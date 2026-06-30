@@ -1,0 +1,175 @@
+# VeritX Research — GitHub Actions CI Matrix Pipeline
+name: VeritX CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  DOCKER_IMAGE: ghcr.io/anmol-s314/veritx-tools-base:latest
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Matrix — one job per track (runs in parallel)
+  # ---------------------------------------------------------------------------
+  veritx-ci:
+    name: ${{ matrix.track }}
+    runs-on: [self-hosted, veritx-runner]
+    container:
+      image: ${{ env.DOCKER_IMAGE }}
+    strategy:
+      fail-fast: false
+      matrix:
+        track: [onboarding, t1-kvcache, t2-deadlock, t3-topology, t4-formal]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup
+        run: make -C tracks/${{ matrix.track }} setup
+      - name: Lint
+        run: make -C tracks/${{ matrix.track }} lint
+      - name: Test (sanity)
+        run: make -C tracks/${{ matrix.track }} test
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-${{ matrix.track }}
+          path: tracks/${{ matrix.track }}/results/
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Full simulation runs (slower, main branch + manual trigger only)
+  # ---------------------------------------------------------------------------
+  sim-t1-kvcache:
+    name: Sim T1 (KVCache QoS)
+    needs: veritx-ci
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    runs-on: [self-hosted, veritx-runner]
+    container:
+      image: ${{ env.DOCKER_IMAGE }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: make -C tracks/t1-kvcache sim
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sim-results-t1
+          path: tracks/t1-kvcache/results/
+          retention-days: 30
+
+  sim-t2-deadlock:
+    name: Sim T2 (Deadlock)
+    needs: veritx-ci
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    runs-on: [self-hosted, veritx-runner]
+    container:
+      image: ${{ env.DOCKER_IMAGE }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: make -C tracks/t2-deadlock sim
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sim-results-t2
+          path: tracks/t2-deadlock/results/
+          retention-days: 30
+
+  sim-t3-topology:
+    name: Sim T3 (Topology)
+    needs: veritx-ci
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    runs-on: [self-hosted, veritx-runner]
+    container:
+      image: ${{ env.DOCKER_IMAGE }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: make -C tracks/t3-topology sim
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sim-results-t3
+          path: tracks/t3-topology/results/
+          retention-days: 30
+
+  sim-t4-formal:
+    name: Sim T4 (Formal Verification)
+    needs: veritx-ci
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    runs-on: [self-hosted, veritx-runner]
+    container:
+      image: ${{ env.DOCKER_IMAGE }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: make -C tracks/t4-formal sim
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sim-results-t4
+          path: tracks/t4-formal/results/
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # Report generation (aggregate and plot results)
+  # ---------------------------------------------------------------------------
+  report:
+    name: Generate Report
+    needs: [sim-t1-kvcache, sim-t2-deadlock, sim-t3-topology, sim-t4-formal]
+    if: always() && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
+    runs-on: [self-hosted, veritx-runner]
+    container:
+      image: ${{ env.DOCKER_IMAGE }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download T1 results
+        uses: actions/download-artifact@v4
+        with:
+          name: sim-results-t1
+          path: tracks/t1-kvcache/results/
+        continue-on-error: true
+      - name: Download T2 results
+        uses: actions/download-artifact@v4
+        with:
+          name: sim-results-t2
+          path: tracks/t2-deadlock/results/
+        continue-on-error: true
+      - name: Download T3 results
+        uses: actions/download-artifact@v4
+        with:
+          name: sim-results-t3
+          path: tracks/t3-topology/results/
+        continue-on-error: true
+      - name: Download T4 results
+        uses: actions/download-artifact@v4
+        with:
+          name: sim-results-t4
+          path: tracks/t4-formal/results/
+        continue-on-error: true
+      - run: make report
+      - uses: actions/upload-artifact@v4
+        with:
+          name: report
+          path: report/
+          retention-days: 90
+
+  # ---------------------------------------------------------------------------
+  # Docker image rebuild (manual trigger)
+  # ---------------------------------------------------------------------------
+  rebuild-docker:
+    name: Rebuild Docker Image
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ env.DOCKER_IMAGE }}

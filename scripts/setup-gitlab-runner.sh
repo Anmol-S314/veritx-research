@@ -41,7 +41,7 @@ echo "[5/5] Verifying runner status..."
 sudo gitlab-runner status
 
 echo ""
-echo "✅ Runner setup complete!"
+echo "✅ GitLab runner setup complete!"
 echo "   Check it at: ${GITLAB_URL}/admin/runners"
 echo ""
 echo "Next steps:"
