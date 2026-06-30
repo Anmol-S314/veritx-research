@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv*/
+venv/
+*.so
+
+# Project data (contains uploaded transcripts & indexes)
+projects/
+transcripts/
+# legacy single-index artifacts (live flow uses projects/<name>/rag_state)
+mis/rag_state/
+# runtime state (logs, persisted answer/feedback history, generated wiki/graph)
+.mis/
+# scratch dir used by `make dist`
+dist-tmp/
+meeting-intelligence.zip
+
+# Model caches
+~/.cache/huggingface/
+~/.cache/torch/
+
+# Logs
+*.log
+server.log
+nohup.out
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+*.key
+api_keys.txt

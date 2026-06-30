@@ -1,0 +1,131 @@
+# VeritX Research — CI Matrix Pipeline
+# Each matrix cell runs only its own track's tests
+
+variables:
+  DOCKER_IMAGE: registry.gitlab.internal/veritx/tools-base:latest
+  DOCKER_TLS_CERTDIR: ""
+
+default:
+  image: ${DOCKER_IMAGE}
+  tags:
+    - veritx-runner
+
+stages:
+  - lint
+  - test
+  - sim
+  - report
+
+# ---------------------------------------------------------------------------
+# Matrix — one job per track (runs in parallel)
+# ---------------------------------------------------------------------------
+veritx-ci:
+  stage: test
+  parallel:
+    matrix:
+      - TRACK: [onboarding, t1-kvcache, t2-deadlock, t3-topology, t4-formal]
+  script:
+    - make -C tracks/${TRACK} setup
+    - make -C tracks/${TRACK} lint
+    - make -C tracks/${TRACK} test
+  artifacts:
+    paths:
+      - tracks/${TRACK}/results/
+    expire_in: 7 days
+
+# ---------------------------------------------------------------------------
+# Full simulation runs (slower, triggered manually or on main)
+# ---------------------------------------------------------------------------
+sim-t1-kvcache:
+  stage: sim
+  needs: ["veritx-ci: [t1-kvcache]"]
+  script:
+    - make -C tracks/t1-kvcache sim
+  artifacts:
+    paths:
+      - tracks/t1-kvcache/results/
+    expire_in: 30 days
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"
+    - if: $CI_PIPELINE_SOURCE == "web"
+
+sim-t2-deadlock:
+  stage: sim
+  needs: ["veritx-ci: [t2-deadlock]"]
+  script:
+    - make -C tracks/t2-deadlock sim
+  artifacts:
+    paths:
+      - tracks/t2-deadlock/results/
+    expire_in: 30 days
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"
+    - if: $CI_PIPELINE_SOURCE == "web"
+
+sim-t3-topology:
+  stage: sim
+  needs: ["veritx-ci: [t3-topology]"]
+  script:
+    - make -C tracks/t3-topology sim
+  artifacts:
+    paths:
+      - tracks/t3-topology/results/
+    expire_in: 30 days
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"
+    - if: $CI_PIPELINE_SOURCE == "web"
+
+sim-t4-formal:
+  stage: sim
+  needs: ["veritx-ci: [t4-formal]"]
+  script:
+    - make -C tracks/t4-formal sim
+  artifacts:
+    paths:
+      - tracks/t4-formal/results/
+    expire_in: 30 days
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"
+    - if: $CI_PIPELINE_SOURCE == "web"
+
+# ---------------------------------------------------------------------------
+# Report generation (aggregate and plot results)
+# ---------------------------------------------------------------------------
+report:
+  stage: report
+  needs:
+    - job: sim-t1-kvcache
+      optional: true
+    - job: sim-t2-deadlock
+      optional: true
+    - job: sim-t3-topology
+      optional: true
+    - job: sim-t4-formal
+      optional: true
+  script:
+    - make report
+  artifacts:
+    paths:
+      - report/
+    expire_in: 90 days
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"
+    - if: $CI_PIPELINE_SOURCE == "web"
+
+# ---------------------------------------------------------------------------
+# Docker image rebuild (manual trigger)
+# ---------------------------------------------------------------------------
+rebuild-docker-image:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  variables:
+    DOCKER_TLS_CERTDIR: ""
+  script:
+    - docker build -t ${DOCKER_IMAGE} .
+    - docker push ${DOCKER_IMAGE}
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "web"
+      when: manual
+      allow_failure: true
