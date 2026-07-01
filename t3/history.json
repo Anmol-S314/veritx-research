@@ -9,5 +9,16 @@
       "mesh4x4": 26.3145,
       "torus4x4": 25.3774
     }
+  },
+  {
+    "run": 2,
+    "sha": "976c33d",
+    "msg": "T3: turnkey README \u2014 zero-install image workflow + matrix() ",
+    "date": "2026-07-01",
+    "latency": {
+      "fly4": 16.2186,
+      "mesh4x4": 20.0326,
+      "torus4x4": 18.3581
+    }
   }
 ]
