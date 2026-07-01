@@ -1,93 +1,149 @@
-# veritx-research
+# VeritX Research — AI-native Network-on-Chip Architecture
 
+Monorepo for the VeritX BTech research programme (6 months, 15 students, 4 tracks).
+Each track studies a different aspect of AI-accelerator NoCs, sharing one toolchain
+(Booksim, Timeloop, Accelergy, Yosys/SymbiYosys, CBMC, Verilator).
 
+**You install nothing but a container runtime.** Every tool is prebuilt into the
+image `ghcr.io/anmol-s314/veritx-tools-base:latest`, and `make` drives it.
 
-## Getting started
+## Quick start
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
-
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
-
-```
-cd existing_repo
-git remote add origin https://internal-devrepo.datavex.ai/anmol/veritx-research.git
-git branch -M main
-git push -uf origin main
+```bash
+make pull                                    # download the tools image (once)
+make run TRACK=t3-topology CMD=timeloop      # run a track command inside the image
+make run TRACK=t3-topology CMD=dashboard     # build the T3 dashboard
+make shell                                   # or drop into the image and poke around
+make help                                    # list everything
 ```
 
-## Integrate with your tools
+Only prerequisite: **podman** or **docker** (auto-detected).
 
-- [ ] [Set up project integrations](https://internal-devrepo.datavex.ai/anmol/veritx-research/-/settings/integrations)
+## Commands
 
-## Collaborate with your team
+Run from the repo root. `make run` executes a track command *inside the image*, so
+it works even with nothing installed locally.
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+| Command | What it does |
+|---|---|
+| `make help` | List available commands (also works inside any track dir) |
+| `make pull` | Download the prebuilt tools image from GHCR |
+| `make run TRACK=<t> CMD=<c>` | Run track `<t>`'s command `<c>` **inside the image** — e.g. `make run TRACK=t4-formal CMD=test` |
+| `make shell` | Open an interactive bash shell inside the image (run tools by hand) |
+| `make setup\|lint\|test\|sim TRACK=<t>` | Run that phase for a track (on the host; use `make run` if you lack the tools) |
+| `make report` | Build the aggregate cross-track report into `report/` |
+| `make clean` | Remove all generated `results/` and `report/` |
+| `make image-build` / `make image-push` | Build / push the tools image (maintainers) |
 
-## Test and Deploy
+Set `IMAGE=…` to point at a different image. Runtime is auto-detected as podman or docker.
 
-Use the built-in continuous integration in GitLab.
+### Per-track commands
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+Every track exposes the same verbs (`make run TRACK=<t> CMD=<verb>`, or
+`make -C tracks/<t> <verb>`):
 
-***
+| Verb | Does |
+|---|---|
+| `setup` | Check the track's tools are present (friendly hint if you're outside the image) |
+| `lint` | Syntax-check the scripts |
+| `test` | Quick sanity run — the CI gate |
+| `sim` | The track's experiment suite |
+| `help` | List that track's commands |
 
-# Editing this README
+**T3** adds three more: `timeloop` (the full Timeloop → traffic-matrix → Booksim
+topology-sweep spine), `energy` (Timeloop's per-component pJ/compute breakdown +
+energy-delay product → `results/energy.json`), and `dashboard` (build
+`report/t3/index.html`).
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+## How the tooling fits together
 
-## Suggestions for a good README
+- **One image** (`Dockerfile`, multi-stage) holds every tool, pinned. Students never compile anything; CI pulls the same image.
+- **`tracks/common.mk`** is included by each track's `Makefile` and provides `make help` plus the `need`/`want` tool-check macros — so behaviour and messages are consistent and defined in one place.
+- **Adding a track:** copy an existing `tracks/<x>/`, `include ../common.mk`, keep the `setup/lint/test/sim` verbs. It then shows up in `make help` and `make TRACK=<x> …` with **no root-Makefile changes**.
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+## Repository structure
 
-## Name
-Choose a self-explaining name for your project.
+```
+.
+├── Makefile               # top-level commands (help / run / shell / pull / …)
+├── tracks/
+│   ├── common.mk          # shared Make machinery (help + tool-check macros)
+│   ├── onboarding/        # toolchain validation — start here
+│   ├── t1-kvcache/        # KV-cache QoS with gem5/Garnet/ASTRA-sim (deferred)
+│   ├── t2-deadlock/       # routing deadlock with Booksim 2.0
+│   ├── t3-topology/       # topology co-opt with Booksim + Timeloop + Accelergy
+│   └── t4-formal/         # formal verification with SymbiYosys + Yosys + CBMC
+├── scripts/               # cross-track report generation
+├── Dockerfile             # multi-stage build of all tools
+└── .github/workflows/     # GitHub Actions CI (5-cell matrix)
+```
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+## Per-track guides
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+| Track | What you study | Files you edit | Status |
+|-------|---------------|----------------|--------|
+| [Onboarding](tracks/onboarding/README.md) | Toolchain sanity | — | First |
+| [T1](tracks/t1-kvcache/README.md) | KV-cache QoS (gem5) | `configs/*.py` | *Deferred* |
+| [T2](tracks/t2-deadlock/README.md) | Deadlock avoidance | `configs/*.cfg` | ✅ |
+| [T3](tracks/t3-topology/README.md) | Topology × traffic | `scripts/timeloop_to_matrix.py` | ✅ |
+| [T4](tracks/t4-formal/README.md) | Formal verification | `rtl/*.sv`, `configs/*.sby` | ✅ |
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+## Student workflow
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+```
+1. git checkout -b <track>/<experiment-name>
+2. <edit your track's files>
+3. make run TRACK=<track> CMD=test      # check it locally, in the image
+4. git commit  &&  git push             # CI runs the full pipeline
+```
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+Every result must be reproducible from a `make` command and tied to a commit.
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+## CI pipeline
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+GitHub Actions runs a 5-cell matrix on every push (inside the same image):
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+```
+onboarding  ── setup → lint → test
+t1-kvcache  ── setup → lint → test (gem5 deferred)
+t2-deadlock ── setup → lint → test → sim → artifacts
+t3-topology ── setup → lint → test → sim → timeloop → dashboard
+t4-formal   ── setup → lint → test → sim → artifacts
+     └── report ── aggregates all tracks → artifact
+```
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+Full `sim`/`timeloop` run on `main` and manual triggers. Results and the T3
+dashboard are uploaded as **downloadable CI artifacts** — kept private to the repo.
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+## Dashboard (T3)
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+`make run TRACK=t3-topology CMD=dashboard` builds a self-contained
+`report/t3/index.html`: traffic-matrix heatmap, latency-vs-injection curves,
+hops (energy proxy), a per-commit regression table, and a Timeloop bottleneck
+breakdown. A **run selector** lets you inspect any past run, and there's a
+light/dark toggle.
+
+Per the programme's IP rules, results are **not** published to a public URL — the
+dashboard is a private CI artifact (or `make ... CMD=dashboard` locally). History
+persists across CI runs on a private `gh-pages` branch; do **not** enable GitHub
+Pages unless it's the private (paid-plan) variant.
+
+## Tool versions
+
+Pinned in `ghcr.io/anmol-s314/veritx-tools-base:latest`:
+
+| Tool | Version | Track |
+|------|---------|-------|
+| Booksim 2.0 (+ `matrix` traffic pattern) | commit `28f4329` | T2, T3 |
+| Timeloop | commit `6b70505` (pre-barvinok) | T3 |
+| Accelergy | latest | T3 |
+| Yosys | 0.66+ | T4 |
+| SymbiYosys | latest | T4 |
+| CBMC | 6.10.0 | T4 |
+| Verilator | 4.038 | T4 |
+| z3 | 4.8.12 | T4 |
+| gem5 | *deferred build* | T1 |
 
 ## License
-For open source projects, say how it is licensed.
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+See [LICENSE](LICENSE).

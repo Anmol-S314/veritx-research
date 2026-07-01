@@ -1,0 +1,135 @@
+name: VeritX CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  veritx-ci:
+    name: ${{ matrix.track }}
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/anmol-s314/veritx-tools-base:latest
+    strategy:
+      fail-fast: false
+      matrix:
+        track: [onboarding, t1-kvcache, t2-deadlock, t3-topology, t4-formal]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup
+        run: make -C tracks/${{ matrix.track }} setup
+      - name: Lint
+        run: make -C tracks/${{ matrix.track }} lint
+      - name: Test (sanity)
+        run: make -C tracks/${{ matrix.track }} test
+      - name: Sim (full)
+        if: matrix.track != 'onboarding' && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
+        run: make -C tracks/${{ matrix.track }} sim
+      - name: Timeloop→Booksim spine (T3 only)
+        if: matrix.track == 't3-topology' && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
+        run: make -C tracks/t3-topology timeloop
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.track }}
+          path: tracks/${{ matrix.track }}/results/
+          retention-days: 30
+
+  report:
+    name: Generate Report
+    needs: [veritx-ci]
+    if: always() && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/anmol-s314/veritx-tools-base:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download T1 results
+        uses: actions/download-artifact@v4
+        with:
+          name: t1-kvcache
+          path: tracks/t1-kvcache/results/
+        continue-on-error: true
+      - name: Download T2 results
+        uses: actions/download-artifact@v4
+        with:
+          name: t2-deadlock
+          path: tracks/t2-deadlock/results/
+        continue-on-error: true
+      - name: Download T3 results
+        uses: actions/download-artifact@v4
+        with:
+          name: t3-topology
+          path: tracks/t3-topology/results/
+        continue-on-error: true
+      - name: Download T4 results
+        uses: actions/download-artifact@v4
+        with:
+          name: t4-formal
+          path: tracks/t4-formal/results/
+        continue-on-error: true
+      - run: make report
+      - uses: actions/upload-artifact@v4
+        with:
+          name: report
+          path: report/
+          retention-days: 90
+
+  dashboard-t3:
+    name: T3 Dashboard
+    needs: [veritx-ci]
+    if: always() && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest        # plain runner — generator is pure python3, no tools needed
+    permissions:
+      contents: write             # to push the built page to gh-pages
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download T3 results
+        uses: actions/download-artifact@v4
+        with:
+          name: t3-topology
+          path: tracks/t3-topology/results/
+        continue-on-error: true
+      - name: Restore history from gh-pages
+        run: |
+          git fetch origin gh-pages --depth=1 2>/dev/null \
+            && git show origin/gh-pages:t3/history.json > tracks/t3-topology/results/history.json 2>/dev/null \
+            || echo "no existing history yet (first run)"
+      - name: Generate dashboard
+        run: python3 tracks/t3-topology/scripts/generate_dashboard.py
+      - name: Stage site
+        run: |
+          mkdir -p public/t3
+          cp report/t3/index.html public/t3/
+          cp tracks/t3-topology/results/history.json public/t3/ 2>/dev/null || true
+      - name: Publish to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
+          keep_files: true          # preserve other tracks' pages
+
+  rebuild-docker:
+    name: Rebuild Docker Image
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/anmol-s314/veritx-tools-base:latest

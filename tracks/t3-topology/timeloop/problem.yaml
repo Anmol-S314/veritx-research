@@ -1,0 +1,26 @@
+# Attention projection GEMM: (M x K) . (K x N) = (M x N).
+# The GEMM shape is defined inline (dims M,N,K; data-spaces A,B,Z) so this file
+# is self-contained — no dependency on Timeloop's bundled problem-shapes/ dir.
+# coefficients is omitted (optional; only needed for strided projections).
+problem:
+  shape:
+    name: gemm
+    dimensions: [ M, N, K ]
+    data-spaces:
+    - name: A
+      projection:
+      - [ [M] ]
+      - [ [K] ]
+    - name: B
+      projection:
+      - [ [N] ]
+      - [ [K] ]
+    - name: Z
+      projection:
+      - [ [M] ]
+      - [ [N] ]
+      read-write: True
+  instance:
+    M: 16
+    N: 16
+    K: 16
