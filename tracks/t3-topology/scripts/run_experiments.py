@@ -9,21 +9,30 @@ CONFIGS = sorted(CONFIGS_DIR.glob("*.cfg"))
 # CI sweep (coarse); add more points for local: [0.01, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4]
 INJECTION_RATES = [0.05, 0.1, 0.2, 0.3, 0.4]
 
+# Optional Timeloop-derived traffic matrix (the Timeloop->Booksim bridge). When
+# set, every topology is driven by this matrix instead of uniform random traffic.
+MATRIX = os.environ.get("TRAFFIC_MATRIX")
+
 def run_one(cfg: Path, rate: float) -> dict:
     booksim = os.environ.get("BOOKSIM_BIN") or "booksim"
     cmd = [booksim, str(cfg), f"injection_rate={rate}"]
+    if MATRIX:
+        cmd.append(f"traffic=matrix({MATRIX})")
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-    latency = None
+    latency = hops = None
     for line in result.stdout.splitlines():
         if "Packet latency average" in line:
-            try:
-                latency = float(line.split()[-3])
-            except (ValueError, IndexError):
-                pass
+            try: latency = float(line.split()[-3])
+            except (ValueError, IndexError): pass
+        elif "Hops average" in line:
+            try: hops = float(line.split()[-2])
+            except (ValueError, IndexError): pass
     return {
         "topology": cfg.stem,
         "injection_rate": rate,
+        "traffic": f"matrix({Path(MATRIX).name})" if MATRIX else "uniform",
         "latency_cycles": latency,
+        "hops_avg": hops,  # energy proxy = hops_avg * packet_size (Pareto step)
         "status": "ok" if latency is not None else "no_output",
         "returncode": result.returncode,
     }

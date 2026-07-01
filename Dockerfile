@@ -19,15 +19,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     git \
     libboost-all-dev \
+    libconfig++-dev \
     libffi-dev \
     libgoogle-perftools-dev \
+    libgpm-dev \
+    libncurses5-dev \
     libprotobuf-dev \
     libreadline-dev \
+    libtinfo-dev \
+    libyaml-cpp-dev \
     make \
     mercurial \
     ninja-build \
     pkg-config \
     protobuf-compiler \
+    scons \
     python3 \
     python3-dev \
     python3-numpy \
@@ -43,20 +49,41 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /opt
 
 # =============================================================================
-# Booksim 2.0 (T2, T3 — Deadlock, Topology)
+# Booksim 2.0 + VeritX matrix traffic pattern (T2, T3 — Deadlock, Topology)
+# Pinned commit + the `matrix(<file>)` pattern that feeds a Timeloop traffic
+# matrix into Booksim (the Timeloop->Booksim bridge for T3). Source kept at
+# /opt/booksim2 so students can add custom patterns/topologies and recompile.
 # =============================================================================
-RUN git clone --depth 1 https://github.com/booksim/booksim2.git && \
-    cd booksim2/src && \
-    make -j$(nproc) && \
-    cp booksim /usr/local/bin/ && \
-    strip /usr/local/bin/booksim
+COPY tracks/t3-topology/booksim-ext/ /opt/booksim-ext/
+RUN git clone https://github.com/booksim/booksim2.git && \
+    cd booksim2 && git checkout 28f43299f1706a3160ffac721ca461d74eb6e618 && \
+    cp /opt/booksim-ext/matrixtraffic.hpp /opt/booksim-ext/matrixtraffic.cpp src/ && \
+    git apply /opt/booksim-ext/matrix_traffic.patch && \
+    cd src && make -j$(nproc) && \
+    cp booksim /usr/local/bin/
 
 # =============================================================================
-# Accelergy (T3 — Topology energy estimation; Timeloop added later via scons)
+# Accelergy (T3 — Topology energy estimation)
 # =============================================================================
 RUN git clone --depth 1 https://github.com/Accelergy-Project/accelergy.git && \
     cd accelergy && \
     pip3 install .
+
+# =============================================================================
+# Timeloop (T3 — data-movement model). Pinned to the last commit before the
+# barvinok/isl/NTL dependency, so it builds from apt deps only (no heavy stack).
+# C++ core only (timeloop-model/mapper); the pytimeloop bindings aren't needed —
+# the mapping search is C++, our bridge is thin Python. `-Werror` is dropped
+# because this 2022 code trips newer GCC's warnings.
+# =============================================================================
+RUN git clone --recurse-submodules https://github.com/Accelergy-Project/timeloop.git && \
+    cd timeloop && git checkout 6b705056d7473a86d6439533879632d0979b85a1 && \
+    git submodule update --init --recursive && \
+    sed -i "s/'-Werror', //; s/-std=c++14/-std=c++17/" src/SConscript && \
+    cd src && ln -s ../pat-public/src/pat . && cd .. && \
+    scons -j$(nproc) && \
+    cp build/timeloop-model build/timeloop-mapper build/timeloop-metrics /usr/local/bin/ && \
+    find . -name "libtimeloop*.so" -exec cp {} /usr/local/lib/ \;
 
 # =============================================================================
 # Yosys (T4 — Formal Verification)
@@ -115,10 +142,18 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # Runtime dependencies only
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    bison \
     ca-certificates \
+    flex \
+    g++ \
+    gcc \
     git \
+    libboost-serialization1.74.0 \
+    libconfig++9v5 \
     libgoogle-perftools4 \
+    libncurses6 \
     libprotobuf-dev \
+    libyaml-cpp0.7 \
     make \
     python3 \
     python3-numpy \
@@ -133,6 +168,8 @@ COPY --from=builder /usr/local/bin/ /usr/local/bin/
 COPY --from=builder /usr/local/lib/ /usr/local/lib/
 COPY --from=builder /usr/local/share/ /usr/local/share/
 COPY --from=builder /usr/lib/python3/dist-packages/ /usr/lib/python3/dist-packages/
+# Booksim source (with matrix pattern) so students can extend + recompile
+COPY --from=builder /opt/booksim2 /opt/booksim2
 
 RUN ldconfig
 
