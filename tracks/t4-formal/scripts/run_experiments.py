@@ -13,6 +13,7 @@ def gen_sby(rtl_path: Path, mode: str, depth: int) -> str:
 [options]
 mode {mode}
 depth {depth}
+dump_vcd on
 
 [engines]
 smtbmc z3
@@ -46,13 +47,19 @@ def run_proof(rtl: Path, mode: str, depth: int) -> dict:
 
     stdout = result.stdout
     passed = "PASS" in stdout or "SUCCESS" in stdout
+    status = "pass" if passed else "fail"
+
+    trace_vcd = build_dir / "engine_0" / "trace.vcd"
+    trace_path = str(trace_vcd) if trace_vcd.exists() else None
+
     return {
         "design": top,
         "mode": mode,
         "depth": depth,
-        "status": "pass" if passed else "fail",
+        "status": status,
         "elapsed_s": round(elapsed, 2),
-        "output_truncated": stdout[-300:] if not passed else "",
+        "trace_vcd": trace_path,
+        "output_truncated": stdout[-500:] if not passed else "",
     }
 
 def main():
