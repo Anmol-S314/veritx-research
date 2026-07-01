@@ -1,6 +1,6 @@
 # T3: Topology — Booksim + Timeloop + Accelergy
 include ../common.mk
-.PHONY: setup lint test sim timeloop dashboard clean
+.PHONY: setup lint test sim timeloop energy dashboard clean
 
 setup:  ## check the toolchain (Booksim required; Timeloop/Accelergy optional)
 	@$(call need,booksim)
@@ -30,6 +30,15 @@ timeloop:  ## full spine: Timeloop workload -> traffic matrix -> topology sweep
 		echo "  ⚠  Timeloop produced no stats; falling back to uniform traffic"; \
 		python3 scripts/run_experiments.py; \
 	fi
+
+energy:  ## Timeloop energy breakdown (pJ/compute + energy-delay product)
+	@mkdir -p results
+	@if [ ! -f results/timeloop.stats.txt ]; then \
+		echo "no Timeloop stats yet — running the model..."; \
+		( cd timeloop && timeloop-mapper mapper.yaml arch.yaml problem.yaml >/dev/null 2>&1 ) \
+		  && cp timeloop/timeloop-mapper.stats.txt results/timeloop.stats.txt; \
+	fi
+	@python3 scripts/energy_report.py results/timeloop.stats.txt
 
 dashboard:  ## (re)build report/t3/index.html from results/
 	@python3 scripts/generate_dashboard.py

@@ -70,6 +70,7 @@ scripts/generate_dashboard.py
 | `make test` | quick sanity sweep (uniform traffic) — the CI gate |
 | `make sim` | uniform-traffic baseline sweep across topologies |
 | `make timeloop` | **the real spine** — Timeloop → matrix → topology sweep |
+| `make energy` | Timeloop energy: per-component pJ/compute + energy-delay product → `results/energy.json` |
 | `make dashboard` | (re)generate `report/t3/index.html` from `results/` |
 
 `make timeloop` is the one you'll use for research. If Timeloop is unavailable it

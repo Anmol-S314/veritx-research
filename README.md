@@ -50,8 +50,10 @@ Every track exposes the same verbs (`make run TRACK=<t> CMD=<verb>`, or
 | `sim` | The track's experiment suite |
 | `help` | List that track's commands |
 
-**T3** adds two more: `timeloop` (the full Timeloop → traffic-matrix → Booksim
-topology-sweep spine) and `dashboard` (build `report/t3/index.html`).
+**T3** adds three more: `timeloop` (the full Timeloop → traffic-matrix → Booksim
+topology-sweep spine), `energy` (Timeloop's per-component pJ/compute breakdown +
+energy-delay product → `results/energy.json`), and `dashboard` (build
+`report/t3/index.html`).
 
 ## How the tooling fits together
 
