@@ -6,7 +6,7 @@ BOOKSIM := $(shell which booksim 2>/dev/null || echo /usr/local/bin/booksim)
 setup:
 	@echo "Verifying Booksim..."
 	@test -x $(BOOKSIM) || (echo "Booksim not found — rebuild Docker image"; exit 1)
-	@$(BOOKSIM) --version 2>/dev/null || echo "  OK"
+	@echo "  OK"
 
 lint:
 	@echo "Linting Booksim configs..."

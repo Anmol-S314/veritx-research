@@ -2,15 +2,13 @@
 # Each matrix cell runs only its own track's tests
 
 variables:
-  DOCKER_IMAGE: registry.gitlab.internal/veritx/tools-base:latest
-  DOCKER_TLS_CERTDIR: ""
+  DOCKER_IMAGE: ghcr.io/anmol-s314/veritx-tools-base:latest
 
 default:
   image: ${DOCKER_IMAGE}
-  tags:
-    - veritx-runner
 
 stages:
+  - build
   - lint
   - test
   - sim
@@ -123,6 +121,7 @@ rebuild-docker-image:
   variables:
     DOCKER_TLS_CERTDIR: ""
   script:
+    - echo "$GHCR_TOKEN" | docker login ghcr.io -u Anmol-S314 --password-stdin
     - docker build -t ${DOCKER_IMAGE} .
     - docker push ${DOCKER_IMAGE}
   rules:

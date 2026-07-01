@@ -19,8 +19,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     git \
     libboost-all-dev \
+    libffi-dev \
     libgoogle-perftools-dev \
     libprotobuf-dev \
+    libreadline-dev \
     make \
     mercurial \
     ninja-build \
@@ -33,6 +35,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pip \
     python3-tk \
     swig \
+    tcl-dev \
     wget \
     zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
@@ -63,11 +66,13 @@ RUN pip3 install cmake && \
         https://github.com/YosysHQ/yosys.git && \
     cd yosys && \
     mkdir build && cd build && \
-    cmake .. -DBUILD_EDA=ON -DENABLE_READLINE=OFF -DWITH_ABC=OFF && \
+    cmake .. -DBUILD_EDA=ON -DENABLE_READLINE=OFF -DWITH_ABC=OFF \
+        -DCMAKE_INSTALL_PREFIX=/usr/local && \
     make -j$(nproc) && \
     make install && \
-    strip /usr/local/bin/yosys && \
-    cd /opt && rm -rf yosys
+    # CMake may miss some share files; copy them explicitly
+    cp -r /opt/yosys/backends/smt2/smtio.py /usr/local/share/yosys/python3/ && \
+    strip /usr/local/bin/yosys
 
 # =============================================================================
 # SymbiYosys (T4)
@@ -76,7 +81,7 @@ RUN git clone --depth 1 https://github.com/YosysHQ/sby.git && \
     cd sby && \
     make install && \
     mkdir -p /usr/local/share/yosys/python3/ && \
-    cp sbysrc/sby_*.py /usr/local/share/yosys/python3/
+    cp sbysrc/*.py /usr/local/share/yosys/python3/
 
 # =============================================================================
 # CBMC (T4)
@@ -91,6 +96,7 @@ RUN git clone --depth 1 https://github.com/diffblue/cbmc.git && \
 # =============================================================================
 # Python dependencies (shared across all tracks)
 # =============================================================================
+# z3 solver comes from the apt `z3` binary (runtime stage); smtbmc shells out to it
 RUN pip3 install --no-cache-dir \
     pandas \
     seaborn \
@@ -120,13 +126,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pip \
     python3-tk \
     wget \
+    z3 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /usr/local/bin/ /usr/local/bin/
 COPY --from=builder /usr/local/lib/ /usr/local/lib/
+COPY --from=builder /usr/local/share/ /usr/local/share/
 COPY --from=builder /usr/lib/python3/dist-packages/ /usr/lib/python3/dist-packages/
 
 RUN ldconfig
+
+ENV PYTHONPATH="/usr/local/share/yosys/python3:${PYTHONPATH}"
 
 # Fix matplotlib/numpy compatibility (apt version compiled against numpy 1.x)
 RUN pip3 install --upgrade --no-cache-dir 'matplotlib>=3.10'

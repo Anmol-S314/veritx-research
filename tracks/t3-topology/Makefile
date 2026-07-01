@@ -6,10 +6,9 @@ BOOKSIM := $(shell which booksim 2>/dev/null || echo /usr/local/bin/booksim)
 setup:
 	@echo "Verifying tools..."
 	@test -x $(BOOKSIM) || (echo "Booksim not found"; exit 1)
-	@python3 -c "import timeloop; print('Timeloop OK:', timeloop.__version__)" 2>/dev/null || \
-		echo "  ⚠  Timeloop import check skipped"
-	@python3 -c "import accelergy; print('Accelergy OK')" 2>/dev/null || \
-		echo "  ⚠  Accelergy import check skipped"
+	@python3 -c "import accelergy; print('Accelergy OK:', accelergy.__version__)" 2>/dev/null || \
+		echo "  ⚠  Accelergy import check skipped (ok for Booksim-only experiments)"
+	@echo "  Timeloop: deferred (needs scons build)"
 
 lint:
 	@echo "Linting configs..."

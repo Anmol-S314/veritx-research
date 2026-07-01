@@ -8,9 +8,8 @@ lint:
 	@echo "No lint for onboarding."
 
 test:
-	@echo "Running onboarding sanity checks..."
-	@python3 -c "import numpy; print('NumPy OK:', numpy.__version__)"
-	@python3 -c "import matplotlib; print('Matplotlib OK:', matplotlib.__version__)"
+	@echo "Running onboarding toolchain validation..."
+	@python3 scripts/sanity_test.py
 
 sim:
 	@echo "No simulation for onboarding."
