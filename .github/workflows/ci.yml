@@ -17,7 +17,7 @@ jobs:
   # ---------------------------------------------------------------------------
   veritx-ci:
     name: ${{ matrix.track }}
-    runs-on: [self-hosted, veritx-runner]
+    runs-on: ubuntu-latest
     container:
       image: ${{ env.DOCKER_IMAGE }}
     strategy:
@@ -46,7 +46,7 @@ jobs:
     name: Sim T1 (KVCache QoS)
     needs: veritx-ci
     if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
-    runs-on: [self-hosted, veritx-runner]
+    runs-on: ubuntu-latest
     container:
       image: ${{ env.DOCKER_IMAGE }}
     steps:
@@ -62,7 +62,7 @@ jobs:
     name: Sim T2 (Deadlock)
     needs: veritx-ci
     if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
-    runs-on: [self-hosted, veritx-runner]
+    runs-on: ubuntu-latest
     container:
       image: ${{ env.DOCKER_IMAGE }}
     steps:
@@ -78,7 +78,7 @@ jobs:
     name: Sim T3 (Topology)
     needs: veritx-ci
     if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
-    runs-on: [self-hosted, veritx-runner]
+    runs-on: ubuntu-latest
     container:
       image: ${{ env.DOCKER_IMAGE }}
     steps:
@@ -94,7 +94,7 @@ jobs:
     name: Sim T4 (Formal Verification)
     needs: veritx-ci
     if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
-    runs-on: [self-hosted, veritx-runner]
+    runs-on: ubuntu-latest
     container:
       image: ${{ env.DOCKER_IMAGE }}
     steps:
@@ -113,7 +113,7 @@ jobs:
     name: Generate Report
     needs: [sim-t1-kvcache, sim-t2-deadlock, sim-t3-topology, sim-t4-formal]
     if: always() && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
-    runs-on: [self-hosted, veritx-runner]
+    runs-on: ubuntu-latest
     container:
       image: ${{ env.DOCKER_IMAGE }}
     steps:
