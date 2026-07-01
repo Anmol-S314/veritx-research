@@ -14,24 +14,18 @@ compare them on latency/energy — visualized in a **dashboard**.
 Everything is pre-built in one container image — you don't install Booksim,
 Timeloop, or Accelergy. From the repo root:
 
+Run everything from the repo root — `make run` executes inside the tools image
+(podman or docker, auto-detected), so you install nothing but a container runtime:
+
 ```bash
-# 1. pull the toolchain image once
-podman pull ghcr.io/anmol-s314/veritx-tools-base:latest
-
-# 2. run the full spine: Timeloop → traffic matrix → Booksim topology sweep
-podman run --rm -v "$PWD":/workspace -w /workspace \
-  ghcr.io/anmol-s314/veritx-tools-base:latest \
-  make -C tracks/t3-topology timeloop
-
-# 3. build the dashboard (also in-container — pure python3, no host installs)
-podman run --rm -v "$PWD":/workspace -w /workspace \
-  ghcr.io/anmol-s314/veritx-tools-base:latest \
-  make -C tracks/t3-topology dashboard
+make pull                                   # pull the toolchain image once
+make run TRACK=t3-topology CMD=timeloop     # full spine: Timeloop → matrix → sweep
+make run TRACK=t3-topology CMD=dashboard    # build report/t3/index.html
 ```
 
-Open `report/t3/index.html` in a browser — no server. Results land in
-`tracks/t3-topology/results/` (git-ignored). The only thing you install is a
-container runtime (podman or docker); everything else is in the image.
+`make help` lists every command; `make shell` drops you into the image for
+interactive work. Open `report/t3/index.html` in a browser — no server. Results
+land in `tracks/t3-topology/results/` (git-ignored).
 
 ---
 

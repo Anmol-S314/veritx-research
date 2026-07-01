@@ -1,24 +1,19 @@
-# T2: Deadlock — Makefile (Booksim 2.0)
+# T2: Deadlock-Free Routing — Booksim 2.0
+include ../common.mk
 .PHONY: setup lint test sim clean
 
-BOOKSIM := $(shell which booksim 2>/dev/null || echo /usr/local/bin/booksim)
+setup:  ## check Booksim is available
+	@$(call need,booksim)
+	@echo "  ✓ Booksim present"
 
-setup:
-	@echo "Verifying Booksim..."
-	@test -x $(BOOKSIM) || (echo "Booksim not found — rebuild Docker image"; exit 1)
-	@echo "  OK"
-
-lint:
-	@echo "Linting Booksim configs..."
+lint:  ## syntax-check the Python scripts
 	@python3 -m py_compile scripts/*.py 2>/dev/null || true
 
-test:
-	@echo "Running T2 sanity sim (4x4 mesh, uniform)..."
+test:  ## quick sanity sim (4x4 mesh, uniform)
 	@python3 scripts/sanity_test.py
 
-sim:
-	@echo "Running T2 deadlock experiment suite..."
+sim:  ## run the deadlock experiment suite
 	@python3 scripts/run_experiments.py
 
-clean:
+clean:  ## remove generated files
 	@rm -rf results/ __pycache__/

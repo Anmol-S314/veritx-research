@@ -1,27 +1,19 @@
-# T1: KVCache QoS — Makefile (gem5/Garnet/ASTRA-sim)
+# T1: KV-Cache QoS — gem5 / Garnet / ASTRA-sim
+include ../common.mk
 .PHONY: setup lint test sim clean
 
-GEM5_BIN := $(shell which gem5.opt 2>/dev/null || echo /usr/local/bin/gem5.opt)
+setup:  ## check gem5 (deferred build — see docs/adr/ADR-0001)
+	@$(call want,gem5.opt)
+	@command -v gem5.opt >/dev/null 2>&1 && gem5.opt --version 2>/dev/null | head -1 || true
 
-setup:
-	@echo "Verifying gem5..."
-	@if test -x $(GEM5_BIN); then \
-		$(GEM5_BIN) --version 2>/dev/null | head -1; \
-	else \
-		echo "  ⚠  gem5 not found (deferred build — see docs/adr/ADR-0001*)"; \
-	fi
-
-lint:
-	@echo "Linting gem5 configs..."
+lint:  ## syntax-check the Python scripts
 	@python3 -m py_compile scripts/*.py 2>/dev/null || true
 
-test:
-	@echo "Running T1 sanity check..."
+test:  ## sanity check
 	@python3 scripts/sanity_test.py
 
-sim:
-	@echo "Running T1 experiment suite..."
+sim:  ## run the experiment suite
 	@python3 scripts/run_experiments.py
 
-clean:
+clean:  ## remove generated files + gem5 m5out/
 	@rm -rf results/ m5out/ __pycache__/
