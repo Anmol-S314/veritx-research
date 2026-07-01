@@ -160,6 +160,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-matplotlib \
     python3-pip \
     python3-tk \
+    verilator \
     wget \
     z3 \
     && rm -rf /var/lib/apt/lists/*
