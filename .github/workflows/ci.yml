@@ -75,6 +75,40 @@ jobs:
           path: report/
           retention-days: 90
 
+  dashboard-t3:
+    name: T3 Dashboard
+    needs: [veritx-ci]
+    if: always() && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest        # plain runner — generator is pure python3, no tools needed
+    permissions:
+      contents: write             # to push the built page to gh-pages
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download T3 results
+        uses: actions/download-artifact@v4
+        with:
+          name: t3-topology
+          path: tracks/t3-topology/results/
+        continue-on-error: true
+      - name: Restore history from gh-pages
+        run: |
+          git fetch origin gh-pages --depth=1 2>/dev/null \
+            && git show origin/gh-pages:t3/history.json > tracks/t3-topology/results/history.json 2>/dev/null \
+            || echo "no existing history yet (first run)"
+      - name: Generate dashboard
+        run: python3 tracks/t3-topology/scripts/generate_dashboard.py
+      - name: Stage site
+        run: |
+          mkdir -p public/t3
+          cp report/t3/index.html public/t3/
+          cp tracks/t3-topology/results/history.json public/t3/ 2>/dev/null || true
+      - name: Publish to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
+          keep_files: true          # preserve other tracks' pages
+
   rebuild-docker:
     name: Rebuild Docker Image
     if: github.event_name == 'workflow_dispatch'
