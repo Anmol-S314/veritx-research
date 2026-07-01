@@ -2,33 +2,77 @@
 <title>T3 Topology Dashboard</title>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <style>
- body{font:14px system-ui,sans-serif;margin:0;background:#0f1117;color:#e6e6e6}
- header{padding:16px 24px;background:#161a23;border-bottom:2px solid #2b6cb0}
- h1{margin:0;font-size:18px} .sub{color:#9aa4b2;font-size:13px;margin-top:4px}
- .badge{font-weight:600} .up{color:#f56565} .down{color:#48bb78}
+ :root{--bg:#f8f9fa;--card:#ffffff;--border:#dee2e6;--text:#212529;--sub:#6c757d;--h2:#495057;--note:#adb5bd;--btn:#0d6efd}
+ .dark{--bg:#0f1117;--card:#161a23;--border:#232838;--text:#e6e6e6;--sub:#9aa4b2;--h2:#cbd5e0;--note:#718096;--btn:#2b6cb0}
+ body{font:14px system-ui,sans-serif;margin:0;background:var(--bg);color:var(--text);transition:background .2s,color .2s}
+ header{padding:16px 24px;background:var(--card);border-bottom:2px solid var(--btn);display:flex;justify-content:space-between;align-items:flex-start}
+ h1{margin:0;font-size:18px} .sub{color:var(--sub);font-size:13px;margin-top:4px}
+ .badge{font-weight:600} .up{color:#cc3b3b} .down{color:#2b8a3e}
+ .bar{padding:10px 24px;background:var(--card);border-bottom:1px solid var(--border)}
+ .bar label{color:var(--sub);margin-right:8px}
+ select{font:13px system-ui;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);max-width:560px}
  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px 24px}
- .card{background:#161a23;border:1px solid #232838;border-radius:8px;padding:12px}
- .card h2{font-size:14px;margin:0 0 8px;color:#cbd5e0}
+ .card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:12px;transition:background .2s}
+ .card h2{font-size:14px;margin:0 0 8px;color:var(--h2)}
  .full{grid-column:1/3}
  table{border-collapse:collapse;width:100%;font-size:13px}
- th,td{border:1px solid #232838;padding:5px 8px;text-align:right}
- th:last-child,td.commit{text-align:left} .commit{color:#9aa4b2;font-family:monospace}
- .note{color:#718096;font-style:italic}
+ th,td{border:1px solid var(--border);padding:5px 8px;text-align:right}
+ th:last-child,td.commit{text-align:left} .commit{color:var(--sub);font-family:monospace}
+ tr.sel td{background:rgba(43,108,176,.14)}
+ .note{color:var(--note);font-style:italic}
+ .toggle{background:var(--btn);color:#fff;border:none;border-radius:6px;padding:5px 14px;font-size:12px;cursor:pointer;white-space:nowrap;margin-left:12px}
+ .toggle:hover{opacity:.85}
 </style></head><body>
-<header><h1>T3 Topology Dashboard</h1>
-<div class="sub">Run #4 · <span class="commit">f81f8a1 T3 README: dashboard is a private artifact, not a public URL</span> · 2026-07-01 · <span class="badge">▬ 0.0% avg latency vs run #3 (unchanged)</span></div></header>
+<header><div><h1>T3 Topology Dashboard</h1>
+<div class="sub">Latest: run #5 · <span class="commit">8c5b6aa T3 dashboard: hide pre-feature runs from selector/table (fix</span> · 2026-07-01 · <span class="badge">first run — no baseline yet</span></div></div>
+ <button class="toggle" id="themeToggle">Dark mode</button></header>
+<div class="bar"><label>Viewing run:</label><select id="runsel"><option value="0" selected>#5 · 8c5b6aa T3 dashboard: hide pre-feature runs from selector/table (fix</option></select></div>
 <div class="grid">
- <div class="card"><h2>Traffic Matrix (this run)</h2><div id="heat"></div></div>
+ <div class="card"><h2>Traffic Matrix</h2><div id="heat"></div></div>
  <div class="card"><h2>Latency vs Injection Rate</h2><div id="lat"></div></div>
- <div class="card full"><h2>Regression — last 4 runs</h2><table><tr><th>Run</th><th>fly4</th><th>mesh4x4</th><th>torus4x4</th><th>Commit</th></tr><tr><td>#4</td><td>16 <span class=''>▬0%</span></td><td>20 <span class=''>▬0%</span></td><td>18 <span class=''>▬0%</span></td><td class='commit'>f81f8a1 T3 README: dashboard is a private artifact, not a public URL</td></tr><tr><td>#3</td><td>16 <span class=''>▬0%</span></td><td>20 <span class=''>▬0%</span></td><td>18 <span class=''>▬0%</span></td><td class='commit'>8ae391f Add Verilator to Docker image for T4 constrained-random simu</td></tr><tr><td>#2</td><td>16 <span class='down'>▼16%</span></td><td>20 <span class='down'>▼24%</span></td><td>18 <span class='down'>▼28%</span></td><td class='commit'>976c33d T3: turnkey README — zero-install image workflow + matrix() </td></tr><tr><td>#1</td><td>19</td><td>26</td><td>25</td><td class='commit'>2f2f39a Fix Timeloop crash (graceful fallback), fix report generator</td></tr></table></div>
+ <div class="card"><h2>Hops (energy proxy)</h2><div id="hops"></div></div>
+ <div class="card full"><h2>Regression — last 1 runs</h2><table id='regt'><tr><th>Run</th><th>fly4</th><th>mesh4x4</th><th>torus4x4</th><th>Commit</th></tr><tr id='row0'><td>#5</td><td>16</td><td>20</td><td>18</td><td class='commit'>8c5b6aa T3 dashboard: hide pre-feature runs from selector/table (fix</td></tr></table></div>
  <div class="card full"><h2>Timeloop Access Breakdown (bottlenecks)</h2><div id="bott"></div></div>
 </div>
-<script>const D={"curves": {"fly4": [[0.002, 16.2186], [0.005, 16.4744], [0.01, 17.0945], [0.02, 20.004], [0.03, 292.534]], "mesh4x4": [[0.002, 20.0326], [0.005, 20.7332], [0.01, 21.8697], [0.02, 23.1712], [0.03, 163.962]], "torus4x4": [[0.002, 18.3581], [0.005, 18.9963], [0.01, 19.4202], [0.02, 21.1919], [0.03, 183.03]]}, "matrix": [[0.6, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2], [0.6, 0.2, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.4, 0.2, 0.2, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.4, 0.0, 0.2, 0.2, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.4, 0.0, 0.0, 0.2, 0.2, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.4, 0.0, 0.0, 0.0, 0.2, 0.2, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.4, 0.0, 0.0, 0.0, 0.0, 0.2, 0.2, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2, 0.2, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2, 0.2, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2, 0.2, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0], [0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2, 0.2, 0.2, 0.0, 0.0, 0.0, 0.0], [0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2, 0.2, 0.2, 0.0, 0.0, 0.0], [0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2, 0.2, 0.2, 0.0, 0.0], [0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2, 0.2, 0.2, 0.0], [0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2, 0.2, 0.2], [0.6, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2, 0.2]], "levels": [{"name": "RegisterFile", "accesses": 12544}, {"name": "GlobalBuffer", "accesses": 0}, {"name": "DRAM", "accesses": 768}]};
-const dark={paper_bgcolor:'#161a23',plot_bgcolor:'#161a23',font:{color:'#cbd5e0'},margin:{t:10,r:10,b:40,l:50}};
-if(D.matrix)Plotly.newPlot('heat',[{z:D.matrix,type:'heatmap',colorscale:'Viridis'}],
-  {...dark,xaxis:{title:'dst tile'},yaxis:{title:'src tile',autorange:'reversed'}},{displayModeBar:false});
-Plotly.newPlot('lat',Object.entries(D.curves).map(([t,p])=>({x:p.map(r=>r[0]),y:p.map(r=>r[1]),name:t,mode:'lines+markers'})),
-  {...dark,xaxis:{title:'injection rate'},yaxis:{title:'latency (cycles)'},legend:{orientation:'h'}},{displayModeBar:false});
-if(D.levels)Plotly.newPlot('bott',[{x:D.levels.map(l=>l.accesses),y:D.levels.map(l=>l.name),type:'bar',orientation:'h',marker:{color:'#2b6cb0'}}],
-  {...dark,xaxis:{title:'word accesses'},margin:{t:10,r:10,b:40,l:130}},{displayModeBar:false});
+<script>
+const RUNS=[{"run":5,"sha":"8c5b6aa","msg":"T3 dashboard: hide pre-feature runs from selector/table (fix","date":"2026-07-01","latency":{"fly4":16.2186,"mesh4x4":20.0326,"torus4x4":18.3581},"curves":{"fly4":[[0.002,16.2186,2.0],[0.005,16.4744,2.0],[0.01,17.0945,2.0],[0.02,20.004,2.0],[0.03,292.534,2.0]],"mesh4x4":[[0.002,20.0326,2.7814],[0.005,20.7332,2.88619],[0.01,21.8697,2.92345],[0.02,23.1712,2.83997],[0.03,163.962,2.95006]],"torus4x4":[[0.002,18.3581,2.21395],[0.005,18.9963,2.2556],[0.01,19.4202,2.24919],[0.02,21.1919,2.26194],[0.03,183.03,2.2727]]},"saturation":{"fly4":0.03,"mesh4x4":0.03,"torus4x4":0.03},"hops":{"fly4":[[0.002,2.0],[0.005,2.0],[0.01,2.0],[0.02,2.0],[0.03,2.0]],"mesh4x4":[[0.002,2.7814],[0.005,2.88619],[0.01,2.92345],[0.02,2.83997],[0.03,2.95006]],"torus4x4":[[0.002,2.21395],[0.005,2.2556],[0.01,2.24919],[0.02,2.26194],[0.03,2.2727]]},"matrix":[[0.6,0.2,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.2],[0.6,0.2,0.2,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],[0.4,0.2,0.2,0.2,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],[0.4,0.0,0.2,0.2,0.2,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],[0.4,0.0,0.0,0.2,0.2,0.2,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],[0.4,0.0,0.0,0.0,0.2,0.2,0.2,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],[0.4,0.0,0.0,0.0,0.0,0.2,0.2,0.2,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],[0.4,0.0,0.0,0.0,0.0,0.0,0.2,0.2,0.2,0.0,0.0,0.0,0.0,0.0,0.0,0.0],[0.4,0.0,0.0,0.0,0.0,0.0,0.0,0.2,0.2,0.2,0.0,0.0,0.0,0.0,0.0,0.0],[0.4,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.2,0.2,0.2,0.0,0.0,0.0,0.0,0.0],[0.4,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.2,0.2,0.2,0.0,0.0,0.0,0.0],[0.4,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.2,0.2,0.2,0.0,0.0,0.0],[0.4,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.2,0.2,0.2,0.0,0.0],[0.4,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.2,0.2,0.2,0.0],[0.4,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.2,0.2,0.2],[0.6,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.2,0.2]],"levels":[{"name":"RegisterFile","accesses":12544},{"name":"GlobalBuffer","accesses":0},{"name":"DRAM","accesses":768}]}];
+let CUR=RUNS.length-1;
+const THEMES={dark:{paper:'#161a23',plot:'#0f1117',font:'#e6e6e6',btn:'#2b6cb0'},light:{paper:'#ffffff',plot:'#f8f9fa',font:'#212529',btn:'#0d6efd'}};
+function theme(){return document.body.classList.contains('dark')?'dark':'light'}
+function lo(t){return{paper_bgcolor:THEMES[t].paper,plot_bgcolor:THEMES[t].plot,font:{color:THEMES[t].font},margin:{t:10,r:10,b:40,l:50}}}
+function note(id,msg){document.getElementById(id).innerHTML="<p class='note'>"+msg+"</p>"}
+function draw(){
+  const r=RUNS[CUR]; if(!r)return;
+  const t=theme(), ly=lo(t);
+  if(r.matrix)Plotly.newPlot('heat',[{z:r.matrix,type:'heatmap',colorscale:'YlOrRd'}],
+    {...ly,xaxis:{title:'dst tile'},yaxis:{title:'src tile',autorange:'reversed'}},{displayModeBar:false,responsive:true});
+  else note('heat','no traffic matrix for this run');
+  if(r.curves){
+    const maxY=Math.max(...Object.values(r.curves).flat().map(x=>x[1]));
+    const latT=Object.entries(r.curves).map(([n,p])=>({x:p.map(x=>x[0]),y:p.map(x=>x[1]),name:n,mode:'lines+markers'}));
+    const satT=Object.entries(r.saturation||{}).filter(([_,v])=>v!==null).map(([n,v])=>({x:[v,v],y:[0,maxY],mode:'lines',name:n+' sat',showlegend:false,line:{dash:'dot',width:1,color:THEMES[t].font}}));
+    Plotly.newPlot('lat',[...latT,...satT],
+      {...ly,xaxis:{title:'injection rate'},yaxis:{title:'latency (cycles)'},legend:{orientation:'h'}},{displayModeBar:false,responsive:true});
+  } else note('lat','no sweep data for this run');
+  if(r.hops)Plotly.newPlot('hops',Object.entries(r.hops).map(([n,p])=>({x:p.map(x=>x[0]),y:p.map(x=>x[1]),name:n,mode:'lines+markers'})),
+    {...ly,xaxis:{title:'injection rate'},yaxis:{title:'avg hops'},legend:{orientation:'h'}},{displayModeBar:false,responsive:true});
+  else note('hops','no hops data for this run');
+  if(r.levels)Plotly.newPlot('bott',[{x:r.levels.map(l=>l.accesses),y:r.levels.map(l=>l.name),type:'bar',orientation:'h',marker:{color:THEMES[t].btn}}],
+    {...ly,margin:{t:10,r:10,b:40,l:130},xaxis:{title:'word accesses'}},{displayModeBar:false,responsive:true});
+  else note('bott','no Timeloop stats for this run');
+  document.querySelectorAll('#regt tr.sel').forEach(x=>x.classList.remove('sel'));
+  const row=document.getElementById('row'+CUR); if(row)row.classList.add('sel');
+}
+const sel=document.getElementById('runsel');
+sel.onchange=()=>{CUR=+sel.value;draw();};
+(function(){
+  if(localStorage.getItem('theme')==='dark')document.body.classList.add('dark');
+  const tog=document.getElementById('themeToggle');
+  tog.textContent=theme()==='dark'?'Light mode':'Dark mode';
+  tog.onclick=function(){document.body.classList.toggle('dark');const t=theme();localStorage.setItem('theme',t);this.textContent=t==='dark'?'Light mode':'Dark mode';draw();};
+  const raw=new URLSearchParams(location.search).get('run');   // absent -> keep latest (not run 0)
+  const q=raw==null?-1:+raw;
+  if(Number.isInteger(q)&&RUNS[q]){CUR=q;sel.value=q;}
+  draw();
+})();
 </script></body></html>
