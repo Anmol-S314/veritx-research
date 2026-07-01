@@ -131,9 +131,11 @@ Our matrix pattern (`matrixtraffic.{hpp,cpp}` + `matrix_traffic.patch`) in
 - **Regression table** — did your last commit help or hurt? (Δ% per topology)
 - **Timeloop breakdown** — where the access bottlenecks are.
 
-On `main` pushes CI publishes it to
-`https://anmol-s314.github.io/veritx-research/t3/` (regression history persists
-across commits).
+On `main` pushes CI rebuilds it and uploads it as a **downloadable artifact**
+(regression history persists across commits via a private `gh-pages` branch).
+Results stay inside the private repo — per the IP rules they are **not** served
+on a public URL. To view a CI run's dashboard, download the `report` artifact
+and open `t3/index.html`, or just run `make dashboard` locally.
 
 ---
 
