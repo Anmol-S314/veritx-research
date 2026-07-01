@@ -6,7 +6,8 @@ from pathlib import Path
 CONFIGS_DIR = Path(__file__).parent.parent / "configs"
 RESULTS_DIR = Path(__file__).parent.parent / "results"
 CONFIGS = sorted(CONFIGS_DIR.glob("*.cfg"))
-INJECTION_RATES = [0.01, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4]
+# CI sweep (coarse); add more points for local: [0.01, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4]
+INJECTION_RATES = [0.05, 0.1, 0.2, 0.3, 0.4]
 
 def run_one(cfg: Path, rate: float) -> dict:
     booksim = os.environ.get("BOOKSIM_BIN") or "booksim"
