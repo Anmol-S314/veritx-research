@@ -127,9 +127,13 @@ Our matrix pattern (`matrixtraffic.{hpp,cpp}` + `matrix_traffic.patch`) in
 `make dashboard` builds a self-contained Plotly page (`report/t3/index.html`):
 
 - **Heatmap** — your traffic matrix (is the spatial model sane?)
-- **Latency curves** — which topology wins, at which injection rate?
+- **Latency curves** — which topology wins, at which injection rate? (dotted line = saturation point)
+- **Hops (energy proxy)** — avg hops × packet size, the Wk9 energy metric
 - **Regression table** — did your last commit help or hurt? (Δ% per topology)
 - **Timeloop breakdown** — where the access bottlenecks are.
+
+Use the **run selector** (or `?run=<n>`) to load any past run's panels, not just
+the latest — every run's full data is embedded. Light/dark toggle top-right.
 
 On `main` pushes CI rebuilds it and uploads it as a **downloadable artifact**
 (regression history persists across commits via a private `gh-pages` branch).

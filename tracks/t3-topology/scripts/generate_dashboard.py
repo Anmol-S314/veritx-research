@@ -3,8 +3,10 @@
 
 Local:  python3 scripts/generate_dashboard.py     (or `make dashboard`)
 Reads results/topology_sweep.json (+ optional traffic matrix & Timeloop stats),
-appends this run to results/history.json (capped), and writes report/t3/index.html
-using Plotly from a CDN. The same script runs in CI to publish to GitHub Pages.
+appends this run's full view-data to results/history.json (capped), and writes
+report/t3/index.html using Plotly from a CDN. Every past run is embedded — pick
+one from the run selector (or open ?run=<n>) to inspect its matrix / curves /
+bottlenecks. The same script runs in CI (dashboard uploaded as a private artifact).
 """
 import json, subprocess, sys, argparse
 from pathlib import Path
@@ -37,19 +39,32 @@ def git_info():
 def load_sweep():
     p = RESULTS / "topology_sweep.json"
     if not p.exists():
-        sys.exit(f"  no {p} — run `make sim` first")
+        sys.exit(f"  no {p} — run `make timeloop` (or `make sim`) first")
     return json.loads(p.read_text())
 
 
 def curves(sweep):
-    """topology -> sorted [(injection_rate, latency)] (valid points only)."""
+    """topology -> sorted [(injection_rate, latency, hops)] (valid points only)."""
     out = {}
     for r in sweep:
         if r.get("latency_cycles") is not None:
-            out.setdefault(r["topology"], []).append([r["injection_rate"], r["latency_cycles"]])
+            out.setdefault(r["topology"], []).append(
+                [r["injection_rate"], r["latency_cycles"], r.get("hops_avg")]
+            )
     for t in out:
         out[t].sort()
     return out
+
+
+def saturation_point(pts):
+    """Injection rate at which latency exceeds 2x zero-load, else None."""
+    if len(pts) < 2:
+        return None
+    zl = pts[0][1]
+    for rate, lat, _ in pts:
+        if lat > 2.0 * zl:
+            return rate
+    return None
 
 
 def characteristic_latency(cur):
@@ -78,14 +93,31 @@ def load_levels(path):
     return lv or None
 
 
-def update_history(latency):
+def build_record(cur, matrix, levels):
+    """Everything needed to redraw one run's panels later."""
+    hops = {t: [[r, h] for r, _, h in pts if h is not None] for t, pts in cur.items()}
+    return {
+        **git_info(),
+        "latency": characteristic_latency(cur),
+        "curves": cur,
+        "saturation": {t: saturation_point(pts) for t, pts in cur.items()},
+        "hops": {t: pts for t, pts in hops.items() if pts} or None,
+        "matrix": matrix,
+        "levels": levels,
+    }
+
+
+def update_history(record):
+    """Append this run's full record; replace a re-run of the same commit; cap."""
     p = RESULTS / "history.json"
     hist = json.loads(p.read_text()) if p.exists() else []
-    gi = git_info()
-    hist = [h for h in hist if h.get("sha") != gi["sha"]]  # replace re-runs of same commit
-    hist.append({"run": (hist[-1]["run"] + 1) if hist else 1, **gi, "latency": latency})
+    hist = [h for h in hist if h.get("sha") != record["sha"]]
+    run_no = (hist[-1]["run"] + 1) if hist else 1
+    hist.append({"run": run_no, **record})
     hist = hist[-HISTORY_CAP:]
-    p.write_text(json.dumps(hist, indent=2))
+    # ponytail: stores curves+matrix per run — tens of KB at 16 tiles x 20 runs.
+    # If matrices get big (64+ tiles) cap matrix history or downsample here.
+    p.write_text(json.dumps(hist, separators=(",", ":")))
     return hist
 
 
@@ -93,8 +125,10 @@ def regression_table(hist):
     topos = sorted({t for h in hist for t in h["latency"]})
     head = "".join(f"<th>{t}</th>" for t in topos)
     rows = ""
+    n = len(hist)
     for i, h in enumerate(reversed(hist)):
-        prev = hist[len(hist) - 2 - i] if (len(hist) - 2 - i) >= 0 else None
+        idx = n - 1 - i                          # original index into RUNS (row highlight)
+        prev = hist[idx - 1] if idx - 1 >= 0 else None
         cells = ""
         for t in topos:
             v = h["latency"].get(t)
@@ -107,8 +141,8 @@ def regression_table(hist):
                 cls = "up" if d > 0 else ("down" if d < 0 else "")
                 delta = f" <span class='{cls}'>{arrow}{abs(d):.0f}%</span>"
             cells += f"<td>{v:.0f}{delta}</td>"
-        rows += f"<tr><td>#{h['run']}</td>{cells}<td class='commit'>{h['sha']} {h['msg']}</td></tr>"
-    return f"<table><tr><th>Run</th>{head}<th>Commit</th></tr>{rows}</table>"
+        rows += f"<tr id='row{idx}'><td>#{h['run']}</td>{cells}<td class='commit'>{h['sha']} {h['msg']}</td></tr>"
+    return f"<table id='regt'><tr><th>Run</th>{head}<th>Commit</th></tr>{rows}</table>"
 
 
 def headline(hist):
@@ -124,55 +158,124 @@ def headline(hist):
     return f"{arrow} {abs(d):.1f}% avg latency vs run #{hist[-2]['run']} ({word})"
 
 
+def run_options(hist):
+    return "".join(
+        f'<option value="{i}"{" selected" if i == len(hist) - 1 else ""}>'
+        f'#{h["run"]} · {h["sha"]} {h["msg"]}</option>'
+        for i, h in reversed(list(enumerate(hist))))
+
+
 HTML = """<!doctype html><html><head><meta charset="utf-8">
 <title>T3 Topology Dashboard</title>
 <script src="__CDN__"></script>
 <style>
- body{font:14px system-ui,sans-serif;margin:0;background:#0f1117;color:#e6e6e6}
- header{padding:16px 24px;background:#161a23;border-bottom:2px solid #2b6cb0}
- h1{margin:0;font-size:18px} .sub{color:#9aa4b2;font-size:13px;margin-top:4px}
- .badge{font-weight:600} .up{color:#f56565} .down{color:#48bb78}
+ :root{--bg:#f8f9fa;--card:#ffffff;--border:#dee2e6;--text:#212529;--sub:#6c757d;--h2:#495057;--note:#adb5bd;--btn:#0d6efd}
+ .dark{--bg:#0f1117;--card:#161a23;--border:#232838;--text:#e6e6e6;--sub:#9aa4b2;--h2:#cbd5e0;--note:#718096;--btn:#2b6cb0}
+ body{font:14px system-ui,sans-serif;margin:0;background:var(--bg);color:var(--text);transition:background .2s,color .2s}
+ header{padding:16px 24px;background:var(--card);border-bottom:2px solid var(--btn);display:flex;justify-content:space-between;align-items:flex-start}
+ h1{margin:0;font-size:18px} .sub{color:var(--sub);font-size:13px;margin-top:4px}
+ .badge{font-weight:600} .up{color:#cc3b3b} .down{color:#2b8a3e}
+ .bar{padding:10px 24px;background:var(--card);border-bottom:1px solid var(--border)}
+ .bar label{color:var(--sub);margin-right:8px}
+ select{font:13px system-ui;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);max-width:560px}
  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px 24px}
- .card{background:#161a23;border:1px solid #232838;border-radius:8px;padding:12px}
- .card h2{font-size:14px;margin:0 0 8px;color:#cbd5e0}
+ .card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:12px;transition:background .2s}
+ .card h2{font-size:14px;margin:0 0 8px;color:var(--h2)}
  .full{grid-column:1/3}
  table{border-collapse:collapse;width:100%;font-size:13px}
- th,td{border:1px solid #232838;padding:5px 8px;text-align:right}
- th:last-child,td.commit{text-align:left} .commit{color:#9aa4b2;font-family:monospace}
- .note{color:#718096;font-style:italic}
+ th,td{border:1px solid var(--border);padding:5px 8px;text-align:right}
+ th:last-child,td.commit{text-align:left} .commit{color:var(--sub);font-family:monospace}
+ tr.sel td{background:rgba(43,108,176,.14)}
+ .note{color:var(--note);font-style:italic}
+ .toggle{background:var(--btn);color:#fff;border:none;border-radius:6px;padding:5px 14px;font-size:12px;cursor:pointer;white-space:nowrap;margin-left:12px}
+ .toggle:hover{opacity:.85}
 </style></head><body>
-<header><h1>T3 Topology Dashboard</h1>
-<div class="sub">Run #__RUN__ · <span class="commit">__SHA__ __MSG__</span> · __DATE__ · <span class="badge">__HEADLINE__</span></div></header>
+<header><div><h1>T3 Topology Dashboard</h1>
+<div class="sub">Latest: run #__RUN__ · <span class="commit">__SHA__ __MSG__</span> · __DATE__ · <span class="badge">__HEADLINE__</span></div></div>
+ <button class="toggle" id="themeToggle">Dark mode</button></header>
+<div class="bar"><label>Viewing run:</label><select id="runsel">__OPTIONS__</select></div>
 <div class="grid">
- <div class="card"><h2>Traffic Matrix (this run)</h2><div id="heat">__NOMATRIX__</div></div>
+ <div class="card"><h2>Traffic Matrix</h2><div id="heat"></div></div>
  <div class="card"><h2>Latency vs Injection Rate</h2><div id="lat"></div></div>
+ <div class="card"><h2>Hops (energy proxy)</h2><div id="hops"></div></div>
  <div class="card full"><h2>Regression — last __N__ runs</h2>__TABLE__</div>
- <div class="card full"><h2>Timeloop Access Breakdown (bottlenecks)</h2><div id="bott">__NOLEVELS__</div></div>
+ <div class="card full"><h2>Timeloop Access Breakdown (bottlenecks)</h2><div id="bott"></div></div>
 </div>
-<script>const D=__DATA__;
-const dark={paper_bgcolor:'#161a23',plot_bgcolor:'#161a23',font:{color:'#cbd5e0'},margin:{t:10,r:10,b:40,l:50}};
-if(D.matrix)Plotly.newPlot('heat',[{z:D.matrix,type:'heatmap',colorscale:'Viridis'}],
-  {...dark,xaxis:{title:'dst tile'},yaxis:{title:'src tile',autorange:'reversed'}},{displayModeBar:false});
-Plotly.newPlot('lat',Object.entries(D.curves).map(([t,p])=>({x:p.map(r=>r[0]),y:p.map(r=>r[1]),name:t,mode:'lines+markers'})),
-  {...dark,xaxis:{title:'injection rate'},yaxis:{title:'latency (cycles)'},legend:{orientation:'h'}},{displayModeBar:false});
-if(D.levels)Plotly.newPlot('bott',[{x:D.levels.map(l=>l.accesses),y:D.levels.map(l=>l.name),type:'bar',orientation:'h',marker:{color:'#2b6cb0'}}],
-  {...dark,xaxis:{title:'word accesses'},margin:{t:10,r:10,b:40,l:130}},{displayModeBar:false});
+<script>
+const RUNS=__DATA__;
+let CUR=RUNS.length-1;
+const THEMES={dark:{paper:'#161a23',plot:'#0f1117',font:'#e6e6e6',btn:'#2b6cb0'},light:{paper:'#ffffff',plot:'#f8f9fa',font:'#212529',btn:'#0d6efd'}};
+function theme(){return document.body.classList.contains('dark')?'dark':'light'}
+function lo(t){return{paper_bgcolor:THEMES[t].paper,plot_bgcolor:THEMES[t].plot,font:{color:THEMES[t].font},margin:{t:10,r:10,b:40,l:50}}}
+function note(id,msg){document.getElementById(id).innerHTML="<p class='note'>"+msg+"</p>"}
+function draw(){
+  const r=RUNS[CUR]; if(!r)return;
+  const t=theme(), ly=lo(t);
+  if(r.matrix)Plotly.newPlot('heat',[{z:r.matrix,type:'heatmap',colorscale:'YlOrRd'}],
+    {...ly,xaxis:{title:'dst tile'},yaxis:{title:'src tile',autorange:'reversed'}},{displayModeBar:false,responsive:true});
+  else note('heat','no traffic matrix for this run');
+  if(r.curves){
+    const maxY=Math.max(...Object.values(r.curves).flat().map(x=>x[1]));
+    const latT=Object.entries(r.curves).map(([n,p])=>({x:p.map(x=>x[0]),y:p.map(x=>x[1]),name:n,mode:'lines+markers'}));
+    const satT=Object.entries(r.saturation||{}).filter(([_,v])=>v!==null).map(([n,v])=>({x:[v,v],y:[0,maxY],mode:'lines',name:n+' sat',showlegend:false,line:{dash:'dot',width:1,color:THEMES[t].font}}));
+    Plotly.newPlot('lat',[...latT,...satT],
+      {...ly,xaxis:{title:'injection rate'},yaxis:{title:'latency (cycles)'},legend:{orientation:'h'}},{displayModeBar:false,responsive:true});
+  } else note('lat','no sweep data for this run');
+  if(r.hops)Plotly.newPlot('hops',Object.entries(r.hops).map(([n,p])=>({x:p.map(x=>x[0]),y:p.map(x=>x[1]),name:n,mode:'lines+markers'})),
+    {...ly,xaxis:{title:'injection rate'},yaxis:{title:'avg hops'},legend:{orientation:'h'}},{displayModeBar:false,responsive:true});
+  else note('hops','no hops data for this run');
+  if(r.levels)Plotly.newPlot('bott',[{x:r.levels.map(l=>l.accesses),y:r.levels.map(l=>l.name),type:'bar',orientation:'h',marker:{color:THEMES[t].btn}}],
+    {...ly,margin:{t:10,r:10,b:40,l:130},xaxis:{title:'word accesses'}},{displayModeBar:false,responsive:true});
+  else note('bott','no Timeloop stats for this run');
+  document.querySelectorAll('#regt tr.sel').forEach(x=>x.classList.remove('sel'));
+  const row=document.getElementById('row'+CUR); if(row)row.classList.add('sel');
+}
+const sel=document.getElementById('runsel');
+sel.onchange=()=>{CUR=+sel.value;draw();};
+(function(){
+  if(localStorage.getItem('theme')==='dark')document.body.classList.add('dark');
+  const tog=document.getElementById('themeToggle');
+  tog.textContent=theme()==='dark'?'Light mode':'Dark mode';
+  tog.onclick=function(){document.body.classList.toggle('dark');const t=theme();localStorage.setItem('theme',t);this.textContent=t==='dark'?'Light mode':'Dark mode';draw();};
+  const raw=new URLSearchParams(location.search).get('run');   // absent -> keep latest (not run 0)
+  const q=raw==null?-1:+raw;
+  if(Number.isInteger(q)&&RUNS[q]){CUR=q;sel.value=q;}
+  draw();
+})();
 </script></body></html>"""
+
+
+def _selfcheck():
+    def mk(sha, run_msg, m_lat):
+        pts = [[0.1, m_lat, 1.0], [0.2, m_lat * 3, 2.0]]
+        return {"sha": sha, "msg": run_msg, "date": "2026-01-01", "latency": {"mesh4x4": m_lat},
+                "curves": {"mesh4x4": pts}, "saturation": {"mesh4x4": 0.2},
+                "hops": {"mesh4x4": [[0.1, 1.0], [0.2, 2.0]]},
+                "matrix": [[0, m_lat], [m_lat, 0]], "levels": [{"name": "DRAM", "accesses": m_lat}]}
+    hist = [{"run": 1, **mk("aaa", "first", 100)}, {"run": 2, **mk("bbb", "second", 80)}]
+    opts = run_options(hist)
+    assert opts.count("<option") == 2 and 'value="1" selected' in opts, opts   # latest pre-selected
+    tbl = regression_table(hist)
+    assert "id='row0'" in tbl and "id='row1'" in tbl, tbl                      # every run addressable
+    assert "▼20%" in tbl, tbl                                                  # 100->80 shows improvement
+    assert "better" in headline(hist), headline(hist)
+    assert json.loads(json.dumps(hist))[0]["curves"]["mesh4x4"][0] == [0.1, 100, 1.0]  # embedding round-trips
+    print("selfcheck OK")
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--matrix", default=str(RESULTS / "traffic_matrix.txt"))
     ap.add_argument("--timeloop-stats", default=str(RESULTS / "timeloop.stats.txt"))
+    ap.add_argument("--selfcheck", action="store_true")
     args = ap.parse_args()
+    if args.selfcheck:
+        _selfcheck(); return
 
-    sweep = load_sweep()
-    cur = curves(sweep)
-    hist = update_history(characteristic_latency(cur))
-    matrix = load_matrix(args.matrix)
-    levels = load_levels(args.timeloop_stats)
+    cur = curves(load_sweep())
+    record = build_record(cur, load_matrix(args.matrix), load_levels(args.timeloop_stats))
+    hist = update_history(record)
 
-    data = {"curves": cur, "matrix": matrix, "levels": levels}
     html = (HTML
             .replace("__CDN__", PLOTLY_CDN)
             .replace("__RUN__", str(hist[-1]["run"]))
@@ -181,15 +284,14 @@ def main():
             .replace("__DATE__", hist[-1]["date"])
             .replace("__HEADLINE__", headline(hist))
             .replace("__N__", str(len(hist)))
+            .replace("__OPTIONS__", run_options(hist))
             .replace("__TABLE__", regression_table(hist))
-            .replace("__NOMATRIX__", "" if matrix else "<p class='note'>no traffic_matrix.txt — uniform run</p>")
-            .replace("__NOLEVELS__", "" if levels else "<p class='note'>no Timeloop stats for this run</p>")
-            .replace("__DATA__", json.dumps(data)))
+            .replace("__DATA__", json.dumps(hist, separators=(",", ":"))))
 
     REPORT.mkdir(parents=True, exist_ok=True)
     out = REPORT / "index.html"
     out.write_text(html)
-    print(f"  dashboard → {out}  (run #{hist[-1]['run']}, {headline(hist)})")
+    print(f"  dashboard → {out}  (run #{hist[-1]['run']}, {len(hist)} runs total, {headline(hist)})")
 
 
 if __name__ == "__main__":
