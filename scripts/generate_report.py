@@ -2,35 +2,61 @@
 """
 VeritX Report Generator — aggregates simulation results and generates plots.
 
-Usage: python3 scripts/generate_report.py
+Supports two formats:
+  - List of {"injection_rate": ..., "latency_cycles": ..., "topology": "..."}
+  - Dict with {"injection_rates": [...], "latencies": [...], "label": "..."}
 """
 import json
-import sys
 from pathlib import Path
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import numpy as np
 
 
 def load_results(track_dir: Path):
-    results = []
-    for result_file in track_dir.glob("results/*.json"):
+    datasets = []
+    for result_file in sorted(track_dir.glob("results/*.json")):
+        if result_file.name == "history.json":
+            continue
         with open(result_file) as f:
             data = json.load(f)
-            results.append(data)
-    return results
+        # List-of-records format (T3 topology_sweep.json, T2 experiments.json)
+        if isinstance(data, list):
+            by_topology = {}
+            for record in data:
+                topo = record.get("topology") or record.get("config", "default")
+                rate = record.get("injection_rate")
+                lat = record.get("latency_cycles") or record.get("latency")
+                if rate is not None and lat is not None:
+                    by_topology.setdefault(topo, {"rates": [], "lats": []})
+                    by_topology[topo]["rates"].append(rate)
+                    by_topology[topo]["lats"].append(lat)
+            for topo, pts in by_topology.items():
+                # sort by rate
+                pairs = sorted(zip(pts["rates"], pts["lats"]))
+                datasets.append({
+                    "injection_rates": [p[0] for p in pairs],
+                    "latencies": [p[1] for p in pairs],
+                    "label": topo,
+                })
+        # Dict format
+        elif isinstance(data, dict):
+            datasets.append(data)
+    return datasets
 
 
 def plot_latency_vs_injection(results, track_name: str, output_dir: Path):
     """Latency vs injection rate — standard NoC characterization plot."""
+    if not results:
+        return
     fig, ax = plt.subplots(figsize=(8, 5))
     for result in results:
-        inj = np.array(result.get("injection_rates", []))
-        lat = np.array(result.get("latencies", []))
+        inj = result.get("injection_rates", [])
+        lat = result.get("latencies", [])
         label = result.get("label", "experiment")
-        ax.plot(inj, lat, marker="o", label=label)
+        if inj and lat:
+            ax.plot(inj, lat, marker="o", label=label)
     ax.set_xlabel("Injection Rate (flits/node/cycle)")
     ax.set_ylabel("Average Latency (cycles)")
     ax.set_title(f"{track_name} — Latency vs Injection Rate")
@@ -51,22 +77,20 @@ def generate_report():
     for track in track_names:
         track_dir = tracks_dir / track
         if not track_dir.exists():
-            print(f"  ⚠  {track}: directory not found, skipping")
+            print(f"  ?  {track}: directory not found, skipping")
             continue
         results = load_results(track_dir)
         if not results:
-            print(f"  ⚠  {track}: no results found")
+            print(f"  ?  {track}: no results found")
             continue
         plot_latency_vs_injection(results, track, output_dir)
         summary[track] = len(results)
-        print(f"  ✓  {track}: {len(results)} result(s) → {output_dir}/{track}_latency.png")
+        print(f"  v  {track}: {len(results)} dataset(s) -> {output_dir}/{track}_latency.png")
 
-    # Write summary JSON
     summary_path = output_dir / "summary.json"
     with open(summary_path, "w") as f:
         json.dump(summary, f, indent=2)
-    print(f"\n✅ Report generated: {output_dir}/")
-    print(f"   Summary: {summary_path}")
+    print(f"\nReport generated: {output_dir}/")
 
 
 if __name__ == "__main__":

@@ -29,12 +29,16 @@ sim:
 timeloop:
 	@echo "Running Timeloop workload model..."
 	@mkdir -p timeloop results
-	@cd timeloop && $(TIMELOOP) problem.yaml arch.yaml map.yaml 2>&1 | tee ../results/timeloop.log
-	@echo "Extracting traffic matrix..."
-	@python3 scripts/timeloop_to_matrix.py results/timeloop.stats.txt -n 16 -o results/traffic_matrix.txt
-	@echo "Running Booksim with generated traffic matrix..."
-	@TRAFFIC_MATRIX=results/traffic_matrix.txt python3 scripts/run_experiments.py
-	@echo "Done — results in results/ ; matrix in results/traffic_matrix.txt"
+	-cd timeloop && $(TIMELOOP) problem.yaml arch.yaml map.yaml 2>&1 | tee ../results/timeloop.log
+	@if [ -f results/timeloop.stats.txt ]; then \
+		echo "Extracting traffic matrix..."; \
+		python3 scripts/timeloop_to_matrix.py results/timeloop.stats.txt -n 16 -o results/traffic_matrix.txt; \
+		echo "Running Booksim with generated traffic matrix..."; \
+		TRAFFIC_MATRIX=results/traffic_matrix.txt python3 scripts/run_experiments.py; \
+		echo "Done — results in results/ ; matrix in results/traffic_matrix.txt"; \
+	else \
+		echo "  ⚠  Timeloop model failed (no stats output); using uniform traffic from previous step"; \
+	fi
 
 dashboard:
 	@echo "Generating T3 dashboard..."
