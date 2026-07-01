@@ -105,8 +105,11 @@ def _selfcheck():
     assert [l["name"] for l in levels] == ["DRAM"], levels          # arith skipped
     assert levels[0]["accesses"] == 100, levels                     # algorithmic/metadata excluded
     m = build_traffic_matrix(levels, 4)
-    assert len(m) == 4 and all(len(r) == 4 for r in m)
-    assert m[0][1] == 200 / 3 and m[0][0] == 0, m                   # 100*2 inst / 3 tiles
+    assert len(m) == 4 and all(len(r) == 4 for r in m)             # square NxN
+    assert all(v >= 0 for row in m for v in row)                   # non-negative weights
+    assert abs(max(sum(r) for r in m) - 1.0) < 1e-9               # normalized: max row sum = 1
+    col = lambda c: sum(m[s][c] for s in range(4))
+    assert col(0) > col(2), m                                     # node 0 (mem controller) is a hotspot
     print("selfcheck OK")
 
 
