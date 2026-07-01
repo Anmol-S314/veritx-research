@@ -31,7 +31,8 @@ ci:
     - make -C tracks/${TRACK} lint
     - make -C tracks/${TRACK} test
   artifacts:
-    paths: [tracks/${TRACK}/results/]
+    paths:
+      - tracks/${TRACK}/results/
     expire_in: 7 days
 
 # --- full experiment runs (main / manual) ---
@@ -39,8 +40,12 @@ sim-t2-deadlock:
   extends: .on_main
   stage: sim
   needs: ["ci: [t2-deadlock]"]
-  script: [make -C tracks/t2-deadlock sim]
-  artifacts: {paths: [tracks/t2-deadlock/results/], expire_in: 30 days}
+  script:
+    - make -C tracks/t2-deadlock sim
+  artifacts:
+    paths:
+      - tracks/t2-deadlock/results/
+    expire_in: 30 days
 
 sim-t3-topology:
   extends: .on_main
@@ -49,14 +54,21 @@ sim-t3-topology:
   script:
     - make -C tracks/t3-topology timeloop    # full spine: Timeloop -> traffic matrix -> sweep
     - make -C tracks/t3-topology energy
-  artifacts: {paths: [tracks/t3-topology/results/], expire_in: 30 days}
+  artifacts:
+    paths:
+      - tracks/t3-topology/results/
+    expire_in: 30 days
 
 sim-t4-formal:
   extends: .on_main
   stage: sim
   needs: ["ci: [t4-formal]"]
-  script: [make -C tracks/t4-formal sim]
-  artifacts: {paths: [tracks/t4-formal/results/], expire_in: 30 days}
+  script:
+    - make -C tracks/t4-formal sim
+  artifacts:
+    paths:
+      - tracks/t4-formal/results/
+    expire_in: 30 days
 # (t1-kvcache: gem5 build deferred — no sim job yet)
 
 # --- T3 dashboard — kept as a private artifact (not a public URL; IP rule) ---
@@ -64,25 +76,37 @@ dashboard-t3:
   extends: .on_main
   stage: dashboard
   needs: ["sim-t3-topology"]
-  script: [make -C tracks/t3-topology dashboard]
-  artifacts: {paths: [report/t3/], expire_in: 90 days}
+  script:
+    - make -C tracks/t3-topology dashboard
+  artifacts:
+    paths:
+      - report/t3/
+    expire_in: 90 days
 
 # --- aggregate cross-track report ---
 report:
   extends: .on_main
   stage: report
   needs:
-    - {job: sim-t2-deadlock, optional: true}
-    - {job: sim-t3-topology, optional: true}
-    - {job: sim-t4-formal, optional: true}
-  script: [make report]
-  artifacts: {paths: [report/], expire_in: 90 days}
+    - job: sim-t2-deadlock
+      optional: true
+    - job: sim-t3-topology
+      optional: true
+    - job: sim-t4-formal
+      optional: true
+  script:
+    - make report
+  artifacts:
+    paths:
+      - report/
+    expire_in: 90 days
 
 # --- rebuild the tools image (manual; needs a GHCR_TOKEN CI variable + docker executor) ---
 rebuild-docker-image:
   stage: build
   image: docker:latest
-  services: [docker:dind]
+  services:
+    - docker:dind
   variables:
     DOCKER_TLS_CERTDIR: ""
   script:
