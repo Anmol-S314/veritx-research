@@ -30,3 +30,10 @@ Thumbs.db
 .env
 *.key
 veritx-tools-base.tar
+
+# Local binaries (gh, glab, gitlab-runner)
+bin/
+
+# Generated docs
+CHANGELOG.md
+LICENSE

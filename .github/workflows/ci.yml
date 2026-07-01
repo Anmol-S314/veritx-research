@@ -10,6 +10,8 @@ on:
 
 env:
   DOCKER_IMAGE: ghcr.io/anmol-s314/veritx-tools-base:latest
+# NOTE: ${{ env.* }} is NOT available in container: image: fields.
+# Unused here — kept for rebuild-docker step that can read it.
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -19,7 +21,7 @@ jobs:
     name: ${{ matrix.track }}
     runs-on: ubuntu-latest
     container:
-      image: ${{ env.DOCKER_IMAGE }}
+      image: ghcr.io/anmol-s314/veritx-tools-base:latest
     strategy:
       fail-fast: false
       matrix:
@@ -48,7 +50,7 @@ jobs:
     if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     container:
-      image: ${{ env.DOCKER_IMAGE }}
+      image: ghcr.io/anmol-s314/veritx-tools-base:latest
     steps:
       - uses: actions/checkout@v4
       - run: make -C tracks/t1-kvcache sim
@@ -64,7 +66,7 @@ jobs:
     if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     container:
-      image: ${{ env.DOCKER_IMAGE }}
+      image: ghcr.io/anmol-s314/veritx-tools-base:latest
     steps:
       - uses: actions/checkout@v4
       - run: make -C tracks/t2-deadlock sim
@@ -80,7 +82,7 @@ jobs:
     if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     container:
-      image: ${{ env.DOCKER_IMAGE }}
+      image: ghcr.io/anmol-s314/veritx-tools-base:latest
     steps:
       - uses: actions/checkout@v4
       - run: make -C tracks/t3-topology sim
@@ -96,7 +98,7 @@ jobs:
     if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     container:
-      image: ${{ env.DOCKER_IMAGE }}
+      image: ghcr.io/anmol-s314/veritx-tools-base:latest
     steps:
       - uses: actions/checkout@v4
       - run: make -C tracks/t4-formal sim
@@ -115,7 +117,7 @@ jobs:
     if: always() && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     container:
-      image: ${{ env.DOCKER_IMAGE }}
+      image: ghcr.io/anmol-s314/veritx-tools-base:latest
     steps:
       - uses: actions/checkout@v4
       - name: Download T1 results
@@ -172,4 +174,4 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ env.DOCKER_IMAGE }}
+          tags: ghcr.io/anmol-s314/veritx-tools-base:latest
