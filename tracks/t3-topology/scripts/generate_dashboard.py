@@ -260,6 +260,9 @@ def _selfcheck():
     assert "▼20%" in tbl, tbl                                                  # 100->80 shows improvement
     assert "better" in headline(hist), headline(hist)
     assert json.loads(json.dumps(hist))[0]["curves"]["mesh4x4"][0] == [0.1, 100, 1.0]  # embedding round-trips
+    mixed = [{"run": 0, "sha": "old", "msg": "legacy", "date": "", "latency": {"mesh4x4": 5}}] + hist
+    view = [h for h in mixed if h.get("curves")]
+    assert len(view) == 2 and all(h.get("curves") for h in view), view   # latency-only run excluded
     print("selfcheck OK")
 
 
@@ -275,18 +278,22 @@ def main():
     cur = curves(load_sweep())
     record = build_record(cur, load_matrix(args.matrix), load_levels(args.timeloop_stats))
     hist = update_history(record)
+    # Only show runs we can actually render. Pre-feature runs stored latency only
+    # (no curves/matrix) — offering them gave empty panels. They stay in history.json
+    # (they age out via the cap) but are hidden from the selector + table.
+    view = [h for h in hist if h.get("curves")] or hist[-1:]
 
     html = (HTML
             .replace("__CDN__", PLOTLY_CDN)
-            .replace("__RUN__", str(hist[-1]["run"]))
-            .replace("__SHA__", hist[-1]["sha"])
-            .replace("__MSG__", hist[-1]["msg"])
-            .replace("__DATE__", hist[-1]["date"])
-            .replace("__HEADLINE__", headline(hist))
-            .replace("__N__", str(len(hist)))
-            .replace("__OPTIONS__", run_options(hist))
-            .replace("__TABLE__", regression_table(hist))
-            .replace("__DATA__", json.dumps(hist, separators=(",", ":"))))
+            .replace("__RUN__", str(view[-1]["run"]))
+            .replace("__SHA__", view[-1]["sha"])
+            .replace("__MSG__", view[-1]["msg"])
+            .replace("__DATE__", view[-1]["date"])
+            .replace("__HEADLINE__", headline(view))
+            .replace("__N__", str(len(view)))
+            .replace("__OPTIONS__", run_options(view))
+            .replace("__TABLE__", regression_table(view))
+            .replace("__DATA__", json.dumps(view, separators=(",", ":"))))
 
     REPORT.mkdir(parents=True, exist_ok=True)
     out = REPORT / "index.html"
