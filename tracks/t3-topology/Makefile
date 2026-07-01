@@ -1,5 +1,5 @@
 # T3: Topology — Makefile (Booksim + Timeloop + Accelergy)
-.PHONY: setup lint test sim clean
+.PHONY: setup lint test sim dashboard clean
 
 BOOKSIM := $(shell which booksim 2>/dev/null || echo /usr/local/bin/booksim)
 
@@ -21,6 +21,11 @@ test:
 sim:
 	@echo "Running T3 topology experiment suite..."
 	@python3 scripts/run_experiments.py
+
+dashboard:
+	@echo "Generating T3 dashboard..."
+	@python3 scripts/generate_dashboard.py
+	@echo "  open report/t3/index.html"
 
 clean:
 	@rm -rf results/ __pycache__/

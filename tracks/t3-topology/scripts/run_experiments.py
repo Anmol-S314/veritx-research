@@ -6,8 +6,10 @@ from pathlib import Path
 CONFIGS_DIR = Path(__file__).parent.parent / "configs"
 RESULTS_DIR = Path(__file__).parent.parent / "results"
 CONFIGS = sorted(CONFIGS_DIR.glob("*.cfg"))
-# CI sweep (coarse); add more points for local: [0.01, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4]
-INJECTION_RATES = [0.05, 0.1, 0.2, 0.3, 0.4]
+# CI sweep (coarse). Override for local/matrix runs: RATES="0.002,0.005,0.01,0.02"
+# (matrix patterns with a hotspot saturate at much lower rates than uniform).
+_rates = os.environ.get("RATES")
+INJECTION_RATES = [float(x) for x in _rates.split(",")] if _rates else [0.05, 0.1, 0.2, 0.3, 0.4]
 
 # Optional Timeloop-derived traffic matrix (the Timeloop->Booksim bridge). When
 # set, every topology is driven by this matrix instead of uniform random traffic.
