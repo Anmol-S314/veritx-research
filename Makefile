@@ -25,7 +25,7 @@ sim:
 report:
 	@echo "Generating report..."
 	@mkdir -p report
-	@./scripts/generate_report.py
+	@python3 scripts/generate_report.py
 
 clean:
 	@echo "Cleaning..."

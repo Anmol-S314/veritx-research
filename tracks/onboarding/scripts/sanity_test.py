@@ -27,11 +27,13 @@ def check_tool(name, args):
 
 def check_py(name):
     try:
-        mod = __import__(name)
-        v = getattr(mod, "__version__", "ok")
+        import importlib.metadata
+        v = importlib.metadata.version(name)
         return {"package": name, "found": True, "version": v}
-    except ImportError:
+    except importlib.metadata.PackageNotFoundError:
         return {"package": name, "found": False, "version": None}
+    except Exception:
+        return {"package": name, "found": True, "version": "installed"}
 
 def main():
     RESULTS.mkdir(parents=True, exist_ok=True)

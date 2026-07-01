@@ -139,7 +139,10 @@ RUN ldconfig
 ENV PYTHONPATH="/usr/local/share/yosys/python3:${PYTHONPATH}"
 
 # Fix matplotlib/numpy compatibility (apt version compiled against numpy 1.x)
-RUN pip3 install --upgrade --no-cache-dir 'matplotlib>=3.10'
+# Remove apt scipy (ABI-incompatible with numpy 2.x); none of our tracks use it
+RUN pip3 install --upgrade --no-cache-dir 'matplotlib>=3.10' && \
+    pip3 uninstall -y scipy 2>/dev/null; \
+    rm -rf /usr/lib/python3/dist-packages/scipy* /usr/lib/python3/dist-packages/scipy/ 2>/dev/null; true
 
 WORKDIR /workspace
 CMD ["bash"]
