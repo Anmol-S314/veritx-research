@@ -1,0 +1,13 @@
+[
+  {
+    "run": 1,
+    "sha": "2f2f39a",
+    "msg": "Fix Timeloop crash (graceful fallback), fix report generator",
+    "date": "2026-07-01",
+    "latency": {
+      "fly4": 19.3074,
+      "mesh4x4": 26.3145,
+      "torus4x4": 25.3774
+    }
+  }
+]
