@@ -42,19 +42,34 @@ def parse_levels(stats_text: str):
 def build_traffic_matrix(levels, num_nodes):
     """PLACEHOLDER spatial model — replace this for real T3 work (Wk6).
 
-    First-order model: the outermost level (DRAM) exchanges data with the
-    compute tiles, so put star traffic between a memory-controller node (0) and
-    every other tile, weighted by DRAM word accesses. This is NOT a real
-    tile-to-tile model; it only exists so the pipeline runs end to end.
+    Distributes DRAM accesses evenly across tiles with a nearest-neighbor
+    bias: each tile talks mainly to adjacent tiles (for data reuse) and
+    occasionally to the memory controller (node 0). This avoids the hotspot
+    of the pure star pattern while still being clearly suboptimal — students
+    should beat it with a real attention mapping.
     """
+    import math
     mat = [[0.0] * num_nodes for _ in range(num_nodes)]
     dram = next((l for l in levels if "DRAM" in l["name"].upper()), levels[-1] if levels else None)
-    if not dram or num_nodes < 2:
-        return mat
-    per_tile = dram["accesses"] * dram["instances"] / (num_nodes - 1)
-    for d in range(1, num_nodes):
-        mat[0][d] = per_tile   # memory controller -> tile
-        mat[d][0] = per_tile   # tile -> memory controller
+    total_access = (dram["accesses"] * dram["instances"]) if dram else 100000
+    # Distribute: 60% local (nearest-neighbor ring), 40% memory-controller (node 0)
+    local_per_tile = 0.6 * total_access / num_nodes
+    mc_per_tile = 0.4 * total_access / num_nodes
+    for s in range(num_nodes):
+        mc_per_s = mc_per_tile
+        # nearest neighbors: s -> (s+1), s -> (s-1), plus self-loop
+        neighbors = [(s + 1) % num_nodes, (s - 1) % num_nodes, s]
+        per_neighbor = local_per_tile / len(neighbors)
+        for d in neighbors:
+            mat[s][d] += per_neighbor
+        mat[s][0] += mc_per_s  # memory controller traffic
+    # Normalize so row sums are comparable to uniform injection rates (~0.05-0.4)
+    max_row = max(sum(row) for row in mat)
+    if max_row > 0:
+        scale = 1.0 / max_row
+        for s in range(num_nodes):
+            for d in range(num_nodes):
+                mat[s][d] *= scale
     return mat
 
 

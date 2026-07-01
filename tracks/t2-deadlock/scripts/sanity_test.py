@@ -20,10 +20,12 @@ def main():
     latency = None
     for line in stdout.splitlines():
         if "Packet latency average" in line:
-            try:
-                latency = float(line.split()[-3])
-            except (ValueError, IndexError):
-                pass
+            for p in line.split():
+                try:
+                    latency = float(p)
+                    break
+                except ValueError:
+                    pass
     if latency is None:
         if stderr:
             print(f"  Booksim error:\n{stderr[:500]}")

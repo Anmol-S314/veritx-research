@@ -21,10 +21,12 @@ def main():
         latency = None
         for line in result.stdout.splitlines():
             if "Packet latency average" in line:
-                try:
-                    latency = float(line.split()[-3])
-                except (ValueError, IndexError):
-                    pass
+                for p in line.split():
+                    try:
+                        latency = float(p)
+                        break
+                    except ValueError:
+                        pass
         all_latencies[cfg.stem] = latency
         print(f"latency={latency}")
 

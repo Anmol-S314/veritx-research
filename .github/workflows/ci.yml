@@ -28,6 +28,9 @@ jobs:
       - name: Sim (full)
         if: matrix.track != 'onboarding' && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
         run: make -C tracks/${{ matrix.track }} sim
+      - name: Timeloop→Booksim spine (T3 only)
+        if: matrix.track == 't3-topology' && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
+        run: make -C tracks/t3-topology timeloop
       - name: Upload results
         uses: actions/upload-artifact@v4
         with:

@@ -1,0 +1,16 @@
+# Attention projection GEMM: Q = softmax(QK^T)V
+# Small dimensions for fast CI: M=N=K=16
+# Original format: coefficients is a list matching dimensions order
+problem:
+  shape:
+    dimensions: [M, N, K]
+    coefficients: [1, 1, 1]
+  instance:
+    - name: attention_proj
+      data_spaces:
+        - name: Input
+          dimensions: [M, K]
+        - name: Weight
+          dimensions: [N, K]
+        - name: Output
+          dimensions: [M, N]

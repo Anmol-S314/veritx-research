@@ -23,12 +23,21 @@ def run_one(cfg: Path, rate: float) -> dict:
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
     latency = hops = None
     for line in result.stdout.splitlines():
+        parts = line.split()
         if "Packet latency average" in line:
-            try: latency = float(line.split()[-3])
-            except (ValueError, IndexError): pass
+            for p in parts:
+                try:
+                    latency = float(p)
+                    break
+                except ValueError:
+                    pass
         elif "Hops average" in line:
-            try: hops = float(line.split()[-2])
-            except (ValueError, IndexError): pass
+            for p in parts:
+                try:
+                    hops = float(p)
+                    break
+                except ValueError:
+                    pass
     return {
         "topology": cfg.stem,
         "injection_rate": rate,

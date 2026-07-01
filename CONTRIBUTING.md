@@ -1,79 +1,77 @@
 # Contributing — VeritX Research
 
-## Git Workflow
+## Workflow
 
 1. **Clone** the monorepo:
    ```bash
-   git clone git@gitlab.com:Anmol-S314/veritx-research.git
+   git clone git@github.com:Anmol-S314/veritx-research.git
    cd veritx-research
    ```
 
 2. **Create a feature branch** per experiment:
    ```bash
    git checkout -b <track>/<experiment-name>
-   # e.g. git checkout -b t2-deadlock/vc-count-sweep
+   # e.g. git checkout -b t3-topology/attention-spatial-model
    ```
 
-3. **Commit** your changes:
+3. **Edit** your track's files:
+   - T2: `tracks/t2-deadlock/configs/*.cfg`
+   - T3: `tracks/t3-topology/scripts/timeloop_to_matrix.py`
+   - T4: `tracks/t4-formal/rtl/*.sv`, `tracks/t4-formal/configs/*.sby`
+
+4. **Push and open a Pull Request**:
    ```bash
    git add <files>
-   git commit -m "T2: sweep VC count on 4x4 mesh"
-   ```
-
-4. **Push** and create a **Merge Request**:
-   ```bash
+   git commit -m "T3: implement attention head spatial mapping"
    git push -u origin <branch>
-   # Then open MR at https://gitlab.com/Anmol-S314/veritx-research/-/merge_requests/new
+   # Then open PR at https://github.com/Anmol-S314/veritx-research/pulls
    ```
 
-5. **MR review**: At least one approval required. CI pipeline must pass.
+5. **Check CI** — pipeline runs automatically. Artifacts include:
+   - Simulation results (`*.json`)
+   - Latency plots (`*.png`)
+   - T3 only: interactive dashboard (Plotly heatmap + curves)
+
+6. **Merge** after CI passes and review is complete.
 
 ## Branch Naming
 
 | Track | Prefix | Example |
 |-------|--------|---------|
+| Onboarding | `onboarding/` | `onboarding/verify-tools` |
 | T1 — KVCache QoS | `t1-kvcache/` | `t1-kvcache/cache-size-sweep` |
 | T2 — Deadlock | `t2-deadlock/` | `t2-deadlock/vc-count-sweep` |
-| T3 — Topology | `t3-topology/` | `t3-topology/mesh-vs-torus` |
+| T3 — Topology | `t3-topology/` | `t3-topology/attention-spatial-model` |
 | T4 — Formal | `t4-formal/` | `t4-formal/fifo-induction` |
-
-## Running Locally
-
-```bash
-export TRACK=t2-deadlock
-make setup     # verify toolchain
-make lint      # check configs
-make test      # run sanity check
-make sim       # run full experiment suite
-make report    # generate plots
-```
 
 ## CI Pipeline
 
-Every push triggers the CI matrix (5 parallel cells: onboarding + 4 tracks).
-Full sim runs only on `main` or manual trigger.
+GitHub Actions matrix: 5 cells run in parallel on every push.
 
-## RTL → Simulation Flow
-
-### T2 / T3 (Booksim)
 ```
-config/*.cfg → booksim → parse latency → results/*.json → report/plots
-```
-
-### T4 (Formal Verification)
-```
-rtl/*.sv → sby (BMC/induction) → pass/fail → results/*.json → report
+onboarding → setup → lint → test  (toolchain validation)
+T1         → setup → lint → test  (gem5 stub — deferred)
+T2         → setup → lint → test → sim → artifacts
+T3         → setup → lint → test → sim → dashboard → gh-pages
+T4         → setup → lint → test → sim → artifacts
+         └── report ── aggregates all → plots
 ```
 
-### T1 (gem5 — deferred)
-```
-config/*.py → gem5.opt → m5out/ → parse stats → results/*.json → report
-```
+Full simulation (`sim` step) runs on `main` and manual triggers only.
 
-## Docker
+## Per-Track READMEs
 
-Pre-built image: `ghcr.io/anmol-s314/veritx-tools-base:latest`
+Start with the README for your track:
+- [Onboarding](tracks/onboarding/README.md)
+- [T1 — KVCache QoS](tracks/t1-kvcache/README.md)
+- [T2 — Deadlock](tracks/t2-deadlock/README.md)
+- [T3 — Topology](tracks/t3-topology/README.md)
+- [T4 — Formal](tracks/t4-formal/README.md)
 
-```bash
-make docker-run  # interactive shell with all tools
-```
+## Dashboard (T3)
+
+T3 generates an interactive dashboard on each `main` run. Published to:
+
+`https://anmol-s314.github.io/veritx-research/t3/`
+
+Shows: traffic matrix heatmap, latency curves per topology, regression table across runs, Timeloop access breakdown.

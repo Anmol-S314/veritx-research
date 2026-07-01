@@ -1,0 +1,38 @@
+# Minimal Timeloop architecture: 3-level memory hierarchy
+# DRAM → GlobalBuffer (SRAM) → RegisterFile → MAC (PE)
+# Tuned for small GEMM that completes fast in CI.
+architecture:
+  version: "0.4"
+  subtree:
+    - !Component
+      name: DRAM
+      attributes:
+        depth: 131072
+        width: 64
+        technology: "45nm"
+      subtree:
+        - !Component
+          name: GlobalBuffer
+          attributes:
+            depth: 2048
+            width: 16
+            technology: "45nm"
+          subtree:
+            - !Component
+              name: PE
+              attributes:
+                technology: "45nm"
+              subtree:
+                - !Component
+                  name: RegisterFile
+                  attributes:
+                    depth: 4
+                    width: 8
+                    technology: "45nm"
+                - !Component
+                  name: MAC
+                  attributes:
+                    meshX: 1
+                    meshY: 1
+                    datawidth: 8
+                    technology: "45nm"

@@ -32,10 +32,12 @@ def run_booksim(cfg_path: Path, injection_rate: float) -> dict:
 
     for line in stdout.splitlines():
         if "Packet latency average" in line:
-            try:
-                latency = float(line.split()[-3])
-            except (ValueError, IndexError):
-                pass
+            for p in line.split():
+                try:
+                    data["latency"] = float(p)
+                    break
+                except ValueError:
+                    pass
         if "deadlock" in line.lower():
             data["deadlock"] = True
 
