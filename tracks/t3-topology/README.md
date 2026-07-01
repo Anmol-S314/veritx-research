@@ -1,96 +1,149 @@
-# T3 — Topology Comparison with Timeloop + Booksim + Accelergy
+# T3 — Topology Co-Optimization for Transformer Inference
 
-This is the most infrastructure-rich track. You model an AI workload's data movement in **Timeloop**, convert the access counts to a **traffic matrix**, simulate it on different NoC topologies in **Booksim**, and compare **energy** via **Accelergy**.
+Model an AI workload's data movement in **Timeloop**, turn the access counts into a
+**traffic matrix**, simulate it on different NoC topologies in **Booksim**, and
+compare them on latency/energy — visualized in a **dashboard**.
 
-## The Core Research Question
+**The research question:** given a transformer layer mapped onto a grid of tiles,
+*which NoC topology minimizes latency and energy for the resulting traffic?*
 
-Given a transformer attention layer mapped onto a 2D grid of tiles, **which NoC topology minimizes latency and energy** for the resulting traffic pattern?
+---
 
-## Your Starting Point: `build_traffic_matrix()`
+## Quick start (zero install)
 
-```python
-# scripts/timeloop_to_matrix.py, line 42
-def build_traffic_matrix(levels, num_nodes):
+Everything is pre-built in one container image — you don't install Booksim,
+Timeloop, or Accelergy. From the repo root:
+
+```bash
+# 1. pull the toolchain image once
+podman pull ghcr.io/anmol-s314/veritx-tools-base:latest
+
+# 2. run the full spine: Timeloop → traffic matrix → Booksim topology sweep
+podman run --rm -v "$PWD":/workspace -w /workspace \
+  ghcr.io/anmol-s314/veritx-tools-base:latest \
+  make -C tracks/t3-topology timeloop
+
+# 3. build the dashboard and open it
+make -C tracks/t3-topology dashboard      # writes report/t3/index.html
 ```
 
-This is a **placeholder** — it assumes all traffic is DRAM→tiles star. Your research is to replace it with a **real spatial model**:
+Open `report/t3/index.html` in a browser — no server. Results land in
+`tracks/t3-topology/results/` (git-ignored).
 
-- Where are attention heads mapped to tiles?
-- How does QK^T matmul data flow between tiles?
-- What about the FFN layers?
-- How does the traffic pattern change with sequence length, head count, model dimension?
+---
 
-## End-to-End Pipeline
+## The one file you edit: `build_traffic_matrix()`
+
+`scripts/timeloop_to_matrix.py` turns Timeloop's per-level access counts into an
+N×N tile-to-tile traffic matrix. The shipped `build_traffic_matrix()` is a
+**deliberately simple placeholder** (nearest-neighbor bias + memory-controller
+traffic). **Your research is to replace this one function** with a real spatial
+model:
+
+- Where are attention heads / QKᵀ / FFN mapped onto tiles?
+- How does data actually flow tile-to-tile for that mapping?
+- How does the pattern change with sequence length, head count, model dim?
+
+Everything else (parsing, the Booksim bridge, the sweep, the dashboard) already
+works — you only touch this function until it's good, then explore topologies.
+
+---
+
+## Pipeline
 
 ```
-Timeloop (workload model)
-    ↓ *.stats.txt
-timeloop_to_matrix.py  ← YOU EDIT THIS
-    ↓ traffic_matrix.txt
-Booksim (NoC sim)
-    ↓ latency, hops
-mesh vs torus vs flatfly comparison
-    ↓
-Dashboard (Plotly heatmap + curves + regression)
+timeloop/{arch,problem,mapper}.yaml
+        │  timeloop-mapper
+        ▼  results/timeloop.stats.txt
+scripts/timeloop_to_matrix.py   ← YOU EDIT build_traffic_matrix()
+        ▼  results/traffic_matrix.txt
+Booksim  (traffic = matrix(...), swept over mesh/torus/fly)
+        ▼  results/topology_sweep.json
+scripts/generate_dashboard.py
+        ▼  report/t3/index.html   (heatmap · latency curves · regression · bottlenecks)
 ```
 
-## What You Edit
+---
 
-| File | What it does |
-|------|-------------|
-| `scripts/timeloop_to_matrix.py` | **Your spatial model** — replace `build_traffic_matrix()` |
-| `configs/*.cfg` | Topology parameters (size, radix, channel width) |
+## Commands
 
-You can also add new topology configs. Booksim supports: `mesh`, `torus`, `flatfly`, `fattree`, `dragonflynew`, `cmesh`.
+| Command | What it does |
+|---|---|
+| `make setup` | verify Booksim + Timeloop + Accelergy are present |
+| `make test` | quick sanity sweep (uniform traffic) — the CI gate |
+| `make sim` | uniform-traffic baseline sweep across topologies |
+| `make timeloop` | **the real spine** — Timeloop → matrix → topology sweep |
+| `make dashboard` | (re)generate `report/t3/index.html` from `results/` |
+
+`make timeloop` is the one you'll use for research. If Timeloop is unavailable it
+falls back to a uniform sweep so the rest of the pipeline still runs.
+
+---
+
+## Using a traffic matrix in Booksim (the bridge)
+
+We added a `matrix` traffic pattern to Booksim. Point any config at a matrix file:
+
+```
+traffic = matrix(results/traffic_matrix.txt);
+```
+
+**File format:** `N×N` non-negative numbers, row-major (`row = source tile`,
+`col = dest tile`); `#` starts a comment. Each packet's destination is sampled
+from row `source`, weighted by the entries. `N` must equal the topology's node
+count (a 4×4 mesh = 16, so a 16×16 matrix).
+
+The sweep runner picks it up automatically:
+
+```bash
+TRAFFIC_MATRIX=results/traffic_matrix.txt \
+RATES="0.002,0.005,0.01,0.02,0.03" \
+python3 scripts/run_experiments.py
+```
+
+(Matrix/hotspot patterns saturate far earlier than uniform, so use low `RATES`.)
+
+---
+
+## Topologies
+
+Configs live in `configs/*.cfg` (16-node `mesh4x4`, `torus4x4`, `fly4`). Add your
+own — Booksim supports `mesh`, `torus`, `flatfly`, `fattree`, `dragonflynew`,
+`cmesh`. For a 4×4 2-D mesh use `k=4; n=2;` (`n` is the number of dimensions, not
+the grid side).
+
+Want a custom topology or traffic pattern in C++? The Booksim source ships in the
+image at `/opt/booksim2` with compilers — edit and `cd /opt/booksim2/src && make`.
+Our matrix pattern (`matrixtraffic.{hpp,cpp}` + `matrix_traffic.patch`) in
+`booksim-ext/` is a worked example of adding one.
+
+---
 
 ## Dashboard
 
-On every `main` push, CI generates an interactive dashboard at:
+`make dashboard` builds a self-contained Plotly page (`report/t3/index.html`):
 
-[`https://anmol-s314.github.io/veritx-research/t3/`](https://anmol-s314.github.io/veritx-research/t3/)
-
-It shows:
 - **Heatmap** — your traffic matrix (is the spatial model sane?)
-- **Latency curves** — which topology wins at which injection rate?
-- **Regression table** — did your latest commit improve or hurt latency?
-- **Timeloop breakdown** — where are the access bottlenecks?
+- **Latency curves** — which topology wins, at which injection rate?
+- **Regression table** — did your last commit help or hurt? (Δ% per topology)
+- **Timeloop breakdown** — where the access bottlenecks are.
 
-## Local Development
+On `main` pushes CI publishes it to
+`https://anmol-s314.github.io/veritx-research/t3/` (regression history persists
+across commits).
 
-```bash
-make dashboard   # rebuild dashboard from latest results
-```
+---
 
-Open `report/t3/index.html` in a browser — no server needed.
+## Suggested path (per the programme)
 
-## CI Pipeline
-
-```
-make setup   → verify Booksim + Timeloop + Accelergy
-make lint    → syntax check
-make test    → sanity run (all topologies, uniform traffic)
-make sim     → full Timeloop→matrix→Booksim spine → sweep
-make dashboard → generate + publish dashboard
-```
-
-## Expected Results
-
-| Topology | Zero-load latency | Saturation rate |
-|----------|-------------------|-----------------|
-| mesh 4×4 | ~220 cycles | ~0.25 |
-| torus 4×4 | ~248 cycles | ~0.30 |
-| flatfly 4 | ~353 cycles | ~0.35 |
-
-These are placeholder numbers with the DRAM-star model. Your spatial model will produce different (correct) values.
-
-## Research Path
-
-1. **Weeks 1-3**: Run the pipeline, understand each stage, reproduce baselines
-2. **Weeks 4-8**: Replace `build_traffic_matrix()` with your real spatial model — this is the novel research
-3. **Weeks 9-16**: Explore topologies, add Accelergy energy comparison, write paper
+1. **Wk 1–3:** run the pipeline, understand each stage, reproduce baselines.
+2. **Wk 4–8:** replace `build_traffic_matrix()` with your real spatial model —
+   the novel work. Compare topologies on your matrix.
+3. **Wk 9–16:** Pareto analysis (latency vs energy vs area), sensitivity sweeps,
+   write-up.
 
 ## Reference
 
-- [Booksim 2.0](https://github.com/booksim/booksim2)
-- [Timeloop](https://github.com/Accelergy-Project/timeloop)
-- [Accelergy](https://github.com/Accelergy-Project/accelergy)
+- [Booksim 2.0](https://github.com/booksim/booksim2) ·
+  [Timeloop](https://github.com/Accelergy-Project/timeloop) ·
+  [Accelergy](https://github.com/Accelergy-Project/accelergy)
