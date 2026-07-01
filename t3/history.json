@@ -31,5 +31,16 @@
       "mesh4x4": 20.0326,
       "torus4x4": 18.3581
     }
+  },
+  {
+    "run": 4,
+    "sha": "f81f8a1",
+    "msg": "T3 README: dashboard is a private artifact, not a public URL",
+    "date": "2026-07-01",
+    "latency": {
+      "fly4": 16.2186,
+      "mesh4x4": 20.0326,
+      "torus4x4": 18.3581
+    }
   }
 ]
