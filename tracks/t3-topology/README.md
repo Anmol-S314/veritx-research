@@ -23,12 +23,15 @@ podman run --rm -v "$PWD":/workspace -w /workspace \
   ghcr.io/anmol-s314/veritx-tools-base:latest \
   make -C tracks/t3-topology timeloop
 
-# 3. build the dashboard and open it
-make -C tracks/t3-topology dashboard      # writes report/t3/index.html
+# 3. build the dashboard (also in-container — pure python3, no host installs)
+podman run --rm -v "$PWD":/workspace -w /workspace \
+  ghcr.io/anmol-s314/veritx-tools-base:latest \
+  make -C tracks/t3-topology dashboard
 ```
 
 Open `report/t3/index.html` in a browser — no server. Results land in
-`tracks/t3-topology/results/` (git-ignored).
+`tracks/t3-topology/results/` (git-ignored). The only thing you install is a
+container runtime (podman or docker); everything else is in the image.
 
 ---
 
