@@ -20,5 +20,16 @@
       "mesh4x4": 20.0326,
       "torus4x4": 18.3581
     }
+  },
+  {
+    "run": 3,
+    "sha": "8ae391f",
+    "msg": "Add Verilator to Docker image for T4 constrained-random simu",
+    "date": "2026-07-01",
+    "latency": {
+      "fly4": 16.2186,
+      "mesh4x4": 20.0326,
+      "torus4x4": 18.3581
+    }
   }
 ]
