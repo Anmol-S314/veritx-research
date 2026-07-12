@@ -16,7 +16,7 @@ test:  ## quick sanity sweep (the CI gate)
 sim:  ## uniform-traffic topology sweep (baseline)
 	@python3 scripts/run_experiments.py
 
-timeloop:  ## full spine: Timeloop workload -> traffic matrix -> topology sweep
+timeloop:  ## full spine: Timeloop workload -> traffic matrix -> topology sweep -> NoC energy
 	@mkdir -p results
 	-cd timeloop && timeloop-mapper mapper.yaml arch.yaml problem.yaml 2>&1 | tee ../results/timeloop.log
 	@if [ -f timeloop/timeloop-mapper.stats.txt ]; then \
@@ -24,11 +24,16 @@ timeloop:  ## full spine: Timeloop workload -> traffic matrix -> topology sweep
 		echo "Extracting traffic matrix..."; \
 		python3 scripts/timeloop_to_matrix.py results/timeloop.stats.txt -n 16 -o results/traffic_matrix.txt; \
 		echo "Sweeping topologies on the Timeloop traffic matrix..."; \
-		TRAFFIC_MATRIX=results/traffic_matrix.txt RATES="0.002,0.005,0.01,0.02,0.03" python3 scripts/run_experiments.py; \
-		echo "Done — results/ has topology_sweep.json + traffic_matrix.txt + timeloop.stats.txt"; \
+		TRAFFIC_MATRIX=results/traffic_matrix.txt RATES="0.002,0.005,0.01,0.02,0.04,0.2,0.5" python3 scripts/run_experiments.py; \
+		echo "Calibrating NoC energy from Booksim hops (Accelergy bridge)..."; \
+		python3 scripts/noc_energy_bridge.py; \
+		echo "Done — results/ has topology_sweep.json + traffic_matrix.txt + timeloop.stats.txt + noc_energy.json"; \
 	else \
 		echo "  ⚠  Timeloop produced no stats; falling back to uniform traffic"; \
 		python3 scripts/run_experiments.py; \
+		echo "Calibrating NoC energy from Booksim hops (Accelergy bridge)..."; \
+		python3 scripts/noc_energy_bridge.py; \
+		echo "Done — results/ has topology_sweep.json + noc_energy.json (no Timeloop traffic matrix this run)"; \
 	fi
 
 energy:  ## Timeloop energy breakdown (pJ/compute + energy-delay product)
@@ -39,6 +44,9 @@ energy:  ## Timeloop energy breakdown (pJ/compute + energy-delay product)
 		  && cp timeloop/timeloop-mapper.stats.txt results/timeloop.stats.txt; \
 	fi
 	@python3 scripts/energy_report.py results/timeloop.stats.txt
+	@if [ -f results/topology_sweep.json ]; then \
+		python3 scripts/noc_energy_bridge.py; \
+	fi
 
 dashboard:  ## (re)build report/t3/index.html from results/
 	@python3 scripts/generate_dashboard.py
