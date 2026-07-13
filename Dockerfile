@@ -69,6 +69,50 @@ RUN git clone --depth 1 https://github.com/Accelergy-Project/accelergy.git && \
     cd accelergy && \
     pip3 install .
 
+# Accelergy estimation backends. Core alone ships no real estimator, so every
+# ERT/ART it emits is a placeholder. Accelergy runs an auction: each plugin bids
+# an accuracy for a (component, action) query and the highest bid wins.
+#
+# Aladdin (accuracy 70) — wire, crossbar, comparator, FIFO, intadder. 40/45nm only.
+# `wire` energy is analytic; the rest are CSV lookups that REQUIRE an
+# `action_latency_cycles` action argument or they raise KeyError.
+RUN git clone --depth 1 https://github.com/Accelergy-Project/accelergy-aladdin-plug-in.git && \
+    cd accelergy-aladdin-plug-in && \
+    pip3 install .
+
+# CACTI — SRAM/DRAM only, but the sole backend with modern nodes (22/32/45/65/90nm,
+# interpolated). `cacti/` is a submodule, hence --recurse-submodules. Its makefile
+# passes -gstabs+ (dropped in GCC 12) and -m64 (breaks arm64); upstream ships
+# cacti.patch for exactly this. `make` must precede pip install — it builds the
+# `cacti` binary that the Python wrapper shells out to.
+RUN git clone --depth 1 --recurse-submodules --shallow-submodules \
+        https://github.com/Accelergy-Project/accelergy-cacti-plug-in.git && \
+    cd accelergy-cacti-plug-in && \
+    sed -i 's/ -gstabs+//; s/g++ -m64/g++/; s/gcc -m64/gcc/' cacti/cacti.mk && \
+    make && \
+    pip3 install .
+
+# Library (bids 90 on a table hit, 0 otherwise) — successor to the table-based
+# plug-in, which now prints "DEPRECATED. Use the Library plug-in instead."
+# Ships citable literature tables, incl. `isaac_router` (32nm, 256b, 20.74 pJ,
+# 150000 um^2) and `isaac_chip2chip_link` — the only shipped router/link numbers
+# at a modern node; Aladdin's wire/crossbar stop at 40/45nm.
+#
+# It is also the bring-your-own-numbers backend: a component class is just a CSV
+# filename under .../accelergy-library-plugin/<set>/<class>.csv, so a `router.csv`
+# at your node defines a `router` class. That is how you price a NoC Aladdin can't.
+RUN git clone --depth 1 https://github.com/Accelergy-Project/accelergy-library-plug-in.git && \
+    cd accelergy-library-plug-in && \
+    pip3 install .
+
+# Drop Accelergy's built-in `dummy` estimator. It is not a backend — it answers
+# 1 pJ / 1 um^2 to every query, and Accelergy falls back to it *silently* (INFO
+# log, exit 0) whenever a real plugin bids and then raises. That is how the
+# eyeriss reference ERT came to read 15.016 pJ: 13.016 from Aladdin's wire plus
+# two comparators at a fabricated 1.0 each. Without dummy, that same input exits
+# 1 and emits nothing. A component no backend can price must fail loudly.
+RUN rm -rf /usr/local/share/accelergy/estimation_plug_ins/dummy_tables
+
 # =============================================================================
 # Timeloop (T3 — data-movement model). Pinned to the last commit before the
 # barvinok/isl/NTL dependency, so it builds from apt deps only (no heavy stack).
