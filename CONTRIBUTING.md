@@ -19,6 +19,10 @@
    - T3: `tracks/t3-topology/scripts/timeloop_to_matrix.py`
    - T4: `tracks/t4-formal/rtl/*.sv`, `tracks/t4-formal/configs/*.sby`
 
+   Changing **Booksim itself** (traffic pattern, routing function, topology) is a
+   different workflow — it rebuilds the shared tools image and affects both T2 and
+   T3. See [Extending Booksim](tracks/t3-topology/README.md#extending-booksim-c).
+
 4. **Push and open a Pull Request**:
    ```bash
    git add <files>

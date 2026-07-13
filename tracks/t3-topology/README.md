@@ -110,10 +110,34 @@ own — Booksim supports `mesh`, `torus`, `flatfly`, `fattree`, `dragonflynew`,
 `cmesh`. For a 4×4 2-D mesh use `k=4; n=2;` (`n` is the number of dimensions, not
 the grid side).
 
-Want a custom topology or traffic pattern in C++? The Booksim source ships in the
-image at `/opt/booksim2` with compilers — edit and `cd /opt/booksim2/src && make`.
-Our matrix pattern (`matrixtraffic.{hpp,cpp}` + `matrix_traffic.patch`) in
-`booksim-ext/` is a worked example of adding one.
+Want a custom topology, traffic pattern, or routing function in C++? See
+**Extending Booksim** below.
+
+---
+
+## Extending Booksim (C++)
+
+The image ships the full Booksim source and a compiler, so you can change the
+simulator itself — traffic pattern, routing function, topology, router.
+
+Everything lives in **[`booksim-ext/`](booksim-ext/)** — add a `.cpp`/`.hpp`,
+register it with one line in `veritx_ext.cpp`, then:
+
+```bash
+make shell
+./tracks/t3-topology/booksim-ext/build.sh   # rebuild + install + verify
+```
+
+No patch to write, no `Dockerfile` to edit. `build.sh` also checks that upstream
+Booksim still behaves, so you find out immediately if you broke it.
+
+`matrixtraffic.{hpp,cpp}` (the `matrix(<file>)` bridge) and `yxroute.{hpp,cpp}`
+(YX routing) are worked examples — copy either. Note this builds the Booksim
+**T2 runs too**, so a break here breaks both tracks.
+
+See [`booksim-ext/README.md`](booksim-ext/README.md) for the full workflow and
+the gotchas (Booksim exits `255` on success; `routing_function` gets the topology
+name appended).
 
 ---
 

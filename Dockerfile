@@ -49,16 +49,31 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /opt
 
 # =============================================================================
-# Booksim 2.0 + VeritX matrix traffic pattern (T2, T3 — Deadlock, Topology)
-# Pinned commit + the `matrix(<file>)` pattern that feeds a Timeloop traffic
-# matrix into Booksim (the Timeloop->Booksim bridge for T3). Source kept at
-# /opt/booksim2 so students can add custom patterns/topologies and recompile.
+# Booksim 2.0 + VeritX extensions (T2, T3 — Deadlock, Topology)
+#
+# Pinned commit, plus booksim-ext/src/, which MIRRORS Booksim's own src/ tree and
+# is copied over it. A file's path is therefore its meaning: a name that doesn't
+# exist upstream is a new file (Booksim's Makefile globs `*.cpp */*.cpp`, so it
+# compiles with no Makefile edit); a name that does exist is a wholesale overlay
+# of that file. The mirror — rather than a flat copy — is what lets you overlay
+# routers/, networks/, allocators/ etc., where the interesting code lives. A flat
+# copy would land routers/iq_router.cpp at src/ *beside* the original and the
+# link would fail on duplicate symbols.
+#
+# `veritx_hooks.patch` is the ONLY patch: 10 lines routing Booksim's two factories
+# (TrafficPattern::New, InitializeRoutingMap) into VeritXNewTraffic() /
+# VeritXRegisterRouting(). Written once, never touched again — a new traffic
+# pattern or routing function is a new file plus one line in veritx_ext.cpp, so
+# contributors write no patch and never edit this Dockerfile.
+#
+# Source stays at /opt/booksim2 so it can be edited and recompiled in-image;
+# booksim-ext/build.sh does that and verifies the result.
 # =============================================================================
 COPY tracks/t3-topology/booksim-ext/ /opt/booksim-ext/
 RUN git clone https://github.com/booksim/booksim2.git && \
     cd booksim2 && git checkout 28f43299f1706a3160ffac721ca461d74eb6e618 && \
-    cp /opt/booksim-ext/matrixtraffic.hpp /opt/booksim-ext/matrixtraffic.cpp src/ && \
-    git apply /opt/booksim-ext/matrix_traffic.patch && \
+    cp -r /opt/booksim-ext/src/. src/ && \
+    git apply /opt/booksim-ext/veritx_hooks.patch && \
     cd src && make -j$(nproc) && \
     cp booksim /usr/local/bin/
 

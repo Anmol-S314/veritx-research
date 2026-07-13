@@ -1,0 +1,45 @@
+diff --git a/src/routefunc.cpp b/src/routefunc.cpp
+index 0fd210f..7210c9b 100644
+--- a/src/routefunc.cpp
++++ b/src/routefunc.cpp
+@@ -42,6 +42,7 @@
+ 
+ #include "booksim.hpp"
+ #include "routefunc.hpp"
++#include "veritx_ext.hpp"
+ #include "kncube.hpp"
+ #include "random_utils.hpp"
+ #include "misc_utils.hpp"
+@@ -1996,4 +1997,6 @@ void InitializeRoutingMap( const Configuration & config )
+ 
+   gRoutingFunctionMap["chaos_mesh"]  = &chaos_mesh;
+   gRoutingFunctionMap["chaos_torus"] = &chaos_torus;
++
++  VeritXRegisterRouting();
+ }
+diff --git a/src/traffic.cpp b/src/traffic.cpp
+index 696d3d6..896dcaf 100644
+--- a/src/traffic.cpp
++++ b/src/traffic.cpp
+@@ -30,6 +30,7 @@
+ #include <ctime>
+ #include "random_utils.hpp"
+ #include "traffic.hpp"
++#include "veritx_ext.hpp"
+ 
+ TrafficPattern::TrafficPattern(int nodes)
+ : _nodes(nodes)
+@@ -192,8 +193,11 @@ TrafficPattern * TrafficPattern::New(string const & pattern, int nodes,
+     }
+     result = new HotSpotTrafficPattern(nodes, hotspots, rates);
+   } else {
+-    cout << "Error: Unknown traffic pattern: " << pattern << endl;
+-    exit(-1);
++    result = VeritXNewTraffic(pattern_name, params, nodes, config);
++    if(!result) {
++      cout << "Error: Unknown traffic pattern: " << pattern << endl;
++      exit(-1);
++    }
+   }
+   return result;
+ }
