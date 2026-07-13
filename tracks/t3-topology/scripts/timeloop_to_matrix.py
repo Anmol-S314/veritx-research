@@ -80,18 +80,63 @@ def write_matrix(mat, path):
             f.write(" ".join(f"{v:g}" for v in row) + "\n")
 
 
+def sizes_from_configs():
+    """Every distinct node count present in configs/ (sorted).
+
+    A traffic matrix must be exactly nodes x nodes, but that's a per-topology
+    constraint, not a global one -- so we emit one matrix per distinct size and
+    let a sweep mix 16- and 64-node topologies freely. Nothing is hardcoded: add
+    a config of any size and its matrix appears.
+    """
+    from run_experiments import nodes_from_cfg  # same dir; single source of truth
+
+    cfgs = sorted((Path(__file__).parent.parent / "configs").glob("*.cfg"))
+    sizes = {c.stem: nodes_from_cfg(c) for c in cfgs}
+    unknown = [k for k, v in sizes.items() if not v]
+    if unknown:
+        print(f"  ⚠  can't derive node count for: {', '.join(unknown)} — no matrix "
+              f"will be generated for them, so they'll be skipped in a matrix sweep.")
+    known = sorted({s for s in sizes.values() if s})
+    if not known:
+        sys.exit("✗ could not derive any node count from configs/ — pass -n explicitly.")
+    return known
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("stats", help="Timeloop *.stats.txt")
-    ap.add_argument("-n", "--nodes", type=int, required=True, help="NoC node count (must match the topology)")
-    ap.add_argument("-o", "--out", default="traffic_matrix.txt")
+    ap.add_argument("stats",
+                    help="Timeloop *.stats.txt; '{n}' is replaced by the node "
+                         "count, so each size uses the arch that was mapped for it")
+    ap.add_argument("-n", "--nodes", default="auto",
+                    help="NoC node count. 'auto' (default) emits one matrix for "
+                         "every distinct node count in configs/*.cfg.")
+    ap.add_argument("-o", "--out", default="traffic_matrix_{n}.txt",
+                    help="output path; '{n}' is replaced by the node count")
     args = ap.parse_args()
 
-    levels = parse_levels(Path(args.stats).read_text())
-    write_matrix(build_traffic_matrix(levels, args.nodes), args.out)
-    print(f"  parsed {len(levels)} levels; wrote {args.nodes}x{args.nodes} matrix -> {args.out}")
-    for l in levels:
-        print(f"    {l['name']}: {l['accesses'] * l['instances']} word accesses ({l['instances']} inst)")
+    sizes = sizes_from_configs() if args.nodes == "auto" else [int(args.nodes)]
+    if len(sizes) > 1 and "{n}" not in args.out:
+        sys.exit(f"✗ configs/ span {len(sizes)} node counts {sizes}, but -o has no "
+                 f"'{{n}}' placeholder — they'd overwrite each other.")
+
+    wrote = 0
+    for n in sizes:
+        stats = Path(args.stats.replace("{n}", str(n)))
+        if not stats.exists():
+            # Better to emit no matrix than one built from another size's mapping:
+            # run_experiments then skips this topology loudly instead of driving it
+            # with traffic that describes a different machine.
+            print(f"  ⚠  {stats} missing — no {n}-node matrix (run `make timeloop`)")
+            continue
+        levels = parse_levels(stats.read_text())
+        out = args.out.replace("{n}", str(n))
+        write_matrix(build_traffic_matrix(levels, n), out)
+        acc = ", ".join(f"{l['name']}={l['accesses'] * l['instances']}" for l in levels)
+        print(f"  wrote {n}x{n} matrix -> {out}   [{acc}]")
+        wrote += 1
+
+    if not wrote:
+        sys.exit("✗ no traffic matrices written — no Timeloop stats found.")
 
 
 def _selfcheck():
