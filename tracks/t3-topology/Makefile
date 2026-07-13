@@ -1,6 +1,6 @@
 # T3: Topology — Booksim + Timeloop + Accelergy
 include ../common.mk
-.PHONY: setup lint test sim timeloop energy dashboard clean
+.PHONY: setup lint test sim timeloop energy area dashboard clean
 
 setup:  ## check the toolchain (Booksim required; Timeloop/Accelergy optional)
 	@$(call need,booksim)
@@ -16,29 +16,40 @@ test:  ## quick sanity sweep (the CI gate)
 sim:  ## uniform-traffic topology sweep (baseline)
 	@python3 scripts/run_experiments.py
 
-timeloop:  ## full spine: Timeloop workload -> traffic matrix -> topology sweep
+timeloop:  ## full spine: Timeloop (one run per NoC size) -> traffic matrix -> sweep
 	@mkdir -p results
-	-cd timeloop && timeloop-mapper mapper.yaml arch.yaml problem.yaml 2>&1 | tee ../results/timeloop.log
-	@if [ -f timeloop/timeloop-mapper.stats.txt ]; then \
-		cp timeloop/timeloop-mapper.stats.txt results/timeloop.stats.txt; \
-		echo "Extracting traffic matrix..."; \
-		python3 scripts/timeloop_to_matrix.py results/timeloop.stats.txt -n 16 -o results/traffic_matrix.txt; \
-		echo "Sweeping topologies on the Timeloop traffic matrix..."; \
-		TRAFFIC_MATRIX=results/traffic_matrix.txt RATES="0.002,0.005,0.01,0.02,0.03" python3 scripts/run_experiments.py; \
-		echo "Done — results/ has topology_sweep.json + traffic_matrix.txt + timeloop.stats.txt"; \
+	@echo "Running Timeloop — one mapping per node count in configs/ (PEs == tiles)..."
+	@if python3 scripts/run_timeloop.py; then \
+		echo "Extracting traffic matrices..."; \
+		python3 scripts/timeloop_to_matrix.py 'results/timeloop_{n}.stats.txt' \
+			-n auto -o 'results/traffic_matrix_{n}.txt'; \
+		echo "Sweeping topologies (injection rate ramps to each one's knee)..."; \
+		TRAFFIC_MATRIX='results/traffic_matrix_{n}.txt' python3 scripts/run_experiments.py; \
+		echo "Done — results/ has topology_sweep.json + traffic_matrix_<N>.txt + timeloop_<N>.stats.txt"; \
 	else \
 		echo "  ⚠  Timeloop produced no stats; falling back to uniform traffic"; \
 		python3 scripts/run_experiments.py; \
 	fi
 
-energy:  ## Timeloop energy breakdown (pJ/compute + energy-delay product)
+energy:  ## energy (Timeloop) + real die area (Accelergy) per NoC size
 	@mkdir -p results
-	@if [ ! -f results/timeloop.stats.txt ]; then \
+	@if ! ls results/timeloop_*.stats.txt >/dev/null 2>&1; then \
 		echo "no Timeloop stats yet — running the model..."; \
-		( cd timeloop && timeloop-mapper mapper.yaml arch.yaml problem.yaml >/dev/null 2>&1 ) \
-		  && cp timeloop/timeloop-mapper.stats.txt results/timeloop.stats.txt; \
+		python3 scripts/run_timeloop.py; \
 	fi
-	@python3 scripts/energy_report.py results/timeloop.stats.txt
+	@for f in results/timeloop_*.stats.txt; do \
+		n=$$(basename $$f .stats.txt | sed 's/timeloop_//'); \
+		python3 scripts/area_report.py -n $$n; \
+		python3 scripts/energy_report.py $$f; \
+		echo; \
+	done
+
+area:  ## die area from Accelergy (routers + buffers + MACs), per NoC size
+	@mkdir -p results
+	@for n in $$(python3 -c "import sys; sys.path.insert(0,'scripts'); \
+		from timeloop_to_matrix import sizes_from_configs; print(' '.join(map(str, sizes_from_configs())))"); do \
+		python3 scripts/area_report.py -n $$n; \
+	done
 
 dashboard:  ## (re)build report/t3/index.html from results/
 	@python3 scripts/generate_dashboard.py

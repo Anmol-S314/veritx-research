@@ -69,8 +69,9 @@ scripts/generate_dashboard.py
 | `make setup` | verify Booksim + Timeloop + Accelergy are present |
 | `make test` | quick sanity sweep (uniform traffic) — the CI gate |
 | `make sim` | uniform-traffic baseline sweep across topologies |
-| `make timeloop` | **the real spine** — Timeloop → matrix → topology sweep |
-| `make energy` | Timeloop energy: per-component pJ/compute + energy-delay product → `results/energy.json` |
+| `make timeloop` | **the real spine** — Timeloop (one mapping per NoC size) → matrix → topology sweep |
+| `make energy` | pJ/compute + EDP (Timeloop) **and** real die area (Accelergy) → `results/energy_<N>.json` |
+| `make area` | die area alone — routers + buffers + MACs → `results/area_<N>.json` |
 | `make dashboard` | (re)generate `report/t3/index.html` from `results/` |
 
 `make timeloop` is the one you'll use for research. If Timeloop is unavailable it
