@@ -56,6 +56,36 @@ def curves(sweep):
     return out
 
 
+def node_counts(sweep):
+    """topology -> node count, as recorded by run_experiments."""
+    return {r["topology"]: r["nodes"] for r in sweep if r.get("nodes")}
+
+
+def failures(sweep):
+    """topology -> why it produced no plottable data.
+
+    A topology with no valid points is invisible in every panel (curves() drops
+    it). Silently omitting it is how a config that Booksim rejected -- usually a
+    node count that doesn't match the traffic matrix -- looks exactly like a
+    config you never added. Surface it instead.
+    """
+    ok = {r["topology"] for r in sweep if r.get("latency_cycles") is not None}
+    bad = {}
+    for r in sweep:
+        t = r["topology"]
+        if t not in ok and t not in bad:
+            bad[t] = r.get("error") or "no data (booksim printed no latency)"
+    return bad
+
+
+def failure_banner(bad):
+    if not bad:
+        return ""
+    rows = "".join(f"<li><b>{t}</b> — {msg}</li>" for t, msg in sorted(bad.items()))
+    return (f'<div class="warn"><b>{len(bad)} topology(ies) produced no data and '
+            f'are not plotted below:</b><ul>{rows}</ul></div>')
+
+
 def saturation_point(pts):
     """Injection rate at which latency exceeds 2x zero-load, else None."""
     if len(pts) < 2:
@@ -84,6 +114,26 @@ def load_matrix(path):
     return rows or None
 
 
+def load_matrices(pattern):
+    """{node_count: matrix} for every traffic_matrix_<N>.txt in results/.
+
+    A sweep may now mix 16- and 64-node topologies, each driven by its own
+    matrix, so the heatmap panel has to hold more than one. Legacy single-file
+    runs (traffic_matrix.txt) still load, keyed by their own dimension.
+    """
+    out = {}
+    for p in sorted(RESULTS.glob(pattern)):
+        m = load_matrix(p)
+        if m:
+            out[str(len(m))] = m          # JSON keys are strings
+    legacy = RESULTS / "traffic_matrix.txt"
+    if not out and legacy.exists():
+        m = load_matrix(legacy)
+        if m:
+            out[str(len(m))] = m
+    return out or None
+
+
 def load_levels(path):
     p = Path(path)
     if not p.exists():
@@ -93,17 +143,52 @@ def load_levels(path):
     return lv or None
 
 
-def build_record(cur, matrix, levels):
+def load_all_levels(pattern):
+    """{node_count: levels} — each size has its own Timeloop run, so its own
+    access breakdown. A 64-PE mapping is not a 16-PE mapping scaled up."""
+    out = {}
+    for p in sorted(RESULTS.glob(pattern)):
+        n = p.name.replace("timeloop_", "").replace(".stats.txt", "")
+        lv = load_levels(p)
+        if lv and n.isdigit():
+            out[n] = lv
+    legacy = RESULTS / "timeloop.stats.txt"
+    if not out and legacy.exists():
+        lv = load_levels(legacy)
+        if lv:
+            out["_"] = lv          # unknown size; picker falls back to it
+    return out or None
+
+
+def load_energy(pattern):
+    """{node_count: energy+area record} written by energy_report.py / area_report.py."""
+    out = {}
+    for p in sorted(RESULTS.glob(pattern)):
+        n = p.name.replace("energy_", "").replace(".json", "")
+        if n.isdigit():
+            out[n] = json.loads(p.read_text())
+    return out or None
+
+
+def build_record(cur, matrices, levels, nodes=None, energy=None):
     """Everything needed to redraw one run's panels later."""
     hops = {t: [[r, h] for r, _, h in pts if h is not None] for t, pts in cur.items()}
+    # Keep "matrix" for the single-size case so old history entries still render.
+    one = next(iter(matrices.values())) if matrices and len(matrices) == 1 else None
+    # Keep flat "levels" for the single-size case so old history entries render.
+    flat = next(iter(levels.values())) if levels and len(levels) == 1 else None
     return {
         **git_info(),
         "latency": characteristic_latency(cur),
         "curves": cur,
         "saturation": {t: saturation_point(pts) for t, pts in cur.items()},
         "hops": {t: pts for t, pts in hops.items() if pts} or None,
-        "matrix": matrix,
-        "levels": levels,
+        "matrix": one,
+        "matrices": matrices or None,
+        "nodes": nodes or None,        # topology -> node count, for the legend
+        "levels": flat,
+        "levelsBySize": levels or None,
+        "energyBySize": energy or None,
     }
 
 
@@ -189,17 +274,23 @@ HTML = """<!doctype html><html><head><meta charset="utf-8">
  .note{color:var(--note);font-style:italic}
  .toggle{background:var(--btn);color:#fff;border:none;border-radius:6px;padding:5px 14px;font-size:12px;cursor:pointer;white-space:nowrap;margin-left:12px}
  .toggle:hover{opacity:.85}
+ .warn{margin:12px 24px 0;padding:10px 14px;border-radius:8px;font-size:13px;background:rgba(204,59,59,.10);border:1px solid rgba(204,59,59,.45);color:var(--text)}
+ .warn ul{margin:6px 0 0;padding-left:20px} .warn li{margin:2px 0}
+ .psub{color:var(--sub);font-weight:400;font-size:12px;margin-left:6px}
 </style></head><body>
 <header><div><h1>T3 Topology Dashboard</h1>
 <div class="sub">Latest: run #__RUN__ · <span class="commit">__SHA__ __MSG__</span> · __DATE__ · <span class="badge">__HEADLINE__</span></div></div>
  <button class="toggle" id="themeToggle">Dark mode</button></header>
-<div class="bar"><label>Viewing run:</label><select id="runsel">__OPTIONS__</select></div>
+<div class="bar"><label>Viewing run:</label><select id="runsel">__OPTIONS__</select><span id="mwrap" style="display:none"><label style="margin-left:18px">NoC size:</label><select id="msel"></select></span></div>
+__FAILED__
 <div class="grid">
- <div class="card"><h2>Traffic Matrix</h2><div id="heat"></div></div>
+ <div class="card"><h2>Traffic Matrix<span class="psub" id="heatsub"></span></h2><div id="heat"></div></div>
  <div class="card"><h2>Latency vs Injection Rate</h2><div id="lat"></div></div>
  <div class="card"><h2>Hops (energy proxy)</h2><div id="hops"></div></div>
  <div class="card full"><h2>Regression — last __N__ runs</h2>__TABLE__</div>
- <div class="card full"><h2>Timeloop Access Breakdown (bottlenecks)</h2><div id="bott"></div></div>
+ <div class="card"><h2>Energy — pJ/compute<span class="psub" id="ensub"></span></h2><div id="en"></div></div>
+ <div class="card"><h2>Die Area<span class="psub" id="arsub"></span></h2><div id="ar"></div></div>
+ <div class="card full"><h2>Timeloop Access Breakdown (bottlenecks)<span class="psub" id="bottsub"></span></h2><div id="bott"></div></div>
 </div>
 <script>
 const RUNS=__DATA__;
@@ -208,28 +299,86 @@ const THEMES={dark:{paper:'#161a23',plot:'#0f1117',font:'#e6e6e6',btn:'#2b6cb0'}
 function theme(){return document.body.classList.contains('dark')?'dark':'light'}
 function lo(t){return{paper_bgcolor:THEMES[t].paper,plot_bgcolor:THEMES[t].plot,font:{color:THEMES[t].font},margin:{t:10,r:10,b:40,l:50}}}
 function note(id,msg){document.getElementById(id).innerHTML="<p class='note'>"+msg+"</p>"}
+// Sweeps may mix node counts; an unlabelled legend would invite comparing a
+// 16-node mesh against a 64-node one as if they were the same experiment.
+function lbl(r,n){const k=r.nodes&&r.nodes[n];return k?n+' ('+k+'n)':n}
 function draw(){
   const r=RUNS[CUR]; if(!r)return;
   const t=theme(), ly=lo(t);
-  if(r.matrix)Plotly.newPlot('heat',[{z:r.matrix,type:'heatmap',colorscale:'YlOrRd'}],
-    {...ly,xaxis:{title:'dst tile'},yaxis:{title:'src tile',autorange:'reversed'}},{displayModeBar:false,responsive:true});
+  // A run holds one traffic matrix AND one Timeloop breakdown per node count --
+  // each size gets its own arch (PEs == tiles) and its own mapping. One picker
+  // governs both panels, so they always describe the same machine.
+  const mats=r.matrices||(r.matrix?{[r.matrix.length]:r.matrix}:null);
+  const lvls=r.levelsBySize||(r.levels?{'_':r.levels}:null);
+  const msel=document.getElementById('msel');
+  const sizes=[...new Set([...Object.keys(mats||{}),...Object.keys(lvls||{})])]
+    .filter(n=>n!=='_').sort((a,b)=>a-b);
+  if(msel.dataset.run!==String(CUR)){
+    msel.innerHTML=sizes.map(n=>`<option value="${n}">${n} tiles</option>`).join('');
+    msel.dataset.run=String(CUR);
+  }
+  document.getElementById('mwrap').style.display=sizes.length>1?'':'none';
+  const N=(sizes.includes(msel.value)?msel.value:sizes[0]);
+  if(N)msel.value=N;
+
+  // Neither of these panels is per-topology, and saying so kills the obvious
+  // misreading. Timeloop never sees the NoC -- every topology of a given size
+  // shares one mapping. And the matrix is deliberately shared: identical traffic
+  // is the controlled variable, otherwise a topology could "win" on easier input.
+  const same=N?Object.keys(r.nodes||{}).filter(t=>String(r.nodes[t])===String(N)):[];
+  const shared=same.length?` — same for all ${same.length} ${N}-node topologies: ${same.join(', ')}`:'';
+  document.getElementById('heatsub').textContent=N?`${N} tiles${shared}`:'';
+  document.getElementById('bottsub').textContent=N?`${N}-PE mapping${shared}`:'';
+
+  const mat=mats&&(mats[N]||(sizes.length?null:Object.values(mats)[0]));
+  if(mat)Plotly.newPlot('heat',[{z:mat,type:'heatmap',colorscale:'YlOrRd'}],
+      {...ly,xaxis:{title:'dst tile'},yaxis:{title:'src tile',autorange:'reversed'}},{displayModeBar:false,responsive:true});
   else note('heat','no traffic matrix for this run');
   if(r.curves){
     const maxY=Math.max(...Object.values(r.curves).flat().map(x=>x[1]));
-    const latT=Object.entries(r.curves).map(([n,p])=>({x:p.map(x=>x[0]),y:p.map(x=>x[1]),name:n,mode:'lines+markers'}));
+    const latT=Object.entries(r.curves).map(([n,p])=>({x:p.map(x=>x[0]),y:p.map(x=>x[1]),name:lbl(r,n),mode:'lines+markers'}));
     const satT=Object.entries(r.saturation||{}).filter(([_,v])=>v!==null).map(([n,v])=>({x:[v,v],y:[0,maxY],mode:'lines',name:n+' sat',showlegend:false,line:{dash:'dot',width:1,color:THEMES[t].font}}));
     Plotly.newPlot('lat',[...latT,...satT],
       {...ly,xaxis:{title:'injection rate'},yaxis:{title:'latency (cycles)'},legend:{orientation:'h'}},{displayModeBar:false,responsive:true});
   } else note('lat','no sweep data for this run');
-  if(r.hops)Plotly.newPlot('hops',Object.entries(r.hops).map(([n,p])=>({x:p.map(x=>x[0]),y:p.map(x=>x[1]),name:n,mode:'lines+markers'})),
+  if(r.hops)Plotly.newPlot('hops',Object.entries(r.hops).map(([n,p])=>({x:p.map(x=>x[0]),y:p.map(x=>x[1]),name:lbl(r,n),mode:'lines+markers'})),
     {...ly,xaxis:{title:'injection rate'},yaxis:{title:'avg hops'},legend:{orientation:'h'}},{displayModeBar:false,responsive:true});
   else note('hops','no hops data for this run');
-  if(r.levels)Plotly.newPlot('bott',[{x:r.levels.map(l=>l.accesses),y:r.levels.map(l=>l.name),type:'bar',orientation:'h',marker:{color:THEMES[t].btn}}],
+  // Energy + area: also per node count, not per topology. Energy is Timeloop's
+  // (built-in PAT model); area is Accelergy's, and it is the only one that prices
+  // the routers -- which is the whole point, since they dominate the die.
+  const en=(r.energyBySize||{})[N];
+  if(en&&en.pj_per_compute){
+    const e=Object.entries(en.pj_per_compute).filter(([_,v])=>v>0).sort((a,b)=>b[1]-a[1]);
+    document.getElementById('ensub').textContent=
+      `${en.energy_uJ} uJ · ${en.cycles} cyc · EDP ${en.edp_uJ_cycles}`;
+    Plotly.newPlot('en',[{x:e.map(x=>x[1]),y:e.map(x=>x[0]),type:'bar',orientation:'h',
+      marker:{color:THEMES[t].btn}}],
+      {...ly,margin:{t:10,r:10,b:40,l:130},xaxis:{title:'pJ / compute'}},
+      {displayModeBar:false,responsive:true});
+  } else {document.getElementById('ensub').textContent='';note('en','no energy data — run `make energy`')}
+
+  const ar=en&&en.area;
+  if(ar){
+    const c=Object.entries(ar.components).sort((a,b)=>b[1].area_um2_total-a[1].area_um2_total);
+    document.getElementById('arsub').textContent=
+      `${ar.total_area_mm2} mm² total · ${c[0][0]} is ${(c[0][1].area_um2_total/ar.total_area_um2*100).toFixed(0)}% of it`;
+    Plotly.newPlot('ar',[{labels:c.map(x=>`${x[0]} x${x[1].instances}`),
+      values:c.map(x=>x[1].area_um2_total),type:'pie',hole:.45,
+      textinfo:'label+percent',
+      hovertemplate:'%{label}<br>%{value:,.0f} um²<extra></extra>'}],
+      {...ly,margin:{t:10,r:10,b:10,l:10},showlegend:false},
+      {displayModeBar:false,responsive:true});
+  } else {document.getElementById('arsub').textContent=''; note('ar','no area data — run `make area`')}
+
+  const lv=lvls&&(lvls[N]||lvls['_']);
+  if(lv)Plotly.newPlot('bott',[{x:lv.map(l=>l.accesses),y:lv.map(l=>l.name),type:'bar',orientation:'h',marker:{color:THEMES[t].btn}}],
     {...ly,margin:{t:10,r:10,b:40,l:130},xaxis:{title:'word accesses'}},{displayModeBar:false,responsive:true});
   else note('bott','no Timeloop stats for this run');
   document.querySelectorAll('#regt tr.sel').forEach(x=>x.classList.remove('sel'));
   const row=document.getElementById('row'+CUR); if(row)row.classList.add('sel');
 }
+document.getElementById('msel').addEventListener('change',draw);
 const sel=document.getElementById('runsel');
 sel.onchange=()=>{CUR=+sel.value;draw();};
 (function(){
@@ -268,15 +417,21 @@ def _selfcheck():
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--matrix", default=str(RESULTS / "traffic_matrix.txt"))
-    ap.add_argument("--timeloop-stats", default=str(RESULTS / "timeloop.stats.txt"))
+    ap.add_argument("--matrix", default="traffic_matrix_*.txt",
+                    help="glob under results/ matching one matrix per node count")
+    ap.add_argument("--timeloop-stats", default="timeloop_*.stats.txt",
+                    help="glob under results/ matching one stats file per node count")
     ap.add_argument("--selfcheck", action="store_true")
     args = ap.parse_args()
     if args.selfcheck:
         _selfcheck(); return
 
-    cur = curves(load_sweep())
-    record = build_record(cur, load_matrix(args.matrix), load_levels(args.timeloop_stats))
+    sweep = load_sweep()
+    cur = curves(sweep)
+    bad = failures(sweep)
+    record = build_record(cur, load_matrices(args.matrix),
+                          load_all_levels(args.timeloop_stats), node_counts(sweep),
+                          load_energy("energy_*.json"))
     hist = update_history(record)
     # Only show runs we can actually render. Pre-feature runs stored latency only
     # (no curves/matrix) — offering them gave empty panels. They stay in history.json
@@ -293,6 +448,7 @@ def main():
             .replace("__N__", str(len(view)))
             .replace("__OPTIONS__", run_options(view))
             .replace("__TABLE__", regression_table(view))
+            .replace("__FAILED__", failure_banner(bad))
             .replace("__DATA__", json.dumps(view, separators=(",", ":"))))
 
     REPORT.mkdir(parents=True, exist_ok=True)
