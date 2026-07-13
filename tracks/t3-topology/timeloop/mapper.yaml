@@ -1,9 +1,15 @@
 # Let Timeloop search for a valid mapping (replaces a hand-written map.yaml, whose
 # classic format — integer targets, "M4 N4" factor strings, keep/bypass — is easy
 # to get wrong). Students can add mapspace constraints or pin a mapping later.
+#
+# victory-condition/timeout must be generous. At the old 100/30 the search gave up
+# early and settled for a mapping that used ONE PE out of 16 for a 64^3 GEMM — the
+# arch was fine, the mapper just stopped looking. A partly-used PE array emits
+# traffic for a machine you aren't simulating, so the NoC comparison silently
+# becomes meaningless. run_timeloop.py now checks utilization and says so.
 mapper:
   algorithm: exhaustive
   optimization-metrics: [energy, delay]
   search-size: 0
-  victory-condition: 100
-  timeout: 30
+  victory-condition: 5000
+  timeout: 0

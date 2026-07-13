@@ -20,7 +20,12 @@ problem:
       - [ [M] ]
       - [ [N] ]
       read-write: True
+  # The workload must be big enough to fill the LARGEST NoC you sweep, or the
+  # mapper packs it onto fewer PEs and the traffic describes a smaller machine.
+  # The old 16x16x16 mapped onto 16 PEs whether the arch had 16 or 64 — so the
+  # "64-node" traffic matrix was byte-identical to the 16-node one. 64^3 fills
+  # both. If you add a 256-node topology, grow this again (run_timeloop.py warns).
   instance:
-    M: 16
-    N: 16
-    K: 16
+    M: 64
+    N: 64
+    K: 64
