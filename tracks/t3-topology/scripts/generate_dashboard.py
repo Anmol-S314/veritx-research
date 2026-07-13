@@ -358,16 +358,22 @@ function draw(){
       {displayModeBar:false,responsive:true});
   } else {document.getElementById('ensub').textContent='';note('en','no energy data — run `make energy`')}
 
-  const ar=en&&en.area;
-  if(ar){
-    const c=Object.entries(ar.components).sort((a,b)=>b[1].area_um2_total-a[1].area_um2_total);
+  // Area IS per-topology now: routers are priced by radix, so a 5-port mesh
+  // router and a 10-port flatfly router no longer cost the same. This is the
+  // panel that lets topology trade off against latency -- the Pareto axis.
+  const ar=en&&en.area, tp=ar&&ar.topologies;
+  if(tp){
+    const t2=Object.entries(tp).sort((a,b)=>a[1].total_area_um2-b[1].total_area_um2);
+    const lo=t2[0][1].total_area_mm2, hi=t2[t2.length-1][1].total_area_mm2;
     document.getElementById('arsub').textContent=
-      `${ar.total_area_mm2} mm² total · ${c[0][0]} is ${(c[0][1].area_um2_total/ar.total_area_um2*100).toFixed(0)}% of it`;
-    Plotly.newPlot('ar',[{labels:c.map(x=>`${x[0]} x${x[1].instances}`),
-      values:c.map(x=>x[1].area_um2_total),type:'pie',hole:.45,
-      textinfo:'label+percent',
-      hovertemplate:'%{label}<br>%{value:,.0f} um²<extra></extra>'}],
-      {...ly,margin:{t:10,r:10,b:10,l:10},showlegend:false},
+      `${lo}–${hi} mm² · ${ar.flit_bits}b flits · NoC is ${t2[0][1].noc_share_pct}–${t2[t2.length-1][1].noc_share_pct}% of the die`;
+    Plotly.newPlot('ar',[
+      {x:t2.map(x=>x[0]),y:t2.map(x=>x[1].noc_um2_total),name:'NoC (routers)',type:'bar',
+       customdata:t2.map(x=>[x[1].radix,x[1].routers]),
+       hovertemplate:'%{x}<br>NoC %{y:,.0f} um²<br>radix %{customdata[0]}, %{customdata[1]} routers<extra></extra>'},
+      {x:t2.map(x=>x[0]),y:t2.map(()=>ar.base_um2),name:'PE array + buffer',type:'bar',
+       hovertemplate:'%{y:,.0f} um²<extra></extra>'},
+    ],{...ly,barmode:'stack',yaxis:{title:'area (um²)'},legend:{orientation:'h'}},
       {displayModeBar:false,responsive:true});
   } else {document.getElementById('arsub').textContent=''; note('ar','no area data — run `make area`')}
 

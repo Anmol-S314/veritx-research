@@ -59,7 +59,12 @@ def main():
         area = p.parent / f"area_{m.group(1)}.json"
         if area.exists():
             e["area"] = json.loads(area.read_text())
-            e["area_mm2"] = e["area"]["total_area_mm2"]
+            # Area is now per-topology (routers are priced by radix), so there is
+            # no single die number for a node count -- report the spread.
+            tp = e["area"].get("topologies") or {}
+            if tp:
+                e["area_mm2_min"] = min(t["total_area_mm2"] for t in tp.values())
+                e["area_mm2_max"] = max(t["total_area_mm2"] for t in tp.values())
         else:
             print(f"  ⚠  no {area.name} — run `make area` for real die area "
                   f"(Timeloop alone reports 0.00)")
@@ -77,12 +82,14 @@ def main():
             bar = "#" * int(round(v / mx * 30)) if mx else ""
             print(f"    {name:<32}{v:8.2f}  {bar}")
         print(f"    {'Total':<32}{e['total_pj_per_compute']:8.2f}")
-    if e.get("area"):
-        a = e["area"]
-        print(f"  Die area: {a['total_area_mm2']} mm^2 — dominated by "
-              + ", ".join(f"{k} {v['area_um2_total']/a['total_area_um2']*100:.0f}%"
-                          for k, v in sorted(a["components"].items(),
-                                             key=lambda kv: -kv[1]["area_um2_total"])[:2]))
+    tp = (e.get("area") or {}).get("topologies") or {}
+    if tp:
+        best = min(tp.items(), key=lambda kv: kv[1]["total_area_um2"])
+        worst = max(tp.items(), key=lambda kv: kv[1]["total_area_um2"])
+        print(f"  Die area: {best[1]['total_area_mm2']}–{worst[1]['total_area_mm2']} mm^2 "
+              f"depending on topology "
+              f"({best[0]} cheapest, {worst[0]} dearest; NoC is "
+              f"{best[1]['noc_share_pct']}–{worst[1]['noc_share_pct']}% of it)")
     print(f"  -> {out}")
 
 
