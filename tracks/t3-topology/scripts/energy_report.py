@@ -49,7 +49,23 @@ def main():
         sys.exit(f"  no {p} — run the Timeloop spine first (make ... CMD=timeloop)")
 
     e = parse_energy(p.read_text())
-    (p.parent / "energy.json").write_text(json.dumps(e, indent=2))
+
+    # Timeloop's own Area is always 0.00 here (its ART hook needs an Accelergy ERT
+    # v0.3 and Accelergy 0.4 emits v0.4), so area comes from area_report.py, which
+    # queries Accelergy directly -- and unlike Timeloop it also prices the routers.
+    m = re.search(r"timeloop_(\d+)\.stats", p.name)
+    if m:
+        e["nodes"] = int(m.group(1))
+        area = p.parent / f"area_{m.group(1)}.json"
+        if area.exists():
+            e["area"] = json.loads(area.read_text())
+            e["area_mm2"] = e["area"]["total_area_mm2"]
+        else:
+            print(f"  ⚠  no {area.name} — run `make area` for real die area "
+                  f"(Timeloop alone reports 0.00)")
+
+    out = p.parent / (f"energy_{e['nodes']}.json" if e.get("nodes") else "energy.json")
+    out.write_text(json.dumps(e, indent=2))
 
     print(f"  Total energy: {e['energy_uJ']} uJ over {e['cycles']} cycles"
           f"  |  EDP {e.get('edp_uJ_cycles')} uJ·cyc  |  util {e['utilization']}")
@@ -61,7 +77,13 @@ def main():
             bar = "#" * int(round(v / mx * 30)) if mx else ""
             print(f"    {name:<32}{v:8.2f}  {bar}")
         print(f"    {'Total':<32}{e['total_pj_per_compute']:8.2f}")
-    print(f"  -> {p.parent / 'energy.json'}")
+    if e.get("area"):
+        a = e["area"]
+        print(f"  Die area: {a['total_area_mm2']} mm^2 — dominated by "
+              + ", ".join(f"{k} {v['area_um2_total']/a['total_area_um2']*100:.0f}%"
+                          for k, v in sorted(a["components"].items(),
+                                             key=lambda kv: -kv[1]["area_um2_total"])[:2]))
+    print(f"  -> {out}")
 
 
 def _selfcheck():
