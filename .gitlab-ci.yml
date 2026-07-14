@@ -1,8 +1,12 @@
 # VeritX Research — GitLab CI (mirror of .github/workflows/ci.yml)
 # Jobs run inside the prebuilt tools image, so the GitLab runner must use a
 # docker/container executor (a shell executor can't pull `image:`).
+# CI_REGISTRY_IMAGE is injected by GitLab and is BY CONSTRUCTION this project's
+# registry path — never hand-write the registry host here. A hardcoded guess is
+# how the image address can be wrong while every job still looks green until the
+# push fails (or, worse, silently keeps pulling a stale image).
 variables:
-  DOCKER_IMAGE: internal-devrepo.datavex.ai:5050/anmol/veritx-research/veritx-tools-base:latest
+  DOCKER_IMAGE: ${CI_REGISTRY_IMAGE}/veritx-tools-base:latest
 
 default:
   image: ${DOCKER_IMAGE}
