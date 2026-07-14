@@ -7,17 +7,31 @@
 # push fails (or, worse, silently keeps pulling a stale image).
 variables:
   DOCKER_REPO: ${CI_REGISTRY_IMAGE}/veritx-tools-base
-  DOCKER_IMAGE: ${DOCKER_REPO}:latest
+  # Every job runs the image THIS commit defines, never a floating `latest`.
+  # `latest` is only what the outside world pulls, and it moves only after the
+  # whole pipeline has passed on this exact image (see promote-image).
+  DOCKER_IMAGE: ${DOCKER_REPO}:${CI_COMMIT_SHORT_SHA}
 
 default:
   image: ${DOCKER_IMAGE}
 
+# build FIRST, promote LAST. The old order was test -> ... -> build, which meant
+# every job validated the OLD image and CI then published a brand-new, entirely
+# untested one over `latest`. That is backwards, and it is how an image can drift
+# from the Dockerfile that defines it while the pipeline stays green.
+#
+# This is the "staging environment", and it is a tag rather than a machine:
+#   build -> :<sha>  (nobody pulls it yet)
+#   test/sim on :<sha>
+#   all green -> retag :<sha> as :latest
+# A red pipeline simply leaves `latest` where it was, still working.
 stages:
+  - build
   - test
   - sim
   - dashboard
   - report
-  - build
+  - promote
 
 # Full runs only on main pushes or manual (web) runs — matches the GitHub gate.
 .on_main:
@@ -106,20 +120,49 @@ report:
       - report/
     expire_in: 90 days
 
-# --- rebuild the tools image (needs a docker executor) ---
+# --- STAGE 1: build this commit's image (needs a docker executor) ---
+#
+# Runs on EVERY pipeline, not only when the Dockerfile changed. That sounds
+# wasteful and mostly isn't: --cache-from reuses every unchanged layer, so an
+# untouched Dockerfile is a pull plus a few seconds, and a Booksim-only edit
+# rebuilds just the last layer (26s locally). What it buys is that no job can
+# ever run an image that isn't the one its own commit describes — which was
+# exactly the hole. Conditional rebuilds are how a branch tests the wrong image.
 #
 # Logs in to the registry it actually PUSHES to. It used to `docker login ghcr.io`
-# and then push to ${DOCKER_IMAGE} on internal-devrepo — authenticating to one
-# registry does not authenticate the other, so the push always failed with
-# `denied`. GitLab injects CI_REGISTRY_* for its own registry; no manual token.
-#
-# Runs AUTOMATICALLY when the image inputs change. Manual-only was how a Dockerfile
-# change could be merged while every job kept silently running the old image — and
-# a stale image does not fail loudly, it fabricates (Accelergy's dummy estimator
-# answers 1 um^2 to everything). The tools image must not be able to drift behind
-# the Dockerfile that defines it.
-rebuild-docker-image:
+# and then push to the internal registry — authenticating to one registry does not
+# authenticate the other, so the push always failed with `denied`. GitLab injects
+# CI_REGISTRY_* for its own registry; no manual token.
+build-image:
   stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  variables:
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_BUILDKIT: "1"
+  script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" -u "$CI_REGISTRY_USER" --password-stdin
+    - docker pull ${DOCKER_REPO}:latest || echo "no latest yet — first build, no cache"
+    # BUILDKIT_INLINE_CACHE bakes the layer metadata INTO the pushed image, which
+    # is what lets the next pipeline's --cache-from actually hit. Without it the
+    # cache silently never applies and every build is a cold 22-minute one.
+    - docker build
+        --cache-from ${DOCKER_REPO}:latest
+        --build-arg BUILDKIT_INLINE_CACHE=1
+        --label org.opencontainers.image.revision=${CI_COMMIT_SHA}
+        -t ${DOCKER_IMAGE} .
+    # :<sha> only. `latest` is NOT touched here — it has not earned it yet.
+    - docker push ${DOCKER_IMAGE}
+
+# --- STAGE last: promote — the image passed, so let the world pull it ---
+#
+# Reached only if build/test/sim/dashboard/report all went green, because GitLab
+# will not start a stage whose predecessors failed. So `latest` can only ever
+# point at an image that ran the full suite. That is the whole guarantee.
+promote-image:
+  extends: .on_main
+  stage: promote
   image: docker:latest
   services:
     - docker:dind
@@ -127,13 +170,10 @@ rebuild-docker-image:
     DOCKER_TLS_CERTDIR: ""
   script:
     - echo "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" -u "$CI_REGISTRY_USER" --password-stdin
-    # Two tags, always: :latest is what jobs pull, :<sha> is what makes a result
-    # reproducible a month later. `latest` alone cannot answer "which image
-    # produced this number?", which is the question a stale image makes you ask.
-    - docker build --label org.opencontainers.image.revision=${CI_COMMIT_SHA}
-        -t ${DOCKER_REPO}:${CI_COMMIT_SHORT_SHA} -t ${DOCKER_REPO}:latest .
-    - docker push ${DOCKER_REPO}:${CI_COMMIT_SHORT_SHA}
+    - docker pull ${DOCKER_IMAGE}
+    - docker tag ${DOCKER_IMAGE} ${DOCKER_REPO}:latest
     - docker push ${DOCKER_REPO}:latest
+    - echo "promoted ${CI_COMMIT_SHORT_SHA} -> latest"
   rules:
     # image inputs changed on main -> rebuild, or every later job runs a stale image
     - if: '$CI_COMMIT_BRANCH == "main"'
