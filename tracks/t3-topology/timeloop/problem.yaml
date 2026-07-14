@@ -25,7 +25,15 @@ problem:
   # The old 16x16x16 mapped onto 16 PEs whether the arch had 16 or 64 — so the
   # "64-node" traffic matrix was byte-identical to the 16-node one. 64^3 fills
   # both. If you add a 256-node topology, grow this again (run_timeloop.py warns).
+  # BERT-base attention projection: X(seq x d_model) . W(d_model x d_model).
+  # M = sequence length, K = N = d_model = 768. This is the Q (or K, or V)
+  # projection of one encoder layer -- the GEMM that actually runs on a
+  # transformer, not a synthetic cube.
+  #
+  # M=128 rather than the full 512: the mapper's search space grows with the
+  # dims, and 128 already fills a 64-tile mesh (128*768 outputs / 64 tiles =
+  # 1536 outputs per tile). Raise it if you want longer-context traffic.
   instance:
-    M: 64
-    N: 64
-    K: 64
+    M: 128
+    N: 768
+    K: 768

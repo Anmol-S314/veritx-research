@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """T3 Topology — sanity test: run Booksim on all configs, check output."""
-import subprocess, json, sys, os
+import shutil, subprocess, json, sys, os
 from pathlib import Path
 
 CONFIGS_DIR = Path(__file__).parent.parent / "configs"
@@ -9,6 +9,11 @@ RESULTS = Path(__file__).parent.parent / "results"
 def main():
     RESULTS.mkdir(parents=True, exist_ok=True)
     booksim = os.environ.get("BOOKSIM_BIN") or "booksim"
+    # Every other script in this track says this rather than dumping a traceback.
+    if not shutil.which(booksim):
+        sys.exit(f"✗ '{booksim}' not on PATH — run inside the tools image:\n"
+                 f"    make run TRACK=t3-topology CMD=test\n"
+                 f"  (or set BOOKSIM_BIN to a booksim binary)")
     configs = sorted(CONFIGS_DIR.glob("*.cfg"))
     all_latencies = {}
 

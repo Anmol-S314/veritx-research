@@ -44,9 +44,15 @@ def scale_arch(arch: dict, nodes: int) -> dict:
     return a
 
 
-def run_one(nodes: int, arch: dict) -> Path | None:
-    """Run the mapper for one size; return its stats file, or None if it failed."""
-    work = RESULTS / f"timeloop_{nodes}"
+def run_one(nodes: int, arch: dict, tag: str | None = None) -> Path | None:
+    """Run the mapper for one size; return its stats file, or None if it failed.
+
+    `tag` names the output files instead of the node count, so a sweep over some
+    OTHER arch knob (see gb_sweep.py) can run many mappings at one node count
+    without each one clobbering the last.
+    """
+    tag = tag or str(nodes)
+    work = RESULTS / f"timeloop_{tag}"
     work.mkdir(parents=True, exist_ok=True)
     (work / "arch.yaml").write_text(yaml.safe_dump(scale_arch(arch, nodes),
                                                    sort_keys=False))
@@ -57,13 +63,13 @@ def run_one(nodes: int, arch: dict) -> Path | None:
     proc = subprocess.run(
         ["timeloop-mapper", "mapper.yaml", "arch.yaml", "problem.yaml"],
         cwd=work, capture_output=True, text=True, timeout=900)
-    (RESULTS / f"timeloop_{nodes}.log").write_text(proc.stdout + proc.stderr)
+    (RESULTS / f"timeloop_{tag}.log").write_text(proc.stdout + proc.stderr)
 
     stats = work / "timeloop-mapper.stats.txt"
     if not stats.exists():
-        print(f"FAILED (see results/timeloop_{nodes}.log)")
+        print(f"FAILED (see results/timeloop_{tag}.log)")
         return None
-    out = RESULTS / f"timeloop_{nodes}.stats.txt"
+    out = RESULTS / f"timeloop_{tag}.stats.txt"
     shutil.copy(stats, out)
     print(f"→ {out.name}")
 

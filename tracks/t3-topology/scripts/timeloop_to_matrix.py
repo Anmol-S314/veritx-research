@@ -6,70 +6,140 @@ Booksim's `matrix(<file>)` pattern reads (see tracks/t3-topology/booksim-ext).
 
 Turning Timeloop's per-level access counts into a *tile-to-tile* NoC traffic
 matrix is the core T3 research question (programme Wk6) — it depends on how the
-workload is spatially mapped onto tiles. `build_traffic_matrix()` ships a
-deliberately simple placeholder so the whole pipeline runs end to end; students
-replace THAT ONE FUNCTION with their real attention/FFN spatial model.
+workload is spatially mapped onto tiles. `build_traffic_matrix()` implements an
+output-stationary mapping of the attention projection GEMM; see its docstring.
+
+ponytail: one mapping (output-stationary), not a mapping framework. A
+weight-stationary or row-stationary variant is a second function and a flag,
+add it when there's an actual comparison to run.
 """
 import re, sys, argparse
 from pathlib import Path
 
 
 def parse_levels(stats_text: str):
-    """Per storage level: {name, instances, accesses}.
+    """Per storage level: {name, instances, accesses, tensors}.
+
     accesses = sum of 'Actual scalar reads/fills/updates (per-instance)' over all
-    tensors in that level (excludes algorithmic/gated/skipped/metadata lines)."""
+    tensors in that level (excludes algorithmic/gated/skipped/metadata lines).
+    tensors = the same, but broken out per data-space ({'A': 4096, 'B': ...}) --
+    the spatial model needs to know operands from outputs, not just a total."""
     levels, cur, inst, acc = [], None, 1, 0
+    tensors, tname = {}, None
     for line in stats_text.splitlines():
         m = re.match(r'\s*=== (.+?) ===', line)
         if m:
             if cur and cur != '__ARITH__':
-                levels.append({"name": cur, "instances": inst, "accesses": acc})
+                levels.append({"name": cur, "instances": inst,
+                               "accesses": acc, "tensors": tensors})
             cur, inst, acc = m.group(1), 1, 0
+            tensors, tname = {}, None
             continue
         if not cur:
             continue
+        mt = re.match(r'\s{4}(\w+):\s*$', line)  # a data-space header, e.g. "    A:"
+        if mt:
+            tname = mt.group(1)
+            tensors.setdefault(tname, 0)
         mi = re.search(r'Utilized instances \(max\)\s*:\s*(\d+)', line)
         if mi:
             inst = int(mi.group(1))
         ma = re.search(r'Actual scalar (reads|fills|updates) \(per-instance\)\s*:\s*(\d+)', line)
         if ma:
             acc += int(ma.group(2))
+            if tname:
+                tensors[tname] += int(ma.group(2))
     if cur and cur != '__ARITH__':
-        levels.append({"name": cur, "instances": inst, "accesses": acc})
+        levels.append({"name": cur, "instances": inst,
+                       "accesses": acc, "tensors": tensors})
     return levels
 
 
-def build_traffic_matrix(levels, num_nodes):
-    """PLACEHOLDER spatial model — replace this for real T3 work (Wk6).
+MEM_CTRL = 0  # tile 0 hosts the memory controller / DRAM port
 
-    Distributes DRAM accesses evenly across tiles with a nearest-neighbor
-    bias: each tile talks mainly to adjacent tiles (for data reuse) and
-    occasionally to the memory controller (node 0). This avoids the hotspot
-    of the pure star pattern while still being clearly suboptimal — students
-    should beat it with a real attention mapping.
+
+def build_traffic_matrix(levels, num_nodes):
+    """Output-stationary spatial model for the attention projection GEMM.
+
+    The GEMM is Z(MxN) = A(MxK) . B(KxN). Tiles form a GxG mesh and each tile
+    owns one block of Z -- so tile (r,c) needs *all* of A's row-block r and
+    *all* of B's column-block c, and nothing else. That is what produces the
+    traffic, and it is not uniform-random:
+
+      * A's row-block r is read from DRAM once, lands on tile (r,0), and is
+        then passed hand-to-hand ACROSS mesh row r. Every tile in the row
+        needs the identical bytes, so it is a row multicast, not G separate
+        DRAM reads.
+      * B's column-block c likewise enters at tile (0,c) and walks DOWN mesh
+        column c.
+      * Z never moves during compute (output-stationary) and is written back
+        to the memory controller at the end.
+
+    Volumes come from Timeloop's DRAM per-tensor access counts, so the matrix
+    describes the mapping Timeloop actually chose -- change the workload or the
+    mapper and this moves with it.
+
+    The signature is what the topology sweep is FOR: the row/column multicasts
+    are exactly the paths a mesh is good at and a fat-tree pays for, while the
+    all-tiles->node-0 writeback is the hotspot a fat-tree handles better than a
+    mesh. The old placeholder's uniform ring had neither structure.
     """
     import math
+
+    g = math.isqrt(num_nodes)
+    if g * g != num_nodes:
+        sys.exit(f"✗ {num_nodes} tiles is not a square mesh — the output-stationary "
+                 f"GxG blocking has no sensible shape. Use a square node count.")
+    node = lambda r, c: r * g + c  # row-major tile numbering, matches Booksim's mesh
+
+    dram = next((l for l in levels if "DRAM" in l["name"].upper()), None)
+    if not dram or not dram["tensors"]:
+        sys.exit("✗ no per-tensor DRAM stats — can't build a spatial model. "
+                 "Re-run `make timeloop`.")
+    t = dram["tensors"]
+    # A/B/Z are the data-space names from problem.yaml. Anything Timeloop lists
+    # that isn't an output is treated as an operand, so a 3-operand shape still
+    # works without editing this.
+    a_words = t.get("A", 0)
+    b_words = t.get("B", 0)
+    z_words = t.get("Z", 0)
+    if not (a_words and b_words):
+        sys.exit(f"✗ DRAM tensors {list(t)} don't look like the A/B/Z GEMM shape.")
+
     mat = [[0.0] * num_nodes for _ in range(num_nodes)]
-    dram = next((l for l in levels if "DRAM" in l["name"].upper()), levels[-1] if levels else None)
-    total_access = (dram["accesses"] * dram["instances"]) if dram else 100000
-    # Distribute: 60% local (nearest-neighbor ring), 40% memory-controller (node 0)
-    local_per_tile = 0.6 * total_access / num_nodes
-    mc_per_tile = 0.4 * total_access / num_nodes
-    for s in range(num_nodes):
-        mc_per_s = mc_per_tile
-        # nearest neighbors: s -> (s+1), s -> (s-1), plus self-loop
-        neighbors = [(s + 1) % num_nodes, (s - 1) % num_nodes, s]
-        per_neighbor = local_per_tile / len(neighbors)
-        for d in neighbors:
-            mat[s][d] += per_neighbor
-        mat[s][0] += mc_per_s  # memory controller traffic
-    # Normalize so row sums are comparable to uniform injection rates (~0.05-0.4)
+
+    def inject(dst, words):
+        """DRAM -> tile. The memory controller shares tile MEM_CTRL, so data
+        destined for that tile never crosses the network."""
+        if dst != MEM_CTRL:
+            mat[MEM_CTRL][dst] += words
+
+    # --- A: DRAM -> head of each mesh row, then multicast across the row ---
+    a_per_row = a_words / g
+    for r in range(g):
+        inject(node(r, 0), a_per_row)
+        for c in range(g - 1):  # hand-to-hand along the row
+            mat[node(r, c)][node(r, c + 1)] += a_per_row
+
+    # --- B: DRAM -> head of each mesh column, then multicast down the column ---
+    b_per_col = b_words / g
+    for c in range(g):
+        inject(node(0, c), b_per_col)
+        for r in range(g - 1):
+            mat[node(r, c)][node(r + 1, c)] += b_per_col
+
+    # --- Z: output-stationary, so it only moves once, at writeback ---
+    z_per_tile = z_words / num_nodes
+    for n in range(num_nodes):
+        if n != MEM_CTRL:
+            mat[n][MEM_CTRL] += z_per_tile
+
+    # Normalize so row sums are comparable to Booksim's uniform injection rates.
     max_row = max(sum(row) for row in mat)
     if max_row > 0:
-        scale = 1.0 / max_row
-        for s in range(num_nodes):
+        for row in mat:
             for d in range(num_nodes):
-                mat[s][d] *= scale
+                row[d] /= max_row
     return mat
 
 
@@ -141,20 +211,35 @@ def main():
 
 def _selfcheck():
     sample = ("=== __ARITH__ ===\n  Actual scalar reads (per-instance) : 5\n"
-              "=== DRAM ===\n  Utilized instances (max) : 2\n"
-              "  Actual scalar reads (per-instance) : 100\n"
-              "  Algorithmic scalar reads (per-instance) : 999\n"
-              "  Actual scalar fills (per-instance) : 0\n"
-              "  Actual scalar metadata reads (per-instance) : 7\n")
+              "=== DRAM ===\n    Utilized instances (max) : 2\n"
+              "    A:\n"
+              "        Actual scalar reads (per-instance) : 100\n"
+              "        Algorithmic scalar reads (per-instance) : 999\n"
+              "        Actual scalar metadata reads (per-instance) : 7\n"
+              "    B:\n"
+              "        Actual scalar reads (per-instance) : 200\n"
+              "    Z:\n"
+              "        Actual scalar updates (per-instance) : 40\n")
     levels = parse_levels(sample)
     assert [l["name"] for l in levels] == ["DRAM"], levels          # arith skipped
-    assert levels[0]["accesses"] == 100, levels                     # algorithmic/metadata excluded
-    m = build_traffic_matrix(levels, 4)
+    assert levels[0]["accesses"] == 340, levels                     # algorithmic/metadata excluded
+    assert levels[0]["tensors"] == {"A": 100, "B": 200, "Z": 40}, levels[0]["tensors"]
+
+    m = build_traffic_matrix(levels, 4)                             # 2x2 mesh
     assert len(m) == 4 and all(len(r) == 4 for r in m)             # square NxN
     assert all(v >= 0 for row in m for v in row)                   # non-negative weights
-    assert abs(max(sum(r) for r in m) - 1.0) < 1e-9               # normalized: max row sum = 1
-    col = lambda c: sum(m[s][c] for s in range(4))
-    assert col(0) > col(2), m                                     # node 0 (mem controller) is a hotspot
+    assert abs(max(sum(r) for r in m) - 1.0) < 1e-9                # normalized: max row sum = 1
+    assert all(m[n][n] == 0 for n in range(4)), m                  # no tile talks to itself
+
+    # the mapping's shape, not just its arithmetic: on a 2x2 mesh (nodes 0,1 /
+    # 2,3), A row-block 1 must reach tile 2 and multicast to tile 3, while B
+    # column-block 1 reaches tile 1 and multicasts down to tile 3.
+    assert m[2][3] > 0, "A should multicast across mesh row 1"
+    assert m[1][3] > 0, "B should multicast down mesh column 1"
+    assert m[3][2] == 0 and m[3][1] == 0, "multicast is one-directional"
+    assert m[3][0] > 0, "Z must be written back to the memory controller"
+    # B is 2x the volume of A here, so a column hop must outweigh a row hop
+    assert m[1][3] > m[2][3], (m[1][3], m[2][3])
     print("selfcheck OK")
 
 
