@@ -235,9 +235,21 @@ def main():
         json.dump(results, f, indent=2)
     print(f"\n  {len(results)} data points → {report}")
 
+    # The e2e assertion. A topology that produces no data is the failure this
+    # pipeline is worst at showing: nothing crashes, the JSON is still valid, the
+    # dashboard still renders -- it just quietly plots fewer lines than there are
+    # configs, and a sweep that compares 3 topologies instead of 9 looks exactly
+    # like a sweep that compares 9. So make it an error, not a warning.
+    #
+    # Only topologies with ZERO usable points count: a run that dies *past*
+    # saturation already gave us its curve, and that is a normal end to a ramp.
     if failed:
-        print(f"\n  ⚠  {len(failed)} topology(ies) produced no data and will NOT "
-              f"be plotted: {', '.join(failed)}")
+        sys.exit(f"\n✗ {len(failed)}/{len(CONFIGS)} topologies produced no data: "
+                 f"{', '.join(failed)}\n"
+                 f"  Every config in configs/ must yield a curve, or the comparison "
+                 f"is silently narrower than it appears.\n"
+                 f"  See the per-topology reason above; results/topology_sweep.json "
+                 f"records it as status=skipped/failed.")
 
 
 def _selfcheck():

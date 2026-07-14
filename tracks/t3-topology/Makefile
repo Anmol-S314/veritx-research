@@ -19,15 +19,19 @@ sim:  ## uniform-traffic topology sweep (baseline)
 timeloop:  ## full spine: Timeloop (one run per NoC size) -> traffic matrix -> sweep
 	@mkdir -p results
 	@echo "Running Timeloop — one mapping per node count in configs/ (PEs == tiles)..."
+	@# && all the way down: the stages were chained with ';', so make only ever saw
+	@# the exit status of the trailing echo — every failure downstream of Timeloop
+	@# (a matrix that didn't build, a topology that produced no curve) reported
+	@# success. The spine is only green if every stage of it is.
 	@if python3 scripts/run_timeloop.py; then \
-		echo "Extracting traffic matrices..."; \
+		echo "Extracting traffic matrices..." && \
 		python3 scripts/timeloop_to_matrix.py 'results/timeloop_{n}.stats.txt' \
-			-n auto -o 'results/traffic_matrix_{n}.txt'; \
-		echo "Sweeping topologies (injection rate ramps to each one's knee)..."; \
-		TRAFFIC_MATRIX='results/traffic_matrix_{n}.txt' python3 scripts/run_experiments.py; \
+			-n auto -o 'results/traffic_matrix_{n}.txt' && \
+		echo "Sweeping topologies (injection rate ramps to each one's knee)..." && \
+		TRAFFIC_MATRIX='results/traffic_matrix_{n}.txt' python3 scripts/run_experiments.py && \
 		echo "Done — results/ has topology_sweep.json + traffic_matrix_<N>.txt + timeloop_<N>.stats.txt"; \
 	else \
-		echo "  ⚠  Timeloop produced no stats; falling back to uniform traffic"; \
+		echo "  ⚠  Timeloop produced no stats; falling back to uniform traffic" && \
 		python3 scripts/run_experiments.py; \
 	fi
 
