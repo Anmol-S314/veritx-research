@@ -155,6 +155,50 @@ Gate 4 must instead come from arXiv 2603.23343 (measured Wormhole kernels). **If
 paper has no extractable per-kernel numbers either, Gate 4 cannot be met and §11 says
 stop.** Resolve this before Phase 1, not after.
 
+### Phase 0b result — DONE, and it is a red light
+
+I read arXiv 2603.23343 (*Numerical Kernels on a Spatial Accelerator: A Study of
+Tenstorrent Wormhole*) end to end. It is the best-matched external anchor that exists,
+and it says, repeatedly and from measurement, that **the NoC is not the bottleneck.**
+
+Three independent statements, all measured on silicon:
+
+1. **Reduction collective, communication granularity** (§5.1): sending full tiles vs
+   pre-reduced scalars through the NoC differ by **1.8% at the largest scale.** Cutting
+   network traffic barely moves the wall clock.
+2. **Reduction collective, routing pattern** (§5.2, Fig. 6): the "center" pattern that
+   *minimises distance travelled* beats the naive left-then-up pattern by ~15% at 1
+   tile/core, and by a **negligible** margin at 128 tiles/core. Their own words: *"the
+   network is so low latency that the naive pattern is sufficient for larger problem
+   sizes."* **Routing/topology stops mattering as the problem grows.**
+3. **Stencil (nearest-neighbour exchange)** (§6): *"The local compute is much more
+   expensive than the communication, demonstrating the strength of the Wormhole NoC."*
+
+For the study this is close to fatal, and I am not going to soften it:
+
+- **Gate 2 is what actually failed, not Gate 4.** Gate 2 asks whether the NoC is even on
+  the critical path. This paper is direct silicon evidence that for the collective and
+  reduction kernels — *the exact multicast/reduce traffic the α-sweep is built to
+  study* — **it is not.** The compute (SFPU FP32, high latency) dominates. A topology
+  that changes NoC energy/latency by 2× would move end-to-end performance by single-digit
+  percent, and that swamps our 1.37× model error.
+- This is the **same shape of result as FINDINGS.md**, arrived at from the opposite
+  direction and on the right machine: topology is a second-order knob for transformers.
+  We found it for the memory fabric; Tenstorrent's own numbers show it for the tile
+  fabric too.
+
+**One caveat that keeps a door open.** Their FP32 compute is on the SFPU, which they say
+is ~6× slower than the FPU and "high latency". Transformer inference runs in **BF16/BFP8
+on the FPU**, which is ~6× faster — so compute shrinks and the NoC's *relative* share
+grows. It is *possible* the NoC matters at low arithmetic intensity (decode: tiny GEMMs,
+huge KV reads) even though it does not for these FP32 scientific kernels. But that is a
+hope, not an anchor, and I will not build a study on it without a number.
+
+**Verdict: Gate 4 as designed cannot be met** (a NoC-topology prediction cannot be
+validated against a machine whose own authors show the NoC is off the critical path),
+**and Gate 2 is in serious doubt.** Per §11, this is a stop-and-reassess point, not a
+proceed. See "Decision" at the end.
+
 ## 5. What we already own
 
 | piece | status |
@@ -328,3 +372,58 @@ chip Tenstorrent actually shipped.** Two independent anchors, neither of which w
   accelerators running transformers**, at Wormhole scale, under a published mapping.
 - Not a claim about the memory fabric. That was the last study, it is in FINDINGS.md,
   and it stands on its own narrower terms.
+
+---
+
+## DECISION (after Phase 0 + 0b)
+
+**Do not proceed to Phase 1 as written.** The gating logic that was pre-committed in §11
+now fires:
+
+- Phase 0 showed the ❶/❷ split is a false dichotomy — one fabric, both traffic types,
+  DRAM interior — so the *reframing* to a multicast α-sweep was the right correction.
+- Phase 0b then showed, from measured silicon (arXiv 2603.23343), that **on the very
+  collective/reduction kernels the α-sweep targets, the NoC is off the critical path.**
+  Their own conclusion: "the network is so low latency that the naive pattern is
+  sufficient." That is Gate 2 failing, and Gate 4 has no extractable NoC-bound number to
+  anchor to.
+
+Pre-committing the stop condition was the point. The convenient move is to run the
+sweep anyway — we have every piece — and report a topology ranking. But a ranking on a
+fabric that measured silicon says is not the bottleneck is exactly the "decoration"
+PITFALLS opens by warning against. **The discipline is to honour the gate we wrote when
+we did not yet know it would hurt.**
+
+### What survives, and is worth writing up
+
+The **negative result is now double-anchored and genuinely interesting:**
+
+> On-chip NoC topology is a second-order knob for transformer accelerators — shown
+> independently for the **memory fabric** (our PyTorchSim study, FINDINGS.md) and the
+> **tile-to-tile fabric** (Tenstorrent's own measured Wormhole kernels). Both point the
+> same way: the mesh/torus is a fine default, and the interesting levers are elsewhere
+> (memory capacity/bandwidth, mapping, multicast to cut DRAM traffic — not graph shape).
+
+That is a real contribution and it is *more* defensible than the topology-sweep would
+have been, precisely because it does not depend on our uncalibrated wire model or on a
+Gate 4 we cannot pass.
+
+### The one open door, stated as a testable condition, not a hope
+
+Every measured "NoC doesn't matter" result in 2603.23343 is **FP32 on the SFPU**, which
+the paper itself says is ~6× slower than FPU BF16. Real inference is BF16/BFP8 on the
+FPU. **Decode** specifically has tiny GEMMs and huge KV reads — the lowest arithmetic
+intensity in the whole workload. So the falsifiable question that remains is:
+
+> Is there a transformer regime (BF16/BFP8 decode) whose arithmetic intensity is low
+> enough that the NoC returns to the critical path?
+
+That is answerable **without** a topology sweep — a single roofline calculation places
+decode against Wormhole's NoC and compute bandwidths and tells us if the NoC is even in
+contention. If it is not, the topology axis is closed for transformers, full stop, and
+we have shown it twice. If it is, *that* regime — and only that one — earns the sweep.
+
+**Recommended next step: the roofline, not Phase 1.** Hours, not a week. It either closes
+the track with a strong two-anchor negative result or it identifies the single regime
+that justifies the full study. Either outcome is worth more than a sweep we already have
+reason to disbelieve.
