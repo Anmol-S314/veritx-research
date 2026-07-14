@@ -58,7 +58,9 @@ n300d, 192 GB, 4608 GB/s)**, batch capacity-limited to 11:
 **A 5.4× decode throughput gain at zero extra silicon** — the win a topology sweep could
 never have found, because it comes from *using* the network, not reshaping it. See
 [scripts/serving_multicast.py](scripts/serving_multicast.py) and
-[scripts/multicast_savings.py](scripts/multicast_savings.py). Honest bounds: `g` is the
+[scripts/multicast_savings.py](scripts/multicast_savings.py). The concrete
+mapping that realises it — query heads to cores, KV multicast along rows — is designed and
+traffic-validated in [SCHEDULE.md](SCHEDULE.md). Honest bounds: `g` is the
 ceiling of the head-parallel mapping the vendor ships (context-parallelism reaches it a
 different way); the win is a bandwidth gain, not a capacity gain; and it grows with
 context, marginal at 8K, dominant at 128K.
