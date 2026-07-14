@@ -18,9 +18,9 @@ sim:  ## uniform-traffic topology sweep (baseline)
 
 timeloop:  ## full spine: Timeloop workload -> traffic matrix -> topology sweep -> NoC energy
 	@mkdir -p results
-	-cd timeloop && timeloop-mapper mapper.yaml arch.yaml problem.yaml 2>&1 | tee ../results/timeloop.log
+	@python3 scripts/run_timeloop_pipeline.py
 	@if [ -f timeloop/timeloop-mapper.stats.txt ]; then \
-		cp timeloop/timeloop-mapper.stats.txt results/timeloop.stats.txt; \
+		python3 scripts/combine_timeloop_stats.py; \
 		echo "Extracting traffic matrix..."; \
 		python3 scripts/timeloop_to_matrix.py results/timeloop.stats.txt -n 16 -o results/traffic_matrix.txt; \
 		echo "Sweeping topologies on the Timeloop traffic matrix..."; \

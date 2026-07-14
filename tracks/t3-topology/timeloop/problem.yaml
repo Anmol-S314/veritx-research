@@ -2,25 +2,154 @@
 # The GEMM shape is defined inline (dims M,N,K; data-spaces A,B,Z) so this file
 # is self-contained — no dependency on Timeloop's bundled problem-shapes/ dir.
 # coefficients is omitted (optional; only needed for strided projections).
-problem:
-  shape:
-    name: gemm
-    dimensions: [ M, N, K ]
-    data-spaces:
-    - name: A
-      projection:
-      - [ [M] ]
-      - [ [K] ]
-    - name: B
-      projection:
-      - [ [N] ]
-      - [ [K] ]
-    - name: Z
-      projection:
-      - [ [M] ]
-      - [ [N] ]
-      read-write: True
-  instance:
-    M: 16
-    N: 16
-    K: 16
+1:
+  problem:
+    shape:
+      name: gemm
+      dimensions: [ M, N, K ]
+      data-spaces:
+      - name: A
+        projection:
+        - [ [M] ]
+        - [ [K] ]
+      - name: B
+        projection:
+        - [ [N] ]
+        - [ [K] ]
+      - name: Z
+        projection:
+        - [ [M] ]
+        - [ [N] ]
+        read-write: True
+    instance:
+      M: 16
+      N: 16
+      K: 16
+
+#A cnn layer / Conv2D operation
+
+
+2:
+  problem:
+    shape:
+      name: cnn_layer
+      dimensions: [ R, S, P, Q, C, M ]
+      data-spaces:
+      - name: Weights
+        projection:
+        - [ [M] ]
+        - [ [C] ]
+        - [ [R] ]
+        - [ [S] ]
+      - name: Inputs
+        projection:
+        - [ [C] ]
+        - [ [P], [R] ] # Wstride * P + R
+        - [ [Q], [S] ] # Hstride * Q + S
+      - name: Outputs
+        projection:
+        - [ [M] ]
+        - [ [P] ]
+        - [ [Q] ]
+        read-write: True
+    instance:
+      R: 3 # Filter Height
+      S: 3 # Filter Width
+      P: 14 # Output Height
+      Q: 14 # Output Width
+      C: 64 # Input Channels
+      M: 128 # Output Channels (Filters)
+
+#       problem:
+#     shape:
+#       name: cnn-layer
+#       dimensions: [N, C, K, R, S, P, Q]
+#       data-spaces:
+#       - name: Weights
+#         projection:
+#           - [[K]]
+#           - [[C]]
+#           - [[R]]
+#           - [[S]]
+
+#       - name: Inputs
+#         projection:
+#           - [[N]]
+#           - [[C]]
+#           - [[R, P]]
+#           - [[S, Q]]
+
+#       - name: Outputs
+#         projection:
+#           - [[N]]
+#           - [[K]]
+#           - [[P]]
+#           - [[Q]]
+#         read-write: True
+
+#     instance:
+#       N: 1
+#       C: 64
+#       K: 64
+#       R: 3
+#       S: 3
+#       P: 56
+#       Q: 56
+
+
+    
+
+# Fully connected layer
+# 2:
+#   problem:
+#     shape:
+#       name: gemv
+#       dimensions: [ N, K ] # 2-dimensional iteration space
+#       data-spaces:
+#       - name: Vector_In
+#         projection:
+#         - [ [K] ]
+#       - name: Matrix_Weights
+#         projection:
+#         - [ [N] ]
+#         - [ [K] ]
+#       - name: Vector_Out
+#         projection:
+#         - [ [N] ]
+#         read-write: True
+#     instance:
+#       N: 1024 # Output features
+#       K: 4096 # Input features
+
+# # Multi head attention
+# 3:
+#   problem:
+#     shape:
+#       name: attention_qk
+#       dimensions: [ B, H, M, N, D ] # Batch, Heads, Query-Seq, Key-Seq, Head-Dim
+#       data-spaces:
+#       - name: Queries
+#         projection:
+#         - [ [B] ]
+#         - [ [H] ]
+#         - [ [M] ]
+#         - [ [D] ]
+#       - name: Keys
+#         projection:
+#         - [ [B] ]
+#         - [ [H] ]
+#         - [ [N] ]
+#         - [ [D] ] # Multiplied across D, leaving sequence dimension N
+#       - name: Attention_Scores
+#         projection:
+#         - [ [B] ]
+#         - [ [H] ]
+#         - [ [M] ]
+#         - [ [N] ]
+#         read-write: True
+#     instance:
+#       B: 2   # Batch size
+#       H: 12  # Attention Heads
+#       M: 512 # Query Sequence Length
+#       N: 512 # Key Sequence Length
+#       D: 64  # Dimension per Head
