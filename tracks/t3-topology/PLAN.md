@@ -20,38 +20,82 @@ real. It is **not** the question the NoC-topology literature asks, and it is not
 question we thought we were asking. Worse, we were calibrating against FlooNoC — a
 288-core **tile-to-tile** chip — as though the two networks were the same thing.
 
-## 2. The question, stated properly this time
+## 2. ❶ vs ❷ is a FALSE DICHOTOMY — Phase 0 killed it
 
-> On a **tiled spatial accelerator** running a transformer — the Cerebras / Groq /
-> Tenstorrent class of machine, where compute tiles talk to *each other* over a
-> packet-switched NoC — **is the 2D mesh the right topology?**
+*This section replaces the original framing. Phase 0 ran, and it refuted the premise
+the rest of this plan was built on. Kept visible rather than rewritten away.*
 
-Every current system either assumes a mesh or ships one, and the 2026 literature
-(WaferLLM, WATOS, TileLoom, MOCAP) optimises *mappings onto a mesh* rather than
-asking whether the mesh is right. Nobody runs a cycle-accurate topology sweep with a
-calibrated energy model on this network for this workload.
+The plan opened by splitting the world into ❶ a *memory fabric* (compute↔DRAM, what we
+had measured) and ❷ a *tile fabric* (tile↔tile, what we proposed to measure), and
+proposed abandoning ❶ for ❷. **On the real chip there is only one fabric, and it
+carries both.** From tt-metal, describing the RISC cores inside every Tensix:
 
-## 3. Why the answer might genuinely differ from what we found
+> "RISC0 and RISC1 are capable of issuing NoC transfers to move data from
+> **L1 ↔ L1 and L1 ↔ DRAM**."
 
-This is not the same experiment relabelled. The **traffic is a different shape**, and
-topology preference follows traffic shape.
+One NoC. Both traffic types. And the node census (`scripts/wormhole.py`, parsed from
+the vendor's own SoC descriptor) shows why the split was never physical: the 18 DRAM
+endpoints sit in **interior columns x=0 and x=5**, with column 5 running straight down
+the middle of the Tensix array. Memory is not off to one side of the network — it is
+*embedded in it*.
 
-| | ❶ memory fabric (what we measured) | ❷ tile fabric (what we propose) |
+**Worse for the original plan: on a real transformer kernel, the DRAM traffic
+dominates.** Tenstorrent's own SOTA FlashAttention implementation:
+
+> "Our FlashAttention kernel **reads Q, K, and V from DRAM and writes the output to
+> DRAM**. On each core, the reader kernel will read a chunk of Q and then iterate over
+> the chunks of K and V. Intermediate results ... are stored in L1 until all KV chunks
+> are processed, then the output is written to DRAM."
+
+Every core works on its own Q chunk, independently. There is **essentially no
+tile-to-tile traffic in the shipped kernel at all.** And they say so explicitly:
+
+> "One Wormhole feature that **this work did not take advantage of is multicasting**.
+> Tensix cores can issue multicasts over the NoC to efficiently ... transfer data to
+> any other core. **Multi-query attention is a good use case** ... We could **reduce
+> total DRAM traffic** by using multicasting to share K and V heads between groups of
+> cores."
+
+So the tile-to-tile path is not the main event — it is an **unexploited optimisation
+that the vendor has publicly identified and not yet implemented.**
+
+**This vindicates the ❶ work rather than discarding it.** Bipartite compute↔DRAM
+traffic is not the wrong question; it is the *dominant* traffic pattern on a real
+tiled accelerator running a real transformer kernel. What was wrong was the *machine*
+(a 2-core TPU with edge DRAM), not the *traffic*.
+
+## 3. The question, restated
+
+> A transformer on a tiled accelerator generates a **mix** of DRAM↔L1 traffic and
+> L1↔L1 traffic, and the mix is set by the mapping — most sharply by whether K/V are
+> **multicast** between cores or re-fetched from DRAM per core.
+>
+> **How does the optimal NoC topology depend on that mix?** And is the mesh still the
+> right default once the traffic stops being purely bipartite?
+
+This is a better question than either version we had:
+
+- It is **the vendor's own open problem**, stated in their tech report.
+- The knob (multicast ratio) is a **real, single-parameter axis** that moves traffic
+  continuously from ❶-like to ❷-like — so we sweep it rather than guessing where on it
+  reality sits.
+- It uses **both halves** of what we have built: the bipartite work is the α=0 endpoint.
+- Nobody has run it. The 2026 literature (WaferLLM, WATOS, TileLoom, MOCAP) optimises
+  mappings *onto a fixed mesh*; nobody asks how topology preference moves with the mix.
+
+**Why the answer could genuinely differ from FINDINGS.md.** Topology preference follows
+traffic shape:
+
+| traffic | governing metric | mesh's advantage |
 |---|---|---|
-| traffic | strictly **bipartite** compute↔DRAM | **broadcast + reduce** between tiles |
-| governing metric | bisection bandwidth | reduction latency/energy, multicast cost |
-| mesh's advantage | wire-optimal: DOR = exact Manhattan distance | *unclear — this is the question* |
+| pure DRAM↔L1 (α=0, today's kernel) | bisection bandwidth | **wire-optimal** — DOR traverses exact Manhattan distance |
+| multicast K/V (α→1, the optimisation) | multicast + reduction cost | *unclear — this is the study* |
 
-A tensor-parallel GEMM on a P×P grid multicasts activations along rows, weights down
-columns, and **reduces partial sums**. Decode is even more extreme: broadcast a tiny
-query vector to every tile holding a KV-cache slice, then reduce the partial attention
-outputs. Broadcast and reduction are exactly the patterns where trees and rings beat
-meshes — a mesh does an all-reduce in O(√P) hops where a torus does a ring all-reduce
-and a fat-tree reduces in O(log P). **The mesh's wire-optimality argument, which is
-the one thing we proved, does not obviously survive contact with reduction traffic.**
-
-So there is a real mechanism by which the answer could flip, and it is stateable in
-advance. That is the bar a hypothesis has to clear.
+Multicast and reduction are exactly the patterns where trees and rings beat meshes: a
+mesh all-reduces in O(√P) hops, a torus does a ring all-reduce, a fat-tree reduces in
+O(log P). **The wire-optimality result — the one thing we actually proved — does not
+obviously survive contact with multicast traffic.** That is a stateable mechanism for a
+flip, which is the bar a hypothesis has to clear.
 
 ## 4. Target machine: Tenstorrent Wormhole
 
@@ -78,11 +122,38 @@ a mesh. If our model concludes the plain mesh beats it, the most likely explanat
 that **our model is wrong**, not that Tenstorrent is. That gives this study something
 the last one never had: an external result we can be *wrong against*.
 
-⚠️ **To verify in Phase 0, not to assume:** the exact grid. Sources disagree between
-"8×10 Tensix" and "10×12 grid containing 64 Tensix plus DRAM/Ethernet/ARC nodes". If
-the latter, the NoC carries **both** tile-to-tile *and* tile-to-DRAM traffic on one
-fabric — which would mean our ❶ work is not discarded but becomes the memory half of a
-more complete model. Do not write a line of traffic code before this is pinned.
+### Phase 0 result — DONE, and it moved the plan (`scripts/wormhole.py --selfcheck`)
+
+Parsed from the vendor's SoC descriptor, vendored at `hw/wormhole_b0_80_arch.yaml`.
+**All 120 NoC nodes classified; the selfcheck asserts none are unaccounted for.**
+
+| | count | where |
+|---|---|---|
+| NoC grid | **10 × 12 = 120 nodes** | *not* 8×10 — that is only the Tensix subset |
+| Tensix workers | **80** | x ∈ {1,2,3,4,6,7,8,9}, y ∈ {1–5, 7–11} |
+| **DRAM endpoints** | **18** | **columns x=0 and x=5 — INTERIOR** (6 banks × 3 endpoints, 12 GiB, 288 GB/s) |
+| Ethernet | 16 | rows y=0 and y=6 |
+| ARC / PCIe / router-only | 1 / 1 / 4 | column x=0 |
+
+- **Topology:** 2D **torus** (wraparound), **two unidirectional NoC planes** (NOC0/NOC1,
+  opposite directions) — tt-metal `METALIUM_GUIDE.md`.
+- **Routing:** row-first dimension-order (X then Y).
+- **L1:** 1,464 KiB × 80 = **114 MiB on-chip**.
+
+**Two findings that cut against our own assumptions:**
+
+1. **DRAM is in interior columns, not an edge strip.** Column 5 splits the Tensix array
+   into two 4-wide halves. `floorplan.py` models TPU DRAM as an edge PHY strip — correct
+   for a TPU, **wrong here**. It cannot be reused for Wormhole without re-derivation.
+   (This is PITFALLS §11c catching itself *before* the study instead of after.)
+2. **One fabric carries both traffic types** — see §2. The premise of this plan was wrong
+   and Phase 0 is what caught it.
+
+⚠️ **Gate 4 is now at risk.** The FlashAttention report's performance numbers are in a
+*figure* (`image3.png`), not a table — there is nothing extractable to validate against.
+Gate 4 must instead come from arXiv 2603.23343 (measured Wormhole kernels). **If that
+paper has no extractable per-kernel numbers either, Gate 4 cannot be met and §11 says
+stop.** Resolve this before Phase 1, not after.
 
 ## 5. What we already own
 
@@ -190,12 +261,13 @@ arXiv 2603.23343 or the `tt-metal` FlashAttention report) within a stated tolera
 
 | phase | work | cost | exit |
 |---|---|---|---|
-| **0** | Pin Wormhole geometry + routing from `tt-metal`. Gate 0. | hours | grid, node types, routing written down and cited |
-| **1** | Traffic model for one tensor-parallel GEMM on a P×P grid. Gates 1–3. | 1 day | traffic matrix that survives all three gates |
-| **2** | Drive BookSim2 standalone, mesh only. Gate 4. | 1 day | we can predict the published mesh number |
-| **3** | The sweep: mesh / **torus** / fat-tree / cmesh / fly / **subnets 1,2,4**. Energy from Accelergy + `floorplan.py`. | 1–2 days | EDP table, with torus and subnets arms alive for the first time |
-| **4** | Prefill (GEMM multicast) vs decode (broadcast+reduce). The interesting split. | 1 day | does topology preference invert between regimes? |
-| **5** | Falsification: for every mechanism claim, zero out the term and check the claim dies. | hours | no claim survives that a null test would kill |
+| **0** | ✅ **DONE.** Wormhole geometry, node census, topology, routing. Gate 0 passes. | — | `scripts/wormhole.py --selfcheck` |
+| **0b** | **Can Gate 4 be met at all?** Find extractable measured numbers (arXiv 2603.23343). | hours | a real number to be wrong against — **or stop** |
+| **1** | Traffic model for FlashAttention on the 80-Tensix grid, with a **multicast ratio α**: α=0 is the shipped kernel (all K/V from DRAM), α=1 is full K/V multicast between cores. Gates 1–3. | 1–2 days | traffic matrix that survives all three gates, at both endpoints |
+| **2** | Drive BookSim2 standalone. **Torus + 2 planes** (what the chip *is*) as baseline. Gate 4. | 1 day | we can predict a measured Wormhole number |
+| **3** | **Sweep α × topology.** mesh / torus / fat-tree / cmesh / fly × subnets {1,2,4}. Energy: Accelergy routers + a **re-derived** Wormhole floorplan (§ Phase 0 finding 1). | 1–2 days | *does the optimal topology move as α moves?* |
+| **4** | Prefill vs decode at the α that each regime implies (decode/GQA is where multicast pays — the vendor says so). | 1 day | does topology preference invert between regimes? |
+| **5** | Falsification: for every mechanism claim, zero the term and check the claim dies. | hours | no claim survives that a null test would kill |
 
 Phase 5 is not optional and not last-if-there's-time. It is the direct response to the
 fact that our headline mechanism ("wires dominate") turned out to be **inert** — a 72%
@@ -206,21 +278,32 @@ share with a 1% effect.
 Written down **before** running, so they can be wrong in public (PITFALLS: we are prone
 to post-hoc storytelling that flatters whatever we just found).
 
-1. **Torus beats mesh on decode.** Decode is broadcast+reduce; a torus does ring
-   all-reduce in ~P hops with no long wires and wraparound links that are one pitch
-   long in a folded layout. Predict **EDP < 1.0** vs mesh.
-2. **Subnets ≈ 2 is close to optimal.** Tenstorrent shipped 2. Predict a knee at 2 with
+1. **Topology preference moves with α.** At α=0 (pure DRAM↔L1, today's kernel) the
+   traffic is bipartite and the mesh's wire-optimality should hold, reproducing
+   FINDINGS.md. As α→1 (K/V multicast between cores) the traffic becomes multicast +
+   reduce, and **the mesh should lose ground to the torus.** Predict a **crossover at
+   some α\*** — and *finding that α\* exists and where it sits is the result.*
+2. **Torus beats mesh at high α.** Ring all-reduce, wraparound links that are one pitch
+   long in a folded layout, no die-spanning wires. Predict **EDP < 1.0** vs mesh once
+   multicast dominates.
+3. **Subnets ≈ 2 is close to optimal.** Tenstorrent shipped 2. Predict a knee at 2 with
    sharply diminishing returns at 4 — bisection doubles at constant wire length and
    constant radix, but injection bandwidth becomes the limit.
-3. **Fat-tree wins prefill but loses decode**, as in ❶ — its reduction advantage is
-   offset by long die-spanning links.
-4. **The crossbar stays dead.** O(radix²) is not survivable at any traffic shape.
-5. **Mesh does not win outright.** If it does, suspect the fixed-mapping bias (§7)
-   before believing it.
+4. **Multicast reduces total NoC energy, not just DRAM traffic.** The vendor claims it
+   cuts DRAM traffic; predict it also cuts NoC energy, because one multicast tree
+   replaces N independent DRAM fetches that each cross the array.
+5. **The crossbar stays dead.** O(radix²) is not survivable at any traffic shape.
+6. **The mesh does not win outright at every α.** If it does, suspect the fixed-mapping
+   bias (§7) before believing it.
 
-Prediction 1 is the study. If it fails, the mesh really is the right default for both
-networks and the topology axis is closed for good — which is a publishable negative
-result *only because* Gate 4 gives us the right to assert it.
+**Prediction 1 is the study.** If α\* does not exist — if the mesh wins across the whole
+range — then the mesh really is the right default under every traffic shape a transformer
+produces, and the topology axis is closed for good. That is a *publishable negative
+result*, but only because Gate 4 would give us the right to assert it.
+
+And note what makes this falsifiable in a way the last study never was: **at α=0 we must
+reproduce our own bipartite result, and at the torus+2-planes point we must reproduce a
+chip Tenstorrent actually shipped.** Two independent anchors, neither of which we control.
 
 ## 11. What would kill this, and when to stop
 
