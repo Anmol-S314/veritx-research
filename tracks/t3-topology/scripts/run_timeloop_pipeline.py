@@ -4,6 +4,7 @@ from pathlib import Path
 import yaml
 import subprocess
 import shutil
+import glob
 import sys
 
 # ------------------------------------------------------------
@@ -12,14 +13,16 @@ import sys
 
 ROOT = Path(__file__).resolve().parent.parent
 
-problem_file = ROOT / "timeloop" / "problem.yaml"
-temp_problem = ROOT / "timeloop" / "temp_problem.yaml"
+TIMELOOP_DIR = ROOT / "timeloop"
+CONFIG_FILE = TIMELOOP_DIR / "config.yaml"
+PROBLEMS_DIR = TIMELOOP_DIR / "problems"
+TEMP_PROBLEM = TIMELOOP_DIR / "temp_problem.yaml"
 
-results_dir = ROOT / "results"
-results_dir.mkdir(exist_ok=True)
+RESULTS_DIR = ROOT / "results"
+RESULTS_DIR.mkdir(exist_ok=True)
 
 # ------------------------------------------------------------
-# Remove outputs from previous run
+# Remove previous outputs
 # ------------------------------------------------------------
 
 for pattern in (
@@ -28,78 +31,148 @@ for pattern in (
     "op*.map+stats.xml",
     "timeloop.stats.txt",
 ):
-    for f in results_dir.glob(pattern):
+    for f in RESULTS_DIR.glob(pattern):
         f.unlink()
 
-stats_file = ROOT / "timeloop" / "timeloop-mapper.stats.txt"
-xml_file   = ROOT / "timeloop" / "timeloop-mapper.map+stats.xml"
-map_file   = ROOT / "timeloop" / "timeloop-mapper.map.txt"
+stats_file = TIMELOOP_DIR / "timeloop-mapper.stats.txt"
+xml_file   = TIMELOOP_DIR / "timeloop-mapper.map+stats.xml"
+map_file   = TIMELOOP_DIR / "timeloop-mapper.map.txt"
 
-# ------------------------------------------------------------
-# Load multi-operation YAML
-# ------------------------------------------------------------
 
-with open(problem_file, "r") as f:
-    problems = yaml.safe_load(f)
+# ============================================================
+# Load configuration
+# ============================================================
 
-print("=== Parsing problem.yaml ===\n")
+def load_config():
 
-i = 1
+    if not CONFIG_FILE.exists():
+        print("config.yaml not found.")
+        sys.exit(1)
 
-while i in problems or str(i) in problems:
+    with open(CONFIG_FILE) as f:
+        return yaml.safe_load(f)
 
-    key = i if i in problems else str(i)
 
-    print(f"Processing operation {i}...")
+# ============================================================
+# Discover available operations
+# ============================================================
 
-    # --------------------------------------------------------
-    # Extract one operation
-    # --------------------------------------------------------
+def discover_operations(enabled_types):
 
-    operation = problems[key]
+    operations = {}
 
-    with open(temp_problem, "w") as f:
-        yaml.safe_dump(operation, f, sort_keys=False)
+    for op_type in enabled_types:
 
-    # --------------------------------------------------------
-    # Run Timeloop
-    # --------------------------------------------------------
+        folder = PROBLEMS_DIR / op_type
 
-    print("  -> Running Timeloop...")
+        if not folder.exists():
+            print(f"Warning: {folder} not found.")
+            continue
+
+        for file in sorted(folder.glob("*.yaml")):
+
+            operations[file.stem] = file
+
+    return operations
+
+
+# ============================================================
+# Expand schedule
+# ============================================================
+
+def build_execution_list(config, operations):
+
+    execution = []
+
+    if "schedule" not in config:
+        print("config.yaml has no schedule.")
+        sys.exit(1)
+
+    for item in config["schedule"]:
+
+        name = item["op"]
+        repeat = item.get("repeat", 1)
+
+        if name not in operations:
+            print(f"Unknown operation: {name}")
+            sys.exit(1)
+
+        for _ in range(repeat):
+            execution.append((name, operations[name]))
+
+    return execution
+
+
+# ============================================================
+# Run one Timeloop operation
+# ============================================================
+
+def run_operation(index, op_name, op_path):
+
+    print(f"\nProcessing operation {index}: {op_name}")
+
+    shutil.copy(op_path, TEMP_PROBLEM)
 
     cmd = [
         "timeloop-mapper",
         "mapper.yaml",
         "arch.yaml",
-        "temp_problem.yaml"
+        "temp_problem.yaml",
     ]
 
     result = subprocess.run(
         cmd,
-        cwd=ROOT / "timeloop",
+        cwd=TIMELOOP_DIR,
     )
 
     if result.returncode != 0:
-        print(f"\nOperation {i} failed.")
+        print(f"\nOperation {op_name} failed.")
         sys.exit(1)
 
-    print("  -> Timeloop completed.")
-
-    # --------------------------------------------------------
-    # Save outputs for this operation
-    # --------------------------------------------------------
-
     if stats_file.exists():
-        shutil.copy(stats_file, results_dir / f"op{i}.stats.txt")
+        shutil.copy(stats_file, RESULTS_DIR / f"op{index}.stats.txt")
 
     if xml_file.exists():
-        shutil.copy(xml_file, results_dir / f"op{i}.map+stats.xml")
+        shutil.copy(xml_file, RESULTS_DIR / f"op{index}.map+stats.xml")
 
     if map_file.exists():
-        shutil.copy(map_file, results_dir / f"op{i}.map.txt")
+        shutil.copy(map_file, RESULTS_DIR / f"op{index}.map.txt")
 
-    print(f"  -> Saved outputs for operation {i}\n")
+    print(f"Saved outputs -> op{index}")
 
-    i += 1
 
-print(f"Total operations processed: {i-1}")
+# ============================================================
+# Main
+# ============================================================
+
+def main():
+
+    config = load_config()
+
+    enabled = config.get("enabled", [])
+
+    operations = discover_operations(enabled)
+
+    if len(operations) == 0:
+        print("No operations discovered.")
+        sys.exit(1)
+
+    execution = build_execution_list(config, operations)
+
+    print("\n========================================")
+    print("Timeloop Execution Plan")
+    print("========================================")
+
+    for i, (name, _) in enumerate(execution, start=1):
+        print(f"{i}. {name}")
+
+    print()
+
+    for i, (name, path) in enumerate(execution, start=1):
+        run_operation(i, name, path)
+
+    print(f"\nTotal Timeloop runs : {len(execution)}")
+
+
+if __name__ == "__main__":
+    main()

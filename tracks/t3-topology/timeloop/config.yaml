@@ -1,0 +1,29 @@
+# Workload configuration
+
+# Operation categories to make available.
+# The runner will automatically load every YAML inside these folders.
+enabled:
+  - gemm
+  - attention
+
+schedule:
+
+  - op: gemm_small
+    repeat: 1
+
+  - op: mha
+    repeat: 2
+
+  - op: gemm_large
+    repeat: 1
+
+# gemm_small
+# gemm_small
+# gemm_large
+# conv3x3_large
+# mha
+# mha
+# qkv
+# ffn_large
+# ffn_large
+# ffn_large
