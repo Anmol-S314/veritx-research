@@ -101,7 +101,18 @@ report:
       - report/
     expire_in: 90 days
 
-# --- rebuild the tools image (manual; needs a GHCR_TOKEN CI variable + docker executor) ---
+# --- rebuild the tools image (needs a docker executor) ---
+#
+# Logs in to the registry it actually PUSHES to. It used to `docker login ghcr.io`
+# and then push to ${DOCKER_IMAGE} on internal-devrepo — authenticating to one
+# registry does not authenticate the other, so the push always failed with
+# `denied`. GitLab injects CI_REGISTRY_* for its own registry; no manual token.
+#
+# Runs AUTOMATICALLY when the image inputs change. Manual-only was how a Dockerfile
+# change could be merged while every job kept silently running the old image — and
+# a stale image does not fail loudly, it fabricates (Accelergy's dummy estimator
+# answers 1 um^2 to everything). The tools image must not be able to drift behind
+# the Dockerfile that defines it.
 rebuild-docker-image:
   stage: build
   image: docker:latest
@@ -110,10 +121,16 @@ rebuild-docker-image:
   variables:
     DOCKER_TLS_CERTDIR: ""
   script:
-    - echo "$GHCR_TOKEN" | docker login ghcr.io -u Anmol-S314 --password-stdin
+    - echo "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" -u "$CI_REGISTRY_USER" --password-stdin
     - docker build -t ${DOCKER_IMAGE} .
     - docker push ${DOCKER_IMAGE}
   rules:
+    # image inputs changed on main -> rebuild, or every later job runs a stale image
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - Dockerfile
+        - tracks/t3-topology/booksim-ext/**/*
+      when: always
     - if: '$CI_PIPELINE_SOURCE == "web"'
       when: manual
       allow_failure: true

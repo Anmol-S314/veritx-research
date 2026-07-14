@@ -112,9 +112,32 @@ jobs:
           publish_dir: ./public
           keep_files: true          # preserve other tracks' pages
 
+  # Rebuilds when the image inputs change, not only on demand. Manual-only was how
+  # a Dockerfile change could merge while every job kept running the old image —
+  # and a stale image does not fail loudly, it fabricates (Accelergy's `dummy`
+  # estimator answers 1 um^2 to every query, silently).
+  changed:
+    name: Image inputs changed?
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.f.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - id: f
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            image:
+              - 'Dockerfile'
+              - 'tracks/t3-topology/booksim-ext/**'
+
   rebuild-docker:
     name: Rebuild Docker Image
-    if: github.event_name == 'workflow_dispatch'
+    needs: changed
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.ref == 'refs/heads/main' && needs.changed.outputs.image == 'true')
     runs-on: ubuntu-latest
     permissions:
       contents: read

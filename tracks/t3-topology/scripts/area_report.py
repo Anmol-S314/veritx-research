@@ -136,8 +136,39 @@ def accelergy_arch(rf_entries, gb_kb, word_bits, routers=None, flit_bits=128,
                              "subtree": [{"name": "system", "local": local}]}}
 
 
+PLUGINS = Path("/usr/local/share/accelergy/estimation_plug_ins")
+
+
+def check_estimators():
+    """Refuse to run against an image whose Accelergy has no real backends.
+
+    This is not paranoia. The `dummy` estimator answers 1 pJ / 1 um^2 to EVERY
+    query and Accelergy falls back to it silently (exit 0). On a stale image this
+    script therefore does not fail -- it prints a plausible table in which the
+    whole PE array is "33 um^2" and a router is "6 um^2", because the numbers are
+    just a count of components. Fabricated area is far worse than no area, so
+    check the image itself rather than trusting it.
+    """
+    if not PLUGINS.exists():
+        sys.exit("✗ Accelergy estimation plug-ins not found — not running in the "
+                 "tools image?")
+    have = {p.name for p in PLUGINS.iterdir()}
+    if any("dummy" in n for n in have):
+        sys.exit(
+            "✗ STALE IMAGE: Accelergy's `dummy` estimator is present.\n"
+            "  It answers 1 um^2 to every query and Accelergy falls back to it\n"
+            "  SILENTLY, so this script would emit fabricated areas and exit 0.\n"
+            "  Rebuild the tools image from the current Dockerfile:\n"
+            "      make image-build && make image-push")
+    real = [n for n in have if any(b in n for b in ("cacti", "aladdin", "library"))]
+    if not real:
+        sys.exit("✗ no real Accelergy estimation backends installed "
+                 f"(found: {sorted(have) or 'nothing'}). Rebuild the tools image.")
+
+
 def run_accelergy(arch: dict):
     """-> {component: area_um2_per_instance}. Raises if a component can't be priced."""
+    check_estimators()
     with tempfile.TemporaryDirectory() as d:
         d = Path(d)
         (d / "arch.yaml").write_text(yaml.safe_dump(arch, sort_keys=False))
