@@ -6,7 +6,11 @@
 .PHONY: help all setup lint test sim report clean run shell pull image-build image-push
 
 TRACK     ?= onboarding
-IMAGE     ?= ghcr.io/anmol-s314/veritx-tools-base:latest
+# The GitLab (datavex) registry is canonical — that is where we work, and it is
+# what .gitlab-ci.yml runs. GHCR is kept in sync by the GitHub mirror's CI, since
+# GitHub runners cannot reach the internal host; override with IMAGE=... to use it:
+#   make shell IMAGE=ghcr.io/anmol-s314/veritx-tools-base:latest
+IMAGE     ?= internal-devrepo.datavex.ai:5050/anmol/veritx-research/veritx-tools-base:latest
 CONTAINER := $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null || echo podman)
 RUN        = $(CONTAINER) run --rm -v "$(PWD)":/workspace -w /workspace
 

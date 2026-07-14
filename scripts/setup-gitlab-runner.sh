@@ -4,10 +4,10 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-GITLAB_URL="${GITLAB_URL:-https://gitlab.internal}"
+GITLAB_URL="${GITLAB_URL:-https://internal-devrepo.datavex.ai}"
 REGISTRATION_TOKEN="${REGISTRATION_TOKEN:?Must set GITLAB_RUNNER_TOKEN}"
 RUNNER_NAME="${RUNNER_NAME:-veritx-runner}"
-DOCKER_IMAGE="${DOCKER_IMAGE:-registry.gitlab.internal/veritx/tools-base:latest}"
+DOCKER_IMAGE="${DOCKER_IMAGE:-internal-devrepo.datavex.ai:5050/anmol/veritx-research/veritx-tools-base:latest}"
 
 echo "[1/5] Installing Docker..."
 if ! command -v docker &>/dev/null; then
@@ -48,5 +48,5 @@ echo "Next steps:"
 echo "  1. Build and push the Docker image:"
 echo "     make docker-build && make docker-push"
 echo "  2. Push the monorepo to GitLab:"
-echo "     git remote add origin ${GITLAB_URL}/veritx/veritx-research.git"
+echo "     git remote add origin ${GITLAB_URL}/anmol/veritx-research.git"
 echo "     git push -u origin main"

@@ -5,7 +5,9 @@ Each track studies a different aspect of AI-accelerator NoCs, sharing one toolch
 (Booksim, Timeloop, Accelergy, Yosys/SymbiYosys, CBMC, Verilator).
 
 **You install nothing but a container runtime.** Every tool is prebuilt into the
-image `ghcr.io/anmol-s314/veritx-tools-base:latest`, and `make` drives it.
+image `internal-devrepo.datavex.ai:5050/anmol/veritx-research/veritx-tools-base:latest`, and `make` drives it. (A GHCR mirror,
+`ghcr.io/anmol-s314/veritx-tools-base:latest`, is kept in sync for GitHub CI —
+use it with `make shell IMAGE=ghcr.io/...` if you can't reach the internal host.)
 
 ## Quick start
 
@@ -130,7 +132,7 @@ Pages unless it's the private (paid-plan) variant.
 
 ## Tool versions
 
-Pinned in `ghcr.io/anmol-s314/veritx-tools-base:latest`:
+Pinned in `internal-devrepo.datavex.ai:5050/anmol/veritx-research/veritx-tools-base:latest`:
 
 | Tool | Version | Track |
 |------|---------|-------|
