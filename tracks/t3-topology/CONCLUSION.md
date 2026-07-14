@@ -38,6 +38,31 @@ Two different networks, a vendor's tapeout, and a first-principles bound — all
 the same way. The result does **not** depend on our uncalibrated wire-energy constant or
 on any validation gate we could not pass.
 
+## The constructive half: where the NoC IS the lever
+
+The negative result has a positive complement, and it falls straight out of the same
+roofline. Decode is DRAM-bound and the NoC sits idle with headroom — so the NoC's value
+is not its *shape*, it is spending that idle capacity to **cut the DRAM traffic that is
+the bottleneck.** GQA hands you the opportunity: `g = n_q/n_kv` query heads share each
+KV head, and the shipped kernel re-reads it from DRAM once per head instead of
+multicasting it once over the network.
+
+Modelled on a real deployment — **Llama-3-70B, 32K context, Tenstorrent QuietBox (8×
+n300d, 192 GB, 4608 GB/s)**, batch capacity-limited to 11:
+
+| | tokens/sec (aggregate) | per user |
+|---|---|---|
+| shipped (KV read 8× redundantly) | 50 | 4.5 |
+| **K/V multicast over the idle NoC** | **269** | **24.4** |
+
+**A 5.4× decode throughput gain at zero extra silicon** — the win a topology sweep could
+never have found, because it comes from *using* the network, not reshaping it. See
+[scripts/serving_multicast.py](scripts/serving_multicast.py) and
+[scripts/multicast_savings.py](scripts/multicast_savings.py). Honest bounds: `g` is the
+ceiling of the head-parallel mapping the vendor ships (context-parallelism reaches it a
+different way); the win is a bandwidth gain, not a capacity gain; and it grows with
+context, marginal at 8K, dominant at 128K.
+
 ## What is genuinely worth keeping
 
 1. **[PITFALLS.md](PITFALLS.md) is the most valuable artifact in the track.** Fifteen
