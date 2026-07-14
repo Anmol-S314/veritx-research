@@ -1,0 +1,26 @@
+problem:
+  shape:
+    name: gemm
+    dimensions: [M, N, K]
+
+    data-spaces:
+      - name: A
+        projection:
+          - [[M]]
+          - [[K]]
+
+      - name: B
+        projection:
+          - [[N]]
+          - [[K]]
+
+      - name: Z
+        projection:
+          - [[M]]
+          - [[N]]
+        read-write: True
+
+  instance:
+    M: 16
+    N: 16
+    K: 16

@@ -1,0 +1,27 @@
+problem:
+  shape:
+    name: gemm
+    dimensions: [M, N, K]
+
+    data-spaces:
+
+      - name: Input
+        projection:
+          - [[M]]
+          - [[K]]
+
+      - name: Weight
+        projection:
+          - [[N]]
+          - [[K]]
+
+      - name: Output
+        projection:
+          - [[M]]
+          - [[N]]
+        read-write: True
+
+  instance:
+    M: 512
+    N: 2048
+    K: 2048
