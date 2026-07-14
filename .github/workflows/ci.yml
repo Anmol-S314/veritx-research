@@ -132,9 +132,15 @@ jobs:
               - 'Dockerfile'
               - 'tracks/t3-topology/booksim-ext/**'
 
+  # NB: this is the MIRROR. The real gate is .gitlab-ci.yml, which builds the image
+  # FIRST and only promotes it to `latest` once the suite has passed on that exact
+  # image. Here we get the weaker half of that guarantee — `needs: veritx-ci` means
+  # a red pipeline cannot publish — because a fork PR's token cannot push to GHCR,
+  # so a build-first flow would break external contributors. Tests here still run
+  # against the previous image; on GitLab they run against the one being published.
   rebuild-docker:
     name: Rebuild Docker Image
-    needs: changed
+    needs: [changed, veritx-ci]
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.ref == 'refs/heads/main' && needs.changed.outputs.image == 'true')

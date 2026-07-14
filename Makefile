@@ -16,6 +16,7 @@ IMAGE_REPO ?= internal-devrepo.datavex.ai:5050/anmol/veritx-research/veritx-tool
 TAG       ?= latest
 IMAGE     ?= $(IMAGE_REPO):$(TAG)
 SHA       := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+TRACKS    := $(notdir $(patsubst %/,%,$(wildcard tracks/*/)))
 CONTAINER := $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null || echo podman)
 RUN        = $(CONTAINER) run --rm -v "$(PWD)":/workspace -w /workspace
 
@@ -51,9 +52,23 @@ image-build:  ## build the tools image locally
 	$(CONTAINER) build --label org.opencontainers.image.revision=$(SHA) \
 		-t $(IMAGE_REPO):$(SHA) -t $(IMAGE_REPO):latest .
 
-image-push:  ## push the tools image to the registry (needs write auth)
+image-push:  ## push THIS COMMIT's image (:<sha>) — does not touch `latest`
 	$(CONTAINER) push $(IMAGE_REPO):$(SHA)
+	@echo "  pushed $(IMAGE_REPO):$(SHA) — latest unchanged; 'make image-promote' moves it"
+
+# Same gate CI enforces, by hand: `latest` is what every contributor and every CI
+# job pulls, so it only moves after the image has actually run the suite. Pushing
+# straight to `latest` is how an untested image becomes everyone's image.
+image-promote:  ## run every track's tests against :<sha>, then make it `latest`
+	@echo "gating $(IMAGE_REPO):$(SHA) — running every track's tests inside it"
+	@for t in $(TRACKS); do \
+		echo "  --- $$t"; \
+		$(RUN) $(IMAGE_REPO):$(SHA) make -C tracks/$$t test || \
+			{ echo "  ✗ $$t failed — NOT promoting; latest stays where it is"; exit 1; }; \
+	done
+	$(CONTAINER) tag $(IMAGE_REPO):$(SHA) $(IMAGE_REPO):latest
 	$(CONTAINER) push $(IMAGE_REPO):latest
+	@echo "  promoted $(SHA) -> latest"
 
 image-rev:  ## which commit built the image you are actually running?
 	@$(CONTAINER) inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' \

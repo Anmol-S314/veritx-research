@@ -29,15 +29,38 @@ it works even with nothing installed locally.
 | Command | What it does |
 |---|---|
 | `make help` | List available commands (also works inside any track dir) |
-| `make pull` | Download the prebuilt tools image from GHCR |
+| `make pull` | Download the prebuilt tools image (GitLab registry; GHCR is the mirror) |
 | `make run TRACK=<t> CMD=<c>` | Run track `<t>`'s command `<c>` **inside the image** — e.g. `make run TRACK=t4-formal CMD=test` |
 | `make shell` | Open an interactive bash shell inside the image (run tools by hand) |
 | `make setup\|lint\|test\|sim TRACK=<t>` | Run that phase for a track (on the host; use `make run` if you lack the tools) |
 | `make report` | Build the aggregate cross-track report into `report/` |
 | `make clean` | Remove all generated `results/` and `report/` |
-| `make image-build` / `make image-push` | Build / push the tools image (maintainers) |
+| `make image-build` / `make image-push` | Build / push **this commit's** image `:<sha>` (maintainers) |
+| `make image-promote` | Run every track's tests against `:<sha>`, then move `latest` to it (maintainers) |
+| `make image-rev` | Print the commit that built the image you're actually running |
 
 Set `IMAGE=…` to point at a different image. Runtime is auto-detected as podman or docker.
+
+### Image versioning — why `latest` is not enough
+
+Every image is tagged twice: `:latest` and `:<commit-sha>`, with the commit stamped
+into an OCI label. That exists because a floating `latest` cannot answer the one
+question that matters when a number looks wrong — *which image produced it?*
+
+This is not hypothetical. A stale `latest` once carried Accelergy's `dummy_tables`
+estimator, which answers **1 pJ and 1 µm² to every query and exits 0**. The whole
+pipeline stayed green and reported a fabricated die area. Nothing crashed.
+
+```bash
+make image-rev                          # which commit built the image I'm running?
+make run TRACK=t3-topology CMD=area TAG=a1b2c3d   # reproduce an old result exactly
+```
+
+`latest` moves only by **promotion**: CI builds `:<sha>`, runs the entire suite
+against that exact image, and retags it `latest` only if everything passed. A red
+pipeline leaves `latest` untouched and still working. `make image-promote` is the
+same gate by hand. Never `docker push …:latest` directly — that is how an image
+nobody tested becomes the image everybody pulls.
 
 ### Per-track commands
 
