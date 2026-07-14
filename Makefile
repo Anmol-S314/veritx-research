@@ -10,7 +10,12 @@ TRACK     ?= onboarding
 # what .gitlab-ci.yml runs. GHCR is kept in sync by the GitHub mirror's CI, since
 # GitHub runners cannot reach the internal host; override with IMAGE=... to use it:
 #   make shell IMAGE=ghcr.io/anmol-s314/veritx-tools-base:latest
-IMAGE     ?= internal-devrepo.datavex.ai:5050/anmol/veritx-research/veritx-tools-base:latest
+IMAGE_REPO ?= internal-devrepo.datavex.ai:5050/anmol/veritx-research/veritx-tools-base
+# `latest` is a moving target — pin TAG to a commit SHA to reproduce an old result:
+#   make run TRACK=t3-topology TAG=a1b2c3d
+TAG       ?= latest
+IMAGE     ?= $(IMAGE_REPO):$(TAG)
+SHA       := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 CONTAINER := $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null || echo podman)
 RUN        = $(CONTAINER) run --rm -v "$(PWD)":/workspace -w /workspace
 
@@ -43,7 +48,13 @@ shell:  ## open an interactive shell in the tools image
 	$(CONTAINER) run --rm -it -v "$(PWD)":/workspace -w /workspace $(IMAGE) bash
 
 image-build:  ## build the tools image locally
-	$(CONTAINER) build -t $(IMAGE) .
+	$(CONTAINER) build --label org.opencontainers.image.revision=$(SHA) \
+		-t $(IMAGE_REPO):$(SHA) -t $(IMAGE_REPO):latest .
 
 image-push:  ## push the tools image to the registry (needs write auth)
-	$(CONTAINER) push $(IMAGE)
+	$(CONTAINER) push $(IMAGE_REPO):$(SHA)
+	$(CONTAINER) push $(IMAGE_REPO):latest
+
+image-rev:  ## which commit built the image you are actually running?
+	@$(CONTAINER) inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' \
+		$(IMAGE) 2>/dev/null | grep . || echo "unlabelled — built before versioning, or stale"

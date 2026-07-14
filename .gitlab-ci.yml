@@ -6,7 +6,8 @@
 # how the image address can be wrong while every job still looks green until the
 # push fails (or, worse, silently keeps pulling a stale image).
 variables:
-  DOCKER_IMAGE: ${CI_REGISTRY_IMAGE}/veritx-tools-base:latest
+  DOCKER_REPO: ${CI_REGISTRY_IMAGE}/veritx-tools-base
+  DOCKER_IMAGE: ${DOCKER_REPO}:latest
 
 default:
   image: ${DOCKER_IMAGE}
@@ -126,8 +127,13 @@ rebuild-docker-image:
     DOCKER_TLS_CERTDIR: ""
   script:
     - echo "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" -u "$CI_REGISTRY_USER" --password-stdin
-    - docker build -t ${DOCKER_IMAGE} .
-    - docker push ${DOCKER_IMAGE}
+    # Two tags, always: :latest is what jobs pull, :<sha> is what makes a result
+    # reproducible a month later. `latest` alone cannot answer "which image
+    # produced this number?", which is the question a stale image makes you ask.
+    - docker build --label org.opencontainers.image.revision=${CI_COMMIT_SHA}
+        -t ${DOCKER_REPO}:${CI_COMMIT_SHORT_SHA} -t ${DOCKER_REPO}:latest .
+    - docker push ${DOCKER_REPO}:${CI_COMMIT_SHORT_SHA}
+    - docker push ${DOCKER_REPO}:latest
   rules:
     # image inputs changed on main -> rebuild, or every later job runs a stale image
     - if: '$CI_COMMIT_BRANCH == "main"'
