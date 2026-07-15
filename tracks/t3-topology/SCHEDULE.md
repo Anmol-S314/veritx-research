@@ -99,14 +99,30 @@ bandwidth is the wall, and the schedule's whole job is to not waste it on redund
      decode), and it saturates for the generic reason that few memory ports throttle many
      writers, not because of anything in our schedule.
 
-  The schedule's actual direction, from the port arithmetic: each of 18 DRAM nodes
-  **sources** 16 GB/s = 0.50 flit/cyc (under the 1.0 port limit), and the 102 compute
-  destinations each **receive** 0.09 flit/cyc — spread, no hotspot. So the KV data path
-  has headroom, cycle-accurate-*consistent* with the roofline. But a true cycle-accurate
-  run of the *multicast* schedule is **blocked on BookSim lacking multicast**, which is a
-  real, separate piece of simulator work (multicast routing + flit replication), not a
-  quick config. It would most likely confirm the roofline rather than surprise it — which
-  is why it is worth doing only for belt-and-suspenders, not as a gate.
+- **Cycle-accurate result (`scripts/mcast_validate.py --run`).** True flit-fork multicast
+  can't be patched into BookSim cheaply — its `TrafficPattern::dest()` returns one node, so
+  multicast needs a destination-set on the flit plus credit-fork routing in `iq_router`
+  (deadlock-research territory, and the exact "plausible but wrong" risk PITFALLS is about).
+  Instead we use the existing file-driven `matrix` pattern: a row-broadcast's **network
+  link load is identical to a unicast to the far end of the row** (DOR crosses each row
+  link once), so we simulate that at flit granularity on an 8×8 torus.
+
+  **What it confirms, cleanly:** at the schedule's 16 GB/s DRAM-bound offered load
+  (injection 0.10 = 0.5 flit/cyc at a source) the torus is **stable — unsaturated** (45
+  cyc). That is the one thing a roofline cannot give: cycle-accurate saturation behaviour
+  under the *actual* row traffic. It also **refines the margin**: the knee sits near
+  0.6–1.0 flit/cyc, so real headroom is **~2×, tighter than the roofline's aggregate 4×**,
+  because a row-broadcast concentrates load on one row's links — invisible to a
+  bandwidth-only view.
+
+  **What it does not show, stated honestly:** it is *not* a clean multicast-vs-naive
+  comparison. The far-end model is faithful for link load but concentrates all *ejection*
+  at the far node, while real multicast spreads delivery across the row — an artifact that
+  makes multicast appear to saturate *earlier* here. So the g-fold useful-throughput win
+  rests on the DRAM-side analysis ([serving_multicast.py](scripts/serving_multicast.py))
+  and hop-energy ([schedule.py](scripts/schedule.py)), not on this run. Full flit-fork
+  fidelity remains a scoped, separate simulator effort — worth it only for
+  belt-and-suspenders, since it would confirm rather than overturn.
 - **Honest bound:** `g` is the ceiling, realised when a group is spread across cores (the
   low-batch / many-core regime). A pure context-parallel mapping reaches low DRAM traffic
   a different way (cross-core reduction instead of multicast); this schedule's advantage
