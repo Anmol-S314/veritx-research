@@ -3,6 +3,7 @@
 
 #include "matrixtraffic.hpp"
 #include "yxroute.hpp"
+#include "snakeroute.hpp"
 
 // ===========================================================================
 //  TRAFFIC PATTERNS  --  add a branch, return NULL for anything not yours.
@@ -35,6 +36,7 @@ TrafficPattern * VeritXNewTraffic(std::string const & name,
 void VeritXRegisterRouting()
 {
   gRoutingFunctionMap["yx_mesh"] = &yx_mesh;
+  gRoutingFunctionMap["snake_mesh"] = &snake_mesh;   // Hamiltonian broadcast (prefix multicast)
 
   // >>> ADD YOUR ROUTING FUNCTION HERE <<<
 }

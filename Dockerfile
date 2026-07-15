@@ -189,11 +189,18 @@ RUN rm -rf /usr/local/share/accelergy/estimation_plug_ins/dummy_tables
 # routers/iq_router.cpp at src/ *beside* the original and the link would die on
 # duplicate symbols.
 #
-# `veritx_hooks.patch` is the ONLY patch: 10 lines routing Booksim's two factories
-# (TrafficPattern::New, InitializeRoutingMap) into VeritXNewTraffic() /
-# VeritXRegisterRouting(). Written once, never touched again — a new traffic
-# pattern or routing function is a new file plus one line in veritx_ext.cpp, so
-# contributors write no patch and never edit this Dockerfile.
+# `veritx_hooks.patch` routes Booksim's two factories (TrafficPattern::New,
+# InitializeRoutingMap) into VeritXNewTraffic() / VeritXRegisterRouting() — a new
+# traffic pattern or routing function is a new file plus one line in veritx_ext.cpp,
+# so those contributors write no patch and never edit this Dockerfile.
+#
+# `multicast.patch` is the exception the rule warned about: true flit-fork multicast
+# (row-broadcast for the GQA KV schedule) needs edits the veritx_ext factory cannot
+# express — a dest field on the Flit, an eject-copy fork in iq_router, and multicast
+# injection in the TrafficManager. It CANNOT be a new file, so it is a real patch. It
+# touches only flit.*, booksim_config.cpp, trafficmanager.*, iq_router.cpp (disjoint
+# from veritx_hooks.patch's routefunc/traffic), and applies cleanly on the pinned
+# commit. See tracks/t3-topology/booksim-ext/README.md and PITFALLS.md #15/#16.
 #
 # Source stays at /opt/booksim2 so it can be edited and recompiled in-image;
 # booksim-ext/build.sh does that and verifies the result.
@@ -205,6 +212,7 @@ COPY tracks/t3-topology/booksim-ext/ /opt/booksim-ext/
 RUN cd /opt/booksim2 && \
     cp -r /opt/booksim-ext/src/. src/ && \
     git apply /opt/booksim-ext/veritx_hooks.patch && \
+    git apply /opt/booksim-ext/multicast.patch && \
     cd src && make -j$(nproc) && \
     cp booksim /usr/local/bin/
 

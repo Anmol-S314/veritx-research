@@ -52,22 +52,40 @@ n300d, 192 GB, 4608 GB/s)**, batch capacity-limited to 11:
 
 | | tokens/sec (aggregate) | per user |
 |---|---|---|
-| shipped (KV read 8× redundantly) | 50 | 4.5 |
-| **K/V multicast over the idle NoC** | **269** | **24.4** |
+| shipped (KV read 8× redundantly) | 45 | 4.1 |
+| **K/V multicast over the idle NoC** | **244** | **22.2** |
 
 **A 5.4× decode throughput gain at zero extra silicon** — the win a topology sweep could
-never have found, because it comes from *using* the network, not reshaping it. See
+never have found, because it comes from *using* the network, not reshaping it. (The
+absolute tok/s are derated by the **measured** DRAM efficiency — 0.91 of peak, GDDR6,
+Ramulator2 [scripts/dram_efficiency.py](scripts/dram_efficiency.py) — not peak-assumed;
+the 5.4× *ratio* is efficiency-independent, since both rows read the same KV layout. That
+measurement also adds a schedule requirement: store KV **per-head-contiguous**, or a
+vLLM-interleaved layout costs another ~28% by thrashing the row buffer.) See
 [scripts/serving_multicast.py](scripts/serving_multicast.py) and
 [scripts/multicast_savings.py](scripts/multicast_savings.py). The concrete
-mapping that realises it — query heads to cores, KV multicast along rows — is designed and
-traffic-validated in [SCHEDULE.md](SCHEDULE.md). Honest bounds: `g` is the
+mapping that realises it — query heads to cores, KV multicast along rows — is designed in
+[SCHEDULE.md](SCHEDULE.md) and **cycle-accurately validated**: we patched real flit-fork
+multicast into BookSim ([booksim-ext/multicast.patch](booksim-ext/multicast.patch)) and
+measured multicast sustaining **≥7.1× (g−1)** the useful KV-delivery rate of the shipped
+re-fetch before the network saturates ([scripts/mcast_flitfork.py](scripts/mcast_flitfork.py)) —
+the network-side confirmation of the g-fold DRAM saving. The schedule's second primitive, the
+online-softmax **column-reduce**, is validated the same way and both primitives are shown to
+fit the fabric at once with headroom ([scripts/schedule_fabric.py](scripts/schedule_fabric.py)).
+And the two cycle-accurate engines are pinned to a **single decode operating point**
+([scripts/decode_e2e.py](scripts/decode_e2e.py)): the DRAM's measured 91%-of-peak feed sets
+the NoC's injection (`288/18 GB/s × 0.91 / 32 = 0.46 flit/cyc`), and *there* multicast is stable
+while naive saturates, DRAM is the binding stage, and the per-die model aggregates back to the
+4608 GB/s headline — the DRAM↔NoC composition **measured from both ends, not assumed between
+them** (compute stays analytic, at 63× headroom it cannot bind).
+Honest bounds: `g` is the
 ceiling of the head-parallel mapping the vendor ships (context-parallelism reaches it a
 different way); the win is a bandwidth gain, not a capacity gain; and it grows with
 context, marginal at 8K, dominant at 128K.
 
 ## What is genuinely worth keeping
 
-1. **[PITFALLS.md](PITFALLS.md) is the most valuable artifact in the track.** Fifteen
+1. **[PITFALLS.md](PITFALLS.md) is the most valuable artifact in the track.** Eighteen
    distinct ways a NoC model produced plausible, confident, wrong numbers — each with
    the symptom, the cause, and the catch. Every headline figure was an artifact before
    it was a result, and the topology verdict flipped four times. The through-line:

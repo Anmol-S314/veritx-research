@@ -313,6 +313,108 @@ it were the whole thing.)*
 
 ---
 
+## 15. "Ejection is never the bottleneck" — a comment in our own validation, and it was wrong
+
+`mcast_validate.py` modelled a row-multicast as a unicast to the far end of the row (same
+link load, exactly true) and dismissed the one thing it *didn't* match with an inline
+comment: *"ejection ports are per-core, never the network bottleneck, so it does not change
+the saturation answer."* Plausible. Confident. Wrong — and it changed the saturation answer.
+
+Two facts, both checkable in the source and then in a 30-second run (`--ejtest`):
+
+1. **BookSim's `matrix` pattern makes *every* node inject at the global rate.** A zero
+   row returns `source` (matrixtraffic.cpp), and `_GeneratePacket` has no `source==dest`
+   short-circuit — so an "idle" node injects a real **self-packet** that `dor_next_mesh`
+   routes straight to the eject port (`cur==dest → 2·gN`).
+2. **The eject port is a real 1 flit/cyc resource.** Pure identity self-traffic saturates
+   at exactly `inj·packet_size = 1.0` — the `--ejtest` knee sits at inj 0.20→0.22, textbook.
+
+Put together: in the multicast matrix the row's terminus node carries its **row stream**
+(0.5 flit/cyc at schedule load) *plus its own idle self-packet* (0.5) = 1.0, and saturates.
+That is why "multicast" appeared to saturate at inj ≈ 0.14 instead of ≈ 0.20 — not physics,
+an artifact of the every-node-injects model double-loading one node.
+
+The result is not overturned: the **schedule-load stability conclusion survives** (at inj
+0.10 the torus is stable even with the double-load), and the g-fold win was always DRAM-side
+(`serving_multicast.py`), not from this run. But the mcast/naive *knee gap* is an artifact
+and must not be read as a result.
+
+**Catch it next time.** A dismissive comment — "*X is never the bottleneck*" — is a claim,
+not an aside. If it decides what you're allowed to ignore, it earns a runnable test. Ours
+took thirty seconds and turned out to be false. The clean fix — real flit-fork ejection —
+we then *built* (`booksim-ext/multicast.patch`, `scripts/mcast_flitfork.py`): it removed the
+confound and **confirmed** the g-fold win (≥7.1× useful throughput, §16), exactly as
+predicted. Writing down the confound was right; it also told us precisely what the real
+patch had to fix.
+
+---
+
+## 16. The flit-fork multicast patch — where a known-answer gate earned its keep twice
+
+Building real multicast into BookSim (§15's "clean fix") meant editing the router and
+traffic manager — the highest-risk kind of change, and prime territory for a plausible,
+confident, wrong result. It produced **two** flattering errors, and the same discipline
+caught both *before* either became a number we reported: a **known-answer gate** — one
+multicast injection must deliver to exactly *g−1 = 7* cores, a figure known in advance.
+
+1. **The model was a mesh model wearing a torus.** "Eject a copy at every node the stream
+   transits" is exact only if the stream transits every row member. On the **torus** it does
+   not: col 0 → col 7 is **1 hop the short way** (wraparound), so the stream skipped cores
+   1–6, their copies never delivered, and in-flight flits piled to ~2000 before the sim
+   aborted. The gate read **accepted/injected = 1, not 7** — off by the whole g-fold. The
+   fix (an 8×8 **mesh**, where a row is a genuine linear path) is also the *conservative*
+   choice: a torus would only shorten the broadcast span. A model that "looked obviously
+   right" was wrong by g×, and only the exact count exposed it.
+2. **The win was read off the wrong point.** The first throughput number compared
+   multicast's ceiling (0.875) to naive's **last pre-saturation sample** (0.088) → a shiny
+   **10×**. But naive's *ceiling* is its **saturated plateau** (0.123, delivering at
+   capacity with exploded latency), and 0.875/0.123 = **7.1×** — which matches the analytic
+   g−1. The 10× was a bandwidth number read one sample too early, flattering by ~40%.
+
+**Catch it next time.** A **known-answer** case (you can state the exact output before you
+run it) is worth more than any "seems reasonable" check — it fails on the *magnitude*, not
+just the direction. Both errors here pointed the flattering way; both died against the same
+"= 7, exactly" gate. And read a saturation number off the **plateau**, never off the last
+stable sample below it.
+
+---
+
+## 17. The throughput model divided by PEAK DRAM bandwidth — and a starved buffer nearly confirmed a lie with a lie
+
+`serving_multicast.py` turns DRAM bytes into tokens/sec by dividing by bandwidth, and for a
+long time that bandwidth was **peak** — 4608 GB/s, straight off the spec sheet, efficiency
+implicitly 1.0. That is the exact move this track exists to distrust ("a result not
+calibrated against silicon is decoration"), hidden in a division. I had even waved it away
+as *"does real DRAM hit peak under this pattern? resolves in multicast's favour by
+inspection"* — conflating the **relative** comparison (multicast vs naive, where efficiency
+cancels) with the **absolute** tokens/sec (where it does not). So we measured it, cycle-accurate
+(Ramulator2, GDDR6, `scripts/dram_efficiency.py`). Two traps, one inside the other:
+
+1. **The absolute headline was 9–34% optimistic.** The KV stream reaches **91%** of peak
+   best-case (the 9% is refresh, confirmed by a refresh-off run hitting ~100%), and only
+   **66%** under a vLLM `[block,heads,dim]` layout that strides one head past the other
+   `g−1` and thrashes the row buffer. 269 tok/s was really ~244; the "inspection" answer
+   would have shipped peak. The g-fold *ratio* survives (efficiency cancels), but the number
+   users read is absolute, and it was wrong the flattering way.
+2. **The measurement itself first read 77% — a buffer-starvation artifact, not the DRAM.**
+   With a small read-buffer the controller ran out of in-flight requests before the banks
+   were busy, so 77% was the *queue depth* throttling throughput, not the DRAM. Reported
+   as-is it would have *under*-stated efficiency (unflattering, but equally wrong). The catch:
+   sweep the read-buffer size until throughput **plateaus** — the plateau (91%, buffer ≥ 64)
+   is the DRAM limit; anything below it is measuring your own queue. Same lesson as §9/§16 in
+   a new place: a saturation number is only real once it stops moving.
+
+The finding paid for itself twice: it derated the absolute claim to honest, *and* it added a
+**design requirement the analytic never saw** — store KV per-head-contiguous (91%), never
+interleaved (66%), or hand back ~28% of the bandwidth multicast just saved.
+
+**Catch it next time.** Any `throughput = bytes / bandwidth` divides by an *achieved*
+bandwidth, never a datasheet peak — and to measure achieved you must first saturate the
+in-flight window, or you measure your own buffer. Efficiency cancels in a ratio; it never
+cancels in an absolute.
+
+---
+
 ## The verdict flipped four times
 
 | model | fat-tree EDP | verdict |

@@ -46,6 +46,20 @@ echo "→ sync   booksim-ext/src → $SRC"
 done
 cp -r "$EXT/src/." "$SRC/"
 
+# multicast.patch edits upstream files (Flit fields, iq_router fork, TM injection) that
+# CANNOT be new files, so unlike the pattern/routing extensions it is a real patch. Apply
+# it idempotently: a rebuilt image already has it baked in (reverse-check succeeds), an
+# older image does not. Getting a booksim without multicast here would silently re-run the
+# unicast baseline and call it multicast -- exactly the failure this repo warns about.
+if [ -e "$EXT/multicast.patch" ]; then
+  if git -C "$SRC/.." apply --reverse --check "$EXT/multicast.patch" 2>/dev/null; then
+    echo "   multicast.patch already applied (baked into image)"
+  else
+    echo "→ apply multicast.patch (flit-fork multicast)"
+    git -C "$SRC/.." apply "$EXT/multicast.patch"
+  fi
+fi
+
 echo "→ build"
 make -C "$SRC" -j"$(nproc)"
 
@@ -99,6 +113,21 @@ with open(sys.argv[1], "w") as f:
         f.write(" ".join("0" if j == i else "1" for j in range(n)) + "\n")
 PY
 check "matrix(<file>)" "traffic=matrix($TMP/m.txt)"
+
+echo "→ verify: flit-fork multicast actually forks (accepted ≫ injected)"
+# mcast_k=8 on the 8x8 mesh: col-0 of each row multicasts to its row, so ONE injected
+# stream must yield ~7 deliveries -> accepted packet rate ≈ 7× injected. A booksim built
+# without multicast.patch delivers 1:1 and fails here -- the whole point of the check.
+mc_ratio="$({ booksim "$CFG" mcast_k=8 packet_size=1 injection_rate=0.02 sim_count=1 2>&1 || true; } \
+  | awk -F'=' '/Injected packet rate average/{split($2,a," ");i=a[1]}
+               /Accepted packet rate average/{split($2,a," ");x=a[1]} END{print (i>0)?x/i:0}')"
+if awk -v r="$mc_ratio" 'BEGIN{exit !(r>5)}'; then
+  printf '  ✓ %-34s accepted/injected %.2f (≈7)\n' "flit-fork multicast (mcast_k)" "$mc_ratio"
+else
+  echo "  ✗ flit-fork multicast — accepted/injected $mc_ratio (expected ≈7)."
+  echo "    multicast.patch missing or not applied. See booksim-ext/README.md."
+  exit 1
+fi
 
 echo
 echo "✓ booksim rebuilt and installed — $(command -v booksim)"

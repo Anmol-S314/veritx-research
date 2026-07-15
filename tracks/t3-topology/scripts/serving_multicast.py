@@ -20,10 +20,18 @@ Both numbers from arXiv 2603.23343 Table 2 (n300d), x8.
 
 THROUGHPUT MODEL (decode is DRAM-bound, per decode_roofline.py):
   bytes/step = W + B * K_read           K_read = per-sequence KV read this step
-  time/step  = bytes/step / BW_agg
-  tokens/sec = B / time/step = B * BW_agg / (W + B * K_read)
-     small B: ~ B*BW/W        (weight-amortisation regime, linear in batch)
-     large B: ~ BW/K_read     (KV-bound ceiling -- where multicast changes the ceiling)
+  time/step  = bytes/step / (BW_agg * eps)
+  tokens/sec = B / time/step = B * BW_agg * eps / (W + B * K_read)
+     small B: ~ B*BW*eps/W    (weight-amortisation regime, linear in batch)
+     large B: ~ BW*eps/K_read (KV-bound ceiling -- where multicast changes the ceiling)
+
+  eps = ACHIEVED / PEAK DRAM bandwidth. NOT 1.0 -- an earlier version implicitly assumed
+  peak, which is exactly the uncalibrated assumption this track distrusts. Measured with
+  Ramulator2 (scripts/dram_efficiency.py, GDDR6): ~0.91 for a per-head-CONTIGUOUS KV layout
+  (the ~9% gap is refresh), collapsing to ~0.66 if the KV cache is stored vLLM-interleaved
+  [block,heads,dim] so reading one head strides past the other g-1 and thrashes the row
+  buffer. eps derates the ABSOLUTE tok/s; it CANCELS in the multicast/naive speedup (same
+  layout both ways). Consequence: the schedule REQUIRES per-head-contiguous KV storage.
 
 THE MULTICAST KNOB is K_read:
   naive head-parallel (what the vendor ships): each of a GQA group's g query heads sits
@@ -50,6 +58,14 @@ import sys
 
 GB = 1e9
 GiB = 2 ** 30
+
+# Achieved / peak DRAM bandwidth for the KV read. Measured, not assumed (the whole point):
+# Ramulator2 GDDR6, per-head-CONTIGUOUS layout, saturated, refresh on -> 0.91 (the 9% is
+# refresh). See scripts/dram_efficiency.py. A vLLM-interleaved KV layout would drop this to
+# ~0.66; the schedule forbids that (SCHEDULE.md layout requirement). eps derates the ABSOLUTE
+# tok/s but CANCELS in the multicast/naive ratio (same layout both ways), so the selfcheck's
+# speedup bounds are unaffected.
+DRAM_EFF = 0.91
 
 
 class Model:
@@ -98,7 +114,7 @@ def throughput(model, box, seq, B, multicast):
         return 0.0
     k_read = model.kv_distinct(seq) * (1 if multicast else model.g)
     bytes_per_step = model.weight_bytes() + B * k_read
-    return B * box.bw / bytes_per_step
+    return B * box.bw * DRAM_EFF / bytes_per_step
 
 
 def operating_point(model, box, seq, B=None):
@@ -145,8 +161,8 @@ def _fmt(tok):
 def main():
     box = QUIETBOX
     print(f"\n  Batched decode on {box.name}: {box.cap / GB:.0f} GB, "
-          f"{box.bw / GB:.0f} GB/s aggregate")
-    print(f"  decode is DRAM-bound -> tokens/sec = B * BW / (weights + B * KV_read)\n")
+          f"{box.bw / GB:.0f} GB/s aggregate x {DRAM_EFF:.2f} achieved (Ramulator2, GDDR6)")
+    print(f"  decode is DRAM-bound -> tokens/sec = B * BW * {DRAM_EFF:.2f} / (weights + B * KV_read)\n")
 
     for m in MODELS:
         print(f"  {m.name}  (BFP8 weights {m.weight_bytes() / GB:.0f} GB, "
@@ -179,6 +195,8 @@ def main():
     print(f"    Multicast shares each KV head over the idle NoC -> {op['after']:.0f} tok/s "
           f"({op['after'] / op['batch']:.1f}/user), a {op['speedup']:.1f}x throughput gain")
     print(f"    at ZERO extra silicon — the win the topology sweep could never have found.")
+    print(f"    (tok/s are at {DRAM_EFF:.2f} DRAM efficiency; the {op['speedup']:.1f}x ratio holds at any")
+    print(f"    efficiency. REQUIRES per-head-contiguous KV storage — see dram_efficiency.py.)")
 
     print(f"\n  The two results are one story: on-chip topology is not the lever")
     print(f"  (it's not the bottleneck), and that is *precisely why* the NoC has the")

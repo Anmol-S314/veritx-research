@@ -1,0 +1,300 @@
+diff --git a/src/booksim_config.cpp b/src/booksim_config.cpp
+index 6f40396..311b8e7 100644
+--- a/src/booksim_config.cpp
++++ b/src/booksim_config.cpp
+@@ -157,6 +157,15 @@ BookSimConfig::BookSimConfig( )
+ 
+   AddStrField( "traffic", "uniform" );
+ 
++  // VeritX multicast row-broadcast experiment. mcast_k>0 turns it on for a
++  // mcast_k x mcast_k torus: col-0 of each row multicasts its stream to the other
++  // g-1=mcast_k-1 cores in the row (receivers do not inject). mcast_naive=1 sends the
++  // same as g-1 independent unicasts instead (the shipped-kernel baseline).
++  _int_map["mcast_k"] = 0;
++  _int_map["mcast_naive"] = 0;   // 0 = fork multicast, 1 = naive g-1 unicasts, 2 = no streams
++  _int_map["reduce_col"] = 0;    // 1 = add column-reduce partials (online-softmax combine)
++  _int_map["bcast_all"] = 0;     // shared-prefix broadcast: 1 = snake fork, 2 = naive N-1 unicasts
++
+   _int_map["class_priority"] = 0;
+   AddStrField("class_priority", ""); // workaraound to allow for vector specification
+ 
+diff --git a/src/flit.cpp b/src/flit.cpp
+index 5bf99a5..fc3575f 100644
+--- a/src/flit.cpp
++++ b/src/flit.cpp
+@@ -80,7 +80,9 @@ void Flit::Reset()
+   intm =-1;
+   ph = -1;
+   data = 0;
+-}  
++  mcast = false;
++  mcast_copies.clear();
++}
+ 
+ Flit * Flit::New() {
+   Flit * f;
+diff --git a/src/flit.hpp b/src/flit.hpp
+index a28d6ac..0de8649 100644
+--- a/src/flit.hpp
++++ b/src/flit.hpp
+@@ -30,6 +30,7 @@
+ 
+ #include <iostream>
+ #include <stack>
++#include <vector>
+ 
+ #include "booksim.hpp"
+ #include "outputset.hpp"
+@@ -83,6 +84,14 @@ public:
+   // Lookahead route info
+   OutputSet la_route_set;
+ 
++  // VeritX multicast (row-broadcast). A `mcast` head flit travels normally to its
++  // far-end `dest`, but carries pre-registered single-flit COPIES for the intermediate
++  // row members; the router forks each copy to the eject port as the stream transits that
++  // member's node (iq_router::_SwitchUpdate). One injected stream -> g deliveries, one
++  // stream on the links. Empty/false for ordinary flits.
++  bool mcast;
++  vector<Flit *> mcast_copies;
++
+   void Reset();
+ 
+   static Flit * New();
+diff --git a/src/routers/iq_router.cpp b/src/routers/iq_router.cpp
+index b2de219..4c8f9ae 100644
+--- a/src/routers/iq_router.cpp
++++ b/src/routers/iq_router.cpp
+@@ -2205,6 +2205,26 @@ void IQRouter::_SwitchUpdate( )
+     //the output buffer size isn't precise due to flits in flight
+     //but there is a maximum bound based on output speed up and ST traversal
+     assert(_output_buffer[output].size()<=(size_t)_output_buffer_size+ _crossbar_delay* _output_speedup+( _output_speedup-1) ||_output_buffer_size==-1);
++
++    // VeritX multicast fork: as a row-broadcast stream transits this router, deliver the
++    // pre-registered copy destined for THIS node to the local eject port (last output;
++    // one flit/cyc, drains freely to the core). The stream continues untouched to its
++    // far-end dest, so the row links carry it exactly once. (See trafficmanager.cpp
++    // _GeneratePacket / mcast_k, and PITFALLS.md #15 for why the copies must really eject.)
++    if(f->mcast && f->head && !f->mcast_copies.empty()) {
++      int const eject = _outputs - 1;   // concentration 1: eject == 2*gN == last port
++      for(size_t i = 0; i < f->mcast_copies.size(); ++i) {
++	Flit * const cp = f->mcast_copies[i];
++	if(cp->dest == GetID()) {
++	  cp->itime = f->itime;           // copy inherits the stream's injection time
++	  cp->hops  = f->hops;            // and its hop count to this node
++	  _output_buffer[eject].push(cp);
++	  f->mcast_copies[i] = f->mcast_copies.back();
++	  f->mcast_copies.pop_back();
++	  break;                          // at most one delivery per node
++	}
++      }
++    }
+     _crossbar_flits.pop_front();
+   }
+ }
+diff --git a/src/trafficmanager.cpp b/src/trafficmanager.cpp
+index 3963188..0f72a06 100644
+--- a/src/trafficmanager.cpp
++++ b/src/trafficmanager.cpp
+@@ -353,6 +353,11 @@ TrafficManager::TrafficManager( const Configuration &config, const vector<Networ
+ 
+     _include_queuing = config.GetInt( "include_queuing" );
+ 
++    _mcast_k     = config.GetInt( "mcast_k" );
++    _mcast_naive = config.GetInt( "mcast_naive" );
++    _reduce_col  = config.GetInt( "reduce_col" );
++    _bcast_all   = config.GetInt( "bcast_all" );
++
+     _print_csv_results = config.GetInt( "print_csv_results" );
+     _deadlock_warn_timeout = config.GetInt( "deadlock_warn_timeout" );
+ 
+@@ -753,6 +758,22 @@ void TrafficManager::_RetireFlit( Flit *f, int dest )
+ 
+ int TrafficManager::_IssuePacket( int source, int cl )
+ {
++    // VeritX schedule mode. A core injects only if it has real traffic to send: a
++    // row-multicast/naive STREAM (col-0 heads, unless streams are disabled) and/or a
++    // column-REDUCE partial (any core with a parent, row>0). Everything else is a pure
++    // receiver and must NOT inject -- otherwise BookSim's "every node injects" default
++    // pollutes receivers' eject ports with self-packets, the confound of PITFALLS.md #15.
++    if(_bcast_all > 0 && source != 0) return 0;
++    if(_mcast_k > 0) {
++        int const col = source % _mcast_k;
++        int const row = source / _mcast_k;
++        bool const is_stream_src = (_mcast_naive != 2) && (col == 0);
++        bool const is_reduce_src = (_reduce_col != 0) && (row > 0);
++        if(!is_stream_src && !is_reduce_src) {
++            return 0;
++        }
++    }
++
+     int result = 0;
+     if(_use_read_write[cl]){ //use read and write
+         //check queue for waiting replies.
+@@ -782,11 +803,122 @@ int TrafficManager::_IssuePacket( int source, int cl )
+     return result;
+ }
+ 
+-void TrafficManager::_GeneratePacket( int source, int stype, 
++void TrafficManager::_GeneratePacket( int source, int stype,
+                                       int cl, int time )
+ {
+     assert(stype!=0);
+ 
++    // ---- VeritX schedule injection: row-multicast STREAM + column-REDUCE partial -----
++    // GQA decode factors onto the 2D fabric as two primitives (SCHEDULE.md): a row
++    // multicast that shares a KV head with its group, and a column reduce that combines
++    // partial attentions when the context is split. This injects either or both.
++    // Single-flit packets (packet_size=1) keep retirement trivial: every delivery is
++    // head&&tail, so _RetireFlit never touches the multi-flit reassembly path.
++    // ---- VeritX shared-prefix BROADCAST (scripts/prefix_broadcast_flitfork.py) --------
++    // One source (node 0) delivers a shared prefix to ALL N-1 other cores. bcast_all=1: a
++    // single Hamiltonian-snake multicast stream (routing_function=snake) that the eject-fork
++    // delivers to every node -> 1 inject, N-1 deliveries. bcast_all=2: N-1 naive unicasts from
++    // node 0 (baseline; node 0's egress is the bottleneck). Reuses the row-multicast machinery.
++    if(_bcast_all > 0) {
++        if(_GetNextPacketSize(cl) != 1)
++            Error("bcast_all requires packet_size = 1 (single-flit deliveries).");
++        int const N = _nodes;
++        int k = 1; while(k * k < N) ++k;
++        int const snake_end = ((k - 1) & 1) ? (k - 1) * k : (k * k - 1);
++        bool record = false;
++        if((_sim_state == running) ||
++           ((_sim_state == draining) && (time < _drain_time)))
++            record = _measure_stats[cl];
++        int const subnetwork = RandomInt(_subnets - 1);
++        auto bmake = [&](int dest, bool is_mcast) -> Flit * {
++            Flit * f = Flit::New();
++            f->id  = _cur_id++;  assert(_cur_id);
++            f->pid = _cur_pid++; assert(_cur_pid);
++            f->watch = gWatchOut && (_packets_to_watch.count(f->pid) > 0);
++            f->subnetwork = subnetwork;
++            f->src = source; f->dest = dest;
++            f->ctime = time; f->record = record; f->cl = cl;
++            f->type = Flit::ANY_TYPE;
++            f->head = true; f->tail = true;
++            f->pri = 0; f->vc = -1;
++            f->mcast = is_mcast;
++            _total_in_flight_flits[cl].insert(make_pair(f->id, f));
++            if(record)
++                _measured_in_flight_flits[cl].insert(make_pair(f->id, f));
++            return f;
++        };
++        if(_bcast_all == 1) {          // one snake stream; copies = all nodes but src & snake-end
++            Flit * stream = bmake(snake_end, true);
++            for(int d = 1; d < N; ++d)
++                if(d != snake_end)
++                    stream->mcast_copies.push_back(bmake(d, false));
++            _partial_packets[source][cl].push_back(stream);
++        } else {                        // naive: N-1 unicasts from node 0
++            for(int d = 1; d < N; ++d)
++                _partial_packets[source][cl].push_back(bmake(d, false));
++        }
++        return;
++    }
++    // ------------------------------------------------------------------------------
++
++    if(_mcast_k > 0) {
++        int const K = _mcast_k;
++        int const col = source % K;
++        int const row = source / K;
++        if(_GetNextPacketSize(cl) != 1)
++            Error("mcast_k requires packet_size = 1 (single-flit deliveries).");
++        bool record = false;
++        if((_sim_state == running) ||
++           ((_sim_state == draining) && (time < _drain_time)))
++            record = _measure_stats[cl];
++        int const subnetwork = RandomInt(_subnets - 1);
++
++        // Build one registered single-flit packet to `dest` (not yet injected).
++        auto make = [&](int dest, bool is_mcast) -> Flit * {
++            Flit * f = Flit::New();
++            f->id  = _cur_id++;  assert(_cur_id);
++            f->pid = _cur_pid++; assert(_cur_pid);
++            f->watch = gWatchOut && (_packets_to_watch.count(f->pid) > 0);
++            f->subnetwork = subnetwork;
++            f->src = source; f->dest = dest;
++            f->ctime = time; f->record = record; f->cl = cl;
++            f->type = Flit::ANY_TYPE;
++            f->head = true; f->tail = true;
++            f->pri = 0; f->vc = -1;
++            f->mcast = is_mcast;
++            _total_in_flight_flits[cl].insert(make_pair(f->id, f));
++            if(record)
++                _measured_in_flight_flits[cl].insert(make_pair(f->id, f));
++            return f;
++        };
++
++        // (a) Row stream: col-0 heads only. mcast_naive 0 = one forked multicast stream,
++        //     1 = g-1 naive unicasts (the shipped baseline), 2 = no stream (reduce-only).
++        if(_mcast_naive != 2 && col == 0) {
++            if(_mcast_naive == 1) {
++                for(int c = 1; c < K; ++c)
++                    _partial_packets[source][cl].push_back(make(row * K + c, false));
++            } else {
++                Flit * stream = make(row * K + (K - 1), true);
++                for(int c = 1; c < K - 1; ++c)
++                    stream->mcast_copies.push_back(make(row * K + c, false));
++                _partial_packets[source][cl].push_back(stream);
++            }
++        }
++
++        // (b) Column reduce: each core with a parent relays its partial ONE hop up the
++        //     column toward the root at row 0. The online-softmax combine is in-core
++        //     compute, so the network only moves partials -- an ordinary 1-hop unicast, no
++        //     fork/merge. Link load = one partial per column link; the pipeline dependency
++        //     (parent waits for child) is a latency effect, not a link-load one, so this
++        //     models the saturation question exactly. A col-0 head does BOTH.
++        if(_reduce_col != 0 && row > 0)
++            _partial_packets[source][cl].push_back(make((row - 1) * K + col, false));
++
++        return;
++    }
++    // ------------------------------------------------------------------------------
++
+     Flit::FlitType packet_type = Flit::ANY_TYPE;
+     int size = _GetNextPacketSize(cl); //input size 
+     int pid = _cur_pid++;
+@@ -1250,14 +1382,21 @@ void TrafficManager::_Step( )
+                                << " into subnet " << subnet 
+                                << "." << endl;
+                 }
+-                Credit * const c = Credit::New();
+-                c->vc.insert(f->vc);
+-                _net[subnet]->WriteCredit(c, n);
+-	
++                // A VeritX multicast copy is forked straight into the eject buffer
++                // (iq_router::_SwitchUpdate) and never allocated a VC in the eject port's
++                // buffer state, so it must NOT return a credit -- there is no occupancy to
++                // release, and its vc is -1. vc<0 marks exactly these copies; every
++                // network-traversed flit ejects with a valid vc and credits normally.
++                if(f->vc >= 0) {
++                    Credit * const c = Credit::New();
++                    c->vc.insert(f->vc);
++                    _net[subnet]->WriteCredit(c, n);
++                }
++
+ #ifdef TRACK_FLOWS
+                 ++_ejected_flits[f->cl][n];
+ #endif
+-	
++
+                 _RetireFlit(f, n);
+             }
+         }
+diff --git a/src/trafficmanager.hpp b/src/trafficmanager.hpp
+index 986d8b4..853deff 100644
+--- a/src/trafficmanager.hpp
++++ b/src/trafficmanager.hpp
+@@ -218,6 +218,12 @@ protected:
+ 
+   int   _include_queuing;
+ 
++  // VeritX multicast row-broadcast + column-reduce (see booksim_config.cpp / _GeneratePacket).
++  int   _mcast_k;
++  int   _mcast_naive;
++  int   _reduce_col;
++  int   _bcast_all;
++
+   vector<int> _measure_stats;
+   bool _pair_stats;
+ 

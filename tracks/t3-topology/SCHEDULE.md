@@ -77,15 +77,26 @@ it is **streamed** from DRAM in tiles — each tile read once, multicast to its 
 consumed online (FlashAttention-decode style). L1 holds only a working window; DRAM
 bandwidth is the wall, and the schedule's whole job is to not waste it on redundant reads.
 
-## Where this sits, and what is not yet done
+**REQUIREMENT — store the KV cache per-head-contiguous.** Because DRAM bandwidth *is* the
+wall, the read pattern that hits it matters, and we measured it (Ramulator2, GDDR6,
+[scripts/dram_efficiency.py](scripts/dram_efficiency.py)): a per-head-contiguous KV head
+reads as a clean stream at **91%** of peak (the 9% is refresh), but a vLLM-style
+`[block, heads, dim]` layout — where reading one KV head strides past the other `g−1` —
+thrashes the row buffer down to **66%**. Multicast reads each KV head *once*, so this is
+exactly the layout it must have; adopting the multicast schedule without fixing the layout
+throws back ~28% of the bandwidth it just saved. (The g-fold multicast-vs-naive *ratio* is
+unaffected — same layout both ways — but the absolute tokens/sec in
+[serving_multicast.py](scripts/serving_multicast.py) is derated by this 0.91, not peak.)
+
+## Where this sits, what is validated, and what is open
 
 - **Where multicast pays** (from [compression_stack.py](scripts/compression_stack.py)):
   throughput serving and/or long context. It is invariant to lossless KV compression at
   the capacity-limited operating point, and orthogonal to it. It erodes only in the
   small-batch, short-context, heavily-compressed corner.
-- **Cycle-accurate validation — attempted, and here is exactly how far it got.** We tried
-  to drive BookSim2 (standalone, off TOGSim) with the schedule's traffic. Two findings,
-  both from checking the tool before trusting it:
+- **Cycle-accurate validation — the two obstacles we started from.** Driving BookSim2
+  (standalone, off TOGSim) with the schedule's traffic hit two walls first, both found by
+  checking the tool before trusting it — and both shaped the two-pass approach below:
 
   1. **BookSim2 mainline has no multicast.** Grep of `/opt/booksim2/src` for
      `multicast`/`mcast`/`multi_dest` returns nothing; every traffic pattern is unicast.
@@ -99,30 +110,73 @@ bandwidth is the wall, and the schedule's whole job is to not waste it on redund
      decode), and it saturates for the generic reason that few memory ports throttle many
      writers, not because of anything in our schedule.
 
-- **Cycle-accurate result (`scripts/mcast_validate.py --run`).** True flit-fork multicast
-  can't be patched into BookSim cheaply — its `TrafficPattern::dest()` returns one node, so
-  multicast needs a destination-set on the flit plus credit-fork routing in `iq_router`
-  (deadlock-research territory, and the exact "plausible but wrong" risk PITFALLS is about).
-  Instead we use the existing file-driven `matrix` pattern: a row-broadcast's **network
-  link load is identical to a unicast to the far end of the row** (DOR crosses each row
-  link once), so we simulate that at flit granularity on an 8×8 torus.
+- **Cycle-accurate validation, in two passes.** First a *proxy* on the existing traffic
+  pattern; then the *real* flit-fork patch that removed the proxy's confound and confirmed
+  the win. Both are kept — the proxy is *where the confound was caught*, and that is the
+  transferable lesson.
 
-  **What it confirms, cleanly:** at the schedule's 16 GB/s DRAM-bound offered load
-  (injection 0.10 = 0.5 flit/cyc at a source) the torus is **stable — unsaturated** (45
-  cyc). That is the one thing a roofline cannot give: cycle-accurate saturation behaviour
-  under the *actual* row traffic. It also **refines the margin**: the knee sits near
-  0.6–1.0 flit/cyc, so real headroom is **~2×, tighter than the roofline's aggregate 4×**,
-  because a row-broadcast concentrates load on one row's links — invisible to a
-  bandwidth-only view.
+  **Pass 1 — far-end proxy (`scripts/mcast_validate.py --run`).** A row-broadcast's network
+  link load equals a unicast to the far end of the row (DOR crosses each row link once), so
+  we simulated that on an 8×8 torus. It confirms one thing a roofline cannot: at the
+  schedule's 16 GB/s DRAM-bound load (injection 0.10) the torus is **stable — unsaturated**,
+  cycle-accurate. But it is *not* a clean multicast-vs-naive comparison, for a precise,
+  proven reason (`--ejtest`): BookSim's `matrix` pattern makes **every** node inject (a zero
+  row → a *self-packet* routed straight to the eject port, `dor_next_mesh`: `cur==dest →
+  2·gN`), and that port is a real **1 flit/cyc** resource (the `--ejtest` knee sits exactly
+  at `inj·packet_size = 1.0`). So the row's terminus node **double-loads** — its stream (0.5
+  flit/cyc at schedule load) *plus* its own idle self-packet (0.5) = 1.0 — and multicast
+  *appears* to saturate early (≈0.14). An artifact of the every-node-injects model, not
+  physics; it even falsified an inline claim in that file that "ejection is never the
+  bottleneck" (**PITFALLS §15**). The schedule-load stability conclusion survives it.
 
-  **What it does not show, stated honestly:** it is *not* a clean multicast-vs-naive
-  comparison. The far-end model is faithful for link load but concentrates all *ejection*
-  at the far node, while real multicast spreads delivery across the row — an artifact that
-  makes multicast appear to saturate *earlier* here. So the g-fold useful-throughput win
-  rests on the DRAM-side analysis ([serving_multicast.py](scripts/serving_multicast.py))
-  and hop-energy ([schedule.py](scripts/schedule.py)), not on this run. Full flit-fork
-  fidelity remains a scoped, separate simulator effort — worth it only for
-  belt-and-suspenders, since it would confirm rather than overturn.
+  **Pass 2 — real flit-fork multicast (`scripts/mcast_flitfork.py`, `booksim-ext/multicast.patch`).**
+  We built it. The `Flit` carries pre-registered single-flit copies, `iq_router` forks each
+  to the eject port as the stream transits a row core, and the `TrafficManager` injects one
+  stream per row with **receivers suppressed** — so the every-node-injects pollution is gone.
+  On an 8×8 **mesh** (a torus would let the stream take the 1-hop wraparound and miss the
+  middle cores, so mesh is the conservative linear-path model):
+    - **Fork is exact** — the known-answer gate: one injection → **7.0 deliveries** = g−1.
+    - **The g-fold win is confirmed, confound-free:** multicast sustains **≥7.1×** the useful
+      KV-delivery rate of naive re-fetch before saturating (0.875 vs 0.123 deliveries/cyc),
+      latency **flat** while naive's detonates at injection 0.20. The group shares the row
+      links; naive's near link carries all g streams and saturates first. This is the
+      network-side (g−1) counterpart of the g-fold DRAM saving
+      ([serving_multicast.py](scripts/serving_multicast.py)), now cycle-accurate. The surgery
+      *confirmed* the analytic result — it did not overturn it, exactly as expected, which is
+      why the DRAM-side analysis was always the load-bearing evidence.
+
+- **The second primitive — column-reduce, and both together (`scripts/schedule_fabric.py`).**
+  The multicast was only half the schedule; the other half is the online-softmax
+  **column-reduce** that combines partial attentions when a head's context is split down a
+  column. The modelling point that makes it cheap: the combine is **in-core compute**, so the
+  network only *relays* a partial one hop up the column to its parent — an ordinary unicast,
+  no fork and no merge, so it needed no extra router surgery (the same `reduce_col` path in
+  `multicast.patch`). Three results:
+    - **Reduce is a pure 1-hop relay** — the known-answer gate: accepted/injected = **1.0**
+      (no fork), and it stays cheap (stable to inj 0.60, latency ~12) because each column
+      link carries just one small partial.
+    - **Both primitives fit the fabric at once.** At the schedule's DRAM-bound operating load
+      (inj 0.10), multicast, reduce, and the **combined** run are all stable with headroom
+      (combined latency ~20 cyc), and combined is still stable at 2× that load.
+    - **Stated conservatism:** we inject reduce partials as fast as the KV stream, whereas the
+      reduce really fires *once per decode step*. So the equal-rate combined saturation is an
+      over-driven floor far above the operating point — the realistic reduce is lighter still.
+- **Both engines on ONE operating point — the composition, earned not assumed
+  (`scripts/decode_e2e.py`).** The results above are each cycle-accurate *on their own* but
+  composed only on paper. This pins the Ramulator DRAM and the BookSim NoC to a **single**
+  decode operating point derived from first principles: Wormhole feeds `288 GB/s ÷ 18 endpoints
+  = 16 GB/s` per DRAM endpoint (one KV-group row), Ramulator keeps `× 0.91` of it (measured
+  live, the per-head-contiguous read above), and the established `32 GB/s = 1 flit/cyc` bridge
+  turns that into **0.456 flit/cyc** at the row source. BookSim's real flit-fork multicast is
+  then run at exactly that injection. At that DRAM-dictated load multicast is **stable**
+  (latency 27) while naive is **saturated** (latency 701); **DRAM is the binding stage** (14.6
+  GB/s vs NoC 32, compute 925 — NoC 2.2× clear, compute 63×); and the per-die model aggregates
+  back to the **4608 GB/s QuietBox** headline. Four gates, all pass (fork-exact 7.01,
+  loop-closes, DRAM-binds, composes-to-headline). It is a **staged DRAM→NoC hand-off**, not a
+  full co-simulator: no NoC→DRAM backpressure, which is unnecessary for a one-way DRAM-bound
+  feed — and the loop-closes gate *checks* the NoC keeps up rather than assuming it. Compute
+  stays analytic (PyTorchSim is not wired in; at 63× headroom it cannot be the binding stage).
+  This closes the one seam that was purely analytic — DRAM↔NoC.
 - **Honest bound:** `g` is the ceiling, realised when a group is spread across cores (the
   low-batch / many-core regime). A pure context-parallel mapping reaches low DRAM traffic
   a different way (cross-core reduction instead of multicast); this schedule's advantage
