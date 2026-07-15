@@ -83,12 +83,30 @@ bandwidth is the wall, and the schedule's whole job is to not waste it on redund
   throughput serving and/or long context. It is invariant to lossless KV compression at
   the capacity-limited operating point, and orthogonal to it. It erodes only in the
   small-batch, short-context, heavily-compressed corner.
-- **Not yet done:** this is a mapping and its traffic accounting, checked against a real
-  floorplan and a calibrated bottleneck model. It is **not** a cycle-accurate run — the
-  next step would be to drive BookSim2 with this exact multicast/reduce traffic (now
-  unblocked, since we are off TOGSim) and confirm the end-to-end decode speedup lands
-  where the roofline predicts. That is a bounded, well-specified experiment rather than
-  the open-ended topology sweep the track started with.
+- **Cycle-accurate validation — attempted, and here is exactly how far it got.** We tried
+  to drive BookSim2 (standalone, off TOGSim) with the schedule's traffic. Two findings,
+  both from checking the tool before trusting it:
+
+  1. **BookSim2 mainline has no multicast.** Grep of `/opt/booksim2/src` for
+     `multicast`/`mcast`/`multi_dest` returns nothing; every traffic pattern is unicast.
+     So the multicast tree — the whole point — cannot be simulated without patching the
+     router to replicate flits. Naively "injecting the multicast traffic" would expand it
+     into `g` unicasts, i.e. re-simulate the naive case and call it validation.
+  2. **BookSim's `hotspot` is the wrong direction.** It concentrates *destinations*; the
+     schedule's heavy flow concentrates *sources* (18 DRAM → 102 compute). A first
+     accidental run funnelled 121→18 and saturated at inj≈0.02 (hotspot node pinned at
+     0.975 flit/cyc) — real, but it is the compute→DRAM **write/request** path (minor in
+     decode), and it saturates for the generic reason that few memory ports throttle many
+     writers, not because of anything in our schedule.
+
+  The schedule's actual direction, from the port arithmetic: each of 18 DRAM nodes
+  **sources** 16 GB/s = 0.50 flit/cyc (under the 1.0 port limit), and the 102 compute
+  destinations each **receive** 0.09 flit/cyc — spread, no hotspot. So the KV data path
+  has headroom, cycle-accurate-*consistent* with the roofline. But a true cycle-accurate
+  run of the *multicast* schedule is **blocked on BookSim lacking multicast**, which is a
+  real, separate piece of simulator work (multicast routing + flit replication), not a
+  quick config. It would most likely confirm the roofline rather than surprise it — which
+  is why it is worth doing only for belt-and-suspenders, not as a gate.
 - **Honest bound:** `g` is the ceiling, realised when a group is spread across cores (the
   low-batch / many-core regime). A pure context-parallel mapping reaches low DRAM traffic
   a different way (cross-core reduction instead of multicast); this schedule's advantage
