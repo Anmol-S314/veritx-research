@@ -36,9 +36,12 @@ Our delta is small and legible — that's the payoff of a subtree over a full-fi
 A version bump is a **normal git merge**, not a patch-reject or a silent shadow:
 
 ```bash
-git subtree pull --prefix third_party/booksim2 \
-    https://github.com/booksim/booksim2.git <new-commit> --squash
+third_party/booksim2/veritx-bump.sh <new-commit-or-tag>
 ```
+
+`veritx-bump.sh` wraps `git subtree pull` with the prefix, upstream URL, and `--squash`
+baked in, and runs from the repo root for you. Under the hood it's just:
+`git subtree pull --prefix third_party/booksim2 <url> <ref> --squash`.
 
 - Upstream changed a file we didn't touch → auto-merged, clean.
 - Upstream changed lines near ours → a normal merge conflict in a real `.cpp`, resolved
