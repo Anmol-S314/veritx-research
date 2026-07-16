@@ -66,6 +66,28 @@ git checkout -- third_party/booksim2/src/main.cpp
 That's the entire workflow: **edit a real file → one rebuild command → it's live.** A real
 change (a new routing function, a router tweak) is the same five steps minus the undo.
 
+## Does my change persist?
+
+Two different things, and they persist differently — worth knowing so an edit doesn't
+seem to "disappear":
+
+| What | Lives in | Persists? |
+|---|---|---|
+| your **source edit** (`third_party/booksim2/src/…`) | the repo (mounted at `/workspace`, in git) | ✅ yes — on your disk |
+| the **rebuilt binary** (`veritx-rebuild.sh` → `/opt`, `/usr/local/bin/booksim`) | the container's throwaway layer | ❌ no — `make shell` is `--rm` |
+
+So `veritx-rebuild.sh` gives you a working `booksim` **for that session only** — the fast
+edit/test loop. Exit the shell and `/opt/booksim2` snaps back to whatever the *image* was
+built with. To make a change **permanent in the image**, rebuild it:
+
+```bash
+make image-build      # COPYs third_party/booksim2 and compiles it into the image
+```
+
+Or just commit + push: CI watches `third_party/booksim2/**` and rebuilds the image for
+you. Full loop: **edit (persists in git) → `veritx-rebuild.sh` (session, to test) → commit
+→ image rebuild (permanent).** Only an *uncommitted* edit is ever session-only.
+
 ## See exactly what we changed
 
 ```bash
