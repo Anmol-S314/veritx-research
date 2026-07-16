@@ -98,10 +98,18 @@ energy-delay product → `results/energy.json`), and `dashboard` (build
 │   ├── t2-deadlock/       # routing deadlock with Booksim 2.0
 │   ├── t3-topology/       # topology co-opt with Booksim + Timeloop + Accelergy
 │   └── t4-formal/         # formal verification with SymbiYosys + Yosys + CBMC
+├── third_party/
+│   └── booksim2/          # vendored BookSim 2.0 (git subtree) + VeritX edits — see VERITX.md
+├── archive/               # superseded machinery, kept for reference (pre-subtree booksim-ext)
 ├── scripts/               # cross-track report generation
 ├── Dockerfile             # multi-stage build of all tools
 └── .github/workflows/     # GitHub Actions CI (5-cell matrix)
 ```
+
+Booksim (used by T2 and T3) is **vendored as a git subtree** under `third_party/booksim2/`.
+You change the simulator by editing its real source — see
+[`third_party/booksim2/VERITX.md`](third_party/booksim2/VERITX.md) for the edit/rebuild
+loop and the `git subtree pull` version-bump.
 
 ## Per-track guides
 
