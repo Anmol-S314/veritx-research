@@ -116,8 +116,12 @@ Files we didn't touch auto-merge; lines near ours conflict in a real `.cpp` with
 context. Commit the merge, update the pinned commit at the top of this file, then
 `veritx-rebuild.sh` and rerun the T3 gates.
 
-See our delta: `git log --oneline -- third_party/booksim2`, or
-`git diff <import-commit> -- third_party/booksim2`.
+## See our delta vs upstream
+
+```bash
+git log  --oneline -- third_party/booksim2       # the import, then our edits
+git diff <import-commit> -- third_party/booksim2  # full delta vs pristine BookSim
+```
 
 ---
 
