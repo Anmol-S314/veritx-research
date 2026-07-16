@@ -45,3 +45,6 @@ tracks/t3-topology/timeloop/timeloop-mapper.*
 # Teaching materials & local setup notes — kept on disk, NOT pushed to the remote
 curriculum/
 docs/VM-SETUP.md
+
+# Contains plaintext infra credentials — keep local, never commit
+docs/VM-SETUP.md
