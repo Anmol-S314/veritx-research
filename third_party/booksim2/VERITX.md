@@ -22,6 +22,50 @@ third_party/booksim2/veritx-rebuild.sh       # sync → compile → install → 
 silently dropped our edits fails the check. T3's scripts also call it automatically if
 they find a booksim on `PATH` that lacks our extensions.
 
+## Try it — a 2-minute worked example
+
+Prove the whole loop with a throwaway edit (we undo it at the end). Inside `make shell`:
+
+**1. Edit a real file.** Add one line to `src/main.cpp`, just after `int main(...)`'s `{`:
+
+```cpp
+int main( int argc, char **argv )
+{
+  cerr << "[hello from my build]" << endl;   // <-- add this line
+
+  BookSimConfig config;
+```
+
+**2. Rebuild:**
+
+```bash
+third_party/booksim2/veritx-rebuild.sh
+```
+
+**3. Run any example and look for your line:**
+
+```bash
+booksim /opt/booksim2/src/examples/mesh88_lat sim_count=1 2>&1 | grep hello
+# -> [hello from my build]
+```
+
+Your edit is in the binary — that's the whole point.
+
+**4. See just your change** (BookSim's original is the baseline, so only your line shows):
+
+```bash
+git diff third_party/booksim2/src/main.cpp    # one +line
+```
+
+**5. Undo it** (it was only a demo — a real change you'd keep and `git commit`):
+
+```bash
+git checkout -- third_party/booksim2/src/main.cpp
+```
+
+That's the entire workflow: **edit a real file → one rebuild command → it's live.** A real
+change (a new routing function, a router tweak) is the same five steps minus the undo.
+
 ## See exactly what we changed
 
 ```bash
