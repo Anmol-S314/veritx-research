@@ -2,7 +2,7 @@
 """Timeloop -> Booksim traffic-matrix bridge (T3).
 
 Parses a Timeloop `*.stats.txt` and emits an N x N traffic matrix in the format
-Booksim's `matrix(<file>)` pattern reads (see tracks/t3-topology/booksim-ext).
+Booksim's `matrix(<file>)` pattern reads (see third_party/booksim2).
 
 Turning Timeloop's per-level access counts into a *tile-to-tile* NoC traffic
 matrix is the core T3 research question (programme Wk6) — it depends on how the

@@ -66,7 +66,7 @@ vLLM-interleaved layout costs another ~28% by thrashing the row buffer.) See
 [scripts/multicast_savings.py](scripts/multicast_savings.py). The concrete
 mapping that realises it — query heads to cores, KV multicast along rows — is designed in
 [SCHEDULE.md](SCHEDULE.md) and **cycle-accurately validated**: we patched real flit-fork
-multicast into BookSim ([booksim-ext/multicast.patch](booksim-ext/multicast.patch)) and
+multicast into BookSim ([our edits in third_party/booksim2](../../third_party/booksim2/VERITX.md)) and
 measured multicast sustaining **≥7.1× (g−1)** the useful KV-delivery rate of the shipped
 re-fetch before the network saturates ([scripts/mcast_flitfork.py](scripts/mcast_flitfork.py)) —
 the network-side confirmation of the g-fold DRAM saving. The schedule's second primitive, the

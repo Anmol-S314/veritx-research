@@ -41,7 +41,7 @@ K = 8                                # 8x8 mesh
 N = K * K                            # 64 nodes
 B_MINUS_1 = N - 1                    # deliveries per broadcast (source excluded) = 63
 HERE = Path(__file__).resolve()
-BUILD = HERE.parents[1] / "booksim-ext" / "build.sh"
+BUILD = HERE.parents[3] / "third_party" / "booksim2" / "veritx-rebuild.sh"
 OUT = Path("/tmp/prefix_bcast")
 SWEEP = [0.01, 0.02, 0.03, 0.05, 0.10, 0.20, 0.40, 0.70, 1.00]
 
@@ -105,11 +105,11 @@ def have_bcast_booksim():
 def ensure_booksim():
     if have_bcast_booksim():
         return
-    print("  booksim without snake-broadcast on PATH -- building via booksim-ext/build.sh ...")
+    print("  booksim without snake-broadcast on PATH -- building via third_party/booksim2/veritx-rebuild.sh ...")
     r = subprocess.run(["bash", str(BUILD)], capture_output=True, text=True)
     if r.returncode != 0 or not have_bcast_booksim():
         sys.exit("  ERROR: could not build/verify the snake-broadcast booksim.\n"
-                 "  Run inside the tools image; see booksim-ext/README.md.\n"
+                 "  Run inside the tools image; see third_party/booksim2/VERITX.md.\n"
                  + r.stdout[-1500:] + r.stderr[-1500:])
 
 

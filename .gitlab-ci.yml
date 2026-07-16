@@ -179,7 +179,7 @@ promote-image:
     - if: '$CI_COMMIT_BRANCH == "main"'
       changes:
         - Dockerfile
-        - tracks/t3-topology/booksim-ext/**/*
+        - third_party/booksim2/**/*
       when: always
     - if: '$CI_PIPELINE_SOURCE == "web"'
       when: manual

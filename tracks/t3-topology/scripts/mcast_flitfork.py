@@ -2,7 +2,7 @@
 """Cycle-accurate multicast vs naive re-fetch, with REAL flit-fork multicast. (T3)
 
 This is the belt-and-suspenders result mcast_validate.py said needed router surgery. The
-surgery is done (booksim-ext/multicast.patch): the Flit carries pre-registered single-flit
+surgery is done (third_party/booksim2): the Flit carries pre-registered single-flit
 COPIES, iq_router forks each to the eject port as the row-broadcast stream transits that
 core, and the TrafficManager injects one stream per row (receivers suppressed, so no
 self-packet pollution -- the confound of the old far-end proxy, PITFALLS.md #15). One
@@ -38,7 +38,7 @@ from pathlib import Path
 K = 8                               # 8x8 mesh: 8 cores per row, 8 rows
 G_MINUS_1 = K - 1                   # deliveries per multicast stream (source excluded)
 HERE = Path(__file__).resolve()
-BUILD = HERE.parents[1] / "booksim-ext" / "build.sh"
+BUILD = HERE.parents[3] / "third_party" / "booksim2" / "veritx-rebuild.sh"
 OUT = Path("/tmp/mcast_flitfork")   # in-container scratch for cfgs
 SWEEP = [0.05, 0.10, 0.20, 0.40, 0.60, 0.80, 1.00]
 
@@ -98,11 +98,11 @@ def have_patched_booksim():
 def ensure_booksim():
     if have_patched_booksim():
         return
-    print("  patched booksim not on PATH -- building via booksim-ext/build.sh ...")
+    print("  patched booksim not on PATH -- building via third_party/booksim2/veritx-rebuild.sh ...")
     r = subprocess.run(["bash", str(BUILD)], capture_output=True, text=True)
     if r.returncode != 0 or not have_patched_booksim():
         sys.exit("  ERROR: could not build/verify the patched booksim.\n"
-                 "  Run inside the tools image; see booksim-ext/README.md.\n"
+                 "  Run inside the tools image; see third_party/booksim2/VERITX.md.\n"
                  + r.stdout[-1500:] + r.stderr[-1500:])
 
 

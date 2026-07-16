@@ -30,6 +30,7 @@
 #include <ctime>
 #include "random_utils.hpp"
 #include "traffic.hpp"
+#include "veritx_ext.hpp"
 
 TrafficPattern::TrafficPattern(int nodes)
 : _nodes(nodes)
@@ -192,8 +193,11 @@ TrafficPattern * TrafficPattern::New(string const & pattern, int nodes,
     }
     result = new HotSpotTrafficPattern(nodes, hotspots, rates);
   } else {
-    cout << "Error: Unknown traffic pattern: " << pattern << endl;
-    exit(-1);
+    result = VeritXNewTraffic(pattern_name, params, nodes, config);
+    if(!result) {
+      cout << "Error: Unknown traffic pattern: " << pattern << endl;
+      exit(-1);
+    }
   }
   return result;
 }

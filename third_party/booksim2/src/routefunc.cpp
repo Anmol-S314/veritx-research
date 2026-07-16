@@ -42,6 +42,7 @@
 
 #include "booksim.hpp"
 #include "routefunc.hpp"
+#include "veritx_ext.hpp"
 #include "kncube.hpp"
 #include "random_utils.hpp"
 #include "misc_utils.hpp"
@@ -1996,4 +1997,6 @@ void InitializeRoutingMap( const Configuration & config )
 
   gRoutingFunctionMap["chaos_mesh"]  = &chaos_mesh;
   gRoutingFunctionMap["chaos_torus"] = &chaos_torus;
+
+  VeritXRegisterRouting();
 }

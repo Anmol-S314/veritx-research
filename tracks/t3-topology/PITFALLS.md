@@ -342,7 +342,7 @@ and must not be read as a result.
 **Catch it next time.** A dismissive comment — "*X is never the bottleneck*" — is a claim,
 not an aside. If it decides what you're allowed to ignore, it earns a runnable test. Ours
 took thirty seconds and turned out to be false. The clean fix — real flit-fork ejection —
-we then *built* (`booksim-ext/multicast.patch`, `scripts/mcast_flitfork.py`): it removed the
+we then *built* (`third_party/booksim2`, `scripts/mcast_flitfork.py`): it removed the
 confound and **confirmed** the g-fold win (≥7.1× useful throughput, §16), exactly as
 predicted. Writing down the confound was right; it also told us precisely what the real
 patch had to fix.

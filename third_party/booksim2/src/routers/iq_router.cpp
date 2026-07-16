@@ -2205,6 +2205,26 @@ void IQRouter::_SwitchUpdate( )
     //the output buffer size isn't precise due to flits in flight
     //but there is a maximum bound based on output speed up and ST traversal
     assert(_output_buffer[output].size()<=(size_t)_output_buffer_size+ _crossbar_delay* _output_speedup+( _output_speedup-1) ||_output_buffer_size==-1);
+
+    // VeritX multicast fork: as a row-broadcast stream transits this router, deliver the
+    // pre-registered copy destined for THIS node to the local eject port (last output;
+    // one flit/cyc, drains freely to the core). The stream continues untouched to its
+    // far-end dest, so the row links carry it exactly once. (See trafficmanager.cpp
+    // _GeneratePacket / mcast_k, and PITFALLS.md #15 for why the copies must really eject.)
+    if(f->mcast && f->head && !f->mcast_copies.empty()) {
+      int const eject = _outputs - 1;   // concentration 1: eject == 2*gN == last port
+      for(size_t i = 0; i < f->mcast_copies.size(); ++i) {
+	Flit * const cp = f->mcast_copies[i];
+	if(cp->dest == GetID()) {
+	  cp->itime = f->itime;           // copy inherits the stream's injection time
+	  cp->hops  = f->hops;            // and its hop count to this node
+	  _output_buffer[eject].push(cp);
+	  f->mcast_copies[i] = f->mcast_copies.back();
+	  f->mcast_copies.pop_back();
+	  break;                          // at most one delivery per node
+	}
+      }
+    }
     _crossbar_flits.pop_front();
   }
 }

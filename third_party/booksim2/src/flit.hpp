@@ -30,6 +30,7 @@
 
 #include <iostream>
 #include <stack>
+#include <vector>
 
 #include "booksim.hpp"
 #include "outputset.hpp"
@@ -82,6 +83,14 @@ public:
 
   // Lookahead route info
   OutputSet la_route_set;
+
+  // VeritX multicast (row-broadcast). A `mcast` head flit travels normally to its
+  // far-end `dest`, but carries pre-registered single-flit COPIES for the intermediate
+  // row members; the router forks each copy to the eject port as the stream transits that
+  // member's node (iq_router::_SwitchUpdate). One injected stream -> g deliveries, one
+  // stream on the links. Empty/false for ordinary flits.
+  bool mcast;
+  vector<Flit *> mcast_copies;
 
   void Reset();
 

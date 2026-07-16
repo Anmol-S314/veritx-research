@@ -18,7 +18,7 @@ it:
                      (a 32 B/cyc link @ 1 GHz = 1 flit/cyc -- the SAME bridge mcast_validate.py
                       and decode_roofline.py already use; not a new constant)
 
--- and BookSim's REAL flit-fork multicast (booksim-ext/multicast.patch) is then run at exactly
+-- and BookSim's REAL flit-fork multicast (third_party/booksim2) is then run at exactly
 that 0.46 flit/cyc. If the layers compose, multicast is stable there (and naive saturates) and
 DRAM is the binding stage. If the bridge or the efficiency were wrong, the implied injection
 could exceed the NoC's ceiling and GATE 2 fails loudly. So the composition is EARNED at one
@@ -101,7 +101,7 @@ def main(run):
     noc.ensure_booksim()
     ir, acc, _, _ = noc.run_booksim(0, 0.02)         # GATE 1: fork exact (known-answer)
     fork = acc / ir
-    print(f"\n  STAGE 2  NoC    BookSim flit-fork multicast (booksim-ext/multicast.patch)")
+    print(f"\n  STAGE 2  NoC    BookSim flit-fork multicast (third_party/booksim2)")
     print(f"                  GATE 1 fork exact: 1 injection -> {fork:.2f} deliveries "
           f"(expect {noc.G_MINUS_1})")
     assert abs(fork - noc.G_MINUS_1) < 0.5, fork

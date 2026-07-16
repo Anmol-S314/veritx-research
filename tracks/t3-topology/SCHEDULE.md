@@ -129,7 +129,7 @@ unaffected — same layout both ways — but the absolute tokens/sec in
   physics; it even falsified an inline claim in that file that "ejection is never the
   bottleneck" (**PITFALLS §15**). The schedule-load stability conclusion survives it.
 
-  **Pass 2 — real flit-fork multicast (`scripts/mcast_flitfork.py`, `booksim-ext/multicast.patch`).**
+  **Pass 2 — real flit-fork multicast (`scripts/mcast_flitfork.py`, `third_party/booksim2`).**
   We built it. The `Flit` carries pre-registered single-flit copies, `iq_router` forks each
   to the eject port as the stream transits a row core, and the `TrafficManager` injects one
   stream per row with **receivers suppressed** — so the every-node-injects pollution is gone.

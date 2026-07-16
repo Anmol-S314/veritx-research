@@ -2,7 +2,7 @@
 """Cycle-accurate check of the multicast schedule's NoC load, via BookSim -- PROXY. (T3)
 
   >>> SUPERSEDED for the multicast-vs-naive comparison by scripts/mcast_flitfork.py, which
-  >>> drives REAL flit-fork multicast (booksim-ext/multicast.patch) and measures the g-fold
+  >>> drives REAL flit-fork multicast (third_party/booksim2) and measures the g-fold
   >>> win directly (>=7.1x, confound-free). This file is kept for two things it still owns:
   >>> the schedule-load STABILITY result, and the --ejtest proof that BookSim's eject port
   >>> is a 1 flit/cyc bottleneck -- the confound that motivated building the real patch
@@ -39,7 +39,7 @@ inj 0.20->0.22). So the far-end model DOUBLE-LOADS the row's terminus: at schedu
 node carries its row stream (0.5 flit/cyc) PLUS its own idle self-packet (0.5) = 1.0, which
 is why multicast appears to saturate at inj~0.14 not ~0.20. That is an artifact of BookSim's
 every-node-injects model, not of multicast. Removing it cleanly needs flit-fork in the
-router -- which we then BUILT (booksim-ext/multicast.patch, scripts/mcast_flitfork.py): it
+router -- which we then BUILT (third_party/booksim2, scripts/mcast_flitfork.py): it
 removed exactly this double-load and confirmed the g-fold (>=7.1x). The one thing THIS proxy
 still owns is the schedule-load stability answer -- see the --run narrative.
 

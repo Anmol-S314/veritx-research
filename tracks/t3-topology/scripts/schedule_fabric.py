@@ -35,7 +35,7 @@ from pathlib import Path
 
 K = 8                                   # 8x8 mesh
 HERE = Path(__file__).resolve()
-BUILD = HERE.parents[1] / "booksim-ext" / "build.sh"
+BUILD = HERE.parents[3] / "third_party" / "booksim2" / "veritx-rebuild.sh"
 OUT = Path("/tmp/schedule_fabric")
 OP_LOAD = 0.10                          # schedule's DRAM-bound load (16 GB/s), the anchor
 
@@ -98,11 +98,11 @@ def have_patched():
 def ensure_booksim():
     if have_patched():
         return
-    print("  patched booksim not on PATH -- building via booksim-ext/build.sh ...")
+    print("  patched booksim not on PATH -- building via third_party/booksim2/veritx-rebuild.sh ...")
     r = subprocess.run(["bash", str(BUILD)], capture_output=True, text=True)
     if r.returncode != 0 or not have_patched():
         sys.exit("  ERROR: could not build/verify the patched booksim; run inside the tools "
-                 "image (booksim-ext/README.md).\n" + r.stdout[-1200:] + r.stderr[-1200:])
+                 "image (third_party/booksim2/VERITX.md).\n" + r.stdout[-1200:] + r.stderr[-1200:])
 
 
 def main():

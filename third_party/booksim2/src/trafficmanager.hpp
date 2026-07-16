@@ -218,6 +218,12 @@ protected:
 
   int   _include_queuing;
 
+  // VeritX multicast row-broadcast + column-reduce (see booksim_config.cpp / _GeneratePacket).
+  int   _mcast_k;
+  int   _mcast_naive;
+  int   _reduce_col;
+  int   _bcast_all;
+
   vector<int> _measure_stats;
   bool _pair_stats;
 

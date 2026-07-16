@@ -171,50 +171,19 @@ RUN rm -rf /usr/local/share/accelergy/estimation_plug_ins/dummy_tables
 # Booksim 2.0 + VeritX extensions (T2, T3 — Deadlock, Topology)
 #
 # DELIBERATELY LAST in the builder stage. Docker invalidates every layer after a
-# changed one, and booksim-ext/ is the only thing here that people actually edit.
-# When this block sat at the top, touching one .cpp rebuilt Accelergy, Timeloop,
-# Yosys, SymbiYosys and CBMC — none of which had changed. Keep the volatile layer
-# at the bottom: everything above it stays cached.
+# changed one, and Booksim is the only source people here actually edit. Keeping it
+# at the bottom means Accelergy, Timeloop, Yosys, SymbiYosys and CBMC above it stay
+# cached when a .cpp changes.
 #
-# The clone is its own layer so it survives an extension edit; only the copy +
-# compile below re-runs (~1-2 min instead of a full rebuild). If you bump the
-# pinned commit, that layer and everything under it rebuilds — which is correct.
-#
-# booksim-ext/src/ MIRRORS Booksim's own src/ tree and is copied over it, so a
-# file's path is its meaning: a name that doesn't exist upstream is a new file
-# (Booksim's Makefile globs `*.cpp */*.cpp`, so no Makefile edit is needed); a
-# name that does exist is a wholesale overlay of that upstream file. The mirror —
-# rather than a flat copy — is what lets you overlay routers/, networks/,
-# allocators/ etc., where the interesting code lives. A flat copy would land
-# routers/iq_router.cpp at src/ *beside* the original and the link would die on
-# duplicate symbols.
-#
-# `veritx_hooks.patch` routes Booksim's two factories (TrafficPattern::New,
-# InitializeRoutingMap) into VeritXNewTraffic() / VeritXRegisterRouting() — a new
-# traffic pattern or routing function is a new file plus one line in veritx_ext.cpp,
-# so those contributors write no patch and never edit this Dockerfile.
-#
-# `multicast.patch` is the exception the rule warned about: true flit-fork multicast
-# (row-broadcast for the GQA KV schedule) needs edits the veritx_ext factory cannot
-# express — a dest field on the Flit, an eject-copy fork in iq_router, and multicast
-# injection in the TrafficManager. It CANNOT be a new file, so it is a real patch. It
-# touches only flit.*, booksim_config.cpp, trafficmanager.*, iq_router.cpp (disjoint
-# from veritx_hooks.patch's routefunc/traffic), and applies cleanly on the pinned
-# commit. See tracks/t3-topology/booksim-ext/README.md and PITFALLS.md #15/#16.
-#
-# Source stays at /opt/booksim2 so it can be edited and recompiled in-image;
-# booksim-ext/build.sh does that and verifies the result.
+# Booksim is VENDORED as a git subtree at third_party/booksim2 — pinned upstream with
+# VeritX's edits carried as ordinary commits on top (see third_party/booksim2/VERITX.md).
+# No clone, no patch, no overlay: you edit the real .cpp files with full LSP, `git diff`
+# shows exactly our delta, and an upstream bump is a `git subtree pull` merge. The image
+# just copies the tree and builds it — editing a Booksim file invalidates only this COPY
+# + the compile (~1-2 min), never the layers above.
 # =============================================================================
-RUN git clone https://github.com/booksim/booksim2.git && \
-    cd booksim2 && git checkout 28f43299f1706a3160ffac721ca461d74eb6e618
-
-COPY tracks/t3-topology/booksim-ext/ /opt/booksim-ext/
-RUN cd /opt/booksim2 && \
-    cp -r /opt/booksim-ext/src/. src/ && \
-    git apply /opt/booksim-ext/veritx_hooks.patch && \
-    git apply /opt/booksim-ext/multicast.patch && \
-    cd src && make -j$(nproc) && \
-    cp booksim /usr/local/bin/
+COPY third_party/booksim2/ /opt/booksim2/
+RUN cd /opt/booksim2/src && make -j$(nproc) && cp booksim /usr/local/bin/
 
 # =============================================================================
 # Stage 2: Runtime image (slim)

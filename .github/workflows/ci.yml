@@ -130,7 +130,7 @@ jobs:
           filters: |
             image:
               - 'Dockerfile'
-              - 'tracks/t3-topology/booksim-ext/**'
+              - 'third_party/booksim2/**'
 
   # NB: this is the MIRROR. The real gate is .gitlab-ci.yml, which builds the image
   # FIRST and only promotes it to `latest` once the suite has passed on that exact

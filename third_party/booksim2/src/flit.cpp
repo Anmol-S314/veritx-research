@@ -80,7 +80,9 @@ void Flit::Reset()
   intm =-1;
   ph = -1;
   data = 0;
-}  
+  mcast = false;
+  mcast_copies.clear();
+}
 
 Flit * Flit::New() {
   Flit * f;
