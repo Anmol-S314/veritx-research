@@ -9,9 +9,10 @@
 
 // VeritX extension registry.
 //
-// `veritx_hooks.patch` wires Booksim's two factories into the functions below.
-// That patch is written once and never touched again -- to add a traffic
-// pattern or routing function you edit veritx_ext.cpp, NOT the patch.
+// Booksim's two factories (TrafficPattern::New in traffic.cpp, InitializeRoutingMap
+// in routefunc.cpp) redirect into the functions below. Those redirects live as
+// ordinary edits in the vendored subtree -- to add a traffic pattern or routing
+// function you edit veritx_ext.cpp, not the factory files. See VERITX.md.
 
 // Called from TrafficPattern::New() when Booksim doesn't recognise a pattern.
 // Return NULL for a name you don't own; Booksim then reports it as unknown.

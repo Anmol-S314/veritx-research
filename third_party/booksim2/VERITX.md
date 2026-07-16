@@ -66,6 +66,81 @@ git checkout -- third_party/booksim2/src/main.cpp
 That's the entire workflow: **edit a real file → one rebuild command → it's live.** A real
 change (a new routing function, a router tweak) is the same five steps minus the undo.
 
+## Worked example: add a routing function
+
+This is the real pattern — how `yx` and `snake` were added. Adding a routing function is
+**three touch points**: a new file pair, one line in the hook, one line in your `.cfg`.
+Copy `src/yxroute.{cpp,hpp}` as your template.
+
+**1. New file `src/myroute.hpp`** — declare the function (signature is fixed by BookSim):
+
+```cpp
+#ifndef _MYROUTE_HPP_
+#define _MYROUTE_HPP_
+#include "routefunc.hpp"
+void my_mesh(const Router *r, const Flit *f, int in_channel,
+             OutputSet *outputs, bool inject);
+#endif
+```
+
+**2. New file `src/myroute.cpp`** — the logic. Pick the output port, set the VC range,
+emit it. The VC block is boilerplate every route needs — lift it verbatim from
+`yxroute.cpp`; only the `out_port` line is yours:
+
+```cpp
+#include "myroute.hpp"
+#include "globals.hpp"
+
+void my_mesh(const Router *r, const Flit *f, int in_channel,
+             OutputSet *outputs, bool inject)
+{
+  int out_port = inject ? -1 : /* your next-hop from r->GetID() to f->dest */;
+
+  int vcBegin = 0, vcEnd = gNumVCs - 1;   // (+ the READ/WRITE_REQUEST/REPLY block from yxroute.cpp)
+  outputs->Clear();
+  outputs->AddRange(out_port, vcBegin, vcEnd);
+}
+```
+
+**3. Register it — one line in `src/veritx_ext.cpp`** (the *only* wiring you touch):
+
+```cpp
+#include "myroute.hpp"           // top of file, next to the other route includes
+// ... inside VeritXRegisterRouting():
+gRoutingFunctionMap["my_mesh"] = &my_mesh;
+```
+
+> ⚠️ Key is `my_mesh` (name **+ topology**). BookSim appends the topology, so `.cfg` says
+> `routing_function = my;` on a mesh. Register `my` and it looks up `my_mesh_mesh` → abort.
+> See Gotchas.
+
+**4. Select it in a `.cfg`** (e.g. `configs/mesh8x8.cfg`):
+
+```
+routing_function = my;
+```
+
+**5. Rebuild and run:**
+
+```bash
+third_party/booksim2/veritx-rebuild.sh
+booksim tracks/t3-topology/configs/mesh8x8.cfg
+```
+
+No Makefile edit (the `*.cpp` glob picks up `myroute.cpp`), no patch, no core-file edit.
+
+**Traffic patterns** are the same shape, one file over: implement a `TrafficPattern`
+subclass (see `matrixtraffic.cpp`), then add an `if (name == "mine")` branch in
+`VeritXNewTraffic()` instead of a map line. Select with `traffic = mine(<args>);`.
+
+**Multicast is different — it's not a hook add.** `mcast`/`bcast_all`/`reduce_col` are
+*cross-cutting* edits to upstream files (the flit carries a copy-list, `iq_router.cpp`
+forks it, `trafficmanager.cpp` injects it) — see the delta table under
+[What VeritX added](#what-veritx-added-the-delta). You drive it from a `.cfg` with the
+knobs (`mcast_k`, `bcast_all=1`, …), not by registering a function. If you need to *change*
+multicast behaviour you edit those real files directly; that's exactly what the subtree
+buys you.
+
 ## Does my change persist?
 
 Two different things, and they persist differently — worth knowing so an edit doesn't
