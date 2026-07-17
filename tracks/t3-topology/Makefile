@@ -1,6 +1,6 @@
 # T3: Topology — Booksim + Timeloop + Accelergy
 include ../common.mk
-.PHONY: setup lint test sim timeloop energy area dashboard clean
+.PHONY: setup lint test sim timeloop energy area dashboard hw clean
 
 setup:  ## check the toolchain (Booksim required; Timeloop/Accelergy optional)
 	@$(call need,booksim)
@@ -57,6 +57,11 @@ area:  ## die area from Accelergy (routers + buffers + MACs), per NoC size
 
 dashboard:  ## (re)build report/t3/index.html from results/
 	@python3 scripts/generate_dashboard.py
+
+hw:  ## build+run the Tenstorrent NoC multicast microbench (needs tt-metal SDK + board; NOT in CI)
+	@# deliberately NOT called from setup/lint/test, so the hardware-less ci: matrix never hits it.
+	@# build.sh exits with instructions if TT_METAL_HOME / a board is absent.
+	@cd hardware && ./build.sh && ./noc_multicast_bw
 
 clean:  ## remove generated results + Timeloop artifacts
 	@rm -rf results/ timeloop/timeloop-mapper* __pycache__/
