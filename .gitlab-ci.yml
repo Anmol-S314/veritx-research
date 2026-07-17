@@ -135,6 +135,10 @@ build-image:
   variables:
     DOCKER_TLS_CERTDIR: ""
     DOCKER_BUILDKIT: "1"
+    # Don't attach provenance/SBOM attestations. They turn the image into an OCI
+    # manifest LIST that the self-hosted registry rejects on push ("error from
+    # registry: unknown error"). We want a plain single-image manifest.
+    BUILDX_NO_DEFAULT_ATTESTATIONS: "1"
   # Build ONLY when the toolchain definition changes, or on a manual run. Every
   # other pipeline skips this job and reuses the `:latest` already in the registry.
   rules:
