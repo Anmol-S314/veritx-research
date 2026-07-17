@@ -1,7 +1,7 @@
 # Stage 1: Build all VeritX research tools
 FROM ubuntu:22.04 AS builder
 
-LABEL description="VeritX Research Tools — Booksim, Accelergy, Yosys, SymbiYosys, CBMC (gem5 + Timeloop added later)"
+LABEL description="VeritX Research Tools — Booksim, Timeloop, Accelergy (T4 formal tools Yosys/SymbiYosys/CBMC temporarily disabled — see below)"
 
 SHELL ["/bin/bash", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive
@@ -65,39 +65,40 @@ RUN git clone --recurse-submodules https://github.com/Accelergy-Project/timeloop
     find . -name "libtimeloop*.so" -exec cp {} /usr/local/lib/ \;
 
 # =============================================================================
-# Yosys (T4 — Formal Verification)
-# =============================================================================
-RUN pip3 install cmake && \
-    git clone --depth 1 --recurse-submodules --shallow-submodules \
-        https://github.com/YosysHQ/yosys.git && \
-    cd yosys && \
-    mkdir build && cd build && \
-    cmake .. -DBUILD_EDA=ON -DENABLE_READLINE=OFF -DWITH_ABC=OFF \
-        -DCMAKE_INSTALL_PREFIX=/usr/local && \
-    make -j$(nproc) && \
-    make install && \
-    # CMake may miss some share files; copy them explicitly
-    cp -r /opt/yosys/backends/smt2/smtio.py /usr/local/share/yosys/python3/ && \
-    strip /usr/local/bin/yosys
-
-# =============================================================================
-# SymbiYosys (T4)
-# =============================================================================
-RUN git clone --depth 1 https://github.com/YosysHQ/sby.git && \
-    cd sby && \
-    make install && \
-    mkdir -p /usr/local/share/yosys/python3/ && \
-    cp sbysrc/*.py /usr/local/share/yosys/python3/
-
-# =============================================================================
-# CBMC (T4)
-# =============================================================================
-RUN git clone --depth 1 https://github.com/diffblue/cbmc.git && \
-    cd cbmc && \
-    cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DWITH_JBMC=OFF && \
-    cmake --build build -j$(nproc) && \
-    cmake --install build && \
-    strip /usr/local/bin/cbmc
+# T4 FORMAL TOOLS (Yosys, SymbiYosys, CBMC) — TEMPORARILY DISABLED.
+#
+# These three source builds are ~80% of the image build time (~35 min). T4 is
+# not active right now, so they are commented out to keep builds fast. To bring
+# the formal track back: uncomment these blocks, re-add `t4-formal` to the CI
+# matrix and the `sim-t4-formal` job in .gitlab-ci.yml, then rebuild.
+#
+# # Yosys (T4)
+# RUN pip3 install cmake && \
+#     git clone --depth 1 --recurse-submodules --shallow-submodules \
+#         https://github.com/YosysHQ/yosys.git && \
+#     cd yosys && \
+#     mkdir build && cd build && \
+#     cmake .. -DBUILD_EDA=ON -DENABLE_READLINE=OFF -DWITH_ABC=OFF \
+#         -DCMAKE_INSTALL_PREFIX=/usr/local && \
+#     make -j$(nproc) && \
+#     make install && \
+#     cp -r /opt/yosys/backends/smt2/smtio.py /usr/local/share/yosys/python3/ && \
+#     strip /usr/local/bin/yosys
+#
+# # SymbiYosys (T4)
+# RUN git clone --depth 1 https://github.com/YosysHQ/sby.git && \
+#     cd sby && \
+#     make install && \
+#     mkdir -p /usr/local/share/yosys/python3/ && \
+#     cp sbysrc/*.py /usr/local/share/yosys/python3/
+#
+# # CBMC (T4)
+# RUN git clone --depth 1 https://github.com/diffblue/cbmc.git && \
+#     cd cbmc && \
+#     cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DWITH_JBMC=OFF && \
+#     cmake --build build -j$(nproc) && \
+#     cmake --install build && \
+#     strip /usr/local/bin/cbmc
 
 # =============================================================================
 # Python dependencies (shared across all tracks)
