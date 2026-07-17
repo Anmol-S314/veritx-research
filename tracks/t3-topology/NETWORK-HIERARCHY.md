@@ -37,7 +37,28 @@ Every property that made topology *not* matter on-chip reverses at scale:
 - **On-chip:** 2D mesh / torus. Tenstorrent Wormhole: 2D torus + two unidirectional NoC
   planes (deadlock-free, 2× bandwidth). Settled; richer shapes cost more for no gain
   ([CONCLUSION.md](CONCLUSION.md)).
-- **Chip-to-chip (scale-up):** short-reach mesh/torus of chips over Ethernet-class links.
+- **Chip-to-chip (scale-up):** the field genuinely disagrees here — three philosophies:
+  - **Tenstorrent — 2D torus of chips (Ethernet).** Same as its on-chip NoC, scaled out;
+    edge Ethernet links tile chips into a torus (QuietBox / Galaxy). Cheap, uniform, tiles.
+  - **NVIDIA — all-to-all switch (NVLink/NVSwitch).** Full bandwidth between any pair within
+    a node (HGX 8-GPU, NVL72 rack). Expensive, non-blocking.
+  - **Google TPU — 3D torus (ICI) + optical circuit switches.** Torus that OCS can
+    *reconfigure* per job and route around failures.
+
+### The chip-to-chip rung is the first place topology may be first-order *for inference*
+
+On-chip, decode's all-reduce is trivial and the NoC has headroom. But **tensor-parallel
+decode across chips** does a **small all-reduce every layer, every token** — tiny messages,
+**latency-bound**, on the critical path. That is exactly where the *interconnect* (not memory,
+not compute) can become the limiter. Pipeline-parallel is gentler (rarer, larger transfers).
+Whether it actually binds is a roofline question — same tool, one rung up.
+
+**This rung is closer to our own work than the pod level.** Our 5.4× multicast result modeled
+**per-die (on-chip) multicast aggregated across 8 chips**. The **cross-chip KV sharing** —
+sending a shared KV head *once over the chip-to-chip fabric* to multiple chips instead of each
+re-loading it — is a **different, less-explored** thing that lives at *this* rung, directly
+adjacent to what we already built. It may be a cleaner novel slice than the pod level; the
+Gate-0 prior-art pass should cover chip-to-chip explicitly, not just pod-scale.
 - **Pod / datacenter (scale-out):**
   - **Fat-tree / Clos** — dominant datacenter-AI-training fabric (Meta, Google, NVIDIA SuperPOD).
   - **Dragonfly** — HPC supercomputers (HPE/Cray Slingshot); minimizes long global cables.
@@ -99,3 +120,26 @@ not a positive result).
 inter-chip roofline either kills it cheaply or identifies the single narrow question worth a
 full study. Either outcome beats building a sweep we have reason to disbelieve — which is
 exactly the mistake this track already made once, on-chip.
+
+### Gate 0 result (prior-art pass, 2026-07-17): PASSES — open, with a close occupant
+
+A fan-out prior-art search found the specific intersection (scale-out topology under
+disaggregated P/D **+** cross-node KV-multicast) **unclaimed by any single work** — a genuine
+pass, unlike the on-chip idea which was already FlatAttention. Caveats, in this track's spirit:
+
+- **Differentiate from (the threat):** **arXiv 2605.00254, "Rethinking Network Topologies for
+  Cost-Effective MoE LLM Serving"** — a systematic topology comparison *for inference serving*
+  (scale-up/scale-out/3D-torus/3D-full-mesh; switchless 20.6–56.2% more cost-effective). It
+  **validates the premise** but targets **MoE expert-parallel**, not disaggregation, not
+  KV-multicast. *Confidence medium: single May-2026 source, self-declared first.*
+- **Names the gap for us:** **NetKV (2606.03910)** does network-aware *routing* on a *fixed*
+  fat-tree and explicitly argues training-topology methods don't transfer to inference.
+- **Treat fabric as given (easy to differentiate):** Mooncake, PrfaaS, FlowKV, TraCT,
+  MemServe, GORGO, NVIDIA Dynamo — all optimize scheduling/placement/transport, none compare
+  topologies.
+- **Genuinely unoccupied:** cross-node KV-multicast / send-once-and-fork (the scale-out
+  FlatAttention analogue) appears nowhere.
+
+**Before building:** (1) read 2605.00254 + NetKV in full to confirm the MoE-vs-disaggregation
+delta holds; (2) run Gate 1 (inter-chip roofline). The field is moving monthly — scoop risk is
+real. See [[scale-out-topology-openproblem]].
