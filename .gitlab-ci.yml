@@ -7,31 +7,25 @@
 # push fails (or, worse, silently keeps pulling a stale image).
 variables:
   DOCKER_REPO: ${CI_REGISTRY_IMAGE}/veritx-tools-base
-  # Every job runs the image THIS commit defines, never a floating `latest`.
-  # `latest` is only what the outside world pulls, and it moves only after the
-  # whole pipeline has passed on this exact image (see promote-image).
-  DOCKER_IMAGE: ${DOCKER_REPO}:${CI_COMMIT_SHORT_SHA}
+  # Jobs run the shared `:latest` toolchain image. It is NOT rebuilt per commit —
+  # the toolchain only changes when the Dockerfile does (see build-image). Normal
+  # commits just pull the existing `:latest`.
+  DOCKER_IMAGE: ${DOCKER_REPO}:latest
 
 default:
   image: ${DOCKER_IMAGE}
 
-# build FIRST, promote LAST. The old order was test -> ... -> build, which meant
-# every job validated the OLD image and CI then published a brand-new, entirely
-# untested one over `latest`. That is backwards, and it is how an image can drift
-# from the Dockerfile that defines it while the pipeline stays green.
-#
-# This is the "staging environment", and it is a tag rather than a machine:
-#   build -> :<sha>  (nobody pulls it yet)
-#   test/sim on :<sha>
-#   all green -> retag :<sha> as :latest
-# A red pipeline simply leaves `latest` where it was, still working.
+# The toolchain image is a heavy, slow-changing artifact, so it is built ONLY
+# when its definition (the Dockerfile) changes — not on every commit. A normal
+# research/docs commit skips the build stage entirely and just pulls the existing
+# `:latest`. The image can also be built and pushed by hand from a dev box, which
+# is the nicer path for a big rebuild since it doesn't tax the CI runner's disk.
 stages:
   - build
   - test
   - sim
   - dashboard
   - report
-  - promote
 
 # Full runs only on main pushes or manual (web) runs — matches the GitHub gate.
 .on_main:
@@ -141,6 +135,14 @@ build-image:
   variables:
     DOCKER_TLS_CERTDIR: ""
     DOCKER_BUILDKIT: "1"
+  # Build ONLY when the toolchain definition changes, or on a manual run. Every
+  # other pipeline skips this job and reuses the `:latest` already in the registry.
+  rules:
+    - changes:
+        - Dockerfile
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+      allow_failure: true
   script:
     - echo "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" -u "$CI_REGISTRY_USER" --password-stdin
     - docker pull ${DOCKER_REPO}:latest || echo "no latest yet — first build, no cache"
@@ -151,36 +153,10 @@ build-image:
         --cache-from ${DOCKER_REPO}:latest
         --build-arg BUILDKIT_INLINE_CACHE=1
         --label org.opencontainers.image.revision=${CI_COMMIT_SHA}
-        -t ${DOCKER_IMAGE} .
-    # :<sha> only. `latest` is NOT touched here — it has not earned it yet.
-    - docker push ${DOCKER_IMAGE}
-
-# --- STAGE last: promote — the image passed, so let the world pull it ---
-#
-# Reached only if build/test/sim/dashboard/report all went green, because GitLab
-# will not start a stage whose predecessors failed. So `latest` can only ever
-# point at an image that ran the full suite. That is the whole guarantee.
-promote-image:
-  extends: .on_main
-  stage: promote
-  image: docker:latest
-  services:
-    - docker:dind
-  variables:
-    DOCKER_TLS_CERTDIR: ""
-  script:
-    - echo "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" -u "$CI_REGISTRY_USER" --password-stdin
-    - docker pull ${DOCKER_IMAGE}
-    - docker tag ${DOCKER_IMAGE} ${DOCKER_REPO}:latest
+        -t ${DOCKER_REPO}:latest .
     - docker push ${DOCKER_REPO}:latest
-    - echo "promoted ${CI_COMMIT_SHORT_SHA} -> latest"
-  rules:
-    # image inputs changed on main -> rebuild, or every later job runs a stale image
-    - if: '$CI_COMMIT_BRANCH == "main"'
-      changes:
-        - Dockerfile
-        - third_party/booksim2/**/*
-      when: always
-    - if: '$CI_PIPELINE_SOURCE == "web"'
-      when: manual
-      allow_failure: true
+
+# Note: no separate "promote" job. build-image pushes `:latest` directly, and it
+# only runs when the Dockerfile changes (or manually), so `:latest` moves rarely
+# and on purpose. If you want a build tested before it becomes `:latest`, build a
+# throwaway tag by hand, run the suite against it, then push `:latest`.
