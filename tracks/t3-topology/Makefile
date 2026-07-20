@@ -24,7 +24,7 @@ timeloop:  ## full spine: Timeloop workload -> traffic matrix -> topology sweep 
 		echo "Extracting traffic matrix..."; \
 		python3 scripts/timeloop_to_matrix.py results/timeloop.stats.txt -n 16 -o results/traffic_matrix.txt; \
 		echo "Sweeping topologies on the Timeloop traffic matrix..."; \
-		TRAFFIC_MATRIX=results/traffic_matrix.txt RATES="0.002,0.005,0.01,0.02,0.04,0.2,0.5" python3 scripts/run_experiments.py; \
+		TRAFFIC_MATRIX=results/traffic_matrix.txt RATES="0.002,0.005,0.01,0.02,0.04,0.05" python3 scripts/run_experiments.py; \
 		echo "Calibrating NoC energy from Booksim hops (Accelergy bridge)..."; \
 		python3 scripts/noc_energy_bridge.py; \
 		echo "Done — results/ has topology_sweep.json + traffic_matrix.txt + timeloop.stats.txt + noc_energy.json"; \
