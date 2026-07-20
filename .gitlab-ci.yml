@@ -2,7 +2,7 @@
 # Jobs run inside the prebuilt tools image, so the GitLab runner must use a
 # docker/container executor (a shell executor can't pull `image:`).
 variables:
-  DOCKER_IMAGE: ghcr.io/anmol-s314/veritx-tools-base:latest
+  DOCKER_IMAGE: internal-devrepo.datavex.ai:5050/anmol/veritx-research/veritx-tools-base:latest
 
 default:
   image: ${DOCKER_IMAGE}
