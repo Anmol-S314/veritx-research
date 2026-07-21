@@ -9,7 +9,56 @@ compare them on latency/energy — visualized in a **dashboard**.
 
 ---
 
-## Quick start (zero install)
+## Developer Quick Start (local Python environment)
+
+One-time setup — works from **any** directory:
+
+```bash
+# 1. Navigate to the run directory and activate the environment
+cd tracks/t3-topology/run
+source env.sh
+
+# 2. Verify everything is available
+t3 check
+
+# 3. Run the full analysis pipeline
+t3 all          # analysis → aggregate → plot
+                # outputs land in tracks/t3-topology/output/
+```
+
+> **Note:** `run/env.sh` is the **canonical** entry point. It resolves T3_DIR as
+> its parent (`t3-topology/`), finds the repo `venv/` wherever it is, adds `t3`
+> to your PATH, and exports all environment variables. You only source it once per shell.
+
+### Individual commands
+
+```bash
+t3 help         # list all commands + env-var overrides
+t3 env          # print all resolved paths and variables
+t3 analysis     # PA-01: load sweep JSON → summary table
+t3 aggregate    # PA-02: merge all results → output/aggregate.csv
+t3 plot --hops  # PA-03: latency curves   → output/latency_curves.png
+t3 selfcheck    # regression guard for all three PA scripts
+t3 sim          # run a fresh Booksim sweep (needs booksim on PATH)
+t3 clean        # remove output/ and __pycache__
+```
+
+### Environment variable overrides
+
+Set these **before** `source run/env.sh` to override defaults:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `BOOKSIM_BIN` | `booksim` | Path to Booksim binary |
+| `RATES` | `0.002,0.005,0.01,0.02,0.03` | Injection rate sweep |
+| `TRAFFIC_MATRIX` | *(unset → uniform)* | Path to traffic matrix file |
+| `PACKET_SIZE_BITS` | `128` | Energy proxy: hops × this |
+| `SAT_K` | `2.0` | Saturation threshold multiplier |
+| `MPLBACKEND` | `Agg` | Matplotlib backend (Agg = headless) |
+
+---
+
+## Container Quick Start (zero install)
 
 Everything is pre-built in one container image — you don't install Booksim,
 Timeloop, or Accelergy. From the repo root:
@@ -64,6 +113,23 @@ scripts/generate_dashboard.py
 
 ## Commands
 
+### `t3` CLI (preferred for local dev)
+
+| Command | What it does |
+|---|---|
+| `t3 help` | full help + env-var reference |
+| `t3 check` | verify Python, pandas, booksim are available |
+| `t3 analysis` | PA-01: sweep JSON → DataFrame + summary table |
+| `t3 aggregate` | PA-02: merge all JSONs → `output/aggregate.csv` |
+| `t3 plot` | PA-03: latency curves → `output/latency_curves.png` |
+| `t3 all` | run analysis → aggregate → plot in sequence |
+| `t3 sim` | fresh Booksim uniform sweep |
+| `t3 dashboard` | build `report/t3/index.html` |
+| `t3 selfcheck` | regression tests for all PA scripts |
+| `t3 clean` | remove `output/` and `__pycache__` |
+
+### `make` targets (container + CI)
+
 | Command | What it does |
 |---|---|
 | `make setup` | verify Booksim + Timeloop + Accelergy are present |
@@ -75,6 +141,36 @@ scripts/generate_dashboard.py
 
 `make timeloop` is the one you'll use for research. If Timeloop is unavailable it
 falls back to a uniform sweep so the rest of the pipeline still runs.
+
+---
+
+## Analysis Framework (PA-01 / PA-02 / PA-03)
+
+Three Python scripts (in `scripts/`) form the metric infrastructure:
+
+| Script | Task | Output |
+|---|---|---|
+| `analysis.py` | Load sweep JSON → pandas DataFrame with all Pareto columns | summary table in terminal |
+| `aggregate.py` | Merge all `results/*.json` + `history.json` by commit SHA | `output/aggregate.csv` |
+| `plot_curves.py` | Latency-throughput curves with saturation markers | `output/latency_curves.png` |
+| `utils.py` | Shared helpers: path resolution, git SHA, saturation logic | imported by above |
+
+All scripts read configuration from the environment variables in `run/env.sh`.
+The `output/` directory (writable by you) holds all generated files;
+`results/` is populated by CI/Docker runs.
+
+```python
+# Python API — use in notebooks or other scripts
+from scripts.analysis    import load_sweep_df, summarise
+from scripts.aggregate   import load_aggregate_df
+from scripts.plot_curves import plot_curves
+from scripts.utils       import resolve_paths, saturation_point
+
+df  = load_sweep_df()           # pandas DataFrame
+agg = load_aggregate_df()       # all historical + current runs
+fig, ax = plot_curves(df, k=2.0, show_hops=True)
+fig.savefig("my_fig.pdf", bbox_inches="tight")
+```
 
 ---
 
