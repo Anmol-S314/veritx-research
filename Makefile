@@ -9,6 +9,7 @@ TRACK     ?= onboarding
 IMAGE     ?= ghcr.io/anmol-s314/veritx-tools-base:latest
 CONTAINER := $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null || echo podman)
 RUN        = $(CONTAINER) run --rm -v "$(PWD)":/workspace -w /workspace
+CONFIG    ?= baseline
 
 help:  ## list top-level commands
 	@echo "VeritX — make <target> [TRACK=t3-topology]"
@@ -33,7 +34,7 @@ pull:  ## pull the prebuilt tools image
 	$(CONTAINER) pull $(IMAGE)
 
 run:  ## run a track command in the image:  make run TRACK=t3-topology CMD=timeloop
-	$(RUN) $(IMAGE) make -C tracks/$(TRACK) $(CMD)
+	$(RUN) $(IMAGE) make -C tracks/$(TRACK) $(CMD) CONFIG=${CONFIG}
 
 shell:  ## open an interactive shell in the tools image
 	$(CONTAINER) run --rm -it -v "$(PWD)":/workspace -w /workspace $(IMAGE) bash

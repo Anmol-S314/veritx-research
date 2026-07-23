@@ -3,9 +3,14 @@
 import subprocess, json, os
 from pathlib import Path
 
-CONFIGS_DIR = Path(__file__).parent.parent / "configs"
-RESULTS_DIR = Path(__file__).parent.parent / "results"
+ROOT = Path(__file__).resolve().parent.parent
+
+CONFIG = os.environ.get("CONFIG", "baseline")
+
+CONFIGS_DIR = ROOT / "configs"
+RESULTS_DIR = ROOT / "results" / CONFIG
 CONFIGS = sorted(CONFIGS_DIR.glob("*.cfg"))
+
 # CI sweep (coarse). Override for local/matrix runs: RATES="0.002,0.005,0.01,0.02"
 # (matrix patterns with a hotspot saturate at much lower rates than uniform).
 _rates = os.environ.get("RATES")
@@ -49,7 +54,11 @@ def run_one(cfg: Path, rate: float) -> dict:
     }
 
 def main():
+
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    print(f"Using configuration: {CONFIG}")
+
     results = []
     for cfg in CONFIGS:
         for rate in INJECTION_RATES:

@@ -2,24 +2,49 @@
 
 from pathlib import Path
 import re
+import json
+import os
 from collections import OrderedDict
 
 ROOT = Path(__file__).resolve().parent.parent
-RESULTS = ROOT / "results"
+
+CONFIG = os.environ.get("CONFIG", "baseline")
+RESULTS = ROOT / "results" / CONFIG
 
 # ------------------------------------------------------------
-# Find all operation stats
+# Load execution metadata
+# ------------------------------------------------------------
+
+execution_file = RESULTS / "execution.json"
+
+if not execution_file.exists():
+    print(f"{execution_file} not found.")
+    exit(1)
+
+with open(execution_file) as f:
+    execution = json.load(f)["operations"]
+
+# ------------------------------------------------------------
+# Find operation stats
 # ------------------------------------------------------------
 
 stats_files = []
 
-i = 1
-while True:
-    f = RESULTS / f"op{i}.stats.txt"
-    if not f.exists():
-        break
-    stats_files.append(f)
-    i += 1
+for op in execution:
+
+    stats_path = RESULTS / op["stats_file"]
+
+    if not stats_path.exists():
+        print(f"Missing {stats_path}")
+        exit(1)
+
+    stats_files.append(
+        {
+            "name": op["name"],
+            "file": stats_path,
+            "repeat": op["repeat"],
+        }
+    )
 
 if not stats_files:
     print("No operation stats found.")
@@ -31,7 +56,11 @@ if not stats_files:
 
 levels = OrderedDict()
 
-for file in stats_files:
+for item in stats_files:
+
+    op_name = item["name"]
+    file = item["file"]
+    repeat = item["repeat"]
 
     current_level = None
     inside_stats = False
@@ -44,6 +73,7 @@ for file in stats_files:
         # ----------------------------------------------------
 
         m = re.match(r"\s*===\s*(.+?)\s*===", line)
+
         if m:
 
             level = m.group(1).strip()
@@ -51,14 +81,16 @@ for file in stats_files:
             if level == "__ARITH__":
                 current_level = None
             else:
+
                 current_level = level
 
                 if current_level not in levels:
+
                     levels[current_level] = {
                         "instances": 1,
                         "reads": 0,
                         "fills": 0,
-                        "updates": 0
+                        "updates": 0,
                     }
 
             inside_stats = False
@@ -96,28 +128,40 @@ for file in stats_files:
         # ----------------------------------------------------
 
         m = re.search(r"Utilized instances \(max\)\s*:\s*(\d+)", line)
+
         if m:
             levels[current_level]["instances"] = max(
                 levels[current_level]["instances"],
-                int(m.group(1))
+                int(m.group(1)),
             )
             continue
 
-        m = re.search(r"Actual scalar reads \(per-instance\)\s*:\s*(\d+)", line)
+        m = re.search(
+            r"Actual scalar reads \(per-instance\)\s*:\s*(\d+)",
+            line,
+        )
+
         if m:
-            levels[current_level]["reads"] += int(m.group(1))
+            levels[current_level]["reads"] += repeat * int(m.group(1))
             continue
 
-        m = re.search(r"Actual scalar fills \(per-instance\)\s*:\s*(\d+)", line)
+        m = re.search(
+            r"Actual scalar fills \(per-instance\)\s*:\s*(\d+)",
+            line,
+        )
+
         if m:
-            levels[current_level]["fills"] += int(m.group(1))
+            levels[current_level]["fills"] += repeat * int(m.group(1))
             continue
 
-        m = re.search(r"Actual scalar updates \(per-instance\)\s*:\s*(\d+)", line)
-        if m:
-            levels[current_level]["updates"] += int(m.group(1))
-            continue
+        m = re.search(
+            r"Actual scalar updates \(per-instance\)\s*:\s*(\d+)",
+            line,
+        )
 
+        if m:
+            levels[current_level]["updates"] += repeat * int(m.group(1))
+            continue
 # ------------------------------------------------------------
 # Write combined file
 # ------------------------------------------------------------
@@ -136,5 +180,21 @@ with open(outfile, "w") as f:
         f.write(f"Actual scalar fills (per-instance) : {data['fills']}\n")
         f.write(f"Actual scalar updates (per-instance) : {data['updates']}\n\n")
 
-print(f"Combined {len(stats_files)} operation(s).")
+# ------------------------------------------------------------
+# Summary
+# ------------------------------------------------------------
+
+unique_operations = len(execution)
+total_repeats = sum(op["repeat"] for op in execution)
+saved_runs = total_repeats - unique_operations
+
+print()
+print("========================================")
+print("Timeloop Statistics Combined")
+print("========================================")
+print(f"Unique operations      : {unique_operations}")
+print(f"Scheduled executions   : {total_repeats}")
+print(f"Timeloop runs executed : {unique_operations}")
+print(f"Timeloop runs saved    : {saved_runs}")
+print(f"Configuration          : {CONFIG}")
 print(f"Wrote {outfile}")
