@@ -24,7 +24,8 @@ setup lint test sim:
 	@$(MAKE) -C tracks/$(TRACK) $@
 
 report:  ## build the aggregate report from results/
-	@mkdir -p report && python3 scripts/generate_report.py
+	@mkdir -p report
+	$(RUN) -e MPLBACKEND=Agg $(IMAGE) python3 scripts/generate_report.py
 
 clean:  ## clean every track + report/ results/
 	@for d in tracks/*/; do $(MAKE) -C $$d clean 2>/dev/null || true; done
