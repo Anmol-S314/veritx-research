@@ -2,7 +2,11 @@ name: VeritX CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - 'pareto-analysis-*'   # Manal's analysis branches
+      - 'feature/**'
+      - 'fix/**'
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -71,7 +75,10 @@ jobs:
           name: t4-formal
           path: tracks/t4-formal/results/
         continue-on-error: true
-      - run: make report
+      - name: Pull tools image
+        run: docker pull ghcr.io/anmol-s314/veritx-tools-base:latest
+      - name: Generate report
+        run: make report
       - uses: actions/upload-artifact@v4
         with:
           name: report
