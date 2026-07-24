@@ -10,7 +10,7 @@ CONFIG ?= baseline
 # Dynamic paths — honour env.sh exports; fall back to sensible in-tree defaults
 # ---------------------------------------------------------------------------
 T3_DIR      ?= $(shell cd .. && pwd)/$(shell basename $(CURDIR))
-T3_RESULTS  ?= $(CURDIR)/results
+T3_RESULTS  ?= $(CURDIR)/results/$(CONFIG)
 T3_SCRIPTS  ?= $(CURDIR)/scripts
 MPLBACKEND  ?= Agg
 
