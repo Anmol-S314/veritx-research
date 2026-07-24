@@ -23,13 +23,13 @@ all: setup lint test  ## setup + lint + test for TRACK
 setup lint test sim:
 	@$(MAKE) -C tracks/$(TRACK) $@
 
-analysis aggregate plot:  ## run PA analysis target for TRACK (CONFIG=baseline)
-	@$(MAKE) -C tracks/$(TRACK) $@ \
-	    T3_RESULTS=$(PWD)/tracks/$(TRACK)/results/$(CONFIG)
+analysis aggregate plot:  ## run PA target for TRACK in container (CONFIG=baseline)
+	$(RUN) $(IMAGE) make -C tracks/$(TRACK) $@ \
+	    T3_RESULTS=/workspace/tracks/$(TRACK)/results/$(CONFIG)
 
-pa-report:  ## run full PA pipeline (analysis + aggregate + plot) for TRACK/CONFIG
-	@$(MAKE) -C tracks/$(TRACK) report \
-	    T3_RESULTS=$(PWD)/tracks/$(TRACK)/results/$(CONFIG)
+pa-report:  ## run full PA pipeline (analysis+aggregate+plot) in container
+	$(RUN) $(IMAGE) make -C tracks/$(TRACK) report \
+	    T3_RESULTS=/workspace/tracks/$(TRACK)/results/$(CONFIG)
 
 report:  ## build the aggregate report from results/
 	@mkdir -p report
