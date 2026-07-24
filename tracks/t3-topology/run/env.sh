@@ -52,9 +52,6 @@ export BOOKSIM_BIN="${BOOKSIM_BIN:-booksim}"
 export T3_SCRIPTS="$T3_DIR/scripts"
 export T3_RESULTS="$T3_DIR/results"
 export T3_CONFIGS="$T3_DIR/configs"
-export T3_OUTPUT="$T3_DIR/output"      # writable; created below if missing
-
-mkdir -p "$T3_OUTPUT"
 
 # --------------------------------------------------------------------------
 # 6.  Analysis tunables (override any of these before sourcing if needed)
@@ -83,5 +80,5 @@ echo "  [T3 env]  T3_DIR     → $T3_DIR"
 echo "  [T3 env]  REPO_ROOT  → $REPO_ROOT"
 echo "  [T3 env]  T3_PYTHON  → $T3_PYTHON"
 echo "  [T3 env]  BOOKSIM    → $BOOKSIM_BIN"
-echo "  [T3 env]  T3_OUTPUT  → $T3_OUTPUT"
+echo "  [T3 env]  T3_RESULTS → $T3_RESULTS"
 echo "  [T3 env]  Run 't3 help' to see available commands."
