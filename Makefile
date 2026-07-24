@@ -7,8 +7,12 @@
 
 TRACK     ?= onboarding
 IMAGE     ?= ghcr.io/anmol-s314/veritx-tools-base:latest
-CONTAINER := $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null || echo podman)
-RUN        = $(CONTAINER) run --rm -v "$(PWD)":/workspace -w /workspace
+CONTAINER := $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
+ifneq ($(CONTAINER),)
+RUN        = $(CONTAINER) run --rm -v "$(PWD)":/workspace -w /workspace $(IMAGE)
+else
+RUN        =
+endif
 CONFIG    ?= baseline
 
 help:  ## list top-level commands
@@ -23,36 +27,40 @@ all: setup lint test  ## setup + lint + test for TRACK
 setup lint test sim:
 	@$(MAKE) -C tracks/$(TRACK) $@
 
-timeloop timeloop-workload energy dashboard:  ## run Timeloop/energy/dashboard target for TRACK in container
-	$(RUN) $(IMAGE) make -C tracks/$(TRACK) $@ CONFIG=$(CONFIG)
+timeloop timeloop-workload energy dashboard:  ## run Timeloop/energy/dashboard target for TRACK
+	$(RUN) $(MAKE) -C tracks/$(TRACK) $@ CONFIG=$(CONFIG)
 
-analysis aggregate plot:  ## run PA target for TRACK in container (CONFIG=baseline)
-	$(RUN) $(IMAGE) make -C tracks/$(TRACK) $@ \
-	    T3_RESULTS=/workspace/tracks/$(TRACK)/results/$(CONFIG)
+analysis aggregate plot:  ## run PA target for TRACK (CONFIG=baseline)
+	$(RUN) $(MAKE) -C tracks/$(TRACK) $@ \
+	    T3_RESULTS=$(PWD)/tracks/$(TRACK)/results/$(CONFIG)
 
-pa-report:  ## run full PA pipeline (analysis+aggregate+plot) in container
-	$(RUN) $(IMAGE) make -C tracks/$(TRACK) report \
-	    T3_RESULTS=/workspace/tracks/$(TRACK)/results/$(CONFIG)
+pa-report:  ## run full PA pipeline (analysis+aggregate+plot)
+	$(RUN) $(MAKE) -C tracks/$(TRACK) report \
+	    T3_RESULTS=$(PWD)/tracks/$(TRACK)/results/$(CONFIG)
 
 report:  ## build the aggregate report from results/
 	@mkdir -p report
-	$(RUN) -e MPLBACKEND=Agg $(IMAGE) python3 scripts/generate_report.py
+	$(RUN) python3 scripts/generate_report.py
 
 clean:  ## clean every track + report/ results/
 	@for d in tracks/*/; do $(MAKE) -C $$d clean 2>/dev/null || true; done
 	@rm -rf report/ results/
 
 pull:  ## pull the prebuilt tools image
+	@if [ -z "$(CONTAINER)" ]; then echo "Error: Container runtime (docker/podman) not found."; exit 1; fi
 	$(CONTAINER) pull $(IMAGE)
 
 run:  ## run a track command in the image:  make run TRACK=t3-topology CMD=timeloop
-	$(RUN) $(IMAGE) make -C tracks/$(TRACK) $(CMD) CONFIG=${CONFIG}
+	$(RUN) $(MAKE) -C tracks/$(TRACK) $(CMD) CONFIG=${CONFIG}
 
 shell:  ## open an interactive shell in the tools image
+	@if [ -z "$(CONTAINER)" ]; then echo "Error: Container runtime (docker/podman) not found (already in container?)."; exit 1; fi
 	$(CONTAINER) run --rm -it -v "$(PWD)":/workspace -w /workspace $(IMAGE) bash
 
 image-build:  ## build the tools image locally
+	@if [ -z "$(CONTAINER)" ]; then echo "Error: Container runtime (docker/podman) not found."; exit 1; fi
 	$(CONTAINER) build -t $(IMAGE) .
 
 image-push:  ## push the tools image to the registry (needs write auth)
+	@if [ -z "$(CONTAINER)" ]; then echo "Error: Container runtime (docker/podman) not found."; exit 1; fi
 	$(CONTAINER) push $(IMAGE)
