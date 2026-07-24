@@ -154,12 +154,18 @@ results/
 
 | Command | What it does |
 |---|---|
+| `make timeloop TRACK=t3-topology CONFIG=baseline` | full Timeloop spine in container → `results/baseline/timeloop.stats.txt` + sweep |
+| `make energy   TRACK=t3-topology CONFIG=baseline` | energy breakdown — **requires timeloop to have run first** |
+| `make dashboard TRACK=t3-topology CONFIG=baseline` | build `report/t3/index.html` in container |
 | `make pa-report TRACK=t3-topology CONFIG=baseline` | full PA pipeline inside container |
 | `make analysis  TRACK=t3-topology CONFIG=baseline` | PA-01 inside container |
 | `make aggregate TRACK=t3-topology CONFIG=baseline` | PA-02 inside container |
 | `make plot      TRACK=t3-topology CONFIG=baseline` | PA-03 inside container |
 | `make run TRACK=t3-topology CMD=sim` | run any target via `make run CMD=<target>` |
 | `make shell` | drop into an interactive container shell |
+
+> **Prerequisites for `make energy`:** `timeloop.stats.txt` must exist first.
+> Run `make timeloop TRACK=t3-topology CONFIG=baseline` before `make energy`.
 
 > **Key rule:** PA targets (`analysis`, `aggregate`, `plot`, `pa-report`) require
 > `pandas` / `matplotlib` which live **only in the container**. Always run them
