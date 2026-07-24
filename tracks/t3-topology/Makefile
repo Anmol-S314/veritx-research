@@ -4,7 +4,16 @@ include ../common.mk
 
 CONFIG ?= baseline
 
-.PHONY: setup lint test sim timeloop energy dashboard clean
+.PHONY: setup lint test sim timeloop energy dashboard clean analysis aggregate plot
+
+# ---------------------------------------------------------------------------
+# Dynamic paths — honour env.sh exports; fall back to sensible in-tree defaults
+# ---------------------------------------------------------------------------
+T3_DIR      ?= $(shell cd .. && pwd)/$(shell basename $(CURDIR))
+T3_RESULTS  ?= $(CURDIR)/results
+T3_OUTPUT   ?= $(CURDIR)/output
+T3_SCRIPTS  ?= $(CURDIR)/scripts
+MPLBACKEND  ?= Agg
 
 setup: ## check the toolchain (Booksim required; Timeloop/Accelergy optional)
 	@$(call need,booksim)
@@ -110,3 +119,19 @@ dashboard:
 clean: ## remove generated results + Timeloop artifacts
 
 	@rm -rf results/ timeloop/timeloop-mapper* __pycache__/
+
+analysis:  ## PA-01: load sweep JSON → DataFrame summary
+	@mkdir -p "$(T3_OUTPUT)"
+	@python3 $(T3_SCRIPTS)/analysis.py
+
+aggregate:  ## PA-02: merge all results → $(T3_OUTPUT)/aggregate.csv
+	@mkdir -p "$(T3_OUTPUT)"
+	@python3 $(T3_SCRIPTS)/aggregate.py \
+	    --results "$(T3_RESULTS)" \
+	    --out "$(T3_OUTPUT)/aggregate.csv"
+
+plot:  ## PA-03: latency-throughput curves → $(T3_OUTPUT)/latency_curves.png
+	@mkdir -p "$(T3_OUTPUT)"
+	MPLBACKEND=$(MPLBACKEND) python3 $(T3_SCRIPTS)/plot_curves.py \
+	    --sweep "$(T3_RESULTS)/topology_sweep.json" \
+	    --hops --out "$(T3_OUTPUT)/latency_curves.png"
