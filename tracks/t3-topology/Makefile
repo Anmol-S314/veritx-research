@@ -4,7 +4,7 @@ include ../common.mk
 
 CONFIG ?= baseline
 
-.PHONY: setup lint test sim timeloop energy dashboard clean analysis aggregate plot
+.PHONY: setup lint test sim timeloop energy dashboard clean analysis aggregate plot report pa-report
 
 # ---------------------------------------------------------------------------
 # Dynamic paths — honour env.sh exports; fall back to sensible in-tree defaults
