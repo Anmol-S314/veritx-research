@@ -1,0 +1,19 @@
+problem:
+  shape:
+    name: gemv
+    dimensions: [ N, K ] # 2-dimensional iteration space
+    data-spaces:
+    - name: Vector_In
+      projection:
+      - [ [K] ]
+    - name: Matrix_Weights
+      projection:
+      - [ [N] ]
+      - [ [K] ]
+    - name: Vector_Out
+      projection:
+      - [ [N] ]
+      read-write: True
+  instance:
+    N: 1024 # Output features
+    K: 4096 # Input features

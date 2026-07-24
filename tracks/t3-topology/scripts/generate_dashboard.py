@@ -36,8 +36,8 @@ def git_info():
     }
 
 
-def load_sweep():
-    p = RESULTS / "topology_sweep.json"
+def load_sweep(file_name):
+    p = Path(file_name)
     if not p.exists():
         sys.exit(f"  no {p} — run `make timeloop` (or `make sim`) first")
     return json.loads(p.read_text())
@@ -107,9 +107,10 @@ def build_record(cur, matrix, levels):
     }
 
 
-def update_history(record):
+def update_history(record, outfile):
     """Append this run's full record; replace a re-run of the same commit; cap."""
-    p = RESULTS / "history.json"
+
+    p = Path(outfile)
     hist = json.loads(p.read_text()) if p.exists() else []
     hist = [h for h in hist if h.get("sha") != record["sha"]]
     run_no = (hist[-1]["run"] + 1) if hist else 1
@@ -268,19 +269,53 @@ def _selfcheck():
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--matrix", default=str(RESULTS / "traffic_matrix.txt"))
-    ap.add_argument("--timeloop-stats", default=str(RESULTS / "timeloop.stats.txt"))
+    ap.add_argument("--config", default="baseline")
+    ap.add_argument("--matrix")
+    ap.add_argument("--timeloop-stats")
+    ap.add_argument("--topology_sweep")
+    ap.add_argument("--history")
     ap.add_argument("--selfcheck", action="store_true")
     args = ap.parse_args()
-    if args.selfcheck:
-        _selfcheck(); return
 
-    cur = curves(load_sweep())
-    record = build_record(cur, load_matrix(args.matrix), load_levels(args.timeloop_stats))
-    hist = update_history(record)
-    # Only show runs we can actually render. Pre-feature runs stored latency only
-    # (no curves/matrix) — offering them gave empty panels. They stay in history.json
-    # (they age out via the cap) but are hidden from the selector + table.
+    if args.selfcheck:
+        _selfcheck()
+        return
+
+    results_dir = RESULTS / args.config
+
+    if not results_dir.exists():
+        sys.exit(f"Configuration '{args.config}' not found: {results_dir}")
+
+    if args.matrix is None:
+        args.matrix = str(results_dir / "traffic_matrix.txt")
+
+    if args.timeloop_stats is None:
+        args.timeloop_stats = str(results_dir / "timeloop.stats.txt")
+
+    if args.topology_sweep is None:
+        args.topology_sweep = str(results_dir / "topology_sweep.json")
+
+    if args.history is None:
+        args.history = str(results_dir / "history.json")
+
+    print(f"Using configuration : {args.config}")
+    print(f"Traffic matrix      : {args.matrix}")
+    print(f"Timeloop stats      : {args.timeloop_stats}")
+    print(f"Topology Sweep      : {args.topology_sweep}")
+    print(f"Topology Sweep      : {args.history}")
+
+
+    cur = curves(load_sweep(args.topology_sweep))
+
+    record = build_record(
+        cur,
+        load_matrix(args.matrix),
+        load_levels(args.timeloop_stats)
+    )
+
+    hist = update_history(record, args.history)
+
+    # Only show runs we can actually render.
     view = [h for h in hist if h.get("curves")] or hist[-1:]
 
     html = (HTML
@@ -298,6 +333,7 @@ def main():
     REPORT.mkdir(parents=True, exist_ok=True)
     out = REPORT / "index.html"
     out.write_text(html)
+
     print(f"  dashboard → {out}  (run #{hist[-1]['run']}, {len(hist)} runs total, {headline(hist)})")
 
 
