@@ -38,11 +38,16 @@ from pathlib import Path
 HERE = Path(__file__).parent
 TRACK = HERE.parent
 TIMELOOP = TRACK / "timeloop"
-RESULTS = TRACK / "results"
+
+# Follow the same configuration layout as the rest of T3
+CONFIG = os.environ.get("CONFIG", "baseline")
+
+RESULTS = TRACK / "results" / CONFIG
 ACCELERGY_OUT = RESULTS / "accelergy"
 
 NOC_ARCH = TIMELOOP / "noc_arch.yaml"
-NOC_ERT = TIMELOOP / "noc_ert.yaml"  # matched case-insensitively below
+NOC_ERT = TIMELOOP / "noc_ert.yaml"
+
 SWEEP = RESULTS / "topology_sweep.json"
 OUT = RESULTS / "noc_energy.json"
 

@@ -1,0 +1,18 @@
+problem:
+  shape:
+    name: attention_qk
+    dimensions: [ B, H, M, N, D ]
+    data-spaces:
+    - name: Queries
+      projection: [ [[B]], [[H]], [[M]], [[D]] ]
+    - name: Keys
+      projection: [ [[B]], [[H]], [[N]], [[D]] ]
+    - name: Attention_Scores
+      projection: [ [[B]], [[H]], [[M]], [[N]] ]
+      read-write: True
+  instance:
+    B: 1
+    H: 32
+    M: 2048
+    N: 2048
+    D: 128
