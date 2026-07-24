@@ -11,6 +11,7 @@ CONFIG ?= baseline
 # ---------------------------------------------------------------------------
 T3_DIR      ?= $(shell cd .. && pwd)/$(shell basename $(CURDIR))
 T3_RESULTS  ?= $(CURDIR)/results/$(CONFIG)
+T3_ANALYSIS ?= $(T3_RESULTS)/analysis
 T3_SCRIPTS  ?= $(CURDIR)/scripts
 MPLBACKEND  ?= Agg
 
@@ -119,7 +120,7 @@ clean: ## remove generated results + Timeloop artifacts
 
 	@rm -rf results/ timeloop/timeloop-mapper* __pycache__/
 
-analysis:  ## PA-01: read sweep JSON → print DataFrame summary
+analysis:  ## PA-01: read sweep JSON → print DataFrame summary (input from T3_RESULTS)
 	@python3 $(T3_SCRIPTS)/analysis.py \
 	    --sweep "$(T3_RESULTS)/topology_sweep.json"
 
