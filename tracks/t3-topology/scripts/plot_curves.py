@@ -282,8 +282,28 @@ def main():
         _selfcheck()
         return
 
-    sweep = Path(args.sweep) if args.sweep else RESULTS / "topology_sweep.json"
-    out   = Path(args.out)   if args.out   else RESULTS / "latency_curves.png"
+    import os
+    config = os.environ.get("CONFIG", "baseline")
+    t3_res = os.environ.get("T3_RESULTS")
+
+    if args.sweep:
+        sweep = Path(args.sweep)
+    else:
+        candidates = []
+        if t3_res:
+            candidates.extend([
+                Path(t3_res) / "topology_sweep.json",
+                Path(t3_res) / config / "topology_sweep.json",
+                Path(t3_res) / "baseline" / "topology_sweep.json",
+            ])
+        candidates.extend([
+            RESULTS / config / "topology_sweep.json",
+            RESULTS / "baseline" / "topology_sweep.json",
+            RESULTS / "topology_sweep.json",
+        ])
+        sweep = next((c for c in candidates if c.exists()), candidates[0])
+
+    out = Path(args.out) if args.out else sweep.parent / "latency_curves.png"
 
     fig, ax = plot_curves(sweep, k=args.k, show_hops=args.hops, title=args.title)
     out.parent.mkdir(parents=True, exist_ok=True)

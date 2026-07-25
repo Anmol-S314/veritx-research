@@ -150,25 +150,21 @@ results/
 | `make dashboard [CONFIG=baseline]` | (re)generate `report/t3/index.html` |
 | `make clean` | remove `results/` and Timeloop artifacts |
 
-### `make` targets — from the **repo root** (works from host or inside `make shell`)
+### `make` targets — from the **repo root / host terminal** (auto-runs in container)
 
 | Command | What it does |
 |---|---|
-| `make timeloop TRACK=t3-topology CONFIG=baseline` | full Timeloop spine → `results/baseline/timeloop.stats.txt` + sweep |
-| `make energy   TRACK=t3-topology CONFIG=baseline` | energy breakdown — **requires timeloop to have run first** |
-| `make dashboard TRACK=t3-topology CONFIG=baseline` | build `report/t3/index.html` |
-| `make pa-report TRACK=t3-topology CONFIG=baseline` | full PA pipeline (analysis + aggregate + plot) |
-| `make analysis  TRACK=t3-topology CONFIG=baseline` | PA-01 (load sweep JSON → print summary table) |
-| `make aggregate TRACK=t3-topology CONFIG=baseline` | PA-02 (merge all results → aggregate.csv) |
-| `make plot      TRACK=t3-topology CONFIG=baseline` | PA-03 (latency curves → latency_curves.png) |
-| `make run TRACK=t3-topology CMD=sim` | run any CMD target in container |
+| `make pa-report TRACK=t3-topology CONFIG=baseline` | full PA pipeline inside container |
+| `make analysis  TRACK=t3-topology CONFIG=baseline` | PA-01 inside container |
+| `make aggregate TRACK=t3-topology CONFIG=baseline` | PA-02 inside container |
+| `make plot      TRACK=t3-topology CONFIG=baseline` | PA-03 inside container |
+| `make run TRACK=t3-topology CMD=sim` | run any target via `make run CMD=<target>` |
 | `make shell` | drop into an interactive container shell |
 
-> **Prerequisites for `make energy`:** `timeloop.stats.txt` must exist first.
-> Run `make timeloop TRACK=t3-topology CONFIG=baseline` before `make energy`.
-
-> **Smart execution:** The root Makefile automatically detects whether docker/podman is available.
-> From the **host terminal**, it spawns the container. From **inside `make shell`**, it runs directly without trying to call docker/podman again.
+> **Key rule:** PA targets (`analysis`, `aggregate`, `plot`, `pa-report`) require
+> `pandas` / `matplotlib` which live **only in the container**. Always run them
+> via `make pa-report TRACK=t3-topology CONFIG=baseline` from the host, or
+> `make -C tracks/t3-topology pa-report CONFIG=baseline` from inside `make shell`.
 
 ### `t3` CLI (preferred for local dev with env.sh sourced)
 

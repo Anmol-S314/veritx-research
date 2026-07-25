@@ -49,8 +49,9 @@ export BOOKSIM_BIN="${BOOKSIM_BIN:-booksim}"
 # --------------------------------------------------------------------------
 # 5.  Project directories  (all anchored to T3_DIR — zero hardcoded paths)
 # --------------------------------------------------------------------------
+export CONFIG="${CONFIG:-baseline}"
 export T3_SCRIPTS="$T3_DIR/scripts"
-export T3_RESULTS="$T3_DIR/results"
+export T3_RESULTS="${T3_RESULTS:-$T3_DIR/results/$CONFIG}"
 export T3_CONFIGS="$T3_DIR/configs"
 
 # --------------------------------------------------------------------------
