@@ -31,9 +31,11 @@ export T3_DIR
 export REPO_ROOT="$(cd "$T3_DIR/../.." && pwd)"
 
 # --------------------------------------------------------------------------
-# 3.  Python — prefer the repo venv, fall back to system python3
+# 3.  Python — select python interpreter with pandas available
 # --------------------------------------------------------------------------
-if [ -x "$REPO_ROOT/venv/bin/python3" ]; then
+if [ -f /.dockerenv ] || [ -f /run/.containerenv ]; then
+    export T3_PYTHON="$(command -v python3)"
+elif [ -x "$REPO_ROOT/venv/bin/python3" ] && "$REPO_ROOT/venv/bin/python3" -c "import pandas" &>/dev/null; then
     export T3_PYTHON="$REPO_ROOT/venv/bin/python3"
 elif command -v python3 &>/dev/null; then
     export T3_PYTHON="$(command -v python3)"
@@ -51,7 +53,9 @@ export BOOKSIM_BIN="${BOOKSIM_BIN:-booksim}"
 # --------------------------------------------------------------------------
 export CONFIG="${CONFIG:-baseline}"
 export T3_SCRIPTS="$T3_DIR/scripts"
-export T3_RESULTS="${T3_RESULTS:-$T3_DIR/results/$CONFIG}"
+if [ -z "${T3_RESULTS:-}" ] || [ "$T3_RESULTS" = "$T3_DIR/results" ]; then
+    export T3_RESULTS="$T3_DIR/results/$CONFIG"
+fi
 export T3_CONFIGS="$T3_DIR/configs"
 
 # --------------------------------------------------------------------------
