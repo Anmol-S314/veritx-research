@@ -156,7 +156,22 @@ def load_aggregate_df(results_dir: Optional[Path] = None,
     pd.DataFrame tagged with run_sha, columns identical to analysis.py output
     plus run_sha, run_no, source_file.
     """
-    rdir   = results_dir or RESULTS
+    import os
+    config = os.environ.get("CONFIG", "baseline")
+    t3_res = os.environ.get("T3_RESULTS")
+
+    if results_dir:
+        rdir = Path(results_dir)
+    elif t3_res:
+        rdir = Path(t3_res)
+    else:
+        rdir = RESULTS / config
+
+    if not (rdir / "topology_sweep.json").exists() and (rdir / config / "topology_sweep.json").exists():
+        rdir = rdir / config
+    elif not (rdir / "topology_sweep.json").exists() and (rdir / "baseline" / "topology_sweep.json").exists():
+        rdir = rdir / "baseline"
+
     sha    = _git_sha()
     all_rows: list[dict] = []
 

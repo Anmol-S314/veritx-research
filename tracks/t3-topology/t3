@@ -36,8 +36,8 @@ else
 fi
 unset _T3_ENV
 
-# Redirect to a default output dir if not set
-T3_OUTPUT="${T3_OUTPUT:-$T3_DIR/output}"
+# Redirect to a default output dir if not set (results/<config>/analysis/)
+T3_OUTPUT="${T3_OUTPUT:-$T3_RESULTS/analysis}"
 mkdir -p "$T3_OUTPUT"
 
 # ---------------------------------------------------------------------------

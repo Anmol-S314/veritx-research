@@ -80,7 +80,25 @@ def load_sweep_df(path: str | Path | None = None) -> pd.DataFrame:
         traffic         str   — traffic pattern string
         status          str   — "ok" | "no_output" | "timeout" | …
     """
-    p = Path(path) if path else RESULTS / "topology_sweep.json"
+    if path:
+        p = Path(path)
+    else:
+        config = os.environ.get("CONFIG", "baseline")
+        t3_res = os.environ.get("T3_RESULTS")
+        candidates = []
+        if t3_res:
+            candidates.extend([
+                Path(t3_res) / "topology_sweep.json",
+                Path(t3_res) / config / "topology_sweep.json",
+                Path(t3_res) / "baseline" / "topology_sweep.json",
+            ])
+        candidates.extend([
+            RESULTS / config / "topology_sweep.json",
+            RESULTS / "baseline" / "topology_sweep.json",
+            RESULTS / "topology_sweep.json",
+        ])
+        p = next((c for c in candidates if c.exists()), candidates[0])
+
     if not p.exists():
         raise FileNotFoundError(
             f"No sweep JSON at {p}.\n"
