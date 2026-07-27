@@ -43,6 +43,18 @@ def load_sweep(file_name):
     return json.loads(p.read_text())
 
 
+def load_noc_energy(results_dir):
+    """Accelergy-calibrated NoC energy (results_dir/noc_energy.json), written by
+    scripts/noc_energy_bridge.py. Optional — absent if Accelergy wasn't
+    available when `make timeloop` ran, in which case the dashboard falls
+    back to the raw hops panel only."""
+    p = Path(results_dir) / "noc_energy.json"
+    print("Looking for:", p)
+    if not p.exists():
+        return None
+    return json.loads(p.read_text())
+
+
 def curves(sweep):
     """topology -> sorted [(injection_rate, latency, hops)] (valid points only)."""
     out = {}
@@ -93,7 +105,7 @@ def load_levels(path):
     return lv or None
 
 
-def build_record(cur, matrix, levels):
+def build_record(cur, matrix, levels, noc_energy):
     """Everything needed to redraw one run's panels later."""
     hops = {t: [[r, h] for r, _, h in pts if h is not None] for t, pts in cur.items()}
     return {
@@ -104,6 +116,11 @@ def build_record(cur, matrix, levels):
         "hops": {t: pts for t, pts in hops.items() if pts} or None,
         "matrix": matrix,
         "levels": levels,
+        # [rate, hops_avg, energy_pJ] per topology, plus the calibrated pJ/hop
+        # coefficient + its component breakdown (router vs link).
+        "noc_energy": (noc_energy or {}).get("per_topology") or None,
+        "pj_per_hop": (noc_energy or {}).get("pj_per_hop"),
+        "noc_energy_components": (noc_energy or {}).get("components"),
     }
 
 
@@ -199,6 +216,7 @@ HTML = """<!doctype html><html><head><meta charset="utf-8">
  <div class="card"><h2>Traffic Matrix</h2><div id="heat"></div></div>
  <div class="card"><h2>Latency vs Injection Rate</h2><div id="lat"></div></div>
  <div class="card"><h2>Hops (energy proxy)</h2><div id="hops"></div></div>
+ <div class="card"><h2>NoC Energy (Accelergy-calibrated) <span id="pjhop" class="note"></span></h2><div id="nocenergy"></div></div>
  <div class="card full"><h2>Regression — last __N__ runs</h2>__TABLE__</div>
  <div class="card full"><h2>Timeloop Access Breakdown (bottlenecks)</h2><div id="bott"></div></div>
 </div>
@@ -225,6 +243,12 @@ function draw(){
   if(r.hops)Plotly.newPlot('hops',Object.entries(r.hops).map(([n,p])=>({x:p.map(x=>x[0]),y:p.map(x=>x[1]),name:n,mode:'lines+markers'})),
     {...ly,xaxis:{title:'injection rate'},yaxis:{title:'avg hops'},legend:{orientation:'h'}},{displayModeBar:false,responsive:true});
   else note('hops','no hops data for this run');
+  const pjhop=document.getElementById('pjhop');
+  if(r.noc_energy){
+    pjhop.textContent=r.pj_per_hop!=null?'('+r.pj_per_hop+' pJ/hop — '+Object.entries(r.noc_energy_components||{}).map(([k,v])=>k+':'+v).join(', ')+')':'';
+    Plotly.newPlot('nocenergy',Object.entries(r.noc_energy).map(([n,p])=>({x:p.map(x=>x[0]),y:p.map(x=>x[2]),name:n,mode:'lines+markers'})),
+      {...ly,xaxis:{title:'injection rate'},yaxis:{title:'NoC energy (pJ)'},legend:{orientation:'h'}},{displayModeBar:false,responsive:true});
+  } else { pjhop.textContent=''; note('nocenergy','no Accelergy NoC energy for this run — run scripts/noc_energy_bridge.py'); }
   if(r.levels)Plotly.newPlot('bott',[{x:r.levels.map(l=>l.accesses),y:r.levels.map(l=>l.name),type:'bar',orientation:'h',marker:{color:THEMES[t].btn}}],
     {...ly,margin:{t:10,r:10,b:40,l:130},xaxis:{title:'word accesses'}},{displayModeBar:false,responsive:true});
   else note('bott','no Timeloop stats for this run');
@@ -277,6 +301,7 @@ def main():
     ap.add_argument("--selfcheck", action="store_true")
     args = ap.parse_args()
 
+
     if args.selfcheck:
         _selfcheck()
         return
@@ -310,12 +335,16 @@ def main():
     record = build_record(
         cur,
         load_matrix(args.matrix),
-        load_levels(args.timeloop_stats)
+        load_levels(args.timeloop_stats),
+        load_noc_energy(results_dir),
     )
 
     hist = update_history(record, args.history)
 
-    # Only show runs we can actually render.
+    # Only show runs we can actually render. Pre-feature runs stored latency only
+    # (no curves/matrix) — offering them gave empty panels. They stay in history.json
+    # (they age out via the cap) but are hidden from the selector + table.
+
     view = [h for h in hist if h.get("curves")] or hist[-1:]
 
     html = (HTML

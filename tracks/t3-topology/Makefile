@@ -32,7 +32,7 @@ sim: ## topology sweep
 	@CONFIG=$(CONFIG) \
 	python3 scripts/run_experiments.py --config $(CONFIG)
 
-timeloop:  ## full spine: Timeloop workload -> traffic matrix -> topology sweep
+timeloop:  ## full spine: Timeloop workload -> traffic matrix -> topology sweep -> NoC energy
 	@mkdir -p results
 	-cd timeloop && timeloop-mapper mapper.yaml arch.yaml problem.yaml 2>&1 | tee ../results/timeloop.log
 	@if [ -f timeloop/timeloop-mapper.stats.txt ]; then \
@@ -40,11 +40,16 @@ timeloop:  ## full spine: Timeloop workload -> traffic matrix -> topology sweep
 		echo "Extracting traffic matrix..."; \
 		python3 scripts/timeloop_to_matrix.py results/timeloop.stats.txt -n 16 -o results/traffic_matrix.txt; \
 		echo "Sweeping topologies on the Timeloop traffic matrix..."; \
-		TRAFFIC_MATRIX=results/traffic_matrix.txt RATES="0.002,0.005,0.01,0.02,0.03" python3 scripts/run_experiments.py; \
-		echo "Done — results/ has topology_sweep.json + traffic_matrix.txt + timeloop.stats.txt"; \
+		TRAFFIC_MATRIX=results/traffic_matrix.txt RATES="0.002,0.005,0.01,0.02,0.04,0.05" python3 scripts/run_experiments.py; \
+		echo "Calibrating NoC energy from Booksim hops (Accelergy bridge)..."; \
+		python3 scripts/noc_energy_bridge.py; \
+		echo "Done — results/ has topology_sweep.json + traffic_matrix.txt + timeloop.stats.txt + noc_energy.json"; \
 	else \
 		echo "  ⚠  Timeloop produced no stats; falling back to uniform traffic"; \
 		python3 scripts/run_experiments.py; \
+		echo "Calibrating NoC energy from Booksim hops (Accelergy bridge)..."; \
+		python3 scripts/noc_energy_bridge.py; \
+		echo "Done — results/ has topology_sweep.json + noc_energy.json (no Timeloop traffic matrix this run)"; \
 	fi
 
 timeloop-workload: ## full spine: Timeloop workload -> traffic matrix -> topology sweep
@@ -75,6 +80,10 @@ timeloop-workload: ## full spine: Timeloop workload -> traffic matrix -> topolog
 		RATES="0.002,0.005,0.01,0.02,0.03" \
 		python3 scripts/run_experiments.py --config $(CONFIG); \
 		echo ""; \
+        echo "Calibrating NoC energy (Accelergy bridge)..."; \
+        CONFIG=$(CONFIG) \
+        python3 scripts/noc_energy_bridge.py; \
+		echo ""; \
 		echo "========================================"; \
 		echo "Pipeline complete"; \
 		echo "========================================"; \
@@ -103,10 +112,12 @@ energy: ## Timeloop energy breakdown
 		results/$(CONFIG)/timeloop.stats.txt \
 		--config $(CONFIG)
 
+
 dashboard:
 	@python3 scripts/generate_dashboard.py --config $(CONFIG)
 
 clean: ## remove generated results + Timeloop artifacts
+
 	@rm -rf results/ timeloop/timeloop-mapper* __pycache__/
 
 analysis:  ## PA-01: load sweep JSON → DataFrame summary
