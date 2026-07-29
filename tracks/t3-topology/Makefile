@@ -12,6 +12,7 @@ CONFIG ?= baseline
 T3_DIR      ?= $(shell cd .. && pwd)/$(shell basename $(CURDIR))
 T3_RESULTS  ?= $(CURDIR)/results/$(CONFIG)
 T3_ANALYSIS ?= $(T3_RESULTS)/analysis
+T3_OUTPUT   ?= $(T3_ANALYSIS)
 T3_SCRIPTS  ?= $(CURDIR)/scripts
 MPLBACKEND  ?= Agg
 
