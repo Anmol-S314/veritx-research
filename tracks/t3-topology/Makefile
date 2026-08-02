@@ -107,6 +107,9 @@ timeloop-workload: ## full spine: Timeloop workload -> traffic matrix -> topolog
 		python3 scripts/run_experiments.py --config $(CONFIG); \
 	fi
 
+timeloop-spatial:
+	python3 scripts/run_spatial_pipeline.py --model-config timeloop/experiment_configs/llama_7b_hf_config.json --tiles 16 72 --seq-len 2048
+
 energy: ## Timeloop energy breakdown
 	@CONFIG=$(CONFIG) \
 	python3 scripts/energy_report.py \
