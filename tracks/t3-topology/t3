@@ -36,8 +36,8 @@ else
 fi
 unset _T3_ENV
 
-# Redirect to a default output dir if not set
-T3_OUTPUT="${T3_OUTPUT:-$T3_DIR/output}"
+# Redirect to a default output dir if not set (results/<config>/analysis/)
+T3_OUTPUT="${T3_OUTPUT:-$T3_RESULTS/analysis}"
 mkdir -p "$T3_OUTPUT"
 
 # ---------------------------------------------------------------------------
@@ -79,8 +79,8 @@ cmd_help() {
 
   ANALYSIS  (PA-01 / PA-02 / PA-03)
     analysis      Load sweep JSON → DataFrame summary (PA-01)
-    aggregate     Merge all results → output/aggregate.csv (PA-02)
-    plot          Latency-throughput curves → output/latency_curves.png (PA-03)
+    aggregate     Merge all results → results/<config>/analysis/aggregate.csv (PA-02)
+    plot          Latency-throughput curves → results/<config>/analysis/latency_curves.png (PA-03)
     all           Run analysis → aggregate → plot in sequence
 
   SIMULATION
@@ -89,12 +89,12 @@ cmd_help() {
 
   REPORTING
     dashboard     Build report/t3/index.html (Plotly dashboard)
-    energy        Timeloop energy breakdown → output/energy.json
+    energy        Timeloop energy breakdown → results/<config>/energy.json
 
   DEVELOPMENT
     selfcheck     Run --selfcheck on analysis, aggregate, plot_curves
     lint          Syntax-check all Python scripts
-    clean         Remove output/ and __pycache__
+    clean         Remove results/ and __pycache__
 
   ══════════════════════════════════════════════════════════════════
 
@@ -106,8 +106,8 @@ cmd_help() {
     PACKET_SIZE_BITS   energy proxy constant    [default: 128]
     SAT_K              saturation multiplier    [default: 2.0]
     MPLBACKEND         matplotlib backend       [default: Agg]
-    T3_OUTPUT          writable output dir      [default: t3-topology/output/]
-    T3_RESULTS         results directory        [default: t3-topology/results/]
+    T3_OUTPUT          writable analysis dir    [default: results/<config>/analysis/]
+    T3_RESULTS         results directory        [default: results/<config>/]
 
   EXAMPLES
 
@@ -223,8 +223,19 @@ cmd_dashboard() {
 
 cmd_energy() {
     _banner "Energy breakdown"
-    local stats="$T3_RESULTS/timeloop.stats.txt"
-    if [ ! -f "$stats" ]; then
+    local stats=""
+    for candidate in \
+        "$T3_RESULTS/timeloop.stats.txt" \
+        "$T3_DIR/results/timeloop.stats.txt" \
+        "$T3_DIR/results/${CONFIG:-baseline}/timeloop.stats.txt" \
+        "$T3_DIR/timeloop/timeloop-mapper.stats.txt"; do
+        if [ -f "$candidate" ]; then
+            stats="$candidate"
+            break
+        fi
+    done
+
+    if [ -z "$stats" ]; then
         _warn "No timeloop.stats.txt — run 't3 timeloop' first"
         exit 1
     fi

@@ -34,21 +34,19 @@ def resolve_paths() -> dict:
     Env-vars respected (all optional — all exported by run/env.sh):
         T3_DIR       — track root directory (t3-topology/)
         T3_RESULTS   — override for results directory
-        T3_OUTPUT    — override for writable output directory (default: track/output)
         T3_SCRIPTS   — override for scripts directory
     """
     track   = TRACK
     results = Path(os.environ.get("T3_RESULTS", track / "results"))
-    output  = Path(os.environ.get("T3_OUTPUT",  track / "output"))
     scripts = Path(os.environ.get("T3_SCRIPTS", HERE))
-    output.mkdir(parents=True, exist_ok=True)
+    results.mkdir(parents=True, exist_ok=True)
     return {
         "t3_dir":  track,
         "repo":    REPO,
         "track":   track,
         "scripts": scripts,
         "results": results,
-        "output":  output,
+        "output":  results,
         "sweep":   results / "topology_sweep.json",
         "history": results / "history.json",
         "energy":  results / "energy.json",
@@ -164,8 +162,8 @@ def saturation_point(
 # ---------------------------------------------------------------------------
 
 def output_path(filename: str, paths: Optional[dict] = None) -> Path:
-    """Return a writable output path under T3_OUTPUT (creates dir if needed)."""
+    """Return a writable path under T3_RESULTS (creates dir if needed)."""
     p = paths or resolve_paths()
-    dest = p["output"] / filename
+    dest = p["results"] / filename
     dest.parent.mkdir(parents=True, exist_ok=True)
     return dest

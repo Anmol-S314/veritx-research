@@ -3,7 +3,7 @@
 # Timeloop, Yosys, …) live in a container image; `make run` / `make shell`
 # execute inside it. Container runtime (podman or docker) is auto-detected.
 .DEFAULT_GOAL := help
-.PHONY: help all setup lint test sim report clean run shell pull image-build image-push
+.PHONY: help all setup lint test sim report clean run shell pull image-build image-push analysis aggregate plot pa-report
 
 TRACK     ?= onboarding
 IMAGE     ?= ghcr.io/anmol-s314/veritx-tools-base:latest
@@ -22,6 +22,14 @@ all: setup lint test  ## setup + lint + test for TRACK
 
 setup lint test sim:
 	@$(MAKE) -C tracks/$(TRACK) $@
+
+analysis aggregate plot:  ## run PA target for TRACK in container (CONFIG=baseline)
+	$(RUN) $(IMAGE) make -C tracks/$(TRACK) $@ \
+	    T3_RESULTS=/workspace/tracks/$(TRACK)/results/$(CONFIG)
+
+pa-report:  ## run full PA pipeline (analysis+aggregate+plot) in container
+	$(RUN) $(IMAGE) make -C tracks/$(TRACK) report \
+	    T3_RESULTS=/workspace/tracks/$(TRACK)/results/$(CONFIG)
 
 report:  ## build the aggregate report from results/
 	@mkdir -p report

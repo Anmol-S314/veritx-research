@@ -4,14 +4,15 @@ include ../common.mk
 
 CONFIG ?= baseline
 
-.PHONY: setup lint test sim timeloop energy dashboard clean analysis aggregate plot
+.PHONY: setup lint test sim timeloop energy dashboard clean analysis aggregate plot report pa-report
 
 # ---------------------------------------------------------------------------
 # Dynamic paths — honour env.sh exports; fall back to sensible in-tree defaults
 # ---------------------------------------------------------------------------
 T3_DIR      ?= $(shell cd .. && pwd)/$(shell basename $(CURDIR))
-T3_RESULTS  ?= $(CURDIR)/results
-T3_OUTPUT   ?= $(CURDIR)/output
+T3_RESULTS  ?= $(CURDIR)/results/$(CONFIG)
+T3_ANALYSIS ?= $(T3_RESULTS)/analysis
+T3_OUTPUT   ?= $(T3_ANALYSIS)
 T3_SCRIPTS  ?= $(CURDIR)/scripts
 MPLBACKEND  ?= Agg
 
@@ -120,18 +121,22 @@ clean: ## remove generated results + Timeloop artifacts
 
 	@rm -rf results/ timeloop/timeloop-mapper* __pycache__/
 
-analysis:  ## PA-01: load sweep JSON → DataFrame summary
-	@mkdir -p "$(T3_OUTPUT)"
-	@python3 $(T3_SCRIPTS)/analysis.py
+analysis:  ## PA-01: read sweep JSON → print DataFrame summary (input from T3_RESULTS)
+	@python3 $(T3_SCRIPTS)/analysis.py \
+	    --sweep "$(T3_RESULTS)/topology_sweep.json"
 
-aggregate:  ## PA-02: merge all results → $(T3_OUTPUT)/aggregate.csv
-	@mkdir -p "$(T3_OUTPUT)"
+aggregate:  ## PA-02: merge all results → $(T3_ANALYSIS)/aggregate.csv
+	@mkdir -p "$(T3_ANALYSIS)"
 	@python3 $(T3_SCRIPTS)/aggregate.py \
 	    --results "$(T3_RESULTS)" \
-	    --out "$(T3_OUTPUT)/aggregate.csv"
+	    --out "$(T3_ANALYSIS)/aggregate.csv"
 
-plot:  ## PA-03: latency-throughput curves → $(T3_OUTPUT)/latency_curves.png
-	@mkdir -p "$(T3_OUTPUT)"
+plot:  ## PA-03: latency-throughput curves → $(T3_ANALYSIS)/latency_curves.png
+	@mkdir -p "$(T3_ANALYSIS)"
 	MPLBACKEND=$(MPLBACKEND) python3 $(T3_SCRIPTS)/plot_curves.py \
 	    --sweep "$(T3_RESULTS)/topology_sweep.json" \
-	    --hops --out "$(T3_OUTPUT)/latency_curves.png"
+	    --hops --out "$(T3_ANALYSIS)/latency_curves.png"
+
+report: analysis aggregate plot  ## PA: run full analysis pipeline (analysis + aggregate + plot)
+
+pa-report: report  ## alias for report (used by make run CMD=pa-report)

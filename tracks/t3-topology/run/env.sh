@@ -31,9 +31,11 @@ export T3_DIR
 export REPO_ROOT="$(cd "$T3_DIR/../.." && pwd)"
 
 # --------------------------------------------------------------------------
-# 3.  Python — prefer the repo venv, fall back to system python3
+# 3.  Python — select python interpreter with pandas available
 # --------------------------------------------------------------------------
-if [ -x "$REPO_ROOT/venv/bin/python3" ]; then
+if [ -f /.dockerenv ] || [ -f /run/.containerenv ]; then
+    export T3_PYTHON="$(command -v python3)"
+elif [ -x "$REPO_ROOT/venv/bin/python3" ] && "$REPO_ROOT/venv/bin/python3" -c "import pandas" &>/dev/null; then
     export T3_PYTHON="$REPO_ROOT/venv/bin/python3"
 elif command -v python3 &>/dev/null; then
     export T3_PYTHON="$(command -v python3)"
@@ -49,12 +51,12 @@ export BOOKSIM_BIN="${BOOKSIM_BIN:-booksim}"
 # --------------------------------------------------------------------------
 # 5.  Project directories  (all anchored to T3_DIR — zero hardcoded paths)
 # --------------------------------------------------------------------------
+export CONFIG="${CONFIG:-baseline}"
 export T3_SCRIPTS="$T3_DIR/scripts"
-export T3_RESULTS="$T3_DIR/results"
+if [ -z "${T3_RESULTS:-}" ] || [ "$T3_RESULTS" = "$T3_DIR/results" ]; then
+    export T3_RESULTS="$T3_DIR/results/$CONFIG"
+fi
 export T3_CONFIGS="$T3_DIR/configs"
-export T3_OUTPUT="$T3_DIR/output"      # writable; created below if missing
-
-mkdir -p "$T3_OUTPUT"
 
 # --------------------------------------------------------------------------
 # 6.  Analysis tunables (override any of these before sourcing if needed)
@@ -83,5 +85,5 @@ echo "  [T3 env]  T3_DIR     → $T3_DIR"
 echo "  [T3 env]  REPO_ROOT  → $REPO_ROOT"
 echo "  [T3 env]  T3_PYTHON  → $T3_PYTHON"
 echo "  [T3 env]  BOOKSIM    → $BOOKSIM_BIN"
-echo "  [T3 env]  T3_OUTPUT  → $T3_OUTPUT"
+echo "  [T3 env]  T3_RESULTS → $T3_RESULTS"
 echo "  [T3 env]  Run 't3 help' to see available commands."
