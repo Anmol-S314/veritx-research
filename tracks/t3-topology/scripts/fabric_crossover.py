@@ -85,7 +85,10 @@ PORTS_PER_DIE = (4, 8)                   # Wormhole-class vs next-gen die I/O
 # are fixed-length, so a topology costs only HOPS. Ranged: 4 pJ/bit (100GbE-class
 # copper SERDES) to 10 pJ/bit (optical transceiver incl. laser).
 SERDES_PJ_BIT = (4.0, 10.0)
-HOPS = {"mesh 4x4": 2.5, "torus 4x4": 2.0, "fat-tree 16 (L=8)": 4.0}
+# hops = exact average Manhattan distance over ordered pairs (excluding self):
+# 4x4 mesh 2.67 (8/3: marginal E=4/3 per dim, incl. same-axis pairs), torus 2.0,
+# fat-tree 16 leaves = 4
+HOPS = {"mesh 4x4": 8 / 3, "torus 4x4": 2.0, "fat-tree 16 (L=8)": 4.0}
 BOX_W = 3000.0                            # 8x n300d-class cards + host, order-of-magnitude
 
 
