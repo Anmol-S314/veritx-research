@@ -415,6 +415,42 @@ cancels in an absolute.
 
 ---
 
+## 18. The intra-chip mechanism was already merged — and Tenstorrent confirmed our placement constraint
+
+**Symptom.** We had treated "read KV once from DRAM, multicast it over the NoC to a row
+of cores" as our proposed optimization, with the risk assessment placing intra-chip
+NoC-multicast-for-KV at ~40–50% "maybe exists".
+
+**Evidence.** tt-metal PR #40733, merged 2026-04-13 ("Add experimental fused ring-joint
+SDPA with fabric KV forwarding", cglagovichTT). Its reader kernel:
+
+> "Q chunks for the same attention head that are distributed across multiple cores on
+> the same device form 'chains.' The first core (injector) reads K/V from DRAM and
+> **multicasts or unicasts** it to downstream cores in the chain, so **only one DRAM
+> read occurs per K/V chunk per head**. Mcast eligibility is computed per-chain: all
+> chain cores must share the same physical row with no gaps in the mcast rectangle,
+> and must have uniform Q chunk counts. If any chain is ineligible, all fall back to
+> unicast store-and-forward."
+
+That is our mechanism, shipped in their ring-joint SDPA. The search gap: release-note
+grep found "fabric KV forwarding" (inter-chip, their writer kernel) and we nearly
+stopped there; the intra-chip sentence lived one level deeper in the PR body.
+
+**What survives.** The eligibility rule is our row-locality placement law, *vendor-
+confirmed* — they compute it per-chain at runtime; our law derives it from the KV
+multicast matrix so the schedule is *built* to be eligible. Still unclaimed: the
+serving-scale quantification (5.4×, 37K ceiling, decode_e2e floor — their PR carries
+no serving numbers, it is a fused-op kernel), and the die-array fabric law (D(G),
+G-blocks, 1.6T closure, energy — they forward within a fixed ring, they do not design
+the fabric). The mechanism is theirs; the analysis is the work.
+
+**Catch it next time.** A release-note item is a pointer, not the artifact: read the PR
+body and the kernel diff before concluding the mechanism is open. And when the vendor
+ships the mechanism, that is *evidence for* your placement constraint, not just a risk
+to dodge — their eligibility condition and our derived row-locality agree.
+
+---
+
 ## The verdict flipped four times
 
 | model | fat-tree EDP | verdict |

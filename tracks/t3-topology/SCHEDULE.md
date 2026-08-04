@@ -104,6 +104,15 @@ and never binds — but it now carries a citable placement constraint instead of
 
 ## Where this sits, what is validated, and what is open
 
+- **Novelty status (checked 2026-08-04):** the *intra-chip* KV multicast mechanism is
+  **already shipped** — tt-metal PR #40733 (merged 2026-04-13) reads KV once from DRAM
+  and multicast-forks it along same-row chain cores in its ring-joint SDPA reader, with
+  the same row-locality eligibility rule our placement law derives (PITFALLS §18). What
+  remains unclaimed is **not the mechanism but its serving-scale form**: the 5.4× /
+  37K-ceiling quantification (their PR has no serving numbers) and the die-array fabric
+  law D(G) / G-blocks / 1.6T closure (they forward inside a fixed ring; they do not
+  design the fabric). Write-ups must attribute the mechanism to the vendor.
+
 - **Where multicast pays** (from [compression_stack.py](scripts/compression_stack.py)):
   throughput serving and/or long context. It is invariant to lossless KV compression at
   the capacity-limited operating point, and orthogonal to it. It erodes only in the

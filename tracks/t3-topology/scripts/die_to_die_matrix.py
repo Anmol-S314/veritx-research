@@ -39,9 +39,16 @@ WHY THIS IS WORTH DOING — 2026 LANDSCAPE (researched, not assumed):
     measured; CXL as a KV tier (the crossover's CXL lever, now with a paper).
   * LEAP (arXiv 2509.14781): KV-aware NoC traffic balancing / KV-cache tiling
     in LLM-inference architectures.
+  * tt-metal PR #40733 (merged 2026-04-13): the INTRA-CHIP mechanism (read KV
+    from DRAM once, NoC-multicast to same-row chain cores) is already shipped
+    in its ring-joint SDPA reader kernel — with an eligibility rule ("same
+    physical row, no gaps in the mcast rectangle") that is our row-locality
+    constraint, vendor-confirmed. It carries no serving-scale numbers and no
+    fabric law.
   The niche WE occupy — a die-array fabric derived from the KV multicast matrix
   with placement as an explicit design parameter — is not covered by any of
-  these. The matrix is the missing first step for it.
+  these. The mechanism is vendor-shipped; the LAW (D(G), blocks, closure) is
+  the still-open first step. Do not re-claim the mechanism itself.
 
 RUN: python3 scripts/die_to_die_matrix.py --selfcheck
 """
