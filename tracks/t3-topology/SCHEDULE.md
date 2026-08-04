@@ -81,12 +81,26 @@ bandwidth is the wall, and the schedule's whole job is to not waste it on redund
 wall, the read pattern that hits it matters, and we measured it (Ramulator2, GDDR6,
 [scripts/dram_efficiency.py](scripts/dram_efficiency.py)): a per-head-contiguous KV head
 reads as a clean stream at **91%** of peak (the 9% is refresh), but a vLLM-style
-`[block, heads, dim]` layout — where reading one KV head strides past the other `g−1` —
+`[block, heads, dim]` layout — where reading every 1 KV head strides past the other `g−1` —
 thrashes the row buffer down to **66%**. Multicast reads each KV head *once*, so this is
 exactly the layout it must have; adopting the multicast schedule without fixing the layout
 throws back ~28% of the bandwidth it just saved. (The g-fold multicast-vs-naive *ratio* is
 unaffected — same layout both ways — but the absolute tokens/sec in
 [serving_multicast.py](scripts/serving_multicast.py) is derated by this 0.91, not peak.)
+
+**REQUIREMENT — run the row-multicast on NoC0, not NoC1 (silicon-measured).** The on-chip
+multicast delivery is *not* free in fanout in general — it depends on which NoC instance
+and where the sender sits relative to the write-ACK path. This is now backed by Tenstorrent's
+own measured plots ([scripts/mcast_measured.py](scripts/mcast_measured.py), extracted from
+the multicast-schemes study in `tt-low-level-documentation`, the closed #22519 deliverable):
+a row-multicast with the sender excluded on **NoC0** stays **30.59 → 29.79 B/cyc** from 2×2
+to 7×7 destinations — flat in fanout (~2.6% total) and 2.0× clear of the schedule's 14.6
+GB/s row feed. The same study shows the **misconfigured pairings collapse up to ~15%**
+(≥8.5 GB/s lost): row-shared on NoC1 or column-shared on NoC0 route the write-ACKs back over
+the congested multicast path (a self-interference loop). Our readers default to RISCV_0
+→ NoC0, so this is a design *rule*, not a change: keep the KV row-multicast on NoC0 with a
+row-shared sender placement. The **NoC is no longer load-bearing** — it is flat-headedroom
+and never binds — but it now carries a citable placement constraint instead of an assumption.
 
 ## Where this sits, what is validated, and what is open
 
@@ -182,3 +196,27 @@ unaffected — same layout both ways — but the absolute tokens/sec in
   a different way (cross-core reduction instead of multicast); this schedule's advantage
   is getting there **without** a per-step reduction on the group axis — one DRAM read and
   one row-broadcast, no all-reduce.
+
+## The claim's envelope: the die-to-die fabric (`scripts/fabric_sweep.py`)
+
+The 5.4× is an **intra-die** result: the KV head crosses a die's own NoC. A sequence whose
+KV exceeds one die's share of the box (12 GB of 192 GB at 16 dies ≈ 37K tokens at 32K/BF16
+rates) must pull KV from *other* dies over the Ethernet fabric — and that layer is
+separately checked, with a quantified verdict:
+
+- **Mechanism holds at die scale:** the same switch-replicated multicast (BookSim, 4×4 die
+  mesh, one stream per KV shard) forks exactly and beats naive re-fetch by ~fanout — the
+  primitive transfers to the die array. A measured topology finding: on a **torus**,
+  dim-order routing takes the 1-hop wraparound and **skips the middle dies**, so
+  replication coverage requires mesh.
+- **Capacity does not:** sharding KV across 16 dies sends ~15/16 of every KV read — **~2.5
+  TB/s** at the 5.4× operating point — over a fabric whose 4×4 mesh of 100GbE links has
+  ~50 GB/s bisection. That is **~50× short** (per-die egress ~3× short); even 800GbE
+  ports leave bisection ~6× short. Multicast's 15× win covers the naive gap *within* the
+  fabric, not the absolute deficit. No near-term Ethernet closes it.
+- **Therefore the envelope is KV-locality:** batch-split placement (each die serves its own
+  sequences) keeps KV 100% local — zero fabric KV traffic, 5.4× untouched — at the price of
+  a ~37K-token context ceiling per sequence. Beyond that, KV must shard, and the fabric
+  loses regardless of topology. **The Ethernet-NoC topology question only becomes
+  first-order at ~10× today's fabric** — the answer at QuietBox scale is "keep KV off the
+  fabric", not "which fabric".

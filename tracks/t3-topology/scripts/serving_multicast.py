@@ -51,6 +51,15 @@ HONESTY (these bound the claim, so they are stated up front, not buried):
     already fit. It is a bandwidth win, not a capacity win.
   * KV shared across CHIPS would ride the Ethernet scale-out fabric, not the on-chip
     NoC. This models the aggregate/intra-chip picture.
+  * The NoC delivery side is SILICON-MEASURED, not assumed: the official Tenstorrent
+    multicast-schemes study (tt-low-level-documentation, the closed #22519 deliverable;
+    curves extracted into scripts/mcast_measured.py) shows a row-multicast on NOC0 with
+    the sender excluded sustains 30.59 -> 29.79 B/cyc from 2x2 to 7x7 -- flat in fanout
+    (<3% total). The schedule's per-row feed (14.6 GB/s) sits at >=1.8x headroom even at
+    49 destinations, so the NoC never binds and the g-fold ratio stands -- PROVIDED the
+    row multicast runs on NOC0 with a row-shared placement (the same study shows the
+    col-shared-on-NOC0 / row-shared-on-NOC1 pairings collapse up to ~15%: that is a
+    design constraint, not a free parameter).
 
     python3 scripts/serving_multicast.py [--selfcheck]
 """

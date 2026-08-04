@@ -48,12 +48,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))   # sibling-script impo
 import mcast_flitfork as noc          # run_booksim, ensure_booksim, G_MINUS_1
 import dram_efficiency as dram        # ensure_ramulator, gen_traces, bw
 import serving_multicast as sm        # QUIETBOX, DRAM_EFF, GB (the analytic headline)
+import mcast_measured as mm           # OFFICIAL silicon curves: bytes/cyc vs multicast fanout
 
 # Wormhole die, arXiv 2603.23343 Table 2 (measured) -- same constants as decode_roofline.py.
 DRAM_GBS = 288.0                       # per Wormhole die
 N_DRAM_ENDPOINTS = 18                  # DRAM endpoints per die; one feeds one KV-group row
 DRAM_PER_ENDPOINT = DRAM_GBS / N_DRAM_ENDPOINTS      # 16.0 GB/s -- the schedule's per-row feed
 NOC_FLIT_GBS = 32.0                    # 1 flit/cyc = one 32 B/cyc link @ 1 GHz (the bridge)
+# The capacity a ROW-MULTICAST stream actually sustains is NOT the theoretical 32 B/cyc:
+# it is the official Tenstorrent silicon curve (mcast_measured.py, extracted from the
+# tt-low-level-documentation multicast-schemes study, Wormhole B0, loopback disabled).
+# For our geometry -- sender excluded, row-shared on NOC0 (scheme 5/8) -- the curve is
+# 30.59 B/cyc at 2x2 and 29.79 B/cyc at 7x7: essentially FLAT in fanout. The conservative
+# floor for ANY fanout <= 49 destinations is used as the NoC stage's rate (2.6% below the
+# 2x2 point, 7% below theoretical peak -- the honesty of using measured, not spec, rates).
+NOC_MULTICAST_GBS = mm.ours(7)         # 29.79 B/cyc -- measured floor at max grid, NOC0
 BF16_TFLOPS = 74.0
 CORES_PER_CHIP = 80                    # Tensix per die (wormhole.py / SCHEDULE.md)
 DECODE_AI = 1.0                        # FLOP/byte, decode GEMV BF16 (decode_roofline.py)
@@ -61,10 +70,13 @@ DECODE_AI = 1.0                        # FLOP/byte, decode GEMV BF16 (decode_roo
 
 def stages_gbs(eps):
     """GB/s along ONE KV-group row for each pipeline stage; the MIN binds. Per-row (not
-    aggregate) is the conservative NoC view -- a row-broadcast concentrates on the row's links."""
+    aggregate) is the conservative NoC view -- a row-broadcast concentrates on the row's links.
+    The NoC stage is the MEASURED multicast delivery rate (mcast_measured.py: official
+    Wormhole B0 silicon curve, row-shared on NOC0, floor over 4..49 destinations), not the
+    theoretical 32 B/cyc link -- measured rates, not spec rates, is this track's rule."""
     return {
         "DRAM (1 endpoint)": DRAM_PER_ENDPOINT * eps,                 # one endpoint feeds one row
-        "NoC (1 row link)": NOC_FLIT_GBS,                             # one link carries the stream
+        "NoC (1 row link)": NOC_MULTICAST_GBS,                        # measured multicast delivery
         "compute (1 core)": BF16_TFLOPS * 1e3 / CORES_PER_CHIP / DECODE_AI,  # each of g cores keeps up
     }
 
@@ -97,7 +109,8 @@ def main(run):
     print(f"\n  BRIDGE   {delivered:.1f} GB/s / {NOC_FLIT_GBS:.0f} (GB/s per flit/cyc) = "
           f"{inj:.3f} flit/cyc injection at the row source")
 
-    # STAGE 2 -- NoC, BookSim REAL flit-fork multicast, run AT that injection.
+    # STAGE 2 -- NoC, BookSim REAL flit-fork multicast, run AT that injection, then CHECK
+    # the measured silicon curve (mcast_measured.py) beats the feed -- the second falsifier.
     noc.ensure_booksim()
     ir, acc, _, _ = noc.run_booksim(0, 0.02)         # GATE 1: fork exact (known-answer)
     fork = acc / ir
@@ -112,6 +125,11 @@ def main(run):
           f"{'SATURATED' if sat_m else 'STABLE'}")
     print(f"                    naive      {acc_n:.3f} deliv/cyc  lat {lat_n or 0:.0f}  "
           f"{'SATURATED' if sat_n else 'STABLE'}")
+    print(f"                  OFFICIAL silicon curve (tt-low-level-documentation multicast")
+    print(f"                  schemes, WH B0, loopback off): row-shared NOC0 sustains")
+    print(f"                  {mm.ours(2):.2f} B/cyc at 2x2 -> {mm.ours(7):.2f} B/cyc at 7x7 "
+          f"(flat in fanout, {100*(1-mm.ours(7)/mm.ours(2)):.1f}% total drop); the wrong")
+    print(f"                  placement (col-shared NoC0, row-shared NoC1) loses up to ~15%.")
 
     # STAGE 3 -- compute (analytic; PyTorchSim not in the loop).
     st = stages_gbs(eps)
@@ -120,11 +138,12 @@ def main(run):
 
     # COMPOSE -- the min stage binds.
     binder = min(st, key=st.get)
-    noc_hr = st["NoC (1 row link)"] / st["DRAM (1 endpoint)"]
+    noc_hr = NOC_MULTICAST_GBS / st["DRAM (1 endpoint)"]
     cmp_hr = st["compute (1 core)"] / st["DRAM (1 endpoint)"]
     print(f"\n  COMPOSE  per-row stage rates (GB/s):  "
           + "   ".join(f"{k} {v:.1f}" for k, v in st.items()))
-    print(f"           binding = {binder} (min); NoC headroom {noc_hr:.1f}x, compute {cmp_hr:.0f}x")
+    print(f"           binding = {binder} (min); NoC headroom {noc_hr:.1f}x "
+          f"(measured multicast floor), compute {cmp_hr:.0f}x")
 
     # GATES -- falsifiable; the composition fails loudly if any breaks.
     print(f"\n  GATES")
@@ -140,6 +159,11 @@ def main(run):
     print(f"    3  DRAM binds: {binder} is the min stage (roofline premise holds) .. "
           f"{'PASS' if g3 else 'FAIL'}")
     assert g3, st
+    g2c = delivered <= NOC_MULTICAST_GBS
+    print(f"    2c silicon holds: feed {delivered:.1f} GB/s <= measured multicast delivery "
+          f"{NOC_MULTICAST_GBS:.1f} B/cyc (WH B0 curve, row-shared NOC0, floor @7x7) .. "
+          f"{'PASS' if g2c else 'FAIL'}")
+    assert g2c, (delivered, NOC_MULTICAST_GBS)
     dies = sm.QUIETBOX.bw / sm.GB / DRAM_GBS
     agg = dies * N_DRAM_ENDPOINTS * DRAM_PER_ENDPOINT
     g4 = abs(agg - sm.QUIETBOX.bw / sm.GB) < 1e-6
@@ -151,8 +175,12 @@ def main(run):
 
     print(f"\n  RESULT: both cycle-accurate engines land on ONE operating point derived from first")
     print(f"  principles (288/18 GB/s x {eps:.2f} / 32 = {inj:.2f} flit/cyc). Multicast is stable")
-    print(f"  there and naive saturates; DRAM is the binding stage, NoC {noc_hr:.1f}x clear and compute")
-    print(f"  {cmp_hr:.0f}x. The composition is measured from both ends, no longer assumed between them.")
+    print(f"  there and naive saturates; the OFFICIAL Wormhole silicon curve (row-shared NOC0,")
+    print(f"  loopback off) sustains {NOC_MULTICAST_GBS:.1f} B/cyc even at 49 destinations --")
+    print(f"  flat in fanout and {noc_hr:.1f}x clear of the feed. DRAM is the binding stage and")
+    print(f"  compute {cmp_hr:.0f}x. The composition is measured from both ends -- DRAM via")
+    print(f"  Ramulator, the NoC via BookSim AND the vendor's own silicon plots -- no longer")
+    print(f"  assumed between them.")
 
 
 def _selfcheck():
@@ -163,17 +191,24 @@ def _selfcheck():
     inj = implied_injection(sm.DRAM_EFF)
     assert 0 < inj < 1.0, inj                     # expressible as a BookSim injection_rate
     assert inj < 0.6, inj                         # comfortably below multicast's 1.0 ceiling (~2x)
-    # DRAM is the binding (min) stage; NoC and compute strictly above it.
+    # DRAM is the binding (min) stage; NoC and compute strictly above it. The NoC stage
+    # is the MEASURED multicast floor (29.79 B/cyc @7x7), not the theoretical 32 link.
     st = stages_gbs(sm.DRAM_EFF)
     assert min(st, key=st.get).startswith("DRAM"), st
     assert st["NoC (1 row link)"] > st["DRAM (1 endpoint)"] < st["compute (1 core)"], st
+    # measured-curve sanity (mcast_measured._selfcheck guards the numbers): our geometry is
+    # flat in fanout (<4% over the whole sweep) and ~2x clear of the DRAM feed.
+    assert NOC_MULTICAST_GBS == mm.ours(7), NOC_MULTICAST_GBS
+    assert st["DRAM (1 endpoint)"] < NOC_MULTICAST_GBS < 32.0, st
+    assert abs((mm.ours(2) - mm.ours(7)) / mm.ours(2)) < 0.04
     # the per-endpoint model aggregates EXACTLY to serving_multicast's QuietBox bandwidth.
     dies = sm.QUIETBOX.bw / sm.GB / DRAM_GBS
     assert abs(dies - 16.0) < 1e-9, dies
     assert abs(dies * N_DRAM_ENDPOINTS * DRAM_PER_ENDPOINT - sm.QUIETBOX.bw / sm.GB) < 1e-6
     print(f"selfcheck OK -- bridge: 16 GB/s/endpoint x eps={sm.DRAM_EFF} / 32 = {inj:.3f} flit/cyc "
           f"(<1.0, ~{1.0 / inj:.1f}x headroom); DRAM binds ({stages_gbs(sm.DRAM_EFF)['DRAM (1 endpoint)']:.1f} "
-          f"< NoC {NOC_FLIT_GBS:.0f}); per-die model x{dies:.0f} = {sm.QUIETBOX.bw / sm.GB:.0f} GB/s QuietBox")
+          f"< NoC {NOC_MULTICAST_GBS:.1f} measured multicast floor < 32); per-die model x{dies:.0f} = "
+          f"{sm.QUIETBOX.bw / sm.GB:.0f} GB/s QuietBox")
 
 
 if __name__ == "__main__":
