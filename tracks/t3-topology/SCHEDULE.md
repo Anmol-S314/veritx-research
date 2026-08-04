@@ -220,3 +220,32 @@ separately checked, with a quantified verdict:
   loses regardless of topology. **The Ethernet-NoC topology question only becomes
   first-order at ~10× today's fabric** — the answer at QuietBox scale is "keep KV off the
   fabric", not "which fabric".
+
+### What replaces Ethernet when the crossover comes (`scripts/fabric_crossover.py`)
+
+The follow-up, quantified: *if* a future box shards KV across dies, which fabric closes
+the ~2.5 TB/s bisection gap, and when? Every packet fabric (Ethernet, IB, UEC, UALink,
+co-packaged optics) rides the same die-edge SERDES budget — protocol buys only the
+per-port rate:
+
+| fabric | era | bisection @ L=8 | vs 2.5 TB/s |
+|---|---|---|---|
+| 100GbE (today) | 2023 | 100 GB/s | 25× short |
+| 800GbE / IB-XDR | 2025 | 800 GB/s | 3.1× short |
+| UEC 1.6T / UALink 2.0 | 2026 | 1600 GB/s | 1.5× short |
+| Co-packaged optics 3.2T | 2027 | 3200 GB/s | **closes** |
+
+- **The mesh as a die-array fabric is dead:** its bisection needs 5 Tb/s-class ports —
+  on no roadmap, ever. The viable shape is **L=8 (torus/fat-tree class)**, and of those
+  only the **fat tree** survives: the torus is disqualified twice (dim_order skips the
+  middle dies, breaking multicast coverage — measured; plus the known deadlock hazard).
+- **The crossover lands ~2026–27** on fat-tree + 3.2T optics (or degree-8 die I/O +
+  1.6T UEC/UALink — twice the wires, no topology magic).
+- **Energy is not the disqualifier at this layer:** the FINDINGS.md 1.65× fat-tree
+  penalty is on-die physics (wire mm + radix) and does not transfer to fixed-length
+  chip-to-chip links, where a topology costs only SERDES hops: the fat-tree-vs-torus
+  delta is **157–394 W on a ~3 kW box (5–13%)** — and the mesh cannot compete on energy
+  either, because it cannot carry the load at all.
+- CXL is a different lever (memory semantics → coherence instead of multicast — a
+  different product question); NVLink-class I/O would close everything but is
+  proprietary to NVIDIA silicon.
