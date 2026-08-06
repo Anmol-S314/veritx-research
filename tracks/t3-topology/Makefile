@@ -137,6 +137,9 @@ plot:  ## PA-03: latency-throughput curves → $(T3_ANALYSIS)/latency_curves.png
 	    --sweep "$(T3_RESULTS)/topology_sweep.json" \
 	    --hops --out "$(T3_ANALYSIS)/latency_curves.png"
 
-report: analysis aggregate plot  ## PA: run full analysis pipeline (analysis + aggregate + plot)
+#report: analysis aggregate plot  ## PA: run full analysis pipeline (analysis + aggregate + plot)
 
-pa-report: report  ## alias for report (used by make run CMD=pa-report)
+#pa-report: report  ## alias for report (used by make run CMD=pa-report)
+
+permissions:
+	@chmod 777 "$(T3_RESULTS)"
