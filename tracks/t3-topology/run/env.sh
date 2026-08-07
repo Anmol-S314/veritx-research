@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 # =============================================================================
 # T3 Topology — Environment bootstrap
-# Source this file from the "run" directory before any script or make target:
+# Source this file from any directory to enable the 't3' CLI command:
 #
-#   cd tracks/t3-topology/run
-#   source env.sh          # sets up all T3_* variables
-#   t3 help               # list all commands
-#   t3 all                # run full analysis pipeline
+#   source tracks/t3-topology/run/env.sh
+#   t3 help
+#   t3 check
+#   t3 timeloop
+#   t3 exec <command>
 #
-# This file lives in  tracks/t3-topology/run/
-# T3_DIR is resolved as the parent:  tracks/t3-topology/
-# It works from any working directory.
+# Sourcing this file adds 't3' to your PATH and enables transparent container
+# execution so commands run inside the veritx-tools-base container seamlessly.
 # =============================================================================
 
 # --------------------------------------------------------------------------
-# 1.  Resolve this file's own location (works whether sourced or executed)
+# 1. Resolve this file's own location (works whether sourced or executed)
 # --------------------------------------------------------------------------
 if [ -n "${BASH_SOURCE[0]}" ]; then
     _T3_ENV_SH="${BASH_SOURCE[0]}"
@@ -26,12 +26,12 @@ T3_DIR="$(cd "$_T3_RUN_DIR/.." && pwd)"                  # .../t3-topology/
 export T3_DIR
 
 # --------------------------------------------------------------------------
-# 2.  Repo root (two levels up from tracks/t3-topology/)
+# 2. Repo root (two levels up from tracks/t3-topology/)
 # --------------------------------------------------------------------------
 export REPO_ROOT="$(cd "$T3_DIR/../.." && pwd)"
 
 # --------------------------------------------------------------------------
-# 3.  Python — select python interpreter with pandas available
+# 3. Python — select python interpreter
 # --------------------------------------------------------------------------
 if [ -f /.dockerenv ] || [ -f /run/.containerenv ]; then
     export T3_PYTHON="$(command -v python3)"
@@ -40,17 +40,13 @@ elif [ -x "$REPO_ROOT/venv/bin/python3" ] && "$REPO_ROOT/venv/bin/python3" -c "i
 elif command -v python3 &>/dev/null; then
     export T3_PYTHON="$(command -v python3)"
 else
-    echo "  [env.sh] ✗ python3 not found — install Python 3.9+ or create venv" >&2
+    export T3_PYTHON="python3"
 fi
 
 # --------------------------------------------------------------------------
-# 4.  Booksim binary  (override: BOOKSIM_BIN=/path/to/booksim source env.sh)
+# 4. Booksim binary & Configs
 # --------------------------------------------------------------------------
 export BOOKSIM_BIN="${BOOKSIM_BIN:-booksim}"
-
-# --------------------------------------------------------------------------
-# 5.  Project directories  (all anchored to T3_DIR — zero hardcoded paths)
-# --------------------------------------------------------------------------
 export CONFIG="${CONFIG:-baseline}"
 export T3_SCRIPTS="$T3_DIR/scripts"
 if [ -z "${T3_RESULTS:-}" ] || [ "$T3_RESULTS" = "$T3_DIR/results" ]; then
@@ -59,31 +55,33 @@ fi
 export T3_CONFIGS="$T3_DIR/configs"
 
 # --------------------------------------------------------------------------
-# 6.  Analysis tunables (override any of these before sourcing if needed)
+# 5. Analysis tunables
 # --------------------------------------------------------------------------
-export PACKET_SIZE_BITS="${PACKET_SIZE_BITS:-128}"   # energy_proxy = hops × this
-export SAT_K="${SAT_K:-2.0}"                         # saturation threshold multiplier
-export RATES="${RATES:-0.002,0.005,0.01,0.02,0.03}"  # injection rate sweep
-
-# Optional: point to a traffic matrix file (skips uniform traffic)
-# export TRAFFIC_MATRIX="$T3_RESULTS/traffic_matrix.txt"
-
-# --------------------------------------------------------------------------
-# 7.  Matplotlib (suppress GUI pop-ups when running headless)
-# --------------------------------------------------------------------------
+export PACKET_SIZE_BITS="${PACKET_SIZE_BITS:-128}"
+export SAT_K="${SAT_K:-2.0}"
+export RATES="${RATES:-0.002,0.005,0.01,0.02,0.03}"
 export MPLBACKEND="${MPLBACKEND:-Agg}"
+export MPLCONFIGDIR="/tmp"
+if [ "$HOME" = "/" ] || [ -z "$HOME" ]; then
+    export HOME="/tmp"
+fi
 
 # --------------------------------------------------------------------------
-# 8.  PATH — make 't3' top-level script callable without a path prefix
+# 6. PATH — make 't3' top-level script callable without a path prefix
 # --------------------------------------------------------------------------
-export PATH="$T3_DIR:$PATH"
+case ":$PATH:" in
+    *":$T3_DIR:"*) ;;
+    *) export PATH="$T3_DIR:$PATH" ;;
+esac
 
 # --------------------------------------------------------------------------
-# 9.  Pretty summary
+# 7. Summary banner
 # --------------------------------------------------------------------------
 echo "  [T3 env]  T3_DIR     → $T3_DIR"
 echo "  [T3 env]  REPO_ROOT  → $REPO_ROOT"
-echo "  [T3 env]  T3_PYTHON  → $T3_PYTHON"
-echo "  [T3 env]  BOOKSIM    → $BOOKSIM_BIN"
-echo "  [T3 env]  T3_RESULTS → $T3_RESULTS"
-echo "  [T3 env]  Run 't3 help' to see available commands."
+if [ -f /.dockerenv ] || [ -f /run/.containerenv ]; then
+    echo "  [T3 env]  MODE       → Container Environment (native execution)"
+else
+    echo "  [T3 env]  MODE       → Host Terminal (transparent container execution active)"
+fi
+echo "  [T3 env]  Run 't3 help' or 't3 check' to get started."

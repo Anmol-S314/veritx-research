@@ -49,7 +49,7 @@ def main():
         sys.exit(f"  no {p} — run the Timeloop spine first (make ... CMD=timeloop)")
 
     e = parse_energy(p.read_text())
-    (p.parent / "energy.json").write_text(json.dumps(e, indent=2))
+    (p.parent.parent / "results" / "energy.json").write_text(json.dumps(e, indent=2))
 
     print(f"  Total energy: {e['energy_uJ']} uJ over {e['cycles']} cycles"
           f"  |  EDP {e.get('edp_uJ_cycles')} uJ·cyc  |  util {e['utilization']}")

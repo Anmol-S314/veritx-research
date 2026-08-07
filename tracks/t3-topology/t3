@@ -2,49 +2,91 @@
 # =============================================================================
 # t3  —  top-level CLI for the T3 Topology track
 #
-# Usage (from ANY directory):
-#   t3 <command> [options]
+# Transparent Container Execution:
+# Sourcing run/env.sh puts 't3' on your PATH.
+# When invoked from your host terminal, 't3' automatically routes the command
+# inside the veritx-tools-base container using your host UID/GID so all dependencies
+# (Timeloop, Accelergy, Booksim, etc.) are available and file permissions remain clean.
 #
-# Quick start:
-#   source /path/to/tracks/t3-topology/run/env.sh  # sets up env once per shell
-#   t3 help                                          # list all commands
-#   t3 analysis                                      # run PA-01 summary
-#   t3 aggregate                                     # run PA-02, write aggregate.csv
-#   t3 plot                                          # run PA-03, write latency_curves.png
-#   t3 all                                           # run analysis → aggregate → plot
+# Usage (from ANY directory on host or container):
+#   source /path/to/tracks/t3-topology/run/env.sh
+#   t3 <command> [options]
+#   t3 exec <any command inside shell>
 # =============================================================================
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
-# Resolve T3_DIR (the directory that contains this script)
+# 1. Resolve T3_DIR & REPO_ROOT
 # ---------------------------------------------------------------------------
 T3_SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 T3_DIR="$(cd "$(dirname "$T3_SCRIPT_PATH")" && pwd)"
+REPO_ROOT="$(cd "$T3_DIR/../.." && pwd)"
 
-# Source run/env.sh — the canonical location for the T3 environment bootstrap
-# shellcheck source=run/env.sh
+# Source run/env.sh if present
 _T3_ENV="$T3_DIR/run/env.sh"
 if [ -f "$_T3_ENV" ]; then
-    source "$_T3_ENV" 2>/dev/null || {
-        echo "  [t3] ERROR: cannot source $_T3_ENV" >&2
-        exit 1
-    }
-else
-    echo "  [t3] ERROR: env.sh not found at $_T3_ENV" >&2
-    echo "  [t3]   Expected location: tracks/t3-topology/run/env.sh" >&2
-    exit 1
+    source "$_T3_ENV" >/dev/null 2>&1 || true
 fi
 unset _T3_ENV
 
-# Redirect to a default output dir if not set (results/<config>/analysis/)
-T3_OUTPUT="${T3_OUTPUT:-$T3_RESULTS/analysis}"
-mkdir -p "$T3_OUTPUT"
+# ---------------------------------------------------------------------------
+# 2. Container transparent dispatch
+# ---------------------------------------------------------------------------
+IN_CONTAINER=0
+if [ -f /.dockerenv ] || [ -f /run/.containerenv ]; then
+    IN_CONTAINER=1
+fi
+
+if [ "$IN_CONTAINER" -eq 0 ]; then
+    CONTAINER_BIN="${CONTAINER_BIN:-$(command -v podman 2>/dev/null || command -v docker 2>/dev/null || echo docker)}"
+    IMAGE="${IMAGE:-ghcr.io/anmol-s314/veritx-tools-base:latest}"
+
+    TTY_FLAG=""
+    if [ -t 0 ] && [ -t 1 ]; then
+        TTY_FLAG="-it"
+    fi
+
+    USER_FLAG="-u $(id -u):$(id -g)"
+
+    EXEC_ENV=(
+        -e CONFIG="${CONFIG:-baseline}"
+        -e RATES="${RATES:-0.002,0.005,0.01,0.02,0.03}"
+        -e SAT_K="${SAT_K:-2.0}"
+        -e PACKET_SIZE_BITS="${PACKET_SIZE_BITS:-128}"
+        -e MPLBACKEND="${MPLBACKEND:-Agg}"
+        -e MPLCONFIGDIR="/tmp"
+        -e HOME="/tmp"
+    )
+    if [ -n "${TRAFFIC_MATRIX:-}" ]; then
+        EXEC_ENV+=(-e TRAFFIC_MATRIX="$TRAFFIC_MATRIX")
+    fi
+
+    # Interactive container shell target
+    if [ "${1:-}" = "shell" ] || [ "${1:-}" = "bash" ]; then
+        exec $CONTAINER_BIN run $TTY_FLAG --rm $USER_FLAG \
+            -v "$REPO_ROOT":/workspace \
+            -w /workspace/tracks/t3-topology \
+            "${EXEC_ENV[@]}" \
+            "$IMAGE" bash
+    fi
+
+    # Dispatch any t3 command or raw command into the container
+    exec $CONTAINER_BIN run $TTY_FLAG --rm $USER_FLAG \
+        -v "$REPO_ROOT":/workspace \
+        -w /workspace/tracks/t3-topology \
+        "${EXEC_ENV[@]}" \
+        "$IMAGE" \
+        bash -c 'source run/env.sh >/dev/null 2>&1 && exec t3 "$@"' _ "$@"
+fi
 
 # ---------------------------------------------------------------------------
-# Helpers
+# 3. Inside container execution below:
 # ---------------------------------------------------------------------------
+T3_OUTPUT="${T3_OUTPUT:-$T3_RESULTS/analysis}"
+mkdir -p "$T3_OUTPUT" 2>/dev/null || true
+
+# Helpers
 _py() {
-    # Run a python script with the resolved python, forwarding all extra args
     "$T3_PYTHON" "$@"
 }
 
@@ -60,10 +102,7 @@ _ok()   { echo "  ✓  $*"; }
 _warn() { echo "  ⚠  $*"; }
 _err()  { echo "  ✗  $*" >&2; exit 1; }
 
-# ---------------------------------------------------------------------------
 # Commands
-# ---------------------------------------------------------------------------
-
 cmd_help() {
     cat <<'EOF'
 
@@ -71,65 +110,40 @@ cmd_help() {
   ══════════════════════════════════════════════════════════════════
 
   Usage:  t3 <command> [options]
+          t3 exec <any command>      (run arbitrary command in container shell)
 
-  SETUP
-    help          Show this message
-    env           Print all active environment variables
-    check         Verify Python, Booksim, pandas, matplotlib are available
+  CONTAINER & ENVIRONMENT
+    shell / bash  Open interactive shell in veritx-tools-base container
+    exec <cmd>    Execute any command (e.g. timeloop-mapper ...) inside shell
+    check         Verify Python, Booksim, Timeloop, pandas, matplotlib
+    env           Print active environment variables
 
-  ANALYSIS  (PA-01 / PA-02 / PA-03)
-    analysis      Load sweep JSON → DataFrame summary (PA-01)
-    aggregate     Merge all results → results/<config>/analysis/aggregate.csv (PA-02)
-    plot          Latency-throughput curves → results/<config>/analysis/latency_curves.png (PA-03)
-    all           Run analysis → aggregate → plot in sequence
+  SIMULATION & PIPELINES
+    sim           Uniform-traffic Booksim sweep
+    timeloop      Timeloop spine (timeloop -> matrix -> sweep -> energy)
+    timeloop-workload Full Timeloop workload pipeline
 
-  SIMULATION
-    sim           Uniform-traffic Booksim sweep (baseline)
-    timeloop      Full spine: Timeloop → matrix → topology sweep
-
-  REPORTING
-    dashboard     Build report/t3/index.html (Plotly dashboard)
-    energy        Timeloop energy breakdown → results/<config>/energy.json
+  ANALYSIS & REPORTING
+    analysis      Load sweep JSON -> DataFrame summary (PA-01)
+    aggregate     Merge all results -> aggregate.csv (PA-02)
+    plot          Latency-throughput curves -> latency_curves.png (PA-03)
+    all           Run analysis -> aggregate -> plot in sequence
+    report        Run full analysis & aggregate report
+    energy        Timeloop energy breakdown
+    dashboard     Build Plotly dashboard
 
   DEVELOPMENT
     selfcheck     Run --selfcheck on analysis, aggregate, plot_curves
-    lint          Syntax-check all Python scripts
+    lint          Syntax-check Python scripts
     clean         Remove results/ and __pycache__
 
   ══════════════════════════════════════════════════════════════════
-
-  ENVIRONMENT VARIABLES (set before 'source env.sh' to override defaults)
-
-    BOOKSIM_BIN        path to booksim binary   [default: booksim (on PATH)]
-    RATES              comma-separated sweep rates  [default: 0.002,0.005,0.01,0.02,0.03]
-    TRAFFIC_MATRIX     path to traffic matrix file  [default: unset → uniform traffic]
-    PACKET_SIZE_BITS   energy proxy constant    [default: 128]
-    SAT_K              saturation multiplier    [default: 2.0]
-    MPLBACKEND         matplotlib backend       [default: Agg]
-    T3_OUTPUT          writable analysis dir    [default: results/<config>/analysis/]
-    T3_RESULTS         results directory        [default: results/<config>/]
-
-  EXAMPLES
-
-    # Standard entry point — run from the 'run' directory:
-    cd tracks/t3-topology/run
-    source env.sh && t3 all
-
-    # From anywhere:
-    source ~/Research/veritx-research/tracks/t3-topology/run/env.sh
-    t3 plot --hops
-
-    # Override output dir and run simulation:
-    T3_OUTPUT=/data/my_run source env.sh && t3 sim
-
-    # Override rates:
-    RATES="0.01,0.02,0.03,0.05" t3 sim
-
 EOF
 }
 
 cmd_env() {
     _banner "T3 Active Environment"
+    echo "  Container Mode  = Active (IN_CONTAINER=1)"
     echo "  T3_DIR          = $T3_DIR"
     echo "  REPO_ROOT       = $REPO_ROOT"
     echo "  T3_PYTHON       = $T3_PYTHON"
@@ -147,25 +161,34 @@ cmd_env() {
 
 cmd_check() {
     _banner "Environment Check"
-    # Python
+    _ok "Container   → Active (veritx-tools-base)"
+
     if [ -x "$T3_PYTHON" ]; then
         _ok "python3     → $T3_PYTHON  ($("$T3_PYTHON" --version 2>&1))"
     else
         _err "python3 not found (expected at $T3_PYTHON)"
     fi
-    # pandas
+
     "$T3_PYTHON" -c "import pandas" 2>/dev/null \
         && _ok "pandas      → $("$T3_PYTHON" -c "import pandas; print(pandas.__version__)")" \
-        || _warn "pandas not installed  (run: $T3_PYTHON -m pip install pandas matplotlib)"
-    # matplotlib
+        || _warn "pandas not installed"
+
     "$T3_PYTHON" -c "import matplotlib" 2>/dev/null \
         && _ok "matplotlib  → $("$T3_PYTHON" -c "import matplotlib; print(matplotlib.__version__)")" \
         || _warn "matplotlib not installed"
-    # booksim
+
     command -v "$BOOKSIM_BIN" &>/dev/null \
         && _ok "booksim     → $(command -v "$BOOKSIM_BIN")" \
-        || _warn "booksim not on PATH  (set BOOKSIM_BIN=/path/to/booksim)"
-    # sweep JSON
+        || _warn "booksim not on PATH"
+
+    command -v timeloop-mapper &>/dev/null \
+        && _ok "timeloop    → $(command -v timeloop-mapper)" \
+        || _warn "timeloop-mapper not found"
+
+    command -v accelergy &>/dev/null \
+        && _ok "accelergy   → $(command -v accelergy)" \
+        || _warn "accelergy not found"
+
     [ -f "$T3_RESULTS/topology_sweep.json" ] \
         && _ok "sweep JSON  → $T3_RESULTS/topology_sweep.json" \
         || _warn "No sweep JSON yet  (run: t3 sim)"
@@ -189,7 +212,6 @@ cmd_aggregate() {
 cmd_plot() {
     _banner "PA-03  plot_curves.py"
     local out="${T3_OUTPUT}/latency_curves.png"
-    # Allow caller to pass --out and other flags through
     _py "$T3_SCRIPTS/plot_curves.py" \
         --sweep "$T3_RESULTS/topology_sweep.json" \
         --k "$SAT_K" \
@@ -212,8 +234,18 @@ cmd_sim() {
 }
 
 cmd_timeloop() {
-    _banner "Full spine: Timeloop → matrix → sweep"
+    _banner "Full spine: Timeloop -> matrix -> sweep"
     ( cd "$T3_DIR" && make timeloop )
+}
+
+cmd_timeloop_workload() {
+    _banner "Timeloop Workload Pipeline"
+    ( cd "$T3_DIR" && make timeloop-workload CONFIG="${CONFIG:-baseline}" )
+}
+
+cmd_report() {
+    _banner "Generating Report"
+    ( cd "$T3_DIR" && make report CONFIG="${CONFIG:-baseline}" )
 }
 
 cmd_dashboard() {
@@ -225,19 +257,23 @@ cmd_energy() {
     _banner "Energy breakdown"
     local stats=""
     for candidate in \
+        "$T3_DIR/timeloop/timeloop-mapper.stats.txt" \
         "$T3_RESULTS/timeloop.stats.txt" \
         "$T3_DIR/results/timeloop.stats.txt" \
-        "$T3_DIR/results/${CONFIG:-baseline}/timeloop.stats.txt" \
-        "$T3_DIR/timeloop/timeloop-mapper.stats.txt"; do
-        if [ -f "$candidate" ]; then
+        "$T3_DIR/results/${CONFIG:-baseline}/timeloop.stats.txt"; do
+        if [ -f "$candidate" ] && grep -q "Summary Stats" "$candidate" 2>/dev/null; then
             stats="$candidate"
             break
         fi
     done
 
     if [ -z "$stats" ]; then
-        _warn "No timeloop.stats.txt — run 't3 timeloop' first"
-        exit 1
+        if [ -f "$T3_DIR/timeloop/timeloop-mapper.stats.txt" ]; then
+            stats="$T3_DIR/timeloop/timeloop-mapper.stats.txt"
+        else
+            _warn "No Timeloop stats file with Summary Stats — run 't3 timeloop' first"
+            exit 1
+        fi
     fi
     _py "$T3_SCRIPTS/energy_report.py" "$stats"
 }
@@ -262,30 +298,40 @@ cmd_clean() {
     _ok "Removed output/ and __pycache__"
 }
 
-# ---------------------------------------------------------------------------
+cmd_exec() {
+    "$@"
+}
+
 # Dispatch
-# ---------------------------------------------------------------------------
 COMMAND="${1:-help}"
-shift || true   # pop first arg; remaining $@ forwarded to sub-commands
+shift || true
 
 case "$COMMAND" in
-    help|-h|--help)   cmd_help        ;;
-    env)              cmd_env         ;;
-    check)            cmd_check       ;;
-    analysis)         cmd_analysis "$@" ;;
-    aggregate)        cmd_aggregate "$@" ;;
-    plot)             cmd_plot "$@"   ;;
-    all)              cmd_all         ;;
-    sim)              cmd_sim "$@"    ;;
-    timeloop)         cmd_timeloop    ;;
-    dashboard)        cmd_dashboard "$@" ;;
-    energy)           cmd_energy      ;;
-    selfcheck)        cmd_selfcheck   ;;
-    lint)             cmd_lint        ;;
-    clean)            cmd_clean       ;;
+    help|-h|--help)       cmd_help              ;;
+    env)                  cmd_env               ;;
+    check)                cmd_check             ;;
+    analysis)             cmd_analysis "$@"     ;;
+    aggregate)            cmd_aggregate "$@"    ;;
+    plot)                 cmd_plot "$@"         ;;
+    all)                  cmd_all               ;;
+    sim)                  cmd_sim "$@"          ;;
+    timeloop)             cmd_timeloop          ;;
+    timeloop-workload)    cmd_timeloop_workload ;;
+    report|pa-report)     cmd_report            ;;
+    dashboard)            cmd_dashboard "$@"    ;;
+    energy)               cmd_energy            ;;
+    selfcheck)            cmd_selfcheck         ;;
+    lint)                 cmd_lint              ;;
+    clean)                cmd_clean             ;;
+    exec|run)             cmd_exec "$@"         ;;
     *)
-        echo "  [t3] Unknown command: '$COMMAND'"
-        echo "  Run 't3 help' for usage."
-        exit 1
+        # If command matches an executable on PATH inside container (like timeloop-mapper, booksim, etc.), run it
+        if command -v "$COMMAND" &>/dev/null; then
+            exec "$COMMAND" "$@"
+        else
+            echo "  [t3] Unknown command or executable: '$COMMAND'"
+            echo "  Run 't3 help' for usage."
+            exit 1
+        fi
         ;;
 esac
