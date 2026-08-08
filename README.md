@@ -1,8 +1,14 @@
-# VeritX Research — AI-native Network-on-Chip Architecture
+# VeritX Research — Interconnect Measurement & Simulation Credibility
 
 Monorepo for the VeritX BTech research programme (6 months, 15 students, 4 tracks).
-Each track studies a different aspect of AI-accelerator NoCs, sharing one toolchain
-(Booksim, Timeloop, Accelergy, Yosys/SymbiYosys, CBMC, Verilator).
+Each track studies a different aspect of AI-accelerator interconnects, sharing one
+toolchain (Booksim, Timeloop, Accelergy, Yosys/SymbiYosys, CBMC, Verilator).
+
+**What this programme is:** the lab of an interconnect-credibility services firm.
+The output is methodology — how to measure interconnect performance so the numbers
+survive contact with reality — plus the case studies and toolchain that prove it.
+See [`docs/business/validation-services.md`](docs/business/validation-services.md)
+and [`docs/business/programme-v2.md`](docs/business/programme-v2.md).
 
 **You install nothing but a container runtime.** Every tool is prebuilt into the
 image `internal-devrepo.datavex.ai:5050/anmol/veritx-research/veritx-tools-base:latest`, and `make` drives it. (A GHCR mirror,
@@ -117,9 +123,9 @@ loop and the `git subtree pull` version-bump.
 |-------|---------------|----------------|--------|
 | [Onboarding](tracks/onboarding/README.md) | Toolchain sanity | — | First |
 | [T1](tracks/t1-kvcache/README.md) | KV-cache QoS (gem5) | `configs/*.py` | *Deferred* |
-| [T2](tracks/t2-deadlock/README.md) | Deadlock avoidance | `configs/*.cfg` | ✅ |
-| [T3](tracks/t3-topology/README.md) | Topology × traffic | `scripts/timeloop_to_matrix.py` | ✅ |
-| [T4](tracks/t4-formal/README.md) | Formal verification | `rtl/*.sv`, `configs/*.sby` | ✅ |
+| [T2](tracks/t2-deadlock/README.md) | Deadlock-claim validation | `configs/*.cfg` | ✅ |
+| [T3](tracks/t3-topology/README.md) | Measurement lab (flagship) | `scripts/timeloop_to_matrix.py` | ✅ |
+| [T4](tracks/t4-formal/README.md) | Formal verification services | `rtl/*.sv`, `configs/*.sby` | ✅ |
 
 ## Student workflow
 

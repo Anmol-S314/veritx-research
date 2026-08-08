@@ -1,5 +1,14 @@
 # T3 — Topology Co-Optimization for Transformer Inference
 
+> **2026-08-05 — this track is now the measurement lab.** The original research
+> question below is *answered*: topology is a second-order knob for transformer
+> accelerators (see [CONCLUSION.md](CONCLUSION.md)), and the methodology that got
+> us there ([PITFALLS.md](PITFALLS.md)) is now the product — see
+> [docs/business/validation-services.md](../../docs/business/validation-services.md).
+> T3's remaining work is the honest-analysis series (5.4× with deratings, D(G)
+> fabric law, decode roofline), the on-silicon multicast measurement
+> ([hardware/](hardware/README.md)), and the Audit Playbook.
+
 Model an AI workload's data movement in **Timeloop**, turn the access counts into a
 **traffic matrix**, simulate it on different NoC topologies in **Booksim**, and
 compare them on latency/energy — visualized in a **dashboard**.

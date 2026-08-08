@@ -9,7 +9,7 @@
 
 | Term | Definition |
 |------|------------|
-| VeritX | BTech 6-month research programme, 4 tracks (T1-T4), AI-native NoC |
+| VeritX | BTech 6-month research programme, 4 tracks (T1-T4), interconnect measurement & simulation credibility (v2 reframe: see `docs/business/`) |
 | T1 | KVCache QoS + gem5/Garnet/ASTRA-sim (4 students, heavy compute) |
 | T2 | Deadlock with Booksim 2.0 (4 students, lightweight) |
 | T3 | Topology with Booksim + Timeloop + Accelergy (4 students, medium) |

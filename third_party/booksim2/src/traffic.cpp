@@ -175,21 +175,27 @@ TrafficPattern * TrafficPattern::New(string const & pattern, int nodes,
       result = new BadPermYarcTrafficPattern(nodes, k, n, xr);
     }
   } else if(pattern_name == "hotspot") {
-    if(params.empty()) {
-      params.push_back("-1");
-    } 
-    vector<int> hotspots = tokenize_int(params[0]);
+    // hotspots: "0,7,15" and "{0,7,15}" both work (tokenize_int used to
+    // atoi() the whole string, truncating "0,7,15" to {0}). Explicit rates:
+    // hotspot({a,b},{r1,r2}) is preserved.
+    vector<int> hotspots;
+    vector<int> rates;
+    if(params.size() >= 2 && params[0][0] == '{' && params[1][0] == '{') {
+      hotspots = tokenize_int(params[0]);
+      rates = tokenize_int(params[1]);
+      rates.resize(hotspots.size(), rates.back());
+    } else {
+      hotspots = tokenize_int(param_str);
+      rates.resize(hotspots.size(), 1);
+    }
+    if(hotspots.empty()) {
+      hotspots.push_back(-1);
+      rates.resize(1, 1);
+    }
     for(size_t i = 0; i < hotspots.size(); ++i) {
       if(hotspots[i] < 0) {
 	hotspots[i] = RandomInt(nodes - 1);
       }
-    }
-    vector<int> rates;
-    if(params.size() >= 2) {
-      rates = tokenize_int(params[1]);
-      rates.resize(hotspots.size(), rates.back());
-    } else {
-      rates.resize(hotspots.size(), 1);
     }
     result = new HotSpotTrafficPattern(nodes, hotspots, rates);
   } else {

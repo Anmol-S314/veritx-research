@@ -341,16 +341,20 @@ vector<string> tokenize_str(string const & data)
 
   size_t start = 1;
   int nested = 0;
+  int parens = 0;
 
   size_t curr = start;
 
-  while(string::npos != (curr = data.find_first_of("{,}", curr))) {
-    
-    if(data[curr] == '{') {
+  while(string::npos != (curr = data.find_first_of("({,)}", curr))) {
+    if(data[curr] == '(') {
+      ++parens;
+    } else if(data[curr] == ')') {
+      --parens;
+    } else if(data[curr] == '{') {
       ++nested;
     } else if((data[curr] == '}') && nested) {
       --nested;
-    } else if(!nested) {
+    } else if(!nested && !parens) {
       if(curr > start) {
 	string token = data.substr(start, curr - start);
 	values.push_back(token);
@@ -373,11 +377,10 @@ vector<int> tokenize_int(string const & data)
     return values;
   }
 
-  // doesn't start with an opening brace --> treat as single element
-  // note that this element can potentially contain nested lists 
+  // doesn't start with an opening brace --> treat as a comma-separated list
+  // (the old code did atoi() on the whole string, truncating "0,7,15" to 0)
   if(data[0] != '{') {
-    values.push_back(atoi(data.c_str()));
-    return values;
+    return tokenize_int("{" + data + "}");
   }
 
   size_t start = 1;
@@ -414,11 +417,10 @@ vector<double> tokenize_float(string const & data)
     return values;
   }
 
-  // doesn't start with an opening brace --> treat as single element
-  // note that this element can potentially contain nested lists 
+  // doesn't start with an opening brace --> treat as a comma-separated list
+  // (the old code did atof() on the whole string, truncating "0.5,0.5" to 0.5)
   if(data[0] != '{') {
-    values.push_back(atof(data.c_str()));
-    return values;
+    return tokenize_float("{" + data + "}");
   }
 
   size_t start = 1;

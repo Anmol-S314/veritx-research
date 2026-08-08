@@ -1,5 +1,12 @@
 # T2 — Deadlock Avoidance with Booksim 2.0
 
+> **2026-08-05 — v2 role: deadlock-claim validation case study.** The deliverable
+> is no longer a NOCS paper; it is a worked audit of a deadlock-freedom claim
+> (config → sweep → gate → verdict), published as case study #3 in the services
+> portfolio (see [docs/business/programme-v2.md](../../docs/business/programme-v2.md)).
+> The study below is the material; the *product* is the discipline of validating
+> the claim, not the XY-vs-UGAL ranking itself.
+
 Study routing deadlock in 2D mesh NoCs: how virtual channel count, routing algorithm, and injection rate interact.
 
 ## What You Edit

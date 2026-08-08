@@ -1,5 +1,12 @@
 # T4 — Formal Verification with SymbiYosys + Yosys + CBMC
 
+> **2026-08-05 — v2 role: formal-verification service arm.** The deliverable is a
+> property-writing playbook plus the simulation-vs-formal coverage study (the
+> strongest result this track has). This sells as a *service* (property writing,
+> proof strategy, coverage studies) — never as an ASIL-B certification claim, which
+> requires a real certification body on real RTL (see
+> [docs/business/programme-v2.md](../../docs/business/programme-v2.md)).
+
 Formally verify RTL designs (SystemVerilog) for AI accelerator NoC components: counters, FIFOs, arbiters, routers.
 
 ## What You Edit

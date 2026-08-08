@@ -449,6 +449,36 @@ body and the kernel diff before concluding the mechanism is open. And when the v
 ships the mechanism, that is *evidence for* your placement constraint, not just a risk
 to dodge — their eligibility condition and our derived row-locality agree.
 
+## 19. "Control starves ~1.3×" looked like a dead end — the burst-length dial was hiding in plain sight
+
+**Symptom.** The first plane-separation sweep moved *DMA rate* at a fixed 5-flit burst size and
+hit a wall: at 1 VC, control starvation grew 1.02× → 1.36×, then every higher-rate cell
+aborted ("Average latency for class 0 exceeded 500 cycles"). We probed patterns, NIC counts,
+buffer depths, routing — the mesh either converged with ~1.3× starvation or diverged. The
+experiment looked like a dud.
+
+**Root cause.** Two things, both self-inflicted:
+
+1. **The 500-cycle abort threshold is a measurement dial, and we left it on its default.**
+   `latency_thres` is a *per-class* vector. With `latency_thres = {5000,500}` — "DMA may be
+   slow, control must be fast", the actual QoS contract under test — cells that previously
+   died mid-transient instead *converge*, and their control latency is a real number. A cell
+   that still fails to converge at those thresholds is genuinely saturated (mark it SAT and
+   never let it prove a gate).
+2. **We swept the wrong variable.** The natural sweep is DMA *rate* at fixed packet size. But
+   the mechanism is HOL blocking, and HOL scales with *burst length*. Sweeping (burst, rate)
+   pairs at **constant flit load** (pkt × rate = 0.08 flits/cyc/node) turned 1.36× into
+   **6.68×** — 5 → 80 flit bursts, identical DMA bandwidth, control latency 45 → 222 cyc.
+   Doubling bandwidth is harmless; doubling burst length quintuples control starvation.
+   That is the finding.
+
+**Catch it next time.** (1) Read the abort threshold before concluding a cell "saturates" —
+it is a config, not a law of physics; state the QoS contract it encodes. (2) When a
+mechanism's lever stalls, hold *total load* constant and sweep the *shape* of the traffic —
+burst length, locality, packet size distribution. (3) Parse the *last* sample block (or the
+Overall section) for a cell's latency, never the first — warmup samples can differ by 10%+
+from the converged value.
+
 ---
 
 ## The verdict flipped four times

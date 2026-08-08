@@ -1,6 +1,6 @@
 # T3: Topology — Booksim + Timeloop + Accelergy
 include ../common.mk
-.PHONY: setup lint test sim timeloop energy area dashboard hw clean
+.PHONY: setup lint test sim planes timeloop energy area dashboard hw clean
 
 setup:  ## check the toolchain (Booksim required; Timeloop/Accelergy optional)
 	@$(call need,booksim)
@@ -15,6 +15,10 @@ test:  ## quick sanity sweep (the CI gate)
 
 sim:  ## uniform-traffic topology sweep (baseline)
 	@python3 scripts/run_experiments.py
+
+planes:  ## plane-separation: DMA bursts vs control traffic (FlooNoC claim)
+	@$(if $(BOOKSIM_BIN),,$(call need,booksim))
+	@python3 scripts/plane_separation.py
 
 timeloop:  ## full spine: Timeloop (one run per NoC size) -> traffic matrix -> sweep
 	@mkdir -p results

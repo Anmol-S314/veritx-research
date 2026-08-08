@@ -143,3 +143,76 @@ pass, unlike the on-chip idea which was already FlatAttention. Caveats, in this 
 **Before building:** (1) read 2605.00254 + NetKV in full to confirm the MoE-vs-disaggregation
 delta holds; (2) run Gate 1 (inter-chip roofline). The field is moving monthly — scoop risk is
 real. See [[scale-out-topology-openproblem]].
+
+---
+
+## Appendix — the periphery: "topology matters" made precise (measured)
+
+The senior's claim — *"mesh is best alone, but peripherals make topology matter"* — is **half
+right, and the half that's wrong is the word "topology."** At the on-chip rung the shape verdict
+stands ([CONCLUSION.md](CONCLUSION.md)); what the periphery changes is the **traffic-class
+structure of the mesh**, and the fix is **plane separation, not a fancier shape**. Measured in
+[scripts/plane_separation.py](scripts/plane_separation.py) (`make planes`):
+
+### Peripheral traffic taxonomy (what actually arrives at the mesh edge)
+
+| Peripheral | Traffic class | Packet shape | Latency sensitivity |
+|---|---|---|---|
+| HBM controller | streaming bulk | long bursts (≥5 flits) | low — bandwidth-bound |
+| DMA engine | bulk copy | long bursts | low |
+| PCIe host link | packetized | mixed | medium |
+| **CXL / coherence port** | **small control** | **1 flit** | **critical — protocol deadline** |
+| Ethernet NIC | incast | variable | medium |
+| UALink / UCIe chiplet port | streaming + control | mixed | high |
+
+The load a NoC's *latency-critical* traffic faces is set by this mix, and the mix is
+**real silicon reality**: FlooNoC (Fischer et al., NOCS 2023) is a chiplet NoC that runs four
+physically separate networks (Control/Streaming/Optional/Chiplet) *because* VC-based sharing
+of bulk DMA with narrow control traffic degraded control latency measurably. Our Booksim
+reproduction of the same mechanism:
+
+### Plane-separation measurement (8×8 mesh, XY, seed=1, class 0 = DMA bursts to
+8 diagonal NICs at rate r, class 1 = 1-flit control at 0.005)
+
+The headline result — **burstiness, not bandwidth, is what starves control.**
+Every cell below moves the *same* DMA flit load (0.08 flits/cycle/node =
+5.12 flits/cycle across 64 nodes); only the burst length changes.
+
+| DMA burst (flits) @ rate | 1 VC | 2 VCs | 4 VCs |
+|---|---|---|---|
+| 5 @ 0.016 | 45.1 | 34.8 | 34.5 |
+| 10 @ 0.008 | 55.5 | 36.7 | 34.7 |
+| 20 @ 0.004 | 70.1 | 37.6 | 34.7 |
+| 40 @ 0.002 | 100.2 | 45.9 | 38.5 |
+| 80 @ 0.001 | **221.6** | 63.3 | 41.3 |
+| **isolated control plane: 33.2 flat** | | | |
+
+- **Doubling DMA bandwidth is harmless; doubling DMA burst length quintuples
+  control starvation.** At 1 VC (no isolation) control latency inflates from
+  **1.36× to 6.68×** vs the separate plane as bursts grow 5 → 80 flits at
+  constant bandwidth. A 1-flit control packet waits for the whole burst to
+  drain the shared VC.
+- **VCs absorb burstiness, within link capacity.** 4 VCs hold control latency
+  to 34.5 → 41.3 cyc (1.24×) across the same sweep — VCs segregate the classes
+  so control never queues behind DMA. The residual rise is link arbitration,
+  not queueing: the *wires* are still shared.
+- **Express channels (MECS A/B, cmesh k=4 c=4 = same 64 nodes, vc=4)
+  flatten the burstiness curve too, but do not remove it:**
+  express OFF 26.3 → 67.4 cyc vs express ON 23.1 → 35.8 cyc (1.9× at the
+  80-flit cell, and never worse at any cell). Control rides the edge express
+  rings clear of DMA bursts — but the express lanes still share the fabric;
+  only a plane is flat by construction.
+- **The senior's intuition, corrected**: at the periphery, what matters is (1) **plane count**
+  (control vs bulk), (2) **boundary bandwidth/placement** (NIC ports sized to the streaming
+  class), (3) **protocol handling at the edge** (coherence deadlines met before the mesh is
+  even touched). The mesh *shape* is not the lever — this is why the on-chip verdict in
+  CONCLUSION.md survives contact with a peripheral-rich chip.
+- **Reproducibility & caveats**: seeded (`seed=1`) — full experiment runs are
+  bit-identical (logs and JSON). The experiment allows the DMA class to be
+  slow (`latency_thres = {5000,500}`: DMA may take thousands of cycles, control
+  must stay under 500 — the QoS contract under test) so high-burst cells
+  *converge* instead of aborting mid-transient; a cell that still fails to
+  converge is marked **SAT** and never used to prove a gate — the
+  "latency can fall at saturation" trap documented in
+  [PITFALLS.md](PITFALLS.md) is handled by construction. The gates therefore
+  assert on the **lowest-VC** row only.

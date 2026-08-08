@@ -69,6 +69,7 @@ sim-t3-topology:
   script:
     - make -C tracks/t3-topology timeloop    # full spine: Timeloop -> traffic matrix -> sweep
     - make -C tracks/t3-topology energy
+    - make -C tracks/t3-topology planes      # plane separation: DMA vs control (FlooNoC claim)
   artifacts:
     paths:
       - tracks/t3-topology/results/
