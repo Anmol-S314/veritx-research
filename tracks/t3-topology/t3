@@ -243,6 +243,11 @@ cmd_timeloop_workload() {
     ( cd "$T3_DIR" && make timeloop-workload CONFIG="${CONFIG:-baseline}" )
 }
 
+cmd_timeloop_spatial() {
+    _banner "Timeloop Spatial Pipeline"
+    cd "$T3_DIR" && make timeloop-spatial "$@" 
+}
+
 cmd_report() {
     _banner "Generating Report"
     ( cd "$T3_DIR" && make report CONFIG="${CONFIG:-baseline}" )
@@ -294,8 +299,8 @@ cmd_lint() {
 
 cmd_clean() {
     _banner "Clean"
-    rm -rf "$T3_OUTPUT" "$T3_DIR/__pycache__" "$T3_SCRIPTS/__pycache__"
-    _ok "Removed output/ and __pycache__"
+    rm -rf "$T3_DIR/results" $T3_DIR/timeloop/timeloop-mapper* "$T3_DIR/__pycache__" "$T3_SCRIPTS/__pycache__"
+    _ok "Removed output/ results/ and __pycache__"
 }
 
 cmd_exec() {
@@ -317,6 +322,7 @@ case "$COMMAND" in
     sim)                  cmd_sim "$@"          ;;
     timeloop)             cmd_timeloop          ;;
     timeloop-workload)    cmd_timeloop_workload ;;
+    timeloop-spatial)     cmd_timeloop_spatial "$@" ;;
     report|pa-report)     cmd_report            ;;
     dashboard)            cmd_dashboard "$@"    ;;
     energy)               cmd_energy            ;;

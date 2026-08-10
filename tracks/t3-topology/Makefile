@@ -2,7 +2,9 @@
 
 include ../common.mk
 
-CONFIG ?= baseline
+MODEL_CONFIG ?= timeloop/experiment_configs/llama_7b_hf_config.json
+TILES ?= 16 72
+SEQ_LEN ?= 2048
 
 .PHONY: setup lint test sim timeloop energy dashboard clean analysis aggregate plot report pa-report
 
@@ -107,6 +109,12 @@ timeloop-workload: ## full spine: Timeloop workload -> traffic matrix -> topolog
 		python3 scripts/run_experiments.py --config $(CONFIG); \
 	fi
 
+timeloop-spatial:
+	python3 scripts/run_spatial_pipeline.py \
+		--model-config $(MODEL_CONFIG) \
+		--tiles $(TILES) \
+		--seq-len $(SEQ_LEN)
+
 energy: ## Timeloop energy breakdown
 	@CONFIG=$(CONFIG) \
 	python3 scripts/energy_report.py \
@@ -118,7 +126,6 @@ dashboard:
 	@python3 scripts/generate_dashboard.py --config $(CONFIG)
 
 clean: ## remove generated results + Timeloop artifacts
-
 	@rm -rf results/ timeloop/timeloop-mapper* __pycache__/
 
 analysis:  ## PA-01: read sweep JSON → print DataFrame summary (input from T3_RESULTS)
