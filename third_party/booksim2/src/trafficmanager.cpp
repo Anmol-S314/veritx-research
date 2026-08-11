@@ -385,6 +385,15 @@ TrafficManager::TrafficManager( const Configuration &config, const vector<Networ
         _stats_out = new ofstream(stats_out_file.c_str());
         config.WriteMatlabFile(_stats_out);
     }
+
+    // ---- VeritX RTL co-sim (Gate R1) ----
+    _trace_out = NULL; _flit_dump = NULL;
+    string trace_out_file = config.GetStr( "trace_out" );
+    if(trace_out_file != "") _trace_out = new ofstream(trace_out_file.c_str());
+    string flit_dump_file = config.GetStr( "flit_dump" );
+    if(flit_dump_file != "") _flit_dump = new ofstream(flit_dump_file.c_str());
+    if(_trace_out) cerr << "[veritx] trace_out opened\n";
+    if(_flit_dump) cerr << "[veritx] flit_dump opened\n";
   
 #ifdef TRACK_FLOWS
     _injected_flits.resize(_classes, vector<int>(_nodes, 0));
@@ -681,6 +690,16 @@ void TrafficManager::_RetireFlit( Flit *f, int dest )
     _flat_stats[f->cl]->AddSample( f->atime - f->itime);
     if(_pair_stats){
         _pair_flat[f->cl][f->src*_nodes+dest]->AddSample( f->atime - f->itime );
+    }
+
+    // ---- VeritX Gate R1: per-flit retire record for the RTL co-sim ----
+    // Fields: atime cl src dst pid itime. The RTL eject-read must reproduce
+    // every line bit-for-bit (same atime, same itime, same ids).
+    if(_flit_dump) {
+        int const d = f->head ? f->dest
+            : _retired_packets[f->cl].find(f->pid)->second->dest;
+        (*_flit_dump) << f->atime << " " << f->cl << " " << f->src << " "
+                      << d << " " << f->pid << " " << f->itime << "\n" << flush;
     }
       
     if ( f->tail ) {
@@ -1048,6 +1067,15 @@ void TrafficManager::_GeneratePacket( int source, int stype,
         }
 
         _partial_packets[source][cl].push_back( f );
+    }
+
+    // ---- VeritX Gate R1: capture the stimulus for RTL trace-replay ----
+    // Every generated packet start: "cycle src cl dst size". Logged in ALL
+    // sim states so the RTL replay includes warmup (empty vs primed queues
+    // would otherwise diverge on the window's first packets).
+    if(_trace_out) {
+        (*_trace_out) << time << " " << source << " " << cl << " "
+                      << packet_destination << " " << size << "\n" << flush;
     }
 }
 

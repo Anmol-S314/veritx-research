@@ -26,6 +26,7 @@ stages:
   - sim
   - dashboard
   - report
+  - site
 
 # Full runs only on main pushes or manual (web) runs — matches the GitHub gate.
 .on_main:
@@ -116,6 +117,27 @@ report:
   artifacts:
     paths:
       - report/
+    expire_in: 90 days
+
+# --- front-facing site: validate every commit, publish on main ---
+# The site is the public storefront for Interconnect Credibility Services
+# (docs/business/validation-services.md). check_site.py needs only the stdlib,
+# so this job does not need the tools image — but it reuses it to keep every
+# job on one runtime.
+site-check:
+  stage: site
+  script:
+    - python3 scripts/check_site.py site/
+
+site-publish:
+  extends: .on_main
+  stage: site
+  needs: ["site-check"]
+  script:
+    - python3 scripts/check_site.py site/
+  artifacts:
+    paths:
+      - site/
     expire_in: 90 days
 
 # --- STAGE 1: build this commit's image (needs a docker executor) ---

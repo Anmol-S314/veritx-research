@@ -5,21 +5,41 @@ from pathlib import Path
 
 RTL_DIR = Path(__file__).parent.parent / "rtl"
 RESULTS_DIR = Path(__file__).parent.parent / "results"
+T3_RTL_DIR = Path(__file__).parent.parent.parent / "t3-topology" / "rtl"
 DESIGNS = sorted(RTL_DIR.glob("*.sv"))
 
 def gen_sby(rtl_path: Path, mode: str, depth: int) -> str:
     top = rtl_path.stem
-    return f"""\
+    if top == "router_g1_formal":
+        return f"""\
 [options]
 mode {mode}
 depth {depth}
-dump_vcd on
 
 [engines]
 smtbmc z3
 
 [script]
-read -formal {rtl_path}
+read -formal -sv {T3_RTL_DIR}/noc_pkg.sv {T3_RTL_DIR}/islip.sv {T3_RTL_DIR}/router.sv {rtl_path}
+prep -top {top}
+
+[files]
+{T3_RTL_DIR}/noc_pkg.sv
+{T3_RTL_DIR}/islip.sv
+{T3_RTL_DIR}/router.sv
+{rtl_path}
+"""
+    else:
+        return f"""\
+[options]
+mode {mode}
+depth {depth}
+
+[engines]
+smtbmc z3
+
+[script]
+read -formal -sv {rtl_path}
 prep -top {top}
 
 [files]
@@ -66,7 +86,6 @@ def main():
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     all_results = []
 
-    # bmc depth 10/20 + prove = sby's k-induction mode (no "induction" mode exists)
     for rtl in DESIGNS:
         for mode, depths in [("bmc", [10, 20]), ("prove", [10])]:
             for depth in depths:

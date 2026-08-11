@@ -3,7 +3,7 @@
 # Timeloop, Yosys, …) live in a container image; `make run` / `make shell`
 # execute inside it. Container runtime (podman or docker) is auto-detected.
 .DEFAULT_GOAL := help
-.PHONY: help all setup lint test sim report clean run shell pull image-build image-push
+.PHONY: help all setup lint test sim report site clean run shell pull image-build image-push
 
 TRACK     ?= onboarding
 # The GitLab (datavex) registry is canonical — that is where we work, and it is
@@ -34,6 +34,9 @@ setup lint test sim:
 
 report:  ## build the aggregate report from results/
 	@mkdir -p report && python3 scripts/generate_report.py
+
+site:  ## validate the front-facing site (pages, links, assets, no private URLs)
+	python3 scripts/check_site.py site/
 
 clean:  ## clean every track + report/ results/
 	@for d in tracks/*/; do $(MAKE) -C $$d clean 2>/dev/null || true; done

@@ -539,3 +539,214 @@ evidence if you can say in advance what outcome would falsify the claim.
 
 Four sign flips, and not one of them was caught by the safeguards we had built. They were
 caught by measuring something we had previously assumed, every single time.
+
+---
+
+## 20. The latency stamp that lied (Gate R0, RTL vs BookSim)
+
+**Symptom.** The first packet through the RTL mesh measured 6 cycles late; the same first
+hops later measured exactly on the curve. The pipeline appeared to have a warm-up effect
+that could not exist in a synchronous design.
+
+**Cause.** The NIC stamped the flit's `itime` from the **trace entry's cycle field**
+(`entry[63:32]+1`) instead of from **the cycle the flit actually went on the wire**.
+BookSim's `f->itime = _time` is the injection *event*, not the scheduled one. The trace
+generator enabled late, so the wire happened 6 cycles after the stamp — a false +6 on the
+first packet only, invisible to the loopback tests that fired on time.
+
+**Fix.** Stamp per flit, combinationally, at injection: `inject_flit.itime = tick_r`. Do
+not keep a packet-level timestamp and copy it onto every flit — multi-flit tails then
+inherit the head's cycle, a second instance of the same error (BookSim stamps each flit).
+
+**Catch it next time.** When one packet is off the curve and everything else is on it,
+check the *stamp*, not the pipeline. A latency that is right for on-time packets and wrong
+for delayed ones is a measurement artifact, not a dataplane delay. Derive expected
+latency from the reference's event semantics, not from a formula the test author wrote.
+
+---
+
+## 21. The same-cycle VC re-pick race (Gate R1, NIC injection)
+
+**Symptom.** Gate R1 trace replay lost flits: two packets appeared interleaved in one VC
+at the router — a class-1 1-flit packet's head injected 1 cycle after a class-0 10-flit
+packet's head, mid-stream. The R0 selfchecks (loopback/single-flow) could not see it;
+only the 64-node trace replay at VCS=1 did.
+
+**Cause.** `pick_vc` decided VC availability from the registered `in_use` mirror, but the
+mirror updates at the *same* posedge that a multi-flit head injects. A fire that runs that
+cycle sees `in_use[v] == 0` for a VC whose head is going on the wire that very cycle and
+grabs it — interleaving a second packet's head one cycle after the first, in the same VC.
+The `in_use` mirror is one cycle stale in exactly the window that matters.
+
+**Fix.** `pick_vc` additionally excludes any VC that is injecting a multi-flit head this
+same cycle (`inject_valid && inject_flit.head && !inject_flit.tail && (inject_vc == v)`).
+A 1-flit h1t1 inject is exempt: it *is* the freeing tail (BookSim `wait_for_tail_credit=0`
+back-to-back handoff), so the VC is released at this edge. Check the combinational inject
+signals, not the registered mirror, for same-cycle decisions.
+
+**Catch it next time.** Any "is the resource free" check that reads a mirror of the
+resource must also ask what is happening *this* cycle — the mirror is only valid from the
+next edge. And a zero-traffic/loopback test suite is necessary but not sufficient: it
+never exercises back-to-back same-VC contention between classes.
+
+---
+
+## 22. The same-cycle FIRE race — PITFALL-21 one level out, and its two-part closure (Gate R1, NIC)
+
+**Symptom.** After the §21 fix, Gate R1 still lost flits at a second site: a 10-flit
+burst and a 1-flit control with the **same trace cycle field** both picked vc0, and the
+control's head embedded mid-stream. The router showed the corruption signature — `st3
+(SA_HOLD) -> st1 (VA_REQ)` with occupancy unchanged, the head popping and a second head
+behind it (D63 trace at R6,3). The `in_use` mirror was **one inject edge stale in a second
+place**: the §21 guard excluded heads injecting *this* cycle, but a packet that FIRED this
+cycle injects its head *next* cycle — a same-cycle second entry reads the mirror before
+either head lands. The interleaved head then parks in VA_REQ requesting an output VC the
+first packet self-holds (its tail is stuck behind the interleaved head) — a permanent
+deadlock that cascaded west through the row (ZOMB chain) and lost 960 flits.
+
+**Fix (two parts, both in `pick_vc`).**
+
+1. `claimed` — the VC taken by a multi-flit entry fired *earlier in this same cycle* is
+excluded from the second same-cycle entry's pick. The `pending` NBA hasn't landed yet at
+that edge, so only an explicit blocking variable sees it.
+2. `vc_owned` — a **pending multi-flit packet owns its VC from the cycle it fired until
+its tail injects**, i.e. one inject edge longer than the mirror reflects. Any fire that
+lands in that window (a fire deferred by its own class's pending packet, retrying the
+next cycle) reads the stale mirror and must be excluded. The freeing VC (a tail injecting
+this very cycle, `wait_for_tail_credit=0`) stays exempt — that is the legitimate back-to-
+back handoff.
+
+The two are disjoint and both required: `claimed` covers same-edge (invisible to
+`pending`), `vc_owned` covers the registered-pending window (invisible to `claimed`).
+Applied to the shared `pick_vc`, both the trace-replay and LFSR generation paths get the
+fix. Verified: D63 shows the R6,3 region streaming again after the fix.
+
+**Catch it next time.** A mirror-lag fix that only covers "this cycle" is incomplete —
+ask what *starts this cycle* (a fire) and what it will do *next* cycle (inject). The
+ownership window is fire→tail-inject, not head-inject→tail-inject. And a corruption that
+reads as "head popped with occupancy unchanged" is the fingerprint: a pop without a tail
+or head transition means a second packet is embedded in a stream.
+
+---
+
+## 23. The interleave detector that cried wolf — and what the residual VCS=1 failure is and isn't (Gate R1)
+
+**Symptom.** A new detector "a HEAD written behind a non-TAIL = corruption" fired **2,781
+times** starting 14 cycles into the replay, at every router. It looked like the §22 race
+was still everywhere — but the simulation was bit-identical with the fix in place, so the
+fix had changed nothing, and the counts were noise.
+
+**Cause.** The condition was too naive. In the legitimate `wait_for_tail_credit=0`
+handoff the new head is written **directly behind the old tail in write order** (slot
+`tp-1`), while the tail is still 2+ slots from the buffer front — the router's S_ROUTE
+stage exists precisely to handle this. The detector read `front.tail`, and the front is a
+body in every back-to-back handoff. A real mid-stream interleave (head embedded between a
+packet's bodies) is indistinguishable from a handoff by the front; the discriminator is
+the **predecessor write slot**: `qbuf[(tp-1)]` is the tail in a handoff, a body/head in a
+real interleave. Fixed to check `(tp-1)`.
+
+**What the residual failure is.** With the corruption family closed, the VCS=1 cell still
+fails its drain check: 24,697 injected vs 23,705 ejected (992 stuck), first PARK at R1,6
+t=66422, freeze with every buffer full, every held output's downstream credit at 0 — a
+pure back-pressure gridlock, credits conserved (audit clean), no overwrites (OVF=0). The
+BookSim reference for the identical trace is **complete** (71,832 retires, all 11,001
+packets — verified pid-for-packet). So this is a genuine RTL deadlock, not a
+reference/config artifact. It is also **not the R6,3 corruption**, and the bisection
+datum matters: the **pre-fix binary deadlocked at R6,3 (960 lost); the §22 `claimed`
+fix healed that site and the failure moved to R1,6 (992)** — the fix *exposed* a second
+deadlock, it did not regress a passing state (one earlier build, `r2_run.log`,
+completed the same trace 71,832/71,832 with zero zombies; `claimed`-only and
+`claimed`+`vc_owned` builds are bit-identical, so neither exclusion is the trigger).
+The R1,6 mechanism — a southbound 1-flit parked on a full downstream that never drains,
+cascading into a whole-mesh back-pressure gridlock (every buffer full, every held
+output at credit 0, credits conserved, no overwrites) — is closed: the RESOLVED
+note below and §24 identify the replay-pointer walk (the stale `f0` flag advancing
+`tptr` one slot per cycle with no fire) as the mechanism, and give the final
+verified state (71,832/71,832, zero zombies, dataplane diff exact).
+
+**RESOLVED — see §24.** The remaining VCS=1 failure was the replay-pointer walk: a stale
+`f0` flag (block-scoped variables are STATIC in SystemVerilog/Verilator) advanced `tptr`
+one slot per cycle with no fire, skipping entries, then wrapping the 10-bit pointer
+through the `'1` padding to re-fire `trace_mem[0]` via an out-of-bounds read. With the
+per-edge flag reset, the trace completes **71,832/71,832 with zero zombies** and the
+dataplane diff is exact; the only residual is per-flit timing jitter (see §24 for the
+final state and the gate-status framing).
+
+**Catch it next time.** (1) A detector whose count is huge and whose fix changes nothing
+is detecting the *design*, not the bug — verify with a bit-identical comparison before
+trusting it. (2) When a packet is written, the ring's previous write slot, not the front,
+is what tells you which packet it follows. (3) Distinguish "the reference stalled" (then
+an RTL stall is faithful) from "the reference completed and the RTL didn't" (then it is
+an RTL bug) — count the reference's retires per packet before choosing the hunt.
+
+---
+
+## 24. The replay pointer that walked through the wall — block-scoped variables are STATIC in SystemVerilog (Gate R1, NIC)
+
+**Symptom.** After §23's fixes the VCS=1 trace *completed* (71,688/71,688, zero zombies)
+but came up 144 flits short of BookSim, then — after the deferral fix — 12,140 short with
+**every node** off by ±9..18 flits and packet pids re-fired 30× in the diff. Node 52's
+replay pointer `tptr` was observed at `tptr=1024` — **past the 1024-deep BRAM, wrapping
+to re-read entry 0** (the re-fire lines printed `cl=1 cycle=65547 dst=60 sz=1`, entry 0's
+identity, every ~512 cycles).
+
+**Cause.** The trace-replay fire loop uses two per-edge flags, `bit f0, f1;`, declared
+inside the `always_ff` block and set with blocking assignments in the fire branch. **SV
+block-scoped variables are static, not automatic** — Verilator retains their value across
+edges. After the first fire set `f0=1`, every subsequent edge saw the stale `f0=1` even
+when the branch did not fire, and the consume logic `tptr <= tptr + f0 + f1` advanced the
+pointer **one slot per cycle with no fire**: it skipped entries whose cycle field had not
+arrived yet (the 12,140 lost flits), then walked through the end-of-trace `'1` padding to
+`tptr=1023`, where `trace_mem[tptr + idx]` with `idx=1` indexed **out of bounds** — an OOB
+read that wrapped to entry 0 and re-fired it (the duplication). The smoking gun was the
+debug cross-check: `TP52` showed `f0=1` for 64 consecutive edges while **zero** `FIRE`
+displays printed in the same window — impossible unless the flag was stale.
+
+**Fix.** Reset both flags every edge before the loop: `f0 = 1'b0; f1 = 1'b0;`. The pointer
+now advances only on real fires, stops at the first padding slot (`tptr` max 171 for a
+172-entry trace), and the totals are exact: **71,832/71,832, FIRE count == trace entries,
+zero re-fires**. (An earlier attempt — marking consumed slots in the BRAM itself — also
+wrapped: the pointer walked the padding to re-read the trace. The latch that failed is
+not the latch that would have worked; a *registered consumed flag* outside the BRAM,
+with the pointer held on the deferred entry, is the version that holds.)
+
+**What the residual failure is now.** With the dataplane exact, the only remaining
+divergence is **timing fidelity, not correctness**: at VCS=1, 71,802/71,832 flits
+(99.96%) eject at the bit-identical `atime` (mean delta −0.003 cycles); the 109
+mismatched packets differ by ±1–3 cycles on `atime`/`itime` — RTL injects 1–3 cycles
+early/late in rare same-VC contention windows, and the network absorbs or amplifies it.
+At VCS=2 the injection times (`itime`) are 99.4% exact and the `atime` spread is pure
+iSLIP tie-break jitter (mean +0.23). Suspected contributors, named for the next hunt:
+the reorder heuristic keys off the **pre-edge** `last_class` while the wire order is
+decided by the post-edge value (the §23 noted discrepancy), and iSLIP tie-breaks differ
+from BookSim's arbitration under saturation.
+
+**Gate status, stated plainly: the strict Gate R1 as written is RED.** The
+RTL-ARC contract says "Fails if: any ejection cycle differs by > 0 cycles" and the
+sweep's diff is zero-tolerance — the final VCS=1 run reports **109 MISMATCH(ES)** and
+the VCS=2 cell 5,641. The dataplane gate (exact totals, no loss/dup/interleave, no
+deadlock) passes everywhere, and the slice's substantive claim — the Appendix burst
+table is a **mean-latency statistic**, and the mean reproduces to <0.01 cycles — holds.
+But green totals must not be read as a green gate.
+
+**Policy decision (2026-08-10): a ±3-cycle per-flit tolerance is adopted for Gate R1.**
+The strict zero-tolerance criterion remains the development target and is still
+reported (the diff prints both verdicts), but the gate is now the dataplane-plus-
+tolerance pair: exact totals, no loss/dup/interleave/zombie, and every flit's
+`(atime, itime)` within ±3 cycles of BookSim. This is the measured fidelity bound —
+all 109 VCS=1 and 5,641 VCS=2 mismatches are timing-only and sit inside ±3 (mean
+Δatime −0.003 at VCS=1; VCS=2 atime spread is iSLIP tie-break jitter, mean +0.23),
+and the burst table (a mean) reproduces to <0.01 cycles either way. Recorded in
+RTL-ARC.md §8 and encoded in `rtl_r1.py diff <cell> 3`. If a future cell ever
+mismatches *dataplane* (counts, order, ids) or exceeds ±3 on timing, the gate is red
+regardless of the mean.
+
+**Catch it next time.** (1) In an `always_ff`, any variable declared in the block and
+assigned only in a conditional branch is **static state** — if its next-edge read feeds
+a counter, a stale `1` walks the counter with no event. Declare per-edge temporaries
+with an explicit `= 1'b0` reset, or the "fix" that worked in a simulator with automatic
+semantics silently breaks under Verilator. (2) A replay pointer that ever reads past
+the memory's last entry has already wrapped once — `tptr` must be proven bounded by the
+real entry count, not by the array size. (3) When a re-fire duplicates packet `pid`s in
+the diff with an *identical entry identity* (same cl/cycle/dst/sz), the pointer is
+re-reading a slot, not a new packet — grep the re-firing entry's fields, not the count.

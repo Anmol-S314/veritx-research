@@ -295,6 +295,10 @@ BookSimConfig::BookSimConfig( )
 
   AddStrField("stats_out", "");
 
+  // ---- VeritX RTL co-sim (Gate R1): stimulus capture + per-flit retire dump --
+  AddStrField("trace_out", "");   // log every generated packet: "cycle src cl dst size"
+  AddStrField("flit_dump", "");   // log every retired flit:   "atime cl src dst pid itime"
+
 #ifdef TRACK_FLOWS
   AddStrField("injected_flits_out", "");
   AddStrField("received_flits_out", "");

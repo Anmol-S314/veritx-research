@@ -1,6 +1,6 @@
 # T3: Topology — Booksim + Timeloop + Accelergy
 include ../common.mk
-.PHONY: setup lint test sim planes timeloop energy area dashboard hw clean
+.PHONY: setup lint test sim planes timeloop energy area dashboard hw rtl clean
 
 setup:  ## check the toolchain (Booksim required; Timeloop/Accelergy optional)
 	@$(call need,booksim)
@@ -66,6 +66,15 @@ hw:  ## build+run the Tenstorrent NoC multicast microbench (needs tt-metal SDK +
 	@# deliberately NOT called from setup/lint/test, so the hardware-less ci: matrix never hits it.
 	@# build.sh exits with instructions if TT_METAL_HOME / a board is absent.
 	@cd hardware && ./build.sh && ./noc_multicast_bw
+
+rtl:  ## RTL slice status (see RTL-ARC.md; NOT in CI — needs Verilator/Yosys, no board)
+	@# RTL-ARC.md Phase 0 contract is the gate: the RTL↔BookSim parameter table must be
+	@# pinned (committed) before any RTL is written. Verilator + Yosys-sby gate the
+	@# later phases; neither is required for setup/lint/test.
+	@echo "RTL slice (RTL-ARC.md) — Phase 0 contract must land before RTL:"
+	@rg -n "The contract|Gate R1" RTL-ARC.md | sed 's/^/  /'
+	@if command -v verilator >/dev/null 2>&1; then echo "  ✓ verilator present"; else echo "  ⚠ verilator missing (needed for Gate R1 co-sim)"; fi
+	@if command -v yosys >/dev/null 2>&1 && command -v sby >/dev/null 2>&1; then echo "  ✓ yosys + sby present (Gate R4)"; else echo "  ⚠ yosys/sby missing (Gate R4; re-enable in the tools image)"; fi
 
 clean:  ## remove generated results + Timeloop artifacts
 	@rm -rf results/ timeloop/timeloop-mapper* __pycache__/

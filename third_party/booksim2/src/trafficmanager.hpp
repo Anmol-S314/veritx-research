@@ -247,6 +247,10 @@ protected:
   //flits to watch
   ostream * _stats_out;
 
+  // ---- VeritX RTL co-sim (Gate R1): stimulus capture + per-flit retire dump --
+  ostream * _trace_out;
+  ostream * _flit_dump;
+
 #ifdef TRACK_FLOWS
   vector<vector<int> > _injected_flits;
   vector<vector<int> > _ejected_flits;

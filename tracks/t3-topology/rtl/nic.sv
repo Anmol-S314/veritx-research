@@ -65,10 +65,10 @@ module noc_nic #(
   localparam int VC_W = $clog2(VCS);
   localparam int CLS  = 2;
 
-  // ------------------------------------------------------------------
-  // LFSR (xorshift32); NB: draws for bernoulli and dest are correlated --
-  // documented deviation; exactness comes from trace-replay mode.
-  // ------------------------------------------------------------------
+  // ===================================================================
+  // PART 1: SYNTHESIZABLE SILICON CORE DATA STRUCTURES & ARBITRATION
+  // (Credit tracking, VC allocation, flit framing, class round-robin)
+  // ===================================================================
   logic [31:0] lfsr;
 
   function automatic logic bernoulli(input logic [31:0] rate_q24);
@@ -340,7 +340,12 @@ module noc_nic #(
         end
       end
 
-      // packet generation
+      // ===============================================================
+      // PART 2: GENERATORS & GATE R1 CO-SIMULATION SHIM
+      //   gen_mode == 2'd0: Idle
+      //   gen_mode == 2'd1: LFSR Burst Generator (Synthesizable PRBS)
+      //   gen_mode == 2'd2: Gate R1 Trace-Replay Driver (Co-Sim Shim)
+      // ===============================================================
       if (gen_mode == 2'd1) begin
         int claimed = -1;
         if (!pkt[0].pending && bernoulli(rate0)) begin
@@ -411,11 +416,21 @@ module noc_nic #(
             // A future entry (due_1 > tick_r+1) cannot fire this edge, so reordering it ahead
             // of tptr would block tptr from firing at its own due edge and cause a false deferral cascade.
             ((tick_r + 1) >= trace_mem[tptr + 1][63:32]) &&
+            // Credit-stall collision: the tptr entry is held past its due
+            // cycle (downstream input buffer full -- the W-chain hotspot
+            // backlog, Gate R1 mismatch #109: src51 pid130 fired 50 cycles
+            // late behind pid129's burst and queued 68 more behind it in the
+            // L-VC FIFO). Once BOTH entries are due at one edge, BookSim's
+            // per-class rotation decides the serve order, not generation
+            // order; with the eligibility guard above, "tptr due" implies
+            // the collision. Without it the entries fire one per edge and
+            // the control strands behind the burst.
             ((trace_mem[tptr + 1][63:32] <= trace_mem[tptr][63:32]) ||
              ((trace_mem[tptr + 1][63:32] == (trace_mem[tptr][63:32] + 1)) &&
               ((tick_r + 1) >= trace_mem[tptr][63:32]) &&
               pkt[trace_mem[tptr][31:24]].pending &&
-              !(inject_valid && inject_flit.tail && (serve == trace_mem[tptr][31:24])))) &&
+              !(inject_valid && inject_flit.tail && (serve == trace_mem[tptr][31:24]))) ||
+             ((tick_r + 1) >= trace_mem[tptr][63:32])) &&
             (trace_mem[tptr][31:24] != trace_mem[tptr + 1][31:24]) &&
             (((inject_valid ? int'(serve) : int'(last_class)) + 1) % CLS ==
              trace_mem[tptr + 1][31:24])) begin
