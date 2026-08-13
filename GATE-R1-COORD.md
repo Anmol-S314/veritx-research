@@ -159,16 +159,26 @@ bound:
   unicast, 223 unicast-then-mcast adjacent pairs, 19 same-tick collisions):
   **R1 SIM COMPLETE, injected=928 (all entries fired, no range-word park),
   ejected=2824 = 928 + 1896 fork delta exact.** The reorder+mcast corner no
-  longer deadlocks.
-- **Diff is single-source-only.** The multi-source two-class cell shows
-  structural pid mismatches (611/928 packets) — the diff's pid mapping
-  assumes one source. Completion criterion is the multi-source gate; the
-  multi-source pid fix in rtl_r1.py is follow-on work.
+  longer deadlocks. Deterministic corner test designed (no statistical
+  guarantee): docs/research/f2-mini-cell-design.md.
+- **Diff pid correlation: FIXED (fa99a9b).** The "single-source-only"
+  limitation was actually mixed unicast+mcast displacement: BookSim side
+  (bpid ignored unicast lines' pid consumption) and RTL side (rpid = 32*ord
+  assumed all-mcast 2-word stepping). Now bs_pid[k] = k + earlier copies,
+  rtl_word = cumulative per-source word count. Verified: g8 stays 154/154
+  zero (no-op for homogeneous); two-class cell drops 2137 -> 147 mismatches,
+  all timing-only (delta -1..+3 cyc, mean +0.89) — contention jitter, the
+  envelope tier's domain.
+- **F10 (R1 debug spam): FIXED (82c770b).** Hardcoded-coordinate debug
+  blocks gated behind R1_DEBUG; NIC50's `free[1] != 8` at (2,6) is an OOB
+  read (free is [VCS]) that printed EVERY cycle on 2-die cells, stalling
+  the off-axis run at tick 248K of 262K pump. -DR1_MODE builds are silent;
+  -DR1_DEBUG restores the original triage traces.
 - **Workflow correction:** all build/cell artifacts now live in
   /var/tmp/r1work/fork_gate/ (real disk, per rule 5). The /tmp losses
   (three builds + two cells) are not recoverable but are regenerable from
-  committed configs.
+  committed configs. Builds launch via tmux sessions (survive shell
+  cleanup; no setsid/shell-race), never via shell backgrounding.
 - **BookSim change:** mcast stream generation gated to class 0 only
-  (trafficmanager.cpp `_IssuePacket` + `_GeneratePacket`, `cl == 0`), so a
-  two-class cell can interleave unicast at tptr with mcast at tptr+1 — the
-  F2 trigger. UNCOMMITTED as of this note.
+  (trafficmanager.cpp `_IssuePacket` + `_GeneratePacket`, `cl == 0`) —
+  COMMITTED (4f951e1) with the T_DEPTH 2048 BRAM + ta width fixes.
