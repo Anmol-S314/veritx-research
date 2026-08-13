@@ -63,7 +63,7 @@ module noc_tb;
   logic [1:0]  gmode[ND * N];
   logic [31:0] blen[ND * N], r0[ND * N], r1[ND * N], sd[ND * N];
   logic       tw[ND * N];
-  logic [9:0] ta[ND * N];
+  logic [10:0] ta[ND * N];
   logic [63:0] td[ND * N];
   logic [31:0] tck[ND * N], injc_[ND * N], ejc_[ND * N];
   logic [31:0] lsum[ND * N][4], lcnt[ND * N][4];
@@ -75,7 +75,7 @@ module noc_tb;
   // Gate R1: per-NIC trace BRAM contents loaded from hex files (trace_n%d.hex),
   // one entry per packet start, format {cycle[63:32], cl[31:24], dst[23:16], size[15:0]}.
   // The eject stream is dumped to rtl_flits.txt as "atime cl src dst pid itime".
-  localparam int T_DEPTH = 1024;
+  localparam int T_DEPTH = 2048;
   // cap for the post-replay drain loop: run_cycles covers the trace window,
   // the drain loop absorbs the tail (and a stalled network burns through
   // this cap before the totals check below FAILs it)
@@ -93,7 +93,7 @@ module noc_tb;
           .VCS(VCS), .X(x), .Y(y), .X_DIM(X_DIM), .Y_DIM(Y_DIM),
           .DIE_BASE(d * N),
 `ifdef R1_MODE
-          .T_DEPTH(T_DEPTH), .T_W(10)
+          .T_DEPTH(T_DEPTH), .T_W(11)
 `else
           .T_DEPTH(16), .T_W(4)
 `endif
@@ -171,7 +171,7 @@ module noc_tb;
     // pump shifted entries into each NIC's trace BRAM (1 entry/cycle)
     for (int n = 0; n < ND * N; n++) begin
       for (int i = 0; i < T_DEPTH; i++) begin
-        tw[n] = 1'b1; ta[n] = i[9:0]; td[n] = tmem[n * T_DEPTH + i];
+        tw[n] = 1'b1; ta[n] = i[10:0]; td[n] = tmem[n * T_DEPTH + i];
         @(posedge clk);
       end
       tw[n] = 1'b0;

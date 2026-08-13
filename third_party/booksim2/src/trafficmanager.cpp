@@ -785,7 +785,10 @@ int TrafficManager::_IssuePacket( int source, int cl )
     // receiver and must NOT inject -- otherwise BookSim's "every node injects" default
     // pollutes receivers' eject ports with self-packets, the confound of PITFALLS.md #15.
     if(_bcast_all > 0 && source != 0) return 0;
-    if(_mcast_k > 0) {
+    // mcast streams fire in class 0 only: other classes keep their normal
+    // (unicast) injection so a two-class cell can interleave a unicast entry
+    // at tptr with an mcast entry at tptr+1 -- the F2 reorder trigger.
+    if(_mcast_k > 0 && cl == 0) {
         int const col = source % _mcast_k;
         int const row = source / _mcast_k;
         // With an offset, only die-A (pre-offset) sources stream: die-B sources would
@@ -888,7 +891,9 @@ void TrafficManager::_GeneratePacket( int source, int stype,
     }
     // ------------------------------------------------------------------------------
 
-    if(_mcast_k > 0) {
+    // mcast stream generation is class-0-only (mirrors the _IssuePacket gate);
+    // other classes fall through to the normal unicast path.
+    if(_mcast_k > 0 && cl == 0) {
         int const K = _mcast_k;
         int const col = source % K;
         int const row = source / K;

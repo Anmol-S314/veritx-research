@@ -32,8 +32,8 @@ module noc_nic #(
   parameter int X_DIM   = 4,
   parameter int Y_DIM   = 4,
   parameter int DIE_BASE = 0,  // 0 = die A, N = die B (2-die bridge mode)
-  parameter int T_DEPTH = 16,
-  parameter int T_W     = 4
+  parameter int T_DEPTH = 2048,
+  parameter int T_W     = 11
 )(
   input  logic clk,
   input  logic rst_n,
