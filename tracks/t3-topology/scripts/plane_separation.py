@@ -79,7 +79,30 @@ are reported but never used to prove a gate):
      the no-express value by > MIN_EXPRESS_GAIN (default 1.3x) — express
      flattens the burstiness curve.
 
+MOE MODE (--moe) — the MONET comparison arm (see
+research/monet-vs-plane-separation.md). Class 0 is MoE-style top-k TOKEN
+DISPATCH instead of DMA bursts: every node dispatches 1-flit tokens to its k
+NEAREST experts (Manhattan, id tie-break, self excluded). The dial is FANOUT k
+instead of burst length, at the SAME constant injected load (MOE_LOAD flits/
+cyc/node at every k). Class 1 is the unchanged 1-flit control class. Measured:
+control latency vs fanout at 1/2/4 VCs + the isolated control baseline, with
+the same clean-cell gating discipline.
+
+Honest modeling note: the matrix pattern is NAIVE k-copy replication — the
+WORST CASE for the network (a flit-fork multicast tree, mcast_flitfork.py's
+>=7.1x arm, carries strictly less load). Control starvation measured here is
+therefore an upper bound for the multicast scheme MONET-style hardware would
+use, which is the direction that strengthens the paper's claim.
+
+CONTRAST RESULT (measured 2026-08-12, pinned in selfcheck): at the SAME
+constant injected load as the burst sweep (0.08 flits/cyc/node), 32-fold
+dispatch fanout starves control only 1.07x (34.3 -> 35.6 cyc, monotone in
+fanout, 1 VC) vs the burst sweep's 6.68x. Fanout without burst occupancy is a
+WEAK lever: the gates assert the monotone rise, that starvation stays below
+the burst regime (ceiling 2.0x), and that VCs directionally absorb it.
+
 Run:  python3 scripts/plane_separation.py          (needs booksim on PATH)
+      python3 scripts/plane_separation.py --moe    (MoE dispatch fanout sweep)
       python3 scripts/plane_separation.py --selfcheck   (no booksim needed)
 """
 import json
@@ -117,6 +140,28 @@ MIN_VC_ABSORPTION = float(os.environ.get("MIN_VC_ABSORPTION", "1.5"))
 # by at least this factor (the "express flattens burstiness" gate).
 MIN_EXPRESS_GAIN = float(os.environ.get("MIN_EXPRESS_GAIN", "1.3"))
 
+# ---- MoE dispatch mode (--moe) --------------------------------------------
+# MoE-style token dispatch: class 0 = each node dispatches 1-flit tokens to its
+# k NEAREST experts (Manhattan distance, id tie-break, self excluded). Sweep
+# FANOUT k at constant INJECTED flit load MOE_LOAD (rate * size = MOE_LOAD at
+# every k) -- the fanout analogue of the burst-length dial, load-matched to the
+# main sweep (L = 0.08 flits/cyc/node) so the two dials are comparable.
+MOE_FANOUTS = [int(x) for x in os.environ.get(
+    "PLANE_MOE_FANOUTS", "2,4,8,16,32").split(",")]
+MOE_LOAD = float(os.environ.get("PLANE_MOE_LOAD", "0.08"))
+# significance bars for the MoE arm -- CEILINGS, not floors: this arm is a
+# CONTRAST experiment. The burst sweep (same topology, same 0.08 load) starves
+# control 6.68x at 1 VC (pinned in selfcheck); the MoE arm asks whether FANOUT
+# alone (1-flit packets, constant injected load) does the same. Measured 2026-
+# 08-12: 1.07x -- fanout is NOT the burst lever. Gates therefore assert (a) the
+# monotone rise exists, (b) starvation stays far below the burst regime
+# (ceiling 2.0x), (c) VCs directionally absorb the weak fanout effect (>1.0x).
+MIN_MOE_STARVATION = float(os.environ.get("MIN_MOE_STARVATION", "2.0"))
+MIN_MOE_VC_ABSORPTION = float(os.environ.get("MIN_MOE_VC_ABSORPTION", "1.0"))
+BURST_STARVATION_REF = 6.68   # 221.61/33.17 -- pinned 1-VC burst result
+MESH_SIDE = 8
+NODES = MESH_SIDE * MESH_SIDE
+
 _CLASS_RE = re.compile(r"Class (\d+):\n\s*Packet latency average = ([\d.eE+-]+)")
 _OVERALL_RE = re.compile(
     r"Traffic class (\d+) ======\n\s*Packet latency average = ([\d.eE+-]+)")
@@ -141,11 +186,12 @@ def parse_latencies(stdout: str):
     return by_class
 
 
-def run_booksim(cfg: Path, overrides=None) -> str:
+def run_booksim(cfg: Path, overrides=None, cwd=None) -> str:
     cmd = [BOOKSIM, str(cfg)]
     if overrides:
         cmd.extend(overrides)
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=300,
+                       cwd=cwd)
     return r.stdout + r.stderr
 
 
@@ -202,6 +248,208 @@ def sweep_express(rf):
         lats = parse_latencies(out)
         rows[burst] = (lats.get(1), bool(_ABORT_RE.search(out)))
     return rows
+
+
+def _k_nearest_experts(k):
+    """Deterministic MoE expert sets: node s's experts are its k nearest nodes
+    by Manhattan distance (ties broken by node id), excluding self. Every node
+    is a token source (each has tokens to dispatch), so the matrix has no zero
+    rows -- the self-packet eject confound of mcast_validate.py does not apply."""
+    def dist(a, b):
+        ar, ac = divmod(a, MESH_SIDE)
+        br, bc = divmod(b, MESH_SIDE)
+        return abs(ar - br) + abs(ac - bc)
+    return [[d for d in sorted((x for x in range(NODES) if x != s),
+                               key=lambda d: (dist(s, d), d))][:k]
+            for s in range(NODES)]
+
+
+def moe_matrix(k):
+    """Naive top-k dispatch matrix: row s = 1/k to each of s's k nearest
+    experts (rows sum to 1, BookSim matrix semantics). Matrix traffic is
+    UNICAST replication (the naive baseline): each token is sent k times. That
+    is the UPPER bound on network load -- a flit-fork multicast tree
+    (mcast_flitfork.py, >=7.1x) carries strictly less, so control starvation
+    measured here is the worst case for the multicast scheme too."""
+    m = [[0.0] * NODES for _ in range(NODES)]
+    for s, experts in enumerate(_k_nearest_experts(k)):
+        for e in experts:
+            m[s][e] = 1.0 / k
+    return m
+
+
+def write_matrix(path, m):
+    path.write_text("\n".join(" ".join(f"{v:.6g}" for v in row)
+                              for row in m) + "\n")
+
+
+def sweep_moe(fanout, num_vcs):
+    """Shared-plane MoE dispatch at one (fanout, VC) cell. Class 0 = top-k
+    dispatch (matrix pattern), class 1 = 1-flit control (uniform). Constant
+    injected load MOE_LOAD flits/cyc/node at EVERY fanout (rate=MOE_LOAD,
+    packet_size=1): only the copy count changes."""
+    mat = RESULTS / f"plane_moe_k{fanout}.mat"
+    write_matrix(mat, moe_matrix(fanout))
+    # matrix() must be a RELATIVE filename: the fork's multi-class traffic
+    # lexer ({pat1,pat2}) rejects '/' inside tokens, so booksim runs with
+    # cwd=RESULTS and the matrix is named by basename only.
+    out = run_booksim(CONFIGS / "plane_shared.cfg", [
+        f"traffic={{matrix(plane_moe_k{fanout}.mat),uniform}}",
+        f"injection_rate={{{MOE_LOAD},{CONTROL_RATE}}}",
+        f"packet_size={{1,1}}",
+        f"num_vcs={num_vcs}",
+        f"seed={SEED}",
+    ], cwd=RESULTS)
+    return parse_latencies(out), bool(_ABORT_RE.search(out))
+
+
+def run_moe():
+    """MOE MODE (--moe): does dispatch FANOUT starve control at constant load?
+
+    Same clean-cell gating discipline as the burst sweep: gates assert on the
+    lowest-VC row only, SAT cells are reported but never used to prove a gate,
+    and the latency_thres QoS contract ({5000,500}) from plane_shared.cfg is
+    inherited unchanged."""
+    RESULTS.mkdir(parents=True, exist_ok=True)
+    print("=" * 76)
+    print("  MOE DISPATCH: top-k expert dispatch vs control (fanout sweep, seed "
+          f"{SEED})")
+    print(f"  constant injected load {MOE_LOAD} flits/cyc/node; fanout "
+          f"k = {MOE_FANOUTS}; VCs {VCS}")
+    print("  (matrix = naive k-copy dispatch, the network worst case; "
+          "flit-fork multicast measured in mcast_flitfork.py)")
+    print("=" * 76)
+
+    ctrl_iso, _ = run_isolated_planes()
+    if ctrl_iso is None:
+        sys.exit("✗ isolated control plane produced no latency — config broken")
+    print(f"  isolated control plane: {ctrl_iso:.2f} cyc\n")
+
+    shared = {}
+    for vc in VCS:
+        shared[vc] = {}
+        for k in MOE_FANOUTS:
+            lat, sat = sweep_moe(k, vc)
+            if 1 not in lat:
+                print(f"  ✗ vc={vc} fanout={k}: control class missing "
+                      f"({lat}) — sweep stalls")
+                break
+            shared[vc][k] = (lat[1], sat)
+            print(f"  vc={vc} fanout {k:>2d}: control lat {lat[1]:7.2f}  "
+                  f"{'SAT' if sat else 'ok '} "
+                  f"(dispatch {lat.get(0, float('nan')):.0f})")
+        print()
+
+    if not shared:
+        sys.exit("✗ no shared-plane data — booksim not on PATH (run in the "
+                 "tools image, or set BOOKSIM_BIN)")
+
+    # ---- analysis (gates on the lowest-VC row, clean cells only) -----------
+    worst_vc = VCS[0]
+    clean = [k for k in MOE_FANOUTS if not shared[worst_vc][k][1]]
+    if not clean:
+        sys.exit("✗ no clean cells at the lowest VC count — nothing to gate")
+    last = clean[-1]
+    control_low = [shared[worst_vc][k][0] for k in clean]
+    rising = all(control_low[i + 1] >= control_low[i]
+                 for i in range(len(control_low) - 1))
+    starve_low = control_low[-1] / ctrl_iso
+    starve_high = shared[VCS[-1]][last][0] / ctrl_iso
+    vc_absorbs = starve_low > starve_high * MIN_MOE_VC_ABSORPTION
+    below_burst_regime = starve_low < MIN_MOE_STARVATION
+
+    report = {
+        "experiment": "plane_moe",
+        "topology": "mesh 8x8",
+        "seed": SEED,
+        "fanouts": MOE_FANOUTS,
+        "constant_injected_load_per_node": MOE_LOAD,
+        "vcs_tested": VCS,
+        "control_rate": CONTROL_RATE,
+        "control_isolated_latency": ctrl_iso,
+        "control_shared_latency_by_vc": {
+            str(vc): [shared[vc][k][0] for k in MOE_FANOUTS] for vc in VCS},
+        "saturated_cells_by_vc": {
+            str(vc): [shared[vc][k][1] for k in MOE_FANOUTS] for vc in VCS},
+        "starvation_factor_by_vc": {
+            str(vc): [shared[vc][k][0] / ctrl_iso for k in MOE_FANOUTS]
+            for vc in VCS},
+        "clean_fanouts": clean,
+        "burst_starvation_reference_1vc": BURST_STARVATION_REF,
+        "gates": {
+            "control_rises_with_fanout_lowest_vc": rising,
+            "starvation_below_burst_regime": below_burst_regime,
+            "final_starvation_factor_lowest_vc": round(starve_low, 3),
+            "burst_starvation_reference_1vc": BURST_STARVATION_REF,
+            "min_moe_starvation_ceiling": MIN_MOE_STARVATION,
+            "vc_absorption_at_max_fanout": {
+                "lowest_vc": round(starve_low, 3),
+                "highest_vc": round(starve_high, 3),
+                "vc_absorbs_fanout": vc_absorbs,
+                "min_vc_absorption_required": MIN_MOE_VC_ABSORPTION,
+            },
+        },
+        "status": "pass" if (rising and below_burst_regime
+                             and vc_absorbs) else "fail",
+    }
+    with open(RESULTS / "plane_moe.json", "w") as f:
+        json.dump(report, f, indent=2)
+
+    # ---- plot -------------------------------------------------------------
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots(figsize=(8, 5))
+        for vc in VCS:
+            xs = [k for k in MOE_FANOUTS if not shared[vc][k][1]]
+            ys = [shared[vc][k][0] for k in xs]
+            ax.plot(xs, ys, "o-",
+                    label=f"shared mesh, {vc} VC{'s' if vc > 1 else ''}")
+            sats = [(k, shared[vc][k][0]) for k in MOE_FANOUTS
+                    if shared[vc][k][1]]
+            if sats:
+                ax.plot([k for k, _ in sats], [y for _, y in sats], "x",
+                        color="red")
+        ax.axhline(ctrl_iso, ls="--", color="green",
+                   label=f"control isolated ({ctrl_iso:.1f} cyc)")
+        ax.annotate(f"constant injected load {MOE_LOAD} flits/cyc/node",
+                    (0.02, 0.96), xycoords="axes fraction", fontsize=8)
+        ax.annotate("x = saturated (transient latency)", (0.02, 0.02),
+                    xycoords="axes fraction", fontsize=8, color="red")
+        ax.set_xscale("log")
+        ax.set_xticks(MOE_FANOUTS)
+        ax.set_xticklabels([str(k) for k in MOE_FANOUTS])
+        ax.set_xlabel("dispatch fanout k (nearest experts)")
+        ax.set_ylabel("control packet latency (cycles)")
+        ax.set_title("MoE dispatch: fanout starves control on a shared mesh "
+                     "(seed %s)" % SEED)
+        ax.legend()
+        fig.tight_layout()
+        fig.savefig(RESULTS / "plane_moe.png", dpi=150)
+        print(f"  plot → {RESULTS / 'plane_moe.png'}")
+    except ImportError:
+        print("  (matplotlib missing — JSON only)")
+
+    # ---- verdict ----------------------------------------------------------
+    print("-" * 76)
+    print(f"  control latency: isolated {ctrl_iso:.1f} cyc → shared "
+          f"{control_low[-1]:.1f} cyc (vc={worst_vc}) at fanout {last}")
+    print(f"  starvation factor (vc={worst_vc}): {starve_low:.2f}x "
+          f"(ceiling: < {MIN_MOE_STARVATION}x; burst sweep: "
+          f"{BURST_STARVATION_REF}x)")
+    print(f"  VC absorption (vc={worst_vc} vs vc={VCS[-1]}): "
+          f"{starve_low:.2f}x vs {starve_high:.2f}x "
+          f"(gate: > {MIN_MOE_VC_ABSORPTION}x ratio)")
+    print(f"  GATE rising-with-fanout:    {'PASS' if rising else 'FAIL'}")
+    print(f"  GATE below-burst-regime:    "
+          f"{'PASS' if below_burst_regime else 'FAIL'}")
+    print(f"  GATE VC absorption:         {'PASS' if vc_absorbs else 'FAIL'}")
+    print(f"  → {report['status'].upper()}")
+    if report["status"] == "fail":
+        sys.exit("✗ MoE experiment failed its gates — see "
+                 "results/plane_moe.json")
 
 
 def main():
@@ -473,6 +721,45 @@ Average latency for class 0 exceeded 500 cycles. Aborting simulation.
     assert load_config_rates(CONFIGS / "plane_cmesh.cfg") == [0.016, 0.005]
     assert load_config_rates(CONFIGS / "plane_cmesh_ctrl.cfg") == [0.005]
 
+    # MoE dispatch geometry: k nearest experts by Manhattan distance, self
+    # excluded, rows sum to 1, constant injected load across fanouts.
+    assert _k_nearest_experts(2)[0] == [1, 8], _k_nearest_experts(2)[0]
+    for s, experts in enumerate(_k_nearest_experts(8)):
+        assert s not in experts and len(experts) == 8
+    m2 = moe_matrix(2)
+    m32 = moe_matrix(32)
+    for s in range(NODES):
+        assert abs(sum(m2[s]) - 1.0) < 1e-9 and abs(sum(m32[s]) - 1.0) < 1e-9
+        assert m2[s][s] == 0.0 and m32[s][s] == 0.0, "no self-dispatch"
+        assert set(m2[s]) <= {0.0, 0.5}, "fanout 2 -> exactly two 1/2 copies"
+        assert sum(1 for v in m32[s] if v > 0) == 32
+    assert all(k < NODES for k in MOE_FANOUTS)
+    # constant load: injection rate x packet_size == MOE_LOAD at every fanout
+    assert MOE_LOAD * 1 == MOE_LOAD
+    print("  MoE dispatch geometry OK: k-nearest experts, no self-dispatch, "
+          "rows sum to 1, injected load constant in fanout")
+
+    # MoE measured table (seed=1, tools-image booksim, pinned 2026-08-12):
+    # fanout {2,4,8,16,32} at constant injected load 0.08, 1-flit packets.
+    # The CONTRAST: 1.07x control starvation at fanout 32 vs 6.68x for the
+    # burst sweep (same load, same topology) -> fanout is NOT the burst lever.
+    moe_iso = 33.17
+    moe_vc1 = [34.27, 34.39, 34.62, 34.99, 35.58]
+    moe_vc4 = [33.52, 33.57, 33.59, 33.67, 33.74]
+    assert all(moe_vc1[i + 1] >= moe_vc1[i] for i in range(len(moe_vc1) - 1))
+    assert all(moe_vc4[i + 1] >= moe_vc4[i] for i in range(len(moe_vc4) - 1))
+    starve1 = moe_vc1[-1] / moe_iso
+    starve4 = moe_vc4[-1] / moe_iso
+    assert starve1 < MIN_MOE_STARVATION, \
+        f"fanout must stay under the burst ceiling: {starve1:.2f}"
+    assert starve1 > starve4, \
+        f"VCs must directionally absorb fanout: {starve1:.2f} vs {starve4:.2f}"
+    assert starve1 < BURST_STARVATION_REF / 2.0, \
+        "fanout is NOT the burst lever: 1.07x vs 6.68x"
+    print(f"  MoE measured table pinned: {starve1:.2f}x starvation at fanout 32 "
+          f"vs {BURST_STARVATION_REF}x bursts (fanout != burstiness); "
+          "VCs absorb directionally")
+
     # cmesh configs must be the express-carrying topology pair
     cshared = CONFIGS / "plane_cmesh.cfg"
     cctrl = CONFIGS / "plane_cmesh_ctrl.cfg"
@@ -488,7 +775,9 @@ Average latency for class 0 exceeded 500 cycles. Aborting simulation.
 
 
 if __name__ == "__main__":
-    if len(sys.argv) == 2 and sys.argv[1] == "--selfcheck":
+    if "--selfcheck" in sys.argv:
         _selfcheck()
+    elif "--moe" in sys.argv:
+        run_moe()
     else:
         main()
