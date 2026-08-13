@@ -354,6 +354,8 @@ TrafficManager::TrafficManager( const Configuration &config, const vector<Networ
     _include_queuing = config.GetInt( "include_queuing" );
 
     _mcast_k     = config.GetInt( "mcast_k" );
+    _mcast_offset= config.GetInt( "mcast_offset" );
+    _mcast_single = config.GetInt( "mcast_single" );
     _mcast_naive = config.GetInt( "mcast_naive" );
     _reduce_col  = config.GetInt( "reduce_col" );
     _bcast_all   = config.GetInt( "bcast_all" );
@@ -786,7 +788,13 @@ int TrafficManager::_IssuePacket( int source, int cl )
     if(_mcast_k > 0) {
         int const col = source % _mcast_k;
         int const row = source / _mcast_k;
-        bool const is_stream_src = (_mcast_naive != 2) && (col == 0);
+        // With an offset, only die-A (pre-offset) sources stream: die-B sources would
+        // target dests >= _nodes (offset+row*K+c overflows), which no routing table has.
+        bool const fits = (_mcast_offset == 0) ||
+                          (source < _mcast_offset &&
+                           _mcast_offset + row * _mcast_k + (_mcast_k - 1) < _nodes);
+        bool const one_src = (_mcast_single == 0) || (source == 0);
+        bool const is_stream_src = (_mcast_naive != 2) && (col == 0) && fits && one_src;
         bool const is_reduce_src = (_reduce_col != 0) && (row > 0);
         if(!is_stream_src && !is_reduce_src) {
             return 0;
@@ -916,12 +924,31 @@ void TrafficManager::_GeneratePacket( int source, int stype,
         if(_mcast_naive != 2 && col == 0) {
             if(_mcast_naive == 1) {
                 for(int c = 1; c < K; ++c)
-                    _partial_packets[source][cl].push_back(make(row * K + c, false));
+                    _partial_packets[source][cl].push_back(
+                        make(_mcast_offset + row * K + c, false));
+                // naive unicasts: one trace line per packet (normal format)
+                if(_trace_out) {
+                    for(int c = 1; c < K; ++c)
+                        (*_trace_out) << time << " " << source << " " << cl << " "
+                                      << (_mcast_offset + row * K + c) << " "
+                                      << _GetNextPacketSize(cl) << "\n" << flush;
+                }
             } else {
-                Flit * stream = make(row * K + (K - 1), true);
+                Flit * stream = make(_mcast_offset + row * K + (K - 1), true);
                 for(int c = 1; c < K - 1; ++c)
-                    stream->mcast_copies.push_back(make(row * K + c, false));
+                    stream->mcast_copies.push_back(
+                        make(_mcast_offset + row * K + c, false));
                 _partial_packets[source][cl].push_back(stream);
+                // forked stream: one trace line with the copy range appended:
+                //   cycle src cl far_end size mcast copy_lo copy_hi
+                if(_trace_out) {
+                    int const lo = (K > 1) ? _mcast_offset + row * K + 1 : 0;
+                    int const hi = (K > 1) ? _mcast_offset + row * K + (K - 2) : 0;
+                    (*_trace_out) << time << " " << source << " " << cl << " "
+                                  << (_mcast_offset + row * K + (K - 1)) << " "
+                                  << _GetNextPacketSize(cl) << " mcast "
+                                  << lo << " " << hi << "\n" << flush;
+                }
             }
         }
 

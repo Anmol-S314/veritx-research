@@ -162,6 +162,8 @@ BookSimConfig::BookSimConfig( )
   // g-1=mcast_k-1 cores in the row (receivers do not inject). mcast_naive=1 sends the
   // same as g-1 independent unicasts instead (the shipped-kernel baseline).
   _int_map["mcast_k"] = 0;
+  _int_map["mcast_offset"] = 0;
+  _int_map["mcast_single"] = 0;
   _int_map["mcast_naive"] = 0;   // 0 = fork multicast, 1 = naive g-1 unicasts, 2 = no streams
   _int_map["reduce_col"] = 0;    // 1 = add column-reduce partials (online-softmax combine)
   _int_map["bcast_all"] = 0;     // shared-prefix broadcast: 1 = snake fork, 2 = naive N-1 unicasts

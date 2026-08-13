@@ -223,6 +223,8 @@ protected:
   int   _mcast_naive;
   int   _reduce_col;
   int   _bcast_all;
+  int   _mcast_offset;   // die-B node offset for the bridge experiment
+  int   _mcast_single;   // 1 = only node 0 injects (single KV multicast stream)
 
   vector<int> _measure_stats;
   bool _pair_stats;

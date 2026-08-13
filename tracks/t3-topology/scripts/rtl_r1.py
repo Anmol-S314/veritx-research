@@ -10,6 +10,11 @@ Subcommands:
         <outdir>/flits.txt      BookSim per-flit retire dump (atime cl src dst pid itime)
         <outdir>/trace_n%d.hex  per-NIC BRAM images for the RTL replay
         <outdir>/run_cycles     RTL run length = last retire + drain margin
+      REFUSES to run a cell.cfg whose DMA injection rate is not the canonical
+      constant-flit-load rate for its burst size (L1 config lint, see
+      docs/lessons.md — 2026-08-12: 12/15 cells ran with a wrong fixed rate).
+  lint <cfg>
+      Standalone: validate a cell.cfg against the canonical GRID rates.
   diff <outdir> [tol]
       Match <outdir>/flits.txt (BookSim) against <outdir>/rtl_flits.txt (RTL),
       per flit. pid correlation:
@@ -34,6 +39,9 @@ Failure => nonzero exit (the gate FAILS; nothing is averaged away).
 """
 
 import sys
+import os
+import subprocess
+import time
 
 DRAIN = 2500
 GRID = [(5, 0.016), (10, 0.008), (20, 0.004), (40, 0.002), (80, 0.001)]
@@ -44,9 +52,58 @@ X_DIM = 8
 Y_DIM = 8
 
 
+ROOT_FIELD_RE = None
+
+
+def _braced_fields(cfg, key):
+    """First {..} in `key = {..}` as a list of strings, or None."""
+    for l in open(cfg):
+        l = l.strip()
+        if l.startswith(key + " ="):
+            body = l.split("=", 1)[1].strip()
+            if body.startswith("{") and "}" in body:
+                return [x.strip() for x in body[1:body.index("}")].split(",")]
+    return None
+
+
+def lint_cell(cfg):
+    """L1 config lint: a cell.cfg must use the canonical constant-flit-load
+    DMA rate for its burst length (GRID above). Any other rate changes the
+    offered flit load and makes the cell incomparable to the paper's table.
+
+    2026-08-12: a fixed {0.008, 0.005} rate silently shipped in 12 of 15
+    cells; the wrong-rate runs produced a fake 0.68x-1.49x scatter. This
+    lint runs inside gen-trace so a bad config is impossible to miss.
+    Returns 0 if canonical, nonzero otherwise (caller decides handling).
+    """
+    pkt = _braced_fields(cfg, "packet_size")
+    rate = _braced_fields(cfg, "injection_rate")
+    bad = None
+    if pkt is None or rate is None or not pkt or not rate:
+        bad = f"{cfg}: cannot parse packet_size/injection_rate"
+    else:
+        burst = int(pkt[0])
+        want = dict(GRID).get(burst)
+        if want is None:
+            bad = f"{cfg}: burst {burst} not in canonical GRID {GRID}"
+        elif abs(float(rate[0]) - want) > 1e-9:
+            bad = (f"{cfg}: burst {burst} demands injection_rate {want} "
+                   f"(constant flit load {burst * want}), got {rate[0]}")
+        elif len(rate) > 1 and abs(float(rate[1]) - CONTROL_RATE) > 1e-9:
+            bad = (f"{cfg}: control class must be {CONTROL_RATE}, "
+                   f"got {rate[1]}")
+    if bad:
+        print(f"L1 CONFIG LINT FAIL: {bad}", file=sys.stderr)
+        return 1
+    print(f"L1 config lint OK: {cfg} (burst {burst}, rate {rate[0]})")
+    return 0
+
+
 def gen_trace(booksim, cfg, outdir):
     import os
     import subprocess
+    if lint_cell(cfg):
+        sys.exit(f"gen-trace aborted: {cfg} fails canonical config lint (L1)")
     os.makedirs(outdir, exist_ok=True)
     # NB: this fork returns -1 (255) on success, 0 on "simulation unstable"
     # (convergence aborted; the trace/dump are still valid stimulus).
@@ -57,15 +114,26 @@ def gen_trace(booksim, cfg, outdir):
         print("WARN: booksim reported 'simulation unstable' (convergence)")
     trace = [l.split() for l in open(f"{outdir}/trace.txt") if l.strip()]
     assert trace, "empty trace"
-    # per-NIC hex images, 64-bit entries {cycle, cl, dst, size}
+    # per-NIC hex images, 64-bit entries {cycle, cl, dst, size}; a 9-field
+    # "… mcast lo hi" line appends a second word {lo, hi} for the fork range
     by_src = {}
-    for cyc, src, cl, dst, size in trace:
-        by_src.setdefault(int(src), []).append(
-            (int(cyc), int(cl), int(dst), int(size)))
+    for l in trace:
+        if len(l) == 8 and l[5] == "mcast":
+            cyc, src, cl, dst, size = int(l[0]), int(l[1]), int(l[2]), int(l[3]), int(l[4])
+            lo, hi = int(l[6]), int(l[7])
+        else:
+            cyc, src, cl, dst, size = map(int, l[:5])
+            lo = hi = -1
+        by_src.setdefault(src, []).append((cyc, cl, dst, size, lo, hi))
     for src, entries in by_src.items():
         with open(f"{outdir}/trace_n{src}.hex", "w") as f:
-            for cyc, cl, dst, size in entries:
+            for cyc, cl, dst, size, lo, hi in entries:
                 f.write(f"{cyc:08x}{cl:02x}{dst:02x}{size:04x}\n")
+                if lo >= 0:
+                    # range word: cycle field (upper 32) MUST be 0 -- the
+                    # NIC identifies it by a zero cycle and non-'1 pattern;
+                    # lo/hi ride in [63:56]/[55:48] (the NIC reads them there)
+                    f.write(f"00000000{lo:02x}{hi:02x}0000\n")
     # run the RTL until every BookSim flit has retired (plus margin): if the
     # RTL were slower than BookSim it would fail the TB's drain check.
     last_atime = 0
@@ -82,7 +150,8 @@ def diff(outdir, tol=0):
     n_pkts = len(trace)
     # per-(src, cl) ordered packet lists -> seq mapping
     seq_map = {}                      # (src, cl) -> list of packet indices
-    for k, (cyc, src, cl, dst, size) in enumerate(trace):
+    for k, l in enumerate(trace):
+        cyc, src, cl, dst, size = l[0], l[1], l[2], l[3], l[4]
         seq_map.setdefault((int(src), int(cl)), []).append(k)
     pkt_info = {k: (int(l[1]), int(l[2]), int(l[3]), int(l[4]))
                 for k, l in enumerate(trace)}   # k -> (src, cl, dst, size)
@@ -107,17 +176,75 @@ def diff(outdir, tol=0):
     # packet within its source NIC's trace lines (global order -> ordinal).
     src_ordinal = {}                          # (src, global_idx) -> rtl pid
     per_src = {}
-    for k, (cyc, src, cl, dst, size) in enumerate(trace):
-        per_src.setdefault(int(src), []).append(k)
+    for k, l in enumerate(trace):
+        per_src.setdefault(int(l[1]), []).append(k)
     for src, idxs in per_src.items():
         for j, k in enumerate(idxs):
             src_ordinal[(src, k)] = j
+
+    # mcast lines: the stream pid and its copies share the stream's ordinal;
+    # copy pid = stream_ordinal + (n - copy_lo) + 1 (BookSim: _cur_pid++ in
+    # registration order; the stream is registered first).
+    mcast_info = {}                           # k -> (lo, hi, far_end)
+    for k, l in enumerate(trace):
+        if len(l) == 8 and l[5] == "mcast":
+            mcast_info[k] = (int(l[6]), int(l[7]), int(l[3]))
 
     strict_fails = 0
     tol_fails = 0
     checked = 0
     for k in range(n_pkts):
         src, cl, dst, size = pkt_info[k]
+        if k in mcast_info:
+            # one injection -> stream + g-1 copies; BookSim pids are global
+            # (stream at line k gets pid = cumsum of prior streams' copy
+            # counts; copies follow). RTL stream pid = the NIC's tptr at
+            # fire (2x ordinal: every stream's range word advances tptr by
+            # 2), copies = stream_pid+1+i. Mapping correlates them below.
+            lo, hi, far = mcast_info[k]
+            ord_ = src_ordinal[(src, k)]
+            ncopies = hi - lo + 1
+            # RTL stream pid: NIC sets (tptr<<4); each mcast entry consumes
+            # 2 trace words (entry + range), so tptr = 2*ordinal and
+            # stream pid = 32*ordinal. Copies = stream_pid | offset
+            # (4-bit offset covers up to 15 copies).
+            rpid = 32 * ord_
+            # BookSim: stream pid = number of flits generated before this
+            # line's stream = sum over earlier mcast lines of (1 + copies)
+            bpid = 0
+            for j in range(k):
+                if j in mcast_info:
+                    jlo, jhi, _ = mcast_info[j]
+                    bpid += 1 + (jhi - jlo + 1)
+            bm = {}
+            for f in bs.get(bpid, []):          # stream flit
+                bm.setdefault(f[3], f)
+            for i in range(ncopies):            # copies, pids bpid+1..
+                for f in bs.get(bpid + 1 + i, []):
+                    bm.setdefault(f[3], f)
+            bl = sorted(bm.values())
+            # RTL: stream pid = rpid, copies = rpid+1+i
+            rl = []
+            for f in rt.get((src, rpid), []):
+                rl.append(f)
+            for i in range(ncopies):
+                rl += rt.get((src, rpid + 1 + i), [])
+            rl = sorted(rl)
+            if len(bl) != len(rl):
+                print(f"FAIL mcast pkt {k}: BookSim {len(bl)} deliveries "
+                      f"(expect {len(rl)})")
+                strict_fails += 1
+                tol_fails += 1
+                continue
+            for ba, ra in zip(bl, rl):
+                checked += 1
+                if ba != ra:
+                    strict_fails += 1
+                    if (abs(ba[0] - ra[0]) > tol or abs(ba[4] - ra[4]) > tol or
+                            ba[1] != ra[1] or ba[2] != ra[2] or ba[3] != ra[3]):
+                        tol_fails += 1
+                        print(f"FAIL mcast pkt {k}: BookSim {ba} vs RTL {ra}")
+            continue
         b = sorted(bs.get(k, []))
         r = sorted(rt.get((src, src_ordinal[(src, k)]), []))
         if len(b) != size or len(r) != size:
@@ -222,6 +349,7 @@ def sweep(booksim, rtlroot, outdir, tol=0):
                     break
 
         if needs_rebuild:
+            os.makedirs(bdir, exist_ok=True)
             t0 = time.time()
             # VCS=8 (vc4) elaboration peaks hard; cap its jobs at 1 so a
             # 14GB host never OOM-kills the build silently (seen twice).
@@ -293,6 +421,8 @@ if __name__ == "__main__":
     cmd = sys.argv[1]
     if cmd == "gen-trace":
         gen_trace(sys.argv[2], sys.argv[3], sys.argv[4])
+    elif cmd == "lint":
+        sys.exit(lint_cell(sys.argv[2]))
     elif cmd == "diff":
         tol = int(sys.argv[3]) if len(sys.argv) > 3 else 0
         sys.exit(diff(sys.argv[2], tol))

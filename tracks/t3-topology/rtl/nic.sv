@@ -31,6 +31,7 @@ module noc_nic #(
   parameter int Y       = 0,
   parameter int X_DIM   = 4,
   parameter int Y_DIM   = 4,
+  parameter int DIE_BASE = 0,  // 0 = die A, N = die B (2-die bridge mode)
   parameter int T_DEPTH = 16,
   parameter int T_W     = 4
 )(
@@ -107,6 +108,9 @@ module noc_nic #(
     logic [15:0] pid;
     logic [31:0] remaining;   // flits left to inject
     logic [31:0] size;        // original packet size (head detection)
+    logic        mcast;       // VeritX fork stream: inject with copy range
+    logic [7:0]  fork_lo;     // copies eject at nodes in [fork_lo, fork_hi]
+    logic [7:0]  fork_hi;
   } pkt_t;
 
   pkt_t pkt [CLS];
@@ -161,9 +165,12 @@ module noc_nic #(
       inject_flit.tail  = (pkt[serve].remaining == 1);
       inject_flit.vc    = pkt[serve].vc;
       inject_flit.cl    = serve;
-      inject_flit.src   = Y * X_DIM + X;
+      inject_flit.src   = DIE_BASE + Y * X_DIM + X;
       inject_flit.dst   = pkt[serve].dst;
       inject_flit.pid   = pkt[serve].pid;
+      inject_flit.mcast    = pkt[serve].mcast;
+      inject_flit.copy_lo  = pkt[serve].fork_lo;
+      inject_flit.copy_hi  = pkt[serve].fork_hi;
       // BookSim: f->itime = _time, per flit, at the inject wire cycle
       inject_flit.itime = tick_r;
 `ifdef R1_MODE
@@ -412,25 +419,31 @@ module noc_nic #(
         // than a second wrap).
         if (!consumed1 && (tptr < (T_DEPTH - 1)) &&
             (trace_mem[tptr + 1] != '1) &&
-            // Entry tptr+1 MUST be eligible to fire at the current edge (tick_r+1 >= due_1).
-            // A future entry (due_1 > tick_r+1) cannot fire this edge, so reordering it ahead
-            // of tptr would block tptr from firing at its own due edge and cause a false deferral cascade.
-            ((tick_r + 1) >= trace_mem[tptr + 1][63:32]) &&
-            // Credit-stall collision: the tptr entry is held past its due
-            // cycle (downstream input buffer full -- the W-chain hotspot
-            // backlog, Gate R1 mismatch #109: src51 pid130 fired 50 cycles
-            // late behind pid129's burst and queued 68 more behind it in the
-            // L-VC FIFO). Once BOTH entries are due at one edge, BookSim's
-            // per-class rotation decides the serve order, not generation
-            // order; with the eligibility guard above, "tptr due" implies
-            // the collision. Without it the entries fire one per edge and
-            // the control strands behind the burst.
-            ((trace_mem[tptr + 1][63:32] <= trace_mem[tptr][63:32]) ||
-             ((trace_mem[tptr + 1][63:32] == (trace_mem[tptr][63:32] + 1)) &&
-              ((tick_r + 1) >= trace_mem[tptr][63:32]) &&
-              pkt[trace_mem[tptr][31:24]].pending &&
-              !(inject_valid && inject_flit.tail && (serve == trace_mem[tptr][31:24]))) ||
-             ((tick_r + 1) >= trace_mem[tptr][63:32])) &&
+            // Rotation collision (BookSim "time >= qtime" test at the
+            // current tick, applied to both entries): the TM serves one
+            // flit/node-cycle in rotation from last_class+1, so at the
+            // first tick where BOTH packets are due, the rotation-next
+            // class wins the slot and the other defers one cycle -- the
+            // trace's generation order must be reversed. Scope is the
+            // HEAD edge only: both classes must be pending-free (a
+            // mid-flight packet pins its class; without this guard the
+            // swap re-fires every edge of a burst and embeds the control
+            // flit inside it). "Due at this tick" is the exact boundary:
+            // a future tptr+1 entry (NIC-17: cl1 due 1256 vs burst due
+            // 1255) must NOT reorder (its qtime hasn't passed; the burst's
+            // in_use then releases it at tail+1, generation order), while
+            // a credit-held tptr entry (src 58: burst due 3442 held to
+            // 3444 by the previous burst's in_use, cl1 due 3444) releases
+            // onto the same edge as the cl1, where the rotation serves the
+            // cl1 first. A pick-failed (W-chain backlog) tptr entry needs
+            // no swap at all: idx=1 fires through f0=0 that edge.
+            !pkt[trace_mem[tptr][31:24]].pending &&
+            (trace_mem[tptr + 1] != '1) &&
+            (trace_mem[tptr + 1][63:32] != '0) &&
+            (trace_mem[tptr + 1][31:24] < CLS) &&
+            !pkt[trace_mem[tptr + 1][31:24]].pending &&
+            (tick_r >= trace_mem[tptr][63:32]) &&
+            (tick_r >= trace_mem[tptr + 1][63:32]) &&
             (trace_mem[tptr][31:24] != trace_mem[tptr + 1][31:24]) &&
             (((inject_valid ? int'(serve) : int'(last_class)) + 1) % CLS ==
              trace_mem[tptr + 1][31:24])) begin
@@ -471,6 +484,8 @@ module noc_nic #(
               (!pkt[c].pending ||
                (inject_valid && inject_flit.tail && (serve == c))) &&
               (trace_mem[tptr + idx] != '1) &&
+              // range words (cycle==0) are not packet entries
+              (trace_mem[tptr + idx][63:32] != '0) &&
               ((tick_r + 1) >= trace_mem[tptr + idx][63:32])) begin
             if (idx == 0) f0 = 1'b1; else f1 = 1'b1;
             fired_c[c] = 1'b1;
@@ -482,8 +497,25 @@ module noc_nic #(
 `endif
             pkt[c].pending   <= 1'b1;
             pkt[c].dst       <= trace_mem[tptr + idx][23:16];
+            // stream pid: tptr for unicast; mcast streams live in the
+            // (tptr<<3) space so their copies (stream_pid|offset, offset
+            // in [1..7]) can never collide with a later stream's pid
             pkt[c].pid       <= {8'h00, tptr + idx};
             pkt[c].remaining <= {16'h0000, trace_mem[tptr + idx][15:0]};
+            // VeritX fork: a range word follows the entry word; its zero
+            // cycle field + non-'1 pattern marks a mcast stream. Range
+            // layout matches the entry format: {cycle=0, cl=lo, dst=hi}.
+            pkt[c].mcast   <= 1'b0;
+            pkt[c].fork_lo <= '0;
+            pkt[c].fork_hi <= '0;
+            if ((tptr + idx + 1) < T_DEPTH &&
+                trace_mem[tptr + idx + 1] != '1 &&
+                trace_mem[tptr + idx + 1][63:32] == '0) begin
+              pkt[c].mcast   <= 1'b1;
+              pkt[c].fork_lo <= trace_mem[tptr + idx + 1][31:24];
+              pkt[c].fork_hi <= trace_mem[tptr + idx + 1][23:16];
+              pkt[c].pid     <= {tptr + idx, 4'b0000};
+            end
             pkt[c].size      <= {16'h0000, trace_mem[tptr + idx][15:0]};
             pkt[c].vc        <= pv;
             // a multi-flit head fired here claims its VC from the NEXT edge
@@ -518,13 +550,38 @@ module noc_nic #(
         // advance past both. The latch (not a BRAM write) keeps tptr from
         // ever walking into the end-of-trace '1 padding and wrapping the
         // 10-bit pointer to replay the trace (PITFALLS 24).
-        if (consumed1) begin
-          tptr <= tptr + (f0 ? 2 : 0);
-          if (f0) consumed1 <= 1'b0;
-        end else if ((ord[0] == 1) && f1 && !f0) begin
-          consumed1 <= 1'b1;            // tptr unchanged: retry the deferred entry
-        end else begin
-          tptr <= tptr + f0 + f1;
+        //
+        // F2 fix: the range-word skip is computed once from the trace
+        // content (a range word has cycle==0), for whichever entry fired --
+        // the tptr entry normally, or the tptr+1 entry in the reorder case.
+        // The consumed1 reorder advance previously skipped +2 blindly and
+        // never consumed the range word of a reorder-fired mcast entry,
+        // leaving tptr parked on the range word forever (replay deadlock).
+        begin
+          logic fired_mcast_skip;
+          if (consumed1 && f0) begin
+            // the deferred tptr entry fired now. The deferred entry cannot
+            // itself be mcast (its range word would occupy tptr+1, which is
+            // the fired real entry), so only the tptr+1 entry's range word
+            // (at tptr+2) needs skipping. A range word has cycle==0.
+            fired_mcast_skip =
+              ((tptr + 2) < T_DEPTH &&
+               trace_mem[tptr + 2] != '1 &&
+               trace_mem[tptr + 2][63:32] == '0);
+            tptr <= tptr + 2 + (fired_mcast_skip ? 1 : 0);
+            consumed1 <= 1'b0;
+          end else if (consumed1) begin
+            tptr <= tptr;                 // deferred entry still blocked
+          end else if ((ord[0] == 1) && f1 && !f0) begin
+            consumed1 <= 1'b1;            // tptr unchanged: retry the deferred entry
+          end else begin
+            // normal path: fired tptr entry (f0) and/or tptr+1 (f1); the
+            // range word after a fired entry has cycle==0
+            tptr <= tptr + f0 + f1 +
+                    ((f0 && (tptr + 1) < T_DEPTH &&
+                      trace_mem[tptr + 1] != '1 &&
+                      trace_mem[tptr + 1][63:32] == '0) ? 1 : 0);
+          end
         end
       end
     end

@@ -2207,12 +2207,21 @@ void IQRouter::_SwitchUpdate( )
     assert(_output_buffer[output].size()<=(size_t)_output_buffer_size+ _crossbar_delay* _output_speedup+( _output_speedup-1) ||_output_buffer_size==-1);
 
     // VeritX multicast fork: as a row-broadcast stream transits this router, deliver the
-    // pre-registered copy destined for THIS node to the local eject port (last output;
-    // one flit/cyc, drains freely to the core). The stream continues untouched to its
-    // far-end dest, so the row links carry it exactly once. (See trafficmanager.cpp
-    // _GeneratePacket / mcast_k, and PITFALLS.md #15 for why the copies must really eject.)
+    // pre-registered copy destined for THIS node to the local eject port (one flit/cyc,
+    // drains freely to the core). The stream continues untouched to its far-end dest, so
+    // the row links carry it exactly once. (See trafficmanager.cpp _GeneratePacket /
+    // mcast_k, and PITFALLS.md #15 for why the copies must really eject.)
+    //
+    // Eject port is the output whose channel has NO router sink (SetSink(NULL, d) in
+    // network.cpp). On a uniform mesh that is the LAST port (_outputs-1); on an anynet
+    // router the node channels come FIRST (port 0) and _outputs-1 would be a network
+    // link, sending the copy (vc=-1) down the fabric. Sink scan is topology-agnostic.
     if(f->mcast && f->head && !f->mcast_copies.empty()) {
-      int const eject = _outputs - 1;   // concentration 1: eject == 2*gN == last port
+      int eject = -1;
+      for(size_t o = 0; o < _output_channels.size(); ++o)
+	if(_output_channels[o]->GetSink() == NULL) { eject = o; break; }
+      if(eject < 0)
+	Error("VeritX mcast fork: no eject (sink-less) output port on this router");
       for(size_t i = 0; i < f->mcast_copies.size(); ++i) {
 	Flit * const cp = f->mcast_copies[i];
 	if(cp->dest == GetID()) {
