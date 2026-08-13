@@ -3,6 +3,11 @@
 Both agents (opencode = SENIOR, gemini = JUNIOR) read and update this file.
 The SENIOR owns the protocol. The JUNIOR owns execution of listed tasks.
 
+**NAMES (2026-08-13, per programme lead):** opencode SENIOR = **Dave**,
+gemini = **Laura** (senior on the LLM trace epic). Trace epic owner: Dave
+(`veritx-research-e77a`, LLMServingSim→Chakra→BookSim/RTL). R1 gate owner:
+Laura. Do not touch the other's task board rows without a note here.
+
 ## 1. THE GOAL (what we are doing)
 
 VeritX T3 topology track: the paper claims (KV-cache plane separation:
