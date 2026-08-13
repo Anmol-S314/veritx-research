@@ -13,33 +13,33 @@
 
 ## Title (candidates)
 
-1. KV-Cache Multicast at the Chip-to-Chip Boundary: A Bridge-Fork Mechanism and a Bridge-Port Placement Law for Chiplet LLM Accelerators
-2. Fork Before the Bridge: Sending KV State Once Across the Die Boundary in Chiplet LLM Inference
-3. The 35-Cycle Law: Bridge-Port Placement for Cross-Die KV Multicast
+1. Fork After the Cut: Replication Placement for Multicast KV Traffic Across Chiplet NoC Boundaries
+2. Bridge-Fork: Sending KV State Once Across the Die Boundary in Chiplet LLM Inference
+3. KV-Cache Multicast at the Chip-to-Chip Boundary: A Bridge-Fork Mechanism and a Bridge-Port Placement Law
 
 ## Abstract (draft, one paragraph)
 
-Once the KV cache is a first-class architectural object, the question for a multi-die
-inference accelerator is not how much chip-to-chip bandwidth it has, but how efficiently
-replicated KV state reaches the chips that need it. We treat KV-cache distribution across
-accelerator dies as a *multicast* problem, not merely a bandwidth problem. For a KV
-row-multicast whose chain spans a NoC-to-NoC (UCIe-class) die boundary, we compare two
-mechanisms: **source-fork**, where the sender replicates and the bridge carries g copies,
-and **bridge-fork**, where the bridge carries one copy and the remote die's own NoC forks
-to its g cores. In cycle-accurate simulation of a two-die 8×8+8×8 system joined by a
-single bridge link [MEASURED, BookSim], bridge-fork holds ~78-cycle latency flat to
-rate 0.064 while source-fork knees at 0.016 and saturates at 0.032 with 497.7-cycle
-latency — a g-fold bridge-bandwidth win that matches the known-answer gate. We further
-measure a bridge-port **placement law**: an off-axis bridge port costs exactly the remote
-die's height in cycles per crossing — 35 on 8×8, 75 on 16×16, 155 on 32×32, i.e.
-(S−1)×5 cycles — and the penalty is load-independent [MEASURED]. Both the mechanism and
-the law are verified in RTL-gated simulation (`rtl_r1.py`): g ∈ {4, 8, 16} fork gates
-deliver 66/154/330 deliveries with **zero per-flit mismatches at tol = 0**, and the
-2-die RTL reproduces the 35-cycle placement penalty to the cycle (on-axis first copy T52,
-off-axis T87). We position the mechanism as vendor-shipped (multicast fork, PR #40733);
-our contribution is its bridge-level form, the placement law, and the RTL gate. Design
-rule: the bridge port must sit on the multicast row's axis of the remote die, or every
-KV crossing pays the die-height hop count.
+Chiplet LLM accelerators join per-die NoCs through a single, capacity-constrained
+die-to-die cut. When replicated state (KV cache, MoE dispatch, embeddings) must
+reach multiple dies, the placement of the replication point relative to that cut
+determines how much of the scarce cut bandwidth a multicast consumes. For a KV
+row-multicast whose chain spans a NoC-to-NoC (UCIe-class) die boundary, we compare
+two mechanisms: **source-fork**, where the sender replicates and the bridge carries
+g copies, and **bridge-fork**, where the bridge carries one copy and the remote
+die's own NoC forks to its g cores. In cycle-accurate simulation of a two-die
+8×8+8×8 system joined by a single bridge link [MEASURED, BookSim], bridge-fork
+holds ~78-cycle latency flat to rate 0.064 while source-fork knees at 0.016 and
+saturates at 0.032 — a g-fold cut-demand reduction that matches the analytic
+model λ_sat,bridge/λ_sat,source ≈ g. We further measure a bridge-port **placement
+penalty**: an off-axis bridge port costs the remote die's height in cycles per
+crossing, ΔL = (S−1)·L_hop — 35 on 8×8, 75 on 16×16, 155 on 32×32 [MEASURED].
+Both the mechanism and the penalty are verified in RTL-gated simulation
+(`rtl_r1.py`): the 2-die RTL reproduces the 35-cycle penalty to the cycle
+(on-axis first copy T52, off-axis T87) with zero per-flit mismatches at tol=0.
+Peak cut bandwidth alone does not determine multicast performance; where
+replication occurs determines how much of that scarce bandwidth is consumed.
+Design rule: the bridge port must sit on the multicast row's axis of the remote
+die, or every KV crossing pays the die-height hop count.
 
 ---
 
@@ -52,10 +52,17 @@ discloses — and precisely what it does not.
 
 **Key claims.**
 
-1. **KV is a multicast-shaped workload.** In GQA, g query heads share one KV head; the
-   replicated state must reach multiple cores/chips. The distribution question is "how
-   efficiently can replicated KV state reach the chips that need it" — not only "how much
-   bandwidth" [safe claim language, per cross-node-kv doc §3].
+1. **KV distribution is multicast-shaped *when the parallelization requires it*.** GQA/MLA
+   alone does not force cross-die KV movement: with TP ≤ KV-heads, ranks shard KV
+   locally (TensorRT-LLM attention-head sharding; vLLM TP > num_kv_heads discussion),
+   and replicated ranks can recompute K/V locally. The multicast-shaped regime is
+   precisely the cases where a KV object is **already materialized on one die and must
+   reach multiple dies/ranks**: (a) TP > KV-heads (replication by construction), and
+   (b) prefill/decode disaggregation, where prefill-die KV streams to decode dies
+   (3DLS, arXiv 2607.01617, documents exactly this regime: KV transfers over D2D
+   fabric contending with TP collectives). The relevant parameter is the
+   TP/KV-heads ratio and the disaggregation boundary — not GQA per se. [safe claim
+   language, per cross-node-kv doc §3]
 2. **The rung.** On-chip, topology is second-order (prior verdict: mesh not beaten by
    enough — fat-tree 1.80×/1.33× for 1.65× energy, EDP 0.92× prefill inside error,
    1.24× decode loss; crossbar dead at 6.97×). At the chip-to-chip rung the properties
@@ -65,9 +72,11 @@ discloses — and precisely what it does not.
    mesh verdict is context, not this paper's subject [prior result, cite FINDINGS.md +
    NETWORK-HIERARCHY.md ladder].
 3. **What Google ships (safe claims only, all quoted-verbatim-disclosed):**
-   - TPU 8i's answer to KV is **capacity, not distribution**: 384 MB on-chip SRAM sized
-     to the KV footprint of production reasoning models, "KV entirely on silicon".
-     [safe — disclosed]
+   - TPU 8i keeps the KV working set on silicon: 384 MB on-chip SRAM, "KV entirely on
+     silicon". Google's public material describes the KV strategy primarily in terms of
+     on-chip *capacity*; it does not specify a cross-die KV multicast mechanism.
+     [safe — disclosed; "capacity, not distribution" is our interpretation, not a
+     Google claim]
    - The CAE accelerates **collectives** (reduction/sync for sampling and chain-of-thought),
      not KV distribution. [safe — disclosed; the collective-vs-read-distribution
      distinction is our framing, not a Google claim]
@@ -380,7 +389,18 @@ the result to flip. Mark [MEASURED]/[MODELED]/[UNSAFE] as relevant.
    plane-separation result (burstiness starves control on a shared fabric) suggests the
    bridge as a new single-point contention site. The confounded multi-source runs that
    motivated `mcast_single` show the multi-stream regime is not trivially additive.
-2. **First-pass workload narrowness.** The motivating serving regime (long-context decode /
+   **[UPDATE 2026-08-13: multi-stream trace-derived replay in progress (seed
+   veritx-research-176e); the RTL was found to have a fork-copy XT collision under
+   contention (F1, fixed edec5c1) and a missing B→A reverse path (fix in progress) —
+   this threat item is being closed by the trace pipeline, not retired.]**
+2. **Single-flit multicast scope (F3).** The RTL fork replicates the head flit only
+   (router.sv:306 fires on `mcast && head`); body flits of a multi-flit mcast packet are
+   not replicated, while BookSim's fork delivers every flit to every copy destination.
+   All measured cells use `packet_size=1` (KV rows modeled as single-flit), so the
+   mechanism claims are scoped to single-flit multicast. Multi-flit KV row-multicast
+   (e.g., a 128-byte KV row as one flit vs several) is either a future extension or must
+   be declared out of scope. [MEASURED limitation, not a bug in the tested regime]
+3. **First-pass workload narrowness.** The motivating serving regime (long-context decode /
    footprint-miss / disaggregated prefill-decode) has not been traced end-to-end through
    the 2-die network. Traffic is synthetic KV row-multicast, not a Chakra-derived trace
    (PITFALLS §4: traffic must be derived, not invented, before the paper claims
