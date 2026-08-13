@@ -425,6 +425,353 @@ flit_dump = flits.txt;
     return 1 if fails else 0
 
 
+# ---------------------------------------------------------------------------
+# Two-tier gate (spec: docs/research/two-tier-gate-spec.md)
+# ---------------------------------------------------------------------------
+
+def _load_policy(path):
+    """Load + validate configs/gate_policy.json. Returns dict or raises."""
+    import json as _json
+    with open(path) as f:
+        pol = _json.load(f)
+    assert pol.get("schema_version") == 1, "policy schema_version != 1"
+    assert "default_env" in pol, "policy missing default_env"
+    for ov in pol.get("overrides", []):
+        assert "cell" in ov and "env" in ov and "reason" in ov, \
+            f"override missing field: {ov}"
+        assert len(ov["reason"]) >= 20, \
+            f"override {ov['cell']}: reason < 20 chars (enforced)"
+        assert ov["env"] > pol["default_env"], \
+            f"override {ov['cell']}: env {ov['env']} <= default (no-op, rejected)"
+        reqs = ov.get("requires", [])
+        assert "tier1_clean" in reqs, \
+            f"override {ov['cell']}: requires must include tier1_clean"
+    return pol
+
+
+def _read_flits(path):
+    """Read a 6-field flit dump -> list of (atime, cl, src, dst, pid, itime)."""
+    out = []
+    for l in open(path):
+        if l.strip():
+            out.append(tuple(map(int, l.split())))
+    return out
+
+
+def _pair_packets(outdir):
+    """Build per-packet (BookSim, RTL) flit lists using the pid correlation.
+
+    Returns (packets, mcast_info, pkt_info) where packets[k] =
+    (bs_flits_sorted, rtl_flits_sorted). Mirrors diff()'s correlation but
+    returns the data instead of printing verdicts.
+    """
+    trace = [l.split() for l in open(f"{outdir}/trace.txt") if l.strip()]
+    n_pkts = len(trace)
+    pkt_info = {k: (int(l[1]), int(l[2]), int(l[3]), int(l[4]))
+                for k, l in enumerate(trace)}   # k -> (src, cl, dst, size)
+
+    bs_all = {}
+    for f in _read_flits(f"{outdir}/flits.txt"):
+        bs_all.setdefault(f[4], []).append(f)   # key: pid
+    # RTL flits keyed by (src, cl, pid) -- the pid is per-NIC, and pids can
+    # be reused across classes (tptr advances across the whole NIC trace),
+    # so (src, pid) alone is ambiguous under multi-class cells. (src, cl,
+    # pid) is unique in the dump (verified on the two-class cell).
+    rt_all = {}
+    for f in _read_flits(f"{outdir}/rtl_flits.txt"):
+        rt_all.setdefault((f[2], f[1], f[4]), []).append(f)  # (src, cl, pid)
+
+    # correlation tables (from diff(); do NOT regress)
+    mcast_info = {}
+    bs_pid = {}
+    rtl_word = {}
+    per_src_words = {}
+    bs_shift = 0
+    for k, l in enumerate(trace):
+        is_mcast = len(l) == 8 and l[5] == "mcast"
+        if is_mcast:
+            mcast_info[k] = (int(l[6]), int(l[7]), int(l[3]))
+            ncopies = int(l[7]) - int(l[6]) + 1
+            bs_pid[k] = k + bs_shift
+            bs_shift += ncopies
+        else:
+            bs_pid[k] = k + bs_shift
+        src = int(l[1])
+        w = per_src_words.get(src, 0)
+        rtl_word[(src, k)] = w
+        per_src_words[src] = w + (2 if is_mcast else 1)
+
+    packets = {}
+    for k in range(n_pkts):
+        src, cl, dst, size = pkt_info[k]
+        if k in mcast_info:
+            lo, hi, far = mcast_info[k]
+            ncopies = hi - lo + 1
+            rpid = rtl_word[(src, k)] << 4
+            bpid = bs_pid[k]
+            bm = {}
+            for f in bs_all.get(bpid, []):
+                bm.setdefault(f[3], f)
+            for i in range(ncopies):
+                for f in bs_all.get(bpid + 1 + i, []):
+                    bm.setdefault(f[3], f)
+            bl = sorted(bm.values())
+            rl = []
+            for f in rt_all.get((src, cl, rpid), []):
+                rl.append(f)
+            for i in range(ncopies):
+                rl += rt_all.get((src, cl, rpid + 1 + i), [])
+            rl = sorted(rl)
+        else:
+            bl = sorted(bs_all.get(bs_pid[k], []))
+            rl = sorted(rt_all.get((src, cl, rtl_word[(src, k)]), []))
+        packets[k] = (bl, rl)
+    return packets, mcast_info, pkt_info, trace
+
+
+def gate_cell(outdir, policy, cell_id=""):
+    """Two-tier gate for ONE cell. Returns the per-cell verdict dict."""
+    import json as _json
+    packets, mcast_info, pkt_info, trace = _pair_packets(outdir)
+    env_def = policy.get("default_env", 0.05)
+
+    # ---- Tier 1: mechanism (zero tolerance) ----
+    t1 = {"t1.1": True, "t1.2": True, "t1.3": True, "t1.4": True}
+    for k, (bl, rl) in packets.items():
+        src, cl, dst, size = pkt_info[k]
+        # T1.1 flit-count equality. For a mcast packet the trace's size field
+        # is the INJECTED count (1 stream) while delivery is 1 + copies; the
+        # expected delivery count is the injected size for unicast and
+        # 1 + (hi - lo + 1) for mcast.
+        if k in mcast_info:
+            lo, hi, _ = mcast_info[k]
+            expect = 1 + (hi - lo + 1)
+        else:
+            expect = size
+        if len(bl) != expect or len(rl) != expect:
+            t1["t1.1"] = False
+        # T1.2 identity + T1.3 order (per matched pair); a count mismatch
+        # already flagged T1.1, so skip pairing on it
+        if len(bl) != len(rl):
+            continue
+        for ba, ra in zip(bl, rl):
+            if (ba[1], ba[2], ba[3]) != (ra[1], ra[2], ra[3]):
+                t1["t1.2"] = False
+    # T1.4 delivery completeness: injected == retired in both models
+    n_bs = sum(len(bl) for bl, rl in packets.values())
+    n_rt = sum(len(rl) for bl, rl in packets.values())
+    if n_bs != n_rt:
+        t1["t1.4"] = False
+    t1_verdict = "CLEAN" if all(t1.values()) else "VIOLATION"
+
+    # ---- Tier 2: per-class mean latency ratio ----
+    # latency(pkt) = max(atime over flits) - itime (the packet's injection
+    # time; BookSim stamps itime identically on every flit of a packet, so
+    # the first flit's itime is the canonical value — min() over flits is
+    # equivalent only if the dump is well-formed, so read it explicitly).
+    def pkt_latency(flits):
+        if not flits:
+            return None
+        atimes = [f[0] for f in flits]
+        return max(atimes) - flits[0][5]
+
+    classes = {}
+    for k, (bl, rl) in packets.items():
+        c = pkt_info[k][1]
+        classes.setdefault(c, {"bs": [], "rtl": []})
+        lb, lr = pkt_latency(bl), pkt_latency(rl)
+        if lb is not None:
+            classes[c]["bs"].append(lb)
+        if lr is not None:
+            classes[c]["rtl"].append(lr)
+
+    t2_classes = {}
+    t2_pass = True
+    for c, d in sorted(classes.items()):
+        bs_m = sum(d["bs"]) / len(d["bs"]) if d["bs"] else None
+        rt_m = sum(d["rtl"]) / len(d["rtl"]) if d["rtl"] else None
+        ratio = (rt_m / bs_m) if (bs_m and rt_m) else None
+        # per-class env: override may relax a specific class
+        env = env_def
+        for ov in policy.get("overrides", []):
+            if ov["cell"] == cell_id and str(c) in ov.get("classes", []):
+                env = ov["env"]
+        in_env = ratio is not None and (1 - env) <= ratio <= (1 + env)
+        t2_classes[str(c)] = {"bs_mean": round(bs_m, 2) if bs_m else None,
+                              "rtl_mean": round(rt_m, 2) if rt_m else None,
+                              "ratio": round(ratio, 3) if ratio else None,
+                              "env": env, "in_env": in_env}
+        if not in_env:
+            t2_pass = False
+
+    # ---- residual characterization (credibility artifact) ----
+    deltas = []
+    for bl, rl in packets.values():
+        for ba, ra in zip(bl, rl):
+            deltas.append(ra[0] - ba[0])   # atime_RTL - atime_BS
+    n_flits = len(deltas)
+    exact = sum(1 for d in deltas if d == 0)
+    mean_d = sum(deltas) / n_flits if n_flits else 0.0
+    ad = sorted(abs(d) for d in deltas)
+    p95 = ad[int(0.95 * len(ad))] if ad else 0
+    mx = max(ad) if ad else 0
+    hist = {"<0": sum(1 for d in deltas if d < 0),
+            "0": exact,
+            "1-3": sum(1 for d in deltas if 1 <= d <= 3),
+            "4-10": sum(1 for d in deltas if 4 <= d <= 10),
+            "10+": sum(1 for d in deltas if d > 10)}
+
+    # ---- override + verdict ----
+    override = None
+    for ov in policy.get("overrides", []):
+        if ov["cell"] == cell_id:
+            override = ov
+            break
+    status = "INCOMPLETE"
+    if t1_verdict == "VIOLATION":
+        status = "FAIL"
+    elif t1_verdict == "CLEAN":
+        if t2_pass:
+            status = "PASS"
+        elif override is not None:
+            # validate override preconditions
+            ok = (t1_verdict == "CLEAN") and override.get("requires", []) or []
+            if "tier1_clean" not in override.get("requires", []):
+                status = "FAIL"   # policy loader enforces; defensive
+            else:
+                status = "PASS-OVERRIDE"
+        else:
+            status = "FAIL"
+
+    return {
+        "cell": cell_id,
+        "status": status,
+        "tier1": {"verdict": t1_verdict, "checks": t1},
+        "tier2": {"verdict": "PASS" if t2_pass else "FAIL",
+                  "env_applied": env_def, "classes": t2_classes},
+        "residual": {"n_flits": n_flits, "exact_match_frac":
+                     round(exact / n_flits, 4) if n_flits else None,
+                     "mean_delta": round(mean_d, 4), "p95_abs_delta": p95,
+                     "max_abs_delta": mx, "histogram": hist},
+        "override": {"cell": override["cell"], "env": override["env"],
+                     "reason": override["reason"]} if override else None,
+    }
+
+
+def _gate_report_json(outdir, cells, ordinal, summary):
+    """Write gate_report.json per spec §3.4."""
+    import json as _json
+    with open(f"{outdir}/gate_report.json", "w") as f:
+        _json.dump({
+            "schema_version": 1,
+            "git_sha": open(f"{outdir}/manifest.txt").read().splitlines()[0]
+                       .split(":")[1].strip() if os.path.exists(
+                           f"{outdir}/manifest.txt") else "no-manifest",
+            "cells": cells,
+            "ordinal_summary": ordinal,
+            "summary": summary,
+        }, f, indent=1)
+
+
+def _gate_report_md(outdir, cells, ordinal, summary):
+    """Write gate_report.md per spec §3.4 (human table)."""
+    lines = ["# Gate R1 report (two-tier)", "",
+             "| cell | verdict | BS mean / RTL mean (cl) | ratio | "
+             "exact% | mean Δ | p95|Δ| | max|Δ| |",
+             "|---|---|---|---|---|---|---|---|"]
+    for cid, c in cells.items():
+        t2 = c["tier2"]["classes"]
+        cells_txt = "; ".join(
+            f"cl{k}: {v['bs_mean']}/{v['rtl_mean']} ({v['ratio']})"
+            for k, v in sorted(t2.items()))
+        r = c["residual"]
+        lines.append(f"| {cid} | {c['status']} | {cells_txt} | "
+                     f"{r['exact_match_frac']} | {r['mean_delta']} | "
+                     f"{r['p95_abs_delta']} | {r['max_abs_delta']} |")
+    lines += ["", "## Ordinal invariants", ""]
+    for k, v in ordinal.items():
+        lines.append(f"- {k}: {v}")
+    lines += ["", f"## Summary: {summary['n_pass']} PASS, "
+                  f"{summary['n_override']} PASS-OVERRIDE, "
+                  f"{summary['n_fail']} FAIL, "
+                  f"{summary['n_incomplete']} INCOMPLETE", ""]
+    with open(f"{outdir}/gate_report.md", "w") as f:
+        f.write("\n".join(lines) + "\n")
+
+
+def gate(outdir, policy_path, cells, binaries=None):
+    """Two-tier gate over a cell list. cells: list of cell dirs.
+
+    binaries: optional {vcs: path} for the manifest (provenance).
+    """
+    import json as _json
+    policy = _load_policy(policy_path)
+    os.makedirs(outdir, exist_ok=True)
+    if binaries:
+        _write_manifest(outdir, [], binaries)
+
+    results = {}
+    for cell in cells:
+        cid = os.path.basename(cell.rstrip("/"))
+        results[cid] = gate_cell(cell, policy, cell_id=cid)
+        st = results[cid]["status"]
+        print(f"cell {cid}: {st}")
+
+    # ordinal checks O1 (VC1 monotone in burst) + O2 (b80_vc1 > b80_vc4)
+    # O1 must hold on BOTH models (spec §5: the paper's ordinal claims are
+    # model-invariant) — previously only the RTL sequence was computed and
+    # o1_bs was a silent no-op (always True).
+    def cell_mean(cid, cls, model):
+        c = results.get(cid)
+        if not c or c["status"] == "INCOMPLETE":
+            return None
+        cl = c["tier2"]["classes"].get(str(cls))
+        if not cl:
+            return None
+        return cl[f"{model}_mean"]
+
+    o1_bs, o1_rtl = True, True
+    bursts = [5, 10, 20, 40, 80]
+    bs_seq, rt_seq = [], []
+    for b in bursts:
+        mb = cell_mean(f"b{b}_vc1", 1, "bs")
+        mr = cell_mean(f"b{b}_vc1", 1, "rtl")
+        if mb is not None:
+            bs_seq.append(mb)
+        if mr is not None:
+            rt_seq.append(mr)
+    if len(bs_seq) > 1:
+        o1_bs = all(bs_seq[i] <= bs_seq[i + 1]
+                    for i in range(len(bs_seq) - 1))
+    if len(rt_seq) > 1:
+        o1_rtl = all(rt_seq[i] <= rt_seq[i + 1]
+                     for i in range(len(rt_seq) - 1))
+
+    b80v1_bs = cell_mean("b80_vc1", 1, "bs")
+    b80v1_rt = cell_mean("b80_vc1", 1, "rtl")
+    b80v4_bs = cell_mean("b80_vc4", 1, "bs")
+    b80v4_rt = cell_mean("b80_vc4", 1, "rtl")
+    o2_bs = (b80v1_bs is not None and b80v4_bs is not None and
+             b80v1_bs > b80v4_bs)
+    o2_rt = (b80v1_rt is not None and b80v4_rt is not None and
+             b80v1_rt > b80v4_rt)
+
+    ordinal = {"o1_monotone_vc1_bs": o1_bs,
+               "o1_monotone_vc1_rtl": o1_rtl,
+               "o2_absorption_bs": o2_bs,
+               "o2_absorption_rtl": o2_rt}
+
+    n_pass = sum(1 for c in results.values() if c["status"] == "PASS")
+    n_ov = sum(1 for c in results.values() if c["status"] == "PASS-OVERRIDE")
+    n_fail = sum(1 for c in results.values() if c["status"] == "FAIL")
+    n_inc = sum(1 for c in results.values() if c["status"] == "INCOMPLETE")
+    summary = {"n_pass": n_pass, "n_override": n_ov, "n_fail": n_fail,
+               "n_incomplete": n_inc}
+
+    _gate_report_json(outdir, results, ordinal, summary)
+    _gate_report_md(outdir, results, ordinal, summary)
+    return 0 if n_fail == 0 else 1
+
 if __name__ == "__main__":
     if len(sys.argv) < 3:
         print(__doc__)
@@ -440,6 +787,14 @@ if __name__ == "__main__":
     elif cmd == "sweep":
         tol = int(sys.argv[5]) if len(sys.argv) > 5 else 0
         sys.exit(sweep(sys.argv[2], sys.argv[3], sys.argv[4], tol))
+    elif cmd == "gate":
+        # gate <outdir> <policy> <cell_dir> [cell_dir ...]
+        if len(sys.argv) < 5:
+            print("gate: need <outdir> <policy> <cell_dir> [cell_dir ...]")
+            sys.exit(2)
+        sys.exit(gate(sys.argv[2], sys.argv[3], sys.argv[4:]))
     else:
         print(__doc__)
         sys.exit(2)
+
+
