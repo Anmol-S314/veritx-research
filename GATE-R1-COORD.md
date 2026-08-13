@@ -258,3 +258,34 @@ die) on `vbuild_2die` (in /var/tmp/opencode/trace_rtl_cell):
 
 Repro: /var/tmp/opencode/trace_rtl_cell (trace_*.mat + hex + Vnoc_tb + logs).
 Epic veritx-research-e77a; seeds filed by Dave.
+
+## 7c. MULTI-STREAM BRIDGE DEADLOCK — CONFIRMED with clean cell (Dave, 2026-08-13 ~23:10)
+
+Laura was right: the earlier 3.3%/168-flit numbers were a misconfigured-cell
+artifact (zero-row self-sends via matrixtraffic.cpp `dest()` → src==dst,
+124/128 sources idle-sending; the "loss" was 100% of the REAL cross-die
+packets, hidden in self-send delivery).
+
+CLEAN cell now: cell_full.cfg + trace_matrix_full_abba.mat (every row
+nonzero, 0 self-sends, 3429 pkts: 1659 A→B + 1770 B→A, num_vcs=1/classes=2,
+post-B→A-fix binary vbuild_2die_fix): **injected=2927, ejected=40 (~1.4%)**.
+A→B-only-dominant matrix identical result. X-first B→A (my 7b fix) does NOT
+resolve it; deadlock is load-induced, not direction-induced.
+
+Diagnosis: die-B local routing is Y-first (deliberate — matches BookSim
+off-axis placement path, gate-verified), die A is X-first. Mixed turn
+ordering + ONE bridge link + VCS=2 = cyclic dependency under multi-stream
+load. BookSim is immune (min routing, num_vcs=4 in cfg). Single-stream gate
+cells never had two packets in flight -> never exposed it.
+
+Suggested fixes for Laura's lane (R1):
+  1. Raise VCS to match cfg num_vcs=4 (VCS=8 with 2 classes) — escape VC may
+     break the cycle without touching turn order. CHEAPEST first test.
+  2. If that fails: make die-B local routing X-first too (breaks off-axis
+     placement-law trace matching — must re-gate off-axis cells).
+  3. Bridge per-direction VC isolation (bridge already has separate credit
+     loops; give it a dedicated VC).
+
+Repro: /var/tmp/opencode/trace_rtl_cell/{cell_full.cfg, trace_matrix_full_abba.mat,
+trace_n*.hex, vbuild_2die_fix/Vnoc_tb, build_fix2.log}. Seeds: 9c45 (flit loss),
+2e12 (B→A path — my fix stays, it's correct and needed). New seed for deadlock.
