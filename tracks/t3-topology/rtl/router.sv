@@ -565,6 +565,7 @@ module noc_router #(
           do_write = flit_in[i].valid && (wr_vc[i] == v);
           do_pop   = sa_pop[i][v];
 `ifdef R1_MODE
+`ifndef R1_DEBUG
           if (X == 2 && Y == 6 && (do_write || do_pop))
             $display("R62 t=%0d %s p%d i%d v%d h=%b t=%b d=%0d o=%0d st=%0d",
                      tick_r, do_write ? "W" : "P", flit_in[i].flit.pid, i, v,
@@ -872,6 +873,7 @@ module noc_router #(
                        st[1][0], occ[1][0], st[4][0], occ[4][0]);
           end
 `endif
+`endif
 
           // buffer occupancy: write and pop may collide
           if (do_write && do_pop)       occ[i][v] <= occ[i][v];
@@ -952,6 +954,7 @@ module noc_router #(
     end
 
 `ifdef R1_MODE
+`ifndef R1_DEBUG
     // cycle-by-cycle freeze-window trace: full VC state + the gates that move it
     if (X == 7 && Y == 7 && tick_r >= 65600 && tick_r <= 65860)
       for (int p = 0; p < NUM_PORTS; p++) begin
@@ -975,6 +978,7 @@ module noc_router #(
                      front[p][v].pid, front[p][v].dst, credit_free[4][0]);
         end
       end
+`endif
 `endif
   end
 
