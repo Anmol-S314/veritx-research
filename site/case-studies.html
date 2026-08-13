@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Case studies — VeritX</title>
+<meta name="description" content="VeritX measured case studies: the honest 5.4x multicast result, burstiness-vs-bandwidth plane separation, and deadlock-claim validation.">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header>
+  <div class="container">
+    <a class="brand" href="index.html">
+      <span class="name">VeritX</span>
+      <span class="tag">interconnect credibility</span>
+    </a>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="services.html">Services</a>
+      <a href="case-studies.html">Case studies</a>
+      <a href="methodology.html">Methodology</a>
+      <a href="contact.html">Contact</a>
+    </nav>
+  </div>
+</header>
+
+<section>
+  <div class="container">
+    <div class="kicker">The proof</div>
+    <h1>Case studies &mdash; measured, not asserted.</h1>
+    <p>Every case study here is reproducible from a committed toolchain: seeded experiments that run bit-identically, known-answer gates with exact answers, and results that were wrong before they were right. Client versions ship redacted; these public ones are our own pipeline.</p>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <h2>1. The honest 5.4&times;</h2>
+    <p>A KV-multicast architecture claimed a 5.4&times; throughput win. On the surface it was right. Under the discipline of derating, it became <em>honest</em>:</p>
+    <ul>
+      <li>269 tok/s &rarr; <strong>244 tok/s</strong> once DRAM efficiency was measured instead of assumed (a starved row buffer was caught by a known-answer gate before it confirmed a lie with a lie).</li>
+      <li>The 5.4&times; survives &mdash; but only at its correct operating point. Longer contexts must shard KV across dies, and that is a fabric question with its own measured crossover (the "keep KV off the fabric" law).</li>
+      <li><strong>Lesson for clients:</strong> the headline wasn't false; it was unqualified. Finding the envelope of a true claim is most of an audit.</li>
+    </ul>
+    <div class="note">
+      <p><strong>Known-answer gate:</strong> a memory-access law with an exact answer, <code>g&minus;1 = 7</code>, pinned before measurement &mdash; then reproduced. The same gate caught a bug in our own multicast patch, twice. This is the standard we hold every re-measured number to.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <h2>2. Burstiness, not bandwidth, starves control</h2>
+    <p>An 8&times;8 mesh carrying two traffic classes: DMA bursts to 8 diagonal NICs (class 0) and 1-flit control packets (class 1). Every cell below moves the <em>same</em> DMA flit load &mdash; 0.08 flits/cycle/node across 64 nodes &mdash; only the burst length changes.</p>
+    <table>
+      <thead>
+        <tr><th>DMA burst (flits) @ rate</th><th class="num">1 VC</th><th class="num">2 VCs</th><th class="num">4 VCs</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>5 @ 0.016</td><td class="num">45.1</td><td class="num">34.8</td><td class="num">34.5</td></tr>
+        <tr><td>10 @ 0.008</td><td class="num">55.5</td><td class="num">36.7</td><td class="num">34.7</td></tr>
+        <tr><td>20 @ 0.004</td><td class="num">70.1</td><td class="num">37.6</td><td class="num">34.7</td></tr>
+        <tr><td>40 @ 0.002</td><td class="num">100.2</td><td class="num">45.9</td><td class="num">38.5</td></tr>
+        <tr><td>80 @ 0.001</td><td class="num bad">221.6</td><td class="num warn">63.3</td><td class="num good">41.3</td></tr>
+      </tbody>
+      <caption>Control latency in cycles. Isolated control plane: 33.2 flat. 1 VC: 1.36&times; &rarr; 6.68&times; vs the plane as bursts grow. 4 VCs: 1.24&times; worst-case &mdash; VCs segregate the classes.</caption>
+    </table>
+    <p><strong>Doubling DMA bandwidth is harmless; doubling DMA burst length quintuples control starvation.</strong> A 1-flit control packet waits for the whole burst to drain the shared VC. The fix is not a fancier topology &mdash; it's plane separation: virtual-channel planes (or express lanes: cmesh k=4 c=4, vc=4, express ON 23.1&rarr;35.8 cyc vs OFF 26.3&rarr;67.4 cyc, never worse at any cell). Only a physically separate plane is flat by construction.</p>
+    <div class="note">
+      <p><strong>Why this is an audit case study:</strong> the claim being checked was "topology matters at the periphery." Half-true &mdash; the word that was wrong was <em>topology</em>. What actually matters is plane count, boundary bandwidth, and protocol handling at the edge. The shape verdict survives contact with a peripheral-rich chip, and the lever moved from "which fabric" to "how the traffic classes meet the fabric." That kind of correction is what an audit is for.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <h2>3. Validating a deadlock-freedom claim</h2>
+    <p>Deadlock-freedom proofs are a special case of the same problem: a claim that must survive an adversary, not a workload. Our worked audit takes a deadlock-freedom claim (textbook and practical), runs it through the gate discipline &mdash; topology-routing deadlock vs protocol-level deadlock, injection as a stress axis, formal model-checking (CBMC/SymbiYosys) as a cross-check rather than a stamp &mdash; and publishes the method as a template.</p>
+    <p><strong>What clients take away:</strong> a repeatable procedure for checking a freedom claim, plus the distinction between what a proof establishes and what it doesn't. The template is public; the client's claim stays redacted.</p>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <h2>4. The methodology behind all of it</h2>
+    <p>The case studies above came out of the same discipline: 19 documented ways interconnect models lied to us, a 30-point audit checklist, known-answer gates, silicon anchors, and pre-committed gates (0&ndash;4) that decide pass/fail before the experiment runs.</p>
+    <p><a href="methodology.html">Read the methodology &rarr;</a></p>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <p><strong>VeritX &mdash; Interconnect Credibility Services.</strong></p>
+    <p>All numbers above are reproducible from committed, seeded experiments in a Docker/CI toolchain. Client work ships redacted and senior-signed.</p>
+    <p><a href="contact.html">Request the data or an audit</a></p>
+  </div>
+</footer>
+
+</body>
+</html>
