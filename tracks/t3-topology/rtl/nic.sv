@@ -306,24 +306,6 @@ module noc_nic #(
         else
           free[v] <= free[v] + delta;
       end
-`ifdef R1_MODE
-`ifndef R1_DEBUG
-      if (X == 2 && Y == 6 && (free[1] != 8 || tick_r < 60))
-        $display("NIC50 t=%0d f0=%0d f1=%0d inj=%b cre=%b crvc=%0d serve=%0d rem=%0d p0vc=%0d pend=%b",
-                 tick_r, free[0], free[1], inject_valid, inject_credit.valid,
-                 inject_credit.vc, serve, pkt[serve].remaining,
-                 pkt[0].vc, pkt[0].pending);
-      if (X == 4 && Y == 2 && tick_r >= 65540 && tick_r < 65600 && inject_valid)
-        $display("NIC34 t=%0d vc=%0d p%d d%d h%b t%b rem=%0d f0=%0d",
-                 tick_r, inject_vc, inject_flit.pid, inject_flit.dst,
-                 inject_flit.head, inject_flit.tail, pkt[serve].remaining, free[0]);
-      if (X == 3 && Y == 6 && tick_r >= 74350 && tick_r < 74500)
-        $display("NIC51 t=%0d f0=%0d inj=%b serve=%0d rem=%0d pend=%b inu=%b freeW=%0d",
-                 tick_r, free[0], inject_valid, serve, pkt[serve].remaining,
-                 pkt[1].pending, in_use[0], free[0]);
-`endif
-`endif
-
       // ejection
       if (eject.valid) begin
         ejc_cnt <= ejc_cnt + 1;
