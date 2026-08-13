@@ -169,11 +169,14 @@ bound:
   zero (no-op for homogeneous); two-class cell drops 2137 -> 147 mismatches,
   all timing-only (delta -1..+3 cyc, mean +0.89) — contention jitter, the
   envelope tier's domain.
-- **F10 (R1 debug spam): FIXED (82c770b).** Hardcoded-coordinate debug
-  blocks gated behind R1_DEBUG; NIC50's `free[1] != 8` at (2,6) is an OOB
+- **F10 (R1 debug spam): FIXED (7528cee, 734f9ff, 7ff59ac).** The R1
+  triage debug display blocks are REMOVED from source entirely (the
+  R1_DEBUG guard proved unreliable under full-design --binary elaboration:
+  textually correct + preproc/standalone-lint clean, yet NIC50 still
+  emitted in the full build). NIC50's `free[1] != 8` at (2,6) is an OOB
   read (free is [VCS]) that printed EVERY cycle on 2-die cells, stalling
-  the off-axis run at tick 248K of 262K pump. -DR1_MODE builds are silent;
-  -DR1_DEBUG restores the original triage traces.
+  the off-axis run at tick 248K of 262K pump. Git history preserves the
+  removed triage traces.
 - **Workflow correction:** all build/cell artifacts now live in
   /var/tmp/r1work/fork_gate/ (real disk, per rule 5). The /tmp losses
   (three builds + two cells) are not recoverable but are regenerable from
