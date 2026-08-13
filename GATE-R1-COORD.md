@@ -185,3 +185,52 @@ bound:
 - **BookSim change:** mcast stream generation gated to class 0 only
   (trafficmanager.cpp `_IssuePacket` + `_GeneratePacket`, `cl == 0`) —
   COMMITTED (4f951e1) with the T_DEPTH 2048 BRAM + ta width fixes.
+
+### 8. HANDOFF — FOR THE JUNIOR (2026-08-13 evening, written by senior)
+
+**Environment rules (non-negotiable):**
+- RAM: 14 GB box, ~5 GB available with browser open. ONE build at a time.
+- ALL builds/cells/artifacts live under /var/tmp/r1work/fork_gate/ (real disk).
+  NEVER /tmp — it is a RAM-backed tmpfs that gets wiped (lost 3 builds + 2 cells already).
+- Launch builds/runs via `tmux new-session -d -s <name> "<command>"` — survives shell
+  cleanup. Do NOT background with `& disown` in the shell tool; it gets killed.
+- pgrep self-match trap: `pgrep -f "Vnoc_tb"` matches your own command line. Use
+  `pgrep -x Vnoc_tb` or check files.
+- RTL edits: COMMIT FIRST (rule 3), then verify. Uncommitted tree = results void
+  (manifest rule 2).
+
+**Verified state (all committed, artifact-backed — DO NOT re-verify):**
+- Placement cells on fully-clean tree (commits 7528cee..dbff766, debug-free):
+  - on-axis (BRIDGE_ROW=0, b_2die_on binary): 154/154 ZERO mismatches, first copy T52
+  - off-axis (BRIDGE_ROW=7, b_2die_off binary): 154/154 ZERO mismatches, first copy
+    T87, penalty = +35 cyc = 7 hops × 5 (paper §4c claim)
+  - Cells: /var/tmp/r1work/fork_gate/cells/gf_bridge_{on,off}/, binaries in
+    /var/tmp/r1work/fork_gate/builds/
+- g=8 single-die fork gate: 154/154 ZERO (b_1die binary).
+- Two-class cell (mixed unicast+mcast): F2 deadlock FIXED (completion criterion:
+  928 injected, 2824 ejected exact). Diff now shows 147 timing-only mismatches
+  (delta −1..+3 cyc) = contention jitter, envelope-tier domain.
+- Two-tier gate spec: docs/research/two-tier-gate-spec.md (the implementation spec).
+- F2 deterministic mini-cell design: docs/research/f2-mini-cell-design.md.
+
+**Your tasks (in order):**
+1. **Implement the `gate` subcommand in tracks/t3-topology/scripts/rtl_r1.py**
+   per docs/research/two-tier-gate-spec.md:
+   - Tier 1 (mechanism, ZERO tolerance): per-packet flit counts, identity (cl,src,dst),
+     per-(src,cl) order, delivery completeness. Any violation = cell FAIL.
+   - Tier 2 (timing envelope, KPI space): per-class mean latency ratio RTL/BookSim
+     in [1−env, 1+env], default env=0.05. Residual stats (mean Δatime, p95|Δ|,
+     max|Δ|, % exact).
+   - Policy file configs/gate_policy.json: b5_vc1 override (env 0.25, reason string,
+     from spec §5d evidence: bs 44.1 / rtl 34.9 / ratio 0.79).
+   - `sweep --gate` mode + ordinal invariant checks (VC1 monotone in burst,
+     VC absorption) + JSON + Markdown report with manifest provenance.
+   - Reuse the existing diff() pid correlation (fa99a9b — do NOT regress it).
+2. Do NOT touch the RTL (router.sv/nic.sv/noc_2die.sv are final for this round).
+3. Do NOT re-run placement cells — they are verified. If you need a regression
+   cell, use gf_8 (g8 single-die) — quick.
+4. Report back: gate subcommand + results on 15-cell corpus + 2-die cells.
+
+**Paper context (why this matters):** the paper claims "99.85% per-flit agreement
+with characterized bounded residuals" — NOT "cycle-exact". The two-tier gate is the
+credibility artifact. The 0/0 gate was re-scoped (section 7); do not chase 0/0.
