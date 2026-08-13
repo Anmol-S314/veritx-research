@@ -48,3 +48,12 @@ docs/VM-SETUP.md
 
 # Contains plaintext infra credentials — keep local, never commit
 docs/VM-SETUP.md
+
+# Vendored toolchains kept OUT of the monorepo (provenance in docs/FINDINGS)
+third_party/pytorchsim/
+
+# One-off RTL debugging probes — provenance lives in commits + RTL-ARC.md
+r1_*.sh
+watch.log
+rtl_flits*.txt
+third_party/booksim2/src/watch.log
