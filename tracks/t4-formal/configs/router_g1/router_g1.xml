@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+<testsuite timestamp="2026-08-11T08:43:41" hostname="datavex-ASUS-TUF-Gaming-A15-FA506NCG-FA506NCG" package="router_g1" id="0" name="default" tests="1" errors="1" failures="0" time="0" skipped="0">
+<properties>
+<property name="os" value="Linux"/>
+<property name="expect" value="PASS"/>
+<property name="status" value="ERROR"/>
+</properties>
+<testcase classname="default" name="default" time="0">
+<error type="ERROR"/>
+</testcase>
+<system-out>SBY  8:43:41 [tracks/t4-formal/configs/router_g1] Removing directory '/home/datavex/veritx-research/tracks/t4-formal/configs/router_g1'.
+SBY  8:43:41 [tracks/t4-formal/configs/router_g1] Copy '/home/datavex/veritx-research/tracks/t3-topology/rtl/noc_pkg.sv' to '/home/datavex/veritx-research/tracks/t4-formal/configs/router_g1/src/noc_pkg.sv'.
+SBY  8:43:41 [tracks/t4-formal/configs/router_g1] Copy '/home/datavex/veritx-research/tracks/t3-topology/rtl/islip.sv' to '/home/datavex/veritx-research/tracks/t4-formal/configs/router_g1/src/islip.sv'.
+SBY  8:43:41 [tracks/t4-formal/configs/router_g1] Copy '/home/datavex/veritx-research/tracks/t3-topology/rtl/router.sv' to '/home/datavex/veritx-research/tracks/t4-formal/configs/router_g1/src/router.sv'.
+SBY  8:43:41 [tracks/t4-formal/configs/router_g1] Copy '/home/datavex/veritx-research/tracks/t4-formal/rtl/router_g1_formal.sv' to '/home/datavex/veritx-research/tracks/t4-formal/configs/router_g1/src/router_g1_formal.sv'.
+SBY  8:43:41 [tracks/t4-formal/configs/router_g1] engine_0: smtbmc z3
+SBY  8:43:41 [tracks/t4-formal/configs/router_g1] base: starting process &quot;cd tracks/t4-formal/configs/router_g1/src; yosys -ql ../model/design.log ../model/design.ys&quot;
+SBY  8:43:41 [tracks/t4-formal/configs/router_g1] base: islip.sv:45: ERROR: syntax error, unexpected TOK_ID
+SBY  8:43:41 [tracks/t4-formal/configs/router_g1] base: finished (returncode=1)
+SBY  8:43:41 [tracks/t4-formal/configs/router_g1] base: task failed. ERROR.
+SBY  8:43:41 [tracks/t4-formal/configs/router_g1] summary: Elapsed clock time [H:MM:SS (secs)]: 0:00:00 (0)
+SBY  8:43:41 [tracks/t4-formal/configs/router_g1] summary: Elapsed process time [H:MM:SS (secs)]: 0:00:00 (0)
+SBY  8:43:41 [tracks/t4-formal/configs/router_g1] summary: engine_0 (smtbmc z3) did not return a status
+SBY  8:43:41 [tracks/t4-formal/configs/router_g1] summary: engine_0 did not produce any traces
+SBY  8:43:41 [tracks/t4-formal/configs/router_g1] DONE (ERROR, rc=16)
+</system-out>
+<system-err>
+</system-err>
+</testsuite>
+</testsuites>
