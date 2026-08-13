@@ -216,14 +216,12 @@ fixes this.
 
 ## What is still soft
 
-- **TPUv3 is a 2018 chip, and it is the only one we can test.** PyTorchSim ships
-  BookSim only on the v3 config; v4 uses `simple_noc` (no topology). TPUv7 does not
-  exist in the tool at all. The whole result is one point in a design space whose
-  most important axis — bytes/FLOP — has moved by an order of magnitude since v3.
-  **A TPUv4-with-BookSim config is a ~5-line change and is the highest-value next
-  experiment.** v4 doubles systolic arrays per core (2→4) and raises DRAM clock
-  28%, i.e. *more* compute per byte, i.e. *more* NoC pressure — which should push
-  the fat-tree further ahead. Untested.
+- **TPUv3 is a 2018 chip.** PyTorchSim ships BookSim only on the v3 config; v4 uses
+  `simple_noc` (no topology). TPUv7 does not exist in the tool at all. The whole
+  result is one point in a design space whose most important axis — bytes/FLOP — has
+  moved by an order of magnitude since v3. **RESOLVED (2026-08-12):** we built the
+  TPUv4-with-BookSim config (the "~5-line change") and ran the 2×2 matrix — see
+  "TPUv4 extension" below. The verdict does not flip.
 - **The wire constant is uncalibrated.** Currently inert (§2), so this is not
   load-bearing — but it becomes load-bearing the moment the router/wire energy
   ratios stop coinciding, e.g. at a different radix or die size.
@@ -235,6 +233,31 @@ fixes this.
 - **Hops are modeled, not BookSim-measured.** BookSim tracks `_hop_stats`
   internally; TOGSim never prints them.
 - **Simulation only, no silicon.**
+
+## TPUv4 extension (2026-08-12, the "What is still soft" follow-up)
+
+We built the TPUv4-with-BookSim configs (both c1 and c2 variants) and ran the
+prefill 2×2: hardware {v3, v4} × topology {mesh, fat-tree}, one BERT-base encoder
+block, batch 1, **seq 128** (first pass; the comparison is the point). All runs on
+the c2 config (2 cores, 32 DRAM channels) — the c1+mesh combination crashes the
+simulator deterministically (bisected; c1 × non-fly topologies die silently in
+TOGSim, see `results/bisect_*.log`). Logs: `results/{c2v3mesh,c2v4mesh,ft_v3,
+ft_v4}.log`. Toolchain: PyTorchSim @ `509f4255` (PSAL-POSTECH, 2026-05-11) —
+vendored locally under `third_party/pytorchsim/`, gitignored (see .gitignore).
+
+| hardware | mesh cycles | fat-tree cycles | fat-tree speedup |
+|---|---|---|---|
+| v3 | 308,176 | 161,246 | 1.91× |
+| v4 | 290,309 | 147,836 | **1.96×** |
+
+- v4 does not flip the verdict: fat-tree speedup grows 1.91× → 1.96× (2.5%), well
+  inside the model's own 1.37× error bar. Prefill EDP: 1.65/1.91 = 0.86× (v3) vs
+  1.65/1.96 = 0.84× (v4) — both below 1, margin moves by ~2 points.
+- The FINDINGS v3 sweep's 1.80× speedup (seq 512) reproduces as 1.91× at seq 128 —
+  same regime, slightly higher with the smaller footprint.
+- **Caveat:** these are seq-128 numbers. The FINDINGS table is seq 512. A seq-512
+  v4 rerun is the remaining gap before citing v4 numbers in a paper (the paper
+  skeleton flags this as an open threat).
 
 ## What this is not
 
