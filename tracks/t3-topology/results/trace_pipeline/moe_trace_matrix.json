@@ -1,0 +1,22 @@
+{
+  "source": "LLMServingSim per-batch traces",
+  "num_traces": 1178,
+  "num_dies": 2,
+  "total_bytes": 24198881280,
+  "bytes_per_pair": {
+    "0->1": 12099440640,
+    "0->0": 0,
+    "1->0": 12099440640,
+    "1->1": 0
+  },
+  "matrix": [
+    [
+      0.0,
+      1.0
+    ],
+    [
+      1.0,
+      0.0
+    ]
+  ]
+}
