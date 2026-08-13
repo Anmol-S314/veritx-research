@@ -239,3 +239,22 @@ bound:
 **Paper context (why this matters):** the paper claims "99.85% per-flit agreement
 with characterized bounded residuals" — NOT "cycle-exact". The two-tier gate is the
 credibility artifact. The 0/0 gate was re-scoped (section 7); do not chase 0/0.
+
+## 7b. TRACE-DERIVED RTL FINDING (Dave 2026-08-13, epic e77a)
+
+**RTL flit loss under multi-stream A→B load.** Replay of trace-derived traffic
+(BookSim matrix → hex → noc_tb TWO_DIE, BRIDGE_COL=3 ROW=0, VCS=2, 8×8 per
+die) on `vbuild_2die` (in /var/tmp/opencode/trace_rtl_cell):
+
+- 4 die-A sources → 4 die-B dsts (rate 0.005): injected=5038, ejected=4870
+  (168 lost, 3.3%), drain check FAILs.
+- 64 die-A sources → die B (full trace matrix): injected=3984, ejected=2257
+  (43% lost).
+- The passing gate cell was SINGLE-STREAM (`mcast_single=1`); this is the
+  first multi-stream bridge replay. Hypo: bridge credit return (br_c1/b) or
+  die-B route2d tail — needs your eyes.
+- ALSO: route2d on die B has NO dst<0x40 case (B→A reverse bridge path
+  unrouted). Symmetric traces die in the network. Directional A→B works.
+
+Repro: /var/tmp/opencode/trace_rtl_cell (trace_*.mat + hex + Vnoc_tb + logs).
+Epic veritx-research-e77a; seeds filed by Dave.
