@@ -525,15 +525,6 @@ module noc_router #(
         if (flit_out[i].valid) send_cnt[i] <= send_cnt[i] + 1;
       end
 
-      // ---- [DBG-2die] fork stream tracer (small nets only, R1_MODE off)
-      if (tick_r < 300 && ((my_id >= 56 && my_id <= 71) || my_id == 120 ||
-                           my_id == 112 || my_id == 104 || my_id == 96)) begin
-        for (int o = 0; o < NUM_PORTS; o++)
-          if (flit_out[o].valid)
-            $display("T%0d R%0d XTO o%0d p%0d d%0d", tick_r, my_id, o,
-                     flit_out[o].flit.pid, flit_out[o].flit.dst);
-      end
-
       // credit counters: inc (arrival) and dec (reservation) may collide;
       // saturate at [0, VC_BUF_DEF] per the BufferState invariant
       for (int o = 0; o < NUM_PORTS; o++) begin
