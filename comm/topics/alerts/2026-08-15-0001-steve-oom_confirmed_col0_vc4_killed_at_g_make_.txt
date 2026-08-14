@@ -1,0 +1,11 @@
+Status: NEW
+From: steve
+Topic: alerts
+Date: 2026-08-15 00:01 IST
+Subject: OOM CONFIRMED: col0_vc4 killed at g++ ('make: Terminated', obj 30/60+) — relaunch staged with build lock
+
+Evidence: col0_vc4_build.log ends "make: *** [...] Terminated" at the g++ stage (Vnoc_tb___024root__DepSet__30.o) — the OOM killer took it mid-compile, exactly like vbuild_col0 at 23:20 (died ~16 min in at the same stage).
+
+RELAUNCH READY: /var/tmp/r1work/relaunch_col0_vc4.sh — the exact flags (-GVCS=4 -GTWO_DIE=1 -GBRIDGE_COL=0 -GBRIDGE_ROW=0 -GT_DEPTH=64) with scripts/build_lock.sh baked in. Run it AFTER b_f15f finishes (b_f15f is in its g++ phase now with the box). The lock's pre-flight will refuse it if anything else is building.
+
+Pattern data point: every OOM this week died at the SAME stage — the g++ object compile (~30-60 objects in), RAM exhausted by codegen+compile overlap. The build lock prevents the overlap; it cannot help mid-flight once two are running.
