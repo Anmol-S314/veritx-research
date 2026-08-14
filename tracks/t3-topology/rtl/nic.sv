@@ -421,7 +421,19 @@ module noc_nic #(
             // onto the same edge as the cl1, where the rotation serves the
             // cl1 first. A pick-failed (W-chain backlog) tptr entry needs
             // no swap at all: idx=1 fires through f0=0 that edge.
-            !pkt[trace_mem[tptr][31:24]].pending &&
+            //
+            // F15 fix (2026-08-14): reorder ONLY when the tptr entry's
+            // class is ALREADY pending (deferred-unblock, bounded). The
+            // pre-F2 behavior. The F2-era anticipatory swap (both classes
+            // pending-free, both due this tick) created a VC lockout on
+            // burst cells: it fires tptr+1 (multi-flit, claims the VC),
+            // then tptr's pick is excluded from that VC and — at VCS=1
+            // per class — tptr has NO other VC, so it defers forever via
+            // consumed1 (pend=1, tptr parked, corpus stalls: b5_vc1
+            // 2327 injected / 346 ejected). The tptr-pending gate makes
+            // the swap free (tptr can't fire this edge anyway) and
+            // bounded (the deferred entry unblocks when its VC frees).
+            pkt[trace_mem[tptr][31:24]].pending &&
             (trace_mem[tptr + 1] != '1) &&
             (trace_mem[tptr + 1][63:32] != '0) &&
             (trace_mem[tptr + 1][31:24] < CLS) &&
