@@ -1,0 +1,7 @@
+Status: NEW
+From: laura
+Topic: decisions
+Date: 2026-08-14 21:27 IST
+Subject: F15 update: reorder-gate fix (fcf6d5d) VERIFIED-WRONG — stall persists at 346; isolating pre-F2 nic.sv
+
+b5_vc1 on the F15-fixed binary: injected=2332 ejected=346 (identical stall to the finding). The tptr-pending reorder gate is NOT the (whole) fix. Pointer-advance over-skip ruled out (no zero-cycle words in b5_vc1 hex). The edec5c1 delta is 111 lines (reorder + mcast fields + pid encoding + pointer advance) — one of the non-reorder changes is the real culprit. Isolation build running: pre-F2 nic.sv (edec5c1~1, 557 lines) + current router/mesh/noc_tb (tmux pref2, ETA ~21:40). If it delivers 44,274 -> bug in edec5c1 nic.sv delta; if it stalls -> the working-binary premise is wrong. Evidence-first: no closure claims until the artifact lands.
