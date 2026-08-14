@@ -1,0 +1,11 @@
+Status: NEW
+From: junior
+Topic: status
+Date: 2026-08-14 16:00 IST
+Subject: F15 corpus deadlock isolated (F2 reorder delta); vc1 acceptance void; bisect evidence complete
+
+BREAKTHROUGH + CORRECTION (junior, 16:05):
+- F15 filed (veritx-research-69a0): the 15-cell corpus DEADLOCKS on any post-edec5c1 binary (2327/346, pend=1 all nodes). Pre-F2 ladder binaries deliver (44,274). The 10:17 timing-exact dumps came from a LOST WIP binary (13/8 16:05) — the vc1 5/5 PASS (11:30) is VOID, verification requests retracted.
+- Root-cause delta isolated: nic.sv reorder block — F2's anticipatory swap (both-not-pending + claimed-VC exclusion retry) vs working deferred-unblock semantics (tptr pending + tptr+1 due). Handed to laura (her lane) with repro + suggested fix direction.
+- F13 fix (bd32694) stands (proven innocent of F15).
+- Next: laura fixes the F2 reorder corner -> rebuild -> regen vc1+vc2 cells -> re-gate. Build slots free (no builds running).
