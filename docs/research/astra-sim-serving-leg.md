@@ -12,12 +12,20 @@
 | simulators | ASTRA-sim 2.0 (master 518bd51) + our booksim2 fork as the network backend (`AstraSim_BookSim2`); analytical backend as reference |
 | mapping | ALLREDUCE → native ring (no multicast benefit); ALLGATHER → BROADCAST (MoE dispatch one-to-k semantics, root=rank 0); REDUCESCATTER/REMOTE not present in slice |
 
-## Measured result (cycle-accurate fabric, same workload, same fabric)
+## Measured result — the three-way table (all at 8 GB/s links)
 
-| variant | completion (all 4 ranks) |
-|---|---|
-| unicast (source-fork baseline) | 15,295,386 cycles |
-| multicast fold (bridge-fork) | 13,885,374 cycles — **9.2% faster**, simultaneous completion |
+| backend | completion (all 4 ranks) | wall |
+|---|---|---|
+| analytical (congestion-free latency model) | 10,495,246 cycles | 0.1 s |
+| booksim2 fabric, unicast (source-fork) | 15,295,386 cycles | 12 s |
+| booksim2 fabric, multicast fold (bridge-fork) | 13,885,374 cycles | 109 s |
+
+- Analytical vs unicast fabric: 1.46x — the queueing/congestion gap the
+  cycle-accurate fabric pays and the latency model ignores.
+- Fold vs unicast on the SAME fabric: **9.2% faster**, simultaneous completion.
+- Fold wall time is higher: per-flit packets cost more simulator time; the
+  CYCLE count is the network claim (in a real NIC the stream machinery is
+  hardware).
 
 Fold record: 6 multicast folds with k=3 (each dispatch collapsed 3 concurrent sends into
 1 stream per flit), 576 k=1 (ring allreduce sends, unicast fallback).

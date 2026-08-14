@@ -1,0 +1,45 @@
+{
+  "experiment": "astra_sim_serving_leg_qwen3_slice",
+  "date": "2026-08-14",
+  "author": "jane",
+  "trace": {
+    "source": "LLMServingSim Qwen3-30B-A3B-Instruct-2507, run_1786643546936153_195056, instance0_batch0.txt",
+    "slice": "first 12 comm ops (6x ALLREDUCE 8MiB + 6x ALLGATHER-dispatch 2.1MiB = 63.7MB)",
+    "model": "4 NPUs (2 dies x 2), network-only timeline, REMOTE ops excluded"
+  },
+  "backends": {
+    "analytical": {
+      "model": "ASTRA-sim analytical network backend (congestion-free latency model)",
+      "links_gbps": 8,
+      "completion_cycles": 10495246,
+      "wall_s": 0.1
+    },
+    "booksim2_unicast": {
+      "model": "our booksim2 fork, cycle-accurate, snake 2x2 mesh, 8B flits @1ns",
+      "links_gbps": 8,
+      "completion_cycles": 15295386,
+      "wall_s": 12
+    },
+    "booksim2_multicast_fold": {
+      "model": "same fabric, dispatch sends folded into one mcast stream per flit (k=3)",
+      "links_gbps": 8,
+      "completion_cycles": 13885374,
+      "wall_s": 109,
+      "fold_record": {"k3_folds": 6, "k1_unicast_fallbacks": 576},
+      "notes": "wall time higher due to per-flit packet simulator cost; cycle count is the network claim"
+    }
+  },
+  "comparison": {
+    "analytical_vs_unicast_fabric": "1.46x faster (congestion-free model; the queueing gap)",
+    "fold_vs_unicast_same_fabric": "9.2% faster completion, simultaneous across ranks",
+    "dispatch_injection_reduction": "3x (one stream delivers to 3 nodes)",
+    "dispatch_share_of_slice_bytes": 0.207
+  },
+  "claim_scope": "NETWORK-LEVEL, cycle-accurate fabric, one batch slice, network-only. NOT end-to-end serving. ALLGATHER modeled as one-to-k MoE dispatch broadcast (ring allgather would not benefit). Snake-routing reachability: dispatch sources constrained to the snake head. Flit granularity 8B@1ns matches the bridge model in serving_level_headroom.json.",
+  "evidence": {
+    "report": "docs/research/astra-sim-serving-leg.md",
+    "logs": "/tmp/opencode/qwen_nofold.log, qwen_fold4.log (VERITX_DEBUG=1)",
+    "trace_gen": "astra-sim/network_frontend/booksim2/examples/gen_qwen_slice.py",
+    "build": "build/astra_booksim2/build.sh; protobuf 3.21.12 from source; astra-sim 518bd51"
+  }
+}
