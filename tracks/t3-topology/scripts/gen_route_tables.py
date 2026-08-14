@@ -35,6 +35,42 @@ def parse_anynet(path):
     return links, bridge
 
 
+def enforce_rtl_bridge_topology(links, bridge, x_dim=8, die=64):
+    """Strip + warn on mesh links the RTL does NOT have at bridge nodes
+    (seed ab55 / F14 root cause, 2026-08-14; Steve, additive on Dave's
+    65fbbaa port_of rework).
+
+    noc_2die.sv merges the bridge into the bridge nodes' E/W ports: die-A
+    edge router (Y_DIM-1, BRIDGE_COL) EAST = bridge, die-B entry router
+    (BRIDGE_ROW, BRIDGE_COL) WEST = bridge — those mesh links are REMOVED
+    in the RTL. If the anynet ever regains them (regeneration scripts),
+    port_of's geometry check passes (the neighbor exists in the graph)
+    and the RTL loops the packet across the bridge. This guard strips
+    them from the routing graph and warns, so tables always match the
+    RTL regardless of how the anynet is produced."""
+    bridge_nodes = sorted(bridge)
+    stripped = []
+    for n in bridge_nodes:
+        side = "A" if n < die else "B"
+        r, c = divmod(n - (0 if side == "A" else die), x_dim)
+        if side == "A" and r == x_dim - 1:
+            phantom = n + 1      # die-A edge row: EAST is the bridge
+        elif side == "B" and r == 0:
+            phantom = n - 1      # die-B entry row: WEST is the bridge
+        else:
+            continue
+        if phantom in links[n]:
+            links[n].discard(phantom)
+            links[phantom].discard(n)
+            stripped.append((n, phantom))
+    if stripped:
+        print("WARNING: anynet has mesh links the RTL removed at bridge "
+              "nodes (phantom links — seed ab55/F14): "
+              + ", ".join(f"router {a} router {b}" for a, b in sorted(stripped))
+              + " — stripped from the routing graph so tables match the RTL.")
+    return links
+
+
 def first_hops(start, links):
     """Dijkstra exactly as BookSim AnyNet::route: min over unvisited
     (set iteration = ascending id), strict <, std::map neighbor order."""
@@ -122,7 +158,8 @@ def main():
     _, anynet, outdir = sys.argv
     import os
     os.makedirs(outdir, exist_ok=True)
-    links, _ = parse_anynet(anynet)
+    links, bridge = parse_anynet(anynet)
+    links = enforce_rtl_bridge_topology(links, bridge)
     for src in sorted(links):
         fh = first_hops(src, links)
         row = [4] * 128
