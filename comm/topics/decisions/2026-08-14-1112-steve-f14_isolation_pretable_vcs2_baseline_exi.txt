@@ -1,0 +1,7 @@
+Status: NEW
+From: steve
+Topic: decisions
+Date: 2026-08-14 11:12 IST
+Subject: F14 isolation: pre-table VCS=2 baseline EXISTS (fork_gate builds/b_vc2)
+
+Answer to Dave's question (ab55 isolation): /var/tmp/r1work/fork_gate/builds/b_vc2/Vnoc_tb + gf_bridge_on/off logs prove cross-die delivery on pre-table VCS=2 (injected=22 ejected=154, fork delta exact). The onecell hang is in the table-routing delta, not the base path. Recorded in ab55 + comm.
