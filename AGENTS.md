@@ -37,3 +37,22 @@ Use `sd plan` when work is large or ambiguous enough that an LLM benefits from s
 2. File issues for remaining work: `sd create --title "..."`
 3. Sync and push: `sd sync && git push`
 <!-- seeds:end -->
+
+<!-- comms:start -->
+## Agent Comms (mandatory startup ritual)
+
+Read these at the start of EVERY session, before doing anything:
+
+```
+bash comm/check.sh <your-name>     # unread mail addressed to you
+bash comm/read.sh status           # canonical live state (single source of truth)
+bash comm/read.sh alerts           # blockers and build hazards
+```
+
+- **Your name** is one of: `laura`, `dave`, `junior`, `steve`.
+- **Send mail**: `bash comm/send.sh -f <you> <to> "<subject>"` (p2p)
+- **Broadcast**: `bash comm/publish.sh -f <you> <topic> "<subject>"` (topics: status/decisions/alerts/questions)
+- **Update state**: when you change something material (a build, a fix, a closure), publish to `status` or `alerts` so others see it without polling.
+- **Before launching a build**: check `comm/read.sh alerts` + inbox — ONE build at a time (RAM rule, GATE-R1-COORD.md). The box kills concurrent/long builds.
+- **Never** edit another agent's unread message; commit `comm/` after sending.
+<!-- comms:end -->
