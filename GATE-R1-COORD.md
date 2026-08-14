@@ -31,7 +31,7 @@ documented, reproducible fidelity bound per cell.
 
 ## 3. ALWAYS-ON RULES
 
-1. MEMORY: 14GB host, ~3.5GB baseline. Builds: ONE at a time, VERILATOR_JOBS=1 for VCS=8. NEVER -j2 for vc4. rtl_r1.py refuses to build if available RAM < 3GB.
+1. MEMORY: 14GB host, ~3.5GB baseline. Builds: ONE at a time, VERILATOR_JOBS=1 for VCS=8. NEVER -j2 for vc4. rtl_r1.py refuses to build if available RAM < 3GB. STRUCTURAL: launch builds via `bash scripts/build_lock.sh <cmd>` — flock on /var/tmp/r1work/.build.lock; fails fast if verilator/make already running (OOM class: vbuild_col0 killed 23:20).
 2. PROVENANCE: every verification run starts from a git commit. The sweep writes <outdir>/manifest.txt recording git SHA + source mtimes + binary mtimes.
 3. SINGLE-OWNER: whoever edits tracks/t3-topology/rtl/*.sv commits first with a message.
 4. NO PARALLEL RUNS: one sweep/sim at a time.
