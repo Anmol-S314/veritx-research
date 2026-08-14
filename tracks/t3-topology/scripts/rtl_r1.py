@@ -342,8 +342,14 @@ def _write_manifest(outdir, rtl_files, binaries):
                 f.write(f"  {os.path.getmtime(b):.0f} vc{v} {b}\n")
 
 
-def sweep(booksim, rtlroot, outdir, tol=0):
-    """Gate R1 grid: the plane-separation burst table, cell-for-cell."""
+def sweep(booksim, rtlroot, outdir, tol=0, gate_policy=None, cell_filter=None):
+    """Gate R1 grid: the plane-separation burst table, cell-for-cell.
+
+    With gate_policy set (sweep --gate): pure analysis mode per spec §8.2 —
+    NO builds, NO trace regeneration, NO RTL sims. Gates the existing cell
+    dirs under outdir (or --cells <name>,<name>...) and writes the gate
+    report artifacts into outdir. Traces are reused; force via gen-trace.
+    """
     import os
     import subprocess
     import time
@@ -354,6 +360,23 @@ def sweep(booksim, rtlroot, outdir, tol=0):
     if _avail_gb() < 3:
         sys.exit(f"sweep aborted: only {_avail_gb()}GB available RAM "
                  "(GATE-R1-COORD rule 1)")
+
+    if gate_policy is not None:
+        # --gate mode: reuse existing cells, no builds/sims (spec §8.2).
+        if cell_filter:
+            cell_dirs = [os.path.join(outdir, c)
+                         for c in cell_filter.split(",")
+                         if os.path.isdir(os.path.join(outdir, c))]
+        else:
+            cell_dirs = sorted(
+                os.path.join(outdir, d) for d in os.listdir(outdir)
+                if os.path.isdir(os.path.join(outdir, d))
+                and d.startswith("b") and "_vc" in d)
+        if not cell_dirs:
+            sys.exit("sweep --gate: no cell dirs found under " + outdir)
+        print(f"sweep --gate: {len(cell_dirs)} cells, "
+              f"policy {os.path.basename(gate_policy)}")
+        return gate(outdir, gate_policy, cell_dirs)
 
     base_cfg = f"""{rtlroot}/configs/plane_shared.cfg"""
     rtl_files = [
@@ -818,8 +841,25 @@ if __name__ == "__main__":
         tol = int(sys.argv[3]) if len(sys.argv) > 3 else 0
         sys.exit(diff(sys.argv[2], tol))
     elif cmd == "sweep":
-        tol = int(sys.argv[5]) if len(sys.argv) > 5 else 0
-        sys.exit(sweep(sys.argv[2], sys.argv[3], sys.argv[4], tol))
+        # sweep <booksim> <rtlroot> <outdir> [--tol N] [--gate <policy>]
+        #       [--cells <name,name,...>]
+        tol = 0
+        gate_policy = None
+        cell_filter = None
+        rest = sys.argv[5:]
+        i = 0
+        while i < len(rest):
+            a = rest[i]
+            if a == "--tol" and i + 1 < len(rest):
+                tol = int(rest[i + 1]); i += 2
+            elif a == "--gate" and i + 1 < len(rest):
+                gate_policy = rest[i + 1]; i += 2
+            elif a == "--cells" and i + 1 < len(rest):
+                cell_filter = rest[i + 1]; i += 2
+            else:
+                i += 1
+        sys.exit(sweep(sys.argv[2], sys.argv[3], sys.argv[4], tol,
+                       gate_policy, cell_filter))
     elif cmd == "gate":
         # gate <outdir> <policy> <cell_dir> [cell_dir ...]
         if len(sys.argv) < 5:
