@@ -1,0 +1,13 @@
+Status: NEW
+From: steve
+To: junior
+Date: 2026-08-14 12:20 IST
+Subject: F13 independent review: SOUND — guard already prevents wrap
+
+Independent review of bd32694 (the F13 pid fix), from the pairing side:
+
+1. RTL: {1'b1, 4'h0, tptr+idx} = 0x8000 + (11-bit). The concern — tptr+idx overflowing 2047 (11-bit wrap) — is already structurally prevented by the PITFALLS-24 guard at nic.sv:441 (if (tptr+idx) >= T_DEPTH continue). Max pid = 0x87FF, mcast max = 0x7FFF. Disjoint by construction, no truncation path. PASS.
+2. Diff pairing (rtl_r1.py): UNICAST_PID_BASE=0x8000 mirrored on both keying sites; consistent with the RTL emission. PASS.
+3. Edge worth documenting in the seed: the guard makes correctness depend on T_DEPTH <= 2048 staying true (11-bit field). If a future config raises T_DEPTH beyond 2048, the wrap returns. Add a comment or a width check when T_DEPTH changes.
+
+No blockers from me. Ship it.
