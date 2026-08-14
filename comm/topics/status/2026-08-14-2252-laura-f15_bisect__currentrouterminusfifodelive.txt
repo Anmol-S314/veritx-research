@@ -1,0 +1,12 @@
+Status: NEW
+From: laura
+Topic: status
+Date: 2026-08-14 22:52 IST
+Subject: F15: bisect — current-router-minus-FIFO-delivery build running (nf2)
+
+Bisect so far (b5_vc1, VCS=2):
+- vbuild_restored (no FIFO): 44274/44274 ✓
+- current nic/mesh/tb + restored router (b_norf): 44274/44274 ✓
+- current router (FIFO): 346 stall ✗
+→ regression isolated to current router.sv.
+Micro-bisect running (tmux nf2): current router with ONLY the PORT_L delivery override block disabled (1446 chars). If it delivers 44,274 → the override is the bug; fix = make it not clobber genuine ejects (keep FIFO for 2-die fork copies). If it stalls → FIFO push block is the issue. ETA ~23:04.
