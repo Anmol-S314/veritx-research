@@ -233,3 +233,20 @@ Source: https://pages.cs.wisc.edu/~karu/archprisms/dl/isca2025_reviews.html
 - All quotes above were taken verbatim from the fetched documents (PDF text extraction or page text).
 - Searches targeted primary sources (paper PDFs, IEEE/ACM pages, official gem5/AMD/Tenstorrent docs, GitHub) plus review corpora; secondary aggregators (e.g., alphaXiv summaries) were only used to locate claims in the primary PDFs.
 - The KV-cache "paper of record" for our own project (KV-cache plane separation in transformers, 8x8 mesh, bursty-serving-starves-control claim) was not located in the published literature — consistent with it being an in-preparation manuscript; the domain standards above (WSC-LLM, KVServe, HyMCache, LLMServingSim) define the comparison set reviewers will use.
+## 28. Saranya & Rao (JETTA 2024) — async NoC router verification = feasibility, not fidelity
+
+**Source:** Saranya, M.N., Rao, R., "Design and Verification of an Asynchronous NoC Router Architecture for GALS Systems," J. Electronic Testing 40:61–74, 2024. DOI 10.1007/s10836-024-06104-y (full text: eng.auburn.edu JETTA mirror).
+
+**What it is:** functional verification of a baseline asynchronous NoC router (5-port, 4×4 mesh, XY, wormhole, PD-Hybrid domino pipeline, hybrid 1-DR-bit + SR encoding) via Cadence Spectre AMS mixed-level simulation (transistor domino stages + behavioral/structural Verilog router logic, UMC 65nm).
+
+**Why it's in the corpus (the credibility lens):** a textbook "feasibility-not-fidelity" exhibit:
+- All "results" are functional waveforms (packet routes, arbiter grants one port under contention, five ports communicate concurrently) — pass/fail only.
+- "The verification approach has no timing information"; "preliminary simulation results conform to the objectives."
+- **NO synchronous/clocked baseline anywhere in the paper** — the "async is naturally low power" claim is asserted in the intro, never measured against a clocked router. No power/latency/throughput/area/EDP numbers at all.
+- The paper therefore cannot and does not answer "is async genuinely better than clocked" — citing it as evidence async wins would be the confident-wrong-number pattern (PITFALLS-class).
+
+**What IS worth taking from it (evaluated 2026-08-14, Steve):**
+- Test-case discipline: four minimal targeted scenarios (switch-level routing, no-load network traversal, all-inputs→one-output contention, five-port concurrent communication). Maps directly to our cell framework: TC2 ≡ the onecell/F14 clean-traversal test; TC3 ≡ an iSLIP arbitration-contention cell; TC4 ≡ a same-switch concurrency cell. See seed T3-004 (contention experiment) for the F14-era version.
+- The "no critical timing constraints" property of their hybrid encoding is architecture-argued, not measured — treat as claim, not result.
+
+**Not transferable:** async paradigm (domino logic, handshakes, completion detection), AMS toolchain, 65nm transistor-level modeling.
