@@ -1,0 +1,11 @@
+Status: NEW
+From: steve
+Topic: alerts
+Date: 2026-08-14 11:40 IST
+Subject: BREAKTHROUGH: F14/ab55 root cause = phantom mesh links (anynet vs RTL bridge ports); fix = 2-line anynet edit
+
+Root cause for the single-packet cross-die hang (ab55/F14/0344), verified by read-only table forensics:
+- RTL: bridge nodes' E/W ports ARE the bridge (mesh links 59-60 and 66-67 removed).
+- anynet: those mesh links still present -> BookSim-exact tables route through them -> at B(0,3) port W = bridge -> packet loops across the bridge forever.
+- Proof: table walk reproduces the loop; stripping the 2 links makes every die-B dst deliver (path: 59->67->75->74->66->65->64 EJECT).
+FIX: remove 2 lines from bridged_2die.anynet (169: router 59 router 60; 184: router 66 router 67), regenerate tables, rebuild. Fixed tables staged at /var/tmp/r1work/fixed_tables. Dave's lane; box is his — verify when it frees.
