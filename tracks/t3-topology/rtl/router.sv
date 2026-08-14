@@ -329,35 +329,11 @@ module noc_router #(
   // Genuine local ejects take PORT_L directly (the FIFO defers one cycle if
   // it would collide -- order of the two PORT_L writers is not observable by
   // the diff, which sorts by pid).
-`ifdef TWO_DIE_ROUTE_TABLE
-  localparam int EJECT_FIFO_DEPTH = 4;
-  flit_t  eject_fifo [EJECT_FIFO_DEPTH];
-  logic   eject_fifo_occ [EJECT_FIFO_DEPTH];   // occupancy bitmap
-  logic   [3:0] eject_fifo_head;
-  logic   [3:0] eject_fifo_tail;
-  logic   [3:0] eject_fifo_cnt;
-  logic        fork_copy_pending;   // the scan found a copy this cycle
-  flit_t       fork_copy_flit;      // that copy (bypass/drain path)
-  logic        local_eject_cyc;
-`endif
      // a genuine sa_pop to PORT_L this cycle
 
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       for (int o = 0; o < NUM_PORTS; o++) xt_valid[o] <= 1'b0;
-`ifdef TWO_DIE_ROUTE_TABLE
-      eject_fifo_cnt <= '0;
-`endif
-`ifdef TWO_DIE_ROUTE_TABLE
-      eject_fifo_head <= '0;
-`endif
-`ifdef TWO_DIE_ROUTE_TABLE
-      eject_fifo_tail <= '0;
-`endif
-`ifdef TWO_DIE_ROUTE_TABLE
-      for (int i = 0; i < EJECT_FIFO_DEPTH; i++)
-        eject_fifo_occ[i] <= 1'b0;
-`endif
     end else begin
       // PORT_L (local eject) is written by exactly one source per cycle:
       // a genuine eject (sa_pop to PORT_L) when one fires, else the FIFO
@@ -376,112 +352,10 @@ module noc_router #(
         end
       end
 
-`ifdef TWO_DIE_ROUTE_TABLE
-      // ---- VeritX multicast fork: push copies into the eject FIFO ----
-      // A mcast stream transits this router to its next hop (the sa_pop
-      // above); if this node is in the stream's copy range, the stream's
-      // copy is pushed to the local eject FIFO (BookSim: copy pushed to the
-      // eject output buffer while the stream continues -- iq_router.cpp
-      // fork, one copy per node). At most one copy per node per cycle (one
-      // mcast stream per source per cycle), so the scan finds <= 1.
-      local_eject_cyc = 1'b0;
-      for (int i = 0; i < NUM_PORTS; i++) begin
-        for (int v = 0; v < VCS; v++) begin
-          if (sa_pop[i][v] && (out_port[i][v] == PORT_L))
-            local_eject_cyc = 1'b1;
-        end
-      end
-      begin
-        logic found_copy;
-        flit_t copy_flit;
-        found_copy = 1'b0;
-        copy_flit  = '0;
-        for (int i = 0; i < NUM_PORTS; i++) begin
-          for (int v = 0; v < VCS; v++) begin
-            if (!found_copy &&
-                sa_pop[i][v] && (out_port[i][v] != PORT_L) &&
-                front[i][v].mcast && front[i][v].head &&
-                (my_id >= front[i][v].copy_lo) && (my_id <= front[i][v].copy_hi)) begin
-              found_copy = 1'b1;
-              copy_flit = front[i][v];
-              copy_flit.dst = my_id[7:0];
-              copy_flit.pid = {front[i][v].pid[15:4],
-                               4'(my_id - front[i][v].copy_lo + 1)};
-              copy_flit.vc  = '0;      // copy marker: no credit return
-              copy_flit.mcast = 1'b0;
-              copy_flit.copy_lo = '0;
-              copy_flit.copy_hi = '0;
-            end
-          end
-        end
-        if (found_copy) begin
-          // blocking: the delivery block below reads these same-cycle
-          // (NBA would not be visible until the next edge)
-          fork_copy_pending = 1'b1;
-          fork_copy_flit    = copy_flit;
-          if (eject_fifo_cnt == EJECT_FIFO_DEPTH[3:0]) begin
-            $display("F1 GUARD: eject FIFO overflow (my_id=%0d)", my_id);
-            $fatal(1, "eject FIFO overflow");
-          end else if (eject_fifo_cnt > 0) begin
-            // FIFO already has queued copies: push
-            eject_fifo[eject_fifo_tail[1:0]] <= copy_flit;
-            eject_fifo_occ[eject_fifo_tail[1:0]] <= 1'b1;
-            eject_fifo_tail <= eject_fifo_tail + 1;
-            eject_fifo_cnt <= eject_fifo_cnt + 1;
-          end else if (local_eject_cyc) begin
-            // cnt==0 but a genuine eject wins PORT_L this cycle: the copy
-            // cannot drain via the bypass, so it queues for next cycle
-            eject_fifo[eject_fifo_tail[1:0]] <= copy_flit;
-            eject_fifo_occ[eject_fifo_tail[1:0]] <= 1'b1;
-            eject_fifo_tail <= eject_fifo_tail + 1;
-            eject_fifo_cnt <= eject_fifo_cnt + 1;
-          end
-          // cnt==0 && !local_eject: drains this cycle through the bypass
-        end else begin
-          fork_copy_pending = 1'b0;
-        end
-      end
 
-`endif
-`ifdef TWO_DIE_ROUTE_TABLE
-      // ---- PORT_L delivery: genuine eject wins, else FIFO head ----
-      // A fork copy pushed into an empty FIFO this cycle bypasses the
-      // FIFO (drains immediately) -- the FIFO read port cannot see a
-      // same-cycle write, so without the bypass a single copy would be
-      // delayed one cycle and the single-stream gate cells would fail
-      // atime parity.
-      begin
-        logic local_eject_cyc2;
-        logic drain_copy;         // the fork's copy_flit from the block above
-        local_eject_cyc2 = local_eject_cyc;
-        drain_copy = fork_copy_pending && (eject_fifo_cnt == 0) &&
-                     !local_eject_cyc2;        if (local_eject_cyc2) begin
-          // (1) genuine eject: the generic loop wrote it this cycle
-          xt_valid[PORT_L] <= 1'b1;
-        end else if (drain_copy) begin
-          // (2a) the just-pushed copy drains immediately
-          xt_valid[PORT_L] <= 1'b1;
-          xt_flit[PORT_L]  <= fork_copy_flit;
-        end else if (eject_fifo_cnt > 0) begin
-          // (2b) FIFO head drains into the slot
-          xt_valid[PORT_L] <= 1'b1;
-          xt_flit[PORT_L]  <= eject_fifo[eject_fifo_head[1:0]];
-          eject_fifo_occ[eject_fifo_head[1:0]] <= 1'b0;
-          eject_fifo_head <= eject_fifo_head + 1;
-          eject_fifo_cnt <= eject_fifo_cnt - 1;
-        end
-        // [F15 fix] no else-branch: the generic loop (line ~357) already
-        // clears xt_valid[o] every cycle, so a later '<= 1'b0' here would
-        // OVERRIDE its '<= 1'b1' for a genuine PORT_L eject on cycles
-        // where local_eject_cyc2 reads false (a timing-skewed duplicate
-        // of the same sa_pop scan) — silently dropping ~98% of local
-        // ejects on burst cells (b5_vc1: 346/44274). The generic loop's
-        // clear stands; only the FIFO-drain writes remain here.
-      end
     end
   end
 
-`endif
   for (genvar o = 0; o < NUM_PORTS; o++) begin : gen_fout
     assign flit_out[o].valid = xt_valid[o];
     assign flit_out[o].flit  = xt_flit[o];
