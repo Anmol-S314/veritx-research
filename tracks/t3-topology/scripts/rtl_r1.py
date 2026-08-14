@@ -695,11 +695,17 @@ def _gate_report_md(outdir, cells, ordinal, summary):
             f"cl{k}: {v['bs_mean']}/{v['rtl_mean']} ({v['ratio']})"
             for k, v in sorted(t2.items()))
         r = c["residual"]
+        bs_sum = sum(v["bs_mean"] for v in t2.values()) or None
+        rt_sum = sum(v["rtl_mean"] for v in t2.values()) or None
+        ratio_all = (round(bs_sum / rt_sum, 4)
+                     if bs_sum is not None and rt_sum else None)
         lines.append(f"| {cid} | {c['status']} | {cells_txt} | "
-                     f"{r['exact_match_frac']} | {r['mean_delta']} | "
-                     f"{r['p95_abs_delta']} | {r['max_abs_delta']} |")
+                     f"{ratio_all} | {r['exact_match_frac']} | "
+                     f"{r['mean_delta']} | {r['p95_abs_delta']} | "
+                     f"{r['max_abs_delta']} |")
     lines += ["", "## Ordinal invariants", ""]
     for k, v in ordinal.items():
+        v = v if v is not None else "N/A (insufficient cells)"
         lines.append(f"- {k}: {v}")
     lines += ["", f"## Summary: {summary['n_pass']} PASS, "
                   f"{summary['n_override']} PASS-OVERRIDE, "
@@ -761,10 +767,12 @@ def gate(outdir, policy_path, cells, binaries=None):
     b80v1_rt = cell_mean("b80_vc1", 1, "rtl")
     b80v4_bs = cell_mean("b80_vc4", 1, "bs")
     b80v4_rt = cell_mean("b80_vc4", 1, "rtl")
-    o2_bs = (b80v1_bs is not None and b80v4_bs is not None and
-             b80v1_bs > b80v4_bs)
-    o2_rt = (b80v1_rt is not None and b80v4_rt is not None and
-             b80v1_rt > b80v4_rt)
+    # O2 (VC absorption): b80_vc1 > b80_vc4. Only evaluable when BOTH
+    # cells are present in the run — otherwise N/A (None), never False.
+    o2_bs = (b80v1_bs > b80v4_bs) if (b80v1_bs is not None
+                                      and b80v4_bs is not None) else None
+    o2_rt = (b80v1_rt > b80v4_rt) if (b80v1_rt is not None
+                                      and b80v4_rt is not None) else None
 
     ordinal = {"o1_monotone_vc1_bs": o1_bs,
                "o1_monotone_vc1_rtl": o1_rtl,

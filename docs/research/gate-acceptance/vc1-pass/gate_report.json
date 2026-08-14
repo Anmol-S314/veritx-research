@@ -1,0 +1,262 @@
+{
+ "schema_version": 1,
+ "git_sha": "no-manifest",
+ "cells": {
+  "b5_vc1": {
+   "cell": "b5_vc1",
+   "status": "PASS",
+   "tier1": {
+    "verdict": "CLEAN",
+    "checks": {
+     "t1.1": true,
+     "t1.2": true,
+     "t1.3": true,
+     "t1.4": true
+    }
+   },
+   "tier2": {
+    "verdict": "PASS",
+    "env_applied": 0.05,
+    "classes": {
+     "0": {
+      "bs_mean": 56.62,
+      "rtl_mean": 56.61,
+      "ratio": 1.0,
+      "env": 0.05,
+      "in_env": true
+     },
+     "1": {
+      "bs_mean": 44.08,
+      "rtl_mean": 44.1,
+      "ratio": 1.0,
+      "env": 0.25,
+      "in_env": true
+     }
+    }
+   },
+   "residual": {
+    "n_flits": 44274,
+    "exact_match_frac": 0.9812,
+    "mean_delta": -0.0049,
+    "p95_abs_delta": 0,
+    "max_abs_delta": 72,
+    "histogram": {
+     "<0": 431,
+     "0": 43443,
+     "1-3": 239,
+     "4-10": 106,
+     "10+": 55
+    }
+   },
+   "override": {
+    "cell": "b5_vc1",
+    "env": 0.25,
+    "reason": "LEGACY \u2014 resolved 2026-08-14: fresh-RTL acceptance shows cl0/cl1 ratios exactly 1.0 (bs 44.08 vs rtl 44.10). The 0.79 anomaly was a stale-RTL (Aug-12, pre-F1/F2) artifact. Override kept for reproducibility of the 2026-08-12 policy but not required: b5_vc1 PASSES at default env 0.05."
+   }
+  },
+  "b10_vc1": {
+   "cell": "b10_vc1",
+   "status": "PASS",
+   "tier1": {
+    "verdict": "CLEAN",
+    "checks": {
+     "t1.1": true,
+     "t1.2": true,
+     "t1.3": true,
+     "t1.4": true
+    }
+   },
+   "tier2": {
+    "verdict": "PASS",
+    "env_applied": 0.05,
+    "classes": {
+     "0": {
+      "bs_mean": 68.47,
+      "rtl_mean": 69.21,
+      "ratio": 1.011,
+      "env": 0.05,
+      "in_env": true
+     },
+     "1": {
+      "bs_mean": 50.59,
+      "rtl_mean": 51.26,
+      "ratio": 1.013,
+      "env": 0.05,
+      "in_env": true
+     }
+    }
+   },
+   "residual": {
+    "n_flits": 71832,
+    "exact_match_frac": 0.8332,
+    "mean_delta": 0.9516,
+    "p95_abs_delta": 16,
+    "max_abs_delta": 304,
+    "histogram": {
+     "<0": 5241,
+     "0": 59849,
+     "1-3": 1166,
+     "4-10": 2328,
+     "10+": 3248
+    }
+   },
+   "override": null
+  },
+  "b20_vc1": {
+   "cell": "b20_vc1",
+   "status": "PASS",
+   "tier1": {
+    "verdict": "CLEAN",
+    "checks": {
+     "t1.1": true,
+     "t1.2": true,
+     "t1.3": true,
+     "t1.4": true
+    }
+   },
+   "tier2": {
+    "verdict": "PASS",
+    "env_applied": 0.05,
+    "classes": {
+     "0": {
+      "bs_mean": 91.38,
+      "rtl_mean": 90.58,
+      "ratio": 0.991,
+      "env": 0.05,
+      "in_env": true
+     },
+     "1": {
+      "bs_mean": 60.94,
+      "rtl_mean": 60.49,
+      "ratio": 0.993,
+      "env": 0.05,
+      "in_env": true
+     }
+    }
+   },
+   "residual": {
+    "n_flits": 61748,
+    "exact_match_frac": 0.8445,
+    "mean_delta": -0.9941,
+    "p95_abs_delta": 24,
+    "max_abs_delta": 480,
+    "histogram": {
+     "<0": 4965,
+     "0": 52144,
+     "1-3": 663,
+     "4-10": 1258,
+     "10+": 2718
+    }
+   },
+   "override": null
+  },
+  "b40_vc1": {
+   "cell": "b40_vc1",
+   "status": "PASS",
+   "tier1": {
+    "verdict": "CLEAN",
+    "checks": {
+     "t1.1": true,
+     "t1.2": true,
+     "t1.3": true,
+     "t1.4": true
+    }
+   },
+   "tier2": {
+    "verdict": "PASS",
+    "env_applied": 0.05,
+    "classes": {
+     "0": {
+      "bs_mean": 137.34,
+      "rtl_mean": 137.33,
+      "ratio": 1.0,
+      "env": 0.05,
+      "in_env": true
+     },
+     "1": {
+      "bs_mean": 82.34,
+      "rtl_mean": 82.33,
+      "ratio": 1.0,
+      "env": 0.05,
+      "in_env": true
+     }
+    }
+   },
+   "residual": {
+    "n_flits": 78947,
+    "exact_match_frac": 0.9958,
+    "mean_delta": 0.0009,
+    "p95_abs_delta": 0,
+    "max_abs_delta": 207,
+    "histogram": {
+     "<0": 246,
+     "0": 78616,
+     "1-3": 0,
+     "4-10": 80,
+     "10+": 5
+    }
+   },
+   "override": null
+  },
+  "b80_vc1": {
+   "cell": "b80_vc1",
+   "status": "PASS",
+   "tier1": {
+    "verdict": "CLEAN",
+    "checks": {
+     "t1.1": true,
+     "t1.2": true,
+     "t1.3": true,
+     "t1.4": true
+    }
+   },
+   "tier2": {
+    "verdict": "PASS",
+    "env_applied": 0.05,
+    "classes": {
+     "0": {
+      "bs_mean": 252.06,
+      "rtl_mean": 251.68,
+      "ratio": 0.998,
+      "env": 0.05,
+      "in_env": true
+     },
+     "1": {
+      "bs_mean": 138.64,
+      "rtl_mean": 138.25,
+      "ratio": 0.997,
+      "env": 0.05,
+      "in_env": true
+     }
+    }
+   },
+   "residual": {
+    "n_flits": 111291,
+    "exact_match_frac": 0.9809,
+    "mean_delta": -0.432,
+    "p95_abs_delta": 0,
+    "max_abs_delta": 405,
+    "histogram": {
+     "<0": 1201,
+     "0": 109162,
+     "1-3": 10,
+     "4-10": 165,
+     "10+": 753
+    }
+   },
+   "override": null
+  }
+ },
+ "ordinal_summary": {
+  "o1_monotone_vc1_bs": true,
+  "o1_monotone_vc1_rtl": true,
+  "o2_absorption_bs": null,
+  "o2_absorption_rtl": null
+ },
+ "summary": {
+  "n_pass": 5,
+  "n_override": 0,
+  "n_fail": 0,
+  "n_incomplete": 0
+ }
+}
