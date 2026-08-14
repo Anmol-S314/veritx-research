@@ -75,7 +75,14 @@ module noc_tb;
   // Gate R1: per-NIC trace BRAM contents loaded from hex files (trace_n%d.hex),
   // one entry per packet start, format {cycle[63:32], cl[31:24], dst[23:16], size[15:0]}.
   // The eject stream is dumped to rtl_flits.txt as "atime cl src dst pid itime".
-  localparam int T_DEPTH = 2048;
+  // T_DEPTH is a build-time parameter (default 2048 = the full-cell depth).
+  // Small cells override with -GT_DEPTH=<n> to skip the ND*N*T_DEPTH pump —
+  // at 2048 that's 262K cycles per NIC before replay starts (minutes of sim).
+  // T_W must match: clog2(T_DEPTH) (11 for 2048).
+  parameter int T_DEPTH = 2048;
+  localparam int T_W    = T_DEPTH > 2048 ? 12 : T_DEPTH > 1024 ? 11 : T_DEPTH > 512 ? 10 :
+                           T_DEPTH > 256 ? 9 : T_DEPTH > 128 ? 8 : T_DEPTH > 64 ? 7 :
+                           T_DEPTH > 32 ? 6 : T_DEPTH > 16 ? 5 : 4;
   // cap for the post-replay drain loop: run_cycles covers the trace window,
   // the drain loop absorbs the tail (and a stalled network burns through
   // this cap before the totals check below FAILs it)
@@ -93,7 +100,7 @@ module noc_tb;
           .VCS(VCS), .X(x), .Y(y), .X_DIM(X_DIM), .Y_DIM(Y_DIM),
           .DIE_BASE(d * N),
 `ifdef R1_MODE
-          .T_DEPTH(T_DEPTH), .T_W(11)
+          .T_DEPTH(T_DEPTH), .T_W(T_W)
 `else
           .T_DEPTH(16), .T_W(4)
 `endif
