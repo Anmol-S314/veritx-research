@@ -13,7 +13,7 @@ TO="${1:?usage: comm/send.sh [-f from] <to> <subject>}"
 SUBJECT="${2:?usage: comm/send.sh [-f from] <to> <subject>}"
 
 case "$TO" in laura|dave|junior|steve) ;; *) echo "unknown recipient: $TO" >&2; exit 1;; esac
-case "$FROM" in laura|dave|junior|steve) ;; *) echo "unknown sender: $FROM (use -f)" >&2; exit 1;; esac
+case "$FROM" in laura|dave|junior|steve|jane) ;; *) echo "unknown sender: $FROM (use -f)" >&2; exit 1;; esac
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 SLUG="$(echo "$SUBJECT" | tr '[:upper:] ' '[:lower:]_' | tr -cd 'a-z0-9_' | cut -c1-40)"

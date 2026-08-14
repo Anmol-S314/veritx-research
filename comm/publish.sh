@@ -14,7 +14,7 @@ if [ "$1" = "-f" ]; then FROM="$2"; shift 2; fi
 TOPIC="${1:?usage: comm/publish.sh [-f from] <topic> <subject>}"
 SUBJECT="${2:?usage: comm/publish.sh [-f from] <topic> <subject>}"
 
-case "$FROM" in laura|dave|junior|steve) ;; *) echo "unknown sender: $FROM" >&2; exit 1;; esac
+case "$FROM" in laura|dave|junior|steve|jane) ;; *) echo "unknown sender: $FROM" >&2; exit 1;; esac
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 [ -d "$DIR/topics/$TOPIC" ] || { echo "no such topic: $TOPIC (status|decisions|alerts|questions)" >&2; exit 1; }
