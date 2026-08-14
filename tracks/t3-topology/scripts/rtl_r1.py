@@ -307,7 +307,13 @@ def _write_manifest(outdir, rtl_files, binaries):
     say so loudly instead of hiding it behind an RTL-only filter).
     """
     import subprocess
-    repo = os.path.dirname(os.path.abspath(outdir))
+    # repo = git root of THIS script (outdir may live outside the repo,
+    # e.g. /var/tmp/r1work/... — deriving repo from outdir silently
+    # produced an empty SHA and a false clean tree).
+    repo = subprocess.run(["git", "rev-parse", "--show-toplevel"],
+                          capture_output=True, text=True,
+                          cwd=os.path.dirname(os.path.abspath(__file__))
+                          ).stdout.strip()
     sha = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True,
                          text=True, cwd=repo)
     status = subprocess.run(["git", "status", "--porcelain"],

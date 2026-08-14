@@ -1,7 +1,15 @@
-git_sha: 
-tree_dirty: no
-uncommitted_files: 0
+git_sha: a71cd1db9fcc86b0a3dbf7522ca58bca17803300
+tree_dirty: YES
+uncommitted_files: 8
 uncommitted(porcelain):
+   M .mulch/expertise/veritx-workflow.jsonl
+   M tracks/t3-topology/scripts/gen_route_tables.py
+   M tracks/t3-topology/scripts/rtl_r1.py
+  ?? .gitattributes
+  ?? .playwright-mcp/
+  ?? docs/research/2026-moe-serving-landscape.md
+  ?? flits.txt
+  ?? trace.txt
 sources:
 binaries:
 cells:
