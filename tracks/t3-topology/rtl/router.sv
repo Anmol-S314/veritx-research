@@ -329,6 +329,7 @@ module noc_router #(
   // Genuine local ejects take PORT_L directly (the FIFO defers one cycle if
   // it would collide -- order of the two PORT_L writers is not observable by
   // the diff, which sorts by pid).
+`ifdef TWO_DIE_ROUTE_TABLE
   localparam int EJECT_FIFO_DEPTH = 4;
   flit_t  eject_fifo [EJECT_FIFO_DEPTH];
   logic   eject_fifo_occ [EJECT_FIFO_DEPTH];   // occupancy bitmap
@@ -337,16 +338,26 @@ module noc_router #(
   logic   [3:0] eject_fifo_cnt;
   logic        fork_copy_pending;   // the scan found a copy this cycle
   flit_t       fork_copy_flit;      // that copy (bypass/drain path)
-  logic        local_eject_cyc;     // a genuine sa_pop to PORT_L this cycle
+  logic        local_eject_cyc;
+`endif
+     // a genuine sa_pop to PORT_L this cycle
 
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       for (int o = 0; o < NUM_PORTS; o++) xt_valid[o] <= 1'b0;
+`ifdef TWO_DIE_ROUTE_TABLE
       eject_fifo_cnt <= '0;
+`endif
+`ifdef TWO_DIE_ROUTE_TABLE
       eject_fifo_head <= '0;
+`endif
+`ifdef TWO_DIE_ROUTE_TABLE
       eject_fifo_tail <= '0;
+`endif
+`ifdef TWO_DIE_ROUTE_TABLE
       for (int i = 0; i < EJECT_FIFO_DEPTH; i++)
         eject_fifo_occ[i] <= 1'b0;
+`endif
     end else begin
       // PORT_L (local eject) is written by exactly one source per cycle:
       // a genuine eject (sa_pop to PORT_L) when one fires, else the FIFO
@@ -365,6 +376,7 @@ module noc_router #(
         end
       end
 
+`ifdef TWO_DIE_ROUTE_TABLE
       // ---- VeritX multicast fork: push copies into the eject FIFO ----
       // A mcast stream transits this router to its next hop (the sa_pop
       // above); if this node is in the stream's copy range, the stream's
@@ -430,6 +442,8 @@ module noc_router #(
         end
       end
 
+`endif
+`ifdef TWO_DIE_ROUTE_TABLE
       // ---- PORT_L delivery: genuine eject wins, else FIFO head ----
       // A fork copy pushed into an empty FIFO this cycle bypasses the
       // FIFO (drains immediately) -- the FIFO read port cannot see a
@@ -467,6 +481,7 @@ module noc_router #(
     end
   end
 
+`endif
   for (genvar o = 0; o < NUM_PORTS; o++) begin : gen_fout
     assign flit_out[o].valid = xt_valid[o];
     assign flit_out[o].flit  = xt_flit[o];
