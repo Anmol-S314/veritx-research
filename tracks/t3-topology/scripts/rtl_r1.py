@@ -302,6 +302,9 @@ def _write_manifest(outdir, rtl_files, binaries):
     """Provenance record for a sweep: git SHA + source/binary mtimes.
 
     Results produced without this file are void (rule 2, GATE-R1-COORD.md).
+    Records ALL uncommitted/untracked files, not just RTL (seed
+    veritx-research-5ce7: a dirty tree makes results void — the manifest must
+    say so loudly instead of hiding it behind an RTL-only filter).
     """
     import subprocess
     repo = os.path.dirname(os.path.abspath(outdir))
@@ -309,14 +312,21 @@ def _write_manifest(outdir, rtl_files, binaries):
                          text=True, cwd=repo)
     status = subprocess.run(["git", "status", "--porcelain"],
                             capture_output=True, text=True, cwd=repo)
+    porcelain = status.stdout.splitlines()
+    rtl_dirty = [l for l in porcelain
+                 if any(rf.split("/")[-1] in l for rf in rtl_files)]
     with open(f"{outdir}/manifest.txt", "w") as f:
         f.write(f"git_sha: {sha.stdout.strip()}\n")
+        f.write(f"tree_dirty: {'YES' if porcelain else 'no'}\n")
+        f.write(f"uncommitted_files: {len(porcelain)}\n")
         f.write("uncommitted(porcelain):\n")
-        hits = [l for l in status.stdout.splitlines()
-                if any(rf.split("/")[-1] in l for rf in rtl_files)]
-        for line in hits or ["  (clean)" if False else ""]:
-            if line:
-                f.write(f"  {line}\n")
+        for line in porcelain:
+            f.write(f"  {line}\n")
+        if rtl_dirty:
+            f.write("WARNING: RTL source uncommitted — results VOID per rule 2 "
+                    "(GATE-R1-COORD.md); commit first (rule 3):\n")
+            for line in rtl_dirty:
+                f.write(f"  ! {line}\n")
         f.write("sources:\n")
         for rf in rtl_files:
             f.write(f"  {os.path.getmtime(rf):.0f} {rf}\n")
