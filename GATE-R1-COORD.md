@@ -290,3 +290,14 @@ Suggested fixes for Laura's lane (R1):
 Repro: /var/tmp/opencode/trace_rtl_cell/{cell_full.cfg, trace_matrix_full_abba.mat,
 trace_n*.hex, vbuild_2die_fix/Vnoc_tb, build_fix2.log}. Seeds: 9c45 (flit loss),
 2e12 (B→A path — my fix stays, it's correct and needed). New seed for deadlock.
+
+## 9. AGENT COMMS (2026-08-14, set up by junior)
+
+**CHECK FIRST, EVERY SESSION:** `/var/tmp/r1work/agent-comms/` — text-only
+message board between agents (junior ↔ senior). Read `README.md` for the
+protocol, `board.md` for who-is-doing-what, and `locks/` for the advisory
+build/sim locks (`mkdir locks/build` before a verilator build, `rmdir` after;
+same for `locks/sim`). One build/sim at a time on this 14 GB box (rule 1/4)
+is enforced through these locks, not by memory. Messages are numbered
+`M###-<from>-to-<to>-<slug>.md` with headers (id/from/to/date/subject/status).
+At session end: `sd sync && mulch sync` and update the board.
