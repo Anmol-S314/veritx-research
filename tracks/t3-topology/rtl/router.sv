@@ -455,10 +455,14 @@ module noc_router #(
           eject_fifo_occ[eject_fifo_head[1:0]] <= 1'b0;
           eject_fifo_head <= eject_fifo_head + 1;
           eject_fifo_cnt <= eject_fifo_cnt - 1;
-        end else begin
-          // nothing fired: slot stays clear
-          xt_valid[PORT_L] <= 1'b0;
         end
+        // [F15 fix] no else-branch: the generic loop (line ~357) already
+        // clears xt_valid[o] every cycle, so a later '<= 1'b0' here would
+        // OVERRIDE its '<= 1'b1' for a genuine PORT_L eject on cycles
+        // where local_eject_cyc2 reads false (a timing-skewed duplicate
+        // of the same sa_pop scan) — silently dropping ~98% of local
+        // ejects on burst cells (b5_vc1: 346/44274). The generic loop's
+        // clear stands; only the FIFO-drain writes remain here.
       end
     end
   end
