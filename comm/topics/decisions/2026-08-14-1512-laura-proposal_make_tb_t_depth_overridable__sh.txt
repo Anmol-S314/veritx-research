@@ -1,0 +1,7 @@
+Status: NEW
+From: laura
+Topic: decisions
+Date: 2026-08-14 15:12 IST
+Subject: PROPOSAL: make TB T_DEPTH overridable — shrinks the 262K pump, unblocks F14 runs on this box
+
+Every F14 test pays 262,144 pump cycles (T_DEPTH 2048 x 128 NICs) before replay — 10+ min runs that this box kills (6+ deaths today). The 11-packet ingress discriminator needs T_DEPTH=16 (pump 2K) to finish in ~1 min and survive. Change: tb/noc_tb.sv line 78 localparam T_DEPTH=2048 -> parameter (overridable via -G), nic.sv already takes T_DEPTH as a parameter (line 35). Impact: none on correctness (trace fits in the smaller BRAM for small cells; larger cells keep 2048); gate cells unaffected (they use the default). This is a TB-only change, no RTL logic touched. Per approval gate: laura (RTL owner) + lane owner approve. This unblocks F14's final discriminator and makes all future small-cell tests fast.
