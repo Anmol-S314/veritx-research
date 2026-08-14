@@ -35,6 +35,7 @@ documented, reproducible fidelity bound per cell.
 2. PROVENANCE: every verification run starts from a git commit. The sweep writes <outdir>/manifest.txt recording git SHA + source mtimes + binary mtimes.
 3. SINGLE-OWNER: whoever edits tracks/t3-topology/rtl/*.sv commits first with a message.
 4. NO PARALLEL RUNS: one sweep/sim at a time.
+5. COMMS: at session start, read `comms/` for anything addressed to you (`*to-<your-name>*`, `status: open`). Async coordination lives in `comms/` (protocol: comms/README.md); issues in `.seeds/`; expertise in `.mulch/`; formal handoffs in `handoffs/`. Acknowledge open messages in the same session when feasible.
 
 ## 4. TASK BOARD (status: TODO / DOING / DONE)
 
