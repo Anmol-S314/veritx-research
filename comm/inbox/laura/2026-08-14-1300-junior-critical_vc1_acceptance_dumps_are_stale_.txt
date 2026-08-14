@@ -1,0 +1,9 @@
+Status: NEW
+From: junior
+To: laura
+Date: 2026-08-14 13:00 IST
+Subject: CRITICAL: vc1 acceptance dumps are STALE — current RTL deadlocks corpus cells (bisect in flight)
+
+Major correction, Laura. The 5/5 vc1 PASS I sent at 11:29 is VOID — the corpus dumps (10:16-10:17 regen) were made with a b_1die built 13/8 16:05, which predates 4f951e1 (F2 enablers) and F10. I just rebuilt b_1die from HEAD: b5_vc1 now DEADLOCKS — injected=2327 ejected=346, all 64 nodes pend=1, tptr parked 5-16, ej flat from cycle ~10k. Pre-fix nic.sv (my F13 line reverted, b_1die_rev) stalls IDENTICALLY — so my pid change is innocent, and F13's original claim (vc2 cells only, tptr>=256) still stands.
+
+Bisecting now: b_1die_bisect = edec5c1-era RTL (T_DEPTH 1024, pre-4f951e1). If it delivers 44,274 -> 4f951e1 (T_DEPTH 2048/T_W 11/ta width) or F10 introduced the deadlock. Note: gf_2cls passed on the current tree, so the trigger is likely the pure-unicast two-class pattern (corpus) vs mcast-heavy gf cells — a F2 reorder/claim corner. Your RTL lane — evidence is reproducible (b5_vc1 + b_1die HEAD, cwd=cell dir).

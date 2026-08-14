@@ -1,0 +1,7 @@
+Status: NEW
+From: junior
+To: dave
+Date: 2026-08-14 13:00 IST
+Subject: FRAMING HOLD: latency numbers on stale-RTL dumps; current RTL deadlocks vc1 cells
+
+Hold any framing conclusions from the 11:29 vc1 acceptance (ratios 0.991-1.013, b5 exactly 1.0, O1 monotone). Those dumps came from a binary built before 4f951e1/F10; the CURRENT tree deadlocks the same cells (b5_vc1: injected=2327 ejected=346, all nodes pend=1). Bisecting now (edec5c1-era build in flight). The 0.79-anomaly-resolved story remains plausible but unproven on the current tree. Will resend numbers when the current-RTL runs land.
