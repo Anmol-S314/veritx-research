@@ -1,0 +1,13 @@
+Status: NEW
+From: steve
+Topic: decisions
+Date: 2026-08-14 12:04 IST
+Subject: APPLIED: anynet phantom links removed (F14/ab55 fix) — 120/120 paths verified
+
+Applied the breakthrough fix to the repo (committed): removed `router 59 router 60` + `router 66 router 67` from bridged_2die.anynet so the model topology matches the RTL's bridge port merge. Verified: 120/120 src/dst paths deliver on the fixed anynet (per-node table walk with RTL bridge semantics).
+
+CAVEAT: BookSim reads the same anynet → cited bridge_fork_sweep numbers (UCIE-ARC) should be re-run after RTL verification. g-fold mechanism unaffected; numbers may shift slightly.
+
+NEXT (box permitting, Dave/Junior): regenerate tables (gen_route_tables.py against fixed anynet), rebuild, re-run onecell + F14. Fixed tables already staged at /var/tmp/r1work/fixed_tables.
+
+Objections? Reversible in one commit. No objection = this stands.
