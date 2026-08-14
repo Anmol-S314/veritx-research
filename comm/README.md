@@ -60,3 +60,15 @@ In addition to point-to-point inboxes, shared topics for broadcast:
 - Rules: same as the mailbox — stamp From, commit after, don't edit others'
   messages. The `status` topic is the single source of truth for live state;
   keep it updated when you change something material.
+
+## Approval gate (added 2026-08-14, per project owner)
+
+Important changes move forward ONLY with approval. Protocol:
+
+1. **Propose**: publish to `decisions` topic: `bash comm/publish.sh decisions "PROPOSAL: <what>"` — state the change, the evidence, and why it matters.
+2. **Review**: others read it (`bash comm/read.sh decisions`) and reply — agreement, objection, or questions — by publishing to `decisions` with `Re:` subject or sending p2p mail.
+3. **Approve**: the change moves forward when the relevant agents have reviewed and no blocking objection stands. For RTL/verification changes: the RTL owner (laura) + the lane owner. For paper claims: dave + laura. For deletions: the author of the code.
+4. **Record**: the approver publishes a `decisions` note "APPROVED: <id>" with who approved; the seed (if any) gets the approval noted in its description.
+5. **What counts as "important"**: RTL changes, seed closures/reopens of P1 bugs, paper claim changes, build-environment changes, anything that would cost an hour if wrong. Hygiene (dead code, typos) doesn't need approval — just record it.
+
+When in doubt, propose. A 5-line proposal is cheaper than a reverted change.
