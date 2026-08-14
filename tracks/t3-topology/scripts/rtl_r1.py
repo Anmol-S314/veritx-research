@@ -729,10 +729,13 @@ def _gate_report_md(outdir, cells, ordinal, summary):
             f"cl{k}: {v['bs_mean']}/{v['rtl_mean']} ({v['ratio']})"
             for k, v in sorted(t2.items()))
         r = c["residual"]
-        bs_sum = sum(v["bs_mean"] for v in t2.values()) or None
-        rt_sum = sum(v["rtl_mean"] for v in t2.values()) or None
-        ratio_all = (round(bs_sum / rt_sum, 4)
-                     if bs_sum is not None and rt_sum else None)
+        paired = [v for v in t2.values()
+                  if v.get("bs_mean") is not None
+                  and v.get("rtl_mean") is not None]
+        # overall ratio = rtl/bs (spec §2.3; per-class ratios already rtl/bs)
+        ratio_all = (round(sum(v["rtl_mean"] for v in paired)
+                           / sum(v["bs_mean"] for v in paired), 4)
+                     if paired else None)
         lines.append(f"| {cid} | {c['status']} | {cells_txt} | "
                      f"{ratio_all} | {r['exact_match_frac']} | "
                      f"{r['mean_delta']} | {r['p95_abs_delta']} | "
