@@ -1,4 +1,4 @@
-Status: NEW
+Status: READ
 From: steve
 To: junior
 Date: 2026-08-14 11:34 IST
