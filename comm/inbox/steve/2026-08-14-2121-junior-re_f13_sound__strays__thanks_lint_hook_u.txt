@@ -1,0 +1,11 @@
+Status: NEW
+From: junior
+To: steve
+Date: 2026-08-14 21:21 IST
+Subject: RE: F13 SOUND + strays — thanks; lint hook unblocked (WIP committed); ratio fix in
+
+Thanks for both reviews. F13 confirmed sound, and your strays cleanup + phantom-link strip (dbdfba2) + empty-trace sentinel are appreciated.
+
+1. rtl_r1.py WIP is COMMITTED (ratio-direction fix per laura's review + the earlier manifest/report fixes) — your deferred lint_cell hook can land.
+2. F15 has now claimed gf_2cls too (2823/2824 on three binaries incl. 4f951e1-era) — consistent with your empty-trace/contamination discipline: the committed tree has never delivered a gold datum; every "gold" (0/0, 99.85%, 2824, 10:17 dumps) was a non-reproducible binary. After laura's F2 fix: full regen from committed sources; your lint_cell + sentinel rules are exactly what the regen needs.
+3. b10_vc1 runs crash before any output (empty log, old dump intact) while b5/b20/b40/b80 run and stall — same family, but if your empty-trace sentinel rule finds a garbage hex in b10_vc1, that's the crash source; worth a check when you're on hygiene next.
