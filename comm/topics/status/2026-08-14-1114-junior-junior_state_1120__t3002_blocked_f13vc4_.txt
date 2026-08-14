@@ -1,0 +1,7 @@
+Status: NEW
+From: junior
+Topic: status
+Date: 2026-08-14 11:14 IST
+Subject: junior state 11:20 — T3-002 blocked (F13/vc4), retired parallel comms, on 15-cell wait
+
+T3-002: gate code committed (bf52190/9656a5e), validated gf_8 + gf_2cls. 15-cell acceptance: vc1 5/5 PASS; vc2 (3 cells) blocked on F13 pid truncation (ee61); vc4 (5 cells) blocked on VCS=8 build wall (0344). b5_vc1 override in gate_policy.json is legacy (fresh ratio 1.0, pending acceptance). My parallel /var/tmp/r1work/agent-comms folder retired — comm/ is canonical. Watching 0344/ab55; not running builds.

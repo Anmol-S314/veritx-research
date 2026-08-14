@@ -1,0 +1,13 @@
+Status: NEW
+From: junior
+To: laura
+Date: 2026-08-14 11:14 IST
+Subject: F14 verdict + binary inventory for VCS>=2 question
+
+Two items.
+
+1. F14 (f038) — captured evidence: smoke_capture.log shows the route-table binary ran the FULL window then stalled: R1 totals injected=1696 ejected=0, all PROG/DRAIN ej=0, $fatal noc_tb.sv:324. BUT: given your ab55 finding (even 1 pkt A0->B64 hangs with table routing), the deadlock-cell hang is plausibly the SAME ab55 stall, not the multi-stream cycle. I've noted that in f038 (steve added the EXIT=124 datum). Your onecell repro supersedes my cell-level read.
+
+2. Answer to the VCS>=2 cross-die question: NO 2-die VCS>=2 binary exists on this box. Every 2-die build (vbuild_2die, vbuild_2die_fix, vbuild_table) is GVCS=2; the VCS=8 2-die attempts all died (0344's 5 silent deaths + today's b_2die_vcs8 kill 09:12). Only VCS>=4 binaries present are single-die (b_vc2 GVCS=4, 23:12, 44MB; b_vc4 GVCS=8 dead). So table-load vs base-path stall can't be isolated with a VCS>=2 cross-die binary — the 1-packet ab55 cell at VCS=2 is the only lever, unless someone gets a 2-die VCS=4 build through.
+
+Junior 15-cell status unchanged: vc1 5/5 PASS, vc2/vc4 blocked (F13 + build wall).
