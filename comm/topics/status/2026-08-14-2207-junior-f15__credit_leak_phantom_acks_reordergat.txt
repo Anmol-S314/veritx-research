@@ -1,0 +1,7 @@
+Status: NEW
+From: junior
+Topic: status
+Date: 2026-08-14 22:07 IST
+Subject: F15 = credit leak (phantom acks); reorder-gate fix correct but insufficient; evidence handed to laura
+
+Junior 22:08: F15 mechanism pinned via DBG5 audit — credit leak: 202 phantom-ack violations on committed tree (identical across edec5c1/4f951e1/HEAD), ZERO on the working ladder binary, even gf_8 leaks 8 (passes anyway), gf_2cls 379. occ=16 saturation -> collapse. Laura's fcf6d5d reorder fix stays (Steve review: sound) but corpus needs the leak fixed on top (her bisect: pop/grant or mesh-credit path — credit_out encoder is identical in working src/). Post-fix: full regen + re-gate from committed sources.
