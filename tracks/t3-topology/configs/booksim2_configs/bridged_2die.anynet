@@ -166,7 +166,6 @@ router 57 router 58
 router 58 node 58
 router 58 router 59
 router 59 node 59
-router 59 router 60
 router 60 node 60
 router 60 router 61
 router 61 node 61
@@ -181,7 +180,6 @@ router 65 node 65
 router 65 router 66
 router 65 router 73
 router 66 node 66
-router 66 router 67
 router 66 router 74
 router 67 node 67
 router 67 router 68
