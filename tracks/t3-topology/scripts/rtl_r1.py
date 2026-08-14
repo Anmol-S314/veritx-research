@@ -723,8 +723,17 @@ def gate(outdir, policy_path, cells, binaries=None):
     import json as _json
     policy = _load_policy(policy_path)
     os.makedirs(outdir, exist_ok=True)
-    if binaries:
-        _write_manifest(outdir, [], binaries)
+    # provenance (rule 2): every acceptance run writes a manifest, even
+    # without binaries — the cell input files are the actual evidence.
+    _write_manifest(outdir, [], binaries or {})
+    with open(f"{outdir}/manifest.txt", "a") as f:
+        f.write("cells:\n")
+        for cell in cells:
+            for name in ("trace.txt", "flits.txt", "rtl_flits.txt",
+                         "run_cycles"):
+                p = f"{cell}/{name}"
+                if os.path.exists(p):
+                    f.write(f"  {os.path.getmtime(p):.0f} {name} {cell}\n")
 
     results = {}
     for cell in cells:

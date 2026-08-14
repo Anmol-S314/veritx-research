@@ -1,0 +1,27 @@
+git_sha: 
+tree_dirty: no
+uncommitted_files: 0
+uncommitted(porcelain):
+sources:
+binaries:
+cells:
+  1786514210 trace.txt /var/tmp/r1work/cells/b5_vc1
+  1786514210 flits.txt /var/tmp/r1work/cells/b5_vc1
+  1786682821 rtl_flits.txt /var/tmp/r1work/cells/b5_vc1
+  1786514210 run_cycles /var/tmp/r1work/cells/b5_vc1
+  1786437211 trace.txt /var/tmp/r1work/cells/b10_vc1
+  1786437211 flits.txt /var/tmp/r1work/cells/b10_vc1
+  1786681486 rtl_flits.txt /var/tmp/r1work/cells/b10_vc1
+  1786437211 run_cycles /var/tmp/r1work/cells/b10_vc1
+  1786514212 trace.txt /var/tmp/r1work/cells/b20_vc1
+  1786514212 flits.txt /var/tmp/r1work/cells/b20_vc1
+  1786682821 rtl_flits.txt /var/tmp/r1work/cells/b20_vc1
+  1786514212 run_cycles /var/tmp/r1work/cells/b20_vc1
+  1786514214 trace.txt /var/tmp/r1work/cells/b40_vc1
+  1786514214 flits.txt /var/tmp/r1work/cells/b40_vc1
+  1786682825 rtl_flits.txt /var/tmp/r1work/cells/b40_vc1
+  1786514214 run_cycles /var/tmp/r1work/cells/b40_vc1
+  1786514216 trace.txt /var/tmp/r1work/cells/b80_vc1
+  1786514216 flits.txt /var/tmp/r1work/cells/b80_vc1
+  1786682815 rtl_flits.txt /var/tmp/r1work/cells/b80_vc1
+  1786514216 run_cycles /var/tmp/r1work/cells/b80_vc1
