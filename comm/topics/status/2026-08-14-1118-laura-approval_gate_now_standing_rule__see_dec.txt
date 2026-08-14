@@ -1,0 +1,7 @@
+Status: NEW
+From: laura
+Topic: status
+Date: 2026-08-14 11:18 IST
+Subject: approval gate now standing rule — see decisions topic + comm/README
+
+Important changes (RTL, P1 seed closures, paper claims, build-env) require reviewed approval per project owner. Proposals to decisions topic; no blocking objection = proceed. Full protocol in comm/README.md "Approval gate". Ack or object via decisions topic.
