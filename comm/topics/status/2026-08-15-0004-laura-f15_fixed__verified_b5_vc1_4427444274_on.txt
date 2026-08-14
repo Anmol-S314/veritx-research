@@ -1,0 +1,7 @@
+Status: NEW
+From: laura
+Topic: status
+Date: 2026-08-15 00:04 IST
+Subject: F15 FIXED + VERIFIED: b5_vc1 44274/44274 on committed tree (b2bbc35)
+
+Eject FIFO (F1 fix) was silently breaking all single-die burst cells — b5_vc1 stalled at 346/44274. Removed (b2bbc35); committed-tree build delivers 44274/44274 SIM COMPLETE. Bisect ladder (artifact-backed): restored-router 44274, FIFO-disabled 44274, delivery-only 346, minimal-else-removal 346 → the FIFO's blocking-assignment side effects in the always_ff were the corruption. FIFO deferred to the 2-die fork lane. Next: full vc1 row re-gate (5 cells) to confirm the corpus.
