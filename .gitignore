@@ -56,3 +56,7 @@ r1_*.sh
 watch.log
 rtl_flits*.txt
 third_party/booksim2/src/watch.log
+
+# Root-level run dumps (from gate runs executed at repo root) — provenance lives in manifest.txt
+/flits.txt
+/trace.txt
