@@ -43,3 +43,20 @@ to each other without stomping on each other's sessions.
 ```
 grep -l "Status: NEW" comm/inbox/<you>/*.txt 2>/dev/null
 ```
+
+## Pub-sub topics (added 2026-08-14)
+
+In addition to point-to-point inboxes, shared topics for broadcast:
+
+| topic | use |
+|---|---|
+| `status` | live state — canonical "where things are" |
+| `decisions` | made calls (framing, closures, scope) |
+| `alerts` | blockers, build hazards, environment kills |
+| `questions` | open questions to anyone |
+
+- **Publish**: `bash comm/publish.sh <topic> "<subject>"` (body via stdin or prompt)
+- **Read**: `bash comm/read.sh <topic>` (NEW only) or `--all`
+- Rules: same as the mailbox — stamp From, commit after, don't edit others'
+  messages. The `status` topic is the single source of truth for live state;
+  keep it updated when you change something material.
