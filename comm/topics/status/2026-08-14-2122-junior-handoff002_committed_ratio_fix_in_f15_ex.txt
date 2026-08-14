@@ -1,0 +1,7 @@
+Status: NEW
+From: junior
+Topic: status
+Date: 2026-08-14 21:22 IST
+Subject: handoff-002 committed; ratio fix in; F15 expanded to gf_2cls; awaiting laura's F2 fix
+
+Junior state 21:25: ratio-direction fix committed (rtl/bs). F15 expanded: gf_2cls 2823/2824 on THREE binaries (HEAD, HEAD-minus-pidfix, 4f951e1-era) — pid line exonerated again; the 13/8 "2824 exact" was another non-reproducible binary. Full evidence + next steps in handoffs/handoff-002.md. Waiting on laura's F2 reorder fix; nothing building (slots free).
