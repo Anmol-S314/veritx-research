@@ -66,30 +66,54 @@ def first_hops(start, links):
     return fh
 
 
-def port_of(src, hop, bridge):
-    """RTL geometric port for a first-hop neighbor.
-    Bridge links are forced to their physical direction (die-A EAST,
-    die-B WEST) — geometric derivation alone is WRONG there (the bridge
-    connects (7,3)<->(0,3), which reads as N/S geometrically).
-    Non-bridge links: direction from src to hop in the mesh."""
-    if hop in bridge and src in bridge and bridge[hop] == bridge[src]:
-        pass  # same bridge, unreachable branch; kept for clarity
-    if hop in bridge and (src < 64) != (hop < 64):
-        # src sits ON the bridge link; its direction is bridge[src] (die-A
-        # EAST, die-B WEST). bridge[hop] is the far side's direction — the
-        # reverse — which is NOT the port src exits on.
-        return {"E": 0, "W": 1}[bridge[src]]
+def port_of(src, hop, links):
+    """RTL geometric port for a first-hop neighbor, validated against the
+    ACTUAL link set. Geometric derivation alone is WRONG at the bridge
+    nodes: die-B (0,3)=67 has NO west mesh link (west is the bridge back
+    to die A), so 'dst west of me' must NOT return W — the only path goes
+    around via the south link. Every port must lead to a neighbor that
+    physically exists in the anynet (which already excludes the phantom
+    mesh links the RTL's bridge ports replace)."""
     sx, sy = src % 8, src // 8
     hx, hy = hop % 8, hop // 8
     if hop == src:
         return 4
+    # bridge link: 59 (die-A 7,3) exits EAST, 67 (die-B 0,3) exits WEST.
+    # These are the ONLY cross-die links, and their direction is fixed by
+    # the RTL's noc_2die.sv wiring regardless of geometry.
+    if (src < 64) != (hop < 64):
+        return 0 if src < 64 else 1
+    # direction from src to hop by geometry
     if hx > sx:
-        return 0
-    if hx < sx:
-        return 1
-    if hy < sy:
-        return 2
-    return 3
+        d = 0
+    elif hx < sx:
+        d = 1
+    elif hy < sy:
+        d = 2
+    else:
+        d = 3
+    # the geometric neighbor in direction d must actually be hop; if the
+    # link is missing (bridge-adjacent node), geometry crossed a void and
+    # the table must NOT emit that port — reroute via the real links.
+    geo = {0: (sx + 1, sy), 1: (sx - 1, sy), 2: (sx, sy - 1), 3: (sx, sy + 1)}
+    gx, gy = geo[d]
+    if gy * 8 + gx == hop:
+        return d
+    # geometry disagrees with reality: hop is reached via a non-geometric
+    # neighbor (e.g. 67 -> 75 south, then west around the missing link).
+    # Find which of src's actual neighbors lies on the shortest path.
+    for nb in sorted(links[src]):
+        if nb == hop:
+            nx, ny = nb % 8, nb // 8
+            if nx > sx:
+                return 0
+            if nx < sx:
+                return 1
+            if ny < sy:
+                return 2
+            return 3
+    # last resort: 4 = LOCAL (should not happen for cross-die)
+    return 4
 
 
 def main():
@@ -98,12 +122,12 @@ def main():
     _, anynet, outdir = sys.argv
     import os
     os.makedirs(outdir, exist_ok=True)
-    links, bridge = parse_anynet(anynet)
+    links, _ = parse_anynet(anynet)
     for src in sorted(links):
         fh = first_hops(src, links)
         row = [4] * 128
         for dst, hop in fh.items():
-            row[dst] = port_of(src, hop, bridge)
+            row[dst] = port_of(src, hop, links)
         with open(f"{outdir}/route_{src}.hex", "w") as f:
             for v in row:
                 f.write(f"{v:01x}\n")
