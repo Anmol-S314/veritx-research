@@ -43,6 +43,11 @@ import os
 import subprocess
 import time
 
+# F13 (veritx-research-ee61): the RTL unicast pid lives at 0x8000+ (nic.sv),
+# ABOVE the mcast stream space ((word<<4)|offset, max 32767) — disjoint by
+# construction, no truncation. The pairing must mirror that base.
+UNICAST_PID_BASE = 0x8000
+
 DRAIN = 2500
 GRID = [(5, 0.016), (10, 0.008), (20, 0.004), (40, 0.002), (80, 0.001)]
 VCS_LIST = [1, 2, 4]
@@ -257,7 +262,7 @@ def diff(outdir, tol=0):
                         print(f"FAIL mcast pkt {k}: BookSim {ba} vs RTL {ra}")
             continue
         b = sorted(bs.get(bs_pid[k], []))
-        r = sorted(rt.get((src, rtl_word[(src, k)]), []))
+        r = sorted(rt.get((src, UNICAST_PID_BASE + rtl_word[(src, k)]), []))
         if len(b) != size or len(r) != size:
             print(f"FAIL pkt {k} (src {src} cl {cl} dst {dst}): "
                   f"BookSim {len(b)}/{size} flits, RTL {len(r)}/{size}")
@@ -563,7 +568,7 @@ def _pair_packets(outdir):
             rl = sorted(rl)
         else:
             bl = sorted(bs_all.get(bs_pid[k], []))
-            rl = sorted(rt_all.get((src, cl, rtl_word[(src, k)]), []))
+            rl = sorted(rt_all.get((src, cl, UNICAST_PID_BASE + rtl_word[(src, k)]), []))
         packets[k] = (bl, rl)
     return packets, mcast_info, pkt_info, trace
 
