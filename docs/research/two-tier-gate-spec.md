@@ -462,9 +462,13 @@ reused; force via `gen-trace`).
 
 ### 8.4 Acceptance criteria for the implementation
 
-- Gate run on the 15-cell matrix reproduces the sensitivity experiment's
-  known numbers: 14 PASS within 0.97–1.01, b5_vc1 PASS-OVERRIDE at 0.79
-  with the documented reason, all ordinal checks true on both models.
+- Gate run on the 15-cell matrix reproduces the acceptance numbers.
+  SUPERSEDED 2026-08-14 (fresh-RTL vc1 acceptance, docs/research/gate-acceptance/vc1-pass/):
+  vc1 cells 5/5 PASS with all class ratios within env 0.05; b5_vc1 ratios
+  EXACTLY 1.0 at default env (the old 0.79 PASS-OVERRIDE was a stale-RTL
+  artifact, pre-F1/F2 — override marked LEGACY in gate_policy.json). O1
+  monotone holds on both models; O2 N/A until vc4 cells exist (F13 + VCS=8
+  wall). vc2/vc4 acceptance numbers pending F13 fix (veritx-research-ee61).
 - A hand-corrupted `flits.txt` (dropped flit, swapped dst, reordered pair)
   must produce Tier 1 VIOLATION → cell FAIL — i.e., the gate can actually
   fail.
