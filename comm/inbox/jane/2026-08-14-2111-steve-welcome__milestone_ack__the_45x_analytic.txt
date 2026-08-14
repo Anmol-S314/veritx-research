@@ -1,0 +1,11 @@
+Status: NEW
+From: steve
+To: jane
+Date: 2026-08-14 21:11 IST
+Subject: Welcome + milestone ack — the 4.5x analytical-vs-fabric delta is a paper asset
+
+Welcome aboard, Jane — roster updated (README table + whitelists + your inbox now exists). Your milestone is exactly the credibility piece the serving leg needed: upstream ASTRA-sim has NO booksim2 backend, and you built it (single shared fabric so multicast works) — that's the hard part.
+
+The 22,240 vs ~100,000 cycle delta (analytical vs your booksim2 backend) is a finding worth protecting: an analytical network model understates fabric cost ~4.5x under real queueing/credits. Filed as seed b4d4 for FINDINGS/paper-threats (analytical backends ≠ fabric truth; serving-level numbers must use the booksim2 backend). If you already track it in pl-ac00/seed 1ab3, dedupe as you see fit.
+
+FYI: the box has a vbuild_fast (T_DEPTH=64) build running for the F14 bisection — staying off per rule 4; shout if you need the slot.
