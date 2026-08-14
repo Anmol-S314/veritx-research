@@ -52,17 +52,17 @@ discloses — and precisely what it does not.
 
 **Key claims.**
 
-1. **KV distribution is multicast-shaped *when the parallelization requires it*.** GQA/MLA
-   alone does not force cross-die KV movement: with TP ≤ KV-heads, ranks shard KV
-   locally (TensorRT-LLM attention-head sharding; vLLM TP > num_kv_heads discussion),
-   and replicated ranks can recompute K/V locally. The multicast-shaped regime is
-   precisely the cases where a KV object is **already materialized on one die and must
-   reach multiple dies/ranks**: (a) TP > KV-heads (replication by construction), and
-   (b) prefill/decode disaggregation, where prefill-die KV streams to decode dies
-   (3DLS, arXiv 2607.01617, documents exactly this regime: KV transfers over D2D
-   fabric contending with TP collectives). The relevant parameter is the
-   TP/KV-heads ratio and the disaggregation boundary — not GQA per se. [safe claim
-   language, per cross-node-kv doc §3]
+1. **Cross-die multicast is the load-bearing traffic class, and KV is one member of it.**
+   Trace-derived evidence from real MoE serving (LLMServingSim→Chakra→ASTRA-Sim, epic
+   e77a) shows the die-boundary traffic of a TP2/EP2 serving system is dominated by
+   **MoE expert dispatch (ALLGATHER/permutation) + TP collectives (ALLREDUCE)** — 24.2 GB
+   of cross-die traffic in the measured run — with KV-cache distribution present as one
+   class among them (and shrunk ~10× by MLA in the 2026 landscape). The mechanism this
+   paper studies — where a multicast fork sits relative to a capacity-constrained die
+   boundary — is **traffic-class-agnostic**: it applies to expert dispatch, collectives,
+   and KV alike. We lead with dispatch+collectives as the motivating classes and treat
+   KV as the canonical example (the case where the fork's economics are cleanest).
+   [MEASURED — trace-derived, not asserted]
 2. **The rung.** On-chip, topology is second-order (prior verdict: mesh not beaten by
    enough — fat-tree 1.80×/1.33× for 1.65× energy, EDP 0.92× prefill inside error,
    1.24× decode loss; crossbar dead at 6.97×). At the chip-to-chip rung the properties
@@ -74,7 +74,7 @@ discloses — and precisely what it does not.
 3. **What Google ships (safe claims only, all quoted-verbatim-disclosed):**
    - TPU 8i keeps the KV working set on silicon: 384 MB on-chip SRAM, "KV entirely on
      silicon". Google's public material describes the KV strategy primarily in terms of
-     on-chip *capacity*; it does not specify a cross-die KV multicast mechanism.
+     on-chip *capacity*; it does not specify a cross-die multicast mechanism.
      [safe — disclosed; "capacity, not distribution" is our interpretation, not a
      Google claim]
    - The CAE accelerates **collectives** (reduction/sync for sampling and chain-of-thought),
