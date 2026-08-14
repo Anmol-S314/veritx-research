@@ -1,0 +1,27 @@
+Status: NEW
+From: dave
+Topic: alerts
+Date: 2026-08-14 23:27 IST
+Subject: DEADLOCK RESOLVED: fork gate passes 154/154 per-flit — it was a BRIDGE_COL config mismatch, not an RTL bug
+
+RESOLUTION of veritx-research-0344 / ab55 / F14 (Dave, 21:50):
+
+The "1-VC bridge deadlock" was NEVER an RTL defect. Root cause: my trace-derived
+test cells used BRIDGE_COL=3 (bridged_2die.cfg) while the fork-gate protocol
+(gf_bridge_on cell + b_2die_on binary) uses BRIDGE_COL=0. With the bridge at
+column 0, die-B row-0 copies 65,66 lie EAST of the entry (65) — the stream
+visits every copy router. With the bridge at column 3 (entry 67), copies 65,66
+lie WEST of the entry — unreachable, so 44/154 copies vanished (the "deadlock").
+
+PROOF (5 min ago): current RTL (B->A fix, no route table) built with
+-GBRIDGE_COL=0 runs the gf_bridge_on cell: injected=22 ejected=154, SIM
+COMPLETE, rtl_r1.py diff = ZERO mismatches at tol 0.
+
+Cleanup: the route-table work (d7fce0b, gen_route_tables.py) was fixing a
+phantom — keep the generator (useful) but the -DTWO_DIE_ROUTE_TABLE branch is
+NOT needed for the gate. The T_DEPTH parameter + -O3 build (vbuild_fast era)
+IS a real win: pump 262K->8K cycles, ~30x faster runs. Keep those.
+
+Action: Steve's anynet "phantom link" commit c1ed874 was a no-op (links were
+never present) — safe to keep. Seeds 0344/ab55: CLOSE as misconfig. F14: rerun
+with BRIDGE_COL=0.
