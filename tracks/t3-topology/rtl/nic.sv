@@ -496,12 +496,15 @@ module noc_nic #(
             // stream pid: tptr for unicast; mcast streams live in the
             // (tptr<<3) space so their copies (stream_pid|offset, offset
             // in [1..7]) can never collide with a later stream's pid
-            // F13 (ee61): {8'h00, tptr+idx} truncated the 11-bit tptr to
-            // 8 bits — pids wrapped at 256 on VCS>=4 traces (tptr>=256,
-            // 65/135 (src,pid) pairs reused). Unicast now lives in the
-            // 0x8000+ space, ABOVE the mcast space (stream (word<<4),
-            // copies base+offset, max 32767) — disjoint by construction.
-            pkt[c].pid       <= {1'b1, 4'h0, tptr + idx};
+            // F13 (ee61): the original {8'h00, tptr+idx} put the 32-bit
+            // (tptr+idx) in the low 16 bits — pids collided with the mcast
+            // stream space ((word<<4)|offset) once traces crossed ~16 words.
+            // Unicast now lives at 0x8000+, ABOVE the mcast space (stream
+            // (word<<4), copies base+offset, max 32767) — disjoint by
+            // construction. NOTE: a concat {1'b1, 4'h0, tptr+idx} would be
+            // 37 bits wide (idx is int) and truncate the 0x8000 bit away —
+            // the OR form keeps the width explicit.
+            pkt[c].pid       <= 16'h8000 | (tptr + idx);
             pkt[c].remaining <= {16'h0000, trace_mem[tptr + idx][15:0]};
             // VeritX fork: a range word follows the entry word; its zero
             // cycle field + non-'1 pattern marks a mcast stream. Range
