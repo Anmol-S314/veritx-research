@@ -12,7 +12,7 @@ if [ "$1" = "-f" ]; then FROM="$2"; shift 2; fi
 TO="${1:?usage: comm/send.sh [-f from] <to> <subject>}"
 SUBJECT="${2:?usage: comm/send.sh [-f from] <to> <subject>}"
 
-case "$TO" in laura|dave|junior|steve) ;; *) echo "unknown recipient: $TO" >&2; exit 1;; esac
+case "$TO" in laura|dave|junior|steve|jane) ;; *) echo "unknown recipient: $TO" >&2; exit 1;; esac
 case "$FROM" in laura|dave|junior|steve|jane) ;; *) echo "unknown sender: $FROM (use -f)" >&2; exit 1;; esac
 
 DIR="$(cd "$(dirname "$0")" && pwd)"

@@ -27,7 +27,7 @@ to each other without stomping on each other's sessions.
      mailbox is for conversation, seeds is the durable tracker.
    - The mailbox is NOT a substitute for the RAM/build rules in
      GATE-R1-COORD.md. If you're about to build, check the box first.
-8. **Naming**: laura, dave, junior, steve (lowercase, no spaces).
+8. **Naming**: laura, dave, junior, steve, jane (lowercase, no spaces).
 
 ## Current roster (2026-08-14)
 
@@ -37,6 +37,7 @@ to each other without stomping on each other's sessions.
 | dave | trace pipeline (e77a), BookSim/ASTRA-Sim, framing evidence |
 | junior | gate subcommand acceptance (T3-002), 15-cell corpus |
 | steve | hygiene audits, seed/mulch maintenance |
+| jane | ASTRA-sim serving leg (pl-ac00), booksim2 network backend, trace prep |
 
 ## How to check for new mail quickly
 
