@@ -32,7 +32,8 @@ module noc_router #(
   parameter int X_DIM   = 4,
   parameter int Y_DIM   = 4,
   parameter int DIE_BASE = 0,   // 0 = die A, 64 = die B (2-die bridge mode)
-  parameter int BRIDGE_COL = 0  // bridge column on die A (die B: entry col)
+  parameter int BRIDGE_COL = 0, // bridge column on die A (die B: entry col)
+  parameter int BRIDGE_ROW = 0  // bridge row on die B (die A: exit row Y_DIM-1)
 )(
   input  logic            clk,
   input  logic            rst_n,
@@ -152,6 +153,16 @@ module noc_router #(
       end
       return xy_dor(X[7:0], Y[7:0], dst % X_DIM, dst / X_DIM);
     end else begin
+      // die B: remote (die-A) targets route to the bridge, then WEST.
+      // X-first DOR to the bridge entry (BRIDGE_ROW, BRIDGE_COL) — MUST
+      // match die A's X-first order: mixed turn ordering across the bridge
+      // (die A X-first, die B Y-first) is a deadlock cycle (multi-stream
+      // replay collapsed to 66/3003 with Y-first; the single-stream gate
+      // cell never exposed it).
+      if (dst < 8'h40) begin
+        if ((Y == BRIDGE_ROW) && (X == BRIDGE_COL)) return PORT_W;
+        return xy_dor(X[7:0], Y[7:0], BRIDGE_COL, BRIDGE_ROW);
+      end
       // die B: local targets only. Y-first DOR: climb to the multicast row
       // (row 0 = ly) BEFORE routing east, matching the BookSim off-axis path
       // (up the entry column, then along the row -- the measured placement
