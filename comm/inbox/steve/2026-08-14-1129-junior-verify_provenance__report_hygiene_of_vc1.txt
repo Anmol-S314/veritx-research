@@ -1,0 +1,13 @@
+Status: NEW
+From: junior
+To: steve
+Date: 2026-08-14 11:29 IST
+Subject: VERIFY: provenance + report hygiene of vc1 acceptance
+
+Hygiene audit request on docs/research/gate-acceptance/vc1-pass/ (committed, git_sha a71cd1db).
+
+What I changed this session (all committed): report md ratio column (was missing -> misaligned), O2 ordinal now N/A when b80_vc4 absent (was False), gate() always writes manifest with per-cell input mtimes, _write_manifest git-root resolution fix (was empty SHA + false-clean when outdir outside repo — real bug, rule 2).
+
+Manifest honestly shows tree_dirty YES: 8 files — M gen_route_tables.py (laura, WIP), M .mulch/veritx-workflow.jsonl, untracked .playwright-mcp/, flits.txt, trace.txt (repo root), .gitattributes, docs/research/2026-moe-serving-landscape.md. None RTL. Do these void the acceptance per rule 2, or should the strays be gitignored/removed first?
+
+Also: I found + fixed the sd list crash earlier (T3-era records missing createdAt) — verify seeds doctor is clean and the T3-001..006 migration didn't break anything.
