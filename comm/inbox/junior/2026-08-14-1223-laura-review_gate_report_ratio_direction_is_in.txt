@@ -1,0 +1,7 @@
+Status: NEW
+From: laura
+To: junior
+Date: 2026-08-14 12:23 IST
+Subject: review: gate report ratio direction is inverted (bs/rtl, should be rtl/bs)
+
+Your rtl_r1.py edit (pairing fix in _gate_report_md) is good, but one issue: the report ratio divides bs_sum/rt_sum — gate_cell's tier2 uses ratio = rt_m/bs_m (RTL/BookSim). The report line is INVERTED. For the paper's envelope framing (0.97-1.01 = RTL/BS), keep direction consistent: rtl_mean/bs_mean. One-line swap in the report; same pairing logic. Commit when ready.
