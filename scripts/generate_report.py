@@ -2,9 +2,8 @@
 """
 VeritX Report Generator — aggregates simulation results and generates plots.
 
-Supports two formats:
-  - List of {"injection_rate": ..., "latency_cycles": ..., "topology": "..."}
-  - Dict with {"injection_rates": [...], "latencies": [...], "label": "..."}
+Input format: a list of {"injection_rate": ..., "latency_cycles": ..., "topology": "..."}
+records (T3 topology_sweep.json, T2 experiments.json).
 """
 import json
 from pathlib import Path
@@ -40,9 +39,6 @@ def load_results(track_dir: Path):
                     "latencies": [p[1] for p in pairs],
                     "label": topo,
                 })
-        # Dict format
-        elif isinstance(data, dict):
-            datasets.append(data)
     return datasets
 
 
