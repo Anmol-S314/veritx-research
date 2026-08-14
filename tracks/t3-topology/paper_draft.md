@@ -146,6 +146,21 @@ and the **RTL gate** of both at zero per-flit mismatch. The Gate-0 prior-art pas
 (2026-08-05) and the primary-source refresh (2026-08-12) found no work analyzing
 multicast fork placement across a NoC-to-NoC bridge for serving traffic.
 
+**Claim scope (2026-08-14, trace-work correction).** What is claimable NOW:
+- **Network-level demand reduction**, measured under trace-derived serving traffic
+  (LLMServingSim → Chakra → BookSim, Qwen3-30B-A3B TP2/EP2, 1,178 batches):
+  fork-vs-source latency win 15-21% across loads at dispatch fanout k=8; bridge
+  bottleneck sustains 13,280 vs 3,873 tok/s = **3.43× serving-rate headroom** at the
+  bridge link. The traffic mix is dispatch-multicast (ALLGATHER 34.7%) + collectives
+  (ALLREDUCE/REDUCESCATTER 65%) — the mechanism's target class is the dominant one.
+- The mechanism is **traffic-class agnostic**; its g-fold applies to any one-to-k
+  multicast crossing the bridge (KV rows, expert dispatch, embedding broadcast).
+What is NOT claimable: **end-to-end "improves MoE serving throughput/latency."**
+The serving-system loop (LLMServingSim) uses an analytical network model that cannot
+represent the fork; the 2-node end-to-end run remains toolchain-blocked (2.6T-cycle
+batches at 4 NPUs). State this boundary explicitly in the paper; the serving-level
+claim is future work.
+
 **Open items.**
 - Re-verify the ⚠️-flagged items before publication (per simulator-landscape-2026 §6
   confidence note): PAC-NoC venue/DOI, 2605.00254 and NetKV read-in-full to confirm the
