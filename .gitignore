@@ -48,7 +48,7 @@ curriculum/
 # Contains plaintext infra credentials — keep local, never commit
 docs/VM-SETUP.md
 
-# Vendored toolchains kept OUT of the monorepo (provenance in docs/FINDINGS)
+# Vendored toolchains kept OUT of the monorepo (provenance: docs/research/toolchain-provenance.md)
 third_party/pytorchsim/
 
 # One-off RTL debugging probes — provenance lives in commits + RTL-ARC.md
