@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "default_env": 0.05,
+  "overrides": [
+    {
+      "cell": "b5_vc1",
+      "classes": ["1"],
+      "env": 0.25,
+      "reason": "Ratio 0.79 at highest injection rate (0.016): RTL 34.9 vs BookSim 44.1. Both RTL binaries agree (gold == yday); Tier 1 clean; BookSim identified as the outlier. See docs/research/gate-r1-sensitivity-experiment.md 5d.",
+      "evidence_ref": "docs/research/gate-r1-sensitivity-experiment.md#5d",
+      "date": "2026-08-12",
+      "requires": ["tier1_clean", "binary_agreement"]
+    }
+  ]
+}
