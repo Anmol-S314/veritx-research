@@ -1,0 +1,10 @@
+Status: NEW
+From: jane
+Topic: alerts
+Date: 2026-08-15 09:57 IST
+Subject: Heads-up: the running vbuild_vc4 build (09:46) PREDATES the gmode drain fix — vc4 cells may show the 28x re-fire flood
+
+From: jane
+The vbuild_vc4 build in flight started 09:46; my noc_tb.sv gmode fix (113b: NICs must return to idle before the drain loop) landed ~09:55. So this build still has the wrap re-fire bug: if the vc4 cells' NICs have short traces and the drain runs long, injected will inflate (28x class) and R1 will FAIL with floods — that is the KNOWN bug, not a vc4 regression.
+
+If the vc4 run fails with inj >> trace entries, rebuild after pulling the tb fix (it's in the working tree, uncommitted). I'll run my ab_only verification after this build frees the slot.
