@@ -48,7 +48,13 @@ module noc_2die #(
   link_c_t injc_st1[2][N], injc_st2[2][N];
 
   // bridge channel stages (link latency 2, like every other link)
-  link_f_t br_f1, br_f2, br_f1b, br_f2b;
+  // Dave 2026-08-15: depth 2 -> 3 per the CreditBased minimum-FIFO rule
+  // (Leone/Colagrande/Benini, arXiv 2607.01430 §III-3): with registered
+  // credit return, a 2-deep downstream FIFO loses up to 33% throughput and
+  // starves one direction under bidirectional contention (measured: A->B
+  // 11% vs B->A 82% on the 2-deep bridge). Depth 3 absorbs the credit-
+  // return latency and sustains full bandwidth in both directions.
+  link_f_t br_f1, br_f2, br_f3, br_f1b, br_f2b, br_f3b;
   link_c_t br_c1, br_c2, br_c1b, br_c2b;
 
   // F9: per-die debug mirrors (same role as noc_mesh's r_pop/r_recv/r_dbg)
@@ -99,8 +105,8 @@ module noc_2die #(
           ejc_st1[d][e].valid <= 1'b0; ejc_st2[d][e].valid <= 1'b0;
           injc_st1[d][e].valid <= 1'b0; injc_st2[d][e].valid <= 1'b0;
         end
-      br_f1.valid <= 1'b0; br_f2.valid <= 1'b0;
-      br_f1b.valid <= 1'b0; br_f2b.valid <= 1'b0;
+      br_f1.valid <= 1'b0; br_f2.valid <= 1'b0; br_f3.valid <= 1'b0;
+      br_f1b.valid <= 1'b0; br_f2b.valid <= 1'b0; br_f3b.valid <= 1'b0;
       br_c1.valid <= 1'b0; br_c2.valid <= 1'b0;
       br_c1b.valid <= 1'b0; br_c2b.valid <= 1'b0;
     end else begin
@@ -126,11 +132,13 @@ module noc_2die #(
           injc_st1[d][e] <= rc_out[d][e][PORT_L];
           injc_st2[d][e] <= injc_st1[d][e];
         end
-      // bridge channels (both directions, 2-stage)
+      // bridge channels (both directions, 3-stage: CreditBased min-FIFO)
       br_f1  <= rf_out[0][(Y_DIM-1) * X_DIM + BRIDGE_COL][PORT_E];
       br_f2  <= br_f1;
+      br_f3  <= br_f2;
       br_f1b <= rf_out[1][BRIDGE_ROW * X_DIM + BRIDGE_COL][PORT_W];
       br_f2b <= br_f1b;
+      br_f3b <= br_f2b;
       br_c1  <= rc_out[1][BRIDGE_ROW * X_DIM + BRIDGE_COL][PORT_W];
       br_c2  <= br_c1;
       br_c1b <= rc_out[0][(Y_DIM-1) * X_DIM + BRIDGE_COL][PORT_E];
@@ -195,10 +203,10 @@ module noc_2die #(
     begin
       int a = (Y_DIM-1) * X_DIM + BRIDGE_COL;
       int b = BRIDGE_ROW * X_DIM + BRIDGE_COL;
-      rf_in[0][a][PORT_E] = br_f2b;         // die A sees die-B's west out
+      rf_in[0][a][PORT_E] = br_f3b;         // die A sees die-B's west out (3-stage)
       rc_in[0][a][PORT_E] = br_c2;          // die-A E credit-in = die-B W credit-out
       rc_early_in[0][a][PORT_E] = br_c1;
-      rf_in[1][b][PORT_W] = br_f2;          // die B sees die-A's east out
+      rf_in[1][b][PORT_W] = br_f3;          // die B sees die-A's east out (3-stage)
       rc_in[1][b][PORT_W] = br_c2b;         // die-B W credit-in = die-A E credit-out
       rc_early_in[1][b][PORT_W] = br_c1b;
     end
