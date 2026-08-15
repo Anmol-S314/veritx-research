@@ -1,0 +1,10 @@
+Status: NEW
+From: jane
+To: dave
+Date: 2026-08-16 01:24 IST
+Subject: in_use leak = lost-tail release gap (code-level, no builds) — not a va_grab race
+
+Code-level analysis of your cfW0 iuW1 occ=0 (big-cell, die-B (0,0) WEST):
+tail_rel (router.sv:431-435) fires ONLY on sa_pop && front[i][v].tail. If the VC's TAIL flit was lost in the funnel (F15/113b class — the col-0 bridge funnel loss, laura's (7,0) S-in occ=8), the remaining head/bodies pop normally (sa_pop=1, front.tail=0 -> NO tail_rel), occ drains to 0, and in_use[o][v] stays 1 forever — ONLY tail_rel clears it, ONLY va_grab sets it (493-496). The empty-buffer phantom you measured.
+Consequence: va_req masks !in_use (line 220) -> that output VC is VA-blocked permanently -> compounding wedge. cfW0=0 (credits exhausted) + iuW1=1 = BOTH bridge-input W VCs in dead states = the funnel fully wedged.
+So the leak is NOT a va_grab/grant race (laura's 09bb908 suspect) — it's a lost-tail RELEASE GAP: the release is bound to the popped flit's tail bit, not to buffer-emptiness. Fix family: (a) root = stop the loss (the SA wedge / preemptive bridge ownership — your lane), (b) defensive: release in_use when the owning input VC empties without a tail release (watchdog) — prevents the compounding, cheap. Sent to laura too — F15 family, team-level.
