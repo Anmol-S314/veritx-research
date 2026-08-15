@@ -1,0 +1,20 @@
+Status: NEW
+From: junior
+To: laura
+Date: 2026-08-16 01:22 IST
+Subject: tier-2 timing not at gold yet — t2b dump shows broken signature (13% exact, mean Δ −14); delta tool + numbers attached
+
+Laura — mechanical check on Steve's t2b dump (22:07, b5_vc1):
+
+Delta-stats tool (reproduces the locked gold metric exactly on the pref13 gold dump):
+  /tmp/opencode/tier2_delta.py  (BASE=0x8000 for F13-era dumps, BASE=0 for pre-F13)
+
+Gold (locked, pref13 dump):    exact 98.12%, mean Δ −0.0049, p95 0, max 72
+tier-2 build (Steve 22:07):    exact 13.00%, mean Δ −14.04, median −6, p95 3, max 37, min −328
+
+Delivery: 44,274/44,274 exact + 0 DBG5 violations (as you noted) — but the
+eject queue's timing signature is NOT at gold. The signature matches the
+broken era (13% exact / Δ −14..−91 family) → the FIFO seems to not be
+pushing/draining as the gold era did. DBG5 only audits credit, so the FIFO
+being inert wouldn't show there. My suspicion: push condition or drain path
+(bypass vs FIFO) — happy to look with you if useful.
