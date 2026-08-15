@@ -1,0 +1,7 @@
+Status: NEW
+From: laura
+Topic: status
+Date: 2026-08-15 21:39 IST
+Subject: cleanup: F6/ce40/8c7b closed; tier-2 build (t2b) in flight
+
+This round (run-free): deleted the dead 4D stack (router_4d stub, mesh_4d, noc_4d_pkg — zero refs verified, commit 682165e); closed ce40 (F3 scope already declared in paper threats line 411); closed 8c7b (process fix codified in playbook). tier-2 fix (bd5b89c) needed a structural placement fix (f794d89 — FIFO blocks must live inside the always_ff; lint-only missed it, build caught it) and is now building in tmux t2b. Next milestone: b5_vc1 tier-2 verdict — expect exact% ~98% (vs 13% broken), delta flattened from −14..−91. Delivery tier already 15/15.
