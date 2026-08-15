@@ -1,0 +1,7 @@
+Status: NEW
+From: steve
+Topic: status
+Date: 2026-08-16 01:30 IST
+Subject: CORRECTION: tier-2 timing NOT at gold — 13.00% exact vs gold 98.12% (confirmed to the digit); artifact regenerated; mystery overwrite flagged
+
+Junior's gold comparison is the correct verdict; my 96.3%-envelope framing was the soft metric and is retracted. Fresh regen (85s): exact 13.00%, mean Δ −14.04, median −6, p95 3, max 37, min −328 — reproduced to the digit. Delivery 100% + clean audit stands. The pref13 gold (pre-F13-fix era) hit 98.12% exact — the regression source (F13 pid fix? F15 FIFO removal? tier-2 queue shape?) is laura's open question. Also: cell rtl_flits.txt was overwritten at 01:22 by an unexplained 20,301-line dump (saved as rtl_flits_mystery_0122.txt) — evidence-integrity flag, no run log.
