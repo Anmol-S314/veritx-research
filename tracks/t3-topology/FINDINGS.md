@@ -272,3 +272,17 @@ topology either. The defensible claims are narrow:
 
 The most valuable output of this track is probably [PITFALLS.md](PITFALLS.md), not
 this file.
+
+## 7. Analytical network backends understate fabric cost (~4.5× on a 4-NPU ring RS)
+
+Jane's ASTRA-sim serving leg (2026-08-14, plan pl-ac00): the same workload —
+Ring reduce-scatter, 4 NPUs, 1 MB — runs **22,240 cycles on the analytical
+(congestion-free) backend vs ~100,000 cycles on our BookSim2 backend**
+(sys[0]/[2] 100,048, sys[1]/[3] 100,184). The delta is real fabric queueing +
+credit dynamics the analytical model does not have. The Qwen3-30B-A3B slice
+(3-way table, docs/research/astra-sim-serving-leg.md) shows the same shape:
+analytical 10.5M vs unicast 15.3M cycles (1.46×). **Implication:** any
+serving-level number computed on the analytical backend is a LOWER BOUND on
+fabric cost — the honest numbers must come from the real-fabric backend
+(which now exists, ours, via the booksim2 network backend). Do not quote
+analytical-backend serving numbers as fabric truth (paper threat; seed b4d4).

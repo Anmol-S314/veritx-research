@@ -104,12 +104,37 @@ def lint_cell(cfg):
     return 0
 
 
+def lint_trace_files(outdir):
+    """d604: a trace file that is EMPTY (0 bytes) leaves tmem uninitialized in
+    the build — the fire guard (nic.sv:470-472) sees X and fires garbage
+    (observed injected=16385 all dst-0, drain spins, timeout). A no-traffic
+    NIC must carry the sentinel line 0000000000000000 (cycle=0, skipped) or
+    have NO file at all. Returns 0 if clean."""
+    import glob
+    import os
+    bad = [os.path.basename(f) for f in
+           sorted(glob.glob(os.path.join(outdir, "trace_n*.hex")))
+           if os.path.getsize(f) == 0]
+    if bad:
+        print(f"TRACE LINT FAIL: {len(bad)} EMPTY trace file(s) — replace with "
+              f"the sentinel line 0000000000000000 (cycle=0, skipped by the "
+              f"fire guard) or delete the file (d604): "
+              f"{', '.join(bad[:5])}", file=sys.stderr)
+        return 1
+    print("trace lint OK (no empty trace files)")
+    return 0
+
+
+
+
 def gen_trace(booksim, cfg, outdir):
     import os
     import subprocess
     if lint_cell(cfg):
         sys.exit(f"gen-trace aborted: {cfg} fails canonical config lint (L1)")
     os.makedirs(outdir, exist_ok=True)
+    if lint_trace_files(outdir):
+        sys.exit(f"gen-trace aborted: {outdir} has EMPTY trace files (d604)")
     # NB: this fork returns -1 (255) on success, 0 on "simulation unstable"
     # (convergence aborted; the trace/dump are still valid stimulus).
     r = subprocess.run([booksim, cfg], cwd=outdir)
