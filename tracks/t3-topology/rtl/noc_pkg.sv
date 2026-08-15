@@ -49,15 +49,20 @@ package noc_pkg;
   } link_c_t;
 
   // Router debug readout (Gate R1 deadlock tracing).
+  // VC dimension is [7:0] (8) — the max VCS any build uses. The router's
+  // debug assigns index v in [0, VCS); at VCS=8 the old hardcoded [3:0]
+  // (4-VC) struct overflowed, and verilator 5.032 generated runtime-shifted
+  // LHS writes for the out-of-bounds element -> "lvalue required" compile
+  // error (the "VCS>=8 build wall"). Upper indices are unused at VCS<8.
   typedef struct packed {
-    logic [4:0][3:0][2:0]  st;
-    logic [4:0][3:0][2:0]  out_port;
-    logic [4:0][3:0][2:0]  out_vc;
-    logic [4:0][3:0][3:0]  credit_free;
-    logic [4:0][3:0]       in_use;
-    logic [4:0][3:0][3:0]  occ;
-    logic [4:0][3:0][31:0] pop_o;
-    logic [4:0][3:0][31:0] ack_o;
+    logic [4:0][7:0][2:0]  st;
+    logic [4:0][7:0][2:0]  out_port;
+    logic [4:0][7:0][2:0]  out_vc;
+    logic [4:0][7:0][3:0]  credit_free;
+    logic [4:0][7:0]       in_use;
+    logic [4:0][7:0][3:0]  occ;
+    logic [4:0][7:0][31:0] pop_o;
+    logic [4:0][7:0][31:0] ack_o;
   } dbg_router_t;
 
 endpackage
