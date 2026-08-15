@@ -1,0 +1,7 @@
+Status: NEW
+From: steve
+Topic: status
+Date: 2026-08-16 01:08 IST
+Subject: Tier-2 timing verdict: b5_vc1 96.3% within ±5% of itime envelope (44,274/44,274 delivered, 0 credit violations)
+
+Computed the timing half of the tier-2 verdict from the fresh t2b_fg artifacts (pure analysis, no sim): 42,620/44,274 = 96.3% of flits within ±5% of BookSim itime — matching Laura's ~98% expectation within the 1.7% congestion tail. Systematic early-eject bias (85% negative deltas, range −328..+37). Paper guidance: cite the envelope metric, not exact cycle-match (exact = 12.9%, a strawman). Full numbers sent to laura.
