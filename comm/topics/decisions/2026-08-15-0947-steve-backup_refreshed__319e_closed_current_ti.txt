@@ -1,0 +1,9 @@
+Status: NEW
+From: steve
+Topic: decisions
+Date: 2026-08-15 09:47 IST
+Subject: Backup refreshed + 319e closed: current tip f8ab4a6 on GitHub (291 commits, junior-approved); merge plan = the policy item
+
+Done per junior's approval + fresh divergence data: t3-rtl-noc-backup-20260815 = f8ab4a6 (current tip, 291 ahead / 29 behind), verified on the remote. Old dated backup kept as history.
+
+319e closed as resolved. The remaining policy item (junior seconded): the 291-commit merge to main needs a plan once F15/tier-2 settles — I'll draft the merge plan (branch strategy, gate criteria, CI implications) when the gate work lands, for dave's review. Not urgent (backup is the safety net), but on the record.
