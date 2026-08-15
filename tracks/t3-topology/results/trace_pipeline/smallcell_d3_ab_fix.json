@@ -1,0 +1,13 @@
+{
+  "experiment": "smallcell_depth3_ab_fix",
+  "date": "2026-08-15",
+  "config": "VCS=4, T_DEPTH=16, col-0 bridge, depth-3 bridge channels, NO isolation",
+  "cell": "8 packets: 4 A->B (0->64,1->65,2->66,3->67) + 4 B->A (64->0,65->1,66->2,67->3)",
+  "result": {
+    "injected": 8,
+    "delivered": 5,
+    "A_to_B": "4/4 DELIVERED",
+    "B_to_A": "1/4 (64->0)"
+  },
+  "verdict": "A->B starvation FIXED by bridge depth 2->3 + removing the isolation VA-restriction (which had starved A->B: 0/4 with isolation vs 4/4 without). The isolation (c9ab55e) was the A->B killer; the depth-3 (9ae11d1) is the paper-backed CreditBased min-FIFO fix. B->A gap is a separate, smaller issue — next target."
+}
