@@ -22,7 +22,12 @@ module noc_2die #(
   output link_c_t inject_credit [2][Y_DIM][X_DIM],
   output link_c_t inject_credit_early [2][Y_DIM][X_DIM],
   output link_f_t eject  [2][Y_DIM][X_DIM],
-  input  link_c_t eject_credit [2][Y_DIM][X_DIM]
+  input  link_c_t eject_credit [2][Y_DIM][X_DIM],
+  // F9 (889f): debug/audit outputs — were dangling (all-zero readout in
+  // TWO_DIE mode, DBG2/3/5 dead). Same wiring as noc_mesh.
+  output logic [31:0] router_pop [2][Y_DIM][X_DIM][NUM_PORTS],
+  output logic [31:0] router_recv [2][Y_DIM][X_DIM][NUM_PORTS],
+  output dbg_router_t router_dbg [2][Y_DIM][X_DIM]
 );
 
   localparam int N = X_DIM * Y_DIM;
@@ -46,6 +51,11 @@ module noc_2die #(
   link_f_t br_f1, br_f2, br_f1b, br_f2b;
   link_c_t br_c1, br_c2, br_c1b, br_c2b;
 
+  // F9: per-die debug mirrors (same role as noc_mesh's r_pop/r_recv/r_dbg)
+  logic [31:0] r_pop [2][N][NUM_PORTS];
+  logic [31:0] r_recv [2][N][NUM_PORTS];
+  dbg_router_t r_dbg [2][N];
+
   for (genvar d = 0; d < 2; d++) begin : gen_die
     for (genvar y = 0; y < Y_DIM; y++) begin : gen_row
       for (genvar x = 0; x < X_DIM; x++) begin : gen_col
@@ -58,8 +68,20 @@ module noc_2die #(
           .flit_in(rf_in[d][n]), .credit_in(rc_in[d][n]),
           .credit_in_early(rc_early_in[d][n]),
           .flit_out(rf_out[d][n]), .credit_out(rc_out[d][n]),
-          .tick(), .recv_cnt(), .send_cnt(), .pop_cnt(), .dbg()
+          .tick(), .recv_cnt(r_recv[d][n]), .send_cnt(), .pop_cnt(r_pop[d][n]),
+          .dbg(r_dbg[d][n])
         );
+      end
+    end
+  end
+
+  for (genvar d = 0; d < 2; d++) begin : gen_dbg_map
+    for (genvar y = 0; y < Y_DIM; y++) begin : gen_dbg_row
+      for (genvar x = 0; x < X_DIM; x++) begin : gen_dbg_col
+        localparam int n = y * X_DIM + x;
+        assign router_pop[d][y][x] = r_pop[d][n];
+        assign router_recv[d][y][x] = r_recv[d][n];
+        assign router_dbg[d][y][x] = r_dbg[d][n];
       end
     end
   end

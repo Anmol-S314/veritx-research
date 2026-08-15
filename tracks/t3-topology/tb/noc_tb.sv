@@ -45,7 +45,9 @@ module noc_tb;
                  .BRIDGE_COL(BRIDGE_COL), .BRIDGE_ROW(BRIDGE_ROW)) u_noc (
         .clk(clk), .rst_n(rst_n),
         .inject(inj), .inject_credit(injc), .inject_credit_early(injce),
-        .eject(ej), .eject_credit(ejc)
+        .eject(ej), .eject_credit(ejc),
+        // F9 (889f): bind the debug/audit outputs (were dangling -> DBG dead)
+        .router_pop(rpop), .router_recv(rrecv), .router_dbg(rdbg)
       );
     end else begin : gen_mesh
       noc_mesh #(.VCS(VCS), .X_DIM(X_DIM), .Y_DIM(Y_DIM)) u_mesh (
