@@ -31,6 +31,9 @@ package noc_pkg;
     logic [7:0]           dst;
     logic [15:0]          pid;
     logic [31:0]          itime;
+    logic                 copy;     // F8: fork-copy marker — the NIC must NOT return
+                                    // eject credit for copies (they bypass the input
+                                    // buffer; an unconditional credit leaks PORT_L).
     logic                 mcast;    // VeritX multicast stream: this flit is a stream whose
                                     // copies eject at every node id in [copy_lo, copy_hi]
                                     // (BookSim mcast_k row-multicast, bridge offset form).

@@ -184,8 +184,10 @@ module noc_nic #(
   assign inject.valid = inject_valid;
   assign inject.flit  = inject_flit;
 
-  // eject credit: same cycle the flit is read
-  assign eject_credit.valid = eject.valid;
+  // eject credit: same cycle the flit is read — UNLESS it's a fork copy
+  // (F8: copies bypass the input buffer, so returning a credit for them
+  // drifts credit_free[PORT_L] to saturation — the 202-violation leak).
+  assign eject_credit.valid = eject.valid && !eject.flit.copy;
   assign eject_credit.vc    = eject.flit.vc;
 
   logic [31:0] tick_r, inj_cnt, ejc_cnt;
