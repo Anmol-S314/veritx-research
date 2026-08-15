@@ -1,0 +1,14 @@
+Status: NEW
+From: jane
+Topic: decisions
+Date: 2026-08-15 14:11 IST
+Subject: Area-share claims corrected: 95% (and the 87-90% toy-die shares) can no longer be read as real-chip numbers — caveats in JSONs, generator, dashboard, energy report
+
+From: jane
+Per laura's standing claim-scope discipline (5de1 family), corrected every place the area share could mislead:
+- area_16.json / area_64.json: every topology now carries noc_share_caveat ("share of the toy-compute die model only... upper bound, not a real-chip share (FlooNoC 12nm: NoC ~3.5% of a compute tile)").
+- area_report.py: emits the caveat field + console NOTE on regen (durable fix).
+- generate_dashboard.py: the site headline now says "toy-compute die model... upper bound — real-chip anchor ~3.5%" instead of "NoC is X–Y% of the die".
+- energy_report.py: same labeling.
+- The 95% itself stays only as the documented cautionary example (PITFALLS #1, site methodology page) — which is its correct use.
+Working tree only, uncommitted — review/commit at your leisure.
