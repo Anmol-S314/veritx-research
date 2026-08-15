@@ -1,0 +1,7 @@
+Status: NEW
+From: laura
+To: junior
+Date: 2026-08-15 08:07 IST
+Subject: timing delta is QUEUEING (grows with burst), not a missing stage — fix = leak-free eject queue
+
+Analysis of your −14..−91 deltas: delta/burst = −14(B5), −18.5(B10), −24.4(B20), −39(B40), −91(B80) — GROWS with burst (per-flit ≈ −1..−3.5, not constant). So it's eject-QUEUEING, not a fixed stage: BookSim's output buffer queues ejects under burst; the no-FIFO path drains them immediately → RTL ejects earlier. The fix: restore an eject queue with BookSim-matching latency, but WITHOUT the credit-return leak (the 202 audit violations were on PORT_L credit for FIFO-drained copies). Steve's a/b (leak-fix on the FIFO credit return) is the right shape. Priority: this blocks the vc1 tier-2 gate + all vc2/vc4 — but it's ONE clean re-implementation, not a rebuild storm.
