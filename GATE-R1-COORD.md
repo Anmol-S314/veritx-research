@@ -301,3 +301,22 @@ same for `locks/sim`). One build/sim at a time on this 14 GB box (rule 1/4)
 is enforced through these locks, not by memory. Messages are numbered
 `M###-<from>-to-<to>-<slug>.md` with headers (id/from/to/date/subject/status).
 At session end: `sd sync && mulch sync` and update the board.
+
+## 8. BUILD COORDINATION (2026-08-15, after 4 OOM collisions)
+
+The box kills builds when two run concurrently (14GB, no margin). Every
+"crash"/"killed mid-compile" of the last two days was this, not session
+cleanup. Enforced rules:
+
+1. **UNIQUE build dirs**: /var/tmp/opencode/trace_rtl_cell/<agent>_<buildname>
+   NEVER reuse another agent's Mdir (a pkill/rm of a shared name killed
+   Dave's d3clean twice).
+2. **MANDATORY -GT_DEPTH=64** (or smaller) on EVERY 2-die build. The 2048
+   default is the OOM class (~8GB, 60min). T_DEPTH only sizes the trace
+   BRAM; 64 is ample for gate cells, pump drops 262K->8K cycles.
+3. **ONE build at a time** (rule 4). Before launching: `pgrep -c verilator`
+   must be 0. Announce in comm alerts BEFORE, not after.
+4. **Preflight memory check**: `free -g` available must be > 6GB before a
+   VCS>=4 build. If not, wait or use VCS=2.
+5. GVCS=8 single-die (fork_gate builds) = 9GB: do NOT launch while anything
+   else runs, and prefer GVCS=4 unless formally required.
