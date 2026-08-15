@@ -693,9 +693,6 @@ module noc_router #(
     end
   end
 
-
-  end
-
   assign tick = tick_r;
 
   for (genvar i = 0; i < NUM_PORTS; i++) begin : gen_dbg
