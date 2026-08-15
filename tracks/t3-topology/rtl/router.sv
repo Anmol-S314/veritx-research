@@ -691,7 +691,6 @@ module noc_router #(
         end
       end
     end
-  end
 
   assign tick = tick_r;
 
