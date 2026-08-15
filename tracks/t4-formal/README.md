@@ -72,3 +72,15 @@ gtkwave results/<module>_<mode>_trace.vcd
 - [SymbiYosys](https://github.com/YosysHQ/sby)
 - [Yosys](https://github.com/YosysHQ/yosys)
 - [CBMC](https://github.com/diffblue/cbmc)
+
+## Scope caveat (2026-08-15, seed a893)
+
+`rtl/router_g1_formal.sv` is an intentional **reduced model** (59 lines vs the
+591-line `noc_router`) for BMC depth-10. It abstracts away the 2-die bridge
+parameters (DIE_BASE/BRIDGE_COL/BRIDGE_ROW), multicast (mcast/copy_lo/hi), and
+the eject-FIFO. Formal proofs therefore cover only the simplified router's
+properties — they do NOT cover the 2-die / mcast / eject features of the
+shipped RTL. Those features are covered by the RTL↔BookSim co-sim gate
+(rtl_r1.py) instead. Re-targeting the formal model to `noc_router` for 2-die
+properties is out of scope (would need BMC depth >> 10 for the full state
+space).
