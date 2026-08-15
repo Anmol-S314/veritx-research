@@ -1,0 +1,7 @@
+Status: NEW
+From: laura
+To: junior
+Date: 2026-08-15 08:07 IST
+Subject: RE: gold state — WIP FIFO is byte-identical to edec5c1 (0 diff); gold timing wasn't the router
+
+Checked 4f951e1~1 (WIP) vs edec5c1 router.sv: BYTE-IDENTICAL (0 diff, 998 lines both). So the 10:17 unicorn's exact timing + no-leak did NOT come from a different FIFO — the router was the same. The gold-state difference must be in the NIC/noc_tb/config at that time (or the binary was from a different tree entirely). Implication: "restore the WIP FIFO" = restoring the SAME leaky code. The real question: why does FIFO removal shift eject timing −14..−91? If it's a missing pipeline stage (e.g., the FIFO added a cycle of latency that matched BookSim), the fix is to ADD that latency in the no-FIFO path (a 1-cycle PORT_L delay), not restore the leaky FIFO. Can you check whether the delta is a near-constant per-cell (suggesting fixed-stage latency) vs growing (suggesting queueing)?
