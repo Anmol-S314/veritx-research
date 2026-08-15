@@ -41,6 +41,8 @@ def run_cell(g, rate, naive, max_samples=60):
 
 def main():
     g = int(sys.argv[sys.argv.index("--g") + 1]) if "--g" in sys.argv else 8
+    if "--saturate" in sys.argv:
+        return main_saturate(g)
     rates = [0.0005, 0.001, 0.002, 0.004, 0.008]
     print(f"=== bridge-fork vs source-fork, g={g} remote cores, 2-die bridge ===\n")
     print(f"  {'rate':>8} | {'bridge-fork':^22} | {'source-fork':^22} | {'fork ratio':>10}")
@@ -67,6 +69,41 @@ def main():
     with open("results/bridge_fork_sweep.json", "w") as f:
         json.dump(out, f, indent=1)
     print(f"\nwrote results/bridge_fork_sweep.json (g={g})")
+
+
+def main_saturate(g):
+    """Saturation leg (ba6c): run rates up past the bridge-fork saturation
+    point and write results/bridge_fork_saturation.json (cited by
+    UCIE-ARC.md:90; previously hand-made, never produced by a script).
+    Format matches the Aug-12 artifact: metadata + cells with per-fork
+    {lat, acc} at each rate. Known-answer gate: bridge-fork keeps the
+    bridge unsaturated ~g x longer than source-fork."""
+    import json
+    rates = [0.0005, 0.002, 0.008, 0.02, 0.05, 0.1]
+    print(f"=== saturation sweep, g={g} remote cores ===")
+    cells = []
+    for rate in rates:
+        ba, bl, _ = run_cell(g, rate, 0)
+        sa, sl, _ = run_cell(g, rate, 1)
+        row = {"rate": rate,
+               "bridge_fork": {"lat": bl, "acc": ba},
+               "source_fork": {"lat": sl, "acc": sa}}
+        cells.append(row)
+        print(f"  {rate:>7.4f} | bridge lat {bl if bl is not None else float('nan'):10.1f} "
+              f"acc {ba if ba is not None else float('nan'):10.2e} | "
+              f"source lat {sl if sl is not None else float('nan'):10.1f} "
+              f"acc {sa if sa is not None else float('nan'):10.2e}")
+    out = {
+        "g": g,
+        "topology": "bridged_2die (two 8x8 meshes, 1 bridge link at row7/row0 col3)",
+        "traffic": "KV row-multicast die A -> g die-B cores, mcast_offset=64, packet_size=1",
+        "known_answer_gate": "bridge-fork must keep bridge unsaturated ~g x longer than source-fork",
+        "cells": cells,
+    }
+    os.makedirs("results", exist_ok=True)
+    with open("results/bridge_fork_saturation.json", "w") as f:
+        json.dump(out, f, indent=1)
+    print(f"\nwrote results/bridge_fork_saturation.json (g={g})")
 
 if __name__ == "__main__":
     main()
