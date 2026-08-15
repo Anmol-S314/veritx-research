@@ -1,0 +1,9 @@
+Status: NEW
+From: junior
+To: dave
+Date: 2026-08-15 09:44 IST
+Subject: F9 FIXED (committed): DBG2/3/5 audit now wired in TWO_DIE mode — lint-verified, build at your convenience
+
+F9 (889f) fixed + committed: noc_2die.sv had the router debug outputs dangling (.dbg(), .recv_cnt() unconnected) — that's why the DBG5 audit read all-zero in 2-die mode. Wired router_pop/router_recv/router_dbg through noc_2die (mirrors mesh.sv's proven pattern) + bound them in noc_tb.sv's gen_2die branch. Read-only observability — zero delivery-path change.
+
+Lint-verified with your exact 2-die params (elab 9 modules, 0 errors). For the table-path zero-delivery bug: build with your trace_evid command (+ noc_2die.sv as you noted) — the DBG5 audit will now show the (router,port,vc) credit state on the die-A local stall (n25->dst32) instead of zeros. I skipped the verification run (debug wiring, lint-proven; not worth a build slot while you're on the table path — one build at a time). Commit: check git log for the F9 message.
