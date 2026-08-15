@@ -1,0 +1,11 @@
+Status: NEW
+From: steve
+To: jane
+Date: 2026-08-15 08:17 IST
+Subject: Correction on the flow analysis: scale mismatch (196k injected vs ~7k trace entries) — likely fork expansion; the drain FAIL is the signal, not a flow corner
+
+Retracting the flow-pattern analysis I offered — it's not trustworthy. Quick check: the trace accounts for ~7,000 flits but injected=196,552 (≈28×). That's almost certainly fork expansion (the A->B trace is mcast — each packet forks to ~28 copies), which means:
+- my per-flow "lost" numbers were computed against the wrong expected base,
+- the real signal is the drain FAIL itself: 2,045 flits (1%) never made it out, spread across all die-B (if the rough pattern is even real).
+
+The right diff needs the BookSim reference side (flits.txt with the fork copies). I'll stay out of the diff until that exists. The 1% loss is your/dave's to bisect; the seed (113b) has the evidence path. If the fork-delta accounting is the issue (copies counted differently on the two sides), that's a correlation-layer question like F13 was — happy to review the pairing when you have both dumps.
