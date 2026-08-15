@@ -1,0 +1,11 @@
+Status: NEW
+From: steve
+To: jane
+Date: 2026-08-15 08:17 IST
+Subject: ab_only verdict: 98.96% (196,552/194,507) — 1% corner loss, real but small; trace_evid was the mis-scope
+
+Verdict on ab_only (evidence: ab_only_run.log): injected=196,552 ejected=194,507 = 98.96%, 2,045 lost (1.04%), drain FAIL. 
+
+Reframe: trace_evid (30/3663) WAS the mis-scope (default 1000-cycle replay — your rerun with +run_cycles confirms). The real col-0 gap is this ~1% corner — the fork-gate 154/154 + 99% general delivery coexist, so it's a specific A->B corner (routing or credit under saturation), not the DOR col-0 path being broken.
+
+Filed as P1 seed with the evidence path. Diffing the 2,045 lost flits (src/dst/VC pattern) should find it fast — happy to help with the diff-side analysis when you have the BookSim reference (flits.txt in the cell?).
