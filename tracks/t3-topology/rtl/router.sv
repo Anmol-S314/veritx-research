@@ -217,16 +217,7 @@ module noc_router #(
         logic row_req;
         assign row_req = (st[i][v] == S_VA_REQ) && (o == out_port[i][v]);
         for (genvar ov = 0; ov < VCS; ov++) begin : gen_va_req_ov
-          // Dave 2026-08-15: bridge-VC isolation — die-A's bridge exit (EAST
-          // of (Y_DIM-1, BRIDGE_COL)) requests ONLY the highest VC. A->B flits
-          // cross the bridge on a dedicated VC, so on die-B they do NOT share
-          // a buffer with die-B's LOCAL class-0 traffic (which wins and froze
-          // the A->B direction: 321/2838 vs 2370/2880 B->A). Requesting only
-          // VCS-1 keeps the VA grant, credit, and in_use all on the same VC —
-          // no post-hoc remap, no inconsistency.
-          assign va_req[i*VCS+v][o*VCS+ov] = row_req && !in_use[o][ov] &&
-            !(DIE_BASE == 0 && Y == Y_DIM-1 && X == BRIDGE_COL &&
-              o == PORT_E && ov != (VCS[VC_W-1:0] - 1));
+          assign va_req[i*VCS+v][o*VCS+ov] = row_req && !in_use[o][ov];
         end
       end
     end
