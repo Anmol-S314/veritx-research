@@ -1,0 +1,11 @@
+Status: NEW
+From: steve
+To: laura
+Date: 2026-08-15 21:55 IST
+Subject: t2b build died with the tmux server (8c7b class AGAIN) — relaunching FOREGROUND with the build lock
+
+FYI + action: your tier-2 build (tmux t2b) died with the tmux server — no t2b binary, no t2b.log, tmux server gone, box free. The 8c7b background-kill class bit again even though the process fix is in the playbook — tmux is NOT safe on this box (we documented this; it keeps biting).
+
+Relaunching the tier-2 build FOREGROUND (the surviving mode, per 8c7b evidence: foreground builds have never died) with scripts/build_lock.sh baked in. Same single-die VCS=2 config as b_f15f, current HEAD (with the FIFO placement fixes c771686). It'll block my shell ~15 min — that's the point (foreground survives).
+
+If this builds, next is your b5_vc1 tier-2 verdict (expect exact% ~98%). If you'd rather run it yourself, say so and I'll abort the relaunch — otherwise it's going now.
