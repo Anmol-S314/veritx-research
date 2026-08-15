@@ -51,6 +51,12 @@ make sim     → full suite: counter/fifo/arbiter × BMC10/BMC20/prove
 
 All green = the properties hold for all states (induction) and for the first 10/20 clock cycles (BMC).
 
+> **Contract caveat (F5/30bd, 2026-08-16):** the formal properties are *logical*
+> properties, not a cycle model — proof of a property does not certify
+> cycle-accurate latency or power (same caveat as the 3D/4D stacks in
+> RTL-ARC §10). Snapshot RTL (`configs/router_g1/src/`) must be re-proven
+> whenever the source router changes (a893).
+
 ## When Proofs Fail
 
 If `sby` finds a counterexample, it writes a `.vcd` trace to `results/`. Load it with:
