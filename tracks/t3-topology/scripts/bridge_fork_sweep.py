@@ -45,6 +45,8 @@ def main():
     print(f"=== bridge-fork vs source-fork, g={g} remote cores, 2-die bridge ===\n")
     print(f"  {'rate':>8} | {'bridge-fork':^22} | {'source-fork':^22} | {'fork ratio':>10}")
     print(f"  {'':>8} | {'accept':>9} {'lat':>9} | {'accept':>9} {'lat':>9} | {'(src/brg)':>10}")
+    import json
+    out = {}
     for rate in rates:
         ba, bl, _ = run_cell(g, rate, 0)
         sa, sl, _ = run_cell(g, rate, 1)
@@ -52,6 +54,19 @@ def main():
         sf = f"{sa:.4f}/{sl:8.1f}" if sa else "FAIL"
         ratio = (sa / ba) if (sa and ba and ba > 0) else float("nan")
         print(f"  {rate:>8.4f} | {bf:>22} | {sf:>22} | {ratio:>9.1f}x")
+        # [ba6c] the script previously never persisted results — the
+        # committed results/bridge_fork_sweep.json (Aug-12) was hand-made
+        # and stale. Write it now, matching the existing format:
+        #   {g: {"bridge-fork@rate": [lat, acc], "source-fork@rate": [...], ...}}
+        out.setdefault(str(g), {})
+        if bl is not None:
+            out[str(g)][f"bridge-fork@{rate}"] = [bl, ba if ba is not None else 0.0]
+        if sl is not None:
+            out[str(g)][f"source-fork@{rate}"] = [sl, sa if sa is not None else 0.0]
+    os.makedirs("results", exist_ok=True)
+    with open("results/bridge_fork_sweep.json", "w") as f:
+        json.dump(out, f, indent=1)
+    print(f"\nwrote results/bridge_fork_sweep.json (g={g})")
 
 if __name__ == "__main__":
     main()
