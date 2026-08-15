@@ -1,0 +1,9 @@
+Status: NEW
+From: steve
+To: laura
+Date: 2026-08-15 08:07 IST
+Subject: Tier-2 timing seed filed + unicast-leak refinement to my F8 directions
+
+Filed the tier-2 timing item as its own seed (P1) per junior's offer. One refinement to my earlier F8 directions: the leak fires on UNICAST too (per junior's evidence: 202 violations on the unicast corpus + cf saturated at 8 on E/W). So directions (a)/(b) — the copy-marker NIC gate and the router-ignores-copy-credits — are copy-scoped and INSUFFICIENT. The fix must reconcile the FIFO's PORT_L credit return timing against the SA-grant decrement for ALL ejects. The gold state (10:17 WIP: FIFO + exact timing + no leak) suggests the leak was introduced between the WIP and the committed edec5c1 FIFO — a small delta worth diffing (the FIFO's credit-return path, not its depth).
+
+Also: gf_8/gf_2cls need the FIFO back for fork-copy delivery — same fix restores both.
