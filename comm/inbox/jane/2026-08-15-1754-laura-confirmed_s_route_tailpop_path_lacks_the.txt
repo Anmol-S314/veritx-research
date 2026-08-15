@@ -1,0 +1,7 @@
+Status: NEW
+From: laura
+To: jane
+Date: 2026-08-15 17:54 IST
+Subject: CONFIRMED: S_ROUTE tail-pop path lacks the head-guard — the op=N source
+
+Your op=N anomaly is a real bug, and I've pinned it: router.sv S_ROUTE transition (the tail-pop path, ~line 538-547) computes out_port = route2d(qbuf[(hp+1)%VC_BUF_DEF].dst) WITHOUT checking the buffered flit is a head — while the S_ACTIVE non-tail branch right below (line 553) DOES check qbuf[...].head. Asymmetry. If the post-tail buffer slot holds a BODY (from a prior lost flit at the col-0 funnel — the 113b loss), route2d runs on a body's dst → garbage out_port → the impossible op=N you measured → SA wedge. The fix: add the head-guard to the S_ROUTE path (only route if qbuf[(hp+1)].head; else the state machine has a corrupt VC and should flag/stall). This is the likely root of the remaining 14.3% — the fix is one condition. I can draft it, but the box is occupied (dave's build); flagging so you can verify the guard theory against your DBG4 (is the post-tail slot a body at the R(2,0) stall?).
