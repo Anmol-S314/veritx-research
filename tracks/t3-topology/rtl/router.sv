@@ -126,19 +126,7 @@ module noc_router #(
   // ------------------------------------------------------------------
   logic [VC_W-1:0] wr_vc[NUM_PORTS];
   for (genvar i = 0; i < NUM_PORTS; i++) begin : gen_wrvc
-    // Dave 2026-08-15: bridge-VC isolation at the die-B bridge entry.
-    // A->B flits cross the bridge on their class VC (0) and enter die-B's
-    // bridge router (BRIDGE_ROW, BRIDGE_COL) WEST input — where they then
-    // share VC 0 with die-B's LOCAL class-0 traffic. Local traffic wins
-    // (earlier cycles), the bridge's VC-0 credit never returns, and the
-    // A->B direction freezes (measured: 321/2838 A->B vs 2370/2880 B->A).
-    // Remap ANY flit arriving on the bridge-entry WEST input to the highest
-    // VC — a dedicated escape class isolated from all die-B local traffic.
-    // Only die-B's bridge entry router does this; die-A's bridge exit is
-    // already isolated (its EAST carries only bridge flits).
-    assign wr_vc[i] = (DIE_BASE != 0 && Y == BRIDGE_ROW && X == BRIDGE_COL &&
-                       i == PORT_W) ? VCS[VC_W-1:0] - 1
-                                    : flit_in[i].flit.vc[VC_W-1:0];
+    assign wr_vc[i] = flit_in[i].flit.vc[VC_W-1:0];
   end
 
   // effective front flit: buffer front, or the just-written flit when the
@@ -229,7 +217,16 @@ module noc_router #(
         logic row_req;
         assign row_req = (st[i][v] == S_VA_REQ) && (o == out_port[i][v]);
         for (genvar ov = 0; ov < VCS; ov++) begin : gen_va_req_ov
-          assign va_req[i*VCS+v][o*VCS+ov] = row_req && !in_use[o][ov];
+          // Dave 2026-08-15: bridge-VC isolation — die-A's bridge exit (EAST
+          // of (Y_DIM-1, BRIDGE_COL)) requests ONLY the highest VC. A->B flits
+          // cross the bridge on a dedicated VC, so on die-B they do NOT share
+          // a buffer with die-B's LOCAL class-0 traffic (which wins and froze
+          // the A->B direction: 321/2838 vs 2370/2880 B->A). Requesting only
+          // VCS-1 keeps the VA grant, credit, and in_use all on the same VC —
+          // no post-hoc remap, no inconsistency.
+          assign va_req[i*VCS+v][o*VCS+ov] = row_req && !in_use[o][ov] &&
+            !(DIE_BASE == 0 && Y == Y_DIM-1 && X == BRIDGE_COL &&
+              o == PORT_E && ov != (VCS[VC_W-1:0] - 1));
         end
       end
     end
@@ -548,10 +545,15 @@ module noc_router #(
                     // completes one cycle later) before presenting the VA
                     // request
                     st[i][v] <= S_ROUTE;
-                    out_port[i][v] <= xy_dor(
-                      X[7:0], Y[7:0],
-                      qbuf[i][v][(hp[i][v] + 1) % VC_BUF_DEF].dst % X_DIM,
-                      qbuf[i][v][(hp[i][v] + 1) % VC_BUF_DEF].dst / X_DIM);
+                    // route2d, NOT xy_dor: xy_dor interprets the dst as
+                    // local mesh coordinates, which is wrong for a die-A
+                    // cross-die head (die-B dst) — it routes east along the
+                    // row instead of down the bridge column, starving the
+                    // col-0 bridge under saturation (113b; identical to
+                    // xy_dor for single-die, so the single-die gate is
+                    // unaffected).
+                    out_port[i][v] <= route2d(
+                      qbuf[i][v][(hp[i][v] + 1) % VC_BUF_DEF].dst);
                   end else begin
                     st[i][v] <= S_IDLE;
                   end
@@ -559,10 +561,10 @@ module noc_router #(
                   // next flit already buffered: head -> VA next cycle
                   if (qbuf[i][v][(hp[i][v] + 1) % VC_BUF_DEF].head) begin
                     st[i][v] <= S_VA_REQ;
-                    out_port[i][v] <= xy_dor(
-                      X[7:0], Y[7:0],
-                      qbuf[i][v][(hp[i][v] + 1) % VC_BUF_DEF].dst % X_DIM,
-                      qbuf[i][v][(hp[i][v] + 1) % VC_BUF_DEF].dst / X_DIM);
+                    // route2d, NOT xy_dor — same 2-die cross-die bug as the
+                    // S_ROUTE path above (113b).
+                    out_port[i][v] <= route2d(
+                      qbuf[i][v][(hp[i][v] + 1) % VC_BUF_DEF].dst);
                   end else begin
                     st[i][v] <= S_ACTIVE;
                   end
