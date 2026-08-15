@@ -188,3 +188,54 @@ FULLY COMPLETE and committed:
    commit proposal).
 3. If the 113b commit proposal is approved: commit gmode + head-guard.
 4. Re-run sd doctor (should be 12/12) + sd sync before pushing.
+
+---
+
+## 8. POST-COMPACTION SESSION (2026-08-16 00:31-01:10)
+
+### 8.1 THE BIG FINDING: c1ed874 anynet is INVERTED from the RTL
+- RTL (noc_2die.sv:116-119, BRIDGE_COL=0): bridge 56<->64; mesh 56-57 & 64-65
+  REMOVED; 59-60 & 66-67 PRESENT.
+- Repo anynet after c1ed874: bridge 59<->67 (col-3); mesh 56-57 & 64-65
+  PRESENT; 59-60 & 66-67 REMOVED. ALL SIX LINKS INVERTED.
+- My staged anynet (/var/tmp/r1work/fixed_anynet/bridged_2die.anynet) matches
+  the RTL on all six — and passed the fabric verification (cross-die 800/800,
+  rows 700/700+700/700).
+- Consequence: die-A 60-63 unreachable from the bridge side with repo tables;
+  ab55 (1-pkt A0->B64 hang at VCS=2 WITH tables) = wrong-geometry tables.
+- Answered dave's question: YES VCS>=2 cross-die delivery exists —
+  vbuild_abfix (VCS=2, DOR): A->B 2,992/3,493 (85.7%). The 0/3663 col-0-TABLE
+  run predates b2bbc35/0b0d332/8ca1308 — NOT a valid table-path verdict.
+- DECISIVE EXPERIMENT (queued for the free slot): current 15/15 tree +
+  -DTWO_DIE_ROUTE_TABLE + MY staged tables + onecell (expect A0->B64 deliver).
+
+### 8.2 Team state at resume (all read from comms, verified)
+- 15/15 delivery GREEN (junior 21:00). b5_vc1 44,274/44,274 with tier-2 eject
+  FIFO, 0 DBG5 violations (steve 22:07, t2b_fg). Tier-2 TIMING verdict =
+  laura's gate run (exact% ~98% expected).
+- junior 00:33: tree unblocked (stash-pop conflict, router.sv took HEAD;
+  lint clean VCS=2; c771686 = my stray-end fix unblocked the tier-2 tree).
+  Junior running b_vc2_t2 (VCS=4) rebuild NOW (box busy — no builds).
+- dave 23:09: big-cell — starvation FIXED (depth-3, no isolation);
+  in_use LEAK at bridge input under load OPEN (F15/4d3b family, team-level).
+  Evidence: results/trace_pipeline/bigcell_d3_findings.json.
+- head-guard + gmode COMMITTED (bd5b89c + noc_tb.sv:253) — my 21:18 audit
+  was stale. bd5b89c eyeballed: copy-bit credit gate correct
+  (eject_credit.valid = eject.valid && !eject.flit.copy).
+- gate_policy.json EXISTS (configs/, legacy override documented).
+- ce40 (F3) CLOSED by team 16:08 with the same declare-scope decision I
+  independently posted (paper_draft.md:411). 30bd (F5) open; t4 caveat added.
+- F9 (889f): 409f1f7 debug wiring eyeballed OK (noc_mesh-pattern consistent).
+
+### 8.3 This session's deliverables (all committed)
+- comm/topics/alerts/2026-08-16-0108: c1ed874 inversion + dave's answer
+- comm/topics/decisions/2026-08-16-0109: F3 single-flit scope (confirms)
+- tracks/t4-formal/README.md: contract caveat (F5/30bd, a893 re-proof note)
+- comm committed; seeds synced.
+
+### 8.4 Next-session checklist
+1. Box: junior b_vc2_t2 (VCS=4) then vc4 (VCS=8) — vc1 regens via t2b_fg.
+2. When a slot frees: the DECISIVE ab55 EXPERIMENT (8.1) — my top priority.
+3. dave's B->A discriminator answer + laura's tier-2 verdict pending.
+4. in_use leak (F15/4d3b family): laura's stale in_use race (09bb908) +
+   dave's cfW0 iuW1 occ=0 = the bridge-funnel wedge (f3839c2).
