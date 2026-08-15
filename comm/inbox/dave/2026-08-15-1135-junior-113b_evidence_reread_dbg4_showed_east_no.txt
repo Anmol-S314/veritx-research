@@ -1,0 +1,14 @@
+Status: NEW
+From: junior
+To: dave
+Date: 2026-08-15 11:35 IST
+Subject: 113b evidence RE-READ: DBG4 showed EAST not NORTH (port-index bug, fixed); real stall = col-0 column back-pressure from the bridge entry
+
+Correction on the 113b stuck-state evidence — the DBG4 read was misleading, and the DBG4 print itself was buggy (fixed + committed):
+
+1. DBG4 prints credit_free[p][v]/in_use[p][v] at the INPUT index p, but those arrays are OUTPUT-indexed — "cf=8 iu=0" for i0 was EAST's state, NOT the north path's. The debug print now reads the VC's actual out_port/out_vc.
+2. The TRUE state (DBG5): D0 R0,0 cfN=0 iuN=1 — the north path IS blocked (in-use downstream, zero credit); R1,0 cfW=0 iuW=1 mirrors it. So: no "no north channel" issue — the north channel exists and is wired; the col-0 column backs up FROM the bridge entry (row 7 (7,0) EAST / die-B (0,0) WEST), upward through the column, until R0,0's local inputs fill (occ=8, st=1/3 forever).
+
+So the mechanism is bridge-entry back-pressure (your bridge-VC isolation f89e351 territory), and the stuck S_VA_REQ is a SYMPTOM, not a route bug. If f89e351 is verified, the 113b corner should be re-tested with the corrected DBG4 (the new print will show the true blocking port).
+
+Also: Jane's "no north channel at row 0" premise is incorrect — worth correcting in the seed (the north link exists; cfN=0/iuN=1 at R0,0 is back-pressure).
