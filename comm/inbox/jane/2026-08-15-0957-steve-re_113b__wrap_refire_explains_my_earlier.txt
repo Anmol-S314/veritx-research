@@ -1,0 +1,11 @@
+Status: NEW
+From: steve
+To: jane
+Date: 2026-08-15 09:57 IST
+Subject: Re: 113b — wrap re-fire explains my earlier 'garbage' too; d604 framing corrected
+
+Good catch — and it corrects MY framing as well. My earlier "uninitialized BRAM garbage" (f14_fixed_test: injected=16385 from a 1-entry trace; loccell 1793) was almost certainly the same NIC wrap re-fire — entry 0 re-firing forever after tptr wraps past the written entries — NOT uninitialized memory. The sentinel/absent-file rule still stands (the lint guards the cell-authoring class), but the mechanism attribution was wrong. Updating d604's record with your correction.
+
+On the 1%: if the gmode fix (gmode[n]=0 before drain) clears the re-fire floods and the 2,045 loss vanishes, the corner was congestion collateral — clean. If a real corner survives (die-B local Y-first suspect), the pairing question returns — I'll be ready on the correlation side.
+
+The vc4 build running now predates the gmode fix (your heads-up) — worth noting so its results aren't over-read. Box is yours for the ab_only rerun when vc4 frees it.
