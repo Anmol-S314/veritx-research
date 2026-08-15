@@ -89,7 +89,9 @@ def main():
         print(f"  Die area: {best[1]['total_area_mm2']}–{worst[1]['total_area_mm2']} mm^2 "
               f"depending on topology "
               f"({best[0]} cheapest, {worst[0]} dearest; NoC is "
-              f"{best[1]['noc_share_pct']}–{worst[1]['noc_share_pct']}% of it)")
+              f"{best[1]['noc_share_pct']}–{worst[1]['noc_share_pct']}% of the "
+              f"toy-compute die — upper bound, not a real-chip share "
+              f"(PITFALLS #1-#3; FlooNoC 12nm ~3.5%))")
     print(f"  -> {out}")
 
 

@@ -254,6 +254,17 @@ def main():
             "total_area_um2": round(base_total + total_routers, 2),
             "total_area_mm2": round((base_total + total_routers) / 1e6, 4),
             "noc_share_pct": round(total_routers / (base_total + total_routers) * 100, 1),
+            # PITFALLS #1-#3 (2026-08-15): this share is against the TOY
+            # compute base (N MACs + RF + one GlobalBuffer), NOT a realistic
+            # die — the denominator is tiny, so the percentage is an upper
+            # bound, not "the NoC's share of a real chip". Real-world anchor:
+            # FlooNoC 12nm puts the NoC at ~3.5% of a compute tile. Never
+            # cite noc_share_pct without this caveat.
+            "noc_share_caveat": (
+                "share of the toy-compute die model only (PE array + one "
+                "GlobalBuffer); PITFALLS #1-#3 — the compute denominator is "
+                "tiny, so this is an upper bound, not a real-chip share "
+                "(FlooNoC 12nm: NoC ~3.5% of a compute tile)"),
         }
 
     out = {
@@ -276,7 +287,9 @@ def main():
           f"{base_total:,.0f} um^2")
     print()
     print(f"    {'topology':<12} {'radix':>6} {'rtrs':>5} {'router ea':>11} "
-          f"{'NoC total':>12} {'die mm^2':>9} {'NoC %':>6}")
+          f"{'NoC total':>12} {'toy die mm^2':>13} {'NoC %':>6}")
+    print("    NOTE: NoC % is vs the TOY-compute die (PITFALLS #1-#3); "
+          "real-chip anchor: FlooNoC 12nm ~3.5% of a compute tile.")
     for t, d in sorted(topos.items(), key=lambda kv: kv[1]["total_area_um2"]):
         print(f"    {t:<12} {d['radix']:>6} {d['routers']:>5} "
               f"{d['router_um2_each']:>11,.0f} {d['noc_um2_total']:>12,.0f} "

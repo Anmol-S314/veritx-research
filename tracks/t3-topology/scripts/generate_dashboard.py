@@ -366,7 +366,9 @@ function draw(){
     const t2=Object.entries(tp).sort((a,b)=>a[1].total_area_um2-b[1].total_area_um2);
     const lo=t2[0][1].total_area_mm2, hi=t2[t2.length-1][1].total_area_mm2;
     document.getElementById('arsub').textContent=
-      `${lo}–${hi} mm² · ${ar.flit_bits}b flits · NoC is ${t2[0][1].noc_share_pct}–${t2[t2.length-1][1].noc_share_pct}% of the die`;
+      `${lo}–${hi} mm² (toy-compute die model) · ${ar.flit_bits}b flits · ` +
+      `NoC ${t2[0][1].noc_share_pct}–${t2[t2.length-1][1].noc_share_pct}% of the toy die ` +
+      `(upper bound — real-chip anchor ~3.5%, PITFALLS #1-#3)`;
     Plotly.newPlot('ar',[
       {x:t2.map(x=>x[0]),y:t2.map(x=>x[1].noc_um2_total),name:'NoC (routers)',type:'bar',
        customdata:t2.map(x=>[x[1].radix,x[1].routers]),
