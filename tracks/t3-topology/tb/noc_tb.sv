@@ -246,6 +246,11 @@ module noc_tb;
     // window plus in-flight transit), so run_cycles only needs to cover the
     // injection window; a network that stops making progress burns through
     // DRAIN_MAX and the totals check below FAILs it
+    // (2026-08-15, jane/113b) NICs MUST return to idle before the drain:
+    // a short trace walks its '1 padding, wraps tptr, and re-fires entry 0
+    // forever (DBG2: n73 inj=23,810 vs tptr=3) — inflating injected and
+    // clogging the fabric, corrupting the R1 totals.
+    for (int n = 0; n < ND * N; n++) gmode[n] = 2'd0;
     for (int d = 0; d < DRAIN_MAX; d++) begin
       longint dinj, deje;
       dinj = 0; deje = 0;
@@ -297,8 +302,16 @@ module noc_tb;
               for (int v = 0; v < VCS; v++)
                 $display("DBG4 D%0d R%0d,%0d i%0d v%0d st=%0d op=%0d ov=%0d cf=%0d iu=%0d oc=%0d",
                          d, x, y, p, v, rdbg[d][y][x].st[p][v], rdbg[d][y][x].out_port[p][v],
-                         rdbg[d][y][x].out_vc[p][v], rdbg[d][y][x].credit_free[p][v],
-                         rdbg[d][y][x].in_use[p][v], rdbg[d][y][x].occ[p][v]);
+                         rdbg[d][y][x].out_vc[p][v],
+                         // F9 follow-up: credit_free/in_use are OUTPUT-indexed —
+                         // the old print read them at the INPUT index p, showing
+                         // the WRONG port's state (e.g. EAST's cf for a LOCAL
+                         // input). Read the actual output the VC targets.
+                         rdbg[d][y][x].credit_free[rdbg[d][y][x].out_port[p][v]]
+                                              [rdbg[d][y][x].out_vc[p][v]],
+                         rdbg[d][y][x].in_use[rdbg[d][y][x].out_port[p][v]]
+                                              [rdbg[d][y][x].out_vc[p][v]],
+                         rdbg[d][y][x].occ[p][v]);
             end
             $display("DBG5 D%0d R%0d,%0d cfE%0d cfW%0d cfN%0d cfS%0d cfL%0d iuE%0d iuW%0d iuN%0d iuS%0d iuL%0d",
                      d, x, y, rdbg[d][y][x].credit_free[0][0], rdbg[d][y][x].credit_free[1][0],
