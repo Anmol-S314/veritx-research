@@ -16,10 +16,17 @@ set -euo pipefail
 LOCK="/var/tmp/r1work/.build.lock"
 LOCK_TIMEOUT="${BUILD_LOCK_TIMEOUT:-300}"
 
-# belt + suspenders: even non-script builds must not run concurrently
-if pgrep -x verilator_bin >/dev/null 2>&1 || pgrep -f "make -C.*Vnoc_tb.mk" >/dev/null 2>&1; then
-    echo "build_lock: verilator/make already running — one build at a time (rule 4)." >&2
-    echo "build_lock:   ps aux | grep -E '[v]erilator|[g]++'  to see it" >&2
+# belt + suspenders: even non-script builds must not run concurrently.
+# Covers all build phases: verilator_bin (parse/elab), make (any Mdir — the
+# old pattern only matched Vnoc_tb.mk and MISSED `make -C dave_d3`, killing
+# dave's build 2026-08-15 21:45), and g++/cc1plus (the g++ phase is where OOM
+# kills happen and has NO verilator_bin process running).
+if pgrep -x verilator_bin >/dev/null 2>&1 \
+   || pgrep -f 'make -C' >/dev/null 2>&1 \
+   || pgrep -x cc1plus >/dev/null 2>&1 \
+   || pgrep -x g++ >/dev/null 2>&1; then
+    echo "build_lock: verilator/make/g++ already running — one build at a time (rule 4)." >&2
+    echo "build_lock:   ps aux | grep -E '[v]erilator|[g]++|[m]ake -C'  to see it" >&2
     exit 1
 fi
 
