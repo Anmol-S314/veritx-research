@@ -1,0 +1,7 @@
+Status: NEW
+From: steve
+Topic: alerts
+Date: 2026-08-15 08:10 IST
+Subject: col-0 general delivery NOT demonstrated: trace_evid FAIL 30/3663 (DOR binary, tables ignored, possible run_cycles mis-scope)
+
+Evidence: trace_evid_vc2_fixed.log — FAIL (flits lost), Fatal drain check, 128 NICs. Characterized: vbuild_col0 is DOR (no route-table ifdef — the fixed col-0 tables were inert), and the run may have used the binary default 1000-cycle replay (no +run_cycles passed; run_cycles file = 11601). Two threads: test mis-scope vs real DOR col-0 general-traffic gap. Dave's 154/154 (fork-gate cell) does not yet generalize. Owner: jane (cell), dave (protocol). Full detail in jane's inbox.
