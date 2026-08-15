@@ -349,8 +349,7 @@ The UCIE-ARC Phase-2 mechanism (KV multicast crossing a die boundary) is now
   `BRIDGE_ROW`). Die-A edge router routes die-B targets to the bridge; die-B uses
   Y-first DOR so an off-axis entry climbs to the multicast row (row 0) before
   routing east — matching BookSim's Dijkstra path exactly.
-- `tb/fork_tb.sv`, `tb/fork_2die_tb.sv` (+ `_tb2` for BRIDGE_ROW): single-stream
-  fork unit tests, credit-gated, delivery-counting.
+- fork unit coverage now lives in the `noc_tb` TWO_DIE path (fork TBs deleted 2026-08-15, seed e8f9).
 
 Measured (Verilator, VCS=1, one stream, g=8 die-B cores, packet_size=1):
 
@@ -409,7 +408,7 @@ single-stream cells), F2 NIC reorder path deadlocks on a mcast range word
 (untested combination), F3 multi-flit mcast forks only the head (cells are
 packet_size=1). **F1+F2 must be fixed before the contention/multi-stream runs; the
 single-stream placement cells are clean.** Moderate: stale self-certifying
-`noc_mcast_tb.sv` (F4), 3D/4D stacks are not cycle models (F5/F6), no off-axis
+3D/4D stacks are not cycle models (F5/F6); noc_mcast_tb.sv deleted (F4, 2026-08-15); no off-axis
 standalone TB (F7), phantom local-port credit breaks only the DBG5 audit line (F8).
 
 ## 11. Work plan
