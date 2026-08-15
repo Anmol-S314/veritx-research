@@ -126,7 +126,19 @@ module noc_router #(
   // ------------------------------------------------------------------
   logic [VC_W-1:0] wr_vc[NUM_PORTS];
   for (genvar i = 0; i < NUM_PORTS; i++) begin : gen_wrvc
-    assign wr_vc[i] = flit_in[i].flit.vc[VC_W-1:0];
+    // Dave 2026-08-15: bridge-VC isolation at the die-B bridge entry.
+    // A->B flits cross the bridge on their class VC (0) and enter die-B's
+    // bridge router (BRIDGE_ROW, BRIDGE_COL) WEST input — where they then
+    // share VC 0 with die-B's LOCAL class-0 traffic. Local traffic wins
+    // (earlier cycles), the bridge's VC-0 credit never returns, and the
+    // A->B direction freezes (measured: 321/2838 A->B vs 2370/2880 B->A).
+    // Remap ANY flit arriving on the bridge-entry WEST input to the highest
+    // VC — a dedicated escape class isolated from all die-B local traffic.
+    // Only die-B's bridge entry router does this; die-A's bridge exit is
+    // already isolated (its EAST carries only bridge flits).
+    assign wr_vc[i] = (DIE_BASE != 0 && Y == BRIDGE_ROW && X == BRIDGE_COL &&
+                       i == PORT_W) ? VCS[VC_W-1:0] - 1
+                                    : flit_in[i].flit.vc[VC_W-1:0];
   end
 
   // effective front flit: buffer front, or the just-written flit when the
