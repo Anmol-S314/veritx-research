@@ -68,7 +68,8 @@ module noc_2die #(
         localparam int n = y * X_DIM + x;
         noc_router #(
           .VCS(VCS), .X(x), .Y(y), .X_DIM(X_DIM), .Y_DIM(Y_DIM),
-          .DIE_BASE(d * 64), .BRIDGE_COL(BRIDGE_COL), .BRIDGE_ROW(BRIDGE_ROW)
+          .DIE_BASE(d * 64), .BRIDGE_COL(BRIDGE_COL), .BRIDGE_ROW(BRIDGE_ROW),
+          .TWO_DIE(1)
         ) u_router (
           .clk(clk), .rst_n(rst_n),
           .flit_in(rf_in[d][n]), .credit_in(rc_in[d][n]),

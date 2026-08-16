@@ -33,7 +33,8 @@ module noc_router #(
   parameter int Y_DIM   = 4,
   parameter int DIE_BASE = 0,   // 0 = die A, 64 = die B (2-die bridge mode)
   parameter int BRIDGE_COL = 0, // bridge column on die A (die B: entry col)
-  parameter int BRIDGE_ROW = 0  // bridge row on die B (die A: exit row Y_DIM-1)
+  parameter int BRIDGE_ROW = 0, // bridge row on die B (die A: exit row Y_DIM-1)
+  parameter int TWO_DIE   = 0   // 1 = bridge topology (noc_2die); 0 = plain mesh
 )(
   input  logic            clk,
   input  logic            rst_n,
@@ -173,6 +174,20 @@ module noc_router #(
     bx = 8'(BRIDGE_COL);
     by = 8'(Y_DIM - 1);
     if (DIE_BASE == 0) begin
+      // die-A row Y_DIM-1 east of the bridge column: the mesh link from
+      // (Y_DIM-1, BRIDGE_COL+1) to the bridge node is SUPPRESSED (the
+      // bridge node's E-port is the bridge), so any X-first WEST hop from
+      // these sources falls into the void (the neighbor's channel stage
+      // is never consumed) and the flit is dropped. Measured: NICs 57-63
+      // delivered 0/333 A->B flits while BookSim carries them via the
+      // phantom 56->57 link. Detour SOUTH first (down one row), then DOR
+      // normally — matches the stripped anynet (seed ab55/F14).
+      // [4d3b] TWO_DIE-gated: in the plain single-die mesh (TWO_DIE=0)
+      // the east link at row Y_DIM-1 exists — the detour was wrongly
+      // routing single-die row-7 westbound flits SOUTH, breaking timing
+      // parity (b5_vc1 exact 13% -> 98.12% with the gate).
+      if (TWO_DIE && (Y == Y_DIM-1) && (X > BRIDGE_COL) &&
+          ((dst >= 8'h40) || ((dst % X_DIM) < X))) return PORT_S;
       // die A: remote targets route to the bridge, then cross EAST
       if (dst >= 8'h40) begin
         if ((Y == Y_DIM-1) && (X == BRIDGE_COL)) return PORT_E;
@@ -187,7 +202,7 @@ module noc_router #(
       // the bridge column, then normal DOR (BookSim's anynet also has no
       // 56->57 link once the phantom is stripped — gen_route_tables.py
       // enforce_rtl_bridge_topology, seed ab55/F14).
-      if ((Y == Y_DIM-1) && (X == BRIDGE_COL)) begin
+      if (TWO_DIE && (Y == Y_DIM-1) && (X == BRIDGE_COL)) begin
         if (dst == 8'(Y * X_DIM + X)) return PORT_L;
         return PORT_S;
       end
