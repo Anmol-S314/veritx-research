@@ -239,3 +239,49 @@ FULLY COMPLETE and committed:
 3. dave's B->A discriminator answer + laura's tier-2 verdict pending.
 4. in_use leak (F15/4d3b family): laura's stale in_use race (09bb908) +
    dave's cfW0 iuW1 occ=0 = the bridge-funnel wedge (f3839c2).
+
+---
+
+## 9. POST-COMPACTION SESSION 2 (2026-08-16 01:10-08:45)
+
+### 9.1 ab55 MECHANISM PROVEN (entry-level, committed as alerts 01:08-01:23)
+- onecell tables (both onecell + onecell2) = ORIGINAL-geometry (col-3 bridge):
+  node59->64=E + node60->64=W; in the RTL (BRIDGE_COL=0) both are MESH ->
+  the 1 flit oscillates 59<->60 forever = the ab55 hang. node0->64=E (tie-break
+  path) sends it to the col-3 region in the first place.
+- My staged tables kill it: node0->64=S, node56->64=E (=RTL bridge), node59->64=N.
+- Decisive experiment PREPPED at /var/tmp/opencode/ab55_run (current tree tables +
+  onecell trace + run_cycles=10000) — run when a build slot frees.
+
+### 9.2 TRUE RTL-EXACT TOPOLOGY (committed generator change)
+- noc_2die.sv removes ONLY the (die-A, (7,BRIDGE_COL), PORT_E) channel stage:
+  the single directed edge 56->57. 57->56 (via 57's WEST stage) IS mesh; die-B
+  64-65 is FULLY bidirectional (64's E stage = mesh; 64's W feeds a nonexistent
+  neighbor). So RTL-exact = FULL mesh + bridge 56<->64 minus 56->57.
+- gen_route_tables.py now supports directed one-way edges (committed 08:3x):
+  strips 56->57, keeps 57->56. Optimal tables: node59->64=W (4-hop), node0->64=S,
+  node56->64=E, node65->64=W, no E at 56 for die-A dsts.
+- Corrected anynet: /var/tmp/r1work/fixed_anynet/bridged_2die.anynet (full mesh +
+  col-0 bridge) — fabric re-verified (rows 700/700, cross-die 800/800).
+- The REPO anynet (c1ed874) is still INVERTED (col-3 bridge + wrong 6 links) —
+  replacement proposed to the team; not overwritten without approval.
+
+### 9.3 Team state updates read this session
+- steve 01:30 CORRECTION: tier-2 timing NOT at gold — exact 13.00% vs gold 98.12%
+  (pre-F13-F15-era), mean -14, p95 3, min -328; delivery 100% + audit clean stands.
+  Mystery rtl_flits.txt overwrite at 01:22 (20,301-line dump, saved as
+  rtl_flits_mystery_0122.txt) — evidence-integrity flag, NOT mine.
+- dave building dave_d3_fix (08:35, VCS=4 TWO_DIE=1 T_DEPTH=64) — box busy.
+- b_vc2_t2 (junior's VCS=4 one-die) binary READY 01:31.
+
+### 9.4 Tier-2 exact% regression analysis (sent to laura 08:42)
+- FIFO shape PROVEN identical gold-vs-now (depth 4, 1/cycle).
+- Join works (deltas exist) — not a full-join artifact.
+- Candidates: (a) F13 pid reordering the mcast zip pairs, (b) the gmode-era
+  measurement shift (gold measured on the wrap-refire-corrupted stream),
+  (c) the route2d/col-0/head-guard phase shifts (p95=3).
+- Discriminators queued: gold binary on b5 cell; current binary on goldcell;
+  order-only join.
+
+### 9.5 Box rules reaffirmed: dave holds the build slot; sims are cheap but
+builds are one-at-a-time. ab55_run experiment = the top queued item.
