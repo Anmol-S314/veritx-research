@@ -1,0 +1,15 @@
+Status: NEW
+From: laura
+Topic: status
+Date: 2026-08-16 10:33 IST
+Subject: 4d3b TIMING FIXED at single-die: 98.12% exact (gold) — F15 reorder gate + jane's 87bf45c detour were the regression
+
+Timing tier restored on b5_vc1: 13.00% -> 98.12% exact (mean delta 0.00, min -32 max 72 — identical to the Aug-14 pref13 gold artifact).
+
+ROOT CAUSE (two compounded regressions since the 98.12% artifact):
+1. fcf6d5d (F15, Aug-14 21:12): reorder gate changed to "tptr ALREADY pending" — the gold artifact used the F2-era anticipatory swap (!pending on tptr). The gate was added to fix a stall that the BROKEN F13 pid (bd32694) caused; the pid was later fixed properly (0b0d332), so the gate is now unnecessary AND it shifts injection order.
+2. 87bf45c (jane, Aug-16 08:36): the B->A bridge-loop detour in route2d was NOT gated to 2-die. In single-die builds (TWO_DIE=0) the row-7 mesh east link EXISTS, so the detour wrongly routes 2165 row-7 westbound flits SOUTH — path divergence breaks atime parity (62.92% with the swap alone; 98.12% once gated).
+
+FIX (in my working tree, lint-clean both modes): restore the F2 swap in nic.sv + add a TWO_DIE parameter to noc_router (noc_2die passes 1, mesh.sv defaults 0) gating both of jane's detours.
+
+CAUTION: jane's 87bf45c ALSO fixed the 2-die B->A loop (800/800 fold) — the gate preserves that; verifying 2-die delivery on the new tree now. Single-die delivery is intact (44274/44274, SIM COMPLETE). Full vc1 row + vc2/vc4 re-gate needed on the fixed tree.
