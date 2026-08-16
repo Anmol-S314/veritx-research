@@ -178,6 +178,19 @@ module noc_router #(
         if ((Y == Y_DIM-1) && (X == BRIDGE_COL)) return PORT_E;
         return xy_dor(X[7:0], Y[7:0], bx, by);
       end
+      // die-A local targets. At the bridge node (Y_DIM-1, BRIDGE_COL) the
+      // mesh east link is SUPPRESSED (noc_2die.sv: PORT_E there is the
+      // bridge, A->B direction) — xy_dor would return PORT_E for any
+      // x > BRIDGE_COL target and the flit loops across the bridge
+      // forever (measured: both bridge ends valid ~every cycle, die-A
+      // (7,1..3) recv=0, only x==0 targets delivered). Detour SOUTH down
+      // the bridge column, then normal DOR (BookSim's anynet also has no
+      // 56->57 link once the phantom is stripped — gen_route_tables.py
+      // enforce_rtl_bridge_topology, seed ab55/F14).
+      if ((Y == Y_DIM-1) && (X == BRIDGE_COL)) begin
+        if (dst == 8'(Y * X_DIM + X)) return PORT_L;
+        return PORT_S;
+      end
       return xy_dor(X[7:0], Y[7:0], dst % X_DIM, dst / X_DIM);
     end else begin
       // die B: remote (die-A) targets route to the bridge, then WEST.

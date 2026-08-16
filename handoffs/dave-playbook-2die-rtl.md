@@ -127,7 +127,44 @@ build.
 - The Dijkstra-exact table is NOT needed for the gate (the DOR routing
   passes); it's a reference tool + for future non-DOR topologies.
 
-## 11. SIM SPEED
+## 12. THE PHANTOM MESH EAST LINK AT THE BRIDGE NODE (B→A loop, 2026-08-16)
+
+**THE B→A "vanishing flit" mystery is SOLVED — it was never a credit or
+turn-map issue. It's a routing divergence into a bridge loop:**
+
+- BookSim's anynet has BOTH `router 56 router 57` (mesh east, die-A row 7)
+  AND `router 56 router 64` (the bridge) at die-A (7,0). The RTL SUPPRESSES
+  the mesh east link (noc_2die.sv:164 — PORT_E at the bridge node IS the
+  bridge). So the RTL topology has NO path from (7,0) to (7,1).
+- route2d (DOR mode, no -DTWO_DIE_ROUTE_TABLE) didn't know: xy_dor at
+  (7,0) returns PORT_E for ANY x>0 die-A target → the flit enters the
+  bridge A→B direction → die-B (0,0) sees dst<64 → PORT_W → back across
+  the bridge → die-A (7,0) E-in → PORT_E → **infinite loop through the
+  bridge pipe**. Both bridge ends valid ~every cycle (recv≈8300 ≈ run
+  cycles), die-A (7,1),(7,2),(7,3) recv=0, only x==0 targets delivered.
+- This is the SAME ab55/F14 class Steve found: anynet links the RTL doesn't
+  have. gen_route_tables.py's enforce_rtl_bridge_topology strips 56→57 in
+  TABLE mode (with WARNING) — but DOR mode had no guard.
+- **FIX (uncommitted at write time, router.sv route2d):** at die-A
+  (Y_DIM-1, BRIDGE_COL), die-A-local targets: self → PORT_L, else PORT_S
+  (detour down the bridge column, then DOR normally — the stripped-anynet
+  shortest path).
+- **Discriminator that nailed it (Jane/Junior's):** B→A to die-A row-7
+  (7,1),(7,2),(7,3) = E→E straight, "must deliver even in a funnel" — they
+  DIDN'T deliver, so the funnel theory died and the loop was proven.
+- **DBG3/DBG4 port order trap:** the DBG3 header line says "ports
+  0=local 1=E 2=W 3=N 4=S" — STALE/WRONG. noc_pkg.sv constants are the
+  truth: PORT_E=0, PORT_W=1, PORT_N=2, PORT_S=3, PORT_L=4. Also the DBG3
+  coordinate print is `d, x, y` not `d, y, x` — "D0 R7,0" is (y=0,x=7),
+  NOT the bridge (y=7,x=0). Both traps wasted a read cycle.
+- **Route-table N/S suspicion (to verify):** fresh gen_route_tables output
+  says route_56[57]=N — but from (7,0) the way to (6,0) is PORT_S in the
+  RTL. If the generator's N/S is flipped vs the RTL, table mode sends
+  northbound traffic south — consistent with Steve's "table-mode hangs"
+  (b_vc2 is single-die; DOR completes). DOR is the verified path; treat
+  tables as suspect until cross-checked against a DOR-known-good cell.
+
+## 13. SIM SPEED
 
 - 128 NICs × run_cycles ≈ slow: ~1M cycles/min at T_DEPTH=64, -O3.
   The 5718-pkt cell (run 11601) takes ~2-3 min of sim after a 5-min build.
