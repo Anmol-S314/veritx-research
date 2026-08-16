@@ -47,33 +47,61 @@ def enforce_rtl_bridge_topology(links, bridge, x_dim=8, die=64):
     port_of's geometry check passes (the neighbor exists in the graph)
     and the RTL loops the packet across the bridge. This guard strips
     them from the routing graph and warns, so tables always match the
-    RTL regardless of how the anynet is produced."""
+    RTL regardless of how the anynet is produced.
+
+    Directed refinement (2026-08-16, jane): noc_2die removes ONLY the
+    channel STAGE at (die-A edge, BRIDGE_COL, PORT_E) — the 56->57
+    direction. The REVERSE direction (57->56) rides 57's WEST stage,
+    which is a normal mesh channel, and die-B's 64-65 link is FULLY
+    present (64's E stage is mesh; 64's W feeds a nonexistent mesh
+    neighbor). So the RTL-exact graph = full mesh + bridge 56<->64,
+    minus the one directed edge 56->57. We strip that direction and
+    return the one-way reverses as directed out-edges."""
     bridge_nodes = sorted(bridge)
     stripped = []
+    one_way = {}  # src -> set of dst (directed reverse edges kept in RTL)
     for n in bridge_nodes:
         side = "A" if n < die else "B"
         r, c = divmod(n - (0 if side == "A" else die), x_dim)
         if side == "A" and r == x_dim - 1:
             phantom = n + 1      # die-A edge row: EAST is the bridge
+            if phantom in links[n]:
+                links[n].discard(phantom)
+                links[phantom].discard(n)
+                stripped.append((n, phantom))
+                one_way.setdefault(phantom, set()).add(n)
         elif side == "B" and r == 0:
-            phantom = n - 1      # die-B entry row: WEST is the bridge
+            # die-B: WEST of the entry node is the bridge, but (0, BRIDGE_COL)
+            # has no WEST mesh neighbor at BRIDGE_COL=0 — and even when it
+            # does, the 64-E stage (the east mesh direction) is NOT removed,
+            # so the die-B row link is fully bidirectional in the RTL.
+            continue
         else:
             continue
-        if phantom in links[n]:
-            links[n].discard(phantom)
-            links[phantom].discard(n)
-            stripped.append((n, phantom))
     if stripped:
         print("WARNING: anynet has mesh links the RTL removed at bridge "
               "nodes (phantom links — seed ab55/F14): "
               + ", ".join(f"router {a} router {b}" for a, b in sorted(stripped))
-              + " — stripped from the routing graph so tables match the RTL.")
+              + " — stripped from the routing graph so tables match the RTL;"
+              + " one-way reverses kept as directed edges: "
+              + ", ".join(f"{s}->{d}" for s, ds in sorted(one_way.items())
+                          for d in sorted(ds)))
+    return links, one_way
     return links
 
 
-def first_hops(start, links):
+def first_hops(start, links, one_way=None):
     """Dijkstra exactly as BookSim AnyNet::route: min over unvisited
-    (set iteration = ascending id), strict <, std::map neighbor order."""
+    (set iteration = ascending id), strict <, std::map neighbor order.
+
+    Directed refinement (2026-08-16, jane): `one_way` = dict of src ->
+    set(dst) for the directed reverse edges the RTL keeps (57->56). The
+    bridge-direction edges (56->57) were stripped by the topology guard,
+    so `links` is undirected everywhere except those reverses."""
+    one_way = one_way or {}
+    out = {i: set(links[i]) for i in links}
+    for s, ds in one_way.items():
+        out.setdefault(s, set()).update(ds)
     dist = {i: float("inf") for i in links}
     prev = {i: -1 for i in links}
     dist[start] = 0
@@ -86,7 +114,7 @@ def first_hops(start, links):
         # Emulate: sorted() + stable min == first minimal in id order.
         min_cand = min(sorted(unvisited), key=lambda i: dist[i])
         unvisited.discard(min_cand)
-        for nb in sorted(links[min_cand]):
+        for nb in sorted(out[min_cand]):
             nd = dist[min_cand] + 1
             if nd < dist[nb]:
                 dist[nb] = nd
@@ -159,9 +187,9 @@ def main():
     import os
     os.makedirs(outdir, exist_ok=True)
     links, bridge = parse_anynet(anynet)
-    links = enforce_rtl_bridge_topology(links, bridge)
+    links, one_way = enforce_rtl_bridge_topology(links, bridge)
     for src in sorted(links):
-        fh = first_hops(src, links)
+        fh = first_hops(src, links, one_way)
         row = [4] * 128
         for dst, hop in fh.items():
             row[dst] = port_of(src, hop, links)
