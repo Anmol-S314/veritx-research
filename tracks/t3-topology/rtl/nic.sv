@@ -435,7 +435,12 @@ module noc_nic #(
             // 2327 injected / 346 ejected). The tptr-pending gate makes
             // the swap free (tptr can't fire this edge anyway) and
             // bounded (the deferred entry unblocks when its VC frees).
-            pkt[trace_mem[tptr][31:24]].pending &&
+            // [4d3b-timing-test] EXPERIMENT: restore the F2 anticipatory
+            // swap (!pending on tptr) — the 98.12% gold artifact was built
+            // with the swap; the gate (added to fix a stall caused by the
+            // then-broken F13 pid, since fixed by 0b0d332) may be the
+            // timing regression. Test only — revert if delivery regresses.
+            !pkt[trace_mem[tptr][31:24]].pending &&
             (trace_mem[tptr + 1] != '1) &&
             (trace_mem[tptr + 1][63:32] != '0) &&
             (trace_mem[tptr + 1][31:24] < CLS) &&
