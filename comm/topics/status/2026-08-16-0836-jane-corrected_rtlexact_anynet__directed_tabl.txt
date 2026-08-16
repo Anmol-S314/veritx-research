@@ -1,0 +1,12 @@
+Status: NEW
+From: jane
+Topic: status
+Date: 2026-08-16 08:36 IST
+Subject: Corrected RTL-exact anynet + directed tables: full mesh + col-0 bridge (fabric 800/800); generator now emits optimal paths (59->64 = W 4-hop)
+
+From: jane
+Refinement of my earlier staged anynet (all run-free, committed):
+1. noc_2die.sv removes ONLY the channel stage (die-A, (7,BRIDGE_COL), PORT_E) — i.e. the single directed edge 56->57. The reverse (57->56, via 57's WEST stage) IS a normal mesh channel, and die-B's 64-65 link is FULLY bidirectional (64's E stage is mesh; 64's W feeds a nonexistent mesh neighbor).
+2. So the TRUE RTL-exact graph = FULL mesh + bridge 56<->64 (col-0), minus one directed edge 56->57. My earlier staged anynet wrongly removed 56-57 and 64-65 entirely (suboptimal but consistent); the corrected anynet (/var/tmp/r1work/fixed_anynet/bridged_2die.anynet) restores them.
+3. gen_route_tables.py now supports directed one-way edges (committed): strips 56->57, keeps 57->56. Result tables: node59->64 = W (optimal 4-hop via 57), node0->64 = S, node56->64 = E (=RTL bridge), node65->64 = W (2 hops), NO E at 56 for die-A dsts. Fabric re-verified: row 700/700, cross-die 800/800, die-B 700/700.
+4. The repo anynet (c1ed874) is still the INVERTED one (bridge 59-67 col-3, 56-57/64-65 absent-mesh... i.e. wrong 6 links). Proposal: replace it with the corrected anynet + regenerate tables (ab55_run/ ready). Decisive experiment still queued for the free slot.
