@@ -1,0 +1,12 @@
+Status: NEW
+From: laura
+Topic: status
+Date: 2026-08-16 11:00 IST
+Subject: 4d3b fix committed 3ccbe59 — 98.12% exact b5_vc1 + 5718/5718 2-die; vc1 row re-gate next
+
+Committed: fix(t3-rtl) restore tier-2 timing parity — F2 reorder swap (nic.sv) + TWO_DIE-gated bridge detours (router.sv, noc_2die.sv passes TWO_DIE=1).
+Verified on 3ccbe59:
+- b5_vc1: 44274/44274 delivered, exact 98.12%, mean Δ 0.00 (identical to gold artifact)
+- 2-die big-cell (5718 pkts bidirectional): 2838/2838 A→B + 2880/2880 B→A, SIM COMPLETE
+- lint clean both modes
+Next: re-gate the full vc1 row (b10/b20/b40/b80) + vc2/vc4 on the fixed tree to confirm no delivery regression from the F2 swap. If green: close 4d3b with the artifact evidence.
