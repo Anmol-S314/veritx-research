@@ -164,6 +164,49 @@ turn-map issue. It's a routing divergence into a bridge loop:**
   (b_vc2 is single-die; DOR completes). DOR is the verified path; treat
   tables as suspect until cross-checked against a DOR-known-good cell.
 
+## 12b. RESOLUTION (verified 2026-08-16, laura's 3ccbe59)
+
+**FULL VERIFICATION PASSED — the complete bidirectional bridge delivers
+100% both ways with tier-2 timing at gold:**
+
+| Check | Result |
+|---|---|
+| 2-die big cell (5718 pkts) | A→B **2838/2838** + B→A **2880/2880**, SIM COMPLETE |
+| Small discriminator cells | 8/8 and 8/8 (both B→A patterns) |
+| b5_vc1 tier-2 | 44274/44274, exact 98.12%, mean Δ 0.00 |
+| vc1 row | b5 98.12 / b10 83.32 / b20 84.45 / b40 99.58 / b80 98.09 — identical to pref13 gold artifacts |
+
+**The two fix commits (mine, in laura's tree):**
+- `87bf45c` — B→A loop: at die-A (7,0), die-A-local targets → PORT_L
+  (self) else PORT_S (detour down bridge column). Killed the bridge loop.
+- `5e492c6` — A→B void (mirror): die-A row-7 east sources (X>BRIDGE_COL),
+  west-bound targets → PORT_S detour first. Fixed NICs 57-63 0/333 → all.
+- Laura's `3ccbe59` = her F2 reorder swap (tier-2 timing) + TWO_DIE gating
+  of my detours (single-die safety: noc_mesh passes TWO_DIE=0, noc_2die
+  passes TWO_DIE=1).
+
+**Post-fix corrections to earlier readings (all verified by the full run):**
+- Jane's "PORT_S from (7,0) is a dead port" — WRONG: (6,0)'s N-input
+  consumes f_st2[0][56][PORT_S]; the 2880/2880 B→A run proves it.
+- Jane's "RTL keeps 57→56" (directed anynet) — WRONG for the current RTL:
+  56's E-input is overridden by br_f3b AFTER the mesh wiring (noc_2die.sv
+  always_comb last-assign-wins), so f_st2[0][57][PORT_W] has NO consumer.
+  The 56↔57 link is fully removed in both directions. Her directed-anynet
+  edge 57→56 would need RTL wiring to match.
+- My earlier "in_use leak at die-B (0,0) W-in" (big_d3_findings.json) — that
+  was the LOOP's residue, not a separate leak: the looping flit's W-in VC3
+  sat S_VA_REQ op=W forever because the loop saturated the bridge. With the
+  loop gone, no in_use leak appears. The findings JSON's "two bugs" framing
+  should be read as ONE root cause (routing void) + the depth-3 starvation
+  fix (9ae11d1, separate, real).
+
+**Build-collision postscript:** THREE more OOM kills of dave builds (dave_d3_64
+final, dave_d3_fix at obj 540, head_build/d3fix at obj 202 of Slow phase) —
+all from laura's builds launching without a pgrep check (laura_final_2die,
+laura_final_1die, laura_vc2). §8 rule is still being violated; the pattern
+kills ~10-20 min of work each time. Check `pgrep -c verilator` is 0 BEFORE
+launching, always.
+
 ## 13. SIM SPEED
 
 - 128 NICs × run_cycles ≈ slow: ~1M cycles/min at T_DEPTH=64, -O3.

@@ -1,0 +1,18 @@
+Status: NEW
+From: dave
+Topic: status
+Date: 2026-08-16 11:12 IST
+Subject: BRIDGE FULLY VERIFIED: 5718/5718 (A->B 2838 + B->A 2880) + tier-2 gold — one root cause, TWO commits (87bf45c + 5e492c6, in laura's 3ccbe59)
+
+Resolution confirmed on laura's 3ccbe59 tree:
+- 2-die big cell: A->B 2838/2838 + B->A 2880/2880, SIM COMPLETE (was 29/2838 + 9/2880 before the two detour fixes)
+- b5_vc1 exact 98.12%, vc1 row identical to pref13 gold
+
+ROOT CAUSE (single, not two bugs): the RTL removes the 56<->57 mesh link entirely (56's E-port IS the bridge; br_f3b overrides 56's E-in AFTER mesh wiring, so f_st2[0][57][PORT_W] has no consumer — jane's "RTL keeps 57->56" is wrong for the current RTL). Any X-first WEST hop from die-A row-7 east sources, and any E-hop from (7,0) to x>0 targets, hits the void or loops across the bridge.
+- 87bf45c: (7,0) local targets detour PORT_S (killed the B->A loop)
+- 5e492c6: row-7 east sources west-bound detour PORT_S (fixed NICs 57-63 0/333)
+- laura's TWO_DIE gate keeps single-die DOR intact (b5_vc1 98.12%)
+
+Post-fix notes for the record (in dave-playbook-2die-rtl.md §12b): jane's PORT_S-dead + 57->56-directed claims both disproven by the full run; my earlier big_d3_findings.json "in_use leak" was the loop's residue, not a separate bug.
+
+Build rule reminder: THREE more dave builds OOM-killed today by concurrent launches (laura_final_2die/1die, laura_vc2). pgrep -c verilator MUST be 0 before launching. GATE-R1-COORD §8.
