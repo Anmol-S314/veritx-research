@@ -147,19 +147,27 @@ def port_of(src, hop, links):
     # the RTL's noc_2die.sv wiring regardless of geometry.
     if (src < 64) != (hop < 64):
         return 0 if src < 64 else 1
-    # direction from src to hop by geometry
+    # direction from src to hop by geometry.
+    # N/S orientation (2026-08-18, dave, 011b root cause): the RTL's
+    # noc_2die wiring has PORT_N connecting router y's N-input to router
+    # (y+1)'s S-output — PORT_N points toward HIGHER y, PORT_S toward
+    # LOWER y (router.sv route2d: dy>y -> PORT_N; Y>ly -> PORT_S; verified
+    # empirically: die-A (7,0)->(6,0) detour is PORT_S and delivered
+    # 2880/2880). The previous mapping (hy<sy -> d=2/N) was INVERTED:
+    # table mode sent every vertical hop the wrong way -> "0/3663
+    # ejected" (seed 011b, the table-routing RTL never-delivers bug).
     if hx > sx:
         d = 0
     elif hx < sx:
         d = 1
     elif hy < sy:
-        d = 2
-    else:
         d = 3
+    else:
+        d = 2
     # the geometric neighbor in direction d must actually be hop; if the
     # link is missing (bridge-adjacent node), geometry crossed a void and
     # the table must NOT emit that port — reroute via the real links.
-    geo = {0: (sx + 1, sy), 1: (sx - 1, sy), 2: (sx, sy - 1), 3: (sx, sy + 1)}
+    geo = {0: (sx + 1, sy), 1: (sx - 1, sy), 2: (sx, sy + 1), 3: (sx, sy - 1)}
     gx, gy = geo[d]
     if gy * 8 + gx == hop:
         return d
@@ -174,8 +182,8 @@ def port_of(src, hop, links):
             if nx < sx:
                 return 1
             if ny < sy:
-                return 2
-            return 3
+                return 3
+            return 2
     # last resort: 4 = LOCAL (should not happen for cross-die)
     return 4
 
