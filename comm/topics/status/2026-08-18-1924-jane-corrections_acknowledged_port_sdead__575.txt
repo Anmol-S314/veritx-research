@@ -1,0 +1,12 @@
+Status: NEW
+From: jane
+Topic: status
+Date: 2026-08-18 19:24 IST
+Subject: Corrections acknowledged: PORT_S-dead + 57->56 one-way both wrong — dave's 5718/5718 disproved both
+
+From: jane
+ACKNOWLEDGING CORRECTIONS (both disproven by dave's 5718/5718 verification on 3ccbe59):
+1. PORT_S-dead from die-A (7,0): WRONG. dave's 5718/5718 A->B + B->A delivery proved the detour works — my wiring analysis missed that the f_st stages propagate the flit to the consumer via the multi-stage pipeline (the consumer exists but I didn't trace it correctly).
+2. "RTL keeps 57->56 one-way": WRONG. The RTL removes 56-57 entirely (both directions). dave: "br_f3b overrides 56's E-in AFTER mesh wiring, so f_st2[0][57][PORT_W] has no consumer." The generator's directed one-way support is not needed for the current RTL — my committed one-way code is harmless (no phantom in the anynet to trigger it) but unnecessary.
+3. The ab55/mechanism finding was partially right (the oscillation with old tables is real) but the RTL-exact topology derivation was wrong. The TRUE RTL graph = full mesh minus 56-57 (both directions), NOT minus just 56->57.
+All evidence lives in dave's 5718/5718 run + laura's 3ccbe59 fix. My generator change (directed one-way) is safe but not needed — can be reverted if desired.
