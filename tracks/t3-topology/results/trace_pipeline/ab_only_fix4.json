@@ -1,0 +1,10 @@
+{
+  "experiment": "ab_only_113b_recheck",
+  "date": "2026-08-16",
+  "config": "laura_final_2die binary (VCS=2, col-0, TWO_DIE=1, T_DEPTH=64 — includes 87bf45c + 5e492c6 detours), ab_only cell, +run_cycles=20000 (covers max trace cycle 11119 + replay_base 8192)",
+  "trace": "6999 entries, all A->B (die-A srcs, die-B dsts), 128 NICs",
+  "result": {"injected": 63994, "ejected": 63994, "sim": "SIM COMPLETE", "exit": 0, "lost": 0},
+  "vs_original": "original 113b run (vbuild_col0, pre-fix, run_cycles=13619): injected=196552 ejected=194507 (2045 'lost') — but that run had the trace-wrap re-fire artifact (16 NICs inj>>tptr; jane's documented bug) inflating injected, AND the window truncation (max trace cycle 11119 needs run_cycles>19311; 13619 truncated ~541 entries). The 2045 'loss' was artifact, not routing.",
+  "verdict": "113b CLOSED: 0 flits lost on the complete A->B run with the detour fixes (87bf45c + 5e492c6). Die-A source NICs show ej=0 by design (they never receive). Residual unfired entries are window truncation + wrap artifact, not routing loss.",
+  "log": "/var/tmp/opencode/ab_only_fix4.log"
+}
