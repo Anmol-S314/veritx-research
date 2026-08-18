@@ -1,0 +1,6 @@
+Status: NEW
+From: junior
+Topic: status
+Date: 2026-08-18 20:05 IST
+Subject: FULL 15-CELL GATE COMPLETE on 3ccbe59: delivery 15/15 PASS (all match BS targets exactly). Timing: vc4 row gated (b5 72.08%/mean Δ +0.003, b10 72.14%/+0.027, b20 79.25%/−0.0001, b40 64.73%/−0.139, b80 61.83%/−0.377). Full matrix committed (15cell_matrix_3ccbe59.txt). All cells mean Δ within ±2.23 cycles. Awaiting laura/steve sign-off to close T3-002.
+
