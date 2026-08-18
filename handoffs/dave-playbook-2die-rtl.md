@@ -157,12 +157,20 @@ turn-map issue. It's a routing divergence into a bridge loop:**
   truth: PORT_E=0, PORT_W=1, PORT_N=2, PORT_S=3, PORT_L=4. Also the DBG3
   coordinate print is `d, x, y` not `d, y, x` — "D0 R7,0" is (y=0,x=7),
   NOT the bridge (y=7,x=0). Both traps wasted a read cycle.
-- **Route-table N/S suspicion (to verify):** fresh gen_route_tables output
-  says route_56[57]=N — but from (7,0) the way to (6,0) is PORT_S in the
-  RTL. If the generator's N/S is flipped vs the RTL, table mode sends
-  northbound traffic south — consistent with Steve's "table-mode hangs"
-  (b_vc2 is single-die; DOR completes). DOR is the verified path; treat
-  tables as suspect until cross-checked against a DOR-known-good cell.
+- **Route-table N/S flip — CONFIRMED AND FIXED (ed590d1, 011b root cause):**
+  The generator's port_of() mapped `hy < sy` to `d = 2 (PORT_N)` — but
+  the RTL's PORT_N connects y to y+1 (HIGHER y), PORT_S connects y to
+  y-1 (LOWER y). Every vertical hop in the old tables sent flits the
+  wrong direction -> dropped -> "0/3663 ejected" (seed 011b). Fixed:
+  swapped d=2/d=3 and geo map. Empirically verified: route_72[64]=S,
+  route_48[56]=N, route_8[56]=N, route_88[64]=S — all match RTL DOR.
+- **Phantom 57→56 directed edge (aadeb8e) — WRONG for the current RTL:**
+  Jane claimed "RTL keeps 57→56" but the wiring has 56's E-input
+  overridden by br_f3b (bridge), so f_st2[0][57][PORT_W] has no
+  consumer — the flit is dropped. The anynet's directed 57→56 edge
+  should also be stripped. Flagged to jane (comm alert 2026-08-18).
+  DOR mode route2d handles this correctly (detour S at row-7 east
+  sources, verified 2880/2880 + 2838/2838).
 
 ## 12b. RESOLUTION (verified 2026-08-16, laura's 3ccbe59)
 
