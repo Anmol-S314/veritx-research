@@ -62,3 +62,12 @@ third_party/booksim2/src/watch.log
 
 # Playwright MCP session junk (console/page logs)
 .playwright-mcp/
+
+# Session artifacts (kept on t3-rtl-noc, not on serving-leg branch)
+/outputs/
+/plans/
+/plan-blocks.md
+/tech-stack-*.png
+/docs/VM-SETUP.md
+/docs/multi-agent-harness-design.md
+/research-vendor/
