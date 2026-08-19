@@ -45,21 +45,51 @@ serving/
    ./veritx-rebuild.sh
    ```
 
-2. Build ASTRA-sim with the BookSim2 backend:
+2. Build the `AstraSim_BookSim2` binary. The frontend is wired by the
+   orchestrating CMakeLists in `serving/astra-sim/build/astra_booksim2/`
+   (it adds the engine as `AstraSim`, the fabric backend as `BookSim2Fabric`,
+   and the wrapper as `AstraSim_BookSim2` — the top-level astra-sim
+   CMakeLists does NOT add the frontend on its own):
 
    ```bash
-   cd serving/astra-sim
-   # per the original build: cmake + make with the booksim2 frontend
-   # (protobuf 3.21.12 from source was required for Chakra trace parsing)
+   mkdir -p /tmp/serving-build && cd /tmp/serving-build
+   BOOKSIM2_SRC_DIR=<path-to>/serving/booksim2-embed \
+     cmake <path-to>/serving/astra-sim/build/astra_booksim2
+   cmake --build . -j2
+   # binary: /tmp/serving-build/bin/AstraSim_BookSim2
    ```
 
-3. Generate the slice trace and run the 3-way comparison:
+   protobuf 3.21.12 (or newer with matching headers) is required for Chakra
+   trace parsing; the system `libprotobuf` is found automatically.
+
+3. Generate the slice trace (needs Chakra's Python stubs on `PYTHONPATH`):
 
    ```bash
-   cd serving/astra-sim/astra-sim/network_frontend/booksim2/examples
-   python3 gen_qwen_slice.py   # emits the Qwen3 slice (first 12 comm ops)
-   # then run the backend with the analytical / unicast / multicast-fold configs
+   TRACE=<path-to>/serving/LLMServingSim/traces/run_1786643546936153_195056/trace/\
+   RTXPRO6000/Qwen/Qwen3-30B-A3B-Instruct-2507/instance0_batch0.txt
+   PYTHONPATH=.../serving/astra-sim/extern/graph_frontend/chakra/src/third_party/utils:\
+   .../serving/astra-sim/extern/graph_frontend/chakra/schema/protobuf \
+     python3 .../serving/astra-sim/astra-sim/network_frontend/booksim2/examples/gen_qwen_slice.py \
+     $TRACE 4 12 /tmp/qwen_slice
    ```
+
+4. Run the 3-way comparison (from `serving/astra-sim` so relative config paths resolve):
+
+   ```bash
+   # analytical + unicast + multicast-fold:
+   AstraSim_BookSim2 \
+     --workload-configuration=/tmp/qwen_slice/qwen_slice \
+     --system-configuration=examples/system/native_collectives/Ring_4chunks.json \
+     --remote-memory-configuration=examples/remote_memory/analytical/no_memory_expansion.json \
+     --network-configuration=astra-sim/network_frontend/booksim2/examples/4npus_snake.cfg \
+     --booksim2-extra="injection_rate=0.0" \
+     [--booksim2-mcast-fold=true]
+   ```
+
+   Verified 2026-08-19: multicast-fold reproduces the documented
+   **13,885,374 cycles** bit-exact; unicast gives 15,625,155 (the 15,295,386 in
+   the results JSON predates a 22:36 code edit in Booksim2NetworkApi.cc — fold
+   path unchanged).
 
 4. The evidence JSONs: `serving/results/*.json`
 
