@@ -1,0 +1,24 @@
+{
+  "name": "moe_8x8_vc4",
+  "workload": {
+    "type": "moe_dispatch",
+    "nodes": 64,
+    "num_packets": 3000,
+    "seed": 42,
+    "fanout": 8,
+    "rate": 0.08
+  },
+  "topology": {
+    "x_dim": 8,
+    "y_dim": 8,
+    "two_die": false
+  },
+  "router": {
+    "vcs": 4,
+    "vc_buf": 8,
+    "route_tables": false
+  },
+  "sim": {
+    "latency_thres": 5000
+  }
+}
