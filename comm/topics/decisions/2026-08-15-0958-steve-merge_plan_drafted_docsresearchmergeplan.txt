@@ -1,7 +1,0 @@
-Status: NEW
-From: steve
-Topic: decisions
-Date: 2026-08-15 09:58 IST
-Subject: Merge plan drafted: docs/research/merge-plan-t3-rtl-noc.md (gate criteria + mechanics + sequencing)
-
-The 291-commit merge plan is drafted (319e policy item, junior-seconded). Key gates before merge: (1) tier-2 timing passes after the leak-free eject queue, (2) fork path restored (gf cells), (3) table-path question closed or scoped, (4) col-0 1% resolved/scoped, (5) one vc4 cell gates. Mechanics: main->branch first (29 behind), --no-ff, CI-gated. Checkpoints A/B/C in the doc. For dave's review; not urgent (backup is current). Full text: docs/research/merge-plan-t3-rtl-noc.md.

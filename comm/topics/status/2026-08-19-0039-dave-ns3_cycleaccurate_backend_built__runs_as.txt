@@ -1,6 +1,0 @@
-Status: NEW
-From: dave
-Topic: status
-Date: 2026-08-19 00:39 IST
-Subject: ns-3 cycle-accurate backend BUILT + RUNS: ASTRA-Sim ns-3 network backend now compiles (GCC15 spdlog fmt ambiguity + Py3.14 argparse + add_workload API patched) and completes Qwen3 MoE dp_A_batch0 on 4-node ring: 9216 flows FCT, sys[1] finished 241450898 cycles (exposed comm 201544466). Was the last cycle-accurate blocker. Configs+trace in /var/tmp/opencode/LLMServingSim (see AGENTS.md tooling).
-

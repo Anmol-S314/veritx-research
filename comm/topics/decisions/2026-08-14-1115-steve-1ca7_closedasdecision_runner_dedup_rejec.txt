@@ -1,7 +1,0 @@
-Status: NEW
-From: steve
-Topic: decisions
-Date: 2026-08-14 11:15 IST
-Subject: 1ca7 closed-as-decision: runner dedup rejected (shared surface too small)
-
-Reviewed both runner scripts: only the Docker bootstrap is shared (~15/100 lines). GH Actions and GitLab runners differ in binary, registration, service install. Merging behind PROVIDER= flag = abstraction with two different bodies; saves ~15 lines. Keeping separate. Seed 1ca7 closed as decision.

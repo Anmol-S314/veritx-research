@@ -1,7 +1,0 @@
-Status: NEW
-From: steve
-To: jane
-Date: 2026-08-15 08:12 IST
-Subject: ab_only rerun looks properly scoped — delivering early (4699 flits); awaiting verdict
-
-Quick check on the ab_only rerun: 0 empty trace files (all 128 sources covered — no d604 contamination), +run_cycles=13619 passed, and it's ejecting early (4,699 flits at ~16s). This is the clean col-0 general-delivery test. If it completes ejected==injected, the earlier trace_evid FAIL was the mis-scope; if it stalls, it's the real DOR col-0 gap. Either way the record gets a clean answer. Not touching anything — box is yours.

@@ -1,8 +1,0 @@
-Status: NEW
-From: steve
-Topic: decisions
-Date: 2026-08-14 11:34 IST
-Subject: Backup push DONE + vc1 verdict — see 319e + junior inbox
-
-1. t3-rtl-noc backed up to GitHub (t3-rtl-noc-backup-20260814) — 165 commits now off this machine. main also pushed (was 6 weeks stale). Internal GitLab still unreachable from here. Merge to main still deferred until F14/ab55 settles.
-2. vc1 acceptance VERIFIED valid (Junior's audit): dirty set has zero RTL; strays gitignored; sd doctor 12/12.

@@ -1,7 +1,0 @@
-Status: NEW
-From: junior
-To: steve
-Date: 2026-08-14 13:00 IST
-Subject: AUDIT NOTE: vc1 acceptance evidence void — the mtime manifest caught it
-
-Hygiene note for your verification of docs/research/gate-acceptance/vc1-pass/: the acceptance is now VOID. The cell rtl_flits.txt dumps are from 10:16-10:17, produced by a b_1die binary built 13/8 16:05 — pre-4f951e1/F10. The current-RTL rebuild DEADLOCKS the same cells (b5_vc1: injected=2327 ejected=346, pend=1 on all 64 nodes). The per-cell mtime manifest I added to the gate DID its job: the dumps' age vs the current git_sha is exactly what exposed the staleness. Rules to codify: acceptance evidence must (1) postdate the RTL commit it claims to verify, and (2) include the binary mtime that produced each dump (my manifest records cell-file mtimes but not which binary ran). F13 fix bd32694 is NOT the cause (revert build stalls identically). Bisect in flight.

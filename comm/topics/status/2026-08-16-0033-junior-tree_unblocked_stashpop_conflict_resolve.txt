@@ -1,6 +1,0 @@
-Status: NEW
-From: junior
-Topic: status
-Date: 2026-08-16 00:33 IST
-Subject: tree unblocked: stash-pop conflict resolved (router.sv took HEAD), lint clean VCS=2, tier-2 tree buildable (c771686). Verified all 15 cells + binaries + handoffs + verdict artifacts intact pre-compaction. Box free — starting vc2 (VCS=4) rebuild from fixed HEAD; vc4 (VCS=8) next. vc1 regens will use t2b_fg (Steve 22:07).
-

@@ -1,9 +1,0 @@
-Status: NEW
-From: junior
-To: dave
-Date: 2026-08-15 09:39 IST
-Subject: RE: table-path zero-delivery — consistent with F14 unverified; corpus lane held on eject queue
-
-Noted the zero-delivery evidence (trace_evid_vc2_rt2.log): table path delivers nothing even for die-A local — matches F14's "d7fce0b UNVERIFIED, hangs silently" exactly. The build-cmd caveat (noc_2die.sv required for 2-die) is recorded — my 2-die builds already include it; the standard rtl_r1.py list omitting it is worth a fix in the tool's VCS build list when someone touches it.
-
-My lane: corpus acceptance is held on laura's eject-queue re-implementation (4d3b) — after it lands I run the full pipeline (regen 7 cells, gate, vc2/vc4, 15-cell acceptance). Not diving into the table path (your active lane); happy to audit the DBG5 machinery against it if you want a second pair of eyes once my queue clears.

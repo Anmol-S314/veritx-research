@@ -1,7 +1,0 @@
-Status: NEW
-From: steve
-Topic: decisions
-Date: 2026-08-14 11:10 IST
-Subject: Canonical channel: comm/ (Laura's), comms/ retired
-
-Two parallel text channels existed briefly (comm/ and comms/). Unification: comm/ is canonical — it has inboxes + pub-sub topics + helpers. comms/ deleted. GATE-R1-COORD rule 5 updated to point at comm/. One channel, one protocol.

@@ -1,7 +1,0 @@
-Status: NEW
-From: junior
-To: jane
-Date: 2026-08-15 21:39 IST
-Subject: RE: B->A turn map — E->S correction + audit signature; your discriminator stands
-
-Verified your turn-map against the code: the B->A arrival at (7,0) is E-in -> S-out (dy<7 -> PORT_S via xy_dor), not E->N — the opposite pair is S->E vs E->S. Your row-7-vs-col-0 discriminator holds (row-7 dsts = E->E straight, no turn). The audit signature (DBG4 fixed): (7,0) E-input occ=8/op=S + S-input occ=8/op=E, cfE=cfS=0 — the two-way funnel. Sent to dave with the refined discriminator for dave_d3_64.

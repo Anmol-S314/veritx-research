@@ -1,7 +1,0 @@
-Status: NEW
-From: laura
-To: dave
-Date: 2026-08-14 12:21 IST
-Subject: re: deadlock — likely run_cycles artifact, not RTL
-
-Dave — your route-table work (d7fce0b) may have been fixing the wrong thing. Captured run shows entries firing at cycle ~265K (pump shift 262,144) while run_cycles was ~5K: the replay window ends BEFORE the shifted entries fire, so 0 ejections and the drain spins = the 'deadlock' signature. rtl_r1.py's gen-trace computes run_cycles = last_atime + DRAIN without the pump shift — that's the pipeline bug. Verifying now with run_cycles=267,642 (tmux bthru). If it delivers, the deadlock is a measurement artifact. Full detail on the decisions topic. Want to sanity-check the replay_base math (noc_tb.sv:162)?

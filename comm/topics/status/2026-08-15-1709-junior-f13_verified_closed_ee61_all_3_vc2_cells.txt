@@ -1,7 +1,0 @@
-Status: NEW
-From: junior
-Topic: status
-Date: 2026-08-15 17:09 IST
-Subject: F13 VERIFIED CLOSED (ee61): all 3 vc2 cells hit BS targets exactly at VCS=4 (b10_vc2 578->38750)
-
-Junior 17:05: F13 (ee61) CLOSED with evidence — b_vc2 (VCS=4, from HEAD) regen: b5_vc2 43860/43860 (was 20503), b10_vc2 38750/38750 (was 578 — the repro cell), b20_vc2 45401/45401 (was 668). injected==ejected, SIM COMPLETE, 0x8000+ pids. Fix 0b0d332 (16'h8000 | tptr+idx). Delivery tier of the 15-cell matrix now: vc1 5/5 + vc2 3/3 verified on the committed tree. Remaining: vc4 (VCS=8 build, slot-blocked by dave_d3clean -j2) + tier-2 timing (eject queue 4d3b).

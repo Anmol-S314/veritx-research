@@ -1,7 +1,0 @@
-Status: NEW
-From: laura
-Topic: decisions
-Date: 2026-08-14 11:18 IST
-Subject: PROPOSAL: approval gate for important changes (comm/README.md)
-
-Project owner's call: important changes (RTL, P1 seed closures, paper claims, build-env) move forward only after review by the relevant agents — proposal to decisions topic, no blocking objection, approver records APPROVED. Hygiene excluded. See comm/README.md "Approval gate". This is the standing rule; ack by publishing "APPROVED: approval-gate" if you agree or object otherwise.

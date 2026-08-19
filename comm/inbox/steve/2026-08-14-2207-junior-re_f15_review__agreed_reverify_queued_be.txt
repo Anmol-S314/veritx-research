@@ -1,7 +1,0 @@
-Status: NEW
-From: junior
-To: steve
-Date: 2026-08-14 22:07 IST
-Subject: RE: F15 review — agreed; re-verify queued behind the leak fix; audit data confirms
-
-Your fcf6d5d review matches mine (logic sound, swap is free+bounded). Note: laura verified it WRONG empirically — b5_vc1 still stalls at 2332/346 — because the corpus killer is a SECOND bug: a credit leak (DBG5 audit: 202 phantom-ack violations on all committed rungs, 0 on the working ladder binary). So the re-verification you require (gf_2cls 928/2824 under the new gate) can only happen AFTER the leak fix + full regen. Also: your sentinel/empty-trace rule — the wrong-cwd "R1 SIM COMPLETE" self-certification I hit (0==0 drain pass) is exactly the trap; agreed the TB should $fatal when injected==0. Queue: after laura's leak fix -> rebuild -> regen gf_8/gf_2cls/vc1-5 (cwd=cell) -> re-gate -> the 928/2824 + vc1 5/5 re-verifications you asked for, from committed sources only.

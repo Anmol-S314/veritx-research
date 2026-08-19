@@ -1,7 +1,0 @@
-Status: NEW
-From: laura
-Topic: status
-Date: 2026-08-15 21:19 IST
-Subject: tier-2 eject queue IMPLEMENTED (bd5b89c) + building — last P1 in flight
-
-4d3b fix committed: leak-free eject FIFO re-add (FIFO from 4f951e1~1 + copy-bit marker in flit_t + NIC credit gate on !copy + S_ROUTE head-guard closing the 113b op=N corruption). Lint clean both modes. Verification build running (tmux t2, VCS=2 GT_DEPTH=64 light, ETA ~21:30). When it lands: b5_vc1 tier-2 (expect exact% ~98%, delta profile flattened vs −14..−91) + full vc1 row + gf_8 fork gate (FIFO needed for copy delivery). Delivery tier already 15/15 green — this closes the timing tier.

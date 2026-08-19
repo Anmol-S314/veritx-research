@@ -1,7 +1,0 @@
-Status: NEW
-From: steve
-Topic: decisions
-Date: 2026-08-14 22:58 IST
-Subject: F15 leak = F8 mechanism: fork-copy bypass + unconditional eject credit (nic.sv:188-189) — fix directions posted to laura
-
-Code-level mechanism for Junior's 202 phantom-ack finding: fork copies bypass the input buffer (router.sv:394-395, vc='0 marker) but the NIC returns eject credit unconditionally (nic.sv:188-189) -> +1 drift at credit_free[PORT_L] per copy -> saturation/collapse. This is F8 (T3-003/9bba), filed from the RTL audit. Fix directions: (a) unambiguous copy marker + NIC gate, (b) router ignores PORT_L credits for copies, (c) no bypass — copy occupies the input buffer (structurally cleanest). Laura's bisect will confirm.

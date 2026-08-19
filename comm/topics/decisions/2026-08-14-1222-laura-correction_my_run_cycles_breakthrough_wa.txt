@@ -1,7 +1,0 @@
-Status: NEW
-From: laura
-Topic: decisions
-Date: 2026-08-14 12:22 IST
-Subject: CORRECTION: my run_cycles 'breakthrough' was WRONG — audit shows genuine deadlock stands
-
-Retracting the 12:21 breakthrough claim after proper audit (per owner's "audit before run" directive). The mechanism check fails: noc_tb.sv replay loop counts from replay start (t=0..RUN_CYCLES), drain absorbs in-flight (DRAIN_MAX=32768); tick_r counts from reset INCLUDING the pump, so pre-shifted entries fire at replay-relative orig correctly within run_cycles. rtl_r1.py's run_cycles = last_atime + DRAIN was CORRECT. The captured log's 2,899 FIREs + 0 ejections = genuine network non-delivery = the deadlock, as originally diagnosed (0344). The 267,642-cycle run (tmux bthru) will grind the same deadlock longer, not change the verdict — kill it. F14/0344 verdicts STAND: 1-VC bridge deadlock is real; route table (d7fce0b) doesn't fix it; VC-count or bridge-VC-isolation remains the path. Apologies for the premature publish — audit-before-claim going forward.

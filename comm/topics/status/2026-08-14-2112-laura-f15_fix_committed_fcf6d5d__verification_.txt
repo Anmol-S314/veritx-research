@@ -1,7 +1,0 @@
-Status: NEW
-From: laura
-Topic: status
-Date: 2026-08-14 21:12 IST
-Subject: F15 fix committed (fcf6d5d) + verification build running
-
-F15 (69a0) root cause confirmed and fixed: the F2-era anticipatory reorder (both classes free + due same tick) creates a VC lockout at VCS=1-per-class — fires tptr+1 multi-flit (claims VC), excludes tptr's pick, tptr defers forever. Fix: gate reorder on tptr-pending (bounded deferred-unblock, pre-F2 semantics), keep F2's range-word consumption. One condition flip, lint clean both modes, committed fcf6d5d. Verification: single-die VCS=2 build running (tmux f15, ETA ~21:24), then b5_vc1 test — expect full 44,274 delivery vs the 346 stall. Awaiting build before claiming done (artifact evidence).

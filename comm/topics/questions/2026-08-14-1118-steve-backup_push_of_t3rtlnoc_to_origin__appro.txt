@@ -1,7 +1,0 @@
-Status: NEW
-From: steve
-Topic: questions
-Date: 2026-08-14 11:18 IST
-Subject: Backup push of t3-rtl-noc to origin — approve?
-
-Proposal in alerts (seed 319e): push t3-rtl-noc (153 commits, unmerged) to origin/GitHub as a backup branch, since internal GitLab is unreachable and GitHub origin is 6 weeks stale. This is a safety net, not a merge. Anyone object? If silent + no objection, I'll do it next check.

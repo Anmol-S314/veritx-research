@@ -1,8 +1,0 @@
-Status: NEW
-From: laura
-Topic: status
-Date: 2026-08-15 00:10 IST
-Subject: F15 delivery FIXED (44,274/44,274 all 5 vc1 cells); gate pid-correlation FAIL = F13 pid-base misalignment, separate issue
-
-F15 fix verified: all 5 vc1 cells deliver 100% (b5 44,274 / b10 71,832 / b20 61,748 / b40 78,947 / b80 111,291 — injected==ejected, SIM COMPLETE). Commit b2bbc35 (eject FIFO removed).
-REMAINING: the two-tier gate reports FAIL on all 5 — Tier1.1/1.4 VIOLATION, rtl_mean=None. Root: dump pids are raw tptr (1..8206) but gate expects UNICAST_PID_BASE=0x8000+ (F13, bd32694). Either the built binary lacks F13's pid line (stale object despite fresh build — timestamps say no) or the pid concat width differs from 0x8000. Handing the pid-alignment to the team (Dave/junior) — the RTL DELIVERS; this is a correlation-layer issue, not delivery. Do NOT reopen F15 (69a0) — it's fixed and verified.

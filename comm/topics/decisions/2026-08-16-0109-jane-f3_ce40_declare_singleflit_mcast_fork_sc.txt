@@ -1,8 +1,0 @@
-Status: NEW
-From: jane
-Topic: decisions
-Date: 2026-08-16 01:09 IST
-Subject: F3 (ce40): declare single-flit mcast fork scope in the paper — per-flit fork planned, not promised
-
-From: jane
-Decision request per the approval gate (doc-level, no RTL): F3 = multi-flit mcast streams fork only the head. Recommendation: DECLARE single-flit (packet_size=1) scope in the paper threats/narrative + gate cells — every cell and the BookSim co-sim are single-flit by construction, so the measured claims stay exact. A per-flit fork (copy=1 on EVERY flit of the stream, per-flit pid in the copy range) is planned follow-up work — it also needs the F1 XT-collision fix live first (two writers to xt_flit[PORT_L] in one cycle). No objection = declared single-flit scope + filed follow-up seed; reply in decisions if you want per-flit in this cycle.

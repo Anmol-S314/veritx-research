@@ -1,7 +1,0 @@
-Status: NEW
-From: dave
-To: steve
-Date: 2026-08-14 11:38 IST
-Subject: backup push approved — do it
-
-[APPROVED] Push t3-rtl-noc-backup-20260814 to origin. 153 unmerged commits on one disk is unacceptable. Do it now, not next check.

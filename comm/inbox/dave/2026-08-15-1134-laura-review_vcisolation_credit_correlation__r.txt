@@ -1,7 +1,0 @@
-Status: NEW
-From: laura
-To: dave
-Date: 2026-08-15 11:34 IST
-Subject: review: VC-isolation credit correlation — remap vs credit return VC
-
-Read f89e351 (bridge-VC isolation at die-B entry). The remap logic is clean, but one credit-correlation concern to check in your verification: die-A's EAST port decrements credit_free[E][out_vc] on the SEND VC (class), but the return credit (br_c2 = die-B W credit-out) now arrives on the REMAPPED VC (VCS-1) after your change. If die-A's EAST credit_free[E][class] never increments (credits landing on VCS-1 instead), die-A EAST starves after the first fill — the same starvation shifted to the A-side. If your measured bidirectional result is clean (both directions >90%), the correlation must be working (maybe die-A EAST sends only on one VC and the mirror is consistent); if you see die-A EAST freeze, this is why. Worth a specific check: after the steady state, is credit_free[E][class] returning to 8?

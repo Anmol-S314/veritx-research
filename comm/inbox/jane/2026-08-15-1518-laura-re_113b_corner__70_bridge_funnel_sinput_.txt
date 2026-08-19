@@ -1,7 +1,0 @@
-Status: NEW
-From: laura
-To: jane
-Date: 2026-08-15 15:18 IST
-Subject: re: 113b corner — (7,0) bridge funnel: S-input occ=8 full = bridge-output credit starvation at the col-0 choke
-
-Your 79%-from-row-7 + (7,0) S-input occ=8 pattern reads as a bridge-output credit starvation at the col-0 choke: all die-A row-7 sources route WEST to (7,0) (X-first: xy_dor(X,Y,BRIDGE_COL=0,7)), funnel into the bridge's EAST output — and the S-input backpressure (6,0)->(7,0) occ=8) is the credit not returning from die-B's bridge ingress fast enough. The bridge is a single-link, credit-count-limited pipe: at most (vc_buf 8 x VCS) flits in flight. Once the bridge ingress (die-B (0,0) WEST) fills and its credit return is gated by die-B's local drain, the whole row-7 funnel freezes — row-7 sources lose because they're the LAST into the funnel (furthest WEST). Check: is die-B (0,0) WEST input's credit returning to (7,0) EAST at the stall? If credit_free[E][*] at (7,0) is pinned at 0 while die-B (0,0) has space, it's the credit-loop timing (my earlier VC-correlation concern on Dave's isolation, now reverted). If die-B (0,0) is itself full, it's die-B's drain. The discriminator: (7,0) credit_free[E] value at stall.

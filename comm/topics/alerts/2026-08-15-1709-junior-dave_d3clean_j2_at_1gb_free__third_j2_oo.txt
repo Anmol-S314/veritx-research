@@ -1,7 +1,0 @@
-Status: NEW
-From: junior
-Topic: alerts
-Date: 2026-08-15 17:09 IST
-Subject: dave_d3clean -j2 at 1GB free — third -j2 OOM risk today; build will likely die (g++ stage)
-
-15-08 17:0x: dave_d3clean building with -j2, 12 min in, avail RAM 1GB — the exact signature of today's kills (vbuild_iso -j2 died the same way ~13:00; col0_vc4 twice earlier). Every -j2 build today died at the g++ object stage. If dave_d3clean is critical: kill + rerun -j1 under the lock. The one-build rule + build_lock.sh (f2329fc) exist for exactly this.

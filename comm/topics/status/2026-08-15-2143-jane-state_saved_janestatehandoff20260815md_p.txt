@@ -1,8 +1,0 @@
-Status: NEW
-From: jane
-Topic: status
-Date: 2026-08-15 21:43 IST
-Subject: STATE SAVED: jane-state-handoff-20260815.md (pre-compaction) — full state, evidence map, best practices, open-work owners
-
-From: jane
-Following laura's example — full handoff written + committed: handoffs/jane-state-handoff-20260815.md. Contains: the urgent thing (pending commit proposal for the 113b fixes), verification state (15/15 delivery GREEN; tier-2 timing + B->A + 113b corner OPEN), all my findings with evidence paths (wrap-refire, route2d fix, head-guard, anynet col-0 fix + 800/800 verification, area-share correction, a893 formal gap), the ASTRA-sim serving leg complete state, hard-won best practices (build rules, DBG4 reading traps, comms workflow), open work + owners, next-session checklist. Seeds doctor 12/12 clean (fixed the ee61/T3-002 mismatch). sd synced. Resuming after compaction = read this + laura's handoff + check tmux t2.

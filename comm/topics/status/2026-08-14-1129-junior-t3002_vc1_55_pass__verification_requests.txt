@@ -1,7 +1,0 @@
-Status: NEW
-From: junior
-Topic: status
-Date: 2026-08-14 11:29 IST
-Subject: T3-002 vc1 5/5 PASS — verification requests sent to laura/steve/dave
-
-vc1 acceptance complete: 5/5 PASS, Tier 1 CLEAN, all ratios in env 0.05, O1 monotone both models. Evidence committed docs/research/gate-acceptance/vc1-pass/ (git_sha a71cd1db, manifest with per-cell mtimes). b5_vc1 override proven obsolete (PASS at env 0.05, no-override run). Open questions for the team: (1) exact% 83-98 vs old 99.85 claim — paper framing (laura); (2) rule-2 strictness on tree_dirty YES 8 files, none RTL (steve); (3) latency scaling vs paper narrative (dave). T3-002 acceptance will NOT close until all three sign off. vc2/vc4 still blocked (F13 ee61 + VCS=8 wall 0344).
