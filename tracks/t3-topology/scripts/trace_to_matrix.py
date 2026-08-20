@@ -43,7 +43,21 @@ LINE_RE = re.compile(
     r"(?P<out_loc>\S+)\s+(?P<out_size>\d+)\s+"
     r"(?P<comm>\S+)\s+(?P<comm_size>\d+)\s+(?P<misc>\S+)"
 )
-EXPERT_RE = re.compile(r"^\s*EXPERT\s+(?P<id>\d+)\s+(?P<comm>\S+)\s+(?P<size>\d+)")
+# EXPERT {id} {comm} {size}  (MoE dispatch)  OR
+# EXPERT END {comm} {size}   (MoE combine; e.g. REDUCESCATTER:1,1)
+EXPERT_RE = re.compile(
+    r"^\s*EXPERT\s+(?:(?P<id>\d+)|END)\s+(?P<comm>\S+)\s+(?P<size>\d+)"
+)
+
+
+def normalize_comm(comm: str) -> str:
+    """Strip the dimension-scope suffix: 'ALLREDUCE:1,0' -> 'ALLREDUCE'.
+
+    LLMServingSim encodes involved_dim as ':dim0,dim1' after the collective
+    name. For the die-level traffic matrix every collective touches the
+    group, so the scope only matters if we ever model per-dim topologies.
+    """
+    return comm.split(":")[0]
 
 
 def remote_die(loc: str, default: int = 0) -> int:
@@ -67,7 +81,10 @@ def parse_trace(path: Path, num_dies: int, volumes: dict):
             continue
         m = EXPERT_RE.match(line)
         if m:
+            comm = normalize_comm(m.group("comm"))
             size = int(m.group("size"))
+            if comm == "NONE" or size == 0:
+                continue
             for src in range(num_dies):
                 for dst in range(num_dies):
                     if src != dst:
@@ -76,7 +93,7 @@ def parse_trace(path: Path, num_dies: int, volumes: dict):
         m = LINE_RE.match(line)
         if not m:
             continue
-        comm = m.group("comm")
+        comm = normalize_comm(m.group("comm"))
         size = int(m.group("comm_size"))
         if comm == "NONE" or size == 0:
             # still count cross-die memory transfers from REMOTE locs
@@ -99,7 +116,7 @@ def parse_trace(path: Path, num_dies: int, volumes: dict):
                 for dst in range(num_dies):
                     if src != dst:
                         volumes[src][dst] += size
-        elif comm in ("ALLGATHER", "ALLTOALL", "ALL2ALL"):
+        elif comm in ("ALLGATHER", "ALLTOALL", "ALL2ALL", "REDUCESCATTER"):
             for src in range(num_dies):
                 for dst in range(num_dies):
                     if src != dst:
