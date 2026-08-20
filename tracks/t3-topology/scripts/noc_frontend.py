@@ -224,13 +224,22 @@ def write_booksim_cfg(spec, out):
     wl, topo, rtr, sim = (spec["workload"], spec["topology"],
                           spec["router"], spec["sim"])
     cell = out / "cells"
+    cell.mkdir(parents=True, exist_ok=True)
     # GATE-R1 coherence: the fork has NO trace-input pattern (only
     # synthetic/matrix), so BookSim is the stimulus SOURCE: it generates the
     # traffic, dumps the injected packets (trace_out=trace.txt) and the retired
     # flits (flit_dump=flits.txt); the RTL then replays the same trace_out and
     # we diff the two delivery dumps. feeding a pre-baked trace.txt to the fork
     # would silently run BookSim on uniform and break the diff.
-    if wl["type"] == "uniform":
+    if "matrix_file" in wl:
+        # Faithful pass-through: a pre-baked probability matrix (e.g. the DSE's
+        # MoE-dispatch .mat, normalized so each row sums to 1). Lets the same
+        # traffic distribution drive BOTH BookSim and the RTL replay, so the
+        # GATE-R1 diff is meaningful for real workloads, not just synthetic.
+        mf = cell / Path(wl["matrix_file"]).name
+        shutil.copyfile(wl["matrix_file"], mf)
+        traffic = f"matrix({mf})"
+    elif wl["type"] == "uniform":
         traffic = "uniform"
     else:
         matrix = cell / "traffic_matrix.txt"
