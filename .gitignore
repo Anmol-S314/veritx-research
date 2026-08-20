@@ -41,6 +41,17 @@ CHANGELOG.md
 VeritX_BTech_6Month_Programme.txt
 tracks/t3-topology/timeloop/timeloop-mapper.*
 
+# Noxim build artifacts (vendored source is tracked; objects/binary are not)
+noxim/bin/build/
+noxim/bin/noxim
+noxim/bin/noxim.exe
+
+# SCALE-Sim v3 build artifacts (vendored source tracked; venv/logs/outputs not)
+SCALE-Sim/.venv/
+SCALE-Sim/outputs/
+SCALE-Sim/source_me.sh
+SCALE-Sim/venv/
+
 # Teaching materials & local setup notes — kept on disk, NOT pushed to the remote
 curriculum/
 
@@ -55,6 +66,15 @@ r1_*.sh
 watch.log
 rtl_flits*.txt
 third_party/booksim2/src/watch.log
+
+# BookSim2 build artifacts (source tracked; objects/lexers are not)
+third_party/booksim2/src/*.o
+third_party/booksim2/src/*.d
+third_party/booksim2/src/**/*.o
+third_party/booksim2/src/**/*.d
+third_party/booksim2/src/lex.yy.c
+third_party/booksim2/src/y.tab.c
+third_party/booksim2/src/y.tab.h
 
 # Root-level run dumps (from gate runs executed at repo root) — provenance lives in manifest.txt
 /flits.txt

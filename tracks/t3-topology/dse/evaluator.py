@@ -4,6 +4,8 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from space import DesignPoint, SimResult
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+from memory_miss_model import bank_contention
 
 BOOKSIM_BIN = Path(os.environ.get(
     "BOOKSIM_BIN",
@@ -28,7 +30,7 @@ def _default_routing(topology: str) -> str:
     }.get(topology, "dor")
 
 
-def _generate_cfg(point: DesignPoint, defaults: dict, workdir: Path) -> str:
+def _generate_cfg(point: DesignPoint, defaults: dict, workdir: Path):
     v = {**defaults, **point.values}
     topology = v.get('topology', 'mesh')
     routing = v.get('routing', _default_routing(topology))
@@ -59,7 +61,7 @@ def _generate_cfg(point: DesignPoint, defaults: dict, workdir: Path) -> str:
         f"injection_rate = {v.get('injection_rate', 0.08)};",
         f"seed = {v.get('seed', 42)};",
     ]
-    return "\n".join(lines) + "\n"
+    return "\n".join(lines) + "\n", v, tf
 
 
 def run_booksim(point: DesignPoint, defaults: dict, timeout: int = 120) -> SimResult:
@@ -69,7 +71,7 @@ def run_booksim(point: DesignPoint, defaults: dict, timeout: int = 120) -> SimRe
     SCRATCH.mkdir(parents=True, exist_ok=True)
     workdir = Path(tempfile.mkdtemp(dir=SCRATCH))
     try:
-        cfg_content = _generate_cfg(point, defaults, workdir)
+        cfg_content, v, tf = _generate_cfg(point, defaults, workdir)
         cfg_path = workdir / "dse.cfg"
         cfg_path.write_text(cfg_content)
 
@@ -100,6 +102,28 @@ def run_booksim(point: DesignPoint, defaults: dict, timeout: int = 120) -> SimRe
                 point,
                 error=f"exit {r.returncode}: no latency in output: {r.stdout[-300:]}",
             )
+
+        # Shared-L2 bank contention (ticket 1874): the fabric sim captures
+        # router/link contention for both traffic classes mixed in one matrix;
+        # the L2 banks are a separate serialization point. Add the M/D/1
+        # queueing delay per access on top of the fabric latency. Bank config
+        # (banks x bandwidth) comes from defaults/point, L2 bytes from the
+        # traffic file header if present.
+        banks = int(v.get("banks", 4))
+        bank_bw = int(v.get("bank_bw", 1024))
+        cycles = int(v.get("cycles", 131411805))  # real sim window (trace)
+        l2_bytes = 0.0
+        if tf is not None:
+            for line in Path(str(tf)).open().readlines():
+                if line.startswith("#"):
+                    m = re.search(r"shared-L2 access bytes (\d+)", line)
+                    if m:
+                        l2_bytes = float(m.group(1))
+                        break
+        if l2_bytes > 0:
+            w_q, rho = bank_contention(l2_bytes, banks, bank_bw, cycles)
+            if w_q != float("inf"):
+                lat = lat + w_q
 
         return SimResult(point, avg_latency=lat, avg_hops=hops, throughput=throughput)
     finally:

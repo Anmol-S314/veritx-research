@@ -121,6 +121,31 @@ def emit_matrix(l2_bytes, num_nodes, out, banks=4):
     return out
 
 
+def bank_contention(l2_bytes, banks, bank_bw_bytes_cycle, cycles):
+    """M/D/1 queueing delay at the shared-L2 banks.
+
+    The fabric routers handle *routing* contention (BookSim2 captures it);
+    the L2 banks are a SEPARATE serialization point: every miss arbitrates
+    at its home bank. This is the explicit analytical coupling D8 requires —
+    we add the bank queueing delay to the fabric latency rather than max()ing
+    the two.
+
+    Per bank: arrival rate lambda = bytes_banked / cycles,
+    service rate mu = bank_bw_bytes_cycle. M/D/1 mean queueing delay:
+        W_q = rho / (2 * mu * (1 - rho)),  rho = lambda / mu
+    Returns per-access added latency in cycles (fractional OK; BookSim2
+    latency is in cycles).
+    """
+    per_bank = l2_bytes / max(banks, 1)
+    lam = per_bank / max(cycles, 1)
+    mu = bank_bw_bytes_cycle
+    rho = lam / mu
+    if rho >= 1.0:
+        return float("inf"), rho
+    w_q = rho / (2 * mu * (1 - rho))
+    return w_q, rho
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -132,6 +157,12 @@ def main():
     ap.add_argument("-l", "--l2-kb", type=int, default=65536,
                     help="shared-per-die L2 size in KiB (default 64 MiB)")
     ap.add_argument("-o", "--out", default="memory_matrix.mat")
+    ap.add_argument("--banks", type=int, default=4,
+                    help="number of shared-L2 banks (default 4)")
+    ap.add_argument("--bank-bw", type=int, default=1024,
+                    help="per-bank bandwidth in bytes/cycle (default 1024 = TPUv4)")
+    ap.add_argument("--cycles", type=int, default=10000,
+                    help="simulation window in cycles for contention (default 10000)")
     ap.add_argument("--scalesim", default=None,
                     help="SCALE-Sim DETAILED_ACCESS_REPORT.csv to validate HBM bytes")
     args = ap.parse_args()
@@ -155,6 +186,18 @@ def main():
           f"({totals['l2']/1e9:.2f} GB)")
     print(f"  HBM (local DRAM):  {totals['hbm']:,} B "
           f"({totals['hbm']/1e9:.2f} GB)")
+
+    # Shared-L2 bank contention (explicit coupling, D8): queueing at the
+    # banks adds to fabric latency. Report per-access added delay + util.
+    w_q, rho = bank_contention(totals["l2"], args.banks, args.bank_bw,
+                               args.cycles)
+    if w_q == float("inf"):
+        print(f"  L2 bank contention: SATURATED "
+              f"(utilization {rho*100:.0f}%) — fabric is NOT the bottleneck; "
+              f"shared-L2 is. Increase L2 banks/bandwidth or shrink misses.")
+    else:
+        print(f"  L2 bank contention: +{w_q:.2f} cyc/access "
+              f"(utilization {rho*100:.1f}%)")
 
     if args.scalesim:
         ss = validate_scalesim(args.scalesim, per_layer)
