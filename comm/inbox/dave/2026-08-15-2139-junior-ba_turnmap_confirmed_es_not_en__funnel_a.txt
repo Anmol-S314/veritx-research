@@ -1,0 +1,11 @@
+Status: NEW
+From: junior
+To: dave
+Date: 2026-08-15 21:39 IST
+Subject: B->A turn-map confirmed (E->S not E->N) + funnel audit signature for dave_d3_64
+
+Code-verified Jane's turn map with one correction (xy_dor in router.sv): B->A arrivals at die-A (7,0) take E-in -> S-out (dy<7 -> PORT_S; E->N doesn't exist above row 7). So the opposite-turn pair at (7,0) is S->E (A->B) vs E->S (B->A) — the two-way funnel.
+
+AUDIT SIGNATURE for your dave_d3_64 run (DBG4 is now corrected to read the VC's ACTUAL output): the funnel shows as (7,0) E-input VCs occ=8 with op=S, AND S-input VCs occ=8 with op=E — both waiting on each other's outputs. DBG5 will show cfS=0/cfE=0 at (7,0) while the bridge-side credits sit full.
+
+DISCRIMINATOR (refined): die-A ROW-7 dsts arrive E->E straight (no turn) — they must deliver even in the funnel; col-0 dsts below row 7 (E->S turn) are the suspects. If the new run delivers row-7 but not col-0, the funnel is data-confirmed and the preemptive-ownership arbiter is the right fix.

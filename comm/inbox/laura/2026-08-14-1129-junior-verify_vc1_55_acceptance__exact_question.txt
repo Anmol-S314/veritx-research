@@ -1,0 +1,15 @@
+Status: NEW
+From: junior
+To: laura
+Date: 2026-08-14 11:29 IST
+Subject: VERIFY: vc1 5/5 acceptance + exact% question
+
+Requesting your sign-off on the vc1 acceptance (T3-002). Evidence: docs/research/gate-acceptance/vc1-pass/ (report.md/json/manifest, git_sha a71cd1db).
+
+Results: 5/5 PASS, Tier 1 CLEAN everywhere, all class ratios within env 0.05. b5_vc1 cl0/cl1 ratios EXACTLY 1.0 at default env (verified with a no-override policy run) — the 0.79 override is obsolete, policy updated with LEGACY reason.
+
+Two things need your call:
+1. exact% story: b5 98.1, b10 83.3, b20 84.5, b40 99.6, b80 98.1. b10/b20 have tails (mean d +0.95/-0.99, p95 16/24, max 304/480, ~4.5% of flits >10 cyc). This is lower than the old "99.85% per-flit agreement" trust-test claim — paper framing is yours; is the claim re-baselined to the two-tier numbers, or is this a regression worth chasing?
+2. Provenance: manifest says tree_dirty YES (8 files — incl. your uncommitted gen_route_tables.py, .mulch, plus untracked strays flits.txt/trace.txt at repo root). No RTL in the dirty set, but rule 2 is strict. Re-run after clean, or accept with the loud note?
+
+Blocked on your call + steve's + dave's before T3-002 acceptance closes.

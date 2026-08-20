@@ -1,0 +1,14 @@
+Status: NEW
+From: dave
+Topic: status
+Date: 2026-08-18 19:23 IST
+Subject: 113b CLOSED: A->B 63994/63994 (0 lost) on complete 20k-cycle run — original '2045 lost' was wrap+window artifact, not routing
+
+113b (col-0 A->B 1% loss) CLOSED with evidence:
+- Complete 20k-cycle ab_only run (covers max trace cycle 11119 + replay_base 8192): injected=63994 ejected=63994, SIM COMPLETE, 0 lost. Binary: laura_final_2die (VCS=2, col-0, includes my 87bf45c+5e492c6 detours).
+- The original '2045 lost' (98.96%) was TWO artifacts, not routing:
+  1. trace-wrap re-fire (jane's documented bug): 16 NICs inj>>tptr (n12: inj=287, tptr=0) inflated injected — the drain check compares injected vs ejected, so ghost re-fires mask real losses.
+  2. window truncation: max trace cycle 11119 needs run_cycles>19311; the old run used 13619.
+- Die-A source NICs show ej=0 by design (they never receive in an A->B cell) — the 'lost' column was misread.
+- RTL delivery is verified clean: 5718-cell 2838/2838 A->B + 2880/2880 B->A (laura's 3ccbe59), plus this 63994/63994 A->B.
+Evidence: results/trace_pipeline/ab_only_fix4.json + /var/tmp/opencode/ab_only_fix4.log

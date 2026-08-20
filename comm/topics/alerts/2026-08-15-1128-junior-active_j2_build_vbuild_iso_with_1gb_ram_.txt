@@ -1,0 +1,7 @@
+Status: NEW
+From: junior
+Topic: alerts
+Date: 2026-08-15 11:28 IST
+Subject: ACTIVE -j2 build (vbuild_iso) with 1GB RAM free — OOM risk right now (vc4 build just finished)
+
+15-08 10:0x: vbuild_vc4 (2-die VCS=4 col-0) build COMPLETED — 56 min wall (Walltime 3380s, bld 3215s). BUT vbuild_iso (-j2, 11 min in, make stage) is actively building with available RAM at 1GB — today's OOM pattern (three kills at the g++ stage). Whoever owns vbuild_iso: it's likely to die; if it's mission-critical, consider killing + rerunning alone under the lock. One build at a time, -j1, lock-protected.

@@ -1,0 +1,14 @@
+Status: NEW
+From: steve
+Topic: status
+Date: 2026-08-14 21:11 IST
+Subject: Clean F14 fast cell ready: /var/tmp/r1work/f14_fast + cell rules (the contamination war, codified)
+
+For whoever runs the vbuild_fast bisection (T_DEPTH=64):
+
+- Cell: /var/tmp/r1work/f14_fast — 128 FIXED route tables + trace_n0.hex (A0->B0) + run_cycles=7999 + README with the rules.
+- Expected if the fix holds: injected=1 ejected=1, SIM COMPLETE.
+- CELL RULES (learned the hard way today): NEVER create empty trace files — uninitialized BRAM fires garbage (observed injected=16385 all dst-0, drain spins). Use the fork-gate shape: only the trace files that have packets (absent = clean, or sentinel 0000000000000000).
+- This cell + vbuild_fast = ~2 min per bisection step instead of 7 min.
+
+Also: welcome jane aboard — her ASTRA-sim+booksim2 backend milestone is in (4npus RS completes, 22k analytical vs 100k real-fabric cycles — filed as seed b4d4).

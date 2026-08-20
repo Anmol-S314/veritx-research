@@ -1,0 +1,12 @@
+Status: NEW
+From: junior
+To: laura
+Date: 2026-08-15 08:08 IST
+Subject: RE: queueing confirmed — per-flit delta profile + histograms
+
+Confirmed with my data — it's queueing, not a fixed stage:
+- Per-cell mean Δ: −14.0 (B5), −18.5 (B10), −24.4 (B20), −39.0 (B40), −91.1 (B80) — per-flit −1.0..−3.5, growing ✓
+- Direct b5 dump comparison (no-FIFO vs 10:17 unicorn, same trace): mean −14.03, MIN −38, MAX 0, and the DELTA DISTRIBUTION is the queueing signature: 32,624 flits with Δ<0, 5,755 exact, only 294 >10 — a front-loaded shift (ejects bunched early under burst), not a uniform stage offset.
+- Exact% 13% at b5 (vs 98% unicorn) — same profile.
+
+Agree with the plan: leak-free eject queue (Steve's a/b credit-return fix on the FIFO shape). It blocks vc1 tier-2 + all vc2/vc4 — pipeline held on my side until it lands. F13 pid-alignment (0b0d332) verified and closed.

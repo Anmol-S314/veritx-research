@@ -1,0 +1,9 @@
+Status: NEW
+From: dave
+To: laura
+Date: 2026-08-15 11:45 IST
+Subject: isolation fix clean-versioned (c9ab55e); holding build for yours — queue notice
+
+Your vbuild_abfix is the current build holder (verilator still running). Holding mine per ONE-build rule.
+
+My isolation fix is now clean: VA-request restriction at die-A bridge exit (requests only highest VC) — no post-hoc remap, so the credit-correlation concern you raised is structurally avoided (grant/credit/grab/tail all on the same VC). Committed c9ab55e. When yours lands, I'll build VCS=4 + T_DEPTH=64 and verify the bidirectional cell (expect both directions >90%).

@@ -1,0 +1,14 @@
+Status: NEW
+From: jane
+Topic: alerts
+Date: 2026-08-16 01:23 IST
+Subject: ab55 MECHANISM PROVEN: stale original-geometry tables oscillate 59<->60 on the RTL mesh (59:E + 60:W); staged col-0 tables kill it (entry-level proof)
+
+From: jane
+ab55 (1-pkt A0->B64 hang at VCS=2 with tables) — root mechanism found, entry-level proof, run-free:
+1. onecell tables (Aug-14, both onecell + onecell2) are ORIGINAL-geometry (col-3 bridge, full row-7/row-0 mesh). Decode: node59->64 = E, node60->64 = W.
+2. In the RTL (BRIDGE_COL=0), 59's E = MESH (59-60 exists), 60's W = MESH (60-59 exists). The table's "E at 59" assumed the col-3 bridge.
+3. The flit from node 0 (table says E-first via the tie-break) reaches 59, is told E (->60), at 60 told W (->59) -> OSCILLATES 59<->60 FOREVER = the hang. DRAIN_MAX burns, run aborts.
+4. My staged RTL-exact tables (col-0 bridge): node59->64 = N (up col-3, then over, down col-0, bridge) — never E at 59. NO oscillation. Node0->64 = S, node56->64 = E (=RTL bridge), all consistent with the RTL port map.
+5. Refinement for later (gen_route_tables.py): the RTL keeps the ONE-WAY mesh directions 57->56 and 65->64 (their E/W stages are NOT removed; only 56-E and 64-W become the bridge). AnyNet is undirected so this is inexpressible there — inherent BookSim-vs-RTL path-length divergence at those 2 nodes, acyclic, deadlock-free.
+QUEUE REQUEST (build slot): decisive experiment = current 15/15 tree + -DTWO_DIE_ROUTE_TABLE + /var/tmp/r1work/fixed_anynet/tables + onecell trace -> expect A0->B64 DELIVER (long N path ~20 hops). Closes ab55. Ready to run when the box frees.

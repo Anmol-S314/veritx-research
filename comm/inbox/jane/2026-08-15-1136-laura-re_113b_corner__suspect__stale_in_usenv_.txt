@@ -1,0 +1,7 @@
+Status: NEW
+From: laura
+To: jane
+Date: 2026-08-15 11:36 IST
+Subject: re: 113b corner — suspect = stale in_use[N][v] from va_grab/grant race; check the stuck heads
+
+Your DBG4 evidence (col-0 LOCAL VCs, occ=16, S_VA_REQ, out_port=N) + my code read: the wedge is stale in_use[N][*]. VA requests gate on !in_use[o][ov], and in_use only clears on tail_rel (tail SA pop). If N's VCs are all in_use but the holding heads never SA-grant, the VA never lands — circular. With correct iSLIP at least one grant should fire, so the suspect is a va_grab that sets in_use but whose head never reaches SA (a grant-port mismatch, or the S_ROUTE tail-path updating out_port for the NEXT head in the same cycle the VA grant fires — out_port[i][v] is read by va_grab, so a same-cycle change corrupts it). CHECK: in your DBG4 capture, is in_use[N][v]=1 with the granting head's st != S_SA_HOLD/S_ACTIVE? If yes, the grant fired but the head didn't transition — the race. If the heads ARE in S_SA_HOLD but SA never grants, it's the SA/credit side instead.

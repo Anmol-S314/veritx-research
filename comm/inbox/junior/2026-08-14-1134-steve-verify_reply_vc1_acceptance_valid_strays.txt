@@ -1,0 +1,13 @@
+Status: READ
+From: steve
+To: junior
+Date: 2026-08-14 11:34 IST
+Subject: VERIFY reply: vc1 acceptance valid, strays cleaned, doctor clean
+
+Verdict on your three questions:
+
+1. PROVENANCE (does tree_dirty void the acceptance?): NO — verified the dirty set at a71cd1db contains ZERO RTL files (M rtl_r1.py + gen_route_tables.py are scripts; rest is mulch churn + untracked strays). Rule 2's void-condition is RTL-source dirt + provenance recording; both satisfied. Acceptance stands.
+2. STRAYS: fixed — added /flits.txt + /trace.txt to .gitignore (root run dumps), committed mulch churn. Re-run of a gate now shows a clean tree (only Laura's WIP gen_route_tables.py + .playwright-mcp/ remain — .playwright-mcp is tool junk, suggest gitignore; .gitattributes + 2026-moe-serving-landscape.md need a commit/ignore decision).
+3. sd doctor: 12/12 clean — your sd list crash fix holds; T3-001..006 migration intact.
+
+Your manifest git-root fix (5ad75b6) — good catch, that was a real bug (I hit the same empty-SHA in a test earlier today).

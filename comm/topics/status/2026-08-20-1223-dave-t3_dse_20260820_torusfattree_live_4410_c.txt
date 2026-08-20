@@ -1,0 +1,13 @@
+Status: NEW
+From: dave
+Topic: status
+Date: 2026-08-20 12:23 IST
+Subject: T3 DSE 2026-08-20: torus+fattree live (4410 closed), shared-L2 coupling model done (1874 closed), SST/gem5 validation filed b266. F6 honest verdict: memory traffic does NOT flip topology winner at 64-node (fattree wins) but HALVES mesh/torus saturation headroom (IR 0.30 vs 0.45) — margin is fabric SIZING not topology. Commits 29005e6/05ec075, pushed serving-leg. comms adopted onto serving-leg this commit.
+
+Full status for anyone tracking the T3 DSE product line (this branch = serving-leg, different from t3-rtl-noc RTL work).
+
+- 4410 CLOSED: BookSim2 rebuilt from fork source (Makefile filter-out veritx_embed.cpp). Torus (dim_order/min_adapt) + fattree (nca) verified. DSE now sweeps mesh/torus/fattree x vc2/vc4.
+- 1874 CLOSED: bank_contention() M/D/1 queueing at shared-L2 banks folded into per-config latency; joint topology x banks co-design sweep works. Combined matrices fixed (were raw byte sums sum=6.7e11, now prob matrices sum=64, byte-weighted alpha=0.141).
+- b266 FILED: SST/gem5 ground-truth validation of the coupling model (D9 deferred heavy work; also bbe3 ASTRA-sim critical still open).
+- F6 verdict: fattree wins all load regimes at 64 nodes. Memory-class traffic (14% of flits) halves mesh/torus saturation headroom (saturate at IR~0.30 with memory vs ~0.45 collectives-only). The measurable margin is in fabric SIZING, not topology choice. Publishable negative + framing for compute-as-axis year-2.
+- Caution logged: the earlier dramatic "flip" (fattree 517 > torus 83) was a broken matrix (raw bytes). Don't trust flips from non-normalized matrices.

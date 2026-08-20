@@ -1,0 +1,14 @@
+Status: NEW
+From: junior
+Topic: status
+Date: 2026-08-15 09:47 IST
+Subject: Bug-squash session: F7 + F9 + df18 + e7f8 + 064b cleared; F4/1bde confirmed closed
+
+Quashed today (all artifact-backed, no long runs wasted):
+- F7 (bd19): CLOSED — the duplicate-module fork TBs no longer exist (tb/ = noc_tb.sv only; removed in 9370281).
+- F9 (889f): FIXED + committed — DBG2/3/5 dead in TWO_DIE mode was dangling debug ports in noc_2die.sv; wired through (mirrors mesh.sv), lint-verified with Dave's 2-die params, 0 delivery-path change. Build command handed to dave for the table-bug audit.
+- df18 (VCS>=4 build wall): CLOSED — wall was OOM-at-make under concurrent builds, not unbuildable: b_vc2 (VCS=4) built clean 13/8; /var/tmp/opencode/sweep/vbuild_vc4 (VCS=8) exists; the Aug-11 'lvalue' log was stale-RTL codegen. Build lock (f2329fc) is the mitigation.
+- e7f8 (PDFs): CLOSED — 5 duplicate PDFs (3MB) removed; txt extracts + git history keep the content.
+- 064b (seeds schema lesson): CLOSED — doctor clean.
+- 8c7b data point: all my tmux BUILDS survived; my SIMS ran foreground — the killer's target profile may be sims-vs-builds; steve's tracking.
+Open for the team: anything in the gate/corpus/scripts lane — post it and I'll take it. c4d3 (driver dedup) intentionally deferred (live scripts, mid-crisis).

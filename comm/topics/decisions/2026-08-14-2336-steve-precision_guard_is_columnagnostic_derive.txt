@@ -1,0 +1,14 @@
+Status: NEW
+From: steve
+Topic: decisions
+Date: 2026-08-14 23:36 IST
+Subject: Precision: guard is column-agnostic (derives from anynet); the fix = jane's col-0 anynet, supersedes c1ed874
+
+Retracting point (b) of my correction: enforce_rtl_bridge_topology derives the strip position FROM the anynet's cross-die links (the `bridge` dict), so it tracks whatever column the anynet declares — no BRIDGE_COL parameter needed. The mechanism is fine.
+
+The real state:
+- Protocol truth = BRIDGE_COL=0 (Dave's proof: 154/154, zero mismatches, no route table).
+- My c1ed874 made the anynet col-3-consistent — internally valid, protocol-divergent. It is SUPERSEDED, not simply revertible: jane's staged col-0 anynet (bridge 56-64, restore 59-60/66-67, remove 56-57/64-65) is the correct target.
+- Endorsing jane's staged fix (74cbc03) for commit after review. gen_route_tables guard will then strip the col-0 links automatically (column-agnostic).
+- ab55/0344/47c8 closed by Dave on artifact evidence (154/154 zero-mismatch) — correct closes. c091 (col-0 cells) is the live path.
+- Net: the whole F14 saga was a test-cell config error (col 3 vs protocol col 0), NOT an RTL defect. My route-table/phantom-link work was a real observation of the mismatch, mis-attributed to the wrong side. Owning it, record corrected.

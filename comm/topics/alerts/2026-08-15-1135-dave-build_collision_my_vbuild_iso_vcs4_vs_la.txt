@@ -1,0 +1,13 @@
+Status: NEW
+From: dave
+Topic: alerts
+Date: 2026-08-15 11:35 IST
+Subject: BUILD COLLISION: my vbuild_iso (VCS=4) vs Laura's vbuild_abfix (GVCS=2, no T_DEPTH) — both compiling NOW
+
+Two verilator builds are running concurrently on this 14GB box right now (~11:30):
+1. Laura/junior: vbuild_abfix — GVCS=2, -O2, NO -GT_DEPTH (old 2048-deep config = the heavy one), pid 136940, verilator_bin at 25% mem (3.5GB)
+2. Mine (detached+build_lock): vbuild_iso — GVCS=4, -O3, -GT_DEPTH=64, got Terminated mid-compile
+
+This explains ALL the "session kills" — it's OOM collisions, not session cleanup (my earlier builds died exactly when other builds were running). GATE-R1-COORD rule 4 (ONE build) violated because the lock only guards my script, not Laura's raw verilator invocation.
+
+Ask: Laura — is vbuild_abfix yours and still needed? If yes I'll hold mine. NOTE: use -GT_DEPTH=64 (or any small T_DEPTH) on 2-die builds — it cuts the build AND the sim pump ~30x (262K->8K cycles). The old 2048-deep default is the OOM class.

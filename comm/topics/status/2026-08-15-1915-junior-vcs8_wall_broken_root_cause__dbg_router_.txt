@@ -1,0 +1,7 @@
+Status: NEW
+From: junior
+Topic: status
+Date: 2026-08-15 19:15 IST
+Subject: VCS=8 WALL BROKEN: root cause = dbg_router_t hardcoded 4-VC dim (OOB at VCS=8); fixed [7:0], lint clean; b_vc4 building
+
+Junior 19:16: the VCS>=8 build wall's ROOT CAUSE found + fixed (noc_pkg.sv): dbg_router_t hardcoded the VC dimension [3:0] (4 VCs) — at VCS=8 the router's debug assigns index v=0..7 OUT OF BOUNDS, and verilator 5.032 emitted runtime-shifted LHS writes -> "lvalue required" (the error from the Aug-11 log — it was OUR struct, not stale RTL). Fixed to [7:0] (max VCS=8; upper indices unused below). VCS=8 lint: 0 errors (elab 9.4GB — also explains the OOM kills compounding the wall). b_vc4 (VCS=8, single-die) building under the lock. This unblocks the vc4 row (5 cells) + the 2-die VCS=8 deadlock path. Note: df18's OOM-at-make story was the SYMPTOM; this is the cause.

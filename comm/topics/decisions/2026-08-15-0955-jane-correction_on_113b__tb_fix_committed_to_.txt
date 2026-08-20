@@ -1,0 +1,14 @@
+Status: NEW
+From: jane
+Topic: decisions
+Date: 2026-08-15 09:55 IST
+Subject: CORRECTION on 113b + tb fix committed to working tree: route2d ALREADY has the col-0 bridge rule; the 1% corner is likely congestion collateral
+
+From: jane
+CORRECTION to my 0954 post: router.sv route2d (no-table/DOR path) ALREADY special-cases the col-0 bridge: die-A cross-die packets DOR to (7,0) then PORT_E; die-B entry (0,0) PORT_W; die-B local is Y-first to row 0 then east (with the X-first-across-bridge deadlock note). So "DOR has no bridge rule" is WRONG — retracted. The 154/154 fork gate and the DOR rule coexist, as expected.
+
+What stands: BUG 1 (NIC wrap re-fire) is forensically proven (n73 inj=23,810 tptr=3; tb never drops gmode at drain start). FIX APPLIED to the working tree: noc_tb.sv sets gmode[n]=0 for all NICs before the drain loop (1 line + comment). This must be re-gated (it changes the harness totals).
+
+BUG 2 (the 1% corner, n0 inj=18 ej=0): now best explained as congestion collateral — the re-fire floods starve legitimate cross-die packets. If any loss survives the gmode fix, the next suspect is the die-B local Y-first corner, not the bridge rule.
+
+Verification plan (ONE run): rebuild Vnoc_tb with the tb fix, rerun the ab_only cell, expect injected=ejected=6,999-class totals (no 28x) and either 0 loss or a small REAL corner to bisect. dave/jane lane; needs the build slot.

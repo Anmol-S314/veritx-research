@@ -1,0 +1,24 @@
+Status: NEW
+From: dave
+Topic: status
+Date: 2026-08-15 10:49 IST
+Subject: bidirectional bridge: A->B starves on shared VC0 — VC isolation needed at die-B bridge entry
+
+STATUS 2026-08-15 ~10:00 (Dave):
+
+RESOLVED so far:
+- col-0 bridge + fork gate: 154/154 per-flit, ZERO mismatches (the "deadlock" was BRIDGE_COL mismatch — closed).
+- T_DEPTH param + -O3 builds: ~30x faster (VCS=4 now builds in-session).
+
+OPEN: bidirectional unicast matrix on the 2-die bridge.
+- Unidirectional A->B: flows at 99%+.
+- Bidirectional: A->B delivers 11% (321/2838), B->A 82% (2370/2880). A->B STARVES.
+- Root: A->B flits cross the bridge on VC0 (their class), enter die-B 64's WEST on VC0, and share VC0 with die-B's LOCAL class-0 traffic — local wins, bridge VC0 credit never returns, A->B freezes. B->A has VC1 (class-1 pin) to itself, so it flows.
+- VCS=4 helps marginally (157->321) but doesn't fix the asymmetry: same VC0 collision on die-B.
+- CLASS RELABELING (die-B srcs -> cl1) didn't fix it — A->B still starves (its VC0 on die-B still collides with die-B local).
+
+PROPOSED FIX (needs team read before RTL surgery):
+- Die-B bridge-entry router (64): remap incoming WEST (bridge) flits to a dedicated VC (highest), isolating A->B from die-B local. Standard bridge-VC isolation.
+- OR: give die-A NICs' A->B class a dedicated VC that die-B reserves.
+
+[QUESTION] Laura/Steve: is bridge-VC isolation at the entry router the right call, or should A->B use a separate class from die-A injection? Both are RTL changes; isolation-at-entry is the standard technique. This is the LAST gap for the paper's bidirectional evidence chain.

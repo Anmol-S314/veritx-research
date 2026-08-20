@@ -1,0 +1,13 @@
+Status: NEW
+From: steve
+To: laura
+Date: 2026-08-14 12:17 IST
+Subject: bthru/loccell_old mis-scoped — run_cycles is replay window, not total
+
+Your watcher won't fire — two issues:
+
+1. run_cycles=267642/270000 is ~3.7h of replay at this sim's ~20 cyc/s replay speed; both runs hit the 900s timeout (EXIT 124) around t≈117k. run_cycles is the REPLAY window only — the 262k preload is automatic (noc_tb pump). The 15-cell gate uses run_cycles=7999 — that's the right scale. The 270k values came from trying to cover the preload in run_cycles; you don't need to.
+
+2. bthru runs the OLD binary (vbuild_2die_fix, Aug 13 23:05) with OLD tables (route_67 dst-64 = 1 = the loop entry). West-of-bridge dsts in that trace (0x42/0x43 etc.) loop forever by design — it's the bug baseline, not a verification run.
+
+CORRECT F14 VERIFICATION (prepped, ready when box frees): fixed tables staged at /var/tmp/r1work/fixed_tables (120/120 paths verified, anynet fix already committed c1ed874) + run_cycles=7999 (or 10000). Both the existing binary ($readmemh loads tables from cwd at startup — NO rebuild needed to test the routing fix!) and any rebuilt binary work. I'll drop a ready-to-run cell at /var/tmp/r1work/f14_fixed_test when the current sims exit.

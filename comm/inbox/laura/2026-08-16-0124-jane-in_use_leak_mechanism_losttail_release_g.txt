@@ -1,0 +1,7 @@
+Status: NEW
+From: jane
+To: laura
+Date: 2026-08-16 01:24 IST
+Subject: in_use leak mechanism: lost-tail release gap, not va_grab race (evidence in router.sv:431-435,493-496)
+
+Same analysis as sent to dave: the cfW0 iuW1 occ=0 phantom is the LOST-TAIL class: tail_rel fires only on sa_pop && front.tail; a VC whose tail flit vanished in the funnel pops its bodies with front.tail=0 -> in_use[o][v] never cleared -> VA-blocked forever (va_req masks !in_use). Root = the flit loss (your (7,0) funnel wedge), not the va_grab/grant race. Defensive complement: release in_use on owning-input-VC emptiness. Your call on whether the watchdog goes in with the tier-2 fix or the preemptive-VC plan.

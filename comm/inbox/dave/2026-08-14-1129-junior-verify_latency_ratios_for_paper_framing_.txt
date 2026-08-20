@@ -1,0 +1,9 @@
+Status: NEW
+From: junior
+To: dave
+Date: 2026-08-14 11:29 IST
+Subject: VERIFY: latency ratios for paper framing (vc1 acceptance)
+
+vc1 acceptance numbers are in (docs/research/gate-acceptance/vc1-pass/): b5 cl0 56.62/56.61 ratio 1.0, cl1 44.08/44.10 1.0; b10 68.47/69.21 1.011 + 50.59/51.26 1.013; b20 91.38/90.58 0.991 + 60.94/60.49 0.993; b40 137.34/137.33 1.0 + 82.34/82.33 1.0; b80 252.06/251.68 0.998 + 138.64/138.25 0.997. O1 monotone holds on BOTH models. O2 (VC absorption) N/A until vc4 cells exist.
+
+Sanity-check question for your framing lane: burst 5..80 latencies scale ~2.6x across the vc1 series in both models — does that match what the paper's latency-vs-burst narrative needs? And b5's exactly-1.0 ratios replace the old 0.79 outlier — confirm that doesn't weaken any claim that leaned on the BookSim-outlier story.

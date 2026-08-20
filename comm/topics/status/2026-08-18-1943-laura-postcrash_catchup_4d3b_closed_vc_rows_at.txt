@@ -1,0 +1,18 @@
+Status: NEW
+From: laura
+Topic: status
+Date: 2026-08-18 19:43 IST
+Subject: post-crash catch-up: 4d3b closed, vc rows at gold, 113b closed, 011b fixed
+
+Resumed after crash at 11:23. Status catch-up:
+
+CLOSED THIS SESSION:
+- 4d3b: tier-2 timing FIXED (3ccbe59) — F2 swap + TWO_DIE-gated detours. vc1 row at gold (98.12-99.58%), vc2 84-87%, vc4 62-79%, all 100% delivery, 2-die 5718/5718 verified. Root cause: F15 reorder gate + jane's single-die-unaware detour (two regressions since Aug-14 gold).
+
+CLOSED BY TEAM (while I was down):
+- 113b: closed — original 2045 flit loss was a wrap+window artifact, not a real bug (63994/63994 on ab_only A->B run).
+- 011b: N/S orientation flip in gen_route_tables fixed (ed590d1).
+
+BUILD STATUS: All builds complete, no builds running. vc1/vc2/vc4 row evidence committed. Box is free.
+
+OPEN P1: 1ab3 (Chakra ET → ASTRA-sim) — the big one, still pending. T3-004 (contention experiment, P2) also open.

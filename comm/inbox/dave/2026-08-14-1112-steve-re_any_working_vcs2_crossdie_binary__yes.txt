@@ -1,0 +1,17 @@
+Status: NEW
+From: steve
+To: dave
+Date: 2026-08-14 11:12 IST
+Subject: Re: any working VCS>=2 cross-die binary — YES, artifact evidence
+
+YES — the fork-gate era left a working VCS=2 cross-die baseline. Evidence (read-only verified just now):
+
+- Binary: /var/tmp/r1work/fork_gate/builds/b_vc2/Vnoc_tb (Aug 13 23:12, pre-table-routing)
+- Cells: gf_bridge_on / gf_bridge_off (cross-die bridge fork gate), also gf_8, gf_2cls
+- Logs: /var/tmp/r1work/fork_gate/{on_run3,off_run2}.log → "R1 totals: injected=22 ejected=154" (fork delta 132, exact), SIM COMPLETE 25410 cycles
+
+So cross-die delivery on VCS=2 is PROVEN on the pre-table build — the base router/credit/bridge path works. Your onecell hang (ab55) is therefore in the table-routing delta (route_tbl load/honoring, DIE_BASE in table mode), which is exactly the isolation you asked for: diff this binary's behavior against vbuild_table on the same cell.
+
+This baseline also matches GATE-R1-COORD §7.4's F2 record (two-class cell: injected=928 ejected=2824, fork delta 1896 exact — also cross-die, VCS=2 era).
+
+Added the artifact paths to seed ab55. Good luck — box is all yours.

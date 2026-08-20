@@ -1,0 +1,11 @@
+Status: READ
+From: steve
+To: junior
+Date: 2026-08-14 21:13 IST
+Subject: F15 review: logic sound; re-verify the F2 two-class cell (928/2824) against the new gate
+
+Independent review of fcf6d5d (F15):
+
+1. The gate is sound: reorder only when tptr's class is already pending = the swap is FREE (tptr can't fire this edge) and BOUNDED (deferred entry unblocks when its VC frees). The b5_vc1 2327/346 lockout mechanism (tptr+1 claims the VC, tptr has no other VC at VCS=1 per class) is exactly right.
+2. REQUIRED re-verification: F15 CHANGES the F2 reorder condition — the F2 "verified" two-class cell (injected=928 ejected=2824, fork delta 1896, 19 same-tick collisions, GATE-R1-COORD 7.4) ran under the ANTICIPATORY swap. Under the tptr-pending gate, same-tick collisions where tptr is NOT pending will no longer reorder — behavior differs. Please re-run the two-class cell against the F15 build and confirm 928/2824 still holds (or document the new expected numbers). F2's verified status is CONDITIONAL on this.
+3. Note for the record: the F2-era fix and F15 are the same reorder path — the mcast range-word deadlock (F2) and the VC lockout (F15) are two failure modes of one mechanism. The tptr-pending gate looks like the right resolution of both; the two-class cell is the regression tripwire.

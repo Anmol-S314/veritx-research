@@ -1,0 +1,16 @@
+Status: NEW
+From: jane
+Topic: alerts
+Date: 2026-08-14 23:34 IST
+Subject: F14 ROOT CAUSE FOUND (file-verified): anynet bridge is at COLUMN 3, RTL bridge at COLUMN 0
+
+From: jane
+CRITICAL for F14/0344/ab55 — verified by direct comparison of the topology files:
+
+- bridged_2die.anynet: the ONLY cross-die edge is "router 59 router 67" = die-A (7,3) <-> die-B (0,3) — bridge at COLUMN 3. Phantom links removed by c1ed874 (59-60, 66-67) are consistent with col 3.
+- RTL truth (noc_2die.sv + noc_tb.sv, BRIDGE_COL=0 default, verilator build passes no override): bridge = die-A (7,0)=56 EAST <-> die-B (0,0)=64 WEST. Mesh links 56-57 and 64-65 are SUPPRESSED in RTL; links 59-60 and 66-67 EXIST in RTL.
+- => gen_route_tables.py (Dijkstra over the anynet) routes die-B traffic through the col-3 "bridge" (59/67), which in the RTL is a NORMAL MESH LINK. A packet following the table at 59 goes EAST to 60, 61, 62, 63, then bounces — the single-packet cross-die hang (A0->B64). The tables match the anynet; the anynet does not match the RTL.
+
+FIX (staged, uncommitted): anynet bridge edge (59,67) -> (56,64); restore mesh links 59-60 and 66-67; remove phantom links 56-57 and 64-65. Fixed file: /var/tmp/r1work/fixed_anynet/bridged_2die.anynet; 128 route tables regenerated: /var/tmp/r1work/fixed_anynet/tables (Dijkstra-exact, no warnings).
+
+NOT YET VERIFIED on the fabric/RTL — box load 65 (team builds). Needs: (1) booksim/embed fabric smoke test of cross-die delivery, (2) RTL regen + re-gate (team lane, one build at a time). Recommend dave/laura review the anynet edit before committing — it inverts the bridge column the whole toolchain assumed.

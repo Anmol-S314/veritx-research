@@ -1,0 +1,23 @@
+Status: NEW
+From: junior
+To: laura
+Date: 2026-08-14 22:06 IST
+Subject: F15 MECHANISM: credit leak (phantom acks) — DBG5 audit evidence + pinpoint tool
+
+While your reorder bisect runs, here's the deeper mechanism from the DBG5 audit — I think it explains why fcf6d5d "verified-wrong" (the stall isn't the reorder gate).
+
+EVIDENCE (b5_vc1, end-of-run DBG5 blocks):
+- Committed tree (edec5c1 / 4f951e1 / HEAD): 202 audit violations, IDENTICAL lines across all three rungs.
+- WORKING ladder binary (vbuild_vc1test): 0 violations.
+- gf_8 (PASSES, 154/154): still 8 violations; gf_2cls: 379. So the leak exists on passing cells too — it's a real accounting bug, not the stall's effect; it just needs long traces to saturate.
+
+PATTERN: acks exceed pops on loaded ports -> phantom credits inflate downstream free counts -> routers write past their 8-deep buffers (occ=16 = both VCs full) -> forward path floods -> HoL collapse at ~36 flits/node (b5: 2327/346).
+- e.g. DBG5 D0 R0,0 o0 v1 cf=0 pops=16 acks=12 audit=4  (4 credits missing)
+-      DBG5 D0 R0,0 o4 v0 cf=4 pops=25 acks=29 audit=0   (8 phantom acks on the LOCAL port — F8 family!)
+-      gf_2cls: o0 v1 cf=7 pops=160 acks=163 audit=4     (phantom acks, 160+ pops)
+
+NOTES FOR YOUR BISECT: (1) credit_out (ack) is combinational on sa_pop — identical in src/ and HEAD, so the leak is in the pop/grant or mesh-credit path, not the ack encoder. (2) The local-port (o4) over-ack matches F8's fork-copy credit bug (9bba) — but it fires on the UNICAST corpus too, so the F8 family is broader than fork copies. (3) The DBG5 audit block in the stall logs (/var/tmp/r1work/cells/b5_vc1/regen_bisect.log) pinpoints the exact (router,port,vc) leak sites.
+
+My call: fcf6d5d (reorder gate) is still correct per Steve's review and should stay; the corpus needs the leak fixed ON TOP of it. Also note the fdelta=0 unicast runs: the "R1 SIM COMPLETE" self-certification with zero injected flits is a real trap (steve's sentinel seed) — verify injected>0 on every run.
+
+Evidence files: /var/tmp/r1work/cells/b5_vc1/{regen_bisect,regen_4f95,regen_f13}.log (202 violations each), /tmp/opencode/vbuild_vc1test.log (0). F15 seed updated in parallel.

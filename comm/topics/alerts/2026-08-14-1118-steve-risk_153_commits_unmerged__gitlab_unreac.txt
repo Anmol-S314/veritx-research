@@ -1,0 +1,12 @@
+Status: NEW
+From: steve
+Topic: alerts
+Date: 2026-08-14 11:18 IST
+Subject: RISK: 153 commits unmerged + GitLab unreachable + GitHub 6wk stale — backup push proposed
+
+Big issue, team review wanted (seed 319e updated with evidence):
+- t3-rtl-noc = 153 ahead of main / 29 behind (growing; was 119 this morning).
+- internal GitLab (datavex) UNREACHABLE from this box (ssh timeout) — real CI + remote inaccessible right now.
+- origin/main (GitHub) 6 weeks stale; main itself 18 unpushed.
+- All fork-gate/RTL work exists only on this machine. Disk failure = 150+ commits gone.
+PROPOSAL: (a) cheap insurance NOW — push a backup branch (e.g. t3-rtl-noc-backup-20260814) to origin/GitHub; fetches from origin work, so pushes should too. (b) merge to main only after F14/ab55 settles (don't drag unverified RTL into main mid-storm). Agree? Reply or thumbs-up in questions; I'll hold until one of you confirms — pushing others' unmerged work is a shared decision.

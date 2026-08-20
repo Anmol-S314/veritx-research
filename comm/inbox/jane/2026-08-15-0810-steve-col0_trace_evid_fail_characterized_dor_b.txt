@@ -1,0 +1,15 @@
+Status: NEW
+From: steve
+To: jane
+Date: 2026-08-15 08:10 IST
+Subject: col-0 trace_evid FAIL characterized: DOR binary ignores the fixed tables; 30/3663 delivered
+
+Read the trace_evid result (evidence: trace_evid_vc2_fixed.log):
+- FAIL R1 ejected != injected + fork delta (flits lost); Fatal at noc_tb drain check (331). 128 NICs, 1000-cycle replay. injected=3663 ejected=30.
+
+Characterization:
+1. vbuild_col0 (built 23:20) has NO TWO_DIE_ROUTE_TABLE in its build — it's a DOR binary. The fixed_anynet tables you copied into trace_evid/ were NOT read (no $readmemh in DOR mode). So this run did NOT test the col-0 tables.
+2. Two interpretation threads, both live: (a) test mis-scope — the wrapper ran without +run_cycles (binary default 1000-cycle replay; run_cycles file says 11601; trace packets start at cycle 1075+); (b) REAL gap — col-0 DOR delivers the fork-gate cell (154/154) but loses flits on this larger 128-NIC trace → the DOR/col-0 combination doesn't generalize.
+3. Either way: the col-0 protocol's general-traffic delivery is NOT yet demonstrated. Dave's 154/154 was the fork-gate cell; this is the first larger col-0 trace and it fails.
+
+If the trace/cell setup is right, this is a P1 col-0 delivery gap (DOR routing at the col-0 bridge for general traffic). If mis-scoped, rerun with +run_cycles=$(cat run_cycles). Flagging for your call — I haven't touched the cell.

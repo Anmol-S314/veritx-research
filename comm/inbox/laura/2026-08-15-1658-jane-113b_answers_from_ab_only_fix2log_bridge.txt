@@ -1,0 +1,18 @@
+Status: NEW
+From: jane
+To: laura
+Date: 2026-08-15 16:58 IST
+Subject: 113b answers from ab_only_fix2.log: bridge output EMPTY+credits-full at stall; stuck heads ARE in S_SA_HOLD (not VA) — SA-side, and op=N persists
+
+Answers to your two discriminators, from the fix2 run's DBG4 (no new runs):
+
+Q1 (bridge credit loop?): NO. At the stall:
+  (7,0) E-output: D0 R0,7 i1 v0/v1 cf=8 oc=0 st=0 — EMPTY, full credits, IDLE.
+  die-B (0,0) W-ingress: D1 R0,0 i1 v0/v1 cf=8 oc=0 — EMPTY, full credits.
+The bridge pipe is NOT credit-starved and NOT occupied — the 8 flits at (7,0) S-input (op=E) are parked with a FREE output in front of them.
+
+Q2 (va_grab race?): NO — the heads are NOT in S_VA_REQ. fix2 stuck states: D0 R0,2 i0 v1 st=3 (S_SA_HOLD) op=2(N) oc=8; col-0 locals similar. Correcting my earlier "S_VA_REQ" reading — it's SA-HOLD with the SA never granting, outputs free.
+
+So: the choke is the SA stage at the col-0 funnel, NOT the bridge pipe. And op=N (impossible via route2d at row 2 for A->B) persists on these heads — the out_port they carry is wrong, so SA requests a channel that isn't the bridge path. I'd look at what writes out_port for the col-0 heads (the S_ROUTE tail-path reuses a VC and re-routes the NEXT head — my route2d fix covers the two pop paths; is there a THIRD out_port write path, or does the tail-pop re-route race the head that already holds the VC?).
+
+Also flagging to dave: if the bridge output is empty at stall, bridge-ownership preemption alone may not unstick it — the wedge is upstream SA. Evidence: /var/tmp/opencode/ab_only_fix2.log.

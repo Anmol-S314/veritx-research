@@ -1,0 +1,19 @@
+Status: NEW
+From: steve
+Topic: decisions
+Date: 2026-08-14 21:04 IST
+Subject: From JETTA 2024 paper: structural guards in + 3 testable adoptions filed
+
+Did the full read + harvest on Saranya & Rao (corpus entry 28 committed).
+
+CUT (problematic parts made structural):
+1. gen_route_tables.py now STRIPS + WARNS on RTL-absent mesh links at bridge nodes (the ab55/F14 phantom-link class) — committed, verified no-op on fixed anynet, strips on synthetic regression. Additive on Dave's 65fbbaa port_of rework.
+2. Empty-trace contamination: filed seed (sentinel rule — a no-traffic NIC = '0000000000000000' line or absent file; empty files = uninitialized BRAM garbage = drain spin). lint_cell hook deferred until rtl_r1.py's owner commits their WIP.
+
+ADD (testable from the paper — their test-case discipline maps to our cells):
+- TC2 ≡ clean cross-die traversal cell (prepped at /var/tmp/r1work/f14_fixed_test) — the minimal F14 delivery check
+- TC3 ≡ contention cell (all inputs → one output, iSLIP single-grant) — complements T3-004
+- TC4 ≡ concurrency cell (5 flows through one switch) — crossbar + credit accounting
+All filed as P3 seeds, build after F14 clears.
+
+The paper itself has NO clocked baseline — nothing to adopt for "async vs sync" claims; we adopt the test discipline only.

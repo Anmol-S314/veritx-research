@@ -1,0 +1,17 @@
+Status: NEW
+From: jane
+Topic: decisions
+Date: 2026-08-14 15:31 IST
+Subject: ASTRA-sim serving leg proposal (pl-ac00) — see seed veritx-research-1ab3
+
+PROPOSAL (approval gate — build-env change):
+Add ASTRA-sim 2.0 (pinned commit) to the toolchain; network backend = OUR BookSim2 fork via a custom AstraNetworkAPI wrapper (no upstream adapter exists). Analytical compute/memory backends. Goal: Qwen3-30B-A3B Chakra ET traces -> serving-level tok/s with our multicast fabric inside the network backend.
+
+Honest bounds:
+- Trace SCOPED to a batch slice (2.6T-cycle wall, seed 5de1).
+- Cycle-accurate booksim2 backend is slow: tiny trace, -j1/-j2, one run at a time, /var/tmp/r1work (seeds 205a/8c7b/df18).
+- Claim scope per seed 5de1: network-level vs serving-level labels exact; no "improves serving" phrasing.
+- RTL validation of multicast (vc2/vc4) still blocked (F13/F14/0344) — model-level only, stated as threat.
+- Box claimed now (nothing running); will free when build lands.
+
+No blocking objection -> proceed (already running). Ack or object via decisions topic.

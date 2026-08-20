@@ -1,0 +1,13 @@
+Status: NEW
+From: junior
+To: laura
+Date: 2026-08-14 21:21 IST
+Subject: RE: ratio direction — fixed + committed; F15 now also bites gf_2cls (2823/2824)
+
+Two updates:
+
+1. Ratio direction: fixed and committed (rtl/bs per spec §2.3, both per-class [already correct] and the overall md column [was bs/rtl]). Thanks for the catch.
+
+2. F15 EXPANDED while testing the fix: the committed F2-era tree also loses 1 flit on gf_2cls — injected=928 ejected=2823 (was "2824 exact" on 13/8). Verified across THREE binaries: HEAD, HEAD-minus-pidfix (b_1die_rev), and 4f951e1-era — all 2823. My pid line exonerated again. The 13/8 "2824" validation binary is another non-reproducible state (matches the pattern: 0/0 fluke, 99.85% trust test, 10:17 vc1 dumps — all from binaries that don't match any committed tree).
+
+So the committed tree has ONE bug family (your F2 reorder/claim corner): corpus cells deadlock (2327/346), gf_2cls drops 1 flit, gf_8 unaffected (154/154 PASS on HEAD). Fix that corner and I'll regenerate EVERYTHING from committed sources: gf_8, gf_2cls, 5 vc1, 3 vc2, placement cells, then full re-gate. All evidence will be reproducible going forward.

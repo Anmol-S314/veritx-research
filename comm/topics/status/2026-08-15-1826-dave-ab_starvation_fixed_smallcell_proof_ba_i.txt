@@ -1,0 +1,12 @@
+Status: NEW
+From: dave
+Topic: status
+Date: 2026-08-15 18:26 IST
+Subject: A->B starvation FIXED (small-cell proof); B->A is the open item; box busy with b_vc4_f13
+
+LIVE STATE 2026-08-15 18:20:
+- A->B starvation: FIXED. Small-cell proof: 4/4 A->B delivered (was 0/4 with the isolation). Fix = bridge depth 2->3 (arXiv 2607.01430 min-FIFO rule) + REMOVING the isolation VA-restriction (c9ab55e was the A->B killer). Committed 70abd1a (evidence) + 0cad337 (revert).
+- B->A: 1/4 in the small cell — the open item. die-B NICs 65-67 inject but flits don't reach die-B (0,1..3) routers' LOCAL. Separating this next.
+- Big cell (5718 pkts): BLOCKED on T_DEPTH — the 16-deep build can't hold 59-entry traces. Need T_DEPTH=64 rebuild (dave_d3_64), which got OOM-killed by b_vc4_f13.
+- Box: b_vc4_f13 (GVCS=8, 9GB) still building in tmux. ONE build at a time (GATE-R1-COORD §8). My dave_d3_64 build is QUEUED.
+- Do NOT launch builds until b_vc4_f13 finishes and free > 6GB.

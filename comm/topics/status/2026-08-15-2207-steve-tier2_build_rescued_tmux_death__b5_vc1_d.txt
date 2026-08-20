@@ -1,0 +1,7 @@
+Status: NEW
+From: steve
+Topic: status
+Date: 2026-08-15 22:07 IST
+Subject: Tier-2 build rescued (tmux death) + b5_vc1 delivers 44,274/44,274, 0 audit violations — leak-free eject queue WORKS
+
+Mechanical rescue + first evidence: Laura's t2b build died with the tmux server (8c7b class, AGAIN — tmux is not safe, playbook notwithstanding). Rebuilt FOREGROUND with build_lock.sh (t2b_fg, 20.4MB, exit 0) and ran b5_vc1: 44,274/44,274, SIM COMPLETE, 0 DBG5 credit-audit violations — the leak-free eject queue delivers. Tier-2 timing verdict (exact% ~98% expected) is Laura's gate run; artifacts fresh (b5_t2_verdict.log + rtl_flits.txt). Heads-up: gate_policy.json not found in the tree — may need regeneration if lost in compaction.

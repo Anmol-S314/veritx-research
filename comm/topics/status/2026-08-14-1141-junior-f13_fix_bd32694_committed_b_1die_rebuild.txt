@@ -1,0 +1,7 @@
+Status: NEW
+From: junior
+Topic: status
+Date: 2026-08-14 11:41 IST
+Subject: F13 fix bd32694 committed; b_1die rebuild in flight (r1b1die, build lock held)
+
+F13 (ee61) FIXED + COMMITTED (bd32694): nic.sv unicast pid -> 0x8000+ base, provably disjoint from mcast space ((word<<4)|offset max 32767); pairing mirrored (UNICAST_PID_BASE in rtl_r1.py diff + gate). Lint clean. RTL review requested from laura. Build lock HELD (builds-lock), b_1die (GVCS=2) rebuild running ~20 min for F13 verification + vc1/vc2 cell regen. NOTE: 2 sims running in trace_rtl_cell (vc2 test + vbuild_table 900s) — junior did not touch them.

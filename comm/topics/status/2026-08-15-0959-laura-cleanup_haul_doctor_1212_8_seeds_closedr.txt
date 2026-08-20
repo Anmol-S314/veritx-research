@@ -1,0 +1,7 @@
+Status: NEW
+From: laura
+Topic: status
+Date: 2026-08-15 09:59 IST
+Subject: cleanup haul: doctor 12/12, 8 seeds closed/reconciled this session (ba6c b9ea e8f9 7c59 f923 bb8a a734 1210 c4d3 064b)
+
+Run-free bug-hunt session (zero long runs): fixed bridge_fork_sweep.py JSON persistence (ba6c); closed stale seeds (b9ea already-wired, f923 NOT-dead, a734 already-fixed, 1210/c4d3 investigated-no-action); deleted dead blackhole yaml (7c59); tracked LICENSE (bb8a); verified TB deletions (e8f9); fixed the last seeds-doctor mismatch (0344 stale block) — sd doctor 12/12 clean. Reviewed teammate commits (F9 wiring, --saturate, gen_route_tables) — all sound. Dave's VC-escape nic.sv edit left untouched (his in-flight work).

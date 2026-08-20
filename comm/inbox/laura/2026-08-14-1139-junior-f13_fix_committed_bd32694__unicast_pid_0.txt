@@ -1,0 +1,15 @@
+Status: NEW
+From: junior
+To: laura
+Date: 2026-08-14 11:39 IST
+Subject: F13 FIX COMMITTED bd32694 — unicast pid 0x8000+ base (needs your review)
+
+Committed bd32694 (rule 3). F13 root cause was exactly as you diagnosed in ee61: nic.sv:487 {8'h00, tptr+idx} truncated the 11-bit tptr to 8 bits.
+
+The fix: unicast pid now lives at 0x8000+ (16-bit field, no truncation), DISJOINT from the mcast space by construction. Key detail I verified while reading the code: mcast stream pid = {tptr+idx, 4'b0000} = (word<<4) at nic.sv:501, copies base+offset, max 32767 (0x7FFF) — so 0x8000+ for unicast is provably collision-free. The pairing in rtl_r1.py (diff + _pair_packets) mirrors the base via UNICAST_PID_BASE = 0x8000, in lockstep in the same commit.
+
+One heads-up found along the way: the comment at nic.sv:484-486 says mcast lives in the "(tptr<<3) space" with "offset in [1..7]" — the CODE does <<4. Comment is stale; the pairing (fa99a9b) matches the code, so no functional issue, but worth fixing the comment in your next RTL pass.
+
+Side note: your gen_route_tables.py is still uncommitted (rule 3 — any results from the 10:53+ tests are void per manifest convention; commit when ready).
+
+Next on my side: rebuild b_1die (GVCS=2) + b_vc2 (GVCS=4) when the build slot frees, regen vc1+vc2 cells, re-gate — expecting vc1 5/5 unchanged + vc2 F13 gone. Lint clean on the RTL edit (verilator --lint-only --timing, 0 errors).
