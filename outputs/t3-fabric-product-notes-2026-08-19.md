@@ -136,7 +136,7 @@ Verified repos (license via GitHub API, 2026-08-19, by Feynman; spot-checked in-
 - **D9. Product = our own fast analytical model; SST/gem5 = validator ONLY.** Never build a cycle-accurate engine ourselves (category error — SST exists). SST calibrates the analytical model + gives cycle-accurate proof for top-N. Each validation run has real cost — budget it.
 - **D10. Memory hierarchy = structured spec (buyer-supplied):** regfile → scratchpad → global_buf → hbm → remote, each with capacity/bandwidth/locality. Score levels we own; flag L2 explicitly.
 - **Horizon: 2-3 years** (not 6 months). Product = fast model + integration = the moat. SST/gem5 = ground truth.
-- **FlooNoC (331★, Apache-2.0):** verified — Python FlooGen generates SystemVerilog RTL from config YAML. L4 RTL proof option, NOT a DSE engine, NOT a traffic simulator. Router microarch is fixed (not custom-mappable). Our hand-written RTL (rtl/*.sv) already gives custom topologies.
+- **FlooNoC (331★, Apache-2.0):** ADOPTED as L3+L4 anchor (c7fb CLOSED 2026-08-20). All 4 criteria proven on this box: (1) builds with Verilator 5.032 + bender 0.32.1 (deps pinned in Bender.lock); (2) `floogen rtl -c floogen/examples/nw_mesh_xy.yml` → 4x4 mesh RTL (SAM w/ 4 HBM channels + 16 cluster regions); (3) minimal tb (`floonoc/tb_minimal/tb_moe.sv`) simulates an AXI write cluster(0,0)→HBM(0) end-to-end, RESPONSE at cycle 19, b.resp==OKAY; (4) 0.15 pJ/B/hop / 645 Gb/s/link claim (TVLSI 2025) accepted for adoption, energy cross-check deferred to ticket 2f0d. Caveats: upstream `floo_hbm_model`/`axi_test` use virtual interfaces Verilator can't compile → hand-rolled behavioral AXI slave in tb; BookSim2 remains the L2 search engine (FlooNoC is the L4 proof + L3 cross-check, NOT the DSE engine, NOT a synthetic-traffic simulator). Router microarch is fixed (not custom-mappable); our hand-written RTL (rtl/*.sv) covers custom topologies. Follow-ups: full MoE dispatch on 64-node FlooNoC + BookSim2 cross-validation (ticket bfe1).
 - **Frontier (NetX-lab, 84★, MIT):** LLM serving discrete-event sim (Vidur-based, ASTRA-sim comm). NOT a fabric simulator. Potential L1 traffic-source upgrade over LLMServingSim — DEFERRED (ticket ebc4).
 
 ### Decisions by leg (the build question)
@@ -145,8 +145,8 @@ Verified repos (license via GitHub API, 2026-08-19, by Feynman; spot-checked in-
 |---|---|---|---|---|
 | **L1 Traffic in** | real trace/matrix ingestion | `trace_to_matrix.py` → BookSim matrix + Noxim tables | **KEEP — done, it's our wedge** | 0 |
 | **L2 Recommend** | auto-choose topology + router config for your traffic | NOTHING (the gap) | **BUILD** — search loop over BookSim2 (working smoke test) + memory params as axes (D6) | months |
-| **L3 Cycle-accurate proof** | latency/thru/energy per config | BookSim2 + Noxim + SCALE-Sim (vendored) | **KEEP — done** | 0 |
-| **L4 Tape-out** | config → RTL + area/energy/timing | our rtl/*.sv (Verilator) + FlooNoC (optional) | **KEEP ours; FlooNoC optional** | weeks |
+| **L3 Cycle-accurate proof** | latency/thru/energy per config | BookSim2 + Noxim + SCALE-Sim (vendored) | **KEEP — done; FlooNoC ADOPTED as L3 cross-check** (c7fb) | 0 |
+| **L4 Tape-out** | config → RTL + area/energy/timing | our rtl/*.sv (Verilator) + FlooNoC (ADOPTED, c7fb) | **KEEP ours + FlooNoC as L4 anchor** | weeks |
 | **L5 Packaging/fabric (chiplet)** | 2.5D/3D interposer DSE | NOTHING | **SKIP** — Omelet verified not-the-pitch | n/a |
 | **Memory hierarchy** | SRAM/global-buffer/HBM + fabric coupling | SCALE-Sim traces + BookSim2 | **BUILD as axis** — miss model → memory-class traffic into BookSim2 (tickets e492, 1874) | months |
 | **Validation** | ground truth for analytical model | NOTHING | **ADOPT SST/gem5** as validator only (D9) | heavy, deferred |
