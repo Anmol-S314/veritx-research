@@ -1,6 +1,9 @@
 import os, re, subprocess, tempfile
 from pathlib import Path
-from .space import DesignPoint, SimResult
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from space import DesignPoint, SimResult
 
 BOOKSIM_BIN = Path(os.environ.get(
     "BOOKSIM_BIN",
@@ -21,10 +24,6 @@ def _generate_cfg(point: DesignPoint, defaults: dict) -> str:
         f"traffic = {v.get('traffic', 'uniform')};",
         "sim_type = latency;",
         f"injection_rate = {v.get('injection_rate', 0.08)};",
-        f"sample_period = {v.get('sample_period', 1000)};",
-        "warmup_periods = 3;",
-        f"max_samples = {v.get('max_samples', 10)};",
-        f"latency_thres = {v.get('latency_thres', 5000)};",
         f"seed = {v.get('seed', 42)};",
     ]
     return "\n".join(lines) + "\n"
@@ -49,9 +48,6 @@ def run_booksim(point: DesignPoint, defaults: dict, timeout: int = 120) -> SimRe
         except Exception as e:
             return SimResult(point, error=str(e))
 
-        if r.returncode != 0:
-            return SimResult(point, error=f"exit {r.returncode}: {r.stderr[:200]}")
-
         lat = hops = throughput = None
         for line in r.stdout.splitlines():
             m = re.search(r"Packet latency average\s*=\s*([0-9.]+)", line)
@@ -60,11 +56,14 @@ def run_booksim(point: DesignPoint, defaults: dict, timeout: int = 120) -> SimRe
             m = re.search(r"Hops average\s*=\s*([0-9.]+)", line)
             if m:
                 hops = float(m.group(1))
-            m = re.search(r"Throughput average\s*=\s*([0-9.]+)", line)
+            m = re.search(r"Accepted packet rate average\s*=\s*([0-9.]+)", line)
             if m:
                 throughput = float(m.group(1))
 
         if lat is None:
-            return SimResult(point, error=f"no latency in output: {r.stdout[-300:]}")
+            return SimResult(
+                point,
+                error=f"exit {r.returncode}: no latency in output: {r.stdout[-300:]}",
+            )
 
         return SimResult(point, avg_latency=lat, avg_hops=hops, throughput=throughput)

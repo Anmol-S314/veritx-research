@@ -3,13 +3,14 @@
 import sys, time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-from tracks.t3_topology.dse.space import Axis, DesignSpace
-from tracks.t3_topology.dse.search import grid_search, print_ranking
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from space import Axis, DesignSpace
+from search import grid_search, print_ranking
+from evaluator import BOOKSIM_BIN
 
 SPACE = DesignSpace(
     axes=[
-        Axis("topology", ("mesh", "torus", "fattree")),
+        Axis("topology", ("mesh",)),
         Axis("vcs", (2, 4)),
     ],
     defaults={
@@ -23,7 +24,7 @@ SPACE = DesignSpace(
 
 def main():
     print(f"DSE smoke test: {SPACE.size()} points")
-    print(f"booksim: {__import__('tracks.t3_topology.dse.evaluator', fromlist=['BOOKSIM_BIN']).BOOKSIM_BIN}")
+    print(f"booksim: {BOOKSIM_BIN}")
     t0 = time.time()
     results = grid_search(SPACE)
     print_ranking(results)

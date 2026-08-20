@@ -1,7 +1,11 @@
 from typing import List
-from .space import DesignSpace, DesignPoint, SimResult
-from .evaluator import run_booksim
 import time
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from space import DesignSpace, DesignPoint, SimResult
+from evaluator import run_booksim
 
 
 def grid_search(space: DesignSpace, timeout: int = 120) -> List[SimResult]:

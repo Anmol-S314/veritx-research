@@ -56,9 +56,10 @@ class DesignSpace:
         import yaml
         with open(path) as fh:
             raw = yaml.safe_load(fh)
-        axes = [Axis(name=tuple(spec.values()) if isinstance(spec, dict) else tuple(spec))
-                for name, spec in raw.get("axes", {}).items()
-                for spec in [raw["axes"][name]]]
+        axes = []
+        for name, spec in raw.get("axes", {}).items():
+            values = spec.get("values", ()) if isinstance(spec, dict) else spec
+            axes.append(Axis(name=name, values=tuple(values)))
         return cls(
             axes=axes,
             defaults=raw.get("defaults", {}),
