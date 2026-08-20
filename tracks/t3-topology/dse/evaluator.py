@@ -17,8 +17,21 @@ SCRATCH = Path(os.environ.get(
 ))
 
 
+def _default_routing(topology: str) -> str:
+    """Per-topology routing default (routing_function omits the _topology
+    suffix — the router appends it)."""
+    return {
+        "mesh": "dor",
+        "torus": "dim_order",
+        "fattree": "nca",
+        "ring": "dim_order",
+    }.get(topology, "dor")
+
+
 def _generate_cfg(point: DesignPoint, defaults: dict, workdir: Path) -> str:
     v = {**defaults, **point.values}
+    topology = v.get('topology', 'mesh')
+    routing = v.get('routing', _default_routing(topology))
     traffic = v.get('traffic', 'uniform')
     # Real traffic: 'traffic = matrix(<file>)' with the matrix copied into the
     # workdir so BookSim2 resolves it relative to the cfg.
@@ -27,13 +40,20 @@ def _generate_cfg(point: DesignPoint, defaults: dict, workdir: Path) -> str:
         dst = workdir / "traffic.matrix"
         shutil.copyfile(tf, dst)
         traffic = f"matrix({dst.name})"
+    # fat-tree needs (k,n) with k^n = nodes; mesh/torus use k x k (n=2).
+    if topology == "fattree":
+        k = int(round((v.get('x_dim', 8) ** 2) ** (1/3)))  # k^3 = 64 -> k=4
+        n = 3
+    else:
+        k = v.get('x_dim', 8)
+        n = 2
     lines = [
-        f"topology = {v.get('topology', 'mesh')};",
-        f"k = {v.get('x_dim', 8)};",
-        "n = 2;",
+        f"topology = {topology};",
+        f"k = {k};",
+        f"n = {n};",
         f"num_vcs = {v.get('vcs', 4)};",
         f"vc_buf_size = {v.get('vc_buf', 8)};",
-        f"routing_function = {v.get('routing', 'dor')};",
+        f"routing_function = {routing};",
         f"traffic = {traffic};",
         "sim_type = latency;",
         f"injection_rate = {v.get('injection_rate', 0.08)};",

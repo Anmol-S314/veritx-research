@@ -36,7 +36,10 @@ LFLAGS +=
 PROG := booksim
 
 # simulator source files
-CPP_SRCS = $(wildcard *.cpp) $(wildcard */*.cpp)
+# veritx_embed.cpp is the SHARED-LIBRARY variant (defines the globals main.cpp
+# also defines). For the standalone binary it must be excluded or the link
+# fails with multiple-definition errors.
+CPP_SRCS = $(filter-out veritx_embed.cpp,$(wildcard *.cpp)) $(wildcard */*.cpp)
 CPP_HDRS = $(wildcard *.hpp) $(wildcard */*.hpp)
 CPP_DEPS = $(CPP_SRCS:.cpp=.d)
 CPP_OBJS = $(CPP_SRCS:.cpp=.o)
