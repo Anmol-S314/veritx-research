@@ -301,14 +301,16 @@ def build_rtl(spec, out):
     if topo["two_die"] and not Path(RTLROOT / "rtl/noc_2die.sv").exists():
         die("two_die=1 but rtl/noc_2die.sv is not on this branch "
             "(it lives on t3-rtl-noc; this branch is serving-leg)")
-    # GATE-R1-COORD §8 preflight: free RAM must exceed ~6GB before a VCS>=4
-    # build (GVCS=8 elaboration peaks at ~9GB; a 14GB host OOM-kills silently).
+    # GATE-R1-COORD §8 preflight: GVCS=8 (vc4) elaboration peaks at ~9GB on a
+    # 14GB host; anything less than that headroom OOM-kills the build silently
+    # (seen twice tonight even with 8.2GB "available" — the peak is real).
     if rtr["vcs"] >= 4:
         avail_mb = _free_mem_mb()
-        if avail_mb < 6000:
-            die(f"vc{rtr['vcs']} build needs >6GB free RAM (GATE-R1-COORD §8); "
-                f"only {avail_mb}MB free — retry when the box clears, or lower "
-                f"router.vcs")
+        if avail_mb < 9000:
+            die(f"vc{rtr['vcs']} (GVCS={rtl_vcs}) build needs >9GB free RAM "
+                f"(GATE-R1-COORD §8); only {avail_mb}MB free — close other "
+                f"apps (browsers/IDEs), or use a smaller mesh (e.g. 8x4) / "
+                f"router.vcs=2")
     if bin_.exists():
         newest = max(Path(RTLROOT / f).stat().st_mtime for f in
                      (TWO_DIE_FILES if topo["two_die"] else RTL_FILES))
