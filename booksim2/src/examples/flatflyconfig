@@ -1,0 +1,36 @@
+num_vcs     = 8;
+vc_buf_size = 4;
+wait_for_tail_credit = 0;
+
+vc_allocator = islip;
+sw_allocator = islip;
+alloc_iters  = 1;
+credit_delay   = 2;
+routing_delay  = 0;
+vc_alloc_delay = 1;
+sw_alloc_delay = 1;
+st_final_delay = 1;
+input_speedup     = 1;
+output_speedup    = 1;
+internal_speedup  = 1.0;
+
+warmup_periods = 3;
+sample_period  = 1000;
+sim_count      = 1;
+traffic        = uniform;
+
+topology = flatfly;
+subnets = 1;
+c  = 4;
+k  = 4;
+n  = 2;
+x  = 4;
+y  = 4;
+xr = 2;
+yr = 2;
+
+routing_function = xyyx;
+use_read_write = 0;
+use_noc_latency = 0;
+injection_rate = 0.05;
+sim_type = latency;
