@@ -3,7 +3,7 @@
 # Timeloop, Yosys, …) live in a container image; `make run` / `make shell`
 # execute inside it. Container runtime (podman or docker) is auto-detected.
 .DEFAULT_GOAL := help
-.PHONY: help all setup lint test sim report clean run shell pull image-build image-push analysis aggregate plot pa-report
+.PHONY: help all setup lint test sim report clean run shell pull image-build image-push analysis aggregate plot pa-report tools tool-info tool-build tool-clean tool-run tool-tag tool-pick
 
 TRACK     ?= onboarding
 IMAGE     ?= ghcr.io/anmol-s314/veritx-tools-base:latest
@@ -52,3 +52,19 @@ image-build:  ## build the tools image locally
 
 image-push:  ## push the tools image to the registry (needs write auth)
 	$(CONTAINER) push $(IMAGE)
+
+# ── Vendored tool management (scripts/tools.py) ─────────────────────────────
+tools:  ## list vendored tools + versions
+	@python3 scripts/tools.py list
+tool-info:  ## tool info: make tool-info TOOL=booksim2
+	@python3 scripts/tools.py $(TOOL)
+tool-build:  ## build+verify: make tool-build TOOL=booksim2
+	@python3 scripts/tools.py $(TOOL) build
+tool-clean:  ## clean build artifacts: make tool-clean TOOL=booksim2
+	@python3 scripts/tools.py $(TOOL) clean
+tool-run:  ## run tool: make tool-run TOOL=booksim2 ARGS="config.cfg"
+	@python3 scripts/tools.py $(TOOL) run $(ARGS)
+tool-tag:  ## tag version: make tool-tag TOOL=booksim2 VER=2.0
+	@python3 scripts/tools.py $(TOOL) tag $(VER)
+tool-pick:  ## interactive version picker: make tool-pick TOOL=booksim2
+	@python3 scripts/tools.py $(TOOL) pick

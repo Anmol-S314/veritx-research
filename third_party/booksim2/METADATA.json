@@ -1,0 +1,26 @@
+{
+  "name": "booksim2",
+  "description": "BookSim 2.0 \u2014 cycle-accurate NoC simulator",
+  "upstream": "https://github.com/booksim/booksim2.git",
+  "commit": "28f43299f1706a3160ffac721ca461d74eb6e618",
+  "date_vendored": "2026-08-25",
+  "source_branch": "updated-booksim @ 46059c8f (internal repo, sowmith)",
+  "patches": [
+    "vendored as full source tree replacing upstream checkout (internal branch updated-booksim)"
+  ],
+  "local_modifications": [
+    "veritx_ext.cpp: snake_mesh registration commented out (needs flit mcast support)",
+    "snakeroute.{cpp,hpp} excluded (depends on Flit::mcast, absent from this base)"
+  ],
+  "known_gaps": [
+    "TODO(sowmith): GEC wire-length pricing not yet ported from the research branch. This gec.cpp carries an honesty guard: topology=gec REFUSES use_noc_latency=1 rather than silently mis-pricing. Alice's priced variant (express channels priced at Manhattan pitch under use_noc_latency=1) lives on branch alice-booksim-wirepriced, booksim2/src/networks/gec.cpp (~70-line diff). Until ported: any gec comparison must set use_noc_latency=0 on both sides.",
+    "NOTE(research-branches): t3 battle scripts that assume priced GEC (e.g. tracks/t3-topology/scripts/claim2_battles.py on exp-d-rtalloc-on-good) will hard-fail their gec leg until the pricing patch lands here."
+  ],
+  "used_by": [
+    "t2-deadlock",
+    "t3-topology"
+  ],
+  "build_command": "cd src && make -j$(nproc)",
+  "clean_command": "cd src && make clean",
+  "install_location": "src/booksim"
+}
