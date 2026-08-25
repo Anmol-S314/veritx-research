@@ -1,0 +1,17 @@
+topology = cmesh;
+k = 4;
+n = 2;
+c = 4;
+xr = 2;
+yr = 2;
+x = 4;
+y = 4;
+routing_function = dor_no_express;
+traffic = uniform;
+use_read_write = 0;
+use_noc_latency = 0;
+injection_rate = 0.05;
+sim_type = latency;
+warmup_periods = 3;
+sample_period = 10000;
+sim_count = 1;
