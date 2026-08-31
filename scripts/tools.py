@@ -254,7 +254,7 @@ def cmd_build(args: argparse.Namespace) -> None:
     print(f"  Command:   {build_cmd}")
 
     result = subprocess.run(
-        build_cmd, shell=True, cwd=tool_dir,
+        ["bash", "-c", build_cmd], cwd=tool_dir,
         capture_output=True, text=True
     )
 
@@ -371,7 +371,7 @@ def cmd_sync(args: argparse.Namespace) -> None:
         if post_sync:
             print(f"  Running post-sync: {post_sync}")
             result = subprocess.run(
-                post_sync, shell=True, cwd=REPO_ROOT,
+                ["bash", "-c", post_sync], cwd=REPO_ROOT,
                 capture_output=True, text=True
             )
             if result.returncode != 0:
@@ -528,7 +528,7 @@ def cmd_clean(args: argparse.Namespace) -> None:
 
     print(f"Cleaning {args.tool}...")
     result = subprocess.run(
-        clean_cmd, shell=True, cwd=tool_dir,
+        ["bash", "-c", clean_cmd], cwd=tool_dir,
         capture_output=True, text=True
     )
 
