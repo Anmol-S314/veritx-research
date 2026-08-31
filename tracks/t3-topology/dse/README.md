@@ -110,7 +110,18 @@ flowchart LR
 (Area/Power/Timing)"]
     I --> J["Verified Fabric
 (Signed + Documented)"]
-    style J fill:#f3e5f5
+
+    style A fill:#e1f5fe,stroke:#333
+    style B fill:#e1f5fe,stroke:#333
+    style C fill:#e1f5fe,stroke:#333
+    style D fill:#e8f5e9,stroke:#333
+    style E fill:#e8f5e9,stroke:#333
+    style F fill:#e8f5e9,stroke:#333
+    style G fill:#e8f5e9,stroke:#333
+    style H fill:#e8f5e9,stroke:#333
+    style I fill:#e8f5e9,stroke:#333
+    style J fill:#e8f5e9,stroke:#333
+
 ```
 
 ### Key insight:
@@ -125,6 +136,17 @@ flowchart TD
     C --> F[" LOCKED\nUser cannot override"]
     D --> F
     E --> F
+
+    style A fill:#e1f5fe,stroke:#333
+    style B fill:#fff3e0,stroke:#333
+
+
+    classDef input fill:#e1f5fe,stroke:#01579b,color:#000
+    classDef cli fill:#e8f5e9,stroke:#2e7d32,color:#000
+    classDef sim fill:#fff3e0,stroke:#e65100,color:#000
+    classDef api fill:#fce4ec,stroke:#c62828,color:#000
+    classDef output fill:#f3e5f5,stroke:#6a1b9a,color:#000
+    class A cli
 ```
 
 ---
@@ -341,6 +363,22 @@ flowchart LR
     D --> E["Step 5\nCompare Winners"]
     E --> F["Step 6\nCompile Fabric"]
     F --> G["Step 7\nVerify + Report"]
+
+    style A fill:#e1f5fe,stroke:#333
+    style B fill:#e8f5e9,stroke:#333
+    style C fill:#e8f5e9,stroke:#333
+    style D fill:#e8f5e9,stroke:#333
+    style E fill:#e8f5e9,stroke:#333
+    style F fill:#e8f5e9,stroke:#333
+    style G fill:#e8f5e9,stroke:#333
+
+
+    classDef input fill:#e1f5fe,stroke:#01579b,color:#000
+    classDef cli fill:#e8f5e9,stroke:#2e7d32,color:#000
+    classDef sim fill:#fff3e0,stroke:#e65100,color:#000
+    classDef api fill:#fce4ec,stroke:#c62828,color:#000
+    classDef output fill:#f3e5f5,stroke:#6a1b9a,color:#000
+    class A input
 ```
 
 ### Step 1: Understand Your Traffic Trace
@@ -632,9 +670,26 @@ flowchart TD
     L -->|"Yes"| M["6b. generate uvm\nFormal verification"]
     L -->|"No"| N["7. Review output\nJSON report + manifest"]
     M --> N
-    style J fill:#f3e5f5
-    style K fill:#f3e5f5
-    style L fill:#f3e5f5
+
+    style A fill:#e1f5fe,stroke:#333
+    style B fill:#e1f5fe,stroke:#333
+    style C fill:#e1f5fe,stroke:#333
+    style E fill:#fff3e0,stroke:#333
+    style F fill:#e8f5e9,stroke:#333
+    style G fill:#e8f5e9,stroke:#333
+    style I fill:#e8f5e9,stroke:#333
+    style J fill:#e8f5e9,stroke:#333
+    style K fill:#e8f5e9,stroke:#333
+    style M fill:#e8f5e9,stroke:#333
+    style N fill:#e8f5e9,stroke:#333
+
+
+    classDef input fill:#e1f5fe,stroke:#01579b,color:#000
+    classDef cli fill:#e8f5e9,stroke:#2e7d32,color:#000
+    classDef sim fill:#fff3e0,stroke:#e65100,color:#000
+    classDef api fill:#fce4ec,stroke:#c62828,color:#000
+    classDef output fill:#f3e5f5,stroke:#6a1b9a,color:#000
+    class A input
 ```
 
 ### Tips for New Users
@@ -901,14 +956,22 @@ flowchart TD
         M2 --> M3["UCIe bridges\ndie-to-die comms"]
         M3 --> M4["Multi-die latency\n+ energy"]
     end
-    style Compile fill:#f3e5f5
-    style Generate fill:#e8f5e9
-    style L1 fill:#f3e5f5
-    style L2 fill:#f3e5f5
-    style L3 fill:#f3e5f5
-    style L4 fill:#f3e5f5
-    style MultiDie fill:#f3e5f5
-    style Validate fill:#f3e5f5
+    style Compile fill:#f3e5f5,stroke:#333
+    style Generate fill:#e8f5e9,stroke:#333
+    style L1 fill:#f3e5f5,stroke:#333
+    style L2 fill:#f3e5f5,stroke:#333
+    style L3 fill:#f3e5f5,stroke:#333
+    style L4 fill:#f3e5f5,stroke:#333
+    style MultiDie fill:#f3e5f5,stroke:#333
+    style Validate fill:#f3e5f5,stroke:#333
+
+
+    classDef input fill:#e1f5fe,stroke:#01579b,color:#000
+    classDef cli fill:#e8f5e9,stroke:#2e7d32,color:#000
+    classDef sim fill:#fff3e0,stroke:#e65100,color:#000
+    classDef api fill:#fce4ec,stroke:#c62828,color:#000
+    classDef output fill:#f3e5f5,stroke:#6a1b9a,color:#000
+    class L1 input
 ```
 
 **Key insight:** The trace file is the single artifact that flows through the entire pipeline. It starts as a vLLM simulation output, gets validated by VeritX, drives BookSim2 cycle-accurate simulation, and produces the final verified fabric.
@@ -1110,15 +1173,26 @@ flowchart TB
     V3 --> O2
     V3 --> O3
     V9 --> O4
-    style ASTRA fill:#fff3e0
-    style BookSim fill:#fff3e0
-    style L1 fill:#f3e5f5
-    style L2 fill:#f3e5f5
-    style L3 fill:#f3e5f5
-    style LLM fill:#f3e5f5
-    style Timeloop fill:#f3e5f5
-    style Traces fill:#e1f5fe
-    style VeritX fill:#e8f5e9
+    style ASTRA fill:#fff3e0,stroke:#333
+    style BookSim fill:#fff3e0,stroke:#333
+    style L1 fill:#f3e5f5,stroke:#333
+    style L2 fill:#f3e5f5,stroke:#333
+    style L3 fill:#f3e5f5,stroke:#333
+    style LLM fill:#f3e5f5,stroke:#333
+    style Timeloop fill:#f3e5f5,stroke:#333
+    style Traces fill:#e1f5fe,stroke:#333
+    style VeritX fill:#e8f5e9,stroke:#333
+
+
+    classDef input fill:#e1f5fe,stroke:#01579b,color:#000
+    classDef cli fill:#e8f5e9,stroke:#2e7d32,color:#000
+    classDef sim fill:#fff3e0,stroke:#e65100,color:#000
+    classDef api fill:#fce4ec,stroke:#c62828,color:#000
+    classDef output fill:#f3e5f5,stroke:#6a1b9a,color:#000
+    class U1,V1,V3,V10,B2,B4,A2,T2,O4 cli
+    class U2,V2,V4,B3,L1,L2,L3,T1,O3,TR1,TR2,TR3,TR4 input
+    class V5,V6,V7,O2 output
+    class V8,V9,B1,A1,A3,O1 sim
 ```
 
 ### High-Level Tool Relationships
@@ -1171,10 +1245,37 @@ flowchart LR
     C5 --> O2
     C3 --> O3
     C2 --> O4
-    style Input fill:#e1f5fe
-    style S1 fill:#e8f5e9
-    style S2 fill:#e8f5e9
-    style Sim fill:#fff3e0
+
+    style C1 fill:#e1f5fe,stroke:#333
+    style C2 fill:#e8f5e9,stroke:#333
+    style C3 fill:#e8f5e9,stroke:#333
+    style C4 fill:#e8f5e9,stroke:#333
+    style C5 fill:#e8f5e9,stroke:#333
+    style Core fill:#e8f5e9,stroke:#333
+    style Energy fill:#e1f5fe,stroke:#333
+    style I1 fill:#e1f5fe,stroke:#333
+    style I2 fill:#e1f5fe,stroke:#333
+    style I3 fill:#e1f5fe,stroke:#333
+    style Input fill:#e1f5fe,stroke:#333
+    style O1 fill:#e8f5e9,stroke:#333
+    style O2 fill:#e8f5e9,stroke:#333
+    style O3 fill:#e8f5e9,stroke:#333
+    style O4 fill:#fff3e0,stroke:#333
+    style Output fill:#f3e5f5,stroke:#333
+    style S1 fill:#fff3e0,stroke:#333
+    style S2 fill:#e1f5fe,stroke:#333
+    style Sim fill:#fff3e0,stroke:#333
+
+
+    classDef input fill:#e1f5fe,stroke:#01579b,color:#000
+    classDef cli fill:#e8f5e9,stroke:#2e7d32,color:#000
+    classDef sim fill:#fff3e0,stroke:#e65100,color:#000
+    classDef api fill:#fce4ec,stroke:#c62828,color:#000
+    classDef output fill:#f3e5f5,stroke:#6a1b9a,color:#000
+    class I1,I2,C1,O1 input
+    class I3,C2,C3,C4,C5,E1,O4 cli
+    class S1,S2 sim
+    class O2,O3 output
 ```
 
 ### 7.1 Module Map
@@ -1252,7 +1353,18 @@ flowchart TD
 (format output)"]
     I --> J["User Output
 (JSON report + UVM + manifest)"]
-    style J fill:#f3e5f5
+
+    style A fill:#e1f5fe,stroke:#333
+    style B fill:#e8f5e9,stroke:#333
+    style C fill:#e8f5e9,stroke:#333
+    style D fill:#e8f5e9,stroke:#333
+    style E fill:#fff3e0,stroke:#333
+    style F fill:#f3e5f5,stroke:#333
+    style G fill:#e8f5e9,stroke:#333
+    style H fill:#e8f5e9,stroke:#333
+    style I fill:#e8f5e9,stroke:#333
+    style J fill:#e8f5e9,stroke:#333
+
 ```
 
 ---
@@ -1314,11 +1426,27 @@ flowchart TD
     A1 -->|"uses as backend"| B2
     B1 -->|"synced via tools.py booksim2 sync"| A1
     L1 -->|"produces traces"| V3
-    style ASTRA fill:#fff3e0
-    style BookSim fill:#fff3e0
-    style L1 fill:#f3e5f5
-    style LLM fill:#f3e5f5
-    style VeritX fill:#e8f5e9
+
+    style A1 fill:#fff3e0,stroke:#333
+    style ASTRA fill:#e1f5fe,stroke:#333
+    style B1 fill:#fff3e0,stroke:#333
+    style B2 fill:#e8f5e9,stroke:#333
+    style BookSim fill:#fff3e0,stroke:#333
+    style L1 fill:#e1f5fe,stroke:#333
+    style V1 fill:#e8f5e9,stroke:#333
+    style V2 fill:#e8f5e9,stroke:#333
+    style V3 fill:#e1f5fe,stroke:#333
+    style VeritX fill:#e8f5e9,stroke:#333
+
+
+    classDef input fill:#e1f5fe,stroke:#01579b,color:#000
+    classDef cli fill:#e8f5e9,stroke:#2e7d32,color:#000
+    classDef sim fill:#fff3e0,stroke:#e65100,color:#000
+    classDef api fill:#fce4ec,stroke:#c62828,color:#000
+    classDef output fill:#f3e5f5,stroke:#6a1b9a,color:#000
+    class V1,V2,B2 cli
+    class V3,L1 input
+    class B1,A1 sim
 ```
 
 ### 9.1 BookSim2
@@ -1483,6 +1611,18 @@ flowchart LR
     C --> E["ASTRA-sim backend\n(inside container)"]
     D --> E
     E --> F["Ready to generate traces"]
+
+    style D fill:#e8f5e9,stroke:#333
+    style E fill:#e1f5fe,stroke:#333
+    style F fill:#e1f5fe,stroke:#333
+
+
+    classDef input fill:#e1f5fe,stroke:#01579b,color:#000
+    classDef cli fill:#e8f5e9,stroke:#2e7d32,color:#000
+    classDef sim fill:#fff3e0,stroke:#e65100,color:#000
+    classDef api fill:#fce4ec,stroke:#c62828,color:#000
+    classDef output fill:#f3e5f5,stroke:#6a1b9a,color:#000
+    class A sim
 ```
 
 ```bash
@@ -1545,9 +1685,21 @@ flowchart TD
     CR --> DEP["E4: Dependencies[]\nsource, target\nkind (blocking/ordering)"]
     CR --> NC["E5: NocConfig\ntopology_family [GUIDED]\nradix [GUIDED]\nlink_width [GUIDED]\n---\nNO routing_function\nNO turn_restrictions\nNO vc_map\n(all LOCKED, derived)"]
     DEP --> VD["VC Derivation\n(blocks -> routing fn + VC count)"]
-    style CR fill:#e1f5fe
-    style VD fill:#f3e5f5
-    style W fill:#e1f5fe
+
+    style AG fill:#e1f5fe,stroke:#333
+    style CR fill:#e1f5fe,stroke:#333
+    style DEP fill:#e1f5fe,stroke:#333
+    style NC fill:#e1f5fe,stroke:#333
+    style R fill:#e1f5fe,stroke:#333
+    style W fill:#e1f5fe,stroke:#333
+
+
+    classDef input fill:#e1f5fe,stroke:#01579b,color:#000
+    classDef cli fill:#e8f5e9,stroke:#2e7d32,color:#000
+    classDef sim fill:#fff3e0,stroke:#e65100,color:#000
+    classDef api fill:#fce4ec,stroke:#c62828,color:#000
+    classDef output fill:#f3e5f5,stroke:#6a1b9a,color:#000
+    class CR cli
 ```
 
 ```
@@ -1655,12 +1807,20 @@ flowchart LR
     S3 --> S4["4⃣ Verify\n F1-F8 checks\n Deadlock free\n Liveness"]
     S4 --> S5["5⃣ Generate\n UVM testbench\n Manifest\n HMAC signing"]
     S5 --> S6["6⃣ Report\n Area\n Power\n Timing"]
-    style S1 fill:#e8f5e9
-    style S2 fill:#e8f5e9
-    style S3 fill:#e8f5e9
-    style S4 fill:#e8f5e9
-    style S5 fill:#e8f5e9
-    style S6 fill:#e8f5e9
+    style S1 fill:#e8f5e9,stroke:#333
+    style S2 fill:#e8f5e9,stroke:#333
+    style S3 fill:#e8f5e9,stroke:#333
+    style S4 fill:#e8f5e9,stroke:#333
+    style S5 fill:#e8f5e9,stroke:#333
+    style S6 fill:#e8f5e9,stroke:#333
+
+
+    classDef input fill:#e1f5fe,stroke:#01579b,color:#000
+    classDef cli fill:#e8f5e9,stroke:#2e7d32,color:#000
+    classDef sim fill:#fff3e0,stroke:#e65100,color:#000
+    classDef api fill:#fce4ec,stroke:#c62828,color:#000
+    classDef output fill:#f3e5f5,stroke:#6a1b9a,color:#000
+    class S1 cli
 ```
 
 ### Stage 1: Validate
@@ -1746,7 +1906,21 @@ flowchart TD
     G --> H{"vc_count > MAX?"}
     H -->|"No"| I["Return assignment\nN+1 VCs, min_adapt routing"]
     H -->|"Yes"| J[" ConfigError D1\nRemedy: reduce coupling"]
-    style J fill:#f3e5f5
+
+    style A fill:#e1f5fe,stroke:#333
+    style B fill:#e8f5e9,stroke:#333
+    style C fill:#fff3e0,stroke:#333
+    style D fill:#fff3e0,stroke:#333
+    style F fill:#fff3e0,stroke:#333
+    style J fill:#f3e5f5,stroke:#333
+
+
+    classDef input fill:#e1f5fe,stroke:#01579b,color:#000
+    classDef cli fill:#e8f5e9,stroke:#2e7d32,color:#000
+    classDef sim fill:#fff3e0,stroke:#e65100,color:#000
+    classDef api fill:#fce4ec,stroke:#c62828,color:#000
+    classDef output fill:#f3e5f5,stroke:#6a1b9a,color:#000
+    class A cli
 ```
 
 ---
@@ -1786,9 +1960,27 @@ flowchart TD
     I --> J
     J -->|"Yes"| K[" Verified\nFabric is correct"]
     J -->|"No"| L[" Counter-example\nWhich check failed + why"]
-    style J fill:#f3e5f5
-    style K fill:#f3e5f5
-    style L fill:#f3e5f5
+
+    style A fill:#e1f5fe,stroke:#333
+    style B fill:#e8f5e9,stroke:#333
+    style C fill:#f3e5f5,stroke:#333
+    style D fill:#f3e5f5,stroke:#333
+    style E fill:#f3e5f5,stroke:#333
+    style F fill:#f3e5f5,stroke:#333
+    style G fill:#f3e5f5,stroke:#333
+    style H fill:#f3e5f5,stroke:#333
+    style I fill:#fff3e0,stroke:#333
+    style J fill:#f3e5f5,stroke:#333
+    style K fill:#fff3e0,stroke:#333
+    style L fill:#f3e5f5,stroke:#333
+
+
+    classDef input fill:#e1f5fe,stroke:#01579b,color:#000
+    classDef cli fill:#e8f5e9,stroke:#2e7d32,color:#000
+    classDef sim fill:#fff3e0,stroke:#e65100,color:#000
+    classDef api fill:#fce4ec,stroke:#c62828,color:#000
+    classDef output fill:#f3e5f5,stroke:#6a1b9a,color:#000
+    class A input
 ```
 
 ---
@@ -1858,6 +2050,14 @@ flowchart TD
     B -->|"Generous (>400)"| G["gec_express_k8\n448 edges, dor"]
     C -->|"Yes"| H["torus_8x8\n128 edges, wrap-around"]
     C -->|"No"| D
+
+    style A fill:#fff3e0,stroke:#333
+    style D fill:#fff3e0,stroke:#333
+    style E fill:#fff3e0,stroke:#333
+    style F fill:#fff3e0,stroke:#333
+    style G fill:#fff3e0,stroke:#333
+    style H fill:#fff3e0,stroke:#333
+
 ```
 
 ---
@@ -2198,7 +2398,28 @@ flowchart TD
     Unit --> I1
     I1 -->|"All pass"| OK["Ready to commit"]
     I1 -->|"Any fail"| FIX["Fix and re-run"]
-    style OK fill:#f3e5f5
+
+    style FIX fill:#f3e5f5,stroke:#333
+    style I1 fill:#e8f5e9,stroke:#333
+    style Integration fill:#e8f5e9,stroke:#333
+    style U1 fill:#e1f5fe,stroke:#333
+    style U2 fill:#e8f5e9,stroke:#333
+    style U3 fill:#e1f5fe,stroke:#333
+    style U4 fill:#e8f5e9,stroke:#333
+    style U5 fill:#e8f5e9,stroke:#333
+    style U6 fill:#e8f5e9,stroke:#333
+    style U7 fill:#e8f5e9,stroke:#333
+    style Unit fill:#e8f5e9,stroke:#333
+
+
+    classDef input fill:#e1f5fe,stroke:#01579b,color:#000
+    classDef cli fill:#e8f5e9,stroke:#2e7d32,color:#000
+    classDef sim fill:#fff3e0,stroke:#e65100,color:#000
+    classDef api fill:#fce4ec,stroke:#c62828,color:#000
+    classDef output fill:#f3e5f5,stroke:#6a1b9a,color:#000
+    class U1,U3 input
+    class U2,U4,U6 output
+    class U5,U7,I1 cli
 ```
 
 ### 30.4 Test Philosophy
@@ -2231,9 +2452,21 @@ flowchart TD
     M -->|"Yes"| N["Increase --timeout\nor reduce trace size"]
     M -->|"No"| O["Check stderr for details"]
     L -->|"Yes"| P["All working"]
-    style J fill:#f3e5f5
-    style K fill:#f3e5f5
-    style L fill:#f3e5f5
+
+    style A fill:#e8f5e9,stroke:#333
+    style B fill:#e8f5e9,stroke:#333
+    style C fill:#e1f5fe,stroke:#333
+    style D fill:#f3e5f5,stroke:#333
+    style F fill:#e1f5fe,stroke:#333
+    style G fill:#e8f5e9,stroke:#333
+    style H fill:#f3e5f5,stroke:#333
+    style I fill:#e8f5e9,stroke:#333
+    style J fill:#e8f5e9,stroke:#333
+    style K fill:#f3e5f5,stroke:#333
+    style L fill:#e8f5e9,stroke:#333
+    style N fill:#e1f5fe,stroke:#333
+    style O fill:#f3e5f5,stroke:#333
+
 ```
 
 ### 31.1 "BookSim binary not found"

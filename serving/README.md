@@ -68,28 +68,37 @@ graph TB
         ASTRABS --> AMAIN
     end
 
-    style WL fill:#e1f5fe
-    style SCHED fill:#e8f5e9
-    style ROUTE fill:#e8f5e9
-    style TG fill:#e8f5e9
-    style CB fill:#e8f5e9
-    style ET fill:#fff3e0
-    style SYS fill:#fff3e0
-    style NETCFG fill:#fff3e0
-    style AMAIN fill:#fce4ec
-    style FABRIC fill:#fce4ec
-    style EVENTQ fill:#fce4ec
-    style NETAPI fill:#fce4ec
-    style WORKLOAD fill:#fce4ec
-    style EMBED fill:#f3e5f5
-    style TM fill:#f3e5f5
-    style FNET fill:#f3e5f5
-    style ROUTERS fill:#f3e5f5
-    style RET fill:#f3e5f5
-    style CLI fill:#e8f5e9
-    style BOOKSIM_BIN fill:#fff3e0
-    style ASTRABS fill:#fff3e0
-    style BOOKSIM_CFG fill:#e1f5fe
+    style WL fill:#e1f5fe,stroke:#333
+    style SCHED fill:#e8f5e9,stroke:#333
+    style ROUTE fill:#e8f5e9,stroke:#333
+    style TG fill:#e8f5e9,stroke:#333
+    style CB fill:#e8f5e9,stroke:#333
+    style ET fill:#fff3e0,stroke:#333
+    style SYS fill:#fff3e0,stroke:#333
+    style NETCFG fill:#fff3e0,stroke:#333
+    style AMAIN fill:#fce4ec,stroke:#333
+    style FABRIC fill:#fce4ec,stroke:#333
+    style EVENTQ fill:#fce4ec,stroke:#333
+    style NETAPI fill:#fce4ec,stroke:#333
+    style WORKLOAD fill:#fce4ec,stroke:#333
+    style EMBED fill:#f3e5f5,stroke:#333
+    style TM fill:#f3e5f5,stroke:#333
+    style FNET fill:#f3e5f5,stroke:#333
+    style ROUTERS fill:#f3e5f5,stroke:#333
+    style RET fill:#f3e5f5,stroke:#333
+    style CLI fill:#e8f5e9,stroke:#333
+    style BOOKSIM_BIN fill:#fff3e0,stroke:#333
+    style ASTRABS fill:#fff3e0,stroke:#333
+    style BOOKSIM_CFG fill:#e1f5fe,stroke:#333
+
+
+    classDef input fill:#e1f5fe,stroke:#01579b,color:#000
+    classDef cli fill:#e8f5e9,stroke:#2e7d32,color:#000
+    classDef sim fill:#fff3e0,stroke:#e65100,color:#000
+    classDef api fill:#fce4ec,stroke:#c62828,color:#000
+    classDef output fill:#f3e5f5,stroke:#6a1b9a,color:#000
+    class WL input
+    class CLI cli
 ```
 
 ### Single-Die vs Multi-Die Path
@@ -109,15 +118,23 @@ graph LR
         BSF --> R2["cycle-accurate<br/>multi-die results"]
     end
 
-    style TR1 fill:#e1f5fe
-    style BS1 fill:#fff3e0
-    style R1 fill:#f3e5f5
-    style WL2 fill:#e1f5fe
-    style LLMS fill:#e8f5e9
-    style ET2 fill:#fff3e0
-    style ASTRA fill:#fce4ec
-    style BSF fill:#fce4ec
-    style R2 fill:#f3e5f5
+    style TR1 fill:#e1f5fe,stroke:#333
+    style BS1 fill:#fff3e0,stroke:#333
+    style R1 fill:#f3e5f5,stroke:#333
+    style WL2 fill:#e1f5fe,stroke:#333
+    style LLMS fill:#e8f5e9,stroke:#333
+    style ET2 fill:#fff3e0,stroke:#333
+    style ASTRA fill:#fce4ec,stroke:#333
+    style BSF fill:#fce4ec,stroke:#333
+    style R2 fill:#f3e5f5,stroke:#333
+
+
+    classDef input fill:#e1f5fe,stroke:#01579b,color:#000
+    classDef cli fill:#e8f5e9,stroke:#2e7d32,color:#000
+    classDef sim fill:#fff3e0,stroke:#e65100,color:#000
+    classDef api fill:#fce4ec,stroke:#c62828,color:#000
+    classDef output fill:#f3e5f5,stroke:#6a1b9a,color:#000
+    class TR1,WL2 input
 ```
 
 ---
@@ -313,6 +330,12 @@ sequenceDiagram
         BookSim->>CLI: Print latency stats (mean, P50, P99)
     end
     CLI->>User: Ranked table of topologies
+
+
+    style BookSim fill:#fff3e0,stroke:#333,color:#000
+    style User fill:#e8f5e9,stroke:#333,color:#000
+    style CLI fill:#e8f5e9,stroke:#333,color:#000
+    style Fabric fill:#fff3e0,stroke:#333,color:#000
 ```
 
 ### Multi-Die Path (veritx run astra)
@@ -340,6 +363,13 @@ sequenceDiagram
     end
     ASTRA->>CLI: Total cycles + per-NPU stats
     CLI->>User: Multi-die latency breakdown
+
+
+    style ASTRA fill:#fff3e0,stroke:#333,color:#000
+    style Fabric fill:#fff3e0,stroke:#333,color:#000
+    style LLM fill:#e8f5e9,stroke:#333,color:#000
+    style CLI fill:#e8f5e9,stroke:#333,color:#000
+    style User fill:#e8f5e9,stroke:#333,color:#000
 ```
 
 ---
@@ -656,6 +686,11 @@ interface. The VeritX integration adds a BookSim2 backend:
 
 ```mermaid
 classDiagram
+    classDef input fill:#e1f5fe,stroke:#01579b,color:#000
+    classDef cli fill:#e8f5e9,stroke:#2e7d32,color:#000
+    classDef sim fill:#fff3e0,stroke:#e65100,color:#000
+    classDef api fill:#fce4ec,stroke:#c62828,color:#000
+    classDef output fill:#f3e5f5,stroke:#6a1b9a,color:#000
     class AstraNetworkAPI {
         <<interface>>
         +sim_send(buffer, count, type, dst, tag, request, handler, arg)
@@ -701,12 +736,13 @@ classDiagram
     AstraNetworkAPI <|-- Booksim2NetworkApi
     Booksim2NetworkApi --> BookSim2Fabric
 
-    style AstraNetworkAPI fill:#e8f5e9
-    style AnalyticalNetworkAPI fill:#e8f5e9
-    style Booksim2NetworkApi fill:#fce4ec
-    style BookSim2Fabric fill:#fce4ec
-    style EmbedTM fill:#f3e5f5
+    style AstraNetworkAPI fill:#e8f5e9,stroke:#333
+    style AnalyticalNetworkAPI fill:#e8f5e9,stroke:#333
+    style Booksim2NetworkApi fill:#fce4ec,stroke:#333
+    style BookSim2Fabric fill:#fce4ec,stroke:#333
+    style EmbedTM fill:#f3e5f5,stroke:#333
     BookSim2Fabric --> EmbedTM
+
 ```
 
 ### Multicast Folding
