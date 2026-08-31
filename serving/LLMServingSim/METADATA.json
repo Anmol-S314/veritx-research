@@ -1,0 +1,19 @@
+{
+  "name": "llmservingsim",
+  "description": "LLMServingSim — LLM serving traffic trace generator (KAIST)",
+  "upstream": "https://github.com/KAIST-AILab/LLMServingSim",
+  "commit": "2c2042c",
+  "date_vendored": "2026-08-17",
+  "source_branch": "main",
+  "patches": [],
+  "local_modifications": [],
+  "known_gaps": [
+    "No standalone binary — runs as python -m serving",
+    "Profiler requires GPU (RTXPRO6000) for hardware latency measurement"
+  ],
+  "used_by": [
+    "t3-topology"
+  ],
+  "build_command": "echo 'No build needed — Python package. Install deps: pip install -r requirements.txt'",
+  "install_location": "serving/__main__.py"
+}

@@ -2,7 +2,7 @@
 """
 scripts/tools.py -- Unified vendored tool management.
 
-Auto-discovers tools from METADATA.json files under third_party/.
+Auto-discovers tools from METADATA.json files under third_party/ and serving/.
 Manages all vendored tools from a single interface.
 Tools declare sync_targets in METADATA.json (no shell scripts needed).
 
@@ -43,6 +43,8 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 THIRD_PARTY = REPO_ROOT / "third_party"
+SERVING = REPO_ROOT / "serving"
+DISCOVERY_DIRS = [THIRD_PARTY, SERVING]
 
 
 # ---------------------------------------------------------------------------
@@ -80,28 +82,29 @@ THIRD_PARTY = REPO_ROOT / "third_party"
 # ---------------------------------------------------------------------------
 
 def discover_tools() -> dict[str, dict[str, Any]]:
-    """Find all METADATA.json under third_party/ and return {name: metadata}."""
+    """Find all METADATA.json under third_party/ and serving/ and return {name: metadata}."""
     tools: dict[str, dict[str, Any]] = {}
-    if not THIRD_PARTY.exists():
-        return tools
 
-    for md_path in sorted(THIRD_PARTY.rglob("METADATA.json")):
-        try:
-            with open(md_path) as f:
-                meta = json.load(f)
-        except (json.JSONDecodeError, OSError) as e:
-            print(f"  WARNING: skipping {md_path}: {e}", file=sys.stderr)
+    for discovery_dir in DISCOVERY_DIRS:
+        if not discovery_dir.exists():
             continue
+        for md_path in sorted(discovery_dir.rglob("METADATA.json")):
+            try:
+                with open(md_path) as f:
+                    meta = json.load(f)
+            except (json.JSONDecodeError, OSError) as e:
+                print(f"  WARNING: skipping {md_path}: {e}", file=sys.stderr)
+                continue
 
-        name = meta.get("name")
-        if not name:
-            print(f"  WARNING: {md_path} has no 'name' field", file=sys.stderr)
-            continue
+            name = meta.get("name")
+            if not name:
+                print(f"  WARNING: {md_path} has no 'name' field", file=sys.stderr)
+                continue
 
-        # Store the path to METADATA.json and the tool directory
-        meta["_path"] = md_path
-        meta["_dir"] = md_path.parent
-        tools[name] = meta
+            # Store the path to METADATA.json and the tool directory
+            meta["_path"] = md_path
+            meta["_dir"] = md_path.parent
+            tools[name] = meta
 
     return tools
 
@@ -125,17 +128,22 @@ def cmd_list(_args: argparse.Namespace) -> None:
     """List all discovered tools."""
     tools = discover_tools()
     if not tools:
-        print("No tools found under third_party/")
+        print("No tools found under third_party/ or serving/")
         return
 
-    print(f"{'Tool':<16} {'Commit':<12} {'Vendored':<12} {'Binary':<8} {'Sync'}")
-    print("-" * 72)
+    print(f"{'Tool':<16} {'Location':<12} {'Commit':<12} {'Binary':<8} {'Sync'}")
+    print("-" * 76)
 
     for name, meta in sorted(tools.items()):
         commit = meta.get("commit", "?")[:10]
-        date = meta.get("date_vendored", "?")
         install = meta.get("install_location", "")
         tool_dir = meta["_dir"]
+
+        # Show relative location
+        try:
+            loc = tool_dir.relative_to(REPO_ROOT).parent.name  # third_party or serving
+        except ValueError:
+            loc = "?"
 
         # Check if binary exists
         if install:
@@ -151,7 +159,7 @@ def cmd_list(_args: argparse.Namespace) -> None:
         else:
             sync_status = "--"
 
-        print(f"{name:<16} {commit:<12} {date:<12} {binary:<8} {sync_status}")
+        print(f"{name:<16} {loc:<12} {commit:<12} {binary:<8} {sync_status}")
 
 
 def cmd_info(args: argparse.Namespace) -> None:
@@ -372,6 +380,64 @@ def cmd_sync(args: argparse.Namespace) -> None:
                     print(f"  {result.stderr.strip()}", file=sys.stderr)
 
 
+def cmd_run(args: argparse.Namespace) -> None:
+    """Run a tool's binary with optional arguments."""
+    meta = get_tool(args.tool)
+    tool_dir = meta["_dir"]
+    install = meta.get("install_location", "")
+
+    if not install:
+        print(f"ERROR: {args.tool} has no install_location in METADATA.json", file=sys.stderr)
+        sys.exit(1)
+
+    bin_path = tool_dir / install
+    if not bin_path.exists():
+        print(f"ERROR: {args.tool} binary not found: {bin_path}", file=sys.stderr)
+        print(f"Run: make tool-build TOOL={args.tool}", file=sys.stderr)
+        sys.exit(1)
+
+    # Build command line
+    cmd = [str(bin_path)] + (args.args or [])
+    print(f"Running: {' '.join(cmd)}")
+    print(f"  CWD: {tool_dir}")
+
+    result = subprocess.run(cmd, cwd=tool_dir)
+    sys.exit(result.returncode)
+
+
+def cmd_pick(args: argparse.Namespace) -> None:
+    """Interactive version picker — list available tags, switch, auto-rebuild."""
+    meta = get_tool(args.tool)
+    tool_dir = meta["_dir"]
+
+    # List available tags
+    result = subprocess.run(
+        ["git", "tag", "-l", f"vendor/{args.tool}/*"],
+        capture_output=True, text=True, cwd=REPO_ROOT
+    )
+    tags = sorted(result.stdout.strip().split("\n")) if result.stdout.strip() else []
+
+    if not tags:
+        print(f"No version tags found for {args.tool}")
+        print(f"Create one with: make tool-tag TOOL={args.tool} VER=1.0")
+        return
+
+    print(f"Available versions for {args.tool}:")
+    for i, tag in enumerate(tags, 1):
+        ver = tag.split("/")[-1]
+        # Get tag date
+        tag_result = subprocess.run(
+            ["git", "log", "-1", "--format=%ci", tag],
+            capture_output=True, text=True, cwd=REPO_ROOT
+        )
+        date = tag_result.stdout.strip()[:10] if tag_result.stdout.strip() else "?"
+        print(f"  {i}. {ver} ({date})")
+
+    print(f"\nCurrent: {meta.get('commit', '?')[:10]}")
+    print(f"\nTo switch: git checkout vendor/{args.tool}/<version>")
+    print(f"Then rebuild: make tool-build TOOL={args.tool}")
+
+
 def cmd_tag(args: argparse.Namespace) -> None:
     """Tag the current state of a tool (creates a git tag)."""
     meta = get_tool(args.tool)
@@ -468,12 +534,13 @@ Examples:
     )
     parser.add_argument("tool", nargs="?", help="Tool name")
     parser.add_argument("command", nargs="?",
-                        choices=["list", "info", "build", "sync", "tag", "clean"],
+                        choices=["list", "info", "build", "run", "sync", "tag", "pick", "clean"],
                         default="list",
                         help="Command to run (default: list)")
     parser.add_argument("version", nargs="?", help="Version for tag command")
     parser.add_argument("--check", dest="check_only", action="store_true",
                         help="Dry run for sync command")
+    parser.add_argument("args", nargs="*", help="Arguments for run command")
 
     args = parser.parse_args()
 
@@ -484,8 +551,10 @@ Examples:
     commands = {
         "info": cmd_info,
         "build": cmd_build,
+        "run": cmd_run,
         "sync": cmd_sync,
         "tag": cmd_tag,
+        "pick": cmd_pick,
         "clean": cmd_clean,
     }
 

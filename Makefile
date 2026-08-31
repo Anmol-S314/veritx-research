@@ -4,7 +4,7 @@
 # execute inside it. Container runtime (podman or docker) is auto-detected.
 .DEFAULT_GOAL := help
 .PHONY: help all setup lint test sim report clean run shell pull image-build image-push
-.PHONY: tools tool-info tool-build tool-sync tool-tag tool-clean
+.PHONY: tools tool-info tool-build tool-run tool-sync tool-tag tool-pick tool-clean
 
 TRACK     ?= onboarding
 IMAGE     ?= ghcr.io/anmol-s314/veritx-tools-base:latest
@@ -61,6 +61,12 @@ tool-sync:  ## sync TOOL to downstream copies (e.g. make tool-sync TOOL=booksim2
 
 tool-tag:  ## tag TOOL at VERSION (e.g. make tool-tag TOOL=booksim2 VER=2.1)
 	@python3 scripts/tools.py $(TOOL) tag $(VER)
+
+tool-pick:  ## interactive version picker for TOOL
+	@python3 scripts/tools.py $(TOOL) pick
+
+tool-run:  ## run TOOL binary with ARGS (e.g. make tool-run TOOL=booksim2 ARGS="cfg trace.txt")
+	@python3 scripts/tools.py $(TOOL) run $(ARGS)
 
 tool-clean:  ## clean TOOL build artifacts
 	@python3 scripts/tools.py $(TOOL) clean

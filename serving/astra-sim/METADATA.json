@@ -1,0 +1,28 @@
+{
+  "name": "astra-sim",
+  "description": "ASTRA-sim 2.0 — system-level multi-die AI accelerator simulator",
+  "upstream": "https://github.com/ASTRA-Sim/ASTRA-sim",
+  "commit": "518bd51",
+  "date_vendored": "2026-08-17",
+  "source_branch": "master",
+  "patches": [
+    "BookSim2 network frontend added (Booksim2NetworkApi.cc, main.cc)",
+    "BookSim2Fabric wrapper added (extern/network_backend/booksim2/)"
+  ],
+  "local_modifications": [
+    "network_frontend/booksim2/main.cc — VeritX entry point with EmbedTM integration",
+    "network_frontend/booksim2/Booksim2NetworkApi.cc — sim_send/sim_recv via fabric",
+    "extern/network_backend/booksim2/Booksim2Fabric.cc/hh — fabric wrapper"
+  ],
+  "known_gaps": [
+    "Build artifacts not tracked (cmake --build needed)",
+    "chakra_to_et binary must be built separately"
+  ],
+  "used_by": [
+    "t3-topology"
+  ],
+  "deps": ["booksim2"],
+  "build_command": "cd build/astra_booksim2 && BOOKSIM2_SRC_DIR=$(realpath ../../../../third_party/booksim2) cmake . && cmake --build . -j$(nproc)",
+  "clean_command": "rm -rf build/astra_booksim2/build",
+  "install_location": "astra-sim/network_frontend/booksim2/bin/AstraSim_BookSim2"
+}
