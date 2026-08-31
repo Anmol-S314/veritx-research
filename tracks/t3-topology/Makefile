@@ -1,6 +1,6 @@
 # T3: Topology — Booksim + Timeloop + Accelergy
 include ../common.mk
-.PHONY: setup lint test sim timeloop energy dashboard clean
+.PHONY: setup lint test sim astrasim astrasim-workload energy dashboard clean 
 
 setup:  ## check the toolchain (Booksim required; Timeloop/Accelergy optional)
 	@$(call need,booksim)
@@ -16,25 +16,8 @@ test:  ## quick sanity sweep (the CI gate)
 sim:  ## uniform-traffic topology sweep (baseline)
 	@python3 scripts/run_experiments.py
 
-timeloop:  ## full spine: Timeloop workload -> traffic matrix -> topology sweep -> NoC energy
-	@mkdir -p results
-	@python3 scripts/run_timeloop_pipeline.py
-	@if ls results/op*.stats.txt >/dev/null 2>&1; then \
-		python3 scripts/combine_timeloop_stats.py; \
-		echo "Extracting traffic matrix..."; \
-		python3 scripts/timeloop_to_matrix.py results/timeloop.stats.txt -n 16 -o results/traffic_matrix.txt; \
-		echo "Sweeping topologies on the Timeloop traffic matrix..."; \
-		TRAFFIC_MATRIX=results/traffic_matrix.txt RATES="0.002,0.005,0.01,0.02,0.04,0.05" python3 scripts/run_experiments.py; \
-		echo "Calibrating NoC energy from Booksim hops (Accelergy bridge)..."; \
-		python3 scripts/noc_energy_bridge.py; \
-		echo "Done — results/ has topology_sweep.json + traffic_matrix.txt + timeloop.stats.txt + noc_energy.json"; \
-	else \
-		echo "  ⚠  Timeloop produced no stats; falling back to uniform traffic"; \
-		python3 scripts/run_experiments.py; \
-		echo "Calibrating NoC energy from Booksim hops (Accelergy bridge)..."; \
-		python3 scripts/noc_energy_bridge.py; \
-		echo "Done — results/ has topology_sweep.json + noc_energy.json (no Timeloop traffic matrix this run)"; \
-	fi
+astrasim:  ## ASTRA-Sim 2.0 Chakra workload -> network sweep -> energy
+	@python3 scripts/run_astrasim.py --config $(CONFIG) --model $(MODEL)
 
 energy:  ## Timeloop energy breakdown (pJ/compute + energy-delay product)
 	@mkdir -p results

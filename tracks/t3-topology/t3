@@ -245,14 +245,6 @@ cmd_astrasim_workload() {
     ( cd "$T3_DIR" && make astrasim-workload CONFIG="${CONFIG:-baseline}" MODEL="${MODEL:-llama7b}" )
 }
 
-cmd_timeloop() {
-    cmd_astrasim "$@"
-}
-
-cmd_timeloop_workload() {
-    cmd_astrasim_workload "$@"
-}
-
 cmd_report() {
     _banner "Generating Report"
     ( cd "$T3_DIR" && make report CONFIG="${CONFIG:-baseline}" )
@@ -311,8 +303,6 @@ case "$COMMAND" in
     sim)                  cmd_sim "$@"          ;;
     astrasim)             cmd_astrasim "$@"     ;;
     astrasim-workload)    cmd_astrasim_workload ;;
-    timeloop)             cmd_timeloop "$@"     ;;
-    timeloop-workload)    cmd_timeloop_workload ;;
     report|pa-report)     cmd_report            ;;
     dashboard)            cmd_dashboard "$@"    ;;
     energy)               cmd_energy            ;;
