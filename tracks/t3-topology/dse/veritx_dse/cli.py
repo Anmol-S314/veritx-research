@@ -320,29 +320,44 @@ def cmd_synthesize_iterative(ctx: Ctx, args):
 
 
 def cmd_evaluate_booksim(ctx: Ctx, args):
+    from veritx_dse.presets import lookup_topo, Topology
     if args.k < 2:
-        fail(ctx, f"k must be >= 2 for a valid mesh, got {args.k}")
+        fail(ctx, f"k must be >= 2, got {args.k}")
         return
     trace = str(Path(args.trace).resolve())
     stats = detect_trace_stats(trace)
     sample_period = max(200, stats.max_cycle + 1000)
 
-    log(ctx, f"BookSim mesh k={args.k} trace={Path(args.trace).name} "
+    # Resolve topology: try preset lookup first, then build from args
+    preset = lookup_topo(args.topo)
+    if preset and not args.routing:
+        # Use preset defaults for routing and params
+        topo = Topology(
+            f"{args.topo}_{args.k}x{args.k}",
+            preset.backend, preset.routing,
+            {**preset.params, "k": args.k},
+            needs_noc_latency_zero=preset.needs_noc_latency_zero,
+        )
+    else:
+        # User specified backend + routing explicitly
+        routing = args.routing or "dim_order"
+        topo = Topology(f"{args.topo}_{args.k}x{args.k}", args.topo, routing, {"k": args.k, "n": 2})
+
+    log(ctx, f"BookSim {topo.backend} k={args.k} routing={topo.routing} trace={Path(args.trace).name} "
         f"({stats.num_packets} pkts, {stats.num_srcs} srcs, span={stats.span}c, IR={stats.ir:.4f})")
 
-    topo = Topology(f"{args.topo}_{args.k}x{args.k}", args.topo, args.routing, {"k": args.k, "n": 2})
     config = build_config(topo, trace, sample_period=sample_period, seed=ctx.seed)
 
     result = run_booksim(ctx, config, repo_root=REPO, timeout=args.timeout)
     result["topology"] = topo.name
     result["trace"] = args.trace
-    result["routing"] = args.routing
+    result["routing"] = topo.routing
     result["trace_stats"] = stats.to_dict()
     result["seed"] = ctx.seed
 
     ok(ctx, f"Latency: {result['latency']:.2f}c | Hops: {result.get('hops', '?')}")
 
-    out_path = RUNS_DIR / "booksim" / f"eval_{args.topo}{args.k}_{Path(args.trace).stem}.json"
+    out_path = RUNS_DIR / "booksim" / f"eval_{topo.backend}{args.k}_{Path(args.trace).stem}.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(result, indent=2))
     ok(ctx, f"Saved: {out_path}")
@@ -730,7 +745,7 @@ def cmd_run(ctx: Ctx, args):
             cmd = [sys.executable, str(SCRIPTS_DIR / "iterative_synthesizer.py"),
                    "--trace", str(trace_path), "--method", method,
                    "--steps", str(max(args.iters, 10)), "--max-edges", "120",
-                   "--out", str(RUNS_DIR / "topo.anynet")]
+                   "--out", str(RUNS_DIR / "booksim" / "topo.anynet")]
             subprocess.run(cmd, capture_output=True, text=True, timeout=600,
                           check=True, cwd=str(REPO))
         else:
@@ -1435,9 +1450,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_bs = es.add_parser("booksim", help="BookSim2 mesh trace replay")
     p_bs.add_argument("--trace", required=True)
     p_bs.add_argument("--k", type=int, default=8)
-    p_bs.add_argument("--topo", default="mesh", choices=["mesh", "torus", "flatfly"],
-                        help="Topology type (default: mesh)")
-    p_bs.add_argument("--routing", default="min_adapt")
+    from veritx_dse.presets import _TOPO_BY_BACKEND
+    known_backends = sorted(_TOPO_BY_BACKEND.keys())
+    p_bs.add_argument("--topo", default="mesh",
+                        help=f"Topology backend (any BookSim topology: {', '.join(known_backends)}, or anynet path)")
+    p_bs.add_argument("--routing", default=None,
+                        help="Routing function (default: from preset, or dim_order)")
     p_bs.add_argument("--vcs", type=int, default=4)
     p_bs.add_argument("--vc-buf", type=int, default=8)
     p_bs.add_argument("--sample-period", type=int, default=1000)
