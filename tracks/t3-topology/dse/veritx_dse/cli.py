@@ -330,7 +330,7 @@ def cmd_evaluate_booksim(ctx: Ctx, args):
     log(ctx, f"BookSim mesh k={args.k} trace={Path(args.trace).name} "
         f"({stats.num_packets} pkts, {stats.num_srcs} srcs, span={stats.span}c, IR={stats.ir:.4f})")
 
-    topo = Topology(f"mesh_{args.k}x{args.k}", "mesh", args.routing, {"k": args.k, "n": 2})
+    topo = Topology(f"{args.topo}_{args.k}x{args.k}", args.topo, args.routing, {"k": args.k, "n": 2})
     config = build_config(topo, trace, sample_period=sample_period, seed=ctx.seed)
 
     result = run_booksim(ctx, config, repo_root=REPO, timeout=args.timeout)
@@ -342,7 +342,7 @@ def cmd_evaluate_booksim(ctx: Ctx, args):
 
     ok(ctx, f"Latency: {result['latency']:.2f}c | Hops: {result.get('hops', '?')}")
 
-    out_path = RUNS_DIR / "booksim" / f"eval_mesh{args.k}_{Path(args.trace).stem}.json"
+    out_path = RUNS_DIR / "booksim" / f"eval_{args.topo}{args.k}_{Path(args.trace).stem}.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(result, indent=2))
     ok(ctx, f"Saved: {out_path}")
@@ -1435,6 +1435,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_bs = es.add_parser("booksim", help="BookSim2 mesh trace replay")
     p_bs.add_argument("--trace", required=True)
     p_bs.add_argument("--k", type=int, default=8)
+    p_bs.add_argument("--topo", default="mesh", choices=["mesh", "torus", "flatfly"],
+                        help="Topology type (default: mesh)")
     p_bs.add_argument("--routing", default="min_adapt")
     p_bs.add_argument("--vcs", type=int, default=4)
     p_bs.add_argument("--vc-buf", type=int, default=8)

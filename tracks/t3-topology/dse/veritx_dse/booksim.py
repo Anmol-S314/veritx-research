@@ -231,6 +231,8 @@ def run_booksim(
                 stdout=r.stdout,
                 stderr="\n".join(stderr_tail),
             )
+        if result.get("unstable"):
+            result["warning"] = "Simulation unstable — latency may be unreliable"
         return result
 
     except subprocess.TimeoutExpired:
@@ -245,15 +247,17 @@ def parse_output(stdout: str) -> dict:
     """Parse BookSim stdout for latency/hops/throughput."""
     result = {}
     for line in stdout.splitlines():
-        m = re.search(r"Packet latency average\s*=\s*([0-9.]+)", line)
+        m = re.search(r"Packet latency average\s*=\s*([0-9.eE+\-]+)", line)
         if m:
             result["latency"] = float(m.group(1))
-        m = re.search(r"Hops average\s*=\s*([0-9.]+)", line)
+        m = re.search(r"Hops average\s*=\s*([0-9.eE+\-]+)", line)
         if m:
             result["hops"] = float(m.group(1))
-        m = re.search(r"Accepted packet rate average\s*=\s*([0-9.]+)", line)
+        m = re.search(r"Accepted packet rate average\s*=\s*([0-9.eE+\-]+)", line)
         if m:
             result["throughput"] = float(m.group(1))
+        if "unstable" in line.lower() or "Too many sample periods" in line:
+            result["unstable"] = True
     return result
 
 
