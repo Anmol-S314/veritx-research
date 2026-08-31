@@ -25,7 +25,7 @@ class TestTraceInfo:
 
     def test_info_returns_stats(self):
         """trace info on a real trace returns packet/src/cycle stats."""
-        trace = Path(__file__).parent.parent / "inputs" / "qwen3_serving_astra.trace"
+        trace = Path(__file__).parent.parent / "inputs" / "traces" / "qwen3_serving_astra.trace"
         if not trace.exists():
             pytest.skip("Qwen3 trace not found")
         from veritx_dse.cli.commands_trace import cmd_trace_info
@@ -71,7 +71,7 @@ class TestTraceValidate:
 
     def test_validate_clean_trace(self):
         """validate on clean trace should pass."""
-        trace = Path(__file__).parent.parent / "inputs" / "qwen3_serving_astra.trace"
+        trace = Path(__file__).parent.parent / "inputs" / "traces" / "qwen3_serving_astra.trace"
         if not trace.exists():
             pytest.skip("Qwen3 trace not found")
         from veritx_dse.cli.commands_trace import cmd_trace_validate

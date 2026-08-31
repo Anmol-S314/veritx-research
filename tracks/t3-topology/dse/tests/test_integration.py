@@ -28,7 +28,7 @@ DSE_DIR = Path(__file__).parent.parent  # dse/ (tests/ is one level deeper)
 REPO = DSE_DIR.parent.parent.parent
 CLI = [sys.executable, "-m", "veritx_dse.cli"]
 EXAMPLES_DIR = DSE_DIR / "examples"  # dse/examples/
-TRACES_DIR = DSE_DIR / "inputs"
+TRACES_DIR = DSE_DIR / "inputs" / "traces"
 QWEN_TRACE = TRACES_DIR / "qwen3_serving_astra.trace"
 TINY_TRACE = TRACES_DIR / "test_dynamic.trace"  # 130 lines, runs in <5s
 

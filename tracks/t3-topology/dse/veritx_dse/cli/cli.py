@@ -1150,7 +1150,8 @@ def _latex_to_html(latex: str, title: str) -> str:
         cells = [c.strip() for c in line.split('&')]
         if len(cells) > 1:
             tag = 'th' if any('\\textbf' in c or 'Topo' in c for c in cells) else 'td'
-            row = ''.join(f'<{tag}>{re.sub(r"\\textbf\{(.+?)\}", r"<b>\1</b>", c)}</{tag}>' for c in cells)
+            pattern = re.compile(r"\\textbf\{(.+?)\}")
+            row = "".join(f"<{tag}>{pattern.sub(r"<b>\1</b>", c)}</{tag}>" for c in cells)
             html_parts.append(f'<tr>{row}</tr>')
     html_parts.extend(['</table>', '</body></html>'])
     return '\n'.join(html_parts)

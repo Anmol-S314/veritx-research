@@ -282,7 +282,8 @@ sim_type = throughput;
     # Run BookSim — pass ABSOLUTE cfg path (subprocess cwd=workdir,
     # so relative paths get doubled)
     import subprocess
-    booksim = "/home/datavex/veritx-research/third_party/booksim2/src/booksim"
+    from veritx_dse.core.paths import BOOKSIM_BIN
+    booksim = str(BOOKSIM_BIN)
     try:
         r = subprocess.run(
             [booksim, str(cfg_path.resolve())],
@@ -344,7 +345,7 @@ def objective(cluster_size, express_length, radix, intra_weight, inter_weight):
     else:
         # Event-native scoring: collectives kept structural, algorithm chosen
         # per-topology, priority-weighted (~50ms, Dijkstra-based).
-        from event_objective import score_topology
+        from veritx_dse.synthesis.event_objective import score_topology
         obj, _det = score_topology(adj, _xy, _events)
         lat = obj / 1e9  # scale to comparable magnitude (GB-cycles)
 
@@ -456,7 +457,7 @@ def main():
     result = gp_minimize(
         objective,
         search_space,
-        n_calls=args.iters,
+        n_calls=max(args.iters, 10),
         n_random_starts=10,
         random_state=args.seed,
         verbose=False,
