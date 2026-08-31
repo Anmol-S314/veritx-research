@@ -246,24 +246,24 @@ def main():
                 flush=True
             )
 
-        r = run_astrasim_topology(
-            cfg,
-            spec,
-            inj_rate,
-            args.config
-        )
+            r = run_astrasim_topology(
+                cfg,
+                spec,
+                inj_rate,
+                args.config
+            )
 
-        latency_text = (
-            f"{r['latency_cycles']:.2f} latency"
-            if r["latency_cycles"] is not None
-            else "no latency"
-        )
+            latency_text = (
+                f"{r['latency_cycles']:.2f} latency"
+                if r["latency_cycles"] is not None
+                else "no latency"
+            )
 
-        print(
-            f"{latency_text} | "
-            f"{r['astrasim_cycles']:>8} total cycles | "
-            f"{r['status']}"
-        )
+            print(
+                f"{latency_text} | "
+                f"{r['astrasim_cycles']:>8} total cycles | "
+                f"{r['status']}"
+            )
 
         results.append(r)
 
