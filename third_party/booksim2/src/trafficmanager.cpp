@@ -1644,6 +1644,14 @@ bool TrafficManager::Run( )
 
         if ( !_SingleSim( ) ) {
             cout << "Simulation unstable, ending ..." << endl;
+            // _SingleSim returns before the normal end-of-run stats block, so the
+            // usual final "Hops average" line never prints; report the last
+            // sample-period's hop average instead (same convergence window
+            // DisplayStats() was already using for the printed latency figure).
+            for ( int c = 0; c < _classes; ++c ) {
+                if ( _measure_stats[c] == 0 ) continue;
+                cout << "Hops average = " << _hop_stats[c]->Average() << endl;
+            }
             return false;
         }
 
