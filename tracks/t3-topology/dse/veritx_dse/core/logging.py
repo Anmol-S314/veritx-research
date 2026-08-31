@@ -1,10 +1,12 @@
 """veritx_dse.logging — Structured logging with verbosity, JSON, and file output.
 
 Every function receives a Ctx object. No global mutable state.
+Also provides get_logger() for library-level logging via Python stdlib.
 """
 from __future__ import annotations
 
 import json
+import logging
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -104,3 +106,32 @@ def print_human(ctx: Ctx, msg: str):
     """Print human-readable output (respects verbosity)."""
     if ctx.verbosity >= 1 and not ctx.json_mode:
         print(msg)
+
+
+# ── Stdlib logging integration (replaces logger.py) ───────────────────────
+
+_STDLOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+_STDLOG_DATE = "%Y-%m-%d %H:%M:%S"
+_stdlog_initialized = False
+
+
+def get_logger(name: str) -> logging.Logger:
+    """Get a named stdlib logger. Auto-configures on first call."""
+    global _stdlog_initialized
+    if not _stdlog_initialized:
+        logging.basicConfig(
+            level=logging.INFO,
+            format=_STDLOG_FORMAT,
+            datefmt=_STDLOG_DATE,
+            handlers=[logging.StreamHandler(sys.stderr)],
+        )
+        _stdlog_initialized = True
+    return logging.getLogger(name)
+
+
+def setup_file_logging(log_path: Path) -> logging.FileHandler:
+    """Add a file handler for persistent logs."""
+    handler = logging.FileHandler(log_path)
+    handler.setFormatter(logging.Formatter(_STDLOG_FORMAT, _STDLOG_DATE))
+    logging.getLogger().addHandler(handler)
+    return handler

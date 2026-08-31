@@ -96,13 +96,13 @@ class TestLogger:
     """veritx_dse.logger"""
 
     def test_logger_exists(self):
-        """logger module imports and has expected functions."""
-        from veritx_dse import logger
-        assert hasattr(logger, 'get_logger') or hasattr(logger, 'setup_logging') or True
+        """logging module imports and has expected functions."""
+        from veritx_dse.core.logging import get_logger
+        assert callable(get_logger)
 
     def test_logger_returns_logger(self):
-        """logger returns a usable logger object."""
-        from veritx_dse.core.logger import get_logger
+        """get_logger returns a usable logger object."""
+        from veritx_dse.core.logging import get_logger
         log = get_logger("test")
         assert log is not None
         # Should be able to call log methods without error

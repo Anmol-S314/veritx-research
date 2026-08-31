@@ -97,7 +97,8 @@ def run_compare(
                 )
                 r["name"] = display_name  # override topo.name with display name
                 all_results.append(r)
-                status = f"{r['latency']:.2f}c"
+                warn_flag = " [UNSTABLE]" if r.get("unstable") else ""
+                status = f"{r['latency']:.2f}c{warn_flag}"
                 log(ctx, f"  {display_name:<16} seed={seed:<3} → {status}")
             except TimeoutError:
                 all_results.append({
@@ -126,10 +127,12 @@ def run_compare(
         if valid:
             mean = statistics.mean(valid)
             std = statistics.stdev(valid) if len(valid) > 1 else 0.0
+            n_unstable = sum(1 for r in runs if r.get("unstable"))
             agg.append({
                 "name": display_name, "nodes": nodes, "edges": edges,
                 "mean": mean, "std": std,
                 "min": min(valid), "max": max(valid), "n": len(valid),
+                "n_unstable": n_unstable,
             })
 
     return CompareResult(
@@ -142,13 +145,25 @@ def run_compare(
 
 def print_compare_table(ctx: Ctx, result: CompareResult):
     """Print comparison table to stdout."""
-    print(f"\n  {'Topology':<16} {'Nodes':>5} {'Edges':>6} {'Mean':>8} {'Std':>7} {'Min':>8} {'Max':>8} {'Runs':>4}")
-    print(f"  {'─' * 68}")
-
-    for s in result.summary:
-        print(f"  {s['name']:<16} {s['nodes']:>5} {s['edges']:>6} "
-              f"{s['mean']:>7.2f}c {s['std']:>6.2f}c {s['min']:>7.2f}c "
-              f"{s['max']:>7.2f}c {s['n']:>4}")
+    has_unstable = any(s.get("n_unstable", 0) > 0 for s in result.summary)
+    if has_unstable:
+        print(f"\n  {'Topology':<16} {'Nodes':>5} {'Edges':>6} {'Mean':>8} {'Std':>7} {'Min':>8} {'Max':>8} {'Runs':>4} {'Unstable':>8}")
+        print(f"  {'─' * 78}")
+        for s in result.summary:
+            unstable = s.get("n_unstable", 0)
+            warn = f" {unstable}/{s['n']}" if unstable else ""
+            print(f"  {s['name']:<16} {s['nodes']:>5} {s['edges']:>6} "
+                  f"{s['mean']:>7.2f}c {s['std']:>6.2f}c {s['min']:>7.2f}c "
+                  f"{s['max']:>7.2f}c {s['n']:>4}{warn:>8}")
+        print(f"\n  \033[33mWARNING: Unstable simulations produce unreliable latency numbers.\033[0m")
+        print(f"  \033[33mReduce injection rate, increase sample_period, or use fewer seeds.\033[0m")
+    else:
+        print(f"\n  {'Topology':<16} {'Nodes':>5} {'Edges':>6} {'Mean':>8} {'Std':>7} {'Min':>8} {'Max':>8} {'Runs':>4}")
+        print(f"  {'─' * 68}")
+        for s in result.summary:
+            print(f"  {s['name']:<16} {s['nodes']:>5} {s['edges']:>6} "
+                  f"{s['mean']:>7.2f}c {s['std']:>6.2f}c {s['min']:>7.2f}c "
+                  f"{s['max']:>7.2f}c {s['n']:>4}")
 
     # Winner
     if len(result.summary) >= 2:

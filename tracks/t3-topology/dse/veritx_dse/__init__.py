@@ -11,9 +11,8 @@ __version__ = "0.3.0"
 from .core.constants import *
 from .core.config import config
 from .core.errors import VeritXError, ConfigError, TraceError, BookSimError
-from .core.logger import get_logger
+from .core.logging import Ctx, log, ok, fail, verbose, banner, output, get_logger, setup_file_logging
 from .core.recovery import temporary_directory, atomic_write
-from .core.logging import Ctx, log, ok, fail, verbose, banner, output
 from .core.paths import REPO, DSE_DIR, RUNS_DIR
 
 # Re-export model
@@ -38,7 +37,7 @@ from .reports.artifact import sign_manifest, verify_manifest, DesignManifest
 from .verification.uvm_gen import generate_uvm
 
 # Backward compatibility - re-export submodules as attributes
-from .core import constants, logger, recovery, paths
+from .core import constants, logging, recovery, paths
 from .model import compile_model, presets
 from .simulation import booksim, traces, trace_to_binary
 from .reports import reports, artifact
