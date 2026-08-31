@@ -22,5 +22,13 @@
   ],
   "build_command": "cd src && make -j$(nproc)",
   "clean_command": "cd src && make clean",
-  "install_location": "src/booksim"
+  "install_location": "src/booksim",
+  "sync_targets": [
+    {
+      "dest": "serving/astra-sim/extern/network_backend/booksim2/booksim2",
+      "patterns": ["*.cpp", "*.hpp", "*.h", "*.c", "Makefile"],
+      "skip": ["booksim", "libveritx_embed.a"],
+      "post_sync": "echo 'Synced. Rebuild: cd serving/astra-sim/extern/network_backend/booksim2/build && cmake .. -DBOOKSIM2_SRC_DIR=$(realpath ../../../../../../third_party/booksim2) && make -j$(nproc)'"
+    }
+  ]
 }

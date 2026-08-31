@@ -12,7 +12,7 @@ simulation leg of the VeritX research pipeline. Three components live here:
 The canonical **BookSim2** NoC simulator (the fabric engine) lives at
 `third_party/booksim2/`, not here. ASTRA-sim carries its own copy of the
 BookSim2 fork source at `serving/astra-sim/extern/network_backend/booksim2/booksim2/src/`,
-kept in sync by `third_party/booksim2/sync_to_astra.sh`.
+kept in sync by `python3 scripts/tools.py booksim2 sync`.
 
 ---
 
@@ -363,22 +363,30 @@ Two copies of the BookSim2 fork exist in the repo:
 | `third_party/booksim2/src/` | **Canonical** source. Edit here. |
 | `serving/astra-sim/extern/network_backend/booksim2/booksim2/src/` | ASTRA-sim's copy. Auto-synced. |
 
-After editing any file in `third_party/booksim2/src/`:
+All tool management goes through `scripts/tools.py` (auto-discovers tools
+from `METADATA.json`). After editing any file in `third_party/booksim2/src/`:
 
 ```bash
 # Sync canonical -> ASTRA-sim copy
-third_party/booksim2/sync_to_astra.sh
+python3 scripts/tools.py booksim2 sync
 
 # Verify only (dry run)
-third_party/booksim2/sync_to_astra.sh --check
+python3 scripts/tools.py booksim2 sync --check
+
+# Or via Makefile
+make tool-sync TOOL=booksim2
 
 # Then rebuild both targets:
 cd third_party/booksim2/src && make -j$(nproc)          # standalone
 cd serving/astra-sim/extern/network_backend/booksim2/build && make -j$(nproc)  # library
 ```
 
-The sync script copies `*.cpp`, `*.hpp`, `*.h`, `*.c`, and `Makefile` but
+The sync copies `*.cpp`, `*.hpp`, `*.h`, `*.c`, and `Makefile` but
 skips compiled binaries (`booksim`, `libveritx_embed.a`).
+
+Sync targets are declared in `METADATA.json` under `sync_targets`, not
+hardcoded in shell scripts. To add a new sync destination, edit the tool's
+`METADATA.json`.
 
 ---
 
@@ -815,6 +823,6 @@ veritx run astra --ets ... --timeout 600
 
 After editing BookSim2 source, run:
 ```bash
-third_party/booksim2/sync_to_astra.sh --check
+python3 scripts/tools.py booksim2 sync --check
 ```
 If differences are found, run without `--check` to sync.

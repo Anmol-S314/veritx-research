@@ -4,6 +4,7 @@
 # execute inside it. Container runtime (podman or docker) is auto-detected.
 .DEFAULT_GOAL := help
 .PHONY: help all setup lint test sim report clean run shell pull image-build image-push
+.PHONY: tools tool-info tool-build tool-sync tool-tag tool-clean
 
 TRACK     ?= onboarding
 IMAGE     ?= ghcr.io/anmol-s314/veritx-tools-base:latest
@@ -43,3 +44,23 @@ image-build:  ## build the tools image locally
 
 image-push:  ## push the tools image to the registry (needs write auth)
 	$(CONTAINER) push $(IMAGE)
+
+# -- Vendored tool management (scripts/tools.py) --
+
+tools:  ## list all vendored tools with status
+	@python3 scripts/tools.py
+
+tool-info:  ## show details for TOOL (e.g. make tool-info TOOL=booksim2)
+	@python3 scripts/tools.py $(TOOL) info
+
+tool-build:  ## build TOOL (e.g. make tool-build TOOL=booksim2)
+	@python3 scripts/tools.py $(TOOL) build
+
+tool-sync:  ## sync TOOL to downstream copies (e.g. make tool-sync TOOL=booksim2)
+	@python3 scripts/tools.py $(TOOL) sync
+
+tool-tag:  ## tag TOOL at VERSION (e.g. make tool-tag TOOL=booksim2 VER=2.1)
+	@python3 scripts/tools.py $(TOOL) tag $(VER)
+
+tool-clean:  ## clean TOOL build artifacts
+	@python3 scripts/tools.py $(TOOL) clean

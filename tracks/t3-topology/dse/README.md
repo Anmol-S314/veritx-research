@@ -146,7 +146,7 @@ veritx-research/                           repo root
           gec.o                        GEC express topology
           custom4.o                    MECS 4-tap topology
         Makefile                       builds booksim + libveritx_embed.a
-        sync_to_astra.sh               sync to ASTRA-sim internal copy
+        tools.py <tool> sync            sync to downstream copies (replaces sync_to_astra.sh)
       METADATA.json                    version tracking (v0.2.1)
     timeloop/                          Timeloop/Mapper (energy model)
 
@@ -685,7 +685,7 @@ libveritx_embed.a    ← 52MB embedding library
 
 ```bash
 # 1. Sync BookSim2 source into ASTRA-sim's internal copy
-third_party/booksim2/sync_to_astra.sh
+python3 scripts/tools.py booksim2 sync
 
 # 2. Build ASTRA-sim with BookSim2 backend
 cd serving/astra-sim/build/astra_booksim2
@@ -1286,7 +1286,7 @@ flowchart TD
     V2 -->|"reads"| A1
     V3 -->|"validates"| L1
     A1 -->|"uses as backend"| B2
-    B1 -->|"synced via sync_to_astra.sh"| A1
+    B1 -->|"synced via tools.py booksim2 sync"| A1
     L1 -->|"produces traces"| V3
 ```
 
@@ -1316,7 +1316,7 @@ flowchart TD
 
 **Where:** `serving/astra-sim/`
 
-**Uses:** BookSim2 as its network backend (synced via `sync_to_astra.sh`).
+**Uses:** BookSim2 as its network backend (synced via `python3 scripts/tools.py booksim2 sync`).
 
 ### 9.3 LLMServingSim
 
@@ -1389,7 +1389,7 @@ ASTRA-sim models **multi-die** (chiplet) systems:
 
 ```bash
 # 1. Sync BookSim2 source
-third_party/booksim2/sync_to_astra.sh
+python3 scripts/tools.py booksim2 sync
 
 # 2. Build ASTRA-sim
 cd serving/astra-sim/build/astra_booksim2
@@ -1424,7 +1424,7 @@ serving/astra-sim/astra-sim/network_frontend/booksim2/bin/AstraSim_BookSim2 \
 
 | Error | Fix |
 |-------|-----|
-| `veritx_embed.hpp: No such file` | Run `third_party/booksim2/sync_to_astra.sh` |
+| `veritx_embed.hpp: No such file` | Run `python3 scripts/tools.py booksim2 sync` |
 | `PER_NODE_MEMORY_EXPANSION` abort | Set `num-devices` in memory config |
 | Binary hangs at stdin | ASTRA-sim waits for `exit` command |
 | `yaml-cpp` not found | `sudo apt install libyaml-cpp-dev` |
@@ -2078,7 +2078,7 @@ When you add a tool, add its path there. Every module imports from paths.py.
 ### Syncing source between locations
 
 Some tools appear in multiple places (e.g., BookSim2 in `third_party/` and inside
-ASTRA-sim). Use `third_party/booksim2/sync_to_astra.sh` as a pattern.
+ASTRA-sim). Add sync_targets to METADATA.json (see booksim2 for an example).
 
 ### Build artifact management
 
@@ -2239,7 +2239,7 @@ veritx compile examples/qwen3_moe_16npu.json
 
 ### 31.6 ASTRA-sim build fails
 
-1. Sync BookSim2 first: `third_party/booksim2/sync_to_astra.sh`
+1. Sync BookSim2 first: `python3 scripts/tools.py booksim2 sync`
 2. Check cmake version: `cmake --version` (need 3.22+)
 3. Install yaml-cpp: `sudo apt install libyaml-cpp-dev`
 
@@ -2727,7 +2727,7 @@ Proprietary — VeritX Research Team
 3. Wire into `cli.py` command handler
 4. Run `python3 -m pytest tests/ -v` — all 278 must pass
 5. Update this README if adding public API
-6. If editing BookSim2, run `third_party/booksim2/sync_to_astra.sh`
+6. If editing BookSim2, run `python3 scripts/tools.py booksim2 sync`
 
 ### 48.2 Code Style
 
