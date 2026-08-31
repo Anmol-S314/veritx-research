@@ -433,9 +433,54 @@ def cmd_pick(args: argparse.Namespace) -> None:
         date = tag_result.stdout.strip()[:10] if tag_result.stdout.strip() else "?"
         print(f"  {i}. {ver} ({date})")
 
-    print(f"\nCurrent: {meta.get('commit', '?')[:10]}")
-    print(f"\nTo switch: git checkout vendor/{args.tool}/<version>")
-    print(f"Then rebuild: make tool-build TOOL={args.tool}")
+    # Get current version
+    current_tag = subprocess.run(
+        ["git", "describe", "--tags", "--exact-match"],
+        capture_output=True, text=True, cwd=REPO_ROOT
+    )
+    current = current_tag.stdout.strip() if current_tag.returncode == 0 else "(dirty)"
+    print(f"\nCurrent: {current}")
+
+    # Interactive selection
+    try:
+        choice = input(f"\nPick version (1-{len(tags)}) or 'q' to quit: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print("\nAborted.")
+        return
+
+    if choice == "q" or not choice:
+        return
+
+    try:
+        idx = int(choice) - 1
+        if idx < 0 or idx >= len(tags):
+            print(f"Invalid choice: {choice}")
+            return
+    except ValueError:
+        print(f"Invalid choice: {choice}")
+        return
+
+    tag = tags[idx]
+    ver = tag.split("/")[-1]
+
+    print(f"\nSwitching {args.tool} to v{ver}...")
+
+    # Checkout the tag into the tool directory
+    result = subprocess.run(
+        ["git", "checkout", tag, "--", str(tool_dir.relative_to(REPO_ROOT))],
+        capture_output=True, text=True, cwd=REPO_ROOT
+    )
+    if result.returncode != 0:
+        print(f"Checkout failed: {result.stderr}", file=sys.stderr)
+        return
+
+    print(f"Switched to {tag}")
+
+    # Auto-rebuild if build_command exists
+    if meta.get("build_command"):
+        print(f"Rebuilding {args.tool}...")
+        build_args = argparse.Namespace(tool=args.tool)
+        cmd_build(build_args)
 
 
 def cmd_tag(args: argparse.Namespace) -> None:
