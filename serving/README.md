@@ -69,9 +69,27 @@ graph TB
     end
 
     style WL fill:#e1f5fe
-    style FABRIC fill:#fff3e0
-    style EMBED fill:#fce4ec
+    style SCHED fill:#e8f5e9
+    style ROUTE fill:#e8f5e9
+    style TG fill:#e8f5e9
+    style CB fill:#e8f5e9
+    style ET fill:#fff3e0
+    style SYS fill:#fff3e0
+    style NETCFG fill:#fff3e0
+    style AMAIN fill:#fce4ec
+    style FABRIC fill:#fce4ec
+    style EVENTQ fill:#fce4ec
+    style NETAPI fill:#fce4ec
+    style WORKLOAD fill:#fce4ec
+    style EMBED fill:#f3e5f5
+    style TM fill:#f3e5f5
+    style FNET fill:#f3e5f5
+    style ROUTERS fill:#f3e5f5
+    style RET fill:#f3e5f5
     style CLI fill:#e8f5e9
+    style BOOKSIM_BIN fill:#fff3e0
+    style ASTRABS fill:#fff3e0
+    style BOOKSIM_CFG fill:#e1f5fe
 ```
 
 ### Single-Die vs Multi-Die Path
@@ -92,9 +110,14 @@ graph LR
     end
 
     style TR1 fill:#e1f5fe
-    style WL2 fill:#e1f5fe
     style BS1 fill:#fff3e0
+    style R1 fill:#f3e5f5
+    style WL2 fill:#e1f5fe
+    style LLMS fill:#e8f5e9
+    style ET2 fill:#fff3e0
+    style ASTRA fill:#fce4ec
     style BSF fill:#fce4ec
+    style R2 fill:#f3e5f5
 ```
 
 ---
@@ -677,6 +700,12 @@ classDiagram
     AstraNetworkAPI <|-- AnalyticalNetworkAPI
     AstraNetworkAPI <|-- Booksim2NetworkApi
     Booksim2NetworkApi --> BookSim2Fabric
+
+    style AstraNetworkAPI fill:#e8f5e9
+    style AnalyticalNetworkAPI fill:#e8f5e9
+    style Booksim2NetworkApi fill:#fce4ec
+    style BookSim2Fabric fill:#fce4ec
+    style EmbedTM fill:#f3e5f5
     BookSim2Fabric --> EmbedTM
 ```
 

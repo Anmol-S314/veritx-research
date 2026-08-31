@@ -110,6 +110,7 @@ flowchart LR
 (Area/Power/Timing)"]
     I --> J["Verified Fabric
 (Signed + Documented)"]
+    style J fill:#f3e5f5
 ```
 
 ### Key insight:
@@ -631,6 +632,9 @@ flowchart TD
     L -->|"Yes"| M["6b. generate uvm\nFormal verification"]
     L -->|"No"| N["7. Review output\nJSON report + manifest"]
     M --> N
+    style J fill:#f3e5f5
+    style K fill:#f3e5f5
+    style L fill:#f3e5f5
 ```
 
 ### Tips for New Users
@@ -897,6 +901,14 @@ flowchart TD
         M2 --> M3["UCIe bridges\ndie-to-die comms"]
         M3 --> M4["Multi-die latency\n+ energy"]
     end
+    style Compile fill:#f3e5f5
+    style Generate fill:#e8f5e9
+    style L1 fill:#f3e5f5
+    style L2 fill:#f3e5f5
+    style L3 fill:#f3e5f5
+    style L4 fill:#f3e5f5
+    style MultiDie fill:#f3e5f5
+    style Validate fill:#f3e5f5
 ```
 
 **Key insight:** The trace file is the single artifact that flows through the entire pipeline. It starts as a vLLM simulation output, gets validated by VeritX, drives BookSim2 cycle-accurate simulation, and produces the final verified fabric.
@@ -1098,6 +1110,15 @@ flowchart TB
     V3 --> O2
     V3 --> O3
     V9 --> O4
+    style ASTRA fill:#fff3e0
+    style BookSim fill:#fff3e0
+    style L1 fill:#f3e5f5
+    style L2 fill:#f3e5f5
+    style L3 fill:#f3e5f5
+    style LLM fill:#f3e5f5
+    style Timeloop fill:#f3e5f5
+    style Traces fill:#e1f5fe
+    style VeritX fill:#e8f5e9
 ```
 
 ### High-Level Tool Relationships
@@ -1150,6 +1171,10 @@ flowchart LR
     C5 --> O2
     C3 --> O3
     C2 --> O4
+    style Input fill:#e1f5fe
+    style S1 fill:#e8f5e9
+    style S2 fill:#e8f5e9
+    style Sim fill:#fff3e0
 ```
 
 ### 7.1 Module Map
@@ -1227,6 +1252,7 @@ flowchart TD
 (format output)"]
     I --> J["User Output
 (JSON report + UVM + manifest)"]
+    style J fill:#f3e5f5
 ```
 
 ---
@@ -1288,6 +1314,11 @@ flowchart TD
     A1 -->|"uses as backend"| B2
     B1 -->|"synced via tools.py booksim2 sync"| A1
     L1 -->|"produces traces"| V3
+    style ASTRA fill:#fff3e0
+    style BookSim fill:#fff3e0
+    style L1 fill:#f3e5f5
+    style LLM fill:#f3e5f5
+    style VeritX fill:#e8f5e9
 ```
 
 ### 9.1 BookSim2
@@ -1514,6 +1545,9 @@ flowchart TD
     CR --> DEP["E4: Dependencies[]\nsource, target\nkind (blocking/ordering)"]
     CR --> NC["E5: NocConfig\ntopology_family [GUIDED]\nradix [GUIDED]\nlink_width [GUIDED]\n---\nNO routing_function\nNO turn_restrictions\nNO vc_map\n(all LOCKED, derived)"]
     DEP --> VD["VC Derivation\n(blocks -> routing fn + VC count)"]
+    style CR fill:#e1f5fe
+    style VD fill:#f3e5f5
+    style W fill:#e1f5fe
 ```
 
 ```
@@ -1621,6 +1655,12 @@ flowchart LR
     S3 --> S4["4⃣ Verify\n F1-F8 checks\n Deadlock free\n Liveness"]
     S4 --> S5["5⃣ Generate\n UVM testbench\n Manifest\n HMAC signing"]
     S5 --> S6["6⃣ Report\n Area\n Power\n Timing"]
+    style S1 fill:#e8f5e9
+    style S2 fill:#e8f5e9
+    style S3 fill:#e8f5e9
+    style S4 fill:#e8f5e9
+    style S5 fill:#e8f5e9
+    style S6 fill:#e8f5e9
 ```
 
 ### Stage 1: Validate
@@ -1706,6 +1746,7 @@ flowchart TD
     G --> H{"vc_count > MAX?"}
     H -->|"No"| I["Return assignment\nN+1 VCs, min_adapt routing"]
     H -->|"Yes"| J[" ConfigError D1\nRemedy: reduce coupling"]
+    style J fill:#f3e5f5
 ```
 
 ---
@@ -1745,6 +1786,9 @@ flowchart TD
     I --> J
     J -->|"Yes"| K[" Verified\nFabric is correct"]
     J -->|"No"| L[" Counter-example\nWhich check failed + why"]
+    style J fill:#f3e5f5
+    style K fill:#f3e5f5
+    style L fill:#f3e5f5
 ```
 
 ---
@@ -2154,6 +2198,7 @@ flowchart TD
     Unit --> I1
     I1 -->|"All pass"| OK["Ready to commit"]
     I1 -->|"Any fail"| FIX["Fix and re-run"]
+    style OK fill:#f3e5f5
 ```
 
 ### 30.4 Test Philosophy
@@ -2186,6 +2231,9 @@ flowchart TD
     M -->|"Yes"| N["Increase --timeout\nor reduce trace size"]
     M -->|"No"| O["Check stderr for details"]
     L -->|"Yes"| P["All working"]
+    style J fill:#f3e5f5
+    style K fill:#f3e5f5
+    style L fill:#f3e5f5
 ```
 
 ### 31.1 "BookSim binary not found"
