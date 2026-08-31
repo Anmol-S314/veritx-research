@@ -35,14 +35,14 @@ graph TB
         TG --> CB["config_builder.py<br/>ASTRA-sim configs"]
         TG --> ET[".et trace files<br/>(Chakra event format)"]
         CB --> SYS["system.json<br/>(ring/gang config)"]
-        CB --> NET["network.yml<br/>(topology config)"]
+        CB --> NETCFG["network.yml<br/>(topology config)"]
     end
 
     subgraph "ASTRA-sim 2.0"
         direction TB
         ET --> AMAIN["main.cc<br/>(BookSim2 frontend)"]
         SYS --> AMAIN
-        NET --> AMAIN
+        NETCFG --> AMAIN
         AMAIN --> FABRIC["Booksim2Fabric<br/>(owns EmbedTM)"]
         FABRIC --> EVENTQ["EventQueue<br/>(cycle-based)"]
         EVENTQ --> NETAPI["Booksim2NetworkApi<br/>(sim_send/sim_recv)"]
@@ -55,8 +55,8 @@ graph TB
         NETAPI -->|"InjectUnicast / InjectMcast"| EMBED["veritx_embed.hpp<br/>(EmbedTM class)"]
         FABRIC -->|"CreateEmbeddedTM"| EMBED
         EMBED --> TM["TrafficManager<br/>(cycle-accurate sim)"]
-        TM --> NET["Network<br/>(mesh/torus/gec/flatfly)"]
-        NET --> ROUTERS["Routers<br/>(VC alloc, sw alloc)"]
+        TM --> FNET["Network<br/>(mesh/torus/gec/flatfly)"]
+        FNET --> ROUTERS["Routers<br/>(VC alloc, sw alloc)"]
         TM -->|"RetireFlit"| RET["_retired_q<br/>(completion events)"]
     end
 
@@ -306,8 +306,7 @@ sequenceDiagram
     CLI->>LLM: python -m serving --cluster-config ...
     LLM->>LLM: scheduler.route -> trace_generator
     LLM->>ASTRA: Generate .et files + system.json + network.yml
-    CLI->>ASTRA: AstraSim_BookSim2 --workload-configuration qwen_slice \
-                   --network-configuration 4npus_snake.cfg
+    CLI->>ASTRA: AstraSim_BookSim2 (workload + network + memory configs)
     ASTRA->>ASTRA: Parse Chakra .et traces
     ASTRA->>ASTRA: Sys.collective scheduling
     loop For each collective operation
