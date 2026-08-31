@@ -16,57 +16,57 @@
 
 ## Table of Contents
 
-- [1. What VeritX Does](#1-what-veritx-does)
-- [2. Repository Layout](#2-repository-layout)
-- [3. Quick Start](#3-quick-start)
-- [4. Full Build Guide](#4-full-build-guide)
-- [5. Command Reference](#5-command-reference)
-- [6. Trace Format & Generation](#6-trace-format--generation)
-- [7. Architecture](#7-architecture)
-- [8. Design Principles](#8-design-principles)
-- [9. Third-Party Dependencies](#9-third-party-dependencies)
-- [10. BookSim2 Deep Dive](#10-booksim2-deep-dive)
-- [11. ASTRA-sim Multi-Die Simulation](#11-astra-sim-multi-die-simulation)
-- [12. LLMServingSim Traffic Generation](#12-llmservingsim-traffic-generation)
-- [13. E1-E5 Data Model](#13-e1-e5-data-model)
-- [14. CompileRequest Format](#14-compilerequest-format)
-- [15. Compile Pipeline Stages](#15-compile-pipeline-stages)
-- [16. VC Derivation Algorithm](#16-vc-derivation-algorithm)
-- [17. Verification Properties (F1-F8)](#17-verification-properties-f1-f8)
-- [18. Output Format & Accuracy Caveats](#18-output-format--accuracy-caveats)
-- [19. Built-in Topologies](#19-built-in-topologies)
-- [20. Built-in Workload Presets](#20-built-in-workload-presets)
-- [21. Extending VeritX](#21-extending-veritx)
-- [22. Adding a New Topology](#22-adding-a-new-topology)
-- [23. Adding a New Workload Preset](#23-adding-a-new-workload-preset)
-- [24. Adding a New Agent Kind](#24-adding-a-new-agent-kind)
-- [25. Adding a New Dependency Kind](#25-adding-a-new-dependency-kind)
-- [26. Adding a New Engine Stage](#26-adding-a-new-engine-stage)
-- [27. Adding a New Report Type](#27-adding-a-new-report-type)
-- [28. Adding a New CLI Command](#28-adding-a-new-cli-command)
-- [29. Adding a New Verification Check](#29-adding-a-new-verification-check)
-- [30. Testing](#30-testing)
-- [31. Debugging & Troubleshooting](#31-debugging--troubleshooting)
-- [32. Common Pitfalls](#32-common-pitfalls)
-- [33. Performance Benchmarks](#33-performance-benchmarks)
-- [34. Research Findings](#34-research-findings)
-- [35. Comparison with Other Tools](#35-comparison-with-other-tools)
-- [36. Hardware Requirements](#36-hardware-requirements)
-- [37. Environment Setup](#37-environment-setup)
-- [38. CI/CD Integration](#38-cicd-integration)
-- [39. Security Considerations](#39-security-considerations)
-- [40. API Reference](#40-api-reference)
-- [41. Configuration Reference](#41-configuration-reference)
-- [42. Glossary](#42-glossary)
-- [43. Changelog](#43-changelog)
-- [44. Roadmap](#44-roadmap)
-- [45. Known Limitations](#45-known-limitations)
-- [46. FAQ](#46-faq)
-- [47. License](#47-license)
-- [48. Contributing](#48-contributing)
-- [49. References](#49-references)
-- [50. Support](#50-support)
-
+- [1. What VeritX Does](#what-veritx-does)
+- [2. Repository Layout](#repository-layout)
+- [3. Quick Start](#quick-start)
+- [4. Full Build Guide](#full-build-guide)
+- [5. Command Reference](#command-reference)
+- [6. Trace Format & Generation](#trace-format-generation)
+- [7. Architecture](#architecture)
+- [8. Design Principles](#design-principles)
+- [9. Third-Party Dependencies](#third-party-dependencies)
+- [10. BookSim2 Deep Dive](#booksim2-deep-dive)
+- [11. ASTRA-sim Multi-Die Simulation](#astra-sim-multi-die-simulation)
+- [12. LLMServingSim Traffic Generation](#llmservingsim-traffic-generation)
+- [13. E1-E5 Data Model](#e1-e5-data-model)
+- [14. CompileRequest Format](#compilerequest-format)
+- [15. Compile Pipeline Stages](#compile-pipeline-stages)
+- [16. VC Derivation Algorithm](#vc-derivation-algorithm)
+- [17. Verification Properties (F1-F8)](#verification-properties-f1-f8)
+- [18. Output Format & Accuracy Caveats](#output-format-accuracy-caveats)
+- [19. Built-in Topologies](#built-in-topologies)
+- [20. Built-in Workload Presets](#built-in-workload-presets)
+- [21. Extending VeritX](#extending-veritx)
+- [22. Adding a New Topology](#adding-a-new-topology)
+- [23. Adding a New Workload Preset](#adding-a-new-workload-preset)
+- [24. Adding a New Agent Kind](#adding-a-new-agent-kind)
+- [25. Adding a New Dependency Kind](#adding-a-new-dependency-kind)
+- [26. Adding a New Engine Stage](#adding-a-new-engine-stage)
+- [27. Adding a New Report Type](#adding-a-new-report-type)
+- [28. Adding a New CLI Command](#adding-a-new-cli-command)
+- [29. Adding a New Verification Check](#adding-a-new-verification-check)
+- [30. Integrating New Third-Party Tools](#integrating-new-third-party-tools)
+- [31. Testing](#testing)
+- [32. Debugging & Troubleshooting](#debugging-troubleshooting)
+- [33. Common Pitfalls](#common-pitfalls)
+- [34. Performance Benchmarks](#performance-benchmarks)
+- [35. Research Findings](#research-findings)
+- [36. Comparison with Other Tools](#comparison-with-other-tools)
+- [37. Hardware Requirements](#hardware-requirements)
+- [38. Environment Setup](#environment-setup)
+- [39. CI/CD Integration](#cicd-integration)
+- [40. Security Considerations](#security-considerations)
+- [41. API Reference](#api-reference)
+- [42. Configuration Reference](#configuration-reference)
+- [43. Glossary](#glossary)
+- [44. Changelog](#changelog)
+- [45. Roadmap](#roadmap)
+- [46. Known Limitations](#known-limitations)
+- [47. FAQ](#faq)
+- [48. License](#license)
+- [49. Contributing](#contributing)
+- [50. References](#references)
+- [51. Support](#support)
 ---
 
 ## 1. What VeritX Does
@@ -1839,14 +1839,6 @@ flowchart TD
 VeritX is designed for extensibility. Every component can be extended without modifying core code.
 
 **Extension points:**
-- [22. Adding a New Topology](#22-adding-a-new-topology)
-- [23. Adding a New Workload Preset](#23-adding-a-new-workload-preset)
-- [24. Adding a New Agent Kind](#24-adding-a-new-agent-kind)
-- [25. Adding a New Dependency Kind](#25-adding-a-new-dependency-kind)
-- [26. Adding a New Engine Stage](#26-adding-a-new-engine-stage)
-- [27. Adding a New Report Type](#27-adding-a-new-report-type)
-- [28. Adding a New CLI Command](#28-adding-a-new-cli-command)
-- [29. Adding a New Verification Check](#29-adding-a-new-verification-check)
 
 ---
 
@@ -2042,7 +2034,67 @@ checks.append(check_my_property(trace_output, vc_assignment))
 
 ---
 
-## 30. Testing
+## 30. Integrating New Third-Party Tools
+
+VeritX uses two directories for third-party tools. The distinction matters:
+
+| Directory | Purpose | You edit the source? | Example |
+|-----------|---------|---------------------|----------|
+| `third_party/` | Simulation engines we fork and modify | **Yes** -- we own the extensions | BookSim2 (trace replay, veritx_embed) |
+| `serving/` | Tools vendored from upstream | **No** -- read-only fork | ASTRA-sim, LLMServingSim |
+
+### Quick start: adding a new tool
+
+```bash
+# 1. Decide where it goes
+#    C/C++ engine we modify? -> third_party/
+#    Python tool or upstream vendor? -> serving/
+
+# 2. Create directory + copy source
+mkdir -p third_party/my-tool/src
+cp /path/to/source/* third_party/my-tool/src/
+
+# 3. Add METADATA.json
+echo '{"name":"my-tool","version":"1.0","pin":"abc123"}' > third_party/my-tool/METADATA.json
+
+# 4. Add .gitignore for build artifacts
+echo -e '*.o\n*.a\nmy-tool' > third_party/my-tool/src/.gitignore
+
+# 5. Add path to veritx_dse/paths.py
+#    MY_TOOL_DIR = REPO / "third_party" / "my-tool" / "src"
+#    MY_TOOL_BIN = MY_TOOL_DIR / "my-tool"
+
+# 6. Wire into CLI (optional)
+#    Add subparser in cli.py, import MY_TOOL_BIN
+
+# 7. Document in README.md
+```
+
+### Path resolution
+
+All tool paths are defined in `veritx_dse/paths.py` -- the SINGLE source of truth.
+When you add a tool, add its path there. Every module imports from paths.py.
+
+### Syncing source between locations
+
+Some tools appear in multiple places (e.g., BookSim2 in `third_party/` and inside
+ASTRA-sim). Use `third_party/booksim2/sync_to_astra.sh` as a pattern.
+
+### Build artifact management
+
+Build artifacts (`.o`, `.a`, `.so`, `build/`, `CMakeCache.txt`) must NOT be committed.
+- `third_party/*/src/.gitignore` catches artifacts in our forks
+- `serving/.gitignore` catches artifacts in vendored tools
+- Root `.gitignore` catches repo-wide patterns
+
+### Full guide
+
+See `docs/INTEGRATING-THIRD-PARTY-TOOLS.md` for the complete step-by-step guide
+with examples (Noxim integration, sync scripts, checklist).
+
+---
+
+## 31. Testing
 
 ### 30.1 Running Tests
 
@@ -2113,7 +2165,7 @@ flowchart TD
 
 ---
 
-## 31. Debugging & Troubleshooting
+## 32. Debugging & Troubleshooting
 
 ### Quick Diagnostic Flowchart
 
@@ -2203,7 +2255,7 @@ The repo contains traces up to 440MB. If disk space is a concern:
 
 ---
 
-## 32. Common Pitfalls
+## 33. Common Pitfalls
 
 ### 32.1 Building BookSim from the wrong directory
 
@@ -2239,7 +2291,7 @@ The repo contains traces up to 440MB. If disk space is a concern:
 
 ---
 
-## 33. Performance Benchmarks
+## 34. Performance Benchmarks
 
 ### 33.1 BookSim Simulation Speed
 
@@ -2267,7 +2319,7 @@ The repo contains traces up to 440MB. If disk space is a concern:
 
 ---
 
-## 34. Research Findings
+## 35. Research Findings
 
 ### 34.1 Topology Comparison Results
 
@@ -2297,7 +2349,7 @@ Torus beats mesh only where path length is the binding constraint:
 
 ---
 
-## 35. Comparison with Other Tools
+## 36. Comparison with Other Tools
 
 | Tool | What it does | VeritX advantage |
 |------|-------------|------------------|
@@ -2310,7 +2362,7 @@ Torus beats mesh only where path length is the binding constraint:
 
 ---
 
-## 36. Hardware Requirements
+## 37. Hardware Requirements
 
 ### Minimum
 
@@ -2339,7 +2391,7 @@ Torus beats mesh only where path length is the binding constraint:
 
 ---
 
-## 37. Environment Setup
+## 38. Environment Setup
 
 ### 37.1 Fresh Install
 
@@ -2382,7 +2434,7 @@ pip install pytest  # for testing
 
 ---
 
-## 38. CI/CD Integration
+## 39. CI/CD Integration
 
 ### 38.1 GitLab CI
 
@@ -2421,7 +2473,7 @@ jobs:
 
 ---
 
-## 39. Security Considerations
+## 40. Security Considerations
 
 ### 39.1 Path Traversal
 
@@ -2461,7 +2513,7 @@ VeritX never evaluates user-provided code. All configurations are parsed as data
 
 ---
 
-## 40. API Reference
+## 41. API Reference
 
 ### 40.1 Python API
 
@@ -2519,7 +2571,7 @@ print(result["simulation"]["latency"])  # 1850.64
 
 ---
 
-## 41. Configuration Reference
+## 42. Configuration Reference
 
 ### 41.1 Environment Variables
 
@@ -2547,7 +2599,7 @@ testpaths = ["tests"]
 
 ---
 
-## 42. Glossary
+## 43. Glossary
 
 | Term | Definition |
 |------|------------|
@@ -2570,7 +2622,7 @@ testpaths = ["tests"]
 
 ---
 
-## 43. Changelog
+## 44. Changelog
 
 ### v0.3.0 (2026-08-31)
 - Full compile pipeline (6 stages)
@@ -2593,7 +2645,7 @@ testpaths = ["tests"]
 
 ---
 
-## 44. Roadmap
+## 45. Roadmap
 
 ### Phase 1: Engine Core (P1) — ~80% complete
 - [x] E1-E5 data model
@@ -2625,7 +2677,7 @@ testpaths = ["tests"]
 
 ---
 
-## 45. Known Limitations
+## 46. Known Limitations
 
 1. **No RTL generation** — VeritX produces UVM testbenches and manifests, but not synthesizable RTL
 2. **No interactive UI** — CLI-only, no web interface
@@ -2638,7 +2690,7 @@ testpaths = ["tests"]
 
 ---
 
-## 46. FAQ
+## 47. FAQ
 
 ### Q: How accurate are the latency numbers?
 **A:** BookSim latency is cycle-accurate and deterministic. For the same trace and topology, you get the same result every time.
@@ -2660,13 +2712,13 @@ testpaths = ["tests"]
 
 ---
 
-## 47. License
+## 48. License
 
 Proprietary — VeritX Research Team
 
 ---
 
-## 48. Contributing
+## 49. Contributing
 
 ### 48.1 Development Workflow
 
@@ -2696,7 +2748,7 @@ Proprietary — VeritX Research Team
 
 ---
 
-## 49. References
+## 50. References
 
 1. **BookSim2** — Jiang et al., "A Detailed and Flexible Cycle-Accurate Network-on-Chip Simulator," ISPASS 2013
 2. **ASTRA-sim** — Mallappa et al., "Astra-sim: Enabling Co-design of Network-on-Chip and Collective Algorithms for DNN Training," ISPASS 2024
@@ -2706,7 +2758,7 @@ Proprietary — VeritX Research Team
 
 ---
 
-## 50. Support
+## 51. Support
 
 - **Issues:** https://internal-devrepo.datavex.ai/anmol/veritx-research/-/issues
 - **Docs:** This README + `docs/` directory
