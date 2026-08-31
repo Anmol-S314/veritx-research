@@ -20,8 +20,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from .logging import Ctx, log, ok, fail, verbose, debug
-from .presets import Topology, count_anynet_edges
+from ..core.logging import Ctx, log, ok, fail, verbose, debug
+from ..model.presets import Topology, count_anynet_edges
 
 
 # ── Errors ──────────────────────────────────────────────────────────────────
@@ -395,7 +395,7 @@ def run_sweep(
 
     Each result: {name, latency, hops, throughput, edges, error}.
     """
-    from .presets import SWEEP_TOPOS
+    from ..model.presets import SWEEP_TOPOS
     topos = topos or SWEEP_TOPOS
     results = []
     for topo in topos:

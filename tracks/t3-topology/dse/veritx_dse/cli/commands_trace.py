@@ -2,12 +2,12 @@
 from __future__ import annotations
 import sys
 from pathlib import Path
-from .logging import Ctx, log, ok, fail, verbose, banner, output
+from ..core.logging import Ctx, log, ok, fail, verbose, banner, output
 
 
 def cmd_trace_validate(ctx: Ctx, args):
     """Validate trace format and sanity-check before expensive BookSim runs."""
-    from .traces import validate_trace
+    from ..simulation.traces import validate_trace
     result = validate_trace(args.trace)
     if not result.valid:
         fail(ctx, f"Trace has {len(result.errors)} errors — fix before running BookSim")
@@ -34,7 +34,7 @@ def cmd_trace_validate(ctx: Ctx, args):
 
 def cmd_trace_info(ctx: Ctx, args):
     """Show detailed trace information."""
-    from .traces import validate_trace
+    from ..simulation.traces import validate_trace
     result = validate_trace(args.trace)
     if ctx.json_mode:
         output(ctx, result.to_dict())
@@ -62,7 +62,7 @@ def cmd_trace_info(ctx: Ctx, args):
 
 def cmd_trace_extract(ctx: Ctx, args):
     """Extract uniform traffic matrix from trace."""
-    from .traces import extract_uniform
+    from ..simulation.traces import extract_uniform
     matrix = extract_uniform(args.trace)
     Path(args.out).write_text(str(matrix))
     ok(ctx, f"Extracted {matrix.shape[0]}x{matrix.shape[1]} matrix → {args.out}")
@@ -70,7 +70,7 @@ def cmd_trace_extract(ctx: Ctx, args):
 
 def cmd_trace_slice(ctx: Ctx, args):
     """Slice trace by class."""
-    from .traces import slice_trace_by_class
+    from ..simulation.traces import slice_trace_by_class
     classes = [int(c) for c in args.classes.split(",")]
     kept, dropped = slice_trace_by_class(args.trace, args.out, classes, args.renumber)
     ok(ctx, f"Slice: {kept} packets kept, {dropped} dropped → {args.out}")

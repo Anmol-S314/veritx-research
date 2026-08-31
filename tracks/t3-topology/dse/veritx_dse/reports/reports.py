@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from .compile_model import CompileRequest
+from ..model.compile_model import CompileRequest
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -418,7 +418,7 @@ def generate_report(
         report["simulation"] = sim_result
 
     # Validation / VC assignment info (PRD §13 — all stages in report)
-    from .compile_model import derive_vc_assignment, verify_design, generate_artifacts
+    from ..model.compile_model import derive_vc_assignment, verify_design, generate_artifacts
     va = derive_vc_assignment(cr)
     report["vc_assignment"] = {
         "vc_count": va.vc_count,

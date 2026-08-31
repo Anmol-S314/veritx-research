@@ -3,7 +3,7 @@
 Single source of truth for all hardcoded values.
 Every 'magic number' in the codebase should reference these.
 """
-from veritx_dse.paths import REPO, DSE_DIR, BOOKSIM_BIN, RUNS_DIR
+from veritx_dse.core.paths import REPO, DSE_DIR, BOOKSIM_BIN, RUNS_DIR
 
 # ── BookSim defaults ─────────────────────────────────────────────────────────
 BOOKSIM_DEFAULTS = {

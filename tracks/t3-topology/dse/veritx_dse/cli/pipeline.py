@@ -18,19 +18,19 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .logging import Ctx, log, ok, fail, verbose, banner, print_human
-from .booksim import (
+from ..core.logging import Ctx, log, ok, fail, verbose, banner, print_human
+from ..simulation.booksim import (
     BookSimError, TimeoutError, detect_trace_stats, run_topology_eval,
     run_sweep, find_booksim_bin, build_config, run_booksim,
 )
-from .presets import (
+from ..model.presets import (
     Topology, SWEEP_TOPOS, DENSE_PRESETS, lookup_topo, make_anynet_topo,
     count_anynet_edges,
 )
 
 
 # ── Path constants ──────────────────────────────────────────────────────────
-from veritx_dse.paths import REPO, RUNS_DIR
+from veritx_dse.core.paths import REPO, RUNS_DIR
 
 
 def _repo_root() -> Path:

@@ -38,16 +38,16 @@ import sys
 import time
 from pathlib import Path
 
-from .logging import Ctx, log, ok, fail, verbose, banner, output, print_human
-from .presets import (
+from ..core.logging import Ctx, log, ok, fail, verbose, banner, output, print_human
+from ..model.presets import (
     Topology, SWEEP_TOPOS, DENSE_PRESETS, lookup_topo, make_anynet_topo,
     count_anynet_edges,
 )
-from .booksim import (
+from ..simulation.booksim import (
     BookSimError, TimeoutError, detect_trace_stats, run_topology_eval,
     run_sweep, find_booksim_bin, build_config, run_booksim, TraceStats,
 )
-from .traces import (
+from ..simulation.traces import (
     validate_trace, analyze_trace, extract_burst, extract_uniform,
     slice_trace,
 )
@@ -58,7 +58,7 @@ from .pipeline import (
 
 
 # ── Path constants ──────────────────────────────────────────────────────────
-from veritx_dse.paths import REPO, DSE_DIR, RUNS_DIR, BOOKSIM_BIN, ASTRA_BS_BIN
+from veritx_dse.core.paths import REPO, DSE_DIR, RUNS_DIR, BOOKSIM_BIN, ASTRA_BS_BIN
 
 SCRIPTS_DIR = DSE_DIR / "scripts"
 EXPERIMENTS_DIR = RUNS_DIR / "experiments"
@@ -254,7 +254,7 @@ def cmd_trace_model(ctx: Ctx, args):
     if not model_path.exists():
         fail(ctx, f"Traffic model not found: {args.model}")
         return
-    from .model_to_trace import main as model_main
+    from ..simulation.model_to_trace import main as model_main
     log(ctx, f"Converting traffic model {model_path.name}")
     sys.argv = ["model_to_trace", "--traffic-model", str(args.model),
                 "--nodes", str(args.nodes), "--out", str(args.out)]
@@ -320,7 +320,7 @@ def cmd_synthesize_iterative(ctx: Ctx, args):
 
 
 def cmd_evaluate_booksim(ctx: Ctx, args):
-    from veritx_dse.presets import lookup_topo, Topology
+    from veritx_dse.model.presets import lookup_topo, Topology
     if args.k < 2:
         fail(ctx, f"k must be >= 2, got {args.k}")
         return
@@ -705,7 +705,7 @@ def cmd_run(ctx: Ctx, args):
     try:
         log(ctx, "Step 1/4: Generating trace from traffic model")
         trace_path = run_dir / "input.trace"
-        from .model_to_trace import main as model_main
+        from ..simulation.model_to_trace import main as model_main
         sys.argv = ["model_to_trace", "--traffic-model", _resolve_path(args.model),
                     "--nodes", str(args.nodes), "--out", str(trace_path)]
         model_main()
@@ -898,13 +898,13 @@ def cmd_compile(ctx: Ctx, args):
 
     This is the PRD's 'intent-to-fabric compiler' entry point.
     """
-    from veritx_dse.compile_model import (
+    from veritx_dse.model.compile_model import (
         CompileRequest, validate, derive_topology_spec,
         derive_vc_assignment, Tier, OutputFormat,
     )
-    from veritx_dse.booksim import build_config, run_booksim, detect_trace_stats
-    from veritx_dse.reports import generate_report
-    from veritx_dse.artifact import DesignManifest
+    from veritx_dse.simulation.booksim import build_config, run_booksim, detect_trace_stats
+    from veritx_dse.reports.reports import generate_report
+    from veritx_dse.reports.artifact import DesignManifest
 
     # Step 1: Ingest — load CompileRequest from JSON
     cr_path = _resolve_path(args.request)
@@ -972,7 +972,7 @@ def cmd_compile(ctx: Ctx, args):
                 result = {}
 
     # ── Step 4/6: Verify — F1-F8 proof obligations ──
-    from veritx_dse.compile_model import verify_design
+    from veritx_dse.model.compile_model import verify_design
     log(ctx, "Step 4/6: Running verification checks...")
     vr_verify = verify_design(cr, topology_name=topo.backend)
     for check in vr_verify.checks:
@@ -984,8 +984,8 @@ def cmd_compile(ctx: Ctx, args):
     ok(ctx, f"Verification: {sum(1 for c in vr_verify.checks if c['status']=='PASS')}/{len(vr_verify.checks)} PASS")
 
     # ── Step 5/6: Generate — RTL + UVM + artifacts ──
-    from veritx_dse.compile_model import generate_artifacts
-    from veritx_dse.uvm_gen import generate_uvm
+    from veritx_dse.model.compile_model import generate_artifacts
+    from veritx_dse.verification.uvm_gen import generate_uvm
     log(ctx, "Step 5/6: Generating collateral...")
     artifacts = generate_artifacts(cr)
     log(ctx, f"  Tracked artifacts: {', '.join(a.kind for a in artifacts)}")
@@ -1063,8 +1063,8 @@ def cmd_compile(ctx: Ctx, args):
 
 def cmd_generate_uvm(ctx: Ctx, args):
     """Generate UVM testbench from CompileRequest."""
-    from veritx_dse.compile_model import CompileRequest, derive_vc_assignment
-    from veritx_dse.uvm_gen import generate_uvm
+    from veritx_dse.model.compile_model import CompileRequest, derive_vc_assignment
+    from veritx_dse.verification.uvm_gen import generate_uvm
 
     cr_path = _resolve_path(args.request)
     if not Path(cr_path).exists():
@@ -1158,7 +1158,7 @@ def _latex_to_html(latex: str, title: str) -> str:
 
 def cmd_init(ctx: Ctx, args):
     """Interactive wizard to generate a CompileRequest JSON."""
-    from veritx_dse.compile_model import (
+    from veritx_dse.model.compile_model import (
         CompileRequest, Workload, ModelFamily, ServingMode,
         Agent, AgentKind, Requirement, QoSClass,
         Dependency, DepKind, DependencyGraph, NocConfig, TopologyFamily,
@@ -1363,7 +1363,7 @@ BANNER = r"""
 """
 
 def build_parser() -> argparse.ArgumentParser:
-    from . import __version__
+    from .. import __version__
     parser = argparse.ArgumentParser(
         prog="veritx",
         description=(
@@ -1450,7 +1450,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_bs = es.add_parser("booksim", help="BookSim2 mesh trace replay")
     p_bs.add_argument("--trace", required=True)
     p_bs.add_argument("--k", type=int, default=8)
-    from veritx_dse.presets import _TOPO_BY_BACKEND
+    from veritx_dse.model.presets import _TOPO_BY_BACKEND
     known_backends = sorted(_TOPO_BY_BACKEND.keys())
     p_bs.add_argument("--topo", default="mesh",
                         help=f"Topology backend (any BookSim topology: {', '.join(known_backends)}, or anynet path)")
@@ -1654,7 +1654,7 @@ _SUB_DESTS = {
 
 
 def main():
-    from . import __version__
+    from .. import __version__
     parser = build_parser()
     args = parser.parse_args()
 

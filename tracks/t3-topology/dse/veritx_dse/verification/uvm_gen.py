@@ -19,7 +19,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-from .compile_model import (
+from ..model.compile_model import (
     CompileRequest, DependencyGraph, derive_vc_assignment,
     AgentKind, TopologyFamily,
 )

@@ -6,7 +6,7 @@ Overridable via environment variables.
 from __future__ import annotations
 import os
 from pathlib import Path
-from veritx_dse.paths import REPO, DSE_DIR, RUNS_DIR
+from veritx_dse.core.paths import REPO, DSE_DIR, RUNS_DIR
 
 
 class Config:
