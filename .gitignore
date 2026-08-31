@@ -64,3 +64,6 @@ LICENSE
 
 # Confidential programme docs
 VeritX_BTech_6Month_Programme.txt
+
+# Old vendored tools (20GB, not needed)
+vendor-archive/
