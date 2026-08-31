@@ -122,8 +122,6 @@ cmd_help() {
     sim           Uniform-traffic Booksim sweep
     astrasim      ASTRA-Sim 2.0 spine (chakra trace -> astrasim -> sweep -> energy)
     astrasim-workload Full ASTRA-Sim workload pipeline across models (LLaMA-7B, LLaMA-70B, etc.)
-    timeloop      [Legacy Alias] Ported to astrasim pipeline
-    timeloop-workload [Legacy Alias] Ported to astrasim-workload pipeline
 
   ANALYSIS & REPORTING
     analysis      Load sweep JSON -> DataFrame summary (PA-01)
