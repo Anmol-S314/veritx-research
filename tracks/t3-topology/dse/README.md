@@ -157,9 +157,11 @@ veritx-research/                           repo root
         AstraSim_BookSim2              multi-die binary
       examples/network/ns3/            network configs (4/8/16 nodes)
     LLMServingSim/                     traffic trace generator (KAIST)
-      serving/                         Python frontend (vLLM scheduler)
-      configs/                         workload configurations
-    booksim2-embed/                    BookSim2 embedding C++ library
+      serving/                         trace generation pipeline
+      profiler/                        measured module latencies
+      traces/                          cited run traces + configs
+      workloads/                       input workload JSONLs
+    results/                           3-way comparison results
 
   runs/
     traces/                            traffic traces for simulation
