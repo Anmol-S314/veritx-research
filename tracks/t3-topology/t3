@@ -120,8 +120,10 @@ cmd_help() {
 
   SIMULATION & PIPELINES
     sim           Uniform-traffic Booksim sweep
-    timeloop      Timeloop spine (timeloop -> matrix -> sweep -> energy)
-    timeloop-workload Full Timeloop workload pipeline
+    astrasim      ASTRA-Sim 2.0 spine (chakra trace -> astrasim -> sweep -> energy)
+    astrasim-workload Full ASTRA-Sim workload pipeline across models (LLaMA-7B, LLaMA-70B, etc.)
+    timeloop      [Legacy Alias] Ported to astrasim pipeline
+    timeloop-workload [Legacy Alias] Ported to astrasim-workload pipeline
 
   ANALYSIS & REPORTING
     analysis      Load sweep JSON -> DataFrame summary (PA-01)
@@ -129,11 +131,11 @@ cmd_help() {
     plot          Latency-throughput curves -> latency_curves.png (PA-03)
     all           Run analysis -> aggregate -> plot in sequence
     report        Run full analysis & aggregate report
-    energy        Timeloop energy breakdown
+    energy        NoC & workload energy breakdown
     dashboard     Build Plotly dashboard
 
   DEVELOPMENT
-    selfcheck     Run --selfcheck on analysis, aggregate, plot_curves
+    selfcheck     Run --selfcheck on analysis, aggregate, plot_curves, astrasim, chakra
     lint          Syntax-check Python scripts
     clean         Remove results/ and __pycache__
 
@@ -181,9 +183,9 @@ cmd_check() {
         && _ok "booksim     → $(command -v "$BOOKSIM_BIN")" \
         || _warn "booksim not on PATH"
 
-    command -v timeloop-mapper &>/dev/null \
-        && _ok "timeloop    → $(command -v timeloop-mapper)" \
-        || _warn "timeloop-mapper not found"
+    command -v astrasim &>/dev/null \
+        && _ok "astrasim    → $(command -v astrasim)" \
+        || _warn "astrasim binary not found (using BookSim engine backend fallback)"
 
     command -v accelergy &>/dev/null \
         && _ok "accelergy   → $(command -v accelergy)" \
@@ -191,7 +193,7 @@ cmd_check() {
 
     [ -f "$T3_RESULTS/topology_sweep.json" ] \
         && _ok "sweep JSON  → $T3_RESULTS/topology_sweep.json" \
-        || _warn "No sweep JSON yet  (run: t3 sim)"
+        || _warn "No sweep JSON yet  (run: t3 sim or t3 astrasim)"
     echo ""
 }
 
@@ -233,14 +235,22 @@ cmd_sim() {
     ( cd "$T3_DIR" && RATES="$RATES" _py "$T3_SCRIPTS/run_experiments.py" "$@" )
 }
 
+cmd_astrasim() {
+    _banner "ASTRA-Sim 2.0 Workload Pipeline"
+    ( cd "$T3_DIR" && make astrasim CONFIG="${CONFIG:-baseline}" MODEL="${MODEL:-llama7b}" )
+}
+
+cmd_astrasim_workload() {
+    _banner "ASTRA-Sim 2.0 Model Workload Pipeline"
+    ( cd "$T3_DIR" && make astrasim-workload CONFIG="${CONFIG:-baseline}" MODEL="${MODEL:-llama7b}" )
+}
+
 cmd_timeloop() {
-    _banner "Full spine: Timeloop -> matrix -> sweep"
-    ( cd "$T3_DIR" && make timeloop )
+    cmd_astrasim "$@"
 }
 
 cmd_timeloop_workload() {
-    _banner "Timeloop Workload Pipeline"
-    ( cd "$T3_DIR" && make timeloop-workload CONFIG="${CONFIG:-baseline}" )
+    cmd_astrasim_workload "$@"
 }
 
 cmd_report() {
@@ -255,34 +265,18 @@ cmd_dashboard() {
 
 cmd_energy() {
     _banner "Energy breakdown"
-    local stats=""
-    for candidate in \
-        "$T3_DIR/timeloop/timeloop-mapper.stats.txt" \
-        "$T3_RESULTS/timeloop.stats.txt" \
-        "$T3_DIR/results/timeloop.stats.txt" \
-        "$T3_DIR/results/${CONFIG:-baseline}/timeloop.stats.txt"; do
-        if [ -f "$candidate" ] && grep -q "Summary Stats" "$candidate" 2>/dev/null; then
-            stats="$candidate"
-            break
-        fi
-    done
-
-    if [ -z "$stats" ]; then
-        if [ -f "$T3_DIR/timeloop/timeloop-mapper.stats.txt" ]; then
-            stats="$T3_DIR/timeloop/timeloop-mapper.stats.txt"
-        else
-            _warn "No Timeloop stats file with Summary Stats — run 't3 timeloop' first"
-            exit 1
-        fi
-    fi
-    _py "$T3_SCRIPTS/energy_report.py" "$stats"
+    _py "$T3_SCRIPTS/noc_energy_bridge.py" --config "${CONFIG:-baseline}"
 }
 
 cmd_selfcheck() {
-    _banner "Selfcheck — all PA scripts"
-    _py "$T3_SCRIPTS/analysis.py"   --selfcheck && _ok "analysis.py   OK"
-    _py "$T3_SCRIPTS/aggregate.py"  --selfcheck && _ok "aggregate.py  OK"
-    _py "$T3_SCRIPTS/plot_curves.py" --selfcheck && _ok "plot_curves.py OK"
+    _banner "Selfcheck — all PA + ASTRA-Sim scripts"
+    _py "$T3_SCRIPTS/generate_chakra_trace.py" --selfcheck && _ok "generate_chakra_trace.py OK"
+    _py "$T3_SCRIPTS/astrasim_adapter.py"     --selfcheck && _ok "astrasim_adapter.py     OK"
+    _py "$T3_SCRIPTS/run_astrasim.py"         --selfcheck && _ok "run_astrasim.py         OK"
+    _py "$T3_SCRIPTS/run_llama7b.py"          --selfcheck && _ok "run_llama7b.py          OK"
+    _py "$T3_SCRIPTS/analysis.py"              --selfcheck && _ok "analysis.py              OK"
+    _py "$T3_SCRIPTS/aggregate.py"             --selfcheck && _ok "aggregate.py             OK"
+    _py "$T3_SCRIPTS/plot_curves.py"            --selfcheck && _ok "plot_curves.py            OK"
 }
 
 cmd_lint() {
@@ -315,7 +309,9 @@ case "$COMMAND" in
     plot)                 cmd_plot "$@"         ;;
     all)                  cmd_all               ;;
     sim)                  cmd_sim "$@"          ;;
-    timeloop)             cmd_timeloop          ;;
+    astrasim)             cmd_astrasim "$@"     ;;
+    astrasim-workload)    cmd_astrasim_workload ;;
+    timeloop)             cmd_timeloop "$@"     ;;
     timeloop-workload)    cmd_timeloop_workload ;;
     report|pa-report)     cmd_report            ;;
     dashboard)            cmd_dashboard "$@"    ;;
