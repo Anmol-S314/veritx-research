@@ -188,7 +188,12 @@ def cmd_trace_slice(ctx: Ctx, args):
 
 def cmd_trace_chakra(ctx: Ctx, args):
     sys.path.insert(0, str(SCRIPTS_DIR))
-    from chakra_to_dse import main as chakra_main
+    try:
+        from chakra_to_dse import main as chakra_main
+    except ImportError:
+        fail(ctx, "chakra_to_dse module not found in scripts/")
+        fail(ctx, "Run: git checkout -- scripts/chakra_to_dse.py")
+        return
 
     et_path = Path(args.et_dir)
     if et_path.is_dir():

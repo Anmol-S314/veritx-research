@@ -1,1 +1,0 @@
-../chakra_to_dse.py

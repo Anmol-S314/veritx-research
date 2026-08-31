@@ -28,8 +28,9 @@ DSE_DIR = Path(__file__).parent.parent  # dse/ (tests/ is one level deeper)
 REPO = DSE_DIR.parent.parent.parent
 CLI = [sys.executable, "-m", "veritx_dse.cli"]
 EXAMPLES_DIR = DSE_DIR / "examples"  # dse/examples/
-TRACES_DIR = REPO / "runs" / "traces"
-QWEN_TRACE = TRACES_DIR / "qwen3_serving_16rank.trace"
+TRACES_DIR = DSE_DIR / "inputs"
+QWEN_TRACE = TRACES_DIR / "qwen3_serving_astra.trace"
+TINY_TRACE = TRACES_DIR / "test_dynamic.trace"  # 130 lines, runs in <5s
 
 
 def _cli(*args: str, input_text: str = "\n", timeout: int = 60,
@@ -215,36 +216,32 @@ class TestGenerateUVM:
 class TestComparePipeline:
     """veritx compare — head-to-head topology comparison."""
 
-    @pytest.mark.skipif(not QWEN_TRACE.exists(), reason="Qwen3 trace not found")
+    @pytest.mark.skipif(not TINY_TRACE.exists(), reason="test_dynamic.trace not found")
     def test_compare_mesh_vs_torus(self):
         """compare mesh_8x8 vs torus_8x8 → produces result table."""
         result = _cli(
             "compare",
-            "--trace", str(QWEN_TRACE),
+            "--trace", str(TINY_TRACE),
             "--topos", "mesh_8x8,torus_8x8",
             "--seeds", "1",
-            "--timeout", "30",
-            timeout=90,
+            "--timeout", "10",
+            timeout=30,
         )
+        assert result.returncode == 0, f"Compare failed: {result.stderr[-300:]}"
         stdout = result.stdout.lower()
-        # Accept either success or timeout (trace is large)
-        if result.returncode == 0:
-            assert "mesh" in stdout and "torus" in stdout
-        else:
-            # Compare might fail if trace too large — that's acceptable
-            assert "timeout" in stdout.lower() or "error" in result.stderr.lower()
+        assert "mesh" in stdout and "torus" in stdout
 
-    @pytest.mark.skipif(not QWEN_TRACE.exists(), reason="Qwen3 trace not found")
+    @pytest.mark.skipif(not TINY_TRACE.exists(), reason="test_dynamic.trace not found")
     def test_compare_json_output(self):
         """compare --json → valid JSON."""
         result = _cli(
             "compare",
-            "--trace", str(QWEN_TRACE),
+            "--trace", str(TINY_TRACE),
             "--topos", "mesh_8x8",
             "--seeds", "1",
-            "--timeout", "30",
+            "--timeout", "10",
             "--json",
-            timeout=90,
+            timeout=30,
         )
         if result.returncode == 0 and result.stdout.strip():
             try:

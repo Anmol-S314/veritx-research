@@ -228,7 +228,10 @@ def list_runs(ctx: Ctx, last: int = 20, run_id: str | None = None):
             return
         manifest_path = target / "manifest.json"
         if manifest_path.exists():
-            m = json.loads(manifest_path.read_text())
+            try:
+                m = json.loads(manifest_path.read_text())
+            except (json.JSONDecodeError, OSError):
+                m = {}
             banner(ctx, f"Run: {run_id}")
             for k, v in m.items():
                 print(f"  {k:<25} {v}")
@@ -252,7 +255,10 @@ def list_runs(ctx: Ctx, last: int = 20, run_id: str | None = None):
     for run in runs:
         manifest = run / "manifest.json"
         if manifest.exists():
-            m = json.loads(manifest.read_text())
+            try:
+                m = json.loads(manifest.read_text())
+            except (json.JSONDecodeError, OSError):
+                continue
             ts = m.get("timestamp", "?")[:19]
             dur = f"{m.get('duration_s', '?')}s"
             model = Path(m.get("model", "?")).name[:20]
@@ -283,7 +289,10 @@ def show_results(ctx: Ctx, last: int = 5):
 
     jsons = jsons[:last]
     for jf in jsons:
-        data = json.loads(jf.read_text())
+        try:
+            data = json.loads(jf.read_text())
+        except (json.JSONDecodeError, OSError):
+            continue
         name = jf.stem
         ts = datetime.fromtimestamp(jf.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
         print(f"\n  \033[1m{name}\033[0m ({ts})")
@@ -342,7 +351,12 @@ def diff_runs(ctx: Ctx, run_a: str | None = None, run_b: str | None = None):
 
     def _load(run):
         m = run / "manifest.json"
-        return json.loads(m.read_text()) if m.exists() else {}
+        if not m.exists():
+            return {}
+        try:
+            return json.loads(m.read_text())
+        except (json.JSONDecodeError, OSError):
+            return {}
 
     mA = _load(a)
     mB = _load(b)
@@ -385,7 +399,10 @@ def diff_runs(ctx: Ctx, run_a: str | None = None, run_b: str | None = None):
 
 def generate_latex(ctx: Ctx, json_path: str, caption: str, label: str) -> str:
     """Generate a LaTeX table from compare or pareto JSON results."""
-    data = json.loads(Path(json_path).read_text())
+    try:
+        data = json.loads(Path(json_path).read_text())
+    except (json.JSONDecodeError, OSError) as e:
+        return f"% Error reading {json_path}: {e}"
 
     if "summary" in data:
         rows = data["summary"]
