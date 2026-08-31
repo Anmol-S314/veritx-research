@@ -67,3 +67,23 @@ VeritX_BTech_6Month_Programme.txt
 
 # Old vendored tools (20GB, not needed)
 vendor-archive/
+
+# Verilator build output
+obj_dir/
+obj_dir_*/
+
+# RTL generation output
+tracks/t3-topology/scripts/rtlgen/mesh_*/
+tracks/t3-topology/scripts/rtlgen/.noc_*/
+tracks/t3-topology/scripts/rtlgen/router_formal/
+
+# Formal verification output
+*.sby/
+status
+status.sqlite
+ERROR
+logfile.txt
+
+# Symlinks to other dirs
+serving/LLMServingSim/astra-sim/
+third_party/timeloop
