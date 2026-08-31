@@ -1,0 +1,22 @@
+{
+  "product": "Training all-reduce exchange NoC",
+  "notes": "Customer: '64 workers train a dense model; every step two halves exchange gradient halves over the chip fabric (all-reduce ring folded to bisection exchange).'",
+  "endpoints": {
+    "count": 64,
+    "layout": "grid",
+    "groups": [
+      {"name": "east", "members": [32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63]},
+      {"name": "west", "members": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]}
+    ]
+  },
+  "flows": [
+    {"name": "grad_exchange_east2west", "src": "group:east", "dst": "group:west", "bw_gbps": 256,
+     "protocol": "AXI4", "rw": "RW", "pkt_size_b": 64, "ordering": "relaxed"},
+    {"name": "grad_exchange_west2east", "src": "group:west", "dst": "group:east", "bw_gbps": 256,
+     "protocol": "AXI4", "rw": "RW", "pkt_size_b": 64, "ordering": "relaxed"}
+  ],
+  "budgets": {"radix_max": 5, "vcs_max": 4, "buf_depth": 8, "clock_mhz": 1000},
+  "physical": {"fabric": "monolithic"},
+  "reliability": {"ecc": "secdec", "safety_level": "QM"},
+  "verification_intent": {"level": "sim", "checks": ["deadlock", "liveness", "qos"]}
+}

@@ -1,0 +1,24 @@
+{
+  "product": "Qwen-MoE-64B serving accelerator NoC",
+  "notes": "Derived from customer statement: '64 compute endpoints on monolithic die, 8 HBM channels for weights/KV, expert dispatch every token with top-4 routing, KV reads latency-critical under 40ns, everything else best effort. AXI4, 1GHz, radix budget 5.'",
+  "endpoints": {
+    "count": 64,
+    "layout": "grid",
+    "groups": [
+      {"name": "hbm", "members": [0, 7, 56, 63]},
+      {"name": "compute", "members": [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15]}
+    ]
+  },
+  "flows": [
+    {"name": "expert_dispatch", "src": "all", "dst": "all", "bw_gbps": 512,
+     "protocol": "AXI4", "rw": "W", "pkt_size_b": 64, "ordering": "relaxed"},
+    {"name": "kv_reads", "src": "compute", "dst": "group:hbm", "bw_gbps": 256,
+     "protocol": "AXI4", "rw": "R", "latency_budget_ns": 40, "ordering": "strict"},
+    {"name": "weight_stream", "src": "group:hbm", "dst": "all", "bw_gbps": 1024,
+     "protocol": "AXI4", "rw": "R", "latency_budget_ns": 80}
+  ],
+  "budgets": {"radix_max": 5, "vcs_max": 4, "buf_depth": 8, "clock_mhz": 1000},
+  "physical": {"fabric": "monolithic"},
+  "reliability": {"ecc": "secdec", "safety_level": "QM"},
+  "verification_intent": {"level": "sim", "checks": ["deadlock", "liveness", "qos"]}
+}

@@ -1,0 +1,21 @@
+{
+  "product": "Hotspot memory-access NoC",
+  "notes": "Customer: '64 cores; most traffic uniform, but a hot shard (6 cores) receives most accesses; hot flow must be low-latency guaranteed.'",
+  "endpoints": {
+    "count": 64,
+    "layout": "grid",
+    "groups": [
+      {"name": "hot", "members": [16, 17, 24, 25, 26, 27]}
+    ]
+  },
+  "flows": [
+    {"name": "uniform", "src": "all", "dst": "all", "bw_gbps": 64,
+     "protocol": "AXI4", "rw": "RW", "pkt_size_b": 64, "ordering": "relaxed"},
+    {"name": "hot_access", "src": "all", "dst": "group:hot", "bw_gbps": 512,
+     "protocol": "AXI4", "rw": "R", "pkt_size_b": 64, "latency_budget_ns": 30, "ordering": "strict"}
+  ],
+  "budgets": {"radix_max": 5, "vcs_max": 4, "buf_depth": 8, "clock_mhz": 1000},
+  "physical": {"fabric": "monolithic"},
+  "reliability": {"ecc": "secdec", "safety_level": "QM"},
+  "verification_intent": {"level": "sim", "checks": ["deadlock", "liveness", "qos"]}
+}
