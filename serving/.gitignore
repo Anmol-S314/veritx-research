@@ -1,0 +1,22 @@
+# Build artifacts (not in git — rebuilt from source)
+**/build/
+**/build_debug/
+**/CMakeCache.txt
+**/CMakeFiles/
+**/cmake_install.cmake
+**/Makefile
+**/*.o
+**/*.a
+**/*.so
+**/*.pyc
+**/__pycache__/
+
+# Runtime artifacts
+**/*.log
+**/bin/AstraSim_BookSim2
+**/lib/
+
+# LLMServingSim runtime
+LLMServingSim/debug.log
+LLMServingSim/log/
+LLMServingSim/traces/run_*/workload/
