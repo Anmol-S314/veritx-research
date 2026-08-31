@@ -279,7 +279,11 @@ def cmd_synthesize_bo(ctx: Ctx, args):
 
     results_path = RUNS_DIR / "booksim" / f"bo_results_N{args.nodes}.json"
     if results_path.exists():
-        data = json.loads(results_path.read_text())
+        try:
+            data = json.loads(results_path.read_text())
+        except (json.JSONDecodeError, OSError) as e:
+            fail(ctx, f"Failed to parse results: {e}")
+            return
         ok(ctx, f"Best analytical: {data.get('best_latency', '?')}c")
         ok(ctx, f"BookSim validated: {data.get('booksim_latency', '?')}c")
         ok(ctx, f"Results: {results_path}")
@@ -708,7 +712,11 @@ def cmd_run(ctx: Ctx, args):
                           check=True, cwd=str(REPO))
             bo_results = RUNS_DIR / "booksim" / f"bo_results_N{args.nodes}.json"
             if bo_results.exists():
-                data = json.loads(bo_results.read_text())
+                try:
+                    data = json.loads(bo_results.read_text())
+                except (json.JSONDecodeError, OSError) as e:
+                    fail(ctx, f"Failed to parse BO results: {e}")
+                    data = {}
                 manifest["best_latency_analytical"] = data.get("best_latency")
                 manifest["best_latency_booksim"] = data.get("booksim_latency")
                 manifest["best_params"] = data.get("best_params")
@@ -924,23 +932,24 @@ def cmd_compile(ctx: Ctx, args):
     # ── Step 3/6: Simulate — BookSim cycle-accurate ──
     log(ctx, "Step 3/6: Running BookSim simulation...")
     trace_raw = cr.workload.trace_path
+    trace = None
+    result = {}
     if not trace_raw:
-        fail(ctx, "No trace_path in workload")
-        return
-    trace = _resolve_path(trace_raw)
-    if not Path(trace).exists():
-        fail(ctx, f"Trace not found: {trace_raw} (resolved: {trace})")
-        fail(ctx, "Set workload.trace_path to a valid .trace file")
-        return
-
-    config = build_config(topo, trace, seed=ctx.seed)
-    try:
-        result = run_booksim(ctx, config, repo_root=REPO, timeout=args.timeout)
-        result["seed"] = ctx.seed
-        ok(ctx, f"Latency: {result['latency']:.2f}c | Hops: {result.get('hops', '?')}")
-    except Exception as e:
-        fail(ctx, f"BookSim failed: {e}")
-        result = {}
+        log(ctx, "  No trace_path in workload — skipping simulation")
+    else:
+        trace = _resolve_path(trace_raw)
+        if not Path(trace).exists():
+            log(ctx, f"  Trace not found: {trace_raw} (resolved: {trace})")
+            log(ctx, "  Skipping simulation — using analytical estimates only")
+        else:
+            config = build_config(topo, trace, seed=ctx.seed)
+            try:
+                result = run_booksim(ctx, config, repo_root=REPO, timeout=args.timeout)
+                result["seed"] = ctx.seed
+                ok(ctx, f"Latency: {result['latency']:.2f}c | Hops: {result.get('hops', '?')}")
+            except Exception as e:
+                fail(ctx, f"BookSim failed: {e}")
+                result = {}
 
     # ── Step 4/6: Verify — F1-F8 proof obligations ──
     from veritx_dse.compile_model import verify_design
