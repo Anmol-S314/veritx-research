@@ -110,7 +110,7 @@ def cmd_trace_model(ctx: Ctx, args):
     out_path.parent.mkdir(parents=True, exist_ok=True)
     log(ctx, f"Converting traffic model {traffic_model.name}")
     r = subprocess.run(
-        [sys.executable, str(DSE_DIR / "traffic_model_compiler.py"),
+        [sys.executable, str(DSE_DIR / "scripts" / "traffic_model_compiler.py"),
          str(traffic_model.resolve()), "--nodes", str(args.nodes),
          "--out", str(out_path.resolve())],
         capture_output=True, text=True, timeout=60, cwd=str(REPO)

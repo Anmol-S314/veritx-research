@@ -10,10 +10,13 @@ Modules:
 - compile_model:  PRD §11 — E1-E5 data model, guardrails, VC derivation
 - reports:        PRD §7 — area/power/timing reports
 - artifact:       PRD §12 — artifact signing and design manifests
-- evaluator:      BookSim simulation runner with caching (legacy)
-- bo_synthesizer: Bayesian optimization topology synthesis
-- traffic_model:  Unified phase-aware traffic model
-- milestone_b/c/d: Synthesis, certification, ASTRA-sim validation
+- commands_trace: CLI commands for trace info/validate/extract/model/chakra
+- uvm_gen:        UVM testbench generation from CompileRequest
+- config:         BookSim config generation from Topology
+- constants:      Centralized magic numbers
+- errors:         Structured error hierarchy
+- recovery:       Atomic writes and temp directory management
+- paths:          Single-source path resolution for all tools
 """
 
 __version__ = "0.3.0"
