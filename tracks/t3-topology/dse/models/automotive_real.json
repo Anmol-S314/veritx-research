@@ -1,0 +1,68 @@
+{
+  "source": "LIST vnc2024-traces (real COTS TSN testbed, CC BY-SA 4.0)",
+  "num_batches_analyzed": 1,
+  "compute": {
+    "avg_cycles_per_batch": 50000000,
+    "total_weight_bytes": 0
+  },
+  "memory": {
+    "total_weight_bytes": 0,
+    "weight_streaming_dominates": false
+  },
+  "network": {
+    "flow_classes": [
+      {
+        "name": "lidar_fusion",
+        "comm_type": "P2P",
+        "bytes_per_invocation": 1290,
+        "invocations_per_batch": 23716,
+        "priority": 3,
+        "deadline_hint_cycles": 100000,
+        "is_expert_parallel": false,
+        "instances": [
+          {
+            "participants": [
+              0,
+              1
+            ]
+          }
+        ]
+      },
+      {
+        "name": "camera_fusion",
+        "comm_type": "P2P",
+        "bytes_per_invocation": 1419,
+        "invocations_per_batch": 22684,
+        "priority": 2,
+        "deadline_hint_cycles": 330000,
+        "is_expert_parallel": false,
+        "instances": [
+          {
+            "participants": [
+              2,
+              1
+            ]
+          }
+        ]
+      }
+    ],
+    "constraints": {
+      "peak_injection_rate": 0.01,
+      "avg_injection_rate": 0.005,
+      "burst_ratio": 1.0,
+      "compute_network_ratio": 100.0
+    }
+  },
+  "phases": [
+    {
+      "type": "steady_state",
+      "priority": "high"
+    }
+  ],
+  "real_traces": {
+    "lidar": "/tmp/automotive_lidar.trace",
+    "camera": "/tmp/automotive_camera.trace",
+    "license": "CC BY-SA 4.0",
+    "source": "LIST Luxembourg, VNC 2024"
+  }
+}

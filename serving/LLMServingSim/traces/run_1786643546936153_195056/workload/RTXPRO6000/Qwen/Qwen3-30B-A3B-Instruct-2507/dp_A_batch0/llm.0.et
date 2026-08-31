@@ -1,0 +1,1173 @@
+»∏
+schemaÍ1.0.2-chakra.0.0.4•∏
+
+input_fileÍî∏COLOCATED		model_parallel_NPU_group: 1
+580
+Layername                     comp_time      input_loc      input_size     weight_loc     weight_size    output_loc     output_size    comm_type      comm_size      misc           
+embedding_0                   5909           REMOTE:0       8192           LOCAL          311164928      LOCAL          8388608        NONE           0              NONE           
+layernorm_1                   6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_2                    64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_3                     22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_4                  8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_5                   102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_6                      61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_7                   6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_9                      553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_11                     553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_13                  6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_14                   64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_15                    22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_16                 8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_17                  102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_18                     61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_19                  6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_21                     553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_23                     553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_25                  6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_26                   64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_27                    22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_28                 8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_29                  102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_30                     61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_31                  6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_33                     553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_35                     553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_37                  6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_38                   64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_39                    22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_40                 8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_41                  102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_42                     61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_43                  6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_45                     553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_47                     553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_49                  6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_50                   64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_51                    22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_52                 8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_53                  102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_54                     61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_55                  6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_57                     553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_59                     553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_61                  6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_62                   64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_63                    22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_64                 8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_65                  102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_66                     61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_67                  6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_69                     553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_71                     553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_73                  6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_74                   64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_75                    22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_76                 8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_77                  102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_78                     61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_79                  6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_81                     553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_83                     553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_85                  6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_86                   64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_87                    22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_88                 8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_89                  102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_90                     61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_91                  6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_93                     553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_95                     553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_97                  6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_98                   64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_99                    22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_100                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_101                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_102                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_103                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_105                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_107                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_109                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_110                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_111                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_112                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_113                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_114                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_115                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_117                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_119                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_121                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_122                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_123                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_124                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_125                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_126                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_127                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_129                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_131                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_133                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_134                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_135                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_136                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_137                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_138                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_139                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_141                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_143                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_145                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_146                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_147                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_148                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_149                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_150                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_151                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_153                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_155                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_157                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_158                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_159                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_160                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_161                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_162                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_163                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_165                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_167                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_169                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_170                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_171                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_172                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_173                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_174                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_175                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_177                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_179                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_181                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_182                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_183                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_184                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_185                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_186                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_187                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_189                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_191                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_193                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_194                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_195                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_196                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_197                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_198                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_199                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_201                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_203                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_205                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_206                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_207                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_208                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_209                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_210                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_211                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_213                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_215                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_217                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_218                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_219                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_220                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_221                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_222                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_223                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_225                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_227                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_229                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_230                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_231                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_232                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_233                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_234                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_235                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_237                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_239                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_241                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_242                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_243                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_244                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_245                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_246                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_247                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_249                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_251                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_253                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_254                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_255                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_256                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_257                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_258                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_259                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_261                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_263                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_265                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_266                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_267                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_268                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_269                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_270                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_271                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_273                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_275                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_277                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_278                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_279                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_280                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_281                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_282                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_283                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_285                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_287                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_289                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_290                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_291                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_292                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_293                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_294                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_295                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_297                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_299                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_301                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_302                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_303                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_304                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_305                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_306                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_307                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_309                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_311                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_313                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_314                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_315                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_316                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_317                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_318                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_319                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_321                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_323                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_325                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_326                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_327                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_328                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_329                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_330                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_331                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_333                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_335                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_337                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_338                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_339                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_340                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_341                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_342                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_343                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_345                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_347                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_349                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_350                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_351                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_352                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_353                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_354                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_355                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_357                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_359                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_361                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_362                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_363                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_364                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_365                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_366                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_367                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_369                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_371                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_373                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_374                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_375                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_376                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_377                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_378                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_379                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_381                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_383                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_385                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_386                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_387                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_388                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_389                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_390                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_391                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_393                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_395                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_397                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_398                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_399                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_400                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_401                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_402                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_403                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_405                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_407                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_409                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_410                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_411                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_412                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_413                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_414                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_415                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_417                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_419                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_421                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_422                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_423                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_424                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_425                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_426                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_427                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_429                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_431                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_433                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_434                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_435                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_436                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_437                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_438                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_439                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_441                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_443                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_445                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_446                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_447                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_448                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_449                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_450                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_451                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_453                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_455                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_457                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_458                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_459                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_460                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_461                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_462                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_463                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_465                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_467                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_469                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_470                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_471                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_472                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_473                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_474                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_475                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_477                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_479                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_481                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_482                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_483                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_484                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_485                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_486                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_487                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_489                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_491                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_493                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_494                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_495                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_496                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_497                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_498                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_499                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_501                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_503                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_505                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_506                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_507                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_508                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_509                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_510                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_511                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_513                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_515                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_517                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_518                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_519                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_520                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_521                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_522                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_523                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_525                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_527                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_529                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_530                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_531                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_532                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_533                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_534                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_535                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_537                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_539                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_541                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_542                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_543                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_544                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_545                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_546                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_547                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_549                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_551                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_553                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_554                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_555                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_556                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_557                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_558                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_559                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_561                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_563                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+layernorm_565                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+qkv_proj_566                  64224          LOCAL          8388608        LOCAL          10485760       LOCAL          10485760       NONE           0              NONE           
+qk_norm_567                   22667          LOCAL          9437184        LOCAL          512            LOCAL          9437184        NONE           0              NONE           
+rotary_emb_568                8853           LOCAL          9437184        LOCAL          0              LOCAL          9437184        NONE           0              NONE           
+attention_569                 102581         LOCAL          8388608        LOCAL          0              LOCAL          8388608        NONE           0              NONE           
+o_proj_570                    61333          LOCAL          8388608        LOCAL          8388608        LOCAL          8388608        ALLREDUCE:1,0  8388608        NONE           
+layernorm_571                 6421           LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+EXPERT 0 ALLGATHER:1,1 2228224                                                                                                                                                      
+expert_573                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT 1 NONE 0                                                                                                                                                                     
+expert_575                    553758         LOCAL          7548928        LOCAL          302514176      LOCAL          7548928        NONE           0              NONE           
+EXPERT END REDUCESCATTER:1,1 8388608                                                                                                                                                      
+final_layernorm_577           13963          LOCAL          8388608        LOCAL          4096           LOCAL          8388608        NONE           0              NONE           
+lm_head_578                   216053         LOCAL          8388608        LOCAL          311164928      LOCAL          311164928      NONE           0              NONE           
+sampler_579                   10123          LOCAL          311164928      LOCAL          0              REMOTE:0       8192           NONE           0              NONE           
+XMEM_LOAD_NODE_embedding_0_INPUTR
+tensor_sizehÄ@R
+
+tensor_locXR
+tensor_deviceX !COMP_NODE_embedding_0* 8ï.!COMP_NODE_layernorm_1*8ï2!COMP_NODE_qkv_proj_2*8‡ı COMP_NODE_qk_norm_3*8ã±"COMP_NODE_rotary_emb_4*8ïE"COMP_NODE_attention_5*8µ°COMP_NODE_o_proj_6*8ïﬂb!COMM_COLL_NODE_o_proj_6_ALLREDUCE*R
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ !	COMP_NODE_layernorm_7*8ï2f
+%COMM_COLL_NODE_expert_start_ALLGATHER*	R
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+COMP_NODE_expert_9*
+8ûÊ!h'COMM_COLL_NODE_expert_end_REDUCESCATTER*R
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+"COMP_NODE_layernorm_13*8ï2"COMP_NODE_qkv_proj_14*8‡ı!COMP_NODE_qk_norm_15*8ã±#COMP_NODE_rotary_emb_16*8ïE#COMP_NODE_attention_17*8µ° COMP_NODE_o_proj_18*8ïﬂc"COMM_COLL_NODE_o_proj_18_ALLREDUCE*R
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ "COMP_NODE_layernorm_19*8ï2f%COMM_COLL_NODE_expert_start_ALLGATHER*R
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+ COMP_NODE_expert_21*8ûÊ!h'COMM_COLL_NODE_expert_end_REDUCESCATTER*R
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+"COMP_NODE_layernorm_25*8ï2"COMP_NODE_qkv_proj_26*8‡ı!COMP_NODE_qk_norm_27*8ã±#COMP_NODE_rotary_emb_28*8ïE#COMP_NODE_attention_29*8µ° COMP_NODE_o_proj_30*8ïﬂc"COMM_COLL_NODE_o_proj_30_ALLREDUCE*R
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ "COMP_NODE_layernorm_31*8ï2f %COMM_COLL_NODE_expert_start_ALLGATHER*R
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+ !COMP_NODE_expert_33* 8ûÊ!h"'COMM_COLL_NODE_expert_end_REDUCESCATTER*!R
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+"#COMP_NODE_layernorm_37*"8ï2"$COMP_NODE_qkv_proj_38*#8‡ı!%COMP_NODE_qk_norm_39*$8ã±#&COMP_NODE_rotary_emb_40*%8ïE#'COMP_NODE_attention_41*&8µ° (COMP_NODE_o_proj_42*'8ïﬂc)"COMM_COLL_NODE_o_proj_42_ALLREDUCE*(R
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ "*COMP_NODE_layernorm_43*)8ï2f+%COMM_COLL_NODE_expert_start_ALLGATHER**R
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+ ,COMP_NODE_expert_45*+8ûÊ!h-'COMM_COLL_NODE_expert_end_REDUCESCATTER*,R
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+".COMP_NODE_layernorm_49*-8ï2"/COMP_NODE_qkv_proj_50*.8‡ı!0COMP_NODE_qk_norm_51*/8ã±#1COMP_NODE_rotary_emb_52*08ïE#2COMP_NODE_attention_53*18µ° 3COMP_NODE_o_proj_54*28ïﬂc4"COMM_COLL_NODE_o_proj_54_ALLREDUCE*3R
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ "5COMP_NODE_layernorm_55*48ï2f6%COMM_COLL_NODE_expert_start_ALLGATHER*5R
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+ 7COMP_NODE_expert_57*68ûÊ!h8'COMM_COLL_NODE_expert_end_REDUCESCATTER*7R
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+"9COMP_NODE_layernorm_61*88ï2":COMP_NODE_qkv_proj_62*98‡ı!;COMP_NODE_qk_norm_63*:8ã±#<COMP_NODE_rotary_emb_64*;8ïE#=COMP_NODE_attention_65*<8µ° >COMP_NODE_o_proj_66*=8ïﬂc?"COMM_COLL_NODE_o_proj_66_ALLREDUCE*>R
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ "@COMP_NODE_layernorm_67*?8ï2fA%COMM_COLL_NODE_expert_start_ALLGATHER*@R
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+ BCOMP_NODE_expert_69*A8ûÊ!hC'COMM_COLL_NODE_expert_end_REDUCESCATTER*BR
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+"DCOMP_NODE_layernorm_73*C8ï2"ECOMP_NODE_qkv_proj_74*D8‡ı!FCOMP_NODE_qk_norm_75*E8ã±#GCOMP_NODE_rotary_emb_76*F8ïE#HCOMP_NODE_attention_77*G8µ° ICOMP_NODE_o_proj_78*H8ïﬂcJ"COMM_COLL_NODE_o_proj_78_ALLREDUCE*IR
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ "KCOMP_NODE_layernorm_79*J8ï2fL%COMM_COLL_NODE_expert_start_ALLGATHER*KR
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+ MCOMP_NODE_expert_81*L8ûÊ!hN'COMM_COLL_NODE_expert_end_REDUCESCATTER*MR
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+"OCOMP_NODE_layernorm_85*N8ï2"PCOMP_NODE_qkv_proj_86*O8‡ı!QCOMP_NODE_qk_norm_87*P8ã±#RCOMP_NODE_rotary_emb_88*Q8ïE#SCOMP_NODE_attention_89*R8µ° TCOMP_NODE_o_proj_90*S8ïﬂcU"COMM_COLL_NODE_o_proj_90_ALLREDUCE*TR
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ "VCOMP_NODE_layernorm_91*U8ï2fW%COMM_COLL_NODE_expert_start_ALLGATHER*VR
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+ XCOMP_NODE_expert_93*W8ûÊ!hY'COMM_COLL_NODE_expert_end_REDUCESCATTER*XR
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+"ZCOMP_NODE_layernorm_97*Y8ï2"[COMP_NODE_qkv_proj_98*Z8‡ı!\COMP_NODE_qk_norm_99*[8ã±$]COMP_NODE_rotary_emb_100*\8ïE$^COMP_NODE_attention_101*]8µ°!_COMP_NODE_o_proj_102*^8ïﬂd`#COMM_COLL_NODE_o_proj_102_ALLREDUCE*_R
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ #aCOMP_NODE_layernorm_103*`8ï2fb%COMM_COLL_NODE_expert_start_ALLGATHER*aR
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+!cCOMP_NODE_expert_105*b8ûÊ!hd'COMM_COLL_NODE_expert_end_REDUCESCATTER*cR
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+#eCOMP_NODE_layernorm_109*d8ï2#fCOMP_NODE_qkv_proj_110*e8‡ı"gCOMP_NODE_qk_norm_111*f8ã±$hCOMP_NODE_rotary_emb_112*g8ïE$iCOMP_NODE_attention_113*h8µ°!jCOMP_NODE_o_proj_114*i8ïﬂdk#COMM_COLL_NODE_o_proj_114_ALLREDUCE*jR
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ #lCOMP_NODE_layernorm_115*k8ï2fm%COMM_COLL_NODE_expert_start_ALLGATHER*lR
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+!nCOMP_NODE_expert_117*m8ûÊ!ho'COMM_COLL_NODE_expert_end_REDUCESCATTER*nR
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+#pCOMP_NODE_layernorm_121*o8ï2#qCOMP_NODE_qkv_proj_122*p8‡ı"rCOMP_NODE_qk_norm_123*q8ã±$sCOMP_NODE_rotary_emb_124*r8ïE$tCOMP_NODE_attention_125*s8µ°!uCOMP_NODE_o_proj_126*t8ïﬂdv#COMM_COLL_NODE_o_proj_126_ALLREDUCE*uR
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ #wCOMP_NODE_layernorm_127*v8ï2fx%COMM_COLL_NODE_expert_start_ALLGATHER*wR
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+!yCOMP_NODE_expert_129*x8ûÊ!hz'COMM_COLL_NODE_expert_end_REDUCESCATTER*yR
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+#{COMP_NODE_layernorm_133*z8ï2#|COMP_NODE_qkv_proj_134*{8‡ı"}COMP_NODE_qk_norm_135*|8ã±$~COMP_NODE_rotary_emb_136*}8ïE$COMP_NODE_attention_137*~8µ°"ÄCOMP_NODE_o_proj_138*8ïﬂfÅ#COMM_COLL_NODE_o_proj_138_ALLREDUCE*ÄR
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %ÇCOMP_NODE_layernorm_139*Å8ï2hÉ%COMM_COLL_NODE_expert_start_ALLGATHER*ÇR
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#ÑCOMP_NODE_expert_141*É8ûÊ!jÖ'COMM_COLL_NODE_expert_end_REDUCESCATTER*ÑR
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%ÜCOMP_NODE_layernorm_145*Ö8ï2%áCOMP_NODE_qkv_proj_146*Ü8‡ı$àCOMP_NODE_qk_norm_147*á8ã±&âCOMP_NODE_rotary_emb_148*à8ïE&äCOMP_NODE_attention_149*â8µ°#ãCOMP_NODE_o_proj_150*ä8ïﬂfå#COMM_COLL_NODE_o_proj_150_ALLREDUCE*ãR
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %çCOMP_NODE_layernorm_151*å8ï2hé%COMM_COLL_NODE_expert_start_ALLGATHER*çR
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#èCOMP_NODE_expert_153*é8ûÊ!jê'COMM_COLL_NODE_expert_end_REDUCESCATTER*èR
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%ëCOMP_NODE_layernorm_157*ê8ï2%íCOMP_NODE_qkv_proj_158*ë8‡ı$ìCOMP_NODE_qk_norm_159*í8ã±&îCOMP_NODE_rotary_emb_160*ì8ïE&ïCOMP_NODE_attention_161*î8µ°#ñCOMP_NODE_o_proj_162*ï8ïﬂfó#COMM_COLL_NODE_o_proj_162_ALLREDUCE*ñR
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %òCOMP_NODE_layernorm_163*ó8ï2hô%COMM_COLL_NODE_expert_start_ALLGATHER*òR
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#öCOMP_NODE_expert_165*ô8ûÊ!jõ'COMM_COLL_NODE_expert_end_REDUCESCATTER*öR
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%úCOMP_NODE_layernorm_169*õ8ï2%ùCOMP_NODE_qkv_proj_170*ú8‡ı$ûCOMP_NODE_qk_norm_171*ù8ã±&üCOMP_NODE_rotary_emb_172*û8ïE&†COMP_NODE_attention_173*ü8µ°#°COMP_NODE_o_proj_174*†8ïﬂf¢#COMM_COLL_NODE_o_proj_174_ALLREDUCE*°R
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %£COMP_NODE_layernorm_175*¢8ï2h§%COMM_COLL_NODE_expert_start_ALLGATHER*£R
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#•COMP_NODE_expert_177*§8ûÊ!j¶'COMM_COLL_NODE_expert_end_REDUCESCATTER*•R
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%ßCOMP_NODE_layernorm_181*¶8ï2%®COMP_NODE_qkv_proj_182*ß8‡ı$©COMP_NODE_qk_norm_183*®8ã±&™COMP_NODE_rotary_emb_184*©8ïE&´COMP_NODE_attention_185*™8µ°#¨COMP_NODE_o_proj_186*´8ïﬂf≠#COMM_COLL_NODE_o_proj_186_ALLREDUCE*¨R
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %ÆCOMP_NODE_layernorm_187*≠8ï2hØ%COMM_COLL_NODE_expert_start_ALLGATHER*ÆR
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#∞COMP_NODE_expert_189*Ø8ûÊ!j±'COMM_COLL_NODE_expert_end_REDUCESCATTER*∞R
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%≤COMP_NODE_layernorm_193*±8ï2%≥COMP_NODE_qkv_proj_194*≤8‡ı$¥COMP_NODE_qk_norm_195*≥8ã±&µCOMP_NODE_rotary_emb_196*¥8ïE&∂COMP_NODE_attention_197*µ8µ°#∑COMP_NODE_o_proj_198*∂8ïﬂf∏#COMM_COLL_NODE_o_proj_198_ALLREDUCE*∑R
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %πCOMP_NODE_layernorm_199*∏8ï2h∫%COMM_COLL_NODE_expert_start_ALLGATHER*πR
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#ªCOMP_NODE_expert_201*∫8ûÊ!jº'COMM_COLL_NODE_expert_end_REDUCESCATTER*ªR
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%ΩCOMP_NODE_layernorm_205*º8ï2%æCOMP_NODE_qkv_proj_206*Ω8‡ı$øCOMP_NODE_qk_norm_207*æ8ã±&¿COMP_NODE_rotary_emb_208*ø8ïE&¡COMP_NODE_attention_209*¿8µ°#¬COMP_NODE_o_proj_210*¡8ïﬂf√#COMM_COLL_NODE_o_proj_210_ALLREDUCE*¬R
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %ƒCOMP_NODE_layernorm_211*√8ï2h≈%COMM_COLL_NODE_expert_start_ALLGATHER*ƒR
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#∆COMP_NODE_expert_213*≈8ûÊ!j«'COMM_COLL_NODE_expert_end_REDUCESCATTER*∆R
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%»COMP_NODE_layernorm_217*«8ï2%…COMP_NODE_qkv_proj_218*»8‡ı$ COMP_NODE_qk_norm_219*…8ã±&ÀCOMP_NODE_rotary_emb_220* 8ïE&ÃCOMP_NODE_attention_221*À8µ°#ÕCOMP_NODE_o_proj_222*Ã8ïﬂfŒ#COMM_COLL_NODE_o_proj_222_ALLREDUCE*ÕR
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %œCOMP_NODE_layernorm_223*Œ8ï2h–%COMM_COLL_NODE_expert_start_ALLGATHER*œR
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#—COMP_NODE_expert_225*–8ûÊ!j“'COMM_COLL_NODE_expert_end_REDUCESCATTER*—R
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%”COMP_NODE_layernorm_229*“8ï2%‘COMP_NODE_qkv_proj_230*”8‡ı$’COMP_NODE_qk_norm_231*‘8ã±&÷COMP_NODE_rotary_emb_232*’8ïE&◊COMP_NODE_attention_233*÷8µ°#ÿCOMP_NODE_o_proj_234*◊8ïﬂfŸ#COMM_COLL_NODE_o_proj_234_ALLREDUCE*ÿR
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %⁄COMP_NODE_layernorm_235*Ÿ8ï2h€%COMM_COLL_NODE_expert_start_ALLGATHER*⁄R
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#‹COMP_NODE_expert_237*€8ûÊ!j›'COMM_COLL_NODE_expert_end_REDUCESCATTER*‹R
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%ﬁCOMP_NODE_layernorm_241*›8ï2%ﬂCOMP_NODE_qkv_proj_242*ﬁ8‡ı$‡COMP_NODE_qk_norm_243*ﬂ8ã±&·COMP_NODE_rotary_emb_244*‡8ïE&‚COMP_NODE_attention_245*·8µ°#„COMP_NODE_o_proj_246*‚8ïﬂf‰#COMM_COLL_NODE_o_proj_246_ALLREDUCE*„R
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %ÂCOMP_NODE_layernorm_247*‰8ï2hÊ%COMM_COLL_NODE_expert_start_ALLGATHER*ÂR
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#ÁCOMP_NODE_expert_249*Ê8ûÊ!jË'COMM_COLL_NODE_expert_end_REDUCESCATTER*ÁR
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%ÈCOMP_NODE_layernorm_253*Ë8ï2%ÍCOMP_NODE_qkv_proj_254*È8‡ı$ÎCOMP_NODE_qk_norm_255*Í8ã±&ÏCOMP_NODE_rotary_emb_256*Î8ïE&ÌCOMP_NODE_attention_257*Ï8µ°#ÓCOMP_NODE_o_proj_258*Ì8ïﬂfÔ#COMM_COLL_NODE_o_proj_258_ALLREDUCE*ÓR
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %COMP_NODE_layernorm_259*Ô8ï2hÒ%COMM_COLL_NODE_expert_start_ALLGATHER*R
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#ÚCOMP_NODE_expert_261*Ò8ûÊ!jÛ'COMM_COLL_NODE_expert_end_REDUCESCATTER*ÚR
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%ÙCOMP_NODE_layernorm_265*Û8ï2%ıCOMP_NODE_qkv_proj_266*Ù8‡ı$ˆCOMP_NODE_qk_norm_267*ı8ã±&˜COMP_NODE_rotary_emb_268*ˆ8ïE&¯COMP_NODE_attention_269*˜8µ°#˘COMP_NODE_o_proj_270*¯8ïﬂf˙#COMM_COLL_NODE_o_proj_270_ALLREDUCE*˘R
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %˚COMP_NODE_layernorm_271*˙8ï2h¸%COMM_COLL_NODE_expert_start_ALLGATHER*˚R
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#˝COMP_NODE_expert_273*¸8ûÊ!j˛'COMM_COLL_NODE_expert_end_REDUCESCATTER*˝R
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%ˇCOMP_NODE_layernorm_277*˛8ï2%ÄCOMP_NODE_qkv_proj_278*ˇ8‡ı$ÅCOMP_NODE_qk_norm_279*Ä8ã±&ÇCOMP_NODE_rotary_emb_280*Å8ïE&ÉCOMP_NODE_attention_281*Ç8µ°#ÑCOMP_NODE_o_proj_282*É8ïﬂfÖ#COMM_COLL_NODE_o_proj_282_ALLREDUCE*ÑR
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %ÜCOMP_NODE_layernorm_283*Ö8ï2há%COMM_COLL_NODE_expert_start_ALLGATHER*ÜR
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#àCOMP_NODE_expert_285*á8ûÊ!jâ'COMM_COLL_NODE_expert_end_REDUCESCATTER*àR
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%äCOMP_NODE_layernorm_289*â8ï2%ãCOMP_NODE_qkv_proj_290*ä8‡ı$åCOMP_NODE_qk_norm_291*ã8ã±&çCOMP_NODE_rotary_emb_292*å8ïE&éCOMP_NODE_attention_293*ç8µ°#èCOMP_NODE_o_proj_294*é8ïﬂfê#COMM_COLL_NODE_o_proj_294_ALLREDUCE*èR
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %ëCOMP_NODE_layernorm_295*ê8ï2hí%COMM_COLL_NODE_expert_start_ALLGATHER*ëR
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#ìCOMP_NODE_expert_297*í8ûÊ!jî'COMM_COLL_NODE_expert_end_REDUCESCATTER*ìR
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%ïCOMP_NODE_layernorm_301*î8ï2%ñCOMP_NODE_qkv_proj_302*ï8‡ı$óCOMP_NODE_qk_norm_303*ñ8ã±&òCOMP_NODE_rotary_emb_304*ó8ïE&ôCOMP_NODE_attention_305*ò8µ°#öCOMP_NODE_o_proj_306*ô8ïﬂfõ#COMM_COLL_NODE_o_proj_306_ALLREDUCE*öR
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %úCOMP_NODE_layernorm_307*õ8ï2hù%COMM_COLL_NODE_expert_start_ALLGATHER*úR
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#ûCOMP_NODE_expert_309*ù8ûÊ!jü'COMM_COLL_NODE_expert_end_REDUCESCATTER*ûR
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%†COMP_NODE_layernorm_313*ü8ï2%°COMP_NODE_qkv_proj_314*†8‡ı$¢COMP_NODE_qk_norm_315*°8ã±&£COMP_NODE_rotary_emb_316*¢8ïE&§COMP_NODE_attention_317*£8µ°#•COMP_NODE_o_proj_318*§8ïﬂf¶#COMM_COLL_NODE_o_proj_318_ALLREDUCE*•R
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %ßCOMP_NODE_layernorm_319*¶8ï2h®%COMM_COLL_NODE_expert_start_ALLGATHER*ßR
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#©COMP_NODE_expert_321*®8ûÊ!j™'COMM_COLL_NODE_expert_end_REDUCESCATTER*©R
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%´COMP_NODE_layernorm_325*™8ï2%¨COMP_NODE_qkv_proj_326*´8‡ı$≠COMP_NODE_qk_norm_327*¨8ã±&ÆCOMP_NODE_rotary_emb_328*≠8ïE&ØCOMP_NODE_attention_329*Æ8µ°#∞COMP_NODE_o_proj_330*Ø8ïﬂf±#COMM_COLL_NODE_o_proj_330_ALLREDUCE*∞R
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %≤COMP_NODE_layernorm_331*±8ï2h≥%COMM_COLL_NODE_expert_start_ALLGATHER*≤R
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#¥COMP_NODE_expert_333*≥8ûÊ!jµ'COMM_COLL_NODE_expert_end_REDUCESCATTER*¥R
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%∂COMP_NODE_layernorm_337*µ8ï2%∑COMP_NODE_qkv_proj_338*∂8‡ı$∏COMP_NODE_qk_norm_339*∑8ã±&πCOMP_NODE_rotary_emb_340*∏8ïE&∫COMP_NODE_attention_341*π8µ°#ªCOMP_NODE_o_proj_342*∫8ïﬂfº#COMM_COLL_NODE_o_proj_342_ALLREDUCE*ªR
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %ΩCOMP_NODE_layernorm_343*º8ï2hæ%COMM_COLL_NODE_expert_start_ALLGATHER*ΩR
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#øCOMP_NODE_expert_345*æ8ûÊ!j¿'COMM_COLL_NODE_expert_end_REDUCESCATTER*øR
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%¡COMP_NODE_layernorm_349*¿8ï2%¬COMP_NODE_qkv_proj_350*¡8‡ı$√COMP_NODE_qk_norm_351*¬8ã±&ƒCOMP_NODE_rotary_emb_352*√8ïE&≈COMP_NODE_attention_353*ƒ8µ°#∆COMP_NODE_o_proj_354*≈8ïﬂf«#COMM_COLL_NODE_o_proj_354_ALLREDUCE*∆R
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %»COMP_NODE_layernorm_355*«8ï2h…%COMM_COLL_NODE_expert_start_ALLGATHER*»R
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+# COMP_NODE_expert_357*…8ûÊ!jÀ'COMM_COLL_NODE_expert_end_REDUCESCATTER* R
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%ÃCOMP_NODE_layernorm_361*À8ï2%ÕCOMP_NODE_qkv_proj_362*Ã8‡ı$ŒCOMP_NODE_qk_norm_363*Õ8ã±&œCOMP_NODE_rotary_emb_364*Œ8ïE&–COMP_NODE_attention_365*œ8µ°#—COMP_NODE_o_proj_366*–8ïﬂf“#COMM_COLL_NODE_o_proj_366_ALLREDUCE*—R
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %”COMP_NODE_layernorm_367*“8ï2h‘%COMM_COLL_NODE_expert_start_ALLGATHER*”R
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#’COMP_NODE_expert_369*‘8ûÊ!j÷'COMM_COLL_NODE_expert_end_REDUCESCATTER*’R
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%◊COMP_NODE_layernorm_373*÷8ï2%ÿCOMP_NODE_qkv_proj_374*◊8‡ı$ŸCOMP_NODE_qk_norm_375*ÿ8ã±&⁄COMP_NODE_rotary_emb_376*Ÿ8ïE&€COMP_NODE_attention_377*⁄8µ°#‹COMP_NODE_o_proj_378*€8ïﬂf›#COMM_COLL_NODE_o_proj_378_ALLREDUCE*‹R
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %ﬁCOMP_NODE_layernorm_379*›8ï2hﬂ%COMM_COLL_NODE_expert_start_ALLGATHER*ﬁR
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#‡COMP_NODE_expert_381*ﬂ8ûÊ!j·'COMM_COLL_NODE_expert_end_REDUCESCATTER*‡R
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%‚COMP_NODE_layernorm_385*·8ï2%„COMP_NODE_qkv_proj_386*‚8‡ı$‰COMP_NODE_qk_norm_387*„8ã±&ÂCOMP_NODE_rotary_emb_388*‰8ïE&ÊCOMP_NODE_attention_389*Â8µ°#ÁCOMP_NODE_o_proj_390*Ê8ïﬂfË#COMM_COLL_NODE_o_proj_390_ALLREDUCE*ÁR
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %ÈCOMP_NODE_layernorm_391*Ë8ï2hÍ%COMM_COLL_NODE_expert_start_ALLGATHER*ÈR
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#ÎCOMP_NODE_expert_393*Í8ûÊ!jÏ'COMM_COLL_NODE_expert_end_REDUCESCATTER*ÎR
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%ÌCOMP_NODE_layernorm_397*Ï8ï2%ÓCOMP_NODE_qkv_proj_398*Ì8‡ı$ÔCOMP_NODE_qk_norm_399*Ó8ã±&COMP_NODE_rotary_emb_400*Ô8ïE&ÒCOMP_NODE_attention_401*8µ°#ÚCOMP_NODE_o_proj_402*Ò8ïﬂfÛ#COMM_COLL_NODE_o_proj_402_ALLREDUCE*ÚR
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %ÙCOMP_NODE_layernorm_403*Û8ï2hı%COMM_COLL_NODE_expert_start_ALLGATHER*ÙR
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#ˆCOMP_NODE_expert_405*ı8ûÊ!j˜'COMM_COLL_NODE_expert_end_REDUCESCATTER*ˆR
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%¯COMP_NODE_layernorm_409*˜8ï2%˘COMP_NODE_qkv_proj_410*¯8‡ı$˙COMP_NODE_qk_norm_411*˘8ã±&˚COMP_NODE_rotary_emb_412*˙8ïE&¸COMP_NODE_attention_413*˚8µ°#˝COMP_NODE_o_proj_414*¸8ïﬂf˛#COMM_COLL_NODE_o_proj_414_ALLREDUCE*˝R
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %ˇCOMP_NODE_layernorm_415*˛8ï2hÄ%COMM_COLL_NODE_expert_start_ALLGATHER*ˇR
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#ÅCOMP_NODE_expert_417*Ä8ûÊ!jÇ'COMM_COLL_NODE_expert_end_REDUCESCATTER*ÅR
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%ÉCOMP_NODE_layernorm_421*Ç8ï2%ÑCOMP_NODE_qkv_proj_422*É8‡ı$ÖCOMP_NODE_qk_norm_423*Ñ8ã±&ÜCOMP_NODE_rotary_emb_424*Ö8ïE&áCOMP_NODE_attention_425*Ü8µ°#àCOMP_NODE_o_proj_426*á8ïﬂfâ#COMM_COLL_NODE_o_proj_426_ALLREDUCE*àR
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %äCOMP_NODE_layernorm_427*â8ï2hã%COMM_COLL_NODE_expert_start_ALLGATHER*äR
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#åCOMP_NODE_expert_429*ã8ûÊ!jç'COMM_COLL_NODE_expert_end_REDUCESCATTER*åR
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%éCOMP_NODE_layernorm_433*ç8ï2%èCOMP_NODE_qkv_proj_434*é8‡ı$êCOMP_NODE_qk_norm_435*è8ã±&ëCOMP_NODE_rotary_emb_436*ê8ïE&íCOMP_NODE_attention_437*ë8µ°#ìCOMP_NODE_o_proj_438*í8ïﬂfî#COMM_COLL_NODE_o_proj_438_ALLREDUCE*ìR
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %ïCOMP_NODE_layernorm_439*î8ï2hñ%COMM_COLL_NODE_expert_start_ALLGATHER*ïR
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#óCOMP_NODE_expert_441*ñ8ûÊ!jò'COMM_COLL_NODE_expert_end_REDUCESCATTER*óR
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%ôCOMP_NODE_layernorm_445*ò8ï2%öCOMP_NODE_qkv_proj_446*ô8‡ı$õCOMP_NODE_qk_norm_447*ö8ã±&úCOMP_NODE_rotary_emb_448*õ8ïE&ùCOMP_NODE_attention_449*ú8µ°#ûCOMP_NODE_o_proj_450*ù8ïﬂfü#COMM_COLL_NODE_o_proj_450_ALLREDUCE*ûR
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %†COMP_NODE_layernorm_451*ü8ï2h°%COMM_COLL_NODE_expert_start_ALLGATHER*†R
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#¢COMP_NODE_expert_453*°8ûÊ!j£'COMM_COLL_NODE_expert_end_REDUCESCATTER*¢R
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%§COMP_NODE_layernorm_457*£8ï2%•COMP_NODE_qkv_proj_458*§8‡ı$¶COMP_NODE_qk_norm_459*•8ã±&ßCOMP_NODE_rotary_emb_460*¶8ïE&®COMP_NODE_attention_461*ß8µ°#©COMP_NODE_o_proj_462*®8ïﬂf™#COMM_COLL_NODE_o_proj_462_ALLREDUCE*©R
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %´COMP_NODE_layernorm_463*™8ï2h¨%COMM_COLL_NODE_expert_start_ALLGATHER*´R
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#≠COMP_NODE_expert_465*¨8ûÊ!jÆ'COMM_COLL_NODE_expert_end_REDUCESCATTER*≠R
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%ØCOMP_NODE_layernorm_469*Æ8ï2%∞COMP_NODE_qkv_proj_470*Ø8‡ı$±COMP_NODE_qk_norm_471*∞8ã±&≤COMP_NODE_rotary_emb_472*±8ïE&≥COMP_NODE_attention_473*≤8µ°#¥COMP_NODE_o_proj_474*≥8ïﬂfµ#COMM_COLL_NODE_o_proj_474_ALLREDUCE*¥R
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %∂COMP_NODE_layernorm_475*µ8ï2h∑%COMM_COLL_NODE_expert_start_ALLGATHER*∂R
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#∏COMP_NODE_expert_477*∑8ûÊ!jπ'COMM_COLL_NODE_expert_end_REDUCESCATTER*∏R
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%∫COMP_NODE_layernorm_481*π8ï2%ªCOMP_NODE_qkv_proj_482*∫8‡ı$ºCOMP_NODE_qk_norm_483*ª8ã±&ΩCOMP_NODE_rotary_emb_484*º8ïE&æCOMP_NODE_attention_485*Ω8µ°#øCOMP_NODE_o_proj_486*æ8ïﬂf¿#COMM_COLL_NODE_o_proj_486_ALLREDUCE*øR
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %¡COMP_NODE_layernorm_487*¿8ï2h¬%COMM_COLL_NODE_expert_start_ALLGATHER*¡R
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#√COMP_NODE_expert_489*¬8ûÊ!jƒ'COMM_COLL_NODE_expert_end_REDUCESCATTER*√R
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%≈COMP_NODE_layernorm_493*ƒ8ï2%∆COMP_NODE_qkv_proj_494*≈8‡ı$«COMP_NODE_qk_norm_495*∆8ã±&»COMP_NODE_rotary_emb_496*«8ïE&…COMP_NODE_attention_497*»8µ°# COMP_NODE_o_proj_498*…8ïﬂfÀ#COMM_COLL_NODE_o_proj_498_ALLREDUCE* R
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %ÃCOMP_NODE_layernorm_499*À8ï2hÕ%COMM_COLL_NODE_expert_start_ALLGATHER*ÃR
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#ŒCOMP_NODE_expert_501*Õ8ûÊ!jœ'COMM_COLL_NODE_expert_end_REDUCESCATTER*ŒR
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%–COMP_NODE_layernorm_505*œ8ï2%—COMP_NODE_qkv_proj_506*–8‡ı$“COMP_NODE_qk_norm_507*—8ã±&”COMP_NODE_rotary_emb_508*“8ïE&‘COMP_NODE_attention_509*”8µ°#’COMP_NODE_o_proj_510*‘8ïﬂf÷#COMM_COLL_NODE_o_proj_510_ALLREDUCE*’R
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %◊COMP_NODE_layernorm_511*÷8ï2hÿ%COMM_COLL_NODE_expert_start_ALLGATHER*◊R
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#ŸCOMP_NODE_expert_513*ÿ8ûÊ!j⁄'COMM_COLL_NODE_expert_end_REDUCESCATTER*ŸR
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%€COMP_NODE_layernorm_517*⁄8ï2%‹COMP_NODE_qkv_proj_518*€8‡ı$›COMP_NODE_qk_norm_519*‹8ã±&ﬁCOMP_NODE_rotary_emb_520*›8ïE&ﬂCOMP_NODE_attention_521*ﬁ8µ°#‡COMP_NODE_o_proj_522*ﬂ8ïﬂf·#COMM_COLL_NODE_o_proj_522_ALLREDUCE*‡R
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %‚COMP_NODE_layernorm_523*·8ï2h„%COMM_COLL_NODE_expert_start_ALLGATHER*‚R
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#‰COMP_NODE_expert_525*„8ûÊ!jÂ'COMM_COLL_NODE_expert_end_REDUCESCATTER*‰R
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%ÊCOMP_NODE_layernorm_529*Â8ï2%ÁCOMP_NODE_qkv_proj_530*Ê8‡ı$ËCOMP_NODE_qk_norm_531*Á8ã±&ÈCOMP_NODE_rotary_emb_532*Ë8ïE&ÍCOMP_NODE_attention_533*È8µ°#ÎCOMP_NODE_o_proj_534*Í8ïﬂfÏ#COMM_COLL_NODE_o_proj_534_ALLREDUCE*ÎR
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %ÌCOMP_NODE_layernorm_535*Ï8ï2hÓ%COMM_COLL_NODE_expert_start_ALLGATHER*ÌR
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#ÔCOMP_NODE_expert_537*Ó8ûÊ!j'COMM_COLL_NODE_expert_end_REDUCESCATTER*ÔR
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%ÒCOMP_NODE_layernorm_541*8ï2%ÚCOMP_NODE_qkv_proj_542*Ò8‡ı$ÛCOMP_NODE_qk_norm_543*Ú8ã±&ÙCOMP_NODE_rotary_emb_544*Û8ïE&ıCOMP_NODE_attention_545*Ù8µ°#ˆCOMP_NODE_o_proj_546*ı8ïﬂf˜#COMM_COLL_NODE_o_proj_546_ALLREDUCE*ˆR
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %¯COMP_NODE_layernorm_547*˜8ï2h˘%COMM_COLL_NODE_expert_start_ALLGATHER*¯R
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#˙COMP_NODE_expert_549*˘8ûÊ!j˚'COMM_COLL_NODE_expert_end_REDUCESCATTER*˙R
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%¸COMP_NODE_layernorm_553*˚8ï2%˝COMP_NODE_qkv_proj_554*¸8‡ı$˛COMP_NODE_qk_norm_555*˝8ã±&ˇCOMP_NODE_rotary_emb_556*˛8ïE&ÄCOMP_NODE_attention_557*ˇ8µ°#ÅCOMP_NODE_o_proj_558*Ä8ïﬂfÇ#COMM_COLL_NODE_o_proj_558_ALLREDUCE*ÅR
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %ÉCOMP_NODE_layernorm_559*Ç8ï2hÑ%COMM_COLL_NODE_expert_start_ALLGATHER*ÉR
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#ÖCOMP_NODE_expert_561*Ñ8ûÊ!jÜ'COMM_COLL_NODE_expert_end_REDUCESCATTER*ÖR
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
+%áCOMP_NODE_layernorm_565*Ü8ï2%àCOMP_NODE_qkv_proj_566*á8‡ı$âCOMP_NODE_qk_norm_567*à8ã±&äCOMP_NODE_rotary_emb_568*â8ïE&ãCOMP_NODE_attention_569*ä8µ°#åCOMP_NODE_o_proj_570*ã8ïﬂfç#COMM_COLL_NODE_o_proj_570_ALLREDUCE*åR
+	comm_typeH R
+	comm_sizeHÄÄÄR
+involved_dim‚
+ %éCOMP_NODE_layernorm_571*ç8ï2hè%COMM_COLL_NODE_expert_start_ALLGATHER*éR
+	comm_typeHR
+	comm_sizeHÄÄàR
+involved_dim‚
+#êCOMP_NODE_expert_573*è8ûÊ!jë'COMM_COLL_NODE_expert_end_REDUCESCATTER*êR
+	comm_typeHR
+	comm_sizeHÄÄÄR
+involved_dim‚
++íCOMP_NODE_final_layernorm_577*ë8ãm$ìCOMP_NODE_lm_head_578*í8ıó#îCOMP_NODE_sampler_579*ì8ãOdï!MEM_STORE_NODE_sampler_579_OUTPUT*îR
+tensor_sizehÄÄ∞îR
+
+tensor_locXR
+tensor_deviceX 

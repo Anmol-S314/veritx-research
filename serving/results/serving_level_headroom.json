@@ -1,0 +1,24 @@
+{
+  "experiment": "serving_level_bridge_headroom_trace_derived",
+  "model": "Qwen3-30B-A3B-Instruct-2507 (MoE 128 experts top-8, GQA)",
+  "parallelism": "TP2/EP2, 2 dies, 1 bridge link",
+  "trace": "1178 batches, 40159 tokens, 24.2 GB inter-die (ALLGATHER 34.7%, ALLREDUCE 32.7%, REDUCESCATTER 32.7%)",
+  "economics": {
+    "inter_die_bytes_per_batch": 20542344,
+    "tokens_per_batch": 34.1,
+    "bytes_per_token": 602577,
+    "bridge_flit_bytes": 8,
+    "bridge_bw_cycles": 1,
+    "bridge_bw_bps": 8000000000,
+    "allgather_share": 0.347,
+    "dispatch_fanout_k": 8
+  },
+  "result": {
+    "bytes_per_token_bridge_fork": 602415,
+    "bytes_per_token_source_fork": 2065680,
+    "bridge_sustainable_tokps_bridge_fork": 13280,
+    "bridge_sustainable_tokps_source_fork": 3873,
+    "serving_rate_headroom": 3.43
+  },
+  "claim_scope": "NETWORK-LEVEL demand reduction at the bridge bottleneck, expressed in serving-throughput terms. NOT an end-to-end serving-system claim (LLMServingSim network model is analytical; the 2-node end-to-end run remains toolchain-blocked). Fork-vs-source latency win under the trace mix: 15-21% (fork_vs_source_trace_mix.json)."
+}

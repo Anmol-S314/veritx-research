@@ -1,0 +1,15 @@
+{
+  "experiment": "fork_vs_source_trace_derived",
+  "traffic_class_mix": {"ALLGATHER": 34.7, "ALLREDUCE": 32.7, "REDUCESCATTER": 32.7, "source": "Qwen3-30B-A3B TP2/EP2 trace, 1178 batches"},
+  "dispatch_fanout": 8,
+  "topology": "bridged_2die (2x 8x8 mesh + 1 bridge link), mcast_single=1, k=8",
+  "cells": [
+    {"rate": 0.001, "bridge_fork_lat": 27.0, "source_fork_lat": 32.57, "win": 1.21},
+    {"rate": 0.005, "bridge_fork_lat": 27.0, "source_fork_lat": 31.07, "win": 1.15},
+    {"rate": 0.01, "bridge_fork_lat": 26.59, "source_fork_lat": 30.57, "win": 1.15},
+    {"rate": 0.02, "bridge_fork_lat": 26.82, "source_fork_lat": 31.15, "win": 1.16},
+    {"rate": 0.04, "bridge_fork_lat": 26.87, "source_fork_lat": 31.52, "win": 1.17}
+  ],
+  "verdict": "Bridge-fork beats source-fork 15-21% at every load on the trace-derived dispatch fanout (k=8). The mechanism targets the DOMINANT traffic class (ALLGATHER = one-to-k multicast, 34.7% of bytes; ALLREDUCE+REDUCESCATTER contain multicast phases). Fit question empirically settled: the mechanism helps the traffic that dominates.",
+  "answers_critique": "Critique 1 (fit question) - mechanism does apply to the dominant class"
+}

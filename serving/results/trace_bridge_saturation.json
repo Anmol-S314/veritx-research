@@ -1,0 +1,37 @@
+{
+  "experiment": "trace_derived_bridge_saturation",
+  "source": "LLMServingSim Qwen3-30B-A3B TP2/EP2, 1178 batches, 24.2GB inter-die",
+  "topology": "bridged_2die (2x 8x8 mesh, 1 bridge link), 128 nodes",
+  "traffic": "trace-derived 2-die matrix expanded to 128x128 (uniform cross-die)",
+  "cells": [
+    {
+      "rate": 0.005,
+      "accepted": 0.0051,
+      "latency": 67.4,
+      "hops": 12.97,
+      "status": "free"
+    },
+    {
+      "rate": 0.01,
+      "accepted": 0.0101,
+      "latency": 69.4,
+      "hops": 12.96,
+      "status": "near-sat"
+    },
+    {
+      "rate": 0.02,
+      "accepted": 0.0156,
+      "latency": 381.5,
+      "hops": null,
+      "status": "SATURATED"
+    },
+    {
+      "rate": 0.04,
+      "accepted": 0.0151,
+      "latency": 315.1,
+      "hops": null,
+      "status": "SATURATED"
+    }
+  ],
+  "verdict": "Single bridge link saturates at aggregate ~1.0 of link capacity; accepted rate caps at 1/64 per core = bridge ceiling; latency 5.6x at saturation. Trace-derived serving traffic reproduces the die-to-die bridge bottleneck the UCIe arc predicts."
+}

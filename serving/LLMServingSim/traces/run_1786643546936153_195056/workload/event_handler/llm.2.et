@@ -1,0 +1,8 @@
+¤
+schemaê1.0.2-chakra.0.0.4‚
+
+input_fileêòEVENT
+1
+Layername                     comp_time      input_loc      input_size     weight_loc     weight_size    output_loc     output_size    comm_type      comm_size      misc           
+event_1ns                     1              REMOTE         0              LOCAL          0              REMOTE         0              NONE           0              NONE           
+COMP_NODE_event_1ns8

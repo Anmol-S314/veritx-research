@@ -1,0 +1,10 @@
+{
+  "experiment": "bigcell_depth3_bidirectional",
+  "date": "2026-08-15",
+  "config": "VCS=4, T_DEPTH=64, col-0 bridge, depth-3 bridge channels, NO isolation (commits 9ae11d1 + 0cad337)",
+  "cell": "5718 packets: 2838 A->B + 2880 B->A (trace-derived, LLMServingSim)",
+  "result": {"injected": 5517, "ejected": 38, "A_to_B": 29, "B_to_A": 9, "stall_cycle": "t~10000"},
+  "stuck_state": "die-B (0,0) WEST (bridge input): cfW0 iuW1 occ=0 — a phantom in_use on VC0 with an EMPTY buffer. Bridge input permanently blocked.",
+  "relationship": "Matches Laura's 'stale in_use race' (09bb908) + Jane's 'cf=0 iu=1 at occ=0' + F15 family. The depth-3 fix resolved the STARVATION (small cell A->B 4/4) but the in_use/credit leak under load persists — the bridge-input VC0 wedges.",
+  "verdict": "Two distinct bugs: (1) starvation — FIXED by depth-3 + isolation removal; (2) in_use leak under load — OPEN, team-level (F15 family, Laura's lane). Big cell cannot pass until (2) lands."
+}

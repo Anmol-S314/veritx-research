@@ -1,0 +1,63 @@
+{
+  "workload": {
+    "model_family": "mixture_of_experts",
+    "model_name": "generic_moe",
+    "tp": 2,
+    "pp": 1,
+    "ep": 4,
+    "dp": 1,
+    "serving_mode": "decode_heavy",
+    "trace_path": null
+  },
+  "requirements": [
+    {
+      "qos_class": "latency_critical",
+      "latency_ceiling_cycles": 2000,
+      "bandwidth_floor_gbps": null,
+      "binding": true
+    }
+  ],
+  "agents": [
+    {
+      "kind": "compute_tile",
+      "count": 8,
+      "data_width": 256,
+      "addr_width": 64,
+      "protocol": "AXI"
+    },
+    {
+      "kind": "hbm_controller",
+      "count": 2,
+      "data_width": 256,
+      "addr_width": 64,
+      "protocol": "AXI"
+    }
+  ],
+  "dependencies": [
+    {
+      "source": "expert_alltoall",
+      "target": "expert_reduce",
+      "kind": "blocking"
+    }
+  ],
+  "noc_config": {
+    "topology_family": "mesh",
+    "radix": null,
+    "concentration": null,
+    "arbitration": null,
+    "rcu_enabled": null,
+    "link_width": null,
+    "output_formats": [
+      "systemverilog"
+    ],
+    "obfuscation_level": 0
+  },
+  "address_map": {
+    "ranges": []
+  },
+  "physical": {
+    "clock_freq_mhz": 1000.0,
+    "data_width": 256,
+    "process_node_nm": 7
+  }
+}

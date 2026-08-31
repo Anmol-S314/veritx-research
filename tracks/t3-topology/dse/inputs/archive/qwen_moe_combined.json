@@ -1,0 +1,5 @@
+{
+  "source": "trace_to_matrix + memory_miss_model(banked L2, 4 banks)",
+  "collective_bytes_per_pair": 1824522240,
+  "num_nodes": 64
+}

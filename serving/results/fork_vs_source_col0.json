@@ -1,0 +1,10 @@
+{
+  "experiment": "fork_vs_source_col0_protocol_topology",
+  "topology": "bridged_2die_onaxis (col-0 bridge: die-A (7,0) <-> die-B (0,0)), the fork-gate protocol config",
+  "traffic": "mcast_k=8 mcast_offset=64 mcast_single=1 (dispatch fanout k=8 crossing the bridge, trace-derived)",
+  "cells": [
+    {"rate": 0.005, "bridge_fork_lat": 67.0, "source_fork_lat": 72.18, "win": 1.077},
+    {"rate": 0.02,  "bridge_fork_lat": 66.84, "source_fork_lat": 72.91, "win": 1.091}
+  ],
+  "verdict": "g-fold win holds on the protocol-correct col-0 topology: 8-9% latency win across loads. Paper-ready, RTL-independent."
+}

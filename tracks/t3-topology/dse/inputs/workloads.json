@@ -1,0 +1,42 @@
+[
+  {
+    "name": "qwen3_serving_astra",
+    "path": "inputs/qwen3_serving_astra.trace",
+    "class": "moe_serving",
+    "type": "trace",
+    "nodes": 64,
+    "notes": "Full Qwen3-30B-A3B serving trace from ASTRA-sim/LLMServingSim (668K packets, 64 nodes, multi-phase)"
+  },
+  {
+    "name": "test_dynamic",
+    "path": "inputs/test_dynamic.trace",
+    "class": "synthetic_dynamic",
+    "type": "trace",
+    "nodes": 64,
+    "notes": "Phase-sequenced dynamic test trace for rapid DSE and microarchitecture validation"
+  },
+  {
+    "name": "qwen3_30b_moe",
+    "path": "inputs/qwen3_30b_moe.trace",
+    "class": "moe_dispatch",
+    "type": "trace",
+    "nodes": 64,
+    "notes": "Qwen3 30B MoE token dispatch traffic trace"
+  },
+  {
+    "name": "qwen_moe_64d",
+    "path": "inputs/qwen_moe_64d.mat",
+    "class": "static_matrix",
+    "type": "matrix",
+    "nodes": 64,
+    "notes": "Standard 64-node MoE static traffic matrix for baseline L2 exploration"
+  },
+  {
+    "name": "qwen_moe_combined_smallsp",
+    "path": "inputs/qwen_moe_combined_smallsp.mat",
+    "class": "memory_fabric_codesign",
+    "type": "matrix",
+    "nodes": 64,
+    "notes": "Banked traffic matrix with shared-L2 accesses for joint fabric + memory co-design"
+  }
+]

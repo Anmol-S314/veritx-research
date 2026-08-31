@@ -1,0 +1,10 @@
+{
+  "source": "astra_flits.txt",
+  "flits": 42762240,
+  "packets": 668160,
+  "segment": 64,
+  "window_cycles": 15621049,
+  "mean_pk_flits": 64.0,
+  "median_pk_flits": 64,
+  "max_pk_flits": 64
+}
