@@ -11,11 +11,11 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from veritx_dse.compile_model import (
+from veritx_dse.model.compile_model import (
     CompileRequest, Workload, Agent, NocConfig, Dependency,
     DependencyGraph, ModelFamily, AgentKind, TopologyFamily, DepKind,
 )
-from veritx_dse.artifact import DesignManifest
+from veritx_dse.reports.artifact import DesignManifest
 
 
 class TestCompileRequestApiContract:
@@ -70,7 +70,7 @@ class TestCompileRequestApiContract:
 
     def test_validate_works_with_list_deps(self):
         """validate() should work with list deps."""
-        from veritx_dse.compile_model import validate
+        from veritx_dse.model.compile_model import validate
         cr = self._minimal_cr(
             dependencies=[Dependency(source="a", target="b", kind=DepKind.BLOCKING)]
         )
@@ -79,7 +79,7 @@ class TestCompileRequestApiContract:
 
     def test_requirements_as_list(self):
         """requirements=[] (list) should auto-convert to tuple."""
-        from veritx_dse.compile_model import Requirement, QoSClass
+        from veritx_dse.model.compile_model import Requirement, QoSClass
         cr = self._minimal_cr(requirements=[
             Requirement(qos_class=QoSClass.LATENCY_CRITICAL, latency_ceiling_cycles=100)
         ])

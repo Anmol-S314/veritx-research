@@ -9,13 +9,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
-from veritx_dse.reports import (
+from veritx_dse.reports.reports import (
     _scale_factor,
     generate_report,
     estimate_fabric_area,
     estimate_total_power,
 )
-from veritx_dse.compile_model import CompileRequest
+from veritx_dse.model.compile_model import CompileRequest
 
 
 # ── _scale_factor tests ──────────────────────────────────────────────────────

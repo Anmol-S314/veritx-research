@@ -3,15 +3,15 @@ import json
 import tempfile
 import pytest
 from pathlib import Path
-from veritx_dse.compile_model import (
+from veritx_dse.model.compile_model import (
     CompileRequest, Workload, ModelFamily, ServingMode,
     Agent, AgentKind, NocConfig, TopologyFamily,
     OutputFormat, validate, derive_vc_assignment,
     VerificationResult, verify_design, generate_artifacts,
     DependencyGraph,
 )
-from veritx_dse.reports import generate_report
-from veritx_dse.uvm_gen import generate_uvm
+from veritx_dse.reports.reports import generate_report
+from veritx_dse.verification.uvm_gen import generate_uvm
 
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
@@ -92,7 +92,7 @@ class TestVerifyInReport:
 
     def test_f7_qos_warn_with_requirements(self):
         """F7 should WARN when requirements are defined (formal QoS pending)."""
-        from veritx_dse.compile_model import Requirement, QoSClass
+        from veritx_dse.model.compile_model import Requirement, QoSClass
         cr = CompileRequest(
             workload=Workload(model_family=ModelFamily.DENSE_TRANSFORMER),
             requirements=(Requirement(QoSClass.LATENCY_CRITICAL, 5000, binding=True),),

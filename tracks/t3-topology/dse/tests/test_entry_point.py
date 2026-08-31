@@ -29,12 +29,12 @@ class TestPackageImport:
 
     def test_import_cli_main(self):
         """veritx_dse.cli:main is importable and callable."""
-        from veritx_dse.cli import main
+        from veritx_dse.cli.cli import main
         assert callable(main)
 
     def test_import_compile_model(self):
         """veritx_dse.compile_model public API is importable."""
-        from veritx_dse.compile_model import (
+        from veritx_dse.model.compile_model import (
             CompileRequest, Workload, Agent, NocConfig,
             validate, derive_topology_spec, derive_vc_assignment,
             verify_design, generate_artifacts,
@@ -44,17 +44,17 @@ class TestPackageImport:
 
     def test_import_reports(self):
         """veritx_dse.reports public API is importable."""
-        from veritx_dse.reports import generate_report
+        from veritx_dse.reports.reports import generate_report
         assert callable(generate_report)
 
     def test_import_artifact(self):
         """veritx_dse.artifact public API is importable."""
-        from veritx_dse.artifact import DesignManifest, sign_manifest, verify_manifest
+        from veritx_dse.reports.artifact import DesignManifest, sign_manifest, verify_manifest
         assert callable(sign_manifest)
 
     def test_import_uvm_gen(self):
         """veritx_dse.uvm_gen public API is importable."""
-        from veritx_dse.uvm_gen import generate_uvm
+        from veritx_dse.verification.uvm_gen import generate_uvm
         assert callable(generate_uvm)
 
 

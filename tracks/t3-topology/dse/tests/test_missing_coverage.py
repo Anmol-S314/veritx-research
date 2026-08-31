@@ -28,16 +28,16 @@ class TestTraceInfo:
         trace = Path(__file__).parent.parent / "inputs" / "qwen3_serving_astra.trace"
         if not trace.exists():
             pytest.skip("Qwen3 trace not found")
-        from veritx_dse.commands_trace import cmd_trace_info
-        from veritx_dse.logging import Ctx
+        from veritx_dse.cli.commands_trace import cmd_trace_info
+        from veritx_dse.core.logging import Ctx
         ctx = Ctx()
         # cmd_trace_info prints to stdout via log(), doesn't return
         cmd_trace_info(ctx, self._make_args(trace))
 
     def test_info_nonexistent_trace(self):
         """trace info on missing file should handle gracefully."""
-        from veritx_dse.commands_trace import cmd_trace_info
-        from veritx_dse.logging import Ctx
+        from veritx_dse.cli.commands_trace import cmd_trace_info
+        from veritx_dse.core.logging import Ctx
         ctx = Ctx()
         try:
             cmd_trace_info(ctx, self._make_args("/nonexistent/trace.trace"))
@@ -46,8 +46,8 @@ class TestTraceInfo:
 
     def test_info_synthetic_trace(self):
         """trace info on synthetic 3-line trace."""
-        from veritx_dse.commands_trace import cmd_trace_info
-        from veritx_dse.logging import Ctx
+        from veritx_dse.cli.commands_trace import cmd_trace_info
+        from veritx_dse.core.logging import Ctx
         with tempfile.NamedTemporaryFile(mode='w', suffix='.trace', delete=False) as f:
             f.write("# cycle src class dst size\n")
             f.write("100 0 0 1 8\n")
@@ -74,15 +74,15 @@ class TestTraceValidate:
         trace = Path(__file__).parent.parent / "inputs" / "qwen3_serving_astra.trace"
         if not trace.exists():
             pytest.skip("Qwen3 trace not found")
-        from veritx_dse.commands_trace import cmd_trace_validate
-        from veritx_dse.logging import Ctx
+        from veritx_dse.cli.commands_trace import cmd_trace_validate
+        from veritx_dse.core.logging import Ctx
         ctx = Ctx()
         cmd_trace_validate(ctx, self._make_args(trace))
 
     def test_validate_nonexistent(self):
         """validate on missing file should handle gracefully."""
-        from veritx_dse.commands_trace import cmd_trace_validate
-        from veritx_dse.logging import Ctx
+        from veritx_dse.cli.commands_trace import cmd_trace_validate
+        from veritx_dse.core.logging import Ctx
         ctx = Ctx()
         try:
             cmd_trace_validate(ctx, self._make_args("/nonexistent/trace.trace"))
@@ -102,7 +102,7 @@ class TestLogger:
 
     def test_logger_returns_logger(self):
         """logger returns a usable logger object."""
-        from veritx_dse.logger import get_logger
+        from veritx_dse.core.logger import get_logger
         log = get_logger("test")
         assert log is not None
         # Should be able to call log methods without error
@@ -121,7 +121,7 @@ class TestRecovery:
 
     def test_atomic_write(self):
         """atomic_write writes via temp file then renames."""
-        from veritx_dse.recovery import atomic_write
+        from veritx_dse.core.recovery import atomic_write
         with tempfile.TemporaryDirectory() as d:
             target = Path(d) / "output.txt"
             with atomic_write(target) as tmp_path:
@@ -130,7 +130,7 @@ class TestRecovery:
 
     def test_temporary_directory(self):
         """temporary_directory creates and cleans up."""
-        from veritx_dse.recovery import temporary_directory
+        from veritx_dse.core.recovery import temporary_directory
         with temporary_directory() as d:
             assert Path(d).exists()
             (Path(d) / "test.txt").write_text("test")
@@ -145,12 +145,12 @@ class TestTraceToBinary:
 
     def test_imports(self):
         """trace_to_binary module imports."""
-        from veritx_dse import trace_to_binary
+        from veritx_dse.simulation import trace_to_binary
         assert True
 
     def test_conversion_function_exists(self):
         """trace_to_binary has a convert function."""
-        from veritx_dse import trace_to_binary
+        from veritx_dse.simulation import trace_to_binary
         # Should have at least one public function
         public = [x for x in dir(trace_to_binary) if not x.startswith('_')]
         assert len(public) > 0

@@ -17,12 +17,12 @@ class TestUVMGenerator:
     """PRD §9.3: UVM verification suite generation."""
 
     def test_generator_importable(self):
-        from veritx_dse.uvm_gen import generate_uvm
+        from veritx_dse.verification.uvm_gen import generate_uvm
         assert callable(generate_uvm)
 
     def test_generate_returns_dict(self):
-        from veritx_dse.uvm_gen import generate_uvm
-        from veritx_dse.compile_model import (
+        from veritx_dse.verification.uvm_gen import generate_uvm
+        from veritx_dse.model.compile_model import (
             CompileRequest, Workload, ModelFamily, Agent, AgentKind,
             NocConfig, DependencyGraph, TopologyFamily,
         )
@@ -39,8 +39,8 @@ class TestUVMGenerator:
         assert "tb_top" in result
 
     def test_generate_produces_tb_top(self):
-        from veritx_dse.uvm_gen import generate_uvm
-        from veritx_dse.compile_model import (
+        from veritx_dse.verification.uvm_gen import generate_uvm
+        from veritx_dse.model.compile_model import (
             CompileRequest, Workload, ModelFamily, Agent, AgentKind,
             NocConfig, DependencyGraph, TopologyFamily,
         )
@@ -58,8 +58,8 @@ class TestUVMGenerator:
         assert "run_test" in tb
 
     def test_generate_produces_sequences(self):
-        from veritx_dse.uvm_gen import generate_uvm
-        from veritx_dse.compile_model import (
+        from veritx_dse.verification.uvm_gen import generate_uvm
+        from veritx_dse.model.compile_model import (
             CompileRequest, Workload, ModelFamily, Agent, AgentKind,
             NocConfig, DependencyGraph, TopologyFamily,
         )
@@ -77,8 +77,8 @@ class TestUVMGenerator:
         assert "sequence" in seq.lower() or "uvm_sequence" in seq
 
     def test_generate_produces_assertions(self):
-        from veritx_dse.uvm_gen import generate_uvm
-        from veritx_dse.compile_model import (
+        from veritx_dse.verification.uvm_gen import generate_uvm
+        from veritx_dse.model.compile_model import (
             CompileRequest, Workload, ModelFamily, Agent, AgentKind,
             NocConfig, DependencyGraph, TopologyFamily,
         )
@@ -97,8 +97,8 @@ class TestUVMGenerator:
         assert "deadlock" in assertions.lower() or "liveness" in assertions.lower()
 
     def test_generate_produces_coverage(self):
-        from veritx_dse.uvm_gen import generate_uvm
-        from veritx_dse.compile_model import (
+        from veritx_dse.verification.uvm_gen import generate_uvm
+        from veritx_dse.model.compile_model import (
             CompileRequest, Workload, ModelFamily, Agent, AgentKind,
             NocConfig, DependencyGraph, TopologyFamily,
         )
@@ -115,8 +115,8 @@ class TestUVMGenerator:
         assert "covergroup" in cov.lower() or "coverpoint" in cov.lower()
 
     def test_generate_produces_all_files(self):
-        from veritx_dse.uvm_gen import generate_uvm
-        from veritx_dse.compile_model import (
+        from veritx_dse.verification.uvm_gen import generate_uvm
+        from veritx_dse.model.compile_model import (
             CompileRequest, Workload, ModelFamily, Agent, AgentKind,
             NocConfig, DependencyGraph, TopologyFamily,
         )
@@ -132,8 +132,8 @@ class TestUVMGenerator:
         assert len(result["files"]) >= 4
 
     def test_generate_tops_from_agents(self):
-        from veritx_dse.uvm_gen import generate_uvm
-        from veritx_dse.compile_model import (
+        from veritx_dse.verification.uvm_gen import generate_uvm
+        from veritx_dse.model.compile_model import (
             CompileRequest, Workload, ModelFamily, Agent, AgentKind,
             NocConfig, DependencyGraph, TopologyFamily,
         )
@@ -153,8 +153,8 @@ class TestUVMGenerator:
         assert "16" in tb or "compute_tile" in tb.lower()
 
     def test_generate_with_cycles_warning(self):
-        from veritx_dse.uvm_gen import generate_uvm
-        from veritx_dse.compile_model import (
+        from veritx_dse.verification.uvm_gen import generate_uvm
+        from veritx_dse.model.compile_model import (
             CompileRequest, Workload, ModelFamily, Agent, AgentKind,
             NocConfig, DependencyGraph, TopologyFamily,
             Dependency, DepKind,
@@ -183,7 +183,7 @@ class TestUVMCLI:
     """PRD §9.3: UVM generation via CLI."""
 
     def test_generate_command_exists(self):
-        from veritx_dse.cli import build_parser
+        from veritx_dse.cli.cli import build_parser
         parser = build_parser()
         # Should be able to parse 'veritx generate uvm'
         args = parser.parse_args(["generate", "uvm", "--request", "test.json",
@@ -191,7 +191,7 @@ class TestUVMCLI:
         assert args.gen_cmd == "uvm"
 
     def test_generate_uvm_help(self):
-        from veritx_dse.cli import build_parser
+        from veritx_dse.cli.cli import build_parser
         parser = build_parser()
         try:
             args = parser.parse_args(["generate", "uvm", "--help"])

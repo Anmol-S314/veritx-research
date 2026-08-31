@@ -18,7 +18,7 @@ class TestResultEntity:
     """PRD §12.8: Result — latency/bw, area/power/timing."""
 
     def test_result_creation(self):
-        from veritx_dse.compile_model import Result
+        from veritx_dse.model.compile_model import Result
         r = Result(
             design_id="abc-123",
             revision=1,
@@ -33,13 +33,13 @@ class TestResultEntity:
         assert r.design_id == "abc-123"
 
     def test_result_immutable(self):
-        from veritx_dse.compile_model import Result
+        from veritx_dse.model.compile_model import Result
         r = Result("abc", 1, 100.0, None, 0.1, 0.01, 1000, 0.5)
         with pytest.raises(AttributeError):
             r.latency_cycles = 200.0
 
     def test_result_to_dict(self):
-        from veritx_dse.compile_model import Result
+        from veritx_dse.model.compile_model import Result
         r = Result("abc", 1, 100.0, 50.0, 0.1, 0.01, 1000, 0.5)
         d = r.to_dict()
         assert d["latency_cycles"] == 100.0
@@ -47,7 +47,7 @@ class TestResultEntity:
         assert d["design_id"] == "abc"
 
     def test_result_from_dict(self):
-        from veritx_dse.compile_model import Result
+        from veritx_dse.model.compile_model import Result
         d = {"design_id": "abc", "revision": 1, "latency_cycles": 100.0,
              "throughput_gbps": None, "area_mm2": 0.1, "power_w": 0.01,
              "fmax_mhz": 1000, "energy_pj_per_bit": 0.5}
@@ -64,7 +64,7 @@ class TestArtifactEntity:
     """PRD §12.9: Artifact — uri, signature, checksum."""
 
     def test_artifact_creation(self):
-        from veritx_dse.compile_model import Artifact
+        from veritx_dse.model.compile_model import Artifact
         a = Artifact(
             artifact_id="art-001",
             design_id="abc-123",
@@ -78,20 +78,20 @@ class TestArtifactEntity:
         assert a.uri == "runs/rtl/mesh_8x8/noc.sv"
 
     def test_artifact_immutable(self):
-        from veritx_dse.compile_model import Artifact
+        from veritx_dse.model.compile_model import Artifact
         a = Artifact("a", "d", 1, "rtl", "f.sv", "ck", "sig")
         with pytest.raises(AttributeError):
             a.kind = "uvm"
 
     def test_artifact_to_dict(self):
-        from veritx_dse.compile_model import Artifact
+        from veritx_dse.model.compile_model import Artifact
         a = Artifact("a", "d", 1, "rtl", "f.sv", "ck", "sig")
         d = a.to_dict()
         assert d["kind"] == "rtl"
         assert d["checksum_sha256"] == "ck"
 
     def test_artifact_from_dict(self):
-        from veritx_dse.compile_model import Artifact
+        from veritx_dse.model.compile_model import Artifact
         d = {"artifact_id": "a", "design_id": "d", "revision": 1,
              "kind": "uvm", "uri": "tb.sv", "checksum_sha256": "ck",
              "signature": "sig"}
@@ -99,7 +99,7 @@ class TestArtifactEntity:
         assert a.kind == "uvm"
 
     def test_artifact_checksum_verification(self):
-        from veritx_dse.compile_model import Artifact
+        from veritx_dse.model.compile_model import Artifact
         content = b"module noc; endmodule"
         checksum = hashlib.sha256(content).hexdigest()
         a = Artifact("a", "d", 1, "rtl", "noc.sv", checksum, "sig")
@@ -115,11 +115,11 @@ class TestVerifyStage:
     """PRD §13.5: Verify — F1–F8 proof obligations."""
 
     def test_verify_stage_exists(self):
-        from veritx_dse.compile_model import verify_design
+        from veritx_dse.model.compile_model import verify_design
         assert callable(verify_design)
 
     def test_verify_returns_result(self):
-        from veritx_dse.compile_model import verify_design, CompileRequest, Workload, ModelFamily, Agent, AgentKind, NocConfig, DependencyGraph
+        from veritx_dse.model.compile_model import verify_design, CompileRequest, Workload, ModelFamily, Agent, AgentKind, NocConfig, DependencyGraph
         cr = CompileRequest(
             workload=Workload(model_family=ModelFamily.CUSTOM),
             requirements=(),
@@ -133,7 +133,7 @@ class TestVerifyStage:
         assert hasattr(vr, "errors")
 
     def test_verify_mesh_has_checks(self):
-        from veritx_dse.compile_model import verify_design, CompileRequest, Workload, ModelFamily, Agent, AgentKind, NocConfig, DependencyGraph
+        from veritx_dse.model.compile_model import verify_design, CompileRequest, Workload, ModelFamily, Agent, AgentKind, NocConfig, DependencyGraph
         cr = CompileRequest(
             workload=Workload(model_family=ModelFamily.CUSTOM),
             requirements=(),
@@ -148,7 +148,7 @@ class TestVerifyStage:
         assert "F2_liveness" in check_names
 
     def test_verify_no_cycles_passes(self):
-        from veritx_dse.compile_model import verify_design, CompileRequest, Workload, ModelFamily, Agent, AgentKind, NocConfig, DependencyGraph
+        from veritx_dse.model.compile_model import verify_design, CompileRequest, Workload, ModelFamily, Agent, AgentKind, NocConfig, DependencyGraph
         cr = CompileRequest(
             workload=Workload(model_family=ModelFamily.CUSTOM),
             requirements=(),
@@ -170,11 +170,11 @@ class TestGenerateStage:
     """PRD §13.6: Generate — RTL/report generation."""
 
     def test_generate_stage_exists(self):
-        from veritx_dse.compile_model import generate_artifacts
+        from veritx_dse.model.compile_model import generate_artifacts
         assert callable(generate_artifacts)
 
     def test_generate_returns_artifacts(self):
-        from veritx_dse.compile_model import generate_artifacts, CompileRequest, Workload, ModelFamily, Agent, AgentKind, NocConfig, DependencyGraph
+        from veritx_dse.model.compile_model import generate_artifacts, CompileRequest, Workload, ModelFamily, Agent, AgentKind, NocConfig, DependencyGraph
         cr = CompileRequest(
             workload=Workload(model_family=ModelFamily.CUSTOM),
             requirements=(),
@@ -187,7 +187,7 @@ class TestGenerateStage:
         assert all(hasattr(a, "kind") for a in artifacts)
 
     def test_generate_manifest_artifact(self):
-        from veritx_dse.compile_model import generate_artifacts, CompileRequest, Workload, ModelFamily, Agent, AgentKind, NocConfig, DependencyGraph
+        from veritx_dse.model.compile_model import generate_artifacts, CompileRequest, Workload, ModelFamily, Agent, AgentKind, NocConfig, DependencyGraph
         cr = CompileRequest(
             workload=Workload(model_family=ModelFamily.CUSTOM),
             requirements=(),
@@ -208,8 +208,8 @@ class TestFullPipeline:
     """PRD §13: Submit→Validate→Simulate→Verify→Generate→Sign→Return."""
 
     def test_pipeline_report_includes_result(self):
-        from veritx_dse.reports import generate_report
-        from veritx_dse.compile_model import CompileRequest, Workload, ModelFamily, Agent, AgentKind, NocConfig, DependencyGraph
+        from veritx_dse.reports.reports import generate_report
+        from veritx_dse.model.compile_model import CompileRequest, Workload, ModelFamily, Agent, AgentKind, NocConfig, DependencyGraph
         cr = CompileRequest(
             workload=Workload(model_family=ModelFamily.CUSTOM),
             requirements=(),
@@ -222,8 +222,8 @@ class TestFullPipeline:
         assert "result" in report or "simulation" in report
 
     def test_pipeline_report_includes_verification(self):
-        from veritx_dse.reports import generate_report
-        from veritx_dse.compile_model import CompileRequest, Workload, ModelFamily, Agent, AgentKind, NocConfig, DependencyGraph
+        from veritx_dse.reports.reports import generate_report
+        from veritx_dse.model.compile_model import CompileRequest, Workload, ModelFamily, Agent, AgentKind, NocConfig, DependencyGraph
         cr = CompileRequest(
             workload=Workload(model_family=ModelFamily.CUSTOM),
             requirements=(),
@@ -235,8 +235,8 @@ class TestFullPipeline:
         assert "verification" in report
 
     def test_pipeline_report_includes_artifacts(self):
-        from veritx_dse.reports import generate_report
-        from veritx_dse.compile_model import CompileRequest, Workload, ModelFamily, Agent, AgentKind, NocConfig, DependencyGraph
+        from veritx_dse.reports.reports import generate_report
+        from veritx_dse.model.compile_model import CompileRequest, Workload, ModelFamily, Agent, AgentKind, NocConfig, DependencyGraph
         cr = CompileRequest(
             workload=Workload(model_family=ModelFamily.CUSTOM),
             requirements=(),

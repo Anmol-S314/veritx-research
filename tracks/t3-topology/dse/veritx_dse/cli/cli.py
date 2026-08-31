@@ -271,7 +271,7 @@ def cmd_trace_hpc(ctx: Ctx, args):
 
 def cmd_synthesize_bo(ctx: Ctx, args):
     log(ctx, f"BO synthesis: {args.iters} iterations, {args.nodes} nodes")
-    cmd = [sys.executable, str(SCRIPTS_DIR / "bo_synthesizer.py"),
+    cmd = [sys.executable, str("veritx_dse.synthesis.bo_synthesizer"),
            "--traffic", args.traffic, "--nodes", str(args.nodes),
            "--iters", str(args.iters), "--scorer", args.scorer]
     if args.seed:
@@ -305,7 +305,7 @@ def cmd_synthesize_grid(ctx: Ctx, args):
 def cmd_synthesize_iterative(ctx: Ctx, args):
     trace = _resolve_path(args.trace)
     log(ctx, f"Iterative synthesis ({args.method}, {args.steps} steps)")
-    cmd = [sys.executable, str(SCRIPTS_DIR / "iterative_synthesizer.py"),
+    cmd = [sys.executable, str("veritx_dse.synthesis.iterative_synthesizer"),
            "--trace", str(Path(trace).resolve()), "--method", args.method,
            "--steps", str(args.steps), "--max-edges", str(args.max_edges),
            "--out", args.out or str(RUNS_DIR / f"{args.method}_standalone.anynet")]
@@ -725,7 +725,7 @@ def cmd_run(ctx: Ctx, args):
         import subprocess
         if args.search == "bo":
             iters = max(args.iters, 10)
-            cmd = [sys.executable, str(SCRIPTS_DIR / "bo_synthesizer.py"),
+            cmd = [sys.executable, str("veritx_dse.synthesis.bo_synthesizer"),
                    "--traffic", str(trace_path), "--nodes", str(args.nodes),
                    "--iters", str(iters), "--scorer", args.scorer]
             subprocess.run(cmd, capture_output=True, text=True, timeout=600,
@@ -742,7 +742,7 @@ def cmd_run(ctx: Ctx, args):
                 manifest["best_params"] = data.get("best_params")
         elif args.search == "iterative":
             method = args.iterative_method
-            cmd = [sys.executable, str(SCRIPTS_DIR / "iterative_synthesizer.py"),
+            cmd = [sys.executable, str("veritx_dse.synthesis.iterative_synthesizer"),
                    "--trace", str(trace_path), "--method", method,
                    "--steps", str(max(args.iters, 10)), "--max-edges", "120",
                    "--out", str(RUNS_DIR / "booksim" / "topo.anynet")]

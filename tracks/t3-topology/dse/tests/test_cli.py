@@ -10,10 +10,10 @@ from unittest.mock import MagicMock, patch
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
-from veritx_dse.logging import Ctx
-from veritx_dse.booksim import build_config, BookSimError
-from veritx_dse.presets import SWEEP_TOPOS
-from veritx_dse.compile_model import CompileRequest
+from veritx_dse.core.logging import Ctx
+from veritx_dse.simulation.booksim import build_config, BookSimError
+from veritx_dse.model.presets import SWEEP_TOPOS
+from veritx_dse.model.compile_model import CompileRequest
 
 
 # ── Mock BookSim runner ──────────────────────────────────────────────────────
@@ -69,7 +69,7 @@ class TestBuildConfig:
 class TestRunBookSimMock:
     def test_mock_runner_returns_latency(self):
         """Mock runner should be accepted by run_booksim."""
-        from veritx_dse.booksim import run_booksim
+        from veritx_dse.simulation.booksim import run_booksim
 
         runner = MockBookSimRunner(latency=42.0)
         ctx = Ctx(verbosity=0)
@@ -83,7 +83,7 @@ class TestRunBookSimMock:
 
     def test_mock_runner_timeout(self):
         """Mock runner raising TimeoutError should propagate."""
-        from veritx_dse.booksim import run_booksim
+        from veritx_dse.simulation.booksim import run_booksim
 
         def timeout_runner(cmd, cwd, timeout):
             raise TimeoutBookSim()
@@ -144,7 +144,7 @@ class TestCtxSeed:
 
 class TestTraceValidation:
     def test_negative_node_id_rejected(self):
-        from veritx_dse.traces import validate_trace
+        from veritx_dse.simulation.traces import validate_trace
         import tempfile, os
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".trace", delete=False) as f:
