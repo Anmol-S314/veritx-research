@@ -131,148 +131,156 @@ flowchart TD
 ## 2. Repository Layout
 
 ```
-veritx-research/                          ← repo root
- third_party/
-    booksim2/                         ← CANONICAL BookSim2 fork (edit here)
-       src/
-          booksim                   ← CLI binary (standalone)
-          libveritx_embed.a         ← embedding library (for ASTRA-sim)
-          veritx_embed.*            ← embedding API (ASTRA-sim integration)
-          veritx_ext.*              ← trace replay extension
-          traffic.cpp               ← trace() traffic pattern factory
-          flit.hpp/cpp              ← multicast fields (mcast, mcast_copies)
-          Makefile                  ← builds both booksim + libveritx_embed.a
-          sync_to_astra.sh          ← sync to ASTRA-sim's internal copy
-       METADATA.json                ← version tracking
-       .gitignore                   ← ignores binaries (*.o, booksim, *.a)
-   
-    timeloop/                         ← Timeloop/Mapper (energy model)
+veritx-research/                           repo root
+  third_party/
+    booksim2/                          CANONICAL BookSim2 fork (edit here)
+      src/
+        booksim                        CLI binary (standalone)
+        libveritx_embed.a              embedding library (ASTRA-sim)
+        veritx_embed.*                 embedding API (ASTRA-sim integration)
+        veritx_ext.*                   trace replay extension
+        traffic.cpp                    trace() traffic pattern factory
+        flit.hpp/cpp                   multicast fields (mcast, mcast_copies)
+        networks/
+          anynet.o                     anynet topology support
+          gec.o                        GEC express topology
+          custom4.o                    MECS 4-tap topology
+        Makefile                       builds booksim + libveritx_embed.a
+        sync_to_astra.sh               sync to ASTRA-sim internal copy
+      METADATA.json                    version tracking (v0.2.1)
+    timeloop/                          Timeloop/Mapper (energy model)
 
- serving/
-    astra-sim/                        ← ASTRA-sim multi-die simulator
-       CMakeLists.txt               ← builds with BookSim2 backend
-       extern/network_backend/booksim2/  ← internal booksim2 copy (synced)
-          booksim2/src/             ← ← synced via sync_to_astra.sh
-       build/astra_booksim2/
-          build.sh                 ← build script
-       astra-sim/
-          common/                   ← AstraComputeAPI, AstraNetworkAPI
-          network_frontend/booksim2/bin/
-              AstraSim_BookSim2     ← multi-die binary
-       examples/
-           network/ns3/             ← network configs (4/8/16 nodes)
-           system/                  ← collective configs (Ring, AllReduce)
-           workload/                ← application workloads
-           remote_memory/           ← memory hierarchy configs
-   
-    LLMServingSim/                    ← traffic trace generator (KAIST)
-        serving/                      ← Python frontend (vLLM-style scheduler)
-           run.sh                   ← run simulations
-        scripts/
-           compile.sh               ← build ASTRA-sim + Chakra
-           docker-sim.sh            ← launch simulator container
-           docker-vllm.sh           ← launch vLLM profiler
-        configs/                      ← workload configurations
-        traces/                       ← generated traces
-        README.md                    ← LLMServingSim docs
+  serving/
+    astra-sim/                         ASTRA-sim multi-die simulator
+      extern/network_backend/booksim2/ internal booksim2 copy (synced)
+      astra-sim/network_frontend/booksim2/bin/
+        AstraSim_BookSim2              multi-die binary
+      examples/network/ns3/            network configs (4/8/16 nodes)
+    LLMServingSim/                     traffic trace generator (KAIST)
+      serving/                         Python frontend (vLLM scheduler)
+      configs/                         workload configurations
+    booksim2-embed/                    BookSim2 embedding C++ library
 
- tracks/t3-topology/
-    dse/                              ← VeritX CLI (this package)
-       README.md                     ← THIS FILE (the wiki)
-       pyproject.toml               ← pip install -e . config
-       veritx_dse/                   ← core package (29 modules)
-          __init__.py              ← public API re-exports
-          cli.py                   ← 17 CLI commands, thin dispatch
-          compile_model.py         ← E1-E5 data model, guardrails
-          traffic_model.py         ← phase-aware traffic model
-          evaluator.py             ← BookSim runner with caching
-          uvm_gen.py               ← UVM testbench generator
-          traces.py                ← trace validation, analysis
-          reports.py               ← area/power/timing estimates
-          pipeline.py              ← compare, sweep, orchestration
-          booksim.py               ← BookSim2 config + execution
-          presets.py               ← topology + workload registry
-          model_to_trace.py        ← traffic model to trace converter
-          artifact.py              ← HMAC signing + manifests
-          chakra_to_dse.py         ← Chakra trace converter
-          recommend.py             ← BO recommendation engine
-          roofline.py              ← roofline model analysis
-          commands_trace.py        ← trace CLI handlers
-          config.py                ← configuration management
-          constants.py             ← physical constants (7nm)
-          errors.py                ← structured error hierarchy
-          logger.py                ← file logger
-          logging.py               ← structured logging with Ctx
-          objective.py             ← optimization objectives
-          phase_sequencer.py       ← phase sequencing
-          recovery.py              ← atomic writes + cleanup
-          dse_to_frontend.py       ← DSE→frontend interface
-          trace_to_binary.py       ← binary trace conversion
-      
-       tests/                        ← test suite (278 tests)
-          test_compile_model.py    ← E1-E5, guardrails (50 tests)
-          test_prd_gaps.py         ← reports, artifacts (38 tests)
-          test_cli_modules.py      ← CLI trace, topology (33 tests)
-          test_integration.py      ← end-to-end CLI (21 tests)
-          test_entry_point.py      ← package install (23 tests)
-          test_sprint1.py          ← Result/Artifact (19 tests)
-          test_uvm_gen.py          ← UVM generation (11 tests)
-          test_compile_uvm.py      ← UVM in pipeline (14 tests)
-          test_missing_coverage.py ← coverage gaps (14 tests)
-          test_cli.py              ← BookSim mock (10 tests)
-          test_reports.py          ← area/power/timing (9 tests)
-          test_api_contract.py     ← API contracts (11 tests)
-          test_stress_calib.py     ← stress calibration
-          test_astra_trace.py      ← ASTRA-sim trace format
-          test_microarch_axes.py   ← microarchitecture axes
-          test_workload_axis.py    ← workload axis
-      
-       examples/                     ← sample CompileRequest JSONs
-          _template.json           ← full template with docs
-          qwen3_moe_16npu.json     ← Qwen3 MoE, 20 nodes
-          llama70b_tp64.json        ← LLaMA-70B dense, 72 nodes
-          llama1b_tp64.json         ← LLaMA-1B attention, 68 nodes
-          dense_64npu.json          ← generic dense, 72 nodes
-          moe_8npu.json             ← generic MoE, 10 nodes
-      
-       scripts/                       ← standalone analysis scripts
-          iterative_synthesizer.py ← RHO/GRPO search
-          multi_workload_pareto.py ← Pareto front computation
-          fair_stress_test.py      ← stress testing framework
-          interdie_stress_test.py  ← inter-die bridge testing
-          llama70b_test.py         ← LLaMA-70B test runner
-          ucie_scaling_results.md  ← UCIe scaling data
-      
-       models/                        ← traffic model definitions
-          traffic_model.json        ← generic traffic model
-          automotive_adas.json      ← automotive ADAS
-          automotive_real.json      ← real automotive trace
-          hpc_real.json             ← real HPC workload
-          hpc_wrf_real.json         ← WRF weather simulation
-      
-       docs/                          ← documentation
-           PRD-CHECKLIST.md          ← Srota §1-§16 compliance
-           LONG-TERM-VISION.md       ← roadmap
-           RESULTS-AND-LEARNINGS.md  ← research findings
-           SHORTCOMINGS-AND-IMPROVEMENTS.md
-           BOOKSIM-PERF-OPTIMIZATION.md
-           VERITX-CLI-AND-TUI-PLAN.md
-           HANDOFF-calibration-plan.md
-           AUDIT-2026-08-28.md
-           PARETO-REPLAY-RESULTS-2026-08-29.md
-           PER-PHASE-PARETO-RESULTS-2026-08-29.md
-           RATE-MISMATCH-OBSERVATION-2026-08-29.md
-   
-    Makefile                          ← top-level make targets
-    configs/                          ← Timeloop configs
+  runs/
+    traces/                            traffic traces for simulation
+      qwen3_serving_16rank.trace      Qwen3 MoE serving (95K pkts, 16 nodes)
+      llama70b_tp64_ring.trace        LLaMA-70B ring (1.3M pkts, 64 nodes)
+      llama70b_tp64_alltoall.trace    LLaMA-70B all-to-all (1.3M pkts)
+      llama_1b_attention.trace         LLaMA-1B attention (258K pkts)
+      qwen3_tree.trace                 Qwen3 tree topo (26M pkts)
+      qwen3_star.trace                 Qwen3 star topo
+      qwen3_ring.trace                 Qwen3 ring topo
+    booksim/                           BookSim outputs + .anynet files
+    compile_requests/                  generated CompileRequest JSONs
 
- runs/
-    traces/                           ← traffic traces for simulation
-    booksim/                          ← BookSim outputs + .anynet files
-    compile_requests/                 ← generated CompileRequest JSONs
+  scripts/
+    golden_model.py                    golden model reference
 
- scripts/
-     golden_model.py                   ← golden model reference
+  tracks/t3-topology/
+    dse/                               VeritX CLI (this package)
+      README.md                        THIS FILE (the wiki)
+      pyproject.toml                   pip install -e . config
+
+      veritx_dse/                      core package (30 modules)
+        paths.py                       SINGLE SOURCE: REPO, DSE_DIR, RUNS_DIR, BOOKSIM_BIN
+        cli.py                         17 CLI commands, thin dispatch
+        compile_model.py               E1-E5 data model, guardrails, VC derivation
+        pipeline.py                    compare, sweep, orchestration
+        booksim.py                     BookSim2 config generation + execution
+        evaluator.py                   BookSim runner with LRU caching
+        traces.py                      trace validation + analysis
+        reports.py                     area/power/timing estimates
+        presets.py                     topology + workload registry
+        artifact.py                    HMAC signing + manifests
+        uvm_gen.py                     UVM testbench generator
+        config.py                      configuration management (env vars)
+        constants.py                   physical constants (7nm tech)
+        errors.py                      structured error hierarchy
+        logger.py                      file logger
+        logging.py                     structured logging with Ctx
+        recovery.py                    atomic writes + cleanup on failure
+        commands_trace.py              trace CLI handlers (validate, info, extract)
+        model_to_trace.py              traffic model to trace converter
+        trace_to_binary.py             ASCII to binary trace conversion
+        chakra_to_dse.py               Chakra trace converter
+        recommend.py                   BO recommendation engine
+        roofline.py                    roofline model analysis
+        objective.py                   optimization objectives
+        phase_sequencer.py             phase sequencing
+        traffic_model.py               phase-aware traffic model
+        dse_to_frontend.py             DSE-to-frontend interface
+        __init__.py                    public API re-exports
+
+      tests/                           278 tests (21 integration + 257 unit)
+        test_integration.py            end-to-end CLI (21 tests)
+        test_compile_model.py          E1-E5, guardrails (50 tests)
+        test_prd_gaps.py               reports, artifacts (38 tests)
+        test_cli_modules.py            CLI trace, topology (33 tests)
+        test_entry_point.py            package install (23 tests)
+        test_sprint1.py                Result/Artifact (19 tests)
+        test_compile_uvm.py            UVM in pipeline (14 tests)
+        test_missing_coverage.py       coverage gaps (14 tests)
+        test_api_contract.py           API contracts (11 tests)
+        test_uvm_gen.py                UVM generation (11 tests)
+        test_cli.py                    BookSim mock (10 tests)
+        test_reports.py                area/power/timing (9 tests)
+        test_astra_trace.py            ASTRA-sim trace format
+
+      scripts/                         standalone analysis scripts (not part of package)
+        bo_synthesizer.py             Bayesian optimization synthesis
+        iterative_synthesizer.py      RHO/GRPO search
+        multi_workload_pareto.py      Pareto front computation
+        milestone_c.py                Milestone C certifier
+        run.py                        DSE grid search smoke test
+        space.py                      design space definition
+        search.py                     grid search implementation
+        event_objective.py             event-based scoring
+        milp_topology_v2.py           MILP topology constants + edge cost
+        deadlock_routing.py            deadlock detection + routing parse
+        log.py                         shared logger for standalone scripts
+        objective.py                   L2 recommend objective
+        ppa_evaluator.py               DSE PPA evaluator (SCALE-Sim + BookSim + Timeloop)
+        surrogate.py                   MLP surrogate model
+        verify.sh                      verification runner
+        ucie_scaling_results.md        UCIe scaling data
+
+      examples/                        sample CompileRequest JSONs
+        _template.json                full template with documentation
+        qwen3_moe_16npu.json          Qwen3 MoE, 16 NPUs (workload preset)
+        llama70b_tp64.json            LLaMA-70B dense, TP=64
+        llama1b_tp64.json             LLaMA-1B attention, TP=64
+        dense_64npu.json              generic dense, 64 NPUs
+        moe_8npu.json                 generic MoE, 8 NPUs
+
+      models/                          traffic model definitions
+        traffic_model.json             generic traffic model
+        automotive_adas.json           automotive ADAS
+        automotive_real.json           real automotive trace
+        hpc_real.json                  real HPC workload
+        hpc_wrf_real.json              WRF weather simulation
+
+      inputs/                          legacy input data
+        chakra_converted.trace         converted Chakra trace
+        qwen3_serving_astra.trace      ASTRA-sim serving trace
+        qwen_moe_*.json / *.mat        MoE workload matrices
+        workloads.json                 workload definitions
+
+      docs/                            documentation
+        PRD-CHECKLIST.md               Srota sections 1-16 compliance
+        LONG-TERM-VISION.md            roadmap
+        RESULTS-AND-LEARNINGS.md       research findings
+        SHORTCOMINGS-AND-IMPROVEMENTS.md  known limitations
+        BOOKSIM-PERF-OPTIMIZATION.md   BookSim tuning guide
+        VERITX-CLI-AND-TUI-PLAN.md    CLI/TUI roadmap
+        HANDOFF-calibration-plan.md    calibration handoff
+        AUDIT-2026-08-28.md            code audit results
+        PARETO-REPLAY-RESULTS-2026-08-29.md  replay Pareto data
+        PER-PHASE-PARETO-RESULTS-2026-08-29.md  per-phase data
+        RATE-MISMATCH-OBSERVATION-2026-08-29.md  cross-check note
+        CONTRIBUTING.md                contribution guidelines
+
+  configs/                             Timeloop configs
+  Makefile                             top-level build targets
 ```
 
 ---

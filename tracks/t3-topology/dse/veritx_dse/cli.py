@@ -60,7 +60,7 @@ from .pipeline import (
 # ── Path constants ──────────────────────────────────────────────────────────
 from veritx_dse.paths import REPO, DSE_DIR, RUNS_DIR, BOOKSIM_BIN, ASTRA_BS_BIN
 
-SCRIPTS_DIR = DSE_DIR
+SCRIPTS_DIR = DSE_DIR / "scripts"
 EXPERIMENTS_DIR = RUNS_DIR / "experiments"
 CERTIFY_SH = DSE_DIR.parent / "scripts" / "certify.sh"
 
@@ -296,7 +296,7 @@ def cmd_synthesize_grid(ctx: Ctx, args):
 def cmd_synthesize_iterative(ctx: Ctx, args):
     trace = _resolve_path(args.trace)
     log(ctx, f"Iterative synthesis ({args.method}, {args.steps} steps)")
-    cmd = [sys.executable, str(DSE_DIR / "scripts" / "iterative_synthesizer.py"),
+    cmd = [sys.executable, str(SCRIPTS_DIR / "iterative_synthesizer.py"),
            "--trace", str(Path(trace).resolve()), "--method", args.method,
            "--steps", str(args.steps), "--max-edges", str(args.max_edges),
            "--out", args.out or str(RUNS_DIR / f"{args.method}_standalone.anynet")]
@@ -498,7 +498,7 @@ def _apply_memory_correction(ctx: Ctx, result, args) -> None:
     where rho = lambda / mu, lambda = bytes_per_bank / cycles, mu = bank_bw.
     """
     try:
-        sys.path.insert(0, str(SCRIPTS_DIR.parent / "scripts"))
+        sys.path.insert(0, str(SCRIPTS_DIR))
         from memory_miss_model import bank_contention
     except ImportError:
         fail(ctx, "bank_contention not available (memory_miss_model not found)")
@@ -622,7 +622,7 @@ def cmd_pareto(ctx: Ctx, args):
     sys.path.insert(0, str(SCRIPTS_DIR))
     import importlib.util
     spec = importlib.util.spec_from_file_location(
-        "mwp", str(SCRIPTS_DIR / "scripts" / "multi_workload_pareto.py"))
+        "mwp", str(SCRIPTS_DIR / "multi_workload_pareto.py"))
     mod = importlib.util.module_from_spec(spec)
     sys.argv = ["multi_workload_pareto.py", "--traces", args.traces,
                 "--topos", args.topos, "--anynet", args.anynet,
@@ -714,7 +714,7 @@ def cmd_run(ctx: Ctx, args):
                 manifest["best_params"] = data.get("best_params")
         elif args.search == "iterative":
             method = args.iterative_method
-            cmd = [sys.executable, str(DSE_DIR / "scripts" / "iterative_synthesizer.py"),
+            cmd = [sys.executable, str(SCRIPTS_DIR / "iterative_synthesizer.py"),
                    "--trace", str(trace_path), "--method", method,
                    "--steps", str(max(args.iters, 10)), "--max-edges", "120",
                    "--out", str(RUNS_DIR / "topo.anynet")]
