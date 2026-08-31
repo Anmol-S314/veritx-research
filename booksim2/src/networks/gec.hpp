@@ -73,6 +73,29 @@
 // x (replication) is not implemented natively; the README documents how
 // to use "subnets" and flags that its exact semantics have not yet been
 // checked against the BookSim source for this project.
+//
+// hybrid=1 (mesh=0 required) -> mesh + MECS layered on the SAME router
+//            set: every router keeps its up-to-4 nearest-neighbor mesh
+//            links (built exactly like mesh=1's graph) AND o MECS
+//            express channels per dimension on top (built exactly like
+//            the o<k-1 MECS case above, same grouping convention).
+//            hybrid_gec() re-evaluates, at every hop while a dimension
+//            is still unresolved, whether to take one mesh step (cost
+//            = queue_occupancy * remaining_grid_distance) or the MECS
+//            jump (cost = queue_occupancy * 1, since an express jump
+//            always reaches the target row/column-mate in exactly one
+//            hop regardless of distance) -- the real UGAL-shaped
+//            min-vs-nonmin decision this project has been building
+//            toward, unlike adaptive_xy_yx_gec's degenerate H=1-for-
+//            both row/column choice. Deadlock safety: strict X-then-Y
+//            phase order (a phase may now span multiple hops, since
+//            mesh steps don't resolve a whole dimension in one hop the
+//            way an express jump does), VC space split in half by
+//            phase -- NOT by hop-rank the way dor_gec's MECS-only case
+//            is, because a phase is no longer capped at one hop -- and
+//            each half further split by MECS tap when d>1. Needs
+//            num_vcs >= 2*d, same floor and same reasoning as
+//            adaptive_xy_yx_gec.
 // ----------------------------------------------------------------------
 
 #ifndef _GEC_HPP_
@@ -108,13 +131,20 @@ public:
   // of sync.
   static int MeshPortOffset( int x, int y, int k, MeshDir dir );
 
+  // Number of present mesh neighbor directions at grid position (x,y) --
+  // shared by _BuildNetHybrid (to size router degree) and hybrid_gec (to
+  // compute port offsets), same discipline as MeshPortOffset. Public for
+  // the same reason MeshPortOffset is: hybrid_gec is a free function.
+  static int MeshDegreeAt( int x, int y, int k );
+
 private:
-  int  _k;    // radix per dimension
-  int  _c;    // concentration factor (terminals per router)
-  int  _n;    // dimensionality (must be 2 for this implementation)
-  int  _o;    // output channels per dimension per node
-  int  _d;    // channel radix (sinks per channel); o*d == k-1 required
-  bool _mesh; // true -> nearest-neighbor mesh graph, false -> express graph
+  int  _k;      // radix per dimension
+  int  _c;      // concentration factor (terminals per router)
+  int  _n;      // dimensionality (must be 2 for this implementation)
+  int  _o;      // output channels per dimension per node
+  int  _d;      // channel radix (sinks per channel); o*d == k-1 required
+  bool _mesh;   // true -> nearest-neighbor mesh graph, false -> express graph
+  bool _hybrid; // true -> mesh + MECS layered together (mesh must be false)
 
   int _degree; // used only in express mode: c + 2*(k-1), uniform for all routers
 
@@ -124,6 +154,7 @@ private:
   void _BuildNetExpress( const Configuration &config );
   void _BuildNetMesh( const Configuration &config );
   void _BuildNetMECS( const Configuration &config );
+  void _BuildNetHybrid( const Configuration &config );
 
   // ---- express-mode (full row/column, o=k-1,d=1) channel id helpers ----
   static int _PeerIndex( int self, int peer );
@@ -138,5 +169,18 @@ private:
 
 void dor_gec( const Router *r, const Flit *f, int in_channel,
               OutputSet *outputs, bool inject );
+
+// Congestion-informed choice of which dimension to resolve first (row or
+// column), made once per packet at its first hop; deterministic dor_gec
+// dimension-order routing otherwise. See the design note above _ComputeSize's
+// num_vcs>=2*d check in gec.cpp for the deadlock argument.
+void adaptive_xy_yx_gec( const Router *r, const Flit *f, int in_channel,
+                          OutputSet *outputs, bool inject );
+
+// Per-hop UGAL-style choice between a mesh step and a MECS jump while
+// resolving each dimension in turn (X then Y). See the design note above
+// for the cost formula and deadlock argument. hybrid=1 only.
+void hybrid_gec( const Router *r, const Flit *f, int in_channel,
+                  OutputSet *outputs, bool inject );
 
 #endif
