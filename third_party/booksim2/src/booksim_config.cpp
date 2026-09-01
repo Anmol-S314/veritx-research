@@ -160,6 +160,8 @@ BookSimConfig::BookSimConfig( )
   _int_map["classes"] = 1;
 
   AddStrField( "traffic", "uniform" );
+  AddStrField( "trace_file", "" );
+  AddStrField( "trace_packet_log", "" );
 
   _int_map["class_priority"] = 0;
   AddStrField("class_priority", ""); // workaraound to allow for vector specification

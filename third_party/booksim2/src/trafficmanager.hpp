@@ -286,8 +286,10 @@ protected:
 
   virtual string _OverallStatsCSV(int c = 0) const;
 
-  int _GetNextPacketSize(int cl) const;
+  virtual int _GetNextPacketSize(int cl) const;
   double _GetAveragePacketSize(int cl) const;
+
+  virtual void _OnPacketGenerated(int pid, int source, int cl, int time) {}
 
 public:
 
