@@ -11,6 +11,7 @@ compile_commands.json
 
 # Build artifacts (all build dirs)
 build/
+build_debug/
 
 # Analytical Model build and result files
 build/astra_analytical/build/
