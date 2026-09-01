@@ -70,3 +70,9 @@ tool-run:  ## run TOOL binary with ARGS (e.g. make tool-run TOOL=booksim2 ARGS="
 
 tool-clean:  ## clean TOOL build artifacts
 	@python3 scripts/tools.py $(TOOL) clean
+
+tool-image:  ## rebuild container image with current tool versions
+	$(CONTAINER) build -t $(IMAGE) .
+
+tool-image-push:  ## push container image to registry
+	$(CONTAINER) push $(IMAGE)

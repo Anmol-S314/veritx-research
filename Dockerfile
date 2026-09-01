@@ -49,17 +49,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /opt
 
 # =============================================================================
-# Booksim 2.0 + VeritX matrix traffic pattern (T2, T3 — Deadlock, Topology)
-# Pinned commit + the `matrix(<file>)` pattern that feeds a Timeloop traffic
-# matrix into Booksim (the Timeloop->Booksim bridge for T3). Source kept at
-# /opt/booksim2 so students can add custom patterns/topologies and recompile.
+# Booksim 2.0 — COPY from third_party/ (single source of truth)
+# The host's third_party/booksim2/src/ carries our modifications:
+#   - matrix traffic pattern (Timeloop bridge)
+#   - VeritX: percentile stats, completion time, drain-on-unstable
+#   - VeritX: trace-driven mode improvements
+# Source kept at /opt/booksim2 so students can extend + recompile.
 # =============================================================================
-COPY tracks/t3-topology/booksim-ext/ /opt/booksim-ext/
-RUN git clone https://github.com/booksim/booksim2.git && \
-    cd booksim2 && git checkout 28f43299f1706a3160ffac721ca461d74eb6e618 && \
-    cp /opt/booksim-ext/matrixtraffic.hpp /opt/booksim-ext/matrixtraffic.cpp src/ && \
-    git apply /opt/booksim-ext/matrix_traffic.patch && \
-    cd src && make -j$(nproc) && \
+COPY third_party/booksim2/src/ /opt/booksim2/src/
+RUN cd /opt/booksim2/src && make -j$(nproc) && \
     cp booksim /usr/local/bin/
 
 # =============================================================================

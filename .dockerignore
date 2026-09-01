@@ -1,0 +1,19 @@
+# VeritX Docker build context exclusions
+.git
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+runs/
+tracks/*/dse/veritx_dse/__pycache__/
+tracks/*/dse/veritx_dse/*/__pycache__/
+tracks/*/dse/tests/__pycache__/
+tracks/*/dse/docs/
+tracks/*/dse/examples/
+*.md
+!README.md
+Makefile
+scripts/
+*.egg-info
+.venv/
+node_modules/

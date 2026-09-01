@@ -10,7 +10,13 @@
   ],
   "local_modifications": [
     "veritx_ext.cpp: snake_mesh registration commented out (needs flit mcast support)",
-    "snakeroute.{cpp,hpp} excluded (depends on Flit::mcast, absent from this base)"
+    "snakeroute.{cpp,hpp} excluded (depends on Flit::mcast, absent from this base)",
+    "stats.cpp: log-linear histogram binning for wide dynamic range (73c to 13M)",
+    "stats.cpp: Percentile(p) method for exact p50/p95/p99 computation",
+    "trafficmanager.cpp: exact per-packet latency collection (_all_latencies)",
+    "trafficmanager.cpp: completion time tracking (_last_ejection_time)",
+    "trafficmanager.cpp: drain remaining packets even when simulation unstable",
+    "trafficmanager.cpp: display p50/p95/p99/pkt_count in DisplayStats"
   ],
   "known_gaps": [
     "TODO(sowmith): GEC wire-length pricing not yet ported from the research branch. This gec.cpp carries an honesty guard: topology=gec REFUSES use_noc_latency=1 rather than silently mis-pricing. Alice's priced variant (express channels priced at Manhattan pitch under use_noc_latency=1) lives on branch alice-booksim-wirepriced, booksim2/src/networks/gec.cpp (~70-line diff). Until ported: any gec comparison must set use_noc_latency=0 on both sides.",
@@ -20,6 +26,11 @@
     "t2-deadlock",
     "t3-topology"
   ],
+  "container_image": {
+    "description": "Container image copies this source directly (no upstream clone)",
+    "dockerfile_line": "COPY third_party/booksim2/src/ /opt/booksim2/src/",
+    "note": "Dockerfile was updated to COPY from third_party/ instead of cloning upstream, so container always has our modifications"
+  },
   "build_command": "cd src && make -j$(nproc)",
   "clean_command": "cd src && make clean",
   "install_location": "src/booksim",
