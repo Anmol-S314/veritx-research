@@ -69,6 +69,9 @@ public:
 
   friend ostream & operator<<(ostream & os, const Stats & s);
 
+  // VeritX: percentile computation from histogram
+  double Percentile(double p) const;  // p in [0, 100]
+
 };
 
 ostream & operator<<(ostream & os, const Stats & s);

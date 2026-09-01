@@ -107,9 +107,18 @@ void Stats::AddSample( double val )
   _max = !(val <= _max) ? val : _max;
   _min = !(val >= _min) ? val : _min;
 
-  //double clamp between 0 and num_bins-1
-  int b = (int)fmax(floor( val / _bin_size ), 0.0);
-  b = (b >= _num_bins) ? (_num_bins - 1) : b;
+  // VeritX: log-linear binning for wide dynamic range
+  // bins 0-99: linear 0-1000 (10 per unit)
+  // bins 100+: log-scale 1K to 10^(n-99)
+  int b;
+  if (val <= 0) {
+    b = 0;
+  } else if (val < 1000) {
+    b = (int)(val / 10.0);  // 10 bins per unit, 0-999
+  } else {
+    b = 100 + (int)std::ceil(std::log10(val / 1000.0));
+    if (b >= _num_bins) b = _num_bins - 1;
+  }
 
   _hist[b]++;
 }
@@ -127,4 +136,24 @@ ostream & operator<<(ostream & os, const Stats & s) {
   }
   os << "]";
   return os;
+}
+
+// VeritX: percentile computation from histogram
+// Uses log-linear bins: 0-999 linear, 1000+ log-scale
+double Stats::Percentile(double p) const {
+  if (_num_samples == 0) return 0.0;
+  int target = (int)(p / 100.0 * _num_samples);
+  int cumulative = 0;
+  for (int b = 0; b < _num_bins; ++b) {
+    cumulative += _hist[b];
+    if (cumulative >= target) {
+      // Convert bin index to actual value
+      if (b < 100) {
+        return b * 10.0 + 5.0;  // center of linear bin
+      } else {
+        return std::pow(10.0, (b - 100) + 3);  // log-scale: 10^(b-97)
+      }
+    }
+  }
+  return std::pow(10.0, (_num_bins - 100) + 3);  // last bin
 }

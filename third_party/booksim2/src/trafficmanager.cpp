@@ -31,6 +31,7 @@
 #include <limits>
 #include <cstdlib>
 #include <ctime>
+#include <algorithm>  // VeritX: for std::sort in percentile computation
 
 #include "booksim.hpp"
 #include "booksim_config.hpp"
@@ -58,7 +59,7 @@ TrafficManager * TrafficManager::New(Configuration const & config,
 }
 
 TrafficManager::TrafficManager( const Configuration &config, const vector<Network *> & net )
-    : Module( 0, "traffic_manager" ), _net(net), _empty_network(false), _trace_injection_done_checked(false), _deadlock_timer(0), _reset_time(0), _drain_time(-1), _cur_id(0), _cur_pid(0), _time(0)
+    : Module( 0, "traffic_manager" ), _net(net), _empty_network(false), _trace_injection_done_checked(false), _last_ejection_time(0), _deadlock_timer(0), _reset_time(0), _drain_time(-1), _cur_id(0), _cur_pid(0), _time(0)
 {
 
     _nodes = _net[0]->NumNodes( );
@@ -463,6 +464,7 @@ TrafficManager::TrafficManager( const Configuration &config, const vector<Networ
     // ============ Statistics ============ 
 
     _plat_stats.resize(_classes);
+    _all_latencies.resize(_classes);  // VeritX: exact latency collection
     _overall_min_plat.resize(_classes, 0.0);
     _overall_avg_plat.resize(_classes, 0.0);
     _overall_max_plat.resize(_classes, 0.0);
@@ -526,7 +528,7 @@ TrafficManager::TrafficManager( const Configuration &config, const vector<Networ
         ostringstream tmp_name;
 
         tmp_name << "plat_stat_" << c;
-        _plat_stats[c] = new Stats( this, tmp_name.str( ), 1.0, 1000 );
+        _plat_stats[c] = new Stats( this, tmp_name.str( ), 1.0, 128 );  // VeritX: 128 log-linear bins (0-999 linear, 1K+ log-scale)
         _stats[tmp_name.str()] = _plat_stats[c];
         tmp_name.str("");
 
@@ -740,6 +742,7 @@ void TrafficManager::_RetireFlit( Flit *f, int dest )
                (_plat_stats[f->cl]->Max() < (f->atime - head->itime)))
                 _slowest_packet[f->cl] = f->pid;
             _plat_stats[f->cl]->AddSample( f->atime - head->ctime);
+            _all_latencies[f->cl].push_back(f->atime - head->ctime);  // VeritX: exact latency
             _nlat_stats[f->cl]->AddSample( f->atime - head->itime);
             _frag_stats[f->cl]->AddSample( (f->atime - head->atime) - (f->id - head->id) );
    
@@ -1293,6 +1296,8 @@ void TrafficManager::_Step( )
                 Flit * const f = iter->second;
 
                 f->atime = _time;
+                // VeritX: track last ejection time for completion time metric
+                if (_time > _last_ejection_time) _last_ejection_time = _time;
                 if(f->watch) {
                     *gWatchOut << GetSimTime() << " | "
                                << "node" << n << " | "
@@ -1368,6 +1373,7 @@ void TrafficManager::_ClearStats( )
     for ( int c = 0; c < _classes; ++c ) {
 
         _plat_stats[c]->Clear( );
+        _all_latencies[c].clear();  // VeritX: clear exact latencies
         _nlat_stats[c]->Clear( );
         _flat_stats[c]->Clear( );
 
@@ -1681,6 +1687,7 @@ bool TrafficManager::Run( )
     for ( int sim = 0; sim < _total_sims; ++sim ) {
 
         _time = 0;
+        _last_ejection_time = 0;  // VeritX: reset for completion time tracking
 
         //remove any pending request from the previous simulations
         _requestsOutstanding.assign(_nodes, 0);
@@ -1710,12 +1717,14 @@ bool TrafficManager::Run( )
             _injection_process[c]->reset();
         }
 
-        if ( !_SingleSim( ) ) {
-            cout << "Simulation unstable, ending ..." << endl;
-            return false;
+        bool sim_converged = _SingleSim( );
+        if ( !sim_converged ) {
+            cout << "Simulation unstable — draining remaining packets ..." << endl;
         }
 
-        // Empty any remaining packets
+        // VeritX: ALWAYS drain remaining packets, even when unstable.
+        // For trace-driven mode, completion time is the primary metric,
+        // not steady-state convergence.
         cout << "Draining remaining packets ..." << endl;
         _empty_network = true;
         int empty_steps = 0;
@@ -1747,7 +1756,9 @@ bool TrafficManager::Run( )
 
         //for the love of god don't ever say "Time taken" anywhere else
         //the power script depend on it
-        cout << "Time taken is " << _time << " cycles" <<endl; 
+        cout << "Time taken is " << _time << " cycles" <<endl;
+        // VeritX: report actual completion time (last ejection)
+        cout << "Completion time is " << _last_ejection_time << " cycles" <<endl;
 
         if(_stats_out) {
             WriteStats(*_stats_out);
@@ -2051,8 +2062,18 @@ void TrafficManager::DisplayStats(ostream & os) const {
         cout 
             << "Packet latency average = " << _plat_stats[c]->Average() << endl
             << "\tminimum = " << _plat_stats[c]->Min() << endl
-            << "\tmaximum = " << _plat_stats[c]->Max() << endl
-            << "Network latency average = " << _nlat_stats[c]->Average() << endl
+            << "\tmaximum = " << _plat_stats[c]->Max() << endl;
+        // VeritX: exact percentiles from collected latencies
+        if (!_all_latencies[c].empty()) {
+            std::vector<double> sorted_lat(_all_latencies[c]);
+            std::sort(sorted_lat.begin(), sorted_lat.end());
+            int n = sorted_lat.size();
+            cout << "\tp50 = " << sorted_lat[n/2] << endl
+                 << "\tp95 = " << sorted_lat[(int)(n*0.95)] << endl
+                 << "\tp99 = " << sorted_lat[(int)(n*0.99)] << endl
+                 << "\tpkt_count = " << n << endl;
+        }
+        cout << "Network latency average = " << _nlat_stats[c]->Average() << endl
             << "\tminimum = " << _nlat_stats[c]->Min() << endl
             << "\tmaximum = " << _nlat_stats[c]->Max() << endl
             << "Slowest packet = " << _slowest_packet[c] << endl

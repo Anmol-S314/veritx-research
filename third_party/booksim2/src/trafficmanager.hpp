@@ -119,6 +119,7 @@ protected:
   bool _empty_network;
   bool _trace_drained;  // S1: set when trace exhausts and all flits delivered
   bool _trace_injection_done_checked;  // VeritX: true once trace injection is done
+  int64_t _last_ejection_time;   // VeritX: cycle when last flit was ejected
 
   bool _hold_switch_for_packet;
 
@@ -145,6 +146,7 @@ protected:
   // ============ Statistics ============
 
   vector<Stats *> _plat_stats;     
+  vector<vector<double>> _all_latencies;  // VeritX: exact per-packet latencies for percentile computation
   vector<double> _overall_min_plat;  
   vector<double> _overall_avg_plat;  
   vector<double> _overall_max_plat;  
