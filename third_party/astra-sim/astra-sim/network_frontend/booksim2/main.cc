@@ -104,34 +104,31 @@ int main(int argc, char * argv[]) {
     systems.push_back(system);
   }
 
-  // Fire initial workload so Python's first read_wait gets "Waiting" immediately
-  // (otherwise both sides block: Python waits for Waiting, BookSim waits for stdin)
-  for (int i = 0; i < npus_count; ++i) systems[i]->workload->fire();
+  // Fire initial workload (event_handler) synchronously before entering interactive mode.
+  // This ensures the first Waiting contains valid completion data and advances wall_time.
   {
+    for (int i = 0; i < npus_count; ++i) systems[i]->workload->fire();
     while (true) {
       while (!event_queue.finished() || fabric.tm()->HasInFlight()) {
-        if (!event_queue.finished())
-          event_queue.proceed();
-        else
-          event_queue.run_cycles(1000000);
+        if (!event_queue.finished()) event_queue.proceed();
+        else event_queue.run_cycles(1000000);
       }
       Booksim2NetworkApi::flush_all();
-      if (event_queue.finished() && !fabric.tm()->HasInFlight() &&
-          !Booksim2NetworkApi::has_pending_groups())
-        break;
+      bool all_done = true;
+      for (auto* sys : systems) if (sys->pending_events > 0) { all_done = false; break; }
+      if (all_done && event_queue.finished() && !fabric.tm()->HasInFlight() && !Booksim2NetworkApi::has_pending_groups()) break;
+      if (!all_done && event_queue.finished() && !fabric.tm()->HasInFlight()) event_queue.run_cycles(1);
     }
     uint64_t wall_time = event_queue.get_current_time();
     for (int i = 0; i < npus_count; ++i) {
-      std::cout << "[workload] sys[" << i << "] finished, "
-                << wall_time << " cycles, exposed communication "
-                << wall_time << " cycles." << std::endl;
+      std::cout << "[workload] sys[" << i << "] finished, " << wall_time << " cycles, exposed communication " << wall_time << " cycles." << std::endl;
     }
     std::cout << "Waiting" << std::endl;
   }
 
-  // Interactive mode: read workload paths from stdin (like analytical backend)
-  const bool interactive_mode = true;
-  if (interactive_mode) {
+  // Interactive mode: read subsequent workload paths from stdin
+  {
+
     std::string line;
     while (std::getline(std::cin, line)) {
       // Trim whitespace
@@ -139,10 +136,12 @@ int main(int argc, char * argv[]) {
       line.erase(line.find_last_not_of(" \t\n\r") + 1);
 
       if (line.empty() || line == "pass") {
-        // No work for this iteration — output dummy completion for each system
+        // No work — output current time as completion (no new events)
+        uint64_t wall_time = event_queue.get_current_time();
         for (int i = 0; i < npus_count; ++i) {
-          std::cout << "[workload] sys[" << i << "] finished, 0 cycles, "
-                    << "exposed communication 0 cycles." << std::endl;
+          std::cout << "[workload] sys[" << i << "] finished, "
+                    << wall_time << " cycles, exposed communication "
+                    << wall_time << " cycles." << std::endl;
         }
         std::cout << "Waiting" << std::endl;
         continue;
@@ -161,18 +160,34 @@ int main(int argc, char * argv[]) {
       // Fire workloads
       for (int i = 0; i < npus_count; ++i) systems[i]->workload->fire();
 
-      // Run event loop until this batch is done
+      // Run event loop until ALL systems finish AND fabric is idle
       while (true) {
+        // Step fabric while there are events or in-flight packets
         while (!event_queue.finished() || fabric.tm()->HasInFlight()) {
           if (!event_queue.finished())
             event_queue.proceed();
           else
-            event_queue.run_cycles(1000000);  // fast-forward idle periods
+            event_queue.run_cycles(1000000);
         }
         Booksim2NetworkApi::flush_all();
-        if (event_queue.finished() && !fabric.tm()->HasInFlight() &&
+
+        // Check if ALL systems are done (no pending events in any system)
+        bool all_done = true;
+        for (auto* sys : systems) {
+          if (sys->pending_events > 0) {
+            all_done = false;
+            break;
+          }
+        }
+        if (all_done && event_queue.finished() && !fabric.tm()->HasInFlight() &&
             !Booksim2NetworkApi::has_pending_groups())
           break;
+
+        // If fabric is idle but systems still have events, step one cycle
+        // to let the fabric callback fire and process system events
+        if (!all_done && event_queue.finished() && !fabric.tm()->HasInFlight()) {
+          event_queue.run_cycles(1);
+        }
       }
 
       // Output results for each system using event queue time as wall time
@@ -184,7 +199,9 @@ int main(int argc, char * argv[]) {
       }
       std::cout << "Waiting" << std::endl;
     }
-  } else {
+  }
+
+  { // batch mode fallback
     // Batch mode: process initial workload and exit
     for (int i = 0; i < npus_count; ++i) systems[i]->workload->fire();
 

@@ -54,24 +54,36 @@ class EventQueue {
     _heap.pop();
     if (ev.cycle > _now) {
       int64_t delta = ev.cycle - _now;
-      // Between communication events the network is idle -- no flits
-      // in flight, no queue changes.  We can safely jump the clock
-      // forward without calling RunCycles at all.  Only drain any
-      // retired packets that might still be pending from the last run.
+      // If there are in-flight packets, drain the fabric fully before
+      // jumping.  The previous 100K cap was too small for LLM AllReduce
+      // bursts (many MBs → many flits) and caused the jump to skip
+      // packet retirements, leaving collectives stuck with unreleased nodes.
       if (_tm->HasInFlight()) {
-        // Packets still in the network -- must step to drain them.
-        constexpr int64_t CHUNK = 1000000;
-        while (delta > 0) {
-          int step = (delta > CHUNK) ? CHUNK : static_cast<int>(delta);
+        // Drain until empty or until we reach ev.cycle, whichever comes first.
+        // Use small chunks so we interleave retirement checks.
+        while (_tm->HasInFlight() && _now < ev.cycle) {
+          constexpr int64_t DRAIN_CHUNK = 1000;
+          int64_t step = std::min<int64_t>(DRAIN_CHUNK, ev.cycle - _now);
           _tm->RunCycles(step);
           _now += step;
-          delta -= step;
+          _drain_retired();
         }
+        // If still in-flight but we hit ev.cycle, we must continue stepping
+        // past ev.cycle until fabric drains — don't jump over in-flight data.
+        while (_tm->HasInFlight()) {
+          constexpr int64_t DRAIN_CHUNK = 1000;
+          _tm->RunCycles(DRAIN_CHUNK);
+          _now += DRAIN_CHUNK;
+          _drain_retired();
+        }
+        // Now _now >= ev.cycle and fabric is idle; ensure we are at least at ev.cycle
+        if (_now < ev.cycle) _now = ev.cycle;
+        _drain_retired();
       } else {
-        // Nothing in flight -- jump clock directly.
+        // No in-flight packets — safe to jump directly.
         _now = ev.cycle;
+        _drain_retired();
       }
-      _drain_retired();
     }
     ev.fn(ev.arg);
   }
@@ -88,6 +100,7 @@ class EventQueue {
     _tm->RunCycles(cycles);
     _now += cycles;
     _drain_retired();
+    if (advance_hook) advance_hook();
   }
 
  private:
