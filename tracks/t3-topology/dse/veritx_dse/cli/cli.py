@@ -132,11 +132,11 @@ def cmd_trace_validate(ctx: Ctx, args):
             for w in result.warnings[:10]:
                 print(f"    {w}")
         if not result.errors and not result.warnings:
-            print(f"\n  \033[32m✓ Trace is clean — ready for BookSim\033[0m")
+            ok(ctx, "Trace is clean — ready for BookSim")
         elif not result.errors:
-            print(f"\n  \033[33m✓ Trace is usable but has {len(result.warnings)} warnings\033[0m")
+            log(ctx, f"Trace is usable but has {len(result.warnings)} warnings")
         else:
-            print(f"\n  \033[31m✗ Trace has {len(result.errors)} errors — fix before running BookSim\033[0m")
+            fail(ctx, f"Trace has {len(result.errors)} errors — fix before running BookSim")
 
     output(ctx, result.to_dict())
 
@@ -271,7 +271,7 @@ def cmd_trace_hpc(ctx: Ctx, args):
 
 def cmd_synthesize_bo(ctx: Ctx, args):
     log(ctx, f"BO synthesis: {args.iters} iterations, {args.nodes} nodes")
-    cmd = [sys.executable, str("veritx_dse.synthesis.bo_synthesizer"),
+    cmd = [sys.executable, str(Path(__file__).parent.parent / "synthesis" / "bo_synthesizer.py"),
            "--traffic", args.traffic, "--nodes", str(args.nodes),
            "--iters", str(args.iters), "--scorer", args.scorer]
     if args.seed:
@@ -305,7 +305,7 @@ def cmd_synthesize_grid(ctx: Ctx, args):
 def cmd_synthesize_iterative(ctx: Ctx, args):
     trace = _resolve_path(args.trace)
     log(ctx, f"Iterative synthesis ({args.method}, {args.steps} steps)")
-    cmd = [sys.executable, str("veritx_dse.synthesis.iterative_synthesizer"),
+    cmd = [sys.executable, str(Path(__file__).parent.parent / "synthesis" / "iterative_synthesizer.py"),
            "--trace", str(Path(trace).resolve()), "--method", args.method,
            "--steps", str(args.steps), "--max-edges", str(args.max_edges),
            "--out", args.out or str(RUNS_DIR / f"{args.method}_standalone.anynet")]
@@ -355,7 +355,18 @@ def cmd_evaluate_booksim(ctx: Ctx, args):
     result["trace_stats"] = stats.to_dict()
     result["seed"] = ctx.seed
 
-    ok(ctx, f"Latency: {result['latency']:.2f}c | Hops: {result.get('hops', '?')}")
+    # For trace-driven mode, use completion_time as primary metric
+    if "completion_time" in result:
+        stats_parts = [f"Completion: {result['completion_time']:,}c"]
+        if "p50" in result:
+            stats_parts.append(f"p50: {result['p50']:.0f}c")
+        if "p95" in result:
+            stats_parts.append(f"p95: {result['p95']:.0f}c")
+        if "p99" in result:
+            stats_parts.append(f"p99: {result['p99']:.0f}c")
+        ok(ctx, " | ".join(stats_parts))
+    else:
+        ok(ctx, f"Latency: {result.get('latency', '?'):.2f}c | Hops: {result.get('hops', '?')}")
 
     out_path = RUNS_DIR / "booksim" / f"eval_{topo.backend}{args.k}_{Path(args.trace).stem}.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -725,7 +736,7 @@ def cmd_run(ctx: Ctx, args):
         import subprocess
         if args.search == "bo":
             iters = max(args.iters, 10)
-            cmd = [sys.executable, str("veritx_dse.synthesis.bo_synthesizer"),
+            cmd = [sys.executable, str(Path(__file__).parent.parent / "synthesis" / "bo_synthesizer.py"),
                    "--traffic", str(trace_path), "--nodes", str(args.nodes),
                    "--iters", str(iters), "--scorer", args.scorer]
             subprocess.run(cmd, capture_output=True, text=True, timeout=600,
@@ -742,7 +753,7 @@ def cmd_run(ctx: Ctx, args):
                 manifest["best_params"] = data.get("best_params")
         elif args.search == "iterative":
             method = args.iterative_method
-            cmd = [sys.executable, str("veritx_dse.synthesis.iterative_synthesizer"),
+            cmd = [sys.executable, str(Path(__file__).parent.parent / "synthesis" / "iterative_synthesizer.py"),
                    "--trace", str(trace_path), "--method", method,
                    "--steps", str(max(args.iters, 10)), "--max-edges", "120",
                    "--out", str(RUNS_DIR / "booksim" / "topo.anynet")]
@@ -1713,6 +1724,27 @@ def main():
         sys.exit(1)
     finally:
         ctx.close()
+        _cleanup_stale_temp_dirs()
+
+
+def _cleanup_stale_temp_dirs():
+    """Remove stale temp dirs left by interrupted BookSim runs.
+
+    BookSim configs are written to runs/booksim/tmp*/ and cleaned up
+    in the finally block of run_booksim(). But if the process is killed
+    (SIGKILL, OOM, Ctrl+C in certain edge cases), the cleanup doesn't
+    run. This function removes any temp dirs older than 1 hour.
+    """
+    import shutil, time as _time
+    scratch = REPO / "runs" / "booksim"
+    if not scratch.exists():
+        return
+    now = _time.time()
+    for d in scratch.iterdir():
+        if d.is_dir() and d.name.startswith("tmp"):
+            age_hours = (now - d.stat().st_mtime) / 3600
+            if age_hours > 1:
+                shutil.rmtree(d, ignore_errors=True)
 
 
 if __name__ == "__main__":

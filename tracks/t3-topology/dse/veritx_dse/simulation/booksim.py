@@ -106,10 +106,16 @@ def build_config(
         print(f"WARNING: trace path contains spaces — BookSim may fail: {trace_abs}", file=_sys.stderr)
     if sim_type == "latency":
         stats = detect_trace_stats(trace_path)
-        sp = sample_period or max(200, stats.max_cycle + 1000)
+        # For trace-driven mode, use very large sample_period
+        # This forces BookSim to run until all events are consumed
+        # instead of doing periodic sampling
+        sp = sample_period or max(10000000, stats.max_cycle + 10000)
         params["traffic"] = f"trace({trace_abs})"
         params["sample_period"] = sp
-        params["max_samples"] = max_samples
+        # For trace-driven mode, use max_samples = 1
+        # The sample_period is set to trace_span + 10000, which forces
+        # BookSim to run until all events are consumed in one pass
+        params["max_samples"] = 1
     else:  # throughput
         params["traffic"] = f"uniform({ir})"
         params["sample_period"] = 1000
@@ -130,6 +136,9 @@ def build_config(
     # Topology and routing MUST come last (after k/n) so BookSim
     # parses dimensions before constructing the network.
     params["topology"] = topo.backend
+    # BookSim automatically appends topology suffix to routing function
+    # e.g., routing_function=min_adapt + topology=torus -> min_adapt_torus
+    # So we just pass the base routing name without the suffix
     params["routing_function"] = topo.routing
 
     # Handle anynet specially (needs network_file on its own line)
@@ -244,12 +253,34 @@ def run_booksim(
 # ── Result parsing ──────────────────────────────────────────────────────────
 
 def parse_output(stdout: str) -> dict:
-    """Parse BookSim stdout for latency/hops/throughput."""
+    """Parse BookSim stdout for latency/hops/throughput/completion_time."""
     result = {}
     for line in stdout.splitlines():
+        # Completion time (primary metric for trace-driven mode)
+        m = re.search(r"Completion time is\s+(\d+)\s+cycles", line)
+        if m:
+            result["completion_time"] = int(m.group(1))
+        # Fallback: Time taken (includes drain, less accurate)
+        elif "completion_time" not in result:
+            m = re.search(r"Time taken is\s+(\d+)\s+cycles", line)
+            if m:
+                result["completion_time"] = int(m.group(1))
+        # Packet latency stats
         m = re.search(r"Packet latency average\s*=\s*([0-9.eE+\-]+)", line)
         if m:
             result["latency"] = float(m.group(1))
+        m = re.search(r"\tp50\s*=\s*([0-9.eE+\-]+)", line)
+        if m:
+            result["p50"] = float(m.group(1))
+        m = re.search(r"\tp95\s*=\s*([0-9.eE+\-]+)", line)
+        if m:
+            result["p95"] = float(m.group(1))
+        m = re.search(r"\tp99\s*=\s*([0-9.eE+\-]+)", line)
+        if m:
+            result["p99"] = float(m.group(1))
+        m = re.search(r"\tpkt_count\s*=\s*(\d+)", line)
+        if m:
+            result["pkt_count"] = int(m.group(1))
         m = re.search(r"Hops average\s*=\s*([0-9.eE+\-]+)", line)
         if m:
             result["hops"] = float(m.group(1))

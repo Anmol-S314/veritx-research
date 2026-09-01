@@ -1054,10 +1054,12 @@ Burst mode:   INJECTION-LIMITED — NIC injection is bottleneck
 **From LLMServingSim:**
 ```bash
 cd serving/LLMServingSim
+# Option 1: Docker (recommended)
 ./scripts/docker-sim.sh
-# Configure workload in configs/
-# Run simulation to generate trace
-cp traces/my_trace.trace /path/to/veritx-research/runs/traces/
+# Option 2: Manual install
+pip install -r requirements.txt && ./scripts/compile.sh
+# Configure workload in configs/ and run simulation
+cp traces/my_trace.trace /path/to/veritx-research/tracks/t3-topology/dse/inputs/traces/
 ```
 
 **From Chakra execution traces:**
@@ -1606,7 +1608,7 @@ LLMServingSim is a cycle-level simulator for LLM serving infrastructure from KAI
 ```mermaid
 flowchart LR
     A["LLMServingSim\nSource code"] --> B{"Docker?"}
-    B -->|"Yes (recommended)"| C["docker-sim.sh\nLaunches container"]
+    B -->|"Yes (recommended)"| C["scripts/docker-sim.sh\nLaunches container"]
     B -->|"No"| D["pip install + compile.sh\nManual install"]
     C --> E["ASTRA-sim backend\n(inside container)"]
     D --> E
@@ -1630,6 +1632,7 @@ cd serving/LLMServingSim
 
 # Option 1: Docker (recommended)
 ./scripts/docker-sim.sh
+# Creates container with ASTRA-sim + all Python deps
 
 # Option 2: Manual install
 pip install -r requirements.txt

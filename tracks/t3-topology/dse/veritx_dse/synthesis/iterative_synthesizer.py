@@ -31,7 +31,7 @@ from pathlib import Path
 
 import numpy as np
 
-REPO = Path(__file__).resolve().parents[3]
+REPO = Path(__file__).resolve().parents[5]
 BOOKSIM = REPO / "third_party" / "booksim2" / "src" / "booksim"
 RUNS = REPO / "runs" / "booksim"
 
