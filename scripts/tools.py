@@ -397,7 +397,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     # Build command line
-    cmd = [str(bin_path)] + (args.args or [])
+    cmd = [str(bin_path)] + (args.run_args or [])
     print(f"Running: {' '.join(cmd)}")
     print(f"  CWD: {tool_dir}")
 
@@ -582,12 +582,39 @@ Examples:
                         choices=["list", "info", "build", "run", "sync", "tag", "pick", "clean"],
                         default="list",
                         help="Command to run (default: list)")
-    parser.add_argument("version", nargs="?", help="Version for tag command")
     parser.add_argument("--check", dest="check_only", action="store_true",
                         help="Dry run for sync command")
-    parser.add_argument("args", nargs="*", help="Arguments for run command")
+    parser.add_argument("--tag", dest="tag_version",
+                        help="Version for tag command (e.g. --tag v2.1)")
+    parser.add_argument("remaining", nargs="*",
+                        help="Version for tag, or args for run command")
 
     args = parser.parse_args()
+
+    # Normalize: 'remaining' is ambiguous — figure out what it means
+    # For 'tag': first remaining arg is the version
+    # For 'run': all remaining args are passed to the binary
+    # For others: ignore
+    args.version = None
+    args.run_args = []
+    if args.command == "tag":
+        if args.tag_version:
+            args.version = args.tag_version
+        elif args.remaining:
+            args.version = args.remaining[0]
+            args.run_args = args.remaining[1:]
+        else:
+            args.version = None
+    elif args.command == "run":
+        if args.tag_version:
+            args.run_args = [args.tag_version] + args.remaining
+        else:
+            args.run_args = args.remaining
+    else:
+        if args.tag_version:
+            args.run_args = [args.tag_version] + args.remaining
+        else:
+            args.run_args = args.remaining
 
     if not args.tool or args.command == "list":
         cmd_list(args)
