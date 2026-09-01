@@ -1,3 +1,0 @@
-/home/datavex/veritx-research/serving/astra-sim/astra-sim/network_frontend/booksim2/build_debug/CMakeFiles/AstraSim_BookSim2.dir
-/home/datavex/veritx-research/serving/astra-sim/astra-sim/network_frontend/booksim2/build_debug/CMakeFiles/edit_cache.dir
-/home/datavex/veritx-research/serving/astra-sim/astra-sim/network_frontend/booksim2/build_debug/CMakeFiles/rebuild_cache.dir
