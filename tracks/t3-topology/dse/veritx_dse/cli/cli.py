@@ -218,14 +218,14 @@ def cmd_trace_chakra(ctx: Ctx, args):
                         trace_files.append(str(txt_out))
                 if not trace_files:
                     fail(ctx, "Chakra conversion produced no output")
-                    fail(ctx, "Ensure ASTRA-sim is built: cd serving/astra-sim && cmake --build build")
+                    fail(ctx, "Ensure ASTRA-sim is built: cd third_party/astra-sim && cmake --build build")
                     return
                 log(ctx, f"Converted {len(trace_files)} Chakra files to text")
             else:
                 fail(ctx, f"{et_path.name}/ contains {len(et_files)} Chakra .et binary files")
                 fail(ctx, "Chakra .et files need ASTRA-sim's chakra_to_et converter:")
-                fail(ctx, f"  1. Build: cd serving/astra-sim && cmake --build build")
-                fail(ctx, f"  2. Convert: serving/astra-sim/astra-sim/bin/chakra_to_et <et_file>")
+                fail(ctx, f"  1. Build: cd third_party/astra-sim && cmake --build build")
+                fail(ctx, f"  2. Convert: third_party/astra-sim/astra-sim/bin/chakra_to_et <et_file>")
                 fail(ctx, f"  3. Then: veritx trace chakra <txt_dir> --out <out>")
                 fail(ctx, "Or use LLMServingSim text traces directly (instance0_batch0.txt)")
                 return

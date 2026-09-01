@@ -1,0 +1,48 @@
+# macOS
+.DS_Store
+._*
+
+# CMake
+cmake-build-debug/
+compile_commands.json
+
+# JetBrains
+.idea/
+
+# Build artifacts (all build dirs)
+build/
+
+# Analytical Model build and result files
+build/astra_analytical/build/
+build/astra_analytical/result/
+build/astra_garnet/build/
+build/astra_garnet/result/
+build/astra_htsim/build/
+
+# ns-3 nested git and build artifacts
+extern/network_backend/ns-3/.git/
+extern/network_backend/ns-3/build/
+
+# BookSim2 embedded binary and build artifacts
+astra-sim/network_frontend/booksim2/bin/
+
+# Qwen slice test outputs
+qwen_slice/
+
+# SCons
+.sconsign.dblite
+
+# Generated Chakra ET files
+*.eg
+*.et
+!examples/**/*.et
+!inputs/**/*.et
+
+# vscode
+.vscode
+
+# logs
+**/*.log
+
+# runs
+runs

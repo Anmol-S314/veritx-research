@@ -169,6 +169,8 @@ COPY --from=builder /usr/local/share/ /usr/local/share/
 COPY --from=builder /usr/lib/python3/dist-packages/ /usr/lib/python3/dist-packages/
 # Booksim source (with matrix pattern) so students can extend + recompile
 COPY --from=builder /opt/booksim2 /opt/booksim2
+# psc-ns3 — COPY from third_party/
+COPY third_party/psc-ns3/ /opt/psc-ns3/
 # Timeloop's bundled problem shapes (baked search path is /opt/timeloop) so
 # students can reference predefined shapes; T3's own problem.yaml is self-contained
 COPY --from=builder /opt/timeloop/problem-shapes /opt/timeloop/problem-shapes

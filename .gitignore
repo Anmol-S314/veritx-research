@@ -86,4 +86,3 @@ logfile.txt
 
 # Symlinks to other dirs
 serving/LLMServingSim/astra-sim/
-third_party/timeloop

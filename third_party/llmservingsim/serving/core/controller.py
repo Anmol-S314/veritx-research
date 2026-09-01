@@ -1,0 +1,89 @@
+import re
+from .logger import get_logger
+
+class Controller():
+    def __init__(self, total_num):
+        self.end_dict = {}
+        self.total_num = total_num
+        self.logger = get_logger(self.__class__)
+        for i in range(total_num):
+            self.end_dict[i] = -1
+
+
+    def read_wait(self, p):
+        out = [""]
+        while True:
+            line = p.stdout.readline()
+            if not line:  # EOF
+                break
+            out.append(line)
+            p.stdout.flush()
+            if "Waiting" in out[-1] or out[-1] == "Checking Non-Exited Systems ...\n":
+                break
+        return out
+
+    def check_end(self, p):
+        out = ["",""]
+        while out[-2] != "All Request Has Been Exited\n" and out[-2] != "ERROR: Some Requests Remain\n":
+            out.append(p.stdout.readline())
+            p.stdout.flush()
+        print(out[-4], end='')
+        print(out[-2], end='')
+        return out
+
+    def write_flush(self, p, input):
+        # For debugging
+        # print(input)
+        p.stdin.write(input+'\n')
+        p.stdin.flush()
+        return
+
+    def parse_output(self, output):
+        # Analytical backend: "sys[N] iteration M finished, X cycles, exposed communication Y cycles."
+        pattern = r"sys\[(\d+)\] iteration (\d+) finished, (\d+) cycles, exposed communication (\d+) cycles."
+        match = re.search(pattern, output)
+        if match:
+            sys = int(match.group(1))
+            id = int(match.group(2))
+            cycle = int(match.group(3))
+            com_cycle = int(match.group(4))
+
+            if self.end_dict[sys] != id:
+                self.logger.info(
+                    "NPU[%d] iteration %d finished, %d cycles, exposed communication %d cycles.",
+                    sys,
+                    id,
+                    cycle,
+                    com_cycle,
+                )
+                self.end_dict[sys] = id
+            return {'sys': sys, 'id': id, 'cycle': cycle}
+        # BookSim backend: "[workload] sys[N] finished, X cycles, exposed communication Y cycles."
+        # BookSim outputs one line per NPU; pick sys 0 (start_npu) to match single-instance scheduling
+        pattern_booksim = r"\[workload\] sys\[(\d+)\] finished, (\d+) cycles, exposed communication (\d+) cycles."
+        for m in re.finditer(pattern_booksim, output):
+            sys = int(m.group(1))
+            cycle = int(m.group(2))
+            com_cycle = int(m.group(3))
+            # Prefer sys 0 (start_npu for single-instance) to ensure schedule() triggers
+            if sys != 0:
+                continue
+            id = self.end_dict.get(sys, -1) + 1
+            if self.end_dict[sys] != id:
+                self.logger.info(
+                    "NPU[%d] BookSim finished, %d cycles, exposed communication %d cycles.",
+                    sys,
+                    cycle,
+                    com_cycle,
+                )
+                self.end_dict[sys] = id
+            return {'sys': sys, 'id': id, 'cycle': cycle}
+        # Fallback: any sys if 0 not found
+        match_booksim = re.search(pattern_booksim, output)
+        if match_booksim:
+            sys = int(match_booksim.group(1))
+            cycle = int(match_booksim.group(2))
+            id = self.end_dict.get(sys, -1) + 1
+            self.end_dict[sys] = id
+            return {'sys': sys, 'id': id, 'cycle': cycle}
+        return

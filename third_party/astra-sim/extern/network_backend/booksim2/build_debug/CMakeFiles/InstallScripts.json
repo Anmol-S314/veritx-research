@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/datavex/veritx-research/serving/astra-sim/extern/network_backend/booksim2/build_debug/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

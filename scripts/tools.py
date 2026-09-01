@@ -43,8 +43,7 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 THIRD_PARTY = REPO_ROOT / "third_party"
-SERVING = REPO_ROOT / "serving"
-DISCOVERY_DIRS = [THIRD_PARTY, SERVING]
+DISCOVERY_DIRS = [THIRD_PARTY]
 
 
 # ---------------------------------------------------------------------------
@@ -82,7 +81,7 @@ DISCOVERY_DIRS = [THIRD_PARTY, SERVING]
 # ---------------------------------------------------------------------------
 
 def discover_tools() -> dict[str, dict[str, Any]]:
-    """Find all METADATA.json under third_party/ and serving/ and return {name: metadata}."""
+    """Find all METADATA.json under third_party/ and return {name: metadata}."""
     tools: dict[str, dict[str, Any]] = {}
 
     for discovery_dir in DISCOVERY_DIRS:
@@ -128,7 +127,7 @@ def cmd_list(_args: argparse.Namespace) -> None:
     """List all discovered tools."""
     tools = discover_tools()
     if not tools:
-        print("No tools found under third_party/ or serving/")
+        print("No tools found under third_party/")
         return
 
     print(f"{'Tool':<16} {'Location':<12} {'Commit':<12} {'Binary':<8} {'Sync'}")
@@ -141,7 +140,7 @@ def cmd_list(_args: argparse.Namespace) -> None:
 
         # Show relative location
         try:
-            loc = tool_dir.relative_to(REPO_ROOT).parent.name  # third_party or serving
+            loc = tool_dir.relative_to(REPO_ROOT).parent.name  # third_party
         except ValueError:
             loc = "?"
 
@@ -540,6 +539,228 @@ def cmd_clean(args: argparse.Namespace) -> None:
         print("CLEAN OK")
 
 
+def cmd_update(args: argparse.Namespace) -> None:
+    """Update a tool from its upstream repository."""
+    meta = get_tool(args.tool)
+    tool_dir = meta["_dir"]
+    upstream = meta.get("upstream")
+
+    if not upstream:
+        print(f"ERROR: {args.tool} has no upstream URL in METADATA.json", file=sys.stderr)
+        sys.exit(1)
+
+    # Check if tool directory is a git repo
+    if not (tool_dir / ".git").exists() and not (tool_dir / ".git" / "HEAD").exists():
+        # Try to initialize git repo from upstream
+        print(f"Initializing git repo in {tool_dir}...")
+        result = subprocess.run(
+            ["git", "init"], cwd=tool_dir, capture_output=True, text=True
+        )
+        if result.returncode != 0:
+            print(f"ERROR: Could not initialize git repo: {result.stderr}", file=sys.stderr)
+            sys.exit(1)
+
+        # Add upstream remote
+        subprocess.run(
+            ["git", "remote", "add", "upstream", upstream],
+            cwd=tool_dir, capture_output=True, text=True
+        )
+    else:
+        # Check if 'upstream' remote exists, if not add it
+        result = subprocess.run(
+            ["git", "remote", "get-url", "upstream"],
+            cwd=tool_dir, capture_output=True, text=True
+        )
+        if result.returncode != 0:
+            print(f"Adding 'upstream' remote: {upstream}")
+            subprocess.run(
+                ["git", "remote", "add", "upstream", upstream],
+                cwd=tool_dir, capture_output=True, text=True
+            )
+
+    # Fetch upstream changes
+    print(f"Fetching upstream changes from {upstream}...")
+    result = subprocess.run(
+        ["git", "fetch", "upstream"], cwd=tool_dir,
+        capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        print(f"FETCH FAILED: {result.stderr}", file=sys.stderr)
+        sys.exit(1)
+
+    # Show what changed
+    result = subprocess.run(
+        ["git", "log", "HEAD..upstream/main", "--oneline"],
+        cwd=tool_dir, capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        # Try master branch
+        result = subprocess.run(
+            ["git", "log", "HEAD..upstream/master", "--oneline"],
+            cwd=tool_dir, capture_output=True, text=True
+        )
+
+    if result.stdout.strip():
+        print(f"\nUpstream changes:")
+        print(result.stdout)
+    else:
+        print("No upstream changes.")
+        return
+
+    # Merge upstream changes
+    print("Merging upstream changes...")
+    result = subprocess.run(
+        ["git", "merge", "upstream/main"], cwd=tool_dir,
+        capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        # Try master branch
+        result = subprocess.run(
+            ["git", "merge", "upstream/master"], cwd=tool_dir,
+            capture_output=True, text=True
+        )
+
+    if result.returncode != 0:
+        print(f"MERGE CONFLICTS detected:", file=sys.stderr)
+        print(result.stdout, file=sys.stderr)
+        print("\nResolve conflicts manually, then run:")
+        print(f"  python3 scripts/tools.py {args.tool} build")
+        print(f"  python3 scripts/tools.py {args.tool} tag <new-version>")
+        sys.exit(1)
+
+    # Get new commit hash
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=tool_dir,
+        capture_output=True, text=True
+    )
+    new_commit = result.stdout.strip()
+
+    # Update METADATA.json
+    import datetime
+    meta["commit"] = new_commit
+    meta["date_vendored"] = datetime.date.today().isoformat()
+    meta_path = tool_dir / "METADATA.json"
+    with open(meta_path, 'w') as f:
+        json.dump({k: v for k, v in meta.items() if not k.startswith("_")}, f, indent=2)
+
+    print(f"\nUpdated METADATA.json:")
+    print(f"  commit: {new_commit}")
+    print(f"  date: {meta['date_vendored']}")
+    print(f"\nNext steps:")
+    print(f"  1. Review changes: git -C {tool_dir} diff HEAD~1")
+    print(f"  2. Build: python3 scripts/tools.py {args.tool} build")
+    print(f"  3. Test: python3 scripts/tools.py {args.tool} run <config>")
+    print(f"  4. Tag: python3 scripts/tools.py {args.tool} tag <new-version>")
+
+
+def cmd_add(args: argparse.Namespace) -> None:
+    """Clone a tool from a URL and auto-generate METADATA.json."""
+    url = args.url
+    if not url:
+        print("ERROR: URL required (e.g., tools.py add https://github.com/user/repo)", file=sys.stderr)
+        sys.exit(1)
+
+    # Extract tool name from URL (strip query params, fragments, .git)
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    tool_name = parsed.path.rstrip('/').split('/')[-1]
+    if tool_name.endswith('.git'):
+        tool_name = tool_name[:-4]
+    if not tool_name:
+        print(f"ERROR: Cannot extract tool name from {url}", file=sys.stderr)
+        sys.exit(1)
+
+    tool_dir = THIRD_PARTY / tool_name
+    if tool_dir.exists():
+        print(f"ERROR: {tool_dir} already exists", file=sys.stderr)
+        sys.exit(1)
+
+    # Clone
+    print(f"Cloning {url} -> {tool_dir}")
+    result = subprocess.run(
+        ["git", "clone", url, str(tool_dir)],
+        capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        # Clean up partial clone
+        if tool_dir.exists():
+            import shutil
+            shutil.rmtree(tool_dir)
+        print(f"CLONE FAILED: {result.stderr.strip()}", file=sys.stderr)
+        sys.exit(1)
+
+    # Get commit hash
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        capture_output=True, text=True, cwd=tool_dir
+    )
+    commit = result.stdout.strip()
+
+    # Auto-detect build system
+    build_cmd = "make"
+    install_loc = "build/"
+    if (tool_dir / "CMakeLists.txt").exists():
+        build_cmd = "mkdir -p build && cd build && cmake .. && make -j$(nproc)"
+        install_loc = "build/"
+    elif (tool_dir / "wscript").exists() or (tool_dir / "ns3").exists():
+        build_cmd = "./ns3 configure --enable-examples && ./ns3 build"
+        install_loc = "build/scratch/"
+    elif (tool_dir / "meson.build").exists():
+        build_cmd = "meson setup build && ninja -C build"
+        install_loc = "build/"
+    elif (tool_dir / "configure.ac").exists() or (tool_dir / "configure").exists():
+        build_cmd = "./configure && make -j$(nproc)"
+        install_loc = ""
+    else:
+        build_cmd = "make -j$(nproc)"
+        install_loc = ""
+
+    # Generate METADATA.json
+    metadata = {
+        "name": tool_name,
+        "description": f"{tool_name} (auto-added from {url})",
+        "upstream": url,
+        "commit": commit,
+        "date_vendored": __import__('datetime').date.today().isoformat(),
+        "build_command": build_cmd,
+        "install_location": install_loc,
+        "clean_command": "make clean" if "make" in build_cmd else "",
+    }
+
+    meta_path = tool_dir / "METADATA.json"
+    with open(meta_path, 'w') as f:
+        json.dump(metadata, f, indent=2)
+
+    print(f"Created: {meta_path}")
+
+    # Check for container runtime
+    container = subprocess.run(
+        ["bash", "-c", "command -v podman || command -v docker || echo none"],
+        capture_output=True, text=True
+    ).stdout.strip()
+
+    # Add to Dockerfile
+    dockerfile = REPO_ROOT / "Dockerfile"
+    if dockerfile.exists():
+        df_content = dockerfile.read_text()
+        # Find where booksim COPY ends and add after it
+        marker = "COPY --from=builder /opt/booksim2 /opt/booksim2"
+        if marker in df_content and f"COPY third_party/{tool_name}/" not in df_content:
+            insert_line = f"\n# {tool_name} — COPY from third_party/\nCOPY third_party/{tool_name}/ /opt/{tool_name}/"
+            df_content = df_content.replace(marker, marker + insert_line)
+            dockerfile.write_text(df_content)
+            print(f"Updated: {dockerfile} (added COPY for {tool_name})")
+
+    print(f"\nDone! Next steps:")
+    print(f"  1. Edit {meta_path} (adjust build_command, install_location)")
+    print(f"  2. python3 scripts/tools.py {tool_name} build")
+    print(f"  3. python3 scripts/tools.py {tool_name} tag v1.0")
+    if container != "none":
+        print(f"  4. make tool-image  (rebuild container with {container})")
+    else:
+        print(f"  4. Install podman/docker for container support")
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -569,6 +790,7 @@ def main() -> None:
         epilog="""
 Examples:
   python3 scripts/tools.py                         # list all tools
+  python3 scripts/tools.py add https://github.com/user/repo  # add new tool
   python3 scripts/tools.py booksim2 info           # show details
   python3 scripts/tools.py booksim2 build          # build the tool
   python3 scripts/tools.py booksim2 sync           # sync to downstream copies
@@ -579,9 +801,10 @@ Examples:
     )
     parser.add_argument("tool", nargs="?", help="Tool name")
     parser.add_argument("command", nargs="?",
-                        choices=["list", "info", "build", "run", "sync", "tag", "pick", "clean"],
+                        choices=["list", "info", "build", "run", "sync", "tag", "pick", "clean", "add", "update"],
                         default="list",
                         help="Command to run (default: list)")
+    parser.add_argument("--url", help="URL for add command")
     parser.add_argument("--check", dest="check_only", action="store_true",
                         help="Dry run for sync command")
     parser.add_argument("--tag", dest="tag_version",
@@ -616,6 +839,15 @@ Examples:
         else:
             args.run_args = args.remaining
 
+    # 'add' command uses --url flag
+    if args.command == "add" or args.tool == "add":
+        if not args.url:
+            print("ERROR: --url required for add command", file=sys.stderr)
+            print("Usage: tools.py add --url https://github.com/user/repo", file=sys.stderr)
+            sys.exit(1)
+        cmd_add(args)
+        return
+
     if not args.tool or args.command == "list":
         cmd_list(args)
         return
@@ -628,6 +860,8 @@ Examples:
         "tag": cmd_tag,
         "pick": cmd_pick,
         "clean": cmd_clean,
+        "add": cmd_add,
+        "update": cmd_update,
     }
 
     func = commands.get(args.command)

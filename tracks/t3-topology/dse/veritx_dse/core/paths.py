@@ -24,8 +24,8 @@ DSE_DIR = _DSE_DIR
 RUNS_DIR = REPO / "runs"
 TRACES_DIR = RUNS_DIR / "traces"
 BOOKSIM_DIR = REPO / "third_party" / "booksim2" / "src"
-ASTRA_DIR = REPO / "serving" / "astra-sim"
-LLMSIM_DIR = REPO / "serving" / "LLMServingSim"
+ASTRA_DIR = REPO / "third_party" / "astra-sim"
+LLMSIM_DIR = REPO / "third_party" / "llmservingsim"
 
 # ── Key binaries ────────────────────────────────────────────────────────
 BOOKSIM_BIN = BOOKSIM_DIR / "booksim"
