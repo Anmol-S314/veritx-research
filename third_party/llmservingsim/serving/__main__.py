@@ -878,16 +878,20 @@ def main():
                     _decode_cache = get_trace_cache() if _is_decode_only and args.decode_batch_size > 0 else None
                     _cached_hit = False
 
-                    if _decode_cache is not None and _decode_cache.has(instance_id, new_req.num_decode):
+                    # Cache key is (instance_id, num_prefill) — stable during decode phase.
+                    # num_decode changes every step (1, 2, 3...) so it CANNOT be used as key.
+                    _cache_key_prefill = new_req.num_prefill
+
+                    if _decode_cache is not None and _decode_cache.has(instance_id, _cache_key_prefill):
                         # Fast path: patch cached trace with new attention latencies
                         _cached_hit = True
                         trace_path = input_path(run_paths.inputs_root, "trace",
                             instance["hardware"], instance["model_name"],
                             f"instance{instance_id}_batch{new_req.batch_id}.txt")
-                        _cached = _decode_cache.get(instance_id, new_req.num_decode)
+                        _cached = _decode_cache.get(instance_id, _cache_key_prefill)
                         if _cached:
                             _decode_cache.patch_and_write(
-                                instance_id, new_req.num_decode,
+                                instance_id, _cache_key_prefill,
                                 _cached.attention_latencies,
                                 trace_path)
                             generate_graph(new_req, instance["hardware"], instance["num_npus"], node_id,
@@ -914,14 +918,14 @@ def main():
                                        inst_cfg["enable_local_offloading"],
                                        inputs_root=run_paths.inputs_root,
                                        cleanup_trace=args.cleanup_inputs)
-                        # Cache this decode trace for future reuse
+                        # Cache this decode trace for future reuse (keyed by num_prefill, not num_decode)
                         if _decode_cache is not None and _is_decode_only:
                             trace_path = input_path(run_paths.inputs_root, "trace",
                                 instance["hardware"], instance["model_name"],
                                 f"instance{instance_id}_batch{new_req.batch_id}.txt")
                             if os.path.exists(trace_path):
                                 _decode_cache.cache_from_file(
-                                    instance_id, new_req.num_decode,
+                                    instance_id, _cache_key_prefill,
                                     instance["hardware"], instance["model_name"],
                                     trace_path)
                     # --- End decode optimization ---
