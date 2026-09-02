@@ -517,6 +517,11 @@ def build_cluster_config(astra_sim, cluster_config_path, enable_local_offloading
                 # sync local-mem-bw in system config with npu_mem bw
                 system_config["local-mem-bw"] = int(npu_mem["mem_bw"])
 
+                # Allow cluster config to override preferred-dataset-splits
+                # (controls chunking of collectives in ASTRA-sim's ring algorithm)
+                if "preferred-dataset-splits" in cluster_config:
+                    system_config["preferred-dataset-splits"] = cluster_config["preferred-dataset-splits"]
+
                 with open(system_config_path, "w", encoding="utf-8") as f:
                     json.dump(system_config, f, ensure_ascii=False, indent=2)
                 
