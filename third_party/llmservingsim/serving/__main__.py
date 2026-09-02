@@ -638,6 +638,13 @@ def main():
 
     # ----------------------------------- Start simulation loop ------------------------------------
     # Starting simulation, one while loop processes one iteration
+    _bench_trace_gen_time = 0.0
+    _bench_trace_only_time = 0.0
+    _bench_graph_only_time = 0.0
+    _bench_cache_hits = 0
+    _bench_cache_misses = 0
+    _bench_total_batches = 0
+    _bench_loop_start = time()
     while True:
         
         out = controller.read_wait(p)
@@ -646,6 +653,21 @@ def main():
         
         # If binary exited (EOF), break
         if not out or (len(out) == 1 and out[0] == ''):
+            _bench_loop_elapsed = time() - _bench_loop_start
+            if _bench_total_batches > 0:
+                _bench_avg_trace = (_bench_trace_gen_time / _bench_total_batches * 1000)
+                _bench_total = _bench_cache_hits + _bench_cache_misses
+                _bench_hit_rate = (_bench_cache_hits / _bench_total * 100) if _bench_total > 0 else 0
+                print(f"\n=== Decode Cache Benchmark ===")
+                print(f"  Batches:              {_bench_total_batches}")
+                print(f"  Cache hits:           {_bench_cache_hits}/{_bench_total} ({_bench_hit_rate:.0f}%)")
+                print(f"  Cache misses:         {_bench_cache_misses}")
+                print(f"  Trace gen time:       {_bench_trace_gen_time:.2f}s (avg {_bench_avg_trace:.0f}ms/batch)")
+                print(f"    - trace_only:       {_bench_trace_only_time:.2f}s (perf_db + interpolation)")
+                print(f"    - graph_only:       {_bench_graph_only_time:.2f}s (Chakra conversion)")
+                print(f"    - cache overhead:   {_bench_trace_gen_time - _bench_trace_only_time - _bench_graph_only_time:.2f}s")
+                print(f"  Total loop time:      {_bench_loop_elapsed:.2f}s")
+                print(f"  Trace gen overhead:   {_bench_trace_gen_time:.2f}s / {_bench_loop_elapsed:.2f}s = {_bench_trace_gen_time/_bench_loop_elapsed*100:.1f}%")
             print("[LLMServingSim] Binary exited, ending simulation.", flush=True)
             break
         
@@ -882,9 +904,11 @@ def main():
                     # num_decode changes every step (1, 2, 3...) so it CANNOT be used as key.
                     _cache_key_prefill = new_req.num_prefill
 
+                    _t_trace_start = time()
                     if _decode_cache is not None and _decode_cache.has(instance_id, _cache_key_prefill):
                         # Fast path: patch cached trace with new attention latencies
                         _cached_hit = True
+                        _bench_cache_hits += 1
                         trace_path = input_path(run_paths.inputs_root, "trace",
                             instance["hardware"], instance["model_name"],
                             f"instance{instance_id}_batch{new_req.batch_id}.txt")
@@ -894,12 +918,9 @@ def main():
                                 instance_id, _cache_key_prefill,
                                 _cached.attention_latencies,
                                 trace_path)
-                            generate_graph(new_req, instance["hardware"], instance["num_npus"], node_id,
-                                           instance_id, inst2npu_mapping[instance_id],
-                                           inst_cfg["enable_local_offloading"],
-                                           inputs_root=run_paths.inputs_root,
-                                           cleanup_trace=args.cleanup_inputs)
                     if not _cached_hit:
+                        _bench_cache_misses += 1
+                        _t_trace_only = time()
                         generate_trace(new_req, instance["hardware"], instance["tp_size"], instance["pp_size"],
                                        instance["local_ep"], instance["ep_total"],
                                        instance["pd_type"],
@@ -913,12 +934,8 @@ def main():
                                        tp_dim=instance["tp_dim"], ep_dim=instance["ep_dim"],
                                        enable_block_copy=inst_cfg["enable_block_copy"],
                                        inputs_root=run_paths.inputs_root)
-                        generate_graph(new_req, instance["hardware"], instance["num_npus"], node_id,
-                                       instance_id, inst2npu_mapping[instance_id],
-                                       inst_cfg["enable_local_offloading"],
-                                       inputs_root=run_paths.inputs_root,
-                                       cleanup_trace=args.cleanup_inputs)
-                        # Cache this decode trace for future reuse (keyed by num_prefill, not num_decode)
+                        _bench_trace_only_time += time() - _t_trace_only
+                        # Cache trace BEFORE generate_graph deletes it (cleanup_trace=True)
                         if _decode_cache is not None and _is_decode_only:
                             trace_path = input_path(run_paths.inputs_root, "trace",
                                 instance["hardware"], instance["model_name"],
@@ -928,7 +945,25 @@ def main():
                                     instance_id, _cache_key_prefill,
                                     instance["hardware"], instance["model_name"],
                                     trace_path)
+                        _t_graph_only = time()
+                        generate_graph(new_req, instance["hardware"], instance["num_npus"], node_id,
+                                       instance_id, inst2npu_mapping[instance_id],
+                                       inst_cfg["enable_local_offloading"],
+                                       inputs_root=run_paths.inputs_root,
+                                       cleanup_trace=args.cleanup_inputs)
+                        _bench_graph_only_time += time() - _t_graph_only
+                    else:
+                        # Cache hit: still need generate_graph (Chakra conversion)
+                        _t_graph_only = time()
+                        generate_graph(new_req, instance["hardware"], instance["num_npus"], node_id,
+                                       instance_id, inst2npu_mapping[instance_id],
+                                       inst_cfg["enable_local_offloading"],
+                                       inputs_root=run_paths.inputs_root,
+                                       cleanup_trace=args.cleanup_inputs)
+                        _bench_graph_only_time += time() - _t_graph_only
                     # --- End decode optimization ---
+                    _bench_trace_gen_time += time() - _t_trace_start
+                    _bench_total_batches += 1
                     workload = get_workload(new_req, instance["hardware"], instance_id,
                                             inputs_root=run_paths.inputs_root)
                     controller.write_flush(p, workload)
@@ -1090,6 +1125,22 @@ def main():
                 # check memory leak before exit
                 schedulers[inst_idx].memory.is_free()
 
+                # --- Benchmark summary ---
+                _bench_loop_elapsed = time() - _bench_loop_start
+                if _bench_total_batches > 0:
+                    _bench_avg_trace = (_bench_trace_gen_time / _bench_total_batches * 1000)
+                    _bench_total = _bench_cache_hits + _bench_cache_misses
+                    _bench_hit_rate = (_bench_cache_hits / _bench_total * 100) if _bench_total > 0 else 0
+                    print(f"\n=== Decode Cache Benchmark ===")
+                    print(f"  Batches:              {_bench_total_batches}")
+                    print(f"  Cache hits:           {_bench_cache_hits}/{_bench_total} ({_bench_hit_rate:.0f}%)")
+                    print(f"  Cache misses:         {_bench_cache_misses}")
+                    print(f"  Trace gen time:       {_bench_trace_gen_time:.2f}s (avg {_bench_avg_trace:.0f}ms/batch)")
+                    print(f"    - trace_only:       {_bench_trace_only_time:.2f}s (perf_db + interpolation)")
+                    print(f"    - graph_only:       {_bench_graph_only_time:.2f}s (Chakra conversion)")
+                    print(f"    - cache overhead:   {_bench_trace_gen_time - _bench_trace_only_time - _bench_graph_only_time:.2f}s")
+                    print(f"  Total loop time:      {_bench_loop_elapsed:.2f}s")
+                    print(f"  Trace gen overhead:   {_bench_trace_gen_time:.2f}s / {_bench_loop_elapsed:.2f}s = {_bench_trace_gen_time/_bench_loop_elapsed*100:.1f}%")
                 print_rule()
                 print_markup("[sim.heading]▶ Exiting simulation...[/]\n")
                 controller.write_flush(p, "exit")
