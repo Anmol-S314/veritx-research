@@ -665,8 +665,7 @@ class Scheduler:
         if len(self.inflight) == 0:
             return prompt_t, gen_t, end_reqs
         batch = None
-        # find batch
-        id -= 1
+        # find batch (id is already the batch_id, no decrement needed)
         idx = 0
         for i, b in enumerate(self.inflight):
             if b.batch_id == id:

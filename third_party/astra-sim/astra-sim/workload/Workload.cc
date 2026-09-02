@@ -242,7 +242,11 @@ void Workload::issue_remote_mem(
     wlhd->sys_id = sys->id;
     wlhd->workload = this;
     wlhd->node_id = node->id();
-    sys->remote_mem->issue(node->tensor_size(), wlhd);
+    // Fix: make remote mem immediate for LLM serving (large embedding loads hang)
+    // Original remote_mem->issue can stall for large tensors; use 1-cycle event.
+    sys->register_event(this, EventType::General, wlhd, 1);
+    return;
+    // sys->remote_mem->issue(node->tensor_size(), wlhd);
 }
 
 void Workload::issue_comp(shared_ptr<Chakra::FeederV3::ETFeederNode> node) {

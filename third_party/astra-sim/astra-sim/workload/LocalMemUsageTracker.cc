@@ -402,7 +402,7 @@ void LocalMemUsageTracker::buildTensorLifetimeHeatmap() {
   auto getSizeColor = [](uint64_t size, uint64_t maxSize) -> std::string {
     // Simple heat gradient: small tensors are blue, large are red
     int intensity = std::min(255, static_cast<int>((static_cast<double>(size) / maxSize) * 255));
-    char color[8];
+    char color[16];
     sprintf(color, "#%02X%02X%02X", intensity, 100, 255 - intensity);
     return std::string(color);
   };

@@ -1072,6 +1072,75 @@ def cmd_compile(ctx: Ctx, args):
     output(ctx, report)
 
 
+def cmd_serve(ctx: Ctx, args):
+    """Full-stack LLM serving simulation: LLMServingSim + AstraSim + BookSim2."""
+    import subprocess
+    import os
+
+    # Resolve paths - LLMServingSim runs from astra-sim/ and prepends ../ to relative paths
+    llmserving_root = REPO / "third_party" / "llmservingsim"
+    cluster_config_path = Path(args.cluster_config).resolve()
+    dataset_path = Path(args.dataset).resolve()
+    # Pass paths relative to llmserving_root (LLMServingSim's _cluster_config_path adds ../)
+    try:
+        cluster_config = str(cluster_config_path.relative_to(llmserving_root))
+    except ValueError:
+        cluster_config = str(cluster_config_path)
+    try:
+        dataset = str(dataset_path.relative_to(llmserving_root))
+    except ValueError:
+        dataset = str(dataset_path)
+
+    if not llmserving_root.exists():
+        fail(ctx, f"LLMServingSim not found at {llmserving_root}")
+        return
+
+    # Build command
+    cmd = [
+        sys.executable, "-m", "serving",
+        "--cluster-config", cluster_config,
+        "--dataset", dataset,
+        "--num-reqs", str(args.num_reqs),
+        "--network-backend", args.network_backend,
+        "--log-level", args.log_level,
+    ]
+
+    if args.output:
+        cmd.extend(["--output", str(Path(args.output).resolve())])
+
+    if args.no_cleanup:
+        cmd.append("--no-cleanup-inputs")
+
+    if args.no_prefix_caching:
+        cmd.append("--no-enable-prefix-caching")
+
+    log(ctx, f"Running full-stack simulation: {args.network_backend} backend")
+    log(ctx, f"Cluster: {Path(args.cluster_config).name}")
+    log(ctx, f"Dataset: {Path(args.dataset).name} ({args.num_reqs} requests)")
+    log(ctx, f"Timeout: {args.timeout}s")
+    print()
+
+    t0 = time.time()
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=str(llmserving_root),
+            timeout=args.timeout,
+            capture_output=False,  # Let output stream to terminal
+        )
+        elapsed = time.time() - t0
+
+        if result.returncode == 0:
+            ok(ctx, f"Simulation completed in {elapsed:.1f}s")
+        else:
+            fail(ctx, f"Simulation failed with exit code {result.returncode}")
+
+    except subprocess.TimeoutExpired:
+        fail(ctx, f"Simulation timed out after {args.timeout}s")
+    except Exception as e:
+        fail(ctx, f"Simulation error: {e}")
+
+
 def cmd_generate_uvm(ctx: Ctx, args):
     """Generate UVM testbench from CompileRequest."""
     from veritx_dse.model.compile_model import CompileRequest, derive_vc_assignment
@@ -1597,6 +1666,20 @@ def build_parser() -> argparse.ArgumentParser:
     p_init = sub.add_parser("init", help="Interactive wizard to generate a CompileRequest")
     p_init.add_argument("--out", "-o", help="Output JSON path (default: runs/compile_requests/<model>.json)")
 
+    # ── serve (full-stack LLM serving simulation) ──────────────────
+    p_serve = sub.add_parser("serve", help="Full-stack LLM serving simulation (LLMServingSim + AstraSim + BookSim2)")
+    p_serve.add_argument("--cluster-config", required=True, help="Cluster configuration JSON")
+    p_serve.add_argument("--dataset", required=True, help="Workload dataset JSONL")
+    p_serve.add_argument("--num-reqs", type=int, default=1, help="Number of requests to simulate")
+    p_serve.add_argument("--network-backend", default="booksim", choices=["booksim", "analytical", "ns3"],
+                          help="Network simulation backend")
+    p_serve.add_argument("--output", help="Output directory for results")
+    p_serve.add_argument("--timeout", type=int, default=600, help="Simulation timeout in seconds")
+    p_serve.add_argument("--log-level", default="WARNING", choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+                          help="LLMServingSim log level")
+    p_serve.add_argument("--no-cleanup", action="store_true", help="Keep intermediate files")
+    p_serve.add_argument("--no-prefix-caching", action="store_true", help="Disable prefix caching")
+
     # ── generate ──────────────────────────────────────────────────
     p_gen = sub.add_parser("generate", help="Generate collateral (UVM, RTL, reports)")
     gs = p_gen.add_subparsers(dest="gen_cmd")
@@ -1651,6 +1734,7 @@ DISPATCH = {
     "baseline": cmd_baseline,
     "compile": cmd_compile,
     "init": cmd_init,
+    "serve": cmd_serve,
     "generate": {
         "uvm": cmd_generate_uvm,
     },
