@@ -27,6 +27,7 @@ from serving.core.router import *
 from serving.core.power_model import *
 from serving.core.logger import *
 from serving.core.run_paths import build_run_paths, resolve_run_id
+from serving.core.decode_opt import get_trace_cache, clear_all_decode_opts
 import sys as flush
 
 from pyinstrument import Profiler
@@ -354,6 +355,10 @@ def main():
                         help='(booksim backend only) replay trace durations without cycle-accurate network simulation '
                         '(default: enabled). Required when ASTRA-sim ring topology does not match BookSim mesh topology. '
                         'Use --no-booksim-replay-only for full cycle-accurate network simulation (requires matching topologies)')
+    parser.add_argument('--decode-batch-size', type=int, default=0,
+                        help='batch N decode steps together to reduce trace-gen overhead. '
+                        '0 = disabled (default). When >0, decode-only steps pre-generate N traces '
+                        'and feed them to the binary without per-step Python overhead. Recommended: 16-32.')
 
     args = parser.parse_args()
     
@@ -366,6 +371,8 @@ def main():
     logger = get_logger("Main")
     print_banner()
     print_input_config(args=args)
+    if args.decode_batch_size > 0:
+        print_markup(f"[sim.tagline]Decode batch size: {args.decode_batch_size}[/]")
     print_markup("[sim.heading]▶ Starting simulation...[/]\n")
     flush.stdout.flush()
     
