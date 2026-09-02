@@ -1,4 +1,4 @@
-"""Decode optimizations — batch decode steps, cache traces, skip redundant graph gen.
+"""Decode optimizations — trace caching, batch decode, async trace generation.
 
 When all requests in a batch are in decode phase (no prefill), subsequent
 steps have identical trace structure — only attention latency changes
@@ -8,7 +8,7 @@ because kv_len increases by 1 per step. We exploit this to:
 2. **Patch attention only** — only recompute attention 4D lookup per step  
 3. **Batch decode steps** — pre-generate N traces, feed to binary without
    waiting for intermediate "Waiting" prompts
-4. **Skip graph gen for cached traces** — reuse Chakra graph structure
+4. **Async trace gen** — background thread overlaps trace gen with binary exec
 """
 
 import os
@@ -24,44 +24,45 @@ logger = get_logger("DecodeOpt")
 
 
 # ---------------------------------------------------------------------------
-# Decode trace cache
+# Decode trace cache — keyed by (instance_id, num_decode)
 # ---------------------------------------------------------------------------
 
 @dataclass
 class CachedDecodeTrace:
     """A cached decode trace ready for fast patching."""
     instance_id: int
-    batch_id: int
+    num_decode: int       # cache key — stable during decode phase
     hardware: str
     model: str
     
     # The trace text lines (before Chakra conversion)
-    header_line: str = ""       # e.g. "COLOCATED\t\tmodel_parallel_NPU_group: 1\n"
-    count_line: str = ""        # e.g. "156\n"
-    column_line: str = ""       # header column names
-    body_lines: List[str] = field(default_factory=list)  # layer entries
+    header_line: str = ""
+    count_line: str = ""
+    column_line: str = ""
+    body_lines: List[str] = field(default_factory=list)
     
     # Line indices where attention latencies live
     attention_indices: List[int] = field(default_factory=list)
-    # Original attention latency values (for each attention line)
     attention_latencies: List[str] = field(default_factory=list)
-    
-    # The Chakra graph .et files directory (shared across decode steps)
-    chakra_workload_dir: str = ""
 
 
 class DecodeTraceCache:
-    """Cache for decode traces with fast attention-only patching."""
+    """Cache for decode traces with fast attention-only patching.
+    
+    Keyed by (instance_id, num_decode) which stays constant during
+    a decode phase. When new requests arrive (num_decode changes),
+    the cache is invalidated.
+    """
     
     def __init__(self):
         self._cache: Dict[Tuple[int, int], CachedDecodeTrace] = {}
         self._hits = 0
         self._misses = 0
     
-    def cache_from_file(self, instance_id: int, batch_id: int,
+    def cache_from_file(self, instance_id: int, num_decode: int,
                         hardware: str, model: str,
                         trace_path: str) -> Optional[CachedDecodeTrace]:
-        """Parse a trace file and cache it."""
+        """Parse a trace file and cache it for future patching."""
         if not os.path.exists(trace_path):
             return None
         
@@ -71,13 +72,12 @@ class DecodeTraceCache:
         if len(lines) < 3:
             return None
         
-        # Parse structure: type_line, count_line, column_header, body...
         header_line = lines[0]
         count_line = lines[1]
         column_line = lines[2]
         body_lines = list(lines[3:])
         
-        # Find attention layer lines (layer_name starts with 'attention_')
+        # Find attention layer lines
         attn_indices = []
         attn_values = []
         for i, line in enumerate(body_lines):
@@ -88,7 +88,7 @@ class DecodeTraceCache:
         
         cached = CachedDecodeTrace(
             instance_id=instance_id,
-            batch_id=batch_id,
+            num_decode=num_decode,
             hardware=hardware,
             model=model,
             header_line=header_line,
@@ -99,24 +99,26 @@ class DecodeTraceCache:
             attention_latencies=attn_values,
         )
         
-        key = (instance_id, batch_id)
+        key = (instance_id, num_decode)
         self._cache[key] = cached
+        self._hits += 1
+        
+        logger.debug("Cached decode trace: inst=%d num_decode=%d attn=%d",
+                     instance_id, num_decode, len(attn_indices))
         return cached
     
-    def get(self, instance_id: int, batch_id: int) -> Optional[CachedDecodeTrace]:
+    def get(self, instance_id: int, num_decode: int) -> Optional[CachedDecodeTrace]:
         """Get cached trace."""
-        key = (instance_id, batch_id)
-        return self._cache.get(key)
+        return self._cache.get((instance_id, num_decode))
     
-    def patch_and_write(self, instance_id: int, batch_id: int,
+    def patch_and_write(self, instance_id: int, num_decode: int,
                         new_latencies: List[str],
                         output_path: str) -> bool:
         """Patch attention latencies and write trace file.
         
-        This is the fast path — no perf_db load, no interpolation,
-        just string replacement in cached lines.
+        Fast path: no perf_db load, no interpolation, just string replacement.
         """
-        cached = self._cache.get((instance_id, batch_id))
+        cached = self._cache.get((instance_id, num_decode))
         if cached is None:
             return False
         
@@ -129,23 +131,28 @@ class DecodeTraceCache:
             
             for i, line in enumerate(cached.body_lines):
                 if i in cached.attention_indices:
-                    # Find which attention index this is
                     attn_pos = cached.attention_indices.index(i)
                     if attn_pos < len(new_latencies):
                         parts = line.split()
                         if len(parts) > 1:
                             parts[1] = new_latencies[attn_pos]
-                            f.write(' '.join(parts) + '\n')
+                            f.write('\t'.join(parts) + '\n')
                             continue
                 f.write(line)
         
         return True
     
-    def has(self, instance_id: int, batch_id: int) -> bool:
-        return (instance_id, batch_id) in self._cache
+    def has(self, instance_id: int, num_decode: int) -> bool:
+        return (instance_id, num_decode) in self._cache
     
-    def invalidate(self, instance_id: int, batch_id: int):
-        self._cache.pop((instance_id, batch_id), None)
+    def invalidate(self, instance_id: int, num_decode: int):
+        self._cache.pop((instance_id, num_decode), None)
+    
+    def invalidate_all_for_instance(self, instance_id: int):
+        """Clear all cached traces for an instance."""
+        keys = [k for k in self._cache if k[0] == instance_id]
+        for k in keys:
+            del self._cache[k]
     
     def clear(self):
         self._cache.clear()
@@ -190,21 +197,11 @@ class DecodeBatcher:
         self._queues: Dict[int, deque] = {}
         self._batching_enabled: Dict[int, bool] = {}
     
-    def is_decode_only(self, scheduler) -> bool:
-        """Check if a scheduler has only decode requests (no prefill)."""
-        if not scheduler.request:
-            return False
-        return all(not req.is_prefill() for req in scheduler.request 
-                    if req.arrival <= scheduler._current_time if hasattr(scheduler, '_current_time'))
-    
     def start_batch(self, instance_id: int):
-        """Enable batching for an instance."""
         self._batching_enabled[instance_id] = True
         self._queues[instance_id] = deque()
     
-    def enqueue(self, instance_id: int, workload_path: str, 
-                batch_id: int):
-        """Add a pre-generated workload to the queue."""
+    def enqueue(self, instance_id: int, workload_path: str, batch_id: int):
         if instance_id not in self._queues:
             self._queues[instance_id] = deque()
         self._queues[instance_id].append(QueuedWorkload(
@@ -214,12 +211,10 @@ class DecodeBatcher:
         ))
     
     def has_workload(self, instance_id: int) -> bool:
-        """Check if there are queued workloads."""
         q = self._queues.get(instance_id)
         return q is not None and len(q) > 0
     
     def next_workload(self, instance_id: int) -> Optional[QueuedWorkload]:
-        """Pop next queued workload."""
         q = self._queues.get(instance_id)
         if q and len(q) > 0:
             return q.popleft()
@@ -230,7 +225,6 @@ class DecodeBatcher:
         return len(q) if q else 0
     
     def stop_batch(self, instance_id: int):
-        """Disable batching for an instance."""
         self._batching_enabled[instance_id] = False
         self._queues.pop(instance_id, None)
     
@@ -249,13 +243,6 @@ class AsyncTraceGenerator:
     While the binary processes the current batch, a producer thread
     generates the next batch's trace + graph. This overlaps Python
     overhead with binary execution.
-    
-    Usage:
-        gen = AsyncTraceGenerator(generate_trace_fn, generate_graph_fn)
-        gen.start(batch, ...)
-        # ... binary processes current batch ...
-        gen.wait()  # blocks until background generation is done
-        workload = gen.get_workload()
     """
     
     def __init__(self):
@@ -265,7 +252,6 @@ class AsyncTraceGenerator:
         self._workload_path = None
     
     def generate_async(self, batch, trace_fn, graph_fn, workload_fn, **kwargs):
-        """Start async trace + graph generation in background."""
         def _worker():
             try:
                 trace_fn(batch, **kwargs)
@@ -280,17 +266,14 @@ class AsyncTraceGenerator:
         self._thread.start()
     
     def is_ready(self) -> bool:
-        """Check if background generation is complete."""
         return self._thread is not None and not self._thread.is_alive()
     
     def wait(self, timeout: float = 30.0) -> bool:
-        """Wait for background generation to complete."""
         if self._thread is not None:
             self._thread.join(timeout=timeout)
         return self._error is None and self._result is not None
     
     def get_workload(self) -> Optional[str]:
-        """Get the generated workload path."""
         return self._workload_path
     
     def get_error(self):

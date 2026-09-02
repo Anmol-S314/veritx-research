@@ -675,7 +675,13 @@ def main():
 
         # Route newly arrived requests to instances based on current load
         if dataset is not None:
+            _prev_req_counts = {iid: len(s.request) for iid, s in enumerate(schedulers)}
             router.route_arrived_requests(current)
+            # Invalidate decode cache when new requests arrive (batch structure changes)
+            if args.decode_batch_size > 0:
+                for iid, s in enumerate(schedulers):
+                    if len(s.request) != _prev_req_counts.get(iid, 0):
+                        get_trace_cache().clear()  # conservative: clear all on any arrival
 
         instance_id = npu2inst_mapping[sys]  # get instance id from NPU id
         node_id = inst2node_mapping[instance_id] # get node id from instance id
@@ -866,25 +872,59 @@ def main():
                         responded = True
                 else:
                     # Independent instance: generate trace immediately
+                    # --- Decode optimization: detect decode-only batch and use cache ---
                     inst_cfg = instance_runtime_configs[instance_id]
-                    generate_trace(new_req, instance["hardware"], instance["tp_size"], instance["pp_size"],
-                                   instance["local_ep"], instance["ep_total"],
-                                   instance["pd_type"],
-                                   node_id, instance_id,
-                                   inst_cfg["max_num_batched_tokens"], inst_cfg["max_num_seqs"],
-                                   placement[instance_id], block_mode_on[instance_id],
-                                   expert_routing_policy, inst_cfg["enable_prefix_caching"],
-                                   inst_cfg["enable_attn_offloading"], power_model, pim_models[node_id],
-                                   inst_cfg["enable_sub_batch_interleaving"], inst_cfg["fp"],
-                                   dtype=inst_cfg["dtype"], kv_cache_dtype=inst_cfg["kv_cache_dtype"],
-                                   tp_dim=instance["tp_dim"], ep_dim=instance["ep_dim"],
-                                   enable_block_copy=inst_cfg["enable_block_copy"],
-                                   inputs_root=run_paths.inputs_root)
-                    generate_graph(new_req, instance["hardware"], instance["num_npus"], node_id,
-                                   instance_id, inst2npu_mapping[instance_id],
-                                   inst_cfg["enable_local_offloading"],
-                                   inputs_root=run_paths.inputs_root,
-                                   cleanup_trace=args.cleanup_inputs)
+                    _is_decode_only = (new_req.num_decode > 0 and new_req.num_prefill == 0)
+                    _decode_cache = get_trace_cache() if _is_decode_only and args.decode_batch_size > 0 else None
+                    _cached_hit = False
+
+                    if _decode_cache is not None and _decode_cache.has(instance_id, new_req.num_decode):
+                        # Fast path: patch cached trace with new attention latencies
+                        _cached_hit = True
+                        trace_path = input_path(run_paths.inputs_root, "trace",
+                            instance["hardware"], instance["model_name"],
+                            f"instance{instance_id}_batch{new_req.batch_id}.txt")
+                        _cached = _decode_cache.get(instance_id, new_req.num_decode)
+                        if _cached:
+                            _decode_cache.patch_and_write(
+                                instance_id, new_req.num_decode,
+                                _cached.attention_latencies,
+                                trace_path)
+                            generate_graph(new_req, instance["hardware"], instance["num_npus"], node_id,
+                                           instance_id, inst2npu_mapping[instance_id],
+                                           inst_cfg["enable_local_offloading"],
+                                           inputs_root=run_paths.inputs_root,
+                                           cleanup_trace=args.cleanup_inputs)
+                    if not _cached_hit:
+                        generate_trace(new_req, instance["hardware"], instance["tp_size"], instance["pp_size"],
+                                       instance["local_ep"], instance["ep_total"],
+                                       instance["pd_type"],
+                                       node_id, instance_id,
+                                       inst_cfg["max_num_batched_tokens"], inst_cfg["max_num_seqs"],
+                                       placement[instance_id], block_mode_on[instance_id],
+                                       expert_routing_policy, inst_cfg["enable_prefix_caching"],
+                                       inst_cfg["enable_attn_offloading"], power_model, pim_models[node_id],
+                                       inst_cfg["enable_sub_batch_interleaving"], inst_cfg["fp"],
+                                       dtype=inst_cfg["dtype"], kv_cache_dtype=inst_cfg["kv_cache_dtype"],
+                                       tp_dim=instance["tp_dim"], ep_dim=instance["ep_dim"],
+                                       enable_block_copy=inst_cfg["enable_block_copy"],
+                                       inputs_root=run_paths.inputs_root)
+                        generate_graph(new_req, instance["hardware"], instance["num_npus"], node_id,
+                                       instance_id, inst2npu_mapping[instance_id],
+                                       inst_cfg["enable_local_offloading"],
+                                       inputs_root=run_paths.inputs_root,
+                                       cleanup_trace=args.cleanup_inputs)
+                        # Cache this decode trace for future reuse
+                        if _decode_cache is not None and _is_decode_only:
+                            trace_path = input_path(run_paths.inputs_root, "trace",
+                                instance["hardware"], instance["model_name"],
+                                f"instance{instance_id}_batch{new_req.batch_id}.txt")
+                            if os.path.exists(trace_path):
+                                _decode_cache.cache_from_file(
+                                    instance_id, new_req.num_decode,
+                                    instance["hardware"], instance["model_name"],
+                                    trace_path)
+                    # --- End decode optimization ---
                     workload = get_workload(new_req, instance["hardware"], instance_id,
                                             inputs_root=run_paths.inputs_root)
                     controller.write_flush(p, workload)
