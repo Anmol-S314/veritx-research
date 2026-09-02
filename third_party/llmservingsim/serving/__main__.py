@@ -574,6 +574,7 @@ def main():
 
     # Simulator start
     current = 0 # current tick of the system
+    _sim_time = 0 # persistent monotonic clock (survives pass/zero-cycle outputs)
     sys = 0 # current system id (NPU id)
     id = 0 # id of the request
     is_prefill_done = False # flag to check if prefill is done
@@ -694,6 +695,12 @@ def main():
         sys = out_dict['sys']
         id = out_dict['id']
         current = out_dict['cycle']
+        # Monotonic clock: never go backward (handles pass/zero-cycle outputs
+        # that don't advance the event queue, e.g. when waiting for agentic
+        # tool-call durations to elapse)
+        if current < _sim_time:
+            current = _sim_time
+        _sim_time = current
 
         # Route newly arrived requests to instances based on current load
         if dataset is not None:
@@ -1149,12 +1156,19 @@ def main():
         elif new_req == None and not responded:
             # If all instances are idle but deferred sessions have pending
             # requests with future arrival times (tool calls still running),
-            # advance current time so the next iteration can pick them up.
+            # advance persistent clock so the next iteration routes them.
+            # Time advancement must also propagate to the binary's event
+            # queue — we send "pass <time>" so BookSim's EventQueue jumps.
+            _advanced = False
             if router.has_deferred_sessions() or router.has_pending_requests():
                 next_arrival = router.get_next_pending_arrival()
-                if next_arrival is not None and next_arrival > current:
+                if next_arrival is not None and next_arrival > _sim_time:
+                    _sim_time = next_arrival
                     current = next_arrival
-            controller.write_flush(p, "pass")
+                    controller.write_flush(p, f"pass {_sim_time}")
+                    _advanced = True
+            if not _advanced:
+                controller.write_flush(p, "pass")
         
         # flush
         flush.stdout.flush()

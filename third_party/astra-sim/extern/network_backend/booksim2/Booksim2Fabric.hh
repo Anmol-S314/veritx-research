@@ -49,6 +49,14 @@ class EventQueue {
 
   int64_t get_current_time() const { return _now; }
 
+  void jump_to(int64_t target) {
+    if (target > _now) {
+      _now = target;
+      _drain_retired();
+      if (advance_hook) advance_hook();
+    }
+  }
+
   void proceed() {
     auto ev = _heap.top();
     _heap.pop();

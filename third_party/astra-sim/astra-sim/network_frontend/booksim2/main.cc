@@ -135,8 +135,32 @@ int main(int argc, char * argv[]) {
       line.erase(0, line.find_first_not_of(" \t\n\r"));
       line.erase(line.find_last_not_of(" \t\n\r") + 1);
 
-      if (line.empty() || line == "pass") {
-        // No work — output current time as completion (no new events)
+      if (line.empty() || line.rfind("pass", 0) == 0) {
+        // "pass" or "pass <target>" — advance event queue if a future
+        // target time is supplied (agentic tool-call gaps). This keeps the
+        // binary's wall_time monotonic with Python's _sim_time.
+        // If fabric is idle, jump directly (no need to simulate idle cycles).
+        if (line.size() > 4) {
+          try {
+            std::string ts = line.substr(5);
+            // trim
+            ts.erase(0, ts.find_first_not_of(" \t"));
+            ts.erase(ts.find_last_not_of(" \t") + 1);
+            if (!ts.empty()) {
+              uint64_t target = std::stoull(ts);
+              uint64_t cur = event_queue.get_current_time();
+              if (target > cur) {
+                if (fabric.tm()->HasInFlight() || !event_queue.finished()) {
+                  uint64_t delta = target - cur;
+                  event_queue.run_cycles(delta);
+                } else {
+                  event_queue.jump_to(target);
+                }
+              }
+            }
+          } catch (...) {
+          }
+        }
         uint64_t wall_time = event_queue.get_current_time();
         for (int i = 0; i < npus_count; ++i) {
           std::cout << "[workload] sys[" << i << "] finished, "
