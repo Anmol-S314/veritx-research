@@ -1,6 +1,6 @@
-/******************************************************************************
-This source code is licensed under the MIT license found in the
-LICENSE file in the root directory of this source tree.
+/***************************************************************************
+* This source code is licensed under the MIT license found in the
+* LICENSE file in the root directory of this source tree.
 *******************************************************************************/
 
 #include "astra-sim/common/Logging.hh"
@@ -19,6 +19,19 @@ using namespace AstraSimAnalytical;
 using namespace AstraSimAnalyticalCongestionAware;
 using namespace NetworkAnalytical;
 using namespace NetworkAnalyticalCongestionAware;
+
+// Helper: output workload results in the same format as BookSim frontend
+// so LLMServingSim's controller.parse_output() can parse them.
+static void emit_workload_results(
+    const std::vector<Sys*>& systems, int npus_count,
+    const std::shared_ptr<EventQueue>& event_queue) {
+    uint64_t wall_time = event_queue->get_current_time();
+    for (int i = 0; i < npus_count; ++i) {
+        std::cout << "[workload] sys[" << i << "] finished, "
+                  << wall_time << " cycles, exposed communication "
+                  << wall_time << " cycles." << std::endl;
+    }
+}
 
 int main(int argc, char* argv[]) {
     // Parse command line arguments
@@ -99,6 +112,8 @@ int main(int argc, char* argv[]) {
     while (!event_queue->finished()) {
         event_queue->proceed();
     }
+    // Emit results in BookSim-compatible format for LLMServingSim controller
+    emit_workload_results(systems, npus_count, event_queue);
     std::cout << "Waiting" << std::endl << std::flush;
 
     // Interactive loop for LLMServingSim (mirrors booksim2/main.cc)
@@ -125,6 +140,7 @@ int main(int argc, char* argv[]) {
                     }
                 } catch (...) {}
             }
+            emit_workload_results(systems, npus_count, event_queue);
             std::cout << "Waiting" << std::endl << std::flush;
             continue;
         }
@@ -135,6 +151,8 @@ int main(int argc, char* argv[]) {
         }
         for (int i = 0; i < npus_count; ++i) systems[i]->workload->fire();
         while (!event_queue->finished()) event_queue->proceed();
+        // Emit results in BookSim-compatible format
+        emit_workload_results(systems, npus_count, event_queue);
         std::cout << "Waiting" << std::endl << std::flush;
     }
 

@@ -123,10 +123,10 @@ void NetworkParser::check_validity() const noexcept {
         std::exit(-1);
     }
 
-    // npus_count should be all positive
+    // npus_count should be positive (allow 1 for single-NPU replay path)
     for (const auto& npus_count : npus_count_per_dim) {
-        if (npus_count <= 1) {
-            std::cerr << "[Error] (network/analytical) " << "npus_count (" << npus_count << ") should be larger than 1"
+        if (npus_count < 1) {
+            std::cerr << "[Error] (network/analytical) " << "npus_count (" << npus_count << ") should be >= 1"
                       << std::endl;
             std::exit(-1);
         }

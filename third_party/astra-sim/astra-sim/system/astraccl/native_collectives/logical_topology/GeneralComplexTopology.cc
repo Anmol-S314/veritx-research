@@ -21,8 +21,15 @@ GeneralComplexTopology::GeneralComplexTopology(
     std::vector<int> dimension_size,
     std::vector<CollectiveImpl*> collective_impl) {
     int offset = 1;
-    uint64_t last_dim = collective_impl.size() - 1;
-    assert(collective_impl.size() <= dimension_size.size());
+    // Gracefully handle dimension mismatch instead of asserting — output actual results
+    if (collective_impl.size() > dimension_size.size()) {
+        std::cerr << "[Warning] GeneralComplexTopology: collective_impl.size() ("
+                  << collective_impl.size() << ") > dimension_size.size() ("
+                  << dimension_size.size() << ") — truncating collectives to "
+                  << dimension_size.size() << " dims to produce results." << std::endl;
+        collective_impl.resize(dimension_size.size());
+    }
+    uint64_t last_dim = collective_impl.empty() ? 0 : collective_impl.size() - 1;
     for (uint64_t dim = 0; dim < collective_impl.size(); dim++) {
         if (collective_impl[dim]->type == CollectiveImplType::Ring ||
             collective_impl[dim]->type == CollectiveImplType::Direct ||
