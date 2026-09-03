@@ -140,7 +140,12 @@ class LLMConverter:
 
     def get_comp_node(self, layer_name: str, comp_time: int) -> Any:
         node = self.get_node("COMP_NODE_" + layer_name, COMP_NODE)
-        node.duration_micros = comp_time
+        # VeritX fix: LLM serving traces write comp_time in NANOSECONDS
+        # (trace_generator latency_ns). The Chakra proto field is duration_MICROS
+        # and ASTRA's issue_replay multiplies runtime by 1000 (us->ns), so the
+        # raw ns value must be converted to us here. Without this, every op
+        # (and the arrival alarm) is inflated 1000x (TTFT ~1e6 ms for ~1s work).
+        node.duration_micros = int(round(comp_time / 1000.0))
         return node
     
     def get_comm_type(self, comm_type: str) -> int:
@@ -256,7 +261,8 @@ class LLMConverter:
 
     def get_pim_compute_node(self, layer_name: str, tensor_type: str, comp_time: int, mem_type: str, tensor_size: int) -> Any:
         node = self.get_node("PIM_COMP_NODE_" + layer_name + "_" + tensor_type, PIM_COMP_NODE)
-        node.duration_micros = comp_time
+        # VeritX fix: comp_time is in ns in LLM serving traces; proto field is us (see get_comp_node).
+        node.duration_micros = int(round(comp_time / 1000.0))
         node.attr.append(ChakraAttr(name="tensor_size", uint64_val=tensor_size))
         node.attr.append(ChakraAttr(name="tensor_loc", uint32_val=self.get_mem_type(mem_type)))
         node.attr.append(ChakraAttr(name="tensor_device", uint32_val=self.get_mem_device(mem_type)))
