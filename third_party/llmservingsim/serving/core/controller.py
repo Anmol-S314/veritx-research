@@ -25,22 +25,10 @@ class Controller():
         return out
 
     def check_end(self, p):
-        # BookSim backend never outputs the termination strings that analytical does.
-        # Blocking here would hang forever after the binary has already exited.
-        if self.network_backend == 'booksim':
-            return []
-        out = ["",""]
-        while out[-2] != "All Request Has Been Exited\n" and out[-2] != "ERROR: Some Requests Remain\n":
-            line = p.stdout.readline()
-            if not line:  # EOF -- binary already exited
-                break
-            out.append(line)
-            p.stdout.flush()
-        if len(out) >= 4:
-            print(out[-4], end='')
-        if len(out) >= 2:
-            print(out[-2], end='')
-        return out
+        # Neither BookSim nor the patched analytical frontend output the
+        # "All Request Has Been Exited" / "ERROR" termination strings.
+        # The terminate/kill cleanup below handles shutdown. Just return.
+        return []
 
     def write_flush(self, p, input):
         # For debugging

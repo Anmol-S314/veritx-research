@@ -138,8 +138,11 @@ def _prepare_booksim_config(astra_sim, run_paths, num_nodes):
     BookSim mesh only supports square k^n. For rectangular dims like 2x4 (8 NPUs)
     we emit an anynet mesh file instead. This keeps node_count correct and avoids
     dimension mismatch with ASTRA's network.yml (which is [2,4] for 4xTP2).
+    
+    Now reads the ACTUAL network.yml dims instead of inferring, so any LLM
+    workload (any N, any parallelism) is correct.
     """
-    import math
+    import math, yaml
     booksim_src = os.path.join(astra_sim, "..", "..", "booksim2", "src")
     if not os.path.exists(booksim_src):
         booksim_src = os.path.join(os.path.dirname(astra_sim), "..", "..", "booksim2", "src")
@@ -148,32 +151,40 @@ def _prepare_booksim_config(astra_sim, run_paths, num_nodes):
     os.makedirs(config_dir, exist_ok=True)
     config_path = os.path.join(config_dir, "config.cfg")
     
-    # Try to infer rectangular dims that match ASTRA's _compute_network_dims.
-    # For single_node_4_instance_2TP: total_npu=8 -> dims [2,4] (not 8x1).
-    # We recompute dims here from num_nodes using the same rule as
-    # config_builder._compute_network_dims for independent instances.
-    # If dims is rectangular or needs anynet, emit anynet file.
-    def _infer_dims(n):
-        # Mirror _compute_network_dims for independent instances without DP.
-        # For total_npu=8,4,2 etc we want factors; simplest: try to make 2D rectangle.
-        # Use 2x4 for 8, 2x2 for 4, 2 for 2, 1 for 1.
-        if n == 8:
-            return [2, 4]
-        if n == 4:
-            return [2, 2]
-        if n == 2:
-            return [2]
-        if n == 1:
-            return [1]
-        # generic: factor into 2 dims close to sqrt
-        r = int(math.sqrt(n))
-        while r > 1 and n % r != 0:
-            r -= 1
-        if r > 1:
-            return [r, n // r]
-        return [n]
-    
-    dims = _infer_dims(num_nodes)
+    # Read ACTUAL dims from network.yml (already written by build_cluster_config)
+    network_yml = os.path.join(run_paths.inputs_root, "network", "network.yml")
+    dims = None
+    topologies = None
+    if os.path.exists(network_yml):
+        try:
+            with open(network_yml) as f:
+                y = yaml.safe_load(f)
+                dims = y.get("npus_count")
+                topologies = y.get("topology")
+                if dims and all(isinstance(x, int) for x in dims):
+                    pass
+                else:
+                    dims = None
+        except Exception:
+            dims = None
+    if dims is None:
+        # Fallback: infer from num_nodes
+        def _infer_dims(n):
+            if n == 8:
+                return [2, 4]
+            if n == 4:
+                return [2, 2]
+            if n == 2:
+                return [2]
+            if n == 1:
+                return [1]
+            r = int(math.sqrt(n))
+            while r > 1 and n % r != 0:
+                r -= 1
+            if r > 1:
+                return [r, n // r]
+            return [n]
+        dims = _infer_dims(num_nodes)
     is_square_mesh = (len(dims) == 1 and dims[0] >= 2) or (len(dims) == 2 and dims[0] == dims[1])
     # Single-node single GPU (dims [1]) is square for our purpose
     if dims == [1]:
@@ -197,21 +208,29 @@ def _prepare_booksim_config(astra_sim, run_paths, num_nodes):
                 for i, d in enumerate(dims):
                     c.append((idx // strides[i]) % d)
                 return c
-            # Build adjacency (mesh, no wrap)
+            # Build adjacency: FullyConnected dims -> clique, else mesh (no wrap)
             with open(out_path, "w") as f:
                 for r in range(N):
                     rc = coords(r)
-                    # each router connects to its node
                     line = f"router {r} node {r}"
-                    # neighbors in each dim
                     for dim, d in enumerate(dims):
-                        for delta in (-1, 1):
-                            nc = rc.copy()
-                            nc[dim] += delta
-                            if 0 <= nc[dim] < d:
-                                # encode neighbor coords back to id
-                                nid = sum(nc[i] * strides[i] for i in range(len(dims)))
-                                line += f" router {nid}"
+                        topo = topologies[dim] if topologies and dim < len(topologies) else "FullyConnected"
+                        if topo == "FullyConnected":
+                            # Fully connect all routers sharing same coords in other dims
+                            for other in range(N):
+                                if other == r: continue
+                                oc = coords(other)
+                                # same in all dims except this dim
+                                if all(oc[i] == rc[i] for i in range(len(dims)) if i != dim):
+                                    line += f" router {other}"
+                        else:
+                            # Mesh: neighbors in each dim
+                            for delta in (-1, 1):
+                                nc = rc.copy()
+                                nc[dim] += delta
+                                if 0 <= nc[dim] < d:
+                                    nid = sum(nc[i] * strides[i] for i in range(len(dims)))
+                                    line += f" router {nid}"
                     f.write(line + "\n")
         _gen_mesh_anynet(dims, anynet_path)
         with open(config_path, "w") as f:

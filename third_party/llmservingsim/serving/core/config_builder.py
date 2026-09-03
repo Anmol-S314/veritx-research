@@ -233,16 +233,14 @@ def _compute_network_dims(instances):
         dims.pop()
     while len(dims) > 1 and dims[0] == 1:
         dims.pop(0)
-    # For BookSim: collapse 2D [2,4] (8 nodes from 4×TP2) to single [8] so the
-    # 1D mesh k=8 matches the single collective impl. Keeps analytical 2D but
+    # For BookSim: collapse 2D rectangular dims to single [total] so the
+    # 1D mesh matches the single collective impl. Keeps analytical 2D but
     # BookSim fabric is always 1D (k^n). Without this, 8N BookSim would be 1D [8]
     # vs network 2D [2,4] → GeneralComplexTopology assert 2<=1.
-    # Only collapse when product matches and dims are 2D asymmetric; keep [2,2] etc.
-    if len(dims) == 2 and dims[0] * dims[1] == total_npu and dims[0] != dims[1]:
-        # e.g. [2,4] for 8N from 4 instances TP2 -> collapse to [8] for BookSim compat
-        # This is safe for replay (network not simulated) and for BookSim cycle-acc
-        # where 1D mesh of 8 can still run the 2 rings as 1D (just collapse).
-        dims = [total_npu]
+    # Only collapse when dims are 2D asymmetric; keep [2,2] etc.
+    if len(dims) == 2 and dims[0] != dims[1]:
+        _total = dims[0] * dims[1]
+        dims = [_total]
     return dims
 
 
