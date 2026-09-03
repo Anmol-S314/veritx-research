@@ -404,7 +404,7 @@ if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("trace_dir", nargs="?", default=
-        "research-vendor/upstream/LLMServingSim/astra-sim/inputs/runs/run_1787561697070974_458785/trace")
+        "third_party/llmservingsim/astra-sim/inputs/runs/run_1787561697070974_458785/trace")
     ap.add_argument("--structure", default=None,
                     help="mapper event stream JSON — merges participant "
                          "instances into flow classes (provenance-recorded)")

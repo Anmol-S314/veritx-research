@@ -1,5 +1,5 @@
 {
-  "source": "research-vendor/upstream/LLMServingSim/astra-sim/inputs/runs/run_1787561697070974_458785/trace",
+  "source": "third_party/llmservingsim/astra-sim/inputs/runs/run_1787561697070974_458785/trace",
   "num_batches_analyzed": 10,
   "compute": {
     "avg_cycles_per_batch": 15849454,

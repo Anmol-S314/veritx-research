@@ -1079,17 +1079,28 @@ def cmd_serve(ctx: Ctx, args):
 
     # Resolve paths - LLMServingSim runs from astra-sim/ and prepends ../ to relative paths
     llmserving_root = REPO / "third_party" / "llmservingsim"
-    cluster_config_path = Path(args.cluster_config).resolve()
-    dataset_path = Path(args.dataset).resolve()
-    # Pass paths relative to llmserving_root (LLMServingSim's _cluster_config_path adds ../)
-    try:
-        cluster_config = str(cluster_config_path.relative_to(llmserving_root))
-    except ValueError:
-        cluster_config = str(cluster_config_path)
-    try:
-        dataset = str(dataset_path.relative_to(llmserving_root))
-    except ValueError:
-        dataset = str(dataset_path)
+
+    def _locate_serve_path(p):
+        """Resolve a config/dataset path for the serving sim.
+
+        Relative paths are tried against llmserving_root, REPO, DSE_DIR, then
+        CWD. If the result lives under llmserving_root it is returned relative
+        to that root (the sim runs with cwd=llmserving_root and prepends ../);
+        otherwise an absolute path is returned.
+        """
+        r = Path(p)
+        if r.is_absolute():
+            return str(r.relative_to(llmserving_root)) \
+                if r.is_relative_to(llmserving_root) else str(r)
+        for base in (llmserving_root, REPO, DSE_DIR, Path.cwd()):
+            cand = base / p
+            if cand.exists():
+                return str(cand.relative_to(llmserving_root)) \
+                    if cand.is_relative_to(llmserving_root) else str(cand)
+        return str((Path.cwd() / p).resolve())
+
+    cluster_config = _locate_serve_path(args.cluster_config)
+    dataset = _locate_serve_path(args.dataset)
 
     if not llmserving_root.exists():
         fail(ctx, f"LLMServingSim not found at {llmserving_root}")

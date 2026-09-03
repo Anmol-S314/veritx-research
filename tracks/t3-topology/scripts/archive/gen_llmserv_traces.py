@@ -9,11 +9,11 @@ then converts to NoC traffic matrices + replayable trace files.
 """
 import sys, os, json, random
 
-LSS = "/home/datavex/veritx-research/research-vendor/upstream/LLMServingSim"
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT = os.path.normpath(os.path.join(_SCRIPT_DIR, "..", "..", "..", ".."))
+LSS = os.path.join(_REPO_ROOT, "third_party", "llmservingsim")
 sys.path.insert(0, LSS)
-sys.path.insert(0, "/home/datavex/veritx-research/research-vendor/upstream/chakra-shim")
-sys.path.insert(0, "/home/datavex/veritx-research/research-vendor/upstream/kaist-chakra/src")
-os.chdir(LSS + "/astra-sim")   # trace gen resolves ../profiler from here
+os.chdir(os.path.join(LSS, "astra-sim"))   # trace gen resolves ../profiler from here
 
 from serving.core.request import Batch
 from serving.core.trace_generator import generate_trace
