@@ -133,34 +133,137 @@ def _prepare_ns3_config(astra_sim, run_paths):
 
 
 def _prepare_booksim_config(astra_sim, run_paths, num_nodes):
-    """Prepare BookSim config for ASTRA-sim's BookSim2 backend."""
-    # Use the vendored BookSim from third_party/booksim2
-    # astra_sim points to third_party/astra-sim/astra-sim
-    # So we go up two levels to third_party, then to booksim2/src
+    """Prepare BookSim config for ASTRA-sim's BookSim2 backend.
+    
+    BookSim mesh only supports square k^n. For rectangular dims like 2x4 (8 NPUs)
+    we emit an anynet mesh file instead. This keeps node_count correct and avoids
+    dimension mismatch with ASTRA's network.yml (which is [2,4] for 4xTP2).
+    """
+    import math
     booksim_src = os.path.join(astra_sim, "..", "..", "booksim2", "src")
     if not os.path.exists(booksim_src):
-        # Fallback: try relative to repo root
         booksim_src = os.path.join(os.path.dirname(astra_sim), "..", "..", "booksim2", "src")
     
-    # Create config directory
     config_dir = os.path.join(run_paths.inputs_root, "booksim")
     os.makedirs(config_dir, exist_ok=True)
     config_path = os.path.join(config_dir, "config.cfg")
     
-    # Calculate mesh dimensions (assume 2D mesh)
-    import math
+    # Try to infer rectangular dims that match ASTRA's _compute_network_dims.
+    # For single_node_4_instance_2TP: total_npu=8 -> dims [2,4] (not 8x1).
+    # We recompute dims here from num_nodes using the same rule as
+    # config_builder._compute_network_dims for independent instances.
+    # If dims is rectangular or needs anynet, emit anynet file.
+    def _infer_dims(n):
+        # Mirror _compute_network_dims for independent instances without DP.
+        # For total_npu=8,4,2 etc we want factors; simplest: try to make 2D rectangle.
+        # Use 2x4 for 8, 2x2 for 4, 2 for 2, 1 for 1.
+        if n == 8:
+            return [2, 4]
+        if n == 4:
+            return [2, 2]
+        if n == 2:
+            return [2]
+        if n == 1:
+            return [1]
+        # generic: factor into 2 dims close to sqrt
+        r = int(math.sqrt(n))
+        while r > 1 and n % r != 0:
+            r -= 1
+        if r > 1:
+            return [r, n // r]
+        return [n]
+    
+    dims = _infer_dims(num_nodes)
+    is_square_mesh = (len(dims) == 1 and dims[0] >= 2) or (len(dims) == 2 and dims[0] == dims[1])
+    # Single-node single GPU (dims [1]) is square for our purpose
+    if dims == [1]:
+        is_square_mesh = True
+    
+    # Rectangular dims -> anynet
+    if not is_square_mesh and dims != [1]:
+        anynet_path = os.path.join(config_dir, "topo.anynet")
+        # Generate mesh anynet for dims
+        def _gen_mesh_anynet(dims, out_path):
+            N = math.prod(dims)
+            # Precompute strides
+            strides = []
+            prod = 1
+            for d in reversed(dims):
+                strides.insert(0, prod)
+                prod *= d
+            # Decode id -> coords
+            def coords(idx):
+                c = []
+                for i, d in enumerate(dims):
+                    c.append((idx // strides[i]) % d)
+                return c
+            # Build adjacency (mesh, no wrap)
+            with open(out_path, "w") as f:
+                for r in range(N):
+                    rc = coords(r)
+                    # each router connects to its node
+                    line = f"router {r} node {r}"
+                    # neighbors in each dim
+                    for dim, d in enumerate(dims):
+                        for delta in (-1, 1):
+                            nc = rc.copy()
+                            nc[dim] += delta
+                            if 0 <= nc[dim] < d:
+                                # encode neighbor coords back to id
+                                nid = sum(nc[i] * strides[i] for i in range(len(dims)))
+                                line += f" router {nid}"
+                    f.write(line + "\n")
+        _gen_mesh_anynet(dims, anynet_path)
+        with open(config_path, "w") as f:
+            f.write(f"""// BookSim anynet for {num_nodes} NPUs dims={dims}
+topology = anynet;
+network_file = {anynet_path};
+routing_function = min;
+num_vcs = 16;
+vc_buf_size = 512;
+packet_size = 64;
+wait_for_tail_credit = 1;
+vc_allocator = islip;
+sw_allocator = islip;
+alloc_iters = 1;
+credit_delay = 2;
+routing_delay = 0;
+vc_alloc_delay = 1;
+sw_alloc_delay = 1;
+input_speedup = 2;
+output_speedup = 1;
+internal_speedup = 1.0;
+traffic = uniform;
+injection_rate = 0.001;
+""")
+        # BookSim frontend (main.cc) always passes npus_count_per_dim={num_nodes} (1D)
+        # to ASTRA's Sys, but system.json may have multi-dim collective_impl.
+        # Collapse collective_impl to 1D so GeneralComplexTopology assertion passes:
+        # assert(collective_impl.size() <= dimension_size.size())
+        system_path = os.path.join(run_paths.inputs_root, "system", "system.json")
+        if os.path.exists(system_path):
+            with open(system_path) as sf:
+                sys_cfg = json.load(sf)
+            # BookSim frontend passes flat npus_count_per_dim to ASTRA.
+            # Collapse multi-dim collective impls to 1D so GeneralComplexTopology
+            # assertion passes: assert(impl.size() <= dim_size.size())
+            _impl_keys = ["all-reduce-implementation", "all-gather-implementation",
+                          "reduce-scatter-implementation", "all-to-all-implementation"]
+            for key in _impl_keys:
+                if key in sys_cfg and isinstance(sys_cfg[key], list) and len(sys_cfg[key]) > 1:
+                    sys_cfg[key] = ["ring"]
+            # Also set npus_count to flat for network.yml consistency
+            with open(system_path, "w") as sf:
+                json.dump(sys_cfg, sf, indent=2)
+        return config_path, booksim_src
+    
+    # Square / 1D mesh path (original)
     k = int(math.sqrt(num_nodes))
     if k * k != num_nodes:
-        # Not a perfect square, use 1D
         k = num_nodes
         n = 1
     else:
         n = 2
-    
-    # Ensure k >= 2 (BookSim minimum) — except for single-node case where
-    # network.yml is dims [1] (e.g. single_node_single_instance). Forcing k=2
-    # would make fabric 2 nodes vs network 1 node → GeneralComplexTopology
-    # assert collective_impl.size() <= dimension_size.size() fails.
     if k < 2:
         if num_nodes == 1:
             k = 1
@@ -168,12 +271,9 @@ def _prepare_booksim_config(astra_sim, run_paths, num_nodes):
         else:
             k = 2
             n = 1
-    
-    # Write BookSim config — tuned for LLM serving collectives (large AllReduce bursts)
     with open(config_path, "w") as f:
         f.write(f"""// BookSim config for ASTRA-sim backend
 // Generated by LLMServingSim
-// External injection only — no synthetic traffic
 topology = mesh;
 k = {k};
 n = {n};
@@ -194,7 +294,6 @@ output_speedup = 1;
 internal_speedup = 1.0;
 traffic = uniform;
 """)
-    
     return config_path, booksim_src
 
 
