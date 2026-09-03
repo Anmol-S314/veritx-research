@@ -27,12 +27,14 @@ typedef ChakraProtoMsg::CollectiveCommType ChakraCollectiveCommType;
 
 Workload::Workload(Sys* sys, string et_filename, string comm_group_filename) {
     string workload_filename = et_filename + "." + to_string(sys->id) + ".et";
-    // Check if workload filename exists
+    // For multi-instance: workload file may not exist for idle NPUs (only the
+    // scheduled instance generates files). Treat missing as empty workload
+    // that immediately finishes, instead of hard exit.
     if (access(workload_filename.c_str(), R_OK) < 0) {
         string error_msg;
         if (errno == ENOENT) {
             error_msg =
-                "workload file: " + workload_filename + " does not exist";
+                "workload file: " + workload_filename + " does not exist (idle NPU, treating as empty)";
         } else if (errno == EACCES) {
             error_msg = "workload file: " + workload_filename +
                         " exists but is not readable";
@@ -40,8 +42,16 @@ Workload::Workload(Sys* sys, string et_filename, string comm_group_filename) {
             error_msg =
                 "Unknown workload file: " + workload_filename + " access error";
         }
-        LoggerFactory::get_logger("workload")->critical(error_msg);
-        exit(EXIT_FAILURE);
+        LoggerFactory::get_logger("workload")->warn(error_msg);
+        // Create empty workload that immediately finishes
+        this->et_feeder = nullptr;
+        this->is_finished = true;
+        this->comm_groups.clear();
+        this->hw_resource = new HardwareResource(1, sys->id);
+        this->sys = sys;
+        this->stats = new Statistics(this);
+        this->local_mem_usage_tracker = std::make_unique<LocalMemUsageTracker>(sys->id);
+        return;
     }
     this->et_feeder = new ETFeeder(workload_filename);
     this->comm_groups.clear();

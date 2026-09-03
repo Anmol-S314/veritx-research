@@ -6,6 +6,8 @@ LICENSE file in the root directory of this source tree.
 #include "astra-sim/common/Logging.hh"
 #include "common/CmdLineParser.hh"
 #include "congestion_aware/CongestionAwareNetworkApi.hh"
+#include <iostream>
+#include <string>
 #include <astra-network-analytical/common/EventQueue.h>
 #include <astra-network-analytical/common/NetworkParser.h>
 #include <astra-network-analytical/congestion_aware/Helper.h>
@@ -90,22 +92,54 @@ int main(int argc, char* argv[]) {
         systems.push_back(system);
     }
 
-    // Initiate ASTRA-sim simulation
+    // Initiate first workload (event_handler) and run
     for (int i = 0; i < npus_count; i++) {
         systems[i]->workload->fire();
     }
-
-    // run simulation
     while (!event_queue->finished()) {
         event_queue->proceed();
     }
+    std::cout << "Waiting" << std::endl << std::flush;
 
-    for (auto it : systems) {
-        delete it;
+    // Interactive loop for LLMServingSim (mirrors booksim2/main.cc)
+    std::string line;
+    while (std::getline(std::cin, line)) {
+        size_t a = line.find_first_not_of(" \t\n\r");
+        if (a == std::string::npos) continue;
+        size_t b = line.find_last_not_of(" \t\n\r");
+        line = line.substr(a, b - a + 1);
+        if (line.empty()) continue;
+        if (line.rfind("pass", 0) == 0) {
+            if (line.size() > 4) {
+                try {
+                    std::string ts = line.substr(5);
+                    size_t aa = ts.find_first_not_of(" \t");
+                    if (aa != std::string::npos) ts = ts.substr(aa);
+                    size_t bb = ts.find_last_not_of(" \t");
+                    if (bb != std::string::npos) ts = ts.substr(0, bb + 1);
+                    if (!ts.empty()) {
+                        uint64_t target = std::stoull(ts);
+                        while (!event_queue->finished() && (uint64_t)event_queue->get_current_time() < target) {
+                            event_queue->proceed();
+                        }
+                    }
+                } catch (...) {}
+            }
+            std::cout << "Waiting" << std::endl << std::flush;
+            continue;
+        }
+        if (line == "exit" || line == "done") break;
+        for (int i = 0; i < npus_count; ++i) {
+            delete systems[i]->workload;
+            systems[i]->workload = new Workload(systems[i], line, comm_group_configuration);
+        }
+        for (int i = 0; i < npus_count; ++i) systems[i]->workload->fire();
+        while (!event_queue->finished()) event_queue->proceed();
+        std::cout << "Waiting" << std::endl << std::flush;
     }
-    systems.clear();
 
-    // terminate simulation
+    for (auto it : systems) delete it;
+    systems.clear();
     AstraSim::LoggerFactory::shutdown();
     return 0;
 }

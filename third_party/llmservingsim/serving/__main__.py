@@ -788,15 +788,16 @@ def main():
             break
         
         # BookSim: pre-notify all sys completions (needed for TP>1: add_done requires all NPUs)
-        # Use the batch_id from the last scheduled batch (stored in _last_batch_id)
+        # Use each instance's OWN inflight batch_id (not a global last_bid —
+        # different instances have different batch_ids).
         main_inst = npu2inst_mapping.get(sys, -1)
-        last_bid = getattr(controller, '_last_batch_id', -1)
-        if main_inst is not None and last_bid >= 0:
+        if main_inst is not None:
             for extra in controller.parse_all_booksim("\n".join(out)):
                 if extra['sys'] != out_dict.get('sys', -1):
                     extra_inst = npu2inst_mapping.get(extra['sys'])
-                    if extra_inst is not None:
-                        schedulers[extra_inst].add_done(last_bid, extra['sys'], extra['cycle'])
+                    if extra_inst is not None and schedulers[extra_inst].inflight:
+                        _extra_bid = schedulers[extra_inst].inflight[-1].batch_id
+                        schedulers[extra_inst].add_done(_extra_bid, extra['sys'], extra['cycle'])
 
         sys = out_dict['sys']
         id = out_dict['id']
@@ -835,7 +836,8 @@ def main():
             waiting_request[instance_id] = True
 
         # check request is done
-        prompt_t, gen_t, finished_reqs = schedulers[instance_id].add_done(last_bid, sys, current)
+        _my_bid = schedulers[instance_id].inflight[-1].batch_id if schedulers[instance_id].inflight else -1
+        prompt_t, gen_t, finished_reqs = schedulers[instance_id].add_done(_my_bid, sys, current)
         # add tokens in throughput
         prompt_th += prompt_t
         total_prompt += prompt_t
@@ -855,9 +857,6 @@ def main():
 
         # schedule requests
         new_req = schedulers[instance_id].schedule(current, sys, id)
-        # Store the last batch_id for BookSim TP>1 completion matching
-        if new_req is not None and schedulers[instance_id].inflight:
-            controller._last_batch_id = schedulers[instance_id].inflight[-1].batch_id
         responded = False  # track whether we already sent a response to ASTRA-Sim
 
         # Check if a pre-generated workload is ready for this instance (from DP sync)
