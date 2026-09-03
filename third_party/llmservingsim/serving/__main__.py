@@ -809,9 +809,12 @@ def main():
         
         # If binary exited (EOF) or no parseable output, break
         if out_dict is None:
-            # Check if this is normal end-of-simulation or an error
+            # Check if this is normal end-of-simulation or an error.
+            # VeritX: an empty read is an EOF (binary exited — usually crash
+            # or unexpected pipe close), NOT a clean completion; the clean
+            # path sends 'exit' then breaks without reading further.
             if not out or (len(out) == 1 and out[0] == ''):
-                print("[LLMServingSim] Simulation complete.", flush=True)
+                print("[LLMServingSim] Network backend exited unexpectedly (EOF).", flush=True)
             else:
                 print("[LLMServingSim] No valid output from network backend, ending simulation.", flush=True)
             break
@@ -824,9 +827,20 @@ def main():
             for extra in controller.parse_all_booksim("\n".join(out)):
                 if extra['sys'] != out_dict.get('sys', -1):
                     extra_inst = npu2inst_mapping.get(extra['sys'])
-                    if extra_inst is not None and schedulers[extra_inst].inflight:
+                    # VeritX: only retire batches actually flushed to the
+                    # backend (sent). A DP-pending batch has not run yet;
+                    # pass-echo finish lines must not retire it.
+                    if extra_inst is not None and schedulers[extra_inst].inflight \
+                            and schedulers[extra_inst].inflight[-1].sent:
                         _extra_bid = schedulers[extra_inst].inflight[-1].batch_id
-                        schedulers[extra_inst].add_done(_extra_bid, extra['sys'], extra['cycle'])
+                        _p, _g, _f = schedulers[extra_inst].add_done(_extra_bid, extra['sys'], extra['cycle'])
+                        # VeritX: extras-path completions must count too
+                        # (previously req_cnt missed any request retired via
+                        # a non-leading finish line, e.g. DP members).
+                        if _f and instances[extra_inst]["pd_type"] != "prefill":
+                            req_cnt += len(_f)
+                            for _r in _f:
+                                router.notify_request_completed(_r.id, extra['cycle'])
 
         sys = out_dict['sys']
         id = out_dict['id']
@@ -865,8 +879,15 @@ def main():
             waiting_request[instance_id] = True
 
         # check request is done
-        _my_bid = schedulers[instance_id].inflight[-1].batch_id if schedulers[instance_id].inflight else -1
-        prompt_t, gen_t, finished_reqs = schedulers[instance_id].add_done(_my_bid, sys, current)
+        # VeritX: guard retirement by .sent — an unsent batch is DP-pending
+        # (awaiting quorum), and the binary's per-round finish echo for a
+        # 'pass' must NOT retire it (that requeued requests every round and
+        # livelocked DP configs with the wall clock frozen).
+        _my_inf = schedulers[instance_id].inflight
+        if _my_inf and _my_inf[-1].sent:
+            prompt_t, gen_t, finished_reqs = schedulers[instance_id].add_done(_my_inf[-1].batch_id, sys, current)
+        else:
+            prompt_t, gen_t, finished_reqs = 0, 0, []
         # add tokens in throughput
         prompt_th += prompt_t
         total_prompt += prompt_t
@@ -890,7 +911,15 @@ def main():
         # does — instead of idling the fabric with a pass. Unblocks independent
         # multi-instance configs (4xTP2) and lets DP-group quorums converge on
         # consecutive member rounds.
-        if num_instances > 1 and not schedulers[instance_id].request:
+        # VeritX round-robin trigger: fire when the base instance cannot make
+        # progress this round — either its queue is empty, or its newest
+        # inflight batch is an unsent DP-pending batch (schedule() is blocked
+        # by the inflight constraint, so only another member's quorum can
+        # unblock it).
+        _base = schedulers[instance_id]
+        _base_blocked = bool(_base.inflight) and not _base.inflight[-1].sent
+        if num_instances > 1 and (not _base.request or _base_blocked):
+            _fallback = None
             for _k in range(num_instances):
                 _cand = (_rr_next + _k) % num_instances
                 if _cand == instance_id or schedulers[_cand].inflight:
@@ -903,6 +932,18 @@ def main():
                     node_id = inst2node_mapping[_cand]
                     sys = inst2npu_mapping[_cand]  # first NPU of the served instance
                     break
+                if _fallback is None and _cand not in done_instance:
+                    _fallback = _cand
+            else:
+                # No candidate had schedulable work: give one idle, not-yet-done
+                # instance a bookkeeping round so its done_instance marking can
+                # fire. Without this, a config whose base instance empties first
+                # spins bare-pass echoes forever (only the served instance's
+                # done check ever runs).
+                if _fallback is not None:
+                    instance_id = _fallback
+                    node_id = inst2node_mapping[_fallback]
+                    sys = inst2npu_mapping[_fallback]
             _rr_next = (instance_id + 1) % num_instances
 
         # schedule requests
@@ -916,7 +957,13 @@ def main():
         # DP group: truly idle instance (no inflight batch) — create dummy batch so ALLTOALL syncs
         elif new_req is None and instance_id in inst_dp_group and sys == inst2npu_mapping[instance_id] and len(schedulers[instance_id].inflight) == 0:
             dg = inst_dp_group[instance_id]
-            if dp_pending[dg]:
+            # VeritX: never overwrite this instance's own real pending batch
+            # with a dummy (dummy branch is only for members not yet in the
+            # quorum).
+            if instance_id in dp_pending[dg]:
+                controller.write_flush(p, "pass")
+                responded = True
+            elif dp_pending[dg]:
                 # Emit a 1-token dummy; the uniform pad-to-max pass below
                 # brings it (and any undersized real peers) up to the
                 # group's max_total_len, matching vLLM's CUDA-graph DP padding.
@@ -973,11 +1020,16 @@ def main():
                                        workload_name=dp_workload_name,
                                        inputs_root=run_paths.inputs_root,
                                        cleanup_trace=args.cleanup_inputs)
-                        if inst_id != instance_id:
-                            dp_ready_workloads[inst_id] = get_workload(batch, inst["hardware"], inst_id,
-                                                                    workload_name=dp_workload_name,
-                                                                    inputs_root=run_paths.inputs_root)
+                        # VeritX: no dp_ready_workloads enqueue — the shared
+                        # workload dir carries every member's rank files and
+                        # the quorum-round single run retires them all via
+                        # the extras path; an enqueue would stale-replay it.
 
+                    # VeritX: mark every quorum member batch as flushed — the
+                    # shared workload dir carries all members' rank files, so
+                    # this single run retires all of them.
+                    for _b, _n in dp_pending[dg].values():
+                        _b.sent = True
                     dp_pending[dg].clear()
                     workload = get_workload(dummy, instances[instance_id]["hardware"], instance_id,
                                             workload_name=dp_workload_name,
@@ -1040,11 +1092,15 @@ def main():
                                            workload_name=dp_workload_name,
                                            inputs_root=run_paths.inputs_root,
                                            cleanup_trace=args.cleanup_inputs)
-                            if inst_id != instance_id:
-                                dp_ready_workloads[inst_id] = get_workload(batch, inst["hardware"], inst_id,
-                                                                        workload_name=dp_workload_name,
-                                                                        inputs_root=run_paths.inputs_root)
+                            # VeritX: no dp_ready_workloads enqueue — the
+                            # shared workload dir carries every member's rank
+                            # files and the quorum-round single run retires
+                            # them all via the extras path.
 
+                        # VeritX: mark every quorum member batch as flushed
+                        # (shared workload dir carries all rank files).
+                        for _b, _n in dp_pending[dg].values():
+                            _b.sent = True
                         dp_pending[dg].clear()
                         workload = get_workload(new_req, instance["hardware"], instance_id,
                                                 workload_name=dp_workload_name,
@@ -1128,11 +1184,13 @@ def main():
                     _bench_total_batches += 1
                     workload = get_workload(new_req, instance["hardware"], instance_id,
                                             inputs_root=run_paths.inputs_root)
+                    new_req.sent = True
                     controller.write_flush(p, workload)
             elif new_req is not None:
                 # Non-first NPU: pick up existing batch workload
                 workload = get_workload(new_req, instances[instance_id]["hardware"], instance_id,
                                         inputs_root=run_paths.inputs_root)
+                new_req.sent = True
                 controller.write_flush(p, workload)
 
         # check time to store throughput (only print on start NPU to avoid transient states)
@@ -1271,7 +1329,17 @@ def main():
 
             if sys not in done_inst_npus[instance_id]:
                 done_inst_npus[instance_id].append(sys)
-            if len(done_inst_npus[instance_id]) == (1 if instances[instance_id]["num_npus"] == 1 else 2):
+            # VeritX: mark the instance done on TRUE completion state
+            # (queue drained and every batch retired). The old gate counted
+            # distinct-NPU 'done' echoes, but with the booksim backend
+            # parse_output pins sys=0 as the base each round and the
+            # round-robin rebind always serves an instance's FIRST NPU — so
+            # a TP>1 instance's echo-count could never reach 2 and the run
+            # never exited (4-instance configs flooded pass-echoes forever).
+            # add_done already requires all NPUs in batch.end before
+            # retiring, so an empty inflight list means every NPU of every
+            # batch was echoed.
+            if len(schedulers[instance_id].inflight) == 0:
                 done_instance.append(instance_id)
 
             # check if all prefill instances are done
@@ -1307,7 +1375,17 @@ def main():
                 print_markup("[sim.heading]▶ Exiting simulation...[/]\n")
                 controller.write_flush(p, "exit")
                 break
-            controller.write_flush(p, "done") # make done instances to sleep
+            # VeritX: NEVER send "done" here — both backends treat 'done'
+            # exactly like 'exit' (main.cc: `if (line == "exit" || line ==
+            # "done") break;`), so the old "make done instances to sleep"
+            # line actually KILLED the binary the moment the first instance
+            # in a multi-instance config exhausted its queue — livelock/'No
+            # valid output' in DP and PD configs. The loop is stateless per
+            # round: a done instance's future rounds just fall through to
+            # 'pass' below. Only send a command if this round responded to
+            # nothing else (protocol: exactly one command per round).
+            if not responded:
+                controller.write_flush(p, "pass")
         elif new_req == None and not responded:
             # If all instances are idle but deferred sessions have pending
             # requests with future arrival times (tool calls still running),

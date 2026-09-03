@@ -83,6 +83,11 @@ class Batch:
         self.fired = [] # systems that fired this batch
         self.requests = []
         self.end = []
+        # VeritX: batch has been flushed to the network backend for execution.
+        # DP-pending batches sit in inflight before their shared workload runs;
+        # pass-echo responses must not retire them (see serving/__main__.py
+        # add_done guards).
+        self.sent = False
         # vllm
         self.kv_size = kv_size
         self.evict = evict
