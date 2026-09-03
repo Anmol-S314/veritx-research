@@ -754,6 +754,20 @@ def main():
     if network_backend == 'ns3':
         astra_args.append("--logical-topology-configuration="+astra_sim+"/inputs/logical_topology/logical_8nodes_1D.json")
     p = subprocess.Popen(astra_args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+    # VeritX: drain the binary's stderr in a background thread so it can never
+    # fill the pipe and deadlock the binary mid-processing (the main loop only
+    # reads stdout). Logs are discarded (the binary already writes log files).
+    import threading as _threading
+    def _drain_stderr():
+        try:
+            while True:
+                line = p.stderr.readline()
+                if not line:
+                    break
+        except Exception:
+            pass
+    threading = _threading.Thread(target=_drain_stderr, daemon=True)
+    threading.start()
 
     # DP group synchronization: defer trace generation until all members have scheduled
     # dp_groups maps dp_group_name -> list of instance_ids
@@ -1323,96 +1337,103 @@ def main():
                 )
         # check if all requests are done for current instance#
         # NOTE: 'instance_id' could occur in duplicate, because 'npu2inst_mapping[sys]' is not one-to-one mapping
-        if (instance_id not in decode_instance or is_prefill_done) and instance_id not in done_instance and schedulers[instance_id].is_request_empty() and not router.has_pending_requests() and not router.has_deferred_sessions():
-            # For DP groups: only mark done when ALL members of the group are empty
-            dg = inst_dp_group.get(instance_id)
-            if dg is not None:
-                all_dp_empty = all(
-                    schedulers[inst_id].is_request_empty() and len(schedulers[inst_id].inflight) == 0
-                    for inst_id in dp_groups[dg]
-                )
-                if not all_dp_empty:
-                    # Other DP members still have work — keep this instance alive for dummy waves
-                    if not responded:
-                        controller.write_flush(p, "pass")
-                    flush.stdout.flush()
+        # VeritX: retire EVERY empty instance each round, not just the round's
+        # current instance_id. In PD the round-robin rebind moves OFF an idle
+        # prefill instance onto the decode instance (fallback), so the old
+        # single-instance check never evaluated the prefill's done-state —
+        # is_prefill_done stayed False, the decode instance (gated on it)
+        # could never exit, and the binary flooded pass-echoes forever
+        # (~1/3 of 3-req PD soak runs hit this).
+        _all_done = False
+        if not router.has_pending_requests() and not router.has_deferred_sessions():
+            import sys as _S
+            for _di in range(num_instances):
+                if _di in done_instance:
                     continue
+                if _di in decode_instance and not is_prefill_done:
+                    continue  # decode must wait until every prefill instance is done
+                if not schedulers[_di].is_request_empty():
+                    continue
+                # For DP groups: only mark done when ALL members of the group are empty
+                dg = inst_dp_group.get(_di)
+                if dg is not None:
+                    all_dp_empty = all(
+                        schedulers[inst_id].is_request_empty() and len(schedulers[inst_id].inflight) == 0
+                        for inst_id in dp_groups[dg]
+                    )
+                    if not all_dp_empty:
+                        # Other DP members still have work — keep this instance alive for dummy waves
+                        continue
 
-            if sys not in done_inst_npus[instance_id]:
-                done_inst_npus[instance_id].append(sys)
-            # VeritX: mark the instance done on TRUE completion state
-            # (queue drained and every batch retired). The old gate counted
-            # distinct-NPU 'done' echoes, but with the booksim backend
-            # parse_output pins sys=0 as the base each round and the
-            # round-robin rebind always serves an instance's FIRST NPU — so
-            # a TP>1 instance's echo-count could never reach 2 and the run
-            # never exited (4-instance configs flooded pass-echoes forever).
-            # add_done already requires all NPUs in batch.end before
-            # retiring, so an empty inflight list means every NPU of every
-            # batch was echoed.
-            if len(schedulers[instance_id].inflight) == 0:
-                done_instance.append(instance_id)
+                if inst2npu_mapping[_di] not in done_inst_npus[_di]:
+                    done_inst_npus[_di].append(inst2npu_mapping[_di])
+                # VeritX: mark the instance done on TRUE completion state
+                # (queue drained and every batch retired). The old gate counted
+                # distinct-NPU 'done' echoes, but with the booksim backend
+                # parse_output pins sys=0 as the base each round and the
+                # round-robin rebind always serves an instance's FIRST NPU — so
+                # a TP>1 instance's echo-count could never reach 2 and the run
+                # never exited (4-instance configs flooded pass-echoes forever).
+                # add_done already requires all NPUs in batch.end before
+                # retiring, so an empty inflight list means every NPU of every
+                # batch was echoed.
+                if len(schedulers[_di].inflight) == 0:
+                    done_instance.append(_di)
 
-            # check if all prefill instances are done
-            if len(done_instance) == len(prefill_instance):
-                is_prefill_done = True
+                # check if all prefill instances are done
+                if len(done_instance) == len(prefill_instance):
+                    is_prefill_done = True
 
-            # check if all instances are done
-            if len(done_instance) == num_instances:
-                # VeritX: dropped-request guard. The PD config previously
-                # flaked (nondeterministically ~1 in 5 runs) by exiting
-                # "cleanly" with req_cnt < expected — a request vanished
-                # from all queues silently. If that ever happens again,
-                # make it LOUD and dump the exact scheduler state at exit
-                # instead of letting it pass as a normal completion.
-                if req_cnt < router.req_num:
-                    print(f"[LLMServingSim] !!! DROPPED REQUESTS at exit: "
-                          f"completed {req_cnt}/{router.req_num} !!!", flush=True)
-                    for _i, _s in enumerate(schedulers):
-                        print(f"[DROPDBG] inst{_i} ({instances[_i]['pd_type']}) "
-                              f"q={[(r.id, r.arrival, r.num_computed_tokens, r.original_input, r.output) for r in _s.request]} "
-                              f"inflight={[(b.batch_id, b.sent, [r.id for r in b.requests]) for b in _s.inflight]}", flush=True)
-                    print(f"[DROPDBG] router_pending={router._pending_idx}/{len(router._pending_requests)} "
-                          f"done_instance={done_instance} current={current}", flush=True)
-                for inst_idx in range(num_instances):
-                    schedulers[inst_idx].memory.free_prefix_cache()
-                    schedulers[inst_idx].memory.free_weight()
-                
-                # check memory leak before exit
-                schedulers[inst_idx].memory.is_free()
+                # check if all instances are done
+                if len(done_instance) == num_instances:
+                    _all_done = True
+                    break
 
-                # --- Benchmark summary ---
-                _bench_loop_elapsed = time() - _bench_loop_start
-                if _bench_total_batches > 0:
-                    _bench_avg_trace = (_bench_trace_gen_time / _bench_total_batches * 1000)
-                    _bench_total = _bench_cache_hits + _bench_cache_misses
-                    _bench_hit_rate = (_bench_cache_hits / _bench_total * 100) if _bench_total > 0 else 0
-                    print(f"\n=== Decode Cache Benchmark ===")
-                    print(f"  Batches:              {_bench_total_batches}")
-                    print(f"  Cache hits:           {_bench_cache_hits}/{_bench_total} ({_bench_hit_rate:.0f}%)")
-                    print(f"  Cache misses:         {_bench_cache_misses}")
-                    print(f"  Trace gen time:       {_bench_trace_gen_time:.2f}s (avg {_bench_avg_trace:.0f}ms/batch)")
-                    print(f"    - trace_only:       {_bench_trace_only_time:.2f}s (perf_db + interpolation)")
-                    print(f"    - graph_only:       {_bench_graph_only_time:.2f}s (Chakra conversion)")
-                    print(f"    - cache overhead:   {_bench_trace_gen_time - _bench_trace_only_time - _bench_graph_only_time:.2f}s")
-                    print(f"  Total loop time:      {_bench_loop_elapsed:.2f}s")
-                    print(f"  Trace gen overhead:   {_bench_trace_gen_time:.2f}s / {_bench_loop_elapsed:.2f}s = {_bench_trace_gen_time/_bench_loop_elapsed*100:.1f}%")
-                print_rule()
-                print_markup("[sim.heading]▶ Exiting simulation...[/]\n")
-                controller.write_flush(p, "exit")
-                break
-            # VeritX: NEVER send "done" here — both backends treat 'done'
-            # exactly like 'exit' (main.cc: `if (line == "exit" || line ==
-            # "done") break;`), so the old "make done instances to sleep"
-            # line actually KILLED the binary the moment the first instance
-            # in a multi-instance config exhausted its queue — livelock/'No
-            # valid output' in DP and PD configs. The loop is stateless per
-            # round: a done instance's future rounds just fall through to
-            # 'pass' below. Only send a command if this round responded to
-            # nothing else (protocol: exactly one command per round).
-            if not responded:
-                controller.write_flush(p, "pass")
+        if _all_done:
+            # VeritX: dropped-request guard. The PD config previously
+            # flaked (nondeterministically ~1 in 5 runs) by exiting
+            # "cleanly" with req_cnt < expected — a request vanished
+            # from all queues silently. If that ever happens again,
+            # make it LOUD and dump the exact scheduler state at exit
+            # instead of letting it pass as a normal completion.
+            if req_cnt < router.req_num:
+                print(f"[LLMServingSim] !!! DROPPED REQUESTS at exit: "
+                      f"completed {req_cnt}/{router.req_num} !!!", flush=True)
+                for _i, _s in enumerate(schedulers):
+                    print(f"[DROPDBG] inst{_i} ({instances[_i]['pd_type']}) "
+                          f"q={[(r.id, r.arrival, r.num_computed_tokens, r.original_input, r.output) for r in _s.request]} "
+                          f"inflight={[(b.batch_id, b.sent, [r.id for r in b.requests]) for b in _s.inflight]}", flush=True)
+                print(f"[DROPDBG] router_pending={router._pending_idx}/{len(router._pending_requests)} "
+                      f"done_instance={done_instance} current={current}", flush=True)
+            for inst_idx in range(num_instances):
+                schedulers[inst_idx].memory.free_prefix_cache()
+                schedulers[inst_idx].memory.free_weight()
+            
+            # check memory leak before exit
+            schedulers[inst_idx].memory.is_free()
+
+            # --- Benchmark summary ---
+            _bench_loop_elapsed = time() - _bench_loop_start
+            if _bench_total_batches > 0:
+                _bench_avg_trace = (_bench_trace_gen_time / _bench_total_batches * 1000)
+                _bench_total = _bench_cache_hits + _bench_cache_misses
+                _bench_hit_rate = (_bench_cache_hits / _bench_total * 100) if _bench_total > 0 else 0
+                print(f"\n=== Decode Cache Benchmark ===")
+                print(f"  Batches:              {_bench_total_batches}")
+                print(f"  Cache hits:           {_bench_cache_hits}/{_bench_total} ({_bench_hit_rate:.0f}%)")
+                print(f"  Cache misses:         {_bench_cache_misses}")
+                print(f"  Trace gen time:       {_bench_trace_gen_time:.2f}s (avg {_bench_avg_trace:.0f}ms/batch)")
+                print(f"    - trace_only:       {_bench_trace_only_time:.2f}s (perf_db + interpolation)")
+                print(f"    - graph_only:       {_bench_graph_only_time:.2f}s (Chakra conversion)")
+                print(f"    - cache overhead:   {_bench_trace_gen_time - _bench_trace_only_time - _bench_graph_only_time:.2f}s")
+                print(f"  Total loop time:      {_bench_loop_elapsed:.2f}s")
+                print(f"  Trace gen overhead:   {_bench_trace_gen_time:.2f}s / {_bench_loop_elapsed:.2f}s = {_bench_trace_gen_time/_bench_loop_elapsed*100:.1f}%")
+            print_rule()
+            print_markup("[sim.heading]▶ Exiting simulation...[/]\n")
+            controller.write_flush(p, "exit")
+            break
         elif new_req == None and not responded:
+            import sys as _S; _S.stderr.write("[BARE] pend=%s def=%s req_cnt=%s/%s idle=%s done=%s prefillDone=%s\n" % (router.has_pending_requests(), router.has_deferred_sessions(), req_cnt, router.req_num, all(sch.is_request_empty() for sch in schedulers), done_instance, is_prefill_done))
             # If all instances are idle but deferred sessions have pending
             # requests with future arrival times (tool calls still running),
             # advance persistent clock so the next iteration routes them.
@@ -1426,9 +1447,31 @@ def main():
                     current = next_arrival
                     controller.write_flush(p, f"pass {_sim_time}")
                     _advanced = True
+            # VeritX PD livelock guard: after prefill→decode transfer,
+            # the decode scheduler has requests but the round-robin may
+            # land on the idle prefill instance. If ANY scheduler still
+            # has queued work, serve it next round instead of bare-passing.
+            # VeritX fix: send a "pass" before continuing. The original
+            # `continue` reached read_wait WITHOUT sending any command while
+            # the binary sat in getline() waiting for one — both blocked on
+            # the pipe (sparse-gap PD hang). Writing "pass" keeps the binary
+            # responsive so the next iteration can schedule the busy
+            # instance without deadlocking.
+            if not _advanced and num_instances > 1:
+                _found = False
+                for _si in range(num_instances):
+                    if _si != instance_id and schedulers[_si].request:
+                        instance_id = _si
+                        sys = inst2npu_mapping[_si]
+                        node_id = inst2node_mapping[_si]
+                        _found = True
+                        break
+                if _found:
+                    controller.write_flush(p, "pass")
+                    continue  # re-enter loop to schedule this instance
             if not _advanced:
                 controller.write_flush(p, "pass")
-        
+
         # flush
         flush.stdout.flush()
 
