@@ -48,8 +48,12 @@ void LoggerFactory::init_default_components(const std::string& log_path) {
         std::filesystem::create_directory(folderPath);
     }
 
+    // VeritX: redirect spdlog console output to stderr so it never
+    // interleaves with the cout protocol stream (which Python's
+    // read_wait parses).  spdlog lines on stdout caused a 64KB
+    // pipe deadlock in ~5-15% of PD runs.
     auto sink_color_console =
-        std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+        std::make_shared<spdlog::sinks::stderr_color_sink_mt>();
     sink_color_console->set_level(spdlog::level::info);
     default_sinks.insert(sink_color_console);
 

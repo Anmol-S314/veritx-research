@@ -51,7 +51,16 @@ class EventQueue {
 
   void jump_to(int64_t target) {
     if (target > _now) {
+      // VeritX fix: also advance the fabric clock in lock-step. The booksim
+      // EmbedTM keeps its own `_time`, and proceed()/run_cycles() step it
+      // via RunCycles — but this method only moved _now. After an idle
+      // (agentic tool-gap) jump the fabric lagged behind the event queue, so
+      // the next DP-group ALLTOALL wave could never synchronize across
+      // members (both blocked on a futex forever). jump_to is only reached
+      // when the fabric is idle, so JumpCycles (which asserts that) is safe.
+      int64_t old = _now;
       _now = target;
+      _tm->JumpCycles(target - old);
       _drain_retired();
       if (advance_hook) advance_hook();
     }
@@ -88,8 +97,13 @@ class EventQueue {
         if (_now < ev.cycle) _now = ev.cycle;
         _drain_retired();
       } else {
-        // No in-flight packets — safe to jump directly.
+        // No in-flight packets — safe to jump directly. Must also advance
+        // the fabric clock in lock-step: jumping only _now lets the fabric
+        // lag behind (compute-heavy events with no comm leave it idle), and
+        // that drift breaks DP-group ALLTOALL wave synchronization.
+        int64_t old = _now;
         _now = ev.cycle;
+        if (ev.cycle > old) _tm->JumpCycles(ev.cycle - old);
         _drain_retired();
       }
     }

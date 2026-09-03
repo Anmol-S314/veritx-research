@@ -1,6 +1,7 @@
 #include "veritx_embed.hpp"
 
 #include <cassert>
+#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -27,11 +28,11 @@ namespace VeritXEmbed {
 EmbedTM::EmbedTM(BookSimConfig const & config, std::vector<Network *> const & net)
     : TrafficManager(config, net), _retired_q(_nodes) {}
 
-void EmbedTM::RunCycles(int cycles) {
-  for (int i = 0; i < cycles; ++i) _Step();
+void EmbedTM::RunCycles(int64_t cycles) {
+  for (int64_t i = 0; i < cycles; ++i) _Step();
 }
 
-void EmbedTM::_BuildUnicast(int src, int dst, int size, int cl, int time) {
+void EmbedTM::_BuildUnicast(int src, int dst, int size, int cl, int64_t time) {
   assert(size > 0);
   assert(dst >= 0 && dst < _nodes);
   int const pid = _cur_pid++;
@@ -61,7 +62,7 @@ void EmbedTM::_BuildUnicast(int src, int dst, int size, int cl, int time) {
 }
 
 void EmbedTM::_BuildMcastStream(int src, std::vector<int> const & dsts,
-                                int cl, int time) {
+                                int cl, int64_t time) {
   assert(!dsts.empty());
   int const far_end = dsts.back();
   assert(far_end >= 0 && far_end < _nodes);
