@@ -12,12 +12,16 @@
 3. So `schedulers[k].schedule()` for k ≥ 1 is never called; routing still places requests there (LOAD policy).
 4. Compounding: the binary's interactive protocol (`booksim2/main.cc` and our `analytical/*/main.cc` patch) reloads **one** workload path for **all** systems. Instance-k batch dirs only contain `llm.<2k>.et`/`llm.<2k+1>.et`, so other ranks' files don't exist under that prefix (this is the real source of the old `llm.2.et does not exist` errors — NOT model mismatch).
 
-## Fix status (2026-09-03 update — eab2dfb7)
+## Fix status (2026-09-04 update — db61a633) — RESOLVED
 
 - ✅ Protocol landed: `load <path>`×N + `run` in both backends (per-rank file existence; legacy bare-path rounds unchanged).
 - ✅ Statistics throw (CPU/REMOTE_MEM types in overlap extraction → std::terminate on instance-switch rounds) fixed.
-- ✅ Independent multi-instance (`4_instance_2TP`) now serves instances 0..3 via round-robin: 2/3 reqs complete in 240s wall (3rd is rate-limited by serialized rounds, not stuck); per-instance TTFTs real (6/19/142 ms).
-- ⚠️ Remaining: (a) round serialization cost — each Waiting round simulates one instance's batch; large-N configs are wall-clock heavy (DP-adjacent slowdown); (b) DP-group (`moe_dp_ep_instance`) NEW livelock post-rr: `schedule()` re-creates batch #0..N every round (wall frozen at arrival alarm 46927000, requests never consumed by dp_pending quorum); (c) PD (`single_node_pd_instance`) starts fine (prefill NPU[0] batch done, wall advances) but dies "No valid output" partway — 3-NPU/2-instance rank-doubling interaction untested.
+- ✅ Independent multi-instance (`4_instance_2TP`) 3/3 clean (was 1/3), `moe_multi_instance` 4/4 clean.
+- ✅ DP-group (`moe_dp_ep_instance`) quorum livelock fixed: `Batch.sent` gate prevents pass-echo from retiring DP-pending batches; dummy self-overwrite guarded; shared quorum dir not re-enqueued (stale double-retire removed); extras retires now counted (req_cnt+router notify).
+- ✅ PD (`single_node_pd_instance`) 2/2 clean (was flaky 1/2): same `sent` gate + extras count + `done`→`pass` fix; rr fallback for idle-not-done ensures done_instance fires for all instances.
+- ✅ Early-exit kill fixed: both backends treat `done` as `exit` (break), so old `write_flush(p,"done")` killed the binary at first instance completion — replaced with conditional `pass`; `done_inst_npus` echo-count gate (pinned sys=0 + TP>1 never reached 2) replaced with honest `not inflight` check.
+- ✅ Matrix (booksim, WARNING): 1N 2/2, moe_single 3/3 (me2), 4-inst 3/3, moe_multi 4/4 (shared_prefix), DP 2/2, PD 2/2 — all `Exiting simulation`.
+- Remaining: round serialization cost — each Waiting round simulates one instance's batch; large-N configs are wall-clock heavy but functionally correct.
 
 ## Old fix sketch (protocol part done; loop parts remain)
 1. **Both `main.cc`s:** per round accept `load <path>` lines then `run`; reload system *i* only from the path where `<path>.<i>.et` exists; fire all unfinished workloads; emit per-sys lines + `Waiting`.
