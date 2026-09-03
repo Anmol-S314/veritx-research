@@ -1348,6 +1348,21 @@ def main():
 
             # check if all instances are done
             if len(done_instance) == num_instances:
+                # VeritX: dropped-request guard. The PD config previously
+                # flaked (nondeterministically ~1 in 5 runs) by exiting
+                # "cleanly" with req_cnt < expected — a request vanished
+                # from all queues silently. If that ever happens again,
+                # make it LOUD and dump the exact scheduler state at exit
+                # instead of letting it pass as a normal completion.
+                if req_cnt < router.req_num:
+                    print(f"[LLMServingSim] !!! DROPPED REQUESTS at exit: "
+                          f"completed {req_cnt}/{router.req_num} !!!", flush=True)
+                    for _i, _s in enumerate(schedulers):
+                        print(f"[DROPDBG] inst{_i} ({instances[_i]['pd_type']}) "
+                              f"q={[(r.id, r.arrival, r.num_computed_tokens, r.original_input, r.output) for r in _s.request]} "
+                              f"inflight={[(b.batch_id, b.sent, [r.id for r in b.requests]) for b in _s.inflight]}", flush=True)
+                    print(f"[DROPDBG] router_pending={router._pending_idx}/{len(router._pending_requests)} "
+                          f"done_instance={done_instance} current={current}", flush=True)
                 for inst_idx in range(num_instances):
                     schedulers[inst_idx].memory.free_prefix_cache()
                     schedulers[inst_idx].memory.free_weight()
