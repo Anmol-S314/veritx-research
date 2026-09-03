@@ -354,7 +354,7 @@ def main():
     parser.add_argument('--booksim-replay-only', action=argparse.BooleanOptionalAction, default=True,
                         help='(booksim backend only) replay trace durations without cycle-accurate network simulation '
                         '(default: enabled). Required when ASTRA-sim ring topology does not match BookSim mesh topology. '
-                        'Use --no-booksim-replay-only for full cycle-accurate network simulation (requires matching topologies)')
+                        'Use --no-booksim-replay-only for full cycle-accurate network simulation (requires matching topologies, ~10× slower).')
     parser.add_argument('--decode-batch-size', type=int, default=0,
                         help='batch N decode steps together to reduce trace-gen overhead. '
                         '0 = disabled (default). When >0, decode-only steps pre-generate N traces '

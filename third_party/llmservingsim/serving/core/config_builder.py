@@ -225,9 +225,14 @@ def _compute_network_dims(instances):
             npus_per_group = total_npu // total_pp
             dims = [npus_per_group, total_pp]
 
-    # Remove trailing 1s (single-element dimensions are unnecessary).
+    # Remove trailing and leading 1s (single-element dimensions are unnecessary).
+    # BookSim mesh requires k>=2, so a leading 1 (e.g. [1,2] from P/D doubling) would
+    # create a degenerate dimension that BookSim cannot represent and Sys would
+    # assert collective_impl.size() <= dimension_size.size(). Collapse to [2].
     while len(dims) > 1 and dims[-1] == 1:
         dims.pop()
+    while len(dims) > 1 and dims[0] == 1:
+        dims.pop(0)
     return dims
 
 
