@@ -185,10 +185,19 @@ def _prepare_booksim_config(astra_sim, run_paths, num_nodes):
                 return [r, n // r]
             return [n]
         dims = _infer_dims(num_nodes)
-    is_square_mesh = (len(dims) == 1 and dims[0] >= 2) or (len(dims) == 2 and dims[0] == dims[1])
-    # Single-node single GPU (dims [1]) is square for our purpose
+    # Mesh k^n only works for square/1D line. FullyConnected with >2 nodes needs anynet clique.
+    # e.g. dims [8] FullyConnected is 8-node clique, not 8-node line (k=8 mesh).
+    has_fc_large = False
+    if topologies:
+        for i, d in enumerate(dims):
+            topo = topologies[i] if i < len(topologies) else "FullyConnected"
+            if topo == "FullyConnected" and d > 2:
+                has_fc_large = True
+    is_square_mesh = (len(dims) == 1 and dims[0] == 2) or (len(dims) == 2 and dims[0] == dims[1])
     if dims == [1]:
         is_square_mesh = True
+    if has_fc_large:
+        is_square_mesh = False
     
     # Rectangular dims -> anynet
     if not is_square_mesh and dims != [1]:
