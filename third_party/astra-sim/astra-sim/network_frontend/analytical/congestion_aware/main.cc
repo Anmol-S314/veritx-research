@@ -8,6 +8,8 @@
 #include "congestion_aware/CongestionAwareNetworkApi.hh"
 #include <iostream>
 #include <string>
+#include <vector>
+#include <unistd.h>  // VeritX: access() for per-rank workload file check
 #include <astra-network-analytical/common/EventQueue.h>
 #include <astra-network-analytical/common/NetworkParser.h>
 #include <astra-network-analytical/congestion_aware/Helper.h>
@@ -116,8 +118,12 @@ int main(int argc, char* argv[]) {
     emit_workload_results(systems, npus_count, event_queue);
     std::cout << "Waiting" << std::endl << std::flush;
 
-    // Interactive loop for LLMServingSim (mirrors booksim2/main.cc)
+    // Interactive loop for LLMServingSim (mirrors booksim2/main.cc).
+    // VeritX multi-instance protocol: "load <path>" lines are queued and
+    // applied only to systems whose <path>.<rank>.et exists; "run" fires the
+    // round. A bare path line = legacy single load + run.
     std::string line;
+    std::vector<std::string> pending_loads;
     while (std::getline(std::cin, line)) {
         size_t a = line.find_first_not_of(" \t\n\r");
         if (a == std::string::npos) continue;
@@ -145,10 +151,30 @@ int main(int argc, char* argv[]) {
             continue;
         }
         if (line == "exit" || line == "done") break;
-        for (int i = 0; i < npus_count; ++i) {
-            delete systems[i]->workload;
-            systems[i]->workload = new Workload(systems[i], line, comm_group_configuration);
+        if (line.rfind("load ", 0) == 0) {
+            std::string path = line.substr(5);
+            size_t pa = path.find_first_not_of(" \t");
+            if (pa != std::string::npos) path = path.substr(pa);
+            size_t pb = path.find_last_not_of(" \t");
+            if (pb != std::string::npos) path = path.substr(0, pb + 1);
+            pending_loads.push_back(path);
+            continue;
         }
+        if (line != "run") {  // legacy bare path
+            pending_loads.clear();
+            pending_loads.push_back(line);
+        }
+        for (int i = 0; i < npus_count; ++i) {
+            for (auto const & pth : pending_loads) {
+                std::string rank_file = pth + "." + std::to_string(i) + ".et";
+                if (access(rank_file.c_str(), R_OK) == 0) {
+                    delete systems[i]->workload;
+                    systems[i]->workload = new Workload(systems[i], pth, comm_group_configuration);
+                    break;
+                }
+            }
+        }
+        pending_loads.clear();
         for (int i = 0; i < npus_count; ++i) systems[i]->workload->fire();
         while (!event_queue->finished()) event_queue->proceed();
         // Emit results in BookSim-compatible format

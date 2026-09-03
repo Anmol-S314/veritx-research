@@ -22,6 +22,14 @@ class Controller():
             p.stdout.flush()
             if "Waiting" in out[-1] or out[-1] == "Checking Non-Exited Systems ...\n":
                 break
+        # If we got no useful output, capture stderr for diagnostics
+        if not out or (len(out) == 1 and out[0] == ''):
+            try:
+                stderr_data = p.stderr.read() if p.stderr and p.stderr.readable() else ''
+                if stderr_data:
+                    print(f"[controller] Binary stderr: {stderr_data[:2000]}", flush=True)
+            except Exception:
+                pass
         return out
 
     def check_end(self, p):

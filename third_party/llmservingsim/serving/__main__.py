@@ -709,6 +709,7 @@ def main():
     # Simulator start
     current = 0 # current tick of the system
     _sim_time = 0 # persistent monotonic clock (survives pass/zero-cycle outputs)
+    _rr_next = 0  # VeritX: round-robin cursor for multi-instance service selection
     sys = 0 # current system id (NPU id)
     id = 0 # id of the request
     is_prefill_done = False # flag to check if prefill is done
@@ -882,6 +883,27 @@ def main():
         # Add prefill ended requests to decode instance
         if instances[instance_id]["pd_type"] == "prefill" and len(finished_reqs) > 0:
             router.transfer_prefill_request(finished_reqs)
+
+        # VeritX multi-instance round-robin: completions were already credited
+        # above (main sys + parse_all_booksim extras), so if the base instance
+        # has no queued requests this round, serve another idle instance that
+        # does — instead of idling the fabric with a pass. Unblocks independent
+        # multi-instance configs (4xTP2) and lets DP-group quorums converge on
+        # consecutive member rounds.
+        if num_instances > 1 and not schedulers[instance_id].request:
+            for _k in range(num_instances):
+                _cand = (_rr_next + _k) % num_instances
+                if _cand == instance_id or schedulers[_cand].inflight:
+                    continue
+                _dg = inst_dp_group.get(_cand)
+                _has_work = bool(schedulers[_cand].request) or \
+                    (_dg is not None and bool(dp_pending.get(_dg)) and not schedulers[_cand].inflight)
+                if _has_work:
+                    instance_id = _cand
+                    node_id = inst2node_mapping[_cand]
+                    sys = inst2npu_mapping[_cand]  # first NPU of the served instance
+                    break
+            _rr_next = (instance_id + 1) % num_instances
 
         # schedule requests
         new_req = schedulers[instance_id].schedule(current, sys, id)

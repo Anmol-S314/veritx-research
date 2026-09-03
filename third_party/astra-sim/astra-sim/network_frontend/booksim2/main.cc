@@ -9,6 +9,7 @@ BookSim2 fabric (embedding API) driven by a cycle-based event queue.
 #include <memory>
 #include <string>
 #include <vector>
+#include <unistd.h>  // VeritX: access() for per-rank workload file check
 
 #include "astra-sim/common/Logging.hh"
 #include "astra-sim/system/Sys.hh"
@@ -130,6 +131,15 @@ int main(int argc, char * argv[]) {
   {
 
     std::string line;
+    // VeritX multi-instance protocol:
+    //   "load <path>"  queue a reload (applied only to systems whose
+    //                  <path>.<rank>.et exists — lets one round carry the
+    //                  disjoint rank sets of several instances / DP members)
+    //   "run"          apply all queued loads, fire unfinished workloads,
+    //                  run to quiescence, report sys lines + Waiting
+    //   "<path>"       legacy single-path round (= "load <path>" + "run")
+    //   "pass [t]" / "exit" / "done" unchanged
+    std::vector<std::string> pending_loads;
     while (std::getline(std::cin, line)) {
       // Trim whitespace
       line.erase(0, line.find_first_not_of(" \t\n\r"));
@@ -175,11 +185,38 @@ int main(int argc, char * argv[]) {
         break;
       }
 
-      // Reload workload from new path
-      for (int i = 0; i < npus_count; ++i) {
-        delete systems[i]->workload;
-        systems[i]->workload = new Workload(systems[i], line, comm_group_configuration);
+      if (line.rfind("load ", 0) == 0) {
+        std::string path = line.substr(5);
+        size_t a = path.find_first_not_of(" \t");
+        if (a != std::string::npos) path = path.substr(a);
+        size_t b = path.find_last_not_of(" \t");
+        if (b != std::string::npos) path = path.substr(0, b + 1);
+        pending_loads.push_back(path);
+        continue;  // accumulate; act on "run"
       }
+
+      if (line == "run") {
+        // round with whatever loads were queued (empty set = re-report only)
+      } else {
+        // legacy bare path line: single load + run
+        pending_loads.clear();
+        pending_loads.push_back(line);
+      }
+
+      // VeritX: reload each system from the first queued path that actually
+      // contains its rank file; systems not covered keep their (finished)
+      // workload, whose fire() is a guarded no-op.
+      for (int i = 0; i < npus_count; ++i) {
+        for (auto const & path : pending_loads) {
+          std::string rank_file = path + "." + std::to_string(i) + ".et";
+          if (access(rank_file.c_str(), R_OK) == 0) {
+            delete systems[i]->workload;
+            systems[i]->workload = new Workload(systems[i], path, comm_group_configuration);
+            break;
+          }
+        }
+      }
+      pending_loads.clear();
 
       // Fire workloads
       for (int i = 0; i < npus_count; ++i) systems[i]->workload->fire();

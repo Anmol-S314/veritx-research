@@ -109,8 +109,14 @@ void Statistics::extract_comp_comm_overlap() {
             has_comm = true;
             break;
         default:
-            throw std::runtime_error(
-                "Only GPU and COMM types are supported for overlap extraction");
+            // VeritX fix: CPU / REMOTE_MEM / REPLAY / INVALID are legitimate
+            // operator types (report() logs them all) and simply do not
+            // participate in compute-comm overlap. Previously this threw a
+            // runtime_error that escaped via Workload::report() and
+            // std::terminate'd the binary whenever a workload contained a
+            // non-GPU/COMM op (multi-instance rounds hit this because the
+            // Sys.cc:468 catch did not cover the report() call path).
+            break;
         }
     }
     if (!has_comp || !has_comm) {
