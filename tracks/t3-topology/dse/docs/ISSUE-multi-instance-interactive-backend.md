@@ -12,7 +12,14 @@
 3. So `schedulers[k].schedule()` for k ≥ 1 is never called; routing still places requests there (LOAD policy).
 4. Compounding: the binary's interactive protocol (`booksim2/main.cc` and our `analytical/*/main.cc` patch) reloads **one** workload path for **all** systems. Instance-k batch dirs only contain `llm.<2k>.et`/`llm.<2k+1>.et`, so other ranks' files don't exist under that prefix (this is the real source of the old `llm.2.et does not exist` errors — NOT model mismatch).
 
-## Fix sketch
+## Fix status (2026-09-03 update — eab2dfb7)
+
+- ✅ Protocol landed: `load <path>`×N + `run` in both backends (per-rank file existence; legacy bare-path rounds unchanged).
+- ✅ Statistics throw (CPU/REMOTE_MEM types in overlap extraction → std::terminate on instance-switch rounds) fixed.
+- ✅ Independent multi-instance (`4_instance_2TP`) now serves instances 0..3 via round-robin: 2/3 reqs complete in 240s wall (3rd is rate-limited by serialized rounds, not stuck); per-instance TTFTs real (6/19/142 ms).
+- ⚠️ Remaining: (a) round serialization cost — each Waiting round simulates one instance's batch; large-N configs are wall-clock heavy (DP-adjacent slowdown); (b) DP-group (`moe_dp_ep_instance`) NEW livelock post-rr: `schedule()` re-creates batch #0..N every round (wall frozen at arrival alarm 46927000, requests never consumed by dp_pending quorum); (c) PD (`single_node_pd_instance`) starts fine (prefill NPU[0] batch done, wall advances) but dies "No valid output" partway — 3-NPU/2-instance rank-doubling interaction untested.
+
+## Old fix sketch (protocol part done; loop parts remain)
 1. **Both `main.cc`s:** per round accept `load <path>` lines then `run`; reload system *i* only from the path where `<path>.<i>.et` exists; fire all unfinished workloads; emit per-sys lines + `Waiting`.
 2. **`controller.py`:** return the full list of completed (sys, cycle) lines, not just sys 0.
 3. **`__main__.py` loop:** on each Waiting round, schedule ALL instances whose in-flight batch completed (parse_all_booksim already sees them), collect their workload paths, send as loads + run.
