@@ -285,14 +285,26 @@ def _build_attention_table(df):
     sweeps all four axes on doubling grids, so the lookup interpolates
     in log-space on each axis (plus a zero-pinned fallback when the
     axis value is 0, which always comes from an exact sample).
+
+    VeritX: hoist the per-group sort+dedup into ONE vectorized pass
+    over the frame instead of thousands of per-group pandas calls —
+    this cut perf_db load time by ~30x (was the one-time decode
+    cache-miss cost).
     """
     pc_vals = sorted({int(v) for v in df["prefill_chunk"].tolist()})
     nd_vals = sorted({int(v) for v in df["n_decode"].tolist()})
+    # One vectorized sort + dedup: sort by all four axes, keep the first
+    # row per (pc, nd, kv_prefill, kv_decode). Preserves the per-group
+    # kv_decode-ascending "keys" the bilinear lookup relies on.
+    df = df.sort_values(
+        ["prefill_chunk", "n_decode", "kv_prefill", "kv_decode"]
+    ).drop_duplicates(
+        subset=["prefill_chunk", "n_decode", "kv_prefill", "kv_decode"]
+    )
     slices = {}
     for (pc, nd), g in df.groupby(["prefill_chunk", "n_decode"]):
         slice_tbl = {}
         for kp, g2 in g.groupby("kv_prefill"):
-            g2 = g2.sort_values("kv_decode").drop_duplicates(subset=["kv_decode"])
             slice_tbl[int(kp)] = {
                 "keys": g2["kv_decode"].astype(int).tolist(),
                 "values": g2["latency_ns"].astype(int).tolist(),
@@ -311,9 +323,12 @@ def _build_attention_table(df):
 
 def _build_moe_table(df):
     """MoE table: (tokens, activated_experts) → latency_ns."""
+    # VeritX: one vectorized sort+dedup instead of per-expert pandas calls.
+    df = df.sort_values(["activated_experts", "tokens"]).drop_duplicates(
+        subset=["activated_experts", "tokens"]
+    )
     tokens_by_experts = {}
     for ae, g in df.groupby("activated_experts"):
-        g = g.sort_values("tokens").drop_duplicates(subset=["tokens"])
         tokens_by_experts[int(ae)] = {
             "keys": g["tokens"].astype(int).tolist(),
             "values": g["latency_ns"].astype(int).tolist(),
