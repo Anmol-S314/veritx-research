@@ -157,10 +157,17 @@ def _prepare_booksim_config(astra_sim, run_paths, num_nodes):
     else:
         n = 2
     
-    # Ensure k >= 2 (BookSim minimum)
+    # Ensure k >= 2 (BookSim minimum) — except for single-node case where
+    # network.yml is dims [1] (e.g. single_node_single_instance). Forcing k=2
+    # would make fabric 2 nodes vs network 1 node → GeneralComplexTopology
+    # assert collective_impl.size() <= dimension_size.size() fails.
     if k < 2:
-        k = 2
-        n = 1
+        if num_nodes == 1:
+            k = 1
+            n = 1
+        else:
+            k = 2
+            n = 1
     
     # Write BookSim config — tuned for LLM serving collectives (large AllReduce bursts)
     with open(config_path, "w") as f:
