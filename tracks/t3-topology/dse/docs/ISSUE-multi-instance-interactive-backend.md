@@ -19,6 +19,7 @@
 - ✅ Independent multi-instance (`4_instance_2TP`) 3/3 clean (was 1/3), `moe_multi_instance` 4/4 clean.
 - ✅ DP-group (`moe_dp_ep_instance`) quorum livelock fixed: `Batch.sent` gate prevents pass-echo from retiring DP-pending batches; dummy self-overwrite guarded; shared quorum dir not re-enqueued (stale double-retire removed); extras retires now counted (req_cnt+router notify).
 - ✅ PD (`single_node_pd_instance`) 2/2 clean (was flaky 1/2): same `sent` gate + extras count + `done`→`pass` fix; rr fallback for idle-not-done ensures done_instance fires for all instances.
+- ✅ PD flake CLOSED loudly (6178d3e5): exit-time dropped-request guard (`req_cnt < router.req_num` → full state dump). Soak: 15× PD 3-req — 14 completed, all 3/3, guard never fired; 1 hit the 180s soak timeout, which a monitored rerun proved was SILENCE-NOT-PROGRESS (heartbeat only prints at sim-1s boundaries; PD 3-req needs 100-180s wall). Use ≥300s timeouts for PD 3-req soaks.
 - ✅ Early-exit kill fixed: both backends treat `done` as `exit` (break), so old `write_flush(p,"done")` killed the binary at first instance completion — replaced with conditional `pass`; `done_inst_npus` echo-count gate (pinned sys=0 + TP>1 never reached 2) replaced with honest `not inflight` check.
 - ✅ Matrix (booksim, WARNING): 1N 2/2, moe_single 3/3 (me2), 4-inst 3/3, moe_multi 4/4 (shared_prefix), DP 2/2, PD 2/2 — all `Exiting simulation`.
 - Remaining: round serialization cost — each Waiting round simulates one instance's batch; large-N configs are wall-clock heavy but functionally correct.

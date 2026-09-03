@@ -837,10 +837,21 @@ def main():
                         # VeritX: extras-path completions must count too
                         # (previously req_cnt missed any request retired via
                         # a non-leading finish line, e.g. DP members).
-                        if _f and instances[extra_inst]["pd_type"] != "prefill":
-                            req_cnt += len(_f)
-                            for _r in _f:
-                                router.notify_request_completed(_r.id, extra['cycle'])
+                        if _f:
+                            if instances[extra_inst]["pd_type"] == "prefill":
+                                # VeritX: THE PD FLAKE. A doubled-prefill
+                                # batch (ranks 0+1) can complete inside the
+                                # extras path when the two finish lines land
+                                # in different orders across rounds (sent
+                                # gating / echo dedup). Transfer it exactly
+                                # like the mainline does — previously _f was
+                                # gated on != prefill and the request vanished
+                                # with both queues empty at exit.
+                                router.transfer_prefill_request(_f)
+                            else:
+                                req_cnt += len(_f)
+                                for _r in _f:
+                                    router.notify_request_completed(_r.id, extra['cycle'])
 
         sys = out_dict['sys']
         id = out_dict['id']
