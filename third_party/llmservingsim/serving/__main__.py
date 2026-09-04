@@ -262,7 +262,7 @@ input_speedup = 2;
 output_speedup = 1;
 internal_speedup = 1.0;
 traffic = uniform;
-injection_rate = 0.001;
+injection_rate = 0.0;
 """)
         # BookSim frontend (main.cc) always passes npus_count_per_dim={num_nodes} (1D)
         # to ASTRA's Sys, but system.json may have multi-dim collective_impl.
