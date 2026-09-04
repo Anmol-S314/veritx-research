@@ -1,0 +1,5 @@
+src/*.o
+src/*.a
+src/booksim
+src/lex.yy.c
+src/y.tab.c
