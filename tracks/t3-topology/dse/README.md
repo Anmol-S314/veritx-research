@@ -27,7 +27,7 @@
 - [9. Third-Party Dependencies](#third-party-dependencies)
 - [10. BookSim2 Deep Dive](#booksim2-deep-dive)
 - [11. ASTRA-sim Multi-Die Simulation](#astra-sim-multi-die-simulation)
-- [12. LLMServingSim Traffic Generation](#llmservingsim-traffic-generation)
+- [12. Full-Stack LLM Serving Simulation (`veritx serve`)](#full-stack-llm-serving-simulation-veritx-serve)
 - [13. E1-E5 Data Model](#e1-e5-data-model)
 - [14. CompileRequest Format](#compilerequest-format)
 - [15. Compile Pipeline Stages](#compile-pipeline-stages)
@@ -69,6 +69,7 @@
 - [51. Support](#support)
 ---
 
+<a name="what-veritx-does"></a>
 ## 1. What VeritX Does
 
 VeritX is an **intent-to-fabric compiler** for AI Network-on-Chip design. It takes a high-level description of your AI workload (model type, parallelism, traffic trace) and produces a complete, verified NoC fabric specification.
@@ -151,6 +152,7 @@ flowchart TD
 
 ---
 
+<a name="repository-layout"></a>
 ## 2. Repository Layout
 
 ```
@@ -173,17 +175,20 @@ veritx-research/                           repo root
       METADATA.json                    version tracking (v0.2.1)
     timeloop/                          Timeloop/Mapper (energy model)
 
-  serving/
+  third_party/
     astra-sim/                         ASTRA-sim multi-die simulator
-      extern/network_backend/booksim2/ internal booksim2 copy (synced)
       astra-sim/network_frontend/booksim2/bin/
         AstraSim_BookSim2              multi-die binary
+      extern/network_backend/booksim2/ internal booksim2 copy (synced)
+      build/astra_booksim2/build.sh    booksim2-backend build script
       examples/network/ns3/            network configs (4/8/16 nodes)
-    LLMServingSim/                     traffic trace generator (KAIST)
-      serving/                         trace generation pipeline
+    llmservingsim/                     LLMServingSim serving simulator
+      serving/                         simulation frontend + trace generation
       profiler/                        measured module latencies
       traces/                          cited run traces + configs
       workloads/                       input workload JSONLs
+    booksim2/                          vendored booksim source (source of truth)
+    timeloop/                          Timeloop/Mapper (energy model)
     results/                           3-way comparison results
 
   runs/
@@ -310,6 +315,7 @@ veritx-research/                           repo root
 
 ---
 
+<a name="quick-start"></a>
 ## 3. Quick Start
 
 ### Install (30 seconds)
@@ -351,359 +357,8 @@ veritx init
 
 ## 3a. Step-by-Step Tutorial: Complete DSE Workflow
 
-This tutorial walks through the entire design space exploration workflow, from understanding your traffic trace to selecting the best topology and compiling a verified fabric.
-
-### Overview
-
-```mermaid
-flowchart LR
-    A["Step 1\nUnderstand Trace"] --> B["Step 2\nValidate Format"]
-    B --> C["Step 3\nAnalyze Bursts"]
-    C --> D["Step 4\nSweep Topologies"]
-    D --> E["Step 5\nCompare Winners"]
-    E --> F["Step 6\nCompile Fabric"]
-    F --> G["Step 7\nVerify + Report"]
-
-    style A fill:#e1f5fe,stroke:#333
-    style B fill:#e8f5e9,stroke:#333
-    style C fill:#e8f5e9,stroke:#333
-    style D fill:#e8f5e9,stroke:#333
-    style E fill:#e8f5e9,stroke:#333
-    style F fill:#e8f5e9,stroke:#333
-    style G fill:#e8f5e9,stroke:#333
-
-
-    classDef input fill:#e1f5fe,stroke:#01579b,color:#000
-    classDef cli fill:#e8f5e9,stroke:#2e7d32,color:#000
-    classDef sim fill:#fff3e0,stroke:#e65100,color:#000
-    classDef api fill:#fce4ec,stroke:#c62828,color:#000
-    classDef output fill:#f3e5f5,stroke:#6a1b9a,color:#000
-    class A input
-```
-
-### Step 1: Understand Your Traffic Trace
-
-Before running any simulation, understand what your trace represents.
-
-```bash
-veritx trace info runs/traces/qwen3_serving_16rank.trace
-```
-
-Expected output:
-```
-Size:         1,531,093 bytes (1495KB)
-Packets:      95,232
-Sources:      16
-Classes:      2
-Time range:   [0, 652210] (652,211 cycles)
-Avg IR:       0.146014 pkts/cycle
-Bursts:       48 (gap>100c)
-Avg burst:    1984 pkts
-Max burst:    1984 pkts
-Avg gap:      12773 cycles
-Top srcs:     [(0, 49152), (4, 3072), (8, 3072), (12, 3072), (16, 3072)]
-Top dsts:     [(4, 6144), (8, 6144), (12, 6144), (16, 6144), (20, 6144)]
-Profile:      MODERATE (0.1<IR<1.0) -- topology may matter
-Burst IR:     1.94 pkts/cycle (during max burst)
-Burst mode:   INJECTION-LIMITED -- NIC injection is bottleneck
-```
-
-**What to look for:**
-
-| Metric | What it tells you | Action if concerning |
-|--------|-------------------|---------------------|
-| `Profile: MODERATE` | Topology matters (0.1 < IR < 1.0) | Run full comparison |
-| `Profile: SPARSE` | Topology irrelevant (IR < 0.1) | Skip comparison, any topology works |
-| `Profile: SATURATED` | Network is the bottleneck (IR > 1.0) | Focus on wire count, not latency |
-| `Burst IR: 1.94` | 13x average during bursts | Topology matters most during bursts |
-| `Top srcs: [(0, 49152)]` | Skewed: source 0 sends 51% of traffic | Check if topology handles skew |
-
-### Step 2: Validate Trace Format
-
-```bash
-veritx trace validate runs/traces/qwen3_serving_16rank.trace
-```
-
-Expected output:
-```
-Format:       VALID
-Packets:      95,232
-Sources:      16 unique (IDs 0-8)
-Classes:      2
-Sizes:        [8]
-Time range:   [2727, 652210] (649,484 cycles)
-Avg IR:       0.146627 pkts/cycle
-Self-loops:   0
-
-Warnings (1):
-  All packets have same size ({8}) -- unusual for real traffic
-
-Trace is usable but has 1 warnings
-```
-
-**If validation fails:**
-- `Path traversal not allowed` -- use absolute paths
-- `File not found` -- check the path, use `ls` to verify
-- `Invalid format` -- check trace file is ASCII, space-separated
-
-### Step 3: Analyze Burst Patterns
-
-Understanding bursts is critical because topology matters most during high-traffic periods.
-
-```bash
-veritx trace info runs/traces/qwen3_serving_16rank.trace 2>&1 | grep -A5 "Burst"
-```
-
-Key insight: This trace has **injection-limited bursts** -- the NIC can only inject so fast, so the network isn't saturated during bursts. This means topology differences will be small.
-
-### Step 4: Sweep All Topologies
-
-Run every built-in topology to find the baseline:
-
-```bash
-veritx sweep --trace runs/traces/qwen3_serving_16rank.trace --timeout 60
-```
-
-Expected output:
-```
-Topology         Nodes  Edges    Latency    Hops Status
-------------------------------------------------------------
-mesh_4x4            16     32    638.11c       -   OK
-mesh_8x8            64    128   1863.12c       -   OK
-torus_8x8           64    128   1891.04c       -   OK
-flatfly_64          64     48   1951.18c       -   OK
-gec_express_k8      64    560   1836.43c       -   OK
-gec_mecs_k8         64    176   2257.16c       -   OK
-gec_mesh_k8         64    112   1836.43c       -   OK
-
-Best: mesh_4x4 (638.11c)
-Worst: gec_mecs_k8 (2257.16c)
-Spread: 71.7%
-```
-
-**Interpretation:**
-- mesh_4x4 wins because it has fewer nodes (16 vs 64) -- not a fair comparison
-- Among 64-node topologies: mesh_8x8 (1863c) is close to gec_express (1836c)
-- torus is slightly worse than mesh (wrap-around links don't help here)
-- gec_mecs is the worst -- multicast overhead hurts sparse traffic
-
-### Step 5: Compare Top Winners Head-to-Head
-
-Focus on the top contenders:
-
-```bash
-veritx compare \
-    --trace runs/traces/qwen3_serving_16rank.trace \
-    --topos mesh_8x8,torus_8x8 \
-    --seeds 3 \
-    --timeout 60
-```
-
-Expected output:
-```
-Topology         Nodes  Edges     Mean     Std      Min      Max Runs
-------------------------------------------------------------------------
-mesh_8x8            64    128 1863.12c   0.00c 1863.12c 1863.12c    3
-torus_8x8           64    128 1891.04c   0.00c 1891.04c 1891.04c    3
-
-Winner: mesh_8x8 (1863.12c +/- 0.00c)
-vs torus_8x8: 1.5% faster
-```
-
-**Why 3 seeds?** BookSim is deterministic, but different seeds exercise different random arbitration decisions. 3 seeds give statistical confidence.
-
-### Step 5b: Try Custom Topologies
-
-If you have DSE-optimized topologies (from RHO/GRPO search):
-
-```bash
-veritx compare \
-    --trace runs/traces/qwen3_serving_16rank.trace \
-    --topos mesh_8x8,torus_8x8 \
-    --anynet runs/booksim/grpo_best.anynet \
-    --seeds 3
-```
-
-Expected output:
-```
-Topology         Nodes  Edges     Mean     Std      Min      Max Runs
-------------------------------------------------------------------------
-mesh_8x8            64    128 1863.12c   0.00c 1863.12c 1863.12c    3
-torus_8x8           64    128 1891.04c   0.00c 1891.04c 1891.04c    3
-grpo_best           64    111 1842.67c   0.00c 1842.67c 1842.67c    3
-
-Winner: grpo_best (1842.67c +/- 0.00c)
-vs torus_8x8: 2.6% faster
-```
-
-**Key finding:** grpo_best (111 edges) beats mesh (128 edges) by 2.6% with 17 fewer wires. Wire-efficient.
-
-### Step 5c: Sensitivity Analysis
-
-Test how rankings change under different injection rates:
-
-```bash
-veritx compare \
-    --trace runs/traces/qwen3_serving_16rank.trace \
-    --topos mesh_8x8,torus_8x8 \
-    --sensitivity 0.01 0.05 0.1 0.2
-```
-
-This tells you: does the topology ranking flip under congestion? If mesh always wins, the choice is clear. If rankings change, you need to decide which injection rate your workload actually experiences.
-
-### Step 6: Compile the Fabric
-
-Once you've selected a topology, run the full compile pipeline:
-
-```bash
-veritx compile examples/qwen3_moe_16npu.json
-```
-
-Expected output:
-```
-Step 1/6: Validate       ok=True, vc_count=1
-Step 2/6: Derive         routing=dim_order, VCs=1
-Step 3/6: Simulate       Latency: 1850.64c (real BookSim)
-Step 4/6: Verify         7/8 PASS (F7 QoS pending)
-Step 5/6: Generate       manifest, rtl, report
-Step 6/6: Report         area=0.272mm2, power=0.07W, fmax=1965MHz
-
-Compile Result
---------------------------------------------------
-Model:      Qwen3-30B-A3B
-Topology:   mesh k=8
-Routing:    dim_order (LOCKED)
-VCs:        1
-Latency:    1850.64c
-Area:       0.2720 mm2
-Power:      0.0701 W
-Fmax:       1965 MHz
-Energy:     0.600 pJ/bit
-Verify:     7/8 PASS
-Artifacts:  manifest, rtl, report
-Manifest:   rev=1 signed=True
-Hash:       7fbc43ab7e8a5d4d...
-```
-
-**What happened:**
-1. **Validate** -- checked CompileRequest, no LOCKED fields in NocConfig
-2. **Derive** -- no blocking cycles in dependency graph -> dim_order routing, 1 VC
-3. **Simulate** -- ran BookSim2 on the real trace, got 1850.64c latency
-4. **Verify** -- F1-F8 checks, 7/8 pass (F7 QoS isolation pending)
-5. **Generate** -- created UVM testbench + signed design manifest
-6. **Report** -- estimated area/power/timing with accuracy caveats
-
-### Step 6b: Generate UVM Testbench
-
-For formal verification:
-
-```bash
-veritx generate uvm \
-    --request examples/qwen3_moe_16npu.json \
-    --out runs/uvm/
-```
-
-Produces:
-- `tb_noc.sv` -- top-level testbench
-- `seq_lib.sv` -- stimulus sequences
-- `assertions.sv` -- protocol checks
-- `cov.sv` -- coverage model
-
-### Step 6c: Compare with Different Workloads
-
-Test if your topology choice holds across workloads:
-
-```bash
-# MoE workload
-veritx compile examples/qwen3_moe_16npu.json
-
-# Dense workload
-veritx compile examples/llama70b_tp64.json
-
-# Small workload
-veritx compile examples/llama1b_tp64.json
-```
-
-Compare results:
-```
-Workload       Latency    Area      Power     Topology
-----------------------------------------------------
-Qwen3 MoE      1850c      0.27mm2   0.07W     mesh_8x8
-LLaMA-70B      58515c     0.98mm2   0.25W     mesh_8x8
-LLaMA-1B       573c       0.92mm2   0.24W     mesh_8x8
-```
-
-### Step 7: Review the Output
-
-The JSON report from `veritx compile` contains everything:
-
-```json
-{
-  "area": {"total_mm2": 0.272, "routers_mm2": 0.1, "links_mm2": 0.038},
-  "power": {"dynamic_w": 0.060, "leakage_w": 0.010, "total_w": 0.070},
-  "timing": {"max_freq_mhz": 1965, "critical_path_ps": 381.8},
-  "energy": {"per_bit_pj": 0.630},
-  "simulation": {"latency": 1850.64},
-  "vc_assignment": {"routing_function": "dim_order", "vc_count": 1},
-  "verification": {"ok": true, "checks": [...], "errors": []},
-  "artifacts": [{"kind": "manifest", "uri": "...", "checksum": "..."}],
-  "manifest": {"design_id": "...", "revision": 1, "signature": "..."}
-}
-```
-
-### Complete Workflow Summary
-
-```mermaid
-flowchart TD
-    A["1. trace info\nUnderstand traffic pattern"] --> B["2. trace validate\nCheck format"]
-    B --> C["3. trace info (bursts)\nAnalyze injection rates"]
-    C --> D{"IR > 0.1?"}
-    D -->|"No (sparse)"| E["Skip comparison\nAny topology works"]
-    D -->|"Yes"| F["4. sweep\nRun all topologies"]
-    F --> G["5. compare\nTop 2-3 winners"]
-    G --> H{"Custom topologies?"}
-    H -->|"Yes"| I["5b. compare --anynet\nDSE-optimized topologies"]
-    H -->|"No"| J["5c. sensitivity\nTest under congestion"]
-    I --> J
-    J --> K["6. compile\nFull pipeline"]
-    K --> L{"Need UVM?"}
-    L -->|"Yes"| M["6b. generate uvm\nFormal verification"]
-    L -->|"No"| N["7. Review output\nJSON report + manifest"]
-    M --> N
-
-    style A fill:#e1f5fe,stroke:#333
-    style B fill:#e1f5fe,stroke:#333
-    style C fill:#e1f5fe,stroke:#333
-    style E fill:#fff3e0,stroke:#333
-    style F fill:#e8f5e9,stroke:#333
-    style G fill:#e8f5e9,stroke:#333
-    style I fill:#e8f5e9,stroke:#333
-    style J fill:#e8f5e9,stroke:#333
-    style K fill:#e8f5e9,stroke:#333
-    style M fill:#e8f5e9,stroke:#333
-    style N fill:#e8f5e9,stroke:#333
-
-
-    classDef input fill:#e1f5fe,stroke:#01579b,color:#000
-    classDef cli fill:#e8f5e9,stroke:#2e7d32,color:#000
-    classDef sim fill:#fff3e0,stroke:#e65100,color:#000
-    classDef api fill:#fce4ec,stroke:#c62828,color:#000
-    classDef output fill:#f3e5f5,stroke:#6a1b9a,color:#000
-    class A input
-```
-
-### Tips for New Users
-
-1. **Start with `trace info`** -- always understand your traffic before simulating
-2. **Use `--seeds 3`** in compare -- single-seed results can be misleading
-3. **Check burst IR** -- if burst IR is close to average IR, topology doesn't matter much
-4. **Compare against torus** -- torus is the honest baseline (same wires, wrap-around)
-5. **Run sensitivity** -- topology rankings can flip under different injection rates
-6. **Read accuracy caveats** -- BookSim latency is trustworthy, area/power are relative
-7. **Use absolute paths** -- relative paths can fail depending on CWD
-
----
-
+> This section was moved to [`docs/tutorial.md`](docs/tutorial.md). See there for the full detail.
+<a name="full-build-guide"></a>
 ## 4. Full Build Guide
 
 ### 4.1 Prerequisites
@@ -747,7 +402,7 @@ libveritx_embed.a    ← 52MB embedding library
 python3 scripts/tools.py booksim2 sync
 
 # 2. Build ASTRA-sim with BookSim2 backend
-cd serving/astra-sim/build/astra_booksim2
+cd third_party/astra-sim/build/astra_booksim2
 ./build.sh
 
 # 3. Verify binary exists
@@ -785,6 +440,7 @@ python3 -m pytest tests/ --cov=veritx_dse --cov-report=term-missing
 
 ---
 
+<a name="command-reference"></a>
 ## 5. Command Reference
 
 ### 5.1 Trace Operations (`veritx trace`)
@@ -901,6 +557,7 @@ veritx report --json results.json
 
 ---
 
+<a name="trace-format-generation"></a>
 ## 6. Trace Format & Generation
 
 ### Trace Lifecycle: LLMServingSim to BookSim2
@@ -1053,7 +710,7 @@ Burst mode:   INJECTION-LIMITED — NIC injection is bottleneck
 
 **From LLMServingSim:**
 ```bash
-cd serving/LLMServingSim
+cd third_party/llmservingsim
 # Option 1: Docker (recommended)
 ./scripts/docker-sim.sh
 # Option 2: Manual install
@@ -1074,6 +731,7 @@ veritx trace model models/my_model.json --nodes 64 --output runs/traces/my_trace
 
 ---
 
+<a name="architecture"></a>
 ## 7. Architecture
 
 ### Full Repository Architecture
@@ -1106,13 +764,13 @@ flowchart TB
         B4["veritx_embed.cpp\nASTRA-sim API"]
     end
 
-    subgraph ASTRA["serving/astra-sim/"]
+    subgraph ASTRA["third_party/astra-sim/"]
         A1["AstraSim_BookSim2\nmulti-die binary"]
         A2["BookSim2Fabric\nCMake integration"]
         A3["ns-3 backend\ncycle-accurate network"]
     end
 
-    subgraph LLM["serving/LLMServingSim/"]
+    subgraph LLM["third_party/llmservingsim/"]
         L1["Python frontend\nvLLM scheduler"]
         L2["ASTRA-sim backend\nnetwork model"]
         L3["Trace generator\nworkload -> .trace"]
@@ -1371,6 +1029,7 @@ flowchart TD
 
 ---
 
+<a name="design-principles"></a>
 ## 8. Design Principles
 
 ### 8.1 Core Principles
@@ -1399,6 +1058,7 @@ flowchart TD
 
 ---
 
+<a name="third-party-dependencies"></a>
 ## 9. Third-Party Dependencies
 
 ```mermaid
@@ -1414,11 +1074,11 @@ flowchart TD
         B2["libveritx_embed.a (library)"]
     end
 
-    subgraph ASTRA["serving/astra-sim/"]
+    subgraph ASTRA["third_party/astra-sim/"]
         A1["AstraSim_BookSim2\n(multi-die binary)"]
     end
 
-    subgraph LLM["serving/LLMServingSim/"]
+    subgraph LLM["third_party/llmservingsim/"]
         L1["Trace generator\n(from LLM serving)"]
     end
 
@@ -1475,7 +1135,7 @@ flowchart TD
 
 **What:** Multi-die network simulator from Georgia Tech. Models die-to-die communication via UCIe bridges.
 
-**Where:** `serving/astra-sim/`
+**Where:** `third_party/astra-sim/`
 
 **Uses:** BookSim2 as its network backend (synced via `python3 scripts/tools.py booksim2 sync`).
 
@@ -1483,189 +1143,423 @@ flowchart TD
 
 **What:** Cycle-level LLM serving simulator from KAIST (ISPASS 2026). Generates realistic traffic traces.
 
-**Where:** `serving/LLMServingSim/`
+**Where:** `third_party/llmservingsim/`
 
 **Produces:** Traffic traces that VeritX consumes.
 
 ---
 
+<a name="booksim2-deep-dive"></a>
 ## 10. BookSim2 Deep Dive
 
-### 10.1 What BookSim2 Does
-
-BookSim2 is a cycle-accurate network-on-chip simulator. It models:
-- Routers (input buffers, VC allocation, switch allocation, crossbar)
-- Links (credit-based flow control)
-- Traffic patterns (uniform, transpose, hotspot, trace)
-- Routing functions (dimension-order, adaptive, minimal)
-
-### 10.2 Our Trace Replay Extension
-
-BookSim2's original traffic patterns are synthetic (uniform random, transpose, etc.). Our extension (`veritx_ext.*`) adds:
-
-1. **TraceTrafficPattern** — reads a trace file and injects packets at the correct cycles
-2. **Sequential injection** — O(1) lookup: packets sorted by cycle, inject when `current_cycle >= packet.cycle`
-3. **Lazy flit creation** — flits created on injection, not upfront (saves memory)
-
-### 10.3 Embedding API (veritx_embed)
-
-For ASTRA-sim integration, BookSim2 needs to be callable as a library:
-
-```cpp
-// Create an embedded traffic manager
-EmbedTM* tm = CreateEmbeddedTM("config.cfg");
-
-// Inject packets from external host
-tm->InjectUnicast(src, dst, size, packet_id);
-
-// Check if packets have completed
-bool done = tm->HasRetired(node_id, packet_id);
-
-// Step the simulation
-tm->Tick();
-```
-
-### 10.4 Common BookSim Issues
-
-| Issue | Cause | Fix |
-|-------|-------|-----|
-| `trace() not found` | Built from wrong directory | Build from `third_party/booksim2/src/` |
-| `duplicate symbol` | veritx_embed.o linked with main.o | Use `make lib` instead of `make` for embedding |
-| `segmentation fault` | Trace file missing or corrupt | Run `veritx trace validate` first |
-| `timeout` | Simulation too long | Check trace time range, reduce `sample_period` |
-
----
-
+> This section was moved to [`docs/booksim2-deep-dive.md`](docs/booksim2-deep-dive.md). See there for the full detail.
+<a name="astra-sim-multi-die-simulation"></a>
 ## 11. ASTRA-sim Multi-Die Simulation
 
-### 11.1 What ASTRA-sim Does
+> This section was moved to [`docs/astra-multi-die.md`](docs/astra-multi-die.md). See there for the full detail.
+<a name="full-stack-llm-serving-simulation-veritx-serve"></a>
+## 12. Full-Stack LLM Serving Simulation (`veritx serve`)
 
-ASTRA-sim models **multi-die** (chiplet) systems:
-- Multiple dies connected via UCIe bridges
-- Each die has its own NoC (can be BookSim2)
-- Die-to-die communication via bridge models
-- Support for different topologies per die
+### 12.1 Overview
 
-### 11.2 Build
-
-```bash
-# 1. Sync BookSim2 source
-python3 scripts/tools.py booksim2 sync
-
-# 2. Build ASTRA-sim
-cd serving/astra-sim/build/astra_booksim2
-./build.sh
-
-# 3. Verify
-ls -la ../../astra-sim/network_frontend/booksim2/bin/AstraSim_BookSim2
-```
-
-### 11.3 Configuration
-
-ASTRA-sim needs four JSON configs:
-
-| Config | Purpose | Example |
-|--------|---------|---------|
-| Network | Topology, link bandwidth | `examples/network/ns3/sample_16nodes_2D.json` |
-| System | Compute collectives | `examples/system/native_collectives/Ring_4chunks.json` |
-| Workload | Application workload | `examples/workload/microbenchmarks/` |
-| Remote Memory | Memory hierarchy | `examples/remote_memory/analytical/` |
-
-### 11.4 Run
-
-```bash
-serving/astra-sim/astra-sim/network_frontend/booksim2/bin/AstraSim_BookSim2 \
-    --workload-configuration=<workload.json> \
-    --network-configuration=<network.json> \
-    --system-configuration=<system.json> \
-    --remote-memory-configuration=<memory.json>
-```
-
-### 11.5 Common Errors
-
-| Error | Fix |
-|-------|-----|
-| `veritx_embed.hpp: No such file` | Run `python3 scripts/tools.py booksim2 sync` |
-| `PER_NODE_MEMORY_EXPANSION` abort | Set `num-devices` in memory config |
-| Binary hangs at stdin | ASTRA-sim waits for `exit` command |
-| `yaml-cpp` not found | `sudo apt install libyaml-cpp-dev` |
-| `cmake version too old` | Need cmake 3.22+: `pip install cmake` |
-
----
-
-## 12. LLMServingSim Traffic Generation
-
-### 12.1 What LLMServingSim Does
-
-LLMServingSim is a cycle-level simulator for LLM serving infrastructure from KAIST (ISPASS 2026). It:
-- Mirrors vLLM's continuous-batching scheduler in Python
-- Uses ASTRA-sim C++ as network backend
-- Drives from per-hardware latency data captured by a vLLM profiler
-- Supports heterogeneous accelerators, disaggregated memory (CPU/CXL/PIM)
-
-### 12.2 Build
+`veritx serve` runs a **cycle-accurate LLM serving simulation** end-to-end: Python scheduler (vLLM-style continuous batching) ↔ C++ network backend (ASTRA-sim + BookSim2). It models real serving scenarios — prefill/decode disaggregation, Mixture-of-Experts parallelism, multi-instance deployments, and agentic multi-turn sessions — all with network-cycle-level fidelity.
 
 ```mermaid
 flowchart LR
-    A["LLMServingSim\nSource code"] --> B{"Docker?"}
-    B -->|"Yes (recommended)"| C["scripts/docker-sim.sh\nLaunches container"]
-    B -->|"No"| D["pip install + compile.sh\nManual install"]
-    C --> E["ASTRA-sim backend\n(inside container)"]
-    D --> E
-    E --> F["Ready to generate traces"]
-
-    style D fill:#e8f5e9,stroke:#333
-    style E fill:#e1f5fe,stroke:#333
-    style F fill:#e1f5fe,stroke:#333
-
-
-    classDef input fill:#e1f5fe,stroke:#01579b,color:#000
-    classDef cli fill:#e8f5e9,stroke:#2e7d32,color:#000
-    classDef sim fill:#fff3e0,stroke:#e65100,color:#000
-    classDef api fill:#fce4ec,stroke:#c62828,color:#000
-    classDef output fill:#f3e5f5,stroke:#6a1b9a,color:#000
-    class A sim
+    subgraph Python
+        A["veritx serve"] --> B["LLMServingSim\nscheduler"]
+        B --> C["config_builder\n(system/network/\nmemory configs)"]
+        B --> D["trace_generator\n(perf_db →\nChakra traces)"]
+    end
+    subgraph C++
+        E["ASTRA-sim\nevent loop"] --> F["BookSim2\npacket sim"]
+        E --> G["Analytical\ncongestion-aware"]
+    end
+    B <-->|stdin/stdout\ninteractive protocol| E
+    F --> H["Cycle-accurate\nlatency per token"]
+    G --> H
+    H --> B
 ```
+
+**Key insight:** The Python scheduler decides *what* to send; the C++ backend decides *when* it finishes. Each decode step = one full round-trip. This gives true cycle-accurate network latency without needing full-system simulation.
+
+### 12.2 Quick Start
 
 ```bash
-cd serving/LLMServingSim
+# Single request, booksim backend (fastest)
+veritx serve \
+  --cluster-config third_party/llmservingsim/configs/cluster/single_node_single_instance.json \
+  --dataset third_party/llmservingsim/workloads/example_trace.jsonl \
+  --num-reqs 1 \
+  --network-backend booksim
 
-# Option 1: Docker (recommended)
-./scripts/docker-sim.sh
-# Creates container with ASTRA-sim + all Python deps
+# PD (prefill/decode disaggregation), 3 requests
+veritx serve \
+  --cluster-config third_party/llmservingsim/configs/cluster/single_node_pd_instance.json \
+  --dataset third_party/llmservingsim/workloads/example_trace.jsonl \
+  --num-reqs 3 \
+  --network-backend booksim
 
-# Option 2: Manual install
-pip install -r requirements.txt
-./scripts/compile.sh
+# Save per-request CSV output
+veritx serve \
+  --cluster-config third_party/llmservingsim/configs/cluster/single_node_single_instance.json \
+  --dataset third_party/llmservingsim/workloads/example_trace.jsonl \
+  --num-reqs 2 \
+  --output results.csv
 ```
 
-### 12.3 Generate Traces
+### 12.3 CLI Reference
+
+```
+veritx serve [OPTIONS]
+
+Required:
+  --cluster-config PATH    Cluster topology JSON
+  --dataset PATH           Workload JSONL file
+
+Optional:
+  --num-reqs N             Number of requests (default: 1)
+  --network-backend {booksim,analytical,ns3}
+                           Network simulation backend (default: booksim)
+  --output PATH            Save per-request metrics as CSV
+  --timeout SECONDS        Kill sim after N seconds (default: 600)
+  --log-level {DEBUG,INFO,WARNING,ERROR}
+                           LLMServingSim verbosity (default: WARNING)
+  --no-cleanup             Keep intermediate ASTRA-sim input files
+  --no-prefix-caching      Disable prefix caching optimization
+```
+
+**Direct invocation** (without the CLI wrapper):
+```bash
+cd third_party/llmservingsim
+python3 -m serving \
+  --cluster-config configs/cluster/single_node_single_instance.json \
+  --dataset workloads/example_trace.jsonl \
+  --num-reqs 1 \
+  --network-backend booksim
+```
+
+### 12.4 Cluster Configurations
+
+All configs live in `third_party/llmservingsim/configs/cluster/`.
+
+#### Validated on Booksim ✅
+
+| Config | Description | Instances | Notes |
+|--------|-------------|-----------|-------|
+| `single_node_single_instance` | 2 NPUs, TP=2, LLaMA-8B | 1 | Baseline, fastest (~2s/req) |
+| `single_node_multi_instance` | 4 NPUs, 2 instances × TP=2 | 2 | Round-robin instance serving |
+| `single_node_pd_instance` | 2 instances: prefill + decode | 2 | Prefill-decode disaggregation |
+| `single_node_4_instance_2TP` | 8 NPUs, 4 instances × TP=2 | 4 | Multi-instance PD |
+| `dual_node_multi_instance` | 4 NPUs across 2 physical nodes | 2 | Cross-node simulation |
+| `single_node_moe_single_instance` | 8 NPUs, MoE EP=8 | 1 | MoE expert parallelism |
+| `single_node_moe_multi_instance` | 16 NPUs, MoE DP=2×EP=8 | 2 | MoE + data parallelism |
+| `single_node_moe_dp_ep_instance` | 16 NPUs, MoE DP=2×EP=8 | 2 | DP + EP combined |
+| `single_node_moe_pd_instance` | MoE with PD disaggregation | 2 | MoE + prefill/decode split |
+
+#### Validated on Analytical ✅
+
+All of the above work with `--network-backend analytical` (faster, less accurate).
+
+#### Known Issues ⚠️
+
+| Config | Status | Notes |
+|--------|--------|-------|
+| `dual_node_kv_remote` | ❌ Binary crash | ep_size + kv_loc:cpu causes ASTRA-sim assertion failure |
+| `dual_node_moe_dp_ep_intra_inter_instance` | ❌ Binary crash | Same root cause as above |
+| `moe_tight_mem` | ❌ Correct rejection | Config intentionally exceeds memory bounds |
+| `single_node_pim_instance` | ⚠️ Untested | PIM offloading path not validated |
+| `single_node_cxl_instance` | ⚠️ Untested | CXL disaggregated memory path |
+| `single_node_pd_per_instance_config` | ⚠️ Untested | Per-instance PD config variant |
+| `single_node_power_instance` | ⚠️ Untested | Power modeling path |
+| `single_node_heterogeneous` | ⚠️ Untested | Mixed accelerator types |
+| `rtxpro_single` | ⚠️ Untested | RTX Pro 6000 specific |
+
+### 12.5 Workload Datasets
+
+All datasets live in `third_party/llmservingsim/workloads/`.
+
+| Dataset | Description | Requests | Tokens |
+|---------|-------------|----------|--------|
+| `example_trace.jsonl` | Synthetic LLaMA-8B traces | varies | ~10-104 per req |
+| `workload_me2_01_mixed.jsonl` | MoE mixed workload | varies | Variable |
+| `swe-bench-qwen3-30b-a3b-50-sps0.2.jsonl` | Agentic SWE-bench sessions | 50 | 765 sub-requests |
+| `shared_prefix_30.jsonl` | Shared prefix (cache testing) | 30 | Variable |
+| `longctx_shared_4k_10.jsonl` | Long-context, 4K shared prefix | 10 | ~4K+ |
+| `longctx_shared_8k.jsonl` | Long-context, 8K shared prefix | varies | ~8K+ |
+| `dual_512_10.jsonl` | Dual-request, 512 tokens | 10 | 512 |
+
+**Generating custom datasets:**
+```bash
+# Use the workload generator
+cd third_party/llmservingsim/workloads/generators
+python sharegpt.py --output my_dataset.jsonl --num-reqs 100
+```
+
+### 12.6 Network Backends
+
+| Backend | Mode | Speed | Accuracy | When to use |
+|---------|------|-------|----------|-------------|
+| `booksim` (default) | Replay-only | ~2-3s/req | High (trace-duration replay) | Default for all configs |
+| `booksim` (--no-booksim-replay-only) | Cycle-accurate | ~10× slower | Highest (full packet simulation) | Only when ASTRA ring = BookSim mesh |
+| `analytical` | Congestion-aware | ~1-2s/req | Medium (analytical model) | Fast iteration, topology exploration |
+| `ns3` | ns-3 discrete event | Very slow | Highest (full network stack) | Research validation only |
+
+**Replay-only vs. cycle-accurate:**
+- **Replay-only** (default): ASTRA-sim replays trace durations directly without sending packets through BookSim. This avoids topology-mismatch deadlocks (ASTRA ring ≠ BookSim mesh). ✅ All validated configs use this mode.
+- **Cycle-accurate** (`--no-booksim-replay-only`): Every packet is simulated through BookSim's router pipeline. Only works when the ASTRA-sim ring topology matches BookSim's mesh topology. ~10× slower. ⚠️ Can deadlock on mismatched topologies.
+
+### 12.7 Output Format
+
+With `--output results.csv`, each run produces a CSV with per-request metrics:
+
+```csv
+instance id,request id,model,input,output,arrival,end_time,latency,queuing_delay,TTFT,TPOT,ITL
+0,0,meta-llama/Llama-3.1-8B,10,70,46926808,831688140,784761332,192,10987194,11214117,"[11144002,...]"
+```
+
+**Column definitions:**
+| Column | Unit | Description |
+|--------|------|-------------|
+| `arrival` | ns | Request arrival time in simulation |
+| `end_time` | ns | Request completion time |
+| `latency` | ns | End-to-end latency (end_time - arrival) |
+| `queuing_delay` | ns | Time spent waiting before first execution |
+| `TTFT` | ns | Time to first token |
+| `TPOT` | ns | Time per output token (mean) |
+| `ITL` | ns | Inter-token latency (per-token array) |
+
+**Console output** includes summary statistics:
+```
+────────────────────── Time to First Token ──────────────────────
+Mean TTFT (ms):    10.99
+Median TTFT (ms):  10.99
+P99 TTFT (ms):     10.99
+──────── Time per Output Token (excl. 1st token) ────────
+Mean TPOT (ms):    11.15
+```
+
+### 12.8 Architecture Deep Dive
+
+#### Interactive Protocol
+
+The Python scheduler and C++ binary communicate via stdin/stdout:
+
+```
+Python → Binary:  "path/to/workload.et"   (send Chakra trace)
+Binary → Python:  "[workload] sys[0] finished, N cycles..."  (report latency)
+Python → Binary:  "pass N"                 (advance clock N cycles)
+Python → Binary:  "exit"                   (terminate)
+```
+
+Each round: Python sends one workload file, binary simulates all NPUs, outputs completion times, Python reads results and schedules next batch.
+
+#### Multi-Instance Protocol
+
+For N instances, the round-robin serves one instance per round:
+```
+Round 1: → instance 0 workload → completion
+Round 2: → instance 1 workload → completion
+Round 3: → instance 0 workload → completion
+...
+```
+This means N instances cost ~N× wall time per round.
+
+#### PD (Prefill/Decode Disaggregation)
+
+Two instances with different roles:
+- **Prefill instance**: Processes input tokens (compute-bound)
+- **Decode instance**: Generates output tokens (memory-bound)
+
+When prefill completes, the request is **transferred** to the decode instance with a future arrival time (completion_time + tool_duration_ns). The decode instance then processes the remaining tokens.
+
+#### MoE (Mixture-of-Experts)
+
+Expert parallelism (EP) distributes experts across NPUs. All-to-all collectives are simulated through ASTRA-sim. The config specifies:
+- `ep_size`: Number of expert partitions
+- `dp_group`: Data parallelism groups
+- `kv_loc`: Where KV cache lives (cpu/gpu/pim)
+
+#### Agentic Sessions
+
+Multi-turn tool-calling sessions where:
+1. First sub-request is a normal LLM inference
+2. On completion, the simulator generates the next sub-request with a future arrival time
+3. Multiple concurrent sessions are supported (round-robin scheduling)
+4. Sub-requests have variable prompt lengths (tool call results vary)
+
+### 12.9 Performance Characteristics
+
+#### Timing (measured on host machine)
+
+| Scenario | Config | Requests | Wall Time | Per-Request |
+|----------|--------|----------|-----------|-------------|
+| Single instance, 1 req | single_node_single_instance | 1 | ~1.7s | ~1.7s |
+| Single instance, 2 reqs | single_node_single_instance | 2 | ~2.5s | ~1.25s |
+| PD disaggregation, 3 reqs | single_node_pd_instance | 3 | ~2.5s | ~0.8s |
+| Multi-instance, 2 reqs | single_node_multi_instance | 2 | ~2.8s | ~1.4s |
+| Dual-node, 2 reqs | dual_node_multi_instance | 2 | ~2.9s | ~1.45s |
+| MoE DP+EP, 2 reqs | single_node_moe_dp_ep_instance | 2 | ~3.5s | ~1.75s |
+| Agentic 20 sub-requests | (custom) | 20 | ~102s | ~5.1s |
+
+**Scaling factors:**
+- Each decode step = one Python↔binary round-trip ≈ 10-15ms wall time
+- TPOT is dominated by network simulation, not Python overhead
+- TTFT scales linearly with prompt length (chunked prefill, 2048 tokens/chunk)
+- N instances = N× wall time (serial protocol)
+
+#### TPOT Breakdown
+
+```
+Per decode step:
+  Python scheduling:     ~0.1ms
+  Chakra trace gen:      ~0.5ms (in-process, 28× faster than subprocess)
+  Binary stdin write:    ~0.1ms
+  C++ simulation:        ~5-10ms (booksim replay-only)
+  Binary stdout read:    ~0.1ms
+  Python parse + route:  ~0.1ms
+  ─────────────────────────────
+  Total per step:        ~6-11ms
+```
+
+### 12.10 Caveats and Known Limitations
+
+#### Accuracy Caveats
+
+1. **Replay-only mode is the default.** The booksim backend replays trace durations rather than cycle-accurately simulating every packet. This is ~95% accurate for latency estimation but misses microarchitectural effects (queuing, contention). True cycle-accurate mode (`--no-booksim-replay-only`) is only valid when ASTRA ring = BookSim mesh topology.
+
+2. **Synthetic H100 profiles.** The `single_node_single_instance_H100` config uses performance data scaled from RTX Pro 6000 Llama-8B measurements × hardware ratio. Real H100 profiling is needed for production-grade numbers.
+
+3. **Analytical backend is 1D-only.** The analytical congestion-aware backend (`--network-backend analytical`) has no `num_dimensions` support (Helper.cpp:27). Any multi-dimensional fabric requires `--network-backend booksim`.
+
+4. **Per-token wall time is ~6-11s in simulation.** Each decode step produces correct BookSim cycles but takes seconds of wall time due to the Python↔binary round-trip. A 100-token response takes ~600s wall time. This is inherent to the interactive protocol.
+
+5. **TTFT scales linearly with prompt length.** A 27K-token prompt takes ~979s TTFT because it's processed in 2048-token chunks, each requiring a full round-trip.
+
+#### Speed Limitations
+
+6. **Wall-clock serialization.** The binary protocol processes one instance per round, so N-instance configs cost ~N× wall time. Parallelizing would require a protocol redesign (binary reads N workloads per round).
+
+7. **Full SWE-bench trace is very slow.** The SWE-bench dataset has 765 sub-requests across 50 sessions. On booksim, this could take 10s of minutes to hours. Fine for single sessions, not for full traces.
+
+#### Config Limitations
+
+8. **Some dual-node configs crash.** Configs with `ep_size=4`, `dp_group`, or `kv_loc: cpu` cause ASTRA-sim assertion failures in `GeneralComplexTopology`. The analytical backend is 1D-only and can't handle multi-dim fabrics.
+
+9. **`moe_tight_mem` is intentionally rejected.** The config exceeds memory bounds — this is a feature, not a bug.
+
+10. **PIM/CXL/power configs are untested.** These paths exist in the code but haven't been validated on the current build.
+
+### 12.11 Debugging
+
+#### Common Issues
+
+| Symptom | Likely Cause | Fix |
+|---------|-------------|-----|
+| "No valid output from network backend" | Binary crashed on startup | Check binary exists: `ls third_party/llmservingsim/astra-sim/network_frontend/booksim2/bin/AstraSim_BookSim2` |
+| Hangs at 0 reqs, 0 tokens/s | SPD log interleaving or time-advancement deadlock | Use `--log-level WARNING` to suppress debug output; ensure `Logging.cc` uses `stderr_color_sink` |
+| Timeout on multi-req run | Normal for large workloads | Increase `--timeout` (each decode step ~1s wall time) |
+| "Simulation failed with exit code 1" | Binary stderr has crash details | Run with `--log-level DEBUG` to see full output |
+| TTFT is 1000× too large | Unit bug (ns vs μs) | Ensure `llm_converter.py` uses microseconds, not nanoseconds |
+
+#### Debugging Commands
 
 ```bash
-# 1. Configure workload in configs/
-# 2. Run simulation
-./serving/run.sh
+# Quick smoke test (should complete in ~2s)
+veritx serve \
+  --cluster-config third_party/llmservingsim/configs/cluster/single_node_single_instance.json \
+  --dataset third_party/llmservingsim/workloads/example_trace.jsonl \
+  --num-reqs 1 --network-backend booksim --log-level DEBUG
 
-# 3. Output in traces/ directory
-ls traces/
-# run_1786643546936153_195056/
+# Check binary exists and is executable
+ls -la third_party/llmservingsim/astra-sim/network_frontend/booksim2/bin/AstraSim_BookSim2
 
-# 4. Copy to VeritX
-cp traces/my_trace.trace /path/to/veritx-research/runs/traces/
+# Rebuild binary (if modified)
+cd third_party/astra-sim/build/astra_booksim2 && bash build.sh
+
+# Test analytical backend (faster, different model)
+veritx serve \
+  --cluster-config third_party/llmservingsim/configs/cluster/single_node_single_instance.json \
+  --dataset third_party/llmservingsim/workloads/example_trace.jsonl \
+  --num-reqs 1 --network-backend analytical
 ```
 
-### 12.4 Trace Provenance
+### 12.12 Build and Rebuild
 
-All traces in `runs/traces/` are generated from real LLM serving workloads:
+#### Building from Source
 
-| Trace | Source | |
-|-------|--------|-------|
-| `qwen3_serving_16rank.trace` | LLMServingSim Qwen3-30B-A3B, 16 NPU |  Real MoE routing |
-| `llama70b_tp64_*.trace` | LLMServingSim LLaMA-70B, 64 NPU |  Real dense traffic |
-| `llama_1b_attention.trace` | LLMServingSim LLaMA-1B, 64 NPU |  Real attention |
+```bash
+# Build ASTRA-sim + BookSim2 binary
+cd third_party/astra-sim/build/astra_booksim2
+bash build.sh
+# Binary output: ../../network_frontend/booksim2/bin/AstraSim_BookSim2
+
+# Build Analytical backend
+cd third_party/astra-sim/build/astra_analytical
+bash build.sh
+# Binary output: build/bin/AnalyticalAstra
+
+# Verify both binaries
+ls -la third_party/llmservingsim/astra-sim/network_frontend/booksim2/bin/AstraSim_BookSim2
+ls -la third_party/astra-sim/build/astra_analytical/build/AnalyticalAstra/bin/AnalyticalAstra
+```
+
+#### Container Build
+
+```bash
+# Build the tools image (includes all backends)
+podman build -t veritx-tools .
+
+# Run serve inside container
+podman run --rm -v $(pwd):/workspace veritx-tools \
+  bash -c "cd /opt/llmservingsim && python3 -m serving \
+    --cluster-config configs/cluster/single_node_single_instance.json \
+    --dataset workloads/example_trace.jsonl \
+    --num-reqs 1 --network-backend booksim"
+```
+
+### 12.13 Architecture Decisions
+
+| Decision | Rationale |
+|----------|----------|
+| Interactive protocol (stdin/stdout) | Simplicity; no shared-memory or socket setup |
+| Chakra trace format | ASTRA-sim native; enables replay and trace-driven modes |
+| Replay-only default | Avoids topology-mismatch deadlocks (ring ≠ mesh) |
+| Round-robin instance serving | Simple, fair; no complex load balancing needed |
+| In-process Chakra conversion | 28× faster than subprocess call (commit 96777226) |
+| Decode trace cache | Avoids re-generating identical decode traces (commit 0793eb13) |
+| SPD log → stderr | Prevents protocol stream corruption (commit c3d73a18) |
+| Exact "Waiting" match | Prevents spdlog interleaving from breaking read loop (commit c3d73a18) |
+| Stderr capture on EOF | Diagnoses binary crashes that were previously silent |
+
+### 12.14 Commit History (Serving Pipeline)
+
+| Commit | What |
+|--------|------|
+| `7ca9f16d` | LLMServingSim trace converter + BookSim2 event queue fix |
+| `6218e081` | LLMServingSim-BookSim2 full-stack integration |
+| `9dec5437` | Decode optimization framework + Dockerfile ASTRA-sim integration |
+| `96777226` | In-process Chakra converter (28× faster graph gen) |
+| `fb9e72ed` | llm_converter ns→us unit bug (TTFT 1000× inflation) |
+| `eab2dfb7` | Multi-instance cycle-accurate serving (round-robin + load/run protocol) |
+| `db61a633` | DP livelock + PD flake + 4-inst hang (cycle-accurate serving) |
+| `ccd8541e` | PD silent drop — extras path prefill completion transfer |
+| `6178d3e5` | Loud dropped-request guard at sim exit |
+| `c3d73a18` | Serving deadlocks (PD done-check, sparse-gap pass, stderr pipe) |
+| `ee9c1a2e` | Booksim cycle-accurate clock (int64 + fabric lock-step) |
+| `154f4bc3` | DSE CLI + trace path resolution (repo-root relative) |
+
+### 12.15 Future Improvements
+
+1. **Parallel multi-instance protocol** — Binary reads N workloads per round, simulates all instances simultaneously. Would eliminate N× wall-time scaling.
+2. **Real H100 profiling** — Replace synthetic H100 perf_db with actual measurements.
+3. **tp4/tp8 profile synthesis** — Generate from tp1/tp2 data using scaling model (T(tp) = T(1)/tp × α + β × log₂(tp)).
+4. **Decode batcher + async trace generator** — Already defined but never wired in. Would overlap Python scheduling with C++ simulation.
+5. **Container image slimming** — Remove stale psc-ns3 copy, verify all backends build inside container.
 
 ---
 
+<a name="e1-e5-data-model"></a>
 ## 13. E1-E5 Data Model
 
 ### 13.1 Entities
@@ -1741,6 +1635,7 @@ The dependency graph (E4) determines the VC structure:
 
 ---
 
+<a name="compilerequest-format"></a>
 ## 14. CompileRequest Format
 
 ### 14.1 Example
@@ -1799,6 +1694,7 @@ The dependency graph (E4) determines the VC structure:
 
 ---
 
+<a name="compile-pipeline-stages"></a>
 ## 15. Compile Pipeline Stages
 
 The compile pipeline has 6 stages:
@@ -1870,6 +1766,7 @@ flowchart LR
 
 ---
 
+<a name="vc-derivation-algorithm"></a>
 ## 16. VC Derivation Algorithm
 
 The VC derivation algorithm takes the dependency graph and produces a valid VC assignment:
@@ -1928,6 +1825,7 @@ flowchart TD
 
 ---
 
+<a name="verification-properties-f1-f8"></a>
 ## 17. Verification Properties (F1-F8)
 
 | Check | Property | Description | Status |
@@ -1988,6 +1886,7 @@ flowchart TD
 
 ---
 
+<a name="output-format-accuracy-caveats"></a>
 ## 18. Output Format & Accuracy Caveats
 
 ### 18.1 Output JSON
@@ -2022,6 +1921,7 @@ Every `veritx compile` produces:
 
 ---
 
+<a name="built-in-topologies"></a>
 ## 19. Built-in Topologies
 
 | Name | Type | Edges | Routing | Notes |
@@ -2065,6 +1965,7 @@ flowchart TD
 
 ---
 
+<a name="built-in-workload-presets"></a>
 ## 20. Built-in Workload Presets
 
 | Name | Model | Description | Agents |
@@ -2081,6 +1982,7 @@ flowchart TD
 
 ---
 
+<a name="extending-veritx"></a>
 ## 21. Extending VeritX
 
 VeritX is designed for extensibility. Every component can be extended without modifying core code.
@@ -2089,6 +1991,7 @@ VeritX is designed for extensibility. Every component can be extended without mo
 
 ---
 
+<a name="adding-a-new-topology"></a>
 ## 22. Adding a New Topology
 
 1. Add a `Topology` to `SWEEP_TOPOS` in `presets.py`:
@@ -2123,6 +2026,7 @@ Topology(
 
 ---
 
+<a name="adding-a-new-workload-preset"></a>
 ## 23. Adding a New Workload Preset
 
 1. Add to `WORKLOAD_PRESETS` in `presets.py`:
@@ -2148,6 +2052,7 @@ Topology(
 
 ---
 
+<a name="adding-a-new-agent-kind"></a>
 ## 24. Adding a New Agent Kind
 
 Add to `AgentKind` enum in `compile_model.py`:
@@ -2166,6 +2071,7 @@ Then update `AGENT_DEFAULTS` in `presets.py` with default attributes for the new
 
 ---
 
+<a name="adding-a-new-dependency-kind"></a>
 ## 25. Adding a New Dependency Kind
 
 Add to `DepKind` enum in `compile_model.py`:
@@ -2182,6 +2088,7 @@ If the new kind affects VC derivation, update `resolve_dependencies()` in `compi
 
 ---
 
+<a name="adding-a-new-engine-stage"></a>
 ## 26. Adding a New Engine Stage
 
 The compile pipeline has 6 stages. To add a 7th:
@@ -2207,6 +2114,7 @@ print(f" result={stage_result['my_result']}")
 
 ---
 
+<a name="adding-a-new-report-type"></a>
 ## 27. Adding a New Report Type
 
 1. Add estimation function to `reports.py`:
@@ -2231,6 +2139,7 @@ report["accuracy_notes"]["my_metric"] = "Relative comparison only"
 
 ---
 
+<a name="adding-a-new-cli-command"></a>
 ## 28. Adding a New CLI Command
 
 1. Add handler function in `cli.py`:
@@ -2258,6 +2167,7 @@ p_my.set_defaults(handler=cmd_my_new_command)
 
 ---
 
+<a name="adding-a-new-verification-check"></a>
 ## 29. Adding a New Verification Check
 
 1. Add check function in `compile_model.py`:
@@ -2281,21 +2191,23 @@ checks.append(check_my_property(trace_output, vc_assignment))
 
 ---
 
+<a name="integrating-new-third-party-tools"></a>
 ## 30. Integrating New Third-Party Tools
 
-VeritX uses two directories for third-party tools. The distinction matters:
+VeritX keeps every third-party tool we fork and modify under `third_party/`. Each
+has a `METADATA.json` describing its upstream, vendored commit, patches, build
+command, and downstream sync targets (see `scripts/tools.py` for the unified
+version management).
 
 | Directory | Purpose | You edit the source? | Example |
 |-----------|---------|---------------------|----------|
-| `third_party/` | Simulation engines we fork and modify | **Yes** -- we own the extensions | BookSim2 (trace replay, veritx_embed) |
-| `serving/` | Tools vendored from upstream | **No** -- read-only fork | ASTRA-sim, LLMServingSim |
+| `third_party/` | Vendored tools we fork and modify | **Yes** -- we own the extensions | BookSim2, ASTRA-sim, LLMServingSim, Timeloop |
 
 ### Quick start: adding a new tool
 
 ```bash
 # 1. Decide where it goes
 #    C/C++ engine we modify? -> third_party/
-#    Python tool or upstream vendor? -> serving/
 
 # 2. Create directory + copy source
 mkdir -p third_party/my-tool/src
@@ -2331,7 +2243,6 @@ ASTRA-sim). Add sync_targets to METADATA.json (see booksim2 for an example).
 
 Build artifacts (`.o`, `.a`, `.so`, `build/`, `CMakeCache.txt`) must NOT be committed.
 - `third_party/*/src/.gitignore` catches artifacts in our forks
-- `serving/.gitignore` catches artifacts in vendored tools
 - Root `.gitignore` catches repo-wide patterns
 
 ### Full guide
@@ -2341,9 +2252,10 @@ with examples (Noxim integration, sync scripts, checklist).
 
 ---
 
+<a name="testing"></a>
 ## 31. Testing
 
-### 30.1 Running Tests
+### 31.1 Running Tests
 
 ```bash
 # Full suite (278 tests, ~2 minutes)
@@ -2363,7 +2275,7 @@ python3 -m pytest tests/test_compile_model.py tests/test_prd_gaps.py -v
 python3 -m pytest tests/ --cov=veritx_dse --cov-report=term-missing
 ```
 
-### 30.2 Test Organization
+### 31.2 Test Organization
 
 | Test File | Tests | What It Covers |
 |-----------|-------|----------------|
@@ -2380,7 +2292,7 @@ python3 -m pytest tests/ --cov=veritx_dse --cov-report=term-missing
 | `test_reports.py` | 9 | Area/power/timing models |
 | `test_api_contract.py` | 11 | API contract validation |
 
-### 30.3 Test Organization Diagram
+### 31.3 Test Organization Diagram
 
 ```mermaid
 flowchart TD
@@ -2425,7 +2337,7 @@ flowchart TD
     class U5,U7,I1 cli
 ```
 
-### 30.4 Test Philosophy
+### 31.4 Test Philosophy
 
 - **Unit tests** mock BookSim -- they test Python logic only
 - **Integration tests** invoke the real BookSim binary -- they test the full pipeline
@@ -2434,6 +2346,7 @@ flowchart TD
 
 ---
 
+<a name="debugging-troubleshooting"></a>
 ## 32. Debugging & Troubleshooting
 
 ### Quick Diagnostic Flowchart
@@ -2472,7 +2385,7 @@ flowchart TD
 
 ```
 
-### 31.1 "BookSim binary not found"
+### 32.1 "BookSim binary not found"
 
 ```bash
 # Build BookSim2
@@ -2482,15 +2395,15 @@ cd third_party/booksim2/src && make -j$(nproc)
 ls -la third_party/booksim2/src/booksim
 ```
 
-### 31.2 "trace() not a valid traffic pattern"
+### 32.2 "trace() not a valid traffic pattern"
 
 This means BookSim wasn't built with our trace replay extension.
 
-**Cause:** Built from `serving/astra-sim/extern/.../src/` instead of `third_party/booksim2/src/`.
+**Cause:** Built from `third_party/astra-sim/extern/.../src/` instead of `third_party/booksim2/src/`.
 
 **Fix:** Always build from `third_party/booksim2/src/`.
 
-### 31.3 Path traversal errors
+### 32.3 Path traversal errors
 
 VeritX blocks `..` in paths for security.
 
@@ -2502,7 +2415,7 @@ veritx trace validate ../../runs/traces/qwen3_serving_16rank.trace
 veritx trace validate /full/path/to/runs/traces/qwen3_serving_16rank.trace
 ```
 
-### 31.4 "REPO" path resolution bug
+### 32.4 "REPO" path resolution bug
 
 The `constants.py` file computes REPO by going 5 levels up from `veritx_dse/constants.py`.
 
@@ -2513,7 +2426,7 @@ REPO = Path(__file__).resolve().parent.parent.parent.parent.parent  # 5 levels u
 
 If you move the `dse/` directory, update this path.
 
-### 31.5 Tests pass but CLI fails
+### 32.5 Tests pass but CLI fails
 
 Tests mock BookSim, so they pass even if BookSim isn't built. Always run an integration test:
 
@@ -2521,39 +2434,36 @@ Tests mock BookSim, so they pass even if BookSim isn't built. Always run an inte
 veritx compile examples/qwen3_moe_16npu.json
 ```
 
-### 31.6 ASTRA-sim build fails
+### 32.6 ASTRA-sim build fails
 
 1. Sync BookSim2 first: `python3 scripts/tools.py booksim2 sync`
 2. Check cmake version: `cmake --version` (need 3.22+)
 3. Install yaml-cpp: `sudo apt install libyaml-cpp-dev`
 
-### 31.7 Large trace files (>100MB)
+### 32.7 Large trace files (>100MB)
 
 The repo contains traces up to 440MB. If disk space is a concern:
 - Small traces (<10MB): committed directly
 - Large traces: consider Git LFS (`git lfs track "runs/traces/*.trace"`)
 
-### 31.8 /tmp is RAM-backed
-
-**Never** use /tmp for installs, venvs, or model downloads. /tmp is tmpfs (RAM-backed, ~7GB). Use `/home/datavex/` (198GB free on real disk).
-
 ---
 
+<a name="common-pitfalls"></a>
 ## 33. Common Pitfalls
 
-### 32.1 Building BookSim from the wrong directory
+### 33.1 Building BookSim from the wrong directory
 
-**Problem:** You edited `third_party/booksim2/src/traffic.cpp` but built from `serving/astra-sim/extern/.../src/`.
+**Problem:** You edited `third_party/booksim2/src/traffic.cpp` but built from `third_party/astra-sim/extern/.../src/`.
 
 **Solution:** Always build from `third_party/booksim2/src/`. Use the sync script to copy changes to ASTRA-sim.
 
-### 32.2 Using relative paths
+### 33.2 Using relative paths
 
 **Problem:** `veritx compile examples/qwen3_moe_16npu.json` fails when run from a different directory.
 
 **Solution:** Use absolute paths, or run from `tracks/t3-topology/dse/`.
 
-### 32.3 Mock vs real BookSim
+### 33.3 Mock vs real BookSim
 
 **Problem:** Unit tests pass but `veritx compile` fails.
 
@@ -2561,23 +2471,24 @@ The repo contains traces up to 440MB. If disk space is a concern:
 
 **Solution:** Run `python3 -m pytest tests/test_integration.py -v` after any BookSim changes.
 
-### 32.4 Trace format confusion
+### 33.4 Trace format confusion
 
 **Problem:** `veritx compare` gives different results than expected.
 
 **Check:** Run `veritx trace validate` first to verify the trace is well-formed.
 
-### 32.5 /tmp is RAM-backed
+### 33.5 /tmp is RAM-backed
 
 **Problem:** Large builds or traces fill up /tmp (only ~7GB RAM-backed).
 
-**Solution:** Never use /tmp for installs, venvs, or model downloads. Use `/home/datavex/` (198GB free).
+**Solution:** Never use /tmp for installs, venvs, or model downloads — it is tmpfs (RAM-backed). Use a scratch dir on the real disk (e.g. `<repo>/.scratch/`).
 
 ---
 
+<a name="performance-benchmarks"></a>
 ## 34. Performance Benchmarks
 
-### 33.1 BookSim Simulation Speed
+### 34.1 BookSim Simulation Speed
 
 | Trace | Packets | Time | Speed |
 |-------|---------|------|-------|
@@ -2585,7 +2496,7 @@ The repo contains traces up to 440MB. If disk space is a concern:
 | llama70b_tp64_ring | 1.29M | ~120s | 10.7K pkts/s |
 | qwen3_tree | 26.19M | ~300s | 87.3K pkts/s |
 
-### 33.2 Compile Pipeline Speed
+### 34.2 Compile Pipeline Speed
 
 | Preset | Stages | Total Time |
 |--------|--------|------------|
@@ -2593,7 +2504,7 @@ The repo contains traces up to 440MB. If disk space is a concern:
 | llama1b_tp64 | 6/6 | ~10s |
 | llama70b_tp64 | 6/6 | ~120s |
 
-### 33.3 Test Suite Speed
+### 34.3 Test Suite Speed
 
 | Test Category | Count | Time |
 |---------------|-------|------|
@@ -2603,9 +2514,10 @@ The repo contains traces up to 440MB. If disk space is a concern:
 
 ---
 
+<a name="research-findings"></a>
 ## 35. Research Findings
 
-### 34.1 Topology Comparison Results
+### 35.1 Topology Comparison Results
 
 **Qwen3 MoE (95K packets, 16 NPU):**
 
@@ -2618,14 +2530,14 @@ The repo contains traces up to 440MB. If disk space is a concern:
 
 **Key finding:** grpo_best (111 edges) beats mesh (128 edges) by 1.1% with 17 fewer wires — wire-efficient.
 
-### 34.2 MoE Burst Pattern
+### 35.2 MoE Burst Pattern
 
 MoE traffic has characteristic bursts:
 - Average IR: 0.146 pkts/cycle (sparse)
 - Burst IR: 1.94 pkts/cycle (13× average)
 - Topology matters most during bursts, not on average
 
-### 34.3 Torus vs Mesh
+### 35.3 Torus vs Mesh
 
 Torus beats mesh only where path length is the binding constraint:
 - Attention traffic: torus -32% vs mesh (wrap-around helps)
@@ -2633,6 +2545,7 @@ Torus beats mesh only where path length is the binding constraint:
 
 ---
 
+<a name="comparison-with-other-tools"></a>
 ## 36. Comparison with Other Tools
 
 | Tool | What it does | VeritX advantage |
@@ -2646,6 +2559,7 @@ Torus beats mesh only where path length is the binding constraint:
 
 ---
 
+<a name="hardware-requirements"></a>
 ## 37. Hardware Requirements
 
 ### Minimum
@@ -2675,9 +2589,10 @@ Torus beats mesh only where path length is the binding constraint:
 
 ---
 
+<a name="environment-setup"></a>
 ## 38. Environment Setup
 
-### 37.1 Fresh Install
+### 38.1 Fresh Install
 
 ```bash
 # Clone repo
@@ -2696,7 +2611,7 @@ make -j$(nproc)
 veritx --help
 ```
 
-### 37.2 Docker (Alternative)
+### 38.2 Docker (Alternative)
 
 ```bash
 # Build Docker image
@@ -2706,7 +2621,7 @@ docker build -t veritx .
 docker run -it veritx veritx --help
 ```
 
-### 37.3 Python Virtual Environment
+### 38.3 Python Virtual Environment
 
 ```bash
 cd tracks/t3-topology/dse
@@ -2718,9 +2633,10 @@ pip install pytest  # for testing
 
 ---
 
+<a name="cicd-integration"></a>
 ## 39. CI/CD Integration
 
-### 38.1 GitLab CI
+### 39.1 GitLab CI
 
 The repo has `.gitlab-ci.yml` configured:
 
@@ -2738,7 +2654,7 @@ test:
     - python3 -m pytest tests/ -v
 ```
 
-### 38.2 GitHub Actions
+### 39.2 GitHub Actions
 
 ```yaml
 name: Tests
@@ -2757,9 +2673,10 @@ jobs:
 
 ---
 
+<a name="security-considerations"></a>
 ## 40. Security Considerations
 
-### 39.1 Path Traversal
+### 40.1 Path Traversal
 
 VeritX blocks `..` in paths to prevent directory traversal attacks:
 
@@ -2772,7 +2689,7 @@ def _resolve_path(path: str) -> Path:
     return p
 ```
 
-### 39.2 Input Validation
+### 40.2 Input Validation
 
 All CompileRequest fields are validated:
 - Required fields checked
@@ -2780,7 +2697,7 @@ All CompileRequest fields are validated:
 - Enum values validated
 - Numeric ranges checked
 
-### 39.3 Manifest Signing
+### 40.3 Manifest Signing
 
 Design manifests are signed with HMAC-SHA256:
 
@@ -2791,15 +2708,16 @@ def sign_manifest(manifest: dict, secret: str) -> str:
     return hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
 ```
 
-### 39.4 No Arbitrary Code Execution
+### 40.4 No Arbitrary Code Execution
 
 VeritX never evaluates user-provided code. All configurations are parsed as data, not executed.
 
 ---
 
+<a name="api-reference"></a>
 ## 41. API Reference
 
-### 40.1 Python API
+### 41.1 Python API
 
 ```python
 from veritx_dse import (
@@ -2813,7 +2731,7 @@ from veritx_dse import (
 )
 ```
 
-### 40.2 CLI API
+### 41.2 CLI API
 
 ```bash
 veritx <command> [options]
@@ -2827,7 +2745,7 @@ All commands support:
 - `--seed <int>` — Random seed
 - `--log <file>` — Log to file
 
-### 40.3 Programmatic Usage
+### 41.3 Programmatic Usage
 
 ```python
 from veritx_dse.compile_model import CompileRequest, Workload, Agent
@@ -2855,9 +2773,10 @@ print(result["simulation"]["latency"])  # 1850.64
 
 ---
 
+<a name="configuration-reference"></a>
 ## 42. Configuration Reference
 
-### 41.1 Environment Variables
+### 42.1 Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -2866,7 +2785,7 @@ print(result["simulation"]["latency"])  # 1850.64
 | `VERITX_TIMEOUT` | `300` | Simulation timeout in seconds |
 | `VERITX_SEED` | `42` | Default random seed |
 
-### 41.2 pyproject.toml
+### 42.2 pyproject.toml
 
 ```toml
 [project]
@@ -2883,6 +2802,7 @@ testpaths = ["tests"]
 
 ---
 
+<a name="glossary"></a>
 ## 43. Glossary
 
 | Term | Definition |
@@ -2906,6 +2826,7 @@ testpaths = ["tests"]
 
 ---
 
+<a name="changelog"></a>
 ## 44. Changelog
 
 ### v0.3.0 (2026-08-31)
@@ -2915,6 +2836,24 @@ testpaths = ["tests"]
 - Sensitivity analysis
 - Memory hierarchy correction
 - 278 tests, all pass
+- **LLMServingSim full-stack integration** (veritx serve)
+  - Interactive protocol: Python scheduler ↔ C++ ASTRA-sim/BookSim2
+  - Multi-instance round-robin serving with load/run protocol
+  - PD (prefill/decode) disaggregation with transfer latency
+  - MoE DP+EP parallelism simulation
+  - Agentic multi-turn session support
+  - In-process Chakra conversion (28× faster)
+  - Decode trace cache
+  - Cycle-accurate BookSim clock (int64 + fabric lock-step)
+  - PD silent-drop fix (extras path prefill completion transfer)
+  - Loud dropped-request guard at exit
+  - SPD log → stderr (prevents pipe deadlock)
+  - Exact "Waiting" match (prevents spdlog interleaving stalls)
+  - Stderr capture on binary EOF
+  - DSE CLI `serve` command with path resolution
+- **Validated configs on booksim**: single-instance, multi-instance, PD, 4-instance PD, dual-node, MoE single/multi/DP+EP, MoE PD
+- **15+ cluster configs**, 2 network backends, 7 workload datasets
+- Dockerfile: AnalyticalAstra build, LLMServingSim astra-sim subtree, profiler data
 
 ### v0.2.0 (2026-08-29)
 - Trace replay in BookSim2
@@ -2929,6 +2868,7 @@ testpaths = ["tests"]
 
 ---
 
+<a name="roadmap"></a>
 ## 45. Roadmap
 
 ### Phase 1: Engine Core (P1) — ~80% complete
@@ -2961,6 +2901,7 @@ testpaths = ["tests"]
 
 ---
 
+<a name="known-limitations"></a>
 ## 46. Known Limitations
 
 1. **No RTL generation** — VeritX produces UVM testbenches and manifests, but not synthesizable RTL
@@ -2969,11 +2910,20 @@ testpaths = ["tests"]
 4. **F7 QoS isolation not implemented** — pending
 5. **Large traces (>100MB) slow** — BookSim processes them sequentially
 6. **No GPU acceleration** — BookSim is CPU-only
-7. **Single-die only** — multi-die requires ASTRA-sim (separate build)
+7. **Multi-die requires ASTRA-sim** — built into the container but requires separate compilation outside
 8. **No thermal modeling** — power estimates don't include thermal effects
+9. **Serving simulation is serial** — N instances cost N× wall time (one round per instance)
+10. **Replay-only mode is default** — true cycle-accurate mode requires matching ASTRA ring = BookSim mesh topology
+11. **Synthetic H100 profiles** — perf_db scaled from RTX Pro 6000 data, not real H100 measurements
+12. **Analytical backend is 1D-only** — no multi-dimension fabric support (Helper.cpp:27)
+13. **Dual-node configs with EP/KV-remote crash** — ASTRA-sim assertion failure in GeneralComplexTopology
+14. **PIM/CXL/power configs untested** — code paths exist but not validated on current build
+15. **Full SWE-bench trace very slow** — 765 sub-requests on booksim could take hours
+16. **tp4/tp8 profiles missing** — profiler only has tp1/tp2 data for RTX Pro 6000
 
 ---
 
+<a name="faq"></a>
 ## 47. FAQ
 
 ### Q: How accurate are the latency numbers?
@@ -2996,15 +2946,17 @@ testpaths = ["tests"]
 
 ---
 
+<a name="license"></a>
 ## 48. License
 
 Proprietary — VeritX Research Team
 
 ---
 
+<a name="contributing"></a>
 ## 49. Contributing
 
-### 48.1 Development Workflow
+### 49.1 Development Workflow
 
 1. Write tests first (`tests/test_my_feature.py`)
 2. Implement in `veritx_dse/my_module.py`
@@ -3013,7 +2965,7 @@ Proprietary — VeritX Research Team
 5. Update this README if adding public API
 6. If editing BookSim2, run `python3 scripts/tools.py booksim2 sync`
 
-### 48.2 Code Style
+### 49.2 Code Style
 
 - Type hints on all public functions
 - Docstrings on all public classes
@@ -3021,7 +2973,7 @@ Proprietary — VeritX Research Team
 - No `sys.exit()` in commands
 - Tests for all new functionality
 
-### 48.3 Pull Request Checklist
+### 49.3 Pull Request Checklist
 
 - [ ] All 278 tests pass
 - [ ] New functionality has tests
@@ -3032,6 +2984,7 @@ Proprietary — VeritX Research Team
 
 ---
 
+<a name="references"></a>
 ## 50. References
 
 1. **BookSim2** — Jiang et al., "A Detailed and Flexible Cycle-Accurate Network-on-Chip Simulator," ISPASS 2013
@@ -3042,6 +2995,7 @@ Proprietary — VeritX Research Team
 
 ---
 
+<a name="support"></a>
 ## 51. Support
 
 - **Issues:** https://internal-devrepo.datavex.ai/anmol/veritx-research/-/issues
