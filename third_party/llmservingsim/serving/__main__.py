@@ -264,25 +264,10 @@ internal_speedup = 1.0;
 traffic = uniform;
 injection_rate = 0.0;
 """)
-        # BookSim frontend (main.cc) always passes npus_count_per_dim={num_nodes} (1D)
-        # to ASTRA's Sys, but system.json may have multi-dim collective_impl.
-        # Collapse collective_impl to 1D so GeneralComplexTopology assertion passes:
-        # assert(collective_impl.size() <= dimension_size.size())
-        system_path = os.path.join(run_paths.inputs_root, "system", "system.json")
-        if os.path.exists(system_path):
-            with open(system_path) as sf:
-                sys_cfg = json.load(sf)
-            # BookSim frontend passes flat npus_count_per_dim to ASTRA.
-            # Collapse multi-dim collective impls to 1D so GeneralComplexTopology
-            # assertion passes: assert(impl.size() <= dim_size.size())
-            _impl_keys = ["all-reduce-implementation", "all-gather-implementation",
-                          "reduce-scatter-implementation", "all-to-all-implementation"]
-            for key in _impl_keys:
-                if key in sys_cfg and isinstance(sys_cfg[key], list) and len(sys_cfg[key]) > 1:
-                    sys_cfg[key] = ["ring"]
-            # Also set npus_count to flat for network.yml consistency
-            with open(system_path, "w") as sf:
-                json.dump(sys_cfg, sf, indent=2)
+        # VeritX: main.cc now takes --physical-dims (logical dims), so
+        # multi-dim collective_impl arrays are honored (no collapse needed).
+        # Collapsing them to 1D would renumber dim>=1 (EP/DP) collectives
+        # out of existence in Sys::generate_collective.
         return config_path, booksim_src
     
     # Square / 1D mesh path (original)
@@ -752,6 +737,19 @@ def main():
     workload = get_workload(None, None, event=True, inputs_root=run_paths.inputs_root)
     # run subprocess — flit 64B reduces packet count 4x for large LLM AllReduces (16MB -> 4K pkts -> 1K pkts)
     astra_args = [binary, "--workload-configuration="+workload, "--system-configuration="+system, "--network-configuration="+network, "--remote-memory-configuration="+memory, "--booksim2-flit-bytes=64"]
+    if network_backend == 'booksim':
+        # VeritX: pass LOGICAL topology dims (trace dim numbering) so trace
+        # collectives scoped to dim>=1 (EP/DP) map onto real Sys dims instead
+        # of being silently dropped. network.yml stays physical/flat.
+        try:
+            _ldims_path = os.path.join(run_paths.inputs_root,
+                                       "logical_dims.json")
+            with open(_ldims_path) as _lf:
+                _ndims = json.load(_lf).get("dims")
+            if _ndims and all(isinstance(x, int) and x >= 1 for x in _ndims):
+                astra_args.append("--physical-dims=" + ",".join(str(x) for x in _ndims))
+        except Exception:
+            pass
     if start_npu_ids != "":
         astra_args.append("--start-npu-ids="+start_npu_ids)
     if end_npu_ids != "":

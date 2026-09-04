@@ -152,7 +152,45 @@ int main(int argc, char * argv[]) {
   EventQueue event_queue(fabric.tm());
 
   const int npus_count = fabric.node_count();
-  const std::vector<int> npus_count_per_dim{npus_count};
+  // VeritX: physical topology dims (e.g. "1,2") matching network.yml, so
+  // trace collectives scoped to dim>=1 (EP/DP) map onto real fabric dims
+  // instead of being silently dropped. Defaults to flat (legacy).
+  std::vector<int> npus_count_per_dim;
+  std::string dims_arg;
+  if (cmd_line_parser.has("physical-dims")) {
+    dims_arg = cmd_line_parser.get<std::string>("physical-dims");
+  }
+  if (!dims_arg.empty()) {
+    size_t start = 0;
+    int product = 1;
+    while (start < dims_arg.size()) {
+      size_t end = dims_arg.find(',', start);
+      if (end == std::string::npos) end = dims_arg.size();
+      if (end > start) {
+        int d = std::atoi(dims_arg.substr(start, end - start).c_str());
+        if (d < 1) {
+          std::cerr << "booksim2: invalid --physical-dims '" << dims_arg
+                    << "'" << std::endl;
+          return 1;
+        }
+        npus_count_per_dim.push_back(d);
+        product *= d;
+      }
+      start = end + 1;
+    }
+    if (npus_count_per_dim.empty() || product != npus_count) {
+      std::cerr << "booksim2: --physical-dims '" << dims_arg
+                << "' product != fabric node count (" << npus_count << ")"
+                << std::endl;
+      return 1;
+    }
+    if (LedgerEnabled()) {
+      std::cerr << "[LEDGER][TOPO] npus=" << npus_count << " dims=" << dims_arg
+                << std::endl;
+    }
+  } else {
+    npus_count_per_dim = std::vector<int>{npus_count};
+  }
 
   Booksim2NetworkApi::set_fabric(&fabric);
   Booksim2NetworkApi::set_event_queue(&event_queue);
@@ -169,7 +207,8 @@ int main(int argc, char * argv[]) {
   std::vector<std::unique_ptr<Booksim2NetworkApi>> network_apis;
   std::vector<Sys *> systems;
 
-  std::vector<int> queues_per_dim(1, num_queues_per_dim);
+  std::vector<int> queues_per_dim(npus_count_per_dim.size(),
+                                   num_queues_per_dim);
   for (int i = 0; i < npus_count; ++i) {
     auto network_api = std::make_unique<Booksim2NetworkApi>(i, &fabric,
                                                             &event_queue);

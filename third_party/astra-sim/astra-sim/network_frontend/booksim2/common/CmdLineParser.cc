@@ -50,7 +50,9 @@ void CmdLineParser::define_options() noexcept {
         "booksim2-mcast-fold", "Fold same-count fanout sends into one mcast stream",
         cxxopts::value<bool>()->default_value("false"))(
         "booksim2-mcast-window", "Fold window in cycles",
-        cxxopts::value<int>()->default_value("8"));
+        cxxopts::value<int>()->default_value("8"))(
+        "physical-dims", "Comma-separated physical topology dims (e.g. 1,2)",
+        cxxopts::value<std::string>()->default_value(""));
 }
 
 bool CmdLineParser::has(const std::string& name) const noexcept {

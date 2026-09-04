@@ -175,7 +175,9 @@ def _resolve_dp_groups(all_instances):
     # Non-DP instances. Independent multi-instance configs still use a
     # multi-dimensional topology ([tp_size, num_groups]); local collectives
     # must be scoped to dim 0 so they do not cross instance/PP groups.
-    network_dims = _compute_network_dims(all_instances)
+    # Trace dim scoping uses LOGICAL dims (dim0=TP, dim1=EP/DP), which keep
+    # size-1 dims so EP/DP collectives keep their dim identity.
+    network_dims = _compute_logical_dims(all_instances)
     local_dim = None
     if len(network_dims) > 1:
         local_dim = [True] + [False] * (len(network_dims) - 1)
@@ -185,12 +187,23 @@ def _resolve_dp_groups(all_instances):
             inst["dp_group_size"] = 1
             inst["local_ep"] = inst["ep_size"]
             inst["ep_total"] = inst["ep_size"]
-            inst["tp_dim"] = local_dim
-            inst["ep_dim"] = local_dim if inst["ep_size"] > 1 else None
+            # Single-dim topology: scope explicitly to [True] so traces carry
+            # involved_dim. Leaving None emits unscoped collectives and the
+            # C++ backend defaults to 4 dims, which deadlocks packet simulation
+            # on any real (1-2 dim) topology.
+            dim = local_dim if local_dim is not None else [True]
+            inst["tp_dim"] = dim
+            inst["ep_dim"] = dim if inst["ep_size"] > 1 else None
 
 
 def _compute_network_dims(instances):
-    """Infer ASTRA-Sim topology dimensions from resolved instances."""
+    """Infer ASTRA-Sim topology dimensions from resolved instances.
+
+    PHYSICAL dims for network.yml (shared with the analytical backend, which
+    only supports flat/1-dim topologies here): size-1 dims are stripped and
+    asymmetric 2D is collapsed, exactly as before. Do NOT use for trace dim
+    numbering — see _compute_logical_dims.
+    """
     dp_groups = {}
     for inst in instances:
         dg = inst.get("dp_group")
@@ -244,6 +257,59 @@ def _compute_network_dims(instances):
     return dims
 
 
+def _compute_logical_dims(instances):
+    """Logical topology dims matching trace dim numbering (dim0=TP, dim1=EP/DP).
+
+    Unlike _compute_network_dims, size-1 dims are KEPT: trace collectives
+    address logical dims, and stripping a leading 1 renumbers dim1 (EP/DP)
+    out of existence, making the backend silently drop those collectives.
+    Used for trace dim scoping, system.json impl arity, and the booksim
+    --physical-dims flag (whose product must equal the fabric node count).
+    """
+    dp_groups = {}
+    for inst in instances:
+        dg = inst.get("dp_group")
+        if dg is not None:
+            dp_groups.setdefault(dg, []).append(inst)
+
+    if dp_groups:
+        first_group = next(iter(dp_groups.values()))
+        dims = [first_group[0]["tp_size"], len(first_group)]
+    else:
+        total_npu = sum(
+            inst["num_npus"] if inst.get("pd_type") != "prefill"
+            else inst["num_npus"] * 2
+            for inst in instances
+        )
+        total_pp = sum(
+            inst["pp_size"] if inst.get("pd_type") != "prefill"
+            else inst["pp_size"] * 2
+            for inst in instances
+        )
+        num_instances = len(instances) + sum(
+            1 for inst in instances if inst.get("pd_type") == "prefill"
+        )
+        if total_npu == total_pp:
+            npus_per_group = total_npu // num_instances
+            dims = [npus_per_group, num_instances]
+        else:
+            npus_per_group = total_npu // total_pp
+            dims = [npus_per_group, total_pp]
+
+    # Remove trailing 1s only (a trailing size-1 dim carries no collectives
+    # and keeps single-TP traces byte-identical to before). A leading 1 is
+    # load-bearing: it holds dim0's slot so EP/DP keep dim1.
+    while len(dims) > 1 and dims[-1] == 1:
+        dims.pop()
+    # Collapse asymmetric 2D only when neither dim is degenerate. [1,X] has
+    # no 2D mesh structure worth flattening, and flattening destroys the
+    # logical dim identity that trace involved_dims rely on.
+    if len(dims) == 2 and dims[0] != dims[1] and 1 not in dims:
+        _total = dims[0] * dims[1]
+        dims = [_total]
+    return dims
+
+
 def _normalize_network_dim_values(raw_value, num_dims, field_name):
     """Normalize scalar-or-list network settings to one float per topology dim."""
     if isinstance(raw_value, list):
@@ -274,7 +340,7 @@ def _sync_system_collective_dims(system_config_path, instances):
     with open(system_config_path) as f:
         system_config = json.load(f)
 
-    num_dims = len(_compute_network_dims(instances))
+    num_dims = len(_compute_logical_dims(instances))
     for key in _COLLECTIVE_IMPL_KEYS:
         system_config[key] = ["ring"] * num_dims
 
@@ -652,6 +718,11 @@ def build_cluster_config(astra_sim, cluster_config_path, enable_local_offloading
 
     # Generate the final ASTRA-Sim input files after all instances are known.
     _create_network_config(network_config_path, total_instances, link_bw, link_latency)
+    # Persist LOGICAL dims (trace dim numbering) for backends that need the
+    # true multi-dim shape. network.yml stays physical/flat for analytical.
+    with open(os.path.join(inputs_root, "logical_dims.json"), "w",
+              encoding="utf-8") as f:
+        json.dump({"dims": _compute_logical_dims(total_instances)}, f)
     with open(memory_config_path, "w", encoding="utf-8") as f:
         json.dump(memory_config, f, ensure_ascii=False, indent=2)
     _validate_memory_config(memory_config_path, placement, enable_local_offloading)
