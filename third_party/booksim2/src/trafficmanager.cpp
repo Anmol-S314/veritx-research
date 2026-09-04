@@ -1728,7 +1728,6 @@ bool TrafficManager::Run( )
         cout << "Draining remaining packets ..." << endl;
         _empty_network = true;
         int empty_steps = 0;
-        int drain_timeout = _time * 2 + 100000;  // 2x trace span + margin
 
         bool packets_left = false;
         for(int c = 0; c < _classes; ++c) {
@@ -1743,37 +1742,15 @@ bool TrafficManager::Run( )
             if ( empty_steps % 1000 == 0 ) {
                 _DisplayRemaining( ); 
             }
-
-            // Deadlock detection: if no ejections in 50K cycles, abort
-            // Uses _last_ejection_time to detect true stalls
-            if ( _time - _last_ejection_time > 50000 && _last_ejection_time > 0 ) {
-                cout << "DRAIN ABORTED: no ejections for 50K cycles (since cycle "
-                     << _last_ejection_time << ") — possible deadlock." << endl;
-                break;
-            }
-
-            // Hard timeout: don't drain forever
-            if ( _time > drain_timeout ) {
-                cout << "DRAIN ABORTED: exceeded " << drain_timeout
-                     << " cycles (2x trace span)." << endl;
-                break;
-            }
-
+      
             packets_left = false;
             for(int c = 0; c < _classes; ++c) {
                 packets_left |= !_total_in_flight_flits[c].empty();
             }
         }
         //wait until all the credits are drained as well
-        // (also bounded to prevent infinite loop)
-        int credit_steps = 0;
-        while(Credit::OutStanding()!=0 && credit_steps < 100000){
+        while(Credit::OutStanding()!=0){
             _Step();
-            ++credit_steps;
-        }
-        if (Credit::OutStanding() != 0) {
-            cout << "DRAIN WARNING: " << Credit::OutStanding()
-                 << " credits still outstanding after 100K cycles." << endl;
         }
         _empty_network = false;
 
