@@ -86,3 +86,7 @@ logfile.txt
 
 # Symlinks to other dirs
 serving/LLMServingSim/astra-sim/
+
+# VM setup docs contain plaintext infra credentials - do not track
+/docs/VM-SETUP.md
+/docs/archive/VM-SETUP.md
