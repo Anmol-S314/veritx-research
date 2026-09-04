@@ -1175,19 +1175,19 @@ flowchart LR
         E["ASTRA-sim\nevent loop"] --> F["BookSim2\npacket sim"]
         E --> G["Analytical\ncongestion-aware"]
     end
-    B <-->|stdin/stdout\ninteractive protocol| E
+    B <-->|"stdin/stdout<br/>interactive protocol"| E
     F --> H["Cycle-accurate\nlatency per token"]
     G --> H
     H --> B
 
-    style A fill:#e8f5e9,stroke:#333   %% cli entry point
-    style B fill:#fff3e0,stroke:#333   %% serving scheduler (sim)
-    style C fill:#e1f5fe,stroke:#333   %% input: configs
-    style D fill:#e1f5fe,stroke:#333   %% input: traces
-    style E fill:#fff3e0,stroke:#333   %% sim engine
-    style F fill:#fff3e0,stroke:#333   %% sim engine
-    style G fill:#fff3e0,stroke:#333   %% sim engine
-    style H fill:#f3e5f5,stroke:#333   %% output
+    style A fill:#e8f5e9,stroke:#333
+    style B fill:#fff3e0,stroke:#333
+    style C fill:#e1f5fe,stroke:#333
+    style D fill:#e1f5fe,stroke:#333
+    style E fill:#fff3e0,stroke:#333
+    style F fill:#fff3e0,stroke:#333
+    style G fill:#fff3e0,stroke:#333
+    style H fill:#f3e5f5,stroke:#333
 ```
 
 **Key insight:** The Python scheduler decides *what* to send; the C++ backend decides *when* it finishes. Each decode step = one full round-trip. This gives true cycle-accurate network latency without needing full-system simulation.
