@@ -9,8 +9,9 @@
     "vendored as full source tree replacing upstream checkout (internal branch updated-booksim)"
   ],
   "local_modifications": [
-    "veritx_ext.cpp: snake_mesh registration commented out (needs flit mcast support)",
-    "snakeroute.{cpp,hpp} excluded (depends on Flit::mcast, absent from this base)",
+    "veritx_ext.cpp: snake_mesh registration commented out (flit mcast support now exists since 2026-09-04 merge; snake routing still not ported onto it)",
+    "snakeroute.{cpp,hpp} excluded from the tree (Flit::mcast is present now; re-enabling means porting snake routing to the mcast-fork model)",
+    "networks/gec.cpp + gec.hpp + routefunc.cpp + booksim_config.cpp: origin/main GEC/hybrid work merged 2026-09-04 (mesh / hybrid mesh+MECS / express / MECS modes, hybrid_gec routing, VC-disjointness checks)",
     "stats.cpp: log-linear histogram binning for wide dynamic range (73c to 13M)",
     "stats.cpp: Percentile(p) method for exact p50/p95/p99 computation",
     "trafficmanager.cpp: exact per-packet latency collection (_all_latencies)",
@@ -19,7 +20,8 @@
     "trafficmanager.cpp: display p50/p95/p99/pkt_count in DisplayStats"
   ],
   "known_gaps": [
-    "TODO(sowmith): GEC wire-length pricing not yet ported from the research branch. This gec.cpp carries an honesty guard: topology=gec REFUSES use_noc_latency=1 rather than silently mis-pricing. Alice's priced variant (express channels priced at Manhattan pitch under use_noc_latency=1) lives on branch alice-booksim-wirepriced, booksim2/src/networks/gec.cpp (~70-line diff). Until ported: any gec comparison must set use_noc_latency=0 on both sides.",
+    "GEC wire-length pricing: NOT ported. Since the 2026-09-04 merge this gec.cpp is origin/main's full GEC work (mesh / hybrid mesh+MECS via hybrid=1 + routing_function=hybrid_gec / express p2p / MECS modes, with VC-disjointness checks), but every mode hardcodes 1-cycle channel latency and REFUSES use_noc_latency=1 (config error) rather than silently mis-pricing. The per-wire priced variant (express channels priced at Manhattan pitch under use_noc_latency=1) still lives only on branch alice-booksim-wirepriced. Until ported: any gec/hybrid_gec comparison must set use_noc_latency=0 on both sides.",
+    "snake_mesh / snakeroute: Flit::mcast support now exists (flit.hpp: mcast flag + mcast_copies fork list), but snake_mesh registration stays commented out in veritx_ext.cpp and snakeroute.{cpp,hpp} remain excluded -- porting snake routing onto the mcast-fork model is open TODO work.",
     "NOTE(research-branches): t3 battle scripts that assume priced GEC (e.g. tracks/t3-topology/scripts/claim2_battles.py on exp-d-rtalloc-on-good) will hard-fail their gec leg until the pricing patch lands here."
   ],
   "used_by": [
