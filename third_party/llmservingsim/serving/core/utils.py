@@ -1,4 +1,5 @@
 import os
+from functools import lru_cache
 from time import time
 import json
 
@@ -59,6 +60,12 @@ def formatter(layername, comp_time, input_loc, input_size, weight_loc, weight_si
 
 
 def get_config(model_name):
+    # Cached: model configs are read-only inputs (do NOT mutate the result).
+    return _get_config_cached(model_name)
+
+
+@lru_cache(maxsize=32)
+def _get_config_cached(model_name):
     base_dir = os.path.dirname(os.path.abspath(__file__))
     serving_dir = os.path.dirname(base_dir)
     repo_root = os.path.dirname(serving_dir)
