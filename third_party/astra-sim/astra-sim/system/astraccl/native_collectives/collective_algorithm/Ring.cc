@@ -8,7 +8,21 @@ LICENSE file in the root directory of this source tree.
 #include "astra-sim/system/PacketBundle.hh"
 #include "astra-sim/system/RecvPacketEventHandlerData.hh"
 
+#include <cstdlib>
+#include <iostream>
+
 using namespace AstraSim;
+
+namespace {
+// VERITX_LEDGER>=2: verbose per-packet ring tracing (RING/READY).
+int veritx_ledger_level() {
+    static const int level = [] {
+        const char* v = std::getenv("VERITX_LEDGER");
+        return v ? std::atoi(v) : 0;
+    }();
+    return level;
+}
+}  // namespace
 
 Ring::Ring(ComType type,
            int id,
@@ -93,6 +107,16 @@ int Ring::get_non_zero_latency_packets() {
 }
 
 void Ring::run(EventType event, CallData* data) {
+    if (veritx_ledger_level() >= 2) {
+        std::cerr << "[LEDGER][RING] rank=" << id
+                  << " stream=" << (stream ? stream->stream_id : -1)
+                  << " ev=" << (event == EventType::StreamInit ? "Init" : (event == EventType::General ? "General" : (event == EventType::PacketReceived ? "PktRecv" : "Other")))
+                  << " comType=" << static_cast<int>(comType)
+                  << " msg_size=" << msg_size
+                  << " pkts=" << packets.size()
+                  << " scnt=" << stream_count << " free=" << free_packets
+                  << std::endl;
+    }
     if (event == EventType::General) {
         free_packets += 1;
         ready();
@@ -218,6 +242,13 @@ bool Ring::ready() {
         stream->changeState(StreamState::Executing);
     }
     if (packets.size() == 0 || stream_count == 0 || free_packets == 0) {
+        if (veritx_ledger_level() >= 2) {
+            std::cerr << "[LEDGER][READY] rank=" << id
+                      << " stream=" << stream->stream_id
+                      << " BLOCKED pkts=" << packets.size()
+                      << " scnt=" << stream_count
+                      << " free=" << free_packets << std::endl;
+        }
         return false;
     }
     MyPacket packet = packets.front();

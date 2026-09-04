@@ -5,6 +5,7 @@ BookSim2 fabric (embedding API) driven by a cycle-based event queue.
 *******************************************************************************/
 
 #include <cstring>
+#include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -20,6 +21,82 @@ BookSim2 fabric (embedding API) driven by a cycle-based event queue.
 
 using namespace AstraSim;
 using namespace VeritX;
+
+namespace {
+bool LedgerLevel() {
+  // VERITX_LEDGER=1: collective-execution contract ledger (low volume:
+  // CMD/LOAD/COLL/STREAM/STATE/STEP/DRAIN_STUCK). VERITX_LEDGER=2: adds
+  // verbose per-packet/per-event tracing (EVENT/SKED/SEND/RECV/...).
+  static const int level = [] {
+    const char* v = std::getenv("VERITX_LEDGER");
+    return v ? std::atoi(v) : 0;
+  }();
+  return level;
+}
+bool LedgerEnabled() {
+  return LedgerLevel() >= 1;
+}
+bool LedgerVerbose() {
+  return LedgerLevel() >= 2;
+}
+
+void LedgerQuiescence(uint64_t round, const char* where, EventQueue& event_queue,
+                      BookSim2Fabric& fabric,
+                      const std::vector<Sys*>& systems) {
+  if (!LedgerEnabled()) return;
+  const bool queue_idle = event_queue.finished();
+  const bool fabric_idle = !fabric.tm()->HasInFlight();
+  const int64_t heap = event_queue.PendingEventCount();
+  const int64_t arrivals = event_queue.PendingArrivalCount();
+  const int64_t api_pending = Booksim2NetworkApi::PendingSendCount();
+  const int64_t fold_groups = Booksim2NetworkApi::PendingFoldGroupCount();
+  int64_t sys_pending = 0;
+  std::string pending_sys;
+  for (size_t i = 0; i < systems.size(); ++i) {
+    if (systems[i]->pending_events > 0) {
+      ++sys_pending;
+      if (pending_sys.size() < 63) {
+        if (!pending_sys.empty()) pending_sys += ",";
+        pending_sys += std::to_string(i);
+      }
+    }
+  }
+  std::cerr << "[LEDGER][STATE] round=" << round << " where=" << where
+            << " now=" << event_queue.get_current_time()
+            << " fab=" << fabric.tm()->Cycle()
+            << " heap=" << heap << " next_ev=" << event_queue.NextEventTime()
+            << " sched=" << event_queue.ScheduledEventCount()
+            << " exec=" << event_queue.ExecutedEventCount()
+            << " arrivals=" << arrivals
+            << " api_pending=" << api_pending
+            << " fold_groups=" << fold_groups
+            << " sys_pending=" << sys_pending << "(" << pending_sys << ")"
+            << " inflight=" << fabric.tm()->InFlightFlitCount()
+            << " partial=" << fabric.tm()->PartialQueueFlitCount()
+            << " req_packets=" << fabric.tm()->PacketsRequested()
+            << " built_unicast=" << fabric.tm()->UnicastFlitsConstructed()
+            << " built_mcast=" << fabric.tm()->McastDeliveriesConstructed()
+            << " retired_flits=" << fabric.tm()->FlitsRetired()
+            << " tail_deliveries=" << fabric.tm()->TailDeliveriesRecorded()
+            << " can_advance="
+            << (queue_idle && fabric_idle && heap == 0 && arrivals == 0 &&
+                api_pending == 0 && fold_groups == 0 && sys_pending == 0)
+            << std::endl;
+  if (fabric.tm()->InFlightFlitCount() > 0) {
+    int id = 0, src = 0, dst = 0, vc = 0;
+    int64_t ctime = 0, itime = 0;
+    bool head = false, tail = false;
+    if (fabric.tm()->SampleOldestInFlight(id, src, dst, ctime, itime, head,
+                                          tail, vc)) {
+      std::cerr << "[LEDGER][STUCK_FLIT] round=" << round << " where=" << where
+                << " id=" << id << " src=" << src << " dst=" << dst
+                << " ctime=" << ctime << " itime=" << itime
+                << " head=" << head << " tail=" << tail << " vc=" << vc
+                << " now=" << fabric.tm()->Cycle() << std::endl;
+    }
+  }
+}
+}  // namespace
 
 int main(int argc, char * argv[]) {
   CmdLineParser cmd_line_parser(argv[0]);
@@ -129,6 +206,8 @@ int main(int argc, char * argv[]) {
 
   // Interactive mode: read subsequent workload paths from stdin
   {
+    const bool ledger_enabled = LedgerEnabled();
+    uint64_t interactive_round = 0;
 
     std::string line;
     // VeritX multi-instance protocol:
@@ -141,6 +220,7 @@ int main(int argc, char * argv[]) {
     //   "pass [t]" / "exit" / "done" unchanged
     std::vector<std::string> pending_loads;
     while (std::getline(std::cin, line)) {
+      ++interactive_round;
       // Trim whitespace
       line.erase(0, line.find_first_not_of(" \t\n\r"));
       line.erase(line.find_last_not_of(" \t\n\r") + 1);
@@ -170,6 +250,12 @@ int main(int argc, char * argv[]) {
             }
           } catch (...) {
           }
+        }
+        if (ledger_enabled) {
+          std::cerr << "[LEDGER][CMD] round=" << interactive_round
+                    << " cmd=" << line << std::endl;
+          LedgerQuiescence(interactive_round, "pass", event_queue, fabric,
+                           systems);
         }
         uint64_t wall_time = event_queue.get_current_time();
         for (int i = 0; i < npus_count; ++i) {
@@ -210,6 +296,11 @@ int main(int argc, char * argv[]) {
         for (auto const & path : pending_loads) {
           std::string rank_file = path + "." + std::to_string(i) + ".et";
           if (access(rank_file.c_str(), R_OK) == 0) {
+            if (ledger_enabled) {
+              std::cerr << "[LEDGER][LOAD] round=" << interactive_round
+                        << " sys=" << i << " path=" << path
+                        << " rank_file=" << rank_file << std::endl;
+            }
             delete systems[i]->workload;
             systems[i]->workload = new Workload(systems[i], path, comm_group_configuration);
             break;
@@ -220,15 +311,53 @@ int main(int argc, char * argv[]) {
 
       // Fire workloads
       for (int i = 0; i < npus_count; ++i) systems[i]->workload->fire();
+      if (ledger_enabled) {
+        LedgerQuiescence(interactive_round, "round-start", event_queue, fabric,
+                         systems);
+      }
 
       // Run event loop until ALL systems finish AND fabric is idle
+      uint64_t quiescence_iters = 0;
+      uint64_t drain_chunks = 0;
       while (true) {
         // Step fabric while there are events or in-flight packets
         while (!event_queue.finished() || fabric.tm()->HasInFlight()) {
+          if (ledger_enabled && ++drain_chunks % 100 == 0) {
+            LedgerQuiescence(interactive_round, "drain", event_queue, fabric,
+                             systems);
+          }
           if (!event_queue.finished())
             event_queue.proceed();
-          else
+          else {
+            if (ledger_enabled) {
+              std::cerr << "[LEDGER][STEP] round=" << interactive_round
+                        << " fab_before=" << fabric.tm()->Cycle()
+                        << " inflight=" << fabric.tm()->InFlightFlitCount()
+                        << " heap=" << event_queue.PendingEventCount()
+                        << std::endl;
+            }
             event_queue.run_cycles(1000000);
+            if (ledger_enabled) {
+              std::cerr << "[LEDGER][STEPPED] round=" << interactive_round
+                        << " fab_after=" << fabric.tm()->Cycle()
+                        << " inflight=" << fabric.tm()->InFlightFlitCount()
+                        << " partial=" << fabric.tm()->PartialQueueFlitCount()
+                        << " retired=" << fabric.tm()->FlitsRetired()
+                        << " req_pkts=" << fabric.tm()->PacketsRequested()
+                        << std::endl;
+              int _oid = 0, _osrc = 0, _odst = 0, _ovc = 0;
+              int64_t _oct = 0, _oit = 0;
+              bool _oh = false, _ot = false;
+              if (fabric.tm()->SampleOldestInFlight(
+                      _oid, _osrc, _odst, _oct, _oit, _oh, _ot, _ovc)) {
+                std::cerr << "[LEDGER][OLDEST] round=" << interactive_round
+                          << " id=" << _oid << " src=" << _osrc
+                          << " dst=" << _odst << " ctime=" << _oct
+                          << " itime=" << _oit << " head=" << _oh
+                          << " tail=" << _ot << " vc=" << _ovc << std::endl;
+              }
+            }
+          }
         }
         Booksim2NetworkApi::flush_all();
 
@@ -248,6 +377,14 @@ int main(int argc, char * argv[]) {
         // to let the fabric callback fire and process system events
         if (!all_done && event_queue.finished() && !fabric.tm()->HasInFlight()) {
           event_queue.run_cycles(1);
+        }
+        if (ledger_enabled && ++quiescence_iters % 10000 == 0) {
+          LedgerQuiescence(interactive_round, "outer", event_queue, fabric,
+                           systems);
+        }
+        if (ledger_enabled && quiescence_iters % 1000 == 0) {
+          LedgerQuiescence(interactive_round, "spin", event_queue, fabric,
+                           systems);
         }
       }
 

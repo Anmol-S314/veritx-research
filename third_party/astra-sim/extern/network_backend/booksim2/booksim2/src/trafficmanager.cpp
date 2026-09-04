@@ -1099,6 +1099,8 @@ void TrafficManager::_Step( )
                 Flit * const cf = pp.front();
                 assert(cf);
                 assert(cf->cl == c);
+                // VeritX: hoisted VC range for the no-VC diagnostic below.
+                int _vx_vc_start = -1, _vx_vc_end = -2;
 	
                 if(cf->subnetwork != subnet) {
                     continue;
@@ -1109,7 +1111,7 @@ void TrafficManager::_Step( )
                 }
 
                 if(cf->head && cf->vc == -1) { // Find first available VC
-	  
+
                     OutputSet route_set;
                     _rf(NULL, cf, -1, &route_set, true);
                     set<OutputSet::sSetElement> const & os = route_set.GetSet();
@@ -1118,6 +1120,8 @@ void TrafficManager::_Step( )
                     assert(se.output_port == -1);
                     int vc_start = se.vc_start;
                     int vc_end = se.vc_end;
+                    _vx_vc_start = vc_start;
+                    _vx_vc_end = vc_end;
                     int vc_count = vc_end - vc_start + 1;
                     if(_noq) {
                         assert(_lookahead_routing);
@@ -1189,6 +1193,32 @@ void TrafficManager::_Step( )
                         *gWatchOut << GetSimTime() << " | " << FullName() << " | "
                                    << "No output VC found for flit " << cf->id
                                    << "." << endl;
+                    }
+                    // VeritX: diagnose injection stalls (head flit with no
+                    // output VC for an extended time). Throttled.
+                    {
+                        static int64_t _vx_last_vc_log = -1000000;
+                        const char* _vx_lv = std::getenv("VERITX_LEDGER");
+                        if (_vx_lv && std::atoi(_vx_lv) >= 2 &&
+                            _time - _vx_last_vc_log > 50000) {
+                            _vx_last_vc_log = _time;
+                            std::string _busy, _full;
+                            for (int _vv = _vx_vc_start;
+                                 _vv <= _vx_vc_end && (int)_busy.size() < 128;
+                                 ++_vv) {
+                                _busy += (dest_buf->IsAvailableFor(_vv) ? '0' : '1');
+                                _full += (dest_buf->IsFullFor(_vv) ? '1' : '0');
+                            }
+                            std::cerr << "[LEDGER][NOVC] t=" << _time
+                                      << " node=" << n
+                                      << " flit=" << cf->id
+                                      << " range=[" << _vx_vc_start << ","
+                                      << _vx_vc_end << "]"
+                                      << " busy=" << _busy
+                                      << " full=" << _full
+                                      << " hold_sw=" << _hold_switch_for_packet
+                                      << std::endl;
+                        }
                     }
                 } else {
                     if(dest_buf->IsFullFor(cf->vc)) {

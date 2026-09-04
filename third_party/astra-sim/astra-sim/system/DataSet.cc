@@ -8,7 +8,21 @@ LICENSE file in the root directory of this source tree.
 #include "astra-sim/system/IntData.hh"
 #include "astra-sim/system/Sys.hh"
 
+#include <cstdlib>
+#include <iostream>
+
 using namespace AstraSim;
+
+namespace {
+// VERITX_LEDGER=1: dataset completion progress (contract ledger).
+int veritx_ledger_level() {
+    static const int level = [] {
+        const char* v = std::getenv("VERITX_LEDGER");
+        return v ? std::atoi(v) : 0;
+    }();
+    return level;
+}
+}  // namespace
 
 int DataSet::id_auto_increment = 0;
 
@@ -31,6 +45,12 @@ void DataSet::notify_stream_finished(StreamStat* data) {
     finished_streams++;
     if (data != nullptr) {
         update_stream_stats(data);
+    }
+    if (veritx_ledger_level() >= 1) {
+        std::cerr << "[LEDGER][DATASET] dataset_id=" << my_id
+                  << " finished_streams=" << finished_streams
+                  << " total_streams=" << total_streams
+                  << " tick=" << Sys::boostedTick() << std::endl;
     }
     if (finished_streams == total_streams) {
         finished = true;

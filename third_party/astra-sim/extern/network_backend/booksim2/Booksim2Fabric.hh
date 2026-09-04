@@ -10,7 +10,9 @@ arrivals are reported back as events at their retirement cycle.
 #ifndef __VERITX_BOOKSIM2_FABRIC_HH__
 #define __VERITX_BOOKSIM2_FABRIC_HH__
 
+#include <cstdlib>
 #include <functional>
+#include <iostream>
 #include <map>
 #include <memory>
 #include <queue>
@@ -23,9 +25,18 @@ arrivals are reported back as events at their retirement cycle.
 
 namespace VeritX {
 
+// VERITX_LEDGER=1: contract ledger; >=2: verbose per-event tracing.
+inline int LedgerLevel() {
+  static const int level = [] {
+    const char* v = std::getenv("VERITX_LEDGER");
+    return v ? std::atoi(v) : 0;
+  }();
+  return level;
+}
+
 // One fabric arrival: a packet fully retired at `dst` at cycle `atime`.
 struct Arrival {
-  int atime;
+  int64_t atime;
   int src;
   int dst;
   int pid;
@@ -35,7 +46,8 @@ struct Arrival {
 //      but steps the fabric between events) --------------------------------
 class EventQueue {
  public:
-  EventQueue(VeritXEmbed::EmbedTM * tm) : _tm(tm), _now(0), _seq(0) {}
+  EventQueue(VeritXEmbed::EmbedTM * tm)
+      : _tm(tm), _now(0), _seq(0), _scheduled(0), _executed(0) {}
 
   // Called after every fabric advance (arrivals drained). Set by the
   // frontend main to pump chunk-arrival events.
@@ -43,9 +55,23 @@ class EventQueue {
 
   void schedule_event(int64_t cycle, void (*fn)(void *), void * arg) {
     _heap.push({cycle, _seq++, fn, arg});
+    ++_scheduled;
   }
 
   bool finished() const { return _heap.empty(); }
+  int64_t PendingEventCount() const {
+    return static_cast<int64_t>(_heap.size());
+  }
+  int64_t NextEventTime() const {
+    return _heap.empty() ? -1 : _heap.top().cycle;
+  }
+  int64_t ScheduledEventCount() const { return _scheduled; }
+  int64_t ExecutedEventCount() const { return _executed; }
+  int64_t PendingArrivalCount() const {
+    int64_t total = 0;
+    for (const auto & kv : _arrivals) total += static_cast<int64_t>(kv.second.size());
+    return total;
+  }
 
   int64_t get_current_time() const { return _now; }
 
@@ -69,8 +95,8 @@ class EventQueue {
   void proceed() {
     auto ev = _heap.top();
     _heap.pop();
+    ++_executed;
     if (ev.cycle > _now) {
-      int64_t delta = ev.cycle - _now;
       // If there are in-flight packets, drain the fabric fully before
       // jumping.  The previous 100K cap was too small for LLM AllReduce
       // bursts (many MBs → many flits) and caused the jump to skip
@@ -87,11 +113,26 @@ class EventQueue {
         }
         // If still in-flight but we hit ev.cycle, we must continue stepping
         // past ev.cycle until fabric drains — don't jump over in-flight data.
+        // Bounded: a genuine drain finishes in <<1M chunks for LLM bursts;
+        // exceeding the bound means stuck flits (bookkeeping or routing bug).
+        // Fail loud instead of spinning forever with no output.
+        int64_t drain_chunks = 0;
         while (_tm->HasInFlight()) {
           constexpr int64_t DRAIN_CHUNK = 1000;
+          constexpr int64_t MAX_DRAIN_CHUNKS = 100000;  // 1e8 cycles
           _tm->RunCycles(DRAIN_CHUNK);
           _now += DRAIN_CHUNK;
           _drain_retired();
+          if (++drain_chunks >= MAX_DRAIN_CHUNKS) {
+            std::cerr << "[LEDGER][DRAIN_STUCK] ev_cycle=" << ev.cycle
+                      << " now=" << _now
+                      << " inflight=" << _tm->InFlightFlitCount() << std::endl;
+            std::cerr << "Booksim2: fabric drain exceeded 1e8 cycles with "
+                      << _tm->InFlightFlitCount()
+                      << " flits still in flight; proceeding anyway."
+                      << std::endl;
+            break;
+          }
         }
         // Now _now >= ev.cycle and fabric is idle; ensure we are at least at ev.cycle
         if (_now < ev.cycle) _now = ev.cycle;
@@ -107,7 +148,15 @@ class EventQueue {
         _drain_retired();
       }
     }
+    if (VeritX::LedgerLevel() >= 2) {
+      std::cerr << "[LEDGER][EVENT] cycle=" << ev.cycle << " now=" << _now
+                << " fn=" << reinterpret_cast<const void*>(ev.fn) << std::endl;
+    }
     ev.fn(ev.arg);
+    if (VeritX::LedgerLevel() >= 2) {
+      std::cerr << "[LEDGER][EVENT_DONE] cycle=" << ev.cycle
+                << " now=" << _now << std::endl;
+    }
   }
 
   // Arrivals collected during the last run_cycles chunk, FIFO per (src, dst).
@@ -149,6 +198,8 @@ class EventQueue {
   VeritXEmbed::EmbedTM * _tm;
   int64_t _now;
   long _seq;
+  int64_t _scheduled;
+  int64_t _executed;
   std::priority_queue<Event, std::vector<Event>, std::greater<Event>> _heap;
   std::map<std::pair<int, int>, std::queue<Arrival>> _arrivals;
 };

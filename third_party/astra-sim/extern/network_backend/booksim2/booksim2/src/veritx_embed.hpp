@@ -35,6 +35,21 @@ public:
   EmbedTM(BookSimConfig const & config, std::vector<Network *> const & net);
 
   void RunCycles(int64_t cycles);
+  // Lifecycle ledger (observability only; does not affect simulation).
+  int64_t PacketsRequested() const { return _packets_requested; }
+  int64_t UnicastFlitsConstructed() const { return _unicast_flits_constructed; }
+  int64_t McastDeliveriesConstructed() const {
+    return _mcast_deliveries_constructed;
+  }
+  int64_t FlitsRetired() const { return _flits_retired; }
+  int64_t TailDeliveriesRecorded() const { return _tail_deliveries_recorded; }
+  int64_t PartialQueueFlitCount() const;
+  int64_t InFlightFlitCount() const;
+  // Copy one currently in-flight flit, preferring the smallest flit id.
+  // Returns false when the flight set is empty.
+  bool SampleOldestInFlight(int & id, int & src, int & dst, int64_t & ctime,
+                            int64_t & itime, bool & head, bool & tail,
+                            int & vc) const;
   // Advance the fabric clock by `cycles` WITHOUT stepping the network.
   // Only valid while the fabric is idle (no in-flight flits); used to keep
   // the fabric timebase synchronized with the host event queue across idle
@@ -73,6 +88,14 @@ private:
                          int64_t time);
 
   std::vector<std::vector<Retired> > _retired_q;
+
+  // Ledger counters: observe host requests, constructed objects, stage
+  // occupancy, and completions without changing simulation behavior.
+  int64_t _packets_requested = 0;
+  int64_t _unicast_flits_constructed = 0;
+  int64_t _mcast_deliveries_constructed = 0;
+  int64_t _flits_retired = 0;
+  int64_t _tail_deliveries_recorded = 0;
 };
 
 // Build the full fabric (networks + EmbedTM) from a booksim cfg file path.

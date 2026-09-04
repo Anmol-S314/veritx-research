@@ -321,6 +321,11 @@ input_speedup = 2;
 output_speedup = 1;
 internal_speedup = 1.0;
 traffic = uniform;
+// VeritX: embed mode must never synthesize demand traffic — every flit
+// comes from sim_send. Without this, booksim's default injection floods
+// the fabric (~2M background flits per 1M cycles) and the event loop
+// spins forever draining flits that never end.
+injection_rate = 0.0;
 """)
     return config_path, booksim_src
 
@@ -756,14 +761,21 @@ def main():
     p = subprocess.Popen(astra_args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
     # VeritX: drain the binary's stderr in a background thread so it can never
     # fill the pipe and deadlock the binary mid-processing (the main loop only
-    # reads stdout). Logs are discarded (the binary already writes log files).
+    # reads stdout). Forwards the collective-execution ledger ([LEDGER] lines,
+    # gated by VERITX_LEDGER in the binary) plus fail-loud error/panic lines;
+    # routine binary chatter is discarded (it already writes log files).
     import threading as _threading
+    import re as _re
+    _stderr_forward_re = _re.compile(r"panic|assert|error|DRAIN_STUCK", _re.IGNORECASE)
     def _drain_stderr():
         try:
             while True:
                 line = p.stderr.readline()
                 if not line:
                     break
+                if line.startswith("[LEDGER]") or _stderr_forward_re.search(line):
+                    import sys as _s
+                    _s.stderr.write(line)
         except Exception:
             pass
     threading = _threading.Thread(target=_drain_stderr, daemon=True)

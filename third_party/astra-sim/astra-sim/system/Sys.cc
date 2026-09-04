@@ -41,6 +41,18 @@ namespace AstraSim {
 uint8_t* Sys::dummy_data = new uint8_t[2];
 vector<Sys*> Sys::all_sys;
 
+namespace {
+// VERITX_LEDGER=1: contract ledger (COLL/STREAM/STATE); >=2: verbose
+// per-stream scheduler tracing (SCHED/SCHEDULE/INIT).
+int veritx_ledger_level() {
+    static const int level = [] {
+        const char* v = std::getenv("VERITX_LEDGER");
+        return v ? std::atoi(v) : 0;
+    }();
+    return level;
+}
+}  // namespace
+
 // SchedulerUnit --------------------------------------------------------------
 Sys::SchedulerUnit::SchedulerUnit(Sys* sys,
                                   vector<int> queues,
@@ -87,6 +99,13 @@ void Sys::SchedulerUnit::notify_stream_added(int vnet) {
 }
 
 void Sys::SchedulerUnit::notify_stream_added_into_ready_list() {
+    if (veritx_ledger_level() >= 2) {
+        std::cerr << "[LEDGER][SCHED] rank=" << this->sys->id
+                  << " ready_thresh=" << this->sys->first_phase_streams << "/"
+                  << ready_list_threshold
+                  << " running=" << this->sys->total_running_streams << "/"
+                  << max_running_streams << std::endl;
+    }
     if (this->sys->first_phase_streams < ready_list_threshold &&
         this->sys->total_running_streams < max_running_streams) {
         int max = ready_list_threshold - sys->first_phase_streams;
@@ -459,20 +478,28 @@ void Sys::exit_sim_loop(string msg) {
 void Sys::call(EventType type, CallData* data) {}
 
 void Sys::call_events() {
-    for (auto& callable : event_queue[Sys::boostedTick()]) {
-        try {
-            pending_events--;
-            (get<0>(callable))->call(get<1>(callable), get<2>(callable));
-        } catch (const std::exception& e) {
-            auto logger = LoggerFactory::get_logger("system");
-            logger->critical("warning! a callable is removed before call {}",
-                             e.what());
+    // VeritX: drain ALL due ticks (<= now), not just == now. The event-queue
+    // clock can jump past a registered tick (proceed()'s in-flight drain
+    // overshoots ev.cycle; run_cycles burns idle gaps), so a trigger that
+    // fires late would otherwise miss its entry: pending_events would leak
+    // and the frontend would spin run_cycles(1) forever with an empty queue
+    // and an idle fabric. Running a stale entry late only delays its effect.
+    const Tick now = Sys::boostedTick();
+    auto it = event_queue.begin();
+    while (it != event_queue.end() && it->first <= now) {
+        for (auto& callable : it->second) {
+            try {
+                pending_events--;
+                (get<0>(callable))->call(get<1>(callable), get<2>(callable));
+            } catch (const std::exception& e) {
+                auto logger = LoggerFactory::get_logger("system");
+                logger->critical(
+                    "warning! a callable is removed before call {}",
+                    e.what());
+            }
         }
+        it = event_queue.erase(it);
     }
-    if (event_queue[Sys::boostedTick()].size() > 0) {
-        event_queue[Sys::boostedTick()].clear();
-    }
-    event_queue.erase(Sys::boostedTick());
 }
 
 void Sys::register_event(Callable* callable,
@@ -719,6 +746,14 @@ DataSet* Sys::generate_collective(
         if (communicator_group != nullptr) {
             stream_id = communicator_group->num_streams++;
         }
+        if (veritx_ledger_level() >= 1) {
+            std::cerr << "[LEDGER][STREAM] rank=" << id
+                      << " stream_id=" << stream_id
+                      << " comm_type=" << static_cast<int>(collective_type)
+                      << " size=" << size
+                      << " has_group=" << (communicator_group != nullptr)
+                      << std::endl;
+        }
         StreamBaseline* newStream =
             new StreamBaseline(this, dataset, stream_id, vect, pri);
         newStream->current_queue_id = -1;
@@ -948,6 +983,14 @@ DataSet* Sys::generate_collective(
             if (communicator_group != nullptr) {
                 stream_id = communicator_group->num_streams++;
             }
+            if (veritx_ledger_level() >= 1) {
+                std::cerr << "[LEDGER][STREAM] rank=" << id
+                          << " stream_id=" << stream_id
+                          << " comm_type=" << static_cast<int>(collective_type)
+                          << " size=" << size
+                          << " has_group=" << (communicator_group != nullptr)
+                          << std::endl;
+            }
             StreamBaseline* newStream =
                 new StreamBaseline(this, dataset, stream_id, vect, pri);
             newStream->current_queue_id = -1;
@@ -1153,6 +1196,13 @@ void Sys::ask_for_schedule(int max) {
 void Sys::schedule(int num) {
     int ready_list_size = ready_list.size();
     int counter = min(num, ready_list_size);
+    if (veritx_ledger_level() >= 2) {
+        std::cerr << "[LEDGER][SCHEDULE] rank=" << id << " num=" << num
+                  << " ready_sz=" << ready_list_size
+                  << " front_stream="
+                  << (ready_list_size > 0 ? ready_list.front()->stream_id : -1)
+                  << std::endl;
+    }
     while (counter > 0) {
         int top_vn = ready_list.front()->phases_to_go.front().queue_id;
         int total_waiting_streams = ready_list.size();

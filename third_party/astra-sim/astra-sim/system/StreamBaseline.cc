@@ -7,7 +7,21 @@ LICENSE file in the root directory of this source tree.
 
 #include "astra-sim/system/astraccl/Algorithm.hh"
 
+#include <cstdlib>
+#include <iostream>
+
 using namespace AstraSim;
+
+namespace {
+// VERITX_LEDGER>=2: verbose per-stream init tracing.
+int veritx_ledger_level() {
+    static const int level = [] {
+        const char* v = std::getenv("VERITX_LEDGER");
+        return v ? std::atoi(v) : 0;
+    }();
+    return level;
+}
+}  // namespace
 
 StreamBaseline::StreamBaseline(Sys* owner,
                                DataSet* dataset,
@@ -27,6 +41,12 @@ StreamBaseline::StreamBaseline(Sys* owner,
 void StreamBaseline::init() {
     initialized = true;
     last_init = Sys::boostedTick();
+    if (veritx_ledger_level() >= 2) {
+        std::cerr << "[LEDGER][INIT] rank=" << owner->id
+                  << " stream_id=" << stream_id
+                  << " enabled=" << my_current_phase.enabled
+                  << " steps=" << steps_finished << std::endl;
+    }
     if (!my_current_phase.enabled) {
         return;
     }

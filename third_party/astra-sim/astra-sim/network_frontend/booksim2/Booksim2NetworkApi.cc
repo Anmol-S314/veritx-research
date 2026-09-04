@@ -44,6 +44,12 @@ void Booksim2NetworkApi::process_chunk_arrival(void * args) {
     return;
   }
 
+  if (VeritX::LedgerLevel() >= 2)
+    std::cerr << "[LEDGER][ARRIVE] tag=" << tag << " src=" << src << " dst=" << dst
+              << " count=" << count << " chunk=" << chunk_id
+              << " both=" << entry->both_callbacks_registered()
+              << " finished=" << entry->is_transmission_finished() << std::endl;
+
   if (getenv("VERITX_DEBUG"))
     std::cerr << "[dbg] chunk_arrival tag=" << tag << " src=" << src << " dst=" << dst
               << " count=" << count << " both=" << entry->both_callbacks_registered()
@@ -125,6 +131,20 @@ bool Booksim2NetworkApi::has_pending_groups() {
   return false;
 }
 
+int64_t Booksim2NetworkApi::PendingSendCount() {
+  int64_t total = 0;
+  for (auto const & kv : _pending)
+    total += static_cast<int64_t>(kv.second.size());
+  return total;
+}
+
+int64_t Booksim2NetworkApi::PendingFoldGroupCount() {
+  int64_t total = 0;
+  for (auto const & kv : _fold_groups)
+    if (!kv.second.dsts.empty()) ++total;
+  return total;
+}
+
 void Booksim2NetworkApi::pump_arrivals() {
   assert(_fabric != NULL && _eq != NULL);
   if (getenv("VERITX_DEBUG"))
@@ -163,6 +183,10 @@ int Booksim2NetworkApi::sim_send(void * buffer, uint64_t count, int type,
               << " count=" << count << " tag=" << tag << " t=" << _eq->get_current_time() << std::endl;
   const int chunk_id =
       _chunk_id_generator.create_send_chunk_id(tag, src, dst, count);
+  if (VeritX::LedgerLevel() >= 2)
+    std::cerr << "[LEDGER][SEND] src=" << src << " dst=" << dst
+              << " count=" << count << " tag=" << tag << " chunk=" << chunk_id
+              << " t=" << _eq->get_current_time() << std::endl;
 
   TrackerEntry * entry = _tracker.search_entry(tag, src, dst, count, chunk_id);
   if (entry != NULL) {
@@ -179,7 +203,7 @@ int Booksim2NetworkApi::sim_send(void * buffer, uint64_t count, int type,
   if (flits < 1) flits = 1;
 
   if (_mcast_fold) {
-    int const now = _eq->get_current_time();
+    int64_t const now = _eq->get_current_time();
     auto & g = _fold_groups[src];
     bool joinable = !g.dsts.empty() && g.count == count &&
                     (now - g.last_cycle) <= _fold_window &&
@@ -217,6 +241,10 @@ int Booksim2NetworkApi::sim_recv(void * buffer, uint64_t count, int type,
   const int dst = sim_comm_get_rank();
   const int chunk_id =
       _chunk_id_generator.create_recv_chunk_id(tag, src, dst, count);
+  if (VeritX::LedgerLevel() >= 2)
+    std::cerr << "[LEDGER][RECV] src=" << src << " dst=" << dst
+              << " count=" << count << " tag=" << tag << " chunk=" << chunk_id
+              << " t=" << _eq->get_current_time() << std::endl;
 
   TrackerEntry * entry = _tracker.search_entry(tag, src, dst, count, chunk_id);
   if (getenv("VERITX_DEBUG"))
@@ -247,6 +275,10 @@ void Booksim2NetworkApi::sim_schedule(const timespec_t delta,
   const double ns_per_cycle = _fabric->ns_per_cycle();
   int64_t cycles = std::llround(delta.time_val / ns_per_cycle);
   int64_t const now = _eq->get_current_time();
+  if (VeritX::LedgerLevel() >= 2)
+    std::cerr << "[LEDGER][SKED] now=" << now << " delta_ns=" << delta.time_val
+              << " cycles=" << cycles << " target=" << (now + cycles)
+              << std::endl;
   _eq->schedule_event(now + cycles, fun_ptr, fun_arg);
 }
 

@@ -14,6 +14,7 @@ LICENSE file in the root directory of this source tree.
 #include <json/json.hpp>
 
 #include <iostream>
+#include <cstdlib>
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -24,6 +25,68 @@ using json = nlohmann::json;
 
 typedef ChakraProtoMsg::NodeType ChakraNodeType;
 typedef ChakraProtoMsg::CollectiveCommType ChakraCollectiveCommType;
+
+namespace {
+// Nonbehavioral execution ledger. VERITX_LEDGER=1: contract ledger;
+// >=2: verbose tracing. Disabled by default. Uses stderr so it never
+// touches the stdout "Waiting" protocol.
+bool veritx_ledger_enabled() {
+    static const int level = [] {
+        const char* v = std::getenv("VERITX_LEDGER");
+        return v ? std::atoi(v) : 0;
+    }();
+    return level >= 1;
+}
+
+std::string veritx_format_bools(const std::vector<bool>& values) {
+    std::string out = "[";
+    for (size_t i = 0; i < values.size(); ++i) {
+        if (i > 0) out += ",";
+        out += values[i] ? "true" : "false";
+    }
+    out += "]";
+    return out;
+}
+
+std::string veritx_format_members(const std::vector<int>& values) {
+    std::string out = "[";
+    for (size_t i = 0; i < values.size(); ++i) {
+        if (i > 0) out += ",";
+        out += std::to_string(values[i]);
+    }
+    out += "]";
+    return out;
+}
+
+void veritx_ledger_coll_submit(int rank, uint64_t astra_node,
+                               uint64_t comm_type, uint64_t comm_size,
+                               uint32_t priority,
+                               const std::vector<bool>& involved_dims,
+                               const std::vector<int>& members,
+                               bool has_group, uint64_t tick) {
+    std::cerr << "[LEDGER][COLL_SUBMIT] rank=" << rank
+              << " astra_node=" << astra_node << " comm_type=" << comm_type
+              << " comm_size=" << comm_size << " priority=" << priority
+              << " involved_dims=" << veritx_format_bools(involved_dims)
+              << " group_members=" << (has_group ? veritx_format_members(members) : std::string("none"))
+              << " tick=" << tick << std::endl;
+}
+
+void veritx_ledger_coll_constructed(int rank, int generated_id) {
+    std::cerr << "[LEDGER][COLL_CONSTRUCTED] rank=" << rank
+              << " dataset_id=" << generated_id << std::endl;
+}
+
+void veritx_ledger_coll_complete(int rank, uint64_t coll_comm_id,
+                                 uint64_t astra_node, uint64_t node_type,
+                                 uint64_t tick) {
+    std::cerr << "[LEDGER][COLL_COMPLETE] rank=" << rank
+              << " dataset_id=" << coll_comm_id
+              << " astra_node=" << astra_node
+              << " node_type=" << node_type
+              << " tick=" << tick << std::endl;
+}
+}  // namespace
 
 Workload::Workload(Sys* sys, string et_filename, string comm_group_filename) {
     string workload_filename = et_filename + "." + to_string(sys->id) + ".et";
@@ -366,30 +429,47 @@ void Workload::issue_coll_comm(
     // TODO: comm_tag? which is used to distinguish two different collective in
     // same pg
     const auto comm_priority = node->comm_priority<uint32_t>();  // default 0u
+    if (veritx_ledger_enabled()) {
+        const std::vector<int> members =
+            (comm_group != nullptr) ? comm_group->involved_NPUs
+                                    : std::vector<int>{sys->id};
+        veritx_ledger_coll_submit(
+            sys->id, node->id(), static_cast<uint64_t>(comm_type), comm_size,
+            comm_priority, involved_dims, members, comm_group != nullptr,
+            static_cast<uint64_t>(Sys::boostedTick()));
+    }
 
     if (comm_type == ChakraCollectiveCommType::ALL_REDUCE) {
         DataSet* fp = sys->generate_all_reduce(comm_size, involved_dims,
                                                comm_group, comm_priority, node->id());
         collective_comm_node_id_map[fp->my_id] = node->id();
         collective_comm_wrapper_map[fp->my_id] = fp;
+        if (veritx_ledger_enabled())
+            veritx_ledger_coll_constructed(sys->id, fp->my_id);
         fp->set_notifier(this, EventType::CollectiveCommunicationFinished);
     } else if (comm_type == ChakraCollectiveCommType::ALL_TO_ALL) {
         DataSet* fp = sys->generate_all_to_all(comm_size, involved_dims,
                                                comm_group, comm_priority, node->id());
         collective_comm_node_id_map[fp->my_id] = node->id();
         collective_comm_wrapper_map[fp->my_id] = fp;
+        if (veritx_ledger_enabled())
+            veritx_ledger_coll_constructed(sys->id, fp->my_id);
         fp->set_notifier(this, EventType::CollectiveCommunicationFinished);
     } else if (comm_type == ChakraCollectiveCommType::ALL_GATHER) {
         DataSet* fp = sys->generate_all_gather(comm_size, involved_dims,
                                                comm_group, comm_priority, node->id());
         collective_comm_node_id_map[fp->my_id] = node->id();
         collective_comm_wrapper_map[fp->my_id] = fp;
+        if (veritx_ledger_enabled())
+            veritx_ledger_coll_constructed(sys->id, fp->my_id);
         fp->set_notifier(this, EventType::CollectiveCommunicationFinished);
     } else if (comm_type == ChakraCollectiveCommType::REDUCE_SCATTER) {
         DataSet* fp = sys->generate_reduce_scatter(comm_size, involved_dims,
                                                    comm_group, comm_priority, node->id());
         collective_comm_node_id_map[fp->my_id] = node->id();
         collective_comm_wrapper_map[fp->my_id] = fp;
+        if (veritx_ledger_enabled())
+            veritx_ledger_coll_constructed(sys->id, fp->my_id);
         fp->set_notifier(this, EventType::CollectiveCommunicationFinished);
     } else if (comm_type == ChakraCollectiveCommType::BROADCAST) {
         // VeritX native broadcast: root (rank 0 of the default group) issues
@@ -548,6 +628,12 @@ void Workload::call(EventType event, CallData* data) {
         uint64_t node_id = collective_comm_node_id_map[coll_comm_id];
         shared_ptr<Chakra::FeederV3::ETFeederNode> node =
             et_feeder->lookupNode(node_id);
+        if (veritx_ledger_enabled()) {
+            veritx_ledger_coll_complete(
+                sys->id, coll_comm_id, node_id,
+                static_cast<uint64_t>(node->type()),
+                static_cast<uint64_t>(Sys::boostedTick()));
+        }
 
         if (sys->trace_enabled) {
             LoggerFactory::get_logger("workload")

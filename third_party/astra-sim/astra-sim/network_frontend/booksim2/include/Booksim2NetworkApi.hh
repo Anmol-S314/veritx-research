@@ -39,6 +39,10 @@ class Booksim2NetworkApi : public AstraSim::AstraNetworkAPI {
   }
   static void flush_all();
   static bool has_pending_groups();
+  // Ledger accessors (observability only): host-side send contexts still
+  // waiting for matching arrivals, and deferred multicast fold groups.
+  static int64_t PendingSendCount();
+  static int64_t PendingFoldGroupCount();
   static void flush_check(void * arg);
 
   // Drain arrivals produced by the last fabric advance and fire chunk
@@ -78,7 +82,7 @@ class Booksim2NetworkApi : public AstraSim::AstraNetworkAPI {
   // Multicast fold group: sends deferred from one src awaiting fanout.
   struct FoldGroup {
     uint64_t count = 0;
-    int last_cycle = 0;
+    int64_t last_cycle = 0;
     std::vector<int> dsts;
     std::vector<PendingSend> pendings;
   };
