@@ -1,7 +1,6 @@
 #include "veritx_embed.hpp"
 
 #include <cassert>
-#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -18,7 +17,7 @@
 // library excludes); the routers / route funcs reference them. MUST be at
 // global scope (unqualified ::gK etc.).
 TrafficManager * trafficManager = NULL;
-int64_t GetSimTime() { return trafficManager->getTime(); }
+int GetSimTime() { return trafficManager->getTime(); }
 bool gPrintActivity = false;
 bool gTrace = false;
 std::ostream * gWatchOut = NULL;
@@ -36,8 +35,6 @@ void EmbedTM::RunCycles(int64_t cycles) {
 void EmbedTM::_BuildUnicast(int src, int dst, int size, int cl, int64_t time) {
   assert(size > 0);
   assert(dst >= 0 && dst < _nodes);
-  _packets_requested++;
-  _unicast_flits_constructed += size;
   int const pid = _cur_pid++;
   int const subnetwork = RandomInt(_subnets - 1);
   for (int i = 0; i < size; ++i) {
@@ -69,8 +66,6 @@ void EmbedTM::_BuildMcastStream(int src, std::vector<int> const & dsts,
   assert(!dsts.empty());
   int const far_end = dsts.back();
   assert(far_end >= 0 && far_end < _nodes);
-  _packets_requested++;
-  _mcast_deliveries_constructed += static_cast<int64_t>(dsts.size());
   int const pid = _cur_pid++;
   int const subnetwork = RandomInt(_subnets - 1);
 
@@ -113,22 +108,6 @@ void EmbedTM::InjectMcast(int src, std::vector<int> const & dsts, int cl) {
 }
 
 void EmbedTM::_RetireFlit(Flit * f, int dest) {
-  _flits_retired++;
-  if (f->tail) _tail_deliveries_recorded++;
-  // NOTE: do NOT erase _total_in_flight_flits here. The base
-  // TrafficManager::_RetireFlit (called below) owns that bookkeeping:
-  // it asserts presence and erases. Erasing here first trips the live
-  // base assert (trafficmanager.cpp) and aborts on the first retire.
-  // (An earlier revision did erase here; it crashed every run that
-  // actually retired flits. The base erase is the single owner.)
-  {
-    const char* lv = std::getenv("VERITX_LEDGER");
-    if (lv && std::atoi(lv) >= 2) {
-      std::cerr << "[LEDGER][RETIRE] id=" << f->id << " cl=" << f->cl
-                << " src=" << f->src << " dst=" << dest
-                << " tail=" << f->tail << std::endl;
-    }
-  }
   TrafficManager::_RetireFlit(f, dest);
   // Packet-complete signal: the tail flit (single-flit packets are
   // head&&tail, so every mcast copy fires here as well).
@@ -142,48 +121,6 @@ void EmbedTM::_RetireFlit(Flit * f, int dest) {
     r.itime = f->ctime;
     _retired_q[dest].push_back(r);
   }
-}
-
-int64_t EmbedTM::InFlightFlitCount() const {
-  int64_t total = 0;
-  for (int c = 0; c < _classes; ++c)
-    total += static_cast<int64_t>(_total_in_flight_flits[c].size());
-  return total;
-}
-
-int64_t EmbedTM::PartialQueueFlitCount() const {
-  int64_t total = 0;
-  for (int src = 0; src < _nodes; ++src)
-    for (int c = 0; c < _classes; ++c)
-      total += static_cast<int64_t>(_partial_packets[src][c].size());
-  return total;
-}
-
-bool EmbedTM::SampleOldestInFlight(int & id, int & src, int & dst,
-                                   int64_t & ctime, int64_t & itime, bool & head,
-                                   bool & tail, int & vc) const {
-  bool found = false;
-  int best_id = 0;
-  const Flit * best = nullptr;
-  for (int c = 0; c < _classes; ++c) {
-    for (const auto & entry : _total_in_flight_flits[c]) {
-      if (!found || entry.first < best_id) {
-        found = true;
-        best_id = entry.first;
-        best = entry.second;
-      }
-    }
-  }
-  if (!found || best == nullptr) return false;
-  id = best->id;
-  src = best->src;
-  dst = best->dest;
-  ctime = best->ctime;
-  itime = best->itime;
-  head = best->head;
-  tail = best->tail;
-  vc = best->vc;
-  return true;
 }
 
 std::vector<Retired> EmbedTM::DrainRetired(int node) {

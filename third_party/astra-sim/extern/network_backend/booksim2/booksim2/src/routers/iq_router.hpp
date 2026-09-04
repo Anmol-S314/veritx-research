@@ -33,7 +33,6 @@
 #include <queue>
 #include <set>
 #include <map>
-#include <cstdint>
 
 #include "router.hpp"
 #include "routefunc.hpp"
@@ -78,15 +77,14 @@ class IQRouter : public Router {
   // output port; carrying it explicitly (rather than reading it back off
   // a flit, which isn't available here) is what lets a multidrop output
   // port's credits land in the right tap's BufferState.
-  // VeritX: 64-bit event times — int keys broke delay pipelines past INT_MAX.
-  deque<pair<int64_t, pair<Credit *, pair<int, int> > > > _proc_credits;
+  deque<pair<int, pair<Credit *, pair<int, int> > > > _proc_credits;
 
-  deque<pair<int64_t, pair<int, int> > > _route_vcs;
-  deque<pair<int64_t, pair<pair<int, int>, int> > > _vc_alloc_vcs;
-  deque<pair<int64_t, pair<pair<int, int>, int> > > _sw_hold_vcs;
-  deque<pair<int64_t, pair<pair<int, int>, int> > > _sw_alloc_vcs;
+  deque<pair<int, pair<int, int> > > _route_vcs;
+  deque<pair<int, pair<pair<int, int>, int> > > _vc_alloc_vcs;  
+  deque<pair<int, pair<pair<int, int>, int> > > _sw_hold_vcs;
+  deque<pair<int, pair<pair<int, int>, int> > > _sw_alloc_vcs;
 
-  deque<pair<int64_t, pair<Flit *, pair<int, int> > > > _crossbar_flits;
+  deque<pair<int, pair<Flit *, pair<int, int> > > > _crossbar_flits;
 
   map<int, Credit *> _out_queue_credits;
 

@@ -109,7 +109,7 @@ protected:
 
   // ============ Injection queues ============ 
 
-  vector<vector<int64_t> > _qtime;
+  vector<vector<int> > _qtime;
   vector<vector<bool> > _qdrained;
   vector<vector<list<Flit *> > > _partial_packets;
 
@@ -215,8 +215,8 @@ protected:
 
   bool _measure_latency;
 
-  int64_t _reset_time;
-  int64_t _drain_time;
+  int   _reset_time;
+  int   _drain_time;
 
   int   _total_sims;
   int   _sample_period;
@@ -277,7 +277,7 @@ protected:
   bool _PacketsOutstanding( ) const;
   
   virtual int  _IssuePacket( int source, int cl );
-  void _GeneratePacket( int source, int size, int cl, int64_t time );
+  void _GeneratePacket( int source, int size, int cl, int time );
 
   virtual void _ClearStats( );
 
