@@ -1306,8 +1306,8 @@ python sharegpt.py --output my_dataset.jsonl --num-reqs 100
 | `ns3` | ns-3 discrete event | Very slow | Highest (full network stack) | Research validation only |
 
 **Replay-only vs. cycle-accurate:**
-- **Replay-only** (default): ASTRA-sim replays trace durations directly without sending packets through BookSim. This avoids topology-mismatch deadlocks (ASTRA ring ≠ BookSim mesh). ✅ All validated configs use this mode.
-- **Cycle-accurate** (`--no-booksim-replay-only`): Every packet is simulated through BookSim's router pipeline. Only works when the ASTRA-sim ring topology matches BookSim's mesh topology. ~10× slower. ⚠️ Can deadlock on mismatched topologies.
+- **Replay-only** (default): ASTRA-sim replays trace durations directly without sending packets through BookSim. Fast (~2-3s/req) and validated on all configs. ✅ All validated configs use this mode.
+- **Cycle-accurate** (`--no-booksim-replay-only`): Every packet is simulated through BookSim's router pipeline (~10× slower or more on large models). Validated end-to-end on single-node (dense/MoE/PD/DP+EP), dual-node MoE, and agentic DP+EP — see §12.16. EP/DP collectives run on a multi-dim fabric via `--physical-dims` (single-dim traces are unaffected).
 
 ### 12.7 Output Format
 
@@ -1426,7 +1426,7 @@ Per decode step:
 
 #### Accuracy Caveats
 
-1. **Replay-only mode is the default.** The booksim backend replays trace durations rather than cycle-accurately simulating every packet. This is ~95% accurate for latency estimation but misses microarchitectural effects (queuing, contention). True cycle-accurate mode (`--no-booksim-replay-only`) is only valid when ASTRA ring = BookSim mesh topology.
+1. **Replay-only mode is the default.** The booksim backend replays trace durations rather than cycle-accurately simulating every packet. This is ~95% accurate for latency estimation but misses microarchitectural effects (queuing, contention). True cycle-accurate mode (`--no-booksim-replay-only`) is validated on the configs in §12.16; EP/DP collectives need `--physical-dims` (passed automatically from `logical_dims.json`).
 
 2. **Synthetic H100 profiles.** The `single_node_single_instance_H100` config uses performance data scaled from RTX Pro 6000 Llama-8B measurements × hardware ratio. Real H100 profiling is needed for production-grade numbers.
 
@@ -1524,10 +1524,10 @@ podman run --rm -v $(pwd):/workspace veritx-tools \
 |----------|----------|
 | Interactive protocol (stdin/stdout) | Simplicity; no shared-memory or socket setup |
 | Chakra trace format | ASTRA-sim native; enables replay and trace-driven modes |
-| Replay-only default | Avoids topology-mismatch deadlocks (ring ≠ mesh) |
+| Replay-only default | Speed + validated latency estimation (cycle-accurate hangs fixed, §12.16) |
 | Round-robin instance serving | Simple, fair; no complex load balancing needed |
 | In-process Chakra conversion | 28× faster than subprocess call (commit 96777226) |
-| Decode trace cache | Avoids re-generating identical decode traces (commit 0793eb13) |
+| Decode trace cache | Avoids re-generating identical decode traces (commit 0793eb13; opt-in via `--decode-batch-size`, default off) |
 | SPD log → stderr | Prevents protocol stream corruption (commit c3d73a18) |
 | Exact "Waiting" match | Prevents spdlog interleaving from breaking read loop (commit c3d73a18) |
 | Stderr capture on EOF | Diagnoses binary crashes that were previously silent |
@@ -1548,6 +1548,10 @@ podman run --rm -v $(pwd):/workspace veritx-tools \
 | `c3d73a18` | Serving deadlocks (PD done-check, sparse-gap pass, stderr pipe) |
 | `ee9c1a2e` | Booksim cycle-accurate clock (int64 + fabric lock-step) |
 | `154f4bc3` | DSE CLI + trace path resolution (repo-root relative) |
+| `c8e8cc70` | Cycle-accurate liveness: background-flood off, drain-due sys events, collective ledger |
+| `37ff6d11` | 64-bit booksim timebase past INT_MAX (vendor/booksim2/0.5) + boundary test |
+| `2fec7aa7` | EP/DP-dim collectives on multi-dim fabric (vendor/booksim2/0.6) |
+| `77af2900` | Model-config load cache (perf) |
 
 ### 12.15 Future Improvements
 
@@ -1556,6 +1560,43 @@ podman run --rm -v $(pwd):/workspace veritx-tools \
 3. **tp4/tp8 profile synthesis** — Generate from tp1/tp2 data using scaling model (T(tp) = T(1)/tp × α + β × log₂(tp)).
 4. **Decode batcher + async trace generator** — Already defined but never wired in. Would overlap Python scheduling with C++ simulation.
 5. **Container image slimming** — Remove stale psc-ns3 copy, verify all backends build inside container.
+6. **Dual-node full completion** — Dual 2-req trajectory is clean to 4.4B fabric cycles (INT_MAX crossed, zero anomalies) but needs ~60+ min wall; run overnight.
+7. **PD TTFT** — Per-request TTFT is empty in *all* modes for PD configs (prefill→decode transfer never sets it), not cycle-accurate-specific.
+8. **Decode-cache decision** — `--decode-batch-size` path reuses frozen attention latencies/sizes across decode steps (wrong when enabled; default off so nothing validated is affected). Fix-forward or remove.
+9. **Bench-vs-vLLM validation** — Cycle-accurate MoE-3 TTFT (41ms) matches analytical (~40ms); needs systematic `bench validate` across configs.
+
+### 12.16 Cycle-Accurate Validation Status
+
+All rows below are `--network-backend booksim --no-booksim-replay-only`, verified
+by `Total requests` (not exit code — the binary-EOF path exits 0 with zero completions).
+
+**What was fixed (all in `third_party/` vendored booksim + serving frontend):**
+
+| Fix | Symptom | Commit |
+|-----|---------|--------|
+| Synthetic demand off (`injection_rate = 0.0` in square-mesh template) | ~2M background flits/1M idle cycles; event loop spun forever | `c8e8cc70` |
+| `Sys::call_events` drains all due ticks (`<= now`) | `pending_events` leak → `run_cycles(1)` spin, empty queue, idle fabric | `c8e8cc70` |
+| 64-bit timebase (`GetSimTime`, channel/router delay queues, `_qtime`) | Freeze crossing INT_MAX (2.1B cycles) | `37ff6d11` (vendor/booksim2/0.5) |
+| Multi-dim fabric (`--physical-dims`, logical dims) | EP/DP collectives built zero streams (silently dropped) | `2fec7aa7` (vendor/booksim2/0.6) |
+
+**Validation matrix (cycle-accurate unless noted):**
+
+| Config | Workload | Result |
+|--------|----------|--------|
+| single MoE TP2 | tiny (2in/1out) | Total=1 ✅ |
+| single MoE TP2 | example 3-req | Total=3, TTFT 41ms (≈ analytical 40ms) ✅ |
+| single dense TP2 | tiny | Total=1 ✅ |
+| single PD | example 3-req | Total=3 ✅ + soak 12/12 ✅ (TTFT empty in all modes — pre-existing) |
+| single MoE DP+EP | tiny: 192 colls → 768 streams → 192 complete | Total=1 ✅ |
+| single MoE DP+EP | example 3-req | Total=3, TTFT 590ms (0.05ms with EP dropped) ✅ |
+| dual MoE DP+EP | tiny | Total=1, 576 completions, both dims ✅ |
+| dual MoE DP+EP | example 2-req | Clean trajectory to 4.4B cycles, INT_MAX crossed, needs ~60+ min wall (overnight) |
+| agentic MoE DP+EP | swe-bench 2 sessions | ~18K collectives, real TTFT/throughput ✅ |
+
+**Observability** (`VERITX_LEDGER`, binary stderr, default off):
+- `=1`: contract ledger — `COLL_SUBMIT/CONSTRUCTED/COMPLETE`, `STREAM`, `DATASET`, `STATE`, `STEP`, `TOPO`, `DRAIN_STUCK` (fail-loud bound, never tripped in passing runs).
+- `=2`: adds per-packet/per-event tracing (`SEND/RECV/ARRIVE/SKED/EVENT/RING/INIT/SCHED`, `NOVC` VC bitmaps).
+- Unset/`=0`: silent. Unset it for timing runs (ledger I/O is measurable at dual-node scale).
 
 ---
 
