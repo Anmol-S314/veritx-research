@@ -62,6 +62,9 @@ public:
   inline void AddSample( int val ) {
     AddSample( (double)val );
   }
+  inline void AddSample( int64_t val ) {
+    AddSample( (double)val );
+  }
 
   int GetBin(int b){ return _hist[b];}
 

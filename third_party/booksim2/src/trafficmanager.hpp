@@ -238,7 +238,7 @@ protected:
 
   int _cur_id;
   int _cur_pid;
-  int _time;
+  int64_t _time;
 
   set<int> _flits_to_watch;
   set<int> _packets_to_watch;
@@ -312,7 +312,7 @@ public:
   virtual void DisplayOverallStats( ostream & os = cout ) const ;
   virtual void DisplayOverallStatsCSV( ostream & os = cout ) const ;
 
-  inline int getTime() { return _time;}
+  inline int64_t getTime() { return _time;}
   Stats * getStats(const string & name) { return _stats[name]; }
 
 };

@@ -54,9 +54,9 @@ public:
   bool head;
   bool tail;
   
-  int  ctime;
-  int  itime;
-  int  atime;
+  int64_t  ctime;
+  int64_t  itime;
+  int64_t  atime;
 
   int  id;
   int  pid;

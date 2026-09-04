@@ -22,20 +22,26 @@
 namespace VeritXEmbed {
 
 struct Retired {
-  int atime;  // retirement cycle (== fabric cycle at the end of the step)
+  int64_t atime;  // retirement cycle (== fabric cycle at the end of the step)
   int cl;     // traffic class
   int src;    // source node
   int dst;    // node at which the packet retired
   int pid;    // packet id (fabric-wide)
-  int itime;  // injection cycle (head flit ctime)
+  int64_t itime;  // injection cycle (head flit ctime)
 };
 
 class EmbedTM : public TrafficManager {
 public:
   EmbedTM(BookSimConfig const & config, std::vector<Network *> const & net);
 
-  void RunCycles(int cycles);
-  int Cycle() const { return _time; }
+  void RunCycles(int64_t cycles);
+  // Advance the fabric clock by `cycles` WITHOUT stepping the network.
+  // Only valid while the fabric is idle (no in-flight flits); used to keep
+  // the fabric timebase synchronized with the host event queue across idle
+  // (agentic tool-gap) clock jumps, which otherwise desync the DP ALLTOALL
+  // wave barrier and deadlock the binary.
+  void JumpCycles(int64_t cycles) { assert(!HasInFlight()); _time += cycles; }
+  int64_t Cycle() const { return _time; }
   int NumNodes() const { return _nodes; }
 
   // Inject a unicast packet of `size` flits at the CURRENT cycle.
@@ -62,9 +68,9 @@ protected:
   void _RetireFlit(Flit * f, int dest) override;
 
 private:
-  void _BuildUnicast(int src, int dst, int size, int cl, int time);
+  void _BuildUnicast(int src, int dst, int size, int cl, int64_t time);
   void _BuildMcastStream(int src, std::vector<int> const & dsts, int cl,
-                         int time);
+                         int64_t time);
 
   std::vector<std::vector<Retired> > _retired_q;
 };
