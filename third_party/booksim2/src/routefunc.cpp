@@ -1992,7 +1992,7 @@ void InitializeRoutingMap( const Configuration & config )
   gRoutingFunctionMap["valiant_torus"] = &valiant_torus;
   gRoutingFunctionMap["valiant_ni_torus"] = &valiant_ni_torus;
 
-  gRoutingFunctionMap["dest_tag_flatfly"] = &dest_tag_fly;
+  gRoutingFunctionMap["dest_tag_fly"] = &dest_tag_fly;
 
   gRoutingFunctionMap["chaos_mesh"]  = &chaos_mesh;
   gRoutingFunctionMap["chaos_torus"] = &chaos_torus;

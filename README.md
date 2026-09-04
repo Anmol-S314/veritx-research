@@ -37,6 +37,24 @@ it works even with nothing installed locally.
 
 Set `IMAGE=…` to point at a different image. Runtime is auto-detected as podman or docker.
 
+### Vendored tool management
+
+Tools vendored under `third_party/` are managed by `scripts/tools.py`, which
+auto-discovers them from each tool's `METADATA.json`. Versions are git tags on
+the vendored dir; nothing static to go stale.
+
+| Command | What it does |
+|---|---|
+| `make tools` | List all vendored tools with commit + status |
+| `make tool-info TOOL=booksim2` | Show details, deps, binary status, known gaps |
+| `make tool-build TOOL=booksim2` | Build and **verify the binary works** |
+| `make tool-run TOOL=booksim2 ARGS="cfg"` | Run the tool's binary |
+| `make tool-tag TOOL=booksim2 VER=2.0` | Tag current state; changelog auto-generated from git history |
+| `make tool-pick TOOL=booksim2` | Interactive picker — switch versions, auto-rebuilds |
+| `make tool-clean TOOL=booksim2` | Clean build artifacts |
+
+Equivalent direct CLI: `python3 scripts/tools.py booksim2 build`.
+
 ### Per-track commands
 
 Every track exposes the same verbs (`make run TRACK=<t> CMD=<verb>`, or
@@ -134,7 +152,7 @@ Pinned in `ghcr.io/anmol-s314/veritx-tools-base:latest`:
 
 | Tool | Version | Track |
 |------|---------|-------|
-| Booksim 2.0 (+ `matrix` traffic pattern) | commit `28f4329` | T2, T3 |
+| BookSim 2.0 (+ `matrix` traffic, **GEC topology**, trace replay) | upstream `28f4329`, vendored in `third_party/booksim2` | T2, T3 |
 | Timeloop | commit `6b70505` (pre-barvinok) | T3 |
 | Accelergy | latest | T3 |
 | Yosys | 0.66+ | T4 |

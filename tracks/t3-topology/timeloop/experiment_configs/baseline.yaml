@@ -1,0 +1,26 @@
+name: baseline
+
+defaults:
+
+  projection: &projection
+    M: 16
+    N: 16
+    K: 16
+
+schedule:
+
+  - id: gemm16*16*16
+    problem: gemm.yaml
+    repeat: 1
+    params:
+      <<: *projection
+
+  - id: attention_qk
+    problem: attention_qk.yaml
+    repeat: 10
+    params:
+      B: 2
+      H: 12
+      M: 512
+      N: 512
+      D: 64

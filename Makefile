@@ -10,6 +10,7 @@ TRACK     ?= onboarding
 IMAGE     ?= ghcr.io/anmol-s314/veritx-tools-base:latest
 CONTAINER := $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null || echo podman)
 RUN        = $(CONTAINER) run --rm -v "$(PWD)":/workspace -w /workspace
+CONFIG    ?= baseline
 
 help:  ## list top-level commands
 	@echo "VeritX — make <target> [TRACK=t3-topology]"
@@ -23,18 +24,26 @@ all: setup lint test  ## setup + lint + test for TRACK
 setup lint test sim:
 	@$(MAKE) -C tracks/$(TRACK) $@
 
-report:  ## build the aggregate report from results/
-	@mkdir -p report && python3 scripts/generate_report.py
+analysis aggregate plot:  ## run PA target for TRACK in container (CONFIG=baseline)
+	$(RUN) $(IMAGE) make -C tracks/$(TRACK) $@ \
+	    T3_RESULTS=/workspace/tracks/$(TRACK)/results/$(CONFIG)
 
-clean:  ## clean every track + report/ results/
-	@for d in tracks/*/; do $(MAKE) -C $$d clean 2>/dev/null || true; done
-	@rm -rf report/ results/
+pa-report:  ## run full PA pipeline (analysis+aggregate+plot) in container
+	$(RUN) $(IMAGE) make -C tracks/$(TRACK) report \
+	    T3_RESULTS=/workspace/tracks/$(TRACK)/results/$(CONFIG)
+
+report:  ## build the aggregate report from results/
+	@mkdir -p report
+	$(RUN) -e MPLBACKEND=Agg $(IMAGE) python3 scripts/generate_report.py
+
+clean:	## clean every track + report/ results/
+	@$(RUN) $(IMAGE) sh -c 'for d in tracks/*/; do $(MAKE) -C "$$d" clean 2>/dev/null || true; done; rm -rf report/ results/'
 
 pull:  ## pull the prebuilt tools image
 	$(CONTAINER) pull $(IMAGE)
 
 run:  ## run a track command in the image:  make run TRACK=t3-topology CMD=timeloop
-	$(RUN) $(IMAGE) make -C tracks/$(TRACK) $(CMD)
+	$(RUN) $(IMAGE) make -C tracks/$(TRACK) $(CMD) CONFIG=${CONFIG}
 
 shell:  ## open an interactive shell in the tools image
 	$(CONTAINER) run --rm -it -v "$(PWD)":/workspace -w /workspace $(IMAGE) bash

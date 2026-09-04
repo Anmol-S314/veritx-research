@@ -1,0 +1,27 @@
+# Calibrated per-action energy table for the NoC (router + link).
+# Replace these with real numbers (synthesis/characterization, DSENT, ORION,
+# datasheet, etc.) whenever you have them — noc_energy_bridge.py is agnostic to
+# where these came from, it just sums 1 traversal + 1 buffer_read + 1 buffer_write
+# + 1 link transfer into a single "pJ per hop" coefficient.
+ERT:
+  version: 0.3
+  tables:
+    - name: noc.router
+      actions:
+        - name: traversal
+          arguments: {}
+          energy: 2.5
+
+        - name: buffer_read
+          arguments: {}
+          energy: 0.8
+
+        - name: buffer_write
+          arguments: {}
+          energy: 0.9
+
+    - name: noc.link
+      actions:
+        - name: transfer
+          arguments: {}
+          energy: 1.2

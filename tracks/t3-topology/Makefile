@@ -1,22 +1,41 @@
 # T3: Topology — Booksim + Timeloop + Accelergy
-include ../common.mk
-.PHONY: setup lint test sim timeloop energy dashboard clean
 
-setup:  ## check the toolchain (Booksim required; Timeloop/Accelergy optional)
+include ../common.mk
+
+MODEL_CONFIG ?= timeloop/experiment_configs/llama_7b_hf_config.json
+TILES ?= 16 72
+SEQ_LEN ?= 2048
+
+.PHONY: setup lint test sim timeloop energy dashboard clean analysis aggregate plot report pa-report
+
+# ---------------------------------------------------------------------------
+# Dynamic paths — honour env.sh exports; fall back to sensible in-tree defaults
+# ---------------------------------------------------------------------------
+T3_DIR      ?= $(shell cd .. && pwd)/$(shell basename $(CURDIR))
+T3_RESULTS  ?= $(CURDIR)/results/$(CONFIG)
+T3_ANALYSIS ?= $(T3_RESULTS)/analysis
+T3_OUTPUT   ?= $(T3_ANALYSIS)
+T3_SCRIPTS  ?= $(CURDIR)/scripts
+MPLBACKEND  ?= Agg
+
+setup: ## check the toolchain (Booksim required; Timeloop/Accelergy optional)
 	@$(call need,booksim)
 	@$(call want,timeloop-mapper)
-	@python3 -c "import accelergy" 2>/dev/null && echo "  ✓ Booksim + Accelergy present" || echo "  ⚠ accelergy not importable (ok for Booksim-only runs)"
+	@python3 -c "import accelergy" 2>/dev/null && \
+		echo "  ✓ Booksim + Accelergy present" || \
+		echo "  ⚠ accelergy not importable (ok for Booksim-only runs)"
 
-lint:  ## syntax-check the Python scripts
+lint: ## syntax-check the Python scripts
 	@python3 -m py_compile scripts/*.py 2>/dev/null || true
 
-test:  ## quick sanity sweep (the CI gate)
+test: ## quick sanity sweep (the CI gate)
 	@python3 scripts/sanity_test.py
 
-sim:  ## uniform-traffic topology sweep (baseline)
-	@python3 scripts/run_experiments.py
+sim: ## topology sweep
+	@CONFIG=$(CONFIG) \
+	python3 scripts/run_experiments.py --config $(CONFIG)
 
-timeloop:  ## full spine: Timeloop workload -> traffic matrix -> topology sweep
+timeloop:  ## full spine: Timeloop workload -> traffic matrix -> topology sweep -> NoC energy
 	@mkdir -p results
 	-cd timeloop && timeloop-mapper mapper.yaml arch.yaml problem.yaml 2>&1 | tee ../results/timeloop.log
 	@if [ -f timeloop/timeloop-mapper.stats.txt ]; then \
@@ -24,24 +43,110 @@ timeloop:  ## full spine: Timeloop workload -> traffic matrix -> topology sweep
 		echo "Extracting traffic matrix..."; \
 		python3 scripts/timeloop_to_matrix.py results/timeloop.stats.txt -n 16 -o results/traffic_matrix.txt; \
 		echo "Sweeping topologies on the Timeloop traffic matrix..."; \
-		TRAFFIC_MATRIX=results/traffic_matrix.txt RATES="0.002,0.005,0.01,0.02,0.03" python3 scripts/run_experiments.py; \
-		echo "Done — results/ has topology_sweep.json + traffic_matrix.txt + timeloop.stats.txt"; \
+		TRAFFIC_MATRIX=results/traffic_matrix.txt RATES="0.002,0.005,0.01,0.02,0.04,0.05" python3 scripts/run_experiments.py; \
+		echo "Calibrating NoC energy from Booksim hops (Accelergy bridge)..."; \
+		python3 scripts/noc_energy_bridge.py; \
+		echo "Done — results/ has topology_sweep.json + traffic_matrix.txt + timeloop.stats.txt + noc_energy.json"; \
 	else \
 		echo "  ⚠  Timeloop produced no stats; falling back to uniform traffic"; \
 		python3 scripts/run_experiments.py; \
+		echo "Calibrating NoC energy from Booksim hops (Accelergy bridge)..."; \
+		python3 scripts/noc_energy_bridge.py; \
+		echo "Done — results/ has topology_sweep.json + noc_energy.json (no Timeloop traffic matrix this run)"; \
 	fi
 
-energy:  ## Timeloop energy breakdown (pJ/compute + energy-delay product)
+timeloop-workload: ## full spine: Timeloop workload -> traffic matrix -> topology sweep
 	@mkdir -p results
-	@if [ ! -f results/timeloop.stats.txt ]; then \
-		echo "no Timeloop stats yet — running the model..."; \
-		( cd timeloop && timeloop-mapper mapper.yaml arch.yaml problem.yaml >/dev/null 2>&1 ) \
-		  && cp timeloop/timeloop-mapper.stats.txt results/timeloop.stats.txt; \
+
+	@echo "========================================"
+	@echo "Running Timeloop Pipeline"
+	@echo "Configuration : $(CONFIG)"
+	@echo "========================================"
+
+	@CONFIG=$(CONFIG) \
+	python3 scripts/run_timeloop_pipeline.py --config $(CONFIG)
+
+	@if [ -f results/$(CONFIG)/execution.json ]; then \
+		echo ""; \
+		echo "Combining Timeloop statistics..."; \
+		CONFIG=$(CONFIG) python3 scripts/combine_timeloop_stats.py; \
+		echo ""; \
+		echo "Generating combined traffic matrix..."; \
+		python3 scripts/timeloop_to_matrix.py \
+			results/$(CONFIG)/timeloop.stats.txt \
+			-n 16 \
+			-o results/$(CONFIG)/traffic_matrix.txt; \
+		echo ""; \
+		echo "Sweeping topologies..."; \
+		CONFIG=$(CONFIG) \
+		TRAFFIC_MATRIX=results/$(CONFIG)/traffic_matrix.txt \
+		RATES="0.002,0.005,0.01,0.02,0.03" \
+		python3 scripts/run_experiments.py --config $(CONFIG); \
+		echo ""; \
+        echo "Calibrating NoC energy (Accelergy bridge)..."; \
+        CONFIG=$(CONFIG) \
+        python3 scripts/noc_energy_bridge.py; \
+		echo ""; \
+		echo "========================================"; \
+		echo "Pipeline complete"; \
+		echo "========================================"; \
+		echo "Configuration : $(CONFIG)"; \
+		echo "Results saved under:"; \
+		echo "  results/$(CONFIG)/"; \
+		echo ""; \
+		echo "Generated:"; \
+		echo "  • operations/<id>/stats.txt"; \
+		echo "  • operations/<id>/map.txt"; \
+		echo "  • operations/<id>/map+stats.xml"; \
+		echo "  • operations/<id>/traffic_matrix.txt"; \
+		echo "  • execution.json"; \
+		echo "  • timeloop.stats.txt"; \
+		echo "  • traffic_matrix.txt"; \
+		echo "  • topology_sweep.json"; \
+	else \
+		echo "⚠ execution.json not found. Falling back to topology sweep."; \
+		CONFIG=$(CONFIG) \
+		python3 scripts/run_experiments.py --config $(CONFIG); \
 	fi
-	@python3 scripts/energy_report.py results/timeloop.stats.txt
 
-dashboard:  ## (re)build report/t3/index.html from results/
-	@python3 scripts/generate_dashboard.py
+timeloop-spatial:
+	python3 scripts/run_spatial_pipeline.py \
+		--model-config $(MODEL_CONFIG) \
+		--tiles $(TILES) \
+		--seq-len $(SEQ_LEN)
 
-clean:  ## remove generated results + Timeloop artifacts
+energy: ## Timeloop energy breakdown
+	@CONFIG=$(CONFIG) \
+	python3 scripts/energy_report.py \
+		results/$(CONFIG)/timeloop.stats.txt \
+		--config $(CONFIG)
+
+
+dashboard:
+	@python3 scripts/generate_dashboard.py --config $(CONFIG)
+
+clean: ## remove generated results + Timeloop artifacts
 	@rm -rf results/ timeloop/timeloop-mapper* __pycache__/
+
+analysis:  ## PA-01: read sweep JSON → print DataFrame summary (input from T3_RESULTS)
+	@python3 $(T3_SCRIPTS)/analysis.py \
+	    --sweep "$(T3_RESULTS)/topology_sweep.json"
+
+aggregate:  ## PA-02: merge all results → $(T3_ANALYSIS)/aggregate.csv
+	@mkdir -p "$(T3_ANALYSIS)"
+	@python3 $(T3_SCRIPTS)/aggregate.py \
+	    --results "$(T3_RESULTS)" \
+	    --out "$(T3_ANALYSIS)/aggregate.csv"
+
+plot:  ## PA-03: latency-throughput curves → $(T3_ANALYSIS)/latency_curves.png
+	@mkdir -p "$(T3_ANALYSIS)"
+	MPLBACKEND=$(MPLBACKEND) python3 $(T3_SCRIPTS)/plot_curves.py \
+	    --sweep "$(T3_RESULTS)/topology_sweep.json" \
+	    --hops --out "$(T3_ANALYSIS)/latency_curves.png"
+
+#report: analysis aggregate plot  ## PA: run full analysis pipeline (analysis + aggregate + plot)
+
+#pa-report: report  ## alias for report (used by make run CMD=pa-report)
+
+permissions:
+	@chmod 777 "$(T3_RESULTS)"

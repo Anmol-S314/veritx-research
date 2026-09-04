@@ -1,0 +1,25 @@
+# Standalone Accelergy architecture for the NoC only (router + link).
+#
+# Deliberately separate from arch.yaml (which is Timeloop-mapper's classic-format
+# accelerator arch — arithmetic/RegisterFile/GlobalBuffer/DRAM — and is NOT valid
+# Accelergy hierarchical YAML). This file exists purely so `accelergy` can compute
+# a calibrated pJ-per-hop coefficient from noc_ERT.yaml, which noc_energy_bridge.py
+# then multiplies against Booksim's real hop counts. See scripts/noc_energy_bridge.py.
+architecture:
+  version: 0.4
+  subtree:
+    - name: system
+      attributes:
+        global_cycle_seconds: 1.0e-9   # NoC clock period — set to your real cycle time
+        technology: "45nm"
+
+      local:
+        - name: noc.router
+          class: router
+          instances: 1
+          attributes: {}
+
+        - name: noc.link
+          class: link
+          instances: 1
+          attributes: {}

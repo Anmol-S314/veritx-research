@@ -1,0 +1,343 @@
+#!/usr/bin/env bash
+# =============================================================================
+# t3  —  top-level CLI for the T3 Topology track
+#
+# Transparent Container Execution:
+# Sourcing run/env.sh puts 't3' on your PATH.
+# When invoked from your host terminal, 't3' automatically routes the command
+# inside the veritx-tools-base container using your host UID/GID so all dependencies
+# (Timeloop, Accelergy, Booksim, etc.) are available and file permissions remain clean.
+#
+# Usage (from ANY directory on host or container):
+#   source /path/to/tracks/t3-topology/run/env.sh
+#   t3 <command> [options]
+#   t3 exec <any command inside shell>
+# =============================================================================
+set -euo pipefail
+
+# ---------------------------------------------------------------------------
+# 1. Resolve T3_DIR & REPO_ROOT
+# ---------------------------------------------------------------------------
+T3_SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+T3_DIR="$(cd "$(dirname "$T3_SCRIPT_PATH")" && pwd)"
+REPO_ROOT="$(cd "$T3_DIR/../.." && pwd)"
+
+# Source run/env.sh if present
+_T3_ENV="$T3_DIR/run/env.sh"
+if [ -f "$_T3_ENV" ]; then
+    source "$_T3_ENV" >/dev/null 2>&1 || true
+fi
+unset _T3_ENV
+
+# ---------------------------------------------------------------------------
+# 2. Container transparent dispatch
+# ---------------------------------------------------------------------------
+IN_CONTAINER=0
+if [ -f /.dockerenv ] || [ -f /run/.containerenv ]; then
+    IN_CONTAINER=1
+fi
+
+if [ "$IN_CONTAINER" -eq 0 ]; then
+    CONTAINER_BIN="${CONTAINER_BIN:-$(command -v podman 2>/dev/null || command -v docker 2>/dev/null || echo docker)}"
+    IMAGE="${IMAGE:-ghcr.io/anmol-s314/veritx-tools-base:latest}"
+
+    TTY_FLAG=""
+    if [ -t 0 ] && [ -t 1 ]; then
+        TTY_FLAG="-it"
+    fi
+
+    USER_FLAG="-u $(id -u):$(id -g)"
+
+    EXEC_ENV=(
+        -e CONFIG="${CONFIG:-baseline}"
+        -e RATES="${RATES:-0.002,0.005,0.01,0.02,0.03}"
+        -e SAT_K="${SAT_K:-2.0}"
+        -e PACKET_SIZE_BITS="${PACKET_SIZE_BITS:-128}"
+        -e MPLBACKEND="${MPLBACKEND:-Agg}"
+        -e MPLCONFIGDIR="/tmp"
+        -e HOME="/tmp"
+    )
+    if [ -n "${TRAFFIC_MATRIX:-}" ]; then
+        EXEC_ENV+=(-e TRAFFIC_MATRIX="$TRAFFIC_MATRIX")
+    fi
+
+    # Interactive container shell target
+    if [ "${1:-}" = "shell" ] || [ "${1:-}" = "bash" ]; then
+        exec $CONTAINER_BIN run $TTY_FLAG --rm $USER_FLAG \
+            -v "$REPO_ROOT":/workspace \
+            -w /workspace/tracks/t3-topology \
+            "${EXEC_ENV[@]}" \
+            "$IMAGE" bash
+    fi
+
+    # Dispatch any t3 command or raw command into the container
+    exec $CONTAINER_BIN run $TTY_FLAG --rm $USER_FLAG \
+        -v "$REPO_ROOT":/workspace \
+        -w /workspace/tracks/t3-topology \
+        "${EXEC_ENV[@]}" \
+        "$IMAGE" \
+        bash -c 'source run/env.sh >/dev/null 2>&1 && exec t3 "$@"' _ "$@"
+fi
+
+# ---------------------------------------------------------------------------
+# 3. Inside container execution below:
+# ---------------------------------------------------------------------------
+T3_OUTPUT="${T3_OUTPUT:-$T3_RESULTS/analysis}"
+mkdir -p "$T3_OUTPUT" 2>/dev/null || true
+
+# Helpers
+_py() {
+    "$T3_PYTHON" "$@"
+}
+
+_banner() {
+    echo ""
+    echo "  ╔══════════════════════════════════╗"
+    printf  "  ║  %-32s  ║\n" "$1"
+    echo "  ╚══════════════════════════════════╝"
+    echo ""
+}
+
+_ok()   { echo "  ✓  $*"; }
+_warn() { echo "  ⚠  $*"; }
+_err()  { echo "  ✗  $*" >&2; exit 1; }
+
+# Commands
+cmd_help() {
+    cat <<'EOF'
+
+  t3 — T3 Topology Track CLI
+  ══════════════════════════════════════════════════════════════════
+
+  Usage:  t3 <command> [options]
+          t3 exec <any command>      (run arbitrary command in container shell)
+
+  CONTAINER & ENVIRONMENT
+    shell / bash  Open interactive shell in veritx-tools-base container
+    exec <cmd>    Execute any command (e.g. timeloop-mapper ...) inside shell
+    check         Verify Python, Booksim, Timeloop, pandas, matplotlib
+    env           Print active environment variables
+
+  SIMULATION & PIPELINES
+    sim           Uniform-traffic Booksim sweep
+    timeloop      Timeloop spine (timeloop -> matrix -> sweep -> energy)
+    timeloop-workload Full Timeloop workload pipeline
+
+  ANALYSIS & REPORTING
+    analysis      Load sweep JSON -> DataFrame summary (PA-01)
+    aggregate     Merge all results -> aggregate.csv (PA-02)
+    plot          Latency-throughput curves -> latency_curves.png (PA-03)
+    all           Run analysis -> aggregate -> plot in sequence
+    report        Run full analysis & aggregate report
+    energy        Timeloop energy breakdown
+    dashboard     Build Plotly dashboard
+
+  DEVELOPMENT
+    selfcheck     Run --selfcheck on analysis, aggregate, plot_curves
+    lint          Syntax-check Python scripts
+    clean         Remove results/ and __pycache__
+
+  ══════════════════════════════════════════════════════════════════
+EOF
+}
+
+cmd_env() {
+    _banner "T3 Active Environment"
+    echo "  Container Mode  = Active (IN_CONTAINER=1)"
+    echo "  T3_DIR          = $T3_DIR"
+    echo "  REPO_ROOT       = $REPO_ROOT"
+    echo "  T3_PYTHON       = $T3_PYTHON"
+    echo "  BOOKSIM_BIN     = $BOOKSIM_BIN"
+    echo "  T3_SCRIPTS      = $T3_SCRIPTS"
+    echo "  T3_RESULTS      = $T3_RESULTS"
+    echo "  T3_OUTPUT       = $T3_OUTPUT"
+    echo "  PACKET_SIZE_BITS= $PACKET_SIZE_BITS"
+    echo "  SAT_K           = $SAT_K"
+    echo "  RATES           = $RATES"
+    echo "  TRAFFIC_MATRIX  = ${TRAFFIC_MATRIX:-<unset>}"
+    echo "  MPLBACKEND      = $MPLBACKEND"
+    echo ""
+}
+
+cmd_check() {
+    _banner "Environment Check"
+    _ok "Container   → Active (veritx-tools-base)"
+
+    if [ -x "$T3_PYTHON" ]; then
+        _ok "python3     → $T3_PYTHON  ($("$T3_PYTHON" --version 2>&1))"
+    else
+        _err "python3 not found (expected at $T3_PYTHON)"
+    fi
+
+    "$T3_PYTHON" -c "import pandas" 2>/dev/null \
+        && _ok "pandas      → $("$T3_PYTHON" -c "import pandas; print(pandas.__version__)")" \
+        || _warn "pandas not installed"
+
+    "$T3_PYTHON" -c "import matplotlib" 2>/dev/null \
+        && _ok "matplotlib  → $("$T3_PYTHON" -c "import matplotlib; print(matplotlib.__version__)")" \
+        || _warn "matplotlib not installed"
+
+    command -v "$BOOKSIM_BIN" &>/dev/null \
+        && _ok "booksim     → $(command -v "$BOOKSIM_BIN")" \
+        || _warn "booksim not on PATH"
+
+    command -v timeloop-mapper &>/dev/null \
+        && _ok "timeloop    → $(command -v timeloop-mapper)" \
+        || _warn "timeloop-mapper not found"
+
+    command -v accelergy &>/dev/null \
+        && _ok "accelergy   → $(command -v accelergy)" \
+        || _warn "accelergy not found"
+
+    [ -f "$T3_RESULTS/topology_sweep.json" ] \
+        && _ok "sweep JSON  → $T3_RESULTS/topology_sweep.json" \
+        || _warn "No sweep JSON yet  (run: t3 sim)"
+    echo ""
+}
+
+cmd_analysis() {
+    _banner "PA-01  analysis.py"
+    _py "$T3_SCRIPTS/analysis.py" "$@"
+}
+
+cmd_aggregate() {
+    _banner "PA-02  aggregate.py"
+    local out="${T3_OUTPUT}/aggregate.csv"
+    _py "$T3_SCRIPTS/aggregate.py" \
+        --results "$T3_RESULTS" \
+        --out "$out" "$@"
+    _ok "Written → $out"
+}
+
+cmd_plot() {
+    _banner "PA-03  plot_curves.py"
+    local out="${T3_OUTPUT}/latency_curves.png"
+    _py "$T3_SCRIPTS/plot_curves.py" \
+        --sweep "$T3_RESULTS/topology_sweep.json" \
+        --k "$SAT_K" \
+        "$@" \
+        --out "${out}"
+    _ok "Written → $out"
+}
+
+cmd_all() {
+    _banner "Running full analysis pipeline"
+    cmd_analysis
+    cmd_aggregate
+    cmd_plot --hops
+    _ok "Pipeline complete. Outputs in $T3_OUTPUT/"
+}
+
+cmd_sim() {
+    _banner "Booksim uniform sweep"
+    ( cd "$T3_DIR" && RATES="$RATES" _py "$T3_SCRIPTS/run_experiments.py" "$@" )
+}
+
+cmd_timeloop() {
+    _banner "Full spine: Timeloop -> matrix -> sweep"
+    ( cd "$T3_DIR" && make timeloop )
+}
+
+cmd_timeloop_workload() {
+    _banner "Timeloop Workload Pipeline"
+    ( cd "$T3_DIR" && make timeloop-workload CONFIG="${CONFIG:-baseline}" )
+}
+
+cmd_timeloop_spatial() {
+    _banner "Timeloop Spatial Pipeline"
+    cd "$T3_DIR" && make timeloop-spatial "$@" 
+}
+
+cmd_report() {
+    _banner "Generating Report"
+    ( cd "$T3_DIR" && make report CONFIG="${CONFIG:-baseline}" )
+}
+
+cmd_dashboard() {
+    _banner "Building dashboard"
+    ( cd "$T3_DIR" && _py "$T3_SCRIPTS/generate_dashboard.py" "$@" )
+}
+
+cmd_energy() {
+    _banner "Energy breakdown"
+    local stats=""
+    for candidate in \
+        "$T3_DIR/timeloop/timeloop-mapper.stats.txt" \
+        "$T3_RESULTS/timeloop.stats.txt" \
+        "$T3_DIR/results/timeloop.stats.txt" \
+        "$T3_DIR/results/${CONFIG:-baseline}/timeloop.stats.txt"; do
+        if [ -f "$candidate" ] && grep -q "Summary Stats" "$candidate" 2>/dev/null; then
+            stats="$candidate"
+            break
+        fi
+    done
+
+    if [ -z "$stats" ]; then
+        if [ -f "$T3_DIR/timeloop/timeloop-mapper.stats.txt" ]; then
+            stats="$T3_DIR/timeloop/timeloop-mapper.stats.txt"
+        else
+            _warn "No Timeloop stats file with Summary Stats — run 't3 timeloop' first"
+            exit 1
+        fi
+    fi
+    _py "$T3_SCRIPTS/energy_report.py" "$stats"
+}
+
+cmd_selfcheck() {
+    _banner "Selfcheck — all PA scripts"
+    _py "$T3_SCRIPTS/analysis.py"   --selfcheck && _ok "analysis.py   OK"
+    _py "$T3_SCRIPTS/aggregate.py"  --selfcheck && _ok "aggregate.py  OK"
+    _py "$T3_SCRIPTS/plot_curves.py" --selfcheck && _ok "plot_curves.py OK"
+}
+
+cmd_lint() {
+    _banner "Lint — syntax check"
+    for f in "$T3_SCRIPTS"/*.py; do
+        "$T3_PYTHON" -m py_compile "$f" && _ok "$(basename "$f")" || _warn "$(basename "$f") has errors"
+    done
+}
+
+cmd_clean() {
+    _banner "Clean"
+    rm -rf "$T3_DIR/results" $T3_DIR/timeloop/timeloop-mapper* "$T3_DIR/__pycache__" "$T3_SCRIPTS/__pycache__"
+    _ok "Removed output/ results/ and __pycache__"
+}
+
+cmd_exec() {
+    "$@"
+}
+
+# Dispatch
+COMMAND="${1:-help}"
+shift || true
+
+case "$COMMAND" in
+    help|-h|--help)       cmd_help              ;;
+    env)                  cmd_env               ;;
+    check)                cmd_check             ;;
+    analysis)             cmd_analysis "$@"     ;;
+    aggregate)            cmd_aggregate "$@"    ;;
+    plot)                 cmd_plot "$@"         ;;
+    all)                  cmd_all               ;;
+    sim)                  cmd_sim "$@"          ;;
+    timeloop)             cmd_timeloop          ;;
+    timeloop-workload)    cmd_timeloop_workload ;;
+    timeloop-spatial)     cmd_timeloop_spatial "$@" ;;
+    report|pa-report)     cmd_report            ;;
+    dashboard)            cmd_dashboard "$@"    ;;
+    energy)               cmd_energy            ;;
+    selfcheck)            cmd_selfcheck         ;;
+    lint)                 cmd_lint              ;;
+    clean)                cmd_clean             ;;
+    exec|run)             cmd_exec "$@"         ;;
+    *)
+        # If command matches an executable on PATH inside container (like timeloop-mapper, booksim, etc.), run it
+        if command -v "$COMMAND" &>/dev/null; then
+            exec "$COMMAND" "$@"
+        else
+            echo "  [t3] Unknown command or executable: '$COMMAND'"
+            echo "  Run 't3 help' for usage."
+            exit 1
+        fi
+        ;;
+esac
