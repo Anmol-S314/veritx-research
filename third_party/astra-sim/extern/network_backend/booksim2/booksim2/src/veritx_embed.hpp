@@ -15,6 +15,7 @@
 
 #include <string>
 #include <vector>
+#include <iostream>
 
 #include "booksim_config.hpp"
 #include "trafficmanager.hpp"
@@ -50,12 +51,33 @@ public:
   bool SampleOldestInFlight(int & id, int & src, int & dst, int64_t & ctime,
                             int64_t & itime, bool & head, bool & tail,
                             int & vc) const;
+  // Dump one node's injection-side BufferState (per-VC occupancy/holder).
+  // Diagnostic for VC-reservation leaks: a VC whose _in_use_by never clears
+  // blocks all later packets needing an output VC.
+  void DumpInjectBuf(int node) const {
+    if (node >= 0 && node < (int)_buf_states.size() && !_buf_states[node].empty() &&
+        _buf_states[node][0] != nullptr) {
+      _buf_states[node][0]->Display(std::cerr);
+    }
+  }
   // Advance the fabric clock by `cycles` WITHOUT stepping the network.
   // Only valid while the fabric is idle (no in-flight flits); used to keep
   // the fabric timebase synchronized with the host event queue across idle
   // (agentic tool-gap) clock jumps, which otherwise desync the DP ALLTOALL
   // wave barrier and deadlock the binary.
-  void JumpCycles(int64_t cycles) { assert(!HasInFlight()); _time += cycles; }
+  void JumpCycles(int64_t cycles) {
+    assert(!HasInFlight());
+    _time += cycles;
+    // VeritX: fast-forward injection clocks too. TrafficManager::_Inject
+    // catches a stale _qtime up to _time one cycle per _Step iteration, so a
+    // billion-cycle jump would wedge the next _Step for billions of
+    // iterations. The fabric is idle (asserted above) with nothing to
+    // generate (embed mode synthesizes no demand), so jumping straight is
+    // behavior-preserving.
+    for (size_t i = 0; i < _qtime.size(); ++i)
+      for (size_t c = 0; c < _qtime[i].size(); ++c)
+        if (_qtime[i][c] < _time) _qtime[i][c] = _time;
+  }
   int64_t Cycle() const { return _time; }
   int NumNodes() const { return _nodes; }
 

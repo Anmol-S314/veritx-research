@@ -63,7 +63,7 @@
  /* the current traffic manager instance */
 TrafficManager * trafficManager = NULL;
 
-int GetSimTime() {
+int64_t GetSimTime() {
   return trafficManager->getTime();
 }
 

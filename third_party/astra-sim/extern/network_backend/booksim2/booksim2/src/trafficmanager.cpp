@@ -796,8 +796,8 @@ int TrafficManager::_IssuePacket( int source, int cl )
     return result;
 }
 
-void TrafficManager::_GeneratePacket( int source, int stype, 
-                                      int cl, int time )
+void TrafficManager::_GeneratePacket( int source, int stype,
+                                      int cl, int64_t time )
 {
     assert(stype!=0);
 

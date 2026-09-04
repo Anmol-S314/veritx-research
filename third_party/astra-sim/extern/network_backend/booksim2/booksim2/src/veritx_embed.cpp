@@ -18,7 +18,7 @@
 // library excludes); the routers / route funcs reference them. MUST be at
 // global scope (unqualified ::gK etc.).
 TrafficManager * trafficManager = NULL;
-int GetSimTime() { return trafficManager->getTime(); }
+int64_t GetSimTime() { return trafficManager->getTime(); }
 bool gPrintActivity = false;
 bool gTrace = false;
 std::ostream * gWatchOut = NULL;

@@ -30,10 +30,13 @@
 #include <string>
 #include <vector>
 #include <iostream>
+#include <cstdint>
 
 /*all declared in main.cpp*/
 
-int GetSimTime();
+// VeritX: 64-bit sim time — the shared fabric runs multi-billion-cycle
+// LLM simulations past INT_MAX; int truncation here froze channel queues.
+int64_t GetSimTime();
 
 class Stats;
 Stats * GetStats(const std::string & name);

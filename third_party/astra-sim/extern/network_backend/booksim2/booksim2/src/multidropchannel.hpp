@@ -104,7 +104,7 @@ public:
 private:
   int _num_lanes;
   vector<Credit *>                          _input_lane;
-  vector<queue<pair<int, Credit *> > >      _wait_queue_lane;
+  vector<queue<pair<int64_t, Credit *> > >      _wait_queue_lane;
   vector<Credit *>                          _output_lane;
 };
 

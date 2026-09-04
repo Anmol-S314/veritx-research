@@ -51,7 +51,7 @@ MultiDropCreditChannel::MultiDropCreditChannel(Module * parent, string const & n
 int MultiDropCreditChannel::AddLane() {
   ++_num_lanes;
   _input_lane.push_back(NULL);
-  _wait_queue_lane.push_back(queue<pair<int, Credit *> >());
+  _wait_queue_lane.push_back(queue<pair<int64_t, Credit *> >());
   _output_lane.push_back(NULL);
   return _num_lanes - 1;
 }
@@ -82,7 +82,7 @@ void MultiDropCreditChannel::WriteOutputs() {
     if(_wait_queue_lane[d].empty()) {
       continue;
     }
-    pair<int, Credit *> const & item = _wait_queue_lane[d].front();
+    pair<int64_t, Credit *> const & item = _wait_queue_lane[d].front();
     if(GetSimTime() < item.first) {
       continue;
     }
