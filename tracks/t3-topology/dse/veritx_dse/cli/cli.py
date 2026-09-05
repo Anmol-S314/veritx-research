@@ -1120,7 +1120,8 @@ def cmd_serve(ctx: Ctx, args):
         cmd.extend(["--output", str(Path(args.output).resolve())])
 
     if args.no_cleanup:
-        cmd.append("--no-cleanup-inputs")
+        # VeritX: upstream renamed --no-cleanup-inputs to --keep-inputs.
+        cmd.append("--keep-inputs")
 
     if args.no_prefix_caching:
         cmd.append("--no-enable-prefix-caching")
