@@ -1,0 +1,17 @@
+{
+  "name": "timeloop",
+  "description": "Timeloop — dataflow mapping and acceleration cost model",
+  "upstream": "https://github.com/Accelergy-Project/timeloop.git",
+  "commit": "6b70505",
+  "date_vendored": "2026-08-26",
+  "source_branch": "main",
+  "patches": [],
+  "local_modifications": [],
+  "known_gaps": [],
+  "used_by": [
+    "t3-topology"
+  ],
+  "build_command": "scons -j$(nproc)",
+  "clean_command": "scons -c",
+  "install_location": "bin/timeloop-mapper"
+}

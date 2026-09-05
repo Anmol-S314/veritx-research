@@ -1,0 +1,22 @@
+{
+  "product": "MoE weight/broadcast serving NoC",
+  "notes": "Customer: '64 endpoints monolithic, HBM holds weights, weights are broadcast to all every layer, one root injects token multicast; latency tolerant except token launch.'",
+  "endpoints": {
+    "count": 64,
+    "layout": "grid",
+    "groups": [
+      {"name": "hbm", "members": [0, 7, 56, 63]},
+      {"name": "root", "members": [15]}
+    ]
+  },
+  "flows": [
+    {"name": "weight_broadcast", "src": "group:hbm", "dst": "all", "bw_gbps": 1024,
+     "protocol": "AXI4", "rw": "R", "pkt_size_b": 64, "ordering": "relaxed"},
+    {"name": "token_multicast", "src": "group:root", "dst": "all", "bw_gbps": 512,
+     "protocol": "AXI4", "rw": "W", "pkt_size_b": 64, "latency_budget_ns": 60, "ordering": "relaxed"}
+  ],
+  "budgets": {"radix_max": 5, "vcs_max": 4, "buf_depth": 8, "clock_mhz": 1000},
+  "physical": {"fabric": "monolithic"},
+  "reliability": {"ecc": "secdec", "safety_level": "QM"},
+  "verification_intent": {"level": "sim", "checks": ["deadlock", "liveness", "qos"]}
+}

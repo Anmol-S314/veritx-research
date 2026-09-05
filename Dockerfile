@@ -49,17 +49,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /opt
 
 # =============================================================================
-# Booksim 2.0 + VeritX matrix traffic pattern (T2, T3 — Deadlock, Topology)
-# Pinned commit + the `matrix(<file>)` pattern that feeds a Timeloop traffic
-# matrix into Booksim (the Timeloop->Booksim bridge for T3). Source kept at
-# /opt/booksim2 so students can add custom patterns/topologies and recompile.
+# Booksim 2.0 — COPY from third_party/ (single source of truth)
+# The host's third_party/booksim2/src/ carries our modifications:
+#   - matrix traffic pattern (Timeloop bridge)
+#   - VeritX: percentile stats, completion time, drain-on-unstable
+#   - VeritX: trace-driven mode improvements
+# Source kept at /opt/booksim2 so students can extend + recompile.
 # =============================================================================
-COPY tracks/t3-topology/booksim-ext/ /opt/booksim-ext/
-RUN git clone https://github.com/booksim/booksim2.git && \
-    cd booksim2 && git checkout 28f43299f1706a3160ffac721ca461d74eb6e618 && \
-    cp /opt/booksim-ext/matrixtraffic.hpp /opt/booksim-ext/matrixtraffic.cpp src/ && \
-    git apply /opt/booksim-ext/matrix_traffic.patch && \
-    cd src && make -j$(nproc) && \
+COPY third_party/booksim2/src/ /opt/booksim2/src/
+RUN cd /opt/booksim2/src && make -j$(nproc) && \
     cp booksim /usr/local/bin/
 
 # =============================================================================
@@ -121,6 +119,35 @@ RUN git clone --depth 1 https://github.com/diffblue/cbmc.git && \
     strip /usr/local/bin/cbmc
 
 # =============================================================================
+# ASTRA-sim + BookSim2 integration (serving-leg multi-die simulation)
+# Builds the AstraSim_BookSim2 binary that uses our BookSim2 fork as the
+# network backend. The event queue fix (advance_hook in Booksim2Fabric.hh)
+# and the interactive main loop (main.cc) are included.
+# =============================================================================
+COPY third_party/astra-sim/ /opt/astra-sim-src/
+COPY third_party/booksim2/ /opt/booksim2-canonical/
+RUN mkdir -p /opt/astra-sim-build && cd /opt/astra-sim-build && \
+    cmake /opt/astra-sim-src/build/astra_booksim2 \
+      -DBOOKSIM2_SRC_DIR=/opt/booksim2-canonical && \
+    cmake --build . -j$(nproc) && \
+    cp bin/AstraSim_BookSim2 /usr/local/bin/
+
+# Chakra protobuf Python stubs are pre-built in the source tree;
+# copy them to a system-wide location for trace parsing.
+RUN mkdir -p /usr/local/share/chakra && \
+    cp /opt/astra-sim-src/extern/graph_frontend/chakra/build/lib/chakra/schema/protobuf/et_def_pb2.py \
+       /usr/local/share/chakra/
+
+# =============================================================================
+# LLMServingSim (serving-leg traffic trace generation)
+# =============================================================================
+COPY third_party/llmservingsim/serving/ /opt/llmservingsim/serving/
+COPY third_party/llmservingsim/configs/ /opt/llmservingsim/configs/
+COPY third_party/llmservingsim/workloads/ /opt/llmservingsim/workloads/
+COPY third_party/astra-sim/astra-sim/network_frontend/booksim2/examples/convert_chakra_trace.py \
+     /opt/llmservingsim/convert_chakra_trace.py
+
+# =============================================================================
 # Python dependencies (shared across all tracks)
 # =============================================================================
 # z3 solver comes from the apt `z3` binary (runtime stage); smtbmc shells out to it
@@ -171,9 +198,20 @@ COPY --from=builder /usr/local/share/ /usr/local/share/
 COPY --from=builder /usr/lib/python3/dist-packages/ /usr/lib/python3/dist-packages/
 # Booksim source (with matrix pattern) so students can extend + recompile
 COPY --from=builder /opt/booksim2 /opt/booksim2
+# ASTRA-sim + BookSim2 integration binary
+COPY --from=builder /usr/local/bin/AstraSim_BookSim2 /usr/local/bin/AstraSim_BookSim2
+# Chakra protobuf Python stubs (for trace parsing)
+COPY --from=builder /usr/local/share/chakra/ /usr/local/share/chakra/
+# LLMServingSim trace generation pipeline
+COPY --from=builder /opt/llmservingsim/ /opt/llmservingsim/
+# psc-ns3 — COPY from third_party/
+COPY third_party/psc-ns3/ /opt/psc-ns3/
 # Timeloop's bundled problem shapes (baked search path is /opt/timeloop) so
 # students can reference predefined shapes; T3's own problem.yaml is self-contained
 COPY --from=builder /opt/timeloop/problem-shapes /opt/timeloop/problem-shapes
+
+# Environment: ASTRA-sim + Chakra + LLMServingSim on PYTHONPATH
+ENV PYTHONPATH="/usr/local/share/chakra:/opt/llmservingsim:${PYTHONPATH}"
 
 RUN ldconfig
 

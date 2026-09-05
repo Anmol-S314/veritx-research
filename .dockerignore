@@ -1,0 +1,63 @@
+# VeritX Docker build context exclusions
+.git
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+runs/
+tracks/*/dse/veritx_dse/__pycache__/
+tracks/*/dse/veritx_dse/*/__pycache__/
+tracks/*/dse/tests/__pycache__/
+tracks/*/dse/docs/
+tracks/*/dse/examples/
+*.md
+!README.md
+Makefile
+scripts/
+*.egg-info
+.venv/
+node_modules/
+
+# LLMServingSim trace data (large, not needed in image)
+third_party/llmservingsim/traces/
+third_party/llmservingsim/astra-sim/
+third_party/llmservingsim/profiler/
+third_party/llmservingsim/bench/
+third_party/llmservingsim/docs/
+third_party/llmservingsim/.github/
+third_party/llmservingsim/gdb.txt
+
+# ASTRA-sim: keep build/astra_booksim2/ CMakeLists but exclude build artifacts
+third_party/astra-sim/build/astra_booksim2/build/
+third_party/astra-sim/build/astra_booksim2/bin/
+third_party/astra-sim/build/astra_analytical/
+third_party/astra-sim/extern/network_backend/ns-3/
+third_party/astra-sim/extern/helper/json/
+third_party/astra-sim/extern/helper/cxxopts/
+
+# BookSim2 build artifacts (host .o files have wrong glibc symbols)
+third_party/booksim2/src/booksim
+third_party/booksim2/src/*.o
+third_party/booksim2/src/*.d
+third_party/booksim2/src/lex.yy.c
+third_party/booksim2/src/y.tab.c
+third_party/booksim2/src/y.tab.h
+third_party/booksim2/src/allocators/*.o
+third_party/booksim2/src/arbiters/*.o
+third_party/booksim2/src/networks/*.o
+third_party/booksim2/src/routers/*.o
+third_party/booksim2/src/power/*.o
+
+# LLMServingSim converted traces and run artifacts
+third_party/llmservingsim/**/*.converted.et
+third_party/llmservingsim/**/*.et
+third_party/llmservingsim/astra-sim/
+
+# Any stray build artifacts in third_party (but NOT CMakeLists.txt dirs)
+third_party/**/*.o
+third_party/**/*.so
+third_party/**/*.a
+third_party/**/build/bin/
+third_party/**/build/CMakeCache.txt
+third_party/**/build/CMakeFiles/
+third_party/**/build/cmake_install.cmake

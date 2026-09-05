@@ -1,0 +1,30 @@
+{
+  "product": "2-die chiplet MoE NoC (NoI-dominant)",
+  "notes": "Customer: 'two dies on an interposer; 32 endpoints each; experts split across dies so every dispatch step does a big cross-die exchange; KV reads stay local to each die's HBM slice; interposer links are the scarce resource.'",
+  "endpoints": {
+    "count": 64,
+    "layout": "interposer",
+    "rows": 8,
+    "cols": 8,
+    "groups": [
+      {"name": "dieA", "members": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]},
+      {"name": "dieB", "members": [32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63]},
+      {"name": "hbA", "members": [4, 11, 20, 27]},
+      {"name": "hbB", "members": [36, 43, 52, 59]}
+    ]
+  },
+  "flows": [
+    {"name": "cross_die_exchange_AB", "src": "group:dieA", "dst": "group:dieB", "bw_gbps": 512,
+     "protocol": "AXI4", "rw": "RW", "pkt_size_b": 64, "latency_budget_ns": 50, "ordering": "relaxed"},
+    {"name": "cross_die_exchange_BA", "src": "group:dieB", "dst": "group:dieA", "bw_gbps": 512,
+     "protocol": "AXI4", "rw": "RW", "pkt_size_b": 64, "latency_budget_ns": 50, "ordering": "relaxed"},
+    {"name": "kv_reads_A", "src": "group:dieA", "dst": "group:hbA", "bw_gbps": 256,
+     "protocol": "AXI4", "rw": "R", "pkt_size_b": 64, "latency_budget_ns": 35, "ordering": "strict"},
+    {"name": "kv_reads_B", "src": "group:dieB", "dst": "group:hbB", "bw_gbps": 256,
+     "protocol": "AXI4", "rw": "R", "pkt_size_b": 64, "latency_budget_ns": 35, "ordering": "strict"}
+  ],
+  "budgets": {"radix_max": 5, "vcs_max": 4, "buf_depth": 8, "clock_mhz": 1000},
+  "physical": {"fabric": "interposer"},
+  "reliability": {"ecc": "secdec", "safety_level": "QM"},
+  "verification_intent": {"level": "sim", "checks": ["deadlock", "liveness", "qos"]}
+}

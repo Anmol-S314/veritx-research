@@ -1,0 +1,24 @@
+# Minimal 16-tile accelerator (classic Timeloop format): DRAM -> GlobalBuffer ->
+# per-PE RegisterFile -> MAC. 16 PEs (meshX=16) = the 16 tiles of the 4x4 NoC.
+arch:
+  arithmetic:
+    instances: 16
+    meshX: 16
+    word-bits: 8
+  storage:
+  - name: RegisterFile
+    entries: 64
+    instances: 16
+    meshX: 16
+    word-bits: 8
+  - name: GlobalBuffer
+    sizeKB: 32
+    instances: 1
+    word-bits: 8
+    block-size: 8
+  - name: DRAM
+    technology: DRAM
+    instances: 1
+    word-bits: 8
+    block-size: 8
+    bandwidth: 10.0

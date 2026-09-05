@@ -1,0 +1,96 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "VeritX NoC Requirement Spec",
+  "description": "Customer-facing typed requirements. The customer NEVER provides a traffic matrix; matrices are DERIVED from flows by spec_translate.py.",
+  "type": "object",
+  "required": ["product", "endpoints", "flows"],
+  "properties": {
+    "product": {"type": "string"},
+    "notes": {"type": "string"},
+    "endpoints": {
+      "type": "object",
+      "required": ["count"],
+      "properties": {
+        "count": {"type": "integer", "minimum": 2},
+        "layout": {"enum": ["grid", "interposer"], "default": "grid"},
+        "rows": {"type": "integer", "minimum": 1},
+        "cols": {"type": "integer", "minimum": 1},
+        "groups": {
+          "type": "array",
+          "description": "Named endpoint sets usable as flow selectors.",
+          "items": {
+            "type": "object",
+            "required": ["name", "members"],
+            "properties": {
+              "name": {"type": "string"},
+              "members": {"type": "array", "items": {"type": "integer"}}
+            }
+          }
+        }
+      }
+    },
+    "flows": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "src", "dst", "bw_gbps"],
+        "properties": {
+          "name": {"type": "string"},
+          "src": {"$ref": "#/definitions/selector"},
+          "dst": {"$ref": "#/definitions/selector"},
+          "protocol": {"enum": ["AXI4", "AXI5", "TileLink-C", "custom"], "default": "AXI4"},
+          "rw": {"enum": ["R", "W", "RW"], "default": "RW"},
+          "bw_gbps": {"type": "number", "exclusiveMinimum": 0,
+                      "description": "Aggregate bandwidth of this flow set."},
+          "pkt_size_b": {"type": "integer", "default": 64},
+          "latency_budget_ns": {"type": "number", "exclusiveMinimum": 0},
+          "qos_class": {"enum": ["GS", "BE"], "default": "BE",
+                        "description": "GS = guaranteed service (reserved, certified bound); BE = best effort."},
+          "ordering": {"enum": ["strict", "relaxed"], "default": "relaxed"}
+        }
+      }
+    },
+    "budgets": {
+      "type": "object",
+      "properties": {
+        "radix_max": {"type": "integer", "minimum": 2, "default": 5},
+        "vcs_max": {"type": "integer", "default": 4},
+        "buf_depth": {"type": "integer", "default": 8},
+        "link_len_units": {"type": "number", "default": 2.0,
+                           "description": "Max link length in placement units."},
+        "clock_mhz": {"type": "number", "default": 1000}
+      }
+    },
+    "physical": {
+      "type": "object",
+      "properties": {
+        "fabric": {"enum": ["monolithic", "interposer"], "default": "monolithic"},
+        "placement_jitter": {"type": "number", "default": 0.08},
+        "cdc_domains": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "reliability": {
+      "type": "object",
+      "properties": {
+        "ecc": {"enum": ["none", "secdec"], "default": "none"},
+        "safety_level": {"enum": ["QM", "ASIL-B", "ASIL-D"], "default": "QM"}
+      }
+    },
+    "verification_intent": {
+      "type": "object",
+      "properties": {
+        "level": {"enum": ["spec", "sim", "rtl", "formal"], "default": "sim"},
+        "checks": {"type": "array",
+                   "items": {"enum": ["deadlock", "liveness", "qos", "throughput"]},
+                   "default": ["deadlock", "liveness"]}
+      }
+    }
+  },
+  "definitions": {
+    "selector": {
+      "description": "Endpoint selector: 'all' | 'group:<name>' | 'index:<i>' | 'range:<a>-<b>' | 'experts_top:<k>' (top-k talkers)",
+      "type": "string"
+    }
+  }
+}

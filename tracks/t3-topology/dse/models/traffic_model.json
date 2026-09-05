@@ -1,0 +1,332 @@
+{
+  "source": "third_party/llmservingsim/astra-sim/inputs/runs/run_1787561697070974_458785/trace",
+  "num_batches_analyzed": 10,
+  "compute": {
+    "avg_cycles_per_batch": 15849454,
+    "total_weight_bytes": 30570082304
+  },
+  "memory": {
+    "total_weight_bytes": 30570082304,
+    "weight_streaming_dominates": true
+  },
+  "network": {
+    "flow_classes": [
+      {
+        "name": "allgather",
+        "comm_type": "ALLGATHER",
+        "invocations_per_batch": 48.0,
+        "bytes_per_invocation": 260250,
+        "priority": 1,
+        "instances": [
+          {
+            "participants": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15
+            ]
+          },
+          {
+            "participants": [
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31
+            ]
+          },
+          {
+            "participants": [
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44,
+              45,
+              46,
+              47
+            ]
+          },
+          {
+            "participants": [
+              48,
+              49,
+              50,
+              51,
+              52,
+              53,
+              54,
+              55,
+              56,
+              57,
+              58,
+              59,
+              60,
+              61,
+              62,
+              63
+            ]
+          }
+        ],
+        "provenance": {
+          "participants": "mapper_event_stream:attached",
+          "deadline_cycles": "bandwidth_hint:100GB/s"
+        },
+        "deadline_cycles": 20819
+      },
+      {
+        "name": "allreduce",
+        "comm_type": "ALLREDUCE",
+        "invocations_per_batch": 48.0,
+        "bytes_per_invocation": 978944,
+        "priority": 2,
+        "instances": [
+          {
+            "participants": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15
+            ]
+          },
+          {
+            "participants": [
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31
+            ]
+          },
+          {
+            "participants": [
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44,
+              45,
+              46,
+              47
+            ]
+          },
+          {
+            "participants": [
+              48,
+              49,
+              50,
+              51,
+              52,
+              53,
+              54,
+              55,
+              56,
+              57,
+              58,
+              59,
+              60,
+              61,
+              62,
+              63
+            ]
+          }
+        ],
+        "provenance": {
+          "participants": "mapper_event_stream:attached",
+          "deadline_cycles": "bandwidth_hint:100GB/s"
+        },
+        "deadline_cycles": 78315
+      },
+      {
+        "name": "reducescatter",
+        "comm_type": "REDUCESCATTER",
+        "invocations_per_batch": 48.0,
+        "bytes_per_invocation": 978944,
+        "priority": 1,
+        "instances": [
+          {
+            "participants": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15
+            ]
+          },
+          {
+            "participants": [
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31
+            ]
+          },
+          {
+            "participants": [
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44,
+              45,
+              46,
+              47
+            ]
+          },
+          {
+            "participants": [
+              48,
+              49,
+              50,
+              51,
+              52,
+              53,
+              54,
+              55,
+              56,
+              57,
+              58,
+              59,
+              60,
+              61,
+              62,
+              63
+            ]
+          }
+        ],
+        "provenance": {
+          "participants": "mapper_event_stream:attached",
+          "deadline_cycles": "bandwidth_hint:100GB/s"
+        },
+        "deadline_cycles": 78315
+      },
+      {
+        "name": "dp_gradient_ar",
+        "comm_type": "ALLREDUCE",
+        "comm_dims": [],
+        "invocations_per_batch": 1,
+        "bytes_per_invocation": 314572800.0,
+        "priority": 1,
+        "instances": [
+          {
+            "participants": [
+              0,
+              16,
+              32,
+              48
+            ]
+          }
+        ],
+        "provenance": {
+          "bytes": "derived:published_llama7b_arch_fp16",
+          "participants": "derived:cluster_reps",
+          "deadline_cycles": "bandwidth_hint:100GB/s"
+        },
+        "deadline_cycles": 25165824
+      }
+    ],
+    "constraints": {
+      "peak_injection_rate": 0.007937,
+      "avg_injection_rate": 0.001143,
+      "avg_collectives_per_batch": 144,
+      "avg_comm_bytes_per_batch": 106470604,
+      "total_comm_bytes_per_batch": 912261120,
+      "num_flow_classes": 3,
+      "compute_network_ratio": 873.5,
+      "burst_ratio": 8.568
+    }
+  }
+}

@@ -1,0 +1,9 @@
+# Let Timeloop search for a valid mapping (replaces a hand-written map.yaml, whose
+# classic format — integer targets, "M4 N4" factor strings, keep/bypass — is easy
+# to get wrong). Students can add mapspace constraints or pin a mapping later.
+mapper:
+  algorithm: exhaustive
+  optimization-metrics: [energy, delay]
+  search-size: 0
+  victory-condition: 100
+  timeout: 30

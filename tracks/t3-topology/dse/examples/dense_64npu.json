@@ -1,0 +1,50 @@
+{
+  "workload": {
+    "model_family": "dense_transformer",
+    "model_name": "generic_dense",
+    "tp": 64,
+    "pp": 1,
+    "ep": 1,
+    "dp": 1,
+    "serving_mode": "mixed",
+    "trace_path": null
+  },
+  "requirements": [],
+  "agents": [
+    {
+      "kind": "compute_tile",
+      "count": 64,
+      "data_width": 256,
+      "addr_width": 64,
+      "protocol": "AXI"
+    },
+    {
+      "kind": "hbm_controller",
+      "count": 8,
+      "data_width": 256,
+      "addr_width": 64,
+      "protocol": "AXI"
+    }
+  ],
+  "dependencies": [],
+  "noc_config": {
+    "topology_family": "mesh",
+    "radix": null,
+    "concentration": null,
+    "arbitration": null,
+    "rcu_enabled": null,
+    "link_width": null,
+    "output_formats": [
+      "systemverilog"
+    ],
+    "obfuscation_level": 0
+  },
+  "address_map": {
+    "ranges": []
+  },
+  "physical": {
+    "clock_freq_mhz": 1000.0,
+    "data_width": 256,
+    "process_node_nm": 7
+  }
+}

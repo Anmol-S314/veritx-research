@@ -32,6 +32,8 @@ it works even with nothing installed locally.
 | `make shell` | Open an interactive bash shell inside the image (run tools by hand) |
 | `make setup\|lint\|test\|sim TRACK=<t>` | Run that phase for a track (on the host; use `make run` if you lack the tools) |
 | `make report` | Build the aggregate cross-track report into `report/` |
+| `make analysis aggregate plot CONFIG=<c>` | Run that PA phase for TRACK in the container (`CONFIG` selects the results subdir) |
+| `make pa-report CONFIG=<c>` | Run the full PA pipeline (analysis + aggregate + plot) for TRACK |
 | `make clean` | Remove all generated `results/` and `report/` |
 | `make image-build` / `make image-push` | Build / push the tools image (maintainers) |
 
@@ -52,8 +54,14 @@ the vendored dir; nothing static to go stale.
 | `make tool-tag TOOL=booksim2 VER=2.0` | Tag current state; changelog auto-generated from git history |
 | `make tool-pick TOOL=booksim2` | Interactive picker — switch versions, auto-rebuilds |
 | `make tool-clean TOOL=booksim2` | Clean build artifacts |
+| `make tool-sync TOOL=booksim2` | Copy canonical `third_party/<tool>/src` to downstream copies (e.g. astra-sim's extern booksim2). Dry run: `python3 scripts/tools.py booksim2 sync --check` — run after any merge that touches vendored sources, so the copies don't drift |
 
 Equivalent direct CLI: `python3 scripts/tools.py booksim2 build`.
+
+`make tool-image` / `make tool-image-push` rebuild / push the tools container image
+(same recipes as `image-build` / `image-push` — kept so the whole tool-* family is
+uniform). See [`third_party/README.md`](third_party/README.md) for how vendoring,
+METADATA.json and the sync mechanism work.
 
 ### Per-track commands
 

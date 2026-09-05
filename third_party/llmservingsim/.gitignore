@@ -1,0 +1,28 @@
+# Ignore env file
+env/
+
+# Ignore python cache
+*.pyc
+__pycache__/
+*.joblib
+
+# Ignore pkl files
+*.pkl
+
+# Ignore bench results
+bench/results/
+
+# Large workload files (regenerable)
+workloads/swe-bench-qwen3-30b-a3b-50-sps0.2.jsonl
+
+# AI agent cache files
+.claude/
+.codex/
+.cursor/
+.copilot/
+.aider*
+.continue/
+
+# Build artifacts
+build/
+build_debug/

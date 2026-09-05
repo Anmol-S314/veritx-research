@@ -1,0 +1,67 @@
+{
+  "source": "BSC Paraver WRF on MareNostrum (128 ranks, real supercomputer)",
+  "num_batches_analyzed": 1,
+  "compute": {
+    "avg_cycles_per_batch": 100000000,
+    "total_weight_bytes": 0
+  },
+  "memory": {
+    "total_weight_bytes": 0,
+    "weight_streaming_dominates": false
+  },
+  "network": {
+    "flow_classes": [
+      {
+        "name": "wrf_mpi_comm",
+        "comm_type": "P2P",
+        "bytes_per_invocation": 1563,
+        "invocations_per_batch": 100480,
+        "priority": 1,
+        "deadline_hint_cycles": 500000,
+        "is_expert_parallel": false,
+        "instances": [
+          {
+            "participants": [
+              1,
+              0
+            ]
+          },
+          {
+            "participants": [
+              1,
+              3
+            ]
+          },
+          {
+            "participants": [
+              1,
+              4
+            ]
+          },
+          {
+            "participants": [
+              1,
+              5
+            ]
+          }
+        ]
+      }
+    ],
+    "constraints": {
+      "peak_injection_rate": 0.03,
+      "avg_injection_rate": 0.01,
+      "burst_ratio": 2.0,
+      "compute_network_ratio": 50.0
+    }
+  },
+  "phases": [
+    {
+      "type": "compute",
+      "priority": "normal"
+    }
+  ],
+  "real_traces": {
+    "paraver_prv": "1.Introduction_to_Paraver_MPI/Iberia-128-CA.chop1.1it.shifted.prv",
+    "source": "BSC Paraver"
+  }
+}

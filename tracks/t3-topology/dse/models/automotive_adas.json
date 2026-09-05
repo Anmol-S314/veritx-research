@@ -1,0 +1,651 @@
+{
+  "source": "synthetic: automotive ADAS sensor fusion",
+  "num_batches_analyzed": 1,
+  "compute": {
+    "avg_cycles_per_batch": 50000000,
+    "total_weight_bytes": 0
+  },
+  "memory": {
+    "total_weight_bytes": 0,
+    "weight_streaming_dominates": false
+  },
+  "network": {
+    "flow_classes": [
+      {
+        "name": "lidar_pointcloud",
+        "comm_type": "P2P",
+        "bytes_per_invocation": 10000000,
+        "invocations_per_batch": 20,
+        "priority": 3,
+        "deadline_hint_cycles": 100000,
+        "is_expert_parallel": false,
+        "instances": [
+          {
+            "participants": [
+              0
+            ]
+          },
+          {
+            "participants": [
+              1
+            ]
+          },
+          {
+            "participants": [
+              2
+            ]
+          },
+          {
+            "participants": [
+              3
+            ]
+          },
+          {
+            "participants": [
+              4
+            ]
+          },
+          {
+            "participants": [
+              5
+            ]
+          },
+          {
+            "participants": [
+              6
+            ]
+          },
+          {
+            "participants": [
+              7
+            ]
+          },
+          {
+            "participants": [
+              8
+            ]
+          },
+          {
+            "participants": [
+              9
+            ]
+          },
+          {
+            "participants": [
+              10
+            ]
+          },
+          {
+            "participants": [
+              11
+            ]
+          },
+          {
+            "participants": [
+              12
+            ]
+          },
+          {
+            "participants": [
+              13
+            ]
+          },
+          {
+            "participants": [
+              14
+            ]
+          },
+          {
+            "participants": [
+              15
+            ]
+          },
+          {
+            "participants": [
+              16
+            ]
+          },
+          {
+            "participants": [
+              17
+            ]
+          },
+          {
+            "participants": [
+              18
+            ]
+          },
+          {
+            "participants": [
+              19
+            ]
+          },
+          {
+            "participants": [
+              20
+            ]
+          },
+          {
+            "participants": [
+              21
+            ]
+          },
+          {
+            "participants": [
+              22
+            ]
+          },
+          {
+            "participants": [
+              23
+            ]
+          },
+          {
+            "participants": [
+              24
+            ]
+          },
+          {
+            "participants": [
+              25
+            ]
+          },
+          {
+            "participants": [
+              26
+            ]
+          },
+          {
+            "participants": [
+              27
+            ]
+          },
+          {
+            "participants": [
+              28
+            ]
+          },
+          {
+            "participants": [
+              29
+            ]
+          },
+          {
+            "participants": [
+              30
+            ]
+          },
+          {
+            "participants": [
+              31
+            ]
+          },
+          {
+            "participants": [
+              32
+            ]
+          },
+          {
+            "participants": [
+              33
+            ]
+          },
+          {
+            "participants": [
+              34
+            ]
+          },
+          {
+            "participants": [
+              35
+            ]
+          },
+          {
+            "participants": [
+              36
+            ]
+          },
+          {
+            "participants": [
+              37
+            ]
+          },
+          {
+            "participants": [
+              38
+            ]
+          },
+          {
+            "participants": [
+              39
+            ]
+          },
+          {
+            "participants": [
+              40
+            ]
+          },
+          {
+            "participants": [
+              41
+            ]
+          },
+          {
+            "participants": [
+              42
+            ]
+          },
+          {
+            "participants": [
+              43
+            ]
+          },
+          {
+            "participants": [
+              44
+            ]
+          },
+          {
+            "participants": [
+              45
+            ]
+          },
+          {
+            "participants": [
+              46
+            ]
+          },
+          {
+            "participants": [
+              47
+            ]
+          },
+          {
+            "participants": [
+              48
+            ]
+          },
+          {
+            "participants": [
+              49
+            ]
+          },
+          {
+            "participants": [
+              50
+            ]
+          },
+          {
+            "participants": [
+              51
+            ]
+          },
+          {
+            "participants": [
+              52
+            ]
+          },
+          {
+            "participants": [
+              53
+            ]
+          },
+          {
+            "participants": [
+              54
+            ]
+          },
+          {
+            "participants": [
+              55
+            ]
+          },
+          {
+            "participants": [
+              56
+            ]
+          },
+          {
+            "participants": [
+              57
+            ]
+          },
+          {
+            "participants": [
+              58
+            ]
+          },
+          {
+            "participants": [
+              59
+            ]
+          },
+          {
+            "participants": [
+              60
+            ]
+          },
+          {
+            "participants": [
+              61
+            ]
+          },
+          {
+            "participants": [
+              62
+            ]
+          },
+          {
+            "participants": [
+              63
+            ]
+          }
+        ]
+      },
+      {
+        "name": "camera_frame",
+        "comm_type": "BROADCAST",
+        "bytes_per_invocation": 2000000,
+        "invocations_per_batch": 30,
+        "priority": 2,
+        "deadline_hint_cycles": 330000,
+        "is_expert_parallel": false,
+        "instances": [
+          {
+            "participants": [
+              0,
+              1,
+              2,
+              3
+            ]
+          }
+        ]
+      },
+      {
+        "name": "fusion_result",
+        "comm_type": "ALLREDUCE",
+        "bytes_per_invocation": 500000,
+        "invocations_per_batch": 20,
+        "priority": 2,
+        "deadline_hint_cycles": 100000,
+        "is_expert_parallel": false,
+        "instances": [
+          {
+            "participants": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44,
+              45,
+              46,
+              47,
+              48,
+              49,
+              50,
+              51,
+              52,
+              53,
+              54,
+              55,
+              56,
+              57,
+              58,
+              59,
+              60,
+              61,
+              62,
+              63
+            ]
+          }
+        ]
+      },
+      {
+        "name": "can_bus",
+        "comm_type": "P2P",
+        "bytes_per_invocation": 64,
+        "invocations_per_batch": 100,
+        "priority": 1,
+        "deadline_hint_cycles": 10000,
+        "is_expert_parallel": false,
+        "instances": [
+          {
+            "participants": [
+              0,
+              1
+            ]
+          },
+          {
+            "participants": [
+              4,
+              5
+            ]
+          },
+          {
+            "participants": [
+              8,
+              9
+            ]
+          },
+          {
+            "participants": [
+              12,
+              13
+            ]
+          },
+          {
+            "participants": [
+              16,
+              17
+            ]
+          },
+          {
+            "participants": [
+              20,
+              21
+            ]
+          },
+          {
+            "participants": [
+              24,
+              25
+            ]
+          },
+          {
+            "participants": [
+              28,
+              29
+            ]
+          },
+          {
+            "participants": [
+              32,
+              33
+            ]
+          },
+          {
+            "participants": [
+              36,
+              37
+            ]
+          },
+          {
+            "participants": [
+              40,
+              41
+            ]
+          },
+          {
+            "participants": [
+              44,
+              45
+            ]
+          },
+          {
+            "participants": [
+              48,
+              49
+            ]
+          },
+          {
+            "participants": [
+              52,
+              53
+            ]
+          },
+          {
+            "participants": [
+              56,
+              57
+            ]
+          },
+          {
+            "participants": [
+              60,
+              61
+            ]
+          }
+        ]
+      },
+      {
+        "name": "diagnostic_stream",
+        "comm_type": "ALLGATHER",
+        "bytes_per_invocation": 100000,
+        "invocations_per_batch": 5,
+        "priority": 0,
+        "deadline_hint_cycles": 2000000,
+        "is_expert_parallel": false,
+        "instances": [
+          {
+            "participants": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44,
+              45,
+              46,
+              47,
+              48,
+              49,
+              50,
+              51,
+              52,
+              53,
+              54,
+              55,
+              56,
+              57,
+              58,
+              59,
+              60,
+              61,
+              62,
+              63
+            ]
+          }
+        ]
+      }
+    ],
+    "constraints": {
+      "peak_injection_rate": 0.01,
+      "avg_injection_rate": 0.005,
+      "burst_ratio": 1.0,
+      "compute_network_ratio": 100.0
+    }
+  },
+  "phases": [
+    {
+      "type": "startup",
+      "priority": "normal"
+    },
+    {
+      "type": "steady_state",
+      "priority": "high"
+    },
+    {
+      "type": "emergency",
+      "priority": "critical"
+    }
+  ]
+}

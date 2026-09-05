@@ -1,0 +1,81 @@
+{
+  "_comment": "VeritX CompileRequest template \u2014 see README.md for field descriptions",
+  "_docs": {
+    "E1_workload": "Model family, parallelism, serving mode, trace binding",
+    "E2_requirements": "Per-class latency/BW bounds with binding flag",
+    "E3_agents": "Typed nodes: compute_tile, hbm_controller, nic, peripheral, ucie_port",
+    "E4_dependencies": "Blocking/ordering graph \u2192 drives VC derivation (LOCKED)",
+    "E5_noc_config": "GUIDED + FREE knobs only. No routing/turns/vc_map fields."
+  },
+  "workload": {
+    "model_family": "mixture_of_experts",
+    "model_name": "Qwen3-30B-A3B",
+    "tp": 16,
+    "pp": 1,
+    "ep": 8,
+    "dp": 1,
+    "serving_mode": "decode_heavy",
+    "param_count_b": 30,
+    "sequence_length": 4096,
+    "precision": "fp8",
+    "trace_path": "runs/traces/qwen3_serving_16rank.trace"
+  },
+  "requirements": [
+    {
+      "qos_class": "latency_critical",
+      "latency_ceiling_cycles": 5000,
+      "bandwidth_floor_gbps": null,
+      "binding": true
+    }
+  ],
+  "agents": [
+    {
+      "kind": "compute_tile",
+      "count": 16,
+      "data_width": 256,
+      "addr_width": 64,
+      "protocol": "AXI"
+    },
+    {
+      "kind": "hbm_controller",
+      "count": 4,
+      "data_width": 256,
+      "addr_width": 64,
+      "protocol": "AXI"
+    }
+  ],
+  "dependencies": [
+    {
+      "source": "expert_alltoall",
+      "target": "expert_reduce",
+      "kind": "blocking"
+    }
+  ],
+  "noc_config": {
+    "topology_family": "mesh",
+    "radix": null,
+    "concentration": null,
+    "arbitration": null,
+    "rcu_enabled": null,
+    "link_width": null,
+    "output_formats": [
+      "systemverilog"
+    ],
+    "obfuscation_level": 0
+  },
+  "address_map": {
+    "ranges": [
+      {
+        "name": "HBM0",
+        "base": 2147483648,
+        "size": 1073741824,
+        "target_agent_idx": 1
+      }
+    ]
+  },
+  "physical": {
+    "clock_freq_mhz": 1000.0,
+    "data_width": 256,
+    "process_node_nm": 7
+  }
+}
