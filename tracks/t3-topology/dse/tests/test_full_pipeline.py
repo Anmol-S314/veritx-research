@@ -10,6 +10,7 @@ This verifies the end-to-end serving simulation path.
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -67,6 +68,19 @@ def _run(cmd, cwd=None, timeout=60, env=None):
         timeout=timeout, env=merged_env,
     )
     return result
+
+
+def _assert_served(result, min_requests=1):
+    """The sim must retire real requests — guards against vacuous passes
+    (exit 0 with an empty results block, e.g. backend died silently)."""
+    stdout = result.stdout.lower()
+    assert "throughput" in stdout or "simulation results" in stdout, (
+        f"Missing throughput/results:\n{result.stdout[-500:]}"
+    )
+    m = re.search(r"total requests:\s+(\d+)", result.stdout, re.IGNORECASE)
+    assert m and int(m.group(1)) >= min_requests, (
+        f"Expected >={min_requests} retired requests:\n{result.stdout[-500:]}"
+    )
 
 
 def _generate_booksim_config(tmpdir):
@@ -282,7 +296,7 @@ class TestLLMServingSimServe:
             "--network-backend", "booksim",
             "--booksim-replay-only",
             "--log-level", "WARNING",
-            "--no-cleanup-inputs",
+            "--keep-inputs",
         ]
         result = _run(cmd, cwd=str(LLMSIM), timeout=120)
 
@@ -292,10 +306,7 @@ class TestLLMServingSimServe:
             f"stderr[-500:]: {result.stderr[-500:]}"
         )
 
-        stdout = result.stdout.lower()
-        assert "throughput" in stdout or "simulation results" in stdout, (
-            f"Missing throughput/results:\n{result.stdout[-500:]}"
-        )
+        _assert_served(result)
 
     @pytest.mark.skipif(
         not (LLMSIM / "serving" / "__main__.py").exists(),
@@ -314,7 +325,7 @@ class TestLLMServingSimServe:
             "--network-backend", "booksim",
             "--booksim-replay-only",
             "--log-level", "WARNING",
-            "--no-cleanup-inputs",
+            "--keep-inputs",
         ]
         result = _run(cmd, cwd=str(LLMSIM), timeout=180)
 
@@ -324,10 +335,7 @@ class TestLLMServingSimServe:
             f"stderr[-500:]: {result.stderr[-500:]}"
         )
 
-        stdout = result.stdout.lower()
-        assert "throughput" in stdout or "simulation results" in stdout, (
-            f"Missing throughput/results:\n{result.stdout[-500:]}"
-        )
+        _assert_served(result)
 
     @pytest.mark.skipif(
         not (LLMSIM / "serving" / "__main__.py").exists(),
@@ -346,7 +354,7 @@ class TestLLMServingSimServe:
             "--network-backend", "booksim",
             "--booksim-replay-only",
             "--log-level", "WARNING",
-            "--no-cleanup-inputs",
+            "--keep-inputs",
         ]
         result = _run(cmd, cwd=str(LLMSIM), timeout=240)
 
@@ -356,10 +364,7 @@ class TestLLMServingSimServe:
             f"stderr[-500:]: {result.stderr[-500:]}"
         )
 
-        stdout = result.stdout.lower()
-        assert "throughput" in stdout or "simulation results" in stdout, (
-            f"Missing throughput/results:\n{result.stdout[-500:]}"
-        )
+        _assert_served(result)
 
     @pytest.mark.skipif(
         not (LLMSIM / "serving" / "__main__.py").exists(),
@@ -378,7 +383,7 @@ class TestLLMServingSimServe:
             "--network-backend", "booksim",
             "--booksim-replay-only",
             "--log-level", "WARNING",
-            "--no-cleanup-inputs",
+            "--keep-inputs",
         ]
         result = _run(cmd, cwd=str(LLMSIM), timeout=240)
 
@@ -388,10 +393,7 @@ class TestLLMServingSimServe:
             f"stderr[-500:]: {result.stderr[-500:]}"
         )
 
-        stdout = result.stdout.lower()
-        assert "throughput" in stdout or "simulation results" in stdout, (
-            f"Missing throughput/results:\n{result.stdout[-500:]}"
-        )
+        _assert_served(result)
 
 
 class TestPipelineTraceToResults:

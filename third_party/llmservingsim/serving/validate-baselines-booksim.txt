@@ -1,0 +1,13 @@
+# VeritX BookSim-backend baselines: total clocks (ns) per serve scenario.
+# Same idea as upstream serving/validate-baselines.txt, but recorded on OUR
+# stack (new upstream frontend a4053bc + forward-ported BookSim backend via
+# AstraSim_BookSim2, replay-only). The sim is deterministic — exact match.
+# Regenerate: bash /tmp/gen_baselines.sh (inline in epic/booksim-forward-port
+# history) or rerun the 4 pytest serve tests and read "Total clocks (ns)".
+# Command shape per line:
+#   python3 -m serving --cluster-config <cfg> --dataset <data> --num-reqs <n>
+#     --network-backend booksim --booksim-replay-only --keep-inputs
+serve_single 24948047278
+serve_dense_dp 894582240
+serve_moe_dp_ep 25029754244
+serve_moe_dp_pp 13262236900

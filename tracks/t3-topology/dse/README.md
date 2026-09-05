@@ -1289,14 +1289,11 @@ immediately — the sim now fails fast with its stderr + exit 1 instead of
 hanging. Use `booksim` for multi-dim. (Upstream's fork lifted this; see
 the convergence note in `third_party/llmservingsim/METADATA.json`.)
 
-#### Backend / topology limits (2026-09-05 sync)
+#### Backend / topology limits (epic/booksim-forward-port: serving/ is upstream a4053bc + re-added BookSim backend)
 
-* `booksim`: N-dim (2-D DP, 3-D DP+PP proven). PP collectives are correctly
-  scoped but the fabric is unpartitioned for PP stages.
+* `booksim`: N-dim green — single, dense-DP, MoE-DP-EP, MoE-DP-PP incl. 3-dim `[tp,pp,dp]` scoping. Our clocks: `serving/validate-baselines-booksim.txt`.
 * `analytical`: 1-dim only (see above).
-* Upstream deleted the `booksim` backend and `--booksim-replay-only` from
-  their CLI; our stack keeps both as VeritX patches. `serving/validate.sh`
-  (vendored additively) needs their CLI and does not run here.
+* Upstream's `validate.sh` still needs their analytical N-dim backend and does not run here; our pytest serve class is the regression net.
 
 #### Known Issues ⚠️
 

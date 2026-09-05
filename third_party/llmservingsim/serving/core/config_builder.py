@@ -109,6 +109,12 @@ def _resolve_parallelism(instance, model_config):
         raise ValueError(f"Parallelism degrees must be >= 1: tp_size={tp_size}, pp_size={pp_size}, ep_size={ep_size}")
     if dp_group is None and ep_size > tp_size:
         raise ValueError(f"ep_size ({ep_size}) > tp_size ({tp_size}) requires dp_group to be set")
+    num_hidden_layers = model_config.get("num_hidden_layers")
+    if num_hidden_layers is not None and pp_size > num_hidden_layers:
+        raise ValueError(
+            f"pp_size ({pp_size}) exceeds the model's transformer block count "
+            f"({num_hidden_layers}); a pipeline stage cannot be empty"
+        )
     if is_moe:
         num_experts = model_config.get(
             "num_local_experts", model_config.get("num_experts", 1)
@@ -125,7 +131,7 @@ def _resolve_parallelism(instance, model_config):
     instance["pp_size"] = pp_size
     instance["ep_size"] = ep_size
     instance["dp_group"] = dp_group
-    instance["is_moe"] = is_moe  # VeritX port from upstream: dense-DP exemption needs this
+    instance["is_moe"] = is_moe
 
     return num_npus, tp_size, pp_size, ep_size, dp_group
 
@@ -153,10 +159,11 @@ def _resolve_dp_groups(all_instances):
 
         dp_size = len(members)
         if not members[0].get("is_moe", True):
-            # VeritX port from upstream: a dense model has no experts, so
-            # ep_size is not sharded over the group — dividing it by
-            # dp_group_size would reject pure data parallelism (vLLM
-            # --data-parallel-size). PP configs still unsupported here.
+            # A dense model has no experts, so ``ep_size`` is not a parallelism
+            # degree to spread over the group -- it is 1 because there is
+            # nothing to shard. Dividing it by dp_group_size would reject pure
+            # data parallelism over a dense model, which is what vLLM's
+            # ``--data-parallel-size`` does on its own.
             ep_total = 1
             local_ep = 1
         else:
@@ -167,11 +174,19 @@ def _resolve_dp_groups(all_instances):
             if local_ep > tp0:
                 raise ValueError(f"DP group '{group_name}': local_ep ({local_ep}) > tp_size ({tp0})")
 
-        # Topology dimensions for a DP group, innermost first (VeritX port
-        # from upstream): [tp_size] + ([pp_size] if pp > 1) + [dp_group_size],
-        # matching vLLM's DP x PP x TP rank layout. EP deliberately spans DP
-        # and TP but NOT PP (upstream transpose pins the PP index).
-        # ALLREDUCE (TP): dim 0 only.
+        # Topology dimensions for a DP group, innermost first:
+        #   [tp_size] + ([pp_size] if pp > 1) + [dp_group_size]
+        # matching vLLM's rank layout, which is DP x PP x TP with TP contiguous
+        # (``parallel_state.initialize_model_parallel``:
+        # ``all_ranks.reshape(-1, dp, pp, pcp, tp)``).
+        #
+        # Collective scoping follows the groups vLLM builds off that layout:
+        #   TP  ``all_ranks.view(-1, tp)``                    -> the TP dim only.
+        #   EP  ``all_ranks.transpose(1, 2).reshape(-1, dp*pcp*tp)`` -> DP and TP,
+        #       and deliberately **not** PP: the transpose pins the PP index, so
+        #       experts are sharded across the DP x TP ranks of one pipeline
+        #       stage. Marking PP involved would drag the other stages' NPUs into
+        #       a collective they never join in vLLM.
         has_pp = pp0 > 1
         if has_pp:
             tp_dim = [True, False, False]
@@ -180,7 +195,7 @@ def _resolve_dp_groups(all_instances):
             else:
                 ep_dim = [True, False, True] if tp0 > 1 else [False, False, True]
         else:
-            tp_dim = [True, False]  # ALLREDUCE on dim 0 only
+            tp_dim = [True, False]
             if ep_total <= tp0:
                 # EP fits within TP dimension (no cross-instance ALLTOALL)
                 ep_dim = [True, False]
@@ -198,9 +213,7 @@ def _resolve_dp_groups(all_instances):
     # Non-DP instances. Independent multi-instance configs still use a
     # multi-dimensional topology ([tp_size, num_groups]); local collectives
     # must be scoped to dim 0 so they do not cross instance/PP groups.
-    # Trace dim scoping uses LOGICAL dims (dim0=TP, dim1=EP/DP), which keep
-    # size-1 dims so EP/DP collectives keep their dim identity.
-    network_dims = _compute_logical_dims(all_instances)
+    network_dims = _compute_network_dims(all_instances)
     local_dim = None
     if len(network_dims) > 1:
         local_dim = [True] + [False] * (len(network_dims) - 1)
@@ -210,23 +223,12 @@ def _resolve_dp_groups(all_instances):
             inst["dp_group_size"] = 1
             inst["local_ep"] = inst["ep_size"]
             inst["ep_total"] = inst["ep_size"]
-            # Single-dim topology: scope explicitly to [True] so traces carry
-            # involved_dim. Leaving None emits unscoped collectives and the
-            # C++ backend defaults to 4 dims, which deadlocks packet simulation
-            # on any real (1-2 dim) topology.
-            dim = local_dim if local_dim is not None else [True]
-            inst["tp_dim"] = dim
-            inst["ep_dim"] = dim if inst["ep_size"] > 1 else None
+            inst["tp_dim"] = local_dim
+            inst["ep_dim"] = local_dim if inst["ep_size"] > 1 else None
 
 
 def _compute_network_dims(instances):
-    """Infer ASTRA-Sim topology dimensions from resolved instances.
-
-    PHYSICAL dims for network.yml (shared with the analytical backend, which
-    only supports flat/1-dim topologies here): size-1 dims are stripped and
-    asymmetric 2D is collapsed, exactly as before. Do NOT use for trace dim
-    numbering — see _compute_logical_dims.
-    """
+    """Infer ASTRA-Sim topology dimensions from resolved instances."""
     dp_groups = {}
     for inst in instances:
         dg = inst.get("dp_group")
@@ -234,12 +236,15 @@ def _compute_network_dims(instances):
             dp_groups.setdefault(dg, []).append(inst)
 
     if dp_groups:
-        # DP group mode: topology = [tp_size, pp_size, dp_group_size],
-        # innermost first (VeritX port from upstream, mirroring vLLM's
-        # DP x PP x TP rank layout). pp_size drops out when 1 so plain
-        # DP+TP keeps its 2-D topology and 2-element dim vectors.
-        # Leaving pp out entirely sizes the world at tp*dp while tp*pp*dp
-        # NPUs exist — ASTRA-Sim then waits on ranks with no room.
+        # DP group mode: topology = [tp_size, pp_size, dp_group_size], innermost
+        # first, mirroring vLLM's DP x PP x TP rank layout. pp_size is dropped
+        # when it is 1 so a plain DP+TP config keeps the 2-D topology (and the
+        # collective dim vectors in _resolve_dp_groups keep their 2-element form).
+        #
+        # Leaving pp_size out entirely -- which this did -- sizes the world at
+        # tp * dp while tp * pp * dp NPUs exist, so ASTRA-Sim waits on ranks its
+        # topology has no room for and the run hangs with no error.
+        # All members agree on tp/pp/ep (validated by _resolve_dp_groups).
         first_group = next(iter(dp_groups.values()))
         tp_size = first_group[0]["tp_size"]
         pp_size = first_group[0]["pp_size"]
@@ -267,33 +272,21 @@ def _compute_network_dims(instances):
             npus_per_group = total_npu // total_pp
             dims = [npus_per_group, total_pp]
 
-    # Remove trailing and leading 1s (single-element dimensions are unnecessary).
-    # BookSim mesh requires k>=2, so a leading 1 (e.g. [1,2] from P/D doubling) would
-    # create a degenerate dimension that BookSim cannot represent and Sys would
-    # assert collective_impl.size() <= dimension_size.size(). Collapse to [2].
+    # Remove trailing 1s (single-element dimensions are unnecessary).
     while len(dims) > 1 and dims[-1] == 1:
         dims.pop()
-    while len(dims) > 1 and dims[0] == 1:
-        dims.pop(0)
-    # For BookSim: collapse 2D rectangular dims to single [total] so the
-    # 1D mesh matches the single collective impl. Keeps analytical 2D but
-    # BookSim fabric is always 1D (k^n). Without this, 8N BookSim would be 1D [8]
-    # vs network 2D [2,4] → GeneralComplexTopology assert 2<=1.
-    # Only collapse when dims are 2D asymmetric; keep [2,2] etc.
-    if len(dims) == 2 and dims[0] != dims[1]:
-        _total = dims[0] * dims[1]
-        dims = [_total]
     return dims
 
 
 def _compute_logical_dims(instances):
-    """Logical topology dims matching trace dim numbering (dim0=TP, dim1=EP/DP).
+    """VeritX: logical topology dims matching trace dim numbering.
 
-    Unlike _compute_network_dims, size-1 dims are KEPT: trace collectives
-    address logical dims, and stripping a leading 1 renumbers dim1 (EP/DP)
-    out of existence, making the backend silently drop those collectives.
-    Used for trace dim scoping, system.json impl arity, and the booksim
-    --physical-dims flag (whose product must equal the fabric node count).
+    dim0=TP, dim1=PP (if pp>1), last=DP — same rule as _compute_network_dims
+    for DP groups. Unlike the physical version, size-1 dims are KEPT: trace
+    collectives address logical dims, and stripping a leading 1 renumbers
+    dim1 (EP/DP) out of existence, making the backend silently drop those
+    collectives. Feeds the booksim --physical-dims flag (whose product must
+    equal the fabric node count) via logical_dims.json.
     """
     dp_groups = {}
     for inst in instances:
@@ -302,12 +295,9 @@ def _compute_logical_dims(instances):
             dp_groups.setdefault(dg, []).append(inst)
 
     if dp_groups:
-        # Logical dims mirror the physical rule (VeritX port from upstream):
-        # [tp_size, pp_size, dp_group_size] innermost-first, pp dropped when
-        # 1 so dim vectors stay 2-element for plain DP+TP.
         first_group = next(iter(dp_groups.values()))
         tp_size = first_group[0]["tp_size"]
-        pp_size = first_group[0]["pp_size"]
+        pp_size = first_group[0].get("pp_size", 1)
         dims = ([tp_size, pp_size, len(first_group)] if pp_size > 1
                 else [tp_size, len(first_group)])
     else:
@@ -317,8 +307,8 @@ def _compute_logical_dims(instances):
             for inst in instances
         )
         total_pp = sum(
-            inst["pp_size"] if inst.get("pd_type") != "prefill"
-            else inst["pp_size"] * 2
+            inst.get("pp_size", 1) if inst.get("pd_type") != "prefill"
+            else inst.get("pp_size", 1) * 2
             for inst in instances
         )
         num_instances = len(instances) + sum(
@@ -336,12 +326,6 @@ def _compute_logical_dims(instances):
     # load-bearing: it holds dim0's slot so EP/DP keep dim1.
     while len(dims) > 1 and dims[-1] == 1:
         dims.pop()
-    # Collapse asymmetric 2D only when neither dim is degenerate. [1,X] has
-    # no 2D mesh structure worth flattening, and flattening destroys the
-    # logical dim identity that trace involved_dims rely on.
-    if len(dims) == 2 and dims[0] != dims[1] and 1 not in dims:
-        _total = dims[0] * dims[1]
-        dims = [_total]
     return dims
 
 
@@ -375,7 +359,7 @@ def _sync_system_collective_dims(system_config_path, instances):
     with open(system_config_path) as f:
         system_config = json.load(f)
 
-    num_dims = len(_compute_logical_dims(instances))
+    num_dims = len(_compute_network_dims(instances))
     for key in _COLLECTIVE_IMPL_KEYS:
         system_config[key] = ["ring"] * num_dims
 
@@ -631,11 +615,6 @@ def build_cluster_config(astra_sim, cluster_config_path, enable_local_offloading
                 # sync local-mem-bw in system config with npu_mem bw
                 system_config["local-mem-bw"] = int(npu_mem["mem_bw"])
 
-                # Allow cluster config to override preferred-dataset-splits
-                # (controls chunking of collectives in ASTRA-sim's ring algorithm)
-                if "preferred-dataset-splits" in cluster_config:
-                    system_config["preferred-dataset-splits"] = cluster_config["preferred-dataset-splits"]
-
                 with open(system_config_path, "w", encoding="utf-8") as f:
                     json.dump(system_config, f, ensure_ascii=False, indent=2)
                 
@@ -753,8 +732,9 @@ def build_cluster_config(astra_sim, cluster_config_path, enable_local_offloading
 
     # Generate the final ASTRA-Sim input files after all instances are known.
     _create_network_config(network_config_path, total_instances, link_bw, link_latency)
-    # Persist LOGICAL dims (trace dim numbering) for backends that need the
-    # true multi-dim shape. network.yml stays physical/flat for analytical.
+    # VeritX: persist LOGICAL dims (trace dim numbering) for backends that
+    # need the true multi-dim shape (booksim --physical-dims). network.yml
+    # stays physical/flat for analytical.
     with open(os.path.join(inputs_root, "logical_dims.json"), "w",
               encoding="utf-8") as f:
         json.dump({"dims": _compute_logical_dims(total_instances)}, f)
@@ -797,7 +777,7 @@ def _create_network_config(network_config_path, instances, link_bw, link_latency
     """Create ASTRA-Sim network topology config.
 
     Topology dimensions:
-      - For DP groups: [tp_size, (pp_size,) dp_group_size] — dim 0 for TP ALLREDUCE, last for EP ALLTOALL
+      - For DP groups: [tp_size, dp_group_size] — dim 0 for TP ALLREDUCE, dim 1 for EP ALLTOALL
       - For independent instances: [tp_size, num_groups] — dim 0 for TP, dim 1 for PP/instances
       - Single GPU instances: [1]
     """

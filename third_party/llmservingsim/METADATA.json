@@ -7,10 +7,9 @@
   "source_branch": "main",
   "patches": [],
   "local_modifications": [
-    "serving/ kept at VeritX stack (multi-instance RR + load/run protocol, BookSim cycle-accurate backend with physical-dims, PD/DP fixes, decode trace cache, stderr-drain, --remote-memory-configuration) — see git log for third_party/llmservingsim/serving/",
-    "serving/core/{block_pool,kv_cache_manager}.py + serving/{validate.sh,validate-baselines.txt} ported additively from upstream a4053bc (self-tests pass; not yet wired into scheduler)",
-    "serving/core/config_builder.py: dense-DP exemption + is_moe plumbing + PP 3-dim scoping ([tp,pp,dp] dims, len-3 tp_dim/ep_dim) ported from upstream; analytical backend stays 1-dim-only (old binary) — multi-dim needs booksim",
-    "serving/__main__.py: loud early-backend-death guard (exit 1 + stderr tail when 0 batches complete)",
+    "serving/ = upstream a4053bc base + forward-ported VeritX BookSim backend (upstream deleted theirs): booksim CLI choice, --booksim-replay-only, _prepare_booksim_config (anynet/mesh), spawn args (remote-memory, flit-bytes, physical-dims via logical_dims.json), controller BookSim parsing, dispatched-only retirement via dp_pending inspection, multi-instance round-robin fallback",
+    "serving: loud early-backend-death guard (exit 1 + stderr tail), zero-division guard on empty results, background stderr-drain thread (backend logs ~510B/round; undrained pipe stalls ~round 1500)",
+    "serving/validate-baselines-booksim.txt: our BookSim-backend clocks for 4 serve scenarios (upstream validate.sh needs their analytical N-dim backend)",
     "inputs/, extern/ kept locally (experiment inputs, not upstream)",
     "configs/cluster dual_node_kv_remote, moe_tight_mem, rtxpro_single + configs/model Qwen3-30B-A3B-Instruct-2507 kept locally (not in upstream HEAD)",
     "astra-sim/ kept as absolute symlinks into third_party/astra-sim (see third_party/README P1); upstream .gitmodules dropped",
@@ -19,8 +18,9 @@
   "known_gaps": [
     "No standalone binary — runs as python -m serving",
     "Profiler requires GPU (RTXPRO6000) for hardware latency measurement",
-    "validate.sh needs new upstream CLI (analytical-only, block-pool scheduler) — fails on VeritX serving base until convergence",
-    "Upstream deleted the booksim network backend; veritx serve still uses our BookSim path — keep until analytical parity proven"
+    "Block-pool scheduler (upstream 2cf3f12) not adopted — ours still uses radix-tree allocator; adopt on KV-pressure bugs only",
+    "Our analytical binary is 1-dim-only; multi-dim needs booksim backend",
+    "Host venv must pip-install chakra from third_party/astra-sim/extern/graph_frontend/chakra (needs protobuf>=7.35.1); image has no chakra package"
   ],
   "used_by": [
     "t3-topology"

@@ -1,59 +1,67 @@
 import re
 from .logger import get_logger
 
+# ASTRA-Sim's per-iteration report, the one line of its stdout the frontend
+# has to parse. Compiled once: parse_output runs on every handshake, and at
+# 8 NPUs a 10-request run makes 337,786 of them.
+_ITERATION_RE = re.compile(
+    r"sys\[(\d+)\] iteration (\d+) finished, (\d+) cycles, "
+    r"exposed communication (\d+) cycles."
+)
+
+
 class Controller():
-    def __init__(self, total_num, network_backend='analytical'):
+    def __init__(self, total_num):
         self.end_dict = {}
         self.total_num = total_num
-        self.network_backend = network_backend
         self.logger = get_logger(self.__class__)
-
         for i in range(total_num):
             self.end_dict[i] = -1
 
 
     def read_wait(self, p):
+        """Read ASTRA-Sim's stdout up to the "Waiting" prompt.
+
+        Every line before the prompt is the iteration report; ASTRA-Sim used
+        to interleave a per-tick "Checking ..." line per NPU, which made this
+        loop 3.07M reads on a 10-request 8-NPU run against 675k now. See the
+        ASTRA_SIM_TRACE_POLLING note in the analytical backend's main.cc.
+        """
         out = [""]
-        while True:
+        while "Waiting" not in out[-1] and out[-1] != "Checking Non-Exited Systems ...\n":
             line = p.stdout.readline()
-            if not line:  # EOF
+            if not line:
+                # VeritX: EOF — backend exited (crash/arg error). Break so the
+                # caller fails loudly instead of spinning forever on a dead pipe.
                 break
+            # For debugging
+            # print(line, end='')
             out.append(line)
-            p.stdout.flush()
-            if "Waiting" in out[-1] or out[-1] == "Checking Non-Exited Systems ...\n":
-                break
-        # If we got no useful output, capture stderr for diagnostics
-        if not out or (len(out) == 1 and out[0] == ''):
-            try:
-                stderr_data = p.stderr.read() if p.stderr and p.stderr.readable() else ''
-                if stderr_data:
-                    print(f"[controller] Binary stderr: {stderr_data[:2000]}", flush=True)
-            except Exception:
-                pass
         return out
 
     def check_end(self, p):
-        # Neither BookSim nor the patched analytical frontend output the
-        # "All Request Has Been Exited" / "ERROR" termination strings.
-        # The terminate/kill cleanup below handles shutdown. Just return.
-        return []
+        out = ["",""]
+        while out[-2] != "All Request Has Been Exited\n" and out[-2] != "ERROR: Some Requests Remain\n":
+            line = p.stdout.readline()
+            if not line:
+                # VeritX: EOF — backend already gone; don't spin.
+                break
+            out.append(line)
+            p.stdout.flush()
+        print(out[-4] if len(out) >= 4 else "", end='')
+        print(out[-2], end='')
+        return out
 
     def write_flush(self, p, input):
         # For debugging
         # print(input)
-        # Binary may have exited (e.g. after "exit"/all requests done) —
-        # catch BrokenPipeError and stop trying to write.
-        try:
-            p.stdin.write(input+'\n')
-            p.stdin.flush()
-        except (BrokenPipeError, OSError):
-            import sys as _sys
-            print(f"[controller] subprocess closed stdin, ignoring: {input!r}", file=_sys.stderr, flush=True)
+        p.stdin.write(input+'\n')
+        p.stdin.flush()
         return
 
     def parse_all_booksim(self, output):
-        """Return list of {sys, cycle} for ALL non-sys0 lines in BookSim output.
-        sys=0 is handled by parse_output separately.
+        """VeritX forward-port: return list of {sys, cycle} for ALL non-sys0
+        lines in BookSim output. sys=0 is handled by parse_output separately.
         Does NOT modify any state - id computation deferred to caller."""
         pattern = r"\[workload\] sys\[(\d+)\] finished, (\d+) cycles, exposed communication (\d+) cycles."
         results = []
@@ -68,9 +76,7 @@ class Controller():
         return results
 
     def parse_output(self, output):
-        # Analytical backend: "sys[N] iteration M finished, X cycles, exposed communication Y cycles."
-        pattern = r"sys\[(\d+)\] iteration (\d+) finished, (\d+) cycles, exposed communication (\d+) cycles."
-        match = re.search(pattern, output)
+        match = _ITERATION_RE.search(output)
         if match:
             sys = int(match.group(1))
             id = int(match.group(2))
@@ -87,15 +93,15 @@ class Controller():
                 )
                 self.end_dict[sys] = id
             return {'sys': sys, 'id': id, 'cycle': cycle}
-        # BookSim backend: "[workload] sys[N] finished, X cycles, exposed communication Y cycles."
-        # BookSim outputs one line per NPU; pick sys 0 (start_npu) to match single-instance scheduling
-        # Match both formats:
-        #   [workload] sys[N] finished, X cycles, exposed communication Y cycles.
-        #   [workload] [info] sys[N] finished, X cycles, exposed communication Y cycles.
+        # VeritX forward-port, BookSim backend:
+        # "[workload] sys[N] finished, X cycles, exposed communication Y cycles."
+        # BookSim outputs one line per NPU; pick sys 0 (start_npu) to match
+        # single-instance scheduling. Matches both formats (with/without [info]).
+        # NOTE: the caller must pass the JOINED read_wait output, not a single
+        # line — BookSim's per-NPU lines arrive in one read.
         pattern_booksim = r"\[workload\](?:\s+\[info\])?\s+sys\[(\d+)\] finished, (\d+) cycles, exposed communication (\d+) cycles."
         matches = list(re.finditer(pattern_booksim, output))
         if matches:
-            # Process ALL sys lines (needed for TP>1: add_done requires all NPUs to complete)
             result = None
             for m in matches:
                 sys = int(m.group(1))
@@ -110,8 +116,6 @@ class Controller():
                         com_cycle,
                     )
                     self.end_dict[sys] = id
-                # Return sys 0 result for scheduling
-                # Don't increment counter here - caller handles it
                 if sys == 0:
                     result = {'sys': sys, 'id': 0, 'cycle': cycle}
             if result:

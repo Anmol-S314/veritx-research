@@ -12,7 +12,7 @@ import argparse
 import json
 import shutil
 from time import time
-from collections import defaultdict
+from collections import defaultdict, deque
 
 from serving.core.scheduler import *
 from serving.core.request import *
@@ -27,7 +27,6 @@ from serving.core.router import *
 from serving.core.power_model import *
 from serving.core.logger import *
 from serving.core.run_paths import build_run_paths, resolve_run_id
-from serving.core.decode_opt import get_trace_cache, clear_all_decode_opts
 import sys as flush
 
 from pyinstrument import Profiler
@@ -61,6 +60,33 @@ def _pad_batch_to_max(batch, max_len):
     batch.total_len = max_len
     batch.kv_len += pad                  # each dummy contributes kv=1
     batch.num_decode += pad              # counted for lm_head / dense shape
+
+
+def _pass_response(router, current, state_changed=False):
+    """The "pass" answer, carrying the next known arrival when there is one.
+
+    ASTRA-Sim stops re-asking an NPU that passed until either some NPU
+    reports an iteration the frontend has not processed yet, or this
+    deadline is reached. Those are the only two things that can change what
+    ``schedule()`` returns, so suppressing the re-asks in between skips no
+    decision. Without the deadline an idle instance would stay suppressed
+    past an arrival it should have admitted, in the case where every other
+    instance is still mid-batch and so no report is coming.
+
+``state_changed=True`` sends ``pass -1``: this pass altered scheduler
+    state, so it is not idempotent and re-asking is not a wasted question.
+    The three DP-barrier passes do that -- joining a round with a dummy,
+    joining it with a real batch, or handing a batch claim back -- and none
+    of them is preceded by a report, so nothing else would lift the
+    suppression. ASTRA-Sim treats it like a workload assignment: this NPU
+    stays askable and every other one is re-opened too.
+    """
+    if state_changed:
+        return "pass -1"
+    nxt = router.get_next_pending_arrival()
+    if nxt is None or nxt <= current:
+        return "pass"
+    return f"pass {int(nxt)}"
 
 
 def _runtime_limit(value):
@@ -100,39 +126,8 @@ def _cleanup_inputs_root(run_paths, logger):
     logger.info("Removed ASTRA-Sim inputs root: %s", inputs_root)
 
 
-def _prepare_ns3_config(astra_sim, run_paths):
-    template = os.path.join(astra_sim, "extern/network_backend/ns-3/scratch/config/config.txt")
-    output_dir = os.path.join(run_paths.inputs_root, "ns3", "output")
-    config_path = os.path.join(run_paths.inputs_root, "ns3", "config.txt")
-    os.makedirs(output_dir, exist_ok=True)
-    os.makedirs(os.path.dirname(config_path), exist_ok=True)
-
-    replacements = {
-        "FLOW_FILE": os.path.join(output_dir, "flow.txt"),
-        "TRACE_FILE": os.path.join(output_dir, "trace.txt"),
-        "TRACE_OUTPUT_FILE": os.path.join(output_dir, "mix.tr"),
-        "FCT_OUTPUT_FILE": os.path.join(output_dir, "fct.txt"),
-        "PFC_OUTPUT_FILE": os.path.join(output_dir, "pfc.txt"),
-        "QLEN_MON_FILE": os.path.join(output_dir, "qlen.txt"),
-    }
-
-    for path in (replacements["FLOW_FILE"], replacements["TRACE_FILE"]):
-        open(path, "w").close()
-
-    with open(template, "r", encoding="utf-8") as f:
-        lines = f.readlines()
-
-    with open(config_path, "w", encoding="utf-8") as f:
-        for line in lines:
-            parts = line.split(maxsplit=1)
-            if parts and parts[0] in replacements:
-                f.write(f"{parts[0]} {replacements[parts[0]]}\n")
-            else:
-                f.write(line)
-    return config_path
-
-
 def _prepare_booksim_config(astra_sim, run_paths, num_nodes):
+    # VeritX: forward-ported BookSim backend (upstream deleted theirs).
     """Prepare BookSim config for ASTRA-sim's BookSim2 backend.
     
     BookSim mesh only supports square k^n. For rectangular dims like 2x4 (8 NPUs)
@@ -315,6 +310,39 @@ injection_rate = 0.0;
     return config_path, booksim_src
 
 
+
+def _prepare_ns3_config(astra_sim, run_paths):
+    template = os.path.join(astra_sim, "extern/network_backend/ns-3/scratch/config/config.txt")
+    output_dir = os.path.join(run_paths.inputs_root, "ns3", "output")
+    config_path = os.path.join(run_paths.inputs_root, "ns3", "config.txt")
+    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(os.path.dirname(config_path), exist_ok=True)
+
+    replacements = {
+        "FLOW_FILE": os.path.join(output_dir, "flow.txt"),
+        "TRACE_FILE": os.path.join(output_dir, "trace.txt"),
+        "TRACE_OUTPUT_FILE": os.path.join(output_dir, "mix.tr"),
+        "FCT_OUTPUT_FILE": os.path.join(output_dir, "fct.txt"),
+        "PFC_OUTPUT_FILE": os.path.join(output_dir, "pfc.txt"),
+        "QLEN_MON_FILE": os.path.join(output_dir, "qlen.txt"),
+    }
+
+    for path in (replacements["FLOW_FILE"], replacements["TRACE_FILE"]):
+        open(path, "w").close()
+
+    with open(template, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    with open(config_path, "w", encoding="utf-8") as f:
+        for line in lines:
+            parts = line.split(maxsplit=1)
+            if parts and parts[0] in replacements:
+                f.write(f"{parts[0]} {replacements[parts[0]]}\n")
+            else:
+                f.write(line)
+    return config_path
+
+
 def _iter_raw_instances(cluster_config):
     for node in cluster_config.get("nodes", []):
         for instance in node.get("instances", []):
@@ -335,6 +363,29 @@ def _resolve_instance_dtype(instance, cli_dtype, dtype_to_bits):
     return dtype
 
 
+def _resolve_mem_util(instance, cli_default):
+    """Per-instance NPU memory utilization, from ``npu_mem.mem_util``.
+
+    Lives inside ``npu_mem`` because its only job is to scale ``mem_size``, and
+    it follows that block's ``mem_*`` naming. Falls back to the CLI default.
+    """
+    util = instance.get("npu_mem", {}).get("mem_util", cli_default)
+    try:
+        util = float(util)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"npu_mem.mem_util for instance {instance.get('instance_id')} must be a "
+            f"number in (0, 1]; got {util!r}"
+        ) from None
+    if not 0 < util <= 1:
+        raise ValueError(
+            f"npu_mem.mem_util for instance {instance.get('instance_id')} must be in "
+            f"(0, 1]; got {util}. It is a fraction of npu_mem.mem_size, so 0.9 rather "
+            f"than 90"
+        )
+    return util
+
+
 def _build_instance_runtime_configs(instances, args, dtype_to_bits):
     runtime_configs = []
     for instance_id, instance in enumerate(instances):
@@ -349,6 +400,12 @@ def _build_instance_runtime_configs(instances, args, dtype_to_bits):
         if enable_sub_batch_interleaving and not enable_attn_offloading:
             raise RuntimeError(
                 f"Instance {instance_id} enables sub-batch interleaving without attention offloading")
+        if enable_sub_batch_interleaving and instance.get("pp_size", 1) > 1:
+            raise RuntimeError(
+                f"Instance {instance_id} enables sub-batch interleaving with pp_size "
+                f"{instance['pp_size']}: an interleaved trace leaves both sub-batches "
+                f"mid-block at every group edge, so a pipeline stage has no single "
+                f"hidden state to pass on")
 
         runtime_configs.append({
             "max_num_seqs": _runtime_limit(instance.get("max_num_seqs", args.max_num_seqs)),
@@ -364,7 +421,9 @@ def _build_instance_runtime_configs(instances, args, dtype_to_bits):
                 "enable_chunked_prefill", args.enable_chunked_prefill),
             "enable_prefix_caching": instance.get(
                 "enable_prefix_caching", args.enable_prefix_caching),
-            "prioritize_prefill": instance.get("prioritize_prefill", args.prioritize_prefill),
+            "npu_memory_utilization": _resolve_mem_util(
+                instance, args.npu_memory_utilization),
+            "reserve_full_isl": instance.get("reserve_full_isl", args.reserve_full_isl),
             "enable_local_offloading": instance.get(
                 "enable_local_offloading", args.enable_local_offloading),
             "enable_attn_offloading": enable_attn_offloading,
@@ -424,7 +483,7 @@ def main():
                         'Disable only for CUSTOM policies that need faithful '
                         'per-layer variance.')
     parser.add_argument('--enable-prefix-caching', action=argparse.BooleanOptionalAction, default=True,
-                        help='enable prefix caching via RadixAttention to reuse KV cache across requests '
+                        help='enable prefix caching to reuse KV cache blocks across requests '
                         'with shared prefixes (default: enabled). Use --no-enable-prefix-caching to disable')
     parser.add_argument('--enable-chunked-prefill', action=argparse.BooleanOptionalAction, default=True,
                         help='enable chunked prefill to split long prefill requests across multiple iterations, '
@@ -441,8 +500,19 @@ def main():
     parser.add_argument('--enable-sub-batch-interleaving', action='store_true', default=False,
                         help='enable sub-batch interleaving to overlap XPU and PIM computation. '
                         'Requires --enable-attn-offloading')
-    parser.add_argument('--prioritize-prefill', action='store_true', default=False,
-                        help='prioritize prefill requests over decode requests in scheduling')
+    parser.add_argument('--reserve-full-isl', action=argparse.BooleanOptionalAction, default=True,
+                        help='admit a request only if its whole sequence fits in the KV cache, '
+                        'not merely its first chunk. Mirrors vLLM\'s scheduler_reserve_full_isl '
+                        '(True there too); without it chunked prefill over-admits and thrashes '
+                        'the KV cache. Override per instance with "reserve_full_isl"')
+    parser.add_argument('--npu-memory-utilization', type=float, default=0.9,
+                        help='fraction of NPU memory an instance may use for weights plus '
+                        "KV cache. Corresponds to vLLM's --gpu-memory-utilization, renamed "
+                        'because every other memory surface here is NPU-terminology; '
+                        'override per instance with "npu_mem": {"mem_util": ...}. KV capacity is '
+                        '(npu_mem * this - model weight); the activation peak and CUDA '
+                        'context that vLLM also subtracts are not modelled, so the '
+                        'resulting capacity is an upper bound on vLLM\'s at the same value')
     parser.add_argument('--block-size', type=int, default=16,
                         help='KV cache block size in tokens (number of tokens per block)')
     parser.add_argument('--dataset', type=str, default=None,
@@ -457,10 +527,19 @@ def main():
     parser.add_argument('--inputs-root', type=str, default=None,
                         help='override the root directory for generated ASTRA-Sim inputs. Defaults to '
                         'astra-sim/inputs/runs/<run-id>')
-    parser.add_argument('--cleanup-inputs', action=argparse.BooleanOptionalAction, default=True,
-                        help='remove generated ASTRA-Sim inputs under astra-sim/inputs/runs/<run-id> '
-                        'after a successful simulation (default: enabled). Use --no-cleanup-inputs '
-                        'to preserve generated trace files, Chakra workloads, and input configs for debugging')
+    parser.add_argument('--save-trace-text', action=argparse.BooleanOptionalAction, default=False,
+                        help='write each batch\'s trace as text, for inspection (default: '
+                        'disabled). Nothing in the pipeline reads it -- the Chakra converter takes '
+                        'the trace rows directly -- so it is produced only on request, and it is '
+                        'the only human-readable form of what the simulator emitted. Implies '
+                        '--keep-inputs, since the text is written into the run directory. Can '
+                        'leave gigabytes behind on a long run')
+    parser.add_argument('--keep-inputs', action=argparse.BooleanOptionalAction, default=False,
+                        help='keep the generated ASTRA-Sim inputs under '
+                        'astra-sim/inputs/runs/<run-id> after a successful simulation (default: '
+                        'disabled). Preserves the Chakra .et workloads and the generated network, '
+                        'system and memory configs, so a run can be replayed through ASTRA-Sim by '
+                        'hand. Replaces --cleanup-inputs, whose polarity was inverted')
     parser.add_argument('--skip-prefill', action='store_true', default=False,
                         help='skip the prefill phase, running decode only')
     parser.add_argument('--num-reqs', type=int, default=0,
@@ -472,17 +551,17 @@ def main():
     parser.add_argument('--log-level', type=str, choices=['WARNING', 'INFO', 'DEBUG'], default='WARNING',
                         help='logging verbosity: WARNING (minimal), INFO (per-iteration details), DEBUG (per-layer memory)')
     parser.add_argument('--kv-cache-dtype', type=str, choices=['auto', 'fp8'], default='auto',
-                        help='KV cache data type: auto (use default profile.csv) or fp8 (use profile_fp8.csv, halves KV cache memory)')
+                        help='KV cache data type: auto (inherit --dtype) or fp8. Selects the profile '
+                        'variant folder -- fp8 resolves to <dtype>-kvfp8, e.g. bf16-kvfp8 -- and '
+                        'halves KV cache memory. Override per instance with "kv_cache_dtype"')
     parser.add_argument('--network-backend', type=str, choices=['analytical', 'ns3', 'booksim'], default='analytical',
-                        help='network simulation backend: analytical (fast, default), ns3 (detailed, WIP), or booksim (cycle-accurate NoC)')
+                        help='network simulation backend: analytical (fast, default), ns3 (detailed, WIP), '
+                        'or booksim (VeritX: cycle-accurate NoC via AstraSim_BookSim2)')
+    # VeritX: forward-ported BookSim backend (upstream deleted theirs).
     parser.add_argument('--booksim-replay-only', action=argparse.BooleanOptionalAction, default=True,
                         help='(booksim backend only) replay trace durations without cycle-accurate network simulation '
                         '(default: enabled). Required when ASTRA-sim ring topology does not match BookSim mesh topology. '
-                        'Use --no-booksim-replay-only for full cycle-accurate network simulation (requires matching topologies, ~10× slower).')
-    parser.add_argument('--decode-batch-size', type=int, default=0,
-                        help='batch N decode steps together to reduce trace-gen overhead. '
-                        '0 = disabled (default). When >0, decode-only steps pre-generate N traces '
-                        'and feed them to the binary without per-step Python overhead. Recommended: 16-32.')
+                        'Use --no-booksim-replay-only for full cycle-accurate network simulation (requires matching topologies, ~10x slower).')
 
     args = parser.parse_args()
     
@@ -495,9 +574,6 @@ def main():
     logger = get_logger("Main")
     print_banner()
     print_input_config(args=args)
-    if args.decode_batch_size > 0:
-        print_markup(f"[sim.tagline]Decode batch size: {args.decode_batch_size}[/]")
-    print_markup("[sim.heading]▶ Starting simulation...[/]\n")
     flush.stdout.flush()
     
     _dtype_to_bits = {'float16': 16, 'bfloat16': 16, 'float32': 32, 'fp8': 8, 'int8': 8}
@@ -550,30 +626,13 @@ def main():
         network=_prepare_ns3_config(astra_sim, run_paths)
         binary=os.path.join(astra_sim, "extern/network_backend/ns-3/build/scratch/ns3.42-AstraSimNetwork-default")
     elif network_backend == 'booksim':
+        # VeritX: forward-ported (upstream deleted the booksim backend).
         network, booksim_src = _prepare_booksim_config(astra_sim, run_paths, total_npu)
         binary=os.path.join(astra_sim, "network_frontend/booksim2/bin/AstraSim_BookSim2")
     else:
         raise NotImplementedError("Only analytical, ns3, and booksim network backends are supported")
     memory=run_paths.memory_config
     system=run_paths.system_config
-    # --- BookSim backend: optionally force replay-only mode ---
-    # When replay-only=1, ASTRA-sim replays trace durations directly without
-    # sending packets through BookSim. This is REQUIRED when the ASTRA-sim
-    # topology (e.g. ring) does not match the BookSim topology (e.g. mesh),
-    # because mismatched ring collectives over mesh cause deadlock.
-    # Disable with --no-booksim-replay-only for full cycle-accurate network
-    # simulation (requires matching topologies).
-    if network_backend == 'booksim' and args.booksim_replay_only:
-        try:
-            import json as _js
-            with open(system, 'r') as _f:
-                _j = _js.load(_f)
-            _j["replay-only"] = 1
-            _j["roofline-enabled"] = 0
-            with open(system, 'w') as _f:
-                _js.dump(_j, _f, indent=2)
-        except Exception:
-            pass
     # ------------------------------------- Prepare simulation -------------------------------------
     # Need to extract each instance's memory accessability 
     node2inst_mapping = defaultdict(list)
@@ -616,36 +675,34 @@ def main():
             cfg = instance_runtime_configs[inst_ids[0]]
             return full_cluster_kv_bytes_per_token(model, cfg["fp"], cfg["kv_cache_dtype"])
 
+        def _pool_block_size(inst_ids):
+            sizes = {instance_runtime_configs[i]["block_size"] for i in inst_ids}
+            if len(sizes) > 1:
+                raise RuntimeError(
+                    f"Shared prefix pool requires instances to share block_size; got {sizes}")
+            return sizes.pop()
+
         if prefix_storage == 'CPU':
             for i in range(num_prefix_pool):
-                if cpu_mem_size[i] > 0:
-                    new_prefix_pool = RadixCache(
-                                                node_id=0,
-                                                device=prefix_storage,
-                                                page_size=256,
-                                                capacity = cpu_mem_size[i] * GB_TO_BYTE,
-                                                kv_size=_pool_kv_bytes_per_token(node2inst_mapping[i]),
-                                                enable_kv_cache_events=True)
-                    prefix_pools.append(new_prefix_pool)
-                else:
+                if cpu_mem_size[i] <= 0:
                     raise RuntimeError(f"Memory size for prefix storage type {prefix_storage} is invalid")
+                inst_ids = node2inst_mapping[i]
+                prefix_pools.append(build_prefix_pool(
+                    pool_device, cpu_mem_size[i] * GB_TO_BYTE,
+                    _pool_block_size(inst_ids), _pool_kv_bytes_per_token(inst_ids),
+                    node_id=i))
             # This means one node shares one prefix pool
             prefix_pool_inst_mapping = inst2node_mapping
 
         elif prefix_storage == 'CXL':
-            if cluster["cxl_mem_size"] > 0:
-                new_prefix_pool = RadixCache(
-                                            node_id=None,
-                                            device=prefix_storage,
-                                            page_size=1,
-                                            capacity = cluster["cxl_mem_size"] * GB_TO_BYTE,
-                                            kv_size=_pool_kv_bytes_per_token(list(range(num_instances))),
-                                            enable_kv_cache_events=True)
-                prefix_pools.append(new_prefix_pool)
-                # This means every instance shares the same universal prefix pool (maybe fixed later)
-                prefix_pool_inst_mapping = [0 for _ in range(num_instances)]
-            else:
+            if cluster["cxl_mem_size"] <= 0:
                 raise RuntimeError(f"Memory size for prefix storage type {prefix_storage} is invalid")
+            inst_ids = list(range(num_instances))
+            prefix_pools.append(build_prefix_pool(
+                pool_device, cluster["cxl_mem_size"] * GB_TO_BYTE,
+                _pool_block_size(inst_ids), _pool_kv_bytes_per_token(inst_ids)))
+            # This means every instance shares the same universal prefix pool (maybe fixed later)
+            prefix_pool_inst_mapping = [0 for _ in range(num_instances)]
         else:
             raise NotImplementedError(f"Prefix storage type {prefix_storage} is not supported or memory size is invalid")
 
@@ -670,16 +727,37 @@ def main():
             instance["npu_mem"]["mem_size"], cpu_mem_size[instance["node_id"]],
             inst2npu_mapping[instance_id], instance["pd_type"],
             inst_cfg["fp"], inst_cfg["block_size"], num_req,
-            inst_cfg["prioritize_prefill"], inst_cfg["enable_prefix_caching"],
+            inst_cfg["enable_prefix_caching"],
             enable_prefix_sharing, prefix_pool, pool_device, inst_cfg["enable_chunked_prefill"],
             inst_cfg["long_prefill_token_threshold"],
             cxl_mem,
             ep_size=instance.get("ep_total", 1),
             kv_cache_dtype=inst_cfg["kv_cache_dtype"],
+            npu_memory_utilization=inst_cfg["npu_memory_utilization"],
+            reserve_full_isl=inst_cfg["reserve_full_isl"],
         ))
 
+    # The derived KV capacity, not the utilization fraction, is what decides
+    # memory pressure. It is per instance and only known once the schedulers
+    # exist, so it gets its own section rather than a row in the input-config
+    # block, which is printed before any of this is resolved.
+    print_heading("KV Cache Initialization")
+    print_markup("")
+    # Pad only as far as the widest label, so the line stays inside the rule.
+    pad = max(len(f"Instance [{i}]") for i in range(len(schedulers)))
+    for inst_id, sched in enumerate(schedulers):
+        pool = sched.memory.npu_pool
+        label = f"Instance \\[{inst_id}]"
+        print_markup(
+            f"  \u2022 [cyan]{label:<{pad + 1}}[/cyan] : "
+            f"{pool.num_blocks * pool.block_size} tokens / {pool.num_blocks} blocks "
+            f"({pool.num_blocks * pool.bytes_per_block / GB_TO_BYTE:.2f} GiB/rank "
+            f"at util {sched.memory.npu_memory_utilization:.2f})"
+        )
+    print_rule()
+
     # Controller for astra-sim process communication
-    controller = Controller(total_npu, network_backend=network_backend)
+    controller = Controller(total_npu)
     # Global Request Router
     router = Router(num_instances, schedulers, num_req, request_routing_policy)
     # Power Modeling if enabled
@@ -698,8 +776,6 @@ def main():
 
     # Simulator start
     current = 0 # current tick of the system
-    _sim_time = 0 # persistent monotonic clock (survives pass/zero-cycle outputs)
-    _rr_next = 0  # VeritX: round-robin cursor for multi-instance service selection
     sys = 0 # current system id (NPU id)
     id = 0 # id of the request
     is_prefill_done = False # flag to check if prefill is done
@@ -717,7 +793,10 @@ def main():
     last_log = 0    # last logged time
     FREQ = 1000_000_000 # 1 GHz (1e9 Hz)
     INTERVAL = log_interval*FREQ
-    RATIO = FREQ//INTERVAL
+    # Per-interval token counts -> tokens/s, so 1/log_interval. Floor division
+    # collapsed to 0 for any --log-interval > 1, which zeroed every logged
+    # throughput and made the summary line divide by zero.
+    RATIO = FREQ/INTERVAL
     total_prompt = 0
     total_gen = 0
     total_latency = 0
@@ -729,55 +808,82 @@ def main():
         event_time = first_arival_time
     else:
         event_time = INTERVAL
-    generate_event(int(event_time), inputs_root=run_paths.inputs_root)
+    event_trace = generate_event(int(event_time), inputs_root=run_paths.inputs_root)
     # Make Chakra Grapth
     generate_graph(None, None, total_npu, event=True, inputs_root=run_paths.inputs_root,
-                   cleanup_trace=args.cleanup_inputs)
+                   save_trace_text=args.save_trace_text, trace=event_trace)
     # set first workload file
     workload = get_workload(None, None, event=True, inputs_root=run_paths.inputs_root)
-    # run subprocess — flit 64B reduces packet count 4x for large LLM AllReduces (16MB -> 4K pkts -> 1K pkts)
-    astra_args = [binary, "--workload-configuration="+workload, "--system-configuration="+system, "--network-configuration="+network, "--remote-memory-configuration="+memory, "--booksim2-flit-bytes=64"]
+    # run subprocess
+    # VeritX: our analytical/BookSim binaries require --remote-memory-configuration
+    # (upstream's newer binaries made it optional/renamed — revisit on backend swap).
+    astra_args = [binary, "--workload-configuration="+workload, "--system-configuration="+system, "--network-configuration="+network, "--memory-configuration="+memory, "--remote-memory-configuration="+memory]
     if network_backend == 'booksim':
+        # VeritX forward-port: flit 64B reduces packet count 4x for large LLM
+        # AllReduces (16MB -> 4K pkts -> 1K pkts).
+        astra_args.append("--booksim2-flit-bytes=64")
         # VeritX: pass LOGICAL topology dims (trace dim numbering) so trace
         # collectives scoped to dim>=1 (EP/DP) map onto real Sys dims instead
         # of being silently dropped. network.yml stays physical/flat.
         try:
-            _ldims_path = os.path.join(run_paths.inputs_root,
-                                       "logical_dims.json")
+            _ldims_path = os.path.join(run_paths.inputs_root, "logical_dims.json")
             with open(_ldims_path) as _lf:
                 _ndims = json.load(_lf).get("dims")
             if _ndims and all(isinstance(x, int) and x >= 1 for x in _ndims):
                 astra_args.append("--physical-dims=" + ",".join(str(x) for x in _ndims))
         except Exception:
             pass
+        # --- BookSim backend: optionally force replay-only mode ---
+        # When replay-only=1, ASTRA-sim replays trace durations directly without
+        # sending packets through BookSim. REQUIRED when the ASTRA-sim topology
+        # (e.g. ring) does not match the BookSim topology (e.g. mesh), because
+        # mismatched ring collectives over mesh cause deadlock. Disable with
+        # --no-booksim-replay-only for full cycle-accurate network simulation
+        # (requires matching topologies).
+        if args.booksim_replay_only:
+            try:
+                with open(system, 'r') as _f:
+                    _j = json.load(_f)
+                _j["replay-only"] = 1
+                _j["roofline-enabled"] = 0
+                with open(system, 'w') as _f:
+                    json.dump(_j, _f, indent=2)
+            except Exception:
+                pass
     if start_npu_ids != "":
         astra_args.append("--start-npu-ids="+start_npu_ids)
     if end_npu_ids != "":
         astra_args.append("--end-npu-ids="+end_npu_ids)
     if network_backend == 'ns3':
         astra_args.append("--logical-topology-configuration="+astra_sim+"/inputs/logical_topology/logical_8nodes_1D.json")
-    p = subprocess.Popen(astra_args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
-    # VeritX: drain the binary's stderr in a background thread so it can never
-    # fill the pipe and deadlock the binary mid-processing (the main loop only
-    # reads stdout). Forwards the collective-execution ledger ([LEDGER] lines,
-    # gated by VERITX_LEDGER in the binary) plus fail-loud error/panic lines;
-    # routine binary chatter is discarded (it already writes log files).
-    import threading as _threading
-    import re as _re
-    _stderr_forward_re = _re.compile(r"panic|assert|error|DRAIN_STUCK", _re.IGNORECASE)
-    def _drain_stderr():
-        try:
-            while True:
-                line = p.stderr.readline()
-                if not line:
-                    break
-                if line.startswith("[LEDGER]") or _stderr_forward_re.search(line):
-                    import sys as _s
-                    _s.stderr.write(line)
-        except Exception:
-            pass
-    threading = _threading.Thread(target=_drain_stderr, daemon=True)
-    threading.start()
+    import os as _os2
+    _dbg_err = open(_os2.getenv("VERITX_BACKEND_STDERR", "/dev/null"), "w") if _os2.getenv("VERITX_BACKEND_STDERR") else subprocess.PIPE
+    p = subprocess.Popen(astra_args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=_dbg_err, universal_newlines=True)
+    # VeritX forward-port: drain the binary's stderr in a background thread so
+    # it can never fill the pipe and deadlock the binary mid-run (the backend
+    # logs ~510B/round; the main loop only reads stdout, so without this the
+    # pipe fills around round ~1500 and the run stalls with both sides idle).
+    # Forwards the collective-execution ledger ([LEDGER] lines, gated by
+    # VERITX_LEDGER in the binary) plus fail-loud error/panic lines; routine
+    # chatter is discarded. NOTE: with the drain active, p.stderr is consumed
+    # live, so the early-death diagnostic below gets little — the forwarded
+    # lines already went to our stderr.
+    if _dbg_err is subprocess.PIPE:
+        import threading as _threading
+        import re as _re
+        _stderr_forward_re = _re.compile(r"panic|assert|error|DRAIN_STUCK", _re.IGNORECASE)
+        def _drain_stderr():
+            try:
+                while True:
+                    line = p.stderr.readline()
+                    if not line:
+                        break
+                    if line.startswith("[LEDGER]") or _stderr_forward_re.search(line):
+                        import sys as _s
+                        _s.stderr.write(line)
+            except Exception:
+                pass
+        _threading.Thread(target=_drain_stderr, daemon=True).start()
 
     # DP group synchronization: defer trace generation until all members have scheduled
     # dp_groups maps dp_group_name -> list of instance_ids
@@ -791,48 +897,39 @@ def main():
     for dg, members in dp_groups.items():
         for inst_id in members:
             inst_dp_group[inst_id] = dg
-    # Pending batches per DP group (waiting for all members to schedule)
-    dp_pending = {dg: {} for dg in dp_groups}  # dp_group -> {instance_id: (new_req, sys)}
-    # Pre-generated workloads ready to submit on next "Waiting"
-    dp_ready_workloads = {}  # instance_id -> workload_path
+    # Batches waiting at the DP barrier: per group, per member, a FIFO. With
+    # pp_size > 1 a member can have up to pp_size batches awaiting their round,
+    # and vLLM pairs the members' forwards in order -- rank A's j-th forward
+    # joins the same collective as rank B's j-th. A single slot per member
+    # silently dropped the earlier batch, which then never got a workload_name,
+    # so the instance's other NPUs retried joining it forever.
+    dp_pending = {dg: defaultdict(deque) for dg in dp_groups}  # dg -> {inst: deque[(batch, node_id)]}
+    # Workloads pre-generated by a DP round, keyed by the NPU that opened that
+    # member's batch, i.e. the one that owes ASTRA-Sim its graph. A FIFO because
+    # with pp_size > 1 an NPU can open a second round before it has been handed
+    # the first one's graph, and a single slot silently dropped the first.
+    dp_ready_workloads = defaultdict(deque)  # npu_id -> deque[workload_path]
 
     # ----------------------------------- Start simulation loop ------------------------------------
+    print_markup("[sim.heading]▶ Starting simulation...[/]\n")
+    flush.stdout.flush()
+
     # Starting simulation, one while loop processes one iteration
-    _bench_trace_gen_time = 0.0
-    _bench_trace_only_time = 0.0
-    _bench_graph_only_time = 0.0
-    _bench_cache_hits = 0
-    _bench_cache_misses = 0
-    _bench_total_batches = 0
-    _bench_loop_start = time()
-    _backend_died_early = False  # VeritX: set if backend EOFs with zero batches done
+    _backend_died_early = False  # VeritX: fail loudly if backend EOFs
+    _rr_next = 0  # VeritX (booksim): round-robin cursor across instances
     while True:
         
         out = controller.read_wait(p)
-        # BookSim outputs 4 sys lines per batch; join all lines so parse finds sys 0
-        out_dict = controller.parse_output("\n".join(out))
-        
-        # If binary exited (EOF), break
-        if not out or (len(out) == 1 and out[0] == ''):
-            _bench_loop_elapsed = time() - _bench_loop_start
-            if _bench_total_batches > 0:
-                _bench_avg_trace = (_bench_trace_gen_time / _bench_total_batches * 1000)
-                _bench_total = _bench_cache_hits + _bench_cache_misses
-                _bench_hit_rate = (_bench_cache_hits / _bench_total * 100) if _bench_total > 0 else 0
-                print(f"\n=== Decode Cache Benchmark ===")
-                print(f"  Batches:              {_bench_total_batches}")
-                print(f"  Cache hits:           {_bench_cache_hits}/{_bench_total} ({_bench_hit_rate:.0f}%)")
-                print(f"  Cache misses:         {_bench_cache_misses}")
-                print(f"  Trace gen time:       {_bench_trace_gen_time:.2f}s (avg {_bench_avg_trace:.0f}ms/batch)")
-                print(f"    - trace_only:       {_bench_trace_only_time:.2f}s (perf_db + interpolation)")
-                print(f"    - graph_only:       {_bench_graph_only_time:.2f}s (Chakra conversion)")
-                print(f"    - cache overhead:   {_bench_trace_gen_time - _bench_trace_only_time - _bench_graph_only_time:.2f}s")
-                print(f"  Total loop time:      {_bench_loop_elapsed:.2f}s")
-                print(f"  Trace gen overhead:   {_bench_trace_gen_time:.2f}s / {_bench_loop_elapsed:.2f}s = {_bench_trace_gen_time/_bench_loop_elapsed*100:.1f}%")
-            print("[LLMServingSim] Binary exited, ending simulation.", flush=True)
-            if _bench_total_batches == 0 and router.req_num > 0:
-                # VeritX: backend died before completing a single batch —
-                # never report silent success. Dump stderr tail, fail at end.
+        if len(out) <= 1 and out[0] == '':
+            # VeritX: backend EOF — died or closed the pipe. Only a failure
+            # if work remains (pending/deferred requests or in-flight
+            # batches); a post-completion EOF is a clean shutdown.
+            _work_remains = (
+                router.has_pending_requests()
+                or router.has_deferred_sessions()
+                or any(len(sch.inflight) > 0 for sch in schedulers)
+            )
+            if _work_remains:
                 _backend_died_early = True
                 try:
                     if p.poll() is not None and p.stderr:
@@ -841,78 +938,69 @@ def main():
                             print(f"[LLMServingSim] backend stderr:\n{_serr[-3000:]}", flush=True)
                 except Exception:
                     pass
-                print(f"[LLMServingSim] ERROR: backend exited with 0 batches completed "
-                      f"({req_cnt}/{router.req_num} requests retired).", flush=True)
+                print("[LLMServingSim] ERROR: backend pipe exhausted with work "
+                      f"remaining ({req_cnt} requests retired) — results below "
+                      f"are incomplete.", flush=True)
             break
+        if network_backend == 'booksim':
+            # VeritX: parse the joined output (BookSim emits one finish line
+            # per NPU); batch identity comes from scheduler state below, the
+            # parse ids are only used for logging.
+            out_dict = controller.parse_output("\n".join(out))
+        else:
+            out_dict = controller.parse_output(out[-2])
         
-        # If binary exited (EOF) or no parseable output, break
-        if out_dict is None:
-            # Check if this is normal end-of-simulation or an error.
-            # VeritX: an empty read is an EOF (binary exited — usually crash
-            # or unexpected pipe close), NOT a clean completion; the clean
-            # path sends 'exit' then breaks without reading further.
-            if not out or (len(out) == 1 and out[0] == ''):
-                print("[LLMServingSim] Network backend exited unexpectedly (EOF).", flush=True)
-            else:
-                print("[LLMServingSim] No valid output from network backend, ending simulation.", flush=True)
-            break
-        
-        # BookSim: pre-notify all sys completions (needed for TP>1: add_done requires all NPUs)
-        # Use each instance's OWN inflight batch_id (not a global last_bid —
-        # different instances have different batch_ids).
-        main_inst = npu2inst_mapping.get(sys, -1)
-        if main_inst is not None:
-            for extra in controller.parse_all_booksim("\n".join(out)):
-                if extra['sys'] != out_dict.get('sys', -1):
-                    extra_inst = npu2inst_mapping.get(extra['sys'])
-                    # VeritX: only retire batches actually flushed to the
-                    # backend (sent). A DP-pending batch has not run yet;
-                    # pass-echo finish lines must not retire it.
-                    if extra_inst is not None and schedulers[extra_inst].inflight \
-                            and schedulers[extra_inst].inflight[-1].sent:
-                        _extra_bid = schedulers[extra_inst].inflight[-1].batch_id
-                        _p, _g, _f = schedulers[extra_inst].add_done(_extra_bid, extra['sys'], extra['cycle'])
-                        # VeritX: extras-path completions must count too
-                        # (previously req_cnt missed any request retired via
-                        # a non-leading finish line, e.g. DP members).
-                        if _f:
-                            if instances[extra_inst]["pd_type"] == "prefill":
-                                # VeritX: THE PD FLAKE. A doubled-prefill
-                                # batch (ranks 0+1) can complete inside the
-                                # extras path when the two finish lines land
-                                # in different orders across rounds (sent
-                                # gating / echo dedup). Transfer it exactly
-                                # like the mainline does — previously _f was
-                                # gated on != prefill and the request vanished
-                                # with both queues empty at exit.
-                                router.transfer_prefill_request(_f)
-                            else:
-                                req_cnt += len(_f)
-                                for _r in _f:
-                                    router.notify_request_completed(_r.id, extra['cycle'])
-
-        sys = out_dict['sys']
-        id = out_dict['id']
-        current = out_dict['cycle']
-        # Monotonic clock: never go backward (handles pass/zero-cycle outputs
-        # that don't advance the event queue, e.g. when waiting for agentic
-        # tool-call durations to elapse)
-        if current < _sim_time:
-            current = _sim_time
-        _sim_time = current
+        if out_dict != None:
+            sys = out_dict['sys']
+            id = out_dict['id']
+            current = out_dict['cycle']
 
         # Route newly arrived requests to instances based on current load
         if dataset is not None:
-            _prev_req_counts = {iid: len(s.request) for iid, s in enumerate(schedulers)}
             router.route_arrived_requests(current)
-            # Invalidate decode cache when new requests arrive (batch structure changes)
-            if args.decode_batch_size > 0:
-                for iid, s in enumerate(schedulers):
-                    if len(s.request) != _prev_req_counts.get(iid, 0):
-                        get_trace_cache().clear()  # conservative: clear all on any arrival
 
         instance_id = npu2inst_mapping[sys]  # get instance id from NPU id
         node_id = inst2node_mapping[instance_id] # get node id from instance id
+
+        # VeritX (booksim backend): the backend reports only NPUs that ran,
+        # so an idle instance's member would never be polled and a DP quorum
+        # could never assemble. Fall back to another instance when the
+        # reported one is fully empty OR its newest batch is still waiting
+        # for DP quorum (unquorate — serving it again cannot progress).
+        # DP partners are preferred (they unblock the quorum); otherwise any
+        # instance with queued work. Served via its first NPU.
+        if network_backend == 'booksim' and num_instances > 1:
+            def _veritx_needs(_iid):
+                if not schedulers[_iid].is_request_empty():
+                    return True
+                _dg = inst_dp_group.get(_iid)
+                return bool(_dg is not None
+                            and any(dp_pending[_dg][i] for i in dp_groups[_dg]))
+            def _veritx_blocked(_iid):
+                _inf = schedulers[_iid].inflight
+                if not _inf:
+                    return False
+                _dg = inst_dp_group.get(_iid)
+                if _dg is None:
+                    return False
+                _newest = _inf[-1]
+                return any(_newest is _qb
+                           for _dq in dp_pending[_dg].values()
+                           for (_qb, _qn) in _dq)
+            if not _veritx_needs(instance_id) or _veritx_blocked(instance_id):
+                _dg0 = inst_dp_group.get(instance_id)
+                _cands = []
+                if _dg0 is not None:
+                    _cands += [i for i in dp_groups[_dg0] if i != instance_id]
+                _cands += [i for i in range(num_instances)
+                           if i != instance_id
+                           and i not in _cands and _veritx_needs(i)]
+                for _cand in _cands:
+                    instance_id = _cand
+                    node_id = inst2node_mapping[_cand]
+                    sys = inst2npu_mapping[_cand]
+                    break
+            _rr_next = (instance_id + 1) % num_instances
 
         # add stanby energy consumption for power modeling
         if power_modeling and sys == inst2npu_mapping[instance_id] and waiting_request[instance_id]:
@@ -928,15 +1016,34 @@ def main():
             waiting_request[instance_id] = True
 
         # check request is done
-        # VeritX: guard retirement by .sent — an unsent batch is DP-pending
-        # (awaiting quorum), and the binary's per-round finish echo for a
-        # 'pass' must NOT retire it (that requeued requests every round and
-        # livelocked DP configs with the wall clock frozen).
-        _my_inf = schedulers[instance_id].inflight
-        if _my_inf and _my_inf[-1].sent:
-            prompt_t, gen_t, finished_reqs = schedulers[instance_id].add_done(_my_inf[-1].batch_id, sys, current)
+        if network_backend == 'booksim':
+            # VeritX: BookSim finish lines carry no batch identity (just
+            # sys/cycle), so retire by scheduler state. A batch still sitting
+            # in a dp_pending quorum deque was never dispatched — retiring it
+            # on a pass-echo requeues requests every round (DP livelock). Walk
+            # back to the youngest dispatched one. batch_id+1 because new
+            # add_done() decrements before matching.
+            def _veritx_dispatched(_b, _iid):
+                _dg = inst_dp_group.get(_iid)
+                if _dg is None:
+                    return True
+                for _dq in dp_pending[_dg].values():
+                    for (_qb, _qn) in _dq:
+                        if _qb is _b:
+                            return False
+                return True
+            _cand = None
+            for _b in reversed(schedulers[instance_id].inflight):
+                if _veritx_dispatched(_b, instance_id):
+                    _cand = _b
+                    break
+            if _cand is not None:
+                prompt_t, gen_t, finished_reqs = schedulers[instance_id].add_done(
+                    _cand.batch_id + 1, sys, current)
+            else:
+                prompt_t, gen_t, finished_reqs = 0, 0, []
         else:
-            prompt_t, gen_t, finished_reqs = 0, 0, []
+            prompt_t, gen_t, finished_reqs = schedulers[instance_id].add_done(id, sys, current)
         # add tokens in throughput
         prompt_th += prompt_t
         total_prompt += prompt_t
@@ -954,65 +1061,92 @@ def main():
         if instances[instance_id]["pd_type"] == "prefill" and len(finished_reqs) > 0:
             router.transfer_prefill_request(finished_reqs)
 
-        # VeritX multi-instance round-robin: completions were already credited
-        # above (main sys + parse_all_booksim extras), so if the base instance
-        # has no queued requests this round, serve another idle instance that
-        # does — instead of idling the fabric with a pass. Unblocks independent
-        # multi-instance configs (4xTP2) and lets DP-group quorums converge on
-        # consecutive member rounds.
-        # VeritX round-robin trigger: fire when the base instance cannot make
-        # progress this round — either its queue is empty, or its newest
-        # inflight batch is an unsent DP-pending batch (schedule() is blocked
-        # by the inflight constraint, so only another member's quorum can
-        # unblock it).
-        _base = schedulers[instance_id]
-        _base_blocked = bool(_base.inflight) and not _base.inflight[-1].sent
-        if num_instances > 1 and (not _base.request or _base_blocked):
-            _fallback = None
-            for _k in range(num_instances):
-                _cand = (_rr_next + _k) % num_instances
-                if _cand == instance_id or schedulers[_cand].inflight:
-                    continue
-                _dg = inst_dp_group.get(_cand)
-                _has_work = bool(schedulers[_cand].request) or \
-                    (_dg is not None and bool(dp_pending.get(_dg)) and not schedulers[_cand].inflight)
-                if _has_work:
-                    instance_id = _cand
-                    node_id = inst2node_mapping[_cand]
-                    sys = inst2npu_mapping[_cand]  # first NPU of the served instance
-                    break
-                if _fallback is None and _cand not in done_instance:
-                    _fallback = _cand
-            else:
-                # No candidate had schedulable work: give one idle, not-yet-done
-                # instance a bookkeeping round so its done_instance marking can
-                # fire. Without this, a config whose base instance empties first
-                # spins bare-pass echoes forever (only the served instance's
-                # done check ever runs).
-                if _fallback is not None:
-                    instance_id = _fallback
-                    node_id = inst2node_mapping[_fallback]
-                    sys = inst2npu_mapping[_fallback]
-            _rr_next = (instance_id + 1) % num_instances
+        # VeritX (booksim backend): BookSim emits one finish line per NPU per
+        # batch but the main path above only retires the leading sys. Feed
+        # every non-leading line through the same add_done + accounting path
+        # (needed for TP>1: a batch retires only when all NPUs report).
+        if network_backend == 'booksim':
+            for extra in controller.parse_all_booksim("\n".join(out)):
+                if extra['sys'] != out_dict.get('sys', -1):
+                    _e_inst = npu2inst_mapping.get(extra['sys'])
+                    if _e_inst is None:
+                        continue
+                    # VeritX: same dispatched-only rule as the main path.
+                    _e_cand = None
+                    for _b in reversed(schedulers[_e_inst].inflight):
+                        _e_dg = inst_dp_group.get(_e_inst)
+                        _e_queued = False
+                        if _e_dg is not None:
+                            for _dq in dp_pending[_e_dg].values():
+                                for (_qb, _qn) in _dq:
+                                    if _qb is _b:
+                                        _e_queued = True
+                                        break
+                                if _e_queued:
+                                    break
+                        if not _e_queued:
+                            _e_cand = _b
+                            break
+                    if _e_cand is not None:
+                        _ep, _eg, _ef = schedulers[_e_inst].add_done(
+                            _e_cand.batch_id + 1, extra['sys'], extra['cycle'])
+                    else:
+                        _ep, _eg, _ef = 0, 0, []
+                    prompt_th += _ep
+                    total_prompt += _ep
+                    gen_th += _eg
+                    total_gen += _eg
+                    if instances[_e_inst]["pd_type"] != "prefill":
+                        req_cnt += len(_ef)
+                        for _r in _ef:
+                            router.notify_request_completed(_r.id, extra['cycle'])
+                    elif len(_ef) > 0:
+                        router.transfer_prefill_request(_ef)
 
-        # schedule requests
-        new_req = schedulers[instance_id].schedule(current, sys, id)
+        # An NPU that opened a DP round owes ASTRA-Sim that round's graph, and it
+        # has to be handed over before the scheduler may open anything new. vLLM
+        # schedules and dispatches in one step (``schedule()`` then
+        # ``execute_model()`` inside ``step_with_batch_queue``), so a scheduled
+        # batch is never left un-dispatched. A DP batch has to break that up --
+        # its graph cannot be emitted until every member has joined the barrier
+        # and the padded ``max_total_len`` is known -- so the invariant to keep is
+        # that the dispatch still lands before the next schedule for this NPU.
+        # Without it, at pp_size > 1 the NPU built its next microbatch on the very
+        # poll that should have handed over the previous one, and the round after
+        # that overwrote the entry: the first graph never ran, and the other
+        # pipeline stage blocked forever on a RECV that never came.
+        pending = dp_ready_workloads.get(sys)
+        new_req = None if pending else schedulers[instance_id].schedule(current, sys, id)
         responded = False  # track whether we already sent a response to ASTRA-Sim
 
-        # Check if a pre-generated workload is ready for this instance (from DP sync)
-        if new_req is None and instance_id in dp_ready_workloads:
-            controller.write_flush(p, dp_ready_workloads.pop(instance_id))
+        # Hand over a workload pre-generated by a DP round this NPU opened.
+        if pending:
+            controller.write_flush(p, pending.popleft())
+            if not pending:
+                del dp_ready_workloads[sys]
             responded = True
         # DP group: truly idle instance (no inflight batch) — create dummy batch so ALLTOALL syncs
-        elif new_req is None and instance_id in inst_dp_group and sys == inst2npu_mapping[instance_id] and len(schedulers[instance_id].inflight) == 0:
+        # An idle DP member has to keep pace with a busy one. vLLM requires every
+        # rank of a DP group to run the same number of forwards, and with PP a
+        # rank has pp_size microbatches in flight at once -- so the gate here is
+        # schedule()'s own pipeline-depth rule, not "nothing in flight". Gating on
+        # == 0 lets the member holding the real request run ahead by up to
+        # pp_size batches, and the dp_pending barrier then waits for a round the
+        # idle members can never join.
+        #
+        # Any NPU of the instance may open the round, not just its first. Which
+        # NPU ASTRA-Sim asks about is not ours to choose, and an instance whose
+        # start NPU is busy or starved would otherwise never contribute a dummy
+        # -- the barrier then waits on a member that cannot answer. An empty
+        # ``dp_pending[dg][instance_id]`` keeps it to one dummy per member per
+        # round -- the member has nothing queued, so it has not yet joined the
+        # round being assembled -- which is what the start-NPU test used to be
+        # standing in for.
+        elif (new_req is None and instance_id in inst_dp_group
+              and not dp_pending[inst_dp_group[instance_id]][instance_id]
+              and len(schedulers[instance_id].inflight) < schedulers[instance_id].pp_size):
             dg = inst_dp_group[instance_id]
-            # VeritX: never overwrite this instance's own real pending batch
-            # with a dummy (dummy branch is only for members not yet in the
-            # quorum).
-            if instance_id in dp_pending[dg]:
-                controller.write_flush(p, "pass")
-                responded = True
-            elif dp_pending[dg]:
+            if any(dp_pending[dg][i] for i in dp_groups[dg]):
                 # Emit a 1-token dummy; the uniform pad-to-max pass below
                 # brings it (and any undersized real peers) up to the
                 # group's max_total_len, matching vLLM's CUDA-graph DP padding.
@@ -1020,14 +1154,25 @@ def main():
                 dummy = Batch(schedulers[instance_id].get_batch_id(), instances[instance_id]["model_name"],
                               1, 1, [1], [], 0, 1, [], [], [1], current, 0)
                 dummy.fired.append(sys)
-                dp_pending[dg][instance_id] = (dummy, inst2node_mapping[instance_id])
+                # Register it the way scheduler._build_batch registers a real
+                # batch. Without this the instance's other NPUs get nothing:
+                # schedule() routes them to _schedule_existing, which searches
+                # inflight, finds no dummy, and they fall through to "pass" --
+                # so their .et never runs and the group's EP collective blocks
+                # forever. Invisible at tp=pp=1, where the start NPU is the only
+                # NPU an instance owns.
+                schedulers[instance_id].inflight.append(dummy)
+                dp_pending[dg][instance_id].append((dummy, inst2node_mapping[instance_id]))
 
-                if len(dp_pending[dg]) == len(dp_groups[dg]):
-                    # All DP members accounted for — pad every batch to the
-                    # group's max (vLLM CUDA-graph DP padding) and generate.
+                if all(dp_pending[dg][i] for i in dp_groups[dg]):
+                    # Every DP member has a batch queued — take one from each,
+                    # oldest first, and pad them to the group's max (vLLM
+                    # CUDA-graph DP padding) before generating.
+                    round_batches = {i: dp_pending[dg][i].popleft() for i in dp_groups[dg]}
+                    own_workload = None
                     config = get_config(instances[instance_id]["model_name"])
-                    max_total_len = max(b.total_len for b, _ in dp_pending[dg].values())
-                    for b, _ in dp_pending[dg].values():
+                    max_total_len = max(b.total_len for b, _ in round_batches.values())
+                    for b, _ in round_batches.values():
                         _pad_batch_to_max(b, max_total_len)
                     # MoE AG/RS comm size is anchored to ``max_total_len``
                     # (not ``max × group_size``). The trace generator divides
@@ -1042,14 +1187,15 @@ def main():
 
                     # Shared workload folder for all DP members
                     first_inst_id = dp_groups[dg][0]
-                    first_batch = dp_pending[dg][first_inst_id][0]
+                    first_batch = round_batches[first_inst_id][0]
                     dp_workload_name = f'{instances[first_inst_id]["hardware"]}/{instances[first_inst_id]["model_name"]}/dp_{dg}_batch{first_batch.batch_id}'
 
                     for inst_id in dp_groups[dg]:
-                        batch, nid = dp_pending[dg][inst_id]
+                        batch, nid = round_batches[inst_id]
+                        batch.workload_name = dp_workload_name
                         inst = instances[inst_id]
                         inst_cfg = instance_runtime_configs[inst_id]
-                        generate_trace(batch, inst["hardware"], inst["tp_size"], inst["pp_size"],
+                        trace_data = generate_trace(batch, inst["hardware"], inst["tp_size"], inst["pp_size"],
                                        inst["local_ep"], inst["ep_total"], inst["pd_type"],
                                        nid, inst_id,
                                        inst_cfg["max_num_batched_tokens"], inst_cfg["max_num_seqs"],
@@ -1068,45 +1214,60 @@ def main():
                                        inst_cfg["enable_local_offloading"],
                                        workload_name=dp_workload_name,
                                        inputs_root=run_paths.inputs_root,
-                                       cleanup_trace=args.cleanup_inputs)
-                        # VeritX: no dp_ready_workloads enqueue — the shared
-                        # workload dir carries every member's rank files and
-                        # the quorum-round single run retires them all via
-                        # the extras path; an enqueue would stale-replay it.
+                                       save_trace_text=args.save_trace_text,
+                                       trace=trace_data)
+                        # ``fired[0]`` is the NPU that opened this member's
+                        # round -- the one that owes ASTRA-Sim its graph. That is
+                        # normally this very poll, and then it is answered
+                        # directly. With pp_size > 1 the round can instead pop a
+                        # batch that another NPU of the instance opened, or an
+                        # older one this NPU opened, so queue it for that NPU.
+                        ready = get_workload(batch, inst["hardware"], inst_id,
+                                             workload_name=dp_workload_name,
+                                             inputs_root=run_paths.inputs_root)
+                        if batch.fired[0] == sys:
+                            own_workload = ready
+                        else:
+                            dp_ready_workloads[batch.fired[0]].append(ready)
 
-                    # VeritX: mark every quorum member batch as flushed — the
-                    # shared workload dir carries all members' rank files, so
-                    # this single run retires all of them.
-                    for _b, _n in dp_pending[dg].values():
-                        _b.sent = True
-                    dp_pending[dg].clear()
-                    workload = get_workload(dummy, instances[instance_id]["hardware"], instance_id,
-                                            workload_name=dp_workload_name,
-                                            inputs_root=run_paths.inputs_root)
-                    controller.write_flush(p, workload)
+                    if own_workload is not None:
+                        controller.write_flush(p, own_workload)
+                    else:
+                        controller.write_flush(p, _pass_response(router, current, state_changed=True))
                     responded = True
                 else:
-                    controller.write_flush(p, "pass")
+                    # Joined the round with a dummy; the round is not complete.
+                    controller.write_flush(p, _pass_response(router, current, state_changed=True))
                     responded = True
         # runnable batch exists
         elif new_req is not None:
-            if sys == inst2npu_mapping[instance_id]:  # first NPU of the instance
+            # ``_build_batch`` returns a batch fired only by the NPU that built
+            # it, so a longer ``fired`` means this poll joined a batch through
+            # ``_schedule_existing``. With DP groups any NPU of an instance may
+            # open a round (the idle-member dummy in particular), so the start
+            # NPU can arrive here holding a batch it did not build -- it has to
+            # be served like any other joiner, not registered into the round a
+            # second time.
+            built_here = len(new_req.fired) == 1  # implies sys is the start NPU
+            if built_here:  # first NPU of the instance, opening a new batch
                 waiting_request[instance_id] = False
                 instance = instances[instance_id]
                 dg = inst_dp_group.get(instance_id)
 
                 if dg is not None:
                     # DP group: defer trace generation until all members scheduled
-                    dp_pending[dg][instance_id] = (new_req, node_id)
+                    dp_pending[dg][instance_id].append((new_req, node_id))
 
-                    if len(dp_pending[dg]) == len(dp_groups[dg]):
-                        # All DP members have scheduled — pad every batch to
-                        # the group's max (vLLM CUDA-graph DP padding) so
-                        # smaller batches gain dummy decodes that all layers
-                        # still compute over.
+                    if all(dp_pending[dg][i] for i in dp_groups[dg]):
+                        # Every DP member has a batch queued — take one from
+                        # each, oldest first, and pad them to the group's max
+                        # (vLLM CUDA-graph DP padding) so smaller batches gain
+                        # dummy decodes that all layers still compute over.
+                        round_batches = {i: dp_pending[dg][i].popleft() for i in dp_groups[dg]}
+                        own_workload = None
                         config = get_config(instance["model_name"])
-                        max_total_len = max(b.total_len for b, _ in dp_pending[dg].values())
-                        for b, _ in dp_pending[dg].values():
+                        max_total_len = max(b.total_len for b, _ in round_batches.values())
+                        for b, _ in round_batches.values():
                             _pad_batch_to_max(b, max_total_len)
                         # See twin block above: anchor MoE comm to max_total_len
                         # (no group-size multiplier).
@@ -1114,14 +1275,15 @@ def main():
 
                         # Shared workload folder for all DP members
                         first_inst_id = dp_groups[dg][0]
-                        first_batch = dp_pending[dg][first_inst_id][0]
+                        first_batch = round_batches[first_inst_id][0]
                         dp_workload_name = f'{instances[first_inst_id]["hardware"]}/{instances[first_inst_id]["model_name"]}/dp_{dg}_batch{first_batch.batch_id}'
 
                         for inst_id in dp_groups[dg]:
-                            batch, nid = dp_pending[dg][inst_id]
+                            batch, nid = round_batches[inst_id]
+                            batch.workload_name = dp_workload_name
                             inst = instances[inst_id]
                             inst_cfg = instance_runtime_configs[inst_id]
-                            generate_trace(batch, inst["hardware"], inst["tp_size"], inst["pp_size"],
+                            trace_data = generate_trace(batch, inst["hardware"], inst["tp_size"], inst["pp_size"],
                                            inst["local_ep"], inst["ep_total"], inst["pd_type"],
                                            nid, inst_id,
                                            inst_cfg["max_num_batched_tokens"], inst_cfg["max_num_seqs"],
@@ -1140,107 +1302,80 @@ def main():
                                            inst_cfg["enable_local_offloading"],
                                            workload_name=dp_workload_name,
                                            inputs_root=run_paths.inputs_root,
-                                           cleanup_trace=args.cleanup_inputs)
-                            # VeritX: no dp_ready_workloads enqueue — the
-                            # shared workload dir carries every member's rank
-                            # files and the quorum-round single run retires
-                            # them all via the extras path.
+                                           save_trace_text=args.save_trace_text,
+                                           trace=trace_data)
+                            # See the twin block above: the NPU that opened a
+                            # member's round owes its graph, and that is normally
+                            # this poll.
+                            ready = get_workload(batch, inst["hardware"], inst_id,
+                                                 workload_name=dp_workload_name,
+                                                 inputs_root=run_paths.inputs_root)
+                            if batch.fired[0] == sys:
+                                own_workload = ready
+                            else:
+                                dp_ready_workloads[batch.fired[0]].append(ready)
 
-                        # VeritX: mark every quorum member batch as flushed
-                        # (shared workload dir carries all rank files).
-                        for _b, _n in dp_pending[dg].values():
-                            _b.sent = True
-                        dp_pending[dg].clear()
-                        workload = get_workload(new_req, instance["hardware"], instance_id,
-                                                workload_name=dp_workload_name,
-                                                inputs_root=run_paths.inputs_root)
-                        controller.write_flush(p, workload)
+                        if own_workload is not None:
+                            controller.write_flush(p, own_workload)
+                        else:
+                            controller.write_flush(p, _pass_response(router, current, state_changed=True))
+                        responded = True
                     else:
                         # Waiting for other DP members — send pass
-                        controller.write_flush(p, "pass")
+                        controller.write_flush(p, _pass_response(router, current, state_changed=True))
                         responded = True
                 else:
                     # Independent instance: generate trace immediately
-                    # --- Decode optimization: detect decode-only batch and use cache ---
                     inst_cfg = instance_runtime_configs[instance_id]
-                    _is_decode_only = (new_req.num_decode > 0 and new_req.num_prefill == 0)
-                    _decode_cache = get_trace_cache() if _is_decode_only and args.decode_batch_size > 0 else None
-                    _cached_hit = False
-
-                    # Cache key is (instance_id, num_prefill) — stable during decode phase.
-                    # num_decode changes every step (1, 2, 3...) so it CANNOT be used as key.
-                    _cache_key_prefill = new_req.num_prefill
-
-                    _t_trace_start = time()
-                    if _decode_cache is not None and _decode_cache.has(instance_id, _cache_key_prefill):
-                        # Fast path: patch cached trace with new attention latencies
-                        _cached_hit = True
-                        _bench_cache_hits += 1
-                        trace_path = input_path(run_paths.inputs_root, "trace",
-                            instance["hardware"], instance["model_name"],
-                            f"instance{instance_id}_batch{new_req.batch_id}.txt")
-                        _cached = _decode_cache.get(instance_id, _cache_key_prefill)
-                        if _cached:
-                            _decode_cache.patch_and_write(
-                                instance_id, _cache_key_prefill,
-                                _cached.attention_latencies,
-                                trace_path)
-                    if not _cached_hit:
-                        _bench_cache_misses += 1
-                        _t_trace_only = time()
-                        generate_trace(new_req, instance["hardware"], instance["tp_size"], instance["pp_size"],
-                                       instance["local_ep"], instance["ep_total"],
-                                       instance["pd_type"],
-                                       node_id, instance_id,
-                                       inst_cfg["max_num_batched_tokens"], inst_cfg["max_num_seqs"],
-                                       placement[instance_id], block_mode_on[instance_id],
-                                       expert_routing_policy, inst_cfg["enable_prefix_caching"],
-                                       inst_cfg["enable_attn_offloading"], power_model, pim_models[node_id],
-                                       inst_cfg["enable_sub_batch_interleaving"], inst_cfg["fp"],
-                                       dtype=inst_cfg["dtype"], kv_cache_dtype=inst_cfg["kv_cache_dtype"],
-                                       tp_dim=instance["tp_dim"], ep_dim=instance["ep_dim"],
-                                       enable_block_copy=inst_cfg["enable_block_copy"],
-                                       inputs_root=run_paths.inputs_root)
-                        _bench_trace_only_time += time() - _t_trace_only
-                        # Cache trace BEFORE generate_graph deletes it (cleanup_trace=True)
-                        if _decode_cache is not None and _is_decode_only:
-                            trace_path = input_path(run_paths.inputs_root, "trace",
-                                instance["hardware"], instance["model_name"],
-                                f"instance{instance_id}_batch{new_req.batch_id}.txt")
-                            if os.path.exists(trace_path):
-                                _decode_cache.cache_from_file(
-                                    instance_id, _cache_key_prefill,
-                                    instance["hardware"], instance["model_name"],
-                                    trace_path)
-                        _t_graph_only = time()
-                        generate_graph(new_req, instance["hardware"], instance["num_npus"], node_id,
-                                       instance_id, inst2npu_mapping[instance_id],
-                                       inst_cfg["enable_local_offloading"],
-                                       inputs_root=run_paths.inputs_root,
-                                       cleanup_trace=args.cleanup_inputs)
-                        _bench_graph_only_time += time() - _t_graph_only
-                    else:
-                        # Cache hit: still need generate_graph (Chakra conversion)
-                        _t_graph_only = time()
-                        generate_graph(new_req, instance["hardware"], instance["num_npus"], node_id,
-                                       instance_id, inst2npu_mapping[instance_id],
-                                       inst_cfg["enable_local_offloading"],
-                                       inputs_root=run_paths.inputs_root,
-                                       cleanup_trace=args.cleanup_inputs)
-                        _bench_graph_only_time += time() - _t_graph_only
-                    # --- End decode optimization ---
-                    _bench_trace_gen_time += time() - _t_trace_start
-                    _bench_total_batches += 1
+                    trace_data = generate_trace(new_req, instance["hardware"], instance["tp_size"], instance["pp_size"],
+                                   instance["local_ep"], instance["ep_total"],
+                                   instance["pd_type"],
+                                   node_id, instance_id,
+                                   inst_cfg["max_num_batched_tokens"], inst_cfg["max_num_seqs"],
+                                   placement[instance_id], block_mode_on[instance_id],
+                                   expert_routing_policy, inst_cfg["enable_prefix_caching"],
+                                   inst_cfg["enable_attn_offloading"], power_model, pim_models[node_id],
+                                   inst_cfg["enable_sub_batch_interleaving"], inst_cfg["fp"],
+                                   dtype=inst_cfg["dtype"], kv_cache_dtype=inst_cfg["kv_cache_dtype"],
+                                   tp_dim=instance["tp_dim"], ep_dim=instance["ep_dim"],
+                                   enable_block_copy=inst_cfg["enable_block_copy"],
+                                   inputs_root=run_paths.inputs_root)
+                    generate_graph(new_req, instance["hardware"], instance["num_npus"], node_id,
+                                   instance_id, inst2npu_mapping[instance_id],
+                                   inst_cfg["enable_local_offloading"],
+                                   inputs_root=run_paths.inputs_root,
+                                   save_trace_text=args.save_trace_text,
+                                   trace=trace_data)
                     workload = get_workload(new_req, instance["hardware"], instance_id,
                                             inputs_root=run_paths.inputs_root)
-                    new_req.sent = True
                     controller.write_flush(p, workload)
-            elif new_req is not None:
-                # Non-first NPU: pick up existing batch workload
-                workload = get_workload(new_req, instances[instance_id]["hardware"], instance_id,
-                                        inputs_root=run_paths.inputs_root)
-                new_req.sent = True
-                controller.write_flush(p, workload)
+            else:
+                # Joined an existing batch: pick up its workload. workload_name
+                # matters for a DP batch, whose graph lives in the group's shared
+                # folder -- deriving the default instance<id>_batch<id> path here
+                # points at a directory that was never written, and ASTRA-Sim
+                # stalls on the missing .et instead of failing.
+                #
+                # A DP batch is in ``inflight`` from the moment its own instance
+                # schedules it, but it is only stamped with the shared folder
+                # when the *last* member of the group joins the barrier. In that
+                # window ``_schedule_existing`` will hand it to this NPU with no
+                # name yet, so wait instead of guessing a path: hand the claim
+                # back and pass, and the batch is re-offered on a later poll once
+                # the round is assembled. The batch is necessarily queued in
+                # ``dp_pending`` already (it exists because an NPU of this
+                # instance opened it), so passing here cannot stall the barrier.
+                if sys == inst2npu_mapping[instance_id]:
+                    waiting_request[instance_id] = False
+                if instance_id in inst_dp_group and new_req.workload_name is None:
+                    new_req.fired.remove(sys)
+                    controller.write_flush(p, _pass_response(router, current, state_changed=True))
+                    responded = True
+                else:
+                    workload = get_workload(new_req, instances[instance_id]["hardware"], instance_id,
+                                            workload_name=new_req.workload_name,
+                                            inputs_root=run_paths.inputs_root)
+                    controller.write_flush(p, workload)
 
         # check time to store throughput (only print on start NPU to avoid transient states)
         if current > last_log + INTERVAL and sys == inst2npu_mapping[instance_id]:
@@ -1266,8 +1401,12 @@ def main():
             ######### Per Instance Metrics #########
 
             for inst_id in range(num_instances):
-                running_reqs = sum(len(batch.requests) for batch in schedulers[inst_id].inflight)
-                waiting_reqs = len([req for req in schedulers[inst_id].request if req.arrival <= current])
+                # len(running), not the size of the in-flight batch: the persistent
+                # running set is the exact analogue of vLLM's num_running_reqs, which
+                # is what bench compares this column against. The batch is only the
+                # subset that fit in this step's token budget.
+                running_reqs = len(schedulers[inst_id].running)
+                waiting_reqs = len([req for req in schedulers[inst_id].waiting if req.arrival <= current])
 
                 mem = schedulers[inst_id].memory
                 npu_used_mb = mem.npu_used / MB_TO_BYTE
@@ -1281,7 +1420,7 @@ def main():
                     f"({npu_util:.3f} % Used)"
                 )
                 if schedulers[inst_id].enable_prefix_caching:
-                    line += schedulers[inst_id].memory.npu_prefix_cache.format_prefix_info()
+                    line += schedulers[inst_id].memory.format_prefix_info()
                 print_markup(line)
 
             ######### Per Node Metrics #########
@@ -1291,7 +1430,7 @@ def main():
                     node_cpu_usage = 0
                     inst_usage = []
                     if any_prefix_caching and enable_prefix_sharing and prefix_storage == "CPU":
-                        node_cpu_usage = prefix_pools[node_id].total_size() * prefix_pools[node_id].kv_size
+                        node_cpu_usage = prefix_pools[node_id].used_bytes()
                     else:
                         for inst_id in inst_ids:
                             inst_cpu_usage = schedulers[inst_id].memory.cpu_used
@@ -1307,7 +1446,7 @@ def main():
                         f"{cpu_util:.3f} % Used "
                     )
                     if any_prefix_caching and enable_prefix_sharing and prefix_storage == "CPU":
-                        line += prefix_pools[node_id].format_prefix_info()
+                        line += prefix_pools[node_id].stats.format_prefix_info()
 
                     if (any_prefix_caching and enable_prefix_sharing and prefix_storage == "CPU") or (len(inst_ids) == 1):
                         print_markup(line)
@@ -1323,8 +1462,8 @@ def main():
                 if enable_prefix_sharing:
                     num_prefix_pool = len(prefix_pools)
                     for cxl_id, cxl_pool in enumerate(prefix_pools):
-                        cxl_usage = cxl_pool.total_size() * cxl_pool.kv_size
-                        cxl_util = cxl_usage / cxl_pool.capacity
+                        cxl_usage = cxl_pool.used_bytes()
+                        cxl_util = cxl_pool.usage()
                         if not power_modeling and cxl_id == num_prefix_pool - 1:
                             tree_indent = '└─'
                         print_markup(
@@ -1338,12 +1477,11 @@ def main():
                         if sched.enable_prefix_caching
                     ]
                     for pos, inst_id in enumerate(enabled_inst_ids):
-                        second_tier = getattr(
-                            schedulers[inst_id].memory, "second_tier_prefix_cache", None)
+                        second_tier = schedulers[inst_id].memory.storage_pool
                         if second_tier is None:
                             continue
-                        cxl_usage = second_tier.total_size() * second_tier.kv_size
-                        cxl_util = cxl_usage / second_tier.capacity
+                        cxl_usage = second_tier.used_bytes()
+                        cxl_util = second_tier.usage()
                         if not power_modeling and pos == len(enabled_inst_ids) - 1:
                             tree_indent = '└─'
                         print_markup(
@@ -1361,141 +1499,57 @@ def main():
                 )
         # check if all requests are done for current instance#
         # NOTE: 'instance_id' could occur in duplicate, because 'npu2inst_mapping[sys]' is not one-to-one mapping
-        # VeritX: retire EVERY empty instance each round, not just the round's
-        # current instance_id. In PD the round-robin rebind moves OFF an idle
-        # prefill instance onto the decode instance (fallback), so the old
-        # single-instance check never evaluated the prefill's done-state —
-        # is_prefill_done stayed False, the decode instance (gated on it)
-        # could never exit, and the binary flooded pass-echoes forever
-        # (~1/3 of 3-req PD soak runs hit this).
-        _all_done = False
-        if not router.has_pending_requests() and not router.has_deferred_sessions():
-            import sys as _S
-            for _di in range(num_instances):
-                if _di in done_instance:
+        if (instance_id not in decode_instance or is_prefill_done) and instance_id not in done_instance and schedulers[instance_id].is_request_empty() and not router.has_pending_requests() and not router.has_deferred_sessions():
+            # For DP groups: only mark done when ALL members of the group are empty
+            dg = inst_dp_group.get(instance_id)
+            if dg is not None:
+                all_dp_empty = all(
+                    schedulers[inst_id].is_request_empty() and len(schedulers[inst_id].inflight) == 0
+                    for inst_id in dp_groups[dg]
+                )
+                if not all_dp_empty:
+                    # Other DP members still have work — keep this instance alive for dummy waves
+                    if not responded:
+                        controller.write_flush(p, _pass_response(router, current))
+                    flush.stdout.flush()
                     continue
-                if _di in decode_instance and not is_prefill_done:
-                    continue  # decode must wait until every prefill instance is done
-                if not schedulers[_di].is_request_empty():
-                    continue
-                # For DP groups: only mark done when ALL members of the group are empty
-                dg = inst_dp_group.get(_di)
-                if dg is not None:
-                    all_dp_empty = all(
-                        schedulers[inst_id].is_request_empty() and len(schedulers[inst_id].inflight) == 0
-                        for inst_id in dp_groups[dg]
-                    )
-                    if not all_dp_empty:
-                        # Other DP members still have work — keep this instance alive for dummy waves
-                        continue
 
-                if inst2npu_mapping[_di] not in done_inst_npus[_di]:
-                    done_inst_npus[_di].append(inst2npu_mapping[_di])
-                # VeritX: mark the instance done on TRUE completion state
-                # (queue drained and every batch retired). The old gate counted
-                # distinct-NPU 'done' echoes, but with the booksim backend
-                # parse_output pins sys=0 as the base each round and the
-                # round-robin rebind always serves an instance's FIRST NPU — so
-                # a TP>1 instance's echo-count could never reach 2 and the run
-                # never exited (4-instance configs flooded pass-echoes forever).
-                # add_done already requires all NPUs in batch.end before
-                # retiring, so an empty inflight list means every NPU of every
-                # batch was echoed.
-                if len(schedulers[_di].inflight) == 0:
-                    done_instance.append(_di)
+            if sys not in done_inst_npus[instance_id]:
+                done_inst_npus[instance_id].append(sys)
+            if len(done_inst_npus[instance_id]) == (1 if instances[instance_id]["num_npus"] == 1 else 2):
+                done_instance.append(instance_id)
 
-                # check if all prefill instances are done
-                if len(done_instance) == len(prefill_instance):
-                    is_prefill_done = True
+            # check if all prefill instances are done
+            if len(done_instance) == len(prefill_instance):
+                is_prefill_done = True
 
-                # check if all instances are done
-                if len(done_instance) == num_instances:
-                    _all_done = True
-                    break
+            # check if all instances are done
+            if len(done_instance) == num_instances:
+                for inst_idx in range(num_instances):
+                    schedulers[inst_idx].memory.free_prefix_cache()
+                    schedulers[inst_idx].memory.free_weight()
+                
+                # check memory leak before exit
+                schedulers[inst_idx].memory.is_free()
 
-        if _all_done:
-            # VeritX: dropped-request guard. The PD config previously
-            # flaked (nondeterministically ~1 in 5 runs) by exiting
-            # "cleanly" with req_cnt < expected — a request vanished
-            # from all queues silently. If that ever happens again,
-            # make it LOUD and dump the exact scheduler state at exit
-            # instead of letting it pass as a normal completion.
-            if req_cnt < router.req_num:
-                print(f"[LLMServingSim] !!! DROPPED REQUESTS at exit: "
-                      f"completed {req_cnt}/{router.req_num} !!!", flush=True)
-                for _i, _s in enumerate(schedulers):
-                    print(f"[DROPDBG] inst{_i} ({instances[_i]['pd_type']}) "
-                          f"q={[(r.id, r.arrival, r.num_computed_tokens, r.original_input, r.output) for r in _s.request]} "
-                          f"inflight={[(b.batch_id, b.sent, [r.id for r in b.requests]) for b in _s.inflight]}", flush=True)
-                print(f"[DROPDBG] router_pending={router._pending_idx}/{len(router._pending_requests)} "
-                      f"done_instance={done_instance} current={current}", flush=True)
-            for inst_idx in range(num_instances):
-                schedulers[inst_idx].memory.free_prefix_cache()
-                schedulers[inst_idx].memory.free_weight()
-            
-            # check memory leak before exit
-            schedulers[inst_idx].memory.is_free()
-
-            # --- Benchmark summary ---
-            _bench_loop_elapsed = time() - _bench_loop_start
-            if _bench_total_batches > 0:
-                _bench_avg_trace = (_bench_trace_gen_time / _bench_total_batches * 1000)
-                _bench_total = _bench_cache_hits + _bench_cache_misses
-                _bench_hit_rate = (_bench_cache_hits / _bench_total * 100) if _bench_total > 0 else 0
-                print(f"\n=== Decode Cache Benchmark ===")
-                print(f"  Batches:              {_bench_total_batches}")
-                print(f"  Cache hits:           {_bench_cache_hits}/{_bench_total} ({_bench_hit_rate:.0f}%)")
-                print(f"  Cache misses:         {_bench_cache_misses}")
-                print(f"  Trace gen time:       {_bench_trace_gen_time:.2f}s (avg {_bench_avg_trace:.0f}ms/batch)")
-                print(f"    - trace_only:       {_bench_trace_only_time:.2f}s (perf_db + interpolation)")
-                print(f"    - graph_only:       {_bench_graph_only_time:.2f}s (Chakra conversion)")
-                print(f"    - cache overhead:   {_bench_trace_gen_time - _bench_trace_only_time - _bench_graph_only_time:.2f}s")
-                print(f"  Total loop time:      {_bench_loop_elapsed:.2f}s")
-                print(f"  Trace gen overhead:   {_bench_trace_gen_time:.2f}s / {_bench_loop_elapsed:.2f}s = {_bench_trace_gen_time/_bench_loop_elapsed*100:.1f}%")
-            print_rule()
-            print_markup("[sim.heading]▶ Exiting simulation...[/]\n")
-            controller.write_flush(p, "exit")
-            break
+                print_rule()
+                print_markup("[sim.heading]▶ Exiting simulation...[/]\n")
+                controller.write_flush(p, "exit")
+                break
+            controller.write_flush(p, "done") # make done instances to sleep
         elif new_req == None and not responded:
-            import sys as _S; _S.stderr.write("[BARE] pend=%s def=%s req_cnt=%s/%s idle=%s done=%s prefillDone=%s\n" % (router.has_pending_requests(), router.has_deferred_sessions(), req_cnt, router.req_num, all(sch.is_request_empty() for sch in schedulers), done_instance, is_prefill_done))
             # If all instances are idle but deferred sessions have pending
             # requests with future arrival times (tool calls still running),
-            # advance persistent clock so the next iteration routes them.
-            # Time advancement must also propagate to the binary's event
-            # queue — we send "pass <time>" so BookSim's EventQueue jumps.
-            _advanced = False
+            # advance current time so the next iteration can pick them up.
+            # Built before the jump below: _pass_response compares against
+            # the clock ASTRA-Sim is actually at, not the one we skip to.
+            pass_msg = _pass_response(router, current)
             if router.has_deferred_sessions() or router.has_pending_requests():
                 next_arrival = router.get_next_pending_arrival()
-                if next_arrival is not None and next_arrival > _sim_time:
-                    _sim_time = next_arrival
+                if next_arrival is not None and next_arrival > current:
                     current = next_arrival
-                    controller.write_flush(p, f"pass {_sim_time}")
-                    _advanced = True
-            # VeritX PD livelock guard: after prefill→decode transfer,
-            # the decode scheduler has requests but the round-robin may
-            # land on the idle prefill instance. If ANY scheduler still
-            # has queued work, serve it next round instead of bare-passing.
-            # VeritX fix: send a "pass" before continuing. The original
-            # `continue` reached read_wait WITHOUT sending any command while
-            # the binary sat in getline() waiting for one — both blocked on
-            # the pipe (sparse-gap PD hang). Writing "pass" keeps the binary
-            # responsive so the next iteration can schedule the busy
-            # instance without deadlocking.
-            if not _advanced and num_instances > 1:
-                _found = False
-                for _si in range(num_instances):
-                    if _si != instance_id and schedulers[_si].request:
-                        instance_id = _si
-                        sys = inst2npu_mapping[_si]
-                        node_id = inst2node_mapping[_si]
-                        _found = True
-                        break
-                if _found:
-                    controller.write_flush(p, "pass")
-                    continue  # re-enter loop to schedule this instance
-            if not _advanced:
-                controller.write_flush(p, "pass")
-
+            controller.write_flush(p, pass_msg)
+        
         # flush
         flush.stdout.flush()
 
@@ -1506,29 +1560,7 @@ def main():
     minutes, seconds = divmod(remainder, 60)
 
     # check all scheduled requests in astra-sim are well done
-    # For BookSim backend, check_end returns immediately (BookSim never outputs
-    # the analytical termination strings). For analytical, it blocks until done.
     controller.check_end(p)
-
-    # Ensure subprocess is terminated -- always, for every backend.
-    # After the simulation loop breaks, the binary may still be alive
-    # (e.g. BookSim waiting on stdin, or analytical still draining).
-    try:
-        if p.poll() is None:
-            # Send EOF to stdin so the binary knows we are done
-            try:
-                p.stdin.close()
-            except Exception:
-                pass
-            p.terminate()
-            try:
-                p.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                p.kill()
-                p.wait(timeout=2)
-
-    except Exception:
-        pass
 
     # calcuate prefix caching metrics
     total_requested_tokens = 0
@@ -1548,11 +1580,11 @@ def main():
         
         if enable_prefix_sharing:
             for pool in prefix_pools:
-                _, temp_cpu_b = pool.return_prefix_info()
+                _, temp_cpu_b = pool.stats.return_prefix_info()
                 total_cpu_hit_tokens += temp_cpu_b
     
     # This is total system's throughput
-    total_latency = current/FREQ if current > 0 else 0.0
+    total_latency = current/FREQ
     print_rule()
     print_markup("[sim.heading]▶ Simulation results...[/]\n")
     print_markup(f"Total simulation time: {int(hours)}h {int(minutes)}m {seconds:.3f}s")
@@ -1560,7 +1592,20 @@ def main():
     print_markup(f"Total requests:                                                     {req_cnt}")
     print_markup(f"Total clocks (ns):                                                  {current}")
     print_markup(f"Total latency (s):                                                  {total_latency:.3f}")
-    print_markup(f"Total input tokens:                                                 {total_prompt}")
+    # total_prompt is the vLLM prompt-throughput gauge: it counts every token
+    # pushed through prefill, including prefix-cache hits and anything recomputed
+    # after a preemption. Report the dataset input from the requests themselves
+    # rather than by subtracting the recompute counter -- a request preempted
+    # again mid-recompute is charged its full remaining work each time it is
+    # re-admitted, so the two are not each other's complement.
+    total_recompute = sum(s.recompute_tokens for s in schedulers)
+    total_preempt = sum(s.num_preemptions for s in schedulers)
+    total_input = sum(req.original_input for s in schedulers for req in s.done)
+    print_markup(f"Total input tokens:                                                 {total_input}")
+    if total_preempt:
+        print_markup(f"Preemptions:                                                        {total_preempt}")
+    if total_recompute:
+        print_markup(f"Recomputed prompt tokens (preemption):                               {total_recompute}")
     print_markup(f"Total generated tokens:                                             {total_gen}")
     if total_latency > 0:
         print_markup(f"Request throughput (req/s):                                         {req_cnt/total_latency:.2f}")
@@ -1568,11 +1613,13 @@ def main():
         print_markup(f"Average generation throughput (tok/s):                              {total_gen/total_latency:.2f}")
         print_markup(f"Total token throughput (tok/s):                                     {(total_prompt + total_gen)/total_latency:.2f}")
     else:
+        # VeritX: early backend death reaches here with zero clocks —
+        # report N/A instead of ZeroDivisionError after the ERROR above.
         print_markup(f"Request throughput (req/s):                                         N/A (no cycles)")
         print_markup(f"Average prompt throughput (tok/s):                                  N/A")
         print_markup(f"Average generation throughput (tok/s):                              N/A")
         print_markup(f"Total token throughput (tok/s):                                     N/A")
-    print_markup(f"Throughput per {1/RATIO} sec (\\[prompt_throughput], \\[gen_throughput]): {throughput}")
+    print_markup(f"Throughput per {log_interval:g} sec (\\[prompt_throughput], \\[gen_throughput]): {throughput}")
     print_rule()
     if any_prefix_caching:
         print_rule("[sim.tagline]Prefix Caching Results[/]")
@@ -1593,7 +1640,7 @@ def main():
         print_markup(f"Total energy consumption (kJ):                                      {total_energy/1000:.2f}")
         # Each node results
         power_model.print_power_summary()
-        print_markup(f"Power per {1/RATIO} sec (W): {power_model.power_time_series}")
+        print_markup(f"Power per {log_interval:g} sec (W): {power_model.power_time_series}")
         print_rule()
     # Each instacne results
     for i in range(num_instances):
@@ -1613,30 +1660,16 @@ def main():
         for i in range(num_instances):
             schedulers[i].save_output(output_file, is_append=False if i == 0 else True)
 
-    if _backend_died_early:
-        # VeritX: exit non-zero so wrappers/CI notice. Inputs deliberately
-        # kept (no cleanup) for post-mortem.
-        import sys as _sys
-        _sys.exit(1)
-
-    if args.cleanup_inputs:
+    # --save-trace-text writes the text into the run directory, so keeping it
+    # is implied: producing the text and then deleting it would be pointless.
+    # VeritX: never clean up after an early backend death — keep the evidence.
+    if not (args.keep_inputs or args.save_trace_text or _backend_died_early):
         _cleanup_inputs_root(run_paths, logger)
 
-    # Close subprocess pipes to prevent BrokenPipeError during interpreter shutdown.
-    # The garbage collector finalizes TextIOWrapper objects after main() returns,
-    # but by then the binary has already exited and the pipe is broken.
-    try:
-        p.stdout.close()
-    except Exception:
-        pass
-    try:
-        p.stderr.close()
-    except Exception:
-        pass
-    try:
-        p.stdin.close()
-    except Exception:
-        pass
+    if _backend_died_early:
+        # VeritX: non-zero exit so wrappers/CI notice.
+        import sys as _sys
+        _sys.exit(1)
     
 
 if __name__ == "__main__": 
