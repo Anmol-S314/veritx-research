@@ -12,11 +12,13 @@
   "local_modifications": [
     "network_frontend/booksim2/main.cc — VeritX entry point with EmbedTM integration",
     "network_frontend/booksim2/Booksim2NetworkApi.cc — sim_send/sim_recv via fabric",
-    "extern/network_backend/booksim2/Booksim2Fabric.cc/hh — fabric wrapper"
+    "extern/network_backend/booksim2/Booksim2Fabric.cc/hh — fabric wrapper",
+    "extern/graph_frontend/chakra/src/converter/llm_converter.py — convert_rows() shim for newer LLMServingSim graph_generator (materializes legacy text, drops pp_stage_boundaries)"
   ],
   "known_gaps": [
     "Build artifacts not tracked (cmake --build needed)",
-    "chakra_to_et binary must be built separately"
+    "chakra_to_et binary must be built separately",
+    "convert_rows shim ignores PP stage boundaries — PP .et output unpartitioned until converter gains PP support"
   ],
   "used_by": [
     "t3-topology"

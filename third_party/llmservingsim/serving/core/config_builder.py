@@ -125,6 +125,7 @@ def _resolve_parallelism(instance, model_config):
     instance["pp_size"] = pp_size
     instance["ep_size"] = ep_size
     instance["dp_group"] = dp_group
+    instance["is_moe"] = is_moe  # VeritX port from upstream: dense-DP exemption needs this
 
     return num_npus, tp_size, pp_size, ep_size, dp_group
 
@@ -141,29 +142,51 @@ def _resolve_dp_groups(all_instances):
         # All members must have same tp_size and ep_size
         tp0 = members[0]["tp_size"]
         ep0 = members[0]["ep_size"]
+        pp0 = members[0]["pp_size"]
         for m in members[1:]:
             if m["tp_size"] != tp0:
                 raise ValueError(f"DP group '{group_name}': tp_size mismatch ({tp0} vs {m['tp_size']})")
             if m["ep_size"] != ep0:
                 raise ValueError(f"DP group '{group_name}': ep_size mismatch ({ep0} vs {m['ep_size']})")
+            if m["pp_size"] != pp0:
+                raise ValueError(f"DP group '{group_name}': pp_size mismatch ({pp0} vs {m['pp_size']})")
 
         dp_size = len(members)
-        ep_total = ep0  # ep_size in config is the total EP degree across DP group
-        local_ep = ep_total // dp_size
-        if ep_total % dp_size != 0:
-            raise ValueError(f"DP group '{group_name}': ep_size ({ep_total}) not divisible by dp_group_size ({dp_size})")
-        if local_ep > tp0:
-            raise ValueError(f"DP group '{group_name}': local_ep ({local_ep}) > tp_size ({tp0})")
-
-        # Topology dimensions for DP group: dim 0 = TP (intra-instance), dim 1 = DP (cross-instance)
-        # ALLREDUCE (TP): dim 0 only. ALLTOALL (EP): dim 1 (or both if EP spans TP+DP).
-        tp_dim = [True, False]  # ALLREDUCE on dim 0 only
-        if ep_total <= tp0:
-            # EP fits within TP dimension (no cross-instance ALLTOALL)
-            ep_dim = [True, False]
+        if not members[0].get("is_moe", True):
+            # VeritX port from upstream: a dense model has no experts, so
+            # ep_size is not sharded over the group — dividing it by
+            # dp_group_size would reject pure data parallelism (vLLM
+            # --data-parallel-size). PP configs still unsupported here.
+            ep_total = 1
+            local_ep = 1
         else:
-            # EP spans both dimensions (cross-instance ALLTOALL)
-            ep_dim = [True, True] if tp0 > 1 else [False, True]
+            ep_total = ep0  # ep_size in config is the total EP degree across DP group
+            local_ep = ep_total // dp_size
+            if ep_total % dp_size != 0:
+                raise ValueError(f"DP group '{group_name}': ep_size ({ep_total}) not divisible by dp_group_size ({dp_size})")
+            if local_ep > tp0:
+                raise ValueError(f"DP group '{group_name}': local_ep ({local_ep}) > tp_size ({tp0})")
+
+        # Topology dimensions for a DP group, innermost first (VeritX port
+        # from upstream): [tp_size] + ([pp_size] if pp > 1) + [dp_group_size],
+        # matching vLLM's DP x PP x TP rank layout. EP deliberately spans DP
+        # and TP but NOT PP (upstream transpose pins the PP index).
+        # ALLREDUCE (TP): dim 0 only.
+        has_pp = pp0 > 1
+        if has_pp:
+            tp_dim = [True, False, False]
+            if ep_total <= tp0:
+                ep_dim = [True, False, False]
+            else:
+                ep_dim = [True, False, True] if tp0 > 1 else [False, False, True]
+        else:
+            tp_dim = [True, False]  # ALLREDUCE on dim 0 only
+            if ep_total <= tp0:
+                # EP fits within TP dimension (no cross-instance ALLTOALL)
+                ep_dim = [True, False]
+            else:
+                # EP spans both dimensions (cross-instance ALLTOALL)
+                ep_dim = [True, True] if tp0 > 1 else [False, True]
 
         for m in members:
             m["dp_group_size"] = dp_size
@@ -211,11 +234,17 @@ def _compute_network_dims(instances):
             dp_groups.setdefault(dg, []).append(inst)
 
     if dp_groups:
-        # DP group mode: topology = [tp_size, dp_group_size]
-        # All instances in DP group must have same tp_size (validated by
-        # _resolve_dp_groups).
+        # DP group mode: topology = [tp_size, pp_size, dp_group_size],
+        # innermost first (VeritX port from upstream, mirroring vLLM's
+        # DP x PP x TP rank layout). pp_size drops out when 1 so plain
+        # DP+TP keeps its 2-D topology and 2-element dim vectors.
+        # Leaving pp out entirely sizes the world at tp*dp while tp*pp*dp
+        # NPUs exist — ASTRA-Sim then waits on ranks with no room.
         first_group = next(iter(dp_groups.values()))
-        dims = [first_group[0]["tp_size"], len(first_group)]
+        tp_size = first_group[0]["tp_size"]
+        pp_size = first_group[0]["pp_size"]
+        dims = ([tp_size, pp_size, len(first_group)] if pp_size > 1
+                else [tp_size, len(first_group)])
     else:
         # Independent instances: standard topology.
         total_npu = sum(
@@ -273,8 +302,14 @@ def _compute_logical_dims(instances):
             dp_groups.setdefault(dg, []).append(inst)
 
     if dp_groups:
+        # Logical dims mirror the physical rule (VeritX port from upstream):
+        # [tp_size, pp_size, dp_group_size] innermost-first, pp dropped when
+        # 1 so dim vectors stay 2-element for plain DP+TP.
         first_group = next(iter(dp_groups.values()))
-        dims = [first_group[0]["tp_size"], len(first_group)]
+        tp_size = first_group[0]["tp_size"]
+        pp_size = first_group[0]["pp_size"]
+        dims = ([tp_size, pp_size, len(first_group)] if pp_size > 1
+                else [tp_size, len(first_group)])
     else:
         total_npu = sum(
             inst["num_npus"] if inst.get("pd_type") != "prefill"
@@ -762,7 +797,7 @@ def _create_network_config(network_config_path, instances, link_bw, link_latency
     """Create ASTRA-Sim network topology config.
 
     Topology dimensions:
-      - For DP groups: [tp_size, dp_group_size] — dim 0 for TP ALLREDUCE, dim 1 for EP ALLTOALL
+      - For DP groups: [tp_size, (pp_size,) dp_group_size] — dim 0 for TP ALLREDUCE, last for EP ALLTOALL
       - For independent instances: [tp_size, num_groups] — dim 0 for TP, dim 1 for PP/instances
       - Single GPU instances: [1]
     """

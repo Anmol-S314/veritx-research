@@ -805,6 +805,7 @@ def main():
     _bench_cache_misses = 0
     _bench_total_batches = 0
     _bench_loop_start = time()
+    _backend_died_early = False  # VeritX: set if backend EOFs with zero batches done
     while True:
         
         out = controller.read_wait(p)
@@ -829,6 +830,19 @@ def main():
                 print(f"  Total loop time:      {_bench_loop_elapsed:.2f}s")
                 print(f"  Trace gen overhead:   {_bench_trace_gen_time:.2f}s / {_bench_loop_elapsed:.2f}s = {_bench_trace_gen_time/_bench_loop_elapsed*100:.1f}%")
             print("[LLMServingSim] Binary exited, ending simulation.", flush=True)
+            if _bench_total_batches == 0 and router.req_num > 0:
+                # VeritX: backend died before completing a single batch —
+                # never report silent success. Dump stderr tail, fail at end.
+                _backend_died_early = True
+                try:
+                    if p.poll() is not None and p.stderr:
+                        _serr = p.stderr.read()
+                        if _serr:
+                            print(f"[LLMServingSim] backend stderr:\n{_serr[-3000:]}", flush=True)
+                except Exception:
+                    pass
+                print(f"[LLMServingSim] ERROR: backend exited with 0 batches completed "
+                      f"({req_cnt}/{router.req_num} requests retired).", flush=True)
             break
         
         # If binary exited (EOF) or no parseable output, break
@@ -1598,6 +1612,12 @@ def main():
         print(f"Saving each request's information to output file: {output_file}")
         for i in range(num_instances):
             schedulers[i].save_output(output_file, is_append=False if i == 0 else True)
+
+    if _backend_died_early:
+        # VeritX: exit non-zero so wrappers/CI notice. Inputs deliberately
+        # kept (no cleanup) for post-mortem.
+        import sys as _sys
+        _sys.exit(1)
 
     if args.cleanup_inputs:
         _cleanup_inputs_root(run_paths, logger)

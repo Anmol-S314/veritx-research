@@ -14,7 +14,7 @@ tool in `METADATA.json`.
 |---|---|---|---|---|
 | `astra-sim` | `518bd51` | Network simulator + Chakra/ns-3 externs | `third_party/astra-sim/` | — |
 | `booksim2` | `28f43299` | Cycle-accurate NoC simulator | `third_party/booksim2/src/` | astra-sim extern booksim2 |
-| `llmservingsim` | `2c2042c` | LLM serving simulator | `third_party/llmservingsim/` | — (wires astra-sim) |
+| `llmservingsim` | `a4053bc` | LLM serving simulator | `third_party/llmservingsim/` | — (wires astra-sim) |
 | `timeloop` | `6b70505` | DNN accelerator mapper | `third_party/timeloop/` | — |
 
 Run `python3 scripts/tools.py` to list all four with binary status.

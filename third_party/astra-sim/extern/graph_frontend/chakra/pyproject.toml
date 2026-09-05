@@ -12,7 +12,9 @@ authors = [
     {name = "MLCommons", email = "chakra@mlcommons.org"},
 ]
 dependencies = [
-    "protobuf==5.*",
+    # VeritX: et_def_pb2.py is gencode 7.35.1 — protobuf 5.x runtimes refuse
+    # to load it (VersionError). Pin the floor to the gencode version.
+    "protobuf>=7.35.1",
     "graphviz",
     "networkx",
     "pydot",

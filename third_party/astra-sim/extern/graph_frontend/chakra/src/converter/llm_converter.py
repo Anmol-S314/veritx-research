@@ -912,3 +912,46 @@ class LLMConverter:
                 self.convert_event(f, num_layers)
             else:
                 raise ValueError(f"Unsupported execution type, {execution_type}")
+
+    def convert_rows(self, header_line: str, rows) -> None:
+        """Shim for newer LLMServingSim (post-2c2042c) graph_generator.
+
+        Upstream's chakra fork parses rows in-memory (no text round trip)
+        and passes pp_stage_boundaries through to convert_common/prefill.
+        This vendored converter predates both, so we materialize the legacy
+        text format to self.input_filename and reuse convert() verbatim:
+        identical downstream behavior at ~1.5ms/batch overhead.
+
+        Known gap: pp_stage_boundaries are dropped with a warning — PP
+        topologies convert as if unpartitioned. Do not trust PP .et output
+        until this converter gains PP support (see METADATA known_gaps).
+        """
+        first = header_line.strip().split()
+        execution_type = first[0] if first else ""
+        header = {}
+        fields = first[1:]
+        for i in range(0, len(fields) - 1, 2):
+            if fields[i].endswith(":"):
+                header[fields[i][:-1]] = fields[i + 1]
+        try:
+            num_npu_group = int(header.get("model_parallel_NPU_group", 0))
+        except ValueError:
+            num_npu_group = 0
+        if header.get("pp_stage_boundaries"):
+            logging.getLogger(__name__).warning(
+                "convert_rows shim: pp_stage_boundaries=%r ignored "
+                "(converter predates PP support)",
+                header.get("pp_stage_boundaries"),
+            )
+        row_lines = [" ".join(str(c) for c in cols) for cols in rows]
+        import os
+        parent = os.path.dirname(os.path.abspath(self.input_filename))
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        with open(self.input_filename, "w") as f:
+            f.write("%s model_parallel_NPU_group: %d\n" % (execution_type, num_npu_group))
+            f.write("%d\n" % len(row_lines))
+            f.write("# layer table (materialized by convert_rows shim)\n")
+            for line in row_lines:
+                f.write(line + "\n")
+        self.convert()

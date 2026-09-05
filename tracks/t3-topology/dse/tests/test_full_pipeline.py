@@ -297,6 +297,102 @@ class TestLLMServingSimServe:
             f"Missing throughput/results:\n{result.stdout[-500:]}"
         )
 
+    @pytest.mark.skipif(
+        not (LLMSIM / "serving" / "__main__.py").exists(),
+        reason="LLMServingSim not found"
+    )
+    @pytest.mark.skipif(not BOOKSIM_BIN.exists(),
+        reason="AstraSim_BookSim2 binary not found"
+    )
+    def test_serve_dense_dp_new_config(self):
+        """New upstream dense-DP config (no EP) validates + runs on our stack."""
+        cmd = [
+            sys.executable, "-m", "serving",
+            "--cluster-config", "configs/cluster/single_node_dp_instance.json",
+            "--dataset", "workloads/example_trace.jsonl",
+            "--num-reqs", "1",
+            "--network-backend", "booksim",
+            "--booksim-replay-only",
+            "--log-level", "WARNING",
+            "--no-cleanup-inputs",
+        ]
+        result = _run(cmd, cwd=str(LLMSIM), timeout=180)
+
+        assert result.returncode == 0, (
+            f"Dense-DP serve failed (exit {result.returncode}):\n"
+            f"stdout[-500:]: {result.stdout[-500:]}\n"
+            f"stderr[-500:]: {result.stderr[-500:]}"
+        )
+
+        stdout = result.stdout.lower()
+        assert "throughput" in stdout or "simulation results" in stdout, (
+            f"Missing throughput/results:\n{result.stdout[-500:]}"
+        )
+
+    @pytest.mark.skipif(
+        not (LLMSIM / "serving" / "__main__.py").exists(),
+        reason="LLMServingSim not found"
+    )
+    @pytest.mark.skipif(not BOOKSIM_BIN.exists(),
+        reason="AstraSim_BookSim2 binary not found"
+    )
+    def test_serve_moe_dp_ep_new_config(self):
+        """New upstream MoE DP+EP config runs on our stack."""
+        cmd = [
+            sys.executable, "-m", "serving",
+            "--cluster-config", "configs/cluster/single_node_moe_dp_ep_instance.json",
+            "--dataset", "workloads/workload_me2_01_mixed.jsonl",
+            "--num-reqs", "1",
+            "--network-backend", "booksim",
+            "--booksim-replay-only",
+            "--log-level", "WARNING",
+            "--no-cleanup-inputs",
+        ]
+        result = _run(cmd, cwd=str(LLMSIM), timeout=240)
+
+        assert result.returncode == 0, (
+            f"MoE-DP-EP serve failed (exit {result.returncode}):\n"
+            f"stdout[-500:]: {result.stdout[-500:]}\n"
+            f"stderr[-500:]: {result.stderr[-500:]}"
+        )
+
+        stdout = result.stdout.lower()
+        assert "throughput" in stdout or "simulation results" in stdout, (
+            f"Missing throughput/results:\n{result.stdout[-500:]}"
+        )
+
+    @pytest.mark.skipif(
+        not (LLMSIM / "serving" / "__main__.py").exists(),
+        reason="LLMServingSim not found"
+    )
+    @pytest.mark.skipif(not BOOKSIM_BIN.exists(),
+        reason="AstraSim_BookSim2 binary not found"
+    )
+    def test_serve_moe_dp_pp_new_config(self):
+        """New upstream MoE DP+PP config: 3-dim scoping ([tp, pp, dp]) on our stack."""
+        cmd = [
+            sys.executable, "-m", "serving",
+            "--cluster-config", "configs/cluster/single_node_moe_dp_pp_instance.json",
+            "--dataset", "workloads/workload_me2_01_mixed.jsonl",
+            "--num-reqs", "1",
+            "--network-backend", "booksim",
+            "--booksim-replay-only",
+            "--log-level", "WARNING",
+            "--no-cleanup-inputs",
+        ]
+        result = _run(cmd, cwd=str(LLMSIM), timeout=240)
+
+        assert result.returncode == 0, (
+            f"MoE-DP-PP serve failed (exit {result.returncode}):\n"
+            f"stdout[-500:]: {result.stdout[-500:]}\n"
+            f"stderr[-500:]: {result.stderr[-500:]}"
+        )
+
+        stdout = result.stdout.lower()
+        assert "throughput" in stdout or "simulation results" in stdout, (
+            f"Missing throughput/results:\n{result.stdout[-500:]}"
+        )
+
 
 class TestPipelineTraceToResults:
     """End-to-end: trace file -> converter -> ASTRA-Sim -> results."""

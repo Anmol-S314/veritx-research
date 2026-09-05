@@ -1217,6 +1217,18 @@ veritx serve \
   --output results.csv
 ```
 
+> **Host venv prerequisite (once per machine).** `serve` runs on the host,
+> not in the image (the image has no `chakra` Python package). Install the
+> converter from our vendored tree — plain `pip install chakra` / the old
+> `protobuf==5.*` pin will break (`et_def_pb2` is gencode 7.35.1):
+>
+> ```bash
+> # from the repo root
+> pip install ./third_party/astra-sim/extern/graph_frontend/chakra
+> # requires protobuf>=7.35.1 (enforced by the vendored pyproject.toml)
+> python3 -c "import chakra.src.converter.llm_converter as m; print(m.LLMConverter.convert_rows and 'chakra OK')"
+> ```
+
 ### 12.3 CLI Reference
 
 ```
@@ -1256,9 +1268,11 @@ All configs live in `third_party/llmservingsim/configs/cluster/`.
 
 | Config | Description | Instances | Notes |
 |--------|-------------|-----------|-------|
-| `single_node_single_instance` | 2 NPUs, TP=2, LLaMA-8B | 1 | Baseline, fastest (~2s/req) |
+| `single_node_single_instance` | 1 NPU, TP=1, LLaMA-8B (upstream shrunk this from 2 NPUs) | 1 | Baseline, fastest (~2s/req) |
 | `single_node_multi_instance` | 4 NPUs, 2 instances × TP=2 | 2 | Round-robin instance serving |
 | `single_node_pd_instance` | 2 instances: prefill + decode | 2 | Prefill-decode disaggregation |
+| `single_node_dp_instance` | 2 instances × TP=2, dense DP (no EP) | 2 | Pure data-parallel; needs dense-DP exemption |
+| `single_node_moe_dp_pp_instance` | MoE DP+PP, 3-dim [tp,pp,dp] scoping | 2 | PP runs unpartitioned on BookSim (see §12.6 note) |
 | `single_node_4_instance_2TP` | 8 NPUs, 4 instances × TP=2 | 4 | Multi-instance PD |
 | `dual_node_multi_instance` | 4 NPUs across 2 physical nodes | 2 | Cross-node simulation |
 | `single_node_moe_single_instance` | 8 NPUs, MoE EP=8 | 1 | MoE expert parallelism |
@@ -1268,7 +1282,21 @@ All configs live in `third_party/llmservingsim/configs/cluster/`.
 
 #### Validated on Analytical ✅
 
-All of the above work with `--network-backend analytical` (faster, less accurate).
+Single-instance (1-dim) configs work with `--network-backend analytical`
+(faster, less accurate). Multi-dim configs (any DP/PP group) do **not**:
+our vendored analytical binary only supports 1-dim topologies and exits
+immediately — the sim now fails fast with its stderr + exit 1 instead of
+hanging. Use `booksim` for multi-dim. (Upstream's fork lifted this; see
+the convergence note in `third_party/llmservingsim/METADATA.json`.)
+
+#### Backend / topology limits (2026-09-05 sync)
+
+* `booksim`: N-dim (2-D DP, 3-D DP+PP proven). PP collectives are correctly
+  scoped but the fabric is unpartitioned for PP stages.
+* `analytical`: 1-dim only (see above).
+* Upstream deleted the `booksim` backend and `--booksim-replay-only` from
+  their CLI; our stack keeps both as VeritX patches. `serving/validate.sh`
+  (vendored additively) needs their CLI and does not run here.
 
 #### Known Issues ⚠️
 
@@ -1516,16 +1544,25 @@ ls -la third_party/astra-sim/build/astra_analytical/build/AnalyticalAstra/bin/An
 #### Container Build
 
 ```bash
-# Build the tools image (includes all backends)
-podman build -t veritx-tools .
+# Build the tools image (booksim + analytical backends; ns3 is NOT in the image)
+make image-build  # tags ghcr.io/anmol-s314/veritx-tools-base:latest
 
-# Run serve inside container
-podman run --rm -v $(pwd):/workspace veritx-tools \
-  bash -c "cd /opt/llmservingsim && python3 -m serving \
+# Run serve from the mounted working tree. Do NOT use /opt/llmservingsim:
+# the baked copy lacks extern/graph_frontend/chakra and profiler/models,
+# so trace generation fails there. The mount also keeps outputs on the host.
+podman run --rm -v $(pwd):/workspace -w /workspace/third_party/llmservingsim \
+  ghcr.io/anmol-s314/veritx-tools-base:latest \
+  python3 -m serving \
     --cluster-config configs/cluster/single_node_single_instance.json \
     --dataset workloads/example_trace.jsonl \
-    --num-reqs 1 --network-backend booksim"
+    --num-reqs 1 --network-backend booksim
 ```
+
+Notes: `veritx serve` (the CLI wrapper) is not installed in the image — use
+`python3 -m serving` directly as above. Rebuild the image before trusting
+container results (binaries are baked at build time). Container Python cannot
+run serve (no `chakra` package in the image) — use the host venv (§12.2
+prerequisite) for validation.
 
 ### 12.13 Architecture Decisions
 
@@ -1602,10 +1639,47 @@ by `Total requests` (not exit code — the binary-EOF path exits 0 with zero com
 | dual MoE DP+EP | example 2-req | Clean trajectory to 4.4B cycles, INT_MAX crossed, needs ~60+ min wall (overnight) |
 | agentic MoE DP+EP | swe-bench 2 sessions | ~18K collectives, real TTFT/throughput ✅ |
 
-**Observability** (`VERITX_LEDGER`, binary stderr, default off):
-- `=1`: contract ledger — `COLL_SUBMIT/CONSTRUCTED/COMPLETE`, `STREAM`, `DATASET`, `STATE`, `STEP`, `TOPO`, `DRAIN_STUCK` (fail-loud bound, never tripped in passing runs).
-- `=2`: adds per-packet/per-event tracing (`SEND/RECV/ARRIVE/SKED/EVENT/RING/INIT/SCHED`, `NOVC` VC bitmaps).
-- Unset/`=0`: silent. Unset it for timing runs (ledger I/O is measurable at dual-node scale).
+**Observability** — the `VERITX_LEDGER` env var turns on a nonbehavioral
+collective-execution ledger on binary stderr (default off). The Python
+frontend inherits the env into the binary and forwards `[LEDGER]` lines to
+its own stderr, so **redirect stderr too** or the ledger prints to your
+terminal instead of the log file:
+
+```bash
+cd third_party/llmservingsim
+VERITX_LEDGER=1 python3 -m serving \
+  --cluster-config configs/cluster/single_node_moe_dp_ep_instance.json \
+  --dataset workloads/example_trace.jsonl --num-reqs 1 \
+  --network-backend booksim --no-booksim-replay-only --log-level WARNING \
+  > run.log 2>&1
+# Kind census (healthy run: STREAMs > 0, COLL_COMPLETE counts match SUBMITs):
+grep -a "LEDGER" run.log | sed 's/.*LEDGER\]\[\([A-Z_]*\).*/\1/' | sort | uniq -c
+```
+
+Levels: `=1` contract ledger (collectives, streams, datasets, fabric
+quiescence — low volume, safe for long runs); `=2` adds per-packet/per-event
+tracing (high volume — tiny runs only); unset/`=0` silent. Unset it for
+timing runs (ledger I/O is measurable at dual-node scale).
+
+| Line kind | Who emits it | What it means / what to look for |
+|-----------|--------------|----------------------------------|
+| `TOPO` | booksim frontend | Fabric dims, e.g. `dims=1,2` — must match `logical_dims.json`; flat when absent |
+| `COLL_SUBMIT` | workload | A trace collective entered the backend (`comm_type`, `comm_size`, `involved_dims`, tick) |
+| `COLL_CONSTRUCTED` | workload | It became a runnable dataset (`dataset_id`) — SUBMIT without CONSTRUCTED = dropped dim (see EP note above) |
+| `STREAM` | Sys | One chunk-stream with ring phases (`stream_id`, `size`) — zero STREAMs for a collective = empty phase vector, traffic silently unmodeled |
+| `DATASET` | dataset | `finished_streams/total_streams` progress per collective |
+| `COLL_COMPLETE` | workload | All streams of a dataset finished — the completion signal stats depend on |
+| `SEND`/`RECV`/`ARRIVE` (L2) | network API | Packet injection / handshake / retirement per `(tag,src,dst,count,chunk)` — SEND without ARRIVE = stuck in fabric |
+| `SKED`/`EVENT`/`EVENT_DONE` (L2) | event queue | Host-side event scheduling and execution |
+| `RING`/`INIT`/`SCHED` (L2) | Sys/stream | Per-stream scheduler and ring-algorithm steps |
+| `STATE` | frontend | Quiescence vector per round (`heap`, `inflight`, `sys_pending`, …) — the hang diagnostic |
+| `STEP`/`STEPPED` | frontend | Fabric advanced past idle gaps (`inflight` should return to 0) |
+| `STUCK_FLIT` | frontend | Oldest unretired flit sample when the drain spins — `vc=-1` + `itime=-1` = never injected (VC wait), otherwise in-flight |
+| `DRAIN_STUCK` | frontend | Fail-loud: drain exceeded 1e8 cycles — a real hang, never tripped in passing runs |
+| `NOVC` (L2) | traffic manager | VC bitmap when a head flit finds no output VC (`busy=1…`, all busy + none full = healthy congestion on 20K-cycle links) |
+
+Golden rule: judge a run by `Total requests` in the summary, not the exit
+code — the binary-EOF path exits 0 with zero completions.
 
 ---
 
