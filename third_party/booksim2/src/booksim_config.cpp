@@ -56,9 +56,29 @@ BookSimConfig::BookSimConfig( )
   _int_map["d"] = 0; //GEC: channel radix / sinks per channel (0 = default to 1)
   _int_map["mesh"] = 0; //GEC: 1 = nearest-neighbor mesh graph, 0 = full express graph
   _int_map["hybrid"] = 0; //GEC: 1 = nearest-neighbor mesh graph + o MECS express channels/dim layered on top, per-hop congestion-and-hopcount routed choice between them (mutually exclusive with mesh=1)
+
+  //---- Srota NoC (topology = srota) -----------------------------------
+  // Names track the spec's register names so a config file reads like the
+  // programming model; see networks/srota.hpp for the full mapping.
+  //   TOPO-003  = SSM-UARCH-TOPO-003  rev 0.3  Topology / MECS
+  //   ROUTE-001 = SSM-UARCH-ROUTE-001 rev 0.3  Routing Algorithm
+  //   TEL-004   = SSM-UARCH-TEL-004   rev 0.3  Telemetry
+  _int_map["srota_mecs"] = 3;             //TOPO_MECS_ENABLE: bit0 row express, bit1 column express. 0 = plain concentrated mesh (the ablation baseline, TOPO-003 5)
+  _int_map["srota_drop_latency"] = 1;     //TOPO_DROP_LATENCY: 1 = single-cycle drop, 2 = repeatered fallback at high radix (TOPO-003 6.2)
+  _int_map["srota_island_col_map"] = 0;   //TOPO_ISLAND_COL_MAP: bitmap of QoS island columns. Requires MECS on both dims (TOPO-003 4.4); checked against invariant I-ISL by TP-V2 at elaboration
+  _int_map["srota_path_en"] = 7;          //ROUTE_PATH_EN: bit0 row-first, bit1 column-first, bit2 Valiant. Bit0 is mandatory (ROUTE-001 14.3). 7 is the shipping default and the RT-R7 configuration
+  _int_map["srota_cong_thresh"] = 8;      //ROUTE_CONGESTION_THRESH: Plane-T occupancy nibble above which a candidate counts as congested (ROUTE-001 14.1)
+  _int_map["srota_epoch_len"] = 1024;     //ROUTE_EPOCH_LEN: flow-epoch length in cycles for the path cache (ROUTE-001 10.3)
+  _int_map["srota_force_shape"] = -1;     //ROUTE_DEBUG_FORCE_SHAPE: -1 = off, else force every flow to shape 0..3 (ROUTE-001 14.1)
+  _int_map["srota_flow_cache_size"] = 64; //Flow-epoch cache entries per FIU (ROUTE-001 10.4). Smaller = more hash collisions = more flows adopting another flow's path
+  _int_map["srota_tel_period"] = 4;       //Plane-T sample period in Plane-D cycles; 4 models 1 GHz telemetry against a 4 GHz data plane (TEL-004 2.1)
+  _int_map["srota_tel_latency"] = 8;      //Plane-T publication delay in Plane-D cycles: fixed ring-tree depth, independent of Plane-D congestion (TEL-004 3)
+  _int_map["srota_cdg_radix"] = 4;        //F1: radix of the abstraction the static channel-dependency-graph check runs on, exhaustively (ROUTE-001 4.4 specifies 4x4). 0 disables the check
+  AddStrField( "srota_vc_policy", "rank" );//Deadlock-avoidance mechanism: none | shape | rank | oneshape. See srota.hpp design note 3 -- this is the RT-R7 experiment axis
+
   AddStrField( "routing_function", "none" );
 
-  //simulator tries to correclty adjust latency for node/router placement 
+  //simulator tries to correclty adjust latency for node/router placement
   _int_map["use_noc_latency"] = 1;
 
 
