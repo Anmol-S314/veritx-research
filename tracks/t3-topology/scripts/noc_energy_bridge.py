@@ -38,7 +38,8 @@ from pathlib import Path
 HERE = Path(__file__).parent
 TRACK = HERE.parent
 TIMELOOP = TRACK / "timeloop"
-RESULTS = TRACK / "results"
+CONFIG = os.environ.get("CONFIG", "baseline")
+RESULTS = TRACK / "results" / CONFIG if (TRACK / "results" / CONFIG).exists() else TRACK / "results"
 ACCELERGY_OUT = RESULTS / "accelergy"
 
 NOC_ARCH = TIMELOOP / "noc_arch.yaml"

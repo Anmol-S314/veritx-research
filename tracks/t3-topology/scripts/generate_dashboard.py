@@ -36,19 +36,25 @@ def git_info():
     }
 
 
-def load_sweep():
-    p = RESULTS / "topology_sweep.json"
+def load_sweep(file_name):
+    p = Path(file_name)
     if not p.exists():
         sys.exit(f"  no {p} — run `make timeloop` (or `make sim`) first")
     return json.loads(p.read_text())
 
 
-def load_noc_energy():
-    """Accelergy-calibrated NoC energy (results/noc_energy.json), written by
-    scripts/noc_energy_bridge.py. Optional — absent if Accelergy wasn't
-    available when `make timeloop` ran, in which case the dashboard falls
-    back to the raw hops panel only."""
-    p = RESULTS / "noc_energy.json"
+def load_noc_energy(results_dir=None):
+    """Accelergy-calibrated NoC energy (results/noc_energy.json or results_dir/noc_energy.json),
+    written by scripts/noc_energy_bridge.py."""
+    if results_dir:
+        p = Path(results_dir) / "noc_energy.json"
+    else:
+        p = RESULTS / "noc_energy.json"
+    if not p.exists() and (RESULTS / "noc_energy.json").exists():
+        p = RESULTS / "noc_energy.json"
+    if not p.exists():
+        return None
+    return json.loads(p.read_text())
     if not p.exists():
         return None
     return json.loads(p.read_text())
@@ -123,9 +129,10 @@ def build_record(cur, matrix, levels, noc_energy):
     }
 
 
-def update_history(record):
+def update_history(record, outfile):
     """Append this run's full record; replace a re-run of the same commit; cap."""
-    p = RESULTS / "history.json"
+
+    p = Path(outfile)
     hist = json.loads(p.read_text()) if p.exists() else []
     hist = [h for h in hist if h.get("sha") != record["sha"]]
     run_no = (hist[-1]["run"] + 1) if hist else 1
@@ -291,19 +298,43 @@ def _selfcheck():
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--matrix", default=str(RESULTS / "traffic_matrix.txt"))
-    ap.add_argument("--timeloop-stats", default=str(RESULTS / "timeloop.stats.txt"))
+    ap.add_argument("--config", default="baseline")
+    ap.add_argument("--matrix")
+    ap.add_argument("--timeloop-stats")
+    ap.add_argument("--topology_sweep")
+    ap.add_argument("--history")
     ap.add_argument("--selfcheck", action="store_true")
     args = ap.parse_args()
-    if args.selfcheck:
-        _selfcheck(); return
 
-    cur = curves(load_sweep())
-    record = build_record(cur, load_matrix(args.matrix), load_levels(args.timeloop_stats), load_noc_energy())
-    hist = update_history(record)
+    if args.selfcheck:
+        _selfcheck()
+        return
+
+    results_dir = RESULTS / args.config
+    if not results_dir.exists():
+        results_dir = RESULTS
+
+    if args.matrix is None:
+        args.matrix = str(results_dir / "traffic_matrix.txt")
+    if args.timeloop_stats is None:
+        args.timeloop_stats = str(results_dir / "timeloop.stats.txt")
+    if args.topology_sweep is None:
+        args.topology_sweep = str(results_dir / "topology_sweep.json")
+    if args.history is None:
+        args.history = str(results_dir / "history.json")
+
+    cur = curves(load_sweep(args.topology_sweep))
+    record = build_record(
+        cur,
+        load_matrix(args.matrix),
+        load_levels(args.timeloop_stats),
+        load_noc_energy(results_dir),
+    )
+    hist = update_history(record, args.history)
     # Only show runs we can actually render. Pre-feature runs stored latency only
     # (no curves/matrix) — offering them gave empty panels. They stay in history.json
     # (they age out via the cap) but are hidden from the selector + table.
+
     view = [h for h in hist if h.get("curves")] or hist[-1:]
 
     html = (HTML
@@ -321,6 +352,7 @@ def main():
     REPORT.mkdir(parents=True, exist_ok=True)
     out = REPORT / "index.html"
     out.write_text(html)
+
     print(f"  dashboard → {out}  (run #{hist[-1]['run']}, {len(hist)} runs total, {headline(hist)})")
 
 

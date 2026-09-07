@@ -3,6 +3,7 @@ name: baseline
 defaults:
 
   projection: &projection
+<<<<<<< HEAD
     M: 512
     N: 64
     K: 768

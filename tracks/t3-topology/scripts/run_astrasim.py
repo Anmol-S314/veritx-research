@@ -264,8 +264,7 @@ def main():
                 f"{r['astrasim_cycles']:>8} total cycles | "
                 f"{r['status']}"
             )
-
-        results.append(r)
+            results.append(r)
 
     out_astrasim_json = out_res_dir / "astrasim_sweep.json"
     out_astrasim_json.write_text(json.dumps(results, indent=2))
