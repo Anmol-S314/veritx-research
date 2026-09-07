@@ -59,14 +59,15 @@ namespace {
 
 class SrotaTelemetry {
 public:
-  SrotaTelemetry() : _k(0), _period(4), _latency(8), _routers(0),
-                     _next_sample(0) {}
+  SrotaTelemetry() : _k(0), _period(4), _latency(8), _buf_per_port(1),
+                     _routers(0), _next_sample(0) {}
 
-  void Configure( int k, int period, int latency,
+  void Configure( int k, int period, int latency, int buf_per_port,
                   vector<Router *> const * routers ) {
     _k       = k;
     _period  = ( period  > 0 ) ? period  : 1;
     _latency = ( latency >= 0 ) ? latency : 0;
+    _buf_per_port = ( buf_per_port > 0 ) ? buf_per_port : 1;
     _routers = routers;
 
     // Published vectors start at zero -- "uncongested until told
@@ -125,35 +126,72 @@ private:
     s.col.assign( _k, 0 );
     s.row.assign( _k, 0 );
 
+    // The nibble reports PEAK queue pressure at a router: the fullest
+    // input buffer, as a fraction of that buffer's capacity, quantised to
+    // 0-15. Two earlier formulations were wrong, and both failed silently
+    // by disabling the section 5 overlay rather than by producing a
+    // visible error -- so the reasoning is recorded here.
+    //
+    // (a) Raw sum of GetBufferOccupancy() over all input ports, clamped
+    //     at 15. An interior router has c + 2(k-1) inputs (34 at k=16,
+    //     c=4), each holding num_vcs * vc_buf_size flits, so the sum
+    //     reaches 15 at under 1% utilisation: the nibble reads 0 when
+    //     idle and pins at 15 under any load, and no threshold setting
+    //     can discriminate.
+    //
+    // (b) MEAN utilisation across input ports. Fails the other way. On
+    //     this topology most of a router's inputs are express taps that
+    //     are idle most of the time -- a router taps k-1 channels per
+    //     dimension but a given flow uses one. Averaging over ~34 ports
+    //     of which a handful are busy pushes the mean below any useful
+    //     threshold even when the router is genuinely a bottleneck, so
+    //     the overlay never fires and adaptive routing degenerates
+    //     exactly to row-first.
+    //
+    // Peak-over-ports is what a congestion report is actually for: the
+    // question the overlay asks is "is this drop point backing up",
+    // and one saturated queue is a bottleneck regardless of how many
+    // idle taps sit beside it. TEL-004 section 2.2 says only "coarse
+    // buffer/queue occupancy", which does not settle the aggregation --
+    // that ambiguity is worth closing in the spec (see TL note in
+    // SROTA.md).
+    vector<int> col_sum( _k, 0 ), row_sum( _k, 0 );
     vector<int> col_n( _k, 0 ), row_n( _k, 0 );
 
     for ( int node = 0; node < (int)_routers->size(); ++node ) {
       Router const * r = (*_routers)[node];
       if ( !r ) continue;
 
-      // TEL-004 section 2.2: a coarse occupancy nibble per router,
-      // "deliberately low-resolution to keep the plane cheap." Total
-      // input-buffer occupancy is the closest thing BookSim exposes to
-      // what a router would report.
-      int occ = 0;
+      int peak = 0;
       for ( int i = 0; i < r->NumInputs(); ++i ) {
-        occ += r->GetBufferOccupancy( i );
+        int const o = r->GetBufferOccupancy( i );
+        if ( o > peak ) peak = o;
       }
 
+      double const util = ( _buf_per_port > 0 )
+          ? ( (double)peak / (double)_buf_per_port ) : 0.0;
+      int nib = (int)( util * 15.0 + 0.5 );
+      if ( nib > 15 ) nib = 15;
+
+      // The LINE aggregate is a mean over the routers in that column or
+      // row, not a max. TEL-004 section 4 calls it a "load vector over
+      // all routers in that column", and mean is what makes it usable
+      // here: a max is dominated by whichever single router is hottest,
+      // and under a hot-destination pattern that router is the packet's
+      // own destination -- which every path shape has to reach. Both
+      // candidates then read "congested" for the same unavoidable
+      // reason, and the comparison carries no information. A mean over
+      // the line measures how loaded the SEGMENT is, which is the part
+      // the choice of shape can actually change.
       int const x = node % _k;
       int const y = node / _k;
-      s.col[x] += occ; col_n[x]++;
-      s.row[y] += occ; row_n[y]++;
+      col_sum[x] += nib; col_n[x]++;
+      row_sum[y] += nib; row_n[y]++;
     }
 
-    // Mean occupancy per router, clamped into the 4-bit report range.
-    // TEL-004 section 2.3: consumers make threshold comparisons, not
-    // absolute-depth decisions, so precision beyond this buys nothing.
     for ( int i = 0; i < _k; ++i ) {
-      if ( col_n[i] ) s.col[i] = s.col[i] / col_n[i];
-      if ( row_n[i] ) s.row[i] = s.row[i] / row_n[i];
-      if ( s.col[i] > 15 ) s.col[i] = 15;
-      if ( s.row[i] > 15 ) s.row[i] = 15;
+      s.col[i] = col_n[i] ? ( col_sum[i] / col_n[i] ) : 0;
+      s.row[i] = row_n[i] ? ( row_sum[i] / row_n[i] ) : 0;
     }
 
     _pending.push_back( s );
@@ -162,6 +200,7 @@ private:
   int _k;
   int _period;
   int _latency;
+  int _buf_per_port;   // num_vcs * vc_buf_size -- per-input-port capacity
   vector<Router *> const * _routers;
 
   int _next_sample;
@@ -284,11 +323,35 @@ private:
     bool const col_en = ( gSrPathEn & SROTA_EN_COL ) != 0;
     bool const val_en = ( gSrPathEn & SROTA_EN_VALIANT ) != 0;
 
-    // Row-first turns at (dx, sy) and then rides column dx, so the
-    // candidate to test is column dx's drop point. Column-first turns at
-    // (sx, dy) and rides row dy.
-    bool const row_cong = gSrTel.ColLoad( dx ) > gSrCongThresh;
-    bool const col_cong = gSrTel.RowLoad( dy ) > gSrCongThresh;
+    // Row-first turns at (dx, sy) and then rides column dx, so its
+    // candidate segment is column dx. Column-first turns at (sx, dy) and
+    // rides row dy.
+    int const row_load = gSrTel.ColLoad( dx );
+    int const col_load = gSrTel.RowLoad( dy );
+
+    bool const row_cong = row_load > gSrCongThresh;
+    bool const col_cong = col_load > gSrCongThresh;
+
+    // Section 5.1's rule reads as a comparison, not two independent
+    // threshold tests: column-first is taken when "the row-first
+    // candidate's column-drop point is congested; the column path is
+    // not". Implemented literally as two absolute tests it degenerates
+    // whenever both candidates sit on the same side of the threshold --
+    // which is most of the time, since both segments end at the same
+    // destination. So the threshold decides only whether to escape to
+    // Valiant, and the choice between the two direct shapes is made by
+    // comparing their candidate loads.
+    if ( row_en && col_en ) {
+      if ( !( row_cong && col_cong ) ) {
+        if ( row_load < col_load ) return SROTA_ROW_FIRST;
+        if ( col_load < row_load ) return SROTA_COL_FIRST;
+        return SROTA_ROW_FIRST;          // tie -> the anchored default
+      }
+      // Both candidates congested: spread the load if Valiant is
+      // available, else still take the less-bad of the two.
+      if ( val_en ) return SROTA_VALIANT_L1;
+      return ( col_load < row_load ) ? SROTA_COL_FIRST : SROTA_ROW_FIRST;
+    }
 
     if ( row_en && !row_cong ) return SROTA_ROW_FIRST;
     if ( col_en && !col_cong ) return SROTA_COL_FIRST;
@@ -698,6 +761,7 @@ void SrotaNoC::_ComputeSize( const Configuration &config ) {
   gSrTel.Configure( _k,
                     config.GetInt( "srota_tel_period" ),
                     config.GetInt( "srota_tel_latency" ),
+                    num_vcs * config.GetInt( "vc_buf_size" ),
                     &_routers );
 
   _PrintConfigBanner( num_vcs, pol );

@@ -38,7 +38,7 @@ island-placement check, before any traffic moves.
 
 ---
 
-## Two findings this model produced
+## Three findings this model produced
 
 ### 1. RT-R7 is real, and the minimal cycle is four channels, not two
 
@@ -108,6 +108,98 @@ a whole-column one. TP-V2 as specified would catch this at generation
 time; it is worth running before the island map is frozen.
 
 ---
+
+### 3. The injection-time overlay captures about half of what it is worth — and a fabric-wide constant does as well
+
+ROUTE-001 §15 lists "reduced hot-column load under MoE skew" as
+*simulation-pending (M1)*. It is now measurable, using
+`tracks/t3-topology/scripts/moe_traffic.py` to build the §6.1 scenario
+directly: Mixtral-8x7B expert-parallel all-to-all, Zipf expert popularity,
+hot experts placed in one mesh column (27.9× destination-load imbalance).
+
+k=16, c=4, `num_vcs=8`, `vc_policy=rank`. Mean packet latency, **stable
+region only** — everything at rate ≥ 0.004 is past saturation and its
+numbers mean nothing:
+
+| rate | row-first | column-first | adaptive overlay | oneshape (§4.5.3 opt 1) |
+|---|---|---|---|---|
+| 0.0015 | 23.61 | **22.43** | 23.61 | 23.01 |
+| 0.002 | 25.70 | **23.66** | 25.70 | 24.82 |
+| 0.0025 | 29.99 | **25.73** | 29.49 | 27.60 |
+| 0.003 | 38.85 | **31.35** | 34.78 | 34.50 |
+
+Balanced all-to-all (skew=0) is the control: all four policies land within
+0.02% of each other at every rate, as they should when no candidate is
+hotter than another.
+
+Three things follow.
+
+**The overlay works, but under-delivers.** At low load it is byte-identical
+to row-first (nothing is congested, so nothing switches — correct). As
+congestion rises it does move toward column-first, but at rate 0.003 it
+recovers only ~54% of the gap between the two fixed shapes (38.85 → 34.78,
+where column-first reaches 31.35).
+
+**Simply forcing column-first beats it everywhere.** Per-flow adaptivity is
+*worse than a fabric-wide constant* here, because a per-flow decision is
+greedy and local: whenever the overlay lets some flows keep row-first,
+those flows ride the hot column for a whole segment and re-congest it for
+everyone. The globally best policy on this pattern is "nobody rides the
+hot column", which no per-flow rule reaches.
+
+**That reframes §4.5.3's cost argument.** Option 1 (one shape per epoch,
+fabric-wide) is dismissed there as losing per-flow diversity — presented as
+a performance price paid to buy deadlock freedom. On this workload per-flow
+diversity has *negative* value: `oneshape` matches or beats the adaptive
+overlay at every rate (34.50 vs 34.78 at 0.003) while costing zero VCs and
+resolving RT-R7 outright. Option 1 may be the right choice on performance
+grounds alone, not merely the cheapest.
+
+Caveat on scope: one workload, one placement, one fabric size. It does not
+show the overlay is useless — it shows the overlay's value is not
+established by the case the spec itself puts forward as its motivation, and
+that the M1 claim should not be quoted until a pattern is found where
+per-flow choice beats a constant.
+
+### A spec ambiguity this surfaced: TEL-004 §2.2 does not define the aggregation
+
+Getting the above to mean anything required fixing the telemetry model
+twice, and both failures were silent — they disabled the overlay rather
+than erroring.
+
+TEL-004 §2.2 specifies a 4-bit "coarse buffer/queue occupancy" per router
+and §4 a per-column "load vector over all routers in that column". Neither
+says how to reduce many buffers to one nibble, or many nibbles to one
+vector entry, and the choice decides whether the signal is usable at all:
+
+- **Raw sum over input ports, clamped at 15** — reads 0 when idle and pins
+  at 15 under any load. An interior router here has c + 2(k−1) = 34 inputs,
+  so the sum passes 15 at under 1% utilisation. No threshold can
+  discriminate.
+- **Mean over input ports** — fails the other way. Most of a router's inputs
+  are express taps that are idle at any instant, so the mean sits below any
+  useful threshold even when the router is a real bottleneck.
+- **Peak over input ports** (what this model now uses) — one saturated queue
+  is a bottleneck regardless of how many idle taps sit beside it.
+
+And at the line level, **max** is wrong for the same structural reason the
+overlay needs to avoid: under a hot-destination pattern the hottest router
+in the line is the packet's own destination, which *every* shape must
+reach, so both candidates read "congested" for the same unavoidable reason
+and the comparison carries no information. **Mean over the line** measures
+the segment, which is the part the choice of shape can actually change.
+
+§5.1's selection rule needs the same treatment. Read literally as two
+independent threshold tests ("row-first when the destination column is
+below thresh; column-first when the row-first candidate is congested and
+the column path is not") it degenerates whenever both candidates fall on
+the same side of the threshold — which is most of the time, because both
+segments terminate at the same destination. This model uses the threshold
+only to decide whether to escape to Valiant, and picks between the two
+direct shapes by comparing their candidate loads. That is the reading
+§5.1's own wording implies ("...is congested; the column path is not"), but
+it is not what the text literally says, and the difference is the
+difference between an overlay that fires and one that never does.
 
 ## The VC policy axis
 
