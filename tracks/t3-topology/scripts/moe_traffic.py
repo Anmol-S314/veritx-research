@@ -324,10 +324,22 @@ def main():
                     help="normalise so the busiest row sums to this")
     args = ap.parse_args()
 
+    # Resolve --model-config so the script works from anywhere: as given
+    # (relative to the caller's cwd) first, then relative to the track
+    # root, so both `cd tracks/t3-topology && ... timeloop/...` and a
+    # repo-root `... tracks/t3-topology/timeloop/...` are accepted. The
+    # default value is track-relative, which is why the fallback exists.
     root = Path(__file__).resolve().parent.parent
     cfg_path = Path(args.model_config)
-    if not cfg_path.is_absolute():
+    if not cfg_path.is_absolute() and not cfg_path.exists():
         cfg_path = root / cfg_path
+    if not cfg_path.exists():
+        raise SystemExit(
+            "model config not found: %s\n"
+            "  tried: %s\n"
+            "         %s"
+            % (args.model_config, Path(args.model_config).resolve(),
+               (root / args.model_config)))
 
     if args.experts and args.top_k:
         spec = dict(hidden_size=4096, ffn=14336, experts=args.experts,
