@@ -60,11 +60,11 @@ class TimeloopRunner:
             op_dir = self.operations_dir / shape_tag(op_template, shape)
             op_dir.mkdir(parents=True, exist_ok=True)
             if self.stats_file.exists():
-                shutil.copy(self.stats_file, op_dir / "stats.txt")
+                shutil.copyfile(self.stats_file, op_dir / "stats.txt")
             if self.map_file.exists():
-                shutil.copy(self.map_file, op_dir / "map.txt")
+                shutil.copyfile(self.map_file, op_dir / "map.txt")
             if self.xml_file.exists():
-                shutil.copy(self.xml_file, op_dir / "map+stats.xml")
+                shutil.copyfile(self.xml_file, op_dir / "map+stats.xml")
 
             stats_text = (op_dir / "stats.txt").read_text()
             read_b, write_b = dram_traffic_bytes(stats_text, dtype_bytes)
