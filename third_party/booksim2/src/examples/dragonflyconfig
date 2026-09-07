@@ -72,8 +72,12 @@ injection_rate_uses_flits=1;
 
 topology = dragonflynew;
 
-k  = 4;
+k  = 2;
 n  = 1;
+
+sim_type = trace;
+trace_file = src/examples/workload72_trace.csv;
+trace_packet_log = src/examples/dragonflynew_packets_out.csv;
 
 watch_out=-;
 

@@ -3,7 +3,7 @@
 
 // Topology
 topology = mesh;
-k = 4;
+k = 8;
 n = 2;
 
 // Routing
@@ -40,13 +40,17 @@ channel_width = 128;
 use_noc_latency = 0;
 
 // Traffic
-traffic = matrix(../traffic_matrix.txt);
+//traffic = matrix(../traffic_matrix.txt);
 packet_size = 5;
 injection_rate = 0.2;
 
 // Simulation
-sim_type = latency;
+//sim_type = latency;
 
 warmup_periods = 3;
 sample_period = 10000;
 sim_count = 1;
+
+sim_type = trace;
+trace_file = src/examples/workload64_trace.csv;
+trace_packet_log = src/examples/mesh88_packets_out.csv;
