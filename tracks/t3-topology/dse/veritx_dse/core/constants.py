@@ -2,8 +2,26 @@
 
 Single source of truth for all hardcoded values.
 Every 'magic number' in the codebase should reference these.
+Environment-overridable bounds use env_int() (fail fast on garbage).
 """
 from veritx_dse.core.paths import REPO, DSE_DIR, BOOKSIM_BIN, RUNS_DIR
+
+
+def env_int(name: str, default: int) -> int:
+    """Read an integer env var with fail-fast validation.
+
+    Unset → default. Set-but-not-integer → ValueError (never silently
+    coerce: a typo'd env var must not become a mystery default).
+    """
+    import os
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        raise ValueError(
+            f"{name}={raw!r} is not an integer")
 
 # ── BookSim defaults ─────────────────────────────────────────────────────────
 BOOKSIM_DEFAULTS = {
@@ -31,4 +49,7 @@ DEFAULT_K = 8
 DEFAULT_TIMEOUT = 60           # seconds
 DEFAULT_ITERS = 20             # BO iterations
 DEFAULT_PROCESS_NM = 7         # technology node
-PLANE_C_MAX_VC = 8             # max VCs per plane
+# Max VCs per plane. Env-overridable: fabrics with shared-pool or
+# high-radix VC budgets (e.g. PCIe6 VC0-VC7 + shared pool) need > 8.
+# Import-time read (documented): changing it requires process restart.
+PLANE_C_MAX_VC = env_int("VERITX_MAX_VC", 8)

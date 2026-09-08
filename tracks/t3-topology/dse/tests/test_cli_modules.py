@@ -397,3 +397,248 @@ class TestParseOutput:
         result = parse_output("Packet latency average = 100.0")
         assert result["latency"] == 100.0
         assert "hops" not in result
+
+
+# ── CLI fail-fast fixes: --anynet handling, dead --nodes, --burst guard ──────
+
+class TestExpandAnynetFiles:
+    def test_comma_split(self):
+        from veritx_dse.cli.cli import _expand_anynet_files
+        assert _expand_anynet_files(["a.anynet,b.anynet"]) == [
+            "a.anynet", "b.anynet"]
+
+    def test_repeatable(self):
+        from veritx_dse.cli.cli import _expand_anynet_files
+        assert _expand_anynet_files(["a.anynet", "b.anynet"]) == [
+            "a.anynet", "b.anynet"]
+
+    def test_mixed_and_blanks(self):
+        from veritx_dse.cli.cli import _expand_anynet_files
+        assert _expand_anynet_files(["a.anynet, b.anynet", "", "c.anynet"]
+                                    ) == ["a.anynet", "b.anynet", "c.anynet"]
+
+    def test_none_and_empty(self):
+        from veritx_dse.cli.cli import _expand_anynet_files
+        assert _expand_anynet_files(None) == []
+        assert _expand_anynet_files([]) == []
+
+
+class TestCompareAnynetFailFast:
+    def _ns(self, trace, anynet):
+        from argparse import Namespace
+        return Namespace(trace=trace, dense=None, topos="mesh_4x4",
+                         anynet=anynet, seeds=1, seed_base=0, timeout=60,
+                         mode="latency", ir=0.05, memory=False,
+                         sensitivity=None)
+
+    def test_missing_anynet_aborts_without_sim(self, ctx, tmp_trace):
+        from unittest.mock import patch
+        from veritx_dse.cli.cli import cmd_compare
+        with patch("veritx_dse.cli.cli.run_compare") as rc:
+            cmd_compare(ctx, self._ns(tmp_trace, ["/nonexistent/a.anynet"]))
+            rc.assert_not_called()
+        log = open(ctx.log_file).read()
+        assert "Aborting compare" in log
+
+    def test_comma_anynet_missing_aborts(self, ctx, tmp_trace):
+        from unittest.mock import patch
+        from veritx_dse.cli.cli import cmd_compare
+        with patch("veritx_dse.cli.cli.run_compare") as rc:
+            cmd_compare(ctx, self._ns(tmp_trace, ["a.anynet,b.anynet"]))
+            rc.assert_not_called()
+
+    def test_existing_anynet_reaches_sim(self, ctx, tmp_path, tmp_trace):
+        from unittest.mock import patch, MagicMock
+        from veritx_dse.cli.cli import cmd_compare
+        af = tmp_path / "t.anynet"
+        af.write_text("router 0 node 0 router 1\nrouter 1 node 1 router 0\n")
+        fake = MagicMock()
+        fake.to_dict.return_value = {}
+        with patch("veritx_dse.cli.cli.run_compare", return_value=fake) as rc:
+            cmd_compare(ctx, self._ns(tmp_trace, [str(af)]))
+            rc.assert_called_once()
+        specs = rc.call_args[0][2]
+        assert [s[0] for s in specs] == ["mesh_4x4", "t"]
+
+
+class TestIterativeNodesRemoved:
+    def test_nodes_flag_rejected(self):
+        from veritx_dse.cli.cli import build_parser
+        import pytest
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["synthesize", "iterative", "--trace", "x",
+                               "--nodes", "8"])
+
+    def test_timeout_flag_accepted(self):
+        from veritx_dse.cli.cli import build_parser
+        parser = build_parser()
+        args = parser.parse_args(["synthesize", "iterative", "--trace", "x",
+                                  "--timeout", "120"])
+        assert args.timeout == 120
+        args = parser.parse_args(["synthesize", "bo", "--traffic", "x"])
+        assert args.timeout is None  # unset → VERITX_TIMEOUT env or builtin
+        args = parser.parse_args(["synthesize", "grid"])
+        assert args.timeout is None
+        args = parser.parse_args(["certify", "flow", "--model", "m",
+                                  "--topo", "t"])
+        assert args.timeout is None
+        args = parser.parse_args(["certify", "full", "--model", "m",
+                                  "--topo", "t"])
+        assert args.timeout is None
+        args = parser.parse_args(["run", "--model", "m"])
+        assert args.timeout is None
+        args = parser.parse_args(["compare", "--trace", "t"])
+        assert args.timeout is None
+
+
+class TestExtractBurstGuard:
+    def test_burst_zero_fails_without_file(self, ctx, tmp_trace, tmp_path):
+        from argparse import Namespace
+        from veritx_dse.cli.cli import cmd_trace_extract
+        out = str(tmp_path / "empty.trace")
+        cmd_trace_extract(ctx, Namespace(trace=tmp_trace, uniform=False,
+                                         burst=0, out=out))
+        import os
+        assert not os.path.exists(out)
+        assert "--burst needs N >= 1" in open(ctx.log_file).read()
+
+
+class TestEffTimeout:
+    """Precedence: --timeout flag > VERITX_TIMEOUT env > built-in default."""
+
+    def _ns(self, timeout):
+        from argparse import Namespace
+        return Namespace(timeout=timeout)
+
+    def test_flag_wins(self, monkeypatch):
+        from veritx_dse.cli.cli import _eff_timeout
+        monkeypatch.setenv("VERITX_TIMEOUT", "9999")
+        assert _eff_timeout(self._ns(120), 60) == 120
+
+    def test_env_fallback(self, monkeypatch):
+        from veritx_dse.cli.cli import _eff_timeout
+        monkeypatch.setenv("VERITX_TIMEOUT", "3600")
+        assert _eff_timeout(self._ns(None), 60) == 3600
+
+    def test_builtin_default(self, monkeypatch):
+        from veritx_dse.cli.cli import _eff_timeout
+        monkeypatch.delenv("VERITX_TIMEOUT", raising=False)
+        assert _eff_timeout(self._ns(None), 60) == 60
+
+    def test_missing_attr_uses_env(self, monkeypatch):
+        from argparse import Namespace
+        from veritx_dse.cli.cli import _eff_timeout
+        monkeypatch.setenv("VERITX_TIMEOUT", "86400")
+        assert _eff_timeout(Namespace(), 60) == 86400
+
+    def test_invalid_env_fails_fast(self, monkeypatch):
+        import pytest
+        from veritx_dse.cli.cli import _eff_timeout
+        monkeypatch.setenv("VERITX_TIMEOUT", "soon")
+        with pytest.raises(ValueError, match="VERITX_TIMEOUT"):
+            _eff_timeout(self._ns(None), 60)
+
+    def test_zero_and_negative_rejected(self):
+        import pytest
+        from veritx_dse.cli.cli import _eff_timeout
+        with pytest.raises(ValueError, match=">= 1"):
+            _eff_timeout(self._ns(0), 60)
+        with pytest.raises(ValueError, match=">= 1"):
+            _eff_timeout(self._ns(-5), 60)
+
+
+class TestBaselineAnynetFailFast:
+    def _ns(self, trace, anynet):
+        from argparse import Namespace
+        return Namespace(trace=trace, topos="mesh_4x4", anynet=anynet,
+                         seeds=1, timeout=60)
+
+    def test_missing_anynet_aborts(self, ctx, tmp_trace):
+        from unittest.mock import patch
+        from veritx_dse.cli.cli import cmd_baseline
+        with patch("veritx_dse.cli.cli.run_compare") as rc:
+            cmd_baseline(ctx, self._ns(tmp_trace, ["/nonexistent_b.anynet"]))
+            rc.assert_not_called()
+        assert "Aborting baseline" in open(ctx.log_file).read()
+
+
+class TestSimOverrides:
+    """evaluate --vcs/--vc-buf/--sample-period/--max-samples forwarding."""
+
+    def test_all_unset_empty(self):
+        from argparse import Namespace
+        from veritx_dse.cli.cli import _sim_overrides
+        ns = Namespace(vcs=None, vc_buf=None, sample_period=None,
+                       max_samples=None)
+        assert _sim_overrides(ns) == {}
+
+    def test_partial_forward(self):
+        from argparse import Namespace
+        from veritx_dse.cli.cli import _sim_overrides
+        ns = Namespace(vcs=16, vc_buf=None, sample_period=None,
+                       max_samples=None)
+        assert _sim_overrides(ns) == {"num_vcs": 16}
+
+    def test_vcs_reaches_config(self, ctx, tmp_trace):
+        from argparse import Namespace
+        from unittest.mock import patch, MagicMock
+        from veritx_dse.cli.cli import cmd_evaluate_booksim
+        ns = Namespace(topo="mesh", k=4, trace=tmp_trace, routing=None,
+                       vcs=16, vc_buf=None, sample_period=None,
+                       max_samples=None, timeout=60)
+        fake_result = {"latency": 10.0, "hops": 2.0}
+        with patch("veritx_dse.cli.cli.run_booksim",
+                   return_value=dict(fake_result)) as rb:
+            cmd_evaluate_booksim(ctx, ns)
+            cfg = rb.call_args[0][1]
+            assert "num_vcs = 16;" in cfg
+
+    def test_explicit_vcs_overrides_gec_guard(self, tmp_trace):
+        from veritx_dse.model.presets import lookup_topo
+        from veritx_dse.simulation.booksim import build_config
+        topo = lookup_topo("gec_mecs_k8")
+        default_cfg = build_config(topo, tmp_trace)
+        assert "num_vcs = 8;" in default_cfg  # guard intact by default
+        override_cfg = build_config(topo, tmp_trace,
+                                    overrides={"num_vcs": 4})
+        assert "num_vcs = 4;" in override_cfg  # explicit user wins
+
+
+class TestEnvConstants:
+    def test_env_int(self, monkeypatch):
+        from veritx_dse.core.constants import env_int
+        monkeypatch.delenv("VERITX_TEST_INT", raising=False)
+        assert env_int("VERITX_TEST_INT", 7) == 7
+        monkeypatch.setenv("VERITX_TEST_INT", "42")
+        assert env_int("VERITX_TEST_INT", 7) == 42
+        monkeypatch.setenv("VERITX_TEST_INT", "many")
+        import pytest
+        with pytest.raises(ValueError, match="VERITX_TEST_INT"):
+            env_int("VERITX_TEST_INT", 7)
+
+    def test_plane_max_vc_single_source(self):
+        from veritx_dse.core import constants as C
+        from veritx_dse.model import compile_model as M
+        assert M.PLANE_C_MAX_VC == C.PLANE_C_MAX_VC == 8
+
+
+class TestIterativeBreadthFlags:
+    def test_horizon_branch_group(self):
+        from veritx_dse.cli.cli import build_parser
+        parser = build_parser()
+        args = parser.parse_args(["synthesize", "iterative", "--trace", "x",
+                                  "--horizon", "3", "--branch", "2",
+                                  "--group", "6"])
+        assert (args.horizon, args.branch, args.group) == (3, 2, 6)
+        args = parser.parse_args(["synthesize", "iterative", "--trace", "x"])
+        assert (args.horizon, args.branch, args.group) == (None, None, None)
+
+    def test_run_max_edges(self):
+        from veritx_dse.cli.cli import build_parser
+        parser = build_parser()
+        args = parser.parse_args(["run", "--model", "m"])
+        assert args.max_edges == 120
+        args = parser.parse_args(["run", "--model", "m",
+                                  "--max-edges", "64"])
+        assert args.max_edges == 64

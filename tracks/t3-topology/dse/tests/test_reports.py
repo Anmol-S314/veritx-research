@@ -75,6 +75,73 @@ class TestGenerateReport:
         assert "area" in result
         assert "power" in result
 
+    def test_collectives_block_empty(self):
+        """No collectives → zero incast, no hypercast estimate."""
+        cr = CompileRequest.from_dict({
+            "workload": {"model_family": "dense_transformer", "tp": 4},
+            "agents": [{"kind": "compute_tile", "count": 4}],
+            "noc_config": {},
+        })
+        result = generate_report(cr)
+        assert result["collectives"]["max_incast_degree"] == 0
+        assert result["collectives"]["hypercast_messages_saved_estimate"] == {}
+        assert result["collectives"]["vc_floor"] == 0
+
+    def test_collectives_block_sizing(self):
+        """alltoall/8 → incast 8, 64-flit note, 48 msgs saved (8*6)."""
+        cr = CompileRequest.from_dict({
+            "workload": {
+                "model_family": "mixture_of_experts", "tp": 2, "ep": 4,
+                "collectives": [{"kind": "alltoall", "group_size": 8}],
+            },
+            "agents": [{"kind": "compute_tile", "count": 8}],
+            "noc_config": {},
+        })
+        result = generate_report(cr)
+        block = result["collectives"]
+        assert block["max_incast_degree"] == 8
+        assert block["vc_floor"] == 1
+        assert "64 flits" in block["recommended_vc_buf_note"]
+        assert block["hypercast_messages_saved_estimate"] == {"alltoall/8": 48}
+        assert "Do not quote as speedup" in block["hypercast_note"]
+
+    def test_collectives_ring_phases(self):
+        """allreduce/64 → 126 ring phases; reduce has no message estimate."""
+        cr = CompileRequest.from_dict({
+            "workload": {
+                "model_family": "dense_transformer", "tp": 64,
+                "collectives": [{"kind": "allreduce", "group_size": 64}],
+            },
+            "agents": [{"kind": "compute_tile", "count": 64}],
+            "noc_config": {},
+        })
+        block = generate_report(cr)["collectives"]
+        assert block["ring_phases_estimate"] == {"allreduce/64": 126}
+        assert block["hypercast_messages_saved_estimate"] == {}
+        assert "ring algorithm" in block["ring_note"]
+        assert block["multicast_groups_available"] is None
+        assert block["multicast_fallback_to_unicast"] == 0
+        assert block["multicast_setup_cost_cycles_estimate"] is None
+
+    def test_collectives_multicast_fit(self):
+        """2 multicast contexts, 1 group, 50-cycle setup → fallback 1, cost 100."""
+        cr = CompileRequest.from_dict({
+            "workload": {
+                "model_family": "mixture_of_experts", "tp": 16, "ep": 8,
+                "collectives": [
+                    {"kind": "alltoall", "group_size": 8},
+                    {"kind": "allgather", "group_size": 16},
+                ],
+            },
+            "agents": [{"kind": "compute_tile", "count": 16}],
+            "noc_config": {"mcast_groups": 1, "mcast_setup_cycles": 50},
+        })
+        block = generate_report(cr)["collectives"]
+        assert block["multicast_groups_required"] == 2
+        assert block["multicast_groups_available"] == 1
+        assert block["multicast_fallback_to_unicast"] == 1
+        assert block["multicast_setup_cost_cycles_estimate"] == 100
+
 
 # ── Manifest atomicity test ──────────────────────────────────────────────────
 

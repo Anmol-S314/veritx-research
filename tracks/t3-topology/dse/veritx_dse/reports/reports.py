@@ -417,6 +417,86 @@ def generate_report(
     if sim_result:
         report["simulation"] = sim_result
 
+    # Collective sizing block (PRD §5.2 Level B — estimates, not sign-off).
+    # Incast buffer note: worst-case concurrent arrivals at one port ≈
+    # incast_degree × 8 flits (BookSim BASE_PARAMS packet_size=8). A fabric
+    # absorbing full-fan-in bursts without backpressure needs vc_buf at or
+    # above that; below it, expect the saturation seen in trace replay.
+    # Hypercast estimate: alltoall/allgather among G ranks takes G*(G-1)
+    # unicast messages vs G hardware-multicast messages, saving G*(G-2).
+    from ..model.compile_model import collective_vc_floor, collective_vc_map
+    colls = list(cr.workload.collectives)
+    multi = [c for c in colls if c.group_size > 1]
+    max_incast = max((c.group_size for c in multi), default=0)
+    hypercast_saved = {
+        f"{c.kind.value}/{c.group_size}": c.group_size * (c.group_size - 2)
+        for c in multi
+        if c.kind.value in ("alltoall", "allgather") and c.group_size > 2
+    }
+    # Ring-algorithm phase estimates for reduce collectives: a ring
+    # allreduce/reducescatter over G ranks takes 2*(G-1) phases. Assumes the
+    # ring algorithm (bandwidth-optimal, latency-suboptimal); a tree or
+    # in-network-compute collapse is NOT modeled — see note below.
+    ring_phases = {
+        f"{c.kind.value}/{c.group_size}": 2 * (c.group_size - 1)
+        for c in multi
+        if c.kind.value in ("allreduce", "reducescatter") and c.group_size > 1
+    }
+    # Multicast group fit vs the GUIDED hardware knobs (None = ideal).
+    mcast_kinds = ("alltoall", "allgather", "broadcast")
+    mcast_need = [c for c in multi if c.kind.value in mcast_kinds]
+    mcast_groups = cr.noc_config.mcast_groups
+    mcast_setup = cr.noc_config.mcast_setup_cycles
+    mcast_fallback = (
+        max(0, len(mcast_need) - mcast_groups) if mcast_groups is not None
+        else 0
+    )
+    setup_cost = (
+        len(mcast_need) * mcast_setup
+        if mcast_setup is not None else None
+    )
+    report["collectives"] = {
+        "contexts": [
+            {"kind": c.kind.value, "group_size": c.group_size,
+             "bytes_per_element": c.bytes_per_element}
+            for c in colls
+        ],
+        "vc_floor": collective_vc_floor(tuple(colls)),
+        "collective_vc_map": collective_vc_map(tuple(colls)),
+        "max_incast_degree": max_incast,
+        "recommended_vc_buf_note": (
+            f"Full-fan-in absorption needs vc_buf >= {max_incast * 8} flits "
+            f"({max_incast} ranks x 8-flit packets); below this, size for "
+            f"backpressure tolerance, not losslessness. Estimate only."
+            if max_incast else "No multi-rank collectives — no incast sizing."
+        ),
+        "hypercast_messages_saved_estimate": hypercast_saved,
+        "hypercast_note": (
+            "Message counts only (G*(G-1) unicast vs G multicast). Excludes "
+            "group-setup latency and the N-1→1 phase collapse from "
+            "in-network compute — both unmodeled. Do not quote as speedup."
+            if hypercast_saved else "No alltoall/allgather with G>2."
+        ),
+        "ring_phases_estimate": ring_phases,
+        "ring_note": (
+            "Phase counts assume the ring algorithm, 2*(G-1) phases per "
+            "collective. Bandwidth-optimal but latency-suboptimal; tree and "
+            "in-network-compute collapses unmodeled. Phase counts, not time."
+            if ring_phases else "No allreduce/reducescatter with G>1."
+        ),
+        "multicast_groups_required": len(mcast_need),
+        "multicast_groups_available": mcast_groups,
+        "multicast_fallback_to_unicast": mcast_fallback,
+        "multicast_setup_cost_cycles_estimate": setup_cost,
+        "multicast_note": (
+            "One group per multicast collective context; excess contexts "
+            "fall back to unicast (slower, still correct). Setup cost = "
+            "contexts × mcast_setup_cycles; dynamic reconfiguration during "
+            "expert routing unmodeled. None-valued knobs mean ideal "
+            "multicast was assumed."
+        ),
+    }
+
     # Validation / VC assignment info (PRD §13 — all stages in report)
     from ..model.compile_model import derive_vc_assignment, verify_design, generate_artifacts
     va = derive_vc_assignment(cr)

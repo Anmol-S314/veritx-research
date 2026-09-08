@@ -26,6 +26,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from veritx_dse.core.constants import PLANE_C_MAX_VC, env_int
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # §11.2 — Tier System
@@ -134,6 +136,31 @@ class CollectiveOp:
     group_size: int = 1
     bytes_per_element: int = 2048
 
+    def __post_init__(self):
+        if self.group_size < 1:
+            raise ValueError(f"group_size must be >= 1, got {self.group_size}")
+        if self.bytes_per_element < 1:
+            raise ValueError(
+                f"bytes_per_element must be >= 1, got {self.bytes_per_element}"
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dict (JSON-safe)."""
+        return {
+            "kind": self.kind.value,
+            "group_size": self.group_size,
+            "bytes_per_element": self.bytes_per_element,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> CollectiveOp:
+        """Deserialize from dict. Unknown kind raises ValueError."""
+        return cls(
+            kind=CollectiveKind(d["kind"]),
+            group_size=d.get("group_size", 1),
+            bytes_per_element=d.get("bytes_per_element", 2048),
+        )
+
 
 @dataclass(frozen=True)
 class Workload:
@@ -226,8 +253,8 @@ class Dependency:
     kind: DepKind
 
 
-# Maximum VC count the fabric supports (PRD §11.3 bound)
-PLANE_C_MAX_VC: int = 8
+# NOTE: PLANE_C_MAX_VC lives in core.constants (env-overridable via
+# VERITX_MAX_VC) and is imported above — do not redefine it here.
 
 
 @dataclass
@@ -368,9 +395,24 @@ class NocConfig:
     arbitration: str | None = None
     rcu_enabled: bool | None = None
     link_width: int | None = None
+    # GUIDED multicast knobs (switch multicast engine limits).
+    # None = unconstrained (engine assumes ideal multicast).
+    mcast_groups: int | None = None  # max hardware multicast groups
+    mcast_setup_cycles: int | None = None  # per-group reconfiguration cost
     # FREE knobs (user's call)
     output_formats: tuple[OutputFormat, ...] = (OutputFormat.SYSTEMVERILOG,)
     obfuscation_level: int = 0  # 0=none, 1=light, 2=full
+
+    def __post_init__(self):
+        if isinstance(self.output_formats, list):
+            object.__setattr__(self, 'output_formats', tuple(self.output_formats))
+        if self.mcast_groups is not None and self.mcast_groups < 1:
+            raise ValueError(
+                f"mcast_groups must be >= 1, got {self.mcast_groups}")
+        if self.mcast_setup_cycles is not None and self.mcast_setup_cycles < 0:
+            raise ValueError(
+                f"mcast_setup_cycles must be >= 0, "
+                f"got {self.mcast_setup_cycles}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -534,6 +576,42 @@ class PhysicalContext:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# §5.2 Level B — Collective VC floor (worst-case-concurrency assumption)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def collective_vc_floor(collectives: tuple[CollectiveOp, ...]) -> int:
+    """Minimum VCs so declared collective contexts don't share one VC.
+
+    Assumption (documented, worst-case): declared collectives are
+    potentially concurrent. Concurrent collectives sharing a VC can
+    deadlock via cyclic buffer waits (rank A holds buffers for collective 1
+    waiting on B; B holds buffers for collective 2 waiting on A) — the same
+    reason MPI separates communicator contexts and IB maps classes to
+    distinct service levels. Phase overlap is NOT modeled, so this is a
+    floor, not a proof: VC0 covers the first context, each additional
+    multi-rank collective needs one more VC.
+
+    Single-rank (group_size == 1) collectives need no fabric VC.
+    """
+    return sum(1 for c in collectives if c.group_size > 1)
+
+
+def collective_vc_map(collectives: tuple[CollectiveOp, ...]) -> dict[int, int]:
+    """GUIDED integration hint: collective index → reserved VC.
+
+    Context 0 → VC0, context k → VC k. Consumed by future traffic-class
+    mapping into BookSim; today it documents intent (which VC each
+    collective context must use) so integration, not simulation, binds it.
+    """
+    return {
+        i: k
+        for k, i in enumerate(
+            idx for idx, c in enumerate(collectives) if c.group_size > 1
+        )
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # §11.3 — VC Separation (execution, not just counting)
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -556,6 +634,7 @@ class VCAssignment:
     per_class_vc: dict[str, int]  # traffic_class → assigned VC
     routing_function: str
     turn_restrictions: list[str] = field(default_factory=list)
+    collective_vc_map: dict[int, int] = field(default_factory=dict)
 
 
     def __post_init__(self):
@@ -586,6 +665,15 @@ def derive_vc_assignment(cr: CompileRequest) -> VCAssignment:
     graph = cr.dependencies
     cycles = graph.find_cycles()
     vc_count = derive_vc_count(graph)
+
+    # Collective floor: each potentially-concurrent multi-rank collective
+    # context needs its own VC (see collective_vc_floor). Final count is
+    # the max — graph cycles and collective contexts are independent
+    # deadlock risks, so neither subsumes the other. Cap enforced below
+    # by the caller-visible PLANE_C_MAX_VC bound (validate() errors).
+    floor = collective_vc_floor(cr.workload.collectives)
+    vc_count = max(vc_count, floor)
+    vc_count = min(vc_count, PLANE_C_MAX_VC)
 
     # Assign VCs: default class gets VC 0, each cycle victim gets VC 1, 2, ...
     per_class_vc: dict[str, int] = {}
@@ -633,6 +721,7 @@ def derive_vc_assignment(cr: CompileRequest) -> VCAssignment:
         per_class_vc=per_class_vc,
         routing_function=routing,
         turn_restrictions=list(turn_restrictions),
+        collective_vc_map=collective_vc_map(cr.workload.collectives),
     )
 
 
@@ -690,6 +779,7 @@ class CompileRequest:
                 "ep": self.workload.ep,
                 "dp": self.workload.dp,
                 "serving_mode": self.workload.serving_mode.value,
+                "collectives": [c.to_dict() for c in self.workload.collectives],
             },
             "requirements": [
                 {
@@ -727,6 +817,8 @@ class CompileRequest:
                 "rcu_enabled": self.noc_config.rcu_enabled,
                 "link_width": self.noc_config.link_width,
                 "obfuscation_level": self.noc_config.obfuscation_level,
+                "mcast_groups": self.noc_config.mcast_groups,
+                "mcast_setup_cycles": self.noc_config.mcast_setup_cycles,
             },
             "address_map": {
                 "ranges": [
@@ -756,6 +848,7 @@ class CompileRequest:
                 "dp": self.workload.dp,
                 "serving_mode": self.workload.serving_mode.value,
                 "trace_path": self.workload.trace_path,
+                "collectives": [c.to_dict() for c in self.workload.collectives],
             },
             "requirements": [
                 {
@@ -794,6 +887,8 @@ class CompileRequest:
                 "link_width": self.noc_config.link_width,
                 "output_formats": [o.value for o in self.noc_config.output_formats],
                 "obfuscation_level": self.noc_config.obfuscation_level,
+                "mcast_groups": self.noc_config.mcast_groups,
+                "mcast_setup_cycles": self.noc_config.mcast_setup_cycles,
             },
             "address_map": {
                 "ranges": [
@@ -823,6 +918,9 @@ class CompileRequest:
             dp=wl.get("dp", 1),
             serving_mode=ServingMode(wl.get("serving_mode", "mixed")),
             trace_path=wl.get("trace_path"),
+            collectives=tuple(
+                CollectiveOp.from_dict(c) for c in wl.get("collectives", [])
+            ),
         )
         requirements = tuple(
             Requirement(
@@ -864,6 +962,8 @@ class CompileRequest:
                 OutputFormat(o) for o in nc_d.get("output_formats", ["systemverilog"])
             ),
             obfuscation_level=nc_d.get("obfuscation_level", 0),
+            mcast_groups=nc_d.get("mcast_groups"),
+            mcast_setup_cycles=nc_d.get("mcast_setup_cycles"),
         )
         # Parse address map
         am_d = d.get("address_map", {})
@@ -891,6 +991,55 @@ class CompileRequest:
 # ══════════════════════════════════════════════════════════════════════════════
 # §13 — Validate Stage
 # ══════════════════════════════════════════════════════════════════════════════
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Trace coverage helper (for collective↔trace consistency)
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Max trace lines scanned during validate(). Full scans of 26M-line traces
+# would break the "errors in seconds" promise; beyond the cap we report
+# sampled results explicitly. Env-overridable (import-time read).
+TRACE_SCAN_CAP = env_int("VERITX_TRACE_SCAN_CAP", 200_000)
+
+
+def _trace_node_ids(trace_path: str, cap: int = TRACE_SCAN_CAP,
+                    ) -> tuple[set[int], bool, str | None]:
+    """Collect distinct node IDs from a packet trace (capped scan).
+
+    On-disk column order is `cycle src class dst size` (see
+    simulation/traces.py detect_trace_stats — NOT the README order).
+
+    Returns (node_ids, truncated, resolved_path_or_None).
+    Missing/unreadable files return (empty set, False, None) — callers
+    decide severity (compile tolerates a missing trace, so warn, not error).
+    """
+    if not trace_path:
+        return set(), False, None
+    from veritx_dse.core.paths import REPO
+    candidates = [Path(trace_path)]
+    if not candidates[0].is_absolute():
+        candidates.append(REPO / trace_path)
+    resolved = next((c for c in candidates if c.is_file()), None)
+    if resolved is None:
+        return set(), False, None
+    ids: set[int] = set()
+    truncated = False
+    try:
+        with open(resolved) as f:
+            for i, line in enumerate(f):
+                if i >= cap:
+                    truncated = True
+                    break
+                if line.startswith("#") or not line.strip():
+                    continue
+                parts = line.split()
+                if len(parts) >= 5:
+                    ids.add(int(parts[1]))
+                    ids.add(int(parts[3]))
+    except (OSError, ValueError):
+        return set(), False, None
+    return ids, truncated, str(resolved)
+
 
 @dataclass
 class ValidationResult:
@@ -945,6 +1094,68 @@ def validate(cr: CompileRequest) -> ValidationResult:
         )
 
     total_nodes = cr.total_nodes
+
+    # Collective floor infeasibility (reachable, unlike the capped graph
+    # count above): more concurrent contexts than fabric VCs.
+    floor = collective_vc_floor(cr.workload.collectives)
+    if floor > PLANE_C_MAX_VC:
+        errors.append(
+            f"Collective VC floor {floor} exceeds fabric maximum "
+            f"{PLANE_C_MAX_VC} — declare fewer concurrent collectives"
+        )
+
+    # Collective↔fabric consistency (declared collectives must fit the fabric)
+    for coll in cr.workload.collectives:
+        if coll.group_size > total_nodes:
+            errors.append(
+                f"Collective {coll.kind.value} group_size={coll.group_size} "
+                f"exceeds fabric nodes={total_nodes} — ranks would have no home"
+            )
+        elif coll.group_size == 1 and coll.kind in (
+            CollectiveKind.ALLREDUCE, CollectiveKind.ALLTOALL,
+            CollectiveKind.BROADCAST,
+        ):
+            warnings.append(
+                f"Collective {coll.kind.value} group_size=1 is a no-op — "
+                f"likely a config mistake"
+            )
+
+    # Collective↔trace coverage (trace must span the declared collective).
+    # Missing trace is a warning: compile tolerates it (analytical fallback).
+    if cr.workload.collectives and cr.workload.trace_path:
+        need = max(c.group_size for c in cr.workload.collectives)
+        ids, truncated, resolved = _trace_node_ids(cr.workload.trace_path)
+        if resolved is None:
+            warnings.append(
+                f"Trace not found: {cr.workload.trace_path} — "
+                f"skipping collective coverage check"
+            )
+        elif len(ids) < need:
+            scope = f" (scanned first {TRACE_SCAN_CAP} lines)" if truncated else ""
+            warnings.append(
+                f"Trace covers {len(ids)} nodes but collectives need {need} — "
+                f"collective would be under-exercised{scope}"
+            )
+
+    # Multicast group fit (Astera's complaint, modeled honestly): a switch
+    # with mcast_groups hardware groups can accelerate at most that many
+    # multicast collective contexts; the excess falls back to unicast
+    # (slower, not infeasible → warning, not error). Unset knob means the
+    # engine assumes ideal multicast (no check).
+    if cr.noc_config.mcast_groups is not None:
+        mcast_need = [
+            c for c in cr.workload.collectives
+            if c.group_size > 1 and c.kind in (
+                CollectiveKind.ALLTOALL, CollectiveKind.ALLGATHER,
+                CollectiveKind.BROADCAST,
+            )
+        ]
+        if len(mcast_need) > cr.noc_config.mcast_groups:
+            warnings.append(
+                f"{len(mcast_need)} multicast collectives need groups but "
+                f"fabric has mcast_groups={cr.noc_config.mcast_groups} — "
+                f"excess falls back to unicast"
+            )
 
     return ValidationResult(
         ok=len(errors) == 0,

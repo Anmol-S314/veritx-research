@@ -181,6 +181,9 @@ WORKLOAD_PRESETS: dict[str, dict] = {
             "sequence_length": 4096,
             "precision": "fp8",
             "trace_path": "runs/traces/qwen3_serving_16rank.trace",
+            "collectives": [
+                {"kind": "alltoall", "group_size": 8},
+            ],
         },
         "agents": [
             {"kind": "compute_tile", "count": 16},
@@ -204,6 +207,9 @@ WORKLOAD_PRESETS: dict[str, dict] = {
             "sequence_length": 4096,
             "precision": "fp16",
             "trace_path": "runs/traces/llama70b_tp64_ring.trace",
+            "collectives": [
+                {"kind": "allreduce", "group_size": 64},
+            ],
         },
         "agents": [
             {"kind": "compute_tile", "count": 64},
@@ -259,6 +265,9 @@ WORKLOAD_PRESETS: dict[str, dict] = {
             "tp": 2, "ep": 4, "dp": 1,
             "serving_mode": "decode_heavy",
             "precision": "fp8",
+            "collectives": [
+                {"kind": "alltoall", "group_size": 4},
+            ],
         },
         "agents": [
             {"kind": "compute_tile", "count": 8},
@@ -319,6 +328,9 @@ WORKLOAD_PRESETS: dict[str, dict] = {
             "tp": 16, "ep": 4, "dp": 1,
             "serving_mode": "decode_heavy",
             "precision": "fp8",
+            "collectives": [
+                {"kind": "alltoall", "group_size": 4},
+            ],
         },
         "agents": [
             {"kind": "compute_tile", "count": 64},
@@ -368,6 +380,7 @@ def preset_to_compile_request(preset_name: str):
         CompileRequest, Workload, ModelFamily, ServingMode,
         Agent, AgentKind, Requirement, QoSClass,
         Dependency, DepKind, DependencyGraph, NocConfig, TopologyFamily,
+        CollectiveOp,
     )
 
     p = WORKLOAD_PRESETS[preset_name]
@@ -385,6 +398,9 @@ def preset_to_compile_request(preset_name: str):
         sequence_length=wl_cfg.get("sequence_length"),
         precision=wl_cfg.get("precision", "fp16"),
         trace_path=wl_cfg.get("trace_path"),
+        collectives=tuple(
+            CollectiveOp.from_dict(c) for c in wl_cfg.get("collectives", [])
+        ),
     )
 
     agents = tuple(
