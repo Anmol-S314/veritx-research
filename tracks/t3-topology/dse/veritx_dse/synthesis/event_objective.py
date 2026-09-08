@@ -17,12 +17,19 @@ This is the thing a pre-aggregated matrix CANNOT express (Test 2, Proof 2).
 """
 import json
 import math
+import sys
 from pathlib import Path
 
 import numpy as np
 
-# Local import: milp_topology_v2 lives in the same package
-from .milp_topology_v2 import PIPE_COST, WIRE_COST, _edge_len
+# Local import: milp_topology_v2 lives in the same package. Fall back to a
+# path import when this file is executed directly as a script (python3
+# event_objective.py …), where package-relative imports are unavailable.
+try:
+    from .milp_topology_v2 import PIPE_COST, WIRE_COST, _edge_len
+except ImportError:  # script mode: sibling module sits next to this file
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from milp_topology_v2 import PIPE_COST, WIRE_COST, _edge_len
 
 
 # ── Algorithm decompositions on a GIVEN topology ────────────────────────
