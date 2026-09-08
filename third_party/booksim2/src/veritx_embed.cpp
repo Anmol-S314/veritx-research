@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+#include "json/json.hpp"  // -I extern/helper (fabric target); standalone Makefile does not compile this TU
+
 #include "booksim.hpp"
 #include "config_utils.hpp"
 #include "network.hpp"
@@ -33,6 +35,8 @@ void EmbedTM::RunCycles(int64_t cycles) {
 }
 
 void EmbedTM::_BuildUnicast(int src, int dst, int size, int cl, int64_t time) {
+  ++_packets_requested;
+  _unicast_flits += size;
   assert(size > 0);
   assert(dst >= 0 && dst < _nodes);
   int const pid = _cur_pid++;
@@ -93,6 +97,8 @@ void EmbedTM::_BuildMcastStream(int src, std::vector<int> const & dsts,
 
   // One stream flit to the far end; every other dest is a pre-registered
   // copy that the router fork ejects at its node along the path.
+  ++_packets_requested;
+  _mcast_deliveries += (int64_t)dsts.size();
   Flit * stream = make(far_end, true);
   for (size_t i = 0; i + 1 < dsts.size(); ++i)
     stream->mcast_copies.push_back(make(dsts[i], false));
@@ -109,6 +115,8 @@ void EmbedTM::InjectMcast(int src, std::vector<int> const & dsts, int cl) {
 
 void EmbedTM::_RetireFlit(Flit * f, int dest) {
   TrafficManager::_RetireFlit(f, dest);
+  ++_flits_retired;
+  if (f->tail) ++_tails_retired;
   // Packet-complete signal: the tail flit (single-flit packets are
   // head&&tail, so every mcast copy fires here as well).
   if (f->tail) {
@@ -131,11 +139,57 @@ std::vector<Retired> EmbedTM::DrainRetired(int node) {
 
 EmbedTM * CreateEmbeddedTM(std::string const & cfg_file,
                            std::vector<std::string> const & overrides) {
+  // The ASTRA-sim frontend passes network.json (which names the real .cfg
+  // in its booksim-config-file member); older callers pass a raw BookSim
+  // .cfg directly. Feeding JSON to the yacc grammar dies with a bare
+  // "Parse error on line 1", so unwrap first. Either way, booksim_cfg
+  // below is always a genuine .cfg by the time ParseArgs sees it.
+  std::string booksim_cfg = cfg_file;
+  {
+    std::ifstream probe(cfg_file.c_str(), std::ios::binary);
+    if (!probe.is_open()) {
+      std::cerr << "veritx_embed: cannot open config '" << cfg_file << "'"
+                << std::endl;
+      return NULL;
+    }
+    // Skip UTF-8 BOM + whitespace; JSON must start with '{'.
+    char bom[3] = {0, 0, 0};
+    probe.read(bom, 3);
+    bool has_bom = (probe.gcount() == 3 && (unsigned char)bom[0] == 0xEF &&
+                    (unsigned char)bom[1] == 0xBB && (unsigned char)bom[2] == 0xBF);
+    if (!has_bom) probe.clear(), probe.seekg(0);
+    probe >> std::ws;
+    if (probe.peek() == '{') {
+      nlohmann::json j;
+      try {
+        probe >> j;
+      } catch (std::exception const & e) {
+        std::cerr << "veritx_embed: invalid JSON in '" << cfg_file
+                  << "': " << e.what() << std::endl;
+        return NULL;
+      }
+      if (!j.contains("booksim-config-file") ||
+          !j["booksim-config-file"].is_string() ||
+          j["booksim-config-file"].get<std::string>().empty()) {
+        std::cerr << "veritx_embed: JSON config '" << cfg_file
+                  << "' lacks a non-empty string member "
+                     "\"booksim-config-file\"" << std::endl;
+        return NULL;
+      }
+      booksim_cfg = j["booksim-config-file"].get<std::string>();
+      if (booksim_cfg.empty() || booksim_cfg[0] != '/') {
+        std::string dir = cfg_file;
+        std::string::size_type slash = dir.find_last_of('/');
+        dir = (slash == std::string::npos) ? "." : dir.substr(0, slash);
+        booksim_cfg = dir + "/" + booksim_cfg;
+      }
+    }
+  }
   // Replicate main.cpp's CLI arg vector: config file + param=value overrides.
   std::vector<char *> argv;
   std::vector<std::string> args;
   args.push_back("booksim");
-  args.push_back(cfg_file);
+  args.push_back(booksim_cfg);
   for (size_t i = 0; i < overrides.size(); ++i) args.push_back(overrides[i]);
   for (size_t i = 0; i < args.size(); ++i)
     argv.push_back(const_cast<char *>(args[i].c_str()));

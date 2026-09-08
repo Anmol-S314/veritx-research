@@ -24,14 +24,33 @@ using namespace NetworkAnalyticalCongestionAware;
 
 // Helper: output workload results in the same format as BookSim frontend
 // so LLMServingSim's controller.parse_output() can parse them.
+// Total stays the cumulative wall time (the Python controller keys its
+// monotonic clock off it); exposed is the per-round non-overlapped share
+// (wall_delta - gpu_delta, the same formula as Workload::report, clamped
+// at 0). Ranks idle this round (no GPU op or comm ticks) report 0, and
+// pure time-advance passes (idle_pass) always report 0 — no collective ran.
 static void emit_workload_results(
     const std::vector<Sys*>& systems, int npus_count,
-    const std::shared_ptr<EventQueue>& event_queue) {
+    const std::shared_ptr<EventQueue>& event_queue,
+    uint64_t wall_before, const std::vector<uint64_t>& gpu_before,
+    const std::vector<uint64_t>& comm_before, bool idle_pass) {
     uint64_t wall_time = event_queue->get_current_time();
+    uint64_t wall_delta = wall_time >= wall_before ? wall_time - wall_before : 0;
     for (int i = 0; i < npus_count; ++i) {
+        uint64_t exposed = 0;
+        if (!idle_pass && i < (int)gpu_before.size() &&
+            i < (int)comm_before.size() && systems[i]->workload &&
+            systems[i]->workload->hw_resource) {
+            uint64_t gpu_after = systems[i]->workload->hw_resource->tics_gpu_ops;
+            uint64_t comm_after = systems[i]->workload->hw_resource->tics_gpu_comms;
+            uint64_t gpu_delta = gpu_after >= gpu_before[i] ? gpu_after - gpu_before[i] : 0;
+            uint64_t comm_delta = comm_after >= comm_before[i] ? comm_after - comm_before[i] : 0;
+            if (gpu_delta + comm_delta != 0)
+                exposed = wall_delta >= gpu_delta ? wall_delta - gpu_delta : 0;
+        }
         std::cout << "[workload] sys[" << i << "] finished, "
                   << wall_time << " cycles, exposed communication "
-                  << wall_time << " cycles." << std::endl;
+                  << exposed << " cycles." << std::endl;
     }
 }
 
@@ -108,6 +127,12 @@ int main(int argc, char* argv[]) {
     }
 
     // Initiate first workload (event_handler) and run
+    std::vector<uint64_t> init_gpu_before(npus_count, 0), init_comm_before(npus_count, 0);
+    for (int i = 0; i < npus_count; i++) {
+        init_gpu_before[i] = systems[i]->workload->hw_resource->tics_gpu_ops;
+        init_comm_before[i] = systems[i]->workload->hw_resource->tics_gpu_comms;
+    }
+    uint64_t init_wall_before = event_queue->get_current_time();
     for (int i = 0; i < npus_count; i++) {
         systems[i]->workload->fire();
     }
@@ -115,7 +140,9 @@ int main(int argc, char* argv[]) {
         event_queue->proceed();
     }
     // Emit results in BookSim-compatible format for LLMServingSim controller
-    emit_workload_results(systems, npus_count, event_queue);
+    emit_workload_results(systems, npus_count, event_queue,
+                          init_wall_before, init_gpu_before, init_comm_before,
+                          false);
     std::cout << "Waiting" << std::endl << std::flush;
 
     // Interactive loop for LLMServingSim (mirrors booksim2/main.cc).
@@ -146,11 +173,17 @@ int main(int argc, char* argv[]) {
                     }
                 } catch (...) {}
             }
-            emit_workload_results(systems, npus_count, event_queue);
+            emit_workload_results(systems, npus_count, event_queue,
+                                  event_queue->get_current_time(), {}, {}, true);
             std::cout << "Waiting" << std::endl << std::flush;
             continue;
         }
-        if (line == "exit" || line == "done") break;
+        if (line == "exit") break;
+        // VeritX: per-instance done is not a global exit (see booksim2).
+        if (line == "done") {
+            std::cout << "Waiting" << std::endl << std::flush;
+            continue;
+        }
         if (line.rfind("load ", 0) == 0) {
             std::string path = line.substr(5);
             size_t pa = path.find_first_not_of(" \t");
@@ -175,10 +208,18 @@ int main(int argc, char* argv[]) {
             }
         }
         pending_loads.clear();
+        std::vector<uint64_t> round_gpu_before(npus_count, 0), round_comm_before(npus_count, 0);
+        for (int i = 0; i < npus_count; ++i) {
+            round_gpu_before[i] = systems[i]->workload->hw_resource->tics_gpu_ops;
+            round_comm_before[i] = systems[i]->workload->hw_resource->tics_gpu_comms;
+        }
+        uint64_t round_wall_before = event_queue->get_current_time();
         for (int i = 0; i < npus_count; ++i) systems[i]->workload->fire();
         while (!event_queue->finished()) event_queue->proceed();
         // Emit results in BookSim-compatible format
-        emit_workload_results(systems, npus_count, event_queue);
+        emit_workload_results(systems, npus_count, event_queue,
+                              round_wall_before, round_gpu_before, round_comm_before,
+                              false);
         std::cout << "Waiting" << std::endl << std::flush;
     }
 

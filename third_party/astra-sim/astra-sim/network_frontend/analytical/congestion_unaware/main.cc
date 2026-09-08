@@ -20,6 +20,21 @@ using namespace AstraSimAnalyticalCongestionUnaware;
 using namespace NetworkAnalytical;
 using namespace NetworkAnalyticalCongestionUnaware;
 
+// Report per-rank completion in the same wire format the congestion-aware and
+// BookSim frontends use, so LLMServingSim's controller.parse_output() can
+// advance its monotonic clock and retire batches. The unaware engine accounts
+// no per-op cycles, so exposed communication is always 0 (no congestion to
+// expose; the frontend only consumes sys and the wall cycle anyway).
+static void emit_workload_results(
+    int npus_count, const std::shared_ptr<EventQueue>& event_queue) {
+    uint64_t wall_time = event_queue->get_current_time();
+    for (int i = 0; i < npus_count; ++i) {
+        std::cout << "[workload] sys[" << i << "] finished, "
+                  << wall_time << " cycles, exposed communication 0 cycles."
+                  << std::endl;
+    }
+}
+
 int main(int argc, char* argv[]) {
     // Parse command line arguments
     auto cmd_line_parser = CmdLineParser(argv[0]);
@@ -98,6 +113,7 @@ int main(int argc, char* argv[]) {
     while (!event_queue->finished()) {
         event_queue->proceed();
     }
+    emit_workload_results(npus_count, event_queue);
     std::cout << "Waiting" << std::endl << std::flush;
 
     // Interactive loop for LLMServingSim (mirrors booksim2/main.cc)
@@ -124,16 +140,23 @@ int main(int argc, char* argv[]) {
                     }
                 } catch (...) {}
             }
+            emit_workload_results(npus_count, event_queue);
             std::cout << "Waiting" << std::endl << std::flush;
             continue;
         }
-        if (line == "exit" || line == "done") break;
+        if (line == "exit") break;
+        // VeritX: per-instance done is not a global exit (see booksim2).
+        if (line == "done") {
+            std::cout << "Waiting" << std::endl << std::flush;
+            continue;
+        }
         for (int i = 0; i < npus_count; ++i) {
             delete systems[i]->workload;
             systems[i]->workload = new Workload(systems[i], line, comm_group_configuration);
         }
         for (int i = 0; i < npus_count; ++i) systems[i]->workload->fire();
         while (!event_queue->finished()) event_queue->proceed();
+        emit_workload_results(npus_count, event_queue);
         std::cout << "Waiting" << std::endl << std::flush;
     }
 

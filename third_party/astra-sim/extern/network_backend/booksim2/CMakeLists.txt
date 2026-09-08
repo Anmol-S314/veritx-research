@@ -29,6 +29,7 @@ add_library(BookSim2Fabric STATIC ${BOOKSIM2_CPP}
 target_include_directories(BookSim2Fabric PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/../../..
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../helper
         ${BOOKSIM2_ROOT}
         ${BOOKSIM2_ROOT}/arbiters
         ${BOOKSIM2_ROOT}/allocators

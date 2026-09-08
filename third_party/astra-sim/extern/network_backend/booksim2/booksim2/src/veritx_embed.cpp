@@ -33,6 +33,8 @@ void EmbedTM::RunCycles(int64_t cycles) {
 }
 
 void EmbedTM::_BuildUnicast(int src, int dst, int size, int cl, int64_t time) {
+  ++_packets_requested;
+  _unicast_flits += size;
   assert(size > 0);
   assert(dst >= 0 && dst < _nodes);
   int const pid = _cur_pid++;
@@ -93,6 +95,8 @@ void EmbedTM::_BuildMcastStream(int src, std::vector<int> const & dsts,
 
   // One stream flit to the far end; every other dest is a pre-registered
   // copy that the router fork ejects at its node along the path.
+  ++_packets_requested;
+  _mcast_deliveries += (int64_t)dsts.size();
   Flit * stream = make(far_end, true);
   for (size_t i = 0; i + 1 < dsts.size(); ++i)
     stream->mcast_copies.push_back(make(dsts[i], false));
@@ -109,6 +113,8 @@ void EmbedTM::InjectMcast(int src, std::vector<int> const & dsts, int cl) {
 
 void EmbedTM::_RetireFlit(Flit * f, int dest) {
   TrafficManager::_RetireFlit(f, dest);
+  ++_flits_retired;
+  if (f->tail) ++_tails_retired;
   // Packet-complete signal: the tail flit (single-flit packets are
   // head&&tail, so every mcast copy fires here as well).
   if (f->tail) {

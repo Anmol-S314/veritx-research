@@ -224,6 +224,17 @@ int main(int argc, char * argv[]) {
   // Fire initial workload (event_handler) synchronously before entering interactive mode.
   // This ensures the first Waiting contains valid completion data and advances wall_time.
   {
+    // Snapshot per-rank GPU-op/comm ticks so the report below can emit a
+    // real per-round exposed-communication number (wall_delta - gpu_delta,
+    // the same formula as Workload::report) instead of echoing wall_time.
+    // Snapshots must be per-round: each round reloads Workload (fresh
+    // counters) while the event-queue wall clock is cumulative.
+    std::vector<uint64_t> init_gpu_before(npus_count, 0), init_comm_before(npus_count, 0);
+    for (int i = 0; i < npus_count; ++i) {
+      init_gpu_before[i] = systems[i]->workload->hw_resource->tics_gpu_ops;
+      init_comm_before[i] = systems[i]->workload->hw_resource->tics_gpu_comms;
+    }
+    uint64_t init_wall_before = event_queue.get_current_time();
     for (int i = 0; i < npus_count; ++i) systems[i]->workload->fire();
     while (true) {
       while (!event_queue.finished() || fabric.tm()->HasInFlight()) {
@@ -237,8 +248,15 @@ int main(int argc, char * argv[]) {
       if (!all_done && event_queue.finished() && !fabric.tm()->HasInFlight()) event_queue.run_cycles(1);
     }
     uint64_t wall_time = event_queue.get_current_time();
+    uint64_t init_wall_delta = wall_time >= init_wall_before ? wall_time - init_wall_before : 0;
     for (int i = 0; i < npus_count; ++i) {
-      std::cout << "[workload] sys[" << i << "] finished, " << wall_time << " cycles, exposed communication " << wall_time << " cycles." << std::endl;
+      uint64_t gpu_after = systems[i]->workload->hw_resource->tics_gpu_ops;
+      uint64_t comm_after = systems[i]->workload->hw_resource->tics_gpu_comms;
+      uint64_t gpu_delta = gpu_after >= init_gpu_before[i] ? gpu_after - init_gpu_before[i] : 0;
+      uint64_t comm_delta = comm_after >= init_comm_before[i] ? comm_after - init_comm_before[i] : 0;
+      uint64_t exposed = (gpu_delta + comm_delta == 0) ? 0
+          : (init_wall_delta >= gpu_delta ? init_wall_delta - gpu_delta : 0);
+      std::cout << "[workload] sys[" << i << "] finished, " << wall_time << " cycles, exposed communication " << exposed << " cycles." << std::endl;
     }
     std::cout << "Waiting" << std::endl;
   }
@@ -297,17 +315,33 @@ int main(int argc, char * argv[]) {
                            systems);
         }
         uint64_t wall_time = event_queue.get_current_time();
+        // Pure time advance (tool-call gap): no collective ran this round,
+        // so exposed is 0. Total stays cumulative for the Python clock.
         for (int i = 0; i < npus_count; ++i) {
           std::cout << "[workload] sys[" << i << "] finished, "
                     << wall_time << " cycles, exposed communication "
-                    << wall_time << " cycles." << std::endl;
+                    << 0 << " cycles." << std::endl;
         }
         std::cout << "Waiting" << std::endl;
         continue;
       }
 
-      if (line == "exit" || line == "done") {
+      if (line == "exit") {
         break;
+      }
+      // VeritX: "done" means ONE instance finished — keep serving the
+      // rest. (Old code treated it like "exit" and killed the shared
+      // binary with other instances' work still queued: clean EXIT:0 with
+      // missing requests.)
+      // MUST echo "Waiting": serving's loop does read_wait() BEFORE sending
+      // its next command — every command (done included) needs exactly one
+      // Waiting-terminated reply or serving deadlocks in read_wait.
+      // (Silent-ack experiment: serving hung forever; manal's done=exit
+      // variant "passes" the DP test only by dying at the first done and
+      // riding serving's clean-EOF path.)
+      if (line == "done") {
+        std::cout << "Waiting" << std::endl;
+        continue;
       }
 
       if (line.rfind("load ", 0) == 0) {
@@ -347,6 +381,15 @@ int main(int argc, char * argv[]) {
         }
       }
       pending_loads.clear();
+
+      // Snapshot per-rank GPU-op/comm ticks after reload (fresh counters)
+      // and before fire; ranks idle this round report exposed 0.
+      std::vector<uint64_t> round_gpu_before(npus_count, 0), round_comm_before(npus_count, 0);
+      for (int i = 0; i < npus_count; ++i) {
+        round_gpu_before[i] = systems[i]->workload->hw_resource->tics_gpu_ops;
+        round_comm_before[i] = systems[i]->workload->hw_resource->tics_gpu_comms;
+      }
+      uint64_t round_wall_before = event_queue.get_current_time();
 
       // Fire workloads
       for (int i = 0; i < npus_count; ++i) systems[i]->workload->fire();
@@ -427,12 +470,22 @@ int main(int argc, char * argv[]) {
         }
       }
 
-      // Output results for each system using event queue time as wall time
+      // Output results: total stays the cumulative wall time (the Python
+      // controller keys its monotonic clock off it); exposed is the
+      // per-round non-overlapped share (wall_delta - gpu_delta, clamped
+      // at 0, and 0 for ranks idle this round).
       uint64_t wall_time = event_queue.get_current_time();
+      uint64_t round_wall_delta = wall_time >= round_wall_before ? wall_time - round_wall_before : 0;
       for (int i = 0; i < npus_count; ++i) {
+        uint64_t gpu_after = systems[i]->workload->hw_resource->tics_gpu_ops;
+        uint64_t comm_after = systems[i]->workload->hw_resource->tics_gpu_comms;
+        uint64_t gpu_delta = gpu_after >= round_gpu_before[i] ? gpu_after - round_gpu_before[i] : 0;
+        uint64_t comm_delta = comm_after >= round_comm_before[i] ? comm_after - round_comm_before[i] : 0;
+        uint64_t exposed = (gpu_delta + comm_delta == 0) ? 0
+            : (round_wall_delta >= gpu_delta ? round_wall_delta - gpu_delta : 0);
         std::cout << "[workload] sys[" << i << "] finished, "
                   << wall_time << " cycles, exposed communication "
-                  << wall_time << " cycles." << std::endl;
+                  << exposed << " cycles." << std::endl;
       }
       std::cout << "Waiting" << std::endl;
     }
