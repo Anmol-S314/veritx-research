@@ -1,0 +1,5 @@
+{
+  "topology-type": "Booksim",
+  "booksim-config-file": "mesh4x4.cfg",
+  "num-nodes": 16
+}

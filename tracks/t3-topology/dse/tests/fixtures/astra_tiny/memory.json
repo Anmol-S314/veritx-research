@@ -1,0 +1,7 @@
+{
+  "memory-type": "PER_NODE_MEMORY_EXPANSION",
+  "num-nodes": 16,
+  "num-npus-per-node": 1,
+  "remote-mem-latency": 100,
+  "remote-mem-bw": 32768
+}

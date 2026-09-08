@@ -12,7 +12,7 @@ Usage:
     veritx synthesize bo --traffic <trace> --nodes 64 --iters 50
     veritx evaluate booksim --trace <trace> [--k 8] [--routing dor]
     veritx evaluate anynet --topo <anynet> --trace <trace>
-    veritx evaluate astra --ets <et_dir> [--timeout 300]
+    veritx evaluate astra --ets <et_file> [--timeout 300]
     veritx certify flow --model <json> --topo <anynet>
     veritx certify rtl --topo <anynet> [--tier quick]
     veritx certify full --model <json> --topo <anynet>
@@ -71,6 +71,37 @@ def sanitize_path(p: str) -> str:
         raise ValueError(f"Path traversal not allowed: {p}")
     resolved = Path(p).resolve()
     return str(resolved)
+
+
+def _expand_anynet_files(entries: list[str] | None) -> list[str]:
+    """Flatten --anynet args to a file list.
+
+    The flag is repeatable AND each use accepts comma-separated paths
+    (mirrors --topos/--traces conventions). Blank segments are dropped.
+    Existence is NOT checked here — callers fail fast on missing files.
+    """
+    files: list[str] = []
+    for entry in entries or []:
+        files.extend(p.strip() for p in entry.split(",") if p.strip())
+    return files
+
+
+def _eff_timeout(args, default: int) -> int:
+    """Resolve effective timeout in seconds.
+
+    Precedence: --timeout flag > VERITX_TIMEOUT env > built-in default.
+    Flags default to None precisely so an explicit env can apply without
+    editing invocations (batch/CI convenience: VERITX_TIMEOUT=86400 ≈ 24h).
+    Values < 1 are rejected — there is deliberately no wait-forever mode:
+    hung simulators burn machines silently, and 86400 covers any real run.
+    """
+    from veritx_dse.core.constants import env_int
+    raw = getattr(args, "timeout", None)
+    if raw is None:
+        return env_int("VERITX_TIMEOUT", default)
+    if raw < 1:
+        raise ValueError(f"--timeout must be >= 1 second, got {raw}")
+    return raw
 
 
 def _resolve_path(p: str) -> str:
@@ -169,6 +200,9 @@ def cmd_trace_extract(ctx: Ctx, args):
     if args.uniform:
         result = extract_uniform(trace, args.out)
     elif args.burst is not None:
+        if args.burst < 1:
+            fail(ctx, f"--burst needs N >= 1, got {args.burst}")
+            return
         result = extract_burst(trace, args.burst, args.out)
     else:
         fail(ctx, "Specify --burst N or --uniform")
@@ -277,7 +311,7 @@ def cmd_synthesize_bo(ctx: Ctx, args):
     if args.seed:
         cmd.extend(["--seed", str(args.seed)])
     import subprocess
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=600, cwd=str(REPO))
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=_eff_timeout(args, 600), cwd=str(REPO))
     if r.returncode != 0:
         fail(ctx, f"BO synthesis failed (exit {r.returncode})")
         return
@@ -298,7 +332,8 @@ def cmd_synthesize_grid(ctx: Ctx, args):
     log(ctx, f"Grid search: {args.nodes} nodes")
     import subprocess
     subprocess.run([sys.executable, str(SCRIPTS_DIR / "run.py")],
-                   capture_output=True, text=True, cwd=str(REPO))
+                   capture_output=True, text=True,
+                   timeout=_eff_timeout(args, 600), cwd=str(REPO))
     ok(ctx, "Grid search complete")
 
 
@@ -311,12 +346,32 @@ def cmd_synthesize_iterative(ctx: Ctx, args):
            "--out", args.out or str(RUNS_DIR / f"{args.method}_standalone.anynet")]
     if args.seed_anynet:
         cmd.extend(["--seed-anynet", str(Path(args.seed_anynet).resolve())])
+    if args.horizon is not None:
+        cmd.extend(["--horizon", str(args.horizon)])
+    if args.branch is not None:
+        cmd.extend(["--branch", str(args.branch)])
+    if args.group is not None:
+        cmd.extend(["--group", str(args.group)])
     import subprocess
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=600, cwd=str(REPO))
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=_eff_timeout(args, 600), cwd=str(REPO))
     for line in r.stdout.splitlines():
         if "Final:" in line:
             ok(ctx, line.strip())
             break
+
+
+def _sim_overrides(args, names=("vcs", "vc_buf", "sample_period",
+                               "max_samples")) -> dict:
+    """Collect explicitly-set BookSim knobs into a build_config overrides dict.
+
+    Only non-None flags are forwarded, so topology-derived guards (e.g. the
+    GEC/MECS num_vcs auto-raise) and trace-span sample periods survive
+    unless the user deliberately overrides them.
+    """
+    key_map = {"vcs": "num_vcs", "vc_buf": "vc_buf_size",
+               "sample_period": "sample_period", "max_samples": "max_samples"}
+    return {key_map[n]: getattr(args, n) for n in names
+            if getattr(args, n, None) is not None}
 
 
 def cmd_evaluate_booksim(ctx: Ctx, args):
@@ -326,7 +381,8 @@ def cmd_evaluate_booksim(ctx: Ctx, args):
         return
     trace = str(Path(args.trace).resolve())
     stats = detect_trace_stats(trace)
-    sample_period = max(200, stats.max_cycle + 1000)
+    sample_period = (args.sample_period if args.sample_period is not None
+                     else max(200, stats.max_cycle + 1000))
 
     # Resolve topology: try preset lookup first, then build from args
     preset = lookup_topo(args.topo)
@@ -346,9 +402,10 @@ def cmd_evaluate_booksim(ctx: Ctx, args):
     log(ctx, f"BookSim {topo.backend} k={args.k} routing={topo.routing} trace={Path(args.trace).name} "
         f"({stats.num_packets} pkts, {stats.num_srcs} srcs, span={stats.span}c, IR={stats.ir:.4f})")
 
-    config = build_config(topo, trace, sample_period=sample_period, seed=ctx.seed)
+    config = build_config(topo, trace, sample_period=sample_period, seed=ctx.seed,
+                          overrides=_sim_overrides(args))
 
-    result = run_booksim(ctx, config, repo_root=REPO, timeout=args.timeout)
+    result = run_booksim(ctx, config, repo_root=REPO, timeout=_eff_timeout(args, 120))
     result["topology"] = topo.name
     result["trace"] = args.trace
     result["routing"] = topo.routing
@@ -415,12 +472,13 @@ def cmd_evaluate_anynet(ctx: Ctx, args):
     topo = make_anynet_topo(topo_path)
     log(ctx, f"BookSim anynet topo={Path(args.topo).name} trace={Path(args.trace).name} "
         f"({n_nodes} nodes, {n_edges} edges)")
-
     stats = detect_trace_stats(trace)
-    sample_period = max(200, stats.max_cycle + 1000)
+    sample_period = (args.sample_period if args.sample_period is not None
+                     else max(200, stats.max_cycle + 1000))
 
-    config = build_config(topo, trace, sample_period=sample_period, seed=ctx.seed)
-    result = run_booksim(ctx, config, repo_root=REPO, timeout=args.timeout)
+    config = build_config(topo, trace, sample_period=sample_period, seed=ctx.seed,
+                          overrides=_sim_overrides(args, names=("vcs", "vc_buf")))
+    result = run_booksim(ctx, config, repo_root=REPO, timeout=_eff_timeout(args, 120))
     result["topology"] = topo.name
     result["trace"] = args.trace
     result["nodes"] = n_nodes
@@ -436,27 +494,93 @@ def cmd_evaluate_anynet(ctx: Ctx, args):
     output(ctx, result)
 
 
+def _parse_astra_cycles(stdout: str) -> dict:
+    """Extract per-rank completion cycles from frontend stdout.
+
+    Lines look like:
+      [workload] sys[3] finished, 50310 cycles, exposed communication ...
+    Returns {rank: cycles}. Empty dict when nothing parseable (the caller,
+    not this helper, decides what that means).
+    """
+    import re
+    per_rank: dict = {}
+    for line in stdout.splitlines():
+        m = re.search(r"sys\[(\d+)\] finished, (\d+) cycles", line)
+        if m:
+            per_rank[int(m.group(1))] = int(m.group(2))
+    return per_rank
+
+
 def cmd_evaluate_astra(ctx: Ctx, args):
     if not ASTRA_BS_BIN.exists():
         fail(ctx, f"ASTRA-sim BookSim2 binary not found: {ASTRA_BS_BIN}")
         return
 
+    # Workload-path convention (B7): the frontend resolves per-rank workloads
+    # as <base>.<rank>.et and treats missing ones as idle (0 cycles, rc=0).
+    # A bare base file with no .0.et sibling is almost certainly a mistake;
+    # fail fast instead of reporting a silent all-idle "success".
+    ets_base = str(Path(args.ets).resolve())
+    if not Path(ets_base).is_file():
+        fail(ctx, f"--ets must be an existing workload file, got: {args.ets}")
+        return
+    if not Path(ets_base + ".0.et").exists():
+        fail(ctx, f"No per-rank workloads found: expected {ets_base}.<rank>.et "
+                   f"(e.g. {Path(ets_base).name}.0.et). The frontend idles ranks "
+                   f"without them, so refusing a silent 0-cycle run.")
+        return
+
     log(ctx, f"ASTRA-sim eval: ets={args.ets}")
     import subprocess
     cmd = [str(ASTRA_BS_BIN),
-           "--workload-configuration", args.ets,
+           "--workload-configuration", ets_base,
            "--system-configuration", args.system_config,
            "--network-configuration", args.network_config,
            "--remote-memory-configuration", args.memory_config,
+           # Embedded mode owns injection: template cfgs carry standalone-style
+           # injection_rate (uniform), which self-injects infinite synthetic
+           # traffic and spins the run forever. Cfgs stay untouched.
+           "--booksim2-extra=injection_rate=0.0",
            "--logging-configuration", "empty",
            "--logging-folder", str(RUNS_DIR / "astra")]
     try:
-        subprocess.run(cmd, timeout=args.timeout, check=True, cwd=str(REPO))
-        ok(ctx, "ASTRA-sim evaluation complete")
+        sim_timeout = _eff_timeout(args, 300)
+        # stdin=DEVNULL: after quiescence the binary prints Waiting and reads
+        # the interactive protocol from stdin; EOF exits cleanly. Inheriting a
+        # terminal here hangs forever (the historical TimeoutExpired bug).
+        proc = subprocess.run(cmd, timeout=sim_timeout, cwd=str(REPO),
+                              stdin=subprocess.DEVNULL,
+                              capture_output=True, text=True)
     except subprocess.TimeoutExpired:
-        fail(ctx, f"ASTRA-sim timed out after {args.timeout}s")
-    except subprocess.CalledProcessError as e:
-        fail(ctx, f"ASTRA-sim failed (exit {e.returncode})")
+        fail(ctx, f"ASTRA-sim timed out after {sim_timeout}s")
+        return
+    if proc.returncode != 0:
+        tail = "\n".join(proc.stderr.splitlines()[-5:])
+        fail(ctx, f"ASTRA-sim failed (exit {proc.returncode}): {tail}")
+        return
+    per_rank = _parse_astra_cycles(proc.stdout)
+    if not per_rank:
+        fail(ctx, "ASTRA-sim exited 0 but emitted no parseable "
+                   "'sys[i] finished' lines — refusing to report success "
+                   "without evidence.")
+        return
+    result = {
+        "backend": "astra-booksim2",
+        "ets": args.ets,
+        "system_config": args.system_config,
+        "network_config": args.network_config,
+        "memory_config": args.memory_config,
+        "cycles": max(per_rank.values()),
+        "per_rank_cycles": per_rank,
+        "num_ranks": len(per_rank),
+        "status": "ok",
+    }
+    ok(ctx, f"ASTRA-sim: {result['cycles']:,}c over {result['num_ranks']} ranks")
+    out_path = RUNS_DIR / "astra" / f"eval_{Path(args.ets).stem}.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(result, indent=2))
+    ok(ctx, f"Saved: {out_path}")
+    output(ctx, result)
 
 
 def cmd_certify_flow(ctx: Ctx, args):
@@ -472,7 +596,8 @@ def cmd_certify_flow(ctx: Ctx, args):
     import subprocess
     r = subprocess.run([sys.executable, str(SCRIPTS_DIR / "milestone_c.py"),
                         "--traffic-model", model_abs, "--topology", topo_abs],
-                       capture_output=True, text=True, timeout=300, cwd=str(REPO))
+                       capture_output=True, text=True,
+                       timeout=_eff_timeout(args, 300), cwd=str(REPO))
     # Parse structured output, not grep
     passed = 0
     failed = 0
@@ -496,7 +621,7 @@ def cmd_certify_rtl(ctx: Ctx, args):
         return
     import subprocess
     subprocess.run(["bash", str(CERTIFY_SH), args.build_dir, args.tier],
-                   timeout=600, check=True, cwd=str(REPO))
+                   timeout=_eff_timeout(args, 600), check=True, cwd=str(REPO))
     ok(ctx, "RTL certification complete")
 
 
@@ -515,7 +640,7 @@ def cmd_sweep(ctx: Ctx, args):
     banner(ctx, f"Sweep: {Path(trace).name}")
     log(ctx, f"Evaluating {len(SWEEP_TOPOS)} topologies on {Path(trace).name}")
 
-    results = run_sweep(ctx, trace, repo_root=REPO, timeout=args.timeout,
+    results = run_sweep(ctx, trace, repo_root=REPO, timeout=_eff_timeout(args, 60),
                         sim_type=sim_type, ir=ir)
     print_sweep_table(ctx, results, sim_type)
 
@@ -571,12 +696,13 @@ def _run_sensitivity(ctx: Ctx, trace: str, specs: list, args) -> None:
     banner(ctx, f"Sensitivity Analysis: IR = {irs}")
 
     all_results = []
+    sens_timeout = _eff_timeout(args, 60)
     for ir in irs:
         log(ctx, f"Running IR={ir}...")
         r = run_compare(
             ctx, trace, specs,
             seeds=1, seed_base=ctx.seed,
-            timeout=args.timeout, sim_type="throughput", ir=ir,
+            timeout=sens_timeout, sim_type="throughput", ir=ir,
         )
         all_results.append((ir, r))
 
@@ -619,11 +745,13 @@ def cmd_compare(ctx: Ctx, args):
             return
         specs.append((name, t))
 
-    for af in anynet_files:
+    for af in _expand_anynet_files(anynet_files):
         af_resolved = _resolve_path(af)
         if not Path(af_resolved).exists():
-            log(ctx, f"  Skipping .anynet not found: {af}")
-            continue
+            fail(ctx, f".anynet not found: {af} (resolved: {af_resolved})")
+            fail(ctx, "Aborting compare — fix the path (repeat --anynet per file "
+                      "or use comma-separated list)")
+            return
         t = make_anynet_topo(af_resolved)
         specs.append((t.name, t))
 
@@ -634,7 +762,7 @@ def cmd_compare(ctx: Ctx, args):
     result = run_compare(
         ctx, trace, specs,
         seeds=args.seeds, seed_base=args.seed_base,
-        timeout=args.timeout, sim_type=args.mode, ir=args.ir,
+        timeout=_eff_timeout(args, 60), sim_type=args.mode, ir=args.ir,
     )
 
     # Apply memory hierarchy correction if requested
@@ -661,7 +789,8 @@ def cmd_pareto(ctx: Ctx, args):
     mod = importlib.util.module_from_spec(spec)
     sys.argv = ["multi_workload_pareto.py", "--traces", args.traces,
                 "--topos", args.topos, "--anynet", args.anynet,
-                "--seeds", str(args.seeds), "--timeout", str(args.timeout),
+                "--seeds", str(args.seeds),
+                "--timeout", str(_eff_timeout(args, 60)),
                 "--out", args.out]
     spec.loader.exec_module(mod)
     mod.main()
@@ -730,6 +859,7 @@ def cmd_run(ctx: Ctx, args):
 
     # Step 2: Synthesize
     topo_path = run_dir / "winner.anynet"
+    step_budget = _eff_timeout(args, 600)
     try:
         log(ctx, f"Step 2/4: Synthesizing topology ({args.search})")
         import shutil
@@ -739,7 +869,7 @@ def cmd_run(ctx: Ctx, args):
             cmd = [sys.executable, str(Path(__file__).parent.parent / "synthesis" / "bo_synthesizer.py"),
                    "--traffic", str(trace_path), "--nodes", str(args.nodes),
                    "--iters", str(iters), "--scorer", args.scorer]
-            subprocess.run(cmd, capture_output=True, text=True, timeout=600,
+            subprocess.run(cmd, capture_output=True, text=True, timeout=step_budget,
                           check=True, cwd=str(REPO))
             bo_results = RUNS_DIR / "booksim" / f"bo_results_N{args.nodes}.json"
             if bo_results.exists():
@@ -755,13 +885,13 @@ def cmd_run(ctx: Ctx, args):
             method = args.iterative_method
             cmd = [sys.executable, str(Path(__file__).parent.parent / "synthesis" / "iterative_synthesizer.py"),
                    "--trace", str(trace_path), "--method", method,
-                   "--steps", str(max(args.iters, 10)), "--max-edges", "120",
+                   "--steps", str(max(args.iters, 10)), "--max-edges", str(args.max_edges),
                    "--out", str(RUNS_DIR / "booksim" / "topo.anynet")]
-            subprocess.run(cmd, capture_output=True, text=True, timeout=600,
+            subprocess.run(cmd, capture_output=True, text=True, timeout=step_budget,
                           check=True, cwd=str(REPO))
         else:
             subprocess.run([sys.executable, str(SCRIPTS_DIR / "run.py")],
-                          capture_output=True, text=True, timeout=600, cwd=str(REPO))
+                          capture_output=True, text=True, timeout=step_budget, cwd=str(REPO))
 
         if not topo_path.exists():
             candidate = RUNS_DIR / "booksim" / "topo.anynet"
@@ -792,7 +922,7 @@ def cmd_run(ctx: Ctx, args):
             k = 8
         topo = Topology(f"mesh_{k}x{k}", "mesh", "min_adapt", {"k": k, "n": 2})
         eval_result = run_topology_eval(ctx, topo, str(trace_path),
-                                        repo_root=REPO, timeout=60)
+                                        repo_root=REPO, timeout=step_budget)
         manifest["eval"] = eval_result
         if "latency" in eval_result:
             ok(ctx, f"Latency: {eval_result['latency']:.2f}c")
@@ -813,7 +943,7 @@ def cmd_run(ctx: Ctx, args):
                     r = subprocess.run([sys.executable, str(SCRIPTS_DIR / "milestone_c.py"),
                                         "--traffic-model", _resolve_path(args.model),
                                         "--topology", str(topo_path.resolve())],
-                                       capture_output=True, text=True, timeout=300, cwd=str(REPO))
+                                       capture_output=True, text=True, timeout=step_budget, cwd=str(REPO))
                     cert_pass = any("PASS" in line for line in r.stdout.splitlines())
                     manifest["cert"] = "PASS" if cert_pass else "FAIL"
                     ok(ctx, f"Certification: {manifest['cert']}")
@@ -883,11 +1013,14 @@ def cmd_baseline(ctx: Ctx, args):
             specs.append((name, t))
 
     # Custom .anynets
-    for af in args.anynet:
+    for af in _expand_anynet_files(args.anynet):
         af_resolved = _resolve_path(af)
-        if Path(af_resolved).exists():
-            t = make_anynet_topo(af_resolved)
-            specs.append((t.name, t))
+        if not Path(af_resolved).exists():
+            fail(ctx, f".anynet not found: {af} (resolved: {af_resolved})")
+            fail(ctx, "Aborting baseline — fix the path")
+            return
+        t = make_anynet_topo(af_resolved)
+        specs.append((t.name, t))
 
     banner(ctx, f"Baseline Comparison: {len(specs)} topologies")
     log(ctx, f"Trace: {Path(trace).name}")
@@ -895,7 +1028,7 @@ def cmd_baseline(ctx: Ctx, args):
     result = run_compare(
         ctx, trace, specs,
         seeds=args.seeds, seed_base=ctx.seed,
-        timeout=args.timeout, sim_type="latency", ir=0.05,
+        timeout=_eff_timeout(args, 60), sim_type="latency", ir=0.05,
     )
     print_compare_table(ctx, result)
     output(ctx, result.to_dict())
@@ -932,6 +1065,9 @@ def cmd_compile(ctx: Ctx, args):
     banner(ctx, f"Compile: {cr.workload.model_name or cr.workload.model_family.value}")
     log(ctx, f"Agents: {', '.join(f'{a.kind.value}×{a.count}' for a in cr.agents)}")
     log(ctx, f"Total nodes: {cr.total_nodes}")
+    if cr.workload.collectives:
+        log(ctx, "Collectives: " + ", ".join(
+            f"{c.kind.value}/{c.group_size}" for c in cr.workload.collectives))
     log(ctx, f"Guardrail hash: {cr.guardrail_hash()[:16]}...")
 
     # ── Step 1/6: Validate — guardrail check (catches errors in seconds) ──
@@ -975,7 +1111,7 @@ def cmd_compile(ctx: Ctx, args):
         else:
             config = build_config(topo, trace, seed=ctx.seed)
             try:
-                result = run_booksim(ctx, config, repo_root=REPO, timeout=args.timeout)
+                result = run_booksim(ctx, config, repo_root=REPO, timeout=_eff_timeout(args, 120))
                 result["seed"] = ctx.seed
                 ok(ctx, f"Latency: {result['latency']:.2f}c | Hops: {result.get('hops', '?')}")
             except Exception as e:
@@ -1126,10 +1262,15 @@ def cmd_serve(ctx: Ctx, args):
     if args.no_prefix_caching:
         cmd.append("--no-enable-prefix-caching")
 
+    if args.cycle_accurate:
+        # Downstream flag is inverted (replay-only defaults True).
+        cmd.append("--no-booksim-replay-only")
+
     log(ctx, f"Running full-stack simulation: {args.network_backend} backend")
     log(ctx, f"Cluster: {Path(args.cluster_config).name}")
     log(ctx, f"Dataset: {Path(args.dataset).name} ({args.num_reqs} requests)")
-    log(ctx, f"Timeout: {args.timeout}s")
+    serve_timeout = _eff_timeout(args, 600)
+    log(ctx, f"Timeout: {serve_timeout}s")
     print()
 
     t0 = time.time()
@@ -1137,7 +1278,7 @@ def cmd_serve(ctx: Ctx, args):
         result = subprocess.run(
             cmd,
             cwd=str(llmserving_root),
-            timeout=args.timeout,
+            timeout=serve_timeout,
             capture_output=False,  # Let output stream to terminal
         )
         elapsed = time.time() - t0
@@ -1148,7 +1289,7 @@ def cmd_serve(ctx: Ctx, args):
             fail(ctx, f"Simulation failed with exit code {result.returncode}")
 
     except subprocess.TimeoutExpired:
-        fail(ctx, f"Simulation timed out after {args.timeout}s")
+        fail(ctx, f"Simulation timed out after {serve_timeout}s")
     except Exception as e:
         fail(ctx, f"Simulation error: {e}")
 
@@ -1506,7 +1647,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_ext = ts.add_parser("extract", help="Extract burst or redistribute")
     p_ext.add_argument("trace")
-    p_ext.add_argument("--burst", type=int)
+    p_ext.add_argument("--burst", type=int,
+                       help="Copy the FIRST N packets (times shifted to t=0). "
+                            "Not the Nth burst — use trace info to size N.")
     p_ext.add_argument("--uniform", action="store_true")
     p_ext.add_argument("--out", required=True)
 
@@ -1523,18 +1666,31 @@ def build_parser() -> argparse.ArgumentParser:
     p_bo.add_argument("--iters", type=int, default=50)
     p_bo.add_argument("--seed", type=int)
     p_bo.add_argument("--scorer", default="analytical", choices=["analytical", "booksim"])
+    p_bo.add_argument("--timeout", type=int, default=None,
+                      help="Subprocess timeout in seconds (default: VERITX_TIMEOUT or 600)")
 
     p_grid = ss.add_parser("grid", help="Grid search")
     p_grid.add_argument("--nodes", type=int, default=64)
+    p_grid.add_argument("--timeout", type=int, default=None,
+                        help="Subprocess timeout in seconds (default: VERITX_TIMEOUT or 600)")
 
     p_iter = ss.add_parser("iterative", help="RHO/GRPO iterative search")
-    p_iter.add_argument("--nodes", type=int, default=64)
     p_iter.add_argument("--trace", required=True)
     p_iter.add_argument("--method", default="rho", choices=["rho", "grpo"])
     p_iter.add_argument("--steps", type=int, default=50)
     p_iter.add_argument("--max-edges", type=int, default=120)
-    p_iter.add_argument("--seed-anynet", default=None)
+    p_iter.add_argument("--horizon", type=int, default=None,
+                        help="RHO lookahead depth (default: 5)")
+    p_iter.add_argument("--branch", type=int, default=None,
+                        help="RHO rollouts per candidate (default: 5)")
+    p_iter.add_argument("--group", type=int, default=None,
+                        help="GRPO group size (default: 4)")
+    p_iter.add_argument("--seed-anynet", default=None,
+                        help="Starting topology; search node count comes from "
+                             "this file (default: mesh 8x8 = 64 nodes)")
     p_iter.add_argument("--out", default=None)
+    p_iter.add_argument("--timeout", type=int, default=None,
+                        help="Subprocess timeout in seconds (default: VERITX_TIMEOUT or 600)")
 
     # evaluate
     p_eval = sub.add_parser("evaluate", help="Cycle-accurate scoring")
@@ -1549,26 +1705,37 @@ def build_parser() -> argparse.ArgumentParser:
                         help=f"Topology backend (any BookSim topology: {', '.join(known_backends)}, or anynet path)")
     p_bs.add_argument("--routing", default=None,
                         help="Routing function (default: from preset, or dim_order)")
-    p_bs.add_argument("--vcs", type=int, default=4)
-    p_bs.add_argument("--vc-buf", type=int, default=8)
-    p_bs.add_argument("--sample-period", type=int, default=1000)
-    p_bs.add_argument("--max-samples", type=int, default=5)
-    p_bs.add_argument("--timeout", type=int, default=120)
+    p_bs.add_argument("--vcs", type=int, default=None,
+                        help="Virtual channels (default: topology-derived; GEC/MECS auto-raises)")
+    p_bs.add_argument("--vc-buf", type=int, default=None,
+                        help="Buffers per VC (default: 8)")
+    p_bs.add_argument("--sample-period", type=int, default=None,
+                        help="BookSim sample period (default: trace-span-derived)")
+    p_bs.add_argument("--max-samples", type=int, default=None,
+                        help="BookSim max samples (default: 1 in trace mode)")
+    p_bs.add_argument("--timeout", type=int, default=None,
+                               help="BookSim timeout in seconds (default: VERITX_TIMEOUT or 120)")
 
     p_anynet = es.add_parser("anynet", help="BookSim2 custom topology")
     p_anynet.add_argument("--topo", required=True)
     p_anynet.add_argument("--trace", required=True)
-    p_anynet.add_argument("--vcs", type=int, default=4)
-    p_anynet.add_argument("--vc-buf", type=int, default=8)
-    p_anynet.add_argument("--sample-period", type=int, default=1000)
-    p_anynet.add_argument("--timeout", type=int, default=120)
+    p_anynet.add_argument("--vcs", type=int, default=None,
+                        help="Virtual channels (default: 4)")
+    p_anynet.add_argument("--vc-buf", type=int, default=None,
+                        help="Buffers per VC (default: 8)")
+    p_anynet.add_argument("--sample-period", type=int, default=None,
+                        help="BookSim sample period (default: trace-span-derived)")
+    p_anynet.add_argument("--timeout", type=int, default=None,
+                                   help="BookSim timeout in seconds (default: VERITX_TIMEOUT or 120)")
 
     p_as = es.add_parser("astra", help="ASTRA-sim backend")
-    p_as.add_argument("--ets", required=True)
+    p_as.add_argument("--ets", required=True,
+                        help="Base workload file; per-rank <base>.<rank>.et must exist alongside it")
     p_as.add_argument("--system-config", default="runs/llm/qwen3_tp16/system.json")
     p_as.add_argument("--network-config", default="runs/llm/qwen3_tp16/network.yml")
     p_as.add_argument("--memory-config", default="runs/llm/qwen3_tp16/memory.json")
-    p_as.add_argument("--timeout", type=int, default=300)
+    p_as.add_argument("--timeout", type=int, default=None,
+                               help="ASTRA-sim timeout in seconds (default: VERITX_TIMEOUT or 300)")
 
     # certify
     p_cert = sub.add_parser("certify", help="Certification")
@@ -1577,17 +1744,23 @@ def build_parser() -> argparse.ArgumentParser:
     p_flow = cs.add_parser("flow", help="Flow-class certification")
     p_flow.add_argument("--model", required=True)
     p_flow.add_argument("--topo", required=True)
+    p_flow.add_argument("--timeout", type=int, default=None,
+                        help="Subprocess timeout in seconds (default: VERITX_TIMEOUT or 300)")
 
     p_rtl = cs.add_parser("rtl", help="RTL certification matrix")
     p_rtl.add_argument("--topo", required=True)
     p_rtl.add_argument("--build-dir", default=".")
     p_rtl.add_argument("--tier", default="quick", choices=["quick", "full"])
+    p_rtl.add_argument("--timeout", type=int, default=None,
+                       help="Subprocess timeout in seconds (default: VERITX_TIMEOUT or 600)")
 
     p_full = cs.add_parser("full", help="Full certification")
     p_full.add_argument("--model", required=True)
     p_full.add_argument("--topo", required=True)
     p_full.add_argument("--build-dir", default=".")
     p_full.add_argument("--tier", default="quick", choices=["quick", "full"])
+    p_full.add_argument("--timeout", type=int, default=None,
+                        help="Per-stage timeout in seconds (default: VERITX_TIMEOUT or flow=300/rtl=600)")
 
     # run
     p_run = sub.add_parser("run", help="Full pipeline")
@@ -1598,11 +1771,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--iters", type=int, default=50)
     p_run.add_argument("--scorer", default="analytical", choices=["analytical", "booksim"])
     p_run.add_argument("--cert", default="flow", choices=["flow", "rtl", "full", "none"])
+    p_run.add_argument("--max-edges", type=int, default=120,
+                       help="Max edges for synthesized topology")
+    p_run.add_argument("--timeout", type=int, default=None,
+                       help="Per-step budget in seconds for synthesis/evaluate/certify "
+                            "(default: VERITX_TIMEOUT or 600)")
 
     # sweep
     p_sweep = sub.add_parser("sweep", help="Batch-evaluate topologies")
     p_sweep.add_argument("--trace", required=True)
-    p_sweep.add_argument("--timeout", type=int, default=60)
+    p_sweep.add_argument("--timeout", type=int, default=None,
+                          help="Per-run timeout in seconds (default: VERITX_TIMEOUT or 60)")
     p_sweep.add_argument("--mode", default="latency", choices=["latency", "throughput"])
     p_sweep.add_argument("--ir", type=float, default=0.05)
 
@@ -1613,7 +1792,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_cmp.add_argument("--anynet", action="append", default=[])
     p_cmp.add_argument("--seeds", type=int, default=3)
     p_cmp.add_argument("--seed-base", type=int, default=0, help="Base seed (0=auto-unique)")
-    p_cmp.add_argument("--timeout", type=int, default=60)
+    p_cmp.add_argument("--timeout", type=int, default=None,
+                        help="Per-run timeout in seconds (default: VERITX_TIMEOUT or 60)")
     p_cmp.add_argument("--dense", choices=list(DENSE_PRESETS.keys()))
     p_cmp.add_argument("--mode", default="latency", choices=["latency", "throughput"])
     p_cmp.add_argument("--ir", type=float, default=0.05)
@@ -1630,7 +1810,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_par.add_argument("--topos", default="mesh_8x8,torus_8x8")
     p_par.add_argument("--anynet", default="")
     p_par.add_argument("--seeds", type=int, default=1)
-    p_par.add_argument("--timeout", type=int, default=60)
+    p_par.add_argument("--timeout", type=int, default=None,
+                        help="Per-run timeout in seconds (default: VERITX_TIMEOUT or 60)")
     p_par.add_argument("--out", default="runs/booksim/pareto.json")
 
     # diff
@@ -1665,13 +1846,15 @@ def build_parser() -> argparse.ArgumentParser:
                        help="Your topologies to compare (comma-separated)")
     p_bl.add_argument("--anynet", action="append", default=[],
                        help="Custom .anynet file(s) to include")
-    p_bl.add_argument("--timeout", type=int, default=60)
+    p_bl.add_argument("--timeout", type=int, default=None,
+                       help="Per-run timeout in seconds (default: VERITX_TIMEOUT or 60)")
     p_bl.add_argument("--seeds", type=int, default=1)
 
     # ── compile (intent-to-fabric) ──────────────────────────────
     p_compile = sub.add_parser("compile", help="Intent-to-fabric pipeline from CompileRequest JSON")
     p_compile.add_argument("request", help="Path to CompileRequest JSON file")
-    p_compile.add_argument("--timeout", type=int, default=120)
+    p_compile.add_argument("--timeout", type=int, default=None,
+                            help="BookSim timeout in seconds (default: VERITX_TIMEOUT or 120)")
     p_compile.add_argument("--output", "-o", help="Save results to JSON file")
 
     # ── init ──────────────────────────────────────────────────────
@@ -1686,11 +1869,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_serve.add_argument("--network-backend", default="booksim", choices=["booksim", "analytical", "ns3"],
                           help="Network simulation backend")
     p_serve.add_argument("--output", help="Output directory for results")
-    p_serve.add_argument("--timeout", type=int, default=600, help="Simulation timeout in seconds")
+    p_serve.add_argument("--timeout", type=int, default=None, help="Simulation timeout in seconds (default: VERITX_TIMEOUT or 600)")
     p_serve.add_argument("--log-level", default="WARNING", choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-                          help="LLMServingSim log level")
+                         help="LLMServingSim log level")
     p_serve.add_argument("--no-cleanup", action="store_true", help="Keep intermediate files")
     p_serve.add_argument("--no-prefix-caching", action="store_true", help="Disable prefix caching")
+    p_serve.add_argument("--cycle-accurate", action="store_true",
+                         help="Full cycle-accurate network simulation via BookSim "
+                              "(maps to downstream --no-booksim-replay-only, ~10x slower). "
+                              "Required for any congestion/QoS claim; default replay "
+                              "mode skips the network.")
 
     # ── generate ──────────────────────────────────────────────────
     p_gen = sub.add_parser("generate", help="Generate collateral (UVM, RTL, reports)")
