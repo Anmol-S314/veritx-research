@@ -33,8 +33,32 @@ MATRIX = os.environ.get("TRAFFIC_MATRIX")
 EXTRA = [x for x in os.environ.get("BOOKSIM_EXTRA", "").split() if x]
 
 
+def _resolve_booksim() -> str:
+    """BOOKSIM_BIN, else booksim on PATH, else the vendored build.
+
+    The vendored fallback matters because the tools image ships its own
+    /usr/local/bin/booksim baked in at image-build time. When a topology
+    is added to third_party/booksim2 but the image has not been rebuilt,
+    that binary does not know it -- and the failure is invisible (see the
+    unknown-topology check in run_one).
+    """
+    env = os.environ.get("BOOKSIM_BIN")
+    if env:
+        return env
+    from shutil import which
+    if which("booksim"):
+        return "booksim"
+    vendored = ROOT.parent.parent / "third_party" / "booksim2" / "src" / "booksim"
+    if vendored.exists():
+        return str(vendored)
+    return "booksim"
+
+
+BOOKSIM = _resolve_booksim()
+
+
 def run_one(cfg: Path, rate: float) -> dict:
-    booksim = os.environ.get("BOOKSIM_BIN") or "booksim"
+    booksim = BOOKSIM
     cmd = [booksim, str(cfg), f"injection_rate={rate}"] + EXTRA
     if MATRIX:
         cmd.append(f"traffic=matrix({MATRIX})")
@@ -74,6 +98,19 @@ def run_one(cfg: Path, rate: float) -> dict:
         note = None
     elif "must match topology node count" in blob:
         status, note = "skipped_node_mismatch", _mismatch_note(blob)
+    elif "Unknown topology" in blob:
+        # The binary does not have this topology compiled in. Almost always
+        # a stale tools image: the Dockerfile copies third_party/booksim2/src
+        # and compiles it at IMAGE BUILD time, so a topology added since the
+        # last `make image-build` is missing from /usr/local/bin/booksim.
+        # Without this branch it lands as a bare "no_output" and the arm
+        # just quietly vanishes from the sweep and every downstream report.
+        topo = next((l.split(":", 1)[1].strip() for l in blob.splitlines()
+                     if "Unknown topology" in l), "?")
+        status = "unknown_topology"
+        note = ("booksim at %s has no topology '%s' compiled in -- rebuild "
+                "the tools image (make image-build) or point BOOKSIM_BIN at "
+                "a current build" % (BOOKSIM, topo))
     elif rc == -1:
         status, note = "timeout", "exceeded 300s"
     else:
@@ -105,6 +142,7 @@ def main():
 
     print(f"Using configuration: {CONFIG}")
 
+    print(f"Booksim: {BOOKSIM}")
     if EXTRA:
         print("Applying to every config: " + " ".join(EXTRA))
     if MATRIX:
@@ -112,6 +150,7 @@ def main():
 
     results = []
     skipped = {}
+    missing = {}
     for cfg in CONFIGS:
         # A topology whose node count does not match the matrix fails
         # identically at every rate, so probe once and skip the rest rather
@@ -130,11 +169,20 @@ def main():
             flag = "" if res["status"] == "ok" else f"  [{res['status']}]"
             print(f"{res['latency_cycles']}{flag}")
             results.append(res)
+            if res["status"] == "unknown_topology":
+                # Same at every rate; record once and stop burning runs on it.
+                missing[cfg.stem] = res["note"]
+                break
 
     report = RESULTS_DIR / "topology_sweep.json"
     with open(report, "w") as f:
         json.dump(results, f, indent=2)
     print(f"\n  {len(results)} data points → {report}")
+
+    if missing:
+        print("\n  *** TOPOLOGY MISSING FROM THIS BOOKSIM BUILD ***")
+        for t, why in sorted(missing.items()):
+            print(f"    {t}: {why}")
 
     _print_comparison(results, skipped)
 
