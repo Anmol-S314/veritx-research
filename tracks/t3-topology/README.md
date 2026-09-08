@@ -177,9 +177,82 @@ results/
 | `t3 plot` | PA-03: latency curves → `results/baseline/analysis/latency_curves.png` |
 | `t3 all` | run analysis → aggregate → plot in sequence |
 | `t3 sim` | fresh Booksim uniform sweep |
+| `t3 astrasim` | ASTRA-Sim 2.0 spine: chakra trace → astrasim sweep → energy (see below) |
 | `t3 dashboard` | build `report/t3/index.html` |
 | `t3 selfcheck` | regression tests for all PA scripts |
 | `t3 clean` | remove `results/` and `__pycache__` |
+
+---
+
+## ASTRA-Sim Integration
+
+T3 runs real workloads on a cycle-accurate NoC through **ASTRA-sim + BookSim2**, two ways:
+
+1. **`t3 astrasim`** — the workload sweep spine (Manal's integration): generate
+   a Chakra `.et` trace for a model, run the ASTRA-sim BookSim2 frontend over
+   the mesh, record per-model cycles into the sweep JSON. No synthetic traffic
+   ever substitutes for the trace — the runner **refuses to report** a run that
+   fell back to template traffic.
+2. **`veritx evaluate astra` / `veritx serve`** — the dse CLI (in `dse/`):
+   one-shot ASTRA-sim evaluation of a trace, and the full LLM-serving stack
+   (LLMServingSim → Chakra → ASTRA-sim → BookSim2).
+
+### `t3 astrasim` — workload sweep spine
+
+```bash
+t3 astrasim                                  # CONFIG=baseline MODEL=llama7b
+t3 astrasim MODEL=gpt3 CONFIG=myexp          # any model the generator knows
+python3 scripts/run_astrasim.py --selfcheck  # spine regression selfcheck
+```
+
+Driven by `scripts/run_astrasim.py`: `--model` (llama7b/13b/70b, gpt3,
+resnet50, all_reduce, …), dimension overrides (`--hidden-size`, `--tp`,
+`--pp`, `--seq-len`, …), `--topo`. Requires `ASTRASIM_BIN` — exported by
+`run/env.sh`, which probes the BookSim2 frontend first, the analytical
+frontend second. Results land in `results/<CONFIG>/` with
+`"traffic": "astrasim(<model>_chakra_et)"` — that field is the proof the
+Chakra trace, not template traffic, was the workload.
+
+### `veritx` CLI (dse/)
+
+```bash
+cd dse
+python3 -m veritx_dse.cli evaluate astra --ets <workload.et> \
+    --system-config <system.json> --network-config <network.json> \
+    --memory-config <memory.json>
+
+python3 -m veritx_dse.cli serve \
+    --cluster-config <cluster.json> --dataset <trace.jsonl> \
+    --num-reqs 10 --network-backend booksim   # or: analytical | ns3
+    # --cycle-accurate   real NoC sim (default is replay-only)
+    # --no-prefix-caching --no-cleanup --output DIR --timeout S
+```
+
+`evaluate astra` expects the per-rank convention `<base>.<rank>.et` (the
+frontend idles ranks without them, so a bare base file is refused — no silent
+0-cycle "success"). Template BookSim cfgs carry standalone-style injection
+rates, so embedded runs always pass `injection_rate=0.0`; the workload is the
+trace.
+
+### What is tested (and how)
+
+Every advertised feature has a test that proves it — contract style: real
+binaries where they're cheap, fault injection (fake crashing/hanging/garbage
+binaries) where the real fault is expensive. `python3 -m pytest tests/ -q`
+runs all of it.
+
+| Advertised behaviour | Guarded by |
+|---|---|
+| `evaluate astra` parses `sys[i] finished` per rank | `test_evaluate_astra.py` (parser unit tests) |
+| refuses missing workload / missing per-rank files | same, convention-gate tests |
+| reports nonzero exit, garbage output, hangs as **failure** — never fabricates a result JSON | same, fault-injection tests (real `subprocess`, fake binaries) |
+| runs the real binary end-to-end, `stdin=DEVNULL` (no hang at the Waiting prompt) | same, live-binary test |
+| `serve` forwards every flag to the serving module — including the VeritX renames (`--no-cleanup` → `--keep-inputs`, `--cycle-accurate` → `--no-booksim-replay-only`) — and the module accepts all of them | `test_serve_contract.py` (probe + module-parser probe) |
+| `serve --network-backend analytical` completes and shuts down cleanly | same, live test |
+| `serve --network-backend booksim` (replay-only, the default) | same, live test |
+| `serve --cycle-accurate`: real NoC simulation with ITL metrics | same, live test |
+| serving-module booksim scenarios (dense-DP, MoE-DP-EP, uneven drain) | `test_full_pipeline.py` |
+| `t3 astrasim` spine consumes the Chakra trace (never the template fallback) | `scripts/run_astrasim.py --selfcheck` + live sweep JSON `traffic` field |
 
 ---
 
@@ -278,6 +351,32 @@ On `main` pushes CI rebuilds it and uploads it as a **downloadable artifact**
 Results stay inside the private repo — per the IP rules they are **not** served
 on a public URL. To view a CI run's dashboard, download the `report` artifact
 and open `t3/index.html`, or just run `make dashboard` locally.
+
+---
+
+## Integrations & Acknowledgements
+
+### 2026-09-08 — ASTRA-sim BookSim2 forward-port (from `astrasim-manal`)
+
+Merged from Manal's `astrasim-manal` branch (merge `74b3e8b2`, tested in
+`88b7fb6d` and later):
+
+- **Vendored `third_party/astra-sim`** with the custom BookSim2 frontend
+  (`network_frontend/booksim2`) — replaces the empty-submodule state that made
+  the frontend unbuildable on fresh checkouts.
+- **Workload sweep spine** — `scripts/run_astrasim.py`, the Chakra trace
+generators, `make astrasim` / `t3 astrasim`, and `env.sh` binary probing
+(frontend-first), fixing the "no binary → template traffic silently
+replaces the trace" failure mode.
+- **Booksim2 core additions** — `TraceTrafficManager` (trace-replay traffic
+manager), the `_OnPacketGenerated` hook, `trace_file` config fields, and the
+honest per-packet latency fix (trace request-time bookkeeping).
+
+Post-merge, both trees' fixes were reconciled: the CLI keeps keep-serving
+`done`-echo semantics (a `done`=exit variant strands queued work in
+multi-instance serving runs), and the shutdown gate on the serving side polls
+once for per-round-reporting backends. See
+`HANDOFF-2026-09-08-astra-integration.md` for the full evidence log.
 
 ---
 

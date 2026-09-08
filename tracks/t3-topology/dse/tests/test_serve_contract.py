@@ -139,3 +139,64 @@ def test_serve_end_to_end_analytical():
         stdin=subprocess.DEVNULL, env=env, timeout=180)
     assert proc.returncode == 0, f"serve failed:\n{proc.stderr[-1500:]}"
     assert "Simulation completed" in proc.stderr
+
+
+# ── live end-to-end: the cycle-accurate NoC (the point of the forward-port) ─
+
+BOOKSIM_BIN = REPO / "third_party" / "astra-sim" / "astra-sim" / \
+    "network_frontend" / "booksim2" / "bin" / "AstraSim_BookSim2"
+
+
+def _cli_serve(*extra: str, timeout_s: int = 120) -> subprocess.CompletedProcess:
+    env = dict(os.environ)
+    env.pop("VERITX_TIMEOUT", None)
+    return subprocess.run(
+        [sys.executable, "-m", "veritx_dse.cli", "serve",
+         "--cluster-config", str(CLUSTER),
+         "--dataset", str(DATASET),
+         "--num-reqs", "1",
+         "--network-backend", "booksim",
+         "--log-level", "WARNING",
+         "--timeout", str(timeout_s), *extra],
+        cwd=str(REPO / "tracks" / "t3-topology" / "dse"),
+        capture_output=True, text=True,
+        stdin=subprocess.DEVNULL, env=env, timeout=timeout_s + 60)
+
+
+@pytest.mark.skipif(not CLUSTER.is_file() or not DATASET.is_file(),
+                    reason="serving fixtures not present")
+@pytest.mark.skipif(not BOOKSIM_BIN.exists(),
+                    reason="AstraSim_BookSim2 binary not built")
+def test_serve_end_to_end_booksim_replay_only():
+    """Default booksim backend (replay-only) through the CLI, ~1.5s.
+
+    Guards the CLI→module spawn for the veritx-default backend: the serving
+    module itself is covered by test_full_pipeline.py, but the CLI wrapper
+    (path resolution, flag forwarding, protocol shutdown) was not.
+    """
+    proc = _cli_serve()
+    assert proc.returncode == 0, f"serve failed:\n{proc.stderr[-1500:]}"
+    assert "Simulation completed" in proc.stderr
+
+
+@pytest.mark.skipif(not CLUSTER.is_file() or not DATASET.is_file(),
+                    reason="serving fixtures not present")
+@pytest.mark.skipif(not BOOKSIM_BIN.exists(),
+                    reason="AstraSim_BookSim2 binary not built")
+def test_serve_end_to_end_booksim_cycle_accurate():
+    """The advertised `--cycle-accurate` flag, live: real NoC simulation.
+
+    This is the only test in the suite that exercises the full stack in
+    non-replay mode (AstraSim+BookSim2 stepping actual flits). It pins two
+    things: the inverted-flag forwarding (`--cycle-accurate` → module's
+    `--no-booksim-replay-only`) and that cycle-accurate mode itself completes
+    and reports latency numbers, not just exit 0. ~2s wall.
+    """
+    proc = _cli_serve("--cycle-accurate")
+    assert proc.returncode == 0, f"serve failed:\n{proc.stderr[-1500:]}"
+    err = proc.stderr
+    assert "Simulation completed" in err
+    # the run must report serving metrics — cycle-accurate mode must produce
+    # a real latency breakdown, not merely "not crash"
+    assert "ITL" in proc.stdout, (
+        f"cycle-accurate run produced no ITL metrics:\n{proc.stdout[-800:]}")
