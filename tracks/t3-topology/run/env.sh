@@ -63,20 +63,32 @@ if [ -z "${T3_RESULTS:-}" ] || [ "$T3_RESULTS" = "$T3_DIR/results" ]; then
 fi
 export T3_CONFIGS="$T3_DIR/configs"
 
-# Auto-detect ASTRA-Sim binary from vendored location or PATH
-# NOTE: ASTRA-Sim may not be compiled into an executable yet (check third_party/astra-sim/CMakeLists.txt)
-# This gracefully falls back to BookSim if the binary doesn't exist or is not executable
+# Auto-detect the ASTRA-sim BookSim FRONTEND binary (AstraSim_BookSim2).
+# This must be the frontend speaking --system/--network/--logical-topology/
+# --workload-configuration -- NOT standalone `booksim` (different CLI) and
+# NOT the analytical backend. Build it with:
+#   cd third_party/astra-sim/build/astra_booksim2 && mkdir -p build && cd build \
+#     && cmake .. && cmake --build . -j$(nproc)
+# If unset, run_astrasim.py MUST fail loudly (no synthetic fallback).
 if [ -z "${ASTRASIM_BIN:-}" ]; then
-    _astrasim_candidate="$REPO_ROOT/third_party/astra-sim/build/astra_analytical/build/AstraSim"
-    if [ -f "$_astrasim_candidate" ] && [ -x "$_astrasim_candidate" ]; then
-        export ASTRASIM_BIN="$_astrasim_candidate"
-    elif command -v astrasim &>/dev/null; then
-        export ASTRASIM_BIN="$(command -v astrasim)"
-    elif command -v astra-sim &>/dev/null; then
-        export ASTRASIM_BIN="$(command -v astra-sim)"
+    _astrasim_candidates=(
+        "$REPO_ROOT/third_party/astra-sim/astra-sim/network_frontend/booksim2/bin/AstraSim_BookSim2"
+    )
+    for _astrasim_candidate in "${_astrasim_candidates[@]}"; do
+        if [ -f "$_astrasim_candidate" ] && [ -x "$_astrasim_candidate" ]; then
+            export ASTRASIM_BIN="$_astrasim_candidate"
+            break
+        fi
+    done
+    if [ -z "${ASTRASIM_BIN:-}" ]; then
+        for _astrasim_cmd in astrasim astra-sim; do
+            if command -v "$_astrasim_cmd" &>/dev/null; then
+                export ASTRASIM_BIN="$(command -v "$_astrasim_cmd")"
+                break
+            fi
+        done
     fi
-    # If none found, ASTRASIM_BIN remains unset, and run_astrasim.py falls back to BookSim
-    unset _astrasim_candidate
+    unset _astrasim_candidate _astrasim_candidates _astrasim_cmd
 fi
 
 # --------------------------------------------------------------------------

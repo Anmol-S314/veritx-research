@@ -6,11 +6,11 @@ AI workloads (LLaMA-7B, LLaMA-13B, LLaMA-70B, GPT-3, ResNet-50, custom models, a
 as Directed Acyclic Graphs (DAGs).
 
 Each node in the Chakra Execution Trace DAG represents:
-  - COMP_NODE        (1) : Local NPU/GPU tensor computation (e.g., QKV projection, FFN SwiGLU)
-  - COMM_COLL_NODE   (2) : Collective communication (e.g., Ring All-Reduce, Reduce-Scatter)
-  - COMM_SEND_NODE   (3) : Point-to-point Send (e.g., Pipeline Parallel activation transfer)
-  - COMM_RECV_NODE   (4) : Point-to-point Recv
-  - MEM_NODE         (5) : Local host/device memory transfer
+  - COMP_NODE        (4) : Local NPU/GPU tensor computation (e.g., QKV projection, FFN SwiGLU)
+  - COMM_SEND_NODE   (5) : Point-to-point Send (e.g., Pipeline Parallel activation transfer)
+  - COMM_RECV_NODE   (6) : Point-to-point Recv
+  - COMM_COLL_NODE   (7) : Collective communication (e.g., Ring All-Reduce, Reduce-Scatter)
+Codes follow et_def.proto exactly; 1/2/3 are METADATA/MEM_LOAD/MEM_STORE.
 
 Usage
 -----
@@ -31,12 +31,15 @@ HERE = Path(__file__).parent
 TRACK = HERE.parent
 RESULTS_DIR = TRACK / "results"
 
-# Chakra Node Types (Standard MLCommons Enum)
-COMP_NODE = 1
-COMM_COLL_NODE = 2
-COMM_SEND_NODE = 3
-COMM_RECV_NODE = 4
-MEM_NODE = 5
+# Chakra NodeType codes MUST match et_def.proto (schema/protobuf/et_def.proto):
+#   INVALID=0 METADATA=1 MEM_LOAD=2 MEM_STORE=3 COMP=4 SEND=5 RECV=6 COLL=7.
+# (Earlier 1/2/3/4 values made compute look like METADATA and collectives
+# look like MEM_LOADs, which sent the runtime into the memory subsystem.)
+COMP_NODE = 4
+COMM_SEND_NODE = 5
+COMM_RECV_NODE = 6
+COMM_COLL_NODE = 7
+MEM_LOAD_NODE = 2
 
 # Chakra Collective Types
 ALL_REDUCE = 1
@@ -212,10 +215,14 @@ class ChakraTraceGenerator:
 
             # 2. Attention All-Reduce (COMM_COLL_NODE)
             attn_comm = ChakraNode(self._next_id(), f"layer_{layer_idx}_attn_allreduce", COMM_COLL_NODE, duration_us=max(10, int(spec["msg_size_mb"] * 5)))
+            # comm_type/comm_size MUST be ints: the runtime reads them as
+            # uint64 attrs (CollectiveCommType ALL_REDUCE=0; size in bytes).
             attn_comm.attr = {
-                "comm_type": "ALL_REDUCE",
-                "comm_size_bytes": msg_size_bytes,
+                "comm_type": 0,
+                "comm_size": msg_size_bytes,
                 "comm_size_mb": spec["msg_size_mb"],
+                # Single logical dim: all ranks in dim 0 (see encoder note).
+                "involved_dim": [True],
             }
             attn_comm.add_dependency(attn_comp.id)
             self.nodes.append(attn_comm)
@@ -230,16 +237,20 @@ class ChakraTraceGenerator:
             # 4. MLP All-Reduce (COMM_COLL_NODE)
             mlp_comm = ChakraNode(self._next_id(), f"layer_{layer_idx}_mlp_allreduce", COMM_COLL_NODE, duration_us=max(10, int(spec["msg_size_mb"] * 5)))
             mlp_comm.attr = {
-                "comm_type": "ALL_REDUCE",
-                "comm_size_bytes": msg_size_bytes,
+                "comm_type": 0,
+                "comm_size": msg_size_bytes,
                 "comm_size_mb": spec["msg_size_mb"],
+                "involved_dim": [True],
             }
             mlp_comm.add_dependency(mlp_comp.id)
             self.nodes.append(mlp_comm)
 
             prev_node_id = mlp_comm.id
 
-            # 5. Pipeline Parallel Activation Transfer (COMM_SEND_NODE) at stage boundaries
+            # 5. Pipeline Parallel Activation Transfer (COMM_SEND_NODE) at stage boundaries.
+            # DORMANT while the runner forces PP=1 (shared replicated traces cannot
+            # route P2P). Before re-enabling: add matching RECV nodes, per-rank
+            # comm_src/comm_dst/comm_tag/comm_size attrs, and per-rank sharded files.
             if pp_degree > 1 and (layer_idx + 1) % pp_stage_layers == 0 and layer_idx < num_layers - 1:
                 pp_send = ChakraNode(self._next_id(), f"layer_{layer_idx}_pp_stage_send", COMM_SEND_NODE, duration_us=max(5, int(spec["msg_size_mb"] * 2)))
                 pp_send.attr = {
@@ -269,7 +280,9 @@ class ChakraTraceGenerator:
         self.nodes.append(c1)
 
         comm = ChakraNode(self._next_id(), f"comm_{comm_type.lower()}", COMM_COLL_NODE, duration_us=150)
-        comm.attr = {"comm_type": comm_type.upper(), "comm_size_bytes": msg_size_bytes}
+        # Same uint64-attr contract as the model path (ALL_REDUCE=0).
+        comm.attr = {"comm_type": 0, "comm_size": msg_size_bytes,
+                     "involved_dim": [True]}
         comm.add_dependency(c1.id)
         self.nodes.append(comm)
 
@@ -294,33 +307,103 @@ def _encode_varint(value: int) -> bytes:
     return bytes(res)
 
 
+def _encode_string_field(buf: bytearray, field_no: int, value: bytes) -> None:
+    """Append a length-delimited (wire type 2) field with a computed tag."""
+    buf.extend(_encode_varint((field_no << 3) | 2))
+    buf.extend(_encode_varint(len(value)))
+    buf.extend(value)
+
+
 def encode_chakra_node_protobuf(node_dict: dict) -> bytes:
-    """Encode a Chakra Node into binary Protobuf format according to et_def.proto schema."""
+    """Encode a Chakra Node into binary Protobuf format according to et_def.proto.
+
+    Field numbers follow the Node message exactly: id=1, name=2, type=3,
+    ctrl_deps=4, data_deps=5, duration_micros=7, attr=10. (An earlier version
+    wrote data_deps to field 4 and duration to field 5, so every duration
+    became a phantom data dependency, e.g. duration 160 -> "Node 160 not
+    found".) Tags are computed, never hardcoded.
+    """
     buf = bytearray()
-    # Field 1: uint64 id (tag = 1, wire_type = 0 -> 0x08)
-    buf.append(0x08)
+    # Field 1: uint64 id (varint)
+    buf.extend(_encode_varint((1 << 3) | 0))
     buf.extend(_encode_varint(node_dict["id"]))
 
-    # Field 2: string name (tag = 2, wire_type = 2 -> 0x12)
-    name_bytes = node_dict["name"].encode("utf-8")
-    buf.append(0x12)
-    buf.extend(_encode_varint(len(name_bytes)))
-    buf.extend(name_bytes)
+    # Field 2: string name
+    _encode_string_field(buf, 2, node_dict["name"].encode("utf-8"))
 
-    # Field 3: enum type (tag = 3, wire_type = 0 -> 0x18)
-    buf.append(0x18)
+    # Field 3: NodeType type (varint enum)
+    buf.extend(_encode_varint((3 << 3) | 0))
     buf.extend(_encode_varint(node_dict["type"]))
 
-    # Field 4: repeated uint64 data_deps (tag = 4, wire_type = 0 -> 0x20)
+    # Field 5: repeated uint64 data_deps (varint each)
     for dep in node_dict.get("data_deps", []):
-        buf.append(0x20)
+        buf.extend(_encode_varint((5 << 3) | 0))
         buf.extend(_encode_varint(dep))
 
-    # Field 5: uint64 duration_us (tag = 5, wire_type = 0 -> 0x28)
-    buf.append(0x28)
+    # Field 7: uint64 duration_micros (varint) -- read by ETFeederNode::runtime
+    buf.extend(_encode_varint((7 << 3) | 0))
     buf.extend(_encode_varint(node_dict.get("duration_us", 10)))
 
+    # Field 10: repeated AttributeProto attr (each length-delimited).
+    # The runtime REQUIRES typed attrs: coll nodes need uint64 comm_type +
+    # comm_size; p2p nodes need comm_src/comm_dst/comm_tag/comm_size.
+    # Python int -> uint64_val (field 13, varint); str -> string_val
+    # (field 29, string). Other types are json-only (skipped on the wire).
+    for attr_name, attr_val in (node_dict.get("attr") or {}).items():
+        attr = bytearray()
+        _encode_string_field(attr, 1, attr_name.encode("utf-8"))
+        if isinstance(attr_val, bool):
+            continue  # no bool singletons in this flow; keep json-only
+        elif isinstance(attr_val, int):
+            attr.extend(_encode_varint((13 << 3) | 0))  # uint64_val
+            attr.extend(_encode_varint(attr_val))
+        elif isinstance(attr_val, str):
+            _encode_string_field(attr, 29, attr_val.encode("utf-8"))
+        elif isinstance(attr_val, (list, tuple)) and all(
+            isinstance(v, bool) for v in attr_val
+        ):
+            # List[bool] -> BoolList (field 28, nested message; values field 1).
+            # Used for involved_dim: WITHOUT it the runtime assumes 4 involved
+            # dims, which stalls 1-D topologies (collectives wait on phantom
+            # dims forever with no output at 100% CPU).
+            nested = bytearray()
+            for v in attr_val:
+                nested.extend(_encode_varint((1 << 3) | 0))
+                nested.extend(_encode_varint(1 if v else 0))
+            attr.extend(_encode_varint((28 << 3) | 2))
+            attr.extend(_encode_varint(len(nested)))
+            attr.extend(nested)
+        else:
+            continue
+        buf.extend(_encode_varint((10 << 3) | 2))
+        buf.extend(_encode_varint(len(attr)))
+        buf.extend(attr)
+
     return bytes(buf)
+
+
+def encode_global_metadata(schema: str = "1.0.2-chakra.0.0.4") -> bytes:
+    """Encode a Chakra GlobalMetadata record (schema attr only).
+
+    The ET feeder reads this as the FIRST length-delimited record to frame
+    the stream. Without it, node #1 is consumed as garbage metadata and the
+    whole trace desyncs (observed symptom: all sys finish at 0 cycles with
+    a clean exit and no error). Tags are computed, never hardcoded.
+    """
+    name = b"schema"
+    val = schema.encode("utf-8")
+    attr = bytearray()
+    attr.append((1 << 3) | 2)  # field 1 (name), wire type 2 (string)
+    attr.extend(_encode_varint(len(name)))
+    attr.extend(name)
+    attr.extend(_encode_varint((29 << 3) | 2))  # field 29 (string_val)
+    attr.extend(_encode_varint(len(val)))
+    attr.extend(val)
+    meta = bytearray()
+    meta.append((2 << 3) | 2)  # field 2 (attr, repeated message)
+    meta.extend(_encode_varint(len(attr)))
+    meta.extend(attr)
+    return bytes(meta)
 
 
 def save_chakra_trace(trace_nodes: List[dict], out_dir: Path, filename_prefix: str = "llama7b", spec: Dict[str, Any] | None = None) -> dict:
@@ -336,8 +419,12 @@ def save_chakra_trace(trace_nodes: List[dict], out_dir: Path, filename_prefix: s
     }
     json_path.write_text(json.dumps(payload, indent=2))
 
-    # Binary Protobuf length-delimited record serialization
+    # Binary Protobuf length-delimited record serialization.
+    # GlobalMetadata MUST come first (see encode_global_metadata).
     binary_buf = bytearray()
+    meta = encode_global_metadata()
+    binary_buf.extend(_encode_varint(len(meta)))
+    binary_buf.extend(meta)
     for node in trace_nodes:
         pb_node = encode_chakra_node_protobuf(node)
         binary_buf.extend(_encode_varint(len(pb_node)))

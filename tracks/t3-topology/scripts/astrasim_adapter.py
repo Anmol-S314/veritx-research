@@ -55,21 +55,62 @@ def parse_booksim_cfg(cfg_path: Path) -> dict:
                 pass
         elif key == "routing_function":
             params["routing_function"] = val
+        elif key == "network_file":
+            params["_network_file"] = val
+        elif key == "total_nodes":
+            try:
+                params["total_nodes"] = int(val)
+            except ValueError:
+                pass
+
+    # Explicit total_nodes in the cfg always wins (required for topologies
+    # without a closed-form size). Never guess: a wrong count silently
+    # simulates the wrong machine.
+    if "total_nodes" in params:
+        return params
 
     # Determine total node count
     if params["topology"] in ("mesh", "torus"):
         params["total_nodes"] = params["k"] ** params["n"]
     elif params["topology"] == "anynet":
-        params["total_nodes"] = 16
+        params["total_nodes"] = _count_anynet_nodes(cfg_path, params)
     elif params["topology"] in ("fly", "flatfly"):
         params["total_nodes"] = params["k"] ** params["n"]
     else:
-        params["total_nodes"] = 16
+        raise ValueError(
+            f"cannot determine total_nodes for topology "
+            f"'{params['topology']}': add an explicit 'total_nodes = N' "
+            f"line to {cfg_path}")
 
     return params
 
 
-def generate_astrasim_system_json(num_nodes: int, model_name: str = "Workload", allreduce_impl: str = "RING") -> dict:
+def _count_anynet_nodes(cfg_path: Path, params: dict) -> int:
+    """Count nodes from the anynet network file. Never guess."""
+    net_file = params.get("_network_file", "")
+    p = Path(net_file)
+    if not p.is_absolute():
+        p = cfg_path.parent / p
+    if not net_file or not p.exists():
+        raise FileNotFoundError(
+            f"anynet topology needs 'network_file = <links file>' in "
+            f"{cfg_path} (resolved to {p}); one '<src> <dst>' link per line.")
+    nodes: set[int] = set()
+    for line in p.read_text().splitlines():
+        line = line.split("//")[0].split("#")[0].strip()
+        toks = line.replace(",", " ").split()
+        if len(toks) >= 2:
+            try:
+                nodes.add(int(toks[0]))
+                nodes.add(int(toks[1]))
+            except ValueError:
+                pass
+    if not nodes:
+        raise ValueError(f"no '<src> <dst>' links found in anynet file {p}")
+    return len(nodes)
+
+
+def generate_astrasim_system_json(num_nodes: int, model_name: str = "Workload", allreduce_impl: str = "ring") -> dict:
     """Generate a standard ASTRA-Sim 2.0 system.json for N PU nodes."""
     return {
         "scheduling-policy": "LIFO",
@@ -77,11 +118,16 @@ def generate_astrasim_system_json(num_nodes: int, model_name: str = "Workload", 
         "active-chunks-per-dimension": 1,
         "preferred-dataset-splits": 1,
         "boost-mode": 0,
+        # Collective names are case-sensitive lowercase (ring|oneRing|
+        # doubleBinaryTree|direct*|oneDirect*|halvingDoubling|
+        # oneHalvingDoubling per CollectiveImplLookup.cc); uppercase aborts.
         "all-reduce-implementation": [allreduce_impl],
-        "all-gather-implementation": ["RING"],
-        "reduce-scatter-implementation": ["RING"],
-        "all-to-all-implementation": ["DIRECT"],
-        "collective-optimization": "LocalBwd",
+        "all-gather-implementation": ["ring"],
+        "reduce-scatter-implementation": ["ring"],
+        "all-to-all-implementation": ["direct"],
+        # Must be one of the Sys.cc-accepted values: baseline | localBWAware.
+        # ("LocalBwd" is rejected at startup with a critical panic.)
+        "collective-optimization": "localBWAware",
         "system-name": f"T3_NOC_{num_nodes}Node_{model_name}",
     }
 
@@ -121,10 +167,21 @@ def prepare_astrasim_config_dir(cfg_path: Path, out_dir: Path, spec: dict | None
     sys_json = generate_astrasim_system_json(params["total_nodes"], model_name=model_name)
     net_json = generate_astrasim_network_json(cfg_path, params)
     log_json = generate_astrasim_logical_topology_json(params["total_nodes"], tp=tp, pp=pp)
+    # Remote-memory config: required flag for our frontend binaries (mirrors
+    # serving's invocation, which passes memory_expansion.json for both memory
+    # flags). num-nodes is set from the actual topology, not copied blindly.
+    mem_json = {
+        "memory-type": "PER_NODE_MEMORY_EXPANSION",
+        "num-nodes": params["total_nodes"],
+        "num-npus-per-node": 1,
+        "remote-mem-latency": 100,
+        "remote-mem-bw": 32768,
+    }
 
     (out_dir / "system.json").write_text(json.dumps(sys_json, indent=2))
     (out_dir / "network.json").write_text(json.dumps(net_json, indent=2))
     (out_dir / "logical_topology.json").write_text(json.dumps(log_json, indent=2))
+    (out_dir / "memory.json").write_text(json.dumps(mem_json, indent=2))
 
     return {
         "out_dir": str(out_dir),

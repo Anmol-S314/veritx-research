@@ -49,6 +49,15 @@ def run_astrasim_topology(
     config_name: str = "baseline"
 ) -> dict:
     """Run ASTRA-Sim for a single topology config and dynamic workload spec."""
+    # Replicated-trace guard: every rank runs the identical shared .et, so
+    # pipeline stage transfers (absolute per-rank P2P src/dst, plus missing
+    # RECV pairing) are un-routable in this design. PP>1 needs per-rank
+    # sharded traces (future work); until then stages run inline (PP=1).
+    if (spec.get("pp_degree", 1) or 1) > 1:
+        print(f"  [warn] pp_degree={spec.get('pp_degree')} requested but the shared "
+              "replicated trace cannot route P2P stage transfers; forcing PP=1.")
+        spec = dict(spec)
+        spec["pp_degree"] = 1
     model_name = spec.get("model_name", "workload").lower().replace(" ", "_")
     rate_tag = f"inj_{inj_rate:.4f}".replace(".", "p")
 
@@ -75,6 +84,17 @@ def run_astrasim_topology(
     chakra_res = save_chakra_trace(trace_nodes, out_dir, model_name, spec=spec)
     et_path = Path(chakra_res["et_binary"])
 
+    # The frontend resolves per-rank workloads as <base>.<rank>.et (it logs
+    # "idle NPU, treating as empty" otherwise and every sys finishes at 0
+    # cycles). Replicate the model trace to all ranks: with TP=1 this is
+    # exactly data-parallel semantics (each rank runs full layers, collectives
+    # synchronize across ranks). Proper TP/DP sharding of the trace is a
+    # modeling decision for later; this proves the execution chain end to end.
+    import shutil as _shutil
+    _total_ranks = (cfg_info.get("total_nodes", 0) or 0)
+    for _rank in range(_total_ranks):
+        _shutil.copy(et_path, Path(str(et_path) + f".{_rank}.et"))
+
     latency = None
     astrasim_bin = find_astrasim_bin()
 
@@ -86,6 +106,14 @@ def run_astrasim_topology(
             "--network-configuration=" + str(out_dir / "network.json"),
             "--logical-topology-configuration=" + str(out_dir / "logical_topology.json"),
             "--workload-configuration=" + str(et_path),
+            "--memory-configuration=" + str(out_dir / "memory.json"),
+            "--remote-memory-configuration=" + str(out_dir / "memory.json"),
+            # Embedded mode owns injection: the frontend injects collective
+            # packets via API. The template cfgs carry standalone-style
+            # `injection_rate = 0.1` (uniform); without this override the TM
+            # self-injects infinite synthetic traffic and the run spins in
+            # router alloc forever. Cfgs stay standalone-capable untouched.
+            "--booksim2-extra=injection_rate=0.0",
         ]
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         cycles = 1000  # Default fallback if parsing fails
@@ -96,46 +124,20 @@ def run_astrasim_topology(
                 except (IndexError, ValueError):
                     pass
         status = "ok" if res.returncode == 0 else "failed"
-        comm_overhead_pct = 25.0
-        hops_avg = 2.5
+        # Honesty: the frontend reports cycles, not these breakdowns.
+        # Null beats fabricated (downstream pandas-tolerates None as NaN).
+        comm_overhead_pct = None
+        hops_avg = None
     else:
-        # Cycle-accurate BookSim emulation using ASTRA-Sim collective traffic mapping
-        booksim = os.environ.get("BOOKSIM_BIN") or shutil.which("booksim")
-
-        if not booksim:
-            raise RuntimeError(
-                "BookSim executable not found. "
-                "Set BOOKSIM_BIN=/path/to/booksim or add BookSim to PATH."
-            )
-        cmd = [booksim, str(cfg_path), f"injection_rate={inj_rate}", "print_activity=0"]
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-
-        latency = hops = None
-        for line in res.stdout.splitlines():
-            if "Packet latency average" in line and "=" in line:
-                try:
-                    latency = float(line.split("=")[1].split("(")[0].strip())
-                except (IndexError, ValueError):
-                    pass
-            elif "Hops average" in line and "=" in line:
-                try:
-                    hops = float(line.split("=")[1].split("(")[0].strip())
-                except (IndexError, ValueError):
-                    pass
-
-        base_lat = latency if latency else 22.0
-        base_hops = hops if hops else 2.5
-        msg_size_mb = spec.get("msg_size_mb", 32.0)
-        num_layers = spec.get("num_layers", 32)
-        allreduce_calls = spec.get("total_allreduce_calls", num_layers * 2)
-
-        comm_cycles_per_call = int((msg_size_mb * 40) + (base_lat * base_hops * 8))
-        total_comm_cycles = comm_cycles_per_call * allreduce_calls
-        total_compute_cycles = int((spec.get("total_flops", 1e12) / 1e9) * 0.8)
-        cycles = total_compute_cycles + total_comm_cycles
-        comm_overhead_pct = round((total_comm_cycles / cycles) * 100, 2)
-        hops_avg = base_hops
-        status = "ok" if (res.returncode == 0 or latency is not None) else "failed"
+        # No synthetic fallback: running plain booksim on the template cfg
+        # simulates uniform traffic, NOT the chakra workload, and previously
+        # reported it as an ASTRA-sim result with status ok. Refuse loudly.
+        raise RuntimeError(
+            "ASTRA-sim binary not found (ASTRASIM_BIN unset and no astrasim "
+            "on PATH). Refusing to substitute a synthetic BookSim run: build "
+            "the frontend (third_party/astra-sim/build/astra_booksim2/build.sh) "
+            "or set ASTRASIM_BIN to "
+            ".../network_frontend/booksim2/bin/AstraSim_BookSim2.")
 
     return {
         "topology": cfg_path.stem,
@@ -180,6 +182,9 @@ def main():
     ap.add_argument("--tp", type=int, default=None, help="Tensor parallelism degree")
     ap.add_argument("--pp", type=int, default=None, help="Pipeline parallelism degree")
     ap.add_argument("--selfcheck", action="store_true", help="Run internal regression selfcheck")
+    ap.add_argument("--topo", default=None,
+                    help="only run configs whose filename stem contains this substring "
+                    "(e.g. --topo mesh4x4 for a single-topology smoke test)")
     args = ap.parse_args()
 
     if args.selfcheck:
@@ -235,6 +240,12 @@ def main():
     print("  Injection Rates :", injection_rates)
     print()
 
+    if args.topo:
+        configs = [c for c in configs if args.topo in c.stem]
+        if not configs:
+            raise ValueError(f"--topo '{args.topo}' matched no configs "
+                             f"in {CONFIGS_DIR}")
+
     for cfg in configs:
 
         for inj_rate in injection_rates:
@@ -246,12 +257,29 @@ def main():
                 flush=True
             )
 
-            r = run_astrasim_topology(
-                cfg,
-                spec,
-                inj_rate,
-                args.config
-            )
+            # One bad config (missing data file, binary crash) must not kill
+            # the other 60+ runs. Failures are recorded as status=error with
+            # the message — never fabricated, never silent.
+            try:
+                r = run_astrasim_topology(
+                    cfg,
+                    spec,
+                    inj_rate,
+                    args.config
+                )
+            except Exception as e:  # noqa: BLE001 - record, don't abort sweep
+                r = {
+                    "topology": cfg.stem,
+                    "workload": f"{spec.get('model_name', 'Model')}",
+                    "total_nodes": None,
+                    "astrasim_cycles": None,
+                    "latency_cycles": None,
+                    "comm_overhead_pct": None,
+                    "injection_rate": inj_rate,
+                    "hops_avg": None,
+                    "traffic": "astrasim(chakra_et)",
+                    "status": f"error: {type(e).__name__}: {e}",
+                }
 
             latency_text = (
                 f"{r['latency_cycles']:.2f} latency"
@@ -259,11 +287,12 @@ def main():
                 else "no latency"
             )
 
-            print(
-                f"{latency_text} | "
-                f"{r['astrasim_cycles']:>8} total cycles | "
-                f"{r['status']}"
+            cycles_text = (
+                f"{r['astrasim_cycles']:>8} total cycles"
+                if r["astrasim_cycles"] is not None
+                else "       n/a total cycles"
             )
+            print(f"{latency_text} | {cycles_text} | {r['status']}")
             results.append(r)
 
     out_astrasim_json = out_res_dir / "astrasim_sweep.json"
