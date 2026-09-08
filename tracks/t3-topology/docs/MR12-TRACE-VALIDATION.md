@@ -154,7 +154,27 @@ pending-event design instead of extending the globals handshake:
   differential test; deletion is a separate decision. Serving/ASTRA loop
   untouched (collective-aware driver stays; CSV is packet-level only).
 
-## 9. Files changed (in `resolve/mr12`)
+## 9. Post-refactor full-sweep re-validation (2026-09-08)
+
+After the §8 convergence refactor, his exact documented workflow re-ran clean:
+
+| Config | n | p50 | p95 | exit |
+|---|---|---|---|---|
+| mesh88_lat | 623 | 62 | 248 | 0 |
+| mecs_gec | 623 | 46 | 279 | 0 |
+| hybrid_gec | 623 | 43 | 267 | 0 |
+| cmesh | 623 | 69 | 433 | 0 |
+| flatfly | 623 | 44 | 279 | 0 |
+| fattree | 623 | 40 | 247 | 0 |
+| dragonfly (72-node) | 626 | 146 | 309 | 0 |
+| torus88 | 623 | 60 | 381 | 0 |
+
+8/8 `rc=0` (was 255 pre-exit-fix), `report.html` regenerated with all 8 runs.
+(n=623–626 = 630 generated minus random self-loops; fresh random workload vs
+§4, so absolute numbers differ — conservation + completion + topology spread
+are the invariants, all hold.)
+
+## 10. Files changed (in `resolve/mr12`)
 
 Merge resolutions: `trafficmanager.cpp` (hook order), `mesh88_lat` (his content),
 `mesh88_lat_transpose` (new, main's demo), `tracetrafficmanager.{cpp,hpp}` (rename),
