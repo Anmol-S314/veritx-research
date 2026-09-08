@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from ..core.logging import Ctx, log, ok, fail, verbose, banner, output
+from ..core.paths import DSE_DIR
 
 
 def cmd_trace_validate(ctx: Ctx, args):
@@ -61,25 +62,63 @@ def cmd_trace_info(ctx: Ctx, args):
 
 
 def cmd_trace_extract(ctx: Ctx, args):
-    """Extract uniform traffic matrix from trace."""
-    from ..simulation.traces import extract_uniform
-    matrix = extract_uniform(args.trace)
-    Path(args.out).write_text(str(matrix))
-    ok(ctx, f"Extracted {matrix.shape[0]}x{matrix.shape[1]} matrix → {args.out}")
+    """Extract a sub-trace: first-N burst (times shifted to t=0) or uniform
+    redistribution across the time range."""
+    from ..simulation.traces import extract_uniform, _shift_times_to_zero
+    src = Path(args.trace)
+    if not src.is_file():
+        fail(ctx, f"Trace not found: {src}")
+        return
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    if args.burst is not None:
+        n = args.burst
+        if n < 1:
+            fail(ctx, f"--burst must be >= 1, got {n}")
+            return
+        packets = []
+        with open(src) as f:
+            for line in f:
+                if line.startswith("#") or not line.strip():
+                    continue
+                p = line.split()
+                if len(p) >= 5:
+                    packets.append(p)
+        if not packets:
+            fail(ctx, f"No packets in trace: {src}")
+            return
+        n = min(n, len(packets))
+        with open(out, "w") as fo:
+            for p in packets[:n]:
+                fo.write(" ".join(p) + "\n")
+        _shift_times_to_zero(out)
+        ok(ctx, f"Burst extract: first {n} packets (times shifted to t=0) → {out}")
+    else:
+        result = extract_uniform(str(src), str(out))
+        ok(ctx, f"Uniform redistribution: {result.packets} packets, "
+                f"spacing {result.spacing} → {out}")
 
 
 def cmd_trace_slice(ctx: Ctx, args):
-    """Slice trace by class."""
-    from ..simulation.traces import slice_trace_by_class
-    classes = [int(c) for c in args.classes.split(",")]
-    kept, dropped = slice_trace_by_class(args.trace, args.out, classes, args.renumber)
-    ok(ctx, f"Slice: {kept} packets kept, {dropped} dropped → {args.out}")
+    """Slice trace by traffic class."""
+    from ..simulation.traces import slice_trace
+    src = Path(args.trace)
+    if not src.is_file():
+        fail(ctx, f"Trace not found: {src}")
+        return
+    try:
+        classes = {int(c) for c in args.classes.split(",") if c.strip()}
+    except ValueError:
+        fail(ctx, f"--classes must be a comma-separated list of integers, got: {args.classes}")
+        return
+    result = slice_trace(str(src), classes, args.out, renumber=args.renumber)
+    ok(ctx, f"Slice: {result.kept} packets kept, {result.dropped} dropped → {args.out}")
 
 
 def cmd_trace_chakra(ctx: Ctx, args):
     """Convert Chakra ET trace to veritx format."""
-    from pathlib import Path as P
-    et_path = P(args.et_dir)
+    et_path = Path(args.et_dir)
     if not et_path.exists():
         fail(ctx, f"Path not found: {et_path}")
         return
@@ -98,57 +137,52 @@ def cmd_trace_chakra(ctx: Ctx, args):
 
 
 def cmd_trace_model(ctx: Ctx, args):
-    """Generate trace from traffic model."""
-    import json, subprocess, sys
-    from pathlib import Path as P
-    traffic_model = P(args.model)
+    """Generate a BookSim trace from a unified TrafficModel JSON."""
+    import subprocess
+    traffic_model = Path(args.model)
     if not traffic_model.exists():
         fail(ctx, f"Traffic model not found: {traffic_model}")
         return
     out = args.out or "runs/traces/input.trace"
-    out_path = P(out)
+    out_path = Path(out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     log(ctx, f"Converting traffic model {traffic_model.name}")
     r = subprocess.run(
-        [sys.executable, str(DSE_DIR / "scripts" / "traffic_model_compiler.py"),
-         str(traffic_model.resolve()), "--nodes", str(args.nodes),
+        [sys.executable, "-m", "veritx_dse.simulation.model_to_trace",
+         "--traffic-model", str(traffic_model.resolve()),
+         "--nodes", str(args.nodes),
          "--out", str(out_path.resolve())],
-        capture_output=True, text=True, timeout=60, cwd=str(REPO)
+        capture_output=True, text=True, timeout=120, cwd=str(DSE_DIR)
     )
     if r.returncode != 0:
-        fail(ctx, f"trace failed: {r.stderr.strip()[-200:]}")
+        fail(ctx, f"trace model failed: {r.stderr.strip()[-200:]}")
         return
     for line in r.stdout.splitlines():
         log(ctx, line)
-    ok(ctx, f"Trace written: {out}")
+    ok(ctx, f"Trace written: {out_path}")
 
 
 def cmd_trace_hpc(ctx: Ctx, args):
-    """Copy HPC trace from built-in library."""
-    import shutil, sys
-    from pathlib import Path as P
-    preset_map = {
-        "hpc_wrf": "wrf128_ring.trace",
-        "hpc_graph500": "graph500_sparse.trace",
-        "hpc_pennant": "pennant_sn默认.trace",
-    }
-    trace_file = preset_map.get(args.preset)
-    if not trace_file:
-        fail(ctx, f"Unknown preset: {args.preset}")
-        log(ctx, f"Available: {', '.join(preset_map.keys())}")
-        return
-    src = SCRIPTS_DIR / "gen_llmserv_traces.py"
-    out = args.out or f"runs/traces/{args.preset}.trace"
-    log(ctx, f"HPC preset {args.preset} → copying")
-    try:
-        import importlib.util
-        spec = importlib.util.spec_from_file_location("gen_trace", src)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        mod.main()
-        ok(ctx, f"HPC trace: {out}")
-    except Exception as e:
-        fail(ctx, f"HPC trace generation failed: {e}")
+    """Install a trace from the built-in library (dse/inputs/traces) into the
+    runs tree. Accepts a library name (e.g. `qwen3_serving_astra`) or an
+    explicit path to a .trace file."""
+    import shutil
+    lib_dir = DSE_DIR / "inputs" / "traces"
+    requested = args.trace_file
+    if requested.endswith(".trace") and Path(requested).is_file():
+        src = Path(requested)
+    else:
+        name = requested if requested.endswith(".trace") else f"{requested}.trace"
+        src = lib_dir / name
+        if not src.is_file():
+            available = sorted(p.name for p in lib_dir.glob("*.trace"))
+            fail(ctx, f"Trace not in library: {name}")
+            log(ctx, f"Available: {', '.join(available) if available else '(none)'}")
+            return
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(src, out)
+    ok(ctx, f"Installed {src.name} → {out}")
 
 
 # Re-export for lazy import
