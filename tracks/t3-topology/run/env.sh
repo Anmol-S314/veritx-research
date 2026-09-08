@@ -46,13 +46,38 @@ fi
 # --------------------------------------------------------------------------
 # 4. Booksim binary & Configs
 # --------------------------------------------------------------------------
-export BOOKSIM_BIN="${BOOKSIM_BIN:-booksim}"
+# Auto-detect booksim binary from vendored location or PATH
+if [ -z "${BOOKSIM_BIN:-}" ]; then
+    if [ -x "$REPO_ROOT/third_party/booksim2/src/booksim" ]; then
+        export BOOKSIM_BIN="$REPO_ROOT/third_party/booksim2/src/booksim"
+    elif command -v booksim &>/dev/null; then
+        export BOOKSIM_BIN="$(command -v booksim)"
+    else
+        export BOOKSIM_BIN="booksim"  # fallback; may fail at runtime
+    fi
+fi
 export CONFIG="${CONFIG:-baseline}"
 export T3_SCRIPTS="$T3_DIR/scripts"
 if [ -z "${T3_RESULTS:-}" ] || [ "$T3_RESULTS" = "$T3_DIR/results" ]; then
     export T3_RESULTS="$T3_DIR/results/$CONFIG"
 fi
 export T3_CONFIGS="$T3_DIR/configs"
+
+# Auto-detect ASTRA-Sim binary from vendored location or PATH
+# NOTE: ASTRA-Sim may not be compiled into an executable yet (check third_party/astra-sim/CMakeLists.txt)
+# This gracefully falls back to BookSim if the binary doesn't exist or is not executable
+if [ -z "${ASTRASIM_BIN:-}" ]; then
+    _astrasim_candidate="$REPO_ROOT/third_party/astra-sim/build/astra_analytical/build/AstraSim"
+    if [ -f "$_astrasim_candidate" ] && [ -x "$_astrasim_candidate" ]; then
+        export ASTRASIM_BIN="$_astrasim_candidate"
+    elif command -v astrasim &>/dev/null; then
+        export ASTRASIM_BIN="$(command -v astrasim)"
+    elif command -v astra-sim &>/dev/null; then
+        export ASTRASIM_BIN="$(command -v astra-sim)"
+    fi
+    # If none found, ASTRASIM_BIN remains unset, and run_astrasim.py falls back to BookSim
+    unset _astrasim_candidate
+fi
 
 # --------------------------------------------------------------------------
 # 5. Analysis tunables

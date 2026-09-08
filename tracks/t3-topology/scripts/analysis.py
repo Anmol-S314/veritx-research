@@ -1,9 +1,17 @@
 #!/usr/bin/env python3
 """PA-01 — Python analysis framework for T3 topology sweep results.
 
-Loads results/topology_sweep.json into a pandas DataFrame with columns:
+Loads results/topology_sweep.json (from either Booksim or ASTRA-Sim sweep)
+into a pandas DataFrame with columns:
     topology, injection_rate, latency_cycles, hops_avg, energy_proxy,
     area_mm2, status
+
+Unified Schema Support:
+  - Booksim (run_experiments.py): uniform/matrix traffic, hop-based latency
+  - ASTRA-Sim (run_astrasim.py): Chakra workload, collective communication
+
+Both write topology_sweep.json with compatible schema, so downstream analysis
+treats them uniformly.
 
 Energy proxy = hops_avg * PACKET_SIZE_BITS  (NoC-side; accelerator-side EDP
 lives in energy.json from energy_report.py).
