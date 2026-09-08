@@ -157,6 +157,9 @@ int TraceTrafficManager::_IssuePacket(int source, int cl)
 
   TraceEvent const & ev = _trace_queue[source].front();
   if ((uint64_t) _time < ev.timestamp) return 0; // not ready yet
+  // NOTE: classes share one per-source queue: whichever class issues first
+  // wins. Other classes simply see an empty queue on their turn (their stats
+  // will show -nan for empty samples — pre-existing BookSim behavior, not a bug).
 
   // Stage the event on this class's own pattern object (see header note).
   // The slot necessarily belongs to the (source, class) pair _GeneratePacket
