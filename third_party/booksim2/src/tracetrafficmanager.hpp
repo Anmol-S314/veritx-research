@@ -26,23 +26,15 @@ struct TraceEvent {
   int      packet_size;      // flits
   int      txn_type;         // 0=READ, 1=WRITE, 2=OTHER (metadata only)
   uint64_t transaction_id;
+  int      cl = 0;           // traffic class (veritx format carries it; single-class use ignores it)
 };
 
 class TraceTrafficManager : public TrafficManager {
-
-  friend class TraceFileTrafficPattern;
 
 protected:
 
   // One time-ordered queue per source node.
   std::vector<std::deque<TraceEvent> > _trace_queue;
-
-  // The event currently being turned into a BookSim packet for a given
-  // source, valid only in the brief window between _IssuePacket() and
-  // _GeneratePacket() for that source (see notes in the .cpp).
-  std::vector<TraceEvent> _pending_event;
-  std::vector<bool>       _pending_valid;
-  int                     _last_issue_source;
 
   // BookSim packet id -> the trace event that produced it, so results can
   // be logged per BookSim packet, not just per source.
@@ -66,10 +58,6 @@ public:
   TraceTrafficManager(Configuration const & config,
                        vector<Network *> const & net);
   virtual ~TraceTrafficManager();
-
-  // Used by TraceFileTrafficPattern::dest(); do not call from outside the
-  // (source, class) pair currently being generated.
-  int PendingDestination(int source) const;
 };
 
 // Replaces the statistical traffic pattern (uniform, transpose, ...) with
@@ -77,13 +65,27 @@ public:
 // this source. Installed directly into TrafficManager's protected
 // `_traffic_pattern` vector in the constructor below — no change to
 // traffic.cpp's string factory is needed.
+//
+// Convergence note: the pending event lives IN the pattern object (one
+// instance per class), not in the manager. _IssuePacket() stages it here,
+// _GeneratePacket() consumes it via dest()/size in the same call chain, so
+// the slot always belongs to the (source, class) currently being generated
+// — no cross-object temporal coupling, no _last_issue_source routing hack.
 class TraceFileTrafficPattern : public TrafficPattern {
 private:
-  TraceTrafficManager * _tm;
+  TraceEvent _pending_event;
+  bool       _pending_valid = false;
 public:
-  TraceFileTrafficPattern(int nodes, TraceTrafficManager * tm)
-    : TrafficPattern(nodes), _tm(tm) {}
-  virtual int dest(int source) { return _tm->PendingDestination(source); }
+  TraceFileTrafficPattern(int nodes)
+    : TrafficPattern(nodes) {}
+  void SetPending(TraceEvent const & ev) { _pending_event = ev; _pending_valid = true; }
+  void ClearPending() { _pending_valid = false; }
+  bool HasPending() const { return _pending_valid; }
+  TraceEvent const & Pending() const { return _pending_event; }
+  virtual int dest(int source) {
+    (void)source;
+    return _pending_valid ? _pending_event.dst : 0;
+  }
 };
 
 #endif

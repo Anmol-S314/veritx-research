@@ -128,7 +128,33 @@ on light traffic are fine. Flag for recompute.
 4. Determinism: same seed → bit-identical; record `--seed` always.
 5. Ruler awareness: after this fix both rulers agree; until binaries are refreshed everywhere, label pre-fix tails suspect.
 
-## 8. Files changed (in `resolve/mr12`)
+## 8. Convergence: one injector family, one ruler (follow-up try, validated)
+
+Per discussion, the veritx `traffic=trace()` path was converged onto the
+pending-event design instead of extending the globals handshake:
+
+- Pending state moved from manager arrays + `_last_issue_source` into the
+  per-class `TraceFileTrafficPattern` object (`SetPending/HasPending/Pending/
+  ClearPending`); `dest()` is self-contained, `friend` + `PendingDestination`
+  deleted. This also removes both of the author's own `NEEDS TESTING` worries
+  (size attribution is structural now, not temporal).
+- `_LoadTraceFile` content-sniffs CSV vs veritx 5-col `{cyc src cl dst sz}`
+  (comma test on first data line; `#`/`%` comments skipped); `TraceEvent` gains
+  a `cl` field. Proven: same events via CSV and via veritx file give
+  bit-identical percentiles (63/355/462 both).
+- His `_RetireFlit` feeds veritx's `_all_latencies` vector with
+  `arrival − request_time`, so `evaluate` reporting works unchanged.
+- **Double-count trap found by the differential test:** first attempt pushed in
+  both his override and base `_RetireFlit` (p95 417 vs CSV 410). Fix: single
+  push site — base `_RetireFlit` reads the shared `_trace_reqtime` map (fed by
+  both injectors: veritx path in `_GeneratePacket`, his path in
+  `_OnPacketGenerated`); his override only writes CSV. Post-fix: vector == CSV
+  exactly on every run (newmatch 57/410/642; Qwen 80/81).
+- veritx legacy `traffic=trace()` path untouched and still guarded by the
+  differential test; deletion is a separate decision. Serving/ASTRA loop
+  untouched (collective-aware driver stays; CSV is packet-level only).
+
+## 9. Files changed (in `resolve/mr12`)
 
 Merge resolutions: `trafficmanager.cpp` (hook order), `mesh88_lat` (his content),
 `mesh88_lat_transpose` (new, main's demo), `tracetrafficmanager.{cpp,hpp}` (rename),

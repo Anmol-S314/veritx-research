@@ -1,16 +1,15 @@
 #include "tracetrafficmanager.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <sstream>
 #include <cstdlib>
 
 TraceTrafficManager::TraceTrafficManager(Configuration const & config,
                                           vector<Network *> const & net)
-  : TrafficManager(config, net), _last_issue_source(-1)
+  : TrafficManager(config, net)
 {
   _trace_queue.resize(_nodes);
-  _pending_event.resize(_nodes);
-  _pending_valid.assign(_nodes, false);
 
   // Swap out whatever TrafficManager's base constructor built from
   // `traffic = ...;` (protected member, so this is legal from here) for
@@ -18,7 +17,7 @@ TraceTrafficManager::TraceTrafficManager(Configuration const & config,
   // goes, and it's virtual, so no BookSim source patch is needed for it.
   for (int c = 0; c < _classes; ++c) {
     delete _traffic_pattern[c];
-    _traffic_pattern[c] = new TraceFileTrafficPattern(_nodes, this);
+    _traffic_pattern[c] = new TraceFileTrafficPattern(_nodes);
   }
 
   string trace_file = config.GetStr("trace_file");
@@ -54,21 +53,45 @@ void TraceTrafficManager::_LoadTraceFile(string const & filename)
   std::string line;
   int line_no = 0;
   bool first_line = true;
+  bool is_csv = true;  // decided by the first data line (see below)
 
   while (std::getline(in, line)) {
     ++line_no;
-    if (line.empty()) continue;
+    if (line.empty() || line[0] == '#' || line[0] == '%') continue;
 
     if (first_line) {
       first_line = false;
-      // Optional header row support: "timestamp,src,dst,..." - if the
-      // first field isn't a number, treat the line as a header and skip it.
-      std::string first_field = line.substr(0, line.find(','));
-      if (first_field.find_first_not_of("0123456789") != std::string::npos) {
-        continue;
+      // Format sniff: a comma means the CSV dialect
+      // (timestamp,src,dst,type,packet_size[,transaction_id], optional
+      // header row); otherwise the veritx whitespace dialect
+      // (cyc src cl dst sz, no header).
+      if (line.find(',') == std::string::npos) {
+        is_csv = false;
+      } else {
+        // Optional header row support: "timestamp,src,dst,..." - if the
+        // first field isn't a number, treat the line as a header and skip it.
+        std::string first_field = line.substr(0, line.find(','));
+        if (first_field.find_first_not_of("0123456789") != std::string::npos) {
+          continue;
+        }
       }
     }
 
+    TraceEvent ev;
+    if (!is_csv) {
+      // veritx text format: cyc src cl dst sz
+      std::istringstream vss(line);
+      int cl = 0;
+      if (!(vss >> ev.timestamp >> ev.src >> cl >> ev.dst >> ev.packet_size)) {
+        std::ostringstream err;
+        err << "TraceTrafficManager: malformed trace line " << line_no
+            << " (need cyc src cl dst sz): " << line;
+        Error(err.str());
+      }
+      ev.cl = cl;
+      ev.txn_type = 2;  // OTHER (metadata only)
+      ev.transaction_id = (uint64_t) line_no;
+    } else {
     std::stringstream ss(line);
     std::string field;
     std::vector<std::string> fields;
@@ -85,7 +108,6 @@ void TraceTrafficManager::_LoadTraceFile(string const & filename)
       Error(err.str());
     }
 
-    TraceEvent ev;
     ev.timestamp = strtoull(fields[0].c_str(), NULL, 10);
     ev.src       = atoi(fields[1].c_str());
     ev.dst       = atoi(fields[2].c_str());
@@ -94,6 +116,7 @@ void TraceTrafficManager::_LoadTraceFile(string const & filename)
     ev.transaction_id = (fields.size() > 5)
                            ? strtoull(fields[5].c_str(), NULL, 10)
                            : (uint64_t) line_no;
+    }
 
     if (ev.src < 0 || ev.src >= _nodes || ev.dst < 0 || ev.dst >= _nodes) {
       std::ostringstream err;
@@ -135,35 +158,31 @@ int TraceTrafficManager::_IssuePacket(int source, int cl)
   TraceEvent const & ev = _trace_queue[source].front();
   if ((uint64_t) _time < ev.timestamp) return 0; // not ready yet
 
-  _pending_event[source] = ev;
-  _pending_valid[source] = true;
-  _last_issue_source     = source;
+  // Stage the event on this class's own pattern object (see header note).
+  // The slot necessarily belongs to the (source, class) pair _GeneratePacket
+  // is about to consume: _Inject() calls _IssuePacket and _GeneratePacket
+  // adjacently per (input, class) with nothing run in between.
+  TraceFileTrafficPattern * pat =
+      static_cast<TraceFileTrafficPattern*>(_traffic_pattern[cl]);
+  pat->SetPending(ev);
   _trace_queue[source].pop_front();
 
   // Replicate the two side effects stock _IssuePacket() would have had.
-  // NEEDS TESTING: confirm nothing downstream depends on these matching
-  // exactly what the statistical path would have produced.
   _packet_seq_no[source]++;
   _requestsOutstanding[source]++;
 
   return 1; // any nonzero, non-read/write stype -> generate a normal packet
 }
 
-int TraceTrafficManager::PendingDestination(int source) const
-{
-  return _pending_valid[source] ? _pending_event[source].dst : 0;
-}
-
 int TraceTrafficManager::_GetNextPacketSize(int cl) const
 {
-  // _GeneratePacket() calls _IssuePacket(source, cl) and then
-  // _GetNextPacketSize(cl) for the *same* source with nothing else run in
-  // between (trafficmanager.cpp::_Inject() is a plain nested loop, no
-  // reentrancy) -- so _last_issue_source is reliable here.
-  // NEEDS TESTING: verify this with a 2-3 line trace and printed pids
-  // before trusting it on a full run.
-  if (_last_issue_source >= 0 && _pending_valid[_last_issue_source]) {
-    return _pending_event[_last_issue_source].packet_size;
+  // Reads this class's own pattern object -- set by _IssuePacket() for the
+  // same (source, class) immediately before _GeneratePacket() runs. No
+  // source routing needed (that was the old _last_issue_source hack).
+  TraceFileTrafficPattern const * pat =
+      static_cast<TraceFileTrafficPattern const *>(_traffic_pattern[cl]);
+  if (pat->HasPending()) {
+    return pat->Pending().packet_size;
   }
   return TrafficManager::_GetNextPacketSize(cl); // fallback; shouldn't hit
 }
@@ -171,9 +190,19 @@ int TraceTrafficManager::_GetNextPacketSize(int cl) const
 void TraceTrafficManager::_OnPacketGenerated(int pid, int source, int cl,
                                               int time)
 {
-  if (_pending_valid[source]) {
-    _pid_to_event[pid] = _pending_event[source];
-    _pending_valid[source] = false;
+  (void)time;
+  TraceFileTrafficPattern * pat =
+      static_cast<TraceFileTrafficPattern*>(_traffic_pattern[cl]);
+  if (pat->HasPending()) {
+    // The pending slot must belong to the packet being generated -- fail
+    // loudly on protocol misuse instead of misattributing sizes.
+    assert(pat->Pending().src == source);
+    _pid_to_event[pid] = pat->Pending();
+    // Feed the shared honest-baseline map as well: base _RetireFlit scores
+    // this packet as arrival - request_time (same value as the CSV above),
+    // so both trace paths converge on one ruler with a single push site.
+    _trace_reqtime[pid] = (int64_t)pat->Pending().timestamp;
+    pat->ClearPending();
   }
 }
 
@@ -199,6 +228,10 @@ void TraceTrafficManager::_RetireFlit(Flit * f, int dest)
                    << (arrival_time - request_time) << ","
                    << f->hops << "\n";
 
+      // NOTE: no _all_latencies push here on purpose. The base-class retire
+      // below records this packet once, baselined on _trace_reqtime (fed by
+      // _OnPacketGenerated just above). Pushing here too would double-count
+      // every packet and corrupt percentiles.
       _pid_to_event.erase(it);
     }
   }
