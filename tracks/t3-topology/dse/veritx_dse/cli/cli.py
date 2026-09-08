@@ -58,7 +58,7 @@ from .pipeline import (
 
 
 # ── Path constants ──────────────────────────────────────────────────────────
-from veritx_dse.core.paths import REPO, DSE_DIR, RUNS_DIR, BOOKSIM_BIN, ASTRA_BS_BIN
+from veritx_dse.core.paths import REPO, DSE_DIR, RUNS_DIR, BOOKSIM_BIN, ASTRA_BS_BIN, LLMSIM_DIR
 
 SCRIPTS_DIR = DSE_DIR / "scripts"
 EXPERIMENTS_DIR = RUNS_DIR / "experiments"
@@ -1208,41 +1208,35 @@ def cmd_compile(ctx: Ctx, args):
     output(ctx, report)
 
 
-def cmd_serve(ctx: Ctx, args):
-    """Full-stack LLM serving simulation: LLMServingSim + AstraSim + BookSim2."""
-    import subprocess
-    import os
+def _locate_serve_path(p: str) -> str:
+    """Resolve a config/dataset path for the serving sim.
 
-    # Resolve paths - LLMServingSim runs from astra-sim/ and prepends ../ to relative paths
-    llmserving_root = REPO / "third_party" / "llmservingsim"
+    Relative paths are tried against LLMSIM_DIR, REPO, DSE_DIR, then CWD.
+    If the result lives under LLMSIM_DIR it is returned relative to that root
+    (the sim runs with cwd=LLMSIM_DIR and prepends ../); otherwise an absolute
+    path is returned.
+    """
+    llmserving_root = LLMSIM_DIR
+    r = Path(p)
+    if r.is_absolute():
+        return str(r.relative_to(llmserving_root)) \
+            if r.is_relative_to(llmserving_root) else str(r)
+    for base in (llmserving_root, REPO, DSE_DIR, Path.cwd()):
+        cand = base / p
+        if cand.exists():
+            return str(cand.relative_to(llmserving_root)) \
+                if cand.is_relative_to(llmserving_root) else str(cand)
+    return str((Path.cwd() / p).resolve())
 
-    def _locate_serve_path(p):
-        """Resolve a config/dataset path for the serving sim.
 
-        Relative paths are tried against llmserving_root, REPO, DSE_DIR, then
-        CWD. If the result lives under llmserving_root it is returned relative
-        to that root (the sim runs with cwd=llmserving_root and prepends ../);
-        otherwise an absolute path is returned.
-        """
-        r = Path(p)
-        if r.is_absolute():
-            return str(r.relative_to(llmserving_root)) \
-                if r.is_relative_to(llmserving_root) else str(r)
-        for base in (llmserving_root, REPO, DSE_DIR, Path.cwd()):
-            cand = base / p
-            if cand.exists():
-                return str(cand.relative_to(llmserving_root)) \
-                    if cand.is_relative_to(llmserving_root) else str(cand)
-        return str((Path.cwd() / p).resolve())
+def _build_serve_cmd(args, cluster_config: str, dataset: str) -> list:
+    """Assemble the `python -m serving` command line for cmd_serve.
 
-    cluster_config = _locate_serve_path(args.cluster_config)
-    dataset = _locate_serve_path(args.dataset)
-
-    if not llmserving_root.exists():
-        fail(ctx, f"LLMServingSim not found at {llmserving_root}")
-        return
-
-    # Build command
+    Single source of truth for the CLI→module flag contract: every VeritX
+    rename/inversion wrinkle (upstream --no-cleanup-inputs → --keep-inputs,
+    --cycle-accurate → --no-booksim-replay-only) is applied exactly once,
+    here.
+    """
     cmd = [
         sys.executable, "-m", "serving",
         "--cluster-config", cluster_config,
@@ -1266,6 +1260,29 @@ def cmd_serve(ctx: Ctx, args):
         # Downstream flag is inverted (replay-only defaults True).
         cmd.append("--no-booksim-replay-only")
 
+    return cmd
+
+
+def _probe_serve(args) -> list:
+    """Test seam: the exact command cmd_serve would run, without spawning it."""
+    return _build_serve_cmd(args,
+                            _locate_serve_path(args.cluster_config),
+                            _locate_serve_path(args.dataset))
+
+
+def cmd_serve(ctx: Ctx, args):
+    """Full-stack LLM serving simulation: LLMServingSim + AstraSim + BookSim2."""
+    import subprocess
+
+    if not LLMSIM_DIR.exists():
+        fail(ctx, f"LLMServingSim not found at {LLMSIM_DIR}")
+        return
+
+    cluster_config = _locate_serve_path(args.cluster_config)
+    dataset = _locate_serve_path(args.dataset)
+
+    cmd = _build_serve_cmd(args, cluster_config, dataset)
+
     log(ctx, f"Running full-stack simulation: {args.network_backend} backend")
     log(ctx, f"Cluster: {Path(args.cluster_config).name}")
     log(ctx, f"Dataset: {Path(args.dataset).name} ({args.num_reqs} requests)")
@@ -1277,7 +1294,7 @@ def cmd_serve(ctx: Ctx, args):
     try:
         result = subprocess.run(
             cmd,
-            cwd=str(llmserving_root),
+            cwd=str(LLMSIM_DIR),
             timeout=serve_timeout,
             capture_output=False,  # Let output stream to terminal
         )
@@ -1870,8 +1887,8 @@ def build_parser() -> argparse.ArgumentParser:
                           help="Network simulation backend")
     p_serve.add_argument("--output", help="Output directory for results")
     p_serve.add_argument("--timeout", type=int, default=None, help="Simulation timeout in seconds (default: VERITX_TIMEOUT or 600)")
-    p_serve.add_argument("--log-level", default="WARNING", choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-                         help="LLMServingSim log level")
+    p_serve.add_argument("--log-level", default="WARNING", choices=["DEBUG", "INFO", "WARNING"],
+                         help="LLMServingSim log level (module accepts DEBUG/INFO/WARNING only)")
     p_serve.add_argument("--no-cleanup", action="store_true", help="Keep intermediate files")
     p_serve.add_argument("--no-prefix-caching", action="store_true", help="Disable prefix caching")
     p_serve.add_argument("--cycle-accurate", action="store_true",

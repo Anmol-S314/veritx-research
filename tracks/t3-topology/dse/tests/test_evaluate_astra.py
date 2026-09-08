@@ -112,3 +112,113 @@ class TestLiveAstra:
         assert result["num_ranks"] == 16
         assert result["cycles"] > 0
         assert result["per_rank_cycles"]["0"] > 0
+
+
+# ── fault injection: every error branch, via the REAL subprocess path ────
+
+class TestAstraFaults:
+    """Drive cmd_evaluate_astra's error branches with tiny fake binaries.
+
+    The command's value is how it *reacts*: nonzero exit, garbage stdout,
+    hangs, and what it refuses to write to disk. Fake scripts keep each
+    branch fast and deterministic while subprocess.run, the timeout, and the
+    artifact rules all stay real. A regression that reports fabricated
+    success (e.g. dropping the no-parseable-output guard) fails here.
+    """
+
+    FAKE_STDOUT = (
+        "[workload] sys[0] finished, 100000 cycles, exposed communication 0 cycles.\n"
+        "[workload] sys[1] finished, 50000 cycles, exposed communication 50000 cycles.\n"
+        "Waiting\n"
+    )
+
+    def _run(self, monkeypatch, tmp_path, capsys, mode, timeout=60):
+        fake = tmp_path / "fake_astra"
+        fake.write_text(
+            "#!/usr/bin/env bash\n"
+            'echo "$@" > "$VERITX_FAKE_ARGV"\n'
+            'case "$VERITX_FAKE_MODE" in\n'
+            "  crash)   echo 'booksim: assertion failed in trafficmanager' >&2\n"
+            "           echo 'second stderr line' >&2; exit 3;;\n"
+            "  garbage) echo 'BEGIN Configuration File: x.cfg'\n"
+            "           echo 'Waiting'; exit 0;;\n"
+            "  hang)    sleep 300;;\n"
+            f"  ok)      printf '%s' '{self.FAKE_STDOUT}'; exit 0;;\n"
+            "esac\n"
+        )
+        fake.chmod(0o755)
+        monkeypatch.setenv("VERITX_FAKE_MODE", mode)
+        monkeypatch.setenv("VERITX_FAKE_ARGV", str(tmp_path / "argv.txt"))
+        monkeypatch.setattr("veritx_dse.cli.cli.ASTRA_BS_BIN", fake)
+        monkeypatch.setattr("veritx_dse.cli.cli.RUNS_DIR", tmp_path)
+
+        ets = tmp_path / "w.et"
+        ets.write_bytes(b"trace")
+        (tmp_path / "w.et.0.et").write_bytes(b"rank0")
+        (tmp_path / "w.et.1.et").write_bytes(b"rank1")
+        args = SimpleNamespace(
+            ets=str(ets),
+            system_config=str(FIX / "system.json"),
+            network_config=str(FIX / "network.json"),
+            memory_config=str(FIX / "memory.json"),
+            timeout=timeout,
+        )
+        cmd_evaluate_astra(Ctx(verbosity=1), args)
+        return {
+            "err": capsys.readouterr().err,
+            "argv": (tmp_path / "argv.txt").read_text() if (tmp_path / "argv.txt").exists() else "",
+            "results": list(tmp_path.glob("astra/eval_*.json")),
+        }
+
+    def test_missing_binary_fails_fast(self, monkeypatch, tmp_path, capsys):
+        monkeypatch.setattr("veritx_dse.cli.cli.ASTRA_BS_BIN",
+                            tmp_path / "no_such_binary")
+        monkeypatch.setattr("veritx_dse.cli.cli.RUNS_DIR", tmp_path)
+        ets = tmp_path / "w.et"
+        ets.write_bytes(b"trace")
+        (tmp_path / "w.et.0.et").write_bytes(b"rank0")
+        args = SimpleNamespace(
+            ets=str(ets), system_config="s", network_config="n",
+            memory_config="m", timeout=60,
+        )
+        cmd_evaluate_astra(Ctx(verbosity=0), args)
+        assert "binary not found" in capsys.readouterr().err
+        assert not list(tmp_path.glob("astra/eval_*.json"))
+
+    def test_nonzero_exit_reports_tail_and_writes_nothing(self, monkeypatch, tmp_path, capsys):
+        got = self._run(monkeypatch, tmp_path, capsys, "crash")
+        assert "ASTRA-sim failed (exit 3)" in got["err"]
+        assert "assertion failed in trafficmanager" in got["err"]
+        assert got["results"] == []
+
+    def test_exit_zero_without_parseable_output_is_refused(self, monkeypatch, tmp_path, capsys):
+        got = self._run(monkeypatch, tmp_path, capsys, "garbage")
+        assert "no parseable" in got["err"]
+        assert "sys[i] finished" in got["err"]
+        assert got["results"] == []  # no fabricated success on disk
+
+    def test_hanging_binary_times_out_and_writes_nothing(self, monkeypatch, tmp_path, capsys):
+        got = self._run(monkeypatch, tmp_path, capsys, "hang", timeout=2)
+        assert "timed out after 2s" in got["err"]
+        assert got["results"] == []
+
+    def test_success_writes_result_with_max_over_ranks(self, monkeypatch, tmp_path, capsys):
+        got = self._run(monkeypatch, tmp_path, capsys, "ok")
+        assert "ASTRA-sim: 100,000c over 2 ranks" in got["err"]
+        assert len(got["results"]) == 1
+        result = json.loads(got["results"][0].read_text())
+        assert result["status"] == "ok"
+        assert result["cycles"] == 100000        # max over ranks, not rank 0
+        assert result["per_rank_cycles"] == {"0": 100000, "1": 50000}  # JSON: int keys → str
+
+    def test_injection_guard_and_configs_reach_the_binary(self, monkeypatch, tmp_path, capsys):
+        got = self._run(monkeypatch, tmp_path, capsys, "ok")
+        joined = got["argv"]
+        # template cfgs carry standalone-style injection_rate; without this
+        # override the embedded sim self-injects forever (the historical spin)
+        assert "--booksim2-extra=injection_rate=0.0" in joined
+        assert "--logging-configuration empty" in joined
+        assert str(tmp_path / "w.et") in joined          # workload base (resolved)
+        assert str(FIX / "system.json") in joined
+        assert str(FIX / "network.json") in joined
+        assert str(FIX / "memory.json") in joined
