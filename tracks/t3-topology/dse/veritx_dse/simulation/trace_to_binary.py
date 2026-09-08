@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Convert text traces to binary format for faster BookSim parsing.
 
-Binary format:
+Binary format (16-byte records):
   - 4 bytes: magic number (0x54524143 = "TRAC")
   - 4 bytes: count of packets
-  - N × 12 bytes: packed records (cycle:uint64, src:uint16, cl:uint16, dst:uint16, size:uint16)
+  - N × 16 bytes: packed records (<QHHHH: cycle:uint64, src:uint16,
+    cl:uint16, dst:uint16, size:uint16)
 
 Usage:
   python3 trace_to_binary.py input.trace output.trace.bin

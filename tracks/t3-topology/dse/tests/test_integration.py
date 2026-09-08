@@ -35,8 +35,10 @@ TINY_TRACE = TRACES_DIR / "test_dynamic.trace"  # 130 lines, runs in <5s
 
 def _cli(*args: str, input_text: str = "\n", timeout: int = 60,
          cwd: str | None = None) -> subprocess.CompletedProcess:
-    """Run CLI with proper PYTHONPATH."""
-    env = {**os.environ, "PYTHONPATH": str(DSE_DIR)}  # dse/ for veritx_dse import
+    """Run CLI with proper PYTHONPATH (prepend, don't clobber inherited path)."""
+    existing = os.environ.get("PYTHONPATH", "")
+    parts = [str(DSE_DIR)] + [p for p in existing.split(os.pathsep) if p]
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(parts)}  # dse/ for veritx_dse import
     return subprocess.run(
         list(CLI) + list(args),
         input=input_text, capture_output=True, text=True,

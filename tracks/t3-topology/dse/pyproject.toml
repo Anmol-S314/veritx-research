@@ -35,6 +35,9 @@ python_functions = "test_*"
 [tool.coverage.run]
 source = ["veritx_dse"]
 omit = ["veritx_dse/__pycache__/*"]
+# parallel: subprocesses (python -m veritx_dse.cli ...) each write their own
+# data file; `coverage combine` merges them. See tests/conftest.py.
+parallel = true
 
 [tool.coverage.report]
 show_missing = true
