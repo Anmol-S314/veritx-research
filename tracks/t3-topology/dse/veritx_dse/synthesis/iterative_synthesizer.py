@@ -91,6 +91,7 @@ def is_connected(adj):
 
 def eval_bs(adj, trace_path, seed=42, timeout=60):
     n = len(adj)
+    RUNS.mkdir(parents=True, exist_ok=True)   # fresh checkouts have no runs/
     work = Path(tempfile.mkdtemp(dir=RUNS))
     anynet = work / "topo.anynet"
     with open(anynet, "w") as f:

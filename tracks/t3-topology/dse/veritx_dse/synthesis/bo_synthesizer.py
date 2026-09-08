@@ -376,6 +376,7 @@ _events = None
 _xy = None
 _scorer = "analytical"
 _booksim_workdir = None
+_trace_path = None   # set by main(); evaluate_topology must not NameError when called directly
 
 
 def main():
