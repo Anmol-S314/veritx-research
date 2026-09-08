@@ -1,6 +1,6 @@
 {
   "name": "booksim2",
-  "description": "BookSim 2.0 \u2014 cycle-accurate NoC simulator",
+  "description": "BookSim 2.0 — cycle-accurate NoC simulator",
   "upstream": "https://github.com/booksim/booksim2.git",
   "commit": "28f43299f1706a3160ffac721ca461d74eb6e618",
   "date_vendored": "2026-08-25",
@@ -17,7 +17,11 @@
     "trafficmanager.cpp: exact per-packet latency collection (_all_latencies)",
     "trafficmanager.cpp: completion time tracking (_last_ejection_time)",
     "trafficmanager.cpp: drain remaining packets even when simulation unstable",
-    "trafficmanager.cpp: display p50/p95/p99/pkt_count in DisplayStats"
+    "trafficmanager.cpp: display p50/p95/p99/pkt_count in DisplayStats",
+    "tracetrafficmanager.{cpp,hpp} (resolve/mr12): CSV + veritx-format trace replay via sim_type=trace (TraceFileTrafficPattern pending-in-pattern design), per-packet CSV log, honest _all_latencies feed (arrival-request_time)",
+    "trafficmanager.{cpp,hpp} (resolve/mr12): _OnPacketGenerated hook placed after VeritX self-loop early-return; pid->request_time honest-baseline map (erase-on-consume, per-Run clear, ctime fallback for synthetic traffic)",
+    "main.cpp (resolve/mr12): exit-code fix, success exits 0 (was inverted: every clean run exited 255)",
+    "examples (resolve/mr12): 8 trace-mode configs + mesh88_lat_transpose (preserved transpose demo) + workload.yaml/workload72.yaml generators inputs"
   ],
   "known_gaps": [
     "GEC wire-length pricing: NOT ported. Since the 2026-09-04 merge this gec.cpp is origin/main's full GEC work (mesh / hybrid mesh+MECS via hybrid=1 + routing_function=hybrid_gec / express p2p / MECS modes, with VC-disjointness checks), but every mode hardcodes 1-cycle channel latency and REFUSES use_noc_latency=1 (config error) rather than silently mis-pricing. The per-wire priced variant (express channels priced at Manhattan pitch under use_noc_latency=1) still lives only on branch alice-booksim-wirepriced. Until ported: any gec/hybrid_gec comparison must set use_noc_latency=0 on both sides.",
@@ -39,8 +43,17 @@
   "sync_targets": [
     {
       "dest": "third_party/astra-sim/extern/network_backend/booksim2/booksim2",
-      "patterns": ["*.cpp", "*.hpp", "*.h", "*.c", "Makefile"],
-      "skip": ["booksim", "libveritx_embed.a"],
+      "patterns": [
+        "*.cpp",
+        "*.hpp",
+        "*.h",
+        "*.c",
+        "Makefile"
+      ],
+      "skip": [
+        "booksim",
+        "libveritx_embed.a"
+      ],
       "post_sync": "echo 'Synced. Rebuild: cd third_party/astra-sim/extern/network_backend/booksim2/build && cmake .. -DBOOKSIM2_SRC_DIR=$(realpath ../../../../../../third_party/booksim2) && make -j$(nproc)'"
     }
   ]
