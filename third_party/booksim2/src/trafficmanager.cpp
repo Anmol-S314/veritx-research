@@ -742,7 +742,19 @@ void TrafficManager::_RetireFlit( Flit *f, int dest )
                (_plat_stats[f->cl]->Max() < (f->atime - head->itime)))
                 _slowest_packet[f->cl] = f->pid;
             _plat_stats[f->cl]->AddSample( f->atime - head->ctime);
-            _all_latencies[f->cl].push_back(f->atime - head->ctime);  // VeritX: exact latency
+            // VeritX: honest latency = arrival - TRACE timestamp. The stock
+            // atime-ctime baseline uses the _qtime slot, which freezes while
+            // a source is backlogged and can predate the packet itself by
+            // 10^4+ cycles at saturation (proven: 400x p50 inflation on a
+            // saturated serving trace). Fall back to ctime only for
+            // non-trace traffic (map miss => synthetic mode, slots fresh).
+            auto _rtit = _trace_reqtime.find(f->pid);
+            if (_rtit != _trace_reqtime.end()) {
+                _all_latencies[f->cl].push_back((double)(f->atime - _rtit->second));
+                _trace_reqtime.erase(_rtit);
+            } else {
+                _all_latencies[f->cl].push_back(f->atime - head->ctime);  // VeritX: exact latency
+            }
             _nlat_stats[f->cl]->AddSample( f->atime - head->itime);
             _frag_stats[f->cl]->AddSample( (f->atime - head->atime) - (f->id - head->id) );
    
@@ -813,6 +825,7 @@ void TrafficManager::_GeneratePacket( int source, int stype,
     if (g_trace_active) {
         packet_destination = g_trace_dst;
         size = (g_trace_size > 0) ? g_trace_size : size;  // trace size is in flits
+        _trace_reqtime[pid] = g_trace_reqtime;  // VeritX: honest baseline; erased at retire
         g_trace_active = false;  // consume
     }
 
@@ -822,6 +835,7 @@ void TrafficManager::_GeneratePacket( int source, int stype,
         _requestsOutstanding[source]--;
         _packet_seq_no[source]--;
         _cur_pid--;
+        _trace_reqtime.erase(pid);  // VeritX: no flits created => no retire; don't leak the entry
         return;
     }
 
@@ -1688,6 +1702,7 @@ bool TrafficManager::Run( )
 
         _time = 0;
         _last_ejection_time = 0;  // VeritX: reset for completion time tracking
+        _trace_reqtime.clear();  // VeritX: fresh sim, no in-flight packets by construction
 
         //remove any pending request from the previous simulations
         _requestsOutstanding.assign(_nodes, 0);

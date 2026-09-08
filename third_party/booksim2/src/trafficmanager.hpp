@@ -147,6 +147,14 @@ protected:
 
   vector<Stats *> _plat_stats;     
   vector<vector<double>> _all_latencies;  // VeritX: exact per-packet latencies for percentile computation
+  // VeritX: pid -> trace request cycle. Honest latency baseline for trace
+  // replay: BookSim's ctime/_qtime slot goes stale while a source is
+  // backlogged (it can predate the packet's own timestamp by 10^4 cycles
+  // at saturation), so atime-ctime inflates tails. atime-reqtime is exact.
+  // Erase-on-consume at retire; cleared per Run(). NOT cleared per sample
+  // (in-flight packets span sample boundaries; _all_latencies above IS
+  // cleared per sample by design — different lifecycle, don't unify).
+  std::map<int, int64_t> _trace_reqtime;
   vector<double> _overall_min_plat;  
   vector<double> _overall_avg_plat;  
   vector<double> _overall_max_plat;  
