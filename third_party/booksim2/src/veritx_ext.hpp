@@ -3,9 +3,47 @@
 
 #include <string>
 #include <vector>
+#include <cstdint>
 
 #include "traffic.hpp"
 #include "config_utils.hpp"
+
+// Trace replay: cycle-accurate injection from {cyc src cl dst sz} file
+struct TraceEntry {
+    int64_t cycle;
+    int     src;
+    int     cl;
+    int     dst;
+    int     size;
+};
+
+class TraceTrafficPattern : public TrafficPattern {
+public:
+    TraceTrafficPattern(int nodes, std::string const & filename);
+    virtual int dest(int source) override;
+    virtual void reset() override;
+    int64_t nextCycle() const;
+    int nextSrc() const;
+    int nextDst() const;
+    int nextCl() const;
+    int nextSize() const;
+    void advance();
+    bool done() const;
+    size_t count() const;
+    const std::vector<TraceEntry>& trace() const { return _trace; }
+private:
+    std::vector<TraceEntry> _trace;
+    size_t _ptr = 0;
+    std::vector<int> _lastDest;
+};
+TraceTrafficPattern * GetTracePattern();
+// globals for cycle-accurate trace injection (set by trafficmanager::_Inject)
+extern int g_trace_dst;
+extern int g_trace_size;
+extern bool g_trace_active;
+// VeritX: trace request cycle for the in-flight decision (honest latency
+// baseline — BookSim's ctime/_qtime slot goes stale under bursty replay).
+extern int64_t g_trace_reqtime;
 
 // VeritX extension registry.
 //

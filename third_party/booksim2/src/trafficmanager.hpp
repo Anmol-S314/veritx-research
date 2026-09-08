@@ -117,8 +117,14 @@ protected:
   vector<map<int, Flit *> > _measured_in_flight_flits;
   vector<map<int, Flit *> > _retired_packets;
   bool _empty_network;
+  bool _trace_drained;  // S1: set when trace exhausts and all flits delivered
+  bool _trace_injection_done_checked;  // VeritX: true once trace injection is done
+  int64_t _last_ejection_time;   // VeritX: cycle when last flit was ejected
 
   bool _hold_switch_for_packet;
+
+  // VeritX helper: sum injected packets across all trace injection processes
+  int _injected_packets_total() const;
 
   // ============ physical sub-networks ==========
 
@@ -140,6 +146,15 @@ protected:
   // ============ Statistics ============
 
   vector<Stats *> _plat_stats;     
+  vector<vector<double>> _all_latencies;  // VeritX: exact per-packet latencies for percentile computation
+  // VeritX: pid -> trace request cycle. Honest latency baseline for trace
+  // replay: BookSim's ctime/_qtime slot goes stale while a source is
+  // backlogged (it can predate the packet's own timestamp by 10^4 cycles
+  // at saturation), so atime-ctime inflates tails. atime-reqtime is exact.
+  // Erase-on-consume at retire; cleared per Run(). NOT cleared per sample
+  // (in-flight packets span sample boundaries; _all_latencies above IS
+  // cleared per sample by design — different lifecycle, don't unify).
+  std::map<int, int64_t> _trace_reqtime;
   vector<double> _overall_min_plat;  
   vector<double> _overall_avg_plat;  
   vector<double> _overall_max_plat;  
@@ -231,7 +246,7 @@ protected:
 
   int _cur_id;
   int _cur_pid;
-  int _time;
+  int64_t _time;
 
   set<int> _flits_to_watch;
   set<int> _packets_to_watch;
@@ -286,8 +301,10 @@ protected:
 
   virtual string _OverallStatsCSV(int c = 0) const;
 
-  int _GetNextPacketSize(int cl) const;
+  virtual int _GetNextPacketSize(int cl) const;
   double _GetAveragePacketSize(int cl) const;
+
+  virtual void _OnPacketGenerated(int pid, int source, int cl, int time) {}
 
 public:
 
@@ -305,7 +322,7 @@ public:
   virtual void DisplayOverallStats( ostream & os = cout ) const ;
   virtual void DisplayOverallStatsCSV( ostream & os = cout ) const ;
 
-  inline int getTime() { return _time;}
+  inline int64_t getTime() { return _time;}
   Stats * getStats(const string & name) { return _stats[name]; }
 
 };

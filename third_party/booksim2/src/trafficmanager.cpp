@@ -31,14 +31,18 @@
 #include <limits>
 #include <cstdlib>
 #include <ctime>
+#include <algorithm>  // VeritX: for std::sort in percentile computation
 
 #include "booksim.hpp"
 #include "booksim_config.hpp"
 #include "trafficmanager.hpp"
 #include "batchtrafficmanager.hpp"
+#include "tracetrafficmanager.hpp"
 #include "random_utils.hpp" 
 #include "vc.hpp"
 #include "packet_reply_info.hpp"
+#include "veritx_ext.hpp"
+#include "injection.hpp"
 
 TrafficManager * TrafficManager::New(Configuration const & config,
                                      vector<Network *> const & net)
@@ -49,6 +53,8 @@ TrafficManager * TrafficManager::New(Configuration const & config,
         result = new TrafficManager(config, net);
     } else if(sim_type == "batch") {
         result = new BatchTrafficManager(config, net);
+    } else if(sim_type == "trace") {
+        result = new TraceTrafficManager(config, net);
     } else {
         cerr << "Unknown simulation type: " << sim_type << endl;
     } 
@@ -56,7 +62,7 @@ TrafficManager * TrafficManager::New(Configuration const & config,
 }
 
 TrafficManager::TrafficManager( const Configuration &config, const vector<Network *> & net )
-    : Module( 0, "traffic_manager" ), _net(net), _empty_network(false), _deadlock_timer(0), _reset_time(0), _drain_time(-1), _cur_id(0), _cur_pid(0), _time(0)
+    : Module( 0, "traffic_manager" ), _net(net), _empty_network(false), _trace_injection_done_checked(false), _last_ejection_time(0), _deadlock_timer(0), _reset_time(0), _drain_time(-1), _cur_id(0), _cur_pid(0), _time(0)
 {
 
     _nodes = _net[0]->NumNodes( );
@@ -229,7 +235,16 @@ TrafficManager::TrafficManager( const Configuration &config, const vector<Networ
 
     for(int c = 0; c < _classes; ++c) {
         _traffic_pattern[c] = TrafficPattern::New(_traffic[c], _nodes, &config);
-        _injection_process[c] = InjectionProcess::New(injection_process[c], _nodes, _load[c], &config);
+        // VeritX: if traffic pattern is trace, create TraceInjectionProcess
+        // that fires packets at exact timestamps instead of Bernoulli
+        TraceTrafficPattern *ttp = dynamic_cast<TraceTrafficPattern*>(_traffic_pattern[c]);
+        if (ttp) {
+            _injection_process[c] = new TraceInjectionProcess(_nodes, ttp->trace());
+            std::cerr << "Trace mode: " << ttp->count() << " events, "
+                      << _nodes << " nodes — using cycle-accurate injection" << std::endl;
+        } else {
+            _injection_process[c] = InjectionProcess::New(injection_process[c], _nodes, _load[c], &config);
+        }
     }
 
     // ============ Injection VC states  ============ 
@@ -452,6 +467,7 @@ TrafficManager::TrafficManager( const Configuration &config, const vector<Networ
     // ============ Statistics ============ 
 
     _plat_stats.resize(_classes);
+    _all_latencies.resize(_classes);  // VeritX: exact latency collection
     _overall_min_plat.resize(_classes, 0.0);
     _overall_avg_plat.resize(_classes, 0.0);
     _overall_max_plat.resize(_classes, 0.0);
@@ -515,7 +531,7 @@ TrafficManager::TrafficManager( const Configuration &config, const vector<Networ
         ostringstream tmp_name;
 
         tmp_name << "plat_stat_" << c;
-        _plat_stats[c] = new Stats( this, tmp_name.str( ), 1.0, 1000 );
+        _plat_stats[c] = new Stats( this, tmp_name.str( ), 1.0, 128 );  // VeritX: 128 log-linear bins (0-999 linear, 1K+ log-scale)
         _stats[tmp_name.str()] = _plat_stats[c];
         tmp_name.str("");
 
@@ -729,6 +745,19 @@ void TrafficManager::_RetireFlit( Flit *f, int dest )
                (_plat_stats[f->cl]->Max() < (f->atime - head->itime)))
                 _slowest_packet[f->cl] = f->pid;
             _plat_stats[f->cl]->AddSample( f->atime - head->ctime);
+            // VeritX: honest latency = arrival - TRACE timestamp. The stock
+            // atime-ctime baseline uses the _qtime slot, which freezes while
+            // a source is backlogged and can predate the packet itself by
+            // 10^4+ cycles at saturation (proven: 400x p50 inflation on a
+            // saturated serving trace). Fall back to ctime only for
+            // non-trace traffic (map miss => synthetic mode, slots fresh).
+            auto _rtit = _trace_reqtime.find(f->pid);
+            if (_rtit != _trace_reqtime.end()) {
+                _all_latencies[f->cl].push_back((double)(f->atime - _rtit->second));
+                _trace_reqtime.erase(_rtit);
+            } else {
+                _all_latencies[f->cl].push_back(f->atime - head->ctime);  // VeritX: exact latency
+            }
             _nlat_stats[f->cl]->AddSample( f->atime - head->itime);
             _frag_stats[f->cl]->AddSample( (f->atime - head->atime) - (f->id - head->id) );
    
@@ -792,6 +821,31 @@ void TrafficManager::_GeneratePacket( int source, int stype,
     int pid = _cur_pid++;
     assert(_cur_pid);
     int packet_destination = _traffic_pattern[cl]->dest(source);
+
+    // VeritX trace-driven mode: use the trace's real dst and size
+    // instead of the dest()-map value.  g_trace_active is set by
+    // TraceInjectionProcess::test() right before _IssuePacket returns.
+    if (g_trace_active) {
+        packet_destination = g_trace_dst;
+        size = (g_trace_size > 0) ? g_trace_size : size;  // trace size is in flits
+        _trace_reqtime[pid] = g_trace_reqtime;  // VeritX: honest baseline; erased at retire
+        g_trace_active = false;  // consume
+    }
+
+    // VeritX: skip self-loop injections for non-participating nodes
+    // (trace pattern returns source for nodes not in the trace)
+    if (packet_destination == source) {
+        _requestsOutstanding[source]--;
+        _packet_seq_no[source]--;
+        _cur_pid--;
+        _trace_reqtime.erase(pid);  // VeritX: no flits created => no retire; don't leak the entry
+        return;
+    }
+
+    // MR12 (trace bookkeeping hook): fires only for packets actually
+    // injected — placed after the VeritX self-loop early-return so phantom
+    // skipped packets never consume _pending_valid[] / _pid_to_event[].
+    _OnPacketGenerated(pid, source, cl, time);
     bool record = false;
     bool watch = gWatchOut && (_packets_to_watch.count(pid) > 0);
     if(_use_read_write[cl]){
@@ -921,6 +975,12 @@ void TrafficManager::_GeneratePacket( int source, int stype,
 
 void TrafficManager::_Inject(){
 
+    // VeritX: tell trace injection process the current cycle
+    for ( int c = 0; c < _classes; ++c ) {
+        TraceInjectionProcess *tip = dynamic_cast<TraceInjectionProcess*>(_injection_process[c]);
+        if (tip) tip->set_cycle(_time);
+    }
+
     for ( int input = 0; input < _nodes; ++input ) {
         for ( int c = 0; c < _classes; ++c ) {
             // Potentially generate packets for any (input,class)
@@ -1006,6 +1066,20 @@ void TrafficManager::_Step( )
   
     if ( !_empty_network ) {
         _Inject();
+        // VeritX: check if all trace events consumed
+        if (!_trace_injection_done_checked) {
+            bool all_done = true;
+            for (int c = 0; c < _classes; ++c) {
+                TraceInjectionProcess *tip = dynamic_cast<TraceInjectionProcess*>(_injection_process[c]);
+                if (tip && !tip->all_done()) { all_done = false; break; }
+            }
+            if (all_done) {
+                _trace_injection_done_checked = true;
+                std::cerr << "[trace] All " << GetSimTime() << " cycles,"
+                          << " injected=" << _injected_packets_total()
+                          << " — draining" << std::endl;
+            }
+        }
     }
 
     for(int subnet = 0; subnet < _subnets; ++subnet) {
@@ -1243,6 +1317,8 @@ void TrafficManager::_Step( )
                 Flit * const f = iter->second;
 
                 f->atime = _time;
+                // VeritX: track last ejection time for completion time metric
+                if (_time > _last_ejection_time) _last_ejection_time = _time;
                 if(f->watch) {
                     *gWatchOut << GetSimTime() << " | "
                                << "node" << n << " | "
@@ -1300,6 +1376,16 @@ bool TrafficManager::_PacketsOutstanding( ) const
     return false;
 }
 
+int TrafficManager::_injected_packets_total() const
+{
+    int total = 0;
+    for (int c = 0; c < _classes; ++c) {
+        TraceInjectionProcess *tip = dynamic_cast<TraceInjectionProcess*>(_injection_process[c]);
+        if (tip) total += tip->injected();
+    }
+    return total;
+}
+
 void TrafficManager::_ClearStats( )
 {
     _slowest_flit.assign(_classes, -1);
@@ -1308,6 +1394,7 @@ void TrafficManager::_ClearStats( )
     for ( int c = 0; c < _classes; ++c ) {
 
         _plat_stats[c]->Clear( );
+        _all_latencies[c].clear();  // VeritX: clear exact latencies
         _nlat_stats[c]->Clear( );
         _flat_stats[c]->Clear( );
 
@@ -1533,7 +1620,15 @@ bool TrafficManager::_SingleSim( )
                 _sim_state = running;
             }
         } else if(_sim_state == running) {
-            if ( ( !_measure_latency || ( lat_chg_exc_class < 0 ) ) &&
+            // VeritX: don't declare convergence while trace events remain
+            bool trace_active = false;
+            for (int cc = 0; cc < _classes; ++cc) {
+                TraceInjectionProcess *tip = dynamic_cast<TraceInjectionProcess*>(_injection_process[cc]);
+                if (tip && !tip->all_done()) { trace_active = true; break; }
+            }
+            if (trace_active) {
+                converged = 0;  // force continued simulation
+            } else if ( ( !_measure_latency || ( lat_chg_exc_class < 0 ) ) &&
                  ( acc_chg_exc_class < 0 ) ) {
                 ++converged;
             } else {
@@ -1613,6 +1708,8 @@ bool TrafficManager::Run( )
     for ( int sim = 0; sim < _total_sims; ++sim ) {
 
         _time = 0;
+        _last_ejection_time = 0;  // VeritX: reset for completion time tracking
+        _trace_reqtime.clear();  // VeritX: fresh sim, no in-flight packets by construction
 
         //remove any pending request from the previous simulations
         _requestsOutstanding.assign(_nodes, 0);
@@ -1642,12 +1739,14 @@ bool TrafficManager::Run( )
             _injection_process[c]->reset();
         }
 
-        if ( !_SingleSim( ) ) {
-            cout << "Simulation unstable, ending ..." << endl;
-            return false;
+        bool sim_converged = _SingleSim( );
+        if ( !sim_converged ) {
+            cout << "Simulation unstable — draining remaining packets ..." << endl;
         }
 
-        // Empty any remaining packets
+        // VeritX: ALWAYS drain remaining packets, even when unstable.
+        // For trace-driven mode, completion time is the primary metric,
+        // not steady-state convergence.
         cout << "Draining remaining packets ..." << endl;
         _empty_network = true;
         int empty_steps = 0;
@@ -1679,7 +1778,9 @@ bool TrafficManager::Run( )
 
         //for the love of god don't ever say "Time taken" anywhere else
         //the power script depend on it
-        cout << "Time taken is " << _time << " cycles" <<endl; 
+        cout << "Time taken is " << _time << " cycles" <<endl;
+        // VeritX: report actual completion time (last ejection)
+        cout << "Completion time is " << _last_ejection_time << " cycles" <<endl;
 
         if(_stats_out) {
             WriteStats(*_stats_out);
@@ -1983,8 +2084,18 @@ void TrafficManager::DisplayStats(ostream & os) const {
         cout 
             << "Packet latency average = " << _plat_stats[c]->Average() << endl
             << "\tminimum = " << _plat_stats[c]->Min() << endl
-            << "\tmaximum = " << _plat_stats[c]->Max() << endl
-            << "Network latency average = " << _nlat_stats[c]->Average() << endl
+            << "\tmaximum = " << _plat_stats[c]->Max() << endl;
+        // VeritX: exact percentiles from collected latencies
+        if (!_all_latencies[c].empty()) {
+            std::vector<double> sorted_lat(_all_latencies[c]);
+            std::sort(sorted_lat.begin(), sorted_lat.end());
+            int n = sorted_lat.size();
+            cout << "\tp50 = " << sorted_lat[n/2] << endl
+                 << "\tp95 = " << sorted_lat[(int)(n*0.95)] << endl
+                 << "\tp99 = " << sorted_lat[(int)(n*0.99)] << endl
+                 << "\tpkt_count = " << n << endl;
+        }
+        cout << "Network latency average = " << _nlat_stats[c]->Average() << endl
             << "\tminimum = " << _nlat_stats[c]->Min() << endl
             << "\tmaximum = " << _nlat_stats[c]->Max() << endl
             << "Slowest packet = " << _slowest_packet[c] << endl

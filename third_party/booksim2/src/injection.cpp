@@ -29,8 +29,11 @@
 #include <vector>
 #include <cassert>
 #include <limits>
+#include <map>
+#include <deque>
 #include "random_utils.hpp"
 #include "injection.hpp"
+#include "veritx_ext.hpp"
 
 using namespace std;
 
@@ -187,4 +190,79 @@ bool OnOffInjectionProcess::test(int source)
 
   // generate packet
   return _state[source] && (RandomFloat() < _r1);
+}
+
+//=============================================================
+//  TraceInjectionProcess — cycle-accurate trace replay
+//
+//  Instead of Bernoulli coin-flip, this reads the sorted trace
+//  and fires every packet at its exact timestamp.  BookSim calls
+//  test(src) once per source per cycle; we return true only when
+//  the front of that source's queue has cycle <= _time.
+//=============================================================
+
+TraceInjectionProcess::TraceInjectionProcess(
+    int nodes,
+    const std::vector<TraceEntry>& trace)
+  : InjectionProcess(nodes, 0.0),  // rate unused
+    _current_cycle(0), _trace_done(false),
+    _injected_total(0), _injected_this_cycle(0)
+{
+  // Build per-source queues from the sorted trace
+  for (auto const& e : trace) {
+    TraceEvent te;
+    te.cycle = e.cycle;
+    te.dst   = e.dst;
+    te.cl    = e.cl;
+    te.size  = e.size;
+    _queues[e.src].push_back(te);
+  }
+  std::cerr << "TraceInjectionProcess: built " << _queues.size()
+            << " source queues, total events = " << trace.size() << std::endl;
+}
+
+void TraceInjectionProcess::set_cycle(int64_t cycle)
+{
+  _current_cycle = cycle;
+  _injected_this_cycle = 0;
+}
+
+bool TraceInjectionProcess::test(int source)
+{
+  assert((source >= 0) && (source < _nodes));
+
+  auto it = _queues.find(source);
+  if (it == _queues.end()) return false;
+
+  auto& q = it->second;
+  if (q.empty()) return false;
+
+  // Fire if this source's next trace event is due
+  if (q.front().cycle <= _current_cycle) {
+    // Set globals so _GeneratePacket uses the trace's real dst/size
+    g_trace_dst  = q.front().dst;
+    g_trace_size = q.front().size;
+    g_trace_reqtime = q.front().cycle;
+    g_trace_active = true;
+    q.pop_front();
+    ++_injected_total;
+    ++_injected_this_cycle;
+    if (q.empty()) {
+      // Check if ALL queues are empty
+      bool all_empty = true;
+      for (auto& kv : _queues) {
+        if (!kv.second.empty()) { all_empty = false; break; }
+      }
+      if (all_empty) _trace_done = true;
+    }
+    return true;
+  }
+  return false;
+}
+
+void TraceInjectionProcess::reset()
+{
+  // For trace mode, reset is a no-op (trace is consumed once)
+  _current_cycle = 0;
+  _injected_this_cycle = 0;
 }

@@ -55,6 +55,7 @@ BookSimConfig::BookSimConfig( )
   _int_map["o"] = 0; //GEC: output channels/dim/node (0 = default to k-1)
   _int_map["d"] = 0; //GEC: channel radix / sinks per channel (0 = default to 1)
   _int_map["mesh"] = 0; //GEC: 1 = nearest-neighbor mesh graph, 0 = full express graph
+  _int_map["hybrid"] = 0; //GEC: 1 = nearest-neighbor mesh graph + o MECS express channels/dim layered on top, per-hop congestion-and-hopcount routed choice between them (mutually exclusive with mesh=1)
   AddStrField( "routing_function", "none" );
 
   //simulator tries to correclty adjust latency for node/router placement 
@@ -159,6 +160,8 @@ BookSimConfig::BookSimConfig( )
   _int_map["classes"] = 1;
 
   AddStrField( "traffic", "uniform" );
+  AddStrField( "trace_file", "" );
+  AddStrField( "trace_packet_log", "" );
 
   _int_map["class_priority"] = 0;
   AddStrField("class_priority", ""); // workaraound to allow for vector specification
