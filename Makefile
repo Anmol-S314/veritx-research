@@ -37,7 +37,8 @@ report:  ## build the aggregate report from results/
 	$(RUN) -e MPLBACKEND=Agg $(IMAGE) python3 scripts/generate_report.py
 
 clean:	## clean every track + report/ results/
-	@$(RUN) $(IMAGE) sh -c 'for d in tracks/*/; do $(MAKE) -C "$$d" clean 2>/dev/null || true; done; rm -rf report/ results/'
+	@for d in tracks/*/; do $(MAKE) -C "$$d" clean 2>/dev/null || true; done
+	@rm -rf report/ results/
 
 pull:  ## pull the prebuilt tools image
 	$(CONTAINER) pull $(IMAGE)

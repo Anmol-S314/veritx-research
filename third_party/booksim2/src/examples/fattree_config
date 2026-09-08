@@ -61,7 +61,7 @@ routing_function = nca;
 num_vcs     = 4;
 
 priority = none;
-traffic       = uniform;
+//traffic       = uniform;
 
 injection_rate = 0.6;
 packet_size = 1;
@@ -69,6 +69,9 @@ injection_rate_uses_flits=1;
 
 topology = fattree;
 
+sim_type = trace;
+trace_file = src/examples/workload64_trace.csv;
+trace_packet_log = src/examples/fattree_packets_out.csv;
 
 k  = 4;
 n  = 3;

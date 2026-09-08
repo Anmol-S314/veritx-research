@@ -16,7 +16,8 @@ import matplotlib.pyplot as plt
 
 def load_results(track_dir: Path):
     datasets = []
-    for result_file in sorted(track_dir.glob("results/*.json")):
+    result_files = sorted(list(track_dir.glob("results/*.json")) + list(track_dir.glob("results/*/*.json")))
+    for result_file in result_files:
         if result_file.name == "history.json":
             continue
         with open(result_file) as f:

@@ -24,21 +24,45 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
-//simple 8X8 torus under injection mode 
-
+//8X8 mesh with 20 flits per packet under injection mode
+//injection rate here is packet per cycle, NOT flit per cycle
 
 // Topology
-topology = torus;
+
+topology = mesh;
 k = 8;
 n = 2;
-// Routing
-routing_function = dim_order;
-// Flow control
-num_vcs = 2;
-// Traffic
-//traffic = uniform;
-injection_rate = 0.15;
 
-sim_type = trace;
-trace_file = src/examples/workload64_trace.csv;
-trace_packet_log = src/examples/torus88_packets_out.csv;
+// Routing
+routing_function = dor;
+
+// Flow control
+num_vcs     = 8;
+vc_buf_size = 8;
+wait_for_tail_credit = 1;
+
+// Router architecture
+vc_allocator = islip;
+sw_allocator = islip;
+alloc_iters  = 1;
+
+credit_delay   = 2;
+routing_delay  = 0;
+vc_alloc_delay = 1;
+sw_alloc_delay = 1;
+
+input_speedup     = 2;
+output_speedup    = 1;
+internal_speedup  = 1.0;
+
+
+// Traffic
+traffic = transpose;
+packet_size = 20;
+
+
+// Simulation
+sim_type = latency;
+
+injection_rate = 0.005;
+

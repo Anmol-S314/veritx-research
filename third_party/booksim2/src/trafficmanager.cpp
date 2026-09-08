@@ -37,6 +37,7 @@
 #include "booksim_config.hpp"
 #include "trafficmanager.hpp"
 #include "batchtrafficmanager.hpp"
+#include "tracetrafficmanager.hpp"
 #include "random_utils.hpp" 
 #include "vc.hpp"
 #include "packet_reply_info.hpp"
@@ -52,6 +53,8 @@ TrafficManager * TrafficManager::New(Configuration const & config,
         result = new TrafficManager(config, net);
     } else if(sim_type == "batch") {
         result = new BatchTrafficManager(config, net);
+    } else if(sim_type == "trace") {
+        result = new TraceTrafficManager(config, net);
     } else {
         cerr << "Unknown simulation type: " << sim_type << endl;
     } 
@@ -839,6 +842,10 @@ void TrafficManager::_GeneratePacket( int source, int stype,
         return;
     }
 
+    // MR12 (trace bookkeeping hook): fires only for packets actually
+    // injected — placed after the VeritX self-loop early-return so phantom
+    // skipped packets never consume _pending_valid[] / _pid_to_event[].
+    _OnPacketGenerated(pid, source, cl, time);
     bool record = false;
     bool watch = gWatchOut && (_packets_to_watch.count(pid) > 0);
     if(_use_read_write[cl]){

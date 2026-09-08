@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
-"""Booksim -> Accelergy NoC energy bridge (T3).
+"""Booksim / ASTRA-Sim -> Accelergy NoC energy bridge (T3).
 
-Booksim's sweep (results/topology_sweep.json, from run_experiments.py) gives us
-real hop counts per topology/injection-rate. Accelergy, given noc_arch.yaml +
-noc_ERT.yaml, gives us a calibrated pJ-per-hop coefficient (router traversal +
-buffer_read + buffer_write + one link transfer = the energy of moving ONE FLIT
-one hop — that 1:1:1:1 action ratio is the standard input-queued VC router
-pipeline, not an assumption specific to this bridge). Multiplying hops_avg *
-packet_size (flits/packet, read from configs/<topology>.cfg) * pj_per_hop turns
-Booksim's per-packet hop count into a real per-packet energy estimate, without
-needing Accelergy to understand Booksim's topology at all — it only ever sees
-a single, generic "1 hop, 1 flit" action count.
+Consumes either:
+  - Booksim results (results/topology_sweep.json from run_experiments.py)
+  - ASTRA-Sim results (results/topology_sweep.json from run_astrasim.py)
+
+Both formats include hops_avg per topology/injection-rate. Accelergy, given
+noc_arch.yaml + noc_ERT.yaml, gives us a calibrated pJ-per-hop coefficient
+(router traversal + buffer_read + buffer_write + one link transfer = the
+energy of moving ONE FLIT one hop). Multiplying hops_avg * packet_size
+(flits/packet, read from configs/<topology>.cfg) * pj_per_hop turns average
+hop count into a real per-packet energy estimate, without needing Accelergy
+to understand the underlying network simulator — it only ever sees a single,
+generic "1 hop, 1 flit" action count.
 
   python3 scripts/noc_energy_bridge.py
   ACCELERGY_BIN=/path/to/accelergy python3 scripts/noc_energy_bridge.py
@@ -31,6 +33,7 @@ run (action_counts.yaml, energy_estimation.yaml, ERT.yaml, ART.yaml, the
 flattened architecture, and accelergy_run.log), so "pJ_per_hop" is reproducible
 and auditable rather than a number that only ever existed inside a tempdir.
 """
+
 import json, os, subprocess, sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -38,16 +41,12 @@ from pathlib import Path
 HERE = Path(__file__).parent
 TRACK = HERE.parent
 TIMELOOP = TRACK / "timeloop"
-
-# Follow the same configuration layout as the rest of T3
 CONFIG = os.environ.get("CONFIG", "baseline")
-
-RESULTS = TRACK / "results" / CONFIG
+RESULTS = TRACK / "results" / CONFIG if (TRACK / "results" / CONFIG).exists() else TRACK / "results"
 ACCELERGY_OUT = RESULTS / "accelergy"
 
 NOC_ARCH = TIMELOOP / "noc_arch.yaml"
-NOC_ERT = TIMELOOP / "noc_ert.yaml"
-
+NOC_ERT = TIMELOOP / "noc_ert.yaml"  # matched case-insensitively below
 SWEEP = RESULTS / "topology_sweep.json"
 OUT = RESULTS / "noc_energy.json"
 
@@ -246,8 +245,13 @@ def apply_to_sweep(sweep: list, pj_per_hop: float, packet_size_fn=_packet_size) 
 
 
 def main():
+    """Bridge from topology sweep results (Booksim or ASTRA-Sim) to NoC energy via Accelergy.
+    
+    Reads topology_sweep.json (written by either run_experiments.py or run_astrasim.py).
+    Both formats include hops_avg, which is all this bridge needs.
+    """
     if not SWEEP.exists():
-        sys.exit(f"  no {SWEEP} — run the Booksim sweep first (make ... CMD=timeloop / CMD=sim)")
+        sys.exit(f"  no {SWEEP} — run the sweep first (make sim for Booksim or make astrasim for ASTRA-Sim)")
 
     try:
         est = get_pj_per_hop()

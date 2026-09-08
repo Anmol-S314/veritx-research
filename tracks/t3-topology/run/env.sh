@@ -46,13 +46,50 @@ fi
 # --------------------------------------------------------------------------
 # 4. Booksim binary & Configs
 # --------------------------------------------------------------------------
-export BOOKSIM_BIN="${BOOKSIM_BIN:-booksim}"
+# Auto-detect booksim binary from vendored location or PATH
+if [ -z "${BOOKSIM_BIN:-}" ]; then
+    if [ -x "$REPO_ROOT/third_party/booksim2/src/booksim" ]; then
+        export BOOKSIM_BIN="$REPO_ROOT/third_party/booksim2/src/booksim"
+    elif command -v booksim &>/dev/null; then
+        export BOOKSIM_BIN="$(command -v booksim)"
+    else
+        export BOOKSIM_BIN="booksim"  # fallback; may fail at runtime
+    fi
+fi
 export CONFIG="${CONFIG:-baseline}"
 export T3_SCRIPTS="$T3_DIR/scripts"
 if [ -z "${T3_RESULTS:-}" ] || [ "$T3_RESULTS" = "$T3_DIR/results" ]; then
     export T3_RESULTS="$T3_DIR/results/$CONFIG"
 fi
 export T3_CONFIGS="$T3_DIR/configs"
+
+# Auto-detect the ASTRA-sim BookSim FRONTEND binary (AstraSim_BookSim2).
+# This must be the frontend speaking --system/--network/--logical-topology/
+# --workload-configuration -- NOT standalone `booksim` (different CLI) and
+# NOT the analytical backend. Build it with:
+#   cd third_party/astra-sim/build/astra_booksim2 && mkdir -p build && cd build \
+#     && cmake .. && cmake --build . -j$(nproc)
+# If unset, run_astrasim.py MUST fail loudly (no synthetic fallback).
+if [ -z "${ASTRASIM_BIN:-}" ]; then
+    _astrasim_candidates=(
+        "$REPO_ROOT/third_party/astra-sim/astra-sim/network_frontend/booksim2/bin/AstraSim_BookSim2"
+    )
+    for _astrasim_candidate in "${_astrasim_candidates[@]}"; do
+        if [ -f "$_astrasim_candidate" ] && [ -x "$_astrasim_candidate" ]; then
+            export ASTRASIM_BIN="$_astrasim_candidate"
+            break
+        fi
+    done
+    if [ -z "${ASTRASIM_BIN:-}" ]; then
+        for _astrasim_cmd in astrasim astra-sim; do
+            if command -v "$_astrasim_cmd" &>/dev/null; then
+                export ASTRASIM_BIN="$(command -v "$_astrasim_cmd")"
+                break
+            fi
+        done
+    fi
+    unset _astrasim_candidate _astrasim_candidates _astrasim_cmd
+fi
 
 # --------------------------------------------------------------------------
 # 5. Analysis tunables

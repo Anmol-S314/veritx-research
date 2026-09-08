@@ -43,13 +43,18 @@ def load_sweep(file_name):
     return json.loads(p.read_text())
 
 
-def load_noc_energy(results_dir):
-    """Accelergy-calibrated NoC energy (results_dir/noc_energy.json), written by
-    scripts/noc_energy_bridge.py. Optional — absent if Accelergy wasn't
-    available when `make timeloop` ran, in which case the dashboard falls
-    back to the raw hops panel only."""
-    p = Path(results_dir) / "noc_energy.json"
-    print("Looking for:", p)
+def load_noc_energy(results_dir=None):
+    """Accelergy-calibrated NoC energy (results/noc_energy.json or results_dir/noc_energy.json),
+    written by scripts/noc_energy_bridge.py."""
+    if results_dir:
+        p = Path(results_dir) / "noc_energy.json"
+    else:
+        p = RESULTS / "noc_energy.json"
+    if not p.exists() and (RESULTS / "noc_energy.json").exists():
+        p = RESULTS / "noc_energy.json"
+    if not p.exists():
+        return None
+    return json.loads(p.read_text())
     if not p.exists():
         return None
     return json.loads(p.read_text())
@@ -301,46 +306,31 @@ def main():
     ap.add_argument("--selfcheck", action="store_true")
     args = ap.parse_args()
 
-
     if args.selfcheck:
         _selfcheck()
         return
 
     results_dir = RESULTS / args.config
-
     if not results_dir.exists():
-        sys.exit(f"Configuration '{args.config}' not found: {results_dir}")
+        results_dir = RESULTS
 
     if args.matrix is None:
         args.matrix = str(results_dir / "traffic_matrix.txt")
-
     if args.timeloop_stats is None:
         args.timeloop_stats = str(results_dir / "timeloop.stats.txt")
-
     if args.topology_sweep is None:
         args.topology_sweep = str(results_dir / "topology_sweep.json")
-
     if args.history is None:
         args.history = str(results_dir / "history.json")
 
-    print(f"Using configuration : {args.config}")
-    print(f"Traffic matrix      : {args.matrix}")
-    print(f"Timeloop stats      : {args.timeloop_stats}")
-    print(f"Topology Sweep      : {args.topology_sweep}")
-    print(f"Topology Sweep      : {args.history}")
-
-
     cur = curves(load_sweep(args.topology_sweep))
-
     record = build_record(
         cur,
         load_matrix(args.matrix),
         load_levels(args.timeloop_stats),
         load_noc_energy(results_dir),
     )
-
     hist = update_history(record, args.history)
-
     # Only show runs we can actually render. Pre-feature runs stored latency only
     # (no curves/matrix) — offering them gave empty panels. They stay in history.json
     # (they age out via the cap) but are hidden from the selector + table.

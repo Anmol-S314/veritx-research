@@ -122,6 +122,7 @@ cmd_help() {
     sim           Uniform-traffic Booksim sweep
     timeloop      Timeloop spine (timeloop -> matrix -> sweep -> energy)
     timeloop-workload Full Timeloop workload pipeline
+    astrasim      ASTRA-Sim 2.0 spine (chakra trace -> astrasim -> sweep -> energy)
 
   ANALYSIS & REPORTING
     analysis      Load sweep JSON -> DataFrame summary (PA-01)
@@ -185,6 +186,10 @@ cmd_check() {
         && _ok "timeloop    → $(command -v timeloop-mapper)" \
         || _warn "timeloop-mapper not found"
 
+    command -v astrasim &>/dev/null \
+        && _ok "astrasim    → $(command -v astrasim)" \
+        || _warn "astrasim binary not found (using BookSim engine backend fallback)"
+
     command -v accelergy &>/dev/null \
         && _ok "accelergy   → $(command -v accelergy)" \
         || _warn "accelergy not found"
@@ -236,6 +241,11 @@ cmd_sim() {
 cmd_timeloop() {
     _banner "Full spine: Timeloop -> matrix -> sweep"
     ( cd "$T3_DIR" && make timeloop )
+}
+
+cmd_astrasim() {
+    _banner "ASTRA-Sim 2.0 Workload Pipeline"
+    ( cd "$T3_DIR" && make astrasim CONFIG="${CONFIG:-baseline}" MODEL="${MODEL:-llama7b}" )
 }
 
 cmd_timeloop_workload() {
@@ -323,6 +333,7 @@ case "$COMMAND" in
     timeloop)             cmd_timeloop          ;;
     timeloop-workload)    cmd_timeloop_workload ;;
     timeloop-spatial)     cmd_timeloop_spatial "$@" ;;
+    astrasim)             cmd_astrasim "$@"     ;;
     report|pa-report)     cmd_report            ;;
     dashboard)            cmd_dashboard "$@"    ;;
     energy)               cmd_energy            ;;

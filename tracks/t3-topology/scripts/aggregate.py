@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
-"""PA-02 — Aggregate ALL Booksim run results into one master dataset.
+"""PA-02 — Aggregate ALL topology sweep results into one master dataset.
 
-Reads every results/*.json in the track's results directory **plus** the
-embedded run history in results/history.json, tags each record with a
-commit hash, deduplicates, and writes aggregate.csv.
+Reads results/topology_sweep.json from either:
+  - Booksim sweep (run_experiments.py)
+  - ASTRA-Sim sweep (run_astrasim.py)
+
+Both sources write topology_sweep.json with the same schema:
+  {topology, injection_rate, latency_cycles, hops_avg, traffic, status, ...}
+
+Also reads the embedded run history in results/history.json, tags each
+record with a commit hash, deduplicates, and writes aggregate.csv.
 
 Sources merged (in priority order):
-  1. results/topology_sweep.json  — current run (per-rate raw records)
+  1. results/topology_sweep.json  — current run (per-rate raw records, Booksim or ASTRA-Sim)
   2. results/history.json         — up to 20 past runs (curves already
                                     flattened per generate_dashboard.py)
   3. Any other results/*.json     — must contain list[dict] with at least
