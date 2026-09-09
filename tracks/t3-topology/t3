@@ -46,7 +46,15 @@ if [ "$IN_CONTAINER" -eq 0 ]; then
         TTY_FLAG="-it"
     fi
 
-    USER_FLAG="-u $(id -u):$(id -g)"
+    # Rootless podman remaps -u UID:GID into the subuid range, so the
+    # container identity owns nothing on the host bind mount (EACCES on every
+    # results/ write).  keep-id preserves the host identity; docker needs the
+    # explicit -u since it runs as root by default.
+    if [ "${CONTAINER_BIN##*/}" = "podman" ]; then
+        USER_FLAG="--userns=keep-id"
+    else
+        USER_FLAG="-u $(id -u):$(id -g)"
+    fi
 
     EXEC_ENV=(
         -e CONFIG="${CONFIG:-baseline}"
@@ -56,7 +64,27 @@ if [ "$IN_CONTAINER" -eq 0 ]; then
         -e MPLBACKEND="${MPLBACKEND:-Agg}"
         -e MPLCONFIGDIR="/tmp"
         -e HOME="/tmp"
+        -e MODEL="${MODEL:-}"
+        -e TOPO="${TOPO:-}"
     )
+
+    # astrasim special case: the AstraSim_BookSim2 frontend is built on the
+    # host and dynamically links host protobuf (libprotobuf.so.32) that the
+    # container image does not carry — inside the container it cannot even
+    # load, so every run reports `failed | 1000 cycles`. When the binary is
+    # host-runnable, run the spine natively; otherwise fall through to the
+    # container (covers container-built frontends).
+    if [ "${1:-}" = "astrasim" ]; then
+        _asim_bin="$REPO_ROOT/third_party/astra-sim/astra-sim/network_frontend/booksim2/bin/AstraSim_BookSim2"
+        if [ -x "$_asim_bin" ] && ! ldd "$_asim_bin" 2>/dev/null | grep -q "not found"; then
+            echo "  [t3] host-runnable AstraSim_BookSim2 detected -> native execution"
+            _asim_extra=()
+            [ -n "${MODEL:-}" ] && _asim_extra+=(--model "$MODEL")
+            [ -n "${TOPO:-}" ] && _asim_extra+=(--topo "$TOPO")
+            exec python3 "$T3_DIR/scripts/run_astrasim.py" \
+                --config "${CONFIG:-baseline}" "${_asim_extra[@]}"
+        fi
+    fi
     if [ -n "${TRAFFIC_MATRIX:-}" ]; then
         EXEC_ENV+=(-e TRAFFIC_MATRIX="$TRAFFIC_MATRIX")
     fi
@@ -245,7 +273,12 @@ cmd_timeloop() {
 
 cmd_astrasim() {
     _banner "ASTRA-Sim 2.0 Workload Pipeline"
-    ( cd "$T3_DIR" && make astrasim CONFIG="${CONFIG:-baseline}" MODEL="${MODEL:-llama7b}" )
+    local _extra=""
+    [ -n "${MODEL:-}" ] && _extra="--model $MODEL"
+    [ -n "${TOPO:-}" ] && _extra="$_extra --topo $TOPO"
+    # shellcheck disable=SC2086
+    ( cd "$T3_DIR" && python3 scripts/run_astrasim.py \
+        --config "${CONFIG:-baseline}" $_extra )
 }
 
 cmd_timeloop_workload() {

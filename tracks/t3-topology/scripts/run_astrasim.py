@@ -45,10 +45,15 @@ def find_astrasim_bin() -> Optional[str]:
 def run_astrasim_topology(
     cfg_path: Path,
     spec: Dict[str, Any],
-    inj_rate: float,
     config_name: str = "baseline"
 ) -> dict:
-    """Run ASTRA-Sim for a single topology config and dynamic workload spec."""
+    """Run ASTRA-Sim for a single topology config and dynamic workload spec.
+
+    One run per topology: embedded mode injects the Chakra collective packets
+    via the frontend API (``--booksim2-extra=injection_rate=0.0``), so the
+    standalone-BookSim injection-rate sweep dimension is meaningless here —
+    every rate produced identical cycle counts and 6x the wall-clock.
+    """
     # Replicated-trace guard: every rank runs the identical shared .et, so
     # pipeline stage transfers (absolute per-rank P2P src/dst, plus missing
     # RECV pairing) are un-routable in this design. PP>1 needs per-rank
@@ -59,7 +64,6 @@ def run_astrasim_topology(
         spec = dict(spec)
         spec["pp_degree"] = 1
     model_name = spec.get("model_name", "workload").lower().replace(" ", "_")
-    rate_tag = f"inj_{inj_rate:.4f}".replace(".", "p")
 
     out_dir = (
         RESULTS_DIR
@@ -67,7 +71,6 @@ def run_astrasim_topology(
         / "astrasim"
         / model_name
         / cfg_path.stem
-        / rate_tag
     )
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -115,7 +118,8 @@ def run_astrasim_topology(
             # router alloc forever. Cfgs stay standalone-capable untouched.
             "--booksim2-extra=injection_rate=0.0",
         ]
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        res = subprocess.run(cmd, capture_output=True, text=True,
+                             timeout=int(os.environ.get("ASTRASIM_TIMEOUT", "1800")))
         cycles = 1000  # Default fallback if parsing fails
         for line in res.stdout.splitlines():
             if "sys[" in line and "finished" in line:
@@ -146,7 +150,10 @@ def run_astrasim_topology(
         "astrasim_cycles": cycles,
         "latency_cycles": latency if latency is not None else None,
         "comm_overhead_pct": comm_overhead_pct,
-        "injection_rate": inj_rate,
+        # Embedded mode: the frontend injects collectives via API; the 0.0
+        # records the injection_rate override actually passed to the TM and
+        # keeps the row schema stable for PA-01/aggregate/energy consumers.
+        "injection_rate": 0.0,
         "hops_avg": hops_avg if status == "ok" else None,
         "traffic": f"astrasim({model_name}_chakra_et)",
         "status": status,
@@ -220,25 +227,6 @@ def main():
     out_res_dir.mkdir(parents=True, exist_ok=True)
 
     configs = sorted(CONFIGS_DIR.glob("*.cfg"))
-    results = []
-
-    print(f"=== ASTRA-Sim 2.0 + Chakra ET Workload Runner ===")
-    print(f"  Model Workload : {spec.get('model_name', args.model)}")
-    print(f"  Message Size   : {spec.get('msg_size_mb', 0.0):.1f} MB per collective call")
-    print(f"  Parallelism    : TP={spec.get('tp_degree', 1)}, PP={spec.get('pp_degree', 1)}")
-    print(f"  Total Layers   : {spec.get('num_layers', 1)}\n")
-
-    injection_rates = [
-    0.005,
-    0.010,
-    0.015,
-    0.020,
-    0.030,
-    0.040,
-]
-
-    print("  Injection Rates :", injection_rates)
-    print()
 
     if args.topo:
         configs = [c for c in configs if args.topo in c.stem]
@@ -246,54 +234,58 @@ def main():
             raise ValueError(f"--topo '{args.topo}' matched no configs "
                              f"in {CONFIGS_DIR}")
 
+    results = []
+
+    print(f"=== ASTRA-Sim 2.0 + Chakra ET Workload Runner ===")
+    print(f"  Model Workload : {spec.get('model_name', args.model)}")
+    print(f"  Message Size   : {spec.get('msg_size_mb', 0.0):.1f} MB per collective call")
+    print(f"  Parallelism    : TP={spec.get('tp_degree', 1)}, PP={spec.get('pp_degree', 1)}")
+    print(f"  Total Layers   : {spec.get('num_layers', 1)}\n")
+    print("  Mode           : single run per topology (embedded injection owns "
+          "the rate dimension; the standalone-BookSim IR sweep does not apply)")
+    print("  Topologies     :", [c.stem for c in configs])
+    print()
+
     for cfg in configs:
 
-        for inj_rate in injection_rates:
+        print(f"  Running {cfg.stem:<12} ... ", end=" ", flush=True)
 
-            print(
-                f"  Running {cfg.stem:<12} "
-                f"@ injection_rate={inj_rate:.3f} ... ",
-                end=" ",
-                flush=True
+        # One bad config (missing data file, binary crash) must not kill
+        # the other runs. Failures are recorded as status=error with
+        # the message — never fabricated, never silent.
+        try:
+            r = run_astrasim_topology(
+                cfg,
+                spec,
+                args.config
             )
+        except Exception as e:  # noqa: BLE001 - record, don't abort sweep
+            r = {
+                "topology": cfg.stem,
+                "workload": f"{spec.get('model_name', 'Model')}",
+                "total_nodes": None,
+                "astrasim_cycles": None,
+                "latency_cycles": None,
+                "comm_overhead_pct": None,
+                "injection_rate": 0.0,
+                "hops_avg": None,
+                "traffic": "astrasim(chakra_et)",
+                "status": f"error: {type(e).__name__}: {e}",
+            }
 
-            # One bad config (missing data file, binary crash) must not kill
-            # the other 60+ runs. Failures are recorded as status=error with
-            # the message — never fabricated, never silent.
-            try:
-                r = run_astrasim_topology(
-                    cfg,
-                    spec,
-                    inj_rate,
-                    args.config
-                )
-            except Exception as e:  # noqa: BLE001 - record, don't abort sweep
-                r = {
-                    "topology": cfg.stem,
-                    "workload": f"{spec.get('model_name', 'Model')}",
-                    "total_nodes": None,
-                    "astrasim_cycles": None,
-                    "latency_cycles": None,
-                    "comm_overhead_pct": None,
-                    "injection_rate": inj_rate,
-                    "hops_avg": None,
-                    "traffic": "astrasim(chakra_et)",
-                    "status": f"error: {type(e).__name__}: {e}",
-                }
+        latency_text = (
+            f"{r['latency_cycles']:.2f} latency"
+            if r["latency_cycles"] is not None
+            else "no latency"
+        )
 
-            latency_text = (
-                f"{r['latency_cycles']:.2f} latency"
-                if r["latency_cycles"] is not None
-                else "no latency"
-            )
-
-            cycles_text = (
-                f"{r['astrasim_cycles']:>8} total cycles"
-                if r["astrasim_cycles"] is not None
-                else "       n/a total cycles"
-            )
-            print(f"{latency_text} | {cycles_text} | {r['status']}")
-            results.append(r)
+        cycles_text = (
+            f"{r['astrasim_cycles']:>8} total cycles"
+            if r["astrasim_cycles"] is not None
+            else "       n/a total cycles"
+        )
+        print(f"{latency_text} | {cycles_text} | {r['status']}")
+        results.append(r)
 
     out_astrasim_json = out_res_dir / "astrasim_sweep.json"
     out_astrasim_json.write_text(json.dumps(results, indent=2))
