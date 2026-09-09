@@ -201,18 +201,30 @@ T3 runs real workloads on a cycle-accurate NoC through **ASTRA-sim + BookSim2**,
 
 ```bash
 t3 astrasim                                  # CONFIG=baseline MODEL=llama7b
-t3 astrasim MODEL=gpt3 CONFIG=myexp          # any model the generator knows
+MODEL=gpt3 CONFIG=myexp t3 astrasim          # any model the generator knows
+TOPO=mesh4x4 CONFIG=smoketest t3 astrasim    # single-topology smoke run
 python3 scripts/run_astrasim.py --selfcheck  # spine regression selfcheck
 ```
 
 Driven by `scripts/run_astrasim.py`: `--model` (llama7b/13b/70b, gpt3,
 resnet50, all_reduce, …), dimension overrides (`--hidden-size`, `--tp`,
-`--pp`, `--seq-len`, …), `--topo`. Requires `ASTRASIM_BIN` — exported by
-`run/env.sh`, which probes the BookSim2 frontend (PATH fallback:
-`astrasim`/`astra-sim`). If unset the runner refuses to fall back to
-template traffic. Results land in `results/<CONFIG>/` with
-`"traffic": "astrasim(<model>_chakra_et)"` — that field is the proof the
-Chakra trace, not template traffic, was the workload.
+`--pp`, `--seq-len`, …), `--topo` (or `TOPO=` through `t3`). Requires
+`ASTRASIM_BIN` — exported by `run/env.sh`, which probes the BookSim2
+frontend (PATH fallback: `astrasim`/`astra-sim`). If unset the runner
+refuses to fall back to template traffic. Results land in
+`results/<CONFIG>/` with `"traffic": "astrasim(<model>_chakra_et)"` —
+that field is the proof the Chakra trace, not template traffic, was the
+workload.
+
+**One run per topology.** Embedded mode injects the Chakra collectives
+via the frontend API (`--booksim2-extra=injection_rate=0.0`), so the
+standalone-BookSim injection-rate sweep does not apply here — every
+row records `injection_rate: 0.0` and a full model workload (e.g.
+llama7b on mesh4x4) legitimately runs tens of minutes; raise
+`ASTRASIM_TIMEOUT` (seconds, default 1800) if needed. `t3 astrasim`
+detects a host-runnable frontend binary and runs the spine natively
+(the container image lacks the host `libprotobuf.so.32` the binary
+links); container execution remains the fallback.
 
 ### `veritx` CLI (dse/)
 
@@ -356,6 +368,25 @@ and open `t3/index.html`, or just run `make dashboard` locally.
 ---
 
 ## Integrations & Acknowledgements
+
+### 2026-09-09 — Astrasim spine hardened: single-run mode, native execution, podman fix
+
+End-to-end verification of the spine surfaced and fixed three defects:
+
+- **Single run per topology** — the spine previously swept 6 injection
+  rates that embedded mode ignores (every row was a duplicate, 6x the
+  wall-clock). Pinned by `dse/tests/test_astrasim_spine_contract.py`.
+- **Host-native execution** — `t3 astrasim` runs the spine on the host
+  when the frontend binary links cleanly there; the container image
+  lacks `libprotobuf.so.32`, which made every in-container run report
+  `failed | 1000 cycles`.
+- **Rootless podman bind-mount writes** — `t3` used `-u UID:GID`, which
+  podman remaps into the subuid range (EACCES on every `results/`
+  write, seen on the `astrasim-manal` checkout). Now
+  `--userns=keep-id` for podman.
+- `MODEL=`/`TOPO=`/`CONFIG=` now actually reach the runner through
+  `t3 astrasim`, and the subprocess timeout is configurable via
+  `ASTRASIM_TIMEOUT` (default 1800s).
 
 ### 2026-09-08 — ASTRA-sim BookSim2 forward-port (from `astrasim-manal`)
 
