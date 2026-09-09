@@ -31,6 +31,9 @@ formal_logs/
 *~
 flits.txt
 trace.txt
+# Generated trace-replay artifacts (MR12 §10: regenerable, not committed)
+*_trace.csv
+*packets_out.csv
 timeloop-mapper.*
 
 # Scratch / experiment directories

@@ -21,7 +21,7 @@
     "tracetrafficmanager.{cpp,hpp} (resolve/mr12): CSV + veritx-format trace replay via sim_type=trace (TraceFileTrafficPattern pending-in-pattern design), per-packet CSV log, honest _all_latencies feed (arrival-request_time)",
     "trafficmanager.{cpp,hpp} (resolve/mr12): _OnPacketGenerated hook placed after VeritX self-loop early-return; pid->request_time honest-baseline map (erase-on-consume, per-Run clear, ctime fallback for synthetic traffic)",
     "main.cpp (resolve/mr12): exit-code fix, success exits 0 (was inverted: every clean run exited 255)",
-    "examples (resolve/mr12): 8 trace-mode configs + mesh88_lat_transpose (preserved transpose demo) + workload.yaml/workload72.yaml generators inputs"
+    "examples (resolve/mr12): 8 trace-mode configs + mesh88_lat_transpose (preserved transpose demo) + workload.yaml/workload72.yaml generators inputs",
     "networks/srota.{cpp,hpp}: NEW -- Srota NoC model (concentrated mesh + MECS express, O1TURN-XY routing with injection-time adaptive overlay) per SSM-UARCH-TOPO-003/ROUTE-001/TEL-004 rev 0.3. Includes elaboration-time F1 channel-dependency-graph check and TP-V2 island-placement check",
     "networks/network.cpp + booksim_config.cpp: register topology=srota and its srota_* config keys",
     "SROTA.md, srota_validate.py, examples/srota_*.config: docs, validation suite, and example configurations"
