@@ -284,6 +284,17 @@ Names track the spec's register names.
 | `srota_tel_latency` | 8 | TEL-004 §3 | Plane-T publication delay, constant by construction |
 | `srota_cdg_radix` | 4 | ROUTE-001 §4.4 | abstraction radix for the F1 check; 0 disables |
 
+Three-level arbiter (ROUTE-001 §11.2), selected with
+`sw_allocator = srota_arb`:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `srota_arb_l0_golden` | 1 | golden-rotation mask, Level 0 (F3) |
+| `srota_arb_l1_slack` | 1 | slack-class mask, Level 1 |
+| `srota_arb_l2_stc` | 1 | STC batch-epoch mask, Level 2 (F4) |
+| `srota_arb_golden_epoch` | 64 | cycles per golden window |
+| `srota_arb_golden_windows` | 16 | windows in the rotation |
+
 Required: `routing_function = o1turn`, `use_noc_latency = 0`,
 `routing_delay > 0` (MECS taps defeat BookSim's lookahead routing).
 
@@ -325,10 +336,15 @@ the load-bearing ones:
    the mechanism behind the ~16× weight-broadcast claim — needs the
    multicast fork path. `srota_o1turn` routes unicast only.
 
-6. **Arbitration is BookSim's, not Srota's.** The three-level
-   golden/slack/STC-batch arbiter (§11.2) is not implemented, so
-   measurable claim M3 (§16.4) is not answerable from this model yet.
-   This is the largest remaining gap.
+6. **Arbitration: the three levels are modelled, the two stages are
+   not.** The golden/slack/STC-batch cascade (§11.2) is implemented as
+   `sw_allocator = srota_arb`, so measurable claim M3 (§16.4) is
+   answerable — see
+   [SROTA-M3-ARBITER.md](../../../tracks/t3-topology/docs/SROTA-M3-ARBITER.md).
+   What is absent is TOPO-003 §7.3's two coupled ≤6-port allocators and
+   rev 0.3's `out_busy_mask` handshake (RT-R9): BookSim's IQRouter drives
+   one flat allocator, so that mask is identically zero here. Closing it
+   needs a custom Router subclass — the same one the side buffer needs.
 
 ---
 
@@ -336,8 +352,9 @@ the load-bearing ones:
 
 In rough order of value:
 
-- **Three-level arbiter** (ROUTE-001 §11.2) as a BookSim allocator, plus a
-  2-bit slack tag in the packet format. Closes M3 (§16.4).
+- **Two-stage allocator coupling** (TOPO-003 §7.3, RT-R9). The three
+  arbitration levels now exist as `sw_allocator = srota_arb`; the mesh and
+  express stages and their `out_busy_mask` handshake do not.
 - **Directed RT-R7 pattern** — four flows around a 2×2 square, per the
   finding above, to observe the cycle dynamically rather than only
   statically.

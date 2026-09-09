@@ -213,7 +213,7 @@ section it implements. Full detail in
 
 | Gap | Spec | Consequence |
 |---|---|---|
-| Three-level arbiter | ROUTE-001 §11.2 | Claim **M3** unanswerable. Largest gap. |
+| Two-stage allocator coupling | TOPO-003 §7.3, RT-R9 | The three arbitration *levels* now exist (`sw_allocator = srota_arb`); the two coupled ≤6-port *stages* and their `out_busy_mask` handshake do not. M3 is answered, with that caveat — see [SROTA-M3-ARBITER.md](SROTA-M3-ARBITER.md). |
 | Side buffer / staging latch | VC-002 §2.1–2.3 | BookSim's per-input VC router cannot express a shared buffer only losers enter; VC-R1 out of reach |
 | Multicast over MECS | TOPO-003 §9.3 | The ~16× broadcast claim is unmeasurable here |
 | Island rate regulators | TOPO-003 §7.5 | Islands affect placement checking, not shaping |
@@ -272,6 +272,8 @@ Ordered by what unblocks the most.
    Megatron-TP matrices can drive any topology at all.
 3. **A real Accelergy technology model**, so energy stops being a restatement
    of hop count and a Pareto trade becomes visible.
-4. **The three-level arbiter**, which closes claim M3.
+4. **The two-stage allocator coupling**, which is what remains of M3 after
+   [SROTA-M3-ARBITER.md](SROTA-M3-ARBITER.md). It shares a custom Router
+   subclass with the side buffer, so the two are one piece of work.
 5. **Retire or differentiate `ftree`**, and correct the node counts implied
    by the names `qtree16` and `tree4` (both 64 nodes).

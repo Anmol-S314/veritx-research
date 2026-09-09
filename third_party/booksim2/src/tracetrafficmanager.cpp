@@ -232,6 +232,25 @@ void TraceTrafficManager::_OnPacketGenerated(int pid, int source, int cl,
   }
 }
 
+void TraceTrafficManager::_PacketArbFields(int pid, int cl,
+                                            int & slack, int & batch,
+                                            int & golden) const
+{
+  (void)cl;
+  // _OnPacketGenerated ran immediately before this and recorded the event
+  // under this pid, so the lookup is a hit for every trace-injected
+  // packet. The miss path is real traffic too -- anything the base manager
+  // generates outside the trace -- and gets the neutral all-zero answer.
+  std::map<int, TraceEvent>::const_iterator it = _pid_to_event.find(pid);
+  if (it == _pid_to_event.end()) {
+    slack = 0; batch = 0; golden = 0;
+    return;
+  }
+  slack  = it->second.slack;
+  batch  = it->second.batch;
+  golden = it->second.golden_id;
+}
+
 void TraceTrafficManager::_RetireFlit(Flit * f, int dest)
 {
   if (f->tail && _packets_csv.is_open()) {

@@ -53,6 +53,14 @@ public:
     int label;
     int in_pri;
     int out_pri;
+    // Srota arbitration header fields (SSM-UARCH-PKT-008 rev 0.3 section
+    // 8.2), carried per request so the three-level arbiter in
+    // allocators/srota_arb.cpp can narrow on them. Zero for every
+    // allocator that does not set them, which makes each level of that
+    // cascade fall through -- see srota_arb.hpp.
+    int slack;
+    int batch;
+    int golden_id;
   };
 
   Allocator( Module *parent, const string& name,
@@ -64,7 +72,8 @@ public:
   virtual bool ReadRequest( sRequest &req, int in, int out ) const = 0;
 
   virtual void AddRequest( int in, int out, int label = 1, 
-			   int in_pri = 0, int out_pri = 0 );
+			   int in_pri = 0, int out_pri = 0,
+			   int slack = 0, int batch = 0, int golden_id = 0 );
   virtual void RemoveRequest( int in, int out, int label = 1 ) = 0;
   
   virtual void Allocate( ) = 0;
@@ -106,7 +115,8 @@ public:
   bool ReadRequest( sRequest &req, int in, int out ) const;
 
   void AddRequest( int in, int out, int label = 1, 
-		   int in_pri = 0, int out_pri = 0 );
+		   int in_pri = 0, int out_pri = 0,
+		   int slack = 0, int batch = 0, int golden_id = 0 );
   void RemoveRequest( int in, int out, int label = 1 );
 
   bool OutputHasRequests( int out ) const;
@@ -142,7 +152,8 @@ public:
   bool ReadRequest( sRequest &req, int in, int out ) const;
 
   void AddRequest( int in, int out, int label = 1, 
-		   int in_pri = 0, int out_pri = 0 );
+		   int in_pri = 0, int out_pri = 0,
+		   int slack = 0, int batch = 0, int golden_id = 0 );
   void RemoveRequest( int in, int out, int label = 1 );
   
   bool OutputHasRequests( int out ) const;

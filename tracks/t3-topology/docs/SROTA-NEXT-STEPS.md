@@ -59,7 +59,8 @@ separate, older reason in point 2 above, which trace replay also fixes.
 
 ## Phase 0 — Merge hygiene and the trace-mode bring-up
 
-Status: Phase 0 **done**, Phase 1 items 1.1 and 1.2 **done**.
+Status: Phase 0 **done**, Phase 1 items 1.1 and 1.2 **done**, Phase 2a
+**done** — results in [SROTA-M3-ARBITER.md](SROTA-M3-ARBITER.md).
 Items 1.3 and 1.4 land with Phase 4, which is what needs them.
 
 **0.1 `METADATA.json` was malformed (done).** The rebase concatenated the

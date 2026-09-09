@@ -906,6 +906,12 @@ void TrafficManager::_GeneratePacket( int source, int stype,
                    << "." << endl;
     }
   
+    // Srota: resolved once per packet, stamped on every flit. The
+    // arbiter reads them at each hop, and a body flit must arbitrate the
+    // same way its head did or a packet could be split across grants.
+    int arb_slack = 0, arb_batch = 0, arb_golden = 0;
+    _PacketArbFields(pid, cl, arb_slack, arb_batch, arb_golden);
+
     for ( int i = 0; i < size; ++i ) {
         Flit * f  = Flit::New();
         f->id     = _cur_id++;
@@ -917,6 +923,9 @@ void TrafficManager::_GeneratePacket( int source, int stype,
         f->ctime  = time;
         f->record = record;
         f->cl     = cl;
+        f->slack     = arb_slack;
+        f->batch     = arb_batch;
+        f->golden_id = arb_golden;
 
         _total_in_flight_flits[f->cl].insert(make_pair(f->id, f));
         if(record) {

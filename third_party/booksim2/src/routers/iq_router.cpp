@@ -108,7 +108,8 @@ IQRouter::IQRouter( Configuration const & config, Module *parent,
     _vc_allocator = Allocator::NewAllocator( this, "vc_allocator", 
 					     vc_alloc_type,
 					     _vcs*_inputs, 
-					     _vcs*_outputs );
+					     _vcs*_outputs,
+					     &config );
 
     if ( !_vc_allocator ) {
       Error("Unknown vc_allocator type: " + vc_alloc_type);
@@ -116,10 +117,15 @@ IQRouter::IQRouter( Configuration const & config, Module *parent,
   }
   
   string sw_alloc_type = config.GetStr( "sw_allocator" );
+  // Pass the config through. The factory takes it so an allocator can read
+  // its own keys; this call site simply omitted it, which left every
+  // config-driven allocator on its built-in defaults (and silently ignored
+  // alloc_iters unless it was given as sw_allocator = islip(N)).
   _sw_allocator = Allocator::NewAllocator( this, "sw_allocator",
 					   sw_alloc_type,
 					   _inputs*_input_speedup, 
-					   _outputs*_output_speedup );
+					   _outputs*_output_speedup,
+					   &config );
 
   if ( !_sw_allocator ) {
     Error("Unknown sw_allocator type: " + sw_alloc_type);
@@ -130,7 +136,8 @@ IQRouter::IQRouter( Configuration const & config, Module *parent,
     _spec_sw_allocator = Allocator::NewAllocator( this, "spec_sw_allocator",
 						  spec_sw_alloc_type,
 						  _inputs*_input_speedup, 
-						  _outputs*_output_speedup );
+						  _outputs*_output_speedup,
+						  &config );
     if ( !_spec_sw_allocator ) {
       Error("Unknown spec_sw_allocator type: " + spec_sw_alloc_type);
     }
@@ -1326,7 +1333,11 @@ bool IQRouter::_SWAllocAddReq(int input, int vc, int output)
 		     << ")." << endl;
 	}
 	allocator->RemoveRequest(expanded_input, expanded_output, req.label);
-	allocator->AddRequest(expanded_input, expanded_output, vc, prio, prio);
+	// Srota: carry the arbitration header fields (PKT-008 section 8.2)
+	// into the request so a three-level arbiter can narrow on them.
+	// Every stock allocator ignores them.
+	allocator->AddRequest(expanded_input, expanded_output, vc, prio, prio,
+			      f->slack, f->batch, f->golden_id);
 	return true;
       }
       if(f->watch) {
@@ -1350,7 +1361,8 @@ bool IQRouter::_SWAllocAddReq(int input, int vc, int output)
 		 << ", pri: " << prio
 		 << ")." << endl;
     }
-    allocator->AddRequest(expanded_input, expanded_output, vc, prio, prio);
+    allocator->AddRequest(expanded_input, expanded_output, vc, prio, prio,
+			  f->slack, f->batch, f->golden_id);
     return true;
   }
   if(f->watch) {

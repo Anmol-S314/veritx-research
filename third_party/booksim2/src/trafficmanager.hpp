@@ -306,6 +306,16 @@ protected:
 
   virtual void _OnPacketGenerated(int pid, int source, int cl, int time) {}
 
+  // Srota: the arbitration header fields for the packet currently being
+  // generated (PKT-008 section 8.2). Fires after _OnPacketGenerated, so a
+  // derived manager that recorded the packet there can answer from its own
+  // bookkeeping. The base returns all zeros, which makes every level of
+  // the three-level arbiter fall through to round-robin -- the correct
+  // behaviour for traffic that carries no slack information.
+  virtual void _PacketArbFields(int pid, int cl,
+                                int & slack, int & batch, int & golden) const
+  { (void)pid; (void)cl; slack = 0; batch = 0; golden = 0; }
+
 public:
 
   static TrafficManager * New(Configuration const & config, 

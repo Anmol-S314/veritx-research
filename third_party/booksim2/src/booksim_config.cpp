@@ -170,6 +170,16 @@ BookSimConfig::BookSimConfig( )
 
   AddStrField( "vc_allocator", "islip" ); 
   AddStrField( "sw_allocator", "islip" ); 
+
+  // Srota three-level arbiter (SSM-UARCH-ROUTE-001 rev 0.3 section 11.2),
+  // selected with sw_allocator = srota_arb. Each level can be disabled
+  // independently, which is how an M3 run says which level did the work
+  // rather than only that the arbiter helped.
+  _int_map["srota_arb_l0_golden"]     = 1;   // golden rotation, F3
+  _int_map["srota_arb_l1_slack"]      = 1;   // slack class
+  _int_map["srota_arb_l2_stc"]        = 1;   // STC batch epoch, F4
+  _int_map["srota_arb_golden_epoch"]  = 64;  // cycles per golden window
+  _int_map["srota_arb_golden_windows"]= 16;  // windows in the rotation
   
   AddStrField( "arb_type", "round_robin" );
   

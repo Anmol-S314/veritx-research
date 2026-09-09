@@ -68,6 +68,8 @@ protected:
   virtual int  _GetNextPacketSize(int cl) const;                 // SIZE   (needs the `virtual` patch)
   virtual void _OnPacketGenerated(int pid, int source, int cl,   // bookkeeping hook (needs a new patch)
                                    int time);
+  virtual void _PacketArbFields(int pid, int cl,                 // slack/batch/golden_id for the arbiter
+                                 int & slack, int & batch, int & golden) const;
   virtual void _RetireFlit(Flit * f, int dest);                  // logging (already virtual in stock BookSim)
 
 public:
