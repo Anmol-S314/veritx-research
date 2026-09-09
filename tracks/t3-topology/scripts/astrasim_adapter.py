@@ -144,6 +144,32 @@ def generate_astrasim_network_json(cfg_path: Path, params: dict) -> dict:
     }
 
 
+# Keys the astrasim adapter understands but BookSim's config parser does
+# not — feeding them to the frontend aborts with "Parse error: Unknown
+# integer field". They are stripped from the sanitized cfg copy.
+_ADAPTER_ONLY_KEYS = {"total_nodes"}
+
+
+def _write_sanitized_cfg(cfg_path: Path, out_dir: Path) -> Path:
+    """Write a copy of the BookSim cfg with adapter-only keys stripped.
+
+    The frontend re-parses the cfg through BookSim's own config parser,
+    which rejects unknown fields — so the sanitized copy (not the original)
+    is what network.json points at. It also documents the exact cfg each
+    run consumed.
+    """
+    kept = []
+    for line in cfg_path.read_text().splitlines():
+        stripped = line.split("//")[0].split("#")[0].strip()
+        if stripped and "=" in stripped:
+            if stripped.split("=", 1)[0].strip() in _ADAPTER_ONLY_KEYS:
+                continue
+        kept.append(line)
+    out = out_dir / cfg_path.name
+    out.write_text("\n".join(kept) + "\n")
+    return out
+
+
 def generate_astrasim_logical_topology_json(num_nodes: int, tp: int = 1, pp: int = 1) -> dict:
     """Generate logical topology breakdown for collective operations and parallelism."""
     if tp > 1 and pp > 1 and (tp * pp == num_nodes):
@@ -165,7 +191,8 @@ def prepare_astrasim_config_dir(cfg_path: Path, out_dir: Path, spec: dict | None
     pp = spec.get("pp_degree", 1) if spec else 1
 
     sys_json = generate_astrasim_system_json(params["total_nodes"], model_name=model_name)
-    net_json = generate_astrasim_network_json(cfg_path, params)
+    net_json = generate_astrasim_network_json(
+        _write_sanitized_cfg(cfg_path, out_dir), params)
     log_json = generate_astrasim_logical_topology_json(params["total_nodes"], tp=tp, pp=pp)
     # Remote-memory config: required flag for our frontend binaries (mirrors
     # serving's invocation, which passes memory_expansion.json for both memory
