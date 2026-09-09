@@ -13,10 +13,10 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))  # dse/ for veritx_dse import
 
 
-# ── commands_trace: info and validate ────────────────────────────────────
+# ── trace commands: info and validate (live cli.py implementations) ───────
 
 class TestTraceInfo:
-    """veritx_dse.commands_trace.cmd_trace_info"""
+    """veritx_dse.cli.cli.cmd_trace_info"""
 
     def _make_args(self, trace_path: str):
         """Create an args namespace like argparse would."""
@@ -28,7 +28,7 @@ class TestTraceInfo:
         trace = Path(__file__).parent.parent / "inputs" / "traces" / "qwen3_serving_astra.trace"
         if not trace.exists():
             pytest.skip("Qwen3 trace not found")
-        from veritx_dse.cli.commands_trace import cmd_trace_info
+        from veritx_dse.cli.cli import cmd_trace_info
         from veritx_dse.core.logging import Ctx
         ctx = Ctx()
         # cmd_trace_info prints to stdout via log(), doesn't return
@@ -36,7 +36,7 @@ class TestTraceInfo:
 
     def test_info_nonexistent_trace(self):
         """trace info on missing file should handle gracefully."""
-        from veritx_dse.cli.commands_trace import cmd_trace_info
+        from veritx_dse.cli.cli import cmd_trace_info
         from veritx_dse.core.logging import Ctx
         ctx = Ctx()
         try:
@@ -46,7 +46,7 @@ class TestTraceInfo:
 
     def test_info_synthetic_trace(self):
         """trace info on synthetic 3-line trace."""
-        from veritx_dse.cli.commands_trace import cmd_trace_info
+        from veritx_dse.cli.cli import cmd_trace_info
         from veritx_dse.core.logging import Ctx
         with tempfile.NamedTemporaryFile(mode='w', suffix='.trace', delete=False) as f:
             f.write("# cycle src class dst size\n")
@@ -63,7 +63,7 @@ class TestTraceInfo:
 
 
 class TestTraceValidate:
-    """veritx_dse.commands_trace.cmd_trace_validate"""
+    """veritx_dse.cli.cli.cmd_trace_validate"""
 
     def _make_args(self, trace_path: str):
         from argparse import Namespace
@@ -74,14 +74,14 @@ class TestTraceValidate:
         trace = Path(__file__).parent.parent / "inputs" / "traces" / "qwen3_serving_astra.trace"
         if not trace.exists():
             pytest.skip("Qwen3 trace not found")
-        from veritx_dse.cli.commands_trace import cmd_trace_validate
+        from veritx_dse.cli.cli import cmd_trace_validate
         from veritx_dse.core.logging import Ctx
         ctx = Ctx()
         cmd_trace_validate(ctx, self._make_args(trace))
 
     def test_validate_nonexistent(self):
         """validate on missing file should handle gracefully."""
-        from veritx_dse.cli.commands_trace import cmd_trace_validate
+        from veritx_dse.cli.cli import cmd_trace_validate
         from veritx_dse.core.logging import Ctx
         ctx = Ctx()
         try:

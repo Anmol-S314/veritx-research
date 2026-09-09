@@ -21,6 +21,7 @@ class Ctx:
     output_file: str | None = None
     log_file: str | None = None
     seed: int = 0              # reproducibility seed (auto-generated if 0)
+    failed: bool = False        # set by fail(); main() exits 1 when set
     _log_fh: object = field(default=None, repr=False)
 
     def __post_init__(self):
@@ -61,9 +62,11 @@ def ok(ctx: Ctx, msg: str):
 
 
 def fail(ctx: Ctx, msg: str):
-    """Error message (always shown)."""
+    """Error message (always shown). Marks the run failed so main() can
+    exit nonzero — a fail()-and-return command must never exit 0."""
     print(f"  \033[31m✗\033[0m {msg}", file=sys.stderr)
     ctx._append("ERROR", msg)
+    ctx.failed = True
 
 
 def verbose(ctx: Ctx, msg: str):

@@ -51,10 +51,11 @@ class TestBuildConfig:
         assert "seed" not in config
 
     def test_latency_thres_default(self):
-        """Default latency_thres must be -1.0 (not 500)."""
+        """Default latency_thres must be a large value: not 500 (aborts long
+        runs) and not -1.0 (the BookSim lexer parses it as int → ParseError)."""
         topo = SWEEP_TOPOS[0]
         config = build_config(topo, "test.trace")
-        assert "latency_thres = -1.0" in config
+        assert "latency_thres = 1000000.0" in config
 
     def test_all_topos_produce_valid_config(self):
         """Every preset topology must generate a valid BookSim config."""

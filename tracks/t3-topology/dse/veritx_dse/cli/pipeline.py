@@ -318,7 +318,7 @@ def show_results(ctx: Ctx, last: int = 5):
             for s in data["summary"]:
                 print(f"  {s['name']:<16} {s['mean']:>7.2f}c {s['std']:>6.2f}c "
                       f"{s['min']:>7.2f}c {s['max']:>7.2f}c {s['n']:>4}")
-        elif isinstance(data, list):
+        elif isinstance(data, list) and all(isinstance(r, dict) for r in data):
             print(f"  {'Topology':<16} {'Latency':>10} {'Hops':>7} {'Status':<8}")
             print(f"  {'─' * 45}")
             for r in data:
@@ -413,25 +413,36 @@ def diff_runs(ctx: Ctx, run_a: str | None = None, run_b: str | None = None):
 # ── LaTeX report ────────────────────────────────────────────────────────────
 
 def generate_latex(ctx: Ctx, json_path: str, caption: str, label: str) -> str:
-    """Generate a LaTeX table from compare or pareto JSON results."""
+    """Generate a LaTeX table from compare, pareto, or sweep JSON results."""
     try:
         data = json.loads(Path(json_path).read_text())
     except (json.JSONDecodeError, OSError) as e:
         return f"% Error reading {json_path}: {e}"
 
-    if "summary" in data:
+    if isinstance(data, list):
+        # `veritx sweep` output: bare list of per-topology results
+        # [{name, latency, hops, edges, ...}].
+        rows = data
+        cols = ["Topology", "Edges", "Latency", "Hops"]
+        fields = ["name", "edges", "latency", "hops"]
+        mean_key = "latency"
+    elif "summary" in data:
         rows = data["summary"]
         cols = ["Topology", "Edges", "Mean", "Std", "Min", "Max"]
         fields = ["name", "edges", "mean", "std", "min", "max"]
+        mean_key = "mean"
     elif "agg" in data:
         rows = data["agg"]
         trace_keys = data.get("traces", [])
         cols = ["Topology", "Edges"] + [t[:12] for t in trace_keys] + ["Mean"]
         fields = ["name", "edges"] + [f"lat_{t}" for t in trace_keys] + ["mean_lat"]
+        mean_key = "mean_lat"
     else:
         raise ValueError(f"Unknown JSON format in {json_path}")
 
-    mean_key = "mean" if "mean" in rows[0] else "mean_lat"
+    if not rows:
+        return f"% No rows in {json_path}"
+
     winner_name = min(rows, key=lambda r: r.get(mean_key, 1e9))["name"]
 
     ncols = len(cols)

@@ -172,8 +172,10 @@ def check_cdg_acyclic(adj, n):
 
     Returns (acyclic: bool, n_cycles: int).
     """
-    # Import from gen_rtl.py (same codebase)
-    rtl_dir = Path(__file__).resolve().parent.parent / "scripts" / "rtlgen"
+    # Import from gen_rtl.py (same codebase). Path is computed relative to
+    # THIS file (dse/scripts/) so it works no matter where the repo root is:
+    # dse/scripts -> dse -> t3-topology -> scripts/rtlgen.
+    rtl_dir = Path(__file__).resolve().parent.parent.parent / "scripts" / "rtlgen"
     sys.path.insert(0, str(rtl_dir))
     try:
         from gen_rtl import cdg_has_cycle, dim_order_tables, up_down_tables, dijkstra_tables
@@ -386,7 +388,7 @@ def main():
     # is consistent with the actual topology (prevents tampered certificates).
     if meta and "guardrail_hash" in meta and meta["guardrail_hash"] != "not_generated_by_gen_rtl":
         try:
-            rtl_dir = Path(__file__).resolve().parent.parent / "scripts" / "rtlgen"
+            rtl_dir = Path(__file__).resolve().parent.parent.parent / "scripts" / "rtlgen"
             sys.path.insert(0, str(rtl_dir))
             from gen_rtl import (
                 dim_order_tables, up_down_tables, dijkstra_tables,

@@ -58,7 +58,9 @@ from .pipeline import (
 
 
 # ── Path constants ──────────────────────────────────────────────────────────
-from veritx_dse.core.paths import REPO, DSE_DIR, RUNS_DIR, BOOKSIM_BIN, ASTRA_BS_BIN, LLMSIM_DIR
+from veritx_dse.core.paths import (
+    REPO, DSE_DIR, RUNS_DIR, BOOKSIM_BIN, ASTRA_BS_BIN, LLMSIM_DIR, CHAKRA_TO_ET,
+)
 
 SCRIPTS_DIR = DSE_DIR / "scripts"
 EXPERIMENTS_DIR = RUNS_DIR / "experiments"
@@ -111,6 +113,7 @@ def _resolve_path(p: str) -> str:
     Rejects path traversal attempts (.. in path).
     """
     # Reject traversal
+    p = str(p)   # accept Path objects too (callers pass both)
     if '..' in p:
         raise ValueError(f"Path traversal not allowed: {p}")
     path = Path(p)
@@ -128,9 +131,6 @@ def _resolve_path(p: str) -> str:
         return str(candidate.resolve())
     # Return as-is (caller will handle FileNotFoundError)
     return str(resolved)
-    if candidate.exists():
-        return str(candidate.resolve())
-    return str(path.resolve())
 
 
 # ── Command handlers ────────────────────────────────────────────────────────
@@ -214,6 +214,9 @@ def cmd_trace_extract(ctx: Ctx, args):
 
 def cmd_trace_slice(ctx: Ctx, args):
     trace = _resolve_path(args.trace)
+    if not Path(trace).exists():
+        fail(ctx, f"Trace not found: {trace}")
+        return
     keep = set(int(c) for c in args.classes.split(","))
     result = slice_trace(trace, keep, args.out, renumber=args.renumber)
     ok(ctx, f"Slice: {result.kept} packets kept, {result.dropped} dropped → {result.output_file}")
@@ -237,8 +240,9 @@ def cmd_trace_chakra(ctx: Ctx, args):
             trace_files = [str(f) for f in txt_files]
             log(ctx, f"Found {len(trace_files)} .txt files in {et_path.name}")
         elif et_files:
-            # Chakra .et binary files — try ASTRA-sim converter
-            astra_bin = REPO / "serving" / "astra-sim" / "astra-sim" / "bin" / "chakra_to_et"
+            # Chakra .et binary files — try ASTRA-sim converter (canonical
+            # third_party layout; the old serving/ path died with the re-vendor)
+            astra_bin = CHAKRA_TO_ET
             if astra_bin.exists():
                 log(ctx, f"Found {len(et_files)} Chakra .et files, converting via ASTRA-sim...")
                 import subprocess
@@ -290,6 +294,8 @@ def cmd_trace_model(ctx: Ctx, args):
         return
     from ..simulation.model_to_trace import main as model_main
     log(ctx, f"Converting traffic model {model_path.name}")
+    out_path = Path(args.out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     sys.argv = ["model_to_trace", "--traffic-model", str(args.model),
                 "--nodes", str(args.nodes), "--out", str(args.out)]
     model_main()
@@ -297,10 +303,27 @@ def cmd_trace_model(ctx: Ctx, args):
 
 
 def cmd_trace_hpc(ctx: Ctx, args):
+    """Install a trace into the runs tree: explicit path, or a name looked
+    up in the built-in trace library (dse/inputs/traces)."""
     import shutil
-    log(ctx, f"Copying HPC trace {args.trace_file}")
-    shutil.copy2(args.trace_file, args.out)
-    ok(ctx, f"Trace: {args.out}")
+    src = Path(args.trace_file)
+    if not src.is_file():
+        lib = DSE_DIR / "inputs" / "traces"
+        name = args.trace_file if args.trace_file.endswith(".trace") \
+            else f"{args.trace_file}.trace"
+        candidate = lib / name
+        if candidate.is_file():
+            src = candidate
+        else:
+            fail(ctx, f"Trace not found: {args.trace_file}")
+            available = sorted(p.name for p in lib.glob("*.trace"))
+            if available:
+                log(ctx, f"Trace library ({lib.name}/): {', '.join(available)}")
+            return
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, out)
+    ok(ctx, f"Trace: {out}")
 
 
 def cmd_synthesize_bo(ctx: Ctx, args):
@@ -381,8 +404,6 @@ def cmd_evaluate_booksim(ctx: Ctx, args):
         return
     trace = str(Path(args.trace).resolve())
     stats = detect_trace_stats(trace)
-    sample_period = (args.sample_period if args.sample_period is not None
-                     else max(200, stats.max_cycle + 1000))
 
     # Resolve topology: try preset lookup first, then build from args
     preset = lookup_topo(args.topo)
@@ -402,7 +423,7 @@ def cmd_evaluate_booksim(ctx: Ctx, args):
     log(ctx, f"BookSim {topo.backend} k={args.k} routing={topo.routing} trace={Path(args.trace).name} "
         f"({stats.num_packets} pkts, {stats.num_srcs} srcs, span={stats.span}c, IR={stats.ir:.4f})")
 
-    config = build_config(topo, trace, sample_period=sample_period, seed=ctx.seed,
+    config = build_config(topo, trace, sample_period=args.sample_period, seed=ctx.seed,
                           overrides=_sim_overrides(args))
 
     result = run_booksim(ctx, config, repo_root=REPO, timeout=_eff_timeout(args, 120))
@@ -472,11 +493,8 @@ def cmd_evaluate_anynet(ctx: Ctx, args):
     topo = make_anynet_topo(topo_path)
     log(ctx, f"BookSim anynet topo={Path(args.topo).name} trace={Path(args.trace).name} "
         f"({n_nodes} nodes, {n_edges} edges)")
-    stats = detect_trace_stats(trace)
-    sample_period = (args.sample_period if args.sample_period is not None
-                     else max(200, stats.max_cycle + 1000))
 
-    config = build_config(topo, trace, sample_period=sample_period, seed=ctx.seed,
+    config = build_config(topo, trace, sample_period=args.sample_period, seed=ctx.seed,
                           overrides=_sim_overrides(args, names=("vcs", "vc_buf")))
     result = run_booksim(ctx, config, repo_root=REPO, timeout=_eff_timeout(args, 120))
     result["topology"] = topo.name
@@ -725,6 +743,9 @@ def _run_sensitivity(ctx: Ctx, trace: str, specs: list, args) -> None:
 
 def cmd_compare(ctx: Ctx, args):
     trace = _resolve_path(args.trace)
+    if not Path(trace).exists():
+        fail(ctx, f"Trace not found: {trace}")
+        return
 
     # Resolve topology specs
     if args.dense:
@@ -850,7 +871,9 @@ def cmd_run(ctx: Ctx, args):
                     "--nodes", str(args.nodes), "--out", str(trace_path)]
         model_main()
         manifest["trace"] = str(trace_path)
-        ok(ctx, f"Trace: {trace_path.name} ({trace_path.stat().st_size // 1024}KB)")
+        sz = trace_path.stat().st_size
+        ok(ctx, f"Trace: {trace_path.name} ({sz // 1024}KB)" if sz >= 1024
+                else f"Trace: {trace_path.name} ({sz}B)")
     except Exception as e:
         manifest["error"] = f"trace: {e}"
         fail(ctx, f"Trace generation failed: {e}")
@@ -897,11 +920,6 @@ def cmd_run(ctx: Ctx, args):
             candidate = RUNS_DIR / "booksim" / "topo.anynet"
             if candidate.exists():
                 shutil.copy2(candidate, topo_path)
-            if args.search == "iterative":
-                for method in ["rho", "grpo"]:
-                    candidate2 = RUNS_DIR / f"{method}_standalone.anynet"
-                    if candidate2.exists() and not topo_path.exists():
-                        shutil.copy2(candidate2, topo_path)
         if topo_path.exists():
             manifest["topology"] = str(topo_path)
             ok(ctx, f"Topology: {topo_path.name}")
@@ -955,7 +973,16 @@ def cmd_run(ctx: Ctx, args):
 
     _save()
     print(f"\n\033[1m{'=' * 60}\033[0m")
-    if manifest.get("error"):
+    # Any step that recorded a failure dict/flag means the pipeline is
+    # incomplete — say so honestly (the old check only looked at
+    # manifest["error"], which no surviving failure path sets).
+    had_failure = (
+        "error" in manifest
+        or isinstance(manifest.get("eval"), dict)
+        or isinstance(manifest.get("cert"), dict)
+        or manifest.get("topology") is None
+    )
+    if had_failure:
         print(f"  \033[31m✗ Pipeline finished with errors\033[0m in {manifest['duration_s']}s")
     else:
         print(f"  \033[32m✓ Pipeline complete\033[0m in {manifest['duration_s']}s")
@@ -1361,11 +1388,18 @@ def cmd_report(ctx: Ctx, args):
             out_path.write_text(html)
             ok(ctx, f"HTML: {args.out}")
         elif out_path.suffix == '.pdf':
-            # Generate PDF via pdflatex (if available)
+            # Generate PDF via pdflatex (if available). The generated table is
+            # a LaTeX *fragment* (meant for \input into a paper); wrap it in a
+            # minimal document or pdflatex fails with "Environment table
+            # undefined" — the fragment alone was never compilable.
             import tempfile, subprocess
             with tempfile.TemporaryDirectory() as tmpdir:
                 tex_path = Path(tmpdir) / 'report.tex'
-                tex_path.write_text(latex)
+                tex_path.write_text(
+                    "\\documentclass{article}\n"
+                    "\\begin{document}\n"
+                    + latex +
+                    "\n\\end{document}\n")
                 r = subprocess.run(['pdflatex', '-interaction=nonstopmode', '-output-directory', tmpdir, str(tex_path)],
                                    capture_output=True, text=True, timeout=30)
                 pdf_path = Path(tmpdir) / 'report.pdf'
@@ -1374,7 +1408,10 @@ def cmd_report(ctx: Ctx, args):
                     shutil.copy2(pdf_path, out_path)
                     ok(ctx, f"PDF: {args.out}")
                 else:
-                    fail(ctx, f"PDF generation failed: {r.stderr[-200:]}")
+                    # pdflatex -interaction=nonstopmode prints errors on STDOUT,
+                    # not stderr — surface whichever stream actually has content.
+                    detail = (r.stderr or r.stdout)[-300:]
+                    fail(ctx, f"PDF generation failed: {detail}")
         else:
             out_path.write_text(latex)
             ok(ctx, f"LaTeX: {args.out}")
@@ -2024,8 +2061,13 @@ def main():
         fail(ctx, f"{args.command} failed: {e}")
         sys.exit(1)
     finally:
+        # fail() marks soft errors (missing files, bad args) that handlers
+        # recover from and return; the process must still exit nonzero so
+        # scripts and CI never read a failed run as success.
         ctx.close()
         _cleanup_stale_temp_dirs()
+        if ctx.failed and sys.exc_info()[1] is None:
+            sys.exit(1)
 
 
 def _cleanup_stale_temp_dirs():

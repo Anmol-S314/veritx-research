@@ -106,10 +106,13 @@ def build_config(
         print(f"WARNING: trace path contains spaces — BookSim may fail: {trace_abs}", file=_sys.stderr)
     if sim_type == "latency":
         stats = detect_trace_stats(trace_path)
-        # For trace-driven mode, use very large sample_period
-        # This forces BookSim to run until all events are consumed
-        # instead of doing periodic sampling
-        sp = sample_period or max(10000000, stats.max_cycle + 10000)
+        # Span-based sampling: trace end + margin. A huge sample_period (the
+        # old 10M default) makes the vendored BookSim spin through empty
+        # event-queue cycles after the trace drains instead of exiting —
+        # every sweep/compare eval then burns its whole timeout. Span+margin
+        # exits cleanly once all packets land (verified against the standalone
+        # reference binary); callers can still override explicitly.
+        sp = sample_period or max(200, stats.max_cycle + 1000)
         params["traffic"] = f"trace({trace_abs})"
         params["sample_period"] = sp
         # For trace-driven mode, use max_samples = 1
@@ -123,7 +126,13 @@ def build_config(
 
     # Simulation type and thresholds
     params["sim_type"] = sim_type
-    params["latency_thres"] = latency_thres
+    # The vendored BookSim lexer reads "-1.0" as integer -1 and then fails
+    # with "Unknown integer field: latency_thres" (the field is registered
+    # float-only). -1 was meant as "threshold disabled"; the equivalent
+    # that actually parses is a threshold larger than any real run (same
+    # workaround multi_workload_pareto.py uses vs the 500-cycle default,
+    # which would abort long simulations).
+    params["latency_thres"] = latency_thres if latency_thres > 0 else 1000000.0
 
     # Seed (for reproducibility)
     if seed is not None:
@@ -164,7 +173,7 @@ def _build_anynet_config(params: dict, topo: Topology) -> str:
         f"sample_period = {params['sample_period']};",
         f"max_samples = {params['max_samples']};",
         f"wait_for_tail_credit = {params.get('wait_for_tail_credit', 1)};",
-        f"latency_thres = {params.get('latency_thres', -1.0)};",
+        f"latency_thres = {params.get('latency_thres', 1000000.0)};",
         f"packet_size = {params.get('packet_size', 8)};",
     ]
     return "\n".join(lines) + "\n"

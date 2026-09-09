@@ -182,7 +182,7 @@ class TestBookSimConfig:
         assert "n = 2;" in cfg
         assert "wait_for_tail_credit = 1;" in cfg
         assert "sim_type = latency;" in cfg
-        assert "latency_thres = -1.0;" in cfg
+        assert "latency_thres = 1000000.0;" in cfg
 
     def test_config_no_classes_param(self, tmp_trace):
         """CRITICAL: 'classes' must never appear as a standalone param — it inflates latency 75x."""
