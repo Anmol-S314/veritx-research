@@ -1,0 +1,26 @@
+nodes: 16
+sources:
+  - mode: uniform
+    src: all
+    dst: all
+    duration: [0, 200]
+    count: 40
+    packet_size: 16
+    type: READ
+
+  - mode: hotspot
+    src: [0,1,2,3,7,12]
+    dst: 15
+    duration: [0, 200]
+    count: 10
+    packet_size: 32
+    type: WRITE
+
+  - mode: burst
+    src: 5
+    dst: 9
+    start: 50
+    interval: 4
+    burst_count: 5
+    packet_size: 8
+    type: WRITE

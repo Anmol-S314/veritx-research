@@ -149,6 +149,7 @@ TraceTrafficPattern * GetTracePattern() { return g_trace_pattern; }
 int g_trace_dst = -1;
 int g_trace_size = -1;
 bool g_trace_active = false;
+int64_t g_trace_reqtime = -1;
 
 // ===========================================================================
 //  TRAFFIC PATTERNS  --  add a branch, return NULL for anything not yours.

@@ -183,5 +183,8 @@ int main( int argc, char **argv )
   /*configure and run the simulator
    */
   bool result = Simulate( config );
-  return result ? -1 : 0;
+  // VeritX fix (found validating MR12): success must exit 0. The inverted
+  // ternary made EVERY run — including clean ones — exit 255, so any
+  // `set -e` driver or make recipe reports failure despite valid output.
+  return result ? 0 : -1;
 }
