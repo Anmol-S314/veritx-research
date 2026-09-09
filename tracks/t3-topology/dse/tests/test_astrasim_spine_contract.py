@@ -142,6 +142,42 @@ def test_run_invocation_pins_embedded_injection_override(tmp_path, monkeypatch):
 # 2. Honest provenance: the traffic proof field + the no-binary refusal
 # ---------------------------------------------------------------------------
 
+def test_dangling_astrasim_bin_warns_and_falls_back(monkeypatch, capsys):
+    """A set-but-dangling ASTRASIM_BIN (checkout moved/deleted) must not
+    masquerade as unset: warn loudly, then fall back to the repo-built
+    frontend before ever considering PATH."""
+    monkeypatch.setenv("ASTRASIM_BIN", "/gone/checkout/AstraSim_BookSim2")
+    found = run_astrasim.find_astrasim_bin()
+    assert found is not None and "veritx-research" in found
+    assert "does not exist" in capsys.readouterr().out
+
+
+def test_missing_binary_refusal_names_the_env(monkeypatch, tmp_path):
+    """With no binary anywhere the refusal stays the honesty gate — the
+    spec-mandated no-synthetic-fallback behaviour."""
+    monkeypatch.setattr(run_astrasim, "RESULTS_DIR", tmp_path)
+    monkeypatch.setattr(run_astrasim, "find_astrasim_bin", lambda: None)
+    cfg = tmp_path / "mesh4x4.cfg"
+    cfg.write_text(
+        "topology = mesh;\nk = 4;\nn = 2;\nnum_vcs = 4;\npacket_size = 5;\n"
+    )
+    spec = run_astrasim.ChakraTraceGenerator().resolve_spec(
+        "llama7b", num_layers=1)
+    with pytest.raises(RuntimeError, match="Refusing to substitute"):
+        run_astrasim.run_astrasim_topology(cfg, spec, config_name="baseline")
+
+
+def test_t3_native_branch_overrides_stale_env():
+    """t3's native-execution branch must pass the ldd-verified binary path
+    explicitly (ASTRASIM_BIN=... exec python3 ...) so a stale env var from a
+    moved checkout cannot sabotage a verified binary."""
+    t3_src = (SCRIPTS.parent / "t3").read_text()
+    native_region = t3_src.split('"${1:-}" = "astrasim"', 1)[1]
+    assert "ASTRASIM_BIN=\"$_asim_bin\"" in native_region, (
+        "native branch no longer passes the verified binary path"
+    )
+
+
 def test_traffic_proof_field_names_the_chakra_trace(tmp_path, monkeypatch):
     # Real spec resolution — the same path main() takes for llama7b.
     spec = run_astrasim.ChakraTraceGenerator().resolve_spec("llama7b", num_layers=1)

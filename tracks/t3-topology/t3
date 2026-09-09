@@ -81,7 +81,9 @@ if [ "$IN_CONTAINER" -eq 0 ]; then
             _asim_extra=()
             [ -n "${MODEL:-}" ] && _asim_extra+=(--model "$MODEL")
             [ -n "${TOPO:-}" ] && _asim_extra+=(--topo "$TOPO")
-            exec python3 "$T3_DIR/scripts/run_astrasim.py" \
+            # Pass the verified path explicitly: a stale ASTRASIM_BIN from a
+            # moved/deleted checkout must not sabotage a verified binary.
+            ASTRASIM_BIN="$_asim_bin" exec python3 "$T3_DIR/scripts/run_astrasim.py" \
                 --config "${CONFIG:-baseline}" "${_asim_extra[@]}"
         fi
     fi

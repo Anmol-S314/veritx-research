@@ -35,10 +35,25 @@ from generate_chakra_trace import ChakraTraceGenerator, save_chakra_trace
 
 
 def find_astrasim_bin() -> Optional[str]:
-    """Locate astrasim binary in PATH or env vars."""
+    """Locate the astrasim binary: ASTRASIM_BIN, then the repo-built
+    frontend, then PATH.
+
+    A set-but-dangling ASTRASIM_BIN (e.g. pointing at a checkout that was
+    moved or deleted) must not masquerade as "unset": warn loudly, fall
+    through, and let the refusal message name the real situation if nothing
+    is found.
+    """
     env_bin = os.environ.get("ASTRASIM_BIN")
-    if env_bin and Path(env_bin).exists():
-        return env_bin
+    if env_bin:
+        if Path(env_bin).exists():
+            return env_bin
+        print(f"  [warn] ASTRASIM_BIN is set but does not exist: {env_bin} "
+              "(stale env from a moved/deleted checkout?) — probing other "
+              "locations.")
+    repo_bin = (TRACK.parent.parent / "third_party" / "astra-sim" / "astra-sim"
+                / "network_frontend" / "booksim2" / "bin" / "AstraSim_BookSim2")
+    if repo_bin.is_file() and os.access(repo_bin, os.X_OK):
+        return str(repo_bin)
     return shutil.which("astrasim") or shutil.which("astra-sim")
 
 
