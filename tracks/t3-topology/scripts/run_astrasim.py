@@ -133,16 +133,44 @@ def run_astrasim_topology(
             # router alloc forever. Cfgs stay standalone-capable untouched.
             "--booksim2-extra=injection_rate=0.0",
         ]
-        res = subprocess.run(cmd, capture_output=True, text=True,
-                             timeout=int(os.environ.get("ASTRASIM_TIMEOUT", "1800")))
-        cycles = 1000  # Default fallback if parsing fails
+        import time as _time
+        _t0 = _time.time()
+        try:
+            res = subprocess.run(cmd, capture_output=True, text=True,
+                                 stdin=subprocess.DEVNULL,
+                                 timeout=int(os.environ.get("ASTRASIM_TIMEOUT", "1800")))
+        except subprocess.TimeoutExpired as te:
+            # Don't fabricate cycles: a timeout means no usable result.
+            # Persist partial stdout tail for post-mortem (BookSim prints
+            # progress to stdout; the last lines show where it wedged).
+            _tail = ""
+            if te.stdout:
+                _lines = (te.stdout.decode() if isinstance(te.stdout, bytes)
+                          else te.stdout).splitlines()
+                _tail = " | stdout-tail: " + " / ".join(_lines[-3:])
+            raise TimeoutError(
+                f"timed out after {te.timeout}s (elapsed { _time.time()-_t0:.0f}s)" + _tail)
+        cycles = None  # Honest default: unknown until the frontend reports it.
         for line in res.stdout.splitlines():
             if "sys[" in line and "finished" in line:
                 try:
                     cycles = int(line.split("finished,")[1].split("cycles")[0].strip())
                 except (IndexError, ValueError):
                     pass
-        status = "ok" if res.returncode == 0 else "failed"
+        if res.returncode == 0 and cycles is not None:
+            status = "ok"
+        else:
+            # Non-zero exit or unparseable output: no usable cycle count.
+            # Keep cycles=None (never the 1000 placeholder) and attach the
+            # stderr tail so failures are diagnosable, not silent.
+            cycles = None
+            _err_tail = ""
+            if res.stderr:
+                _err_tail = " | stderr: " + " / ".join(res.stderr.splitlines()[-3:])
+            _out_tail = ""
+            if res.stdout:
+                _out_tail = " | stdout-tail: " + " / ".join(res.stdout.splitlines()[-3:])
+            status = f"failed (rc={res.returncode}){_err_tail}{_out_tail}"
         # Honesty: the frontend reports cycles, not these breakdowns.
         # Null beats fabricated (downstream pandas-tolerates None as NaN).
         comm_overhead_pct = None
@@ -299,8 +327,13 @@ def main():
             if r["astrasim_cycles"] is not None
             else "       n/a total cycles"
         )
-        print(f"{latency_text} | {cycles_text} | {r['status']}")
+        print(f"{latency_text} | {cycles_text} | {r['status']}", flush=True)
         results.append(r)
+        # Incremental persistence: a slow/hung topology must not hold the
+        # whole sweep's results hostage. The JSON on disk is always the
+        # prefix completed so far; a later run overwrites with the full set.
+        (out_res_dir / "astrasim_sweep.json").write_text(json.dumps(results, indent=2))
+        (out_res_dir / "topology_sweep.json").write_text(json.dumps(results, indent=2))
 
     out_astrasim_json = out_res_dir / "astrasim_sweep.json"
     out_astrasim_json.write_text(json.dumps(results, indent=2))

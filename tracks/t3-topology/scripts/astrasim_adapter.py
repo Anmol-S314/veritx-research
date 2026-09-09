@@ -33,6 +33,7 @@ def parse_booksim_cfg(cfg_path: Path) -> dict:
         "topology": "mesh",
         "k": 4,
         "n": 2,
+        "c": 1,
         "num_vcs": 4,
         "vc_buf_size": 4,
         "packet_size": 1,
@@ -48,7 +49,7 @@ def parse_booksim_cfg(cfg_path: Path) -> dict:
 
         if key == "topology":
             params["topology"] = val
-        elif key in ("k", "n", "num_vcs", "vc_buf_size", "packet_size", "subnets"):
+        elif key in ("k", "n", "c", "num_vcs", "vc_buf_size", "packet_size", "subnets"):
             try:
                 params[key] = int(val)
             except ValueError:
@@ -74,8 +75,11 @@ def parse_booksim_cfg(cfg_path: Path) -> dict:
         params["total_nodes"] = params["k"] ** params["n"]
     elif params["topology"] == "anynet":
         params["total_nodes"] = _count_anynet_nodes(cfg_path, params)
-    elif params["topology"] in ("fly", "flatfly"):
+    elif params["topology"] == "fly":
         params["total_nodes"] = params["k"] ** params["n"]
+    elif params["topology"] == "flatfly":
+        # _nodes = k^n * c (flatfly_onchip.cpp); c=concentration.
+        params["total_nodes"] = (params["k"] ** params["n"]) * params.get("c", 1)
     else:
         raise ValueError(
             f"cannot determine total_nodes for topology "
@@ -94,11 +98,25 @@ def _count_anynet_nodes(cfg_path: Path, params: dict) -> int:
     if not net_file or not p.exists():
         raise FileNotFoundError(
             f"anynet topology needs 'network_file = <links file>' in "
-            f"{cfg_path} (resolved to {p}); one '<src> <dst>' link per line.")
+            f"{cfg_path} (resolved to {p}); BookSim anynet format: one "
+            f"'router <id> node <id> / router <id>' link per line.")
     nodes: set[int] = set()
     for line in p.read_text().splitlines():
         line = line.split("//")[0].split("#")[0].strip()
+        if not line:
+            continue
         toks = line.replace(",", " ").split()
+        # Real BookSim anynet syntax: 'router <rid> [node <nid>] [router <rid> <w>] ...'
+        # Collect every integer following a 'node' token as a compute node.
+        if "node" in toks or "router" in toks:
+            for i, t in enumerate(toks):
+                if t == "node" and i + 1 < len(toks):
+                    try:
+                        nodes.add(int(toks[i + 1]))
+                    except ValueError:
+                        pass
+            continue
+        # Fallback: plain '<src> <dst>' edge list.
         if len(toks) >= 2:
             try:
                 nodes.add(int(toks[0]))
@@ -106,7 +124,7 @@ def _count_anynet_nodes(cfg_path: Path, params: dict) -> int:
             except ValueError:
                 pass
     if not nodes:
-        raise ValueError(f"no '<src> <dst>' links found in anynet file {p}")
+        raise ValueError(f"no 'node <id>' entries found in anynet file {p}")
     return len(nodes)
 
 
@@ -157,13 +175,32 @@ def _write_sanitized_cfg(cfg_path: Path, out_dir: Path) -> Path:
     which rejects unknown fields — so the sanitized copy (not the original)
     is what network.json points at. It also documents the exact cfg each
     run consumed.
+
+    Relative `network_file` paths (anynet) are rewritten to absolute so the
+    frontend finds them regardless of cwd, and the referenced file is copied
+    into the run dir for provenance.
     """
     kept = []
     for line in cfg_path.read_text().splitlines():
-        stripped = line.split("//")[0].split("#")[0].strip()
-        if stripped and "=" in stripped:
-            if stripped.split("=", 1)[0].strip() in _ADAPTER_ONLY_KEYS:
+        code = line.split("//")[0].split("#")[0].strip()
+        if code and "=" in code:
+            key = code.split("=", 1)[0].strip()
+            if key in _ADAPTER_ONLY_KEYS:
                 continue
+            if key == "network_file":
+                val = code.split("=", 1)[1].strip().rstrip(";").strip()
+                src = Path(val)
+                if not src.is_absolute():
+                    src = cfg_path.parent / val
+                if src.exists():
+                    # Copy alongside the sanitized cfg for provenance…
+                    try:
+                        (out_dir / src.name).write_bytes(src.read_bytes())
+                    except OSError:
+                        pass
+                    # …but point the frontend at the absolute original so a
+                    # cwd-dependent BookSim lookup can never miss.
+                    line = f"network_file = {src.resolve()};"
         kept.append(line)
     out = out_dir / cfg_path.name
     out.write_text("\n".join(kept) + "\n")
