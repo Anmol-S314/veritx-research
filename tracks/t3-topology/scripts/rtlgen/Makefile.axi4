@@ -1,0 +1,39 @@
+# Makefile for AXI4 end-to-end NoC test
+# Usage: make -f Makefile.axi4
+
+VERILATOR = verilator
+CXX = g++
+VERILATOR_FLAGS = --cc -O0 -Wall -Wno-fatal -Wno-PINNOTFOUND -Wno-UNOPTFLAT
+VERILATOR_FLAGS += --top-module axi4_noc --Mdir obj_dir_axi4
+VERILATOR_FLAGS += -DCOCOTB_SIM
+
+SRV_DIR = .
+RTL_FILES = $(SRV_DIR)/noc_pkg.sv $(SRV_DIR)/router.sv \
+            $(SRV_DIR)/axi4_flit.sv $(SRV_DIR)/axi4_noc.sv
+TB_CPP = $(SRV_DIR)/tb_axi4.cpp
+
+.PHONY: all clean run
+
+all: obj_dir_axi4/Vaxi4_noc_bin
+
+obj_dir_axi4/Vaxi4_noc.sv: $(RTL_FILES)
+	$(VERILATOR) $(VERILATOR_FLAGS) $(RTL_FILES)
+
+obj_dir_axi4/Vaxi4_noc__ALL.a: obj_dir_axi4/Vaxi4_noc.sv
+	$(MAKE) -C obj_dir_axi4 -f Vaxi4_noc.mk
+
+obj_dir_axi4/Vaxi4_noc_bin: obj_dir_axi4/Vaxi4_noc__ALL.a $(TB_CPP)
+	$(CXX) -O0 -std=c++17 -I obj_dir_axi4 -I /usr/share/verilator/include \
+		-DVM_COVERAGE=0 -DVM_SC=0 -DVM_TIMING=0 -DVM_TRACE=0 \
+		/usr/share/verilator/include/verilated.cpp \
+		$(TB_CPP) \
+		obj_dir_axi4/Vaxi4_noc__ALL.a \
+		obj_dir_axi4/libVaxi4_noc.a \
+		/usr/share/verilator/include/verilated_vcd_c.o \
+		-lpthread -latomic -o $@
+
+run: obj_dir_axi4/Vaxi4_noc_bin
+	./obj_dir_axi4/Vaxi4_noc_bin
+
+clean:
+	rm -rf obj_dir_axi4

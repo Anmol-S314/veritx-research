@@ -21,7 +21,7 @@ from veritx_dse.core import recovery
 from veritx_dse.core import paths as paths_mod
 from veritx_dse.cli.cli import (
     _resolve_path, _parse_astra_cycles, cmd_trace_chakra, cmd_serve,
-    cmd_report, cmd_certify_full, cmd_synthesize_grid, cmd_run, cmd_compile,
+    cmd_report, cmd_certify_full, cmd_synthesize_bo, cmd_run, cmd_compile,
 )
 from veritx_dse.cli.pipeline import (
     list_runs, show_results, diff_runs, generate_latex,
@@ -771,14 +771,13 @@ class TestCliBranches:
         assert "Flow" in combined
         assert rc in (0, 1)
 
-    def test_synthesize_grid_runs_real_script(self, tmp_path, monkeypatch):
-        monkeypatch.chdir(tmp_path)
-        ctx = _ctx()
-        args = SimpleNamespace(nodes=4, timeout=30)
-        # run.py in the repo tree is heavyweight; here we only assert the
-        # wrapper survives (it captures output, never raises on nonzero).
-        cmd_synthesize_grid(ctx, args)
-        assert not ctx.failed
+    def test_synthesize_grid_is_gone(self):
+        """`veritx synthesize grid` was removed: it invoked scripts/run.py,
+        which imported a deleted `evaluator` module (crashed on every run).
+        The parser must now reject it with exit code 2."""
+        rc, out, err = _cli("synthesize", "grid")
+        assert rc == 2
+        assert "invalid choice" in (out + err)
 
     def test_compile_validation_failure_nonzero(self, tmp_path):
         req = tmp_path / "bad_req.json"

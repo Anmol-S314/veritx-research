@@ -68,7 +68,6 @@ def build_config(
     sim_type: str = "latency",
     ir: float = 0.05,
     sample_period: int | None = None,
-    max_samples: int = 1,
     latency_thres: float = -1.0,
     seed: int | None = None,
     overrides: dict[str, Any] | None = None,

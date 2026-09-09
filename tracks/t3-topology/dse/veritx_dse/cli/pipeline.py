@@ -18,7 +18,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from ..core.logging import Ctx, log, ok, fail, verbose, banner, print_human
+from ..core.logging import Ctx, log, ok, fail, verbose, banner
 from ..simulation.booksim import (
     BookSimError, TimeoutError, detect_trace_stats, run_topology_eval,
     run_sweep, find_booksim_bin, build_config, run_booksim,

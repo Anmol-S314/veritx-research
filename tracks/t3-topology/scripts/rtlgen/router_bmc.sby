@@ -1,0 +1,17 @@
+[options]
+mode bmc
+depth 50
+wait 10
+multiclock on
+
+[script]
+read -sv noc_pkg.sv router.sv
+read -sv ecc_codec.sv
+hierarchy -top router
+
+[files]
+noc_pkg.sv
+router.sv
+ecc_codec.sv
+
+[cover]

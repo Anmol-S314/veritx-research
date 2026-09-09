@@ -170,7 +170,7 @@ results/
 
 | Command | What it does |
 |---|---|
-| `t3 help` | full help + env-var reference |
+| `t3 help` | command list (`t3 env` prints the active env-var reference) |
 | `t3 check` | verify Python, pandas, booksim are available |
 | `t3 analysis` | PA-01: sweep JSON → DataFrame + summary table |
 | `t3 aggregate` | PA-02: merge all JSONs → `results/baseline/analysis/aggregate.csv` |
@@ -208,8 +208,9 @@ python3 scripts/run_astrasim.py --selfcheck  # spine regression selfcheck
 Driven by `scripts/run_astrasim.py`: `--model` (llama7b/13b/70b, gpt3,
 resnet50, all_reduce, …), dimension overrides (`--hidden-size`, `--tp`,
 `--pp`, `--seq-len`, …), `--topo`. Requires `ASTRASIM_BIN` — exported by
-`run/env.sh`, which probes the BookSim2 frontend first, the analytical
-frontend second. Results land in `results/<CONFIG>/` with
+`run/env.sh`, which probes the BookSim2 frontend (PATH fallback:
+`astrasim`/`astra-sim`). If unset the runner refuses to fall back to
+template traffic. Results land in `results/<CONFIG>/` with
 `"traffic": "astrasim(<model>_chakra_et)"` — that field is the proof the
 Chakra trace, not template traffic, was the workload.
 
@@ -251,7 +252,7 @@ runs all of it.
 | `serve --network-backend analytical` completes and shuts down cleanly | same, live test |
 | `serve --network-backend booksim` (replay-only, the default) | same, live test |
 | `serve --cycle-accurate`: real NoC simulation with ITL metrics | same, live test |
-| serving-module booksim scenarios (dense-DP, MoE-DP-EP, uneven drain) | `test_full_pipeline.py` |
+| serving-module booksim scenarios (dense-DP, MoE-DP-EP, MoE-DP-PP) | `test_full_pipeline.py` |
 | `t3 astrasim` spine consumes the Chakra trace (never the template fallback) | `scripts/run_astrasim.py --selfcheck` + live sweep JSON `traffic` field |
 
 ---

@@ -19,7 +19,7 @@ from veritx_dse.cli.cli import (
     cmd_sweep, cmd_run, cmd_compare, cmd_pareto, cmd_baseline,
     cmd_certify_flow, cmd_certify_rtl, cmd_certify_full, cmd_compile,
     cmd_init, cmd_report, cmd_evaluate_anynet, cmd_synthesize_bo,
-    cmd_synthesize_grid, cmd_synthesize_iterative, cmd_runs, cmd_results,
+    cmd_synthesize_iterative, cmd_runs, cmd_results,
     cmd_status, cmd_diff, cmd_generate_uvm, main, _expand_anynet_files,
     _eff_timeout, _resolve_path, sanitize_path, _parse_astra_cycles,
     _latex_to_html,
@@ -346,11 +346,10 @@ class TestReport:
 
 
 # ── synthesize wrappers ──────────────────────────────────────────────────────
+# NOTE: the `grid` subcommand was removed — it invoked scripts/run.py, which
+# imported a deleted `evaluator` module (crashed on every invocation).
 
 class TestSynthesize:
-    def test_grid_completes(self, capsys):
-        cmd_synthesize_grid(Ctx(verbosity=1), SimpleNamespace(nodes=4, timeout=120))
-        assert "Grid search complete" in capsys.readouterr().err
 
     def test_bo_reports_persisted_results(self, tmp_path, monkeypatch, capsys):
         """After BO completes, the persisted results JSON is read and echoed.
@@ -396,18 +395,18 @@ class TestSynthesize:
         """main() routes synthesize subcommands through the dispatch table."""
         import veritx_dse.cli.cli as cli_mod
         called = []
-        monkeypatch.setattr(cli_mod, "cmd_synthesize_grid",
-                            lambda ctx, args: called.append("grid"))
+        monkeypatch.setattr(cli_mod, "cmd_synthesize_iterative",
+                            lambda ctx, args: called.append("iterative"))
         # DISPATCH holds the function reference directly — patch the table too
-        monkeypatch.setitem(cli_mod.DISPATCH["synthesize"], "grid",
-                            lambda ctx, args: called.append("grid"))
+        monkeypatch.setitem(cli_mod.DISPATCH["synthesize"], "iterative",
+                            lambda ctx, args: called.append("iterative"))
         argv = sys.argv
-        sys.argv = ["veritx", "synthesize", "grid"]
+        sys.argv = ["veritx", "synthesize", "iterative", "--trace", "x"]
         try:
             main()                               # success → returns, no exit
         finally:
             sys.argv = argv
-        assert called == ["grid"]
+        assert called == ["iterative"]
 
 
 # ── runs / results / status / diff wrappers ──────────────────────────────────

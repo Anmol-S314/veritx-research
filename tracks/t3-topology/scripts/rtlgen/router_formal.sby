@@ -1,0 +1,15 @@
+[options]
+mode bmc
+depth 20
+
+[engines]
+smtbmc
+
+[script]
+read -sv /home/datavex/veritx-research/tracks/t3-topology/scripts/rtlgen/noc_pkg.sv
+read -sv /home/datavex/veritx-research/tracks/t3-topology/scripts/rtlgen/router.sv
+hierarchy -top router
+
+[files]
+/home/datavex/veritx-research/tracks/t3-topology/scripts/rtlgen/noc_pkg.sv
+/home/datavex/veritx-research/tracks/t3-topology/scripts/rtlgen/router.sv

@@ -38,7 +38,7 @@ import sys
 import time
 from pathlib import Path
 
-from ..core.logging import Ctx, log, ok, fail, verbose, banner, output, print_human
+from ..core.logging import Ctx, log, ok, fail, verbose, banner, output
 from ..model.presets import (
     Topology, SWEEP_TOPOS, DENSE_PRESETS, lookup_topo, make_anynet_topo,
     count_anynet_edges,
@@ -349,15 +349,6 @@ def cmd_synthesize_bo(ctx: Ctx, args):
         ok(ctx, f"Best analytical: {data.get('best_latency', '?')}c")
         ok(ctx, f"BookSim validated: {data.get('booksim_latency', '?')}c")
         ok(ctx, f"Results: {results_path}")
-
-
-def cmd_synthesize_grid(ctx: Ctx, args):
-    log(ctx, f"Grid search: {args.nodes} nodes")
-    import subprocess
-    subprocess.run([sys.executable, str(SCRIPTS_DIR / "run.py")],
-                   capture_output=True, text=True,
-                   timeout=_eff_timeout(args, 600), cwd=str(REPO))
-    ok(ctx, "Grid search complete")
 
 
 def cmd_synthesize_iterative(ctx: Ctx, args):
@@ -912,9 +903,6 @@ def cmd_run(ctx: Ctx, args):
                    "--out", str(RUNS_DIR / "booksim" / "topo.anynet")]
             subprocess.run(cmd, capture_output=True, text=True, timeout=step_budget,
                           check=True, cwd=str(REPO))
-        else:
-            subprocess.run([sys.executable, str(SCRIPTS_DIR / "run.py")],
-                          capture_output=True, text=True, timeout=step_budget, cwd=str(REPO))
 
         if not topo_path.exists():
             candidate = RUNS_DIR / "booksim" / "topo.anynet"
@@ -1723,11 +1711,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_bo.add_argument("--timeout", type=int, default=None,
                       help="Subprocess timeout in seconds (default: VERITX_TIMEOUT or 600)")
 
-    p_grid = ss.add_parser("grid", help="Grid search")
-    p_grid.add_argument("--nodes", type=int, default=64)
-    p_grid.add_argument("--timeout", type=int, default=None,
-                        help="Subprocess timeout in seconds (default: VERITX_TIMEOUT or 600)")
-
     p_iter = ss.add_parser("iterative", help="RHO/GRPO iterative search")
     p_iter.add_argument("--trace", required=True)
     p_iter.add_argument("--method", default="rho", choices=["rho", "grpo"])
@@ -1820,7 +1803,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_run = sub.add_parser("run", help="Full pipeline")
     p_run.add_argument("--model", required=True)
     p_run.add_argument("--nodes", type=int, default=64)
-    p_run.add_argument("--search", default="bo", choices=["bo", "grid", "iterative"])
+    p_run.add_argument("--search", default="bo", choices=["bo", "iterative"])
     p_run.add_argument("--iterative-method", default="rho", choices=["rho", "grpo"])
     p_run.add_argument("--iters", type=int, default=50)
     p_run.add_argument("--scorer", default="analytical", choices=["analytical", "booksim"])
@@ -1963,7 +1946,6 @@ DISPATCH = {
     "trace": TRACE_CMDS,
     "synthesize": {
         "bo": cmd_synthesize_bo,
-        "grid": cmd_synthesize_grid,
         "iterative": cmd_synthesize_iterative,
     },
     "evaluate": {

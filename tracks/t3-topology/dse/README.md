@@ -211,68 +211,64 @@ veritx-research/                           repo root
       README.md                        THIS FILE (the wiki)
       pyproject.toml                   pip install -e . config
 
-      veritx_dse/                      core package (30 modules)
-        paths.py                       SINGLE SOURCE: REPO, DSE_DIR, RUNS_DIR, BOOKSIM_BIN
-        cli.py                         17 CLI commands, thin dispatch
-        compile_model.py               E1-E5 data model, guardrails, VC derivation
-        pipeline.py                    compare, sweep, orchestration
-        booksim.py                     BookSim2 config generation + execution
-        evaluator.py                   BookSim runner with LRU caching
-        traces.py                      trace validation + analysis
-        reports.py                     area/power/timing estimates
-        presets.py                     topology + workload registry
-        artifact.py                    HMAC signing + manifests
-        uvm_gen.py                     UVM testbench generator
-        config.py                      configuration management (env vars)
-        constants.py                   physical constants (7nm tech)
-        errors.py                      structured error hierarchy
-        logger.py                      file logger
-        logging.py                     structured logging with Ctx
-        recovery.py                    atomic writes + cleanup on failure
-        commands_trace.py              trace CLI handlers (validate, info, extract)
-        model_to_trace.py              traffic model to trace converter
-        trace_to_binary.py             ASCII to binary trace conversion
-        chakra_to_dse.py               Chakra trace converter
-        recommend.py                   BO recommendation engine
-        roofline.py                    roofline model analysis
-        objective.py                   optimization objectives
-        phase_sequencer.py             phase sequencing
-        traffic_model.py               phase-aware traffic model
-        dse_to_frontend.py             DSE-to-frontend interface
-        __init__.py                    public API re-exports
+      veritx_dse/                      core package (30 modules, 7 subpackages)
+        core/paths.py                  SINGLE SOURCE: REPO, DSE_DIR, RUNS_DIR, BOOKSIM_BIN
+        cli/cli.py                     CLI commands, thin dispatch
+        cli/pipeline.py                compare, sweep, runs, results, LaTeX
+        model/compile_model.py         E1-E5 data model, guardrails, VC derivation
+        model/presets.py               topology + workload registry
+        simulation/booksim.py          BookSim2 config generation + execution
+        simulation/traces.py           trace validation + analysis + extraction
+        simulation/model_to_trace.py   traffic model → trace converter
+        simulation/trace_to_binary.py  ASCII → binary trace conversion
+        synthesis/bo_synthesizer.py    Bayesian-optimization topology search
+        synthesis/iterative_synthesizer.py  RHO/GRPO topology search
+        synthesis/milp_topology_v2.py  TMCF MILP + SA topology synthesis
+        synthesis/event_objective.py   event-native analytical scoring
+        reports/reports.py             area/power/timing estimates
+        reports/artifact.py            HMAC signing + manifests
+        verification/uvm_gen.py        UVM testbench generator
+        core/config.py                 configuration management (env vars)
+        core/constants.py              physical constants (7nm tech)
+        core/errors.py                 structured error hierarchy
+        core/logging.py                structured logging with Ctx
+        core/recovery.py               atomic writes + cleanup on failure
 
-      tests/                           278 tests (21 integration + 257 unit)
-        test_integration.py            end-to-end CLI (21 tests)
-        test_compile_model.py          E1-E5, guardrails (50 tests)
-        test_prd_gaps.py               reports, artifacts (38 tests)
-        test_cli_modules.py            CLI trace, topology (33 tests)
-        test_entry_point.py            package install (23 tests)
-        test_sprint1.py                Result/Artifact (19 tests)
-        test_compile_uvm.py            UVM in pipeline (14 tests)
-        test_missing_coverage.py       coverage gaps (14 tests)
-        test_api_contract.py           API contracts (11 tests)
-        test_uvm_gen.py                UVM generation (11 tests)
-        test_cli.py                    BookSim mock (10 tests)
-        test_reports.py                area/power/timing (9 tests)
-        test_astra_trace.py            ASTRA-sim trace format
+      tests/                           588 tests, all green (subprocess-coverage enabled)
+        test_compile_model.py          E1-E5, guardrails (95 tests)
+        test_coverage_residue.py       branch-closure sweep (71)
+        test_cli_modules.py            CLI trace, topology (65)
+        test_commands_batch_e.py       run/certify/report branches (44)
+        test_prd_gaps.py               reports, artifacts (38)
+        test_trace_commands.py         live trace commands (25)
+        test_synthesis_math.py         event_objective + MILP (25)
+        test_entry_point.py            package install (23)
+        test_sprint1.py                Result/Artifact (19)
+        test_synthesis_loops.py        BO + iterative loops (18)
+        test_pipeline.py               pipeline internals (18)
+        test_integration.py            end-to-end CLI (17)
+        test_trace_tools.py            trace/binary round-trips (16)
+        test_reports.py                area/power/timing (14)
+        test_missing_coverage.py       coverage gaps (14)
+        test_compile_uvm.py            UVM in pipeline (14)
+        test_evaluate_astra.py         ASTRA-sim backend (12)
+        test_cli.py                    BookSim mock (12)
+        test_uvm_gen.py                UVM generation (11)
+        test_full_pipeline.py          serving-module scenarios (11)
+        test_api_contract.py           API contracts (11)
+        test_serve_contract.py         serve contract + live serve (7)
 
-      scripts/                         standalone analysis scripts (not part of package)
-        bo_synthesizer.py             Bayesian optimization synthesis
-        iterative_synthesizer.py      RHO/GRPO search
+      scripts/                         standalone scripts (not part of the package)
+        chakra_to_dse.py              Chakra → DSE trace converter
+        milestone_c.py                Milestone C certifier (certify flow)
+        memory_miss_model.py          M/D/1 L2-bank contention model
         multi_workload_pareto.py      Pareto front computation
-        milestone_c.py                Milestone C certifier
-        run.py                        DSE grid search smoke test
-        space.py                      design space definition
-        search.py                     grid search implementation
-        event_objective.py             event-based scoring
-        milp_topology_v2.py           MILP topology constants + edge cost
-        deadlock_routing.py            deadlock detection + routing parse
-        log.py                         shared logger for standalone scripts
-        objective.py                   L2 recommend objective
-        ppa_evaluator.py               DSE PPA evaluator (SCALE-Sim + BookSim + Timeloop)
-        surrogate.py                   MLP surrogate model
-        verify.sh                      verification runner
-        ucie_scaling_results.md        UCIe scaling data
+        event_objective.py            event-based scoring (script entry)
+        milp_topology_v2.py           MILP topology synthesis (script entry)
+        deadlock_routing.py           deadlock detection + routing parse
+        log.py                        shared logger for standalone scripts
+        verify.sh                     verification runner
+        ucie_scaling_results.md       UCIe scaling data
 
       examples/                        sample CompileRequest JSONs
         _template.json                full template with documentation
@@ -425,7 +421,7 @@ veritx --help
 ```bash
 cd tracks/t3-topology/dse
 
-# Full suite (278 tests, ~2 minutes)
+# Full suite (588 tests, ~2 minutes)
 python3 -m pytest tests/ -v
 
 # Quick smoke test (no BookSim needed)
@@ -1042,7 +1038,7 @@ flowchart TD
 
 4. **Type-enforced guardrails** — `NocConfig` has no field for LOCKED parameters. An override isn't refused at runtime — it's inexpressible in the type system.
 
-5. **TDD** — tests written before implementation. 278 tests, all pass.
+5. **TDD** — tests written before implementation. 588 tests, all pass.
 
 6. **Minimal surface area** — 17 CLI commands, each doing one thing well. No command does too much.
 
@@ -2379,7 +2375,7 @@ with examples (Noxim integration, sync scripts, checklist).
 ### 31.1 Running Tests
 
 ```bash
-# Full suite (278 tests, ~2 minutes)
+# Full suite (588 tests, ~2 minutes)
 python3 -m pytest tests/ -v
 
 # Specific modules
@@ -2956,7 +2952,7 @@ testpaths = ["tests"]
 - Design manifest signing
 - Sensitivity analysis
 - Memory hierarchy correction
-- 278 tests, all pass
+- 588 tests, all pass
 - **LLMServingSim full-stack integration** (veritx serve)
   - Interactive protocol: Python scheduler ↔ C++ ASTRA-sim/BookSim2
   - Multi-instance round-robin serving with load/run protocol
@@ -3096,7 +3092,7 @@ Proprietary — VeritX Research Team
 
 ### 49.3 Pull Request Checklist
 
-- [ ] All 278 tests pass
+- [ ] All 588 tests pass
 - [ ] New functionality has tests
 - [ ] README updated if public API changed
 - [ ] BookSim changes synced to ASTRA-sim
