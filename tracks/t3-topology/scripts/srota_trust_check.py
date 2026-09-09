@@ -68,6 +68,10 @@ def read_trace(path):
                 "type": fields[3],
                 "size": int(fields[4]),
                 "txn": fields[5] if len(fields) > 5 else str(line_no),
+                # Arbitration header fields, optional on input.
+                "slack": int(fields[6]) if len(fields) > 6 else 0,
+                "batch": int(fields[7]) if len(fields) > 7 else 0,
+                "golden_id": int(fields[8]) if len(fields) > 8 else 0,
             })
     return events, had_header
 
@@ -80,7 +84,12 @@ def write_veritx(events, path):
     """
     with open(path, "w") as f:
         for e in events:
-            f.write(f"{e['timestamp']} {e['src']} 0 {e['dst']} {e['size']}\n")
+            # The arbitration fields are written even when all zero: once
+            # the arbiter is active they change the result, so a dialect
+            # comparison that dropped them would silently stop comparing
+            # the same run.
+            f.write(f"{e['timestamp']} {e['src']} 0 {e['dst']} {e['size']} "
+                    f"{e['slack']} {e['batch']} {e['golden_id']}\n")
 
 
 def derive_config(src_config, out_config, trace_file, packet_log, seed):
@@ -236,6 +245,19 @@ def main():
                   f"csv p50/p95/p99 {pa.get('p50')}/{pa.get('p95')}/{pa.get('p99')}"
                   f"  veritx {pb.get('p50')}/{pb.get('p95')}/{pb.get('p99')}")
 
+        # The arbitration fields must survive both parsers identically, or
+        # an arbiter run measured through one dialect is not the run the
+        # other dialect reports.
+        def arb_sig(pkts):
+            if not pkts or "slack" not in pkts[0]:
+                return None
+            return sorted((p["slack"], p["batch"], p["golden_id"]) for p in pkts)
+        sa, sb = arb_sig(pkts_a), arb_sig(pkts_b)
+        if sa is not None:
+            rep.check("2. two rulers: arbitration fields", sa == sb,
+                      f"{len(set(s[0] for s in sa))} slack class(es) present, "
+                      + ("identical across dialects" if sa == sb else "DIFFER"))
+
         # ---- 3. Physical bounds ----------------------------------------
         # A packet cannot beat serialization plus one cycle per hop. The
         # logged hop count includes the injection channel.
@@ -294,6 +316,19 @@ def main():
 
         rep.note("result", f"p50/p95/p99 = {pa.get('p50')}/{pa.get('p95')}/{pa.get('p99')}"
                            f", n={len(lat_a)}")
+
+        # Per-slack-class results: the M3 headline is critical-class tail
+        # latency, not the aggregate.
+        if pkts_a and "slack" in pkts_a[0]:
+            per = {}
+            for p in pkts_a:
+                per.setdefault(int(p["slack"]), []).append(int(p["total_latency"]))
+            if len(per) > 1:
+                for s in sorted(per):
+                    q = percentiles(per[s])
+                    rep.note(f"result: slack {s}",
+                             f"n={len(per[s])}  p50/p95/p99 = "
+                             f"{q['p50']}/{q['p95']}/{q['p99']}")
 
         print(rep.render())
         if keep:

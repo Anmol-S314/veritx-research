@@ -59,7 +59,8 @@ separate, older reason in point 2 above, which trace replay also fixes.
 
 ## Phase 0 — Merge hygiene and the trace-mode bring-up
 
-Status as of writing: items 0.1–0.4 **done**, 0.5–0.7 open.
+Status: Phase 0 **done**, Phase 1 items 1.1 and 1.2 **done**.
+Items 1.3 and 1.4 land with Phase 4, which is what needs them.
 
 **0.1 `METADATA.json` was malformed (done).** The rebase concatenated the
 MR12 `local_modifications` entries and the Srota entries without a separator,
@@ -153,7 +154,7 @@ golden-window request, idling the fabric on a schedule rather than on demand.
 It deserves a directed test of its own.
 
 **Config surface.** `srota_arb_l0_golden`, `srota_arb_l1_slack`,
-`srota_arb_l2_batch` as enable masks, plus golden epoch length and batch
+`srota_arb_l2_stc` as enable masks, plus golden epoch length and batch
 epoch length, matching the §13 register names the way the existing twelve
 `srota_*` keys already do.
 
