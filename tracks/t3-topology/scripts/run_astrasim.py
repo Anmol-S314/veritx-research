@@ -57,6 +57,26 @@ def find_astrasim_bin() -> Optional[str]:
     return shutil.which("astrasim") or shutil.which("astra-sim")
 
 
+def _parse_plat_line(stdout: str) -> Optional[dict]:
+    """Parse the frontend's [plat] per-packet summary (one line, last wins).
+
+    Emitted by AstraSim_BookSim2 at end of each round:
+      [plat] packets=480 avg=23.375 min=19 p50=19 p95=44 p99=44 max=44
+             hops_avg=2.875 hops_min=2 hops_max=7
+    Values are exact retire-time measurements (EmbedTM::PlatStats), not
+    estimates. Returns None when the binary predates the feature.
+    """
+    import re
+    result = None
+    for line in stdout.splitlines():
+        if "[plat]" not in line:
+            continue
+        fields = dict(re.findall(r"(\w+)=([0-9.eE+-]+)", line))
+        if fields:
+            result = fields
+    return result
+
+
 def run_astrasim_topology(
     cfg_path: Path,
     spec: Dict[str, Any],
@@ -113,7 +133,6 @@ def run_astrasim_topology(
     for _rank in range(_total_ranks):
         _shutil.copy(et_path, Path(str(et_path) + f".{_rank}.et"))
 
-    latency = None
     astrasim_bin = find_astrasim_bin()
 
     if astrasim_bin:
@@ -134,11 +153,88 @@ def run_astrasim_topology(
             "--booksim2-extra=injection_rate=0.0",
         ]
         import time as _time
+        import threading as _threading
         _t0 = _time.time()
+        _timeout_s = int(os.environ.get("ASTRASIM_TIMEOUT", "1800"))
+        # Stream (don't capture-and-block): tee frontend stdout/stderr to
+        # run.log live so `tail -f` works, echo key lines, heartbeat every
+        # 60s so a 45-min dragonfly doesn't look hung. Full text kept for
+        # the cycles/[plat] parse below.
+        _run_log = out_dir / "run.log"
+        _out_lines: list[str] = []
+        _err_lines: list[str] = []
+        _lock = _threading.Lock()
+        _done = _threading.Event()
+        def _fmt_elapsed(s: float) -> str:
+            s = int(s)
+            return f"{s // 60}m{s % 60:02d}s" if s >= 60 else f"{s}s"
+        def _is_interesting(line: str) -> bool:
+            # Tight: rank-completion lines (sys[i] finished) + plat summary +
+            # node count + errors. Excludes per-rank [statistics] repeats
+            # (Wall/GPU/Comm restate the finished line x3).
+            if "[plat]" in line or "# of nodes" in line:
+                return True
+            low = line.lower()
+            if "error" in low or "parse error" in low or "assert" in low:
+                return True
+            return "sys[" in line and "finished" in line
+        def _pump(stream, store: list[str], is_stdout: bool):
+            try:
+                with open(_run_log, "a") as _lf:
+                    for _line in iter(stream.readline, ""):
+                        with _lock:
+                            store.append(_line)
+                        try:
+                            _lf.write(("[stdout] " if is_stdout else "[stderr] ") + _line)
+                            _lf.flush()
+                        except OSError:
+                            pass
+                        if _is_interesting(_line.rstrip()):
+                            print(f"\n    | {cfg_path.stem}: {_line.rstrip()[:160]}", flush=True)
+            finally:
+                try:
+                    stream.close()
+                except OSError:
+                    pass
         try:
-            res = subprocess.run(cmd, capture_output=True, text=True,
-                                 stdin=subprocess.DEVNULL,
-                                 timeout=int(os.environ.get("ASTRASIM_TIMEOUT", "1800")))
+            _run_log.write_text(f"$ {' '.join(cmd)}\n")
+            _proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                     stdin=subprocess.DEVNULL, text=True, bufsize=1)
+            _t_out = _threading.Thread(target=_pump, args=(_proc.stdout, _out_lines, True), daemon=True)
+            _t_err = _threading.Thread(target=_pump, args=(_proc.stderr, _err_lines, False), daemon=True)
+            _t_out.start(); _t_err.start()
+            _last_beat = _t0
+            while True:
+                _rc = _proc.poll()
+                if _rc is not None:
+                    break
+                _now = _time.time()
+                if _now - _t0 > _timeout_s:
+                    _proc.kill()
+                    try:
+                        _proc.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        pass
+                    _done.set()
+                    _tail = ""
+                    with _lock:
+                        _tail_lines = "".join(_out_lines).splitlines()[-3:]
+                    if _tail_lines:
+                        _tail = " | stdout-tail: " + " / ".join(_tail_lines)
+                    raise TimeoutError(
+                        f"timed out after {_timeout_s}s (elapsed {_fmt_elapsed(_now - _t0)})" + _tail)
+                if _now - _last_beat >= 60:
+                    print(f"    ... {cfg_path.stem} still running "
+                          f"({_fmt_elapsed(_now - _t0)} elapsed, timeout {_fmt_elapsed(_timeout_s)})",
+                          flush=True)
+                    _last_beat = _now
+                _done.wait(1.0)
+                if _proc.poll() is not None:
+                    break
+            _t_out.join(timeout=10); _t_err.join(timeout=10)
+            import types as _types
+            res = _types.SimpleNamespace(returncode=_proc.returncode,
+                                         stdout="".join(_out_lines), stderr="".join(_err_lines))
         except subprocess.TimeoutExpired as te:
             # Don't fabricate cycles: a timeout means no usable result.
             # Persist partial stdout tail for post-mortem (BookSim prints
@@ -150,20 +246,43 @@ def run_astrasim_topology(
                 _tail = " | stdout-tail: " + " / ".join(_lines[-3:])
             raise TimeoutError(
                 f"timed out after {te.timeout}s (elapsed { _time.time()-_t0:.0f}s)" + _tail)
+        # Frontend reports per-rank: "sys[i] finished, WALL cycles, exposed
+        # communication EXPOSED cycles." Take the max WALL across ranks as the
+        # workload's total cycles (slowest rank gates the collective), and the
+        # exposed comm from that same rank for the overhead ratio.
+        # latency_cycles = total cycles: the collective's wall time is its
+        # latency, and ranking topologies by it is exactly what comparison
+        # analysis.py's zero_load_latency already does. TRUE per-packet
+        # latency percentiles + hop counts come from the [plat] line when
+        # the binary emits it (plat_stats below); older binaries leave None.
         cycles = None  # Honest default: unknown until the frontend reports it.
+        exposed_best = None
         for line in res.stdout.splitlines():
             if "sys[" in line and "finished" in line:
                 try:
-                    cycles = int(line.split("finished,")[1].split("cycles")[0].strip())
+                    wall = int(line.split("finished,")[1].split("cycles")[0].strip())
+                    exp = None
+                    if "exposed communication" in line:
+                        exp = int(line.split("exposed communication")[1].split("cycles")[0].strip())
+                    if cycles is None or wall > cycles:
+                        cycles = wall
+                        exposed_best = exp
                 except (IndexError, ValueError):
                     pass
         if res.returncode == 0 and cycles is not None:
             status = "ok"
+            latency = cycles
+            comm_overhead_pct = (round(100.0 * exposed_best / cycles, 2)
+                                 if exposed_best is not None and cycles else None)
+            plat = _parse_plat_line(res.stdout)
         else:
+            plat = None
             # Non-zero exit or unparseable output: no usable cycle count.
             # Keep cycles=None (never the 1000 placeholder) and attach the
             # stderr tail so failures are diagnosable, not silent.
             cycles = None
+            latency = None
+            comm_overhead_pct = None
             _err_tail = ""
             if res.stderr:
                 _err_tail = " | stderr: " + " / ".join(res.stderr.splitlines()[-3:])
@@ -171,9 +290,8 @@ def run_astrasim_topology(
             if res.stdout:
                 _out_tail = " | stdout-tail: " + " / ".join(res.stdout.splitlines()[-3:])
             status = f"failed (rc={res.returncode}){_err_tail}{_out_tail}"
-        # Honesty: the frontend reports cycles, not these breakdowns.
-        # Null beats fabricated (downstream pandas-tolerates None as NaN).
-        comm_overhead_pct = None
+        # hops_avg: the frontend never reports per-packet hops — stays None
+        # (energy_proxy will be NaN for astrasim rows; use cycles for ranking).
         hops_avg = None
     else:
         # No synthetic fallback: running plain booksim on the template cfg
@@ -192,7 +310,12 @@ def run_astrasim_topology(
         "total_nodes": cfg_info["total_nodes"],
         "astrasim_cycles": cycles,
         "latency_cycles": latency if latency is not None else None,
+        "exposed_comm_cycles": exposed_best,
         "comm_overhead_pct": comm_overhead_pct,
+        # Real per-packet measurements from the [plat] frontend line
+        # (packets, avg/min/p50/p95/p99/max latency, hop stats). None when
+        # the binary predates the feature — never fabricated.
+        "plat_stats": plat,
         # Embedded mode: the frontend injects collectives via API; the 0.0
         # records the injection_rate override actually passed to the TM and
         # keeps the row schema stable for PA-01/aggregate/energy consumers.
@@ -278,6 +401,13 @@ def main():
                              f"in {CONFIGS_DIR}")
 
     results = []
+    import time as _wtime
+    _sweep_t0 = _wtime.time()
+    _elapsed_hist: list[float] = []
+
+    def _fmt_dur(s: float) -> str:
+        s = int(s)
+        return f"{s // 60}m{s % 60:02d}s" if s >= 60 else f"{s}s"
 
     print(f"=== ASTRA-Sim 2.0 + Chakra ET Workload Runner ===")
     print(f"  Model Workload : {spec.get('model_name', args.model)}")
@@ -289,9 +419,15 @@ def main():
     print("  Topologies     :", [c.stem for c in configs])
     print()
 
-    for cfg in configs:
-
-        print(f"  Running {cfg.stem:<12} ... ", end=" ", flush=True)
+    for _idx, cfg in enumerate(configs, 1):
+        _topo_t0 = _wtime.time()
+        if _elapsed_hist:
+            _avg = sum(_elapsed_hist) / len(_elapsed_hist)
+            _eta = _avg * (len(configs) - len(results))
+            _eta_txt = f" | ETA ~{_fmt_dur(_eta)}"
+        else:
+            _eta_txt = ""
+        print(f"  [{_idx}/{len(configs)}] Running {cfg.stem:<12} ...{_eta_txt}", flush=True)
 
         # One bad config (missing data file, binary crash) must not kill
         # the other runs. Failures are recorded as status=error with
@@ -327,7 +463,12 @@ def main():
             if r["astrasim_cycles"] is not None
             else "       n/a total cycles"
         )
-        print(f"{latency_text} | {cycles_text} | {r['status']}", flush=True)
+        _topo_elapsed = _wtime.time() - _topo_t0
+        _elapsed_hist.append(_topo_elapsed)
+        _n_ok = sum(1 for _r in results if _r.get("status") == "ok") + (1 if r.get("status") == "ok" else 0)
+        print(f"  [{_idx}/{len(configs)}] {cfg.stem:<12} done in {_fmt_dur(_topo_elapsed)} "
+              f"| {latency_text} | {cycles_text} | {r['status']} "
+              f"(ok={_n_ok}/{_idx} | sweep {_fmt_dur(_wtime.time() - _sweep_t0)})", flush=True)
         results.append(r)
         # Incremental persistence: a slow/hung topology must not hold the
         # whole sweep's results hostage. The JSON on disk is always the
