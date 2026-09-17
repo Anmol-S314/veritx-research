@@ -42,7 +42,13 @@ import sys
 from pathlib import Path
 
 # Aladdin CSV rows at 1 ns latency (the row Accelergy picks for a 1 GHz design).
-PLUGIN = Path("/home/datavex/.local/share/accelergy/estimation_plug_ins/accelergy-aladdin-plug-in")
+# $HOME-anchored (was a hardcoded /home/datavex path); override via env for
+# nonstandard installs.
+import os as _os
+PLUGIN = Path(_os.environ.get(
+    "ACCELENERGY_ALADDIN_PLUGIN",
+    str(Path.home() / ".local/share/accelergy/estimation_plug_ins/accelergy-aladdin-plug-in"),
+))
 CROSSBAR_CSV = PLUGIN / "data" / "crossbar.csv"
 REG_CSV = PLUGIN / "data" / "reg.csv"
 

@@ -10,6 +10,13 @@
 
 **v0.3.0** — Turn workload traces into verified NoC topologies with cycle-accurate proof, formal reports, and signed design manifests.
 
+> **Layout note (2026-09-11 cleanup):** historical inputs/runs/docs moved to `archive/`
+> (flat: `archive/inputs/traces/` holds the trace library; stale docs, retired scripts
+> like `verify.sh`/`event_objective.py`, traffic matrices, and `README.full.md` all sit
+> at the `archive/` root). Live outputs go to the repo-root `runs/` and
+> `tracks/t3-topology/results/<command>/<ts>_seed<n>/` — one results home,
+> timestamped + seed-stamped per run.
+
 > **If you're stuck, this README is the single source of truth.** Every command, every build step, every debug trick is here. This is a wiki — search it, don't guess.
 
 ---
@@ -260,15 +267,16 @@ veritx-research/                           repo root
 
       scripts/                         standalone scripts (not part of the package)
         chakra_to_dse.py              Chakra → DSE trace converter
-        milestone_c.py                Milestone C certifier (certify flow)
-        memory_miss_model.py          M/D/1 L2-bank contention model
+        flow_certifier.py             Flow-class certifier (certify flow)
+        memory_miss_model.py          M/D/1 L2-bank contention model (used by CLI)
         multi_workload_pareto.py      Pareto front computation
-        event_objective.py            event-based scoring (script entry)
-        milp_topology_v2.py           MILP topology synthesis (script entry)
         deadlock_routing.py           deadlock detection + routing parse
         log.py                        shared logger for standalone scripts
-        verify.sh                     verification runner
-        ucie_scaling_results.md       UCIe scaling data
+        _cov_sitecustomize.py         coverage subprocess hook (used by tests/conftest.py)
+
+      (retired copies of event_objective.py / milp_topology_v2.py live in the
+       package under veritx_dse/synthesis/; verify.sh and ucie_scaling_results.md
+       were retired to archive/)
 
       examples/                        sample CompileRequest JSONs
         _template.json                full template with documentation
@@ -324,21 +332,53 @@ veritx --help
 
 ### First Run (2 minutes)
 
+No path memorization required — **`veritx where <name>` resolves any trace,
+example, fixture, or anynet file by short name** (extension optional,
+substring fallback), and `veritx interact` prints copy-pasteable next steps:
+
 ```bash
-# 1. Validate a real traffic trace
-veritx trace validate runs/traces/qwen3_serving_16rank.trace
+# 0. Don't know a full path? Ask.
+veritx where test_dynamic          # → .../inputs/traces/test_dynamic.trace
+veritx where moe_8npu              # → .../examples/moe_8npu.json
+veritx interact                    # menu of common next steps
+
+# 1. Validate a real traffic trace (resolved by name)
+veritx trace validate $(veritx where test_dynamic)
 
 # 2. Analyze trace characteristics (burst patterns, injection rates)
-veritx trace info runs/traces/qwen3_serving_16rank.trace
+veritx trace info $(veritx where test_dynamic)
 
 # 3. Compare topologies head-to-head
 veritx compare \
-    --trace runs/traces/qwen3_serving_16rank.trace \
+    --trace $(veritx where qwen3) \
     --topos mesh_8x8,torus_8x8 \
     --seeds 1
 
-# 4. Full intent-to-fabric pipeline
+# 4. Query every past run across all result JSONs
+veritx history --reindex --limit 20          # newest rows, all sweeps
+veritx history --topo mesh4x4 --status ok    # filtered
+
+# 5. Full intent-to-fabric pipeline
 veritx compile examples/qwen3_moe_16npu.json
+```
+
+`where` searches all asset classes by default (trace → example → fixture →
+anynet → model); `--kind` narrows it. A miss exits 1 and **lists what is
+available** instead of leaving you guessing.
+
+#### Experiment history (the DB layer)
+
+`veritx history` is the query surface over **`runs/index.db`** — a
+rebuildable sqlite index (stdlib, zero dependencies) over every result JSON.
+Files stay the source of truth; delete the DB and `--reindex` reproduces it.
+This is the foundation the future read-only API + dashboard frontend sit on
+(same `veritx_dse.core.store.Store` class, unchanged schema).
+
+```bash
+veritx history --reindex                      # (re)build index, then list
+veritx history --topo mesh4x4 --status ok     # filter
+veritx history --min-cycles 3000000           # numeric filters too
+veritx --json history --limit 5               # machine-readable
 ```
 
 ### Interactive Wizard
@@ -441,15 +481,27 @@ python3 -m pytest tests/ --cov=veritx_dse --cov-report=term-missing
 
 ### 5.1 Trace Operations (`veritx trace`)
 
+`veritx trace` has two groups: **make** (produce a trace from some source) and
+**inspect** (read/transform an existing trace). In the t3 menu they are separate
+pickers (`trace → make` / `trace → inspect`); on the CLI they are written as
+`veritx trace <subcommand> …`.
+
+**Make — produce a `.trace` from a source:**
+
 | Command | What it does | Example |
 |---------|-------------|---------|
-| `trace validate` | Check trace format, detect anomalies | `veritx trace validate trace.trace` |
-| `trace info` | Analyze burst patterns, injection rates | `veritx trace info trace.trace` |
-| `trace extract` | Pull single burst or redistribute uniformly | `veritx trace extract trace.trace --burst 100` |
-| `trace slice` | Filter by traffic class | `veritx trace slice --trace t.trace --classes 0,1` |
-| `trace chakra` | Convert Chakra .et execution traces | `veritx trace chakra et_dir/ --nodes 64` |
-| `trace model` | Convert TrafficModel JSON | `veritx trace model model.json --nodes 64` |
-| `trace hpc` | Copy HPC MPI traces | `veritx trace hpc mpi.trace` |
+| `trace chakra` | Convert Chakra .et / batch .txt traces | `veritx trace chakra et_dir/ --nodes 64 --out runs/traces/input.trace` |
+| `trace model` | Convert a TrafficModel JSON | `veritx trace model model.json --nodes 64 --out runs/traces/input.trace` |
+| `trace hpc` | Copy / install an HPC MPI trace | `veritx trace hpc mpi.trace --nodes 64 --out runs/traces/input.trace` |
+
+**Inspect — read or transform an existing `.trace`:**
+
+| Command | What it does | Example |
+|---------|-------------|---------|
+| `trace info` | Analyze packets, burst patterns, injection rate | `veritx trace info trace.trace` |
+| `trace validate` | Check format, detect anomalies | `veritx trace validate trace.trace` |
+| `trace slice` | Filter by traffic class(es) | `veritx trace slice --trace t.trace --classes 0,1 --out t_slice.trace` |
+| `trace extract` | Pull a single burst or redistribute uniformly | `veritx trace extract trace.trace --burst 100 --out extract.trace` |
 
 ### 5.2 Topology Search (`veritx synthesize`)
 
@@ -479,6 +531,15 @@ veritx synthesize iterative --trace trace.trace --method grpo --steps 100
 veritx evaluate booksim --trace trace.trace --k 8
 veritx evaluate anynet --topo grpo_best.anynet --trace trace.trace
 ```
+
+**`evaluate astra` result JSON** carries real measurements only —
+`cycles` + `per_rank_cycles` (max wall across ranks),
+`exposed_comm_cycles` (slowest rank's exposed communication), and
+`plat_stats`: exact per-packet latency percentiles + hop counts from
+the frontend's `[plat]` line (`packets avg min p50 p95 p99 max
+hops_avg hops_min hops_max`). Any field the binary didn't emit is
+`null` — results are never fabricated, and a run with no parseable
+`sys[i] finished` lines is a **failure**, not a 0-cycle success.
 
 ### 5.4 Comparison (`veritx compare`)
 
@@ -563,7 +624,7 @@ flowchart TD
     subgraph Generate["1. Generate Trace (LLMServingSim)"]
         L1["LLM Workload\nQwen3-30B-A3B, 16 NPU"] --> L2["vLLM Scheduler\nPython frontend"]
         L2 --> L3["ASTRA-sim Backend\nC++ network model"]
-        L3 --> L4["Trace Output\ncycle src dst class size"]
+        L3 --> L4["Trace Output\ncycle src class dst size"]
     end
 
     subgraph Store["2. Store Trace (runs/traces/)"]
@@ -634,7 +695,7 @@ flowchart TD
 VeritX uses a simple ASCII trace format. Each line is one packet:
 
 ```
-cycle src_node dst_node traffic_class packet_size
+cycle src_node traffic_class dst_node packet_size
 ```
 
 Example:
@@ -650,8 +711,8 @@ Example:
 |-------|------|-------|-------------|
 | `cycle` | int | 0–∞ | Injection cycle (when packet enters network) |
 | `src_node` | int | 0–N-1 | Source node ID |
-| `dst_node` | int | 0–N-1 | Destination node ID |
 | `traffic_class` | int | 0–C | Traffic class (0=best effort, 1=latency critical) |
+| `dst_node` | int | 0–N-1 | Destination node ID |
 | `packet_size` | int | 1–∞ | Flit count (usually 8 for 64-byte packets) |
 
 **Format rules:**
@@ -2227,7 +2288,7 @@ print(f" result={stage_result['my_result']}")
 ```
 
 3. Add tests in `tests/test_compile_model.py`
-4. Update the stage list in `docs/PRD-CHECKLIST.md`
+4. Update the stage list in `../docs/PRD-CHECKLIST.md` (canonical copy — the dse/docs fork is archived as docs/PRD-CHECKLIST-DSE-FORK-ARCHIVE.md)
 
 ---
 

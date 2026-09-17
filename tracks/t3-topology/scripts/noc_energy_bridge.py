@@ -136,12 +136,18 @@ def parse_energy_estimation(text: str) -> dict:
     return {"total": total, "components": comps}
 
 
-def get_pj_per_hop() -> dict:
+def get_pj_per_hop(out_dir=None) -> dict:
     """Run Accelergy once with a nominal 1-hop action count to get a
     calibrated pJ-per-hop coefficient. Raises RuntimeError with a clear
     message if Accelergy or the required input files aren't available —
     callers should treat that as "skip the NoC energy step", not a hard
     pipeline failure.
+
+    out_dir: where the audit trail lands (action_counts.yaml,
+    energy_estimation.yaml, ERT/ART, accelergy_run.log). Defaults to the
+    legacy ACCELERGY_OUT (results/<CONFIG>/accelergy) for the standalone
+    sweep bridge; the spatial pipeline passes its own dir so the trail
+    sits next to the summary that quotes it.
 
     Unlike a tempdir, ACCELERGY_OUT is committed to disk under results/ —
     action_counts.yaml, energy_estimation.yaml, ERT.yaml, ART.yaml, the
@@ -151,6 +157,7 @@ def get_pj_per_hop() -> dict:
     from"): rerun `accelergy noc_arch.yaml noc_ERT.yaml action_counts.yaml`
     by hand inside results/accelergy/ and you get the identical files back.
     """
+    out = Path(out_dir) if out_dir is not None else ACCELERGY_OUT
     if not NOC_ARCH.exists():
         raise RuntimeError(f"missing {NOC_ARCH}")
     ert_path = _find_noc_ert()
@@ -158,38 +165,38 @@ def get_pj_per_hop() -> dict:
         raise RuntimeError(f"missing noc_ERT.yaml in {TIMELOOP}")
     accelergy = os.environ.get("ACCELERGY_BIN") or "accelergy"
 
-    ACCELERGY_OUT.mkdir(parents=True, exist_ok=True)
+    out.mkdir(parents=True, exist_ok=True)
     # Clear stale outputs from a previous run first — if this run fails
     # partway through, we don't want last run's energy_estimation.yaml
     # sitting there looking like it belongs to today's run.
-    for stale in ACCELERGY_OUT.glob("*.yaml"):
+    for stale in out.glob("*.yaml"):
         stale.unlink()
 
-    action_counts_path = ACCELERGY_OUT / "action_counts.yaml"
+    action_counts_path = out / "action_counts.yaml"
     _write_yaml(ONE_HOP_ACTION_COUNTS, action_counts_path)
 
     try:
         result = subprocess.run(
             [accelergy, str(NOC_ARCH.resolve()), str(ert_path.resolve()),
              str(action_counts_path.resolve())],
-            cwd=ACCELERGY_OUT, capture_output=True, text=True, timeout=120,
+            cwd=out, capture_output=True, text=True, timeout=120,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired) as e:
         raise RuntimeError(f"could not run '{accelergy}': {e}")
 
-    (ACCELERGY_OUT / "accelergy_run.log").write_text(
+    (out / "accelergy_run.log").write_text(
         f"$ {accelergy} {NOC_ARCH} {ert_path} {action_counts_path}\n"
         f"(run at {datetime.now(timezone.utc).isoformat()}Z, "
         f"returncode={result.returncode})\n\n"
         f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
     )
 
-    est_path = ACCELERGY_OUT / "energy_estimation.yaml"
+    est_path = out / "energy_estimation.yaml"
     if result.returncode != 0 or not est_path.exists():
         tail = "\n".join((result.stdout + result.stderr).splitlines()[-15:])
         raise RuntimeError(
             f"accelergy failed (rc={result.returncode}) — see "
-            f"{ACCELERGY_OUT / 'accelergy_run.log'} for the full log:\n{tail}"
+            f"{out / 'accelergy_run.log'} for the full log:\n{tail}"
         )
     return parse_energy_estimation(est_path.read_text())
 
@@ -256,6 +263,13 @@ def main():
     try:
         est = get_pj_per_hop()
     except RuntimeError as e:
+        # Quarantine any previous run's energy file: leaving it in place made
+        # the next dashboard present last run's pJ/hop as if it belonged to
+        # today's sweep (Accelergy failure is non-fatal, so rc stays 0).
+        if OUT.exists():
+            _q = OUT.with_suffix(".json.unavailable")
+            OUT.rename(_q)
+            print(f"  ⚠ quarantined stale {OUT.name} → {_q.name}")
         print(f"  NoC energy bridge skipped: {e}")
         print(f"  (this does not fail the sweep — {SWEEP} still has hops_avg)")
         return  # non-fatal: don't break `make timeloop` over a missing/misconfigured Accelergy step

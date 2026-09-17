@@ -19,19 +19,81 @@ Usage
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
+# sys[N] finished lines arrive twice: the frontend logs each completion once
+# with a `[timestamp] [workload] [info]` prefix (stderr-style) and once plain
+# (stdout) — sometimes with slightly different cycle counts. The result
+# parser max()es them, so display dedupes by sys id, first copy wins.
+_SYS_DONE_RE = re.compile(r"sys\[(\d+)\]\s+finished")
+_ZERO_DRAIN_RE = re.compile(r"injected=0\b.*draining")
+# Ledger markers (frontend emits these iff VERITX_LEDGER=1, which the driver
+# below always sets): a submit proves the collective was ISSUED (the old
+# no-issue hang class never submits); a completion proves progress.
+_COLL_SUBMIT_RE = re.compile(r"\[LEDGER\]\[COLL_SUBMIT\]")
+_COLL_DONE_RE = re.compile(r"\[LEDGER\]\[COLL_COMPLETE\]")
+
+
+def _stall_update(fresh_text: str, stall_since, issued_since, now: float,
+                  limit_s: int, slow_limit_s: int):
+    """Backend-stall state machine. Pure function so --selfcheck pins it.
+
+    Two tiers (lesson of 2026-09-14: a healthy 64-rank 16 MB allreduce needs
+    ~9 min, and `injected=0` at drain-start is NORMAL — the BookSim uniform
+    counter never counts embedded API injection, and a 10 us comp node means
+    nothing has injected yet when the drain line prints):
+    - no-issue hang (the original class: trace consumed, collective never
+      issued): armed on zero-injection drain, trips past limit_s.
+    - stuck collective (issued but never completes): trips past slow_limit_s.
+    Disarms fully on any rank completion; each COLL_COMPLETE re-arms the
+    slow clock (completions are progress). Draining WITH BookSim packets in
+    flight never arms. Returns (trip_kind, stall_since, issued_since) with
+    trip_kind None | "no-issue" | "stuck".
+    """
+    if _SYS_DONE_RE.search(fresh_text):
+        return None, None, None
+    submitted = bool(_COLL_SUBMIT_RE.search(fresh_text))
+    completed = bool(_COLL_DONE_RE.search(fresh_text))
+    if issued_since is not None and completed:
+        issued_since = now  # progress: a collective finished
+    if stall_since is None:
+        if _ZERO_DRAIN_RE.search(fresh_text):
+            stall_since = now
+            if submitted:
+                issued_since = now
+        return None, stall_since, issued_since
+    if submitted and issued_since is None:
+        issued_since = now  # work was issued: not the no-issue hang class
+    if issued_since is None:
+        if now - stall_since > limit_s:
+            return "no-issue", stall_since, issued_since
+    elif now - issued_since > slow_limit_s:
+        return "stuck", stall_since, issued_since
+    return None, stall_since, issued_since
+
 HERE = Path(__file__).parent
 TRACK = HERE.parent
 CONFIGS_DIR = TRACK / "configs"
 RESULTS_DIR = TRACK / "results"
 
-from astrasim_adapter import prepare_astrasim_config_dir, parse_booksim_cfg
+# astrasim_adapter lives in the package now (scripts/ copy removed).
+# This script runs BOTH ways — inside the container (no package on
+# sys.path, the ModuleNotFoundError that broke `t3 astrasim` 2026-09-16)
+# and on the host — so anchor the package root before importing. The other
+# scripts here are imported from $T3_DIR (cwd) as before.
+_DSE_ROOT = str(HERE / "dse")
+if _DSE_ROOT not in sys.path:
+    sys.path.insert(0, _DSE_ROOT)
+from veritx_dse.simulation.astrasim_adapter import (
+    prepare_astrasim_config_dir, parse_booksim_cfg)
 from generate_chakra_trace import ChakraTraceGenerator, save_chakra_trace
+from lib.t3log import SweepLogger, log_crash
+from lib.t3models import get_model, to_spec
 
 
 def find_astrasim_bin() -> Optional[str]:
@@ -89,15 +151,29 @@ def run_astrasim_topology(
     standalone-BookSim injection-rate sweep dimension is meaningless here —
     every rate produced identical cycle counts and 6x the wall-clock.
     """
+    # Honesty gate FIRST (spec-mandated no-synthetic-fallback): with no
+    # binary anywhere, refuse before anything else — including before the PP
+    # guard below — so a missing binary is never misreported as a model
+    # problem, and no case dirs are prepped for a run that cannot happen.
+    # (The late `else` branch stays as TOCTOU cover for a binary deleted
+    # mid-flight.) Contract: run_astrasim_topology(any spec, no binary)
+    # always raises naming the env (see test_astrasim_spine_contract).
+    if not find_astrasim_bin():
+        raise RuntimeError(
+            "ASTRA-sim binary not found (ASTRASIM_BIN unset and no astrasim "
+            "on PATH). Refusing to substitute a synthetic BookSim run: build "
+            "the frontend (third_party/astra-sim/build/astra_booksim2/build.sh) "
+            "or set ASTRASIM_BIN to "
+            ".../network_frontend/booksim2/bin/AstraSim_BookSim2.")
     # Replicated-trace guard: every rank runs the identical shared .et, so
     # pipeline stage transfers (absolute per-rank P2P src/dst, plus missing
     # RECV pairing) are un-routable in this design. PP>1 needs per-rank
-    # sharded traces (future work); until then stages run inline (PP=1).
+    # sharded traces (future work). main() aborts before dispatch; reaching
+    # here with PP>1 means a bypass — refuse rather than burn a timeout.
     if (spec.get("pp_degree", 1) or 1) > 1:
-        print(f"  [warn] pp_degree={spec.get('pp_degree')} requested but the shared "
-              "replicated trace cannot route P2P stage transfers; forcing PP=1.")
-        spec = dict(spec)
-        spec["pp_degree"] = 1
+        raise RuntimeError(
+            f"pp_degree={spec.get('pp_degree')} requires per-rank sharded "
+            "traces (not implemented); rerun with --pp 1 for single-stage mode")
     model_name = spec.get("model_name", "workload").lower().replace(" ", "_")
 
     out_dir = (
@@ -163,6 +239,7 @@ def run_astrasim_topology(
         _run_log = out_dir / "run.log"
         _out_lines: list[str] = []
         _err_lines: list[str] = []
+        _echoed_sys: set[str] = set()  # sys ids already echoed (dedupe double-print)
         _lock = _threading.Lock()
         _done = _threading.Event()
         def _fmt_elapsed(s: float) -> str:
@@ -190,7 +267,17 @@ def run_astrasim_topology(
                         except OSError:
                             pass
                         if _is_interesting(_line.rstrip()):
-                            print(f"\n    | {cfg_path.stem}: {_line.rstrip()[:160]}", flush=True)
+                            _stripped = _line.rstrip()
+                            _show = True
+                            _m = _SYS_DONE_RE.search(_stripped)
+                            if _m:
+                                with _lock:
+                                    if _m.group(1) in _echoed_sys:
+                                        _show = False
+                                    else:
+                                        _echoed_sys.add(_m.group(1))
+                            if _show:
+                                print(f"\n    | {cfg_path.stem}: {_stripped[:160]}", flush=True)
             finally:
                 try:
                     stream.close()
@@ -198,39 +285,126 @@ def run_astrasim_topology(
                     pass
         try:
             _run_log.write_text(f"$ {' '.join(cmd)}\n")
+            # VERITX_LEDGER=1: per-collective issue/complete markers on stderr.
+            # The stall watchdog below NEEDS them (a submit proves the no-issue
+            # hang class is not what we're seeing); volume is lines per
+            # collective op, negligible next to sim runtime. Kept out of the
+            # live echo by _is_interesting, but persisted in run.log.
+            _env = dict(os.environ)
+            _env["VERITX_LEDGER"] = "1"
             _proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                     stdin=subprocess.DEVNULL, text=True, bufsize=1)
+                                     stdin=subprocess.DEVNULL, text=True, bufsize=1,
+                                     env=_env)
             _t_out = _threading.Thread(target=_pump, args=(_proc.stdout, _out_lines, True), daemon=True)
             _t_err = _threading.Thread(target=_pump, args=(_proc.stderr, _err_lines, False), daemon=True)
             _t_out.start(); _t_err.start()
-            _last_beat = _t0
-            while True:
-                _rc = _proc.poll()
-                if _rc is not None:
-                    break
-                _now = _time.time()
-                if _now - _t0 > _timeout_s:
-                    _proc.kill()
-                    try:
-                        _proc.wait(timeout=10)
-                    except subprocess.TimeoutExpired:
-                        pass
-                    _done.set()
-                    _tail = ""
+            _last_beat = 0.0  # non-TTY log throttle (TTY ticks every second)
+            # Backend-stall watchdog, two tiers (see _stall_update): the old
+            # single trip killed HEALTHY 64-rank runs — a 16 MB allreduce
+            # needs ~9 min, and `injected=0` at drain-start is normal there
+            # (10 us comp first; the BookSim uniform counter never counts
+            # embedded API injection at all). Tier 1 (no-issue hang: nothing
+            # ever submitted) keeps the aggressive limit; tier 2 (issued but
+            # stuck) gets the slow limit. Both overridable via env.
+            _stall_limit = int(os.environ.get("ASTRASIM_STALL_S", "300"))
+            _slow_limit = int(os.environ.get("ASTRASIM_SLOW_S", "900"))
+            _scanned_out = _scanned_err = 0
+            _stall_since = _issued_since = None
+            _was_issued = False
+            _n_sub = _n_done = 0
+            _last_stall_note = 0.0
+            try:
+                while True:
+                    _rc = _proc.poll()
+                    if _rc is not None:
+                        print()  # clear the live timer line below
+                        break
+                    _now = _time.time()
+                    if _now - _t0 > _timeout_s:
+                        _proc.kill()
+                        try:
+                            _proc.wait(timeout=10)
+                        except subprocess.TimeoutExpired:
+                            pass
+                        _done.set()
+                        _tail = ""
+                        with _lock:
+                            _tail_lines = "".join(_out_lines).splitlines()[-3:]
+                        if _tail_lines:
+                            _tail = " | stdout-tail: " + " / ".join(_tail_lines)
+                        raise TimeoutError(
+                            f"\ntimed out after {_timeout_s}s (elapsed {_fmt_elapsed(_now - _t0)})" + _tail)
+                    # Stall check (cheap: only lines appended since last poll;
+                    # per-stream cursors — one shared index would skip lines in
+                    # the slower stream and could trip on a missed finish).
                     with _lock:
-                        _tail_lines = "".join(_out_lines).splitlines()[-3:]
-                    if _tail_lines:
-                        _tail = " | stdout-tail: " + " / ".join(_tail_lines)
-                    raise TimeoutError(
-                        f"timed out after {_timeout_s}s (elapsed {_fmt_elapsed(_now - _t0)})" + _tail)
-                if _now - _last_beat >= 60:
-                    print(f"    ... {cfg_path.stem} still running "
-                          f"({_fmt_elapsed(_now - _t0)} elapsed, timeout {_fmt_elapsed(_timeout_s)})",
-                          flush=True)
-                    _last_beat = _now
-                _done.wait(1.0)
-                if _proc.poll() is not None:
-                    break
+                        _fresh = list(_out_lines[_scanned_out:]) + list(_err_lines[_scanned_err:])
+                        _scanned_out, _scanned_err = len(_out_lines), len(_err_lines)
+                    _freshtxt = "".join(_fresh)
+                    _n_sub += len(_COLL_SUBMIT_RE.findall(_freshtxt))
+                    _n_done += len(_COLL_DONE_RE.findall(_freshtxt))
+                    _was_armed = _stall_since is not None
+                    _trip_kind, _stall_since, _issued_since = _stall_update(
+                        _freshtxt, _stall_since, _issued_since,
+                        _now, _stall_limit, _slow_limit)
+                    if _stall_since is not None and not _was_armed:
+                        print(f"\n    ! {cfg_path.stem}: backend in zero-injection drain "
+                              f"— killing in {_stall_limit}s unless work issues "
+                              f"(slow-guard {_slow_limit}s once issued)",
+                              flush=True)
+                    if _issued_since is not None and not _was_issued:
+                        _was_issued = True
+                        print(f"\n    | {cfg_path.stem}: collectives issuing "
+                              f"({_n_sub} submitted) — awaiting completion "
+                              f"(slow-guard {_slow_limit}s)", flush=True)
+                    if (_stall_since is not None and _now - _last_stall_note >= 60):
+                        _last_stall_note = _now
+                        print(f"\n    | {cfg_path.stem}: still running "
+                              f"({_n_sub} submitted, {_n_done} completed)",
+                              flush=True)
+                    if _trip_kind is not None:
+                        _proc.kill()
+                        try:
+                            _proc.wait(timeout=10)
+                        except subprocess.TimeoutExpired:
+                            pass
+                        _done.set()
+                        _tail = ""
+                        with _lock:
+                            _tail_lines = ("".join(_out_lines) + "".join(_err_lines)).splitlines()[-3:]
+                        if _tail_lines:
+                            _tail = " | stdout-tail: " + " / ".join(_tail_lines)
+                        if _trip_kind == "stuck":
+                            raise TimeoutError(
+                                f"\nbackend stall: {_n_sub} collectives issued but none "
+                                f"completed for {_fmt_elapsed(_now - _issued_since)} "
+                                f"(slow-guard {_slow_limit}s via ASTRASIM_SLOW_S)" + _tail)
+                        raise TimeoutError(
+                            f"\nbackend stall: trace injected 0 packets then drained "
+                            f"with nothing issued for {_fmt_elapsed(_now - _stall_since)} "
+                            f"(limit {_stall_limit}s via ASTRASIM_STALL_S)" + _tail)
+                    # Upward timer on one live line (\r, no newline): one line
+                    # per topo instead of a heartbeat every minute. Tick every
+                    # second on a TTY, every 60 s into logs/pipes (same info,
+                    # no spam). The 1s wait below sets the tick cadence.
+                    import sys as _sys
+                    _is_tty = _sys.stdout.isatty()
+                    if _is_tty or _now - _last_beat >= 60:
+                        print(f"\r    ... {cfg_path.stem} {_fmt_elapsed(_now - _t0)} / {_fmt_elapsed(_timeout_s)}",
+                              end="", flush=True)
+                        _last_beat = _now
+                    _done.wait(1.0)
+                    if _proc.poll() is not None:
+                        break
+            except KeyboardInterrupt:
+                # Don't orphan the sim: kill the child before unwinding (the
+                # sweep loop owns persistence; nothing extra to save here).
+                _proc.kill()
+                try:
+                    _proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    pass
+                raise
             _t_out.join(timeout=10); _t_err.join(timeout=10)
             import types as _types
             res = _types.SimpleNamespace(returncode=_proc.returncode,
@@ -294,7 +468,9 @@ def run_astrasim_topology(
         # (energy_proxy will be NaN for astrasim rows; use cycles for ranking).
         hops_avg = None
     else:
-        # No synthetic fallback: running plain booksim on the template cfg
+        # No synthetic fallback (TOCTOU twin of the honesty gate at function
+        # top: reachable only if the binary vanishes mid-flight): running
+        # plain booksim on the template cfg
         # simulates uniform traffic, NOT the chakra workload, and previously
         # reported it as an ASTRA-sim result with status ok. Refuse loudly.
         raise RuntimeError(
@@ -306,7 +482,7 @@ def run_astrasim_topology(
 
     return {
         "topology": cfg_path.stem,
-        "workload": f"{spec.get('model_name', 'Model')} (TP={spec.get('tp_degree', 1)}, PP={spec.get('pp_degree', 1)})",
+        "workload": _workload_tag(spec),
         "total_nodes": cfg_info["total_nodes"],
         "astrasim_cycles": cycles,
         "latency_cycles": latency if latency is not None else None,
@@ -322,8 +498,81 @@ def run_astrasim_topology(
         "injection_rate": 0.0,
         "hops_avg": hops_avg if status == "ok" else None,
         "traffic": f"astrasim({model_name}_chakra_et)",
+        "et_coll_type": _et_coll_type(spec),
         "status": status,
     }
+
+
+def select_cfgdir(config: str, sizes: str = "auto") -> Path:
+    """Resolve the topology cfg directory (testable helper).
+
+    Explicit --sizes wins (n16/n64 → configs/<sizes>); 'auto' keeps the
+    legacy CONFIG-suffix sniffing (_N64/_N16, else the mixed configs/ dir)
+    so existing invocations don't move. Size-honesty rationale: a 16-node
+    topo in an N64 config measures nothing comparable.
+    """
+    sizes = (sizes or "auto").lower()
+    if sizes in ("n16", "n64") and (CONFIGS_DIR / sizes).is_dir():
+        return CONFIGS_DIR / sizes
+    if sizes == "auto":
+        if config.upper().endswith("_N64") and (CONFIGS_DIR / "n64").is_dir():
+            return CONFIGS_DIR / "n64"
+        if config.upper().endswith("_N16") and (CONFIGS_DIR / "n16").is_dir():
+            return CONFIGS_DIR / "n16"
+    return CONFIGS_DIR
+
+
+def _merge_sweep(existing: list, new: list) -> list:
+    """Merge ASTRA rows into the shared topology_sweep.json content.
+
+    Rules (see _save): new topologies append; an ok row is never replaced
+    by a non-ok row. Pure function so --selfcheck can pin it."""
+    by_topo = [r.get("topology") for r in existing if isinstance(r, dict)]
+    merged = list(existing)
+    for r in new:
+        if not isinstance(r, dict) or not r.get("topology"):
+            continue
+        if r["topology"] in by_topo:
+            i = by_topo.index(r["topology"])
+            if merged[i].get("status") == "ok" and r.get("status") != "ok":
+                continue
+            merged[i] = r
+        else:
+            by_topo.append(r["topology"])
+            merged.append(r)
+    return merged
+
+
+def _et_coll_type(spec: dict):
+    """Normalized collective for microbench specs, else None.
+
+    feeds the row's et_coll_type field, which keeps resume-skips honest:
+    pre-fix non-allreduce microbench rows contain ALLREDUCE numbers under a
+    bare label, so they must never satisfy a post-fix resume for the same
+    label (None never equals a real type). Pure/testable, no I/O.
+    """
+    if not spec.get("is_collective_microbenchmark"):
+        return None
+    try:
+        if str((TRACK / "dse").resolve()) not in sys.path:
+            sys.path.insert(0, str(TRACK / "dse"))
+        from veritx_dse.model.presets import normalize_collective as _norm
+        return _norm(spec.get("model_name", ""))
+    except Exception:
+        return None
+
+
+def _workload_tag(spec: dict) -> str:
+    """Display/record workload tag: bare name + parallelism.
+
+    (The old `(as ALL_REDUCE)` substitution suffix is gone: the ET encoder
+    now writes the real collective type, so the label means what it says.
+    Pre-fix non-allreduce microbench rows are still mislabeled on disk —
+    see _et_coll_type, which stops resume from trusting them.)
+    """
+    name = spec.get("model_name", "Model")
+    return (f"{name} (TP={spec.get('tp_degree', 1)}, "
+            f"PP={spec.get('pp_degree', 1)})")
 
 
 def _selfcheck():
@@ -339,6 +588,53 @@ def _selfcheck():
         res = prepare_astrasim_config_dir(cfg, out_dir, spec=spec)
         assert Path(res["out_dir"]).exists()
         assert (out_dir / "system.json").exists()
+
+    # Merge semantics: shared topology_sweep.json is append/overlay, never
+    # clobber. Regression: 40 measured rows were once destroyed by a single
+    # failure row written blind over the file.
+    _ok40 = [{"topology": f"t{i}", "status": "ok"} for i in range(40)]
+    _fail1 = [{"topology": "anynet16", "status": "error: timeout"}]
+    _m = _merge_sweep(list(_ok40), _fail1)
+    assert len(_m) == 41 and all(r["status"] == "ok" for r in _m[:40]), _m
+    _m2 = _merge_sweep([{"topology": "a", "status": "ok"}],
+                       [{"topology": "a", "status": "error: x"}])
+    assert _m2 == [{"topology": "a", "status": "ok"}], _m2
+    _m3 = _merge_sweep([{"topology": "a", "status": "error: x"}],
+                       [{"topology": "a", "status": "ok"}])
+    assert _m3 == [{"topology": "a", "status": "ok"}], _m3
+
+    # Stall watchdog state machine: arm only on zero-injection drain,
+    # disarm on any rank finish, trip past the limit. Draining WITH
+    # packets in flight must never arm (legitimately slow). Issued work
+    # (ledger submit) moves the run to the slow guard; completions reset it.
+    _t, _s, _i = _stall_update("routine chatter\n", None, None, 100.0, 300, 900)
+    assert (_t, _s, _i) == (None, None, None), (_t, _s, _i)
+    _t, _s, _i = _stall_update("[trace] All 10010 cycles, injected=0 — draining\n",
+                               None, None, 100.0, 300, 900)
+    assert (_t, _s, _i) == (None, 100.0, None), (_t, _s, _i)
+    _t, _s, _i = _stall_update("still quiet\n", 100.0, None, 200.0, 300, 900)
+    assert (_t, _s, _i) == (None, 100.0, None), (_t, _s, _i)
+    _t, _s, _i = _stall_update("still quiet\n", 100.0, None, 401.0, 300, 900)
+    assert (_t, _s, _i) == ("no-issue", 100.0, None), (_t, _s, _i)
+    _t, _s, _i = _stall_update("sys[3] finished, 99 cycles\n", 100.0, 200.0, 401.0, 300, 900)
+    assert (_t, _s, _i) == (None, None, None), (_t, _s, _i)
+    _t, _s, _i = _stall_update("[trace] All 5 cycles, injected=120 — draining\n",
+                               None, None, 100.0, 300, 900)
+    assert (_t, _s, _i) == (None, None, None), (_t, _s, _i)
+    # Issued work switches to the slow guard instead of tripping at 300s.
+    _t, _s, _i = _stall_update("[LEDGER][COLL_SUBMIT] rank=0\n", 100.0, None, 200.0, 300, 900)
+    assert (_t, _s, _i) == (None, 100.0, 200.0), (_t, _s, _i)
+    _t, _s, _i = _stall_update("quiet\n", 100.0, 200.0, 500.0, 300, 900)
+    assert (_t, _s, _i) == (None, 100.0, 200.0), (_t, _s, _i)  # 300s would have killed this
+    _t, _s, _i = _stall_update("quiet\n", 100.0, 200.0, 1101.0, 300, 900)
+    assert (_t, _s, _i) == ("stuck", 100.0, 200.0), (_t, _s, _i)
+    # A completion resets the slow clock (progress).
+    _t, _s, _i = _stall_update("[LEDGER][COLL_COMPLETE] rank=0\n", 100.0, 200.0, 1000.0, 300, 900)
+    assert (_t, _s, _i) == (None, 100.0, 1000.0), (_t, _s, _i)
+    # Submit + drain in the same batch arms already-issued.
+    _t, _s, _i = _stall_update("[LEDGER][COLL_SUBMIT] r=0\n[trace] All 1 cycles, injected=0 — draining\n",
+                               None, None, 100.0, 300, 900)
+    assert (_t, _s, _i) == (None, 100.0, 100.0), (_t, _s, _i)
 
     print("selfcheck OK")
 
@@ -358,6 +654,11 @@ def main():
     ap.add_argument("--topo", default=None,
                     help="only run configs whose filename stem contains this substring "
                     "(e.g. --topo mesh4x4 for a single-topology smoke test)")
+    ap.add_argument("--sizes", default="auto", choices=("auto", "n16", "n64", "legacy"),
+                    help="topology-size family: configs/n16, configs/n64, or the legacy "
+                    "mixed configs/ dir. 'auto' sniffs the CONFIG suffix (_N64/_N16, "
+                    "legacy fallback) — explicit is better: a chain-suffixed CONFIG "
+                    "like baseline_N16_N16_N64 only lands in n64 by accident.")
     args = ap.parse_args()
 
     if args.selfcheck:
@@ -366,7 +667,17 @@ def main():
 
     gen = ChakraTraceGenerator()
     model_key = args.model.lower()
-    if model_key in ("all_reduce", "all_to_all", "reduce_scatter", "all_gather"):
+    _overrides = {"hidden_size": args.hidden_size, "ffn_size": args.ffn_size,
+                  "num_layers": args.num_layers, "seq_len": args.seq_len,
+                  "batch_size": args.batch_size, "tp_degree": args.tp,
+                  "pp_degree": args.pp}
+    _rec = get_model(model_key)
+    if _rec is not None:
+        # Registry hit (builtins are seeded into workloads/ on first use, so
+        # llama7b lands here too). CLI overrides win over registry values so
+        # one entry can feed several what-ifs.
+        spec = to_spec(_rec, _overrides)
+    elif model_key in ("all_reduce", "all_to_all", "reduce_scatter", "all_gather"):
         spec = {
             "model_name": model_key.upper(),
             "is_collective_microbenchmark": True,
@@ -378,27 +689,57 @@ def main():
             "pp_degree": 1,
         }
     else:
-        spec = gen.resolve_spec(
-            model_key,
-            hidden_size=args.hidden_size,
-            ffn_size=args.ffn_size,
-            num_layers=args.num_layers,
-            seq_len=args.seq_len,
-            batch_size=args.batch_size,
-            tp_degree=args.tp,
-            pp_degree=args.pp,
-        )
+        try:
+            spec = gen.resolve_spec(
+                model_key,
+                hidden_size=args.hidden_size,
+                ffn_size=args.ffn_size,
+                num_layers=args.num_layers,
+                seq_len=args.seq_len,
+                batch_size=args.batch_size,
+                tp_degree=args.tp,
+                pp_degree=args.pp,
+            )
+        except ValueError as e:
+            print(f"  ✗ {e}", file=sys.stderr)
+            sys.exit(2)
 
     out_res_dir = RESULTS_DIR / args.config
     out_res_dir.mkdir(parents=True, exist_ok=True)
 
-    configs = sorted(CONFIGS_DIR.glob("*.cfg"))
+    # PP gate (fail loudly, never warn-and-degrade): the shared replicated
+    # trace cannot route pipeline stage transfers, so a PP>1 model would run
+    # 30 minutes under the wrong parallelism and then time out. Abort here
+    # in seconds — unless the user explicitly accepts single-stage mode
+    # with --pp 1 (documented degradation: stage transfers not modeled).
+    _reg_pp = ((_rec.get("pp_degree", 1) or 1) if isinstance(_rec, dict) else 1)
+    _eff_pp = (spec.get("pp_degree", 1) or 1)
+    if _eff_pp > 1 and args.pp != 1:
+        print(f"  \u2717 {spec.get('model_name', args.model)} requests "
+              f"pp_degree={spec.get('pp_degree')} but per-rank sharded "
+              f"traces are not implemented (shared replicated trace cannot "
+              f"route P2P stage transfers).", file=sys.stderr)
+        print("    rerun with --pp 1 to accept single-stage mode, or wait "
+              "for sharded-trace support.", file=sys.stderr)
+        sys.exit(2)
+    if _reg_pp > 1 and _eff_pp == 1:
+        print(f"  note: single-stage mode (registry asked pp_degree={_reg_pp}, "
+              f"--pp 1 accepted); P2P stage transfers not modeled")
+
+    # Size-honest candidates (same rule as run_experiments.py --configs).
+    # A 16-node topo in an N64 config measured nothing comparable — and
+    # the failure row it wrote once destroyed the shared sweep file.
+    # Explicit --sizes wins; 'auto' keeps legacy CONFIG-suffix sniffing.
+    _cfgdir = select_cfgdir(args.config, getattr(args, "sizes", "auto"))
+    configs = sorted(_cfgdir.glob("*.cfg"))
 
     if args.topo:
         configs = [c for c in configs if args.topo in c.stem]
         if not configs:
-            raise ValueError(f"--topo '{args.topo}' matched no configs "
-                             f"in {CONFIGS_DIR}")
+            print(f"  \u2717 --topo '{args.topo}' matched no configs in {_cfgdir} "
+                  f"(CONFIG={args.config} routes here; --topo is a filename-substring "
+                  f"filter, not a size override)", file=sys.stderr)
+            sys.exit(2)
 
     results = []
     import time as _wtime
@@ -409,6 +750,52 @@ def main():
         s = int(s)
         return f"{s // 60}m{s % 60:02d}s" if s >= 60 else f"{s}s"
 
+    def _save() -> None:
+        # Atomic incremental write: the JSON on disk is always the prefix
+        # completed so far — a Ctrl-C'd sweep loses nothing that landed.
+        for _name in ("astrasim_sweep.json",):
+            _tmp = out_res_dir / f"{_name}.tmp"
+            _tmp.write_text(json.dumps(results, indent=2))
+            _tmp.rename(out_res_dir / _name)  # atomic on POSIX
+        # topology_sweep.json is SHARED with the standalone sweep: MERGE by
+        # topology, never overwrite. A blind write here once destroyed 40
+        # measured rows with a single failure row. Rules: new keys append;
+        # an ok row is never replaced by a non-ok row (a failed ASTRA leg
+        # must not clobber good standalone data for the same topo).
+        _sweep_json = out_res_dir / "topology_sweep.json"
+        try:
+            _existing = json.loads(_sweep_json.read_text()) \
+                if _sweep_json.exists() else []
+            if not isinstance(_existing, list):
+                _existing = []
+        except (json.JSONDecodeError, OSError):
+            _existing = []
+        _merged = _merge_sweep(_existing, results)
+        _tmp = out_res_dir / "topology_sweep.json.tmp"
+        _tmp.write_text(json.dumps(_merged, indent=2))
+        _tmp.rename(_sweep_json)  # atomic on POSIX
+
+    # Resume: topos already measured (status ok) skip re-running, so an
+    # interrupted sweep picks up where it stopped instead of redoing
+    # every (multi-minute) topology.
+    _sweep_path = out_res_dir / "astrasim_sweep.json"
+    if _sweep_path.exists():
+        try:
+            _loaded = json.loads(_sweep_path.read_text())
+            results = _loaded if isinstance(_loaded, list) else []
+        except (json.JSONDecodeError, OSError):
+            results = []
+    # Skip-set is scoped to the exact workload tag: switching MODEL/TP/PP
+    # must not reuse topologies measured under a different workload. The
+    # et_coll_type key additionally stops pre-fix mislabeled microbench rows
+    # (non-allreduce labels containing allreduce numbers, et_coll_type None)
+    # from satisfying a post-fix resume for the same label.
+    _wl_tag = _workload_tag(spec)
+    _wl_type = _et_coll_type(spec)
+    _done = {r.get("topology") for r in results
+             if r.get("status") == "ok" and r.get("workload") == _wl_tag
+             and r.get("et_coll_type") == _wl_type}
+
     print(f"=== ASTRA-Sim 2.0 + Chakra ET Workload Runner ===")
     print(f"  Model Workload : {spec.get('model_name', args.model)}")
     print(f"  Message Size   : {spec.get('msg_size_mb', 0.0):.1f} MB per collective call")
@@ -417,74 +804,124 @@ def main():
     print("  Mode           : single run per topology (embedded injection owns "
           "the rate dimension; the standalone-BookSim IR sweep does not apply)")
     print("  Topologies     :", [c.stem for c in configs])
+    _planned_done = _done & {c.stem for c in configs}
+    if _planned_done:
+        print(f"  resuming: {len(_planned_done)} of {len(configs)} topology(ies) "
+              f"already measured in {_sweep_path.name}")
+    print("  (each line lands the moment its ASTRA-sim run finishes)")
     print()
 
-    for _idx, cfg in enumerate(configs, 1):
-        _topo_t0 = _wtime.time()
-        if _elapsed_hist:
-            _avg = sum(_elapsed_hist) / len(_elapsed_hist)
-            _eta = _avg * (len(configs) - len(results))
-            _eta_txt = f" | ETA ~{_fmt_dur(_eta)}"
-        else:
-            _eta_txt = ""
-        print(f"  [{_idx}/{len(configs)}] Running {cfg.stem:<12} ...{_eta_txt}", flush=True)
+    # Structured session log: logs/<sweep_id>/events.ndjson + sweep.log.
+    slog = SweepLogger("astrasim", args.config,
+                       extra={"model": args.model, "topo": args.topo or "",
+                              "workload": _wl_tag})
 
-        # One bad config (missing data file, binary crash) must not kill
-        # the other runs. Failures are recorded as status=error with
-        # the message — never fabricated, never silent.
-        try:
-            r = run_astrasim_topology(
-                cfg,
-                spec,
-                args.config
+    _n_new_ok = _n_skip = _n_fail = 0
+    _cfg_names = {c.stem for c in configs}
+    try:
+        for _idx, cfg in enumerate(configs, 1):
+            _topo_t0 = _wtime.time()
+            if cfg.stem in _done:
+                _n_skip += 1
+                _skip_line = (f"  [{_idx}/{len(configs)}] {cfg.stem:<12} "
+                              f"─ already measured, skip")
+                print(_skip_line, flush=True)
+                slog.session_log(_skip_line)
+                slog.log_event("point", topology=cfg.stem, status="skip")
+                continue
+            if _elapsed_hist:
+                _avg = sum(_elapsed_hist) / len(_elapsed_hist)
+                _remaining = 1 + sum(1 for _c in configs[_idx:] if _c.stem not in _done)
+                _eta_txt = f" | ETA ~{_fmt_dur(_avg * _remaining)}"
+            else:
+                _eta_txt = ""
+            print(f"  [{_idx}/{len(configs)}] Running {cfg.stem:<12} ...{_eta_txt}", flush=True)
+            slog.log_event("run_start", topology=cfg.stem)
+
+            # One bad config (missing data file, binary crash) must not kill
+            # the other runs. Failures are recorded as status=error with
+            # the message — never fabricated, never silent.
+            try:
+                r = run_astrasim_topology(
+                    cfg,
+                    spec,
+                    args.config
+                )
+            except KeyboardInterrupt:
+                raise
+            except Exception as e:  # noqa: BLE001 - record, don't abort sweep
+                r = {
+                    "topology": cfg.stem,
+                    "workload": _workload_tag(spec),
+                    "total_nodes": None,
+                    "astrasim_cycles": None,
+                    "latency_cycles": None,
+                    "comm_overhead_pct": None,
+                    "injection_rate": 0.0,
+                    "hops_avg": None,
+                    "traffic": "astrasim(chakra_et)",
+                    "status": f"error: {type(e).__name__}: {e}",
+                }
+
+            _topo_elapsed = _wtime.time() - _topo_t0
+            _elapsed_hist.append(_topo_elapsed)
+            # Replace any stale row for this topology (e.g. a failed run
+            # being re-measured) so the JSON keeps one row per topology.
+            results = [x for x in results if x.get("topology") != cfg.stem]
+            results.append(r)
+            _save()  # lands the moment this topo finishes — safe to Ctrl-C
+            if r.get("status") == "ok":
+                _n_new_ok += 1
+                _mark, _color = "✓", "\033[32m"
+            else:
+                _n_fail += 1
+                _mark, _color = "✗", "\033[31m"
+            latency_text = (
+                f"{r['latency_cycles']:.2f} latency"
+                if r["latency_cycles"] is not None
+                else "no latency"
             )
-        except Exception as e:  # noqa: BLE001 - record, don't abort sweep
-            r = {
-                "topology": cfg.stem,
-                "workload": f"{spec.get('model_name', 'Model')}",
-                "total_nodes": None,
-                "astrasim_cycles": None,
-                "latency_cycles": None,
-                "comm_overhead_pct": None,
-                "injection_rate": 0.0,
-                "hops_avg": None,
-                "traffic": "astrasim(chakra_et)",
-                "status": f"error: {type(e).__name__}: {e}",
-            }
+            cycles_text = (
+                f"{r['astrasim_cycles']:>8} total cycles"
+                if r["astrasim_cycles"] is not None
+                else "       n/a total cycles"
+            )
+            # Count only the planned set: with --topo, results also holds
+            # rows from other topos — they must not inflate this ratio.
+            _n_ok = sum(1 for _r in results
+                        if _r.get("status") == "ok" and _r.get("topology") in _cfg_names)
+            _done_line = (f"  {_color}{_mark}\033[0m [{_idx}/{len(configs)}] {cfg.stem:<12} done in {_fmt_dur(_topo_elapsed)} "
+                          f"| {latency_text} | {cycles_text} | {r['status']} "
+                          f"(ok={_n_ok}/{len(configs)} | sweep {_fmt_dur(_wtime.time() - _sweep_t0)})")
+            print(_done_line, flush=True)
+            slog.session_log(_done_line)
+            slog.log_event("point", topology=cfg.stem,
+                           status=("ok" if r.get("status") == "ok" else "error"),
+                           detail=str(r.get("status")),
+                           latency_cycles=r.get("latency_cycles"),
+                           astrasim_cycles=r.get("astrasim_cycles"),
+                           elapsed_ms=int(_topo_elapsed * 1000))
+    except KeyboardInterrupt:
+        print("\n  interrupted — partial results saved")
+        slog.session_log("interrupted — partial results saved")
+        slog.finish("interrupted", {"ok": _n_new_ok, "skipped": _n_skip,
+                                    "failed": _n_fail})
+    except (OSError, subprocess.SubprocessError) as e:
+        log_crash(e)  # frontend missing / crashed out — record, re-raise
+        raise
 
-        latency_text = (
-            f"{r['latency_cycles']:.2f} latency"
-            if r["latency_cycles"] is not None
-            else "no latency"
-        )
-
-        cycles_text = (
-            f"{r['astrasim_cycles']:>8} total cycles"
-            if r["astrasim_cycles"] is not None
-            else "       n/a total cycles"
-        )
-        _topo_elapsed = _wtime.time() - _topo_t0
-        _elapsed_hist.append(_topo_elapsed)
-        _n_ok = sum(1 for _r in results if _r.get("status") == "ok") + (1 if r.get("status") == "ok" else 0)
-        print(f"  [{_idx}/{len(configs)}] {cfg.stem:<12} done in {_fmt_dur(_topo_elapsed)} "
-              f"| {latency_text} | {cycles_text} | {r['status']} "
-              f"(ok={_n_ok}/{_idx} | sweep {_fmt_dur(_wtime.time() - _sweep_t0)})", flush=True)
-        results.append(r)
-        # Incremental persistence: a slow/hung topology must not hold the
-        # whole sweep's results hostage. The JSON on disk is always the
-        # prefix completed so far; a later run overwrites with the full set.
-        (out_res_dir / "astrasim_sweep.json").write_text(json.dumps(results, indent=2))
-        (out_res_dir / "topology_sweep.json").write_text(json.dumps(results, indent=2))
-
+    _save()
     out_astrasim_json = out_res_dir / "astrasim_sweep.json"
-    out_astrasim_json.write_text(json.dumps(results, indent=2))
-
     # Also update topology_sweep.json so downstream PA tools (analysis, aggregate, plot, energy) work seamlessly
     out_sweep_json = out_res_dir / "topology_sweep.json"
-    out_sweep_json.write_text(json.dumps(results, indent=2))
 
-    print(f"\n  ✓ {len(results)} topology records → {out_astrasim_json}")
+    print(f"\n  ✓ {len(results)} topology records → {out_astrasim_json}"
+          f"  ({_n_new_ok} new, {_n_skip} skipped, {_n_fail} failed)")
     print(f"  ✓ Integrated sweep results → {out_sweep_json}")
+    slog.session_log(f"done: {len(results)} records "
+                     f"({_n_new_ok} new, {_n_skip} skipped, {_n_fail} failed)")
+    slog.finish("done", {"ok": _n_new_ok, "skipped": _n_skip,
+                         "failed": _n_fail, "total": len(results)})
 
 
 if __name__ == "__main__":

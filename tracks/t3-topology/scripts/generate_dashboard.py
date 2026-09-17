@@ -8,7 +8,7 @@ report/t3/index.html using Plotly from a CDN. Every past run is embedded — pic
 one from the run selector (or open ?run=<n>) to inspect its matrix / curves /
 bottlenecks. The same script runs in CI (dashboard uploaded as a private artifact).
 """
-import json, subprocess, sys, argparse
+import json, os, subprocess, sys, argparse
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -20,6 +20,8 @@ PLOTLY_CDN = "https://cdn.plot.ly/plotly-2.35.2.min.js"
 
 sys.path.insert(0, str(HERE))
 from timeloop_to_matrix import parse_levels  # reuse the Timeloop stats parser
+from lib.t3load import find_sweep, load_sweep as _lib_load_sweep  # noqa: E402
+from lib.t3load import saturation_point as _lib_saturation_point  # noqa: E402
 
 
 def git_info():
@@ -40,7 +42,9 @@ def load_sweep(file_name):
     p = Path(file_name)
     if not p.exists():
         sys.exit(f"  no {p} — run `make timeloop` (or `make sim`) first")
-    return json.loads(p.read_text())
+    # Single parser via lib.t3load (default latency!=None filter matches the
+    # valid-points-only semantics applied in curves() below).
+    return _lib_load_sweep(p)
 
 
 def load_noc_energy(results_dir=None):
@@ -61,9 +65,16 @@ def load_noc_energy(results_dir=None):
 
 
 def curves(sweep):
-    """topology -> sorted [(injection_rate, latency, hops)] (valid points only)."""
+    """topology -> sorted [(injection_rate, latency, hops)] (valid points only).
+
+    Preserves the original latency!=None filter (same as
+    lib.t3load.load_sweep's default); the check below is idempotent on the
+    already-filtered rows from load_sweep().
+    """
     out = {}
     for r in sweep:
+        if not isinstance(r, dict):
+            continue
         if r.get("latency_cycles") is not None:
             out.setdefault(r["topology"], []).append(
                 [r["injection_rate"], r["latency_cycles"], r.get("hops_avg")]
@@ -74,14 +85,11 @@ def curves(sweep):
 
 
 def saturation_point(pts):
-    """Injection rate at which latency exceeds 2x zero-load, else None."""
-    if len(pts) < 2:
-        return None
-    zl = pts[0][1]
-    for rate, lat, _ in pts:
-        if lat > 2.0 * zl:
-            return rate
-    return None
+    """Injection rate at which latency exceeds 2x zero-load, else None.
+
+    Delegates to lib.t3load.saturation_point (single implementation, k=2.0).
+    """
+    return _lib_saturation_point(pts, k=2.0)
 
 
 def characteristic_latency(cur):
@@ -110,12 +118,21 @@ def load_levels(path):
     return lv or None
 
 
-def build_record(cur, matrix, levels, noc_energy):
+def build_record(cur, matrix, levels, noc_energy, traffic=None):
     """Everything needed to redraw one run's panels later."""
     hops = {t: [[r, h] for r, _, h in pts if h is not None] for t, pts in cur.items()}
     return {
         **git_info(),
+        # Run provenance: the effective inputs behind these curves (flow-audit
+        # P1: two runs at the same SHA with different rates/matrices are NOT
+        # the same experiment and must stay distinguishable).
+        "config": os.environ.get("CONFIG", "baseline"),
+        "rates": os.environ.get("RATES", ""),
+        "matrix_file": os.environ.get("TRAFFIC_MATRIX", ""),
         "latency": characteristic_latency(cur),
+        "traffic": traffic,  # distinct sweep `traffic` values (F7 provenance:
+        # placeholder uniform vs matrix vs astrasim(...) — screenshotted
+        # numbers mean nothing without it)
         "curves": cur,
         "saturation": {t: saturation_point(pts) for t, pts in cur.items()},
         "hops": {t: pts for t, pts in hops.items() if pts} or None,
@@ -130,12 +147,16 @@ def build_record(cur, matrix, levels, noc_energy):
 
 
 def update_history(record, outfile):
-    """Append this run's full record; replace a re-run of the same commit; cap."""
+    """Append this run as an IMMUTABLE record (same-SHA re-runs get a new
+    numbered entry, never replace or renumber earlier ones), then cap."""
 
     p = Path(outfile)
     hist = json.loads(p.read_text()) if p.exists() else []
-    hist = [h for h in hist if h.get("sha") != record["sha"]]
-    run_no = (hist[-1]["run"] + 1) if hist else 1
+    # Monotonic run numbers survive the cap: next_run is max(ever seen) + 1.
+    # (The old next-run = len+1 + same-SHA replacement scheme reset numbering
+    # and silently dropped the earlier run when the dashboard ran twice on
+    # one commit — run #N became run #1 again.)
+    run_no = max((h["run"] for h in hist), default=0) + 1
     hist.append({"run": run_no, **record})
     hist = hist[-HISTORY_CAP:]
     # ponytail: stores curves+matrix per run — tens of KB at 16 tiles x 20 runs.
@@ -178,7 +199,11 @@ def headline(hist):
     d = sum((cur[t] - prev[t]) / prev[t] for t in common) / len(common) * 100
     word = "worse" if d > 0 else ("better" if d < 0 else "unchanged")
     arrow = "▲" if d > 0 else ("▼" if d < 0 else "▬")
-    return f"{arrow} {abs(d):.1f}% avg latency vs run #{hist[-2]['run']} ({word})"
+    base = f"{arrow} {abs(d):.1f}% avg latency vs run #{hist[-2]['run']} ({word})"
+    traffic = hist[-1].get("traffic")
+    if traffic:
+        base += f" · traffic: {'/'.join(traffic)}"
+    return base
 
 
 def run_options(hist):
@@ -302,6 +327,8 @@ def main():
     ap.add_argument("--matrix")
     ap.add_argument("--timeloop-stats")
     ap.add_argument("--topology_sweep")
+    ap.add_argument("--sweep", default=None,
+                    help="Alias for --topology_sweep (uniform flag vocabulary, Phase 4e)")
     ap.add_argument("--history")
     ap.add_argument("--selfcheck", action="store_true")
     args = ap.parse_args()
@@ -319,18 +346,33 @@ def main():
     if args.timeloop_stats is None:
         args.timeloop_stats = str(results_dir / "timeloop.stats.txt")
     if args.topology_sweep is None:
-        args.topology_sweep = str(results_dir / "topology_sweep.json")
+        # Precedence: explicit --topology_sweep, then --sweep alias, then
+        # discovery (back-compat: --topology_sweep keeps working as before).
+        if args.sweep is not None:
+            args.topology_sweep = args.sweep
+        else:
+            # Single discovery via lib.t3load.find_sweep (canonical
+            # CONFIG/T3_RESULTS env walk, plot_curves order). Falls back to the
+            # legacy results_dir path for error-message parity.
+            _found = find_sweep(config=args.config)
+            args.topology_sweep = str(_found) if _found is not None else str(results_dir / "topology_sweep.json")
     if args.history is None:
         args.history = str(results_dir / "history.json")
 
-    cur = curves(load_sweep(args.topology_sweep))
-    record = build_record(
-        cur,
-        load_matrix(args.matrix),
-        load_levels(args.timeloop_stats),
-        load_noc_energy(results_dir),
-    )
-    hist = update_history(record, args.history)
+    try:
+        _sweep_rows = load_sweep(args.topology_sweep)
+        cur = curves(_sweep_rows)
+        _traffic = sorted({str(r.get("traffic", "?")) for r in _sweep_rows}) or None
+        record = build_record(
+            cur,
+            load_matrix(args.matrix),
+            load_levels(args.timeloop_stats),
+            load_noc_energy(results_dir),
+            traffic=_traffic,
+        )
+        hist = update_history(record, args.history)
+    except (FileNotFoundError, ValueError, OSError, json.JSONDecodeError, KeyError, TypeError, AttributeError) as e:
+        sys.exit(f"  ✗ dashboard build failed: {e}")
     # Only show runs we can actually render. Pre-feature runs stored latency only
     # (no curves/matrix) — offering them gave empty panels. They stay in history.json
     # (they age out via the cap) but are hidden from the selector + table.

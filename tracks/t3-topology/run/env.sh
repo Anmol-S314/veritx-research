@@ -58,8 +58,11 @@ if [ -z "${BOOKSIM_BIN:-}" ]; then
 fi
 export CONFIG="${CONFIG:-baseline}"
 export T3_SCRIPTS="$T3_DIR/scripts"
-if [ -z "${T3_RESULTS:-}" ] || [ "$T3_RESULTS" = "$T3_DIR/results" ]; then
+# Derived-from-CONFIG (see t3 re-derive guard): refresh when CONFIG moves so
+# a mid-session switch can't sweep one dir while compare/report use another.
+if [ -z "${T3_RESULTS:-}" ] || [ "${T3_RESULTS_FOR:-}" != "$CONFIG" ]; then
     export T3_RESULTS="$T3_DIR/results/$CONFIG"
+    export T3_RESULTS_FOR="$CONFIG"
 fi
 export T3_CONFIGS="$T3_DIR/configs"
 

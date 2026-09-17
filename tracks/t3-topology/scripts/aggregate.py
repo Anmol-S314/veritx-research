@@ -20,7 +20,8 @@ Sources merged (in priority order):
 
 Output: results/aggregate.csv
 Columns: run_sha, run_no, topology, injection_rate, latency_cycles,
-         hops_avg, energy_proxy, area_mm2, traffic, status, source_file
+         astrasim_cycles, hops_avg, energy_proxy, area_mm2, traffic,
+         status, source_file
 
 Usage
 -----
@@ -48,6 +49,9 @@ HERE    = Path(__file__).parent
 TRACK   = HERE.parent
 RESULTS = TRACK / "results"
 
+sys.path.insert(0, str(HERE))
+from lib.t3load import find_sweep, load_sweep as _lib_load_sweep  # noqa: E402
+
 PACKET_SIZE_BITS: int = 128   # must match analysis.py
 
 
@@ -70,8 +74,12 @@ def _git_sha(default: str = "local") -> str:
 # ---------------------------------------------------------------------------
 
 def _records_from_sweep(path: Path, sha: str, run_no: int) -> list[dict]:
-    """Convert a flat topology_sweep.json list into aggregate rows."""
-    raw: list[dict] = json.loads(path.read_text())
+    """Convert a flat topology_sweep.json list into aggregate rows.
+
+    Delegates parsing to lib.t3load.load_sweep(keep_all=True), preserving
+    the original keep-all semantics (failed rows kept).
+    """
+    raw: list[dict] = _lib_load_sweep(path, keep_all=True)
     rows = []
     for r in raw:
         rows.append({
@@ -117,25 +125,30 @@ def _records_from_history(path: Path) -> list[dict]:
 
 
 def _records_from_generic_json(path: Path, sha: str, run_no: int) -> list[dict]:
-    """Best-effort parse of any other results/*.json that looks like a sweep."""
+    """Best-effort parse of any other results/*.json that looks like a sweep.
+
+    Delegates file parsing to lib.t3load.load_sweep(keep_all=True),
+    preserving the original keep-all semantics plus the
+    "topology+injection_rate both missing -> skip" sweep-record check.
+    """
     try:
-        raw = json.loads(path.read_text())
+        raw = _lib_load_sweep(path, keep_all=True)
     except Exception:
-        return []
-    if not isinstance(raw, list):
         return []
     rows = []
     for r in raw:
-        if not isinstance(r, dict):
-            continue
         if "topology" not in r and "injection_rate" not in r:
             continue   # not a sweep record
         rows.append({
-            "run_sha":        r.get("sha", sha),
+            # No embedded sha → provenance unknown. Stamping the current
+            # commit here once silently attributed history rows to the
+            # wrong commit; "unknown" is honest and dedups safely.
+            "run_sha":        r.get("sha") or "unknown",
             "run_no":         r.get("run", run_no),
             "topology":       r.get("topology"),
             "injection_rate": r.get("injection_rate"),
             "latency_cycles": r.get("latency_cycles"),
+            "astrasim_cycles": r.get("astrasim_cycles"),
             "hops_avg":       r.get("hops_avg"),
             "traffic":        r.get("traffic", "unknown"),
             "status":         r.get("status", "unknown"),
@@ -173,10 +186,12 @@ def load_aggregate_df(results_dir: Optional[Path] = None,
     else:
         rdir = RESULTS / config
 
-    if not (rdir / "topology_sweep.json").exists() and (rdir / config / "topology_sweep.json").exists():
-        rdir = rdir / config
-    elif not (rdir / "topology_sweep.json").exists() and (rdir / "baseline" / "topology_sweep.json").exists():
-        rdir = rdir / "baseline"
+    # Single discovery via lib.t3load.find_sweep (canonical candidate order).
+    # If the sweep lives in a config/baseline subdir, descend so history +
+    # generic scans stay next to the sweep (preserves the original fallback).
+    _found = find_sweep(results_dir=rdir, config=config)
+    if _found is not None:
+        rdir = _found.parent
 
     sha    = _git_sha()
     all_rows: list[dict] = []
@@ -208,8 +223,10 @@ def load_aggregate_df(results_dir: Optional[Path] = None,
     df = pd.DataFrame(all_rows)
 
     # Cast types
-    for col in ("injection_rate", "latency_cycles", "hops_avg"):
-        df[col] = pd.to_numeric(df[col], errors="coerce")
+    for col in ("injection_rate", "latency_cycles", "hops_avg",
+                "astrasim_cycles"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
 
     # Derived columns
     df["energy_proxy"] = df["hops_avg"] * PACKET_SIZE_BITS
@@ -228,9 +245,13 @@ def load_aggregate_df(results_dir: Optional[Path] = None,
         keep="first"
     )
 
-    # Canonical column order
+    # Canonical column order (astrasim_cycles only exists when a generic
+    # file carried it — backfill so sweep/history-only dirs still work).
+    if "astrasim_cycles" not in df.columns:
+        df["astrasim_cycles"] = None
     df = df[["run_sha", "run_no", "topology", "injection_rate",
-             "latency_cycles", "hops_avg", "energy_proxy", "area_mm2",
+             "latency_cycles", "astrasim_cycles", "hops_avg",
+             "energy_proxy", "area_mm2",
              "traffic", "status", "source_file"]]
 
     df = df.sort_values(["run_no", "topology", "injection_rate"]).reset_index(drop=True)
@@ -269,6 +290,11 @@ def _selfcheck():
         tp = Path(td)
         (tp / "topology_sweep.json").write_text(_json.dumps(sweep_data))
         (tp / "history.json").write_text(_json.dumps(hist_data))
+        (tp / "astrasim_sweep.json").write_text(_json.dumps([
+            {"topology": "mesh4x4", "injection_rate": 0.0,
+             "astrasim_cycles": 3980310, "latency_cycles": None,
+             "traffic": "astrasim(all_reduce_chakra_et)", "status": "ok"},
+        ]))
 
         df = load_aggregate_df(results_dir=tp)
 
@@ -287,6 +313,11 @@ def _selfcheck():
     # energy proxy
     row = df[(df["topology"] == "fattree16") & (df["injection_rate"] == 0.002)]
     assert abs(float(row["energy_proxy"].iloc[0]) - 1.74 * 128) < 0.1
+
+    # generic astrasim record: cycles preserved, sha honestly unknown
+    arow = df[(df["topology"] == "mesh4x4") & (df["injection_rate"] == 0.0)]
+    assert float(arow["astrasim_cycles"].iloc[0]) == 3980310
+    assert arow["run_sha"].iloc[0] == "unknown"
 
     print("selfcheck OK")
 

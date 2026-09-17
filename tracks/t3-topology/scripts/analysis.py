@@ -44,6 +44,9 @@ HERE   = Path(__file__).parent
 TRACK  = HERE.parent
 RESULTS = TRACK / "results"
 
+sys.path.insert(0, str(HERE))
+from lib.t3load import find_sweep, load_sweep, saturation_point  # noqa: E402
+
 # NoC energy proxy constant (32-bit flit × 4 flits/packet = 128 bits).
 # Override via PACKET_SIZE_BITS env-var for different workloads.
 import os
@@ -91,21 +94,14 @@ def load_sweep_df(path: str | Path | None = None) -> pd.DataFrame:
     if path:
         p = Path(path)
     else:
-        config = os.environ.get("CONFIG", "baseline")
-        t3_res = os.environ.get("T3_RESULTS")
-        candidates = []
-        if t3_res:
-            candidates.extend([
-                Path(t3_res) / "topology_sweep.json",
-                Path(t3_res) / config / "topology_sweep.json",
-                Path(t3_res) / "baseline" / "topology_sweep.json",
-            ])
-        candidates.extend([
-            RESULTS / config / "topology_sweep.json",
-            RESULTS / "baseline" / "topology_sweep.json",
-            RESULTS / "topology_sweep.json",
-        ])
-        p = next((c for c in candidates if c.exists()), candidates[0])
+        # Single discovery via lib.t3load.find_sweep (canonical
+        # CONFIG/T3_RESULTS env walk, plot_curves order).
+        found = find_sweep()
+        if found is None:
+            _cfg = os.environ.get("CONFIG", "baseline")
+            p = RESULTS / _cfg / "topology_sweep.json"
+        else:
+            p = found
 
     if not p.exists():
         raise FileNotFoundError(
@@ -113,7 +109,9 @@ def load_sweep_df(path: str | Path | None = None) -> pd.DataFrame:
             "Run: make sim   (or: python3 scripts/run_experiments.py)"
         )
 
-    raw: list[dict] = json.loads(p.read_text())
+    # Single parser via lib.t3load.load_sweep(keep_all=True): preserves the
+    # original keep-all+NaN semantics (failed rows kept; None->NaN below).
+    raw: list[dict] = load_sweep(p, keep_all=True)
     df = pd.DataFrame(raw)
 
     # Normalise columns — ensure required columns exist even in older JSON files
@@ -144,7 +142,11 @@ def load_sweep_df(path: str | Path | None = None) -> pd.DataFrame:
 def summarise(df: pd.DataFrame) -> pd.DataFrame:
     """Return a per-topology summary table (valid rows only).
 
-    Columns: topology, n_ok, zero_load_latency, sat_rate, max_energy_proxy
+    Columns: topology, n_ok, zero_load_latency, sat_rate, saturated_in_grid,
+    max_energy_proxy. sat_rate is None (NaN in CSV) when the curve never
+    exceeds 2x zero-load inside the measured grid — saturated_in_grid
+    makes that explicit so readers don't mistake "didn't saturate here"
+    for "missing data".
     """
     ok = df[df["status"] == "ok"].copy()
     if ok.empty:
@@ -156,14 +158,15 @@ def summarise(df: pd.DataFrame) -> pd.DataFrame:
     for topo, grp in ok.groupby("topology"):
         grp_s = grp.sort_values("injection_rate")
         zero_load = grp_s["latency_cycles"].iloc[0]
-        # Saturation: first rate where latency > 2× zero-load (matches dashboard logic)
-        sat = grp_s.loc[grp_s["latency_cycles"] > 2.0 * zero_load, "injection_rate"]
-        sat_rate = float(sat.iloc[0]) if not sat.empty else None
+        # Saturation via lib.t3load.saturation_point (single implementation,
+        # k=2.0 — matches dashboard logic).
+        sat_rate = saturation_point(grp_s, k=2.0)
         rows.append({
             "topology":          topo,
             "n_ok":              len(grp_s),
             "zero_load_latency": round(zero_load, 3),
             "sat_rate":          sat_rate,
+            "saturated_in_grid": sat_rate is not None,
             "max_energy_proxy":  round(grp_s["energy_proxy"].max(), 3),
         })
 
@@ -238,7 +241,12 @@ def main():
         _selfcheck()
         return
 
-    df = load_sweep_df(args.sweep)
+    try:
+        df = load_sweep_df(args.sweep)
+    except FileNotFoundError as e:
+        # Guided runs (t3 report on a fresh CONFIG) must fail with the
+        # actionable hint, not a traceback — same contract as load_sweep().
+        sys.exit(f"  {e}")
 
     print(f"\n=== Sweep DataFrame ({'all rows' if args.all else 'valid only'}) ===")
     print(f"  Packet size constant : {PACKET_SIZE_BITS} bits")

@@ -1,15 +1,20 @@
 [options]
 mode bmc
 depth 20
+# Run from THIS directory (paths below are sby-dir-relative):
+#   cd scripts/rtlgen && sby -f router_formal.sby
+# Current blocker (2026-09-14): yosys rejects router.sv:59 (syntax error,
+# unexpected TOK_ID) before any engine runs — the checked-in RTL needs a
+# SystemVerilog-capable frontend pass before these proofs mean anything.
 
 [engines]
 smtbmc
 
 [script]
-read -sv /home/datavex/veritx-research/tracks/t3-topology/scripts/rtlgen/noc_pkg.sv
-read -sv /home/datavex/veritx-research/tracks/t3-topology/scripts/rtlgen/router.sv
+read -sv noc_pkg.sv
+read -sv router.sv
 hierarchy -top router
 
 [files]
-/home/datavex/veritx-research/tracks/t3-topology/scripts/rtlgen/noc_pkg.sv
-/home/datavex/veritx-research/tracks/t3-topology/scripts/rtlgen/router.sv
+noc_pkg.sv
+router.sv

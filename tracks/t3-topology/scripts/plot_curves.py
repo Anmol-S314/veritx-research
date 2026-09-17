@@ -34,6 +34,12 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+import warnings
+
+# The image carries two matplotlib installs (apt + pip); the 3D toolkit
+# import guard warns on every run although all our charts are 2D.
+warnings.filterwarnings("ignore", message="Unable to import Axes3D")
+
 import matplotlib.pyplot as plt
 import matplotlib.lines as mlines
 import pandas as pd
@@ -43,27 +49,23 @@ HERE    = Path(__file__).parent
 TRACK   = HERE.parent
 RESULTS = TRACK / "results"
 
-# Curated colour palette (tab10-inspired, avoids plain red/blue/green)
-PALETTE = [
-    "#4C72B0",  # muted indigo
-    "#DD8452",  # warm orange
-    "#55A868",  # sage green
-    "#C44E52",  # raspberry
-    "#8172B2",  # violet
-    "#937860",  # sienna
-    "#DA8BC3",  # pink
-    "#8C8C8C",  # grey
-    "#CCB974",  # khaki
-    "#64B5CD",  # sky
-]
+sys.path.insert(0, str(HERE))
+from lib.t3load import PALETTE, find_sweep, saturation_point  # noqa: E402
+# NOTE (Phase 2b): PALETTE is now the canonical compare_curves 10-color
+# tab10 set from lib.t3load (previously a muted seaborn-style set here).
+# Colors change; curve data does not.
 
 
 # ---------------------------------------------------------------------------
-# Saturation detection (mirrors generate_dashboard.py::saturation_point)
+# Saturation detection (delegates to lib.t3load — single implementation)
 # ---------------------------------------------------------------------------
 
 def _saturation_point(pts: pd.DataFrame, k: float = 2.0) -> Optional[float]:
     """Return the injection rate where latency first exceeds k × zero-load.
+
+    Delegates to lib.t3load.saturation_point (single implementation).
+    Kept as a thin wrapper for backward compat (selfcheck + external
+    callers import this name).
 
     Parameters
     ----------
@@ -75,12 +77,7 @@ def _saturation_point(pts: pd.DataFrame, k: float = 2.0) -> Optional[float]:
     -------
     float | None
     """
-    if len(pts) < 2:
-        return None
-    zero_load = pts["latency_cycles"].iloc[0]
-    threshold = k * zero_load
-    sat = pts.loc[pts["latency_cycles"] > threshold, "injection_rate"]
-    return float(sat.iloc[0]) if not sat.empty else None
+    return saturation_point(pts, k=k)
 
 
 # ---------------------------------------------------------------------------
@@ -207,7 +204,9 @@ def plot_curves(
               ncol=max(1, len(topologies) // 8))
 
     if ax2 is not None:
-        ax2.legend(loc="upper right", fontsize=8, framealpha=0.7)
+        _h2, _l2 = ax2.get_legend_handles_labels()
+        if _h2:  # twin axis often carries unlabeled artists; empty legend warns
+            ax2.legend(loc="upper right", fontsize=8, framealpha=0.7)
 
     fig.tight_layout()
     return fig, ax
@@ -284,28 +283,23 @@ def main():
 
     import os
     config = os.environ.get("CONFIG", "baseline")
-    t3_res = os.environ.get("T3_RESULTS")
 
     if args.sweep:
         sweep = Path(args.sweep)
     else:
-        candidates = []
-        if t3_res:
-            candidates.extend([
-                Path(t3_res) / "topology_sweep.json",
-                Path(t3_res) / config / "topology_sweep.json",
-                Path(t3_res) / "baseline" / "topology_sweep.json",
-            ])
-        candidates.extend([
-            RESULTS / config / "topology_sweep.json",
-            RESULTS / "baseline" / "topology_sweep.json",
-            RESULTS / "topology_sweep.json",
-        ])
-        sweep = next((c for c in candidates if c.exists()), candidates[0])
+        # Single discovery via lib.t3load.find_sweep (canonical
+        # CONFIG/T3_RESULTS env walk, plot_curves order). Falls back to the
+        # canonical non-existing path for error-message parity.
+        found = find_sweep()
+        sweep = found if found is not None else RESULTS / config / "topology_sweep.json"
 
     out = Path(args.out) if args.out else sweep.parent / "latency_curves.png"
 
-    fig, ax = plot_curves(sweep, k=args.k, show_hops=args.hops, title=args.title)
+    try:
+        fig, ax = plot_curves(sweep, k=args.k, show_hops=args.hops, title=args.title)
+    except (FileNotFoundError, ValueError, OSError, KeyError, json.JSONDecodeError) as e:
+        print(f"  ✗ plot failed: {e}", file=sys.stderr)
+        sys.exit(1)
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, bbox_inches="tight")
     plt.close(fig)

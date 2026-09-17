@@ -23,7 +23,7 @@ tile<->tile edges, because qkv_proj never triggers a collective.
 """
 import numpy as np
 
-from ir import TileProgram
+from tl_ir import TileProgram
 from collectives import ring_allreduce_pairs
 from softmax_accounting import softmax_dram_bytes
 

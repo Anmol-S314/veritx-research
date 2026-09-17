@@ -3,9 +3,11 @@
 
 Parses a Timeloop stats file's "Summary Stats" block into a per-component
 pJ/Compute breakdown + total energy + energy-delay product, prints it, and
-writes results/energy.json. This is the *accelerator-side* energy (which tile
-level burns the most) — the *NoC-side* energy proxy is hops x packet_size from
-the Booksim sweep. Together they feed the Wk13 energy-vs-latency Pareto analysis.
+writes energy.json NEXT TO the input stats file (config-scoped inputs get
+config-scoped outputs — no results/results/ surprises). This is the
+*accelerator-side* energy (which tile level burns the most) — the *NoC-side*
+energy proxy is hops x packet_size from the Booksim sweep. Together they feed
+the Wk13 energy-vs-latency Pareto analysis.
 
   python3 scripts/energy_report.py results/timeloop.stats.txt
 """
@@ -49,7 +51,13 @@ def main():
         sys.exit(f"  no {p} — run the Timeloop spine first (make ... CMD=timeloop)")
 
     e = parse_energy(p.read_text())
-    (p.parent.parent / "results" / "energy.json").write_text(json.dumps(e, indent=2))
+    # Output lands NEXT TO the input stats, not at a hardcoded second-level
+    # results/results/: with a config-scoped input (results/<cfg>/timeloop.stats.txt)
+    # the old p.parent.parent / "results" path resolved to results/results/energy.json
+    # — a directory that never exists — and the run died on FileNotFoundError
+    # after successfully parsing the stats.
+    out_path = p.parent / "energy.json"
+    out_path.write_text(json.dumps(e, indent=2))
 
     print(f"  Total energy: {e['energy_uJ']} uJ over {e['cycles']} cycles"
           f"  |  EDP {e.get('edp_uJ_cycles')} uJ·cyc  |  util {e['utilization']}")
@@ -61,7 +69,7 @@ def main():
             bar = "#" * int(round(v / mx * 30)) if mx else ""
             print(f"    {name:<32}{v:8.2f}  {bar}")
         print(f"    {'Total':<32}{e['total_pj_per_compute']:8.2f}")
-    print(f"  -> {p.parent / 'energy.json'}")
+    print(f"  -> {out_path}")
 
 
 def _selfcheck():

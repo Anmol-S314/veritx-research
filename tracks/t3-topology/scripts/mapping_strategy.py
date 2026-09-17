@@ -10,7 +10,7 @@ around attention_qk/attention_sv) and global TP all-reduce (both regimes,
 around out_proj/down_proj). Everything else is either fully local
 (Regime A attention) or a plain output-channel split (no reduction).
 """
-from ir import OpAssignment, TensorHandle, TileProgram
+from tl_ir import OpAssignment, TensorHandle, TileProgram
 from distribute import assign_heads_regime_a, distribute_regime_b, split_sizes
 
 

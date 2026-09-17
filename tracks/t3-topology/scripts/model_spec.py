@@ -1,6 +1,6 @@
 """HF config.json -> ModelSpec (plan.md Section 6, step 1)."""
 import json
-from ir import ModelSpec
+from tl_ir import ModelSpec
 
 
 def load_model_spec(config_path, seq_len: int, dtype_bytes: int = 2) -> ModelSpec:

@@ -41,11 +41,13 @@ COMM_RECV_NODE = 6
 COMM_COLL_NODE = 7
 MEM_LOAD_NODE = 2
 
-# Chakra Collective Types
-ALL_REDUCE = 1
-ALL_GATHER = 2
-REDUCE_SCATTER = 3
-ALL_TO_ALL = 4
+# Chakra CollectiveCommType wire codes (et_def.proto). The ONLY source for
+# ET attr encoding — a previous 1-based copy of these names (ALL_REDUCE=1…)
+# matched nothing on the wire and silently mislabeled traces.
+_COLL_PROTO_CODE = {
+    "allreduce": 0, "allgather": 2, "broadcast": 5,
+    "alltoall": 6, "reducescatter": 7,
+}
 
 
 MODEL_PRESETS: Dict[str, Dict[str, Any]] = {
@@ -143,22 +145,20 @@ class ChakraTraceGenerator:
         return self.current_id
 
     def resolve_spec(self, model_key: str, **kwargs) -> Dict[str, Any]:
-        """Construct full workload specification dictionary from preset and/or overrides."""
+        """Construct full workload specification dictionary from preset and/or overrides.
+
+        Unknown keys raise ValueError (Phase 4d): silently fabricating a
+        llama7b-shaped spec for a typo'd MODEL= once produced wrong-size
+        sweeps that looked legitimate. Callers wanting a miss-tolerant
+        lookup use t3models.get_model (returns None) instead.
+        """
         key = model_key.lower()
         if key in MODEL_PRESETS:
             spec = dict(MODEL_PRESETS[key])
         else:
-            spec = {
-                "model_name": model_key.upper(),
-                "hidden_size": 4096,
-                "ffn_size": 11008,
-                "num_layers": 32,
-                "seq_len": 2048,
-                "batch_size": 2,
-                "tp_degree": 4,
-                "pp_degree": 4,
-                "bytes_per_elem": 2,
-            }
+            raise ValueError(
+                f"unknown model {model_key!r} (known: {', '.join(sorted(MODEL_PRESETS))})"
+            )
 
         # Apply CLI overrides if provided
         for field in ("hidden_size", "ffn_size", "num_layers", "seq_len", "batch_size", "tp_degree", "pp_degree", "bytes_per_elem"):
@@ -274,14 +274,23 @@ class ChakraTraceGenerator:
 
     def build_collective_trace(self, comm_type: str = "ALL_REDUCE", msg_size_bytes: int = 16777216) -> List[dict]:
         """Build Chakra ET DAG for micro-benchmark collective operation."""
+        try:
+            if str((TRACK / "dse").resolve()) not in sys.path:
+                sys.path.insert(0, str(TRACK / "dse"))
+            from veritx_dse.model.presets import normalize_collective as _norm
+            _code = _COLL_PROTO_CODE[_norm(comm_type)]  # unknown spellings raise, never guess
+        except ValueError:
+            raise
+        except Exception:
+            _code = 0  # normalizer unavailable (standalone): allreduce default, as before
         self.nodes = []
         self.current_id = 0
         c1 = ChakraNode(self._next_id(), "comp_pre", COMP_NODE, duration_us=10)
         self.nodes.append(c1)
 
         comm = ChakraNode(self._next_id(), f"comm_{comm_type.lower()}", COMM_COLL_NODE, duration_us=150)
-        # Same uint64-attr contract as the model path (ALL_REDUCE=0).
-        comm.attr = {"comm_type": 0, "comm_size": msg_size_bytes,
+        # Wire-format collective type (et_def.proto CollectiveCommType).
+        comm.attr = {"comm_type": _code, "comm_size": msg_size_bytes,
                      "involved_dim": [True]}
         comm.add_dependency(c1.id)
         self.nodes.append(comm)
@@ -483,16 +492,20 @@ def main():
         nodes = gen.build_collective_trace(comm_type=model_key.upper())
         res = save_chakra_trace(nodes, out_dir, model_key)
     else:
-        spec = gen.resolve_spec(
-            model_key,
-            hidden_size=args.hidden_size,
-            ffn_size=args.ffn_size,
-            num_layers=args.num_layers,
-            seq_len=args.seq_len,
-            batch_size=args.batch_size,
-            tp_degree=args.tp,
-            pp_degree=args.pp,
-        )
+        try:
+            spec = gen.resolve_spec(
+                model_key,
+                hidden_size=args.hidden_size,
+                ffn_size=args.ffn_size,
+                num_layers=args.num_layers,
+                seq_len=args.seq_len,
+                batch_size=args.batch_size,
+                tp_degree=args.tp,
+                pp_degree=args.pp,
+            )
+        except ValueError as e:
+            print(f"  ✗ {e}", file=sys.stderr)
+            sys.exit(2)
         nodes = gen.build_model_trace(spec)
         res = save_chakra_trace(nodes, out_dir, model_key, spec=spec)
 

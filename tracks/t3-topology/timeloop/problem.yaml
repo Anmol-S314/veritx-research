@@ -1,35 +1,25 @@
 problem:
   shape:
-    name: attention_qk
+    name: gemm
     dimensions:
-    - B
-    - H
     - M
     - N
-    - D
+    - K
     data-spaces:
-    - name: Queries
+    - name: Inputs
       projection:
-      - - - B
-      - - - H
       - - - M
-      - - - D
-    - name: Keys
+      - - - K
+    - name: Weights
       projection:
-      - - - B
-      - - - H
+      - - - K
       - - - N
-      - - - D
-    - name: Attention_Scores
+    - name: Outputs
       projection:
-      - - - B
-      - - - H
       - - - M
       - - - N
       read-write: true
   instance:
-    B: 2
-    H: 12
-    M: 512
-    N: 512
-    D: 64
+    M: 2048
+    N: 4096
+    K: 216
