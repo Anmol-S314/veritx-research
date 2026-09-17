@@ -147,6 +147,7 @@ class TestBoMain:
         ev = tmp_path / "events.json"
         ev.write_text(json.dumps(events))
         monkeypatch.chdir(tmp_path)               # runs/ lands in tmp
+        monkeypatch.setattr(bo, "_SYNTH_DIR", tmp_path / "runs" / "booksim")
         monkeypatch.setattr(sys, "argv", [
             "bo_synthesizer.py", "--traffic", str(ev), "--nodes", "4",
             "--iters", "10", "--seed", "1", "--scorer", "analytical"])

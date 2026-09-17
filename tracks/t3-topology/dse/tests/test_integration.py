@@ -219,6 +219,11 @@ class TestComparePipeline:
     """veritx compare — head-to-head topology comparison."""
 
     @pytest.mark.skipif(not TINY_TRACE.exists(), reason="test_dynamic.trace not found")
+    @pytest.mark.skipif(
+        not (REPO / "third_party" / "booksim2" / "src" / "booksim").exists()
+        and not __import__("shutil").which("booksim"),
+        reason="booksim binary not built",
+    )
     def test_compare_mesh_vs_torus(self):
         """compare mesh_8x8 vs torus_8x8 → produces result table."""
         result = _cli(

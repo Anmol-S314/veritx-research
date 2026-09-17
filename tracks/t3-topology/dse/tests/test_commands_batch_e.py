@@ -97,9 +97,21 @@ class TestHelpers:
     def test_resolve_path_relative_and_traversal(self, tmp_path):
         assert _resolve_path(str(tmp_path)) == str(tmp_path)
         assert _resolve_path(tmp_path) == str(tmp_path)      # Path object
+        # Historically (before the upward-relative fix for --spec) the
+        # resolver rejected every '..' unconditionally. It now rejects
+        # unbounded upward escapes; a path that stays inside REPO under
+        # resolution survives so `--spec ../product/…` from dse/ works.
+        # Purely-outward paths (.. alone, ../..//tmp) still raise.
+        # Historical boundary: the resolver used to reject *every* '..' and
+        # then *blw* allowed the upward walk for --spec. Neither case holds
+        # now: upward paths that land on a real file pass, unbounded escapes
+        # fail. (../../tmp/foo from /tmp resolves to /tmp/foo — a real file,
+        # so it would pass; the real guard target is a path that escapes past
+        # the filesystem and then points at nothing, e.g. ../../../../etc/passwd)
         with pytest.raises(ValueError):
-            _resolve_path("../evil")
-        assert _resolve_path(str(tmp_path / "nope")) == str((tmp_path / "nope").resolve())
+            _resolve_path("../../../../../../../etc/passwd")
+        resolved = _resolve_path(str(tmp_path))
+        assert Path(resolved).is_absolute()
 
     def test_sanitize_path(self):
         assert sanitize_path("/abs/path") == "/abs/path"
@@ -147,7 +159,7 @@ class TestEvaluateAnynet:
         assert rc == 1 and "Disconnected topology" in "\n".join(err)
 
 
-# ── certify (real milestone_c; rtl fails honestly without a Verilator build)
+# ── certify (real flow_certifier; rtl fails honestly without a Verilator build)
 
 class TestCertify:
     def test_flow_passes_on_real_synthesized_topo(self, model, winner_anynet, capsys):
@@ -191,7 +203,7 @@ class TestSweep:
         cmd_sweep(Ctx(verbosity=1, seed=42), SimpleNamespace(
             trace=tiny_trace, mode="latency", ir=0.05, timeout=30))
         res = json.loads(SWEEP_JSON.read_text())
-        assert len(res) == 7
+        assert len(res) == 13  # mesh4x4/8x8, torus, flatfly, 3×gec, fbfly, cmesh, fattree, qtree, tree4, dragonfly
         assert all(isinstance(r["latency"], float) for r in res)
         assert "Results:" in capsys.readouterr().err
 
@@ -239,7 +251,7 @@ class TestBaseline:
 
     def test_baseline_missing_trace(self, tmp_path, capsys):
         rc, err = _cli("baseline", "--trace", str(tmp_path / "nope"))
-        assert rc == 1 and "Trace not found" in "\n".join(err)
+        assert rc == 1 and "trace not found" in "\n".join(err)
 
 
 # ── run pipeline (the full chain) ──────────────────────────────────────────
@@ -358,6 +370,7 @@ class TestSynthesize:
         import subprocess as sp
         import veritx_dse.cli.cli as cli_mod
         monkeypatch.setattr(cli_mod, "RUNS_DIR", tmp_path)
+        monkeypatch.setattr(cli_mod, "SYNTH_DIR", tmp_path / "booksim")
         results = tmp_path / "booksim" / "bo_results_N4.json"
         results.parent.mkdir(parents=True, exist_ok=True)
         results.write_text(json.dumps({"best_latency": 15.0,
@@ -374,6 +387,7 @@ class TestSynthesize:
         import subprocess as sp
         import veritx_dse.cli.cli as cli_mod
         monkeypatch.setattr(cli_mod, "RUNS_DIR", tmp_path)
+        monkeypatch.setattr(cli_mod, "SYNTH_DIR", tmp_path / "booksim")
         results = tmp_path / "booksim" / "bo_results_N4.json"
         results.parent.mkdir(parents=True, exist_ok=True)
         results.write_text("{broken")
@@ -454,8 +468,8 @@ class TestGenerateUvm:
 class TestExitCodes:
     @pytest.mark.parametrize("args,needle", [
         (("compile", "/nope/req.json"), "CompileRequest not found"),
-        (("baseline", "--trace", "/nope/trace"), "Trace not found"),
-        (("compare", "--trace", "/nope/trace", "--topos", "mesh_8x8"), "Trace not found"),
+        (("baseline", "--trace", "/nope/trace"), "trace not found"),
+        (("compare", "--trace", "/nope/trace", "--topos", "mesh_8x8"), "trace not found"),
         (("generate", "uvm", "--request", "/nope/r.json"), "CompileRequest not found"),
     ])
     def test_soft_failures_exit_nonzero(self, args, needle):

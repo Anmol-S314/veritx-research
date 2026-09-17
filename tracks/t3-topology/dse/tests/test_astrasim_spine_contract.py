@@ -20,7 +20,9 @@ Real objects throughout (the real trace generator, the real adapter); only the
 ASTRA-sim binary boundary is faked, and only where a real multi-minute
 simulation is not needed to pin the contract.
 """
+import io
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -31,6 +33,57 @@ SCRIPTS = TRACK / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 import run_astrasim  # noqa: E402  (path set above)
+
+
+# ---------------------------------------------------------------------------
+# Fake binary boundary: the runner spawns via subprocess.Popen + pump threads
+# (live progress display), so tests fake THAT boundary — in-memory pipes the
+# pump threads drain, plus poll/kill/wait — while recording the spawn kwargs
+# so invocation contracts (stdin, --booksim2-extra) stay pinned.
+# ---------------------------------------------------------------------------
+
+class _FakePopen:
+    def __init__(self, stdout_text, stderr_text="", returncode=0):
+        self._stdout_text = stdout_text
+        self._stderr_text = stderr_text
+        self.returncode = returncode
+        self.cmd = None
+        self.kwargs = {}
+        self.stdout = io.StringIO("")
+        self.stderr = io.StringIO("")
+        self.killed = False
+
+    def __call__(self, cmd, **kwargs):
+        self.cmd = cmd
+        self.kwargs = kwargs
+        self.stdout = io.StringIO(self._stdout_text)
+        self.stderr = io.StringIO(self._stderr_text)
+        return self
+
+    def poll(self):
+        # Still "running" while the pump threads haven't drained the pipes
+        # (a closed stream means its pump finished: fully drained).
+        try:
+            if self.stdout.tell() < len(self._stdout_text):
+                return None
+            if self.stderr.tell() < len(self._stderr_text):
+                return None
+        except ValueError:
+            pass
+        return self.returncode
+
+    def kill(self):
+        self.killed = True
+
+    def wait(self, timeout=None):
+        return self.returncode
+
+
+def _fake_popen(monkeypatch, stdout_text, stderr_text="", returncode=0):
+    """Patch run_astrasim's subprocess.Popen; returns the recorder instance."""
+    fake = _FakePopen(stdout_text, stderr_text, returncode)
+    monkeypatch.setattr(run_astrasim.subprocess, "Popen", fake)
+    return fake
 
 
 # ---------------------------------------------------------------------------
@@ -64,12 +117,7 @@ def test_row_schema_records_embedded_injection_rate(tmp_path, monkeypatch):
         run_astrasim, "find_astrasim_bin", lambda: "/fake/AstraSim_BookSim2"
     )
 
-    class R:
-        returncode = 0
-        stdout = "sys[0] finished, 99 cycles"
-        stderr = ""
-
-    monkeypatch.setattr(run_astrasim.subprocess, "run", lambda *a, **k: R())
+    _fake_popen(monkeypatch, "sys[0] finished, 99 cycles")
 
     cfg = tmp_path / "mesh4x4.cfg"
     cfg.write_text(
@@ -99,17 +147,7 @@ def test_run_invocation_pins_embedded_injection_override(tmp_path, monkeypatch):
     """The real binary path must pass --booksim2-extra=injection_rate=0.0 and
     only that injection knob — proving the trace (not template traffic) drives
     the run."""
-    captured = {}
-
-    def fake_run(cmd, capture_output, text, timeout):
-        captured["cmd"] = cmd
-        class R:
-            returncode = 0
-            stdout = "sys[0] finished, 1234 cycles"
-            stderr = ""
-        return R()
-
-    monkeypatch.setattr(run_astrasim.subprocess, "run", fake_run)
+    proc = _fake_popen(monkeypatch, "sys[0] finished, 1234 cycles")
     monkeypatch.setattr(
         run_astrasim, "find_astrasim_bin", lambda: "/fake/AstraSim_BookSim2"
     )
@@ -132,9 +170,134 @@ def test_run_invocation_pins_embedded_injection_override(tmp_path, monkeypatch):
 
     r = run_astrasim.run_astrasim_topology(cfg, spec, config_name="baseline")
 
-    extra = [a for a in captured["cmd"] if a.startswith("--booksim2-extra=")]
+    extra = [a for a in proc.cmd if a.startswith("--booksim2-extra=")]
     assert extra == ["--booksim2-extra=injection_rate=0.0"]
     assert r["astrasim_cycles"] == 1234          # real parse, not the fallback
+    assert r["status"] == "ok"
+
+
+def test_run_invocation_closes_stdin(tmp_path, monkeypatch):
+    """The frontend's post-simulation command loop reads stdin forever: with
+    an inherited interactive terminal it blocks after every rank has finished
+    (the 1800s TimeoutExpired on `t3 astrasim`). The invocation must pass
+    stdin=subprocess.DEVNULL so the loop sees EOF and exits cleanly.
+
+    Reproduced at fd level: an open-but-silent pipe (writer never writes,
+    never closes) keeps the process alive indefinitely after all 16
+    `sys[*] finished` lines; /dev/null exits normally. Same binary, same
+    workload — stdin is the only variable.
+    """
+    proc = _fake_popen(monkeypatch, "sys[0] finished, 1234 cycles")
+    monkeypatch.setattr(
+        run_astrasim, "find_astrasim_bin", lambda: "/fake/AstraSim_BookSim2"
+    )
+    monkeypatch.setattr(run_astrasim, "RESULTS_DIR", tmp_path)
+
+    cfg = tmp_path / "mesh4x4.cfg"
+    cfg.write_text(
+        "topology = mesh;\nk = 4;\nn = 2;\nnum_vcs = 4;\npacket_size = 5;\n"
+    )
+    spec = {
+        "model_name": "ALL_REDUCE",
+        "is_collective_microbenchmark": True,
+        "msg_size_mb": 1.0,
+        "num_layers": 1,
+        "total_allreduce_calls": 1,
+        "total_flops": 1e9,
+        "tp_degree": 1,
+        "pp_degree": 1,
+    }
+
+    run_astrasim.run_astrasim_topology(cfg, spec, config_name="baseline")
+
+    assert proc.kwargs["stdin"] is subprocess.DEVNULL, (
+        "binary spawned with inherited stdin — post-simulation command loop "
+        "will block forever on an interactive terminal"
+    )
+
+
+def test_row_wires_exposed_comm_from_finished_lines(tmp_path, monkeypatch):
+    """The frontend prints 'sys[i] finished, N cycles, exposed communication M
+    cycles.' The spine must surface the real numbers: latency_cycles = max
+    wall across ranks, exposed_comm_cycles from that same rank, and the
+    derived comm_overhead_pct — no placeholders, no fabrication."""
+    _fake_popen(monkeypatch,
+                "sys[0] finished, 2000 cycles, exposed communication 1500 cycles.\n"
+                "sys[1] finished, 2200 cycles, exposed communication 1400 cycles.\n")
+    monkeypatch.setattr(
+        run_astrasim, "find_astrasim_bin", lambda: "/fake/AstraSim_BookSim2"
+    )
+    monkeypatch.setattr(run_astrasim, "RESULTS_DIR", tmp_path)
+
+    cfg = tmp_path / "mesh4x4.cfg"
+    cfg.write_text(
+        "topology = mesh;\nk = 4;\nn = 2;\nnum_vcs = 4;\npacket_size = 5;\n"
+    )
+    spec = {
+        "model_name": "ALL_REDUCE",
+        "is_collective_microbenchmark": True,
+        "msg_size_mb": 1.0,
+        "num_layers": 1,
+        "total_allreduce_calls": 1,
+        "total_flops": 1e9,
+        "tp_degree": 1,
+        "pp_degree": 1,
+    }
+
+    r = run_astrasim.run_astrasim_topology(cfg, spec, config_name="baseline")
+
+    assert r["astrasim_cycles"] == 2200          # max wall across ranks
+    assert r["latency_cycles"] == 2200           # embedded mode: wall IS latency
+    assert r["exposed_comm_cycles"] == 1400      # exposed from the slowest rank
+    assert r["comm_overhead_pct"] == round(100.0 * 1400 / 2200, 2)
+
+
+def test_parse_plat_line_extracts_exact_fields():
+    """The [plat] frontend line parses into the plat_stats dict; a stdout
+    without it yields None (older binary) — absence is honest, never fake."""
+    line = ("[plat] packets=480 avg=23.375 min=19 p50=19 p95=44 p99=44 "
+            "max=44 hops_avg=2.875 hops_min=2 hops_max=7")
+    plat = run_astrasim._parse_plat_line(line)
+    assert plat == {
+        "packets": "480", "avg": "23.375", "min": "19", "p50": "19",
+        "p95": "44", "p99": "44", "max": "44",
+        "hops_avg": "2.875", "hops_min": "2", "hops_max": "7",
+    }
+    assert run_astrasim._parse_plat_line("sys[0] finished, 50310 cycles") is None
+
+
+def test_row_carries_plat_stats_when_emitted(tmp_path, monkeypatch):
+    """When the binary prints [plat], the sweep row surfaces it."""
+    _fake_popen(monkeypatch,
+                "sys[0] finished, 50310 cycles, exposed communication 30310 cycles.\n"
+                "[plat] packets=480 avg=23.375 min=19 p50=19 p95=44 p99=44 "
+                "max=44 hops_avg=2.875 hops_min=2 hops_max=7\n")
+    monkeypatch.setattr(
+        run_astrasim, "find_astrasim_bin", lambda: "/fake/AstraSim_BookSim2"
+    )
+    monkeypatch.setattr(run_astrasim, "RESULTS_DIR", tmp_path)
+
+    cfg = tmp_path / "mesh4x4.cfg"
+    cfg.write_text(
+        "topology = mesh;\nk = 4;\nn = 2;\nnum_vcs = 4;\npacket_size = 5;\n"
+    )
+    spec = {
+        "model_name": "ALL_REDUCE",
+        "is_collective_microbenchmark": True,
+        "msg_size_mb": 1.0,
+        "num_layers": 1,
+        "total_allreduce_calls": 1,
+        "total_flops": 1e9,
+        "tp_degree": 1,
+        "pp_degree": 1,
+    }
+
+    r = run_astrasim.run_astrasim_topology(cfg, spec, config_name="baseline")
+    assert r["plat_stats"] == {
+        "packets": "480", "avg": "23.375", "min": "19", "p50": "19",
+        "p95": "44", "p99": "44", "max": "44",
+        "hops_avg": "2.875", "hops_min": "2", "hops_max": "7",
+    }
     assert r["status"] == "ok"
 
 
@@ -194,12 +357,10 @@ def test_traffic_proof_field_names_the_chakra_trace(tmp_path, monkeypatch):
         run_astrasim.run_astrasim_topology(cfg, spec, config_name="baseline")
 
     # With the (faked) binary, the row carries the documented proof field.
-    class R:
-        returncode = 0
-        stdout = "sys[0] finished, 42 cycles"
-        stderr = ""
-
-    monkeypatch.setattr(run_astrasim.subprocess, "run", lambda *a, **k: R())
+    # pp override mirrors main()'s --pp 1 acceptance: raw registry pp>1 is
+    # refused by the replicated-trace guard (per-rank sharding unimplemented).
+    spec["pp_degree"] = 1
+    _fake_popen(monkeypatch, "sys[0] finished, 42 cycles")
     monkeypatch.setattr(
         run_astrasim, "find_astrasim_bin", lambda: "/fake/AstraSim_BookSim2"
     )

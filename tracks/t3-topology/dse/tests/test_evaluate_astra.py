@@ -66,17 +66,17 @@ def _args(ets, tmp_path):
 class TestConventionGate:
     def test_missing_base_fails(self, tmp_path, capsys):
         from unittest.mock import patch
-        with patch("veritx_dse.cli.cli.RUNS_DIR", tmp_path):
+        with patch("veritx_dse.core.paths.RESULTS_DIR", tmp_path):
             cmd_evaluate_astra(Ctx(verbosity=0), _args(tmp_path / "nope.et", tmp_path))
-        assert not list(tmp_path.glob("astra/eval_*.json"))
+        assert not list(tmp_path.glob("evaluate-astra/*/eval_*.json"))
 
     def test_missing_rank_files_fails(self, tmp_path, capsys):
         from unittest.mock import patch
         lonely = tmp_path / "lonely.et"
         lonely.write_bytes(b"junk")
-        with patch("veritx_dse.cli.cli.RUNS_DIR", tmp_path):
+        with patch("veritx_dse.core.paths.RESULTS_DIR", tmp_path):
             cmd_evaluate_astra(Ctx(verbosity=0), _args(lonely, tmp_path))
-        assert not list(tmp_path.glob("astra/eval_*.json"))
+        assert not list(tmp_path.glob("evaluate-astra/*/eval_*.json"))
 
 
 # ── live binary test ─────────────────────────────────────────────────────
@@ -103,15 +103,24 @@ class TestLiveAstra:
             memory_config=str(FIX / "memory.json"),
             timeout=120,
         )
-        with patch("veritx_dse.cli.cli.RUNS_DIR", tmp_path):
+        with patch("veritx_dse.core.paths.RESULTS_DIR", tmp_path):
             cmd_evaluate_astra(Ctx(verbosity=0), args)
-        results = list(tmp_path.glob("astra/eval_*.json"))
+        results = list(tmp_path.glob("evaluate-astra/*/eval_*.json"))
         assert len(results) == 1
         result = json.loads(results[0].read_text())
         assert result["status"] == "ok"
         assert result["num_ranks"] == 16
         assert result["cycles"] > 0
         assert result["per_rank_cycles"]["0"] > 0
+        # The fixture's allreduce has nonzero exposed comm — the CLI must
+        # surface it, not drop the field the frontend already reports.
+        assert result["exposed_comm_cycles"] > 0
+        # [plat] line: real per-packet latency/hops from the built binary.
+        plat = result["plat_stats"]
+        assert plat is not None, "binary emits [plat]; CLI dropped it"
+        assert int(plat["packets"]) > 0
+        assert float(plat["p50"]) > 0
+        assert float(plat["hops_avg"]) > 0
 
 
 # ── fault injection: every error branch, via the REAL subprocess path ────
@@ -150,7 +159,7 @@ class TestAstraFaults:
         monkeypatch.setenv("VERITX_FAKE_MODE", mode)
         monkeypatch.setenv("VERITX_FAKE_ARGV", str(tmp_path / "argv.txt"))
         monkeypatch.setattr("veritx_dse.cli.cli.ASTRA_BS_BIN", fake)
-        monkeypatch.setattr("veritx_dse.cli.cli.RUNS_DIR", tmp_path)
+        monkeypatch.setattr("veritx_dse.core.paths.RESULTS_DIR", tmp_path)
 
         ets = tmp_path / "w.et"
         ets.write_bytes(b"trace")
@@ -167,13 +176,13 @@ class TestAstraFaults:
         return {
             "err": capsys.readouterr().err,
             "argv": (tmp_path / "argv.txt").read_text() if (tmp_path / "argv.txt").exists() else "",
-            "results": list(tmp_path.glob("astra/eval_*.json")),
+            "results": list(tmp_path.glob("evaluate-astra/*/eval_*.json")),
         }
 
     def test_missing_binary_fails_fast(self, monkeypatch, tmp_path, capsys):
         monkeypatch.setattr("veritx_dse.cli.cli.ASTRA_BS_BIN",
                             tmp_path / "no_such_binary")
-        monkeypatch.setattr("veritx_dse.cli.cli.RUNS_DIR", tmp_path)
+        monkeypatch.setattr("veritx_dse.core.paths.RESULTS_DIR", tmp_path)
         ets = tmp_path / "w.et"
         ets.write_bytes(b"trace")
         (tmp_path / "w.et.0.et").write_bytes(b"rank0")
@@ -183,7 +192,7 @@ class TestAstraFaults:
         )
         cmd_evaluate_astra(Ctx(verbosity=0), args)
         assert "binary not found" in capsys.readouterr().err
-        assert not list(tmp_path.glob("astra/eval_*.json"))
+        assert not list(tmp_path.glob("evaluate-astra/*/eval_*.json"))
 
     def test_nonzero_exit_reports_tail_and_writes_nothing(self, monkeypatch, tmp_path, capsys):
         got = self._run(monkeypatch, tmp_path, capsys, "crash")

@@ -103,12 +103,12 @@ class TestTopology:
     def test_mesh_edge_count(self):
         from veritx_dse.model.presets import Topology
         t = Topology("mesh_8x8", "mesh", "min_adapt", {"k": 8, "n": 2})
-        assert t.edges() == 128  # 2 * 8^2 = 128
+        assert t.edges() == 112  # 2*k*(k-1) undirected (was n*k**n=128, overcounted)
 
-    def test_torus_same_as_mesh(self):
+    def test_torus_wrap_edges(self):
         from veritx_dse.model.presets import Topology
         t = Topology("torus_8x8", "torus", "dim_order", {"k": 8, "n": 2})
-        assert t.edges() == 128
+        assert t.edges() == 128  # wrap links add k**n over the mesh count
 
     def test_flatfly_edge_count(self):
         from veritx_dse.model.presets import Topology
@@ -117,11 +117,14 @@ class TestTopology:
         assert edges > 0
 
     def test_gec_edge_count(self):
-        from veritx_dse.model.presets import Topology
+        from veritx_dse.model.presets import Topology, lookup_topo
         t = Topology("gec", "gec", "dor", {"k": 8, "c": 1, "o": 7, "d": 1})
-        edges = t.edges()
-        # mesh_edges = 2*8*7 = 112, express = 7*64 = 448, total = 560
-        assert edges == 560
+        # express mode builds ONLY the p2p graph: k*k*(k-1) = 448 undirected
+        # (the old mesh_edges+express total 560 counted unbuilt mesh links).
+        assert t.edges() == 448
+        m = lookup_topo("gec_mesh_k8")
+        assert m is not None and m.params.get("mesh") == 1
+        assert m.edges() == 2 * 8 * 7  # real mesh graph, not silent express
 
     def test_lookup_by_name(self):
         from veritx_dse.model.presets import lookup_topo
@@ -182,7 +185,7 @@ class TestBookSimConfig:
         assert "n = 2;" in cfg
         assert "wait_for_tail_credit = 1;" in cfg
         assert "sim_type = latency;" in cfg
-        assert "latency_thres = 1000000.0;" in cfg
+        assert "latency_thres = 1000000000000000.0;" in cfg
 
     def test_config_no_classes_param(self, tmp_trace):
         """CRITICAL: 'classes' must never appear as a standalone param — it inflates latency 75x."""
@@ -273,9 +276,11 @@ class TestTraceStats:
         assert stats.num_packets == 0
 
     def test_detect_nonexistent(self):
+        import pytest
+        from veritx_dse.core.errors import TraceError
         from veritx_dse.simulation.booksim import detect_trace_stats
-        stats = detect_trace_stats("/nonexistent/file.trace")
-        assert stats.num_packets == 0
+        with pytest.raises(TraceError):
+            detect_trace_stats("/nonexistent/file.trace")
 
 
 # ── Trace validate tests ───────────────────────────────────────────────────
@@ -398,6 +403,39 @@ class TestParseOutput:
         assert result["latency"] == 100.0
         assert "hops" not in result
 
+    def test_parse_dash_placeholder(self):
+        # BookSim prints "= -" for a stat with no samples (zero packets
+        # delivered). Must be "no data", never a float('-') crash.
+        from veritx_dse.simulation.booksim import parse_output
+        stdout = ("Packet latency average = -\n\tp50 = -\n\tp99 = -\n"
+                  "Hops average = -\nAccepted packet rate average = -\n"
+                  "\thonest_avg = -")
+        result = parse_output(stdout)
+        assert "latency" not in result and "p50" not in result
+        assert "p99" not in result and "hops" not in result
+        assert "throughput" not in result and "honest_latency" not in result
+
+    def test_parse_scientific_notation(self):
+        from veritx_dse.simulation.booksim import parse_output
+        result = parse_output("Packet latency average = 1.234e+03\n\thonest_avg = 5e-1")
+        assert result["latency"] == 1234.0
+        assert result["honest_latency"] == 0.5
+
+    def test_trace_stats_max_node(self):
+        # max_node feeds run_compare's anynet size pre-check: a 4-node net
+        # handed a trace addressing nodes 0..48 delivers zero packets.
+        import tempfile, os
+        from veritx_dse.simulation.booksim import detect_trace_stats
+        with tempfile.NamedTemporaryFile("w", suffix=".trace", delete=False) as f:
+            f.write("# comment\n0 0 0 3 128\n5 16 0 48 128\n")
+            path = f.name
+        try:
+            stats = detect_trace_stats(path)
+        finally:
+            os.unlink(path)
+        assert stats.max_node == 48
+        assert stats.num_packets == 2
+
 
 # ── CLI fail-fast fixes: --anynet handling, dead --nodes, --burst guard ──────
 
@@ -431,21 +469,21 @@ class TestCompareAnynetFailFast:
                          mode="latency", ir=0.05, memory=False,
                          sensitivity=None)
 
-    def test_missing_anynet_aborts_without_sim(self, ctx, tmp_trace):
+    def test_missing_anynet_warns_and_continues(self, ctx, tmp_trace):
         from unittest.mock import patch
         from veritx_dse.cli.cli import cmd_compare
         with patch("veritx_dse.cli.cli.run_compare") as rc:
             cmd_compare(ctx, self._ns(tmp_trace, ["/nonexistent/a.anynet"]))
-            rc.assert_not_called()
+            rc.assert_called_once()  # warn-and-continue: built-ins still compare
         log = open(ctx.log_file).read()
-        assert "Aborting compare" in log
+        assert "not found, skipping" in log
 
-    def test_comma_anynet_missing_aborts(self, ctx, tmp_trace):
+    def test_comma_anynet_missing_warns_and_continues(self, ctx, tmp_trace):
         from unittest.mock import patch
         from veritx_dse.cli.cli import cmd_compare
         with patch("veritx_dse.cli.cli.run_compare") as rc:
             cmd_compare(ctx, self._ns(tmp_trace, ["a.anynet,b.anynet"]))
-            rc.assert_not_called()
+            rc.assert_called_once()  # warn-and-continue: built-ins still compare
 
     def test_existing_anynet_reaches_sim(self, ctx, tmp_path, tmp_trace):
         from unittest.mock import patch, MagicMock
@@ -552,13 +590,15 @@ class TestBaselineAnynetFailFast:
         return Namespace(trace=trace, topos="mesh_4x4", anynet=anynet,
                          seeds=1, timeout=60)
 
-    def test_missing_anynet_aborts(self, ctx, tmp_trace):
-        from unittest.mock import patch
+    def test_missing_anynet_warns_and_continues(self, ctx, tmp_trace):
+        from unittest.mock import patch, MagicMock
         from veritx_dse.cli.cli import cmd_baseline
-        with patch("veritx_dse.cli.cli.run_compare") as rc:
+        fake = MagicMock()
+        fake.to_dict.return_value = {}
+        with patch("veritx_dse.cli.cli.run_compare", return_value=fake) as rc:
             cmd_baseline(ctx, self._ns(tmp_trace, ["/nonexistent_b.anynet"]))
-            rc.assert_not_called()
-        assert "Aborting baseline" in open(ctx.log_file).read()
+            rc.assert_called_once()  # warn-and-continue: built-ins still compare
+        assert "not found, skipping" in open(ctx.log_file).read()
 
 
 class TestSimOverrides:

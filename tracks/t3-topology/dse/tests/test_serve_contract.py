@@ -49,7 +49,16 @@ class TestServeArgForwarding:
                             "--cycle-accurate",
                             "--output", "/tmp/veritx_serve_out",
                             "--timeout", "123",
-                            "--log-level", "INFO")
+                            "--log-level", "INFO",
+                            "--max-num-seqs", "64",
+                            "--max-num-batched-tokens", "1024",
+                            "--dtype", "fp8",
+                            "--request-routing-policy", "RR",
+                            "--expert-routing-policy", "RAND",
+                            "--block-size", "32",
+                            "--skip-prefill",
+                            "--no-chunked-prefill",
+                            "--no-block-copy")
         cmd = _probe_serve(args)
         joined = " ".join(cmd)
         assert "--num-reqs 7" in joined
@@ -59,6 +68,15 @@ class TestServeArgForwarding:
         assert "--no-enable-prefix-caching" in joined
         assert "--no-booksim-replay-only" in joined  # downstream flag is inverted
         assert "--output /tmp/veritx_serve_out" in joined
+        assert "--max-num-seqs 64" in joined
+        assert "--max-num-batched-tokens 1024" in joined
+        assert "--dtype fp8" in joined
+        assert "--request-routing-policy RR" in joined
+        assert "--expert-routing-policy RAND" in joined
+        assert "--block-size 32" in joined
+        assert "--skip-prefill" in joined
+        assert "--no-enable-chunked-prefill" in joined
+        assert "--no-enable-block-copy" in joined
 
     def test_defaults_match_module_expectations(self):
         args = self._parsed()
@@ -84,7 +102,24 @@ class TestServeArgForwarding:
         args = parser.parse_args(["serve", "--cluster-config", str(CLUSTER),
                                   "--dataset", str(DATASET),
                                   "--no-cleanup", "--no-prefix-caching",
-                                  "--cycle-accurate", "--output", "/tmp/o"])
+                                  "--cycle-accurate", "--output", "/tmp/o",
+                                  "--max-num-seqs", "64", "--dtype", "fp8",
+                                  "--skip-prefill", "--no-chunked-prefill",
+                                  "--enable-prefix-sharing",
+                                  "--prefix-storage", "CPU",
+                                  "--no-reserve-full-isl", "--save-trace-text",
+                                  "--log-interval", "0.5",
+                                  "--kv-cache-dtype", "fp8",
+                                  "--enable-local-offloading",
+                                  "--block-size", "32",
+                                  "--npu-memory-utilization", "0.8",
+                                  "--long-prefill-token-threshold", "512",
+                                  "--request-routing-policy", "RR",
+                                  "--expert-routing-policy", "RAND",
+                                  "--max-num-batched-tokens", "1024",
+                                  "--no-block-copy",
+                                  "--enable-attn-offloading",
+                                  "--enable-sub-batch-interleaving"])
         cmd = _probe_serve(args)
         module_argv = cmd[3:]  # drop [python, -m, serving]
         probe = subprocess.run(
