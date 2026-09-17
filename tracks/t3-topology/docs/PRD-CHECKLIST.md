@@ -347,6 +347,28 @@
 
 ---
 
+## §17 PR6 — Serving → BookSim vertical slice
+
+Unblocked by PR5.2 (`HANDOFF-2026-09-17-pr52-livelock-verification.md`).
+Concrete slice first: own entry point, no Slice A generalization, no
+shared session abstraction (that waits for the post-PR7 checkpoint).
+
+| # | PRD Line | Requirement | Status | Priority | Notes |
+|---|----------|-------------|--------|----------|-------|
+| 17.1 | "ExperimentSpec(mode=serving)" | Strict serving-spec boundary | ❌ | P0 | Own function/slice; Slice A stays untouched |
+| 17.2 | "immutable run" | Frozen spec/manifest/provenance per serving run | ❌ | P0 | ADR 0001/0002 |
+| 17.3 | "PP preflight" | PP requested + converter lacks PP → REFUSE nonzero | ❌ | P0 | `convert_rows` shim fail-closed; `--allow-lossy-conversion` opts into DEGRADED, ineligible for goldens/comparison |
+| 17.4 | "network_mode provenance" | Every serving result carries `REAL_SIMULATION` or `TRACE_REPLAY` | ❌ | P0 | Default booksim serve is replay; `--cycle-accurate` selects real |
+| 17.5 | "TRACE_REPLAY fidelity" | Replay distinct from `SYSTEM_SIMULATION`/`NETWORK_SIMULATION` | ❌ | P0 | `runs.py` addition; replay TTFT/TPOT never compare vs simulated |
+| 17.6 | "single-instance golden" | Trivial single-instance golden retires all + validates terminal state | ❌ | P0 | Success ≠ exit 0 |
+| 17.7 | "multi-instance golden" | Trivial multi-instance golden serves every instance | ❌ | P0 | Per-instance assertion, not bare request count |
+| 17.8 | "replay exclusion" | Regression proving replay-only cannot pass the golden gate | ❌ | P0 | Gate requires real + `semantic_losses==[]` |
+| 17.9 | "timeout policy" | Golden timeouts from probe fingerprint, not wall-clock | ❌ | P1 | Soak-vs-wall-clock note in PR5.2 handoff |
+
+**§17 Score: 0/9 → F (next tranche)**
+
+---
+
 ## Summary: Grade Matrix
 
 | Section | Items | ✅ Done | 🔧 Partial | ❌ Missing | ⏭️ Deferred | Score |
@@ -366,7 +388,8 @@
 | §13 Pipeline | 9 | 3 | 3 | 2 | 1 | **B** |
 | §14 IP Protection | 5 | 0 | 0 | 2 | 3 | **F** (deferred) |
 | §15 Build Order | 6 | 2 | 1 | 0 | 3 | **B** |
-| **TOTAL** | **116** | **60** | **25** | **16** | **15** | **B+** |
+| §17 PR6 serving→BookSim | 9 | 0 | 0 | 9 | 0 | **F** (next) |
+| **TOTAL** | **125** | **60** | **25** | **25** | **15** | **B+** |
 
 ---
 
