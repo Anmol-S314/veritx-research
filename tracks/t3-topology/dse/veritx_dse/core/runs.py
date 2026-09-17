@@ -155,7 +155,10 @@ def _utcnow() -> str:
 FIDELITY_CATEGORIES = (
     "ANALYTICAL_ESTIMATE",           # derived from a model, not simulated
     "NETWORK_SIMULATION",            # BookSim-style cycle simulation
-    "SYSTEM_SERVING_SIMULATION",     # LLMServingSim-style system simulation
+    "SYSTEM_SERVING_SIMULATION",     # LLMServingSim over a real network backend
+    "TRACE_REPLAY",                  # PR6 §17.5: trace durations replayed, no
+                                     # network simulated — never comparable
+                                     # against SYSTEM_SERVING_SIMULATION
     "RTL_SIMULATION",                # Verilator-class RTL execution
     "FORMAL_PROOF",                  # model-checker result
     "SYNTHESIS_STA_PHYSICAL",        # implementation-tool derived
