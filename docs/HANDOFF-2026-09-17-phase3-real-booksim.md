@@ -74,3 +74,25 @@ Suspicion was that comm isn't used right (all-true `involved_dims`,
 - `docs/VERITX_SROTA_IMPLEMENTATION_PLAN.md` (committed: the authority
   version this program executes against)
 - This handoff. No source changes in T6 (evidence-only phase).
+
+## Addendum — review corrections adopted for PR6 (binding)
+
+1. **Ownership boundary preserved:** VeriTX supervises the LLMServingSim
+   process (lifecycle, timeout, artifacts); LLMServingSim keeps owning
+   the ASTRA/BookSim interactive protocol. PR5's `ServingBackendSession`
+   stays a test fixture. Any attempt to rewire protocol ownership in
+   PR6 must be stopped.
+2. **Two goldens, different burdens:** A = single-instance TP/EP>1
+   (fabric activity); B = multi-instance with guaranteed communication
+   (no tp=1-per-instance negligible-traffic configs) proving ownership,
+   rebinding, and per-instance retirement under REAL_SIMULATION.
+3. **involved_dim tripwire NOW (not Phase 10):** multi-dim goldens must
+   assert scoped collectives carry topology-length `involved_dim`
+   vectors; the 4-wide all-true fallback signature on a 2-dim topology
+   fails the run. Broader unscopable-collective policy still belongs to
+   the canonical workload phase (Phase 9).
+4. **Liveness is diagnostic, never the terminal oracle:** success =
+   retirement count + validated output + process/result state. A final
+   non-USEFUL snapshot (as seen in T5) does not override CSV truth.
+5. **Replay tests are scheduler-side evidence only** — never
+   network-correctness evidence. Golden B must run REAL_SIMULATION.
