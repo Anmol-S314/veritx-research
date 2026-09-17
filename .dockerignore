@@ -21,19 +21,17 @@ node_modules/
 # LLMServingSim trace data (large, not needed in image)
 third_party/llmservingsim/traces/
 third_party/llmservingsim/astra-sim/
-third_party/llmservingsim/profiler/
 third_party/llmservingsim/bench/
 third_party/llmservingsim/docs/
 third_party/llmservingsim/.github/
 third_party/llmservingsim/gdb.txt
 
-# ASTRA-sim: keep build/astra_booksim2/ CMakeLists but exclude build artifacts
+# ASTRA-sim: keep CMakeLists but exclude build artifacts
+third_party/astra-sim/inputs/runs/
 third_party/astra-sim/build/astra_booksim2/build/
 third_party/astra-sim/build/astra_booksim2/bin/
-third_party/astra-sim/build/astra_analytical/
+third_party/astra-sim/build/astra_analytical/build/
 third_party/astra-sim/extern/network_backend/ns-3/
-third_party/astra-sim/extern/helper/json/
-third_party/astra-sim/extern/helper/cxxopts/
 
 # BookSim2 build artifacts (host .o files have wrong glibc symbols)
 third_party/booksim2/src/booksim
@@ -51,7 +49,6 @@ third_party/booksim2/src/power/*.o
 # LLMServingSim converted traces and run artifacts
 third_party/llmservingsim/**/*.converted.et
 third_party/llmservingsim/**/*.et
-third_party/llmservingsim/astra-sim/
 
 # Any stray build artifacts in third_party (but NOT CMakeLists.txt dirs)
 third_party/**/*.o

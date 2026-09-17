@@ -46,8 +46,8 @@ pull:  ## pull the prebuilt tools image
 run:  ## run a track command in the image:  make run TRACK=t3-topology CMD=timeloop
 	$(RUN) $(IMAGE) make -C tracks/$(TRACK) $(CMD) CONFIG=${CONFIG}
 
-shell:  ## open an interactive shell in the tools image
-	$(CONTAINER) run --rm -it -v "$(PWD)":/workspace -w /workspace $(IMAGE) bash
+shell:  ## open an interactive shell in the tools image (t3 on PATH)
+	$(CONTAINER) run --rm -it -v "$(PWD)":/workspace -w /workspace $(IMAGE) bash -c 'export PATH="/workspace/tracks/t3-topology:$$PATH"; exec bash -i'
 
 image-build:  ## build the tools image locally
 	$(CONTAINER) build -t $(IMAGE) .

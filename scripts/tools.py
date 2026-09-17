@@ -278,7 +278,13 @@ def cmd_build(args: argparse.Namespace) -> None:
 
 
 def cmd_sync(args: argparse.Namespace) -> None:
-    """Sync tool source to downstream copies declared in METADATA.json."""
+    """Sync tool source to downstream copies declared in METADATA.json.
+
+    Exit codes: 0 = in sync (or synced), 1 = drift found in --check mode.
+    The README says canonical and mirror 'must always equal' — that contract
+    needs a gate, not a grep of the output, so --check reports drift by rc
+    (CI-usable; plain sync still exits 0 after copying).
+    """
     meta = get_tool(args.tool)
     tool_dir = meta["_dir"]
     sync_targets = meta.get("sync_targets", [])
@@ -286,6 +292,8 @@ def cmd_sync(args: argparse.Namespace) -> None:
     if not sync_targets:
         print(f"{args.tool} has no sync_targets defined in METADATA.json")
         return
+
+    total_diffs = 0
 
     for target in sync_targets:
         dest_rel = target["dest"]
@@ -334,19 +342,26 @@ def cmd_sync(args: argparse.Namespace) -> None:
                 changed_files += 1
                 diffs += 1
 
-        # Info-only: files only in destination
-        for rel in files_to_sync:
-            src_file = src_dir / rel
-            dst_file = dst_dir / rel
-            if not src_file.exists() and dst_file.exists():
-                if not args.check_only:
-                    print(f"  DEST-ONLY: {rel} (not in source)")
+        # Destination-only files: stale mirror leftovers the next real sync
+        # will NOT remove (the sync loop only copies src -> dst). The old loop
+        # iterated source files and then tested the source for absence — dead
+        # logic that never fired, so stale mirror files drifted silently.
+        _src_rels = {f.relative_to(src_dir) for pattern in patterns
+                     for f in src_dir.rglob(pattern) if f.name not in skip}
+        for f in dst_dir.rglob("*"):
+            if not f.is_file() or f.name in skip:
+                continue
+            rel = f.relative_to(dst_dir)
+            if any(rel.match(p) for p in patterns) and rel not in _src_rels:
+                print(f"  DEST-ONLY: {rel} (in mirror, not in canonical source)")
+                diffs += 1
 
         if diffs == 0:
             print(f"  All {len(files_to_sync)} files are in sync.")
             continue
 
         print(f"  Found {diffs} differences ({new_files} new, {changed_files} changed)")
+        total_diffs += diffs
 
         if args.check_only:
             print(f"  Dry run -- no files copied. Run without --check to sync.")
@@ -377,6 +392,12 @@ def cmd_sync(args: argparse.Namespace) -> None:
                 print(f"  WARNING: post-sync failed (exit {result.returncode})", file=sys.stderr)
                 if result.stderr:
                     print(f"  {result.stderr.strip()}", file=sys.stderr)
+
+    if args.check_only and total_diffs:
+        print(f"  ✗ {total_diffs} drift difference(s) between canonical and mirror "
+              f"— run '{sys.argv[0].split('/')[-1]} {args.tool} sync' (without --check) to repair",
+              file=sys.stderr)
+        sys.exit(1)
 
 
 def cmd_run(args: argparse.Namespace) -> None:

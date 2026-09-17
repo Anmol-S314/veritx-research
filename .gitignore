@@ -91,3 +91,11 @@ serving/LLMServingSim/astra-sim/
 /docs/VM-SETUP.md
 # Archived docs (incl. the old VM-SETUP.md) - keep out of the tree
 /docs/archive/
+
+# Session transcripts & agent scratch (2026-09-16)
+session-*.md
+tracks/t3-topology/logs/
+tracks/t3-topology/log/
+.pytest_cache/
+# cold storage: archived runs, old transcripts, stale handoffs (do not commit)
+archive/
