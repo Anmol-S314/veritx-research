@@ -398,3 +398,48 @@ class TestInstrumentationIsPure:
         assert p.no_useful_progress_report() == {
             "error": "no observations recorded"}
         assert attach_to_failure(p, "x") == "x"
+
+
+class TestCompleteLogicalCommand:
+    """T4: the probe must record the COMPLETE command (workload path,
+    pass variant, done, exit) — not a normalized bare-pass category."""
+
+    def test_full_workload_path_preserved_verbatim(self):
+        cmd = ("inputs/runs/abc/workload/Qwen/Qwen3-30B/instance0_batch7"
+               "/llm.0.et")
+        p = LivenessProbe()
+        p.observe(ProgressObservation(
+            round=0, sim_time=1, backend_cycle=1, backend_completions=0,
+            retired_requests=0, pending_requests=0, deferred_requests=0,
+            inflight_batches=1, dispatched_this_round=True,
+            last_command=cmd))
+        r = p.no_useful_progress_report()
+        assert r["last_command"] == cmd
+        assert cmd in p.render()
+
+    def test_repeating_full_command_detected(self):
+        p = LivenessProbe()
+        for _ in range(2):
+            p.observe(ProgressObservation(
+                round=0, sim_time=1, backend_cycle=1, backend_completions=0,
+                retired_requests=0, pending_requests=0, deferred_requests=0,
+                inflight_batches=1, dispatched_this_round=False,
+                last_command="pass 46926808"))
+        assert p.answers()["repeating_same_action"] is True
+
+    def test_all_backend_sends_flow_through_single_seam(self):
+        """Every write to the backend must pass the recording seam, so no
+        future send site can silently reintroduce a bare-pass-only record."""
+        main = (_LLM_DIR / "serving" / "__main__.py").read_text()
+        sends = [ln for ln in main.splitlines()
+                 if "controller.write_flush(" in ln]
+        assert len(sends) == 1, (
+            "backend sends bypassing the _issue seam:\n"
+            + "\n".join(sends))
+        assert sends[0].strip() == "controller.write_flush(p, cmd)"
+        writers = sorted(ln.strip().split("#")[0].strip()
+                         for ln in main.splitlines()
+                         if ln.strip().startswith("_lv_last_cmd ="))
+        assert writers == ['_lv_last_cmd = "<startup>"',
+                           "_lv_last_cmd = cmd"], (
+            "last_command must have exactly two writers: init + seam")

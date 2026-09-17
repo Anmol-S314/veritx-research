@@ -1067,6 +1067,18 @@ def main():
     _lv_probe = _LivenessProbe()
     _lv_dump_every = int(os.environ.get("VERITX_LIVENESS_DUMP", "0"))
     _lv_last_cmd = "<startup>"  # logical command pending/issued last
+
+    def _issue(cmd):
+        """Single backend-send seam (VeritX liveness, behavior-neutral).
+
+        EVERY command to the backend flows through here — workload
+        paths, pass variants, done, exit — so the probe records the
+        COMPLETE logical command, not a normalized category. Closure
+        over this loop's state: same string, same order, same call.
+        """
+        nonlocal _lv_last_cmd
+        _lv_last_cmd = cmd
+        controller.write_flush(p, cmd)
     while True:
         if _vround_timing:
             _vround_now = _vperf()
@@ -1338,7 +1350,7 @@ def main():
         if pending:
             if _vround_timing:
                 _vbr['pending_handover'] += 1
-            controller.write_flush(p, pending.popleft())
+            _issue(pending.popleft())
             if not pending:
                 del dp_ready_workloads[sys]
             responded = True
@@ -1454,13 +1466,13 @@ def main():
                         own_workload = ready if own_workload is None else own_workload
 
                     if own_workload is not None:
-                        controller.write_flush(p, own_workload)
+                        _issue(own_workload)
                     else:
-                        controller.write_flush(p, _pass_response(router, current, state_changed=True))
+                        _issue(_pass_response(router, current, state_changed=True))
                     responded = True
                 else:
                     # Joined the round with a dummy; the round is not complete.
-                    controller.write_flush(p, _pass_response(router, current, state_changed=True))
+                    _issue(_pass_response(router, current, state_changed=True))
                     responded = True
         # runnable batch exists
         elif new_req is not None:
@@ -1539,13 +1551,13 @@ def main():
                             own_workload = ready if own_workload is None else own_workload
 
                         if own_workload is not None:
-                            controller.write_flush(p, own_workload)
+                            _issue(own_workload)
                         else:
-                            controller.write_flush(p, _pass_response(router, current, state_changed=True))
+                            _issue(_pass_response(router, current, state_changed=True))
                         responded = True
                     else:
                         # Waiting for other DP members — send pass
-                        controller.write_flush(p, _pass_response(router, current, state_changed=True))
+                        _issue(_pass_response(router, current, state_changed=True))
                         responded = True
                 else:
                     # Independent instance: generate trace immediately
@@ -1573,7 +1585,7 @@ def main():
                                    trace=trace_data)
                     workload = get_workload(new_req, instance["hardware"], instance_id,
                                             inputs_root=run_paths.inputs_root)
-                    controller.write_flush(p, workload)
+                    _issue(workload)
             else:
                 # Joined an existing batch: pick up its workload. workload_name
                 # matters for a DP batch, whose graph lives in the group's shared
@@ -1594,13 +1606,13 @@ def main():
                     waiting_request[instance_id] = False
                 if instance_id in inst_dp_group and new_req.workload_name is None:
                     new_req.fired.remove(sys)
-                    controller.write_flush(p, _pass_response(router, current, state_changed=True))
+                    _issue(_pass_response(router, current, state_changed=True))
                     responded = True
                 else:
                     workload = get_workload(new_req, instances[instance_id]["hardware"], instance_id,
                                             workload_name=new_req.workload_name,
                                             inputs_root=run_paths.inputs_root)
-                    controller.write_flush(p, workload)
+                    _issue(workload)
 
         # check time to store throughput (only print on start NPU to avoid transient states)
         if current > last_log + INTERVAL and sys == inst2npu_mapping[instance_id]:
@@ -1745,12 +1757,12 @@ def main():
 
             print_rule()
             print_markup("[sim.heading]▶ Exiting simulation...[/]\n")
-            controller.write_flush(p, "exit")
+            _issue("exit")
             break
         if _newly_done_instances:
             # The backend command is not instance-addressed: one ack per
             # round suffices even if several transitioned together.
-            controller.write_flush(p, "done") # make done instances to sleep
+            _issue("done") # make done instances to sleep
             responded = True
         if new_req is None and not responded:
             # If all instances are idle but deferred sessions have pending
@@ -1775,7 +1787,9 @@ def main():
                              and not _routed_now
                              and _vprog_round > _vprog_last)
             if _is_bare_pass:
-                _lv_last_cmd = pass_msg  # the repeated-action evidence
+                # (last_command already holds pass_msg: every send,
+                # including this round's upcoming _issue(pass_msg),
+                # flows through the _issue seam.)
                 _veritx_idle_rounds = _vprog_round - _vprog_last
                 if _veritx_idle_rounds == 200:
                     print(f"[LLMServingSim] DEBUG first-stall round: "
@@ -1819,13 +1833,13 @@ def main():
                         pass
                     _backend_died_early = True  # non-zero exit + keep inputs
                     try:
-                        controller.write_flush(p, "exit")
+                        _issue("exit")
                     except Exception:
                         pass
                     break
             else:
                 _veritx_idle_rounds = 0
-            controller.write_flush(p, pass_msg)
+            _issue(pass_msg)
             if _vround_timing:
                 _vbr['bare_pass'] += 1
 
@@ -1874,6 +1888,15 @@ def main():
     total_time = end_time - start_time
     hours, remainder = divmod(total_time, 3600)
     minutes, seconds = divmod(remainder, 60)
+
+    # VeritX: opt-in terminal liveness evidence (T5 baselines). Pure
+    # observation print under an explicit env gate — never on by default,
+    # never a behavioral change.
+    if os.environ.get("VERITX_LIVENESS_DUMP"):
+        try:
+            print(f"[LIVENESS] final:\n{_lv_probe.render()}", flush=True)
+        except Exception:
+            pass
 
     # check all scheduled requests in astra-sim are well done
     controller.check_end(p)
