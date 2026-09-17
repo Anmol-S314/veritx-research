@@ -383,7 +383,14 @@ class TestLLMServingSimServe:
         reason="AstraSim_BookSim2 binary not found"
     )
     def test_serve_moe_dp_pp_new_config(self):
-        """New upstream MoE DP+PP config: 3-dim scoping ([tp, pp, dp]) on our stack."""
+        """MoE DP+PP config must FAIL CLOSED (program Phase 1 T2).
+
+        The converter cannot represent pp_stage_boundaries, so this run
+        used to succeed with every rank simulating the full unpartitioned
+        graph — the false-success class. Now the PP header raises
+        UNSUPPORTED_WORKLOAD_SEMANTIC at first conversion: nonzero exit,
+        reason surfaced, no metrics accepted.
+        """
         cmd = [
             sys.executable, "-m", "serving",
             "--cluster-config", "configs/cluster/single_node_moe_dp_pp_instance.json",
@@ -396,13 +403,18 @@ class TestLLMServingSimServe:
         ]
         result = _run(cmd, cwd=str(LLMSIM), timeout=240)
 
-        assert result.returncode == 0, (
-            f"MoE-DP-PP serve failed (exit {result.returncode}):\n"
+        assert result.returncode != 0, (
+            "MoE-DP-PP serve returned exit 0: PP semantics were silently "
+            "accepted again — fail-closed regressed.\n"
             f"stdout[-500:]: {result.stdout[-500:]}\n"
             f"stderr[-500:]: {result.stderr[-500:]}"
         )
-
-        _assert_served(result)
+        combined = result.stdout + result.stderr
+        assert "UNSUPPORTED_WORKLOAD_SEMANTIC" in combined, (
+            "PP refusal must surface the structured reason, not just die.\n"
+            f"stdout[-500:]: {result.stdout[-500:]}\n"
+            f"stderr[-500:]: {result.stderr[-500:]}"
+        )
 
 
 class TestPipelineTraceToResults:

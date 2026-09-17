@@ -1,4 +1,3 @@
-import logging
 from io import TextIOWrapper
 from typing import Any, List
 from enum import Enum
@@ -922,9 +921,13 @@ class LLMConverter:
         text format to self.input_filename and reuse convert() verbatim:
         identical downstream behavior at ~1.5ms/batch overhead.
 
-        Known gap: pp_stage_boundaries are dropped with a warning — PP
-        topologies convert as if unpartitioned. Do not trust PP .et output
-        until this converter gains PP support (see METADATA known_gaps).
+        Fail-closed policy (program Phase 1 T2): pp_stage_boundaries are
+        load-bearing (block-boundary partitioning with agreeing SEND/RECV
+        sizes) and this converter cannot represent them. Dropping them
+        hands every rank the full unpartitioned graph, so a PP header
+        raises UNSUPPORTED_WORKLOAD_SEMANTIC instead of converting.
+        Do not add warn-and-continue without a concrete research
+        requirement and DEGRADED-fidelity marking (golden-ineligible).
         """
         first = header_line.strip().split()
         execution_type = first[0] if first else ""
@@ -938,10 +941,15 @@ class LLMConverter:
         except ValueError:
             num_npu_group = 0
         if header.get("pp_stage_boundaries"):
-            logging.getLogger(__name__).warning(
-                "convert_rows shim: pp_stage_boundaries=%r ignored "
-                "(converter predates PP support)",
-                header.get("pp_stage_boundaries"),
+            raise ValueError(
+                "UNSUPPORTED_WORKLOAD_SEMANTIC\n"
+                "\n"
+                "field: pp_stage_boundaries\n"
+                f"value: {header.get('pp_stage_boundaries')!r}\n"
+                "converter: convert_rows\n"
+                "reason: converter has no pipeline-parallel semantics; "
+                "converting would hand every rank the full unpartitioned "
+                "graph with wrong communication semantics"
             )
         row_lines = [" ".join(str(c) for c in cols) for cols in rows]
         import os
