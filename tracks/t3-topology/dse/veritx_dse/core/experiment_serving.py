@@ -30,6 +30,7 @@ from ..core.runs import Run, binary_identity
 from ..core.spec import SpecError, parse, resolve
 from ..core.errors import ServingPreflightError, ServingResultError
 from ..core.serving import (
+    engine_identity_from_binaries,
     build_serve_cmd,
     fidelity_for_mode,
     locate_serve_path,
@@ -66,6 +67,29 @@ def fabric_evidence(stderr: str) -> dict[str, Any]:
         "submit_vectors": submits,
         "topo_dims": topo_dims,
     }
+
+
+def check_fabric_activity(evidence: dict[str, Any],
+                          network_backend: str) -> None:
+    """Backend-aware fabric-activity gate (PR7).
+
+    BookSim counts retired flits — packets really traversed a network;
+    require them. The analytical engines integrate an analytical model
+    with no flit accounting (TOPO/flit lines are BookSim-frontend
+    artifacts), so collective construction/completion in the shared
+    ASTRA ledger IS the fabric activity. Replay masquerade stays
+    impossible either way: the serving loop cannot emit COLL_COMPLETE
+    without running the backend's workload engine.
+    """
+    ok = (evidence["max_retired_flits"] >= 1
+          if network_backend == "booksim"
+          else evidence["coll_completes"] >= 1)
+    if not ok:
+        raise ServingResultError(
+            "NO_FABRIC_ACTIVITY",
+            f"backend ran but fabric shows no activity for "
+            f"{network_backend!r} (evidence: {evidence}) — replay "
+            "masquerade?")
 
 
 def check_involved_dim_tripwire(evidence: dict[str, Any]) -> None:
@@ -129,9 +153,13 @@ def run_serving_experiment(
                         "(LLMServingSim takes no seed)")
     resolved = resolve(spec)
     sv = resolved["serving"]
-    if sv["network_backend"] != "booksim" or not sv["cycle_accurate"]:
-        # Slice B is real-BookSim-only. Replay/analytical stay available
-        # via `veritx serve` and PR7; they cannot enter this slice.
+    if sv["network_backend"] not in ("booksim", "analytical"):
+        # Slice B runs real backends only: booksim (packets) and the
+        # analytical engines (model-integrated). Replay stays available
+        # via `veritx serve`; ns3 has no binary and never preflights.
+        raise SpecError("Slice B requires network_backend=booksim or "
+                        "analytical (real simulation only)")
+    if sv["network_backend"] == "booksim" and not sv["cycle_accurate"]:
         raise SpecError("Slice B requires network_backend=booksim with "
                         "cycle_accurate=true (real simulation only)")
     cluster_path = serving_fixture("cluster", sv["cluster"])
@@ -147,12 +175,13 @@ def run_serving_experiment(
         run.transition("CANCELLED", note=reason)
         return run
 
+    backend = sv["network_backend"]
     # ── preflight (before anything spawns) ───────────────────────────
     try:
         serve_binaries = preflight_serve(
             llmsim_dir=LLMSIM_DIR, cluster_path=cluster_path,
-            dataset_path=dataset_path, network_backend="booksim",
-            cycle_accurate=True, cli_dtype=None)
+            dataset_path=dataset_path, network_backend=backend,
+            cycle_accurate=sv["cycle_accurate"], cli_dtype=None)
     except ServingPreflightError as e:
         return _cancel(f"preflight {e.reason}: {e}")
     run.transition("VALIDATED", note=f"preflight passed; "
@@ -172,8 +201,8 @@ def run_serving_experiment(
     # ── execute (supervised child; WE own the process, not the protocol)
     csv_path = run.root / "artifacts" / "requests.csv"
     args = serve_args(
-        num_reqs=sv["num_reqs"], network_backend="booksim",
-        cycle_accurate=True,
+        num_reqs=sv["num_reqs"], network_backend=backend,
+        cycle_accurate=sv["cycle_accurate"],
         request_routing_policy=sv["request_routing_policy"],
         output=str(csv_path), log_level="WARNING",
         timeout=resolved["simulation"]["timeout_s"])
@@ -206,7 +235,7 @@ def run_serving_experiment(
             run.finalize("FAILED", note=f"exit {res.returncode}")
             return run
         return _verdict(run, res, csv_path, sv, serve_binaries,
-                        cluster_path, dataset_path)
+                        cluster_path, dataset_path, backend)
     except KeyboardInterrupt:
         run.transition("INTERRUPTED", note="KeyboardInterrupt during serve")
         raise
@@ -221,11 +250,11 @@ def _write_logs(run: Run, out: Any, err: Any) -> None:
 
 def _verdict(run: Run, res: Any, csv_path: Path, sv: dict[str, Any],
              serve_binaries: list[str], cluster_path: Path,
-             dataset_path: Path) -> Run:
+             dataset_path: Path, backend: str) -> Run:
     """Terminal validation: retirement + provenance + fabric + tripwire."""
-    network_mode = mode_for_backend("booksim", True)
+    network_mode = mode_for_backend(backend, sv["cycle_accurate"])
     assert network_mode == "REAL_SIMULATION"
-    fidelity = fidelity_for_mode("booksim", network_mode)
+    fidelity = fidelity_for_mode(backend, network_mode)
     try:
         retired = retired_from_csv(csv_path)
     except FileNotFoundError as e:
@@ -239,11 +268,13 @@ def _verdict(run: Run, res: Any, csv_path: Path, sv: dict[str, Any],
         run.finalize("FAILED", note=f"retired {retired}/{sv['num_reqs']}")
         return run
     evidence = fabric_evidence(res.stderr or "")
-    if evidence["coll_completes"] < 1 or evidence["max_retired_flits"] < 1:
+    try:
+        check_fabric_activity(evidence, backend)
+    except ServingResultError as e:
         run.add_result("serve", {"error": "NO_FABRIC_ACTIVITY",
-                                 "evidence": evidence})
+                                 "detail": str(e), "evidence": evidence})
         run.finalize("FAILED", note="backend ran but fabric shows no "
-                                    "collectives/flits — replay masquerade?")
+                                    "activity — replay masquerade?")
         return run
     try:
         check_involved_dim_tripwire(evidence)
@@ -256,8 +287,15 @@ def _verdict(run: Run, res: Any, csv_path: Path, sv: dict[str, Any],
         run.finalize("FAILED", note=e.reason)
         return run
     provenance = serving_provenance(
-        engine="llmservingsim", network_backend="booksim2",
+        engine="llmservingsim", network_backend=backend,
         network_mode=network_mode, semantic_losses=[])
+    result_extra: dict[str, Any] = {}
+    if backend == "analytical":
+        # PR7: which analytical engine ran is data, not a stdout notice.
+        result_extra = {
+            **engine_identity_from_binaries(serve_binaries),
+            "cluster": sv["cluster"],
+        }
     try:
         bundle = build_serving_metrics(
             csv_path, num_requested=sv["num_reqs"], fidelity=fidelity,
@@ -273,6 +311,7 @@ def _verdict(run: Run, res: Any, csv_path: Path, sv: dict[str, Any],
         "backend_binaries": [binary_identity(b) for b in serve_binaries],
         "cluster_sha256": binary_identity(cluster_path)["sha256"],
         "dataset_sha256": binary_identity(dataset_path)["sha256"],
+        **result_extra,
         "fabric": {
             "coll_completes": evidence["coll_completes"],
             "max_retired_flits": evidence["max_retired_flits"],

@@ -16,23 +16,39 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from veritx_dse.core.experiment_serving import (
+    check_fabric_activity,
     check_involved_dim_tripwire,
     fabric_evidence,
     run_serving_experiment,
 )
 from veritx_dse.core.errors import ServingResultError
+from veritx_dse.core.serving import (
+    engine_identity_from_binaries,
+    fidelity_for_mode,
+    mode_for_backend,
+    serving_provenance,
+)
 from veritx_dse.core.spec import SpecError
 
 from veritx_dse.core.paths import REPO  # noqa: E402
 LLMSIM = REPO / "third_party" / "llmservingsim"
 BOOKSIM_BIN = REPO / "third_party" / "astra-sim" / "astra-sim" / \
     "network_frontend" / "booksim2" / "bin" / "AstraSim_BookSim2"
+ANALYTICAL_AWARE_BIN = REPO / "third_party" / "llmservingsim" / "astra-sim" \
+    / "astra-sim" / "build" / "astra_analytical" / "build" \
+    / "AnalyticalAstra" / "bin" / "AnalyticalAstra"
+ANALYTICAL_UNAWARE_BIN = REPO / "third_party" / "llmservingsim" / "astra-sim" \
+    / "build" / "astra_analytical_unaware" / "build" / "bin" \
+    / "AnalyticalAstraUnaware"
 
 needs_serving = pytest.mark.skipif(
     not (LLMSIM / "serving" / "__main__.py").exists(),
     reason="LLMServingSim not vendored")
 needs_binary = pytest.mark.skipif(not BOOKSIM_BIN.exists(),
                                   reason="AstraSim_BookSim2 not built")
+needs_analytical = pytest.mark.skipif(
+    not (ANALYTICAL_AWARE_BIN.exists() and ANALYTICAL_UNAWARE_BIN.exists()),
+    reason="AnalyticalAstra frontends not built")
 
 
 def _spec_dict(**serving_kw):
@@ -90,6 +106,72 @@ class TestVerdictHelpers:
         check_involved_dim_tripwire(ev)  # 1-dim: fallback unread, exempt
 
 
+class TestAnalyticalIdentity:
+    """PR7: backend engine identity is data, never prose.
+
+    The N-dim→unaware fallback already existed as a printed notice;
+    these tests pin it as machine-readable result fields (plan item 8.2:
+    "make it data").
+    """
+
+    def test_analytical_1dim_is_congestion_aware(self):
+        assert mode_for_backend("analytical", False) == "REAL_SIMULATION"
+        assert (fidelity_for_mode("analytical", "REAL_SIMULATION")
+                == "ANALYTICAL_ESTIMATE")
+        ident = engine_identity_from_binaries(
+            ["/x/build/AnalyticalAstra/bin/AnalyticalAstra"])
+        assert ident == {"network_engine": "congestion_aware",
+                         "engine_selected_by": "topology_dims"}
+
+    def test_engine_identity_follows_unaware_binary(self):
+        ident = engine_identity_from_binaries(
+            ["/x/AnalyticalAstra", "/y/AnalyticalAstraUnaware"])
+        assert ident["network_engine"] == "congestion_unaware"
+
+    def test_engine_identity_without_analytical_binary_refused(self):
+        with pytest.raises(ValueError, match="no analytical binary"):
+            engine_identity_from_binaries(["/x/AstraSim_BookSim2"])
+
+    def test_provenance_carries_engine_identity(self):
+        base = serving_provenance(
+            engine="llmservingsim", network_backend="analytical",
+            network_mode="REAL_SIMULATION", semantic_losses=[])
+        p = {**base,
+             **engine_identity_from_binaries(
+                 ["/x/build/AnalyticalAstra/bin/AnalyticalAstra"]),
+             "fidelity": fidelity_for_mode("analytical",
+                                           "REAL_SIMULATION")}
+        assert p["network_engine"] == "congestion_aware"
+        assert p["fidelity"] == "ANALYTICAL_ESTIMATE"
+        assert p["semantic_losses"] == []
+
+
+class TestAnalyticalFabric:
+    """PR7: fabric evidence is backend-aware — flit accounting exists
+    only in the BookSim frontend; analytical runs prove activity via
+    collective construction/completion in the shared ASTRA ledger."""
+
+    def test_analytical_requires_collectives(self):
+        ev = {"coll_completes": 0, "max_retired_flits": 0}
+        with pytest.raises(ServingResultError) as e:
+            check_fabric_activity(ev, "analytical")
+        assert e.value.reason == "NO_FABRIC_ACTIVITY"
+
+    def test_analytical_passes_on_collectives(self):
+        ev = {"coll_completes": 3, "max_retired_flits": 0}
+        check_fabric_activity(ev, "analytical")  # must not raise
+
+    def test_booksim_still_requires_flits(self):
+        ev = {"coll_completes": 2, "max_retired_flits": 0}
+        with pytest.raises(ServingResultError) as e:
+            check_fabric_activity(ev, "booksim")
+        assert e.value.reason == "NO_FABRIC_ACTIVITY"
+
+    def test_booksim_flits_satisfy(self):
+        ev = {"coll_completes": 2, "max_retired_flits": 64}
+        check_fabric_activity(ev, "booksim")  # must not raise
+
+
 class TestSliceRefusals:
     def test_non_serving_mode_rejected(self, tmp_path):
         d = _spec_dict()
@@ -102,10 +184,25 @@ class TestSliceRefusals:
             run_serving_experiment(_spec_dict(cycle_accurate=False),
                                    repo=tmp_path)
 
-    def test_non_booksim_rejected(self, tmp_path):
-        with pytest.raises(SpecError, match="booksim"):
-            run_serving_experiment(_spec_dict(network_backend="analytical"),
-                                   repo=tmp_path)
+    def test_analytical_reaches_preflight(self, tmp_path, monkeypatch):
+        """PR7: the slice boundary opens for analytical — the spec gets
+        past validate/resolve and dies (only) in preflight, which owns
+        binary resolution. Full-run proof lives in the goldens."""
+        import veritx_dse.core.experiment_serving as es
+        from veritx_dse.core.errors import ServingPreflightError
+        monkeypatch.setattr(es, "preflight_serve",
+                            lambda **kw: (_ for _ in ()).throw(
+                                ServingPreflightError("BACKEND_BINARY_MISSING",
+                                                      "boom")))
+        monkeypatch.setattr("veritx_dse.core.runs.VERITX_RUNS_DIR",
+                            tmp_path / "runs")
+        d = _spec_dict(network_backend="analytical")
+        d["serving"]["cycle_accurate"] = False
+        run = run_serving_experiment(d, repo=tmp_path)
+        assert run.state == "CANCELLED"
+        results = json.loads(
+            (run.root / "manifest.json").read_text())["results"]
+        assert "BACKEND_BINARY_MISSING" in results[0]["error"]
 
     def test_stochastic_rejected(self, tmp_path):
         d = _spec_dict()
@@ -266,6 +363,58 @@ class TestGoldenB:
             seen = {r["instance id"] for r in _csv.DictReader(f)}
         # RR over 2 requests guarantees both instances serve: rebinding
         # bugs (all completions credited to instance 0) fail here.
+        assert seen == {"0", "1"}, f"ownership broken: {seen}"
+        assert res["fabric"]["coll_completes"] >= 1
+
+
+@needs_serving
+@needs_analytical
+class TestGoldenAnalytical:
+    """PR7: one tiny golden per analytical frontend.
+
+    Golden-C: single-instance 1-dim cluster → congestion-aware engine.
+    Golden-D: multi-instance N-dim cluster → congestion-unaware engine
+    (the fallback, now machine-readable). Both prove the serving loop's
+    interactive protocol works against each frontend's main.cc and that
+    retirement + fabric evidence + engine identity land in the result.
+    """
+
+    def test_single_instance_aware_golden(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("veritx_dse.core.runs.VERITX_RUNS_DIR",
+                            tmp_path / "runs")
+        d = _spec_dict(network_backend="analytical")
+        d["serving"]["cycle_accurate"] = False
+        run = run_serving_experiment(d, repo=tmp_path)
+        assert run.state == "SUCCEEDED", \
+            _result(run).get("error") if run.state == "FAILED" else run.root
+        res = _result(run)
+        assert res["metrics"]["requests_retired"]["value"] == 1
+        assert res["provenance"]["network_mode"] == "REAL_SIMULATION"
+        assert res["provenance"]["fidelity"] == "ANALYTICAL_ESTIMATE"
+        assert res["provenance"]["semantic_losses"] == []
+        assert res["network_engine"] == "congestion_aware"
+        assert res["fabric"]["coll_completes"] >= 1
+        assert res["backend_binaries"][0]["sha256"] is not None
+
+    def test_multi_instance_unaware_golden(self, tmp_path, monkeypatch):
+        import csv as _csv
+        monkeypatch.setattr("veritx_dse.core.runs.VERITX_RUNS_DIR",
+                            tmp_path / "runs")
+        d = _spec_dict(network_backend="analytical", cluster="multi_dp_tp",
+                       num_reqs=2, request_routing_policy="RR")
+        d["serving"]["cycle_accurate"] = False
+        d["simulation"] = {"mode": "serving", "timeout_s": 1200}
+        run = run_serving_experiment(d, repo=tmp_path)
+        assert run.state == "SUCCEEDED", \
+            _result(run).get("error") if run.state == "FAILED" else run.root
+        res = _result(run)
+        assert res["metrics"]["requests_retired"]["value"] == 2
+        assert res["network_engine"] == "congestion_unaware"
+        csv_path = run.root / "artifacts" / "requests.csv"
+        with open(csv_path, newline="") as f:
+            seen = {r["instance id"] for r in _csv.DictReader(f)}
+        # RR over 2 requests: both instances must serve — proves the
+        # unaware frontend's bare-path reload reaches every rank.
         assert seen == {"0", "1"}, f"ownership broken: {seen}"
         assert res["fabric"]["coll_completes"] >= 1
         assert res["provenance"]["network_mode"] == "REAL_SIMULATION"

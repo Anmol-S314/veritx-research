@@ -96,6 +96,32 @@ def fidelity_for_mode(network_backend: str, network_mode: str) -> str:
             "fidelity is data, not prose") from None
 
 
+# ── Analytical engine identity (PR7) ─────────────────────────────
+# The congestion-aware analytical engine is 1-dim-only; N-dim clusters
+# (DP/PP/MoE shapes) run on the congestion-unaware engine (optimistic
+# lower bound). Selection happens once, in preflight binary resolution;
+# this maps the resolved binaries back to a machine-readable name so a
+# result can never misstate which engine produced it.
+
+def engine_identity_from_binaries(serve_binaries: list[Any]) -> dict[str, str]:
+    """Which analytical engine ran, from the binaries preflight resolved.
+
+    Pure observation of the resolved paths — identity follows the binary
+    that executed (same principle as binary_identity's sha256), never a
+    re-derivation that could drift from it.
+    """
+    names = [Path(str(b)).name for b in serve_binaries]
+    if any("AnalyticalAstraUnaware" in n for n in names):
+        return {"network_engine": "congestion_unaware",
+                "engine_selected_by": "topology_dims"}
+    if any(n.startswith("AnalyticalAstra") for n in names):
+        return {"network_engine": "congestion_aware",
+                "engine_selected_by": "topology_dims"}
+    raise ValueError(
+        f"no analytical binary in resolved set {names} — engine identity "
+        "is only defined for analytical runs")
+
+
 def retired_from_csv(csv_path: Any) -> int:
     """Retired-request count from serving's per-request CSV (one row each)."""
     from pathlib import Path as _P
