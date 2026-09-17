@@ -57,6 +57,10 @@ class CompareResult:
     sim_type: str = "latency"
     ir: float = 0.05
     overrides: dict = field(default_factory=dict)
+    # Phase 8: machine-readable ComparisonSpec verdict (None only for
+    # callers predating the gate — tests, one-off tools). Consumers must
+    # treat a missing verdict as uncertified, never as valid-by-default.
+    verdict: dict | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -67,6 +71,7 @@ class CompareResult:
             "overrides": self.overrides,
             "results": self.results,
             "summary": self.summary,
+            "verdict": self.verdict,
         }
 
 
@@ -81,11 +86,16 @@ def run_compare(
     sim_type: str = "latency",
     ir: float = 0.05,
     overrides: dict | None = None,
+    comparison: dict | None = None,
 ) -> CompareResult:
     """Run multi-seed comparison across topologies.
 
     topo_specs: list of (display_name, Topology) pairs.
-    Returns CompareResult with per-topology aggregation.
+    comparison: optional ComparisonSpec intent dict (§2). When omitted,
+        a default intent is used: DESIGN_COMPARISON with no declared
+        variables — so any material difference between candidates fails
+        closed rather than silently ranking.
+    Returns CompareResult with per-topology aggregation + verdict.
     """
     repo = _repo_root()
     all_results = []
@@ -211,6 +221,40 @@ def run_compare(
                 "n": 0,
             })
 
+    # ── Phase 8: ComparisonSpec enforcement (fail closed) ─────────────
+    # Every candidate row is fingerprinted (legacy adapter marks what it
+    # cannot resolve); the verdict gates the winner claim in the printer.
+    # Default intent declares nothing, so any material difference between
+    # candidates refuses — ranking whatever ran was never valid.
+    from ..core.comparison import (
+        evaluate_comparability, fingerprint_from_legacy_row, resolve_intent,
+    )
+    # Default intent = the compare command's declared purpose (§4's own
+    # example): "which topology gives lower latency?" — topology is the
+    # experimental variable, everything else controlled. Legacy rows
+    # carry display-name topology identity only (the adapter marks what
+    # it cannot resolve, so vc/packetization/simulator stay unresolved
+    # and the verdict uncertified). Any OTHER material difference —
+    # node count, workload, seeds — refuses undeclared.
+    intent = resolve_intent(comparison) if comparison else resolve_intent({
+        "kind": "DESIGN_COMPARISON",
+        "objectives": ["latency"],
+        "experimental_variables": ["topology"],
+        "controlled_dimensions": {},
+    })
+    fps = [fingerprint_from_legacy_row({**row, "trace": trace_path,
+                                        "seed": seed_base})
+           for row in agg]
+    verdict = evaluate_comparability(fps, intent)
+    verdict_dict = {
+        "status": verdict.status,
+        "comparison_kind": verdict.comparison_kind,
+        "experimental_variables": verdict.experimental_variables,
+        "differences": verdict.differences,
+        "candidates": verdict.candidates,
+        "certified": verdict.certified,
+    }
+
     return CompareResult(
         trace=trace_path,
         seeds=list(range(seed_base, seed_base + seeds)),
@@ -219,23 +263,22 @@ def run_compare(
         sim_type=sim_type,
         ir=ir,
         overrides=dict(overrides or {}),
+        verdict=verdict_dict,
     )
 
 
-def print_compare_table(ctx: Ctx, result: CompareResult):
-    """Print comparison table to stdout."""
+def print_compare_table(ctx: Ctx, result: CompareResult) -> dict:
+    """Print comparison table to stdout; return a machine-readable claim.
+
+    Phase 8: the winner is claimed ONLY when the ComparisonSpec verdict
+    is COMPARABLE. An INVALID_COMPARISON prints the exact differences
+    (diagnostics, not booleans) and the returned claim says so — the
+    historical warning-only behavior is enforcement now.
+    """
     ok = [s for s in result.summary if "mean" in s]
     failed = [s for s in result.summary if "error" in s]
-
-    # Comparability warning (not a gate yet — ComparisonSpec enforcement is
-    # a later tranche): differing node counts in one comparison is the
-    # classic silent-invalidity shape (16-node mesh vs 64-node trace).
-    node_counts = {s.get("nodes") for s in result.summary
-                   if isinstance(s.get("nodes"), int)}
-    if len(node_counts) > 1:
-        emit(ctx, f"  \033[33mWARNING: mixed node counts {sorted(node_counts)} "
-              f"in one comparison — latencies are NOT directly comparable "
-              f"unless the difference is a declared variable.\033[0m")
+    verdict = result.verdict or {}
+    comparable = verdict.get("status") == "COMPARABLE"
 
     has_unstable = any(s.get("n_unstable", 0) > 0 for s in ok)
     if has_unstable:
@@ -265,8 +308,17 @@ def print_compare_table(ctx: Ctx, result: CompareResult):
         emit(ctx, f"\n  \033[33m{len(failed)} candidate(s) FAILED and are excluded from ranking — "
               f"the winner is valid only among successful runs.\033[0m")
 
-    # Winner — only among successfully measured candidates
-    if len(ok) >= 2:
+    # Winner — only among successfully measured candidates of a COMPARABLE
+    # comparison (Phase 8: undeclared differences suppress the claim).
+    if verdict.get("status") == "INVALID_COMPARISON":
+        emit(ctx, f"\n  \033[31mCOMPARISON REFUSED — no winner is claimed.\033[0m")
+        for d in verdict.get("differences", []):
+            emit(ctx, f"  \033[31m{d['reason']}: {d['field']} "
+                  f"({d.get('left')!r} vs {d.get('right')!r})\033[0m")
+        emit(ctx, f"  \033[31mDeclare the differing dimensions as "
+              f"experimental_variables in the comparison spec, or compare "
+              f"like with like.\033[0m")
+    elif len(ok) >= 2:
         agg_sorted = sorted(ok, key=lambda a: a["mean"])
         best = agg_sorted[0]
         worst = agg_sorted[-1]
@@ -286,6 +338,16 @@ def print_compare_table(ctx: Ctx, result: CompareResult):
         else:
             emit(ctx, f"\n  Winner: {best['name']} ({best['mean']:.2f}c ± {best['std']:.2f}c)")
         emit(ctx, f"  vs {worst['name']}: {delta:.1f}% faster{sig}")
+
+    # Machine-readable claim (Phase 8): consumers (t3 TUI, compare.json)
+    # read this instead of inferring validity from the presence of a
+    # winner line. A missing verdict is uncertified by definition.
+    winner_claimed = (comparable and len(ok) >= 2)
+    return {
+        "winner_claimed": winner_claimed,
+        "certified": bool(winner_claimed and verdict.get("certified")),
+        "verdict_status": verdict.get("status", "UNSPECIFIED"),
+    }
 
     # NOTE: no save here — persistence belongs to the command layer
     # (cmd_compare writes results/compare/<ts>_seed<n>/compare.json); printing

@@ -61,6 +61,115 @@ class TestRunCompare:
         assert res.seeds == [42, 43]
 
 
+# ── Phase 8: ComparisonSpec enforcement at the compare boundary ─────────
+
+class TestComparisonGate:
+    """The legacy compare path now resolves fingerprints, evaluates
+    comparability against declared intent, and only ranks winners when
+    the comparison is COMPARABLE. Undeclared material differences fail
+    closed; failed candidates stay visible.
+    """
+
+    def _two_topos(self):
+        t = type("T", (), {"backend": "mesh",
+                           "params": {"k": 4, "n": 2},
+                           "edges": lambda s: 4})
+        return [("meshA", t()), ("meshB", t())]
+
+    def test_undeclared_node_count_difference_fails_closed(
+            self, tmp_path, monkeypatch, capsys):
+        def fake_eval(ctx, topo, trace, seed=None, **kw):
+            name = topo.params["k"]
+            return {"latency": 10.0, "nodes": 4 if name == 4 else 8,
+                    "edges": 4, "unstable": False}
+        monkeypatch.setattr(pl, "run_topology_eval", fake_eval)
+        topos = [("m4", type("T", (), {"backend": "mesh",
+                                       "params": {"k": 4, "n": 2},
+                                       "edges": lambda s: 4})()),
+                 ("m8", type("T", (), {"backend": "mesh",
+                                       "params": {"k": 8, "n": 1},
+                                       "edges": lambda s: 4})())]
+        res = pl.run_compare(Ctx(verbosity=0), "t.trace", topos,
+                             seeds=1, comparison={
+                                 "kind": "DESIGN_COMPARISON",
+                                 "objectives": ["latency"],
+                                 "experimental_variables": [],
+                                 "controlled_dimensions": {}})
+        assert res.verdict is not None
+        assert res.verdict["status"] == "INVALID_COMPARISON"
+        fields = {d["field"] for d in res.verdict["differences"]}
+        assert "node_count" in fields
+        s = pl.print_compare_table(Ctx(verbosity=0), res)
+        assert s["winner_claimed"] is False
+        out = capsys.readouterr().out
+        assert "UNDECLARED_DIFFERENCE" in out
+
+    def test_declared_node_count_variable_allows_winner(self, tmp_path, monkeypatch):
+        """Every material difference must be declared: from legacy rows
+        the two candidates differ in display-name topology identity AND
+        node count, so the intent declares both."""
+        def fake_eval(ctx, topo, trace, seed=None, **kw):
+            name = topo.params["k"]
+            return {"latency": 10.0 if name == 4 else 20.0,
+                    "nodes": 4 if name == 4 else 8, "edges": 4,
+                    "unstable": False}
+        monkeypatch.setattr(pl, "run_topology_eval", fake_eval)
+        topos = [("m4", type("T", (), {"backend": "mesh",
+                                       "params": {"k": 4, "n": 2},
+                                       "edges": lambda s: 4})()),
+                 ("m8", type("T", (), {"backend": "mesh",
+                                       "params": {"k": 8, "n": 1},
+                                       "edges": lambda s: 4})())]
+        res = pl.run_compare(Ctx(verbosity=0), "t.trace", topos,
+                             seeds=1, comparison={
+                                 "kind": "DESIGN_COMPARISON",
+                                 "objectives": ["latency"],
+                                 "experimental_variables":
+                                     ["topology", "node_count"],
+                                 "controlled_dimensions": {}})
+        assert res.verdict["status"] == "COMPARABLE"
+        s = pl.print_compare_table(Ctx(verbosity=0), res)
+        assert s["winner_claimed"] is True
+        assert s["certified"] is False  # legacy rows: uncertified by design
+
+    def test_legacy_uncertified_label(self, tmp_path, monkeypatch):
+        def fake_eval(ctx, topo, trace, seed=None, **kw):
+            return {"latency": 10.0, "nodes": 4, "edges": 4,
+                    "unstable": False}
+        monkeypatch.setattr(pl, "run_topology_eval", fake_eval)
+        res = pl.run_compare(Ctx(verbosity=0), "t.trace", self._two_topos(),
+                             seeds=1)
+        assert res.verdict["status"] == "COMPARABLE"
+        assert res.verdict["certified"] is False
+
+
+# ── Phase 8: scoped Pareto output (§8/§11/§13) ─────────────────────────
+
+class TestScopedParetoOutput:
+    def test_invalid_comparison_produces_no_winner_block(self):
+        from veritx_dse.core.comparison import ComparisonVerdict
+        res = pl.CompareResult(
+            trace="t", seeds=[42], results=[], summary=[
+                {"name": "a", "nodes": 4, "edges": 4, "mean": 10.0,
+                 "std": 0.0, "min": 10.0, "max": 10.0, "n": 1},
+                {"name": "b", "nodes": 8, "edges": 4, "mean": 20.0,
+                 "std": 0.0, "min": 20.0, "max": 20.0, "n": 1},
+            ],
+            verdict={"status": "INVALID_COMPARISON",
+                     "comparison_kind": "DESIGN_COMPARISON",
+                     "differences": [{"field": "node_count", "left": 4,
+                                      "right": 8,
+                                      "reason": "UNDECLARED_DIFFERENCE"}],
+                     "certified": False})
+        s = pl.print_compare_table(Ctx(verbosity=0), res)
+        assert s["winner_claimed"] is False
+
+    def test_to_dict_carries_verdict(self):
+        res = pl.CompareResult(trace="t", seeds=[42], results=[],
+                               summary=[], verdict={"status": "COMPARABLE"})
+        assert res.to_dict()["verdict"] == {"status": "COMPARABLE"}
+
+
 class TestPrintTables:
     def test_compare_table_stable_and_unstable(self, runs, capsys):
         res = pl.CompareResult(trace="t.trace", seeds=[42],

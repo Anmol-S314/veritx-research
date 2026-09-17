@@ -790,11 +790,26 @@ def main():
             print("  ⚠ NO_METRIC = process exited 0 but no latency parsed — "
                   "check the trace/config pair before trusting this table")
 
-    # Pareto on per-trace latencies + edges
+    # Pareto on per-trace latencies + edges (Phase 8: scope-stated).
+    # The ok-only restriction is now an explicit, reported exclusion —
+    # every requested candidate stays visible in the table (fail rows
+    # print below) and pareto.json carries the evaluated scope. This
+    # tool compares single-backend BookSim rows with legacy provenance:
+    # the output is marked uncertified (LEGACY scope), never a certified
+    # Pareto claim. Certified comparisons go through core.comparison on
+    # immutable runs.
     pareto_keys=[f"lat_{tk}" for tk in trace_keys]+["edges"]
-    # filter ok only
     ok_agg=[a for a in agg if a["ok"]]
+    excluded=[{"name": a["name"],
+               "reason": "FAILED_OR_NO_METRIC"}
+              for a in agg if not a["ok"]]
     front, dominated=pareto_front(ok_agg, pareto_keys)
+    print(f"\n  Pareto scope: {len(agg)} candidates requested, "
+          f"{len(ok_agg)} comparable, {len(excluded)} excluded "
+          f"(failed/no-metric). Frontier computed over the comparable set only.")
+    if excluded:
+        print("  Excluded (still visible in the table above): "
+              + ", ".join(e["name"] for e in excluded))
 
     def _rank(a):
         g = a["geomean"]
@@ -834,8 +849,14 @@ def main():
                                "trace_fingerprints":fingerprints,
                                "aggregation":{"metric":"geomean of per-trace latency / best-per-trace, over common successful traces",
                                               "common_traces":sorted(common_ok),"baseline":baseline},
+                               "pareto_scope":{"candidate_count":len(agg),
+                                               "comparable_count":len(ok_agg),
+                                               "excluded":excluded,
+                                               "certified":False,
+                                               "scope":"LEGACY_BOOKSIM_ROWS"},
                                "results":all_results,"agg":agg,"front":[f["name"] for f in front],"dominated":[d["name"] for d in dominated]}, indent=2))
-    print(f"\nSaved: {out}")
+    print(f"\nSaved: {out} (scope: LEGACY_BOOKSIM_ROWS — uncertified; "
+          "certified comparisons require ComparisonSpec over immutable runs)")
 
 if __name__=="__main__":
     main()
