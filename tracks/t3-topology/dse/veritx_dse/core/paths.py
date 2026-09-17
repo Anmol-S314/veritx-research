@@ -62,6 +62,37 @@ def new_run_dir(command: str, seed: int | None = None, root: Path | None = None)
     d.mkdir(parents=True)
     return d
 
+# ── Trusted serving-fixture registry (PR6 slice B; ADR 0005) ──────────
+# Serving specs name clusters/datasets by these IDs, never by path.
+# Values are repo-relative fixture paths in the vendored LLMServingSim
+# tree. Golden A needs a single TP/EP>1 instance (fabric traffic);
+# Golden B needs multiple instances with guaranteed model-parallel
+# traffic (no tp=1-per-instance negligible-traffic shapes).
+SERVING_CLUSTERS: dict[str, str] = {
+    "single_tp2_ep2":
+        "third_party/llmservingsim/configs/cluster/"
+        "single_node_moe_single_instance.json",
+    "multi_dp_tp":
+        "third_party/llmservingsim/configs/cluster/"
+        "single_node_moe_dp_tp_instance.json",
+}
+SERVING_DATASETS: dict[str, str] = {
+    "example": "third_party/llmservingsim/workloads/example_trace.jsonl",
+}
+
+
+def serving_fixture(kind: str, _id: str) -> Path:
+    """Registered serving fixture ID -> absolute path (SpecError if unknown)."""
+    table = {"cluster": SERVING_CLUSTERS,
+             "dataset": SERVING_DATASETS}.get(kind)
+    if table is None or _id not in table:
+        from .spec import SpecError
+        raise SpecError(f"unknown serving {kind} id {_id!r} — not in the "
+                        "trusted serving registry; specs reference fixtures "
+                        "by ID, never by path")
+    return REPO / table[_id]
+
+
 # ── Key binaries ────────────────────────────────────────────────────────
 BOOKSIM_BIN = BOOKSIM_DIR / "booksim"
 ASTRA_BS_BIN = (

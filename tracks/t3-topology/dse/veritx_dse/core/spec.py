@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -82,6 +82,19 @@ class ComparisonSpec(BaseModel):
     acknowledged_differences: list[str] = Field(default_factory=list)
 
 
+class ServingSpec(BaseModel):
+    """Serving intent (PR6 slice B). Cluster/dataset are REGISTERED IDs
+    (ADR 0005) resolved via the trusted serving registry in core.paths —
+    never filesystem paths in the spec."""
+    model_config = _STRICT
+    cluster: str = Field(min_length=1)
+    dataset: str = Field(min_length=1)
+    num_reqs: int = Field(ge=1)
+    network_backend: Literal["booksim", "analytical", "ns3"] = "booksim"
+    cycle_accurate: bool = Field(default=True)
+    request_routing_policy: Literal["LOAD", "RR", "RAND", "CUSTOM"] = "LOAD"
+
+
 class ExperimentSpec(BaseModel):
     model_config = _STRICT
     schema_version: int = SCHEMA_VERSION
@@ -92,6 +105,7 @@ class ExperimentSpec(BaseModel):
     simulation: SimulationSpec = Field(default_factory=SimulationSpec)
     replication: ReplicationSpec = Field(default_factory=ReplicationSpec)
     comparison: ComparisonSpec | None = None
+    serving: ServingSpec | None = None
     notes: str = ""
 
 
@@ -133,6 +147,12 @@ def resolve(spec: ExperimentSpec) -> dict[str, Any]:
             "comparison (redesign §20) — pass explicit seeds or use "
             "mode=deterministic"
         )
+    if spec.simulation.mode == "serving" and spec.serving is None:
+        raise SpecError("simulation.mode is serving but no serving block "
+                        "was provided")
+    if spec.simulation.mode != "serving" and spec.serving is not None:
+        raise SpecError("serving block provided but simulation.mode is "
+                        f"{spec.simulation.mode!r}, not serving")
     return {
         "schema_version": SCHEMA_VERSION,
         "workload": {"id": spec.workload.id, "trace": spec.workload.trace},
@@ -158,6 +178,19 @@ def resolve(spec: ExperimentSpec) -> dict[str, Any]:
                 "acknowledged_differences": spec.comparison.acknowledged_differences,
             }
             if spec.comparison is not None
+            else None
+        ),
+        "serving": (
+            {
+                "cluster": spec.serving.cluster,
+                "dataset": spec.serving.dataset,
+                "num_reqs": spec.serving.num_reqs,
+                "network_backend": spec.serving.network_backend,
+                "cycle_accurate": spec.serving.cycle_accurate,
+                "request_routing_policy":
+                    spec.serving.request_routing_policy,
+            }
+            if spec.serving is not None
             else None
         ),
     }

@@ -11,6 +11,9 @@ only after slices B and C expose what actually repeats.
 """
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 # PR6 §17.4: the only two execution modes a serving result may claim.
@@ -103,6 +106,161 @@ def retired_from_csv(csv_path: Any) -> int:
     with open(path) as f:
         lines = [ln for ln in f if ln.strip()]
     return max(len(lines) - 1, 0)  # header row is not a request
+
+
+# ── Serve argv assembly (single implementation; CLI delegates here) ───
+# Defaults mirror the `serve` parser exactly — the parser remains the
+# human surface, this table is the reusable source for control-plane
+# callers. Any default change lands here AND in build_parser together
+# (pinned by test_serve_contract arg-forwarding tests).
+
+SERVE_DEFAULTS: dict[str, Any] = {
+    "num_reqs": 1,
+    "network_backend": "booksim",
+    "output": None,
+    "timeout": None,
+    "log_level": "WARNING",
+    "no_cleanup": False,
+    "no_prefix_caching": False,
+    "cycle_accurate": False,
+    "max_num_seqs": None,
+    "max_num_batched_tokens": None,
+    "long_prefill_token_threshold": None,
+    "block_size": None,
+    "npu_memory_utilization": None,
+    "log_interval": None,
+    "dtype": None,
+    "kv_cache_dtype": None,
+    "request_routing_policy": None,
+    "expert_routing_policy": None,
+    "prefix_storage": None,
+    "skip_prefill": False,
+    "save_trace_text": False,
+    "enable_prefix_sharing": False,
+    "enable_local_offloading": False,
+    "enable_attn_offloading": False,
+    "enable_sub_batch_interleaving": False,
+    "no_chunked_prefill": False,
+    "no_block_copy": False,
+    "no_reserve_full_isl": False,
+}
+
+
+def serve_args(**overrides: Any) -> SimpleNamespace:
+    """Argv namespace for serving assembly: defaults + spec overrides."""
+    unknown = set(overrides) - set(SERVE_DEFAULTS)
+    if unknown:
+        raise ValueError(f"unknown serve args: {sorted(unknown)}")
+    return SimpleNamespace(**{**SERVE_DEFAULTS, **overrides})
+
+
+def locate_serve_path(p: str, *, llmsim_dir: Path, repo_dir: Path,
+                      dse_dir: Path) -> str:
+    """Resolve a config/dataset path for the serving sim.
+
+    The serving module runs with cwd=llmsim_dir, chdir's into astra-sim/,
+    and then blindly prepends "../" to every config/dataset path — so the
+    string handed over is interpreted as llmsim_dir/<path>. Absolute paths
+    would break unless the file lives inside llmsim_dir. Therefore: always
+    return a path relative to llmsim_dir ("walk_up" style ../../x/y for
+    files elsewhere in the repo), looking the input up against llmsim_dir,
+    repo, dse, then CWD.
+    """
+    llmserving_root = llmsim_dir.resolve()
+
+    def _rel(cand: Path) -> str:
+        cand = cand.resolve()
+        try:
+            return str(cand.relative_to(llmserving_root))
+        except ValueError:
+            return str(cand.relative_to(llmserving_root, walk_up=True))
+
+    r = Path(p)
+    if r.is_absolute():
+        if r.exists():
+            return _rel(r)
+        # Absolute path that doesn't exist: keep the old absolute behavior so
+        # the module's own error message names the path the user gave.
+        return str(r)
+    for base in (llmserving_root, repo_dir, dse_dir, Path.cwd()):
+        cand = base / p
+        if cand.exists():
+            return _rel(cand)
+    # Not found anywhere: return an LLMSIM-relative guess so the downstream
+    # "../" prepend resolves inside the vendored tree (module fails there
+    # with an accurate "file not found" naming a resolvable location).
+    return _rel(Path.cwd() / p)
+
+
+def build_serve_cmd(args: Any, cluster_config: str, dataset: str) -> list:
+    """Assemble the `python -m serving` command line.
+
+    Single source of truth for the CLI→module flag contract: every VeritX
+    rename/inversion wrinkle (upstream --no-cleanup-inputs → --keep-inputs,
+    --cycle-accurate → --no-booksim-replay-only) is applied exactly once,
+    here.
+    """
+    cmd = [
+        sys.executable, "-m", "serving",
+        "--cluster-config", cluster_config,
+        "--dataset", dataset,
+        "--num-reqs", str(args.num_reqs),
+        "--network-backend", args.network_backend,
+        "--log-level", args.log_level,
+    ]
+
+    if args.output:
+        cmd.extend(["--output", str(Path(args.output).resolve())])
+
+    if args.no_cleanup:
+        # VeritX: upstream renamed --no-cleanup-inputs to --keep-inputs.
+        cmd.append("--keep-inputs")
+
+    if args.no_prefix_caching:
+        cmd.append("--no-enable-prefix-caching")
+
+    if args.cycle_accurate:
+        # Downstream flag is inverted (replay-only defaults True).
+        cmd.append("--no-booksim-replay-only")
+
+    # Valued flags: forward only when explicitly set (None = upstream default).
+    for _flag, _val in (
+        ("--max-num-seqs", args.max_num_seqs),
+        ("--max-num-batched-tokens", args.max_num_batched_tokens),
+        ("--long-prefill-token-threshold", args.long_prefill_token_threshold),
+        ("--block-size", args.block_size),
+        ("--npu-memory-utilization", args.npu_memory_utilization),
+        ("--log-interval", args.log_interval),
+        ("--dtype", args.dtype),
+        ("--kv-cache-dtype", args.kv_cache_dtype),
+        ("--request-routing-policy", args.request_routing_policy),
+        ("--expert-routing-policy", args.expert_routing_policy),
+        ("--prefix-storage", args.prefix_storage),
+    ):
+        if _val is not None:
+            cmd.extend([_flag, str(_val)])
+
+    # Toggles.
+    for _attr, _dflag in (
+        ("skip_prefill", "--skip-prefill"),
+        ("save_trace_text", "--save-trace-text"),
+        ("enable_prefix_sharing", "--enable-prefix-sharing"),
+        ("enable_local_offloading", "--enable-local-offloading"),
+        ("enable_attn_offloading", "--enable-attn-offloading"),
+        ("enable_sub_batch_interleaving", "--enable-sub-batch-interleaving"),
+    ):
+        if getattr(args, _attr, False):
+            cmd.append(_dflag)
+    # VeritX --no-* renames for upstream BooleanOptional defaults-True.
+    for _attr, _dflag in (
+        ("no_chunked_prefill", "--no-enable-chunked-prefill"),
+        ("no_block_copy", "--no-enable-block-copy"),
+        ("no_reserve_full_isl", "--no-reserve-full-isl"),
+    ):
+        if getattr(args, _attr, False):
+            cmd.append(_dflag)
+
+    return cmd
 
 
 # ── Serving preflight (Phase 1 T1) ────────────────────────────────────
