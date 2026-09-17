@@ -50,7 +50,12 @@ void EmbedTM::_BuildUnicast(int src, int dst, int size, int cl, int64_t time) {
     f->subnetwork = subnetwork;
     f->src = src;
     f->ctime = time;
-    f->record = false;
+    // VeritX: record per-packet statistics for embedded/API-injected
+    // traffic. Embedded mode never enters the standalone warmup/run state
+    // machine, so without this the retire gate
+    // ( (_sim_state == warming_up) || f->record ) discards every sample
+    // and per-packet latency / hop counts silently vanish.
+    f->record = true;
     f->cl = cl;
     f->type = Flit::ANY_TYPE;
     f->head = (i == 0);
@@ -60,6 +65,9 @@ void EmbedTM::_BuildUnicast(int src, int dst, int size, int cl, int64_t time) {
     f->vc = -1;
     f->mcast = false;
     _total_in_flight_flits[f->cl].insert(std::make_pair(f->id, f));
+    // Keep the measured-in-flight set in sync with record=true (the retire
+    // path asserts membership when record is set).
+    _measured_in_flight_flits[f->cl].insert(std::make_pair(f->id, f));
     assert(f && "_BuildUnicast: null flit");
     _partial_packets[src][cl].push_back(f);
   }
@@ -83,7 +91,8 @@ void EmbedTM::_BuildMcastStream(int src, std::vector<int> const & dsts,
     f->src = src;
     f->dest = dest;
     f->ctime = time;
-    f->record = false;
+    // VeritX: record stats (see _BuildUnicast).
+    f->record = true;
     f->cl = cl;
     f->type = Flit::ANY_TYPE;
     f->head = true;
@@ -92,6 +101,8 @@ void EmbedTM::_BuildMcastStream(int src, std::vector<int> const & dsts,
     f->vc = -1;
     f->mcast = is_mcast;
     _total_in_flight_flits[cl].insert(std::make_pair(f->id, f));
+    // Keep the measured-in-flight set in sync with record=true.
+    _measured_in_flight_flits[cl].insert(std::make_pair(f->id, f));
     return f;
   };
 
@@ -135,6 +146,43 @@ std::vector<Retired> EmbedTM::DrainRetired(int node) {
   std::vector<Retired> out;
   out.swap(_retired_q[node]);
   return out;
+}
+
+EmbedTM::PlatSummary EmbedTM::PlatStats() const {
+  PlatSummary s;
+  std::vector<double> lat;
+  double hop_sum = 0.0;
+  int64_t hop_samples = 0;
+  double hop_min = -1.0, hop_max = -1.0;
+  for (int c = 0; c < _classes; ++c) {
+    // _all_latencies: per-packet, recorded at tail retirement (see
+    // TrafficManager::_RetireFlit). Exact values, not binned averages.
+    for (double v : _all_latencies[c]) lat.push_back(v);
+    if (_hop_stats[c] && _hop_stats[c]->NumSamples() > 0) {
+      // Exact aggregates (Stats tracks sum/count/min/max directly); the
+      // 20-bin histogram clamps large hop counts, so never read bins here.
+      hop_sum += _hop_stats[c]->Sum();
+      hop_samples += _hop_stats[c]->NumSamples();
+      double mn = _hop_stats[c]->Min(), mx = _hop_stats[c]->Max();
+      if (hop_min < 0 || mn < hop_min) hop_min = mn;
+      if (mx > hop_max) hop_max = mx;
+    }
+  }
+  s.count = (int64_t)lat.size();
+  if (!lat.empty()) {
+    std::sort(lat.begin(), lat.end());
+    double sum = 0.0;
+    for (double v : lat) sum += v;
+    s.avg = sum / lat.size();
+    s.min = lat.front();
+    s.max = lat.back();
+    auto q = [&](double f) { return lat[(size_t)(f * (lat.size() - 1))]; };
+    s.p50 = q(0.50); s.p95 = q(0.95); s.p99 = q(0.99);
+  }
+  s.hops_avg = hop_samples ? hop_sum / hop_samples : 0.0;
+  s.hops_min = hop_min < 0 ? 0 : (int)(hop_min + 0.5);
+  s.hops_max = hop_max < 0 ? 0 : (int)(hop_max + 0.5);
+  return s;
 }
 
 EmbedTM * CreateEmbeddedTM(std::string const & cfg_file,

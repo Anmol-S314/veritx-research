@@ -88,6 +88,9 @@ public:
   void set_cycle(int64_t cycle);
   bool all_done() const { return _trace_done; }
   int injected() const { return _injected_total; }
+  // VeritX: pending-event census for stuck-drain diagnostics (no side effects).
+  size_t pending() const;
+  size_t pending_source(int source) const;
 };
 
 #endif 

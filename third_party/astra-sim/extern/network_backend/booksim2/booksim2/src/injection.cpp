@@ -242,6 +242,7 @@ bool TraceInjectionProcess::test(int source)
     // Set globals so _GeneratePacket uses the trace's real dst/size
     g_trace_dst  = q.front().dst;
     g_trace_size = q.front().size;
+    g_trace_reqtime = q.front().cycle;
     g_trace_active = true;
     q.pop_front();
     ++_injected_total;
@@ -264,4 +265,17 @@ void TraceInjectionProcess::reset()
   // For trace mode, reset is a no-op (trace is consumed once)
   _current_cycle = 0;
   _injected_this_cycle = 0;
+}
+
+size_t TraceInjectionProcess::pending() const
+{
+  size_t n = 0;
+  for (auto const& kv : _queues) n += kv.second.size();
+  return n;
+}
+
+size_t TraceInjectionProcess::pending_source(int source) const
+{
+  auto it = _queues.find(source);
+  return (it == _queues.end()) ? 0 : it->second.size();
 }

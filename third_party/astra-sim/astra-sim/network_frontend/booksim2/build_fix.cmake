@@ -1,6 +1,12 @@
 # Fixed CMakeLists.txt for AstraSim_BookSim2 frontend
 # Finds pre-built AstraSim + BookSim2Fabric libs from parent builds
 
+# NOTE: all paths here are REPO-RELATIVE (computed from this file's location:
+# <repo>/third_party/astra-sim/astra-sim/network_frontend/booksim2/).
+# The previous version hardcoded /home/datavex/veritx-research/... paths from
+# the old serving/astra-sim layout — unbuildable on any other machine or
+# checkout path.
+
 cmake_minimum_required(VERSION 3.15)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -9,12 +15,17 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 project(AstraSim_BookSim2)
 
+# Repo roots derived from this file (four levels up = third_party/astra-sim,
+# six levels up = repo root)
+get_filename_component(ASTRA_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
+get_filename_component(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../../.." ABSOLUTE)
+
 # Paths to pre-built libraries
-set(ASTRASIM_LIB_DIR "/home/datavex/veritx-research/serving/astra-sim/build/lib")
-set(ASTRASIM_SRC_DIR "/home/datavex/veritx-research/serving/astra-sim")
-set(BOOKSIM2FABRIC_LIB_DIR "/home/datavex/veritx-research/serving/astra-sim/extern/network_backend/booksim2/build")
-set(BOOKSIM2FABRIC_SRC_DIR "/home/datavex/veritx-research/serving/astra-sim/extern/network_backend/booksim2")
-set(BOOKSIM2_SRC_DIR "/home/datavex/veritx-research/third_party/booksim2/src")
+set(ASTRASIM_LIB_DIR "${ASTRA_ROOT}/build/lib")
+set(ASTRASIM_SRC_DIR "${ASTRA_ROOT}")
+set(BOOKSIM2FABRIC_LIB_DIR "${ASTRA_ROOT}/extern/network_backend/booksim2/build")
+set(BOOKSIM2FABRIC_SRC_DIR "${ASTRA_ROOT}/extern/network_backend/booksim2")
+set(BOOKSIM2_SRC_DIR "${REPO_ROOT}/third_party/booksim2/src")
 
 # Find pre-built libraries
 find_library(ASTRASIM_LIB AstraSim PATHS ${ASTRASIM_LIB_DIR} NO_DEFAULT_PATH)

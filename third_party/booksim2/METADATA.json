@@ -17,6 +17,8 @@
     "trafficmanager.cpp: exact per-packet latency collection (_all_latencies)",
     "trafficmanager.cpp: completion time tracking (_last_ejection_time)",
     "trafficmanager.cpp: drain remaining packets even when simulation unstable",
+    "trafficmanager.cpp (2026-09-10): trace-mode drain verdict replaces steady-state convergence (structurally unreachable with max_samples=1); gate-open drain so queued trace events can't starve once _empty_network is set; partial packets join the drain-exit condition (credit-return race); _drain_time set at drain start (was -1, printed all overall rates as negative); delivered-packet count in replay-complete line",
+    "injection.{cpp,hpp} (2026-09-10): pending()/pending_source() census accessors for stuck-drain diagnostics",
     "trafficmanager.cpp: display p50/p95/p99/pkt_count in DisplayStats",
     "tracetrafficmanager.{cpp,hpp} (resolve/mr12): CSV + veritx-format trace replay via sim_type=trace (TraceFileTrafficPattern pending-in-pattern design), per-packet CSV log, honest _all_latencies feed (arrival-request_time)",
     "trafficmanager.{cpp,hpp} (resolve/mr12): _OnPacketGenerated hook placed after VeritX self-loop early-return; pid->request_time honest-baseline map (erase-on-consume, per-Run clear, ctime fallback for synthetic traffic)",

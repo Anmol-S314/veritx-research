@@ -8,6 +8,14 @@ _ITERATION_RE = re.compile(
     r"sys\[(\d+)\] iteration (\d+) finished, (\d+) cycles, "
     r"exposed communication (\d+) cycles."
 )
+_COMPLETION_RE = re.compile(
+    r"sys\[(?P<iteration_sys>\d+)\] iteration (?P<iteration_id>\d+) "
+    r"finished, (?P<iteration_cycle>\d+) cycles, exposed communication "
+    r"(?P<iteration_com>\d+) cycles\."
+    r"|\[workload\](?:\s+\[info\])?\s+sys\[(?P<booksim_sys>\d+)\] "
+    r"finished, (?P<booksim_cycle>\d+) cycles, exposed communication "
+    r"(?P<booksim_com>\d+) cycles\."
+)
 
 
 class Controller():
@@ -59,21 +67,34 @@ class Controller():
         p.stdin.flush()
         return
 
-    def parse_all_booksim(self, output):
-        """VeritX forward-port: return list of {sys, cycle} for ALL non-sys0
-        lines in BookSim output. sys=0 is handled by parse_output separately.
-        Does NOT modify any state - id computation deferred to caller."""
-        pattern = r"\[workload\] sys\[(\d+)\] finished, (\d+) cycles, exposed communication (\d+) cycles."
+    def parse_all_completions(self, output):
+        """Return every distinct NPU completion in one backend burst.
+
+        This is deliberately side-effect-free; ``parse_output`` remains the
+        compatibility path that updates ``end_dict`` for the leading record.
+        """
         results = []
         seen = set()
-        for m in re.finditer(pattern, output):
-            sys_id = int(m.group(1))
-            cycle = int(m.group(2))
-            if sys_id == 0 or sys_id in seen:
+        for match in _COMPLETION_RE.finditer(output):
+            groups = match.groupdict()
+            if groups['iteration_sys'] is not None:
+                sys_id = int(groups['iteration_sys'])
+                completion_id = int(groups['iteration_id'])
+                cycle = int(groups['iteration_cycle'])
+            else:
+                sys_id = int(groups['booksim_sys'])
+                completion_id = None
+                cycle = int(groups['booksim_cycle'])
+            if sys_id in seen:
                 continue
             seen.add(sys_id)
-            results.append({'sys': sys_id, 'cycle': cycle})
+            results.append({'sys': sys_id, 'id': completion_id, 'cycle': cycle})
         return results
+
+    def parse_all_booksim(self, output):
+        """Backward-compatible alias for older callers."""
+        return [record for record in self.parse_all_completions(output)
+                if record['id'] is None]
 
     def parse_output(self, output):
         match = _ITERATION_RE.search(output)

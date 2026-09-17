@@ -64,6 +64,18 @@ public:
   bool HasRetired(int node) const { return !_retired_q[node].empty(); }
   std::vector<Retired> DrainRetired(int node);
 
+  // VeritX: per-packet latency / hop summary over every recorded retirement
+  // (all classes). Populated only when flits carry record=true (the embed
+  // builders set it); empty summary when no packets retired. Percentiles
+  // are exact (sorted vector, nearest-rank), not estimated.
+  struct PlatSummary {
+    int64_t count = 0;
+    double avg = 0.0, min = 0.0, p50 = 0.0, p95 = 0.0, p99 = 0.0, max = 0.0;
+    double hops_avg = 0.0;
+    int hops_min = 0, hops_max = 0;
+  };
+  PlatSummary PlatStats() const;
+
   // VeritX ledger diagnostics: cheap counters/snapshots over
   // traffic-manager state, used by the frontend LEDGER dumps. All O(1)
   // except the two scans, which are O(in-flight) and only run on the

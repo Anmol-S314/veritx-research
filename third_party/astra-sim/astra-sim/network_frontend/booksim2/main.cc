@@ -476,6 +476,18 @@ int main(int argc, char * argv[]) {
       // at 0, and 0 for ranks idle this round).
       uint64_t wall_time = event_queue.get_current_time();
       uint64_t round_wall_delta = wall_time >= round_wall_before ? wall_time - round_wall_before : 0;
+      // VeritX: per-packet latency/hop summary for this round's retirements.
+      // Machine-parseable one-liner; values are exact (see EmbedTM::PlatStats).
+      {
+        VeritXEmbed::EmbedTM::PlatSummary ps = fabric.tm()->PlatStats();
+        std::cout << "[plat] packets=" << ps.count
+                  << " avg=" << ps.avg << " min=" << ps.min
+                  << " p50=" << ps.p50 << " p95=" << ps.p95 << " p99=" << ps.p99
+                  << " max=" << ps.max
+                  << " hops_avg=" << ps.hops_avg
+                  << " hops_min=" << ps.hops_min << " hops_max=" << ps.hops_max
+                  << std::endl;
+      }
       for (int i = 0; i < npus_count; ++i) {
         uint64_t gpu_after = systems[i]->workload->hw_resource->tics_gpu_ops;
         uint64_t comm_after = systems[i]->workload->hw_resource->tics_gpu_comms;
@@ -506,6 +518,16 @@ int main(int argc, char * argv[]) {
       if (event_queue.finished() && !fabric.tm()->HasInFlight() &&
           !Booksim2NetworkApi::has_pending_groups())
         break;
+    }
+    {
+      VeritXEmbed::EmbedTM::PlatSummary ps = fabric.tm()->PlatStats();
+      std::cout << "[plat] packets=" << ps.count
+                << " avg=" << ps.avg << " min=" << ps.min
+                << " p50=" << ps.p50 << " p95=" << ps.p95 << " p99=" << ps.p99
+                << " max=" << ps.max
+                << " hops_avg=" << ps.hops_avg
+                << " hops_min=" << ps.hops_min << " hops_max=" << ps.hops_max
+                << std::endl;
     }
   }
 
