@@ -16,7 +16,6 @@ classifier, never exit code alone.
 """
 from __future__ import annotations
 
-import json
 import os
 import re
 import subprocess
@@ -171,8 +170,9 @@ def run_serving_experiment(
     run = Run.create(repo=repo, resolved_spec=resolved, argv=list(sys.argv))
 
     def _cancel(reason: str) -> Run:
-        run.add_result("validate", {"error": reason})
-        run.transition("CANCELLED", note=reason)
+        # Rejection evidence contract lives on Run (Phase 7 extraction;
+        # identical closure existed in both slices).
+        run.cancel(reason)
         return run
 
     backend = sv["network_backend"]
@@ -193,10 +193,7 @@ def run_serving_experiment(
                        "dataset": sv["dataset"],
                        "num_reqs": sv["num_reqs"],
                        "timeout_s": resolved["simulation"]["timeout_s"]}]}
-    with atomic_write(run.root / "plan.json") as tmp:
-        tmp.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n")
-    run.transition("PLANNED", note="1 task")
-    run.transition("RUNNING")
+    run.record_plan(plan)
 
     # ── execute (supervised child; WE own the process, not the protocol)
     csv_path = run.root / "artifacts" / "requests.csv"

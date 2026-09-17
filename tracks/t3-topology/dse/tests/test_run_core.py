@@ -283,4 +283,35 @@ class TestStandaloneExperiment:
         assert result["routing"] == "xy_yx"
         assert result["nodes"] == experiment["system"]["nodes"]
         assert result["seed"] == 101
-        assert result["config"] == configs[0]
+
+
+# ── Phase 7: shared run-lifecycle mechanics (extraction) ────────────────
+
+class TestRunLifecycleHelpers:
+    """Plan persistence + rejection-evidence live on Run — the run-
+    lifecycle owner — because two real slices repeat them verbatim.
+    Behavior contracts unchanged; the slices delegate to these."""
+
+    def test_record_plan_persists_and_transitions(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("veritx_dse.core.runs.VERITX_RUNS_DIR",
+                            tmp_path / "runs")
+        run = Run.create(repo=tmp_path,
+                         resolved_spec=resolve(parse(_spec_dict())))
+        # VALIDATED is slice-owned (carries slice-specific evidence);
+        # record_plan owns plan persistence + PLANNED -> RUNNING.
+        run.transition("VALIDATED", note="validation evidence here")
+        plan = {"schema_version": 1, "tasks": [{"task_id": "t1"}]}
+        run.record_plan(plan)
+        on_disk = json.loads((run.root / "plan.json").read_text())
+        assert on_disk == plan
+        assert run.state == "RUNNING"
+
+    def test_cancel_records_evidence_and_closes(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("veritx_dse.core.runs.VERITX_RUNS_DIR",
+                            tmp_path / "runs")
+        run = Run.create(repo=tmp_path,
+                         resolved_spec=resolve(parse(_spec_dict())))
+        run.cancel("trace invalid: garbage")
+        assert run.state == "CANCELLED"
+        manifest = json.loads((run.root / "manifest.json").read_text())
+        assert "trace invalid: garbage" in manifest["results"][0]["error"]

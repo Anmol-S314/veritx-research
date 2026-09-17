@@ -315,3 +315,25 @@ class Run:
             if not manifest["results"]:
                 raise RunError("cannot SUCCEED with zero recorded results")
         self.transition(status, note=note)
+
+    # -- shared slice mechanics (Phase 7) -----------------------------------
+    # Both real execution slices (standalone BookSim, serving) repeated
+    # these verbatim; they are run-lifecycle mechanics, so they live on
+    # Run. Behavior contracts stay pinned by test_run_core and the
+    # slices' own verdict tests.
+
+    def record_plan(self, plan: dict[str, Any]) -> None:
+        """Persist the executable plan and advance to RUNNING via PLANNED.
+
+        One implementation of the plan-file contract (layout, key order,
+        transition order) so slices cannot drift apart."""
+        with atomic_write(self.root / "plan.json") as tmp:
+            tmp.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n")
+        self.transition("PLANNED", note=f"{len(plan['tasks'])} task(s)")
+        self.transition("RUNNING")
+
+    def cancel(self, reason: str) -> None:
+        """Record the rejection INSIDE the run dir, then close it out —
+        a refused experiment leaves evidence, not a silent no-op."""
+        self.add_result("validate", {"error": reason})
+        self.transition("CANCELLED", note=reason)

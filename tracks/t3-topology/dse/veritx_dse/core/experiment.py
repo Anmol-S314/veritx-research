@@ -18,7 +18,6 @@ what actually repeats (§7 deletion test).
 from __future__ import annotations
 
 import hashlib
-import json
 import re
 import sys
 from dataclasses import replace
@@ -26,7 +25,6 @@ from pathlib import Path
 from typing import Any
 
 from ..core.paths import DSE_DIR, REPO
-from ..core.recovery import atomic_write
 from ..core.runs import Run, RunError
 from ..core.spec import SpecError, parse, plan as plan_spec, resolve
 from ..core.errors import BookSimError, TraceError
@@ -107,10 +105,9 @@ def run_experiment(
     run = Run.create(repo=repo, resolved_spec=resolved, argv=list(sys.argv))
 
     def _cancel(reason: str) -> Run:
-        # Record the rejection INSIDE the run dir, then close it out —
-        # a refused experiment leaves evidence, not a silent no-op.
-        run.add_result("validate", {"error": reason})
-        run.transition("CANCELLED", note=reason)
+        # Rejection evidence contract lives on Run (Phase 7 extraction;
+        # identical closure existed in both slices).
+        run.cancel(reason)
         return run
 
     try:
@@ -125,12 +122,9 @@ def run_experiment(
     run.transition("VALIDATED", note=f"trace: {stats.num_packets} pkts, "
                                      f"max_node {stats.max_node}")
 
-    # ── plan (write the expansion, then move to RUNNING) ────────────────
+    # ── plan (persist via Run; one plan-file contract, Phase 7) ────────
     p = plan_spec(resolved)
-    with atomic_write(run.root / "plan.json") as tmp:
-        tmp.write_text(json.dumps(p, indent=2, sort_keys=True) + "\n")
-    run.transition("PLANNED", note=f"{len(p['tasks'])} task(s)")
-    run.transition("RUNNING")
+    run.record_plan(p)
 
     # ── execute (one task per seed; real process, real parse) ──────────
     trace_hash = _trace_sha256(trace_path)
