@@ -27,9 +27,22 @@ from serving.core.router import *
 from serving.core.power_model import *
 from serving.core.logger import *
 from serving.core.run_paths import build_run_paths, resolve_run_id
+from serving.core.liveness import (
+    LivenessProbe as _LivenessProbe,
+    ProgressObservation as _ProgressObservation,
+    attach_to_failure as _liveness_attach,
+    USEFUL_PROGRESS as _LIVE_PROGRESS,
+)
 import sys as flush
 
-from pyinstrument import Profiler
+# Optional profiling: the vendored pyinstrument ships a C extension built
+# for one CPython version; on a newer interpreter the import fails and would
+# otherwise kill the whole simulation at startup. All current uses are
+# commented out (see main()), so degrade to Profiler=None instead.
+try:
+    from pyinstrument import Profiler
+except ImportError:  # missing/incompatible compiled low_level extension
+    Profiler = None
 
 
 def _pad_batch_to_max(batch, max_len):
@@ -60,6 +73,65 @@ def _pad_batch_to_max(batch, max_len):
     batch.total_len = max_len
     batch.kv_len += pad                  # each dummy contributes kv=1
     batch.num_decode += pad              # counted for lm_head / dense shape
+
+
+def _sweep_completion(network_backend, num_instances, instance_id,
+                      decode_instance, is_prefill_done, schedulers, router,
+                      inst_dp_group, dp_groups, npu2inst_mapping, instances,
+                      done_inst_npus, done_instance, round_done_npus):
+    """Burst-wide completion accounting. Returns newly-done instance ids.
+
+    Completion is a property of simulator state, not of which instance
+    happened to be selected for scheduling: booksim/analytical replies are
+    cluster-wide (bursts name many NPUs while sys points at one), so every
+    instance represented by this round's evidence is evaluated. Other
+    backends keep served-instance-only behaviour (their per-NPU polls visit
+    everyone naturally). Mutates done_inst_npus / done_instance in place.
+    """
+    _prefill_done_before_sweep = is_prefill_done
+    _newly_done = []
+    if network_backend in ('booksim', 'analytical'):
+        _candidates = range(num_instances)
+    else:
+        _candidates = (instance_id,)
+    for _iid in _candidates:
+        # Phase gate, snapshotted: completing the final prefill instance
+        # must not also complete decode instances in the same iteration.
+        if _iid in decode_instance and not _prefill_done_before_sweep:
+            continue
+        if _iid in done_instance:
+            continue
+        if not schedulers[_iid].is_request_empty():
+            continue
+        if router.has_pending_requests():
+            continue
+        if router.has_deferred_sessions():
+            continue
+        # DP-group all-members-empty check (candidate-skip, not
+        # iteration-skip).
+        _dg = inst_dp_group.get(_iid)
+        if _dg is not None and not all(
+                schedulers[i].is_request_empty()
+                and len(schedulers[i].inflight) == 0
+                for i in dp_groups[_dg]):
+            continue
+        # Credit only actual completion evidence for this instance.
+        for _done_sys in round_done_npus:
+            if npu2inst_mapping.get(_done_sys) != _iid:
+                continue
+            if _done_sys not in done_inst_npus[_iid]:
+                done_inst_npus[_iid].append(_done_sys)
+        _need = 1 if (
+            instances[_iid]["num_npus"] == 1
+            or network_backend in ('booksim', 'analytical')
+        ) else 2
+        # >= not ==: one burst can expose several NPUs of an instance at
+        # once; exact equality would livelock 0->2 against a threshold of 1.
+        # Dedup keeps the 2-distinct-NPU handshake exact for other backends.
+        if len(done_inst_npus[_iid]) >= _need:
+            done_instance.append(_iid)
+            _newly_done.append(_iid)
+    return _newly_done
 
 
 def _pass_response(router, current, state_changed=False):
@@ -129,11 +201,11 @@ def _cleanup_inputs_root(run_paths, logger):
 def _prepare_booksim_config(astra_sim, run_paths, num_nodes):
     # VeritX: forward-ported BookSim backend (upstream deleted theirs).
     """Prepare BookSim config for ASTRA-sim's BookSim2 backend.
-    
+
     BookSim mesh only supports square k^n. For rectangular dims like 2x4 (8 NPUs)
     we emit an anynet mesh file instead. This keeps node_count correct and avoids
     dimension mismatch with ASTRA's network.yml (which is [2,4] for 4xTP2).
-    
+
     Now reads the ACTUAL network.yml dims instead of inferring, so any LLM
     workload (any N, any parallelism) is correct.
     """
@@ -141,11 +213,11 @@ def _prepare_booksim_config(astra_sim, run_paths, num_nodes):
     booksim_src = os.path.join(astra_sim, "..", "..", "booksim2", "src")
     if not os.path.exists(booksim_src):
         booksim_src = os.path.join(os.path.dirname(astra_sim), "..", "..", "booksim2", "src")
-    
+
     config_dir = os.path.join(run_paths.inputs_root, "booksim")
     os.makedirs(config_dir, exist_ok=True)
     config_path = os.path.join(config_dir, "config.cfg")
-    
+
     # Read ACTUAL dims from network.yml (already written by build_cluster_config)
     network_yml = os.path.join(run_paths.inputs_root, "network", "network.yml")
     dims = None
@@ -193,7 +265,7 @@ def _prepare_booksim_config(astra_sim, run_paths, num_nodes):
         is_square_mesh = True
     if has_fc_large:
         is_square_mesh = False
-    
+
     # Rectangular dims -> anynet
     if not is_square_mesh and dims != [1]:
         anynet_path = os.path.join(config_dir, "topo.anynet")
@@ -264,7 +336,7 @@ injection_rate = 0.0;
         # Collapsing them to 1D would renumber dim>=1 (EP/DP) collectives
         # out of existence in Sys::generate_collective.
         return config_path, booksim_src
-    
+
     # Square / 1D mesh path (original)
     k = int(math.sqrt(num_nodes))
     if k * k != num_nodes:
@@ -443,8 +515,8 @@ def main():
 
     # -------------------------------------- Argument parsing --------------------------------------
     parser = argparse.ArgumentParser(prog='python -m serving',
-                                     description='LLMServingSim') 
-    
+                                     description='LLMServingSim')
+
     parser.add_argument('--cluster-config', type=str, default='configs/cluster/single_node_single_instance.json',
                         help='path to cluster config JSON defining node topology, instance layout, hardware, and memory hierarchy')
     parser.add_argument('--max-num-seqs', type=int, default=128,
@@ -564,7 +636,7 @@ def main():
                         'Use --no-booksim-replay-only for full cycle-accurate network simulation (requires matching topologies, ~10x slower).')
 
     args = parser.parse_args()
-    
+
     args.run_id = resolve_run_id(args.run_id)
     run_paths = build_run_paths(astra_sim, args.run_id, args.inputs_root)
     args.inputs_root = run_paths.inputs_root
@@ -575,7 +647,7 @@ def main():
     print_banner()
     print_input_config(args=args)
     flush.stdout.flush()
-    
+
     _dtype_to_bits = {'float16': 16, 'bfloat16': 16, 'float32': 32, 'fp8': 8, 'int8': 8}
     request_routing_policy=args.request_routing_policy
     expert_routing_policy=args.expert_routing_policy
@@ -670,7 +742,7 @@ def main():
     memory=run_paths.memory_config
     system=run_paths.system_config
     # ------------------------------------- Prepare simulation -------------------------------------
-    # Need to extract each instance's memory accessability 
+    # Need to extract each instance's memory accessability
     node2inst_mapping = defaultdict(list)
     for inst_id, node_id in inst2node_mapping.items():
         node2inst_mapping[node_id].append(inst_id)
@@ -750,8 +822,8 @@ def main():
             prefix_pool = prefix_pools[prefix_pool_index]
         cxl_mem = 0
         if cluster["cxl_mem_size"] > 0:
-            cxl_mem = cluster["cxl_mem_size"]        
-        
+            cxl_mem = cluster["cxl_mem_size"]
+
         # Make scheduler for each instance
 
         inst_cfg = instance_runtime_configs[instance_id]
@@ -961,8 +1033,58 @@ def main():
     # forever. Threshold overridable for testing (VERITX_SPIN_ABORT).
     _veritx_idle_rounds = 0
     _veritx_spin_abort = int(os.environ.get("VERITX_SPIN_ABORT", "100000"))
+    # VeritX: per-iteration phase timing (VERITX_ROUND_TIMING=1). Splits each
+    # serving<->backend round into backend_wait (blocked in read_wait) vs
+    # sched (parse/route/rebind/retire) vs gen_dispatch (schedule + trace /
+    # graph generation + write_flush). Plain stdout prints every 10 rounds
+    # so timeout-killed runs still report. Zero overhead when unset.
+    from time import perf_counter as _vperf
+    _vround_timing = bool(os.environ.get("VERITX_ROUND_TIMING"))
+    _vround_n = 0
+    _vround_bw = 0.0
+    _vround_sched = 0.0
+    _vround_gen = 0.0
+    _vround_s0 = 0.0
+    _vround_lb = 0.0
+    _vround_ls = 0.0
+    _vbr = defaultdict(int)  # dispatch-arm histogram (same flag)
+    # VeritX: livelock progress markers (always-on, ints only). The old reset zeroed the detector every lap:
+    # pass-echo replies carry sys/cycle lines by construction, and the
+    # increment required an exact "pass" shape while "pass {deadline}"/
+    # "pass -1" skipped it. Progress is now: backend clock advanced,
+    # a batch dispatched, requests routed/retired, or the deadline jump
+    # moved time. Rounds with none of those count up whatever the message
+    # shape; legitimate waiting always advances the clock, so it never
+    # counts. Threshold still VERITX_SPIN_ABORT (default 100000).
+    _vprog_round = 0
+    _vprog_last = 0
+    _vprog_last_current = None
+    # VeritX: liveness observation (review-directed). PURE instrumentation:
+    # one snapshot per round, no control-flow effect. Reports are emitted
+    # only when explicitly requested (VERITX_LIVENESS_DUMP=n — every n
+    # unchanged rounds) or when an existing failure path fires (EOF with
+    # work, spin abort) — the observation never aborts anything itself.
+    _lv_probe = _LivenessProbe()
+    _lv_dump_every = int(os.environ.get("VERITX_LIVENESS_DUMP", "0"))
+    _lv_last_cmd = "<startup>"  # logical command pending/issued last
     while True:
-        
+        if _vround_timing:
+            _vround_now = _vperf()
+            if _vround_n > 0:
+                _vround_gen += (_vround_now - _vround_s0) - _vround_lb - _vround_ls
+                if _vround_n % 10 == 0:
+                    _vbr_other = _vround_n - sum(_vbr.values())
+                    _vbr_top = sorted(_vbr.items(), key=lambda kv: -kv[1])[:5]
+                    _vbr_txt = ", ".join(f"{k}={v}" for k, v in _vbr_top)
+                    if _vbr_other:
+                        _vbr_txt += f", other={_vbr_other}"
+                    print(f"[VERITX_TIMING] rounds={_vround_n} "
+                          f"backend_wait={_vround_bw:.1f}s sched={_vround_sched:.1f}s "
+                          f"gen_dispatch={_vround_gen:.1f}s arms:[{_vbr_txt}]", flush=True)
+            _vround_n += 1
+            _vround_s0 = _vround_now
+        _vprog_round += 1
+        round_done_npus = set()  # backend completion evidence this round
         out = controller.read_wait(p)
         if len(out) <= 1 and out[0] == '':
             # VeritX: backend EOF — died or closed the pipe. Only a failure
@@ -985,25 +1107,42 @@ def main():
                 print("[LLMServingSim] ERROR: backend pipe exhausted with work "
                       f"remaining ({req_cnt} requests retired) — results below "
                       f"are incomplete.", flush=True)
+                # VeritX: attach the latest liveness observation so the
+                # failure says WHICH state stopped changing first (§28).
+                print(_liveness_attach(_lv_probe, "backend EOF"), flush=True)
             break
+        if _vround_timing:
+            _vround_s1 = _vperf()
+            _vround_lb = _vround_s1 - _vround_s0
+            _vround_bw += _vround_lb
         if network_backend in ('booksim', 'analytical'):
-            # VeritX: parse the joined output (the BookSim and analytical
-            # binaries emit one [workload] finish line per NPU); batch
-            # identity comes from scheduler state below, the parse ids are
-            # only used for logging.
-            out_dict = controller.parse_output("\n".join(out))
+            # Both backends return a burst containing one completion per NPU.
+            # Parse that burst once so analytical's iteration format and
+            # BookSim's workload format share the same evidence path.
+            _joined_out = "\n".join(out)
+            out_dict = controller.parse_output(_joined_out)
+            round_completions = controller.parse_all_completions(_joined_out)
         else:
             out_dict = controller.parse_output(out[-2])
-        
+            round_completions = controller.parse_all_completions(out[-2])
+
         if out_dict != None:
-            sys = out_dict['sys']
+            reported_sys = out_dict['sys']
+            sys = reported_sys
             id = out_dict['id']
             current = out_dict['cycle']
-            # VeritX: a real backend report is progress — clear the
-            # bare-pass livelock counter.
-            _veritx_idle_rounds = 0
+            # Preserve the backend-reported NPU before instance rebinding can
+            # change `sys`; completion evidence must never be credited to the
+            # scheduler-selected instance.
+            # Progress marker: backend clock moved. NOTE: no counter reset
+            # here — pass-echo replies parse too, and resetting on "any
+            # reply" defeated the detector (reset won every lap by order).
+            if _vprog_last_current is None or current != _vprog_last_current:
+                _vprog_last_current = current
+                _vprog_last = _vprog_round
 
         # Route newly arrived requests to instances based on current load
+        round_done_npus.update(record['sys'] for record in round_completions)
         _routed_now = 0
         if dataset is not None:
             _routed_now = router.route_arrived_requests(current)
@@ -1135,11 +1274,12 @@ def main():
         # Feed every non-leading line through the same add_done + accounting
         # path (needed for TP>1: a batch retires only when all NPUs report).
         if network_backend in ('booksim', 'analytical'):
-            for extra in controller.parse_all_booksim("\n".join(out)):
-                if extra['sys'] != out_dict.get('sys', -1):
+            for extra in round_completions:
+                if extra['sys'] != reported_sys:
                     _e_inst = npu2inst_mapping.get(extra['sys'])
                     if _e_inst is None:
                         continue
+                    round_done_npus.add(extra['sys'])
                     # VeritX: same dispatched-only rule as the main path.
                     _e_cand = None
                     for _b in reversed(schedulers[_e_inst].inflight):
@@ -1184,12 +1324,20 @@ def main():
         # poll that should have handed over the previous one, and the round after
         # that overwrote the entry: the first graph never ran, and the other
         # pipeline stage blocked forever on a RECV that never came.
+        if _vround_timing:
+            _vround_s2 = _vperf()
+            _vround_ls = _vround_s2 - _vround_s1
+            _vround_sched += _vround_ls
         pending = dp_ready_workloads.get(sys)
         new_req = None if pending else schedulers[instance_id].schedule(current, sys, id)
+        if new_req is not None:
+            _vprog_last = _vprog_round  # dispatch = forward motion
         responded = False  # track whether we already sent a response to ASTRA-Sim
 
         # Hand over a workload pre-generated by a DP round this NPU opened.
         if pending:
+            if _vround_timing:
+                _vbr['pending_handover'] += 1
             controller.write_flush(p, pending.popleft())
             if not pending:
                 del dp_ready_workloads[sys]
@@ -1231,6 +1379,8 @@ def main():
                 # forever. Invisible at tp=pp=1, where the start NPU is the only
                 # NPU an instance owns.
                 schedulers[instance_id].inflight.append(dummy)
+                if _vround_timing:
+                    _vbr['dummy_created'] += 1
                 dp_pending[dg][instance_id].append((dummy, inst2node_mapping[instance_id]))
 
                 if all(dp_pending[dg][i] for i in dp_groups[dg]):
@@ -1399,6 +1549,8 @@ def main():
                         responded = True
                 else:
                     # Independent instance: generate trace immediately
+                    if _vround_timing:
+                        _vbr['gen_new_req'] += 1
                     inst_cfg = instance_runtime_configs[instance_id]
                     trace_data = generate_trace(new_req, instance["hardware"], instance["tp_size"], instance["pp_size"],
                                    instance["local_ep"], instance["ep_total"],
@@ -1570,63 +1722,37 @@ def main():
                     f"{log_indent+tree_indent}"
                     f"Avg power consumption: {power_model.get_current_power(current)} W"
                 )
-        # check if all requests are done for current instance#
-        # NOTE: 'instance_id' could occur in duplicate, because 'npu2inst_mapping[sys]' is not one-to-one mapping
-        if (instance_id not in decode_instance or is_prefill_done) and instance_id not in done_instance and schedulers[instance_id].is_request_empty() and not router.has_pending_requests() and not router.has_deferred_sessions():
-            # For DP groups: only mark done when ALL members of the group are empty
-            dg = inst_dp_group.get(instance_id)
-            if dg is not None:
-                all_dp_empty = all(
-                    schedulers[inst_id].is_request_empty() and len(schedulers[inst_id].inflight) == 0
-                    for inst_id in dp_groups[dg]
-                )
-                if not all_dp_empty:
-                    # Other DP members still have work — keep this instance alive for dummy waves
-                    if not responded:
-                        controller.write_flush(p, _pass_response(router, current))
-                    flush.stdout.flush()
-                    continue
+        # Completion is independent of scheduler visitation; sweep all
+        # candidates using only backend evidence observed in this burst.
+        _newly_done_instances = _sweep_completion(
+            network_backend, num_instances, instance_id,
+            decode_instance, is_prefill_done, schedulers, router,
+            inst_dp_group, dp_groups, npu2inst_mapping, instances,
+            done_inst_npus, done_instance, round_done_npus)
 
-            if sys not in done_inst_npus[instance_id]:
-                done_inst_npus[instance_id].append(sys)
-            # VeritX: BookSim/analytical backends report per-round completion
-            # for ALL NPUs of an instance in one burst (one sys line per NPU;
-            # non-leading lines are retired via parse_all_booksim), and the
-            # instance rebinding above pins `sys` to the instance's FIRST NPU
-            # — so a second, distinct-NPU poll never arrives. Requiring
-            # len(done_inst_npus[i]) == num_npus therefore deadlocked the
-            # shutdown handshake: neither instance ever completed, python
-            # wrote "done" forever and the binary replied bare "Waiting"
-            # (~14K rounds/s observed via strace). Instance completion is
-            # scheduler state (empty queues + no inflight + DP group drained,
-            # all checked above), not per-NPU state: one poll suffices for
-            # these backends. Non-reporting backends keep the old rule.
-            _done_npus_needed = 1 if (
-                instances[instance_id]["num_npus"] == 1
-                or network_backend in ("booksim", "analytical")
-            ) else 2
-            if len(done_inst_npus[instance_id]) == _done_npus_needed:
-                done_instance.append(instance_id)
+        # check if all prefill instances are done
+        if len(done_instance) == len(prefill_instance):
+            is_prefill_done = True
 
-            # check if all prefill instances are done
-            if len(done_instance) == len(prefill_instance):
-                is_prefill_done = True
+        # check if all instances are done
+        if len(done_instance) == num_instances:
+            for inst_idx in range(num_instances):
+                schedulers[inst_idx].memory.free_prefix_cache()
+                schedulers[inst_idx].memory.free_weight()
 
-            # check if all instances are done
-            if len(done_instance) == num_instances:
-                for inst_idx in range(num_instances):
-                    schedulers[inst_idx].memory.free_prefix_cache()
-                    schedulers[inst_idx].memory.free_weight()
-                
-                # check memory leak before exit
-                schedulers[inst_idx].memory.is_free()
+            # check memory leak before exit
+            schedulers[inst_idx].memory.is_free()
 
-                print_rule()
-                print_markup("[sim.heading]▶ Exiting simulation...[/]\n")
-                controller.write_flush(p, "exit")
-                break
+            print_rule()
+            print_markup("[sim.heading]▶ Exiting simulation...[/]\n")
+            controller.write_flush(p, "exit")
+            break
+        if _newly_done_instances:
+            # The backend command is not instance-addressed: one ack per
+            # round suffices even if several transitioned together.
             controller.write_flush(p, "done") # make done instances to sleep
-        elif new_req == None and not responded:
+            responded = True
+        if new_req is None and not responded:
             # If all instances are idle but deferred sessions have pending
             # requests with future arrival times (tool calls still running),
             # advance current time so the next iteration can pick them up.
@@ -1637,16 +1763,20 @@ def main():
                 next_arrival = router.get_next_pending_arrival()
                 if next_arrival is not None and next_arrival > current:
                     current = next_arrival
-            # VeritX: bare-pass spin detector. A bare "pass" round that
-            # retires nothing, routes nothing and advances nothing is a
-            # no-op; thousands in a row mean scheduler and backend are
-            # ping-ponging with no progress (e.g. a DP quorum that can
-            # never assemble). Fail loudly with a state dump instead of
-            # spinning forever.
-            _is_bare_pass = (pass_msg == "pass" and not finished_reqs
-                             and not _routed_now)
+                    _vprog_last = _vprog_round  # legitimate wait: clock moved
+            # VeritX: no-progress spin detector. Counts rounds with no
+            # retire, no route, no dispatch and no clock advance, whatever
+            # the pass-message shape ("pass" / "pass {deadline}" /
+            # "pass -1" all count). Thousands in a row mean scheduler and
+            # backend are ping-ponging with no progress (e.g. a DP quorum
+            # that can never assemble). Fail loudly with a state dump
+            # instead of spinning forever.
+            _is_bare_pass = (not finished_reqs
+                             and not _routed_now
+                             and _vprog_round > _vprog_last)
             if _is_bare_pass:
-                _veritx_idle_rounds += 1
+                _lv_last_cmd = pass_msg  # the repeated-action evidence
+                _veritx_idle_rounds = _vprog_round - _vprog_last
                 if _veritx_idle_rounds == 200:
                     print(f"[LLMServingSim] DEBUG first-stall round: "
                           f"out_tail={[ln[:100] for ln in out[-3:]]!r} "
@@ -1675,6 +1805,18 @@ def main():
                     print("[LLMServingSim] ERROR: scheduler/backend livelock "
                           "(see state above) — aborting instead of spinning.",
                           flush=True)
+                    # VeritX: liveness snapshot at abort — the observation
+                    # distinguishes the stall class; it does not replace
+                    # the abort (existing guardrail stays).
+                    print(_liveness_attach(
+                        _lv_probe, "spin abort"), flush=True)
+                    try:
+                        with open(os.environ.get(
+                                "VERITX_LIVENESS_JSON", ""), "w") as _lf:
+                            json.dump(_lv_probe.no_useful_progress_report(), _lf,
+                                      indent=2, sort_keys=True)
+                    except Exception:
+                        pass
                     _backend_died_early = True  # non-zero exit + keep inputs
                     try:
                         controller.write_flush(p, "exit")
@@ -1684,9 +1826,48 @@ def main():
             else:
                 _veritx_idle_rounds = 0
             controller.write_flush(p, pass_msg)
-        
-        # flush
-        flush.stdout.flush()
+            if _vround_timing:
+                _vbr['bare_pass'] += 1
+
+        # VeritX: liveness observation — snapshot this round. Read-only;
+        # every value here was already computed above. Cheap: one dataclass
+        # + one tuple compare. Never aborts, never changes scheduling.
+        try:
+            _lv_disp = bool(finished_reqs) or _routed_now > 0 or new_req is not None
+            _lv_probe.observe(_ProgressObservation(
+                round=0,  # probe assigns the real round number
+                sim_time=current,
+                backend_cycle=(round_completions[-1]['cycle']
+                               if round_completions else None),
+                backend_completions=len(round_completions),
+                retired_requests=req_cnt,
+                pending_requests=(len(router._pending_requests)
+                                  - router._pending_idx),
+                deferred_requests=len(router._deferred_sessions),
+                inflight_batches=sum(len(sch.inflight) for sch in schedulers),
+                dispatched_this_round=_lv_disp,
+                last_command=_lv_last_cmd,
+                per_instance={
+                    f"instance_{i}": {
+                        "waiting": len(schedulers[i].waiting),
+                        "running": len(schedulers[i].running),
+                        "inflight": len(schedulers[i].inflight),
+                        "dp_queued": (len(dp_pending[inst_dp_group[i]][i])
+                                      if i in inst_dp_group else 0),
+                    }
+                    for i in range(num_instances)
+                },
+                backend_alive=(p.poll() is None),
+                note=("dp_pending=" + str({dg: {i: len(q) for i, q in m.items()}
+                                              for dg, m in dp_pending.items()}
+                                         ) if dp_pending else ""),
+            ))
+            if (_lv_dump_every and _lv_probe.rounds_unchanged >= _lv_dump_every
+                    and _lv_probe.rounds_unchanged % _lv_dump_every == 0
+                    and _lv_probe.classify() != _LIVE_PROGRESS):
+                print(f"[LIVENESS] {_lv_probe.render()}", flush=True)
+        except Exception:  # instrumentation must never kill simulation
+            pass
 
     # calculate simulation time
     end_time = time()
@@ -1712,12 +1893,12 @@ def main():
             total_npu_hit_tokens += temp_npu_b
             if not enable_prefix_sharing:
                 total_cpu_hit_tokens += temp_cpu_b
-        
+
         if enable_prefix_sharing:
             for pool in prefix_pools:
                 _, temp_cpu_b = pool.stats.return_prefix_info()
                 total_cpu_hit_tokens += temp_cpu_b
-    
+
     # This is total system's throughput
     total_latency = current/FREQ
     print_rule()
@@ -1789,9 +1970,9 @@ def main():
         print_rule(f"[sim.tagline]Instance \\[{i}][/]")
         schedulers[i].print_result()
         print_rule()
-    
+
     # Important informations about metrics
-    # The TTFT (Time to First Token) in our simulator differs from vllm. 
+    # The TTFT (Time to First Token) in our simulator differs from vllm.
     # While vllm measures TTFT as the time when the client receives the first token,
     # Our simulator measures it as the time when the computation of the first token is completed.
     # Therefore, vllm gets much more higher TTFT.
@@ -1812,9 +1993,9 @@ def main():
         # VeritX: non-zero exit so wrappers/CI notice.
         import sys as _sys
         _sys.exit(1)
-    
 
-if __name__ == "__main__": 
+
+if __name__ == "__main__":
     # For simulation time breakdown
     # profiler = Profiler()
     # profiler.start()
