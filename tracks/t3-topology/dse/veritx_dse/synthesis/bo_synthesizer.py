@@ -31,6 +31,8 @@ from skopt.utils import use_named_args
 _REPO = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(_REPO / "tracks/t3-topology/scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+# Ensure the DSE package (veritx_dse) is importable in script mode.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 try:
     from collectives import ring_allreduce_pairs
 except ImportError:
@@ -40,6 +42,107 @@ except ImportError:
         if n <= 1: return []
         chunk = size_bytes / n
         return [(participants[i], participants[(i+1)%n], chunk) for i in range(n)]
+
+# Canonical topology sizes — single source of truth in
+# veritx_dse.model.presets. All backend (mesh/grid/anynet) size math
+# delegates here instead of hand-rolled k**n counting.
+try:
+    from veritx_dse.model.presets import topo_size, count_anynet_edges
+except ImportError:
+    try:
+        from ..model.presets import topo_size, count_anynet_edges  # type: ignore
+    except Exception:
+        topo_size = None  # type: ignore
+        count_anynet_edges = None  # type: ignore
+
+# Canonical synth output dir — single source of truth in
+# veritx_dse.core.paths. Module-global (not function-local) so tests can
+# monkeypatch it for isolation; script-mode fallback is the same value.
+try:
+    from veritx_dse.core.paths import SYNTH_DIR as _SYNTH_DIR
+except Exception:
+    _SYNTH_DIR = None  # type: ignore
+try:
+    from veritx_dse.core.constants import BOOKSIM_SEED, DEFAULT_TIMEOUT, env_int
+    from veritx_dse.core.constants import DEFAULT_NODES
+except Exception:
+    BOOKSIM_SEED = 42  # type: ignore  # same value; canonical home is core.constants
+    DEFAULT_TIMEOUT = 60  # type: ignore
+    DEFAULT_NODES = 64  # type: ignore
+    def env_int(name, default):  # type: ignore
+        import os
+        raw = os.environ.get(name)
+        if raw is None:
+            return default
+        return int(raw)  # fail fast like core.constants.env_int
+
+# Unified synthesis evaluation machinery (Phase 2a). Script-mode safe:
+# package import first, sibling fallback for `python3 bo_synthesizer.py`.
+try:
+    from veritx_dse.synthesis.evaluator import (
+        BO_PRESET,
+        evaluate_adj,
+        is_connected as _shared_is_connected,
+        write_anynet as _shared_write_anynet,
+    )
+    from veritx_dse.synthesis.results import SynthResult
+except Exception:
+    try:
+        from evaluator import (  # type: ignore
+            BO_PRESET,
+            evaluate_adj,
+            is_connected as _shared_is_connected,
+            write_anynet as _shared_write_anynet,
+        )
+        from results import SynthResult  # type: ignore
+    except Exception:
+        BO_PRESET = None  # type: ignore
+        evaluate_adj = None  # type: ignore
+        _shared_is_connected = None  # type: ignore
+        _shared_write_anynet = None  # type: ignore
+        SynthResult = None  # type: ignore
+
+
+def mesh_size(k: int = 8, n: int = 2) -> tuple:
+    """Thin wrapper over the canonical helper for mesh sizes.
+
+    Kept under a local name for backward compat; new code should call
+    ``topo_size`` directly.
+    """
+    if topo_size is not None:
+        return topo_size("mesh", {"k": k, "n": n})
+    return (k ** n, n * (k - 1) * k ** (n - 1) if k > 0 else 0)
+
+
+def grid_size(num_nodes: int) -> tuple:
+    """Thin wrapper for sqrt(n)×sqrt(n) grid meshes via the canonical helper."""
+    k = int(math.isqrt(num_nodes))
+    assert k * k == num_nodes, f"n={num_nodes} must be a perfect square"
+    return mesh_size(k, 2)
+
+
+def anynet_size(path) -> tuple:
+    """Thin wrapper over the canonical anynet counter."""
+    if count_anynet_edges is not None:
+        return count_anynet_edges(str(path))
+    return 0, 0
+
+
+def _canonical_runs():
+    """Absolute runs/booksim dir anchored at the track root.
+
+    Outputs used to be runs/... relative to the CWD, so the winner +
+    results + validation workdirs scattered across dse/runs, runs, and
+    wherever else the synthesizer was invoked from. Anchor once: every
+    invocation lands in the one dir the t3 pickers scan.
+    NOTE: _REPO above is the track root (t3-topology/), not the repo root.
+    """
+    if _SYNTH_DIR is not None:
+        d = _SYNTH_DIR
+    else:
+        d = _REPO / "runs" / "booksim"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 # ── Topology generation from parameters ────────────────────────────────
 
@@ -51,7 +154,7 @@ def grid_xy(n):
 
 
 def generate_topology(n, cluster_size, express_length, radix,
-                      intra_weight, inter_weight, seed=42):
+                      intra_weight, inter_weight, seed=BOOKSIM_SEED):
     """Generate topology edges from parameters.
 
     Guarantees connectivity by starting with a nearest-neighbor mesh
@@ -121,7 +224,14 @@ def adj_to_edge_list(adj):
 
 
 def edge_list_to_anynet(adj, path):
-    """Write BookSim .anynet format."""
+    """Write BookSim .anynet format.
+
+    Thin wrapper over the shared evaluator writer (Phase 2a); kept for
+    backward compat (tests import it). Bit-identical output.
+    """
+    if _shared_write_anynet is not None:
+        _shared_write_anynet(adj, path)
+        return
     n = len(adj)
     with open(path, "w") as f:
         for i in range(n):
@@ -137,7 +247,9 @@ def build_traffic_matrix(events_path, n_nodes):
     # try JSON first, fallback to trace parsing
     try:
         events = json.load(open(events_path))
-    except Exception:
+    except Exception as e:
+        print(f"warning: build_traffic_matrix: not JSON ({type(e).__name__}: {e}) — "
+              f"parsing {events_path} as .trace", file=sys.stderr)
         # .trace files are "cyc src cl dst sz" - build matrix from counts
         T = np.zeros((n_nodes, n_nodes))
         try:
@@ -148,8 +260,9 @@ def build_traffic_matrix(events_path, n_nodes):
                 if len(parts) < 5: continue
                 _, src, _, dst, _ = parts[:5]
                 T[int(src)][int(dst)] += 1
-        except Exception:
-            pass
+        except Exception as e2:
+            print(f"warning: build_traffic_matrix: trace parse failed for {p}: "
+                  f"{type(e2).__name__}: {e2} — falling back to uniform", file=sys.stderr)
         if T.sum() == 0:
             T = np.ones((n_nodes, n_nodes))  # fallback uniform
         return T
@@ -192,7 +305,13 @@ def build_traffic_matrix(events_path, n_nodes):
 
 
 def _is_connected(adj):
-    """BFS connectivity check."""
+    """BFS connectivity check.
+
+    Thin wrapper over the shared evaluator check (Phase 2a); kept for
+    backward compat (tests import it). Functionally identical.
+    """
+    if _shared_is_connected is not None:
+        return _shared_is_connected(adj)
     n = len(adj)
     if n == 0:
         return False
@@ -209,94 +328,71 @@ def _is_connected(adj):
     return len(visited) == n
 
 
-def evaluate_topology(adj, T, workdir):
+def evaluate_topology(adj, T, workdir, timeout=None):
     """Run BookSim on topology + traffic, return latency (or 1000.0 on failure).
 
     Reuses a single work directory (overwrites files each eval).
     Supports trace mode (legit Qwen 95K) and matrix mode (synthetic).
+
+    Phase 2a: delegates to the shared evaluator with BO_PRESET
+    (pareto-converged measurement: span-derived sample_period, max_samples=5,
+    warmup 1, honest-first first-match; throughput sim_type kept).
+    Returns the same float sentinels the GP loop relies on (1e9 disconnect,
+    1000.0 runtime); canonical status/error conversion happens at the
+    bo_results_N.json record boundary in main().
+
+    timeout=None resolves VERITX_TIMEOUT (default 60s) at call time.
     """
-    n = len(adj)
-    edge_count = sum(len(v) for v in adj.values()) // 2
-
-    # Fast-fail: disconnected or degenerate topologies
-    if edge_count < n - 1 or not _is_connected(adj):
-        return 1e9  # penalty >> real latency (~40k) so GP doesn't prefer disconnected
-
-    workdir = Path(workdir)
-    workdir.mkdir(parents=True, exist_ok=True)
-
-    # Write .anynet
-    anynet_path = workdir / "topo.anynet"
-    edge_list_to_anynet(adj, anynet_path)
-
-    # Trace mode (legit Qwen 95K) vs matrix mode (synthetic)
-    global _trace_path
-    if _trace_path and Path(_trace_path).exists():
-        # Trace mode: use trace directly, auto sample_period from max cycle, packet_size 8, single class (anynet doesn't support classes)
+    # Shared path (preserves numbers + workdir reuse + log prefixes).
+    if evaluate_adj is not None and BO_PRESET is not None:
+        if timeout is None:
+            timeout = env_int("VERITX_TIMEOUT", DEFAULT_TIMEOUT)
+        global _trace_path
+        use_trace = bool(_trace_path) and Path(_trace_path).exists()
         try:
-            max_cyc = 0
-            with open(_trace_path) as tf:
-                for line in tf:
-                    if line.startswith("#"): continue
-                    parts=line.split()
-                    if len(parts)>=5:
-                        max_cyc = max(max_cyc, int(parts[0]))
-            sample_period = max(200, max_cyc + 1000) if max_cyc>0 else 200
-        except: sample_period = 200
-        trace_abs = Path(_trace_path).resolve()
-        cfg_path = workdir / "run.cfg"
-        cfg_path.write_text(f"""topology = anynet;
-routing_function = min;
-network_file = {anynet_path.resolve()};
-traffic = trace({trace_abs});
-num_vcs = 4;
-vc_buf_size = 8;
-packet_size = 8;
-sample_period = 200;
-max_samples = 3;
-seed = 42;
-sim_type = throughput;
-""")
-    else:
-        # Matrix mode (synthetic)
-        max_val = T.max() if T is not None else 1
-        T_norm = T / max_val if max_val > 0 else T
-        matrix_path = workdir / "traffic.matrix"
-        with open(matrix_path, "w") as f:
-            for row in T_norm:
-                f.write(" ".join(f"{v:.6g}" for v in row) + "\n")
-        cfg_path = workdir / "run.cfg"
-        cfg_path.write_text(f"""topology = anynet;
-routing_function = min;
-network_file = {anynet_path.resolve()};
-traffic = matrix({matrix_path.resolve()});
-num_vcs = 4;
-vc_buf_size = 16;
-sample_period = 100;
-max_samples = 3;
-injection_rate = 0.04;  # 9ce5 pre-knee: BookSim 0.08 saturates, use 0.04
-seed = 42;
-sim_type = throughput;
-""")
-
-    # Run BookSim — pass ABSOLUTE cfg path (subprocess cwd=workdir,
-    # so relative paths get doubled)
-    import subprocess
-    from veritx_dse.core.paths import BOOKSIM_BIN
-    booksim = str(BOOKSIM_BIN)
-    try:
-        r = subprocess.run(
-            [booksim, str(cfg_path.resolve())],
-            capture_output=True, text=True, timeout=60, cwd=str(workdir.resolve())
-        )
-        # Parse latency
-        import re
-        matches = re.findall(r"Packet latency average\s*=\s*([0-9.]+)", r.stdout)
-        if matches:
-            return float(matches[-1])  # Last sample = final average
-        return 1000.0  # No latency found (timeout or error)
-    except (subprocess.TimeoutExpired, Exception):
-        return 1000.0  # Large but finite (GP can't handle inf)
+            if use_trace:
+                res = evaluate_adj(
+                    adj, trace_path=_trace_path, workdir=workdir,
+                    seed=BOOKSIM_SEED, timeout=timeout, config=BO_PRESET,
+                    name=f"bo_N{len(adj)}",
+                )
+            else:
+                res = evaluate_adj(
+                    adj, traffic_matrix=T, workdir=workdir,
+                    seed=BOOKSIM_SEED, timeout=timeout, config=BO_PRESET,
+                    name=f"bo_N{len(adj)}",
+                )
+        except Exception as e:
+            # Matrix-normalization TypeError path (T=None) propagated like
+            # the original outside-try code: re-raise unchanged.
+            raise
+        if res.status == "ok":
+            return float(res.latency)
+        kind = (res.extra or {}).get("failure_kind", "")
+        if kind == "disconnected":
+            return 1e9  # silent fast-fail, like the original
+        if kind == "timeout":
+            print(f"warning: evaluate_topology: BookSim timed out in {workdir}: {res.error} — scoring 1000.0",
+                  file=sys.stderr)
+            return 1000.0
+        if kind == "no_latency":
+            rc = (res.extra or {}).get("returncode", "?")
+            print(f"warning: evaluate_topology: no latency in BookSim output for {workdir} "
+                  f"(exit {rc}) — scoring 1000.0", file=sys.stderr)
+            return 1000.0
+        print(f"warning: evaluate_topology: BookSim run failed in {workdir} "
+              f"({res.error}) — scoring 1000.0", file=sys.stderr)
+        return 1000.0
+    # No inline fallback: the pre-2a duplicated BookSim path lived here and
+    # encoded pre-convergence numbers (sample 200/max 3/plat-last). The
+    # shared evaluator (imported above, sibling fallback for script mode)
+    # is the ONE evaluation path — a second one would silently diverge
+    # again. Fail loudly if it is somehow unavailable.
+    raise ImportError(
+        "bo_synthesizer.evaluate_topology requires "
+        "veritx_dse.synthesis.evaluator (or sibling evaluator.py for "
+        "`python3 bo_synthesizer.py`); refusing to run a divergent fallback."
+    )
 
 
 # ── BO objective wrapper ───────────────────────────────────────────────
@@ -383,10 +479,12 @@ def main():
     global _n_nodes, _T_matrix, _events, _xy
 
     ap = argparse.ArgumentParser()
-    ap.add_argument("--traffic", default="runs/traces/test1_events.json")
-    ap.add_argument("--nodes", type=int, default=64)
+    # Absolute default (Phase 4 follow-up): the old relative default landed
+    # wherever the caller ran from; _REPO is the track root either way.
+    ap.add_argument("--traffic", default=str(_REPO / "runs" / "traces" / "test1_events.json"))
+    ap.add_argument("--nodes", type=int, default=DEFAULT_NODES)
     ap.add_argument("--iters", type=int, default=50)
-    ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--seed", type=int, default=BOOKSIM_SEED)
     ap.add_argument("--scorer", default="analytical", choices=["analytical", "booksim"],
                     help="Scoring function: 'analytical' (fast, ~50ms) or 'booksim' (accurate, ~10-60s)")
     args = ap.parse_args()
@@ -401,7 +499,7 @@ def main():
         _T_matrix = build_traffic_matrix(args.traffic, args.nodes) if _trace_path is None else None
     else:
         _T_matrix = None  # analytical path: structural events only
-    _booksim_workdir = f"runs/booksim/bo_{_scorer}_N{args.nodes}"
+    _booksim_workdir = str(_canonical_runs() / f"bo_{_scorer}_N{args.nodes}")
     # Clean previous iteration dirs to avoid disk bloat
     import shutil
     bwdir = Path(_booksim_workdir)
@@ -413,7 +511,9 @@ def main():
         _events = json.load(open(args.traffic))
         if "collectives" not in _events:
             raise ValueError("not events json")
-    except Exception:
+    except Exception as e:
+        print(f"warning: bo_synthesizer: traffic is not events JSON ({type(e).__name__}: {e}) — "
+              f"building stub collectives from trace", file=sys.stderr)
         _events = {"meta": {"num_tiles": 16}, "collectives": []}
         if _scorer == "booksim" and _T_matrix is not None:
             T = _T_matrix
@@ -441,7 +541,9 @@ def main():
                     dsts = by_src[s][:4]
                     if len(dsts) >= 2:
                         _events["collectives"].append({"tensor": f"trace_col_{s}", "participants": dsts[:4], "size_bytes": 8192, "priority": 2, "pattern": "allreduce"})
-            except Exception: pass
+            except Exception as e2:
+                print(f"warning: bo_synthesizer: trace stub parse failed for {args.traffic}: "
+                      f"{type(e2).__name__}: {e2} — using default collective", file=sys.stderr)
         if not _events["collectives"]:
             _events["collectives"] = [{"tensor": "trace_col_0", "participants": list(range(min(8, args.nodes))), "size_bytes": 8192, "priority": 2, "pattern": "allreduce"}]
     _k = int(math.isqrt(args.nodes))
@@ -455,11 +557,15 @@ def main():
     print()
 
     t0 = time.time()
+    if args.iters < 1:
+        parser.error("--iters must be >= 1")
     result = gp_minimize(
         objective,
         search_space,
-        n_calls=max(args.iters, 10),
-        n_random_starts=10,
+        n_calls=args.iters,
+        # skopt requires n_calls >= n_random_starts; scale the random phase down
+        # instead of silently inflating the user's budget.
+        n_random_starts=min(10, args.iters),
         random_state=args.seed,
         verbose=False,
     )
@@ -468,7 +574,8 @@ def main():
     print(f"\n=== Results ===")
     print(f"Best latency: {result.fun:.1f} cycles")
     print(f"Best params: {_best_params}")
-    print(f"Total time: {elapsed:.1f}s ({elapsed/args.iters:.1f}s/eval)")
+    _n_evals = len(result.func_vals)
+    print(f"Total time: {elapsed:.1f}s ({elapsed/_n_evals:.1f}s/eval)")
     print(f"Total evals: {result.func_vals}")
 
     # Save results
@@ -484,7 +591,38 @@ def main():
         ],
         "elapsed": elapsed,
     }
-    out_path = Path(f"runs/booksim/bo_results_N{args.nodes}.json")
+    # Phase 2a record boundary: convert the winner float sentinel to a
+    # canonical SynthResult (ADDITIVE — existing keys untouched). The inner
+    # GP loop keeps floats; only this JSON carries status/error.
+    try:
+        if SynthResult is not None and _best_params is not None:
+            _w_lat = float(result.fun)
+            import math as _math
+            # BO sentinels are exactly 1e9 (disconnect) / 1000.0 (runtime);
+            # a real BookSim latency coinciding bit-exactly is negligible.
+            _w_sentinel = (_w_lat == 1e9 or _w_lat == 1000.0)
+            _w_ok = _math.isfinite(_w_lat) and _w_lat < 1e8 and not _w_sentinel
+            _w_prov = ("bo_synthesizer+BO_PRESET" if _scorer == "booksim"
+                       else "bo_synthesizer+analytical")
+            if _w_ok:
+                _w_res = SynthResult.ok(
+                    name=f"bo_N{args.nodes}_winner", topology="anynet",
+                    nodes=int(args.nodes), edges=int(_best_params.get("edges", 0)),
+                    latency=_w_lat, seed=int(args.seed), provenance=_w_prov,
+                    extra={"scorer": _scorer, "best_params": dict(_best_params)},
+                )
+            else:
+                _w_res = SynthResult.fail(
+                    name=f"bo_N{args.nodes}_winner", topology="anynet",
+                    nodes=int(args.nodes), edges=int(_best_params.get("edges", 0)),
+                    error=f"best_latency sentinel {_w_lat}", seed=int(args.seed),
+                    provenance=_w_prov,
+                    extra={"scorer": _scorer, "best_params": dict(_best_params)},
+                )
+            out["synth_result"] = _w_res.to_dict()
+    except Exception:
+        pass
+    out_path = _canonical_runs() / f"bo_results_N{args.nodes}.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(out, indent=1))
     print(f"Results saved to {out_path}")
@@ -495,7 +633,7 @@ def main():
                                         _best_params["express_length"], _best_params["radix"],
                                         _best_params["intra_weight"], _best_params["inter_weight"],
                                         seed=args.seed)
-        winner_path = Path("runs/booksim/topo.anynet")
+        winner_path = _canonical_runs() / "topo.anynet"
         winner_path.parent.mkdir(parents=True, exist_ok=True)
         edge_list_to_anynet(winner_adj, winner_path)
         print(f"Winner topology: {winner_path} ({_best_params['edges']} edges)")
@@ -510,12 +648,37 @@ def main():
         # Build T lazily for validation only (analytical path skipped it)
         try:
             val_T = _T_matrix if _T_matrix is not None else build_traffic_matrix(args.traffic, args.nodes)
-            bs_lat = evaluate_topology(adj, val_T, "runs/booksim/bo_final")
+            bs_lat = evaluate_topology(adj, val_T, str(_canonical_runs() / "bo_final"))
         except Exception as e:
             print(f"BookSim validation skipped: {e}")
             bs_lat = float('nan')
         print(f"BookSim latency: {bs_lat:.1f} cycles on {_best_params['edges']} edges")
         out["booksim_latency"] = bs_lat
+        # Phase 2a: canonical record for the validation run (additive).
+        try:
+            if SynthResult is not None:
+                import math as _math2
+                _v_sentinel = (bs_lat == 1e9 or bs_lat == 1000.0)
+                _v_ok = isinstance(bs_lat, float) and _math2.isfinite(bs_lat) and bs_lat < 1e8 and not _v_sentinel
+                if _v_ok:
+                    _v_res = SynthResult.ok(
+                        name=f"bo_N{args.nodes}_validation", topology="anynet",
+                        nodes=int(args.nodes), edges=int(_best_params.get("edges", 0)),
+                        latency=float(bs_lat), seed=int(args.seed),
+                        provenance="bo_synthesizer+BO_PRESET",
+                        extra={"scorer": "booksim-validation"},
+                    )
+                else:
+                    _v_res = SynthResult.fail(
+                        name=f"bo_N{args.nodes}_validation", topology="anynet",
+                        nodes=int(args.nodes), edges=int(_best_params.get("edges", 0)),
+                        error=f"validation sentinel {bs_lat}", seed=int(args.seed),
+                        provenance="bo_synthesizer+BO_PRESET",
+                        extra={"scorer": "booksim-validation"},
+                    )
+                out["booksim_synth_result"] = _v_res.to_dict()
+        except Exception:
+            pass
         out_path.write_text(json.dumps(out, indent=1))
     elif _scorer == "booksim":
         # Already validated — best_latency IS the BookSim number

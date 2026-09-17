@@ -30,6 +30,16 @@ class BookSimError(VeritXError):
         self.stderr = stderr
 
 
+class TimeoutError(BookSimError):
+    """Raised when BookSim exceeds the time limit.
+
+    Subclasses BookSimError so existing ``except BookSimError`` handlers
+    keep catching timeouts, while carrying returncode/stdout/stderr like
+    its parent for debuggability.
+    """
+    pass
+
+
 class TopologyError(VeritXError):
     """Topology-related errors."""
     pass

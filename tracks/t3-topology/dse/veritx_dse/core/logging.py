@@ -2,6 +2,17 @@
 
 Every function receives a Ctx object. No global mutable state.
 Also provides get_logger() for library-level logging via Python stdlib.
+
+Logging boundary (Phase 3a unification):
+  - Package code (veritx_dse.cli.*, veritx_dse.core.*, pipeline orchestration)
+    MUST use these Ctx helpers only — never bare print(). Data/machine-clean
+    output goes to stdout via output()/print_human()/emit(); human status goes
+    to stderr via log()/ok()/fail()/verbose()/debug()/diag(). banner() stays
+    on stdout but is suppressed in quiet/json modes.
+  - Standalone scripts (scripts/*.py, scripts/lib/t3log.py SweepLogger) keep
+    their own logger and MUST NOT import this module. SweepLogger owns
+    session/event logging for sweep runs; Ctx owns CLI/pipeline logging.
+    The two systems meet only in log files on disk, never in imports.
 """
 from __future__ import annotations
 
@@ -109,6 +120,41 @@ def print_human(ctx: Ctx, msg: str):
     """Print human-readable output (respects verbosity)."""
     if ctx.verbosity >= 1 and not ctx.json_mode:
         print(msg)
+
+
+def emit(ctx: Ctx, msg: str = "", *, end: str = "\n"):
+    """Verbatim stdout line for data/machine-clean output (no prefix).
+
+    Unlike print_human(), this is UNCONDITIONAL: no verbosity or json_mode
+    gate — it preserves the exact routing of legacy bare print() data lines
+    (tables, resolved paths, menus, summaries) which historically printed to
+    stdout even in quiet mode. Structured results should still go through
+    output(); emit() is the bridge for human-rendered data lines whose text
+    is pinned and must not gain a log()/ok()/fail() prefix.
+    """
+    print(msg, end=end)
+    ctx._append("OUT", msg)
+
+
+def diag(ctx: Ctx, msg: str = "", *, end: str = "\n"):
+    """Verbatim stderr line for status that must not gain a prefix.
+
+    Companion to emit() for the stderr side: preserves the exact text of
+    legacy print(..., file=sys.stderr) lines (e.g. exception tails,
+    "Interrupted.") which cannot go through fail()/log() without changing
+    their pinned wording. Always shown, always on stderr.
+    """
+    print(msg, end=end, file=sys.stderr)
+    ctx._append("DIAG", msg)
+
+
+def early_error(msg: str):
+    """Stderr line for pre-Ctx failures (e.g. --log path unusable).
+
+    No Ctx exists yet so log()/fail()/diag() are unavailable. Verbatim to
+    stderr, no prefix — the caller exits nonzero immediately after.
+    """
+    print(msg, file=sys.stderr)
 
 
 # ── Stdlib logging integration (replaces logger.py) ───────────────────────

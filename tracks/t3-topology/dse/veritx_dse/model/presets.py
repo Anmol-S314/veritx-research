@@ -5,6 +5,7 @@ means adding one Topology instance here — no other file needs changes.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -16,7 +17,7 @@ class Topology:
 
     Attributes:
         name:       Display name (e.g. "mesh_8x8").
-        backend:    BookSim topology type ("mesh", "torus", "flatfly", "gec", "anynet").
+        backend:    BookSim topology type ("mesh", "torus", "flatfly", "gec", "fly", "cmesh", "fattree", "qtree", "tree4", "dragonflynew", "anynet").
         routing:    BookSim routing function name.
         params:     BookSim config overrides (k, n, c, o, d, use_noc_latency, etc.).
         edge_fn:    Callable(extra_params) -> int  — counts edges for this topology.
@@ -44,10 +45,20 @@ class Topology:
 
 def _default_edge_count(backend: str, params: dict) -> int:
     """Compute undirected edge count for standard topologies."""
-    if backend in ("mesh", "torus"):
+    if backend == "mesh":
         k = params.get("k", 8)
         n = params.get("n", 2)
-        return n * k ** n  # each dim has k^(n-1)*(k-1) edges, n dims
+        # 2D k×k mesh: 2*k*(k-1) undirected (112 for k=8; per-plane
+        # logic consistent with reports.py). General n-dim:
+        # n dims × k^(n-1) lines × (k-1) edges per line.
+        try:
+            return n * (k - 1) * (k ** (n - 1))
+        except (TypeError, ValueError, ArithmeticError):
+            return 0
+    elif backend == "torus":
+        k = params.get("k", 8)
+        n = params.get("n", 2)
+        return n * k ** n  # each dim has k^(n-1)*k edges (wrap), n dims
     elif backend == "flatfly":
         k = params.get("k", 4)
         n_dim = params.get("n", 2)
@@ -56,45 +67,234 @@ def _default_edge_count(backend: str, params: dict) -> int:
         r = c + (k - 1) * n_dim
         return nodes // c * (r - c) // 2
     elif backend == "gec":
+        # Physical graph per gec.cpp: mesh mode builds ONLY mesh channels
+        # (2*k*(k-1) undirected); express (d==1) builds ONLY the full
+        # row/column p2p graph (k*k*(k-1) undirected — the old formula added
+        # unbuilt mesh edges on top, overcounting by 112 at k=8); MECS keeps
+        # the mesh+express proxy (multidrop channels have no p2p equivalent).
         k = params.get("k", 8)
         o = params.get("o", 0)
+        d = params.get("d", 1)
+        if params.get("mesh"):
+            return 2 * k * (k - 1)
+        if d == 1 and o >= k - 1:
+            return k * k * (k - 1)
         mesh_edges = 2 * k * (k - 1)
         express_edges = o * k * k
         return mesh_edges + express_edges
+    elif backend == "fly":
+        k = params.get("k", 4)
+        n = params.get("n", 3)
+        return (n - 1) * k ** n
+    elif backend == "cmesh":
+        k = params.get("k", 4)
+        n = params.get("n", 2)
+        return 2 * n * k ** n
+    elif backend in ("fattree", "qtree", "tree4"):
+        # k-ary n-tree: n levels × k^n links (undirected, approx).
+        # NOTE: "fly" (flattened butterfly) is handled above and must NOT
+        # appear here — the old ("fly", "fattree", ...) arm was dead for
+        # "fly" (matched earlier).
+        k = params.get("k", 4)
+        n = params.get("n", 3)
+        return n * k ** n
+    elif backend == "dragonflynew":
+        # p=k: a=2p routers/group, g=a*p+1 groups; global + local links.
+        p = params.get("k", 2)
+        a = 2 * p
+        g = a * p + 1
+        return g * a * p // 2 + g * a * (2 * p - 1) // 2
     elif backend == "anynet":
         return 0  # counted at runtime from .anynet file
     return 0
 
 
-def count_anynet_edges(filepath: str) -> tuple[int, int]:
-    """Parse .anynet file to count nodes and edges.
+# ── Collective spelling + parallelism math (Phase 4d single source) ────
+# The same collective is spelled three ways across layers: "allreduce" /
+# "alltoall" (DSE presets, compile CollectiveKind values), "all_reduce" /
+# "all_to_all" (t3models registry, chakra CLI), "ALL_REDUCE" (chakra ET
+# attr path). Normalize at every boundary; canonical = CollectiveKind value.
 
-    Format: 'router <id> node <nid> router <peer1> router <peer2> ...'
-    Returns (num_nodes, num_edges).
+_COLLECTIVE_CANONICAL = (
+    "allreduce", "allgather", "reducescatter", "broadcast", "alltoall",
+)
+
+
+def normalize_collective(name: str) -> str:
+    """Map any collective spelling to its canonical CollectiveKind value.
+
+    Accepts any case with optional _, -, or space separators
+    ("ALL_REDUCE", "all-reduce", "AllReduce" -> "allreduce"). Raises
+    ValueError listing the canonical set for anything unrecognized —
+    callers must fail loudly, never guess a collective.
     """
-    nodes: set[int] = set()
-    edges: set[tuple[int, int]] = set()
+    key = re.sub(r"[\s_\-]+", "", str(name)).lower()
+    for canon in _COLLECTIVE_CANONICAL:
+        if key == canon:
+            return canon
+    raise ValueError(
+        f"unknown collective {name!r} (canonical: {', '.join(_COLLECTIVE_CANONICAL)})"
+    )
+
+
+def parallel_world_size(tp: int, pp: int = 1, ep: int = 1, dp: int = 1) -> int:
+    """Physical device count for 4D parallelism: tp × pp × ep × dp.
+
+    NOTE on the MoE convention question: expert (ep) ranks each hold a
+    shard of the MoE layer and collectively span the same device mesh as
+    the tp×pp×dp grid in this codebase's accounting (cf. compile
+    total_npus = tp×ep for MoE, which ignores pp/dp). This helper reports
+    the full product — the conservative upper bound for typo-guard style
+    checks. Do NOT substitute it into compile sizing without sim-owner
+    review; the sizing path keeps its own rule deliberately.
+    """
+    return int(tp) * int(pp) * int(ep) * int(dp)
+
+
+def _parse_anynet_adj(filepath: str) -> dict[int, set[int]]:
+    """Parse .anynet into an undirected router adjacency map.
+
+    Delegates to core.anynet — the ONE parser implementing BookSim's
+    anynet.cpp grammar (both line dialects, auto-symmetrized edges).
+    History: this parser required >=5 tokens and peer-scanning from
+    index 4, so two-line link files (configs/anynet16.links style)
+    yielded EMPTY adjacency → count 0 / "disconnected".
+    """
+    from ..core.anynet import AnynetError, parse_anynet_file
     try:
-        with open(filepath) as f:
-            for line in f:
-                parts = line.strip().split()
-                if len(parts) < 5 or parts[0] != "router":
-                    continue
-                rid = int(parts[1])
-                nodes.add(rid)
-                i = 4
-                while i < len(parts):
-                    if parts[i] == "router" and i + 1 < len(parts):
-                        peer_id = int(parts[i + 1])
-                        nodes.add(peer_id)
-                        edge = (min(rid, peer_id), max(rid, peer_id))
-                        edges.add(edge)
-                        i += 2
-                    else:
-                        i += 1
+        g = parse_anynet_file(filepath)
+    except (OSError, AnynetError):
+        # Preserve the historical swallow-on-unreadable contract:
+        # callers (count_anynet_edges) report zero rather than crash.
+        return {}
+    return {r: set(peers) for r, peers in g.router_adj.items()}
+
+
+def count_anynet_edges(filepath: str) -> tuple[int, int]:
+    """Parse .anynet file to count nodes and edges (via core.anynet).
+
+    Returns (num_nodes, num_edges). Unreadable/malformed files yield
+    (0, 0) — the synthesis callers treat that as 'unusable candidate'
+    rather than crashing.
+    """
+    from ..core.anynet import AnynetError, count_anynet_edges as _count
+    try:
+        return _count(filepath)
+    except (OSError, AnynetError):
+        return 0, 0
+
+
+def check_anynet_connected(filepath: str) -> tuple[bool, int, int]:
+    """BFS connectivity from router 0. Returns (connected, n_nodes, n_unreached).
+
+    Delegates to core.anynet. Missing/unreadable files yield (False, 0, 0)
+    — callers report "no routers parsed". BookSim hangs on disconnected
+    graphs, so compare and evaluate paths must skip before burning a
+    timeout."""
+    from ..core.anynet import check_anynet_connected as _check
+    return _check(filepath)
+
+
+def topo_size(topology=None, backend=None, params=None) -> tuple[int, int]:
+    """Canonical (nodes, edges) for any topology — single source of truth.
+
+    All other modules must delegate here instead of hand-rolling
+    ``k**n`` / edge math.
+
+    Usable from a Topology object OR a backend+params dict::
+
+        topo_size(topo)                      # Topology instance
+        topo_size("mesh", {"k": 8, "n": 2})  # backend + params dict
+        topo_size(backend="mesh", params={"k": 8, "n": 2})
+        topo_size({"backend": "mesh", "k": 8, "n": 2})          # flat dict
+        topo_size({"topology": "mesh", "k": 8, "n": 2})         # flat dict
+        topo_size({"backend": "mesh", "params": {"k": 8}})      # nested dict
+
+    Returns (num_nodes, num_edges). Unknown backends yield (0, 0);
+    anynet with a missing/unreadable file yields (0, 0) via
+    :func:`count_anynet_edges`.
+    """
+    be: str | None = backend
+    ps: dict | None = params
+    topo_obj: Topology | None = None
+
+    if isinstance(topology, Topology):
+        topo_obj = topology
+        be = topology.backend
+        ps = dict(topology.params)
+    elif isinstance(topology, str):
+        # topo_size("mesh", {...}) — second positional binds to `backend`.
+        be = topology
+        if isinstance(backend, dict) and ps is None:
+            ps = backend
+        elif ps is None:
+            ps = {}
+    elif isinstance(topology, dict):
+        d = topology
+        be = d.get("backend", d.get("topology", be))
+        nested = d.get("params")
+        if isinstance(nested, dict):
+            ps = dict(nested)
+            # Allow flat keys alongside nested params (flat wins if dup).
+            for k, v in d.items():
+                if k not in ("backend", "topology", "params", "name", "routing"):
+                    ps[k] = v
+        else:
+            ps = {k: v for k, v in d.items()
+                  if k not in ("backend", "topology", "name", "routing")}
+            # d itself may already be a pure params dict (e.g. {"k":8}).
+            if be is None and ps:
+                # No backend key — caller must supply backend=...; else (0,0).
+                pass
+    # topology is None → use backend=/params= kwargs directly.
+    if be is None:
+        be = backend
+    if ps is None:
+        ps = dict(params) if isinstance(params, dict) else {}
+    if not isinstance(ps, dict):
+        ps = {}
+    if be is None:
+        return 0, 0
+
+    # Normalise anynet file keys (astrasim_adapter stores "_network_file").
+    if be == "anynet":
+        nf = ps.get("network_file", ps.get("_network_file", ""))
+        if nf:
+            return count_anynet_edges(str(nf))
+        return 0, 0
+
+    # Node count (mirrors simulation/booksim.topo_size).
+    try:
+        if be in ("mesh", "torus"):
+            nodes = ps.get("k", 8) ** ps.get("n", 2)
+        elif be == "flatfly":
+            nodes = (ps.get("k", 4) ** ps.get("n", 2)) * ps.get("c", 4)
+        elif be == "gec":
+            nodes = ps.get("k", 8) ** 2 * ps.get("c", 1)
+        elif be == "fly":
+            nodes = ps.get("k", 4) ** ps.get("n", 3)
+        elif be in ("fattree", "qtree", "tree4"):
+            nodes = ps.get("k", 4) ** ps.get("n", 3)
+        elif be == "dragonflynew":
+            p = ps.get("k", 2)
+            a = 2 * p
+            nodes = a * p * (a * p + 1)
+        elif be == "cmesh":
+            nodes = ps.get("c", 4) * ps.get("k", 4) ** ps.get("n", 2)
+        else:
+            return 0, 0
+    except (TypeError, ValueError, ArithmeticError):
+        return 0, 0
+
+    # Edge count — respect custom edge_fn on Topology objects.
+    try:
+        if topo_obj is not None:
+            edges = topo_obj.edges()
+        else:
+            edges = _default_edge_count(be, ps)
     except Exception:
-        pass
-    return len(nodes), len(edges)
+        edges = 0
+    return int(nodes), int(edges)
 
 
 # ── Built-in topologies ────────────────────────────────────────────────────
@@ -110,9 +310,30 @@ SWEEP_TOPOS: list[Topology] = [
     # GEC MECS: o=1,d=7 → 1 express channel, tapped to 7 dests
     Topology("gec_mecs_k8", "gec", "dor", {"k": 8, "c": 1, "o": 1, "d": 7},
              needs_noc_latency_zero=True),
-    # GEC mesh: o=0 → no express channels (degrades to plain mesh)
-    Topology("gec_mesh_k8", "gec", "dor", {"k": 8, "c": 1, "o": 0, "d": 0},
+    # GEC mesh: mesh=1 builds the plain-mesh graph (o/d must be nonzero —
+    # BookSim converts o=0/d=0 to full-express defaults, which once made
+    # this preset a silent duplicate of gec_express_k8 at identical latency).
+    Topology("gec_mesh_k8", "gec", "dor", {"k": 8, "c": 1, "o": 1, "d": 1, "mesh": 1},
              needs_noc_latency_zero=True),
+    # Fat-tree (BookSim fly): k-ary n-fly, k=4/n=3 → 64 nodes.
+    # Only dest_tag_fly routing is registered for fly.
+    # Flattened butterfly (BookSim "fly"): k-ary n-fly, k=4/n=3 → 64 nodes.
+    # Only dest_tag_fly routing is registered for fly.
+    Topology("fbfly_64", "fly", "dest_tag", {"k": 4, "n": 3}),
+    # Concentrated mesh: c=4 nodes/router, k=4/n=2 → 64 nodes.
+    # cmesh asserts c==4, n<=2, symmetric x/y (see networks/cmesh.cpp).
+    Topology("cmesh_64", "cmesh", "dor",
+             {"k": 4, "n": 2, "c": 4, "x": 4, "y": 4, "xr": 2, "yr": 2}),
+    # Fat-tree (k-ary n-tree, BookSim "fattree"): k=4/n=3 → 64 nodes.
+    # Routings registered: nca (deterministic), anca (adaptive).
+    Topology("fattree_k4n3", "fattree", "nca", {"k": 4, "n": 3}),
+    # Quad tree / 4-ary tree: both assert k==4/n==3 → 64 nodes.
+    Topology("qtree_64", "qtree", "nca", {"k": 4, "n": 3}),
+    Topology("tree4_64", "tree4", "nca", {"k": 4, "n": 3}),
+    # DragonFly (BookSim "dragonflynew", n must be 1): p=k=2 →
+    # a=4 routers/group × g=9 groups × p=2 → 72 nodes (no exact 64).
+    # Routings registered: min (minimal), ugal (adaptive).
+    Topology("dragonfly_72", "dragonflynew", "min", {"k": 2, "n": 1}),
 ]
 
 _TOPO_BY_NAME: dict[str, Topology] = {t.name: t for t in SWEEP_TOPOS}

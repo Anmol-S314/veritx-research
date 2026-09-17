@@ -29,10 +29,140 @@ import tempfile
 import time
 from pathlib import Path
 
+# Canonical topology sizes — single source of truth in
+# veritx_dse.model.presets. Mesh/grid/anynet size math delegates here
+# instead of hand-rolled counting.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+try:
+    from veritx_dse.model.presets import topo_size, count_anynet_edges
+except ImportError:
+    try:
+        from ..model.presets import topo_size, count_anynet_edges  # type: ignore
+    except Exception:
+        topo_size = None  # type: ignore
+        count_anynet_edges = None  # type: ignore
+
+# Unified synthesis evaluation machinery (Phase 2a). Script-mode safe.
+try:
+    from veritx_dse.synthesis.evaluator import (
+        ITERATIVE_PRESET,
+        evaluate_adj,
+        is_connected as _shared_is_connected,
+        write_anynet as _shared_write_anynet,
+    )
+    from veritx_dse.synthesis.results import SynthResult
+except Exception:
+    try:
+        from evaluator import (  # type: ignore
+            ITERATIVE_PRESET,
+            evaluate_adj,
+            is_connected as _shared_is_connected,
+            write_anynet as _shared_write_anynet,
+        )
+        from results import SynthResult  # type: ignore
+    except Exception:
+        ITERATIVE_PRESET = None  # type: ignore
+        evaluate_adj = None  # type: ignore
+        _shared_is_connected = None  # type: ignore
+        _shared_write_anynet = None  # type: ignore
+        SynthResult = None  # type: ignore
+
+
+def mesh_size(k: int = 8, n: int = 2) -> tuple:
+    """Thin wrapper over the canonical helper for mesh sizes.
+
+    Kept under a local name for backward compat; new code should call
+    ``topo_size`` directly.
+    """
+    if topo_size is not None:
+        return topo_size("mesh", {"k": k, "n": n})
+    return (k ** n, n * (k - 1) * k ** (n - 1) if k > 0 else 0)
+
+
+def grid_size(num_nodes: int) -> tuple:
+    """Thin wrapper for sqrt(n)×sqrt(n) grid meshes via the canonical helper."""
+    k = math.isqrt(num_nodes)
+    assert k * k == num_nodes, f"n={num_nodes} must be a perfect square"
+    return mesh_size(k, 2)
+
+
+def anynet_size(path) -> tuple:
+    """Thin wrapper over the canonical anynet counter (backward compat)."""
+    if count_anynet_edges is not None:
+        return count_anynet_edges(str(path))
+    # Fallback: parse locally (same format as count_anynet_edges).
+    nodes: set = set()
+    edges: set = set()
+    try:
+        for line in open(path):
+            parts = line.split()
+            if len(parts) < 5 or parts[0] != "router":
+                continue
+            rid = int(parts[1])
+            nodes.add(rid)
+            i = 4
+            while i < len(parts):
+                if parts[i] == "router" and i + 1 < len(parts):
+                    pid = int(parts[i + 1])
+                    nodes.add(pid)
+                    edges.add((min(rid, pid), max(rid, pid)))
+                    i += 2
+                else:
+                    i += 1
+    except (OSError, ValueError):
+        pass
+    return len(nodes), len(edges)
+
+
+def mesh_seed_adj(n: int) -> dict:
+    """√n×√n mesh seed when n is a perfect square, else a connected
+    ring + chords fallback. Starting from the wrong node count poisons the
+    whole search: BookSim drops packets to unroutable nodes and every
+    latency eval is garbage."""
+    k = math.isqrt(n)
+    if k * k != n:
+        # Not a square: ring connects everything; add nearest-neighbor chords.
+        adj = {i: set() for i in range(n)}
+        for i in range(n):
+            adj[i].add((i + 1) % n)
+            adj[(i + 1) % n].add(i)
+        for i in range(n):
+            j = (i + max(1, n // 4)) % n
+            adj[i].add(j)
+            adj[j].add(i)
+        return adj
+    adj = {i: set() for i in range(n)}
+    for y in range(k):
+        for x in range(k):
+            nid = y * k + x
+            if x < k - 1:
+                adj[nid].add(nid + 1)
+                adj[nid + 1].add(nid)
+            if y < k - 1:
+                adj[nid].add(nid + k)
+                adj[nid + k].add(nid)
+    return adj
+
 import numpy as np
 
-REPO = Path(__file__).resolve().parents[5]
-BOOKSIM = REPO / "third_party" / "booksim2" / "src" / "booksim"
+# Canonical roots — single source of truth in veritx_dse.core.paths.
+# The __file__ math below is the script-mode fallback (same values).
+try:
+    from veritx_dse.core.paths import REPO, BOOKSIM_BIN, SYNTH_DIR
+    from veritx_dse.core.constants import BOOKSIM_SEED, DEFAULT_TIMEOUT, env_int
+except Exception:
+    REPO = Path(__file__).resolve().parents[5]
+    BOOKSIM_BIN = REPO / "third_party" / "booksim2" / "src" / "booksim"
+    SYNTH_DIR = Path(__file__).resolve().parents[3] / "runs" / "booksim"
+    BOOKSIM_SEED = 42
+    DEFAULT_TIMEOUT = 60
+    def env_int(name, default):
+        import os
+        raw = os.environ.get(name)
+        if raw is None:
+            return default
+        return int(raw)
+BOOKSIM = BOOKSIM_BIN
 RUNS = REPO / "runs" / "booksim"
 
 
@@ -75,6 +205,12 @@ def edges_of(adj):
 
 
 def is_connected(adj):
+    """Connectivity check (thin wrapper over the shared evaluator check).
+
+    Kept for backward compat (tests import it); functionally identical.
+    """
+    if _shared_is_connected is not None:
+        return _shared_is_connected(adj)
     n = len(adj)
     if n == 0:
         return False
@@ -89,60 +225,57 @@ def is_connected(adj):
     return len(vis) == n
 
 
-def eval_bs(adj, trace_path, seed=42, timeout=60):
-    n = len(adj)
-    RUNS.mkdir(parents=True, exist_ok=True)   # fresh checkouts have no runs/
-    work = Path(tempfile.mkdtemp(dir=RUNS))
-    anynet = work / "topo.anynet"
-    with open(anynet, "w") as f:
-        for i in range(n):
-            peers = sorted(adj[i])
-            f.write(f"router {i} node {i} " + " ".join(f"router {p}" for p in peers) + "\n")
+def eval_bs(adj, trace_path, seed=BOOKSIM_SEED, timeout=None):
+    """Evaluate an adjacency on a trace; return latency (1e9 on failure).
 
-    # Auto-detect span
-    span = 0
-    try:
-        for line in open(trace_path):
-            if line.startswith("#"):
-                continue
-            p = line.split()
-            if len(p) >= 5:
-                span = max(span, int(p[0]))
-    except Exception:
-        pass
-    sp = max(50000, span + 10000)
+    Phase 2a: delegates to the shared evaluator with ITERATIVE_PRESET
+    (pareto-converged: span-derived sample_period, max_samples=5, warmup 1,
+    honest-first first-match). Returns the same float
+    sentinel the RHO/GRPO loops rely on; canonical status/error conversion
+    happens at the .json sidecar record boundary in main().
 
-    cfg = f"""topology = anynet;
-routing_function = min;
-network_file = {anynet};
-traffic = trace({trace_path});
-num_vcs = 4;
-vc_buf_size = 8;
-packet_size = 8;
-sim_type = latency;
-latency_thres = 1000000.0;
-sample_period = {sp};
-max_samples = 1;
-wait_for_tail_credit = 1;
-use_noc_latency = 0;
-seed = {seed};
-"""
-    (work / "cfg").write_text(cfg)
-    try:
-        r = subprocess.run(
-            [str(BOOKSIM.resolve()), str((work / "cfg").resolve())],
-            capture_output=True, text=True, timeout=timeout,
-            cwd=str(work), stdin=subprocess.DEVNULL,
-        )
-        import re
-        m = re.search(r"Packet latency average\s*=\s*([0-9.]+)", r.stdout)
-        lat = float(m.group(1)) if m else 1e9
-    except Exception:
-        lat = 1e9
-    finally:
-        import shutil
-        shutil.rmtree(work, ignore_errors=True)
-    return lat
+    timeout=None resolves VERITX_TIMEOUT (default 60s) at call time.
+    """
+    if timeout is None:
+        timeout = env_int("VERITX_TIMEOUT", DEFAULT_TIMEOUT)
+    if evaluate_adj is not None and ITERATIVE_PRESET is not None:
+        try:
+            RUNS.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+        try:
+            res = evaluate_adj(
+                adj, trace_path=trace_path, workdir=None,
+                seed=seed, timeout=timeout, config=ITERATIVE_PRESET,
+                name=f"iterative_N{len(adj)}", scratch_parent=RUNS,
+            )
+        except Exception as e:
+            print(f"warning: eval_bs: BookSim run failed ({type(e).__name__}: {e}) — scoring 1e9",
+                  file=sys.stderr)
+            return 1e9
+        if res.status == "ok":
+            return float(res.latency)
+        kind = (res.extra or {}).get("failure_kind", "")
+        if kind == "timeout":
+            print(f"warning: eval_bs: BookSim timed out after {timeout}s: {res.error} — scoring 1e9",
+                  file=sys.stderr)
+            return 1e9
+        if kind == "no_latency":
+            # Original garbage-output path was silent (returned 1e9 with no
+            # warning); preserve silence here.
+            return 1e9
+        print(f"warning: eval_bs: BookSim run failed ({res.error}) — scoring 1e9",
+              file=sys.stderr)
+        return 1e9
+    # No inline fallback: the pre-2a duplicated BookSim path lived here and
+    # encoded pre-convergence numbers (max_samples 1, wait_for_tail, plat
+    # parse). The shared evaluator (imported above, sibling fallback for
+    # script mode) is the ONE evaluation path. Fail loudly if unavailable.
+    raise ImportError(
+        "iterative_synthesizer.eval_bs requires "
+        "veritx_dse.synthesis.evaluator (or sibling evaluator.py for "
+        "`python3 iterative_synthesizer.py`); refusing a divergent fallback."
+    )
 
 
 def mutate_add(adj, n):
@@ -176,7 +309,7 @@ def mutate(adj, n):
     return mutate_remove(adj)
 
 
-def run_rho(seed_adj, trace_path, steps=50, H=5, B=5, max_edges=120, timeout=60):
+def run_rho(seed_adj, trace_path, steps=50, H=5, B=5, max_edges=120, timeout=None):
     n = len(seed_adj)
     best_adj = copy.deepcopy(seed_adj)
     best_lat = eval_bs(best_adj, trace_path, timeout=timeout)
@@ -225,7 +358,7 @@ def run_rho(seed_adj, trace_path, steps=50, H=5, B=5, max_edges=120, timeout=60)
     return best_adj, best_lat
 
 
-def run_grpo(seed_adj, trace_path, steps=50, group=4, max_edges=120, timeout=60):
+def run_grpo(seed_adj, trace_path, steps=50, group=4, max_edges=120, timeout=None):
     n = len(seed_adj)
     best_adj = copy.deepcopy(seed_adj)
     best_lat = eval_bs(best_adj, trace_path, timeout=timeout)
@@ -268,7 +401,7 @@ def main():
     ap.add_argument("--trace", required=True)
     ap.add_argument("--method", default="rho", choices=["rho", "grpo"])
     ap.add_argument("--seed-anynet", default=None,
-                    help="Starting topology (default: mesh 8x8)")
+                    help="Seed topology .anynet (default: √n mesh for the trace's node count)")
     ap.add_argument("--steps", type=int, default=50)
     ap.add_argument("--max-edges", type=int, default=120)
     ap.add_argument("--timeout", type=int, default=60)
@@ -285,17 +418,24 @@ def main():
     if args.seed_anynet:
         seed_adj = load_anynet(args.seed_anynet)
     else:
-        # Default: mesh 8x8
-        seed_adj = {i: set() for i in range(64)}
-        for y in range(8):
-            for x in range(8):
-                nid = y * 8 + x
-                if x < 7:
-                    seed_adj[nid].add(nid + 1)
-                    seed_adj[nid + 1].add(nid)
-                if y < 7:
-                    seed_adj[nid].add(nid + 8)
-                    seed_adj[nid + 8].add(nid)
+        # Seed from the trace's actual node count — a hardcoded 64-node mesh
+        # against a smaller trace leaves nodes unreachable and every eval
+        # degenerate.
+        max_node = -1
+        for line in open(trace):
+            if line.startswith("#") or not line.strip():
+                continue
+            p = line.split()
+            if len(p) >= 5:
+                try:
+                    max_node = max(max_node, int(p[1]), int(p[3]))
+                except ValueError:
+                    continue
+        if max_node < 0:
+            ap.error(f"trace has no parseable packets: {args.trace}")
+        n_seed = max_node + 1
+        print(f"Seed topology: √{n_seed} mesh ({n_seed} nodes from trace)")
+        seed_adj = mesh_seed_adj(n_seed)
 
     print(f"Method: {args.method} | Trace: {Path(args.trace).name} | Steps: {args.steps}")
 
@@ -310,17 +450,20 @@ def main():
             max_edges=args.max_edges, timeout=args.timeout,
         )
 
-    # Save winner
-    out_path = Path(args.out) if args.out else RUNS / f"{args.method}_best.anynet"
+    # Save winner (canonical synth home; Phase 4c single results home).
+    out_path = Path(args.out) if args.out else SYNTH_DIR / f"{args.method}_best.anynet"
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(out_path, "w") as f:
-        for i in range(len(best_adj)):
-            peers = sorted(best_adj[i])
-            f.write(f"router {i} node {i} " + " ".join(f"router {p}" for p in peers) + "\n")
+    if _shared_write_anynet is not None:
+        _shared_write_anynet(best_adj, out_path)
+    else:
+        with open(out_path, "w") as f:
+            for i in range(len(best_adj)):
+                peers = sorted(best_adj[i])
+                f.write(f"router {i} node {i} " + " ".join(f"router {p}" for p in peers) + "\n")
 
     # Save results JSON
     json_path = out_path.with_suffix(".json")
-    json_path.write_text(json.dumps({
+    _sidecar = {
         "method": args.method,
         "trace": args.trace,
         "seed_anynet": args.seed_anynet,
@@ -328,7 +471,35 @@ def main():
         "edges": len(edges_of(best_adj)),
         "latency": best_lat,
         "topology": str(out_path),
-    }, indent=2))
+    }
+    # Phase 2a record boundary: canonical winner record (ADDITIVE — existing
+    # keys untouched). Inner RHO/GRPO loops keep float sentinels (1e9).
+    try:
+        if SynthResult is not None:
+            _n = len(best_adj)
+            _e = len(edges_of(best_adj))
+            _ok = isinstance(best_lat, (int, float)) and best_lat < 1e9
+            if _ok:
+                _sr = SynthResult.ok(
+                    name=f"{args.method}_best", topology="anynet",
+                    nodes=_n, edges=_e, latency=float(best_lat), seed=BOOKSIM_SEED,
+                    provenance="iterative_synthesizer+ITERATIVE_PRESET",
+                    extra={"method": args.method, "trace": args.trace,
+                           "steps": args.steps},
+                )
+            else:
+                _sr = SynthResult.fail(
+                    name=f"{args.method}_best", topology="anynet",
+                    nodes=_n, edges=_e, error=f"best_lat sentinel {best_lat}",
+                    seed=BOOKSIM_SEED,
+                    provenance="iterative_synthesizer+ITERATIVE_PRESET",
+                    extra={"method": args.method, "trace": args.trace,
+                           "steps": args.steps},
+                )
+            _sidecar["synth_result"] = _sr.to_dict()
+    except Exception:
+        pass
+    json_path.write_text(json.dumps(_sidecar, indent=2))
 
     print(f"\nFinal: {best_lat:.2f}c {len(edges_of(best_adj))}e → {out_path}")
 

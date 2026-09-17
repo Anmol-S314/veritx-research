@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ..core.errors import TraceError
+
 
 # ── Validation ──────────────────────────────────────────────────────────────
 
@@ -210,7 +212,11 @@ class TraceInfo:
 
 
 def analyze_trace(trace_path: str) -> TraceInfo:
-    """Analyze trace characteristics: burst structure, IR, sources, profile."""
+    """Analyze trace characteristics: burst structure, IR, sources, profile.
+
+    Malformed lines are NOT silently skipped: any parse failure aborts the
+    analysis — a profile computed from partial data is a lie, not an estimate.
+    """
     path = Path(trace_path)
     file_size = path.stat().st_size
 
@@ -221,23 +227,38 @@ def analyze_trace(trace_path: str) -> TraceInfo:
     num_classes = 1
     num_packets = 0
     srcs: set[int] = set()
+    bad_lines: list[str] = []
 
     with open(path) as f:
-        for line in f:
+        for line_no, line in enumerate(f, 1):
             if line.startswith("#"):
                 continue
             parts = line.split()
-            if len(parts) >= 5:
+            if len(parts) < 5:
+                bad_lines.append(f"line {line_no}: expected >=5 fields, got {len(parts)}")
+                continue
+            try:
                 t, src, cl, dst = int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3])
-                ts.append(t)
-                src_pkts[src] = src_pkts.get(src, 0) + 1
-                dst_pkts[dst] = dst_pkts.get(dst, 0) + 1
-                num_packets += 1
-                srcs.add(src)
-                if t > max_cycle:
-                    max_cycle = t
-                if cl > 0 and num_classes <= cl:
-                    num_classes = cl + 1
+            except ValueError:
+                bad_lines.append(f"line {line_no}: non-integer field: {line.strip()[:60]}")
+                continue
+            ts.append(t)
+            src_pkts[src] = src_pkts.get(src, 0) + 1
+            dst_pkts[dst] = dst_pkts.get(dst, 0) + 1
+            num_packets += 1
+            srcs.add(src)
+            if t > max_cycle:
+                max_cycle = t
+            if cl > 0 and num_classes <= cl:
+                num_classes = cl + 1
+
+    if bad_lines:
+        preview = "; ".join(bad_lines[:5])
+        raise TraceError(
+            f"{trace_path}: {len(bad_lines)} malformed line(s) — "
+            f"refusing to analyze a corrupt trace ({preview})")
+    if num_packets == 0:
+        raise TraceError(f"{trace_path}: no packets found (empty or comments only)")
 
     span = max_cycle + 1
     ir = num_packets / max(span, 1)
@@ -451,3 +472,107 @@ def slice_trace(trace_path: str, classes: set[int], output_path: str,
                 dropped += 1
 
     return SliceResult(output_file=output_path, kept=kept, dropped=dropped)
+
+
+# ── Traffic-matrix aggregation ──────────────────────────────────────────────
+#
+# The N×N bytes-per-pair matrix is the shared currency of the pipeline: MILP
+# synthesis, the deadlock CDG certificate, and spec_translate all consume the
+# same shape. These helpers let `veritx run` derive it from any ingested
+# trace, so every source funnels into one representation.
+
+def trace_num_nodes(trace_path: str) -> int:
+    """Highest node id appearing in the trace, + 1 (the implied matrix dim).
+
+    Tolerates malformed lines here (aggregate_matrix reports them precisely);
+    this scan only needs the endpoint range.
+    """
+    mx = -1
+    with open(trace_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            p = line.split()
+            if len(p) < 5:
+                continue
+            try:
+                s, d = int(p[1]), int(p[3])
+            except ValueError:
+                continue
+            mx = max(mx, s, d)
+    return mx + 1 if mx >= 0 else 0
+
+
+def aggregate_matrix(trace_path: str, num_nodes: int) -> Any:
+    """Aggregate a DSE .trace into an N×N bytes-per-pair matrix (row=src).
+
+    Raises TraceError on malformed lines — same contract as analyze_trace:
+    never silently drop traffic, because a hole in the matrix would
+    synthesize a topology calibrated to missing data.
+    """
+    import numpy as np
+    T = np.zeros((num_nodes, num_nodes), dtype=np.float64)
+    with open(trace_path) as f:
+        for lineno, line in enumerate(f, 1):
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            p = line.split()
+            if len(p) < 5:
+                raise TraceError(
+                    f"{trace_path}: line {lineno}: expected >=5 fields "
+                    f"(cyc src cl dst sz), got {len(p)}")
+            try:
+                src, dst, sz = int(p[1]), int(p[3]), int(p[4])
+            except ValueError as e:
+                raise TraceError(f"{trace_path}: line {lineno}: {e}") from e
+            if not (0 <= src < num_nodes) or not (0 <= dst < num_nodes):
+                raise TraceError(
+                    f"{trace_path}: line {lineno}: endpoint out of range "
+                    f"[0,{num_nodes}) — src={src} dst={dst}")
+            T[src][dst] += sz
+    return T
+
+
+def save_matrix(T: Any, mat_path: Path) -> None:
+    """Write the .mat format milp_topology_v2.load_matrix reads: N rows of N
+    whitespace-separated numbers (comment lines allowed, we write none)."""
+    import numpy as np
+    np.savetxt(str(mat_path), np.asarray(T, dtype=np.float64), fmt="%.6f")
+
+
+def matrix_to_trace(T: Any, trace_path: Path, flit_bytes: int = 64,
+                    cap_per_pair: int = 1024) -> dict:
+    """Traffic matrix → DSE .trace (BookSim input): one 64B packet per flit.
+
+    Per-pair packet counts are capped to keep BookSim replay tractable for
+    very large matrices; when the cap binds, packet counts no longer encode
+    absolute bytes — the caller records `scaled` so downstream numbers are
+    read as relative, not absolute. Cycles are serialized (1 packet/cycle)
+    to keep injection far below saturation for any topology.
+    """
+    import math
+    n = len(T)
+    cyc = 0
+    total = 0
+    pairs = 0
+    capped = False
+    with open(trace_path, "w") as f:
+        for s in range(n):
+            for d in range(n):
+                if s == d:
+                    continue
+                b = float(T[s][d])
+                if b <= 0:
+                    continue
+                k = math.ceil(b / flit_bytes)
+                if k > cap_per_pair:
+                    k = cap_per_pair
+                    capped = True
+                for _ in range(k):
+                    f.write(f"{cyc} {s} 0 {d} {flit_bytes}\n")
+                    cyc += 1
+                total += k
+                pairs += 1
+    return {"packets": total, "pairs": pairs, "cycles": cyc, "scaled": capped}

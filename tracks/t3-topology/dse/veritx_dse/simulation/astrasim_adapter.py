@@ -16,12 +16,24 @@ Usage
 import argparse
 import json
 import os
-import sys
 from pathlib import Path
 
+# Lives in the package now (moved from scripts/, 2026-09-16): one office,
+# no sys.path hacks at call sites. CONFIGS_DIR still points at the track's
+# generated sweep sets — the data home didn't move, only the code did.
 HERE = Path(__file__).parent
-TRACK = HERE.parent
+TRACK = HERE.parents[2]                      # t3-topology/
 CONFIGS_DIR = TRACK / "configs"
+
+# Canonical topology sizes — single source of truth in model/presets.py.
+try:
+    from ..model.presets import topo_size, count_anynet_edges
+except ImportError:  # run as a bare script (--selfcheck): package root on path
+    import sys as _sys
+    _dse_root = str(Path(__file__).resolve().parents[2])
+    if _dse_root not in _sys.path:
+        _sys.path.insert(0, _dse_root)
+    from veritx_dse.model.presets import topo_size, count_anynet_edges
 
 
 def parse_booksim_cfg(cfg_path: Path) -> dict:
@@ -49,7 +61,8 @@ def parse_booksim_cfg(cfg_path: Path) -> dict:
 
         if key == "topology":
             params["topology"] = val
-        elif key in ("k", "n", "c", "num_vcs", "vc_buf_size", "packet_size", "subnets"):
+        elif key in ("k", "n", "c", "o", "d", "x", "y", "xr", "yr",
+                     "num_vcs", "vc_buf_size", "packet_size", "subnets"):
             try:
                 params[key] = int(val)
             except ValueError:
@@ -68,8 +81,64 @@ def parse_booksim_cfg(cfg_path: Path) -> dict:
     # without a closed-form size). Never guess: a wrong count silently
     # simulates the wrong machine.
     if "total_nodes" in params:
+        # Fill edge count via the canonical helper for completeness.
+        # Extra key is ignored by callers that only read total_nodes,
+        # so the return shape stays backward compatible.
+        if topo_size is not None:
+            try:
+                _hp = dict(params)
+                if params["topology"] == "anynet" and "_network_file" in params:
+                    _nf = params.get("_network_file", "")
+                    _p = Path(_nf) if _nf else Path("")
+                    if _nf and not _p.is_absolute():
+                        _q = Path.cwd() / _p
+                        _p = _q if _q.exists() else cfg_path.parent / _p
+                    if _nf and _p.exists():
+                        _hp["network_file"] = str(_p)
+                    else:
+                        _hp["network_file"] = _nf
+                _, _e = topo_size(_hp)
+                params["total_edges"] = _e
+            except Exception:
+                pass
         return params
 
+    # Canonical sizes: single source of truth in presets.topo_size.
+    # Covers mesh/torus/fly/flatfly/fattree/qtree/tree4/cmesh/
+    # dragonflynew/anynet — plus the previously missing "gec" branch
+    # (which used to raise ValueError).
+    if topo_size is not None:
+        try:
+            backend = params["topology"]
+            helper_params = dict(params)
+            if backend == "anynet":
+                net_file = params.get("_network_file", "")
+                p = Path(net_file) if net_file else Path("")
+                if net_file and not p.is_absolute():
+                    q = Path.cwd() / p
+                    p = q if q.exists() else cfg_path.parent / p
+                if not net_file or not p.exists():
+                    raise FileNotFoundError(
+                        f"anynet topology needs 'network_file = <links file>' in "
+                        f"{cfg_path} (resolved to {p}); BookSim anynet format: one "
+                        f"'router <id> node <id> / router <id>' link per line.")
+                helper_params["network_file"] = str(p)
+                helper_params["_network_file"] = str(p)
+            nodes, edges = topo_size(helper_params)
+            if nodes == 0 and edges == 0 and backend != "anynet":
+                raise ValueError(
+                    f"cannot determine total_nodes for topology "
+                    f"'{backend}': add an explicit 'total_nodes = N' "
+                    f"line to {cfg_path}")
+            params["total_nodes"] = nodes
+            params["total_edges"] = edges
+            return params
+        except (FileNotFoundError, ValueError):
+            raise
+        except Exception:
+            pass  # fall through to legacy fallback below
+
+    # Legacy fallback (presets not importable) — kept for standalone use.
     # Determine total node count
     if params["topology"] in ("mesh", "torus"):
         params["total_nodes"] = params["k"] ** params["n"]
@@ -80,6 +149,27 @@ def parse_booksim_cfg(cfg_path: Path) -> dict:
     elif params["topology"] == "flatfly":
         # _nodes = k^n * c (flatfly_onchip.cpp); c=concentration.
         params["total_nodes"] = (params["k"] ** params["n"]) * params.get("c", 1)
+    elif params["topology"] in ("fattree", "qtree", "tree4"):
+        # _nodes = k^n (k-ary n-tree; qtree/tree4 assert k==4/n==3).
+        params["total_nodes"] = params["k"] ** params["n"]
+    elif params["topology"] == "cmesh":
+        # _nodes = c * k^n (cmesh.cpp; asserts c==4, n<=2).
+        params["total_nodes"] = params.get("c", 4) * params["k"] ** params["n"]
+    elif params["topology"] == "dragonflynew":
+        # N = a*p*g, a=2p routers/group, g=a*p+1 groups, p=k (n must be 1).
+        p = params["k"]
+        a = 2 * p
+        params["total_nodes"] = a * p * (a * p + 1)
+    elif params["topology"] == "gec":
+        # _nodes = k*k*c (gec.cpp 2D grid, c=concentration).
+        params["total_nodes"] = params.get("k", 8) ** 2 * params.get("c", 1)
+        # Edges via canonical formula when available.
+        if topo_size is not None:
+            try:
+                _, _ge = topo_size(dict(params))
+                params["total_edges"] = _ge
+            except Exception:
+                pass
     else:
         raise ValueError(
             f"cannot determine total_nodes for topology "
@@ -90,16 +180,32 @@ def parse_booksim_cfg(cfg_path: Path) -> dict:
 
 
 def _count_anynet_nodes(cfg_path: Path, params: dict) -> int:
-    """Count nodes from the anynet network file. Never guess."""
+    """Count nodes from the anynet network file. Never guess.
+
+    Thin wrapper over the canonical ``presets.count_anynet_edges``
+    (single source of truth); path resolution and error messages are
+    preserved for backward compatibility.
+    """
     net_file = params.get("_network_file", "")
     p = Path(net_file)
     if not p.is_absolute():
-        p = cfg_path.parent / p
+        # Resolve like BookSim does (cwd-relative; flows run from $T3_DIR),
+        # falling back to cfg-relative for directly-invoked configs.
+        q = Path.cwd() / p
+        p = q if q.exists() else cfg_path.parent / p
     if not net_file or not p.exists():
         raise FileNotFoundError(
             f"anynet topology needs 'network_file = <links file>' in "
             f"{cfg_path} (resolved to {p}); BookSim anynet format: one "
             f"'router <id> node <id> / router <id>' link per line.")
+    # Canonical counting first.
+    if count_anynet_edges is not None:
+        try:
+            n, _ = count_anynet_edges(str(p))
+            if n:
+                return n
+        except Exception:
+            pass
     nodes: set[int] = set()
     for line in p.read_text().splitlines():
         line = line.split("//")[0].split("#")[0].strip()
