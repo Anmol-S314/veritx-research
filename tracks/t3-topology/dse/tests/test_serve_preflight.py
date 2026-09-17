@@ -7,8 +7,6 @@ cannot represent (Case 3: PP). Preflight never spawns — a refusal test
 passing means the child was never launched, by construction.
 """
 import json
-import os
-import stat
 import sys
 from pathlib import Path
 
@@ -193,6 +191,6 @@ class TestFeasibility:
         assert e.value.reason == "UNSUPPORTED_EXECUTION_MODE"
 
     def test_valid_pp_free_config_passes(self, tmp_path):
-        assert _preflight(tmp_path, [_inst()]) is None
-        os.stat(tmp_path)  # sanity: fixtures really exist
-        assert stat.S_ISDIR(os.stat(tmp_path).st_mode)
+        binaries = _preflight(tmp_path, [_inst()])
+        assert binaries, "passing preflight returns the binary paths"
+        assert all(Path(b).is_file() for b in binaries)

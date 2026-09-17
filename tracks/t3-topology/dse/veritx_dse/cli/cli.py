@@ -3054,9 +3054,18 @@ def cmd_serve(ctx: Ctx, args):
     # Phase 1 T1: refuse invalid executions before spawning. Same search
     # order as the old inline existence checks, now with structured
     # reasons (backend binary, dataset, cluster, parallelism, model
-    # fit, converter capability, execution mode).
+    # fit, converter capability, execution mode). Passing preflight
+    # returns the resolved backend binaries for provenance identity.
     from veritx_dse.core.errors import ServingPreflightError
-    from veritx_dse.core.serving import preflight_serve
+    from veritx_dse.core.serving import (
+        fidelity_for_mode,
+        mode_for_backend,
+        preflight_serve,
+        retired_from_csv,
+        serving_provenance,
+    )
+    from veritx_dse.core.errors import ServingResultError
+    from veritx_dse.core.runs import binary_identity
 
     def _resolve_abs(p: str) -> Path:
         for c in (Path(p), LLMSIM_DIR / p, LLMSIM_DIR / "astra-sim" / p):
@@ -3065,7 +3074,7 @@ def cmd_serve(ctx: Ctx, args):
         return LLMSIM_DIR / p
 
     try:
-        preflight_serve(
+        serve_binaries = preflight_serve(
             llmsim_dir=LLMSIM_DIR,
             cluster_path=_resolve_abs(args.cluster_config),
             dataset_path=_resolve_abs(args.dataset),
@@ -3076,6 +3085,12 @@ def cmd_serve(ctx: Ctx, args):
     except ServingPreflightError as e:
         fail(ctx, str(e))
         return
+
+    # Phase 1 T3: execution identity is decided here, from requested
+    # flags — never inferred from stdout wording after the fact.
+    network_mode = mode_for_backend(
+        args.network_backend, getattr(args, "cycle_accurate", False))
+    fidelity = fidelity_for_mode(args.network_backend, network_mode)
 
     cluster_config = _locate_serve_path(args.cluster_config)
     dataset = _locate_serve_path(args.dataset)
@@ -3100,7 +3115,41 @@ def cmd_serve(ctx: Ctx, args):
         elapsed = time.time() - t0
 
         if result.returncode == 0:
-            ok(ctx, f"Simulation completed in {elapsed:.1f}s")
+            # Phase 1 T3: exit 0 is necessary but not sufficient. Terminal
+            # validation: every requested request retired per the
+            # per-request CSV (when --output was given), then emit the
+            # machine-readable result identity.
+            try:
+                retired = None
+                if args.output:
+                    retired = retired_from_csv(
+                        Path(args.output).resolve())
+                    if retired != args.num_reqs:
+                        raise ServingResultError(
+                            "RETIREMENT_MISMATCH",
+                            f"serving exited 0 but retired {retired} of "
+                            f"{args.num_reqs} requested "
+                            f"(csv: {args.output})")
+                record = {
+                    **serving_provenance(
+                        engine="llmservingsim",
+                        network_backend=args.network_backend,
+                        network_mode=network_mode,
+                        semantic_losses=[],
+                    ),
+                    "fidelity": fidelity,
+                    "requests_requested": args.num_reqs,
+                    "requests_retired": retired,
+                    "backend_binaries": [binary_identity(b)
+                                         for b in serve_binaries],
+                    "elapsed_wall_s": round(elapsed, 1),
+                }
+            except (ServingResultError, FileNotFoundError) as e:
+                fail(ctx, f"Serving result invalid: {e}")
+                return
+            output(ctx, record)
+            ok(ctx, f"Simulation completed in {elapsed:.1f}s "
+                    f"[{network_mode}/{fidelity}]")
         else:
             fail(ctx, f"Simulation failed with exit code {result.returncode} "
                        f"(full simulator output is above — rerun with "

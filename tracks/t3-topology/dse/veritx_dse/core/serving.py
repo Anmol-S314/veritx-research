@@ -57,6 +57,54 @@ def passes_serving_golden_gate(provenance: dict[str, Any]) -> bool:
             and provenance.get("semantic_losses") == [])
 
 
+# ── Execution-mode / fidelity identity (Phase 1 T3) ───────────────────
+# Closed vocabulary: a serving result is either real simulation or
+# trace replay — never an unlabeled "booksim". Fidelity follows the
+# existing runs.py categories (source wins over the program text's
+# SYSTEM_SIMULATION shorthand until Phase 5 settles metric semantics).
+
+def mode_for_backend(network_backend: str, cycle_accurate: bool) -> str:
+    """Execution mode for a requested backend+flags combination."""
+    if network_backend == "booksim":
+        return "REAL_SIMULATION" if cycle_accurate else "TRACE_REPLAY"
+    if network_backend in ("analytical", "ns3"):
+        # Neither replays trace durations: analytical integrates its own
+        # model, ns-3 simulates packets. (ns-3 is unreachable without its
+        # binary — preflight refuses first.)
+        return "REAL_SIMULATION"
+    raise ValueError(
+        f"unknown network_mode for backend {network_backend!r} — must be "
+        f"one of booksim/analytical/ns3")
+
+
+def fidelity_for_mode(network_backend: str, network_mode: str) -> str:
+    """Metric fidelity for a backend+mode combination (runs.py vocabulary)."""
+    table = {
+        ("booksim", "REAL_SIMULATION"): "SYSTEM_SERVING_SIMULATION",
+        ("booksim", "TRACE_REPLAY"): "TRACE_REPLAY",
+        ("analytical", "REAL_SIMULATION"): "ANALYTICAL_ESTIMATE",
+        ("ns3", "REAL_SIMULATION"): "SYSTEM_SERVING_SIMULATION",
+    }
+    try:
+        return table[(network_backend, network_mode)]
+    except KeyError:
+        raise ValueError(
+            f"unknown fidelity for {(network_backend, network_mode)!r} — "
+            "fidelity is data, not prose") from None
+
+
+def retired_from_csv(csv_path: Any) -> int:
+    """Retired-request count from serving's per-request CSV (one row each)."""
+    from pathlib import Path as _P
+
+    path = _P(csv_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"per-request CSV missing: {path}")
+    with open(path) as f:
+        lines = [ln for ln in f if ln.strip()]
+    return max(len(lines) - 1, 0)  # header row is not a request
+
+
 # ── Serving preflight (Phase 1 T1) ────────────────────────────────────
 # Refuse invalid serving executions BEFORE LLMServingSim is spawned.
 # Mirrors downstream rules (cited per check); the downstream checks stay
@@ -189,9 +237,10 @@ def preflight_serve(*, llmsim_dir: Any, cluster_path: Any,
 
     Checks run in fixed order so the first refusal is deterministic:
     backend → execution mode → binaries → dataset → cluster →
-    parallelism → model fit → converter capability. Returns None when
-    the execution may proceed. Raises ServingPreflightError otherwise.
-    Never spawns a subprocess.
+    parallelism → model fit → converter capability. Returns the resolved
+    backend binary paths when the execution may proceed (one resolution,
+    reused for provenance identity). Raises ServingPreflightError
+    otherwise. Never spawns a subprocess.
     """
     import copy as _copy
     import json as _json
@@ -335,4 +384,4 @@ def preflight_serve(*, llmsim_dir: Any, cluster_path: Any,
                           converter="convert_rows",
                           detail="converter has no pipeline-parallel "
                                  "semantics")
-    return None
+    return [str(b) for b in binaries]

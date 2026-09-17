@@ -65,3 +65,14 @@ class ServingPreflightError(VeritXError):
     def __init__(self, reason: str, message: str):
         super().__init__(message)
         self.reason = reason
+
+
+class ServingResultError(VeritXError):
+    """A serving execution finished but its result is not valid science.
+
+    Returncode 0 with missing/partial results (e.g. fewer retired
+    requests than requested) lands here — never reported as success.
+    """
+    def __init__(self, reason: str, message: str):
+        super().__init__(message)
+        self.reason = reason
