@@ -19,7 +19,6 @@ from veritx_dse.core.experiment_serving import (
     check_involved_dim_tripwire,
     fabric_evidence,
     run_serving_experiment,
-    serving_metrics,
 )
 from veritx_dse.core.errors import ServingResultError
 from veritx_dse.core.spec import SpecError
@@ -89,19 +88,6 @@ class TestVerdictHelpers:
               "submit_vectors": [[True, True, True, True]],
               "coll_completes": 1, "max_retired_flits": 5}
         check_involved_dim_tripwire(ev)  # 1-dim: fallback unread, exempt
-
-    def test_serving_metrics_typed(self, tmp_path):
-        p = tmp_path / "r.csv"
-        with open(p, "w", newline="") as f:
-            w = csv.writer(f)
-            w.writerow(["instance id", "request id", "TTFT", "TPOT"])
-            w.writerow(["0", "0", "1000", "500"])
-            w.writerow(["1", "1", "3000", "700"])
-        m = serving_metrics(p, "SYSTEM_SERVING_SIMULATION")
-        assert m["ttft_mean_ns"]["value"] == 2000
-        assert m["ttft_mean_ns"]["unit"] == "ns"
-        assert m["tpot_mean_ns"]["value"] == 600
-        assert m["tpot_mean_ns"]["fidelity"] == "SYSTEM_SERVING_SIMULATION"
 
 
 class TestSliceRefusals:
@@ -175,8 +161,9 @@ class TestFastNegatives:
             if csv_rows is not None and csv_path:
                 with open(csv_path[0], "w", newline="") as f:
                     w = csv.writer(f)
-                    w.writerow(["instance id", "request id", "TTFT",
-                                "TPOT", "ITL"])
+                    w.writerow(["instance id", "request id", "arrival",
+                                "end_time", "latency", "TTFT", "TPOT",
+                                "ITL"])
                     w.writerows(csv_rows)
             if timeout:
                 raise subprocess.TimeoutExpired(cmd, 1)
@@ -190,9 +177,11 @@ class TestFastNegatives:
         return run_serving_experiment(_spec_dict(), repo=tmp_path)
 
     def test_exact_retirement_succeeds(self, tmp_path, monkeypatch):
-        run = self._fake_run(tmp_path, monkeypatch,
-                             csv_rows=[["0", "0", "1", "1", "[]"]],
-                             returncode=0)
+        run = self._fake_run(
+            tmp_path, monkeypatch,
+            csv_rows=[["0", "0", "100", "1100", "1000", "700", "100",
+                       "[100]"]],
+            returncode=0)
         assert run.state == "SUCCEEDED"
 
     def test_retirement_mismatch_fails(self, tmp_path, monkeypatch):
@@ -242,13 +231,15 @@ class TestGoldenA:
         run = run_serving_experiment(_spec_dict(), repo=tmp_path)
         assert run.state == "SUCCEEDED"
         res = _result(run)
-        assert res["requests_retired"] == 1
+        assert res["metrics"]["requests_retired"]["value"] == 1
         assert res["provenance"]["network_mode"] == "REAL_SIMULATION"
         assert res["provenance"]["semantic_losses"] == []
         assert res["provenance"]["fidelity"] == "SYSTEM_SERVING_SIMULATION"
         assert res["fabric"]["coll_completes"] >= 1
         assert res["fabric"]["max_retired_flits"] > 0
-        assert res["metrics"]["ttft_mean_ns"]["unit"] == "ns"
+        assert res["metric_schema"] == 1
+        assert res["metrics"]["TTFT"]["unit"] == "ns"
+        assert res["metrics"]["sim_clock"]["unit"] == "ns"
         assert res["backend_binaries"][0]["sha256"] is not None
         assert res["cluster_sha256"] is not None
         assert res["dataset_sha256"] is not None
@@ -269,7 +260,7 @@ class TestGoldenB:
         run = run_serving_experiment(d, repo=tmp_path)
         assert run.state == "SUCCEEDED"
         res = _result(run)
-        assert res["requests_retired"] == 2
+        assert res["metrics"]["requests_retired"]["value"] == 2
         csv_path = run.root / "artifacts" / "requests.csv"
         with open(csv_path, newline="") as f:
             seen = {r["instance id"] for r in _csv.DictReader(f)}

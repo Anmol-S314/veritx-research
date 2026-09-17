@@ -98,6 +98,22 @@ estimates, never comparable against `SYSTEM_SERVING_SIMULATION`.
 `dse/veritx_dse/core/serving.py`: real simulation AND zero semantic
 loss. A replay-only run fails it by construction, not by eyeballing.
 
+## Serving metrics (Phase 5)
+
+**Serving vocabulary** — `dse/veritx_dse/core/serving_metrics.py`:
+canonical names (`sim_clock`, `request_latency`, `TTFT`, `TPOT`, `ITL`,
+`requests_submitted`, `requests_retired`, `wall_time`), units, producers,
+scopes, derivations, schema version. Time fields are sim-clock ticks =
+ns at FREQ=1GHz (never cycles); `wall_time` is supervisor seconds.
+
+**Naming ruling:** the program text's `SYSTEM_SIMULATION` shorthand
+denotes the code's `SYSTEM_SERVING_SIMULATION` category (`runs.py`,
+arch §13.1). Source wins; no rename.
+
+**Known gap:** `backend_exposed_communication` is vocabulary-defined but
+UNSOURCED — parsed per-iteration, emitted nowhere. Wiring an emitter is
+later serving-loop work, not backfill.
+
 ## What this file deliberately does NOT define
 
 No terms for the future Python control plane (spec/plan/run/manifest) —

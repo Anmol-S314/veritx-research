@@ -16,7 +16,6 @@ classifier, never exit code alone.
 """
 from __future__ import annotations
 
-import csv
 import json
 import os
 import re
@@ -27,7 +26,7 @@ from typing import Any
 
 from ..core.paths import DSE_DIR, LLMSIM_DIR, REPO, serving_fixture
 from ..core.recovery import atomic_write
-from ..core.runs import Run, RunError, binary_identity, metric
+from ..core.runs import Run, binary_identity
 from ..core.spec import SpecError, parse, resolve
 from ..core.errors import ServingPreflightError, ServingResultError
 from ..core.serving import (
@@ -40,6 +39,7 @@ from ..core.serving import (
     serve_args,
     serving_provenance,
 )
+from ..core.serving_metrics import SERVING_METRIC_SCHEMA, build_serving_metrics
 
 _COLL_COMPLETE_RE = re.compile(r"\[LEDGER\]\[COLL_COMPLETE\]")
 _SUBMIT_DIMS_RE = re.compile(
@@ -96,27 +96,6 @@ def check_involved_dim_tripwire(evidence: dict[str, Any]) -> None:
             f"{len(vectors)} submits on a {ndims}-dim topology with no "
             "scoped (contains-False) vector — collective scoping is not "
             "flowing; STOP")
-
-
-def serving_metrics(csv_path: Path, fidelity: str) -> dict[str, Any]:
-    """Typed per-request latency means from the authoritative CSV (ns)."""
-    with open(csv_path, newline="") as f:
-        rows = list(csv.DictReader(f))
-    if not rows:
-        raise ServingResultError("EMPTY_RESULT_CSV",
-                                 f"per-request CSV has no rows: {csv_path}")
-    ttfts = [int(r["TTFT"]) for r in rows]
-    tpots = [int(r["TPOT"]) for r in rows]
-    return {
-        "ttft_mean_ns": metric("ttft_mean", sum(ttfts) // len(ttfts), "ns",
-                               producer="llmservingsim", fidelity=fidelity,
-                               scope="per_request",
-                               derivation="mean over retired requests"),
-        "tpot_mean_ns": metric("tpot_mean", sum(tpots) // len(tpots), "ns",
-                               producer="llmservingsim", fidelity=fidelity,
-                               scope="per_request",
-                               derivation="mean over retired requests"),
-    }
 
 
 def run_serving_experiment(
@@ -280,15 +259,16 @@ def _verdict(run: Run, res: Any, csv_path: Path, sv: dict[str, Any],
         engine="llmservingsim", network_backend="booksim2",
         network_mode=network_mode, semantic_losses=[])
     try:
-        metrics = serving_metrics(csv_path, fidelity)
-    except (ServingResultError, KeyError, ValueError) as e:
+        bundle = build_serving_metrics(
+            csv_path, num_requested=sv["num_reqs"], fidelity=fidelity,
+            wall_time_s=float(getattr(res, "wall_time_s", 0.0)))
+    except (KeyError, ValueError) as e:
         run.add_result("serve", {"error": f"unparseable result CSV: {e}"})
         run.finalize("FAILED", note="malformed result artifact")
         return run
     run.add_result("serve", {
-        "requests_requested": sv["num_reqs"],
-        "requests_retired": retired,
-        "metrics": metrics,
+        "metric_schema": bundle["schema"],
+        "metrics": bundle["metrics"],
         "provenance": {**provenance, "fidelity": fidelity},
         "backend_binaries": [binary_identity(b) for b in serve_binaries],
         "cluster_sha256": binary_identity(cluster_path)["sha256"],
@@ -297,7 +277,6 @@ def _verdict(run: Run, res: Any, csv_path: Path, sv: dict[str, Any],
             "coll_completes": evidence["coll_completes"],
             "max_retired_flits": evidence["max_retired_flits"],
         },
-        "wall_time_s": round(getattr(res, "wall_time_s", 0.0), 1),
     })
     run.finalize("SUCCEEDED")
     return run
