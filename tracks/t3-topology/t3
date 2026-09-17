@@ -854,7 +854,7 @@ _ui_runner() { # type to filter any t3 command; optional seed as $1
             done
         fi
         printf '\n  \033[2m↑↓ move · ⏎ run · tab complete · esc cancel\033[0m'
-        IFS= read -rsn1 _k || { printf '\n'; break }
+        IFS= read -rsn1 _k || { printf '\n'; break; }
         case "$_k" in
         '') if [[ "$_q" == veritx\ * ]] && [[ "$_q" != veritx\ *\ * ]] && [ "${#_m[@]}" -gt 0 ]; then
                 _q="${_m[$_sel]} "; _sel=0; continue  # finish the verb first, args next

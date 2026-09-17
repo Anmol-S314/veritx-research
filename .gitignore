@@ -23,6 +23,10 @@ runs/
 m5out/
 formal_logs/
 
+# Serving run artifacts (per-run inputs/traces, incl. --keep-inputs)
+third_party/llmservingsim/traces/
+third_party/llmservingsim/astra-sim/inputs/runs/
+
 # Generated simulation output
 *.log
 *.bak

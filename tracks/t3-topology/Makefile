@@ -33,6 +33,7 @@ setup: ## check the toolchain (Booksim required)
 
 lint: ## syntax-check the Python scripts + collect tests + binary-free selfchecks (CI-safe, no simulators)
 	@python3 -m py_compile scripts/*.py scripts/lib/*.py dse/veritx_dse/**/*.py
+	@bash -n t3 && bash -n run/env.sh
 	@python3 -m pytest dse/tests --collect-only -q -p no:cacheprovider
 	@for s in analysis aggregate plot_curves compare_bars compare_curves compare_heatmap generate_dashboard; do \
 		python3 scripts/$$s.py --selfcheck > /dev/null || exit 1; \
