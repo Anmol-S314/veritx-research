@@ -3051,23 +3051,34 @@ def cmd_serve(ctx: Ctx, args):
         fail(ctx, f"LLMServingSim not found at {LLMSIM_DIR}")
         return
 
+    # Phase 1 T1: refuse invalid executions before spawning. Same search
+    # order as the old inline existence checks, now with structured
+    # reasons (backend binary, dataset, cluster, parallelism, model
+    # fit, converter capability, execution mode).
+    from veritx_dse.core.errors import ServingPreflightError
+    from veritx_dse.core.serving import preflight_serve
+
+    def _resolve_abs(p: str) -> Path:
+        for c in (Path(p), LLMSIM_DIR / p, LLMSIM_DIR / "astra-sim" / p):
+            if c.exists():
+                return c
+        return LLMSIM_DIR / p
+
+    try:
+        preflight_serve(
+            llmsim_dir=LLMSIM_DIR,
+            cluster_path=_resolve_abs(args.cluster_config),
+            dataset_path=_resolve_abs(args.dataset),
+            network_backend=args.network_backend,
+            cycle_accurate=getattr(args, "cycle_accurate", False),
+            cli_dtype=getattr(args, "dtype", None),
+        )
+    except ServingPreflightError as e:
+        fail(ctx, str(e))
+        return
+
     cluster_config = _locate_serve_path(args.cluster_config)
     dataset = _locate_serve_path(args.dataset)
-
-    # _locate_serve_path returns LLMSIM-relative strings — verify the target
-    # exists before handing it to the sim, or a typo silently burns the
-    # entire timeout inside LLMServingSim's own loader.
-    def _serve_exists(p: str) -> bool:
-        return any(c.exists() for c in (Path(p), LLMSIM_DIR / p,
-                                        LLMSIM_DIR / "astra-sim" / p))
-    if not _serve_exists(cluster_config):
-        fail(ctx, f"cluster config not found: {args.cluster_config} — "
-                  "browse third_party/llmservingsim/configs/cluster/")
-        return
-    if not _serve_exists(dataset):
-        fail(ctx, f"dataset not found: {args.dataset} — "
-                  "browse third_party/llmservingsim/configs/ (datasets)")
-        return
 
     cmd = _build_serve_cmd(args, cluster_config, dataset)
 

@@ -53,3 +53,15 @@ class CertificationError(VeritXError):
 class ArtifactError(VeritXError):
     """Artifact signing/manifest errors."""
     pass
+
+
+class ServingPreflightError(VeritXError):
+    """A serving execution refused before LLMServingSim was spawned.
+
+    Carries a machine-readable ``reason`` (closed vocabulary, see
+    core.serving.preflight_serve) plus a human block with the concrete
+    values. Downstream safety checks stay in place; this fails earlier.
+    """
+    def __init__(self, reason: str, message: str):
+        super().__init__(message)
+        self.reason = reason

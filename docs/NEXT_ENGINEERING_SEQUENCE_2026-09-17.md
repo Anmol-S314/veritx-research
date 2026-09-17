@@ -305,3 +305,12 @@ listing (scaffolding only); filesystem-wide absence of `ns3.42-AstraSimNetwork*`
 
 **Runtime artifacts observed:** `AstraSim_BookSim2` + `.real` present and
 executed by the live regression tests in this run; ns-3 binary absent as stated.
+
+## Addendum — contradictions recorded during Phase 1 (do not silently reconcile)
+
+- **Fidelity name:** program T3 example uses `fidelity: SYSTEM_SIMULATION`;
+  code (`core/runs.py`, arch §13.1) uses `SYSTEM_SERVING_SIMULATION`.
+  Source wins for now; resolve in Phase 5 (metric semantics), not by rename.
+- **"Silently" (N-dim analytical):** downstream prints an explicit fallback
+  notice (`serving/__main__.py:719-721`); the word "silently" in older notes
+  is contradicted. No test pins the notice yet — recorded for PR7.
