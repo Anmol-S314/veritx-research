@@ -17,14 +17,7 @@ T3_SCRIPTS  ?= $(CURDIR)/scripts
 MPLBACKEND  ?= Agg
 
 lock: ## regenerate dse/requirements.lock from the current environment (PR A)
-	@cd dse && python3 -c "
-import importlib.metadata as im
-pkgs = ['pydantic','numpy','scipy','scikit-optimize','pyyaml']
-print('# veritx runtime dependency lock — regenerate: make lock')
-print('# Exact pins from the reference environment; satisfy pyproject floors.')
-for p in pkgs:
-	print(f'{p}=={im.version(p)}')
-" > requirements.lock && echo "  ✓ dse/requirements.lock regenerated"
+	@cd dse && python3 lock_deps.py > requirements.lock && echo "  ✓ dse/requirements.lock regenerated"
 
 pr-a-gate: ## PR A gate: clean env install from declared metadata + focused core tests
 	@python3 -m venv /tmp/veritx-pra-venv && \

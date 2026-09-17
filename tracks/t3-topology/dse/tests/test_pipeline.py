@@ -37,18 +37,24 @@ class TestRunCompare:
             raise BookSimError("booksim exploded")
 
         monkeypatch.setattr(pl, "run_topology_eval", fake_eval)
-        topos = [("meshA", type("T", (), {"backend": "mesh", "edges": lambda s: 4})()),
-                 ("meshB", type("T", (), {"backend": "mesh", "edges": lambda s: 6})())]
+        topos = [("meshA", type("T", (), {"backend": "mesh", "params": {"k": 4, "n": 2}, "edges": lambda s: 4})()),
+                 ("meshB", type("T", (), {"backend": "mesh", "params": {"k": 4, "n": 2}, "edges": lambda s: 6})())]
         res = pl.run_compare(Ctx(verbosity=0), "t.trace", topos, seeds=1)
         assert res.results[0]["error"] == "timeout"
         assert "exploded" in res.results[1]["error"]
-        assert res.summary == []               # no valid latencies → no agg rows
+        # Failed candidates stay VISIBLE as agg rows with the error recorded
+        # (PR follow-up: silent exclusion hid exactly the runs that
+        # invalidate a comparison); the winner printer ignores them.
+        assert len(res.summary) == 2
+        assert all("error" in s and s["n"] == 0 and "mean" not in s
+                   for s in res.summary)
+        assert {s["error"] for s in res.summary} == {"timeout", "booksim exploded"}
 
     def test_summary_aggregates_multi_seed(self, monkeypatch):
         def fake_eval(ctx, topo, trace, seed=None, **kw):
             return {"latency": 100.0 + (seed % 2) * 10, "nodes": 4, "edges": 4, "unstable": False}
         monkeypatch.setattr(pl, "run_topology_eval", fake_eval)
-        topo = type("T", (), {"backend": "mesh", "edges": lambda s: 4})()
+        topo = type("T", (), {"backend": "mesh", "params": {"k": 4, "n": 2}, "edges": lambda s: 4})()
         res = pl.run_compare(Ctx(verbosity=0), "t.trace", [("m", topo)], seeds=2, seed_base=42)
         s = res.summary[0]
         assert s["n"] == 2 and s["mean"] == 105.0 and s["max"] - s["min"] == 10
@@ -67,7 +73,8 @@ class TestPrintTables:
         pl.print_compare_table(Ctx(verbosity=1), res)
         out = capsys.readouterr().out
         assert "Unstable" in out and "1/2" in out and "Winner: mesh" in out
-        assert (runs / "booksim" / "compare_t.json").exists()
+        # Persistence moved to cmd_compare (results/compare/<ts>_seed<n>/);
+        # printing is side-effect-free so callers can't double-save.
 
     def test_compare_table_stable_path_has_t_stat(self, runs, capsys):
         res = pl.CompareResult(trace="t.trace", seeds=[42, 43], results=[], summary=[
@@ -105,7 +112,7 @@ def _mk_run(exp, name, manifest=None, extra=None):
 class TestListRuns:
     def test_missing_experiments_dir_fails(self, runs, capsys):
         pl.list_runs(Ctx(verbosity=0))
-        assert "No experiments directory" in capsys.readouterr().err
+        assert "No experiments directory yet" in capsys.readouterr().err
 
     def test_lists_and_inspects_runs(self, runs, capsys):
         exp = runs / "experiments"
@@ -137,10 +144,10 @@ class TestListRuns:
 class TestShowResults:
     def test_missing_dir_and_no_results(self, runs, capsys):
         pl.show_results(Ctx(verbosity=0))
-        assert "No booksim results directory" in capsys.readouterr().err
+        assert "No booksim results yet" in capsys.readouterr().err
         (runs / "booksim").mkdir()
         pl.show_results(Ctx(verbosity=0))
-        assert "No results found" in capsys.readouterr().err
+        assert "No results in" in capsys.readouterr().err
 
     def test_renders_all_three_json_shapes(self, runs, capsys):
         bs = runs / "booksim"
@@ -161,7 +168,7 @@ class TestShowResults:
 class TestDiffRuns:
     def test_needs_two_runs(self, runs, capsys):
         pl.diff_runs(Ctx(verbosity=0))
-        assert "No experiments directory" in capsys.readouterr().err
+        assert "No experiments yet" in capsys.readouterr().err
         exp = runs / "experiments"
         _mk_run(exp, "only_one")
         pl.diff_runs(Ctx(verbosity=0))
