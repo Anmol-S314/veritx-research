@@ -89,10 +89,11 @@ class TestPyprojectToml:
         assert len(proj["description"]) > 10
 
     def test_project_requires_python(self):
-        """Has requires-python >= 3.10."""
+        """Has requires-python >= 3.12 (PR A truthful floor: 3.12+ is what
+        the package actually supports and what CI tests)."""
         proj = self.data.get("project", {})
         assert "requires-python" in proj
-        assert "3.10" in proj["requires-python"]
+        assert "3.12" in proj["requires-python"]
 
     def test_entry_point_registered(self):
         """Has [project.scripts] with veritx entry point."""

@@ -1283,6 +1283,11 @@ class Artifact:
 
     Each artifact (RTL file, UVM testbench, report, manifest) is
     tracked with its checksum and signature for provenance.
+
+    ``generated`` is the PR-B honesty flag: False means the artifact is
+    REGISTERED but the file has not been produced (and its checksum is
+    correspondingly empty). Consumers — reports, exports — must treat
+    generated=False entries as placeholders, never as generated content.
     """
     artifact_id: str
     design_id: str
@@ -1292,6 +1297,7 @@ class Artifact:
     checksum_sha256: str
     signature: str
     timestamp: str = ""
+    generated: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to JSON-safe dict."""
@@ -1304,6 +1310,7 @@ class Artifact:
             "checksum_sha256": self.checksum_sha256,
             "signature": self.signature,
             "timestamp": self.timestamp,
+            "generated": self.generated,
         }
 
     @classmethod
@@ -1318,6 +1325,7 @@ class Artifact:
             checksum_sha256=d["checksum_sha256"],
             signature=d["signature"],
             timestamp=d.get("timestamp", ""),
+            generated=d.get("generated", False),
         )
 
 
@@ -1334,120 +1342,193 @@ class VerificationResult:
     warnings: list[str] = field(default_factory=list)
 
 
+# Verification status contract (verified-PRD Integrity PR B, §4.1):
+# A PASS is emitted ONLY when a defined check actually executed against its
+# referenced evidence and satisfied the acceptance rule. ASSUMPTION records
+# architectural intent. NOT_RUN records unexecuted checks honestly.
+VERIFICATION_STATUSES = (
+    "PASS", "FAIL", "NOT_RUN", "UNSUPPORTED", "INCONCLUSIVE", "ASSUMPTION",
+)
+
+
 def verify_design(
     cr: CompileRequest,
     topology_name: str = "mesh_8x8",
+    evidence: dict[str, Any] | None = None,
 ) -> VerificationResult:
     """PRD §13.5: Run F1–F8 verification checks.
 
-    Produces proof obligations for the selected configuration.
-    Each check returns PASS/WARN/FAIL with explanation.
+    Each check returns a status from VERIFICATION_STATUSES with an explicit
+    statement (what was verified, at what scope), the method used, and the
+    evidence it consumed. F1–F8:
 
-    F1: Deadlock freedom — no cyclic channel dependency
-    F2: Liveness — every packet eventually delivered
-    F3: Packet conservation — no lost/duplicated flits
-    F4: Ordering — in-order delivery per VC
-    F5: Flow control — credit-based, no overflow
-    F6: Routing correctness — minimal/adaptive paths
-    F7: QoS isolation — traffic classes don't starve
-    F8: Timeout — bounded latency under load
+    F1: Deadlock freedom — abstract dependency graph acyclic (heuristic
+        scope; the (channel,VC) CDG certificate is a separate artifact)
+    F2: Liveness — requires topology connectivity evidence
+    F3: Packet conservation — requires BookSim flit accounting evidence
+    F4: Ordering — architectural assumption (per-VC FIFO)
+    F5: Flow control — architectural assumption (credit-based)
+    F6: Routing correctness — requires route-table equivalence evidence
+    F7: QoS isolation — unsupported until a formal QoS check exists
+    F8: Timeout — requires BookSim latency-bound evidence
+
+    ``evidence`` carries optional simulation results keyed by name; checks
+    upgrade from NOT_RUN to PASS/FAIL only when their evidence is present.
+
+    Gate B (verified-PRD §12.1): no code path may emit PASS without
+    executing its acceptance check.
     """
+    ev = evidence or {}
     checks: list[dict[str, Any]] = []
     errors: list[str] = []
+    warnings: list[str] = []
 
-    # F1: Deadlock freedom — check dependency graph for cycles
+    def add(name: str, status: str, statement: str, method: str,
+            detail: str, evidence_used: dict[str, Any] | None = None) -> None:
+        assert status in VERIFICATION_STATUSES, status
+        checks.append({
+            "name": name,
+            "status": status,
+            "statement": statement,
+            "method": method,
+            "detail": detail,
+            "evidence": evidence_used,
+        })
+
+    # F1: Deadlock freedom — cycle detection on the abstract dependency graph.
+    # The executed check is real but its scope is the abstract graph; a full
+    # deadlock claim requires the (channel,VC) CDG certificate (PR D+).
     cycles = cr.dependencies.find_cycles()
     if not cycles:
-        checks.append({
-            "name": "F1_deadlock_freedom",
-            "status": "PASS",
-            "detail": "No blocking cycles in dependency graph",
-        })
+        add("F1_deadlock_freedom", "PASS",
+            "Abstract dependency graph is acyclic",
+            "cycle_detection",
+            "No blocking cycles in the abstract dependency graph. Scope: "
+            "abstract graph only — NOT a (channel,VC) CDG deadlock certificate.",
+            {"graph": "abstract_dependency"})
     else:
-        # Cycles exist but VC separation should break them
+        # Cycles exist; VC separation is claimed to break them. That is a
+        # heuristic, not a proof at (channel,VC) granularity (§3.4).
         vc = derive_vc_count(cr.dependencies)
         if vc <= PLANE_C_MAX_VC:
-            checks.append({
-                "name": "F1_deadlock_freedom",
-                "status": "PASS",
-                "detail": f"{len(cycles)} cycle(s) broken by {vc} VCs",
-            })
+            add("F1_deadlock_freedom", "ASSUMPTION",
+                f"{len(cycles)} abstract cycle(s) assumed broken by {vc} VCs",
+                "vc_count_heuristic",
+                "VC-count heuristic applied to abstract cycles — unproven at "
+                "(channel,VC) dependency level.",
+                {"graph": "abstract_dependency", "cycles": len(cycles),
+                 "vc_count": vc})
+            warnings.append(
+                f"F1: {len(cycles)} cycle(s) broken only by a VC-count "
+                f"assumption, not a (channel,VC) certificate")
         else:
-            checks.append({
-                "name": "F1_deadlock_freedom",
-                "status": "FAIL",
-                "detail": f"{len(cycles)} cycles need {vc} VCs (max {PLANE_C_MAX_VC})",
-            })
+            add("F1_deadlock_freedom", "FAIL",
+                f"{len(cycles)} abstract cycle(s) need {vc} VCs "
+                f"(max {PLANE_C_MAX_VC})",
+                "vc_count_heuristic",
+                "Cycles exceed declared VC capacity.",
+                {"graph": "abstract_dependency", "cycles": len(cycles),
+                 "vc_count": vc})
             errors.append(f"Deadlock: {len(cycles)} cycles exceed VC capacity")
 
-    # F2: Liveness — mesh/torus/gec are connected → packets reach destination
-    checks.append({
-        "name": "F2_liveness",
-        "status": "PASS",
-        "detail": f"{topology_name} is connected — all destinations reachable",
-    })
+    # F2: Liveness — requires a connectivity check over the actual topology.
+    # This function only receives a topology NAME; a name is not evidence
+    # (verified-PRD §3.11: the old unconditional PASS was fabricated).
+    add("F2_liveness", "NOT_RUN",
+        "Every packet eventually delivered — requires topology connectivity "
+        "evidence",
+        "topology_connectivity (pending)",
+        f"Not executed: only the topology name '{topology_name}' is available "
+        "to this check; connectivity was NOT verified.")
 
-    # F3: Packet conservation — checked by BookSim flit accounting
-    # NOTE: This is a simulation check, not a formal proof. The claim is that
-    # BookSim's internal accounting is correct (injected == completed + dropped).
-    # For formal verification, we would need a model checker.
-    checks.append({
-        "name": "F3_packet_conservation",
-        "status": "PASS",
-        "detail": "Simulation check: BookSim tracks injected/completed flits (not a formal proof)",
-    })
-
-    # F4: Ordering — per-VC ordering guaranteed by flow control
-    va = derive_vc_assignment(cr)
-    checks.append({
-        "name": "F4_ordering",
-        "status": "PASS",
-        "detail": f"{va.vc_count} VCs with {va.routing_function} routing",
-    })
-
-    # F5: Flow control — credit-based (BookSim default)
-    checks.append({
-        "name": "F5_flow_control",
-        "status": "PASS",
-        "detail": "Credit-based flow control (pipelined)",
-    })
-
-    # F6: Routing correctness
-    checks.append({
-        "name": "F6_routing_correctness",
-        "status": "PASS",
-        "detail": f"{va.routing_function} routing — derived from dependency graph",
-    })
-
-    # F7: QoS isolation — if requirements exist
-    if cr.requirements:
-        checks.append({
-            "name": "F7_qos_isolation",
-            "status": "WARN",
-            "detail": f"{len(cr.requirements)} requirement(s) defined — formal QoS verification pending",
-        })
+    # F3: Packet conservation — real check when BookSim accounting evidence
+    # is provided: injected == completed + dropped.
+    inj = ev.get("booksim_injected_flits")
+    com = ev.get("booksim_completed_flits")
+    dro = ev.get("booksim_dropped_flits")
+    if None not in (inj, com, dro):
+        conserved = int(inj) == int(com) + int(dro)
+        add("F3_packet_conservation", "PASS" if conserved else "FAIL",
+            "Injected flits equal completed plus dropped flits",
+            "booksim_flit_accounting",
+            f"injected={inj}, completed={com}, dropped={dro}",
+            {"injected": inj, "completed": com, "dropped": dro})
+        if not conserved:
+            errors.append(
+                f"F3: flit conservation violated "
+                f"({inj} != {com} + {dro})")
     else:
-        checks.append({
-            "name": "F7_qos_isolation",
-            "status": "PASS",
-            "detail": "No QoS requirements — isolation not required",
-        })
+        add("F3_packet_conservation", "NOT_RUN",
+            "No lost/duplicated flits — requires BookSim run evidence",
+            "booksim_flit_accounting (pending)",
+            "Not executed: no BookSim flit-accounting evidence provided.")
 
-    # F8: Timeout — bounded latency (BookSim simulation provides proof)
-    # F8: Timeout — checked by BookSim latency threshold
-    # NOTE: This is a simulation check, not a formal proof. The claim is that
-    # BookSim's latency measurement is correct (within simulation accuracy).
-    # For formal verification, we would need a model checker.
-    checks.append({
-        "name": "F8_timeout",
-        "status": "PASS",
-        "detail": "Simulation check: BookSim measures bounded latency (not a formal proof)",
-    })
+    # F4: Ordering — per-VC FIFO is an architectural assumption of the
+    # credit-based wormhole design, not a verified property.
+    va = derive_vc_assignment(cr)
+    add("F4_ordering", "ASSUMPTION",
+        "Per-VC in-order delivery follows from the credit-based wormhole "
+        "architecture",
+        "architectural_intent",
+        f"{va.vc_count} VCs with {va.routing_function} routing — ordering "
+        "assumed from architecture, not checked.",
+        {"vc_count": va.vc_count, "routing_function": va.routing_function})
+
+    # F5: Flow control — credit-based flow control is the designed mechanism;
+    # no overflow analysis is executed here.
+    add("F5_flow_control", "ASSUMPTION",
+        "Credit-based flow control prevents overflow by design",
+        "architectural_intent",
+        "Credit-based (pipelined) design intent — no overflow analysis "
+        "executed.")
+
+    # F6: Routing correctness — requires proving the routes the simulator/RTL
+    # execute match the certified route set (the routing-truth gap, PR D).
+    add("F6_routing_correctness", "NOT_RUN",
+        "Executed routes equal certified routes — requires route-table "
+        "equivalence evidence",
+        "route_table_equivalence (pending RouteArtifact)",
+        f"Not executed: derived label '{va.routing_function}' is a design "
+        "choice, not an equivalence check.")
+
+    # F7: QoS isolation — no formal QoS check is implemented.
+    if cr.requirements:
+        add("F7_qos_isolation", "UNSUPPORTED",
+            "Traffic classes do not starve — no implemented check",
+            "none",
+            f"{len(cr.requirements)} requirement(s) declared; formal QoS "
+            "verification is not implemented.")
+        warnings.append("F7: QoS isolation declared but no check implemented")
+    else:
+        add("F7_qos_isolation", "NOT_RUN",
+            "Traffic classes do not starve",
+            "none",
+            "No QoS requirements declared — nothing to verify.")
+
+    # F8: Timeout — real check when BookSim latency evidence is provided.
+    lat = ev.get("max_packet_latency_cycles")
+    bound = ev.get("latency_bound_cycles")
+    if None not in (lat, bound):
+        within = float(lat) <= float(bound)
+        add("F8_timeout", "PASS" if within else "FAIL",
+            "Maximum packet latency within the declared bound",
+            "booksim_latency_bound",
+            f"max_latency={lat}c, bound={bound}c",
+            {"max_packet_latency_cycles": lat, "latency_bound_cycles": bound})
+        if not within:
+            errors.append(
+                f"F8: latency bound exceeded ({lat}c > {bound}c)")
+    else:
+        add("F8_timeout", "NOT_RUN",
+            "Bounded latency under load — requires BookSim latency evidence",
+            "booksim_latency_bound (pending)",
+            "Not executed: no BookSim latency evidence provided.")
 
     return VerificationResult(
         ok=len(errors) == 0,
         checks=checks,
         errors=errors,
+        warnings=warnings,
     )
 
 
@@ -1480,6 +1561,13 @@ def generate_artifacts(
     timestamp = _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime())
     artifacts: list[Artifact] = []
 
+    # Integrity honesty (verified-PRD Integrity PR B, §3.13): this function
+    # REGISTERS intended artifacts; it does not generate files. Entries for
+    # files that do not exist yet are marked generated=False and must not be
+    # presented (or exported) as generated content. The manifest is the one
+    # exception: its checksum is computed over the actual CompileRequest
+    # serialization held in memory, so it is real on creation.
+
     # Always generate manifest artifact
     manifest_content = json.dumps(cr.to_dict(), sort_keys=True, separators=(",", ":")).encode()
     manifest_checksum = hashlib.sha256(manifest_content).hexdigest()
@@ -1492,6 +1580,7 @@ def generate_artifacts(
         checksum_sha256=manifest_checksum,
         signature="",  # signed by DesignManifest
         timestamp=timestamp,
+        generated=True,
     ))
 
     # Track RTL artifact if output format includes SystemVerilog
@@ -1502,9 +1591,10 @@ def generate_artifacts(
             revision=revision,
             kind="rtl",
             uri=f"{output_dir}/{design_id}/noc.sv",
-            checksum_sha256="",  # computed after generation
+            checksum_sha256="",  # computable only after actual generation
             signature="",
             timestamp=timestamp,
+            generated=False,  # registered, not yet produced
         ))
 
     # Track UVM artifact if output format includes UVM (PRD §9.3)
@@ -1515,9 +1605,10 @@ def generate_artifacts(
             revision=revision,
             kind="uvm",
             uri=f"{output_dir}/{design_id}/tb_noc.sv",
-            checksum_sha256="",  # computed after generation
+            checksum_sha256="",  # computable only after actual generation
             signature="",
             timestamp=timestamp,
+            generated=False,  # registered, not yet produced
         ))
 
     # Track report artifact
@@ -1530,6 +1621,7 @@ def generate_artifacts(
         checksum_sha256="",
         signature="",
         timestamp=timestamp,
+        generated=False,  # registered, not yet produced
     ))
 
     return artifacts

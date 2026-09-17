@@ -25,7 +25,9 @@ ENV = {**{"PYTHONPATH": str(DSE)}, **__import__("os").environ}
 from veritx_dse.simulation.trace_to_binary import BINARY_MAGIC, convert_text_to_binary
 from veritx_dse.simulation.model_to_trace import (
     COLLECTIVE_DECOMPOSERS,
+    LoweringError,
     alltoall_packets,
+    broadcast_packets,
     model_to_trace,
     ring_allgather_packets,
     ring_allreduce_packets,
@@ -171,29 +173,84 @@ class TestModelToTrace:
         keys = [(p[0], p[1]) for p in pkts]
         assert keys == sorted(keys)
 
-    def test_out_of_range_participants_dropped(self):
+    def test_out_of_range_participant_fails_closed(self):
+        """PR C: out-of-range participants are a hard error, never a silent
+        filter (the old filter made the workload lighter than declared)."""
         tm = {"network": {"flow_classes": [{
             "name": "x", "comm_type": "allreduce", "bytes_per_invocation": 64,
             "invocations_per_batch": 1,
             "instances": [{"participants": [0, 1, 99, -1]}],   # 99/-1 invalid for 2 nodes
         }]}}
-        pkts = model_to_trace(tm, n_nodes=2)
-        assert all(p[1] in (0, 1) and p[3] in (0, 1) for p in pkts)
+        with pytest.raises(LoweringError, match="participant"):
+            model_to_trace(tm, n_nodes=2)
 
-    def test_single_participant_instance_skipped(self):
+    def test_single_participant_instance_fails_closed(self):
+        """PR C: a degenerate 1-participant instance is a hard error —
+        it used to be silently skipped (workload silently lighter)."""
         tm = {"network": {"flow_classes": [{
             "name": "x", "comm_type": "allreduce", "bytes_per_invocation": 64,
             "instances": [{"participants": [0]}],
         }]}}
-        assert model_to_trace(tm, n_nodes=4) == []
+        with pytest.raises(LoweringError, match="participant"):
+            model_to_trace(tm, n_nodes=4)
 
-    def test_unknown_comm_type_is_skipped_with_warning(self, capsys):
+    def test_unknown_comm_type_fails_closed(self):
+        """PR C: unknown comm_type raises LoweringError naming the class and
+        the defect — never warning-and-skip (the BROADCAST-class bug)."""
         tm = {"network": {"flow_classes": [{
             "name": "weird", "comm_type": "hypercube_shuffle",
             "bytes_per_invocation": 64, "instances": [{"participants": [0, 1]}],
         }]}}
-        assert model_to_trace(tm, n_nodes=2) == []
-        assert "unknown comm_type" in capsys.readouterr().err
+        with pytest.raises(LoweringError, match="hypercube_shuffle"):
+            model_to_trace(tm, n_nodes=2)
+
+    def test_p2p_is_decomposed(self):
+        """P2P flows (e.g. automotive lidar_fusion / camera_fusion) should
+        produce point-to-point packets, not be skipped as unknown.
+
+        Regression for automotive_real.json, whose flow classes used
+        comm_type 'P2P' and emitted 0 packets before the decomposer existed.
+        """
+        tm = {"network": {"flow_classes": [{
+            "name": "lidar_fusion", "comm_type": "P2P",
+            "bytes_per_invocation": 1290,
+            "invocations_per_batch": 23716,
+            "instances": [{"participants": [0, 1]}],
+        }, {
+            "name": "camera_fusion", "comm_type": "p2p",
+            "bytes_per_invocation": 1419,
+            "invocations_per_batch": 22684,
+            "instances": [{"participants": [2, 1]}],
+        }]}}
+        pkts = model_to_trace(tm, n_nodes=4, ipc=1.0)
+        # Each invocation = 1 P2P packet. 23716 + 22684 = 46400 total.
+        assert len(pkts) == 46400
+        # lidar_fusion: src=0 → dst=1 ; camera_fusion: src=2 → dst=1
+        assert pkts[0][1] == 0 and pkts[0][3] == 1  # lidar_fusion first packet
+        assert pkts[-1][1] == 2 and pkts[-1][3] == 1  # camera_fusion last packet
+        # lidar packets all go 0→1 ; camera packets all go 2→1
+        lidar = [p for p in pkts if p[1] == 0]
+        camera = [p for p in pkts if p[1] == 2]
+        assert len(lidar) == 23716
+        assert len(camera) == 22684
+        assert all(p[3] == 1 for p in lidar)
+        assert all(p[3] == 1 for p in camera)
+        assert all(p[0] >= 0 for p in pkts)  # non-negative cycles
+
+    def test_p2p_accurate_volumes(self):
+        """With --accurate-volumes, P2P packets carry flits sized to the byte
+        volume (bytes_per_invocation / 64B per flit), not the 4-flits default.
+        """
+        tm = {"network": {"flow_classes": [{
+            "name": "sensor_fusion", "comm_type": "P2P",
+            "bytes_per_invocation": 1290,
+            "invocations_per_batch": 1,
+            "instances": [{"participants": [3, 7]}],
+        }]}}
+        pkts = model_to_trace(tm, n_nodes=8, ipc=1.0, accurate=True)
+        assert len(pkts) == 1
+        # 1290B / 64B per flit = 20.15625 → ceil = 21 flits
+        assert pkts[0][4] == 21
 
     def test_write_trace_round_trips_through_parser(self, tmp_path):
         pkts = model_to_trace(_traffic_model(), n_nodes=8)
@@ -220,3 +277,112 @@ class TestModelToTraceCLI:
         assert "2 flow classes" in r.stdout
         assert "Generated" in r.stdout and "Estimated IR:" in r.stdout
         assert out.exists()
+
+
+# ── PR C: fail-closed lowering + LoweringManifest v0 ──────────────────────────
+
+class TestBroadcastDecomposer:
+    """PR C §8.3: BROADCAST is precisely defined, not silently deleted.
+    The real model automotive_adas.json uses comm_type BROADCAST."""
+
+    def test_broadcast_shape(self):
+        pkts = broadcast_packets([0, 1, 2, 3], total_bytes=1024, ipc=0.5)
+        assert len(pkts) == 3  # k-1 receivers
+        assert all(p[1] == 0 for p in pkts)          # first participant sends
+        assert sorted(p[3] for p in pkts) == [1, 2, 3]  # others receive
+
+    def test_broadcast_registered_as_alias(self):
+        assert COLLECTIVE_DECOMPOSERS["BROADCAST"] is broadcast_packets
+        assert COLLECTIVE_DECOMPOSERS["broadcast"] is broadcast_packets
+
+    def test_real_automotive_adas_model_lowers(self):
+        """The actual repo model with a BROADCAST class must lower without
+        silent loss (it previously lost camera_frame entirely)."""
+        model_path = DSE / "models" / "automotive_adas.json"
+        if not model_path.exists():
+            pytest.skip("models/automotive_adas.json not present")
+        tm = json.loads(model_path.read_text())
+        # NOTE: this model ALSO has singleton-participant P2P instances,
+        # which fail closed by design — expect the precise error naming it.
+        with pytest.raises(LoweringError, match="participant"):
+            model_to_trace(tm, n_nodes=64)
+
+
+class TestLoweringManifest:
+    """PR C §6.3: every lowering emits a machine-readable conservation
+    manifest; unsupported/dropped are empty by construction."""
+
+    def test_main_writes_manifest_sidecar(self, tmp_path):
+        tm_path = tmp_path / "tm.json"
+        tm_path.write_text(json.dumps(_traffic_model()))
+        out = tmp_path / "out.trace"
+        r = subprocess.run(
+            [sys.executable, "-m", "veritx_dse.simulation.model_to_trace",
+             "--traffic-model", str(tm_path), "--nodes", "8",
+             "--out", str(out)],
+            capture_output=True, text=True, env=ENV, cwd=str(DSE), timeout=60)
+        assert r.returncode == 0, r.stderr[-500:]
+        mpath = tmp_path / "out.trace.manifest.json"
+        assert mpath.is_file(), "manifest sidecar must be written"
+        m = json.loads(mpath.read_text())
+        assert m["schema_version"] == 1
+        assert m["unsupported_operations"] == []
+        assert m["dropped_operations"] == []
+        assert m["output"]["packet_count"] > 0
+        assert m["output"]["trace_sha256"]
+
+    def test_manifest_conservation_counts(self, tmp_path):
+        """Conservation: declared ops map to emitted packets exactly.
+        allreduce: 2 inv × 2 inst × 24 pkts; alltoall: 1 × 4×3 pkts."""
+        tm_path = tmp_path / "tm.json"
+        tm_path.write_text(json.dumps(_traffic_model()))
+        out = tmp_path / "out.trace"
+        subprocess.run(
+            [sys.executable, "-m", "veritx_dse.simulation.model_to_trace",
+             "--traffic-model", str(tm_path), "--nodes", "8",
+             "--out", str(out)],
+            capture_output=True, text=True, env=ENV, cwd=str(DSE), timeout=60,
+            check=True)
+        m = json.loads((tmp_path / "out.trace.manifest.json").read_text())
+        assert m["operation_counts_by_kind"] == {
+            "allreduce": 4, "alltoall": 1}
+        trace_pkts = [l for l in out.read_text().splitlines()
+                      if not l.startswith("#")]
+        assert m["output"]["packet_count"] == len(trace_pkts) == 2 * 2 * 24 + 12
+
+    def test_manifest_captures_conversion_params(self, tmp_path):
+        tm_path = tmp_path / "tm.json"
+        tm_path.write_text(json.dumps(_traffic_model()))
+        out = tmp_path / "out.trace"
+        subprocess.run(
+            [sys.executable, "-m", "veritx_dse.simulation.model_to_trace",
+             "--traffic-model", str(tm_path), "--nodes", "8",
+             "--out", str(out), "--accurate-volumes"],
+            capture_output=True, text=True, env=ENV, cwd=str(DSE), timeout=60,
+            check=True)
+        m = json.loads((tmp_path / "out.trace.manifest.json").read_text())
+        assert m["conversion_parameters"]["accurate_volumes"] is True
+        assert m["conversion_parameters"]["bytes_per_flit"] == 64
+        # accurate mode: allreduce 4096B over 4-participant ring →
+        # bytes/step = 4096/4 = 1024 → 1024/64 = 16 flits/packet
+        assert m["output"]["flit_count"] == 2 * 2 * 24 * 16 + 4 * 3 * 4
+
+    def test_failed_lowering_writes_no_trace(self, tmp_path):
+        """Fail-closed: a rejected workload produces neither trace nor
+        manifest — no partial 'successful' artifact can exist."""
+        tm = {"network": {"flow_classes": [{
+            "name": "weird", "comm_type": "hypercube_shuffle",
+            "bytes_per_invocation": 64, "instances": [{"participants": [0, 1]}],
+        }]}}
+        tm_path = tmp_path / "tm.json"
+        tm_path.write_text(json.dumps(tm))
+        out = tmp_path / "out.trace"
+        r = subprocess.run(
+            [sys.executable, "-m", "veritx_dse.simulation.model_to_trace",
+             "--traffic-model", str(tm_path), "--nodes", "8",
+             "--out", str(out)],
+            capture_output=True, text=True, env=ENV, cwd=str(DSE), timeout=60)
+        assert r.returncode != 0
+        assert "hypercube_shuffle" in r.stderr
+        assert not out.exists()
+        assert not (tmp_path / "out.trace.manifest.json").exists()

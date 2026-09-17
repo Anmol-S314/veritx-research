@@ -119,6 +119,30 @@ jobs:
           publish_dir: ./public
           keep_files: true          # preserve other tracks' pages
 
+  # Verified-PRD Integrity PR A (§11.4): a compatibility claim requires CI
+  # evidence. The container job pins one Python; this matrix actually tests
+  # the declared >=3.12 floor on real interpreters — the job that would have
+  # caught the uuid.uuid7-on-3.13 defect.
+  pr-a-environment:
+    name: PR A env matrix (py ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install from declared metadata only
+        run: pip install -e tracks/t3-topology/dse
+      - name: Focused core tests
+        run: |
+          python -m pytest tracks/t3-topology/dse/tests/test_environment_contract.py -q
+          python -m pytest tracks/t3-topology/dse/tests/test_run_core.py -q
+          python -m pytest tracks/t3-topology/dse/tests/test_slice_a_booksim.py -q
+
   rebuild-docker:
     name: Rebuild Docker Image
     if: github.event_name == 'workflow_dispatch'

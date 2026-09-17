@@ -102,7 +102,9 @@ class TestVerifyInReport:
         )
         report = generate_report(cr, {"latency": 100.0})
         checks = {c["name"]: c for c in report["verification"]["checks"]}
-        assert checks["F7_qos_isolation"]["status"] == "WARN"
+        # PR B: no check exists for QoS isolation — UNSUPPORTED, not a WARN
+        # that implies a check ran.
+        assert checks["F7_qos_isolation"]["status"] == "UNSUPPORTED"
 
 
 # ── UVM Generation Integration ──────────────────────────────────────────────

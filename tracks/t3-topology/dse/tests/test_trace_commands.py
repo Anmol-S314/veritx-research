@@ -27,7 +27,7 @@ from veritx_dse.cli.cli import (
 )
 from veritx_dse.core.logging import Ctx
 
-LIB_TRACES = DSE / "inputs" / "traces"
+LIB_TRACES = DSE / "archive" / "inputs" / "traces"
 TINY_TRACE = LIB_TRACES / "test_dynamic.trace"   # runs fast
 
 
@@ -227,7 +227,8 @@ class TestModel:
         assert all(r.split()[2] == "0" for r in body)   # classes mapped to 0
         assert "Trace:" in capsys.readouterr().err
 
-    def test_unknown_comm_type_is_skipped_with_warning(self, tmp_path, capsys, monkeypatch):
+    def test_unknown_comm_type_fails_closed(self, tmp_path, capsys, monkeypatch):
+        """PR C: unsupported semantics refuse to lower — CLI fails, no trace."""
         tm = _traffic_model()
         tm["network"]["flow_classes"][0]["comm_type"] = "teleport"
         model = tmp_path / "tm.json"
@@ -235,8 +236,11 @@ class TestModel:
         out = tmp_path / "o.trace"
         monkeypatch.chdir(tmp_path)
         cmd_trace_model(Ctx(verbosity=1), _args(model=str(model), nodes=3, out=str(out)))
-        assert "unknown comm_type" in capsys.readouterr().err
-        assert not [l for l in out.read_text().splitlines() if not l.startswith("#")]
+        err = capsys.readouterr().err
+        assert "Lowering refused" in err
+        assert "teleport" in err
+        assert not out.exists()
+        assert not Path(str(out) + ".manifest.json").exists()
 
     def test_missing_model_fails(self, tmp_path, capsys):
         cmd_trace_model(Ctx(verbosity=1), _args(

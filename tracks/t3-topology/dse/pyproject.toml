@@ -8,16 +8,32 @@ version = "0.3.0"
 description = "Intent-to-fabric compiler for AI Network-on-Chip"
 readme = "README.md"
 license = {text = "Proprietary"}
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 authors = [
     {name = "VeritX Team"},
 ]
-dependencies = []
+dependencies = [
+    "pydantic>=2.5",
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "scikit-optimize>=0.9",
+    "pyyaml>=6.0",
+]
+# Verified-PRD Integrity PR A (§11): the declared range above must match the
+# range actually tested (see .github/workflows + PR-A environment tests) and
+# the interpreter floor enforced in veritx_dse.core.runs. uuid.uuid7 is
+# implemented locally in core/runs.py precisely so 3.12/3.13 work.
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
+]
+
+classifiers = [
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
 
 [project.scripts]

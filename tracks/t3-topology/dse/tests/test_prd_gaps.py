@@ -336,10 +336,42 @@ class TestDesignManifest:
             dependencies=DependencyGraph([]),
             noc_config=NocConfig(),
         )
-        dm = DesignManifest.create(cr)
+        dm = DesignManifest.create(cr, secret_key="test-key")
         assert dm.design_id is not None
         assert dm.guardrail_hash == cr.guardrail_hash()
         assert dm.revision == 1
+
+    def test_create_without_key_is_refused(self):
+        """PR B: no default signing secret exists — omitting the key must
+        fail loudly rather than sign with a source-embedded value."""
+        from veritx_dse.reports.artifact import DesignManifest, MissingSigningKey
+        from veritx_dse.model.compile_model import CompileRequest, Workload, ModelFamily, NocConfig, DependencyGraph, Agent, AgentKind
+        cr = CompileRequest(
+            workload=Workload(model_family=ModelFamily.MOE),
+            requirements=(),
+            agents=(Agent(AgentKind.COMPUTE_TILE, 64),),
+            dependencies=DependencyGraph([]),
+            noc_config=NocConfig(),
+        )
+        with pytest.raises(MissingSigningKey):
+            DesignManifest.create(cr)
+
+    def test_create_unsigned_is_honest(self):
+        """PR B: unsigned mode records CHECKSUMMED_UNSIGNED and an empty
+        signature — never a fake signature and never a hidden-key one."""
+        from veritx_dse.reports.artifact import DesignManifest
+        from veritx_dse.model.compile_model import CompileRequest, Workload, ModelFamily, NocConfig, DependencyGraph, Agent, AgentKind
+        cr = CompileRequest(
+            workload=Workload(model_family=ModelFamily.MOE),
+            requirements=(),
+            agents=(Agent(AgentKind.COMPUTE_TILE, 64),),
+            dependencies=DependencyGraph([]),
+            noc_config=NocConfig(),
+        )
+        dm = DesignManifest.create_unsigned(cr)
+        assert dm.signature == ""
+        assert dm.metadata["signing_mode"] == "CHECKSUMMED_UNSIGNED"
+        assert dm.manifest_hash  # checksum integrity still present
 
     def test_manifest_revision_chain(self):
         from veritx_dse.reports.artifact import DesignManifest
@@ -351,8 +383,8 @@ class TestDesignManifest:
             dependencies=DependencyGraph([]),
             noc_config=NocConfig(),
         )
-        dm1 = DesignManifest.create(cr)
-        dm2 = dm1.revise(cr)
+        dm1 = DesignManifest.create(cr, secret_key="test-key")
+        dm2 = dm1.revise(cr, secret_key="test-key")
         assert dm2.revision == 2
         assert dm2.parent_hash == dm1.manifest_hash
         assert dm2.design_id == dm1.design_id  # same design, new revision
@@ -367,7 +399,7 @@ class TestDesignManifest:
             dependencies=DependencyGraph([]),
             noc_config=NocConfig(),
         )
-        dm = DesignManifest.create(cr)
+        dm = DesignManifest.create(cr, secret_key="test-key")
         d = dm.to_dict()
         dm2 = DesignManifest.from_dict(d)
         assert dm2.design_id == dm.design_id

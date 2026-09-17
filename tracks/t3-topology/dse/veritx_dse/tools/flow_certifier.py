@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""milestone_c.py — Flow-Class-Aware Certification Engine (PLAN §Milestone C).
+"""flow_certifier.py — Flow-Class-Aware Certification Engine.
 
-from log import get_log
-log = get_log("milestone_c")
+Named for what it does (certifies traffic-model flow classes against a
+topology); formerly milestone_c.py, a plan-phase name that outlived the
+plan.
 
 Reads:
   1. Unified TrafficModel JSON (dse/models/traffic_model.json)
@@ -22,7 +23,7 @@ the hint deadline.  A PASS means the topology CAN deliver within the
 bandwidth-implied deadline under ideal conditions.
 
 Usage:
-  python3 milestone_c.py \\
+  python3 flow_certifier.py \\
     --traffic-model dse/models/traffic_model.json \\
     --topology .noc_p0/custom.anynet \\
     [--meta .noc_p0/rtl_out/meta.json] \\
@@ -39,7 +40,7 @@ from collections import deque
 from pathlib import Path
 
 # ── Topology helpers (reuse parse_anynet from deadlock_routing) ────────
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from deadlock_routing import parse_anynet
 
 
@@ -173,9 +174,9 @@ def check_cdg_acyclic(adj, n):
     Returns (acyclic: bool, n_cycles: int).
     """
     # Import from gen_rtl.py (same codebase). Path is computed relative to
-    # THIS file (dse/scripts/) so it works no matter where the repo root is:
-    # dse/scripts -> dse -> t3-topology -> scripts/rtlgen.
-    rtl_dir = Path(__file__).resolve().parent.parent.parent / "scripts" / "rtlgen"
+    # THIS file (veritx_dse/tools/) so it works no matter where the repo root is:
+    # veritx_dse/tools -> veritx_dse -> dse -> t3-topology -> scripts/rtlgen.
+    rtl_dir = Path(__file__).resolve().parent.parent.parent.parent / "scripts" / "rtlgen"
     sys.path.insert(0, str(rtl_dir))
     try:
         from gen_rtl import cdg_has_cycle, dim_order_tables, up_down_tables, dijkstra_tables
@@ -388,7 +389,7 @@ def main():
     # is consistent with the actual topology (prevents tampered certificates).
     if meta and "guardrail_hash" in meta and meta["guardrail_hash"] != "not_generated_by_gen_rtl":
         try:
-            rtl_dir = Path(__file__).resolve().parent.parent.parent / "scripts" / "rtlgen"
+            rtl_dir = Path(__file__).resolve().parent.parent.parent.parent / "scripts" / "rtlgen"
             sys.path.insert(0, str(rtl_dir))
             from gen_rtl import (
                 dim_order_tables, up_down_tables, dijkstra_tables,

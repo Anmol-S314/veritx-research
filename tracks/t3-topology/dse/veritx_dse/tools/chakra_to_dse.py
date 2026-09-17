@@ -167,6 +167,11 @@ def generate_dse_trace(ops, npu_map, speedup=100, base_cycle=10,
         size_flits = max(1, (nbytes + FLIT_BYTES - 1) // FLIT_BYTES)
         pkt_flits = pkt_flits_override if pkt_flits_override else min(size_flits, MAX_FLITS_PER_PKT)
         n_pkts = max(1, (size_flits + pkt_flits - 1) // pkt_flits)
+        # Conservation: every packet carries full pkt_flits EXCEPT the
+        # last, which carries the remainder — total emitted flits ==
+        # size_flits exactly (no fabricated bytes for non-multiples).
+        _pkt_sizes = [pkt_flits] * n_pkts
+        _pkt_sizes[-1] = size_flits - pkt_flits * (n_pkts - 1)
 
         if comm == "ALLREDUCE":
             if collective == "star":
@@ -175,29 +180,29 @@ def generate_dse_trace(ops, npu_map, speedup=100, base_cycle=10,
                 for p in range(n_pkts):
                     for i in range(1, n_ranks):
                         c = cycle + p * n_ranks + i
-                        entries.append((c, root, 0, npu_map[i], pkt_flits))
-                        entries.append((c + n_ranks, npu_map[i], 0, root, pkt_flits))
+                        entries.append((c, root, 0, npu_map[i], _pkt_sizes[p]))
+                        entries.append((c + n_ranks, npu_map[i], 0, root, _pkt_sizes[p]))
             elif collective == "tree":
                 # Tree: O(log N) steps, each rank sends to partner
                 tree = _tree_steps(n_ranks)
                 for p in range(n_pkts):
                     for step, sender, receiver in tree:
                         c = cycle + p * len(tree) * 2 + step * 2
-                        entries.append((c, npu_map[sender], 0, npu_map[receiver], pkt_flits))
-                        entries.append((c + 1, npu_map[receiver], 0, npu_map[sender], pkt_flits))
+                        entries.append((c, npu_map[sender], 0, npu_map[receiver], _pkt_sizes[p]))
+                        entries.append((c + 1, npu_map[receiver], 0, npu_map[sender], _pkt_sizes[p]))
             elif collective == "butterfly":
                 # Butterfly: O(log N) steps, XOR-based pairs
                 bf = _butterfly_steps(n_ranks)
                 for p in range(n_pkts):
                     for step, sender, receiver in bf:
                         c = cycle + p * len(bf) * 2 + step * 2
-                        entries.append((c, npu_map[sender], 0, npu_map[receiver], pkt_flits))
-                        entries.append((c + 1, npu_map[receiver], 0, npu_map[sender], pkt_flits))
+                        entries.append((c, npu_map[sender], 0, npu_map[receiver], _pkt_sizes[p]))
+                        entries.append((c + 1, npu_map[receiver], 0, npu_map[sender], _pkt_sizes[p]))
             else:  # ring
                 for p in range(n_pkts):
                     for i in range(n_ranks):
                         c = cycle + p * n_ranks + i
-                        entries.append((c, npu_map[i], 0, npu_map[(i + 1) % n_ranks], pkt_flits))
+                        entries.append((c, npu_map[i], 0, npu_map[(i + 1) % n_ranks], _pkt_sizes[p]))
 
         elif comm == "ALLGATHER":
             if collective == "star":
@@ -205,25 +210,25 @@ def generate_dse_trace(ops, npu_map, speedup=100, base_cycle=10,
                 for p in range(n_pkts):
                     for i in range(1, n_ranks):
                         c = cycle + p * n_ranks + i
-                        entries.append((c, root, 1, npu_map[i], pkt_flits))
+                        entries.append((c, root, 1, npu_map[i], _pkt_sizes[p]))
             elif collective == "tree":
                 tree = _tree_steps(n_ranks)
                 for p in range(n_pkts):
                     for step, sender, receiver in tree:
                         c = cycle + p * len(tree) + step
-                        entries.append((c, npu_map[sender], 1, npu_map[receiver], pkt_flits))
+                        entries.append((c, npu_map[sender], 1, npu_map[receiver], _pkt_sizes[p]))
             elif collective == "butterfly":
                 bf = _butterfly_steps(n_ranks)
                 for p in range(n_pkts):
                     for step, sender, receiver in bf:
                         c = cycle + p * len(bf) + step
-                        entries.append((c, npu_map[sender], 1, npu_map[receiver], pkt_flits))
-                        entries.append((c, npu_map[receiver], 1, npu_map[sender], pkt_flits))
+                        entries.append((c, npu_map[sender], 1, npu_map[receiver], _pkt_sizes[p]))
+                        entries.append((c, npu_map[receiver], 1, npu_map[sender], _pkt_sizes[p]))
             else:  # ring
                 for p in range(n_pkts):
                     for i in range(n_ranks):
                         c = cycle + p * n_ranks + i
-                        entries.append((c, npu_map[i], 1, npu_map[(i + 1) % n_ranks], pkt_flits))
+                        entries.append((c, npu_map[i], 1, npu_map[(i + 1) % n_ranks], _pkt_sizes[p]))
 
         elif comm == "REDUCESCATTER":
             if collective == "star":
@@ -231,25 +236,25 @@ def generate_dse_trace(ops, npu_map, speedup=100, base_cycle=10,
                 for p in range(n_pkts):
                     for i in range(1, n_ranks):
                         c = cycle + p * n_ranks + i
-                        entries.append((c, npu_map[i], 1, root, pkt_flits))
+                        entries.append((c, npu_map[i], 1, root, _pkt_sizes[p]))
             elif collective == "tree":
                 tree = _tree_steps(n_ranks)
                 for p in range(n_pkts):
                     for step, sender, receiver in reversed(tree):
                         c = cycle + p * len(tree) + (len(tree) - 1 - step)
-                        entries.append((c, npu_map[sender], 1, npu_map[receiver], pkt_flits))
+                        entries.append((c, npu_map[sender], 1, npu_map[receiver], _pkt_sizes[p]))
             elif collective == "butterfly":
                 bf = _butterfly_steps(n_ranks)
                 for p in range(n_pkts):
                     for step, sender, receiver in reversed(bf):
                         c = cycle + p * len(bf) + (len(bf) - 1 - step)
-                        entries.append((c, npu_map[sender], 1, npu_map[receiver], pkt_flits))
-                        entries.append((c, npu_map[receiver], 1, npu_map[sender], pkt_flits))
+                        entries.append((c, npu_map[sender], 1, npu_map[receiver], _pkt_sizes[p]))
+                        entries.append((c, npu_map[receiver], 1, npu_map[sender], _pkt_sizes[p]))
             else:  # ring
                 for p in range(n_pkts):
                     for i in range(n_ranks):
                         c = cycle + p * n_ranks + i
-                        entries.append((c, npu_map[i], 1, npu_map[(i - 1) % n_ranks], pkt_flits))
+                        entries.append((c, npu_map[i], 1, npu_map[(i - 1) % n_ranks], _pkt_sizes[p]))
 
         elif comm == "ALLTOALL":
             if collective == "butterfly":
@@ -257,15 +262,15 @@ def generate_dse_trace(ops, npu_map, speedup=100, base_cycle=10,
                 for p in range(n_pkts):
                     for step, sender, receiver in bf:
                         c = cycle + p * len(bf) + step
-                        entries.append((c, npu_map[sender], 1, npu_map[receiver], pkt_flits))
-                        entries.append((c, npu_map[receiver], 1, npu_map[sender], pkt_flits))
+                        entries.append((c, npu_map[sender], 1, npu_map[receiver], _pkt_sizes[p]))
+                        entries.append((c, npu_map[receiver], 1, npu_map[sender], _pkt_sizes[p]))
             else:  # ring permutation
                 for p in range(n_pkts):
                     for i in range(n_ranks):
                         c = cycle + p * n_ranks + i
                         ep_group_start = (i // ep_size) * ep_size
                         dst_rank = ep_group_start + ((i - ep_group_start + 1) % ep_size)
-                        entries.append((c, npu_map[i], 1, npu_map[dst_rank], pkt_flits))
+                        entries.append((c, npu_map[i], 1, npu_map[dst_rank], _pkt_sizes[p]))
 
         elif comm == "REMOTE":
             # KV-cache remote memory — excluded

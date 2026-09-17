@@ -198,12 +198,13 @@ class TestCliHelpers:
 
 class TestPresets:
     def test_edge_counts_all_backends(self):
-        assert _default_edge_count("mesh", {"k": 4, "n": 2}) == 32
+        assert _default_edge_count("mesh", {"k": 4, "n": 2}) == 24
         assert _default_edge_count("torus", {"k": 4, "n": 2}) == 32
         assert _default_edge_count("flatfly", {"k": 4, "n": 2, "c": 4}) == \
             Topology("f", "flatfly", "r", {"k": 4, "n": 2, "c": 4}).edges()
-        assert _default_edge_count("gec", {"k": 8, "o": 7}) == \
-            2 * 8 * 7 + 7 * 8 * 8
+        assert _default_edge_count("gec", {"k": 8, "o": 7}) == 8 * 8 * 7
+        # express builds ONLY the p2p graph (448 undirected); the old
+        # mesh_edges+express total (560) counted unbuilt mesh links.
         assert _default_edge_count("anynet", {}) == 0
         assert _default_edge_count("mystery", {}) == 0
 
@@ -218,11 +219,19 @@ class TestPresets:
         p.write_text(
             "router 0 node 0 router 1\n"
             "router 1 node 1 router 0 router 2\n"
-            "garbage line\n"
             "router 2 node 2 router 1\n")
         n, e = count_anynet_edges(str(p))
         assert n == 3
-        assert e == 2        # {0-1, 1-2}, deduped
+        assert e == 2        # {0-1, 1-2}, deduped + symmetrized
+        # Malformed files are rejected WHOLE (BookSim asserts on garbage
+        # lines; a partially-counted topology would rank a broken
+        # candidate). Consumer contract: (0, 0) = unusable.
+        p_bad = tmp_path / "bad.anynet"
+        p_bad.write_text(
+            "router 0 node 0 router 1\n"
+            "garbage line\n"
+            "router 1 node 1 router 0\n")
+        assert count_anynet_edges(str(p_bad)) == (0, 0)
         assert count_anynet_edges(str(tmp_path / "missing")) == (0, 0)
 
     def test_lookup_and_make_anynet(self, tmp_path):
@@ -338,8 +347,8 @@ class TestCompileModelValidators:
 class TestArtifactManifest:
     def test_revisions_increment_and_sign(self, monkeypatch, tmp_path):
         cr = preset_to_compile_request("moe_8npu")
-        dm = DesignManifest.create(cr, metadata={"engine": "t"})
-        dm2 = dm.revise(cr, metadata={"note": "rev2"})
+        dm = DesignManifest.create(cr, secret_key="test-key", metadata={"engine": "t"})
+        dm2 = dm.revise(cr, secret_key="test-key", metadata={"note": "rev2"})
         assert dm2.revision == dm.revision + 1
         assert dm2.design_id == dm.design_id
         assert dm2.metadata["note"] == "rev2"
@@ -553,7 +562,7 @@ class TestPipelineBranches:
                             tmp_path / "empty_parent2")
         (tmp_path / "empty_parent2").mkdir()
         show_results(_ctx(), last=5)
-        assert "No booksim results directory" in capsys.readouterr().err
+        assert "No booksim results yet" in capsys.readouterr().err
 
     def test_diff_runs_branches(self, tmp_path, capsys, monkeypatch):
         exp = tmp_path / "experiments"
@@ -621,6 +630,8 @@ class TestBOSynthesizer:
 
     def test_main_analytical_and_validation(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(bo_synthesizer, "_SYNTH_DIR",
+                            tmp_path / "runs" / "booksim")
         t = tmp_path / "traffic.trace"
         t.write_text("\n".join(
             f"{i} {i % 4} 0 {(i + 1) % 4} 4" for i in range(40)) + "\n")
@@ -833,7 +844,9 @@ class TestCliBranches:
             output=None, log=None, seed=1)
         cmd_run(ctx, args)
         assert ctx.failed
-        assert "Trace generation failed" in capsys.readouterr().err
+        # Fail-fast gate: the miss is named precisely (with available assets)
+        # and no ghost run dir is created.
+        assert "traffic model not found" in capsys.readouterr().err
 
     def test_main_dispatch_subparser_help(self):
         rc, out, err = _cli("trace")
@@ -877,10 +890,10 @@ def capsys_err(f):
 class TestDesignManifestChain:
     def test_increment_chain_hashes(self):
         cr = preset_to_compile_request("llama1b_tp64")
-        dm = DesignManifest.create(cr)
+        dm = DesignManifest.create(cr, secret_key="test-key")
         chain = [dm]
         for i in range(2):
-            chain.append(chain[-1].revise(cr, metadata={"step": i}))
+            chain.append(chain[-1].revise(cr, secret_key="test-key", metadata={"step": i}))
         assert [m.revision for m in chain] == sorted(m.revision for m in chain)
         assert chain[2].parent_hash == chain[1].manifest_hash
         assert chain[1].parent_hash == chain[0].manifest_hash

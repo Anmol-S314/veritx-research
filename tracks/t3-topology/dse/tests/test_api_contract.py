@@ -64,7 +64,7 @@ class TestCompileRequestApiContract:
         cr = self._minimal_cr(
             dependencies=[Dependency(source="a", target="b", kind=DepKind.BLOCKING)]
         )
-        dm = DesignManifest.create(cr)
+        dm = DesignManifest.create(cr, secret_key="test-key")
         assert dm.revision == 1
         assert len(dm.guardrail_hash) == 64
 

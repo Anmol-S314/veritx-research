@@ -1,0 +1,14 @@
+# veritx runtime dependency lock — verified-PRD Integrity PR A (§11.3)
+#
+# This file is the scientific-environment identity for runs: its SHA256 is
+# recorded in provenance.json ("python_dependency_lock"). Regenerate it with
+#   make -C tracks/t3-topology lock
+# after changing pyproject [project].dependencies, and commit the result.
+#
+# Exact pins captured on the reference environment (Python 3.14.4, linux);
+# they satisfy the >= floors declared in pyproject.toml.
+pydantic==2.13.4
+numpy==2.4.6
+scipy==1.17.1
+scikit-optimize==0.10.2
+pyyaml==6.0.3
