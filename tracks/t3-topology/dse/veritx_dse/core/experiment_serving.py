@@ -197,18 +197,26 @@ def run_serving_experiment(
 
     # ── execute (supervised child; WE own the process, not the protocol)
     csv_path = run.root / "artifacts" / "requests.csv"
+    # Phase 9: run-owned inputs root + saved trace text, so the run's
+    # workload canonicalizes into the run dir. The child never writes
+    # outside the run and skips its own cleanup (build_serve_cmd pins
+    # --keep-inputs when inputs_root is set).
+    inputs_root = run.root / "inputs"
     args = serve_args(
         num_reqs=sv["num_reqs"], network_backend=backend,
         cycle_accurate=sv["cycle_accurate"],
         request_routing_policy=sv["request_routing_policy"],
         output=str(csv_path), log_level="WARNING",
-        timeout=resolved["simulation"]["timeout_s"])
+        timeout=resolved["simulation"]["timeout_s"],
+        save_trace_text=True, inputs_root=str(inputs_root),
+        run_id=run.run_id)
     cmd = build_serve_cmd(
         args,
         locate_serve_path(str(cluster_path), llmsim_dir=LLMSIM_DIR,
                           repo_dir=REPO, dse_dir=DSE_DIR),
         locate_serve_path(str(dataset_path), llmsim_dir=LLMSIM_DIR,
-                          repo_dir=REPO, dse_dir=DSE_DIR))
+                          repo_dir=REPO, dse_dir=DSE_DIR),
+        inputs_root=str(inputs_root), run_id=run.run_id)
     env = {**os.environ, "VERITX_LEDGER": "1"}  # fabric evidence channel
     try:
         from ..core.process import supervised_run
@@ -293,6 +301,26 @@ def _verdict(run: Run, res: Any, csv_path: Path, sv: dict[str, Any],
             **engine_identity_from_binaries(serve_binaries),
             "cluster": sv["cluster"],
         }
+    # ── Phase 9: canonicalize the run's workload ─────────────────────
+    # Saved traces (run-owned inputs root, --save-trace-text) become
+    # content-addressed WorkloadArtifacts; the workload identity rides
+    # the run result and comparison fingerprints consume it. Fail-closed:
+    # canonicalization failure fails the run.
+    workload_index = None
+    workload_identity_hash = None
+    try:
+        from ..workload.serve import canonicalize_run_workload, \
+            workload_identity as _wi
+        from .paths import serving_fixture
+        workload_index = canonicalize_run_workload(
+            run.root, serving_fixture("cluster", sv["cluster"]))
+        workload_identity_hash = _wi(workload_index)
+    except Exception as e:  # WorkloadError and anything unexpected
+        run.add_result("serve", {
+            "error": "WORKLOAD_CANONICALIZATION_FAILED", "detail": str(e),
+            "retired_requests": retired})
+        run.finalize("FAILED", note="workload canonicalization failed")
+        return run
     try:
         bundle = build_serving_metrics(
             csv_path, num_requested=sv["num_reqs"], fidelity=fidelity,
@@ -308,6 +336,12 @@ def _verdict(run: Run, res: Any, csv_path: Path, sv: dict[str, Any],
         "backend_binaries": [binary_identity(b) for b in serve_binaries],
         "cluster_sha256": binary_identity(cluster_path)["sha256"],
         "dataset_sha256": binary_identity(dataset_path)["sha256"],
+        "workload": {
+            "identity": workload_identity_hash,
+            "artifact_count": len(workload_index["artifacts"]),
+            "index": "workload/index.json",
+            "certified": True,
+        },
         **result_extra,
         "fabric": {
             "coll_completes": evidence["coll_completes"],

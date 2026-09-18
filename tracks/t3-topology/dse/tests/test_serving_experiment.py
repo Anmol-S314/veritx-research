@@ -262,6 +262,19 @@ class TestFastNegatives:
                                 "end_time", "latency", "TTFT", "TPOT",
                                 "ITL"])
                     w.writerows(csv_rows)
+            # Phase 9: the real child saves trace text under the
+            # run-owned --inputs-root; a run without saved traces fails
+            # closed at canonicalization. The fake must save one too —
+            # same layout and grammar as trace_generator._write_trace.
+            if "--inputs-root" in cmd:
+                tdir = (Path(cmd[cmd.index("--inputs-root") + 1])
+                        / "trace" / "fake_hw" / "fake_model")
+                tdir.mkdir(parents=True, exist_ok=True)
+                (tdir / "instance0_batch1.txt").write_text(
+                    "SYNTHETIC\\t\\tmodel_parallel_NPU_group: 1\n"
+                    "1\n"
+                    "embedding_0 1000 LOCAL 1024 LOCAL 2048 LOCAL 512"
+                    " NONE 0 1\n")
             if timeout:
                 raise subprocess.TimeoutExpired(cmd, 1)
             r = R()
@@ -340,6 +353,46 @@ class TestGoldenA:
         assert res["backend_binaries"][0]["sha256"] is not None
         assert res["cluster_sha256"] is not None
         assert res["dataset_sha256"] is not None
+        # Phase 9: canonical workload provenance rides the run result.
+        wl = res["workload"]
+        assert wl["certified"] is True
+        assert wl["identity"].startswith("sha256:")
+        assert wl["artifact_count"] >= 1
+        idx_path = run.root / "workload" / "index.json"
+        assert idx_path.is_file()
+        import json as _json
+        import hashlib as _hashlib
+        idx = _json.loads(idx_path.read_text())
+        from veritx_dse.workload.canonical import WorkloadArtifact
+        art = WorkloadArtifact.from_dict(_json.loads(
+            (run.root / "workload" / idx["artifacts"][0]["file"])
+            .read_text()))
+        assert art.artifact_hash == idx["artifacts"][0]["artifact_hash"]
+        assert art.comm_bytes_total() > 0
+        # Phase 9 parity + sufficiency, end-to-end on the REAL run:
+        # regenerate the backend ET from the artifact ALONE and compare
+        # bytes with what the child actually executed.
+        from veritx_dse.workload.lowering import (
+            rows_from_artifact, lower_to_et)
+        executed = sorted(
+            (run.root / "inputs" / "workload").rglob("llm.*.et"))
+        assert executed, "run produced no llm.*.et backend inputs"
+        exec_sha = {"sha256:" + _hashlib.sha256(p.read_bytes()).hexdigest()
+                    for p in executed}
+        matched = False
+        for e in idx["artifacts"]:
+            art_i = WorkloadArtifact.from_dict(_json.loads(
+                (run.root / "workload" / e["file"]).read_text()))
+            regen = lower_to_et(
+                art_i, rows_from_artifact(art_i).rows,
+                run.root / "artifacts" / "regen" / e["name"],
+                num_npus=2, num_npu_group=1)
+            if set(regen.et_sha256s) & exec_sha:
+                matched = True
+                break
+        assert matched, (
+            "artifact-alone regeneration does not reproduce any of the "
+            f"run's executed backend inputs (executed={exec_sha})")
 
 
 @needs_serving

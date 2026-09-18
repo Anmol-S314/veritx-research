@@ -149,6 +149,8 @@ SERVE_DEFAULTS: dict[str, Any] = {
     "no_cleanup": False,
     "no_prefix_caching": False,
     "cycle_accurate": False,
+    "inputs_root": None,
+    "run_id": None,
     "max_num_seqs": None,
     "max_num_batched_tokens": None,
     "long_prefill_token_threshold": None,
@@ -218,13 +220,20 @@ def locate_serve_path(p: str, *, llmsim_dir: Path, repo_dir: Path,
     return _rel(Path.cwd() / p)
 
 
-def build_serve_cmd(args: Any, cluster_config: str, dataset: str) -> list:
+def build_serve_cmd(args: Any, cluster_config: str, dataset: str, *,
+                    inputs_root: str | None = None,
+                    run_id: str | None = None) -> list:
     """Assemble the `python -m serving` command line.
 
     Single source of truth for the CLI→module flag contract: every VeritX
     rename/inversion wrinkle (upstream --no-cleanup-inputs → --keep-inputs,
     --cycle-accurate → --no-booksim-replay-only) is applied exactly once,
     here.
+
+    inputs_root/run_id: Phase 9 — when the caller pins a run-owned inputs
+    root, the child writes its traces/ETs there and skips cleanup (the
+    slice needs the workload artifacts for canonicalization; ADR-style:
+    nothing outside the run dir is ever touched).
     """
     cmd = [
         sys.executable, "-m", "serving",
@@ -237,6 +246,14 @@ def build_serve_cmd(args: Any, cluster_config: str, dataset: str) -> list:
 
     if args.output:
         cmd.extend(["--output", str(Path(args.output).resolve())])
+
+    if inputs_root is not None:
+        cmd.extend(["--inputs-root", str(Path(inputs_root).resolve())])
+        # Phase 9: artifacts are canonicalized from the run-owned inputs
+        # root, so the child must leave them in place.
+        cmd.append("--keep-inputs")
+    if run_id is not None:
+        cmd.extend(["--run-id", str(run_id)])
 
     if args.no_cleanup:
         # VeritX: upstream renamed --no-cleanup-inputs to --keep-inputs.

@@ -195,13 +195,35 @@ def fingerprint_from_run(run_dir: Path) -> dict[str, Any]:
     serving = spec.get("serving")
     sim = spec.get("simulation", {})
 
-    # Workload identity: the resolved workload/serving inputs, hashed.
-    # (Serving fixture identity subsumes cluster parallelism — the
-    # cluster ID + its registry path are part of the hash input.)
-    wl_payload = canonical_json({
-        "workload": spec.get("workload"), "serving": serving,
-    })
-    workload_hash = hashlib.sha256(wl_payload.encode()).hexdigest()
+    # Workload identity: canonical first, fixture identity as fallback.
+    # Phase 9: a run whose serving slice canonicalized its saved traces
+    # carries <run>/workload/index.json with content-addressed
+    # WorkloadArtifact hashes — those ARE the workload identity, and the
+    # fingerprint is certified. Without them, fall back to hashing the
+    # resolved workload/serving inputs (fixture identity subsumes
+    # cluster parallelism) and mark the identity uncertified: two runs
+    # of the same fixture provably share semantics only through the
+    # canonical artifact, never through config equality alone.
+    wl_index_path = run_dir / "workload" / "index.json"
+    workload_certified = False
+    if wl_index_path.is_file():
+        try:
+            wl_index = json.loads(wl_index_path.read_text())
+        except (OSError, ValueError, KeyError, TypeError) as e:
+            raise RuntimeError(
+                f"workload index {wl_index_path} unreadable/malformed: {e} "
+                "— refusing to guess workload identity (fail-closed)")
+        from ..workload.serve import workload_identity
+        # Shared identity rule (slice provenance uses the same); raises
+        # WorkloadError on an empty artifact set — fail-closed, never a
+        # guessed identity.
+        workload_hash = workload_identity(wl_index)
+        workload_certified = True
+    else:
+        wl_payload = canonical_json({
+            "workload": spec.get("workload"), "serving": serving,
+        })
+        workload_hash = hashlib.sha256(wl_payload.encode()).hexdigest()
 
     if serving is not None:
         simulator = f"llmservingsim/{serving.get('network_backend', '?')}"
@@ -242,6 +264,7 @@ def fingerprint_from_run(run_dir: Path) -> dict[str, Any]:
         "dp": None, "ep": None, "pp": None,  # inside cluster identity
         "instance_mapping": None,
         "metric_schema": metric_schema,
+        "workload_certified": workload_certified,
         "certified": True,
         "run_id": manifest.get("run_id", run_dir.name),
     }
