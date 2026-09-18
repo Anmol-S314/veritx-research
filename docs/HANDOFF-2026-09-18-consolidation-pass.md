@@ -4,6 +4,35 @@
 **Directive:** reviewer's stop-all-new-work consolidation (6 items). Every
 item executed; **no new-phase work was started.**
 
+> **STATUS UPDATE 2026-09-19 — FROZEN & PUSHED.** Freeze patch `36ade9fc`
+> pushed to both remotes (`origin`/internal devrepo + `github`); annotated
+> tag `phase17-freeze-2026-09-19` → `36ade9fc` on both. Final ledger:
+>
+> ```text
+> Phase 13  PASS
+> Phase 14  PASS
+> Phase 15  PASS / CLOSED / permanent recertification gate
+> Phase 16  PASS / FROZEN
+> Phase 17  PASS / stable application API
+> ```
+>
+> Consolidation is DONE. Phases 13–17 are frozen at the tag — do not
+> reopen them casually. **Next bounded milestone: T3 Study Integrity**
+> (study orchestration / result-identity defects surfaced by the last
+> T3 run: historical sweep-point reuse across changed studies, BookSim +
+> ASTRA-scale metrics mixed in one report, mixed node-count flow,
+> compare/report landing under a foreign CONFIG dir, n=1 printed as
+> "Winner"). Shape: a `StudyManifest`/`StudyFingerprint` (workload hash,
+> node_count, traffic_kind, packetization, simulator/fidelity, tool
+> hashes, topology cohort, rates, git commit) with
+> `study/{manifest.json,sweep/,compare/,report/,artifacts/}`; steps
+> consume ONE study_id; `old result exists` never implies `safe to
+> reuse` — reuse requires fingerprint match; report aggregation only
+> across matching producer/fidelity/semantics/units/node-count. Then
+> ONE fresh controlled study (N16-only, fixed traffic+rates+build+commit,
+> 3 seeds for the explicit compare) verifying zero contamination end to
+> end. Only after that: the next product layer (user-facing workflow).
+
 ## 0. Scope discipline
 
 The previous session had overrun into Phase 17/18 API surfaces while
