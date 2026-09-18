@@ -41,7 +41,7 @@ import time
 from pathlib import Path
 
 from ..core.errors import TraceError, ConfigError, BookSimError, TimeoutError
-from ..core.constants import DEFAULT_K, DEFAULT_NODES
+from ..core.constants import BOOKSIM_SEED, DEFAULT_K, DEFAULT_NODES
 
 
 from ..core.logging import (
@@ -842,6 +842,83 @@ def cmd_synthesize_iterative(ctx: Ctx, args):
     else:
         fail(ctx, "synthesizer finished but printed no Final line — "
                   "no topology was certified")
+
+
+def cmd_synthesize_compile(ctx: Ctx, args):
+    """Phase 13: requirements-driven fabric compiler.
+
+    Declared E2 requirements become hard constraints over a candidate set
+    (from a synthesis results file). Verdicts: FEASIBLE (with Pareto
+    evidence) or NO_FEASIBLE_DESIGN (with violation + relaxation evidence).
+    Requirements are never silently relaxed; unmeasurable constraints fail
+    closed. Both verdicts are real outcomes — only setup errors fail().
+    """
+    import json as _json
+
+    from veritx_dse.core.errors import VeritXError
+    from veritx_dse.synthesis.bridge import compile_from_results_file
+    from veritx_dse.synthesis.compiler import (
+        CompilerRequest, InvalidCompilerRequest,
+    )
+
+    # Parse requirements FIRST: an incoherent spec is deterministic and
+    # free to check — it must be reported even when files are also missing,
+    # and must never cost an evaluation (fail-fast pattern, cmd_serve ref).
+    try:
+        request_kwargs = {
+            "requirements": _json.loads(args.requirements),
+            "search_budget": {"requested_evaluations": args.max_evals},
+            "seed_policy": {"seed": args.seed, "replication": 1},
+        }
+        CompilerRequest(candidates=[{"name": "preflight"}],
+                        **{k: v for k, v in request_kwargs.items()})
+    except (InvalidCompilerRequest, _json.JSONDecodeError) as e:
+        fail(ctx, f"invalid --requirements: {e}")
+        return
+
+    if not _require_file(ctx, args.results, "synthesis results", kind=None):
+        return
+    if not _require_file(ctx, args.trace, "trace", kind="trace"):
+        return
+
+    out_path = (SYNTH_DIR / f"compile_verdict_N{args.nodes}.json") \
+        if args.out is None else Path(_resolve_path(args.out))
+    try:
+        out = compile_from_results_file(
+            _resolve_path(args.results), request_kwargs,
+            trace_path=str(_resolve_path(args.trace)),
+            seed=args.seed, timeout=_eff_timeout(args, 600),
+            out_path=out_path,
+        )
+    except InvalidCompilerRequest as e:
+        fail(ctx, f"compiler request invalid: {e}")
+        return
+    except VeritXError as e:
+        fail(ctx, f"compiler cannot evaluate candidates: {e}")
+        return
+
+    # Report — NO_FEASIBLE_DESIGN is a real verdict (evidence written),
+    # not a command failure; only setup/environment errors fail() above.
+    scope = out["scope"]
+    ok(ctx, f"verdict: {out['verdict']} "
+            f"({scope['candidates']} candidates: {scope['feasible']} feasible, "
+            f"{scope['constraint_violation']} violated, "
+            f"{scope['evaluation_failed']} failed, "
+            f"{scope['constraint_unmeasurable']} unmeasurable, "
+            f"{scope['pruned']} pruned)")
+    if out["verdict"] == "FEASIBLE":
+        ok(ctx, f"pareto front: {', '.join(out['pareto']['front'])}")
+    else:
+        for v in out["violated_constraints"]:
+            ok(ctx, f"violated: {v['constraint']['kind']}"
+                    f"[{v['constraint']['qos_class']}]"
+                    f" bound={v['constraint']['bound']}"
+                    f" best_measured={v.get('best_measured')}")
+        relax = out["relaxation_information"]
+        if relax.get("minimal_ceiling_admitting_best") is not None:
+            ok(ctx, "relaxation: tightest ceiling admitting the best "
+                    f"measured candidate = {relax['minimal_ceiling_admitting_best']}c")
+    ok(ctx, f"evidence: {out.get('output', out_path)}")
 
 
 def _coerce_set_value(v: str):
@@ -3580,7 +3657,27 @@ def build_parser() -> argparse.ArgumentParser:
     p_iter.add_argument("--timeout", type=int, default=None,
                         help="Subprocess timeout in seconds (default: VERITX_TIMEOUT or 600)")
 
-    # evaluate
+    p_compile = _synth_ps["compile"]
+    p_compile.add_argument("--results", required=True,
+                           help="Synthesis results file (SynthResult records from "
+                                "bo/iterative/pareto runs) forming the candidate set")
+    p_compile.add_argument("--trace", required=True,
+                           help="Workload trace used to (re)evaluate every candidate")
+    p_compile.add_argument("--requirements", required=True,
+                           help="E2 requirements as JSON array, e.g. "
+                                "'[\"{\\\"qos_class\\\":\\\"latency_critical\\\","
+                                "\\\"latency_ceiling_cycles\\\":5000,"
+                                "\\\"binding\\\":true}\"]'")
+    p_compile.add_argument("--nodes", type=int, default=DEFAULT_NODES,
+                           help="Node count for the verdict filename")
+    p_compile.add_argument("--seed", type=int, default=BOOKSIM_SEED,
+                           help="BookSim seed (recorded in seed_policy; n=1)")
+    p_compile.add_argument("--max-evals", type=int, default=None,
+                           help="Declares requested_evaluations budget (recorded, not enforced)")
+    p_compile.add_argument("--out", default=None,
+                           help="Verdict evidence path (default: SYNTH_DIR/compile_verdict_N<nodes>.json)")
+    p_compile.add_argument("--timeout", type=int, default=None,
+                           help="Per-candidate evaluation timeout in seconds (default: VERITX_TIMEOUT or 600)")
     p_eval = _top_ps["evaluate"]
     es = p_eval.add_subparsers(dest=_SUB_DESTS["evaluate"])
 
@@ -3975,6 +4072,11 @@ COMMANDS = {
                "handler": cmd_synthesize_bo},
         "iterative": {"help": "RHO/GRPO iterative search", "t3_mode": "forward",
                       "handler": cmd_synthesize_iterative},
+        "compile": {"help": "Requirements-driven fabric compiler (Phase 13): "
+                            "requirements gate a candidate set; "
+                            "FEASIBLE / NO_FEASIBLE_DESIGN verdicts",
+                    "t3_mode": "forward",
+                    "handler": cmd_synthesize_compile},
     }},
     "evaluate": {"help": "Cycle-accurate scoring", "t3_mode": "forward",
                  "sub_dest": "eval_cmd", "handler": None, "subcommands": {
