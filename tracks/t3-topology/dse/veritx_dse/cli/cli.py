@@ -1021,11 +1021,52 @@ def _sim_overrides(args, names=("vcs", "vc_buf", "sample_period",
             if getattr(args, n, None) is not None}
 
 
+def _resolve_eval_topology(args):
+    """Resolve `evaluate booksim` --topo/--k/--routing into a Topology.
+
+    Contract (preset-mutation bug, 2026-09-18): a NAMED preset is an
+    immutable architecture. `dragonfly_72` means dragonflynew k=2 n=1 —
+    72 nodes — no matter what defaults argparse would invent. The old
+    code merged a default k=8 over preset params, silently turning
+    dragonfly_72 into 16,512 nodes and fattree_k4n3 into k=8.
+
+    Returns (Topology, None) or (None, reason).
+      - named preset, no explicit k/routing  → exactly the preset
+      - named preset + explicit k/routing    → refuse (immutable)
+      - raw backend name (no preset match)   → requires explicit --k
+    """
+    from veritx_dse.model.presets import topo_size, _TOPO_BY_NAME
+    preset = lookup_topo(args.topo)
+    explicit_k = getattr(args, "k", None)
+    explicit_routing = getattr(args, "routing", None)
+    if preset is not None:
+        if explicit_k is None and explicit_routing is None:
+            # Bare preset name or backend alias: exactly the preset
+            # architecture — never merge invented defaults over it.
+            return preset, None
+        if args.topo in _TOPO_BY_NAME:
+            # Named preset + explicit overrides: presets are immutable.
+            return None, (
+                f"preset '{preset.name}' is immutable — its architecture is "
+                f"{preset.backend} {preset.params} routing={preset.routing}. "
+                "Pass --k/--routing only with a raw backend name "
+                f"(e.g. --topo {preset.backend} --k … --routing …), "
+                "not with a named preset")
+    if explicit_k is None:
+        return None, (
+            f"raw backend '{args.topo}' requires an explicit --k "
+            "(refusing to invent a fabric size)")
+    if explicit_k < 2:
+        return None, f"k must be >= 2, got {explicit_k}"
+    # Raw form: routing defaults to dim_order (pre-existing contract),
+    # but k is REQUIRED — defaulting it is what corrupted presets before.
+    topo = Topology(f"{args.topo}_{explicit_k}x{explicit_k}", args.topo,
+                    explicit_routing or "dim_order", {"k": explicit_k, "n": 2})
+    return topo, None
+
+
 def cmd_evaluate_booksim(ctx: Ctx, args):
-    from veritx_dse.model.presets import lookup_topo, Topology
-    if args.k < 2:
-        fail(ctx, f"k must be >= 2, got {args.k}")
-        return
+    from veritx_dse.model.presets import lookup_topo, Topology, topo_size
     if not _require_file(ctx, args.trace, "trace", kind="trace"):
         return
     trace = _resolve_path(args.trace)
@@ -1035,32 +1076,19 @@ def cmd_evaluate_booksim(ctx: Ctx, args):
                   "check it with: veritx trace validate <trace>")
         return
 
-    # Resolve topology: try preset lookup first, then build from args
-    preset = lookup_topo(args.topo)
-    if preset is None and not args.routing:
-        # Unknown backend: the old path fed the raw string to BookSim as a
-        # topology name and died inside the sim ("Unknown topology",
-        # exit -11). Name the choices instead.
+    # Resolve topology: named presets are immutable; raw backends need
+    # explicit k+routing (fail closed — never invent a fabric size).
+    topo, err = _resolve_eval_topology(args)
+    if topo is None:
         anynet_hint = " (for .anynet files use: veritx evaluate anynet --topo …)" \
             if Path(args.topo).suffix == ".anynet" else ""
-        fail(ctx, f"unknown topology '{args.topo}'{anynet_hint} — try a preset "
-                  "(mesh_8x8, torus_8x8, flatfly_64, …) or pass --routing to "
-                  "force a BookSim backend name")
+        fail(ctx, f"{err}{anynet_hint}")
         return
-    if preset and not args.routing:
-        # Use preset defaults for routing and params
-        topo = Topology(
-            f"{args.topo}_{args.k}x{args.k}",
-            preset.backend, preset.routing,
-            {**preset.params, "k": args.k},
-            needs_noc_latency_zero=preset.needs_noc_latency_zero,
-        )
-    else:
-        # User specified backend + routing explicitly
-        routing = args.routing or "dim_order"
-        topo = Topology(f"{args.topo}_{args.k}x{args.k}", args.topo, routing, {"k": args.k, "n": 2})
-
-    log(ctx, f"BookSim {topo.backend} k={args.k} routing={topo.routing} trace={Path(args.trace).name} "
+    resolved_k = topo.params.get("k", "?")
+    resolved_n = topo_size(topo)[0]
+    log(ctx, f"BookSim {topo.backend} k={resolved_k} routing={topo.routing} "
+        f"topo={topo.name} terminals={resolved_n} "
+        f"trace={Path(args.trace).name} "
         f"({stats.num_packets} pkts, {stats.num_srcs} srcs, span={stats.span}c, IR={stats.ir:.4f})")
 
     config = build_config(topo, trace, sample_period=args.sample_period, seed=ctx.seed,
@@ -1090,7 +1118,7 @@ def cmd_evaluate_booksim(ctx: Ctx, args):
         ok(ctx, f"Latency: {result.get('latency', '?'):.2f}c | Hops: {result.get('hops', '?')}")
 
     out_dir = new_run_dir("evaluate", ctx.seed)
-    out_path = out_dir / f"eval_{topo.backend}{args.k}.json"
+    out_path = out_dir / f"eval_{topo.name}.json"
     out_path.write_text(json.dumps(result, indent=2))
     ok(ctx, f"Saved: {out_path}")
     output(ctx, result)
@@ -3687,7 +3715,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_bs = _eval_ps["booksim"]
     p_bs.add_argument("--trace", required=True)
-    p_bs.add_argument("--k", type=int, default=DEFAULT_K)
+    p_bs.add_argument("--k", type=int, default=None,
+                      help="Mesh/fabric parameter (raw-backend form only; "
+                           "named presets are immutable and refuse it)")
     from veritx_dse.model.presets import _TOPO_BY_BACKEND
     known_backends = sorted(_TOPO_BY_BACKEND.keys())
     p_bs.add_argument("--topo", default="mesh",

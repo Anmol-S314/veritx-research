@@ -383,15 +383,18 @@ class TestInputLabels:
         assert input_label("rel.json") == ("rel", Path("rel.json"))
 
 class TestValidationSurfaces:
-    def test_evaluate_booksim_rejects_k(self, ctx):
-        from veritx_dse.cli.cli import cmd_evaluate_booksim
-        cmd_evaluate_booksim(ctx, Namespace(k=1, trace="x.trace", topos="mesh_4x4"))
-        assert "k must be >= 2" in open(ctx.log_file).read()
+    def test_evaluate_booksim_rejects_k(self):
+        from veritx_dse.cli.cli import _resolve_eval_topology
+        from argparse import Namespace
+        topo, err = _resolve_eval_topology(
+            Namespace(topo="mesh", k=1, routing="dim_order"))
+        assert topo is None
+        assert "k must be >= 2" in err
 
     def test_evaluate_booksim_missing_trace(self, ctx, tmp_path):
         from veritx_dse.cli.cli import cmd_evaluate_booksim
         cmd_evaluate_booksim(ctx, Namespace(k=4, trace=str(tmp_path / "no.trace"),
-                                            topos="mesh_4x4"))
+                                            topo="mesh_4x4"))
         assert ctx.failed
 
     def test_certify_flow_missing_model(self, ctx, tmp_path):
