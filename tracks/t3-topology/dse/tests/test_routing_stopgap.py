@@ -97,6 +97,19 @@ class TestRouteTablePersistence:
         cert = json.loads((tmp_path / "cert.json").read_text())
         assert "route_table" not in cert
 
+    def test_booksim_cert_carries_route_artifact(self, tmp_path):
+        # Phase 10: the certificate carries the content-addressed
+        # RouteArtifact; it must reload hash-verified (tamper-evident).
+        r = _run_cert(tmp_path, UNIT_RING)
+        assert r.returncode == 0, r.stderr[-400:]
+        cert = json.loads((tmp_path / "cert.json").read_text())
+        ra = cert["route_artifact"]
+        assert ra["routing_algorithm"] == "anynet_dijkstra_hops"
+        assert len(ra["entries"]) == 4 * 3          # all-pairs minus diag
+        from veritx_dse.core.route_artifact import RouteArtifact
+        art = RouteArtifact.from_dict(ra)            # raises on hash mismatch
+        assert art.artifact_hash == ra["artifact_hash"]
+
 
 class TestWeightedAnynetRejected:
     def test_weighted_topology_exit_2_no_certificate(self, tmp_path):

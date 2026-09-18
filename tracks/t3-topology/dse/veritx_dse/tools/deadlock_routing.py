@@ -308,42 +308,18 @@ def is_connected(adj, n):
 
 # ---------------- BookSim-exact shortest paths (one routing truth) ----------------
 def booksim_first_hop_table(n, adj):
-    """The first-hop table BookSim's AnyNet actually builds — replicated
-    exactly from AnyNet::route() (networks/anynet.cpp), because the
-    certifier must evaluate the SAME routes the simulator executes.
+    """The first-hop table BookSim's AnyNet actually builds.
 
-    Tie-break semantics, from the C++ source:
-      * candidate scan is over std::set<int> rlist (ascending) keeping the
-        FIRST strict minimum -> min() over an ascending list;
-      * relaxation uses strict `<` -> the first predecessor sticks;
-      * neighbor iteration is std::map (ascending id).
-    All-pairs (BookSim's table covers every destination regardless of T),
-    so the CDG check is a conservative superset of any traffic pattern.
-    Returns {(s,t): next_hop_after_s}.
+    Delegates to core.route_artifact — the canonical home of the
+    routing-truth replica since Phase 10 (this module keeps a thin
+    re-export so existing callers/tests keep working; ONE
+    implementation lives in core).
     """
-    fh = {}
-    INF = float("inf")
-    for s in range(n):
-        dist = [INF] * n
-        prev = [-1] * n
-        dist[s] = 0
-        rlist = list(range(n))            # std::set<int>: ascending
-        while rlist:
-            u = min(rlist, key=lambda x: dist[x])   # first strict min wins
-            rlist.remove(u)
-            for v in sorted(adj[u]):      # std::map: ascending neighbors
-                nd = dist[u] + 1          # distance is hops (anynet.cpp)
-                if nd < dist[v]:          # strict: first predecessor sticks
-                    dist[v] = nd
-                    prev[v] = u
-        for t in range(n):
-            if t == s or dist[t] == INF:
-                continue                  # unreachable: callers gate on connectivity
-            v = t
-            while prev[v] != s:
-                v = prev[v]
-            fh[(s, t)] = v
-    return fh
+    # Absolute import: this module runs in three contexts (package,
+    # importlib bare-module, direct script) and veritx_dse is importable
+    # in all of them (editable install).
+    from veritx_dse.core.route_artifact import _anynet_replica_first_hops
+    return _anynet_replica_first_hops(n, adj)
 
 
 def booksim_route_paths(n, adj):
@@ -425,7 +401,7 @@ def deadlock_certificate(n, adj, T, anynet_path, method="mclb",
     """
     bestp, fh = route(n, adj, T, method=method, timeout=timeout)
     acyclic, cycles, nchan = build_cdg_and_check(bestp, n, adj, escape_vcs)
-    return {
+    result = {
         "topology": anynet_path,
         "connected": is_connected(adj, n),
         "method": method,
@@ -441,6 +417,16 @@ def deadlock_certificate(n, adj, T, anynet_path, method="mclb",
                        else "FAIL: cyclic CDG => assign these channels to an escape/separate VC class"},
         "escape_vcs_required": 0 if acyclic else escape_vcs,
     }
+    if method == "booksim":
+        # Phase 10: the certificate carries the content-addressed
+        # RouteArtifact (hash-verified on load) alongside the CSV diff
+        # seam — consumers reference the artifact hash, not the file.
+        from veritx_dse.core.route_artifact import RouteArtifact
+        import os
+        art = RouteArtifact.from_adjacency(
+            adj, name=os.path.splitext(os.path.basename(str(anynet_path)))[0])
+        result["route_artifact"] = art.serialize()
+    return result
 
 
 def main():

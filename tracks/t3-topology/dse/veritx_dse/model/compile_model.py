@@ -1482,14 +1482,63 @@ def verify_design(
         "Credit-based (pipelined) design intent — no overflow analysis "
         "executed.")
 
-    # F6: Routing correctness — requires proving the routes the simulator/RTL
-    # execute match the certified route set (the routing-truth gap, PR D).
-    add("F6_routing_correctness", "NOT_RUN",
-        "Executed routes equal certified routes — requires route-table "
-        "equivalence evidence",
-        "route_table_equivalence (pending RouteArtifact)",
-        f"Not executed: derived label '{va.routing_function}' is a design "
-        "choice, not an equivalence check.")
+    # F6: Routing correctness — the routes the simulator/RTL execute must
+    # equal the certified route set (RouteArtifact, Phase 10). Evidence:
+    #   route_equivalence  the equivalence report (status COMPARABLE)
+    #   route_artifact     the serialized artifact, re-verified by hash
+    # A tampered/untrusted artifact fails closed even when the report
+    # itself claims COMPARABLE — the report is only as good as the table
+    # it compared against.
+    route_ev = ev.get("route_equivalence")
+    if route_ev is not None:
+        art_d = ev.get("route_artifact")
+        hash_note = None
+        if art_d is not None:
+            try:
+                from ..core.route_artifact import RouteArtifact
+                RouteArtifact.from_dict(art_d)  # raises on hash mismatch
+            except Exception as e:  # malformed evidence must FAIL, not crash
+                hash_note = str(e)
+        if hash_note is not None:
+            add("F6_routing_correctness", "FAIL",
+                "Executed routes equal certified routes",
+                "route_table_equivalence (RouteArtifact)",
+                f"RouteArtifact untrusted: {hash_note}",
+                {"route_table_hash":
+                 (art_d or {}).get("route_table_hash")})
+            errors.append(
+                f"F6: RouteArtifact failed hash verification: {hash_note}")
+        elif route_ev.get("status") == "COMPARABLE":
+            cov = route_ev.get("coverage", {})
+            add("F6_routing_correctness", "PASS",
+                "Executed routes equal certified routes",
+                "route_table_equivalence (RouteArtifact)",
+                f"route_table_hash={route_ev.get('route_table_hash')} "
+                f"matched {cov.get('matched')}/"
+                f"{cov.get('artifact_flows')} first-hop flows",
+                {"route_table_hash": route_ev.get("route_table_hash")})
+        else:
+            mism = route_ev.get("mismatched", [])
+            first = mism[0] if mism else None
+            pin = (f"; first mismatch ({first['src']},{first['dst']}): "
+                   f"artifact {first['artifact_next_hop']} vs executed "
+                   f"{first['executed_next_hop']}" if first else "")
+            add("F6_routing_correctness", "FAIL",
+                "Executed routes equal certified routes",
+                "route_table_equivalence (RouteArtifact)",
+                f"equivalence status {route_ev.get('status')}: "
+                f"{len(mism)} mismatched flow(s){pin}",
+                {"route_table_hash": route_ev.get("route_table_hash")})
+            errors.append(
+                "F6: executed routes diverge from the certified route "
+                "table")
+    else:
+        add("F6_routing_correctness", "NOT_RUN",
+            "Executed routes equal certified routes — requires route-table "
+            "equivalence evidence",
+            "route_table_equivalence (RouteArtifact)",
+            f"Not executed: derived label '{va.routing_function}' is a design "
+            "choice, not an equivalence check.")
 
     # F7: QoS isolation — no formal QoS check is implemented.
     if cr.requirements:
