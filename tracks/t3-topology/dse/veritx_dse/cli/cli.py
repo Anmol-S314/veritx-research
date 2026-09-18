@@ -4062,7 +4062,183 @@ def build_parser() -> argparse.ArgumentParser:
     p_uvm.add_argument("--nodes", type=int, default=DEFAULT_NODES, help="Number of network nodes")
     p_uvm.add_argument("--k", type=int, default=DEFAULT_K, help="Mesh dimension (sqrt of nodes)")
 
+    # ── api ───────────────────────────────────────────────────────
+    p_api = _top_ps["api"]
+    apis = p_api.add_subparsers(dest=_SUB_DESTS["api"])
+
+    _api_ps = {}
+    for _sn, _sm in COMMANDS["api"]["subcommands"].items():
+        _api_ps[_sn] = apis.add_parser(_sn, help=_sm["help"])
+
+    p_api_val = _api_ps["validate"]
+    p_api_val.add_argument("--spec", required=True, help="Experiment spec JSON")
+
+    p_api_plan = _api_ps["plan"]
+    p_api_plan.add_argument("--spec", required=True, help="Experiment spec JSON")
+
+    p_api_exec = _api_ps["execute"]
+    p_api_exec.add_argument("--spec", required=True, help="Experiment spec JSON")
+    p_api_exec.add_argument("--timeout-s", type=int, default=None,
+                            help="Declared execution budget (seconds)")
+
+    p_api_run = _api_ps["run"]
+    p_api_run.add_argument("--run-id", required=True, help="Run directory id")
+
+    p_api_res = _api_ps["results"]
+    p_api_res.add_argument("--topology", default=None)
+    p_api_res.add_argument("--status", default=None)
+    p_api_res.add_argument("--workload", default=None)
+    p_api_res.add_argument("--limit", type=int, default=None,
+                           help="Row cap (budget-capped)")
+
+    p_api_cmp = _api_ps["compare"]
+    p_api_cmp.add_argument("--candidates", required=True,
+                           help="Candidates JSON (array or {candidates: [...]})")
+    p_api_cmp.add_argument("--metrics", required=True, help="Comma-separated metric names")
+    p_api_cmp.add_argument("--variables", default=None,
+                           help="Comma-separated experimental variables")
+    p_api_cmp.add_argument("--kind", default="DESIGN_COMPARISON",
+                           choices=["DESIGN_COMPARISON", "CROSS_FIDELITY_CALIBRATION"])
+
+    p_api_compile = _api_ps["compile"]
+    p_api_compile.add_argument("--request", required=True,
+                               help="Compiler request JSON (requirements+candidates)")
+
+    p_api_diag = _api_ps["diagnose"]
+    p_api_diag.add_argument("--level", default="quick", choices=["quick", "deep"])
+
     return parser
+
+
+# ── api (Phase 17/18): thin JSON adapter over the agent-safe surface ──────
+
+def _api_out(ctx: Ctx, payload: dict) -> None:
+    """Emit one API payload — --json gives pure JSON; human mode shows all keys."""
+    if ctx.json_mode:
+        log(ctx, json.dumps(payload, indent=2, sort_keys=True))
+        return
+    head = f"  {payload.get('op', 'api')}: {payload.get('status', '?')}"
+    if payload.get("valid") is False:
+        head += " (invalid)"
+    log(ctx, head)
+    for r in payload.get("reasons", []):
+        log(ctx, f"    - {r}")
+    skip = {"schema_version", "status", "op", "valid", "reasons"}
+    for k in sorted(payload.keys() - skip):
+        log(ctx, f"  {k}: {json.dumps(payload[k], indent=2, sort_keys=True)}")
+
+
+def _api_load_json_arg(ctx: Ctx, ref: str, what: str) -> dict:
+    path = Path(_resolve_path(ref))
+    if not path.is_file():
+        raise FileNotFoundError(f"{what} not found: {ref} (resolved {path})")
+    data = json.loads(path.read_text())
+    if not isinstance(data, dict):
+        raise ValueError(f"{what} must be a JSON object")
+    return data
+
+
+def cmd_api_capabilities(ctx: Ctx, args):
+    """Machine-readable vocabulary: backends, fidelities, verdicts, budgets."""
+    from .. import api
+    _api_out(ctx, api.list_capabilities())
+
+
+def cmd_api_workloads(ctx: Ctx, args):
+    """Named serving workloads available for spec intent."""
+    from .. import api
+    _api_out(ctx, api.list_workloads())
+
+
+def cmd_api_topologies(ctx: Ctx, args):
+    """Named topology presets with resolved identity (immutable)."""
+    from .. import api
+    _api_out(ctx, api.list_topologies())
+
+
+def cmd_api_validate(ctx: Ctx, args):
+    """Validate experiment intent; errors are data (exit 0 with valid=false)."""
+    from .. import api
+    spec_dict = _api_load_json_arg(ctx, args.spec, "spec")
+    out = api.validate(spec_dict)
+    _api_out(ctx, out)
+    if not out.get("valid", False):
+        sys.exit(2)
+
+
+def cmd_api_plan(ctx: Ctx, args):
+    """Resolve intent to a deterministic plan WITHOUT executing."""
+    from .. import api
+    spec_dict = _api_load_json_arg(ctx, args.spec, "spec")
+    out = api.plan(spec_dict)
+    _api_out(ctx, out)
+    if out.get("status") == "INVALID":
+        sys.exit(2)
+
+
+def cmd_api_execute(ctx: Ctx, args):
+    """Run one experiment through the API surface (serving-aware routing)."""
+    from .. import api
+    spec_dict = _api_load_json_arg(ctx, args.spec, "spec")
+    out = api.execute(spec_dict, timeout_s=args.timeout_s)
+    _api_out(ctx, out)
+    if out.get("status") in ("INVALID", "EVALUATION_FAILED"):
+        sys.exit(1)
+    if out.get("state") not in ("SUCCEEDED", None):
+        sys.exit(1)
+
+
+def cmd_api_run(ctx: Ctx, args):
+    """Run identity + state by run_id (filesystem-authoritative)."""
+    from .. import api
+    _api_out(ctx, api.get_run(args.run_id))
+
+
+def cmd_api_results(ctx: Ctx, args):
+    """Query the runs store (budget-capped)."""
+    from .. import api
+    _api_out(ctx, api.get_results(topology=args.topology, status=args.status,
+                                  workload=args.workload, limit=args.limit))
+
+
+def cmd_api_compare(ctx: Ctx, args):
+    """ComparisonSpec-gated comparison over a candidates JSON file."""
+    from .. import api
+    candidates = _api_load_json_arg(ctx, args.candidates, "candidates")
+    rows = candidates.get("candidates", candidates)  # {candidates:[...]} or [...]
+    if not isinstance(rows, list):
+        raise ValueError("candidates must be a JSON array or {candidates: [...]}")
+    out = api.compare(rows, metrics=args.metrics.split(","),
+                      experimental_variables=(args.variables.split(",")
+                                              if args.variables else []),
+                      comparison_kind=args.kind)
+    _api_out(ctx, out)
+    if out.get("verdict", {}).get("status") == "INVALID_COMPARISON":
+        sys.exit(2)
+
+
+def cmd_api_compile(ctx: Ctx, args):
+    """Requirements-driven fabric compile (FEASIBLE / NO_FEASIBLE_DESIGN)."""
+    from .. import api
+    req_doc = _api_load_json_arg(ctx, args.request, "request")
+    out = api.compile_fabric(req_doc.get("requirements", []),
+                             req_doc.get("candidates", []),
+                             search_budget=req_doc.get("search_budget"),
+                             seed_policy=req_doc.get("seed_policy"))
+    _api_out(ctx, out)
+    if out.get("result", {}).get("verdict") == "NO_FEASIBLE_DESIGN":
+        sys.exit(2)
+
+
+def cmd_api_diagnose(ctx: Ctx, args):
+    """Health battery (quick|deep) through the API surface."""
+    from .. import api
+    out = api.diagnose(level=args.level)
+    _api_out(ctx, out)
+    if out.get("status") == "INVALID":
+        sys.exit(2)
+    if any(o.get("status") == "fail" for o in out.get("result", {}).get("checks", [])):
+        sys.exit(1)
 
 
 # ── Canonical command registry (Phase 3a single source) ────────────────────
@@ -4183,6 +4359,33 @@ COMMANDS = {
                  "sub_dest": "gen_cmd", "handler": None, "subcommands": {
         "uvm": {"help": "Generate UVM testbench", "t3_mode": "forward",
                 "handler": cmd_generate_uvm},
+    }},
+    "api": {"help": "Agent-safe semantic API surface (Phase 17): structured "
+                    "results, errors-as-data, declared budgets",
+            "t3_mode": "forward",
+            "sub_dest": "api_cmd", "handler": None, "subcommands": {
+        "capabilities": {"help": "Machine-readable vocabulary + budgets",
+                         "t3_mode": "forward", "handler": cmd_api_capabilities},
+        "workloads": {"help": "List named workloads", "t3_mode": "forward",
+                      "handler": cmd_api_workloads},
+        "topologies": {"help": "List topology presets (resolved identity)",
+                       "t3_mode": "forward", "handler": cmd_api_topologies},
+        "validate": {"help": "Validate spec intent (errors as data)",
+                     "t3_mode": "forward", "handler": cmd_api_validate},
+        "plan": {"help": "Resolve spec to a plan without executing",
+                 "t3_mode": "forward", "handler": cmd_api_plan},
+        "execute": {"help": "Run one experiment via the stable API",
+                    "t3_mode": "forward", "handler": cmd_api_execute},
+        "run": {"help": "Inspect one run by run_id", "t3_mode": "forward",
+                "handler": cmd_api_run},
+        "results": {"help": "Query the runs store", "t3_mode": "forward",
+                    "handler": cmd_api_results},
+        "compare": {"help": "ComparisonSpec-gated comparison",
+                    "t3_mode": "forward", "handler": cmd_api_compare},
+        "compile": {"help": "Requirements-driven fabric compile",
+                    "t3_mode": "forward", "handler": cmd_api_compile},
+        "diagnose": {"help": "Health battery (quick|deep)", "t3_mode": "forward",
+                     "handler": cmd_api_diagnose},
     }},
 }
 
