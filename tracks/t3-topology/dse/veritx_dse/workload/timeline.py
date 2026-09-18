@@ -55,12 +55,14 @@ Op model (where overlap comes from)
 
 Verdicts (§ reviewer spec, on exposed STALL — the savings question)
 -------------------------------------------------------------------
-  COMPUTE_BOUND / MEMORY_BOUND / FABRIC_BOUND — unique stall leader
-  NETWORK_NOT_THE_BOTTLENECK — net carried service but its stall is 0
-                               (fully hidden): fabric changes save nothing
-  MIXED                       — perfect tie (all stalls 0 with ≥2 served
-                               dims) or leader margin ≤ 0.05
-  INCONCLUSIVE                — no dimension carries service
+The one rule (2026-09-18 consolidation-2):
+    net service > 0 AND net stall == 0  → NETWORK_NOT_THE_BOTTLENECK
+    net stall > 0, tied with another dim → MIXED (co-bottlenecks:
+        improving either independently still saves runtime)
+    net stall unique max                → FABRIC_BOUND
+  COMPUTE_BOUND / MEMORY_BOUND          — unique stall leader
+  MIXED                                 — tie or leader margin ≤ 0.05
+  INCONCLUSIVE                          — no dimension carries service
 """
 from __future__ import annotations
 
@@ -83,10 +85,17 @@ class TimelineError(ValueError):
 
 @dataclass(frozen=True)
 class BackendBinding:
-    """Declared producer + fidelity + clock for one dimension."""
+    """Declared producer + fidelity + clock for one dimension.
+
+    ns_per_cycle: REQUIRED for any cycle-denominated service on this
+    dimension (cycles without a clock are not time — a default of 1.0
+    would silently double time when the real clock is 0.5 ns/c).
+    None is legal ONLY for bindings used exclusively with rate-form
+    service (bytes/second is SI and needs no clock). No silent default.
+    """
     producer: str
     fidelity: str
-    ns_per_cycle: float = 1.0
+    ns_per_cycle: float | None = None
 
     def __post_init__(self) -> None:
         if not self.producer or not isinstance(self.producer, str):
@@ -95,11 +104,12 @@ class BackendBinding:
         if not self.fidelity or not isinstance(self.fidelity, str):
             raise TimelineError(
                 f"fidelity must be a non-empty string, got {self.fidelity!r}")
-        if not isinstance(self.ns_per_cycle, (int, float)) or \
-                isinstance(self.ns_per_cycle, bool) or self.ns_per_cycle <= 0:
-            raise TimelineError(
-                "ns_per_cycle must be a positive number, got "
-                f"{self.ns_per_cycle!r}")
+        if self.ns_per_cycle is not None:
+            v = self.ns_per_cycle
+            if not isinstance(v, (int, float)) or isinstance(v, bool) or v <= 0:
+                raise TimelineError(
+                    "ns_per_cycle must be a positive number or None "
+                    f"(rate-form only), got {v!r}")
 
 
 @dataclass(frozen=True)
@@ -148,14 +158,21 @@ class ServiceBinding:
 
 def _clock(default: ServiceBinding | None, dim: str,
            op_id: str) -> BackendBinding:
-    """The binding for `dim` — mandatory whenever that dimension's
-    service is declared in cycles (cycles without a clock are not time)."""
+    """The binding for `dim` — mandatory AND clock-carrying whenever that
+    dimension's service is declared in cycles (cycles without a clock are
+    not time; a binding with ns_per_cycle=None is a rate-form-only
+    binding and must not be silently read as 1.0)."""
     b = getattr(default, dim) if default else None
     if b is None:
         raise TimelineError(
             f"op {op_id!r}: {dim} service is declared in cycles but no "
             f"{dim} binding (clock) exists — cycles without a clock are "
             "not time; declare ServiceBinding." + dim + "=BackendBinding(...)")
+    if b.ns_per_cycle is None:
+        raise TimelineError(
+            f"op {op_id!r}: {dim} service is declared in cycles but the "
+            f"{dim} binding carries ns_per_cycle=None (rate-form only) — "
+            "declare the clock explicitly; 1 cycle is not silently 1 ns")
     return b
 
 
@@ -408,30 +425,8 @@ def _attribute(records: tuple[OpRecord, ...],
     def stall_of(d: str) -> float:
         return stall.get(d, 0.0)
 
-    # Perfect tie: ≥2 dims served, every stall 0 — elimination saves
-    # nothing anywhere; fall back to the ownership tie for the verdict.
-    if all(v <= 0.0 for v in stall.values()):
-        mx = max(ownership.values())
-        tied = sorted(d for d in service if service.get(d, 0.0) > 0
-                      and ownership.get(d, 0.0) == mx)
-        if len(tied) > 1 and "net" in tied:
-            return Attribution(
-                verdict="NETWORK_NOT_THE_BOTTLENECK",
-                exposed_totals=dict(ownership),
-                exposed_stall_totals=dict(stall),
-                bottleneck=None, margin=1.0,
-                reasons=reasons + [
-                    "perfect tie at max ownership (all stalls 0) including "
-                    "net — eliminating the fabric alone shortens nothing"])
-        return Attribution(
-            verdict="MIXED", exposed_totals=dict(ownership),
-            exposed_stall_totals=dict(stall),
-            bottleneck=None, margin=1.0,
-            reasons=reasons + [
-                f"perfect tie at max ownership: {tied} — no single "
-                "subsystem owns the critical path"])
-
-    # net carried service but is fully hidden → fabric changes save 0.
+    # THE one net rule: carried service but zero stall → fabric changes
+    # save nothing. (Also covers the all-stalls-0 case when net served.)
     if service.get("net", 0.0) > 0 and stall_of("net") <= 0.0:
         return Attribution(
             verdict="NETWORK_NOT_THE_BOTTLENECK",
@@ -443,28 +438,37 @@ def _attribute(records: tuple[OpRecord, ...],
                 "fabric is fully hidden under a concurrent longer leg; "
                 "fabric improvements would not shorten the critical path"])
 
+    # Perfect tie: ≥2 dims served, every stall 0 — eliminating any single
+    # subsystem saves nothing anywhere; fall back to ownership for MIXED.
+    if all(v <= 0.0 for v in stall.values()):
+        mx = max(ownership.values())
+        tied = sorted(d for d in service if service.get(d, 0.0) > 0
+                      and ownership.get(d, 0.0) == mx)
+        return Attribution(
+            verdict="MIXED", exposed_totals=dict(ownership),
+            exposed_stall_totals=dict(stall),
+            bottleneck=None, margin=1.0,
+            reasons=reasons + [
+                f"perfect tie at max ownership: {tied} — no single "
+                "subsystem owns the critical path"])
+
     positive = sorted((v for v in stall.values() if v > 0), reverse=True)
     mx = positive[0]
     tied = sorted(d for d, v in stall.items() if v == mx)
     runner_up = positive[1] if len(positive) > 1 else 0.0
     margin = runner_up / mx
+    # A positive tie between net and another dimension is MIXED, never
+    # NETWORK_NOT_THE_BOTTLENECK: making the fabric instantaneous saves
+    # mx ns — the network clearly matters (consolidation-2 ruling; the
+    # old net-tie special case contradicted the counterfactual).
     if len(tied) > 1:
-        if "net" in tied:
-            return Attribution(
-                verdict="NETWORK_NOT_THE_BOTTLENECK",
-                exposed_totals=dict(ownership),
-                exposed_stall_totals=dict(stall),
-                bottleneck=None, margin=margin,
-                reasons=reasons + [
-                    "net tied for max exposed stall with " +
-                    ", ".join(d for d in tied if d != "net") +
-                    " — fabric improvements would not shorten the "
-                    "critical path"])
         return Attribution(
             verdict="MIXED", exposed_totals=dict(ownership),
             exposed_stall_totals=dict(stall),
             bottleneck=None, margin=margin,
-            reasons=reasons + [f"tie for max exposed stall: {tied}"])
+            reasons=reasons + [
+                f"tie for max exposed stall: {tied} — co-bottlenecks; "
+                "improving either tied subsystem alone saves mx ns"])
     if margin >= 1.0 - MIXED_REL_MARGIN:
         return Attribution(
             verdict="MIXED", exposed_totals=dict(ownership),

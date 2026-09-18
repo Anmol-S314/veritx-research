@@ -106,6 +106,36 @@ def test_net_uses_net_clock():
     assert tl.ops[0].finish == pytest.approx(1000.0)
 
 
+def test_binding_without_clock_fails_on_cycles():
+    """ns_per_cycle defaults to None: a clock-less binding + cycle leg is
+    an ERROR, never a silent '1 cycle == 1 ns' (consolidation-2)."""
+    art = _artifact(_coll("a1", 4096))
+    with pytest.raises(TimelineError, match="not silently 1 ns"):
+        build_timeline(art, ServiceBinding(
+            net=BackendBinding("booksim", "NETWORK_CYCLE_SIMULATION")),
+            {"a1": _svc(net_cycles=100)})
+
+
+def test_clockless_binding_is_legal_for_rate_form():
+    """Rate form needs no clock: ns_per_cycle=None is legitimate there."""
+    art = _artifact(_coll("a1", 4096))
+    tl = build_timeline(art, ServiceBinding(
+        mem=BackendBinding("m", "MEMORY_ESTIMATE"),
+        comp=BackendBinding("c", "COMPUTE_MODEL")),
+        {"a1": _svc(mem_bw=2.0e9, comp_bw=1.0e9)})
+    assert tl.ops[0].legs["mem"] == pytest.approx(2048.0)
+    assert tl.attribution.verdict == "COMPUTE_BOUND"
+
+
+def test_explicit_default_clock_still_works():
+    """1.0 ns/c remains available — but only when DECLARED."""
+    art = _artifact(_coll("a1", 4096))
+    tl = build_timeline(art, ServiceBinding(
+        net=BackendBinding("b", "NETWORK_CYCLE_SIMULATION", ns_per_cycle=1.0)),
+        {"a1": _svc(net_cycles=500)})
+    assert tl.ops[0].legs["net"] == pytest.approx(500.0)
+
+
 def test_rate_form_units_are_nanoseconds():
     """4096 B @ 4096 B/s = 1 s = 1e9 ns — never a bare 1.0 vs cycles."""
     art = _artifact(_coll("a1", 4096))
@@ -289,7 +319,8 @@ def test_evidence_from_declared_bindings():
     tl = build_timeline(art, ServiceBinding(
         compute=BackendBinding("veritx-compute", "COMPUTE_MODEL",
                                ns_per_cycle=1.0),
-        net=BackendBinding("booksim", "NETWORK_CYCLE_SIMULATION")),
+        net=BackendBinding("booksim", "NETWORK_CYCLE_SIMULATION",
+                           ns_per_cycle=1.0)),
         {"c1": _svc(compute_cycles=100),
          "a1": _svc(net_cycles=50)})
     assert tl.ops[0].evidence["compute"] == {
@@ -367,8 +398,12 @@ def test_hidden_comp_leg_has_zero_stall_memory_bound():
     assert tl.attribution.verdict == "MEMORY_BOUND"
 
 
-def test_stall_tie_still_network_not_the_bottleneck():
-    """net tied at max stall with compute → no single winner."""
+def test_positive_stall_tie_net_compute_is_mixed():
+    """Sequential net-only and compute-only steps, both 5000ns: both
+    stall the full span. Making the fabric instantaneous saves 5000ns —
+    the network clearly MATTERS. Co-bottlenecks → MIXED, never
+    NETWORK_NOT_THE_BOTTLENECK (consolidation-2: the old net-tie
+    special case contradicted the counterfactual)."""
     art = _artifact(
         build_compute_op("c1", duration_ns=1000),
         _coll("a1", 65536))
@@ -378,8 +413,11 @@ def test_stall_tie_still_network_not_the_bottleneck():
     tl = build_timeline(art, clk, {
         "c1": _svc(compute_cycles=5000), "a1": _svc(net_cycles=5000)})
     a = tl.attribution
-    assert a.verdict == "NETWORK_NOT_THE_BOTTLENECK"
+    assert a.verdict == "MIXED"
     assert a.bottleneck is None
+    assert tl.exposed_stall_totals["net"] == pytest.approx(5000.0)
+    assert tl.exposed_stall_totals["compute"] == pytest.approx(5000.0)
+    assert "co-bottlenecks" in " ".join(a.reasons)
 
 
 def test_three_step_stall_leader_is_fabric_bound():
@@ -405,9 +443,9 @@ def test_three_step_stall_leader_is_fabric_bound():
     assert tl.exposed_stall_totals["mem"] == 0.0
 
 
-def test_perfect_ownership_tie_with_zero_stalls_reports_network_not_bottleneck():
-    """All stalls 0 with ≥2 served dims INCLUDING net: eliminating any
-    single subsystem saves nothing → NETWORK_NOT_THE_BOTTLENECK."""
+def test_perfect_ownership_tie_with_zero_stalls_is_mixed():
+    """All stalls 0 with ≥2 served dims (compute/mem tie): eliminating
+    any single subsystem saves nothing → MIXED on the ownership tie."""
     art = _artifact(
         build_compute_op("c1", duration_ns=1000),
         build_compute_op("c2", duration_ns=1000))
@@ -419,26 +457,7 @@ def test_perfect_ownership_tie_with_zero_stalls_reports_network_not_bottleneck()
         "c2": _svc(compute_cycles=2000, mem_cycles=2000)})
     a = tl.attribution
     assert all(v == 0.0 for v in a.exposed_stall_totals.values())
-    assert a.verdict == "MIXED"  # compute/mem tie: no net in the tie set
-
-
-def test_perfect_tie_including_net_is_network_not_the_bottleneck():
-    art = _artifact(
-        build_compute_op("c1", duration_ns=1000),
-        build_compute_op("c2", duration_ns=1000),
-        _coll("a1", 65536))
-    clk = ServiceBinding(
-        compute=BackendBinding("c", "COMPUTE_MODEL", ns_per_cycle=1.0),
-        mem=BackendBinding("m", "MEMORY_CYCLE_SIMULATION", ns_per_cycle=1.0),
-        net=BackendBinding("b", "NETWORK_CYCLE_SIMULATION", ns_per_cycle=1.0))
-    tl = build_timeline(art, clk, {
-        "c1": _svc(compute_cycles=2000, mem_cycles=2000),
-        "c2": _svc(compute_cycles=2000, mem_cycles=2000),
-        "a1": _svc(net_cycles=4000)})
-    # net step: only leg → its stall = 4000 > 0 → not the perfect-tie path;
-    # instead this hits stall-leader FABRIC_BOUND. Pin that honestly:
-    assert tl.attribution.verdict == "FABRIC_BOUND"
-    assert tl.exposed_stall_totals["net"] == pytest.approx(4000.0)
+    assert a.verdict == "MIXED"
 
 
 def test_mixed_within_five_percent():

@@ -4222,15 +4222,24 @@ def cmd_api_compare(ctx: Ctx, args):
 
 
 def cmd_api_compile(ctx: Ctx, args):
-    """Requirements-driven fabric compile (FEASIBLE / NO_FEASIBLE_DESIGN)."""
+    """Requirements-driven fabric compile (FEASIBLE / NO_FEASIBLE_DESIGN).
+
+    Registered evaluator contract: the request doc names evaluator_id
+    (booksim, with trace_path; analytical → declared UNSUPPORTED). No
+    Python callables cross the API boundary.
+    """
     from .. import api
     req_doc = _api_load_json_arg(ctx, args.request, "request")
     out = api.compile_fabric(req_doc.get("requirements", []),
                              req_doc.get("candidates", []),
+                             evaluator_id=req_doc.get("evaluator_id"),
+                             trace_path=req_doc.get("trace_path"),
                              search_budget=req_doc.get("search_budget"),
                              seed_policy=req_doc.get("seed_policy"))
     _api_out(ctx, out)
     if out.get("result", {}).get("verdict") == "NO_FEASIBLE_DESIGN":
+        sys.exit(2)
+    if out.get("status") in ("INVALID", "UNSUPPORTED"):
         sys.exit(2)
 
 

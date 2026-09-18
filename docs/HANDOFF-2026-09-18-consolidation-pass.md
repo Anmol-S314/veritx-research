@@ -153,8 +153,36 @@ Next:     reviewer verdict on 16/17 before any new phase
 ## Owed / residuals
 
 - `clock_ratio` is not exposed by the v1 `execute()` seam — probed and
-  documented in the battery (deterministic at default ratio). Exposing it
-  is a small, honest follow-up when needed.
+  documented (deterministic at default ratio; check renamed
+  `default-clock-repeatability` per review — it never varied the ratio).
+  Exposing it is a small, honest follow-up when needed.
+- The acceptance battery (`veritx_dse.acceptance.phase15`, VERDICT PASS
+  16/16 at `fd7f6f7a` and re-verified green after consolidation-2) was
+  REMOVED from the tree at the user's request after its final run. It is
+  recoverable from git history (`git show fd7f6f7a:tracks/t3-topology/dse/veritx_dse/acceptance/phase15.py`)
+  and remains the reference gate for any future Phase-15 re-certification.
 - The API/CLI surface (17/18) awaits review before being called complete.
 - Studio v0 (19) deliberately skipped per user decision; MCP stdio server
   was scrapped (user directive) and removed.
+
+## Consolidation-2 addendum (same day, reviewer's FINAL CONSOLIDATION-2)
+
+1. Phase 16 verdicts: positive net stall tie ⇒ MIXED (co-bottlenecks);
+   `NETWORK_NOT_THE_BOTTLENECK` is reserved for net service > 0 AND net
+   stall == 0. The old net-tie special case is gone. Tests re-pinned
+   (`test_positive_stall_tie_net_compute_is_mixed`,
+   `test_three_step_stall_leader_is_fabric_bound`).
+2. `BackendBinding.ns_per_cycle` default → **None**: a clock-less binding
+   + cycle-denominated service now RAISES (`1 cycle is not silently
+   1 ns`); legal only for rate-form-only bindings. Regression pinned.
+3. `execute()` budget is a real MAXIMUM: over-budget intent (explicit
+   `timeout_s` or spec `simulation.timeout_s` > 1800) is REJECTED with
+   `INVALID` — never silently clamped. Verified for both paths.
+4. `api compile` is functional again via REGISTERED evaluator IDs
+   (`booksim` with `trace_path`; `analytical` declared UNSUPPORTED). No
+   Python callables cross the external boundary. Verified end-to-end:
+   2 candidates × real BookSim evals → `FEASIBLE` verdict through the CLI.
+5. The original Phase-16 handoff now carries a visible SUPERSEDED header
+   (schema `veritx.timeline/2`, corrected semantics), mirroring Phase 15.
+6. Final verification: acceptance battery PASS (16/16), full suite
+   1390 passed + 1 skipped (from repo root and dse/), lint rc=0.

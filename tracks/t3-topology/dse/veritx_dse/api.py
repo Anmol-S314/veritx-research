@@ -139,20 +139,24 @@ def execute(spec_dict: dict[str, Any], *, repo: Path | None = None,
             timeout_s: int | None = None) -> dict[str, Any]:
     """Run one experiment; returns run identity + terminal state.
 
-    Serving specs route to the serving slice; everything else to Slice A.
-    The declared budget is ENFORCED, not decorative: if absent the spec's
-    own simulation.timeout_s is honored; an explicit timeout_s overrides
-    it in the spec dict before parse. The effective budget is reported.
+    The API budget is a MAXIMUM, not decorative: the requested timeout
+    (explicit timeout_s, else the spec's simulation.timeout_s) is checked
+    against BUDGETS["max_execution_seconds"] and OVER-BUDGET intent is
+    REJECTED — never silently clamped (clamping would alter declared
+    intent). The accepted value is written into the spec before parse so
+    the runner enforces the same number.
     """
     doc = dict(spec_dict)
-    declared = timeout_s if timeout_s is not None \
-        else BUDGETS["max_execution_seconds"]
     try:
-        sim = doc.get("simulation") or {}
-        if timeout_s is not None:
-            sim = dict(sim)
-            sim["timeout_s"] = int(timeout_s)
-            doc["simulation"] = sim
+        sim = dict(doc.get("simulation") or {})
+        requested = int(timeout_s) if timeout_s is not None \
+            else int(sim.get("timeout_s", 60))
+        if requested > BUDGETS["max_execution_seconds"]:
+            return _reject("execute", [
+                f"timeout {requested}s exceeds API maximum "
+                f"{BUDGETS['max_execution_seconds']}s"])
+        sim["timeout_s"] = requested
+        doc["simulation"] = sim
         sp = spec_mod.parse(doc)
         budget = int(sp.simulation.timeout_s)
     except Exception as e:
@@ -243,22 +247,53 @@ def diagnose(*, level: str = "quick") -> dict[str, Any]:
 # ── Synthesis ──────────────────────────────────────────────────────────────
 
 
+REGISTERED_EVALUATORS = ("booksim", "analytical")
+
+
 def compile_fabric(requirements: list[dict[str, Any]],
                    candidates: list[dict[str, Any]], *,
+                   evaluator_id: str | None = None,
                    evaluate: Any | None = None,
+                   trace_path: str | None = None,
+                   seed: int = 0,
+                   timeout: int = 600,
                    search_budget: dict[str, Any] | None = None,
                    seed_policy: dict[str, Any] | None = None) -> dict[str, Any]:
     """Requirements-driven compile; FEASIBLE/NO_FEASIBLE_DESIGN verdict.
 
-    ``evaluate`` is REQUIRED by the compiler core (it maps one candidate
-    to a SynthResult-shaped dict) and must be provided by the embedding
-    host — the API never invents a default evaluator. Without one this
-    is data, not a crash.
+    External-API contract: no Python callables cross this boundary. The
+    evaluator is selected by REGISTERED ID — ``booksim`` resolves the one
+    real evaluation path (synthesis.bridge._spec_evaluator over
+    evaluator.evaluate_spec, requiring trace_path), ``analytical`` is
+    registered as UNSUPPORTED (declared, not invented). Host embeddings
+    may pass ``evaluate=`` directly (internal contract); external callers
+    must not.
     """
     if evaluate is None:
-        return _reject("compile", [
-            "compile requires an evaluate(candidate)->SynthResult callable "
-            "— the API surface does not ship a default evaluator"])
+        if evaluator_id is None:
+            return _reject("compile", [
+                "compile requires evaluator_id (registered: "
+                f"{', '.join(REGISTERED_EVALUATORS)}) — an agent-safe API "
+                "never takes Python callables"])
+        if evaluator_id not in REGISTERED_EVALUATORS:
+            return _ok(status="UNSUPPORTED", op="compile",
+                       valid=False,
+                       reasons=[f"evaluator_id {evaluator_id!r} is not "
+                                f"registered — supported: "
+                                f"{', '.join(REGISTERED_EVALUATORS)}"])
+        if evaluator_id == "analytical":
+            return _ok(status="UNSUPPORTED", op="compile",
+                       valid=False,
+                       reasons=["evaluator_id 'analytical' has no compiler "
+                                "resolution yet — declared UNSUPPORTED, "
+                                "never invented"])
+        if not trace_path:
+            return _reject("compile", [
+                "evaluator_id 'booksim' requires trace_path (the real "
+                "evaluation path measures the candidate against a trace)"])
+        from .synthesis.bridge import _spec_evaluator
+        evaluate = _spec_evaluator(trace_path=str(Path(trace_path).resolve()),
+                                   seed=seed, timeout=timeout)
     if len(candidates) > BUDGETS["max_candidates_per_compile"]:
         return _reject("compile", [
             f"candidate count {len(candidates)} exceeds budget "

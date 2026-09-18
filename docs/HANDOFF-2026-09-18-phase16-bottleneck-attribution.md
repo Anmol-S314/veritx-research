@@ -1,5 +1,18 @@
 # HANDOFF — Phase 16: system execution / bottleneck attribution
 
+> **⚠ SUPERSEDED (2026-09-18, consolidation-2 `fd7f6f7a`+):** the schema is
+> now `veritx.timeline/2` and the semantics below were corrected in the
+> consolidation pass and consolidation-2. Canonical units: every leg is
+> NANOSECONDS via its own dimension's clock (cycles without an explicit
+> clock raise; `ns_per_cycle` has no 1.0 default). Two attribution
+> metrics: `exposed` (critical-path ownership) vs `exposed_stall`
+> (counterfactual savings); verdicts consume STALL, and a positive stall
+> tie including net is MIXED — `NETWORK_NOT_THE_BOTTLENECK` is reserved
+> for net service > 0 with net stall == 0. Read
+> `docs/HANDOFF-2026-09-18-consolidation-pass.md` and
+> `workload/timeline.py` (module docstring) for the current contract.
+> The text below is preserved as history.
+
 **Date:** 2026-09-18 · **Branch:** `epic/booksim-forward-port`
 **Prior:** Phase-15 landing + preset-integrity fix (`a456a30e`); the deferred
 Phase-15 acceptance battery remains OWED (see `HANDOFF-2026-09-18-preset-fix-and-phase15-landing.md`).
