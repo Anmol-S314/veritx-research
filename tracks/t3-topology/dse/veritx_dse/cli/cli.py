@@ -2819,9 +2819,23 @@ def cmd_compile(ctx: Ctx, args):
                 result = {}
 
     # ── Step 4/6: Verify — F1-F8 proof obligations ──
-    from veritx_dse.model.compile_model import verify_design
+    # Evidence plumbing (Phase-13 precursor): what Step 3 measured is
+    # translated to the F-check vocabulary — absent stats produce
+    # absent keys (F3/F8 stay NOT_RUN, never read a fabricated zero).
+    from veritx_dse.model.compile_model import (
+        latency_bound_from_requirements, topology_adjacency, verify_design,
+    )
+    from veritx_dse.simulation.booksim import evidence_from_result
+    evidence = evidence_from_result(result)
+    adj = topology_adjacency(topo)
+    if adj is not None:
+        evidence["topology_adjacency"] = {str(k): sorted(v)
+                                          for k, v in adj.items()}
+    bound = latency_bound_from_requirements(cr.requirements)
+    if bound is not None:
+        evidence["latency_bound_cycles"] = bound
     log(ctx, "Step 4/6: Running verification checks...")
-    vr_verify = verify_design(cr, topology_name=topo.backend)
+    vr_verify = verify_design(cr, topology_name=topo.backend, evidence=evidence)
     for check in vr_verify.checks:
         # Honest display (PR B): only PASS is success; FAIL is failure;
         # NOT_RUN/ASSUMPTION/UNSUPPORTED/INCONCLUSIVE are explicitly not

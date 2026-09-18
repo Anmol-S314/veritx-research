@@ -520,6 +520,9 @@ TrafficManager::TrafficManager( const Configuration &config, const vector<Networ
     _overall_min_accepted.resize(_classes, 0.0);
     _overall_avg_accepted.resize(_classes, 0.0);
     _overall_max_accepted.resize(_classes, 0.0);
+    // VeritX: flit total + latency-max accumulators (see header note)
+    _veritx_total_sent_flits.resize(_classes, 0);
+    _veritx_total_accepted_flits.resize(_classes, 0);
 
 #ifdef TRACK_STALLS
     _buffer_busy_stalls.resize(_classes);
@@ -1046,6 +1049,9 @@ void TrafficManager::_Step( )
                 flits[subnet].insert(make_pair(n, f));
                 if((_sim_state == warming_up) || (_sim_state == running)) {
                     ++_accepted_flits[f->cl][n];
+                    // VeritX: run-total ejected flits (increment-on-event;
+                    // immune to the per-phase stats clears)
+                    ++_veritx_total_accepted_flits[f->cl];
                     if(f->tail) {
                         ++_accepted_packets[f->cl][n];
                     }
@@ -1309,6 +1315,9 @@ void TrafficManager::_Step( )
 	
                 if((_sim_state == warming_up) || (_sim_state == running)) {
                     ++_sent_flits[c][n];
+                    // VeritX: run-total injected flits (increment-on-event;
+                    // immune to the per-phase stats clears)
+                    ++_veritx_total_sent_flits[c];
                     if(f->head) {
                         ++_sent_packets[c][n];
                     }
@@ -1891,6 +1900,18 @@ bool TrafficManager::Run( )
                      << " packets, drain took "
                      << empty_steps << " cycles" << endl;
             }
+            // VeritX: flit conservation totals — SUM over the per-class
+            // run-total accumulators (increment-on-event since sim start,
+            // immune to per-phase stats clears; classes are disjoint
+            // traffic, so the sum is the network conservation quantity).
+            // Emitted once at the drain-success point.
+            long v_inj = 0, v_acc = 0;
+            for (int cc = 0; cc < _classes; ++cc) {
+                v_inj += _veritx_total_sent_flits[cc];
+                v_acc += _veritx_total_accepted_flits[cc];
+            }
+            cout << "VeritX: injected flits total = " << v_inj << endl
+                 << "VeritX: accepted flits total = " << v_acc << endl;
         }
         //wait until all the credits are drained as well
         while(Credit::OutStanding()!=0){
@@ -2410,7 +2431,6 @@ void TrafficManager::DisplayOverallStats( ostream & os ) const {
 #endif
     
     }
-  
 }
 
 string TrafficManager::_OverallStatsCSV(int c) const

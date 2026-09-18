@@ -403,6 +403,39 @@ class TestParseOutput:
         assert result["latency"] == 100.0
         assert "hops" not in result
 
+    def test_parse_drain_point_evidence(self):
+        # F3 evidence: the VeritX fork emits flit totals at the
+        # trace-drain-success point (full-run values, summed over classes)
+        from veritx_dse.simulation.booksim import parse_output
+        stdout = ("Trace replay complete: delivered 24 packets, drain took 9 cycles\n"
+                  "VeritX: injected flits total = 96\n"
+                  "VeritX: accepted flits total = 96\n")
+        result = parse_output(stdout)
+        assert result["flits_injected"] == 96
+        assert result["flits_accepted"] == 96
+
+    def test_parse_absent_totals_stay_absent(self):
+        # A stock (non-VeritX) binary prints no totals; keys must not
+        # appear (F3 then reports NOT_RUN honestly instead of inventing 0)
+        from veritx_dse.simulation.booksim import parse_output
+        stdout = ("Injected flit rate average = 0.001\n"
+                  "Accepted flit rate average= 0.001\n")
+        result = parse_output(stdout)
+        assert "flits_injected" not in result
+        assert "flits_accepted" not in result
+
+    def test_parse_max_packet_latency_nan_guarded(self):
+        # F8 evidence: the \tmaximum under a REAL "Packet latency average"
+        # (the per-phase stats block). NaN blocks (packet-less phases) and
+        # other blocks' maxima must not produce the key.
+        from veritx_dse.simulation.booksim import parse_output
+        ok = parse_output("Packet latency average = 19.125\n\tmaximum = 26\n")
+        assert ok["max_packet_latency"] == 26.0
+        nan = parse_output("Packet latency average = -nan\n\tmaximum = -nan\n")
+        assert "max_packet_latency" not in nan
+        wrong = parse_output("Flit latency average = 3.0\n\tmaximum = 9\n")
+        assert "max_packet_latency" not in wrong
+
     def test_parse_dash_placeholder(self):
         # BookSim prints "= -" for a stat with no samples (zero packets
         # delivered). Must be "no data", never a float('-') crash.

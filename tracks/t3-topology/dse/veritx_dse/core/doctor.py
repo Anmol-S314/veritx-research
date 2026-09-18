@@ -192,6 +192,38 @@ def _check_config_seams(log: list[str]) -> list[Observation]:
         observed="equal" if not drifted else f"drifted: {drifted}")]
 
 
+def _check_fork_mirror(log: list[str]) -> list[Observation]:
+    """The two booksim2 source copies must carry the same VeritX deltas
+    (sync protocol, AGENTS.md #5): the conservation-totals delta and the
+    existing extension points are compared, not the full files (vendor
+    baseline may legitimately differ between extern and standalone)."""
+    import hashlib
+    standalone = REPO / "third_party" / "booksim2" / "src"
+    extern = (REPO / "third_party" / "astra-sim" / "extern" /
+              "network_backend" / "booksim2" / "booksim2" / "src")
+    probes = ["trafficmanager.cpp", "trafficmanager.hpp"]
+    drifted = []
+    for name in probes:
+        a, b = standalone / name, extern / name
+        if not (a.exists() and b.exists()):
+            drifted.append(f"{name}: missing copy")
+            continue
+        # Compare the VeritX-delta signature lines only
+        sig = ("VeritX:", "_veritx_total")
+        la = [l.strip() for l in a.read_text().splitlines()
+              if any(s in l for s in sig)]
+        lb = [l.strip() for l in b.read_text().splitlines()
+              if any(s in l for s in sig)]
+        if la != lb:
+            drifted.append(f"{name}: VeritX deltas differ "
+                           f"({len(la)} vs {len(lb)} sig lines)")
+    return [Observation(
+        name="seam.booksim_fork_mirror",
+        status="pass" if not drifted else "fail",
+        expected="VeritX deltas identical in both booksim2 copies",
+        observed="identical" if not drifted else f"drifted: {drifted}")]
+
+
 def _check_calibration_docs(log: list[str]) -> list[Observation]:
     cal = DSE_DIR.parent / "docs" / "CALIBRATION.md"
     if not cal.exists():
@@ -442,8 +474,10 @@ def _check_live_astra(log: list[str]) -> list[Observation]:
 # ── the interface ─────────────────────────────────────────────────────────
 
 CHECKS: dict[str, list] = {
-    "quick": [_check_bins, _check_config_seams, _check_calibration_docs],
-    "deep": [_check_bins, _check_config_seams, _check_calibration_docs,
+    "quick": [_check_bins, _check_config_seams, _check_fork_mirror,
+              _check_calibration_docs],
+    "deep": [_check_bins, _check_config_seams, _check_fork_mirror,
+             _check_calibration_docs,
              _check_live_booksim, _check_live_certify,
              _check_live_astra, _check_live_topology_diff],
 }

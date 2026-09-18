@@ -383,6 +383,7 @@ NUM = r"((?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)"
 def parse_output(stdout: str) -> dict:
     """Parse BookSim stdout for latency/hops/throughput/completion_time."""
     result = {}
+    expecting_max = False
     for line in stdout.splitlines():
         # Completion time (primary metric for trace-driven mode)
         m = re.search(r"Completion time is\s+(\d+)\s+cycles", line)
@@ -397,6 +398,21 @@ def parse_output(stdout: str) -> dict:
         m = re.search(rf"Packet latency average\s*=\s*{NUM}", line)
         if m:
             result["latency"] = float(m.group(1))
+            # F8 evidence candidate: the \tmaximum within THIS block
+            # (grammar: average, minimum, maximum — before "Network
+            # latency average"). Guarded: NaN blocks (packet-less
+            # phase/class) never produce the key.
+            expecting_max = True
+        if expecting_max:
+            if line.startswith("Network latency average"):
+                expecting_max = False  # block ended with no real max
+            else:
+                m2 = re.fullmatch(rf"\tmaximum = ({NUM})", line)
+                if m2:
+                    v = float(m2.group(1))
+                    if v == v and abs(v) != float("inf"):  # NaN/inf guard
+                        result["max_packet_latency"] = v
+                    expecting_max = False
         m = re.search(rf"\tp50\s*=\s*{NUM}", line)
         if m:
             result["p50"] = float(m.group(1))
@@ -425,7 +441,48 @@ def parse_output(stdout: str) -> dict:
         m = re.search(r"delivered (\d+) packets", line)
         if m:
             result["delivered"] = int(m.group(1))
+        # F3 evidence: the VeritX fork emits flit TOTALS at the
+        # trace-drain-success point (the only point where the counters
+        # provably hold the full-run values). Summed over classes by the
+        # fork itself; stock BookSim prints none — keys stay absent, so
+        # F3 stays NOT_RUN instead of reading a fabricated zero.
+        m = re.search(r"VeritX: injected flits total = (\d+)", line)
+        if m:
+            result["flits_injected"] = int(m.group(1))
+        m = re.search(r"VeritX: accepted flits total = (\d+)", line)
+        if m:
+            result["flits_accepted"] = int(m.group(1))
     return result
+
+
+def evidence_from_result(result: dict) -> dict:
+    """Map a BookSim result to the F-check evidence vocabulary.
+
+    The seam between Step 3 (simulate) and Step 4 (verify): what the
+    simulator measured, translated to the keys verify_design consumes.
+    Honest-by-construction:
+
+      * absent stats produce ABSENT keys — a stock binary that prints
+        no flit totals yields no F3 evidence at all, never a fabricated
+        zero (a zero would masquerade as a measured zero)
+      * NO derived drop counter: injected - accepted is an arithmetic
+        identity, and feeding it to F3's injected == completed + dropped
+        would make the check verify nothing. Instead F3 applies
+        complete-delivery semantics to a drained run: any gap between
+        injected and ejected flits is loss inside the fabric.
+      * pkt_count rides along as booksim_pkts_expected for corroboration
+    """
+    ev: dict = {}
+    inj = result.get("flits_injected")
+    acc = result.get("flits_accepted")
+    if inj is not None and acc is not None:
+        ev["booksim_injected_flits"] = int(inj)
+        ev["booksim_completed_flits"] = int(acc)
+    if result.get("max_packet_latency") is not None:
+        ev["max_packet_latency_cycles"] = float(result["max_packet_latency"])
+    if result.get("pkt_count") is not None:
+        ev["booksim_pkts_expected"] = int(result["pkt_count"])
+    return ev
 
 
 # ── Trace stats ─────────────────────────────────────────────────────────────

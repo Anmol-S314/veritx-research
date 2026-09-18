@@ -1351,6 +1351,71 @@ VERIFICATION_STATUSES = (
 )
 
 
+def topology_adjacency(topo) -> dict[int, set[int]] | None:
+    """Adjacency of the topology that will actually be simulated (F2 evidence).
+
+    Supports the backends derive_topology_spec can emit. For anynet,
+    reads the network file through core.anynet (the ONE parser). An
+    unsupported backend returns None — the caller then reports F2
+    NOT_RUN (no evidence) instead of fabricating an adjacency.
+    """
+    backend = getattr(topo, "backend", "")
+    params = getattr(topo, "params", {}) or {}
+    if backend in ("mesh", "cmesh"):
+        k, n = int(params.get("k", 8)), int(params.get("n", 2))
+        nodes = k ** n
+        adj: dict[int, set[int]] = {i: set() for i in range(nodes)}
+        for i in range(nodes):
+            dims = []
+            v = i
+            for _ in range(n):
+                dims.append(v % k)
+                v //= k
+            for d in range(n):
+                for delta in (-1, 1):
+                    nd = dims[d] + delta
+                    if 0 <= nd < k:  # mesh: no wraparound
+                        j = i + delta * (k ** d)
+                        adj[i].add(j)
+        return adj
+    if backend == "torus":
+        k, n = int(params.get("k", 8)), int(params.get("n", 2))
+        nodes = k ** n
+        adj = {i: set() for i in range(nodes)}
+        for i in range(nodes):
+            dims = []
+            v = i
+            for _ in range(n):
+                dims.append(v % k)
+                v //= k
+            for d in range(n):
+                for delta in (-1, 1):
+                    nd = (dims[d] + delta) % k  # torus: wraps
+                    j = i + (nd - dims[d]) * (k ** d)
+                    adj[i].add(j)
+        return adj
+    if backend == "anynet":
+        nf = params.get("network_file", "")
+        if not nf:
+            return None
+        from .presets import _parse_anynet_adj
+        adj = _parse_anynet_adj(nf)
+        return adj or None
+    return None
+
+
+def latency_bound_from_requirements(requirements) -> float | None:
+    """F8's latency bound: min over declared latency ceilings (E2).
+
+    Requirements without a ceiling contribute nothing; no requirements
+    → no bound → F8 stays NOT_RUN. The bound is a declared scientific
+    constraint, never a defaulted number.
+    """
+    ceilings = [float(r.latency_ceiling_cycles) for r in (requirements or [])
+                if r.latency_ceiling_cycles is not None]
+    return min(ceilings) if ceilings else None
+
+
 def verify_design(
     cr: CompileRequest,
     topology_name: str = "mesh_8x8",
@@ -1431,18 +1496,66 @@ def verify_design(
                  "vc_count": vc})
             errors.append(f"Deadlock: {len(cycles)} cycles exceed VC capacity")
 
-    # F2: Liveness — requires a connectivity check over the actual topology.
-    # This function only receives a topology NAME; a name is not evidence
-    # (verified-PRD §3.11: the old unconditional PASS was fabricated).
-    add("F2_liveness", "NOT_RUN",
-        "Every packet eventually delivered — requires topology connectivity "
-        "evidence",
-        "topology_connectivity (pending)",
-        f"Not executed: only the topology name '{topology_name}' is available "
-        "to this check; connectivity was NOT verified.")
+    # F2: Liveness — real check when topology adjacency evidence is
+    # provided (Phase-13 precursor): every node reachable from node 0.
+    # A name is not evidence (verified-PRD §3.11); an adjacency set from
+    # the actually-executed topology is.
+    adj_ev = ev.get("topology_adjacency")
+    if isinstance(adj_ev, dict) and adj_ev:
+        try:
+            adj = {int(k): set(v) for k, v in adj_ev.items()}
+            n = len(adj)
+            seen = {0}
+            stack = [0]
+            while stack:
+                u = stack.pop()
+                for v in adj.get(u, ()):
+                    if v not in seen:
+                        seen.add(v)
+                        stack.append(v)
+            connected = len(seen) == n
+        except (TypeError, ValueError):
+            connected = None
+        if connected is True:
+            add("F2_liveness", "PASS",
+                "Every packet eventually delivered — all nodes reachable",
+                "topology_connectivity (executed topology adjacency)",
+                f"{n} nodes, all reachable from node 0 (BFS over the "
+                "executed topology's adjacency).",
+                {"nodes": n})
+        elif connected is False:
+            add("F2_liveness", "FAIL",
+                "Every packet eventually delivered — topology disconnected",
+                "topology_connectivity (executed topology adjacency)",
+                f"only {len(seen)} of {n} nodes reachable from node 0 — "
+                "packets to unreachable nodes can never deliver.",
+                {"nodes": n, "reachable": len(seen)})
+            errors.append(
+                f"F2: topology disconnected ({len(seen)}/{n} reachable)")
+        else:
+            add("F2_liveness", "FAIL",
+                "Liveness evidence malformed",
+                "topology_connectivity (executed topology adjacency)",
+                "topology_adjacency present but not parseable as "
+                "{node_id: [neighbors]} — refusing to guess.")
+            errors.append("F2: malformed topology_adjacency evidence")
+    else:
+        add("F2_liveness", "NOT_RUN",
+            "Every packet eventually delivered — requires topology connectivity "
+            "evidence",
+            "topology_connectivity (pending)",
+            f"Not executed: only the topology name '{topology_name}' is available "
+            "to this check; connectivity was NOT verified.")
 
     # F3: Packet conservation — real check when BookSim accounting evidence
-    # is provided: injected == completed + dropped.
+    # is provided. Two evidence shapes:
+    #   a) injected/completed/dropped all present: the classic identity
+    #      injected == completed + dropped (all three measured/fork-declared)
+    #   b) injected/completed present, dropped absent (the VeritX fork's
+    #      totals print): complete-delivery semantics on a drained run —
+    #      any injected-vs-ejected gap is loss inside the fabric. We do
+    #      NOT derive dropped = injected - accepted and feed it back
+    #      through (a): that is an arithmetic identity, verifying nothing.
     inj = ev.get("booksim_injected_flits")
     com = ev.get("booksim_completed_flits")
     dro = ev.get("booksim_dropped_flits")
@@ -1457,6 +1570,18 @@ def verify_design(
             errors.append(
                 f"F3: flit conservation violated "
                 f"({inj} != {com} + {dro})")
+    elif None not in (inj, com):
+        conserved = int(inj) == int(com)
+        add("F3_packet_conservation", "PASS" if conserved else "FAIL",
+            "All injected flits reached ejection (complete delivery)",
+            "booksim_flit_accounting",
+            f"injected={inj}, ejected={com}"
+            + ("" if conserved else f", lost={int(inj) - int(com)}"),
+            {"injected": inj, "completed": com})
+        if not conserved:
+            errors.append(
+                f"F3: flits lost inside the fabric "
+                f"({int(inj) - int(com)} of {inj} never ejected)")
     else:
         add("F3_packet_conservation", "NOT_RUN",
             "No lost/duplicated flits — requires BookSim run evidence",
