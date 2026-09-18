@@ -99,12 +99,19 @@ class TestServingSpecBoundary:
 
 class TestServingRegistry:
     def test_golden_ids_resolve_to_real_files(self):
-        for _id, rel in list(SERVING_CLUSTERS.items()) + \
-                list(SERVING_DATASETS.items()):
-            p = Path(rel)
-            assert p.is_file(), f"registered { _id} missing: {rel}"
+        """Via the PRODUCTION seam (serving_fixture → REPO-anchored), never
+        cwd-relative Path(rel): a test that passes at repo root and fails
+        from dse/ is a cwd bug, and AGENTS.md forbids cwd-fragile paths."""
+        from veritx_dse.core.paths import serving_fixture
+        for kind, table in (("cluster", SERVING_CLUSTERS),
+                            ("dataset", SERVING_DATASETS)):
+            for _id in table:
+                p = serving_fixture(kind, _id)
+                assert p.is_file(), \
+                    f"registered {_id} missing: {p}"
 
     def test_golden_clusters_cover_both_shapes(self):
+        from veritx_dse.core.paths import serving_fixture
         from veritx_dse.core.serving import preflight_serve  # noqa: F401
         import json
         singles = [i for i in SERVING_CLUSTERS
@@ -113,7 +120,7 @@ class TestServingRegistry:
         assert singles and multis, \
             "registry must hold a single-instance and a multi-instance ID"
         for _id in singles + multis:
-            cfg = json.loads(Path(SERVING_CLUSTERS[_id]).read_text())
+            cfg = json.loads(serving_fixture("cluster", _id).read_text())
             ninst = sum(len(n.get("instances", []))
                         for n in cfg.get("nodes", []))
             if _id in multis:

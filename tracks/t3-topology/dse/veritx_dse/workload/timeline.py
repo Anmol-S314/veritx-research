@@ -1,14 +1,26 @@
 """Phase 16 — System Execution / Bottleneck Attribution.
 
 One dependency-aware timeline over declared per-op backend service legs,
-answering the product question: *what actually delayed this workload?*
+answering the product question: *what actually delayed this workload —
+and what would improving each subsystem actually save?*
 
 Relationship to the plan: the CanonicalWorkloadArtifact is the semantic
 parent (Phase 9); BookSim/analytical/memory evidence conventions come
 from Phases 5/15. Phase 16 does NOT couple simulators (reviewer §Phase
 16): it composes DECLARED per-op service legs through the workload's
-dependency structure and attributes stalls. Service is what a backend
-charged; **exposed stall** is what the critical path actually waited.
+dependency structure and attributes stalls.
+
+Canonical time unit
+-------------------
+Every leg is normalized to NANOSECONDS before any comparison:
+    compute_ns = compute_cycles × compute.ns_per_cycle
+    memory_ns  = mem_cycles     × mem.ns_per_cycle      (the MEM clock)
+    network_ns = net_cycles     × net.ns_per_cycle      (the NET clock)
+    rate_ns    = bytes / bytes_per_second × 1e9        (SI: no clock)
+Cycles without a clock are not time — a service leg in cycles with no
+binding for its dimension raises (fail closed; the 2026-09-18 review
+found compute-ns, mem-on-compute-clock, raw net cycles, and raw seconds
+mixed inside one max()).
 
 Op model (where overlap comes from)
 -----------------------------------
@@ -16,16 +28,18 @@ Op model (where overlap comes from)
   chains nodes positionally): op *i* is released when op *i-1* finishes.
   No dependency edges are invented here.
 - One op = one dependency step issuing its service legs CONCURRENTLY:
-    finish = ready + max(legs)
-  This is what makes hidden time representable: a 5,000-cycle memory
-  fetch under a 20,000-cycle compute finishes with the compute, and its
-  exposed stall is 0 — never "compute + memory".
-- Per-dimension exposed stall (critical-path attribution): the step's
-  span (its max leg) is credited to the longest leg's dimension(s);
-  strictly-shorter concurrent legs are fully hidden by definition.
-  Under a tie, EACH tied leg is credited the full span — either could
-  be the critical path — so the exposed sum may exceed the chain
-  advance exactly when a single-bottleneck verdict must be refused.
+    finish = ready + max(legs_ns)
+- Per op the attribution reports SEPARATE metrics (never overloaded):
+    service_ns(d)          the declared leg
+    exposed_stall_ns(d)    max(0, leg − max other leg)  — the COUNTER-
+                           FACTUAL: runtime saved if dimension d were
+                           instantaneous. A 20,000ns compute beside a
+                           5,000ns mem fetch → compute stall 15,000
+                           (removing compute saves exactly that), mem 0.
+    overlap_ns(d)          leg − exposed_stall — the hidden part
+    critical_path_owner    dimension(s) whose leg == step span; the
+                           step's span is attributed fully to them
+                           (ownership, NOT stall — a tie credits each)
 - Legs by op kind (all values DECLARED, never defaulted):
     COMPUTE            compute leg (required) + optional memory leg
                        (mem_cycles — operand fetch service, e.g. from a
@@ -39,13 +53,14 @@ Op model (where overlap comes from)
   sync leg and SYNC_BOUND is unreachable in v1 — recorded as an explicit
   assumption on every attribution, never as a silent zero.
 
-Verdicts (§ reviewer spec)
---------------------------
-  COMPUTE_BOUND / MEMORY_BOUND / FABRIC_BOUND
-  NETWORK_NOT_THE_BOTTLENECK — net tied for max exposed with another dim
-  MIXED                       — tie or relative margin <= 0.05
-  INCONCLUSIVE                — no dimension has exposed > 0 (fully
-                                overlapped / zero-service workload)
+Verdicts (§ reviewer spec, on exposed STALL — the savings question)
+-------------------------------------------------------------------
+  COMPUTE_BOUND / MEMORY_BOUND / FABRIC_BOUND — unique stall leader
+  NETWORK_NOT_THE_BOTTLENECK — net carried service but its stall is 0
+                               (fully hidden): fabric changes save nothing
+  MIXED                       — perfect tie (all stalls 0 with ≥2 served
+                               dims) or leader margin ≤ 0.05
+  INCONCLUSIVE                — no dimension carries service
 """
 from __future__ import annotations
 
@@ -55,12 +70,13 @@ from typing import Any
 from veritx_dse.workload.canonical import WorkloadArtifact, WorkloadOp
 
 MIXED_REL_MARGIN = 0.05
+NS_PER_SECOND = 1e9
 COMM_DIMS = ("net", "mem", "comp")
 
 
 class TimelineError(ValueError):
     """The Binding/dimension contract is violated — fail closed, never
-    substitute a default service time."""
+    substitute a default service time or clock."""
 
 
 # ── declared backend bindings (evidence attribution) ─────────────────────
@@ -128,24 +144,38 @@ class ServiceBinding:
     comp: BackendBinding | None = None
 
 
-# ── leg resolution (one implementation) ──────────────────────────────────
+# ── leg resolution (one implementation; canonical ns) ────────────────────
+
+def _clock(default: ServiceBinding | None, dim: str,
+           op_id: str) -> BackendBinding:
+    """The binding for `dim` — mandatory whenever that dimension's
+    service is declared in cycles (cycles without a clock are not time)."""
+    b = getattr(default, dim) if default else None
+    if b is None:
+        raise TimelineError(
+            f"op {op_id!r}: {dim} service is declared in cycles but no "
+            f"{dim} binding (clock) exists — cycles without a clock are "
+            "not time; declare ServiceBinding." + dim + "=BackendBinding(...)")
+    return b
+
 
 def _legs_for_op(op: WorkloadOp, default: ServiceBinding | None,
                  binding: OpService | None,
                  ) -> tuple[dict[str, float], dict[str, dict[str, str]],
                             list[str]]:
-    """Resolve one op's concurrent service legs in final cycle units.
+    """Resolve one op's concurrent service legs in CANONICAL NANOSECONDS.
 
     Fail-closed: a COMPUTE op without compute_cycles raises; a comm op
-    with neither service form raises; values violating OpService invariants
+    with neither service form raises; a cycles-denominated leg without
+    its dimension's clock raises; values violating OpService invariants
     raise (checked at construction). Memory legs that were not declared
     are ABSENT legs — recorded as assumptions, never zero-filled.
     """
     evidence: dict[str, dict[str, str]] = {}
     assumptions: list[str] = []
 
-    def ev(dim: str, binding_key: str) -> dict[str, str]:
-        b = getattr(default, binding_key) if default else None
+    def ev(dim: str) -> dict[str, str]:
+        b = getattr(default, dim) if default else None
         return ({"producer": b.producer, "fidelity": b.fidelity} if b
                 else {"producer": "declared", "fidelity": "DECLARED"})
 
@@ -154,14 +184,14 @@ def _legs_for_op(op: WorkloadOp, default: ServiceBinding | None,
             raise TimelineError(
                 f"op {op.op_id!r}: COMPUTE op has no declared compute "
                 "service (compute_cycles) — refusing to fabricate one")
-        clk = default.compute.ns_per_cycle if (default and default.compute) \
-            else 1.0
+        clk = _clock(default, "compute", op.op_id)
         legs: dict[str, float] = {
-            "compute": float(binding.compute_cycles) * clk}
-        evidence["compute"] = ev("compute", "compute")
+            "compute": float(binding.compute_cycles) * clk.ns_per_cycle}
+        evidence["compute"] = ev("compute")
         if binding.mem_cycles is not None:
-            legs["mem"] = float(binding.mem_cycles) * clk
-            evidence["mem"] = ev("mem", "mem")
+            mem_clk = _clock(default, "mem", op.op_id)
+            legs["mem"] = float(binding.mem_cycles) * mem_clk.ns_per_cycle
+            evidence["mem"] = ev("mem")
         else:
             assumptions.append(
                 f"op {op.op_id!r}: no memory service declared — operand "
@@ -173,17 +203,20 @@ def _legs_for_op(op: WorkloadOp, default: ServiceBinding | None,
     op_mem = binding.mem_bw if binding else None
     op_comp = binding.comp_bw if binding else None
     if op_net is not None:
-        legs = {"net": float(op_net)}
-        evidence["net"] = ev("net", "net")
+        net_clk = _clock(default, "net", op.op_id)
+        legs = {"net": float(op_net) * net_clk.ns_per_cycle}
+        evidence["net"] = ev("net")
         return legs, evidence, assumptions
     if op_mem is None or op_comp is None:
         raise TimelineError(
             f"op {op.op_id!r}: comm op has no declared service "
             "(net_cycles or mem_bw/comp_bw) — refusing to fabricate one")
     nbytes = op.bytes or 0
-    legs = {"mem": nbytes / op_mem, "comp": nbytes / op_comp}
-    evidence["mem"] = ev("mem", "mem")
-    evidence["comp"] = ev("comp", "comp")
+    # Rate form is SI (bytes/second) — no clock involved: s → ns via 1e9.
+    legs = {"mem": nbytes / op_mem * NS_PER_SECOND,
+            "comp": nbytes / op_comp * NS_PER_SECOND}
+    evidence["mem"] = ev("mem")
+    evidence["comp"] = ev("comp")
     return legs, evidence, assumptions
 
 
@@ -191,28 +224,43 @@ def _legs_for_op(op: WorkloadOp, default: ServiceBinding | None,
 
 @dataclass(frozen=True)
 class OpRecord:
-    """One op's timeline row: ready/finish plus concurrent service legs,
-    per-dimension exposed stall, and evidence attribution per leg."""
+    """One op's timeline row, all values in canonical ns.
+
+    legs          declared service per dimension
+    exposed       critical-path OWNERSHIP: the step span credited to the
+                  longest leg's dimension(s) (a tie credits each)
+    exposed_stall COUNTERFACTUAL savings: max(0, leg − max other leg) —
+                  what runtime drops if that dimension were instantaneous
+    overlap       legs hidden under a concurrent longer leg
+    owners        dimension(s) whose leg == the step span
+    """
     op_id: str
     kind: str
     ready: float
     finish: float
     legs: dict[str, float]
     exposed: dict[str, float]
+    exposed_stall: dict[str, float]
+    overlap: dict[str, float]
+    owners: tuple[str, ...]
     evidence: dict[str, dict[str, str]]
 
     def to_dict(self) -> dict[str, Any]:
         return {"op_id": self.op_id, "kind": self.kind,
                 "ready": self.ready, "finish": self.finish,
                 "legs": dict(self.legs), "exposed": dict(self.exposed),
+                "exposed_stall": dict(self.exposed_stall),
+                "overlap": dict(self.overlap),
+                "critical_path_owners": list(self.owners),
                 "evidence": {k: dict(v) for k, v in self.evidence.items()}}
 
 
 @dataclass(frozen=True)
 class Attribution:
-    """Machine-readable bottleneck verdict."""
+    """Machine-readable bottleneck verdict (over exposed STALL)."""
     verdict: str
     exposed_totals: dict[str, float]
+    exposed_stall_totals: dict[str, float]
     bottleneck: str | None
     margin: float | None
     reasons: list[str]
@@ -220,6 +268,7 @@ class Attribution:
     def to_dict(self) -> dict[str, Any]:
         return {"verdict": self.verdict,
                 "exposed_totals": dict(self.exposed_totals),
+                "exposed_stall_totals": dict(self.exposed_stall_totals),
                 "bottleneck": self.bottleneck, "margin": self.margin,
                 "reasons": list(self.reasons)}
 
@@ -232,17 +281,21 @@ class Timeline:
     ops: tuple[OpRecord, ...]
     service_totals: dict[str, float]
     exposed_totals: dict[str, float]
+    exposed_stall_totals: dict[str, float]
+    overlap_totals: dict[str, float]
     attribution: Attribution
     assumptions: tuple[str, ...]
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "schema": "veritx.timeline/1",
+            "schema": "veritx.timeline/2",
             "artifact_hash": self.artifact_hash,
             "ns_per_cycle": dict(self.ns_per_cycle),
             "ops": [o.to_dict() for o in self.ops],
             "service_totals": dict(self.service_totals),
             "exposed_totals": dict(self.exposed_totals),
+            "exposed_stall_totals": dict(self.exposed_stall_totals),
+            "overlap_totals": dict(self.overlap_totals),
             "attribution": self.attribution.to_dict(),
             "assumptions": list(self.assumptions),
         }
@@ -252,7 +305,7 @@ def build_timeline(art: WorkloadArtifact,
                    default: ServiceBinding | None = None,
                    op_services: dict[str, OpService] | None = None,
                    ) -> Timeline:
-    """Compose the dependency timeline and attribute exposed stalls.
+    """Compose the dependency timeline and attribute stalls.
 
     Every op must carry declared service legs (op_services overrides the
     default binding per dimension); an op without them raises — a timeline
@@ -262,11 +315,18 @@ def build_timeline(art: WorkloadArtifact,
     records: list[OpRecord] = []
     service_totals: dict[str, float] = {}
     exposed_totals: dict[str, float] = {}
+    stall_totals: dict[str, float] = {}
+    overlap_totals: dict[str, float] = {}
     assumptions: list[str] = [
         "op order is the dependency carrier (chain, no invented edges)",
         "sync has no leg in v1 (no barrier ops in the canonical op set) "
         "— SYNC_BOUND is unreachable in v1",
-        "exposed(d) = max(0, leg(d) - max other concurrent leg)",
+        "all legs normalized to ns: cycles × dimension clock; byte rates "
+        "are SI (×1e9 s→ns)",
+        "exposed_stall(d) = max(0, leg(d) − max other concurrent leg) — "
+        "the counterfactual saving if d were instantaneous",
+        "exposed(d) = critical-path ownership: the step span credited to "
+        "the longest leg(s); distinct from stall by design",
     ]
     prev_finish = 0.0
     for op in art.ops:
@@ -274,30 +334,37 @@ def build_timeline(art: WorkloadArtifact,
             op, default, services.get(op.op_id))
         assumptions.extend(asm)
         ready = prev_finish
-        finish = ready + max(legs.values())
-        longest = max(legs.values())
-        # Critical-path attribution: the step's span (its max leg) is
-        # attributed to the longest leg's dimension(s); strictly-shorter
-        # concurrent legs are fully hidden by definition. Sum of exposed
-        # across dimensions == step span == chain advance. (Leg-difference
-        # attribution — max(0, leg - max other) — would under-credit the
-        # critical path: a 20000c compute leg next to a 5000c mem leg
-        # would read 15000c exposed, which is wrong: remove the compute
-        # and the step finishes 20000c earlier.)
-        exposed = {d: (v if v == longest else 0.0)
-                   for d, v in legs.items()}
+        span = max(legs.values())
+        finish = ready + span
+        # Ownership: full span to the longest leg(s) — a tie credits each
+        # tied leg, so ownership sums may exceed the span exactly when a
+        # single-owner verdict must be refused.
+        exposed = {d: (v if v == span else 0.0) for d, v in legs.items()}
+        owners = tuple(d for d, v in legs.items() if v == span)
+        # Counterfactual stall: eliminate d → new span = max(other legs).
+        exposed_stall = {
+            d: max(0.0, v - max((o for d2, o in legs.items() if d2 != d),
+                                default=0.0))
+            for d, v in legs.items()}
+        overlap = {d: v - exposed_stall[d] for d, v in legs.items()}
         for d, v in legs.items():
             service_totals[d] = service_totals.get(d, 0.0) + v
         for d, v in exposed.items():
             exposed_totals[d] = exposed_totals.get(d, 0.0) + v
+        for d, v in exposed_stall.items():
+            stall_totals[d] = stall_totals.get(d, 0.0) + v
+        for d, v in overlap.items():
+            overlap_totals[d] = overlap_totals.get(d, 0.0) + v
         records.append(OpRecord(
             op_id=op.op_id, kind=op.kind, ready=ready, finish=finish,
             legs=dict(legs), exposed=exposed,
+            exposed_stall=dict(exposed_stall), overlap=dict(overlap),
+            owners=owners,
             evidence={k: dict(v) for k, v in evidence.items()}))
         prev_finish = finish
 
-    attribution = _attribute(records, exposed_totals,
-                             art.comm_bytes_total())
+    attribution = _attribute(records, service_totals, exposed_totals,
+                             stall_totals, art.comm_bytes_total())
     clocks: dict[str, float] = {}
     if default is not None:
         for dim in ("compute", "net", "mem", "comp"):
@@ -308,59 +375,109 @@ def build_timeline(art: WorkloadArtifact,
                     ns_per_cycle=clocks, ops=tuple(records),
                     service_totals=service_totals,
                     exposed_totals=exposed_totals,
+                    exposed_stall_totals=stall_totals,
+                    overlap_totals=overlap_totals,
                     attribution=attribution,
                     assumptions=tuple(assumptions))
 
 
-# ── verdict (§ reviewer spec) ────────────────────────────────────────────
+# ── verdict (§ reviewer spec, on exposed STALL) ──────────────────────────
 
 _BOUND_NAMES = {"compute": "COMPUTE_BOUND", "net": "FABRIC_BOUND",
                 "mem": "MEMORY_BOUND", "comp": "COMPUTE_BOUND"}
 
 
 def _attribute(records: tuple[OpRecord, ...],
-               exposed: dict[str, float],
+               service: dict[str, float],
+               ownership: dict[str, float],
+               stall: dict[str, float],
                comm_bytes_total: int) -> Attribution:
     reasons: list[str] = [
-        "sync leg absent in v1 — synchronization cannot be the verdict"]
-    if not any(v > 0 for v in exposed.values()):
+        "sync leg absent in v1 — synchronization cannot be the verdict",
+        "verdict over exposed_stall (counterfactual savings), not "
+        "critical-path ownership"]
+    if not any(v > 0 for v in service.values()):
         return Attribution(
-            verdict="INCONCLUSIVE", exposed_totals=dict(exposed),
+            verdict="INCONCLUSIVE", exposed_totals=dict(ownership),
+            exposed_stall_totals=dict(stall),
             bottleneck=None, margin=None,
             reasons=reasons + [
-                "no dimension has exposed stall > 0 — every leg is covered "
-                "by a concurrent longer leg or carries no service; the "
-                "workload does not exercise a bottleneck under this binding"])
-    mx = max(exposed.values())
-    tied = sorted(d for d, v in exposed.items() if v == mx)
-    positive = sorted((v for v in exposed.values() if v > 0), reverse=True)
+                "no dimension carries service — the workload does not "
+                "exercise a bottleneck under this binding"])
+
+    def stall_of(d: str) -> float:
+        return stall.get(d, 0.0)
+
+    # Perfect tie: ≥2 dims served, every stall 0 — elimination saves
+    # nothing anywhere; fall back to the ownership tie for the verdict.
+    if all(v <= 0.0 for v in stall.values()):
+        mx = max(ownership.values())
+        tied = sorted(d for d in service if service.get(d, 0.0) > 0
+                      and ownership.get(d, 0.0) == mx)
+        if len(tied) > 1 and "net" in tied:
+            return Attribution(
+                verdict="NETWORK_NOT_THE_BOTTLENECK",
+                exposed_totals=dict(ownership),
+                exposed_stall_totals=dict(stall),
+                bottleneck=None, margin=1.0,
+                reasons=reasons + [
+                    "perfect tie at max ownership (all stalls 0) including "
+                    "net — eliminating the fabric alone shortens nothing"])
+        return Attribution(
+            verdict="MIXED", exposed_totals=dict(ownership),
+            exposed_stall_totals=dict(stall),
+            bottleneck=None, margin=1.0,
+            reasons=reasons + [
+                f"perfect tie at max ownership: {tied} — no single "
+                "subsystem owns the critical path"])
+
+    # net carried service but is fully hidden → fabric changes save 0.
+    if service.get("net", 0.0) > 0 and stall_of("net") <= 0.0:
+        return Attribution(
+            verdict="NETWORK_NOT_THE_BOTTLENECK",
+            exposed_totals=dict(ownership),
+            exposed_stall_totals=dict(stall),
+            bottleneck=None, margin=None,
+            reasons=reasons + [
+                "net carried service but its exposed stall is 0 — the "
+                "fabric is fully hidden under a concurrent longer leg; "
+                "fabric improvements would not shorten the critical path"])
+
+    positive = sorted((v for v in stall.values() if v > 0), reverse=True)
+    mx = positive[0]
+    tied = sorted(d for d, v in stall.items() if v == mx)
     runner_up = positive[1] if len(positive) > 1 else 0.0
     margin = runner_up / mx
     if len(tied) > 1:
         if "net" in tied:
             return Attribution(
                 verdict="NETWORK_NOT_THE_BOTTLENECK",
-                exposed_totals=dict(exposed), bottleneck=None, margin=margin,
+                exposed_totals=dict(ownership),
+                exposed_stall_totals=dict(stall),
+                bottleneck=None, margin=margin,
                 reasons=reasons + [
-                    "net tied for max exposed with " +
+                    "net tied for max exposed stall with " +
                     ", ".join(d for d in tied if d != "net") +
                     " — fabric improvements would not shorten the "
                     "critical path"])
         return Attribution(
-            verdict="MIXED", exposed_totals=dict(exposed),
+            verdict="MIXED", exposed_totals=dict(ownership),
+            exposed_stall_totals=dict(stall),
             bottleneck=None, margin=margin,
-            reasons=reasons + [f"tie for max exposed: {tied}"])
+            reasons=reasons + [f"tie for max exposed stall: {tied}"])
     if margin >= 1.0 - MIXED_REL_MARGIN:
         return Attribution(
-            verdict="MIXED", exposed_totals=dict(exposed),
+            verdict="MIXED", exposed_totals=dict(ownership),
+            exposed_stall_totals=dict(stall),
             bottleneck=None, margin=margin,
             reasons=reasons + [
-                f"runner-up exposed is within {1.0 - margin:.2%} of the "
+                f"runner-up stall is within {1.0 - margin:.2%} of the "
                 f"leader (mixed margin {MIXED_REL_MARGIN:.0%})"])
     leader = tied[0]
     if leader == "net" and comm_bytes_total == 0:
         reasons.append("fabric leads with zero declared comm bytes — "
                        "verify the binding (bytes are part of op identity)")
     return Attribution(verdict=_BOUND_NAMES[leader],
-                       exposed_totals=dict(exposed), bottleneck=leader,
-                       margin=margin, reasons=reasons)
+                       exposed_totals=dict(ownership),
+                       exposed_stall_totals=dict(stall),
+                       bottleneck=leader, margin=margin, reasons=reasons)

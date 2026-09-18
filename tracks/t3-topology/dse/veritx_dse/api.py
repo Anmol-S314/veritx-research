@@ -55,6 +55,17 @@ def _jsonable(x: Any) -> Any:
     return x
 
 
+def _strip_host_paths(x: Any) -> Any:
+    """Remove filesystem locations from an output doc — this surface
+    reports identity (ids/hashes/states), never host paths."""
+    if isinstance(x, dict):
+        return {k: _strip_host_paths(v) for k, v in x.items()
+                if k not in ("run_dir", "bundle", "manifest", "root")}
+    if isinstance(x, list):
+        return [_strip_host_paths(v) for v in x]
+    return x
+
+
 # ── Discovery (no execution) ──────────────────────────────────────────────
 
 
@@ -71,8 +82,11 @@ def list_capabilities() -> dict[str, Any]:
                             "MISSING_METRIC", "SEMANTIC_LOSS", "INVALID_FIDELITY",
                             "INSUFFICIENT_PROVENANCE"],
         compiler_verdicts=["FEASIBLE", "NO_FEASIBLE_DESIGN"],
+        # SYNC_BOUND is NOT advertised: the v1 canonical op set has no
+        # barrier semantics, so the timeline can never produce it
+        # (workload/timeline.py — honest vocabulary only).
         bottleneck_verdicts=["COMPUTE_BOUND", "MEMORY_BOUND", "FABRIC_BOUND",
-                             "SYNCHRONIZATION_BOUND", "MIXED", "INCONCLUSIVE",
+                             "MIXED", "INCONCLUSIVE",
                              "NETWORK_NOT_THE_BOTTLENECK"],
         budgets=BUDGETS,
     )
@@ -126,25 +140,33 @@ def execute(spec_dict: dict[str, Any], *, repo: Path | None = None,
     """Run one experiment; returns run identity + terminal state.
 
     Serving specs route to the serving slice; everything else to Slice A.
-    Budget: the declared wall-clock cap is passed to the underlying runner
-    via the simulation spec when absent; the caller-visible budget is
-    always reported back.
+    The declared budget is ENFORCED, not decorative: if absent the spec's
+    own simulation.timeout_s is honored; an explicit timeout_s overrides
+    it in the spec dict before parse. The effective budget is reported.
     """
+    doc = dict(spec_dict)
+    declared = timeout_s if timeout_s is not None \
+        else BUDGETS["max_execution_seconds"]
     try:
-        sp = spec_mod.parse(spec_dict)
+        sim = doc.get("simulation") or {}
+        if timeout_s is not None:
+            sim = dict(sim)
+            sim["timeout_s"] = int(timeout_s)
+            doc["simulation"] = sim
+        sp = spec_mod.parse(doc)
+        budget = int(sp.simulation.timeout_s)
     except Exception as e:
         return _reject("execute", [f"{type(e).__name__}: {e}"])
 
-    budget = timeout_s if timeout_s is not None else BUDGETS["max_execution_seconds"]
     kwargs: dict[str, Any] = {"repo": repo} if repo is not None else {}
     t0 = time.monotonic()
     try:
         if sp.serving is not None:
             from .core.experiment_serving import run_serving_experiment
-            run = run_serving_experiment(spec_dict, **kwargs)
+            run = run_serving_experiment(doc, **kwargs)
         else:
             from .core.experiment import run_experiment
-            run = run_experiment(spec_dict, **kwargs)
+            run = run_experiment(doc, **kwargs)
     except spec_mod.SpecError as e:
         return _reject("execute", [str(e)])
     except Exception as e:
@@ -153,7 +175,7 @@ def execute(spec_dict: dict[str, Any], *, repo: Path | None = None,
                    elapsed_s=round(time.monotonic() - t0, 3),
                    budget_max_execution_seconds=budget)
     return _ok(status="OK", op="execute", run_id=run.run_id,
-               state=run.state, run_dir=str(run.root),
+               state=run.state,
                elapsed_s=round(time.monotonic() - t0, 3),
                budget_max_execution_seconds=budget)
 
@@ -162,9 +184,14 @@ def execute(spec_dict: dict[str, Any], *, repo: Path | None = None,
 
 
 def get_run(run_id: str) -> dict[str, Any]:
-    """Run identity + state by run_id — filesystem-authoritative (ADR 0003)."""
+    """Run identity + state by run_id — filesystem-authoritative (ADR 0003).
+
+    Immutable runs live under runs/veritx-runs/<run_id> (where Run.create
+    allocates them). The run_dir is NOT returned: it is a host path, and
+    this surface reports identity, never filesystem location.
+    """
     import json
-    root = REPO / "runs" / run_id
+    root = REPO / "runs" / "veritx-runs" / run_id
     manifest = root / "manifest.json"
     if not manifest.is_file():
         return _reject("get_run", [f"unknown run_id: {run_id}"])
@@ -174,7 +201,7 @@ def get_run(run_id: str) -> dict[str, Any]:
         else m.get("status", "UNKNOWN")
     return _ok(status="OK", op="get_run", run_id=run_id,
                experiment_hash=m.get("experiment_hash"), state=state,
-               created_at=m.get("created_at"), run_dir=str(root))
+               created_at=m.get("created_at"))
 
 
 def get_results(*, topology: str | None = None, status: str | None = None,
@@ -185,7 +212,8 @@ def get_results(*, topology: str | None = None, status: str | None = None,
     cap = min(limit or BUDGETS["max_query_rows"], BUDGETS["max_query_rows"])
     rows = Store(db).query(topology=topology, status=status,
                            workload=workload, limit=cap)
-    return _ok(status="OK", op="get_results", rows=rows, count=len(rows),
+    return _ok(status="OK", op="get_results", rows=_strip_host_paths(rows),
+               count=len(rows),
                budget_max_query_rows=BUDGETS["max_query_rows"])
 
 
@@ -200,7 +228,7 @@ def compare(candidates: list[dict[str, Any]], *, metrics: list[str],
         "comparison_kind": comparison_kind,
     })
     verdict = evaluate_comparability(candidates, intent)
-    return _ok(status="OK", op="compare", verdict=_jsonable(verdict))
+    return _ok(status="OK", op="compare", verdict=_strip_host_paths(_jsonable(verdict)))
 
 
 def diagnose(*, level: str = "quick") -> dict[str, Any]:
@@ -217,9 +245,20 @@ def diagnose(*, level: str = "quick") -> dict[str, Any]:
 
 def compile_fabric(requirements: list[dict[str, Any]],
                    candidates: list[dict[str, Any]], *,
+                   evaluate: Any | None = None,
                    search_budget: dict[str, Any] | None = None,
                    seed_policy: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Requirements-driven compile; FEASIBLE/NO_FEASIBLE_DESIGN verdict."""
+    """Requirements-driven compile; FEASIBLE/NO_FEASIBLE_DESIGN verdict.
+
+    ``evaluate`` is REQUIRED by the compiler core (it maps one candidate
+    to a SynthResult-shaped dict) and must be provided by the embedding
+    host — the API never invents a default evaluator. Without one this
+    is data, not a crash.
+    """
+    if evaluate is None:
+        return _reject("compile", [
+            "compile requires an evaluate(candidate)->SynthResult callable "
+            "— the API surface does not ship a default evaluator"])
     if len(candidates) > BUDGETS["max_candidates_per_compile"]:
         return _reject("compile", [
             f"candidate count {len(candidates)} exceeds budget "
@@ -231,8 +270,9 @@ def compile_fabric(requirements: list[dict[str, Any]],
         search_budget=search_budget or {},
         seed_policy=seed_policy or {},
     )
-    result = _cf(req)
-    return _ok(status="OK", op="compile", result=_jsonable(result))
+    result = _cf(req, evaluate)
+    return _ok(status="OK", op="compile",
+               result=_strip_host_paths(_jsonable(result)))
 
 
 # ── Export (plan §22) ───────────────────────────────────────────────────────
@@ -251,7 +291,12 @@ def export_run(run_id: str, *, out_dir: str | Path | None = None) -> dict[str, A
     except Exception as e:
         return _ok(status="EVALUATION_FAILED", op="export",
                    error=f"{type(e).__name__}: {e}")
-    return _ok(**result)
+    # Identity only: bundle/manifest are host paths — report their
+    # checksums, never their filesystem locations.
+    return _ok(status="OK", op="export", run_id=run_id,
+               manifest_sha256=result["manifest_sha256"],
+               archive_sha256=result["archive_sha256"],
+               signing=result["signing"], file_count=result["file_count"])
 
 
 __all__ = [

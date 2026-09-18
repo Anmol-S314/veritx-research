@@ -54,7 +54,24 @@ any interpreter):
   derived completed bytes (served × tx); dual fidelity labels
   (request-generation recorded vs dram-timing cycle simulation).
 
-### Standing verdict (honest gate, documented in-module)
+### Standing verdict — SUPERSEDED (2026-09-18, later same day)
+
+The text below described the pre-15b state. The C++ drain patch has since
+LANDED (vendored `readwrite_trace.cpp`, `VeritX:`-marked: `is_finished()`
+waits for accepted requests to complete; `outstanding` derived as
+`accepted − completed`), real runs PASS with full drain, and the fix was
+certified live (write-coalescing/read-forwarding probes after the
+`req.addr` flat-address repair). The Phase-15 acceptance battery
+(`veritx_dse.acceptance.phase15`) closes the phase: **VERDICT: PASS,
+16/16 checks** — drain matrix (1R / 192R+32W / 4096R / 4096W / mixed /
+backpressure), wrapper≡direct equivalence on a shared trace,
+determinism ×3, row-locality + isolated bank-parallelism sensitivity,
+capacity/tamper refusal, byte conservation. The paragraph below is kept
+as the honest record of why the patch was initially considered.
+
+---
+
+### Original standing verdict (superseded — see above)
 
 The v1 frontend leaves ~31 requests in flight at EOF regardless of trace
 length, so real runs terminate INCONCLUSIVE (measured live: accepted

@@ -44,8 +44,8 @@ from pathlib import Path
 from typing import Any
 
 from veritx_dse.workload.memory_lowering import MemoryLoweringManifest
+from veritx_dse.core.paths import REPO  # canonical repo root — never re-derive
 
-REPO = Path(__file__).resolve().parent.parent.parent.parent.parent
 VENDOR_DIR = REPO / "third_party" / "ramulator2"
 VENDOR_PIN = "72427a1bba3771564c4fb0e494ba02242fd1eaa7"
 RAMULATOR_VERSION = "2.1.0"
@@ -464,6 +464,19 @@ def _verdict(manifest: MemoryLoweringManifest, stats: dict,
     if isinstance(sv_rd, int) and isinstance(sv_wr, int):
         metrics["completed_read_bytes"] = _metric(sv_rd * tx, "bytes")
         metrics["completed_write_bytes"] = _metric(sv_wr * tx, "bytes")
+    # Drain counters EXPOSED, not just reconciled: a PASS verdict must be
+    # independently checkable from evidence (accepted==completed==generated,
+    # outstanding==0 — the reviewer's non-negotiable).
+    metrics["generated_requests"] = _metric(exp_rd + exp_wr, "requests")
+    metrics["accepted_requests"] = _metric(
+        (acc_rd if isinstance(acc_rd, int) else 0)
+        + (acc_wr if isinstance(acc_wr, int) else 0), "requests")
+    _sv_rd = sv_rd if isinstance(sv_rd, int) else 0
+    _sv_wr = sv_wr if isinstance(sv_wr, int) else 0
+    _coal = coal_wr if isinstance(coal_wr, int) else 0
+    metrics["completed_requests"] = _metric(_sv_rd + _sv_wr + _coal, "requests")
+    metrics["outstanding_requests"] = _metric(
+        max(0, (exp_rd + exp_wr) - (_sv_rd + _sv_wr + _coal)), "requests")
     try:
         (_acc_ok, short) = _reconcile(exp_rd, exp_wr, acc_rd, acc_wr,
                                       sv_rd, sv_wr, coal_wr)
