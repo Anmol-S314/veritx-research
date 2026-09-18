@@ -202,6 +202,16 @@ int main(int argc, char * argv[]) {
       cmd_line_parser.get<int>("booksim2-mcast-window");
   Booksim2NetworkApi::set_mcast_fold(mcast_fold, mcast_window);
 
+  // VeritX trial: embedded-MTU fragmentation (0 = off, status quo).
+  const int embedded_mtu =
+      cmd_line_parser.get<int>("booksim2-embedded-mtu");
+  if (embedded_mtu < 0) {
+    std::cerr << "booksim2: invalid --booksim2-embedded-mtu '"
+              << embedded_mtu << "' (want >= 0)" << std::endl;
+    return 1;
+  }
+  Booksim2NetworkApi::set_embedded_mtu(embedded_mtu);
+
   auto memory_api =
       std::make_unique<Analytical::AnalyticalRemoteMemory>(remote_memory_configuration);
   std::vector<std::unique_ptr<Booksim2NetworkApi>> network_apis;

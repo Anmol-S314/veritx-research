@@ -123,6 +123,59 @@ class TestLiveAstra:
         assert float(plat["hops_avg"]) > 0
 
 
+@needs_binary
+class TestEmbeddedMtu:
+    """Trial: --booksim2-embedded-mtu fragments message-sized unicast sends.
+
+    Background: embedded sim_send injects one wormhole packet per send; a
+    233KB ring chunk becomes a ~29k-flit packet vs 8-flit VC buffers, which
+    wedges inter-router traffic (intra-router pairs bypass the clog, so
+    short snapshots misleadingly implicate parity/routing). Fragmenting
+    into MTU-sized packets unblocks it (dragonfly16 case: 0 → 864 rank
+    completions in the same wall budget, zero tracker mismatches).
+    """
+
+    def _run_direct(self, *extra, timeout=120):
+        import subprocess
+        return subprocess.run(
+            [str(ASTRA_BS_BIN),
+             "--workload-configuration", str(FIX / "one-coll.et"),
+             "--system-configuration", str(FIX / "system.json"),
+             "--network-configuration", str(FIX / "network.json"),
+             "--remote-memory-configuration", str(FIX / "memory.json"),
+             "--booksim2-extra=injection_rate=0.0",
+             "--logging-configuration", "empty",
+             "--logging-folder", "/tmp/veritx_mtu_test",
+             "--max-scale=0", *extra],
+            cwd=str(Path(__file__).parent.parent.parent.parent),
+            stdin=subprocess.DEVNULL, capture_output=True, text=True,
+            timeout=timeout)
+
+    def test_negative_mtu_fails_fast(self):
+        r = self._run_direct("--booksim2-embedded-mtu", "-5")
+        assert r.returncode != 0
+        assert "embedded-mtu" in r.stderr
+
+    def test_mtu_fragments_and_completes(self):
+        """MTU=4 forces real fragmentation on the tiny fixture: the
+        baseline emits 480 packets; fragmented it must emit 960 with all
+        32 rank-steps finishing and no tracker mismatch (each chunk needs
+        ALL its fragments to match)."""
+        r = self._run_direct("--booksim2-embedded-mtu", "4")
+        assert r.returncode == 0, r.stderr[-500:]
+        assert (r.stdout + r.stderr).count("finished") == 32
+        assert "no tracker entry" not in r.stdout
+        plat = [l for l in r.stdout.splitlines() if "[plat]" in l]
+        assert plat and "packets=960" in plat[0]
+
+    def test_mtu_above_message_size_is_identity(self):
+        """MTU larger than any send behaves exactly like MTU off."""
+        r = self._run_direct("--booksim2-embedded-mtu", "1000000")
+        assert r.returncode == 0, r.stderr[-500:]
+        plat = [l for l in r.stdout.splitlines() if "[plat]" in l]
+        assert plat and "packets=480" in plat[0]
+
+
 # ── fault injection: every error branch, via the REAL subprocess path ────
 
 class TestAstraFaults:

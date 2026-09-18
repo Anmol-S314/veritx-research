@@ -21,6 +21,27 @@ std::map<std::pair<int, int>, std::queue<Booksim2NetworkApi::PendingSend>>
 std::map<int, Booksim2NetworkApi::FoldGroup> Booksim2NetworkApi::_fold_groups = {};
 bool Booksim2NetworkApi::_mcast_fold = false;
 int Booksim2NetworkApi::_fold_window = 8;
+int Booksim2NetworkApi::_embedded_mtu_flits = 0;
+
+// VeritX trial: split one message-sized injection into ceil(flits/mtu)
+// packets (full-MTU + tail). Returns fragment count for _pending matching
+// (remaining_flits counts down one per fragment arrival).
+static int inject_fragmented(BookSim2Fabric * fabric, int src, int dst,
+                             int flits, int mtu) {  if (mtu <= 0 || flits <= mtu) {
+    fabric->tm()->InjectUnicast(src, dst, flits, 0);
+    return 1;
+  }
+  int full = flits / mtu, tail = flits % mtu, n = 0;
+  for (int i = 0; i < full; ++i) {
+    fabric->tm()->InjectUnicast(src, dst, mtu, 0);
+    ++n;
+  }
+  if (tail) {
+    fabric->tm()->InjectUnicast(src, dst, tail, 0);
+    ++n;
+  }
+  return n;
+}
 
 Booksim2NetworkApi::Booksim2NetworkApi(int rank, BookSim2Fabric * fabric,
                                        EventQueue * eq)
@@ -99,8 +120,9 @@ void Booksim2NetworkApi::flush_fold_group(int src) {
   if (g.dsts.size() == 1) {
     // k=1: a plain unicast packet (the mcast stream path requires a
     // routable far end and gains nothing for a single dest).
-    _fabric->tm()->InjectUnicast(src, g.dsts[0], flits, 0);
-    g.pendings[0].remaining_flits = 1;
+    int nfrag = inject_fragmented(_fabric, src, g.dsts[0], flits,
+                                  _embedded_mtu_flits);
+    g.pendings[0].remaining_flits = nfrag;
     _pending[std::make_pair(src, g.dsts[0])].push(g.pendings[0]);
     return;
   }
@@ -227,10 +249,15 @@ int Booksim2NetworkApi::sim_send(void * buffer, uint64_t count, int type,
     return 0;
   }
 
-  _fabric->tm()->InjectUnicast(src, dst, flits, 0);
-  _pending[std::make_pair(src, dst)].push({tag, count, chunk_id, 1});
+  // VeritX trial: fragment message-sized sends (see set_embedded_mtu).
+  // remaining_flits counts fragments; the chunk completes on the last
+  // fragment's arrival (same machinery as the fold path).
+  int nfrag = inject_fragmented(_fabric, src, dst, flits,
+                                _embedded_mtu_flits);
+  _pending[std::make_pair(src, dst)].push({tag, count, chunk_id, nfrag});
   if (getenv("VERITX_DEBUG"))
-    std::cerr << "[dbg] sim_send injected flits=" << flits << " pending="
+    std::cerr << "[dbg] sim_send injected flits=" << flits << " nfrag="
+              << nfrag << " pending="
               << _pending[std::make_pair(src, dst)].size() << std::endl;
   return 0;
 }

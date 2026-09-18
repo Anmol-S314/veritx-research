@@ -51,6 +51,8 @@ void CmdLineParser::define_options() noexcept {
         cxxopts::value<bool>()->default_value("false"))(
         "booksim2-mcast-window", "Fold window in cycles",
         cxxopts::value<int>()->default_value("8"))(
+        "booksim2-embedded-mtu", "Fragment embedded unicast sends into MTU-flit packets (0 = one message-packet, status quo)",
+        cxxopts::value<int>()->default_value("0"))(
         "physical-dims", "Comma-separated physical topology dims (e.g. 1,2)",
         cxxopts::value<std::string>()->default_value(""));
 }

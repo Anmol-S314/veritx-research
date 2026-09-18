@@ -37,6 +37,16 @@ class Booksim2NetworkApi : public AstraSim::AstraNetworkAPI {
     _mcast_fold = on;
     _fold_window = window;
   }
+  // Embedded MTU (VeritX trial): one message-sized wormhole packet (tens of
+  // thousands of flits vs single-digit VC buffers) exceeds total fabric
+  // buffering and wedges inter-router traffic while intra-router pairs
+  // bypass the clog. When set (>0 flits), each unicast send fragments into
+  // ceil(flits/mtu) packets; completion matching already counts
+  // multi-packet sends via PendingSend::remaining_flits. 0 = single
+  // message-packet (status quo ante). Fail-fast on negative in main().
+  static void set_embedded_mtu(int mtu_flits) {
+    _embedded_mtu_flits = mtu_flits;
+  }
   static void flush_all();
   static bool has_pending_groups();
   // Ledger accessors (observability only): host-side send contexts still
@@ -89,6 +99,7 @@ class Booksim2NetworkApi : public AstraSim::AstraNetworkAPI {
   static std::map<int, FoldGroup> _fold_groups;
   static bool _mcast_fold;
   static int _fold_window;
+  static int _embedded_mtu_flits;
   static void flush_fold_group(int src);
 };
 
