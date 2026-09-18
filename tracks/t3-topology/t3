@@ -194,7 +194,14 @@ if [ "$IN_CONTAINER" -eq 0 ]; then
     }
     _forward_path T3_RESULTS "$REPO_ROOT/tracks/t3-topology/results/${CONFIG:-baseline}" || exit 1
     _forward_path T3_OUTPUT "$REPO_ROOT/tracks/t3-topology/results/${CONFIG:-baseline}/analysis" || exit 1
-    _forward_path BOOKSIM_BIN || exit 1
+    # BOOKSIM_BIN: the host default (repo bind-mount binary) is a COMPUTED
+    # default — never forward it. The host-built binary needs a newer
+    # libstdc++/glibc (GLIBCXX_3.4.32, GLIBC_2.38) than the Ubuntu-22.04
+    # image provides, so forwarding it breaks every in-container BookSim
+    # run. Skipped here, the container's env.sh derives its image-native
+    # binary (/usr/local/bin/booksim). An explicit user override (custom
+    # path) still forwards as before.
+    _forward_path BOOKSIM_BIN "$REPO_ROOT/third_party/booksim2/src/booksim" "booksim" || exit 1
     _forward_path TRAFFIC_MATRIX || exit 1
     # Dispatch any t3 command or raw command into the container
     exec $CONTAINER_BIN run $TTY_FLAG --rm $USER_FLAG \
@@ -1947,6 +1954,10 @@ cmd_lint() {
 _err_lint() { echo "  ✗  $*" >&2; }
 
 cmd_veritx() {
+    # NOTE: environment validation (missing Python deps, stale images) is
+    # owned by the CLI itself: veritx_dse.cli:main fails fast from
+    # core.deps, driven by dse/pyproject.toml. No per-package checks here —
+    # duplicating that list in bash is how it rotted last time.
     # A bare verb with missing required args would die on raw argparse usage.
     # Route through the builder-aware router: the menu does this for its own
     # rows, and a TTY gets the same guided picks; piped stdin keeps the
@@ -2467,12 +2478,10 @@ cmd_veritx_compare() { # interactive compare builder: every flag behind a picker
     local _timeout="$_PICK"
     _pick_num "ir" "0.05" 0.01 0.02 0.05 0.1 || return 0
     local _ir="$_PICK"
-    local _mem="off" _banks="4" _bankbw="1024"
-    if _ui_pick "memory model" "off" off on; then _mem="$_PICK"; fi
-    if [ "$_mem" = "on" ]; then
-        _pick_num "l2 banks" "4" 1 2 4 8 16 || return 0; _banks="$_PICK"
-        _pick_num "bank bw B/cyc" "1024" 256 512 1024 2048 || return 0; _bankbw="$_PICK"
-    fi
+    # MEMORY-ROADMAP §2 quarantine: the compare --memory scalar correction
+    # is deprecated and refused fail-closed by the CLI (it was
+    # topology-invariant, measured +0.0c). No toggle offered here; memory
+    # modelling returns via an explicit backend, not these flags.
     local _dense="none"
     if _ui_pick "dense preset (extra baselines; none skips)" "none" none llama70b_ring llama70b_a2a qwen3_moe; then _dense="$_PICK"; fi
     # Dense presets bundle topos + .anynet files from synthesis runs. Expand
@@ -2509,7 +2518,6 @@ print(' '.join(p.get('anynet', [])))" 2>/dev/null)
     local _sens="${_PICKS[*]}"
     local _args=(compare --trace "$_trace" --topos "$_topos" --seeds "$_seeds" --seed-base "$_seedbase" --mode "$_mode" --timeout "$_timeout" --ir "$_ir")
     [ -n "$_anynet" ] && [ "$_anynet" != "none" ] && _args+=(--anynet "$_anynet")
-    [ "$_mem" = "on" ] && _args+=(--memory --banks "$_banks" --bank-bw "$_bankbw")
     [ "$_dense" != "none" ] && _args+=(--dense "$_dense")
     # shellcheck disable=SC2086
     [ -n "$_sens" ] && _args+=(--sensitivity $_sens)

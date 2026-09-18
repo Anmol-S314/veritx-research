@@ -132,7 +132,18 @@ class TestBoEvaluateTopology:
         adj[0] = {1}; adj[1] = {0, 3}; adj[2] = {3}; adj[3] = {1, 2}
         T = np.ones((4, 4)) - np.eye(4)
         import veritx_dse.core.paths as paths
+        import veritx_dse.synthesis.evaluator as evaluator
+        # Pin the WHOLE resolver chain to "no runnable binary anywhere":
+        # paths.BOOKSIM_BIN (evaluator's first source) unrunnable AND the
+        # simulation.helper fallback raising (it would otherwise find the
+        # real repo/container binary and return a real latency).
         monkeypatch.setattr(paths, "BOOKSIM_BIN", tmp_path / "nope")
+        monkeypatch.setenv("BOOKSIM_BIN", str(tmp_path / "nope"))
+        def _raise(repo_root):
+            raise FileNotFoundError("no booksim (test)")
+        monkeypatch.setattr(evaluator, "_is_runnable", lambda c: False)
+        monkeypatch.setattr(
+            "veritx_dse.simulation.booksim.find_booksim_bin", _raise)
         lat = bo.evaluate_topology(adj, T, tmp_path)
         assert lat == 1000.0   # finite so the GP can keep iterating
 

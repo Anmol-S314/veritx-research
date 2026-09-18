@@ -187,17 +187,21 @@ RUN mkdir -p /opt/llmservingsim/astra-sim/inputs/system && \
        /opt/llmservingsim/astra-sim/astra-sim/build/astra_analytical/build/AnalyticalAstra/bin/AnalyticalAstra
 
 # =============================================================================
-# Python dependencies (shared across all tracks)
-# =============================================================================
-# z3 solver comes from the apt `z3` binary (runtime stage); smtbmc shells out to it
+# Python dependencies (shared across all tracks).
+# NOTE: veritx_dse requires pydantic>=2.5 (see tracks/t3-topology/dse/
+# pyproject.toml [project].dependencies). It must be installed here — the
+# t3 entrypoint runs `python3 -m veritx_dse.cli` directly off PYTHONPATH
+# (no pip-install step), so anything missing here is missing at runtime.
 RUN pip3 install --no-cache-dir \
     pandas \
     seaborn \
     jupyter \
     click \
     pyyaml \
+    'pydantic>=2.5' \
     'matplotlib>=3.10' \
     scikit-optimize
+# z3 solver comes from the apt `z3` binary (runtime stage); smtbmc shells out to it
 
 # =============================================================================
 # Stage 2: Runtime image (slim)

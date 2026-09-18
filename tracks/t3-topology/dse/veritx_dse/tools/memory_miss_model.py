@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 """Memory-class traffic generator (T3, D8 coupling model).
 
+EXPERIMENTAL / ASSUMPTION_BASED (MEMORY-ROADMAP §2 quarantine): this is
+research code, NOT certified system evidence. In particular `bank_contention`
+implements a topology-invariant M/D/1 scalar that measured +0.0c on real
+traces — it must not silently become comparison evidence. The `veritx compare
+--memory` path that consumed it is deprecated and refused fail-closed; this
+module's standalone `main()` report remains available as a research tool,
+with all outputs to be read as experimental estimates.
+
 Converts an LLMServingSim per-batch trace into *memory-class* traffic for the
 fabric, alongside the collective traffic that trace_to_matrix.py already
 emits. This is the analytical coupling D8 locked: memory misses enter the

@@ -46,9 +46,26 @@ fi
 # --------------------------------------------------------------------------
 # 4. Booksim binary & Configs
 # --------------------------------------------------------------------------
-# Auto-detect booksim binary from vendored location or PATH
+# Auto-detect booksim binary from vendored location or PATH.
+# Inside the container prefer the IMAGE-built binary (/usr/local/bin,
+# /opt/booksim2): the repo bind-mount carries a HOST-built binary whose
+# newer libstdc++/glibc (GLIBCXX_3.4.32, GLIBC_2.38) the Ubuntu-22.04
+# image cannot load. (veritx's find_booksim_bin also skips unrunnable
+# candidates, so this is belt-and-suspenders at the env layer.)
 if [ -z "${BOOKSIM_BIN:-}" ]; then
-    if [ -x "$REPO_ROOT/third_party/booksim2/src/booksim" ]; then
+    if [ -f /.dockerenv ] || [ -f /run/.containerenv ]; then
+        if [ -x /usr/local/bin/booksim ]; then
+            export BOOKSIM_BIN="/usr/local/bin/booksim"
+        elif [ -x /opt/booksim2/src/booksim ]; then
+            export BOOKSIM_BIN="/opt/booksim2/src/booksim"
+        elif [ -x "$REPO_ROOT/third_party/booksim2/src/booksim" ]; then
+            export BOOKSIM_BIN="$REPO_ROOT/third_party/booksim2/src/booksim"
+        elif command -v booksim &>/dev/null; then
+            export BOOKSIM_BIN="$(command -v booksim)"
+        else
+            export BOOKSIM_BIN="booksim"  # fallback; may fail at runtime
+        fi
+    elif [ -x "$REPO_ROOT/third_party/booksim2/src/booksim" ]; then
         export BOOKSIM_BIN="$REPO_ROOT/third_party/booksim2/src/booksim"
     elif command -v booksim &>/dev/null; then
         export BOOKSIM_BIN="$(command -v booksim)"

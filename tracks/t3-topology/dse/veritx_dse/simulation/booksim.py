@@ -11,6 +11,7 @@ BookSimError (never sys.exit) so callers can handle failures.
 """
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -215,20 +216,82 @@ def _build_anynet_config(params: dict, topo: Topology) -> str:
 
 # ── Execution ──────────────────────────────────────────────────────────────
 
+@lru_cache(maxsize=64)
+def _is_runnable_binary(path_str: str) -> bool:
+    """True if path is an executable whose shared libs all resolve.
+
+    Catches the host-vs-container GLIBCXX skew: a host-built booksim
+    bind-mounted into the Ubuntu-22.04 container exists and is +x, but
+    `ldd` reports `libstdc++.so.6: version GLIBCXX_3.4.32 not found`.
+    Without this check the resolver returns the broken binary and every
+    run fails with "No latency in BookSim output (exit 1)".
+    """
+    import subprocess as _sp
+    p = Path(path_str)
+    if not p.is_file() or not os.access(p, os.X_OK):
+        return False
+    try:
+        r = _sp.run(["ldd", str(p)], capture_output=True, text=True,
+                    timeout=10)
+    except Exception:
+        return True  # no ldd (non-Linux): executability is all we can check
+    return "not found" not in r.stdout
+
+
 @lru_cache(maxsize=16)
-def find_booksim_bin(repo_root: Path) -> Path:
-    """Locate the BookSim binary."""
-    candidates = [
-        repo_root / "third_party" / "booksim2" / "src" / "booksim",
-        repo_root / "third_party" / "booksim2" / "build" / "booksim",
-    ]
-    for c in candidates:
-        if c.exists():
+def _find_cached(repo_root_str: str, env_val: str) -> Path:
+    """Cached core of find_booksim_bin (env participates in the key)."""
+    repo_root = Path(repo_root_str)
+    tried: list[str] = []
+
+    def _note(label: str) -> None:
+        tried.append(label)
+
+    # 1. Explicit override wins — but only if it actually runs here.
+    if env_val:
+        _note(f"$BOOKSIM_BIN={env_val}")
+        cand = Path(env_val)
+        if cand.is_file() and _is_runnable_binary(str(cand)):
+            return cand
+        hit = shutil.which(env_val)
+        if hit and _is_runnable_binary(hit):
+            return Path(hit)
+    # 2. Container-native binaries (image-built with the image's libstdc++).
+    for c in (Path("/usr/local/bin/booksim"),
+              Path("/opt/booksim2/src/booksim")):
+        _note(str(c))
+        if _is_runnable_binary(str(c)):
             return c
+    # 3. Repo-built binaries (host-built; skipped when GLIBCXX-skewed).
+    for c in (repo_root / "third_party" / "booksim2" / "src" / "booksim",
+              repo_root / "third_party" / "booksim2" / "build" / "booksim"):
+        _note(str(c))
+        if _is_runnable_binary(str(c)):
+            return c
+    # 4. Anything called `booksim` on PATH.
+    hit = shutil.which("booksim")
+    if hit:
+        _note(f"$PATH booksim={hit}")
+        if _is_runnable_binary(hit):
+            return Path(hit)
     raise FileNotFoundError(
-        f"BookSim binary not found. Tried: {[str(c) for c in candidates]}\n"
-        "Build it: cd third_party/booksim2/src && make -j$(nproc)"
+        f"BookSim binary not found or not runnable here. Tried: {tried}\n"
+        "Build it: cd third_party/booksim2/src && make -j$(nproc)\n"
+        "If a candidate exists but ldd reports 'not found' (e.g. "
+        "GLIBCXX_3.4.32), it was built against a newer libstdc++ than "
+        "this environment provides — rebuild it here or unset $BOOKSIM_BIN "
+        "so a compatible binary is picked."
     )
+
+
+def find_booksim_bin(repo_root: Path) -> Path:
+    """Locate a runnable BookSim binary.
+
+    Order: $BOOKSIM_BIN → container-native (/usr/local/bin, /opt/booksim2)
+    → repo build → $PATH. Candidates that exist but cannot load (GLIBCXX
+    skew across the host/container boundary) are skipped, not returned.
+    """
+    return _find_cached(str(repo_root), os.environ.get("BOOKSIM_BIN", ""))
 
 
 def run_booksim(

@@ -363,18 +363,38 @@ def parse_latency(
     return None
 
 
+def _is_runnable(cand) -> bool:
+    """Present-executable-and-ldd-clean check, shared with simulation.booksim.
+
+    Imported lazily so module import never shells out (the lru_cache in
+    simulation.booksim keeps repeated resolution cheap).
+    """
+    try:
+        from ..simulation.booksim import _is_runnable_binary
+        return _is_runnable_binary(str(cand))
+    except Exception:
+        p = Path(cand)
+        return p.is_file()
+
+
 def _resolve_booksim_bin():
     """Binary location: core.paths at call time -> simulation helper -> legacy.
 
     Call-time lookup (not import-time) so tests monkeypatching
     ``veritx_dse.core.paths.BOOKSIM_BIN`` keep working (cf. BO
     missing-binary test expecting the finite 1000.0 penalty).
+
+    Every candidate must be *runnable* here (ldd-clean), not merely
+    present: a host-built binary bind-mounted into the older container
+    libstdc++ exists but cannot load (GLIBCXX skew). Unrunnable
+    candidates fall through to the next source instead of producing
+    "No latency in BookSim output (exit 1)" at run time.
     """
     try:
         import veritx_dse.core.paths as _paths
 
         cand = getattr(_paths, "BOOKSIM_BIN", None)
-        if cand is not None:
+        if cand is not None and _is_runnable(cand):
             return Path(cand)
     except Exception:
         pass
@@ -393,7 +413,7 @@ def _resolve_booksim_bin():
     for base in (here.parents[4] if len(here.parents) > 4 else here.parent,
                  here.parents[5] if len(here.parents) > 5 else here.parent):
         cand = base / "third_party" / "booksim2" / "src" / "booksim"
-        if cand.exists():
+        if _is_runnable(cand):
             return cand
     try:
         import veritx_dse.core.paths as _paths2

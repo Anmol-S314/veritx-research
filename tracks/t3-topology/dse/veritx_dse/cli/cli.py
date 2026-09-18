@@ -1898,10 +1898,12 @@ def cmd_sweep(ctx: Ctx, args):
 
 
 def _apply_memory_correction(ctx: Ctx, result, args) -> None:
-    """Apply shared-L2 bank contention correction to comparison results.
+    """DEPRECATED (MEMORY-ROADMAP §2 quarantine) — do not call from commands.
 
-    Uses M/D/1 queue model: W_q = rho / (2 * mu * (1 - rho))
-    where rho = lambda / mu, lambda = bytes_per_bank / cycles, mu = bank_bw.
+    Kept for research import only. The scalar M/D/1 correction added one
+    topology-invariant constant to every summary mean (measured +0.0c on
+    real traces): ranking-neutral, not system-level memory evidence.
+    `cmd_compare` refuses --memory fail-closed before reaching here.
     """
     try:
         sys.path.insert(0, str(SCRIPTS_DIR))
@@ -2006,6 +2008,23 @@ def cmd_compare(ctx: Ctx, args):
                    "check it with: veritx trace validate <trace>")
         return
 
+    # MEMORY-ROADMAP §2 quarantine: the --memory scalar correction is
+    # deprecated and must never silently contaminate a comparison. It added
+    # one topology-invariant M/D/1 constant to every mean (measured +0.0c
+    # on real traces), so it could not alter rankings — only imply a memory
+    # science that was not there. Fail closed BEFORE any simulation burns
+    # time; the replacement is an explicit memory backend
+    # (docs/MEMORY-ROADMAP.md), not these flags.
+    if getattr(args, "memory", False):
+        fail(ctx, "--memory scalar correction is deprecated and refused: "
+                   "it added the same constant to every topology "
+                   "(topology-invariant, ranking-neutral — measured +0.0c) "
+                   "and is not valid system-level memory evidence. "
+                   "Run the comparison without --memory/--banks/--bank-bw; "
+                   "real memory modelling lands via an explicit memory "
+                   "backend (see docs/MEMORY-ROADMAP.md).")
+        return
+
     # Resolve topology specs
     if args.dense:
         preset = DENSE_PRESETS[args.dense]
@@ -2068,10 +2087,6 @@ def cmd_compare(ctx: Ctx, args):
         timeout=_eff_timeout(args, 60), sim_type=args.mode, ir=args.ir,
         overrides=overrides,
     )
-
-    # Apply memory hierarchy correction if requested
-    if getattr(args, 'memory', False):
-        _apply_memory_correction(ctx, result, args)
 
     print_compare_table(ctx, result)
 
@@ -3754,9 +3769,11 @@ def build_parser() -> argparse.ArgumentParser:
                              "Applies to every topology; recorded in compare.json. "
                              "system./network./memory. keys are reserved for ASTRA overlay.")
     p_cmp.add_argument("--memory", action="store_true",
-                        help="Apply shared-L2 bank contention correction (M/D/1 queue model)")
-    p_cmp.add_argument("--banks", type=int, default=4, help="Number of L2 banks (for --memory)")
-    p_cmp.add_argument("--bank-bw", type=int, default=1024, help="L2 bank bandwidth B/cyc (for --memory)")
+                        help="DEPRECATED and refused (MEMORY-ROADMAP §2): the scalar "
+                             "M/D/1 correction was topology-invariant and is not valid "
+                             "memory evidence. Passing it fails the command closed.")
+    p_cmp.add_argument("--banks", type=int, default=4, help="DEPRECATED with --memory (refused).")
+    p_cmp.add_argument("--bank-bw", type=int, default=1024, help="DEPRECATED with --memory (refused).")
     p_cmp.add_argument("--sensitivity", nargs="+", metavar="IR",
                         help="Run sensitivity analysis at specified injection rates (e.g. --sensitivity 0.01 0.05 0.1 0.2)")
     p_cmp.add_argument("--out-dir", default=None, metavar="DIR",
@@ -4066,6 +4083,24 @@ _SUB_DESTS = {
 
 
 def main():
+    # Fail fast on missing third-party deps BEFORE any work runs. The CLI
+    # executes off PYTHONPATH in environments no installer verified (host
+    # shells, the tools container, CI); a missing dist used to surface as a
+    # bare ModuleNotFoundError deep inside a command, after simulations had
+    # already burned minutes. The requirement list is derived from
+    # pyproject.toml (core.deps), never hardcoded here.
+    from ..core.deps import missing_distributions
+    _missing = missing_distributions()
+    if _missing:
+        early_error(
+            "  ✗ missing Python dependencies: " + ", ".join(_missing) + "\n"
+            "    veritx requires everything in dse/pyproject.toml "
+            "[project].dependencies.\n"
+            "    Fix (native):  pip install -e tracks/t3-topology/dse\n"
+            "    Fix (container): rebuild the veritx-tools-base image "
+            "(Dockerfile installs the locked deps)."
+        )
+        sys.exit(1)
     from .. import __version__
     parser = build_parser()
     args = parser.parse_args()

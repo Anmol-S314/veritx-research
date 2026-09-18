@@ -532,6 +532,44 @@ class TestCompareAnynetFailFast:
         assert [s[0] for s in specs] == ["mesh_4x4", "t"]
 
 
+# ── MEMORY-ROADMAP §2 quarantine: --memory refused fail-closed ───────────────
+
+class TestMemoryQuarantine:
+    def _ns_mem(self, trace):
+        from argparse import Namespace
+        return Namespace(trace=trace, dense=None, topos="mesh_4x4",
+                         anynet=[], seeds=1, seed_base=0, timeout=60,
+                         mode="latency", ir=0.05, memory=True, banks=4,
+                         bank_bw=1024, sensitivity=None, out_dir=None,
+                         set=None)
+
+    def test_memory_flag_refused_before_sims(self, ctx, tmp_trace):
+        """--memory must fail closed with zero simulations burned."""
+        from unittest.mock import patch
+        from veritx_dse.cli.cli import cmd_compare
+        with patch("veritx_dse.cli.cli.run_compare") as rc:
+            cmd_compare(ctx, self._ns_mem(tmp_trace))
+            rc.assert_not_called()
+        assert ctx.failed
+        assert "deprecated" in open(ctx.log_file).read()
+
+    def test_memory_flag_end_to_end_cli(self, tmp_trace):
+        """Real CLI path: nonzero exit, deprecation message, no traceback."""
+        import subprocess
+        import sys
+        from pathlib import Path
+        dse = Path(__file__).resolve().parent.parent
+        r = subprocess.run(
+            [sys.executable, "-m", "veritx_dse.cli", "compare",
+             "--trace", str(tmp_trace), "--topos", "mesh_4x4",
+             "--seeds", "1", "--timeout", "30", "--memory"],
+            cwd=str(dse), capture_output=True, text=True, timeout=120,
+            stdin=subprocess.DEVNULL)
+        assert r.returncode != 0
+        assert "deprecated" in r.stderr
+        assert "Traceback" not in r.stderr
+
+
 class TestIterativeNodesRemoved:
     def test_nodes_flag_rejected(self):
         from veritx_dse.cli.cli import build_parser
