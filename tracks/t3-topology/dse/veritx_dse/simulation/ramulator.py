@@ -242,15 +242,93 @@ def _evidence_base(manifest: MemoryLoweringManifest,
                 manifest.to_dict()["backend_config_hash"]}
 
 
-def execute(manifest: MemoryLoweringManifest, trace_path: str | Path, *,
+def _sha256_hex(payload: bytes) -> str:
+    return "sha256:" + hashlib.sha256(payload).hexdigest()
+
+
+def _verify_chain(artifact, manifest: MemoryLoweringManifest,
+                  trace: Path) -> None:
+    """Re-verify every manifest link against its SOURCE (fail closed).
+
+    The reviewer's blocker: execute() trusted the manifest's declared
+    hashes/counts without recomputation, so the middle link of
+    intent → artifact → execution → evidence could be substituted.
+    After this function, evidence cannot claim a different artifact,
+    access stream, backend config, or input than what is executed.
+    """
+    md = manifest.to_dict()
+    if artifact is not None:
+        if artifact.artifact_hash != md["source_memory_artifact_hash"]:
+            raise RamulatorError(
+                "manifest.source_memory_artifact_hash does not match the "
+                f"supplied artifact ({md['source_memory_artifact_hash']} "
+                f"vs {artifact.artifact_hash}) — refusing to execute "
+                "against a substituted artifact")
+        if artifact.access_stream_hash != md["access_stream_hash"]:
+            raise RamulatorError(
+                "manifest.access_stream_hash does not match the supplied "
+                "artifact's access stream — refusing to execute")
+    # Backend config: the driver is generated FROM manifest.geometry, so
+    # the declared hash must equal the hash of that same geometry —
+    # otherwise the executed config has no declared identity.
+    from veritx_dse.workload.memory_lowering import (
+        backend_config_payload, RamulatorGeometry)
+    geo_d = manifest.geometry
+    if not isinstance(geo_d, dict) or "dram_class" not in geo_d:
+        raise RamulatorError(
+            "manifest.geometry is malformed — refusing to generate a "
+            "driver from it")
+    try:
+        geo_obj = RamulatorGeometry.from_dict(geo_d)
+    except (KeyError, TypeError, ValueError) as e:
+        raise RamulatorError(
+            "manifest.geometry does not reconstruct a valid "
+            f"RamulatorGeometry ({e}) — refusing to generate a driver")
+    recomputed = _sha256_hex(backend_config_payload(
+        geo_obj, manifest.mapping_algorithm))
+    if recomputed != md["backend_config_hash"]:
+        raise RamulatorError(
+            "manifest.backend_config_hash does not match the geometry "
+            "that generates the driver — refusing to execute (config "
+            "identity must be recomputed, not asserted)")
+    # Recount trace lines against declared transaction counts.
+    n_rd = n_wr = 0
+    for ln in trace.read_text().splitlines():
+        if not ln.strip():
+            continue
+        parts = ln.split()
+        if len(parts) not in (2, 3) or parts[0] not in ("R", "W"):
+            raise RamulatorError(
+                "trace line does not parse as a ReadWriteTrace record: "
+                f"{ln[:60]!r} — refusing to execute")
+        if parts[0] == "R":
+            n_rd += 1
+        else:
+            n_wr += 1
+    counts = md["counts"]
+    if (n_rd, n_wr, n_rd + n_wr) != (
+            counts["read_transactions"], counts["write_transactions"],
+            counts["transactions"]):
+        raise RamulatorError(
+            "trace line counts disagree with the manifest's declared "
+            f"transaction counts (recounted R={n_rd} W={n_wr} total="
+            f"{n_rd + n_wr} vs declared R={counts['read_transactions']} "
+            f"W={counts['write_transactions']} "
+            f"total={counts['transactions']}) — refusing to execute")
+
+
+def execute(artifact, manifest: MemoryLoweringManifest,
+            trace_path: str | Path, *,
             backend: RamulatorBackend, run_dir: str | Path,
             timeout: float | None = 600) -> MemoryEvidence:
     """Execute a lowered trace and return typed evidence (never None).
 
-    Verifies the trace hash before running (tamper-evident execution).
-    Raw debris (driver, stdout, stderr) is retained under run_dir.
-    Refuses (raising) on VeritX-side misuse: backend not built, trace
-    missing or hash-mismatched. Returns UNSUPPORTED evidence (no
+    Tamper-closed chain (2026-09-18): the manifest is not trusted — every
+    link is re-verified against its SOURCE before spawn (see
+    _verify_chain): artifact, access stream, backend config, trace hash,
+    and recounted trace lines must all match the manifest's declared
+    identity. Refuses (raising) on VeriTX-side misuse: backend not
+    built, missing/tampered inputs. Returns UNSUPPORTED evidence (no
     execution) for geometries outside the v1 envelope.
     """
     if not backend.ready:
@@ -272,6 +350,7 @@ def execute(manifest: MemoryLoweringManifest, trace_path: str | Path, *,
         raise RamulatorError(
             f"trace {trace} does not match the manifest's trace_sha256 "
             "— refusing to execute a substituted input")
+    _verify_chain(artifact, manifest, trace)
 
     unsupported = _check_supported(manifest)
     if unsupported is not None:

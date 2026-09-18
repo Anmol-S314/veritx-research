@@ -17,6 +17,8 @@ class ReadWriteTrace : public IFrontEnd, public Implementation {
   struct Trace {
     bool is_write;
     AddrVec_t addr_vec;
+    bool has_flat_addr;   // VeritX: extended 3-token form carries the
+    Addr_t flat_addr;     // flat byte address (the coalescing/forwarding key)
   };
   std::vector<Trace> m_trace;
 
@@ -70,6 +72,17 @@ class ReadWriteTrace : public IFrontEnd, public Implementation {
     const Trace& t = m_trace[m_curr_trace_idx];
     Request req(t.addr_vec, t.is_write ? Request::Type::Write : Request::Type::Read);
     req.size_bytes = m_memory_system->get_tx_bytes();
+    // VeritX (req.addr correctness, 2026-09-18): the addr-vector Request
+    // constructor leaves req.addr == -1, and ControllerBase keys write
+    // coalescing / read forwarding on req.addr — every request aliased to
+    // one key, so a buffered write to bank0/row7 could coalesce an
+    // unrelated write to bank3/row54. VeriX traces carry the flat byte
+    // address explicitly (3-token form); legacy 2-token traces get a
+    // unique per-line negative sentinel: no real address collides with a
+    // sentinel and sentinels never collide with each other, so legacy
+    // traces conservatively NEVER coalesce/forward (the aliased behavior
+    // they previously got was wrong, not a feature).
+    req.addr = t.has_flat_addr ? t.flat_addr : static_cast<Addr_t>(-(static_cast<long long>(m_curr_trace_idx) + 1));
     // VeritX: completion callback — the controller invokes it when the
     // request reaches its terminal state (reads: after modeled latency;
     // writes: at the terminal command; coalesced writes: synchronously
@@ -77,13 +90,17 @@ class ReadWriteTrace : public IFrontEnd, public Implementation {
     req.callback = [this](Request&) {
       ++m_completed_count;
       ++s_completed_requests;
-      --s_outstanding_requests;
     };
     bool sent = m_memory_system->send(req);
     if (sent) {
       ++m_accepted_count;
       ++s_accepted_requests;
-      ++s_outstanding_requests;
+      // VeritX (outstanding gauge, 2026-09-18): DERIVED from the monotonic
+      // truth at the one point where completed <= accepted is guaranteed
+      // (a coalesced write's callback fires inside send(), before the
+      // accept increment below — mutating the gauge there wrapped the
+      // size_t through 2^64). The gauge is only read at finalize.
+      s_outstanding_requests = m_accepted_count - m_completed_count;
       m_curr_trace_idx = (m_curr_trace_idx + 1) % m_trace_length;
       m_trace_count++;
     }
@@ -93,21 +110,28 @@ class ReadWriteTrace : public IFrontEnd, public Implementation {
   };
 
  private:
-  // Trace format: one memory access per line, space-separated.
-  //   <op> <addr_vec>
+  // Trace format (VeritX): one memory access per line, space-separated.
+  //   VeriX extended form:  <op> <flat_byte_addr> <addr_vec>   (3 tokens)
+  //   upstream legacy form: <op> <addr_vec>                    (2 tokens)
   //
   // - op:       R (read) or W (write)
+  // - flat:     flat byte address of the transaction — the equality key
+  //             the controller uses for write coalescing / read forwarding
+  //             (flat = tx_index * transaction_bytes from the lowerer)
   // - addr_vec: comma-separated integers forming a multi-dimensional address
-  //             vector (e.g., channel,rank,bank,row,column)
+  //             vector (e.g., channel,rank,bankgroup,bank,row,column)
   //
-  // Example:
-  //   R 0,1,2,100,32
-  //   W 0,0,3,200,16
+  // Examples:
+  //   R 4096 0,1,2,100,32
+  //   W 4160 0,0,3,200,16
   //
-  // Single pass (no cyclic replay): after the last record is accepted,
-  // tick() stops injecting and is_finished() additionally requires every
-  // accepted request to have completed via its callback (VeritX drain
-  // semantics — EOF alone is not completion).
+  // Legacy 2-token lines are accepted for upstream compatibility; their
+  // coalescing key is a unique per-line sentinel (see tick()), i.e. they
+  // conservatively never coalesce or forward. Single pass (no cyclic
+  // replay): after the last record is accepted, tick() stops injecting
+  // and is_finished() additionally requires every accepted request to
+  // have completed via its callback (VeritX drain semantics — EOF alone
+  // is not completion).
   void init_trace(const std::string& file_path_str) {
     fs::path trace_path(file_path_str);
     if (!fs::exists(trace_path)) {
@@ -126,9 +150,9 @@ class ReadWriteTrace : public IFrontEnd, public Implementation {
       std::vector<std::string> tokens;
       tokenize(tokens, line, " ");
 
-      if (tokens.size() != 2) {
+      if (tokens.size() != 2 && tokens.size() != 3) {
         throw std::runtime_error(
-            fmt::format("Trace {} line {}: expected 2 tokens, got {}", file_path_str, line_num, tokens.size()));
+            fmt::format("Trace {} line {}: expected 2 or 3 tokens, got {}", file_path_str, line_num, tokens.size()));
       }
 
       bool is_write = false;
@@ -141,15 +165,32 @@ class ReadWriteTrace : public IFrontEnd, public Implementation {
             fmt::format("Trace {} line {}: unknown type '{}' (expected R or W)", file_path_str, line_num, tokens[0]));
       }
 
+      // VeritX: 3-token form = <op> <flat_byte_addr> <addr_vec>.
+      const bool has_flat = (tokens.size() == 3);
+      const size_t vec_tok = has_flat ? 2 : 1;
+      Addr_t flat_addr = -1;
+      if (has_flat) {
+        try {
+          flat_addr = static_cast<Addr_t>(std::stoll(tokens[1]));
+        } catch (const std::exception&) {
+          throw std::runtime_error(
+              fmt::format("Trace {} line {}: flat address '{}' is not an integer", file_path_str, line_num, tokens[1]));
+        }
+        if (flat_addr < 0) {
+          throw std::runtime_error(
+              fmt::format("Trace {} line {}: flat address must be >= 0", file_path_str, line_num));
+        }
+      }
+
       std::vector<std::string> addr_vec_tokens;
-      tokenize(addr_vec_tokens, tokens[1], ",");
+      tokenize(addr_vec_tokens, tokens[vec_tok], ",");
 
       AddrVec_t addr_vec;
       for (const auto& token : addr_vec_tokens) {
         addr_vec.push_back(static_cast<int>(std::stoll(token)));
       }
 
-      m_trace.push_back({is_write, addr_vec});
+      m_trace.push_back({is_write, addr_vec, has_flat, flat_addr});
     }
 
     trace_file.close();

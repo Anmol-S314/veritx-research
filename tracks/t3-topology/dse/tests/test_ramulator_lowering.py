@@ -119,6 +119,58 @@ class TestLowering:
         # op0: input+weight READs (144 lines) then output WRITEs (8)
         assert set(kinds[:144]) == {"R"} and set(kinds[144:]) == {"W"}
 
+    def test_flat_byte_address_emitted_per_line(self, tmp_path):
+        """req.addr correctness (2026-09-18): every line carries the flat
+        tx byte address = tx_index * transaction_bytes — the controller's
+        coalescing/forwarding equality key. Distinct transactions must
+        have distinct flat addresses even when addr_vecs repeat."""
+        art = _artifact()
+        geo = _tiny_geo()  # tx = 64B
+        man = lower_to_ramulator_trace(art, geo,
+                                       out_path=tmp_path / "t.trace")
+        lines = (tmp_path / "t.trace").read_text().splitlines()
+        rows = [l.split() for l in lines]
+        assert all(len(r) == 3 for r in rows), \
+            "every line must be the 3-token extended form"
+        flats = [int(r[1]) for r in rows]
+        # flat addresses are exact tx multiples; reads strictly increasing
+        assert all(f % 64 == 0 for f in flats)
+        read_flats = flats[:144]
+        assert read_flats == sorted(read_flats)
+        assert read_flats[0] == 0
+        # every flat address maps to exactly one addr_vec and vice versa:
+        # distinct physical locations never share a coalescing key
+        pairs = {(r[1], r[2]) for r in rows}
+        assert len(pairs) == len(rows)
+
+    def test_distinct_txs_same_addr_vec_get_distinct_keys(self, tmp_path):
+        """The aliasing case that motivated the fix: two DIFFERENT
+        transactions must never share a coalescing key."""
+        art = _artifact()
+        man = lower_to_ramulator_trace(art, _tiny_geo(),
+                                       out_path=tmp_path / "t.trace")
+        lines = (tmp_path / "t.trace").read_text().splitlines()
+        seen = {}
+        for l in lines:
+            op, flat, vec = l.split()
+            if op == "W":
+                # within writes, distinct flats with identical vec = the
+                # old bug (key aliasing across physical locations)
+                seen.setdefault(vec, set()).add(flat)
+        # every addr_vec maps to exactly one flat address and vice versa
+        for vec, flats in seen.items():
+            assert len(flats) == 1, f"aliased keys for {vec}: {flats}"
+
+    def test_expand_access_returns_flat_addresses(self):
+        art = _artifact()
+        geo = _tiny_geo()
+        acc = art.accesses[0]
+        region = {r.region_id: r for r in art.regions}[acc.region_id]
+        vecs, flats, fp, bp = expand_access(acc, region.base_address, geo)
+        assert len(vecs) == len(flats) == 16  # 1024B / 64B
+        assert flats == [i * 64 for i in range(16)]
+        assert fp == 0 and bp == 0
+
     def test_trace_hash_matches_file(self, tmp_path):
         import hashlib
         art = _artifact()

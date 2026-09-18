@@ -444,21 +444,29 @@ def addr_vec_for_tx(tx_index: int, geometry: RamulatorGeometry,
 
 def expand_access(access: MemoryAccess, base_address: int,
                   geometry: RamulatorGeometry,
-                  ) -> tuple[list[tuple[int, ...]], int, int]:
-    """One semantic access → (backend request vectors, front_pad, back_pad).
+                  ) -> tuple[list[tuple[int, ...]], list[int], int, int]:
+    """One semantic access → (backend request vectors, flat addresses,
+    front_pad, back_pad).
 
     The backend serves whole transactions (req.size_bytes = tx, set by the
     frontend — a partial tail still occupies a full request). Padding is
     explicit: front_pad bytes before the access inside the first tx,
-    back_pad after it inside the last tx. Pure: no I/O.
+    back_pad after it inside the last tx. The flat byte address of each
+    transaction (tx_index * transaction_bytes) rides beside its addr_vec:
+    it is the equality key for controller write coalescing / read
+    forwarding (the req.addr == -1 aliasing bug, fixed 2026-09-18 —
+    without it, unrelated requests shared one coalescing key). Pure: no I/O.
     """
     tx = geometry.transaction_bytes
     start = base_address + access.offset_bytes
     end = start + access.size_bytes
     first, last = start // tx, (end - 1) // tx
-    vecs = [addr_vec_for_tx(i, geometry)
-            for i in range(first, last + 1)]
-    return vecs, start - first * tx, (last + 1) * tx - end
+    vecs: list[tuple[int, ...]] = []
+    flats: list[int] = []
+    for i in range(first, last + 1):
+        vecs.append(addr_vec_for_tx(i, geometry))
+        flats.append(i * tx)
+    return vecs, flats, start - first * tx, (last + 1) * tx - end
 
 
 @dataclass(frozen=True)
@@ -505,6 +513,18 @@ class MemoryLoweringManifest:
         }
 
 
+def backend_config_payload(geometry: RamulatorGeometry, mapping: str,
+                           ) -> bytes:
+    """Canonical config payload whose sha256 is the manifest's
+    backend_config_hash — ONE implementation; execute() recomputes it
+    to verify the manifest's declared hash against the geometry that
+    actually generates the driver (tamper-closed chain, 2026-09-18)."""
+    return json.dumps({
+        "geometry": geometry.to_dict(), "mapping": mapping,
+        "transaction_bytes": geometry.transaction_bytes},
+        sort_keys=True, separators=(",", ":")).encode()
+
+
 def lower_to_ramulator_trace(artifact: MemoryArtifact,
                              geometry: RamulatorGeometry, *,
                              out_path: str | Path,
@@ -531,10 +551,15 @@ def lower_to_ramulator_trace(artifact: MemoryArtifact,
             raise LoweringError(
                 f"access {access.access_id!r}: unknown region "
                 f"{access.region_id!r}")
-        vecs, fp, bp = expand_access(access, region.base_address,
-                                     geometry)
+        vecs, flats, fp, bp = expand_access(access, region.base_address,
+                                            geometry)
         op = "W" if access.kind == "WRITE" else "R"
-        lines.extend(f"{op} {','.join(map(str, v))}" for v in vecs)
+        # VeriX extended trace form: <op> <flat_byte_addr> <addr_vec> —
+        # the flat address is the controller's coalescing/forwarding key
+        # (the lowerer KNOWS the logical byte address; never invent a
+        # hash of the addr_vec for it).
+        lines.extend(f"{op} {flat} {','.join(map(str, v))}"
+                     for v, flat in zip(vecs, flats))
         n_tx += len(vecs)
         front_pad += fp
         back_pad += bp
@@ -563,10 +588,7 @@ def lower_to_ramulator_trace(artifact: MemoryArtifact,
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("\n".join(lines) + "\n")
     trace_hash = _sha256(out.read_bytes())
-    backend_config_hash = _sha256(json.dumps({
-        "geometry": geometry.to_dict(), "mapping": mapping,
-        "transaction_bytes": geometry.transaction_bytes},
-        sort_keys=True, separators=(",", ":")).encode())
+    backend_config_hash = _sha256(backend_config_payload(geometry, mapping))
     return MemoryLoweringManifest(
         schema_version=1,
         source_memory_artifact_hash=artifact.artifact_hash,
@@ -595,6 +617,9 @@ def lower_to_ramulator_trace(artifact: MemoryArtifact,
             "flat tx index → addr_vec via sequential_bankstriped_v1 "
             "(column, bank, bankgroup, sid, pseudochannel, channel, "
             "row — row slowest)",
+            "flat tx byte address emitted per line (VeriX 3-token "
+            "extended trace form) — req.addr correctness for controller "
+            "coalescing/forwarding (2026-09-18)",
         ],
         semantic_losses=[],
         unsupported=[],

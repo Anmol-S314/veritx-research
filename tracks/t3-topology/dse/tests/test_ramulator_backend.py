@@ -22,8 +22,8 @@ from veritx_dse.simulation.ramulator import (
 from veritx_dse.workload.canonical import (
     Parallelism, WorkloadArtifact, build_compute_op)
 from veritx_dse.workload.memory_lowering import (
-    MemorySystemDesign, hbm3_16gb_8hi_geometry, lower_to_ramulator_trace,
-    resolve_memory,
+    MemoryLoweringManifest, MemorySystemDesign, hbm3_16gb_8hi_geometry,
+    lower_to_ramulator_trace, resolve_memory,
 )
 
 DESIGN = MemorySystemDesign(hbm_devices=(0,))
@@ -33,6 +33,8 @@ GEO = hbm3_16gb_8hi_geometry(num_channels=1)
 
 
 def _manifest(tmp_path):
+    """Build (artifact, manifest, trace) through the real chain — never
+    hand-constructed — so execute()'s re-verification has real sources."""
     ops = (build_compute_op("op0", 100, input_bytes=4096,
                             weight_bytes=8192, output_bytes=2048),)
     wl = WorkloadArtifact(workload_id="w", source_kind="test",
@@ -41,7 +43,7 @@ def _manifest(tmp_path):
     art = resolve_memory(wl, DESIGN, policy=POLICY).artifact
     trace = tmp_path / "t.trace"
     man = lower_to_ramulator_trace(art, GEO, out_path=trace)
-    return man, trace
+    return art, man, trace
 
 
 def _backend(tmp_path=None):
@@ -94,8 +96,8 @@ class _Runner:
 def _run_with(monkeypatch, tmp_path, runner):
     import veritx_dse.core.process as proc
     monkeypatch.setattr(proc, "supervised_run", runner)
-    man, trace = _manifest(tmp_path)
-    return execute(man, trace, backend=_backend(tmp_path),
+    art, man, trace = _manifest(tmp_path)
+    return execute(art, man, trace, backend=_backend(tmp_path),
                    run_dir=tmp_path / "run"), man
 
 
@@ -185,21 +187,85 @@ class TestVerdicts:
 
 class TestMisuse:
     def test_backend_not_built_raises(self, tmp_path):
-        man, trace = _manifest(tmp_path)
+        art, man, trace = _manifest(tmp_path)
         missing = tmp_path / "nope" / "_ramulator.so"  # never created
         be = RamulatorBackend(python_exe=sys.executable,
                               package_dir=tmp_path, ext_path=missing)
         assert not be.ready
         with pytest.raises(RamulatorError, match="not built"):
-            execute(man, trace, backend=be, run_dir=tmp_path / "run")
+            execute(art, man, trace, backend=be, run_dir=tmp_path / "run")
 
     def test_tampered_trace_raises(self, monkeypatch, tmp_path):
         import veritx_dse.core.process as proc
         monkeypatch.setattr(proc, "supervised_run", _Runner())
-        man, trace = _manifest(tmp_path)
-        trace.write_text(trace.read_text() + "R 0,0,0,0,0,0,0\n")
+        art, man, trace = _manifest(tmp_path)
+        trace.write_text(trace.read_text() + "R 0 0,0,0,0,0,0,0\n")
         with pytest.raises(RamulatorError, match="trace_sha256"):
-            execute(man, trace, backend=_backend(tmp_path),
+            execute(art, man, trace, backend=_backend(tmp_path),
+                    run_dir=tmp_path / "run")
+
+    # ── O2: manifest/artifact/config binding verified before spawn ──
+
+    def test_substituted_artifact_refused(self, tmp_path):
+        art, man, trace = _manifest(tmp_path)
+        ops = (build_compute_op("op0", 100, input_bytes=64),)
+        wl2 = WorkloadArtifact(workload_id="w2", source_kind="test",
+                               parallelism=Parallelism(), num_participants=1,
+                               ops=ops)
+        other = resolve_memory(wl2, DESIGN, policy=POLICY).artifact
+        with pytest.raises(RamulatorError, match="substituted artifact"):
+            execute(other, man, trace, backend=_backend(tmp_path),
+                    run_dir=tmp_path / "run")
+
+    def test_tampered_access_stream_refused(self, monkeypatch, tmp_path):
+        import dataclasses
+        import veritx_dse.core.process as proc
+        monkeypatch.setattr(proc, "supervised_run", _Runner())
+        art, man, trace = _manifest(tmp_path)
+        # Rebuild a genuine artifact with one bigger access → different
+        # access_stream_hash and artifact_hash, but present it with the
+        # original manifest.
+        ops = (build_compute_op("op0", 100, input_bytes=4096,
+                                weight_bytes=8192, output_bytes=4096),)
+        wl2 = WorkloadArtifact(workload_id="w", source_kind="test",
+                               parallelism=Parallelism(), num_participants=1,
+                               ops=ops)
+        other = resolve_memory(wl2, DESIGN, policy=POLICY).artifact
+        with pytest.raises(RamulatorError, match="artifact"):
+            execute(other, man, trace, backend=_backend(tmp_path),
+                    run_dir=tmp_path / "run")
+
+    def test_tampered_backend_config_refused(self, monkeypatch, tmp_path):
+        """Driver is generated from manifest.geometry — a declared
+        backend_config_hash that corresponds to a DIFFERENT geometry
+        than manifest.geometry must refuse before spawn."""
+        import dataclasses
+        import hashlib
+        import veritx_dse.core.process as proc
+        from veritx_dse.workload.memory_lowering import backend_config_payload
+        runner = _Runner()
+        monkeypatch.setattr(proc, "supervised_run", runner)
+        art, man, trace = _manifest(tmp_path)
+        geo2 = dataclasses.replace(GEO, banks=2)
+        tampered = dataclasses.replace(
+            man, backend_config_hash="sha256:" + hashlib.sha256(
+                backend_config_payload(geo2,
+                                       man.mapping_algorithm)).hexdigest())
+        with pytest.raises(RamulatorError, match="backend_config_hash"):
+            execute(art, tampered, trace, backend=_backend(tmp_path),
+                    run_dir=tmp_path / "run")
+        assert runner.calls == []  # nothing executed
+
+    def test_tampered_counts_refused(self, monkeypatch, tmp_path):
+        import dataclasses
+        import veritx_dse.core.process as proc
+        monkeypatch.setattr(proc, "supervised_run", _Runner())
+        art, man, trace = _manifest(tmp_path)
+        d = man.to_dict()
+        d["counts"] = dict(d["counts"], transactions=999)
+        tampered = MemoryLoweringManifest(**d)
+        with pytest.raises(RamulatorError, match="counts disagree"):
+            execute(art, tampered, trace, backend=_backend(tmp_path),
                     run_dir=tmp_path / "run")
 
     def test_unsupported_geometry_returns_evidence(self, monkeypatch,
@@ -218,22 +284,46 @@ class TestMisuse:
         from veritx_dse.workload.memory_lowering import (
             lower_to_ramulator_trace as lower)
         man = lower(art, geo, out_path=trace)
-        ev = execute(man, trace, backend=_backend(tmp_path),
+        ev = execute(art, man, trace, backend=_backend(tmp_path),
                      run_dir=tmp_path / "run")
         assert ev.status == "UNSUPPORTED"
         assert "DDR5" in ev.failure_reason
         assert runner.calls == []  # nothing executed
 
 
-# ── live backend (skipif, needs_binary pattern) ─────────────────────────
+# ── live backend (interpreter-FLEXIBLE, O4) ─────────────────────────
+#
+# The old gate hardcoded LIVE_PY=python3.12 while the ext was built under
+# 3.14 — the suite reported 1 skipped while the ONE test that mattered
+# never ran. Now: the interpreter is derived from the BUILT EXTENSION's
+# cpython tag, so the live tests run against whatever interpreter the
+# vendored tree was built with (when that interpreter exists on PATH).
 
-LIVE_PY = Path("/home/datavex/.local/bin/python3.12")
 LIVE_VENDOR = DSE.parent.parent.parent / "third_party" / "ramulator2"
 LIVE_PKG = LIVE_VENDOR / "python"
-LIVE_EXT = list(LIVE_PKG.glob("ramulator/_ramulator*.so"))
+
+
+def _live_interpreter() -> str | None:
+    """pythonX.Y matching the built ext's tag, if present on PATH."""
+    import re as _re
+    import shutil as _sh
+    for ext in sorted(LIVE_PKG.glob("ramulator/_ramulator.cpython-*.so")):
+        # tag grammar: cp<major><2-digit minor> (cp314 → 3.14)
+        m = _re.search(r"cpython-(\d)(\d{2})-", ext.name)
+        if not m:
+            continue
+        py = _sh.which(f"python{int(m.group(1))}.{int(m.group(2))}")
+        if py:
+            return py
+    return None
+
+
+LIVE_PY = _live_interpreter()
+LIVE_EXT = bool(list(LIVE_PKG.glob("ramulator/_ramulator*.so")))
 needs_backend = pytest.mark.skipif(
-    not (LIVE_PY.exists() and LIVE_EXT),
-    reason="ramulator backend not built in the vendored tree")
+    not (LIVE_PY and LIVE_EXT),
+    reason="ramulator backend not built (or its interpreter not on PATH) "
+           "— unit-level contract tests above still run")
 
 
 @needs_backend
@@ -248,8 +338,8 @@ class TestLiveBackend:
     def test_execute_passes_with_full_drain(self, tmp_path):
         be = discover(python_exe=str(LIVE_PY),
                       vendor_dir=LIVE_VENDOR)
-        man, trace = _manifest(tmp_path)
-        ev = execute(man, trace, backend=be, run_dir=tmp_path / "run",
+        art, man, trace = _manifest(tmp_path)
+        ev = execute(art, man, trace, backend=be, run_dir=tmp_path / "run",
                      timeout=300)
         assert ev.status == "PASS", ev.failure_reason
         m = ev.metrics
