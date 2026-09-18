@@ -156,11 +156,16 @@ Next:     reviewer verdict on 16/17 before any new phase
   documented (deterministic at default ratio; check renamed
   `default-clock-repeatability` per review — it never varied the ratio).
   Exposing it is a small, honest follow-up when needed.
-- The acceptance battery (`veritx_dse.acceptance.phase15`, VERDICT PASS
-  16/16 at `fd7f6f7a` and re-verified green after consolidation-2) was
-  REMOVED from the tree at the user's request after its final run. It is
-  recoverable from git history (`git show fd7f6f7a:tracks/t3-topology/dse/veritx_dse/acceptance/phase15.py`)
-  and remains the reference gate for any future Phase-15 re-certification.
+- The acceptance battery (`veritx_dse.acceptance.phase15`) is RETAINED in
+  the tree as the PERMANENT Phase-15 re-certification gate
+  (`python3 -m veritx_dse.acceptance.phase15`). It is not part of the
+  default fast test suite — run it explicitly after any Ramulator,
+  vendored-backend, or memory-lowering change. Battery VERDICT PASS
+  16/16 at `fd7f6f7a`, re-verified after consolidation-2, and restored
+  byte-identical from `fd7f6f7a` in the freeze patch after a mistaken
+  deletion (the "removed at the user's request" wording below was
+  wrong — the reviewer recommended retention; the correction is
+  recorded here so no future agent resurrects the mistake).
 - The API/CLI surface (17/18) awaits review before being called complete.
 - Studio v0 (19) deliberately skipped per user decision; MCP stdio server
   was scrapped (user directive) and removed.
@@ -186,3 +191,21 @@ Next:     reviewer verdict on 16/17 before any new phase
    (schema `veritx.timeline/2`, corrected semantics), mirroring Phase 15.
 6. Final verification: acceptance battery PASS (16/16), full suite
    1390 passed + 1 skipped (from repo root and dse/), lint rc=0.
+
+## Consolidation-3 addendum: FINAL FREEZE PATCH (reviewer-directed)
+
+1. Phase-15 acceptance battery restored byte-identical from `fd7f6f7a`
+   (`veritx_dse/acceptance/phase15.py` + package `__init__.py`) as the
+   permanent re-certification gate; see policy above.
+2. `api.compile_fabric` boundary is now STRUCTURAL: the public signature
+   has no `evaluate` parameter — registered evaluator IDs only. DI moved
+   to private `api._compile_fabric_with_evaluator` (host embeddings and
+   tests; synthesis.bridge continues to drive the core compiler
+   directly, beneath the API). Pinned in
+   `dse/tests/test_phase_api_boundary.py`.
+3. `compile` timeout is a real MAXIMUM: `timeout < 1` or `>`
+   `BUDGETS["max_execution_seconds"]` (1800) is REJECTED with INVALID —
+   never clamped (the Python-API hole the reviewer found; the CLI never
+   exposed it). Pinned for both compile and execute.
+4. Verification: acceptance battery PASS 16/16, timeline tests, API
+   boundary tests, full suite, lint — all green (see final run record).

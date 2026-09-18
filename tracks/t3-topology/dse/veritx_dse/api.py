@@ -6,6 +6,10 @@ One narrow surface over the stable control plane. Contract:
     shell, no docker, no host paths as outputs, no environment mutation
   - bad intent is DATA (``valid=False`` + reasons), never an exception
     crossing this boundary
+  - no Python callables cross this boundary — structurally, by
+    signature: compile takes registered evaluator IDs, and the DI seam
+    (``_compile_fabric_with_evaluator``) is private, for host embeddings
+    and tests only
   - resource budgets are DECLARED (visible via ``list_capabilities``)
     and enforced where cheap (execution limits)
   - MCP/CLI/TUI are thin adapters to these functions, not alternatives
@@ -253,7 +257,6 @@ REGISTERED_EVALUATORS = ("booksim", "analytical")
 def compile_fabric(requirements: list[dict[str, Any]],
                    candidates: list[dict[str, Any]], *,
                    evaluator_id: str | None = None,
-                   evaluate: Any | None = None,
                    trace_path: str | None = None,
                    seed: int = 0,
                    timeout: int = 600,
@@ -261,39 +264,62 @@ def compile_fabric(requirements: list[dict[str, Any]],
                    seed_policy: dict[str, Any] | None = None) -> dict[str, Any]:
     """Requirements-driven compile; FEASIBLE/NO_FEASIBLE_DESIGN verdict.
 
-    External-API contract: no Python callables cross this boundary. The
-    evaluator is selected by REGISTERED ID — ``booksim`` resolves the one
-    real evaluation path (synthesis.bridge._spec_evaluator over
+    External-API contract, structurally enforced: no Python callables
+    cross this boundary — the signature has no ``evaluate`` parameter.
+    The evaluator is selected by REGISTERED ID — ``booksim`` resolves the
+    one real evaluation path (synthesis.bridge._spec_evaluator over
     evaluator.evaluate_spec, requiring trace_path), ``analytical`` is
-    registered as UNSUPPORTED (declared, not invented). Host embeddings
-    may pass ``evaluate=`` directly (internal contract); external callers
-    must not.
+    registered as UNSUPPORTED (declared, not invented).
+
+    Budgets: ``timeout`` is a MAXIMUM (``1 <= timeout <=``
+    ``BUDGETS["max_execution_seconds"]``) — over-budget intent is
+    REJECTED, never clamped; candidate count is capped by
+    ``max_candidates_per_compile``.
     """
-    if evaluate is None:
-        if evaluator_id is None:
-            return _reject("compile", [
-                "compile requires evaluator_id (registered: "
-                f"{', '.join(REGISTERED_EVALUATORS)}) — an agent-safe API "
-                "never takes Python callables"])
-        if evaluator_id not in REGISTERED_EVALUATORS:
-            return _ok(status="UNSUPPORTED", op="compile",
-                       valid=False,
-                       reasons=[f"evaluator_id {evaluator_id!r} is not "
-                                f"registered — supported: "
-                                f"{', '.join(REGISTERED_EVALUATORS)}"])
-        if evaluator_id == "analytical":
-            return _ok(status="UNSUPPORTED", op="compile",
-                       valid=False,
-                       reasons=["evaluator_id 'analytical' has no compiler "
-                                "resolution yet — declared UNSUPPORTED, "
-                                "never invented"])
-        if not trace_path:
-            return _reject("compile", [
-                "evaluator_id 'booksim' requires trace_path (the real "
-                "evaluation path measures the candidate against a trace)"])
-        from .synthesis.bridge import _spec_evaluator
-        evaluate = _spec_evaluator(trace_path=str(Path(trace_path).resolve()),
-                                   seed=seed, timeout=timeout)
+    if timeout < 1 or timeout > BUDGETS["max_execution_seconds"]:
+        return _reject("compile", [
+            f"timeout {timeout}s outside API budget "
+            f"[1, {BUDGETS['max_execution_seconds']}]s — over-budget "
+            "intent is rejected, never clamped"])
+    if evaluator_id is None:
+        return _reject("compile", [
+            "compile requires evaluator_id (registered: "
+            f"{', '.join(REGISTERED_EVALUATORS)}) — an agent-safe API "
+            "never takes Python callables"])
+    if evaluator_id not in REGISTERED_EVALUATORS:
+        return _ok(status="UNSUPPORTED", op="compile",
+                   valid=False,
+                   reasons=[f"evaluator_id {evaluator_id!r} is not "
+                            f"registered — supported: "
+                            f"{', '.join(REGISTERED_EVALUATORS)}"])
+    if evaluator_id == "analytical":
+        return _ok(status="UNSUPPORTED", op="compile",
+                   valid=False,
+                   reasons=["evaluator_id 'analytical' has no compiler "
+                            "resolution yet — declared UNSUPPORTED, "
+                            "never invented"])
+    if not trace_path:
+        return _reject("compile", [
+            "evaluator_id 'booksim' requires trace_path (the real "
+            "evaluation path measures the candidate against a trace)"])
+    from .synthesis.bridge import _spec_evaluator
+    evaluate = _spec_evaluator(trace_path=str(Path(trace_path).resolve()),
+                               seed=seed, timeout=timeout)
+    return _compile_fabric_with_evaluator(
+        requirements, candidates, evaluate=evaluate,
+        search_budget=search_budget, seed_policy=seed_policy)
+
+
+def _compile_fabric_with_evaluator(
+        requirements: list[dict[str, Any]],
+        candidates: list[dict[str, Any]], *,
+        evaluate: Any,
+        search_budget: dict[str, Any] | None = None,
+        seed_policy: dict[str, Any] | None = None) -> dict[str, Any]:
+    """INTERNAL dependency-injection seam for compile (host embeddings
+    and tests). NOT part of the public agent-safe API: it takes a Python
+    callable by design. The public surface is :func:`compile_fabric`.
+    """
     if len(candidates) > BUDGETS["max_candidates_per_compile"]:
         return _reject("compile", [
             f"candidate count {len(candidates)} exceeds budget "
