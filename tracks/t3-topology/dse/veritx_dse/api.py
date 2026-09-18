@@ -235,8 +235,27 @@ def compile_fabric(requirements: list[dict[str, Any]],
     return _ok(status="OK", op="compile", result=_jsonable(result))
 
 
+# ── Export (plan §22) ───────────────────────────────────────────────────────
+
+
+def export_run(run_id: str, *, out_dir: str | Path | None = None) -> dict[str, Any]:
+    """Checksummed export bundle for one immutable run (CHECKSUMMED_UNSIGNED
+    unless an HMAC key is declared via VERITX_EXPORT_HMAC_KEY)."""
+    from .core.export import export_run as _export
+    target = REPO / "runs" / "veritx-runs" / run_id
+    if not target.is_dir():
+        return _reject("export", [f"unknown run_id: {run_id}"])
+    try:
+        result = _export(target, out_dir or (REPO / "runs" / "exports"),
+                         run_id=run_id)
+    except Exception as e:
+        return _ok(status="EVALUATION_FAILED", op="export",
+                   error=f"{type(e).__name__}: {e}")
+    return _ok(**result)
+
+
 __all__ = [
     "BUDGETS", "list_capabilities", "list_workloads", "list_topologies",
     "validate", "plan", "execute", "get_run", "get_results", "compare",
-    "diagnose", "compile_fabric",
+    "diagnose", "compile_fabric", "export_run",
 ]

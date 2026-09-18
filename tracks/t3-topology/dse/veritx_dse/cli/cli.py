@@ -4107,6 +4107,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_api_diag = _api_ps["diagnose"]
     p_api_diag.add_argument("--level", default="quick", choices=["quick", "deep"])
 
+    p_api_exp = _api_ps["export"]
+    p_api_exp.add_argument("--run-id", required=True, help="Run directory id")
+    p_api_exp.add_argument("--out", default=None, help="Output directory")
+
     return parser
 
 
@@ -4238,6 +4242,15 @@ def cmd_api_diagnose(ctx: Ctx, args):
     if out.get("status") == "INVALID":
         sys.exit(2)
     if any(o.get("status") == "fail" for o in out.get("result", {}).get("checks", [])):
+        sys.exit(1)
+
+
+def cmd_api_export(ctx: Ctx, args):
+    """Checksummed export bundle for one immutable run (plan §22)."""
+    from .. import api
+    out = api.export_run(args.run_id, out_dir=args.out)
+    _api_out(ctx, out)
+    if out.get("status") != "OK":
         sys.exit(1)
 
 
@@ -4386,6 +4399,8 @@ COMMANDS = {
                     "t3_mode": "forward", "handler": cmd_api_compile},
         "diagnose": {"help": "Health battery (quick|deep)", "t3_mode": "forward",
                      "handler": cmd_api_diagnose},
+        "export": {"help": "Checksummed export bundle for a run (§22)",
+                   "t3_mode": "forward", "handler": cmd_api_export},
     }},
 }
 
