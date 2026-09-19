@@ -2850,6 +2850,40 @@ def cmd_baseline(ctx: Ctx, args):
     output(ctx, result.to_dict())
 
 
+def cmd_migrate_design(ctx: Ctx, args):
+    """Re-emit a CompileRequest under the current compiler semantics."""
+    from veritx_dse.model.compile_model import (
+        COMPILER_SEMANTICS_VERSION, CompileRequest, migrate_design,
+    )
+
+    src = Path(_resolve_path(args.request))
+    if not src.exists():
+        fail(ctx, f"CompileRequest not found: {src}")
+        return
+    target = getattr(args, "to_semantics", None)
+    if target is not None and target != COMPILER_SEMANTICS_VERSION:
+        fail(ctx, f"unsupported --to-semantics {target} "
+                  f"(this build speaks {COMPILER_SEMANTICS_VERSION})")
+        return
+    migrated, provenance = migrate_design(json.loads(src.read_text()))
+    document = migrated.to_dict()
+    if getattr(args, "output", None):
+        out = Path(args.output)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(document, indent=2))
+        emit(ctx, f"  ✓ migrated → {out}")
+    else:
+        emit(ctx, json.dumps(document, indent=2))
+    if provenance["changed"]:
+        log(ctx, f"  semantics {provenance['from_semantics']} → "
+                 f"{provenance['to_semantics']}; design_hash "
+                 f"{provenance['from_design_hash'][:16]}… → "
+                 f"{provenance['to_design_hash'][:16]}…")
+    else:
+        log(ctx, f"  already compiler_semantics_version "
+                 f"{COMPILER_SEMANTICS_VERSION}; nothing to migrate")
+
+
 def cmd_compile(ctx: Ctx, args):
     # Short-name nicety: `veritx compile moe_8npu` resolves the CompileRequest
     # through the asset registry like every other kind.
@@ -4000,6 +4034,15 @@ def build_parser() -> argparse.ArgumentParser:
                             help="BookSim timeout in seconds (default: VERITX_TIMEOUT or 120)")
     p_compile.add_argument("--output", "-o", help="Save results to JSON file")
 
+    # ── migrate-design (compiler semantics migration) ──────────────
+    p_migrate = _top_ps["migrate-design"]
+    p_migrate.add_argument("request", help="Path to CompileRequest JSON file")
+    p_migrate.add_argument("--output", "-o",
+                           help="Write migrated JSON here (default: stdout)")
+    p_migrate.add_argument("--to-semantics", type=int, default=None,
+                           help="Target compiler semantics (only the current "
+                                "version is supported)")
+
     # ── init ──────────────────────────────────────────────────────
     p_init = _top_ps["init"]
     p_init.add_argument("--out", "-o", help="Output JSON path (default: runs/compile_requests/<model>.json)")
@@ -4363,6 +4406,9 @@ COMMANDS = {
     "compile": {"help": "Intent-to-fabric pipeline from CompileRequest JSON",
                 "t3_mode": "forward",
                 "sub_dest": None, "handler": cmd_compile, "subcommands": None},
+    "migrate-design": {"help": "Re-emit a CompileRequest under current compiler semantics",
+                "t3_mode": "forward",
+                "sub_dest": None, "handler": cmd_migrate_design, "subcommands": None},
     "init": {"help": "Interactive wizard to generate a CompileRequest",
              "t3_mode": "forward",
              "sub_dest": None, "handler": cmd_init, "subcommands": None},

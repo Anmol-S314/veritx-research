@@ -20,7 +20,7 @@ from .model.compile_model import (
     CompileRequest, Workload, Agent, DependencyGraph, NocConfig,
     ModelFamily, ServingMode, AgentKind, TopologyFamily,
     QoSClass, Requirement, Dependency, DepKind,
-    verify_design, derive_vc_assignment,
+    verify_design, derive_vc_assignment, migrate_design,
     AddressMap, AddressRange, PhysicalContext,
 )
 from .model.presets import SWEEP_TOPOS, WORKLOAD_PRESETS, lookup_topo

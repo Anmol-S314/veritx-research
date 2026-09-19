@@ -34,7 +34,16 @@ from veritx_dse.core.constants import PLANE_C_MAX_VC, env_int
 # spec (core.spec) and of every other persisted format — same user
 # request under different compiler semantics is a different design.
 COMPILE_REQUEST_SCHEMA_VERSION = 2
-COMPILER_SEMANTICS_VERSION = 1
+# Compiler-semantics version — how design intent maps to identity.
+#   v1 (legacy) — dependency edge order is identity-bearing.
+#   v2 (current) — graph processing is deterministic, so dependency edge
+#                  order is NON-semantic: the same edge set always yields
+#                  the same design_hash.
+# v1 documents remain loadable and are never reinterpreted under v2; use
+# migrate_design() / `migrate-design --to-semantics 2` to re-emit them.
+COMPILER_SEMANTICS_VERSION = 2
+LEGACY_COMPILER_SEMANTICS_VERSIONS = (1,)
+SUPPORTED_COMPILER_SEMANTICS_VERSIONS = (1, 2)
 
 # Hash-domain tag: a CompileRequest identity can never collide with an
 # experiment, execution fingerprint, or artifact hash by construction.
@@ -480,10 +489,16 @@ class DependencyGraph:
                 if d.kind == DepKind.BLOCKING]
 
     def _adjacency(self) -> dict[str, list[str]]:
-        """Build adjacency list from blocking edges."""
+        """Build adjacency from blocking edges, canonically ordered.
+
+        Neighbors are sorted so traversal is independent of the declared
+        dependency order (Wave B3.0-pre: graph processing deterministic).
+        """
         adj: dict[str, list[str]] = {}
         for src, dst in self._blocking_edges():
             adj.setdefault(src, []).append(dst)
+        for neighbors in adj.values():
+            neighbors.sort()
         return adj
 
     def find_cycles(self) -> list[list[str]]:
@@ -514,7 +529,7 @@ class DependencyGraph:
             path.pop()
             rec_stack.discard(node)
 
-        for node in all_nodes:
+        for node in sorted(all_nodes):
             if node not in visited:
                 _dfs(node, [])
 
@@ -949,7 +964,7 @@ def derive_vc_assignment(cr: CompileRequest) -> VCAssignment:
     for dep in graph.dependencies:
         all_classes.add(dep.source)
         all_classes.add(dep.target)
-    for cls in all_classes:
+    for cls in sorted(all_classes):
         if cls not in per_class_vc:
             per_class_vc[cls] = 0
 
@@ -1044,11 +1059,11 @@ class CompileRequest:
                 f"(this build implements v{COMPILE_REQUEST_SCHEMA_VERSION})")
         if _as_int("compiler_semantics_version",
                    self.compiler_semantics_version) \
-                != COMPILER_SEMANTICS_VERSION:
+                not in SUPPORTED_COMPILER_SEMANTICS_VERSIONS:
             raise ValueError(
                 f"unsupported compiler_semantics_version "
-                f"{self.compiler_semantics_version} (this build implements "
-                f"{COMPILER_SEMANTICS_VERSION})")
+                f"{self.compiler_semantics_version} (this build speaks "
+                f"{SUPPORTED_COMPILER_SEMANTICS_VERSIONS})")
 
     @property
     def total_nodes(self) -> int:
@@ -1140,9 +1155,14 @@ class CompileRequest:
         Ordering policy (authoritative table lives in
         tests/test_design_intent_identity.py):
           ORDERED   collectives (index to VC map), agents
-                    (target_agent_idx indexes the tuple), dependencies
-                    (adjacency/DFS order feeds the cycle set)
-          UNORDERED requirements, address ranges, output_formats
+                    (target_agent_idx indexes the tuple)
+          UNORDERED dependencies (semantics v2; graph processing is
+                    deterministic), requirements, address ranges,
+                    output_formats
+
+        Under legacy semantics v1, dependency edge order was identity-
+        bearing; v1 documents are hashed in declared order so their stored
+        design_hash still validates.
         """
         d = self._semantic_dict()
         d["requirements"] = sorted(d["requirements"], key=_canonical_json)
@@ -1150,6 +1170,8 @@ class CompileRequest:
                                             key=_canonical_json)
         d["noc_config"]["output_formats"] = sorted(
             d["noc_config"]["output_formats"])
+        if self.compiler_semantics_version >= 2:
+            d["dependencies"] = sorted(d["dependencies"], key=_canonical_json)
         return {
             "type": _HASH_TYPE_TAG,
             "schema_version": self.schema_version,
@@ -1216,10 +1238,10 @@ class CompileRequest:
                 "never reinterpreted under new semantics")
         semantics = _need(d, "compiler_semantics_version", "root")
         if type(semantics) is not int \
-                or semantics != COMPILER_SEMANTICS_VERSION:
+                or semantics not in SUPPORTED_COMPILER_SEMANTICS_VERSIONS:
             raise CompileRequestSchemaError(
                 f"unsupported compiler_semantics_version {semantics!r} "
-                f"(this build speaks {COMPILER_SEMANTICS_VERSION})")
+                f"(this build speaks {SUPPORTED_COMPILER_SEMANTICS_VERSIONS})")
 
         wl = _need(d, "workload", "root")
         _strict_keys(wl, _WORKLOAD_KEYS, "workload")
@@ -1332,6 +1354,60 @@ class CompileRequest:
                     f"{key} does not match the recomputed design identity "
                     "— document tampered with or drifted")
         return obj
+
+
+def migrate_design(document: CompileRequest | dict[str, Any]
+                   ) -> tuple[CompileRequest, dict[str, Any]]:
+    """Re-emit a CompileRequest under the current compiler semantics.
+
+    Wave B3.0-pre migration path. A legacy document is loaded under its
+    own semantics (its stored design_hash is validated there), then
+    re-emitted as a current-semantics request. Because current semantics
+    treat dependency edge order as non-semantic, the migrated identity is
+    order-independent; it differs from the legacy identity whenever the
+    semantics version contributes to the hash body (always, on a bump).
+
+    Returns ``(migrated, provenance)``. Provenance is NON-semantic — the
+    caller records it out-of-band (stdout/log/sidecar); it never enters
+    any artifact identity. An already-current document is returned
+    unchanged with a no-op provenance record.
+    """
+    obj = (document if isinstance(document, CompileRequest)
+           else CompileRequest.from_dict(document))
+    source_version = obj.compiler_semantics_version
+    if source_version == COMPILER_SEMANTICS_VERSION:
+        return obj, {
+            "from_semantics": source_version,
+            "to_semantics": source_version,
+            "from_design_hash": obj.design_hash(),
+            "to_design_hash": obj.design_hash(),
+            "changed": False,
+            "dependency_order_canonicalized": False,
+        }
+    if source_version not in LEGACY_COMPILER_SEMANTICS_VERSIONS:
+        raise CompileRequestSchemaError(
+            f"migrate_design: unsupported source compiler_semantics_version "
+            f"{source_version!r} (can migrate {LEGACY_COMPILER_SEMANTICS_VERSIONS} "
+            f"to {COMPILER_SEMANTICS_VERSION})")
+    migrated = CompileRequest(
+        workload=obj.workload,
+        requirements=obj.requirements,
+        agents=obj.agents,
+        dependencies=obj.dependencies,
+        noc_config=obj.noc_config,
+        address_map=obj.address_map,
+        physical=obj.physical,
+        schema_version=obj.schema_version,
+        compiler_semantics_version=COMPILER_SEMANTICS_VERSION,
+    )
+    return migrated, {
+        "from_semantics": source_version,
+        "to_semantics": COMPILER_SEMANTICS_VERSION,
+        "from_design_hash": obj.design_hash(),
+        "to_design_hash": migrated.design_hash(),
+        "changed": obj.design_hash() != migrated.design_hash(),
+        "dependency_order_canonicalized": True,
+    }
 
 
 # ══════════════════════════════════════════════════════════════════════════════

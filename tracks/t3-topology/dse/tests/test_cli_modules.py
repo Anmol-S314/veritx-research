@@ -751,3 +751,21 @@ class TestIterativeBreadthFlags:
         args = parser.parse_args(["run", "--model", "m",
                                   "--max-edges", "64"])
         assert args.max_edges == 64
+
+
+class TestMigrateDesignCommand:
+    def test_command_wired_with_args(self):
+        from veritx_dse.cli.cli import build_parser
+        parser = build_parser()
+        args = parser.parse_args(["migrate-design", "req.json",
+                                  "--to-semantics", "2"])
+        assert args.command == "migrate-design"
+        assert args.request == "req.json"
+        assert args.to_semantics == 2
+
+    def test_to_semantics_defaults_to_none(self):
+        from veritx_dse.cli.cli import build_parser
+        parser = build_parser()
+        args = parser.parse_args(["migrate-design", "req.json"])
+        assert args.to_semantics is None
+        assert args.output is None
