@@ -90,6 +90,27 @@ class LogicalRank:
 
 
 @dataclass(frozen=True)
+class Endpoint:
+    """A fabric attachment point: a rank's network interface and router.
+
+    Endpoints are supplied by the fabric (B3). A rank index is never
+    silently treated as an endpoint or router id.
+    """
+
+    endpoint_id: int
+    rank: int
+    router: int
+
+    def __post_init__(self):
+        for name in ("endpoint_id", "rank", "router"):
+            _as_int(name, getattr(self, name), minimum=0)
+
+    def to_dict(self) -> dict[str, int]:
+        return {"endpoint_id": self.endpoint_id, "rank": self.rank,
+                "router": self.router}
+
+
+@dataclass(frozen=True)
 class NodeInventory:
     """The explicit node universes, side by side.
 
