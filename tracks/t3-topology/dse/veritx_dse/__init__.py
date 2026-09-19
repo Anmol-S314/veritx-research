@@ -31,6 +31,13 @@ from .model.placement import (
 from .model.mapping import (
     MappingArtifact, RankPlacement, MappingError, derive_mapping,
 )
+from .model.topology_artifact import (
+    TopologyArtifact, Router, DirectedChannel, PhysicalLink,
+    MaterializedFamily, TopologyError, materialize_topology, materialize_family,
+)
+from .model.attachment import (
+    AgentAttachmentArtifact, Endpoint, AttachmentError, derive_attachment,
+)
 
 # Re-export simulation
 from .simulation.booksim import build_config, run_booksim, find_booksim_bin, detect_trace_stats
