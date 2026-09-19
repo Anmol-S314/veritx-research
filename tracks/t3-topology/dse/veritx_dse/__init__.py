@@ -57,6 +57,11 @@ from .reports.artifact import sign_manifest, verify_manifest, DesignManifest
 
 # Re-export verification
 from .verification.uvm_gen import generate_uvm
+from .verification.channel_vc_cdg import (
+    ChannelVCCDG, DeadlockCertificate, CDGError,
+    CHANNEL_VC_DEPENDENCY_ACYCLIC, DEADLOCK_PROOF_METHODS,
+    build_channel_vc_cdg, certify_channel_vc_deadlock,
+)
 
 # Backward compatibility - re-export submodules as attributes
 from .core import constants, logging, recovery, paths
