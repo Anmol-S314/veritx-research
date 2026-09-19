@@ -19,6 +19,56 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 from veritx_dse.core.logging import Ctx
 
 
+def _read_varint(buf, i):
+    shift = 0
+    val = 0
+    while True:
+        x = buf[i]
+        i += 1
+        val |= (x & 0x7F) << shift
+        shift += 7
+        if not (x & 0x80):
+            return val, i
+
+
+def _attr_wire_fields(pb):
+    """{attr_name: (value_field_number, value)} for scalar attrs in a Node."""
+    out = {}
+    i = 0
+    while i < len(pb):
+        tag, i = _read_varint(pb, i)
+        field, wire = tag >> 3, tag & 7
+        if wire == 0:
+            _, i = _read_varint(pb, i)
+        elif wire == 2:
+            ln, i = _read_varint(pb, i)
+            payload = pb[i:i + ln]
+            i += ln
+            if field != 10:
+                continue
+            j = 0
+            name = None
+            val = None
+            while j < len(payload):
+                t, j = _read_varint(payload, j)
+                f2, w2 = t >> 3, t & 7
+                if w2 == 0:
+                    v, j = _read_varint(payload, j)
+                    if f2 != 1:
+                        val = (f2, v)
+                elif w2 == 2:
+                    l2, j = _read_varint(payload, j)
+                    q = payload[j:j + l2]
+                    j += l2
+                    if f2 == 1:
+                        name = q.decode()
+            if name and val is not None:
+                out[name] = val
+        else:
+            break
+    return out
+
+
 @pytest.fixture
 def ctx(tmp_path):
     return Ctx(verbosity=0, log_file=str(tmp_path / "test.log"))
@@ -237,6 +287,36 @@ class TestModelRegistry:
         assert "only supports ALL_REDUCE" not in capsys.readouterr().err
         with pytest.raises(ValueError):
             gen.build_collective_trace(comm_type="ALL_COMBINE")
+
+    def test_collective_attr_wire_fields_match_feeder(self):
+        """Binary ET must use the value field ETFeederNode reads.
+
+        The feeder reads comm_type/comm_size via int64_val (proto field 9).
+        Writing them as uint64_val (13) decodes silently as 0, so
+        Sys::generate_collective's while(size>0) never runs and the run stalls
+        in zero-injection drain.
+        """
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+        from generate_chakra_trace import (
+            ChakraTraceGenerator, encode_chakra_node_protobuf,
+        )
+        node = ChakraTraceGenerator().build_collective_trace(
+            comm_type="ALL_GATHER")[1]
+        fields = _attr_wire_fields(encode_chakra_node_protobuf(node))
+        assert fields["comm_type"] == (9, 2)
+        assert fields["comm_size"][0] == 9
+        assert fields["comm_size"][1] == 16777216
+
+    def test_model_allreduce_attr_uses_int64(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+        from generate_chakra_trace import (
+            COMM_COLL_NODE, ChakraTraceGenerator, encode_chakra_node_protobuf,
+        )
+        nodes = ChakraTraceGenerator().build_llama7b_trace(num_layers=1)
+        comm = next(n for n in nodes if n["type"] == COMM_COLL_NODE)
+        fields = _attr_wire_fields(encode_chakra_node_protobuf(comm))
+        assert fields["comm_size"][0] == 9 and fields["comm_size"][1] > 0
+        assert fields["comm_type"] == (9, 0)  # ALL_REDUCE
 
     def test_et_coll_type_resume_key(self):
         sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))

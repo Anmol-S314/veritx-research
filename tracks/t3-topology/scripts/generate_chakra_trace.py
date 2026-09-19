@@ -323,6 +323,23 @@ def _encode_string_field(buf: bytearray, field_no: int, value: bytes) -> None:
     buf.extend(value)
 
 
+# Attribute value wire fields, matching ETFeederNode
+# (chakra/src/feeder/et_feeder_node.cpp) EXACTLY. The feeder reads:
+#   is_cpu_op -> bool_val(27)            tensor_size -> uint64_val(13)
+#   num_ops   -> int64_val(9)            comm_priority/src/dst/tag -> int32_val(7)
+#   comm_type -> int64_val(9)            involved_dim -> bool_list(28)
+#   comm_size -> int64_val(9)
+# Writing the wrong value field fails SILENTLY: a protobuf accessor returns 0
+# for an unset field, so a comm_size written as uint64_val(13) but read as
+# int64_val(9) becomes 0. Sys::generate_collective then skips its
+# `while (size > 0)` body, never submits the collective, and the run sits in
+# the zero-injection drain until the stall watchdog kills it.
+_INT64_VAL_ATTRS = frozenset({"num_ops", "comm_type", "comm_size"})
+_INT32_VAL_ATTRS = frozenset({"comm_priority", "comm_src", "comm_dst", "comm_tag"})
+_UINT64_VAL_ATTRS = frozenset({"tensor_size"})
+_BOOL_VAL_ATTRS = frozenset({"is_cpu_op"})
+
+
 def encode_chakra_node_protobuf(node_dict: dict) -> bytes:
     """Encode a Chakra Node into binary Protobuf format according to et_def.proto.
 
@@ -354,18 +371,31 @@ def encode_chakra_node_protobuf(node_dict: dict) -> bytes:
     buf.extend(_encode_varint(node_dict.get("duration_us", 10)))
 
     # Field 10: repeated AttributeProto attr (each length-delimited).
-    # The runtime REQUIRES typed attrs: coll nodes need uint64 comm_type +
-    # comm_size; p2p nodes need comm_src/comm_dst/comm_tag/comm_size.
-    # Python int -> uint64_val (field 13, varint); str -> string_val
-    # (field 29, string). Other types are json-only (skipped on the wire).
+    # Value field per attr name is pinned to ETFeederNode's accessor (see the
+    # _INT*_VAL_ATTRS maps above): comm_type/comm_size/num_ops -> int64_val(9),
+    # comm_priority/src/dst/tag -> int32_val(7), tensor_size -> uint64_val(13),
+    # involved_dim -> bool_list(28), strings/names -> string_val(29). Wrong
+    # field = silent zero, so this mapping is load-bearing, not cosmetic.
     for attr_name, attr_val in (node_dict.get("attr") or {}).items():
         attr = bytearray()
         _encode_string_field(attr, 1, attr_name.encode("utf-8"))
         if isinstance(attr_val, bool):
-            continue  # no bool singletons in this flow; keep json-only
+            if attr_name not in _BOOL_VAL_ATTRS:
+                continue  # no bool singletons elsewhere in this flow; json-only
+            attr.extend(_encode_varint((27 << 3) | 0))  # bool_val
+            attr.extend(_encode_varint(1 if attr_val else 0))
         elif isinstance(attr_val, int):
-            attr.extend(_encode_varint((13 << 3) | 0))  # uint64_val
-            attr.extend(_encode_varint(attr_val))
+            if attr_name in _INT64_VAL_ATTRS:
+                val_field = 9    # int64_val
+            elif attr_name in _INT32_VAL_ATTRS:
+                val_field = 7    # int32_val
+            elif attr_name in _UINT64_VAL_ATTRS:
+                val_field = 13   # uint64_val
+            else:
+                val_field = 13   # generic int default (uint64_val)
+            attr.extend(_encode_varint((val_field << 3) | 0))
+            attr.extend(_encode_varint(
+                attr_val if attr_val >= 0 else attr_val & ((1 << 64) - 1)))
         elif isinstance(attr_val, str):
             _encode_string_field(attr, 29, attr_val.encode("utf-8"))
         elif isinstance(attr_val, (list, tuple)) and all(
