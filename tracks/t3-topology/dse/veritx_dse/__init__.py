@@ -24,6 +24,10 @@ from .model.compile_model import (
     AddressMap, AddressRange, PhysicalContext,
 )
 from .model.presets import SWEEP_TOPOS, WORKLOAD_PRESETS, lookup_topo
+from .model.placement import (
+    AgentInstance, LogicalRank, NodeInventory, build_inventory,
+    rank_of, coords_of,
+)
 
 # Re-export simulation
 from .simulation.booksim import build_config, run_booksim, find_booksim_bin, detect_trace_stats

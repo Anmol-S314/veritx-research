@@ -374,11 +374,19 @@ class Workload:
                 raise ValueError(f"trace_path is a directory, not a file: {self.trace_path}")
 
     @property
+    def world_size(self) -> int:
+        """Physical device count: tp × pp × ep × dp (full 4D parallelism)."""
+        from .presets import parallel_world_size
+        return parallel_world_size(self.tp, self.pp, self.ep, self.dp)
+
+    @property
     def total_npus(self) -> int:
-        """Total NPUs = tp × ep (for MoE) or tp (for dense)."""
-        if self.model_family == ModelFamily.MOE:
-            return self.tp * self.ep
-        return self.tp
+        """Deprecated alias for ``world_size`` (was tp×ep for MoE,tp for dense).
+
+        The old formula silently dropped pp and dp. Kept one wave for
+        compatibility; use ``world_size`` or ``NodeInventory.rank_count``.
+        """
+        return self.world_size
 
 
 # ══════════════════════════════════════════════════════════════════════════════
