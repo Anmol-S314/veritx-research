@@ -65,6 +65,10 @@ from .model.fabric_artifact import (
     FABRIC_SCHEMA_VERSION, FabricArtifact, FabricArtifactError,
     PlaneComposition, make_fabric_artifact,
 )
+from .model.resolved_fabric import (
+    RESOLVED_FABRIC_SCHEMA_VERSION, ResolvedFabric, ResolvedFabricError,
+    make_resolved_fabric,
+)
 
 # Re-export simulation
 from .simulation.booksim import build_config, run_booksim, find_booksim_bin, detect_trace_stats

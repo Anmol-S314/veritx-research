@@ -19,6 +19,7 @@
 | 1.5 | B3.1c | AgentAttachmentArtifact completes the interface authority: each Endpoint carries an immutable `AgentInterfaceDescriptor` (data_width_bits, address_width_bits, protocol, clock_domain, power_domain) derived from the parent Agent group, and the artifact binds `design_hash` as a parent. Validation proves group/instance bounds, kind agreement, interface equality with the parent group, real router seats, and one-to-one mapping placement identity. Schema v2; v1 attachments refused. |
 | 1.6 | B3.1d | Attachment identity correction: schema v3 makes `topology_hash` the ONLY semantic parent. DesignRevision and NodeInventory are derivation/validation sources and MappingArtifact meets the hardware again only at ResolvedFabric (`resolved_fabric_hash = design_hash + mapping_hash + fabric_hash`), so the same hardware under a different mapping or an unrelated design change keeps the same `attachment_hash`/`fabric_hash`. Validation now proves the complete design agent universe (no missing idle agents, no fabricated extras) and total seat legality. v1 and v2 attachments are refused. |
 | 1.7 | B3.5a | FabricArtifact is implemented as the root hardware identity: exactly the six child semantic hashes + `PlaneComposition.SINGLE_PLANE`, domain `srota/Fabric/v1`. `validate_against` revalidates the complete child DAG, so individually valid children that cannot form one DAG are refused. No design/mapping/backend/provenance/evidence enters `fabric_hash`. Legacy `core.fabric.FabricArtifact` remains untouched backend evidence (rename in B3.7). |
+| 1.8 | B3.5b | ResolvedFabric is implemented: `resolved_fabric_hash = H(design_hash, mapping_hash, fabric_hash)`, domain `srota/ResolvedFabric/v1`. Its seam proves the design/mapping/fabric roots, the attachment↔design/inventory universe, the mapping↔attachment placement identity (exact coordinates+kind; idle agents legal), the rank-space equality, and then the complete FabricArtifact DAG. Same hardware under a different mapping keeps `fabric_hash` and changes `resolved_fabric_hash`. |
 
 This document defines what a resolved Srota fabric *is* before B3 code is
 written. It starts from hardware semantics and maps existing code onto them —
@@ -704,7 +705,13 @@ auxiliary_files[{name,sha256}], lowering_version, semantic_loss[SemanticLoss],
 artifact_hash}`.
 
 ### ResolvedFabric (semantic)
-`design_hash`, `mapping_hash`, `fabric_hash`, `resolved_fabric_hash`.
+`design_hash + mapping_hash + fabric_hash`; domain `srota/ResolvedFabric/v1`;
+persisted hash key `resolved_fabric_hash`. `validate_against(...)` proves the
+three root hashes, the attachment↔design/inventory seam, the
+mapping↔attachment placement seam (exact `(group_index, instance_index, kind)`
+identity; idle agents legal), the rank-space seam (`mapping.rank_count ==
+inventory.rank_count` and ranks equal), and then the full FabricArtifact DAG.
+No backend execution or candidate provenance.
 
 ### CandidateRecord (non-semantic)
 `candidate_id`, `resolved_fabric_hash`, `guided_choices`, generator name/version,
@@ -759,6 +766,11 @@ Enforced at the ResolvedFabric seam (discharges B2's deferred parent binding):
   idle agents, no fabricated extras);
 - every mapping placement points at an attached AgentInstance — a ResolvedFabric
   seam invariant that does not alter attachment identity;
+- mapping rank count equals the NodeInventory rank count and the mapping ranks
+  are exactly the inventory logical rank ids;
+- `resolved_fabric_hash = H(design_hash, mapping_hash, fabric_hash)` is the only
+  identity in which design and mapping meet hardware; the same fabric under a
+  different mapping keeps `fabric_hash` and changes `resolved_fabric_hash`;
 - every attachment endpoint references a real topology seat (router exists, port
   < seat capacity); every agent attaches exactly once; seats not exceeded;
 - **`resolved_route.topology_hash == topology.topology_hash()`** and
