@@ -55,6 +55,11 @@ SERVING_PHYSICAL_DIMS_FILE = "physical_dims.json"
 SERVING_EXECUTION_MODE = "REAL_SIMULATION_EMBEDDED"
 SERVING_SEED = 1
 
+_SERVING_ROLES = {SERVING_CONFIG_FILE: "booksim_config",
+                  TOPOLOGY_FILE: "topology",
+                  SERVING_FLIT_BYTES_FILE: "flit_conversion",
+                  SERVING_PHYSICAL_DIMS_FILE: "physical_dims"}
+
 
 class ServingBackendError(ValueError):
     """The certified serving backend cannot be prepared/validated."""
@@ -196,6 +201,42 @@ class PreparedServingBackend:
     directory: str
 
 
+def _serving_files(bundle: ResolvedFabricBundle,
+                   config: BackendConfigArtifact, flit_bytes: int,
+                   dims: tuple[int, ...]) -> tuple[tuple[str, bytes], ...]:
+    """The canonical certified serving render (one implementation)."""
+    return (
+        (SERVING_CONFIG_FILE, render_serving_config(bundle, config)),
+        (TOPOLOGY_FILE, render_topology_anynet(bundle)),
+        (SERVING_FLIT_BYTES_FILE, f"{flit_bytes}\n".encode()),
+        (SERVING_PHYSICAL_DIMS_FILE,
+         (json.dumps({"dims": list(dims)}, sort_keys=True) + "\n").encode()),
+    )
+
+
+def _serving_manifest(config: BackendConfigArtifact, flit_bytes: int,
+                      dims: tuple[int, ...],
+                      files: tuple[tuple[str, bytes], ...],
+                      ) -> BackendInputManifest:
+    """The canonical input binding of the certified serving render."""
+    return BackendInputManifest(
+        backend_config_hash=config.backend_config_hash(),
+        workload_hash=None,
+        execution_mode=SERVING_EXECUTION_MODE,
+        seed=SERVING_SEED,
+        seed_policy="pinned_profile",
+        rendered_inputs=tuple(
+            RenderedInput(role=_SERVING_ROLES[name], logical_name=name,
+                          sha256=sha256_bytes(data), size=len(data))
+            for name, data in files),
+        invocation_args=(("config-file", SERVING_CONFIG_FILE),
+                         ("flit-bytes", str(flit_bytes)),
+                         ("physical-dims",
+                          ",".join(str(d) for d in dims)),
+                         ("replay-only", "false")),
+    )
+
+
 def prepare_serving_booksim(
         bundle: ResolvedFabricBundle, *, out_dir: Path,
         physical_dims: Any,
@@ -209,34 +250,9 @@ def prepare_serving_booksim(
     flit_bytes = exact_flit_bytes(bundle.packet_format)
     dims = validate_physical_dims(
         physical_dims, endpoint_count=bundle.attachment.endpoint_count)
-    cfg = render_serving_config(bundle, config)
-    files = (
-        (SERVING_CONFIG_FILE, cfg),
-        (TOPOLOGY_FILE, render_topology_anynet(bundle)),
-        (SERVING_FLIT_BYTES_FILE, f"{flit_bytes}\n".encode()),
-        (SERVING_PHYSICAL_DIMS_FILE,
-         (json.dumps({"dims": list(dims)}, sort_keys=True) + "\n").encode()),
-    )
-    rendered = ServingRendered(files=tuple(sorted(files)))
-    roles = {SERVING_CONFIG_FILE: "booksim_config", TOPOLOGY_FILE: "topology",
-             SERVING_FLIT_BYTES_FILE: "flit_conversion",
-             SERVING_PHYSICAL_DIMS_FILE: "physical_dims"}
-    manifest = BackendInputManifest(
-        backend_config_hash=config.backend_config_hash(),
-        workload_hash=None,
-        execution_mode=SERVING_EXECUTION_MODE,
-        seed=SERVING_SEED,
-        seed_policy="pinned_profile",
-        rendered_inputs=tuple(
-            RenderedInput(role=roles[name], logical_name=name,
-                          sha256=sha256_bytes(data), size=len(data))
-            for name, data in rendered.files),
-        invocation_args=(("config-file", SERVING_CONFIG_FILE),
-                         ("flit-bytes", str(flit_bytes)),
-                         ("physical-dims",
-                          ",".join(str(d) for d in dims)),
-                         ("replay-only", "false")),
-    )
+    rendered = ServingRendered(
+        files=tuple(sorted(_serving_files(bundle, config, flit_bytes, dims))))
+    manifest = _serving_manifest(config, flit_bytes, dims, rendered.files)
     directory = Path(out_dir)
     materialize_backend(rendered, manifest, directory)
     return PreparedServingBackend(
@@ -245,8 +261,64 @@ def prepare_serving_booksim(
         directory=str(directory))
 
 
+def assert_canonical_serving_prepared(
+        prepared: PreparedServingBackend) -> None:
+    """Prove the certified serving chain, not its pieces independently:
+
+        bundle -> canonical serving config -> exact canonical render
+               -> exact canonical input manifest
+
+    Serving execution remains BLOCKED; this validator exists so the
+    consumer seam cannot accept a rehashed object with false metadata.
+    """
+    bundle, config = prepared.bundle, prepared.config
+    try:
+        assert_canonical_booksim_projection(bundle, config)
+    except ValueError as exc:
+        raise ServingBackendError(
+            f"prepared serving config is not canonical: {exc}") from exc
+    expected_flit = exact_flit_bytes(bundle.packet_format)
+    if prepared.flit_bytes != expected_flit:
+        raise ServingBackendError(
+            f"prepared serving flit_bytes={prepared.flit_bytes} is not the "
+            f"exact PacketFormatArtifact conversion ({expected_flit})")
+    dims = validate_physical_dims(
+        prepared.physical_dims,
+        endpoint_count=bundle.attachment.endpoint_count)
+    expected_files = dict(_serving_files(bundle, config, expected_flit,
+                                         dims))
+    names = [name for name, _ in prepared.rendered.files]
+    if len(set(names)) != len(names):
+        raise ServingBackendError(
+            "prepared serving inputs contain duplicate logical names")
+    extra = sorted(set(names) - set(expected_files))
+    missing = sorted(set(expected_files) - set(names))
+    if extra or missing:
+        raise ServingBackendError(
+            f"prepared serving file set is not canonical (missing "
+            f"{missing}, extra {extra})")
+    for name, data in expected_files.items():
+        if prepared.rendered.file(name) != data:
+            raise ServingBackendError(
+                f"rendered serving input {name!r} is not the canonical "
+                f"rendering of this config/bundle (byte mismatch)")
+    canonical_files = tuple(sorted(expected_files.items()))
+    expected_manifest = _serving_manifest(config, expected_flit, dims,
+                                          canonical_files)
+    actual_identity = prepared.manifest.identity_dict()
+    expected_identity = expected_manifest.identity_dict()
+    if actual_identity != expected_identity:
+        differing = sorted(
+            key for key in set(actual_identity) | set(expected_identity)
+            if actual_identity.get(key) != expected_identity.get(key))
+        raise ServingBackendError(
+            f"prepared serving manifest is not the canonical binding of "
+            f"the serving render (differs in {differing})")
+
+
 def verify_serving_prepared(prepared: PreparedServingBackend) -> None:
-    """Re-hash the materialized serving inputs (consumer preflight)."""
+    """Canonical-chain proof + re-hash the materialized serving inputs."""
+    assert_canonical_serving_prepared(prepared)
     verify_materialized(prepared.manifest, Path(prepared.directory))
 
 
@@ -287,8 +359,9 @@ def validate_serving_consumption(
     mode must agree with the prepared certified projection.
     """
     try:
-        assert_canonical_booksim_projection(prepared.bundle,
-                                            prepared.config)
+        assert_canonical_serving_prepared(prepared)
+    except ServingBackendError:
+        raise
     except ValueError as exc:
         raise ServingBackendError(
             f"prepared serving config is not canonical: {exc}") from exc
@@ -311,24 +384,34 @@ def validate_serving_consumption(
             f"serving physical_dims {dims} do not match the prepared "
             f"certified dims {prepared.physical_dims}")
 
-    kv = parse_booksim_config_values(cfg_text)
+    try:
+        kv = parse_booksim_config_values(cfg_text)
+        canonical_kv = parse_booksim_config_values(
+            render_serving_config(prepared.bundle, prepared.config).decode())
+    except ValueError as exc:
+        raise ServingBackendError(
+            f"generated serving config is not a parseable certified "
+            f"config: {exc}") from exc
     if "packet_size" in kv:
         raise ServingBackendError(
             "generated serving config declares packet_size, which does not "
             "control embedded sim_send traffic; a certified config must not "
             "carry a false packetization authority")
-    expected = dict(prepared.config.normalized_parameters)
-    expected.pop("routing_class", None)
-    expected.pop("channel_latency_cycles", None)
-    for key, value in expected.items():
-        if key not in kv:
-            raise ServingBackendError(
-                f"generated serving config is missing certified parameter "
-                f"{key!r}")
-        if kv[key] != _format_value(value):
-            raise ServingBackendError(
-                f"generated serving config {key}={kv[key]!r} does not match "
-                f"the certified projection {_format_value(value)!r}")
+    extra = sorted(set(kv) - set(canonical_kv))
+    missing = sorted(set(canonical_kv) - set(kv))
+    if extra or missing:
+        raise ServingBackendError(
+            f"generated serving config field set is not the certified field "
+            f"set (missing {missing}, extra {extra})")
+    mismatches = [key for key in canonical_kv
+                  if kv[key] != canonical_kv[key]]
+    if mismatches:
+        detail = ", ".join(
+            f"{key}={kv[key]!r} != certified {canonical_kv[key]!r}"
+            for key in sorted(mismatches)[:3])
+        raise ServingBackendError(
+            f"generated serving config diverges from the certified "
+            f"projection in {sorted(mismatches)}: {detail}")
 
 
 __all__ = [
@@ -340,6 +423,7 @@ __all__ = [
     "SERVING_PHYSICAL_DIMS_FILE",
     "ServingBackendError",
     "ServingRendered",
+    "assert_canonical_serving_prepared",
     "lower_serving_booksim",
     "prepare_serving_booksim",
     "render_serving_config",

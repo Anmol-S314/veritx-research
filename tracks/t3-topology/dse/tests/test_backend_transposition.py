@@ -69,7 +69,8 @@ class TestArtifactTransposition:
         a = prepare_booksim_standalone(bundle, workload_trace=TRACE)
         b = prepare_booksim_standalone(bundle, workload_trace=TRACE + b"5 1 0 0 1\n")
         transposed = replace(a, manifest=b.manifest)
-        with pytest.raises(BackendMaterializationError, match="manifest"):
+        with pytest.raises((BackendMaterializationError, BookSimLoweringError),
+                           match="manifest|canonical binding"):
             run_certified_booksim(
                 transposed, run_dir=tmp_path, repo_root=tmp_path,
                 runner=_never_called, binary=Path("/bin/true"))

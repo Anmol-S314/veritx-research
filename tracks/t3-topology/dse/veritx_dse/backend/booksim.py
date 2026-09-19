@@ -77,6 +77,10 @@ WORKLOAD_FILE = "workload.trace"
 ROUTE_DUMP_FILE = "routing.dump"
 
 _SEED_DEFAULT = 1
+SEED_POLICY_PINNED_DEFAULT = "pinned_default"
+SEED_POLICY_EXPLICIT = "explicit"
+_SEED_POLICIES = frozenset({SEED_POLICY_PINNED_DEFAULT, SEED_POLICY_EXPLICIT})
+_CFG_LINE_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^;]*);$")
 _SAMPLE_PERIOD_MIN = 200
 _SAMPLE_PERIOD_MARGIN = 1000
 
@@ -693,19 +697,24 @@ def parse_booksim_config_values(text: str) -> dict[str, str]:
     """Parse a rendered BookSim config into name -> raw value strings.
 
     The single parser for rendered certified configs (runner gate checks
-    and the serving consumption validator both use it).
+    and the serving consumption validator both use it). Fail-closed:
+    malformed non-comment lines and duplicate keys are refused rather
+    than silently skipped or last-one-wins.
     """
     values: dict[str, str] = {}
-    for line in text.splitlines():
-        line = line.strip()
+    for line_no, raw in enumerate(text.splitlines(), 1):
+        line = raw.strip()
         if not line or line.startswith("//") or line.startswith("#"):
             continue
-        if not line.endswith(";") or "=" not in line:
-            continue
-        key, value = line[:-1].split("=", 1)
-        key = key.strip()
-        if key and key.replace("_", "").isalnum():
-            values[key] = value.strip()
+        m = _CFG_LINE_RE.match(line)
+        if not m:
+            raise BookSimLoweringError(
+                f"malformed certified config line {line_no}: {raw!r}")
+        key, value = m.group(1), m.group(2).strip()
+        if key in values:
+            raise BookSimLoweringError(
+                f"duplicate certified config key {key!r} at line {line_no}")
+        values[key] = value
     return values
 
 
@@ -963,7 +972,8 @@ def bind_booksim_inputs(
         workload_hash=workload_hash,
         execution_mode="REAL_SIMULATION",
         seed=_SEED_DEFAULT if seed is None else seed,
-        seed_policy="explicit" if seed is not None else "pinned_default",
+        seed_policy=(SEED_POLICY_EXPLICIT if seed is not None
+                     else SEED_POLICY_PINNED_DEFAULT),
         rendered_inputs=inputs,
         invocation_args=(("config-file", CONFIG_FILE),),
     )
@@ -991,6 +1001,95 @@ def prepare_booksim_standalone(
         seed=seed)
     return PreparedBackend(bundle=bundle, config=config, rendered=rendered,
                            manifest=manifest)
+
+
+def _canonical_seed_argument(
+        manifest: BackendInputManifest) -> int | None:
+    """Map certified seed policy to the renderer's seed argument.
+
+    ``pinned_default`` means the certified default seed and is rendered
+    as ``seed=None``; ``explicit`` must carry that exact non-negative
+    integer. Any other policy is refused.
+    """
+    policy, seed = manifest.seed_policy, manifest.seed
+    if policy == SEED_POLICY_PINNED_DEFAULT:
+        if seed != _SEED_DEFAULT:
+            raise BookSimLoweringError(
+                f"seed_policy={SEED_POLICY_PINNED_DEFAULT} requires the "
+                f"certified default seed {_SEED_DEFAULT}, got {seed!r}")
+        return None
+    if policy == SEED_POLICY_EXPLICIT:
+        if type(seed) is not int or seed < 0:
+            raise BookSimLoweringError(
+                f"seed_policy={SEED_POLICY_EXPLICIT} requires a "
+                f"non-negative int seed, got {seed!r}")
+        return seed
+    raise BookSimLoweringError(
+        f"unsupported seed_policy {policy!r}; certified standalone runs "
+        f"use {sorted(_SEED_POLICIES)}")
+
+
+def assert_canonical_prepared_booksim(
+        prepared: PreparedBackend) -> None:
+    """Prove the whole prepared chain, not its pieces independently:
+
+        bundle -> canonical config -> exact rendered bytes
+               -> exact canonical BackendInputManifest
+
+    A canonical config paired with forged rendered bytes and a freshly
+    recomputed, internally valid manifest is refused here: the workload
+    bytes are taken as the execution-input authority, the renderer is
+    re-run for the manifest's seed intent, every file is compared by
+    exact bytes, and the manifest is re-bound and compared by complete
+    identity. Hash consistency alone is never accepted at any boundary.
+    """
+    bundle, config = prepared.bundle, prepared.config
+    rendered, manifest = prepared.rendered, prepared.manifest
+    assert_canonical_booksim_projection(bundle, config)
+    try:
+        workload = rendered.file(WORKLOAD_FILE)
+    except BackendMaterializationError as exc:
+        raise BookSimLoweringError(
+            f"prepared backend does not contain the canonical workload "
+            f"input: {exc}") from exc
+    seed_arg = _canonical_seed_argument(manifest)
+    expected_rendered = render_booksim_standalone(
+        bundle, config, workload_trace=workload, seed=seed_arg)
+    supplied_names = [name for name, _ in rendered.files]
+    expected_names = [name for name, _ in expected_rendered.files]
+    if len(set(supplied_names)) != len(supplied_names):
+        raise BookSimLoweringError(
+            "prepared backend rendered files contain duplicate logical "
+            "names; the canonical file set has one entry per name")
+    extra = sorted(set(supplied_names) - set(expected_names))
+    missing = sorted(set(expected_names) - set(supplied_names))
+    if extra or missing:
+        raise BookSimLoweringError(
+            f"prepared backend file set is not canonical (missing "
+            f"{missing}, extra {extra})")
+    for name, data in expected_rendered.files:
+        if rendered.file(name) != data:
+            raise BookSimLoweringError(
+                f"rendered {name!r} is not the canonical rendering of this "
+                f"config/workload/seed (byte mismatch); a fresh manifest "
+                f"does not authorize these bytes")
+    if rendered.sample_period != expected_rendered.sample_period or \
+            rendered.trace_summary != expected_rendered.trace_summary:
+        raise BookSimLoweringError(
+            "rendered trace summary/sample_period is not the canonical "
+            "derivation from the workload bytes")
+    expected_manifest = bind_booksim_inputs(
+        config, expected_rendered, workload_hash=sha256_bytes(workload),
+        seed=seed_arg)
+    actual_identity = manifest.identity_dict()
+    expected_identity = expected_manifest.identity_dict()
+    if actual_identity != expected_identity:
+        differing = sorted(
+            key for key in set(actual_identity) | set(expected_identity)
+            if actual_identity.get(key) != expected_identity.get(key))
+        raise BookSimLoweringError(
+            f"prepared manifest is not the canonical binding of the "
+            f"rendered inputs (differs in {differing})")
 
 
 # ── materialization / verification ──────────────────────────────────────
@@ -1293,10 +1392,12 @@ def run_qualified_booksim(
     EXECUTED_BLOCKED_FROM_EXACT). UNSUPPORTED_EXECUTION refuses before
     anything is materialized or spawned.
 
-    Order: revalidate bundle → identity checks → qualification guard →
+    Order: revalidate bundle → canonical config → canonical prepared
+    inputs (exact render + manifest binding) → qualification guard →
     materialize → parse-back topology → verify hashes IMMEDIATELY BEFORE
-    spawn → run → executed-route proof → parse stats. Any tamper/stale
-    input refuses.
+    spawn → runtime profile gates → run → executed-route proof → parse
+    stats. Any tamper/stale/forged input refuses before materialization
+    or spawn.
     """
     import time
 
@@ -1321,6 +1422,10 @@ def run_qualified_booksim(
             bundle.resolved_fabric.resolved_fabric_hash():
         raise BackendMaterializationError(
             "backend config does not bind the supplied bundle")
+    # Whole-chain proof: canonical config -> exact rendered bytes ->
+    # exact canonical input manifest. Refuses before any filesystem
+    # materialization or process spawn.
+    assert_canonical_prepared_booksim(prepared)
     qualification = assert_executable(config)
 
     backend_dir = Path(run_dir) / "backend"
@@ -1427,7 +1532,10 @@ __all__ = [
     "CertifiedBookSimEvidence",
     "PreparedBackend",
     "RenderedBackend",
+    "SEED_POLICY_EXPLICIT",
+    "SEED_POLICY_PINNED_DEFAULT",
     "TraceSummary",
+    "assert_canonical_prepared_booksim",
     "bind_booksim_inputs",
     "compare_route_realization",
     "execution_qualification",

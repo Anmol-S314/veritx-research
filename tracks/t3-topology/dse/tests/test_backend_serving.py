@@ -18,6 +18,8 @@ sys.path.insert(0, str(DSE))
 sys.path.insert(0, str(TESTS))
 sys.path.insert(0, str(REPO / "third_party" / "llmservingsim"))
 
+from dataclasses import replace  # noqa: E402
+
 from test_backend_bundle import make_bundle  # noqa: E402
 from test_fabric_artifact import build_chain  # noqa: E402
 
@@ -25,14 +27,16 @@ from veritx_dse.backend.booksim import (  # noqa: E402
     BookSimLoweringError, exact_flit_bytes, lower_booksim_standalone,
 )
 from veritx_dse.backend.contracts import (  # noqa: E402
-    BackendTarget, CertificationEffect, RepresentationStatus,
-    SemanticDimension,
+    BackendTarget, CertificationEffect,
+    RepresentationStatus, SemanticDimension, sha256_bytes,
 )
 from veritx_dse.backend.serving import (  # noqa: E402
     SERVING_BOOKSIM2_PROFILE, SERVING_CONFIG_FILE, SERVING_FLIT_BYTES_FILE,
-    SERVING_PHYSICAL_DIMS_FILE, ServingBackendError, lower_serving_booksim,
-    prepare_serving_booksim, render_serving_config, validate_physical_dims,
-    validate_serving_consumption, verify_serving_prepared,
+    SERVING_PHYSICAL_DIMS_FILE, ServingBackendError,
+    ServingRendered, assert_canonical_serving_prepared,
+    lower_serving_booksim, prepare_serving_booksim, render_serving_config,
+    validate_physical_dims, validate_serving_consumption,
+    verify_serving_prepared,
 )
 
 
@@ -223,6 +227,76 @@ class TestPreparation:
             validate_serving_consumption(
                 prepared, cfg_text=cfg + "packet_size = 64;\n",
                 flit_bytes=8, physical_dims=(2, 2), replay_only=False)
+
+
+# ── canonical prepared/input seam (B3.8i) ───────────────────────────────
+
+class TestCanonicalServingPrepared:
+    @pytest.fixture()
+    def prepared(self, bundle, tmp_path):
+        return prepare_serving_booksim(
+            bundle, out_dir=tmp_path, physical_dims=(2, 2))
+
+    def test_canonical_prepared_passes(self, prepared):
+        assert_canonical_serving_prepared(prepared)
+        verify_serving_prepared(prepared)
+
+    def test_forged_config_bytes_refused(self, prepared):
+        cfg = prepared.rendered.file(SERVING_CONFIG_FILE).decode()
+        forged = cfg.replace("num_vcs = 2;", "num_vcs = 99;").encode()
+        files = tuple(
+            (name, forged) if name == SERVING_CONFIG_FILE
+            else (name, data)
+            for name, data in prepared.rendered.files)
+        rendered = ServingRendered(files=files)
+        inputs = tuple(
+            replace(r, sha256=sha256_bytes(forged), size=len(forged))
+            if r.logical_name == SERVING_CONFIG_FILE else r
+            for r in prepared.manifest.rendered_inputs)
+        forged_prepared = replace(
+            prepared, rendered=rendered,
+            manifest=replace(prepared.manifest, rendered_inputs=inputs,
+                             artifact_hash=""))
+        with pytest.raises(ServingBackendError, match="byte mismatch"):
+            assert_canonical_serving_prepared(forged_prepared)
+
+    def test_extra_file_refused(self, prepared):
+        files = tuple(prepared.rendered.files) + (("extra.txt", b"x"),)
+        rendered = ServingRendered(files=files)
+        with pytest.raises(ServingBackendError, match="file set"):
+            assert_canonical_serving_prepared(
+                replace(prepared, rendered=rendered))
+
+    def test_false_flit_bytes_refused(self, prepared):
+        with pytest.raises(ServingBackendError, match="flit_bytes"):
+            assert_canonical_serving_prepared(
+                replace(prepared, flit_bytes=64))
+
+    def test_false_physical_dims_refused(self, prepared):
+        with pytest.raises(ServingBackendError, match="byte mismatch"):
+            assert_canonical_serving_prepared(
+                replace(prepared, physical_dims=(4,)))
+
+    def test_false_manifest_metadata_refused(self, prepared):
+        forged = replace(prepared.manifest, seed=7,
+                         artifact_hash="")
+        with pytest.raises(ServingBackendError, match="differs in"):
+            assert_canonical_serving_prepared(
+                replace(prepared, manifest=forged))
+
+    def test_consumption_refuses_extra_field(self, prepared):
+        cfg = prepared.rendered.file(SERVING_CONFIG_FILE).decode()
+        with pytest.raises(ServingBackendError, match="field set"):
+            validate_serving_consumption(
+                prepared, cfg_text=cfg + "extra = 1;\n", flit_bytes=8,
+                physical_dims=(2, 2), replay_only=False)
+
+    def test_consumption_refuses_duplicate_key(self, prepared):
+        cfg = prepared.rendered.file(SERVING_CONFIG_FILE).decode()
+        with pytest.raises(ServingBackendError, match="parseable"):
+            validate_serving_consumption(
+                prepared, cfg_text=cfg + "num_vcs = 4;\n", flit_bytes=8,
+                physical_dims=(2, 2), replay_only=False)
 
 
 # ── vendored consumer helper ────────────────────────────────────────────
