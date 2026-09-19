@@ -131,9 +131,34 @@ def _as_real(name: str, value: Any, minimum: float | None = None) -> float:
     v = float(value)  # canonical: int and float forms share one identity
     if not math.isfinite(v):
         raise ValueError(f"{name} must be finite, got {value!r}")
+    if v == 0.0:
+        v = 0.0  # -0.0 and 0.0 are the same bound, one identity
     if minimum is not None and v < minimum:
         raise ValueError(f"{name} must be >= {minimum}, got {value!r}")
     return v
+
+
+def _as_tuple(name: str, value: Any) -> tuple:
+    """JSON-facing list or in-memory tuple only; snapshot to a tuple.
+
+    Any other container (deque, set, dict, generator, str) is refused:
+    the design-intent graph must store actual immutable tuples, never a
+    caller-owned mutable iterable.
+    """
+    if isinstance(value, list):
+        return tuple(value)
+    if isinstance(value, tuple):
+        return value
+    raise ValueError(
+        f"{name} must be a list or tuple, got {type(value).__name__}")
+
+
+def _as_enum(name: str, value: Any, cls: Any) -> Any:
+    if not isinstance(value, cls):
+        raise ValueError(
+            f"{name} must be {cls.__name__}, got {type(value).__name__} "
+            f"{value!r}")
+    return value
 
 
 def _as_bool(name: str, value: Any) -> bool:
@@ -215,6 +240,7 @@ class Agent:
     power_domain: str | None = None  # PRD §4.2
 
     def __post_init__(self):
+        _as_enum("kind", self.kind, AgentKind)
         _as_int("count", self.count, minimum=1)
         _as_int("data_width", self.data_width, minimum=8)
         _as_int("addr_width", self.addr_width, minimum=8)
@@ -262,6 +288,7 @@ class CollectiveOp:
     bytes_per_element: int = 2048
 
     def __post_init__(self):
+        _as_enum("kind", self.kind, CollectiveKind)
         _as_int("group_size", self.group_size, minimum=1)
         _as_int("bytes_per_element", self.bytes_per_element, minimum=1)
 
@@ -316,10 +343,12 @@ class Workload:
     trace_path: str | None = None
 
     def __post_init__(self):
-        # Normalize caller-supplied lists to tuples: the frozen object
-        # must never retain a mutable collection the caller can edit.
-        if isinstance(self.collectives, list):
-            object.__setattr__(self, "collectives", tuple(self.collectives))
+        _as_enum("model_family", self.model_family, ModelFamily)
+        _as_enum("serving_mode", self.serving_mode, ServingMode)
+        # Normalize caller-supplied sequences to tuples: the frozen object
+        # must never retain a mutable/odd container the caller can edit.
+        object.__setattr__(self, "collectives",
+                           _as_tuple("collectives", self.collectives))
         for c in self.collectives:
             if not isinstance(c, CollectiveOp):
                 raise ValueError(
@@ -372,6 +401,7 @@ class Requirement:
     binding: bool = False  # if True, must be met or design fails
 
     def __post_init__(self):
+        _as_enum("qos_class", self.qos_class, QoSClass)
         _as_bool("binding", self.binding)
         for name, val in (("latency_ceiling_cycles", self.latency_ceiling_cycles),
                           ("bandwidth_floor_gbps", self.bandwidth_floor_gbps)):
@@ -402,9 +432,7 @@ class Dependency:
     def __post_init__(self):
         _as_str("source", self.source, allow_empty=False)
         _as_str("target", self.target, allow_empty=False)
-        if not isinstance(self.kind, DepKind):
-            raise ValueError(
-                f"kind must be a DepKind, got {type(self.kind).__name__}")
+        _as_enum("kind", self.kind, DepKind)
 
 
 # NOTE: PLANE_C_MAX_VC lives in core.constants (env-overridable via
@@ -430,9 +458,8 @@ class DependencyGraph:
     dependencies: tuple[Dependency, ...]
 
     def __post_init__(self):
-        if isinstance(self.dependencies, list):
-            object.__setattr__(self, "dependencies",
-                               tuple(self.dependencies))
+        object.__setattr__(self, "dependencies",
+                           _as_tuple("dependencies", self.dependencies))
         for d in self.dependencies:
             if not isinstance(d, Dependency):
                 raise ValueError(
@@ -576,8 +603,8 @@ class NocConfig:
     obfuscation_level: int = 0  # 0=none, 1=light, 2=full
 
     def __post_init__(self):
-        if isinstance(self.output_formats, list):
-            object.__setattr__(self, 'output_formats', tuple(self.output_formats))
+        object.__setattr__(self, "output_formats",
+                           _as_tuple("output_formats", self.output_formats))
         for o in self.output_formats:
             if not isinstance(o, OutputFormat):
                 raise ValueError(
@@ -638,8 +665,8 @@ class AddressMap:
     ranges: tuple[AddressRange, ...] = ()
 
     def __post_init__(self):
-        if isinstance(self.ranges, list):
-            object.__setattr__(self, 'ranges', tuple(self.ranges))
+        object.__setattr__(self, "ranges",
+                           _as_tuple("ranges", self.ranges))
         for r in self.ranges:
             if not isinstance(r, AddressRange):
                 raise ValueError(
@@ -970,13 +997,18 @@ class CompileRequest:
     def __post_init__(self):
         # Normalize caller-owned mutable collections: a frozen request
         # must never retain a list the caller can still edit.
-        if isinstance(self.requirements, list):
-            object.__setattr__(self, 'requirements', tuple(self.requirements))
-        if isinstance(self.agents, list):
-            object.__setattr__(self, 'agents', tuple(self.agents))
-        if isinstance(self.dependencies, list):
-            object.__setattr__(self, 'dependencies',
-                               DependencyGraph(self.dependencies))
+        object.__setattr__(self, 'requirements',
+                           _as_tuple('requirements', self.requirements))
+        object.__setattr__(self, 'agents',
+                           _as_tuple('agents', self.agents))
+        deps = self.dependencies
+        if isinstance(deps, list):
+            deps = DependencyGraph(deps)
+        elif not isinstance(deps, DependencyGraph):
+            raise ValueError(
+                "dependencies must be a DependencyGraph or list, got "
+                f"{type(deps).__name__}")
+        object.__setattr__(self, 'dependencies', deps)
         for r in self.requirements:
             if not isinstance(r, Requirement):
                 raise ValueError(
@@ -986,8 +1018,6 @@ class CompileRequest:
             if not isinstance(a, Agent):
                 raise ValueError(
                     f"agents must contain Agent, got {type(a).__name__}")
-        if not isinstance(self.dependencies, DependencyGraph):
-            raise ValueError("dependencies must be a DependencyGraph")
         if not isinstance(self.noc_config, NocConfig):
             raise ValueError("noc_config must be a NocConfig")
         if not isinstance(self.address_map, AddressMap):

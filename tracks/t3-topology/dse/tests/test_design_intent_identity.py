@@ -737,6 +737,126 @@ def test_golden_design_hash_is_stable():
     assert B.design_hash() == GOLDEN_DESIGN_HASH
 
 
+# ── container sealing: only list (JSON) or tuple (memory) allowed ──────────
+
+def _bad_container(kind, item):
+    from collections import deque
+    if kind == "deque":
+        return deque([item])
+    if kind == "set":
+        return {item}
+    if kind == "dict":
+        return {"k": item}
+    if kind == "str":
+        return "abc"
+    if kind == "generator":
+        return (x for x in [item])
+    raise AssertionError(kind)
+
+
+_CONTAINER_KINDS = ("deque", "set", "dict", "str", "generator")
+
+
+@pytest.mark.parametrize("kind", _CONTAINER_KINDS)
+def test_workload_collectives_rejects_non_sequence(kind):
+    with pytest.raises(ValueError, match="collectives"):
+        Workload(model_family=ModelFamily.MOE,
+                 collectives=_bad_container(
+                     kind, CollectiveOp(kind=CollectiveKind.ALLREDUCE,
+                                        group_size=8)))
+
+
+@pytest.mark.parametrize("kind", _CONTAINER_KINDS)
+def test_dependency_graph_rejects_non_sequence(kind):
+    with pytest.raises(ValueError, match="dependencies"):
+        DependencyGraph(_bad_container(
+            kind, Dependency(source="a", target="b", kind=DepKind.BLOCKING)))
+
+
+@pytest.mark.parametrize("kind", _CONTAINER_KINDS)
+def test_address_map_rejects_non_sequence(kind):
+    with pytest.raises(ValueError, match="ranges"):
+        AddressMap(ranges=_bad_container(kind, _address_range()))
+
+
+@pytest.mark.parametrize("kind", _CONTAINER_KINDS)
+def test_noc_output_formats_rejects_non_sequence(kind):
+    with pytest.raises(ValueError, match="output_formats"):
+        NocConfig(output_formats=_bad_container(kind, OutputFormat.UVM))
+
+
+@pytest.mark.parametrize("kind", _CONTAINER_KINDS)
+def test_request_requirements_rejects_non_sequence(kind):
+    with pytest.raises(ValueError, match="requirements"):
+        replace(B, requirements=_bad_container(kind, _requirement()))
+
+
+@pytest.mark.parametrize("kind", _CONTAINER_KINDS)
+def test_request_agents_rejects_non_sequence(kind):
+    with pytest.raises(ValueError, match="agents"):
+        replace(B, agents=_bad_container(kind, _agent()))
+
+
+@pytest.mark.parametrize("kind", _CONTAINER_KINDS)
+def test_request_dependencies_rejects_non_graph_container(kind):
+    with pytest.raises(ValueError):
+        replace(B, dependencies=_bad_container(
+            kind, Dependency(source="a", target="b", kind=DepKind.BLOCKING)))
+
+
+def test_collections_are_stored_as_tuples():
+    assert isinstance(B.requirements, tuple)
+    assert isinstance(B.agents, tuple)
+    assert isinstance(B.workload.collectives, tuple)
+    assert isinstance(B.dependencies.dependencies, tuple)
+    assert isinstance(B.address_map.ranges, tuple)
+    assert isinstance(B.noc_config.output_formats, tuple)
+
+
+def test_deque_not_retained():
+    from collections import deque
+    reqs = deque([_requirement()])
+    with pytest.raises(ValueError):
+        replace(B, requirements=reqs)
+
+
+def test_generator_not_accepted_as_design_collection():
+    with pytest.raises(ValueError):
+        replace(B, requirements=(r for r in [_requirement()]))
+
+
+# ── enum-typed fields validated on direct construction ─────────────────────
+
+@pytest.mark.parametrize("build", [
+    lambda: Agent(kind="compute_tile", count=1),
+    lambda: Workload(model_family="mixture_of_experts"),
+    lambda: Workload(model_family=ModelFamily.MOE, serving_mode="mixed"),
+    lambda: CollectiveOp(kind="allreduce"),
+    lambda: Requirement(qos_class="latency_critical"),
+    lambda: Dependency(source="a", target="b", kind="blocking"),
+], ids=["agent.kind", "workload.model_family", "workload.serving_mode",
+        "collective.kind", "requirement.qos_class", "dependency.kind"])
+def test_enum_fields_require_enum_type(build):
+    with pytest.raises(ValueError):
+        build()
+
+
+# ── negative zero canonicalization ─────────────────────────────────────────
+
+def test_negative_zero_real_values_canonicalize():
+    for field in ("latency_ceiling_cycles", "bandwidth_floor_gbps"):
+        h_int = _req(0, **{field: 0}).design_hash()
+        h_pos = _req(0, **{field: 0.0}).design_hash()
+        h_neg = _req(0, **{field: -0.0}).design_hash()
+        assert h_int == h_pos == h_neg, f"{field}: signed zero forked identity"
+
+
+def test_negative_zero_serializes_positive():
+    d = _req(0, latency_ceiling_cycles=-0.0).to_dict()
+    assert d["requirements"][0]["latency_ceiling_cycles"] == 0.0
+    assert "-0.0" not in json.dumps(d["requirements"][0])
+
+
 # ── tracked examples ────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("path", sorted(EXAMPLES_DIR.glob("*.json")),
