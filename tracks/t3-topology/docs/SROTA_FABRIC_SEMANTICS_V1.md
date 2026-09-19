@@ -23,6 +23,8 @@
 | 1.9 | B3.5c | Sealing validation only; no schema/hash change. FabricArtifact now calls `attachment.validate_against_topology(topology)` and `router_route.validate_against(topology)` (parent-hash equality is not legality: channels, all-pairs termination, loops). Attachment gains the design-free `validate_against_topology` helper; `validate_against(design, inventory, topology)` composes it. ResolvedFabric proves `inventory.parallelism == workload (tp,pp,ep,dp)` and that `inventory.ranks` is the canonical rank namespace for that shape (equal world size with different geometry is refused), plus tampered coordinates are refused. |
 | 1.10 | B3.5d | AddressDecodeArtifact materializes `CompileRequest.address_map` + attachment into canonical `(name, base, size, target_agent_group, target_endpoint_id)` entries (domain `srota/AddressDecode/v1`), with singleton-target-group enforcement and UNSUPPORTED for multi-instance groups. FabricArtifact becomes schema v2 (`srota/Fabric/v2`) binding `address_decode_hash`; v1 is refused. ResolvedFabric proves the decode artifact corresponds exactly to `design.address_map`. Addresses remain protocol payload and do not enter flit headers. |
 | 1.11 | B3.5e | AddressDecodeArtifact schema v2: range `name` is non-semantic transport (excluded from `address_decode_hash` and canonical order), `address_transform=IDENTITY` pins forwarding, and entries must fit the target endpoint's address interface width. `validate_against_attachment` proves hardware legality without DesignRevision; `validate_against` proves design-map equivalence. FabricArtifact schema v3 (`srota/Fabric/v3`) validates hardware-only and refuses multi-clock/multi-power attachments; ResolvedFabric owns address-map equivalence and refuses `rcu_enabled=True`. Fabric v1/v2 and AddressDecode v1 are refused. |
+| 1.12 | B3.7a | Backend projection/input identity contracts: `BackendConfigArtifact` (domain `srota/BackendConfig/v1`; one binding per SemanticDimension, RepresentationStatus + CertificationEffect, path-independent, closed ownership table) and `BackendInputManifest` (domain `srota/BackendInputManifest/v1`; workload content, seed policy, rendered input hashes, normalized invocation). `ResolvedFabricBundle` carries the real semantic objects a lowerer must revalidate before lowering — never a root hash alone. |
+| 1.13 | B3.7b | Certified standalone BookSim lowering: canonical AnyNet rendering from TopologyArtifact + AgentAttachmentArtifact with parse-back proof; closed parameter ownership; `packet_size` deliberately not emitted (trace records are the packet authority); AnyNet latency/route-cost coupling means heterogeneous latency and non-unit `route_weight` are `UNSUPPORTED`. Narrow BookSim fork seam `routing_dump_file` dumps the built all-pairs first-hop table; the certified runner mechanically compares it with RouteArtifact (missing/divergent dump refuses the run). Materialized inputs are re-hashed immediately before spawn. Serving/analytical targets are not certified by this row. |
 
 This document defines what a resolved Srota fabric *is* before B3 code is
 written. It starts from hardware semantics and maps existing code onto them —
@@ -883,14 +885,17 @@ architecture-affecting value; `semantic_loss[]` lists anything unrepresentable.
 | Srota semantic | BookSim | Lossless? |
 |---|---|---|
 | materialized topology | `topology`/`k`/`n`/`network_file` | mesh/torus/anynet yes; others partial |
-| route realization | `routing_function` or route table | **NO** — BookSim computes `min_anynet`; must ingest or dump (C-01/C-02) |
-| vc_count | `num_vcs` | yes, but buffering-only semantics |
+| route realization | `routing_function` or route table | **NO** — BookSim computes `min_anynet`; must ingest or dump (C-01/C-02) || vc_count | `num_vcs` | yes, but buffering-only semantics |
 | vc buffer depth | `vc_buf_size` | yes |
 | packetization | `packet_size` | yes (8 vs ASTRA 64 divergence) |
 | flow control | `wait_for_tail_credit`, `hold_switch_for_packet` | partial; latter never emitted |
 | arbitration | `vc_allocator`/`sw_allocator`/`arb_type` | partial |
 | pipeline | delays | execution detail |
 | link width/latency | none | **loss** — declared |
+
+Supersession: the route-realization, packetization and flow-control rows above
+are the pre-B3.7 truth. For the certified standalone profile see §21.5; the
+legacy lowering path remains non-certified and unchanged.
 
 ### 21.2 RTL
 Consumes TopologyArtifact adjacency/channels, ResolvedRouteArtifact tables,
@@ -906,6 +911,52 @@ Declares representable topology classes, congestion model, units, and
 `NOT IMPLEMENTED`. Intended contract: consume FabricArtifact + WorkloadIR,
 implement packet/flit format and router behavior from artifacts, declare
 fidelity.
+
+### 21.5 Certified standalone BookSim (B3.7a/b, implemented)
+
+The rows in §21.1 describe the pre-B3.7 lowering truth. Implemented for the
+certified profile `CERTIFIED_BOOKSIM_ANYNET_V1`:
+
+- **Inputs.** `ResolvedFabricBundle` (design/inventory/mapping + all child
+  artifacts + FabricArtifact + ResolvedFabric) is revalidated before every
+  lower/render/execute. Lowering never starts from a root hash.
+- **Topology.** The materialized `TopologyArtifact` router/channel graph and
+  `AgentAttachmentArtifact` node assignment are rendered as AnyNet (every
+  directed channel with its latency), then parsed back with the canonical
+  `core.anynet` parser and compared (routers, node→router, adjacency,
+  per-edge weights) before spawn. Endpoint port ids are assigned by BookSim
+  and are not represented.
+- **Route realization (C-01/C-02 closed for this profile).** The BookSim fork
+  gains `routing_dump_file`: after `buildRoutingTable()` the AnyNet network
+  writes its built all-pairs first-hop table. The certified runner compares
+  that executed table with `RouteArtifact` (selected class) for every
+  `(router × attached endpoint)`; complete coverage is required and any
+  divergence refuses the run. A config-level routing-function name is never
+  route evidence. Built-in mesh/torus routers have no equivalent seam yet, so
+  DOR_XY fabrics are `UNSUPPORTED` in this profile.
+- **Latency/route-weight coupling.** AnyNet's Dijkstra uses the link's numeric
+  value as both channel latency and route cost. Certified v1 therefore
+  requires uniform channel latency and `route_weight == 1`; heterogeneous
+  latency and weighted routes are refused (`UNSUPPORTED`), never
+  approximated.
+- **Parameters.** Every rendered config key has exactly one owner in
+  `BOOKSIM_STANDALONE_OWNERSHIP` (FABRIC_DERIVED / WORKLOAD_DERIVED /
+  EXECUTION_POLICY / BACKEND_PROFILE / SEMANTIC_LOSS). `packet_size` is
+  deliberately not emitted: trace records are the packet-length authority
+  (`tracetrafficmanager.cpp`); the runner instead validates
+  `1 <= packet_size <= PacketFormatArtifact.max_packet_flits` for every trace
+  record. `output_delay` is `UNREPRESENTABLE` (registered but unread by the
+  iq router in this fork); output staging is `COARSENED` (BookSim's output
+  queue is per port, not per VC); `VC_CLASS_ASSIGNMENT` is `COARSENED` for
+  multi-class artifacts (BookSim trace traffic runs one class over all VCs).
+  `COARSENED`/`UNREPRESENTABLE` bindings make `exact_fabric_eligible()`
+  false even when the run is permitted as `FIDELITY_DOWNGRADE`.
+- **Identity split.** `backend_config_hash` is path/run/timestamp independent
+  and never contains workload bytes; `backend_input_hash` binds workload
+  content, seed, rendered file hashes and normalized invocation. Rendered
+  files are compared against the manifest immediately before spawn; a
+  modified input refuses execution. Legacy `simulation/booksim.py` execution
+  remains `LEGACY_NON_CERTIFIED`.
 
 ## 22. SystemC status
 
@@ -1083,7 +1134,7 @@ B3.8 last.
 | `derive_vc_count` | DEPRECATE | heuristic only |
 | `derive_vc_assignment` | EVOLVE | candidate generation, not proof |
 | `derive_topology_spec` | EVOLVE | size from inventory |
-| `booksim.build_config` | EVOLVE | declared-semantics lowerer |
+| `booksim.build_config` | EVOLVE | declared-semantics lowerer; `backend/booksim.py` is the canonical certified path, legacy builder stays non-certified |
 | `flow_certifier` route logic | EVOLVE | consume ResolvedRouteArtifact |
 | RTL local route generation | DEPRECATE | consume ResolvedRouteArtifact |
 | report topology arithmetic | DELETE | render FabricArtifact |

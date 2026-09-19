@@ -331,6 +331,23 @@ class TestConfigImmutability:
         assert a.binding(SemanticDimension.VC_COUNT).representation_status \
             is RepresentationStatus.EXACT
 
+    def test_coarsened_binding_blocks_exact_fabric_claim(self):
+        binds = _bindings(**{"VC_COUNT": {
+            "status": RepresentationStatus.COARSENED,
+            "effect": CertificationEffect.FIDELITY_DOWNGRADE}})
+        a = _artifact(semantic_bindings=binds)
+        # The run is permitted (FIDELITY_DOWNGRADE) but is NOT an
+        # exact-fabric result.
+        assert not a.exact_fabric_eligible()
+
+    def test_all_exact_or_irrelevant_is_exact_eligible(self):
+        binds = _bindings(**{"CHANNEL_WIDTH": {
+            "status": RepresentationStatus.BACKEND_IRRELEVANT,
+            "effect": CertificationEffect.NONE,
+            "reason": "no width model"}})
+        a = _artifact(semantic_bindings=binds)
+        assert a.exact_fabric_eligible()
+
 
 # ── input manifest algebra ──────────────────────────────────────────────
 

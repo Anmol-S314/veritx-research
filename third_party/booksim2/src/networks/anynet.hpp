@@ -45,6 +45,15 @@ class AnyNet : public Network {
   //stores minimal routing information from every router to every node
   //[router][dest_node]=port
   vector<map<int, int> > routing_table;
+  // VeritX (B3.7b): certified route evidence. When routing_dump_file is
+  // non-empty the built all-pairs first-hop table is written there, so a
+  // certified runner can compare the EXECUTED route realization against
+  // the authoritative RouteArtifact instead of trusting the routing
+  // function name. Diagnostics only: never changes routing behavior.
+  string routing_dump_file;
+  // [src router][dest node] = next router toward that node (== src router
+  // when the destination node is local to the source router).
+  vector<map<int, int> > routing_next;
 
   void _ComputeSize( const Configuration &config );
   void _BuildNet( const Configuration &config );

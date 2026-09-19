@@ -44,6 +44,11 @@ class AnynetGraph:
     router_adj: dict[int, set[int]] = field(default_factory=dict)
     node_router: dict[int, int] = field(default_factory=dict)
     non_unit_weights: list[tuple[int, int]] = field(default_factory=list)
+    # Directed router->router weights as DECLARED in the file (only explicit
+    # mentions; BookSim defaults an unmentioned reverse channel to 1).
+    # B3.7b route-proof consumers compare these with TopologyArtifact
+    # channel latencies; absent entries mean BookSim's default of 1.
+    router_weight: dict[tuple[int, int], int] = field(default_factory=dict)
 
     @property
     def has_non_unit_weights(self) -> bool:
@@ -116,10 +121,11 @@ def _parse_line(toks: list[str], g: AnynetGraph, line_no: int) -> None:
         # optional weight token (LINK_WEIGHT state): any bare integer sets
         # the channel latency BookSim uses as edge distance. Recorded, not
         # folded into adjacency — PR D consumers enforce the policy.
+        weight = 1
         if i < len(toks) and toks[i] not in ("router", "node"):
-            w = _int(toks[i], "weight")
-            if w != 1:
-                g.non_unit_weights.append((line_no, w))
+            weight = _int(toks[i], "weight")
+            if weight != 1:
+                g.non_unit_weights.append((line_no, weight))
             i += 1
 
         if head_kind == "router" and kind == "router":
@@ -127,6 +133,7 @@ def _parse_line(toks: list[str], g: AnynetGraph, line_no: int) -> None:
             g.router_adj.setdefault(body, set())
             g.router_adj[head].add(body)
             g.router_adj[body].add(head)
+            g.router_weight[(head, body)] = weight
         elif head_kind == "router" and kind == "node":
             _attach(g, body, head, line_no)
         elif head_kind == "node" and kind == "router":

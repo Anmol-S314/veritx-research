@@ -79,6 +79,8 @@ AnyNet::~AnyNet(){
 
 void AnyNet::_ComputeSize( const Configuration &config ){
   file_name = config.GetStr("network_file");
+  // VeritX (B3.7b): optional certified route-evidence dump path.
+  routing_dump_file = config.GetStr("routing_dump_file");
   if(file_name==""){
     cout<<"No network file name provided"<<endl;
     exit(-1);
@@ -243,10 +245,34 @@ void min_anynet( const Router *r, const Flit *f, int in_channel,
 void AnyNet::buildRoutingTable(){
   cout<<"========================== Routing table  =====================\n";  
   routing_table.resize(_size);
+  routing_next.resize(_size);
   for(int i = 0; i<_size; i++){
     route(i);
   }
   global_routing_table = &routing_table[0];
+
+  // VeritX (B3.7b): dump the built all-pairs first-hop table for
+  // mechanical comparison against the authoritative RouteArtifact.
+  // Format: "src_router <r> dst_node <n> next_router <m> port <p>"
+  // (next_router == r means the destination node is local to router r).
+  // Purely diagnostic: emitted only when routing_dump_file is set.
+  if(!routing_dump_file.empty()){
+    ofstream dump(routing_dump_file.c_str());
+    if(!dump.is_open()){
+      cout<<"AnyNet: cannot open routing_dump_file "<<routing_dump_file<<endl;
+      exit(-1);
+    }
+    dump<<"# VeritX anynet routing table dump (executed first-hop realization)\n";
+    for(int r = 0; r<_size; r++){
+      map<int, int>::iterator iter;
+      for(iter = routing_next[r].begin(); iter != routing_next[r].end(); iter++){
+        dump<<"src_router "<<r<<" dst_node "<<iter->first
+            <<" next_router "<<iter->second
+            <<" port "<<routing_table[r][iter->first]<<"\n";
+      }
+    }
+    dump.close();
+  }
 }
 
 
@@ -296,6 +322,8 @@ void AnyNet::route(int r_start){
 	  iter!=router_list[0][i].end();
 	  iter++){
 	routing_table[r_start][iter->first]=iter->second.first;
+	// VeritX (B3.7b): destination local to r_start -> next hop is self.
+	routing_next[r_start][iter->first]=r_start;
 	//cout<<"node "<<iter->first<<" port "<< iter->second.first<<endl;
       }
     } else {
@@ -314,6 +342,8 @@ void AnyNet::route(int r_start){
 	  iter!=router_list[0][i].end();
 	  iter++){
 	routing_table[r_start][iter->first]=port;
+	// VeritX (B3.7b): first router after r_start toward destination i.
+	routing_next[r_start][iter->first]=neighbor;
 	//cout<<"node "<<iter->first<<" port "<< port<<" dist "<<distance<<endl;
       }
     }

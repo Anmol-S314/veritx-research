@@ -143,6 +143,21 @@ class CertificationEffect(Enum):
     UNSUPPORTED_EXECUTION = "UNSUPPORTED_EXECUTION"
 
 
+class ParameterOwner(Enum):
+    """Closed ownership classes for every result-affecting parameter.
+
+    A rendered backend parameter with no owner is an error; a parameter
+    relying on an undeclared backend default is an error too. Certificate
+    paths never carry free-form overrides.
+    """
+
+    FABRIC_DERIVED = "FABRIC_DERIVED"
+    WORKLOAD_DERIVED = "WORKLOAD_DERIVED"
+    EXECUTION_POLICY = "EXECUTION_POLICY"
+    BACKEND_PROFILE = "BACKEND_PROFILE"
+    SEMANTIC_LOSS = "SEMANTIC_LOSS"
+
+
 _EXACT_STATUSES = frozenset({RepresentationStatus.EXACT,
                              RepresentationStatus.DERIVED_EXACT})
 _NON_EXACT_EFFECTS = frozenset({CertificationEffect.FIDELITY_DOWNGRADE,
@@ -323,7 +338,7 @@ class SemanticBinding:
             raise BackendConfigError(
                 f"{self.dimension.value}: exact representation cannot carry "
                 f"certification effect {effect.value}")
-        if status is not RepresentationStatus.EXACT and not self.reason:
+        if status not in _EXACT_STATUSES and not self.reason:
             raise BackendConfigError(
                 f"{self.dimension.value}: non-exact representation "
                 f"{status.value} requires a reason")
@@ -526,11 +541,22 @@ class BackendConfigArtifact:
         } for b in self.non_exact_bindings())
 
     def exact_fabric_eligible(self) -> bool:
-        """True only when no binding blocks or refuses exact execution."""
+        """True only when every dimension is exactly represented (or is
+        irrelevant to this backend) and nothing blocks/refuses execution.
+
+        COARSENED / ASSUMED_FIXED / UNREPRESENTABLE bindings make this
+        False even when the run itself is permitted (FIDELITY_DOWNGRADE):
+        a downgraded run must never present itself as an exact-fabric
+        result.
+        """
         for b in self.semantic_bindings:
             if b.certification_effect in (
                     CertificationEffect.BLOCKS_EXACT_FABRIC,
                     CertificationEffect.UNSUPPORTED_EXECUTION):
+                return False
+            if b.representation_status not in _EXACT_STATUSES and \
+                    b.representation_status is not \
+                    RepresentationStatus.BACKEND_IRRELEVANT:
                 return False
         return True
 
@@ -804,6 +830,7 @@ __all__ = [
     "BackendInputManifest",
     "BackendTarget",
     "CertificationEffect",
+    "ParameterOwner",
     "RenderedInput",
     "RepresentationStatus",
     "SemanticBinding",
