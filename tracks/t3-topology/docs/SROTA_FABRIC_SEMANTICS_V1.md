@@ -26,6 +26,7 @@
 | 1.12 | B3.7a | Backend projection/input identity contracts: `BackendConfigArtifact` (domain `srota/BackendConfig/v1`; one binding per SemanticDimension, RepresentationStatus + CertificationEffect, path-independent, closed ownership table) and `BackendInputManifest` (domain `srota/BackendInputManifest/v1`; workload content, seed policy, rendered input hashes, normalized invocation). `ResolvedFabricBundle` carries the real semantic objects a lowerer must revalidate before lowering — never a root hash alone. |
 | 1.13 | B3.7b | Certified standalone BookSim lowering: canonical AnyNet rendering from TopologyArtifact + AgentAttachmentArtifact with parse-back proof; closed parameter ownership; `packet_size` deliberately not emitted (trace records are the packet authority); AnyNet latency/route-cost coupling means heterogeneous latency and non-unit `route_weight` are `UNSUPPORTED`. Narrow BookSim fork seam `routing_dump_file` dumps the built all-pairs first-hop table; the certified runner mechanically compares it with RouteArtifact (missing/divergent dump refuses the run). Materialized inputs are re-hashed immediately before spawn. Serving/analytical targets are not certified by this row. |
 | 1.14 | B3.7c | Serving BookSim consumer seam. `backend/serving.py` lowers the same canonical BookSim projection to `SERVING_BOOKSIM2`, converts `PacketFormatArtifact.flit_width_bits` to flit BYTES exactly (64 bits → 8 bytes; non-byte-exact widths refused), and prepares an exact run-owned backend directory consumed by the vendored serving module through `VERITX_CERTIFIED_BACKEND_DIR` (no config synthesized from network.yml; `packet_size` refused as a false authority; replay mode refused as non-execution; physical dims fail closed). Route realization is declared UNREPRESENTABLE/BLOCKS_EXACT_FABRIC because the embedded frontend exposes no executed-route evidence, and max_packet_flits is UNREPRESENTABLE (embedded MTU deferred to Wave D). Public serving control path still has no authoritative ResolvedFabric bridge: `SERVING_BOOKSIM2` execution is BLOCKED for full certification. |
+| 1.15 | B3.7d | Analytical aware/unaware lowering: distinct `SERVING_ANALYTICAL_AWARE` (1-dim only; N-dim refused) and `SERVING_ANALYTICAL_UNAWARE` backend identities with explicit capability matrices over every SemanticDimension. Because the fabric artifacts carry channel BITS and latency CYCLES while the analytical network model takes GB/s and ns, and no clock/bandwidth-unit derivation exists, CHANNEL_WIDTH and CHANNEL_LATENCY are UNREPRESENTABLE with UNSUPPORTED_EXECUTION: execution is refused until units and a representative configuration are established. No numeric bandwidth/latency is invented. |
 
 This document defines what a resolved Srota fabric *is* before B3 code is
 written. It starts from hardware semantics and maps existing code onto them —
@@ -988,6 +989,24 @@ ResolvedFabricBundle → lower (SERVING_BOOKSIM2) → config.cfg + topology.anyn
   execution is BLOCKED for full certification until an upstream authority
   supplies the bundle. The legacy path (no env var) is unchanged and
   `LEGACY_NON_CERTIFIED`.
+
+### 21.7 Analytical aware/unaware (B3.7d)
+
+`SERVING_ANALYTICAL_AWARE` and `SERVING_ANALYTICAL_UNAWARE` are distinct
+backend targets with distinct capability matrices. The aware engine is
+1-dim only (N-dim `network_dims` refuses; the serving selection code's
+silent fallback to the unaware engine is therefore represented by target
+identity, never by substituting one backend after lowering).
+
+Every non-EXACT dimension is declared with a reason and effect. The two
+unit-dependent dimensions are `UNREPRESENTABLE` /
+`UNSUPPORTED_EXECUTION`: the analytical model takes bandwidth (GB/s) and
+latency (ns), the fabric artifacts carry width bits and latency cycles,
+and no clock period or bandwidth-unit derivation exists. No numeric
+bandwidth or latency is emitted; `assert_analytical_executable` refuses
+execution while those blockers remain. Route/VC/buffer/credit/packet
+semantics have no analytical representation and are declared. This is a
+correct `UNSUPPORTED` outcome, not a certification failure.
 
 ## 22. SystemC status
 
