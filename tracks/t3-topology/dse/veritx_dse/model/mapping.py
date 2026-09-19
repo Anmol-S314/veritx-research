@@ -97,6 +97,11 @@ class MappingArtifact:
                 raise MappingError(
                     f"placements must contain RankPlacement, got "
                     f"{type(p).__name__}")
+        # Every supported Workload has tp,pp,ep,dp >= 1, so at least one
+        # logical rank exists; a complete active-rank placement is never empty.
+        if not self.placements:
+            raise MappingError(
+                "mapping must contain at least one rank placement")
         try:
             version = _as_int("schema_version", self.schema_version)
         except ValueError as e:

@@ -188,6 +188,13 @@ class NodeInventory:
                 raise ValueError(
                     f"ranks must contain LogicalRank, got {type(r).__name__}")
 
+        # Fundamental identity is the SOURCE coordinate (group, instance);
+        # kind is descriptive information inherited from the parent group, so
+        # it must not be able to mask a duplicate member claim.
+        source_coords = [(a.group_index, a.instance_index) for a in self.agents]
+        if len(source_coords) != len(set(source_coords)):
+            raise ValueError(
+                "duplicate source-instance coordinate in inventory")
         ids = [a.instance_id for a in self.agents]
         if len(ids) != len(set(ids)):
             raise ValueError("duplicate agent instance identity in inventory")

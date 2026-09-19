@@ -95,10 +95,30 @@ def test_agent_instance_strict_validation(kwargs):
 
 def test_inventory_rejects_duplicate_agent_identity():
     a = AgentInstance(0, 0, AgentKind.COMPUTE_TILE)
-    with pytest.raises(ValueError, match="duplicate agent instance"):
+    with pytest.raises(ValueError, match="duplicate source-instance coordinate"):
         NodeInventory(parallelism=ParallelismShape(1, 1, 1, 1),
                       agents=(a, a),
                       ranks=_ranks(ParallelismShape(1, 1, 1, 1)))
+
+
+def test_inventory_rejects_duplicate_source_instance_coordinate():
+    """Same (group, instance) with differing kind still collides."""
+    a = AgentInstance(0, 0, AgentKind.COMPUTE_TILE)
+    b = AgentInstance(0, 0, AgentKind.HBM_CONTROLLER)
+    with pytest.raises(ValueError, match="duplicate source-instance coordinate"):
+        NodeInventory(parallelism=ParallelismShape(1, 1, 1, 1),
+                      agents=(a, b),
+                      ranks=_ranks(ParallelismShape(1, 1, 1, 1)))
+
+
+def test_inventory_allows_same_instance_index_in_different_groups():
+    shape = ParallelismShape(1, 1, 1, 1)
+    inv = NodeInventory(
+        parallelism=shape,
+        agents=(AgentInstance(0, 0, AgentKind.COMPUTE_TILE),
+                AgentInstance(1, 0, AgentKind.COMPUTE_TILE)),
+        ranks=_ranks(shape))
+    assert inv.agent_count == 2
 
 
 # ══════════════════════════════════════════════════════════════════════════════

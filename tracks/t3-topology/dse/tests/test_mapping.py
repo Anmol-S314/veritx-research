@@ -241,3 +241,14 @@ def test_artifact_requires_tuple_placements():
     p = RankPlacement(rank=0, agent=AgentInstance(0, 0, AgentKind.COMPUTE_TILE))
     with pytest.raises(MappingError, match="tuple"):
         MappingArtifact(placements=[p])
+
+
+def test_empty_mapping_refused():
+    with pytest.raises(MappingError, match="at least one rank placement"):
+        MappingArtifact(placements=())
+
+
+def test_empty_mapping_refused_on_load():
+    with pytest.raises(MappingError, match="at least one rank placement"):
+        MappingArtifact.from_dict(
+            {"schema_version": 1, "placements": [], "mapping_hash": "0" * 64})
