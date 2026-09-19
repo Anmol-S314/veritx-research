@@ -1037,6 +1037,11 @@ class CertifiedBookSimEvidence:
     wall_time_s: float
     command: tuple[str, ...]
     backend_dir: str
+    workload_hash: str | None = None
+    seed: int | None = None
+    seed_policy: str = ""
+    rendered_inputs: tuple[dict[str, Any], ...] = ()
+    invocation_args: tuple[tuple[str, str], ...] = ()
     booksim_binary_sha256: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -1056,6 +1061,12 @@ class CertifiedBookSimEvidence:
             "wall_time_s": self.wall_time_s,
             "command": list(self.command),
             "backend_dir": self.backend_dir,
+            "workload_hash": self.workload_hash,
+            "seed": self.seed,
+            "seed_policy": self.seed_policy,
+            "rendered_inputs": [dict(row) for row in self.rendered_inputs],
+            "invocation_args": {k: v
+                                for k, v in self.invocation_args},
             "booksim_binary_sha256": self.booksim_binary_sha256,
         }
 
@@ -1162,6 +1173,12 @@ def run_certified_booksim(
         wall_time_s=wall,
         command=cmd,
         backend_dir=str(backend_dir),
+        workload_hash=manifest.workload_hash,
+        seed=manifest.seed,
+        seed_policy=manifest.seed_policy,
+        rendered_inputs=tuple(r.identity_dict()
+                              for r in manifest.rendered_inputs),
+        invocation_args=manifest.invocation_args,
         booksim_binary_sha256=binary_hash,
     )
 

@@ -264,6 +264,29 @@ def verify_serving_prepared(prepared: PreparedServingBackend) -> None:
     verify_materialized(prepared.manifest, Path(prepared.directory))
 
 
+def serving_backend_evidence(prepared: PreparedServingBackend) -> dict:
+    """Exact-input provenance for a prepared serving backend (B3.7e).
+
+    Mirrors the standalone evidence vocabulary: both identity hashes, the
+    logical rendered inputs with content hashes, and every command-line
+    value that alters embedded network behavior (flit bytes, logical dims,
+    replay mode).
+    """
+    return {
+        "backend_config_hash": prepared.config.backend_config_hash(),
+        "backend_input_hash": prepared.manifest.backend_input_hash(),
+        "resolved_fabric_hash": prepared.config.resolved_fabric_hash,
+        "fabric_hash": prepared.config.fabric_hash,
+        "execution_mode": prepared.manifest.execution_mode,
+        "flit_bytes": prepared.flit_bytes,
+        "physical_dims": list(prepared.physical_dims),
+        "invocation_args": dict(prepared.manifest.invocation_args),
+        "rendered_inputs": [r.identity_dict()
+                            for r in prepared.manifest.rendered_inputs],
+        "semantic_loss": list(prepared.config.semantic_loss_summary()),
+    }
+
+
 # ── mechanical consumption validation (transition path) ────────────────
 
 _CFG_KV_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^;]+);\s*$",
@@ -332,6 +355,7 @@ __all__ = [
     "lower_serving_booksim",
     "prepare_serving_booksim",
     "render_serving_config",
+    "serving_backend_evidence",
     "validate_physical_dims",
     "validate_serving_consumption",
     "verify_serving_prepared",
