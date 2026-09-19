@@ -408,10 +408,12 @@ class TestExecutionQualification:
             run_certified_booksim,
         )
         prepared = prepare_booksim_standalone(bundle, workload_trace=TRACE)
+        fake = tmp_path / "fake"
+        fake.write_bytes(b"fake-booksim-binary-v1")
         ev = run_certified_booksim(
             prepared, run_dir=tmp_path, repo_root=tmp_path,
             runner=make_capturing_runner(bundle, prepared.config),
-            binary=tmp_path / "fake")
+            binary=fake)
         assert ev.qualification == "EXECUTED_WITH_DECLARED_LOSS"
         assert ev.qualification != "EXECUTED_EXACT"
         assert ev.exact_fabric_eligible is False
@@ -427,10 +429,12 @@ class TestExecutionQualification:
         blocked_bundle = rebuild_bundle(chain, vc=_vc(chain, escape=(0,)))
         prepared = prepare_booksim_standalone(
             blocked_bundle, workload_trace=TRACE)
+        fake = tmp_path / "fake"
+        fake.write_bytes(b"fake-booksim-binary-v1")
         ev = run_certified_booksim(
             prepared, run_dir=tmp_path, repo_root=tmp_path,
             runner=make_capturing_runner(blocked_bundle, prepared.config),
-            binary=tmp_path / "fake")
+            binary=fake)
         assert ev.qualification == "EXECUTED_BLOCKED_FROM_EXACT"
         assert ev.exact_fabric_eligible is False
 

@@ -37,6 +37,7 @@
 | 1.23 | B3.8g | Site-gated proof closure. `INACTIVE_FOR_PROFILE` membership is no longer accepted as proof: inactive fields are subjected to the same `GATED_READ_SITES` checks as unregistered gated fields (same-file extra occurrence, new-file occurrence and moved-method reads all fail under the real profile shape, pinned by tests). Each declared site now carries its own explicit gates (multi-mechanism fields `k`/`n`/`c`/`xr` distinguish `pin:topology=anynet`, `pattern_dispatch` and `conditional_presence` per site), verified against the rendered config and the mechanism registry. The scanner is receiver-agnostic (`config`, `cfg`, `anything->`) and covers `.cpp/.cc/.cxx/.hpp/.hh/.h/.ipp`, so aliases and new extensions cannot silently evade. `qualify_cross_backend` requires mapping labels to equal `artifact.backend_target.value` and refuses duplicate targets under aliases. |
 | 1.24 | B3.8h | Canonical lowering authenticity. `assert_canonical_booksim_projection(bundle, config)` re-derives the expected artifact for the config's target/profile/version identity and requires complete canonical identity equality, so a recomputed-hash forged artifact (changed profile pins, fabric-derived parameters or semantic bindings) is refused even though its `fabric_hash`/`resolved_fabric_hash` and own hash are internally valid. The certified renderer validates canonicality; `run_qualified_booksim` checks it before manifest binding/materialization/spawn; and cross-backend qualification takes the bundle as required context and refuses equally forged artifacts that would otherwise agree with each other. Immediately before spawn the exact rendered bytes are parsed once and every site pin gate is verified against them (runtime half of the source-gate proof; no C++ is scanned at runtime). Serving projection/seam canonicality is enforced; serving execution remains BLOCKED. |
 | 1.25 | B3.8i | Prepared-chain authenticity. `assert_canonical_prepared_booksim(prepared)` proves the middle chain rather than its pieces independently: canonical config -> workload bytes/seed intent -> canonical rendered files (exact file-set and byte equality) -> canonical `BackendInputManifest` (complete identity equality). A canonical config paired with forged rendered bytes and a freshly recomputed, internally valid manifest is refused before materialization or spawn; seed policy is recognized only as `pinned_default`/`explicit` and the rendered seed must equal the manifest seed; workload bytes are the B3 execution-input authority (changing them is allowed and changes `backend_input_hash`). `parse_booksim_config_values` is fail-closed (malformed lines and duplicate keys refuse). Serving gets the equivalent `assert_canonical_serving_prepared` and its consumption validator requires the exact certified field set, not merely presence; serving execution remains BLOCKED. |
+| 1.26 | B-FINAL | Execution-producer binding. `resolve_producer_identity(binary, repo_root)` identifies the exact producer before spawn — binary sha256/size (fail closed when unreadable), git HEAD revision, tracked-tree dirt flag plus porcelain digest, host/harness platform — and `run_qualified_booksim` binds all of it into `CertifiedBookSimEvidence`. `verify_evidence_binding` gives safe reuse semantics: an evidence file reuses only for the identical config hash, input hash and producer (binary digest, revision, dirt, platform); legacy evidence without producer fields cannot be reused. `assert_pinned_producer` refuses evidence-grade reuse from unpinned or dirty checkouts. `serving_backend_evidence` validates the canonical prepared/materialized chain before emitting (B3.8i residual closed). |
 
 This document defines what a resolved Srota fabric *is* before B3 code is
 written. It starts from hardware semantics and maps existing code onto them —
@@ -1389,6 +1390,17 @@ execution UNSUPPORTED/NOT_RUN (units unresolved).
   (non-negative int); the exact seed in the rendered config must equal the
   manifest seed. Workload bytes are the B3 execution-input authority:
   changing them is allowed but must change `backend_input_hash`/`workload_hash`.
+- **Execution-producer binding.** `resolve_producer_identity` hashes the
+  exact binary bytes before spawn (refusing when unreadable, so evidence
+  never carries an unknown producer), records the git HEAD revision, the
+  tracked-tree dirty flag plus a porcelain content digest, and the host/
+  harness platform; all of it is bound into the run evidence. Recorded
+  dirt is provenance, not laundering: a dirty tree refuses pinned reuse
+  via `assert_pinned_producer`. `verify_evidence_binding` is the safe-reuse
+  rule — identical config hash, input hash and producer, or no reuse — and
+  evidence that predates producer binding cannot be reused, only
+  re-executed. Nothing here proves the binary was built from the recorded
+  tree; the binary digest is the primary binding of what executed.
 - **Target identity.** `qualify_cross_backend` treats
   `artifact.backend_target` as authoritative: caller labels must match it
   and duplicate targets under aliases are refused, so a qualification

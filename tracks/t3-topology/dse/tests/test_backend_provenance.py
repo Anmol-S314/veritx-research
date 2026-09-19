@@ -87,13 +87,28 @@ class TestStandaloneProvenance:
         assert delta_seed_ev.backend_input_hash != shifted.backend_input_hash
         assert shifted.seed == 9 and shifted.seed_policy == "explicit"
 
-    def test_binary_hash_is_observation_not_identity(self, bundle, tmp_path):
+    def test_binary_digest_is_pre_spawn_identity(self, bundle, tmp_path):
+        from veritx_dse.backend.producer import (  # noqa: PLC0415
+            resolve_producer_identity, verify_evidence_binding,
+        )
         _, ev = _run(tmp_path, bundle)
-        assert ev.booksim_binary_sha256 is not None
-        # Replacing the binary does not alter the scientific input hash.
+        assert ev.booksim_binary_sha256 == sha256_bytes(
+            Path("/bin/true").read_bytes())
+        # Replacing the binary does not alter the scientific input hash...
         assert ev.backend_input_hash \
             == prepare_booksim_standalone(
                 bundle, workload_trace=TRACE).manifest.backend_input_hash()
+        # ...but the old evidence cannot be reused for the new producer.
+        other = tmp_path / "other-bin"
+        other.write_bytes(b"different-producer-bytes")
+        other_producer = resolve_producer_identity(
+            other, repo_root=tmp_path)
+        with pytest.raises(Exception, match="different binary"):
+            verify_evidence_binding(
+                ev.to_dict(),
+                backend_config_hash=ev.backend_config_hash,
+                backend_input_hash=ev.backend_input_hash,
+                producer=other_producer)
 
 
 class TestEvidencePersistence:

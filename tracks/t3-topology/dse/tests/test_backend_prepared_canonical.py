@@ -98,10 +98,12 @@ def _assert_refused(prepared, tmp_path, match=None):
 
 
 def _run_ok(prepared, tmp_path):
+    fake = tmp_path / "fake"
+    fake.write_bytes(b"fake-booksim-binary-v1")
     return run_qualified_booksim(
         prepared, run_dir=tmp_path, repo_root=tmp_path,
         runner=make_capturing_runner(prepared.bundle, prepared.config),
-        binary=tmp_path / "fake")
+        binary=fake)
 
 
 class TestCanonicalBaseline:

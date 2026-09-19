@@ -325,11 +325,12 @@ def verify_serving_prepared(prepared: PreparedServingBackend) -> None:
 def serving_backend_evidence(prepared: PreparedServingBackend) -> dict:
     """Exact-input provenance for a prepared serving backend (B3.7e).
 
-    Mirrors the standalone evidence vocabulary: both identity hashes, the
-    logical rendered inputs with content hashes, and every command-line
-    value that alters embedded network behavior (flit bytes, logical dims,
-    replay mode).
+    B-FINAL residual: the prepared chain is validated before anything is
+    emitted, so a forged object (flit_bytes, dims, manifest, rendered
+    metadata) cannot be laundered through this helper into a
+    trustworthy-looking dictionary.
     """
+    verify_serving_prepared(prepared)
     return {
         "backend_config_hash": prepared.config.backend_config_hash(),
         "backend_input_hash": prepared.manifest.backend_input_hash(),

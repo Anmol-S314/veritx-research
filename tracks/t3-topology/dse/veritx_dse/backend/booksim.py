@@ -63,6 +63,7 @@ from .contracts import (
     ParameterOwner, RenderedInput, RepresentationStatus, SemanticBinding,
     SemanticDimension, sha256_bytes,
 )
+from .producer import resolve_producer_identity
 
 BOOKSIM_STANDALONE_PROFILE = "CERTIFIED_BOOKSIM_ANYNET_V1"
 SERVING_BOOKSIM2_PROFILE = "CERTIFIED_SERVING_BOOKSIM2_V1"
@@ -1350,6 +1351,10 @@ class CertifiedBookSimEvidence:
     rendered_inputs: tuple[dict[str, Any], ...] = ()
     invocation_args: tuple[tuple[str, str], ...] = ()
     booksim_binary_sha256: str | None = None
+    producer_source_revision: str | None = None
+    producer_source_dirty: bool | None = None
+    producer_source_dirty_digest: str | None = None
+    producer_tool_identity: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -1376,6 +1381,11 @@ class CertifiedBookSimEvidence:
             "invocation_args": {k: v
                                 for k, v in self.invocation_args},
             "booksim_binary_sha256": self.booksim_binary_sha256,
+            "producer_source_revision": self.producer_source_revision,
+            "producer_source_dirty": self.producer_source_dirty,
+            "producer_source_dirty_digest":
+                self.producer_source_dirty_digest,
+            "producer_tool_identity": self.producer_tool_identity,
         }
 
 
@@ -1394,10 +1404,11 @@ def run_qualified_booksim(
 
     Order: revalidate bundle → canonical config → canonical prepared
     inputs (exact render + manifest binding) → qualification guard →
+    producer identity (pre-spawn binary digest, fail closed) →
     materialize → parse-back topology → verify hashes IMMEDIATELY BEFORE
     spawn → runtime profile gates → run → executed-route proof → parse
-    stats. Any tamper/stale/forged input refuses before materialization
-    or spawn.
+    stats. Any tamper/stale/forged/unidentified input refuses before
+    materialization or spawn.
     """
     import time
 
@@ -1428,6 +1439,14 @@ def run_qualified_booksim(
     assert_canonical_prepared_booksim(prepared)
     qualification = assert_executable(config)
 
+    bin_path = Path(binary) if binary is not None \
+        else find_booksim_bin(repo_root)
+    # B-FINAL: identify the exact producer BEFORE spawn (and before any
+    # filesystem materialization) and bind it into the evidence. An
+    # unreadable binary refuses here — certified evidence never carries
+    # an unknown producer digest.
+    producer = resolve_producer_identity(bin_path, repo_root=Path(repo_root))
+
     backend_dir = Path(run_dir) / "backend"
     materialize_backend(rendered, manifest, backend_dir)
     verify_anynet_roundtrip(bundle, backend_dir / TOPOLOGY_FILE)
@@ -1438,8 +1457,6 @@ def run_qualified_booksim(
     verify_rendered_profile_gates(parse_booksim_config_values(
         (backend_dir / CONFIG_FILE).read_text()))
 
-    bin_path = Path(binary) if binary is not None \
-        else find_booksim_bin(repo_root)
     cmd = (str(bin_path), CONFIG_FILE)
     if runner is None:
         from veritx_dse.core.process import supervised_run
@@ -1475,12 +1492,6 @@ def run_qualified_booksim(
     route = compare_route_realization(
         bundle, config, backend_dir / ROUTE_DUMP_FILE)
 
-    binary_hash = None
-    try:
-        binary_hash = sha256_bytes(bin_path.read_bytes())
-    except OSError:
-        binary_hash = None
-
     return CertifiedBookSimEvidence(
         backend_config_hash=config.backend_config_hash(),
         backend_input_hash=manifest.backend_input_hash(),
@@ -1504,7 +1515,11 @@ def run_qualified_booksim(
         rendered_inputs=tuple(r.identity_dict()
                               for r in manifest.rendered_inputs),
         invocation_args=manifest.invocation_args,
-        booksim_binary_sha256=binary_hash,
+        booksim_binary_sha256=producer.binary_sha256,
+        producer_source_revision=producer.source_revision,
+        producer_source_dirty=producer.source_dirty,
+        producer_source_dirty_digest=producer.source_dirty_digest,
+        producer_tool_identity=producer.tool_identity,
     )
 
 

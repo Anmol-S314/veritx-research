@@ -293,9 +293,11 @@ class TestServingCanonicality:
 class TestGoldenRegression:
     def test_normal_execution_still_works(self, bundle, tmp_path):
         prepared = prepare_booksim_standalone(bundle, workload_trace=TRACE)
+        fake = tmp_path / "fake"
+        fake.write_bytes(b"fake-booksim-binary-v1")
         ev = run_certified_booksim(
             prepared, run_dir=tmp_path, repo_root=tmp_path,
             runner=make_capturing_runner(bundle, prepared.config),
-            binary=tmp_path / "fake")
+            binary=fake)
         assert ev.route_equivalence == "EXACT"
         assert ev.qualification == "EXECUTED_WITH_DECLARED_LOSS"
