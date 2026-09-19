@@ -54,6 +54,11 @@ from .model.packet_format import (
     PacketFormatArtifact, PacketFormatError,
     derive_packet_format, encoding_width, network_packet_count,
 )
+from .model.router_behavior import (
+    AllocatorPolicy, BufferOrganization, FlowControlProtocol,
+    PacketHoldPolicy, RouterBehaviorArtifact, RouterBehaviorError,
+    VCReusePolicy, canonical_allocator, derive_router_behavior,
+)
 
 # Re-export simulation
 from .simulation.booksim import build_config, run_booksim, find_booksim_bin, detect_trace_stats
