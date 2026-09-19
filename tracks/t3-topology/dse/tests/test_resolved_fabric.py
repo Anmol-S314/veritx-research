@@ -186,6 +186,39 @@ class TestSeamRefusals:
                 router_behavior=chain.rb, fabric=fabric)
 
 
+class TestParallelismSeam:
+    def test_different_shape_same_world_size_refused(self):
+        base = build_chain(tp=4)              # TP=4 PP=1
+        foreign = build_chain(tp=2, pp=2)     # TP=2 PP=2
+        assert base.inv.parallelism.world_size == 4
+        assert foreign.inv.parallelism.world_size == 4
+        assert base.inv.parallelism != foreign.inv.parallelism
+        with pytest.raises(ResolvedFabricError, match="parallelism"):
+            make_resolved_fabric(
+                design=base.cr, inventory=foreign.inv,
+                mapping=foreign.mapping, topology=base.topo,
+                attachment=base.att, router_route=base.rr,
+                resolved_route=base.rra, vc_assignment=base.vc,
+                packet_format=base.pf, router_behavior=base.rb,
+                fabric=compose(base))
+
+    def test_tampered_rank_coordinates_refused(self):
+        chain = build_chain(tp=2, pp=2)       # 4 ranks, real coordinates
+        inventory = build_inventory(chain.cr)
+        ranks = list(inventory.ranks)
+        ranks[1] = replace(ranks[1], tp=1 - ranks[1].tp)
+        object.__setattr__(inventory, "ranks", tuple(ranks))
+        with pytest.raises(ResolvedFabricError,
+                           match="canonical rank namespace"):
+            make_resolved_fabric(
+                design=chain.cr, inventory=inventory,
+                mapping=chain.mapping, topology=chain.topo,
+                attachment=chain.att, router_route=chain.rr,
+                resolved_route=chain.rra, vc_assignment=chain.vc,
+                packet_format=chain.pf, router_behavior=chain.rb,
+                fabric=compose(chain))
+
+
 # ── persistence strictness ───────────────────────────────────────────────
 
 class TestPersistence:

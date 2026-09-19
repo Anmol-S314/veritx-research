@@ -275,12 +275,16 @@ class FabricArtifact:
                 raise FabricArtifactError(
                     f"{name} does not match the supplied artifact")
 
-        if attachment.topology_hash != topology.topology_hash():
+        try:
+            attachment.validate_against_topology(topology)
+        except ValueError as exc:
             raise FabricArtifactError(
-                "AgentAttachmentArtifact does not bind this topology")
-        if router_route.topology_hash != topology.topology_hash():
+                f"attachment is not legal for topology: {exc}") from exc
+        try:
+            router_route.validate_against(topology)
+        except ValueError as exc:
             raise FabricArtifactError(
-                "RouteArtifact does not bind this topology")
+                f"router_route is not legal for topology: {exc}") from exc
 
         try:
             resolved_route.validate_against(topology, attachment,

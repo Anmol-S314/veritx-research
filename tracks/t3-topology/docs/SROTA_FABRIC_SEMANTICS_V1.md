@@ -20,6 +20,7 @@
 | 1.6 | B3.1d | Attachment identity correction: schema v3 makes `topology_hash` the ONLY semantic parent. DesignRevision and NodeInventory are derivation/validation sources and MappingArtifact meets the hardware again only at ResolvedFabric (`resolved_fabric_hash = design_hash + mapping_hash + fabric_hash`), so the same hardware under a different mapping or an unrelated design change keeps the same `attachment_hash`/`fabric_hash`. Validation now proves the complete design agent universe (no missing idle agents, no fabricated extras) and total seat legality. v1 and v2 attachments are refused. |
 | 1.7 | B3.5a | FabricArtifact is implemented as the root hardware identity: exactly the six child semantic hashes + `PlaneComposition.SINGLE_PLANE`, domain `srota/Fabric/v1`. `validate_against` revalidates the complete child DAG, so individually valid children that cannot form one DAG are refused. No design/mapping/backend/provenance/evidence enters `fabric_hash`. Legacy `core.fabric.FabricArtifact` remains untouched backend evidence (rename in B3.7). |
 | 1.8 | B3.5b | ResolvedFabric is implemented: `resolved_fabric_hash = H(design_hash, mapping_hash, fabric_hash)`, domain `srota/ResolvedFabric/v1`. Its seam proves the design/mapping/fabric roots, the attachment↔design/inventory universe, the mapping↔attachment placement identity (exact coordinates+kind; idle agents legal), the rank-space equality, and then the complete FabricArtifact DAG. Same hardware under a different mapping keeps `fabric_hash` and changes `resolved_fabric_hash`. |
+| 1.9 | B3.5c | Sealing validation only; no schema/hash change. FabricArtifact now calls `attachment.validate_against_topology(topology)` and `router_route.validate_against(topology)` (parent-hash equality is not legality: channels, all-pairs termination, loops). Attachment gains the design-free `validate_against_topology` helper; `validate_against(design, inventory, topology)` composes it. ResolvedFabric proves `inventory.parallelism == workload (tp,pp,ep,dp)` and that `inventory.ranks` is the canonical rank namespace for that shape (equal world size with different geometry is refused), plus tampered coordinates are refused. |
 
 This document defines what a resolved Srota fabric *is* before B3 code is
 written. It starts from hardware semantics and maps existing code onto them —
@@ -772,7 +773,17 @@ Enforced at the ResolvedFabric seam (discharges B2's deferred parent binding):
   identity in which design and mapping meet hardware; the same fabric under a
   different mapping keeps `fabric_hash` and changes `resolved_fabric_hash`;
 - every attachment endpoint references a real topology seat (router exists, port
-  < seat capacity); every agent attaches exactly once; seats not exceeded;
+  < seat capacity); every agent attaches exactly once; seats not exceeded.
+  `attachment.validate_against_topology(topology)` proves these hardware-only
+  facts without design context; FabricArtifact calls it directly, and the
+  design/inventory completeness check composes it;
+- `router_route.validate_against(topology)` is part of the FabricArtifact seam:
+  parent-hash equality alone does not prove channel legality or all-pairs
+  route termination;
+- For ResolvedFabric, `inventory.parallelism == ParallelismShape(workload.tp,
+  workload.pp, workload.ep, workload.dp)` and `inventory.ranks` equals the
+  canonical rank namespace recomputed for that shape; equal world size with a
+  different TP/PP/EP/DP geometry is refused;
 - **`resolved_route.topology_hash == topology.topology_hash()`** and
   **`resolved_route.attachment_hash == attachment.artifact_hash`** and
   **`resolved_route.router_route_hash == route.artifact_hash`** (refuse

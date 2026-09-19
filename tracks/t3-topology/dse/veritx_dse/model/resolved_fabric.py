@@ -32,6 +32,10 @@ relations):
     (group_index, instance_index, kind) — not by instance_id string;
   * rank-space seam: mapping.rank_count == inventory.rank_count and the
     mapping ranks are exactly the inventory logical rank ids;
+  * design/inventory geometry seam: inventory.parallelism equals the
+    workload's TP/PP/EP/DP shape and inventory.ranks is exactly the
+    canonical rank namespace recomputed for that shape (equal world size
+    with different geometry is refused);
   * idle compute agents remain legal (mapped => attached, never the
     inverse; non-compute hardware needs no rank placement).
 
@@ -46,7 +50,9 @@ from typing import Any
 
 from .fabric_artifact import FabricArtifact
 from .mapping import MappingArtifact
-from .placement import NodeInventory
+from .placement import (
+    LogicalRank, NodeInventory, ParallelismShape, coords_of,
+)
 
 RESOLVED_FABRIC_SCHEMA_VERSION = 1
 _HASH_TYPE_TAG = "srota/ResolvedFabric"
@@ -204,6 +210,31 @@ class ResolvedFabric:
         if self.fabric_hash != fabric.fabric_hash():
             raise ResolvedFabricError(
                 "fabric_hash does not match the FabricArtifact")
+
+        # 1b. design <-> inventory parallelism geometry + rank namespace.
+        # Equal world size is not enough: TP=4/PP=1 and TP=2/PP=2 both have
+        # four ranks 0..3 but DIFFERENT logical coordinates.
+        if not hasattr(design, "workload"):
+            raise ResolvedFabricError("design must expose workload")
+        expected_shape = ParallelismShape(
+            tp=design.workload.tp, pp=design.workload.pp,
+            ep=design.workload.ep, dp=design.workload.dp)
+        if inventory.parallelism != expected_shape:
+            raise ResolvedFabricError(
+                f"NodeInventory parallelism "
+                f"{inventory.parallelism.to_dict()} does not match design "
+                f"workload {expected_shape.to_dict()}")
+        expected_ranks = tuple(
+            LogicalRank(rank=r,
+                        **coords_of(r, tp=expected_shape.tp,
+                                    pp=expected_shape.pp,
+                                    ep=expected_shape.ep,
+                                    dp=expected_shape.dp))
+            for r in range(expected_shape.world_size))
+        if inventory.ranks != expected_ranks:
+            raise ResolvedFabricError(
+                "NodeInventory logical ranks do not match the design's "
+                "canonical rank namespace (rank id/coordinate mismatch)")
 
         # 2. attachment against design/inventory/topology
         try:

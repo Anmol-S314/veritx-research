@@ -293,24 +293,55 @@ class AgentAttachmentArtifact:
         return d
 
     # ── parent/derivation validation ───────────────────────────────────
+    def validate_against_topology(self,
+                                  topology: TopologyArtifact) -> None:
+        """Prove hardware-local attachment legality (no design context).
+
+        This is the helper FabricArtifact uses: it proves only what the
+        topology alone can prove — router existence, seat capacity and
+        at-most-once seat occupancy. It must not require DesignRevision,
+        NodeInventory or MappingArtifact (B3.1d boundary).
+        """
+        if not isinstance(topology, TopologyArtifact):
+            raise AttachmentError("topology must be a TopologyArtifact")
+        if self.topology_hash != topology.topology_hash():
+            raise AttachmentError(
+                "topology_hash does not match the materialized topology")
+        by_router = {r.router_id: r for r in topology.routers}
+        seats: set[tuple[int, int]] = set()
+        for e in self.endpoints:
+            router = by_router.get(e.router_id)
+            if router is None:
+                raise AttachmentError(
+                    f"endpoint {e.endpoint_id} references router "
+                    f"{e.router_id}, which is not in the topology")
+            if not 0 <= e.port_id < router.seat_capacity:
+                raise AttachmentError(
+                    f"endpoint {e.endpoint_id} port {e.port_id} is outside "
+                    f"router {e.router_id} seat capacity "
+                    f"{router.seat_capacity}")
+            seat = (e.router_id, e.port_id)
+            if seat in seats:
+                raise AttachmentError(
+                    f"duplicate seat: router {e.router_id} port {e.port_id}")
+            seats.add(seat)
+
     def validate_against(self, design, inventory: NodeInventory,
                          topology: TopologyArtifact) -> None:
         """Prove topology seats + the complete design agent universe.
 
         DesignRevision and NodeInventory are validation sources, not
         identity parents: this proves the attachment corresponds to them
-        without hashing them.
+        without hashing them. Hardware-local seat legality is delegated
+        to ``validate_against_topology`` so FabricArtifact can prove it
+        without design context — no duplicated implementation.
         """
         if not isinstance(inventory, NodeInventory):
             raise AttachmentError("inventory must be a NodeInventory")
-        if not isinstance(topology, TopologyArtifact):
-            raise AttachmentError("topology must be a TopologyArtifact")
         groups = getattr(design, "agents", None)
         if groups is None:
             raise AttachmentError("design must expose .agents")
-        if self.topology_hash != topology.topology_hash():
-            raise AttachmentError(
-                "topology_hash does not match the materialized topology")
+        self.validate_against_topology(topology)
 
         expected = _expected_universe(design)
         inventory_actual = _inventory_universe(inventory)
@@ -324,7 +355,6 @@ class AgentAttachmentArtifact:
             raise AttachmentError(_format_delta(
                 "attachment", expected - actual, actual - expected))
 
-        by_router = {r.router_id: r for r in topology.routers}
         for e in self.endpoints:
             group_index = e.agent.group_index
             group = groups[group_index]          # safe: actual == expected
@@ -344,16 +374,6 @@ class AgentAttachmentArtifact:
                     f"endpoint {e.endpoint_id} interface descriptor does "
                     f"not match Agent group {group_index}: "
                     f"{e.interface.to_dict()} != {expected_iface.to_dict()}")
-            router = by_router.get(e.router_id)
-            if router is None:
-                raise AttachmentError(
-                    f"endpoint {e.endpoint_id} references router "
-                    f"{e.router_id}, which is not in the topology")
-            if not 0 <= e.port_id < router.seat_capacity:
-                raise AttachmentError(
-                    f"endpoint {e.endpoint_id} port {e.port_id} is outside "
-                    f"router {e.router_id} seat capacity "
-                    f"{router.seat_capacity}")
 
     @classmethod
     def from_dict(cls, d: Any) -> "AgentAttachmentArtifact":

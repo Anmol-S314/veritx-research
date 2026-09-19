@@ -19,7 +19,9 @@ DSE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(DSE))
 
 from veritx_dse.core.route_artifact import ANYNET_MIN_HOPS, RouteArtifact
-from veritx_dse.model.attachment import derive_attachment
+from veritx_dse.model.attachment import (
+    AgentAttachmentArtifact, Endpoint, derive_attachment,
+)
 from veritx_dse.model.compile_model import (
     Agent, AgentKind, CompileRequest, Dependency, DependencyGraph, DepKind,
     ModelFamily, NocConfig, TopologyFamily, Workload,
@@ -40,9 +42,11 @@ from veritx_dse.model.topology_artifact import materialize_topology
 def build_chain(*, model_family=ModelFamily.MOE, protocol="AXI",
                 data_width=256, clock_domain=None, link_width=None,
                 max_packet_flits=8, n_agents=4,
-                family=TopologyFamily.MESH):
+                family=TopologyFamily.MESH,
+                tp=1, pp=1, ep=1, dp=1):
     cr = CompileRequest(
-        workload=Workload(model_family=model_family, tp=1, pp=1, ep=1, dp=1),
+        workload=Workload(model_family=model_family, tp=tp, pp=pp, ep=ep,
+                          dp=dp),
         requirements=[],
         agents=[Agent(kind=AgentKind.COMPUTE_TILE, count=n_agents,
                       protocol=protocol, data_width=data_width,
@@ -239,9 +243,57 @@ class TestFrankensteinRefusal:
     def test_attachment_from_other_topology_refused(self, chain):
         other = build_chain(link_width=128)
         with pytest.raises(FabricArtifactError,
-                           match="does not bind this topology"):
+                           match="attachment is not legal for topology"):
             make_fabric_artifact(
                 topology=chain.topo, attachment=other.att,
+                router_route=chain.rr, resolved_route=chain.rra,
+                vc_assignment=chain.vc, packet_format=chain.pf,
+                router_behavior=chain.rb)
+
+
+class TestSealingValidation:
+    def _looping_route(self, chain):
+        entries = dict(chain.rr.entries)
+        by_hop: dict[tuple[int, int], list[int]] = {}
+        for c in chain.topo.channels:
+            by_hop.setdefault((c.src_router, c.dst_router), []).append(
+                c.channel_id)
+        # destination 3 cycles 0 -> 1 -> 0: each hop is locally legal
+        entries[(ANYNET_MIN_HOPS, 0, 3)] = min(by_hop[(0, 1)])
+        entries[(ANYNET_MIN_HOPS, 1, 3)] = min(by_hop[(1, 0)])
+        return RouteArtifact(
+            schema_version=2, name="looping",
+            topology_hash=chain.topo.topology_hash(),
+            routing_classes=chain.rr.routing_classes, entries=entries)
+
+    def test_illegal_router_route_refused(self, chain):
+        rr_bad = self._looping_route(chain)
+        rra_bad = derive_resolved_route(chain.topo, chain.att, rr_bad)
+        vc_bad = derive_vc_assignment_artifact(chain.cr, rra_bad)
+        pf_bad = derive_packet_format(
+            topology=chain.topo, attachment=chain.att,
+            vc_assignment=vc_bad)
+        rb_bad = derive_router_behavior(vc_assignment=vc_bad)
+        with pytest.raises(FabricArtifactError,
+                           match="router_route is not legal for topology"):
+            make_fabric_artifact(
+                topology=chain.topo, attachment=chain.att,
+                router_route=rr_bad, resolved_route=rra_bad,
+                vc_assignment=vc_bad, packet_format=pf_bad,
+                router_behavior=rb_bad)
+
+    def test_invalid_attachment_seat_refused_without_design(self, chain):
+        bad_att = AgentAttachmentArtifact(
+            topology_hash=chain.att.topology_hash,
+            endpoints=tuple(
+                Endpoint(e.endpoint_id, e.agent, e.router_id,
+                         99 if e.endpoint_id == 0 else e.port_id, e.interface)
+                for e in chain.att.endpoints))
+        # no DesignRevision / NodeInventory is supplied anywhere here
+        with pytest.raises(FabricArtifactError,
+                           match="attachment is not legal for topology"):
+            make_fabric_artifact(
+                topology=chain.topo, attachment=bad_att,
                 router_route=chain.rr, resolved_route=chain.rra,
                 vc_assignment=chain.vc, packet_format=chain.pf,
                 router_behavior=chain.rb)

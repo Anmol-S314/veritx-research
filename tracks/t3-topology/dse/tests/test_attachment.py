@@ -256,6 +256,27 @@ class TestCompleteness:
             twin.validate_against(cr, inv, topo)
 
 
+class TestTopologyOnlyValidation:
+    def test_seat_refused_without_design_context(self):
+        _cr_a, _inv, topo, att = _derive(
+            [Agent(kind=AgentKind.COMPUTE_TILE, count=4)])
+        twin = AgentAttachmentArtifact(
+            topology_hash=att.topology_hash,
+            endpoints=tuple(
+                Endpoint(e.endpoint_id, e.agent, e.router_id,
+                         99 if e.endpoint_id == 0 else e.port_id, e.interface)
+                for e in att.endpoints))
+        with pytest.raises(AttachmentError, match="seat capacity"):
+            twin.validate_against_topology(topo)
+
+    def test_wrong_topology_refused(self):
+        _cr_a, _inv, _topo, att = _derive(
+            [Agent(kind=AgentKind.COMPUTE_TILE, count=4)])
+        other = materialize_family(MaterializedFamily.MESH, endpoint_count=9)
+        with pytest.raises(AttachmentError, match="topology_hash"):
+            att.validate_against_topology(other)
+
+
 class TestSchemaRefusal:
     @pytest.mark.parametrize("version", [1, 2])
     def test_old_schema_refused(self, version):
