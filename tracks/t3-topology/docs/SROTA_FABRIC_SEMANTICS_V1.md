@@ -13,6 +13,7 @@
 |---|---|---|
 | 1.0 | B3.0 | Audit + first specification. |
 | 1.1 | B3.0.1 | Close fabric semantic ownership and identity gaps: RouteArtifact binds attachment; remove Topology/Attachment circularity; replace the linear chain with an artifact DAG; split RoutingClass (Route) from VC resources (VCAssignment); rename FlowControlArtifact → RouterBehaviorArtifact; single owner for flit width; `fabric_hash` is the same-fabric definition; separate `resolved_fabric_hash`; candidate provenance non-semantic; canonical numbering rules; `channel_id` and DirectedChannel-first link properties; derived packet capacities; structured SemanticLoss; consistent support vocabulary; closed buffer-depth/plane/address rulings; compiler-semantics-v1 migration rule. |
+| 1.2 | B3.2 | Two-tier routing: the router-level RouteArtifact (parent: topology only) is split from ResolvedRouteArtifact (parents: topology + attachment + router route), which owns endpoint→router, LOCAL_EJECTION and the expanded endpoint route-table hash. FabricArtifact binds `resolved_route_hash`. F6 can never PASS from two replicas of the same algorithm; it requires independent backend-emitted executed-route evidence. |
 
 This document defines what a resolved Srota fabric *is* before B3 code is
 written. It starts from hardware semantics and maps existing code onto them —
@@ -78,7 +79,7 @@ CompileRequest (B1)
   └── cli.cmd_compile ──► topology_adjacency (2nd builder) ; verify_design
 
 TopologyIR ──► to_booksim_cfg / to_analytical_yml / to_anynet / to_preset
-RouteArtifact ──► replica (anynet_dijkstra_hops) ──► F6 ; NOT consumed by BookSim/RTL
+ResolvedRouteArtifact ──► F6 requires independent backend-emitted executed evidence; replicas are INCONCLUSIVE
 deadlock_routing.py / flow_certifier.py ──► CDGs ──► CLI parses stdout
 scripts/rtlgen/gen_rtl.py ──► independently derives routes/VC/flit ──► RTL
 rtl/mot_htree + rtl/cdc ──► second RTL family, different layout, no harness
@@ -152,14 +153,19 @@ depends on.
               AgentAttachmentArtifact
               (TopologyArtifact + NodeInventory + MappingArtifact)
                     │           │
-          ┌─────────┘           └─────────┐
-          ▼                               ▼
-   RouteArtifact                  PacketFormatArtifact
-   (topology+attachment)          (attachment + vc assignment)
-          │                               ▲
-          ▼                               │
- VCAssignmentArtifact ────────────────────┘
- (route + design TrafficClass namespace)
+          ┌─────────┘           └──────────┐
+          ▼                                ▼
+   RouteArtifact                   PacketFormatArtifact
+   (topology only;                 (attachment + vc assignment)
+    router-level)                           ▲
+          │                                 │
+          ▼                                 │
+ ResolvedRouteArtifact
+ (topology + attachment + router_route)
+          │                                 │
+          ▼                                 │
+ VCAssignmentArtifact ──────────────────────┘
+ (resolved_route + design TrafficClass namespace)
           │
           ▼
  RouterBehaviorArtifact
@@ -167,7 +173,7 @@ depends on.
           │
           └──────────────┐
                          ▼
-                   FabricArtifact          (all six + plane composition)
+                   FabricArtifact          (all + plane composition)
                          │
                          ▼
                    fabric_hash
@@ -183,7 +189,8 @@ envelope; `CandidateRecord` is the non-semantic provenance record (§20).
 | router/link graph, ports, channels, seats | TopologyArtifact |
 | which AgentInstance occupies which seat | AgentAttachmentArtifact |
 | endpoint_id namespace | AgentAttachmentArtifact |
-| routing behavior (`RoutingClass`, next-hop sets) | RouteArtifact |
+| router routing behavior (`RoutingClass`, next-hop sets) | RouteArtifact (router-level) |
+| endpoint→router binding, LOCAL_EJECTION, endpoint route table | ResolvedRouteArtifact |
 | VC IDs, VC↔RoutingClass binding, transitions, escape designation | VCAssignmentArtifact |
 | TrafficClass vocabulary | Design revision (B1) |
 | flit width + header field layout + encodings | PacketFormatArtifact |
@@ -315,10 +322,12 @@ Router
   identity). Owned by the design revision (B1/WorkloadIR later). B3 does not
   define the full taxonomy.
 - **RoutingClass** — *which routing behavior a packet follows* (e.g. `FREE`,
-  `ESCAPE`, `LATENCY_ROUTE`, `CUSTOM_CLASS_3`). Owned by RouteArtifact.
+  `ESCAPE`, `LATENCY_ROUTE`, `CUSTOM_CLASS_3`). Owned by RouteArtifact
+  (router-level); carried into the endpoint realization by ResolvedRouteArtifact.
 
 The mapping is `TrafficClass → VC (VCAssignmentArtifact) → RoutingClass
-(RouteArtifact)`. The bare word "class" is never used for three things.
+(ResolvedRouteArtifact over RouteArtifact)`. The bare word "class" is never
+used for three things.
 
 ### 10.1 Policy vs realization
 - **RoutingPolicy** label: `dimension_order | minimal | minimal_adaptive |
@@ -328,18 +337,34 @@ The mapping is `TrafficClass → VC (VCAssignmentArtifact) → RoutingClass
   - adaptive: `(router, destination, RoutingClass, state) → allowed_next_hop_set`
 - A policy label is never certification evidence; the realization is.
 
-### 10.2 RouteArtifact
+### 10.2 RouteArtifact (router-level)
 Basis: existing `core/route_artifact.py` (strongest artifact). Reuse unchanged:
-all-pairs coverage, `topology_hash`, `route_table_hash`/`artifact_hash` domain
-separation, tie-break pinning, unit-weight enforcement, connectivity refusal,
+all-pairs coverage, `route_table_hash`/`artifact_hash` domain separation,
+tie-break pinning, unit-weight enforcement, connectivity refusal,
 sequential-id requirement. Evolve:
-- **Parent hashes: `topology_hash` + `attachment_hash`.** Routes are expressed
-  against destination endpoints, whose router attachment comes from the
-  attachment artifact; the router/link graph alone cannot determine them. Two
-  fabrics with identical graphs but different endpoint attachment must have
-  different route tables.
-- Add RoutingClass to entries (next-hop or allowed set by class); **no numeric
-  VC assignment here** (that is VCAssignmentArtifact).
+- **Parent hash: `topology_hash` only** — and for production it is
+  `TopologyArtifact.topology_hash()` EXACTLY (one topology identity after
+  B3.1). Standalone AnyNet graphs carry a routing-graph digest, exposed as
+  `routing_graph_hash_from_adj`; they make no fabric claims and pass no
+  endpoint identities.
+- Entries are router/routing-class → directed-channel realization; next-hop
+  router is derived from `channel_id` (parallel/express links are different
+  resources even at the same neighbor). The channel-level column lands with
+  the schema v2 route artifact (B3.2d); the current authoritative realization
+  is the all-pairs first-hop table, validated against materialized channels.
+- Add RoutingClass to entries; **no numeric VC assignment here** (that is
+  VCAssignmentArtifact).
+
+### 10.2.1 ResolvedRouteArtifact (fabric-level)
+Parents: `topology_hash`, `attachment_hash`, `router_route_hash`. Owns the
+endpoint interpretation: `endpoint_id → router_id`, `LOCAL_EJECTION` for
+traffic whose endpoints share a router (never a fabricated hop), the
+RoutingClass namespace, and an `endpoint_route_table_hash` computed from the
+expanded semantic realization — without duplicating the full expanded table.
+`from_dict` verifies SELF-integrity; `validate_against(topology, attachment,
+router_route)` proves reference legality at the seam. `FabricArtifact` binds
+`resolved_route_hash`, never the router-only `route_hash` — same router
+network with different endpoint placement must be a different fabric.
 - Bind and verify `topology_hash` against the materialized TopologyArtifact.
 - Refuse partial tables from the public extraction helper as hard as the
   constructor does.
@@ -349,6 +374,14 @@ sequential-id requirement. Evolve:
 > No deadlock or routing PASS may be produced unless the proof reasons about the
 > exact route realization used by the target backend/RTL, or mechanically proves
 > equivalence to it. No exceptions.
+
+**F6 invariant (B3.2):** F6 can never PASS from two independently generated
+replicas of the same algorithm. Python agreeing with Python is not evidence.
+PASS requires a `ResolvedRouteArtifact` plus independently backend-emitted
+executed-route evidence (`booksim_dumped_table`, `booksim_ingested_artifact`,
+`rtl_emitted_table`). Replica provenance is `INCONCLUSIVE`; unknown provenance
+is `UNSUPPORTED`; no resolved artifact is `NOT_RUN`. Until backend route
+evidence exists, F6 is honestly `NOT_RUN`/`UNSUPPORTED`.
 
 ### 10.4 Turn restrictions
 Compiler-owned LOCKED, derived from the route realization; either derived from
@@ -361,7 +394,7 @@ field (already true).
   credits.
 - **VCAssignmentArtifact owns** (and only these):
   ```
-  route_hash (parent)
+  resolved_route_hash (parent)
   vc_count
   VC IDs
   traffic_class → allowed_vc_set
@@ -401,8 +434,9 @@ CHANNEL_VC_DEPENDENCY_ACYCLIC
 ESCAPE_SUBNETWORK_THEOREM   (escape class must be a real, separate VC class)
 FORMAL_BOUNDED_CHECK
 ```
-Every certificate binds `topology_hash`, `attachment_hash`, `route_hash`,
-`vc_hash`, `router_behavior_hash`, `proof_method`, `evidence`, `tool`, `scope`.
+Every certificate binds `topology_hash`, `attachment_hash`,
+`resolved_route_hash`, `vc_hash`, `router_behavior_hash`, `proof_method`,
+`evidence`, `tool`, `scope`.
 
 Ruling: the abstract workload dependency graph and `derive_vc_*` are
 candidate-generation heuristics only, never the deadlock proof (verified doc
@@ -517,15 +551,23 @@ capacity. Parents: none (inputs NodeInventory + GUIDED recorded in envelope).
 `protocol`, clock domain, power domain. Parents: `topology_hash`,
 `mapping_hash`.
 
-### RouteArtifact
-Parent hashes `topology_hash`, `attachment_hash`; `routing_algorithm` (exact
-version); RoutingClass namespace; entries (deterministic next-hop or adaptive
-allowed set by class); `tie_break_policy`; `endpoint_assumptions`;
-`route_table_hash`; `artifact_hash`. No numeric VC assignment.
+### RouteArtifact (router-level)
+Parent hash `topology_hash` (== `TopologyArtifact.topology_hash()` for
+production; a routing-graph digest for standalone AnyNet); `routing_algorithm`
+(exact version); RoutingClass namespace; entries (deterministic next-hop or
+adaptive allowed set by class, ultimately `channel_id`); `tie_break_policy`;
+`route_table_hash`; `artifact_hash`. No attachment, no endpoint ids, no
+numeric VC assignment.
+
+### ResolvedRouteArtifact (fabric-level)
+Parents `topology_hash`, `attachment_hash`, `router_route_hash`; endpoint→router
+map; routing classes; `endpoint_route_table_hash` (expanded realization,
+`LOCAL_EJECTION` included); `resolved_route_hash`. `from_dict` = self-integrity;
+`validate_against(topology, attachment, router_route)` = parent legality.
 
 ### VCAssignmentArtifact
-Parent `route_hash` + design TrafficClass namespace; §11 fields; `artifact_hash`.
-No buffering.
+Parent `resolved_route_hash` + design TrafficClass namespace; §11 fields;
+`artifact_hash`. No buffering.
 
 ### PacketFormatArtifact
 Parent `attachment_hash` + `vc_assignment_hash`; §13 fields; derived capacities;
@@ -535,7 +577,7 @@ Parent `attachment_hash` + `vc_assignment_hash`; §13 fields; derived capacities
 Parent `vc_assignment_hash`; §14 fields; `artifact_hash`.
 
 ### FabricArtifact
-Parents: `topology_hash`, `attachment_hash`, `route_hash`,
+Parents: `topology_hash`, `attachment_hash`, `resolved_route_hash`,
 `vc_assignment_hash`, `packet_format_hash`, `router_behavior_hash`, plus
 `plane_composition`. Excludes backend bytes/paths/run ids/git/timestamps/seeds.
 `artifact_hash` = `fabric_hash`.
@@ -580,11 +622,12 @@ expected for analytical projection; fatal for exact RTL↔BookSim equivalence.
 |---|---|---|
 | TopologyArtifact | — | `srota/TopologyArtifact/v1` |
 | AgentAttachmentArtifact | topology_hash, mapping_hash | `srota/AgentAttachment/v1` |
-| RouteArtifact | topology_hash, attachment_hash | `srota/RouteArtifact/v1` |
-| VCAssignmentArtifact | route_hash | `srota/VCAssignment/v1` |
+| RouteArtifact | topology_hash | `srota/RouteArtifact/v1` |
+| ResolvedRouteArtifact | topology_hash, attachment_hash, router_route_hash | `srota/ResolvedRouteArtifact/v1` |
+| VCAssignmentArtifact | resolved_route_hash | `srota/VCAssignment/v1` |
 | PacketFormatArtifact | attachment_hash, vc_assignment_hash | `srota/PacketFormat/v1` |
 | RouterBehaviorArtifact | vc_assignment_hash | `srota/RouterBehavior/v1` |
-| FabricArtifact | topology, attachment, route, vc, packet, router_behavior, plane_composition | `srota/Fabric/v1` |
+| FabricArtifact | topology, attachment, resolved_route, vc, packet, router_behavior, plane_composition | `srota/Fabric/v1` |
 | BackendConfigArtifact | fabric_hash | `srota/BackendConfig/v1` |
 | ResolvedFabric | design_hash, mapping_hash, fabric_hash | `srota/ResolvedFabric/v1` |
 
@@ -595,7 +638,11 @@ Enforced at the ResolvedFabric seam (discharges B2's deferred parent binding):
 - every mapping agent exists in NodeInventory; kind agrees; group/instance exist;
 - every attachment endpoint references a real topology seat; every agent
   attaches exactly once; seats not exceeded;
-- **`route.attachment_hash == attachment.artifact_hash`** (refuse otherwise);
+- **`resolved_route.topology_hash == topology.topology_hash()`** and
+  **`resolved_route.attachment_hash == attachment.artifact_hash`** and
+  **`resolved_route.router_route_hash == route.artifact_hash`** (refuse
+  otherwise); `validate_against()` proves every endpoint and every needed
+  router pair is covered;
 - every route hop corresponds to a real `channel_id`; every destination
   reachable; no partial tables; entry legality re-validated on load;
 - every VC id `< vc_count`; every TrafficClass has legal VC eligibility; every VC
@@ -641,7 +688,7 @@ architecture-affecting value; `semantic_loss[]` lists anything unrepresentable.
 | link width/latency | none | **loss** — declared |
 
 ### 21.2 RTL
-Consumes TopologyArtifact adjacency/channels, RouteArtifact tables,
+Consumes TopologyArtifact adjacency/channels, ResolvedRouteArtifact tables,
 VCAssignmentArtifact bindings, PacketFormatArtifact layout,
 RouterBehaviorArtifact parameters, plane composition — never re-deriving them.
 Current generator violates this (C-01/C-04).
@@ -773,7 +820,9 @@ same `fabric_hash` and a different `resolved_fabric_hash`.
 
 - Topology: change one channel → `topology_hash` changes.
 - Attachment: move one agent to another seat → `attachment_hash` changes.
-- Route: change one next hop → `route_table_hash`/`route_hash` change.
+- Route: change one next hop → `route_table_hash`/`route_hash` change; move one
+  agent to another router at fixed router routes → `resolved_route_hash` changes
+  while `route_hash` does not.
 - VC: change one allowed VC or VC→RoutingClass binding → `vc_assignment_hash` changes.
 - Packet: move one field bit → `packet_format_hash` changes.
 - Router behavior: change buffer depth/allocator → `router_behavior_hash` changes.
@@ -793,9 +842,14 @@ same `fabric_hash` and a different `resolved_fabric_hash`.
 - **B3.1** — TopologyArtifact (materialized, canonical numbering) +
   AgentAttachmentArtifact; sizing from inventory/mapping; no `k=8,n=2`.
   Exit: one materialized topology; reports consume it.
-- **B3.2** — RouteArtifact convergence (topology+attachment parents,
-  RoutingClass); BookSim ingest/dump or `UNSUPPORTED`; kill replica-vs-replica
-  F6. Exit: exactly one hashed route realization per fabric.
+- **B3.2** — Two-tier routing: router RouteArtifact bound to the materialized
+  TopologyArtifact, plus ResolvedRouteArtifact binding topology + attachment +
+  router route. F6 requires the resolved artifact and independent
+  backend-emitted executed evidence; replica-vs-replica is rejected. BookSim
+  dump/ingest remains `UNSUPPORTED` until it lands. Exit: exactly one
+  authoritative router-route realization, exactly one endpoint-resolved
+  binding per candidate fabric, and no verification path can turn two
+  replicas into an F6 PASS.
 - **B3.3** — VCAssignmentArtifact + `(channel,VC)` CDG + proof registry; delete
   clamp semantics. Exit: deadlock PASS only with bound evidence.
 - **B3.4** — PacketFormatArtifact + RouterBehaviorArtifact + addressability.
@@ -823,8 +877,8 @@ B3.8 last.
 | `derive_vc_assignment` | EVOLVE | candidate generation, not proof |
 | `derive_topology_spec` | EVOLVE | size from inventory |
 | `booksim.build_config` | EVOLVE | declared-semantics lowerer |
-| `flow_certifier` route logic | EVOLVE | consume RouteArtifact |
-| RTL local route generation | DEPRECATE | consume RouteArtifact |
+| `flow_certifier` route logic | EVOLVE | consume ResolvedRouteArtifact |
+| RTL local route generation | DEPRECATE | consume ResolvedRouteArtifact |
 | report topology arithmetic | DELETE | render FabricArtifact |
 | `constants.BOOKSIM_DEFAULTS` | DELETE or DERIVE | one canonical table |
 | `FlowControlArtifact` (name) | RENAME | → RouterBehaviorArtifact |
@@ -860,7 +914,8 @@ If any answer is "it depends which file you look at", B3.0 is not done.
 
 1. no circular artifact derivation — §6, §6.1, §9;
 2. one owner per semantic — §6.1;
-3. RouteArtifact binds attachment + topology — §10.2, §17, §19;
+3. two-tier routing: RouteArtifact parent is topology only; ResolvedRouteArtifact
+   binds topology + attachment + router route — §10.2, §17, §19;
 4. RoutingClass separates Route from VC resources — §10.0, §11;
 5. VC and buffer ownership do not overlap — §11, §14;
 6. flit width has one owner — §8, §13;
