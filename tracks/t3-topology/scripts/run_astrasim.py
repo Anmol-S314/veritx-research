@@ -23,6 +23,7 @@ import re
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
@@ -48,9 +49,8 @@ _DEFAULT_FLIT_BYTES = 128
 _PACKETIZATION_MODEL = "single_wormhole_packet_per_send"
 # NOTE: --booksim2-embedded-mtu is the architecturally correct direction
 # (bounded packets instead of one message-sized packet) but is currently
-# EXPERIMENTAL / BROKEN for large sends: with thousands of fragments the
-# frontend stalls at its first cycle. Not wired into runs; B3 packetization
-# owns the proper fix.
+# EXPERIMENTAL / BROKEN: with fragments the frontend stalls at its first
+# cycle. Not wired into runs; B3 packetization owns the proper fix.
 
 
 def _resolve_flit_bytes(env=None) -> int:
@@ -97,42 +97,67 @@ def _packetization_banner(rec: dict) -> str:
 
 
 
-def _stall_update(fresh_text: str, stall_since, issued_since, now: float,
+@dataclass
+class _StallState:
+    """Historical progress, not per-poll deltas.
+
+    The old design only remembered a submission seen in the SAME poll batch
+    as the zero-drain marker, so `COLL_SUBMIT ×N` followed later by a drain
+    line was misclassified "nothing issued" while _n_sub was 16. Issue is a
+    one-way fact: once seen, this run is never the no-issue class.
+    """
+    ever_issued: bool = False
+    last_submit_at: float | None = None
+    last_progress_at: float | None = None
+    stall_since: float | None = None
+    armed: bool = False
+
+    def progress_ref(self) -> float | None:
+        return self.last_progress_at or self.last_submit_at or self.stall_since
+
+
+def _stall_update(fresh_text: str, state: _StallState, now: float,
                   limit_s: int, slow_limit_s: int):
-    """Backend-stall state machine. Pure function so --selfcheck pins it.
+    """Backend-stall state machine. Pure (mutates the passed state only) so
+    --selfcheck pins it.
 
     Two tiers (lesson of 2026-09-14: a healthy 64-rank 16 MB allreduce needs
     ~9 min, and `injected=0` at drain-start is NORMAL — the BookSim uniform
     counter never counts embedded API injection, and a 10 us comp node means
     nothing has injected yet when the drain line prints):
-    - no-issue hang (the original class: trace consumed, collective never
-      issued): armed on zero-injection drain, trips past limit_s.
-    - stuck collective (issued but never completes): trips past slow_limit_s.
-    Disarms fully on any rank completion; each COLL_COMPLETE re-arms the
-    slow clock (completions are progress). Draining WITH BookSim packets in
-    flight never arms. Returns (trip_kind, stall_since, issued_since) with
-    trip_kind None | "no-issue" | "stuck".
+    - no-issue hang: armed on zero-injection drain with NO historical
+      submission; trips past limit_s.
+    - stuck collective: a submission was seen; trips past slow_limit_s
+      counted from the last submit or completion.
+    A completion resets the progress clock; any sys[N] finished disarms.
+    Returns trip_kind None | "no-issue" | "stuck".
     """
     if _SYS_DONE_RE.search(fresh_text):
-        return None, None, None
-    submitted = bool(_COLL_SUBMIT_RE.search(fresh_text))
-    completed = bool(_COLL_DONE_RE.search(fresh_text))
-    if issued_since is not None and completed:
-        issued_since = now  # progress: a collective finished
-    if stall_since is None:
+        state.armed = False
+        state.stall_since = None
+        state.last_progress_at = now
+        return None
+    if _COLL_SUBMIT_RE.search(fresh_text):
+        state.ever_issued = True
+        state.last_submit_at = now
+    if _COLL_DONE_RE.search(fresh_text):
+        state.last_progress_at = now
+        if state.armed:
+            state.stall_since = now  # progress: restart the drain clock
+    if not state.armed:
         if _ZERO_DRAIN_RE.search(fresh_text):
-            stall_since = now
-            if submitted:
-                issued_since = now
-        return None, stall_since, issued_since
-    if submitted and issued_since is None:
-        issued_since = now  # work was issued: not the no-issue hang class
-    if issued_since is None:
-        if now - stall_since > limit_s:
-            return "no-issue", stall_since, issued_since
-    elif now - issued_since > slow_limit_s:
-        return "stuck", stall_since, issued_since
-    return None, stall_since, issued_since
+            state.armed = True
+            state.stall_since = now
+        return None
+    if state.ever_issued:
+        ref = state.progress_ref()
+        if ref is not None and now - ref > slow_limit_s:
+            return "stuck"
+        return None
+    if now - state.stall_since > limit_s:
+        return "no-issue"
+    return None
+
 
 HERE = Path(__file__).parent
 TRACK = HERE.parent
@@ -385,7 +410,7 @@ def run_astrasim_topology(
             _stall_limit = int(os.environ.get("ASTRASIM_STALL_S", "300"))
             _slow_limit = int(os.environ.get("ASTRASIM_SLOW_S", "900"))
             _scanned_out = _scanned_err = 0
-            _stall_since = _issued_since = None
+            _watch = _StallState()
             _was_issued = False
             _n_sub = _n_done = 0
             _last_stall_note = 0.0
@@ -419,21 +444,20 @@ def run_astrasim_topology(
                     _freshtxt = "".join(_fresh)
                     _n_sub += len(_COLL_SUBMIT_RE.findall(_freshtxt))
                     _n_done += len(_COLL_DONE_RE.findall(_freshtxt))
-                    _was_armed = _stall_since is not None
-                    _trip_kind, _stall_since, _issued_since = _stall_update(
-                        _freshtxt, _stall_since, _issued_since,
-                        _now, _stall_limit, _slow_limit)
-                    if _stall_since is not None and not _was_armed:
+                    _was_armed = _watch.armed
+                    _trip_kind = _stall_update(
+                        _freshtxt, _watch, _now, _stall_limit, _slow_limit)
+                    if _watch.armed and not _was_armed:
                         print(f"\n    ! {cfg_path.stem}: backend in zero-injection drain "
                               f"— killing in {_stall_limit}s unless work issues "
                               f"(slow-guard {_slow_limit}s once issued)",
                               flush=True)
-                    if _issued_since is not None and not _was_issued:
+                    if _watch.ever_issued and not _was_issued:
                         _was_issued = True
                         print(f"\n    | {cfg_path.stem}: collectives issuing "
                               f"({_n_sub} submitted) — awaiting completion "
                               f"(slow-guard {_slow_limit}s)", flush=True)
-                    if (_stall_since is not None and _now - _last_stall_note >= 60):
+                    if (_watch.armed and _now - _last_stall_note >= 60):
                         _last_stall_note = _now
                         print(f"\n    | {cfg_path.stem}: still running "
                               f"({_n_sub} submitted, {_n_done} completed)",
@@ -451,13 +475,14 @@ def run_astrasim_topology(
                         if _tail_lines:
                             _tail = " | stdout-tail: " + " / ".join(_tail_lines)
                         if _trip_kind == "stuck":
+                            _ref = _watch.progress_ref() or _now
                             raise TimeoutError(
                                 f"\nbackend stall: {_n_sub} collectives issued but none "
-                                f"completed for {_fmt_elapsed(_now - _issued_since)} "
+                                f"completed for {_fmt_elapsed(_now - _ref)} "
                                 f"(slow-guard {_slow_limit}s via ASTRASIM_SLOW_S)" + _tail)
                         raise TimeoutError(
                             f"\nbackend stall: trace injected 0 packets then drained "
-                            f"with nothing issued for {_fmt_elapsed(_now - _stall_since)} "
+                            f"with nothing issued for {_fmt_elapsed(_now - _watch.stall_since)} "
                             f"(limit {_stall_limit}s via ASTRASIM_STALL_S)" + _tail)
                     # Upward timer on one live line (\r, no newline): one line
                     # per topo instead of a heartbeat every minute. Tick every
@@ -682,38 +707,69 @@ def _selfcheck():
                        [{"topology": "a", "status": "ok"}])
     assert _m3 == [{"topology": "a", "status": "ok"}], _m3
 
-    # Stall watchdog state machine: arm only on zero-injection drain,
-    # disarm on any rank finish, trip past the limit. Draining WITH
-    # packets in flight must never arm (legitimately slow). Issued work
-    # (ledger submit) moves the run to the slow guard; completions reset it.
-    _t, _s, _i = _stall_update("routine chatter\n", None, None, 100.0, 300, 900)
-    assert (_t, _s, _i) == (None, None, None), (_t, _s, _i)
-    _t, _s, _i = _stall_update("[trace] All 10010 cycles, injected=0 — draining\n",
-                               None, None, 100.0, 300, 900)
-    assert (_t, _s, _i) == (None, 100.0, None), (_t, _s, _i)
-    _t, _s, _i = _stall_update("still quiet\n", 100.0, None, 200.0, 300, 900)
-    assert (_t, _s, _i) == (None, 100.0, None), (_t, _s, _i)
-    _t, _s, _i = _stall_update("still quiet\n", 100.0, None, 401.0, 300, 900)
-    assert (_t, _s, _i) == ("no-issue", 100.0, None), (_t, _s, _i)
-    _t, _s, _i = _stall_update("sys[3] finished, 99 cycles\n", 100.0, 200.0, 401.0, 300, 900)
-    assert (_t, _s, _i) == (None, None, None), (_t, _s, _i)
-    _t, _s, _i = _stall_update("[trace] All 5 cycles, injected=120 — draining\n",
-                               None, None, 100.0, 300, 900)
-    assert (_t, _s, _i) == (None, None, None), (_t, _s, _i)
-    # Issued work switches to the slow guard instead of tripping at 300s.
-    _t, _s, _i = _stall_update("[LEDGER][COLL_SUBMIT] rank=0\n", 100.0, None, 200.0, 300, 900)
-    assert (_t, _s, _i) == (None, 100.0, 200.0), (_t, _s, _i)
-    _t, _s, _i = _stall_update("quiet\n", 100.0, 200.0, 500.0, 300, 900)
-    assert (_t, _s, _i) == (None, 100.0, 200.0), (_t, _s, _i)  # 300s would have killed this
-    _t, _s, _i = _stall_update("quiet\n", 100.0, 200.0, 1101.0, 300, 900)
-    assert (_t, _s, _i) == ("stuck", 100.0, 200.0), (_t, _s, _i)
-    # A completion resets the slow clock (progress).
-    _t, _s, _i = _stall_update("[LEDGER][COLL_COMPLETE] rank=0\n", 100.0, 200.0, 1000.0, 300, 900)
-    assert (_t, _s, _i) == (None, 100.0, 1000.0), (_t, _s, _i)
-    # Submit + drain in the same batch arms already-issued.
-    _t, _s, _i = _stall_update("[LEDGER][COLL_SUBMIT] r=0\n[trace] All 1 cycles, injected=0 — draining\n",
-                               None, None, 100.0, 300, 900)
-    assert (_t, _s, _i) == (None, 100.0, 100.0), (_t, _s, _i)
+    # Stall watchdog state machine: historical progress, not per-poll deltas.
+    # Arm only on a zero-injection drain; a historical COLL_SUBMIT means the
+    # run is never the no-issue class (the 2026-09-19 misclassification);
+    # completions reset the slow clock; any rank finish disarms.
+    def _st(text, st, now, limit=300, slow=900):
+        return _stall_update(text, st, now, limit, slow)
+
+    st = _StallState()
+    assert _st("routine chatter\n", st, 100.0) is None
+    assert _st("[trace] All 10010 cycles, injected=0 — draining\n", st, 100.0) is None
+    assert st.armed and st.stall_since == 100.0
+    assert _st("still quiet\n", st, 200.0) is None
+    assert _st("still quiet\n", st, 401.0) == "no-issue"
+
+    # THE BUG: submit BEFORE the drain marker must not be classified no-issue.
+    st = _StallState()
+    assert _st("[LEDGER][COLL_SUBMIT] rank=0\n", st, 100.0) is None
+    assert _st("[trace] All 10010 cycles, injected=0 — draining\n", st, 110.0) is None
+    assert _st("quiet\n", st, 500.0) is None       # 300 s no-issue guard would kill
+    assert _st("quiet\n", st, 1101.0) == "stuck"   # slow guard from the submit
+
+    # Completion resets the slow clock.
+    st = _StallState()
+    _st("[LEDGER][COLL_SUBMIT] rank=0\n", st, 100.0)
+    _st("[trace] All 1 cycles, injected=0 — draining\n", st, 110.0)
+    _st("[LEDGER][COLL_COMPLETE] rank=0\n", st, 1000.0)
+    assert _st("quiet\n", st, 1500.0) is None
+    assert _st("quiet\n", st, 1901.0) == "stuck"
+
+    # Any rank finish disarms.
+    assert _st("sys[3] finished, 99 cycles\n", st, 2000.0) is None
+    assert not st.armed
+
+    # Draining WITH packets in flight never arms (legitimately slow).
+    st = _StallState()
+    assert _st("[trace] All 5 cycles, injected=120 — draining\n", st, 100.0) is None
+    assert not st.armed
+
+    # Submit + drain in one batch is issued, not no-issue.
+    st = _StallState()
+    assert _st("[LEDGER][COLL_SUBMIT] r=0\n"
+               "[trace] All 1 cycles, injected=0 — draining\n", st, 100.0) is None
+    assert st.ever_issued and st.armed
+    assert _st("quiet\n", st, 1001.0) == "stuck"
+
+    # Packetization provenance: comparison key, override labeling, derived bits.
+    rec = _packetization_record(_BACKEND_DEFAULT_FLIT_BYTES,
+                                message_size_bytes=16777216)
+    assert rec["packetization_fidelity"] == "backend_default"
+    assert rec["flit_bits"] == 64
+    rec = _packetization_record(128, message_size_bytes=16777216)
+    assert rec["packetization_fidelity"] == "coarse_packetization_override"
+    assert rec["flit_bytes"] == 128 and rec["flit_bits"] == 1024
+    assert rec["embedded_mtu_flits"] == 0
+    assert rec["packetization_model"] == "single_wormhole_packet_per_send"
+    assert _resolve_flit_bytes({}) == 128
+    assert _resolve_flit_bytes({"ASTRASIM_FLIT_BYTES": "512"}) == 512
+    for _bad in ("0", "-1", "nope"):
+        try:
+            _resolve_flit_bytes({"ASTRASIM_FLIT_BYTES": _bad})
+            raise AssertionError(f"accepted ASTRASIM_FLIT_BYTES={_bad!r}")
+        except ValueError:
+            pass
 
     print("selfcheck OK")
 

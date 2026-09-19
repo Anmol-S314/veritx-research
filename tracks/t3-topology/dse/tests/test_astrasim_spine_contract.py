@@ -227,6 +227,58 @@ def test_packetization_defaults_and_validation():
             run_astrasim._resolve_flit_bytes({"ASTRASIM_FLIT_BYTES": bad})
 
 
+class TestStallWatchdog:
+    """Historical issue progress, not per-poll deltas.
+
+    The old machine only remembered a submission seen in the same poll batch
+    as the zero-drain marker; 16 COLL_SUBMIT lines followed later by a drain
+    line were reported as "nothing issued" while the counter said 16.
+    """
+
+    def _st(self, text, st, now, limit=300, slow=900):
+        return run_astrasim._stall_update(text, st, now, limit, slow)
+
+    def test_submit_before_drain_is_never_no_issue(self):
+        st = run_astrasim._StallState()
+        self._st("[LEDGER][COLL_SUBMIT] rank=0\n", st, 100.0)
+        self._st("[trace] All 10010 cycles, injected=0 — draining\n", st, 110.0)
+        assert self._st("quiet\n", st, 500.0) is None    # 300s no-issue guard
+        assert self._st("quiet\n", st, 1101.0) == "stuck"
+
+    def test_no_historical_submit_trips_no_issue(self):
+        st = run_astrasim._StallState()
+        self._st("[trace] All 5 cycles, injected=0 — draining\n", st, 100.0)
+        assert self._st("quiet\n", st, 200.0) is None
+        assert self._st("quiet\n", st, 401.0) == "no-issue"
+
+    def test_completion_resets_the_progress_clock(self):
+        st = run_astrasim._StallState()
+        self._st("[LEDGER][COLL_SUBMIT] rank=0\n", st, 100.0)
+        self._st("[trace] All 1 cycles, injected=0 — draining\n", st, 110.0)
+        self._st("[LEDGER][COLL_COMPLETE] rank=0\n", st, 1000.0)
+        assert self._st("quiet\n", st, 1500.0) is None
+        assert self._st("quiet\n", st, 1901.0) == "stuck"
+
+    def test_rank_finish_disarms(self):
+        st = run_astrasim._StallState()
+        self._st("[trace] All 1 cycles, injected=0 — draining\n", st, 100.0)
+        assert st.armed
+        assert self._st("sys[3] finished, 99 cycles\n", st, 200.0) is None
+        assert not st.armed
+
+    def test_packets_in_flight_never_arm(self):
+        st = run_astrasim._StallState()
+        self._st("[trace] All 5 cycles, injected=120 — draining\n", st, 100.0)
+        assert not st.armed
+
+    def test_submit_and_drain_same_batch_is_issued(self):
+        st = run_astrasim._StallState()
+        self._st("[LEDGER][COLL_SUBMIT] r=0\n"
+                 "[trace] All 1 cycles, injected=0 — draining\n", st, 100.0)
+        assert st.ever_issued and st.armed
+        assert self._st("quiet\n", st, 1001.0) == "stuck"
+
+
 # Real-binary ABI canary: guards the Python ET writer ↔ ETFeederNode ↔ Sys
 # seam (the field-9 comm_size mismatch silently decoded as 0 and stalled the
 # run). Gated on the host-built frontend.
