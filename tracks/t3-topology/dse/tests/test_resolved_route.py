@@ -92,6 +92,41 @@ def test_validate_against_refuses_wrong_parents():
         rra.validate_against(topo, other_att, rr)
 
 
+def test_one_class_route_mutation_changes_every_route_hash():
+    """Same topology/attachment/classes; changing one class's channel
+    choice for one pair must change route_table_hash, router_route_hash,
+    endpoint_route_table_hash and resolved_route_hash, while topology and
+    attachment stay identical."""
+    from veritx_dse.core.route_artifact import (
+        ANYNET_MIN_HOPS, DOR_XY, RouteArtifact,
+    )
+    topo, att, _rr = _fabric(4)
+    rr = RouteArtifact.from_topology(
+        topo, name="t", routing_classes=(ANYNET_MIN_HOPS, DOR_XY))
+    base = derive_resolved_route(topo, att, rr)
+
+    entries = dict(rr.entries)
+    old = entries[(DOR_XY, 0, 3)]
+    by_id = {c.channel_id: c for c in topo.channels}
+    alt = next(c.channel_id for c in topo.channels
+               if c.src_router == 0 and c.channel_id != old)
+    entries[(DOR_XY, 0, 3)] = alt
+    mutated = RouteArtifact(
+        schema_version=rr.schema_version, name=rr.name,
+        topology_hash=rr.topology_hash, routing_classes=rr.routing_classes,
+        entries=entries)
+    mutated.validate_against(topo)
+    assert by_id[alt].dst_router != by_id[old].dst_router
+    after = derive_resolved_route(topo, att, mutated)
+
+    assert after.topology_hash == base.topology_hash
+    assert after.attachment_hash == base.attachment_hash
+    assert mutated.route_table_hash != rr.route_table_hash
+    assert mutated.artifact_hash != rr.artifact_hash
+    assert after.endpoint_route_table_hash != base.endpoint_route_table_hash
+    assert after.resolved_route_hash() != base.resolved_route_hash()
+
+
 def test_resolved_self_integrity_on_load():
     topo, att, rr = _fabric(4)
     rra = derive_resolved_route(topo, att, rr)
@@ -109,6 +144,21 @@ def test_unknown_fields_refused():
     d["router"] = 1
     with pytest.raises(ResolvedRouteError, match="unknown fields"):
         ResolvedRouteArtifact.from_dict(d)
+
+
+def test_schema_v1_resolved_route_is_refused():
+    topo, att, rr = _fabric(4)
+    d = derive_resolved_route(topo, att, rr).to_dict()
+    d["schema_version"] = 1
+    with pytest.raises(ResolvedRouteError, match="v1|migration"):
+        ResolvedRouteArtifact.from_dict(d)
+
+
+def test_derive_refuses_a_v1_router_route():
+    topo, att, rr = _fabric(4)
+    object.__setattr__(rr, "schema_version", 1)
+    with pytest.raises(ResolvedRouteError, match="v1|v2"):
+        derive_resolved_route(topo, att, rr)
 
 
 # ── router RouteArtifact ↔ TopologyArtifact binding ─────────────────────────

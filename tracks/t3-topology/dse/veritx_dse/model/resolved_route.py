@@ -4,18 +4,27 @@ A router-level route table is NOT a fabric routing truth. It says how a
 packet moves between ROUTERS; a fabric is routed between ENDPOINTS, whose
 attachment to routers is a separate artifact (AgentAttachmentArtifact).
 
-    TopologyArtifact ──► RouteArtifact (router-level)
+    TopologyArtifact ──► RouteArtifact (router-level, class-aware v2)
             │                    │
             ▼                    ▼
     AgentAttachmentArtifact ──► ResolvedRouteArtifact
                                      │
                                      ▼
-                              FabricArtifact (later: resolved_route_hash)
+                              VCAssignmentArtifact (later)
 
 ResolvedRouteArtifact binds the exact three parents and owns the endpoint
 interpretation: endpoint → router, local traffic as LOCAL_EJECTION (a rank
 whose source and destination share a router does not take a network hop),
-and an expanded endpoint route-table hash that is independently checkable.
+and an expanded endpoint route-table hash that covers every
+(endpoint_src, endpoint_dst, routing_class) row with the EXACT first
+channel realization selected by the class-specific router table.
+
+Identity vs transport (B3.0, applied): the artifact hash covers this
+artifact's semantic fields; the endpoint route table has its own hash so a
+consumer can check the expansion without re-deriving it.
+
+Schema v1 (classless, next-router expansion) is REFUSED on the
+authoritative path — no silent migration. Rebuild from a v2 router route.
 
 Standalone AnyNet tooling keeps using the router-level RouteArtifact and
 makes no endpoint claims — no synthetic attachments are invented here.
@@ -29,7 +38,7 @@ from typing import Any
 from .attachment import AgentAttachmentArtifact
 from .topology_artifact import TopologyArtifact
 
-RESOLVED_ROUTE_SCHEMA_VERSION = 1
+RESOLVED_ROUTE_SCHEMA_VERSION = 2
 _HASH_TYPE_TAG = "srota/ResolvedRouteArtifact"
 LOCAL_EJECTION = "LOCAL_EJECTION"
 DEFAULT_ROUTING_CLASS = "DEFAULT"
@@ -55,9 +64,18 @@ def _need(d: dict[str, Any], key: str, where: str) -> Any:
     return d[key]
 
 
+def _router_route_classes(router_route) -> tuple[str, ...]:
+    definitions = getattr(router_route, "routing_classes", None)
+    if not definitions:
+        raise ResolvedRouteError(
+            "router route does not declare routing classes (schema v2 "
+            "requires RoutingClassDefinition entries)")
+    return tuple(d.id for d in definitions)
+
+
 @dataclass(frozen=True)
 class ResolvedRouteArtifact:
-    """Endpoint-resolved routing for one candidate fabric."""
+    """Endpoint-resolved, class-aware routing for one candidate fabric."""
 
     topology_hash: str
     attachment_hash: str
@@ -82,13 +100,28 @@ class ResolvedRouteArtifact:
         if eids != list(range(len(eids))):
             raise ResolvedRouteError(
                 "endpoint ids must be contiguous from 0")
-        if not isinstance(self.routing_classes, tuple) or not self.routing_classes:
+        for eid, router_id in self.endpoint_to_router:
+            if type(eid) is not int or type(router_id) is not int:
+                raise ResolvedRouteError(
+                    "endpoint_to_router entries must be (int, int)")
+            if router_id < 0:
+                raise ResolvedRouteError(
+                    f"endpoint {eid} references router {router_id} < 0")
+        if not isinstance(self.routing_classes, tuple) \
+                or not self.routing_classes:
             raise ResolvedRouteError("routing_classes must be non-empty")
+        for cls in self.routing_classes:
+            if not isinstance(cls, str) or not cls:
+                raise ResolvedRouteError(
+                    "routing class ids must be non-empty strings")
+        if len(set(self.routing_classes)) != len(self.routing_classes):
+            raise ResolvedRouteError("routing class ids must be unique")
         if type(self.schema_version) is not int or \
                 self.schema_version != RESOLVED_ROUTE_SCHEMA_VERSION:
             raise ResolvedRouteError(
                 f"unsupported resolved-route schema_version "
-                f"{self.schema_version!r}")
+                f"{self.schema_version!r} (expected "
+                f"{RESOLVED_ROUTE_SCHEMA_VERSION})")
         expected = self._compute_hash()
         if self.artifact_hash and self.artifact_hash != expected:
             raise ResolvedRouteError(
@@ -123,16 +156,22 @@ class ResolvedRouteArtifact:
 
     # ── serialization (self-integrity only) ────────────────────────────
     @classmethod
-    def from_dict(cls, d: Any) -> ResolvedRouteArtifact:
+    def from_dict(cls, d: Any) -> "ResolvedRouteArtifact":
         """Deserialize and verify SELF-integrity only.
 
         Reference legality against the parents (topology/attachment/router
         route) is a seam check: call ``validate_against`` after loading.
+        Schema v1 is refused — rebuild from a v2 router route instead.
         """
         _strict_keys(d, frozenset({
             "type", "schema_version", "topology_hash", "attachment_hash",
             "router_route_hash", "endpoint_to_router", "routing_classes",
             "endpoint_route_table_hash", "artifact_hash"}), "resolved_route")
+        if _need(d, "schema_version", "resolved_route") == 1:
+            raise ResolvedRouteError(
+                "ResolvedRouteArtifact schema v1 is refused on the "
+                "authoritative path (classless next-router expansion); "
+                "rebuild from a v2 RouteArtifact — no silent migration")
         pairs = _need(d, "endpoint_to_router", "resolved_route")
         if not isinstance(pairs, list):
             raise ResolvedRouteError("endpoint_to_router must be a list")
@@ -166,6 +205,15 @@ class ResolvedRouteArtifact:
         if self.router_route_hash != getattr(router_route, "artifact_hash", ""):
             raise ResolvedRouteError(
                 "router_route_hash does not match the router route artifact")
+        if getattr(router_route, "schema_version", None) != 2:
+            raise ResolvedRouteError(
+                "router route is not schema v2 (class-aware channel "
+                "realization) — refusing to resolve endpoints against it")
+        expected_classes = _router_route_classes(router_route)
+        if set(self.routing_classes) != set(expected_classes):
+            raise ResolvedRouteError(
+                f"routing_classes {list(self.routing_classes)} do not match "
+                f"the router route classes {list(expected_classes)}")
         expected_pairs = tuple(
             (e.endpoint_id, e.router_id) for e in attachment.endpoints)
         if self.endpoint_to_router != expected_pairs:
@@ -185,16 +233,18 @@ class ResolvedRouteArtifact:
                 inj, eje = by_id[src], by_id[dst]
                 if inj == eje:
                     continue  # LOCAL_EJECTION needs no router entry
-                if (inj, eje) not in entries:
-                    raise ResolvedRouteError(
-                        f"router route has no entry for ({inj},{eje}) needed "
-                        f"by endpoint flow ({src}->{dst})")
+                for cls in self.routing_classes:
+                    if (cls, inj, eje) not in entries:
+                        raise ResolvedRouteError(
+                            f"router route has no {cls} entry for "
+                            f"({inj},{eje}) needed by endpoint flow "
+                            f"({src}->{dst})")
 
 
 def _endpoint_route_table(
         endpoint_to_router: tuple[tuple[int, int], ...],
         routing_classes: tuple[str, ...],
-        router_entries: dict[tuple[int, int], int],
+        router_entries: dict[tuple[str, int, int], int],
 ) -> list[list[Any]]:
     by_id = dict(endpoint_to_router)
     rows: list[list[Any]] = []
@@ -207,29 +257,39 @@ def _endpoint_route_table(
                 if inj == eje:
                     rows.append([src, dst, cls, LOCAL_EJECTION, None])
                 else:
+                    key = (cls, inj, eje)
+                    if key not in router_entries:
+                        raise ResolvedRouteError(
+                            f"router route has no {cls} entry for "
+                            f"({inj},{eje}) needed by endpoint flow "
+                            f"({src}->{dst})")
                     rows.append([src, dst, cls, "ROUTED",
-                                 int(router_entries[(inj, eje)])])
+                                 int(router_entries[key])])
     return rows
 
 
 def derive_resolved_route(topology: TopologyArtifact,
                           attachment: AgentAttachmentArtifact,
                           router_route) -> ResolvedRouteArtifact:
-    """Bind a router route realization to a materialized topology and the
+    """Bind a class-aware router route to a materialized topology and the
     endpoint attachment, and compute the expanded endpoint routing hash."""
     from veritx_dse.core.spec import canonical_json
 
+    if getattr(router_route, "schema_version", None) != 2:
+        raise ResolvedRouteError(
+            "derive_resolved_route requires a schema v2 RouteArtifact "
+            "(class-aware channel realization); v1 is refused — call "
+            "upgrade_v1_to_v2() explicitly if migration is intended")
     pairs = tuple((e.endpoint_id, e.router_id) for e in attachment.endpoints)
     for _eid, router_id in pairs:
         if not 0 <= router_id < topology.router_count:
             raise ResolvedRouteError(
                 f"attachment references router {router_id} outside the "
                 "materialized topology")
-    classes = tuple(getattr(router_route, "routing_classes",
-                            (DEFAULT_ROUTING_CLASS,)))
+    classes = _router_route_classes(router_route)
     rows = _endpoint_route_table(pairs, classes, dict(router_route.entries))
     table_hash = hashlib.sha256(
-        (f"{_HASH_TYPE_TAG}/endpoint-table/v1\0"
+        (f"{_HASH_TYPE_TAG}/endpoint-table/v2\0"
          + canonical_json(rows)).encode()).hexdigest()
     artifact = ResolvedRouteArtifact(
         topology_hash=topology.topology_hash(),

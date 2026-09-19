@@ -37,13 +37,20 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from veritx_dse.core.anynet import parse_anynet_file
 from veritx_dse.core.paths import REPO
 from veritx_dse.core.route_artifact import (
+    ANYNET_MIN_HOPS,
+    ANYNET_MIN_HOPS_DEFINITION,
+    DOR_XY,
     ROUTING_ALGORITHM,
+    TIE_BREAK_POLICY,
     RouteArtifact,
     RouteArtifactError,
     artifact_from_anynet,
     equivalence_report,
+    first_hop_table,
     route_entries_from_adj,
+    standalone_channel_dst,
     topology_hash_from_adj,
+    upgrade_v1_to_v2,
 )
 from veritx_dse.tools.deadlock_routing import booksim_first_hop_table
 
@@ -68,12 +75,14 @@ class TestConstruction:
     def test_valid_construction_records_executed_semantics(self):
         adj = _ring_adj(4)
         art = RouteArtifact.from_adjacency(adj, name="ring4")
-        assert art.schema_version == 1
-        assert art.routing_algorithm == "anynet_dijkstra_hops"
+        assert art.schema_version == 2
+        definition = art.routing_classes[0]
+        assert definition.id == ANYNET_MIN_HOPS
+        assert definition.algorithm == "anynet_dijkstra_hops"
         assert art.topology_hash.startswith("sha256:")
         assert art.route_table_hash.startswith("sha256:")
         assert art.artifact_hash.startswith("sha256:")
-        assert art.tie_break_policy, "tie-break policy must be documented"
+        assert dict(definition.parameters)["tie_break_policy"]
 
     def test_unknown_algorithm_fails_closed(self):
         with pytest.raises(RouteArtifactError, match="routing_algorithm"):
@@ -151,8 +160,9 @@ class TestHashing:
     def test_tampered_entries_detected_on_load(self):
         art = RouteArtifact.from_adjacency(_ring_adj(4), name="rt")
         d = art.serialize()
-        d["entries"]["0|2"] = "3"  # lie about a next hop
-        with pytest.raises(RouteArtifactError, match="hash mismatch"):
+        key = next(iter(d["entries"]))
+        d["entries"][key] = int(d["entries"][key]) + 1  # lie about a channel
+        with pytest.raises(RouteArtifactError, match="route_table_hash"):
             RouteArtifact.from_dict(d)
 
 
@@ -163,7 +173,7 @@ class TestExtraction:
         adj = _square_grid()
         art = RouteArtifact.from_adjacency(adj, name="grid")
         replica = booksim_first_hop_table(len(adj), adj)
-        assert dict(art.entries) == replica
+        assert first_hop_table(art, standalone_channel_dst(adj)) == replica
 
     def test_from_anynet_real_topology(self):
         if not ANYNET16.exists():
@@ -173,7 +183,8 @@ class TestExtraction:
         assert len(art.entries) == g.n_routers * (g.n_routers - 1)
         replica = booksim_first_hop_table(
             g.n_routers, g.sequential_adj())
-        assert dict(art.entries) == replica
+        assert first_hop_table(
+            art, standalone_channel_dst(g.sequential_adj())) == replica
 
     def test_topology_hash_canonicalizes_noise(self):
         # adjacency construction order/set representation is transport,
@@ -191,7 +202,9 @@ class TestEquivalence:
     def test_identical_tables_report_comparable(self):
         adj = _square_grid()
         art = RouteArtifact.from_adjacency(adj, name="grid")
-        rep = equivalence_report(art, booksim_first_hop_table(len(adj), adj))
+        rep = equivalence_report(
+            art, booksim_first_hop_table(len(adj), adj),
+            channel_dst=standalone_channel_dst(adj))
         assert rep["status"] == "COMPARABLE"
         assert rep["mismatched"] == []
         assert rep["coverage"]["matched"] == rep["coverage"]["artifact_flows"]
@@ -203,7 +216,8 @@ class TestEquivalence:
         flow = next(iter(executed))
         executed[flow] = next(
             n for n in adj[flow[0]] if n != executed[flow])
-        rep = equivalence_report(art, executed)
+        rep = equivalence_report(
+            art, executed, channel_dst=standalone_channel_dst(adj))
         assert rep["status"] == "DIVERGENT"
         assert len(rep["mismatched"]) == 1
         m = rep["mismatched"][0]
@@ -216,7 +230,8 @@ class TestEquivalence:
         art = RouteArtifact.from_adjacency(adj, name="r")
         executed = booksim_first_hop_table(4, adj)
         del executed[(0, 2)]
-        rep = equivalence_report(art, executed)
+        rep = equivalence_report(
+            art, executed, channel_dst=standalone_channel_dst(adj))
         assert rep["status"] == "DIVERGENT"
         assert any(m["src"] == 0 and m["dst"] == 2
                    for m in rep["missing_in_executed"])
@@ -264,7 +279,9 @@ class TestF6Evidence:
         from veritx_dse.model.compile_model import verify_design
         cr, rr, rra = self._fabric()
         adj = _ring_adj(4)
-        rep = equivalence_report(rr, booksim_first_hop_table(4, adj))
+        rep = equivalence_report(
+            rr, booksim_first_hop_table(4, adj),
+            channel_dst={ch: 0 for ch in set(rr.entries.values())})
         vr = verify_design(cr, evidence={
             "resolved_route_artifact": rra.to_dict(),
             "executed_route_evidence": {
@@ -329,3 +346,175 @@ class TestF6Evidence:
         f6 = self._f6(vr)
         assert f6["status"] == "FAIL"
         assert "untrusted" in f6["detail"].lower()
+
+
+# ── B3.2d: routing classes, exact resources, whole-route termination ───────
+
+def _mesh_topo(k: int):
+    from veritx_dse.model.topology_artifact import (
+        MaterializedFamily, materialize_family,
+    )
+    return materialize_family(MaterializedFamily.MESH, endpoint_count=k * k)
+
+
+def _adjacency_of(topo):
+    adj = {r.router_id: set() for r in topo.routers}
+    for c in topo.channels:
+        adj[c.src_router].add(c.dst_router)
+    return adj
+
+
+def _walk(art, topo, cls, s, t):
+    by_id = {c.channel_id: c for c in topo.channels}
+    cur = s
+    while cur != t:
+        ch = by_id[art.entries[(cls, cur, t)]]
+        yield ch
+        cur = ch.dst_router
+
+
+class TestDORXY:
+    @pytest.mark.parametrize("k", (2, 3, 4))
+    def test_dor_xy_is_minimal_and_x_before_y(self, k):
+        topo = _mesh_topo(k)
+        art = RouteArtifact.from_topology(
+            topo, name=f"mesh{k}", routing_classes=(DOR_XY,))
+        assert art.routing_classes[0].algorithm == "dimension_order"
+        assert dict(art.routing_classes[0].parameters) == {
+            "dimension_order": ("x", "y"), "wraparound": False}
+        coord = {r.router_id: r.coordinates for r in topo.routers}
+        for s in coord:
+            for t in coord:
+                if s == t:
+                    continue
+                path = list(_walk(art, topo, DOR_XY, s, t))
+                sx, sy = coord[s]
+                tx, ty = coord[t]
+                assert len(path) == abs(sx - tx) + abs(sy - ty)
+                if sx != tx:
+                    assert coord[path[0].dst_router][0] != sx
+                moved_y = False
+                cur = s
+                for ch in path:
+                    a, b = coord[cur], coord[ch.dst_router]
+                    if b[1] != a[1]:
+                        moved_y = True
+                    if moved_y:
+                        assert b[0] == a[0], "X movement after a Y turn"
+                    cur = ch.dst_router
+
+    def test_dor_xy_refuses_torus_and_ring(self):
+        from veritx_dse.model.topology_artifact import (
+            MaterializedFamily, materialize_family,
+        )
+        for family in (MaterializedFamily.TORUS, MaterializedFamily.RING):
+            topo = materialize_family(family, endpoint_count=4)
+            with pytest.raises(RouteArtifactError, match="DOR_XY"):
+                RouteArtifact.from_topology(
+                    topo, name=family.value, routing_classes=(DOR_XY,))
+
+    def test_unknown_class_refused(self):
+        with pytest.raises(RouteArtifactError, match="unknown routing class"):
+            RouteArtifact.from_topology(
+                _mesh_topo(2), name="x", routing_classes=("MAGIC",))
+
+
+class TestV1Migration:
+    def _v1(self, adj, name="legacy"):
+        return {
+            "schema_version": 1,
+            "name": name,
+            "topology_hash": topology_hash_from_adj(adj),
+            "routing_algorithm": ROUTING_ALGORITHM,
+            "tie_break_policy": TIE_BREAK_POLICY,
+            "entries": {f"{s}|{t}": nh for (s, t), nh
+                        in sorted(route_entries_from_adj(adj).items())},
+            "route_table_hash": "sha256:x",
+            "artifact_hash": "sha256:y",
+        }
+
+    def test_v1_direct_load_is_refused(self):
+        with pytest.raises(RouteArtifactError,
+                           match="v1|upgrade_v1_to_v2"):
+            RouteArtifact.from_dict(self._v1(_ring_adj(4)))
+
+    def test_upgrade_unique_hops_succeeds_and_is_deterministic(self):
+        topo = _mesh_topo(2)
+        v1 = self._v1(_adjacency_of(topo))
+        a = upgrade_v1_to_v2(v1, topo)
+        b = upgrade_v1_to_v2(v1, topo)
+        assert a.artifact_hash == b.artifact_hash
+        assert a.routing_classes[0].id == ANYNET_MIN_HOPS
+        assert "upgraded" in a.provenance
+        fresh = RouteArtifact.from_topology(
+            topo, name="x", routing_classes=(ANYNET_MIN_HOPS,))
+        assert a.route_table_hash == fresh.route_table_hash
+        assert a.artifact_hash == fresh.artifact_hash
+
+    def test_upgrade_parallel_links_refused_as_ambiguous(self):
+        from veritx_dse.model.topology_artifact import (
+            DirectedChannel, MaterializedFamily, Router, TopologyArtifact,
+        )
+        topo = TopologyArtifact(
+            family=MaterializedFamily.MESH,
+            routers=(Router(0, (0, 0), 1), Router(1, (1, 0), 1)),
+            channels=(
+                DirectedChannel(0, 0, 0, 1, 0, 64, 1),
+                DirectedChannel(1, 0, 1, 1, 1, 64, 1),
+                DirectedChannel(2, 1, 0, 0, 0, 64, 1),
+            ),
+        )
+        v1 = self._v1({0: {1}, 1: {0}})
+        with pytest.raises(RouteArtifactError, match="ambiguous"):
+            upgrade_v1_to_v2(v1, topo)
+
+    def test_provenance_does_not_change_identity(self):
+        topo = _mesh_topo(2)
+        base = RouteArtifact.from_topology(
+            topo, name="m", routing_classes=(ANYNET_MIN_HOPS,))
+        twin = RouteArtifact(
+            schema_version=base.schema_version,
+            name="other",
+            topology_hash=base.topology_hash,
+            routing_classes=base.routing_classes,
+            entries=dict(base.entries),
+            provenance="explanatory migration text is not identity",
+        )
+        assert twin.route_table_hash == base.route_table_hash
+        assert twin.artifact_hash == base.artifact_hash
+
+
+class TestWholeRouteTermination:
+    def test_locally_legal_but_looping_table_refused(self):
+        topo = _mesh_topo(2)
+        by_hop = {}
+        for c in topo.channels:
+            by_hop.setdefault((c.src_router, c.dst_router), []).append(
+                c.channel_id)
+        base = RouteArtifact.from_topology(
+            topo, name="m", routing_classes=(ANYNET_MIN_HOPS,))
+        entries = dict(base.entries)
+        # destination 3: 0 -> 1 and 1 -> 0 are each a legal first channel,
+        # but together they never reach 3.
+        entries[(ANYNET_MIN_HOPS, 0, 3)] = min(by_hop[(0, 1)])
+        entries[(ANYNET_MIN_HOPS, 1, 3)] = min(by_hop[(1, 0)])
+        art = RouteArtifact(
+            schema_version=2, name="loop",
+            topology_hash=topo.topology_hash(),
+            routing_classes=(ANYNET_MIN_HOPS_DEFINITION,),
+            entries=entries)
+        with pytest.raises(RouteArtifactError, match="routing loop"):
+            art.validate_against(topo)
+
+    def test_wrong_class_entry_is_refused_at_construction(self):
+        topo = _mesh_topo(2)
+        base = RouteArtifact.from_topology(
+            topo, name="m", routing_classes=(ANYNET_MIN_HOPS,))
+        entries = {(DOR_XY, s, t): ch
+                   for (cls, s, t), ch in base.entries.items()}
+        with pytest.raises(RouteArtifactError, match="undeclared"):
+            RouteArtifact(
+                schema_version=2, name="x",
+                topology_hash=topo.topology_hash(),
+                routing_classes=(ANYNET_MIN_HOPS_DEFINITION,),
+                entries=entries)

@@ -104,7 +104,8 @@ class TestRouteTablePersistence:
         assert r.returncode == 0, r.stderr[-400:]
         cert = json.loads((tmp_path / "cert.json").read_text())
         ra = cert["route_artifact"]
-        assert ra["routing_algorithm"] == "anynet_dijkstra_hops"
+        assert ra["schema_version"] == 2
+        assert ra["routing_classes"][0]["id"] == "ANYNET_MIN_HOPS"
         assert len(ra["entries"]) == 4 * 3          # all-pairs minus diag
         from veritx_dse.core.route_artifact import RouteArtifact
         art = RouteArtifact.from_dict(ra)            # raises on hash mismatch

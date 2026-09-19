@@ -6,16 +6,18 @@ channels the resource is `(channel, vc)`, so the graph must be built over
 `(channel, vc)` nodes with VC-transition edges, not over physical channels.
 
 Nodes: every directed channel × every VC id in the VCAssignmentArtifact.
-Edges: a packet on `(c_in, vc_in)` that arrives at router v and continues
-toward any destination w uses an outgoing channel `c_out = v -> next(v, w)`
-under the routing class of `vc_out`; the edge exists for every
-`(vc_in -> vc_out)` transition the artifact allows. Ejection (w == v) adds
-no edge. Parallel channels to the same neighbor are distinct resources and
-all receive edges.
+Edges: for the route class the packet uses, a packet on `(c_in, vc_in)`
+that reaches router v en route to destination d requests the EXACT
+outgoing channel `(class, v, d)` from the v2 RouteArtifact; the edge
+exists for every `(vc_in -> vc_out)` transition the artifact allows.
+Ejection (d == v) adds no edge. Channel ids are exact hardware resources:
+the v1 next-router ambiguity is gone.
 
 This certifier is honest about what it does NOT know:
-  * only the DEFAULT routing class is interpretable today (the router-level
-    route artifact is class-less; schema v2 adds classes);
+  * B3.2d interim: every VC must use one class (the router route's
+    default). Selecting the class from `vc_out` per transition is B3.3d;
+    until then a multi-class VC assignment is UNSUPPORTED, never a
+    guessed PASS;
   * allowed transitions default to VC-preserving, so no escape subnetwork
     is conjured to launder a cyclic physical graph into a PASS;
   * buffering is not modeled — `CHANNEL_VC_DEPENDENCY_ACYCLIC` does not
@@ -32,9 +34,7 @@ from typing import Any
 
 from veritx_dse.model.resolved_route import ResolvedRouteArtifact
 from veritx_dse.model.topology_artifact import TopologyArtifact
-from veritx_dse.model.vc_assignment import (
-    DEFAULT_ROUTING_CLASS, VCAssignmentArtifact,
-)
+from veritx_dse.model.vc_assignment import VCAssignmentArtifact
 
 CHANNEL_VC_DEPENDENCY_ACYCLIC = "CHANNEL_VC_DEPENDENCY_ACYCLIC"
 
@@ -64,11 +64,7 @@ class ChannelVCCDG:
 
     nodes: tuple[tuple[int, int], ...]           # (channel_id, vc)
     edges: tuple[tuple[tuple[int, int], tuple[int, int]], ...]
-    # Number of routing decisions where the v1 table named a next ROUTER
-    # that had more than one parallel directed channel. Each such decision
-    # conservatively depends on every parallel channel (false FAIL is safe,
-    # false PASS is not; schema v2 names a channel_id exactly).
-    conservative_expansions: int = 0
+    cdg_route_class: str = ""
 
     @property
     def node_count(self) -> int:
@@ -132,28 +128,22 @@ def build_channel_vc_cdg(
     Raises CDGError if the VC assignment uses a routing class this
     certifier cannot interpret (the caller reports UNSUPPORTED).
     """
-    classes = {rc for _vc, rc in vc_assignment.vc_to_routing_class}
-    unknown = classes - {DEFAULT_ROUTING_CLASS}
-    if unknown:
+    definitions = getattr(router_route, "routing_classes", None)
+    if not definitions:
         raise CDGError(
-            f"routing classes {sorted(unknown)} have no executable "
-            f"semantics in the router-level route artifact (schema v2) — "
-            f"cannot build the realized CDG")
-
-    entries: dict[tuple[int, int], int] = getattr(router_route, "entries", {})
-
-    # The v1 route table names a next ROUTER, never a channel. Map the
-    # physical hop (src_router, dst_router) to the exact directed channel(s)
-    # that realize it; the packet that leaves v toward nxt requests channels
-    # v->nxt, NOT channels leaving nxt (one hop too far).
-    channels_by_edge: dict[tuple[int, int], list[int]] = {}
-    for ch in topology.channels:
-        channels_by_edge.setdefault(
-            (ch.src_router, ch.dst_router), []).append(ch.channel_id)
-    for edge in channels_by_edge:
-        channels_by_edge[edge].sort()
-    parallel_edges = {e for e, ids in channels_by_edge.items() if len(ids) > 1}
-    router_count = topology.router_count
+            "router route does not declare routing classes (schema v2 "
+            "required) — cannot build the realized CDG")
+    entry_class = definitions[0].id
+    classes = {rc for _vc, rc in vc_assignment.vc_to_routing_class}
+    if classes != {entry_class}:
+        raise CDGError(
+            f"VC routing classes {sorted(classes)} are not the single "
+            f"router-route class {entry_class!r}; per-vc_out class "
+            f"selection is B3.3d — cannot build the realized CDG")
+    entries = {(s, d): ch
+               for (cls, s, d), ch in router_route.entries.items()
+               if cls == entry_class}
+    channel_by_id = {c.channel_id: c for c in topology.channels}
 
     transitions = vc_assignment.allowed_transitions
     nodes = tuple(
@@ -162,34 +152,29 @@ def build_channel_vc_cdg(
         for vc in vc_assignment.vc_ids
     )
     edges: set[tuple[tuple[int, int], tuple[int, int]]] = set()
-    conservative_expansions = 0
-    for ch in topology.channels:
-        u, v = ch.src_router, ch.dst_router
-        for w in range(router_count):
-            # A packet is on channel u->v toward w only if the table
-            # routes w through v from u. Otherwise this channel is not on
-            # that flow's path and creates no dependency.
-            if w == u or w == v:
-                continue
-            if entries.get((u, w)) != v:
-                continue
-            nxt = entries.get((v, w))
-            if nxt is None or nxt == v:
-                continue
-            out_ids = channels_by_edge.get((v, nxt), ())
-            if not out_ids:
-                raise CDGError(
-                    f"route ({v},{w}) names next router {nxt}, but the "
-                    f"topology has no directed channel {v}->{nxt} — the "
-                    f"route table and the topology disagree")
-            if (v, nxt) in parallel_edges:
-                conservative_expansions += 1
-            for out_id in out_ids:
-                for vc_in, vc_out in transitions:
-                    edges.add(((ch.channel_id, vc_in), (out_id, vc_out)))
+    for (s, d), ch_id in sorted(entries.items()):
+        ch = channel_by_id.get(ch_id)
+        if ch is None:
+            raise CDGError(
+                f"route ({s},{d}) names channel {ch_id}, which is not in "
+                f"the topology")
+        v = ch.dst_router
+        if v == d:
+            continue                     # eject at v: no dependency
+        out_id = entries.get((v, d))
+        if out_id is None:
+            raise CDGError(
+                f"route ({s},{d}) reaches router {v} but has no entry "
+                f"for ({v},{d}) — the route table is not total")
+        out_ch = channel_by_id.get(out_id)
+        if out_ch is None or out_ch.src_router != v:
+            raise CDGError(
+                f"route ({v},{d}) names channel {out_id}, which does not "
+                f"leave router {v}")
+        for vc_in, vc_out in transitions:
+            edges.add(((ch_id, vc_in), (out_id, vc_out)))
     ordered = tuple(sorted(edges))
-    return ChannelVCCDG(nodes=nodes, edges=ordered,
-                        conservative_expansions=conservative_expansions)
+    return ChannelVCCDG(nodes=nodes, edges=ordered, cdg_route_class=entry_class)
 
 
 @dataclass(frozen=True)
@@ -235,6 +220,10 @@ def _binding_hashes(
         raise CDGError("resolved route does not bind this topology")
     if resolved_route.router_route_hash != getattr(router_route, "artifact_hash", ""):
         raise CDGError("resolved route does not bind this router route")
+    if getattr(router_route, "schema_version", None) != 2:
+        raise CDGError(
+            "router route is not schema v2 (class-aware channel "
+            "realization); v1 is refused on the certification path")
     if vc_assignment.resolved_route_hash != resolved_route.resolved_route_hash():
         raise CDGError("VC assignment does not bind this resolved route")
     return (topology.topology_hash(), resolved_route.attachment_hash,
@@ -273,10 +262,8 @@ def certify_channel_vc_deadlock(
 
     evidence["node_count"] = cdg.node_count
     evidence["edge_count"] = cdg.edge_count
-    evidence["route_realization"] = "v1_next_router"
-    evidence["conservative_parallel_channel_expansion"] = \
-        cdg.conservative_expansions > 0
-    evidence["conservative_expansion_count"] = cdg.conservative_expansions
+    evidence["route_realization"] = "v2_channel_id"
+    evidence["cdg_route_class"] = cdg.cdg_route_class
     cycle = cdg.find_cycle()
     if cycle is None:
         evidence["acyclic"] = True

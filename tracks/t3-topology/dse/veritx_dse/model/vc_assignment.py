@@ -38,10 +38,10 @@ from .resolved_route import ResolvedRouteArtifact
 VC_ASSIGNMENT_SCHEMA_VERSION = 1
 _HASH_TYPE_TAG = "srota/VCAssignmentArtifact"
 
-# The one routing class the router-level route artifact currently defines.
-# The class axis (schema v2 route artifact, B3.2d) will widen this; until
-# then every honest VC maps to the default class and no escape subnetwork
-# may be claimed.
+# Compatibility alias only: the authoritative default class is
+# resolved_route.routing_classes[0] (RouteArtifact v2). "DEFAULT" no
+# longer names hardware semantics — B3.2d materializes ANYNET_MIN_HOPS /
+# DOR_XY explicitly. The name stays so older callers do not break.
 DEFAULT_ROUTING_CLASS = "DEFAULT"
 
 

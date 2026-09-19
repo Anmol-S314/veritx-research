@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from veritx_dse.core.route_artifact import RouteArtifact
+from veritx_dse.core.route_artifact import DOR_XY, ANYNET_MIN_HOPS, RouteArtifact
 from veritx_dse.model.attachment import derive_attachment
 from veritx_dse.model.compile_model import (
     Agent, AgentKind, CompileRequest, DepKind, Dependency, DependencyGraph,
@@ -19,9 +19,7 @@ from veritx_dse.model.topology_artifact import (
     DirectedChannel, MaterializedFamily, Router, TopologyArtifact,
     materialize_topology,
 )
-from veritx_dse.model.vc_assignment import (
-    DEFAULT_ROUTING_CLASS, make_vc_assignment_artifact,
-)
+from veritx_dse.model.vc_assignment import make_vc_assignment_artifact
 from veritx_dse.verification.channel_vc_cdg import (
     CDGError, CHANNEL_VC_DEPENDENCY_ACYCLIC, DEADLOCK_PROOF_METHODS,
     build_channel_vc_cdg, certify_channel_vc_deadlock,
@@ -64,7 +62,7 @@ def _two_router():
         attachment_hash="a" * 64,
         router_route_hash=rr.artifact_hash,
         endpoint_to_router=((0, 0), (1, 1)),
-        routing_classes=(DEFAULT_ROUTING_CLASS,),
+        routing_classes=(ANYNET_MIN_HOPS,),
         endpoint_route_table_hash="b" * 64,
     )
     vc = make_vc_assignment_artifact(
@@ -89,7 +87,7 @@ def _directed_ring():
         attachment_hash="a" * 64,
         router_route_hash=rr.artifact_hash,
         endpoint_to_router=((0, 0), (1, 1), (2, 2)),
-        routing_classes=(DEFAULT_ROUTING_CLASS,),
+        routing_classes=(ANYNET_MIN_HOPS,),
         endpoint_route_table_hash="b" * 64,
     )
     vc = make_vc_assignment_artifact(
@@ -115,13 +113,49 @@ def _parallel_hop_ring():
         attachment_hash="a" * 64,
         router_route_hash=rr.artifact_hash,
         endpoint_to_router=((0, 0), (1, 1), (2, 2)),
-        routing_classes=(DEFAULT_ROUTING_CLASS,),
+        routing_classes=(ANYNET_MIN_HOPS,),
         endpoint_route_table_hash="b" * 64,
     )
     vc = make_vc_assignment_artifact(
         resolved_route=rra, vc_count=1,
         traffic_class_to_vcs={"A": [0]}, derivation="parallel_hop_ring")
     return topo, rr, rra, vc
+
+
+def _dor_mesh(k=3):
+    """DOR_XY route authority + endpoint-resolved binding + 1 VC."""
+    from veritx_dse.model.topology_artifact import (
+        MaterializedFamily, materialize_family,
+    )
+    topo = materialize_family(MaterializedFamily.MESH, endpoint_count=k * k)
+    rr = RouteArtifact.from_topology(
+        topo, name=f"dor{k}", routing_classes=(DOR_XY,))
+    rra = ResolvedRouteArtifact(
+        topology_hash=topo.topology_hash(),
+        attachment_hash="a" * 64,
+        router_route_hash=rr.artifact_hash,
+        endpoint_to_router=tuple((i, i) for i in range(k * k)),
+        routing_classes=(DOR_XY,),
+        endpoint_route_table_hash="b" * 64,
+    )
+    vc = make_vc_assignment_artifact(
+        resolved_route=rra, vc_count=1,
+        traffic_class_to_vcs={"A": [0]}, derivation=f"dor_mesh{k}")
+    return topo, rr, rra, vc
+
+
+class TestDORXYGoldenPositive:
+    @pytest.mark.parametrize("k", (2, 3, 4))
+    def test_dor_xy_mesh_with_one_vc_is_acyclic(self, k):
+        """The canonical positive deadlock case: mesh + exact DOR_XY +
+        one VC must PASS. If this fails, the CDG is wrong."""
+        topo, rr, rra, vc = _dor_mesh(k)
+        cert = certify_channel_vc_deadlock(
+            topology=topo, resolved_route=rra, router_route=rr,
+            vc_assignment=vc)
+        assert cert.verdict == "PASS"
+        assert cert.evidence["acyclic"] is True
+        assert cert.evidence["cdg_route_class"] == DOR_XY
 
 
 class TestTwoRouterPasses:
@@ -180,7 +214,7 @@ class TestObservedVerdicts:
         # not break a physical cycle.
         assert cert.verdict == "PASS"
         assert cert.evidence["acyclic"] is True
-        assert cert.evidence["conservative_parallel_channel_expansion"] is False
+        assert cert.evidence["route_realization"] == "v2_channel_id"
 
     def test_mesh_verdict_is_deterministic(self):
         _cr, topo, rr, rra, vc = _mesh_chain(cycles=1)
@@ -209,18 +243,20 @@ class TestCDGEdgeConstruction:
         assert ((0, 0), (1, 0)) in cdg.edges
         assert ((0, 0), (2, 0)) not in cdg.edges
 
-    def test_parallel_channels_expanded_conservatively(self):
+    def test_parallel_hop_uses_the_declared_min_channel(self):
         topo, rr, rra, vc = _parallel_hop_ring()
+        # the 1->2 hop has channels 1 and 2; ANYNET_MIN_HOPS declares
+        # min_channel_id, so the realization is exact and declared.
+        assert rr.entries[(ANYNET_MIN_HOPS, 1, 2)] == 1
         cdg = build_channel_vc_cdg(topo, rr, vc)
-        assert cdg.conservative_expansions >= 1
-        # 0->1 toward 2 depends on BOTH parallel 1->2 channels (ids 1, 2)
+        assert cdg.cdg_route_class == ANYNET_MIN_HOPS
         assert ((0, 0), (1, 0)) in cdg.edges
-        assert ((0, 0), (2, 0)) in cdg.edges
+        assert ((0, 0), (2, 0)) not in cdg.edges
         cert = certify_channel_vc_deadlock(
             topology=topo, resolved_route=rra, router_route=rr,
             vc_assignment=vc)
-        assert cert.evidence["conservative_parallel_channel_expansion"] is True
-        assert cert.evidence["route_realization"] == "v1_next_router"
+        assert cert.evidence["route_realization"] == "v2_channel_id"
+        assert cert.evidence["cdg_route_class"] == ANYNET_MIN_HOPS
 
 
 class TestFailClosed:

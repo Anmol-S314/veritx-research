@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 from veritx_dse.core.constants import PLANE_C_MAX_VC
-from veritx_dse.core.route_artifact import RouteArtifact
+from veritx_dse.core.route_artifact import ANYNET_MIN_HOPS, RouteArtifact
 from veritx_dse.model.attachment import derive_attachment
 from veritx_dse.model.compile_model import (
     Agent, AgentKind, CollectiveKind, CollectiveOp, CompileRequest, DepKind,
@@ -17,7 +17,7 @@ from veritx_dse.model.placement import build_inventory
 from veritx_dse.model.resolved_route import derive_resolved_route
 from veritx_dse.model.topology_artifact import materialize_topology
 from veritx_dse.model.vc_assignment import (
-    DEFAULT_ROUTING_CLASS, VCAssignmentArtifact, VCAssignmentError as VCAErr,
+    VCAssignmentArtifact, VCAssignmentError as VCAErr,
     make_vc_assignment_artifact,
 )
 
@@ -53,8 +53,8 @@ class TestBuilder:
             derivation="unit",
         )
         assert art.vc_ids == (0, 1)
-        assert art.vc_to_routing_class == ((0, DEFAULT_ROUTING_CLASS),
-                                           (1, DEFAULT_ROUTING_CLASS))
+        assert art.vc_to_routing_class == ((0, ANYNET_MIN_HOPS),
+                                           (1, ANYNET_MIN_HOPS))
         # VC-preserving transitions only, no invented escape VC.
         assert art.allowed_transitions == ((0, 0), (1, 1))
         assert art.escape_vcs == ()
