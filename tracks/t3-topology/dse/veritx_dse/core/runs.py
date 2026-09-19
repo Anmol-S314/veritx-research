@@ -96,9 +96,20 @@ def _git_identity(repo: Path) -> dict[str, Any]:
             ["git", "status", "--porcelain"], cwd=repo, capture_output=True,
             text=True, timeout=10, check=True,
         ).stdout.strip()
-        return {"commit": commit, "dirty": bool(dirty)}
+        state_sha = None
+        if dirty:
+            diff = subprocess.run(
+                ["git", "diff", "HEAD"], cwd=repo, capture_output=True,
+                timeout=30, check=True,
+            ).stdout
+            state_sha = hashlib.sha256(
+                commit.encode() + b"\0" + diff + b"\0"
+                + dirty.encode()).hexdigest()
+        return {"commit": commit, "dirty": bool(dirty),
+                "source_state_sha256": state_sha}
     except Exception:
-        return {"commit": None, "dirty": None}  # not a git checkout; say so
+        return {"commit": None, "dirty": None,
+                "source_state_sha256": None}  # not a git checkout; say so
 
 
 def _file_sha256(path: Path) -> str | None:

@@ -169,7 +169,7 @@ FINGERPRINT_FIELDS = (
     "packetization", "topology", "routing", "vc_count",
     "simulator", "network_engine", "network_mode", "fidelity",
     "seed_policy", "tp", "dp", "ep", "pp", "instance_mapping",
-    "metric_schema",
+    "metric_schema", "binary_sha256",
 )
 
 # Required dimensions per evidence class. A memory comparison must not
@@ -182,7 +182,8 @@ REQUIRED_BY_FIDELITY = {
         "vc_count", "packetization", "fidelity"}),
     "SYSTEM_SERVING_SIMULATION": frozenset({
         "workload_hash", "participant_count", "topology", "routing",
-        "vc_count", "packetization", "fidelity", "network_mode"}),
+        "vc_count", "packetization", "fidelity", "network_mode",
+        "instance_mapping"}),
     "ANALYTICAL_ESTIMATE": frozenset({
         "workload_hash", "participant_count", "topology", "routing",
         "fidelity"}),
@@ -237,10 +238,20 @@ def fingerprint_from_run(run_dir: Path) -> dict[str, Any]:
         workload_hash = workload_identity(wl_index)
         workload_certified = True
     else:
+        wl_index = None
         wl_payload = canonical_json({
             "workload": spec.get("workload"), "serving": serving,
         })
         workload_hash = hashlib.sha256(wl_payload.encode()).hexdigest()
+
+    instance_mapping = None
+    if serving is not None and wl_index is not None:
+        try:
+            from .mapping import mapping_from_workload_index
+            instance_mapping = mapping_from_workload_index(
+                wl_index, serving.get("cluster")).mapping_hash
+        except Exception:
+            instance_mapping = None
 
     if serving is not None:
         simulator = f"llmservingsim/{serving.get('network_backend', '?')}"
@@ -312,7 +323,13 @@ def fingerprint_from_run(run_dir: Path) -> dict[str, Any]:
                         if repl else None),
         "tp": spec.get("system", {}).get("tp_size"),
         "dp": None, "ep": None, "pp": None,  # inside cluster identity
-        "instance_mapping": None,
+        "instance_mapping": instance_mapping,
+        "binary_sha256": next((
+            b.get("sha256") for r in reversed(results)
+            if isinstance(r, dict)
+            for b in ([r.get("booksim_binary")] if r.get("booksim_binary")
+                      else (r.get("backend_binaries") or []))
+            if isinstance(b, dict) and b.get("sha256")), None),
         "metric_schema": metric_schema,
         "workload_certified": workload_certified,
         "certified": workload_certified and fabric is not None,
