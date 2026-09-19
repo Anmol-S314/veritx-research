@@ -18,6 +18,7 @@
 | 1.4 | B3.4c | RouterBehaviorArtifact schema v2: the ambiguous `packet_hold_policy=FLIT_INTERLEAVED` is replaced by `input_vc_packet_policy=ONE_PACKET_AT_A_TIME` (no two packets share one input VC's packet context) and `vc_allocation_scope=PACKET` (HEAD/SINGLE selects `vc_out`; BODY/TAIL reuse it for the packet at that hop). `hold_switch_for_packet` remains the independent switch-arbitration granularity. v1 is explicitly refused, not silently migrated. |
 | 1.5 | B3.1c | AgentAttachmentArtifact completes the interface authority: each Endpoint carries an immutable `AgentInterfaceDescriptor` (data_width_bits, address_width_bits, protocol, clock_domain, power_domain) derived from the parent Agent group, and the artifact binds `design_hash` as a parent. Validation proves group/instance bounds, kind agreement, interface equality with the parent group, real router seats, and one-to-one mapping placement identity. Schema v2; v1 attachments refused. |
 | 1.6 | B3.1d | Attachment identity correction: schema v3 makes `topology_hash` the ONLY semantic parent. DesignRevision and NodeInventory are derivation/validation sources and MappingArtifact meets the hardware again only at ResolvedFabric (`resolved_fabric_hash = design_hash + mapping_hash + fabric_hash`), so the same hardware under a different mapping or an unrelated design change keeps the same `attachment_hash`/`fabric_hash`. Validation now proves the complete design agent universe (no missing idle agents, no fabricated extras) and total seat legality. v1 and v2 attachments are refused. |
+| 1.7 | B3.5a | FabricArtifact is implemented as the root hardware identity: exactly the six child semantic hashes + `PlaneComposition.SINGLE_PLANE`, domain `srota/Fabric/v1`. `validate_against` revalidates the complete child DAG, so individually valid children that cannot form one DAG are refused. No design/mapping/backend/provenance/evidence enters `fabric_hash`. Legacy `core.fabric.FabricArtifact` remains untouched backend evidence (rename in B3.7). |
 
 This document defines what a resolved Srota fabric *is* before B3 code is
 written. It starts from hardware semantics and maps existing code onto them —
@@ -161,7 +162,7 @@ depends on.
           ┌─────────┘           └──────────┐
           ▼                                ▼
    RouteArtifact                   PacketFormatArtifact
-   (topology only;                 (attachment + vc assignment)
+   (topology only;                 (topology + attachment + vc assignment)
     router-level)                           ▲
           │                                 │
           ▼                                 │
@@ -182,6 +183,12 @@ depends on.
                          │
                          ▼
                    fabric_hash
+                         │
+                         ▼
+                   ResolvedFabric          (design_hash + mapping_hash + fabric_hash)
+                         │
+                         ▼
+                 resolved_fabric_hash
 ```
 
 `ResolvedFabric` (design_hash + mapping_hash + fabric_hash) is the parent
@@ -682,8 +689,14 @@ Parent `vc_assignment_hash`; §14 fields; `artifact_hash`.
 ### FabricArtifact
 Parents: `topology_hash`, `attachment_hash`, `resolved_route_hash`,
 `vc_assignment_hash`, `packet_format_hash`, `router_behavior_hash`, plus
-`plane_composition`. Excludes backend bytes/paths/run ids/git/timestamps/seeds.
-`artifact_hash` = `fabric_hash`.
+`plane_composition` (`SINGLE_PLANE` only in v1). Contains no design_hash,
+mapping_hash, backend bytes/paths/run ids/git/timestamps/seeds, candidate
+provenance, metrics or verification evidence. `validate_against(...)`
+revalidates the whole child DAG (ResolvedRoute, VC, PacketFormat,
+RouterBehavior) and refuses individually valid children that cannot form one
+DAG. Persisted hash key `fabric_hash`; domain `srota/Fabric/v1`. NOTE: the
+legacy `core.fabric.FabricArtifact` is backend/executed evidence, not this
+object; its rename is deferred to B3.7.
 
 ### BackendConfigArtifact
 `{backend, backend_binary_sha256, fabric_hash, rendered_config_sha256,
@@ -760,6 +773,12 @@ Enforced at the ResolvedFabric seam (discharges B2's deferred parent binding):
   VC ≥ count;
 - packet encoded capacities ≥ actual endpoint and VC counts (v1 has no class/sequence wire fields);
 - router behavior covers every implemented VC;
+- FabricArtifact binds exactly the six child semantic hashes plus
+  plane_composition and revalidates the complete child DAG; a set of
+  individually valid artifacts that cannot form one DAG is refused;
+- FabricArtifact contains no design, mapping, backend or evidence fields;
+  `resolved_fabric_hash = H(design_hash, mapping_hash, fabric_hash)` is the
+  only place design and mapping meet hardware identity;
 - `fabric_hash` recursively covers every identity-bearing dimension, including
   plane composition;
 - deadlock certificate hashes the exact topology+attachment+route+VC+router
@@ -861,7 +880,7 @@ Note: a backend may be `SUPPORTED` for representation/execution while
 | output models | FREE | collateral |
 | obfuscation | FREE | IP protection |
 | materialized graph / seats | DERIVED CONSEQUENCE | from inventory + GUIDED |
-| endpoint attachment | DERIVED CONSEQUENCE | from TopologyArtifact + inventory + mapping |
+| endpoint attachment | DERIVED CONSEQUENCE | from DesignRevision agent/interface semantics + NodeInventory + TopologyArtifact; MappingArtifact is a ResolvedFabric seam concern |
 | routing algorithm / RoutingClass | LOCKED | inspectable |
 | materialized routes | LOCKED | authority; evidence-linked |
 | turn restrictions | LOCKED | derived from route realization |
@@ -950,7 +969,9 @@ same `fabric_hash` and a different `resolved_fabric_hash`.
   with reordered edges. Exit: deterministic cycles; golden hash updated with
   rationale; zero regression.
 - **B3.1** — TopologyArtifact (materialized, canonical numbering) +
-  AgentAttachmentArtifact; sizing from inventory/mapping; no `k=8,n=2`.
+  AgentAttachmentArtifact; attachment derived from DesignRevision agent/
+  interface semantics + NodeInventory + TopologyArtifact (Mapping is a
+  ResolvedFabric seam concern); sizing from inventory; no `k=8,n=2`.
   Exit: one materialized topology; reports consume it.
 - **B3.2** — Two-tier routing: router RouteArtifact bound to the materialized
   TopologyArtifact, plus ResolvedRouteArtifact binding topology + attachment +

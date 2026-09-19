@@ -61,6 +61,10 @@ from .model.router_behavior import (
     VCAllocationScope, VCReusePolicy, canonical_allocator,
     derive_router_behavior,
 )
+from .model.fabric_artifact import (
+    FABRIC_SCHEMA_VERSION, FabricArtifact, FabricArtifactError,
+    PlaneComposition, make_fabric_artifact,
+)
 
 # Re-export simulation
 from .simulation.booksim import build_config, run_booksim, find_booksim_bin, detect_trace_stats
