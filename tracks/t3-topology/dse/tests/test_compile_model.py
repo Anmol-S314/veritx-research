@@ -182,6 +182,7 @@ class TestCollectives:
     def test_request_from_dict_parses_collectives(self):
         from veritx_dse.model.compile_model import CompileRequest, CollectiveKind
         d = {
+            "schema_version": 2,
             "workload": {
                 "model_family": "mixture_of_experts",
                 "tp": 16, "ep": 8,
@@ -200,6 +201,7 @@ class TestCollectives:
     def test_request_from_dict_no_collectives_defaults_empty(self):
         from veritx_dse.model.compile_model import CompileRequest
         d = {
+            "schema_version": 2,
             "workload": {"model_family": "dense_transformer"},
             "requirements": [],
             "agents": [{"kind": "compute_tile", "count": 16}],
@@ -212,6 +214,7 @@ class TestCollectives:
     def test_request_to_dict_round_trip_collectives(self):
         from veritx_dse.model.compile_model import CompileRequest
         d = {
+            "schema_version": 2,
             "workload": {
                 "model_family": "dense_transformer",
                 "tp": 64,
@@ -515,6 +518,7 @@ class TestMulticastKnobs:
     def test_knobs_parse_and_round_trip(self):
         from veritx_dse.model.compile_model import CompileRequest
         d = {
+            "schema_version": 2,
             "workload": {"model_family": "dense_transformer"},
             "requirements": [],
             "agents": [{"kind": "compute_tile", "count": 4}],
@@ -533,6 +537,7 @@ class TestMulticastKnobs:
     def test_hash_pins_collectives_and_knobs(self):
         from veritx_dse.model.compile_model import CompileRequest
         base = {
+            "schema_version": 2,
             "workload": {"model_family": "dense_transformer"},
             "requirements": [],
             "agents": [{"kind": "compute_tile", "count": 4}],

@@ -305,14 +305,15 @@ def test_binding_requirement_without_any_bound_is_invalid():
 
 
 def test_nonpositive_bounds_are_invalid():
+    # 0 is representable but incoherent — the compiler refuses it.
     with pytest.raises(InvalidCompilerRequest):
         compile_fabric(CompilerRequest(
             requirements=[_req(latency_ceiling_cycles=0.0)],
             candidates=[_cand("a", 61.5)]), _ok_eval({"a": 61.5}))
-    with pytest.raises(InvalidCompilerRequest):
-        compile_fabric(CompilerRequest(
-            requirements=[_req(bandwidth_floor_gbps=-1.0, latency_ceiling_cycles=None)],
-            candidates=[_cand("a", 61.5)]), _ok_eval({"a": 61.5}))
+    # Negative bounds are refused earlier still: the Requirement model
+    # cannot represent them (Wave B1 numeric boundary).
+    with pytest.raises(ValueError):
+        _req(bandwidth_floor_gbps=-1.0, latency_ceiling_cycles=None)
 
 
 def test_unknown_qos_class_string_fails_closed():

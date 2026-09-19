@@ -793,6 +793,7 @@ class TestCliBranches:
     def test_compile_validation_failure_nonzero(self, tmp_path):
         req = tmp_path / "bad_req.json"
         req.write_text(json.dumps({
+            "schema_version": 2,
             "workload": {"model_family": "dense_transformer", "model_name": "m",
                          "tp": 0},                     # invalid
             "agents": [], "dependencies": [], "requirements": [],
@@ -804,6 +805,7 @@ class TestCliBranches:
     def test_compile_uvm_output_format(self, tmp_path):
         req = tmp_path / "uvm_req.json"
         req.write_text(json.dumps({
+            "schema_version": 2,
             "workload": {"model_family": "dense_transformer", "model_name": "uvm_t",
                          "tp": 4},
             "agents": [{"kind": "compute_tile", "count": 4}],

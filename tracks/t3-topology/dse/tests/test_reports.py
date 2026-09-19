@@ -67,6 +67,7 @@ class TestGenerateReport:
     def test_with_valid_cr(self):
         """generate_report with valid CompileRequest should work."""
         cr = CompileRequest.from_dict({
+            "schema_version": 2,
             "workload": {"model_family": "dense_transformer", "tp": 4, "dp": 1, "serving_mode": "mixed"},
             "agents": [{"kind": "compute_tile", "count": 4}],
             "noc_config": {},
@@ -78,6 +79,7 @@ class TestGenerateReport:
     def test_collectives_block_empty(self):
         """No collectives → zero incast, no hypercast estimate."""
         cr = CompileRequest.from_dict({
+            "schema_version": 2,
             "workload": {"model_family": "dense_transformer", "tp": 4},
             "agents": [{"kind": "compute_tile", "count": 4}],
             "noc_config": {},
@@ -90,6 +92,7 @@ class TestGenerateReport:
     def test_collectives_block_sizing(self):
         """alltoall/8 → incast 8, 64-flit note, 48 msgs saved (8*6)."""
         cr = CompileRequest.from_dict({
+            "schema_version": 2,
             "workload": {
                 "model_family": "mixture_of_experts", "tp": 2, "ep": 4,
                 "collectives": [{"kind": "alltoall", "group_size": 8}],
@@ -108,6 +111,7 @@ class TestGenerateReport:
     def test_collectives_ring_phases(self):
         """allreduce/64 → 126 ring phases; reduce has no message estimate."""
         cr = CompileRequest.from_dict({
+            "schema_version": 2,
             "workload": {
                 "model_family": "dense_transformer", "tp": 64,
                 "collectives": [{"kind": "allreduce", "group_size": 64}],
@@ -126,6 +130,7 @@ class TestGenerateReport:
     def test_collectives_multicast_fit(self):
         """2 multicast contexts, 1 group, 50-cycle setup → fallback 1, cost 100."""
         cr = CompileRequest.from_dict({
+            "schema_version": 2,
             "workload": {
                 "model_family": "mixture_of_experts", "tp": 16, "ep": 8,
                 "collectives": [

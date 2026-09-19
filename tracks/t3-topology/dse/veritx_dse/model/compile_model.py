@@ -21,12 +21,101 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
 from veritx_dse.core.constants import PLANE_C_MAX_VC, env_int
+
+
+# Product design-intent format. Versioned INDEPENDENTLY of the experiment
+# spec (core.spec) and of every other persisted format — same user
+# request under different compiler semantics is a different design.
+COMPILE_REQUEST_SCHEMA_VERSION = 2
+COMPILER_SEMANTICS_VERSION = 1
+
+# Hash-domain tag: a CompileRequest identity can never collide with an
+# experiment, execution fingerprint, or artifact hash by construction.
+_HASH_TYPE_TAG = "srota/CompileRequest"
+
+
+class CompileRequestSchemaError(ValueError):
+    """Rejected CompileRequest document: unknown field, unsupported
+    schema, or a value that cannot represent a design."""
+
+
+# Allowed keys per level. Unknown keys FAIL CLOSED: a typo must never
+# silently vanish (which would let two different intents hash equal).
+_TOP_KEYS = frozenset({
+    "schema_version", "compiler_semantics_version", "workload",
+    "requirements", "agents", "dependencies", "noc_config", "address_map",
+    "physical", "design_hash", "guardrail_hash",
+})
+_WORKLOAD_KEYS = frozenset({
+    "model_family", "model_name", "tp", "pp", "ep", "dp", "param_count_b",
+    "sequence_length", "batch_size", "precision", "serving_mode",
+    "collectives", "trace_path",
+})
+_COLLECTIVE_KEYS = frozenset({"kind", "group_size", "bytes_per_element"})
+_REQUIREMENT_KEYS = frozenset({
+    "qos_class", "latency_ceiling_cycles", "bandwidth_floor_gbps", "binding",
+})
+_AGENT_KEYS = frozenset({
+    "kind", "count", "data_width", "addr_width", "protocol",
+    "clock_domain", "power_domain",
+})
+_DEPENDENCY_KEYS = frozenset({"source", "target", "kind"})
+_NOC_KEYS = frozenset({
+    "topology_family", "radix", "concentration", "arbitration",
+    "rcu_enabled", "link_width", "output_formats", "obfuscation_level",
+    "mcast_groups", "mcast_setup_cycles",
+})
+_ADDRESS_MAP_KEYS = frozenset({"ranges"})
+_ADDRESS_RANGE_KEYS = frozenset({
+    "name", "base", "size", "target_agent_idx",
+})
+_PHYSICAL_KEYS = frozenset({
+    "clock_freq_mhz", "data_width", "num_power_domains", "process_node_nm",
+})
+
+
+def _canonical_json(obj: Any) -> str:
+    return json.dumps(obj, sort_keys=True, separators=(",", ":"))
+
+
+def _strict_keys(d: Any, allowed: frozenset, where: str,
+                 *, allow_meta: bool = False) -> None:
+    """Reject unknown keys at a boundary.
+
+    ``allow_meta`` (root only) tolerates ``_``-prefixed documentation
+    keys such as ``_comment``/``_docs`` — they carry no semantics and
+    never enter identity.
+    """
+    if not isinstance(d, dict):
+        raise CompileRequestSchemaError(f"{where} must be a JSON object")
+    keys = set(d)
+    if allow_meta:
+        keys = {k for k in keys
+                if not (isinstance(k, str) and k.startswith("_"))}
+    unknown = sorted(keys - allowed)
+    if unknown:
+        raise CompileRequestSchemaError(f"unknown field {where}.{unknown[0]}")
+
+
+def _need(d: dict, key: str, where: str) -> Any:
+    if key not in d:
+        raise CompileRequestSchemaError(
+            f"missing required field {where}.{key}")
+    return d[key]
+
+
+def _enum(cls_: Any, value: Any, where: str) -> Any:
+    try:
+        return cls_(value)
+    except (ValueError, TypeError) as e:
+        raise CompileRequestSchemaError(f"invalid {where}: {value!r}") from e
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -201,6 +290,17 @@ class Workload:
                 raise ValueError(f"{field_name} must be >= 1, got {val}")
         if self.batch_size < 1:
             raise ValueError(f"batch_size must be >= 1, got {self.batch_size}")
+        if self.sequence_length is not None and self.sequence_length < 1:
+            raise ValueError(
+                f"sequence_length must be >= 1, got {self.sequence_length}")
+        if self.param_count_b is not None and (
+                not math.isfinite(self.param_count_b)
+                or self.param_count_b <= 0):
+            raise ValueError(
+                f"param_count_b must be a finite positive number, "
+                f"got {self.param_count_b!r}")
+        if not self.precision:
+            raise ValueError("precision must be a non-empty string")
         if self.trace_path is not None:
             p = Path(self.trace_path)
             if p.exists() and p.is_dir():
@@ -232,6 +332,16 @@ class Requirement:
     latency_ceiling_cycles: float | None = None
     bandwidth_floor_gbps: float | None = None
     binding: bool = False  # if True, must be met or design fails
+
+    def __post_init__(self):
+        for name, val in (("latency_ceiling_cycles", self.latency_ceiling_cycles),
+                          ("bandwidth_floor_gbps", self.bandwidth_floor_gbps)):
+            if val is None:
+                continue
+            if not math.isfinite(val):
+                raise ValueError(f"{name} must be finite, got {val!r}")
+            if val < 0:
+                raise ValueError(f"{name} must be >= 0, got {val}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -427,6 +537,18 @@ class AddressRange:
     size: int                   # size in bytes
     target_agent_idx: int = 0   # index into agents tuple
 
+    def __post_init__(self):
+        if not self.name:
+            raise ValueError("AddressRange.name must be non-empty")
+        if self.base < 0:
+            raise ValueError(f"AddressRange.base must be >= 0, got {self.base}")
+        if self.size < 1:
+            raise ValueError(f"AddressRange.size must be >= 1, got {self.size}")
+        if self.target_agent_idx < 0:
+            raise ValueError(
+                f"AddressRange.target_agent_idx must be >= 0, "
+                f"got {self.target_agent_idx}")
+
 
 @dataclass(frozen=True)
 class AddressMap:
@@ -573,6 +695,22 @@ class PhysicalContext:
     default_data_width: int = 256
     num_power_domains: int = 1
     process_node_nm: int = 7  # technology node
+
+    def __post_init__(self):
+        if not math.isfinite(self.default_clock_freq_mhz) \
+                or self.default_clock_freq_mhz <= 0:
+            raise ValueError(
+                "default_clock_freq_mhz must be finite and > 0, got "
+                f"{self.default_clock_freq_mhz!r}")
+        if self.default_data_width < 8:
+            raise ValueError(
+                f"default_data_width must be >= 8, got {self.default_data_width}")
+        if self.num_power_domains < 1:
+            raise ValueError(
+                f"num_power_domains must be >= 1, got {self.num_power_domains}")
+        if self.process_node_nm < 1:
+            raise ValueError(
+                f"process_node_nm must be >= 1, got {self.process_node_nm}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -734,8 +872,14 @@ class CompileRequest:
     """PRD §11.1: The single structured object the engine consumes.
 
     Combines all five entities (E1–E5) into one immutable revision.
-    The guardrail_hash() method produces a SHA-256 that pins the
-    exact configuration for reproducibility and audit trails.
+
+    Identity (Wave B1): ``design_hash()`` is the AUTHORITATIVE product
+    design-intent identity — SHA-256 over the canonical semantic envelope
+    (domain-tagged and versioned by schema + compiler semantics).
+    ``guardrail_hash()`` is a retained compatibility name for the same
+    value; new code calls ``design_hash()``. Execution provenance (git
+    commit, binaries, host, timestamps, seeds) is deliberately NOT part
+    of either hash.
     """
     workload: Workload
     requirements: tuple[Requirement, ...]
@@ -745,6 +889,10 @@ class CompileRequest:
     # Extended fields (PRD §4.3, §10)
     address_map: AddressMap = field(default_factory=AddressMap)
     physical: PhysicalContext = field(default_factory=PhysicalContext)
+    # Envelope versions: the SAME user fields under different compiler
+    # semantics are a different design. Independent of core.spec.
+    schema_version: int = COMPILE_REQUEST_SCHEMA_VERSION
+    compiler_semantics_version: int = COMPILER_SEMANTICS_VERSION
 
     def __post_init__(self):
         # Convert lists to tuples for immutability
@@ -764,228 +912,282 @@ class CompileRequest:
         """Total number of nodes across all agent kinds."""
         return sum(a.count for a in self.agents)
 
-    def guardrail_hash(self) -> str:
-        """PRD §12: SHA-256 hash of the full configuration.
+    # ── one serialization per entity (canonical + to_dict share it) ────
 
-        Pins the guardrail version so any Result or Artifact can be
-        traced to the exact inputs that produced it.
-        """
-        # Build a canonical representation
-        d = {
-            "workload": {
-                "model_family": self.workload.model_family.value,
-                "model_name": self.workload.model_name,
-                "tp": self.workload.tp,
-                "ep": self.workload.ep,
-                "dp": self.workload.dp,
-                "serving_mode": self.workload.serving_mode.value,
-                "collectives": [c.to_dict() for c in self.workload.collectives],
-            },
-            "requirements": [
-                {
-                    "qos_class": r.qos_class.value,
-                    "latency_ceiling": r.latency_ceiling_cycles,
-                    "bandwidth_floor": r.bandwidth_floor_gbps,
-                    "binding": r.binding,
-                }
-                for r in self.requirements
-            ],
-            "agents": [
-                {
-                    "kind": a.kind.value,
-                    "count": a.count,
-                    "data_width": a.data_width,
-                    "addr_width": a.addr_width,
-                    "protocol": a.protocol,
-                }
-                for a in self.agents
-            ],
-            "dependencies": [
-                {
-                    "source": dep.source,
-                    "target": dep.target,
-                    "kind": dep.kind.value,
-                }
-                for dep in self.dependencies.dependencies
-            ],
-            "noc_config": {
-                "topology_family": self.noc_config.topology_family.value
-                    if self.noc_config.topology_family else None,
-                "radix": self.noc_config.radix,
-                "concentration": self.noc_config.concentration,
-                "arbitration": self.noc_config.arbitration,
-                "rcu_enabled": self.noc_config.rcu_enabled,
-                "link_width": self.noc_config.link_width,
-                "obfuscation_level": self.noc_config.obfuscation_level,
-                "mcast_groups": self.noc_config.mcast_groups,
-                "mcast_setup_cycles": self.noc_config.mcast_setup_cycles,
-            },
-            "address_map": {
-                "ranges": [
-                    {"name": r.name, "base": r.base, "size": r.size,
-                     "target_agent_idx": r.target_agent_idx}
-                    for r in self.address_map.ranges
-                ],
-            },
-            "physical": {
-                "clock_freq_mhz": self.physical.default_clock_freq_mhz,
-                "data_width": self.physical.default_data_width,
-                "process_node_nm": self.physical.process_node_nm,
-            },
+    @staticmethod
+    def _requirement_dict(r: Requirement) -> dict:
+        return {"qos_class": r.qos_class.value,
+                "latency_ceiling_cycles": r.latency_ceiling_cycles,
+                "bandwidth_floor_gbps": r.bandwidth_floor_gbps,
+                "binding": r.binding}
+
+    @staticmethod
+    def _agent_dict(a: Agent) -> dict:
+        return {"kind": a.kind.value, "count": a.count,
+                "data_width": a.data_width, "addr_width": a.addr_width,
+                "protocol": a.protocol, "clock_domain": a.clock_domain,
+                "power_domain": a.power_domain}
+
+    @staticmethod
+    def _dependency_dict(dep: Dependency) -> dict:
+        return {"source": dep.source, "target": dep.target,
+                "kind": dep.kind.value}
+
+    @staticmethod
+    def _address_dict(r: AddressRange) -> dict:
+        return {"name": r.name, "base": r.base, "size": r.size,
+                "target_agent_idx": r.target_agent_idx}
+
+    def _noc_dict(self) -> dict:
+        return {
+            "topology_family": self.noc_config.topology_family.value
+                if self.noc_config.topology_family else None,
+            "radix": self.noc_config.radix,
+            "concentration": self.noc_config.concentration,
+            "arbitration": self.noc_config.arbitration,
+            "rcu_enabled": self.noc_config.rcu_enabled,
+            "link_width": self.noc_config.link_width,
+            "output_formats": [o.value for o in self.noc_config.output_formats],
+            "obfuscation_level": self.noc_config.obfuscation_level,
+            "mcast_groups": self.noc_config.mcast_groups,
+            "mcast_setup_cycles": self.noc_config.mcast_setup_cycles,
         }
-        canonical = json.dumps(d, sort_keys=True, separators=(",", ":"))
-        return hashlib.sha256(canonical.encode()).hexdigest()
+
+    def _physical_dict(self) -> dict:
+        return {"clock_freq_mhz": self.physical.default_clock_freq_mhz,
+                "data_width": self.physical.default_data_width,
+                "num_power_domains": self.physical.num_power_domains,
+                "process_node_nm": self.physical.process_node_nm}
+
+    def _workload_dict(self) -> dict:
+        return {
+            "model_family": self.workload.model_family.value,
+            "model_name": self.workload.model_name,
+            "tp": self.workload.tp,
+            "pp": self.workload.pp,
+            "ep": self.workload.ep,
+            "dp": self.workload.dp,
+            "param_count_b": self.workload.param_count_b,
+            "sequence_length": self.workload.sequence_length,
+            "batch_size": self.workload.batch_size,
+            "precision": self.workload.precision,
+            "serving_mode": self.workload.serving_mode.value,
+            "collectives": [c.to_dict() for c in self.workload.collectives],
+            "trace_path": self.workload.trace_path,
+        }
+
+    def _semantic_dict(self) -> dict:
+        """Every semantic field, declared insertion order preserved."""
+        return {
+            "workload": self._workload_dict(),
+            "requirements": [self._requirement_dict(r)
+                             for r in self.requirements],
+            "agents": [self._agent_dict(a) for a in self.agents],
+            "dependencies": [self._dependency_dict(dep)
+                             for dep in self.dependencies.dependencies],
+            "noc_config": self._noc_dict(),
+            "address_map": {"ranges": [self._address_dict(r)
+                                       for r in self.address_map.ranges]},
+            "physical": self._physical_dict(),
+        }
+
+    def canonical_dict(self) -> dict:
+        """Canonical semantic envelope — the sole input to design_hash().
+
+        Ordering policy (authoritative table lives in
+        tests/test_design_intent_identity.py):
+          ORDERED   collectives (index to VC map), agents
+                    (target_agent_idx indexes the tuple), dependencies
+                    (adjacency/DFS order feeds the cycle set)
+          UNORDERED requirements, address ranges, output_formats
+        """
+        d = self._semantic_dict()
+        d["requirements"] = sorted(d["requirements"], key=_canonical_json)
+        d["address_map"]["ranges"] = sorted(d["address_map"]["ranges"],
+                                            key=_canonical_json)
+        d["noc_config"]["output_formats"] = sorted(
+            d["noc_config"]["output_formats"])
+        return {
+            "type": _HASH_TYPE_TAG,
+            "schema_version": self.schema_version,
+            "compiler_semantics_version": self.compiler_semantics_version,
+            **d,
+        }
+
+    def design_hash(self) -> str:
+        """AUTHORITATIVE design-intent identity (SHA-256, domain-separated).
+
+        Answers only "what exact product design did the customer
+        request?". No git/binary/host/seed/timestamp provenance enters.
+        """
+        from veritx_dse.core.spec import canonical_json
+        body = (f"{_HASH_TYPE_TAG}/v{self.schema_version}/"
+                f"c{self.compiler_semantics_version}\0"
+                + canonical_json(self.canonical_dict()))
+        return hashlib.sha256(body.encode()).hexdigest()
+
+    def guardrail_hash(self) -> str:
+        """Deprecated compatibility name for :meth:`design_hash`.
+
+        Retained so existing report/CLI call sites keep one authoritative
+        value; it no longer computes an incomplete field set.
+        """
+        return self.design_hash()
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize to dict (JSON-safe)."""
-        return {
-            "workload": {
-                "model_family": self.workload.model_family.value,
-                "model_name": self.workload.model_name,
-                "tp": self.workload.tp,
-                "pp": self.workload.pp,
-                "ep": self.workload.ep,
-                "dp": self.workload.dp,
-                "serving_mode": self.workload.serving_mode.value,
-                "trace_path": self.workload.trace_path,
-                "collectives": [c.to_dict() for c in self.workload.collectives],
-            },
-            "requirements": [
-                {
-                    "qos_class": r.qos_class.value,
-                    "latency_ceiling_cycles": r.latency_ceiling_cycles,
-                    "bandwidth_floor_gbps": r.bandwidth_floor_gbps,
-                    "binding": r.binding,
-                }
-                for r in self.requirements
-            ],
-            "agents": [
-                {
-                    "kind": a.kind.value,
-                    "count": a.count,
-                    "data_width": a.data_width,
-                    "addr_width": a.addr_width,
-                    "protocol": a.protocol,
-                }
-                for a in self.agents
-            ],
-            "dependencies": [
-                {
-                    "source": dep.source,
-                    "target": dep.target,
-                    "kind": dep.kind.value,
-                }
-                for dep in self.dependencies.dependencies
-            ],
-            "noc_config": {
-                "topology_family": self.noc_config.topology_family.value
-                    if self.noc_config.topology_family else None,
-                "radix": self.noc_config.radix,
-                "concentration": self.noc_config.concentration,
-                "arbitration": self.noc_config.arbitration,
-                "rcu_enabled": self.noc_config.rcu_enabled,
-                "link_width": self.noc_config.link_width,
-                "output_formats": [o.value for o in self.noc_config.output_formats],
-                "obfuscation_level": self.noc_config.obfuscation_level,
-                "mcast_groups": self.noc_config.mcast_groups,
-                "mcast_setup_cycles": self.noc_config.mcast_setup_cycles,
-            },
-            "address_map": {
-                "ranges": [
-                    {"name": r.name, "base": r.base, "size": r.size,
-                     "target_agent_idx": r.target_agent_idx}
-                    for r in self.address_map.ranges
-                ],
-            },
-            "physical": {
-                "clock_freq_mhz": self.physical.default_clock_freq_mhz,
-                "data_width": self.physical.default_data_width,
-                "process_node_nm": self.physical.process_node_nm,
-            },
-            "guardrail_hash": self.guardrail_hash(),
+        """Lossless serialization: every semantic field survives.
+
+        Carries the schema/semantics envelope and the derived
+        ``design_hash`` (also as ``guardrail_hash`` for compatibility).
+        ``from_dict(to_dict()) == self`` holds.
+        """
+        d = {
+            "schema_version": self.schema_version,
+            "compiler_semantics_version": self.compiler_semantics_version,
+            **self._semantic_dict(),
         }
+        d["design_hash"] = self.design_hash()
+        d["guardrail_hash"] = d["design_hash"]
+        return d
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> CompileRequest:
-        """Deserialize from dict."""
-        wl = d["workload"]
+        """Strict, versioned, lossless deserialization.
+
+        Fails closed on: unknown fields at any level, missing or
+        unsupported schema_version, unsupported compiler_semantics_version,
+        and any value that cannot represent a design. A supplied
+        design_hash/guardrail_hash must match the recomputed identity.
+        """
+        _strict_keys(d, _TOP_KEYS, "root", allow_meta=True)
+        if "schema_version" not in d:
+            raise CompileRequestSchemaError(
+                "missing schema_version — refusing to guess a schema; add "
+                f"\"schema_version\": {COMPILE_REQUEST_SCHEMA_VERSION}")
+        if d["schema_version"] != COMPILE_REQUEST_SCHEMA_VERSION:
+            raise CompileRequestSchemaError(
+                f"unsupported CompileRequest schema_version "
+                f"{d['schema_version']} (this build speaks "
+                f"v{COMPILE_REQUEST_SCHEMA_VERSION}) — old documents are "
+                "never reinterpreted under new semantics")
+        semantics = d.get("compiler_semantics_version",
+                          COMPILER_SEMANTICS_VERSION)
+        if semantics != COMPILER_SEMANTICS_VERSION:
+            raise CompileRequestSchemaError(
+                f"unsupported compiler_semantics_version {semantics} "
+                f"(this build speaks {COMPILER_SEMANTICS_VERSION})")
+
+        wl = _need(d, "workload", "root")
+        _strict_keys(wl, _WORKLOAD_KEYS, "workload")
+        collectives = []
+        for i, c in enumerate(wl.get("collectives", [])):
+            _strict_keys(c, _COLLECTIVE_KEYS, f"workload.collectives[{i}]")
+            collectives.append(CollectiveOp.from_dict(c))
         workload = Workload(
-            model_family=ModelFamily(wl["model_family"]),
+            model_family=_enum(ModelFamily,
+                               _need(wl, "model_family", "workload"),
+                               "workload.model_family"),
             model_name=wl.get("model_name", ""),
             tp=wl.get("tp", 1),
             pp=wl.get("pp", 1),
             ep=wl.get("ep", 1),
             dp=wl.get("dp", 1),
-            serving_mode=ServingMode(wl.get("serving_mode", "mixed")),
+            param_count_b=wl.get("param_count_b"),
+            sequence_length=wl.get("sequence_length"),
+            batch_size=wl.get("batch_size", 1),
+            precision=wl.get("precision", "fp16"),
+            serving_mode=_enum(ServingMode, wl.get("serving_mode", "mixed"),
+                               "workload.serving_mode"),
+            collectives=tuple(collectives),
             trace_path=wl.get("trace_path"),
-            collectives=tuple(
-                CollectiveOp.from_dict(c) for c in wl.get("collectives", [])
-            ),
         )
-        requirements = tuple(
-            Requirement(
-                qos_class=QoSClass(r["qos_class"]),
+        requirements = []
+        for i, r in enumerate(d.get("requirements", [])):
+            _strict_keys(r, _REQUIREMENT_KEYS, f"requirements[{i}]")
+            requirements.append(Requirement(
+                qos_class=_enum(QoSClass,
+                                _need(r, "qos_class", f"requirements[{i}]"),
+                                f"requirements[{i}].qos_class"),
                 latency_ceiling_cycles=r.get("latency_ceiling_cycles"),
                 bandwidth_floor_gbps=r.get("bandwidth_floor_gbps"),
                 binding=r.get("binding", False),
-            )
-            for r in d.get("requirements", [])
-        )
-        agents = tuple(
-            Agent(
-                kind=AgentKind(a["kind"]),
-                count=a["count"],
+            ))
+        agents = []
+        for i, a in enumerate(d.get("agents", [])):
+            _strict_keys(a, _AGENT_KEYS, f"agents[{i}]")
+            agents.append(Agent(
+                kind=_enum(AgentKind, _need(a, "kind", f"agents[{i}]"),
+                           f"agents[{i}].kind"),
+                count=_need(a, "count", f"agents[{i}]"),
                 data_width=a.get("data_width", 256),
                 addr_width=a.get("addr_width", 64),
                 protocol=a.get("protocol", "AXI"),
-            )
-            for a in d.get("agents", [])
-        )
-        deps = DependencyGraph([
-            Dependency(
-                source=dep["source"],
-                target=dep["target"],
-                kind=DepKind(dep["kind"]),
-            )
-            for dep in d.get("dependencies", [])
-        ])
+                clock_domain=a.get("clock_domain"),
+                power_domain=a.get("power_domain"),
+            ))
+        deps = []
+        for i, dep in enumerate(d.get("dependencies", [])):
+            _strict_keys(dep, _DEPENDENCY_KEYS, f"dependencies[{i}]")
+            deps.append(Dependency(
+                source=_need(dep, "source", f"dependencies[{i}]"),
+                target=_need(dep, "target", f"dependencies[{i}]"),
+                kind=_enum(DepKind, _need(dep, "kind", f"dependencies[{i}]"),
+                           f"dependencies[{i}].kind"),
+            ))
         nc_d = d.get("noc_config", {})
+        _strict_keys(nc_d, _NOC_KEYS, "noc_config")
         noc_config = NocConfig(
-            topology_family=TopologyFamily(nc_d["topology_family"])
-                if nc_d.get("topology_family") else None,
+            topology_family=(_enum(TopologyFamily, nc_d["topology_family"],
+                                   "noc_config.topology_family")
+                             if nc_d.get("topology_family") else None),
             radix=nc_d.get("radix"),
             concentration=nc_d.get("concentration"),
             arbitration=nc_d.get("arbitration"),
             rcu_enabled=nc_d.get("rcu_enabled"),
             link_width=nc_d.get("link_width"),
             output_formats=tuple(
-                OutputFormat(o) for o in nc_d.get("output_formats", ["systemverilog"])
-            ),
+                _enum(OutputFormat, o, "noc_config.output_formats")
+                for o in nc_d.get("output_formats", ["systemverilog"])),
             obfuscation_level=nc_d.get("obfuscation_level", 0),
             mcast_groups=nc_d.get("mcast_groups"),
             mcast_setup_cycles=nc_d.get("mcast_setup_cycles"),
         )
-        # Parse address map
         am_d = d.get("address_map", {})
-        address_map = AddressMap.from_dict(am_d) if am_d else AddressMap()
-
-        # Parse physical context
+        _strict_keys(am_d, _ADDRESS_MAP_KEYS, "address_map")
+        ranges = []
+        for i, r in enumerate(am_d.get("ranges", [])):
+            _strict_keys(r, _ADDRESS_RANGE_KEYS, f"address_map.ranges[{i}]")
+            ranges.append(AddressRange(
+                name=_need(r, "name", f"address_map.ranges[{i}]"),
+                base=_need(r, "base", f"address_map.ranges[{i}]"),
+                size=_need(r, "size", f"address_map.ranges[{i}]"),
+                target_agent_idx=r.get("target_agent_idx", 0)))
         ph_d = d.get("physical", {})
+        _strict_keys(ph_d, _PHYSICAL_KEYS, "physical")
         physical = PhysicalContext(
             default_clock_freq_mhz=ph_d.get("clock_freq_mhz", 1000.0),
             default_data_width=ph_d.get("data_width", 256),
+            num_power_domains=ph_d.get("num_power_domains", 1),
             process_node_nm=ph_d.get("process_node_nm", 7),
-        ) if ph_d else PhysicalContext()
-
-        return cls(
-            workload=workload,
-            requirements=requirements,
-            agents=agents,
-            dependencies=deps,
-            noc_config=noc_config,
-            address_map=address_map,
-            physical=physical,
         )
+
+        obj = cls(
+            workload=workload,
+            requirements=tuple(requirements),
+            agents=tuple(agents),
+            dependencies=DependencyGraph(deps),
+            noc_config=noc_config,
+            address_map=AddressMap(ranges=tuple(ranges)),
+            physical=physical,
+            schema_version=d["schema_version"],
+            compiler_semantics_version=semantics,
+        )
+        for key in ("design_hash", "guardrail_hash"):
+            if key in d and d[key] != obj.design_hash():
+                raise CompileRequestSchemaError(
+                    f"{key} does not match the recomputed design identity "
+                    "— document tampered with or drifted")
+        return obj
 
 
 # ══════════════════════════════════════════════════════════════════════════════

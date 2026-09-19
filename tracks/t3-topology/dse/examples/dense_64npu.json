@@ -1,4 +1,6 @@
 {
+  "schema_version": 2,
+  "compiler_semantics_version": 1,
   "workload": {
     "model_family": "dense_transformer",
     "model_name": "generic_dense",

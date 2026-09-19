@@ -3549,7 +3549,8 @@ def cmd_init(ctx: Ctx, args):
         out = Path(out_path)
         out.parent.mkdir(parents=True, exist_ok=True)
         d = cr.to_dict()
-        d.pop("guardrail_hash", None)  # computed at runtime
+        d.pop("guardrail_hash", None)  # derived, recomputed on load
+        d.pop("design_hash", None)
         out.write_text(json.dumps(d, indent=2))
 
         ok(ctx, f"CompileRequest: {out}")
