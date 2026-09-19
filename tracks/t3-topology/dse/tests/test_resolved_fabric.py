@@ -26,7 +26,7 @@ from veritx_dse.model.resolved_fabric import (  # noqa: E402
     RESOLVED_FABRIC_SCHEMA_VERSION, ResolvedFabric, ResolvedFabricError,
     make_resolved_fabric,
 )
-from veritx_dse.model.fabric_artifact import FabricArtifact  # noqa: E402
+from veritx_dse.model.fabric_artifact import FabricArtifact, FabricArtifactError  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -45,6 +45,7 @@ def bind(chain, *, fabric=None, **overrides):
         topology=chain.topo, attachment=chain.att, router_route=chain.rr,
         resolved_route=chain.rra, vc_assignment=chain.vc,
         packet_format=chain.pf, router_behavior=chain.rb,
+        address_decode=chain.ad,
         fabric=fabric if fabric is not None else compose(chain))
     kw.update(overrides)
     return make_resolved_fabric(**kw)
@@ -132,7 +133,8 @@ class TestSeamRefusals:
                 topology=chain.topo, attachment=chain.att,
                 router_route=chain.rr, resolved_route=chain.rra,
                 vc_assignment=chain.vc, packet_format=chain.pf,
-                router_behavior=chain.rb, fabric=fabric)
+                router_behavior=chain.rb, address_decode=chain.ad,
+                fabric=fabric)
 
     def test_wrong_mapping_hash_refused(self, chain, fabric):
         rf = ResolvedFabric(
@@ -144,7 +146,8 @@ class TestSeamRefusals:
                 topology=chain.topo, attachment=chain.att,
                 router_route=chain.rr, resolved_route=chain.rra,
                 vc_assignment=chain.vc, packet_format=chain.pf,
-                router_behavior=chain.rb, fabric=fabric)
+                router_behavior=chain.rb, address_decode=chain.ad,
+                fabric=fabric)
 
     def test_wrong_fabric_hash_refused(self, chain, fabric):
         rf = ResolvedFabric(
@@ -157,7 +160,8 @@ class TestSeamRefusals:
                 topology=chain.topo, attachment=chain.att,
                 router_route=chain.rr, resolved_route=chain.rra,
                 vc_assignment=chain.vc, packet_format=chain.pf,
-                router_behavior=chain.rb, fabric=fabric)
+                router_behavior=chain.rb, address_decode=chain.ad,
+                fabric=fabric)
 
     def test_rank_count_mismatch_refused(self, chain, fabric):
         two_ranks = MappingArtifact(placements=(
@@ -183,7 +187,8 @@ class TestSeamRefusals:
                 topology=chain.topo, attachment=chain.att,
                 router_route=chain.rr, resolved_route=chain.rra,
                 vc_assignment=chain.vc, packet_format=chain.pf,
-                router_behavior=chain.rb, fabric=fabric)
+                router_behavior=chain.rb, address_decode=chain.ad,
+                fabric=fabric)
 
 
 class TestParallelismSeam:
@@ -200,7 +205,7 @@ class TestParallelismSeam:
                 attachment=base.att, router_route=base.rr,
                 resolved_route=base.rra, vc_assignment=base.vc,
                 packet_format=base.pf, router_behavior=base.rb,
-                fabric=compose(base))
+                address_decode=base.ad, fabric=compose(base))
 
     def test_tampered_rank_coordinates_refused(self):
         chain = build_chain(tp=2, pp=2)       # 4 ranks, real coordinates
@@ -216,7 +221,31 @@ class TestParallelismSeam:
                 attachment=chain.att, router_route=chain.rr,
                 resolved_route=chain.rra, vc_assignment=chain.vc,
                 packet_format=chain.pf, router_behavior=chain.rb,
-                fabric=compose(chain))
+                address_decode=chain.ad, fabric=compose(chain))
+
+
+class TestAddressMapSeam:
+    def test_address_map_change_moves_fabric_and_resolved(self):
+        from test_fabric_artifact import _with_hbm
+        a = _with_hbm(base=0x1000)
+        b = _with_hbm(base=0x8000)
+        rf_a = bind(a, fabric=compose(a))
+        rf_b = bind(b, fabric=compose(b))
+        assert rf_a.fabric_hash != rf_b.fabric_hash
+        assert rf_a.resolved_fabric_hash() != rf_b.resolved_fabric_hash()
+
+    def test_foreign_address_decode_refused(self):
+        from test_fabric_artifact import _with_hbm
+        a = _with_hbm(base=0x1000)
+        b = _with_hbm(base=0x8000)
+        with pytest.raises(FabricArtifactError,
+                           match="address_decode_hash does not match"):
+            make_resolved_fabric(
+                design=a.cr, inventory=a.inv, mapping=a.mapping,
+                topology=a.topo, attachment=a.att, router_route=a.rr,
+                resolved_route=a.rra, vc_assignment=a.vc,
+                packet_format=a.pf, router_behavior=a.rb,
+                address_decode=b.ad, fabric=compose(a))
 
 
 # ── persistence strictness ───────────────────────────────────────────────

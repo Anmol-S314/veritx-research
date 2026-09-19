@@ -40,6 +40,10 @@ from .model.attachment import (
     AgentAttachmentArtifact, AgentInterfaceDescriptor, Endpoint,
     AttachmentError, derive_attachment,
 )
+from .model.address_decode import (
+    AddressDecodeArtifact, AddressDecodeEntry, AddressDecodeError,
+    derive_address_decode, UNMATCHED_ADDRESS_POLICY_ERROR,
+)
 from .model.resolved_route import (
     ResolvedRouteArtifact, ResolvedRouteError, LOCAL_EJECTION,
     derive_resolved_route,

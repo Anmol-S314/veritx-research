@@ -21,6 +21,7 @@
 | 1.7 | B3.5a | FabricArtifact is implemented as the root hardware identity: exactly the six child semantic hashes + `PlaneComposition.SINGLE_PLANE`, domain `srota/Fabric/v1`. `validate_against` revalidates the complete child DAG, so individually valid children that cannot form one DAG are refused. No design/mapping/backend/provenance/evidence enters `fabric_hash`. Legacy `core.fabric.FabricArtifact` remains untouched backend evidence (rename in B3.7). |
 | 1.8 | B3.5b | ResolvedFabric is implemented: `resolved_fabric_hash = H(design_hash, mapping_hash, fabric_hash)`, domain `srota/ResolvedFabric/v1`. Its seam proves the design/mapping/fabric roots, the attachment↔design/inventory universe, the mapping↔attachment placement identity (exact coordinates+kind; idle agents legal), the rank-space equality, and then the complete FabricArtifact DAG. Same hardware under a different mapping keeps `fabric_hash` and changes `resolved_fabric_hash`. |
 | 1.9 | B3.5c | Sealing validation only; no schema/hash change. FabricArtifact now calls `attachment.validate_against_topology(topology)` and `router_route.validate_against(topology)` (parent-hash equality is not legality: channels, all-pairs termination, loops). Attachment gains the design-free `validate_against_topology` helper; `validate_against(design, inventory, topology)` composes it. ResolvedFabric proves `inventory.parallelism == workload (tp,pp,ep,dp)` and that `inventory.ranks` is the canonical rank namespace for that shape (equal world size with different geometry is refused), plus tampered coordinates are refused. |
+| 1.10 | B3.5d | AddressDecodeArtifact materializes `CompileRequest.address_map` + attachment into canonical `(name, base, size, target_agent_group, target_endpoint_id)` entries (domain `srota/AddressDecode/v1`), with singleton-target-group enforcement and UNSUPPORTED for multi-instance groups. FabricArtifact becomes schema v2 (`srota/Fabric/v2`) binding `address_decode_hash`; v1 is refused. ResolvedFabric proves the decode artifact corresponds exactly to `design.address_map`. Addresses remain protocol payload and do not enter flit headers. |
 
 This document defines what a resolved Srota fabric *is* before B3 code is
 written. It starts from hardware semantics and maps existing code onto them —
@@ -181,7 +182,7 @@ depends on.
           │
           └──────────────┐
                          ▼
-                   FabricArtifact          (all + plane composition)
+                   FabricArtifact          (all + address decode + plane, v2)
                          │
                          ▼
                    fabric_hash
@@ -506,6 +507,11 @@ protocol meta  NI/protocol payload (AXI/CHI/UCIe/...)
 multicast      workload lowering only in v1 (no fabric primitive)
 ```
 
+Addresses are protocol payload too: address→endpoint decoding happens at
+injection/NI (`AddressDecodeArtifact`) and selects the PacketFormat
+`destination_endpoint_id`; no address field enters the flit, and no flit
+header is interpreted as an address.
+
 Packetization v1 is `BOUNDED_WORMHOLE` with identity-bearing
 `max_packet_flits` (default 8). A larger message is fragmented by the
 NI/lowerer into multiple bounded network packets; one message must never become
@@ -619,6 +625,7 @@ claim for any existing backend.
 | demotion | none | stale/partial historical code |
 | switch hold | false | implementation-specific |
 | flit width | equals channel width v1 | RTL fixed 64; ASTRA coarse override may differ |
+| address decode | AddressDecodeArtifact (singleton target groups) | rtlgen `gen_rtl_2die.py::addr_to_router()` upper-bit decode | B3.6 removes |
 
 ## 15. Multicast / multi-plane semantics
 
@@ -688,15 +695,29 @@ derived capacities; `artifact_hash`.
 ### RouterBehaviorArtifact
 Parent `vc_assignment_hash`; §14 fields; `artifact_hash`.
 
+### AddressDecodeArtifact
+Parent `attachment_hash`; canonical entries `(name, base, size,
+target_agent_group, target_endpoint_id)` sorted by `(base, size,
+target_agent_group, target_endpoint_id, name)`; `unmatched_address_policy =
+ERROR`; domain `srota/AddressDecode/v1`. Derived from
+`CompileRequest.address_map` + attachment; copies address semantics without
+binding `design_hash`. v1 requires singleton target Agent groups
+(multi-instance -> UNSUPPORTED, never an invented selection/interleave policy).
+Ranges are non-overlapping and must not overflow the 64-bit address domain.
+Addresses stay protocol payload; the decoder selects the PacketFormat
+destination endpoint at injection. Legacy `gen_rtl_2die.py::addr_to_router()`
+is non-authoritative and B3.6 must remove it.
+
 ### FabricArtifact
 Parents: `topology_hash`, `attachment_hash`, `resolved_route_hash`,
-`vc_assignment_hash`, `packet_format_hash`, `router_behavior_hash`, plus
-`plane_composition` (`SINGLE_PLANE` only in v1). Contains no design_hash,
-mapping_hash, backend bytes/paths/run ids/git/timestamps/seeds, candidate
-provenance, metrics or verification evidence. `validate_against(...)`
-revalidates the whole child DAG (ResolvedRoute, VC, PacketFormat,
-RouterBehavior) and refuses individually valid children that cannot form one
-DAG. Persisted hash key `fabric_hash`; domain `srota/Fabric/v1`. NOTE: the
+`vc_assignment_hash`, `packet_format_hash`, `router_behavior_hash`,
+`address_decode_hash`, plus `plane_composition` (`SINGLE_PLANE` only in v1).
+Contains no design_hash, mapping_hash, backend bytes/paths/run ids/git/
+timestamps/seeds, candidate provenance, metrics or verification evidence.
+`validate_against(...)` revalidates the whole child DAG (address decode,
+ResolvedRoute, VC, PacketFormat, RouterBehavior) and refuses individually
+valid children that cannot form one DAG. Persisted hash key `fabric_hash`;
+domain `srota/Fabric/v2` (v1 without address decode is refused). NOTE: the
 legacy `core.fabric.FabricArtifact` is backend/executed evidence, not this
 object; its rename is deferred to B3.7.
 
@@ -751,7 +772,8 @@ expected for analytical projection; fatal for exact RTL↔BookSim equivalence.
 | VCAssignmentArtifact | resolved_route_hash | `srota/VCAssignment/v1` |
 | PacketFormatArtifact | topology_hash, attachment_hash, vc_assignment_hash | `srota/PacketFormat/v1` |
 | RouterBehaviorArtifact | vc_assignment_hash | `srota/RouterBehavior/v2` |
-| FabricArtifact | topology, attachment, resolved_route, vc, packet, router_behavior, plane_composition | `srota/Fabric/v1` |
+| AddressDecodeArtifact | attachment_hash | `srota/AddressDecode/v1` |
+| FabricArtifact | topology, attachment, resolved_route, vc, packet, router_behavior, address_decode, plane_composition | `srota/Fabric/v2` |
 | BackendConfigArtifact | fabric_hash | `srota/BackendConfig/v1` |
 | ResolvedFabric | design_hash, mapping_hash, fabric_hash | `srota/ResolvedFabric/v1` |
 
@@ -796,6 +818,10 @@ Enforced at the ResolvedFabric seam (discharges B2's deferred parent binding):
   VC ≥ count;
 - packet encoded capacities ≥ actual endpoint and VC counts (v1 has no class/sequence wire fields);
 - router behavior covers every implemented VC;
+- address decode entries equal the materialized decode of `design.address_map`
+  against the attachment (content-based, not design-hash-based); target Agent
+  groups are singleton; ranges are non-overlapping and within the address
+  domain; addresses never enter flit headers;
 - FabricArtifact binds exactly the six child semantic hashes plus
   plane_composition and revalidates the complete child DAG; a set of
   individually valid artifacts that cannot form one DAG is refused;

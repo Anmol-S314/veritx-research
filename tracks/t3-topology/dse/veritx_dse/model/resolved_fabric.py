@@ -23,7 +23,8 @@ relations):
   * design_hash matches the design revision;
   * mapping_hash matches the mapping artifact;
   * fabric_hash matches the FabricArtifact, whose complete child DAG is
-    revalidated (never trust a root hash alone);
+    revalidated (never trust a root hash alone), including the address
+    decode against ``design.address_map`` + attachment;
   * attachment.validate_against(design, inventory, topology): complete
     design agent universe, idle agents included, interfaces and seats
     legal;
@@ -48,6 +49,7 @@ import hashlib
 from dataclasses import dataclass
 from typing import Any
 
+from .address_decode import AddressDecodeArtifact
 from .fabric_artifact import FabricArtifact
 from .mapping import MappingArtifact
 from .placement import (
@@ -177,6 +179,7 @@ class ResolvedFabric:
                          vc_assignment,
                          packet_format,
                          router_behavior,
+                         address_decode: AddressDecodeArtifact,
                          fabric: FabricArtifact) -> None:
         """Prove design+mapping really apply to this fabric.
 
@@ -196,6 +199,10 @@ class ResolvedFabric:
             raise ResolvedFabricError(
                 f"fabric must be a FabricArtifact, got "
                 f"{type(fabric).__name__}")
+        if not isinstance(address_decode, AddressDecodeArtifact):
+            raise ResolvedFabricError(
+                f"address_decode must be an AddressDecodeArtifact, got "
+                f"{type(address_decode).__name__}")
         if not hasattr(design, "design_hash"):
             raise ResolvedFabricError(
                 "design must expose design_hash()")
@@ -270,12 +277,16 @@ class ResolvedFabric:
                 f"mapping ranks {mapping_ranks[:4]}... do not match the "
                 f"inventory logical ranks {inventory_ranks[:4]}...")
 
-        # 5. the complete hardware DAG (FabricArtifactError propagates)
+        # 5. the complete hardware DAG (FabricArtifactError propagates).
+        #    Passing design.address_map here proves the supplied decode
+        #    artifact corresponds exactly to the design address map, while
+        #    keeping design identity out of fabric identity.
         fabric.validate_against(
             topology=topology, attachment=attachment,
             router_route=router_route, resolved_route=resolved_route,
             vc_assignment=vc_assignment, packet_format=packet_format,
-            router_behavior=router_behavior)
+            router_behavior=router_behavior, address_decode=address_decode,
+            address_map=design.address_map)
 
 
 def make_resolved_fabric(*, design, inventory: NodeInventory,
@@ -287,6 +298,7 @@ def make_resolved_fabric(*, design, inventory: NodeInventory,
                          vc_assignment,
                          packet_format,
                          router_behavior,
+                         address_decode: AddressDecodeArtifact,
                          fabric: FabricArtifact) -> ResolvedFabric:
     """Bind design + mapping to an already-composed FabricArtifact.
 
@@ -302,5 +314,5 @@ def make_resolved_fabric(*, design, inventory: NodeInventory,
         topology=topology, attachment=attachment, router_route=router_route,
         resolved_route=resolved_route, vc_assignment=vc_assignment,
         packet_format=packet_format, router_behavior=router_behavior,
-        fabric=fabric)
+        address_decode=address_decode, fabric=fabric)
     return artifact
