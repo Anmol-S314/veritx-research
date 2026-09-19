@@ -121,8 +121,9 @@ class TestServingFabricResolution:
         assert expected == {
             "source": "serving_cluster", "topology": "mesh",
             "routing": "dor", "dimensions": [2], "npu_count": 2,
+            "cluster_id": "single_node_moe_single_instance",
             "k": 2, "n": 1, "num_vcs": 16, "vc_buf_size": 512,
-            "packet_size": 64}
+            "packet_size": 64, "flit_size": 64}
 
     def test_multi_dp_tp_lowers_to_square_mesh(self):
         expected = resolve_serving_fabric_identity(
@@ -677,3 +678,156 @@ class TestSliceFabricGateWiring:
         assert results[0]["error"] == "FABRIC_INTENT_MISMATCH"
         assert results[0]["expected_fabric"]["k"] == 2
         assert results[0]["executed_fabric"]["size"] == {"k": "4", "n": "1"}
+
+
+# ── Wave B: content-addressed fabric/mapping identity (audit #1/#26/#36) ─
+
+class TestFabricArtifactIdentity:
+    """Mutation property: any result-affecting fabric change forks the
+    artifact hash; identical fabrics hash identically across authorities."""
+
+    def test_param_mutation_forks_hash(self):
+        from veritx_dse.core.fabric import fabric_from_preset
+        from veritx_dse.model.presets import lookup_topo
+        from veritx_dse.simulation.booksim import resolve_fabric_params
+        topo = lookup_topo("mesh_8x8")
+        base = resolve_fabric_params(topo)
+        a1 = fabric_from_preset(topo, sim_params=base, node_count=64)
+        bumped = dict(base, num_vcs=base["num_vcs"] + 1)
+        a2 = fabric_from_preset(topo, sim_params=bumped, node_count=64)
+        assert a1.artifact_hash != a2.artifact_hash, \
+            "a VC change that alters execution must fork fabric identity"
+
+    def test_same_preset_same_hash(self):
+        from veritx_dse.core.fabric import fabric_from_preset
+        from veritx_dse.model.presets import lookup_topo
+        from veritx_dse.simulation.booksim import resolve_fabric_params
+        topo = lookup_topo("mesh_8x8")
+        params = resolve_fabric_params(topo)
+        a1 = fabric_from_preset(topo, sim_params=params, node_count=64)
+        a2 = fabric_from_preset(topo, sim_params=params, node_count=64)
+        assert a1.artifact_hash == a2.artifact_hash
+
+    def test_resolution_binds_artifact_in_intent(self):
+        """The resolved spec carries the artifact, so experiment_hash
+        (intent identity) forks on fabric changes — audit #26's first
+        link in the intent→execution hash chain."""
+        from veritx_dse.core.spec import parse, resolve
+        d = {"name": "t", "workload": {"id": "w", "trace": "x"},
+             "system": {"nodes": 64},
+             "network": {"topology": "mesh_8x8"},
+             "simulation": {"mode": "latency", "timeout_s": 5},
+             "replication": {"mode": "deterministic", "seeds": [42]}}
+        r1 = resolve(parse(d))
+        assert r1["fabric_artifact"]["topology_id"] == "mesh_8x8"
+        assert r1["fabric_artifact"]["routing"] == "min_adapt"
+        d2 = json.loads(json.dumps(d))
+        d2["network"] = {"topology": "torus_8x8"}
+        r2 = resolve(parse(d2))
+        assert (r1["fabric_artifact"]["artifact_hash"]
+                != r2["fabric_artifact"]["artifact_hash"])
+
+    def test_standalone_fingerprint_binding_certifies(self, tmp_path):
+        """A standalone run whose results record the artifact hash it
+        executed gets fabric identity resolved — the Wave-B executed-
+        evidence path for Slice A (comparison.py artifact_bound)."""
+        from veritx_dse.core.spec import parse, resolve
+        d = {"name": "t", "workload": {"id": "w", "trace": "x"},
+             "system": {"nodes": 64},
+             "network": {"topology": "mesh_8x8"},
+             "simulation": {"mode": "latency", "timeout_s": 5},
+             "replication": {"mode": "deterministic", "seeds": [42]}}
+        r = resolve(parse(d))
+        fa = r["fabric_artifact"]
+        run_dir = tmp_path / "runA"
+        (run_dir / "workload").mkdir(parents=True)
+        (run_dir / "workload" / "index.json").write_text(json.dumps({
+            "schema_version": 1,
+            "artifacts": [{"trace": "trace/r0.txt",
+                           "artifact_hash": "sha256:" + "c" * 64}]}))
+        (run_dir / "spec.resolved.json").write_text(json.dumps(r))
+        (run_dir / "manifest.json").write_text(json.dumps({
+            "schema_version": 1, "run_id": "runA",
+            "status": "SUCCEEDED",
+            "results": [{
+                "task_id": "eval-seed42",
+                "fabric_artifact_hash": fa["artifact_hash"],
+                "provenance": {"engine": "booksim",
+                               "network_backend": "booksim",
+                               "network_mode": "REAL_SIMULATION",
+                               "semantic_losses": [],
+                               "fidelity": "NETWORK_SIMULATION"},
+                "metric_schema": 1,
+                "metrics": {"latency": {"value": 1.0, "unit": "cycles",
+                                        "producer": "booksim",
+                                        "fidelity": "NETWORK_SIMULATION",
+                                        "scope": "per_packet"}},
+            }]}))
+        from veritx_dse.core.comparison import fingerprint_from_run
+        fp = fingerprint_from_run(run_dir)
+        assert fp["topology"] == "mesh_8x8"
+        assert fp["vc_count"] == fa["vc_count"]
+        assert fp["packetization"] == fa["packet_size_flits"]
+        assert fp["fabric_artifact_hash"] == fa["artifact_hash"]
+        assert fp["certified"] is True
+
+    def test_hash_mismatch_does_not_certify(self, tmp_path):
+        """A result recording a DIFFERENT artifact hash than the spec
+        binds is not a bound execution — no certification."""
+        from veritx_dse.core.spec import parse, resolve
+        d = {"name": "t", "workload": {"id": "w", "trace": "x"},
+             "system": {"nodes": 64},
+             "network": {"topology": "mesh_8x8"},
+             "simulation": {"mode": "latency", "timeout_s": 5},
+             "replication": {"mode": "deterministic", "seeds": [42]}}
+        r = resolve(parse(d))
+        run_dir = tmp_path / "runB"
+        (run_dir / "workload").mkdir(parents=True)
+        (run_dir / "workload" / "index.json").write_text(json.dumps({
+            "schema_version": 1,
+            "artifacts": [{"trace": "trace/r0.txt",
+                           "artifact_hash": "sha256:" + "c" * 64}]}))
+        (run_dir / "spec.resolved.json").write_text(json.dumps(r))
+        (run_dir / "manifest.json").write_text(json.dumps({
+            "schema_version": 1, "run_id": "runB",
+            "status": "SUCCEEDED",
+            "results": [{
+                "task_id": "eval-seed42",
+                "fabric_artifact_hash": "sha256:" + "d" * 64,
+                "metric_schema": 1, "metrics": {}}]}))
+        from veritx_dse.core.comparison import fingerprint_from_run
+        fp = fingerprint_from_run(run_dir)
+        assert fp["certified"] is False
+
+
+class TestMappingArtifactIdentity:
+    """Audit #25: placement is identity. Ordered rank entries, content-
+    addressed, canonicalized by rank key."""
+
+    def test_rank_swap_forks_identity(self):
+        from veritx_dse.core.fabric import mapping_artifact
+        m1 = mapping_artifact(authority="serving_workload", entries=[
+            {"rank": 0, "device": "A"}, {"rank": 1, "device": "B"}])
+        m2 = mapping_artifact(authority="serving_workload", entries=[
+            {"rank": 0, "device": "B"}, {"rank": 1, "device": "A"}])
+        assert m1.mapping_hash != m2.mapping_hash
+
+    def test_input_order_is_canonicalized_by_rank(self):
+        from veritx_dse.core.fabric import mapping_artifact
+        m1 = mapping_artifact(authority="a", entries=[
+            {"rank": 0, "device": "A"}, {"rank": 1, "device": "B"}])
+        m2 = mapping_artifact(authority="a", entries=[
+            {"rank": 1, "device": "B"}, {"rank": 0, "device": "A"}])
+        assert m1.mapping_hash == m2.mapping_hash
+
+    def test_gap_and_tamper_refused(self):
+        from veritx_dse.core.fabric import MappingArtifact, mapping_artifact
+        with pytest.raises(Exception):
+            mapping_artifact(authority="a", entries=[
+                {"rank": 0, "device": "A"}, {"rank": 2, "device": "C"}])
+        m = mapping_artifact(authority="a", entries=[
+            {"rank": 0, "device": "A"}, {"rank": 1, "device": "B"}])
+        d = m.to_dict()
+        d["entries"][0]["device"] = "TAMPERED"
+        with pytest.raises(Exception):
+            MappingArtifact.from_dict(d)

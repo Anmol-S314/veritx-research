@@ -198,9 +198,14 @@ def resolve_serving_fabric_identity(cluster_path: str | Path) -> dict[str, Any]:
         is_square_mesh = False
     expected: dict[str, Any] = {
         "source": "serving_cluster",
+        "cluster_id": str(Path(cluster_path).stem),
         "dimensions": dims,
         "npu_count": npu_count,
         "num_vcs": 16, "vc_buf_size": 512, "packet_size": 64,
+        # The child launches the ASTRA backend with --booksim2-flit-bytes=64
+        # (serving/__main__). Recorded so the FabricArtifact's packet_bytes
+        # derivation is real, not assumed.
+        "flit_size": 64,
     }
     if not is_square_mesh and dims != [1]:
         expected.update({"topology": "anynet", "routing": "min"})

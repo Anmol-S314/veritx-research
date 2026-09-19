@@ -108,6 +108,19 @@ def run_experiment(
             f"system.nodes {spec.system.nodes} does not match topology "
             f"'{spec.network.topology}' ({nodes} nodes)"
         )
+    # Wave B — the resolved FabricArtifact must re-assert against the
+    # preset here too (one fabric authority; resolve() built it from the
+    # same preset, so any drift is a programming error — refuse loudly).
+    from ..simulation.booksim import resolve_fabric_params
+    from .fabric import fabric_from_preset
+    expected_artifact = fabric_from_preset(
+        topo, sim_params=resolve_fabric_params(topo),
+        node_count=nodes).to_dict()
+    if resolved.get("fabric_artifact") != expected_artifact:
+        raise SpecError(
+            "resolved fabric_artifact does not match the preset's fabric "
+            "— resolution drift (programming error; presets are the only "
+            "standalone authority)")
     trace_path = _resolve_trace(spec.workload.trace)
 
     # ── run directory (immutable from here) ────────────────────────────
@@ -133,6 +146,9 @@ def run_experiment(
 
     # ── plan (persist via Run; one plan-file contract, Phase 7) ────────
     p = plan_spec(resolved)
+    # Wave B: plan carries the fabric artifact hash so the plan hash binds
+    # the exact fabric the tasks will execute.
+    p["fabric_artifact_hash"] = resolved["fabric_artifact"]["artifact_hash"]
     run.record_plan(p)
 
     # ── execute (one task per seed; real process, real parse) ──────────
@@ -147,6 +163,10 @@ def run_experiment(
                     timeout=task["timeout_s"], sim_type=spec.simulation.mode,
                     runner=runner,
                 )
+                # Wave B: executed-evidence binding — every task result
+                # names the FabricArtifact whose lowering produced it.
+                r["fabric_artifact_hash"] = resolved["fabric_artifact"][
+                    "artifact_hash"]
                 run.add_result(task["task_id"],
                                {"trace_sha256": trace_hash, **r})
             except BookSimError as e:  # includes TimeoutError subclass

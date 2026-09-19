@@ -47,6 +47,12 @@ __all__ = [
 
 # ── Config builder (single source of truth) ────────────────────────────────
 
+# Flit width used by the ET→trace lowering (tools/chakra_to_dse.py):
+# workload bytes are converted to flits at 64B/flit. Recorded in fabric
+# artifacts so packet_bytes derivation is honest — BookSim itself is
+# unit-less (flits are its currency; no flit_size param exists).
+FLIT_BYTES = 64
+
 # Default BookSim parameters. Every run starts from this base.
 BASE_PARAMS: dict[str, Any] = {
     "num_vcs": 4,
@@ -64,6 +70,31 @@ BASE_PARAMS: dict[str, Any] = {
     "internal_speedup": 1.0,
     "packet_size": 8,
 }
+
+
+def resolve_fabric_params(topo: Topology) -> dict[str, Any]:
+    """Resolve the fabric params ONE build_config will render.
+
+    The single authority the FabricArtifact consumes: callers get exactly
+    the VC/buffer/packet/flit dimensions their runs will execute, so the
+    artifact's hash covers reality instead of a guess. Mirrors build_config's
+    base→topo-override→GEC-adjustment order; sim/traffic params (traffic,
+    seed, sample_period, thresholds) are NOT fabric and stay out.
+    """
+    params = dict(BASE_PARAMS)
+    params.update(topo.params)
+    if topo.needs_noc_latency_zero:
+        params["use_noc_latency"] = 0
+        params["routing_delay"] = 1
+        d_val = topo.params.get("d", 0)
+        if d_val > 0 and params["num_vcs"] < d_val:
+            params["num_vcs"] = d_val + 1
+    # flit_size is a fabric-IDENTITY annotation (workload lowering width,
+    # see FLIT_BYTES above), not a BookSim param — BookSim has no such
+    # field and its parser rejects unknown ones. Identity-only: build_config
+    # pops it before rendering; artifact factories consume it.
+    params["flit_size"] = FLIT_BYTES
+    return params
 
 
 def build_config(
@@ -87,21 +118,7 @@ def build_config(
     Also: NEVER pass "classes" — it creates separate traffic classes with
     split VCs, inflating latency 75x for multi-class traces.
     """
-    # Start from base params
-    params = dict(BASE_PARAMS)
-
-    # Apply topology-specific overrides first (k, n, c, o, d)
-    params.update(topo.params)
-
-    # GEC topologies need special handling
-    if topo.needs_noc_latency_zero:
-        params["use_noc_latency"] = 0
-        # GEC requires deferred routing
-        params["routing_delay"] = 1
-        # MECS needs num_vcs >= d (one VC sub-range per tap on shared channel)
-        d_val = topo.params.get("d", 0)
-        if d_val > 0 and params["num_vcs"] < d_val:
-            params["num_vcs"] = d_val + 1
+    params = resolve_fabric_params(topo)
 
     # Traffic source
     trace_abs = str(Path(trace_path).resolve())
@@ -171,6 +188,8 @@ def build_config(
     # Apply any extra overrides
     if overrides:
         params.update(overrides)
+    # Never render the identity-only annotation (see above).
+    params.pop("flit_size", None)
 
     # Topology and routing MUST come last (after k/n) so BookSim
     # parses dimensions before constructing the network.

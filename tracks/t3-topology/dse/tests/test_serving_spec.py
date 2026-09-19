@@ -95,7 +95,7 @@ class TestServingSpecBoundary:
         assert r["serving"] is None
         assert set(r) == {"schema_version", "workload", "system",
                           "network", "simulation", "replication",
-                          "comparison", "serving"}
+                          "comparison", "serving", "fabric_artifact"}
 
 
 class TestServingRegistry:

@@ -206,6 +206,26 @@ def resolve(spec: ExperimentSpec) -> dict[str, Any]:
         raise SpecError("network is required for standalone experiments")
     network = (_resolve_named_network(spec.network)
                if spec.network is not None else None)
+    # Wave B — FabricArtifact: standalone fabric identity is content-
+    # addressed at resolution time. The artifact consumes the same param
+    # resolution build_config renders (resolve_fabric_params), so its hash
+    # covers the VC/buffer/packet/flit dimensions the run will EXECUTE —
+    # not just the topology/routing name. Rides resolved["fabric_artifact"]
+    # so experiment_hash forks on any result-affecting fabric change.
+    # Serving runs inject their cluster-derived artifact later (slice),
+    # because the cluster file must be resolved from disk first.
+    fabric_artifact = None
+    if network is not None:
+        from ..model.presets import lookup_topo
+        from ..simulation.booksim import resolve_fabric_params
+        from .fabric import fabric_from_preset
+        topo = lookup_topo(network["topology"])
+        if topo is None:  # defensive; _resolve_named_network already raised
+            raise SpecError(
+                f"unknown topology id '{network['topology']}'")
+        fabric_artifact = fabric_from_preset(
+            topo, sim_params=resolve_fabric_params(topo),
+            node_count=spec.system.nodes).to_dict()
     return {
         "schema_version": SCHEMA_VERSION,
         "workload": {"id": spec.workload.id, "trace": spec.workload.trace},
@@ -221,6 +241,9 @@ def resolve(spec: ExperimentSpec) -> dict[str, Any]:
             "timeout_s": spec.simulation.timeout_s,
         },
         "replication": {"mode": repl.mode, "seeds": seeds},
+        # Content-addressed fabric identity (Wave B). None for serving at
+        # this stage — the slice injects the cluster-derived artifact.
+        "fabric_artifact": fabric_artifact,
         "comparison": (
             {
                 "variable": spec.comparison.variable,

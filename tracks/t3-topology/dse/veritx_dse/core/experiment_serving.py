@@ -176,6 +176,13 @@ def run_serving_experiment(
     # to execute — identity and execution cannot silently diverge.
     expected_fabric = resolve_serving_fabric_identity(cluster_path)
     resolved["serving"]["expected_fabric"] = expected_fabric
+    # Wave B: the expected fabric becomes a content-addressed
+    # FabricArtifact — one identity type across both authorities. Its hash
+    # covers VC/buffer/packet/flit dimensions, so two clusters that render
+    # the same dims but differ in, say, buffer depth cannot share identity.
+    from .fabric import fabric_from_serving_cluster
+    fabric_artifact = fabric_from_serving_cluster(expected_fabric)
+    resolved["fabric_artifact"] = fabric_artifact.to_dict()
 
     # ── run directory (immutable from here) ──────────────────────
     run = Run.create(repo=repo, resolved_spec=resolved, argv=list(sys.argv))
@@ -251,7 +258,8 @@ def run_serving_experiment(
             run.finalize("FAILED", note=f"exit {res.returncode}")
             return run
         return _verdict(run, res, csv_path, sv, serve_binaries,
-                        cluster_path, dataset_path, backend)
+                        cluster_path, dataset_path, backend,
+                        fabric_artifact=resolved["fabric_artifact"])
     except KeyboardInterrupt:
         run.transition("INTERRUPTED", note="KeyboardInterrupt during serve")
         raise
@@ -266,7 +274,8 @@ def _write_logs(run: Run, out: Any, err: Any) -> None:
 
 def _verdict(run: Run, res: Any, csv_path: Path, sv: dict[str, Any],
              serve_binaries: list[str], cluster_path: Path,
-             dataset_path: Path, backend: str) -> Run:
+             dataset_path: Path, backend: str,
+             *, fabric_artifact: dict[str, Any]) -> Run:
     """Terminal validation: retirement + provenance + fabric + tripwire."""
     network_mode = mode_for_backend(backend, sv["cycle_accurate"])
     assert network_mode == "REAL_SIMULATION"
@@ -383,6 +392,9 @@ def _verdict(run: Run, res: Any, csv_path: Path, sv: dict[str, Any],
         "backend_binaries": [binary_identity(b) for b in serve_binaries],
         "cluster_sha256": binary_identity(cluster_path)["sha256"],
         "dataset_sha256": binary_identity(dataset_path)["sha256"],
+        # Wave B: the content-addressed fabric identity this run bound at
+        # creation (booksim runs proved executed == expected above).
+        "fabric_artifact": fabric_artifact,
         **({"executed_fabric": executed_fabric}
            if executed_fabric is not None else {}),
         "workload": {

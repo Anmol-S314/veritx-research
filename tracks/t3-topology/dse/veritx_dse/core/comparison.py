@@ -245,6 +245,20 @@ def fingerprint_from_run(run_dir: Path) -> dict[str, Any]:
         fidelity = "NETWORK_SIMULATION"
         semantic_losses = []
 
+    # Wave B: content-addressed fabric artifacts. The resolved spec binds
+    # a FabricArtifact; standalone task results record the artifact hash
+    # they executed. Binding (spec artifact hash == result-recorded hash)
+    # lets the artifact's dimensions stand in as executed evidence for
+    # standalone runs — the hash is proven, the dimensions were hashed at
+    # resolution from the same param resolution build_config renders.
+    spec_artifact = spec.get("fabric_artifact") \
+        if isinstance(spec.get("fabric_artifact"), dict) else None
+    artifact_hash = (spec_artifact or {}).get("artifact_hash")
+    recorded_artifact_hash = next(
+        (r.get("fabric_artifact_hash") for r in reversed(results)
+         if isinstance(r, dict) and r.get("fabric_artifact_hash")), None)
+    artifact_bound = bool(artifact_hash
+                          and recorded_artifact_hash == artifact_hash)
     # Study-integrity P0: vc/packetization identity comes from the run's
     # EXECUTED-fabric record (parsed from the generated BookSim config the
     # child actually ran), not from the spec's claims — spec.network never
@@ -273,6 +287,16 @@ def fingerprint_from_run(run_dir: Path) -> dict[str, Any]:
             packetization = None
         if vc_count is None or packetization is None:
             workload_certified = False
+    elif artifact_bound:
+        # Standalone with a proven artifact binding: the artifact is the
+        # executed fabric identity (its hash rode every task result).
+        vc_count = spec_artifact.get("vc_count")
+        try:
+            packetization = (int(spec_artifact["packet_size_flits"])
+                             if spec_artifact.get("packet_size_flits")
+                             else None)
+        except (TypeError, ValueError):
+            packetization = None
 
     repl = spec.get("replication", {})
     metric_schema = next((r.get("metric_schema") for r in reversed(results)
@@ -283,10 +307,15 @@ def fingerprint_from_run(run_dir: Path) -> dict[str, Any]:
     # intent), and the run slice refuses requested/executed contradictions
     # before any result exists, so the executed record IS the routing/topo
     # identity. One source, never silently chosen per field.
-    topology_id = (exec_topo if serving is not None
-                   else spec.get("network", {}).get("topology"))
-    routing_id = (exec_routing if serving is not None
-                  else spec.get("network", {}).get("routing"))
+    if serving is not None:
+        topology_id = exec_topo
+        routing_id = exec_routing
+    elif artifact_bound:
+        topology_id = spec_artifact.get("topology_id")
+        routing_id = spec_artifact.get("routing")
+    else:
+        topology_id = spec.get("network", {}).get("topology")
+        routing_id = spec.get("network", {}).get("routing")
     fp = {
         "workload_hash": workload_hash,
         "model_identity": (serving or {}).get("cluster"),
@@ -322,6 +351,8 @@ def fingerprint_from_run(run_dir: Path) -> dict[str, Any]:
         **({"executed_topology": exec_topo, "executed_routing": exec_routing,
             "executed_config_sha256": exec_fabric.get("config_sha256")}
            if exec_fabric else {}),
+        # Wave B: the content-addressed fabric identity bound to the run.
+        **({"fabric_artifact_hash": artifact_hash} if artifact_hash else {}),
         "run_id": manifest.get("run_id", run_dir.name),
     }
     # Certification completeness (study-integrity P0 #7): a mandatory
@@ -341,8 +372,10 @@ def fingerprint_from_run(run_dir: Path) -> dict[str, Any]:
         "metric_schema": fp["metric_schema"],
     }
     unresolved = [name for name, v in mandatory.items() if v is None]
-    fp["certified"] = bool(fp["workload_certified"] and exec_fabric is not None
-                           and not unresolved)
+    fp["certified"] = bool(
+        fp["workload_certified"]
+        and (exec_fabric is not None or artifact_bound)
+        and not unresolved)
     if unresolved:
         fp["unresolved_dimensions"] = unresolved
         fp["certification_status"] = "INSUFFICIENT_PROVENANCE"
