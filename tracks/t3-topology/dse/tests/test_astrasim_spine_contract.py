@@ -176,6 +176,99 @@ def test_run_invocation_pins_embedded_injection_override(tmp_path, monkeypatch):
     assert r["status"] == "ok"
 
 
+def test_flit_bytes_is_explicit_recorded_and_labelled(tmp_path, monkeypatch):
+    """Packetization is a comparison key, not cosmetic provenance.
+
+    The runner must (a) pass --booksim2-flit-bytes explicitly, (b) record
+    flit_bytes/flit_bits/model/fidelity in the row, and (c) label a coarse
+    override distinctly from the 8-byte backend default, so a 512 B run can
+    never be ranked as equivalent-fidelity to an 8 B run.
+    """
+    proc = _fake_popen(monkeypatch, "sys[0] finished, 1234 cycles")
+    monkeypatch.setattr(
+        run_astrasim, "find_astrasim_bin", lambda: "/fake/AstraSim_BookSim2"
+    )
+    monkeypatch.setattr(run_astrasim, "RESULTS_DIR", tmp_path)
+    monkeypatch.setenv("ASTRASIM_FLIT_BYTES", "512")
+
+    cfg = tmp_path / "mesh4x4.cfg"
+    cfg.write_text("topology = mesh;\nk = 4;\nn = 2;\nnum_vcs = 4;\n")
+    spec = {
+        "model_name": "ALL_GATHER",
+        "is_collective_microbenchmark": True,
+        "msg_size_mb": 16.0,
+        "num_layers": 1,
+        "total_allreduce_calls": 1,
+        "total_flops": 1e9,
+        "tp_degree": 1,
+        "pp_degree": 1,
+    }
+
+    r = run_astrasim.run_astrasim_topology(cfg, spec, config_name="baseline")
+
+    assert "--booksim2-flit-bytes=512" in proc.cmd
+    assert r["flit_bytes"] == 512
+    assert r["flit_bits"] == 4096                      # derived, one authority
+    assert r["embedded_mtu_flits"] == 0
+    assert r["packetization_model"] == "single_wormhole_packet_per_send"
+    assert r["packetization_fidelity"] == "coarse_packetization_override"
+    assert r["message_size_bytes"] == 16777216
+
+
+def test_packetization_defaults_and_validation():
+    rec = run_astrasim._packetization_record(8)        # backend default
+    assert rec["packetization_fidelity"] == "backend_default"
+    assert rec["flit_bits"] == 64
+    assert run_astrasim._resolve_flit_bytes({}) == 128
+    assert run_astrasim._resolve_flit_bytes(
+        {"ASTRASIM_FLIT_BYTES": "256"}) == 256
+    for bad in ("0", "-8", "eight", ""):
+        with pytest.raises(ValueError):
+            run_astrasim._resolve_flit_bytes({"ASTRASIM_FLIT_BYTES": bad})
+
+
+# Real-binary ABI canary: guards the Python ET writer ↔ ETFeederNode ↔ Sys
+# seam (the field-9 comm_size mismatch silently decoded as 0 and stalled the
+# run). Gated on the host-built frontend.
+_ASTRA_BS_BIN = (TRACK.parent.parent / "third_party" / "astra-sim" /
+                 "astra-sim" / "network_frontend" / "booksim2" / "bin" /
+                 "AstraSim_BookSim2")
+_needs_binary = pytest.mark.skipif(
+    not _ASTRA_BS_BIN.exists(),
+    reason="AstraSim_BookSim2 frontend binary not built")
+
+
+@_needs_binary
+def test_real_frontend_decodes_comm_size_and_completes(tmp_path):
+    import os
+    import shutil
+    from generate_chakra_trace import ChakraTraceGenerator, save_chakra_trace
+
+    nodes = ChakraTraceGenerator().build_collective_trace(
+        comm_type="ALL_GATHER", msg_size_bytes=1024)
+    res = save_chakra_trace(nodes, tmp_path, "abi")
+    et = Path(res["et_binary"])
+    for rank in range(16):
+        shutil.copy(et, Path(str(et) + f".{rank}.et"))
+
+    fix = Path(__file__).parent / "fixtures" / "astra_tiny"
+    env = dict(os.environ, VERITX_LEDGER="1")
+    proc = subprocess.run(
+        [str(_ASTRA_BS_BIN),
+         f"--workload-configuration={et}",
+         f"--system-configuration={fix / 'system.json'}",
+         f"--network-configuration={fix / 'network.json'}",
+         f"--remote-memory-configuration={fix / 'memory.json'}",
+         f"--logical-topology-configuration={fix / 'logical_topology.json'}",
+         "--logging-configuration", "empty",
+         "--booksim2-extra=injection_rate=0.0"],
+        cwd=str(fix), stdin=subprocess.DEVNULL, capture_output=True,
+        text=True, timeout=180, env=env)
+    out = proc.stdout + proc.stderr
+    assert "comm_size=1024" in out, out[-800:]
+    assert "finished" in out, out[-800:]
+
+
 def test_run_invocation_closes_stdin(tmp_path, monkeypatch):
     """The frontend's post-simulation command loop reads stdin forever: with
     an inherited interactive terminal it blocks after every rank has finished

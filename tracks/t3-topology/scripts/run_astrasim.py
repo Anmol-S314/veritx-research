@@ -38,6 +38,64 @@ _ZERO_DRAIN_RE = re.compile(r"injected=0\b.*draining")
 _COLL_SUBMIT_RE = re.compile(r"\[LEDGER\]\[COLL_SUBMIT\]")
 _COLL_DONE_RE = re.compile(r"\[LEDGER\]\[COLL_COMPLETE\]")
 
+# Embedded packetization. The frontend injects ONE wormhole packet per send
+# with flits = ceil(bytes / flit_bytes); the frontend default is 8 B, which
+# turns a 16 MiB collective into ~2.1M flits in one packet and stalls against
+# 8-flit VC buffers. Until packetization is modelled properly (B3
+# PacketFormat/lowering), runs use an explicitly recorded coarse override.
+_BACKEND_DEFAULT_FLIT_BYTES = 8
+_DEFAULT_FLIT_BYTES = 128
+_PACKETIZATION_MODEL = "single_wormhole_packet_per_send"
+# NOTE: --booksim2-embedded-mtu is the architecturally correct direction
+# (bounded packets instead of one message-sized packet) but is currently
+# EXPERIMENTAL / BROKEN for large sends: with thousands of fragments the
+# frontend stalls at its first cycle. Not wired into runs; B3 packetization
+# owns the proper fix.
+
+
+def _resolve_flit_bytes(env=None) -> int:
+    """ASTRASIM_FLIT_BYTES override, else the operational coarse default."""
+    raw = (env if env is not None else os.environ).get(
+        "ASTRASIM_FLIT_BYTES", str(_DEFAULT_FLIT_BYTES))
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"ASTRASIM_FLIT_BYTES must be an int, got {raw!r}") from None
+    if value <= 0:
+        raise ValueError(f"ASTRASIM_FLIT_BYTES must be > 0, got {value}")
+    return value
+
+
+def _packetization_record(flit_bytes: int, message_size_bytes=None,
+                          embedded_mtu_flits: int = 0) -> dict:
+    """Comparison key for ASTRA rows. Two results differing in any of these
+    are NOT equivalent-fidelity comparisons (flit width changes the modeled
+    NoC, and an inflated flit only buys simulation speed)."""
+    return {
+        "packetization_model": _PACKETIZATION_MODEL,
+        "flit_bytes": int(flit_bytes),
+        "flit_bits": int(flit_bytes) * 8,   # derived display, not authority
+        "embedded_mtu_flits": int(embedded_mtu_flits),
+        "packetization_fidelity": (
+            "backend_default" if flit_bytes == _BACKEND_DEFAULT_FLIT_BYTES
+            else "coarse_packetization_override"),
+        "message_size_bytes": message_size_bytes,
+    }
+
+
+def _packetization_banner(rec: dict) -> str:
+    mtu = rec["embedded_mtu_flits"] or "disabled"
+    return (
+        "\n  ASTRA packetization:\n"
+        f"    message model : {rec['packetization_model']}\n"
+        f"    flit bytes    : {rec['flit_bytes']}\n"
+        f"    flit width    : {rec['flit_bits']} bits\n"
+        f"    MTU           : {mtu}\n"
+        f"    fidelity      : {rec['packetization_fidelity']}"
+    )
+
+
 
 def _stall_update(fresh_text: str, stall_since, issued_since, now: float,
                   limit_s: int, slow_limit_s: int):
@@ -198,6 +256,20 @@ def run_astrasim_topology(
     chakra_res = save_chakra_trace(trace_nodes, out_dir, model_name, spec=spec)
     et_path = Path(chakra_res["et_binary"])
 
+    # Packetization provenance: the comparison key for ASTRA rows. A coarse
+    # flit is a speed knob, not the modeled NoC — record it and say so.
+    _comm_sizes = [
+        int((n.get("attr") or {}).get("comm_size"))
+        for n in trace_nodes
+        if n.get("type") == 7 and (n.get("attr") or {}).get("comm_size")
+    ]
+    packetization = _packetization_record(
+        _resolve_flit_bytes(),
+        message_size_bytes=max(_comm_sizes, default=None),
+    )
+    if packetization["packetization_fidelity"] != "backend_default":
+        print(_packetization_banner(packetization))
+
     # The frontend resolves per-rank workloads as <base>.<rank>.et (it logs
     # "idle NPU, treating as empty" otherwise and every sys finishes at 0
     # cycles). Replicate the model trace to all ranks: with TP=1 this is
@@ -227,6 +299,10 @@ def run_astrasim_topology(
             # self-injects infinite synthetic traffic and the run spins in
             # router alloc forever. Cfgs stay standalone-capable untouched.
             "--booksim2-extra=injection_rate=0.0",
+            # Explicit embedded flit granularity (recorded in the row). See
+            # _packetization_record: 8 B makes a 16 MiB send a 2.1M-flit
+            # wormhole packet that stalls against 8-flit VC buffers.
+            "--booksim2-flit-bytes=" + str(packetization["flit_bytes"]),
         ]
         import time as _time
         import threading as _threading
@@ -499,6 +575,9 @@ def run_astrasim_topology(
         "hops_avg": hops_avg if status == "ok" else None,
         "traffic": f"astrasim({model_name}_chakra_et)",
         "et_coll_type": _et_coll_type(spec),
+        # Comparison key (flit width/model/fidelity); two rows differing here
+        # must not be ranked as equivalent-fidelity ASTRA results.
+        **packetization,
         "status": status,
     }
 
