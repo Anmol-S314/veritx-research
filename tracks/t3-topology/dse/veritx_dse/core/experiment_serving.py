@@ -240,7 +240,8 @@ def run_serving_experiment(
             run.finalize("FAILED", note=f"exit {res.returncode}")
             return run
         return _verdict(run, res, csv_path, sv, serve_binaries,
-                        cluster_path, dataset_path, backend)
+                        cluster_path, dataset_path, backend,
+                        resolved.get("fabric"))
     except KeyboardInterrupt:
         run.transition("INTERRUPTED", note="KeyboardInterrupt during serve")
         raise
@@ -253,9 +254,58 @@ def _write_logs(run: Run, out: Any, err: Any) -> None:
         tmp.write_text(err or "")
 
 
+def _read_network_yml(run_root: Path) -> dict[str, Any] | None:
+    import yaml as _yaml
+    try:
+        return dict(_yaml.safe_load(
+            (run_root / "inputs" / "network" / "network.yml").read_text()))
+    except (OSError, ValueError):
+        return None
+
+
+def _executed_fabric(run_root: Path, backend: str) -> dict[str, Any]:
+    """First-class executed-fabric evidence (audit #9).
+
+    BookSim backend: parse the generated config.cfg the child executed,
+    plus the anynet it references and the network.yml it was derived
+    from. Anything unparseable is recorded as unrecorded dims — shared
+    ignorance downstream, never a guessed fabric.
+    """
+    from ..core.fabric import fabric_from_config_text
+    if backend != "booksim":
+        return {"source": f"backend:{backend}", "unrecorded": True}
+    cfg = run_root / "inputs" / "booksim" / "config.cfg"
+    try:
+        text = cfg.read_text()
+    except OSError:
+        return {"source": "booksim_config", "unrecorded": True,
+                "reason": "generated config.cfg missing from run inputs"}
+    anynet_text = None
+    for cand in (run_root / "inputs" / "booksim" / "topo.anynet",):
+        try:
+            anynet_text = cand.read_text()
+            break
+        except OSError:
+            continue
+    try:
+        out = fabric_from_config_text(text, anynet_text=anynet_text).to_dict()
+    except ValueError as e:
+        return {"source": "booksim_config", "unrecorded": True,
+                "reason": f"unparseable generated config: {e}"}
+    yml = run_root / "inputs" / "network" / "network.yml"
+    try:
+        import hashlib as _hl
+        out["network_yml_sha256"] = "sha256:" + _hl.sha256(
+            yml.read_bytes()).hexdigest()
+    except OSError:
+        out["network_yml_sha256"] = None
+    return out
+
+
 def _verdict(run: Run, res: Any, csv_path: Path, sv: dict[str, Any],
              serve_binaries: list[str], cluster_path: Path,
-             dataset_path: Path, backend: str) -> Run:
+             dataset_path: Path, backend: str,
+             expected_fabric: dict[str, Any] | None) -> Run:
     """Terminal validation: retirement + provenance + fabric + tripwire."""
     network_mode = mode_for_backend(backend, sv["cycle_accurate"])
     assert network_mode == "REAL_SIMULATION"
@@ -291,6 +341,23 @@ def _verdict(run: Run, res: Any, csv_path: Path, sv: dict[str, Any],
                                          evidence["submit_vectors"])}})
         run.finalize("FAILED", note=e.reason)
         return run
+    executed_fabric = _executed_fabric(run.root, backend)
+    if backend == "booksim":
+        from ..core.fabric import check_serving_fabric
+        yml = _read_network_yml(run.root)
+        ok, reason = check_serving_fabric(expected_fabric, executed_fabric
+                                          if not executed_fabric.get("unrecorded")
+                                          else None, yml)
+        if not ok:
+            code = ("FABRIC_EVIDENCE_MISSING"
+                    if executed_fabric.get("unrecorded") else
+                    "FABRIC_INTENT_MISMATCH")
+            run.add_result("serve", {
+                "error": code, "detail": reason,
+                "expected_fabric": expected_fabric,
+                "executed_fabric": executed_fabric})
+            run.finalize("FAILED", note=reason)
+            return run
     provenance = serving_provenance(
         engine="llmservingsim", network_backend=backend,
         network_mode=network_mode, semantic_losses=[])
@@ -336,6 +403,7 @@ def _verdict(run: Run, res: Any, csv_path: Path, sv: dict[str, Any],
         "backend_binaries": [binary_identity(b) for b in serve_binaries],
         "cluster_sha256": binary_identity(cluster_path)["sha256"],
         "dataset_sha256": binary_identity(dataset_path)["sha256"],
+        "fabric": executed_fabric,
         "workload": {
             "identity": workload_identity_hash,
             "artifact_count": len(workload_index["artifacts"]),
@@ -343,7 +411,7 @@ def _verdict(run: Run, res: Any, csv_path: Path, sv: dict[str, Any],
             "certified": True,
         },
         **result_extra,
-        "fabric": {
+        "fabric_activity": {
             "coll_completes": evidence["coll_completes"],
             "max_retired_flits": evidence["max_retired_flits"],
         },

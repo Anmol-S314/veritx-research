@@ -21,7 +21,12 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 # One line per persisted format (ADR: versioned formats). Bump on any
 # resolution-rule change — it deliberately changes every experiment_hash.
-SCHEMA_VERSION = 1
+# v2: routing default None→preset-native (no silent override); network
+# block required for latency, forbidden for serving (cluster owns fabric).
+# Formats are versioned independently: an experiment-schema bump never
+# moves the plan format.
+EXPERIMENT_SPEC_SCHEMA_VERSION = 2
+PLAN_SCHEMA_VERSION = 1
 
 # Fields that describe the *display* of an experiment, not its science.
 # Excluded from the canonical hash — changing a note must not fork identity.
@@ -55,7 +60,10 @@ class SystemSpec(BaseModel):
 class NetworkSpec(BaseModel):
     model_config = _STRICT
     topology: str = Field(min_length=1)  # registered ID (model/presets.py)
-    routing: str = Field(default="dim_order")
+    # None = undeclared: the named preset's own routing executes. An
+    # explicit value must equal the preset's routing — presets are
+    # immutable, never silently overridden.
+    routing: str | None = Field(default=None)
 
 
 class SimulationSpec(BaseModel):
@@ -97,11 +105,14 @@ class ServingSpec(BaseModel):
 
 class ExperimentSpec(BaseModel):
     model_config = _STRICT
-    schema_version: int = SCHEMA_VERSION
+    schema_version: int = EXPERIMENT_SPEC_SCHEMA_VERSION
     name: str = Field(min_length=1)
     workload: WorkloadSpec
     system: SystemSpec
-    network: NetworkSpec
+    # Latency mode: required (standalone fabric intent). Serving mode:
+    # MUST be absent — fabric is cluster-derived, and an ignored block
+    # must never ride the intent hash.
+    network: NetworkSpec | None = None
     simulation: SimulationSpec = Field(default_factory=SimulationSpec)
     replication: ReplicationSpec = Field(default_factory=ReplicationSpec)
     comparison: ComparisonSpec | None = None
@@ -113,13 +124,21 @@ class ExperimentSpec(BaseModel):
 
 def parse(data: dict[str, Any]) -> ExperimentSpec:
     """Strictly parse an experiment spec dict. Raises SpecError with a
-    precise message on any unknown field or bad value."""
+    precise message on any unknown field or bad value. Schema v1 is
+    rejected outright: its routing default silently overrode presets, so
+    old specs must be rewritten, never reinterpreted."""
     try:
-        return ExperimentSpec.model_validate(data)
+        spec = ExperimentSpec.model_validate(data)
     except ValidationError as e:
         first = e.errors()[0]
         loc = ".".join(str(p) for p in first["loc"]) or "<root>"
         raise SpecError(f"invalid spec at '{loc}': {first['msg']}") from e
+    if spec.schema_version != EXPERIMENT_SPEC_SCHEMA_VERSION:
+        raise SpecError(
+            f"unsupported schema_version {spec.schema_version} "
+            f"(this build speaks v{EXPERIMENT_SPEC_SCHEMA_VERSION}) — rewrite the spec, "
+            "old versions are never reinterpreted")
+    return spec
 
 
 def resolve(spec: ExperimentSpec) -> dict[str, Any]:
@@ -129,9 +148,9 @@ def resolve(spec: ExperimentSpec) -> dict[str, Any]:
     The resolved dict is the unit of identity — what gets hashed (ADR 0002)
     and what gets frozen into the run directory (ADR 0001).
     """
-    if spec.schema_version != SCHEMA_VERSION:
+    if spec.schema_version != EXPERIMENT_SPEC_SCHEMA_VERSION:
         raise SpecError(
-            f"spec schema_version {spec.schema_version} != supported {SCHEMA_VERSION}"
+            f"spec schema_version {spec.schema_version} != supported {EXPERIMENT_SPEC_SCHEMA_VERSION}"
         )
     repl = spec.replication
     if repl.mode not in ("deterministic", "stochastic"):
@@ -153,18 +172,36 @@ def resolve(spec: ExperimentSpec) -> dict[str, Any]:
     if spec.simulation.mode != "serving" and spec.serving is not None:
         raise SpecError("serving block provided but simulation.mode is "
                         f"{spec.simulation.mode!r}, not serving")
+    if spec.simulation.mode == "serving" and spec.network is not None:
+        raise SpecError(
+            "serving fabric is derived from serving.cluster in schema v2; "
+            "network.topology/routing must not be supplied — an ignored "
+            "block must never ride the intent hash")
+    network: dict[str, Any] | None = None
+    fabric: dict[str, Any] | None = None
+    if spec.simulation.mode == "serving":
+        from .serving import expected_cluster_fabric
+        fabric = expected_cluster_fabric(spec.serving.cluster)
+    else:
+        if spec.network is None:
+            raise SpecError("network is required for standalone "
+                            "latency execution")
+        from ..model.presets import resolve_fabric
+        topo, reason = resolve_fabric(spec.network.topology,
+                                      spec.network.routing)
+        if topo is None:
+            raise SpecError(reason)
+        network = {"topology": topo.name, "routing": topo.routing}
     return {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": EXPERIMENT_SPEC_SCHEMA_VERSION,
         "workload": {"id": spec.workload.id, "trace": spec.workload.trace},
         "system": {
             "nodes": spec.system.nodes,
             "tp_size": spec.system.tp_size,
             "instances_per_node": spec.system.instances_per_node,
         },
-        "network": {
-            "topology": spec.network.topology,
-            "routing": spec.network.routing,
-        },
+        "network": network,
+        "fabric": fabric,
         "simulation": {
             "mode": spec.simulation.mode,
             "network_simulator": spec.simulation.network_simulator,
@@ -234,6 +271,9 @@ def plan(resolved: dict[str, Any]) -> dict[str, Any]:
     is derived from the resolved spec hash + plan schema version, so
     execute(plan_id) can never drift from what was validated."""
     seeds = resolved["replication"]["seeds"]
+    if resolved.get("network") is None:
+        raise SpecError("plan() is the standalone-slice seam — serving "
+                        "runs plan inside run_serving_experiment")
     tasks = [
         {
             "task_id": f"eval-seed{s}",
@@ -245,7 +285,7 @@ def plan(resolved: dict[str, Any]) -> dict[str, Any]:
         for s in seeds
     ]
     return {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": PLAN_SCHEMA_VERSION,
         "experiment_hash": experiment_hash(resolved),
         "tasks": tasks,
     }

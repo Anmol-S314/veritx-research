@@ -136,9 +136,150 @@ def test_unmeasurable_bandwidth_floor_never_silent_pass():
     out = compile_fabric(req, _ok_eval({"a": 61.5}))
     statuses = {c["status"] for c in out["candidates"]}
     assert statuses == {"CONSTRAINT_UNMEASURABLE"}
+    # Audit #3: all-unmeasurable is unanswerable, never a measured refusal.
+    assert out["verdict"] == "CONSTRAINT_UNMEASURABLE"
+    assert out["violated_constraints"] == []
+    assert out["relaxation_information"] is None
+    assert out["unmeasurable_reasons"]["constraint_unmeasurable"] == 1
+
+
+# ── verdict truth table (spec F) ──────────────────────────────────────
+
+def _truth_table(cands, evaluate):
+    req = CompilerRequest(requirements=[_req(latency_ceiling_cycles=50.0)],
+                          candidates=cands)
+    return compile_fabric(req, evaluate)
+
+
+def _violator(name):
+    return _cand(name, 500.0)
+
+
+def _crasher(name):
+    return {"name": name, "topology": "anynet", "seed": 0}
+
+
+def _boom_eval(names):
+    def evaluate(cand):
+        if cand["name"] in names:
+            raise RuntimeError("sim died")
+        return _ok_eval({cand["name"]: 500.0})(cand)
+    return evaluate
+
+
+def test_all_violations_is_no_feasible_design():
+    cands = [_violator(f"v{i}") for i in range(10)]
+    out = _truth_table(cands, _ok_eval({c["name"]: 500.0 for c in cands}))
     assert out["verdict"] == "NO_FEASIBLE_DESIGN"
-    assert "bandwidth_floor" in out["violated_constraints"][0]["constraint"]["kind"] or \
-        out["violated_constraints"][0]["constraint"]["kind"] == "bandwidth_floor"
+    assert out["relaxation_information"] is not None
+    assert out["pareto"] is None
+
+
+def test_violations_plus_crashes_is_inconclusive():
+    cands = [_violator(f"v{i}") for i in range(4)] + \
+        [_crasher(f"c{i}") for i in range(6)]
+    out = _truth_table(cands, _boom_eval({f"c{i}" for i in range(6)}))
+    assert out["verdict"] == "INCONCLUSIVE"
+    assert out["pareto"] is None and out["relaxation_information"] is None
+    assert out["inconclusive_reasons"]["evaluation_failed"] == 6
+
+
+def test_unmeasurable_mixed_with_crashes_is_inconclusive():
+    req = CompilerRequest(
+        requirements=[_req(qos_class=QoSClass.BANDWIDTH,
+                           bandwidth_floor_gbps=10.0,
+                           latency_ceiling_cycles=None)],
+        candidates=[_cand(f"u{i}", 42.0) for i in range(6)] + [
+            _crasher(f"c{i}") for i in range(4)],
+    )
+    lats = {f"u{i}": 42.0 for i in range(6)}
+    out = compile_fabric(
+        req, lambda c: _boom_eval({f"c{i}" for i in range(4)})(c)
+        if c["name"].startswith("c") else _ok_eval(lats)(c))
+    assert out["verdict"] == "INCONCLUSIVE"
+    assert out["pareto"] is None and out["relaxation_information"] is None
+    assert out["violated_constraints"] == []
+
+
+def test_proven_violation_beats_unmeasurable_at_candidate_level():
+    req = CompilerRequest(
+        requirements=[_req(latency_ceiling_cycles=50.0),
+                      _req(qos_class=QoSClass.BANDWIDTH,
+                           bandwidth_floor_gbps=10.0,
+                           latency_ceiling_cycles=None)],
+        candidates=[_cand("v", 500.0)],
+    )
+    out = compile_fabric(req, _ok_eval({"v": 500.0}))
+    rec = out["candidates"][0]
+    assert rec["status"] == "CONSTRAINT_VIOLATION"
+    assert rec["unmeasurable"]  # sibling unknown retained as evidence
+
+
+def test_all_violated_with_unmeasurable_siblings_is_no_feasible():
+    req = CompilerRequest(
+        requirements=[_req(latency_ceiling_cycles=50.0),
+                      _req(qos_class=QoSClass.BANDWIDTH,
+                           bandwidth_floor_gbps=10.0,
+                           latency_ceiling_cycles=None)],
+        candidates=[_cand(f"v{i}", 500.0) for i in range(10)],
+    )
+    out = compile_fabric(
+        req, _ok_eval({f"v{i}": 500.0 for i in range(10)}))
+    assert out["verdict"] == "NO_FEASIBLE_DESIGN"
+    assert out["relaxation_information"] is not None
+
+
+def test_violated_plus_pure_unmeasurable_is_inconclusive():
+    req = CompilerRequest(
+        requirements=[_req(latency_ceiling_cycles=50.0),
+                      _req(qos_class=QoSClass.BANDWIDTH,
+                           bandwidth_floor_gbps=10.0,
+                           latency_ceiling_cycles=None)],
+        candidates=[_cand(f"v{i}", 500.0) for i in range(4)] + [
+            _cand(f"u{i}", 42.0) for i in range(6)],
+    )
+    lats = {f"v{i}": 500.0 for i in range(4)}
+    lats.update({f"u{i}": 42.0 for i in range(6)})
+    out = compile_fabric(req, _ok_eval(lats))
+    assert out["verdict"] == "INCONCLUSIVE"
+    assert out["pareto"] is None and out["relaxation_information"] is None
+    assert out["violated_constraints"] == []
+    assert out["inconclusive_reasons"]["constraint_violation"] == 4
+    assert out["inconclusive_reasons"]["constraint_unmeasurable"] == 6
+
+
+def test_violations_plus_pruned_is_inconclusive():
+    cands = [_violator(f"v{i}") for i in range(4)] + [
+        {"name": f"p{i}", "pruned": True, "pruning_reason": "budget"}
+        for i in range(6)]
+    out = _truth_table(cands, _ok_eval({f"v{i}": 500.0 for i in range(4)}))
+    assert out["verdict"] == "INCONCLUSIVE"
+    assert out["pareto"] is None and out["relaxation_information"] is None
+    assert out["inconclusive_reasons"]["pruned"] == 6
+
+
+def test_all_crashes_is_inconclusive():
+    cands = [_crasher(f"c{i}") for i in range(10)]
+    out = _truth_table(cands, _boom_eval({f"c{i}" for i in range(10)}))
+    assert out["verdict"] == "INCONCLUSIVE"
+    assert out["pareto"] is None and out["relaxation_information"] is None
+
+
+def test_all_pruned_is_inconclusive():
+    cands = [{"name": f"p{i}", "pruned": True, "pruning_reason": "budget"}
+             for i in range(10)]
+    out = _truth_table(cands, _ok_eval({}))
+    assert out["verdict"] == "INCONCLUSIVE"
+    assert out["pareto"] is None and out["relaxation_information"] is None
+
+
+def test_one_feasible_among_crashes_is_feasible():
+    cands = [_cand("good", 42.0)] + [_crasher(f"c{i}") for i in range(9)]
+    out = _truth_table(cands, lambda c: _boom_eval({"x"})(c)
+                       if c["name"] != "good"
+                       else _ok_eval({"good": 42.0})(c))
+    assert out["verdict"] == "FEASIBLE"
+    assert out["pareto"] is not None
 
 
 # ── soft vs hard ──────────────────────────────────────────────────────────────

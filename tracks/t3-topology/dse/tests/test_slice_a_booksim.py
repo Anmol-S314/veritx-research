@@ -32,7 +32,7 @@ TRACE = "archive/inputs/traces/qwen3_20k.trace"  # 20k pkts, max_node 3
 
 def _spec(**over):
     d = {
-        "schema_version": 1,
+        "schema_version": 2,
         "name": "slice_a_qwen20k_mesh4x4",
         "workload": {"id": "qwen3_20k", "trace": TRACE},
         "system": {"nodes": 16},

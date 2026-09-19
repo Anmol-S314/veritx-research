@@ -172,6 +172,23 @@ FINGERPRINT_FIELDS = (
     "metric_schema",
 )
 
+# Required dimensions per evidence class. A memory comparison must not
+# demand network VCs; a fabric comparison must not ignore packetization.
+# Unknown fidelities skip this gate (kind policy still applies) — an
+# unwired evidence class is not a license to invent its requirements.
+REQUIRED_BY_FIDELITY = {
+    "NETWORK_SIMULATION": frozenset({
+        "workload_hash", "participant_count", "topology", "routing",
+        "vc_count", "packetization", "fidelity"}),
+    "SYSTEM_SERVING_SIMULATION": frozenset({
+        "workload_hash", "participant_count", "topology", "routing",
+        "vc_count", "packetization", "fidelity", "network_mode"}),
+    "ANALYTICAL_ESTIMATE": frozenset({
+        "workload_hash", "participant_count", "topology", "routing",
+        "fidelity"}),
+    "TRACE_REPLAY": frozenset({"workload_hash", "fidelity"}),
+}
+
 
 def fingerprint_from_run(run_dir: Path) -> dict[str, Any]:
     """Resolve the comparison fingerprint of one immutable run.
@@ -237,19 +254,52 @@ def fingerprint_from_run(run_dir: Path) -> dict[str, Any]:
         fidelity = "NETWORK_SIMULATION"
         semantic_losses = []
 
+    # Fabric identity comes from the run's EXECUTED-fabric record
+    # (FabricArtifact parsed from the BookSim config that actually ran),
+    # not from spec claims: spec.network never reaches the serving
+    # child's generated config. Unrecorded ⇒ None, uncertified.
+    fabric = next(
+        (r.get("fabric") or r.get("executed_fabric") for r in reversed(results)
+         if isinstance(r, dict)
+         and isinstance(r.get("fabric") or r.get("executed_fabric"), dict)),
+        None)
+    if fabric and not fabric.get("unrecorded"):
+        try:
+            vc_count = int(fabric["num_vcs"]) if fabric.get("num_vcs") else None
+        except (TypeError, ValueError):
+            vc_count = None
+        try:
+            packetization = (int(fabric["packet_size"])
+                             if fabric.get("packet_size") else None)
+        except (TypeError, ValueError):
+            packetization = None
+        if serving is not None:
+            fab_topo, fab_routing = fabric.get("topology"), fabric.get("routing")
+        else:
+            fab_topo, fab_routing = None, None
+    else:
+        fabric, vc_count, packetization, fab_topo, fab_routing = \
+            None, None, None, None, None
+
     repl = spec.get("replication", {})
     metric_schema = next((r.get("metric_schema") for r in reversed(results)
                           if isinstance(r, dict) and r.get("metric_schema")),
                          None)
+    if serving is not None:
+        topo_id, routing_id = fab_topo, fab_routing
+    else:
+        net = spec.get("network") or {}
+        topo_id = net.get("topology")
+        routing_id = net.get("routing")
     return {
         "workload_hash": workload_hash,
         "model_identity": (serving or {}).get("cluster"),
         "node_count": spec.get("system", {}).get("nodes"),
         "participant_count": spec.get("system", {}).get("nodes"),
-        "topology": spec.get("network", {}).get("topology"),
-        "routing": spec.get("network", {}).get("routing"),
-        "vc_count": None,          # not recorded at spec level (Phase 10)
-        "packetization": None,     # not recorded at spec level
+        "topology": topo_id,
+        "routing": routing_id,
+        "vc_count": vc_count,
+        "packetization": packetization,
         "simulator": simulator,
         "network_engine": next((r.get("network_engine") for r in
                                 reversed(results)
@@ -265,7 +315,10 @@ def fingerprint_from_run(run_dir: Path) -> dict[str, Any]:
         "instance_mapping": None,
         "metric_schema": metric_schema,
         "workload_certified": workload_certified,
-        "certified": True,
+        "certified": workload_certified and fabric is not None,
+        **({"fabric_artifact_hash": fabric.get("artifact_hash"),
+            "fabric_config_sha256": fabric.get("config_sha256")}
+           if fabric else {}),
         "run_id": manifest.get("run_id", run_dir.name),
     }
 
@@ -305,12 +358,13 @@ def fingerprint_from_legacy_row(row: dict[str, Any]) -> dict[str, Any]:
 
 @dataclass
 class ComparisonVerdict:
-    status: str                                   # COMPARABLE | INVALID_COMPARISON
+    status: str                                   # COMPARABLE | INVALID_COMPARISON | INSUFFICIENT_PROVENANCE
     comparison_kind: str
     differences: list[dict[str, Any]] = field(default_factory=list)
     candidates: list[dict[str, Any]] = field(default_factory=list)
     experimental_variables: list[str] = field(default_factory=list)
     certified: bool = True
+    unresolved_dimensions: list[str] = field(default_factory=list)
 
 
 def _diff(field: str, left: Any, right: Any, reason: str,
@@ -344,6 +398,56 @@ def evaluate_comparability(
         intent = ComparisonIntent.from_dict(intent)
     fps = list(fingerprints)
     diffs: list[dict[str, Any]] = []
+
+    def _vals(name: str) -> list[Any]:
+        return [fp.get(name) for fp in fps]
+
+    # Provenance gate (§14): a candidate whose fidelity is unknown or
+    # unrecorded has no provenance contract — the set is ineligible
+    # regardless of kind. Calibration exempts known-class differences,
+    # never an unknown class. Two identical unknown strings are not
+    # evidence of comparability.
+    if fps and any(fp.get("fidelity") not in REQUIRED_BY_FIDELITY
+                   for fp in fps):
+        unknown = sorted({str(fp.get("fidelity")) for fp in fps
+                          if fp.get("fidelity") not in REQUIRED_BY_FIDELITY})
+        diffs.append(_diff("fidelity", unknown, None, "UNKNOWN_FIDELITY"))
+        return ComparisonVerdict(
+            status="INSUFFICIENT_PROVENANCE",
+            comparison_kind=intent.kind,
+            differences=diffs,
+            candidates=[{"run_id": fp.get("run_id"),
+                         "status": "INSUFFICIENT_PROVENANCE"}
+                        for fp in fps],
+            experimental_variables=sorted(intent.experimental_variables),
+            certified=False,
+            unresolved_dimensions=["fidelity"],
+        )
+    # Required controlled dimensions unrecorded for every candidate make
+    # a DESIGN_COMPARISON ineligible — never comparable. Required set
+    # follows the candidates' evidence class, minus declared axes.
+    if intent.kind == "DESIGN_COMPARISON" and fps:
+        fids = {fp.get("fidelity") for fp in fps} - {None}
+        required: set[str] = set()
+        if len(fids) == 1:
+            required = set(REQUIRED_BY_FIDELITY[next(iter(fids))])
+        required -= set(intent.experimental_variables)
+        unresolved = sorted(
+            d for d in required if all(fp.get(d) is None for fp in fps))
+        if unresolved:
+            for d in unresolved:
+                diffs.append(_diff(d, None, None, "INSUFFICIENT_PROVENANCE"))
+            return ComparisonVerdict(
+                status="INSUFFICIENT_PROVENANCE",
+                comparison_kind=intent.kind,
+                differences=diffs,
+                candidates=[{"run_id": fp.get("run_id"),
+                             "status": "INSUFFICIENT_PROVENANCE"}
+                            for fp in fps],
+                experimental_variables=sorted(intent.experimental_variables),
+                certified=False,
+                unresolved_dimensions=unresolved,
+            )
 
     def _vals(name: str) -> list[Any]:
         return [fp.get(name) for fp in fps]

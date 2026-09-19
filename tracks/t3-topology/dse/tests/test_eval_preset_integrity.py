@@ -108,3 +108,47 @@ def test_backend_alias_bare_resolves_to_preset():
     assert err is None
     nodes, _ = topo_size(topo)
     assert nodes == 16  # first mesh preset is mesh_4x4
+
+
+# ── one resolver (audit #10): spec/API path shares the same rule ────────
+
+class TestResolveFabric:
+    def test_undeclared_routing_returns_preset_unchanged(self):
+        from veritx_dse.model.presets import resolve_fabric
+        topo, err = resolve_fabric("mesh_8x8", None)
+        assert err is None and topo.routing == "min_adapt"
+
+    def test_matching_routing_accepted(self):
+        from veritx_dse.model.presets import resolve_fabric
+        topo, err = resolve_fabric("mesh_8x8", "min_adapt")
+        assert err is None and topo.name == "mesh_8x8"
+
+    def test_contradicting_routing_refused(self):
+        from veritx_dse.model.presets import resolve_fabric
+        topo, err = resolve_fabric("mesh_8x8", "dim_order")
+        assert topo is None and "immutable" in err
+
+    def test_unknown_id_refused(self):
+        from veritx_dse.model.presets import resolve_fabric
+        topo, err = resolve_fabric("not_a_topo", None)
+        assert topo is None and "unknown topology id" in err
+
+    def test_resolve_fills_effective_routing(self):
+        from veritx_dse.core.spec import parse, resolve
+        r = resolve(parse({
+            "schema_version": 2, "name": "x",
+            "workload": {"id": "w", "trace": "t.trace"},
+            "system": {"nodes": 64},
+            "network": {"topology": "mesh_8x8"},
+            "simulation": {"mode": "latency"}}))
+        assert r["network"] == {"topology": "mesh_8x8", "routing": "min_adapt"}
+
+    def test_resolve_refuses_preset_override(self):
+        from veritx_dse.core.spec import parse, resolve, SpecError
+        with pytest.raises(SpecError, match="immutable"):
+            resolve(parse({
+                "schema_version": 2, "name": "x",
+                "workload": {"id": "w", "trace": "t.trace"},
+                "system": {"nodes": 64},
+                "network": {"topology": "mesh_8x8", "routing": "dim_order"},
+                "simulation": {"mode": "latency"}}))

@@ -1035,23 +1035,25 @@ def _resolve_eval_topology(args):
       - named preset + explicit k/routing    → refuse (immutable)
       - raw backend name (no preset match)   → requires explicit --k
     """
-    from veritx_dse.model.presets import topo_size, _TOPO_BY_NAME
-    preset = lookup_topo(args.topo)
+    from veritx_dse.model.presets import topo_size, _TOPO_BY_NAME, lookup_topo, resolve_fabric
     explicit_k = getattr(args, "k", None)
     explicit_routing = getattr(args, "routing", None)
-    if preset is not None:
-        if explicit_k is None and explicit_routing is None:
-            # Bare preset name or backend alias: exactly the preset
-            # architecture — never merge invented defaults over it.
+    if args.topo in _TOPO_BY_NAME:
+        preset, reason = resolve_fabric(args.topo, explicit_routing)
+        if preset is not None and explicit_k is None:
             return preset, None
-        if args.topo in _TOPO_BY_NAME:
-            # Named preset + explicit overrides: presets are immutable.
+        if preset is not None:
             return None, (
                 f"preset '{preset.name}' is immutable — its architecture is "
                 f"{preset.backend} {preset.params} routing={preset.routing}. "
                 "Pass --k/--routing only with a raw backend name "
                 f"(e.g. --topo {preset.backend} --k … --routing …), "
                 "not with a named preset")
+        return None, reason
+    if explicit_k is None and explicit_routing is None:
+        aliased = lookup_topo(args.topo)
+        if aliased is not None:
+            return aliased, None
     if explicit_k is None:
         return None, (
             f"raw backend '{args.topo}' requires an explicit --k "

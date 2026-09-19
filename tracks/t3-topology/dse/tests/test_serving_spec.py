@@ -36,7 +36,6 @@ def _serving_dict(**kw):
         "name": "serve",
         "workload": {"id": "w", "trace": "archive/inputs/traces/x.trace"},
         "system": {"nodes": 1},
-        "network": {"topology": "mesh_8x8"},
         "simulation": {"mode": "serving", "timeout_s": 300},
         "serving": {
             "cluster": "single_tp2_ep2",
@@ -82,6 +81,40 @@ class TestServingSpecBoundary:
         assert r["serving"]["cycle_accurate"] is True
         assert r["serving"]["request_routing_policy"] == "LOAD"
         assert r["simulation"]["mode"] == "serving"
+        assert r["network"] is None
+        assert r["fabric"] == {
+            "source": "serving_cluster", "cluster": "single_tp2_ep2",
+            "topology": ["FullyConnected"], "dimensions": [2], "npu_count": 2}
+
+    def test_network_block_refused_for_serving(self):
+        d = _serving_dict()
+        d["network"] = {"topology": "mesh_8x8"}
+        with pytest.raises(SpecError, match="must not be supplied"):
+            resolve(parse(d))
+
+    def test_network_required_for_latency(self):
+        d = _latency_dict()
+        del d["network"]
+        with pytest.raises(SpecError, match="network is required"):
+            resolve(parse(d))
+
+    def test_schema_v1_rejected(self):
+        d = _latency_dict()
+        d["schema_version"] = 1
+        with pytest.raises(SpecError, match="unsupported schema_version"):
+            parse(d)
+
+    def test_expected_fabric_multi_dp_tp(self):
+        from veritx_dse.core.serving import expected_cluster_fabric
+        assert expected_cluster_fabric("multi_dp_tp") == {
+            "source": "serving_cluster", "cluster": "multi_dp_tp",
+            "topology": ["FullyConnected", "FullyConnected"],
+            "dimensions": [2, 2], "npu_count": 4}
+
+    def test_expected_fabric_unknown_cluster_refused(self):
+        from veritx_dse.core.serving import expected_cluster_fabric
+        with pytest.raises(SpecError, match="unknown serving cluster"):
+            expected_cluster_fabric("nope")
 
     def test_serving_specs_hash_distinctly(self):
         h1 = experiment_hash(resolve(parse(_serving_dict())))
@@ -92,8 +125,11 @@ class TestServingSpecBoundary:
     def test_latency_resolution_unchanged(self):
         r = resolve(parse(_latency_dict()))
         assert r["serving"] is None
+        assert r["fabric"] is None
+        assert r["network"] == {"topology": "mesh_8x8",
+                                "routing": "min_adapt"}
         assert set(r) == {"schema_version", "workload", "system",
-                          "network", "simulation", "replication",
+                          "network", "fabric", "simulation", "replication",
                           "comparison", "serving"}
 
 

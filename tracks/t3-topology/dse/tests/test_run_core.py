@@ -23,11 +23,11 @@ from veritx_dse.core.runs import Run, RunError, new_run_id
 
 def _spec_dict(**over):
     d = {
-        "schema_version": 1,
+        "schema_version": 2,
         "name": "qwen3_decode_n64",
         "workload": {"id": "qwen3_decode_64", "trace": "archive/inputs/traces/chakra_converted.trace"},
         "system": {"nodes": 64, "tp_size": 1, "instances_per_node": 2},
-        "network": {"topology": "mesh_8x8", "routing": "dim_order"},
+        "network": {"topology": "mesh_8x8"},
         "simulation": {"mode": "latency", "network_simulator": "booksim", "timeout_s": 60},
         "replication": {"mode": "deterministic", "seeds": [42]},
     }
@@ -70,7 +70,7 @@ class TestIdentity:
         assert r["replication"]["seeds"] == [42]
         # every default materialized — nothing implicit left
         assert r["simulation"]["timeout_s"] == 60
-        assert r["network"]["routing"] == "dim_order"
+        assert r["network"]["routing"] == "min_adapt"  # preset's own, resolved
 
     def test_hash_stable_across_key_order(self):
         d1 = _spec_dict()
@@ -111,6 +111,14 @@ class TestIdentity:
         p = plan(r)
         assert p["experiment_hash"] == experiment_hash(r)
         assert [t["task_id"] for t in p["tasks"]] == ["eval-seed42"]
+
+    def test_plan_schema_independent_of_experiment_schema(self):
+        from veritx_dse.core.spec import (
+            EXPERIMENT_SPEC_SCHEMA_VERSION, PLAN_SCHEMA_VERSION)
+        assert EXPERIMENT_SPEC_SCHEMA_VERSION == 2
+        r = resolve(parse(_spec_dict()))
+        assert r["schema_version"] == 2
+        assert plan(r)["schema_version"] == PLAN_SCHEMA_VERSION == 1
 
     def test_canonical_json_is_tight_and_sorted(self):
         r = resolve(parse(_spec_dict()))
@@ -260,7 +268,7 @@ class TestStandaloneExperiment:
     def test_routing_and_seed_reach_config_and_result(self, experiment, tmp_path):
         from veritx_dse.core.experiment import run_experiment
 
-        experiment["network"]["routing"] = "xy_yx"
+        experiment["network"]["routing"] = "min_adapt"
         experiment["replication"]["seeds"] = [101]
         configs = []
 
@@ -275,14 +283,26 @@ class TestStandaloneExperiment:
         assert run.root.parent == tmp_path / "runs"
         assert run.state == "SUCCEEDED"
         assert len(configs) == 1
-        assert "routing_function = xy_yx;" in configs[0]
+        assert "routing_function = min_adapt;" in configs[0]
         assert "seed = 101;" in configs[0]
         assert "sim_type = latency;" in configs[0]
         manifest = json.loads((run.root / "manifest.json").read_text())
         result = manifest["results"][0]
-        assert result["routing"] == "xy_yx"
+        assert result["routing"] == "min_adapt"
         assert result["nodes"] == experiment["system"]["nodes"]
         assert result["seed"] == 101
+        fab = result["fabric"]
+        assert fab["topology"] == "mesh" and fab["routing"] == "min_adapt"
+        assert fab["node_count"] == 64 and fab["num_vcs"] == 4
+        assert fab["artifact_hash"]
+
+    def test_preset_routing_override_refused_before_run(self, experiment, tmp_path):
+        from veritx_dse.core.experiment import run_experiment
+
+        experiment["network"]["routing"] = "xy_yx"
+        with pytest.raises(SpecError, match="immutable"):
+            run_experiment(experiment, repo=tmp_path)
+        assert not (tmp_path / "runs").exists()
 
 
 # ── Phase 7: shared run-lifecycle mechanics (extraction) ────────────────

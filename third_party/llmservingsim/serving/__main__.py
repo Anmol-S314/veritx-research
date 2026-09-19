@@ -228,38 +228,28 @@ def _prepare_booksim_config(astra_sim, run_paths, num_nodes):
                 y = yaml.safe_load(f)
                 dims = y.get("npus_count")
                 topologies = y.get("topology")
-                if dims and all(isinstance(x, int) for x in dims):
+                if dims and all(isinstance(x, int) for x in dims) \
+                        and topologies and len(topologies) == len(dims):
                     pass
                 else:
                     dims = None
         except Exception:
             dims = None
     if dims is None:
-        # Fallback: infer from num_nodes
-        def _infer_dims(n):
-            if n == 8:
-                return [2, 4]
-            if n == 4:
-                return [2, 2]
-            if n == 2:
-                return [2]
-            if n == 1:
-                return [1]
-            r = int(math.sqrt(n))
-            while r > 1 and n % r != 0:
-                r -= 1
-            if r > 1:
-                return [r, n // r]
-            return [n]
-        dims = _infer_dims(num_nodes)
+        # VeritX: certified execution never invents a fabric. network.yml
+        # is written by build_cluster_config in this same process — its
+        # absence (or a missing topology axis) is an internal failure,
+        # not a license to infer dimensions or assume FullyConnected.
+        raise RuntimeError(
+            f"refusing to invent serving fabric: {network_yml} missing or "
+            "without matching npus_count/topology (certified runs derive "
+            "dims from the resolved cluster only)")
     # Mesh k^n only works for square/1D line. FullyConnected with >2 nodes needs anynet clique.
     # e.g. dims [8] FullyConnected is 8-node clique, not 8-node line (k=8 mesh).
     has_fc_large = False
-    if topologies:
-        for i, d in enumerate(dims):
-            topo = topologies[i] if i < len(topologies) else "FullyConnected"
-            if topo == "FullyConnected" and d > 2:
-                has_fc_large = True
+    for i, d in enumerate(dims):
+        if topologies[i] == "FullyConnected" and d > 2:
+            has_fc_large = True
     is_square_mesh = (len(dims) == 1 and dims[0] == 2) or (len(dims) == 2 and dims[0] == dims[1])
     if dims == [1]:
         is_square_mesh = True
@@ -290,8 +280,7 @@ def _prepare_booksim_config(astra_sim, run_paths, num_nodes):
                     rc = coords(r)
                     line = f"router {r} node {r}"
                     for dim, d in enumerate(dims):
-                        topo = topologies[dim] if topologies and dim < len(topologies) else "FullyConnected"
-                        if topo == "FullyConnected":
+                        if topologies[dim] == "FullyConnected":
                             # Fully connect all routers sharing same coords in other dims
                             for other in range(N):
                                 if other == r: continue

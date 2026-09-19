@@ -10,16 +10,27 @@ Verdicts (exactly one):
   FEASIBLE              ≥1 candidate satisfied all constraints; Pareto
                         evidence over the feasible set via the Phase-8 gate
                         (pareto_with_scope — never re-implemented here)
-  NO_FEASIBLE_DESIGN    every candidate failed some constraint; carries
+  NO_FEASIBLE_DESIGN    complete population where every candidate is
+                        definitively disproven by at least one measured
+                        hard-constraint violation; carries
                         violated-constraint evidence plus relaxation
                         information (tightest ceiling that would admit the
                         best measured candidate)
+  CONSTRAINT_UNMEASURABLE
+                        nothing violated, nothing measurable — the request is
+                        unanswerable with current producers, not refused
+  INCONCLUSIVE          anything else: crashes, prunes, or unmeasurable
+                        candidates coexist with violations, so no refusal
+                        is warranted; counts per status are retained
   (incoherent requests raise InvalidCompilerRequest before any evaluation)
+  pareto and relaxation_information are None unless FEASIBLE — never
+  computed from an incomplete population.
 
 Fail-closed semantics:
-  - a constraint the candidate record cannot measure (bandwidth floors
-    today: no measured GB/s exists anywhere in the stack) marks the
-    candidate CONSTRAINT_UNMEASURABLE — never a silent pass
+  - a proven hard violation rejects the candidate even when a sibling
+    constraint is unmeasurable; otherwise an unmeasurable hard
+    constraint (bandwidth floors today) marks the candidate
+    CONSTRAINT_UNMEASURABLE — never a silent pass
   - failed evaluations stay visible as EVALUATION_FAILED with their error
   - pruned candidates stay visible as PRUNED with their pruning reason and
     are never evaluated
@@ -45,6 +56,10 @@ ST_PRUNED = "PRUNED"
 
 VERDICT_FEASIBLE = "FEASIBLE"
 VERDICT_NO_FEASIBLE_DESIGN = "NO_FEASIBLE_DESIGN"
+VERDICT_INCONCLUSIVE = "INCONCLUSIVE"
+# Nothing violated, nothing measurable: the request is unanswerable with
+# current producers — not refused, not unknown-for-lack-of-trying.
+VERDICT_CONSTRAINT_UNMEASURABLE = "CONSTRAINT_UNMEASURABLE"
 
 # The one constraint kind whose metric the stack cannot measure yet.
 _UNMEASURABLE = {"bandwidth_floor": "bandwidth_floor_gbps"}
@@ -218,16 +233,18 @@ def compile_fabric(request: CompilerRequest,
                 continue
             verdicts.append(_evaluate_constraint(r, latency))
         rec["constraint_verdicts"] = verdicts
-
         if unmeasurable:
-            rec.update(
-                status=ST_CONSTRAINT_UNMEASURABLE,
-                unmeasurable=[_constraint_label(r) for r in unmeasurable],
-                unmeasurable_reason=(
-                    "no measured producer exists for this metric in the "
-                    "stack today — enforcing would fabricate a number"))
-        elif any(not v["satisfied"] for v in verdicts):
+            rec["unmeasurable"] = [_constraint_label(r) for r in unmeasurable]
+            rec["unmeasurable_reason"] = (
+                "no measured producer exists for this metric in the "
+                "stack today — enforcing would fabricate a number")
+        # A proven hard violation rejects the candidate even when a
+        # sibling constraint is unmeasurable — unknown measurements
+        # cannot resurrect a disproven design.
+        if any(not v["satisfied"] for v in verdicts):
             rec.update(status=ST_CONSTRAINT_VIOLATION)
+        elif unmeasurable:
+            rec.update(status=ST_CONSTRAINT_UNMEASURABLE)
         else:
             rec.update(status=ST_FEASIBLE)
         records.append(rec)
@@ -261,10 +278,33 @@ def compile_fabric(request: CompilerRequest,
     }
 
     if n_feasible == 0:
-        out["verdict"] = VERDICT_NO_FEASIBLE_DESIGN
+        # Truth table: NO_FEASIBLE_DESIGN requires a complete population
+        # in which every candidate is definitively rejected by at least
+        # one measured hard-constraint violation. Unmeasurable sibling
+        # constraints do not undo a proven violation. Anything else that
+        # could change the conclusion (crash, prune, pure-unmeasurable)
+        # blocks it.
         out["pareto"] = None
-        out["violated_constraints"] = _violated_evidence(records, hard)
-        out["relaxation_information"] = _relaxation(records, hard)
+        out["violated_constraints"] = []
+        out["relaxation_information"] = None
+        complete = (n_failed == 0 and n_pruned == 0 and n_unmeasurable == 0)
+        if complete and n_violated > 0:
+            out["verdict"] = VERDICT_NO_FEASIBLE_DESIGN
+            out["violated_constraints"] = _violated_evidence(records, hard)
+            out["relaxation_information"] = _relaxation(records, hard)
+            return out
+        if (n_unmeasurable > 0 and n_violated == 0
+                and n_failed == 0 and n_pruned == 0):
+            out["verdict"] = VERDICT_CONSTRAINT_UNMEASURABLE
+            out["unmeasurable_reasons"] = {
+                "constraint_unmeasurable": n_unmeasurable}
+            return out
+        out["verdict"] = VERDICT_INCONCLUSIVE
+        out["inconclusive_reasons"] = {
+            "constraint_violation": n_violated,
+            "evaluation_failed": n_failed,
+            "constraint_unmeasurable": n_unmeasurable,
+            "pruned": n_pruned}
         return out
 
     out["verdict"] = VERDICT_FEASIBLE

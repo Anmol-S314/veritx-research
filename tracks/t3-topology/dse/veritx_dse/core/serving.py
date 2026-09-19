@@ -586,3 +586,58 @@ def preflight_serve(*, llmsim_dir: Any, cluster_path: Any,
                           detail="converter has no pipeline-parallel "
                                  "semantics")
     return [str(b) for b in binaries]
+
+
+def expected_cluster_fabric(cluster_id: str) -> dict[str, Any]:
+    """Expected serving fabric for a registered cluster, pre-execution.
+
+    Resolves instances with the exact production rules (model registry +
+    resolve_parallelism + resolve_dp_groups + network_dims from the
+    vendored serving core) — no second arithmetic. Topology entries are
+    FullyConnected because that is what the production network-config
+    builder emits per dimension, not a fallback.
+    Raises SpecError when the cluster cannot be resolved.
+    """
+    import copy as _copy
+    import json as _json
+    import math as _math
+    from .paths import LLMSIM_DIR, serving_fixture
+    from .spec import SpecError
+
+    cluster_path = serving_fixture("cluster", cluster_id)
+    try:
+        cluster = _json.loads(cluster_path.read_text())
+    except (OSError, ValueError) as e:
+        raise SpecError(f"cluster {cluster_id!r} unreadable: {e}") from e
+    nodes = cluster.get("nodes")
+    if not isinstance(nodes, list) or not nodes:
+        raise SpecError(f"cluster {cluster_id!r} has no nodes list")
+    helpers = _load_serving_helpers(LLMSIM_DIR)
+    instances: list[dict[str, Any]] = []
+    for ni, node in enumerate(nodes):
+        for inst in node.get("instances") or []:
+            work = _copy.deepcopy(inst)
+            try:
+                model_config = helpers.get_config(work["model_name"])
+            except (FileNotFoundError, KeyError) as e:
+                raise SpecError(
+                    f"cluster {cluster_id!r} model "
+                    f"{work.get('model_name')!r} unresolvable: {e}") from e
+            try:
+                helpers.resolve_parallelism(work, model_config)
+            except ValueError as e:
+                raise SpecError(
+                    f"cluster {cluster_id!r} parallelism invalid: {e}") from e
+            work["node_id"] = ni
+            instances.append(work)
+    if not instances:
+        raise SpecError(f"cluster {cluster_id!r} resolves to zero instances")
+    try:
+        helpers.resolve_dp_groups(instances)
+        dims = [int(d) for d in helpers.network_dims(instances)]
+    except ValueError as e:
+        raise SpecError(
+            f"cluster {cluster_id!r} dims unresolvable: {e}") from e
+    return {"source": "serving_cluster", "cluster": cluster_id,
+            "topology": ["FullyConnected"] * len(dims),
+            "dimensions": dims, "npu_count": _math.prod(dims)}

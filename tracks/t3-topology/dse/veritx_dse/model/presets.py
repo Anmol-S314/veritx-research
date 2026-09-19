@@ -353,6 +353,28 @@ def lookup_topo(name: str) -> Topology | None:
     return None
 
 
+def resolve_fabric(topology_id: str, routing: str | None = None,
+                   ) -> tuple[Topology | None, str | None]:
+    """One fabric resolver for CLI, API, compiler, serving.
+
+    Returns (Topology, None) or (None, reason). Named presets are
+    immutable: routing None (undeclared) or equal to the preset's own
+    returns the preset unchanged; anything else is refused, never merged.
+    """
+    preset = lookup_topo(topology_id)
+    if preset is None:
+        return None, (
+            f"unknown topology id '{topology_id}' — specs reference "
+            "registered presets by ID")
+    if routing is not None and routing != preset.routing:
+        return None, (
+            f"topology '{preset.name}' is immutable (routing="
+            f"'{preset.routing}'); requested routing '{routing}' "
+            "contradicts it — declare a custom fabric instead of "
+            "overriding a named preset")
+    return preset, None
+
+
 def make_anynet_topo(filepath: str) -> Topology:
     """Create a Topology from an .anynet file path."""
     p = Path(filepath)

@@ -225,7 +225,8 @@ class Run:
 
     @classmethod
     def create(cls, repo: Path, resolved_spec: dict[str, Any],
-               argv: list[str] | None = None) -> "Run":
+               argv: list[str] | None = None,
+               study_hash: str | None = None) -> "Run":
         """Allocate + initialize a run directory. Fails loudly if the run
         directory already exists (collision = bug, never overwrite)."""
         assert_runtime_compatible()
@@ -249,6 +250,7 @@ class Run:
             "schema_version": 1,
             "run_id": run_id,
             "experiment_hash": ehash,
+            "study": study_hash,
             "status": "CREATED",
             "created_at": _utcnow(),
             "spec": "spec.resolved.json",

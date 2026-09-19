@@ -59,7 +59,6 @@ def _spec_dict(**serving_kw):
         "name": "pr6t",
         "workload": {"id": "w", "trace": "archive/inputs/traces/x.trace"},
         "system": {"nodes": 1},
-        "network": {"topology": "mesh_8x8"},
         "simulation": {"mode": "serving", "timeout_s": 900},
         "serving": serving,
     }
@@ -326,6 +325,109 @@ class TestFastNegatives:
         assert run.state == "FAILED"
 
 
+class TestFabricVerdictWiring:
+    """D: expected fabric == executed fabric is proven before SUCCEEDED.
+
+    Binary-free: preflight mocked, child faked (CSV + trace text +
+    generated booksim config), real cluster fixture + production
+    resolver for the expected side.
+    """
+
+    _CSV = [["0", "0", "100", "1100", "1000", "700", "100", "[100]"]]
+    _ERR = ("[LEDGER][TOPO] npus=2 dims=2\n"
+            "[LEDGER][COLL_COMPLETE] x\n"
+            "[LEDGER][STATE] y retired_flits=64 tail_deliveries=2\n")
+    _CFG = ("topology = mesh;\nk = 2;\nn = 1;\nrouting_function = dor;\n"
+            "num_vcs = 16;\nvc_buf_size = 512;\npacket_size = 64;\n")
+    _YML = "topology:\n- FullyConnected\nnpus_count:\n- 2\n"
+
+    def _run(self, tmp_path, monkeypatch, cfg_text=_CFG, yml_text=_YML):
+        import csv as _csv
+        import subprocess as _sp
+        import veritx_dse.core.process as proc
+        import veritx_dse.core.experiment_serving as es
+
+        class R:
+            wall_time_s = 1.5
+
+        def fake(cmd, **kw):
+            csv_path = [a for a in cmd if a.endswith(".csv")][0]
+            with open(csv_path, "w", newline="") as f:
+                w = _csv.writer(f)
+                w.writerow(["instance id", "request id", "arrival",
+                            "end_time", "latency", "TTFT", "TPOT", "ITL"])
+                w.writerows(self._CSV)
+            root = Path(cmd[cmd.index("--inputs-root") + 1])
+            tdir = root / "trace" / "fake_hw" / "fake_model"
+            tdir.mkdir(parents=True, exist_ok=True)
+            (tdir / "instance0_batch1.txt").write_text(
+                "SYNTHETIC\\t\\tmodel_parallel_NPU_group: 1\n"
+                "1\n"
+                "embedding_0 1000 LOCAL 1024 LOCAL 2048 LOCAL 512"
+                " NONE 0 1\n")
+            if cfg_text is not None:
+                bdir = root / "booksim"
+                bdir.mkdir(parents=True, exist_ok=True)
+                (bdir / "config.cfg").write_text(cfg_text)
+            if yml_text is not None:
+                ndir = root / "network"
+                ndir.mkdir(parents=True, exist_ok=True)
+                (ndir / "network.yml").write_text(yml_text)
+            r = R()
+            r.returncode, r.stdout, r.stderr = 0, "out", self._ERR
+            return r
+
+        monkeypatch.setattr(proc, "supervised_run", fake)
+        monkeypatch.setattr(es, "preflight_serve", lambda **kw: [])
+        monkeypatch.setattr("veritx_dse.core.runs.VERITX_RUNS_DIR",
+                            tmp_path / "runs")
+        return run_serving_experiment(_spec_dict(), repo=tmp_path)
+
+    def test_matching_fabric_succeeds(self, tmp_path, monkeypatch):
+        run = self._run(tmp_path, monkeypatch)
+        assert run.state == "SUCCEEDED"
+        res = _result(run)
+        assert res["fabric"]["node_count"] == 2
+        assert res["fabric"]["artifact_hash"]
+
+    def test_node_mismatch_fails(self, tmp_path, monkeypatch):
+        bad = self._CFG.replace("k = 2;", "k = 4;")
+        run = self._run(tmp_path, monkeypatch, cfg_text=bad)
+        assert run.state == "FAILED"
+        res = _result(run)
+        assert res["error"] == "FABRIC_INTENT_MISMATCH"
+        assert res["expected_fabric"]["npu_count"] == 2
+        assert res["executed_fabric"]["node_count"] == 4
+
+    def test_missing_evidence_fails(self, tmp_path, monkeypatch):
+        run = self._run(tmp_path, monkeypatch, cfg_text=None)
+        assert run.state == "FAILED"
+        assert _result(run)["error"] == "FABRIC_EVIDENCE_MISSING"
+
+
+@needs_serving
+class TestNoFabricInvention:
+    """E: the certified child never invents dims or assumes a topology."""
+
+    def _child(self):
+        import importlib
+        import sys as _sys
+        from veritx_dse.core.paths import LLMSIM_DIR
+        saved = list(_sys.path)
+        _sys.path.insert(0, str(LLMSIM_DIR))
+        try:
+            return importlib.import_module("serving.__main__")
+        finally:
+            _sys.path[:] = saved
+
+    def test_missing_network_yml_refuses(self, tmp_path):
+        from types import SimpleNamespace
+        child = self._child()
+        rp = SimpleNamespace(inputs_root=str(tmp_path))
+        with pytest.raises(RuntimeError, match="refusing to invent"):
+            child._prepare_booksim_config("/nonexistent/astra", rp, 8)
+
+
 def _result(run):
     return json.loads((run.root / "manifest.json").read_text())["results"][0]
 
@@ -345,8 +447,8 @@ class TestGoldenA:
         assert res["provenance"]["network_mode"] == "REAL_SIMULATION"
         assert res["provenance"]["semantic_losses"] == []
         assert res["provenance"]["fidelity"] == "SYSTEM_SERVING_SIMULATION"
-        assert res["fabric"]["coll_completes"] >= 1
-        assert res["fabric"]["max_retired_flits"] > 0
+        assert res["fabric_activity"]["coll_completes"] >= 1
+        assert res["fabric_activity"]["max_retired_flits"] > 0
         assert res["metric_schema"] == 1
         assert res["metrics"]["TTFT"]["unit"] == "ns"
         assert res["metrics"]["sim_clock"]["unit"] == "ns"
@@ -417,7 +519,7 @@ class TestGoldenB:
         # RR over 2 requests guarantees both instances serve: rebinding
         # bugs (all completions credited to instance 0) fail here.
         assert seen == {"0", "1"}, f"ownership broken: {seen}"
-        assert res["fabric"]["coll_completes"] >= 1
+        assert res["fabric_activity"]["coll_completes"] >= 1
 
 
 @needs_serving
@@ -446,7 +548,7 @@ class TestGoldenAnalytical:
         assert res["provenance"]["fidelity"] == "ANALYTICAL_ESTIMATE"
         assert res["provenance"]["semantic_losses"] == []
         assert res["network_engine"] == "congestion_aware"
-        assert res["fabric"]["coll_completes"] >= 1
+        assert res["fabric_activity"]["coll_completes"] >= 1
         assert res["backend_binaries"][0]["sha256"] is not None
 
     def test_multi_instance_unaware_golden(self, tmp_path, monkeypatch):
@@ -469,5 +571,5 @@ class TestGoldenAnalytical:
         # RR over 2 requests: both instances must serve — proves the
         # unaware frontend's bare-path reload reaches every rank.
         assert seen == {"0", "1"}, f"ownership broken: {seen}"
-        assert res["fabric"]["coll_completes"] >= 1
+        assert res["fabric_activity"]["coll_completes"] >= 1
         assert res["provenance"]["network_mode"] == "REAL_SIMULATION"

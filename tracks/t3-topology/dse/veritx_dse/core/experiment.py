@@ -20,7 +20,6 @@ from __future__ import annotations
 import hashlib
 import re
 import sys
-from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +28,7 @@ from ..core.runs import Run, RunError
 from ..core.spec import SpecError, parse, plan as plan_spec, resolve
 from ..core.errors import BookSimError, TraceError
 from ..simulation.booksim import detect_trace_stats, run_topology_eval
-from ..model.presets import lookup_topo, topo_size
+from ..model.presets import topo_size
 
 
 def _resolve_trace(ref: str) -> Path:
@@ -45,6 +44,16 @@ def _trace_sha256(path: Path) -> str:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def _read_anynet(topo: Any) -> str | None:
+    nf = (topo.params or {}).get("network_file")
+    if topo.backend != "anynet" or not nf:
+        return None
+    try:
+        return Path(nf).read_text()
+    except OSError:
+        return None
 
 
 def run_experiment(
@@ -82,23 +91,19 @@ def run_experiment(
         raise SpecError("system.tp_size is not modeled by standalone BookSim; use 1")
     if spec.system.instances_per_node != 1:
         raise SpecError("system.instances_per_node is not modeled by standalone BookSim; use 1")
-    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", spec.network.routing):
+    if spec.network.routing is not None and not re.fullmatch(
+            r"[A-Za-z_][A-Za-z0-9_]*", spec.network.routing):
         raise SpecError("network.routing must be a BookSim routing identifier")
-    topo = lookup_topo(spec.network.topology)
+    from ..model.presets import resolve_fabric, topo_size
+    topo, reason = resolve_fabric(spec.network.topology, spec.network.routing)
     if topo is None:
-        # Registered-ID check is the trusted-config join point (ADR 0005):
-        # specs cannot carry paths, so an unregistered ID is unrunnable.
-        raise SpecError(
-            f"unknown topology id '{spec.network.topology}' — not in the "
-            "registered presets; specs reference simulators/topologies by ID"
-        )
+        raise SpecError(reason)
     nodes, _ = topo_size(topo)
     if spec.system.nodes != nodes:
         raise SpecError(
             f"system.nodes {spec.system.nodes} does not match topology "
             f"'{spec.network.topology}' ({nodes} nodes)"
         )
-    topo = replace(topo, routing=spec.network.routing)
     trace_path = _resolve_trace(spec.workload.trace)
 
     # ── run directory (immutable from here) ────────────────────────────
@@ -128,6 +133,7 @@ def run_experiment(
 
     # ── execute (one task per seed; real process, real parse) ──────────
     trace_hash = _trace_sha256(trace_path)
+    from ..core.fabric import fabric_from_config_text
     failures: list[str] = []
     try:
         for task in p["tasks"]:
@@ -138,8 +144,12 @@ def run_experiment(
                     timeout=task["timeout_s"], sim_type=spec.simulation.mode,
                     runner=runner,
                 )
+                fabric = fabric_from_config_text(
+                    r["config"],
+                    anynet_text=_read_anynet(topo)).to_dict()
                 run.add_result(task["task_id"],
-                               {"trace_sha256": trace_hash, **r})
+                               {"trace_sha256": trace_hash, "fabric": fabric,
+                                **r})
             except BookSimError as e:  # includes TimeoutError subclass
                 failures.append(f"{task['task_id']}: {e}")
                 run.add_result(task["task_id"],
