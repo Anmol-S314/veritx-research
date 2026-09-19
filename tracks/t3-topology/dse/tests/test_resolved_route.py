@@ -39,7 +39,7 @@ def _fabric(n=4, **kw):
     cr = _cr([Agent(kind=AgentKind.COMPUTE_TILE, count=n)], **kw)
     inv = build_inventory(cr)
     topo = materialize_topology(inv, cr)
-    att = derive_attachment(inv, derive_mapping(cr), topo, cr)
+    att = derive_attachment(design=cr, inventory=inv, topology=topo)
     rr = RouteArtifact.from_topology(topo, name="t")
     return topo, att, rr
 
@@ -73,13 +73,11 @@ def test_same_router_route_different_attachment_differs():
     a0 = AgentInstance(0, 0, AgentKind.COMPUTE_TILE)
     a1 = AgentInstance(0, 1, AgentKind.COMPUTE_TILE)
     att_a = AgentAttachmentArtifact(
-        design_hash="d" * 64,
-        topology_hash=topo.topology_hash(), mapping_hash="m" * 64,
+        topology_hash=topo.topology_hash(),
         endpoints=(Endpoint(0, a0, 0, 0, _IFACE),
                    Endpoint(1, a1, 3, 0, _IFACE)))
     att_b = AgentAttachmentArtifact(
-        design_hash="d" * 64,
-        topology_hash=topo.topology_hash(), mapping_hash="m" * 64,
+        topology_hash=topo.topology_hash(),
         endpoints=(Endpoint(0, a0, 3, 0, _IFACE),
                    Endpoint(1, a1, 0, 0, _IFACE)))
 

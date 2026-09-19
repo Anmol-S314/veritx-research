@@ -17,6 +17,7 @@
 | 1.3 | B3.4 | PacketFormatArtifact is the wire-format authority: physical beat width stays Topology-owned, logical flit width is PacketFormat-owned, v1 requires one flit per beat. v1 wire fields are payload/source_endpoint/destination_endpoint/flit_type/vc_id; TrafficClass, RoutingClass, sequence and protocol metadata are explicitly absent. RouterBehaviorArtifact v1 pins per-input-port/per-VC buffering, credit flow control, wait-for-tail-credit, iSLIP, pipeline timing and speedups, with no implicit demotion or escape priority. |
 | 1.4 | B3.4c | RouterBehaviorArtifact schema v2: the ambiguous `packet_hold_policy=FLIT_INTERLEAVED` is replaced by `input_vc_packet_policy=ONE_PACKET_AT_A_TIME` (no two packets share one input VC's packet context) and `vc_allocation_scope=PACKET` (HEAD/SINGLE selects `vc_out`; BODY/TAIL reuse it for the packet at that hop). `hold_switch_for_packet` remains the independent switch-arbitration granularity. v1 is explicitly refused, not silently migrated. |
 | 1.5 | B3.1c | AgentAttachmentArtifact completes the interface authority: each Endpoint carries an immutable `AgentInterfaceDescriptor` (data_width_bits, address_width_bits, protocol, clock_domain, power_domain) derived from the parent Agent group, and the artifact binds `design_hash` as a parent. Validation proves group/instance bounds, kind agreement, interface equality with the parent group, real router seats, and one-to-one mapping placement identity. Schema v2; v1 attachments refused. |
+| 1.6 | B3.1d | Attachment identity correction: schema v3 makes `topology_hash` the ONLY semantic parent. DesignRevision and NodeInventory are derivation/validation sources and MappingArtifact meets the hardware again only at ResolvedFabric (`resolved_fabric_hash = design_hash + mapping_hash + fabric_hash`), so the same hardware under a different mapping or an unrelated design change keeps the same `attachment_hash`/`fabric_hash`. Validation now proves the complete design agent universe (no missing idle agents, no fabricated extras) and total seat legality. v1 and v2 attachments are refused. |
 
 This document defines what a resolved Srota fabric *is* before B3 code is
 written. It starts from hardware semantics and maps existing code onto them —
@@ -154,7 +155,8 @@ depends on.
                          │
                          ▼
               AgentAttachmentArtifact
-              (TopologyArtifact + NodeInventory + MappingArtifact)
+              (topology-bound; agent universe + interface semantics from
+               DesignRevision/NodeInventory; Mapping does not flow in)
                     │           │
           ┌─────────┘           └──────────┐
           ▼                                ▼
@@ -281,8 +283,10 @@ RouterPort (local seat)
 Router
 ```
 
-- **Owner:** AgentAttachmentArtifact. Inputs: TopologyArtifact (seats),
-  NodeInventory, MappingArtifact. It selects seats; it does not create them.
+- **Owner:** AgentAttachmentArtifact. Inputs: TopologyArtifact (seats) and the
+  DesignRevision/NodeInventory agent universe (interface semantics). It selects
+  seats; it does not create them. MappingArtifact does NOT participate in
+  attachment derivation — rank placement is a ResolvedFabric seam concern.
 - **Every hardware AgentInstance attaches**, compute or not: compute tiles, HBM
   controllers, NICs, peripherals, UCIe ports, and idle compute instances. An
   active `LogicalRank` is not required to attach an agent.
@@ -296,14 +300,17 @@ Router
   `AgentInterfaceDescriptor` (`data_width_bits`, `address_width_bits`,
   `protocol`, `clock_domain`, `power_domain`) derived from the parent Agent
   group in the design revision.
-- **B3.1c interface/parent binding:** `derive_attachment` reads the design
-  revision and binds `design_hash` alongside `topology_hash` and
-  `mapping_hash`. Validation proves `group_index` exists,
-  `instance_index < group.count`, `AgentInstance.kind` matches the parent
-  group, the endpoint descriptor equals the parent group's
-  width/protocol/clock/power semantics, every router/port is a real topology
-  seat, and every MappingArtifact placement points at the same AgentInstance
-  (full identity, not merely the same coordinate).
+- **B3.1d identity boundary:** the attachment's only semantic parent is
+  `topology_hash`. DesignRevision and NodeInventory are derivation/validation
+  SOURCES, not identity parents; the copied `AgentInterfaceDescriptor` is how
+  design-derived hardware semantics propagate. Validation proves the
+  attachment contains exactly the AgentInstance universe implied by the design
+  (no missing idle agents, no fabricated extras), `group_index` exists,
+  `instance_index < group.count`, kind agrees, each interface equals the parent
+  group's width/address/protocol/clock/power semantics, every router/port is a
+  real topology seat, and every seat is occupied at most once. Mapping
+  placement legality is checked at the ResolvedFabric seam and never changes
+  attachment identity.
 - **Does not own flit width.** Flit width belongs to PacketFormatArtifact (§6.1).
 - **v1 decision:** `Endpoint` and `NetworkInterface` are one semantic attachment
   object. The distinction is documented for future protocol bridges, not
@@ -641,9 +648,11 @@ capacity. Parents: none (inputs NodeInventory + GUIDED recorded in envelope).
 ### AgentAttachmentArtifact
 `endpoint_id → (AgentInstance, RouterPort, AgentInterfaceDescriptor)` where the
 descriptor owns `data_width_bits`, `address_width_bits`, `protocol`,
-`clock_domain`, `power_domain`. Parents: `design_hash`, `topology_hash`,
-`mapping_hash`. v1 attachments (no design parent, no interface descriptor) are
-refused on load.
+`clock_domain`, `power_domain`. Parent: `topology_hash` only; DesignRevision and
+NodeInventory are derivation/validation sources and MappingArtifact is a
+ResolvedFabric seam concern. Validation proves the complete design agent
+universe. v1 (no interface descriptor) and v2 (design/mapping over-binding)
+attachments are refused on load.
 
 ### RouteArtifact (router-level)
 Parent hash `topology_hash` (== `TopologyArtifact.topology_hash()` for
@@ -715,7 +724,7 @@ expected for analytical projection; fatal for exact RTL↔BookSim equivalence.
 | Artifact | Parent hashes | Hash domain |
 |---|---|---|
 | TopologyArtifact | — | `srota/TopologyArtifact/v1` |
-| AgentAttachmentArtifact | design_hash, topology_hash, mapping_hash | `srota/AgentAttachment/v2` |
+| AgentAttachmentArtifact | topology_hash | `srota/AgentAttachment/v3` |
 | RouteArtifact | topology_hash | `srota/RouteArtifact/v1` |
 | ResolvedRouteArtifact | topology_hash, attachment_hash, router_route_hash | `srota/ResolvedRouteArtifact/v1` |
 | VCAssignmentArtifact | resolved_route_hash | `srota/VCAssignment/v1` |
@@ -732,8 +741,11 @@ Enforced at the ResolvedFabric seam (discharges B2's deferred parent binding):
 - every mapping agent exists in NodeInventory; kind agrees; group/instance exist;
 - every attachment endpoint's group_index/instance_index/kind exist in the design
   revision, its interface descriptor equals the parent Agent group's
-  data_width/addr_width/protocol/clock/power semantics, and the artifact binds
-  `design_hash`;
+  data_width/addr_width/protocol/clock/power semantics, and the attachment
+  contains exactly the AgentInstance universe implied by the design (no missing
+  idle agents, no fabricated extras);
+- every mapping placement points at an attached AgentInstance — a ResolvedFabric
+  seam invariant that does not alter attachment identity;
 - every attachment endpoint references a real topology seat (router exists, port
   < seat capacity); every agent attaches exactly once; seats not exceeded;
 - **`resolved_route.topology_hash == topology.topology_hash()`** and

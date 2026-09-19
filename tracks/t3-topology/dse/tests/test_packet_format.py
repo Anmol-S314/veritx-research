@@ -46,9 +46,7 @@ def _attachment(topology, endpoint_count):
                  interface=_IFACE)
         for i in range(endpoint_count))
     return AgentAttachmentArtifact(
-        design_hash="d" * 64,
-        topology_hash=topology.topology_hash(),
-        mapping_hash="m" * 64, endpoints=endpoints)
+        topology_hash=topology.topology_hash(), endpoints=endpoints)
 
 
 def _vc(vc_count, resolved_route_hash="r" * 64):
@@ -440,15 +438,14 @@ class TestIdentityMutations:
         art_a = derive_packet_format(
             topology=topo, attachment=_attachment(topo, 4),
             vc_assignment=_vc(1))
+        changed = AgentInterfaceDescriptor(512, 64, "CHI", None, None)
         att_b = AgentAttachmentArtifact(
-            design_hash="d" * 64,
             topology_hash=topo.topology_hash(),
-            mapping_hash="n" * 64,
             endpoints=tuple(
                 Endpoint(endpoint_id=i,
                          agent=AgentInstance(i, i, AgentKind.COMPUTE_TILE),
                          router_id=i % topo.router_count, port_id=0,
-                         interface=_IFACE)
+                         interface=changed)
                 for i in range(4)))
         art_b = derive_packet_format(
             topology=topo, attachment=att_b, vc_assignment=_vc(1))

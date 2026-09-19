@@ -1,6 +1,6 @@
-"""veritx_dse.model.attachment — AgentAttachmentArtifact (Wave B3.1, B3.1c).
+"""veritx_dse.model.attachment — AgentAttachmentArtifact (B3.1, B3.1c, B3.1d).
 
-B2 stops at LogicalRank -> AgentInstance. B3.1 owns the next relationship:
+B2 stops at LogicalRank -> AgentInstance. B3 owns the next relationship:
 
     AgentInstance -> Endpoint (fabric-addressable attachment) -> RouterPort
 
@@ -10,9 +10,7 @@ agent. Endpoint ids are canonical fabric attachment ids assigned densely
 in (router_id, port_id) order; AddressRange.target_agent_idx identifies
 an Agent group and does NOT assign endpoint ids (§8).
 
-B3.1c completes the interface authority the spec promised: an Endpoint is
-not just "an agent on a seat", it also owns the immutable NI/interface
-descriptor of the Agent group it was derived from:
+Interface authority (B3.1c):
 
     AgentInterfaceDescriptor
         data_width_bits
@@ -21,21 +19,46 @@ descriptor of the Agent group it was derived from:
         clock_domain
         power_domain
 
-Parents: design_hash + topology_hash + mapping_hash. Deriving interface
-semantics from the customer design makes design_hash a real parent, and
-lets validation discharge the deferred B2 parent-binding obligation:
+endpoints carry the immutable interface semantics of the Agent group they
+were derived from.
 
-  * every AgentInstance's group_index exists in the design;
-  * instance_index < group.count;
-  * AgentInstance.kind == parent Agent group kind;
-  * the endpoint interface descriptor equals the parent Agent group's
-    data_width/addr_width/protocol/clock/power semantics;
-  * every seat exists in the TopologyArtifact;
-  * every MappingArtifact placement points at the SAME AgentInstance
-    (full identity, not merely the same instance_id string).
+Identity boundary (B3.1d). The attachment's ONLY semantic parent is
 
-v1 attachments (no design parent, no interface descriptor) are refused on
-load — no silent migration.
+    topology_hash
+
+because the endpoints reference router/port seat identities from the
+TopologyArtifact. DesignRevision and NodeInventory are the derivation and
+validation SOURCES, and MappingArtifact is a downstream seam concern — none
+of them enter attachment identity:
+
+    fabric_hash       = identity of the resolved hardware fabric
+    resolved_fabric   = design_hash + mapping_hash + fabric_hash
+
+so the same hardware fabric under a different workload mapping must keep
+the same attachment_hash (and later fabric_hash). Copying the interface
+descriptor into the artifact is what lets design-derived hardware
+semantics propagate WITHOUT hashing the entire design; an unrelated design
+change (batch size, requirement, output format) must not change hardware
+identity.
+
+Validation (B3.1d) proves the complete agent universe:
+
+    expected = {(group_index, instance_index, group.kind)
+                for every group in design.agents
+                for every instance in range(group.count)}
+
+    inventory agents == expected      (no missing, no extra)
+    attachment endpoints == expected  (no missing, no extra, no duplicates)
+
+plus per-endpoint group bounds, kind agreement, interface equality with
+the parent group, real router seats, and at-most-once seat occupancy.
+Every hardware agent attaches — not only agents that currently host a
+logical rank. Mapping placement legality is a ResolvedFabric seam check,
+not an attachment identity rule.
+
+Schema v1 and v2 attachments are refused on load: v1 has no interface
+descriptor; v2 polluted identity with design/mapping hashes. Neither is
+silently converted to v3.
 """
 from __future__ import annotations
 
@@ -44,11 +67,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from .compile_model import AgentKind, _as_int, _as_str
-from .mapping import MappingArtifact
 from .placement import AgentInstance, NodeInventory
 from .topology_artifact import TopologyArtifact
 
-ATTACHMENT_SCHEMA_VERSION = 2
+ATTACHMENT_SCHEMA_VERSION = 3
 _HASH_TYPE_TAG = "srota/AgentAttachment"
 
 
@@ -75,8 +97,8 @@ class AgentInterfaceDescriptor:
     """Immutable interface semantics of one endpoint's parent Agent group.
 
     This is NI-level hardware semantics, derived from the design revision
-    and owned by the attachment artifact — not inferred later from a
-    backend configuration.
+    and copied into the attachment artifact: design-derived semantics
+    propagate through the descriptor, not through a design hash.
     """
 
     data_width_bits: int
@@ -181,20 +203,45 @@ class Endpoint:
         )
 
 
+def _expected_universe(design) -> set[tuple[int, int, AgentKind]]:
+    groups = getattr(design, "agents", None)
+    if groups is None:
+        raise AttachmentError("design must expose .agents")
+    return {(group_index, instance_index, group.kind)
+            for group_index, group in enumerate(groups)
+            for instance_index in range(group.count)}
+
+
+def _inventory_universe(inventory: NodeInventory) -> set[tuple[int, int, AgentKind]]:
+    return {(a.group_index, a.instance_index, a.kind)
+            for a in inventory.agents}
+
+
+def _format_delta(name: str, missing: set, extra: set) -> str:
+    parts = []
+    if missing:
+        parts.append(f"missing {len(missing)}: {sorted(missing, key=str)[:3]}")
+    if extra:
+        parts.append(f"extra {len(extra)}: {sorted(extra, key=str)[:3]}")
+    return f"{name} does not match the design agent universe ({'; '.join(parts)})"
+
+
 @dataclass(frozen=True)
 class AgentAttachmentArtifact:
-    design_hash: str
+    """Hardware attachment identity: topology seats + agent interfaces.
+
+    Identity parent is ``topology_hash`` ONLY. DesignRevision and
+    NodeInventory are derivation/validation sources; MappingArtifact is a
+    downstream ResolvedFabric seam concern.
+    """
+
     topology_hash: str
-    mapping_hash: str
     endpoints: tuple[Endpoint, ...]
     schema_version: int = ATTACHMENT_SCHEMA_VERSION
 
     def __post_init__(self):
-        for name in ("design_hash", "topology_hash", "mapping_hash"):
-            value = getattr(self, name)
-            if not isinstance(value, str) or not value:
-                raise AttachmentError(
-                    f"{name} must be a non-empty string")
+        if not isinstance(self.topology_hash, str) or not self.topology_hash:
+            raise AttachmentError("topology_hash must be a non-empty string")
         if not isinstance(self.endpoints, tuple) or not self.endpoints:
             raise AttachmentError("endpoints must be a non-empty tuple")
         if not isinstance(self.schema_version, int) or \
@@ -230,9 +277,7 @@ class AgentAttachmentArtifact:
         return {
             "type": _HASH_TYPE_TAG,
             "schema_version": self.schema_version,
-            "design_hash": self.design_hash,
             "topology_hash": self.topology_hash,
-            "mapping_hash": self.mapping_hash,
             "endpoints": [e.to_dict() for e in self.endpoints],
         }
 
@@ -247,54 +292,58 @@ class AgentAttachmentArtifact:
         d["attachment_hash"] = self.attachment_hash()
         return d
 
-    # ── parent legality ────────────────────────────────────────────────
-    def validate_against(self, design, topology: TopologyArtifact,
-                         mapping: MappingArtifact) -> None:
-        """Prove design/interface/topology/mapping references are legal."""
+    # ── parent/derivation validation ───────────────────────────────────
+    def validate_against(self, design, inventory: NodeInventory,
+                         topology: TopologyArtifact) -> None:
+        """Prove topology seats + the complete design agent universe.
+
+        DesignRevision and NodeInventory are validation sources, not
+        identity parents: this proves the attachment corresponds to them
+        without hashing them.
+        """
+        if not isinstance(inventory, NodeInventory):
+            raise AttachmentError("inventory must be a NodeInventory")
         if not isinstance(topology, TopologyArtifact):
             raise AttachmentError("topology must be a TopologyArtifact")
-        if not isinstance(mapping, MappingArtifact):
-            raise AttachmentError("mapping must be a MappingArtifact")
         groups = getattr(design, "agents", None)
-        if groups is None or not hasattr(design, "design_hash"):
-            raise AttachmentError(
-                "design must expose .agents and .design_hash()")
-        if self.design_hash != design.design_hash():
-            raise AttachmentError(
-                "design_hash does not match the design revision")
+        if groups is None:
+            raise AttachmentError("design must expose .agents")
         if self.topology_hash != topology.topology_hash():
             raise AttachmentError(
                 "topology_hash does not match the materialized topology")
-        if self.mapping_hash != mapping.mapping_hash():
-            raise AttachmentError(
-                "mapping_hash does not match the mapping artifact")
+
+        expected = _expected_universe(design)
+        inventory_actual = _inventory_universe(inventory)
+        if inventory_actual != expected:
+            raise AttachmentError(_format_delta(
+                "inventory", expected - inventory_actual,
+                inventory_actual - expected))
+        actual = {(e.agent.group_index, e.agent.instance_index, e.agent.kind)
+                  for e in self.endpoints}
+        if actual != expected:
+            raise AttachmentError(_format_delta(
+                "attachment", expected - actual, actual - expected))
+
         by_router = {r.router_id: r for r in topology.routers}
-        by_coords: dict[tuple[int, int], Endpoint] = {}
         for e in self.endpoints:
-            by_coords[(e.agent.group_index, e.agent.instance_index)] = e
             group_index = e.agent.group_index
-            if not 0 <= group_index < len(groups):
-                raise AttachmentError(
-                    f"endpoint {e.endpoint_id} references Agent group "
-                    f"{group_index}, outside the design's "
-                    f"{len(groups)} groups")
-            group = groups[group_index]
-            if e.agent.kind != group.kind:
-                raise AttachmentError(
-                    f"endpoint {e.endpoint_id} kind {e.agent.kind.value!r} "
-                    f"does not match Agent group {group_index} kind "
-                    f"{group.kind.value!r}")
+            group = groups[group_index]          # safe: actual == expected
             if not 0 <= e.agent.instance_index < group.count:
                 raise AttachmentError(
                     f"endpoint {e.endpoint_id} instance_index "
                     f"{e.agent.instance_index} is outside Agent group "
                     f"{group_index} count {group.count}")
-            expected = descriptor_of_group(group)
-            if e.interface != expected:
+            if e.agent.kind != group.kind:
+                raise AttachmentError(
+                    f"endpoint {e.endpoint_id} kind {e.agent.kind.value!r} "
+                    f"does not match Agent group {group_index} kind "
+                    f"{group.kind.value!r}")
+            expected_iface = descriptor_of_group(group)
+            if e.interface != expected_iface:
                 raise AttachmentError(
                     f"endpoint {e.endpoint_id} interface descriptor does "
                     f"not match Agent group {group_index}: "
-                    f"{e.interface.to_dict()} != {expected.to_dict()}")
+                    f"{e.interface.to_dict()} != {expected_iface.to_dict()}")
             router = by_router.get(e.router_id)
             if router is None:
                 raise AttachmentError(
@@ -305,41 +354,27 @@ class AgentAttachmentArtifact:
                     f"endpoint {e.endpoint_id} port {e.port_id} is outside "
                     f"router {e.router_id} seat capacity "
                     f"{router.seat_capacity}")
-        for placement in mapping.placements:
-            endpoint = by_coords.get(
-                (placement.agent.group_index,
-                 placement.agent.instance_index))
-            if endpoint is None:
-                raise AttachmentError(
-                    f"mapping places rank {placement.rank} on "
-                    f"{placement.agent.instance_id}, which is not in the "
-                    "inventory/attachment")
-            if endpoint.agent != placement.agent:
-                raise AttachmentError(
-                    f"mapping places rank {placement.rank} on "
-                    f"{placement.agent}, but the attachment bound "
-                    f"{endpoint.agent}")
 
     @classmethod
     def from_dict(cls, d: Any) -> "AgentAttachmentArtifact":
         if not isinstance(d, dict):
             raise AttachmentError(
                 f"attachment must be an object, got {type(d).__name__}")
-        if d.get("schema_version") == 1:
+        if d.get("schema_version") in (1, 2):
             raise AttachmentError(
-                "AgentAttachmentArtifact schema v1 is refused: it has no "
-                "design_hash parent and no endpoint interface descriptor; "
-                "rebuild with v2 — no silent migration")
+                f"AgentAttachmentArtifact schema v{d['schema_version']} is "
+                "refused: v1 has no interface descriptor and v2 over-bound "
+                "identity to design/mapping hashes. Rebuild from "
+                "DesignRevision + NodeInventory + TopologyArtifact — no "
+                "silent migration")
         _strict_keys(d, frozenset({
-            "type", "schema_version", "design_hash", "topology_hash",
-            "mapping_hash", "endpoints", "attachment_hash"}), "attachment")
+            "type", "schema_version", "topology_hash", "endpoints",
+            "attachment_hash"}), "attachment")
         endpoints = _need(d, "endpoints", "attachment")
         if not isinstance(endpoints, list):
             raise AttachmentError("attachment.endpoints must be a list")
         artifact = cls(
-            design_hash=_need(d, "design_hash", "attachment"),
             topology_hash=_need(d, "topology_hash", "attachment"),
-            mapping_hash=_need(d, "mapping_hash", "attachment"),
             endpoints=tuple(Endpoint.from_dict(e) for e in endpoints),
             schema_version=_need(d, "schema_version", "attachment"),
         )
@@ -350,29 +385,34 @@ class AgentAttachmentArtifact:
         return artifact
 
 
-def derive_attachment(inventory: NodeInventory,
-                      mapping: MappingArtifact,
-                      topology: TopologyArtifact,
-                      design) -> AgentAttachmentArtifact:
+def derive_attachment(*, design, inventory: NodeInventory,
+                      topology: TopologyArtifact) -> AgentAttachmentArtifact:
     """Bind every hardware AgentInstance to a topology local seat.
 
     Baseline policy: routers in id order, seats 0..capacity-1 within each
     router, agents in canonical NodeInventory order. Deterministic, no
     optimizer.
 
-    ``design`` is the CompileRequest the inventory was built from: the
-    endpoint interface descriptor and design_hash parent come from it,
-    and ``validate_against`` discharges the B2 parent-binding checks.
+    Inputs are the design revision (agent universe + interface
+    semantics), the NodeInventory (canonical agent order), and the
+    TopologyArtifact (seats). MappingArtifact deliberately does not
+    participate: rank placement is not hardware attachment identity.
     """
     if not isinstance(inventory, NodeInventory):
         raise AttachmentError("inventory must be a NodeInventory")
-    if not isinstance(mapping, MappingArtifact):
-        raise AttachmentError("mapping must be a MappingArtifact")
     if not isinstance(topology, TopologyArtifact):
         raise AttachmentError("topology must be a TopologyArtifact")
     groups = getattr(design, "agents", None)
-    if groups is None or not hasattr(design, "design_hash"):
-        raise AttachmentError("design must expose .agents and .design_hash()")
+    if groups is None:
+        raise AttachmentError("design must expose .agents")
+
+    expected = _expected_universe(design)
+    inventory_actual = _inventory_universe(inventory)
+    if inventory_actual != expected:
+        raise AttachmentError(_format_delta(
+            "inventory", expected - inventory_actual,
+            inventory_actual - expected))
+
     seats = [(r.router_id, s)
              for r in topology.routers
              for s in range(r.seat_capacity)]
@@ -387,10 +427,8 @@ def derive_attachment(inventory: NodeInventory,
         for i, agent in enumerate(inventory.agents)
     )
     artifact = AgentAttachmentArtifact(
-        design_hash=design.design_hash(),
         topology_hash=topology.topology_hash(),
-        mapping_hash=mapping.mapping_hash(),
         endpoints=endpoints,
     )
-    artifact.validate_against(design, topology, mapping)
+    artifact.validate_against(design, inventory, topology)
     return artifact
