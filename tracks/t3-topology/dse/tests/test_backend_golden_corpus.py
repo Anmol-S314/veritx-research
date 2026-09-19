@@ -28,9 +28,9 @@ from veritx_dse.backend.analytical import (  # noqa: E402
     lower_analytical_aware, lower_analytical_unaware,
 )
 from veritx_dse.backend.booksim import (  # noqa: E402
-    bind_booksim_inputs, expected_route_table, lower_booksim_standalone,
-    prepare_booksim_standalone, render_booksim_standalone,
-    run_certified_booksim,
+    bind_booksim_inputs, execution_qualification, expected_route_table,
+    lower_booksim_standalone, prepare_booksim_standalone,
+    render_booksim_standalone, run_certified_booksim,
 )
 from veritx_dse.backend.contracts import sha256_bytes  # noqa: E402
 from veritx_dse.backend.serving import lower_serving_booksim  # noqa: E402
@@ -82,6 +82,7 @@ def _observed(bundle):
     rendered = render_booksim_standalone(bundle, art, workload_trace=trace)
     manifest = bind_booksim_inputs(
         art, rendered, workload_hash=sha256_bytes(trace))
+    loss = sorted(art.semantic_loss_summary(), key=lambda r: r["dimension"])
     return trace, {
         "endpoint_count": n,
         "fabric_hash": bundle.fabric.fabric_hash(),
@@ -89,6 +90,9 @@ def _observed(bundle):
         "standalone_input_hash": manifest.backend_input_hash(),
         "route_expected_sha256": _route_digest(bundle, art),
         "exact_fabric_eligible": art.exact_fabric_eligible(),
+        "qualification": execution_qualification(art).value,
+        "loss_dimensions": sorted(r["dimension"] for r in loss),
+        "loss_statuses": {r["dimension"]: r["status"] for r in loss},
         "loss_digest": _loss_digest(art),
         "serving_config_hash": lower_serving_booksim(bundle)
         .backend_config_hash(),
@@ -102,7 +106,7 @@ def _observed(bundle):
 
 class TestGoldenHashes:
     def test_corpus_shape(self, corpus):
-        assert corpus["schema"] == 1
+        assert corpus["schema"] == 2
         assert corpus["profile"] == "CERTIFIED_BOOKSIM_ANYNET_V1"
         assert set(corpus["cases"]) == set(_cases())
 
@@ -117,14 +121,39 @@ class TestGoldenHashes:
                     f"  pinned:   {expected[key]!r}\n"
                     f"  observed: {value!r}")
 
-    def test_corpus_covers_exact_and_blocked_domains(self, corpus):
+    def test_corpus_is_explicitly_lossy_not_exact(self, corpus):
+        """What the corpus proves and does not prove.
+
+        Proves: deterministic semantic identity, exact executed-route
+        realization where supported, nonzero real BookSim activity, and
+        stable DECLARED semantic losses (by dimension, not just digest).
+        Does NOT prove complete full-fabric semantic equivalence: no
+        case is exact_fabric_eligible, because BookSim cannot represent
+        packet delimitation, output staging/delay, width semantics, etc.
+        """
         eligible = [n for n, row in corpus["cases"].items()
                     if row["exact_fabric_eligible"]]
         assert eligible == []
+        assert all(row["qualification"] != "EXECUTED_EXACT"
+                   for row in corpus["cases"].values())
         losses = {n: row["loss_digest"] for n, row in corpus["cases"].items()}
-        # Distinct fabrics mostly share loss shapes; single-class removes
-        # the VC-class coarsening, so its loss digest must differ.
         assert losses["mesh4_singleclass"] != losses["mesh4_multiclass"]
+
+    def test_baseline_loss_dimensions_are_pinned(self, corpus):
+        row = corpus["cases"]["mesh4_multiclass"]
+        assert row["loss_dimensions"] == [
+            "ADDRESS_DECODE", "CHANNEL_WIDTH", "FLIT_WIDTH",
+            "HEADER_LAYOUT", "HEADER_REPLICATION", "OUTPUT_DELAY_CYCLES",
+            "OUTPUT_STAGE_DEPTH", "PACKET_DELIMITATION",
+            "VC_CLASS_ASSIGNMENT"]
+        assert row["loss_statuses"]["VC_CLASS_ASSIGNMENT"] \
+            == "COARSENED"
+        assert row["qualification"] == "EXECUTED_WITH_DECLARED_LOSS"
+
+    def test_escape_case_is_blocked_from_exact(self, corpus):
+        row = corpus["cases"]["escape_blocked"]
+        assert "ESCAPE_VCS" in row["loss_dimensions"]
+        assert row["qualification"] == "EXECUTED_BLOCKED_FROM_EXACT"
 
 
 class TestGoldenExecution:
@@ -151,4 +180,5 @@ class TestGoldenExecution:
                 expected["route_expected_sha256"], name
             assert ev.route_executed_sha256 == \
                 expected["route_expected_sha256"], name
+            assert ev.qualification == expected["qualification"], name
             assert ev.stats.get("delivered") == 2, name

@@ -59,6 +59,7 @@ from .bundle import ResolvedFabricBundle
 from .contracts import (
     BackendConfigArtifact, BackendConfigError, BackendInputError,
     BackendInputManifest, BackendTarget, CertificationEffect,
+    ExecutionQualification,
     ParameterOwner, RenderedInput, RepresentationStatus, SemanticBinding,
     SemanticDimension, sha256_bytes,
 )
@@ -1082,6 +1083,41 @@ def compare_route_realization(
 
 # ── certified execution ─────────────────────────────────────────────────
 
+def execution_qualification(
+        config: BackendConfigArtifact) -> ExecutionQualification:
+    """What a run of this artifact is — never a blanket "certified".
+
+    Derived strictly from the bindings:
+      * UNSUPPORTED_EXECUTION present  -> EXECUTION_UNSUPPORTED (refuse)
+      * BLOCKS_EXACT_FABRIC present    -> EXECUTED_BLOCKED_FROM_EXACT
+      * all exact/irrelevant           -> EXECUTED_EXACT
+      * otherwise                      -> EXECUTED_WITH_DECLARED_LOSS
+    """
+    effects = {b.certification_effect for b in config.semantic_bindings}
+    if CertificationEffect.UNSUPPORTED_EXECUTION in effects:
+        return ExecutionQualification.EXECUTION_UNSUPPORTED
+    if CertificationEffect.BLOCKS_EXACT_FABRIC in effects:
+        return ExecutionQualification.EXECUTED_BLOCKED_FROM_EXACT
+    if config.exact_fabric_eligible():
+        return ExecutionQualification.EXECUTED_EXACT
+    return ExecutionQualification.EXECUTED_WITH_DECLARED_LOSS
+
+
+def assert_executable(config: BackendConfigArtifact) -> ExecutionQualification:
+    """Refuse UNSUPPORTED_EXECUTION before any process/materialization."""
+    qualification = execution_qualification(config)
+    if qualification is ExecutionQualification.EXECUTION_UNSUPPORTED:
+        blocked = ", ".join(
+            b.dimension.value for b in config.semantic_bindings
+            if b.certification_effect is
+            CertificationEffect.UNSUPPORTED_EXECUTION)
+        target = config.backend_target.value
+        raise BookSimLoweringError(
+            f"UNSUPPORTED_EXECUTION: refusing to run {target} with "
+            f"unresolved semantics: {blocked}")
+    return qualification
+
+
 @dataclass(frozen=True)
 class CertifiedBookSimEvidence:
     """Everything a certified standalone BookSim run must carry."""
@@ -1095,6 +1131,7 @@ class CertifiedBookSimEvidence:
     route_executed_sha256: str
     route_pairs_compared: int
     exact_fabric_eligible: bool
+    qualification: str
     semantic_loss: tuple[dict[str, Any], ...]
     stats: dict[str, Any]
     exit_status: int
@@ -1119,6 +1156,7 @@ class CertifiedBookSimEvidence:
             "route_executed_sha256": self.route_executed_sha256,
             "route_pairs_compared": self.route_pairs_compared,
             "exact_fabric_eligible": self.exact_fabric_eligible,
+            "qualification": self.qualification,
             "semantic_loss": [dict(row) for row in self.semantic_loss],
             "stats": dict(self.stats),
             "exit_status": self.exit_status,
@@ -1135,7 +1173,7 @@ class CertifiedBookSimEvidence:
         }
 
 
-def run_certified_booksim(
+def run_qualified_booksim(
         prepared: PreparedBackend, *,
         run_dir: Path,
         repo_root: Path,
@@ -1143,11 +1181,15 @@ def run_certified_booksim(
         runner: Any | None = None,
         binary: Path | None = None,
 ) -> CertifiedBookSimEvidence:
-    """Execute one prepared certified standalone BookSim run.
+    """Execute one prepared BookSim run and return its explicit
+    qualification (EXECUTED_EXACT / EXECUTED_WITH_DECLARED_LOSS /
+    EXECUTED_BLOCKED_FROM_EXACT). UNSUPPORTED_EXECUTION refuses before
+    anything is materialized or spawned.
 
-    Order: revalidate bundle → identity checks → materialize →
-    parse-back topology → verify hashes IMMEDIATELY BEFORE spawn → run →
-    executed-route proof → parse stats. Any tamper/stale input refuses.
+    Order: revalidate bundle → identity checks → qualification guard →
+    materialize → parse-back topology → verify hashes IMMEDIATELY BEFORE
+    spawn → run → executed-route proof → parse stats. Any tamper/stale
+    input refuses.
     """
     import time
 
@@ -1171,6 +1213,7 @@ def run_certified_booksim(
             bundle.resolved_fabric.resolved_fabric_hash():
         raise BackendMaterializationError(
             "backend config does not bind the supplied bundle")
+    qualification = assert_executable(config)
 
     backend_dir = Path(run_dir) / "backend"
     materialize_backend(rendered, manifest, backend_dir)
@@ -1231,6 +1274,7 @@ def run_certified_booksim(
         route_executed_sha256=route["executed_sha256"],
         route_pairs_compared=route["pairs_compared"],
         exact_fabric_eligible=config.exact_fabric_eligible(),
+        qualification=qualification.value,
         semantic_loss=config.semantic_loss_summary(),
         stats={k: v for k, v in stats.items()},
         exit_status=int(res.returncode),
@@ -1245,6 +1289,17 @@ def run_certified_booksim(
         invocation_args=manifest.invocation_args,
         booksim_binary_sha256=binary_hash,
     )
+
+
+def run_certified_booksim(
+        prepared: PreparedBackend, **kwargs: Any) -> CertifiedBookSimEvidence:
+    """Compatibility alias for :func:`run_qualified_booksim`.
+
+    The old name overstated lossy runs; callers should read
+    ``evidence.qualification`` rather than treating success as
+    exact-fabric certification.
+    """
+    return run_qualified_booksim(prepared, **kwargs)
 
 
 __all__ = [
@@ -1263,7 +1318,9 @@ __all__ = [
     "TraceSummary",
     "bind_booksim_inputs",
     "compare_route_realization",
+    "execution_qualification",
     "expected_route_table",
+    "assert_executable",
     "exact_flit_bytes",
     "lower_booksim_projection",
     "lower_booksim_standalone",
@@ -1272,6 +1329,7 @@ __all__ = [
     "render_booksim_standalone",
     "render_topology_anynet",
     "run_certified_booksim",
+    "run_qualified_booksim",
     "verify_anynet_roundtrip",
     "verify_materialized",
 ]

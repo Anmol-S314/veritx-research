@@ -42,7 +42,6 @@ from veritx_dse.core.route_artifact import (  # noqa: E402
     ANYNET_MIN_HOPS, DOR_XY,
 )
 
-
 @pytest.fixture(scope="module")
 def chain():
     return build_chain()
@@ -66,16 +65,18 @@ def four_targets(bundle):
 
 
 class TestSemanticIntersection:
-    def test_shared_exact_claims_use_one_source(self, bundle):
+    def test_shared_authority_claims_use_one_source(self, bundle):
         artifacts = four_targets(bundle)
         report = qualify_cross_backend(artifacts)
         assert report.targets == tuple(sorted(artifacts))
-        assert "TOPOLOGY_GRAPH" in report.shared_exact_dimensions
-        for claim in report.shared_exact:
-            sources = {artifacts[t].binding(claim.dimension).source_identity
-                       for t in claim.targets}
-            assert len(sources) == 1, claim.dimension
-            assert claim.source_identity == next(iter(sources))
+        assert "TOPOLOGY_GRAPH" in report.shared_authority_dimensions
+        for claim in report.authorities:
+            for target in claim.targets:
+                row = artifacts[target].binding(claim.dimension)
+                assert row.source_identity == claim.source_identity
+                assert row.representation_status.value == claim.status
+                assert row.supported_domain == claim.supported_domain
+            assert claim.supported_domain, claim.dimension
 
     def test_no_false_equalities_over_all_dimensions(self, bundle):
         artifacts = four_targets(bundle)
@@ -88,6 +89,52 @@ class TestSemanticIntersection:
                  RepresentationStatus.DERIVED_EXACT)}
             assert len(set(exact_sources.values())) <= 1, (dim,
                                                            exact_sources)
+
+    def test_analytical_topology_is_coarsened_not_exact(self, bundle):
+        artifacts = four_targets(bundle)
+        for target in ("SERVING_ANALYTICAL_AWARE",
+                       "SERVING_ANALYTICAL_UNAWARE"):
+            row = artifacts[target].binding(
+                SemanticDimension.TOPOLOGY_GRAPH)
+            assert row.representation_status is \
+                RepresentationStatus.COARSENED
+            assert row.certification_effect is \
+                CertificationEffect.FIDELITY_DOWNGRADE
+            assert row.reason and "shape" in row.reason
+        report = qualify_cross_backend(artifacts)
+        claim = next(c for c in report.authorities
+                     if c.dimension is SemanticDimension.TOPOLOGY_GRAPH)
+        assert claim.targets == ("BOOKSIM_STANDALONE", "SERVING_BOOKSIM2")
+
+    def test_dims_are_policy_not_graph_proof(self, bundle):
+        from veritx_dse.backend.analytical import (  # noqa: PLC0415
+            lower_analytical_unaware,
+        )
+        flat = lower_analytical_unaware(bundle, network_dims=(4,)).config
+        grid = lower_analytical_unaware(bundle, network_dims=(2, 2)).config
+        assert flat.backend_config_hash() != grid.backend_config_hash()
+        for art in (flat, grid):
+            assert art.binding(SemanticDimension.TOPOLOGY_GRAPH) \
+                .representation_status is RepresentationStatus.COARSENED
+
+    def test_broken_projection_is_refused_even_with_same_authority(
+            self, bundle):
+        from dataclasses import replace  # noqa: PLC0415
+        artifacts = four_targets(bundle)
+        serving = artifacts["SERVING_BOOKSIM2"]
+        tampered_params = dict(serving.normalized_parameters)
+        tampered_params["num_vcs"] = 99
+        tampered = replace(
+            serving, artifact_hash="",
+            normalized_parameters=tuple(sorted(tampered_params.items())))
+        # The bindings (and therefore the claimed authority) are unchanged;
+        # only the projection is broken.
+        assert tampered.binding(SemanticDimension.VC_COUNT).source_identity \
+            == serving.binding(SemanticDimension.VC_COUNT).source_identity
+        artifacts["SERVING_BOOKSIM2"] = tampered
+        with pytest.raises(QualificationError,
+                           match="projection differs"):
+            qualify_cross_backend(artifacts)
 
     def test_disagreements_are_explicit(self, bundle):
         artifacts = four_targets(bundle)
@@ -110,6 +157,9 @@ class TestSemanticIntersection:
         assert report.resolved_fabric_hash == \
             bundle.resolved_fabric.resolved_fabric_hash()
         assert len({h for _n, h in report.config_hashes}) == 4
+        comparison = report.projection_for("BOOKSIM_STANDALONE",
+                                           "SERVING_BOOKSIM2")
+        assert comparison is not None and comparison.equivalent
 
     def test_route_realization_disagreement_is_visible(self, bundle):
         artifacts = four_targets(bundle)
@@ -204,3 +254,79 @@ class TestUnsupportedDomains:
             with pytest.raises(BookSimRouteError, match="coverage"):
                 compare_route_realization(bundle, config, dump)
         assert other.backend_config_hash() != config.backend_config_hash()
+
+
+class TestExecutionQualification:
+    """Lossy execution must never present itself as exact certification."""
+
+    def test_baseline_run_is_explicitly_lossy(self, bundle, tmp_path):
+        from test_backend_booksim import (  # noqa: PLC0415
+            TRACE, make_capturing_runner, prepare_booksim_standalone,
+            run_certified_booksim,
+        )
+        prepared = prepare_booksim_standalone(bundle, workload_trace=TRACE)
+        ev = run_certified_booksim(
+            prepared, run_dir=tmp_path, repo_root=tmp_path,
+            runner=make_capturing_runner(bundle, prepared.config),
+            binary=tmp_path / "fake")
+        assert ev.qualification == "EXECUTED_WITH_DECLARED_LOSS"
+        assert ev.qualification != "EXECUTED_EXACT"
+        assert ev.exact_fabric_eligible is False
+        assert ev.to_dict()["qualification"] == \
+            "EXECUTED_WITH_DECLARED_LOSS"
+
+    def test_escape_case_runs_but_is_blocked_from_exact(self, chain,
+                                                        tmp_path):
+        from test_backend_booksim import (  # noqa: PLC0415
+            TRACE, make_capturing_runner, prepare_booksim_standalone,
+            run_certified_booksim,
+        )
+        blocked_bundle = rebuild_bundle(chain, vc=_vc(chain, escape=(0,)))
+        prepared = prepare_booksim_standalone(
+            blocked_bundle, workload_trace=TRACE)
+        ev = run_certified_booksim(
+            prepared, run_dir=tmp_path, repo_root=tmp_path,
+            runner=make_capturing_runner(blocked_bundle, prepared.config),
+            binary=tmp_path / "fake")
+        assert ev.qualification == "EXECUTED_BLOCKED_FROM_EXACT"
+        assert ev.exact_fabric_eligible is False
+
+    def test_unsupported_execution_never_spawns(self, bundle, tmp_path):
+        from dataclasses import replace  # noqa: PLC0415
+        from veritx_dse.backend.booksim import (  # noqa: PLC0415
+            PreparedBackend, bind_booksim_inputs, render_booksim_standalone,
+        )
+        from veritx_dse.backend.contracts import sha256_bytes  # noqa: PLC0415
+        art = lower_booksim_standalone(bundle)
+        binds = list(art.semantic_bindings)
+        idx = next(i for i, b in enumerate(binds)
+                   if b.dimension is SemanticDimension.HEADER_LAYOUT)
+        binds[idx] = replace(
+            binds[idx],
+            representation_status=RepresentationStatus.UNREPRESENTABLE,
+            certification_effect=CertificationEffect.UNSUPPORTED_EXECUTION,
+            supported_domain="")
+        tampered = replace(art, semantic_bindings=tuple(binds),
+                           artifact_hash="")
+        trace = b"0 0 0 3 2\n10 3 0 0 2\n"
+        rendered = render_booksim_standalone(bundle, tampered,
+                                             workload_trace=trace)
+        manifest = bind_booksim_inputs(
+            tampered, rendered, workload_hash=sha256_bytes(trace))
+        prepared = PreparedBackend(bundle=bundle, config=tampered,
+                                   rendered=rendered, manifest=manifest)
+        calls = {"n": 0}
+
+        def never(cmd, cwd, timeout):
+            calls["n"] += 1
+            raise AssertionError("spawned despite UNSUPPORTED_EXECUTION")
+
+        with pytest.raises(BookSimLoweringError,
+                           match="UNSUPPORTED_EXECUTION"):
+            from veritx_dse.backend.booksim import (  # noqa: PLC0415
+                run_certified_booksim,
+            )
+            run_certified_booksim(
+                prepared, run_dir=tmp_path, repo_root=tmp_path,
+                runner=never, binary=tmp_path / "fake")
+        assert calls["n"] == 0

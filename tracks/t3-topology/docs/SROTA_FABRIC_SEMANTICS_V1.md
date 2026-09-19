@@ -32,6 +32,7 @@
 | 1.18 | B3.7g | Closed-world backend audit + supported-domain exactness. `backend/booksim_profile.py` registers every config field the certified path reads with owner class and source location; INACTIVE_FOR_PROFILE entries state the pinned gate that makes them dead; every BACKEND_PROFILE value is emitted explicitly (76-key closed config). `SemanticBinding.supported_domain` states the exact representable subset (`escape_vcs == ()`, identity transitions, uniform latency, unit route_weight, …), so EXACT never over-claims arbitrary semantics; BackendConfigArtifact schema v2 refuses v1 with a rebuild message. |
 | 1.19 | B3.8a/b/c | Cross-backend qualification. Source-drift guard (`backend/source_audit.py`) lexically scans every `config.Get*` read in the vendored fork and requires each to be registered or gated; 159 reads are closed over (105 registry fields + 54 gated with machine-checked `pin:<field>=<value>` or documented dispatch mechanisms). `qualify_cross_backend` proves shared EXACT claims use one authoritative source while disagreements stay explicit (no false equalities; distinct target hashes; shared fabric identity). Transposition tests refuse serving artifacts on the standalone runner, stale manifests, foreign rendered inputs, foreign/tampered route dumps, cross-width flit bytes, foreign dims and cross-target evidence sharing a path. |
 | 1.20 | B3.8d | Golden fabric corpus: five deterministic fabrics (multi-class, single-class, HBM/addrmap, 128-bit links, escape-blocked) pin `fabric_hash`, standalone/serving/analytical config hashes, input hash, expected route table hash, exact-fabric eligibility and loss digest in `tests/fixtures/backend_golden.json`; each case is executed against real BookSim and must reproduce the pinned route hash with nonzero delivery. |
+| 1.21 | B3.8e | Proof-vocabulary corrections. Analytical `TOPOLOGY_GRAPH` is `COARSENED`/`FIDELITY_DOWNGRADE`: `network_dims` is execution policy (endpoint count + supplied shape), not proof of the materialized router/channel graph. Cross-backend qualification now reports `SharedAuthorityClaim` (same source/status/supported_domain — authority agreement) separately from canonical BookSim projection equivalence (standalone vs serving fabric-derived parameters must be byte-equal; a tampered projection refuses even with unchanged bindings). Source gates are read-site aware: `GATED_SCOPE` fixes each gated field to its allowed files, so a new read of an already-gated field elsewhere fails; scanning is whole-file so multiline calls cannot evade it; the embedded mirror is guarded by read-site equivalence. `ExecutionQualification` (EXECUTED_EXACT / EXECUTED_WITH_DECLARED_LOSS / EXECUTED_BLOCKED_FROM_EXACT / EXECUTION_UNSUPPORTED) derives from bindings; UNSUPPORTED_EXECUTION refuses before materialization/spawn and `run_certified_booksim` is a compatibility alias for `run_qualified_booksim`. The golden corpus explicitly documents lossy-not-exact semantics and pins each case's loss dimensions. |
 
 This document defines what a resolved Srota fabric *is* before B3 code is
 written. It starts from hardware semantics and maps existing code onto them —
@@ -1002,8 +1003,13 @@ backend targets with distinct capability matrices. The aware engine is
 silent fallback to the unaware engine is therefore represented by target
 identity, never by substituting one backend after lowering).
 
-Every non-EXACT dimension is declared with a reason and effect. The two
-unit-dependent dimensions are `UNREPRESENTABLE` /
+Every non-EXACT dimension is declared with a reason and effect. `TOPOLOGY_GRAPH`
+is `COARSENED`/`FIDELITY_DOWNGRADE`: `network_dims` is execution/model
+policy (endpoint count + an externally supplied logical shape), and the
+lowerer does not prove that shape corresponds to the materialized
+router/channel graph, so it cannot claim graph exactness. Graph-to-shape
+equivalence is deferred. The two unit-dependent dimensions are
+`UNREPRESENTABLE` /
 `UNSUPPORTED_EXECUTION`: the analytical model takes bandwidth (GB/s) and
 latency (ns), the fabric artifacts carry width bits and latency cycles,
 and no clock period or bandwidth-unit derivation exists. No numeric
@@ -1322,3 +1328,35 @@ honesty, not latency parity:
 Execution status remains: standalone BookSim executable + route-proven;
 SERVING_BOOKSIM2 execution BLOCKED (no upstream authority); analytical
 execution UNSUPPORTED/NOT_RUN (units unresolved).
+
+### 33.1 B3.8e proof-vocabulary corrections
+
+- **Authority vs realization.** `qualify_cross_backend` reports
+  `SharedAuthorityClaim` (one source identity, representation status and
+  `supported_domain` across claimant targets). That is authority
+  agreement. Realization equivalence is checked separately for targets
+  sharing the canonical BookSim lowerer: `booksim_semantic_projection`
+  keeps only fabric-derived parameters (target-specific traffic, sample
+  period, seeds, route-dump path excluded) and `compare_booksim_projections`
+  must find byte equality. A broken serving projection is refused even
+  when the authority hashes still match.
+- **Analytical topology.** `TOPOLOGY_GRAPH` is `COARSENED` in both aware
+  and unaware artifacts; analytical targets never participate in a shared
+  exact topology claim. Same topology hash + different `network_dims`
+  yields different backend hashes and stays coarsened.
+- **Read-site gates.** `GATED_SCOPE` binds every gated field to the files
+  allowed to read it; a new read of an already-gated field from another
+  file (`channel_width` in `iq_router.cpp`) fails. The scanner is
+  whole-file and whitespace-tolerant, so `config.GetInt(\n "x")` and
+  `config->\n GetStr("y")` are found. The embedded mirror must have the
+  same read sites as the audited fork.
+- **Execution qualification.** Evidence carries
+  `EXECUTED_EXACT` / `EXECUTED_WITH_DECLARED_LOSS` /
+  `EXECUTED_BLOCKED_FROM_EXACT`; `UNSUPPORTED_EXECUTION` bindings refuse
+  before materialization or spawn. `run_certified_booksim` is a
+  compatibility alias for `run_qualified_booksim`.
+- **Golden corpus semantics.** The corpus proves deterministic identity,
+  exact executed-route realization, real activity and stable DECLARED
+  losses (dimension lists pinned, not only digests). No case is
+  `exact_fabric_eligible`; the corpus does not prove full-fabric
+  semantic equivalence.

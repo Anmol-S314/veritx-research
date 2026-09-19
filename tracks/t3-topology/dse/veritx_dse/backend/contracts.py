@@ -143,6 +143,20 @@ class CertificationEffect(Enum):
     UNSUPPORTED_EXECUTION = "UNSUPPORTED_EXECUTION"
 
 
+class ExecutionQualification(Enum):
+    """What a completed backend run actually is (B3.8e).
+
+    A successful process exit must never be reported as generic
+    "certified": the qualification is derived from the artifact's
+    bindings, and UNSUPPORTED_EXECUTION bindings refuse before spawn.
+    """
+
+    EXECUTED_EXACT = "EXECUTED_EXACT"
+    EXECUTED_WITH_DECLARED_LOSS = "EXECUTED_WITH_DECLARED_LOSS"
+    EXECUTED_BLOCKED_FROM_EXACT = "EXECUTED_BLOCKED_FROM_EXACT"
+    EXECUTION_UNSUPPORTED = "EXECUTION_UNSUPPORTED"
+
+
 class ParameterOwner(Enum):
     """Closed ownership classes for every result-affecting parameter.
 
@@ -858,6 +872,7 @@ __all__ = [
     "BackendInputManifest",
     "BackendTarget",
     "CertificationEffect",
+    "ExecutionQualification",
     "ParameterOwner",
     "RenderedInput",
     "RepresentationStatus",

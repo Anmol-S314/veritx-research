@@ -15,6 +15,13 @@ Capability truth from source review:
   * the congestion-aware engine supports only flat 1-dim topologies (the
     serving selection code falls back to the unaware engine for N-dim
     clusters);
+  * ``network_dims`` is an execution/model policy: it supplies the
+    endpoint count and a logical shape, but the lowerer does NOT prove
+    that shape corresponds to the materialized TopologyArtifact graph.
+    TOPOLOGY_GRAPH is therefore COARSENED (FIDELITY_DOWNGRADE): the
+    backend represents endpoint count + supplied shape, not the full
+    router/channel graph. Graph->shape equivalence for supported
+    families is explicitly deferred (do not infer it here);
   * the network.yml bandwidth (GB/s) and latency (ns) values are
     hardcoded assumptions in the serving/config path, and the fabric
     artifacts contain channel width BITS and latency CYCLES — without an
@@ -149,13 +156,15 @@ def lower_analytical(
 
     b = (
         _bind(SemanticDimension.TOPOLOGY_GRAPH, t_hash,
-              RepresentationStatus.DERIVED_EXACT,
+              RepresentationStatus.COARSENED,
               (("npus_count", bundle.attachment.endpoint_count),
                ("topology_shape", list(dims))),
-              reason="",
-              domain=("1-dim topology shapes only (the congestion-aware "
-                      "engine refuses N-dim)" if aware else
-                      "N-dim topology shapes")),
+              reason="the analytical backend represents the endpoint count "
+                     "and an externally supplied logical topology shape "
+                     "(network_dims); it does not realize or prove the "
+                     "materialized router/channel graph. Shape-to-graph "
+                     "equivalence is not established, so this dimension "
+                     "is a declared coarsening"),
         _bind(SemanticDimension.ENDPOINT_ATTACHMENT, a_hash,
               RepresentationStatus.UNREPRESENTABLE,
               reason="no endpoint-to-router attachment model " + simple_reason),

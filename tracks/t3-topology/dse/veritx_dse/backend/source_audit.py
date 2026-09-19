@@ -1,27 +1,31 @@
-"""veritx_dse.backend.source_audit — source-drift guard (B3.8a).
+"""veritx_dse.backend.source_audit — read-site-aware source-drift guard
+(B3.8a, hardened in B3.8e).
 
 `booksim_profile.py` is the closed-world registry of configuration fields
-the certified BookSim profile reads. It was built by hand. This module
-makes the closure stay closed mechanically:
+the certified BookSim profile reads. This module makes the closure stay
+closed mechanically and PER READ SITE:
 
-    scan the vendored BookSim sources for config.Get*/config->Get*("field")
-        -> every read must be either
-             * registered in the profile audit (active or inactive), or
-             * listed in GATED_FIELDS with a gate that explains why it
-               cannot affect the certified profile
-        -> every registry/gated entry must still correspond to a real read
-           (no stale entries hiding a removed read)
+    scan the vendored BookSim sources (whole-file lexical scan, so
+    multiline calls cannot evade it) for
+        config.Get*/config->Get*("field")
+        -> for every discovered (field, source file):
+             * field is registered active in the profile registry, OR
+             * (field, file) is covered by GATED_FIELDS + GATED_SCOPE:
+               the field's gate must hold for that specific file
+        -> stale registry entries, stale gates, stale scopes and
+           uncovered read sites are refused.
 
-The gate vocabulary is machine-checkable where it can be:
+Gating a field name is not enough: a new read of an already-gated field
+from a different file (e.g. channel_width in the power module today,
+someone adding it to iq_router.cpp tomorrow) fails until that read site
+is explicitly registered or gated.
 
-    pin:<field>=<value>   the rendered certified config pins <field> to
-                          <value>; verified against actual rendered bytes
-    <mechanism tag>       a documented dispatch/presence mechanism whose
-                          justification lives in MECHANISM_JUSTIFICATIONS
-
-A new `config.GetInt("magic_knob")` anywhere in the fork therefore fails
-the guard until someone registers it as active or states the gate. No C++
-parser is needed: a conservative lexical scan is sufficient.
+Scope note: this audits the STANDALONE certified fork
+(third_party/booksim2/src). The embedded serving mirror
+(third_party/astra-sim/extern/network_backend/booksim2/booksim2/src) is
+covered by an explicit read-site identity check (see tests); full
+embedded-source drift qualification is deferred until SERVING_BOOKSIM2
+receives an authoritative ResolvedFabric bridge and becomes executable.
 """
 from __future__ import annotations
 
@@ -32,17 +36,18 @@ from typing import Any
 
 from .booksim_profile import BOOKSIM_STANDALONE_PROFILE, ConfigRead
 
+# Whole-file scan: whitespace/newlines may appear around the arrow and
+# between the getter and its argument, so multiline calls are found too.
 CONFIG_READ_RE = re.compile(
-    r"config(?:->|\.)Get"
+    r"config\s*(?:->|\.)\s*Get"
     r"(?:Int|Str|Float|IntArray|StrArray|FloatArray)"
     r"\s*\(\s*\"([A-Za-z_][A-Za-z0-9_]*)\"")
+CONFIG_READ_GROUP = 1
 
 
 class SourceAuditError(ValueError):
     """The certified source closure diverges from the audit registry."""
 
-
-# ── gated mechanisms ────────────────────────────────────────────────────
 
 MECHANISM_JUSTIFICATIONS: dict[str, str] = {
     "diagnostic_only": (
@@ -64,9 +69,8 @@ MECHANISM_JUSTIFICATIONS: dict[str, str] = {
 }
 
 
-# Fields read by code that is unreachable for the certified profile.
-# Every inactive registry entry also appears here with its gate so the
-# gate is machine-checked rather than prose.
+# ── gated fields and their allowed read sites ───────────
+
 GATED_FIELDS: dict[str, tuple[str, ...]] = {
     "Cd": ("pin:sim_power=0",),
     "Cd_pwr": ("pin:sim_power=0",),
@@ -155,6 +159,93 @@ GATED_FIELDS: dict[str, tuple[str, ...]] = {
     "max_credits_out": ("diagnostic_only",),
 }
 
+GATED_SCOPE: dict[str, tuple[str, ...]] = {
+    'Cd': ('power/power_module.cpp',),
+    'Cd_pwr': ('power/power_module.cpp',),
+    'Cg': ('power/power_module.cpp',),
+    'Cg_pwr': ('power/power_module.cpp',),
+    'Cgdl': ('power/power_module.cpp',),
+    'Cw_cpl': ('power/power_module.cpp',),
+    'Cw_gnd': ('power/power_module.cpp',),
+    'H_DFQD1': ('power/power_module.cpp',),
+    'H_INVD2': ('power/power_module.cpp',),
+    'H_ND2D1': ('power/power_module.cpp',),
+    'H_SRAM': ('power/power_module.cpp',),
+    'IoffN': ('power/power_module.cpp',),
+    'IoffP': ('power/power_module.cpp',),
+    'IoffSRAM': ('power/power_module.cpp',),
+    'LAMBDA': ('power/power_module.cpp',),
+    'MetalPitch': ('power/power_module.cpp',),
+    'R': ('power/power_module.cpp',),
+    'Rw': ('power/power_module.cpp',),
+    'Vdd': ('power/power_module.cpp',),
+    'W_DFQD1': ('power/power_module.cpp',),
+    'W_INVD2': ('power/power_module.cpp',),
+    'W_ND2D1': ('power/power_module.cpp',),
+    'W_SRAM': ('power/power_module.cpp',),
+    'active_packets_out': ('trafficmanager.cpp',),
+    'batch_count': ('batchtrafficmanager.cpp',),
+    'batch_size': ('batchtrafficmanager.cpp',),
+    'burst_alpha': ('injection.cpp',),
+    'burst_beta': ('injection.cpp',),
+    'burst_r1': ('injection.cpp',),
+    'c': ('networks/cmesh.cpp', 'networks/flatfly_onchip.cpp', 'networks/gec.cpp', 'veritx_embed.cpp'),
+    'channel_sweep': ('power/power_module.cpp',),
+    'channel_width': ('power/power_module.cpp',),
+    'const_flits_per_packet': ('routers/chaos_router.cpp',),
+    'd': ('networks/gec.cpp',),
+    'ejected_flits_out': ('trafficmanager.cpp',),
+    'fail_seed': ('networks/kncube.cpp',),
+    'feedback_aging_scale': ('buffer_state.cpp',),
+    'feedback_offset': ('buffer_state.cpp',),
+    'free_credits_out': ('trafficmanager.cpp',),
+    'hybrid': ('networks/gec.cpp',),
+    'injected_flits_out': ('trafficmanager.cpp',),
+    'k': ('networks/cmesh.cpp', 'networks/dragonfly.cpp', 'networks/fattree.cpp', 'networks/flatfly_onchip.cpp', 'networks/fly.cpp', 'networks/gec.cpp', 'networks/kncube.cpp', 'networks/qtree.cpp', 'networks/tree4.cpp', 'traffic.cpp', 'veritx_embed.cpp'),
+    'max_credits_out': ('trafficmanager.cpp',),
+    'max_held_slots': ('buffer_state.cpp',),
+    'max_outstanding_requests': ('batchtrafficmanager.cpp',),
+    'mesh': ('networks/gec.cpp',),
+    'multi_queue_size': ('routers/chaos_router.cpp',),
+    'n': ('networks/cmesh.cpp', 'networks/dragonfly.cpp', 'networks/fattree.cpp', 'networks/flatfly_onchip.cpp', 'networks/fly.cpp', 'networks/kncube.cpp', 'networks/qtree.cpp', 'networks/tree4.cpp', 'traffic.cpp', 'veritx_embed.cpp'),
+    'o': ('networks/gec.cpp',),
+    'outstanding_credits_out': ('trafficmanager.cpp',),
+    'packet_size': ('trafficmanager.cpp',),
+    'packet_size_rate': ('trafficmanager.cpp',),
+    'perm_seed': ('traffic.cpp',),
+    'power_output_file': ('power/power_module.cpp',),
+    'private_buf_end_vc': ('buffer_state.cpp',),
+    'private_buf_size': ('buffer_state.cpp',),
+    'private_buf_start_vc': ('buffer_state.cpp',),
+    'private_bufs': ('buffer_state.cpp',),
+    'read_reply_size': ('trafficmanager.cpp',),
+    'read_request_size': ('trafficmanager.cpp',),
+    'received_flits_out': ('trafficmanager.cpp',),
+    'sent_flits_out': ('trafficmanager.cpp',),
+    'sent_packets_out': ('batchtrafficmanager.cpp',),
+    'stats_out': ('trafficmanager.cpp',),
+    'stored_flits_out': ('trafficmanager.cpp',),
+    'tech_file': ('power/power_module.cpp',),
+    'trace_file': ('tracetrafficmanager.cpp',),
+    'trace_packet_log': ('tracetrafficmanager.cpp',),
+    'use_noc_latency': ('networks/cmesh.cpp', 'networks/flatfly_onchip.cpp', 'networks/gec.cpp', 'networks/kncube.cpp'),
+    'used_credits_out': ('trafficmanager.cpp',),
+    'vct': ('routers/event_router.cpp',),
+    'watch_file': ('trafficmanager.cpp',),
+    'watch_flits': ('trafficmanager.cpp',),
+    'watch_out': ('main.cpp',),
+    'watch_packets': ('trafficmanager.cpp',),
+    'wire_length': ('power/power_module.cpp',),
+    'write_fraction': ('trafficmanager.cpp',),
+    'write_reply_size': ('trafficmanager.cpp',),
+    'write_request_size': ('trafficmanager.cpp',),
+    'x': ('networks/cmesh.cpp', 'networks/flatfly_onchip.cpp'),
+    'xr': ('networks/cmesh.cpp', 'networks/flatfly_onchip.cpp', 'traffic.cpp'),
+    'y': ('networks/cmesh.cpp', 'networks/flatfly_onchip.cpp'),
+    'yr': ('networks/cmesh.cpp', 'networks/flatfly_onchip.cpp'),
+}
+
+
 
 # ── scanning ────────────────────────────────────────────────────────────
 
@@ -167,13 +258,16 @@ class SourceRead:
 @dataclass(frozen=True)
 class DriftReport:
     reads: tuple[SourceRead, ...]
-    unregistered: tuple[str, ...]
-    stale_gated: tuple[str, ...]
-    stale_registered: tuple[str, ...]
+    unregistered: tuple[str, ...]          # field not known at all
+    uncovered_sites: tuple[str, ...]       # known gated field, new file
+    stale_gated: tuple[str, ...]           # gate for a field no longer read
+    stale_scope: tuple[str, ...]           # scope file no longer reads it
+    stale_registered: tuple[str, ...]      # registry field no longer read
 
     @property
     def clean(self) -> bool:
-        return not (self.unregistered or self.stale_gated
+        return not (self.unregistered or self.uncovered_sites
+                    or self.stale_gated or self.stale_scope
                     or self.stale_registered)
 
     def raise_if_dirty(self) -> None:
@@ -181,32 +275,36 @@ class DriftReport:
             return
         parts = []
         if self.unregistered:
-            parts.append(
-                "unregistered C++ config reads (register as active or "
-                f"add a gate): {list(self.unregistered)}")
+            parts.append(f"unregistered C++ config fields: "
+                         f"{list(self.unregistered)}")
+        if self.uncovered_sites:
+            parts.append(f"read sites outside their gated scope: "
+                         f"{list(self.uncovered_sites)}")
         if self.stale_gated:
-            parts.append(
-                f"gated fields no longer read: {list(self.stale_gated)}")
+            parts.append(f"gated fields no longer read: "
+                         f"{list(self.stale_gated)}")
+        if self.stale_scope:
+            parts.append(f"scope entries no longer read: "
+                         f"{list(self.stale_scope)}")
         if self.stale_registered:
-            parts.append(
-                f"registered fields no longer read: "
-                f"{list(self.stale_registered)}")
+            parts.append(f"registered fields no longer read: "
+                         f"{list(self.stale_registered)}")
         raise SourceAuditError("; ".join(parts))
 
 
 def scan_config_reads(source_root: Path) -> tuple[SourceRead, ...]:
-    """Conservative lexical scan of every .cpp/.hpp under source_root."""
+    """Whole-file lexical scan of every .cpp/.hpp under source_root."""
     root = Path(source_root)
     found: dict[str, list[str]] = {}
     for path in sorted(root.rglob("*")):
         if path.suffix not in (".cpp", ".hpp"):
             continue
         rel = str(path.relative_to(root))
-        for line_no, line in enumerate(
-                path.read_text(errors="ignore").splitlines(), 1):
-            for match in CONFIG_READ_RE.finditer(line):
-                found.setdefault(match.group(1), []).append(
-                    f"{rel}:{line_no}")
+        text = path.read_text(errors="ignore")
+        for match in CONFIG_READ_RE.finditer(text):
+            line_no = text.count("\n", 0, match.start()) + 1
+            found.setdefault(match.group(CONFIG_READ_GROUP), []).append(
+                f"{rel}:{line_no}")
     return tuple(SourceRead(field=name, locations=tuple(locs))
                  for name, locs in sorted(found.items()))
 
@@ -216,16 +314,41 @@ def audit_source_drift(
         *,
         profile: Any = BOOKSIM_STANDALONE_PROFILE,
         gated: dict[str, tuple[str, ...]] = GATED_FIELDS,
+        scope: dict[str, tuple[str, ...]] = GATED_SCOPE,
 ) -> DriftReport:
     reads = scan_config_reads(source_root)
-    read_fields = {r.field for r in reads}
     registry = set(profile.active_names()) | set(profile.inactive_names())
-    unregistered = tuple(sorted(read_fields - registry - set(gated)))
-    stale_gated = tuple(sorted(set(gated) - read_fields))
-    stale_registered = tuple(sorted(registry - read_fields))
-    return DriftReport(reads=reads, unregistered=unregistered,
-                       stale_gated=stale_gated,
-                       stale_registered=stale_registered)
+    unregistered: set[str] = set()
+    uncovered: set[str] = set()
+    discovered_gated: dict[str, set[str]] = {}
+    for read in reads:
+        files = {loc.split(":")[0] for loc in read.locations}
+        discovered_gated.setdefault(read.field, set()).update(files)
+        if read.field in registry:
+            continue
+        allowed = set(scope.get(read.field, ()))
+        for path in sorted(files):
+            if path not in allowed:
+                uncovered.add(f"{read.field}@{path}")
+    unregistered = {f for f in discovered_gated
+                    if f not in gated and f not in registry}
+    stale_scope = []
+    for field, files in scope.items():
+        actual = discovered_gated.get(field, set())
+        for path in files:
+            if path not in actual:
+                stale_scope.append(f"{field}@{path}")
+    read_fields = {r.field for r in reads}
+    return DriftReport(
+        reads=reads,
+        unregistered=tuple(sorted(unregistered)),
+        uncovered_sites=tuple(sorted(uncovered)),
+        stale_gated=tuple(sorted(set(gated) - read_fields)),
+        stale_scope=tuple(sorted(stale_scope)),
+        stale_registered=tuple(sorted(registry - read_fields)))
+
+
+
 
 
 # ── gate verification against a rendered certified config ───────────────
@@ -261,21 +384,15 @@ def verify_gates(rendered_values: dict[str, str]) -> None:
                     f"field {field!r} uses unknown gate mechanism {gate!r}")
 
 
-def gated_union(profile: Any = BOOKSIM_STANDALONE_PROFILE
-                ) -> set[str]:
-    return set(profile.inactive_names()) | {
-        field for field, gates in GATED_FIELDS.items() if gates}
-
-
 __all__ = [
     "CONFIG_READ_RE",
     "GATED_FIELDS",
+    "GATED_SCOPE",
     "MECHANISM_JUSTIFICATIONS",
     "DriftReport",
     "SourceAuditError",
     "SourceRead",
     "audit_source_drift",
-    "gated_union",
     "parse_pin_gate",
     "scan_config_reads",
     "verify_gates",
