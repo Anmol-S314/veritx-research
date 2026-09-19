@@ -1263,6 +1263,75 @@ class TestIntegration:
         assert "routing_function = dor;" in config
         assert "num_vcs = 3;" in config
 
+    def test_topology_size_comes_from_agent_inventory(self):
+        """B3.1b: k is derived from the hardware agents, never hardcoded.
+
+        The old derive_topology_spec returned k=8 for ANY agent count.
+        """
+        from veritx_dse.model.compile_model import (
+            CompileRequest, Workload, Agent, DependencyGraph, NocConfig,
+            AgentKind, ModelFamily, TopologyFamily, derive_topology_spec,
+            derive_topology_artifact,
+        )
+        def _cr(count, family=TopologyFamily.MESH, **noc_kw):
+            return CompileRequest(
+                workload=Workload(model_family=ModelFamily.MOE),
+                requirements=[],
+                agents=[Agent(kind=AgentKind.COMPUTE_TILE, count=count)],
+                dependencies=DependencyGraph([]),
+                noc_config=NocConfig(topology_family=family, **noc_kw),
+            )
+
+        t16 = derive_topology_spec(_cr(16))
+        assert (t16.backend, t16.params["k"]) == ("mesh", 4)
+
+        # 8 agents -> k=ceil(sqrt(8))=3 -> 9 routers (one idle seat)
+        t8 = derive_topology_spec(_cr(8))
+        assert (t8.backend, t8.params["k"]) == ("mesh", 3)
+
+        # 64 compute + 8 HBM = 72 agents -> k=ceil(sqrt(72))=9
+        art = derive_topology_artifact(_cr(72))
+        assert art.router_count == 81 == 9 ** 2
+
+        # GUIDED radix pins k (still providing enough seats)
+        tradix = derive_topology_spec(_cr(64, radix=8))
+        assert tradix.params["k"] == 8
+
+    def test_concentrated_mesh_materializes_as_cmesh(self):
+        from veritx_dse.model.compile_model import (
+            CompileRequest, Workload, Agent, DependencyGraph, NocConfig,
+            AgentKind, ModelFamily, TopologyFamily, derive_topology_spec,
+        )
+        cr = CompileRequest(
+            workload=Workload(model_family=ModelFamily.MOE),
+            requirements=[],
+            agents=[Agent(kind=AgentKind.COMPUTE_TILE, count=64)],
+            dependencies=DependencyGraph([]),
+            noc_config=NocConfig(
+                topology_family=TopologyFamily.CONCENTRATED_MESH),
+        )
+        topo = derive_topology_spec(cr)
+        # 64 endpoints / 4 seats = 16 routers -> k=4, c=4
+        assert topo.backend == "cmesh"
+        assert topo.params["k"] == 4 and topo.params["c"] == 4
+
+    def test_unmaterializable_families_refused_not_downgraded(self):
+        from veritx_dse.model.compile_model import (
+            CompileRequest, Workload, Agent, DependencyGraph, NocConfig,
+            AgentKind, ModelFamily, TopologyFamily, derive_topology_spec,
+        )
+        from veritx_dse.model.topology_artifact import TopologyError
+        for fam in (TopologyFamily.GEC, TopologyFamily.FAT_TREE):
+            cr = CompileRequest(
+                workload=Workload(model_family=ModelFamily.MOE),
+                requirements=[],
+                agents=[Agent(kind=AgentKind.COMPUTE_TILE, count=16)],
+                dependencies=DependencyGraph([]),
+                noc_config=NocConfig(topology_family=fam),
+            )
+            with pytest.raises(TopologyError, match="not materializable"):
+                derive_topology_spec(cr)
+
     def test_compile_request_roundtrip(self):
         """CompileRequest → to_dict → from_dict preserves all fields."""
         from veritx_dse.model.compile_model import (

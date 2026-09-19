@@ -1594,14 +1594,27 @@ def validate(cr: CompileRequest) -> ValidationResult:
 # Integration: CompileRequest → existing types
 # ══════════════════════════════════════════════════════════════════════════════
 
+def derive_topology_artifact(cr: CompileRequest):
+    """Materialize the fabric: the authoritative topology for this request.
+
+    Wave B3.1b. Sizing inputs are the hardware NodeInventory and the GUIDED
+    knobs (family/radix/concentration) — NOT a hardcoded k/n and NOT the
+    model rank count. GEC and fat-tree are refused by the materializer
+    rather than silently downgraded to a mesh.
+
+    Returns a TopologyArtifact (routers, directed channels, local seats).
+    """
+    from .placement import build_inventory
+    from .topology_artifact import materialize_topology
+    return materialize_topology(build_inventory(cr), cr)
+
+
 def derive_topology_spec(cr: CompileRequest):
-    """Bridge CompileRequest to existing Topology dataclass.
+    """Bridge the materialized TopologyArtifact to presets.Topology.
 
-    Maps NocConfig.topology_family → Topology(backend=...) with
-    appropriate defaults from the PRD's GUIDED knobs.
-
-    The routing function is LOCKED — derived from the dependency graph
-    via derive_vc_assignment(), not taken from the family map default.
+    The backend/k/c come from the materialized artifact (one topology truth);
+    the routing function stays LOCKED — derived from the dependency graph via
+    derive_vc_assignment(), not taken from the family map default.
 
     Args:
         cr: CompileRequest with noc_config populated.
@@ -1610,42 +1623,53 @@ def derive_topology_spec(cr: CompileRequest):
         Topology instance from veritx_dse.presets.
     """
     from .presets import Topology
+    from .topology_artifact import MaterializedFamily
 
-    family = cr.noc_config.topology_family
-    if family is None:
-        family = TopologyFamily.MESH
+    artifact = derive_topology_artifact(cr)
+    family = artifact.family
+    routers = artifact.router_count
 
-    # Map PRD topology families to BookSim backends (routing is placeholder)
-    family_map = {
-        TopologyFamily.MESH: ("mesh", {"k": 8, "n": 2}),
-        TopologyFamily.TORUS: ("torus", {"k": 8, "n": 2}),
-        TopologyFamily.CONCENTRATED_MESH: ("mesh", {"k": 4, "n": 2}),
-        TopologyFamily.GEC: ("gec", {"k": 8, "c": 1, "o": 7, "d": 1}),
-        TopologyFamily.FAT_TREE: ("fattree", {}),
-    }
-
-    backend, params = family_map.get(family, ("mesh", {"k": 8, "n": 2}))
-
-    # Apply GUIDED overrides
-    if cr.noc_config.radix is not None:
-        params["k"] = cr.noc_config.radix
-    if cr.noc_config.concentration is not None:
-        params["c"] = cr.noc_config.concentration
+    if family in (MaterializedFamily.MESH, MaterializedFamily.TORUS,
+                  MaterializedFamily.CONCENTRATED_MESH):
+        k = math.isqrt(routers)
+        if k * k != routers:
+            raise ValueError(
+                f"materialized {family.value} is not a square grid "
+                f"({routers} routers) — refusing to guess a k")
+        if family == MaterializedFamily.TORUS:
+            backend, params = "torus", {"k": k, "n": 2}
+        elif family == MaterializedFamily.CONCENTRATED_MESH:
+            # Concentration is a meshed fabric with several local seats per
+            # router; the backend that can express it is cmesh.
+            backend = "cmesh"
+            params = {"k": k, "n": 2,
+                      "c": artifact.routers[0].seat_capacity}
+        else:
+            backend, params = "mesh", {"k": k, "n": 2}
+    elif family == MaterializedFamily.RING:
+        backend, params = "torus", {"k": routers, "n": 1}
+    else:  # pragma: no cover - enum is closed
+        raise ValueError(f"unhandled materialized family {family}")
 
     # LOCKED: Derive routing + VC assignment from dependency graph
     vc_assignment = derive_vc_assignment(cr)
     routing = vc_assignment.routing_function  # LOCKED — not user-chosen
     if vc_assignment.vc_count > 1:
-        params["num_vcs"] = vc_assignment.vc_count + 1  # +1 for head flit VC
+        # B3.3 owns the VC-count semantics (this +1 head-flit VC and the
+        # clamp are known defects; not repaired in the sizing wave).
+        params["num_vcs"] = vc_assignment.vc_count + 1
 
-    needs_noc_latency_zero = family == TopologyFamily.GEC
+    name = (f"{backend}_{params['k']}x{params['k']}_c{params['c']}"
+            if backend == "cmesh" else f"{backend}_{params['k']}x{params['k']}")
 
     return Topology(
-        name=f"{backend}_{params.get('k', 8)}x{params.get('k', 8)}",
+        name=name,
         backend=backend,
         routing=routing,
         params=params,
-        needs_noc_latency_zero=needs_noc_latency_zero,
+        # GEC (the only needs_noc_latency_zero family) is refused by the
+        # materializer, so this is always False now.
+        needs_noc_latency_zero=False,
     )
 
 
