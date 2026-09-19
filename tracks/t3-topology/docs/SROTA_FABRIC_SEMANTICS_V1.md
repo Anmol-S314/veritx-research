@@ -16,6 +16,7 @@
 | 1.2 | B3.2 | Two-tier routing: the router-level RouteArtifact (parent: topology only) is split from ResolvedRouteArtifact (parents: topology + attachment + router route), which owns endpoint→router, LOCAL_EJECTION and the expanded endpoint route-table hash. FabricArtifact binds `resolved_route_hash`. F6 can never PASS from two replicas of the same algorithm; it requires independent backend-emitted executed-route evidence. |
 | 1.3 | B3.4 | PacketFormatArtifact is the wire-format authority: physical beat width stays Topology-owned, logical flit width is PacketFormat-owned, v1 requires one flit per beat. v1 wire fields are payload/source_endpoint/destination_endpoint/flit_type/vc_id; TrafficClass, RoutingClass, sequence and protocol metadata are explicitly absent. RouterBehaviorArtifact v1 pins per-input-port/per-VC buffering, credit flow control, wait-for-tail-credit, iSLIP, pipeline timing and speedups, with no implicit demotion or escape priority. |
 | 1.4 | B3.4c | RouterBehaviorArtifact schema v2: the ambiguous `packet_hold_policy=FLIT_INTERLEAVED` is replaced by `input_vc_packet_policy=ONE_PACKET_AT_A_TIME` (no two packets share one input VC's packet context) and `vc_allocation_scope=PACKET` (HEAD/SINGLE selects `vc_out`; BODY/TAIL reuse it for the packet at that hop). `hold_switch_for_packet` remains the independent switch-arbitration granularity. v1 is explicitly refused, not silently migrated. |
+| 1.5 | B3.1c | AgentAttachmentArtifact completes the interface authority: each Endpoint carries an immutable `AgentInterfaceDescriptor` (data_width_bits, address_width_bits, protocol, clock_domain, power_domain) derived from the parent Agent group, and the artifact binds `design_hash` as a parent. Validation proves group/instance bounds, kind agreement, interface equality with the parent group, real router seats, and one-to-one mapping placement identity. Schema v2; v1 attachments refused. |
 
 This document defines what a resolved Srota fabric *is* before B3 code is
 written. It starts from hardware semantics and maps existing code onto them —
@@ -291,8 +292,18 @@ Router
 - **Endpoint IDs** are canonical fabric attachment IDs (§7.5). `AddressRange.
   target_agent_idx` identifies an Agent *group*; it does **not** assign endpoint
   IDs. Address→endpoint decode tables are a later NI concern.
-- **Owns:** `endpoint_id`, `AgentInstance`, `RouterPort`, `agent_interface_width`,
-  `protocol` label, clock domain, power domain.
+- **Owns:** `endpoint_id`, `AgentInstance`, `RouterPort`, and an immutable
+  `AgentInterfaceDescriptor` (`data_width_bits`, `address_width_bits`,
+  `protocol`, `clock_domain`, `power_domain`) derived from the parent Agent
+  group in the design revision.
+- **B3.1c interface/parent binding:** `derive_attachment` reads the design
+  revision and binds `design_hash` alongside `topology_hash` and
+  `mapping_hash`. Validation proves `group_index` exists,
+  `instance_index < group.count`, `AgentInstance.kind` matches the parent
+  group, the endpoint descriptor equals the parent group's
+  width/protocol/clock/power semantics, every router/port is a real topology
+  seat, and every MappingArtifact placement points at the same AgentInstance
+  (full identity, not merely the same coordinate).
 - **Does not own flit width.** Flit width belongs to PacketFormatArtifact (§6.1).
 - **v1 decision:** `Endpoint` and `NetworkInterface` are one semantic attachment
   object. The distinction is documented for future protocol bridges, not
@@ -628,9 +639,11 @@ Routers, RouterPorts, DirectedChannels, optional PhysicalLinks, local seat
 capacity. Parents: none (inputs NodeInventory + GUIDED recorded in envelope).
 
 ### AgentAttachmentArtifact
-`endpoint_id → (AgentInstance, RouterPort)`, `agent_interface_width`,
-`protocol`, clock domain, power domain. Parents: `topology_hash`,
-`mapping_hash`.
+`endpoint_id → (AgentInstance, RouterPort, AgentInterfaceDescriptor)` where the
+descriptor owns `data_width_bits`, `address_width_bits`, `protocol`,
+`clock_domain`, `power_domain`. Parents: `design_hash`, `topology_hash`,
+`mapping_hash`. v1 attachments (no design parent, no interface descriptor) are
+refused on load.
 
 ### RouteArtifact (router-level)
 Parent hash `topology_hash` (== `TopologyArtifact.topology_hash()` for
@@ -702,12 +715,12 @@ expected for analytical projection; fatal for exact RTL↔BookSim equivalence.
 | Artifact | Parent hashes | Hash domain |
 |---|---|---|
 | TopologyArtifact | — | `srota/TopologyArtifact/v1` |
-| AgentAttachmentArtifact | topology_hash, mapping_hash | `srota/AgentAttachment/v1` |
+| AgentAttachmentArtifact | design_hash, topology_hash, mapping_hash | `srota/AgentAttachment/v2` |
 | RouteArtifact | topology_hash | `srota/RouteArtifact/v1` |
 | ResolvedRouteArtifact | topology_hash, attachment_hash, router_route_hash | `srota/ResolvedRouteArtifact/v1` |
 | VCAssignmentArtifact | resolved_route_hash | `srota/VCAssignment/v1` |
 | PacketFormatArtifact | topology_hash, attachment_hash, vc_assignment_hash | `srota/PacketFormat/v1` |
-| RouterBehaviorArtifact | vc_assignment_hash | `srota/RouterBehavior/v1` |
+| RouterBehaviorArtifact | vc_assignment_hash | `srota/RouterBehavior/v2` |
 | FabricArtifact | topology, attachment, resolved_route, vc, packet, router_behavior, plane_composition | `srota/Fabric/v1` |
 | BackendConfigArtifact | fabric_hash | `srota/BackendConfig/v1` |
 | ResolvedFabric | design_hash, mapping_hash, fabric_hash | `srota/ResolvedFabric/v1` |
@@ -717,8 +730,12 @@ expected for analytical projection; fatal for exact RTL↔BookSim equivalence.
 Enforced at the ResolvedFabric seam (discharges B2's deferred parent binding):
 
 - every mapping agent exists in NodeInventory; kind agrees; group/instance exist;
-- every attachment endpoint references a real topology seat; every agent
-  attaches exactly once; seats not exceeded;
+- every attachment endpoint's group_index/instance_index/kind exist in the design
+  revision, its interface descriptor equals the parent Agent group's
+  data_width/addr_width/protocol/clock/power semantics, and the artifact binds
+  `design_hash`;
+- every attachment endpoint references a real topology seat (router exists, port
+  < seat capacity); every agent attaches exactly once; seats not exceeded;
 - **`resolved_route.topology_hash == topology.topology_hash()`** and
   **`resolved_route.attachment_hash == attachment.artifact_hash`** and
   **`resolved_route.router_route_hash == route.artifact_hash`** (refuse

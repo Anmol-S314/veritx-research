@@ -11,7 +11,9 @@ from dataclasses import replace
 
 import pytest
 
-from veritx_dse.model.attachment import AgentAttachmentArtifact, Endpoint
+from veritx_dse.model.attachment import (
+    AgentAttachmentArtifact, AgentInterfaceDescriptor, Endpoint,
+)
 from veritx_dse.model.compile_model import AgentKind
 from veritx_dse.model.packet_format import (
     DEFAULT_MAX_PACKET_FLITS, FLIT_TYPE_ENCODING,
@@ -30,14 +32,21 @@ from veritx_dse.model.vc_assignment import VCAssignmentArtifact
 
 # ── fixtures ──────────────────────────────────────────────────────────────
 
+_IFACE = AgentInterfaceDescriptor(
+    data_width_bits=256, address_width_bits=64, protocol="AXI",
+    clock_domain=None, power_domain=None)
+
+
 def _attachment(topology, endpoint_count):
     endpoints = tuple(
         Endpoint(endpoint_id=i,
                  agent=AgentInstance(i, i, AgentKind.COMPUTE_TILE),
                  router_id=i % topology.router_count,
-                 port_id=i // topology.router_count)
+                 port_id=i // topology.router_count,
+                 interface=_IFACE)
         for i in range(endpoint_count))
     return AgentAttachmentArtifact(
+        design_hash="d" * 64,
         topology_hash=topology.topology_hash(),
         mapping_hash="m" * 64, endpoints=endpoints)
 
@@ -432,12 +441,14 @@ class TestIdentityMutations:
             topology=topo, attachment=_attachment(topo, 4),
             vc_assignment=_vc(1))
         att_b = AgentAttachmentArtifact(
+            design_hash="d" * 64,
             topology_hash=topo.topology_hash(),
             mapping_hash="n" * 64,
             endpoints=tuple(
                 Endpoint(endpoint_id=i,
                          agent=AgentInstance(i, i, AgentKind.COMPUTE_TILE),
-                         router_id=i % topo.router_count, port_id=0)
+                         router_id=i % topo.router_count, port_id=0,
+                         interface=_IFACE)
                 for i in range(4)))
         art_b = derive_packet_format(
             topology=topo, attachment=att_b, vc_assignment=_vc(1))

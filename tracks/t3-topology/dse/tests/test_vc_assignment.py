@@ -38,7 +38,7 @@ def _cr(agents=4, deps=(), collectives=()):
 def _resolved_route(cr):
     inv = build_inventory(cr)
     topo = materialize_topology(inv, cr)
-    att = derive_attachment(inv, derive_mapping(cr), topo)
+    att = derive_attachment(inv, derive_mapping(cr), topo, cr)
     rr = RouteArtifact.from_topology(topo, name="t")
     return derive_resolved_route(topo, att, rr)
 

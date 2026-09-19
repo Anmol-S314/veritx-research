@@ -261,7 +261,7 @@ class TestF6Evidence:
         )
         inv = build_inventory(cr)
         topo = materialize_topology(inv, cr)
-        att = derive_attachment(inv, derive_mapping(cr), topo)
+        att = derive_attachment(inv, derive_mapping(cr), topo, cr)
         rr = RouteArtifact.from_topology(topo, name="mesh")
         return cr, rr, derive_resolved_route(topo, att, rr)
 

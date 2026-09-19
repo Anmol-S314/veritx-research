@@ -37,7 +37,8 @@ from .model.topology_artifact import (
     MaterializedFamily, TopologyError, materialize_topology, materialize_family,
 )
 from .model.attachment import (
-    AgentAttachmentArtifact, Endpoint, AttachmentError, derive_attachment,
+    AgentAttachmentArtifact, AgentInterfaceDescriptor, Endpoint,
+    AttachmentError, derive_attachment,
 )
 from .model.resolved_route import (
     ResolvedRouteArtifact, ResolvedRouteError, LOCAL_EJECTION,

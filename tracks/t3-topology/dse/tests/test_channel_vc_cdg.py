@@ -40,7 +40,7 @@ def _mesh_chain(n=4, cycles=1):
     )
     inv = build_inventory(cr)
     topo = materialize_topology(inv, cr)
-    att = derive_attachment(inv, derive_mapping(cr), topo)
+    att = derive_attachment(inv, derive_mapping(cr), topo, cr)
     rr = RouteArtifact.from_topology(topo, name="mesh")
     rra = derive_resolved_route(topo, att, rr)
     vc = derive_vc_assignment_artifact(cr, rra)
