@@ -14,6 +14,7 @@
 | 1.0 | B3.0 | Audit + first specification. |
 | 1.1 | B3.0.1 | Close fabric semantic ownership and identity gaps: RouteArtifact binds attachment; remove Topology/Attachment circularity; replace the linear chain with an artifact DAG; split RoutingClass (Route) from VC resources (VCAssignment); rename FlowControlArtifact → RouterBehaviorArtifact; single owner for flit width; `fabric_hash` is the same-fabric definition; separate `resolved_fabric_hash`; candidate provenance non-semantic; canonical numbering rules; `channel_id` and DirectedChannel-first link properties; derived packet capacities; structured SemanticLoss; consistent support vocabulary; closed buffer-depth/plane/address rulings; compiler-semantics-v1 migration rule. |
 | 1.2 | B3.2 | Two-tier routing: the router-level RouteArtifact (parent: topology only) is split from ResolvedRouteArtifact (parents: topology + attachment + router route), which owns endpoint→router, LOCAL_EJECTION and the expanded endpoint route-table hash. FabricArtifact binds `resolved_route_hash`. F6 can never PASS from two replicas of the same algorithm; it requires independent backend-emitted executed-route evidence. |
+| 1.3 | B3.4 | PacketFormatArtifact is the wire-format authority: physical beat width stays Topology-owned, logical flit width is PacketFormat-owned, v1 requires one flit per beat. v1 wire fields are payload/source_endpoint/destination_endpoint/flit_type/vc_id; TrafficClass, RoutingClass, sequence and protocol metadata are explicitly absent. RouterBehaviorArtifact v1 pins per-input-port/per-VC buffering, credit flow control, wait-for-tail-credit, iSLIP, pipeline timing and speedups, with no implicit demotion or escape priority. |
 
 This document defines what a resolved Srota fabric *is* before B3 code is
 written. It starts from hardware semantics and maps existing code onto them —
@@ -193,7 +194,8 @@ envelope; `CandidateRecord` is the non-semantic provenance record (§20).
 | endpoint→router binding, LOCAL_EJECTION, endpoint route table | ResolvedRouteArtifact |
 | VC IDs, VC↔RoutingClass binding, transitions, escape designation | VCAssignmentArtifact |
 | TrafficClass vocabulary | Design revision (B1) |
-| flit width + header field layout + encodings | PacketFormatArtifact |
+| physical channel beat width | TopologyArtifact (`DirectedChannel.width_bits`) |
+| logical flit width + header field layout + encodings | PacketFormatArtifact |
 | buffer capacity/credit/allocator/arbitration/pipeline | RouterBehaviorArtifact |
 | plane composition | FabricArtifact |
 | composite fabric identity | FabricArtifact (`fabric_hash`) |
@@ -446,22 +448,55 @@ candidate-generation heuristics only, never the deadlock proof (verified doc
 
 Current state (C-09): four incompatible layouts. A single
 **PacketFormatArtifact** is authoritative; every backend derives its encoding
-from it.
+from it. Current RTL is a migration target, not the definition (§14.5, §21).
 
-Fields:
+**Width ownership (B3.4):**
 ```
-flit_width_bits
-ordered field_layout: name, lsb, width, signed?, semantic_role
-packet types + HEAD/BODY/TAIL/SINGLE encoding
+TopologyArtifact.DirectedChannel.width_bits = physical channel beat width
+PacketFormatArtifact.flit_width_bits         = logical flit width
 ```
-Encodings: destination, source, type, routing class, VC (if present), sequence,
-payload.
+Srota v1 transfers exactly one logical flit per channel beat, so the two must
+be equal. That equality is a v1 constraint, not a permanent conceptual
+equivalence. The ASTRA `ASTRASIM_FLIT_BYTES` coarse-packetization knob is an
+execution-fidelity override and is explicitly NOT fabric width authority.
 
-**Capacities are derived, not duplicated.** `destination.width = 8` implies
-`destination_capacity = 256` as a derived property; same for source/VC/class/
-sequence. Cross-artifact validation checks actual counts ≤ capacity
-(endpoints ≤ destination capacity, `vc_count` ≤ encoded VC capacity, etc.).
-There is no second way to represent a limit.
+**v1 wire fields (exactly these, repeated in EVERY flit):**
+```
+payload               opaque to the router
+source_endpoint       endpoint namespace, PACKET_IMMUTABLE
+destination_endpoint  endpoint namespace, PACKET_IMMUTABLE
+flit_type             SINGLE/HEAD/BODY/TAIL, FLIT_STRUCTURAL
+vc_id                 HOP_LOCAL (rewritable only by a legal VC transition)
+```
+
+**Deliberately not on the wire in v1:**
+```
+TrafficClass   injection-time intent (traffic_class_to_vcs)
+RoutingClass   derived from vc_out via VCAssignmentArtifact
+sequence       NI / protocol / testbench responsibility
+protocol meta  NI/protocol payload (AXI/CHI/UCIe/...)
+multicast      workload lowering only in v1 (no fabric primitive)
+```
+
+Packetization v1 is `BOUNDED_WORMHOLE` with identity-bearing
+`max_packet_flits` (default 8). A larger message is fragmented by the
+NI/lowerer into multiple bounded network packets; one message must never become
+one unbounded wormhole packet.
+
+Canonical bit layout, pinned LSB → MSB:
+```
+payload | source_endpoint | destination_endpoint | flit_type | vc_id
+```
+with `endpoint_width = encoding_width(E)`, `vc_width = encoding_width(V)`,
+`encoding_width(n) = max(1, ceil(log2(n)))`, `type_width = 2`, and
+`payload_width = flit_width_bits - header_width >= 1` (otherwise UNSUPPORTED;
+the physical link is never widened automatically). Flit-type encoding is
+identity-bearing: HEAD=0, BODY=1, TAIL=2, SINGLE=3.
+
+**Capacities are derived, not duplicated.** `endpoint_capacity = 2**endpoint_width`
+and `vc_capacity = 2**vc_width` are derived properties. Cross-artifact
+validation checks actual counts ≤ capacity (endpoints ≤ endpoint capacity,
+`vc_count` ≤ encoded VC capacity). There is no second way to represent a limit.
 
 Observed layouts to reconcile (for migration, not authority):
 `gen_rtl.py:126-146` / `router_template.sv:112-126`; `axi4_flit.sv:1-20,94-105`;
@@ -511,6 +546,50 @@ recorded, not enforced (C-family).
 **GUIDED with compiler-derived LOCKED minimum.** The user may propose a buffer
 depth; the optimizer may vary it; the compiler rejects or raises it when below
 the architectural minimum for the resolved VC/flow-control semantics.
+
+### 14.4 RouterBehaviorArtifact v1 baseline (B3.4)
+Parent: `vc_assignment_hash` only. It references the VC structure; it never
+duplicates VC ids, transitions or routing classes.
+```
+buffer organization          PER_INPUT_PORT_PER_VC
+input buffer depth           8 flits / VC
+output stage depth           1 flit / VC
+flow control                 CREDIT (one-flit granularity, per channel+VC)
+credit return latency        1 cycle
+VC reuse                     WAIT_FOR_TAIL_CREDIT
+VC allocator                 ISLIP
+switch allocator             ISLIP
+allocator iterations         1
+hold switch for packet       false
+packet interleaving          flit-interleaved (one active packet per input VC)
+input/output/internal speedup 1 / 1 / 1
+route compute                0 cycles
+VC allocation                1 cycle
+switch allocation            1 cycle
+switch traversal             1 cycle
+output delay                 0 cycles
+implicit demotion            none
+implicit VC / escape priority none
+```
+Channel traversal latency remains solely `DirectedChannel.latency_cycles`.
+
+### 14.5 B3.4 authority vs current implementation (migration gaps)
+This table records explicit B3.6/B3.7 obligations; it is not a conformance
+claim for any existing backend.
+
+| Semantic | B3.4 authority | Current implementation |
+|---|---|---|
+| destination | endpoint id | rtlgen router id |
+| source | full endpoint id | rtlgen truncated/ambiguous |
+| VC | hop-local `vc_id` | rtlgen calls it class/escape |
+| TrafficClass | injection-only | no exact equivalent |
+| RoutingClass | derived from VC | separate RT_MIN/RT_ESC assumptions |
+| max packet | 8 flits default | ASTRA can currently inject message-sized packet |
+| buffer | per-input-port/per-VC, 8 | similar but local quirks |
+| allocator | iSLIP default | rtlgen custom RR/priority |
+| demotion | none | stale/partial historical code |
+| switch hold | false | implementation-specific |
+| flit width | equals channel width v1 | RTL fixed 64; ASTRA coarse override may differ |
 
 ## 15. Multicast / multi-plane semantics
 
@@ -570,8 +649,8 @@ Parent `resolved_route_hash` + design TrafficClass namespace; §11 fields;
 `artifact_hash`. No buffering.
 
 ### PacketFormatArtifact
-Parent `attachment_hash` + `vc_assignment_hash`; §13 fields; derived capacities;
-`artifact_hash`.
+Parents `topology_hash`, `attachment_hash`, `vc_assignment_hash`; §13 fields;
+derived capacities; `artifact_hash`.
 
 ### RouterBehaviorArtifact
 Parent `vc_assignment_hash`; §14 fields; `artifact_hash`.
@@ -625,7 +704,7 @@ expected for analytical projection; fatal for exact RTL↔BookSim equivalence.
 | RouteArtifact | topology_hash | `srota/RouteArtifact/v1` |
 | ResolvedRouteArtifact | topology_hash, attachment_hash, router_route_hash | `srota/ResolvedRouteArtifact/v1` |
 | VCAssignmentArtifact | resolved_route_hash | `srota/VCAssignment/v1` |
-| PacketFormatArtifact | attachment_hash, vc_assignment_hash | `srota/PacketFormat/v1` |
+| PacketFormatArtifact | topology_hash, attachment_hash, vc_assignment_hash | `srota/PacketFormat/v1` |
 | RouterBehaviorArtifact | vc_assignment_hash | `srota/RouterBehavior/v1` |
 | FabricArtifact | topology, attachment, resolved_route, vc, packet, router_behavior, plane_composition | `srota/Fabric/v1` |
 | BackendConfigArtifact | fabric_hash | `srota/BackendConfig/v1` |
@@ -648,7 +727,7 @@ Enforced at the ResolvedFabric seam (discharges B2's deferred parent binding):
 - every VC id `< vc_count`; every TrafficClass has legal VC eligibility; every VC
   maps to a RoutingClass present in RouteArtifact; assignments never reference a
   VC ≥ count;
-- packet encoded capacities ≥ actual endpoint/VC/class/sequence counts;
+- packet encoded capacities ≥ actual endpoint and VC counts (v1 has no class/sequence wire fields);
 - router behavior covers every implemented VC;
 - `fabric_hash` recursively covers every identity-bearing dimension, including
   plane composition;

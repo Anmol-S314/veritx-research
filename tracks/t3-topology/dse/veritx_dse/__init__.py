@@ -46,6 +46,14 @@ from .model.resolved_route import (
 from .model.vc_assignment import (
     VCAssignmentArtifact, VCAssignmentError, make_vc_assignment_artifact,
 )
+from .model.packet_format import (
+    DEFAULT_MAX_PACKET_FLITS,
+    FLIT_TYPE_ENCODING, HEADER_REPLICATION_EVERY_FLIT,
+    PACKETIZATION_BOUNDED_WORMHOLE,
+    FieldMutability, FieldRole, PacketField,
+    PacketFormatArtifact, PacketFormatError,
+    derive_packet_format, encoding_width, network_packet_count,
+)
 
 # Re-export simulation
 from .simulation.booksim import build_config, run_booksim, find_booksim_bin, detect_trace_stats
