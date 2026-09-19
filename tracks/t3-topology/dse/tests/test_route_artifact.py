@@ -225,12 +225,18 @@ class TestEquivalence:
 # ── F6: routing correctness consumes artifact evidence ────────────────────
 
 class TestF6Evidence:
-    def _cr(self):
+    def _fabric(self):
+        """ResolvedRouteArtifact for a 4-agent mesh (real derivation)."""
+        from veritx_dse.model.attachment import derive_attachment
         from veritx_dse.model.compile_model import (
             Agent, AgentKind, CompileRequest, DependencyGraph, ModelFamily,
             NocConfig, Workload,
         )
-        return CompileRequest(
+        from veritx_dse.model.mapping import derive_mapping
+        from veritx_dse.model.placement import build_inventory
+        from veritx_dse.model.resolved_route import derive_resolved_route
+        from veritx_dse.model.topology_artifact import materialize_topology
+        cr = CompileRequest(
             workload=Workload(model_family=ModelFamily.DENSE_TRANSFORMER,
                               collectives=()),
             requirements=[],
@@ -238,47 +244,88 @@ class TestF6Evidence:
             dependencies=DependencyGraph([]),
             noc_config=NocConfig(topology_family=None),
         )
+        inv = build_inventory(cr)
+        topo = materialize_topology(inv, cr)
+        att = derive_attachment(inv, derive_mapping(cr), topo)
+        rr = RouteArtifact.from_topology(topo, name="mesh")
+        return cr, rr, derive_resolved_route(topo, att, rr)
 
-    def test_f6_upgrades_to_pass_on_comparable_evidence(self):
-        from veritx_dse.model.compile_model import verify_design
-        adj = _ring_adj(4)
-        art = RouteArtifact.from_adjacency(adj, name="r")
-        rep = equivalence_report(art, booksim_first_hop_table(4, adj))
-        vr = verify_design(self._cr(), evidence={"route_equivalence": rep,
-                                                 "route_artifact": art.serialize()})
-        f6 = next(c for c in vr.checks if c["name"] == "F6_routing_correctness")
-        assert f6["status"] == "PASS"
-        assert art.route_table_hash in f6["detail"]
-
-    def test_f6_fails_on_divergent_evidence(self):
-        from veritx_dse.model.compile_model import verify_design
-        adj = _square_grid()
-        art = RouteArtifact.from_adjacency(adj, name="grid")
-        executed = booksim_first_hop_table(len(adj), adj)
-        flow = next(iter(executed))
-        executed[flow] = next(
-            n for n in adj[flow[0]] if n != executed[flow])
-        rep = equivalence_report(art, executed)
-        vr = verify_design(self._cr(), evidence={"route_equivalence": rep})
-        f6 = next(c for c in vr.checks if c["name"] == "F6_routing_correctness")
-        assert f6["status"] == "FAIL"
-        assert "DIVERGENT" in f6["detail"]
+    def _f6(self, vr):
+        return next(c for c in vr.checks
+                    if c["name"] == "F6_routing_correctness")
 
     def test_f6_stays_not_run_without_evidence(self):
         from veritx_dse.model.compile_model import verify_design
-        vr = verify_design(self._cr())
-        f6 = next(c for c in vr.checks if c["name"] == "F6_routing_correctness")
-        assert f6["status"] == "NOT_RUN"
+        cr, _rr, _rra = self._fabric()
+        assert self._f6(verify_design(cr))["status"] == "NOT_RUN"
 
-    def test_f6_refuses_unsigned_or_tampered_artifact(self):
+    def test_f6_replica_evidence_is_inconclusive(self):
+        """The B3.2 invariant: Python agreement with Python is not proof."""
         from veritx_dse.model.compile_model import verify_design
+        cr, rr, rra = self._fabric()
         adj = _ring_adj(4)
-        art = RouteArtifact.from_adjacency(adj, name="r")
-        rep = equivalence_report(art, booksim_first_hop_table(4, adj))
-        bad = art.serialize()
-        bad["entries"]["0|1"] = "2"  # tamper: table no longer matches hash
-        vr = verify_design(self._cr(), evidence={"route_equivalence": rep,
-                                                 "route_artifact": bad})
-        f6 = next(c for c in vr.checks if c["name"] == "F6_routing_correctness")
+        rep = equivalence_report(rr, booksim_first_hop_table(4, adj))
+        vr = verify_design(cr, evidence={
+            "resolved_route_artifact": rra.to_dict(),
+            "executed_route_evidence": {
+                "provenance": "python_replica",
+                "resolved_route_hash": rra.resolved_route_hash(),
+                "matches": True,
+            },
+            "route_equivalence": rep,
+        })
+        f6 = self._f6(vr)
+        assert f6["status"] == "INCONCLUSIVE"
+        assert "replica" in f6["detail"].lower()
+        assert f6["status"] != "PASS"
+
+    def test_f6_pass_requires_independent_provenance(self):
+        from veritx_dse.model.compile_model import verify_design
+        cr, _rr, rra = self._fabric()
+        vr = verify_design(cr, evidence={
+            "resolved_route_artifact": rra.to_dict(),
+            "executed_route_evidence": {
+                "provenance": "booksim_dumped_table",
+                "resolved_route_hash": rra.resolved_route_hash(),
+                "matches": True,
+            },
+        })
+        f6 = self._f6(vr)
+        assert f6["status"] == "PASS"
+        assert rra.resolved_route_hash() in f6["detail"]
+
+    def test_f6_fails_when_executed_evidence_is_another_fabric(self):
+        from veritx_dse.model.compile_model import verify_design
+        cr, _rr, rra = self._fabric()
+        vr = verify_design(cr, evidence={
+            "resolved_route_artifact": rra.to_dict(),
+            "executed_route_evidence": {
+                "provenance": "rtl_emitted_table",
+                "resolved_route_hash": "0" * 64,
+                "matches": True,
+            },
+        })
+        assert self._f6(vr)["status"] == "FAIL"
+
+    def test_f6_fails_on_independent_divergence(self):
+        from veritx_dse.model.compile_model import verify_design
+        cr, _rr, rra = self._fabric()
+        vr = verify_design(cr, evidence={
+            "resolved_route_artifact": rra.to_dict(),
+            "executed_route_evidence": {
+                "provenance": "booksim_dumped_table",
+                "resolved_route_hash": rra.resolved_route_hash(),
+                "matches": False,
+            },
+        })
+        assert self._f6(vr)["status"] == "FAIL"
+
+    def test_f6_refuses_tampered_resolved_artifact(self):
+        from veritx_dse.model.compile_model import verify_design
+        cr, _rr, rra = self._fabric()
+        bad = rra.to_dict()
+        bad["endpoint_to_router"][0][1] = 99
+        vr = verify_design(cr, evidence={"resolved_route_artifact": bad})
+        f6 = self._f6(vr)
         assert f6["status"] == "FAIL"
-        assert "hash mismatch" in f6["detail"]
+        assert "untrusted" in f6["detail"].lower()

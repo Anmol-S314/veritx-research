@@ -2056,62 +2056,109 @@ def verify_design(
         "executed.")
 
     # F6: Routing correctness — the routes the simulator/RTL execute must
-    # equal the certified route set (RouteArtifact, Phase 10). Evidence:
-    #   route_equivalence  the equivalence report (status COMPARABLE)
-    #   route_artifact     the serialized artifact, re-verified by hash
-    # A tampered/untrusted artifact fails closed even when the report
-    # itself claims COMPARABLE — the report is only as good as the table
-    # it compared against.
-    route_ev = ev.get("route_equivalence")
-    if route_ev is not None:
-        art_d = ev.get("route_artifact")
-        hash_note = None
-        if art_d is not None:
-            try:
-                from ..core.route_artifact import RouteArtifact
-                RouteArtifact.from_dict(art_d)  # raises on hash mismatch
-            except Exception as e:  # malformed evidence must FAIL, not crash
-                hash_note = str(e)
-        if hash_note is not None:
-            add("F6_routing_correctness", "FAIL",
-                "Executed routes equal certified routes",
-                "route_table_equivalence (RouteArtifact)",
-                f"RouteArtifact untrusted: {hash_note}",
-                {"route_table_hash":
-                 (art_d or {}).get("route_table_hash")})
-            errors.append(
-                f"F6: RouteArtifact failed hash verification: {hash_note}")
-        elif route_ev.get("status") == "COMPARABLE":
-            cov = route_ev.get("coverage", {})
-            add("F6_routing_correctness", "PASS",
-                "Executed routes equal certified routes",
-                "route_table_equivalence (RouteArtifact)",
-                f"route_table_hash={route_ev.get('route_table_hash')} "
-                f"matched {cov.get('matched')}/"
-                f"{cov.get('artifact_flows')} first-hop flows",
-                {"route_table_hash": route_ev.get("route_table_hash")})
-        else:
-            mism = route_ev.get("mismatched", [])
-            first = mism[0] if mism else None
-            pin = (f"; first mismatch ({first['src']},{first['dst']}): "
-                   f"artifact {first['artifact_next_hop']} vs executed "
-                   f"{first['executed_next_hop']}" if first else "")
-            add("F6_routing_correctness", "FAIL",
-                "Executed routes equal certified routes",
-                "route_table_equivalence (RouteArtifact)",
-                f"equivalence status {route_ev.get('status')}: "
-                f"{len(mism)} mismatched flow(s){pin}",
-                {"route_table_hash": route_ev.get("route_table_hash")})
-            errors.append(
-                "F6: executed routes diverge from the certified route "
-                "table")
-    else:
+    # equal the resolved fabric routing. Evidence model (Wave B3.2):
+    #   resolved_route_artifact  ResolvedRouteArtifact (topology+attachment+
+    #                            router routes), self-integrity checked here
+    #   executed_route_evidence  {provenance, resolved_route_hash, matches}
+    #                            from the backend that actually executed
+    # INVARIANT: two independently generated replicas of the same Python
+    # algorithm are NOT evidence. Provenance must be an independent emitter;
+    # replica provenance is INCONCLUSIVE, never PASS.
+    _INDEPENDENT_ROUTE_PROVENANCE = frozenset({
+        "booksim_dumped_table", "booksim_ingested_artifact",
+        "rtl_emitted_table",
+    })
+    _REPLICA_ROUTE_PROVENANCE = frozenset({
+        "python_replica", "anynet_replica", "booksim_first_hop_table",
+        "replica",
+    })
+    resolved_d = ev.get("resolved_route_artifact")
+    executed_ev = ev.get("executed_route_evidence")
+    hash_note = None
+    rra = None
+    if resolved_d is not None:
+        try:
+            from .resolved_route import ResolvedRouteArtifact
+            rra = ResolvedRouteArtifact.from_dict(resolved_d)
+        except Exception as e:  # malformed evidence must FAIL, not crash
+            hash_note = str(e)
+    if hash_note is not None:
+        add("F6_routing_correctness", "FAIL",
+            "Executed routes equal resolved fabric routes",
+            "resolved_route_equivalence (ResolvedRouteArtifact)",
+            f"ResolvedRouteArtifact untrusted: {hash_note}", {})
+        errors.append(
+            f"F6: ResolvedRouteArtifact failed integrity verification: "
+            f"{hash_note}")
+    elif rra is None:
         add("F6_routing_correctness", "NOT_RUN",
-            "Executed routes equal certified routes — requires route-table "
-            "equivalence evidence",
-            "route_table_equivalence (RouteArtifact)",
-            f"Not executed: derived label '{va.routing_function}' is a design "
-            "choice, not an equivalence check.")
+            "Executed routes equal resolved fabric routes — requires a "
+            "ResolvedRouteArtifact plus backend-executed route evidence",
+            "resolved_route_equivalence (ResolvedRouteArtifact)",
+            "Not executed: no ResolvedRouteArtifact binding topology, "
+            "attachment and router routes. A router-level table or a derived "
+            f"label ('{va.routing_function}') is not a fabric routing proof.")
+    elif executed_ev is None:
+        add("F6_routing_correctness", "NOT_RUN",
+            "Executed routes equal resolved fabric routes — requires "
+            "independently executed route evidence",
+            "resolved_route_equivalence (ResolvedRouteArtifact)",
+            "Not executed: no backend-emitted executed route table. A "
+            "locally replicated routing algorithm cannot certify F6.",
+            {"resolved_route_hash": rra.resolved_route_hash()})
+    else:
+        provenance = str(executed_ev.get("provenance", ""))
+        if not provenance or provenance in _REPLICA_ROUTE_PROVENANCE:
+            add("F6_routing_correctness", "INCONCLUSIVE",
+                "Executed routes equal resolved fabric routes",
+                "resolved_route_equivalence (ResolvedRouteArtifact)",
+                f"Replica-vs-replica: route evidence provenance "
+                f"{provenance or '<missing>'!r} is a Python replica, not an "
+                "independent emitter. Python agreeing with Python is not a "
+                "routing proof.",
+                {"resolved_route_hash": rra.resolved_route_hash()})
+        elif provenance not in _INDEPENDENT_ROUTE_PROVENANCE:
+            add("F6_routing_correctness", "UNSUPPORTED",
+                "Executed routes equal resolved fabric routes",
+                "resolved_route_equivalence (ResolvedRouteArtifact)",
+                f"Unknown route-evidence provenance {provenance!r}; supported "
+                f"independent emitters: "
+                f"{sorted(_INDEPENDENT_ROUTE_PROVENANCE)}",
+                {"resolved_route_hash": rra.resolved_route_hash()})
+        elif executed_ev.get("resolved_route_hash") \
+                != rra.resolved_route_hash():
+            add("F6_routing_correctness", "FAIL",
+                "Executed routes equal resolved fabric routes",
+                "resolved_route_equivalence (ResolvedRouteArtifact)",
+                "executed evidence references a different resolved route "
+                "hash — it certifies a different fabric",
+                {"resolved_route_hash": rra.resolved_route_hash()})
+            errors.append(
+                "F6: executed route evidence references a different resolved "
+                "route hash")
+        elif executed_ev.get("matches") is True:
+            add("F6_routing_correctness", "PASS",
+                "Executed routes equal resolved fabric routes",
+                "resolved_route_equivalence (ResolvedRouteArtifact)",
+                f"resolved_route_hash={rra.resolved_route_hash()} matched by "
+                f"independent emitter {provenance!r}",
+                {"resolved_route_hash": rra.resolved_route_hash()})
+        elif executed_ev.get("matches") is False:
+            add("F6_routing_correctness", "FAIL",
+                "Executed routes equal resolved fabric routes",
+                "resolved_route_equivalence (ResolvedRouteArtifact)",
+                f"independent emitter {provenance!r} reported divergence "
+                "from the resolved route table",
+                {"resolved_route_hash": rra.resolved_route_hash()})
+            errors.append("F6: executed routes diverge from the resolved "
+                          "route table")
+        else:
+            add("F6_routing_correctness", "INCONCLUSIVE",
+                "Executed routes equal resolved fabric routes",
+                "resolved_route_equivalence (ResolvedRouteArtifact)",
+                f"provenance {provenance!r} declared but no comparison "
+                "result was supplied",
+                {"resolved_route_hash": rra.resolved_route_hash()})
 
     # F7: QoS isolation — no formal QoS check is implemented.
     if cr.requirements:
