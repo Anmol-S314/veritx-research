@@ -35,11 +35,12 @@ from pathlib import Path
 from typing import Any
 
 from .booksim import (
-    BOOKSIM_LOWERER_VERSION, SERVING_BOOKSIM2_PROFILE,
-    SERVING_BOOKSIM2_SEMANTICS_VERSION, TOPOLOGY_FILE, exact_flit_bytes,
-    lower_booksim_projection, materialize_backend, render_topology_anynet,
-    verify_materialized,
+    BOOKSIM_CONFIG_KEY_ORDER, BOOKSIM_LOWERER_VERSION, ROUTE_DUMP_FILE,
+    SERVING_BOOKSIM2_PROFILE, SERVING_BOOKSIM2_SEMANTICS_VERSION,
+    TOPOLOGY_FILE, exact_flit_bytes, lower_booksim_projection,
+    materialize_backend, render_topology_anynet, verify_materialized,
 )
+from .booksim_profile import BOOKSIM_SERVING_PROFILE as SERVING_PROFILE_SPEC
 from .bundle import ResolvedFabricBundle
 from .contracts import (
     BackendConfigArtifact, BackendInputManifest, BackendTarget,
@@ -59,52 +60,13 @@ class ServingBackendError(ValueError):
 
 
 # ── closed ownership table (serving target) ─────────────────────────────
+# Derived from the same B3.7g closed-world audit as standalone; the only
+# ownership differences are the profile-selected traffic/sample values.
 
-SERVING_BOOKSIM2_OWNERSHIP: dict[str, ParameterOwner] = {
-    "topology": ParameterOwner.BACKEND_PROFILE,
-    "network_file": ParameterOwner.BACKEND_PROFILE,
-    "routing_function": ParameterOwner.FABRIC_DERIVED,
-    "num_vcs": ParameterOwner.FABRIC_DERIVED,
-    "vc_buf_size": ParameterOwner.FABRIC_DERIVED,
-    "wait_for_tail_credit": ParameterOwner.FABRIC_DERIVED,
-    "hold_switch_for_packet": ParameterOwner.FABRIC_DERIVED,
-    "vc_allocator": ParameterOwner.FABRIC_DERIVED,
-    "sw_allocator": ParameterOwner.FABRIC_DERIVED,
-    "alloc_iters": ParameterOwner.FABRIC_DERIVED,
-    "credit_delay": ParameterOwner.FABRIC_DERIVED,
-    "routing_delay": ParameterOwner.FABRIC_DERIVED,
-    "vc_alloc_delay": ParameterOwner.FABRIC_DERIVED,
-    "sw_alloc_delay": ParameterOwner.FABRIC_DERIVED,
-    "st_prepare_delay": ParameterOwner.FABRIC_DERIVED,
-    "st_final_delay": ParameterOwner.FABRIC_DERIVED,
-    "input_speedup": ParameterOwner.FABRIC_DERIVED,
-    "output_speedup": ParameterOwner.FABRIC_DERIVED,
-    "internal_speedup": ParameterOwner.FABRIC_DERIVED,
-    "output_buffer_size": ParameterOwner.FABRIC_DERIVED,
-    "arb_type": ParameterOwner.BACKEND_PROFILE,
-    "classes": ParameterOwner.BACKEND_PROFILE,
-    "subnets": ParameterOwner.BACKEND_PROFILE,
-    "router": ParameterOwner.BACKEND_PROFILE,
-    "buffer_policy": ParameterOwner.BACKEND_PROFILE,
-    "max_samples": ParameterOwner.BACKEND_PROFILE,
-    "sim_type": ParameterOwner.BACKEND_PROFILE,
-    "latency_thres": ParameterOwner.BACKEND_PROFILE,
-    "traffic": ParameterOwner.BACKEND_PROFILE,
-    "injection_rate": ParameterOwner.BACKEND_PROFILE,
-    "seed": ParameterOwner.EXECUTION_POLICY,
-}
+SERVING_BOOKSIM2_OWNERSHIP: dict[str, ParameterOwner] = \
+    SERVING_PROFILE_SPEC.ownership()
 
-_SERVING_KEY_ORDER: tuple[str, ...] = (
-    "topology", "network_file", "routing_function",
-    "num_vcs", "vc_buf_size", "wait_for_tail_credit",
-    "hold_switch_for_packet", "vc_allocator", "sw_allocator", "alloc_iters",
-    "arb_type", "credit_delay", "routing_delay", "vc_alloc_delay",
-    "sw_alloc_delay", "st_prepare_delay", "st_final_delay",
-    "input_speedup", "output_speedup", "internal_speedup",
-    "output_buffer_size", "classes", "subnets", "router", "buffer_policy",
-    "traffic", "injection_rate", "max_samples", "sim_type", "latency_thres",
-    "seed",
-)
+_SERVING_KEY_ORDER: tuple[str, ...] = BOOKSIM_CONFIG_KEY_ORDER
 
 _PROJECTION_ONLY_KEYS = frozenset({"routing_class",
                                    "channel_latency_cycles"})
@@ -175,6 +137,9 @@ def render_serving_config(config: BackendConfigArtifact) -> bytes:
         if key not in _PROJECTION_ONLY_KEYS}
     values["network_file"] = TOPOLOGY_FILE
     values["seed"] = SERVING_SEED
+    # The embedded AnyNet build also honors the dump seam; emitting it keeps
+    # the closed-world key set identical and gives future route evidence.
+    values["routing_dump_file"] = ROUTE_DUMP_FILE
     unowned = set(values) - set(SERVING_BOOKSIM2_OWNERSHIP)
     if unowned:
         raise ServingBackendError(

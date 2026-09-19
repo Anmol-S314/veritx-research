@@ -27,7 +27,7 @@ H64C = "c" * 64
 
 
 def _binding(dim, *, status=RepresentationStatus.EXACT, effect=None,
-             fields=(), reason="", source=H64):
+             fields=(), reason="", source=H64, domain="test domain"):
     if effect is None:
         effect = (CertificationEffect.NONE
                   if status in (RepresentationStatus.EXACT,
@@ -39,7 +39,7 @@ def _binding(dim, *, status=RepresentationStatus.EXACT, effect=None,
     return SemanticBinding(
         dimension=dim, source_identity=source, representation_status=status,
         backend_fields=tuple(sorted(fields)), reason=reason,
-        certification_effect=effect,
+        certification_effect=effect, supported_domain=domain,
     )
 
 
@@ -89,12 +89,12 @@ class TestConfigIdentity:
         import hashlib
         from veritx_dse.core.spec import canonical_json
         a = _artifact()
-        body = (("srota/BackendConfig/v1\0")
+        body = (("srota/BackendConfig/v2\0")
                 + canonical_json(a.identity_dict()))
         assert a.backend_config_hash() == hashlib.sha256(
             body.encode()).hexdigest()
         assert len(a.backend_config_hash()) == 64
-        assert a.schema_version == BACKEND_CONFIG_SCHEMA_VERSION == 1
+        assert a.schema_version == BACKEND_CONFIG_SCHEMA_VERSION == 2
 
     def test_same_semantics_different_path_same_hash(self):
         # Path-INDEPENDENT identity: only logical names enter the artifact,
@@ -194,9 +194,24 @@ class TestConfigStrictness:
 
     def test_unknown_schema_refused(self):
         d = _artifact().to_dict()
-        d["schema_version"] = 2
+        d["schema_version"] = 99
         with pytest.raises(BackendConfigError, match="schema_version"):
             BackendConfigArtifact.from_dict(d)
+
+    def test_v1_schema_refused_with_rebuild_message(self):
+        d = _artifact().to_dict()
+        d["schema_version"] = 1
+        with pytest.raises(BackendConfigError, match="Rebuild with v2"):
+            BackendConfigArtifact.from_dict(d)
+
+    def test_exact_binding_needs_supported_domain(self):
+        with pytest.raises(BackendConfigError, match="supported_domain"):
+            SemanticBinding(
+                dimension=SemanticDimension.VC_COUNT, source_identity=H64,
+                representation_status=RepresentationStatus.EXACT,
+                backend_fields=(), reason="",
+                certification_effect=CertificationEffect.NONE,
+                supported_domain="")
 
     def test_unknown_field_refused(self):
         d = _artifact().to_dict()

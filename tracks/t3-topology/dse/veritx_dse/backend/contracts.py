@@ -36,7 +36,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-BACKEND_CONFIG_SCHEMA_VERSION = 1
+BACKEND_CONFIG_SCHEMA_VERSION = 2
 BACKEND_INPUT_SCHEMA_VERSION = 1
 _CONFIG_HASH_TAG = "srota/BackendConfig"
 _INPUT_HASH_TAG = "srota/BackendInputManifest"
@@ -148,7 +148,10 @@ class ParameterOwner(Enum):
 
     A rendered backend parameter with no owner is an error; a parameter
     relying on an undeclared backend default is an error too. Certificate
-    paths never carry free-form overrides.
+    paths never carry free-form overrides. INACTIVE_FOR_PROFILE is used by
+    the closed-world audit for parameters that are read by backend code
+    but cannot affect the certified profile's results (and are documented
+    with a source location instead of silently defaulted).
     """
 
     FABRIC_DERIVED = "FABRIC_DERIVED"
@@ -156,6 +159,7 @@ class ParameterOwner(Enum):
     EXECUTION_POLICY = "EXECUTION_POLICY"
     BACKEND_PROFILE = "BACKEND_PROFILE"
     SEMANTIC_LOSS = "SEMANTIC_LOSS"
+    INACTIVE_FOR_PROFILE = "INACTIVE_FOR_PROFILE"
 
 
 _EXACT_STATUSES = frozenset({RepresentationStatus.EXACT,
@@ -290,7 +294,14 @@ def _jsonable(value: Any) -> Any:
 
 @dataclass(frozen=True)
 class SemanticBinding:
-    """One fabric dimension's backend representation declaration."""
+    """One fabric dimension's backend representation declaration.
+
+    ``supported_domain`` states the exact subset of the artifact's domain
+    the declaration covers (e.g. "escape_vcs must be empty"). Without it,
+    an unconditional EXACT cell would over-claim arbitrary
+    representability. Exact declarations must name their supported domain;
+    non-exact declarations may leave it empty (nothing is representable).
+    """
 
     dimension: SemanticDimension
     source_identity: str
@@ -298,6 +309,7 @@ class SemanticBinding:
     backend_fields: tuple[tuple[str, Any], ...]
     reason: str
     certification_effect: CertificationEffect
+    supported_domain: str = ""
 
     def __post_init__(self):
         _as_enum("dimension", SemanticDimension, self.dimension)
@@ -306,6 +318,8 @@ class SemanticBinding:
                  self.representation_status)
         _as_enum("certification_effect", CertificationEffect,
                  self.certification_effect)
+        if not isinstance(self.supported_domain, str):
+            raise BackendConfigError("supported_domain must be a string")
         if not isinstance(self.reason, str):
             raise BackendConfigError("reason must be a string")
         if not isinstance(self.backend_fields, tuple):
@@ -334,6 +348,10 @@ class SemanticBinding:
 
         status = self.representation_status
         effect = self.certification_effect
+        if status in _EXACT_STATUSES and not self.supported_domain:
+            raise BackendConfigError(
+                f"{self.dimension.value}: exact declarations must name "
+                "their supported_domain")
         if status in _EXACT_STATUSES and effect is not CertificationEffect.NONE:
             raise BackendConfigError(
                 f"{self.dimension.value}: exact representation cannot carry "
@@ -368,6 +386,7 @@ class SemanticBinding:
                                for k, v in self.backend_fields},
             "reason": self.reason,
             "certification_effect": self.certification_effect.value,
+            "supported_domain": self.supported_domain,
         }
 
     def to_dict(self) -> dict[str, Any]:
@@ -377,7 +396,8 @@ class SemanticBinding:
     def from_dict(cls, d: Any) -> "SemanticBinding":
         allowed = frozenset({
             "dimension", "source_identity", "representation_status",
-            "backend_fields", "reason", "certification_effect"})
+            "backend_fields", "reason", "certification_effect",
+            "supported_domain"})
         _strict_keys(d, allowed, "semantic_binding")
         raw_fields = _need(d, "backend_fields", "semantic_binding")
         if not isinstance(raw_fields, dict):
@@ -398,6 +418,8 @@ class SemanticBinding:
             certification_effect=_enum_from_value(
                 "certification_effect", CertificationEffect,
                 _need(d, "certification_effect", "semantic_binding")),
+            supported_domain=_need(d, "supported_domain",
+                                   "semantic_binding"),
         )
 
 
@@ -572,6 +594,12 @@ class BackendConfigArtifact:
         if _need(d, "type", "backend_config") != _CONFIG_HASH_TAG:
             raise BackendConfigError(
                 f"unexpected artifact type {d.get('type')!r}")
+        if _need(d, "schema_version", "backend_config") == 1:
+            raise BackendConfigError(
+                "BackendConfigArtifact schema v1 is refused: v1 bindings "
+                "could not state a supported representability domain, so "
+                "an EXACT cell over-claimed arbitrary semantics. Rebuild "
+                "with v2 — no silent migration")
         if _need(d, "schema_version", "backend_config") != \
                 BACKEND_CONFIG_SCHEMA_VERSION:
             raise BackendConfigError(

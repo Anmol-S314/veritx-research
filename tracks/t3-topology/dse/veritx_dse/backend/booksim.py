@@ -51,6 +51,10 @@ from veritx_dse.model.router_behavior import (
     AllocatorPolicy, VCReusePolicy,
 )
 
+from .booksim_profile import (
+    BOOKSIM_SERVING_PROFILE as SERVING_PROFILE_SPEC,
+    BOOKSIM_STANDALONE_PROFILE as STANDALONE_PROFILE_SPEC,
+)
 from .bundle import ResolvedFabricBundle
 from .contracts import (
     BackendConfigArtifact, BackendConfigError, BackendInputError,
@@ -72,7 +76,6 @@ WORKLOAD_FILE = "workload.trace"
 ROUTE_DUMP_FILE = "routing.dump"
 
 _SEED_DEFAULT = 1
-_LATENCY_THRES = 1000000000000000.0
 _SAMPLE_PERIOD_MIN = 200
 _SAMPLE_PERIOD_MARGIN = 1000
 
@@ -89,61 +92,48 @@ class BackendMaterializationError(ValueError):
     """Rendered inputs cannot be materialized/verified — fail closed."""
 
 
-# ── closed parameter ownership table (B3.7b §8) ────────────────────────
-# Every rendered BookSim config key must appear here with exactly one
-# owner; every key emitted by the renderer must be listed. An emitted
-# key without an owner is an error.
+# ── closed parameter ownership (B3.7g) ──────────────────────────────────
+# One source of truth: backend/booksim_profile.py audits every config
+# field the active certified path reads, with owner class and source
+# location. The lowerer and renderer emit active audited fields only;
+# BACKEND_PROFILE fields carry explicit pinned values from the profile,
+# so no result-affecting value comes from a compiled BookSim default.
 
-BOOKSIM_STANDALONE_OWNERSHIP: dict[str, ParameterOwner] = {
-    # topology projection (renderer-translated from the artifact)
-    "topology": ParameterOwner.BACKEND_PROFILE,
-    "network_file": ParameterOwner.BACKEND_PROFILE,
-    "routing_function": ParameterOwner.FABRIC_DERIVED,
-    # router/VC/flow behavior
-    "num_vcs": ParameterOwner.FABRIC_DERIVED,
-    "vc_buf_size": ParameterOwner.FABRIC_DERIVED,
-    "wait_for_tail_credit": ParameterOwner.FABRIC_DERIVED,
-    "hold_switch_for_packet": ParameterOwner.FABRIC_DERIVED,
-    "vc_allocator": ParameterOwner.FABRIC_DERIVED,
-    "sw_allocator": ParameterOwner.FABRIC_DERIVED,
-    "alloc_iters": ParameterOwner.FABRIC_DERIVED,
-    "credit_delay": ParameterOwner.FABRIC_DERIVED,
-    "routing_delay": ParameterOwner.FABRIC_DERIVED,
-    "vc_alloc_delay": ParameterOwner.FABRIC_DERIVED,
-    "sw_alloc_delay": ParameterOwner.FABRIC_DERIVED,
-    "st_prepare_delay": ParameterOwner.FABRIC_DERIVED,
-    "st_final_delay": ParameterOwner.FABRIC_DERIVED,
-    "input_speedup": ParameterOwner.FABRIC_DERIVED,
-    "output_speedup": ParameterOwner.FABRIC_DERIVED,
-    "internal_speedup": ParameterOwner.FABRIC_DERIVED,
-    "output_buffer_size": ParameterOwner.FABRIC_DERIVED,
-    # backend profile pins (no fabric artifact models these yet)
-    "arb_type": ParameterOwner.BACKEND_PROFILE,
-    "classes": ParameterOwner.BACKEND_PROFILE,
-    "subnets": ParameterOwner.BACKEND_PROFILE,
-    "router": ParameterOwner.BACKEND_PROFILE,
-    "buffer_policy": ParameterOwner.BACKEND_PROFILE,
-    "max_samples": ParameterOwner.BACKEND_PROFILE,
-    "sim_type": ParameterOwner.BACKEND_PROFILE,
-    "latency_thres": ParameterOwner.BACKEND_PROFILE,
-    # workload / execution inputs
-    "traffic": ParameterOwner.WORKLOAD_DERIVED,
-    "sample_period": ParameterOwner.WORKLOAD_DERIVED,
-    "seed": ParameterOwner.EXECUTION_POLICY,
-    "routing_dump_file": ParameterOwner.EXECUTION_POLICY,
-}
+BOOKSIM_STANDALONE_OWNERSHIP: dict[str, ParameterOwner] = \
+    STANDALONE_PROFILE_SPEC.ownership()
 
 # Rendered in a fixed order so the config bytes are deterministic.
-_CFG_KEY_ORDER: tuple[str, ...] = (
+# The set must equal the profile's active field set (asserted below).
+BOOKSIM_CONFIG_KEY_ORDER: tuple[str, ...] = (
+    # topology + projection
     "topology", "network_file", "routing_function",
+    # fabric-derived router/VC/flow behavior
     "num_vcs", "vc_buf_size", "wait_for_tail_credit",
     "hold_switch_for_packet", "vc_allocator", "sw_allocator", "alloc_iters",
     "arb_type", "credit_delay", "routing_delay", "vc_alloc_delay",
     "sw_alloc_delay", "st_prepare_delay", "st_final_delay",
     "input_speedup", "output_speedup", "internal_speedup",
-    "output_buffer_size", "classes", "subnets", "router", "buffer_policy",
-    "traffic", "sample_period", "max_samples", "sim_type", "latency_thres",
-    "seed", "routing_dump_file",
+    "output_buffer_size", "buffer_policy",
+    # VC-range globals derived from num_vcs
+    "read_request_begin_vc", "read_request_end_vc",
+    "read_reply_begin_vc", "read_reply_end_vc",
+    "write_request_begin_vc", "write_request_end_vc",
+    "write_reply_begin_vc", "write_reply_end_vc",
+    # explicit backend-profile pins (no compiled defaults)
+    "router", "classes", "subnets", "link_failures", "priority",
+    "vc_priority_donation", "vc_busy_when_full", "vc_prioritize_empty",
+    "vc_shuffle_requests", "speculative", "spec_check_elig",
+    "spec_check_cred", "spec_mask_by_reqs", "spec_sw_allocator", "noq",
+    "buf_size", "use_read_write", "injection_rate",
+    "injection_rate_uses_flits", "injection_process", "class_priority",
+    "read_request_subnet", "read_reply_subnet", "write_request_subnet",
+    "write_reply_subnet", "sim_count", "warmup_periods", "measure_stats",
+    "pair_stats", "warmup_thres", "acc_warmup_thres", "stopping_thres",
+    "acc_stopping_thres", "include_queuing", "print_csv_results",
+    "deadlock_warn_timeout", "print_activity", "viewer_trace", "sim_power",
+    "max_samples", "sim_type", "latency_thres",
+    # workload / execution inputs
+    "traffic", "sample_period", "seed", "routing_dump_file",
 )
 
 # Artifact parameters that are projection semantics, not BookSim cfg keys.
@@ -152,12 +142,21 @@ _PROJECTION_ONLY_KEYS = frozenset({"routing_class",
 
 
 def _assert_ownership() -> None:
-    if set(_CFG_KEY_ORDER) != set(BOOKSIM_STANDALONE_OWNERSHIP):
-        missing = set(_CFG_KEY_ORDER) - set(BOOKSIM_STANDALONE_OWNERSHIP)
-        extra = set(BOOKSIM_STANDALONE_OWNERSHIP) - set(_CFG_KEY_ORDER)
+    active = set(STANDALONE_PROFILE_SPEC.active_names())
+    serving_active = set(SERVING_PROFILE_SPEC.active_names())
+    if active != serving_active:
         raise BookSimLoweringError(
-            f"ownership table does not match the rendered key set "
-            f"(missing {sorted(missing)}, extra {sorted(extra)})")
+            "standalone and serving profiles audit different field sets")
+    if set(BOOKSIM_CONFIG_KEY_ORDER) != active:
+        missing = set(BOOKSIM_CONFIG_KEY_ORDER) - active
+        extra = active - set(BOOKSIM_CONFIG_KEY_ORDER)
+        raise BookSimLoweringError(
+            f"config key order does not match the audited active field set "
+            f"(unemitted {sorted(missing)}, unlisted {sorted(extra)})")
+    for name in active:
+        if not STANDALONE_PROFILE_SPEC.source_of(name):
+            raise BookSimLoweringError(
+                f"audited field {name!r} has no source location")
 
 
 _assert_ownership()
@@ -306,51 +305,66 @@ def lower_booksim_projection(
     vc_class_exact, vc_class_reason = _vc_exactness(vc)
     transitions_exact = _transitions_exact(vc)
 
-    params = (
+    # VC-range globals are derived exactly as InitializeRoutingMap computes
+    # them from num_vcs (they are not consulted for ANY_TYPE trace flits,
+    # but they are emitted explicitly instead of inherited).
+    half = vc.vc_count // 2
+
+    fabric_params = (
         ("channel_latency_cycles", latency),
-        ("classes", 1),
-        ("arb_type", "round_robin"),
         ("alloc_iters", rb.allocator_iterations),
         ("buffer_policy", "private"),
         ("credit_delay", rb.credit_return_latency_cycles),
         ("hold_switch_for_packet", 1 if rb.hold_switch_for_packet else 0),
         ("input_speedup", rb.input_speedup),
         ("internal_speedup", float(rb.internal_speedup)),
-        ("latency_thres", _LATENCY_THRES),
-        ("max_samples", 1),
         ("num_vcs", vc.vc_count),
         ("output_buffer_size",
          rb.output_stage_depth_flits_per_vc * vc.vc_count),
         ("output_speedup", rb.output_speedup),
-        ("router", "iq"),
+        ("read_reply_begin_vc", half),
+        ("read_reply_end_vc", vc.vc_count - 1),
+        ("read_request_begin_vc", 0),
+        ("read_request_end_vc", half - 1),
         ("routing_class", selected),
         ("routing_delay", rb.route_compute_cycles),
         ("routing_function", "min"),
-        ("sim_type", "latency"),
         ("st_final_delay", rb.switch_traversal_cycles),
         ("st_prepare_delay", 0),
-        ("subnets", 1),
         ("sw_alloc_delay", rb.switch_alloc_cycles),
         ("sw_allocator", rb.switch_allocator.value),
-        ("topology", "anynet"),
         ("vc_alloc_delay", rb.vc_alloc_cycles),
         ("vc_allocator", rb.vc_allocator.value),
         ("vc_buf_size", rb.input_buffer_depth_flits_per_vc),
         ("wait_for_tail_credit",
          1 if rb.vc_reuse_policy is VCReusePolicy.WAIT_FOR_TAIL_CREDIT
          else 0),
+        ("write_reply_begin_vc", half),
+        ("write_reply_end_vc", vc.vc_count - 1),
+        ("write_request_begin_vc", 0),
+        ("write_request_end_vc", half - 1),
     )
-    if serving:
-        # Embedded mode: every flit comes from the host via sim_send;
-        # background demand traffic must stay off (legacy serving cfg does
-        # the same with injection_rate = 0.0).
-        params = params + (
-            ("injection_rate", 0.0),
-            ("traffic", "uniform"),
-        )
-    params = tuple(sorted(params))
+    profile_spec = SERVING_PROFILE_SPEC if serving \
+        else STANDALONE_PROFILE_SPEC
+    combined = dict(fabric_params)
+    for name, value in profile_spec.pinned_values().items():
+        if name in combined:
+            raise BookSimLoweringError(
+                f"parameter {name!r} is both fabric-derived and "
+                "profile-pinned")
+        combined[name] = value
+    expected_owner = profile_spec.ownership()
+    for name in combined:
+        if name in _PROJECTION_ONLY_KEYS:
+            continue
+        if name not in expected_owner:
+            raise BookSimLoweringError(
+                f"emitted parameter {name!r} is not in the audited active "
+                "field set")
+    params = tuple(sorted(combined.items()))
 
-    def bind(dimension, source, status, fields, reason="", effect=None):
+    def bind(dimension, source, status, fields, reason="", effect=None,
+             domain=""):
         if effect is None:
             effect = (CertificationEffect.NONE if status in (
                 RepresentationStatus.EXACT,
@@ -361,7 +375,7 @@ def lower_booksim_projection(
             dimension=dimension, source_identity=source,
             representation_status=status,
             backend_fields=tuple(sorted(fields)), reason=reason,
-            certification_effect=effect)
+            certification_effect=effect, supported_domain=domain)
 
     t_hash, a_hash = topo.topology_hash(), att.attachment_hash()
     rra_hash, vc_hash = rra.resolved_route_hash(), vc.vc_assignment_hash()
@@ -373,11 +387,15 @@ def lower_booksim_projection(
              RepresentationStatus.DERIVED_EXACT,
              (("topology_kind", "anynet"),
               ("parse_back", "required before spawn") if not serving
-              else ("parse_back", "required at preparation"))),
+              else ("parse_back", "required at preparation")),
+             domain="the full materialized router/channel graph "
+                    "(parallel channels already refused by lowering)"),
         bind(SemanticDimension.ENDPOINT_ATTACHMENT, a_hash,
              RepresentationStatus.EXACT,
              (("node_lines", att.endpoint_count),
-              ("ports", "assigned by BookSim; port ids not represented"))),
+              ("ports", "assigned by BookSim; port ids not represented")),
+             domain="one endpoint->seat binding each; BookSim reassigns "
+                    "port ids"),
         bind(SemanticDimension.CHANNEL_WIDTH, t_hash,
              RepresentationStatus.BACKEND_IRRELEVANT, (),
              reason="BookSim is a flit-count timing model: flit channels "
@@ -385,9 +403,12 @@ def lower_booksim_projection(
                     "serialization/occupancy exists"),
         bind(SemanticDimension.CHANNEL_LATENCY, t_hash,
              RepresentationStatus.EXACT,
-             (("anynet_link_weight", latency),)),
+             (("anynet_link_weight", latency),),
+             domain="uniform channel latency >= 1 cycle only (AnyNet "
+                    "couples latency and route cost)"),
         bind(SemanticDimension.ROUTE_WEIGHT, t_hash,
-             RepresentationStatus.EXACT, (("route_weight", 1),)),
+             RepresentationStatus.EXACT, (("route_weight", 1),),
+             domain="every channel route_weight == 1 only"),
         bind(SemanticDimension.ROUTE_REALIZATION, rra_hash,
              RepresentationStatus.UNREPRESENTABLE if serving
              else RepresentationStatus.EXACT,
@@ -399,17 +420,24 @@ def lower_booksim_projection(
                     "dump; route execution is not proven for serving"
              if serving else "",
              effect=CertificationEffect.BLOCKS_EXACT_FABRIC
-             if serving else None),
+             if serving else None,
+             domain="" if serving else
+             "ANYNET_MIN_HOPS with uniform unit-cost links; the executed "
+             "first-hop table is compared mechanically"),
         bind(SemanticDimension.VC_COUNT, vc_hash,
-             RepresentationStatus.EXACT, (("num_vcs", vc.vc_count),)),
+             RepresentationStatus.EXACT, (("num_vcs", vc.vc_count),),
+             domain="all vc_count >= 1"),
         bind(SemanticDimension.VC_CLASS_ASSIGNMENT, vc_hash,
              RepresentationStatus.EXACT if vc_class_exact
              else RepresentationStatus.COARSENED,
              (("classes", 1),),
-             reason=vc_class_reason),
+             reason=vc_class_reason,
+             domain="a single traffic class mapped to all VCs only"
+             if vc_class_exact else ""),
         bind(SemanticDimension.VC_ROUTING_CLASS, vc_hash,
              RepresentationStatus.EXACT,
-             (("routing_function", "min"),)),
+             (("routing_function", "min"),),
+             domain="all VCs map to the selected ANYNET_MIN_HOPS class"),
         bind(SemanticDimension.VC_TRANSITIONS, vc_hash,
              RepresentationStatus.EXACT if transitions_exact
              else RepresentationStatus.UNREPRESENTABLE,
@@ -418,7 +446,9 @@ def lower_booksim_projection(
              "BookSim never migrates a packet between VCs; the artifact's "
              "cross-VC transitions have no backend realization",
              effect=None if transitions_exact
-             else CertificationEffect.BLOCKS_EXACT_FABRIC),
+             else CertificationEffect.BLOCKS_EXACT_FABRIC,
+             domain="allowed_transitions == identity (VC-preserving) "
+                    "only" if transitions_exact else ""),
         bind(SemanticDimension.ESCAPE_VCS, vc_hash,
              RepresentationStatus.EXACT if not vc.escape_vcs
              else RepresentationStatus.UNREPRESENTABLE,
@@ -428,13 +458,17 @@ def lower_booksim_projection(
              "that designates escape VCs for deadlock freedom is not "
              "representable",
              effect=None if not vc.escape_vcs
-             else CertificationEffect.BLOCKS_EXACT_FABRIC),
+             else CertificationEffect.BLOCKS_EXACT_FABRIC,
+             domain="escape_vcs == () (trivial policy) only"
+             if not vc.escape_vcs else ""),
         bind(SemanticDimension.FLIT_WIDTH, pf_hash,
              RepresentationStatus.DERIVED_EXACT if serving
              else RepresentationStatus.BACKEND_IRRELEVANT,
              (("flit_bytes", serving_flit_bytes),) if serving else (),
              reason="BookSim counts flits; no width/serialization model"
-             if not serving else ""),
+             if not serving else "",
+             domain="flit_width_bits % 8 == 0 only (exact bits->bytes)"
+             if serving else ""),
         bind(SemanticDimension.PACKET_DELIMITATION, pf_hash,
              RepresentationStatus.UNREPRESENTABLE if serving
              else RepresentationStatus.COARSENED,
@@ -458,7 +492,9 @@ def lower_booksim_projection(
              reason="max_packet_flits is not enforced for embedded "
                     "sim_send traffic; the optional embedded-MTU "
                     "fragmentation mechanism is not activated or proven"
-             if serving else ""),
+             if serving else "",
+             domain="" if serving else
+             "every trace packet size in [1, max_packet_flits] only"),
         bind(SemanticDimension.HEADER_LAYOUT, pf_hash,
              RepresentationStatus.BACKEND_IRRELEVANT, (),
              reason="no header decode exists in the timing model"),
@@ -466,10 +502,13 @@ def lower_booksim_projection(
              RepresentationStatus.BACKEND_IRRELEVANT, (),
              reason="header bytes are not modeled per flit"),
         bind(SemanticDimension.BUFFER_ORGANIZATION, rb_hash,
-             RepresentationStatus.EXACT, (("buffer_policy", "private"),)),
+             RepresentationStatus.EXACT, (("buffer_policy", "private"),),
+             domain="buffer_organization=PER_INPUT_PORT_PER_VC only "
+                    "(artifact-enforced)"),
         bind(SemanticDimension.INPUT_BUFFER_DEPTH, rb_hash,
              RepresentationStatus.EXACT,
-             (("vc_buf_size", rb.input_buffer_depth_flits_per_vc),)),
+             (("vc_buf_size", rb.input_buffer_depth_flits_per_vc),),
+             domain="any depth >= 1 flit per VC"),
         bind(SemanticDimension.OUTPUT_STAGE_DEPTH, rb_hash,
              RepresentationStatus.COARSENED,
              (("output_buffer_size",
@@ -481,51 +520,65 @@ def lower_booksim_projection(
              RepresentationStatus.EXACT,
              (("wait_for_tail_credit",
                1 if rb.vc_reuse_policy is VCReusePolicy.WAIT_FOR_TAIL_CREDIT
-               else 0),)),
+               else 0),),
+             domain="flow_control=CREDIT only (artifact-enforced)"),
         bind(SemanticDimension.CREDIT_RETURN_LATENCY, rb_hash,
              RepresentationStatus.EXACT,
-             (("credit_delay", rb.credit_return_latency_cycles),)),
+             (("credit_delay", rb.credit_return_latency_cycles),),
+             domain="any non-negative credit delay"),
         bind(SemanticDimension.VC_REUSE_POLICY, rb_hash,
              RepresentationStatus.EXACT,
              (("wait_for_tail_credit",
                1 if rb.vc_reuse_policy is VCReusePolicy.WAIT_FOR_TAIL_CREDIT
-               else 0),)),
+               else 0),),
+             domain="both artifact policies map 1:1 to wait_for_tail_credit"),
         bind(SemanticDimension.VC_ALLOCATOR, rb_hash,
              RepresentationStatus.EXACT,
-             (("vc_allocator", rb.vc_allocator.value),)),
+             (("vc_allocator", rb.vc_allocator.value),),
+             domain="AllocatorPolicy values islip/round_robin"),
         bind(SemanticDimension.SWITCH_ALLOCATOR, rb_hash,
              RepresentationStatus.EXACT,
-             (("sw_allocator", rb.switch_allocator.value),)),
+             (("sw_allocator", rb.switch_allocator.value),),
+             domain="AllocatorPolicy values islip/round_robin"),
         bind(SemanticDimension.ALLOCATOR_ITERATIONS, rb_hash,
              RepresentationStatus.EXACT,
-             (("alloc_iters", rb.allocator_iterations),)),
+             (("alloc_iters", rb.allocator_iterations),),
+             domain="iterations >= 1"),
         bind(SemanticDimension.HOLD_SWITCH_FOR_PACKET, rb_hash,
              RepresentationStatus.EXACT,
              (("hold_switch_for_packet",
-               1 if rb.hold_switch_for_packet else 0),)),
+               1 if rb.hold_switch_for_packet else 0),),
+             domain="both boolean values"),
         bind(SemanticDimension.INPUT_SPEEDUP, rb_hash,
              RepresentationStatus.EXACT,
-             (("input_speedup", rb.input_speedup),)),
+             (("input_speedup", rb.input_speedup),),
+             domain="positive integer speedups"),
         bind(SemanticDimension.OUTPUT_SPEEDUP, rb_hash,
              RepresentationStatus.EXACT,
-             (("output_speedup", rb.output_speedup),)),
+             (("output_speedup", rb.output_speedup),),
+             domain="positive integer speedups"),
         bind(SemanticDimension.INTERNAL_SPEEDUP, rb_hash,
              RepresentationStatus.DERIVED_EXACT,
-             (("internal_speedup", float(rb.internal_speedup)),)),
+             (("internal_speedup", float(rb.internal_speedup)),),
+             domain="positive integers converted exactly to float"),
         bind(SemanticDimension.ROUTE_COMPUTE_CYCLES, rb_hash,
              RepresentationStatus.EXACT,
-             (("routing_delay", rb.route_compute_cycles),)),
+             (("routing_delay", rb.route_compute_cycles),),
+             domain="non-negative cycles; BookSim routing stage"),
         bind(SemanticDimension.VC_ALLOC_CYCLES, rb_hash,
              RepresentationStatus.EXACT,
-             (("vc_alloc_delay", rb.vc_alloc_cycles),)),
+             (("vc_alloc_delay", rb.vc_alloc_cycles),),
+             domain="non-negative cycles; BookSim VC-allocation stage"),
         bind(SemanticDimension.SWITCH_ALLOC_CYCLES, rb_hash,
              RepresentationStatus.EXACT,
-             (("sw_alloc_delay", rb.switch_alloc_cycles),)),
+             (("sw_alloc_delay", rb.switch_alloc_cycles),),
+             domain="non-negative cycles; BookSim switch-allocation stage"),
         bind(SemanticDimension.SWITCH_TRAVERSAL_CYCLES, rb_hash,
              RepresentationStatus.DERIVED_EXACT,
              (("st_prepare_delay", 0),
               ("st_final_delay", rb.switch_traversal_cycles)),
-             reason=""),
+             reason="",
+             domain="non-negative cycles; split st_prepare=0 + st_final"),
         bind(SemanticDimension.OUTPUT_DELAY_CYCLES, rb_hash,
              RepresentationStatus.UNREPRESENTABLE, (),
              reason="BookSim's output_delay field is registered but not "
@@ -537,7 +590,8 @@ def lower_booksim_projection(
              reason="the timing backend has no address-dependent state or "
                     "behavior; addresses remain protocol payload"),
         bind(SemanticDimension.PLANE_COMPOSITION, fabric.fabric_hash(),
-             RepresentationStatus.EXACT, (("subnets", 1),)),
+             RepresentationStatus.EXACT, (("subnets", 1),),
+             domain="PlaneComposition.SINGLE_PLANE only"),
     )
 
     try:
@@ -558,14 +612,9 @@ def lower_booksim_projection(
     for key, _value in artifact.normalized_parameters:
         if key in _PROJECTION_ONLY_KEYS:
             continue
-        if key in BOOKSIM_STANDALONE_OWNERSHIP:
-            continue
-        # The serving target adds one profile pin (injection_rate); its
-        # complete table is enforced by backend.serving.render_serving_config.
-        if serving and key == "injection_rate":
-            continue
-        raise BookSimLoweringError(
-            f"emitted parameter {key!r} has no ownership entry")
+        if key not in BOOKSIM_STANDALONE_OWNERSHIP:
+            raise BookSimLoweringError(
+                f"emitted parameter {key!r} has no ownership entry")
     return artifact
 
 
@@ -770,7 +819,7 @@ def render_booksim_standalone(
             f"ownership table keys not rendered: {sorted(missing_keys)}")
 
     cfg_lines = [f"{key} = {_format_cfg_value(values[key])};"
-                 for key in _CFG_KEY_ORDER]
+                 for key in BOOKSIM_CONFIG_KEY_ORDER]
     cfg = ("\n".join(cfg_lines) + "\n").encode()
     files = ((CONFIG_FILE, cfg), (TOPOLOGY_FILE, _render_anynet(bundle)),
              (WORKLOAD_FILE, workload_trace))

@@ -126,7 +126,7 @@ class TestServingLowering:
         assert "packet_size" not in cfg
         assert "traffic = uniform;" in cfg
         assert "injection_rate = 0.0;" in cfg
-        assert "routing_dump_file" not in cfg
+        assert "routing_dump_file = routing.dump;" in cfg
 
 
 class TestPhysicalDims:

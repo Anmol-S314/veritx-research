@@ -29,6 +29,7 @@
 | 1.15 | B3.7d | Analytical aware/unaware lowering: distinct `SERVING_ANALYTICAL_AWARE` (1-dim only; N-dim refused) and `SERVING_ANALYTICAL_UNAWARE` backend identities with explicit capability matrices over every SemanticDimension. Because the fabric artifacts carry channel BITS and latency CYCLES while the analytical network model takes GB/s and ns, and no clock/bandwidth-unit derivation exists, CHANNEL_WIDTH and CHANNEL_LATENCY are UNREPRESENTABLE with UNSUPPORTED_EXECUTION: execution is refused until units and a representative configuration are established. No numeric bandwidth/latency is invented. |
 | 1.16 | B3.7e | Exact backend-input provenance persistence: `backend-evidence.json` is a canonical-JSON, content-addressed view of already-verified facts (both identity hashes, design/mapping/fabric binding, route-equivalence status, per-input logical role → content sha256, invocation args, workload hash, seed/policy, producer binary observation). Identical evidence is idempotent; different evidence at the same path is refused; tampering changes the digest. Serving evidence mirrors the same vocabulary including flit bytes and physical dims. |
 | 1.17 | B3.7f | Adversarial qualification: table-driven semantic-mutation matrix (topology edge, attachment, width, latency, route, VC count/assignment/escape, buffer depth, allocator, credit latency, routing delay, speedup, flit width, max packet flits, address decode) where every mutation changes `backend_config_hash` or refuses; non-semantic path/JSON/label changes never change identity while workload content changes `backend_input_hash`; tamper matrix (wrong parent hash, stale resolved hash, parameter/binding/input tampering, deleted/duplicate binding, unknown target/schema, unsupported LOCKED semantics) fails closed; bypass proof (monkeypatched legacy `build_config`/`BASE_PARAMS` never used); one real BookSim run proves the artifact executes with EXACT route evidence. Serving BookSim execution remains BLOCKED (no upstream authority); analytical execution NOT_RUN (unresolved units). |
+| 1.18 | B3.7g | Closed-world backend audit + supported-domain exactness. `backend/booksim_profile.py` registers every config field the certified path reads with owner class and source location; INACTIVE_FOR_PROFILE entries state the pinned gate that makes them dead; every BACKEND_PROFILE value is emitted explicitly (76-key closed config). `SemanticBinding.supported_domain` states the exact representable subset (`escape_vcs == ()`, identity transitions, uniform latency, unit route_weight, …), so EXACT never over-claims arbitrary semantics; BackendConfigArtifact schema v2 refuses v1 with a rebuild message. |
 
 This document defines what a resolved Srota fabric *is* before B3 code is
 written. It starts from hardware semantics and maps existing code onto them —
@@ -993,7 +994,6 @@ ResolvedFabricBundle → lower (SERVING_BOOKSIM2) → config.cfg + topology.anyn
   `LEGACY_NON_CERTIFIED`.
 
 ### 21.7 Analytical aware/unaware (B3.7d)
-
 `SERVING_ANALYTICAL_AWARE` and `SERVING_ANALYTICAL_UNAWARE` are distinct
 backend targets with distinct capability matrices. The aware engine is
 1-dim only (N-dim `network_dims` refuses; the serving selection code's
@@ -1010,7 +1010,29 @@ execution while those blockers remain. Route/VC/buffer/credit/packet
 semantics have no analytical representation and are declared. This is a
 correct `UNSUPPORTED` outcome, not a certification failure.
 
-### 21.8 B3.7 qualification
+### 21.8 Closed-world parameter audit (B3.7g)
+
+Every configuration field read by the certified BookSim path is registered in
+`backend/booksim_profile.py` with an owner class and source location. The
+certified config is a closed 76-key set: fabric-derived values, explicit
+`BACKEND_PROFILE` pins (no compiled defaults), and workload/execution inputs.
+Parameters that are read but cannot affect certified results are
+`INACTIVE_FOR_PROFILE` with the gating argument stated (speculative gating,
+private-buffer policy, `use_read_write=0`, `sim_power=0`, no output files);
+trace-record authority replaces `packet_size`/`packet_size_rate`, and the
+runner validates every packet against `max_packet_flits`. A test asserts the
+emitted key set equals the audited active set for both BookSim targets and
+that every pin is emitted verbatim.
+
+`SemanticBinding.supported_domain` distinguishes supported-domain exactness
+from arbitrary representability: `EXACT` cells name the subset they cover
+(e.g. empty `escape_vcs`, identity VC transitions, uniform latency, unit
+`route_weight`, single-class VC assignment). Non-empty escape VCs and cross-VC
+transitions remain `UNREPRESENTABLE / BLOCKS_EXACT_FABRIC`. The artifact
+schema is v2 (v1 refused) because v1 bindings could not state a domain and an
+`EXACT` cell therefore over-claimed.
+
+### 21.9 B3.7 qualification
 
 `tests/test_backend_execution_qualification.py` holds the adversarial
 matrix. It demonstrates: every semantic mutation either changes

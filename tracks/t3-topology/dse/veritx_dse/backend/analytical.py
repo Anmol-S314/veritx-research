@@ -92,7 +92,8 @@ def _validate_dims(network_dims: Any, *, endpoint_count: int,
     return tuple(dims)
 
 
-def _bind(dimension, source, status, fields=(), reason="", effect=None):
+def _bind(dimension, source, status, fields=(), reason="", effect=None,
+          domain=""):
     if effect is None:
         effect = (CertificationEffect.NONE if status in (
             RepresentationStatus.EXACT,
@@ -102,7 +103,8 @@ def _bind(dimension, source, status, fields=(), reason="", effect=None):
     return SemanticBinding(
         dimension=dimension, source_identity=source,
         representation_status=status, backend_fields=tuple(sorted(fields)),
-        reason=reason, certification_effect=effect)
+        reason=reason, certification_effect=effect,
+        supported_domain=domain)
 
 
 def lower_analytical(
@@ -150,7 +152,10 @@ def lower_analytical(
               RepresentationStatus.DERIVED_EXACT,
               (("npus_count", bundle.attachment.endpoint_count),
                ("topology_shape", list(dims))),
-              reason=""),
+              reason="",
+              domain=("1-dim topology shapes only (the congestion-aware "
+                      "engine refuses N-dim)" if aware else
+                      "N-dim topology shapes")),
         _bind(SemanticDimension.ENDPOINT_ATTACHMENT, a_hash,
               RepresentationStatus.UNREPRESENTABLE,
               reason="no endpoint-to-router attachment model " + simple_reason),
