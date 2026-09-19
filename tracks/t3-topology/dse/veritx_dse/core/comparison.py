@@ -172,6 +172,14 @@ FINGERPRINT_FIELDS = (
     "metric_schema",
 )
 
+# Dimensions a DESIGN_COMPARISON must have recorded for every candidate
+# before it is eligible at all. All-None here means the runs failed to
+# record a load-bearing parameter — absence is not equality.
+REQUIRED_DESIGN_DIMENSIONS = (
+    "workload_hash", "participant_count", "topology", "routing",
+    "vc_count", "packetization", "fidelity",
+)
+
 
 def fingerprint_from_run(run_dir: Path) -> dict[str, Any]:
     """Resolve the comparison fingerprint of one immutable run.
@@ -237,19 +245,57 @@ def fingerprint_from_run(run_dir: Path) -> dict[str, Any]:
         fidelity = "NETWORK_SIMULATION"
         semantic_losses = []
 
+    # Study-integrity P0: vc/packetization identity comes from the run's
+    # EXECUTED-fabric record (parsed from the generated BookSim config the
+    # child actually ran), not from the spec's claims — spec.network never
+    # reaches the serving child's generated config. Unrecorded ⇒ None and
+    # the fingerprint is UNCERTIFIED: "we don't know" is data, never a
+    # certified fact.
+    exec_fabric = next(
+        (r.get("executed_fabric") for r in reversed(results)
+         if isinstance(r, dict) and isinstance(r.get("executed_fabric"), dict)),
+        None)
+    exec_topo: str | None = None
+    exec_routing: str | None = None
+    vc_count = None
+    packetization = None
+    if exec_fabric:
+        exec_topo = exec_fabric.get("topology")
+        exec_routing = exec_fabric.get("routing")
+        try:
+            vc_count = int(exec_fabric["num_vcs"]) if exec_fabric.get("num_vcs") else None
+        except (TypeError, ValueError):
+            vc_count = None
+        try:
+            packetization = (int(exec_fabric["packet_size"])
+                             if exec_fabric.get("packet_size") else None)
+        except (TypeError, ValueError):
+            packetization = None
+        if vc_count is None or packetization is None:
+            workload_certified = False
+
     repl = spec.get("replication", {})
     metric_schema = next((r.get("metric_schema") for r in reversed(results)
                           if isinstance(r, dict) and r.get("metric_schema")),
                          None)
-    return {
+    # Serving identity comes from EXECUTED evidence, not the spec — a
+    # serving spec carries no network block (the cluster owns fabric
+    # intent), and the run slice refuses requested/executed contradictions
+    # before any result exists, so the executed record IS the routing/topo
+    # identity. One source, never silently chosen per field.
+    topology_id = (exec_topo if serving is not None
+                   else spec.get("network", {}).get("topology"))
+    routing_id = (exec_routing if serving is not None
+                  else spec.get("network", {}).get("routing"))
+    fp = {
         "workload_hash": workload_hash,
         "model_identity": (serving or {}).get("cluster"),
         "node_count": spec.get("system", {}).get("nodes"),
         "participant_count": spec.get("system", {}).get("nodes"),
-        "topology": spec.get("network", {}).get("topology"),
-        "routing": spec.get("network", {}).get("routing"),
-        "vc_count": None,          # not recorded at spec level (Phase 10)
-        "packetization": None,     # not recorded at spec level
+        "topology": topology_id,
+        "routing": routing_id,
+        "vc_count": vc_count,
+        "packetization": packetization,
         "simulator": simulator,
         "network_engine": next((r.get("network_engine") for r in
                                 reversed(results)
@@ -265,9 +311,44 @@ def fingerprint_from_run(run_dir: Path) -> dict[str, Any]:
         "instance_mapping": None,
         "metric_schema": metric_schema,
         "workload_certified": workload_certified,
-        "certified": True,
+        # certified means: every load-bearing identity dimension is
+        # RECORDED, not merely absent from the diffs. Runs without an
+        # executed-fabric record carry unresolved vc/packetization and
+        # are uncertified — honest "we don't know", comparable but
+        # never claim-bearing (§14).
+        # Execution-side evidence (not comparison dimensions — the run
+        # slice already refuses intent/execution contradictions; these
+        # document WHICH generated fabric produced the numbers).
+        **({"executed_topology": exec_topo, "executed_routing": exec_routing,
+            "executed_config_sha256": exec_fabric.get("config_sha256")}
+           if exec_fabric else {}),
         "run_id": manifest.get("run_id", run_dir.name),
     }
+    # Certification completeness (study-integrity P0 #7): a mandatory
+    # dimension that is None is UNRESOLVED, not "equal to the other side's
+    # None". Two Nones are not equality — the fingerprint is uncertified
+    # with an explicit reason, so a certified comparison can never rest on
+    # shared ignorance.
+    mandatory = {
+        "workload_hash": fp["workload_hash"],
+        "node_count": fp["node_count"],
+        "topology": fp["topology"],
+        "routing": fp["routing"],
+        "vc_count": fp["vc_count"],
+        "packetization": fp["packetization"],
+        "simulator": fp["simulator"],
+        "network_mode": fp["network_mode"],
+        "metric_schema": fp["metric_schema"],
+    }
+    unresolved = [name for name, v in mandatory.items() if v is None]
+    fp["certified"] = bool(fp["workload_certified"] and exec_fabric is not None
+                           and not unresolved)
+    if unresolved:
+        fp["unresolved_dimensions"] = unresolved
+        fp["certification_status"] = "INSUFFICIENT_PROVENANCE"
+    else:
+        fp["certification_status"] = "RESOLVED"
+    return fp
 
 
 def fingerprint_from_legacy_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -305,12 +386,13 @@ def fingerprint_from_legacy_row(row: dict[str, Any]) -> dict[str, Any]:
 
 @dataclass
 class ComparisonVerdict:
-    status: str                                   # COMPARABLE | INVALID_COMPARISON
+    status: str                                   # COMPARABLE | INVALID_COMPARISON | INSUFFICIENT_PROVENANCE
     comparison_kind: str
     differences: list[dict[str, Any]] = field(default_factory=list)
     candidates: list[dict[str, Any]] = field(default_factory=list)
     experimental_variables: list[str] = field(default_factory=list)
     certified: bool = True
+    unresolved_dimensions: list[str] = field(default_factory=list)
 
 
 def _diff(field: str, left: Any, right: Any, reason: str,
@@ -344,6 +426,30 @@ def evaluate_comparability(
         intent = ComparisonIntent.from_dict(intent)
     fps = list(fingerprints)
     diffs: list[dict[str, Any]] = []
+
+    def _vals(name: str) -> list[Any]:
+        return [fp.get(name) for fp in fps]
+
+    # Provenance gate (§14): required controlled dimensions unrecorded for
+    # every candidate make the set ineligible — never comparable.
+    if intent.kind == "DESIGN_COMPARISON" and fps:
+        required = [d for d in REQUIRED_DESIGN_DIMENSIONS
+                    if d not in intent.experimental_variables]
+        unresolved = [d for d in required if all(fp.get(d) is None for fp in fps)]
+        if unresolved:
+            for d in unresolved:
+                diffs.append(_diff(d, None, None, "INSUFFICIENT_PROVENANCE"))
+            return ComparisonVerdict(
+                status="INSUFFICIENT_PROVENANCE",
+                comparison_kind=intent.kind,
+                differences=diffs,
+                candidates=[{"run_id": fp.get("run_id"),
+                             "status": "INSUFFICIENT_PROVENANCE"}
+                            for fp in fps],
+                experimental_variables=sorted(intent.experimental_variables),
+                certified=False,
+                unresolved_dimensions=unresolved,
+            )
 
     def _vals(name: str) -> list[Any]:
         return [fp.get(name) for fp in fps]

@@ -364,6 +364,10 @@ _ui_open() { # run _RUN outside the alt screen; report status; wait; resume menu
         _ui_enter
         _need_draw=1
     fi
+    # Study-integrity: a failed step must be OBSERVABLE by callers —
+    # guided flows stop on failure instead of marching through wreckage
+    # and announcing success.
+    return "$_rc"
 }
 
 _ui_page_start() { # shared pager state: _sel, filtered _m[], render window [_top.._top+_rows)
@@ -950,21 +954,34 @@ cmd_start_here() { # guided end-to-end run for first-time / non-dev users
         echo ""
         # Step 1: sweep (no knob questions — current CONFIG, default RATES)
         printf '  \033[1mStep 1/3 — sweep all topologies (~1 min; every point saves as it lands)\033[0m\n'
-        _RUN_NAME="start-here: sweep"; _RUN=(_dispatch sim); _EXPLICIT=""; _ui_open
+        _RUN_NAME="start-here: sweep"; _RUN=(_dispatch sim); _EXPLICIT=""; _ui_open || {
+            _ui_leave
+            echo "  ✗  sweep failed — stopping the walkthrough (compare/report on a partial sweep would dress old data as new results)."
+            return 1
+        }
         # Step 2: quick compare (esc on any picker skips the step)
         printf '  \033[1mStep 2/3 — compare topologies on real LLM traffic\033[0m\n'
         printf '  \033[2m(⏎ keeps the suggested value; esc skips this step)\033[0m\n'
-        cmd_quick_compare
+        cmd_quick_compare || {
+            _ui_leave
+            echo "  ✗  compare failed — stopping the walkthrough (the report would be built on an incomplete study)."
+            return 1
+        }
         # Step 3: report + open
         printf '  \033[1mStep 3/3 — build the report and plots\033[0m\n'
-        _RUN_NAME="start-here: report"; _RUN=(_dispatch report); _ui_open
+        _RUN_NAME="start-here: report"; _RUN=(_dispatch report); _ui_open || {
+            _ui_leave
+            echo "  ✗  report failed — stopping the walkthrough."
+            return 1
+        }
         # finish OUTSIDE the alt screen so the summary stays readable
         _ui_leave
         printf '  \033[2m── start-here complete\033[0m\n\n'
         cmd_viz_open
         echo ""
-        _ok "All done — you ran a full topology study. Re-run 't3 menu' anytime;"
-        echo "  everything you picked is remembered for next time."
+        _ok "Walkthrough complete — uniform synthetic sweep, one-trace compare, and report all ran."
+        echo "  (legacy uncertified path — not a certified topology study)."
+        echo "  Re-run 't3 menu' anytime; everything you picked is remembered for next time."
         if [ "$_IN_MENU" -eq 1 ]; then
             printf '  \033[2m⏎ back to menu\033[0m'
             IFS= read -rsn1 _kp || true

@@ -20,7 +20,6 @@ from __future__ import annotations
 import hashlib
 import re
 import sys
-from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -82,8 +81,11 @@ def run_experiment(
         raise SpecError("system.tp_size is not modeled by standalone BookSim; use 1")
     if spec.system.instances_per_node != 1:
         raise SpecError("system.instances_per_node is not modeled by standalone BookSim; use 1")
-    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", spec.network.routing):
-        raise SpecError("network.routing must be a BookSim routing identifier")
+    # Study-integrity P0 (#10): the RESOLVED routing is concrete —
+    # spec.network.routing is None (preset owns routing) or was verified
+    # equal to the preset's native routing at the boundary. This is a
+    # re-assertion of the resolver's decision, never a mutation: the
+    # preset's own routing is what reaches the plan and the backend.
     topo = lookup_topo(spec.network.topology)
     if topo is None:
         # Registered-ID check is the trusted-config join point (ADR 0005):
@@ -92,13 +94,20 @@ def run_experiment(
             f"unknown topology id '{spec.network.topology}' — not in the "
             "registered presets; specs reference simulators/topologies by ID"
         )
+    if resolved["network"]["routing"] != topo.routing:
+        raise SpecError(
+            f"resolved routing {resolved['network']['routing']!r} does not "
+            f"match preset '{topo.name}' (immutable routing: "
+            f"{topo.routing!r}) — presets are immutable; custom routing "
+            "requires an explicit custom fabric")
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", topo.routing):
+        raise SpecError("network.routing must be a BookSim routing identifier")
     nodes, _ = topo_size(topo)
     if spec.system.nodes != nodes:
         raise SpecError(
             f"system.nodes {spec.system.nodes} does not match topology "
             f"'{spec.network.topology}' ({nodes} nodes)"
         )
-    topo = replace(topo, routing=spec.network.routing)
     trace_path = _resolve_trace(spec.workload.trace)
 
     # ── run directory (immutable from here) ────────────────────────────

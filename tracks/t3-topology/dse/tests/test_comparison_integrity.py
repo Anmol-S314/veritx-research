@@ -98,7 +98,74 @@ class TestFingerprints:
         (run / "spec.resolved.json").write_text(json.dumps({
             "workload": {"id": "w", "trace": "archive/inputs/traces/x.trace"},
             "system": {"nodes": 8, "tp_size": 2, "instances_per_node": 1},
-            "network": {"topology": "mesh_8x8", "routing": "dim_order"},
+            # Study-integrity P0: serving specs carry NO network block —
+            # the cluster owns fabric intent; identity comes from the
+            # executed-fabric record below.
+            "simulation": {"mode": "serving", "timeout_s": 60},
+            "replication": {"mode": "deterministic", "seeds": [42]},
+            "serving": {"cluster": "single_tp2_ep2", "dataset": "example",
+                        "num_reqs": 1, "network_backend": "booksim",
+                        "cycle_accurate": True,
+                        "request_routing_policy": "LOAD",
+                        "expected_fabric": {
+                            "source": "serving_cluster", "topology": "mesh",
+                            "routing": "dor", "dimensions": [2],
+                            "npu_count": 2, "k": 2, "n": 1,
+                            "num_vcs": 16, "vc_buf_size": 512,
+                            "packet_size": 64}},
+        }))
+        (run / "manifest.json").write_text(json.dumps({
+            "schema_version": 1, "run_id": "run1", "status": "SUCCEEDED",
+            "results": [{"task_id": "serve",
+                         "provenance": {"engine": "llmservingsim",
+                                        "network_backend": "booksim",
+                                        "network_mode": "REAL_SIMULATION",
+                                        "semantic_losses": [],
+                                        "fidelity": "SYSTEM_SERVING_SIMULATION"},
+                         "metric_schema": 1,
+                         "executed_fabric": {
+                             "topology": "mesh", "size": {"k": "2", "n": "1"},
+                             "routing": "dor", "num_vcs": "16",
+                             "vc_buf_size": "512", "packet_size": "64",
+                             "config_sha256": "sha256:abc"},
+                         "metrics": {"TTFT": {"value": 1.0, "unit": "ns",
+                                              "producer": "llmservingsim",
+                                              "fidelity": "SYSTEM_SERVING_SIMULATION",
+                                              "scope": "per_request"}}}],
+        }))
+        # Canonical workload identity (Phase 9): a certified run carries
+        # content-addressed workload artifacts — the fake writes the same
+        # index the real slice emits for a single-rank workload.
+        wl = tmp_path / "run1" / "workload"
+        wl.mkdir(parents=True)
+        (wl / "index.json").write_text(json.dumps({
+            "schema_version": 1, "source_kind": "llmservingsim",
+            "cluster_sha256": "cafe",
+            "artifacts": [{"rank": 0, "trace": "trace/instance0_batch1.txt",
+                           "artifact_hash": "sha256:w0"}]}))
+        fp = fingerprint_from_run(run)
+        assert fp["workload_hash"] == "sha256:w0"  # canonical artifact hash
+        assert fp["node_count"] == 8
+        # Serving topology/routing identity comes from EXECUTED evidence.
+        assert fp["topology"] == "mesh"
+        assert fp["routing"] == "dor"
+        assert fp["vc_count"] == 16
+        assert fp["packetization"] == 64
+        assert fp["certified"] is True
+        assert fp["certification_status"] == "RESOLVED"
+        assert fp["simulator"] == "llmservingsim/booksim"
+        assert fp["fidelity"] == "SYSTEM_SERVING_SIMULATION"
+        assert fp["semantic_losses"] == []
+        assert fp["seed_policy"] == "deterministic:[42]"
+
+    def test_unresolved_mandatory_fields_are_never_certified(self, tmp_path):
+        # Two candidates that BOTH fail to record a material parameter are
+        # not equal on it — shared ignorance is not equality (P0 #7).
+        run = tmp_path / "run1"
+        run.mkdir()
+        (run / "spec.resolved.json").write_text(json.dumps({
+            "workload": {"id": "w", "trace": "archive/inputs/traces/x.trace"},
+            "system": {"nodes": 8, "tp_size": 2, "instances_per_node": 1},
             "simulation": {"mode": "serving", "timeout_s": 60},
             "replication": {"mode": "deterministic", "seeds": [42]},
             "serving": {"cluster": "single_tp2_ep2", "dataset": "example",
@@ -115,19 +182,17 @@ class TestFingerprints:
                                         "semantic_losses": [],
                                         "fidelity": "SYSTEM_SERVING_SIMULATION"},
                          "metric_schema": 1,
-                         "metrics": {"TTFT": {"value": 1.0, "unit": "ns",
-                                              "producer": "llmservingsim",
-                                              "fidelity": "SYSTEM_SERVING_SIMULATION",
-                                              "scope": "per_request"}}}],
+                         # NO executed_fabric record -> vc/packetization/
+                         # topology/routing unresolved.
+                         "metrics": {}}],
         }))
         fp = fingerprint_from_run(run)
-        assert fp["workload_hash"]  # resolved from the registered fixture path
-        assert fp["node_count"] == 8
-        assert fp["topology"] == "mesh_8x8"
-        assert fp["simulator"] == "llmservingsim/booksim"
-        assert fp["fidelity"] == "SYSTEM_SERVING_SIMULATION"
-        assert fp["semantic_losses"] == []
-        assert fp["seed_policy"] == "deterministic:[42]"
+        assert fp["vc_count"] is None
+        assert fp["packetization"] is None
+        assert fp["certified"] is False
+        assert fp["certification_status"] == "INSUFFICIENT_PROVENANCE"
+        assert "vc_count" in fp["unresolved_dimensions"]
+        assert "packetization" in fp["unresolved_dimensions"]
 
     def test_from_run_dir_missing_files_is_insufficient(self, tmp_path):
         run = tmp_path / "empty"
@@ -426,3 +491,49 @@ class TestParetoIntegrity:
         ex = {e["run_id"]: e for e in out["excluded"]}
         assert ex["broken"]["status"] == "SEMANTIC_LOSS"
         assert "reason" in ex["broken"]
+
+
+# ── provenance gate (§14): unresolved required dims are ineligible ─────────
+
+class TestProvenanceGate:
+    def test_all_unresolved_required_dims_refuse(self):
+        fps = [_run_fingerprint(vc_count=None, packetization=None,
+                                routing=None, participant_count=None),
+               _run_fingerprint(vc_count=None, packetization=None,
+                                routing=None, participant_count=None)]
+        v = evaluate_comparability(fps, _cspec())
+        assert v.status == "INSUFFICIENT_PROVENANCE"
+        assert v.certified is False
+        for d in ("vc_count", "packetization", "routing",
+                  "participant_count"):
+            assert d in v.unresolved_dimensions
+        assert all(c["status"] == "INSUFFICIENT_PROVENANCE"
+                   for c in v.candidates)
+
+    def test_legacy_rows_are_ineligible(self):
+        fps = [fingerprint_from_legacy_row(_legacy_row()),
+               fingerprint_from_legacy_row(_legacy_row())]
+        v = evaluate_comparability(fps, _cspec())
+        assert v.status == "INSUFFICIENT_PROVENANCE"
+
+    def test_declared_experimental_axis_is_exempt(self):
+        fps = [_run_fingerprint(topology="mesh_8x8"),
+               _run_fingerprint(topology="torus_8x8")]
+        v = evaluate_comparability(fps, _cspec(variables=["topology"]))
+        assert v.status == "COMPARABLE"
+
+    def test_calibration_kind_is_exempt(self):
+        fps = [_run_fingerprint(vc_count=None),
+               _run_fingerprint(vc_count=None,
+                                simulator="analytical/congestion_aware",
+                                fidelity="ANALYTICAL_ESTIMATE")]
+        v = evaluate_comparability(
+            fps, _cspec(variables=["simulator", "fidelity"],
+                        kind="CROSS_FIDELITY_CALIBRATION"))
+        assert v.status == "COMPARABLE"
+
+    def test_resolved_set_still_comparable(self):
+        v = evaluate_comparability(
+            [_run_fingerprint(), _run_fingerprint()], _cspec())
+        assert v.status == "COMPARABLE"
+        assert v.unresolved_dimensions == []

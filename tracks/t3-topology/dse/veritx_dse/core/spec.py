@@ -55,7 +55,14 @@ class SystemSpec(BaseModel):
 class NetworkSpec(BaseModel):
     model_config = _STRICT
     topology: str = Field(min_length=1)  # registered ID (model/presets.py)
-    routing: str = Field(default="dim_order")
+    # Study-integrity P0 (#10): a named preset OWNS its routing. ``None``
+    # means "no opinion — the preset is the authority"; an explicit value
+    # must EQUAL the preset's native routing or the spec is rejected at
+    # the boundary. The old default ("dim_order") silently mutated any
+    # preset whose native routing differed — the same defect class as the
+    # Dragonfly k=8 disaster. None never reaches `resolved`: resolution
+    # always materializes the preset's concrete routing.
+    routing: str | None = Field(default=None)
 
 
 class SimulationSpec(BaseModel):
@@ -101,7 +108,11 @@ class ExperimentSpec(BaseModel):
     name: str = Field(min_length=1)
     workload: WorkloadSpec
     system: SystemSpec
-    network: NetworkSpec
+    # Study-integrity P0 (#2): the serving CLUSTER is the authoritative
+    # fabric intent until Wave B lands FabricArtifact. A serving spec must
+    # NOT carry a standalone network preset — that was false intent (the
+    # cluster's parallelism generates the executed fabric, not the spec).
+    network: NetworkSpec | None = None
     simulation: SimulationSpec = Field(default_factory=SimulationSpec)
     replication: ReplicationSpec = Field(default_factory=ReplicationSpec)
     comparison: ComparisonSpec | None = None
@@ -120,6 +131,33 @@ def parse(data: dict[str, Any]) -> ExperimentSpec:
         first = e.errors()[0]
         loc = ".".join(str(p) for p in first["loc"]) or "<root>"
         raise SpecError(f"invalid spec at '{loc}': {first['msg']}") from e
+
+
+def _resolve_named_network(network: NetworkSpec) -> dict[str, str]:
+    """One topology resolver: named preset -> concrete (topology, routing).
+
+    The preset is immutable fabric intent (study-integrity P0 #10):
+      * ``routing is None``  -> the preset's native routing is materialized;
+      * ``routing == native`` -> same resolved intent (hash-identical);
+      * anything else        -> SpecError BEFORE anything is created.
+    There is no alias guessing (exact registered IDs only) and no
+    ``replace(topo, routing=...)`` anywhere downstream — run_experiment
+    consumes this concrete routing and re-asserts it.
+    """
+    from ..model.presets import lookup_topo
+
+    topo = lookup_topo(network.topology)
+    if topo is None:
+        raise SpecError(
+            f"unknown topology id {network.topology!r} — not in the "
+            "registered presets; specs reference topologies by exact "
+            "registered ID (no aliases)")
+    if network.routing is not None and network.routing != topo.routing:
+        raise SpecError(
+            f"named preset {topo.name!r} owns routing {topo.routing!r}; "
+            f"requested {network.routing!r}. Use an explicit custom-fabric "
+            "path when custom routing is supported.")
+    return {"topology": topo.name, "routing": topo.routing}
 
 
 def resolve(spec: ExperimentSpec) -> dict[str, Any]:
@@ -153,6 +191,21 @@ def resolve(spec: ExperimentSpec) -> dict[str, Any]:
     if spec.simulation.mode != "serving" and spec.serving is not None:
         raise SpecError("serving block provided but simulation.mode is "
                         f"{spec.simulation.mode!r}, not serving")
+    if spec.simulation.mode == "serving":
+        if spec.network is not None:
+            # Serving fabric authority is the CLUSTER (study-integrity P0
+            # #2, Wave-A rule): its parallelism generates the executed
+            # BookSim fabric. A standalone preset here is false scientific
+            # intent — the old shape let spec.network.topology ride the
+            # fingerprint while the cluster's fabric executed.
+            raise SpecError(
+                "serving fabric is cluster-derived in the current schema; "
+                "do not provide network.topology — the serving cluster "
+                "owns fabric intent (FabricArtifact lands in Wave B)")
+    elif spec.network is None:
+        raise SpecError("network is required for standalone experiments")
+    network = (_resolve_named_network(spec.network)
+               if spec.network is not None else None)
     return {
         "schema_version": SCHEMA_VERSION,
         "workload": {"id": spec.workload.id, "trace": spec.workload.trace},
@@ -161,10 +214,7 @@ def resolve(spec: ExperimentSpec) -> dict[str, Any]:
             "tp_size": spec.system.tp_size,
             "instances_per_node": spec.system.instances_per_node,
         },
-        "network": {
-            "topology": spec.network.topology,
-            "routing": spec.network.routing,
-        },
+        "network": network,
         "simulation": {
             "mode": spec.simulation.mode,
             "network_simulator": spec.simulation.network_simulator,
@@ -189,6 +239,14 @@ def resolve(spec: ExperimentSpec) -> dict[str, Any]:
                 "cycle_accurate": spec.serving.cycle_accurate,
                 "request_routing_policy":
                     spec.serving.request_routing_policy,
+                # intent→execution join (study-integrity P0): the concrete
+                # cluster-derived fabric identity is injected into this
+                # block by the serving slice BEFORE Run.create() (see
+                # core.serving.resolve_serving_fabric_identity), so the
+                # experiment hash binds the expected fabric and the run
+                # slice can prove expected == executed. ``network`` is
+                # deliberately absent for serving — the cluster, not a
+                # standalone preset, owns fabric intent.
             }
             if spec.serving is not None
             else None

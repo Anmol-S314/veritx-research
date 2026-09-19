@@ -192,6 +192,7 @@ def canonicalize_run_workload(run_root: Path,
             "comm_bytes_total": art.comm_bytes_total(),
             "op_count": len(art.ops),
         })
+    entries.sort(key=lambda e: e["trace"])  # deterministic index order
     index = {
         "schema_version": 1,
         "source_kind": "llmservingsim",
@@ -207,20 +208,37 @@ def canonicalize_run_workload(run_root: Path,
 def workload_identity(index: dict[str, Any]) -> str:
     """The run's workload identity from its canonical index.
 
-    One artifact: its content hash IS the identity. Several: a digest
-    over the sorted hash set (composite identity). Shared by the
+    Rank-assignment-preserving (study-integrity P1): the identity is a
+    digest over the (trace_path, artifact_hash) pairs IN INDEX ORDER —
+    the index is written sorted by trace path, so order is canonical.
+    A digest over a sorted hash SET would be blind to rank assignment:
+    swapping two different per-rank traces between ranks preserves it
+    while execution semantics change. Same-hash-different-experiment is
+    the failure this must never allow.
+
+    One artifact: its content hash IS the identity. Shared by the
     serving slice (run provenance) and the comparison fingerprint —
-    one implementation, so the two can never drift.
+    one implementation, so the two can never drift. Raises WorkloadError
+    on an empty artifact set (fail-closed, never a guessed identity).
     """
-    hashes = sorted(a["artifact_hash"] for a in index.get("artifacts", []))
-    if not hashes:
+    arts = index.get("artifacts", [])
+    if not arts:
         raise WorkloadError(
             "workload index lists no artifacts — identity undefined "
             "(fail-closed)")
-    if len(hashes) == 1:
-        return hashes[0]
+    if len(arts) == 1:
+        return arts[0]["artifact_hash"]
+    # Stable-sort by the RANK KEY (trace path), never by artifact hash and
+    # never by caller-supplied list order: the digest must bind WHICH rank
+    # runs WHICH artifact (P0 #11) while remaining order-insensitive to
+    # index serialization. Sorting by hash would re-blind the digest to
+    # rank assignment — exactly the defect this function exists to kill.
+    pairs = sorted(
+        ((str(a.get("trace")), a["artifact_hash"]) for a in arts),
+        key=lambda p: p[0])
     return "sha256:" + hashlib.sha256(
-        json.dumps(hashes, sort_keys=True).encode()).hexdigest()
+        json.dumps([[t, h] for t, h in pairs], sort_keys=False).encode()
+    ).hexdigest()
 
 
 def _int_from_cluster(cluster: dict[str, Any], key: str) -> int:

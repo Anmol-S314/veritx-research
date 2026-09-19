@@ -32,11 +32,12 @@ def _latency_dict():
 
 
 def _serving_dict(**kw):
+    # Serving fabric authority is the registered CLUSTER (study-integrity
+    # P0 #2): a serving spec must NOT carry a standalone network preset.
     d = {
         "name": "serve",
         "workload": {"id": "w", "trace": "archive/inputs/traces/x.trace"},
         "system": {"nodes": 1},
-        "network": {"topology": "mesh_8x8"},
         "simulation": {"mode": "serving", "timeout_s": 300},
         "serving": {
             "cluster": "single_tp2_ep2",

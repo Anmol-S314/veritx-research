@@ -59,7 +59,9 @@ def _spec_dict(**serving_kw):
         "name": "pr6t",
         "workload": {"id": "w", "trace": "archive/inputs/traces/x.trace"},
         "system": {"nodes": 1},
-        "network": {"topology": "mesh_8x8"},
+        # Study-integrity P0: serving specs carry NO network block — the
+        # serving CLUSTER owns fabric intent (single_tp2_ep2 lowers to
+        # mesh k=2 n=1 dor); a standalone preset here is false intent.
         "simulation": {"mode": "serving", "timeout_s": 900},
         "serving": serving,
     }
@@ -237,12 +239,32 @@ class TestSliceRefusals:
 
 @needs_serving
 @needs_binary
+def _result(run):
+    return json.loads((run.root / "manifest.json").read_text())["results"][0]
+
+
 class TestFastNegatives:
     """Every verdict arm, without paying for real simulation twice."""
 
     def _fake_run(self, tmp_path, monkeypatch, csv_rows=None,
-                  returncode=0, timeout=False):
+                  returncode=0, timeout=False, cluster="single_tp2_ep2",
+                  write_fabric=True, fabric_override=None):
         import veritx_dse.core.process as proc
+
+        from veritx_dse.core.paths import serving_fixture
+        from veritx_dse.core.serving import (
+            render_expected_booksim_config,
+            resolve_serving_fabric_identity,
+        )
+        # The fake child writes the SAME fabric artifact the real child
+        # writes (config.cfg under the run-owned inputs root), derived
+        # from the same cluster→fabric resolution the slice pins in the
+        # experiment hash — it models the child's contract, it does not
+        # bypass the checker.
+        expected = resolve_serving_fabric_identity(
+            serving_fixture("cluster", cluster))
+        if fabric_override:
+            expected = {**expected, **fabric_override}
 
         # Minimal honest fabric evidence: single-dim topology, one
         # collective completed, nonzero retired flits.
@@ -262,6 +284,12 @@ class TestFastNegatives:
                                 "end_time", "latency", "TTFT", "TPOT",
                                 "ITL"])
                     w.writerows(csv_rows)
+            if write_fabric and "--inputs-root" in cmd:
+                cfg_dir = (Path(cmd[cmd.index("--inputs-root") + 1])
+                           / "booksim")
+                cfg_dir.mkdir(parents=True, exist_ok=True)
+                (cfg_dir / "config.cfg").write_text(
+                    render_expected_booksim_config(expected))
             # Phase 9: the real child saves trace text under the
             # run-owned --inputs-root; a run without saved traces fails
             # closed at canonicalization. The fake must save one too —
@@ -293,11 +321,61 @@ class TestFastNegatives:
                        "[100]"]],
             returncode=0)
         assert run.state == "SUCCEEDED"
+        res = _result(run)
+        # P0 pin: expected cluster fabric is in the immutable spec hash
+        # and the executed record matches it.
+        spec = json.loads((run.root / "spec.resolved.json").read_text())
+        assert spec["serving"]["expected_fabric"]["topology"] == "mesh"
+        assert spec["serving"]["expected_fabric"]["k"] == 2
+        assert res["executed_fabric"]["topology"] == "mesh"
+        assert res["executed_fabric"]["routing"] == "dor"
+        assert res["executed_fabric"]["size"] == {"k": "2", "n": "1"}
+
+    def test_fabric_mismatch_fails(self, tmp_path, monkeypatch):
+        """Executed fabric differs from the cluster-derived expected
+        fabric → FAILED with FABRIC_INTENT_MISMATCH, never certified."""
+        run = self._fake_run(
+            tmp_path, monkeypatch,
+            csv_rows=[["0", "0", "100", "1100", "1000", "700", "100",
+                       "[100]"]],
+            fabric_override={"k": 4, "n": 1})
+        assert run.state == "FAILED"
+        res = _result(run)
+        assert res["error"] == "FABRIC_INTENT_MISMATCH"
+        assert res["expected_fabric"]["k"] == 2
+        assert res["executed_fabric"]["size"] == {"k": "4", "n": "1"}
+
+    def test_missing_fabric_evidence_fails(self, tmp_path, monkeypatch):
+        """No executed-fabric record → FAILED (never SUCCEEDED, never
+        certified): a run that cannot show what it executed is not
+        science, however healthy its metrics look."""
+        run = self._fake_run(
+            tmp_path, monkeypatch,
+            csv_rows=[["0", "0", "100", "1100", "1000", "700", "100",
+                       "[100]"]],
+            write_fabric=False)
+        assert run.state == "FAILED"
+        res = _result(run)
+        assert res["error"] == "EXECUTED_FABRIC_UNRECORDED"
 
     def test_retirement_mismatch_fails(self, tmp_path, monkeypatch):
         import veritx_dse.core.process as proc
 
+        from veritx_dse.core.paths import serving_fixture
+        from veritx_dse.core.serving import (
+            render_expected_booksim_config,
+            resolve_serving_fabric_identity,
+        )
+        expected = resolve_serving_fabric_identity(
+            serving_fixture("cluster", "single_tp2_ep2"))
+
         def fake(cmd, **kw):
+            if "--inputs-root" in cmd:
+                cfg_dir = (Path(cmd[cmd.index("--inputs-root") + 1])
+                           / "booksim")
+                cfg_dir.mkdir(parents=True, exist_ok=True)
+                (cfg_dir / "config.cfg").write_text(
+                    render_expected_booksim_config(expected))
             csv_path = [a for a in cmd if a.endswith(".csv")][0]
             with open(csv_path, "w", newline="") as f:
                 f.write("instance id,request id,TTFT,TPOT,ITL\n")
@@ -324,10 +402,6 @@ class TestFastNegatives:
     def test_timeout_fails(self, tmp_path, monkeypatch):
         run = self._fake_run(tmp_path, monkeypatch, timeout=True)
         assert run.state == "FAILED"
-
-
-def _result(run):
-    return json.loads((run.root / "manifest.json").read_text())["results"][0]
 
 
 @needs_serving

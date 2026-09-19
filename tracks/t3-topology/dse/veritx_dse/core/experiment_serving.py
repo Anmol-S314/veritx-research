@@ -29,12 +29,15 @@ from ..core.runs import Run, binary_identity
 from ..core.spec import SpecError, parse, resolve
 from ..core.errors import ServingPreflightError, ServingResultError
 from ..core.serving import (
+    check_fabric_matches_intent,
     engine_identity_from_binaries,
     build_serve_cmd,
+    executed_fabric_identity,
     fidelity_for_mode,
     locate_serve_path,
     mode_for_backend,
     preflight_serve,
+    resolve_serving_fabric_identity,
     retired_from_csv,
     serve_args,
     serving_provenance,
@@ -166,7 +169,15 @@ def run_serving_experiment(
     if not cluster_path.is_file() or not dataset_path.is_file():
         raise SpecError("registered serving fixture missing on disk")
 
-    # ── run directory (immutable from here) ──────────────────────────
+    # ── cluster fabric identity (study-integrity P0) ──────────────
+    # The serving CLUSTER is the fabric authority. Its concrete expected
+    # fabric is resolved BEFORE Run.create and injected into the resolved
+    # spec, so the experiment hash binds the fabric the run is required
+    # to execute — identity and execution cannot silently diverge.
+    expected_fabric = resolve_serving_fabric_identity(cluster_path)
+    resolved["serving"]["expected_fabric"] = expected_fabric
+
+    # ── run directory (immutable from here) ──────────────────────
     run = Run.create(repo=repo, resolved_spec=resolved, argv=list(sys.argv))
 
     def _cancel(reason: str) -> Run:
@@ -266,6 +277,42 @@ def _verdict(run: Run, res: Any, csv_path: Path, sv: dict[str, Any],
         run.add_result("serve", {"error": f"missing per-request CSV: {e}"})
         run.finalize("FAILED", note="no result artifact")
         return run
+    # ── intent→execution join (study-integrity P0) ────────────────────
+    # The child generates its BookSim config from the cluster's
+    # parallelism — spec.network never reaches it. The run therefore
+    # records the fabric it actually executed and fails closed unless it
+    # provably matches the declared intent. A run that cannot show the
+    # match is not science, however healthy its metrics look.
+    executed_fabric = None
+    try:
+        executed_fabric = executed_fabric_identity(
+            run.root / "inputs" / "booksim" / "config.cfg")
+    except FileNotFoundError:
+        if backend == "booksim":
+            run.add_result("serve", {
+                "error": "EXECUTED_FABRIC_UNRECORDED",
+                "detail": "generated BookSim config missing from run "
+                          "inputs — the fabric that executed cannot be "
+                          "shown, so the run cannot be certified"})
+            run.finalize("FAILED", note="executed fabric unrecorded")
+            return run
+    except ValueError as e:
+        run.add_result("serve", {"error": "EXECUTED_FABRIC_UNPARSEABLE",
+                                 "detail": str(e)})
+        run.finalize("FAILED", note="executed fabric unparseable")
+        return run
+    if executed_fabric is not None:
+        try:
+            check_fabric_matches_intent(
+                executed_fabric, expected_fabric=sv["expected_fabric"])
+        except ServingResultError as e:
+            run.add_result("serve", {
+                "error": e.reason, "detail": str(e),
+                "expected_fabric": sv["expected_fabric"],
+                "executed_fabric": executed_fabric})
+            run.finalize("FAILED", note="executed fabric differs from "
+                                        "cluster-derived expected fabric")
+            return run
     if retired != sv["num_reqs"]:
         run.add_result("serve", {"error": "RETIREMENT_MISMATCH",
                                  "retired": retired,
@@ -336,6 +383,8 @@ def _verdict(run: Run, res: Any, csv_path: Path, sv: dict[str, Any],
         "backend_binaries": [binary_identity(b) for b in serve_binaries],
         "cluster_sha256": binary_identity(cluster_path)["sha256"],
         "dataset_sha256": binary_identity(dataset_path)["sha256"],
+        **({"executed_fabric": executed_fabric}
+           if executed_fabric is not None else {}),
         "workload": {
             "identity": workload_identity_hash,
             "artifact_count": len(workload_index["artifacts"]),

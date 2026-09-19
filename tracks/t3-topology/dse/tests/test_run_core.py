@@ -27,7 +27,10 @@ def _spec_dict(**over):
         "name": "qwen3_decode_n64",
         "workload": {"id": "qwen3_decode_64", "trace": "archive/inputs/traces/chakra_converted.trace"},
         "system": {"nodes": 64, "tp_size": 1, "instances_per_node": 2},
-        "network": {"topology": "mesh_8x8", "routing": "dim_order"},
+        # Study-integrity P0 #10: routing omitted — the named preset owns
+        # its routing (mesh_8x8 → min_adapt). Explicit-native is also
+        # legal; anything else is rejected at the boundary.
+        "network": {"topology": "mesh_8x8"},
         "simulation": {"mode": "latency", "network_simulator": "booksim", "timeout_s": 60},
         "replication": {"mode": "deterministic", "seeds": [42]},
     }
@@ -70,7 +73,43 @@ class TestIdentity:
         assert r["replication"]["seeds"] == [42]
         # every default materialized — nothing implicit left
         assert r["simulation"]["timeout_s"] == 60
+        # Study-integrity P0 #10: the preset's NATIVE routing is
+        # materialized (mesh_8x8 owns min_adapt); None never resolves.
+        assert r["network"]["routing"] == "min_adapt"
+
+    def test_preset_routing_omitted_equals_explicit_native(self):
+        # The resolver materializes the preset's routing, so an omitted
+        # routing and the explicit native value are the SAME scientific
+        # intent — one experiment_hash.
+        omitted = resolve(parse(_spec_dict()))
+        explicit = _spec_dict()
+        explicit["network"]["routing"] = "min_adapt"
+        native = resolve(parse(explicit))
+        assert (experiment_hash(omitted)
+                == experiment_hash(native))
+
+    def test_preset_routing_mutation_rejected_before_run(self, tmp_path):
+        # mesh_8x8 owns min_adapt; dim_order is a foreign default — the
+        # same silent-preset-mutation defect class as the Dragonfly k=8
+        # disaster. Rejected at the boundary; nothing is created.
+        from veritx_dse.core.experiment import run_experiment
+
+        d = _spec_dict()
+        d["network"]["routing"] = "dim_order"
+        with pytest.raises(SpecError, match="owns routing"):
+            run_experiment(d, repo=tmp_path)
+        assert not (tmp_path / "runs").exists()
+
+    def test_torus_omitted_routing_resolves_native(self):
+        d = _spec_dict()
+        d["network"] = {"topology": "torus_8x8"}
+        r = resolve(parse(d))
         assert r["network"]["routing"] == "dim_order"
+        explicit = _spec_dict()
+        explicit["network"] = {"topology": "torus_8x8",
+                               "routing": "dim_order"}
+        assert (experiment_hash(r)
+                == experiment_hash(resolve(parse(explicit))))
 
     def test_hash_stable_across_key_order(self):
         d1 = _spec_dict()
@@ -85,8 +124,10 @@ class TestIdentity:
         assert experiment_hash(r1) == experiment_hash(r2)
 
     def test_science_change_forks_hash(self):
+        # Valid 64-node preset pair — a real network-science change, not a
+        # preset mutation (study-integrity P0 #10).
         d1, d2 = _spec_dict(), _spec_dict()
-        d2["system"]["nodes"] = 32
+        d2["network"] = {"topology": "torus_8x8"}
         assert experiment_hash(resolve(parse(d1))) != experiment_hash(resolve(parse(d2)))
 
     def test_seed_change_forks_hash(self):
@@ -260,7 +301,9 @@ class TestStandaloneExperiment:
     def test_routing_and_seed_reach_config_and_result(self, experiment, tmp_path):
         from veritx_dse.core.experiment import run_experiment
 
-        experiment["network"]["routing"] = "xy_yx"
+        # Routing rides the PRESET (mesh_8x8 → min_adapt; study-integrity
+        # P0 #10): what reaches the BookSim config is the resolved native
+        # routing, never a spec-supplied override.
         experiment["replication"]["seeds"] = [101]
         configs = []
 
@@ -275,12 +318,12 @@ class TestStandaloneExperiment:
         assert run.root.parent == tmp_path / "runs"
         assert run.state == "SUCCEEDED"
         assert len(configs) == 1
-        assert "routing_function = xy_yx;" in configs[0]
+        assert "routing_function = min_adapt;" in configs[0]
         assert "seed = 101;" in configs[0]
         assert "sim_type = latency;" in configs[0]
         manifest = json.loads((run.root / "manifest.json").read_text())
         result = manifest["results"][0]
-        assert result["routing"] == "xy_yx"
+        assert result["routing"] == "min_adapt"
         assert result["nodes"] == experiment["system"]["nodes"]
         assert result["seed"] == 101
 

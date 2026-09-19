@@ -10,10 +10,15 @@ Verdicts (exactly one):
   FEASIBLE              ≥1 candidate satisfied all constraints; Pareto
                         evidence over the feasible set via the Phase-8 gate
                         (pareto_with_scope — never re-implemented here)
-  NO_FEASIBLE_DESIGN    every candidate failed some constraint; carries
+  NO_FEASIBLE_DESIGN    ≥1 candidate was MEASURED against every relevant
+                        hard constraint and each refused; carries
                         violated-constraint evidence plus relaxation
                         information (tightest ceiling that would admit the
                         best measured candidate)
+  CONSTRAINT_UNMEASURABLE
+                        nothing violated, nothing measurable — the request is
+                        unanswerable with current producers, not refused
+  INCONCLUSIVE          no measured refusal (all crashed or all pruned)
   (incoherent requests raise InvalidCompilerRequest before any evaluation)
 
 Fail-closed semantics:
@@ -45,6 +50,18 @@ ST_PRUNED = "PRUNED"
 
 VERDICT_FEASIBLE = "FEASIBLE"
 VERDICT_NO_FEASIBLE_DESIGN = "NO_FEASIBLE_DESIGN"
+# Decision order (study-integrity P0 #6): with zero feasible candidates,
+# the verdict is deliberately conservative — CONSTRAINT_UNMEASURABLE,
+# EVALUATION_FAILED, SEARCH_INCOMPLETE each beat NO_FEASIBLE_DESIGN.
+# "We don't know" / "we could not measure" / "we did not look everywhere"
+# must never wear the costume of a measured refusal.
+VERDICT_EVALUATION_FAILED = "EVALUATION_FAILED"
+# At least one candidate was pruned and none violated: the search space
+# was not exhausted, so no refusal is warranted.
+VERDICT_SEARCH_INCOMPLETE = "SEARCH_INCOMPLETE"
+# Nothing violated, nothing measurable: the request is unanswerable with
+# current producers — not refused, not unknown-for-lack-of-trying.
+VERDICT_CONSTRAINT_UNMEASURABLE = "CONSTRAINT_UNMEASURABLE"
 
 # The one constraint kind whose metric the stack cannot measure yet.
 _UNMEASURABLE = {"bandwidth_floor": "bandwidth_floor_gbps"}
@@ -261,10 +278,44 @@ def compile_fabric(request: CompilerRequest,
     }
 
     if n_feasible == 0:
-        out["verdict"] = VERDICT_NO_FEASIBLE_DESIGN
+        # Verdict honesty (study-integrity P0 #6), decision order is
+        # deliberately conservative — an evidence problem beats a refusal:
+        #   CONSTRAINT_UNMEASURABLE > EVALUATION_FAILED > SEARCH_INCOMPLETE
+        #   > NO_FEASIBLE_DESIGN. NO_FEASIBLE_DESIGN is legal ONLY when
+        # every candidate was successfully evaluated and measured, and
+        # all violate — a measured refusal, never "we don't know".
+        # relaxation_information is scientifically valid ONLY for that
+        # fully-measured refusal; partial-failure populations never get a
+        # fabricated relaxation recommendation.
         out["pareto"] = None
         out["violated_constraints"] = _violated_evidence(records, hard)
-        out["relaxation_information"] = _relaxation(records, hard)
+        out["verdict"] = _verdict_from_counts(
+            records=records, n_feasible=n_feasible, n_violated=n_violated,
+            n_failed=n_failed, n_unmeasurable=n_unmeasurable,
+            n_pruned=n_pruned)
+        if out["verdict"] == VERDICT_CONSTRAINT_UNMEASURABLE:
+            out["unmeasurable_reasons"] = {
+                "constraint_unmeasurable": n_unmeasurable}
+        elif out["verdict"] == VERDICT_EVALUATION_FAILED:
+            out["failure_reasons"] = {
+                "evaluation_failed": n_failed,
+                "note": "simulator/evaluator failure is an evidence "
+                        "failure, not a design refusal; fix the "
+                        "evaluation path and recompile"}
+        elif out["verdict"] == VERDICT_SEARCH_INCOMPLETE:
+            out["search_incomplete_reasons"] = (
+                {"candidates": 0,
+                 "note": "no candidates were generated — there is no "
+                         "evidence to refuse a design with"}
+                if not records else
+                {"pruned": n_pruned,
+                 "note": "pruning/budget prevented a full evaluation — "
+                         "there is insufficient evidence to refuse a "
+                         "design"})
+        else:  # VERDICT_NO_FEASIBLE_DESIGN: fully measured — relaxation valid
+            out["relaxation_information"] = _relaxation(records, hard)
+        if out["verdict"] != VERDICT_NO_FEASIBLE_DESIGN:
+            out["relaxation_information"] = None
         return out
 
     out["verdict"] = VERDICT_FEASIBLE
@@ -277,6 +328,29 @@ def compile_fabric(request: CompilerRequest,
                  if r["status"] == ST_FEASIBLE]
     out["pareto"] = pareto_with_scope(pareto_in, ["latency"])
     return out
+
+
+def _verdict_from_counts(*, records: list[dict], n_feasible: int,
+                         n_violated: int, n_failed: int,
+                         n_unmeasurable: int, n_pruned: int) -> str:
+    """Top-level verdict from candidate-status counts (pure; P0 #6).
+
+    Decision order is deliberately conservative — an evidence problem
+    beats a refusal: CONSTRAINT_UNMEASURABLE > EVALUATION_FAILED >
+    SEARCH_INCOMPLETE > NO_FEASIBLE_DESIGN. NO_FEASIBLE_DESIGN is legal
+    only when every candidate was successfully evaluated and all violate
+    (n_unmeasurable == n_failed == n_pruned == 0 with n_violated > 0);
+    with zero records there is no evidence at all → SEARCH_INCOMPLETE.
+    """
+    if n_feasible > 0:
+        return VERDICT_FEASIBLE
+    if n_unmeasurable > 0:
+        return VERDICT_CONSTRAINT_UNMEASURABLE
+    if n_failed > 0:
+        return VERDICT_EVALUATION_FAILED
+    if n_pruned > 0 or not records:
+        return VERDICT_SEARCH_INCOMPLETE
+    return VERDICT_NO_FEASIBLE_DESIGN
 
 
 def _violated_evidence(records: list[dict], hard: list[Requirement]) -> list[dict]:
