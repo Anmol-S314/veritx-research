@@ -986,6 +986,42 @@ _DUMP_RE = re.compile(
     r"^src_router (\d+) dst_node (\d+) next_router (\d+) port (\d+)$")
 
 
+def expected_route_table(bundle: ResolvedFabricBundle,
+                         config: BackendConfigArtifact
+                         ) -> dict[tuple[int, int], int]:
+    """Expected executed first-hop table: (router, endpoint) -> next router.
+
+    Derived from RouteArtifact for the artifact's selected routing class
+    and every attached endpoint. This is the semantic expectation the
+    executed dump is compared against; exported so golden corpora can
+    pin it without executing the backend.
+    """
+    selected = dict(config.normalized_parameters)["routing_class"]
+    endpoints = bundle.attachment.endpoints
+    e2r = dict(bundle.resolved_route.endpoint_to_router)
+    channels = {c.channel_id: c for c in bundle.topology.channels}
+    entries = bundle.router_route.entries
+    expected: dict[tuple[int, int], int] = {}
+    for r in range(bundle.topology.router_count):
+        for ep in endpoints:
+            dst_router = e2r[ep.endpoint_id]
+            if r == dst_router:
+                expected[(r, ep.endpoint_id)] = r
+                continue
+            key = (selected, r, dst_router)
+            if key not in entries:
+                raise BookSimRouteError(
+                    f"RouteArtifact has no entry for {key!r}")
+            channel = channels[entries[key]]
+            if channel.src_router != r:
+                raise BookSimRouteError(
+                    f"RouteArtifact ({selected},{r},{dst_router}) -> "
+                    f"channel {channel.channel_id} leaves router "
+                    f"{channel.src_router}, not {r}")
+            expected[(r, ep.endpoint_id)] = channel.dst_router
+    return expected
+
+
 def compare_route_realization(
         bundle: ResolvedFabricBundle, config: BackendConfigArtifact,
         dump_path: Path) -> dict[str, Any]:
@@ -1014,28 +1050,7 @@ def compare_route_realization(
                 f"route dump repeats (src_router={src}, dst_node={node})")
         executed[key] = nxt
 
-    endpoints = bundle.attachment.endpoints
-    e2r = dict(bundle.resolved_route.endpoint_to_router)
-    channels = {c.channel_id: c for c in bundle.topology.channels}
-    entries = bundle.router_route.entries
-    expected: dict[tuple[int, int], int] = {}
-    for r in range(bundle.topology.router_count):
-        for ep in endpoints:
-            dst_router = e2r[ep.endpoint_id]
-            if r == dst_router:
-                expected[(r, ep.endpoint_id)] = r
-                continue
-            key = (selected, r, dst_router)
-            if key not in entries:
-                raise BookSimRouteError(
-                    f"RouteArtifact has no entry for {key!r}")
-            channel = channels[entries[key]]
-            if channel.src_router != r:
-                raise BookSimRouteError(
-                    f"RouteArtifact ({selected},{r},{dst_router}) -> "
-                    f"channel {channel.channel_id} leaves router "
-                    f"{channel.src_router}, not {r}")
-            expected[(r, ep.endpoint_id)] = channel.dst_router
+    expected = expected_route_table(bundle, config)
 
     missing = sorted(set(expected) - set(executed))
     extra = sorted(set(executed) - set(expected))
@@ -1248,6 +1263,7 @@ __all__ = [
     "TraceSummary",
     "bind_booksim_inputs",
     "compare_route_realization",
+    "expected_route_table",
     "exact_flit_bytes",
     "lower_booksim_projection",
     "lower_booksim_standalone",

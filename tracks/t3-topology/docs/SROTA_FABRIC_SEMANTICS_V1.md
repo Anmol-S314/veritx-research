@@ -30,6 +30,8 @@
 | 1.16 | B3.7e | Exact backend-input provenance persistence: `backend-evidence.json` is a canonical-JSON, content-addressed view of already-verified facts (both identity hashes, design/mapping/fabric binding, route-equivalence status, per-input logical role → content sha256, invocation args, workload hash, seed/policy, producer binary observation). Identical evidence is idempotent; different evidence at the same path is refused; tampering changes the digest. Serving evidence mirrors the same vocabulary including flit bytes and physical dims. |
 | 1.17 | B3.7f | Adversarial qualification: table-driven semantic-mutation matrix (topology edge, attachment, width, latency, route, VC count/assignment/escape, buffer depth, allocator, credit latency, routing delay, speedup, flit width, max packet flits, address decode) where every mutation changes `backend_config_hash` or refuses; non-semantic path/JSON/label changes never change identity while workload content changes `backend_input_hash`; tamper matrix (wrong parent hash, stale resolved hash, parameter/binding/input tampering, deleted/duplicate binding, unknown target/schema, unsupported LOCKED semantics) fails closed; bypass proof (monkeypatched legacy `build_config`/`BASE_PARAMS` never used); one real BookSim run proves the artifact executes with EXACT route evidence. Serving BookSim execution remains BLOCKED (no upstream authority); analytical execution NOT_RUN (unresolved units). |
 | 1.18 | B3.7g | Closed-world backend audit + supported-domain exactness. `backend/booksim_profile.py` registers every config field the certified path reads with owner class and source location; INACTIVE_FOR_PROFILE entries state the pinned gate that makes them dead; every BACKEND_PROFILE value is emitted explicitly (76-key closed config). `SemanticBinding.supported_domain` states the exact representable subset (`escape_vcs == ()`, identity transitions, uniform latency, unit route_weight, …), so EXACT never over-claims arbitrary semantics; BackendConfigArtifact schema v2 refuses v1 with a rebuild message. |
+| 1.19 | B3.8a/b/c | Cross-backend qualification. Source-drift guard (`backend/source_audit.py`) lexically scans every `config.Get*` read in the vendored fork and requires each to be registered or gated; 159 reads are closed over (105 registry fields + 54 gated with machine-checked `pin:<field>=<value>` or documented dispatch mechanisms). `qualify_cross_backend` proves shared EXACT claims use one authoritative source while disagreements stay explicit (no false equalities; distinct target hashes; shared fabric identity). Transposition tests refuse serving artifacts on the standalone runner, stale manifests, foreign rendered inputs, foreign/tampered route dumps, cross-width flit bytes, foreign dims and cross-target evidence sharing a path. |
+| 1.20 | B3.8d | Golden fabric corpus: five deterministic fabrics (multi-class, single-class, HBM/addrmap, 128-bit links, escape-blocked) pin `fabric_hash`, standalone/serving/analytical config hashes, input hash, expected route table hash, exact-fabric eligibility and loss digest in `tests/fixtures/backend_golden.json`; each case is executed against real BookSim and must reproduce the pinned route hash with nonzero delivery. |
 
 This document defines what a resolved Srota fabric *is* before B3 code is
 written. It starts from hardware semantics and maps existing code onto them —
@@ -1285,3 +1287,38 @@ See §4.
 
 ### Appendix C — Contradiction register
 See §5 (C-01 … C-29).
+
+---
+
+## 33. B3.8-SW — cross-backend qualification
+
+Scope-adjusted to actual capabilities. The wave proves representational
+honesty, not latency parity:
+
+- **Source-drift guard** (`backend/source_audit.py`): every lexical
+  `config.Get*/config->Get*` read in `third_party/booksim2/src` must be
+  either registered in `booksim_profile` or gated in `GATED_FIELDS`. Pin
+  gates are verified against the rendered certified config for both
+  BookSim targets; dispatch gates (pattern dispatch, injection-process
+  dispatch, conditional presence, trace records, diagnostic-only outputs)
+  carry written justifications. Stale registry/gate entries are refused.
+  Current closure: 159 reads = 105 registry fields (76 active, 29
+  inactive) + 54 gated reads.
+- **Semantic intersection** (`backend/qualification.py`): for one shared
+  fabric, every dimension claimed EXACT by two or more targets must bind
+  the same authoritative source identity; every non-exact claim must be
+  explicit (status/effect/reason/domain); all targets share
+  `fabric_hash`/`resolved_fabric_hash` but produce distinct
+  `backend_config_hash` values. `SERVING_BOOKSIM2` route realization is
+  `BLOCKS_EXACT_FABRIC`; analytical engines declare their losses rather
+  than joining false equalities.
+- **Transposition/tamper**: artifacts, manifests, rendered inputs, route
+  dumps, consumed configs and evidence are not portable across targets,
+  widths, dims or fabrics; every transposition refuses before execution.
+- **Golden corpus** (`tests/fixtures/backend_golden.json`): five fabrics
+  pin every identity and loss digest; each executes on real BookSim with
+  `route_equivalence: EXACT` and nonzero delivery.
+
+Execution status remains: standalone BookSim executable + route-proven;
+SERVING_BOOKSIM2 execution BLOCKED (no upstream authority); analytical
+execution UNSUPPORTED/NOT_RUN (units unresolved).

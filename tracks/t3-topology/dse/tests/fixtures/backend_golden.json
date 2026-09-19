@@ -1,0 +1,76 @@
+{
+  "cases": {
+    "escape_blocked": {
+      "aware_config_hash": "b51b7e3921479b5c9c845e625a31c14c9f9200829ce0fa4b38311c625b082aa7",
+      "endpoint_count": 4,
+      "exact_fabric_eligible": false,
+      "fabric_hash": "25c10e13f0f547d49e9f10d79e8df6ff4b434256995309c9225793b1013c63fa",
+      "flit_bytes": 8,
+      "loss_digest": "3bbaf8827b2723b61cdfe236905eb843e5eaaf123a3fd3ae64b0522460350b55",
+      "route_expected_sha256": "8947cb9d11947ebe0593891d6aafc9d1cb26bfe8542e85e27111e7257a61b440",
+      "serving_config_hash": "a6c822903a3f30e0b4499716668d207a97f915e1f93faafb9c6133d704348b0c",
+      "standalone_config_hash": "086183dcb9f59ff40ed55c58279fb4cf678cb08043ae8d88dfb3f52b44ab201b",
+      "standalone_input_hash": "79b3528d3712278673ebda0a68129b705aff06d3d5be7673eb003d38ae4a9892",
+      "trace": "0 0 0 3 2\n10 3 0 0 2\n",
+      "unaware_config_hash": "11c8e523d51dd6b9c5fdfaf6ea35499368ed54effb4d3128e8f06fa9f7edde5f"
+    },
+    "hbm5_addrmap": {
+      "aware_config_hash": "4efb365d027b2744b48e58369c5e39def61b9b23f93c142236eb27c165d2a162",
+      "endpoint_count": 5,
+      "exact_fabric_eligible": false,
+      "fabric_hash": "7d5723d018b9bb2f1af40731de11eae06cacec19eeb60ee54d7241b041663aa1",
+      "flit_bytes": 8,
+      "loss_digest": "99c4e5a23a2692a7e5c693b37efaaa0e7c6490f31dfcc1a9c57724265b8c8206",
+      "route_expected_sha256": "a68ff3003b224a86d78ffa7701e09dc21ca0af9b998dcdde15d31c65fd50a0b1",
+      "serving_config_hash": "68823b67f1bbf27c34524d00d5b983301312d1176081ffd00a325d201d76c253",
+      "standalone_config_hash": "7202be030e968fe23a4905597315b112a6b071547d2a7d034a9dceb1e07b3826",
+      "standalone_input_hash": "4a073064a99caa16c0bb0ef5e58e10c0bb2257d00a6fe8e6dee8ac5a11609d32",
+      "trace": "0 0 0 4 2\n10 4 0 0 2\n",
+      "unaware_config_hash": "a86e70f28d00f54f22441ddba47ddec3e1f39007815a6230f04763f85822e1ad"
+    },
+    "mesh4_multiclass": {
+      "aware_config_hash": "dbda20c883bd209a833d02d7409e93d4ef80e2516ff2e07cfe09df82a65f1259",
+      "endpoint_count": 4,
+      "exact_fabric_eligible": false,
+      "fabric_hash": "951109771aa3489a4419a3e3e38491153a3b98cdf383215417318235660d50a5",
+      "flit_bytes": 8,
+      "loss_digest": "99c4e5a23a2692a7e5c693b37efaaa0e7c6490f31dfcc1a9c57724265b8c8206",
+      "route_expected_sha256": "8947cb9d11947ebe0593891d6aafc9d1cb26bfe8542e85e27111e7257a61b440",
+      "serving_config_hash": "708629de59123000c4fd14b15b49e1ec33549eaa91c5cf32cb4dc9a1a123244a",
+      "standalone_config_hash": "0659783115e5e9708bffd9be146244be4ca93937fac86c4a0abf39d868af29cd",
+      "standalone_input_hash": "9cd6a6912d5077a0211c3a461907ab4d33353e413ab838927ee727e542e24171",
+      "trace": "0 0 0 3 2\n10 3 0 0 2\n",
+      "unaware_config_hash": "b502292cf1e0e87a7f8168ad2b241c745f07a1b37c7d93a15642eb72add35e08"
+    },
+    "mesh4_singleclass": {
+      "aware_config_hash": "d6e0cc4610456e889132bdea90948ee327a0479806ec81051082563127cf3c69",
+      "endpoint_count": 4,
+      "exact_fabric_eligible": false,
+      "fabric_hash": "76cac073e1f104e1aeacfd2bdba937cdd18774729e520443f6b402f4bd8e4a98",
+      "flit_bytes": 8,
+      "loss_digest": "5037bf5759619cbfcd8247cf5774fcda2ff102996b3575232262a1f449cbe744",
+      "route_expected_sha256": "8947cb9d11947ebe0593891d6aafc9d1cb26bfe8542e85e27111e7257a61b440",
+      "serving_config_hash": "8aa0797e1de9ee2a4b8e6208a57ddac245bd375a0793cada63ed63c398b172ee",
+      "standalone_config_hash": "f81a3d57b2fd079b78f260719024ea99b927b6969e741eb7038da44b0ba1d4b5",
+      "standalone_input_hash": "0cae66532066c24886a252e248cb86b0b61a5aa590cd589ffafea8320a080760",
+      "trace": "0 0 0 3 2\n10 3 0 0 2\n",
+      "unaware_config_hash": "72eb27a4d6a2a521b8bffbce3eb7945881352346286d590e24b50227a3bcffd1"
+    },
+    "wide128": {
+      "aware_config_hash": "432b3691dc778af8c175c5c2d93b3fa0c3150d7feb95193a2cf451ae533513e6",
+      "endpoint_count": 4,
+      "exact_fabric_eligible": false,
+      "fabric_hash": "9cc523662cd481cac31a77226910cd9b729c200f13417c34dfc0f2e3bc3b6efd",
+      "flit_bytes": 16,
+      "loss_digest": "99c4e5a23a2692a7e5c693b37efaaa0e7c6490f31dfcc1a9c57724265b8c8206",
+      "route_expected_sha256": "8947cb9d11947ebe0593891d6aafc9d1cb26bfe8542e85e27111e7257a61b440",
+      "serving_config_hash": "81168f7ce8efcf369435acc3db11aafb9fa7d52fd22e60258edf2cc95e0b40fb",
+      "standalone_config_hash": "57735db8f2e195ff897e6e407c0d86b1e5b0076e284a8281f8fb6eacd7b9b0d1",
+      "standalone_input_hash": "9c6dbf506aad246a70528a4c2d1b9e01ab42c4e40a81f486c8f8871e8b009722",
+      "trace": "0 0 0 3 2\n10 3 0 0 2\n",
+      "unaware_config_hash": "2aaea1781f9b0b253b2b61da3e5e2649401f3a80d043fd21a772c56fc0711f2e"
+    }
+  },
+  "profile": "CERTIFIED_BOOKSIM_ANYNET_V1",
+  "schema": 1
+}
