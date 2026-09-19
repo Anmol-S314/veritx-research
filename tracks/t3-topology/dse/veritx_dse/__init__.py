@@ -56,8 +56,9 @@ from .model.packet_format import (
 )
 from .model.router_behavior import (
     AllocatorPolicy, BufferOrganization, FlowControlProtocol,
-    PacketHoldPolicy, RouterBehaviorArtifact, RouterBehaviorError,
-    VCReusePolicy, canonical_allocator, derive_router_behavior,
+    InputVCPacketPolicy, RouterBehaviorArtifact, RouterBehaviorError,
+    VCAllocationScope, VCReusePolicy, canonical_allocator,
+    derive_router_behavior,
 )
 
 # Re-export simulation

@@ -25,6 +25,25 @@ v1 baseline (see docs §14.4):
     input/output/internal speedup 1
     route 0, VC-alloc 1, switch-alloc 1, traversal 1, output 0 cycles
 
+Two independent packet/switch semantics (B3.4c, schema v2):
+
+    hold_switch_for_packet = False
+        the physical switch is arbitrated per flit; a packet does not
+        reserve the crossbar path until TAIL.
+
+    input_vc_packet_policy = ONE_PACKET_AT_A_TIME
+        WITHIN one input VC, HEAD opens a packet context and BODY/TAIL
+        belong to it; no second HEAD/SINGLE may begin there until the
+        first packet closes. Packets in DIFFERENT VCs may still make
+        interleaved progress through the switch.
+
+    vc_allocation_scope = PACKET
+        HEAD/SINGLE selects vc_out for this packet at this hop;
+        BODY/TAIL reuse that same vc_out, and every outgoing flit of the
+        packet at this hop carries it in its hop-local vc_id field.
+        BODY/TAIL never re-arbitrate a different vc_out (that would let
+        one packet split across VCs or routing classes mid-hop).
+
 Explicitly absent in v1: automatic VC demotion, hidden escape/QoS
 priority, and multicast. A VC transition is legal only if
 VCAssignmentArtifact.allowed_transitions contains it and the router's
@@ -40,7 +59,7 @@ from typing import Any
 
 from .vc_assignment import VCAssignmentArtifact
 
-ROUTER_BEHAVIOR_SCHEMA_VERSION = 1
+ROUTER_BEHAVIOR_SCHEMA_VERSION = 2
 _HASH_TYPE_TAG = "srota/RouterBehaviorArtifact"
 
 DEFAULT_INPUT_BUFFER_DEPTH_FLITS = 8
@@ -136,8 +155,16 @@ class AllocatorPolicy(Enum):
     ROUND_ROBIN = "round_robin"
 
 
-class PacketHoldPolicy(Enum):
-    FLIT_INTERLEAVED = "flit_interleaved"
+class InputVCPacketPolicy(Enum):
+    """May flits of two packets share one input VC's packet context?"""
+
+    ONE_PACKET_AT_A_TIME = "one_packet_at_a_time"
+
+
+class VCAllocationScope(Enum):
+    """How long an output-VC choice is held by a packet."""
+
+    PACKET = "packet"
 
 
 class VCReusePolicy(Enum):
@@ -192,7 +219,9 @@ class RouterBehaviorArtifact:
 
     hold_switch_for_packet: bool
 
-    packet_hold_policy: PacketHoldPolicy = PacketHoldPolicy.FLIT_INTERLEAVED
+    input_vc_packet_policy: InputVCPacketPolicy = \
+        InputVCPacketPolicy.ONE_PACKET_AT_A_TIME
+    vc_allocation_scope: VCAllocationScope = VCAllocationScope.PACKET
 
     input_speedup: int = 1
     output_speedup: int = 1
@@ -239,13 +268,21 @@ class RouterBehaviorArtifact:
                     f"{name} must be an AllocatorPolicy")
         _as_positive_int("allocator_iterations", self.allocator_iterations)
         _as_bool("hold_switch_for_packet", self.hold_switch_for_packet)
-        if not isinstance(self.packet_hold_policy, PacketHoldPolicy):
+        if not isinstance(self.input_vc_packet_policy, InputVCPacketPolicy):
             raise RouterBehaviorError(
-                "packet_hold_policy must be a PacketHoldPolicy")
-        if self.packet_hold_policy is not PacketHoldPolicy.FLIT_INTERLEAVED:
+                "input_vc_packet_policy must be an InputVCPacketPolicy")
+        if self.input_vc_packet_policy is not \
+                InputVCPacketPolicy.ONE_PACKET_AT_A_TIME:
             raise RouterBehaviorError(
-                f"UNSUPPORTED packet hold policy "
-                f"{self.packet_hold_policy.value!r} in v1")
+                f"UNSUPPORTED input VC packet policy "
+                f"{self.input_vc_packet_policy.value!r} in v2")
+        if not isinstance(self.vc_allocation_scope, VCAllocationScope):
+            raise RouterBehaviorError(
+                "vc_allocation_scope must be a VCAllocationScope")
+        if self.vc_allocation_scope is not VCAllocationScope.PACKET:
+            raise RouterBehaviorError(
+                f"UNSUPPORTED VC allocation scope "
+                f"{self.vc_allocation_scope.value!r} in v2")
         for name in ("input_speedup", "output_speedup", "internal_speedup"):
             _as_positive_int(name, getattr(self, name))
         for name in ("route_compute_cycles", "vc_alloc_cycles",
@@ -284,7 +321,8 @@ class RouterBehaviorArtifact:
             "switch_allocator": self.switch_allocator.value,
             "allocator_iterations": self.allocator_iterations,
             "hold_switch_for_packet": self.hold_switch_for_packet,
-            "packet_hold_policy": self.packet_hold_policy.value,
+            "input_vc_packet_policy": self.input_vc_packet_policy.value,
+            "vc_allocation_scope": self.vc_allocation_scope.value,
             "input_speedup": self.input_speedup,
             "output_speedup": self.output_speedup,
             "internal_speedup": self.internal_speedup,
@@ -318,12 +356,20 @@ class RouterBehaviorArtifact:
             "output_stage_depth_flits_per_vc", "flow_control",
             "credit_return_latency_cycles", "vc_reuse_policy",
             "vc_allocator", "switch_allocator", "allocator_iterations",
-            "hold_switch_for_packet", "packet_hold_policy",
+            "hold_switch_for_packet", "input_vc_packet_policy",
+            "vc_allocation_scope",
             "input_speedup", "output_speedup", "internal_speedup",
             "route_compute_cycles", "vc_alloc_cycles",
             "switch_alloc_cycles", "switch_traversal_cycles",
             "output_delay_cycles", "artifact_hash",
         })
+        if isinstance(d, dict) and d.get("schema_version") == 1:
+            raise RouterBehaviorError(
+                "RouterBehaviorArtifact schema v1 is refused: its "
+                "packet_hold_policy conflated switch arbitration with "
+                "input-VC packet context. Rebuild with v2 "
+                "(input_vc_packet_policy + vc_allocation_scope) — no "
+                "silent migration")
         _strict_keys(d, allowed, "router_behavior")
         if _need(d, "type", "router_behavior") != _HASH_TYPE_TAG:
             raise RouterBehaviorError(
@@ -357,9 +403,12 @@ class RouterBehaviorArtifact:
                 d, "allocator_iterations", "router_behavior"),
             hold_switch_for_packet=_need(
                 d, "hold_switch_for_packet", "router_behavior"),
-            packet_hold_policy=_enum(
-                "packet hold policy", PacketHoldPolicy,
-                _need(d, "packet_hold_policy", "router_behavior")),
+            input_vc_packet_policy=_enum(
+                "input VC packet policy", InputVCPacketPolicy,
+                _need(d, "input_vc_packet_policy", "router_behavior")),
+            vc_allocation_scope=_enum(
+                "VC allocation scope", VCAllocationScope,
+                _need(d, "vc_allocation_scope", "router_behavior")),
             input_speedup=_need(d, "input_speedup", "router_behavior"),
             output_speedup=_need(d, "output_speedup", "router_behavior"),
             internal_speedup=_need(d, "internal_speedup", "router_behavior"),
@@ -427,7 +476,8 @@ def derive_router_behavior(
         switch_allocator=allocator,
         allocator_iterations=DEFAULT_ALLOCATOR_ITERATIONS,
         hold_switch_for_packet=False,
-        packet_hold_policy=PacketHoldPolicy.FLIT_INTERLEAVED,
+        input_vc_packet_policy=InputVCPacketPolicy.ONE_PACKET_AT_A_TIME,
+        vc_allocation_scope=VCAllocationScope.PACKET,
         input_speedup=1,
         output_speedup=1,
         internal_speedup=1,

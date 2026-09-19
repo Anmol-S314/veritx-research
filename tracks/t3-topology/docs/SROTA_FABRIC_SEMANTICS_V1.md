@@ -15,6 +15,7 @@
 | 1.1 | B3.0.1 | Close fabric semantic ownership and identity gaps: RouteArtifact binds attachment; remove Topology/Attachment circularity; replace the linear chain with an artifact DAG; split RoutingClass (Route) from VC resources (VCAssignment); rename FlowControlArtifact → RouterBehaviorArtifact; single owner for flit width; `fabric_hash` is the same-fabric definition; separate `resolved_fabric_hash`; candidate provenance non-semantic; canonical numbering rules; `channel_id` and DirectedChannel-first link properties; derived packet capacities; structured SemanticLoss; consistent support vocabulary; closed buffer-depth/plane/address rulings; compiler-semantics-v1 migration rule. |
 | 1.2 | B3.2 | Two-tier routing: the router-level RouteArtifact (parent: topology only) is split from ResolvedRouteArtifact (parents: topology + attachment + router route), which owns endpoint→router, LOCAL_EJECTION and the expanded endpoint route-table hash. FabricArtifact binds `resolved_route_hash`. F6 can never PASS from two replicas of the same algorithm; it requires independent backend-emitted executed-route evidence. |
 | 1.3 | B3.4 | PacketFormatArtifact is the wire-format authority: physical beat width stays Topology-owned, logical flit width is PacketFormat-owned, v1 requires one flit per beat. v1 wire fields are payload/source_endpoint/destination_endpoint/flit_type/vc_id; TrafficClass, RoutingClass, sequence and protocol metadata are explicitly absent. RouterBehaviorArtifact v1 pins per-input-port/per-VC buffering, credit flow control, wait-for-tail-credit, iSLIP, pipeline timing and speedups, with no implicit demotion or escape priority. |
+| 1.4 | B3.4c | RouterBehaviorArtifact schema v2: the ambiguous `packet_hold_policy=FLIT_INTERLEAVED` is replaced by `input_vc_packet_policy=ONE_PACKET_AT_A_TIME` (no two packets share one input VC's packet context) and `vc_allocation_scope=PACKET` (HEAD/SINGLE selects `vc_out`; BODY/TAIL reuse it for the packet at that hop). `hold_switch_for_packet` remains the independent switch-arbitration granularity. v1 is explicitly refused, not silently migrated. |
 
 This document defines what a resolved Srota fabric *is* before B3 code is
 written. It starts from hardware semantics and maps existing code onto them —
@@ -547,7 +548,7 @@ recorded, not enforced (C-family).
 depth; the optimizer may vary it; the compiler rejects or raises it when below
 the architectural minimum for the resolved VC/flow-control semantics.
 
-### 14.4 RouterBehaviorArtifact v1 baseline (B3.4)
+### 14.4 RouterBehaviorArtifact v1 baseline (B3.4, schema v2)
 Parent: `vc_assignment_hash` only. It references the VC structure; it never
 duplicates VC ids, transitions or routing classes.
 ```
@@ -560,8 +561,9 @@ VC reuse                     WAIT_FOR_TAIL_CREDIT
 VC allocator                 ISLIP
 switch allocator             ISLIP
 allocator iterations         1
-hold switch for packet       false
-packet interleaving          flit-interleaved (one active packet per input VC)
+hold switch for packet       false (switch arbitrated per flit)
+input VC packet policy       ONE_PACKET_AT_A_TIME
+VC allocation scope          PACKET (HEAD selects vc_out; BODY/TAIL reuse it)
 input/output/internal speedup 1 / 1 / 1
 route compute                0 cycles
 VC allocation                1 cycle

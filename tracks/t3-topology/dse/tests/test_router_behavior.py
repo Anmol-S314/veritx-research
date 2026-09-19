@@ -12,8 +12,9 @@ import pytest
 
 from veritx_dse.model.router_behavior import (
     AllocatorPolicy, BufferOrganization, FlowControlProtocol,
-    PacketHoldPolicy, RouterBehaviorArtifact, RouterBehaviorError,
-    VCReusePolicy, canonical_allocator, derive_router_behavior,
+    InputVCPacketPolicy, RouterBehaviorArtifact, RouterBehaviorError,
+    VCAllocationScope, VCReusePolicy, canonical_allocator,
+    derive_router_behavior,
 )
 from veritx_dse.model.vc_assignment import VCAssignmentArtifact
 
@@ -64,7 +65,9 @@ class TestGoldenDefault:
         assert art.allocator_iterations == 1
 
         assert art.hold_switch_for_packet is False
-        assert art.packet_hold_policy is PacketHoldPolicy.FLIT_INTERLEAVED
+        assert art.input_vc_packet_policy is \
+            InputVCPacketPolicy.ONE_PACKET_AT_A_TIME
+        assert art.vc_allocation_scope is VCAllocationScope.PACKET
 
         assert (art.input_speedup, art.output_speedup,
                 art.internal_speedup) == (1, 1, 1)
@@ -176,8 +179,7 @@ class TestArbitrationAliases:
 
 class TestStrictness:
     @pytest.mark.parametrize("mutation,match", [
-        ({"input_buffer_depth_flits_per_vc": 0}, "input_buffer_depth"),
-        ({"input_buffer_depth_flits_per_vc": True}, "input_buffer_depth"),
+        ({"input_buffer_depth_flits_per_vc": 0}, "input_buffer_depth"),        ({"input_buffer_depth_flits_per_vc": True}, "input_buffer_depth"),
         ({"input_buffer_depth_flits_per_vc": 8.0}, "input_buffer_depth"),
         ({"input_buffer_depth_flits_per_vc": "8"}, "input_buffer_depth"),
         ({"credit_return_latency_cycles": -1}, "credit_return"),
@@ -199,7 +201,7 @@ class TestStrictness:
 
     @pytest.mark.parametrize("mutate,match", [
         (lambda d: d.update(extra=1), "unknown fields"),
-        (lambda d: d.update(schema_version=2), "schema_version"),
+        (lambda d: d.update(schema_version=3), "schema_version"),
         (lambda d: d.update(vc_allocator="priority"), "unknown VC allocator"),
         (lambda d: d.update(switch_allocator="magic"),
          "unknown switch allocator"),
@@ -217,6 +219,10 @@ class TestStrictness:
          "input_buffer_depth"),
         (lambda d: d.update(hold_switch_for_packet=1),
          "hold_switch_for_packet"),
+        (lambda d: d.update(input_vc_packet_policy="interleaved"),
+         "unknown input VC packet policy"),
+        (lambda d: d.update(vc_allocation_scope="flit"),
+         "unknown VC allocation scope"),
         (lambda d: d.update(artifact_hash="0" * 64), "artifact_hash"),
     ])
     def test_persisted_mutations_refused(self, mutate, match):
@@ -237,5 +243,41 @@ class TestStrictness:
         _vc_art, art = _derive()
         d = art.to_dict()
         d["future_field"] = 3
+        with pytest.raises(RouterBehaviorError, match="unknown fields"):
+            RouterBehaviorArtifact.from_dict(d)
+
+
+# ── B3.4c packet-context / VC-scope seal ──────────────────────────────────
+
+class TestPacketContextSemantics:
+    def test_one_packet_context_per_input_vc(self):
+        _vc_art, art = _derive()
+        assert art.input_vc_packet_policy is \
+            InputVCPacketPolicy.ONE_PACKET_AT_A_TIME
+        assert art.vc_allocation_scope is VCAllocationScope.PACKET
+        # ...and this is independent of switch arbitration granularity
+        assert art.hold_switch_for_packet is False
+
+    def test_switch_hold_does_not_change_vc_scope(self):
+        _vc_art, art = _derive()
+        held = replace(art, artifact_hash="", hold_switch_for_packet=True)
+        assert held.vc_allocation_scope is VCAllocationScope.PACKET
+        assert held.input_vc_packet_policy is \
+            InputVCPacketPolicy.ONE_PACKET_AT_A_TIME
+        assert held.router_behavior_hash() != art.router_behavior_hash()
+
+    def test_schema_v1_is_refused_with_explicit_message(self):
+        _vc_art, art = _derive()
+        d = art.to_dict()
+        d["schema_version"] = 1
+        with pytest.raises(RouterBehaviorError,
+                           match="schema v1|silent migration"):
+            RouterBehaviorArtifact.from_dict(d)
+
+    def test_v1_packet_hold_policy_field_is_not_accepted(self):
+        _vc_art, art = _derive()
+        d = art.to_dict()
+        d.pop("input_vc_packet_policy")
+        d["packet_hold_policy"] = "flit_interleaved"
         with pytest.raises(RouterBehaviorError, match="unknown fields"):
             RouterBehaviorArtifact.from_dict(d)
