@@ -6,18 +6,23 @@ channels the resource is `(channel, vc)`, so the graph must be built over
 `(channel, vc)` nodes with VC-transition edges, not over physical channels.
 
 Nodes: every directed channel × every VC id in the VCAssignmentArtifact.
-Edges: for the route class the packet uses, a packet on `(c_in, vc_in)`
-that reaches router v en route to destination d requests the EXACT
-outgoing channel `(class, v, d)` from the v2 RouteArtifact; the edge
-exists for every `(vc_in -> vc_out)` transition the artifact allows.
-Ejection (d == v) adds no edge. Channel ids are exact hardware resources:
-the v1 next-router ambiguity is gone.
+Edges: a packet on `(c_in, vc_in)` that reaches router v en route to
+destination d requests the EXACT outgoing channel `(class, v, d)` from
+the v2 RouteArtifact, where `class` is the RoutingClass of the VC the
+packet requests next. The edge exists for every `(vc_in -> vc_out)`
+transition the artifact allows. Ejection (d == v) adds no edge. Channel
+ids are exact hardware resources: the v1 next-router ambiguity is gone.
+
+Routing-class convention (pinned): for an allowed transition
+`vc_in -> vc_out`, the route used to acquire the next channel is the
+RoutingClass of `vc_out` — the class that owns the resource being
+requested. Using `vc_in` instead would let RTL and verification
+silently disagree about the same transition.
 
 This certifier is honest about what it does NOT know:
-  * B3.2d interim: every VC must use one class (the router route's
-    default). Selecting the class from `vc_out` per transition is B3.3d;
-    until then a multi-class VC assignment is UNSUPPORTED, never a
-    guessed PASS;
+  * only the routing classes the router route actually materialized
+    have executable semantics; a VC bound to an unknown class is
+    UNSUPPORTED, never a guessed PASS;
   * allowed transitions default to VC-preserving, so no escape subnetwork
     is conjured to launder a cyclic physical graph into a PASS;
   * buffering is not modeled — `CHANNEL_VC_DEPENDENCY_ACYCLIC` does not
@@ -64,7 +69,7 @@ class ChannelVCCDG:
 
     nodes: tuple[tuple[int, int], ...]           # (channel_id, vc)
     edges: tuple[tuple[tuple[int, int], tuple[int, int]], ...]
-    cdg_route_class: str = ""
+    cdg_route_classes: tuple[str, ...] = ()
 
     @property
     def node_count(self) -> int:
@@ -133,16 +138,22 @@ def build_channel_vc_cdg(
         raise CDGError(
             "router route does not declare routing classes (schema v2 "
             "required) — cannot build the realized CDG")
-    entry_class = definitions[0].id
-    classes = {rc for _vc, rc in vc_assignment.vc_to_routing_class}
-    if classes != {entry_class}:
+    declared = {d.id for d in definitions}
+    class_of_vc = dict(vc_assignment.vc_to_routing_class)
+    unknown = set(class_of_vc.values()) - declared
+    if unknown:
         raise CDGError(
-            f"VC routing classes {sorted(classes)} are not the single "
-            f"router-route class {entry_class!r}; per-vc_out class "
-            f"selection is B3.3d — cannot build the realized CDG")
-    entries = {(s, d): ch
-               for (cls, s, d), ch in router_route.entries.items()
-               if cls == entry_class}
+            f"VC routing classes {sorted(unknown)} are not defined by the "
+            f"router route (has {sorted(declared)}) — cannot build the "
+            f"realized CDG")
+
+    # One exact table per class. Routing choice is made per transition by
+    # the class of vc_out (the resource being requested), never vc_in.
+    per_class: dict[str, dict[tuple[int, int], int]] = {
+        cid: {} for cid in declared}
+    for (cid, s, d), ch in router_route.entries.items():
+        if cid in per_class:
+            per_class[cid][(s, d)] = ch
     channel_by_id = {c.channel_id: c for c in topology.channels}
 
     transitions = vc_assignment.allowed_transitions
@@ -152,29 +163,34 @@ def build_channel_vc_cdg(
         for vc in vc_assignment.vc_ids
     )
     edges: set[tuple[tuple[int, int], tuple[int, int]]] = set()
-    for (s, d), ch_id in sorted(entries.items()):
-        ch = channel_by_id.get(ch_id)
-        if ch is None:
-            raise CDGError(
-                f"route ({s},{d}) names channel {ch_id}, which is not in "
-                f"the topology")
-        v = ch.dst_router
-        if v == d:
-            continue                     # eject at v: no dependency
-        out_id = entries.get((v, d))
-        if out_id is None:
-            raise CDGError(
-                f"route ({s},{d}) reaches router {v} but has no entry "
-                f"for ({v},{d}) — the route table is not total")
-        out_ch = channel_by_id.get(out_id)
-        if out_ch is None or out_ch.src_router != v:
-            raise CDGError(
-                f"route ({v},{d}) names channel {out_id}, which does not "
-                f"leave router {v}")
-        for vc_in, vc_out in transitions:
-            edges.add(((ch_id, vc_in), (out_id, vc_out)))
+    for cid in sorted(per_class):
+        table = per_class[cid]
+        for (s, d), ch_id in sorted(table.items()):
+            ch = channel_by_id.get(ch_id)
+            if ch is None:
+                raise CDGError(
+                    f"{cid} route ({s},{d}) names channel {ch_id}, which "
+                    f"is not in the topology")
+            v = ch.dst_router
+            if v == d:
+                continue                 # eject at v: no dependency
+            out_id = table.get((v, d))
+            if out_id is None:
+                raise CDGError(
+                    f"{cid} route ({s},{d}) reaches router {v} but has no "
+                    f"entry for ({v},{d}) — the route table is not total")
+            out_ch = channel_by_id.get(out_id)
+            if out_ch is None or out_ch.src_router != v:
+                raise CDGError(
+                    f"{cid} route ({v},{d}) names channel {out_id}, which "
+                    f"does not leave router {v}")
+            for vc_in, vc_out in transitions:
+                if class_of_vc[vc_out] != cid:
+                    continue
+                edges.add(((ch_id, vc_in), (out_id, vc_out)))
     ordered = tuple(sorted(edges))
-    return ChannelVCCDG(nodes=nodes, edges=ordered, cdg_route_class=entry_class)
+    return ChannelVCCDG(nodes=nodes, edges=ordered,
+                        cdg_route_classes=tuple(sorted(declared)))
 
 
 @dataclass(frozen=True)
@@ -185,6 +201,7 @@ class DeadlockCertificate:
     verdict: Verdict
     topology_hash: str
     attachment_hash: str
+    router_route_hash: str
     resolved_route_hash: str
     vc_assignment_hash: str
     router_behavior_hash: str
@@ -201,6 +218,7 @@ class DeadlockCertificate:
             "verdict": self.verdict,
             "topology_hash": self.topology_hash,
             "attachment_hash": self.attachment_hash,
+            "router_route_hash": self.router_route_hash,
             "resolved_route_hash": self.resolved_route_hash,
             "vc_assignment_hash": self.vc_assignment_hash,
             "router_behavior_hash": self.router_behavior_hash,
@@ -227,6 +245,7 @@ def _binding_hashes(
     if vc_assignment.resolved_route_hash != resolved_route.resolved_route_hash():
         raise CDGError("VC assignment does not bind this resolved route")
     return (topology.topology_hash(), resolved_route.attachment_hash,
+            getattr(router_route, "artifact_hash", ""),
             resolved_route.resolved_route_hash(),
             vc_assignment.vc_assignment_hash())
 
@@ -240,7 +259,7 @@ def certify_channel_vc_deadlock(
         router_behavior_hash: str = "",
 ) -> DeadlockCertificate:
     """Prove or refute acyclicity of the realized (channel, VC) CDG."""
-    topo_hash, att_hash, rr_hash, vc_hash = _binding_hashes(
+    topo_hash, att_hash, router_hash, rr_hash, vc_hash = _binding_hashes(
         topology, resolved_route, router_route, vc_assignment)
 
     classes = sorted({rc for _vc, rc in vc_assignment.vc_to_routing_class})
@@ -257,19 +276,21 @@ def certify_channel_vc_deadlock(
         return DeadlockCertificate(
             proof_method=CHANNEL_VC_DEPENDENCY_ACYCLIC, verdict="UNSUPPORTED",
             topology_hash=topo_hash, attachment_hash=att_hash,
+            router_route_hash=router_hash,
             resolved_route_hash=rr_hash, vc_assignment_hash=vc_hash,
             router_behavior_hash=router_behavior_hash, evidence=evidence)
 
     evidence["node_count"] = cdg.node_count
     evidence["edge_count"] = cdg.edge_count
     evidence["route_realization"] = "v2_channel_id"
-    evidence["cdg_route_class"] = cdg.cdg_route_class
+    evidence["cdg_route_classes"] = list(cdg.cdg_route_classes)
     cycle = cdg.find_cycle()
     if cycle is None:
         evidence["acyclic"] = True
         return DeadlockCertificate(
             proof_method=CHANNEL_VC_DEPENDENCY_ACYCLIC, verdict="PASS",
             topology_hash=topo_hash, attachment_hash=att_hash,
+            router_route_hash=router_hash,
             resolved_route_hash=rr_hash, vc_assignment_hash=vc_hash,
             router_behavior_hash=router_behavior_hash, evidence=evidence)
     evidence["acyclic"] = False
@@ -277,5 +298,6 @@ def certify_channel_vc_deadlock(
     return DeadlockCertificate(
         proof_method=CHANNEL_VC_DEPENDENCY_ACYCLIC, verdict="FAIL",
         topology_hash=topo_hash, attachment_hash=att_hash,
+        router_route_hash=router_hash,
         resolved_route_hash=rr_hash, vc_assignment_hash=vc_hash,
         router_behavior_hash=router_behavior_hash, evidence=evidence)

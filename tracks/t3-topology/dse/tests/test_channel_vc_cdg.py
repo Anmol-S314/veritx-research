@@ -155,7 +155,78 @@ class TestDORXYGoldenPositive:
             vc_assignment=vc)
         assert cert.verdict == "PASS"
         assert cert.evidence["acyclic"] is True
-        assert cert.evidence["cdg_route_class"] == DOR_XY
+        assert cert.evidence["cdg_route_classes"] == [DOR_XY]
+
+
+def _mixed_class_mesh():
+    """2x2 mesh with two classes; VC0 -> ANYNET_MIN_HOPS, VC1 -> DOR_XY.
+
+    For (2 -> 1) the two classes pick different first hops:
+      ANYNET_MIN_HOPS: 2->0 (channel 4), then 0->1 (channel 0)
+      DOR_XY:          2->3 (channel 5), then 3->1 (channel 6)
+    """
+    from veritx_dse.model.topology_artifact import (
+        MaterializedFamily, materialize_family,
+    )
+    topo = materialize_family(MaterializedFamily.MESH, endpoint_count=4)
+    rr = RouteArtifact.from_topology(
+        topo, name="mixed",
+        routing_classes=(ANYNET_MIN_HOPS, DOR_XY))
+    rra = ResolvedRouteArtifact(
+        topology_hash=topo.topology_hash(),
+        attachment_hash="a" * 64,
+        router_route_hash=rr.artifact_hash,
+        endpoint_to_router=((0, 0), (1, 1), (2, 2), (3, 3)),
+        routing_classes=(ANYNET_MIN_HOPS, DOR_XY),
+        endpoint_route_table_hash="b" * 64,
+    )
+    vc = make_vc_assignment_artifact(
+        resolved_route=rra, vc_count=2,
+        traffic_class_to_vcs={"A": [0], "B": [1]},
+        vc_to_routing_class={0: ANYNET_MIN_HOPS, 1: DOR_XY},
+        allowed_transitions=[(0, 0), (1, 1)],
+        derivation="mixed_class_mesh")
+    return topo, rr, rra, vc
+
+
+class TestVCOutClassSelection:
+    def test_next_channel_uses_the_class_of_vc_out(self):
+        topo, rr, rra, vc = _mixed_class_mesh()
+        cdg = build_channel_vc_cdg(topo, rr, vc)
+        assert cdg.cdg_route_classes == (ANYNET_MIN_HOPS, DOR_XY)
+        # VC0 (ANYNET) on 2->0 toward 1 requests 0->1
+        assert ((4, 0), (0, 0)) in cdg.edges
+        # VC1 (DOR_XY) on 2->3 toward 1 requests 3->1
+        assert ((5, 1), (6, 1)) in cdg.edges
+        # ...and neither class leaks into the other VC's edges
+        assert ((4, 1), (0, 1)) not in cdg.edges
+        assert ((5, 0), (6, 0)) not in cdg.edges
+        cert = certify_channel_vc_deadlock(
+            topology=topo, resolved_route=rra, router_route=rr,
+            vc_assignment=vc)
+        assert cert.verdict in ("PASS", "FAIL")
+        assert cert.evidence["cdg_route_classes"] == [
+            ANYNET_MIN_HOPS, DOR_XY]
+
+    def test_unknown_vc_class_is_unsupported(self):
+        topo, rr, _rra, _vc = _mixed_class_mesh()
+        rra = ResolvedRouteArtifact(
+            topology_hash=topo.topology_hash(),
+            attachment_hash="a" * 64,
+            router_route_hash=rr.artifact_hash,
+            endpoint_to_router=((0, 0), (1, 1), (2, 2), (3, 3)),
+            routing_classes=("ESCAPE",),
+            endpoint_route_table_hash="b" * 64,
+        )
+        vc = make_vc_assignment_artifact(
+            resolved_route=rra, vc_count=1,
+            traffic_class_to_vcs={"A": [0]},
+            vc_to_routing_class={0: "ESCAPE"}, derivation="unit")
+        cert = certify_channel_vc_deadlock(
+            topology=topo, resolved_route=rra, router_route=rr,
+            vc_assignment=vc)
+        assert cert.verdict == "UNSUPPORTED"
+        assert "ESCAPE" in cert.evidence["unsupported_reason"]
 
 
 class TestTwoRouterPasses:
@@ -232,6 +303,40 @@ class TestObservedVerdicts:
             topology=topo, resolved_route=rra, router_route=rr, vc_assignment=vc)
         assert c1.evidence["cycle"] == c2.evidence["cycle"]
 
+    def test_wraparound_anynet_fixtures_are_observed_not_blessed(self):
+        """Torus wraparound with the AnyNet replica is acyclic at 2x2/3x3
+        (cross-checked against deadlock_routing.build_cdg_and_check).
+
+        This is NOT a wraparound safety theorem and NOT DOR_XY (which
+        refuses torus entirely); wraparound needs its own class plus an
+        escape/VC discipline before any torus claim is made.
+        """
+        from veritx_dse.model.topology_artifact import (
+            MaterializedFamily, materialize_family,
+        )
+        for k in (2, 3):
+            topo = materialize_family(
+                MaterializedFamily.TORUS, endpoint_count=k * k)
+            rr = RouteArtifact.from_topology(
+                topo, name=f"torus{k}",
+                routing_classes=(ANYNET_MIN_HOPS,))
+            rra = ResolvedRouteArtifact(
+                topology_hash=topo.topology_hash(),
+                attachment_hash="a" * 64,
+                router_route_hash=rr.artifact_hash,
+                endpoint_to_router=tuple((i, i) for i in range(k * k)),
+                routing_classes=(ANYNET_MIN_HOPS,),
+                endpoint_route_table_hash="b" * 64,
+            )
+            vc = make_vc_assignment_artifact(
+                resolved_route=rra, vc_count=1,
+                traffic_class_to_vcs={"A": [0]}, derivation="torus")
+            cert = certify_channel_vc_deadlock(
+                topology=topo, resolved_route=rra, router_route=rr,
+                vc_assignment=vc)
+            assert cert.verdict == "PASS"
+            assert cert.evidence["acyclic"] is True
+
 
 class TestCDGEdgeConstruction:
     def test_dependency_targets_the_next_channel_not_the_exit_of_nxt(self):
@@ -249,14 +354,14 @@ class TestCDGEdgeConstruction:
         # min_channel_id, so the realization is exact and declared.
         assert rr.entries[(ANYNET_MIN_HOPS, 1, 2)] == 1
         cdg = build_channel_vc_cdg(topo, rr, vc)
-        assert cdg.cdg_route_class == ANYNET_MIN_HOPS
+        assert cdg.cdg_route_classes == (ANYNET_MIN_HOPS,)
         assert ((0, 0), (1, 0)) in cdg.edges
         assert ((0, 0), (2, 0)) not in cdg.edges
         cert = certify_channel_vc_deadlock(
             topology=topo, resolved_route=rra, router_route=rr,
             vc_assignment=vc)
         assert cert.evidence["route_realization"] == "v2_channel_id"
-        assert cert.evidence["cdg_route_class"] == ANYNET_MIN_HOPS
+        assert cert.evidence["cdg_route_classes"] == [ANYNET_MIN_HOPS]
 
 
 class TestFailClosed:
@@ -305,8 +410,10 @@ class TestFailClosed:
         d = certify_channel_vc_deadlock(
             topology=topo, resolved_route=rra, router_route=rr,
             vc_assignment=vc, router_behavior_hash="c" * 64).to_dict()
-        for key in ("topology_hash", "attachment_hash", "resolved_route_hash",
+        for key in ("topology_hash", "attachment_hash", "router_route_hash",
+                    "resolved_route_hash",
                     "vc_assignment_hash", "router_behavior_hash",
                     "proof_method", "evidence", "tool", "scope"):
             assert key in d
         assert d["router_behavior_hash"] == "c" * 64
+        assert d["router_route_hash"] == rr.artifact_hash
