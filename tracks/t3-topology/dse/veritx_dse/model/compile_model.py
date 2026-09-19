@@ -1400,12 +1400,14 @@ def migrate_design(document: CompileRequest | dict[str, Any]
         schema_version=obj.schema_version,
         compiler_semantics_version=COMPILER_SEMANTICS_VERSION,
     )
+    src_hash = obj.design_hash()
+    dst_hash = migrated.design_hash()
     return migrated, {
         "from_semantics": source_version,
         "to_semantics": COMPILER_SEMANTICS_VERSION,
-        "from_design_hash": obj.design_hash(),
-        "to_design_hash": migrated.design_hash(),
-        "changed": obj.design_hash() != migrated.design_hash(),
+        "from_design_hash": src_hash,
+        "to_design_hash": dst_hash,
+        "changed": src_hash != dst_hash,
         "dependency_order_canonicalized": True,
     }
 
