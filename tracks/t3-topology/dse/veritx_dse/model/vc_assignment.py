@@ -24,7 +24,8 @@ Hard rules (B3.3):
   * over-limit requirements are UNSUPPORTED, never silently clamped.
 
 The derivation (which cycle needed which separation) lives in the
-``derivation`` string and is provenance, not authority.
+``derivation`` string and is provenance, not authority: it is transported
+by ``to_dict()`` but deliberately excluded from ``vc_assignment_hash``.
 """
 from __future__ import annotations
 
@@ -70,6 +71,20 @@ def _as_int(name: str, value: Any) -> int:
     return value
 
 
+def _int_tuple(name: str, value: Any, *,
+               allow_empty: bool = False) -> tuple[int, ...]:
+    """Strict integer sequence: ``True``/``1.0``/``"1"`` are refused, not
+    canonicalized. Authoritative artifacts load the past; they do not
+    repair it."""
+    if not isinstance(value, (tuple, list)):
+        raise VCAssignmentError(
+            f"{name} must be a sequence of ints, got {type(value).__name__}")
+    out = tuple(_as_int(name, v) for v in value)
+    if not out and not allow_empty:
+        raise VCAssignmentError(f"{name} must be non-empty")
+    return out
+
+
 def _pairs(name: str, value: Any) -> tuple[tuple[int, int], ...]:
     if not isinstance(value, (tuple, list)):
         raise VCAssignmentError(f"{name} must be a sequence of pairs")
@@ -105,6 +120,9 @@ class VCAssignmentArtifact:
         _as_int("vc_count", self.vc_count)
         if self.vc_count < 1:
             raise VCAssignmentError("vc_count must be >= 1")
+        if not isinstance(self.vc_ids, tuple):
+            raise VCAssignmentError("vc_ids must be a tuple")
+        _int_tuple("vc_ids", self.vc_ids)
         if self.vc_ids != tuple(range(self.vc_count)):
             raise VCAssignmentError(
                 "vc_ids must be exactly 0..vc_count-1 (canonical)")
@@ -114,7 +132,11 @@ class VCAssignmentArtifact:
                 "traffic_class_to_vcs must be a non-empty tuple")
         seen_classes: set[str] = set()
         prev = None
-        for cls, vcs in self.traffic_class_to_vcs:
+        for item in self.traffic_class_to_vcs:
+            if not isinstance(item, tuple) or len(item) != 2:
+                raise VCAssignmentError(
+                    "traffic_class_to_vcs entries must be (class, vcs) pairs")
+            cls, vcs = item
             if not isinstance(cls, str) or not cls:
                 raise VCAssignmentError(
                     "traffic class names must be non-empty strings")
@@ -129,6 +151,7 @@ class VCAssignmentArtifact:
             if not isinstance(vcs, tuple) or not vcs:
                 raise VCAssignmentError(
                     f"traffic class {cls!r} has an empty VC set")
+            _int_tuple(f"traffic class {cls!r} VC set", vcs)
             if tuple(sorted(set(vcs))) != vcs:
                 raise VCAssignmentError(
                     f"traffic class {cls!r} VC set must be sorted and unique")
@@ -141,6 +164,10 @@ class VCAssignmentArtifact:
                 or len(self.vc_to_routing_class) != self.vc_count:
             raise VCAssignmentError(
                 "vc_to_routing_class must name every VC exactly once")
+        for item in self.vc_to_routing_class:
+            if not isinstance(item, tuple) or len(item) != 2:
+                raise VCAssignmentError(
+                    "vc_to_routing_class entries must be (vc, class) pairs")
         expected_ids = list(range(self.vc_count))
         actual_ids = [_as_int("vc_to_routing_class key", k)
                       for k, _ in self.vc_to_routing_class]
@@ -160,6 +187,9 @@ class VCAssignmentArtifact:
                 raise VCAssignmentError(
                     f"transition ({src},{dst}) references a VC outside "
                     f"0..{self.vc_count - 1}")
+        if not isinstance(self.escape_vcs, tuple):
+            raise VCAssignmentError("escape_vcs must be a tuple")
+        _int_tuple("escape_vcs", self.escape_vcs, allow_empty=True)
         if tuple(sorted(set(self.escape_vcs))) != self.escape_vcs:
             raise VCAssignmentError(
                 "escape_vcs must be sorted and unique")
@@ -180,7 +210,14 @@ class VCAssignmentArtifact:
             raise VCAssignmentError("artifact_hash does not match content")
 
     # ── identity ───────────────────────────────────────────────────────
-    def canonical_dict(self) -> dict[str, Any]:
+    def identity_dict(self) -> dict[str, Any]:
+        """The SEMANTIC identity that ``vc_assignment_hash`` commits to.
+
+        ``derivation`` is provenance and is deliberately absent: two
+        artifacts describing the same VC structure must hash identically
+        no matter which compiler pass produced them (B3.0 identity rule).
+        Provenance travels in ``to_dict()``, never in the hash.
+        """
         return {
             "type": _HASH_TYPE_TAG,
             "schema_version": self.schema_version,
@@ -195,20 +232,20 @@ class VCAssignmentArtifact:
             ],
             "allowed_transitions": [list(p) for p in self.allowed_transitions],
             "escape_vcs": list(self.escape_vcs),
-            "derivation": self.derivation,
         }
 
     def _compute_hash(self) -> str:
         from veritx_dse.core.spec import canonical_json
         body = (f"{_HASH_TYPE_TAG}/v{self.schema_version}\0"
-                + canonical_json(self.canonical_dict()))
+                + canonical_json(self.identity_dict()))
         return hashlib.sha256(body.encode()).hexdigest()
 
     def vc_assignment_hash(self) -> str:
         return self._compute_hash()
 
     def to_dict(self) -> dict[str, Any]:
-        d = self.canonical_dict()
+        d = self.identity_dict()
+        d["derivation"] = self.derivation
         d["artifact_hash"] = self.vc_assignment_hash()
         return d
 
@@ -224,28 +261,39 @@ class VCAssignmentArtifact:
         if _need(d, "type", "vc_assignment") != _HASH_TYPE_TAG:
             raise VCAssignmentError(
                 f"unexpected artifact type {d.get('type')!r}")
-        traffic = tuple(
-            (cls, tuple(vcs))
-            for cls, vcs in _need(d, "traffic_class_to_vcs", "vc_assignment")
-        )
-        routing = tuple(
-            (int(vc), str(rc))
-            for vc, rc in _need(d, "vc_to_routing_class", "vc_assignment")
-        )
-        return cls(
-            resolved_route_hash=_need(d, "resolved_route_hash", "vc_assignment"),
-            vc_count=_need(d, "vc_count", "vc_assignment"),
-            vc_ids=tuple(_need(d, "vc_ids", "vc_assignment")),
-            traffic_class_to_vcs=traffic,
-            vc_to_routing_class=routing,
-            allowed_transitions=_pairs(
-                "allowed_transitions",
-                _need(d, "allowed_transitions", "vc_assignment")),
-            escape_vcs=tuple(_need(d, "escape_vcs", "vc_assignment")),
-            derivation=_need(d, "derivation", "vc_assignment"),
-            schema_version=_need(d, "schema_version", "vc_assignment"),
-            artifact_hash=_need(d, "artifact_hash", "vc_assignment"),
-        )
+        try:
+            traffic = tuple(
+                (cls, tuple(vcs))
+                for cls, vcs in _need(
+                    d, "traffic_class_to_vcs", "vc_assignment")
+            )
+            # No int()/str() repair: malformed persisted values must be
+            # rejected by __post_init__, never canonicalized into valid
+            # state (True / 1.0 / "1" are impostors, not integers).
+            routing = tuple(
+                (vc, rc)
+                for vc, rc in _need(
+                    d, "vc_to_routing_class", "vc_assignment")
+            )
+            return cls(
+                resolved_route_hash=_need(d, "resolved_route_hash", "vc_assignment"),
+                vc_count=_need(d, "vc_count", "vc_assignment"),
+                vc_ids=tuple(_need(d, "vc_ids", "vc_assignment")),
+                traffic_class_to_vcs=traffic,
+                vc_to_routing_class=routing,
+                allowed_transitions=_pairs(
+                    "allowed_transitions",
+                    _need(d, "allowed_transitions", "vc_assignment")),
+                escape_vcs=tuple(_need(d, "escape_vcs", "vc_assignment")),
+                derivation=_need(d, "derivation", "vc_assignment"),
+                schema_version=_need(d, "schema_version", "vc_assignment"),
+                artifact_hash=_need(d, "artifact_hash", "vc_assignment"),
+            )
+        except VCAssignmentError:
+            raise
+        except (TypeError, ValueError) as exc:
+            raise VCAssignmentError(
+                f"malformed VCAssignmentArtifact: {exc}") from exc
 
     # ── parent legality ────────────────────────────────────────────────
     def validate_against(self, resolved_route: ResolvedRouteArtifact) -> None:
@@ -288,8 +336,10 @@ def make_vc_assignment_artifact(
         deadlock proofs get falsified);
       * no escape VC is designated.
     """
+    _as_int("vc_count", vc_count)
     tc_pairs = tuple(
-        (str(cls), tuple(sorted({int(v) for v in vcs})))
+        (cls, tuple(sorted(set(_int_tuple(
+            f"traffic class {cls!r} VC set", vcs)))))
         for cls, vcs in sorted(dict(traffic_class_to_vcs).items())
     )
     ids = tuple(range(vc_count))
@@ -300,13 +350,15 @@ def make_vc_assignment_artifact(
         vc_routing = tuple((vc, default_cls) for vc in ids)
     else:
         vc_routing = tuple(sorted(
-            (int(vc), str(rc)) for vc, rc in dict(vc_to_routing_class).items()
+            (_as_int("vc id", vc), rc)
+            for vc, rc in dict(vc_to_routing_class).items()
         ))
     if allowed_transitions is None:
         transitions = tuple((vc, vc) for vc in ids)
     else:
         transitions = tuple(sorted({
-            (int(a), int(b)) for a, b in allowed_transitions
+            (_as_int("transition src", a), _as_int("transition dst", b))
+            for a, b in allowed_transitions
         }))
     artifact = VCAssignmentArtifact(
         resolved_route_hash=resolved_route.resolved_route_hash(),
@@ -315,7 +367,8 @@ def make_vc_assignment_artifact(
         traffic_class_to_vcs=tc_pairs,
         vc_to_routing_class=vc_routing,
         allowed_transitions=transitions,
-        escape_vcs=tuple(sorted({int(v) for v in escape_vcs})),
+        escape_vcs=tuple(sorted(set(
+            _int_tuple("escape_vcs", escape_vcs, allow_empty=True)))),
         derivation=derivation,
     )
     artifact.validate_against(resolved_route)

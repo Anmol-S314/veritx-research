@@ -64,6 +64,11 @@ class ChannelVCCDG:
 
     nodes: tuple[tuple[int, int], ...]           # (channel_id, vc)
     edges: tuple[tuple[tuple[int, int], tuple[int, int]], ...]
+    # Number of routing decisions where the v1 table named a next ROUTER
+    # that had more than one parallel directed channel. Each such decision
+    # conservatively depends on every parallel channel (false FAIL is safe,
+    # false PASS is not; schema v2 names a channel_id exactly).
+    conservative_expansions: int = 0
 
     @property
     def node_count(self) -> int:
@@ -136,11 +141,18 @@ def build_channel_vc_cdg(
             f"cannot build the realized CDG")
 
     entries: dict[tuple[int, int], int] = getattr(router_route, "entries", {})
-    out_channels: dict[int, list[int]] = {}
+
+    # The v1 route table names a next ROUTER, never a channel. Map the
+    # physical hop (src_router, dst_router) to the exact directed channel(s)
+    # that realize it; the packet that leaves v toward nxt requests channels
+    # v->nxt, NOT channels leaving nxt (one hop too far).
+    channels_by_edge: dict[tuple[int, int], list[int]] = {}
     for ch in topology.channels:
-        out_channels.setdefault(ch.src_router, []).append(ch.channel_id)
-    for src in out_channels:
-        out_channels[src].sort()
+        channels_by_edge.setdefault(
+            (ch.src_router, ch.dst_router), []).append(ch.channel_id)
+    for edge in channels_by_edge:
+        channels_by_edge[edge].sort()
+    parallel_edges = {e for e, ids in channels_by_edge.items() if len(ids) > 1}
     router_count = topology.router_count
 
     transitions = vc_assignment.allowed_transitions
@@ -150,6 +162,7 @@ def build_channel_vc_cdg(
         for vc in vc_assignment.vc_ids
     )
     edges: set[tuple[tuple[int, int], tuple[int, int]]] = set()
+    conservative_expansions = 0
     for ch in topology.channels:
         u, v = ch.src_router, ch.dst_router
         for w in range(router_count):
@@ -163,11 +176,20 @@ def build_channel_vc_cdg(
             nxt = entries.get((v, w))
             if nxt is None or nxt == v:
                 continue
-            for out_id in out_channels.get(nxt, ()):
+            out_ids = channels_by_edge.get((v, nxt), ())
+            if not out_ids:
+                raise CDGError(
+                    f"route ({v},{w}) names next router {nxt}, but the "
+                    f"topology has no directed channel {v}->{nxt} — the "
+                    f"route table and the topology disagree")
+            if (v, nxt) in parallel_edges:
+                conservative_expansions += 1
+            for out_id in out_ids:
                 for vc_in, vc_out in transitions:
                     edges.add(((ch.channel_id, vc_in), (out_id, vc_out)))
     ordered = tuple(sorted(edges))
-    return ChannelVCCDG(nodes=nodes, edges=ordered)
+    return ChannelVCCDG(nodes=nodes, edges=ordered,
+                        conservative_expansions=conservative_expansions)
 
 
 @dataclass(frozen=True)
@@ -251,6 +273,10 @@ def certify_channel_vc_deadlock(
 
     evidence["node_count"] = cdg.node_count
     evidence["edge_count"] = cdg.edge_count
+    evidence["route_realization"] = "v1_next_router"
+    evidence["conservative_parallel_channel_expansion"] = \
+        cdg.conservative_expansions > 0
+    evidence["conservative_expansion_count"] = cdg.conservative_expansions
     cycle = cdg.find_cycle()
     if cycle is None:
         evidence["acyclic"] = True

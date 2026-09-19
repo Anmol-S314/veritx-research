@@ -98,6 +98,32 @@ def _directed_ring():
     return topo, rr, rra, vc
 
 
+def _parallel_hop_ring():
+    """0 -> 1 -> {2,2} -> 0: the 1->2 hop has two parallel channels."""
+    routers = (Router(0, (0,), 1), Router(1, (1,), 1), Router(2, (2,), 1))
+    channels = (
+        DirectedChannel(0, 0, 0, 1, 0, 64, 1),
+        DirectedChannel(1, 1, 0, 2, 0, 64, 1),
+        DirectedChannel(2, 1, 1, 2, 1, 64, 1),
+        DirectedChannel(3, 2, 0, 0, 0, 64, 1),
+    )
+    topo = TopologyArtifact(
+        family=MaterializedFamily.RING, routers=routers, channels=channels)
+    rr = RouteArtifact.from_topology(topo, name="parallel_hop_ring")
+    rra = ResolvedRouteArtifact(
+        topology_hash=topo.topology_hash(),
+        attachment_hash="a" * 64,
+        router_route_hash=rr.artifact_hash,
+        endpoint_to_router=((0, 0), (1, 1), (2, 2)),
+        routing_classes=(DEFAULT_ROUTING_CLASS,),
+        endpoint_route_table_hash="b" * 64,
+    )
+    vc = make_vc_assignment_artifact(
+        resolved_route=rra, vc_count=1,
+        traffic_class_to_vcs={"A": [0]}, derivation="parallel_hop_ring")
+    return topo, rr, rra, vc
+
+
 class TestTwoRouterPasses:
     def test_acyclic_fabric_passes(self):
         topo, rr, rra, vc = _two_router()
@@ -124,7 +150,15 @@ class TestTwoRouterPasses:
         assert all(src[1] == dst[1] for src, dst in cdg.edges)
 
 
-class TestMeshFailsHonestly:
+class TestObservedVerdicts:
+    """Verdicts here are OBSERVED for these fixtures, not general theorems.
+
+    The pre-B3.3c builder had an edge-construction bug (dependencies landed
+    on the exits of the NEXT router, one hop too far), so the earlier
+    mesh/ring FAILs were not valid evidence. B3.2d/B3.3d re-certify with
+    exact per-routing-class channel realization and DOR_XY golden cases.
+    """
+
     def test_directed_ring_is_cyclic(self):
         topo, rr, rra, vc = _directed_ring()
         cert = certify_channel_vc_deadlock(
@@ -134,27 +168,59 @@ class TestMeshFailsHonestly:
         assert cert.evidence["acyclic"] is False
         assert len(cert.evidence["cycle"]) == 4  # 3 channels + closing node
 
-    def test_bidirectional_mesh_is_cyclic(self):
+    def test_two_by_two_mesh_shortest_path_is_acyclic_here(self):
         _cr, topo, rr, rra, vc = _mesh_chain(cycles=1)
         assert vc.vc_count == 2
         cert = certify_channel_vc_deadlock(
             topology=topo, resolved_route=rra, router_route=rr,
             vc_assignment=vc)
-        # shortest-path routing over bidirectional links has a physical
-        # 2-cycle; VC-preserving transitions do not launder it.
-        assert cert.verdict == "FAIL"
-        assert cert.evidence["acyclic"] is False
-        cycle = cert.evidence["cycle"]
-        assert len(cycle) >= 3
-        assert cycle[0] == cycle[-1]
+        # Observed: AnyNet shortest paths on this 2x2 fixture form two
+        # disjoint channel chains. NOT a general mesh claim — arbitrary
+        # shortest-path meshes may cycle, and VC-preserving transitions do
+        # not break a physical cycle.
+        assert cert.verdict == "PASS"
+        assert cert.evidence["acyclic"] is True
+        assert cert.evidence["conservative_parallel_channel_expansion"] is False
 
-    def test_failure_is_deterministic(self):
+    def test_mesh_verdict_is_deterministic(self):
         _cr, topo, rr, rra, vc = _mesh_chain(cycles=1)
         c1 = certify_channel_vc_deadlock(
             topology=topo, resolved_route=rra, router_route=rr, vc_assignment=vc)
         c2 = certify_channel_vc_deadlock(
             topology=topo, resolved_route=rra, router_route=rr, vc_assignment=vc)
+        assert c1.evidence == c2.evidence
+
+    def test_cycle_witness_is_deterministic(self):
+        topo, rr, rra, vc = _directed_ring()
+        c1 = certify_channel_vc_deadlock(
+            topology=topo, resolved_route=rra, router_route=rr, vc_assignment=vc)
+        c2 = certify_channel_vc_deadlock(
+            topology=topo, resolved_route=rra, router_route=rr, vc_assignment=vc)
         assert c1.evidence["cycle"] == c2.evidence["cycle"]
+
+
+class TestCDGEdgeConstruction:
+    def test_dependency_targets_the_next_channel_not_the_exit_of_nxt(self):
+        """Regression: the edge is (u->v, vc) -> (v->nxt, vc), never
+        (u->v, vc) -> (nxt->*, vc)."""
+        topo, rr, _rra, vc = _directed_ring()
+        cdg = build_channel_vc_cdg(topo, rr, vc)
+        # 0->1 toward 2 requests the channel 1->2 (id 1), not 2->0 (id 2)
+        assert ((0, 0), (1, 0)) in cdg.edges
+        assert ((0, 0), (2, 0)) not in cdg.edges
+
+    def test_parallel_channels_expanded_conservatively(self):
+        topo, rr, rra, vc = _parallel_hop_ring()
+        cdg = build_channel_vc_cdg(topo, rr, vc)
+        assert cdg.conservative_expansions >= 1
+        # 0->1 toward 2 depends on BOTH parallel 1->2 channels (ids 1, 2)
+        assert ((0, 0), (1, 0)) in cdg.edges
+        assert ((0, 0), (2, 0)) in cdg.edges
+        cert = certify_channel_vc_deadlock(
+            topology=topo, resolved_route=rra, router_route=rr,
+            vc_assignment=vc)
+        assert cert.evidence["conservative_parallel_channel_expansion"] is True
+        assert cert.evidence["route_realization"] == "v1_next_router"
 
 
 class TestFailClosed:

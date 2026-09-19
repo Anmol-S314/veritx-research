@@ -106,9 +106,31 @@ class TestBuilder:
         other_prov = make_vc_assignment_artifact(
             resolved_route=rra, vc_count=2,
             traffic_class_to_vcs={"A": [0], "B": [1]}, derivation="other")
-        hashes = {base.vc_assignment_hash(), more_vcs.vc_assignment_hash(),
-                  moved.vc_assignment_hash(), other_prov.vc_assignment_hash()}
-        assert len(hashes) == 4
+        semantic = {base.vc_assignment_hash(), more_vcs.vc_assignment_hash(),
+                    moved.vc_assignment_hash()}
+        assert len(semantic) == 3
+        # derivation is provenance: it does NOT change identity
+        assert other_prov.vc_assignment_hash() == base.vc_assignment_hash()
+
+    def test_derivation_is_provenance_not_identity(self):
+        """Same VC semantics + different derivation => same hash."""
+        cr = _cr()
+        rra = _resolved_route(cr)
+        a = make_vc_assignment_artifact(
+            resolved_route=rra, vc_count=2,
+            traffic_class_to_vcs={"A": [0], "B": [1]},
+            derivation="two blocking dependency cycles")
+        b = make_vc_assignment_artifact(
+            resolved_route=rra, vc_count=2,
+            traffic_class_to_vcs={"A": [0], "B": [1]},
+            derivation="compiler pass 7 determined 2 VCs")
+        assert a.vc_assignment_hash() == b.vc_assignment_hash()
+        # ...while the provenance still round-trips for explanation.
+        assert a.to_dict()["derivation"] == "two blocking dependency cycles"
+        loaded = VCAssignmentArtifact.from_dict(b.to_dict())
+        assert loaded.derivation == "compiler pass 7 determined 2 VCs"
+        assert loaded.vc_assignment_hash() == a.vc_assignment_hash()
+        assert "derivation" not in a.identity_dict()
 
 
 class TestStructuralIntegrity:
@@ -157,6 +179,39 @@ class TestStructuralIntegrity:
         d["extra"] = 1
         with pytest.raises(VCAErr):
             VCAssignmentArtifact.from_dict(d)
+
+    def test_bool_vc_id_refused(self):
+        with pytest.raises(VCAErr):
+            self._artifact(vc_ids=(0, True))
+
+    def test_float_vc_count_refused(self):
+        with pytest.raises(VCAErr):
+            self._artifact(vc_count=2.0)
+
+    def test_bool_traffic_vc_refused(self):
+        with pytest.raises(VCAErr):
+            self._artifact(
+                traffic_class_to_vcs=(("A", (False,)), ("B", (1,))))
+
+    def test_bool_escape_vc_refused(self):
+        with pytest.raises(VCAErr):
+            self._artifact(escape_vcs=(True,))
+
+    def test_persisted_impostors_are_rejected_not_repaired(self):
+        art = self._artifact()
+        mutations = (
+            lambda d: d.update(vc_ids=[0, True]),
+            lambda d: d.update(escape_vcs=[False]),
+            lambda d: d.update(
+                traffic_class_to_vcs=[["A", [0]], ["B", [True]]]),
+            lambda d: d.update(
+                vc_to_routing_class=[["0", "DEFAULT"], [1, "DEFAULT"]]),
+        )
+        for mutate in mutations:
+            d = art.to_dict()
+            mutate(d)
+            with pytest.raises(VCAErr):
+                VCAssignmentArtifact.from_dict(d)
 
     def test_parent_mismatch_refused(self):
         art = self._artifact()
