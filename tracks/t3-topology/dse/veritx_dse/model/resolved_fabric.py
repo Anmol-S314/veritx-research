@@ -37,6 +37,13 @@ relations):
     workload's TP/PP/EP/DP shape and inventory.ranks is exactly the
     canonical rank namespace recomputed for that shape (equal world size
     with different geometry is refused);
+  * address-map equivalence: the supplied AddressDecodeArtifact realizes
+    ``design.address_map`` (semantic fields only; range names are
+    presentation). FabricArtifact itself proves only hardware legality, so
+    a decode that is legal hardware but belongs to another address map is
+    refused here;
+  * unsupported-intent gate: ``NocConfig.rcu_enabled is True`` is refused
+    (Fabric v3 has no RCU artifact/behavior);
   * idle compute agents remain legal (mapped => attached, never the
     inverse; non-compute hardware needs no rank placement).
 
@@ -242,6 +249,12 @@ class ResolvedFabric:
             raise ResolvedFabricError(
                 "NodeInventory logical ranks do not match the design's "
                 "canonical rank namespace (rank id/coordinate mismatch)")
+        noc = getattr(design, "noc_config", None)
+        if noc is not None and getattr(noc, "rcu_enabled", None) is True:
+            raise ResolvedFabricError(
+                "UNSUPPORTED: NocConfig.rcu_enabled=True has no RCU "
+                "artifact/behavior in Fabric v3; refusing to resolve the "
+                "ordinary non-RCU fabric for an RCU-intent design")
 
         # 2. attachment against design/inventory/topology
         try:
@@ -277,16 +290,24 @@ class ResolvedFabric:
                 f"mapping ranks {mapping_ranks[:4]}... do not match the "
                 f"inventory logical ranks {inventory_ranks[:4]}...")
 
-        # 5. the complete hardware DAG (FabricArtifactError propagates).
-        #    Passing design.address_map here proves the supplied decode
-        #    artifact corresponds exactly to the design address map, while
-        #    keeping design identity out of fabric identity.
+        # 5. design address-map equivalence (design-revision side).
+        #    FabricArtifact proves hardware legality only; this proves the
+        #    hardware decode realizes THIS design's address map.
+        try:
+            address_decode.validate_against(design.address_map, attachment)
+        except ValueError as exc:
+            raise ResolvedFabricError(
+                f"address_decode does not realize design.address_map: "
+                f"{exc}") from exc
+
+        # 6. the complete hardware DAG (FabricArtifactError propagates).
+        #    Hardware-only: no DesignRevision / NodeInventory / Mapping /
+        #    AddressMap object is required by the fabric seam.
         fabric.validate_against(
             topology=topology, attachment=attachment,
             router_route=router_route, resolved_route=resolved_route,
             vc_assignment=vc_assignment, packet_format=packet_format,
-            router_behavior=router_behavior, address_decode=address_decode,
-            address_map=design.address_map)
+            router_behavior=router_behavior, address_decode=address_decode)
 
 
 def make_resolved_fabric(*, design, inventory: NodeInventory,

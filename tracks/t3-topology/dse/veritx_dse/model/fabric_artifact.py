@@ -29,8 +29,9 @@ attachment) and is bound here too (FabricArtifact schema v2):
                                   │
     Topology/Attachment/ResolvedRoute/VC/Packet/RouterBehavior
                                   └──► FabricArtifact v2
-            (schema srota/Fabric/v2\0; v1 is refused — it omitted the
-             identity-bearing NI address decode; no silent migration)
+            (schema srota/Fabric/v3\0; v1 without address decode and v2
+             with AddressDecode v1 semantics are refused — no silent
+             migration)
 
 Identity boundary (frozen):
 
@@ -69,7 +70,7 @@ from .router_behavior import RouterBehaviorArtifact
 from .topology_artifact import TopologyArtifact
 from .vc_assignment import VCAssignmentArtifact
 
-FABRIC_SCHEMA_VERSION = 2
+FABRIC_SCHEMA_VERSION = 3
 _HASH_TYPE_TAG = "srota/Fabric"
 
 
@@ -196,11 +197,12 @@ class FabricArtifact:
             "packet_format_hash", "router_behavior_hash",
             "address_decode_hash", "plane_composition", "fabric_hash",
         })
-        if isinstance(d, dict) and d.get("schema_version") == 1:
+        if isinstance(d, dict) and d.get("schema_version") in (1, 2):
             raise FabricArtifactError(
-                "FabricArtifact schema v1 is refused: it omitted the "
-                "identity-bearing NI address decode. Rebuild with v2 "
-                "(address_decode_hash) — no silent migration")
+                "FabricArtifact schema v1/v2 is refused: v1 omitted the "
+                "identity-bearing NI address decode and v2 bound "
+                "AddressDecode v1 semantics (named identity + implicit "
+                "forwarding). Rebuild with v3 — no silent migration")
         _strict_keys(d, allowed, "fabric")
         if _need(d, "type", "fabric") != _HASH_TYPE_TAG:
             raise FabricArtifactError(
@@ -241,8 +243,7 @@ class FabricArtifact:
                          vc_assignment: VCAssignmentArtifact,
                          packet_format: PacketFormatArtifact,
                          router_behavior: RouterBehaviorArtifact,
-                         address_decode: AddressDecodeArtifact,
-                         address_map) -> None:
+                         address_decode: AddressDecodeArtifact) -> None:
         """Prove the complete child DAG, not just six root hash strings.
 
         DesignRevision/NodeInventory/MappingArtifact deliberately do not
@@ -308,6 +309,20 @@ class FabricArtifact:
         except ValueError as exc:
             raise FabricArtifactError(
                 f"attachment is not legal for topology: {exc}") from exc
+        clock_domains = {e.interface.clock_domain or "DEFAULT"
+                         for e in attachment.endpoints}
+        if len(clock_domains) > 1:
+            raise FabricArtifactError(
+                f"UNSUPPORTED: attachment spans {len(clock_domains)} clock "
+                f"domains {sorted(clock_domains)}; Fabric v3 has no CDC "
+                "semantics to represent them")
+        power_domains = {e.interface.power_domain or "DEFAULT"
+                         for e in attachment.endpoints}
+        if len(power_domains) > 1:
+            raise FabricArtifactError(
+                f"UNSUPPORTED: attachment spans {len(power_domains)} power "
+                f"domains {sorted(power_domains)}; Fabric v3 has no "
+                "isolation/power-crossing semantics to represent them")
         try:
             router_route.validate_against(topology)
         except ValueError as exc:
@@ -317,11 +332,11 @@ class FabricArtifact:
             raise FabricArtifactError(
                 "address_decode does not bind this attachment")
         try:
-            address_decode.validate_against(address_map, attachment)
+            address_decode.validate_against_attachment(attachment)
         except ValueError as exc:
             raise FabricArtifactError(
-                f"address_decode is not legal for the design address map "
-                f"+ attachment: {exc}") from exc
+                f"address_decode is not legal hardware for this "
+                f"attachment: {exc}") from exc
 
         try:
             resolved_route.validate_against(topology, attachment,
@@ -359,7 +374,6 @@ def make_fabric_artifact(
         packet_format: PacketFormatArtifact,
         router_behavior: RouterBehaviorArtifact,
         address_decode: AddressDecodeArtifact,
-        address_map,
         plane_composition: PlaneComposition = PlaneComposition.SINGLE_PLANE,
 ) -> FabricArtifact:
     """Compose the root hardware identity from already-resolved children.
@@ -380,5 +394,5 @@ def make_fabric_artifact(
         topology=topology, attachment=attachment, router_route=router_route,
         resolved_route=resolved_route, vc_assignment=vc_assignment,
         packet_format=packet_format, router_behavior=router_behavior,
-        address_decode=address_decode, address_map=address_map)
+        address_decode=address_decode)
     return artifact

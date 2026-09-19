@@ -15,7 +15,7 @@ TESTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(DSE))
 sys.path.insert(0, str(TESTS))
 
-from test_fabric_artifact import build_chain, compose  # noqa: E402
+from test_fabric_artifact import _fab, _with_hbm, build_chain, compose  # noqa: E402
 
 from veritx_dse.model.compile_model import AgentKind, ModelFamily  # noqa: E402
 from veritx_dse.model.mapping import (  # noqa: E402
@@ -226,7 +226,6 @@ class TestParallelismSeam:
 
 class TestAddressMapSeam:
     def test_address_map_change_moves_fabric_and_resolved(self):
-        from test_fabric_artifact import _with_hbm
         a = _with_hbm(base=0x1000)
         b = _with_hbm(base=0x8000)
         rf_a = bind(a, fabric=compose(a))
@@ -234,18 +233,43 @@ class TestAddressMapSeam:
         assert rf_a.fabric_hash != rf_b.fabric_hash
         assert rf_a.resolved_fabric_hash() != rf_b.resolved_fabric_hash()
 
-    def test_foreign_address_decode_refused(self):
-        from test_fabric_artifact import _with_hbm
+    def test_stale_decode_legal_hardware_wrong_map_refused(self):
+        # a.ad is legal hardware for b.att (same attachment), but does not
+        # implement b's design address map: ResolvedFabric must refuse.
         a = _with_hbm(base=0x1000)
         b = _with_hbm(base=0x8000)
-        with pytest.raises(FabricArtifactError,
-                           match="address_decode_hash does not match"):
+        fab_ab = _fab(b, address_decode=a.ad)
+        with pytest.raises(ResolvedFabricError,
+                           match="does not realize design.address_map"):
             make_resolved_fabric(
-                design=a.cr, inventory=a.inv, mapping=a.mapping,
-                topology=a.topo, attachment=a.att, router_route=a.rr,
-                resolved_route=a.rra, vc_assignment=a.vc,
-                packet_format=a.pf, router_behavior=a.rb,
-                address_decode=b.ad, fabric=compose(a))
+                design=b.cr, inventory=b.inv, mapping=b.mapping,
+                topology=b.topo, attachment=b.att, router_route=b.rr,
+                resolved_route=b.rra, vc_assignment=b.vc,
+                packet_format=b.pf, router_behavior=b.rb,
+                address_decode=a.ad, fabric=fab_ab)
+
+    def test_rename_changes_design_and_resolved_not_fabric(self):
+        a = _with_hbm(name="HBM0")
+        b = _with_hbm(name="dram_bank")
+        assert a.cr.design_hash() != b.cr.design_hash()
+        assert a.ad.address_decode_hash() == b.ad.address_decode_hash()
+        assert compose(a).fabric_hash() == compose(b).fabric_hash()
+        rf_a = bind(a, fabric=compose(a))
+        rf_b = bind(b, fabric=compose(b))
+        assert rf_b.resolved_fabric_hash() != rf_a.resolved_fabric_hash()
+
+    def test_rcu_enabled_refused(self, chain, fabric):
+        rcu_cr = replace(
+            chain.cr,
+            noc_config=replace(chain.cr.noc_config, rcu_enabled=True))
+        with pytest.raises(ResolvedFabricError, match="rcu_enabled"):
+            make_resolved_fabric(
+                design=rcu_cr, inventory=chain.inv, mapping=chain.mapping,
+                topology=chain.topo, attachment=chain.att,
+                router_route=chain.rr, resolved_route=chain.rra,
+                vc_assignment=chain.vc, packet_format=chain.pf,
+                router_behavior=chain.rb, address_decode=chain.ad,
+                fabric=fabric)
 
 
 # ── persistence strictness ───────────────────────────────────────────────

@@ -45,12 +45,19 @@ def build_chain(*, model_family=ModelFamily.MOE, protocol="AXI",
                 max_packet_flits=8, n_agents=4,
                 family=TopologyFamily.MESH,
                 tp=1, pp=1, ep=1, dp=1,
-                hbm_count=0, address_map=None, derive_decode=True):
+                hbm_count=0, address_map=None, derive_decode=True,
+                compute_clock=None, compute_power=None,
+                compute_addr_width=64, hbm_clock=None, hbm_power=None,
+                hbm_addr_width=64, mcast_groups=None,
+                mcast_setup_cycles=None):
     agents = [Agent(kind=AgentKind.COMPUTE_TILE, count=n_agents,
                     protocol=protocol, data_width=data_width,
-                    clock_domain=clock_domain)]
+                    addr_width=compute_addr_width,
+                    clock_domain=compute_clock, power_domain=compute_power)]
     if hbm_count:
-        agents.append(Agent(kind=AgentKind.HBM_CONTROLLER, count=hbm_count))
+        agents.append(Agent(kind=AgentKind.HBM_CONTROLLER, count=hbm_count,
+                            addr_width=hbm_addr_width,
+                            clock_domain=hbm_clock, power_domain=hbm_power))
     cr = CompileRequest(
         workload=Workload(model_family=model_family, tp=tp, pp=pp, ep=ep,
                           dp=dp),
@@ -58,7 +65,9 @@ def build_chain(*, model_family=ModelFamily.MOE, protocol="AXI",
         dependencies=DependencyGraph([
             Dependency("A", "B", DepKind.BLOCKING),
             Dependency("B", "A", DepKind.BLOCKING)]),
-        noc_config=NocConfig(topology_family=family, link_width=link_width),
+        noc_config=NocConfig(
+            topology_family=family, link_width=link_width,
+            mcast_groups=mcast_groups, mcast_setup_cycles=mcast_setup_cycles),
         address_map=address_map if address_map is not None else AddressMap())
     inv = build_inventory(cr)
     mapping = derive_mapping(cr)
@@ -85,7 +94,7 @@ def _fab(chain, **overrides):
         topology=chain.topo, attachment=chain.att, router_route=chain.rr,
         resolved_route=chain.rra, vc_assignment=chain.vc,
         packet_format=chain.pf, router_behavior=chain.rb,
-        address_decode=chain.ad, address_map=chain.cr.address_map)
+        address_decode=chain.ad)
     kw.update(overrides)
     return make_fabric_artifact(**kw)
 
@@ -99,11 +108,13 @@ def compose(chain, *, rr=None, rra=None, vc=None, pf=None, rb=None, ad=None,
                 address_decode=ad or chain.ad, plane_composition=plane)
 
 
-def _with_hbm(*, base=0x1000, size=0x1000, hbm=1):
+def _with_hbm(*, base=0x1000, size=0x1000, hbm=1, name="HBM0",
+              hbm_addr_width=64, hbm_clock=None, hbm_power=None):
     return build_chain(
-        hbm_count=hbm,
+        hbm_count=hbm, hbm_addr_width=hbm_addr_width,
+        hbm_clock=hbm_clock, hbm_power=hbm_power,
         address_map=AddressMap(ranges=(
-            AddressRange(name="HBM0", base=base, size=size,
+            AddressRange(name=name, base=base, size=size,
                          target_agent_idx=1),)))
 
 
@@ -131,12 +142,12 @@ class TestGoldenComposition:
         assert fabric.address_decode_hash == chain.ad.address_decode_hash()
         assert fabric.plane_composition is PlaneComposition.SINGLE_PLANE
         assert len(fabric.fabric_hash()) == 64
-        assert fabric.schema_version == FABRIC_SCHEMA_VERSION == 2
+        assert fabric.schema_version == FABRIC_SCHEMA_VERSION == 3
 
-    def test_hash_domain_is_srota_fabric_v2(self, fabric):
+    def test_hash_domain_is_srota_fabric_v3(self, fabric):
         import hashlib
         from veritx_dse.core.spec import canonical_json
-        body = ("srota/Fabric/v2\0"
+        body = ("srota/Fabric/v3\0"
                 + canonical_json(fabric.identity_dict()))
         assert fabric.fabric_hash() == hashlib.sha256(body.encode()).hexdigest()
 
@@ -286,12 +297,12 @@ class TestFrankensteinRefusal:
                            match="router_behavior does not bind"):
             _fab(chain, router_behavior=other.rb)
 
-    def test_foreign_address_decode_refused(self):
-        a = _with_hbm(base=0x1000)
-        b = _with_hbm(base=0x8000)
+    def test_foreign_address_decode_refused(self, chain):
+        # hardware-local check: decode bound to a different attachment
+        other = build_chain(protocol="CHI", data_width=512)
         with pytest.raises(FabricArtifactError,
-                           match="address_decode is not legal"):
-            _fab(a, address_decode=b.ad)
+                           match="address_decode does not bind this attachment"):
+            _fab(chain, address_decode=other.ad)
 
     def test_attachment_from_other_topology_refused(self, chain):
         other = build_chain(link_width=128)
@@ -343,6 +354,14 @@ class TestSealingValidation:
             _fab(chain, attachment=bad_att)
 
 
+class TestModelKnobIdentity:
+    def test_mcast_model_knob_does_not_change_fabric(self):
+        a = build_chain()
+        b = build_chain(mcast_groups=2, mcast_setup_cycles=4)
+        assert a.cr.design_hash() != b.cr.design_hash()
+        assert compose(a).fabric_hash() == compose(b).fabric_hash()
+
+
 # ── self-integrity vs parent legality ────────────────────────────────────
 
 class TestSelfIntegrityVsLegality:
@@ -366,8 +385,29 @@ class TestSelfIntegrityVsLegality:
                 topology=chain.topo, attachment=chain.att,
                 router_route=chain.rr, resolved_route=chain.rra,
                 vc_assignment=chain.vc, packet_format=chain.pf,
-                router_behavior=chain.rb, address_decode=chain.ad,
-                address_map=chain.cr.address_map)
+                router_behavior=chain.rb, address_decode=chain.ad)
+
+
+class TestDomainGates:
+    def test_single_default_domains_accepted(self):
+        c = _with_hbm()
+        assert compose(c).fabric_hash()
+
+    def test_multiple_clock_domains_refused(self):
+        c = _with_hbm(hbm_clock="clkA")
+        with pytest.raises(FabricArtifactError, match="clock domains"):
+            _fab(c)
+
+    def test_multiple_power_domains_refused(self):
+        c = _with_hbm(hbm_power="pdA")
+        with pytest.raises(FabricArtifactError, match="power domains"):
+            _fab(c)
+
+    def test_same_named_domains_accepted(self):
+        c1 = _with_hbm(hbm_clock="clk0")
+        c2 = build_chain(hbm_count=1, compute_clock="clk0", hbm_clock="clk0",
+                         address_map=c1.cr.address_map)
+        assert compose(c2).fabric_hash()
 
 
 # ── persistence strictness ───────────────────────────────────────────────
@@ -375,8 +415,9 @@ class TestSelfIntegrityVsLegality:
 class TestPersistence:
     @pytest.mark.parametrize("mutate,match", [
         (lambda d: d.update(extra=1), "unknown fields"),
-        (lambda d: d.update(schema_version=3), "schema_version"),
-        (lambda d: d.update(schema_version=1), "schema v1|silent migration"),
+        (lambda d: d.update(schema_version=4), "schema_version"),
+        (lambda d: d.update(schema_version=1), "schema v1/v2|silent migration"),
+        (lambda d: d.update(schema_version=2), "schema v1/v2|silent migration"),
         (lambda d: d.update(plane_composition="dual_plane"),
          "unknown plane composition"),
         (lambda d: d.update(fabric_hash="0" * 64), "does not match content"),
