@@ -25,6 +25,7 @@
 | 1.11 | B3.5e | AddressDecodeArtifact schema v2: range `name` is non-semantic transport (excluded from `address_decode_hash` and canonical order), `address_transform=IDENTITY` pins forwarding, and entries must fit the target endpoint's address interface width. `validate_against_attachment` proves hardware legality without DesignRevision; `validate_against` proves design-map equivalence. FabricArtifact schema v3 (`srota/Fabric/v3`) validates hardware-only and refuses multi-clock/multi-power attachments; ResolvedFabric owns address-map equivalence and refuses `rcu_enabled=True`. Fabric v1/v2 and AddressDecode v1 are refused. |
 | 1.12 | B3.7a | Backend projection/input identity contracts: `BackendConfigArtifact` (domain `srota/BackendConfig/v1`; one binding per SemanticDimension, RepresentationStatus + CertificationEffect, path-independent, closed ownership table) and `BackendInputManifest` (domain `srota/BackendInputManifest/v1`; workload content, seed policy, rendered input hashes, normalized invocation). `ResolvedFabricBundle` carries the real semantic objects a lowerer must revalidate before lowering — never a root hash alone. |
 | 1.13 | B3.7b | Certified standalone BookSim lowering: canonical AnyNet rendering from TopologyArtifact + AgentAttachmentArtifact with parse-back proof; closed parameter ownership; `packet_size` deliberately not emitted (trace records are the packet authority); AnyNet latency/route-cost coupling means heterogeneous latency and non-unit `route_weight` are `UNSUPPORTED`. Narrow BookSim fork seam `routing_dump_file` dumps the built all-pairs first-hop table; the certified runner mechanically compares it with RouteArtifact (missing/divergent dump refuses the run). Materialized inputs are re-hashed immediately before spawn. Serving/analytical targets are not certified by this row. |
+| 1.14 | B3.7c | Serving BookSim consumer seam. `backend/serving.py` lowers the same canonical BookSim projection to `SERVING_BOOKSIM2`, converts `PacketFormatArtifact.flit_width_bits` to flit BYTES exactly (64 bits → 8 bytes; non-byte-exact widths refused), and prepares an exact run-owned backend directory consumed by the vendored serving module through `VERITX_CERTIFIED_BACKEND_DIR` (no config synthesized from network.yml; `packet_size` refused as a false authority; replay mode refused as non-execution; physical dims fail closed). Route realization is declared UNREPRESENTABLE/BLOCKS_EXACT_FABRIC because the embedded frontend exposes no executed-route evidence, and max_packet_flits is UNREPRESENTABLE (embedded MTU deferred to Wave D). Public serving control path still has no authoritative ResolvedFabric bridge: `SERVING_BOOKSIM2` execution is BLOCKED for full certification. |
 
 This document defines what a resolved Srota fabric *is* before B3 code is
 written. It starts from hardware semantics and maps existing code onto them —
@@ -957,6 +958,36 @@ certified profile `CERTIFIED_BOOKSIM_ANYNET_V1`:
   files are compared against the manifest immediately before spawn; a
   modified input refuses execution. Legacy `simulation/booksim.py` execution
   remains `LEGACY_NON_CERTIFIED`.
+
+### 21.6 Certified serving BookSim seam (B3.7c)
+
+The serving target `SERVING_BOOKSIM2` reuses §21.5's canonical projection.
+Certified serving consumption is inversion of authority:
+
+```
+ResolvedFabricBundle → lower (SERVING_BOOKSIM2) → config.cfg + topology.anynet
+    + flit_bytes.txt + physical_dims.json  →  VERITX_CERTIFIED_BACKEND_DIR
+    → vendored serving module consumes the exact bytes
+```
+
+- `flit_width_bits` converts to `--booksim2-flit-bytes` only when byte-exact
+  (`bits % 8 == 0`). The regression that pins 64 bits = 8 bytes lives in
+  `tests/test_backend_serving.py`.
+- `packet_size` is never emitted: embedded packet length is
+  `ceil(message_bytes / flit_bytes)` (Booksim2NetworkApi::sim_send), so a
+  config value would be a false authority. `PACKET_MAX_FLITS` and
+  `PACKET_DELIMITATION` are `UNREPRESENTABLE`; the optional embedded-MTU
+  fragmentation path is deferred to Wave D and is not claimed.
+- `ROUTE_REALIZATION` is `UNREPRESENTABLE` / `BLOCKS_EXACT_FABRIC`: the
+  embedded frontend has no executed-route dump seam.
+- `replay-only` is refused on the certified path (replay is not network
+  execution); physical dims must be present, positive and multiply to the
+  attachment endpoint count (fail closed).
+- **Authority blocker:** the public serving control path does not yet carry
+  a `ResolvedFabric`, so this seam is a consumer contract; `SERVING_BOOKSIM2`
+  execution is BLOCKED for full certification until an upstream authority
+  supplies the bundle. The legacy path (no env var) is unchanged and
+  `LEGACY_NON_CERTIFIED`.
 
 ## 22. SystemC status
 

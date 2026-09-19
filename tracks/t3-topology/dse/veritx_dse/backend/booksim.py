@@ -60,7 +60,10 @@ from .contracts import (
 )
 
 BOOKSIM_STANDALONE_PROFILE = "CERTIFIED_BOOKSIM_ANYNET_V1"
+SERVING_BOOKSIM2_PROFILE = "CERTIFIED_SERVING_BOOKSIM2_V1"
 BOOKSIM_BACKEND_SEMANTICS_VERSION = "booksim2-fork+B3.7b-anynet-dump"
+SERVING_BOOKSIM2_SEMANTICS_VERSION = \
+    "booksim2-fork+B3.7c-embedded-injection"
 BOOKSIM_LOWERER_VERSION = "B37/1"
 
 CONFIG_FILE = "config.cfg"
@@ -237,6 +240,23 @@ def _transitions_exact(vc) -> bool:
 
 # ── lowering ────────────────────────────────────────────────────────────
 
+def exact_flit_bytes(packet_format: Any) -> int:
+    """Exact bits->bytes conversion for the embedded frontend.
+
+    The ASTRA BookSim frontend takes ``--booksim2-flit-bytes`` and
+    divides message bytes by it (Booksim2NetworkApi::sim_send). A width
+    that is not byte-exact has no representation; refusing here is what
+    keeps a 64-BIT flit from silently becoming the legacy 64-BYTE value.
+    """
+    bits = packet_format.flit_width_bits
+    if bits % 8 != 0:
+        raise BookSimLoweringError(
+            f"UNSUPPORTED: flit width {bits} bits is not byte-exact "
+            f"(flit_bytes = bits/8 required); the embedded frontend takes "
+            "an integer number of bytes")
+    return bits // 8
+
+
 def lower_booksim_standalone(
         bundle: ResolvedFabricBundle, *,
         profile: str = BOOKSIM_STANDALONE_PROFILE) -> BackendConfigArtifact:
@@ -245,6 +265,28 @@ def lower_booksim_standalone(
     if profile != BOOKSIM_STANDALONE_PROFILE:
         raise BookSimLoweringError(
             f"unknown standalone BookSim profile {profile!r}")
+    return lower_booksim_projection(
+        bundle, target=BackendTarget.BOOKSIM_STANDALONE, profile=profile,
+        semantics_version=BOOKSIM_BACKEND_SEMANTICS_VERSION,
+        lowerer_version=BOOKSIM_LOWERER_VERSION)
+
+
+def lower_booksim_projection(
+        bundle: ResolvedFabricBundle, *, target: BackendTarget,
+        profile: str, semantics_version: str,
+        lowerer_version: str) -> BackendConfigArtifact:
+    """The one BookSim fabric projection, parameterized by backend target.
+
+    Standalone and embedded serving share every fabric-derived parameter;
+    only packet/delimitation/route-evidence claims differ, because the
+    embedded frontend injects messages through Booksim2NetworkApi instead
+    of consuming a trace.
+    """
+    if target not in (BackendTarget.BOOKSIM_STANDALONE,
+                      BackendTarget.SERVING_BOOKSIM2):
+        raise BookSimLoweringError(
+            f"unsupported BookSim backend target {target.value}")
+    serving = target is BackendTarget.SERVING_BOOKSIM2
     try:
         bundle.revalidate()
     except ValueError as exc:
@@ -259,11 +301,12 @@ def lower_booksim_standalone(
 
     selected = _selected_routing_class(bundle)
     latency = _uniform_link_latency(bundle)
+    serving_flit_bytes = exact_flit_bytes(pf) if serving else None
 
     vc_class_exact, vc_class_reason = _vc_exactness(vc)
     transitions_exact = _transitions_exact(vc)
 
-    params = tuple(sorted((
+    params = (
         ("channel_latency_cycles", latency),
         ("classes", 1),
         ("arb_type", "round_robin"),
@@ -296,7 +339,16 @@ def lower_booksim_standalone(
         ("wait_for_tail_credit",
          1 if rb.vc_reuse_policy is VCReusePolicy.WAIT_FOR_TAIL_CREDIT
          else 0),
-    )))
+    )
+    if serving:
+        # Embedded mode: every flit comes from the host via sim_send;
+        # background demand traffic must stay off (legacy serving cfg does
+        # the same with injection_rate = 0.0).
+        params = params + (
+            ("injection_rate", 0.0),
+            ("traffic", "uniform"),
+        )
+    params = tuple(sorted(params))
 
     def bind(dimension, source, status, fields, reason="", effect=None):
         if effect is None:
@@ -320,7 +372,8 @@ def lower_booksim_standalone(
         bind(SemanticDimension.TOPOLOGY_GRAPH, t_hash,
              RepresentationStatus.DERIVED_EXACT,
              (("topology_kind", "anynet"),
-              ("parse_back", "required before spawn"))),
+              ("parse_back", "required before spawn") if not serving
+              else ("parse_back", "required at preparation"))),
         bind(SemanticDimension.ENDPOINT_ATTACHMENT, a_hash,
              RepresentationStatus.EXACT,
              (("node_lines", att.endpoint_count),
@@ -336,11 +389,17 @@ def lower_booksim_standalone(
         bind(SemanticDimension.ROUTE_WEIGHT, t_hash,
              RepresentationStatus.EXACT, (("route_weight", 1),)),
         bind(SemanticDimension.ROUTE_REALIZATION, rra_hash,
-             RepresentationStatus.EXACT,
+             RepresentationStatus.UNREPRESENTABLE if serving
+             else RepresentationStatus.EXACT,
              (("routing_function", "min"),
               ("routing_class", selected),
-              ("route_evidence", ROUTE_DUMP_FILE)),
-             reason=""),
+              ("route_evidence", "no embedded route dump") if serving
+              else ("route_evidence", ROUTE_DUMP_FILE)),
+             reason="the embedded BookSim frontend exposes no executed-route "
+                    "dump; route execution is not proven for serving"
+             if serving else "",
+             effect=CertificationEffect.BLOCKS_EXACT_FABRIC
+             if serving else None),
         bind(SemanticDimension.VC_COUNT, vc_hash,
              RepresentationStatus.EXACT, (("num_vcs", vc.vc_count),)),
         bind(SemanticDimension.VC_CLASS_ASSIGNMENT, vc_hash,
@@ -371,18 +430,35 @@ def lower_booksim_standalone(
              effect=None if not vc.escape_vcs
              else CertificationEffect.BLOCKS_EXACT_FABRIC),
         bind(SemanticDimension.FLIT_WIDTH, pf_hash,
-             RepresentationStatus.BACKEND_IRRELEVANT, (),
-             reason="BookSim counts flits; no width/serialization model"),
+             RepresentationStatus.DERIVED_EXACT if serving
+             else RepresentationStatus.BACKEND_IRRELEVANT,
+             (("flit_bytes", serving_flit_bytes),) if serving else (),
+             reason="BookSim counts flits; no width/serialization model"
+             if not serving else ""),
         bind(SemanticDimension.PACKET_DELIMITATION, pf_hash,
-             RepresentationStatus.COARSENED,
-             (("packet_size", "not emitted (trace-record authority)"),),
-             reason="BookSim executes the packet boundaries encoded in the "
-                    "trace records; it does not model BOUNDED_WORMHOLE "
-                    "fragmentation"),
+             RepresentationStatus.UNREPRESENTABLE if serving
+             else RepresentationStatus.COARSENED,
+             (("packet_size", "not emitted (trace-record authority)"),)
+             if not serving else (("injection", "sim_send per message"),),
+             reason="the embedded frontend injects ceil(bytes/flit_bytes) "
+                    "flits as one packet per sim_send; BOUNDED_WORMHOLE "
+                    "fragmentation and packet delimitation are not "
+                    "executed"
+             if serving else
+             "BookSim executes the packet boundaries encoded in the "
+             "trace records; it does not model BOUNDED_WORMHOLE "
+             "fragmentation"),
         bind(SemanticDimension.PACKET_MAX_FLITS, pf_hash,
-             RepresentationStatus.DERIVED_EXACT,
+             RepresentationStatus.UNREPRESENTABLE if serving
+             else RepresentationStatus.DERIVED_EXACT,
              (("trace_validation",
-               f"1 <= packet_size <= {pf.max_packet_flits}"),)),
+               f"1 <= packet_size <= {pf.max_packet_flits}"),)
+             if not serving else
+             (("embedded_mtu", "not proven/deferred to Wave D"),),
+             reason="max_packet_flits is not enforced for embedded "
+                    "sim_send traffic; the optional embedded-MTU "
+                    "fragmentation mechanism is not activated or proven"
+             if serving else ""),
         bind(SemanticDimension.HEADER_LAYOUT, pf_hash,
              RepresentationStatus.BACKEND_IRRELEVANT, (),
              reason="no header decode exists in the timing model"),
@@ -466,10 +542,10 @@ def lower_booksim_standalone(
 
     try:
         artifact = BackendConfigArtifact(
-            backend_target=BackendTarget.BOOKSIM_STANDALONE,
+            backend_target=target,
             backend_profile=profile,
-            backend_semantics_version=BOOKSIM_BACKEND_SEMANTICS_VERSION,
-            lowerer_version=BOOKSIM_LOWERER_VERSION,
+            backend_semantics_version=semantics_version,
+            lowerer_version=lowerer_version,
             resolved_fabric_hash=bundle.resolved_fabric
             .resolved_fabric_hash(),
             fabric_hash=fabric.fabric_hash(),
@@ -482,9 +558,14 @@ def lower_booksim_standalone(
     for key, _value in artifact.normalized_parameters:
         if key in _PROJECTION_ONLY_KEYS:
             continue
-        if key not in BOOKSIM_STANDALONE_OWNERSHIP:
-            raise BookSimLoweringError(
-                f"emitted parameter {key!r} has no ownership entry")
+        if key in BOOKSIM_STANDALONE_OWNERSHIP:
+            continue
+        # The serving target adds one profile pin (injection_rate); its
+        # complete table is enforced by backend.serving.render_serving_config.
+        if serving and key == "injection_rate":
+            continue
+        raise BookSimLoweringError(
+            f"emitted parameter {key!r} has no ownership entry")
     return artifact
 
 
@@ -530,6 +611,11 @@ def _render_anynet(bundle: ResolvedFabricBundle) -> bytes:
             parts.append(f"router {c.dst_router} {c.latency_cycles}")
         lines.append(" ".join(parts))
     return ("\n".join(lines) + "\n").encode()
+
+
+def render_topology_anynet(bundle: ResolvedFabricBundle) -> bytes:
+    """Exact AnyNet render of the materialized topology + attachment."""
+    return _render_anynet(bundle)
 
 
 def _format_cfg_value(value: Any) -> str:
@@ -1085,6 +1171,8 @@ __all__ = [
     "BOOKSIM_LOWERER_VERSION",
     "BOOKSIM_STANDALONE_OWNERSHIP",
     "BOOKSIM_STANDALONE_PROFILE",
+    "SERVING_BOOKSIM2_PROFILE",
+    "SERVING_BOOKSIM2_SEMANTICS_VERSION",
     "BackendMaterializationError",
     "BookSimLoweringError",
     "BookSimRouteError",
@@ -1094,10 +1182,13 @@ __all__ = [
     "TraceSummary",
     "bind_booksim_inputs",
     "compare_route_realization",
+    "exact_flit_bytes",
+    "lower_booksim_projection",
     "lower_booksim_standalone",
     "materialize_backend",
     "prepare_booksim_standalone",
     "render_booksim_standalone",
+    "render_topology_anynet",
     "run_certified_booksim",
     "verify_anynet_roundtrip",
     "verify_materialized",

@@ -33,6 +33,8 @@ from serving.core.liveness import (
     attach_to_failure as _liveness_attach,
     USEFUL_PROGRESS as _LIVE_PROGRESS,
 )
+# VeritX B3.7c: certified backend consumer seam (no semantic inference).
+from serving.veritx_certified import CERTIFIED_BACKEND_ENV, resolve_certified_backend
 import sys as flush
 
 # Optional profiling: the vendored pyinstrument ships a C extension built
@@ -213,6 +215,13 @@ def _prepare_booksim_config(astra_sim, run_paths, num_nodes):
     booksim_src = os.path.join(astra_sim, "..", "..", "booksim2", "src")
     if not os.path.exists(booksim_src):
         booksim_src = os.path.join(os.path.dirname(astra_sim), "..", "..", "booksim2", "src")
+
+    _certified = resolve_certified_backend()
+    if _certified is not None:
+        # VeritX B3.7c: certified consumption. The exact config is prepared
+        # by the semantic lowerer; never synthesize a second fabric from
+        # network.yml. CertifiedBackendError propagates (fail closed).
+        return _certified["config_path"], booksim_src
 
     config_dir = os.path.join(run_paths.inputs_root, "booksim")
     os.makedirs(config_dir, exist_ok=True)
@@ -916,20 +925,32 @@ def main():
     # (upstream's newer binaries made it optional/renamed — revisit on backend swap).
     astra_args = [binary, "--workload-configuration="+workload, "--system-configuration="+system, "--network-configuration="+network, "--memory-configuration="+memory, "--remote-memory-configuration="+memory]
     if network_backend == 'booksim':
-        # VeritX forward-port: flit 64B reduces packet count 4x for large LLM
-        # AllReduces (16MB -> 4K pkts -> 1K pkts).
-        astra_args.append("--booksim2-flit-bytes=64")
-        # VeritX: pass LOGICAL topology dims (trace dim numbering) so trace
-        # collectives scoped to dim>=1 (EP/DP) map onto real Sys dims instead
-        # of being silently dropped. network.yml stays physical/flat.
-        try:
-            _ldims_path = os.path.join(run_paths.inputs_root, "logical_dims.json")
-            with open(_ldims_path) as _lf:
-                _ndims = json.load(_lf).get("dims")
-            if _ndims and all(isinstance(x, int) and x >= 1 for x in _ndims):
-                astra_args.append("--physical-dims=" + ",".join(str(x) for x in _ndims))
-        except Exception:
-            pass
+        _certified = resolve_certified_backend()
+        if _certified is not None:
+            # VeritX B3.7c: flit width comes from PacketFormatArtifact via
+            # the exact bits->bytes conversion. 64 BITS must be 8 BYTES.
+            astra_args.append(
+                "--booksim2-flit-bytes=%d" % _certified["flit_bytes"])
+            # Logical dims are an exact certified execution input; missing
+            # or malformed data fails closed (no silent flat fallback).
+            astra_args.append("--physical-dims=" + ",".join(
+                str(x) for x in _certified["physical_dims"]))
+        else:
+            # Legacy path (non-certified): keep historical behavior.
+            # VeritX forward-port: flit 64B reduces packet count 4x for large LLM
+            # AllReduces (16MB -> 4K pkts -> 1K pkts).
+            astra_args.append("--booksim2-flit-bytes=64")
+            # VeritX: pass LOGICAL topology dims (trace dim numbering) so trace
+            # collectives scoped to dim>=1 (EP/DP) map onto real Sys dims instead
+            # of being silently dropped. network.yml stays physical/flat.
+            try:
+                _ldims_path = os.path.join(run_paths.inputs_root, "logical_dims.json")
+                with open(_ldims_path) as _lf:
+                    _ndims = json.load(_lf).get("dims")
+                if _ndims and all(isinstance(x, int) and x >= 1 for x in _ndims):
+                    astra_args.append("--physical-dims=" + ",".join(str(x) for x in _ndims))
+            except Exception:
+                pass
         # --- BookSim backend: optionally force replay-only mode ---
         # When replay-only=1, ASTRA-sim replays trace durations directly without
         # sending packets through BookSim. REQUIRED when the ASTRA-sim topology
@@ -938,6 +959,12 @@ def main():
         # --no-booksim-replay-only for full cycle-accurate network simulation
         # (requires matching topologies).
         if args.booksim_replay_only:
+            if _certified is not None:
+                # VeritX B3.7c: replay is not network execution. A certified
+                # run must never masquerade as one.
+                raise SystemExit(
+                    "error: " + CERTIFIED_BACKEND_ENV + " refuses "
+                    "--booksim-replay-only: replay is not network execution")
             try:
                 with open(system, 'r') as _f:
                     _j = json.load(_f)
