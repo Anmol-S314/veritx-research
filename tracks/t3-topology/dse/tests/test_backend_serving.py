@@ -122,7 +122,8 @@ class TestServingLowering:
 
     def test_config_has_no_packet_size_and_no_background_traffic(
             self, bundle):
-        cfg = render_serving_config(lower_serving_booksim(bundle)).decode()
+        cfg = render_serving_config(
+            bundle, lower_serving_booksim(bundle)).decode()
         assert "packet_size" not in cfg
         assert "traffic = uniform;" in cfg
         assert "injection_rate = 0.0;" in cfg

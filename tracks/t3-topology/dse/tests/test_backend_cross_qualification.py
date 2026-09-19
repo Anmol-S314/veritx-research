@@ -79,13 +79,13 @@ class TestTargetIdentity:
         }
         with pytest.raises(QualificationError,
                            match="does not match artifact"):
-            qualify_cross_backend(swapped)
+            qualify_cross_backend(bundle, swapped)
 
     def test_arbitrary_labels_refused(self, bundle):
         arts = four_targets(bundle)
         with pytest.raises(QualificationError,
                            match="does not match artifact"):
-            qualify_cross_backend({
+            qualify_cross_backend(bundle, {
                 "FOO": arts["BOOKSIM_STANDALONE"],
                 "BAR": arts["SERVING_BOOKSIM2"],
             })
@@ -94,14 +94,14 @@ class TestTargetIdentity:
         arts = four_targets(bundle)
         with pytest.raises(QualificationError,
                            match="does not match artifact"):
-            qualify_cross_backend({
+            qualify_cross_backend(bundle, {
                 "BOOKSIM_STANDALONE": arts["BOOKSIM_STANDALONE"],
                 "SERVING_BOOKSIM2": arts["BOOKSIM_STANDALONE"],
             })
 
     def test_valid_labels_report_artifact_identity(self, bundle):
         arts = four_targets(bundle)
-        report = qualify_cross_backend(arts)
+        report = qualify_cross_backend(bundle, arts)
         assert set(report.targets) == set(arts)
         for claim in report.authorities:
             assert set(claim.targets) <= set(arts)
@@ -110,7 +110,7 @@ class TestTargetIdentity:
 class TestSemanticIntersection:
     def test_shared_authority_claims_use_one_source(self, bundle):
         artifacts = four_targets(bundle)
-        report = qualify_cross_backend(artifacts)
+        report = qualify_cross_backend(bundle, artifacts)
         assert report.targets == tuple(sorted(artifacts))
         assert "TOPOLOGY_GRAPH" in report.shared_authority_dimensions
         for claim in report.authorities:
@@ -144,7 +144,7 @@ class TestSemanticIntersection:
             assert row.certification_effect is \
                 CertificationEffect.FIDELITY_DOWNGRADE
             assert row.reason and "shape" in row.reason
-        report = qualify_cross_backend(artifacts)
+        report = qualify_cross_backend(bundle, artifacts)
         claim = next(c for c in report.authorities
                      if c.dimension is SemanticDimension.TOPOLOGY_GRAPH)
         assert claim.targets == ("BOOKSIM_STANDALONE", "SERVING_BOOKSIM2")
@@ -174,10 +174,17 @@ class TestSemanticIntersection:
         # only the realization is broken.
         assert tampered.binding(SemanticDimension.VC_COUNT).source_identity \
             == serving.binding(SemanticDimension.VC_COUNT).source_identity
+        # Realization comparison alone would see the difference...
+        from veritx_dse.backend.qualification import (  # noqa: PLC0415
+            compare_booksim_realizations,
+        )
+        assert not compare_booksim_realizations(
+            artifacts["BOOKSIM_STANDALONE"], tampered).equivalent
+        # ...but canonicality refuses before any comparison.
         artifacts["SERVING_BOOKSIM2"] = tampered
         with pytest.raises(QualificationError,
-                           match="realization differs"):
-            qualify_cross_backend(artifacts)
+                           match="canonical lowering"):
+            qualify_cross_backend(bundle, artifacts)
 
     @pytest.mark.parametrize("field,value", [
         ("speculative", 1),
@@ -196,9 +203,19 @@ class TestSemanticIntersection:
         artifacts["SERVING_BOOKSIM2"] = replace(
             serving, artifact_hash="",
             normalized_parameters=tuple(sorted(params.items())))
+        # The forged artifact is refused as noncanonical before the
+        # realization surface is consulted...
         with pytest.raises(QualificationError,
-                           match="shared BookSim realization differs"):
-            qualify_cross_backend(artifacts)
+                           match="canonical lowering"):
+            qualify_cross_backend(bundle, artifacts)
+        # ...while the realization comparison itself still detects the
+        # drift (kept as its own proof).
+        from veritx_dse.backend.qualification import (  # noqa: PLC0415
+            compare_booksim_realizations,
+        )
+        assert not compare_booksim_realizations(
+            artifacts["BOOKSIM_STANDALONE"],
+            artifacts["SERVING_BOOKSIM2"]).equivalent
 
     def test_permitted_target_differences_still_qualify(self, bundle):
         from dataclasses import replace  # noqa: PLC0415
@@ -207,13 +224,22 @@ class TestSemanticIntersection:
         params = dict(serving.normalized_parameters)
         params["traffic"] = "uniform_different_transport"
         params["sample_period"] = 12345
-        artifacts["SERVING_BOOKSIM2"] = replace(
+        doctored = replace(
             serving, artifact_hash="",
             normalized_parameters=tuple(sorted(params.items())))
-        report = qualify_cross_backend(artifacts)
-        comparison = report.realization_for("BOOKSIM_STANDALONE",
-                                            "SERVING_BOOKSIM2")
-        assert comparison is not None and comparison.equivalent
+        # Excluded fields are not part of the realization surface, so the
+        # comparison still reports equivalence.
+        from veritx_dse.backend.qualification import (  # noqa: PLC0415
+            compare_booksim_realizations,
+        )
+        assert compare_booksim_realizations(
+            artifacts["BOOKSIM_STANDALONE"], doctored).equivalent
+        # Canonical qualification (which checks the artifact against the
+        # bundle) does NOT accept doctored artifacts; that is the stronger
+        # guarantee and is asserted here explicitly.
+        with pytest.raises(QualificationError, match="canonical lowering"):
+            qualify_cross_backend(
+                bundle, {**artifacts, "SERVING_BOOKSIM2": doctored})
 
     def test_target_specific_exclusion_set_is_closed_and_audited(self):
         from veritx_dse.backend.booksim_profile import (  # noqa: PLC0415
@@ -255,7 +281,7 @@ class TestSemanticIntersection:
 
     def test_disagreements_are_explicit(self, bundle):
         artifacts = four_targets(bundle)
-        report = qualify_cross_backend(artifacts)
+        report = qualify_cross_backend(bundle, artifacts)
         assert report.disagreements
         for row in report.disagreements:
             art = artifacts[row.target]
@@ -269,7 +295,7 @@ class TestSemanticIntersection:
     def test_targets_share_fabric_identity_but_not_config_hashes(
             self, bundle):
         artifacts = four_targets(bundle)
-        report = qualify_cross_backend(artifacts)
+        report = qualify_cross_backend(bundle, artifacts)
         assert report.fabric_hash == bundle.fabric.fabric_hash()
         assert report.resolved_fabric_hash == \
             bundle.resolved_fabric.resolved_fabric_hash()
@@ -280,7 +306,7 @@ class TestSemanticIntersection:
 
     def test_route_realization_disagreement_is_visible(self, bundle):
         artifacts = four_targets(bundle)
-        report = qualify_cross_backend(artifacts)
+        report = qualify_cross_backend(bundle, artifacts)
         rows = {r.target: r for r in report.disagreements
                 if r.dimension is SemanticDimension.ROUTE_REALIZATION}
         assert rows["SERVING_BOOKSIM2"].effect == "BLOCKS_EXACT_FABRIC"
@@ -292,7 +318,7 @@ class TestSemanticIntersection:
         mixed = dict(artifacts)
         mixed["SERVING_BOOKSIM2"] = foreign["SERVING_BOOKSIM2"]
         with pytest.raises(QualificationError, match="fabric_hash"):
-            qualify_cross_backend(mixed)
+            qualify_cross_backend(bundle, mixed)
 
 
 # ── unsupported-domain qualification ────────────────────────────────────
@@ -425,21 +451,30 @@ class TestExecutionQualification:
             supported_domain="")
         tampered = replace(art, semantic_bindings=tuple(binds),
                            artifact_hash="")
-        trace = b"0 0 0 3 2\n10 3 0 0 2\n"
-        rendered = render_booksim_standalone(bundle, tampered,
-                                             workload_trace=trace)
-        manifest = bind_booksim_inputs(
-            tampered, rendered, workload_hash=sha256_bytes(trace))
-        prepared = PreparedBackend(bundle=bundle, config=tampered,
-                                   rendered=rendered, manifest=manifest)
+        # The qualification classification itself still reports
+        # UNSUPPORTED_EXECUTION...
+        from veritx_dse.backend.booksim import (  # noqa: PLC0415
+            execution_qualification,
+        )
+        assert execution_qualification(tampered).value == \
+            "EXECUTION_UNSUPPORTED"
+        # ...and the certified renderer refuses it (noncanonical) before
+        # anything could be materialized or spawned.
         calls = {"n": 0}
 
         def never(cmd, cwd, timeout):
             calls["n"] += 1
             raise AssertionError("spawned despite UNSUPPORTED_EXECUTION")
 
+        trace = b"0 0 0 3 2\n10 3 0 0 2\n"
         with pytest.raises(BookSimLoweringError,
-                           match="UNSUPPORTED_EXECUTION"):
+                           match="noncanonical|UNSUPPORTED_EXECUTION"):
+            rendered = render_booksim_standalone(bundle, tampered,
+                                                 workload_trace=trace)
+            manifest = bind_booksim_inputs(
+                tampered, rendered, workload_hash=sha256_bytes(trace))
+            prepared = PreparedBackend(bundle=bundle, config=tampered,
+                                       rendered=rendered, manifest=manifest)
             from veritx_dse.backend.booksim import (  # noqa: PLC0415
                 run_certified_booksim,
             )

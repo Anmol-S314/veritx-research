@@ -25,8 +25,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping
 
+from .booksim import assert_canonical_booksim_projection
 from .booksim_profile import BOOKSIM_SERVING_PROFILE, \
     BOOKSIM_STANDALONE_PROFILE
+from .bundle import ResolvedFabricBundle
 from .contracts import (
     BackendConfigArtifact, BackendTarget, RepresentationStatus,
     SemanticDimension,
@@ -174,8 +176,18 @@ def compare_booksim_realizations(
 # ── the qualifier ───────────────────────────────────────────────────────
 
 def qualify_cross_backend(
+        bundle: ResolvedFabricBundle,
         artifacts: Mapping[str, BackendConfigArtifact],
 ) -> QualificationReport:
+    """Qualify targets against the authoritative bundle context.
+
+    Canonical lowering is checked FIRST for every BookSim target: an
+    artifact that recomputed its own hash but is not the canonical
+    lowering of ``bundle`` is refused before authority or realization
+    comparison, so two equally forged artifacts cannot agree their way
+    to validity. Analytical canonical re-lowering is out of scope (no
+    graph authority exists); their identity checks are structural only.
+    """
     if len(artifacts) < 2:
         raise QualificationError("need at least two target artifacts")
     # Target identity is authoritative from the artifact; caller labels are
@@ -193,6 +205,15 @@ def qualify_cross_backend(
         raise QualificationError(
             f"duplicate backend targets in qualification input: "
             f"{sorted(seen_targets)}")
+    for name, art in artifacts.items():
+        if art.backend_target in (BackendTarget.BOOKSIM_STANDALONE,
+                                  BackendTarget.SERVING_BOOKSIM2):
+            try:
+                assert_canonical_booksim_projection(bundle, art)
+            except ValueError as exc:
+                raise QualificationError(
+                    f"{name}: artifact is not the canonical lowering of "
+                    f"the supplied bundle: {exc}") from exc
     problems: list[str] = []
     fabric_hashes = {a.fabric_hash for a in artifacts.values()}
     resolved_hashes = {a.resolved_fabric_hash for a in artifacts.values()}

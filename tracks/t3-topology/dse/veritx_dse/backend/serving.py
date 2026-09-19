@@ -29,7 +29,6 @@ Unit conversion rules:
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -37,8 +36,10 @@ from typing import Any
 from .booksim import (
     BOOKSIM_CONFIG_KEY_ORDER, BOOKSIM_LOWERER_VERSION, ROUTE_DUMP_FILE,
     SERVING_BOOKSIM2_PROFILE, SERVING_BOOKSIM2_SEMANTICS_VERSION,
-    TOPOLOGY_FILE, exact_flit_bytes, lower_booksim_projection,
-    materialize_backend, render_topology_anynet, verify_materialized,
+    TOPOLOGY_FILE, assert_canonical_booksim_projection, exact_flit_bytes,
+    lower_booksim_projection, materialize_backend,
+    parse_booksim_config_values, render_topology_anynet,
+    verify_materialized, verify_rendered_profile_gates,
 )
 from .booksim_profile import BOOKSIM_SERVING_PROFILE as SERVING_PROFILE_SPEC
 from .bundle import ResolvedFabricBundle
@@ -126,12 +127,24 @@ def validate_physical_dims(physical_dims: Any, *,
     return tuple(dims)
 
 
-def render_serving_config(config: BackendConfigArtifact) -> bytes:
-    """Render the exact embedded BookSim config (no packet_size)."""
+def render_serving_config(bundle: ResolvedFabricBundle,
+                          config: BackendConfigArtifact) -> bytes:
+    """Render the exact embedded BookSim config (no packet_size).
+
+    Certified path: the config must be the canonical lowering of the
+    supplied bundle, and the rendered bytes must satisfy every site pin
+    gate before they are returned for materialization.
+    """
     if config.backend_target is not BackendTarget.SERVING_BOOKSIM2:
         raise ServingBackendError(
             f"config target {config.backend_target.value} is not "
             f"{BackendTarget.SERVING_BOOKSIM2.value}")
+    try:
+        assert_canonical_booksim_projection(bundle, config)
+    except ValueError as exc:
+        raise ServingBackendError(
+            f"serving config is not the canonical lowering of this "
+            f"bundle: {exc}") from exc
     values: dict[str, Any] = {
         key: value for key, value in config.normalized_parameters
         if key not in _PROJECTION_ONLY_KEYS}
@@ -150,7 +163,15 @@ def render_serving_config(config: BackendConfigArtifact) -> bytes:
             f"serving ownership keys not rendered: {sorted(missing)}")
     lines = [f"{key} = {_format_value(values[key])};"
              for key in _SERVING_KEY_ORDER]
-    return ("\n".join(lines) + "\n").encode()
+    cfg = ("\n".join(lines) + "\n").encode()
+    try:
+        verify_rendered_profile_gates(parse_booksim_config_values(
+            cfg.decode()))
+    except ValueError as exc:
+        raise ServingBackendError(
+            f"rendered serving config violates certified profile gates: "
+            f"{exc}") from exc
+    return cfg
 
 
 @dataclass(frozen=True)
@@ -188,7 +209,7 @@ def prepare_serving_booksim(
     flit_bytes = exact_flit_bytes(bundle.packet_format)
     dims = validate_physical_dims(
         physical_dims, endpoint_count=bundle.attachment.endpoint_count)
-    cfg = render_serving_config(config)
+    cfg = render_serving_config(bundle, config)
     files = (
         (SERVING_CONFIG_FILE, cfg),
         (TOPOLOGY_FILE, render_topology_anynet(bundle)),
@@ -254,10 +275,6 @@ def serving_backend_evidence(prepared: PreparedServingBackend) -> dict:
 
 # ── mechanical consumption validation (transition path) ────────────────
 
-_CFG_KV_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^;]+);\s*$",
-                        re.M)
-
-
 def validate_serving_consumption(
         prepared: PreparedServingBackend, *,
         cfg_text: str, flit_bytes: int,
@@ -269,6 +286,12 @@ def validate_serving_consumption(
     parameter, the flit-byte conversion, the logical dims and the replay
     mode must agree with the prepared certified projection.
     """
+    try:
+        assert_canonical_booksim_projection(prepared.bundle,
+                                            prepared.config)
+    except ValueError as exc:
+        raise ServingBackendError(
+            f"prepared serving config is not canonical: {exc}") from exc
     if replay_only:
         raise ServingBackendError(
             "replay_only serving runs are not network execution and cannot "
@@ -288,7 +311,7 @@ def validate_serving_consumption(
             f"serving physical_dims {dims} do not match the prepared "
             f"certified dims {prepared.physical_dims}")
 
-    kv = {m.group(1): m.group(2).strip() for m in _CFG_KV_RE.finditer(cfg_text)}
+    kv = parse_booksim_config_values(cfg_text)
     if "packet_size" in kv:
         raise ServingBackendError(
             "generated serving config declares packet_size, which does not "

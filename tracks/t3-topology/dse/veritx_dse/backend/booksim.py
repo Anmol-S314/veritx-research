@@ -80,6 +80,18 @@ _SEED_DEFAULT = 1
 _SAMPLE_PERIOD_MIN = 200
 _SAMPLE_PERIOD_MARGIN = 1000
 
+# Authoritative profile/version identity per BookSim target. A forged
+# artifact can recompute its own hash; it cannot change what its target's
+# certified lowering must be.
+_EXPECTED_BOOKSIM_IDENTITY: dict[BackendTarget, tuple[str, str, str]] = {
+    BackendTarget.BOOKSIM_STANDALONE: (
+        BOOKSIM_STANDALONE_PROFILE, BOOKSIM_BACKEND_SEMANTICS_VERSION,
+        BOOKSIM_LOWERER_VERSION),
+    BackendTarget.SERVING_BOOKSIM2: (
+        SERVING_BOOKSIM2_PROFILE, SERVING_BOOKSIM2_SEMANTICS_VERSION,
+        BOOKSIM_LOWERER_VERSION),
+}
+
 
 class BookSimLoweringError(ValueError):
     """The semantic fabric cannot be lowered to BookSim — fail closed."""
@@ -621,6 +633,100 @@ def lower_booksim_projection(
 
 # ── deterministic rendering ─────────────────────────────────────────────
 
+def assert_canonical_booksim_projection(
+        bundle: ResolvedFabricBundle,
+        config: BackendConfigArtifact) -> BackendConfigArtifact:
+    """Prove ``config`` IS the canonical lowering of ``bundle``.
+
+    A BackendConfigArtifact can be internally hash-consistent, bind the
+    right fabric/resolved identities, and still not be the authorized
+    lowering of that fabric (recomputed hash + forged parameters). This
+    re-derives the expected artifact for the config's target/profile
+    identity and requires complete canonical identity equality. Hash
+    consistency alone is never accepted.
+
+    Returns the freshly derived canonical artifact.
+    """
+    if config.backend_target not in _EXPECTED_BOOKSIM_IDENTITY:
+        raise BookSimLoweringError(
+            f"no canonical BookSim lowering for target "
+            f"{config.backend_target.value}")
+    profile, semantics, lowerer = _EXPECTED_BOOKSIM_IDENTITY[
+        config.backend_target]
+    if config.backend_profile != profile:
+        raise BookSimLoweringError(
+            f"noncanonical backend_profile {config.backend_profile!r}; "
+            f"{config.backend_target.value} requires {profile!r}")
+    if config.backend_semantics_version != semantics:
+        raise BookSimLoweringError(
+            f"noncanonical backend_semantics_version "
+            f"{config.backend_semantics_version!r}; expected {semantics!r}")
+    if config.lowerer_version != lowerer:
+        raise BookSimLoweringError(
+            f"noncanonical lowerer_version {config.lowerer_version!r}; "
+            f"expected {lowerer!r}")
+    if config.fabric_hash != bundle.fabric.fabric_hash():
+        raise BookSimLoweringError(
+            "config fabric_hash does not match the supplied bundle")
+    if config.resolved_fabric_hash != \
+            bundle.resolved_fabric.resolved_fabric_hash():
+        raise BookSimLoweringError(
+            "config resolved_fabric_hash does not match the supplied "
+            "bundle")
+    expected = lower_booksim_projection(
+        bundle, target=config.backend_target, profile=profile,
+        semantics_version=semantics, lowerer_version=lowerer)
+    actual_identity = config.identity_dict()
+    expected_identity = expected.identity_dict()
+    if actual_identity != expected_identity:
+        differing = sorted(
+            key for key in set(actual_identity) | set(expected_identity)
+            if actual_identity.get(key) != expected_identity.get(key))
+        raise BookSimLoweringError(
+            f"noncanonical BookSim artifact: it does not equal the "
+            f"canonical lowering of this bundle (differs in "
+            f"{differing})")
+    return expected
+
+
+def parse_booksim_config_values(text: str) -> dict[str, str]:
+    """Parse a rendered BookSim config into name -> raw value strings.
+
+    The single parser for rendered certified configs (runner gate checks
+    and the serving consumption validator both use it).
+    """
+    values: dict[str, str] = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("//") or line.startswith("#"):
+            continue
+        if not line.endswith(";") or "=" not in line:
+            continue
+        key, value = line[:-1].split("=", 1)
+        key = key.strip()
+        if key and key.replace("_", "").isalnum():
+            values[key] = value.strip()
+    return values
+
+
+def verify_rendered_profile_gates(rendered_values: dict[str, str]) -> None:
+    """Verify the exact bytes about to execute satisfy every site pin gate.
+
+    The static source audit proves these gates make inactive backend
+    source paths unreachable; this is the runtime half: the rendered
+    config must actually hold them. Mechanism gates are declaration-only
+    here. No C++ source is scanned at runtime.
+    """
+    from .source_audit import (GATED_READ_SITES, SourceAuditError,
+                               verify_site_gates)
+    try:
+        verify_site_gates(GATED_READ_SITES, rendered_values)
+    except SourceAuditError as exc:
+        raise BookSimLoweringError(
+            f"rendered config violates certified profile gates: {exc}"
+        ) from exc
+
+
 @dataclass(frozen=True)
 class TraceSummary:
     dialect: str
@@ -770,6 +876,7 @@ def render_booksim_standalone(
         raise BookSimLoweringError(
             f"config target {config.backend_target.value} is not "
             f"{BackendTarget.BOOKSIM_STANDALONE.value}")
+    assert_canonical_booksim_projection(bundle, config)
     if config.fabric_hash != bundle.fabric.fabric_hash():
         raise BookSimLoweringError(
             "config fabric_hash does not match the supplied bundle")
@@ -1205,6 +1312,7 @@ def run_qualified_booksim(
     except ValueError as exc:
         raise BookSimLoweringError(
             f"bundle failed revalidation before execution: {exc}") from exc
+    assert_canonical_booksim_projection(bundle, config)
     if config.backend_config_hash() != manifest.backend_config_hash:
         raise BackendMaterializationError(
             "manifest does not bind this backend config artifact")
@@ -1220,6 +1328,10 @@ def run_qualified_booksim(
     verify_anynet_roundtrip(bundle, backend_dir / TOPOLOGY_FILE)
     # Re-verify the exact bytes the child is about to execute.
     verify_materialized(manifest, backend_dir)
+    # Runtime half of the profile-gate proof: the exact rendered bytes must
+    # satisfy every site pin gate before anything spawns.
+    verify_rendered_profile_gates(parse_booksim_config_values(
+        (backend_dir / CONFIG_FILE).read_text()))
 
     bin_path = Path(binary) if binary is not None \
         else find_booksim_bin(repo_root)
@@ -1321,6 +1433,9 @@ __all__ = [
     "execution_qualification",
     "expected_route_table",
     "assert_executable",
+    "assert_canonical_booksim_projection",
+    "parse_booksim_config_values",
+    "verify_rendered_profile_gates",
     "exact_flit_bytes",
     "lower_booksim_projection",
     "lower_booksim_standalone",
