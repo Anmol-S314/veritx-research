@@ -64,6 +64,49 @@ def four_targets(bundle):
     }
 
 
+class TestTargetIdentity:
+    """Caller labels cannot misrepresent artifact target identity."""
+
+    def test_swapped_labels_refused(self, bundle):
+        arts = four_targets(bundle)
+        swapped = {
+            "BOOKSIM_STANDALONE": arts["SERVING_BOOKSIM2"],
+            "SERVING_BOOKSIM2": arts["BOOKSIM_STANDALONE"],
+            "SERVING_ANALYTICAL_AWARE":
+                arts["SERVING_ANALYTICAL_AWARE"],
+            "SERVING_ANALYTICAL_UNAWARE":
+                arts["SERVING_ANALYTICAL_UNAWARE"],
+        }
+        with pytest.raises(QualificationError,
+                           match="does not match artifact"):
+            qualify_cross_backend(swapped)
+
+    def test_arbitrary_labels_refused(self, bundle):
+        arts = four_targets(bundle)
+        with pytest.raises(QualificationError,
+                           match="does not match artifact"):
+            qualify_cross_backend({
+                "FOO": arts["BOOKSIM_STANDALONE"],
+                "BAR": arts["SERVING_BOOKSIM2"],
+            })
+
+    def test_duplicate_target_under_alias_refused(self, bundle):
+        arts = four_targets(bundle)
+        with pytest.raises(QualificationError,
+                           match="does not match artifact"):
+            qualify_cross_backend({
+                "BOOKSIM_STANDALONE": arts["BOOKSIM_STANDALONE"],
+                "SERVING_BOOKSIM2": arts["BOOKSIM_STANDALONE"],
+            })
+
+    def test_valid_labels_report_artifact_identity(self, bundle):
+        arts = four_targets(bundle)
+        report = qualify_cross_backend(arts)
+        assert set(report.targets) == set(arts)
+        for claim in report.authorities:
+            assert set(claim.targets) <= set(arts)
+
+
 class TestSemanticIntersection:
     def test_shared_authority_claims_use_one_source(self, bundle):
         artifacts = four_targets(bundle)

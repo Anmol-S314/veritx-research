@@ -1,35 +1,41 @@
-"""veritx_dse.backend.source_audit — read-site source-drift guard
-(B3.8a, hardened in B3.8e/B3.8f).
+"""veritx_dse.backend.source_audit — site-gated source-drift guard
+(B3.8a, hardened through B3.8g).
 
 `booksim_profile.py` is the closed-world registry of configuration fields
 the certified BookSim profile reads. This module keeps the closure closed
-at READ-SITE granularity:
+at READ-SITE granularity with an explicit, site-specific gate:
 
-    whole-file lexical scan (multiline-safe) for
-        config.Get*/config->Get*("field")
-    -> for every discovered occurrence (field, file, line):
-         * field is registered active in the profile registry, OR
-         * the (field, file) site is declared in GATED_READ_SITES with
-           the exact expected occurrence count (and, when recoverable, the
-           enclosing method set), and its gate holds
-    -> stale registry entries, stale gates, stale sites and uncovered or
-       count-mismatched occurrences are refused.
+    conservative whole-file lexical scan for any receiver
+        <receiver>.Get*(...) / <receiver>->Get*(...)
+    over .cpp .cc .cxx .hpp .hh .h .ipp
+    -> for every discovered (field, file, occurrence):
+         * ACTIVE registered field            -> accepted as registered
+         * INACTIVE_FOR_PROFILE field         -> MUST match a declared
+                                                 GATED_READ_SITES entry
+                                                 (file, count, methods,
+                                                 site gates)
+         * unregistered field with a declared site -> same site checks
+         * otherwise                          -> refused
+    -> stale registry entries, stale gates, stale sites and uncovered
+       occurrences are refused.
 
-The count check is what closes the same-file hole: adding a second
-`config.GetInt("packet_size")` to trafficmanager.cpp fails even though
-`packet_size@trafficmanager.cpp` was already gated once.
+INACTIVE_FOR_PROFILE is documentation/accounting, not proof: those fields
+are exactly the ones whose safety depends on a gate, so they are subjected
+to the same site checks as unregistered gated fields.
 
-KNOWN BOUNDARY: this proves the DECLARED SET OF LEXICAL READ SITES has not
-changed. It does not prove arbitrary C++ control-flow equivalence: moving
-an existing read into a different branch while preserving the same lexical
-identity and count is source modification, and producer/source identity in
-B4 is the layer that detects it.
+KNOWN BOUNDARY: this proves the DECLARED SET OF LEXICAL READ SITES and
+each site's explicit disabling mechanism have not changed. It does not
+prove arbitrary C++ control-flow equivalence when an existing read is
+moved or semantically repurposed without changing its lexical identity;
+B4 producer/source identity detects such source modification. B4 proves
+producer identity, not semantic equivalence.
 
 Scope note: this audits the STANDALONE certified fork
-(third_party/booksim2/src). The embedded serving mirror is guarded by
-read-site equivalence in tests; full embedded-source drift qualification
-is deferred until SERVING_BOOKSIM2 receives an authoritative
-ResolvedFabric bridge and becomes executable.
+(third_party/booksim2/src). The embedded serving mirror is guarded by a
+read-site comparison (field, file, occurrence count, recovered methods)
+in tests; full embedded-source equivalence and execution qualification
+remain deferred until SERVING_BOOKSIM2 has an authoritative ResolvedFabric
+bridge.
 """
 from __future__ import annotations
 
@@ -40,18 +46,17 @@ from typing import Any
 
 from .booksim_profile import BOOKSIM_STANDALONE_PROFILE, ConfigRead
 
-# Whole-file scan: whitespace/newlines may appear around the arrow and
-# between the getter and its argument, so multiline calls are found too.
+# Conservative: receiver name is irrelevant, so aliases cannot evade.
 CONFIG_READ_RE = re.compile(
-    r"config\s*(?:->|\.)\s*Get"
+    r"\b[A-Za-z_]\w*\s*(?:->|\.)\s*Get"
     r"(?:Int|Str|Float|IntArray|StrArray|FloatArray)"
     r"\s*\(\s*\"([A-Za-z_][A-Za-z0-9_]*)\"")
 CONFIG_READ_GROUP = 1
+SOURCE_EXTENSIONS: tuple[str, ...] = (
+    ".cpp", ".cc", ".cxx", ".hpp", ".hh", ".h", ".ipp")
 
-# Conservative class-method recovery for C++ definitions at column 0
-# (e.g. `TrafficManager::TrafficManager(`). Free functions and unusual
-# formatting fall back to (). Informational, and enforced only when the
-# declared site records a non-empty function set.
+# Class-method recovery for C++ definitions at column 0. Informational;
+# enforced only when a declared site records a non-empty function set.
 ENCLOSING_DEF_RE = re.compile(
     r"^[A-Za-z_][A-Za-z0-9_:<>,~ \*&]*?\b([A-Za-z_]\w*::[A-Za-z_~]\w*)\s*\(")
 
@@ -60,13 +65,18 @@ class SourceAuditError(ValueError):
     """The certified source closure diverges from the audit registry."""
 
 
-def enclosing_function(text: str, pos: int) -> tuple[str, ...]:
-    current: tuple[str, ...] = ()
-    for line in text[:pos].splitlines():
-        m = ENCLOSING_DEF_RE.match(line)
-        if m:
-            current = (m.group(1),)
-    return current
+@dataclass(frozen=True)
+class GatedReadSite:
+    """One declared gated read site: file, count, methods, and ITS gates.
+
+    ``gates`` is site-specific: a site must not inherit a gate that
+    justifies a different site of the same field.
+    """
+
+    path: str
+    occurrences: int
+    functions: tuple[str, ...] = ()
+    gates: tuple[str, ...] = ()
 
 
 MECHANISM_JUSTIFICATIONS: dict[str, str] = {
@@ -84,196 +94,104 @@ MECHANISM_JUSTIFICATIONS: dict[str, str] = {
         "certified targets render trace(...) or uniform, which do not "
         "reach those branches"),
     "conditional_presence": (
-        "read only when config.GetIntMap().count(field) (veritx_embed.cpp:"
-        "267-269); the certified projector never emits k/n/c"),
+        "read only when config.GetIntMap().count(field) (veritx_embed.cpp); "
+        "the certified projector never emits k/n/c"),
 }
 
 
-# ── gates (field level) ─────────────────────────────────
-
-GATED_FIELDS: dict[str, tuple[str, ...]] = {
-    "Cd": ("pin:sim_power=0",),
-    "Cd_pwr": ("pin:sim_power=0",),
-    "Cg": ("pin:sim_power=0",),
-    "Cg_pwr": ("pin:sim_power=0",),
-    "Cgdl": ("pin:sim_power=0",),
-    "Cw_cpl": ("pin:sim_power=0",),
-    "Cw_gnd": ("pin:sim_power=0",),
-    "H_DFQD1": ("pin:sim_power=0",),
-    "H_INVD2": ("pin:sim_power=0",),
-    "H_ND2D1": ("pin:sim_power=0",),
-    "H_SRAM": ("pin:sim_power=0",),
-    "IoffN": ("pin:sim_power=0",),
-    "IoffP": ("pin:sim_power=0",),
-    "IoffSRAM": ("pin:sim_power=0",),
-    "LAMBDA": ("pin:sim_power=0",),
-    "MetalPitch": ("pin:sim_power=0",),
-    "R": ("pin:sim_power=0",),
-    "Rw": ("pin:sim_power=0",),
-    "Vdd": ("pin:sim_power=0",),
-    "W_DFQD1": ("pin:sim_power=0",),
-    "W_INVD2": ("pin:sim_power=0",),
-    "W_ND2D1": ("pin:sim_power=0",),
-    "W_SRAM": ("pin:sim_power=0",),
-    "channel_sweep": ("pin:sim_power=0",),
-    "channel_width": ("pin:sim_power=0",),
-    "power_output_file": ("pin:sim_power=0",),
-    "tech_file": ("pin:sim_power=0",),
-    "wire_length": ("pin:sim_power=0",),
-    "batch_count": ("pin:sim_type=latency",),
-    "batch_size": ("pin:sim_type=latency",),
-    "max_outstanding_requests": ("pin:sim_type=latency",),
-    "sent_packets_out": ("pin:sim_type=latency", "diagnostic_only"),
-    "trace_file": ("pin:sim_type=latency",),
-    "trace_packet_log": ("pin:sim_type=latency",),
-    "const_flits_per_packet": ("pin:router=iq",),
-    "multi_queue_size": ("pin:router=iq",),
-    "vct": ("pin:router=iq",),
-    "c": ("pin:topology=anynet", "conditional_presence"),
-    "d": ("pin:topology=anynet",),
-    "fail_seed": ("pin:topology=anynet",),
-    "hybrid": ("pin:topology=anynet",),
-    "k": ("pin:topology=anynet", "conditional_presence",
-          "pattern_dispatch"),
-    "mesh": ("pin:topology=anynet",),
-    "n": ("pin:topology=anynet", "conditional_presence",
-          "pattern_dispatch"),
-    "o": ("pin:topology=anynet",),
-    "use_noc_latency": ("pin:topology=anynet",),
-    "x": ("pin:topology=anynet",),
-    "xr": ("pin:topology=anynet", "pattern_dispatch"),
-    "y": ("pin:topology=anynet",),
-    "yr": ("pin:topology=anynet",),
-    "burst_alpha": ("pin:injection_process=bernoulli",),
-    "burst_beta": ("pin:injection_process=bernoulli",),
-    "burst_r1": ("pin:injection_process=bernoulli",),
-    "perm_seed": ("pattern_dispatch",),
-    "packet_size": ("trace_records",),
-    "packet_size_rate": ("trace_records",),
-    "private_bufs": ("pin:buffer_policy=private",),
-    "private_buf_size": ("pin:buffer_policy=private",),
-    "private_buf_start_vc": ("pin:buffer_policy=private",),
-    "private_buf_end_vc": ("pin:buffer_policy=private",),
-    "max_held_slots": ("pin:buffer_policy=private",),
-    "feedback_aging_scale": ("pin:buffer_policy=private",),
-    "feedback_offset": ("pin:buffer_policy=private",),
-    "write_fraction": ("pin:use_read_write=0",),
-    "read_request_size": ("pin:use_read_write=0",),
-    "read_reply_size": ("pin:use_read_write=0",),
-    "write_request_size": ("pin:use_read_write=0",),
-    "write_reply_size": ("pin:use_read_write=0",),
-    "watch_out": ("diagnostic_only",),
-    "watch_file": ("diagnostic_only",),
-    "watch_flits": ("diagnostic_only",),
-    "watch_packets": ("diagnostic_only",),
-    "stats_out": ("diagnostic_only",),
-    "injected_flits_out": ("diagnostic_only",),
-    "received_flits_out": ("diagnostic_only",),
-    "stored_flits_out": ("diagnostic_only",),
-    "sent_flits_out": ("diagnostic_only",),
-    "outstanding_credits_out": ("diagnostic_only",),
-    "ejected_flits_out": ("diagnostic_only",),
-    "active_packets_out": ("diagnostic_only",),
-    "used_credits_out": ("diagnostic_only",),
-    "free_credits_out": ("diagnostic_only",),
-    "max_credits_out": ("diagnostic_only",),
-}
-
-
-# ── declared read sites (field + file + count + functions) ──
-
-@dataclass(frozen=True)
-class GatedReadSite:
-    path: str
-    occurrences: int
-    functions: tuple[str, ...] = ()
+# ── declared read sites (field + file + count + methods + gates) ──
 
 GATED_READ_SITES: dict[str, tuple[GatedReadSite, ...]] = {
-    'Cd': (GatedReadSite('power/power_module.cpp', 1, ()),),
-    'Cd_pwr': (GatedReadSite('power/power_module.cpp', 1, ()),),
-    'Cg': (GatedReadSite('power/power_module.cpp', 1, ()),),
-    'Cg_pwr': (GatedReadSite('power/power_module.cpp', 1, ()),),
-    'Cgdl': (GatedReadSite('power/power_module.cpp', 1, ()),),
-    'Cw_cpl': (GatedReadSite('power/power_module.cpp', 1, ()),),
-    'Cw_gnd': (GatedReadSite('power/power_module.cpp', 1, ()),),
-    'H_DFQD1': (GatedReadSite('power/power_module.cpp', 1, ()),),
-    'H_INVD2': (GatedReadSite('power/power_module.cpp', 1, ()),),
-    'H_ND2D1': (GatedReadSite('power/power_module.cpp', 1, ()),),
-    'H_SRAM': (GatedReadSite('power/power_module.cpp', 1, ()),),
-    'IoffN': (GatedReadSite('power/power_module.cpp', 1, ()),),
-    'IoffP': (GatedReadSite('power/power_module.cpp', 1, ()),),
-    'IoffSRAM': (GatedReadSite('power/power_module.cpp', 1, ()),),
-    'LAMBDA': (GatedReadSite('power/power_module.cpp', 1, ()),),
-    'MetalPitch': (GatedReadSite('power/power_module.cpp', 1, ()),),
-    'R': (GatedReadSite('power/power_module.cpp', 1, ()),),
-    'Rw': (GatedReadSite('power/power_module.cpp', 1, ()),),
-    'Vdd': (GatedReadSite('power/power_module.cpp', 1, ()),),
-    'W_DFQD1': (GatedReadSite('power/power_module.cpp', 1, ()),),
-    'W_INVD2': (GatedReadSite('power/power_module.cpp', 1, ()),),
-    'W_ND2D1': (GatedReadSite('power/power_module.cpp', 1, ()),),
-    'W_SRAM': (GatedReadSite('power/power_module.cpp', 1, ()),),
-    'active_packets_out': (GatedReadSite('trafficmanager.cpp', 1, ('TrafficManager::New',)),),
-    'batch_count': (GatedReadSite('batchtrafficmanager.cpp', 1, ()),),
-    'batch_size': (GatedReadSite('batchtrafficmanager.cpp', 1, ()),),
-    'burst_alpha': (GatedReadSite('injection.cpp', 1, ('InjectionProcess::New',)),),
-    'burst_beta': (GatedReadSite('injection.cpp', 1, ('InjectionProcess::New',)),),
-    'burst_r1': (GatedReadSite('injection.cpp', 1, ('InjectionProcess::New',)),),
-    'c': (GatedReadSite('networks/cmesh.cpp', 1, ('CMesh::_ComputeSize',)), GatedReadSite('networks/flatfly_onchip.cpp', 1, ('FlatFlyOnChip::_ComputeSize',)), GatedReadSite('networks/gec.cpp', 1, ('GEC::_ComputeSize',)), GatedReadSite('veritx_embed.cpp', 1, ('EmbedTM::PlatStats',))),
-    'channel_sweep': (GatedReadSite('power/power_module.cpp', 1, ()),),
-    'channel_width': (GatedReadSite('power/power_module.cpp', 1, ()),),
-    'const_flits_per_packet': (GatedReadSite('routers/chaos_router.cpp', 1, ()),),
-    'd': (GatedReadSite('networks/gec.cpp', 1, ('GEC::_ComputeSize',)),),
-    'ejected_flits_out': (GatedReadSite('trafficmanager.cpp', 1, ('TrafficManager::New',)),),
-    'fail_seed': (GatedReadSite('networks/kncube.cpp', 2, ('KNCube::InsertRandomFaults',)),),
-    'feedback_aging_scale': (GatedReadSite('buffer_state.cpp', 1, ('FeedbackSharedBufferPolicy::FeedbackSharedBufferPolicy',)),),
-    'feedback_offset': (GatedReadSite('buffer_state.cpp', 1, ('FeedbackSharedBufferPolicy::FeedbackSharedBufferPolicy',)),),
-    'free_credits_out': (GatedReadSite('trafficmanager.cpp', 1, ('TrafficManager::New',)),),
-    'hybrid': (GatedReadSite('networks/gec.cpp', 1, ('GEC::_ComputeSize',)),),
-    'injected_flits_out': (GatedReadSite('trafficmanager.cpp', 1, ('TrafficManager::New',)),),
-    'k': (GatedReadSite('networks/cmesh.cpp', 1, ('CMesh::_ComputeSize',)), GatedReadSite('networks/dragonfly.cpp', 1, ('DragonFlyNew::_ComputeSize',)), GatedReadSite('networks/fattree.cpp', 1, ('FatTree::_ComputeSize',)), GatedReadSite('networks/flatfly_onchip.cpp', 1, ('FlatFlyOnChip::_ComputeSize',)), GatedReadSite('networks/fly.cpp', 1, ('KNFly::_ComputeSize',)), GatedReadSite('networks/gec.cpp', 1, ('GEC::_ComputeSize',)), GatedReadSite('networks/kncube.cpp', 1, ('KNCube::_ComputeSize',)), GatedReadSite('networks/qtree.cpp', 1, ('QTree::_ComputeSize',)), GatedReadSite('networks/tree4.cpp', 1, ('Tree4::_ComputeSize',)), GatedReadSite('traffic.cpp', 2, ('TrafficPattern::New',)), GatedReadSite('veritx_embed.cpp', 1, ('EmbedTM::PlatStats',))),
-    'max_credits_out': (GatedReadSite('trafficmanager.cpp', 1, ('TrafficManager::New',)),),
-    'max_held_slots': (GatedReadSite('buffer_state.cpp', 1, ('LimitedSharedBufferPolicy::LimitedSharedBufferPolicy',)),),
-    'max_outstanding_requests': (GatedReadSite('batchtrafficmanager.cpp', 1, ()),),
-    'mesh': (GatedReadSite('networks/gec.cpp', 1, ('GEC::_ComputeSize',)),),
-    'multi_queue_size': (GatedReadSite('routers/chaos_router.cpp', 1, ()),),
-    'n': (GatedReadSite('networks/cmesh.cpp', 1, ('CMesh::_ComputeSize',)), GatedReadSite('networks/dragonfly.cpp', 1, ('DragonFlyNew::_ComputeSize',)), GatedReadSite('networks/fattree.cpp', 1, ('FatTree::_ComputeSize',)), GatedReadSite('networks/flatfly_onchip.cpp', 1, ('FlatFlyOnChip::_ComputeSize',)), GatedReadSite('networks/fly.cpp', 1, ('KNFly::_ComputeSize',)), GatedReadSite('networks/kncube.cpp', 1, ('KNCube::_ComputeSize',)), GatedReadSite('networks/qtree.cpp', 1, ('QTree::_ComputeSize',)), GatedReadSite('networks/tree4.cpp', 1, ('Tree4::_ComputeSize',)), GatedReadSite('traffic.cpp', 2, ('TrafficPattern::New',)), GatedReadSite('veritx_embed.cpp', 1, ('EmbedTM::PlatStats',))),
-    'o': (GatedReadSite('networks/gec.cpp', 1, ('GEC::_ComputeSize',)),),
-    'outstanding_credits_out': (GatedReadSite('trafficmanager.cpp', 1, ('TrafficManager::New',)),),
-    'packet_size': (GatedReadSite('trafficmanager.cpp', 2, ('TrafficManager::New',)),),
-    'packet_size_rate': (GatedReadSite('trafficmanager.cpp', 2, ('TrafficManager::New',)),),
-    'perm_seed': (GatedReadSite('traffic.cpp', 2, ('TrafficPattern::New',)),),
-    'power_output_file': (GatedReadSite('power/power_module.cpp', 1, ()),),
-    'private_buf_end_vc': (GatedReadSite('buffer_state.cpp', 2, ('SharedBufferPolicy::SharedBufferPolicy',)),),
-    'private_buf_size': (GatedReadSite('buffer_state.cpp', 2, ('SharedBufferPolicy::SharedBufferPolicy',)),),
-    'private_buf_start_vc': (GatedReadSite('buffer_state.cpp', 2, ('SharedBufferPolicy::SharedBufferPolicy',)),),
-    'private_bufs': (GatedReadSite('buffer_state.cpp', 1, ('SharedBufferPolicy::SharedBufferPolicy',)),),
-    'read_reply_size': (GatedReadSite('trafficmanager.cpp', 2, ('TrafficManager::New',)),),
-    'read_request_size': (GatedReadSite('trafficmanager.cpp', 2, ('TrafficManager::New',)),),
-    'received_flits_out': (GatedReadSite('trafficmanager.cpp', 1, ('TrafficManager::New',)),),
-    'sent_flits_out': (GatedReadSite('trafficmanager.cpp', 1, ('TrafficManager::New',)),),
-    'sent_packets_out': (GatedReadSite('batchtrafficmanager.cpp', 1, ()),),
-    'stats_out': (GatedReadSite('trafficmanager.cpp', 1, ('TrafficManager::New',)),),
-    'stored_flits_out': (GatedReadSite('trafficmanager.cpp', 1, ('TrafficManager::New',)),),
-    'tech_file': (GatedReadSite('power/power_module.cpp', 1, ()),),
-    'trace_file': (GatedReadSite('tracetrafficmanager.cpp', 1, ()),),
-    'trace_packet_log': (GatedReadSite('tracetrafficmanager.cpp', 1, ()),),
-    'use_noc_latency': (GatedReadSite('networks/cmesh.cpp', 1, ('CMesh::_BuildNet',)), GatedReadSite('networks/flatfly_onchip.cpp', 1, ('FlatFlyOnChip::_BuildNet',)), GatedReadSite('networks/gec.cpp', 1, ('GEC::_ComputeSize',)), GatedReadSite('networks/kncube.cpp', 1, ('KNCube::_BuildNet',))),
-    'used_credits_out': (GatedReadSite('trafficmanager.cpp', 1, ('TrafficManager::New',)),),
-    'vct': (GatedReadSite('routers/event_router.cpp', 1, ()),),
-    'watch_file': (GatedReadSite('trafficmanager.cpp', 1, ('TrafficManager::New',)),),
-    'watch_flits': (GatedReadSite('trafficmanager.cpp', 1, ('TrafficManager::New',)),),
-    'watch_out': (GatedReadSite('main.cpp', 1, ()),),
-    'watch_packets': (GatedReadSite('trafficmanager.cpp', 1, ('TrafficManager::New',)),),
-    'wire_length': (GatedReadSite('power/power_module.cpp', 1, ()),),
-    'write_fraction': (GatedReadSite('trafficmanager.cpp', 2, ('TrafficManager::New',)),),
-    'write_reply_size': (GatedReadSite('trafficmanager.cpp', 2, ('TrafficManager::New',)),),
-    'write_request_size': (GatedReadSite('trafficmanager.cpp', 2, ('TrafficManager::New',)),),
-    'x': (GatedReadSite('networks/cmesh.cpp', 1, ('CMesh::_ComputeSize',)), GatedReadSite('networks/flatfly_onchip.cpp', 1, ('FlatFlyOnChip::_ComputeSize',))),
-    'xr': (GatedReadSite('networks/cmesh.cpp', 1, ('CMesh::_ComputeSize',)), GatedReadSite('networks/flatfly_onchip.cpp', 1, ('FlatFlyOnChip::_ComputeSize',)), GatedReadSite('traffic.cpp', 1, ('TrafficPattern::New',))),
-    'y': (GatedReadSite('networks/cmesh.cpp', 1, ('CMesh::_ComputeSize',)), GatedReadSite('networks/flatfly_onchip.cpp', 1, ('FlatFlyOnChip::_ComputeSize',))),
-    'yr': (GatedReadSite('networks/cmesh.cpp', 1, ('CMesh::_ComputeSize',)), GatedReadSite('networks/flatfly_onchip.cpp', 1, ('FlatFlyOnChip::_ComputeSize',))),
+    'Cd': (GatedReadSite('power/power_module.cpp', 1, (), ('pin:sim_power=0',)),),
+    'Cd_pwr': (GatedReadSite('power/power_module.cpp', 1, (), ('pin:sim_power=0',)),),
+    'Cg': (GatedReadSite('power/power_module.cpp', 1, (), ('pin:sim_power=0',)),),
+    'Cg_pwr': (GatedReadSite('power/power_module.cpp', 1, (), ('pin:sim_power=0',)),),
+    'Cgdl': (GatedReadSite('power/power_module.cpp', 1, (), ('pin:sim_power=0',)),),
+    'Cw_cpl': (GatedReadSite('power/power_module.cpp', 1, (), ('pin:sim_power=0',)),),
+    'Cw_gnd': (GatedReadSite('power/power_module.cpp', 1, (), ('pin:sim_power=0',)),),
+    'H_DFQD1': (GatedReadSite('power/power_module.cpp', 1, (), ('pin:sim_power=0',)),),
+    'H_INVD2': (GatedReadSite('power/power_module.cpp', 1, (), ('pin:sim_power=0',)),),
+    'H_ND2D1': (GatedReadSite('power/power_module.cpp', 1, (), ('pin:sim_power=0',)),),
+    'H_SRAM': (GatedReadSite('power/power_module.cpp', 1, (), ('pin:sim_power=0',)),),
+    'IoffN': (GatedReadSite('power/power_module.cpp', 1, (), ('pin:sim_power=0',)),),
+    'IoffP': (GatedReadSite('power/power_module.cpp', 1, (), ('pin:sim_power=0',)),),
+    'IoffSRAM': (GatedReadSite('power/power_module.cpp', 1, (), ('pin:sim_power=0',)),),
+    'LAMBDA': (GatedReadSite('power/power_module.cpp', 1, (), ('pin:sim_power=0',)),),
+    'MetalPitch': (GatedReadSite('power/power_module.cpp', 1, (), ('pin:sim_power=0',)),),
+    'R': (GatedReadSite('power/power_module.cpp', 1, (), ('pin:sim_power=0',)),),
+    'Rw': (GatedReadSite('power/power_module.cpp', 1, (), ('pin:sim_power=0',)),),
+    'Vdd': (GatedReadSite('power/power_module.cpp', 1, (), ('pin:sim_power=0',)),),
+    'W_DFQD1': (GatedReadSite('power/power_module.cpp', 1, (), ('pin:sim_power=0',)),),
+    'W_INVD2': (GatedReadSite('power/power_module.cpp', 1, (), ('pin:sim_power=0',)),),
+    'W_ND2D1': (GatedReadSite('power/power_module.cpp', 1, (), ('pin:sim_power=0',)),),
+    'W_SRAM': (GatedReadSite('power/power_module.cpp', 1, (), ('pin:sim_power=0',)),),
+    'active_packets_out': (GatedReadSite('trafficmanager.cpp', 1, ('TrafficManager::New',), ('diagnostic_only',)),),
+    'batch_count': (GatedReadSite('batchtrafficmanager.cpp', 1, (), ('pin:sim_type=latency',)),),
+    'batch_size': (GatedReadSite('batchtrafficmanager.cpp', 1, (), ('pin:sim_type=latency',)),),
+    'burst_alpha': (GatedReadSite('injection.cpp', 1, ('InjectionProcess::New',), ('pin:injection_process=bernoulli',)),),
+    'burst_beta': (GatedReadSite('injection.cpp', 1, ('InjectionProcess::New',), ('pin:injection_process=bernoulli',)),),
+    'burst_r1': (GatedReadSite('injection.cpp', 1, ('InjectionProcess::New',), ('pin:injection_process=bernoulli',)),),
+    'c': (GatedReadSite('networks/cmesh.cpp', 1, ('CMesh::_ComputeSize',), ('pin:topology=anynet',)), GatedReadSite('networks/flatfly_onchip.cpp', 1, ('FlatFlyOnChip::_ComputeSize',), ('pin:topology=anynet',)), GatedReadSite('networks/gec.cpp', 1, ('GEC::_ComputeSize',), ('pin:topology=anynet',)), GatedReadSite('veritx_embed.cpp', 1, ('EmbedTM::PlatStats',), ('conditional_presence',))),
+    'channel_sweep': (GatedReadSite('power/power_module.cpp', 1, (), ('pin:sim_power=0',)),),
+    'channel_width': (GatedReadSite('power/power_module.cpp', 1, (), ('pin:sim_power=0',)),),
+    'const_flits_per_packet': (GatedReadSite('routers/chaos_router.cpp', 1, (), ('pin:router=iq',)),),
+    'd': (GatedReadSite('networks/gec.cpp', 1, ('GEC::_ComputeSize',), ('pin:topology=anynet',)),),
+    'ejected_flits_out': (GatedReadSite('trafficmanager.cpp', 1, ('TrafficManager::New',), ('diagnostic_only',)),),
+    'fail_seed': (GatedReadSite('networks/kncube.cpp', 2, ('KNCube::InsertRandomFaults',), ('pin:topology=anynet',)),),
+    'feedback_aging_scale': (GatedReadSite('buffer_state.cpp', 1, ('FeedbackSharedBufferPolicy::FeedbackSharedBufferPolicy',), ('pin:buffer_policy=private',)),),
+    'feedback_offset': (GatedReadSite('buffer_state.cpp', 1, ('FeedbackSharedBufferPolicy::FeedbackSharedBufferPolicy',), ('pin:buffer_policy=private',)),),
+    'free_credits_out': (GatedReadSite('trafficmanager.cpp', 1, ('TrafficManager::New',), ('diagnostic_only',)),),
+    'hybrid': (GatedReadSite('networks/gec.cpp', 1, ('GEC::_ComputeSize',), ('pin:topology=anynet',)),),
+    'injected_flits_out': (GatedReadSite('trafficmanager.cpp', 1, ('TrafficManager::New',), ('diagnostic_only',)),),
+    'k': (GatedReadSite('networks/cmesh.cpp', 1, ('CMesh::_ComputeSize',), ('pin:topology=anynet',)), GatedReadSite('networks/dragonfly.cpp', 1, ('DragonFlyNew::_ComputeSize',), ('pin:topology=anynet',)), GatedReadSite('networks/fattree.cpp', 1, ('FatTree::_ComputeSize',), ('pin:topology=anynet',)), GatedReadSite('networks/flatfly_onchip.cpp', 1, ('FlatFlyOnChip::_ComputeSize',), ('pin:topology=anynet',)), GatedReadSite('networks/fly.cpp', 1, ('KNFly::_ComputeSize',), ('pin:topology=anynet',)), GatedReadSite('networks/gec.cpp', 1, ('GEC::_ComputeSize',), ('pin:topology=anynet',)), GatedReadSite('networks/kncube.cpp', 1, ('KNCube::_ComputeSize',), ('pin:topology=anynet',)), GatedReadSite('networks/qtree.cpp', 1, ('QTree::_ComputeSize',), ('pin:topology=anynet',)), GatedReadSite('networks/tree4.cpp', 1, ('Tree4::_ComputeSize',), ('pin:topology=anynet',)), GatedReadSite('traffic.cpp', 2, ('TrafficPattern::New',), ('pattern_dispatch',)), GatedReadSite('veritx_embed.cpp', 1, ('EmbedTM::PlatStats',), ('conditional_presence',))),
+    'max_credits_out': (GatedReadSite('trafficmanager.cpp', 1, ('TrafficManager::New',), ('diagnostic_only',)),),
+    'max_held_slots': (GatedReadSite('buffer_state.cpp', 1, ('LimitedSharedBufferPolicy::LimitedSharedBufferPolicy',), ('pin:buffer_policy=private',)),),
+    'max_outstanding_requests': (GatedReadSite('batchtrafficmanager.cpp', 1, (), ('pin:sim_type=latency',)),),
+    'mesh': (GatedReadSite('networks/gec.cpp', 1, ('GEC::_ComputeSize',), ('pin:topology=anynet',)),),
+    'multi_queue_size': (GatedReadSite('routers/chaos_router.cpp', 1, (), ('pin:router=iq',)),),
+    'n': (GatedReadSite('networks/cmesh.cpp', 1, ('CMesh::_ComputeSize',), ('pin:topology=anynet',)), GatedReadSite('networks/dragonfly.cpp', 1, ('DragonFlyNew::_ComputeSize',), ('pin:topology=anynet',)), GatedReadSite('networks/fattree.cpp', 1, ('FatTree::_ComputeSize',), ('pin:topology=anynet',)), GatedReadSite('networks/flatfly_onchip.cpp', 1, ('FlatFlyOnChip::_ComputeSize',), ('pin:topology=anynet',)), GatedReadSite('networks/fly.cpp', 1, ('KNFly::_ComputeSize',), ('pin:topology=anynet',)), GatedReadSite('networks/kncube.cpp', 1, ('KNCube::_ComputeSize',), ('pin:topology=anynet',)), GatedReadSite('networks/qtree.cpp', 1, ('QTree::_ComputeSize',), ('pin:topology=anynet',)), GatedReadSite('networks/tree4.cpp', 1, ('Tree4::_ComputeSize',), ('pin:topology=anynet',)), GatedReadSite('traffic.cpp', 2, ('TrafficPattern::New',), ('pattern_dispatch',)), GatedReadSite('veritx_embed.cpp', 1, ('EmbedTM::PlatStats',), ('conditional_presence',))),
+    'o': (GatedReadSite('networks/gec.cpp', 1, ('GEC::_ComputeSize',), ('pin:topology=anynet',)),),
+    'outstanding_credits_out': (GatedReadSite('trafficmanager.cpp', 1, ('TrafficManager::New',), ('diagnostic_only',)),),
+    'packet_size': (GatedReadSite('trafficmanager.cpp', 2, ('TrafficManager::New',), ('trace_records',)),),
+    'packet_size_rate': (GatedReadSite('trafficmanager.cpp', 2, ('TrafficManager::New',), ('trace_records',)),),
+    'perm_seed': (GatedReadSite('traffic.cpp', 2, ('TrafficPattern::New',), ('pattern_dispatch',)),),
+    'power_output_file': (GatedReadSite('power/power_module.cpp', 1, (), ('pin:sim_power=0',)),),
+    'private_buf_end_vc': (GatedReadSite('buffer_state.cpp', 2, ('SharedBufferPolicy::SharedBufferPolicy',), ('pin:buffer_policy=private',)),),
+    'private_buf_size': (GatedReadSite('buffer_state.cpp', 2, ('SharedBufferPolicy::SharedBufferPolicy',), ('pin:buffer_policy=private',)),),
+    'private_buf_start_vc': (GatedReadSite('buffer_state.cpp', 2, ('SharedBufferPolicy::SharedBufferPolicy',), ('pin:buffer_policy=private',)),),
+    'private_bufs': (GatedReadSite('buffer_state.cpp', 1, ('SharedBufferPolicy::SharedBufferPolicy',), ('pin:buffer_policy=private',)),),
+    'read_reply_size': (GatedReadSite('trafficmanager.cpp', 2, ('TrafficManager::New',), ('pin:use_read_write=0',)),),
+    'read_request_size': (GatedReadSite('trafficmanager.cpp', 2, ('TrafficManager::New',), ('pin:use_read_write=0',)),),
+    'received_flits_out': (GatedReadSite('trafficmanager.cpp', 1, ('TrafficManager::New',), ('diagnostic_only',)),),
+    'sent_flits_out': (GatedReadSite('trafficmanager.cpp', 1, ('TrafficManager::New',), ('diagnostic_only',)),),
+    'sent_packets_out': (GatedReadSite('batchtrafficmanager.cpp', 1, (), ('pin:sim_type=latency',)),),
+    'stats_out': (GatedReadSite('trafficmanager.cpp', 1, ('TrafficManager::New',), ('diagnostic_only',)),),
+    'stored_flits_out': (GatedReadSite('trafficmanager.cpp', 1, ('TrafficManager::New',), ('diagnostic_only',)),),
+    'tech_file': (GatedReadSite('power/power_module.cpp', 1, (), ('pin:sim_power=0',)),),
+    'trace_file': (GatedReadSite('tracetrafficmanager.cpp', 1, (), ('pin:sim_type=latency',)),),
+    'trace_packet_log': (GatedReadSite('tracetrafficmanager.cpp', 1, (), ('pin:sim_type=latency',)),),
+    'use_noc_latency': (GatedReadSite('networks/cmesh.cpp', 1, ('CMesh::_BuildNet',), ('pin:topology=anynet',)), GatedReadSite('networks/flatfly_onchip.cpp', 1, ('FlatFlyOnChip::_BuildNet',), ('pin:topology=anynet',)), GatedReadSite('networks/gec.cpp', 1, ('GEC::_ComputeSize',), ('pin:topology=anynet',)), GatedReadSite('networks/kncube.cpp', 1, ('KNCube::_BuildNet',), ('pin:topology=anynet',))),
+    'used_credits_out': (GatedReadSite('trafficmanager.cpp', 1, ('TrafficManager::New',), ('diagnostic_only',)),),
+    'vct': (GatedReadSite('routers/event_router.cpp', 1, (), ('pin:router=iq',)),),
+    'watch_file': (GatedReadSite('trafficmanager.cpp', 1, ('TrafficManager::New',), ('diagnostic_only',)),),
+    'watch_flits': (GatedReadSite('trafficmanager.cpp', 1, ('TrafficManager::New',), ('diagnostic_only',)),),
+    'watch_out': (GatedReadSite('main.cpp', 1, (), ('diagnostic_only',)),),
+    'watch_packets': (GatedReadSite('trafficmanager.cpp', 1, ('TrafficManager::New',), ('diagnostic_only',)),),
+    'wire_length': (GatedReadSite('power/power_module.cpp', 1, (), ('pin:sim_power=0',)),),
+    'write_fraction': (GatedReadSite('trafficmanager.cpp', 2, ('TrafficManager::New',), ('pin:use_read_write=0',)),),
+    'write_reply_size': (GatedReadSite('trafficmanager.cpp', 2, ('TrafficManager::New',), ('pin:use_read_write=0',)),),
+    'write_request_size': (GatedReadSite('trafficmanager.cpp', 2, ('TrafficManager::New',), ('pin:use_read_write=0',)),),
+    'x': (GatedReadSite('networks/cmesh.cpp', 1, ('CMesh::_ComputeSize',), ('pin:topology=anynet',)), GatedReadSite('networks/flatfly_onchip.cpp', 1, ('FlatFlyOnChip::_ComputeSize',), ('pin:topology=anynet',))),
+    'xr': (GatedReadSite('networks/cmesh.cpp', 1, ('CMesh::_ComputeSize',), ('pin:topology=anynet',)), GatedReadSite('networks/flatfly_onchip.cpp', 1, ('FlatFlyOnChip::_ComputeSize',), ('pin:topology=anynet',)), GatedReadSite('traffic.cpp', 1, ('TrafficPattern::New',), ('pattern_dispatch',))),
+    'y': (GatedReadSite('networks/cmesh.cpp', 1, ('CMesh::_ComputeSize',), ('pin:topology=anynet',)), GatedReadSite('networks/flatfly_onchip.cpp', 1, ('FlatFlyOnChip::_ComputeSize',), ('pin:topology=anynet',))),
+    'yr': (GatedReadSite('networks/cmesh.cpp', 1, ('CMesh::_ComputeSize',), ('pin:topology=anynet',)), GatedReadSite('networks/flatfly_onchip.cpp', 1, ('FlatFlyOnChip::_ComputeSize',), ('pin:topology=anynet',))),
 }
 
+
+GATED_FIELDS: dict[str, tuple[str, ...]] = {
+    field: tuple(sorted({g for site in sites for g in site.gates}))
+    for field, sites in GATED_READ_SITES.items()
+}
 
 
 # ── scanning ────────────────────────────────────────────────────────────
@@ -295,16 +213,14 @@ class SourceRead:
         return tuple(f"{o.path}:{o.line}" for o in self.occurrences)
 
 
-
-
 @dataclass(frozen=True)
 class DriftReport:
     reads: tuple[SourceRead, ...]
-    unregistered: tuple[str, ...]          # field not known at all
-    uncovered_sites: tuple[str, ...]       # new file, new count, new method
-    stale_gated: tuple[str, ...]           # gate for a field no longer read
-    stale_scope: tuple[str, ...]           # declared site no longer matches
-    stale_registered: tuple[str, ...]      # registry field no longer read
+    unregistered: tuple[str, ...]
+    uncovered_sites: tuple[str, ...]
+    stale_gated: tuple[str, ...]
+    stale_scope: tuple[str, ...]
+    stale_registered: tuple[str, ...]
 
     @property
     def clean(self) -> bool:
@@ -334,12 +250,21 @@ class DriftReport:
         raise SourceAuditError("; ".join(parts))
 
 
+def enclosing_function(text: str, pos: int) -> tuple[str, ...]:
+    current: tuple[str, ...] = ()
+    for line in text[:pos].splitlines():
+        m = ENCLOSING_DEF_RE.match(line)
+        if m:
+            current = (m.group(1),)
+    return current
+
+
 def scan_config_reads(source_root: Path) -> tuple[SourceRead, ...]:
-    """Whole-file lexical scan of every .cpp/.hpp under source_root."""
+    """Conservative whole-file lexical scan of all supported extensions."""
     root = Path(source_root)
     found: dict[str, list[ReadOccurrence]] = {}
     for path in sorted(root.rglob("*")):
-        if path.suffix not in (".cpp", ".hpp"):
+        if path.suffix not in SOURCE_EXTENSIONS:
             continue
         rel = str(path.relative_to(root))
         text = path.read_text(errors="ignore")
@@ -361,11 +286,16 @@ def audit_source_drift(
         source_root: Path,
         *,
         profile: Any = BOOKSIM_STANDALONE_PROFILE,
-        gated: dict[str, tuple[str, ...]] = GATED_FIELDS,
         sites: dict[str, tuple[GatedReadSite, ...]] = GATED_READ_SITES,
 ) -> DriftReport:
+    """Enforce per-site evidence for every non-active read.
+
+    ACTIVE fields are accepted on registry membership. INACTIVE_FOR_PROFILE
+    and unregistered-gated fields BOTH require a matching declared site.
+    """
     reads = scan_config_reads(source_root)
-    registry = set(profile.active_names()) | set(profile.inactive_names())
+    active = set(profile.active_names())
+    inactive = set(profile.inactive_names())
     by_field_file: dict[tuple[str, str], list[ReadOccurrence]] = {}
     for read in reads:
         for occ in read.occurrences:
@@ -375,15 +305,15 @@ def audit_source_drift(
     unregistered: set[str] = set()
     matched: set[str] = set()
     for (field, path), occs in sorted(by_field_file.items()):
-        if field in registry:
-            matched.add(_site_key(field, path))
+        key = _site_key(field, path)
+        if field in active:
+            matched.add(key)
             continue
         declared = {s.path: s for s in sites.get(field, ())}
-        if field not in gated:
+        if field not in inactive and field not in sites:
             unregistered.add(field)
             continue
         site = declared.get(path)
-        key = _site_key(field, path)
         if site is None:
             uncovered.append(
                 f"{key}: {len(occs)} occurrence(s) not declared")
@@ -400,6 +330,9 @@ def audit_source_drift(
                     f"{key}: functions {sorted(observed)} != declared "
                     f"{sorted(site.functions)}")
                 continue
+        if not site.gates:
+            uncovered.append(f"{key}: site has no explicit gate")
+            continue
         matched.add(key)
 
     stale_scope: list[str] = []
@@ -414,18 +347,18 @@ def audit_source_drift(
         reads=reads,
         unregistered=tuple(sorted(unregistered)),
         uncovered_sites=tuple(sorted(uncovered)),
-        stale_gated=tuple(sorted(set(gated) - read_fields)),
+        stale_gated=tuple(sorted(set(sites) - read_fields)),
         stale_scope=tuple(sorted(stale_scope)),
-        stale_registered=tuple(sorted(registry - read_fields)))
+        stale_registered=tuple(sorted(
+            (active | inactive) - read_fields)))
 
 
 def read_accounting(
         source_root: Path,
         *,
         profile: Any = BOOKSIM_STANDALONE_PROFILE,
-        gated: dict[str, tuple[str, ...]] = GATED_FIELDS,
 ) -> dict[str, int]:
-    """Occurrence-level accounting for reports (not a pass/fail gate)."""
+    """Occurrence-level accounting for reports."""
     reads = scan_config_reads(source_root)
     active = set(profile.active_names())
     inactive = set(profile.inactive_names())
@@ -437,18 +370,15 @@ def read_accounting(
             active_occ += n
         elif read.field in inactive:
             inactive_occ += n
-        elif read.field in gated:
+        else:
             gated_occ += n
     return {
         "unique_fields": len(reads),
         "total_occurrences": total,
         "registered_active_occurrences": active_occ,
         "registered_inactive_occurrences": inactive_occ,
-        "gated_occurrences": gated_occ,
+        "unregistered_gated_occurrences": gated_occ,
     }
-
-
-
 
 
 # ── gate verification against a rendered certified config ───────────────
@@ -465,41 +395,36 @@ def parse_pin_gate(gate: str) -> tuple[str, str] | None:
     return field, value
 
 
+def verify_site_gates(
+        sites: dict[str, tuple[GatedReadSite, ...]],
+        rendered_values: dict[str, str]) -> None:
+    """Every declared SITE gate must hold for the rendered certified config."""
+    for field, declared_sites in sites.items():
+        for site in declared_sites:
+            if not site.gates:
+                raise SourceAuditError(
+                    f"site {field}@{site.path} has no explicit gate")
+            for gate in site.gates:
+                pin = parse_pin_gate(gate)
+                if pin is not None:
+                    name, value = pin
+                    if name not in rendered_values:
+                        raise SourceAuditError(
+                            f"site {field}@{site.path} gate names unpinned "
+                            f"field {name!r}")
+                    if rendered_values[name] != value:
+                        raise SourceAuditError(
+                            f"site gate {gate!r} for {field}@{site.path} "
+                            f"does not hold: rendered "
+                            f"{name}={rendered_values[name]!r}")
+                elif gate not in MECHANISM_JUSTIFICATIONS:
+                    raise SourceAuditError(
+                        f"site {field}@{site.path} uses unknown gate "
+                        f"mechanism {gate!r}")
+
+
 def verify_gates(rendered_values: dict[str, str]) -> None:
-    """Every gate must hold against the actual rendered certified config."""
-    for field, gates in GATED_FIELDS.items():
-        for gate in gates:
-            pin = parse_pin_gate(gate)
-            if pin is not None:
-                name, value = pin
-                if name not in rendered_values:
-                    raise SourceAuditError(
-                        f"gate for {field!r} names unpinned field {name!r}")
-                if rendered_values[name] != value:
-                    raise SourceAuditError(
-                        f"gate {gate!r} for {field!r} does not hold: "
-                        f"rendered {name}={rendered_values[name]!r}")
-            elif gate not in MECHANISM_JUSTIFICATIONS:
-                raise SourceAuditError(
-                    f"field {field!r} uses unknown gate mechanism {gate!r}")
-
-
-def verify_site_gates(rendered_values: dict[str, str]) -> None:
-    """Every declared site's gate must hold for the rendered config."""
-    for field, gates in GATED_FIELDS.items():
-        for gate in gates:
-            pin = parse_pin_gate(gate)
-            if pin is None:
-                continue
-            name, value = pin
-            if name not in rendered_values:
-                raise SourceAuditError(
-                    f"site gate for {field!r} names unpinned field "
-                    f"{name!r}")
-            if rendered_values[name] != value:
-                raise SourceAuditError(
-                    f"site gate {gate!r} for {field!r} does not hold: "
-                    f"rendered {name}={rendered_values[name]!r}")
+    verify_site_gates(GATED_READ_SITES, rendered_values)
 
 
 __all__ = [
@@ -507,6 +432,7 @@ __all__ = [
     "GATED_FIELDS",
     "GATED_READ_SITES",
     "MECHANISM_JUSTIFICATIONS",
+    "SOURCE_EXTENSIONS",
     "DriftReport",
     "GatedReadSite",
     "ReadOccurrence",

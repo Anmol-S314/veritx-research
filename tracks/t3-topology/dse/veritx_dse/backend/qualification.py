@@ -178,6 +178,21 @@ def qualify_cross_backend(
 ) -> QualificationReport:
     if len(artifacts) < 2:
         raise QualificationError("need at least two target artifacts")
+    # Target identity is authoritative from the artifact; caller labels are
+    # display aliases and must agree. Duplicate target artifacts under
+    # different aliases are refused.
+    seen_targets: list[str] = []
+    for name, art in artifacts.items():
+        actual = art.backend_target.value
+        if name != actual:
+            raise QualificationError(
+                f"mapping label {name!r} does not match artifact "
+                f"backend_target {actual!r}")
+        seen_targets.append(actual)
+    if len(set(seen_targets)) != len(seen_targets):
+        raise QualificationError(
+            f"duplicate backend targets in qualification input: "
+            f"{sorted(seen_targets)}")
     problems: list[str] = []
     fabric_hashes = {a.fabric_hash for a in artifacts.values()}
     resolved_hashes = {a.resolved_fabric_hash for a in artifacts.values()}
