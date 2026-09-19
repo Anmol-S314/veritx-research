@@ -25,8 +25,8 @@ from .model.compile_model import (
 )
 from .model.presets import SWEEP_TOPOS, WORKLOAD_PRESETS, lookup_topo
 from .model.placement import (
-    AgentInstance, LogicalRank, Endpoint, NodeInventory, build_inventory,
-    rank_of, coords_of,
+    ParallelismShape, AgentInstance, LogicalRank, NodeInventory,
+    build_inventory, rank_of, coords_of,
 )
 from .model.mapping import (
     MappingArtifact, RankPlacement, MappingError, derive_mapping,
