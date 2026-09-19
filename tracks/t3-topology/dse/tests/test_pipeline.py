@@ -96,18 +96,16 @@ class TestComparisonGate:
                                  "experimental_variables": [],
                                  "controlled_dimensions": {}})
         assert res.verdict is not None
-        assert res.verdict["status"] == "INVALID_COMPARISON"
-        fields = {d["field"] for d in res.verdict["differences"]}
-        assert "node_count" in fields
+        assert res.verdict["status"] == "INSUFFICIENT_PROVENANCE"
+        assert "vc_count" in res.verdict["unresolved_dimensions"]
         s = pl.print_compare_table(Ctx(verbosity=0), res)
         assert s["winner_claimed"] is False
         out = capsys.readouterr().out
-        assert "UNDECLARED_DIFFERENCE" in out
+        assert "INSUFFICIENT_PROVENANCE" in out
 
-    def test_declared_node_count_variable_allows_winner(self, tmp_path, monkeypatch):
-        """Every material difference must be declared: from legacy rows
-        the two candidates differ in display-name topology identity AND
-        node count, so the intent declares both."""
+    def test_declared_node_count_variable_still_needs_provenance(self, tmp_path, monkeypatch):
+        """Declaring the axis is not enough: legacy rows never recorded
+        vc/packetization/routing, so the gate refuses on provenance."""
         def fake_eval(ctx, topo, trace, seed=None, **kw):
             name = topo.params["k"]
             return {"latency": 10.0 if name == 4 else 20.0,
@@ -127,10 +125,10 @@ class TestComparisonGate:
                                  "experimental_variables":
                                      ["topology", "node_count"],
                                  "controlled_dimensions": {}})
-        assert res.verdict["status"] == "COMPARABLE"
+        assert res.verdict["status"] == "INSUFFICIENT_PROVENANCE"
         s = pl.print_compare_table(Ctx(verbosity=0), res)
-        assert s["winner_claimed"] is True
-        assert s["certified"] is False  # legacy rows: uncertified by design
+        assert s["winner_claimed"] is False
+        assert s["certified"] is False
 
     def test_legacy_uncertified_label(self, tmp_path, monkeypatch):
         def fake_eval(ctx, topo, trace, seed=None, **kw):
@@ -139,7 +137,7 @@ class TestComparisonGate:
         monkeypatch.setattr(pl, "run_topology_eval", fake_eval)
         res = pl.run_compare(Ctx(verbosity=0), "t.trace", self._two_topos(),
                              seeds=1)
-        assert res.verdict["status"] == "COMPARABLE"
+        assert res.verdict["status"] == "INSUFFICIENT_PROVENANCE"
         assert res.verdict["certified"] is False
 
 
@@ -178,7 +176,7 @@ class TestPrintTables:
              "min": 9.5, "max": 10.5, "n": 2, "n_unstable": 0},
             {"name": "torus", "nodes": 4, "edges": 8, "mean": 12.0, "std": 3.0,
              "min": 9.0, "max": 15.0, "n": 2, "n_unstable": 1},
-        ])
+        ], verdict={"status": "COMPARABLE", "certified": True})
         pl.print_compare_table(Ctx(verbosity=1), res)
         out = capsys.readouterr().out
         assert "Unstable" in out and "1/2" in out and "Winner: mesh" in out
@@ -191,10 +189,34 @@ class TestPrintTables:
              "min": 9.9, "max": 10.1, "n": 2, "n_unstable": 0},
             {"name": "b", "nodes": 4, "edges": 4, "mean": 14.0, "std": 0.1,
              "min": 13.9, "max": 14.1, "n": 2, "n_unstable": 0},
-        ])
+        ], verdict={"status": "COMPARABLE", "certified": True})
         pl.print_compare_table(Ctx(verbosity=1), res)
         out = capsys.readouterr().out
         assert "Winner: a" in out and "faster" in out and "t=" in out
+
+    def test_no_verdict_prints_no_winner(self, runs, capsys):
+        res = pl.CompareResult(trace="t.trace", seeds=[42], results=[], summary=[
+            {"name": "a", "nodes": 4, "edges": 4, "mean": 10.0, "std": 0.0,
+             "min": 10.0, "max": 10.0, "n": 2, "n_unstable": 0},
+            {"name": "b", "nodes": 4, "edges": 4, "mean": 14.0, "std": 0.0,
+             "min": 14.0, "max": 14.0, "n": 2, "n_unstable": 0},
+        ])
+        s = pl.print_compare_table(Ctx(verbosity=1), res)
+        assert s["winner_claimed"] is False
+        assert "NO COMPARABILITY VERDICT" in capsys.readouterr().out
+
+    def test_single_sample_is_observation_not_winner(self, runs, capsys):
+        res = pl.CompareResult(trace="t.trace", seeds=[42], results=[], summary=[
+            {"name": "a", "nodes": 4, "edges": 4, "mean": 10.0, "std": 0.0,
+             "min": 10.0, "max": 10.0, "n": 1, "n_unstable": 0},
+            {"name": "b", "nodes": 4, "edges": 4, "mean": 14.0, "std": 0.0,
+             "min": 14.0, "max": 14.0, "n": 1, "n_unstable": 0},
+        ], verdict={"status": "COMPARABLE", "certified": True})
+        s = pl.print_compare_table(Ctx(verbosity=1), res)
+        out = capsys.readouterr().out
+        assert "Single-sample observation" in out
+        assert "Winner:" not in out
+        assert s["winner_claimed"] is True
 
     def test_sweep_table_both_sim_types(self, capsys):
         results = [{"name": "mesh", "nodes": 4, "edges": 4, "latency": 20.5, "hops": 1.5},

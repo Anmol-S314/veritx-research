@@ -253,6 +253,7 @@ def run_compare(
         "differences": verdict.differences,
         "candidates": verdict.candidates,
         "certified": verdict.certified,
+        "unresolved_dimensions": verdict.unresolved_dimensions,
     }
 
     return CompareResult(
@@ -309,7 +310,8 @@ def print_compare_table(ctx: Ctx, result: CompareResult) -> dict:
               f"the winner is valid only among successful runs.\033[0m")
 
     # Winner — only among successfully measured candidates of a COMPARABLE
-    # comparison (Phase 8: undeclared differences suppress the claim).
+    # comparison. Any other verdict (INVALID, INSUFFICIENT_PROVENANCE, or a
+    # missing gate verdict) suppresses the claim; measurements still print.
     if verdict.get("status") == "INVALID_COMPARISON":
         emit(ctx, f"\n  \033[31mCOMPARISON REFUSED — no winner is claimed.\033[0m")
         for d in verdict.get("differences", []):
@@ -318,6 +320,15 @@ def print_compare_table(ctx: Ctx, result: CompareResult) -> dict:
         emit(ctx, f"  \033[31mDeclare the differing dimensions as "
               f"experimental_variables in the comparison spec, or compare "
               f"like with like.\033[0m")
+    elif verdict.get("status") == "INSUFFICIENT_PROVENANCE":
+        emit(ctx, f"\n  \033[31mCOMPARISON REFUSED — required dimensions "
+              f"unrecorded, no winner is claimed.\033[0m")
+        for d in verdict.get("unresolved_dimensions", []):
+            emit(ctx, f"  \033[31mINSUFFICIENT_PROVENANCE: {d}\033[0m")
+        emit(ctx, f"  \033[31mRe-run through the immutable run store so every "
+              f"candidate records its executed fabric.\033[0m")
+    elif verdict.get("status") != "COMPARABLE":
+        emit(ctx, f"\n  \033[31mNO COMPARABILITY VERDICT — no winner is claimed.\033[0m")
     elif len(ok) >= 2:
         agg_sorted = sorted(ok, key=lambda a: a["mean"])
         best = agg_sorted[0]
@@ -332,12 +343,13 @@ def print_compare_table(ctx: Ctx, result: CompareResult) -> dict:
                 sig = f" (t={t_stat:.1f})" + (" **" if abs(t_stat) > 2 else " *" if abs(t_stat) > 1.5 else " n.s.")
 
         if best["n"] < 2 or worst["n"] < 2:
-            # One seed ⇒ stdev is 0.0 by construction, not measured
-            # confidence — print n=1, never a ±0.00 that reads as certainty.
-            emit(ctx, f"\n  Winner: {best['name']} ({best['mean']:.2f}c, n=1 — no spread sampled)")
+            emit(ctx, f"\n  Single-sample observation: {best['name']} measured "
+                      f"{best['mean']:.2f}c vs {worst['name']} {worst['mean']:.2f}c "
+                      f"({delta:.1f}% lower). No variability estimate available — "
+                      f"not a winner.")
         else:
             emit(ctx, f"\n  Winner: {best['name']} ({best['mean']:.2f}c ± {best['std']:.2f}c)")
-        emit(ctx, f"  vs {worst['name']}: {delta:.1f}% faster{sig}")
+            emit(ctx, f"  vs {worst['name']}: {delta:.1f}% faster{sig}")
 
     # Machine-readable claim (Phase 8): consumers (t3 TUI, compare.json)
     # read this instead of inferring validity from the presence of a

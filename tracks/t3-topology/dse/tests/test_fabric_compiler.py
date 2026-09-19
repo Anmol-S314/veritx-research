@@ -136,7 +136,8 @@ def test_unmeasurable_bandwidth_floor_never_silent_pass():
     out = compile_fabric(req, _ok_eval({"a": 61.5}))
     statuses = {c["status"] for c in out["candidates"]}
     assert statuses == {"CONSTRAINT_UNMEASURABLE"}
-    assert out["verdict"] == "NO_FEASIBLE_DESIGN"
+    # Audit #3: all-unmeasurable is unanswerable, never a measured refusal.
+    assert out["verdict"] == "CONSTRAINT_UNMEASURABLE"
     assert "bandwidth_floor" in out["violated_constraints"][0]["constraint"]["kind"] or \
         out["violated_constraints"][0]["constraint"]["kind"] == "bandwidth_floor"
 

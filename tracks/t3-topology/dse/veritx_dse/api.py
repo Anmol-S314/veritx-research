@@ -85,7 +85,9 @@ def list_capabilities() -> dict[str, Any]:
         candidate_statuses=["COMPARABLE", "FAILED_EXECUTION", "INCOMPATIBLE",
                             "MISSING_METRIC", "SEMANTIC_LOSS", "INVALID_FIDELITY",
                             "INSUFFICIENT_PROVENANCE"],
-        compiler_verdicts=["FEASIBLE", "NO_FEASIBLE_DESIGN"],
+        compiler_verdicts=["FEASIBLE", "NO_FEASIBLE_DESIGN",
+                           "EVALUATION_FAILED", "SEARCH_INCOMPLETE",
+                           "CONSTRAINT_UNMEASURABLE"],
         # SYNC_BOUND is NOT advertised: the v1 canonical op set has no
         # barrier semantics, so the timeline can never produce it
         # (workload/timeline.py — honest vocabulary only).
