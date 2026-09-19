@@ -28,6 +28,7 @@
 | 1.14 | B3.7c | Serving BookSim consumer seam. `backend/serving.py` lowers the same canonical BookSim projection to `SERVING_BOOKSIM2`, converts `PacketFormatArtifact.flit_width_bits` to flit BYTES exactly (64 bits → 8 bytes; non-byte-exact widths refused), and prepares an exact run-owned backend directory consumed by the vendored serving module through `VERITX_CERTIFIED_BACKEND_DIR` (no config synthesized from network.yml; `packet_size` refused as a false authority; replay mode refused as non-execution; physical dims fail closed). Route realization is declared UNREPRESENTABLE/BLOCKS_EXACT_FABRIC because the embedded frontend exposes no executed-route evidence, and max_packet_flits is UNREPRESENTABLE (embedded MTU deferred to Wave D). Public serving control path still has no authoritative ResolvedFabric bridge: `SERVING_BOOKSIM2` execution is BLOCKED for full certification. |
 | 1.15 | B3.7d | Analytical aware/unaware lowering: distinct `SERVING_ANALYTICAL_AWARE` (1-dim only; N-dim refused) and `SERVING_ANALYTICAL_UNAWARE` backend identities with explicit capability matrices over every SemanticDimension. Because the fabric artifacts carry channel BITS and latency CYCLES while the analytical network model takes GB/s and ns, and no clock/bandwidth-unit derivation exists, CHANNEL_WIDTH and CHANNEL_LATENCY are UNREPRESENTABLE with UNSUPPORTED_EXECUTION: execution is refused until units and a representative configuration are established. No numeric bandwidth/latency is invented. |
 | 1.16 | B3.7e | Exact backend-input provenance persistence: `backend-evidence.json` is a canonical-JSON, content-addressed view of already-verified facts (both identity hashes, design/mapping/fabric binding, route-equivalence status, per-input logical role → content sha256, invocation args, workload hash, seed/policy, producer binary observation). Identical evidence is idempotent; different evidence at the same path is refused; tampering changes the digest. Serving evidence mirrors the same vocabulary including flit bytes and physical dims. |
+| 1.17 | B3.7f | Adversarial qualification: table-driven semantic-mutation matrix (topology edge, attachment, width, latency, route, VC count/assignment/escape, buffer depth, allocator, credit latency, routing delay, speedup, flit width, max packet flits, address decode) where every mutation changes `backend_config_hash` or refuses; non-semantic path/JSON/label changes never change identity while workload content changes `backend_input_hash`; tamper matrix (wrong parent hash, stale resolved hash, parameter/binding/input tampering, deleted/duplicate binding, unknown target/schema, unsupported LOCKED semantics) fails closed; bypass proof (monkeypatched legacy `build_config`/`BASE_PARAMS` never used); one real BookSim run proves the artifact executes with EXACT route evidence. Serving BookSim execution remains BLOCKED (no upstream authority); analytical execution NOT_RUN (unresolved units). |
 
 This document defines what a resolved Srota fabric *is* before B3 code is
 written. It starts from hardware semantics and maps existing code onto them —
@@ -1008,6 +1009,20 @@ bandwidth or latency is emitted; `assert_analytical_executable` refuses
 execution while those blockers remain. Route/VC/buffer/credit/packet
 semantics have no analytical representation and are declared. This is a
 correct `UNSUPPORTED` outcome, not a certification failure.
+
+### 21.8 B3.7 qualification
+
+`tests/test_backend_execution_qualification.py` holds the adversarial
+matrix. It demonstrates: every semantic mutation either changes
+`backend_config_hash` or is refused; non-semantic path/formatting/label
+changes keep identity while workload content moves `backend_input_hash`;
+the tamper matrix fails closed; the certified path never invokes the
+legacy `build_config`/`BASE_PARAMS`; and one real BookSim execution
+(`third_party/booksim2/src/booksim`) returns `route_equivalence: EXACT`
+with nonzero delivery and manifest-matching input hashes. Serving
+BookSim execution is `NOT_RUN / BLOCKED` (no upstream `ResolvedFabric`
+bridge) and analytical execution is `NOT_RUN` (units blocked; no
+representative configuration).
 
 ## 22. SystemC status
 
