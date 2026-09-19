@@ -72,6 +72,13 @@ def topology_hash_from_adj(adj: dict[int, set[int]]) -> str:
                        "adjacency": _canonical_adjacency(adj)})
 
 
+# Naming (Wave B3.2): a standalone AnyNet graph has no TopologyArtifact, so
+# this digest is a ROUTING-GRAPH hash, not a fabric topology identity. New
+# code binds through RouteArtifact.from_topology(); the column rename to
+# ``routing_graph_hash`` lands with the schema v2 route artifact (B3.2d).
+routing_graph_hash_from_adj = topology_hash_from_adj
+
+
 def _anynet_replica_first_hops(n: int,
                                adj: dict[int, set[int]]) -> dict[tuple[int, int], int]:
     """The first-hop table BookSim's AnyNet actually builds — replicated
@@ -117,12 +124,18 @@ def route_entries_from_adj(adj: dict[int, set[int]]) -> dict[tuple[int, int], in
 
     Delegates to the exact replica (tie-breaks documented there); the
     adjacency is normalized to range(n) first, matching BookSim's
-    sequential-id requirement.
+    sequential-id requirement. Disconnected graphs are refused here too —
+    the public helper must fail closed exactly like the constructor, or it
+    would hand out a partial table that looks like a route artifact.
     """
     n = max(adj) + 1 if adj else 0
     if sorted(adj) != list(range(n)):
         raise RouteArtifactError(
             "router ids not sequential 0..n-1 — BookSim requires it")
+    if not _is_connected(adj, n):
+        raise RouteArtifactError(
+            "topology is disconnected — a partial first-hop table is not a "
+            "route artifact (use a diagnostic helper, never this one)")
     return dict(_anynet_replica_first_hops(n, adj))
 
 
@@ -187,6 +200,65 @@ class RouteArtifact:
                    tie_break_policy=TIE_BREAK_POLICY,
                    entries=dict(entries), route_table_hash=ttable,
                    artifact_hash=ahash)
+
+    @classmethod
+    def from_topology(cls, topology, *, name: str,
+                      entries: dict[tuple[int, int], int] | None = None,
+                      routing_algorithm: str = ROUTING_ALGORITHM
+                      ) -> "RouteArtifact":
+        """Authoritative router routing bound to a materialized TopologyArtifact.
+
+        ``topology_hash`` is ``TopologyArtifact.topology_hash()`` EXACTLY —
+        after B3.1 there is one topology identity, and this artifact must not
+        carry a second, differently-defined digest of the same name.
+        """
+        adj: dict[int, set[int]] = {r.router_id: set() for r in topology.routers}
+        for c in topology.channels:
+            adj[c.src_router].add(c.dst_router)
+        art = cls.from_adjacency(adj, name=name,
+                                 routing_algorithm=routing_algorithm,
+                                 entries=entries)
+        thash = topology.topology_hash()
+        ahash = _sha256_of({
+            "schema_version": art.schema_version,
+            "topology_hash": thash,
+            "routing_algorithm": art.routing_algorithm,
+            "tie_break_policy": art.tie_break_policy,
+            "route_table_hash": art.route_table_hash,
+        })
+        bound = cls(schema_version=art.schema_version, name=art.name,
+                    topology_hash=thash,
+                    routing_algorithm=art.routing_algorithm,
+                    tie_break_policy=art.tie_break_policy,
+                    entries=art.entries,
+                    route_table_hash=art.route_table_hash,
+                    artifact_hash=ahash)
+        bound.validate_against(topology)
+        return bound
+
+    def validate_against(self, topology) -> None:
+        """Parent legality against the materialized TopologyArtifact.
+
+        Deliberately separate from from_dict (self-integrity): a child can
+        prove it was not tampered with without possessing its parent; the
+        seam proves its references are legal.
+        """
+        if self.topology_hash != topology.topology_hash():
+            raise RouteArtifactError(
+                "topology_hash does not match the materialized topology "
+                "(standalone routing-graph digests are not fabric identities)")
+        channels = {(c.src_router, c.dst_router) for c in topology.channels}
+        for (s, t), nh in sorted(self.entries.items()):
+            if (s, nh) not in channels:
+                raise RouteArtifactError(
+                    f"({s},{t}): next hop {nh} is not a directed channel in "
+                    "the materialized topology")
+        expected = {(s, t) for s in range(topology.router_count)
+                    for t in range(topology.router_count) if s != t}
+        if set(self.entries) != expected:
+            raise RouteArtifactError(
+                "entries do not cover all router pairs of the materialized "
+                "topology (partial tables are not authoritative artifacts)")
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "RouteArtifact":

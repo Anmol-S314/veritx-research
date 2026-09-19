@@ -38,6 +38,10 @@ from .model.topology_artifact import (
 from .model.attachment import (
     AgentAttachmentArtifact, Endpoint, AttachmentError, derive_attachment,
 )
+from .model.resolved_route import (
+    ResolvedRouteArtifact, ResolvedRouteError, LOCAL_EJECTION,
+    derive_resolved_route,
+)
 
 # Re-export simulation
 from .simulation.booksim import build_config, run_booksim, find_booksim_bin, detect_trace_stats
