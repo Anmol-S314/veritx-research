@@ -183,6 +183,7 @@ class TestCollectives:
         from veritx_dse.model.compile_model import CompileRequest, CollectiveKind
         d = {
             "schema_version": 2,
+            "compiler_semantics_version": 1,
             "workload": {
                 "model_family": "mixture_of_experts",
                 "tp": 16, "ep": 8,
@@ -202,6 +203,7 @@ class TestCollectives:
         from veritx_dse.model.compile_model import CompileRequest
         d = {
             "schema_version": 2,
+            "compiler_semantics_version": 1,
             "workload": {"model_family": "dense_transformer"},
             "requirements": [],
             "agents": [{"kind": "compute_tile", "count": 16}],
@@ -215,6 +217,7 @@ class TestCollectives:
         from veritx_dse.model.compile_model import CompileRequest
         d = {
             "schema_version": 2,
+            "compiler_semantics_version": 1,
             "workload": {
                 "model_family": "dense_transformer",
                 "tp": 64,
@@ -519,6 +522,7 @@ class TestMulticastKnobs:
         from veritx_dse.model.compile_model import CompileRequest
         d = {
             "schema_version": 2,
+            "compiler_semantics_version": 1,
             "workload": {"model_family": "dense_transformer"},
             "requirements": [],
             "agents": [{"kind": "compute_tile", "count": 4}],
@@ -538,6 +542,7 @@ class TestMulticastKnobs:
         from veritx_dse.model.compile_model import CompileRequest
         base = {
             "schema_version": 2,
+            "compiler_semantics_version": 1,
             "workload": {"model_family": "dense_transformer"},
             "requirements": [],
             "agents": [{"kind": "compute_tile", "count": 4}],

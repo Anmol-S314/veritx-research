@@ -18,13 +18,18 @@ COLLECTION ORDER RULING (inspected against the code, not assumed):
                                                 index (derive_vc_assignment)
   CompileRequest   agents            ORDERED   AddressRange.target_agent_idx
                                                 indexes this tuple
-  DependencyGraph  dependencies      ORDERED   adjacency insertion order
-                                                feeds DFS cycle enumeration
+  DependencyGraph  dependencies      ORDERED   TEMPORARY B1 ruling — see note
   CompileRequest   requirements      UNORDERED per-class bounds; min()/all()
                                                 are order-independent
   AddressMap       ranges            UNORDERED validate_no_overlaps sorts by
                                                 base; no decode-order consumer
   NocConfig        output_formats    UNORDERED a set of requested artifacts
+
+TEMPORARY B1 RULING: dependency edge order is identity-bearing only
+because the current compiler observes it (adjacency insertion order
+feeds the DFS in DependencyGraph.find_cycles). MANDATORY B3 FIX: make
+graph processing deterministic, then make dependency edge order
+non-semantic and bump compiler_semantics_version.
 """
 import dataclasses
 import json
@@ -65,6 +70,60 @@ EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples"
 GOLDEN_DESIGN_HASH = \
     "6b95eb820150f06d2b155f807160675f7f43e7af5e3e8ae07977164f065a6707"
 
+# ── explicit positive field classification ──────────────────────────────────
+# A new dataclass field fails test_field_coverage_sentinel until it is
+# listed here (identity-bearing) or in NON_SEMANTIC_FIELDS (with a reason).
+IDENTITY_FIELDS = {
+    CompileRequest: frozenset({
+        "workload", "requirements", "agents", "dependencies", "noc_config",
+        "address_map", "physical", "schema_version",
+        "compiler_semantics_version",
+    }),
+    Workload: frozenset({
+        "model_family", "model_name", "tp", "pp", "ep", "dp",
+        "param_count_b", "sequence_length", "batch_size", "precision",
+        "serving_mode", "collectives", "trace_path",
+    }),
+    CollectiveOp: frozenset({"kind", "group_size", "bytes_per_element"}),
+    Requirement: frozenset({
+        "qos_class", "latency_ceiling_cycles", "bandwidth_floor_gbps",
+        "binding",
+    }),
+    Agent: frozenset({
+        "kind", "count", "data_width", "addr_width", "protocol",
+        "clock_domain", "power_domain",
+    }),
+    Dependency: frozenset({"source", "target", "kind"}),
+    DependencyGraph: frozenset({"dependencies"}),
+    NocConfig: frozenset({
+        "topology_family", "radix", "concentration", "arbitration",
+        "rcu_enabled", "link_width", "mcast_groups", "mcast_setup_cycles",
+        "output_formats", "obfuscation_level",
+    }),
+    AddressMap: frozenset({"ranges"}),
+    AddressRange: frozenset({"name", "base", "size", "target_agent_idx"}),
+    PhysicalContext: frozenset({
+        "default_clock_freq_mhz", "default_data_width", "num_power_domains",
+        "process_node_nm",
+    }),
+}
+
+# Fields deliberately excluded from identity. Empty today; a future
+# non-semantic field must be named here with a reason.
+NON_SEMANTIC_FIELDS = {cls: frozenset() for cls in IDENTITY_FIELDS}
+
+# Version fields are identity-bearing constants: construction refuses any
+# value other than the implemented version, so they cannot be mutated and
+# therefore cannot appear in the mutation matrix.
+IMMUTABLE_CONSTANT_FIELDS = frozenset({
+    (CompileRequest, "schema_version"),
+    (CompileRequest, "compiler_semantics_version"),
+})
+
+_LEAF_FIELDS = frozenset(
+    (cls, f) for cls, fs in IDENTITY_FIELDS.items() for f in fs
+) - IMMUTABLE_CONSTANT_FIELDS
+
 
 # ── builders ────────────────────────────────────────────────────────────────
 
@@ -98,7 +157,7 @@ def _agent(**kw) -> Agent:
     return Agent(**base)
 
 
-def _noc(**kw) -> NocConfig:
+def _noc_config(**kw) -> NocConfig:
     base = dict(topology_family=TopologyFamily.TORUS, radix=8,
                 concentration=2, arbitration="round_robin",
                 rcu_enabled=True, link_width=256, mcast_groups=4,
@@ -123,6 +182,15 @@ def _address_range(**kw) -> AddressRange:
     return AddressRange(**base)
 
 
+def _deps(**kw) -> DependencyGraph:
+    base = dict(dependencies=(
+        Dependency(source="cls_a", target="cls_b", kind=DepKind.BLOCKING),
+        Dependency(source="cls_b", target="cls_c", kind=DepKind.ORDERING),
+    ))
+    base.update(kw)
+    return DependencyGraph(**base)
+
+
 def _full_request() -> CompileRequest:
     """Every supported field set to a non-default value."""
     return CompileRequest(
@@ -136,11 +204,8 @@ def _full_request() -> CompileRequest:
                 _agent(kind=AgentKind.HBM_CONTROLLER, count=8,
                        data_width=256, addr_width=40, protocol="AXI",
                        clock_domain="clk1", power_domain="pd1")),
-        dependencies=DependencyGraph([
-            Dependency(source="cls_a", target="cls_b", kind=DepKind.BLOCKING),
-            Dependency(source="cls_b", target="cls_c", kind=DepKind.ORDERING),
-        ]),
-        noc_config=_noc(),
+        dependencies=_deps(),
+        noc_config=_noc_config(),
         address_map=AddressMap(ranges=(
             AddressRange(name="SRAM0", base=0x20000000, size=0x100000,
                          target_agent_idx=0),
@@ -150,208 +215,318 @@ def _full_request() -> CompileRequest:
     )
 
 
-def _with_workload(**kw) -> CompileRequest:
-    return replace(_full_request(), workload=_workload(**kw))
+B = _full_request()
 
 
-def _with_requirement(i, **kw) -> CompileRequest:
-    base = _full_request()
-    reqs = list(base.requirements)
+def _wl(**kw) -> CompileRequest:
+    return replace(B, workload=_workload(**kw))
+
+
+def _req(i, **kw) -> CompileRequest:
+    reqs = list(B.requirements)
     reqs[i] = replace(reqs[i], **kw)
-    return replace(base, requirements=tuple(reqs))
+    return replace(B, requirements=tuple(reqs))
 
 
-def _with_agent(i, **kw) -> CompileRequest:
-    base = _full_request()
-    agents = list(base.agents)
+def _coll(**kw) -> CompileRequest:
+    colls = list(B.workload.collectives)
+    colls[0] = replace(colls[0], **kw)
+    return replace(B, workload=replace(B.workload, collectives=tuple(colls)))
+
+
+def _ag(i, **kw) -> CompileRequest:
+    agents = list(B.agents)
     agents[i] = replace(agents[i], **kw)
-    return replace(base, agents=tuple(agents))
+    return replace(B, agents=tuple(agents))
 
 
-def _with_noc(**kw) -> CompileRequest:
-    return replace(_full_request(), noc_config=_noc(**kw))
+def _dep(i, **kw) -> CompileRequest:
+    deps = list(B.dependencies.dependencies)
+    deps[i] = replace(deps[i], **kw)
+    return replace(B, dependencies=DependencyGraph(tuple(deps)))
 
 
-def _with_physical(**kw) -> CompileRequest:
-    return replace(_full_request(), physical=_physical(**kw))
+def _noc(**kw) -> CompileRequest:
+    return replace(B, noc_config=_noc_config(**kw))
 
 
-def _with_ranges(ranges) -> CompileRequest:
-    return replace(_full_request(), address_map=AddressMap(ranges=tuple(ranges)))
+def _phys(**kw) -> CompileRequest:
+    return replace(B, physical=_physical(**kw))
 
 
-def _with_deps(deps) -> CompileRequest:
-    return replace(_full_request(),
-                   dependencies=DependencyGraph(list(deps)))
+def _rng(i, **kw) -> CompileRequest:
+    rs = list(B.address_map.ranges)
+    rs[i] = replace(rs[i], **kw)
+    return replace(B, address_map=AddressMap(ranges=tuple(rs)))
 
 
-def _base_hash() -> str:
-    return _full_request().design_hash()
-
-
-# ── §22 single-field mutation matrix ────────────────────────────────────────
-
-def _matrix():
-    """(label, mutated_request) for every semantic field."""
-    m = [
-        # Workload
-        ("workload.model_family", _with_workload(model_family=ModelFamily.DENSE_TRANSFORMER)),
-        ("workload.model_name", _with_workload(model_name="Other")),
-        ("workload.tp", _with_workload(tp=16)),
-        ("workload.pp", _with_workload(pp=3)),
-        ("workload.ep", _with_workload(ep=8)),
-        ("workload.dp", _with_workload(dp=4)),
-        ("workload.param_count_b", _with_workload(param_count_b=70.0)),
-        ("workload.sequence_length", _with_workload(sequence_length=8192)),
-        ("workload.batch_size", _with_workload(batch_size=32)),
-        ("workload.precision", _with_workload(precision="bf16")),
-        ("workload.serving_mode", _with_workload(serving_mode=ServingMode.PREFILL_HEAVY)),
-        ("workload.collectives", _with_workload(collectives=(
-            CollectiveOp(kind=CollectiveKind.ALLREDUCE, group_size=8),))),
-        ("workload.trace_path", _with_workload(trace_path="runs/traces/y.trace")),
-        # Requirement
-        ("requirement.qos_class", _with_requirement(0, qos_class=QoSClass.BEST_EFFORT)),
-        ("requirement.latency_ceiling_cycles", _with_requirement(0, latency_ceiling_cycles=4321.0)),
-        ("requirement.bandwidth_floor_gbps", _with_requirement(0, bandwidth_floor_gbps=55.0)),
-        ("requirement.binding", _with_requirement(0, binding=False)),
-        # Agent
-        ("agent.kind", _with_agent(0, kind=AgentKind.NIC)),
-        ("agent.count", _with_agent(0, count=128)),
-        ("agent.data_width", _with_agent(0, data_width=1024)),
-        ("agent.addr_width", _with_agent(0, addr_width=64)),
-        ("agent.protocol", _with_agent(0, protocol="AXI")),
-        ("agent.clock_domain", _with_agent(0, clock_domain="clk9")),
-        ("agent.power_domain", _with_agent(0, power_domain="pd9")),
-        # Dependency
-        ("dependency.source", _with_deps([
-            Dependency(source="cls_z", target="cls_b", kind=DepKind.BLOCKING),
-            Dependency(source="cls_b", target="cls_c", kind=DepKind.ORDERING)])),
-        ("dependency.target", _with_deps([
-            Dependency(source="cls_a", target="cls_z", kind=DepKind.BLOCKING),
-            Dependency(source="cls_b", target="cls_c", kind=DepKind.ORDERING)])),
-        ("dependency.kind", _with_deps([
-            Dependency(source="cls_a", target="cls_b", kind=DepKind.INDEPENDENT),
-            Dependency(source="cls_b", target="cls_c", kind=DepKind.ORDERING)])),
-        # NocConfig
-        ("noc_config.topology_family", _with_noc(topology_family=TopologyFamily.MESH)),
-        ("noc_config.radix", _with_noc(radix=16)),
-        ("noc_config.concentration", _with_noc(concentration=4)),
-        ("noc_config.arbitration", _with_noc(arbitration="fixed")),
-        ("noc_config.rcu_enabled", _with_noc(rcu_enabled=False)),
-        ("noc_config.link_width", _with_noc(link_width=512)),
-        ("noc_config.mcast_groups", _with_noc(mcast_groups=8)),
-        ("noc_config.mcast_setup_cycles", _with_noc(mcast_setup_cycles=99)),
-        ("noc_config.output_formats", _with_noc(
-            output_formats=(OutputFormat.SYSTEMVERILOG,))),
-        ("noc_config.obfuscation_level", _with_noc(obfuscation_level=1)),
-        # Physical
-        ("physical.clock_freq_mhz", _with_physical(default_clock_freq_mhz=1500.0)),
-        ("physical.data_width", _with_physical(default_data_width=256)),
-        ("physical.num_power_domains", _with_physical(num_power_domains=5)),
-        ("physical.process_node_nm", _with_physical(process_node_nm=3)),
-        # Address map
-        ("address_map.name", _with_ranges([
-            _address_range(name="HBM1"),
-            AddressRange(name="SRAM0", base=0x20000000, size=0x100000,
-                         target_agent_idx=0)])),
-        ("address_map.base", _with_ranges([
-            _address_range(base=0x1000),
-            AddressRange(name="SRAM0", base=0x20000000, size=0x100000,
-                         target_agent_idx=0)])),
-        ("address_map.size", _with_ranges([
-            _address_range(size=0x20000000),
-            AddressRange(name="SRAM0", base=0x20000000, size=0x100000,
-                         target_agent_idx=0)])),
-        ("address_map.target_agent_idx", _with_ranges([
-            _address_range(target_agent_idx=0),
-            AddressRange(name="SRAM0", base=0x20000000, size=0x100000,
-                         target_agent_idx=1)])),
-        # Envelope
-        ("schema_version", replace(_full_request(),
-                                   schema_version=COMPILE_REQUEST_SCHEMA_VERSION + 1)),
-        ("compiler_semantics_version", replace(
-            _full_request(),
-            compiler_semantics_version=COMPILER_SEMANTICS_VERSION + 1)),
-    ]
-    return m
-
-
-@pytest.mark.parametrize("label,mutated", _matrix(),
-                         ids=[lbl for lbl, _ in _matrix()])
-def test_semantic_field_mutation_changes_design_hash(label, mutated):
-    assert mutated.design_hash() != _base_hash(), (
-        f"mutating {label} did not change design identity")
-
-
-def test_mutation_matrix_is_complete():
-    """Every semantic field appears in the matrix at least once."""
-    labels = {lbl for lbl, _ in _matrix()}
-    expected = {
-        "workload.model_family", "workload.model_name", "workload.tp",
-        "workload.pp", "workload.ep", "workload.dp", "workload.param_count_b",
-        "workload.sequence_length", "workload.batch_size", "workload.precision",
-        "workload.serving_mode", "workload.collectives", "workload.trace_path",
-        "requirement.qos_class", "requirement.latency_ceiling_cycles",
-        "requirement.bandwidth_floor_gbps", "requirement.binding",
-        "agent.kind", "agent.count", "agent.data_width", "agent.addr_width",
-        "agent.protocol", "agent.clock_domain", "agent.power_domain",
-        "dependency.source", "dependency.target", "dependency.kind",
-        "noc_config.topology_family", "noc_config.radix",
-        "noc_config.concentration", "noc_config.arbitration",
-        "noc_config.rcu_enabled", "noc_config.link_width",
-        "noc_config.mcast_groups", "noc_config.mcast_setup_cycles",
-        "noc_config.output_formats", "noc_config.obfuscation_level",
-        "physical.clock_freq_mhz", "physical.data_width",
-        "physical.num_power_domains", "physical.process_node_nm",
-        "address_map.name", "address_map.base", "address_map.size",
-        "address_map.target_agent_idx",
-        "schema_version", "compiler_semantics_version",
-    }
-    assert labels == expected
-
-
-# ── §23 field-coverage sentinel ─────────────────────────────────────────────
-
-# Fields deliberately excluded from identity. Must be empty for the
-# product-intent dataclasses today; if that changes, name the field here
-# with a written reason.
-NON_SEMANTIC_FIELDS = {
-    CompileRequest: frozenset(),
-    Workload: frozenset(),
-    Requirement: frozenset(),
-    Agent: frozenset(),
-    Dependency: frozenset(),
-    NocConfig: frozenset(),
-    AddressRange: frozenset(),
-    PhysicalContext: frozenset(),
+# (ClassName, field) -> zero-arg callable producing a request differing
+# only in that field. Covers every identity-bearing leaf field; the
+# coverage test asserts this mechanically.
+MUTATORS = {
+    # CompileRequest object fields
+    (CompileRequest, "workload"): lambda: _wl(model_name="Other"),
+    (CompileRequest, "requirements"):
+        lambda: replace(B, requirements=(B.requirements[0],)),
+    (CompileRequest, "agents"): lambda: replace(B, agents=(B.agents[0],)),
+    (CompileRequest, "dependencies"):
+        lambda: replace(B, dependencies=DependencyGraph(
+            (B.dependencies.dependencies[0],))),
+    (CompileRequest, "noc_config"): lambda: _noc(radix=16),
+    (CompileRequest, "address_map"):
+        lambda: replace(B, address_map=AddressMap(
+            ranges=(B.address_map.ranges[0],))),
+    (CompileRequest, "physical"): lambda: _phys(default_data_width=256),
+    # Workload
+    (Workload, "model_family"): lambda: _wl(model_family=ModelFamily.DENSE_TRANSFORMER),
+    (Workload, "model_name"): lambda: _wl(model_name="Other"),
+    (Workload, "tp"): lambda: _wl(tp=16),
+    (Workload, "pp"): lambda: _wl(pp=3),
+    (Workload, "ep"): lambda: _wl(ep=8),
+    (Workload, "dp"): lambda: _wl(dp=4),
+    (Workload, "param_count_b"): lambda: _wl(param_count_b=70.0),
+    (Workload, "sequence_length"): lambda: _wl(sequence_length=8192),
+    (Workload, "batch_size"): lambda: _wl(batch_size=32),
+    (Workload, "precision"): lambda: _wl(precision="bf16"),
+    (Workload, "serving_mode"): lambda: _wl(serving_mode=ServingMode.PREFILL_HEAVY),
+    (Workload, "collectives"): lambda: _wl(collectives=(
+        CollectiveOp(kind=CollectiveKind.ALLREDUCE, group_size=8),)),
+    (Workload, "trace_path"): lambda: _wl(trace_path="runs/traces/y.trace"),
+    # CollectiveOp
+    (CollectiveOp, "kind"): lambda: _coll(kind=CollectiveKind.ALLREDUCE),
+    (CollectiveOp, "group_size"): lambda: _coll(group_size=4),
+    (CollectiveOp, "bytes_per_element"): lambda: _coll(bytes_per_element=8192),
+    # Requirement
+    (Requirement, "qos_class"): lambda: _req(0, qos_class=QoSClass.BEST_EFFORT),
+    (Requirement, "latency_ceiling_cycles"): lambda: _req(0, latency_ceiling_cycles=4321.0),
+    (Requirement, "bandwidth_floor_gbps"): lambda: _req(0, bandwidth_floor_gbps=55.0),
+    (Requirement, "binding"): lambda: _req(0, binding=False),
+    # Agent
+    (Agent, "kind"): lambda: _ag(0, kind=AgentKind.NIC),
+    (Agent, "count"): lambda: _ag(0, count=128),
+    (Agent, "data_width"): lambda: _ag(0, data_width=1024),
+    (Agent, "addr_width"): lambda: _ag(0, addr_width=64),
+    (Agent, "protocol"): lambda: _ag(0, protocol="AXI"),
+    (Agent, "clock_domain"): lambda: _ag(0, clock_domain="clk9"),
+    (Agent, "power_domain"): lambda: _ag(0, power_domain="pd9"),
+    # Dependency
+    (Dependency, "source"): lambda: _dep(0, source="cls_z"),
+    (Dependency, "target"): lambda: _dep(0, target="cls_z"),
+    (Dependency, "kind"): lambda: _dep(0, kind=DepKind.INDEPENDENT),
+    # DependencyGraph
+    (DependencyGraph, "dependencies"): lambda: replace(B, dependencies=_deps(
+        dependencies=(B.dependencies.dependencies[0],))),
+    # NocConfig
+    (NocConfig, "topology_family"): lambda: _noc(topology_family=TopologyFamily.MESH),
+    (NocConfig, "radix"): lambda: _noc(radix=16),
+    (NocConfig, "concentration"): lambda: _noc(concentration=4),
+    (NocConfig, "arbitration"): lambda: _noc(arbitration="fixed"),
+    (NocConfig, "rcu_enabled"): lambda: _noc(rcu_enabled=False),
+    (NocConfig, "link_width"): lambda: _noc(link_width=512),
+    (NocConfig, "mcast_groups"): lambda: _noc(mcast_groups=8),
+    (NocConfig, "mcast_setup_cycles"): lambda: _noc(mcast_setup_cycles=99),
+    (NocConfig, "output_formats"): lambda: _noc(
+        output_formats=(OutputFormat.SYSTEMVERILOG,)),
+    (NocConfig, "obfuscation_level"): lambda: _noc(obfuscation_level=1),
+    # AddressMap
+    (AddressMap, "ranges"): lambda: replace(B, address_map=AddressMap(
+        ranges=(B.address_map.ranges[0],))),
+    # AddressRange
+    (AddressRange, "name"): lambda: _rng(1, name="HBM1"),
+    (AddressRange, "base"): lambda: _rng(1, base=0x1000),
+    (AddressRange, "size"): lambda: _rng(1, size=0x20000000),
+    (AddressRange, "target_agent_idx"): lambda: _rng(1, target_agent_idx=0),
+    # PhysicalContext
+    (PhysicalContext, "default_clock_freq_mhz"): lambda: _phys(default_clock_freq_mhz=1500.0),
+    (PhysicalContext, "default_data_width"): lambda: _phys(default_data_width=256),
+    (PhysicalContext, "num_power_domains"): lambda: _phys(num_power_domains=5),
+    (PhysicalContext, "process_node_nm"): lambda: _phys(process_node_nm=3),
 }
 
 
-@pytest.mark.parametrize("cls", list(NON_SEMANTIC_FIELDS),
-                         ids=lambda c: c.__name__)
-def test_field_coverage_sentinel(cls):
-    """A new dataclass field must be classified before this passes.
+# ── mutation matrix ─────────────────────────────────────────────────────────
 
-    All fields are currently semantic; adding one to any of these
-    dataclasses fails this test until it is either included in identity
-    or explicitly listed in NON_SEMANTIC_FIELDS with a reason.
+@pytest.mark.parametrize(
+    "key", sorted(MUTATORS, key=lambda k: (k[0].__name__, k[1])),
+    ids=[f"{c.__name__}.{f}" for (c, f) in sorted(
+        MUTATORS, key=lambda k: (k[0].__name__, k[1]))])
+def test_semantic_field_mutation_changes_design_hash(key):
+    mutated = MUTATORS[key]()
+    assert mutated.design_hash() != B.design_hash(), (
+        f"mutating {key[0].__name__}.{key[1]} did not change design identity")
+
+
+def test_mutation_coverage_matches_classification():
+    """Every identity-bearing leaf field is mutated; nothing else is."""
+    assert set(MUTATORS) == set(_LEAF_FIELDS)
+
+
+# ── field-coverage sentinel (positive classification) ───────────────────────
+
+@pytest.mark.parametrize("cls", list(IDENTITY_FIELDS), ids=lambda c: c.__name__)
+def test_field_coverage_sentinel(cls):
+    """A new dataclass field fails here until it is classified.
+
+    Identity and non-semantic sets must together equal the actual fields
+    and must be disjoint, so merely existing cannot auto-enroll a field
+    as semantic.
     """
     names = {f.name for f in dataclasses.fields(cls)}
+    identity = IDENTITY_FIELDS[cls]
     non_semantic = NON_SEMANTIC_FIELDS[cls]
-    semantic = names - non_semantic
-    assert semantic, f"{cls.__name__} has no semantic fields?"
-    assert semantic | non_semantic == names
-    assert not (semantic & non_semantic)
+    assert not (identity & non_semantic), f"{cls.__name__}: overlapping classes"
+    assert identity | non_semantic == names, (
+        f"{cls.__name__}: unclassified fields "
+        f"{sorted(names ^ (identity | non_semantic))}")
 
 
-# ── §21 / §15 complete round trip ───────────────────────────────────────────
+# ── deep immutability ───────────────────────────────────────────────────────
+
+def test_dependencies_list_is_not_retained():
+    deps = [Dependency(source="a", target="b", kind=DepKind.BLOCKING)]
+    cr = replace(B, dependencies=deps)
+    h = cr.design_hash()
+    deps.append(Dependency(source="b", target="c", kind=DepKind.ORDERING))
+    assert cr.design_hash() == h
+    assert isinstance(cr.dependencies.dependencies, tuple)
+
+
+def test_dependency_graph_dependencies_are_immutable():
+    deps = [Dependency(source="a", target="b", kind=DepKind.BLOCKING)]
+    g = DependencyGraph(deps)
+    h = g.dependencies
+    deps.clear()
+    assert g.dependencies == h  # tuple snapshot, not the caller's list
+    with pytest.raises((AttributeError, TypeError)):
+        g.dependencies.append(deps)
+
+
+def test_requirements_list_is_not_retained():
+    reqs = [_requirement()]
+    cr = replace(B, requirements=reqs, agents=(_agent(),))
+    h = cr.design_hash()
+    reqs.append(_requirement(qos_class=QoSClass.BANDWIDTH,
+                             latency_ceiling_cycles=None,
+                             bandwidth_floor_gbps=1.0, binding=False))
+    assert cr.design_hash() == h
+    assert isinstance(cr.requirements, tuple)
+
+
+def test_agents_list_is_not_retained():
+    agents = [_agent()]
+    cr = replace(B, agents=agents, requirements=())
+    h = cr.design_hash()
+    agents.append(_agent(kind=AgentKind.NIC, count=2))
+    assert cr.design_hash() == h
+    assert isinstance(cr.agents, tuple)
+
+
+def test_workload_collectives_list_is_not_retained():
+    colls = [CollectiveOp(kind=CollectiveKind.ALLREDUCE, group_size=8)]
+    wl = Workload(model_family=ModelFamily.MOE, collectives=colls)
+    h = replace(B, workload=wl).design_hash()
+    colls.append(CollectiveOp(kind=CollectiveKind.ALLGATHER, group_size=4))
+    assert replace(B, workload=wl).design_hash() == h
+    assert isinstance(wl.collectives, tuple)
+
+
+def test_address_ranges_list_is_not_retained():
+    rs = [_address_range()]
+    am = AddressMap(ranges=rs)
+    h = replace(B, address_map=am).design_hash()
+    rs.append(AddressRange(name="X", base=0x40000000, size=0x1000))
+    assert replace(B, address_map=am).design_hash() == h
+    assert isinstance(am.ranges, tuple)
+
+
+# ── strict primitive typing + canonical numerics ────────────────────────────
+
+@pytest.mark.parametrize("build", [
+    lambda: _workload(tp=True),
+    lambda: _workload(tp=1.0),
+    lambda: _workload(pp=2.0),
+    lambda: _workload(batch_size=True),
+    lambda: _workload(sequence_length=4096.0),
+    lambda: _agent(count=True),
+    lambda: _agent(data_width=256.0),
+    lambda: _agent(addr_width=True),
+    lambda: _requirement(binding=1),
+    lambda: _requirement(latency_ceiling_cycles=True),
+    lambda: _noc_config(rcu_enabled="false"),
+    lambda: _noc_config(rcu_enabled=1),
+    lambda: _noc_config(radix=8.0),
+    lambda: _noc_config(obfuscation_level=True),
+    lambda: _physical(num_power_domains=True),
+    lambda: _physical(default_data_width=256.0),
+    lambda: _address_range(base=0.0),
+    lambda: _address_range(size=True),
+    lambda: CollectiveOp(kind=CollectiveKind.ALLREDUCE, group_size=8.0),
+    lambda: Dependency(source="a", target="b", kind="blocking"),
+], ids=lambda f: "case")
+def test_primitive_type_violations_refused(build):
+    with pytest.raises((ValueError, TypeError)):
+        build()
+
+
+def test_int_and_float_real_identity_are_equal():
+    assert _phys(default_clock_freq_mhz=1000).design_hash() \
+        == _phys(default_clock_freq_mhz=1000.0).design_hash()
+    assert _req(0, latency_ceiling_cycles=500).design_hash() \
+        == _req(0, latency_ceiling_cycles=500.0).design_hash()
+    assert _req(0, bandwidth_floor_gbps=10).design_hash() \
+        == _req(0, bandwidth_floor_gbps=10.0).design_hash()
+    assert _wl(param_count_b=30).design_hash() \
+        == _wl(param_count_b=30.0).design_hash()
+
+
+def test_schema_version_float_representation_refused():
+    d = B.to_dict()
+    d["schema_version"] = 2.0
+    with pytest.raises(CompileRequestSchemaError, match="schema_version"):
+        CompileRequest.from_dict(d)
+
+
+def test_compiler_semantics_float_representation_refused():
+    d = B.to_dict()
+    d["compiler_semantics_version"] = 1.0
+    with pytest.raises(CompileRequestSchemaError, match="compiler_semantics"):
+        CompileRequest.from_dict(d)
+
+
+def test_wrong_int_types_in_doc_refused():
+    d = B.to_dict()
+    d["workload"]["tp"] = 1.0
+    with pytest.raises(ValueError):
+        CompileRequest.from_dict(d)
+
+
+# ── version contract (unrepresentable in memory) ────────────────────────────
+
+def test_unsupported_schema_unrepresentable():
+    with pytest.raises(ValueError, match="schema_version"):
+        replace(B, schema_version=COMPILE_REQUEST_SCHEMA_VERSION + 1)
+
+
+def test_unsupported_semantics_unrepresentable():
+    with pytest.raises(ValueError, match="compiler_semantics_version"):
+        replace(B, compiler_semantics_version=COMPILER_SEMANTICS_VERSION + 1)
+
+
+def test_missing_compiler_semantics_version_refused():
+    d = B.to_dict()
+    del d["compiler_semantics_version"]
+    with pytest.raises(CompileRequestSchemaError,
+                       match="missing required field root.compiler_semantics_version"):
+        CompileRequest.from_dict(d)
+
+
+# ── round trip ──────────────────────────────────────────────────────────────
 
 def test_complete_round_trip_is_lossless():
-    cr = _full_request()
-    restored = CompileRequest.from_dict(cr.to_dict())
-    assert restored == cr
-    assert restored.to_dict() == cr.to_dict()
-    assert restored.design_hash() == cr.design_hash()
+    restored = CompileRequest.from_dict(B.to_dict())
+    assert restored == B
+    assert restored.to_dict() == B.to_dict()
+    assert restored.design_hash() == B.design_hash()
 
 
 @pytest.mark.parametrize("path", [
@@ -361,189 +536,170 @@ def test_complete_round_trip_is_lossless():
     "physical.num_power_domains", "noc_config.output_formats",
 ])
 def test_previously_dropped_fields_survive_serialization(path):
-    d = _full_request().to_dict()
-    cur = d
+    cur = B.to_dict()
     for part in path.split("."):
         cur = cur[int(part)] if part.isdigit() else cur[part]
     assert cur is not None
 
 
-# ── §24 dictionary insertion order ──────────────────────────────────────────
-
 def test_json_key_order_does_not_affect_hash():
-    a = _full_request()
-    d = a.to_dict()
+    d = B.to_dict()
     reordered = dict(reversed(list(d.items())))
-    b = CompileRequest.from_dict(reordered)
-    assert b.design_hash() == a.design_hash()
+    assert CompileRequest.from_dict(reordered).design_hash() == B.design_hash()
 
 
-# ── §25 collection order semantics ──────────────────────────────────────────
+# ── collection order semantics ──────────────────────────────────────────────
 
 def test_requirements_order_is_irrelevant():
-    a = _full_request()
-    b = replace(a, requirements=tuple(reversed(a.requirements)))
-    assert b.design_hash() == a.design_hash()
+    assert replace(B, requirements=tuple(reversed(B.requirements))).design_hash() \
+        == B.design_hash()
 
 
 def test_address_ranges_order_is_irrelevant():
-    a = _full_request()
-    b = replace(a, address_map=AddressMap(
-        ranges=tuple(reversed(a.address_map.ranges))))
-    assert b.design_hash() == a.design_hash()
+    rev = replace(B, address_map=AddressMap(
+        ranges=tuple(reversed(B.address_map.ranges))))
+    assert rev.design_hash() == B.design_hash()
 
 
 def test_output_formats_order_is_irrelevant():
     fmts = (OutputFormat.SYSTEMVERILOG, OutputFormat.UVM, OutputFormat.JSON)
-    a = _with_noc(output_formats=fmts)
-    b = _with_noc(output_formats=tuple(reversed(fmts)))
-    assert b.design_hash() == a.design_hash()
+    a = _noc(output_formats=fmts)
+    b = _noc(output_formats=tuple(reversed(fmts)))
+    assert a.design_hash() == b.design_hash()
 
 
 def test_agents_order_is_semantic():
-    a = _full_request()
-    b = replace(a, agents=tuple(reversed(a.agents)))
-    assert b.design_hash() != a.design_hash()
+    assert replace(B, agents=tuple(reversed(B.agents))).design_hash() \
+        != B.design_hash()
 
 
 def test_collectives_order_is_semantic():
     colls = (CollectiveOp(kind=CollectiveKind.ALLREDUCE, group_size=8),
              CollectiveOp(kind=CollectiveKind.ALLGATHER, group_size=4))
-    a = _with_workload(collectives=colls)
-    b = _with_workload(collectives=tuple(reversed(colls)))
-    assert b.design_hash() != a.design_hash()
+    a = _wl(collectives=colls)
+    b = _wl(collectives=tuple(reversed(colls)))
+    assert a.design_hash() != b.design_hash()
 
 
 def test_dependencies_order_is_semantic():
-    deps = [Dependency(source="a", target="b", kind=DepKind.BLOCKING),
-            Dependency(source="b", target="c", kind=DepKind.ORDERING)]
-    a = _with_deps(deps)
-    b = _with_deps(list(reversed(deps)))
-    assert b.design_hash() != a.design_hash()
+    deps = (Dependency(source="a", target="b", kind=DepKind.BLOCKING),
+            Dependency(source="b", target="c", kind=DepKind.ORDERING))
+    a = replace(B, dependencies=DependencyGraph(deps))
+    b = replace(B, dependencies=DependencyGraph(tuple(reversed(deps))))
+    assert a.design_hash() != b.design_hash()
 
 
-# ── §26 unknown fields ──────────────────────────────────────────────────────
+# ── unknown fields and metadata allowlist ───────────────────────────────────
 
-def _doc() -> dict:
-    return _full_request().to_dict()
-
-
-@pytest.mark.parametrize("mutate,where", [
-    (lambda d: d.__setitem__("tpp", 16), "root.tpp"),
-    (lambda d: d["workload"].__setitem__("tpp", 16), "workload.tpp"),
-    (lambda d: d["agents"][0].__setitem__("width", 4), "agents[0].width"),
-    (lambda d: d["noc_config"].__setitem__("routing", "dor"), "noc_config.routing"),
-    (lambda d: d["physical"].__setitem__("voltage", 1.0), "physical.voltage"),
-    (lambda d: d["address_map"]["ranges"][0].__setitem__("owner", "x"),
-     "address_map.ranges[0].owner"),
+@pytest.mark.parametrize("mutate", [
+    lambda d: d.__setitem__("tpp", 16),
+    lambda d: d["workload"].__setitem__("tpp", 16),
+    lambda d: d["agents"][0].__setitem__("width", 4),
+    lambda d: d["noc_config"].__setitem__("routing", "dor"),
+    lambda d: d["physical"].__setitem__("voltage", 1.0),
+    lambda d: d["address_map"]["ranges"][0].__setitem__("owner", "x"),
 ])
-def test_unknown_field_refused(mutate, where):
-    d = _doc()
+def test_unknown_field_refused(mutate):
+    d = B.to_dict()
     mutate(d)
     with pytest.raises(CompileRequestSchemaError, match="unknown field"):
         CompileRequest.from_dict(d)
 
 
-def test_underscore_metadata_allowed_at_root():
-    d = _doc()
-    d["_comment"] = "documentation"
-    CompileRequest.from_dict(d)  # must not raise, must not change identity
+def test_allowlisted_root_metadata_is_ignored():
+    for key in ("_comment", "_docs"):
+        d = B.to_dict()
+        d[key] = "documentation"
+        assert CompileRequest.from_dict(d).design_hash() == B.design_hash()
 
 
-# ── §27 / §28 schema behavior ───────────────────────────────────────────────
+def test_non_allowlisted_underscore_field_refused():
+    d = B.to_dict()
+    d["_routing_override"] = "dor"
+    with pytest.raises(CompileRequestSchemaError, match="unknown field"):
+        CompileRequest.from_dict(d)
+
+
+# ── schema behavior ─────────────────────────────────────────────────────────
+
+def test_current_schema_accepted():
+    CompileRequest.from_dict(B.to_dict())
+
 
 def test_missing_schema_version_refused():
-    d = _doc()
+    d = B.to_dict()
     del d["schema_version"]
     with pytest.raises(CompileRequestSchemaError, match="missing schema_version"):
         CompileRequest.from_dict(d)
 
 
 def test_old_schema_version_refused():
-    d = _doc()
+    d = B.to_dict()
     d["schema_version"] = 1
     with pytest.raises(CompileRequestSchemaError, match="unsupported"):
         CompileRequest.from_dict(d)
 
 
 def test_future_schema_version_refused():
-    d = _doc()
+    d = B.to_dict()
     d["schema_version"] = COMPILE_REQUEST_SCHEMA_VERSION + 1
     with pytest.raises(CompileRequestSchemaError, match="unsupported"):
         CompileRequest.from_dict(d)
 
 
 def test_future_compiler_semantics_refused():
-    d = _doc()
+    d = B.to_dict()
     d["compiler_semantics_version"] = COMPILER_SEMANTICS_VERSION + 1
     with pytest.raises(CompileRequestSchemaError, match="compiler_semantics"):
         CompileRequest.from_dict(d)
 
 
 def test_tampered_design_hash_refused():
-    d = _doc()
+    d = B.to_dict()
     d["design_hash"] = "0" * 64
     with pytest.raises(CompileRequestSchemaError, match="does not match"):
         CompileRequest.from_dict(d)
 
 
-def test_current_schema_accepted():
-    CompileRequest.from_dict(_doc())  # must not raise
+# ── invalid numerics ────────────────────────────────────────────────────────
 
-
-# ── §29 invalid numerics ────────────────────────────────────────────────────
-
-@pytest.mark.parametrize("mutate,exc", [
-    (lambda d: d["workload"].__setitem__("tp", 0), ValueError),
-    (lambda d: d["workload"].__setitem__("pp", -1), ValueError),
-    (lambda d: d["workload"].__setitem__("param_count_b", float("nan")), ValueError),
-    (lambda d: d["workload"].__setitem__("param_count_b", float("inf")), ValueError),
-    (lambda d: d["workload"].__setitem__("param_count_b", 0), ValueError),
-    (lambda d: d["workload"].__setitem__("sequence_length", 0), ValueError),
-    (lambda d: d["workload"].__setitem__("batch_size", 0), ValueError),
-    (lambda d: d["agents"][0].__setitem__("count", 0), ValueError),
-    (lambda d: d["agents"][0].__setitem__("data_width", 4), ValueError),
-    (lambda d: d["agents"][0].__setitem__("addr_width", 0), ValueError),
-    (lambda d: d["requirements"][0].__setitem__("latency_ceiling_cycles", float("nan")), ValueError),
-    (lambda d: d["requirements"][0].__setitem__("latency_ceiling_cycles", -1.0), ValueError),
-    (lambda d: d["requirements"][0].__setitem__("bandwidth_floor_gbps", float("inf")), ValueError),
-    (lambda d: d["physical"].__setitem__("clock_freq_mhz", float("nan")), ValueError),
-    (lambda d: d["physical"].__setitem__("clock_freq_mhz", 0.0), ValueError),
-    (lambda d: d["physical"].__setitem__("num_power_domains", 0), ValueError),
-    (lambda d: d["physical"].__setitem__("process_node_nm", 0), ValueError),
-    (lambda d: d["address_map"]["ranges"][0].__setitem__("size", 0), ValueError),
-    (lambda d: d["address_map"]["ranges"][0].__setitem__("base", -1), ValueError),
-    (lambda d: d["address_map"]["ranges"][0].__setitem__("target_agent_idx", -1), ValueError),
+@pytest.mark.parametrize("mutate", [
+    lambda d: d["workload"].__setitem__("tp", 0),
+    lambda d: d["workload"].__setitem__("pp", -1),
+    lambda d: d["workload"].__setitem__("param_count_b", float("nan")),
+    lambda d: d["workload"].__setitem__("param_count_b", float("inf")),
+    lambda d: d["workload"].__setitem__("param_count_b", 0),
+    lambda d: d["workload"].__setitem__("sequence_length", 0),
+    lambda d: d["workload"].__setitem__("batch_size", 0),
+    lambda d: d["agents"][0].__setitem__("count", 0),
+    lambda d: d["agents"][0].__setitem__("data_width", 4),
+    lambda d: d["agents"][0].__setitem__("addr_width", 0),
+    lambda d: d["requirements"][0].__setitem__("latency_ceiling_cycles", float("nan")),
+    lambda d: d["requirements"][0].__setitem__("latency_ceiling_cycles", -1.0),
+    lambda d: d["requirements"][0].__setitem__("bandwidth_floor_gbps", float("inf")),
+    lambda d: d["physical"].__setitem__("clock_freq_mhz", float("nan")),
+    lambda d: d["physical"].__setitem__("clock_freq_mhz", 0.0),
+    lambda d: d["physical"].__setitem__("num_power_domains", 0),
+    lambda d: d["physical"].__setitem__("process_node_nm", 0),
+    lambda d: d["address_map"]["ranges"][0].__setitem__("size", 0),
+    lambda d: d["address_map"]["ranges"][0].__setitem__("base", -1),
+    lambda d: d["address_map"]["ranges"][0].__setitem__("target_agent_idx", -1),
 ])
-def test_invalid_numerics_refused(mutate, exc):
-    d = _doc()
+def test_invalid_numerics_refused(mutate):
+    d = B.to_dict()
     mutate(d)
-    with pytest.raises(exc):
+    with pytest.raises(ValueError):
         CompileRequest.from_dict(d)
 
 
-# ── §31 hash domain separation ──────────────────────────────────────────────
+# ── hash domain separation and provenance exclusion ─────────────────────────
 
 def test_canonical_envelope_carries_type_discriminator():
-    c = _full_request().canonical_dict()
+    c = B.canonical_dict()
     assert c["type"] == "srota/CompileRequest"
     assert c["schema_version"] == COMPILE_REQUEST_SCHEMA_VERSION
     assert c["compiler_semantics_version"] == COMPILER_SEMANTICS_VERSION
 
-
-def test_schema_version_forks_identity():
-    a = _full_request()
-    b = replace(a, schema_version=a.schema_version + 1)
-    assert a.design_hash() != b.design_hash()
-
-
-def test_compiler_semantics_version_forks_identity():
-    a = _full_request()
-    b = replace(a, compiler_semantics_version=a.compiler_semantics_version + 1)
-    assert a.design_hash() != b.design_hash()
-
-
-# ── §32 no execution provenance leak ────────────────────────────────────────
 
 _PROVENANCE_TOKENS = (
     "commit", "dirty", "binary", "bin_path", "hostname", "host",
@@ -553,11 +709,10 @@ _PROVENANCE_TOKENS = (
 
 
 def test_no_execution_provenance_in_canonical_identity():
-    canon = json.dumps(_full_request().canonical_dict(), sort_keys=True)
+    canon = json.dumps(B.canonical_dict(), sort_keys=True)
     for tok in _PROVENANCE_TOKENS:
         assert tok not in canon, f"provenance token {tok!r} leaked into identity"
-    # The whole envelope is exactly the known semantic keys + discriminator.
-    assert set(_full_request().canonical_dict()) == {
+    assert set(B.canonical_dict()) == {
         "type", "schema_version", "compiler_semantics_version",
         "workload", "requirements", "agents", "dependencies", "noc_config",
         "address_map", "physical",
@@ -565,15 +720,12 @@ def test_no_execution_provenance_in_canonical_identity():
 
 
 def test_same_intent_same_hash_across_construction_contexts():
-    # Different construction path (round-trip) in a different "context"
-    # must yield the same identity — no context leaks in.
-    a = _full_request()
-    b = CompileRequest.from_dict(json.loads(json.dumps(a.to_dict())))
-    assert a.design_hash() == b.design_hash()
-    assert a.design_hash() == CompileRequest.from_dict(a.to_dict()).design_hash()
+    b = CompileRequest.from_dict(json.loads(json.dumps(B.to_dict())))
+    assert B.design_hash() == b.design_hash()
+    assert B.design_hash() == CompileRequest.from_dict(B.to_dict()).design_hash()
 
 
-# ── §30 hash stability golden ───────────────────────────────────────────────
+# ── golden hash ─────────────────────────────────────────────────────────────
 
 def test_golden_design_hash_is_stable():
     """Deliberate change detector.
@@ -582,10 +734,10 @@ def test_golden_design_hash_is_stable():
     constant: bump COMPILE_REQUEST_SCHEMA_VERSION or
     COMPILER_SEMANTICS_VERSION (whichever semantics moved) and explain why.
     """
-    assert _full_request().design_hash() == GOLDEN_DESIGN_HASH
+    assert B.design_hash() == GOLDEN_DESIGN_HASH
 
 
-# ── §33 tracked examples ────────────────────────────────────────────────────
+# ── tracked examples ────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("path", sorted(EXAMPLES_DIR.glob("*.json")),
                          ids=lambda p: p.name)

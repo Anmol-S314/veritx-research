@@ -52,6 +52,8 @@ _TOP_KEYS = frozenset({
     "schema_version", "compiler_semantics_version", "workload",
     "requirements", "agents", "dependencies", "noc_config", "address_map",
     "physical", "design_hash", "guardrail_hash",
+    # Root documentation metadata: non-semantic, explicitly allowlisted.
+    "_comment", "_docs",
 })
 _WORKLOAD_KEYS = frozenset({
     "model_family", "model_name", "tp", "pp", "ep", "dp", "param_count_b",
@@ -85,21 +87,11 @@ def _canonical_json(obj: Any) -> str:
     return json.dumps(obj, sort_keys=True, separators=(",", ":"))
 
 
-def _strict_keys(d: Any, allowed: frozenset, where: str,
-                 *, allow_meta: bool = False) -> None:
-    """Reject unknown keys at a boundary.
-
-    ``allow_meta`` (root only) tolerates ``_``-prefixed documentation
-    keys such as ``_comment``/``_docs`` — they carry no semantics and
-    never enter identity.
-    """
+def _strict_keys(d: Any, allowed: frozenset, where: str) -> None:
+    """Reject unknown keys at a boundary (``extra="forbid"`` semantics)."""
     if not isinstance(d, dict):
         raise CompileRequestSchemaError(f"{where} must be a JSON object")
-    keys = set(d)
-    if allow_meta:
-        keys = {k for k in keys
-                if not (isinstance(k, str) and k.startswith("_"))}
-    unknown = sorted(keys - allowed)
+    unknown = sorted(set(d) - allowed)
     if unknown:
         raise CompileRequestSchemaError(f"unknown field {where}.{unknown[0]}")
 
@@ -116,6 +108,48 @@ def _enum(cls_: Any, value: Any, where: str) -> Any:
         return cls_(value)
     except (ValueError, TypeError) as e:
         raise CompileRequestSchemaError(f"invalid {where}: {value!r}") from e
+
+
+# Strict primitive typing (Wave B1.1). `bool` is an `int` subclass in
+# Python, so `type(x) is int` is the only reliable integer check; and an
+# int/float distinction in the canonical JSON would otherwise let
+# `1000` and `1000.0` hash differently for one semantic value.
+def _as_int(name: str, value: Any, minimum: int | None = None) -> int:
+    if type(value) is not int:
+        raise ValueError(
+            f"{name} must be an int, got {type(value).__name__} {value!r}")
+    if minimum is not None and value < minimum:
+        raise ValueError(f"{name} must be >= {minimum}, got {value}")
+    return value
+
+
+def _as_real(name: str, value: Any, minimum: float | None = None) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(
+            f"{name} must be a real number, got {type(value).__name__} "
+            f"{value!r}")
+    v = float(value)  # canonical: int and float forms share one identity
+    if not math.isfinite(v):
+        raise ValueError(f"{name} must be finite, got {value!r}")
+    if minimum is not None and v < minimum:
+        raise ValueError(f"{name} must be >= {minimum}, got {value!r}")
+    return v
+
+
+def _as_bool(name: str, value: Any) -> bool:
+    if type(value) is not bool:
+        raise ValueError(
+            f"{name} must be a bool, got {type(value).__name__} {value!r}")
+    return value
+
+
+def _as_str(name: str, value: Any, *, allow_empty: bool = True) -> str:
+    if not isinstance(value, str):
+        raise ValueError(
+            f"{name} must be a string, got {type(value).__name__}")
+    if not allow_empty and not value:
+        raise ValueError(f"{name} must be non-empty")
+    return value
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -181,12 +215,14 @@ class Agent:
     power_domain: str | None = None  # PRD §4.2
 
     def __post_init__(self):
-        if self.count < 1:
-            raise ValueError(f"Agent count must be >= 1, got {self.count}")
-        if self.data_width < 8:
-            raise ValueError(f"data_width must be >= 8, got {self.data_width}")
-        if self.addr_width < 8:
-            raise ValueError(f"addr_width must be >= 8, got {self.addr_width}")
+        _as_int("count", self.count, minimum=1)
+        _as_int("data_width", self.data_width, minimum=8)
+        _as_int("addr_width", self.addr_width, minimum=8)
+        _as_str("protocol", self.protocol, allow_empty=False)
+        if self.clock_domain is not None:
+            _as_str("clock_domain", self.clock_domain, allow_empty=False)
+        if self.power_domain is not None:
+            _as_str("power_domain", self.power_domain, allow_empty=False)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -226,12 +262,8 @@ class CollectiveOp:
     bytes_per_element: int = 2048
 
     def __post_init__(self):
-        if self.group_size < 1:
-            raise ValueError(f"group_size must be >= 1, got {self.group_size}")
-        if self.bytes_per_element < 1:
-            raise ValueError(
-                f"bytes_per_element must be >= 1, got {self.bytes_per_element}"
-            )
+        _as_int("group_size", self.group_size, minimum=1)
+        _as_int("bytes_per_element", self.bytes_per_element, minimum=1)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dict (JSON-safe)."""
@@ -284,24 +316,30 @@ class Workload:
     trace_path: str | None = None
 
     def __post_init__(self):
+        # Normalize caller-supplied lists to tuples: the frozen object
+        # must never retain a mutable collection the caller can edit.
+        if isinstance(self.collectives, list):
+            object.__setattr__(self, "collectives", tuple(self.collectives))
+        for c in self.collectives:
+            if not isinstance(c, CollectiveOp):
+                raise ValueError(
+                    f"collectives must contain CollectiveOp, got {type(c).__name__}")
         for field_name in ("tp", "pp", "ep", "dp"):
-            val = getattr(self, field_name)
-            if val < 1:
-                raise ValueError(f"{field_name} must be >= 1, got {val}")
-        if self.batch_size < 1:
-            raise ValueError(f"batch_size must be >= 1, got {self.batch_size}")
-        if self.sequence_length is not None and self.sequence_length < 1:
-            raise ValueError(
-                f"sequence_length must be >= 1, got {self.sequence_length}")
-        if self.param_count_b is not None and (
-                not math.isfinite(self.param_count_b)
-                or self.param_count_b <= 0):
-            raise ValueError(
-                f"param_count_b must be a finite positive number, "
-                f"got {self.param_count_b!r}")
-        if not self.precision:
-            raise ValueError("precision must be a non-empty string")
+            _as_int(field_name, getattr(self, field_name), minimum=1)
+        _as_int("batch_size", self.batch_size, minimum=1)
+        if self.sequence_length is not None:
+            _as_int("sequence_length", self.sequence_length, minimum=1)
+        if self.param_count_b is not None:
+            object.__setattr__(
+                self, "param_count_b",
+                _as_real("param_count_b", self.param_count_b, minimum=0.0))
+            if self.param_count_b <= 0:
+                raise ValueError(
+                    f"param_count_b must be > 0, got {self.param_count_b!r}")
+        _as_str("model_name", self.model_name)
+        _as_str("precision", self.precision, allow_empty=False)
         if self.trace_path is not None:
+            _as_str("trace_path", self.trace_path)
             p = Path(self.trace_path)
             if p.exists() and p.is_dir():
                 raise ValueError(f"trace_path is a directory, not a file: {self.trace_path}")
@@ -334,14 +372,13 @@ class Requirement:
     binding: bool = False  # if True, must be met or design fails
 
     def __post_init__(self):
+        _as_bool("binding", self.binding)
         for name, val in (("latency_ceiling_cycles", self.latency_ceiling_cycles),
                           ("bandwidth_floor_gbps", self.bandwidth_floor_gbps)):
             if val is None:
                 continue
-            if not math.isfinite(val):
-                raise ValueError(f"{name} must be finite, got {val!r}")
-            if val < 0:
-                raise ValueError(f"{name} must be >= 0, got {val}")
+            object.__setattr__(self, name,
+                               _as_real(name, val, minimum=0.0))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -362,20 +399,45 @@ class Dependency:
     target: str
     kind: DepKind
 
+    def __post_init__(self):
+        _as_str("source", self.source, allow_empty=False)
+        _as_str("target", self.target, allow_empty=False)
+        if not isinstance(self.kind, DepKind):
+            raise ValueError(
+                f"kind must be a DepKind, got {type(self.kind).__name__}")
+
 
 # NOTE: PLANE_C_MAX_VC lives in core.constants (env-overridable via
 # VERITX_MAX_VC) and is imported above — do not redefine it here.
 
 
-@dataclass
+@dataclass(frozen=True)
 class DependencyGraph:
     """PRD E4: Blocking/ordering graph that drives VC derivation.
 
     The graph is a directed graph over traffic class names.
     Cycles in the BLOCKING subgraph indicate potential deadlock
     that requires VC separation to resolve.
+
+    Frozen with a tuple: the graph is part of design identity, so it
+    must not be mutable after construction.
+
+    TEMPORARY B1 RULING: edge order is identity-bearing only because the
+    current compiler observes it (adjacency insertion order feeds DFS).
+    MANDATORY B3 FIX: make graph processing deterministic, then make
+    dependency edge ordering non-semantic and bump the semantics version.
     """
-    dependencies: list[Dependency]
+    dependencies: tuple[Dependency, ...]
+
+    def __post_init__(self):
+        if isinstance(self.dependencies, list):
+            object.__setattr__(self, "dependencies",
+                               tuple(self.dependencies))
+        for d in self.dependencies:
+            if not isinstance(d, Dependency):
+                raise ValueError(
+                    f"dependencies must contain Dependency, got "
+                    f"{type(d).__name__}")
 
     def _blocking_edges(self) -> list[tuple[str, str]]:
         """Return only BLOCKING edges (the ones that can form deadlock cycles)."""
@@ -516,13 +578,28 @@ class NocConfig:
     def __post_init__(self):
         if isinstance(self.output_formats, list):
             object.__setattr__(self, 'output_formats', tuple(self.output_formats))
-        if self.mcast_groups is not None and self.mcast_groups < 1:
-            raise ValueError(
-                f"mcast_groups must be >= 1, got {self.mcast_groups}")
-        if self.mcast_setup_cycles is not None and self.mcast_setup_cycles < 0:
-            raise ValueError(
-                f"mcast_setup_cycles must be >= 0, "
-                f"got {self.mcast_setup_cycles}")
+        for o in self.output_formats:
+            if not isinstance(o, OutputFormat):
+                raise ValueError(
+                    f"output_formats must contain OutputFormat, got "
+                    f"{type(o).__name__}")
+        if self.topology_family is not None \
+                and not isinstance(self.topology_family, TopologyFamily):
+            raise ValueError("topology_family must be a TopologyFamily")
+        for name in ("radix", "concentration", "link_width", "mcast_groups"):
+            val = getattr(self, name)
+            if val is not None:
+                _as_int(f"noc_config.{name}", val, minimum=1)
+        if self.mcast_setup_cycles is not None:
+            _as_int("noc_config.mcast_setup_cycles",
+                    self.mcast_setup_cycles, minimum=0)
+        _as_int("noc_config.obfuscation_level", self.obfuscation_level,
+                minimum=0)
+        if self.arbitration is not None:
+            _as_str("noc_config.arbitration", self.arbitration,
+                    allow_empty=False)
+        if self.rcu_enabled is not None:
+            _as_bool("noc_config.rcu_enabled", self.rcu_enabled)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -538,16 +615,11 @@ class AddressRange:
     target_agent_idx: int = 0   # index into agents tuple
 
     def __post_init__(self):
-        if not self.name:
-            raise ValueError("AddressRange.name must be non-empty")
-        if self.base < 0:
-            raise ValueError(f"AddressRange.base must be >= 0, got {self.base}")
-        if self.size < 1:
-            raise ValueError(f"AddressRange.size must be >= 1, got {self.size}")
-        if self.target_agent_idx < 0:
-            raise ValueError(
-                f"AddressRange.target_agent_idx must be >= 0, "
-                f"got {self.target_agent_idx}")
+        _as_str("AddressRange.name", self.name, allow_empty=False)
+        _as_int("AddressRange.base", self.base, minimum=0)
+        _as_int("AddressRange.size", self.size, minimum=1)
+        _as_int("AddressRange.target_agent_idx", self.target_agent_idx,
+                minimum=0)
 
 
 @dataclass(frozen=True)
@@ -568,6 +640,11 @@ class AddressMap:
     def __post_init__(self):
         if isinstance(self.ranges, list):
             object.__setattr__(self, 'ranges', tuple(self.ranges))
+        for r in self.ranges:
+            if not isinstance(r, AddressRange):
+                raise ValueError(
+                    f"ranges must contain AddressRange, got "
+                    f"{type(r).__name__}")
 
     @classmethod
     def from_dict(cls, d: dict) -> AddressMap:
@@ -697,20 +774,16 @@ class PhysicalContext:
     process_node_nm: int = 7  # technology node
 
     def __post_init__(self):
-        if not math.isfinite(self.default_clock_freq_mhz) \
-                or self.default_clock_freq_mhz <= 0:
+        object.__setattr__(
+            self, "default_clock_freq_mhz",
+            _as_real("default_clock_freq_mhz", self.default_clock_freq_mhz))
+        if self.default_clock_freq_mhz <= 0:
             raise ValueError(
-                "default_clock_freq_mhz must be finite and > 0, got "
+                "default_clock_freq_mhz must be > 0, got "
                 f"{self.default_clock_freq_mhz!r}")
-        if self.default_data_width < 8:
-            raise ValueError(
-                f"default_data_width must be >= 8, got {self.default_data_width}")
-        if self.num_power_domains < 1:
-            raise ValueError(
-                f"num_power_domains must be >= 1, got {self.num_power_domains}")
-        if self.process_node_nm < 1:
-            raise ValueError(
-                f"process_node_nm must be >= 1, got {self.process_node_nm}")
+        _as_int("default_data_width", self.default_data_width, minimum=8)
+        _as_int("num_power_domains", self.num_power_domains, minimum=1)
+        _as_int("process_node_nm", self.process_node_nm, minimum=1)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -895,17 +968,49 @@ class CompileRequest:
     compiler_semantics_version: int = COMPILER_SEMANTICS_VERSION
 
     def __post_init__(self):
-        # Convert lists to tuples for immutability
+        # Normalize caller-owned mutable collections: a frozen request
+        # must never retain a list the caller can still edit.
         if isinstance(self.requirements, list):
             object.__setattr__(self, 'requirements', tuple(self.requirements))
         if isinstance(self.agents, list):
             object.__setattr__(self, 'agents', tuple(self.agents))
-        # Convert list of Dependencies to DependencyGraph if needed
         if isinstance(self.dependencies, list):
-            object.__setattr__(self, 'dependencies', DependencyGraph(self.dependencies))
-        # Validate agents
+            object.__setattr__(self, 'dependencies',
+                               DependencyGraph(self.dependencies))
+        for r in self.requirements:
+            if not isinstance(r, Requirement):
+                raise ValueError(
+                    f"requirements must contain Requirement, got "
+                    f"{type(r).__name__}")
+        for a in self.agents:
+            if not isinstance(a, Agent):
+                raise ValueError(
+                    f"agents must contain Agent, got {type(a).__name__}")
+        if not isinstance(self.dependencies, DependencyGraph):
+            raise ValueError("dependencies must be a DependencyGraph")
+        if not isinstance(self.noc_config, NocConfig):
+            raise ValueError("noc_config must be a NocConfig")
+        if not isinstance(self.address_map, AddressMap):
+            raise ValueError("address_map must be an AddressMap")
+        if not isinstance(self.physical, PhysicalContext):
+            raise ValueError("physical must be a PhysicalContext")
         if len(self.agents) == 0:
             raise ValueError("agents list cannot be empty — need at least one agent kind")
+        # The version fields describe the semantics THIS class implements;
+        # they are not user-adjustable knobs. Unsupported versions are
+        # unrepresentable in memory, exactly as they are refused on load.
+        if _as_int("schema_version", self.schema_version) \
+                != COMPILE_REQUEST_SCHEMA_VERSION:
+            raise ValueError(
+                f"unsupported schema_version {self.schema_version} "
+                f"(this build implements v{COMPILE_REQUEST_SCHEMA_VERSION})")
+        if _as_int("compiler_semantics_version",
+                   self.compiler_semantics_version) \
+                != COMPILER_SEMANTICS_VERSION:
+            raise ValueError(
+                f"unsupported compiler_semantics_version "
+                f"{self.compiler_semantics_version} (this build implements "
+                f"{COMPILER_SEMANTICS_VERSION})")
 
     @property
     def total_nodes(self) -> int:
@@ -1059,22 +1164,23 @@ class CompileRequest:
         and any value that cannot represent a design. A supplied
         design_hash/guardrail_hash must match the recomputed identity.
         """
-        _strict_keys(d, _TOP_KEYS, "root", allow_meta=True)
+        _strict_keys(d, _TOP_KEYS, "root")
         if "schema_version" not in d:
             raise CompileRequestSchemaError(
                 "missing schema_version — refusing to guess a schema; add "
                 f"\"schema_version\": {COMPILE_REQUEST_SCHEMA_VERSION}")
-        if d["schema_version"] != COMPILE_REQUEST_SCHEMA_VERSION:
+        if type(d["schema_version"]) is not int \
+                or d["schema_version"] != COMPILE_REQUEST_SCHEMA_VERSION:
             raise CompileRequestSchemaError(
                 f"unsupported CompileRequest schema_version "
-                f"{d['schema_version']} (this build speaks "
+                f"{d['schema_version']!r} (this build speaks "
                 f"v{COMPILE_REQUEST_SCHEMA_VERSION}) — old documents are "
                 "never reinterpreted under new semantics")
-        semantics = d.get("compiler_semantics_version",
-                          COMPILER_SEMANTICS_VERSION)
-        if semantics != COMPILER_SEMANTICS_VERSION:
+        semantics = _need(d, "compiler_semantics_version", "root")
+        if type(semantics) is not int \
+                or semantics != COMPILER_SEMANTICS_VERSION:
             raise CompileRequestSchemaError(
-                f"unsupported compiler_semantics_version {semantics} "
+                f"unsupported compiler_semantics_version {semantics!r} "
                 f"(this build speaks {COMPILER_SEMANTICS_VERSION})")
 
         wl = _need(d, "workload", "root")

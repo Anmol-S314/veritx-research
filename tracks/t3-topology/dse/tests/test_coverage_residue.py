@@ -794,6 +794,7 @@ class TestCliBranches:
         req = tmp_path / "bad_req.json"
         req.write_text(json.dumps({
             "schema_version": 2,
+            "compiler_semantics_version": 1,
             "workload": {"model_family": "dense_transformer", "model_name": "m",
                          "tp": 0},                     # invalid
             "agents": [], "dependencies": [], "requirements": [],
@@ -806,6 +807,7 @@ class TestCliBranches:
         req = tmp_path / "uvm_req.json"
         req.write_text(json.dumps({
             "schema_version": 2,
+            "compiler_semantics_version": 1,
             "workload": {"model_family": "dense_transformer", "model_name": "uvm_t",
                          "tp": 4},
             "agents": [{"kind": "compute_tile", "count": 4}],
