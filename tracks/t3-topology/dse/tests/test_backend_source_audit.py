@@ -1,9 +1,9 @@
-"""Wave B3.8a/B3.8e tests — read-site-aware source-drift guard.
+"""Wave B3.8a/e/f tests — read-site source-drift guard.
 
-Proves the closed-world audit stays closed PER READ SITE: a new read of an
-already-gated field from a different file fails, multiline calls cannot
-evade the scanner, and the embedded mirrored frontend has the same read
-sites as the audited standalone fork.
+Proves the closed-world audit stays closed per READ SITE: a new read of an
+already-gated field from a different file OR from the same file (extra
+occurrence) fails, multiline calls cannot evade the scanner, and the
+embedded mirrored frontend has the same read sites as the audited fork.
 """
 from __future__ import annotations
 
@@ -30,8 +30,9 @@ from veritx_dse.backend.serving import (  # noqa: E402
     prepare_serving_booksim,
 )
 from veritx_dse.backend.source_audit import (  # noqa: E402
-    GATED_FIELDS, GATED_SCOPE, MECHANISM_JUSTIFICATIONS, SourceAuditError,
-    audit_source_drift, parse_pin_gate, scan_config_reads, verify_gates,
+    GATED_FIELDS, GATED_READ_SITES, MECHANISM_JUSTIFICATIONS,
+    GatedReadSite, SourceAuditError, audit_source_drift, parse_pin_gate,
+    read_accounting, scan_config_reads, verify_gates,
 )
 from veritx_dse.core.paths import REPO  # noqa: E402
 
@@ -55,37 +56,67 @@ def bundle():
 
 
 class TestCurrentClosure:
-    def test_every_read_site_is_registered_or_gated(self):
+    def test_every_read_occurrence_is_registered_or_declared(self):
         report = audit_source_drift(BOOKSIM_SRC)
         assert report.unregistered == (), report.unregistered
         assert report.uncovered_sites == (), report.uncovered_sites
         assert report.stale_gated == (), report.stale_gated
         assert report.stale_scope == (), report.stale_scope
         assert report.stale_registered == (), report.stale_registered
-        assert len(report.reads) == len(
-            BOOKSIM_STANDALONE_PROFILE.active_names()) + len(GATED_FIELDS)
 
-    def test_scope_covers_every_inactive_and_gated_read(self):
+    def test_declared_sites_cover_every_gated_occurrence(self):
         inactive = set(BOOKSIM_STANDALONE_PROFILE.inactive_names())
         assert inactive <= set(GATED_FIELDS)
         reads = scan_config_reads(BOOKSIM_SRC)
         registry = set(BOOKSIM_STANDALONE_PROFILE.active_names()) | inactive
         assert set(GATED_FIELDS) == inactive | (
             {r.field for r in reads} - registry)
+        declared = {f: {s.path: s.occurrences
+                        for s in sites}
+                    for f, sites in GATED_READ_SITES.items()}
         for read in reads:
             if read.field in registry:
                 continue
-            files = {loc.split(":")[0] for loc in read.locations}
-            assert files <= set(GATED_SCOPE[read.field]), read.field
+            counts: dict[str, int] = {}
+            for occ in read.occurrences:
+                counts[occ.path] = counts.get(occ.path, 0) + 1
+            assert counts == declared[read.field], read.field
 
-    def test_every_gated_field_has_gate_and_scope(self):
+    def test_every_gated_field_has_gate_and_site(self):
         for field, gates in GATED_FIELDS.items():
             assert gates, field
-            assert GATED_SCOPE[field], field
+            assert GATED_READ_SITES[field], field
             for gate in gates:
                 if parse_pin_gate(gate) is None:
                     assert gate in MECHANISM_JUSTIFICATIONS, (field, gate)
                     assert MECHANISM_JUSTIFICATIONS[gate]
+
+    def test_occurrence_accounting(self):
+        accounting = read_accounting(BOOKSIM_SRC)
+        assert accounting["unique_fields"] == len(
+            BOOKSIM_STANDALONE_PROFILE.active_names()) + len(GATED_FIELDS)
+        assert accounting["total_occurrences"] > accounting["unique_fields"]
+        assert accounting["registered_active_occurrences"] > 0
+        assert accounting["registered_inactive_occurrences"] > 0
+        assert accounting["gated_occurrences"] > 0
+        assert (accounting["registered_active_occurrences"]
+                + accounting["registered_inactive_occurrences"]
+                + accounting["gated_occurrences"]
+                == accounting["total_occurrences"])
+
+    def test_packet_size_occurrences_are_pinned(self):
+        sites = {s.path: s for s in GATED_READ_SITES["packet_size"]}
+        assert sites["trafficmanager.cpp"].occurrences == 2
+
+
+class _EmptyProfile:
+    """Registry stub for synthetic trees: only the gated field exists."""
+
+    def active_names(self):
+        return frozenset()
+
+    def inactive_names(self):
+        return frozenset()
 
 
 class TestScanner:
@@ -118,8 +149,6 @@ class TestScanner:
         assert report.unregistered == ("magic_performance_knob",)
 
     def test_known_gated_field_in_active_file_is_flagged(self, tmp_path):
-        # channel_width is legitimately gated in the power module; a new
-        # read from iq_router.cpp must fail until that site is gated.
         src = tmp_path / "src"
         (src / "power").mkdir(parents=True)
         (src / "routers").mkdir()
@@ -130,24 +159,58 @@ class TestScanner:
         (src / "routers" / "iq_router.cpp").write_text(
             'int w = config.GetInt("channel_width");\n')
         report = audit_source_drift(src)
-        assert report.uncovered_sites == (
-            "channel_width@routers/iq_router.cpp",)
+        assert any("channel_width@routers/iq_router.cpp" in s
+                   for s in report.uncovered_sites)
+
+    def test_same_file_extra_gated_read_is_flagged(self, tmp_path):
+        src = tmp_path / "src"
+        src.mkdir()
+        path = src / "trafficmanager.cpp"
+        path.write_text('int a = config.GetInt("packet_size");\n')
+        gated = {"packet_size": ("trace_records",)}
+        sites = {"packet_size": (GatedReadSite("trafficmanager.cpp", 1),)}
+        report = audit_source_drift(src, profile=_EmptyProfile(),
+                                    gated=gated, sites=sites)
+        assert report.clean
+        path.write_text('int a = config.GetInt("packet_size");\n'
+                        'int b = config.GetInt("packet_size");\n')
+        report = audit_source_drift(src, profile=_EmptyProfile(),
+                                    gated=gated, sites=sites)
+        assert any("packet_size@trafficmanager.cpp: 2 occurrence(s), "
+                   "declared 1" in s for s in report.uncovered_sites)
+
+    def test_same_file_moved_gated_read_is_flagged(self, tmp_path):
+        src = tmp_path / "src"
+        src.mkdir()
+        path = src / "trafficmanager.cpp"
+        path.write_text('void A::one() {\n  int a = config.GetInt("x");\n}\n')
+        gated = {"x": ("diagnostic_only",)}
+        sites = {"x": (GatedReadSite("trafficmanager.cpp", 1,
+                                     ("A::one",)),)}
+        report = audit_source_drift(src, profile=_EmptyProfile(),
+                                    gated=gated, sites=sites)
+        assert report.clean
+        path.write_text('void A::one() {\n}\n'
+                        'void A::two() {\n  int a = config.GetInt("x");\n}\n')
+        report = audit_source_drift(src, profile=_EmptyProfile(),
+                                    gated=gated, sites=sites)
+        assert any("functions" in s for s in report.uncovered_sites)
 
     def test_stale_gate_entry_is_flagged(self, tmp_path):
         src = tmp_path / "src"
         src.mkdir()
         (src / "router.cpp").write_text('int x = config.GetInt("one");\n')
         report = audit_source_drift(
-            src, gated={"ghost_field": ("diagnostic_only",)}, scope={})
+            src, gated={"ghost_field": ("diagnostic_only",)}, sites={})
         assert report.stale_gated == ("ghost_field",)
 
-    def test_stale_scope_entry_is_flagged(self, tmp_path):
+    def test_stale_site_entry_is_flagged(self, tmp_path):
         src = tmp_path / "src"
         src.mkdir()
         (src / "router.cpp").write_text('int x = config.GetInt("one");\n')
         report = audit_source_drift(
             src, gated={"one": ("diagnostic_only",)},
-            scope={"one": ("gone.cpp",)})
+            sites={"one": (GatedReadSite("gone.cpp", 1),)})
         assert report.stale_scope == ("one@gone.cpp",)
 
     def test_registered_but_removed_read_is_flagged(self, tmp_path):
@@ -207,8 +270,6 @@ class TestEmbeddedMirror:
 
     Standalone-source drift is fully guarded by the registry; the mirror
     is guarded for the thing that matters here — configuration reads.
-    Byte-level mirror drift in non-config code is outside this guard and
-    is picked up by the repo's mirror-sync protocol.
     """
 
     def test_mirror_exists_and_has_same_read_sites(self):

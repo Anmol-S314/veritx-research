@@ -35,8 +35,37 @@ from .contracts import (
 _EXACT = frozenset({RepresentationStatus.EXACT,
                     RepresentationStatus.DERIVED_EXACT})
 
+# Fields allowed to differ between the two BookSim targets, with the
+# reason they are execution/workload-specific rather than realization
+# semantics. Closed list: a new target override must be added here
+# explicitly after review, or realization comparison will refuse it.
+TARGET_SPECIFIC_EXCLUSIONS: dict[str, str] = {
+    "traffic": "workload/traffic-pattern source: standalone renders "
+               "trace(<logical>); serving renders the uniform placeholder "
+               "(embedded traffic is injected by sim_send)",
+    "sample_period": "workload-derived sampling window (standalone = "
+                     "trace span + margin; serving = fixed profile pin)",
+    "seed": "per-run execution input (explicit or pinned); its policy "
+            "lives in the BackendInputManifest, not the realization",
+    "routing_dump_file": "evidence/diagnostic output path; cannot affect "
+                         "routing, buffering or timing",
+}
+
 _PROJECTION_ONLY_KEYS = frozenset({"routing_class",
                                    "channel_latency_cycles"})
+
+
+def _assert_exclusions_are_audited() -> None:
+    for name in TARGET_SPECIFIC_EXCLUSIONS:
+        for profile in (BOOKSIM_STANDALONE_PROFILE,
+                        BOOKSIM_SERVING_PROFILE):
+            if name not in profile.active_names():
+                raise QualificationError(
+                    f"target-specific exclusion {name!r} is not an active "
+                    f"field of {profile.profile_id}")
+
+
+_assert_exclusions_are_audited()
 
 
 class QualificationError(ValueError):
@@ -70,7 +99,7 @@ class UnsupportedRow:
 
 
 @dataclass(frozen=True)
-class ProjectionComparison:
+class RealizationComparison:
     target_a: str
     target_b: str
     equivalent: bool
@@ -82,7 +111,7 @@ class QualificationReport:
     targets: tuple[str, ...]
     authorities: tuple[SharedAuthorityClaim, ...]
     disagreements: tuple[UnsupportedRow, ...]
-    projections: tuple[ProjectionComparison, ...]
+    realizations: tuple[RealizationComparison, ...]
     fabric_hash: str
     resolved_fabric_hash: str
     config_hashes: tuple[tuple[str, str], ...]
@@ -91,52 +120,53 @@ class QualificationReport:
     def shared_authority_dimensions(self) -> frozenset[str]:
         return frozenset(c.dimension.value for c in self.authorities)
 
-    def projection_for(self, a: str,
-                       b: str) -> ProjectionComparison | None:
-        for row in self.projections:
+    def realization_for(self, a: str,
+                        b: str) -> RealizationComparison | None:
+        for row in self.realizations:
             if {row.target_a, row.target_b} == {a, b}:
                 return row
         return None
 
 
-# ── canonical BookSim semantic projection ───────────────────────────────
+# ── BookSim shared realization ──────────────────────────────────────────
 
-def booksim_semantic_projection(
+def booksim_shared_realization(
         artifact: BackendConfigArtifact) -> dict[str, Any]:
-    """Fabric-derived parameters shared by standalone and serving BookSim.
+    """Every shared result-affecting BookSim configuration parameter.
 
-    Excludes target-specific execution fields (traffic/workload source,
-    sample period, seed policy, route-dump path, serving invocation-only
-    values). Raises when the artifact is not a BookSim target.
+    Starts from the artifact's full normalized projection (which includes
+    the explicit BACKEND_PROFILE pins, not only fabric-derived values) and
+    removes only the closed, reviewed target-specific executions:
+    traffic source, sample window, seed, and the route-dump evidence path.
+    Anything that can change routing, buffering, arbitration, flow
+    control, pipeline timing, channel behavior or packet handling stays
+    in the comparison.
     """
     if artifact.backend_target not in (BackendTarget.BOOKSIM_STANDALONE,
                                        BackendTarget.SERVING_BOOKSIM2):
         raise QualificationError(
             f"{artifact.backend_target.value} is not a BookSim target")
-    profile = (BOOKSIM_SERVING_PROFILE
-               if artifact.backend_target is BackendTarget.SERVING_BOOKSIM2
-               else BOOKSIM_STANDALONE_PROFILE)
-    owners = profile.ownership()
-    projection: dict[str, Any] = {}
+    realization: dict[str, Any] = {}
     for key, value in artifact.normalized_parameters:
-        if key in _PROJECTION_ONLY_KEYS:
-            projection[key] = value
+        if key in TARGET_SPECIFIC_EXCLUSIONS:
             continue
-        if owners.get(key) is not None and \
-                owners[key].value == "FABRIC_DERIVED":
-            projection[key] = value
-    return projection
+        realization[key] = value
+    for key in _PROJECTION_ONLY_KEYS:
+        value = dict(artifact.normalized_parameters).get(key)
+        if value is not None:
+            realization[key] = value
+    return realization
 
 
-def compare_booksim_projections(
+def compare_booksim_realizations(
         a: BackendConfigArtifact, b: BackendConfigArtifact
-) -> ProjectionComparison:
-    pa, pb = booksim_semantic_projection(a), booksim_semantic_projection(b)
+) -> RealizationComparison:
+    ra, rb = booksim_shared_realization(a), booksim_shared_realization(b)
     differences = tuple(
-        (key, pa.get(key), pb.get(key))
-        for key in sorted(set(pa) | set(pb))
-        if pa.get(key) != pb.get(key))
-    return ProjectionComparison(
+        (key, ra.get(key), rb.get(key))
+        for key in sorted(set(ra) | set(rb))
+        if ra.get(key) != rb.get(key))
+    return RealizationComparison(
         target_a=a.backend_target.value, target_b=b.backend_target.value,
         equivalent=not differences, differences=differences)
 
@@ -199,21 +229,22 @@ def qualify_cross_backend(
             status=status.value, supported_domain=domain,
             targets=tuple(sorted(claims))))
 
-    # Projection equivalence for target pairs sharing the canonical
-    # BookSim lowerer.
+    # Shared realization for target pairs sharing the canonical BookSim
+    # lowerer: every result-affecting parameter except the closed
+    # target-specific exclusion list.
     book_targets = {name: art for name, art in artifacts.items() if
                     art.backend_target in (BackendTarget.BOOKSIM_STANDALONE,
                                            BackendTarget.SERVING_BOOKSIM2)}
-    projections: list[ProjectionComparison] = []
+    realizations: list[RealizationComparison] = []
     book_names = sorted(book_targets)
     for i, a_name in enumerate(book_names):
         for b_name in book_names[i + 1:]:
-            cmp = compare_booksim_projections(book_targets[a_name],
-                                              book_targets[b_name])
-            projections.append(cmp)
+            cmp = compare_booksim_realizations(book_targets[a_name],
+                                               book_targets[b_name])
+            realizations.append(cmp)
             if not cmp.equivalent:
                 problems.append(
-                    f"{a_name} vs {b_name}: fabric-derived projection "
+                    f"{a_name} vs {b_name}: shared BookSim realization "
                     f"differs: {cmp.differences[:5]}")
 
     if problems:
@@ -231,7 +262,7 @@ def qualify_cross_backend(
         targets=tuple(sorted(artifacts)),
         authorities=tuple(authorities),
         disagreements=tuple(unsupported),
-        projections=tuple(projections),
+        realizations=tuple(realizations),
         fabric_hash=next(iter(fabric_hashes)),
         resolved_fabric_hash=next(iter(resolved_hashes)),
         config_hashes=config_hashes,
@@ -239,12 +270,13 @@ def qualify_cross_backend(
 
 
 __all__ = [
-    "ProjectionComparison",
     "QualificationError",
     "QualificationReport",
+    "RealizationComparison",
     "SharedAuthorityClaim",
+    "TARGET_SPECIFIC_EXCLUSIONS",
     "UnsupportedRow",
-    "booksim_semantic_projection",
-    "compare_booksim_projections",
+    "booksim_shared_realization",
+    "compare_booksim_realizations",
     "qualify_cross_backend",
 ]

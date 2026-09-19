@@ -35,7 +35,7 @@ from veritx_dse.backend.contracts import (  # noqa: E402
     CertificationEffect, RepresentationStatus, SemanticDimension,
 )
 from veritx_dse.backend.qualification import (  # noqa: E402
-    QualificationError, qualify_cross_backend,
+    QualificationError, TARGET_SPECIFIC_EXCLUSIONS, qualify_cross_backend,
 )
 from veritx_dse.backend.serving import lower_serving_booksim  # noqa: E402
 from veritx_dse.core.route_artifact import (  # noqa: E402
@@ -128,13 +128,87 @@ class TestSemanticIntersection:
             serving, artifact_hash="",
             normalized_parameters=tuple(sorted(tampered_params.items())))
         # The bindings (and therefore the claimed authority) are unchanged;
-        # only the projection is broken.
+        # only the realization is broken.
         assert tampered.binding(SemanticDimension.VC_COUNT).source_identity \
             == serving.binding(SemanticDimension.VC_COUNT).source_identity
         artifacts["SERVING_BOOKSIM2"] = tampered
         with pytest.raises(QualificationError,
-                           match="projection differs"):
+                           match="realization differs"):
             qualify_cross_backend(artifacts)
+
+    @pytest.mark.parametrize("field,value", [
+        ("speculative", 1),
+        ("arb_type", "pim"),
+        ("router", "event"),
+        ("noq", 1),
+        ("vc_busy_when_full", 1),
+    ])
+    def test_backend_profile_drift_is_refused(self, bundle, field, value):
+        from dataclasses import replace  # noqa: PLC0415
+        artifacts = four_targets(bundle)
+        serving = artifacts["SERVING_BOOKSIM2"]
+        assert field in dict(serving.normalized_parameters)
+        params = dict(serving.normalized_parameters)
+        params[field] = value
+        artifacts["SERVING_BOOKSIM2"] = replace(
+            serving, artifact_hash="",
+            normalized_parameters=tuple(sorted(params.items())))
+        with pytest.raises(QualificationError,
+                           match="shared BookSim realization differs"):
+            qualify_cross_backend(artifacts)
+
+    def test_permitted_target_differences_still_qualify(self, bundle):
+        from dataclasses import replace  # noqa: PLC0415
+        artifacts = four_targets(bundle)
+        serving = artifacts["SERVING_BOOKSIM2"]
+        params = dict(serving.normalized_parameters)
+        params["traffic"] = "uniform_different_transport"
+        params["sample_period"] = 12345
+        artifacts["SERVING_BOOKSIM2"] = replace(
+            serving, artifact_hash="",
+            normalized_parameters=tuple(sorted(params.items())))
+        report = qualify_cross_backend(artifacts)
+        comparison = report.realization_for("BOOKSIM_STANDALONE",
+                                            "SERVING_BOOKSIM2")
+        assert comparison is not None and comparison.equivalent
+
+    def test_target_specific_exclusion_set_is_closed_and_audited(self):
+        from veritx_dse.backend.booksim_profile import (  # noqa: PLC0415
+            BOOKSIM_SERVING_PROFILE, BOOKSIM_STANDALONE_PROFILE,
+        )
+        assert set(TARGET_SPECIFIC_EXCLUSIONS) == {
+            "traffic", "sample_period", "seed", "routing_dump_file"}
+        for field in TARGET_SPECIFIC_EXCLUSIONS:
+            assert field in BOOKSIM_STANDALONE_PROFILE.active_names()
+            assert field in BOOKSIM_SERVING_PROFILE.active_names()
+            assert TARGET_SPECIFIC_EXCLUSIONS[field]
+
+    def test_rendered_shared_fields_agree(self, bundle, tmp_path):
+        from test_backend_booksim import TRACE  # noqa: PLC0415
+        from veritx_dse.backend.booksim import (  # noqa: PLC0415
+            prepare_booksim_standalone,
+        )
+        from veritx_dse.backend.serving import (  # noqa: PLC0415
+            prepare_serving_booksim,
+        )
+        standalone = prepare_booksim_standalone(
+            bundle, workload_trace=TRACE)
+        serving = prepare_serving_booksim(
+            bundle, out_dir=tmp_path, physical_dims=(2, 2))
+
+        def values(prepared):
+            out = {}
+            for line in prepared.rendered.file("config.cfg").decode() \
+                    .splitlines():
+                key, val = line.split(" = ", 1)
+                out[key] = val.rstrip(";")
+            return out
+
+        a, b = values(standalone), values(serving)
+        shared = (set(a) | set(b)) - set(TARGET_SPECIFIC_EXCLUSIONS)
+        differences = {k: (a.get(k), b.get(k)) for k in shared
+                       if a.get(k) != b.get(k)}
+        assert differences == {}
 
     def test_disagreements_are_explicit(self, bundle):
         artifacts = four_targets(bundle)
@@ -157,8 +231,8 @@ class TestSemanticIntersection:
         assert report.resolved_fabric_hash == \
             bundle.resolved_fabric.resolved_fabric_hash()
         assert len({h for _n, h in report.config_hashes}) == 4
-        comparison = report.projection_for("BOOKSIM_STANDALONE",
-                                           "SERVING_BOOKSIM2")
+        comparison = report.realization_for("BOOKSIM_STANDALONE",
+                                            "SERVING_BOOKSIM2")
         assert comparison is not None and comparison.equivalent
 
     def test_route_realization_disagreement_is_visible(self, bundle):

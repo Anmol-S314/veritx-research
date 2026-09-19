@@ -33,6 +33,7 @@
 | 1.19 | B3.8a/b/c | Cross-backend qualification. Source-drift guard (`backend/source_audit.py`) lexically scans every `config.Get*` read in the vendored fork and requires each to be registered or gated; 159 reads are closed over (105 registry fields + 54 gated with machine-checked `pin:<field>=<value>` or documented dispatch mechanisms). `qualify_cross_backend` proves shared EXACT claims use one authoritative source while disagreements stay explicit (no false equalities; distinct target hashes; shared fabric identity). Transposition tests refuse serving artifacts on the standalone runner, stale manifests, foreign rendered inputs, foreign/tampered route dumps, cross-width flit bytes, foreign dims and cross-target evidence sharing a path. |
 | 1.20 | B3.8d | Golden fabric corpus: five deterministic fabrics (multi-class, single-class, HBM/addrmap, 128-bit links, escape-blocked) pin `fabric_hash`, standalone/serving/analytical config hashes, input hash, expected route table hash, exact-fabric eligibility and loss digest in `tests/fixtures/backend_golden.json`; each case is executed against real BookSim and must reproduce the pinned route hash with nonzero delivery. |
 | 1.21 | B3.8e | Proof-vocabulary corrections. Analytical `TOPOLOGY_GRAPH` is `COARSENED`/`FIDELITY_DOWNGRADE`: `network_dims` is execution policy (endpoint count + supplied shape), not proof of the materialized router/channel graph. Cross-backend qualification now reports `SharedAuthorityClaim` (same source/status/supported_domain — authority agreement) separately from canonical BookSim projection equivalence (standalone vs serving fabric-derived parameters must be byte-equal; a tampered projection refuses even with unchanged bindings). Source gates are read-site aware: `GATED_SCOPE` fixes each gated field to its allowed files, so a new read of an already-gated field elsewhere fails; scanning is whole-file so multiline calls cannot evade it; the embedded mirror is guarded by read-site equivalence. `ExecutionQualification` (EXECUTED_EXACT / EXECUTED_WITH_DECLARED_LOSS / EXECUTED_BLOCKED_FROM_EXACT / EXECUTION_UNSUPPORTED) derives from bindings; UNSUPPORTED_EXECUTION refuses before materialization/spawn and `run_certified_booksim` is a compatibility alias for `run_qualified_booksim`. The golden corpus explicitly documents lossy-not-exact semantics and pins each case's loss dimensions. |
+| 1.22 | B3.8f | Read-site and realization sealing. `GATED_READ_SITES` pins each gated (field, file) to an expected occurrence count plus recovered enclosing-method set, so a second read added to the same file (e.g. another `packet_size` read in `trafficmanager.cpp`) fails; the lexical boundary (moved/reused reads with identical identity) is documented as B4 producer identity. `booksim_shared_realization` replaces the fabric-derived-only projection: it includes every shared result-affecting parameter (including `BACKEND_PROFILE` pins such as `router`, `arb_type`, `speculative`, `noq`, `vc_busy_when_full`) and excludes only the closed, reviewed target-specific set `{traffic, sample_period, seed, routing_dump_file}`; adversarial profile drift refuses. Accounting: 159 unique fields, 267 lexical occurrences (140 active, 39 inactive, 88 gated), 0 uncovered. |
 
 This document defines what a resolved Srota fabric *is* before B3 code is
 written. It starts from hardware semantics and maps existing code onto them —
@@ -1344,12 +1345,24 @@ execution UNSUPPORTED/NOT_RUN (units unresolved).
   and unaware artifacts; analytical targets never participate in a shared
   exact topology claim. Same topology hash + different `network_dims`
   yields different backend hashes and stays coarsened.
-- **Read-site gates.** `GATED_SCOPE` binds every gated field to the files
-  allowed to read it; a new read of an already-gated field from another
-  file (`channel_width` in `iq_router.cpp`) fails. The scanner is
-  whole-file and whitespace-tolerant, so `config.GetInt(\n "x")` and
-  `config->\n GetStr("y")` are found. The embedded mirror must have the
-  same read sites as the audited fork.
+- **Read-site gates.** `GATED_READ_SITES` binds every gated `(field, file)`
+  to an exact occurrence count and (where recoverable) the enclosing
+  method set; a new read of an already-gated field from another file or a
+  second occurrence in the same file fails. The scanner is whole-file and
+  whitespace-tolerant, so `config.GetInt(\n "x")` and `config->\n
+  GetStr("y")` are found. The embedded mirror must have the same read
+  sites as the audited fork. Boundary: this proves the declared lexical
+  read-site set has not changed; it does not prove control-flow
+  equivalence for a moved/reused read, which B4 producer identity covers.
+  Accounting: 159 unique fields, 267 lexical occurrences (140 registered
+  active, 39 registered inactive, 88 gated), 0 uncovered.
+- **Shared realization.** `booksim_shared_realization` compares every
+  shared result-affecting BookSim parameter — including `BACKEND_PROFILE`
+  pins such as `router`, `topology`, `arb_type`, `speculative`, `noq`,
+  `vc_busy_when_full` — and excludes only the closed reviewed set
+  `{traffic, sample_period, seed, routing_dump_file}` (workload source,
+  sampling window, per-run seed, evidence path). Drift in any shared pin
+  refuses qualification; permitted target differences still qualify.
 - **Execution qualification.** Evidence carries
   `EXECUTED_EXACT` / `EXECUTED_WITH_DECLARED_LOSS` /
   `EXECUTED_BLOCKED_FROM_EXACT`; `UNSUPPORTED_EXECUTION` bindings refuse
