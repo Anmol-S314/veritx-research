@@ -20,7 +20,8 @@ from .model.compile_model import (
     CompileRequest, Workload, Agent, DependencyGraph, NocConfig,
     ModelFamily, ServingMode, AgentKind, TopologyFamily,
     QoSClass, Requirement, Dependency, DepKind,
-    verify_design, derive_vc_assignment, migrate_design,
+    verify_design, derive_vc_assignment, derive_vc_assignment_artifact,
+    migrate_design,
     AddressMap, AddressRange, PhysicalContext,
 )
 from .model.presets import SWEEP_TOPOS, WORKLOAD_PRESETS, lookup_topo
@@ -41,6 +42,9 @@ from .model.attachment import (
 from .model.resolved_route import (
     ResolvedRouteArtifact, ResolvedRouteError, LOCAL_EJECTION,
     derive_resolved_route,
+)
+from .model.vc_assignment import (
+    VCAssignmentArtifact, VCAssignmentError, make_vc_assignment_artifact,
 )
 
 # Re-export simulation

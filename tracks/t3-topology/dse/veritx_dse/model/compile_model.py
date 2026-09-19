@@ -28,6 +28,9 @@ from pathlib import Path
 from typing import Any
 
 from veritx_dse.core.constants import PLANE_C_MAX_VC, env_int
+# NOTE: .vc_assignment is imported lazily inside its consumers — it depends
+# on resolved_route -> attachment -> this module (cycle). Annotations are
+# strings (from __future__), so the return annotation below is safe.
 
 
 # Product design-intent format. Versioned INDEPENDENTLY of the experiment
@@ -555,7 +558,9 @@ def derive_vc_count(graph: DependencyGraph) -> int:
         graph: DependencyGraph with blocking/ordering edges.
 
     Returns:
-        Minimum VC count needed for deadlock-freedom.
+        Required VC count (raw, un-clamped). Callers enforce the fabric
+        bound: B3.3 ruling — an over-limit requirement is UNSUPPORTED,
+        never a silent ``min(vc_count, PLANE_C_MAX_VC)``.
     """
     cycles = graph.find_cycles()
 
@@ -569,10 +574,7 @@ def derive_vc_count(graph: DependencyGraph) -> int:
 
     # Each independent cycle needs one VC separation → VC count = 1 + cycles
     # (VC 0 is the default; each separation adds one more VC)
-    vc_count = 1 + independent_cycles
-
-    # Cap at fabric maximum
-    return min(vc_count, PLANE_C_MAX_VC)
+    return 1 + independent_cycles
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -930,12 +932,17 @@ def derive_vc_assignment(cr: CompileRequest) -> VCAssignment:
     # Collective floor: each potentially-concurrent multi-rank collective
     # context needs its own VC (see collective_vc_floor). Final count is
     # the max — graph cycles and collective contexts are independent
-    # deadlock risks, so neither subsumes the other. Cap enforced below
-    # by the caller-visible PLANE_C_MAX_VC bound (validate() errors).
+    # deadlock risks, so neither subsumes the other.
     floor = collective_vc_floor(cr.workload.collectives)
     vc_count = max(vc_count, floor)
-    vc_count = min(vc_count, PLANE_C_MAX_VC)
-
+    # B3.3: over-limit is UNSUPPORTED. The old silent clamp certified a
+    # smaller VC structure than the design required.
+    if vc_count > PLANE_C_MAX_VC:
+        from .vc_assignment import VCAssignmentError
+        raise VCAssignmentError(
+            f"required {vc_count} VCs exceeds fabric maximum "
+            f"{PLANE_C_MAX_VC} — UNSUPPORTED; reduce dependency cycles or "
+            f"concurrent collectives, or raise VERITX_MAX_VC")
     # Assign VCs: default class gets VC 0, each cycle victim gets VC 1, 2, ...
     per_class_vc: dict[str, int] = {}
     separated: list[str] = []
@@ -983,6 +990,37 @@ def derive_vc_assignment(cr: CompileRequest) -> VCAssignment:
         routing_function=routing,
         turn_restrictions=list(turn_restrictions),
         collective_vc_map=collective_vc_map(cr.workload.collectives),
+    )
+
+
+def derive_vc_assignment_artifact(
+        cr: CompileRequest,
+        resolved_route,
+) -> VCAssignmentArtifact:
+    """Bind the derived VC structure to the endpoint-resolved route.
+
+    Wave B3.3. The legacy ``VCAssignment`` stays the compiler-internal
+    derivation result; this is the semantic artifact downstream consumers
+    reference by hash. VCs that exist only to break dependency cycles are
+    recorded in the derivation provenance, not claimed as escape VCs —
+    escape semantics require a routing class that implements one, and the
+    router-level route artifact does not yet define classes.
+    """
+    from .vc_assignment import make_vc_assignment_artifact
+    va = derive_vc_assignment(cr)
+    separated = sorted(
+        cls for cls, vc in va.per_class_vc.items() if vc != 0
+    )
+    derivation = (
+        f"graph_cycles+collective_floor v1; routing_function="
+        f"{va.routing_function}; cycle_separated={separated}; "
+        f"collective_vc_map={sorted(va.collective_vc_map.items())}"
+    )
+    return make_vc_assignment_artifact(
+        resolved_route=resolved_route,
+        vc_count=va.vc_count,
+        traffic_class_to_vcs={cls: [vc] for cls, vc in va.per_class_vc.items()},
+        derivation=derivation,
     )
 
 
@@ -1654,10 +1692,7 @@ def derive_topology_spec(cr: CompileRequest):
     # LOCKED: Derive routing + VC assignment from dependency graph
     vc_assignment = derive_vc_assignment(cr)
     routing = vc_assignment.routing_function  # LOCKED — not user-chosen
-    if vc_assignment.vc_count > 1:
-        # B3.3 owns the VC-count semantics (this +1 head-flit VC and the
-        # clamp are known defects; not repaired in the sizing wave).
-        params["num_vcs"] = vc_assignment.vc_count + 1
+    params["num_vcs"] = vc_assignment.vc_count
 
     name = (f"{backend}_{params['k']}x{params['k']}_c{params['c']}"
             if backend == "cmesh" else f"{backend}_{params['k']}x{params['k']}")

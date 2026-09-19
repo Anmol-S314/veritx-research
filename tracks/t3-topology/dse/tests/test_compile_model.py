@@ -1214,7 +1214,7 @@ class TestIntegration:
         config = build_config(topo, cr.workload.trace_path)
         assert "topology = mesh;" in config
         assert "routing_function = dim_order;" in config
-        assert "num_vcs = 4;" in config  # default (no VC separation needed)
+        assert "num_vcs = 1;" in config  # VC artifact: 1 VC is the truth
 
     def test_full_pipeline_with_cycles(self):
         """End-to-end: CompileRequest with cycles → VC separation."""
@@ -1256,12 +1256,12 @@ class TestIntegration:
         topo = derive_topology_spec(cr)
         assert topo.backend == "mesh"
         assert topo.routing == "dor"  # LOCKED, derived from cycle
-        assert topo.params.get("num_vcs", 4) == 3  # vc_count(2) + 1
+        assert topo.params["num_vcs"] == 2  # vc_count, no head-flit +1
 
         # Step 4: Build BookSim config (uses derived num_vcs)
         config = build_config(topo, cr.workload.trace_path)
         assert "routing_function = dor;" in config
-        assert "num_vcs = 3;" in config
+        assert "num_vcs = 2;" in config
 
     def test_topology_size_comes_from_agent_inventory(self):
         """B3.1b: k is derived from the hardware agents, never hardcoded.
