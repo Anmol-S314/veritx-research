@@ -122,7 +122,7 @@ class SrotaControlPlane:
         workload = self._workload_record(trace_bytes, trace_source,
                                          bundle)
         design_id = design.resource_id()
-        self.store.put("intent", intent.intent_id(), intent.to_dict())
+        self._store_intent(intent)
         self.store.put("design", design_id, design.to_dict())
         self.store.put("workload", workload.workload_id(),
                        workload.to_dict())
@@ -131,6 +131,23 @@ class SrotaControlPlane:
             "workload": workload.to_dict(),
             "bundle_hashes": bundle.root_hashes(),
         }
+
+    def _store_intent(self, intent: Intent) -> None:
+        """Persist the intent document (first label wins).
+
+        Display labels are excluded from intent identity, so two intents
+        with identical semantics but different names share one id. The
+        first persisted label wins; a genuine id collision (same id,
+        different semantics) refuses instead of proceeding.
+        """
+        try:
+            self.store.put("intent", intent.intent_id(), intent.to_dict())
+        except ControlPlaneError as exc:
+            if exc.code != ErrorCode.CONFLICT:
+                raise
+            existing = self.store.get("intent", intent.intent_id())
+            if parse_intent(existing).intent_id() != intent.intent_id():
+                raise
 
     def _derive_request(self, intent: Intent) -> dict[str, Any]:
         try:

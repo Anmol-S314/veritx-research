@@ -143,6 +143,10 @@ def derive_request(name: str,
     request = build_preset_request(name).to_dict()
     for path, value in dict(overrides or {}).items():
         _apply_dotted(request, path, value)
+    # Overrides invalidate the embedded identity: from_dict recomputes it
+    # (a stale design_hash must never survive derivation).
+    request.pop("design_hash", None)
+    request.pop("guardrail_hash", None)
     return request
 
 

@@ -85,6 +85,7 @@ class WorkloadRecord:
         return _content_id("srota-workload/v1", {
             "trace_sha256": self.trace_sha256,
             "trace_bytes": self.trace_bytes,
+            "endpoint_count": self.endpoint_count,
         })
 
     def to_dict(self) -> dict[str, Any]:
