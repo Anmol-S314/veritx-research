@@ -799,7 +799,7 @@ class TestCliBranches:
                          "tp": 0},                     # invalid
             "agents": [], "dependencies": [], "requirements": [],
         }))
-        rc, out, err = _cli("compile", str(req))
+        rc, out, err = _cli("legacy", "compile", str(req))
         assert rc == 1
         assert "failed" in (out + err).lower()
 
@@ -814,7 +814,7 @@ class TestCliBranches:
             "dependencies": [], "requirements": [],
             "noc_config": {"output_formats": ["uvm"]},
         }))
-        rc, out, err = _cli("compile", str(req), timeout=180)
+        rc, out, err = _cli("legacy", "compile", str(req), timeout=180)
         combined = out + err
         assert rc == 0, f"compile failed: {combined[-3:]}"
         assert "UVM" in combined

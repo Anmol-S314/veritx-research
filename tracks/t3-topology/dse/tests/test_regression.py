@@ -202,7 +202,7 @@ class TestRunBanner:
         monkeypatch.setattr(_sys, "exit", _capt_exit)
 
         _argv = [
-            "veritx", "run",
+            "veritx", "legacy", "run",
             "--model", str(model),
             "--nodes", "4",
             "--search", "bo",

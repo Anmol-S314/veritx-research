@@ -90,13 +90,27 @@ class TestIntentEquivalence:
 
 class TestEvaluationEquivalence:
     def test_python_api_cli_same_experiment(self, tmp_path, capsys=None):
-        _needs_binary()
+        import subprocess
+        git = tmp_path / "cleanrepo"
+        git.mkdir()
+        for args in (["init", "-q"], ["config", "user.email", "t@t"],
+                     ["config", "user.name", "t"]):
+            subprocess.run(["git", "-C", str(git), *args],
+                           capture_output=True, timeout=30)
+        (git / "src.txt").write_text("v1")
+        subprocess.run(["git", "-C", str(git), "add", "src.txt"],
+                       capture_output=True, timeout=30)
+        subprocess.run(["git", "-C", str(git), "commit", "-qm", "v1"],
+                       capture_output=True, timeout=30)
+        binary = _needs_binary()
         doc = _canonical_doc()
         store = tmp_path / "store"
-        python_svc = SrotaControlPlane(store_root=store)
+        python_svc = SrotaControlPlane(store_root=store, repo_root=git,
+                                       binary=binary)
         python_res = python_svc.evaluate(dict(doc))
         from veritx_dse import api as api_mod
-        api_out = api_mod.service_evaluate(dict(doc), store_root=store)
+        api_out = api_mod.service_evaluate(
+            dict(doc), store_root=store, repo=git, binary=binary)
         assert api_out["status"] == "OK", api_out
         api_res = api_out["result"]
         assert api_res["experiment_id"] == python_res["experiment_id"]
@@ -104,7 +118,10 @@ class TestEvaluationEquivalence:
             python_res["backend_input_hash"]
         assert api_res["backend_config_hash"] == \
             python_res["backend_config_hash"]
-        assert api_res["attempt_id"] != python_res["attempt_id"]
+        # Same store + same semantics: the API call reuses the Python
+        # attempt rather than spawning a duplicate execution.
+        assert api_res["reused"] is True
+        assert api_res["attempt_id"] == python_res["attempt_id"]
 
     def test_cli_evaluate_matches_python(self, tmp_path):
         import subprocess

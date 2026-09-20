@@ -4635,7 +4635,9 @@ def main():
                 parser.parse_args([args.command, "--help"])
                 return
             _res = handler[sub_key](ctx, args)
-            if args.command == "run" and isinstance(_res, int):
+            if isinstance(_res, int) and (
+                    args.command == "run" or
+                    (args.command == "legacy" and sub_key == "run")):
                 _exit_override = _res
         else:
             _res = handler(ctx, args)

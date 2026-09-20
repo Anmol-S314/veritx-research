@@ -242,7 +242,7 @@ class TestPareto:
 class TestBaseline:
     def test_baseline_runs_literature_set(self, tiny_trace, tmp_path):
         out = tmp_path / "base.json"
-        rc, _ = _cli("--json", "--output", str(out), "baseline",
+        rc, _ = _cli("--json", "--output", str(out), "legacy", "baseline",
                      "--trace", tiny_trace, "--timeout", "30")
         assert rc == 0
         d = json.loads(out.read_text())
@@ -412,10 +412,12 @@ class TestSynthesize:
         monkeypatch.setattr(cli_mod, "cmd_synthesize_iterative",
                             lambda ctx, args: called.append("iterative"))
         # DISPATCH holds the function reference directly — patch the table too
-        monkeypatch.setitem(cli_mod.DISPATCH["synthesize"], "iterative",
+        monkeypatch.setitem(cli_mod.DISPATCH["legacy"],
+                            "synthesize-iterative",
                             lambda ctx, args: called.append("iterative"))
         argv = sys.argv
-        sys.argv = ["veritx", "synthesize", "iterative", "--trace", "x"]
+        sys.argv = ["veritx", "legacy", "synthesize-iterative",
+                    "--trace", "x"]
         try:
             main()                               # success → returns, no exit
         finally:

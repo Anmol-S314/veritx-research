@@ -63,7 +63,7 @@ class TestCompilePipeline:
         json_path = EXAMPLES_DIR / example
         if not json_path.exists():
             pytest.skip(f"Example {example} not found")
-        result = _cli("compile", str(json_path), timeout=90)
+        result = _cli("legacy", "compile", str(json_path), timeout=90)
         assert result.returncode == 0, (
             f"Example {example} failed:\n"
             f"stdout[-300:]: {result.stdout[-300:]}\n"
@@ -78,7 +78,7 @@ class TestCompilePipeline:
         json_path = EXAMPLES_DIR / "qwen3_moe_16npu.json"
         if not json_path.exists():
             pytest.skip("Example not found")
-        result = _cli("compile", str(json_path), timeout=90)
+        result = _cli("legacy", "compile", str(json_path), timeout=90)
         assert result.returncode == 0
         clean = _strip_ansi(result.stdout)
         # Should show physical estimates
@@ -93,7 +93,7 @@ class TestCompilePipeline:
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
             out_path = f.name
         try:
-            result = _cli("compile", str(json_path), "--output", out_path, timeout=90)
+            result = _cli("legacy", "compile", str(json_path), "--output", out_path, timeout=90)
             assert result.returncode == 0
             report = json.loads(Path(out_path).read_text())
             report_str = json.dumps(report).lower()
@@ -109,7 +109,7 @@ class TestCompilePipeline:
         json_path = EXAMPLES_DIR / "qwen3_moe_16npu.json"
         if not json_path.exists():
             pytest.skip("Example not found")
-        result = _cli("compile", str(json_path), timeout=90)
+        result = _cli("legacy", "compile", str(json_path), timeout=90)
         assert result.returncode == 0
         clean = _strip_ansi(result.stdout).lower()
         assert any(kw in clean for kw in ["hmac", "sign", "manifest", "guardrail"])
@@ -122,7 +122,7 @@ class TestCompilePipeline:
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
             out_path = f.name
         try:
-            result = _cli("compile", str(json_path), "--output", out_path, timeout=90)
+            result = _cli("legacy", "compile", str(json_path), "--output", out_path, timeout=90)
             assert result.returncode == 0
             report = json.loads(Path(out_path).read_text())
             # Should have key sections
@@ -265,7 +265,7 @@ class TestErrorHandling:
 
     def test_compile_missing_file(self):
         """compile with missing JSON → clear error."""
-        result = _cli("compile", "/nonexistent/request.json", timeout=10)
+        result = _cli("legacy", "compile", "/nonexistent/request.json", timeout=10)
         # May return 0 but show error in stdout, or non-zero
         assert result.returncode != 0 or "error" in (result.stdout + result.stderr).lower() or "not found" in (result.stdout + result.stderr).lower()
 
@@ -274,13 +274,17 @@ class TestErrorHandling:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             f.write("not valid json {{{")
             f.flush()
-            result = _cli("compile", f.name, timeout=10)
+            result = _cli("legacy", "compile", f.name, timeout=10)
             os.unlink(f.name)
             assert result.returncode != 0 or "error" in _strip_ansi(result.stderr + result.stdout).lower() or "failed" in _strip_ansi(result.stderr).lower()
 
     def test_help_all_commands(self):
         """veritx <cmd> --help works for all commands."""
-        for cmd in ["trace", "compile", "init", "generate", "compare",
-                    "synthesize", "evaluate", "certify", "run", "sweep"]:
+        for cmd in ["trace", "init", "generate", "certify",
+                    "legacy", "service", "api"]:
             result = _cli(cmd, "--help", timeout=5)
             assert result.returncode == 0, f"'{cmd} --help' failed"
+        for sub in ["synthesize-compile", "evaluate-booksim",
+                    "compare", "run"]:
+            result = _cli("legacy", sub, "--help", timeout=5)
+            assert result.returncode == 0, f"'legacy {sub} --help' failed"

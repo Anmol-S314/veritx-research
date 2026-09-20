@@ -30,9 +30,9 @@ from veritx_dse.synthesis.bridge import (
 # ── CLI registration contract ────────────────────────────────────────────────
 
 def test_compile_registered_in_dispatch():
-    subs = COMMANDS["synthesize"]["subcommands"]
-    assert "compile" in subs
-    assert subs["compile"]["handler"] is not None
+    subs = COMMANDS["legacy"]["subcommands"]
+    assert "synthesize-compile" in subs
+    assert subs["synthesize-compile"]["handler"] is not None
 
 
 def test_compile_flags_contract():
@@ -40,7 +40,7 @@ def test_compile_flags_contract():
     import sys
     from veritx_dse.cli.cli import build_parser
     parser = build_parser()
-    argv = ["synthesize", "compile", "--results", "r.json",
+    argv = ["legacy", "synthesize-compile", "--results", "r.json",
             "--trace", "t.trace", "--requirements", "[]"]
     args = parser.parse_args(argv)
     assert args.results == "r.json"
