@@ -47,7 +47,41 @@ oracle:
 | 8 | the contention policy was hard-coded in the scheduler and **absent from `performance_model_id`** — a hidden timing assumption (contract §20) | `arbitration_exclusive` / `arbitration_bandwidth` are declared, identity-bearing model fields; the scheduler refuses a policy it does not implement |
 | 9 | the declared `FIFO_SERIAL` policy is **not makespan-optimal** under contention | recorded, not hidden: three independent jobs 1 µs, 1 µs, 2 µs on capacity 2 → FIFO 3 µs, optimum 2 µs. The oracle asserts soundness (never better than optimum) and proves optimality where the policy is non-idling-optimal (capacity 1, hand corpus) |
 
-## 2. Architecture
+## 2. Repository audit (Stage A): what timing authority exists
+
+Searched for compute cycles, kernel durations, FLOPs, HBM bandwidth/latency,
+clock frequencies and historical timing constants across the production tree:
+
+```
+backend/booksim.py + simulation/booksim.py
+    BookSim statistics: completion_time (global cycles), delivered,
+    pkt_count, latency avg/max/p50/p95/p99, flits_injected/accepted,
+    drain_verdict.  NO per-message completion cycles.
+backend/analytical.py
+    registered; execution UNSUPPORTED. Not a timing authority.
+core/serving.py, experiment_serving.py
+    serving stack; BLOCKED since Wave D. No request timing contract.
+synthesis/compiler.py
+    bandwidth_floor_gbps is a REQUIREMENT (a constraint to check), not a
+    timing model. Not on the Wave-E path.
+tools/memory_miss_model.py
+    standalone research tool with a default per-bank bandwidth. Not on
+    the product path and not promoted to authority.
+model/compile_model.py
+    Workload carries tp/pp/ep/dp and shape metadata; no timing fields.
+```
+
+Ruling: **the repository holds no trustworthy compute/memory timing
+authority and no measured dataset.** Wave E therefore treats
+`EXPLICIT_DURATION` as the trustworthy baseline, declares analytical rate
+laws where they are exact (`T = latency + bytes/BW`), binds every rate
+into model identity, and reports `UNCALIBRATED` rather than promoting an
+existing constant to scientific authority. No hidden clock, bandwidth or
+overlap heuristic influences a VERIFIED result: the only timing numbers
+that reach a result are declared durations, declared rates, and BookSim
+evidence divided by a declared clock.
+
+## 3. Architecture
 
 ```
 wavee/time.py         exact rational QTime + explicit clocks
@@ -69,7 +103,7 @@ authority. The temporal overlay is declared on the intent
 (`workload.wave_e`), bound into the plan, executed through the sealed
 Wave-B/D path, and verified on load.
 
-## 3. Identity DAG (as implemented)
+## 4. Identity DAG (as implemented)
 
 ```
 performance_model_id  ← H(clocks, resources, compute_source,
@@ -88,7 +122,7 @@ Plan identity binds `{temporal_workload_id, performance_model_id}`; the
 result block binds the same pair **plus** the full Wave-D chain, the
 network binding, the window, the makespan and the fidelity warning.
 
-## 4. Time / resource contract
+## 5. Time / resource contract
 
 ```
 time          exact rational seconds (numerator/denominator), never floats
@@ -99,7 +133,7 @@ network       one BARRIER window per traffic window; links are NOT
               re-modeled (BookSim owns network contention)
 ```
 
-## 5. Proof matrix
+## 6. Proof matrix
 
 | Invariant | Production | Independent reference | Adversarial | Status |
 |---|---|---|---|---|
@@ -118,7 +152,7 @@ network       one BARRIER window per traffic window; links are NOT
 | result provenance | `wave_e_resources` | re-run schedule | transplant/tamper matrix | PROVED |
 | predictive accuracy | — | — | — | **UNCALIBRATED** |
 
-## 6. Attack matrix (all against the real product verifier)
+## 7. Attack matrix (all against the real product verifier)
 
 ```
 makespan tamper                      refused (re-derived)
@@ -137,7 +171,7 @@ unknown field in the block           refused (schema close)
 workload-id transplant               refused
 ```
 
-## 7. Real product E2E
+## 8. Real product E2E
 
 ```
 intent(workload.wave_d + workload.wave_e)
@@ -155,7 +189,7 @@ run whose evidence flows through `bind_network_window` into a verified
 result, plus the three sensitivity demonstrations (compute-dominant,
 network-exposed, overlap) whose conclusions are derived from schedules.
 
-## 8. Calibration
+## 9. Calibration
 
 `UNCALIBRATED`. The repository holds no measured per-operation timing
 dataset; no synthetic data is manufactured. The fidelity warning inside
@@ -163,7 +197,7 @@ every result is re-derived from the verified model, so an accuracy claim
 cannot be forged. A calibrated claim would require dataset hash, device
 identity, fit parameters, held-out error metrics and a validity domain.
 
-## 9. Comparison compatibility (§119/§120)
+## 10. Comparison compatibility (§119/§120)
 
 The Wave-C comparison gate gains a required `timing_model` dimension
 (the verified `performance_model_id`, or `NO_TIMING_MODEL` for an untimed
@@ -171,18 +205,35 @@ result). A different clock, resource set, compute source or arbitration
 refuses comparison; a different *duration* does not (that is the study).
 The variation can be allowed only by declaring it in the contract.
 
-## 10. Regression
+## 11. Regression
+
+From the committed tree (`934f122f`, clean):
 
 ```
-Wave-E suites            111 passed / 1 skipped
-Wave-D seal + semantics  (see battery below)
-Wave-C control plane
-frozen Wave-B chain
-BookSim goldens
-broad DSE suite          failed-node IDs compared to the baseline
+Wave-E suites (scheduler/identity/demos/product)   115 passed / 1 skipped
+Wave-D seal + semantics + physical + authenticity   (with Wave-C below)
+Wave-C control plane                                467 passed together
+frozen Wave-B focused chain                         747 passed
+BookSim goldens                                       6 passed
+broad DSE suite      26 failed / 3096 passed / 41 skipped
+  failed node IDs vs the pre-Wave-D baseline        IDENTICAL (zero new)
+git diff --check                                    clean
 ```
 
-## 11. Known limitations
+The 26 pre-existing failures are the environment-dependent ones recorded
+before Wave D (gitignored `dse/archive/` + `dse/runs/` assets and unbuilt
+vendored binaries); the node set is byte-identical.
+
+Evidence-grade reuse and comparison require a clean tree (sealed Wave-B
+producer policy); both were verified from this committed SHA:
+
+```
+evaluate twice, same overlay      reused=True, same result id
+comparison, different clock       COMPARISON_INCOMPATIBLE (timing_model)
+comparison, different duration    comparable (that is the study)
+```
+
+## 12. Known limitations
 
 ```
 per-operation network causality     UNSUPPORTED (BookSim exposes a window)
