@@ -273,8 +273,8 @@ def load_verified_attempt(store: Any, attempt_id: str) -> dict[str, Any]:
     experiment = load_verified_experiment(store,
                                           record.get("experiment_id"))
     status = record.get("status")
-    if status not in ("SUCCEEDED", "FAILED", "TIMED_OUT",
-                      "INTERRUPTED"):
+    from .service import ATTEMPT_STATUSES
+    if status not in ATTEMPT_STATUSES:
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
             f"attempt {attempt_id} has invalid status {status!r}",
