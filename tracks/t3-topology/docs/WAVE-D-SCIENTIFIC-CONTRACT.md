@@ -1268,7 +1268,33 @@ flits_injected == flits_accepted == expected_flits
 
 A missing counter is a hard failure, never a skipped check.
 
-### 37.8 What is NOT closed
+### 37.8 Result provenance binding (D-SEAL.1)
+
+Verifying that a result's Wave-D chain is internally valid is a
+different question from verifying that it is THIS plan's chain. Phase is
+deliberately not representable in the five-column BookSim trace, so two
+workloads with different semantic identities can render byte-identical
+traffic -- and a fully valid chain from the other experiment could be
+transplanted into a successful result.
+
+`_verify_waved_result()` therefore:
+
+```
+1. closes the result block schema: set(result.wave_d) ==
+   set(PLAN_CHAIN_KEYS + EXECUTION_RESULT_KEYS)
+2. requires result.wave_d[chain key] == plan.wave_d[chain key] exactly
+3. re-derives the chain from the PLAN's traffic parent
+4. re-derives expected_packets/expected_flits from that traffic and
+   delivered_packets/flits_injected/flits_accepted from the
+   authenticated Wave-B evidence stats
+```
+
+The plan's chain is the authority. The key sets live in one place
+(`application/waved_resources.py`), and both block constructors assert
+they emit exactly those keys, so a field cannot be added to a VERIFIED
+block without the verifier knowing.
+
+### 37.9 What is NOT closed
 
 | item | status |
 |---|---|

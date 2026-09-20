@@ -1,6 +1,7 @@
 # Wave D seal report
 
-Status: **SEALED v1 supported domain.**
+Status: **SEALED v1 supported domain** (final patch: D-SEAL.1 result
+provenance binding).
 
 ```
 branch      wave-d/distributed-semantics
@@ -26,6 +27,7 @@ them and states what remains out of scope.
 | 6 | Adversarial tests were fake (mutated a copy, validated the original; conditional asserts; a test named for flit width that built two identical bundles) | Rewritten. Every adversarial test feeds a mutated object into a real production validator/loader, or asserts on a genuinely different artifact |
 | 7 | Wave D had modified the sealed Wave-B evidence schema (`injected_packets`) | Reverted. `CertifiedBookSimEvidence` and `parse_trace_injected` are back to their Wave-B-frozen form; quiescence uses only sealed counters (`delivered`, `flits_injected`, `flits_accepted`) |
 | 8 | Wave-C never consumed Wave D: two science paths existed | `SrotaControlPlane` is the single authority. `Intent.workload.wave_d` declares an explicit semantic workload; compile/plan/evaluate route it through the verified chain, and the BookSim trace is a DERIVED backend input. Legacy packet traces keep the legacy path and are labelled `LEGACY_TRACE` |
+| 9 | **Result → plan provenance edge unverified.** The verifier proved the result's Wave-D chain was *internally valid*, never that it was *this plan's* chain. Phase is not representable in the five-column BookSim trace, so a DECODE and a PREFILL workload render byte-identical traffic; a fully valid chain from the other experiment could be transplanted into a successful result and still verify. The result's `wave_d` block was also not schema-closed, so arbitrary scientific-looking fields survived VERIFIED | `_verify_waved_result()` now closes the block schema (exactly `PLAN_CHAIN_KEYS + EXECUTION_RESULT_KEYS`), requires every plan-chain field to match the result exactly, re-derives the chain from the **plan's** traffic parent, and re-derives the execution counters from that traffic and the authenticated evidence. `waved_resources` owns the one key-set definition and both block constructors assert they emit exactly it |
 
 ## 2. Bug found by the new tests
 
@@ -57,7 +59,8 @@ dse/tests/test_wave_d_seal.py            transitive immutability, geometry
                                          parsing, verified loaders,
                                          parent transplants, plan identity
                                          separation at identical bytes,
-                                         product E2E, product tamper
+                                         product E2E, product tamper,
+                                         result->plan provenance binding
 ```
 
 ## 4. What is verified, mechanically
@@ -77,6 +80,11 @@ product E2E      compile -> plan -> evaluate -> load_verified_result, then
                  walk every verified parent and match all IDs
 product tamper   tampering a persisted opgraph/messages/traffic row, or the
                  result's own wave_d block, makes the result non-VERIFIED
+provenance       a fully VALID Wave-D chain from another experiment cannot
+                 be transplanted into a result (refused as a provenance
+                 mismatch, proven after independently verifying the
+                 transplanted chain); unknown, missing-chain and
+                 missing-execution fields all refuse
 reuse            a transplanted result link never reuses another
                  experiment's science
 ```
@@ -94,7 +102,31 @@ reuse            a transplanted result link never reuses another
 | `EXTERNAL-CONTRACT-NEEDED` EXT-1..EXT-5 | open, contract §36 |
 | pre-existing DSE test failures (26) | environment-dependent (gitignored `archive/`/`runs/` assets, unbuilt vendored binaries); identical node set to the pre-Wave-D baseline |
 
-## 6. Evidence-grade reuse (verified on the sealed tree)
+## 6. The provenance edge (D-SEAL.1)
+
+Two individually truthful statements can collaborate on a lie: "plan A
+is valid" and "chain B is valid" do not imply "result A came from chain
+B". The attack is real and was reproduced before the fix:
+
+```
+A: DECODE  ALLREDUCE ranks 0..3 payload 1024 mesh4
+B: PREFILL ALLREDUCE ranks 0..3 payload 1024 mesh4
+A.plan_id != B.plan_id, A.wave_d.*_id != B.wave_d.*_id
+rendered BookSim trace A == rendered BookSim trace B   (phase is lossy)
+120/120 packets, 864/864/864 flits for both
+
+transplant B's valid chain into result A, keep A's result_id /
+experiment_id / plan_id / evidence_ref
+  before: VERIFIED
+  after:  EVIDENCE_INVALID -- "result.wave_d.waved_workload_id does not
+          match its authority"
+```
+
+The verifier now proves `result.wave_d chain == plan.wave_d chain` on
+every field, using the plan as the authority, and refuses any block
+whose key set is not exactly the declared chain + execution schema.
+
+## 7. Evidence-grade reuse (verified on the sealed tree)
 
 `_try_reuse` additionally requires a clean source tree (sealed Wave-B
 producer policy). In a dirty working tree reuse declines and a fresh
@@ -108,10 +140,10 @@ evaluate again           reused=True   result c16e105042c0106a
 changed operation bytes  reused=False  different result id
 ```
 
-## 7. Final battery (from the committed tree)
+## 8. Final battery (from the committed tree)
 
 ```
-wave-D suites (semantics/physical/authenticity/contract/seal)  226 passed
+wave-D suites (semantics/physical/authenticity/contract/seal)  246 passed
 Wave-C control plane                                          221 passed
 frozen Wave-B focused chain                                   747 passed
 frozen production BookSim goldens                               6 passed
@@ -123,7 +155,7 @@ The 26 pre-existing failures are environment-dependent (gitignored
 `dse/archive/` + `dse/runs/` assets and unbuilt vendored binaries);
 their node set is byte-identical to the baseline recorded before Wave D.
 
-## 8. Real BookSim evidence (production path, sealed counters)
+## 9. Real BookSim evidence (production path, sealed counters)
 
 All three required scenarios ran through `SrotaControlPlane.evaluate()`
 and verified through `load_verified_result`:
@@ -137,7 +169,7 @@ and verified through `load_verified_result`:
 Backend-injected packet equality is deliberately NOT claimed: that
 counter does not exist in the sealed Wave-B evidence schema.
 
-## 9. Reproduce
+## 10. Reproduce
 
 ```bash
 cd tracks/t3-topology

@@ -281,6 +281,31 @@ def load_verified_traffic(store: Any, traffic_id: str
 
 # ── chain identity (the product-visible Wave-D provenance block) ─────────
 
+# The ONE authoritative key sets. Plan identity binds the scientific
+# chain; the result adds only execution-derived counters. Both
+# constructors assert they emit exactly these keys, so a field can never
+# be added to a VERIFIED block without this verifier knowing about it.
+PLAN_CHAIN_KEYS = (
+    "workload_kind",
+    "waved_workload_id",
+    "parallelism_id",
+    "wave_d_semantics_id",
+    "operation_graph_id",
+    "message_artifact_id",
+    "physical_traffic_id",
+    "resolved_fabric_hash",
+    "packet_format_hash",
+)
+EXECUTION_RESULT_KEYS = (
+    "expected_packets",
+    "expected_flits",
+    "delivered_packets",
+    "flits_injected",
+    "flits_accepted",
+)
+RESULT_WAVE_D_KEYS = PLAN_CHAIN_KEYS + EXECUTION_RESULT_KEYS
+
+
 def waved_chain_ids(workload: WaveDWorkload, graph: OperationGraph,
                     messages: LogicalMessageArtifact,
                     traffic: PhysicalTrafficArtifact,
@@ -292,7 +317,7 @@ def waved_chain_ids(workload: WaveDWorkload, graph: OperationGraph,
     a stored block can be compared field-by-field against a recomputed
     one.
     """
-    return {
+    block = {
         "workload_kind": "WAVE_D_SEMANTIC",
         "waved_workload_id": workload.workload_id(),
         "parallelism_id": workload.parallelism.parallelism_id(),
@@ -305,6 +330,13 @@ def waved_chain_ids(workload: WaveDWorkload, graph: OperationGraph,
         "packet_format_hash":
             bundle.packet_format.packet_format_hash(),
     }
+    if set(block) != set(PLAN_CHAIN_KEYS):  # pragma: no cover - guard
+        raise ControlPlaneError(
+            ErrorCode.INTERNAL_ERROR,
+            "wave_d chain block does not match PLAN_CHAIN_KEYS: "
+            f"{sorted(block)} vs {sorted(PLAN_CHAIN_KEYS)}",
+            operation="verify_resource")
+    return block
 
 
 def waved_chain_ids_from_traffic(traffic: PhysicalTrafficArtifact
@@ -379,6 +411,12 @@ def waved_execution_block(chain: dict[str, Any], summary: dict[str, Any],
         "flits_injected": counters.get("flits_injected"),
         "flits_accepted": counters.get("flits_accepted"),
     })
+    if set(block) != set(RESULT_WAVE_D_KEYS):  # pragma: no cover - guard
+        raise ControlPlaneError(
+            ErrorCode.INTERNAL_ERROR,
+            "wave_d result block does not match RESULT_WAVE_D_KEYS: "
+            f"{sorted(block)} vs {sorted(RESULT_WAVE_D_KEYS)}",
+            operation="verify_resource")
     return block
 
 
@@ -390,6 +428,9 @@ def load_verified_traffic_record(store: Any, traffic_id: str
 
 
 __all__ = [
+    "EXECUTION_RESULT_KEYS",
+    "PLAN_CHAIN_KEYS",
+    "RESULT_WAVE_D_KEYS",
     "WAVED_RESOURCE_KINDS",
     "load_verified_messages",
     "load_verified_operation_graph",

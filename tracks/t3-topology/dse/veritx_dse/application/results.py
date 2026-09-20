@@ -494,18 +494,26 @@ def load_verified_result(store: Any, result_id: str, *,
 def _verify_waved_result(store: Any, result: dict[str, Any],
                          plan: dict[str, Any], evidence: dict[str, Any],
                          result_id: str) -> None:
-    """A Wave-D result is only VERIFIED if its whole chain re-derives.
+    """A Wave-D result is only VERIFIED if it IS the plan's experiment.
 
-    Re-loads the verified traffic parent (which re-verifies every
-    upstream artifact), recomputes the chain block and the expected
-    packet/flit totals, and re-derives the execution counters from the
-    authenticated evidence stats. Tampering any scientific Wave-D
-    parent therefore invalidates the result.
+    The verified plan is the authority for the scientific chain. Proving
+    that the result's chain is internally valid is a DIFFERENT question
+    from proving that it is THIS experiment's chain: two individually
+    valid chains can describe byte-identical BookSim traffic (phase is
+    not representable in a five-column trace), so a transplant would
+    otherwise pass every local check. The verifier therefore:
+
+      1. closes the result block's schema (no unknown fields),
+      2. requires the result's chain to equal the plan's chain exactly,
+      3. re-derives the chain from the PLAN's traffic parent,
+      4. re-derives the execution counters from that traffic and from
+         the authenticated evidence.
     """
     from veritx_dse.waved.backend import verify_trace_projection
 
     from .waved_resources import (
-        load_verified_traffic, waved_chain_ids_from_traffic,
+        PLAN_CHAIN_KEYS, RESULT_WAVE_D_KEYS, load_verified_traffic,
+        waved_chain_ids_from_traffic,
     )
     plan_wave_d = plan.get("wave_d")
     wave_d = result.get("wave_d")
@@ -516,11 +524,35 @@ def _verify_waved_result(store: Any, result: dict[str, Any],
             "a Wave-D experiment cannot be verified against a legacy "
             "plan (or the reverse)",
             operation="verify_result", resource_id=result_id)
+    # 1. Schema closure: a VERIFIED block carries exactly the declared
+    #    chain + execution fields, nothing else.
+    if set(wave_d) != set(RESULT_WAVE_D_KEYS):
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"result {result_id} wave_d block has the wrong field set: "
+            f"unknown {sorted(set(wave_d) - set(RESULT_WAVE_D_KEYS))}, "
+            f"missing {sorted(set(RESULT_WAVE_D_KEYS) - set(wave_d))}",
+            operation="verify_result", resource_id=result_id)
+    if set(plan_wave_d) != set(PLAN_CHAIN_KEYS):
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"plan {plan.get('resource_id')} wave_d chain has the wrong "
+            f"field set: unknown "
+            f"{sorted(set(plan_wave_d) - set(PLAN_CHAIN_KEYS))}, missing "
+            f"{sorted(set(PLAN_CHAIN_KEYS) - set(plan_wave_d))}",
+            operation="verify_result", resource_id=result_id)
+    # 2. Provenance binding: the result must claim the PLAN's chain.
+    for key in PLAN_CHAIN_KEYS:
+        _require_equal(f"result.wave_d.{key}", wave_d.get(key),
+                       plan_wave_d.get(key), result_id)
+    # 3. Re-derive from the plan's traffic parent (the authority), then
+    #    confirm the plan's own chain is what that traffic produces.
     traffic, _ = load_verified_traffic(
-        store, wave_d.get("physical_traffic_id"))
-    for key, value in waved_chain_ids_from_traffic(traffic).items():
-        _require_equal(f"result.wave_d.{key}", wave_d.get(key), value,
-                       result_id)
+        store, plan_wave_d.get("physical_traffic_id"))
+    recomputed_chain = waved_chain_ids_from_traffic(traffic)
+    for key in PLAN_CHAIN_KEYS:
+        _require_equal(f"plan.wave_d.{key}", plan_wave_d.get(key),
+                       recomputed_chain[key], result_id)
     summary = verify_trace_projection(traffic)
     _require_equal("wave_d.expected_packets",
                    wave_d.get("expected_packets"),

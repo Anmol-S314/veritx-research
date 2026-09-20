@@ -40,6 +40,7 @@ from veritx_dse.application.errors import ControlPlaneError, ErrorCode  # noqa: 
 from veritx_dse.application.service import SrotaControlPlane  # noqa: E402
 from veritx_dse.application.store import ResourceStore  # noqa: E402
 from veritx_dse.application.waved_resources import (  # noqa: E402
+    EXECUTION_RESULT_KEYS, PLAN_CHAIN_KEYS, RESULT_WAVE_D_KEYS,
     load_verified_messages, load_verified_operation_graph,
     load_verified_parallelism, load_verified_traffic,
     load_verified_waved_semantics, load_verified_waved_workload,
@@ -92,17 +93,20 @@ def _p2p(tid="t0", src=0, dst=2, payload=300, owner=0, step=1, deps=()):
 
 
 def _intent(*, preset="mesh4", tp=1, pp=1, ep=1, dp=4, operations=None,
-            name="waved-e2e", seed=7, metrics=METRICS, timeout_s=120):
+            name="waved-e2e", seed=7, metrics=METRICS, timeout_s=120,
+            phase="DECODE"):
     return {
         "schema_version": 1, "name": name, "fabric_preset": preset,
         "fabric_overrides": {"workload.tp": tp, "workload.pp": pp,
                              "workload.ep": ep, "workload.dp": dp},
         "workload": {"wave_d": {
             "parallelism": {"tp": tp, "pp": pp, "ep": ep, "dp": dp},
-            "semantics": {"phase": "DECODE"},
+            "semantics": {"phase": phase},
             "operations": operations or [
-                _collective(participants=tuple(range(dp))),
-                _p2p(dst=min(2, dp - 1), deps=("c0",)),
+                {**_collective(participants=tuple(range(dp))),
+                 "phase": phase},
+                {**_p2p(dst=min(2, dp - 1), deps=("c0",)),
+                 "phase": phase},
             ],
         }},
         "backend_target": "BOOKSIM_STANDALONE", "seed": seed,
@@ -939,3 +943,162 @@ class TestProductTamper:
         self._tamper_file(cp, "result", result["resource_id"], mutate)
         with pytest.raises(ControlPlaneError):
             load_verified_result(cp.store, result["resource_id"])
+
+
+
+# ══ 4/5/6/7. result -> plan provenance binding ═══════════════════════════
+
+def _rewrite_result_wave_d(cp, result_id, block):
+    """Tamper a persisted result's wave_d block directly (as an attacker)."""
+    from veritx_dse.core.spec import canonical_json
+    path = cp.store.root / "result" / f"{result_id}.json"
+    doc = json.loads(path.read_text())
+    doc["wave_d"] = block
+    path.write_text(canonical_json(doc))
+
+
+@requires_binary
+class TestResultProvenanceBinding:
+    """The final edge: a result must BE its plan's experiment.
+
+    Verifying that a chain is internally valid is a different question
+    from verifying that it is THIS experiment's chain. Phase is not
+    representable in the five-column BookSim trace, so a DECODE and a
+    PREFILL workload can render byte-identical traffic while carrying
+    different semantic identities -- exactly the transplant an
+    edge-blind verifier would accept.
+    """
+
+    def _phase_pair(self, cp):
+        a = cp.evaluate(_intent(name="prov-a", phase="DECODE"))
+        b = cp.plan(_intent(name="prov-b", phase="PREFILL"))
+        return a, b
+
+    def test_identical_traffic_different_semantics_is_a_real_collision(
+            self, cp):
+        """Preconditions: identical bytes and counters, different chains."""
+        from veritx_dse.waved.backend import (render_waved_trace,
+                                              verify_trace_projection)
+        a, b = self._phase_pair(cp)
+        assert a["plan_id"] != b["plan"]["resource_id"]
+        assert a["wave_d"]["wave_d_semantics_id"] != \
+            b["wave_d"]["wave_d_semantics_id"]
+        assert a["wave_d"]["operation_graph_id"] != \
+            b["wave_d"]["operation_graph_id"]
+        assert a["wave_d"]["message_artifact_id"] != \
+            b["wave_d"]["message_artifact_id"]
+        assert a["wave_d"]["physical_traffic_id"] != \
+            b["wave_d"]["physical_traffic_id"]
+        ta, _ = load_verified_traffic(
+            cp.store, a["wave_d"]["physical_traffic_id"])
+        tb, _ = load_verified_traffic(
+            cp.store, b["wave_d"]["physical_traffic_id"])
+        assert render_waved_trace(ta) == render_waved_trace(tb)
+        sa, sb = verify_trace_projection(ta), verify_trace_projection(tb)
+        assert sa["num_packets"] == sb["num_packets"]
+        assert sa["flits_total"] == sb["flits_total"]
+        assert a["wave_d"]["expected_packets"] == sb["num_packets"]
+        assert a["wave_d"]["expected_flits"] == sb["flits_total"]
+
+    def test_valid_chain_transplant_refused_as_provenance(self, cp):
+        """The mandatory attack: B's whole VALID chain into A's result.
+
+        The refusal must be a provenance mismatch, not a chain-validity
+        failure -- chain B is independently verified first.
+        """
+        from veritx_dse.application.results import load_verified_result
+        a, b = self._phase_pair(cp)
+        # Chain B is fully valid on its own.
+        tb, _ = load_verified_traffic(
+            cp.store, b["wave_d"]["physical_traffic_id"])
+        assert tb.physical_traffic_id() == \
+            b["wave_d"]["physical_traffic_id"]
+        forged = dict(b["wave_d"])
+        forged.update({k: a["wave_d"][k] for k in EXECUTION_RESULT_KEYS})
+        _rewrite_result_wave_d(cp, a["resource_id"], forged)
+        with pytest.raises(ControlPlaneError) as exc:
+            load_verified_result(cp.store, a["resource_id"])
+        assert exc.value.code == ErrorCode.EVIDENCE_INVALID
+        # The message names the mismatched chain field (provenance),
+        # and the chain it points at is otherwise valid.
+        assert "result.wave_d." in exc.value.message
+
+    def test_physically_different_valid_chain_transplant_refused(self, cp):
+        """A valid chain from another preset cannot be adopted either."""
+        from veritx_dse.application.results import load_verified_result
+        a = cp.evaluate(_intent(name="prov-wide-a"))
+        wide = cp.plan(_intent(name="prov-wide-b",
+                               preset="mesh4_wide128"))
+        load_verified_traffic(cp.store,
+                              wide["wave_d"]["physical_traffic_id"])
+        forged = dict(wide["wave_d"])
+        forged.update({k: a["wave_d"][k] for k in EXECUTION_RESULT_KEYS})
+        _rewrite_result_wave_d(cp, a["resource_id"], forged)
+        with pytest.raises(ControlPlaneError) as exc:
+            load_verified_result(cp.store, a["resource_id"])
+        assert exc.value.code == ErrorCode.EVIDENCE_INVALID
+        assert "result.wave_d." in exc.value.message
+
+    def test_unknown_wave_d_field_refused(self, cp):
+        from veritx_dse.application.results import load_verified_result
+        a = cp.evaluate(_intent(name="prov-unknown"))
+        assert load_verified_result(cp.store, a["resource_id"])
+        forged = dict(a["wave_d"])
+        forged["forged_claim"] = "47% speedup"
+        _rewrite_result_wave_d(cp, a["resource_id"], forged)
+        with pytest.raises(ControlPlaneError) as exc:
+            load_verified_result(cp.store, a["resource_id"])
+        assert exc.value.code == ErrorCode.EVIDENCE_INVALID
+        assert "wrong field set" in exc.value.message
+
+    @pytest.mark.parametrize("missing", EXECUTION_RESULT_KEYS)
+    def test_missing_execution_field_refused(self, cp, missing):
+        from veritx_dse.application.results import load_verified_result
+        a = cp.evaluate(_intent(name=f"prov-missing-{missing}"))
+        forged = {k: v for k, v in a["wave_d"].items() if k != missing}
+        _rewrite_result_wave_d(cp, a["resource_id"], forged)
+        with pytest.raises(ControlPlaneError):
+            load_verified_result(cp.store, a["resource_id"])
+
+    @pytest.mark.parametrize("missing", PLAN_CHAIN_KEYS)
+    def test_missing_chain_field_refused(self, cp, missing):
+        from veritx_dse.application.results import load_verified_result
+        a = cp.evaluate(_intent(name=f"prov-chain-{missing}"))
+        forged = {k: v for k, v in a["wave_d"].items() if k != missing}
+        _rewrite_result_wave_d(cp, a["resource_id"], forged)
+        with pytest.raises(ControlPlaneError):
+            load_verified_result(cp.store, a["resource_id"])
+
+    def test_result_block_key_set_is_exactly_declared(self, cp):
+        a = cp.evaluate(_intent(name="prov-schema"))
+        assert set(a["wave_d"]) == set(RESULT_WAVE_D_KEYS)
+        plan = cp.store.get("plan", a["plan_id"])
+        assert set(plan["wave_d"]) == set(PLAN_CHAIN_KEYS)
+
+    def test_reuse_cannot_adopt_a_transplanted_result(self, cp,
+                                                      monkeypatch):
+        """Reuse runs through the same verifier, so it inherits the bind."""
+        from veritx_dse.application.requests import resolve_intent
+        from veritx_dse.application.resources import ExperimentRecord
+        from veritx_dse.backend import producer as producer_mod
+        # The subject is the provenance check, not the producer policy:
+        # neutralise the clean-tree gate so the loader step is reached
+        # even in a dirty working tree.
+        monkeypatch.setattr(producer_mod, "verify_reusable_evidence",
+                            lambda *a, **k: None)
+        doc = _intent(name="prov-reuse")
+        first = cp.evaluate(doc)
+        b = cp.plan(_intent(name="prov-reuse-b", phase="PREFILL"))
+        forged = dict(b["wave_d"])
+        forged.update({k: first["wave_d"][k]
+                       for k in EXECUTION_RESULT_KEYS})
+        _rewrite_result_wave_d(cp, first["resource_id"], forged)
+        record = cp.store.get("experiment", first["experiment_id"])
+        intent, _, _ = resolve_intent(doc)
+        plan = cp.store.get("plan", record["plan_id"])
+        assert cp._try_reuse(ExperimentRecord(
+            experiment_id=record["resource_id"],
+            plan_id=record["plan_id"],
+            backend_config_hash=record["backend_config_hash"],
+            backend_input_hash=record["backend_input_hash"],
+            execution_mode=record["execution_mode"]), plan, intent) is None

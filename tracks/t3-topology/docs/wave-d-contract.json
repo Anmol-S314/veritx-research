@@ -1,6 +1,6 @@
 {
   "schema": "srota/wave-d-contract/v1",
-  "revision": 5,
+  "revision": 6,
   "status": "SEALED_V1",
   "base": {
     "wave_c_seal": "8455c0450e27486ae034028b76c9a05b94f2ea72",
@@ -1182,6 +1182,33 @@
       "uneven_collective_chunking": "UNSUPPORTED (refused), §10.2",
       "shape_to_operation_synthesis": "DEFERRED, §31",
       "embedded_route_dump_export": "NOT_RUN (external contract, §36)"
+    },
+    "result_provenance_binding": {
+      "authority": "the verified plan's wave_d chain",
+      "rule": "result.wave_d[chain key] must equal plan.wave_d[chain key] on every field; the chain is re-derived from the plan's traffic parent",
+      "schema": {
+        "plan_chain_keys": [
+          "workload_kind",
+          "waved_workload_id",
+          "parallelism_id",
+          "wave_d_semantics_id",
+          "operation_graph_id",
+          "message_artifact_id",
+          "physical_traffic_id",
+          "resolved_fabric_hash",
+          "packet_format_hash"
+        ],
+        "execution_keys": [
+          "expected_packets",
+          "expected_flits",
+          "delivered_packets",
+          "flits_injected",
+          "flits_accepted"
+        ],
+        "closure": "set(result.wave_d) must equal exactly chain keys + execution keys; unknown/missing fields refuse"
+      },
+      "attack": "two workloads with identical rendered BookSim traffic but different semantic identities (phase is not representable in the trace) cannot share a result chain",
+      "reuse": "inherits the binding through load_verified_result"
     }
   },
   "citation_convention": {
