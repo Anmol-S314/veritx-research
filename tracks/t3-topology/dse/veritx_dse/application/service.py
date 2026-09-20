@@ -945,6 +945,26 @@ class SrotaControlPlane:
                         "experiment", target):
                     related["experiment_id"] = self.store.get(
                         "experiment", target)
+            if kind == "studydef":
+                directory = self.store.root / "studyrun"
+                runs = []
+                if directory.is_dir():
+                    for path in sorted(directory.glob("*.json")):
+                        try:
+                            run = self.store.get("studyrun", path.stem)
+                        except ControlPlaneError:
+                            continue
+                        if isinstance(run, dict) and \
+                                run.get("study_id") == \
+                                record.get("resource_id"):
+                            runs.append(path.stem)
+                related["runs"] = runs
+            if kind == "studyrun":
+                target = record.get("study_id")
+                if isinstance(target, str) and self.store.exists(
+                        "studydef", target):
+                    related["studydef"] = self.store.get(
+                        "studydef", target)
         return {"kind": kind, "record": record, "related": related,
                 "evidence_status": evidence_status,
                 "integrity": integrity}

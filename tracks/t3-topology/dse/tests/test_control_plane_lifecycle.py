@@ -417,6 +417,9 @@ class TestStudyInspect:
         observed = clean_service.inspect(run["resource_id"])
         assert observed["integrity"]["state"] == "VERIFIED"
         assert observed["record"]["study_id"] == run["study_id"]
+        assert observed["related"]["studydef"]["resource_id"] == \
+            run["study_id"]
+        assert run["resource_id"] in definition["related"]["runs"]
 
     def test_inspect_unknown_study_is_not_found(self,
                                                clean_service):
