@@ -1,7 +1,7 @@
 {
   "schema": "srota/wave-d-contract/v1",
-  "revision": 3,
-  "status": "DRAFT_FOR_AUDIT",
+  "revision": 4,
+  "status": "IMPLEMENTED_V1",
   "base": {
     "wave_c_seal": "8455c0450e27486ae034028b76c9a05b94f2ea72",
     "branch": "wave-d/distributed-semantics",
@@ -1063,5 +1063,58 @@
       "decide identity-parent questions"
     ],
     "normative": "identity.wave_d parent lists"
+  },
+  "implementation": {
+    "modules": {
+      "parallelism": "dse/veritx_dse/waved/parallelism.py",
+      "semantics": "dse/veritx_dse/waved/semantics.py",
+      "operations": "dse/veritx_dse/waved/operations.py",
+      "messages": "dse/veritx_dse/waved/messages.py",
+      "traffic": "dse/veritx_dse/waved/traffic.py",
+      "backend": "dse/veritx_dse/waved/backend.py",
+      "errors": "dse/veritx_dse/waved/errors.py",
+      "oracles": "dse/veritx_dse/waved/oracles.py"
+    },
+    "tests": [
+      "dse/tests/test_wave_d_semantics.py",
+      "dse/tests/test_wave_d_physical.py",
+      "dse/tests/test_wave_d_authenticity.py",
+      "dse/tests/test_wave_d_contract.py"
+    ],
+    "backend_status": {
+      "BOOKSIM_STANDALONE": "VALIDATED: qualified supervised execution; route EXACT; quiescence injected==delivered==expected; flit counters exact (\u00a749)",
+      "ASTRA": "NOT INTEGRATED for Wave-D semantics (EXT-1 unanswered)",
+      "SERVING_BOOKSIM2": "BLOCKED (unchanged)",
+      "ANALYTICAL": "UNSUPPORTED",
+      "RTL_UVM_FORMAL": "NOT_RUN"
+    },
+    "proof_methods": {
+      "bounded_exhaustive": "TP,PP,EP,DP in [1,4]^4 (256 combos): bijection, group laws, oracle cross-check",
+      "property": "Hypothesis: bijection, collective conservation, packet payload conservation, flit identity, multicast law",
+      "differential": "production lowering vs independent pure oracles (\u00a726/\u00a768)",
+      "metamorphic": "singleton dims, payload doubling, capacity monotonicity, path independence",
+      "mutation": "identity mutation matrix + adversarial tamper suite (\u00a742/\u00a760)"
+    },
+    "identity_dag": {
+      "parallelism_id": "H(schema_version, TP, PP, EP, DP)",
+      "wave_d_semantics_id": "H(schema_version, phase, routing_policy, shape_metadata, model_descriptor_hash)",
+      "operation_graph_id": "H(workload_id, parallelism_id, wave_d_semantics_id, nodes, collectives, p2p, multicasts)",
+      "message_artifact_id": "H(operation_graph_id, schedules, replication_schedule, traffic_class, messages)",
+      "physical_traffic_id": "H(message_artifact_id, resolved_fabric_hash, packet_format_hash, packets)"
+    },
+    "trace_projection": {
+      "dialect": "waved-derived-whitespace-v1 (cyc src cl dst sz; size in flits)",
+      "lossless_fields": [
+        "src endpoint",
+        "dst endpoint",
+        "flit count",
+        "packet ordering"
+      ],
+      "lossy_fields": [
+        "operation id",
+        "phase"
+      ],
+      "provenance_authority": "PhysicalTrafficArtifact (trace is a derived backend input, \u00a748)"
+    }
   }
 }

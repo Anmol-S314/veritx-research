@@ -1,7 +1,12 @@
-# Wave D Scientific Contract — Distributed Semantics (D0)
+# Wave D Scientific Contract — Distributed Semantics (D0 → D-IMPL)
 
-Status: **DRAFT FOR AUDIT** (D0 is a scientific-design pass; it adds no
-production behavior).
+Status: **IMPLEMENTED (v1 supported domain)** — the D0 design rulings
+below are now backed by production modules in
+`dse/veritx_dse/waved/` and pinned by tests
+`dse/tests/test_wave_d_{semantics,physical,authenticity}.py` (§67 proof
+methods). The D0 text is preserved as the normative ruling set; the
+implementation status column of §31 and the identity DAG of §23.2 are
+now executed code, not plan.
 
 Base: Wave C-SEAL.1 `8455c0450e27486ae034028b76c9a05b94f2ea72`
 (branch `wave-d/distributed-semantics`).
@@ -25,12 +30,24 @@ Nothing in this document assigns durations.
 
 ## 1. Scope and non-goals
 
-In scope (future D1–D-FINAL):
+In scope (D1–D-FINAL):
 
 ```
 workload intent → logical ranks → physical placement → communication
 groups → operations → messages → packets → flits → backend traffic
 ```
+
+Implementation status (v1, this revision):
+
+| Stage | Module | Status |
+|---|---|---|
+| rank space + groups | `waved/parallelism.py` | EXACT (bounded exhaustive [1,4]^4 + oracle) |
+| semantic envelope | `waved/semantics.py` | EXACT (versioned, content-bound descriptor) |
+| operation graph | `waved/operations.py` | EXACT (DAG laws enforced) |
+| schedules/messages | `waved/messages.py` | EXACT (differential vs oracle) |
+| packets/flits | `waved/traffic.py` | EXACT (bit-exact, Wave-B PacketFormat) |
+| conservation ledger | `waved/traffic.py` | EXACT (per-class laws, fail closed) |
+| backend projection | `waved/backend.py` | VALIDATED (qualified BookSim, quiescence proven) |
 
 Non-goals (explicitly out of Wave D):
 
