@@ -36,6 +36,13 @@ KNOWN_DIMENSIONS = (
     "metric_schema",
     "producer_binary",
     "semantic_loss",
+    # Wave E: two latency numbers are not automatically comparable. A
+    # result produced under a different performance model (different
+    # clocks, resources, compute source, arbitration or calibration
+    # context) measures something else, so the model is a required
+    # compatibility dimension. A contract may explicitly allow it, but
+    # silence never may.
+    "timing_model",
 )
 
 _DEFAULT_ALLOWED: dict[str, frozenset[str]] = {
@@ -140,6 +147,13 @@ def parse_contract(doc: Any) -> ComparisonContract:
 
 def _dimension_values(result: dict[str, Any]) -> dict[str, Any]:
     producer = result.get("producer") or {}
+    wave_e = result.get("wave_e")
+    timing_model = "NO_TIMING_MODEL"
+    if isinstance(wave_e, dict) and wave_e.get("performance_model_id"):
+        # The performance model IS the timing semantics (clocks,
+        # resources, compute source, arbitration); the fidelity warning
+        # is a function of it. Wave-D-only results have no timing model.
+        timing_model = wave_e["performance_model_id"]
     return {
         "fabric_hash": result.get("fabric_hash"),
         "workload_hash": result.get("workload_hash"),
@@ -154,6 +168,7 @@ def _dimension_values(result: dict[str, Any]) -> dict[str, Any]:
         "producer_binary": producer.get("binary_sha256")
         if isinstance(producer, dict) else None,
         "semantic_loss": result.get("loss_digest"),
+        "timing_model": timing_model,
     }
 
 

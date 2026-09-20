@@ -73,6 +73,7 @@ def capability_registry() -> dict[str, Any]:
                 "semantic_provenance": "DECLARED_OPERATIONS",
                 "wave_d_chain": "VERIFIED",
                 "execution": "SUPPORTED",
+                "timing_overlay": "OPTIONAL (workload.wave_e)",
                 "note": "the BookSim trace is DERIVED from verified "
                         "physical traffic; conservation, oracle and "
                         "projection gates run before every spawn",
@@ -82,12 +83,44 @@ def capability_registry() -> dict[str, Any]:
             "wavedworkload", "parallelism", "wavedsemantics", "opgraph",
             "messages", "traffic",
         ],
+        "wave_e": {
+            "time": "EXACT_RATIONAL_SECONDS",
+            "compute": {
+                "EXPLICIT_DURATION": "EXACT_MODEL_SEMANTICS",
+                "ANALYTICAL_MODEL": "MEMORY_ONLY",
+                "calibration": "UNCALIBRATED",
+            },
+            "memory": {"analytical_bandwidth": "ANALYTICAL",
+                       "capacity": "DEFERRED"},
+            "network_timing": {
+                "authority": "QUALIFIED_BOOKSIM_WINDOW",
+                "granularity": "GLOBAL_WINDOW",
+                "per_operation_causality": "UNSUPPORTED",
+                "wall_time": "REQUIRES_EXPLICIT_CLOCK",
+            },
+            "scheduler": {
+                "kind": "DETERMINISTIC_DISCRETE_EVENT",
+                "arbitration": ["FIFO_SERIAL",
+                                "EQUAL_SHARE_BANDWIDTH"],
+                "makespan_optimality": "NOT_CLAIMED",
+            },
+            "metrics": ["makespan", "critical_path", "utilization",
+                        "request_latency", "ttft", "decode_step_latency",
+                        "sensitivity"],
+            "unsupported": ["throughput", "continuous_batching",
+                            "per_operation_network_causality",
+                            "analytical_compute_roofline",
+                            "memory_capacity"],
+            "predictive_validation": "NOT_ESTABLISHED",
+        },
+        "wave_e_resources": ["waveeworkload"],
         "deferred": {
             "rtl_verification": "NOT_RUN",
             "uvm_verification": "NOT_RUN",
             "formal_verification": "NOT_RUN",
-            "area_power_energy": "WAVE_E",
+            "area_power_energy": "WAVE_F",
             "multicast_concurrency": "WAVE_D",
+            "calibration_dataset": "EXTERNAL-CONTRACT-NEEDED",
         },
     }
 

@@ -47,8 +47,12 @@ class CompiledDesign:
         return "design"
 
     def resource_id(self) -> str:
+        # Content-addressed by the SEMANTIC hashes only. The intent link
+        # is navigational (verified on load) and must NOT enter design
+        # identity: two intents compiling identical fabric share the
+        # design, the traffic, and every downstream artifact — only
+        # their plans differ (Wave-E §69 made this case unavoidable).
         return _content_id("srota-design/v1", {
-            "intent_id": self.intent_id,
             "design_hash": self.design_hash,
             "mapping_hash": self.mapping_hash,
             "fabric_hash": self.fabric_hash,
@@ -59,7 +63,6 @@ class CompiledDesign:
             "resource_type": self.resource_type,
             "schema_version": RESOURCE_SCHEMA_VERSION,
             "resource_id": self.resource_id(),
-            "intent_id": self.intent_id,
             "design_hash": self.design_hash,
             "mapping_hash": self.mapping_hash,
             "fabric_hash": self.fabric_hash,
@@ -148,6 +151,7 @@ class EvaluationPlan:
     metric_ids: tuple[str, ...]
     metric_schema_version: str
     wave_d: dict[str, Any] | None = None
+    wave_e: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         out = {
@@ -173,6 +177,8 @@ class EvaluationPlan:
         }
         if self.wave_d is not None:
             out["wave_d"] = dict(self.wave_d)
+        if self.wave_e is not None:
+            out["wave_e"] = dict(self.wave_e)
         return out
 
 
@@ -254,6 +260,7 @@ class EvaluationResult:
     seed_policy: str
     reused: bool
     wave_d: dict[str, Any] | None = None
+    wave_e: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         out = {
@@ -290,6 +297,8 @@ class EvaluationResult:
         }
         if self.wave_d is not None:
             out["wave_d"] = dict(self.wave_d)
+        if self.wave_e is not None:
+            out["wave_e"] = dict(self.wave_e)
         return out
 
 

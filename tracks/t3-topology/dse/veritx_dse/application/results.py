@@ -93,14 +93,20 @@ def load_verified_intent(store: Any, intent_id: str) -> dict[str, Any]:
 
 
 def load_verified_design(store: Any, design_id: str) -> dict[str, Any]:
-    """Design ID + intent link + recompiled semantic hashes."""
+    """Design ID + recompiled semantic hashes.
+
+    Design identity is content-addressed by its semantic hashes; the
+    intent that produced it is NOT part of the record (two intents
+    compiling identical fabric share one design resource — only plans
+    differ). The design-to-intent link lives on the plan, verified
+    there.
+    """
     from .compile import compile_bundle
     from veritx_dse.model.compile_model import CompileRequest
     record = _get(store, "design", design_id)
     check_envelope(record, "design")
     _require_id("design", design_id, record)
     recomputed = _content_id("srota-design/v1", {
-        "intent_id": record.get("intent_id"),
         "design_hash": record.get("design_hash"),
         "mapping_hash": record.get("mapping_hash"),
         "fabric_hash": record.get("fabric_hash"),
@@ -110,7 +116,6 @@ def load_verified_design(store: Any, design_id: str) -> dict[str, Any]:
             ErrorCode.EVIDENCE_INVALID,
             f"design {design_id} recomputes to {recomputed}: forged",
             operation="verify_resource", resource_id=design_id)
-    load_verified_intent(store, record.get("intent_id"))
     try:
         compile_request = CompileRequest.from_dict(
             record.get("compile_request"))
@@ -240,6 +245,8 @@ def load_verified_plan(store: Any, plan_id: str) -> dict[str, Any]:
     }
     if record.get("wave_d") is not None:
         body["wave_d"] = record.get("wave_d")
+    if record.get("wave_e") is not None:
+        body["wave_e"] = record.get("wave_e")
     recomputed = _content_id("srota-plan/v1", body)
     if recomputed != plan_id:
         raise ControlPlaneError(
@@ -248,6 +255,8 @@ def load_verified_plan(store: Any, plan_id: str) -> dict[str, Any]:
             operation="verify_resource", resource_id=plan_id)
     design = load_verified_design(store, record.get("design_id"))
     workload = load_verified_workload(store, record.get("workload_id"))
+    if record.get("wave_e") is not None:
+        _verify_plan_wave_e(store, record, plan_id)
     if record.get("wave_d") is not None:
         from .waved_resources import (
             load_verified_traffic, waved_chain_ids_from_traffic,
@@ -258,8 +267,8 @@ def load_verified_plan(store: Any, plan_id: str) -> dict[str, Any]:
                        waved_chain_ids_from_traffic(traffic), plan_id)
         _require_equal("workload.wave_d", workload.get("wave_d"),
                        record["wave_d"], plan_id)
-    _require_equal("plan.intent_id", record.get("intent_id"),
-                   design.get("intent_id"), plan_id)
+    # The design link is content-addressed; intent binding is on the
+    # plan itself (verified via load_verified_intent on the intent_id).
     _require_equal("plan.design_hash", record.get("design_hash"),
                    design.get("design_hash"), plan_id)
     _require_equal("plan.mapping_hash", record.get("mapping_hash"),
@@ -278,6 +287,52 @@ def load_verified_plan(store: Any, plan_id: str) -> dict[str, Any]:
     _require_equal("plan.lowerer_version", record.get("lowerer_version"),
                    lowerer, plan_id)
     return record
+
+
+def _verify_plan_wave_e(store: Any, record: dict[str, Any],
+                        plan_id: str) -> None:
+    """A plan's Wave-E binding must resolve to a verified overlay.
+
+    Plan identity hashes the block, but that only proves the plan is
+    self-consistent: without resolving the parent, a plan could bind a
+    temporal workload that does not exist, or whose model is not the
+    one it names, or that schedules communication this workload's
+    operation graph never performs.
+    """
+    from .wave_e_resources import (
+        PLAN_WAVE_E_KEYS, load_verified_wave_e_workload,
+    )
+    wave_e = record["wave_e"]
+    if not isinstance(wave_e, dict) or \
+            set(wave_e) != set(PLAN_WAVE_E_KEYS):
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"plan {plan_id} wave_e binding has the wrong field set",
+            operation="verify_resource", resource_id=plan_id)
+    if record.get("wave_d") is None:
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"plan {plan_id} binds Wave-E timing without a Wave-D chain: "
+            "timing cannot stand without its communication parents",
+            operation="verify_resource", resource_id=plan_id)
+    overlay = load_verified_wave_e_workload(
+        store, wave_e["temporal_workload_id"])
+    _require_equal("plan.wave_e.performance_model_id",
+                   wave_e["performance_model_id"],
+                   overlay.performance_model.performance_model_id(),
+                   plan_id)
+    from .waved_resources import load_verified_operation_graph
+    graph = load_verified_operation_graph(
+        store, record["wave_d"]["operation_graph_id"])
+    graph_ids = {n.operation_id for n in graph.nodes}
+    unknown = sorted(set(overlay.declared_wave_d_operation_ids())
+                     - graph_ids)
+    if unknown:
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"plan {plan_id} temporal overlay schedules Wave-D operations "
+            f"{unknown} that are not in the plan's operation graph",
+            operation="verify_resource", resource_id=plan_id)
 
 
 def load_verified_experiment(store: Any,
@@ -488,6 +543,19 @@ def load_verified_result(store: Any, result_id: str, *,
                        evidence.get(evidence_key), result_id)
     if plan.get("wave_d") is not None or result.get("wave_d") is not None:
         _verify_waved_result(store, result, plan, evidence, result_id)
+    if plan.get("wave_e") is not None or result.get("wave_e") is not None:
+        from .wave_e_resources import verify_wave_e_result_block
+        verify_wave_e_result_block(
+            store,
+            result.get("wave_e") or {},
+            plan.get("wave_e"),
+            plan.get("wave_d"),
+            result.get("wave_d"),
+            evidence,
+            (result.get("evidence_ref") or {}).get("sha256"),
+            result.get("backend_config_hash"),
+            result.get("backend_input_hash"),
+            result_id)
     return result
 
 

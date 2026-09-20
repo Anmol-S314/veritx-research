@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from veritx_dse.core.runs import new_run_id
+from veritx_dse.wavee.workload import EVENT_NETWORK_OPERATION_REF
 
 from .compile import compile_bundle
 from .comparison import (
@@ -139,6 +140,7 @@ class SrotaControlPlane:
             waved_workload_record,
         )
         workload_decl = intent.workload.wave_d
+        wave_e_decl = intent.workload.wave_e
         request_dict = self._derive_request(intent)
         try:
             compile_request = CompileRequest.from_dict(request_dict)
@@ -199,11 +201,42 @@ class SrotaControlPlane:
                     "waved_workload_id": workload_decl.workload_id()},
             wave_d=chain)
         self._store_workload(workload)
+        wave_e = None
+        if wave_e_decl is not None:
+            # §8/§15: the temporal overlay may only cite operations that
+            # exist in THIS workload's compiled operation graph — the
+            # overlay references Wave-D semantics, it never invents them.
+            graph_ids = {n.operation_id for n in graph.nodes}
+            cited = set(wave_e_decl.declared_wave_d_operation_ids())
+            unknown_ops = sorted(cited - graph_ids)
+            if unknown_ops:
+                raise intent_error(
+                    f"wave_e temporal overlay cites Wave-D operations "
+                    f"{unknown_ops} that are not in the compiled "
+                    f"operation graph: refusing an overlay that "
+                    f"references communication this workload does not "
+                    f"perform (§8)",
+                    operation="compile")
+            # Persist the temporal workload BEFORE anything depends on
+            # its identity (same rule as the Wave-D chain), then bind
+            # the minimal Wave-E parents into the plan (§69).
+            from .wave_e_resources import wave_e_workload_record
+            self.store.put("waveeworkload",
+                           wave_e_decl.temporal_workload_id(),
+                           wave_e_workload_record(wave_e_decl))
+            wave_e = {
+                "temporal_workload_id":
+                    wave_e_decl.temporal_workload_id(),
+                "performance_model_id":
+                    wave_e_decl.performance_model.
+                    performance_model_id(),
+            }
         return {
             "design": design.to_dict(),
             "workload": workload.to_dict(),
             "bundle_hashes": bundle.root_hashes(),
             "wave_d": chain,
+            "wave_e": wave_e,
         }
 
     @staticmethod
@@ -257,6 +290,9 @@ class SrotaControlPlane:
         self._store_intent(intent)
         self.store.put("design", design_id, design.to_dict())
         self._store_workload(workload)
+        # Sealed Wave-D shape: a legacy workload carries NO wave_d/wave_e
+        # key at all. Wave E must not leak an explicit-null marker into
+        # the legacy path (the Wave-D seal pins the absence).
         return {
             "design": design.to_dict(),
             "workload": workload.to_dict(),
@@ -467,6 +503,7 @@ class SrotaControlPlane:
         design = compiled["design"]
         workload = compiled["workload"]
         wave_d = compiled.get("wave_d")
+        wave_e = compiled.get("wave_e")
         self._require_executable(intent)
         profile = BOOKSIM_STANDALONE_PROFILE
         semantics = BOOKSIM_BACKEND_SEMANTICS_VERSION
@@ -491,6 +528,10 @@ class SrotaControlPlane:
             # share an experiment identity merely because rendered
             # BookSim bytes coincide (§16).
             body["wave_d"] = dict(wave_d)
+        if wave_e is not None:
+            # Two different timing models may never share a plan
+            # identity because their Wave-D traffic is identical (§69).
+            body["wave_e"] = dict(wave_e)
         plan_id = _content_id("srota-plan/v1", body)
         plan = EvaluationPlan(
             plan_id=plan_id, intent_id=intent.intent_id(),
@@ -508,10 +549,11 @@ class SrotaControlPlane:
             seed=intent.seed, seed_policy=intent.seed_policy(),
             metric_ids=intent.metrics,
             metric_schema_version=METRIC_SCHEMA_VERSION,
-            wave_d=wave_d)
+            wave_d=wave_d, wave_e=wave_e)
         self.store.put("plan", plan_id, plan.to_dict())
         return {"plan": plan.to_dict(), "design": design,
-                "workload": workload, "wave_d": wave_d}
+                "workload": workload, "wave_d": wave_d,
+                "wave_e": wave_e}
 
     @staticmethod
     def _require_executable(intent: Intent) -> None:
@@ -595,6 +637,7 @@ class SrotaControlPlane:
         planned = self._plan_resolved(intent, None, trace_source)
         plan = planned["plan"]
         chain = plan["wave_d"]
+        wave_e_plan = plan.get("wave_e")
         traffic, _ = load_verified_traffic(
             self.store, chain["physical_traffic_id"])
         summary = assert_waved_ready(traffic)
@@ -622,7 +665,12 @@ class SrotaControlPlane:
                     "drain_verdict"),
             }
             verify_backend_quiescence(summary, counters)
-            return evidence, waved_execution_block(chain, summary, counters)
+            extra = waved_execution_block(chain, summary, counters)
+            if wave_e_plan is not None:
+                extra["_wave_e_evidence"] = evidence
+                extra["_wave_e_traffic"] = traffic
+                extra["_wave_e_summary"] = summary
+            return evidence, extra
 
         return self._execute_attempt(plan, planned, experiment, intent,
                                      execute=execute)
@@ -686,9 +734,18 @@ class SrotaControlPlane:
                 exc, operation="evaluate",
                 attempt_id=attempt_id) from exc
         ref = write_evidence(attempt_dir, evidence.to_dict())
+        # The private _wave_e_* keys carry live objects (evidence,
+        # traffic, summary) for Wave-E derivation; they are never
+        # persisted inside the wave_d block.
+        wave_e_extra = None
+        if extra.get("_wave_e_evidence") is not None:
+            wave_e_extra = extra
+        wave_d_block = {k: v for k, v in extra.items()
+                        if not k.startswith("_wave_e_")} or None
         result = self._build_result(
             plan, planned, experiment, attempt_id, attempt_dir, evidence,
-            producer, ref, reused=False, wave_d_execution=extra or None)
+            producer, ref, reused=False, wave_d_execution=wave_d_block,
+            wave_e_extra=wave_e_extra)
         self._persist_success(experiment, attempt_id, attempt_dir,
                               producer, runtime, ref, result)
         return result.to_dict()
@@ -802,9 +859,12 @@ class SrotaControlPlane:
                       experiment: ExperimentRecord, attempt_id: str,
                       attempt_dir: Path, evidence: Any, producer: Any,
                       ref: Any, *, reused: bool,
-                      wave_d_execution: dict[str, Any] | None = None
+                      wave_d_execution: dict[str, Any] | None = None,
+                      wave_e_extra: dict[str, Any] | None = None
                       ) -> EvaluationResult:
         from .results import loss_digest_of
+        wave_e_block = self._derive_wave_e_block(
+            plan, planned, evidence, ref, wave_e_extra)
         metrics = []
         for metric_id in plan["metric_ids"]:
             definition = get_metric_definition(metric_id)
@@ -861,7 +921,117 @@ class SrotaControlPlane:
             producer=producer.identity_dict(),
             seed=evidence.seed, seed_policy=evidence.seed_policy,
             reused=reused,
-            wave_d=wave_d_execution)
+            wave_d=wave_d_execution, wave_e=wave_e_block)
+
+    def _derive_wave_e_block(self, plan: dict[str, Any],
+                             planned: dict[str, Any], evidence: Any,
+                             ref: Any,
+                             wave_e_extra: dict[str, Any] | None
+                             ) -> dict[str, Any] | None:
+        """Derive the verified Wave-E timing block from REAL evidence.
+
+        The §70 evaluation chain, in order: load/verify the temporal
+        workload from the store, bind the network window to THIS run's
+        authenticated evidence, schedule deterministically, derive the
+        performance result, and hand back the result-level block.
+        Every number is re-derivable; nothing is transcribed (§74).
+        """
+        wave_e_plan = plan.get("wave_e")
+        if wave_e_plan is None:
+            if wave_e_extra is not None:
+                raise internal_error(
+                    "execution produced Wave-E payload without a plan "
+                    "binding", operation="evaluate")
+            return None
+        from .wave_e_resources import (
+            RESULT_WAVE_E_KEYS, load_verified_wave_e_workload,
+            wave_e_result_block,
+        )
+        workload = load_verified_wave_e_workload(
+            self.store, wave_e_plan["temporal_workload_id"])
+        if workload.performance_model.performance_model_id() \
+                != wave_e_plan["performance_model_id"]:
+            raise internal_error(
+                "temporal workload's model does not match the plan "
+                "binding", operation="evaluate")
+
+        # ── network seam: bind THIS run's evidence (§36–§42) ────────
+        net_binding_doc = None
+        network_durations = None
+        chain = plan["wave_d"]
+        if wave_e_extra is not None:
+            from veritx_dse.wavee.model import NETWORK_TIMING_BOOKSIM
+            from veritx_dse.wavee.network import (
+                NetworkWindowBinding, bind_network_window,
+            )
+            run_evidence = wave_e_extra["_wave_e_evidence"]
+            run_summary = wave_e_extra["_wave_e_summary"]
+            model = workload.performance_model
+            if model.network_timing_model != NETWORK_TIMING_BOOKSIM:
+                raise ControlPlaneError(
+                    ErrorCode.UNSUPPORTED_SEMANTICS,
+                    "a BookSim-backed evaluation requires the temporal "
+                    "workload's network_timing_model to be "
+                    f"{NETWORK_TIMING_BOOKSIM}; got "
+                    f"{model.network_timing_model!r}",
+                    operation="evaluate")
+            clock_hz = model.clock_hz(model.network_clock) \
+                if model.network_clock else None
+            if clock_hz is None:
+                raise ControlPlaneError(
+                    ErrorCode.UNSUPPORTED_SEMANTICS,
+                    "network timing requires an explicit network clock "
+                    "in the performance model (§37: never guess a "
+                    "frequency)",
+                    operation="evaluate")
+            # expected_packets comes from the Wave-D traffic summary
+            # (quiescence-proven in execute()); bind_network_window
+            # re-proves the evidence belongs to this traffic (§42).
+            binding, window = bind_network_window(
+                evidence=run_evidence,
+                evidence_sha256=ref.sha256,
+                chain={
+                    "operation_graph_id":
+                        chain["operation_graph_id"],
+                    "physical_traffic_id":
+                        chain["physical_traffic_id"],
+                    "backend_config_hash":
+                        run_evidence.backend_config_hash,
+                    "backend_input_hash":
+                        run_evidence.backend_input_hash,
+                },
+                network_clock_hz=clock_hz,
+                expected_packets=run_summary["num_packets"])
+            net_binding_doc = binding.to_dict()
+            # §39 barrier-window rule: EVERY NETWORK_OPERATION_REF gets
+            # the same evidence-bound window duration.
+            network_durations = {
+                e.event_id: window for e in workload.events
+                if e.kind == EVENT_NETWORK_OPERATION_REF}
+
+        # ── deterministic schedule over verified inputs ─────────────
+        from veritx_dse.wavee.result import (
+            WaveEEventGraph, build_performance_result,
+        )
+        from veritx_dse.wavee.scheduler import schedule_workload
+        egraph = WaveEEventGraph(
+            workload=workload,
+            network_binding=(NetworkWindowBinding.from_dict(
+                net_binding_doc) if net_binding_doc else None),
+            wave_d_chain=dict(chain))
+        schedule = schedule_workload(
+            workload, network_durations=network_durations)
+        perf = build_performance_result(graph=egraph, schedule=schedule)
+        from .wave_e_resources import wave_e_metrics_warning
+        metrics_warning = wave_e_metrics_warning(
+            workload.performance_model)
+        block = wave_e_result_block(
+            workload=workload, performance_result=perf,
+            wave_d_chain=dict(chain), metrics_warning=metrics_warning)
+        if set(block) != set(RESULT_WAVE_E_KEYS):  # pragma: no cover
+            raise internal_error(
+                "wave_e block key set drifted", operation="evaluate")
+        return block
 
     def _persist_success(self, experiment: ExperimentRecord,
                          attempt_id: str, attempt_dir: Path, producer: Any,

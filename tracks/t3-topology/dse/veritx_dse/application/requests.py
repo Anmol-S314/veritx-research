@@ -57,7 +57,7 @@ def _strict_keys(d: dict[str, Any], allowed: frozenset[str]) -> None:
 class WorkloadRef:
     """Workload reference with resolved content identity.
 
-    Two mutually exclusive provenance kinds:
+    Provenance kinds:
 
     * legacy packet trace (``trace``/``trace_file``): the bytes are the
       ground truth and ``trace_sha256`` is the content digest; no Wave-D
@@ -65,6 +65,10 @@ class WorkloadRef:
     * explicit Wave-D semantic workload (``wave_d``): the declared
       operations are the ground truth and ``wave_d.workload_id()`` is
       the content digest. The BookSim trace is DERIVED from it.
+    * optional Wave-E temporal overlay (``wave_e``): an explicit
+      WaveETemporalWorkload layered OVER a Wave-D workload — it adds
+      WHEN (events/resources/requests) but owns no communication
+      semantics (§8: never retrofit compute into Wave D).
 
     The filesystem path (for ``trace_file``) is transport metadata and
     never enters identity; the bytes always do. An intent without a
@@ -75,6 +79,7 @@ class WorkloadRef:
     trace_file: str | None = None
     trace_sha256: str | None = None
     wave_d: Any = None          # WaveDWorkload | None
+    wave_e: Any = None          # WaveETemporalWorkload | None
 
     @property
     def workload_kind(self) -> str:
@@ -83,7 +88,10 @@ class WorkloadRef:
 
     def identity_dict(self) -> dict[str, Any]:
         if self.wave_d is not None:
-            return {"wave_d": self.wave_d.workload_id()}
+            body = {"wave_d": self.wave_d.workload_id()}
+            if self.wave_e is not None:
+                body["wave_e"] = self.wave_e.temporal_workload_id()
+            return body
         return {"trace": self.trace, "trace_sha256": self.trace_sha256}
 
 
@@ -152,6 +160,13 @@ class Intent:
                 "semantics": w.semantics.to_dict(),
                 "operations": [op.to_dict() for op in w.operations],
             }
+        if self.workload.wave_e is not None:
+            from veritx_dse.wavee.workload import WaveETemporalWorkload
+            we = self.workload.wave_e
+            if not isinstance(we, WaveETemporalWorkload):
+                raise ValueError(
+                    "workload.wave_e must be a WaveETemporalWorkload")
+            workload["wave_e"] = we.to_dict()
         d["workload"] = workload
         return d
 
@@ -192,11 +207,28 @@ class Intent:
             if not isinstance(workload_raw, dict):
                 raise ValueError("intent.workload must be an object")
             _strict_keys(workload_raw, frozenset(
-                {"trace", "trace_file", "trace_sha256", "wave_d"}))
+                {"trace", "trace_file", "trace_sha256", "wave_d",
+                 "wave_e"}))
             trace = workload_raw.get("trace")
             trace_file = workload_raw.get("trace_file")
             digest = workload_raw.get("trace_sha256")
             wave_d_doc = workload_raw.get("wave_d")
+            wave_e_doc = workload_raw.get("wave_e")
+            if wave_e_doc is not None:
+                if wave_d_doc is None:
+                    raise ValueError(
+                        "intent.workload.wave_e requires workload.wave_d: "
+                        "a temporal overlay extends Wave-D semantics, it "
+                        "never replaces them (§8)")
+                from veritx_dse.wavee.workload import WaveETemporalWorkload
+                try:
+                    wave_e = WaveETemporalWorkload.from_dict(wave_e_doc)
+                except Exception as exc:
+                    raise ValueError(
+                        f"intent.workload.wave_e does not parse: {exc}") \
+                        from exc
+            else:
+                wave_e = None
             if wave_d_doc is not None:
                 if trace is not None or trace_file is not None \
                         or digest is not None:
@@ -257,7 +289,8 @@ class Intent:
                 schema_version=version, name=name, fabric_preset=preset,
                 fabric_overrides=tuple(sorted(raw_overrides.items())),
                 workload=WorkloadRef(trace=trace, trace_file=trace_file,
-                                     trace_sha256=digest, wave_d=wave_d),
+                                     trace_sha256=digest, wave_d=wave_d,
+                                     wave_e=wave_e),
                 backend_target=backend, seed=seed,
                 metrics=tuple(raw_metrics), timeout_s=timeout)
         except (ValueError, KeyError) as exc:
