@@ -266,7 +266,11 @@ def _service(*, store_root: str | Path | None = None,
 
 
 def _service_out(op: str, payload: dict[str, Any]) -> dict[str, Any]:
-    return _ok(status="OK", op=op, **_strip_host_paths(_jsonable(payload)))
+    # Service payloads carry their own typed "status" (SUCCEEDED, ...),
+    # so they nest under "result" instead of colliding with the
+    # envelope status.
+    return _ok(status="OK", op=op,
+               result=_strip_host_paths(_jsonable(payload)))
 
 
 def _service_error(op: str, exc: Exception) -> dict[str, Any]:
@@ -318,6 +322,70 @@ def service_inspect(resource_id: str, *, store_root=None) -> dict:
             _service(store_root=store_root).inspect(resource_id))
     except Exception as exc:
         return _service_error("service_inspect", exc)
+
+
+def service_validate(request: dict[str, Any], *, store_root=None) -> dict:
+    """Validate intent (pure; no compile, no execution)."""
+    try:
+        return _service_out(
+            "service_validate",
+            _service(store_root=store_root).validate(request))
+    except Exception as exc:
+        return _service_error("service_validate", exc)
+
+
+def service_plan(request: dict[str, Any], *, store_root=None) -> dict:
+    """Plan intent to an EvaluationPlan (no execution)."""
+    try:
+        return _service_out(
+            "service_plan",
+            _service(store_root=store_root).plan(request))
+    except Exception as exc:
+        return _service_error("service_plan", exc)
+
+
+def service_study(request: dict[str, Any], *, store_root=None,
+                  repo=None, binary=None) -> dict:
+    """Run a study over candidate intents."""
+    try:
+        return _service_out(
+            "service_study",
+            _service(store_root=store_root, repo=repo,
+                     binary=binary).run_study(request))
+    except Exception as exc:
+        return _service_error("service_study", exc)
+
+
+def service_capabilities(*, store_root=None) -> dict:
+    """Derived backend capabilities."""
+    try:
+        return _service_out(
+            "service_capabilities",
+            _service(store_root=store_root).capabilities())
+    except Exception as exc:
+        return _service_error("service_capabilities", exc)
+
+
+def service_diagnose(*, store_root=None, repo=None,
+                     binary=None) -> dict:
+    """Operational health (no experiment)."""
+    try:
+        return _service_out(
+            "service_diagnose",
+            _service(store_root=store_root, repo=repo,
+                     binary=binary).diagnose())
+    except Exception as exc:
+        return _service_error("service_diagnose", exc)
+
+
+def service_list(*, store_root=None, limit=None) -> dict:
+    """List persisted results (capped index)."""
+    try:
+        return _service_out(
+            "service_list",
+            _service(store_root=store_root).list_results(limit=limit))
+    except Exception as exc:
+        return _service_error("service_list", exc)
 
 
 # ── Synthesis ──────────────────────────────────────────────────────────────

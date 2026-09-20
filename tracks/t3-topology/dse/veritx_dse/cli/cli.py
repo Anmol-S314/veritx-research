@@ -65,8 +65,10 @@ from .pipeline import (
     list_runs, show_results, diff_runs, generate_latex,
 )
 from .service_cli import (
-    cmd_service_compare, cmd_service_compile, cmd_service_evaluate,
-    cmd_service_inspect,
+    cmd_service_capabilities, cmd_service_compare, cmd_service_compile,
+    cmd_service_diagnose, cmd_service_evaluate, cmd_service_inspect,
+    cmd_service_list, cmd_service_plan, cmd_service_study,
+    cmd_service_validate,
 )
 
 
@@ -4169,9 +4171,10 @@ def build_parser() -> argparse.ArgumentParser:
     for _sn, _sm in COMMANDS["service"]["subcommands"].items():
         _svc_ps[_sn] = svcs.add_parser(_sn, help=_sm["help"])
 
-    for _sn in ("compile", "evaluate", "compare"):
+    for _sn in ("compile", "validate", "plan", "evaluate", "study",
+                "compare"):
         _svc_ps[_sn].add_argument("--request", required=True,
-                                   help="Intent/compare request JSON file")
+                                   help="Intent/study/compare request file")
         _svc_ps[_sn].add_argument("--store", default=None,
                                    help="Control-plane store root")
     _svc_ps["evaluate"].add_argument("--repo", default=None,
@@ -4182,6 +4185,11 @@ def build_parser() -> argparse.ArgumentParser:
                                        help="Stable resource ID")
     _svc_ps["inspect"].add_argument("--store", default=None,
                                        help="Control-plane store root")
+    for _sn in ("capabilities", "diagnose", "list"):
+        _svc_ps[_sn].add_argument("--store", default=None,
+                                   help="Control-plane store root")
+    _svc_ps["list"].add_argument("--limit", type=int, default=None,
+                                    help="Row cap")
 
     return parser
 
@@ -4466,15 +4474,33 @@ COMMANDS = {
         "compile": {"help": "Compile intent to design (no execution)",
                       "t3_mode": "forward",
                       "handler": cmd_service_compile},
+        "validate": {"help": "Validate intent (pure, no execution)",
+                       "t3_mode": "forward",
+                       "handler": cmd_service_validate},
+        "plan": {"help": "Plan intent to an EvaluationPlan",
+                   "t3_mode": "forward",
+                   "handler": cmd_service_plan},
         "evaluate": {"help": "Evaluate intent to a typed result",
                        "t3_mode": "forward",
                        "handler": cmd_service_evaluate},
+        "study": {"help": "Run a study over candidate intents",
+                    "t3_mode": "forward",
+                    "handler": cmd_service_study},
         "compare": {"help": "Gated comparison of two results",
                       "t3_mode": "forward",
                       "handler": cmd_service_compare},
         "inspect": {"help": "Inspect a resource by stable ID",
                       "t3_mode": "forward",
                       "handler": cmd_service_inspect},
+        "capabilities": {"help": "Derived backend capabilities",
+                           "t3_mode": "forward",
+                           "handler": cmd_service_capabilities},
+        "diagnose": {"help": "Operational health (no experiment)",
+                       "t3_mode": "forward",
+                       "handler": cmd_service_diagnose},
+        "list": {"help": "List persisted results",
+                   "t3_mode": "forward",
+                   "handler": cmd_service_list},
     }},
     "api": {"help": "Agent-safe semantic API surface (Phase 17): structured "
                     "results, errors-as-data, declared budgets",

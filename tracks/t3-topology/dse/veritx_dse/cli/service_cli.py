@@ -30,8 +30,10 @@ def _service_from_args(args: Any):
 
 def _emit_ok(ctx: Any, payload: dict[str, Any]) -> None:
     from ..core.logging import emit
-    emit(ctx, json.dumps({"status": "OK", **payload}, indent=2,
-                         sort_keys=True))
+    # Service payloads carry their own typed "status"; nest under
+    # "result" so the envelope status stays transport-level.
+    emit(ctx, json.dumps({"status": "OK", "result": payload},
+                         indent=2, sort_keys=True))
 
 
 def _emit_error(ctx: Any, exc: BaseException) -> None:
@@ -102,9 +104,81 @@ def cmd_service_inspect(ctx: Any, args: Any):
     _emit_ok(ctx, out)
 
 
+def cmd_service_validate(ctx: Any, args: Any):
+    """Validate intent (pure; no compile, no execution)."""
+    try:
+        service = _service_from_args(args)
+        out = service.validate(_load_request(args))
+    except Exception as exc:
+        _emit_error(ctx, exc)
+        return
+    _emit_ok(ctx, out)
+
+
+def cmd_service_plan(ctx: Any, args: Any):
+    """Plan intent -> EvaluationPlan (no execution)."""
+    try:
+        service = _service_from_args(args)
+        out = service.plan(_load_request(args))
+    except Exception as exc:
+        _emit_error(ctx, exc)
+        return
+    _emit_ok(ctx, out)
+
+
+def cmd_service_study(ctx: Any, args: Any):
+    """Run a study (sequential candidates + optional comparisons)."""
+    try:
+        service = _service_from_args(args)
+        out = service.run_study(_load_request(args))
+    except Exception as exc:
+        _emit_error(ctx, exc)
+        return
+    _emit_ok(ctx, out)
+
+
+def cmd_service_capabilities(ctx: Any, args: Any):
+    """Show the derived capability registry."""
+    try:
+        service = _service_from_args(args)
+        out = service.capabilities()
+    except Exception as exc:
+        _emit_error(ctx, exc)
+        return
+    _emit_ok(ctx, out)
+
+
+def cmd_service_diagnose(ctx: Any, args: Any):
+    """Operational health (no experiment)."""
+    try:
+        service = _service_from_args(args)
+        out = service.diagnose()
+    except Exception as exc:
+        _emit_error(ctx, exc)
+        return
+    _emit_ok(ctx, out)
+
+
+def cmd_service_list(ctx: Any, args: Any):
+    """List persisted results (capped index)."""
+    try:
+        service = _service_from_args(args)
+        out = service.list_results(limit=args.limit)
+    except Exception as exc:
+        _emit_error(ctx, exc)
+        return
+    _emit_ok(ctx, out)
+
+
 __all__ = [
+    "cmd_service_capabilities",
     "cmd_service_compare",
     "cmd_service_compile",
+    "cmd_service_diagnose",
     "cmd_service_evaluate",
     "cmd_service_inspect",
+    "cmd_service_list",
+    "cmd_service_plan",
+    "cmd_service_study",
+    "cmd_service_validate",
 ]
