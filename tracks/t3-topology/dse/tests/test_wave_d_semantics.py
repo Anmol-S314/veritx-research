@@ -1,11 +1,11 @@
 """Wave D1/D3/D4 proof tests — rank space, groups, collectives,
 packetization, flitization.
 
-Methods (§67): algebraic exact checks, bounded exhaustive enumeration,
+Methods (§25): algebraic exact checks, bounded exhaustive enumeration,
 independent-oracle differential checks, Hypothesis property tests.
 
 The oracles in ``veritx_dse.waved.oracles`` are structurally independent
-of the production code (§68): they import nothing from it and the
+of the production code (§26): they import nothing from it and the
 production modules import nothing from them outside tests.
 """
 from __future__ import annotations
@@ -243,7 +243,7 @@ class TestMessageLoweringDifferential:
         assert l1.message_artifact_id() != l2.message_artifact_id()
 
     def test_message_artifact_id_changes_with_schedule(self):
-        # §60: collective algorithm change → schedule identity changes.
+        # §23.6: collective algorithm change → schedule identity changes.
         pa = ParallelismArtifact(tp=1, pp=1, ep=1, dp=2)
         g = _graph_for(pa, collectives=(
             CollectiveIntent("ALLREDUCE", (0, 1), 512, "c0"),))
@@ -254,11 +254,11 @@ class TestMessageLoweringDifferential:
         assert l1.message_artifact_id() != l2.message_artifact_id()
 
 
-# ══ §34/§35/§37 packet/flit exactness + non-byte-aligned ════════════════
+# ══ §34/§18/§19 packet/flit exactness + non-byte-aligned ════════════════
 
 class TestPacketFlitExactness:
     def test_regression_f65_h1(self):
-        # §37: F=65, H=1, Q=64, P_i=100 → n=2, padding=28, tx=130
+        # §19: F=65, H=1, Q=64, P_i=100 → n=2, padding=28, tx=130
         n, padding, tx = ref_flitize(100, 64, 1, 65)
         assert (n, padding, tx) == (2, 28, 130)
 
@@ -293,7 +293,7 @@ class TestPacketFlitExactness:
             assert packetize_message(bits, pf) == ref_packetize(bits, 57, 8)
 
 
-# ══ Hypothesis property tests (§43) ═════════════════════════════════════
+# ══ Hypothesis property tests (§29) ═════════════════════════════════════
 
 class TestProperties:
     @settings(max_examples=200, deadline=None)
@@ -344,7 +344,7 @@ class TestProperties:
         assert ref["source_payload"] == B
 
 
-# ══ Mutation/adversarial (§42) — identity/conservation layer ════════════
+# ══ Mutation/adversarial (§30) — identity/conservation layer ════════════
 
 class TestMutations:
     def _one_coll_graph(self, B=512):
@@ -387,7 +387,7 @@ class TestMutations:
             MulticastIntent(0, (1, 1), 64, "SOURCE_REPLICATION", "m0")
 
     def test_deleted_multicast_destination_changes_identity(self):
-        # A "deleted destination" is a DIFFERENT workload (§42): the
+        # A "deleted destination" is a DIFFERENT workload (§30): the
         # artifact stays self-consistent but its identity must change —
         # a tampered persisted copy is caught by the hash check, a
         # semantically different intent by the id.

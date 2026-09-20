@@ -1,4 +1,4 @@
-"""Wave-D persisted-resource authenticity (§56).
+"""Wave-D persisted-resource authenticity (§22).
 
 Every persisted Wave-D artifact verifies its embedded identity against
 the recomputed canonical-content identity on load: the Wave-C
@@ -16,7 +16,9 @@ import pytest
 DSE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(DSE))
 
-from veritx_dse.waved.errors import InvalidInput  # noqa: E402
+from veritx_dse.waved.errors import (  # noqa: E402
+    EvidenceInvalid, InvalidInput,
+)
 from veritx_dse.waved.messages import LogicalMessageArtifact  # noqa: E402
 from veritx_dse.waved.operations import (  # noqa: E402
     KIND_COLLECTIVE, KIND_P2P, CollectiveIntent, OperationGraph,
@@ -159,13 +161,21 @@ class TestOperationGraphAuthenticity:
         assert g1.operation_graph_id() != g2.operation_graph_id()
 
     def test_message_artifact_binds_graph_id(self):
-        lm = LogicalMessageArtifact(graph=_graph())
+        graph = _graph()
+        lm = LogicalMessageArtifact(graph=graph)
         d = lm.to_dict()
-        assert d["operation_graph_id"] == _graph().operation_graph_id()
-        # Tampering the parent in the persisted record is detectable by
-        # rebuilding from the (tampered) parent: ids diverge.
+        assert d["operation_graph_id"] == graph.operation_graph_id()
+        # A transplanted parent ID is refused by the REAL strict parser
+        # (rebuilding from the supplied verified parent), not merely
+        # observed to differ from some other identity domain.
         tampered = dict(d)
         tampered["operation_graph_id"] = "sha256:" + "f" * 64
-        assert tampered["operation_graph_id"] \
-            != LogicalMessageArtifact(
-                graph=_graph()).message_artifact_id()
+        with pytest.raises(InvalidInput):
+            LogicalMessageArtifact.from_dict(tampered, graph=graph,
+                                             strict=True)
+        # And a tampered message row is refused too.
+        forged = {**d, "messages": [dict(m) for m in d["messages"]]}
+        forged["messages"][0]["payload_bytes"] += 8
+        with pytest.raises(EvidenceInvalid):
+            LogicalMessageArtifact.from_dict(forged, graph=graph,
+                                             strict=True)
