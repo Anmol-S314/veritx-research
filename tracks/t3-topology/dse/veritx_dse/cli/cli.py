@@ -3838,28 +3838,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_td.add_argument("--booksim-flit-bytes", type=int, default=64,
                       help="Flit size in bytes for the booksim leg (default: 64)")
 
-    # certify
-    p_cert = _top_ps["certify"]
-    cs = p_cert.add_subparsers(dest=_SUB_DESTS["certify"])
-
-    _cert_ps = {}
-    for _sn, _sm in COMMANDS["certify"]["subcommands"].items():
-        _cert_ps[_sn] = cs.add_parser(_sn, help=_sm["help"])
-
-    p_flow = _cert_ps["flow"]
+    # certify (Wave C.2 legacy: RTL/flow re-entry deferred to B3.6R/B3.8-HW)
+    p_flow = _legacy_ps["certify-flow"]
     p_flow.add_argument("--model", required=True)
     p_flow.add_argument("--topo", required=True)
     p_flow.add_argument("--timeout", type=int, default=None,
                         help="Subprocess timeout in seconds (default: VERITX_TIMEOUT or 300)")
 
-    p_rtl = _cert_ps["rtl"]
+    p_rtl = _legacy_ps["certify-rtl"]
     p_rtl.add_argument("--topo", required=True)
     p_rtl.add_argument("--build-dir", default=".")
     p_rtl.add_argument("--tier", default="quick", choices=["quick", "full"])
     p_rtl.add_argument("--timeout", type=int, default=None,
                        help="Subprocess timeout in seconds (default: VERITX_TIMEOUT or 600)")
 
-    p_full = _cert_ps["full"]
+    p_full = _legacy_ps["certify-full"]
     p_full.add_argument("--model", required=True)
     p_full.add_argument("--topo", required=True)
     p_full.add_argument("--build-dir", default=".")
@@ -4109,7 +4102,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_uvm.add_argument("--nodes", type=int, default=DEFAULT_NODES, help="Number of network nodes")
     p_uvm.add_argument("--k", type=int, default=DEFAULT_K, help="Mesh dimension (sqrt of nodes)")
 
-    # ── api ───────────────────────────────────────────────────────
+    # ── api (Wave C.2): thin alias over the control-plane service ──
+    # Every subcommand shares the cmd_service_* handlers: `veritx api X`
+    # is exactly `veritx service X`. The pre-Wave-C api handlers moved to
+    # `veritx legacy api-*` below.
     p_api = _top_ps["api"]
     apis = p_api.add_subparsers(dest=_SUB_DESTS["api"])
 
@@ -4117,44 +4113,47 @@ def build_parser() -> argparse.ArgumentParser:
     for _sn, _sm in COMMANDS["api"]["subcommands"].items():
         _api_ps[_sn] = apis.add_parser(_sn, help=_sm["help"])
 
-    p_api_val = _api_ps["validate"]
+    for _sn in ("compile", "validate", "plan", "evaluate", "study",
+                "compare"):
+        _api_ps[_sn].add_argument("--request", required=True,
+                                   help="Intent/study/compare request file")
+        _api_ps[_sn].add_argument("--store", default=None,
+                                   help="Control-plane store root")
+    _api_ps["evaluate"].add_argument("--repo", default=None,
+                                        help="Repository root")
+    _api_ps["evaluate"].add_argument("--binary", default=None,
+                                        help="BookSim binary path")
+    _api_ps["inspect"].add_argument("--resource-id", required=True,
+                                       help="Stable resource ID")
+    _api_ps["inspect"].add_argument("--store", default=None,
+                                       help="Control-plane store root")
+    for _sn in ("capabilities", "diagnose", "list"):
+        _api_ps[_sn].add_argument("--store", default=None,
+                                   help="Control-plane store root")
+    _api_ps["list"].add_argument("--limit", type=int, default=None,
+                                    help="Row cap")
+
+    # ── legacy api handlers (pre-Wave-C semantics, NON_CERTIFIED) ──
+    p_api_val = _legacy_ps["api-validate"]
     p_api_val.add_argument("--spec", required=True, help="Experiment spec JSON")
 
-    p_api_plan = _api_ps["plan"]
+    p_api_plan = _legacy_ps["api-plan"]
     p_api_plan.add_argument("--spec", required=True, help="Experiment spec JSON")
 
-    p_api_exec = _legacy_ps["api-execute"]
-    p_api_exec.add_argument("--spec", required=True, help="Experiment spec JSON")
-    p_api_exec.add_argument("--timeout-s", type=int, default=None,
-                            help="Declared execution budget (seconds)")
-
-    p_api_run = _api_ps["run"]
+    p_api_run = _legacy_ps["api-run"]
     p_api_run.add_argument("--run-id", required=True, help="Run directory id")
 
-    p_api_res = _api_ps["results"]
+    p_api_res = _legacy_ps["api-results"]
     p_api_res.add_argument("--topology", default=None)
     p_api_res.add_argument("--status", default=None)
     p_api_res.add_argument("--workload", default=None)
     p_api_res.add_argument("--limit", type=int, default=None,
                            help="Row cap (budget-capped)")
 
-    p_api_cmp = _legacy_ps["api-compare"]
-    p_api_cmp.add_argument("--candidates", required=True,
-                           help="Candidates JSON (array or {candidates: [...]})")
-    p_api_cmp.add_argument("--metrics", required=True, help="Comma-separated metric names")
-    p_api_cmp.add_argument("--variables", default=None,
-                           help="Comma-separated experimental variables")
-    p_api_cmp.add_argument("--kind", default="DESIGN_COMPARISON",
-                           choices=["DESIGN_COMPARISON", "CROSS_FIDELITY_CALIBRATION"])
-
-    p_api_compile = _legacy_ps["api-compile"]
-    p_api_compile.add_argument("--request", required=True,
-                               help="Compiler request JSON (requirements+candidates)")
-
-    p_api_diag = _api_ps["diagnose"]
+    p_api_diag = _legacy_ps["api-diagnose"]
     p_api_diag.add_argument("--level", default="quick", choices=["quick", "deep"])
 
-    p_api_exp = _api_ps["export"]
+    p_api_exp = _legacy_ps["api-export"]
     p_api_exp.add_argument("--run-id", required=True, help="Run directory id")
     p_api_exp.add_argument("--out", default=None, help="Output directory")
 
@@ -4421,15 +4420,44 @@ COMMANDS = {
         "api-compile": {"help": "LEGACY requirements-driven compile",
                           "t3_mode": "blocked",
                           "handler": cmd_api_compile},
-    }},
-    "certify": {"help": "Certification", "t3_mode": "forward",
-                "sub_dest": "cert_cmd", "handler": None, "subcommands": {
-        "flow": {"help": "Flow-class certification", "t3_mode": "forward",
-                 "handler": cmd_certify_flow},
-        "rtl": {"help": "RTL certification matrix", "t3_mode": "forward",
-                "handler": cmd_certify_rtl},
-        "full": {"help": "Full certification (flow + rtl; every leg must pass)",
-                 "t3_mode": "forward", "handler": cmd_certify_full},
+        "api-validate": {"help": "LEGACY spec validation",
+                           "t3_mode": "blocked",
+                           "handler": cmd_api_validate},
+        "api-plan": {"help": "LEGACY spec planning",
+                       "t3_mode": "blocked",
+                       "handler": cmd_api_plan},
+        "api-run": {"help": "LEGACY run inspection",
+                      "t3_mode": "blocked", "handler": cmd_api_run},
+        "api-results": {"help": "LEGACY runs-store query",
+                          "t3_mode": "blocked",
+                          "handler": cmd_api_results},
+        "api-diagnose": {"help": "LEGACY health battery",
+                           "t3_mode": "blocked",
+                           "handler": cmd_api_diagnose},
+        "api-export": {"help": "LEGACY export bundle",
+                         "t3_mode": "blocked",
+                         "handler": cmd_api_export},
+        "api-capabilities": {"help": "LEGACY capability listing",
+                               "t3_mode": "blocked",
+                               "handler": cmd_api_capabilities},
+        "api-workloads": {"help": "LEGACY workload listing",
+                            "t3_mode": "blocked",
+                            "handler": cmd_api_workloads},
+        "api-topologies": {"help": "LEGACY topology listing",
+                             "t3_mode": "blocked",
+                             "handler": cmd_api_topologies},
+        "certify-flow": {"help": "LEGACY flow certification "
+                             "(RTL re-entry deferred)",
+                           "t3_mode": "blocked",
+                           "handler": cmd_certify_flow},
+        "certify-rtl": {"help": "LEGACY RTL certification "
+                            "(RTL re-entry deferred)",
+                          "t3_mode": "blocked",
+                          "handler": cmd_certify_rtl},
+        "certify-full": {"help": "LEGACY full certification "
+                             "(RTL re-entry deferred)",
+                           "t3_mode": "blocked",
+                           "handler": cmd_certify_full},
     }},
     "runs": {"help": "List/inspect experiment runs", "t3_mode": "forward",
              "sub_dest": None, "handler": cmd_runs, "subcommands": None},
@@ -4508,28 +4536,31 @@ COMMANDS = {
                    "t3_mode": "forward",
                    "handler": cmd_service_list},
     }},
-    "api": {"help": "Agent-safe semantic API surface (Phase 17): structured "
-                    "results, errors-as-data, declared budgets",
+    "api": {"help": "Agent-safe semantic API surface: thin alias over "
+                    "the Wave-C control-plane service operations",
             "t3_mode": "forward",
             "sub_dest": "api_cmd", "handler": None, "subcommands": {
-        "capabilities": {"help": "Machine-readable vocabulary + budgets",
-                         "t3_mode": "forward", "handler": cmd_api_capabilities},
-        "workloads": {"help": "List named workloads", "t3_mode": "forward",
-                      "handler": cmd_api_workloads},
-        "topologies": {"help": "List topology presets (resolved identity)",
-                       "t3_mode": "forward", "handler": cmd_api_topologies},
-        "validate": {"help": "Validate spec intent (errors as data)",
-                     "t3_mode": "forward", "handler": cmd_api_validate},
-        "plan": {"help": "Resolve spec to a plan without executing",
-                 "t3_mode": "forward", "handler": cmd_api_plan},
-        "run": {"help": "Inspect one run by run_id", "t3_mode": "forward",
-                "handler": cmd_api_run},
-        "results": {"help": "Query the runs store", "t3_mode": "forward",
-                    "handler": cmd_api_results},
-        "diagnose": {"help": "Health battery (quick|deep)", "t3_mode": "forward",
-                     "handler": cmd_api_diagnose},
-        "export": {"help": "Checksummed export bundle for a run (§22)",
-                   "t3_mode": "forward", "handler": cmd_api_export},
+        "validate": {"help": "Validate intent (service adapter)",
+                     "t3_mode": "forward", "handler": cmd_service_validate},
+        "compile": {"help": "Compile intent (service adapter)",
+                    "t3_mode": "forward", "handler": cmd_service_compile},
+        "plan": {"help": "Plan intent (service adapter)",
+                 "t3_mode": "forward", "handler": cmd_service_plan},
+        "evaluate": {"help": "Evaluate intent (service adapter)",
+                     "t3_mode": "forward", "handler": cmd_service_evaluate},
+        "study": {"help": "Run a study (service adapter)",
+                  "t3_mode": "forward", "handler": cmd_service_study},
+        "compare": {"help": "Gated comparison (service adapter)",
+                    "t3_mode": "forward", "handler": cmd_service_compare},
+        "inspect": {"help": "Inspect a resource (service adapter)",
+                    "t3_mode": "forward", "handler": cmd_service_inspect},
+        "capabilities": {"help": "Derived capabilities (service adapter)",
+                         "t3_mode": "forward",
+                         "handler": cmd_service_capabilities},
+        "diagnose": {"help": "Operational health (service adapter)",
+                     "t3_mode": "forward", "handler": cmd_service_diagnose},
+        "list": {"help": "List results (service adapter)",
+                 "t3_mode": "forward", "handler": cmd_service_list},
     }},
 }
 

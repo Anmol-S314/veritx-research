@@ -1,14 +1,14 @@
-"""veritx_dse.application.results — verified result loading (Wave C.1).
+"""veritx_dse.application.results — verified resource loading (Wave C.2).
 
-Scientific consumers must NEVER use ``store.get("result", ...)``
-directly: the persisted summary layer is evidence-bearing, so every
-field is re-derived from its authorities on load:
+Scientific consumers must NEVER use ``store.get()`` directly: every
+content-identified resource proves, on load, that its current canonical
+contents still produce its claimed ID:
 
-    result -> experiment -> plan -> attempt -> EvidenceRef
-           -> authenticated Wave-B evidence -> metric registry
+    requested filename ID == embedded resource_id == recomputed ID
 
-Anything that cannot be re-derived refuses with EVIDENCE_INVALID.
-``store.get()`` remains for inspection/internal storage access only.
+plus linkage and Wave-B evidence derivations. Anything else refuses
+with EVIDENCE_INVALID (corrupt store links) or NOT_FOUND. Raw
+``store.get()`` is inspection/internal storage access only.
 """
 from __future__ import annotations
 
@@ -27,21 +27,37 @@ def loss_digest_of(loss: list[dict[str, Any]]) -> str:
     return hashlib.sha256(canonical_json(ordered).encode()).hexdigest()
 
 
-def _linked(store: Any, kind: str, resource_id: Any) -> dict[str, Any]:
+def _content_id(tag: str, body: dict[str, Any]) -> str:
+    from veritx_dse.core.spec import canonical_json
+    return hashlib.sha256(
+        (tag + "\0" + canonical_json(body)).encode()).hexdigest()
+
+
+def _get(store: Any, kind: str, resource_id: Any) -> dict[str, Any]:
     if not isinstance(resource_id, str) or not resource_id:
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
-            f"result links to invalid {kind} id {resource_id!r}",
-            operation="verify_result")
+            f"invalid {kind} link {resource_id!r}",
+            operation="verify_resource")
     try:
         return store.get(kind, resource_id)
     except ControlPlaneError as exc:
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
-            f"result links to missing {kind} {resource_id!r}: "
-            f"{exc.message}",
-            operation="verify_result",
+            f"missing linked {kind} {resource_id!r}: {exc.message}",
+            operation="verify_resource",
             resource_id=resource_id) from exc
+
+
+def _require_id(kind: str, requested_id: str,
+                record: dict[str, Any]) -> None:
+    embedded = record.get("resource_id")
+    if embedded != requested_id:
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"{kind} file {requested_id} embeds resource_id "
+            f"{embedded!r}: refusing transplanted content",
+            operation="verify_resource", resource_id=requested_id)
 
 
 def _require_equal(what: str, actual: Any, expected: Any,
@@ -54,42 +70,228 @@ def _require_equal(what: str, actual: Any, expected: Any,
             operation="verify_result", resource_id=resource_id)
 
 
+def load_verified_intent(store: Any, intent_id: str) -> dict[str, Any]:
+    """Intent has no embedded id; requested ID must equal recomputed."""
+    from .requests import parse_intent
+    record = _get(store, "intent", intent_id)
+    try:
+        intent = parse_intent({k: v for k, v in record.items()})
+    except ControlPlaneError as exc:
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"persisted intent {intent_id} does not parse: {exc.message}",
+            operation="verify_resource",
+            resource_id=intent_id) from exc
+    if intent.intent_id() != intent_id:
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"persisted intent {intent_id} recomputes to "
+            f"{intent.intent_id()}: content forged",
+            operation="verify_resource", resource_id=intent_id)
+    return record
+
+
+def load_verified_design(store: Any, design_id: str) -> dict[str, Any]:
+    """Design ID + intent link + recompiled semantic hashes."""
+    from .compile import compile_bundle
+    from veritx_dse.model.compile_model import CompileRequest
+    record = _get(store, "design", design_id)
+    check_envelope(record, "design")
+    _require_id("design", design_id, record)
+    recomputed = _content_id("srota-design/v1", {
+        "intent_id": record.get("intent_id"),
+        "design_hash": record.get("design_hash"),
+        "mapping_hash": record.get("mapping_hash"),
+        "fabric_hash": record.get("fabric_hash"),
+    })
+    if recomputed != design_id:
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"design {design_id} recomputes to {recomputed}: forged",
+            operation="verify_resource", resource_id=design_id)
+    load_verified_intent(store, record.get("intent_id"))
+    try:
+        compile_request = CompileRequest.from_dict(
+            record.get("compile_request"))
+    except Exception as exc:
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"design {design_id} compile_request does not parse: {exc}",
+            operation="verify_resource",
+            resource_id=design_id) from exc
+    if compile_request.design_hash() != record.get("design_hash"):
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"design {design_id} request hashes to "
+            f"{compile_request.design_hash()}, not the recorded "
+            f"{record.get('design_hash')}",
+            operation="verify_resource", resource_id=design_id)
+    try:
+        bundle = compile_bundle(compile_request)
+    except ControlPlaneError as exc:
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"design {design_id} fails canonical rederivation: "
+            f"{exc.message}",
+            operation="verify_resource",
+            resource_id=design_id) from exc
+    for key, actual in (
+            ("mapping_hash", bundle.resolved_fabric.mapping_hash),
+            ("fabric_hash", bundle.fabric.fabric_hash()),
+            ("topology_hash", bundle.topology.topology_hash()),
+            ("attachment_hash", bundle.attachment.attachment_hash())):
+        _require_equal(f"design.{key}", record.get(key), actual, design_id)
+    return record
+
+
+def load_verified_workload(store: Any, workload_id: str) -> dict[str, Any]:
+    record = _get(store, "workload", workload_id)
+    check_envelope(record, "workload")
+    _require_id("workload", workload_id, record)
+    recomputed = _content_id("srota-workload/v1", {
+        "trace_sha256": record.get("trace_sha256"),
+        "trace_bytes": record.get("trace_bytes"),
+        "endpoint_count": record.get("endpoint_count"),
+    })
+    if recomputed != workload_id:
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"workload {workload_id} recomputes to {recomputed}: forged",
+            operation="verify_resource", resource_id=workload_id)
+    return record
+
+
+def _expected_plan_profile(target: str) -> tuple[str, str, str]:
+    from veritx_dse.backend.booksim import (
+        BOOKSIM_BACKEND_SEMANTICS_VERSION, BOOKSIM_LOWERER_VERSION,
+        BOOKSIM_STANDALONE_PROFILE,
+    )
+    if target == "BOOKSIM_STANDALONE":
+        return (BOOKSIM_STANDALONE_PROFILE,
+                BOOKSIM_BACKEND_SEMANTICS_VERSION, BOOKSIM_LOWERER_VERSION)
+    raise ControlPlaneError(
+        ErrorCode.EVIDENCE_INVALID,
+        f"plan targets non-executable backend {target!r}",
+        operation="verify_resource")
+
+
+def load_verified_plan(store: Any, plan_id: str) -> dict[str, Any]:
+    """Plan ID + links + canonical backend declarations."""
+    record = _get(store, "plan", plan_id)
+    check_envelope(record, "plan")
+    _require_id("plan", plan_id, record)
+    recomputed = _content_id("srota-plan/v1", {
+        "design_hash": record.get("design_hash"),
+        "mapping_hash": record.get("mapping_hash"),
+        "fabric_hash": record.get("fabric_hash"),
+        "workload_hash": record.get("workload_hash"),
+        "backend_target": record.get("backend_target"),
+        "backend_profile": record.get("backend_profile"),
+        "backend_semantics_version": record.get(
+            "backend_semantics_version"),
+        "lowerer_version": record.get("lowerer_version"),
+        "execution_mode": record.get("execution_mode"),
+        "seed": record.get("seed"),
+        "seed_policy": record.get("seed_policy"),
+        "metric_ids": record.get("metric_ids"),
+        "metric_schema_version": record.get("metric_schema_version"),
+    })
+    if recomputed != plan_id:
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"plan {plan_id} recomputes to {recomputed}: forged",
+            operation="verify_resource", resource_id=plan_id)
+    design = load_verified_design(store, record.get("design_id"))
+    workload = load_verified_workload(store, record.get("workload_id"))
+    _require_equal("plan.intent_id", record.get("intent_id"),
+                   design.get("intent_id"), plan_id)
+    _require_equal("plan.design_hash", record.get("design_hash"),
+                   design.get("design_hash"), plan_id)
+    _require_equal("plan.mapping_hash", record.get("mapping_hash"),
+                   design.get("mapping_hash"), plan_id)
+    _require_equal("plan.fabric_hash", record.get("fabric_hash"),
+                   design.get("fabric_hash"), plan_id)
+    _require_equal("plan.workload_hash", record.get("workload_hash"),
+                   workload.get("trace_sha256"), plan_id)
+    profile, semantics, lowerer = _expected_plan_profile(
+        record.get("backend_target"))
+    _require_equal("plan.backend_profile", record.get("backend_profile"),
+                   profile, plan_id)
+    _require_equal("plan.backend_semantics_version",
+                   record.get("backend_semantics_version"), semantics,
+                   plan_id)
+    _require_equal("plan.lowerer_version", record.get("lowerer_version"),
+                   lowerer, plan_id)
+    return record
+
+
+def load_verified_experiment(store: Any,
+                             experiment_id: str) -> dict[str, Any]:
+    record = _get(store, "experiment", experiment_id)
+    check_envelope(record, "experiment")
+    _require_id("experiment", experiment_id, record)
+    recomputed = _content_id("srota-experiment/v1", {
+        "plan_id": record.get("plan_id"),
+        "backend_config_hash": record.get("backend_config_hash"),
+        "backend_input_hash": record.get("backend_input_hash"),
+        "execution_mode": record.get("execution_mode"),
+    })
+    if recomputed != experiment_id:
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"experiment {experiment_id} recomputes to {recomputed}: "
+            f"forged",
+            operation="verify_resource", resource_id=experiment_id)
+    plan = load_verified_plan(store, record.get("plan_id"))
+    _require_equal("experiment.execution_mode",
+                   record.get("execution_mode"),
+                   plan.get("execution_mode"), experiment_id)
+    return record
+
+
+def load_verified_attempt(store: Any, attempt_id: str) -> dict[str, Any]:
+    """UUID attempt: filename==embedded plus experiment linkage."""
+    record = _get(store, "attempt", attempt_id)
+    check_envelope(record, "attempt")
+    _require_id("attempt", attempt_id, record)
+    load_verified_experiment(store, record.get("experiment_id"))
+    return record
+
+
 def load_verified_result(store: Any, result_id: str, *,
                          expected_experiment_id: str | None = None
                          ) -> dict[str, Any]:
-    """Load a result only if its full chain re-derives consistently.
+    """Full result validation against verified links + Wave-B evidence.
 
-    Checks, in order: envelope; experiment link (and the expected
-    experiment when reusing through a link); plan/attempt/design/
-    workload links; attempt success + evidence-ref agreement; Wave-B
-    evidence digest authentication; every scientific field against
-    plan/experiment/evidence/registry derivations. Returns the stored
-    mapping on success.
+    Replaces every raw linked ``store.get()`` with verified loaders,
+    requires filename == embedded == recomputed result ID, and
+    re-derives all scientific fields. Only then is the record trusted.
     """
     from veritx_dse.backend.evidence import EvidenceRef, read_verified_evidence
     result = store.get("result", result_id)
     check_envelope(result, "result")
-    resource_id = result.get("resource_id", result_id)
-    experiment = _linked(store, "experiment", result.get("experiment_id"))
+    _require_id("result", result_id, result)
+    experiment = load_verified_experiment(
+        store, result.get("experiment_id"))
     if expected_experiment_id is not None and \
             experiment.get("resource_id") != expected_experiment_id:
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
-            f"result {resource_id} belongs to experiment "
+            f"result {result_id} belongs to experiment "
             f"{experiment.get('resource_id')}, not the requested "
             f"{expected_experiment_id}: refusing transplanted reuse",
-            operation="verify_result", resource_id=resource_id)
-    plan = _linked(store, "plan", experiment.get("plan_id"))
-    attempt = _linked(store, "attempt", result.get("attempt_id"))
+            operation="verify_result", resource_id=result_id)
+    plan = load_verified_plan(store, experiment.get("plan_id"))
+    attempt = load_verified_attempt(store, result.get("attempt_id"))
     _require_equal("attempt.experiment_id",
                    attempt.get("experiment_id"),
-                   experiment.get("resource_id"), resource_id)
+                   experiment.get("resource_id"), result_id)
     _require_equal("attempt.status", attempt.get("status"), "SUCCEEDED",
-                   resource_id)
+                   result_id)
     _require_equal("attempt.evidence_ref", attempt.get("evidence_ref"),
-                   result.get("evidence_ref"), resource_id)
-    design = _linked(store, "design", plan.get("design_id"))
-    workload = _linked(store, "workload", plan.get("workload_id"))
+                   result.get("evidence_ref"), result_id)
+    design = load_verified_design(store, plan.get("design_id"))
+    workload = load_verified_workload(store, plan.get("workload_id"))
     for key in ("experiment_id", "attempt_id", "plan_id", "design_id",
                 "workload_id"):
         _require_equal(key, result.get(key),
@@ -98,50 +300,60 @@ def load_verified_result(store: Any, result_id: str, *,
                         "plan_id": plan.get("resource_id"),
                         "design_id": design.get("resource_id"),
                         "workload_id": workload.get("resource_id")}[key],
-                       resource_id)
+                       result_id)
     for key in ("design_hash", "mapping_hash", "fabric_hash"):
-        _require_equal(key, result.get(key), plan.get(key), resource_id)
+        _require_equal(key, result.get(key), plan.get(key), result_id)
         _require_equal(f"design.{key}", design.get(key), plan.get(key),
-                       resource_id)
+                       result_id)
     _require_equal("workload_hash", result.get("workload_hash"),
-                   plan.get("workload_hash"), resource_id)
+                   plan.get("workload_hash"), result_id)
     _require_equal("workload.trace_sha256", workload.get("trace_sha256"),
-                   plan.get("workload_hash"), resource_id)
+                   plan.get("workload_hash"), result_id)
     for key in ("backend_target", "backend_profile",
                 "backend_semantics_version", "execution_mode"):
-        _require_equal(key, result.get(key), plan.get(key), resource_id)
+        _require_equal(key, result.get(key), plan.get(key), result_id)
     for key in ("backend_config_hash", "backend_input_hash"):
         _require_equal(f"result.{key}", result.get(key),
-                       experiment.get(key), resource_id)
+                       experiment.get(key), result_id)
     ref_doc = result.get("evidence_ref") or {}
     try:
         ref = EvidenceRef(path=ref_doc["path"], sha256=ref_doc["sha256"])
     except (KeyError, TypeError, ValueError) as exc:
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
-            f"result {resource_id} carries a malformed EvidenceRef: "
-            f"{exc}",
-            operation="verify_result", resource_id=resource_id) from exc
+            f"result {result_id} carries a malformed EvidenceRef: {exc}",
+            operation="verify_result", resource_id=result_id) from exc
     try:
         evidence = read_verified_evidence(ref)
     except Exception as exc:
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
-            f"result {resource_id} evidence fails verification: {exc}",
-            operation="verify_result", resource_id=resource_id,
+            f"result {result_id} evidence fails verification: {exc}",
+            operation="verify_result", resource_id=result_id,
             cause_type=type(exc).__name__) from exc
     if not isinstance(evidence, dict):
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
-            f"result {resource_id} evidence is not a mapping",
-            operation="verify_result", resource_id=resource_id)
+            f"result {result_id} evidence is not a mapping",
+            operation="verify_result", resource_id=result_id)
     for key in ("backend_config_hash", "backend_input_hash"):
         _require_equal(f"evidence.{key}", evidence.get(key),
-                       experiment.get(key), resource_id)
-    _require_equal("status", result.get("status"), "SUCCEEDED", resource_id)
+                       experiment.get(key), result_id)
+    recomputed_result = _content_id("srota-result/v1", {
+        "experiment_id": experiment.get("resource_id"),
+        "attempt_id": attempt.get("resource_id"),
+        "evidence_sha256": ref.sha256,
+    })
+    if recomputed_result != result_id:
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"result {result_id} recomputes to {recomputed_result}: "
+            f"forged",
+            operation="verify_result", resource_id=result_id)
+    _require_equal("status", result.get("status"), "SUCCEEDED", result_id)
     for key in ("qualification", "execution_transport", "seed",
                 "seed_policy"):
-        _require_equal(key, result.get(key), evidence.get(key), resource_id)
+        _require_equal(key, result.get(key), evidence.get(key), result_id)
     _require_equal("semantic_loss",
                    sorted((dict(r) for r in result.get(
                        "semantic_loss", [])),
@@ -149,11 +361,11 @@ def load_verified_result(store: Any, result_id: str, *,
                    sorted((dict(r) for r in evidence.get(
                        "semantic_loss", [])),
                           key=lambda r: r.get("dimension", "")),
-                   resource_id)
+                   result_id)
     _require_equal("loss_digest", result.get("loss_digest"),
                    loss_digest_of(evidence.get("semantic_loss", [])),
-                   resource_id)
-    _verify_metrics(result, evidence, plan, resource_id)
+                   result_id)
+    _verify_metrics(result, evidence, plan, result_id)
     producer = result.get("producer") or {}
     for key, evidence_key in (
             ("binary_sha256", "booksim_binary_sha256"),
@@ -162,7 +374,7 @@ def load_verified_result(store: Any, result_id: str, *,
             ("source_dirty_digest", "producer_source_dirty_digest"),
             ("tool_identity", "producer_tool_identity")):
         _require_equal(f"producer.{key}", producer.get(key),
-                       evidence.get(evidence_key), resource_id)
+                       evidence.get(evidence_key), result_id)
     return result
 
 
@@ -227,4 +439,105 @@ def _verify_metrics(result: dict[str, Any], evidence: dict[str, Any],
             operation="verify_result", resource_id=resource_id)
 
 
-__all__ = ["load_verified_result", "loss_digest_of"]
+def load_verified_comparison(store: Any,
+                             comparison_id: str) -> dict[str, Any]:
+    """Comparison ID + re-gated candidates + recomputed output."""
+    from .comparison import check_compatibility, compare_metrics, \
+        parse_contract
+    record = store.get("comparison", comparison_id)
+    check_envelope(record, "comparison")
+    _require_id("comparison", comparison_id, record)
+    contract = parse_contract(record.get("contract"))
+    candidates = record.get("candidate_ids")
+    if not isinstance(candidates, list) or len(candidates) != 2:
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            "comparison must reference exactly two candidates",
+            operation="verify_resource", resource_id=comparison_id)
+    recomputed = _content_id("srota-comparison/v1", {
+        "candidate_ids": list(candidates),
+        "contract": contract.identity_dict(),
+        "metric_ids": list(contract.metric_ids),
+    })
+    if recomputed != comparison_id:
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"comparison {comparison_id} recomputes to {recomputed}: "
+            f"forged",
+            operation="verify_resource", resource_id=comparison_id)
+    results = [load_verified_result(store, candidate)
+               for candidate in candidates]
+    compatibility = check_compatibility(results[0], results[1], contract)
+    metrics = compare_metrics(results[0], results[1],
+                              contract.metric_ids)
+    _require_equal("compatibility", record.get("compatibility"),
+                   compatibility, comparison_id)
+    _require_equal("metrics", record.get("metrics"), metrics,
+                   comparison_id)
+    _require_equal("contract", record.get("contract"),
+                   contract.identity_dict(), comparison_id)
+    _require_equal("candidate_ids", record.get("candidate_ids"),
+                   candidates, comparison_id)
+    fidelity = {
+        "a_qualification": results[0]["qualification"],
+        "b_qualification": results[1]["qualification"],
+        "a_loss_digest": results[0]["loss_digest"],
+        "b_loss_digest": results[1]["loss_digest"],
+        "acknowledged_differences": list(
+            contract.acknowledged_differences),
+    }
+    _require_equal("fidelity_context", record.get("fidelity_context"),
+                   fidelity, comparison_id)
+    return record
+
+
+def load_verified_study(store: Any, study_id: str) -> dict[str, Any]:
+    """Study ID + verified referenced results/comparisons."""
+    record = store.get("study", study_id)
+    check_envelope(record, "study")
+    _require_id("study", study_id, record)
+    recomputed = _content_id("srota-study/v1", {
+        "name": record.get("name"),
+        "candidate_intents": list(record.get("candidate_intents", [])),
+        "comparison": record.get("comparison_request"),
+    })
+    # NOTE: StudyRequest.study_id() hashes live-resolved candidate
+    # intents; the stored candidate_intents ARE those resolved IDs, so
+    # recomputation over stored values is exact. Invalid-candidate
+    # markers ("invalid:<sha>") round-trip as opaque strings.
+    if recomputed != study_id:
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"study {study_id} recomputes to {recomputed}: forged",
+            operation="verify_resource", resource_id=study_id)
+    for entry in record.get("experiments", []):
+        if not isinstance(entry, dict):
+            raise ControlPlaneError(
+                ErrorCode.EVIDENCE_INVALID,
+                f"study {study_id} has a malformed experiment entry",
+                operation="verify_resource", resource_id=study_id)
+        if entry.get("result_id") is not None:
+            load_verified_result(store, entry["result_id"])
+    for entry in record.get("comparisons", []):
+        if not isinstance(entry, dict):
+            raise ControlPlaneError(
+                ErrorCode.EVIDENCE_INVALID,
+                f"study {study_id} has a malformed comparison entry",
+                operation="verify_resource", resource_id=study_id)
+        if entry.get("status") == "COMPARED":
+            load_verified_comparison(store, entry["comparison_id"])
+    return record
+
+
+__all__ = [
+    "load_verified_attempt",
+    "load_verified_comparison",
+    "load_verified_design",
+    "load_verified_experiment",
+    "load_verified_intent",
+    "load_verified_plan",
+    "load_verified_result",
+    "load_verified_study",
+    "load_verified_workload",
+    "loss_digest_of",
+]

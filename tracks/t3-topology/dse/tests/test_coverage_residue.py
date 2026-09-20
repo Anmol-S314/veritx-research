@@ -774,7 +774,7 @@ class TestCliBranches:
             "instances": [{"participants": [0, 1, 2, 3]}]}]}}))
         topo = tmp_path / "t.anynet"
         topo.write_text("router 0 node 0 router 1\nrouter 1 node 1 router 0\n")
-        rc, out, err = _cli("certify", "full", "--model", str(model),
+        rc, out, err = _cli("legacy", "certify-full", "--model", str(model),
                             "--topo", str(topo), timeout=120)
         combined = out + err
         # Flow stage runs first; RTL stage may fail (no verilator build) →

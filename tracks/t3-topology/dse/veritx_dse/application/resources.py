@@ -265,6 +265,7 @@ class StudyResult:
     candidate_intents: tuple[str, ...]
     experiments: tuple[dict[str, Any], ...]
     comparisons: tuple[dict[str, Any], ...]
+    comparison_request: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -275,6 +276,8 @@ class StudyResult:
             "candidate_intents": list(self.candidate_intents),
             "experiments": [dict(e) for e in self.experiments],
             "comparisons": [dict(c) for c in self.comparisons],
+            "comparison_request": dict(self.comparison_request)
+            if self.comparison_request is not None else None,
         }
 
 

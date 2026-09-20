@@ -280,11 +280,11 @@ class TestErrorHandling:
 
     def test_help_all_commands(self):
         """veritx <cmd> --help works for all commands."""
-        for cmd in ["trace", "init", "generate", "certify",
+        for cmd in ["trace", "init", "generate",
                     "legacy", "service", "api"]:
             result = _cli(cmd, "--help", timeout=5)
             assert result.returncode == 0, f"'{cmd} --help' failed"
         for sub in ["synthesize-compile", "evaluate-booksim",
-                    "compare", "run"]:
+                    "compare", "run", "certify-full", "api-execute"]:
             result = _cli("legacy", sub, "--help", timeout=5)
             assert result.returncode == 0, f"'legacy {sub} --help' failed"

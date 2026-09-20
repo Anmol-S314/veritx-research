@@ -274,26 +274,36 @@ class SrotaControlPlane:
         }
 
     def list_results(self, limit: int | None = None) -> dict[str, Any]:
-        """Deterministic result listing (capped; index-only)."""
+        """Verified result listing (capped index).
+
+        Every row passes the verified loader; corrupt/tampered records
+        are reported as integrity INVALID with no trusted scientific
+        fields (never surfaced as science).
+        """
         from .capabilities import cap_query_rows
+        from .results import load_verified_result
         count = cap_query_rows(limit)
         directory = self.store.root / "result"
         ids = sorted(p.stem for p in directory.glob("*.json"))[:count]
         rows = []
+        invalid = 0
         for resource_id in ids:
             try:
-                record = self.store.get("result", resource_id)
+                record = load_verified_result(self.store, resource_id)
                 rows.append({
                     "resource_id": resource_id,
                     "experiment_id": record.get("experiment_id"),
                     "status": record.get("status"),
                     "qualification": record.get("qualification"),
                     "fabric_hash": record.get("fabric_hash"),
+                    "integrity": "VERIFIED",
                 })
             except ControlPlaneError:
-                continue
+                invalid += 1
+                rows.append({"resource_id": resource_id,
+                             "integrity": "INVALID"})
         return {"results": rows, "count": len(rows),
-                "cap": count}
+                "invalid_count": invalid, "cap": count}
 
     # ── plan ──────────────────────────────────────────────────────
 
@@ -689,7 +699,8 @@ class SrotaControlPlane:
             study_id=request.study_id(), name=request.name,
             candidate_intents=tuple(intents),
             experiments=tuple(experiments),
-            comparisons=tuple(comparisons))
+            comparisons=tuple(comparisons),
+            comparison_request=request.comparison)
         self.store.put("study", study.study_id, study.to_dict())
         return study.to_dict()
 
@@ -842,8 +853,26 @@ class SrotaControlPlane:
             resource_id=resource_id)
 
     def _describe(self, kind: str, record: dict[str, Any]) -> dict[str, Any]:
+        from .results import (
+            load_verified_attempt, load_verified_comparison,
+            load_verified_design, load_verified_experiment,
+            load_verified_intent, load_verified_plan,
+            load_verified_study, load_verified_workload,
+        )
         related: dict[str, Any] = {}
         evidence_status: dict[str, Any] = {"checked": False}
+        integrity: dict[str, Any] = {"checked": False}
+        loaders = {
+            "result": None,  # handled below (needs evidence stages)
+            "attempt": load_verified_attempt,
+            "experiment": load_verified_experiment,
+            "plan": load_verified_plan,
+            "design": load_verified_design,
+            "workload": load_verified_workload,
+            "intent": load_verified_intent,
+            "comparison": load_verified_comparison,
+            "study": load_verified_study,
+        }
         if kind == "result":
             for link_kind, key in (
                     ("experiment", "experiment_id"),
@@ -859,20 +888,36 @@ class SrotaControlPlane:
                     related[key] = {"resource_id": target,
                                     "missing": True}
             evidence_status = self._evidence_status(record)
-        elif kind == "attempt":
-            for link_kind, key in (("experiment", "experiment_id"),):
-                target = record.get(key)
+            try:
+                from .results import load_verified_result
+                load_verified_result(
+                    self.store, record.get("resource_id", ""))
+                integrity = {"checked": True, "state": "VERIFIED"}
+            except ControlPlaneError as exc:
+                integrity = {"checked": True, "state": "INVALID",
+                             "reason": exc.message}
+        elif kind in loaders and loaders[kind] is not None:
+            try:
+                loaders[kind](self.store, record.get("resource_id", ""))
+                integrity = {"checked": True, "state": "VERIFIED"}
+            except ControlPlaneError as exc:
+                integrity = {"checked": True, "state": "INVALID",
+                             "reason": exc.message}
+            if kind in ("experiment", "plan"):
+                for link_kind, key in (("plan", "plan_id"),):
+                    target = record.get(key)
+                    if kind == "experiment" and isinstance(target, str) \
+                            and self.store.exists(link_kind, target):
+                        related[key] = self.store.get(link_kind, target)
+            if kind == "attempt":
+                target = record.get("experiment_id")
                 if isinstance(target, str) and self.store.exists(
-                        link_kind, target):
-                    related[key] = self.store.get(link_kind, target)
-        elif kind in ("experiment", "plan"):
-            for link_kind, key in (("plan", "plan_id"),):
-                target = record.get(key)
-                if kind == "experiment" and isinstance(target, str) \
-                        and self.store.exists(link_kind, target):
-                    related[key] = self.store.get(link_kind, target)
+                        "experiment", target):
+                    related["experiment_id"] = self.store.get(
+                        "experiment", target)
         return {"kind": kind, "record": record, "related": related,
-                "evidence_status": evidence_status}
+                "evidence_status": evidence_status,
+                "integrity": integrity}
 
     def _evidence_status(self, result: dict[str, Any]) -> dict[str, Any]:
         """Three-stage integrity: record, evidence bytes, full chain."""

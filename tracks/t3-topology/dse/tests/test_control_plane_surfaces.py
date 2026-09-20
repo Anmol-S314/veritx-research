@@ -280,7 +280,8 @@ class TestPublicSurfaceClosure:
     """Legacy scientific paths must not be normal product operations."""
 
     LEGACY_TOP_LEVEL = ("run", "sweep", "compare", "pareto",
-                        "compile", "evaluate", "synthesize")
+                        "compile", "evaluate", "synthesize",
+                        "certify", "baseline", "diff", "serve")
     LEGACY_HANDLERS = ("cmd_run", "cmd_sweep", "cmd_compare",
                        "cmd_pareto", "cmd_compile", "cmd_baseline",
                        "cmd_diff", "cmd_serve", "cmd_synthesize_bo",
@@ -288,8 +289,13 @@ class TestPublicSurfaceClosure:
                        "cmd_synthesize_compile",
                        "cmd_evaluate_booksim", "cmd_evaluate_anynet",
                        "cmd_evaluate_astra", "cmd_topology_diff",
-                       "cmd_api_execute", "cmd_api_compare",
-                       "cmd_api_compile")
+                       "cmd_certify_flow", "cmd_certify_rtl",
+                       "cmd_certify_full", "cmd_api_execute",
+                       "cmd_api_compare", "cmd_api_compile",
+                       "cmd_api_validate", "cmd_api_plan", "cmd_api_run",
+                       "cmd_api_results", "cmd_api_diagnose",
+                       "cmd_api_export", "cmd_api_capabilities",
+                       "cmd_api_workloads", "cmd_api_topologies")
 
     def _commands(self):
         from veritx_dse.cli.cli import COMMANDS  # noqa: PLC0415
@@ -301,10 +307,21 @@ class TestPublicSurfaceClosure:
             assert name not in commands, name
         assert "legacy" in commands
         assert "service" in commands
+        assert "api" in commands
+        assert "certify" not in commands
         legacy = commands["legacy"]["subcommands"]
-        assert len(legacy) == 18
+        assert len(legacy) == 30
         for sub, entry in legacy.items():
             assert entry["t3_mode"] == "blocked", sub
+        from veritx_dse.cli import service_cli  # noqa: PLC0415
+        api_handlers = {
+            entry["handler"].__name__
+            for entry in commands["api"]["subcommands"].values()}
+        service_handlers = {
+            entry["handler"].__name__
+            for entry in commands["service"]["subcommands"].values()}
+        assert api_handlers == service_handlers
+        assert api_handlers <= set(service_cli.__all__)
 
     def test_no_product_handler_reaches_legacy(self):
         commands = self._commands()
@@ -363,3 +380,34 @@ class TestPublicSurfaceClosure:
         assert proc.returncode == 0, proc.stderr[-2000:]
         import json
         return json.loads(proc.stdout)
+
+    def test_capability_authority_equality(self, tmp_path):
+        from veritx_dse import api as api_mod  # noqa: PLC0415
+        service_caps = SrotaControlPlane(
+            store_root=tmp_path / "store").capabilities()
+        api_out = api_mod.service_capabilities(
+            store_root=tmp_path / "store")
+        assert api_out["status"] == "OK"
+        assert api_out["result"] == service_caps
+
+    def test_api_service_authority_equivalence(self, tmp_path):
+        import subprocess
+        doc = _canonical_doc()
+        request_file = tmp_path / "req.json"
+        request_file.write_text(json.dumps(doc))
+        store = tmp_path / "store"
+        first = None
+        for group in ("service", "api"):
+            proc = subprocess.run(
+                [sys.executable, "-m", "veritx_dse.cli", group,
+                 "validate", "--request", str(request_file),
+                 "--store", str(store)],
+                capture_output=True, text=True, timeout=120, cwd=DSE)
+            assert proc.returncode == 0, proc.stderr[-1000:]
+            out = json.loads(proc.stdout)
+            assert out["status"] == "OK", out
+            assert out["result"]["valid"] is True
+            if first is None:
+                first = out["result"]["intent_id"]
+            else:
+                assert out["result"]["intent_id"] == first

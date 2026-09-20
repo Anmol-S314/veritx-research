@@ -95,6 +95,21 @@ LEDGER: tuple[dict[str, Any], ...] = (
         "replacement": "application.comparison gate over typed results",
     },
     {
+        "path": "veritx_dse/cli/cli.py",
+        "symbol": "legacy certify-flow/certify-rtl/certify-full",
+        "responsibility": "historical flow/RTL certification "
+                          "(re-entry deferred to B3.6R/B3.8-HW)",
+        "classification": "LEGACY_INTERNAL",
+        "replacement": "none in Wave C (blocked legacy namespace)",
+    },
+    {
+        "path": "veritx_dse/cli/cli.py",
+        "symbol": "api validate/plan/... (service mirrors)",
+        "responsibility": "agent CLI surface aliased to the service",
+        "classification": "AUTHORITATIVE",
+        "replacement": "itself",
+    },
+    {
         "path": "veritx_dse/model/presets.py",
         "symbol": "WORKLOAD_PRESETS/topology presets/resolve_fabric",
         "responsibility": "mutable legacy preset dicts",

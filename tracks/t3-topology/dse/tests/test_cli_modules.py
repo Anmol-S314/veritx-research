@@ -587,10 +587,10 @@ class TestIterativeNodesRemoved:
         assert args.timeout == 120
         args = parser.parse_args(["legacy", "synthesize-bo", "--traffic", "x"])
         assert args.timeout is None  # unset → VERITX_TIMEOUT env or builtin
-        args = parser.parse_args(["certify", "flow", "--model", "m",
+        args = parser.parse_args(["legacy", "certify-flow", "--model", "m",
                                   "--topo", "t"])
         assert args.timeout is None
-        args = parser.parse_args(["certify", "full", "--model", "m",
+        args = parser.parse_args(["legacy", "certify-full", "--model", "m",
                                   "--topo", "t"])
         assert args.timeout is None
         args = parser.parse_args(["legacy", "run", "--model", "m"])
