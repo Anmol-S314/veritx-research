@@ -249,6 +249,77 @@ def diagnose(*, level: str = "quick") -> dict[str, Any]:
     return _ok(status="OK", op="diagnose", level=level, result=report.to_dict())
 
 
+# ── Wave-C unified service (thin adapters; no backend logic here) ───────
+
+def _service(*, store_root: str | Path | None = None,
+             repo: str | Path | None = None,
+             binary: str | Path | None = None):
+    from .application.service import SrotaControlPlane
+    kwargs: dict[str, Any] = {}
+    if store_root is not None:
+        kwargs["store_root"] = store_root
+    if repo is not None:
+        kwargs["repo_root"] = repo
+    if binary is not None:
+        kwargs["binary"] = binary
+    return SrotaControlPlane(**kwargs)
+
+
+def _service_out(op: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return _ok(status="OK", op=op, **_strip_host_paths(_jsonable(payload)))
+
+
+def _service_error(op: str, exc: Exception) -> dict[str, Any]:
+    from .application.errors import ControlPlaneError
+    if isinstance(exc, ControlPlaneError):
+        body = exc.to_dict()
+        return _ok(status="ERROR", op=op, **body)
+    return _ok(status="ERROR", op=op, code="INTERNAL_ERROR",
+               message=f"{type(exc).__name__}: {exc}")
+
+
+def service_compile(request: dict[str, Any], *, store_root=None) -> dict:
+    """Compile intent through the Wave-C service (no execution)."""
+    try:
+        return _service_out(
+            "service_compile",
+            _service(store_root=store_root).compile(request))
+    except Exception as exc:
+        return _service_error("service_compile", exc)
+
+
+def service_evaluate(request: dict[str, Any], *, store_root=None,
+                     repo=None, binary=None) -> dict:
+    """Evaluate intent through the Wave-C service (reuse or run)."""
+    try:
+        return _service_out(
+            "service_evaluate",
+            _service(store_root=store_root, repo=repo,
+                     binary=binary).evaluate(request))
+    except Exception as exc:
+        return _service_error("service_evaluate", exc)
+
+
+def service_compare(request: dict[str, Any], *, store_root=None) -> dict:
+    """Gated comparison through the Wave-C service."""
+    try:
+        return _service_out(
+            "service_compare",
+            _service(store_root=store_root).compare(request))
+    except Exception as exc:
+        return _service_error("service_compare", exc)
+
+
+def service_inspect(resource_id: str, *, store_root=None) -> dict:
+    """Inspect a resource by stable ID (read-only)."""
+    try:
+        return _service_out(
+            "service_inspect",
+            _service(store_root=store_root).inspect(resource_id))
+    except Exception as exc:
+        return _service_error("service_inspect", exc)
+
+
 # ── Synthesis ──────────────────────────────────────────────────────────────
 
 

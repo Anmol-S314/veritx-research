@@ -64,6 +64,10 @@ from .pipeline import (
     run_compare, print_compare_table, print_sweep_table,
     list_runs, show_results, diff_runs, generate_latex,
 )
+from .service_cli import (
+    cmd_service_compare, cmd_service_compile, cmd_service_evaluate,
+    cmd_service_inspect,
+)
 
 
 # ── Path constants ──────────────────────────────────────────────────────────
@@ -4157,6 +4161,28 @@ def build_parser() -> argparse.ArgumentParser:
     p_api_exp.add_argument("--run-id", required=True, help="Run directory id")
     p_api_exp.add_argument("--out", default=None, help="Output directory")
 
+    # ── service (Wave C): thin adapters over the control-plane service ──
+    p_svc = _top_ps["service"]
+    svcs = p_svc.add_subparsers(dest=_SUB_DESTS["service"])
+
+    _svc_ps = {}
+    for _sn, _sm in COMMANDS["service"]["subcommands"].items():
+        _svc_ps[_sn] = svcs.add_parser(_sn, help=_sm["help"])
+
+    for _sn in ("compile", "evaluate", "compare"):
+        _svc_ps[_sn].add_argument("--request", required=True,
+                                   help="Intent/compare request JSON file")
+        _svc_ps[_sn].add_argument("--store", default=None,
+                                   help="Control-plane store root")
+    _svc_ps["evaluate"].add_argument("--repo", default=None,
+                                        help="Repository root")
+    _svc_ps["evaluate"].add_argument("--binary", default=None,
+                                        help="BookSim binary path")
+    _svc_ps["inspect"].add_argument("--resource-id", required=True,
+                                       help="Stable resource ID")
+    _svc_ps["inspect"].add_argument("--store", default=None,
+                                       help="Control-plane store root")
+
     return parser
 
 
@@ -4430,6 +4456,25 @@ COMMANDS = {
                  "sub_dest": "gen_cmd", "handler": None, "subcommands": {
         "uvm": {"help": "Generate UVM testbench", "t3_mode": "forward",
                 "handler": cmd_generate_uvm},
+    }},
+    "service": {"help": "Unified control-plane service (Wave C): "
+                        "compile/evaluate/compare/inspect through one "
+                        "authoritative service",
+                "t3_mode": "forward",
+                "sub_dest": "service_cmd", "handler": None,
+                "subcommands": {
+        "compile": {"help": "Compile intent to design (no execution)",
+                      "t3_mode": "forward",
+                      "handler": cmd_service_compile},
+        "evaluate": {"help": "Evaluate intent to a typed result",
+                       "t3_mode": "forward",
+                       "handler": cmd_service_evaluate},
+        "compare": {"help": "Gated comparison of two results",
+                      "t3_mode": "forward",
+                      "handler": cmd_service_compare},
+        "inspect": {"help": "Inspect a resource by stable ID",
+                      "t3_mode": "forward",
+                      "handler": cmd_service_inspect},
     }},
     "api": {"help": "Agent-safe semantic API surface (Phase 17): structured "
                     "results, errors-as-data, declared budgets",
