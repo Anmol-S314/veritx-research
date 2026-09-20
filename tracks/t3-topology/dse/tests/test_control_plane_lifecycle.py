@@ -21,7 +21,7 @@ from veritx_dse.application.errors import (  # noqa: E402
     ControlPlaneError, ErrorCode,
 )
 from veritx_dse.application.results import (  # noqa: E402
-    load_verified_study, load_verified_studyrun,
+    load_verified_attempt, load_verified_study, load_verified_studyrun,
 )
 from veritx_dse.application.service import (  # noqa: E402
     SrotaControlPlane,
@@ -426,3 +426,385 @@ class TestStudyInspect:
         with pytest.raises(ControlPlaneError) as excinfo:
             clean_service.inspect("0" * 64)
         assert excinfo.value.code == ErrorCode.NOT_FOUND
+
+
+def _three_candidate_request():
+    return {
+        "name": "three-way",
+        "candidates": [_doc(name="a"),
+                       _doc(name="b", fabric_preset="mesh4_wide128"),
+                       _doc(name="c", fabric_preset="mesh4_hbm")],
+        "comparison": {
+            "contract": {"metric_ids": ["sim.latency.avg_cycles"]},
+            "pairs": [[0, 1], [0, 2]]}}
+
+
+class TestStudyComparisonCompleteness:
+    """Exactly one verified outcome per requested comparison pair."""
+
+    @pytest.fixture()
+    def compared(self, clean_service):
+        run = clean_service.run_study(_three_candidate_request())
+        assert [r["status"] for r in run["comparisons"]] == \
+            ["COMPARED", "COMPARED"]
+        return run
+
+    def _rewrite_rows(self, clean_service, run, rows):
+        store = clean_service.store
+        doc = copy.deepcopy(store.get("studyrun", run["resource_id"]))
+        doc["comparisons"] = rows
+        _overwrite(store, "studyrun", run["resource_id"], doc)
+
+    def test_correct_rows_verify(self, clean_service, compared):
+        load_verified_studyrun(clean_service.store,
+                               compared["resource_id"])
+
+    def test_missing_all_rows_refuses(self, clean_service, compared):
+        self._rewrite_rows(clean_service, compared, [])
+        with pytest.raises(ControlPlaneError):
+            load_verified_studyrun(clean_service.store,
+                                   compared["resource_id"])
+
+    def test_missing_one_row_refuses(self, clean_service, compared):
+        self._rewrite_rows(clean_service, compared,
+                           [compared["comparisons"][0]])
+        with pytest.raises(ControlPlaneError):
+            load_verified_studyrun(clean_service.store,
+                                   compared["resource_id"])
+
+    def test_duplicate_row_refuses(self, clean_service, compared):
+        first = compared["comparisons"][0]
+        self._rewrite_rows(clean_service, compared, [first, dict(first)])
+        with pytest.raises(ControlPlaneError):
+            load_verified_studyrun(clean_service.store,
+                                   compared["resource_id"])
+
+    def test_replaced_pair_refuses(self, clean_service, compared):
+        # [0,1] twice: one requested pair missing, another duplicated.
+        first = compared["comparisons"][0]
+        self._rewrite_rows(clean_service, compared, [first, dict(first)])
+        with pytest.raises(ControlPlaneError):
+            load_verified_studyrun(clean_service.store,
+                                   compared["resource_id"])
+
+    def test_extra_unrequested_row_refuses(self, clean_service,
+                                           compared):
+        rows = list(compared["comparisons"])
+        rows.append({"pair": [1, 2], "status": "SKIPPED",
+                     "reason": "a side has no successful result"})
+        self._rewrite_rows(clean_service, compared, rows)
+        with pytest.raises(ControlPlaneError):
+            load_verified_studyrun(clean_service.store,
+                                   compared["resource_id"])
+
+    def test_duplicate_requested_pair_refused_at_parse(self):
+        with pytest.raises(ControlPlaneError) as excinfo:
+            StudyRequest.parse({
+                "name": "dup",
+                "candidates": [_doc(name="a"), _doc(name="b")],
+                "comparison": {"contract": {}, "pairs": [[0, 1], [0, 1]]}})
+        assert excinfo.value.code == ErrorCode.INVALID_INTENT
+
+    def test_out_of_range_pair_refused_at_parse(self):
+        with pytest.raises(ControlPlaneError) as excinfo:
+            StudyRequest.parse({
+                "name": "oor",
+                "candidates": [_doc(name="a")],
+                "comparison": {"contract": {}, "pairs": [[0, 1]]}})
+        assert excinfo.value.code == ErrorCode.INVALID_INTENT
+
+    def test_directional_pairs_are_distinct(self):
+        forward = StudyRequest.parse({
+            "name": "d", "candidates": [_doc(name="a"),
+                                       _doc(name="b")],
+            "comparison": {"contract": {}, "pairs": [[0, 1], [1, 0]]}})
+        assert forward.comparison["pairs"] == [[0, 1], [1, 0]]
+
+
+class TestStudyTypedStatuses:
+    """Typed evaluation failures survive into StudyRun entries."""
+
+    def _status_of(self, service, request):
+        run = service.run_study(request)
+        return run, run["experiments"][0]
+
+    def _sleeper_service(self, clean_service, tmp_path):
+        sleeper = tmp_path / "sleeper"
+        sleeper.write_text("#!/bin/sh\nsleep 30\n")
+        sleeper.chmod(0o755)
+        return SrotaControlPlane(
+            store_root=tmp_path / "timeout_store",
+            repo_root=clean_service.repo_root, binary=sleeper)
+
+    def test_backend_failure_is_failed(self, clean_service, tmp_path):
+        broken = tmp_path / "broken"
+        broken.write_text("#!/bin/sh\nexit 3\n")
+        broken.chmod(0o755)
+        dark = SrotaControlPlane(
+            store_root=tmp_path / "fail_store",
+            repo_root=clean_service.repo_root, binary=broken)
+        run, entry = self._status_of(
+            dark, {"name": "f", "candidates": [_doc(name="x")]})
+        assert entry["status"] == "FAILED"
+        assert entry["error"]["code"] == "EXECUTION_FAILED"
+        load_verified_studyrun(dark.store, run["resource_id"])
+
+    def test_backend_timeout_is_timed_out(self, clean_service,
+                                          tmp_path):
+        dark = self._sleeper_service(clean_service, tmp_path)
+        candidate = _doc(name="t")
+        candidate["timeout_s"] = 1
+        run, entry = self._status_of(
+            dark, {"name": "t", "candidates": [candidate]})
+        assert entry["status"] == "TIMED_OUT"
+        assert entry["error"]["code"] == "EXECUTION_TIMEOUT"
+        load_verified_studyrun(dark.store, run["resource_id"])
+
+    def test_analytical_candidate_is_unsupported(self, clean_service):
+        run, entry = self._status_of(clean_service, {
+            "name": "u",
+            "candidates": [_doc(name="a",
+                                backend_target="SERVING_ANALYTICAL_AWARE")]})
+        assert entry["status"] == "UNSUPPORTED"
+        assert entry["error"]["code"] == "UNSUPPORTED_SEMANTICS"
+        load_verified_studyrun(clean_service.store, run["resource_id"])
+
+    def test_serving_candidate_is_blocked(self, clean_service):
+        run, entry = self._status_of(clean_service, {
+            "name": "b",
+            "candidates": [_doc(name="a",
+                                backend_target="SERVING_BOOKSIM2")]})
+        assert entry["status"] == "BLOCKED"
+        assert entry["error"]["code"] == "UNSUPPORTED_SEMANTICS"
+        load_verified_studyrun(clean_service.store, run["resource_id"])
+
+    def test_lowering_unsupported_maps_unsupported(self):
+        from veritx_dse.application.studies import (  # noqa: PLC0415
+            study_status_for_code,
+        )
+        assert study_status_for_code(
+            ErrorCode.LOWERING_UNSUPPORTED,
+            backend_target="BOOKSIM_STANDALONE") == "UNSUPPORTED"
+        assert study_status_for_code(
+            ErrorCode.POLICY_REJECTED) == "FAILED"
+
+    def _tamper_entry(self, service, run, **fields):
+        store = service.store
+        doc = copy.deepcopy(store.get("studyrun", run["resource_id"]))
+        doc["experiments"][0].update(fields)
+        _overwrite(store, "studyrun", run["resource_id"], doc)
+        with pytest.raises(ControlPlaneError):
+            load_verified_studyrun(store, run["resource_id"])
+
+    def test_timed_out_with_failure_code_refuses(self, clean_service,
+                                                 tmp_path):
+        dark = self._sleeper_service(clean_service, tmp_path)
+        candidate = _doc(name="t")
+        candidate["timeout_s"] = 1
+        run, _ = self._status_of(
+            dark, {"name": "t2", "candidates": [candidate]})
+        self._tamper_entry(dark, run,
+                           error={"code": "EXECUTION_FAILED",
+                                  "message": "forged",
+                                  "operation": "evaluate",
+                                  "resource_id": "", "cause_type": "",
+                                  "details": {}})
+
+    def test_failed_with_timeout_code_refuses(self, clean_service,
+                                              tmp_path):
+        broken = tmp_path / "broken9"
+        broken.write_text("#!/bin/sh\nexit 3\n")
+        broken.chmod(0o755)
+        dark = SrotaControlPlane(
+            store_root=tmp_path / "fail_store9",
+            repo_root=clean_service.repo_root, binary=broken)
+        run, _ = self._status_of(
+            dark, {"name": "f9", "candidates": [_doc(name="x")]})
+        self._tamper_entry(dark, run,
+                           error={"code": "EXECUTION_TIMEOUT",
+                                  "message": "forged",
+                                  "operation": "evaluate",
+                                  "resource_id": "", "cause_type": "",
+                                  "details": {}})
+
+    def test_unsupported_with_execution_error_refuses(self,
+                                                      clean_service):
+        run, _ = self._status_of(clean_service, {
+            "name": "u2",
+            "candidates": [_doc(name="a",
+                                backend_target="SERVING_ANALYTICAL_AWARE")]})
+        self._tamper_entry(clean_service, run,
+                           error={"code": "EXECUTION_FAILED",
+                                  "message": "forged",
+                                  "operation": "evaluate",
+                                  "resource_id": "", "cause_type": "",
+                                  "details": {}})
+
+    def test_unsupported_relabelled_blocked_refuses(self, clean_service):
+        run, _ = self._status_of(clean_service, {
+            "name": "u3",
+            "candidates": [_doc(name="a",
+                                backend_target="SERVING_ANALYTICAL_AWARE")]})
+        self._tamper_entry(clean_service, run, status="BLOCKED")
+
+    def test_unknown_error_code_refuses(self, clean_service, tmp_path):
+        broken = tmp_path / "broken10"
+        broken.write_text("#!/bin/sh\nexit 3\n")
+        broken.chmod(0o755)
+        dark = SrotaControlPlane(
+            store_root=tmp_path / "fail_store10",
+            repo_root=clean_service.repo_root, binary=broken)
+        run, _ = self._status_of(
+            dark, {"name": "f10", "candidates": [_doc(name="x")]})
+        self._tamper_entry(dark, run,
+                           error={"code": "NOT_A_CODE", "message": "x",
+                                  "operation": "evaluate",
+                                  "resource_id": "", "cause_type": "",
+                                  "details": {}})
+
+
+class TestAttemptStructure:
+    """Non-success attempts: coherent, never authenticated success."""
+
+    def _failed_attempt(self, clean_service, tmp_path):
+        broken = tmp_path / "brokenA"
+        broken.write_text("#!/bin/sh\nexit 3\n")
+        broken.chmod(0o755)
+        service = SrotaControlPlane(
+            store_root=tmp_path / "storeA",
+            repo_root=clean_service.repo_root, binary=broken)
+        with pytest.raises(ControlPlaneError) as excinfo:
+            service.evaluate(_doc(name="f"))
+        return service, excinfo.value.resource_id
+
+    def _timed_out_attempt(self, clean_service, tmp_path):
+        sleeper = tmp_path / "sleeperA"
+        sleeper.write_text("#!/bin/sh\nsleep 30\n")
+        sleeper.chmod(0o755)
+        service = SrotaControlPlane(
+            store_root=tmp_path / "storeB",
+            repo_root=clean_service.repo_root, binary=sleeper)
+        candidate = _doc(name="t")
+        candidate["timeout_s"] = 1
+        with pytest.raises(ControlPlaneError) as excinfo:
+            service.evaluate(candidate)
+        return service, excinfo.value.resource_id
+
+    def test_failed_attempt_is_structurally_valid(self, clean_service,
+                                                  tmp_path):
+        service, attempt_id = self._failed_attempt(clean_service,
+                                                   tmp_path)
+        described = service.inspect(attempt_id)
+        assert described["integrity"]["state"] == "STRUCTURALLY_VALID"
+        assert described["integrity"]["evidence"] == "NOT_AVAILABLE"
+
+    def test_timed_out_attempt_is_structurally_valid(self,
+                                                     clean_service,
+                                                     tmp_path):
+        service, attempt_id = self._timed_out_attempt(clean_service,
+                                                      tmp_path)
+        described = service.inspect(attempt_id)
+        assert described["integrity"]["state"] == "STRUCTURALLY_VALID"
+        assert described["record"]["error"]["code"] == \
+            "EXECUTION_TIMEOUT"
+
+    def test_interrupted_attempt_is_structurally_valid(self,
+                                                       clean_service):
+        from veritx_dse.application.resources import AttemptRecord
+        store = clean_service.store
+        attempt = AttemptRecord(
+            attempt_id="01a0be00-0000-7000-8000-00000000abcd",
+            experiment_id="experiment:" + "0" * 64,
+            status="INTERRUPTED", backend_dir="/tmp/x",
+            producer={}, error={"code": "INTERRUPTED",
+                                "message": "KeyboardInterrupt"},
+            runtime={})
+        store.put("attempt", attempt.attempt_id, attempt.to_dict())
+        # No experiment exists for this synthetic record: linkage refuses.
+        with pytest.raises(ControlPlaneError):
+            load_verified_attempt(store, attempt.attempt_id)
+
+    def test_planned_attempt_with_error_refuses(self, clean_service):
+        from veritx_dse.application.resources import AttemptRecord
+        store = clean_service.store
+        attempt = AttemptRecord(
+            attempt_id="01a0be00-0000-7000-8000-00000000abce",
+            experiment_id="experiment:" + "0" * 64,
+            status="PLANNED", backend_dir="/tmp/x", producer={},
+            error={"code": "EXECUTION_FAILED", "message": "x"},
+            runtime={})
+        store.put("attempt", attempt.attempt_id, attempt.to_dict())
+        with pytest.raises(ControlPlaneError):
+            load_verified_attempt(store, attempt.attempt_id)
+
+    def _tamper(self, service, attempt_id, mutate):
+        store = service.store
+        doc = copy.deepcopy(store.get("attempt", attempt_id))
+        mutate(doc)
+        _overwrite(store, "attempt", attempt_id, doc)
+        with pytest.raises(ControlPlaneError):
+            load_verified_attempt(store, attempt_id)
+
+    def test_failed_relabelled_timed_out_refuses(self, clean_service,
+                                                 tmp_path):
+        service, attempt_id = self._failed_attempt(clean_service,
+                                                   tmp_path)
+        self._tamper(service, attempt_id,
+                     lambda d: d.update({"status": "TIMED_OUT"}))
+
+    def test_timed_out_relabelled_failed_refuses(self, clean_service,
+                                                 tmp_path):
+        service, attempt_id = self._timed_out_attempt(clean_service,
+                                                      tmp_path)
+        self._tamper(service, attempt_id,
+                     lambda d: d.update({"status": "FAILED"}))
+
+    def test_interrupted_without_marker_refuses(self, clean_service,
+                                                tmp_path):
+        service, attempt_id = self._failed_attempt(clean_service,
+                                                   tmp_path)
+        self._tamper(service, attempt_id,
+                     lambda d: d.update({"status": "INTERRUPTED"}))
+
+    def test_evidence_ref_on_failed_attempt_refuses(self, clean_service,
+                                                    tmp_path):
+        service, attempt_id = self._failed_attempt(clean_service,
+                                                   tmp_path)
+        self._tamper(service, attempt_id,
+                     lambda d: d.update({
+                         "evidence_ref": {"path": "/tmp/x",
+                                          "sha256": "0" * 64}}))
+
+    def test_evidence_ref_on_timed_out_attempt_refuses(self,
+                                                       clean_service,
+                                                       tmp_path):
+        service, attempt_id = self._timed_out_attempt(clean_service,
+                                                      tmp_path)
+        self._tamper(service, attempt_id,
+                     lambda d: d.update({
+                         "evidence_ref": {"path": "/tmp/x",
+                                          "sha256": "0" * 64}}))
+
+    def test_missing_error_payload_refuses(self, clean_service,
+                                           tmp_path):
+        service, attempt_id = self._failed_attempt(clean_service,
+                                                   tmp_path)
+        self._tamper(service, attempt_id,
+                     lambda d: d.pop("error", None))
+
+    def test_unknown_error_code_refuses(self, clean_service, tmp_path):
+        service, attempt_id = self._failed_attempt(clean_service,
+                                                   tmp_path)
+        self._tamper(service, attempt_id,
+                     lambda d: d["error"].update({"code": "NOPE"}))
+
+    def test_legitimate_failed_attempt_verifies_without_evidence(
+            self, clean_service, tmp_path):
+        service, attempt_id = self._failed_attempt(clean_service,
+                                                   tmp_path)
+        record = load_verified_attempt(service.store, attempt_id)
+        assert record["status"] == "FAILED"
+        assert record["error"]["code"] == "EXECUTION_FAILED"
+        assert record.get("evidence_ref") is None
+        directory = service.store.root / "result"
+        assert not list(directory.glob("*.json"))

@@ -660,7 +660,7 @@ class SrotaControlPlane:
         result IDs by candidate index.
         """
         from .capabilities import check_study_budget
-        from .studies import StudyRequest
+        from .studies import StudyRequest, study_status_for_error
         from .resources import StudyDefinition, StudyResult
         request = StudyRequest.parse(study_doc)
         check_study_budget(len(request.candidates))
@@ -682,7 +682,8 @@ class SrotaControlPlane:
                 experiments.append({
                     "index": index, "status": "INVALID",
                     "candidate_identity": candidate_identity,
-                    "intent_id": None, "experiment_id": None,
+                    "intent_id": None, "backend_target": None,
+                    "experiment_id": None,
                     "result_id": None, "error": exc.to_dict()})
                 continue
             try:
@@ -691,14 +692,18 @@ class SrotaControlPlane:
                     "index": index, "status": "SUCCEEDED",
                     "candidate_identity": candidate_identity,
                     "intent_id": intent.intent_id(),
+                    "backend_target": intent.backend_target,
                     "experiment_id": result["experiment_id"],
                     "result_id": result["resource_id"],
                     "reused": result["reused"]})
             except ControlPlaneError as exc:
                 experiments.append({
-                    "index": index, "status": "FAILED",
+                    "index": index,
+                    "status": study_status_for_error(
+                        exc, backend_target=intent.backend_target),
                     "candidate_identity": candidate_identity,
                     "intent_id": intent.intent_id(),
+                    "backend_target": intent.backend_target,
                     "experiment_id": None,
                     "result_id": None, "error": exc.to_dict()})
         comparisons: list[dict[str, Any]] = []

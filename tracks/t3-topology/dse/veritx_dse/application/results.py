@@ -17,6 +17,7 @@ from typing import Any
 
 from .errors import ControlPlaneError, ErrorCode
 from .resources import check_envelope
+from .studies import STUDY_CANDIDATE_STATUSES
 
 
 def loss_digest_of(loss: list[dict[str, Any]]) -> str:
@@ -280,6 +281,7 @@ def load_verified_attempt(store: Any, attempt_id: str) -> dict[str, Any]:
             f"attempt {attempt_id} has invalid status {status!r}",
             operation="verify_resource", resource_id=attempt_id)
     if status != "SUCCEEDED":
+        _verify_attempt_structure(attempt_id, record)
         return record
     ref_doc = record.get("evidence_ref") or {}
     try:
@@ -545,6 +547,66 @@ def load_verified_comparison(store: Any,
     return record
 
 
+def _verify_attempt_structure(attempt_id: str,
+                              record: dict[str, Any]) -> None:
+    """Status/error coherence for non-success attempts.
+
+    These records are NOT authenticated scientific evidence — no
+    successful EvidenceRef exists to bind. Structural validity still
+    requires internal coherence: the terminal state and its error
+    classification must agree, and no unsuccessful attempt may carry
+    success evidence.
+    """
+    status = record.get("status")
+    if record.get("evidence_ref") is not None:
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"attempt {attempt_id} is {status} but carries an "
+            f"evidence_ref",
+            operation="verify_resource", resource_id=attempt_id)
+    if status in ("PLANNED", "RUNNING"):
+        # Live/abandoned states carry no terminal claim at all.
+        if record.get("error") is not None:
+            raise ControlPlaneError(
+                ErrorCode.EVIDENCE_INVALID,
+                f"attempt {attempt_id} is {status} but carries a "
+                f"terminal error payload",
+                operation="verify_resource", resource_id=attempt_id)
+        return
+    error = record.get("error")
+    if not isinstance(error, dict) or not error.get("message"):
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"attempt {attempt_id} ({status}) lacks a well-formed "
+            f"error payload",
+            operation="verify_resource", resource_id=attempt_id)
+    code = error.get("code")
+    if status == "TIMED_OUT":
+        if code != "EXECUTION_TIMEOUT":
+            raise ControlPlaneError(
+                ErrorCode.EVIDENCE_INVALID,
+                f"attempt {attempt_id} is TIMED_OUT with error "
+                f"{code!r}",
+                operation="verify_resource", resource_id=attempt_id)
+        return
+    if status == "FAILED":
+        if code != "EXECUTION_FAILED":
+            raise ControlPlaneError(
+                ErrorCode.EVIDENCE_INVALID,
+                f"attempt {attempt_id} is FAILED with non-failure "
+                f"error {code!r}",
+                operation="verify_resource", resource_id=attempt_id)
+        return
+    # INTERRUPTED: the interruption marker is its own literal (there is
+    # no ErrorCode member for a synchronous cancellation).
+    if code != "INTERRUPTED":
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"attempt {attempt_id} is {status} with error {code!r} "
+            f"(expected the interruption marker)",
+            operation="verify_resource", resource_id=attempt_id)
+
+
 def load_verified_study(store: Any, study_id: str) -> dict[str, Any]:
     """StudyDefinition identity (definition kind, deterministic ID)."""
     record = _get(store, "studydef", study_id)
@@ -597,10 +659,55 @@ def load_verified_studyrun(store: Any, study_run_id: str) -> dict[str, Any]:
     for position, entry in enumerate(experiments):
         _verify_study_entry(store, study_run_id, position, entry,
                             identities)
+    _verify_comparison_completeness(study_run_id, definition,
+                                    record.get("comparisons"))
     for row in record.get("comparisons", []):
         _verify_study_comparison_row(store, study_run_id, row,
                                      definition, experiments)
     return record
+
+
+def _verify_comparison_completeness(study_run_id: str,
+                                    definition: dict[str, Any],
+                                    rows: Any) -> None:
+    """Exactly one outcome row per requested comparison pair.
+
+    Validating only the rows that exist would let a requested
+    comparison be deleted (or duplicated) while the run still
+    verifies; the requested pair multiset is the contract.
+    """
+    requested = (definition.get("comparison_request") or {})
+    pairs = requested.get("pairs", [])
+    if not isinstance(rows, list):
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"study run {study_run_id} comparisons must be a list",
+            operation="verify_resource", resource_id=study_run_id)
+    if len(rows) != len(pairs):
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"study run {study_run_id} has {len(rows)} comparison "
+            f"rows for {len(pairs)} requested pairs",
+            operation="verify_resource", resource_id=study_run_id)
+    observed = []
+    for row in rows:
+        pair = row.get("pair") if isinstance(row, dict) else None
+        if not isinstance(pair, list) or len(pair) != 2 or any(
+                not isinstance(i, int) or isinstance(i, bool)
+                for i in pair):
+            raise ControlPlaneError(
+                ErrorCode.EVIDENCE_INVALID,
+                f"study run {study_run_id} has a malformed comparison "
+                f"pair {pair!r}",
+                operation="verify_resource", resource_id=study_run_id)
+        observed.append((pair[0], pair[1]))
+    expected = [(p[0], p[1]) for p in pairs]
+    if sorted(observed) != sorted(expected):
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"study run {study_run_id} comparison pairs {observed} do "
+            f"not match the requested pairs {expected}",
+            operation="verify_resource", resource_id=study_run_id)
 
 
 def _verify_study_entry(store: Any, study_run_id: str, position: int,
@@ -618,14 +725,16 @@ def _verify_study_entry(store: Any, study_run_id: str, position: int,
     status = entry.get("status")
     if status == "SUCCEEDED":
         result = load_verified_result(store, entry.get("result_id"))
+        plan = load_verified_plan(store, result.get("plan_id"))
         _require_equal(f"entry[{position}].experiment_id",
                        entry.get("experiment_id"),
                        result.get("experiment_id"), study_run_id)
         _require_equal(f"entry[{position}].intent_id",
                        entry.get("intent_id"),
-                       load_verified_plan(
-                           store, result.get("plan_id"))
-                       .get("intent_id"), study_run_id)
+                       plan.get("intent_id"), study_run_id)
+        _require_equal(f"entry[{position}].backend_target",
+                       entry.get("backend_target"),
+                       plan.get("backend_target"), study_run_id)
         if entry.get("error") is not None:
             raise ControlPlaneError(
                 ErrorCode.EVIDENCE_INVALID,
@@ -633,8 +742,7 @@ def _verify_study_entry(store: Any, study_run_id: str, position: int,
                 f"but carries an error payload",
                 operation="verify_resource", resource_id=study_run_id)
         return
-    if status not in ("INVALID", "FAILED", "TIMED_OUT",
-                      "UNSUPPORTED", "BLOCKED"):
+    if status not in STUDY_CANDIDATE_STATUSES:
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
             f"study run {study_run_id} entry {position} has invalid "
@@ -653,8 +761,15 @@ def _verify_study_entry(store: Any, study_run_id: str, position: int,
 def _verify_study_error(store: Any, study_run_id: str, position: int,
                         entry: dict[str, Any],
                         identities: list) -> None:
-    """Non-success entries: intent binding + error well-formedness."""
+    """Non-success entries: intent binding + typed error coherence.
+
+    The status must equal the ONE authoritative mapping
+    (``study_status_for_code``) for the recorded error code and the
+    recorded backend target, so timeout/unsupported/blocked/failure
+    cannot be relabelled.
+    """
     from .errors import ErrorCode as _Codes
+    from .studies import study_status_for_code
     status = entry.get("status")
     error = entry.get("error")
     if not isinstance(error, dict) or not error.get("code") or \
@@ -682,6 +797,12 @@ def _verify_study_error(store: Any, study_run_id: str, position: int,
                 f"study run {study_run_id} entry {position} is "
                 f"INVALID but carries an intent_id",
                 operation="verify_resource", resource_id=study_run_id)
+        if entry.get("backend_target") is not None:
+            raise ControlPlaneError(
+                ErrorCode.EVIDENCE_INVALID,
+                f"study run {study_run_id} entry {position} is "
+                f"INVALID but carries a backend_target",
+                operation="verify_resource", resource_id=study_run_id)
         if not identities[position].startswith("invalid:"):
             raise ControlPlaneError(
                 ErrorCode.EVIDENCE_INVALID,
@@ -703,22 +824,13 @@ def _verify_study_error(store: Any, study_run_id: str, position: int,
     experiment_id = entry.get("experiment_id")
     if experiment_id is not None:
         load_verified_experiment(store, experiment_id)
-    if status == "TIMED_OUT" and code != _Codes.EXECUTION_TIMEOUT:
+    expected = study_status_for_code(
+        code, backend_target=entry.get("backend_target"))
+    if status != expected:
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
-            f"study run {study_run_id} entry {position} TIMED_OUT "
-            f"with error {code.value}",
-            operation="verify_resource", resource_id=study_run_id)
-    if code in (_Codes.INVALID_INTENT, _Codes.NOT_FOUND,
-                _Codes.CONFLICT, _Codes.COMPARISON_INCOMPATIBLE):
-        # These codes cannot originate inside evaluate() for an
-        # already-resolved intent: resolution, inspection, store and
-        # comparison failures surface elsewhere, never as a FAILED
-        # study entry.
-        raise ControlPlaneError(
-            ErrorCode.EVIDENCE_INVALID,
-            f"study run {study_run_id} entry {position} {status} "
-            f"with impossible error {code.value}",
+            f"study run {study_run_id} entry {position} claims "
+            f"{status} for error {code.value} (expected {expected})",
             operation="verify_resource", resource_id=study_run_id)
 
 

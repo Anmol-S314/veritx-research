@@ -231,3 +231,30 @@ first-wins with semantic verification.
 - **Observability**: top-level `runs/results/status/history/report` moved
   under `veritx legacy …` (blocked, labeled LEGACY) — the certified
   surface is `service/api list|inspect`.
+
+## 12. Wave C-SEAL: comparison completeness, typed failures, attempt coherence
+
+- **Comparison completeness**: a StudyRun must contain exactly one
+  outcome row per requested comparison pair
+  (`multiset(row.pair) == multiset(requested pairs)`). Deleted,
+  duplicated, replaced or extra rows refuse. Duplicate or out-of-range
+  requested pairs are rejected at `StudyRequest` parse time (ordered
+  pairs are unique; direction is semantic).
+- **Typed study failures**: `study_status_for_code` is the ONE
+  authoritative evaluation-error -> study-status mapping
+  (`EXECUTION_TIMEOUT -> TIMED_OUT`; `UNSUPPORTED_SEMANTICS` /
+  `LOWERING_UNSUPPORTED -> UNSUPPORTED`, or `BLOCKED` when the
+  capability registry says the target's execution is BLOCKED; everything
+  else -> `FAILED`). `run_study()` records the mapped status with the
+  original `ControlPlaneError` preserved in the error envelope, plus the
+  resolved `backend_target` on every entry. The verifier re-derives the
+  expected status from the recorded code + target, so relabelling (e.g.
+  `TIMED_OUT + EXECUTION_FAILED`, `FAILED + EXECUTION_TIMEOUT`,
+  `UNSUPPORTED + execution error`) refuses.
+- **Attempt structural coherence**: non-success attempts are still not
+  authenticated evidence, but must be internally coherent —
+  `TIMED_OUT` requires `EXECUTION_TIMEOUT`, `FAILED` requires
+  `EXECUTION_FAILED`, `INTERRUPTED` requires the interruption marker,
+  no non-success attempt may carry an `evidence_ref`, and
+  `PLANNED`/`RUNNING` may carry no terminal error. `SUCCEEDED` requires
+  no failure error payload in addition to the authenticated EvidenceRef.
