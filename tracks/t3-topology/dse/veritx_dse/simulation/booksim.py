@@ -518,17 +518,6 @@ def parse_output(stdout: str) -> dict:
     return result
 
 
-_TRACE_INJECTED_RE = re.compile(r"\[trace\] All \d+ cycles,\s*injected=(\d+)")
-
-
-def parse_trace_injected(stderr: str) -> int | None:
-    """Wave D (§49): the fork prints the true injected-packet total on
-    stderr at the drain point ("[trace] All ... cycles, injected=N").
-    Returns None when the marker is absent — never a fabricated zero."""
-    hits = _TRACE_INJECTED_RE.findall(stderr or "")
-    return int(hits[-1]) if hits else None
-
-
 def evidence_from_result(result: dict) -> dict:
     """Map a BookSim result to the F-check evidence vocabulary.
 

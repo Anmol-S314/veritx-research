@@ -1367,10 +1367,6 @@ class CertifiedBookSimEvidence:
     producer_source_dirty_digest: str | None = None
     producer_tool_identity: str = ""
     execution_transport: str = EXECUTION_TRANSPORT_SUPERVISED
-    # Wave D (§49): true backend-injected packet count from the fork's
-    # drain point (stderr). None when the backend did not print it —
-    # never fabricated.
-    injected_packets: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -1403,7 +1399,6 @@ class CertifiedBookSimEvidence:
                 self.producer_source_dirty_digest,
             "producer_tool_identity": self.producer_tool_identity,
             "execution_transport": self.execution_transport,
-            "injected_packets": self.injected_packets,
         }
 
 
@@ -1524,8 +1519,6 @@ def _execute_prepared(
             returncode=res.returncode, stdout=res.stdout, stderr=res.stderr)
 
     stats = parse_output(res.stdout or "")
-    from veritx_dse.simulation.booksim import parse_trace_injected
-    injected_packets = parse_trace_injected(res.stderr or "")
     if stats.get("delivered", 0) == 0:
         raise BookSimError(
             "certified BookSim delivered 0 packets — topology cannot carry "
@@ -1568,7 +1561,6 @@ def _execute_prepared(
         producer_source_dirty_digest=producer.source_dirty_digest,
         producer_tool_identity=producer.tool_identity,
         execution_transport=transport,
-        injected_packets=injected_packets,
     )
 
 
