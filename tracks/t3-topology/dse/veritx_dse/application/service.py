@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from veritx_dse.core.runs import new_run_id
-from veritx_dse.wavee.workload import EVENT_NETWORK_OPERATION_REF
+from veritx_dse.wavee.workload import EVENT_NETWORK_TRAFFIC_WINDOW
 
 from .compile import compile_bundle
 from .comparison import (
@@ -959,7 +959,9 @@ class SrotaControlPlane:
         net_binding_doc = None
         network_durations = None
         chain = plan["wave_d"]
-        if wave_e_extra is not None:
+        window_events = [e.event_id for e in workload.events
+                         if e.kind == EVENT_NETWORK_TRAFFIC_WINDOW]
+        if wave_e_extra is not None and window_events:
             from veritx_dse.wavee.model import NETWORK_TIMING_BOOKSIM
             from veritx_dse.wavee.network import (
                 NetworkWindowBinding, bind_network_window,
@@ -1003,11 +1005,13 @@ class SrotaControlPlane:
                 network_clock_hz=clock_hz,
                 expected_packets=run_summary["num_packets"])
             net_binding_doc = binding.to_dict()
-            # §39 barrier-window rule: EVERY NETWORK_OPERATION_REF gets
-            # the same evidence-bound window duration.
+            # §39: the ONE aggregate window event gets the evidence-bound
+            # duration. Handing the global window to several network
+            # events would multiply or fake-overlap the network
+            # contribution with no evidence behind it.
             network_durations = {
                 e.event_id: window for e in workload.events
-                if e.kind == EVENT_NETWORK_OPERATION_REF}
+                if e.kind == EVENT_NETWORK_TRAFFIC_WINDOW}
 
         # ── deterministic schedule over verified inputs ─────────────
         from veritx_dse.wavee.result import (

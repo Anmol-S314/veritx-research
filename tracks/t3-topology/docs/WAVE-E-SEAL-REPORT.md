@@ -90,6 +90,22 @@ The library-level `reverify_result` is likewise a self-consistency
 checker; the product path never persists a schedule, so the product
 verifier re-runs the scheduler from the verified overlay and binding.
 
+## 1c. Second adversarial audit: the closure findings
+
+An independent audit of the sealed tree found eight further issues. All
+were reproduced, fixed, and locked with tests.
+
+| # | Finding | Fix |
+|---|---|---|
+| 1 | **The global BookSim window was assigned to EVERY network event.** A workload with two network events got the whole global duration twice (or fake overlap), and the product bound the window to a single Wave-D operation id while it actually covered the whole traffic artifact. | One aggregate `NETWORK_TRAFFIC_WINDOW` event per workload, carrying no operation id and declaring duration 0; `NETWORK_OPERATION_REF` refuses at construction as UNSUPPORTED; the binding exists iff the overlay declares a window event; a window no event consumes refuses. |
+| 2 | **`WaveEEventGraph` was mutable beneath a cached identity.** `wave_d_chain` was a caller-owned dict and no attribute was frozen, so mutating the caller's dict left `event_graph_id()` stale. | Transitively immutable: the chain is frozen into the canonical value tree (shared with Wave D), attribute assignment refuses, and mutation of the caller's dict cannot move the identity. |
+| 3 | **`compute_source=ANALYTICAL_MODEL` was false provenance.** It changed the fidelity warning but nothing about compute timing — compute always used the declared duration. | `compute_source` admits `EXPLICIT_DURATION` only and refuses anything else; a separate `memory_source` (`EXPLICIT_DURATION` / `ANALYTICAL_BANDWIDTH`) carries the memory rate law. The warning reports both. |
+| 4 | **Memory latency was advertised and silently zero.** The law was documented as `T = latency + bytes/BW` while the scheduler passed no latency and `ResourceDef` had none. | The law is `T = bytes / bandwidth` with no latency parameter at all; memory latency is UNSUPPORTED rather than a hidden zero. |
+| 5 | **Nested schemas were not closed.** `ResourceDef.from_dict`, `WaveETemporalEvent.from_dict` and `WaveERequest.from_dict` ignored extra fields, so a persisted overlay could carry `claimed_h100_latency_ns: 17`, verify, and still expose the raw field through `inspect`. | All three parsers enforce exact key sets; an unknown field refuses. |
+| 6 | **Request identity was ambiguous.** Request ids were not required unique (two `r1` entries shared release keys while metrics looped over both), and `first_token_event_id` was checked for existence but not ownership, so one request could claim another's event. | Unique request ids; one ownership policy for root, completion and first-token events (owned by this request or unowned). |
+| 7 | **The library result verifier dropped `bytes_moved`** when rebuilding a persisted schedule, so re-derived bandwidth utilization was wrong again after the audit fix. | The row roundtrip restores `bytes_moved`; schedule rows have a closed key set and an unknown field refuses. |
+| 8 | **The "critical path" was not the realized one.** Two independent events on a capacity-1 resource produce a 20 ms makespan while the metric reported 10 ms, because resource serialization is not a dependency edge. | Renamed to `dependency_critical_path` (and `_duration`) everywhere, with the limitation stated in the contract and pinned by a test. Building resource-causality edges was deliberately NOT done in v1; sensitivity is the bottleneck tool. |
+
 ## 2. Repository audit (Stage A): what timing authority exists
 
 Searched for compute cycles, kernel durations, FLOPs, HBM bandwidth/latency,
@@ -253,12 +269,12 @@ The variation can be allowed only by declaring it in the contract.
 From the committed tree (`934f122f`, clean):
 
 ```
-Wave-E suites (scheduler/identity/demos/product)   134 passed / 1 skipped
+Wave-E suites (scheduler/identity/demos/product)   153 passed / 1 skipped
 Wave-D seal + semantics + physical + authenticity   (with Wave-C below)
 Wave-C control plane                                467 passed together
 frozen Wave-B focused chain                         747 passed
 BookSim goldens                                       6 passed
-broad DSE suite      26 failed / 3114 passed / 41 skipped
+broad DSE suite      26 failed / 3133 passed / 41 skipped
   failed node IDs vs the pre-Wave-D baseline        IDENTICAL (zero new)
 git diff --check                                    clean
 ```
@@ -279,7 +295,12 @@ comparison, different duration    comparable (that is the study)
 ## 12. Known limitations
 
 ```
-per-operation network causality     UNSUPPORTED (BookSim exposes a window)
+per-operation network causality     UNSUPPORTED (BookSim exposes one window;
+                                    the event kind refuses at construction)
+realized critical path              NOT COMPUTED (dependency chain only, and
+                                    named accordingly)
+memory latency                      UNSUPPORTED (T = bytes/BW, no hidden zero)
+analytical compute                  UNSUPPORTED (declared durations only)
 optimal makespan under contention   UNSUPPORTED (declared FIFO, recorded gap)
 analytical compute (FLOPs roofline) UNSUPPORTED (no FLOPs model in repo)
 memory capacity feasibility         DEFERRED (no residency declarations)

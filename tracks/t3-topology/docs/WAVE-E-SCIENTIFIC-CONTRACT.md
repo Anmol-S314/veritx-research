@@ -128,14 +128,21 @@ about a second; 50 000-deep chains and 50 000-way bandwidth sharing likewise.
 
 ## 6. Compute / memory timing
 
-- Sources (identity-bearing): `EXPLICIT_DURATION` (the trustworthy baseline),
-  `ANALYTICAL_MODEL` (declared; e.g. roofline-like with explicitly bound rates),
-  `MEASURED_DURATION`, `CALIBRATED_MODEL` (requires a real calibration dataset;
-  none exists → `UNCALIBRATED`). No synthetic data is manufactured to claim
-  calibration.
-- Memory: explicit bytes; `T = latency + bytes/bandwidth` is a **declared
-  analytical model**, not an HBM prediction; capacity is an exact constraint
-  only where residency is explicitly declared.
+The two sources are SEPARATE identity-bearing fields, because a single
+`compute_source` flag that only affected memory was false provenance:
+
+- `compute_source`: **`EXPLICIT_DURATION` only.** The repository holds no
+  FLOPs/kernel model, so an "analytical compute" mode would change the
+  fidelity warning while changing nothing about the timing. Declaring one
+  refuses. `MEASURED_DURATION` / `CALIBRATED_MODEL` need a real dataset;
+  none exists → `UNCALIBRATED`.
+- `memory_source`: `EXPLICIT_DURATION` (the event's declared duration) or
+  `ANALYTICAL_BANDWIDTH` (`T = bytes / bandwidth` for a bandwidth
+  resource). **There is no latency term**: the repository declares no base
+  memory latency, and folding a silent zero into the law would be a hidden
+  timing assumption. Memory latency is UNSUPPORTED in v1.
+- Memory bytes are explicit; capacity is an exact constraint only where
+  residency is explicitly declared (DEFERRED).
 
 ## 7. Network timing (the one seam)
 
@@ -144,9 +151,21 @@ BookSim evidence (§38 audit) exposes: `completion_time` (global cycles),
 `flits_accepted`, `drain_verdict`. It does **not** expose per-message
 completion cycles. Therefore:
 
-- The whole traffic window is **one BARRIER network event** with
+- A workload declares **exactly one `NETWORK_TRAFFIC_WINDOW` event**
+  covering the WHOLE Wave-D traffic artifact, with
   `duration = completion_time / network_clock_hz` (§39: no invented per-op
-  causality). Communication overlap *within* the window is BookSim's business.
+  causality). It carries no Wave-D operation id and declares duration 0 —
+  both are refused, because the window is not one operation's time and the
+  declared duration would be inert.
+- `NETWORK_OPERATION_REF` is **UNSUPPORTED and refuses at construction**:
+  assigning the global window to N operations would multiply the network
+  contribution N-fold or invent overlap, with no evidence behind it.
+  Per-operation network timing arrives only when BookSim exposes
+  per-message completion.
+- The evidence binding is present **iff** the overlay declares a window
+  event: a pure-compute overlay claims no network window, and a claimed
+  window that no event consumes refuses.
+- Communication overlap *within* the window is BookSim's business.
 - `cycles → seconds` requires the explicit network clock; without it the
   window stays in cycles and cross-domain wall-time claims refuse.
 - Wave E never re-derives Wave-D traffic and never applies an analytical NoC
@@ -159,8 +178,18 @@ completion cycles. Therefore:
 ## 8. Metrics
 
 - `makespan = max(end) − min(start)` over the scheduled domain.
-- **Critical path** = longest causal chain of the scheduled DAG (not "largest
-  busy time"); ties broken by semantic id.
+- **`dependency_critical_path`** = longest EXPLICIT dependency chain of the
+  scheduled DAG (not "largest busy time", and not the realized schedule
+  critical path either); ties broken by semantic id. Resource serialization
+  is NOT a dependency edge, so two independent events sharing a capacity-1
+  resource run back to back while this metric reports only the longer one.
+  The name says which one it is; sensitivity analysis is the tool for
+  realized bottleneck attribution. A realized critical path would require
+  reconstructing resource-causality edges — deliberately not built in v1.
+- **Schedule accounting** (persisted with the schedule and re-derived on
+  load): each bandwidth transfer records the exact `bytes_moved` and the
+  time-weighted average rate; the capacity integral equals the bytes moved;
+  `utilization ≤ 1` is enforced and an over-capacity schedule refuses.
 - **Utilization** = occupied capacity-time / (capacity × makespan) per exclusive
   resource; bandwidth resources report bytes and capacity integral.
 - **Request latency** = completion − arrival, only for events bound to explicit
@@ -269,7 +298,9 @@ empirical claim) · `UNCALIBRATED` (no dataset) · `UNSUPPORTED` (refuses)
 | memory contention (equal share) | ANALYTICAL | event-driven fluid sharing, exact-rational |
 | BookSim network cycles | EXACT_MODEL_SEMANTICS | evidence `completion_time` |
 | BookSim cycles → wall time | EXACT_MODEL_SEMANTICS | requires an explicit `network_clock_hz`; no default |
-| per-operation network completion | UNSUPPORTED | BookSim exposes only a global window (§7) |
+| per-operation network completion | UNSUPPORTED | BookSim exposes only a global window (§7); the event kind refuses at construction |
+| memory latency | UNSUPPORTED | no base latency exists; the law is T = bytes/BW with no hidden zero |
+| realized (resource-aware) critical path | UNSUPPORTED | only the dependency critical path is computed; named accordingly |
 | communication overlap (window vs local work) | EXACT_MODEL_SEMANTICS | causal scheduling; no overlap heuristic |
 | single request latency | EXACT_MODEL_SEMANTICS | completion − arrival for explicit requests |
 | multiple explicit arrivals | EXACT_MODEL_SEMANTICS | arrivals are release times; deterministic queueing on shared resources |

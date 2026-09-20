@@ -23,7 +23,8 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from veritx_dse.wavee.metrics import (
-    critical_path, latency_summary, request_latencies, resource_utilization,
+    dependency_critical_path, latency_summary, request_latencies,
+    resource_utilization,
 )
 from veritx_dse.wavee.model import (
     ClockDef, ResourceDef, WaveEPerformanceModel,
@@ -33,7 +34,7 @@ from veritx_dse.wavee.scheduler import (
 )
 from veritx_dse.wavee.time import QTime
 from veritx_dse.wavee.workload import (
-    EVENT_MEMORY_READ, EVENT_NETWORK_OPERATION_REF, WaveERequest,
+    EVENT_MEMORY_READ, EVENT_NETWORK_TRAFFIC_WINDOW, WaveERequest,
     WaveETemporalEvent, WaveETemporalWorkload, WorkloadError,
 )
 
@@ -63,10 +64,11 @@ def mem(eid: str, nbytes: int, deps: tuple[str, ...] = (),
                               deps=tuple(deps), bytes_count=nbytes)
 
 
-def net_event(eid: str = "NET", op: str = "op1",
+def net_event(eid: str = "NET", op: str | None = None,
               deps: tuple[str, ...] = ()) -> WaveETemporalEvent:
-    return WaveETemporalEvent(eid, EVENT_NETWORK_OPERATION_REF, QTime(0),
-                              wave_d_operation_id=op, deps=deps)
+    """The ONE aggregate network window event (§39)."""
+    return WaveETemporalEvent(eid, EVENT_NETWORK_TRAFFIC_WINDOW, QTime(0),
+                              deps=deps)
 
 
 # ── §76 hand-computed reference schedules ────────────────────────────
@@ -186,7 +188,7 @@ class TestReferenceSchedules:
                     comp("D", 1000, ("B", "C"))))
         s = schedule_workload(w)
         assert s.makespan() == QTime(8000, US)
-        path, length = critical_path(w, s)
+        path, length = dependency_critical_path(w, s)
         assert set(path) == {"A", "C", "D"}
         assert length == QTime(8000, US)
 

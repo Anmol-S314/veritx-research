@@ -44,7 +44,7 @@ from veritx_dse.wavee.model import (
 )
 from veritx_dse.wavee.time import QTime, TimeError
 from veritx_dse.wavee.workload import (
-    EVENT_NETWORK_OPERATION_REF, MEMORY_KINDS, WaveETemporalEvent,
+    EVENT_NETWORK_TRAFFIC_WINDOW, MEMORY_KINDS, WaveETemporalEvent,
     WaveETemporalWorkload,
 )
 
@@ -147,14 +147,15 @@ class Schedule:
 
 def _duration_of(e: WaveETemporalEvent, model: WaveEPerformanceModel
                  ) -> QTime:
-    """Duration under the model's compute source (§22).
+    """Duration under the model's declared timing sources (§22).
 
-    EXPLICIT mode uses the declared duration verbatim (trustworthy
-    relative-to-model baseline, §92). ANALYTICAL mode derives memory
-    event durations from the resource rate law ``T = bytes / BW``; other
-    events keep their declared duration (no fabricated FLOPs model).
+    Compute always uses the declared duration: v1 has no compute model, so
+    ``compute_source`` admits EXPLICIT_DURATION only. Memory events use the
+    declared duration unless ``memory_source`` is ANALYTICAL_BANDWIDTH, in
+    which case the resource's rate law ``T = bytes / bandwidth`` applies
+    (no latency term exists to fold in).
     """
-    if model.compute_source == "ANALYTICAL_MODEL" and \
+    if model.memory_source == "ANALYTICAL_BANDWIDTH" and \
             e.kind in MEMORY_KINDS and e.resource is not None:
         from veritx_dse.wavee.model import rate_duration
         rdef = model.resource(e.resource)
@@ -169,7 +170,7 @@ def schedule_workload(workload: WaveETemporalWorkload, *,
                       ) -> Schedule:
     """Deterministic earliest-start schedule under model policies.
 
-    ``network_durations`` maps NETWORK_OPERATION_REF event ids to exact
+    ``network_durations`` maps NETWORK_TRAFFIC_WINDOW event ids to exact
     durations bound to qualified backend evidence (§36/§42); events not
     present there keep their declared duration. The caller — never the
     scheduler — owns the evidence seam (§113).
@@ -189,16 +190,16 @@ def schedule_workload(workload: WaveETemporalWorkload, *,
     net = dict(network_durations or {})
     by_id = {e.event_id: e for e in workload.events}
 
-    # §36/§42: a NETWORK_OPERATION_REF with no evidence-bound duration
+    # §36/§42: the aggregate window event with no evidence-bound duration
     # would silently schedule at its declared placeholder (0) — i.e.
     # claim the network is free without any timing authority. Refuse:
     # network time enters ONLY through the evidence seam.
     unbound = sorted(e.event_id for e in workload.events
-                     if e.kind == EVENT_NETWORK_OPERATION_REF
+                     if e.kind == EVENT_NETWORK_TRAFFIC_WINDOW
                      and e.event_id not in net)
     if unbound:
         raise TimeError(
-            f"NETWORK_OPERATION_REF events {unbound} have no "
+            f"NETWORK_TRAFFIC_WINDOW events {unbound} have no "
             f"evidence-bound duration; network timing requires qualified "
             f"backend evidence (§36/§42) — refusing to treat the "
             f"network as free")

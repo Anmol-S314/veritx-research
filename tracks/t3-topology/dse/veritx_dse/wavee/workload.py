@@ -9,7 +9,7 @@ is the causal object the scheduler consumes:
                              dependencies, resources, requests)
 
 Event kinds (small vocabulary, §14): COMPUTE, MEMORY_READ, MEMORY_WRITE,
-MEMORY_COPY, NETWORK_OPERATION_REF, BARRIER.
+MEMORY_COPY, NETWORK_TRAFFIC_WINDOW, BARRIER.
 
 DAG laws (§17): every dependency references an existing event; no self
 edges; acyclic; referenced resources exist in the model; Wave-D
@@ -39,12 +39,21 @@ EVENT_COMPUTE = "COMPUTE"
 EVENT_MEMORY_READ = "MEMORY_READ"
 EVENT_MEMORY_WRITE = "MEMORY_WRITE"
 EVENT_MEMORY_COPY = "MEMORY_COPY"
-EVENT_NETWORK_OPERATION_REF = "NETWORK_OPERATION_REF"
+# ONE aggregate network event covering the WHOLE Wave-D traffic artifact.
+# BookSim exposes a global completion window and no per-message completion
+# cycles, so a per-operation network event would be a lie: assigning the
+# global window to each of N operations multiplies the network
+# contribution N-fold (or invents overlap) with no evidence behind it.
+EVENT_NETWORK_TRAFFIC_WINDOW = "NETWORK_TRAFFIC_WINDOW"
 EVENT_BARRIER = "BARRIER"
 EVENT_KINDS = (EVENT_COMPUTE, EVENT_MEMORY_READ, EVENT_MEMORY_WRITE,
-               EVENT_MEMORY_COPY, EVENT_NETWORK_OPERATION_REF, EVENT_BARRIER)
+               EVENT_MEMORY_COPY, EVENT_NETWORK_TRAFFIC_WINDOW,
+               EVENT_BARRIER)
 
 MEMORY_KINDS = (EVENT_MEMORY_READ, EVENT_MEMORY_WRITE, EVENT_MEMORY_COPY)
+# Retained as a NAME ONLY so a persisted v1 document refuses with a clear
+# message instead of "unknown kind".
+EVENT_NETWORK_OPERATION_REF = "NETWORK_OPERATION_REF"
 
 
 class WorkloadError(Exception):
@@ -58,7 +67,13 @@ class WorkloadError(Exception):
 
 
 class WaveERequest:
-    """Explicit request grouping (§52). Never inferred from packets."""
+    """Explicit request grouping (§52). Never inferred from packets.
+
+    ``request_id`` is the identity the scheduler keys release times by, so
+    it must be unique within a workload. Root/completion/first-token
+    events must be owned by this request or unowned — one ownership
+    policy for all three.
+    """
 
     __slots__ = ("request_id", "arrival", "root_event_ids",
                  "completion_event_ids", "first_token_event_id")
@@ -103,10 +118,16 @@ class WaveERequest:
 
     @staticmethod
     def from_dict(d: Any) -> "WaveERequest":
-        if not isinstance(d, dict) or \
-                not {"request_id", "arrival", "root_event_ids",
-                     "completion_event_ids"} <= set(d):
+        required = {"request_id", "arrival", "root_event_ids",
+                    "completion_event_ids"}
+        allowed = required | {"first_token_event_id"}
+        if not isinstance(d, dict) or not required <= set(d):
             raise WorkloadError(f"request dict malformed: {d!r}")
+        unknown = sorted(set(d) - allowed)
+        if unknown:
+            raise WorkloadError(
+                f"request has unknown fields {unknown}; the request schema "
+                f"is closed")
         return WaveERequest(
             request_id=d["request_id"], arrival=QTime.from_dict(d["arrival"]),
             root_event_ids=tuple(d["root_event_ids"]),
@@ -132,6 +153,13 @@ class WaveETemporalEvent:
                  is_first_token: bool = False) -> None:
         if not isinstance(event_id, str) or not event_id:
             raise WorkloadError("event_id must be a non-empty string")
+        if kind == EVENT_NETWORK_OPERATION_REF:
+            raise WorkloadError(
+                "NETWORK_OPERATION_REF is UNSUPPORTED: BookSim exposes a "
+                "global completion window, not per-operation completion "
+                "cycles, so per-operation network timing cannot be "
+                "justified. Declare ONE NETWORK_TRAFFIC_WINDOW event "
+                "covering the whole traffic artifact instead.")
         if kind not in EVENT_KINDS:
             raise WorkloadError(
                 f"kind must be one of {EVENT_KINDS}, got {kind!r}")
@@ -141,17 +169,25 @@ class WaveETemporalEvent:
             raise WorkloadError(f"duration must be >= 0, got {duration}")
         if kind == EVENT_BARRIER and duration != QTime.zero():
             raise WorkloadError("BARRIER events have zero duration")
-        if kind == EVENT_NETWORK_OPERATION_REF:
+        if kind == EVENT_NETWORK_TRAFFIC_WINDOW:
+            if duration != QTime.zero():
+                raise WorkloadError(
+                    "NETWORK_TRAFFIC_WINDOW declares duration 0; its real "
+                    "duration comes ONLY from the evidence-bound window "
+                    "(a declared duration here would be inert and "
+                    "misleading)")
             if resource is not None:
                 raise WorkloadError(
-                    "NETWORK_OPERATION_REF does not claim a local resource")
-            if wave_d_operation_id is None:
+                    "NETWORK_TRAFFIC_WINDOW does not claim a local "
+                    "resource")
+            if wave_d_operation_id is not None:
                 raise WorkloadError(
-                    "NETWORK_OPERATION_REF requires wave_d_operation_id "
-                    "provenance (§15)")
+                    "NETWORK_TRAFFIC_WINDOW covers the WHOLE traffic "
+                    "artifact, not one operation; it must not cite a "
+                    "Wave-D operation id (§42)")
             if bytes_count is not None:
                 raise WorkloadError(
-                    "NETWORK_OPERATION_REF does not carry bytes_count; "
+                    "NETWORK_TRAFFIC_WINDOW does not carry bytes_count; "
                     "its time comes from the evidence-bound window")
         else:
             if resource is None:
@@ -187,7 +223,7 @@ class WaveETemporalEvent:
                            wave_d_operation_id)
         object.__setattr__(self, "bytes_count", bytes_count)
         object.__setattr__(self, "is_first_token", bool(is_first_token)
-                           and kind != EVENT_NETWORK_OPERATION_REF)
+                           and kind != EVENT_NETWORK_TRAFFIC_WINDOW)
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -206,9 +242,17 @@ class WaveETemporalEvent:
 
     @staticmethod
     def from_dict(d: Any) -> "WaveETemporalEvent":
-        if not isinstance(d, dict) or \
-                not {"event_id", "kind", "duration", "deps"} <= set(d):
+        required = {"event_id", "kind", "duration", "deps"}
+        allowed = required | {"resource", "phase", "rank", "step",
+                              "request_id", "wave_d_operation_id",
+                              "bytes_count", "is_first_token"}
+        if not isinstance(d, dict) or not required <= set(d):
             raise WorkloadError(f"event dict malformed: {d!r}")
+        unknown = sorted(set(d) - allowed)
+        if unknown:
+            raise WorkloadError(
+                f"event {d.get('event_id')!r} has unknown fields {unknown}; "
+                f"the event schema is closed")
         return WaveETemporalEvent(
             event_id=d["event_id"], kind=d["kind"],
             duration=QTime.from_dict(d["duration"]),
@@ -258,6 +302,20 @@ class WaveETemporalWorkload:
         if len(ids) != len(set(ids)):
             dupes = sorted({i for i in ids if ids.count(i) > 1})
             raise WorkloadError(f"duplicate event_ids: {dupes}")
+        windows = [e.event_id for e in events
+                   if e.kind == EVENT_NETWORK_TRAFFIC_WINDOW]
+        if len(windows) > 1:
+            raise WorkloadError(
+                f"a workload declares at most ONE "
+                f"NETWORK_TRAFFIC_WINDOW event (got {sorted(windows)}): "
+                f"the global BookSim window cannot be split across "
+                f"events")
+        req_ids = [r.request_id for r in requests]
+        if len(req_ids) != len(set(req_ids)):
+            dupes = sorted({i for i in req_ids if req_ids.count(i) > 1})
+            raise WorkloadError(
+                f"duplicate request_ids {dupes}: the scheduler keys "
+                f"release times by request id, so it must be unique")
         object.__setattr__(self, "performance_model", performance_model)
         object.__setattr__(self, "events",
                            canonical_events(tuple(events)))
@@ -324,22 +382,24 @@ class WaveETemporalWorkload:
                     raise WorkloadError(
                         f"request {r.request_id!r} references missing event "
                         f"{rid!r}")
-            for rid in r.root_event_ids + r.completion_event_ids:
+            for rid in r.root_event_ids + r.completion_event_ids + \
+                    ((r.first_token_event_id,)
+                     if r.first_token_event_id else ()):
                 ev = by_id[rid]
                 if ev.request_id not in (None, r.request_id):
                     raise WorkloadError(
                         f"request {r.request_id!r} binds event {rid!r} "
                         f"already owned by request {ev.request_id!r}")
-        # wave_d provenance check (§15): every NETWORK_OPERATION_REF
-        # must cite a declared Wave-D operation id
+        # wave_d provenance check (§15): any event that cites a Wave-D
+        # operation id must cite one from the declared set
         if declared:
             for e in self.events:
                 if e.wave_d_operation_id is not None and \
-                        e.wave_d_operation_id not in declared and \
-                        e.kind == EVENT_NETWORK_OPERATION_REF:
+                        e.wave_d_operation_id not in declared:
                     raise WorkloadError(
                         f"event {e.event_id!r} cites Wave-D operation "
-                        f"{e.wave_d_operation_id!r} not in the declared set")
+                        f"{e.wave_d_operation_id!r} not in the declared "
+                        f"set")
 
     # ── identity ────────────────────────────────────────────────
     def canonical(self) -> dict[str, Any]:

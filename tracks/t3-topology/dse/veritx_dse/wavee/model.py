@@ -25,12 +25,23 @@ from typing import Any
 
 from veritx_dse.wavee.time import TimeError
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 _MODEL_TAG = "srota/wavee/performance-model/v1"
 
+# Compute timing has exactly ONE supported source in v1: the declared
+# duration. The repository holds no FLOPs/kernel model, so advertising an
+# "analytical compute" mode would be false provenance (the flag would
+# change the fidelity warning while changing nothing about the timing).
 COMPUTE_SOURCE_EXPLICIT = "EXPLICIT_DURATION"
-COMPUTE_SOURCE_ANALYTICAL = "ANALYTICAL_MODEL"
-COMPUTE_SOURCES = (COMPUTE_SOURCE_EXPLICIT, COMPUTE_SOURCE_ANALYTICAL)
+COMPUTE_SOURCES = (COMPUTE_SOURCE_EXPLICIT,)
+
+# Memory timing has two declared sources: the event's own duration, or
+# the declared bandwidth rate law T = bytes / bandwidth. There is no
+# latency term: no identity-bearing base latency exists, and a hidden
+# zero is still a hidden assumption.
+MEMORY_SOURCE_EXPLICIT = "EXPLICIT_DURATION"
+MEMORY_SOURCE_ANALYTICAL = "ANALYTICAL_BANDWIDTH"
+MEMORY_SOURCES = (MEMORY_SOURCE_EXPLICIT, MEMORY_SOURCE_ANALYTICAL)
 
 ARBITRATION_FIFO = "FIFO_SERIAL"
 ARBITRATION_EQUAL_SHARE = "EQUAL_SHARE_BANDWIDTH"
@@ -145,22 +156,40 @@ class ResourceDef:
 
     @staticmethod
     def from_dict(d: Any) -> "ResourceDef":
+        """Strict: the resource schema is CLOSED (no unknown fields).
+
+        An extra key that the constructor silently drops would let a
+        persisted resource carry a claim (``peak_tflops``, a latency, a
+        clock) that survives into a "verified" record without ever
+        affecting the model identity.
+        """
         if not isinstance(d, dict) or "name" not in d or "kind" not in d:
             raise ModelError(f"resource dict malformed: {d!r}")
         if d["kind"] == RESOURCE_KIND_EXCLUSIVE:
-            return ResourceDef(d["name"], d["kind"], capacity=d.get("capacity"))
-        if d["kind"] == RESOURCE_KIND_BANDWIDTH:
-            return ResourceDef(
-                d["name"], d["kind"],
-                bandwidth_bytes_per_s=Fraction(d["bandwidth_bps_num"],
-                                               d["bandwidth_bps_den"]))
-        raise ModelError(f"unknown resource kind {d['kind']!r}")
+            allowed = {"name", "kind", "capacity"}
+        elif d["kind"] == RESOURCE_KIND_BANDWIDTH:
+            allowed = {"name", "kind", "bandwidth_bps_num",
+                       "bandwidth_bps_den"}
+        else:
+            raise ModelError(f"unknown resource kind {d['kind']!r}")
+        unknown = sorted(set(d) - allowed)
+        if unknown:
+            raise ModelError(
+                f"resource {d['name']!r} has unknown fields {unknown}; the "
+                f"resource schema is closed")
+        if d["kind"] == RESOURCE_KIND_EXCLUSIVE:
+            return ResourceDef(d["name"], d["kind"],
+                               capacity=d.get("capacity"))
+        return ResourceDef(
+            d["name"], d["kind"],
+            bandwidth_bytes_per_s=Fraction(d["bandwidth_bps_num"],
+                                           d["bandwidth_bps_den"]))
 
 
 class WaveEPerformanceModel:
     """Immutable binding of every timing-affecting assumption (§10)."""
 
-    __slots__ = ("clocks", "resources", "compute_source",
+    __slots__ = ("clocks", "resources", "compute_source", "memory_source",
                  "network_timing_model", "network_clock",
                  "arbitration_exclusive", "arbitration_bandwidth", "_id")
 
@@ -169,6 +198,7 @@ class WaveEPerformanceModel:
     def __init__(self, *, clocks: tuple[ClockDef, ...],
                  resources: tuple[ResourceDef, ...],
                  compute_source: str = COMPUTE_SOURCE_EXPLICIT,
+                 memory_source: str = MEMORY_SOURCE_EXPLICIT,
                  network_timing_model: str = NETWORK_TIMING_BOOKSIM,
                  network_clock: str | None = None,
                  arbitration_exclusive: str = ARBITRATION_FIFO,
@@ -191,7 +221,13 @@ class WaveEPerformanceModel:
         if compute_source not in COMPUTE_SOURCES:
             raise ModelError(
                 f"compute_source must be one of {COMPUTE_SOURCES}, "
-                f"got {compute_source!r}")
+                f"got {compute_source!r}; there is no analytical compute "
+                f"model in the repository, so claiming one would be false "
+                f"provenance")
+        if memory_source not in MEMORY_SOURCES:
+            raise ModelError(
+                f"memory_source must be one of {MEMORY_SOURCES}, "
+                f"got {memory_source!r}")
         if network_timing_model != NETWORK_TIMING_BOOKSIM:
             raise ModelError(
                 "network_timing_model must be QUALIFIED_BOOKSIM_WINDOW; "
@@ -219,6 +255,7 @@ class WaveEPerformanceModel:
         object.__setattr__(self, "clocks", tuple(clocks))
         object.__setattr__(self, "resources", tuple(resources))
         object.__setattr__(self, "compute_source", compute_source)
+        object.__setattr__(self, "memory_source", memory_source)
         object.__setattr__(self, "network_timing_model",
                            network_timing_model)
         object.__setattr__(self, "network_clock", network_clock)
@@ -234,6 +271,7 @@ class WaveEPerformanceModel:
             "schema_version": SCHEMA_VERSION,
             "clocks": [c.to_dict() for c in self.clocks],
             "compute_source": self.compute_source,
+            "memory_source": self.memory_source,
             "network_timing_model": self.network_timing_model,
             "network_clock": self.network_clock,
             "arbitration_exclusive": self.arbitration_exclusive,
@@ -271,8 +309,9 @@ class WaveEPerformanceModel:
         if not isinstance(d, dict):
             raise ModelError("performance model must be a dict")
         allowed = {"schema_version", "clocks", "compute_source",
-                   "network_timing_model", "network_clock", "resources",
-                   "arbitration_exclusive", "arbitration_bandwidth"}
+                   "memory_source", "network_timing_model", "network_clock",
+                   "resources", "arbitration_exclusive",
+                   "arbitration_bandwidth"}
         if set(d) != allowed:
             raise ModelError(
                 f"performance model fields must be exactly {sorted(allowed)}, "
@@ -285,26 +324,26 @@ class WaveEPerformanceModel:
         return WaveEPerformanceModel(
             clocks=clocks, resources=resources,
             compute_source=d["compute_source"],
+            memory_source=d["memory_source"],
             network_timing_model=d["network_timing_model"],
             network_clock=d["network_clock"],
             arbitration_exclusive=d["arbitration_exclusive"],
             arbitration_bandwidth=d["arbitration_bandwidth"])
 
 
-def rate_duration(bytes_count: int, bandwidth_bps: int | Fraction,
-                  latency: int | Fraction = 0) -> Fraction:
-    """Analytical transfer: T = latency + bytes / bandwidth (§30).
+def rate_duration(bytes_count: int, bandwidth_bps: int | Fraction
+                  ) -> Fraction:
+    """Analytical transfer: T = bytes / bandwidth (§30).
 
     Exact rational. This is a *declared analytical model*, not an HBM
     prediction; the caller binds it into model identity via the
-    resource/bandwidth definitions.
+    resource/bandwidth definitions. There is deliberately NO latency
+    term: the repository declares no base memory latency, and folding a
+    silent zero into the law would be a hidden timing assumption. Memory
+    latency is UNSUPPORTED in v1.
     """
     if isinstance(bytes_count, bool) or not isinstance(bytes_count, int) \
             or bytes_count < 0:
         raise ModelError(f"bytes_count must be int >= 0, got {bytes_count!r}")
     bw = _bandwidth(bandwidth_bps, "bandwidth")
-    if isinstance(latency, bool) or not isinstance(latency, (int, Fraction)) \
-            or latency < 0:
-        raise ModelError("latency must be exact and >= 0")
-    lat = Fraction(latency)
-    return lat + Fraction(bytes_count, 1) / bw
+    return Fraction(bytes_count, 1) / bw

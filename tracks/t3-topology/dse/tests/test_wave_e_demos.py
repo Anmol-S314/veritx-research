@@ -23,7 +23,9 @@ from fractions import Fraction
 
 import pytest
 
-from veritx_dse.wavee.metrics import critical_path, resource_utilization
+from veritx_dse.wavee.metrics import (
+    dependency_critical_path, resource_utilization,
+)
 from veritx_dse.wavee.model import (
     ClockDef, ResourceDef, WaveEPerformanceModel,
 )
@@ -35,7 +37,7 @@ from veritx_dse.wavee.result import (
 from veritx_dse.wavee.scheduler import schedule_workload
 from veritx_dse.wavee.time import QTime
 from veritx_dse.wavee.workload import (
-    EVENT_NETWORK_OPERATION_REF, WaveERequest, WaveETemporalEvent,
+    EVENT_NETWORK_TRAFFIC_WINDOW, WaveERequest, WaveETemporalEvent,
     WaveETemporalWorkload,
 )
 
@@ -57,8 +59,8 @@ def comp(eid, dur_us, deps=(), **kw):
 
 
 def net(eid="NET", deps=()):
-    return WaveETemporalEvent(eid, "NETWORK_OPERATION_REF", QTime(0),
-                              wave_d_operation_id="op1", deps=tuple(deps))
+    return WaveETemporalEvent(eid, "NETWORK_TRAFFIC_WINDOW", QTime(0),
+                              deps=tuple(deps))
 
 
 def _mem(eid, nbytes, deps=()):
@@ -145,7 +147,7 @@ class TestDemoCOverlap:
         # window determines quiescence — while the compute chain sums to
         # 6.5ms. Counterfactual removal (1ms) and critical-path membership
         # are DIFFERENT quantities and both are reported, never conflated.
-        path, length = critical_path(w, s)
+        path, length = dependency_critical_path(w, s)
         assert set(path) == {"NET", "JOIN"}
         assert length == QTime(7500, US)
 
@@ -415,8 +417,8 @@ class TestRealBookSimE2E:
             network_clock="net")
         events = (
             WaveETemporalEvent(
-                "NET", EVENT_NETWORK_OPERATION_REF, QTime(0),
-                wave_d_operation_id="p2p0", phase="DECODE", rank=0),
+                "NET", EVENT_NETWORK_TRAFFIC_WINDOW, QTime(0),
+                phase="DECODE", rank=0),
             WaveETemporalEvent(
                 "TAIL", "COMPUTE", QTime(500, 10 ** 6), "gpu.compute",
                 deps=("NET",), phase="DECODE", rank=0),

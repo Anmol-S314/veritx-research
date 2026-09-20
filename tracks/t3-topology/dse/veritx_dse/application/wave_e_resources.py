@@ -158,9 +158,10 @@ def wave_e_metrics_warning(model: Any) -> str:
     "VALIDATED against H100" claim cannot survive a load.
     """
     return (f"compute={model.compute_source} "
+            f"memory={model.memory_source} "
             f"network={model.network_timing_model} "
             f"all=UNCALIBRATED "
-            f"(analytical/explicit models; no hardware dataset in repo)")
+            f"(declared/explicit models; no hardware dataset in repo)")
 
 
 def verify_wave_e_result_block(
@@ -260,7 +261,7 @@ def verify_wave_e_result_block(
     binding = wave_e.get("network_binding")
     network_events = sorted(
         e.event_id for e in workload.events
-        if e.kind == "NETWORK_OPERATION_REF")
+        if e.kind == "NETWORK_TRAFFIC_WINDOW")
     if binding is None:
         if network_events:
             raise ControlPlaneError(
@@ -269,6 +270,8 @@ def verify_wave_e_result_block(
                 f"events but no evidence-bound window: refusing to "
                 f"treat the network as free (§36/§42)",
                 operation="verify_result", resource_id=result_id)
+        # ... and the converse: a window with no event to consume it is
+        # a claim the overlay never made.
         if wave_e.get("network_window") is not None:
             raise ControlPlaneError(
                 ErrorCode.EVIDENCE_INVALID,
@@ -277,6 +280,14 @@ def verify_wave_e_result_block(
                 operation="verify_result", resource_id=result_id)
         rebuilt = None
     else:
+        if not network_events:
+            raise ControlPlaneError(
+                ErrorCode.EVIDENCE_INVALID,
+                f"result {result_id} claims an evidence-bound network "
+                f"window but its temporal workload declares no "
+                f"NETWORK_TRAFFIC_WINDOW event: the window would never "
+                f"affect the schedule",
+                operation="verify_result", resource_id=result_id)
         if not isinstance(binding, dict):
             raise ControlPlaneError(
                 ErrorCode.EVIDENCE_INVALID,

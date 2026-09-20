@@ -22,7 +22,7 @@ import hashlib
 from typing import Any
 
 from veritx_dse.wavee.metrics import (
-    critical_path as compute_critical_path,
+    dependency_critical_path as compute_critical_path,
 )
 from veritx_dse.wavee.metrics import (
     latency_summary, request_latencies, resource_utilization,
@@ -30,8 +30,17 @@ from veritx_dse.wavee.metrics import (
 from veritx_dse.wavee.network import NetworkWindowBinding
 from veritx_dse.wavee.scheduler import Schedule
 from veritx_dse.wavee.time import QTime
+# The immutability layer is shared with Wave D: one implementation of
+# "frozen canonical value tree", not a second copy (AGENTS.md rule).
+from veritx_dse.waved.immutable import ImmutableError, freeze, thaw
+
+
+def _freeze(self, name, value):  # noqa: ANN001
+    raise AttributeError(
+        f"{type(self).__name__} is immutable (Wave-E §11); construct a "
+        f"new instance instead")
 from veritx_dse.wavee.workload import (
-    EVENT_NETWORK_OPERATION_REF, WaveETemporalWorkload,
+    EVENT_NETWORK_TRAFFIC_WINDOW, WaveETemporalWorkload,
 )
 
 RESULT_SCHEMA_VERSION = 1
@@ -42,9 +51,16 @@ _RESULT_TAG = "srota/wavee/performance-result/v1"
 RESULT_FIELDS = frozenset({
     "schema_version", "event_graph_id", "performance_model_id",
     "temporal_workload_id", "network_binding", "wave_d_chain",
-    "schedule", "makespan", "critical_path", "critical_path_duration",
-    "utilization", "request_latencies", "latency_summary",
-    "sensitivity", "metrics_warning",
+    "schedule", "makespan", "dependency_critical_path",
+    "dependency_critical_path_duration", "utilization",
+    "request_latencies", "latency_summary", "sensitivity",
+    "metrics_warning",
+})
+
+# The closed key set of one persisted schedule row.
+SCHEDULE_ROW_FIELDS = frozenset({
+    "event_id", "start", "end", "resource", "bandwidth_allocated_bps",
+    "bytes_moved",
 })
 
 
@@ -63,17 +79,34 @@ def _content_id(tag: str, body: dict[str, Any]) -> str:
 
 
 class WaveEEventGraph:
-    """Validated temporal workload + model + optional network binding."""
+    """Validated temporal workload + model + optional network binding.
+
+    Transitively immutable, like every other Wave-E/D artifact: the
+    Wave-D chain block is copied into a frozen canonical map, so mutating
+    the caller's dict (or any nested value) cannot change the graph after
+    ``event_graph_id()`` has been observed. A cached identity over
+    mutable content is the exact bug class Waves B and D exterminated.
+    """
 
     __slots__ = ("workload", "network_binding", "wave_d_chain", "_id")
+
+    __setattr__ = _freeze
 
     def __init__(self, *, workload: WaveETemporalWorkload,
                  network_binding: NetworkWindowBinding | None = None,
                  wave_d_chain: dict[str, Any] | None = None) -> None:
         object.__setattr__(self, "workload", workload)
         object.__setattr__(self, "network_binding", network_binding)
-        object.__setattr__(self, "wave_d_chain",
-                           dict(wave_d_chain) if wave_d_chain else None)
+        if wave_d_chain:
+            try:
+                chain = freeze(wave_d_chain)
+            except ImmutableError as exc:
+                raise ResultError(
+                    f"wave_d_chain is not a canonical immutable value: "
+                    f"{exc}") from None
+        else:
+            chain = None
+        object.__setattr__(self, "wave_d_chain", chain)
         object.__setattr__(self, "_id", None)
 
     def event_graph_id(self) -> str:
@@ -87,17 +120,19 @@ class WaveEEventGraph:
             if self.network_binding is not None:
                 body["network_binding"] = self.network_binding.to_dict()
             if self.wave_d_chain is not None:
-                body["wave_d_chain"] = self.wave_d_chain
+                body["wave_d_chain"] = thaw(self.wave_d_chain)
             object.__setattr__(self, "_id",
                                _content_id(_GRAPH_TAG, body))
         return self._id
 
     def network_durations(self) -> dict[str, QTime] | None:
-        """§37/§39: the BARRIER window as NETWORK_OPERATION_REF durations.
+        """§37/§39: the ONE aggregate window event's duration.
 
-        The whole traffic window is ONE barrier event (§39): every
-        NETWORK_OPERATION_REF in the workload receives the SAME window
-        duration, bound to qualified evidence. Without a bound clock the
+        BookSim exposes a global completion window, so the workload
+        declares exactly one NETWORK_TRAFFIC_WINDOW event and it receives
+        that window verbatim. Handing the same global duration to several
+        network events would multiply or fake-overlap the network
+        contribution with no evidence behind it. Without a bound clock the
         duration stays None and cross-domain wall-time mixing refuses.
         """
         if self.network_binding is None:
@@ -106,7 +141,7 @@ class WaveEEventGraph:
         if dur is None:
             return None
         return {e.event_id: dur for e in self.workload.events
-                if e.kind == EVENT_NETWORK_OPERATION_REF}
+                if e.kind == EVENT_NETWORK_TRAFFIC_WINDOW}
 
 
 def build_performance_result(*, graph: WaveEEventGraph,
@@ -138,7 +173,7 @@ def build_performance_result(*, graph: WaveEEventGraph,
             workload.performance_model.performance_model_id(),
         "schedule": schedule.to_dict(),
         "makespan": makespan.to_dict(),
-        "critical_path": list(path),
+        "dependency_critical_path": list(path),
     })
     return {
         "schema_version": RESULT_SCHEMA_VERSION,
@@ -150,8 +185,13 @@ def build_performance_result(*, graph: WaveEEventGraph,
         "wave_d_chain": graph.wave_d_chain,
         "schedule": schedule.to_dict(),
         "makespan": makespan.to_dict(),
-        "critical_path": list(path),
-        "critical_path_duration": path_len.to_dict(),
+        # The name says exactly what it is: the longest EXPLICIT
+        # dependency chain. Resource-serialization edges (two independent
+        # events sharing a capacity-1 resource) are not part of it, so
+        # this can be shorter than the makespan and must not be read as
+        # the realized schedule critical path.
+        "dependency_critical_path": list(path),
+        "dependency_critical_path_duration": path_len.to_dict(),
         "utilization": util,
         "request_latencies": rows,
         "latency_summary": summary,
@@ -186,6 +226,14 @@ def reverify_result(result_doc: dict[str, Any], *,
         from veritx_dse.wavee.scheduler import ScheduledEvent
         events = []
         for row in result_doc["schedule"]["events"]:
+            if not isinstance(row, dict) or \
+                    not {"event_id", "start", "end"} <= set(row):
+                raise ResultError(f"malformed schedule row {row!r}")
+            unknown = sorted(set(row) - SCHEDULE_ROW_FIELDS)
+            if unknown:
+                raise ResultError(
+                    f"schedule row {row.get('event_id')!r} has unknown "
+                    f"fields {unknown}; the schedule schema is closed")
             bw = row.get("bandwidth_allocated_bps")
             events.append(ScheduledEvent(
                 row["event_id"],
@@ -193,15 +241,21 @@ def reverify_result(result_doc: dict[str, Any], *,
                 QTime.from_dict(row["end"]),
                 row.get("resource"),
                 bandwidth_allocated_bps=(Fraction(bw["num"], bw["den"])
-                                         if bw else None)))
+                                         if bw else None),
+                # bytes_moved is identity-bearing for bandwidth
+                # utilization; dropping it on load made the re-derived
+                # utilization wrong.
+                bytes_moved=int(row.get("bytes_moved", 0))))
         schedule = Schedule(tuple(events))
     # re-derive every summary from the schedule (§74)
     path, path_len = compute_critical_path(workload, schedule)
     makespan = schedule.makespan()
     checks = (
         ("makespan", result_doc["makespan"], makespan.to_dict()),
-        ("critical_path", result_doc["critical_path"], list(path)),
-        ("critical_path_duration", result_doc["critical_path_duration"],
+        ("dependency_critical_path",
+         result_doc["dependency_critical_path"], list(path)),
+        ("dependency_critical_path_duration",
+         result_doc["dependency_critical_path_duration"],
          path_len.to_dict()),
     )
     for what, stored, derived in checks:
@@ -221,7 +275,7 @@ def reverify_result(result_doc: dict[str, Any], *,
         "performance_model_id": rebuild["performance_model_id"],
         "schedule": rebuild["schedule"],
         "makespan": rebuild["makespan"],
-        "critical_path": rebuild["critical_path"],
+        "dependency_critical_path": rebuild["dependency_critical_path"],
     }
     if _content_id(_RESULT_TAG, body) != rid:
         raise ResultError(

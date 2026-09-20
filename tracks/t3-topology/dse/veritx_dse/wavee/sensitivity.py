@@ -30,7 +30,7 @@ from veritx_dse.wavee.model import (
 from veritx_dse.wavee.scheduler import Schedule, schedule_workload
 from veritx_dse.wavee.time import QTime
 from veritx_dse.wavee.workload import (
-    EVENT_NETWORK_OPERATION_REF, MEMORY_KINDS, WaveETemporalWorkload,
+    EVENT_NETWORK_TRAFFIC_WINDOW, MEMORY_KINDS, WaveETemporalWorkload,
 )
 
 SENSITIVITY_SCHEMA_VERSION = 1
@@ -97,7 +97,7 @@ def perturb_workload_durations(workload: WaveETemporalWorkload, *,
     for e in workload.events:
         dur = e.duration
         nbytes = e.bytes_count
-        if e.kind == EVENT_NETWORK_OPERATION_REF:
+        if e.kind == EVENT_NETWORK_TRAFFIC_WINDOW:
             if network_zero:
                 dur = QTime(0)
             elif network_factor is not None:

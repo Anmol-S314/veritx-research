@@ -25,17 +25,23 @@ from veritx_dse.wavee.model import (
 from veritx_dse.wavee.scheduler import Schedule
 from veritx_dse.wavee.time import QTime
 from veritx_dse.wavee.workload import (
-    EVENT_NETWORK_OPERATION_REF, WaveETemporalWorkload,
+    EVENT_NETWORK_TRAFFIC_WINDOW, WaveETemporalWorkload,
 )
 
 
-def critical_path(workload: WaveETemporalWorkload, schedule: Schedule,
-                  ) -> tuple[tuple[str, ...], QTime]:
-    """Longest causal chain under scheduled durations (§45).
+def dependency_critical_path(workload: WaveETemporalWorkload,
+                             schedule: Schedule,
+                             ) -> tuple[tuple[str, ...], QTime]:
+    """Longest EXPLICIT dependency chain under scheduled durations (§45).
 
     Chain length = sum of scheduled durations along a dependency chain,
     maximized over the event DAG; ties broken by semantic event id
-    ordering (deterministic). This is NOT "largest total busy time".
+    ordering (deterministic). This is NOT "largest total busy time", and
+    it is NOT the realized schedule critical path either: resource
+    serialization is not a dependency edge, so two independent events
+    sharing a capacity-1 resource run back to back while this metric
+    reports only the longer of the two. The name says which one it is;
+    sensitivity analysis is the tool for realized bottleneck attribution.
     Iterative memoized evaluation: safe for deep chains (§140).
     """
     by_id = {e.event_id: e for e in workload.events}

@@ -1,6 +1,6 @@
 {
   "contract": "srota/wave-e",
-  "schema_version": 3,
+  "schema_version": 4,
   "base": {
     "wave_d_branch": "wave-d/distributed-semantics",
     "wave_d_sealed_sha": "d3f3bd63b952b54fb5cac688532caf83ca66c512"
@@ -21,6 +21,7 @@
       "clocks (name + exact hz)",
       "resources (name/kind/capacity|bandwidth)",
       "compute_source",
+      "memory_source",
       "network_timing_model",
       "network_clock",
       "arbitration_exclusive",
@@ -84,7 +85,9 @@
     ],
     "not_available": "per-message/per-operation completion cycles",
     "window_rule": "the whole traffic window is one BARRIER-network event with duration = completion_time / network_clock_hz; per-op causal completion is UNSUPPORTED",
-    "no_double_contention": "analytical NoC contention over BookSim-simulated traffic is refused"
+    "no_double_contention": "analytical NoC contention over BookSim-simulated traffic is refused",
+    "granularity": "ONE aggregate NETWORK_TRAFFIC_WINDOW event per workload covering the whole traffic artifact; NETWORK_OPERATION_REF refuses at construction",
+    "binding_presence": "the evidence binding is present iff the overlay declares a window event"
   },
   "metrics": {
     "makespan": "max(end) - min(start) over scheduled events",
@@ -94,7 +97,9 @@
     "ttft": "first token completion - arrival; requires explicit request + first-token completion event, else UNSUPPORTED",
     "tpot": "decode-step cadence from explicit step identities, else UNSUPPORTED",
     "exposed_network": "counterfactual: makespan_baseline - makespan(network duration -> 0); not total network active time",
-    "attribution": "non-additive; sensitivity/counterfactual quantities are reported per-parameter, never summed to makespan"
+    "attribution": "non-additive; sensitivity/counterfactual quantities are reported per-parameter, never summed to makespan",
+    "dependency_critical_path": "longest EXPLICIT dependency chain; NOT the realized schedule critical path (resource serialization is not a dependency edge)",
+    "schedule_accounting": "each bandwidth transfer records exact bytes_moved and the time-weighted average rate; capacity integral == bytes moved; utilization <= 1 enforced; schedule rows are schema-closed and round-trip bytes_moved"
   },
   "scheduler": {
     "algorithm": "deterministic discrete-event; event boundaries are dependency completions, resource releases, bandwidth completions",
@@ -184,5 +189,33 @@
       "O(n^2) scheduler -> near-linear (differential-verified)"
     ],
     "boundary": "a store-writer who re-signs the whole chain can present a different declared timing model; only the network window is anchored in authenticated evidence"
+  },
+  "compute_timing": {
+    "compute_source": [
+      "EXPLICIT_DURATION"
+    ],
+    "memory_source": [
+      "EXPLICIT_DURATION",
+      "ANALYTICAL_BANDWIDTH"
+    ],
+    "memory_law": "T = bytes / bandwidth (NO latency term; latency is UNSUPPORTED rather than a hidden zero)",
+    "calibration": "UNCALIBRATED"
+  },
+  "schema_closure": {
+    "top_level": [
+      "performance model",
+      "temporal workload",
+      "event graph",
+      "performance result",
+      "network binding"
+    ],
+    "nested": [
+      "resource def",
+      "clock def",
+      "event",
+      "request",
+      "schedule row"
+    ],
+    "rule": "exact key sets everywhere; an unknown field refuses"
   }
 }

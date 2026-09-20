@@ -30,11 +30,16 @@ from veritx_dse.wavee.result import (
 from veritx_dse.wavee.scheduler import schedule_workload
 from veritx_dse.wavee.time import QTime
 from veritx_dse.wavee.workload import (
-    EVENT_NETWORK_OPERATION_REF,
-    WaveETemporalEvent, WaveETemporalWorkload, WorkloadError,
+    EVENT_NETWORK_TRAFFIC_WINDOW, WaveERequest, WaveETemporalEvent,
+    WaveETemporalWorkload, WorkloadError,
 )
 
 US = 10 ** 6
+
+
+def comp_ev(eid, dur_us, deps=(), **kw):
+    return WaveETemporalEvent(eid, "COMPUTE", QTime(dur_us, US),
+                              "gpu.compute", deps=tuple(deps), **kw)
 
 
 def make_model(**kw) -> WaveEPerformanceModel:
@@ -168,8 +173,10 @@ class TestModelIdentityMutations:
                                   network_clock="unbound")
 
     def test_rate_law_exact(self):
-        assert rate_duration(1000, 100, latency=Fraction(1, 10)) \
-            == Fraction(1, 10) + 10
+        # T = bytes / bandwidth, exactly; there is deliberately no
+        # latency term (a hidden zero would be a hidden assumption)
+        assert rate_duration(1000, 100) == Fraction(10)
+        assert rate_duration(0, 100) == Fraction(0)
         with pytest.raises(ModelError):
             rate_duration(-1, 100)
 
@@ -230,8 +237,8 @@ class TestWorkloadAttacks:
 
     def test_bytes_on_network_event_refused(self):
         with pytest.raises(WorkloadError, match="bytes_count"):
-            WaveETemporalEvent("X", EVENT_NETWORK_OPERATION_REF, QTime(0),
-                               wave_d_operation_id="op", bytes_count=8)
+            WaveETemporalEvent("X", EVENT_NETWORK_TRAFFIC_WINDOW, QTime(0),
+                               bytes_count=8)
 
     def test_unknown_request_refused(self):
         with pytest.raises(WorkloadError, match="unknown request"):
@@ -245,7 +252,7 @@ class TestWorkloadAttacks:
             WaveETemporalWorkload(
                 performance_model=make_model(),
                 events=(WaveETemporalEvent(
-                    "N", "NETWORK_OPERATION_REF", QTime(0),
+                    "N", "COMPUTE", QTime(1, US), "gpu.compute",
                     wave_d_operation_id="opX"),),
                 wave_d_operation_ids=("op1",))
 
@@ -310,6 +317,182 @@ CHAIN = {
     "backend_config_hash": "cfg-789",
     "backend_input_hash": "in-000",
 }
+
+
+class TestClosureFindings:
+    """Attacks for the independent-audit closure findings."""
+
+    # ── F1: one aggregate network window, never per-operation ───────
+    def test_per_operation_network_event_refused(self):
+        with pytest.raises(WorkloadError, match="NETWORK_OPERATION_REF is "
+                                                "UNSUPPORTED|global"):
+            WaveETemporalEvent("N", "NETWORK_OPERATION_REF", QTime(0),
+                               wave_d_operation_id="op1")
+
+    def test_multiple_window_events_refused(self):
+        """The global window cannot be split across events."""
+        with pytest.raises(WorkloadError, match="at most ONE"):
+            WaveETemporalWorkload(
+                performance_model=make_model(),
+                events=(WaveETemporalEvent("N1",
+                                           EVENT_NETWORK_TRAFFIC_WINDOW,
+                                           QTime(0)),
+                        WaveETemporalEvent("N2",
+                                           EVENT_NETWORK_TRAFFIC_WINDOW,
+                                           QTime(0))))
+
+    def test_window_event_with_declared_duration_refused(self):
+        with pytest.raises(WorkloadError, match="duration 0"):
+            WaveETemporalEvent("N", EVENT_NETWORK_TRAFFIC_WINDOW,
+                               QTime(1, US))
+
+    def test_window_event_citing_an_operation_refused(self):
+        with pytest.raises(WorkloadError, match="WHOLE traffic"):
+            WaveETemporalEvent("N", EVENT_NETWORK_TRAFFIC_WINDOW, QTime(0),
+                               wave_d_operation_id="op1")
+
+    # ── F2: WaveEEventGraph must be transitively immutable ──────────
+    def test_event_graph_is_immutable(self):
+        from veritx_dse.wavee.result import WaveEEventGraph
+        w = WaveETemporalWorkload(performance_model=make_model(),
+                                  events=(comp_ev("K", 1),))
+        chain = {"waved_workload_id": "w", "operation_graph_id": "og",
+                 "physical_traffic_id": "pt", "packet_format_hash": "pf",
+                 "resolved_fabric_hash": "rf", "message_artifact_id": "m",
+                 "parallelism_id": "pa", "wave_d_semantics_id": "s",
+                 "workload_kind": "WAVE_D_SEMANTIC"}
+        g = WaveEEventGraph(workload=w, wave_d_chain=chain)
+        before = g.event_graph_id()
+        chain["operation_graph_id"] = "FORGED"
+        chain["physical_traffic_id"] = "FORGED"
+        assert g.event_graph_id() == before
+        with pytest.raises(AttributeError):
+            g.wave_d_chain = None  # type: ignore[misc]
+        with pytest.raises(TypeError):
+            g.wave_d_chain["operation_graph_id"] = "FORGED"  # type: ignore
+
+    # ── F3: no false analytical-compute provenance ──────────────────
+    def test_analytical_compute_refused(self):
+        with pytest.raises(ModelError, match="compute_source"):
+            WaveEPerformanceModel(
+                clocks=(ClockDef("net", 10 ** 9),),
+                resources=(ResourceDef("g", "EXCLUSIVE", capacity=1),),
+                compute_source="ANALYTICAL_MODEL", network_clock="net")
+
+    def test_memory_source_controls_memory_durations(self):
+        from veritx_dse.wavee.scheduler import schedule_workload
+        ev = (WaveETemporalEvent("M", "MEMORY_READ", QTime(0), "hbm",
+                                 bytes_count=1200),)
+        explicit = WaveETemporalWorkload(
+            performance_model=make_model(bw=1200), events=ev)
+        analytical = WaveETemporalWorkload(
+            performance_model=WaveEPerformanceModel(
+                clocks=(ClockDef("net", 10 ** 9),),
+                resources=(ResourceDef("hbm", "BANDWIDTH",
+                                       bandwidth_bytes_per_s=1200),),
+                memory_source="ANALYTICAL_BANDWIDTH", network_clock="net"),
+            events=ev)
+        # both derive from bytes/BW for a bandwidth resource, but the
+        # DECLARED source is what the fidelity warning reports
+        assert explicit.performance_model.memory_source == \
+            "EXPLICIT_DURATION"
+        assert analytical.performance_model.memory_source == \
+            "ANALYTICAL_BANDWIDTH"
+        assert schedule_workload(analytical).end("M") == QTime(1)
+
+    # ── F4: no hidden memory latency ────────────────────────────────
+    def test_rate_law_has_no_latency_term(self):
+        import inspect
+        from veritx_dse.wavee.model import rate_duration
+        params = list(inspect.signature(rate_duration).parameters)
+        assert params == ["bytes_count", "bandwidth_bps"]
+        assert rate_duration(1200, 1200) == Fraction(1)
+
+    # ── F5: nested schemas are closed ───────────────────────────────
+    def test_event_schema_is_closed(self):
+        good = comp_ev("K", 1).to_dict()
+        with pytest.raises(WorkloadError, match="unknown fields"):
+            WaveETemporalEvent.from_dict(
+                {**good, "claimed_h100_latency_ns": 17})
+
+    def test_request_schema_is_closed(self):
+        good = WaveERequest("r1", QTime(0)).to_dict()
+        with pytest.raises(WorkloadError, match="unknown fields"):
+            WaveERequest.from_dict({**good, "claimed_tpot_ns": 3})
+
+    def test_resource_schema_is_closed(self):
+        good = ResourceDef("g", "EXCLUSIVE", capacity=1).to_dict()
+        with pytest.raises(ModelError, match="unknown|malformed"):
+            ResourceDef.from_dict({**good, "peak_tflops": 989})
+
+    # ── F6: request identity and ownership ──────────────────────────
+    def test_duplicate_request_ids_refused(self):
+        with pytest.raises(WorkloadError, match="duplicate request_ids"):
+            WaveETemporalWorkload(
+                performance_model=make_model(),
+                events=(comp_ev("K", 1),),
+                requests=(WaveERequest("r1", QTime(0)),
+                          WaveERequest("r1", QTime(10, US))))
+
+    def test_first_token_must_be_owned_or_unowned(self):
+        """Request A cannot claim request B's event as its first token."""
+        with pytest.raises(WorkloadError, match="already owned"):
+            WaveETemporalWorkload(
+                performance_model=make_model(),
+                events=(comp_ev("A", 1, request_id="r1"),
+                        comp_ev("B", 1, request_id="r2")),
+                requests=(WaveERequest("r1", QTime(0),
+                                       first_token_event_id="B"),
+                          WaveERequest("r2", QTime(0))))
+
+    # ── F7: persisted schedule roundtrip keeps bytes_moved ──────────
+    def test_reverify_preserves_bytes_moved(self):
+        from veritx_dse.wavee.result import (
+            WaveEEventGraph, build_performance_result, reverify_result,
+        )
+        from veritx_dse.wavee.scheduler import schedule_workload
+        w = WaveETemporalWorkload(
+            performance_model=make_model(),
+            events=(WaveETemporalEvent("M1", "MEMORY_READ", QTime(0), "hbm",
+                                       bytes_count=1200),
+                    WaveETemporalEvent("D", "COMPUTE", QTime(500, US),
+                                       "gpu.compute"),
+                    WaveETemporalEvent("M2", "MEMORY_READ", QTime(0), "hbm",
+                                       deps=("D",), bytes_count=600)))
+        s = schedule_workload(w)
+        doc = build_performance_result(graph=WaveEEventGraph(workload=w),
+                                       schedule=s)
+        assert doc["utilization"]["hbm"]["bytes_moved"] == 1800
+        again = reverify_result(dict(doc), workload=w)
+        assert again["utilization"]["hbm"]["bytes_moved"] == 1800
+
+    def test_schedule_row_schema_is_closed(self):
+        from veritx_dse.wavee.result import (
+            WaveEEventGraph, ResultError, build_performance_result,
+            reverify_result,
+        )
+        from veritx_dse.wavee.scheduler import schedule_workload
+        w = WaveETemporalWorkload(performance_model=make_model(),
+                                  events=(comp_ev("K", 1),))
+        doc = build_performance_result(graph=WaveEEventGraph(workload=w),
+                                       schedule=schedule_workload(w))
+        doc["schedule"]["events"][0]["forged_field"] = 1
+        with pytest.raises(ResultError, match="unknown fields"):
+            reverify_result(doc, workload=w)
+
+    # ── F8: the dependency critical path is named honestly ──────────
+    def test_dependency_critical_path_excludes_resource_edges(self):
+        """Two independent events on capacity 1: 20ms makespan, 10ms chain."""
+        from veritx_dse.wavee.metrics import dependency_critical_path
+        from veritx_dse.wavee.scheduler import schedule_workload
+        w = WaveETemporalWorkload(
+            performance_model=make_model(capacity=1),
+            events=(comp_ev("A", 10000), comp_ev("B", 10000)))
+        s = schedule_workload(w)
+        assert s.makespan() == QTime(20, 1000)   # realized schedule
+        path, length = dependency_critical_path(w, s)
+        assert length == QTime(10, 1000)          # explicit deps only
+        assert len(path) == 1
 
 
 class TestNetworkBinding:
@@ -415,18 +598,19 @@ class TestResultTamperMatrix:
         with pytest.raises(ResultError, match="makespan"):
             reverify_result(t, workload=w)
 
-    def test_critical_path_tamper_refuses(self):
+    def test_dependency_critical_path_tamper_refuses(self):
         w, _g, doc = self.build()
         t = copy.deepcopy(doc)
-        t["critical_path"] = ["NONEXISTENT"]
-        with pytest.raises(ResultError, match="critical_path"):
+        t["dependency_critical_path"] = ["NONEXISTENT"]
+        with pytest.raises(ResultError, match="dependency_critical_path"):
             reverify_result(t, workload=w)
 
-    def test_critical_path_duration_tamper_refuses(self):
+    def test_dependency_critical_path_duration_tamper_refuses(self):
         w, _g, doc = self.build()
         t = copy.deepcopy(doc)
-        t["critical_path_duration"] = {"numerator": 1, "denominator": 7}
-        with pytest.raises(ResultError, match="critical_path_duration"):
+        t["dependency_critical_path_duration"] = {"numerator": 1,
+                                                  "denominator": 7}
+        with pytest.raises(ResultError, match="dependency_critical_path_duration"):
             reverify_result(t, workload=w)
 
     def test_utilization_tamper_refuses(self):

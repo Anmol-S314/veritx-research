@@ -35,7 +35,7 @@ from veritx_dse.wavee.model import (  # noqa: E402
 from veritx_dse.wavee.scheduler import schedule_workload  # noqa: E402
 from veritx_dse.wavee.time import QTime  # noqa: E402
 from veritx_dse.wavee.workload import (  # noqa: E402
-    EVENT_NETWORK_OPERATION_REF, WaveETemporalEvent,
+    EVENT_NETWORK_TRAFFIC_WINDOW, WaveETemporalEvent,
     WaveETemporalWorkload,
 )
 
@@ -46,9 +46,9 @@ def _wave_e_workload(compute_ms: int = 1, *, clock_hz: int = 10 ** 9
                      ) -> WaveETemporalWorkload:
     """One network window + an explicit compute tail on gpu.compute.
 
-    The NETWORK_OPERATION_REF cites the Wave-D collective operation
-    id (provenance is constructor-validated); its duration comes only
-    from the evidence seam at evaluation time.
+    The NETWORK_TRAFFIC_WINDOW event covers the WHOLE Wave-D traffic
+    artifact (BookSim exposes one global completion window); its
+    duration comes only from the evidence seam at evaluation time.
     """
     model = WaveEPerformanceModel(
         clocks=(ClockDef("net", clock_hz),),
@@ -58,8 +58,8 @@ def _wave_e_workload(compute_ms: int = 1, *, clock_hz: int = 10 ** 9
         performance_model=model,
         events=(
             WaveETemporalEvent(
-                "NET", EVENT_NETWORK_OPERATION_REF, QTime(0),
-                wave_d_operation_id="c0", phase="DECODE", rank=0),
+                "NET", EVENT_NETWORK_TRAFFIC_WINDOW, QTime(0),
+                phase="DECODE", rank=0),
             WaveETemporalEvent(
                 "TAIL", "COMPUTE", QTime(compute_ms, 1000), "gpu.compute",
                 deps=("NET",), phase="DECODE", rank=0),
@@ -402,14 +402,70 @@ class TestWaveEProvenanceBinding:
             WaveETemporalWorkload,
         )
         we = _wave_e_workload()
+        # A local compute event may cite a Wave-D operation id; an
+        # overlay that cites one this workload does not perform refuses.
         foreign = WaveETemporalWorkload(
             performance_model=we.performance_model,
             events=(WaveETemporalEvent(
-                "NET", EVENT_NETWORK_OPERATION_REF, QTime(0),
-                wave_d_operation_id="not-an-op", phase="DECODE", rank=0),),
+                "K", "COMPUTE", QTime(1, 1000), "gpu.compute",
+                wave_d_operation_id="not-an-op", phase="DECODE",
+                rank=0),),
             wave_d_operation_ids=("not-an-op",))
         with pytest.raises(Exception, match="not in the compiled"):
             cp.compile(_intent(name="we-prov-foreign", wave_e=foreign))
+
+
+class TestAggregateNetworkWindow:
+    """§39: ONE window event covering the whole traffic artifact."""
+
+    def test_window_event_is_bound_once(self, cp):
+        r = cp.evaluate(_intent(name="agg-window",
+                                wave_e=_wave_e_workload(1)))
+        b = r["wave_e"]
+        # exactly one window event, and the makespan is window + tail
+        window = Fraction(b["network_window"]["numerator"],
+                          b["network_window"]["denominator"])
+        makespan = Fraction(b["makespan"]["numerator"],
+                            b["makespan"]["denominator"])
+        assert makespan == window + Fraction(1, 1000)
+        assert b["network_binding"]["window_kind"] == \
+            "BARRIER_TRAFFIC_WINDOW"
+        # the binding is NOT tied to a single Wave-D operation
+        assert "wave_d_operation_id" not in b["network_binding"]
+
+    def test_pure_compute_overlay_claims_no_network_window(self, cp):
+        """No window event => the timing block claims no network time."""
+        we = _wave_e_workload()
+        pure = WaveETemporalWorkload(
+            performance_model=we.performance_model,
+            events=(WaveETemporalEvent("K", "COMPUTE", QTime(1, 1000),
+                                       "gpu.compute", phase="DECODE",
+                                       rank=0),))
+        r = cp.evaluate(_intent(name="agg-pure", wave_e=pure))
+        assert r["wave_e"]["network_binding"] is None
+        assert r["wave_e"]["network_window"] is None
+        assert Fraction(r["wave_e"]["makespan"]["numerator"],
+                        r["wave_e"]["makespan"]["denominator"]) \
+            == Fraction(1, 1000)
+
+    def test_window_without_event_refuses(self, cp):
+        """A claimed window that no event consumes is refused."""
+        from veritx_dse.core.spec import canonical_json
+        r = cp.evaluate(_intent(name="agg-orphan",
+                                wave_e=_wave_e_workload(1)))
+        path = cp.store.root / "result" / f"{r['resource_id']}.json"
+        doc = json.loads(path.read_text())
+        # drop the window event from the persisted overlay
+        wid = doc["wave_e"]["temporal_workload_id"]
+        wpath = cp.store.root / "waveeworkload" / f"{wid}.json"
+        wdoc = json.loads(wpath.read_text())
+        wdoc["artifact"]["events"] = [
+            e for e in wdoc["artifact"]["events"]
+            if e["kind"] != "NETWORK_TRAFFIC_WINDOW"]
+        wpath.write_text(canonical_json(wdoc))
+        with pytest.raises(Exception, match="no NETWORK_TRAFFIC_WINDOW|"
+                                            "recomputes|does not"):
+            load_verified_result(cp.store, r["resource_id"])
 
 
 class TestWaveENavigation:
