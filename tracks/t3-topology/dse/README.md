@@ -355,8 +355,8 @@ veritx compare \
     --seeds 1
 
 # 4. Query every past run across all result JSONs
-veritx history --reindex --limit 20          # newest rows, all sweeps
-veritx history --topo mesh4x4 --status ok    # filtered
+veritx legacy history --reindex --limit 20          # newest rows, all sweeps
+veritx legacy history --topo mesh4x4 --status ok    # filtered
 
 # 5. Full intent-to-fabric pipeline
 veritx compile examples/qwen3_moe_16npu.json
@@ -368,16 +368,16 @@ available** instead of leaving you guessing.
 
 #### Experiment history (the DB layer)
 
-`veritx history` is the query surface over **`runs/index.db`** — a
+`veritx legacy history` is the query surface over **`runs/index.db`** — a
 rebuildable sqlite index (stdlib, zero dependencies) over every result JSON.
 Files stay the source of truth; delete the DB and `--reindex` reproduces it.
 This is the foundation the future read-only API + dashboard frontend sit on
 (same `veritx_dse.core.store.Store` class, unchanged schema).
 
 ```bash
-veritx history --reindex                      # (re)build index, then list
-veritx history --topo mesh4x4 --status ok     # filter
-veritx history --min-cycles 3000000           # numeric filters too
+veritx legacy history --reindex                      # (re)build index, then list
+veritx legacy history --topo mesh4x4 --status ok     # filter
+veritx legacy history --min-cycles 3000000           # numeric filters too
 veritx --json history --limit 5               # machine-readable
 ```
 
@@ -606,10 +606,10 @@ Produces: `tb_noc.sv`, `seq_lib.sv`, `assertions.sv`, `cov.sv`
 ### 5.8 Run History
 
 ```bash
-veritx runs --last 10
-veritx results --last 5
+veritx legacy runs --last 10
+veritx legacy results --last 5
 veritx diff run_a run_b
-veritx report --json results.json
+veritx legacy report --json results.json
 ```
 
 ---

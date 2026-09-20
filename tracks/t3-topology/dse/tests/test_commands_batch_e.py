@@ -323,23 +323,23 @@ class TestReport:
         return str(p)
 
     def test_report_stdout_table(self, sweep_json, capsys):
-        rc, _ = _cli("report", "--json", sweep_json)
+        rc, _ = _cli("legacy", "report", "--json", sweep_json)
         assert rc == 0
 
     def test_report_latex_file(self, sweep_json, tmp_path, capsys):
         out = tmp_path / "r.tex"
-        rc, _ = _cli("report", "--json", sweep_json, "--out", str(out))
+        rc, _ = _cli("legacy", "report", "--json", sweep_json, "--out", str(out))
         assert rc == 0 and out.exists()
         assert "\\begin{table}" in out.read_text()
 
     def test_report_html_file(self, sweep_json, tmp_path):
         out = tmp_path / "r.html"
-        rc, _ = _cli("report", "--json", sweep_json, "--out", str(out))
+        rc, _ = _cli("legacy", "report", "--json", sweep_json, "--out", str(out))
         assert rc == 0 and out.read_text().startswith("<!DOCTYPE html>")
 
     def test_report_pdf_compiles(self, sweep_json, tmp_path):
         out = tmp_path / "r.pdf"
-        rc, err = _cli("report", "--json", sweep_json, "--out", str(out),
+        rc, err = _cli("legacy", "report", "--json", sweep_json, "--out", str(out),
                        timeout=180)
         assert rc == 0
         assert out.read_bytes()[:4] == b"%PDF"
@@ -347,13 +347,13 @@ class TestReport:
     def test_report_unreadable_json_yields_comment(self, tmp_path, capsys):
         bad = tmp_path / "bad.json"
         bad.write_text("{not json")
-        rc, _ = _cli("report", "--json", str(bad))
+        rc, _ = _cli("legacy", "report", "--json", str(bad))
         assert rc == 0                          # comment, not a crash
 
     def test_report_unknown_format_exits_1(self, tmp_path, capsys):
         bad = tmp_path / "unk.json"
         bad.write_text('{"neither": 1}')
-        rc, err = _cli("report", "--json", str(bad))
+        rc, err = _cli("legacy", "report", "--json", str(bad))
         assert rc == 1 and "Unknown JSON format" in "\n".join(err)
 
 

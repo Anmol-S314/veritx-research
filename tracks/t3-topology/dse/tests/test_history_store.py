@@ -160,14 +160,14 @@ class TestHistoryCLI:
         subprocess must not depend on whatever the dev's repo happens to
         have indexed."""
         monkeypatch.setenv("VERITX_INDEX_DB", str(tmp_path / "index.db"))
-        r = _cli("history")
+        r = _cli("legacy", "history")
         assert r.returncode == 0, r.stderr
         combined = r.stdout + r.stderr
         assert "No indexed rows" in combined
         assert "--reindex" in combined
 
     def test_history_json_mode(self):
-        r = _cli("--json", "history")
+        r = _cli("--json", "legacy", "history")
         assert r.returncode == 0, r.stderr
         data = json.loads(r.stdout)
         assert isinstance(data, list)

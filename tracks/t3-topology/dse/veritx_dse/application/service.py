@@ -661,19 +661,27 @@ class SrotaControlPlane:
         """
         from .capabilities import check_study_budget
         from .studies import StudyRequest
-        from .resources import StudyResult
+        from .resources import StudyDefinition, StudyResult
         request = StudyRequest.parse(study_doc)
         check_study_budget(len(request.candidates))
+        identities = request.candidate_identities()
+        definition = StudyDefinition(
+            study_id=request.study_id(), name=request.name,
+            candidate_intents=tuple(identities),
+            comparison_request=request.comparison)
+        self.store.put("studydef", definition.study_id,
+                       definition.to_dict())
         experiments: list[dict[str, Any]] = []
-        intents: list[str] = []
         for index, candidate in enumerate(request.candidates):
+            candidate_identity = identities[index]
             try:
                 from .requests import resolve_intent
                 intent, _, _ = resolve_intent(candidate)
-                intents.append(intent.intent_id())
+                assert intent.intent_id() == candidate_identity
             except ControlPlaneError as exc:
                 experiments.append({
                     "index": index, "status": "INVALID",
+                    "candidate_identity": candidate_identity,
                     "intent_id": None, "experiment_id": None,
                     "result_id": None, "error": exc.to_dict()})
                 continue
@@ -681,6 +689,7 @@ class SrotaControlPlane:
                 result = self.evaluate(candidate)
                 experiments.append({
                     "index": index, "status": "SUCCEEDED",
+                    "candidate_identity": candidate_identity,
                     "intent_id": intent.intent_id(),
                     "experiment_id": result["experiment_id"],
                     "result_id": result["resource_id"],
@@ -688,6 +697,7 @@ class SrotaControlPlane:
             except ControlPlaneError as exc:
                 experiments.append({
                     "index": index, "status": "FAILED",
+                    "candidate_identity": candidate_identity,
                     "intent_id": intent.intent_id(),
                     "experiment_id": None,
                     "result_id": None, "error": exc.to_dict()})
@@ -696,12 +706,14 @@ class SrotaControlPlane:
             comparisons = self._study_comparisons(
                 request, experiments)
         study = StudyResult(
-            study_id=request.study_id(), name=request.name,
-            candidate_intents=tuple(intents),
+            study_id=definition.study_id,
+            study_run_id=new_run_id(),
+            name=request.name,
+            candidate_intents=tuple(identities),
             experiments=tuple(experiments),
             comparisons=tuple(comparisons),
             comparison_request=request.comparison)
-        self.store.put("study", study.study_id, study.to_dict())
+        self.store.put("studyrun", study.study_run_id, study.to_dict())
         return study.to_dict()
 
     def _study_comparisons(
@@ -842,7 +854,8 @@ class SrotaControlPlane:
     def inspect(self, resource_id: str) -> dict[str, Any]:
         """Read-only forensic navigation (never mutates, never executes)."""
         kinds = ("result", "attempt", "experiment", "plan", "design",
-                 "workload", "comparison", "intent", "links")
+                 "workload", "comparison", "intent", "links",
+                 "studydef", "studyrun")
         for kind in kinds:
             if self.store.exists(kind, resource_id):
                 record = self.store.get(kind, resource_id)
@@ -857,7 +870,8 @@ class SrotaControlPlane:
             load_verified_attempt, load_verified_comparison,
             load_verified_design, load_verified_experiment,
             load_verified_intent, load_verified_plan,
-            load_verified_study, load_verified_workload,
+            load_verified_study, load_verified_studyrun,
+            load_verified_workload,
         )
         related: dict[str, Any] = {}
         evidence_status: dict[str, Any] = {"checked": False}
@@ -871,7 +885,8 @@ class SrotaControlPlane:
             "workload": load_verified_workload,
             "intent": load_verified_intent,
             "comparison": load_verified_comparison,
-            "study": load_verified_study,
+            "studydef": load_verified_study,
+            "studyrun": load_verified_studyrun,
         }
         if kind == "result":
             for link_kind, key in (
@@ -898,8 +913,23 @@ class SrotaControlPlane:
                              "reason": exc.message}
         elif kind in loaders and loaders[kind] is not None:
             try:
-                loaders[kind](self.store, record.get("resource_id", ""))
-                integrity = {"checked": True, "state": "VERIFIED"}
+                checked = loaders[kind](
+                    self.store, record.get("resource_id", ""))
+                if kind == "attempt" and isinstance(checked, dict) \
+                        and checked.get("status") != "SUCCEEDED":
+                    # Failed/timed-out/interrupted attempts verify
+                    # structurally only: never label failure metadata
+                    # cryptographically authenticated.
+                    integrity = {"checked": True,
+                                 "state": "STRUCTURALLY_VALID",
+                                 "evidence": "NOT_AVAILABLE"}
+                else:
+                    integrity = {"checked": True, "state": "VERIFIED"}
+                if kind == "workload":
+                    # packets/source are observational transport and
+                    # derived metadata: NOT covered by the workload
+                    # content ID and never a scientific claim.
+                    integrity["observational"] = ["packets", "source"]
             except ControlPlaneError as exc:
                 integrity = {"checked": True, "state": "INVALID",
                              "reason": exc.message}

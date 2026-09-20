@@ -63,7 +63,8 @@ class StudyRequest:
         return cls(name=name, candidates=tuple(candidates),
                    comparison=comparison)
 
-    def study_id(self) -> str:
+    def candidate_identities(self) -> list[str]:
+        """Ordered candidate identities (invalid markers preserved)."""
         from veritx_dse.core.spec import canonical_json
         from .errors import ControlPlaneError
         from .requests import resolve_intent
@@ -74,15 +75,17 @@ class StudyRequest:
                 resolved, _, _ = resolve_intent(candidate)
                 intents.append(resolved.intent_id())
             except (ControlPlaneError, ValueError):
-                # Invalid candidates are RECORDED, not executed; their
-                # bytes still identify the study deterministically.
                 intents.append("invalid:" + _hashlib.sha256(
                     canonical_json(candidate).encode()).hexdigest())
+        return intents
+
+    def study_id(self) -> str:
+        from veritx_dse.core.spec import canonical_json
         body = "srota-study/v1\0" + canonical_json({
             "name": self.name,
             # Candidate order is semantically relevant (index-addressed
             # execution and comparison pairs): preserve it exactly.
-            "candidate_intents": list(intents),
+            "candidate_intents": self.candidate_identities(),
             "comparison": self.comparison,
         })
         return hashlib.sha256(body.encode()).hexdigest()

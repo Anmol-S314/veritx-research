@@ -20,7 +20,8 @@ from typing import Any
 from .errors import ControlPlaneError, ErrorCode
 
 RESOURCE_KINDS = ("intent", "design", "workload", "plan", "experiment",
-                  "attempt", "result", "comparison", "links", "study")
+                  "attempt", "result", "comparison", "links", "studydef",
+                  "studyrun")
 
 
 class ResourceStore:

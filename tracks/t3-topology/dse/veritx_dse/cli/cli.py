@@ -3954,13 +3954,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_diff.add_argument("run_a", nargs="?")
     p_diff.add_argument("run_b", nargs="?")
 
-    # runs
-    p_runs = _top_ps["runs"]
+    # runs (legacy observability)
+    p_runs = _legacy_ps["runs"]
     p_runs.add_argument("--last", type=int, default=20)
     p_runs.add_argument("--run-id")
 
-    # results
-    p_results = _top_ps["results"]
+    # results (legacy observability)
+    p_results = _legacy_ps["results"]
     p_results.add_argument("--last", type=int, default=5)
 
     # status
@@ -3983,8 +3983,8 @@ def build_parser() -> argparse.ArgumentParser:
                        help="write the full report JSON (incl. log tail + LLM review) "
                             "to this path for the self-improvement loop")
 
-    # history (cross-run queries over the experiment store)
-    p_hist = _top_ps["history"]
+    # history (legacy forensic index)
+    p_hist = _legacy_ps["history"]
     p_hist.add_argument("--topo", help="filter by topology")
     p_hist.add_argument("--workload", help="filter by workload")
     p_hist.add_argument("--status", help="filter by status (ok, failed, error: ...)")
@@ -4000,11 +4000,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_inter.add_argument("--no-prompt", action="store_true",
                          help="never prompt, even on a TTY")
 
-    p_status = _top_ps["status"]
+    p_status = _legacy_ps["status"]
     p_status.add_argument("--last", type=int, default=10)
 
-    # report
-    p_report = _top_ps["report"]
+    # report (legacy forensic formatter)
+    p_report = _legacy_ps["report"]
     p_report.add_argument("--json", required=True)
     p_report.add_argument("--caption", default="Topology comparison")
     p_report.add_argument("--label", default="tab:compare")
@@ -4458,11 +4458,22 @@ COMMANDS = {
                              "(RTL re-entry deferred)",
                            "t3_mode": "blocked",
                            "handler": cmd_certify_full},
+        "runs": {"help": "LEGACY run-filesystem listing "
+                      "(pre-Wave-C runs/, not certified results)",
+                    "t3_mode": "blocked", "handler": cmd_runs},
+        "results": {"help": "LEGACY run-filesystem results "
+                        "(pre-Wave-C, not certified results)",
+                      "t3_mode": "blocked", "handler": cmd_results},
+        "status": {"help": "LEGACY run history "
+                       "(pre-Wave-C, not certified status)",
+                     "t3_mode": "blocked", "handler": cmd_status},
+        "history": {"help": "LEGACY forensic run index "
+                        "(sqlite over legacy result JSONs)",
+                      "t3_mode": "blocked", "handler": cmd_history},
+        "report": {"help": "LEGACY forensic formatter "
+                       "(legacy result JSON, not a certified claim)",
+                     "t3_mode": "blocked", "handler": cmd_report},
     }},
-    "runs": {"help": "List/inspect experiment runs", "t3_mode": "forward",
-             "sub_dest": None, "handler": cmd_runs, "subcommands": None},
-    "results": {"help": "Show latest results", "t3_mode": "forward",
-                "sub_dest": None, "handler": cmd_results, "subcommands": None},
     "where": {"help": "Resolve an asset by short name to an absolute path",
               "t3_mode": "forward",
               "sub_dest": None, "handler": cmd_where, "subcommands": None},
@@ -4472,13 +4483,6 @@ COMMANDS = {
     "interact": {"help": "Guided quickstart (safe when piped: prints next steps)",
                  "t3_mode": "forward",
                  "sub_dest": None, "handler": cmd_interact, "subcommands": None},
-    "history": {"help": "Query past runs across all result JSONs (sqlite index)",
-                "t3_mode": "forward",
-                "sub_dest": None, "handler": cmd_history, "subcommands": None},
-    "status": {"help": "Show run history", "t3_mode": "forward",
-               "sub_dest": None, "handler": cmd_status, "subcommands": None},
-    "report": {"help": "Generate LaTeX table", "t3_mode": "forward",
-               "sub_dest": None, "handler": cmd_report, "subcommands": None},
     "migrate-design": {"help": "Re-emit a CompileRequest under current compiler semantics",
                 "t3_mode": "forward",
                 "sub_dest": None, "handler": cmd_migrate_design, "subcommands": None},

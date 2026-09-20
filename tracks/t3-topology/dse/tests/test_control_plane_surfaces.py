@@ -281,7 +281,9 @@ class TestPublicSurfaceClosure:
 
     LEGACY_TOP_LEVEL = ("run", "sweep", "compare", "pareto",
                         "compile", "evaluate", "synthesize",
-                        "certify", "baseline", "diff", "serve")
+                        "certify", "baseline", "diff", "serve",
+                        "runs", "results", "status", "history",
+                        "report")
     LEGACY_HANDLERS = ("cmd_run", "cmd_sweep", "cmd_compare",
                        "cmd_pareto", "cmd_compile", "cmd_baseline",
                        "cmd_diff", "cmd_serve", "cmd_synthesize_bo",
@@ -295,7 +297,9 @@ class TestPublicSurfaceClosure:
                        "cmd_api_validate", "cmd_api_plan", "cmd_api_run",
                        "cmd_api_results", "cmd_api_diagnose",
                        "cmd_api_export", "cmd_api_capabilities",
-                       "cmd_api_workloads", "cmd_api_topologies")
+                       "cmd_api_workloads", "cmd_api_topologies",
+                       "cmd_runs", "cmd_results", "cmd_status",
+                       "cmd_history", "cmd_report")
 
     def _commands(self):
         from veritx_dse.cli.cli import COMMANDS  # noqa: PLC0415
@@ -310,7 +314,7 @@ class TestPublicSurfaceClosure:
         assert "api" in commands
         assert "certify" not in commands
         legacy = commands["legacy"]["subcommands"]
-        assert len(legacy) == 30
+        assert len(legacy) == 35
         for sub, entry in legacy.items():
             assert entry["t3_mode"] == "blocked", sub
         from veritx_dse.cli import service_cli  # noqa: PLC0415
@@ -322,6 +326,19 @@ class TestPublicSurfaceClosure:
             for entry in commands["service"]["subcommands"].values()}
         assert api_handlers == service_handlers
         assert api_handlers <= set(service_cli.__all__)
+
+    def test_trusted_observability_uses_service(self):
+        """Normal run/result status flows through verified resources."""
+        commands = self._commands()
+        for surface in ("service", "api"):
+            subs = commands[surface]["subcommands"]
+            assert "list" in subs and "inspect" in subs, surface
+        legacy = commands["legacy"]["subcommands"]
+        for sub in ("runs", "results", "status", "history",
+                    "report"):
+            assert sub in legacy, sub
+            assert legacy[sub]["t3_mode"] == "blocked", sub
+            assert "LEGACY" in legacy[sub]["help"], sub
 
     def test_no_product_handler_reaches_legacy(self):
         commands = self._commands()

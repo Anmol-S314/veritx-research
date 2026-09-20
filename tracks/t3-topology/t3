@@ -268,10 +268,10 @@ _T3_NATIVE="menu start-here env check analysis plot-config viz viz-open compare-
 # intentional and documented there, not a dispatch block. If a veritx command
 # ever needs a hard dispatch block, add its slash-path here with a reason
 # comment and _dispatch will refuse it loudly.
-_T3_BLOCKED="legacy/run legacy/sweep legacy/compare legacy/pareto legacy/compile legacy/baseline legacy/diff legacy/serve legacy/synthesize-bo legacy/synthesize-iterative legacy/synthesize-compile legacy/evaluate-booksim legacy/evaluate-anynet legacy/evaluate-astra legacy/topology-diff legacy/api-execute legacy/api-compare legacy/api-compile legacy/api-validate legacy/api-plan legacy/api-run legacy/api-results legacy/api-diagnose legacy/api-export legacy/api-capabilities legacy/api-workloads legacy/api-topologies legacy/certify-flow legacy/certify-rtl legacy/certify-full"
+_T3_BLOCKED="legacy/run legacy/sweep legacy/compare legacy/pareto legacy/compile legacy/baseline legacy/diff legacy/serve legacy/synthesize-bo legacy/synthesize-iterative legacy/synthesize-compile legacy/evaluate-booksim legacy/evaluate-anynet legacy/evaluate-astra legacy/topology-diff legacy/api-execute legacy/api-compare legacy/api-compile legacy/api-validate legacy/api-plan legacy/api-run legacy/api-results legacy/api-diagnose legacy/api-export legacy/api-capabilities legacy/api-workloads legacy/api-topologies legacy/certify-flow legacy/certify-rtl legacy/certify-full legacy/runs legacy/results legacy/status legacy/history legacy/report"
 
 _veritx_verbs_fallback() { # the ONE literal fallback verb list (selfcheck diffs it)
-    echo "api doctor generate history init interact legacy migrate-design report results runs service status topology trace where"
+    echo "api doctor generate init interact legacy migrate-design service topology trace where"
 }
 
 _veritx_verbs() { # -> space-separated veritx top-level verbs, live from registry
@@ -988,7 +988,7 @@ cmd_viz() { # visualize gallery: every plot one picker away
     local _items=() _acts=() _p _i
     _items=("latency curves — CONFIG=${CONFIG:-baseline}" "latency curves + hops axis" \
             "configure & plot… (pick config)" "plotly dashboard" \
-            "n-way sweep overlay… (configs)" "compare bars… (veritx results)" \
+            "n-way sweep overlay… (configs)" "compare bars… (legacy compare results)" \
             "win/loss heatmap… (across all compare results)")
     _acts=("curves" "hops" "plotcfg" "dashboard" "overlay" "bars" "heat")
     _viz_list_pngs
@@ -1450,11 +1450,11 @@ cmd_menu() {
                    "veritx pareto: multi-workload Pareto" \
                    "veritx baseline: published-baseline compare" \
                    "veritx diff: two experiment runs" \
-                   "veritx history: query past runs" \
+                   "LEGACY history: query past runs (blocked)" \
                    "back to main ⏎")
             _acts=("quick_compare" "veritx_compare" "overlay" "bars" "heat" \
                    "menu_run:veritx pareto" "menu_run:veritx baseline" \
-                   "menu_run:veritx diff" "menu_run:veritx history" "page:main")
+                   "menu_run:veritx diff" "menu_run:veritx legacy history" "page:main")
             ;;
         viz)
             _opts=("latency curves: CONFIG=${CONFIG:-baseline} → PNG" \
@@ -1479,7 +1479,7 @@ cmd_menu() {
                    "pareto: multi-workload Pareto" \
                    "baseline: published baselines" \
                    "run: full pipeline trace→synth→eval→cert" \
-                   "report: LaTeX table from a result JSON" \
+                   "service list: verified Wave-C results" \
                    "serve: full-stack LLM serving sim (guided)" \
                    "init: wizard → CompileRequest JSON" \
                    "trace: chakra/model/hpc/slice/info…" \
@@ -1488,21 +1488,15 @@ cmd_menu() {
                    "certify: flow / rtl / full" \
                    "generate: UVM testbench from a request" \
                    "interact: guided veritx quickstart" \
-                   "status: run history" \
-                   "runs: list experiment runs" \
-                   "results: show latest results" \
-                   "history: query past runs (sqlite)" \
                    "back to main ⏎")
             _acts=("menu_run:veritx where" "veritx_compare" "veritx_compile" \
                    "menu_run:veritx sweep" "menu_run:veritx pareto" \
                    "menu_run:veritx baseline" "menu_run:veritx run" \
-                   "menu_run:veritx report" "veritx_serve" \
+                   "menu_run:veritx service list" "veritx_serve" \
                    "menu_run:veritx init" "menu_run:veritx trace" \
                    "menu_run:veritx synthesize" "menu_run:veritx evaluate" \
                    "menu_run:veritx certify" "menu_run:veritx generate" \
-                   "menu_run:veritx interact" \
-                   "menu_run:veritx status" "menu_run:veritx runs" \
-                   "menu_run:veritx results" "menu_run:veritx history" "page:main")
+                   "menu_run:veritx interact" "page:main")
             ;;
         cfg)
             local _c
@@ -2014,7 +2008,7 @@ cmd_veritx_report() { # report builder: pick a result JSON + labels
     local _js=() _j
     # veritx-native result schemas only (have 'name' keys): t3's own
     # *topology_sweep.json / astrasim_sweep.json use a different schema and
-    # make `veritx report` die with KeyError('name').
+    # make `veritx legacy report` die with KeyError('name').
     while IFS= read -r _j; do _js+=("$_j"); done < \
         <(find runs/experiments results runs/booksim "$REPO_ROOT/runs/booksim" -maxdepth 3 \
               -name 'sweep.json' -o -name 'baseline.json' -o -name 'pareto*.json' \
@@ -2028,12 +2022,12 @@ cmd_veritx_report() { # report builder: pick a result JSON + labels
     _read_def "caption (e.g. Mesh vs torus at IR 0.05, empty=skip)" ""; local _cap="$_VAL"
     _read_def "label (e.g. tab:compare, empty=skip)" ""; local _label="$_VAL"
     _read_def "out (e.g. results/compare/table.tex, empty=stdout)" ""; local _out="$_VAL"
-    local _args=(report --json "$_json")
+    local _args=(legacy report --json "$_json")
     [ -n "$_cap" ] && _args+=(--caption "$_cap")
     [ -n "$_label" ] && _args+=(--label "$_label")
     [ -n "$_out" ] && _args+=(--out "$_out")
     echo "  veritx ${_args[*]}"
-    _RUN_NAME="veritx report"
+    _RUN_NAME="veritx legacy report"
     _RUN=(_dispatch veritx "${_args[@]}")
     _ui_open
 }

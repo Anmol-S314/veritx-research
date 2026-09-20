@@ -104,6 +104,23 @@ LEDGER: tuple[dict[str, Any], ...] = (
     },
     {
         "path": "veritx_dse/cli/cli.py",
+        "symbol": "legacy runs/results/status/history/report",
+        "responsibility": "pre-Wave-C run/result observability "
+                          "(run filesystem, sqlite index, forensic "
+                          "formatter — not certified claims)",
+        "classification": "LEGACY_INTERNAL",
+        "replacement": "service/api list + inspect (verified resources)",
+    },
+    {
+        "path": "veritx_dse/application/results.py",
+        "symbol": "StudyDefinition/StudyRun + load_verified_studyrun",
+        "responsibility": "deterministic study identity vs "
+                          "execution-dependent run records",
+        "classification": "AUTHORITATIVE",
+        "replacement": "itself",
+    },
+    {
+        "path": "veritx_dse/cli/cli.py",
         "symbol": "api validate/plan/... (service mirrors)",
         "responsibility": "agent CLI surface aliased to the service",
         "classification": "AUTHORITATIVE",

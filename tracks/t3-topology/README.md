@@ -124,14 +124,14 @@ Every command writes to one documented place — nothing scatters:
 | `./t3 astrasim` (astra sweep) | `results/<CONFIG>/astrasim/<MODEL>/<TOPO>/…` + `astrasim_sweep.json` + `topology_sweep.json` | per-rank configs, Chakra ETs, cycle/exposed/plat rows |
 | `veritx evaluate astra` | `<repo>/runs/astra/eval_<stem>.json` | single run result JSON (cycles, exposed, plat_stats) |
 | `veritx compile` / `run` | `<repo>/runs/` (`booksim/`, `uvm/`, `experiments/`) | pipeline artifacts + manifests |
-| `veritx history --reindex` | `<repo>/runs/index.db` | rebuildable sqlite index over the JSONs above |
+| `veritx legacy history --reindex` | `<repo>/runs/index.db` | rebuildable sqlite index over the JSONs above |
 | analysis (`make pa-report`) | `results/<CONFIG>/analysis/` | processed CSV/PNG (never overwrites raw sweeps) |
 
 > **Why two levels under `results/`?** `results/<CONFIG>/` holds raw sim data other
 > targets depend on (e.g. dashboard reads `topology_sweep.json`). `analysis/` holds
 > post-processed outputs so a `make aggregate` never risks overwriting sweep data.
 > Set `CONFIG=<name>` for every ad-hoc experiment — one config name = one folder =
-> one reproducible unit, and `veritx history` indexes them all uniformly.
+> one reproducible unit, and `veritx legacy history` indexes them all uniformly.
 
 ### Runtime vs tracked directories
 

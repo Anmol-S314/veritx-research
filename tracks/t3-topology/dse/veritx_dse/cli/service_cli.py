@@ -60,6 +60,25 @@ def _load_request(args: Any) -> Any:
     return cli_intent(request_file=args.request).to_dict()
 
 
+def _load_document(args: Any) -> Any:
+    """Raw JSON request document (study/compare requests).
+
+    Intent-bearing requests go through ``_load_request`` (the canonical
+    intent surface). Study and compare requests carry their own schemas
+    and are validated by the service; transport must not reinterpret
+    them as intents.
+    """
+    import json
+    from pathlib import Path
+    from ..application.errors import intent_error
+    try:
+        return json.loads(Path(args.request).read_text())
+    except (OSError, ValueError) as exc:
+        raise intent_error(
+            f"cli: cannot read request file {args.request}: {exc}",
+            operation="cli", cause_type=type(exc).__name__) from exc
+
+
 def cmd_service_compile(ctx: Any, args: Any):
     """Compile intent -> design + workload (no execution)."""
     try:
@@ -86,7 +105,7 @@ def cmd_service_compare(ctx: Any, args: Any):
     """Compare two persisted results through the compatibility gate."""
     try:
         service = _service_from_args(args)
-        out = service.compare(_load_request(args))
+        out = service.compare(_load_document(args))
     except Exception as exc:
         _emit_error(ctx, exc)
         return
@@ -130,7 +149,7 @@ def cmd_service_study(ctx: Any, args: Any):
     """Run a study (sequential candidates + optional comparisons)."""
     try:
         service = _service_from_args(args)
-        out = service.run_study(_load_request(args))
+        out = service.run_study(_load_document(args))
     except Exception as exc:
         _emit_error(ctx, exc)
         return

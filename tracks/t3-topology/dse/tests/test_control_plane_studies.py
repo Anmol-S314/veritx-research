@@ -71,20 +71,56 @@ def clean_service(tmp_path):
 
 class TestStudy:
     def test_study_runs_candidates_and_compares(self, clean_service):
-        study = clean_service.run_study({
+        from veritx_dse.application.results import (  # noqa: PLC0415
+            load_verified_study, load_verified_studyrun,
+        )
+        request = {
             "name": "two-fabrics",
             "candidates": [_doc(name="a"),
                            _doc(name="b",
                                 fabric_preset="mesh4_wide128")],
             "comparison": {
                 "contract": {"metric_ids": ["sim.latency.avg_cycles"]},
-                "pairs": [[0, 1]]}})
+                "pairs": [[0, 1]]}}
+        study = clean_service.run_study(request)
         assert study["resource_type"] == "study"
+        assert study["study_id"] == StudyRequest.parse(
+            request).study_id()
         assert [e["status"] for e in study["experiments"]] == \
             ["SUCCEEDED", "SUCCEEDED"]
         assert study["comparisons"][0]["status"] == "COMPARED"
+        load_verified_study(clean_service.store, study["study_id"])
+        load_verified_studyrun(clean_service.store,
+                               study["resource_id"])
+        definition = clean_service.inspect(study["study_id"])
+        assert definition["integrity"]["state"] == "VERIFIED"
+        run = clean_service.inspect(study["resource_id"])
+        assert run["integrity"]["state"] == "VERIFIED"
+
+    def test_identical_study_rerun_creates_a_new_run(self,
+                                                      clean_service):
+        request = {"name": "twice",
+                   "candidates": [_doc(name="a"), _doc(name="b")],
+                   "comparison": {
+                       "contract": {
+                           "metric_ids": ["sim.latency.avg_cycles"]},
+                       "pairs": [[0, 1]]}}
+        first = clean_service.run_study(request)
+        second = clean_service.run_study(request)
+        assert first["study_id"] == second["study_id"]
+        assert first["resource_id"] != second["resource_id"]
+        from veritx_dse.application.results import (  # noqa: PLC0415
+            load_verified_studyrun,
+        )
+        load_verified_studyrun(clean_service.store,
+                               first["resource_id"])
+        load_verified_studyrun(clean_service.store,
+                               second["resource_id"])
 
     def test_study_collects_failures(self, clean_service, tmp_path):
+        from veritx_dse.application.results import (  # noqa: PLC0415
+            load_verified_study, load_verified_studyrun,
+        )
         broken = tmp_path / "broken"
         broken.write_text("#!/bin/sh\nexit 3\n")
         broken.chmod(0o755)
@@ -98,6 +134,11 @@ class TestStudy:
         assert by_index[0]["status"] == "FAILED"
         assert by_index[0]["error"]["code"] == "EXECUTION_FAILED"
         assert by_index[1]["status"] == "INVALID"
+        # Invalid candidates keep their ordered identity entry.
+        assert len(study["candidate_intents"]) == 2
+        assert by_index[1]["candidate_identity"].startswith("invalid:")
+        load_verified_study(dark.store, study["study_id"])
+        load_verified_studyrun(dark.store, study["resource_id"])
 
     def test_study_budget_rejects(self, clean_service):
         many = [_doc(name=f"c{i}") for i in

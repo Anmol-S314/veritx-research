@@ -259,8 +259,32 @@ class EvaluationResult:
 
 
 @dataclass(frozen=True)
-class StudyResult:
+class StudyDefinition:
+    """Deterministic study semantics (no execution outcomes)."""
+
     study_id: str
+    name: str
+    candidate_intents: tuple[str, ...]
+    comparison_request: dict[str, Any] | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "resource_type": "studydef",
+            "schema_version": RESOURCE_SCHEMA_VERSION,
+            "resource_id": self.study_id,
+            "name": self.name,
+            "candidate_intents": list(self.candidate_intents),
+            "comparison_request": dict(self.comparison_request)
+            if self.comparison_request is not None else None,
+        }
+
+
+@dataclass(frozen=True)
+class StudyResult:
+    """One execution of a StudyDefinition (unique run identity)."""
+
+    study_id: str
+    study_run_id: str
     name: str
     candidate_intents: tuple[str, ...]
     experiments: tuple[dict[str, Any], ...]
@@ -271,7 +295,8 @@ class StudyResult:
         return {
             "resource_type": "study",
             "schema_version": RESOURCE_SCHEMA_VERSION,
-            "resource_id": self.study_id,
+            "resource_id": self.study_run_id,
+            "study_id": self.study_id,
             "name": self.name,
             "candidate_intents": list(self.candidate_intents),
             "experiments": [dict(e) for e in self.experiments],
@@ -334,6 +359,7 @@ __all__ = [
     "EvaluationPlan",
     "EvaluationResult",
     "ExperimentRecord",
+    "StudyDefinition",
     "StudyResult",
     "WorkloadRecord",
     "check_envelope",

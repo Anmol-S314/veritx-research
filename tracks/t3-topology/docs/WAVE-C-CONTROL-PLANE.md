@@ -191,3 +191,43 @@ full result validation. Transplanted links re-execute fresh.
 - `ControlPlaneError` is unfrozen (frozen exceptions cannot cross
 generator context managers); intent/workload label collisions resolve
 first-wins with semantic verification.
+
+## 11. Wave C-FINAL: study and attempt lifecycle
+
+- **Definition vs execution**: `StudyDefinition` (deterministic
+  `study_id` over name + ordered candidate identities + comparison
+  request) is stored under kind `studydef`; each `run_study` creates a
+  NEW `StudyRun` under kind `studyrun` with a unique `study_run_id`.
+  Identical reruns never collide on `ResourceStore`; execution-dependent
+  fields (`status`, `result_id`, `reused`, `error`) never enter the
+  definition identity.
+- **Invalid candidates**: `StudyRequest.candidate_identities()` is the
+  single ordered identity list (`invalid:<sha256(canonical doc)>`
+  markers included) used by BOTH the definition ID and the stored
+  definition; `len(candidate_intents) == len(candidates)` always.
+- **StudyRun verification**: `load_verified_studyrun` proves the
+  definition link, name/comparison agreement, one entry per candidate,
+  `index`/`candidate_identity` exactness, and for `SUCCEEDED` entries
+  re-derives `experiment_id`/`intent_id` from the verified result +
+  plan. Non-success entries must carry a well-formed error whose code is
+  a real `ErrorCode`, must not carry a `result_id`, must match the
+  resolved identity (or the `invalid:` marker), and must respect the
+  `TIMED_OUT ↔ EXECUTION_TIMEOUT` pairing; `reused` stays operational.
+- **Comparison rows**: `pair` must be a requested pair; `COMPARED`
+  requires the verified comparison whose `candidate_ids` equal the two
+  successful results and whose contract equals the requested contract;
+  `SKIPPED` requires a genuinely result-less side; `REFUSED` re-derives
+  the refusal through the read-only gate and requires the recorded error
+  code to reproduce exactly.
+- **Successful attempts**: `load_verified_attempt` binds
+  `binary_sha256`, `source_revision`, `source_dirty`,
+  `source_dirty_digest` and `tool_identity` to the authenticated Wave-B
+  evidence, plus config/input hashes to the verified experiment.
+  Failed/timed-out/interrupted attempts verify structurally only
+  (`STRUCTURALLY_VALID`, `evidence: NOT_AVAILABLE`).
+- **Inspect**: `studydef` and `studyrun` are searchable resources;
+  definition inspection lists its runs. `packets`/`source` on workloads
+  are reported as observational (outside the content ID).
+- **Observability**: top-level `runs/results/status/history/report` moved
+  under `veritx legacy …` (blocked, labeled LEGACY) — the certified
+  surface is `service/api list|inspect`.
