@@ -95,6 +95,10 @@ Each entry names two or more incompatible interpretations present in the
 tree today. `P0` = changes scientific results if consumed silently;
 `P1` = changes semantics/identity or can hide a claim; `P2` = cosmetic.
 
+Severity tally: **4 × P0 (C001–C004) + 5 × P1 (C005–C009) + 2 × P2
+(C010–C011) = 11**. The machine-readable contract carries the same
+tally.
+
 ### D0-C001 (P0) world-size / EP multiplication
 
 - A: `model/presets.py:parallel_world_size` → `tp × pp × ep × dp`
@@ -354,42 +358,110 @@ schedule observes it — §32).
 
 ## 10. Collective algorithm semantics
 
-`CollectiveIntent = (kind, participants, logical_bytes_per_rank)`.
-`CollectiveSchedule = (kind, algorithm)` — the lowering that fixes
-message count and per-edge bytes. Wave-D v1 supports exactly:
+`CollectiveIntent = (kind, participants, payload)` where **the meaning of
+`B` is per-kind** (below). `CollectiveSchedule = (kind, algorithm)` fixes
+message count, message size and per-rank bytes. Wave-D v1 supports
+exactly these pairs; anything else refuses.
 
-| kind | algorithm | steps | messages | per-rank sent bytes |
+Common notation: `k = |participants|` (integer ≥ 2), `B` = the per-kind
+payload defined below (integer bytes), `C = B / k`.
+
+### 10.1 Per-kind payload meaning and exact equations
+
+| kind | `B` means | divisibility | steps | messages | message bytes | per-rank sent | aggregate network payload |
+|---|---|---|---|---|---|---|---|
+| ALLREDUCE / ring | input tensor bytes **per rank** | `B % k == 0` | `2(k−1)` | `2k(k−1)` | `C` | `2(k−1)C` | `2(k−1)B` |
+| REDUCESCATTER / ring | input tensor bytes **per rank** | `B % k == 0` | `k−1` | `k(k−1)` | `C` | `(k−1)C` | `(k−1)B` |
+| ALLGATHER / ring | local contribution bytes **per rank** | none | `k−1` | `k(k−1)` | `B` | `(k−1)B` | `k(k−1)B` |
+| ALLTOALL / direct | total input bytes **per rank**, equal split over `k` destinations | `B % k == 0` | `1` | `k(k−1)` | `C` | `(k−1)C` | `(k−1)B` |
+| BROADCAST / root fan-out | **root** payload bytes | none | `1` | `k−1` | `B` | `(k−1)B` (root only) | `(k−1)B` |
+
+Additional per-kind facts:
+
+- ALLREDUCE: each rank ends with a `B`-byte reduced result.
+- REDUCESCATTER: output payload per rank is `B/k`.
+- ALLGATHER: gathered result per rank is `kB`.
+- ALLTOALL: the self-chunk (`C`) does not enter the network.
+- BROADCAST: non-root ranks send zero. It is the one asymmetric
+  schedule: `aggregate = root_sent`, **not** `k × root_sent`.
+- Symmetric schedules (ALLREDUCE, REDUCESCATTER, ALLGATHER, ALLTOALL)
+  satisfy `aggregate = k × per_rank_sent` exactly.
+
+All quantities are integers. Aggregate network payload is the **primary**
+conservation invariant; per-rank traffic is asserted only where the v1
+equal-chunk schedule makes it exact (all rows above). Average per-rank
+traffic is never presented as an individual-rank quantity.
+
+### 10.2 Divisibility refusal
+
+Equal-partition v1 schedules (ALLREDUCE, REDUCESCATTER, ALLTOALL) require
+`B % k == 0`; otherwise the operation is **UNSUPPORTED** and refuses.
+Uneven chunk partitioning is a future extension, not a D0 invention.
+
+### 10.3 Singleton normalization
+
+The canonical workload builder requires ≥ 2 participants
+(`build_collective_op`); that authority is preserved. Wave-D ruling:
+
+```
+dimension size == 1  → no collective operation is generated
+                     → zero messages, zero network bytes
+explicit k < 2       → invalid, refuses
+```
+
+A one-member `CollectiveIntent` is never represented. `TP=1`, `DP=1` or
+`EP=1` therefore produce **no** collective for that dimension rather than
+a degenerate no-op object.
+
+### 10.4 Pinned reference example (`k=4`, `B=1024`)
+
+| kind | messages | message bytes | per-rank sent | aggregate |
 |---|---|---|---|---|
-| ALLREDUCE | ring | `2(k−1)` | `2k(k−1)` | `2(k−1)·B/k` |
-| ALLGATHER | ring | `k−1` | `k(k−1)` | `(k−1)·B/k` |
-| REDUCESCATTER | ring | `k−1` | `k(k−1)` | `(k−1)·B/k` |
-| ALLTOALL | direct | `1` | `k(k−1)` | `(k−1)·B/k` |
-| BROADCAST | root fan-out | `1` | `k−1` | `B` (root only) |
+| ALLREDUCE | 24 | 256 | 1536 | 6144 |
+| REDUCESCATTER | 12 | 256 | 768 | 3072 |
+| ALLGATHER | 12 | 1024 | 3072 | 12288 |
+| ALLTOALL | 12 | 256 | 768 | 3072 |
+| BROADCAST | 3 | 1024 | 3072 (root) | 3072 |
 
-`B` = logical bytes per rank (integer), `k = |participants|`. All values
-integers; `k=1` → zero messages (identity, not an error); `k=0`
-impossible (participants ≥ 2 enforced by the artifact builders).
-Unsupported pairs (e.g. tree allreduce, recursive doubling, halving
-doubling) **refuse** — they are not silently substituted.
+These values are pinned by audit tests, independent of any future
+production implementation.
+
+Unsupported pairs (tree allreduce, recursive doubling, halving doubling,
+one-ring, …) refuse — never silently substituted.
 
 `EXTERNAL-CONTRACT-NEEDED`: ASTRA's `ring`/`direct` byte accounting must
-be shown equal to the table above before any cross-backend exactness
-claim; until then ASTRA traffic is `DIFFERENTIALLY_VALIDATED`.
+be shown equal to §10.1 before any cross-backend exactness claim; until
+then ASTRA traffic is `DIFFERENTIALLY_VALIDATED`.
 
-## 11. Prefill/decode semantics
+## 11. Prefill/decode semantics (narrowed v1 scope)
+
+Wave-D v1 rules:
 
 ```
-PREFILL: shape = (batch_size, sequence_length) → per-layer ops with
-         full-sequence attention; KV produced for all prompt tokens.
-DECODE:  shape = (batch_size, 1 token) per step; KV read for prompt +
-         generated tokens, KV written for the new token.
+phase tagging (PREFILL / DECODE):                      EXACT
+explicit workload operations + declared comm bytes:    EXACT
+automatic synthesis of per-layer compute/communication
+  operations from model shape alone:                   DEFERRED
 ```
 
-Required intent metadata: `sequence_length`, `batch_size`, `num_layers`,
-`hidden_size`, `bytes_per_elem` (all present in the model presets,
-e.g. `workloads/gpt3.json`). Missing metadata → refuse (no invented
-defaults). `ServingMode` labels (`PREFILL_HEAVY`/`DECODE_HEAVY`/`MIXED`)
-are display-only and excluded from identity (D0-C010).
+A PREFILL or DECODE workload is exact when the canonical workload
+artifact **explicitly contains** the operations and their communication
+bytes. D2/D5 must not invent communication from `hidden_size`,
+`sequence_length`, `batch_size` or `num_layers`; those fields may be
+recorded as declared shape metadata but are not an operation generator.
+
+Shape metadata authority (§10 of the D0.1 brief): model-shape values
+(`num_layers`, `hidden_size`, `bytes_per_elem`, `num_experts`, `top_k`,
+`decode_steps`) must come from either an explicit versioned Wave-D
+workload document or a named immutable model descriptor whose **content
+hash is bound into** Wave-D workload identity. Implicit preset lookup by
+name is refused (a preset can change underneath an identity). Missing
+required shape information refuses.
+
+`ServingMode` labels (`PREFILL_HEAVY`/`DECODE_HEAVY`/`MIXED`) are
+traffic-mix labels, not phases. They remain **identity-bearing in the
+frozen CompileRequest `design_hash`** (§9/§16) and are excluded from
+Wave-D phase semantics.
 
 Continuous batching, chunked prefill, sub-batch interleaving: UNSUPPORTED
 in v1 (external serving flags exist — `core/serving.py:serve_args` — and
@@ -401,9 +473,10 @@ are not Srota semantics).
   ordered by `p`.
 - Inference only; forward transfers only. Training backward, 1F1B,
   interleaved/virtual PP: UNSUPPORTED.
-- A PP transfer is a `PointToPointTransfer(src=(t,p,e,d),
-  dst=(t,p+1,e,d), bytes)` requiring an explicit `SEND`/`RECV` op pair
-  (never inferred from adjacency — §34).
+- A PP transfer is one canonical `P2PTransfer` (§13.1) with
+  `src=(t,p,e,d)`, `dst=(t,p+1,e,d)`; legacy SEND/RECV pairs are paired
+  by an explicit shared identifier during ingestion, never inferred
+  from adjacency (§34).
 - `PP=1` → zero inter-stage transfers (metamorphic law, §29).
 
 ## 13. EP/MoE semantics
@@ -413,10 +486,11 @@ are not Srota semantics).
 - Dispatch/combine are explicit collective or P2P ops in the artifact;
   `EXPERT_BEGIN`/`EXPERT_END` markers are structural and optionally
   carry one collective (`workload/canonical.py`).
-- Top-k routing requires an explicit policy:
-  `EXPLICIT_TRACE` (routing carried in the trace) or
-  `DETERMINISTIC_BALANCED` (derived, labeled). Uniform-random routing
-  without a declared seed policy: UNSUPPORTED.
+- Top-k routing policy for v1: `EXPLICIT_TRACE` only (routing carried
+  in the trace/artifact). `DETERMINISTIC_BALANCED` is **DEFERRED** until
+  token→expert assignment, top-k ordering, remainder handling and tie
+  rules are specified mathematically. Uniform-random routing without a
+declared seed policy: UNSUPPORTED.
 - Token dropping: UNSUPPORTED in v1. Conservation (no drop):
   `assignments = tokens × k`, and for every phase
   `assignments_sent == assignments_received`.
@@ -431,8 +505,9 @@ KVObject = (layer, phase, owner_rank, logical_bytes)
 ```
 
 - v1 models pipeline-local KV residency (a stage owns the KV it
-  produced). Cross-rank movement requires an explicit `SEND`/`RECV`
-  artifact op with declared src/dst.
+  produced). Cross-rank movement requires one canonical `P2PTransfer`
+  (§13.1) with declared src/dst; a SEND/RECV pair is one transfer, not
+  two.
 - Prefill/decode disaggregation (KV moved between separate prefill and
   decode instances): DEFERRED. The external serving `pd_type` doubling
   (D0-C007) is not adopted.
@@ -457,6 +532,28 @@ graph contains every operation the workload declares and nothing else;
 per-layer structure is positionally ordered (matching
 `workload/lowering.py` conservation).
 
+### 15.1 Canonical point-to-point transfer
+
+One semantic network transfer is one object — never a SEND plus a RECV:
+
+```
+P2PTransfer
+    transfer_id
+    phase
+    src_rank
+    dst_rank
+    logical_payload_bytes
+    dependencies
+```
+
+One `P2PTransfer` generates exactly one logical message. Legacy formats
+that record SEND and RECV separately must be paired into one
+`P2PTransfer` by an **explicit shared identifier** (transfer/comm tag)
+during ingestion. If no unambiguous shared identifier exists, ingestion
+**refuses** — pairing by adjacent rows, equal byte counts or source
+order is forbidden. This rule prevents the double-counting failure mode
+where both halves of a pair generate traffic.
+
 ## 16. Logical message semantics
 
 ```
@@ -478,53 +575,90 @@ Definitions:
 
 ```
 logical multicast: one payload, N declared destinations
-source replication: the source issues N unicast messages
-network replication: the fabric duplicates one injected packet
-destination copies: N delivered copies
+source replication: the source issues N unicast messages (schedule)
+network replication: the fabric duplicates one injected packet (schedule)
+destination copies: N delivered copies (outcome)
 ```
 
-Accounting (all integers, per operation):
+`LogicalMulticastIntent` (payload, destination set) is separate from
+`ReplicationSchedule`. Wave-D v1 supports exactly:
 
 ```
-logical_bytes   = payload_bytes              (one payload)
-injected_bytes  = payload_bytes × N          (v1: source replication)
+SOURCE_REPLICATION   EXACT for the selected schedule
+HARDWARE_REPLICATION UNSUPPORTED / DEFERRED
+```
+
+Accounting for `SOURCE_REPLICATION` (integers, per operation):
+
+```
+logical_bytes   = payload_bytes
+injected_bytes  = payload_bytes × N
 wire_bytes      = injected_bytes (+ per-hop overhead, Wave E)
 delivered_bytes = payload_bytes × N
 ```
 
-Wave-D v1 implements **source replication** only. Hardware multicast
-groups (`mcast_groups`) are a schedule acceleration with an explicit
-`DECLARED_APPROXIMATION` if used; the silent "excess falls back to
-unicast" warning (D0-C009) is replaced by an explicit fidelity record.
+This is **exact for the chosen schedule**, not a fidelity approximation.
+If a caller explicitly requests hardware/network replication, Wave D
+**refuses** rather than silently substituting source replication or
+labelling it an approximation. Fidelity loss is reserved for cases where
+the model cannot represent what was requested.
 
-## 18. Packetization semantics
+## 18. Packetization semantics (bit-exact)
 
 Authority: `model/packet_format.py` (`PacketFormatArtifact`,
-`max_network_packet_payload_bits`, `canonical_field_layout`).
+`canonical_field_layout`, `max_packet_flits`). Wire accounting is done in
+**bits**, because Wave-B permits flit widths that are not byte-aligned
+(only a positive channel width is required).
+
+Notation (all integers):
 
 ```
-packet_payload_bytes   = max_network_packet_payload_bits // 8
-packet_wire_bytes      = flit_width_bits // 8 × flits_per_packet
-flits_per_packet       = ceil(packet_wire_bits / flit_width_bits)
+message_bits               = logical_payload_bytes × 8
+F  = flit_width_bits
+H  = header_width_bits     = F − payload_width_bits
+Q  = payload_width_bits    = F − H
+L  = max_packet_flits
+packet_payload_capacity_bits = Q × L
 ```
 
-Rules: payload capacity is derived from the Wave-B artifact (never a
-config literal); a message of `M` bytes → `N = ceil(M / P)` packets;
-`Σ packet_payload_bytes = M` exactly (the tail packet carries the
-remainder, `1 ≤ tail ≤ P`); zero-byte messages are refused upstream
-(`_check_bytes` requires ≥ 1); `packet_size` (unqualified) is banned
-(D0-C004). The legacy `bytes_per_element` is not a payload authority
-(D0-C008) — Wave D uses explicit `logical_bytes_per_rank`.
+Packetization:
+
+```
+N_packets = ceil(message_bits / packet_payload_capacity_bits)
+sum(packet_payload_bits) == message_bits          (exact)
+```
+
+The tail packet carries the remainder; zero-byte messages are refused
+upstream (`_check_bytes` requires ≥ 1).
+
+Per packet `i` carrying `P_i` useful payload bits:
+
+```
+n_i             = ceil(P_i / Q)        flit count
+padding_i       = n_i × Q − P_i        0 ≤ padding_i < Q
+header_bits_i   = n_i × H
+transmitted_bits_i = n_i × F
+transmitted_bits_i == header_bits_i + P_i + padding_i   (exact)
+```
+
+No byte-aligned `packet_wire_bytes` field exists in Wave D: byte
+conversion is only legal where byte alignment is separately proven.
+
+Rules: payload capacity derives from the Wave-B artifact, never from a
+config literal; `packet_size` (unqualified) is banned (D0-C004); the
+legacy `bytes_per_element` is not a payload authority (D0-C008).
 
 ## 19. Flit semantics
 
 - `flit_width_bits` = physical channel width; v1 requires exactly one
   flit per channel beat and homogeneous channel widths
-  (`packet_format.py` validation).
+  (`packet_format.py` validation). Byte alignment is **not** required.
 - Flit types: `SINGLE | HEAD | BODY | TAIL`; header metadata repeats in
-  every flit.
-- `flit_capacity_bits = wire_bits + padding_bits`, integer, with
-  `padding_bits < flit_width_bits` per packet.
+  every flit (hence `header_bits_i = n_i × H`).
+- Terminology is fixed: *logical payload bytes*, *logical payload bits*,
+  *packet payload capacity bits*, *header bits*, *padding bits*,
+  *transmitted wire bits*, *flit count*. Padding bits are transmitted —
+  they are part of `transmitted_bits_i`, never an add-on to it.
 - BookSim mapping: the cfg `packet_size` is **flits**
   (EXTERNAL-CONTRACT-NEEDED to confirm the fork's per-packet override
   path); Srota passes packet sizes through trace records, not config
@@ -571,14 +705,62 @@ parallelism_id     H(tp, pp, ep, dp)                      [new, D1]
 mapping_hash       model/mapping.py                        [existing]
 operation_graph_id H(workload_id, parallelism_id, phase structure) [new, D2]
 message_artifact_id H(operation_graph_id, schedules)       [new, D3]
-packetization_id   H(message_artifact_id, packet_payload_bytes) [new, D4]
-traffic_id         H(packetization_id, flit_width_bits, replication) [new, D4]
+packetization_id   H(message_artifact_id, packet_payload_capacity_bits) [new, D4]
+traffic_id         H(packetization_id, flit_width_bits, replication schedule) [new, D4]
+wave_d_semantics_id H(WaveDWorkloadSemantics version + declared fields
+                      + model descriptor content hash)      [new, D1]
 ```
 
 Dependencies: changing the mapping changes `mapping_hash` and everything
-downstream of it, but not `workload_id`. Changing MTU changes
-`packetization_id`/`traffic_id` only. Output paths, labels and JSON
-ordering never change any identity (Wave C rule preserved).
+downstream of it, but not `workload_id`. Changing the packet payload
+capacity changes `packetization_id`/`traffic_id` only. Output paths,
+labels and JSON ordering never change any identity (Wave C rule
+preserved).
+
+### 23.1 Frozen CompileRequest identity
+
+Wave D does **not** reinterpret the frozen Wave-B/C `design_hash`
+(`model/compile_model.py:CompileRequest.design_hash`). Its
+`canonical_dict` includes `workload.serving_mode`, so `serving_mode`
+remains identity-bearing there. Wave D keeps the current CompileRequest
+schema and compiler semantics unchanged; any future removal or
+reinterpretation of a CompileRequest field requires an explicit
+schema/compiler-semantics version bump, after which old documents retain
+their original meaning.
+
+### 23.2 Wave-D semantic version boundary
+
+Wave D introduces its own versioned boundary — `WaveDWorkloadSemantics`
+v1 — separate from CompileRequest identity. It owns only the fields an
+implemented slice actually needs:
+
+```
+phase                 PREFILL | DECODE
+shape metadata        num_layers, hidden_size, bytes_per_elem,
+                      decode_steps, num_experts, top_k
+routing policy        EXPLICIT_TRACE (DETERMINISTIC_BALANCED deferred)
+collective payload    per-kind meaning (§10.1)
+model descriptor      name + content hash (never a bare name lookup)
+```
+
+### 23.3 Identity mutation table
+
+| Mutation | IDs that change | IDs that do not change |
+|---|---|---|
+| rename display label | none | all |
+| move workload/trace file | none | all |
+| change trace bytes | workload_id and downstream | — |
+| change explicit phase | wave_d_semantics_id, operation_graph_id+ | workload_id, mapping_hash |
+| change model descriptor content | wave_d_semantics_id+ | mapping_hash |
+| change TP/PP/EP/DP | parallelism_id, mapping_hash+ | workload_id |
+| change physical mapping | mapping_hash+ | workload_id, parallelism_id |
+| change collective schedule | message_artifact_id+ | workload_id, mapping_hash |
+| change collective payload | message_artifact_id+ | mapping_hash |
+| change P2P transfer id/src/dst/bytes | operation_graph_id, message_artifact_id+ | mapping_hash |
+| change packet payload capacity / flit width | packetization_id, traffic_id | everything above |
+| change replication schedule | traffic_id | everything above |
+| change output directory | none | all |
+| change legacy `CompileRequest.serving_mode` | frozen `design_hash` (historical semantics) | no Wave-D phase is fabricated by this change |
 
 ## 24. Conservation laws
 
@@ -588,13 +770,14 @@ ordering never change any identity (Wave C rule preserved).
 | L2 rank bijection | coords | rank | `coords(rank(c)) = c` | BOUNDED_EXHAUSTIVE | sizes ≤ 4 |
 | L3 mapping completeness | R ranks | placements | `len = R`, injective, contiguous | PROVED_EXACT | v1 mapping |
 | L4 group membership | R ranks | groups | each rank in exactly one group per family; `Σ sizes = R` | PROVED_EXACT | all valid |
-| L5 collective participants | intent | schedule | `participants(schedule) = participants(intent)` | PROPERTY | §10 table |
-| L6 MoE assignments | tokens, k | assignments | `= tokens × k`; sent = received | PROVED_EXACT | no-drop |
+| L5 collective participants | intent | schedule | `participants(schedule) = participants(intent)` | PROPERTY | §10.1 |
+| L6 MoE assignments | tokens, k | assignments | `= tokens × k`; sent = received | PROVED_EXACT | EXPLICIT_TRACE, no drop |
 | L7 message payload | op logical bytes | `Σ message payload` | equal, integers | PROVED_EXACT | all |
-| L8 packet payload | M bytes | packets | `N = ceil(M/P)`, `Σ payload = M` | PROVED_EXACT | M ≥ 1, P ≥ 1 |
-| L9 wire overhead | packets | wire bytes | `wire = payload + overhead` | PROVED_EXACT | declared header |
-| L10 flit padding | wire bits | flit capacity | `capacity = wire + padding` | PROVED_EXACT | widths ≥ 8 |
-| L11 multicast delivery | payload, N | delivered | `= payload × N` | PROVED_EXACT | v1 replication |
+| L8 packet payload | message_bits | packets | `N = ceil(message_bits / (Q·L))`, `Σ payload_bits = message_bits` | PROVED_EXACT | bits, any F |
+| L9 transmitted bits | packet `P_i`, Q, H, F | `transmitted_bits_i` | `n_i·F = n_i·H + P_i + padding_i` | PROVED_EXACT | bits, any F |
+| L10 flit padding | `P_i`, Q | `padding_i` | `padding_i = n_i·Q − P_i`, `0 ≤ padding_i < Q` | PROVED_EXACT | bits, any F |
+| L10b collective aggregate | per-kind `B`, `k` | aggregate network payload | §10.1 table (primary invariant) | PROVED_EXACT | `B % k == 0` where required |
+| L11 multicast delivery | payload, N | delivered | `= payload × N` | PROVED_EXACT | SOURCE_REPLICATION |
 | L12 KV ownership | produced | resident+transferred+discarded | equality, integers | PROVED_EXACT | v1 local |
 | L13 quiescence | submitted | completed | equal (or explicit cancel/drop/fail) | DIFFERENTIAL | backend exact only |
 
@@ -613,9 +796,10 @@ Required oracles (pure, no production calls):
 ```
 ref_rank(coords) / ref_coords(rank)          (integer closed form)
 ref_group_members(family, sizes, coords)
-ref_ring_allreduce(k, B)  ref_ring_allgather  ref_ring_reducescatter
-ref_alltoall(k, B)        ref_broadcast(k, B)
-ref_packetize(M, P)       ref_flitize(wire_bits, F)
+ref_collective(kind, k, B) -> (steps, messages, message_bytes,
+                               per_rank_sent, aggregate)   §10.1 table
+ref_packetize(message_bits, Q, L) -> packet payload bits
+ref_flitize(P_i, Q, H, F) -> (n_i, padding_i, transmitted_bits_i)
 ref_multicast(payload, N)
 ```
 
@@ -623,23 +807,26 @@ Forbidden: `expected = production(input); actual = production(input)`.
 
 ## 27. Property-based test plan
 
-Hypothesis properties (constraints: sizes 1–4, `R ≤ 64`; M 1–65536;
-P ∈ {1,8,64,256,1024}; F ∈ {16,32,64,128,256}):
+Hypothesis properties (constraints: sizes 1–4, `R ≤ 64`; message_bits
+1–524288; Q ∈ {1,8,64,256,1024}; F ∈ {16,32,64,65,128,256}; H < F;
+L ≥ 1):
 
 rank bijection; group disjointness/coverage; mapping injectivity;
-message payload conservation; packet payload conservation; flit padding
-conservation; identity path-independence; declared-nonsemantic
+collective aggregate conservation (§10.1); message payload conservation;
+packet payload conservation in bits; flit padding conservation with
+non-byte-aligned widths; identity path-independence; declared-nonsemantic
 permutations preserve identity.
 
 ## 28. Bounded exhaustive test plan
 
 ```
 TP,PP,EP,DP ∈ [1,4]  (all 256 combinations; R ≤ 64 → all pass)
-M ∈ {1,2,63,64,65,255,256,257,4095,4096,4097}
-P ∈ {1,8,64,256,1024}
-F ∈ {16,32,64,128,256}
+message_bits ∈ {8,16,504,512,520,2040,2048,2056,32760,32768,32776}
+Q ∈ {1,8,64,256,1024}   (payload width bits)
+F ∈ {16,32,64,65,128,256}   (65 exercises the non-byte-aligned path)
+L ∈ [1,8]
 N ∈ [1,8]
-k ∈ [1,8]   (collective participants)
+k ∈ [2,8]   (collective participants; k=1 is not represented, §10.3)
 ```
 
 ## 29. Metamorphic test plan
@@ -649,12 +836,15 @@ k ∈ [1,8]   (collective participants)
 | move workload file | identical identity | path not semantic |
 | reorder non-semantic input | identical identity | order declared nonsemantic |
 | double payload | double logical/message bytes | integer |
-| increase P | packet count non-increasing | M fixed |
-| increase F | flit count non-increasing | wire bits fixed |
-| TP=1 | TP collective is identity | §10 k=1 |
+| increase packet payload capacity | packet count non-increasing | message_bits fixed |
+| increase F | flit count non-increasing | payload/header widths fixed |
+| TP=1 | no TP collective operation is generated | §10.3 singleton rule |
 | PP=1 | zero PP transfers | §12 |
-| EP=1 | zero EP routing traffic | §13 |
-| DP=1 | zero DP collectives | §9 |
+| EP=1 | no EP routing collective is generated | §10.3 |
+| DP=1 | no DP collective operation is generated | §10.3 |
+
+(A one-member collective object is never produced, so “identity/no-op”
+statements apply to *operation generation*, not to a degenerate object.)
 
 ## 30. Mutation/adversarial test plan
 
@@ -668,8 +858,10 @@ k ∈ [1,8]   (collective participants)
 | ±1 byte payload | L7 |
 | wrong src/dst | message identity |
 | drop/duplicate tail packet | L8 |
-| wrong packet payload count | L8 |
-| drop/duplicate flit; wrong width/padding | L10 |
+| wrong packet payload bits | L8 |
+| drop/duplicate flit; wrong width/padding | L9/L10 |
+| non-divisible collective chunk (`B % k != 0`) | §10.2 refusal |
+| duplicate a SEND/RECV half as two transfers | §15.1 |
 | change dependency / introduce cycle | §15 acyclicity |
 | change KV owner; drop KV transfer | L12 |
 | change expert assignment | L6 |
@@ -680,21 +872,27 @@ k ∈ [1,8]   (collective participants)
 |---|---|
 | inference | EXACT (v1 scope) |
 | training / backward / 1F1B | UNSUPPORTED |
-| single-node / multi-node | EXACT |
+| endpoint-level rank→fabric mapping | EXACT |
+| physical-node-aware semantics | DEFERRED (PhysicalNode is bookkeeping only, §5) |
 | multi-instance (serving) | DEFERRED |
 | TP / PP / DP | EXACT |
 | EP | EXACT (no drop) |
-| MoE top-k routing | EXACT with EXPLICIT_TRACE or DETERMINISTIC_BALANCED |
+| MoE top-k routing | EXACT with EXPLICIT_TRACE only |
+| DETERMINISTIC_BALANCED routing | DEFERRED (underdefined) |
 | token dropping | UNSUPPORTED |
 | continuous batching | UNSUPPORTED |
 | static batching | EXACT |
-| prefill / decode | EXACT (declared shape metadata) |
+| phase tagging (PREFILL / DECODE) | EXACT |
+| explicit workload ops + declared comm bytes | EXACT |
+| automatic model-shape → operation synthesis | DEFERRED |
 | P/D disaggregation | DEFERRED |
-| KV transfer across ranks | UNSUPPORTED in row lowering; artifact op only |
+| KV transfer across ranks | UNSUPPORTED in row lowering; canonical `P2PTransfer` only |
 | multiple ranks per accelerator | UNSUPPORTED |
 | multiple endpoints per accelerator | DEFERRED |
-| multicast | DECLARED_APPROXIMATION (source replication) |
+| multicast (SOURCE_REPLICATION) | EXACT for the selected schedule |
+| multicast (HARDWARE_REPLICATION) | UNSUPPORTED / DEFERRED (refuse, do not substitute) |
 | non-ring collective algorithms | UNSUPPORTED |
+| uneven collective chunks (`B % k != 0`) | UNSUPPORTED |
 | serving execution | BLOCKED |
 | analytical execution | UNSUPPORTED |
 | RTL/UVM/formal | NOT_RUN |
@@ -704,13 +902,15 @@ k ∈ [1,8]   (collective participants)
 | id | assumption | scope | why | if false | fidelity | removal |
 |---|---|---|---|---|---|---|
 | A1 | one rank per accelerator | v1 | injective placement | oversubscription semantics undefined | PHYSICAL_MAPPING | Wave E |
-| A2 | source-replication multicast | v1 | no hardware model yet | injected bytes overcount | MULTICAST_REPLICATION | Wave E/HW |
+| A2 | SOURCE_REPLICATION is the selected multicast schedule | v1 | no hardware model yet | hardware replication must be refused (not substituted) | MULTICAST_REPLICATION | Wave E/HW |
 | A3 | ring allreduce / direct alltoall | v1 | single algorithm per kind | traffic changes | MESSAGE_PAYLOAD | later |
 | A4 | no token dropping | v1 | conservation clarity | assignments change | MOE_ROUTING | later |
 | A5 | static batching | v1 | decode defined per step | schedule changes | OPERATION_GRAPH | later |
-| A6 | header repeats in every flit | v1 | Wave-B layout | wire overhead changes | FLITIZATION | later |
+| A6 | header repeats in every flit | v1 | Wave-B layout | transmitted bits change | FLITIZATION | later |
 | A7 | pipeline-local KV | v1 | no P/D model | KV transfers missing | KV_PLACEMENT | Wave D5+ |
 | A8 | homogeneous channel width | v1 | Wave-B validation | flit width undefined | FLITIZATION | later |
+| A9 | equal collective chunks (`B % k == 0`) | v1 | exact integer arithmetic | uneven partition policy needed | MESSAGE_PAYLOAD | later |
+| A10 | explicit workload ops (no shape-derived synthesis) | v1 | avoid invented science | operation generator needed | OPERATION_GRAPH | later |
 
 ## 33. Migration plan
 
