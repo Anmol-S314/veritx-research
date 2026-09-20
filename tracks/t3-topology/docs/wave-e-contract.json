@@ -1,0 +1,161 @@
+{
+  "contract": "srota/wave-e",
+  "schema_version": 2,
+  "base": {
+    "wave_d_branch": "wave-d/distributed-semantics",
+    "wave_d_sealed_sha": "d3f3bd63b952b54fb5cac688532caf83ca66c512"
+  },
+  "time": {
+    "representation": "exact_rational",
+    "module": "veritx_dse.wavee.time",
+    "canonical_unit": "seconds",
+    "serialization": {
+      "numerator": "int",
+      "denominator": "int_pos"
+    },
+    "clock_binding": "every cycles->seconds conversion requires an explicit clock_hz > 0 bound into performance_model_id; no default 1 GHz"
+  },
+  "identity_dag": {
+    "performance_model_id": [
+      "schema_version",
+      "clocks (name + exact hz)",
+      "resources (name/kind/capacity|bandwidth)",
+      "compute_source",
+      "network_timing_model",
+      "network_clock",
+      "arbitration_exclusive",
+      "arbitration_bandwidth"
+    ],
+    "temporal_workload_id": [
+      "performance_model (full content)",
+      "canonical events (rank, step, event_id order)",
+      "dependencies",
+      "resources",
+      "requests",
+      "declared waved operation ids"
+    ],
+    "event_graph_id": [
+      "temporal_workload_id",
+      "performance_model_id",
+      "network window binding when present",
+      "waved chain when present"
+    ],
+    "network_window_binding": [
+      "operation_graph_id",
+      "physical_traffic_id",
+      "backend_config_hash",
+      "backend_input_hash",
+      "evidence_sha256",
+      "evidence_stats_sha256",
+      "network_clock_hz",
+      "window_kind"
+    ],
+    "performance_result_id": [
+      "event_graph_id",
+      "performance_model_id",
+      "canonical schedule",
+      "makespan",
+      "critical path"
+    ]
+  },
+  "resource_policies": {
+    "declared_and_identity_bearing": true,
+    "exclusive": {
+      "policy": "FIFO_SERIAL",
+      "law": "claims <= capacity at every instant; admit by (earliest ready, semantic event id); never start before a predecessor ends",
+      "known_property": "FIFO admits by identity order, so under capacity contention it is NOT makespan-optimal; the brute-force oracle records the counterexample (3 independent jobs 1,1,2 on capacity 2: FIFO 3us, optimum 2us). Optimality is a property of a chosen policy, not of feasibility."
+    },
+    "bandwidth": {
+      "policy": "EQUAL_SHARE_BANDWIDTH",
+      "law": "fluid equal share among active transfers; a transfer joins at its own ready time; sum(active) <= bandwidth_bytes_per_s; event-driven, no fixed timesteps"
+    }
+  },
+  "network_timing": {
+    "authority": "BookSim evidence via sealed Wave-B/D qualified path only; Wave E never re-derives traffic or contention",
+    "observed_stats": [
+      "completion_time (global cycles)",
+      "delivered",
+      "pkt_count",
+      "latency avg/max",
+      "p50/p95/p99",
+      "drain_verdict"
+    ],
+    "not_available": "per-message/per-operation completion cycles",
+    "window_rule": "the whole traffic window is one BARRIER-network event with duration = completion_time / network_clock_hz; per-op causal completion is UNSUPPORTED",
+    "no_double_contention": "analytical NoC contention over BookSim-simulated traffic is refused"
+  },
+  "metrics": {
+    "makespan": "max(end) - min(start) over scheduled events",
+    "critical_path": "longest causal chain of the scheduled DAG, by semantic identity tie-break; not largest busy time",
+    "utilization": "occupied capacity-time / (capacity x makespan) per exclusive resource",
+    "request_latency": "completion - arrival for events bound to an explicit request; per-request stats require sample_count",
+    "ttft": "first token completion - arrival; requires explicit request + first-token completion event, else UNSUPPORTED",
+    "tpot": "decode-step cadence from explicit step identities, else UNSUPPORTED",
+    "exposed_network": "counterfactual: makespan_baseline - makespan(network duration -> 0); not total network active time",
+    "attribution": "non-additive; sensitivity/counterfactual quantities are reported per-parameter, never summed to makespan"
+  },
+  "scheduler": {
+    "algorithm": "deterministic discrete-event; event boundaries are dependency completions, resource releases, bandwidth completions",
+    "tie_break": "semantic event id; no set iteration, no host time",
+    "deadlock": "unfinished events with no runnable progress -> typed SchedulerDeadlock (never a spin)",
+    "invariants": [
+      "start >= end of every predecessor",
+      "claims <= capacity always",
+      "start <= end",
+      "each event executes exactly once",
+      "quiescence schedules everything or refuses"
+    ]
+  },
+  "sensitivity": {
+    "method": "re-run the schedule under explicit parameter perturbations (e.g. 0.5x/2x); no algebraic shortcut",
+    "speedup": "T_baseline / T_perturbed",
+    "elasticity": "((T2 - T0.5)/T1) / (2 - 0.5), sign convention: positive elasticity means bigger/faster parameter shortens makespan",
+    "zero_cost_counterfactual": "duration -> 0 for one source class measures exposed contribution, not active time",
+    "identity": "each perturbation is a distinct derived evaluation identity bound to base model + perturbation"
+  },
+  "persistence": {
+    "kinds": [
+      "waveeperfmodel",
+      "waveetemporal",
+      "waveeresult"
+    ],
+    "authenticity": "requested filename id == embedded resource_id == recomputed canonical-content id; closed field sets; verified parents; schema-close result refuses unknown fields; summaries re-derived from schedule on load"
+  },
+  "calibration": {
+    "status": "UNCALIBRATED",
+    "reason": "no measured per-operation timing dataset in the repository",
+    "artifact": null,
+    "rule": "a calibrated claim requires dataset hash, device identity, fit parameters, held-out error metrics and a validity domain; none exists, so analytical/explicit models are labeled accordingly and no empirical accuracy is claimed"
+  },
+  "unsupported_matrix": {
+    "per_operation_network_causality": "UNSUPPORTED (BookSim exposes no per-message completion)",
+    "analytical_noc_contention_over_booksim": "UNSUPPORTED (double modeling)",
+    "continuous_batching": "UNSUPPORTED",
+    "llmservingsim_integration": "BLOCKED (external contract missing, unchanged from Wave D)",
+    "astra_walltime_authority": "UNSUPPORTED (contract not established)",
+    "ramulator": "NOT_RUN",
+    "calibrated_compute": "UNCALIBRATED (no data)",
+    "rtl_timing": "NOT_RUN (Wave G)"
+  },
+  "result_provenance_binding": {
+    "rule": "the verified plan's wave_e binding is the authority; the result's block must claim it and the schedule is re-run",
+    "checks": [
+      "schema closure: set(result.wave_e) == RESULT_WAVE_E_KEYS",
+      "result.wave_e.{temporal_workload_id, performance_model_id} == plan.wave_e",
+      "the temporal workload resource re-verifies from the store and its model id matches",
+      "result.wave_e.wave_d_chain == plan.wave_d on every chain field",
+      "network_binding.evidence_sha256 == this run's authenticated evidence digest",
+      "network_binding.stats_sha256 == canonical digest of this run's authenticated stats",
+      "network_binding.{operation_graph_id, physical_traffic_id, backend_config_hash, backend_input_hash} == their authorities",
+      "network_binding.network_clock_hz == the model's declared clock",
+      "network_window == network_binding.duration",
+      "makespan == re-run schedule makespan",
+      "metrics_warning == wave_e_metrics_warning(verified model)"
+    ],
+    "plan_level": [
+      "plan.wave_e resolves to a persisted verified temporal workload",
+      "overlay model id == plan binding",
+      "every declared waved operation id exists in the plan's operation graph"
+    ]
+  }
+}
