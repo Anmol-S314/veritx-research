@@ -1,11 +1,12 @@
 {
   "schema": "srota/wave-d-contract/v1",
-  "revision": 4,
-  "status": "IMPLEMENTED_V1",
+  "revision": 5,
+  "status": "SEALED_V1",
   "base": {
     "wave_c_seal": "8455c0450e27486ae034028b76c9a05b94f2ea72",
     "branch": "wave-d/distributed-semantics",
-    "contract_doc": "docs/WAVE-D-SCIENTIFIC-CONTRACT.md"
+    "contract_doc": "docs/WAVE-D-SCIENTIFIC-CONTRACT.md",
+    "d0_freeze_candidate": "75452bd34c0673303a51da83b0d0871fc9623acb"
   },
   "rank_space": {
     "dimensions": [
@@ -1073,16 +1074,21 @@
       "traffic": "dse/veritx_dse/waved/traffic.py",
       "backend": "dse/veritx_dse/waved/backend.py",
       "errors": "dse/veritx_dse/waved/errors.py",
-      "oracles": "dse/veritx_dse/waved/oracles.py"
+      "oracles": "dse/veritx_dse/waved/oracles.py",
+      "immutable": "dse/veritx_dse/waved/immutable.py",
+      "strict": "dse/veritx_dse/waved/strict.py",
+      "workload": "dse/veritx_dse/waved/workload.py",
+      "waved_resources": "dse/veritx_dse/application/waved_resources.py"
     },
     "tests": [
       "dse/tests/test_wave_d_semantics.py",
       "dse/tests/test_wave_d_physical.py",
       "dse/tests/test_wave_d_authenticity.py",
-      "dse/tests/test_wave_d_contract.py"
+      "dse/tests/test_wave_d_contract.py",
+      "dse/tests/test_wave_d_seal.py"
     ],
     "backend_status": {
-      "BOOKSIM_STANDALONE": "VALIDATED: qualified supervised execution; route EXACT; quiescence injected==delivered==expected; flit counters exact (\u00a749)",
+      "BOOKSIM_STANDALONE": "VALIDATED: qualified supervised execution of the DERIVED trace; route EXACT; quiescence delivered_packets==expected_packets and flits_injected==flits_accepted==expected_flits from sealed Wave-B evidence counters (§21); the sealed evidence schema is NOT modified",
       "ASTRA": "NOT INTEGRATED for Wave-D semantics (EXT-1 unanswered)",
       "SERVING_BOOKSIM2": "BLOCKED (unchanged)",
       "ANALYTICAL": "UNSUPPORTED",
@@ -1091,9 +1097,9 @@
     "proof_methods": {
       "bounded_exhaustive": "TP,PP,EP,DP in [1,4]^4 (256 combos): bijection, group laws, oracle cross-check",
       "property": "Hypothesis: bijection, collective conservation, packet payload conservation, flit identity, multicast law",
-      "differential": "production lowering vs independent pure oracles (\u00a726/\u00a768)",
+      "differential": "production lowering vs independent pure oracles (§26/§68)",
       "metamorphic": "singleton dims, payload doubling, capacity monotonicity, path independence",
-      "mutation": "identity mutation matrix + adversarial tamper suite (\u00a742/\u00a760)"
+      "mutation": "identity mutation matrix + adversarial tamper suite feeding mutated objects into real production validators/loaders (§30, §23.6)"
     },
     "identity_dag": {
       "parallelism_id": "H(schema_version, TP, PP, EP, DP)",
@@ -1114,7 +1120,87 @@
         "operation id",
         "phase"
       ],
-      "provenance_authority": "PhysicalTrafficArtifact (trace is a derived backend input, \u00a748)"
+      "provenance_authority": "PhysicalTrafficArtifact (trace is a derived backend input, §48)"
+    },
+    "persisted_resources": {
+      "kinds": [
+        "wavedworkload",
+        "parallelism",
+        "wavedsemantics",
+        "opgraph",
+        "messages",
+        "traffic"
+      ],
+      "loader_contract": "requested filename ID == embedded resource_id == recomputed ID, exact type tag, exact schema version, unknown fields refused, parents resolved and verified, semantic revalidation",
+      "ledger": "DERIVED, never persisted: recomputed from a verified PhysicalTrafficArtifact"
+    },
+    "deep_immutability": {
+      "mechanism": "waved/immutable.py: caller-owned containers are copied into FrozenMap/tuple; thaw() at JSON boundaries",
+      "guarantee": "mutating a caller's dict after construction cannot change artifact content, identity, or a lowered child"
+    },
+    "geometry_seam": {
+      "rule": "logical.graph.parallelism must equal bundle.inventory.parallelism and the compiled design workload geometry; equal world size is not semantic equivalence",
+      "enforced_at": [
+        "PhysicalTrafficArtifact.__post_init__",
+        "PhysicalTrafficArtifact.validate_against_bundle",
+        "SrotaControlPlane._require_waved_geometry"
+      ],
+      "bundle_revalidation": "bundle.revalidate() runs before rank binding"
+    },
+    "product_integration": {
+      "authority": "SrotaControlPlane (single product path)",
+      "workload_kinds": {
+        "LEGACY_TRACE": "packet bytes -> BookSim (unchanged legacy path)",
+        "WAVE_D_SEMANTIC": "declared operations -> verified graph -> verified messages -> verified traffic -> derived trace -> sealed qualified BookSim"
+      },
+      "intent_seam": "Intent.workload.wave_d (versioned, content-hashed)",
+      "plan_binding": [
+        "waved_workload_id",
+        "parallelism_id",
+        "wave_d_semantics_id",
+        "operation_graph_id",
+        "message_artifact_id",
+        "physical_traffic_id",
+        "resolved_fabric_hash",
+        "packet_format_hash"
+      ],
+      "result_provenance": "the result carries the chain plus expected/delivered packet and flit counters; load_verified_result re-derives all of them",
+      "pre_spawn_gates": [
+        "validate_against_bundle",
+        "validate_against_oracle",
+        "validate_conservation",
+        "cross_check_against_oracle",
+        "verify_trace_projection",
+        "verify_backend_quiescence"
+      ]
+    },
+    "not_closed": {
+      "kv_and_expert_routing_lowering": "UNSUPPORTED (refused), §14",
+      "physical_node_semantics": "DEFERRED, §31",
+      "multi_instance": "DEFERRED, §31",
+      "pd_disaggregation": "DEFERRED, §31",
+      "uneven_collective_chunking": "UNSUPPORTED (refused), §10.2",
+      "shape_to_operation_synthesis": "DEFERRED, §31",
+      "embedded_route_dump_export": "NOT_RUN (external contract, §36)"
+    }
+  },
+  "citation_convention": {
+    "rule": "code and tests cite WAVE-D-SCIENTIFIC-CONTRACT.md sections",
+    "brief_map": {
+      "31-41": "18-19, 24",
+      "35-37": "18, 19",
+      "38": "26",
+      "39-41": "24.1, 24",
+      "42-43": "30, 29",
+      "46-50": "21, 23.3",
+      "52": "21",
+      "56": "22",
+      "60": "23.6",
+      "61-62": "31, 10.2",
+      "67": "25",
+      "68": "26",
+      "72-73": "21",
+      "79": "preamble"
     }
   }
 }

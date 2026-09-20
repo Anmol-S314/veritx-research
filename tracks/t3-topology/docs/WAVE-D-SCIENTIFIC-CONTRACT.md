@@ -1,18 +1,33 @@
-# Wave D Scientific Contract — Distributed Semantics (D0 → D-IMPL)
+# Wave D Scientific Contract — Distributed Semantics (D0 → D-SEAL)
 
-Status: **IMPLEMENTED (v1 supported domain)** — the D0 design rulings
-below are now backed by production modules in
-`dse/veritx_dse/waved/` and pinned by tests
-`dse/tests/test_wave_d_{semantics,physical,authenticity}.py` (§67 proof
-methods). The D0 text is preserved as the normative ruling set; the
-implementation status column of §31 and the identity DAG of §23.2 are
-now executed code, not plan.
+Status: **SEALED v1 supported domain** — the D0 design rulings below are
+backed by production modules in `dse/veritx_dse/waved/`, persisted as
+first-class resources (`wavedworkload`, `parallelism`, `wavedsemantics`,
+`opgraph`, `messages`, `traffic`) with verified loaders, and consumed by
+the single product control plane (`SrotaControlPlane`) for Wave-D
+semantic workloads. Proof suites:
+
+```
+dse/tests/test_wave_d_semantics.py       collective/P2P/multicast laws
+dse/tests/test_wave_d_physical.py        packet/flit/identity + real runs
+dse/tests/test_wave_d_authenticity.py    parent binding + mutation matrix
+dse/tests/test_wave_d_contract.py        contract/D0 audit pins
+dse/tests/test_wave_d_seal.py            immutability, geometry seam,
+                                         strict loaders, transplant
+                                         attacks, product E2E + tamper
+```
+
+The D0 text is preserved as the normative ruling set. Every §31 row
+carries its implementation status; §23.2's identity DAG and §37's
+closure items are executed code, not plan.
 
 Base: Wave C-SEAL.1 `8455c0450e27486ae034028b76c9a05b94f2ea72`
-(branch `wave-d/distributed-semantics`).
+(branch `wave-d/distributed-semantics`). D-SEAL closes on top of the
+D0.2 freeze candidate `75452bd34c0673303a51da83b0d0871fc9623acb`.
 
 This document is the normative contract for Wave D. Every ruling uses the
-decision format from §79 of the D0 brief:
+decision format of the D0 brief (§38 maps brief sections onto this
+document):
 
 ```
 DECISION / SUPPORTED DOMAIN / RATIONALE / CONSEQUENCE /
@@ -220,7 +235,7 @@ tally.
   agree, per comment and `ValueError` paths) — semantically valid, not a
   silent collapse. B is a P/D disaggregation accounting convention
   belonging to the external serving model.
-- Resolution: §22/§46 (representative reads are legal only behind an
+- Resolution: §22/§21 (representative reads are legal only behind an
   explicit all-members-agree proof; P/D doubling is DEFERRED and must
   never be inferred by Srota).
 
@@ -943,19 +958,25 @@ ref_multicast(payload, N)
 
 Forbidden: `expected = production(input); actual = production(input)`.
 
-## 27. Property-based test plan
+## 27. Property-based test plan — IMPLEMENTED
 
 Hypothesis properties (constraints: sizes 1–4, `R ≤ 64`; message_bits
 1–524288; Q ∈ {1,8,64,256,1024}; F ∈ {16,32,64,65,128,256}; H < F;
 L ≥ 1):
 
-rank bijection; group disjointness/coverage; mapping injectivity;
-collective aggregate conservation (§10.1); message payload conservation;
-packet payload conservation in bits; flit padding conservation with
-non-byte-aligned widths; identity path-independence; declared-nonsemantic
-permutations preserve identity.
+| property | status | where |
+|---|---|---|
+| rank bijection | IMPLEMENTED | `test_wave_d_semantics.py::TestRankBijection` |
+| group disjointness / coverage | IMPLEMENTED | `TestGroupLaws` |
+| mapping injectivity | REUSED (Wave-B authority) | `test_mapping.py` |
+| collective aggregate conservation (§10.1) | IMPLEMENTED | `TestCollectiveEquations` |
+| message payload conservation | IMPLEMENTED | `TestMessageLoweringDifferential` |
+| packet payload conservation in bits | IMPLEMENTED | `TestPacketization` |
+| flit padding conservation, non-byte-aligned widths | IMPLEMENTED | `TestFlitization` |
+| identity path-independence | IMPLEMENTED | `TestIdentityStability` |
+| declared-nonsemantic permutations preserve identity | IMPLEMENTED | `test_wave_d_authenticity.py` |
 
-## 28. Bounded exhaustive test plan
+## 28. Bounded exhaustive test plan — IMPLEMENTED
 
 ```
 TP,PP,EP,DP ∈ [1,4]  (all 256 combinations; R ≤ 64 → all pass)
@@ -967,75 +988,89 @@ N ∈ [1,8]
 k ∈ [2,8]   (collective participants; k=1 is not represented, §10.3)
 ```
 
-## 29. Metamorphic test plan
+The 256-combination parallelism sweep and the `F = 65` non-byte-aligned
+flit path are executed in `test_wave_d_semantics.py` (oracle
+cross-checked), not merely declared.
 
-| Transformation | Expected effect | Assumption |
-|---|---|---|
-| move workload file | identical identity | path not semantic |
-| reorder non-semantic input | identical identity | order declared nonsemantic |
-| double payload | double logical/message bytes | integer |
-| increase packet payload capacity | packet count non-increasing | message_bits fixed |
-| increase F | flit count non-increasing | payload/header widths fixed |
-| TP=1 | no TP collective operation is generated | §10.3 singleton rule |
-| PP=1 | zero PP transfers | §12 |
-| EP=1 | no EP routing collective is generated | §10.3 |
-| DP=1 | no DP collective operation is generated | §10.3 |
+## 29. Metamorphic test plan — IMPLEMENTED
+
+| Transformation | Expected effect | Assumption | status |
+|---|---|---|---|
+| move workload file | identical identity | path not semantic | IMPLEMENTED |
+| reorder non-semantic input | identical identity | order declared nonsemantic | IMPLEMENTED |
+| double payload | double logical/message bytes | integer | IMPLEMENTED |
+| increase packet payload capacity | packet count non-increasing | message_bits fixed | IMPLEMENTED |
+| increase F | flit count non-increasing | payload/header widths fixed | IMPLEMENTED |
+| TP=1 | no TP collective operation is generated | §10.3 singleton rule | IMPLEMENTED |
+| PP=1 | zero PP transfers | §12 | IMPLEMENTED |
+| EP=1 | no EP routing collective is generated | §10.3 | IMPLEMENTED |
+| DP=1 | no DP collective operation is generated | §10.3 | IMPLEMENTED |
+| different mapping, same design | logical IDs stable, physical ID moves | §23.3 | IMPLEMENTED (`test_wave_d_seal.py`) |
+| different packet format, same design | logical IDs stable, physical ID moves | §23.3 | IMPLEMENTED (`test_wave_d_seal.py`) |
 
 (A one-member collective object is never produced, so “identity/no-op”
 statements apply to *operation generation*, not to a degenerate object.)
 
-## 30. Mutation/adversarial test plan
+## 30. Mutation/adversarial test plan — IMPLEMENTED
 
-| Mutation | Must fail |
-|---|---|
-| delete/duplicate/swap rank | L1/L2/L3 |
-| two ranks → one agent | L3 injectivity |
-| nonexistent endpoint | L3 |
-| drop/duplicate collective participant | L5 |
-| delete/duplicate message | L7 |
-| ±1 byte payload | L7 |
-| wrong src/dst | message identity |
-| drop/duplicate tail packet | L8 |
-| wrong packet payload bits | L8 |
-| drop/duplicate flit; wrong width/padding | L9/L10 |
-| non-divisible collective chunk (`B % k != 0`) | §10.2 refusal |
-| duplicate a SEND/RECV half as two transfers | §15.1 |
-| change dependency / introduce cycle | §15 acyclicity |
-| apply a generic `Σ message payload == op bytes` law to a collective | L6 (aggregate is schedule-dependent) |
-| compare `N·B` multicast traffic against one-copy source payload | L8 |
-| change KV owner; drop KV transfer | L12 |
-| change expert assignment | L6 |
+Every row feeds a mutated object into a REAL production validator or
+loader (never `mutate(copy); validate(original)`).
+
+| Mutation | Must fail | status |
+|---|---|---|
+| delete/duplicate/swap rank | L1/L2/L3 | IMPLEMENTED |
+| two ranks → one agent | L3 injectivity | IMPLEMENTED (Wave-B seam) |
+| nonexistent endpoint | L3 | IMPLEMENTED |
+| drop/duplicate collective participant | L5 | IMPLEMENTED |
+| delete/duplicate message | L7 | IMPLEMENTED |
+| ±1 byte payload | L7 | IMPLEMENTED |
+| wrong src/dst | message identity | IMPLEMENTED |
+| drop/duplicate tail packet | L8 | IMPLEMENTED (strict parser) |
+| wrong packet payload bits | L8 | IMPLEMENTED (strict parser + oracle) |
+| drop/duplicate flit; wrong width/padding | L9/L10 | IMPLEMENTED |
+| non-divisible collective chunk (`B % k != 0`) | §10.2 refusal | IMPLEMENTED |
+| duplicate a SEND/RECV half as two transfers | §15.1 | IMPLEMENTED |
+| change dependency / introduce cycle | §15 acyclicity | IMPLEMENTED |
+| generic `Σ message payload == op bytes` on a collective | L6 | IMPLEMENTED |
+| `N·B` multicast traffic vs one-copy source payload | L8 | IMPLEMENTED |
+| change KV owner; drop KV transfer | L12 | NOT_RUN (KV lowering UNSUPPORTED, §14) |
+| change expert assignment | L6 | NOT_RUN (EXPLICIT_TRACE only) |
+| same world size, different geometry transposition | §9 refusal | IMPLEMENTED (`test_wave_d_seal.py`) |
+| persisted parent transplant (opgraph/messages/traffic) | loader refusal | IMPLEMENTED (`test_wave_d_seal.py`) |
+| persisted content tamper (nodes/messages/packets) | loader refusal | IMPLEMENTED (`test_wave_d_seal.py`) |
+| tampered parent invalidates a persisted result | result not VERIFIED | IMPLEMENTED (`test_wave_d_seal.py`) |
+| forged evidence counter (quiescence) | BackendFailure | IMPLEMENTED (`test_wave_d_physical.py`) |
 
 ## 31. Unsupported matrix
 
-| Capability | Status |
-|---|---|
-| inference | EXACT (v1 scope) |
-| training / backward / 1F1B | UNSUPPORTED |
-| endpoint-level rank→fabric mapping | EXACT |
-| physical-node-aware semantics | DEFERRED (PhysicalNode is bookkeeping only, §5) |
-| multi-instance (serving) | DEFERRED |
-| TP / PP / DP | EXACT |
-| EP | EXACT (no drop) |
-| MoE top-k routing | EXACT with EXPLICIT_TRACE only |
-| DETERMINISTIC_BALANCED routing | DEFERRED (underdefined) |
-| token dropping | UNSUPPORTED |
-| continuous batching | UNSUPPORTED |
-| static batching | EXACT |
-| phase tagging (PREFILL / DECODE) | EXACT |
-| explicit workload ops + declared comm bytes | EXACT |
-| automatic model-shape → operation synthesis | DEFERRED |
-| P/D disaggregation | DEFERRED |
-| KV transfer across ranks | UNSUPPORTED in row lowering; canonical `P2PTransfer` only |
-| multiple ranks per accelerator | UNSUPPORTED |
-| multiple endpoints per accelerator | DEFERRED |
-| multicast (SOURCE_REPLICATION) | EXACT for the selected schedule |
-| multicast (HARDWARE_REPLICATION) | UNSUPPORTED / DEFERRED (refuse, do not substitute) |
-| non-ring collective algorithms | UNSUPPORTED |
-| uneven collective chunks (`B % k != 0`) | UNSUPPORTED |
-| serving execution | BLOCKED |
-| analytical execution | UNSUPPORTED |
-| RTL/UVM/formal | NOT_RUN |
+| Capability | Status | Implemented? |
+|---|---|---|
+| inference | EXACT (v1 scope) | YES — `waved/workload.py`, `waved/operations.py` |
+| training / backward / 1F1B | UNSUPPORTED | YES (refused: `KIND_*` vocabulary is closed) |
+| endpoint-level rank→fabric mapping | EXACT | YES — `waved/traffic.py::_rank_to_endpoint_maps` |
+| physical-node-aware semantics | DEFERRED (PhysicalNode is bookkeeping only, §5) | DECLARED (no code path consumes PhysicalNode) |
+| multi-instance (serving) | DEFERRED | DECLARED |
+| TP / PP / DP | EXACT | YES — `waved/parallelism.py` |
+| EP | EXACT (no drop) | YES |
+| MoE top-k routing | EXACT with EXPLICIT_TRACE only | PARTIAL — operation kinds exist; routing must be explicit |
+| DETERMINISTIC_BALANCED routing | DEFERRED (underdefined) | DECLARED |
+| token dropping | UNSUPPORTED | DECLARED |
+| continuous batching | UNSUPPORTED | DECLARED |
+| static batching | EXACT | YES (step index in the node) |
+| phase tagging (PREFILL / DECODE) | EXACT | YES — `WaveDWorkloadSemantics.phase`, `OperationNode.phase` |
+| explicit workload ops + declared comm bytes | EXACT | YES — `waved/workload.py` |
+| automatic model-shape → operation synthesis | DEFERRED | DECLARED (nothing infers ops from shape) |
+| P/D disaggregation | DEFERRED | DECLARED |
+| KV transfer across ranks | UNSUPPORTED in row lowering; canonical `P2PTransfer` only | YES (refused) |
+| multiple ranks per accelerator | UNSUPPORTED | YES (Wave-B mapping injectivity) |
+| multiple endpoints per accelerator | DEFERRED | DECLARED |
+| multicast (SOURCE_REPLICATION) | EXACT for the selected schedule | YES — `waved/messages.py` |
+| multicast (HARDWARE_REPLICATION) | UNSUPPORTED / DEFERRED (refuse, do not substitute) | YES (refused: `UnsupportedSemantics`) |
+| non-ring collective algorithms | UNSUPPORTED | YES (refused: `SCHEDULES` is pinned) |
+| uneven collective chunks (`B % k != 0`) | UNSUPPORTED | YES (refused: `ref_collective`) |
+| serving execution | BLOCKED | YES (`capabilities.SERVING_BOOKSIM2.execution`) |
+| analytical execution | UNSUPPORTED | YES |
+| RTL/UVM/formal | NOT_RUN | YES (no surface claims otherwise) |
 
 ## 32. Assumption ledger
 
@@ -1125,3 +1160,142 @@ all Wave-B/Wave-C invariants unchanged
 | EXT-3 | Chakra | Semantics of `involved_dim` and `comm_size` (bytes) per node type? |
 | EXT-4 | LLMServingSim | Exact mapping of `(tp_size, pp_size, ep_size, dp_group, pd_type)` onto a Cartesian rank space? |
 | EXT-5 | Ramulator | Memory timing contract (Wave E scope). |
+
+## 37. D-SEAL closure — product integration and authenticity
+
+D0 specified the semantics; D-SEAL closed the gap between "verified
+library" and "trusted product architecture". Each item below is executed
+code with a test that feeds a real mutated object into a real validator.
+
+### 37.1 Transitive immutability
+
+A frozen dataclass is only skin deep. Every Wave-D artifact now copies
+caller-owned containers into an immutable canonical value tree
+(`waved/immutable.py::freeze` / `FrozenMap`); `thaw` converts back at
+JSON boundaries. Mutating the caller's dict after construction cannot
+change an artifact, its identity, or a lowered child.
+
+```
+mutate caller's shape_metadata / node.detail
+  → semantics_id(), operation_graph_id(), message_artifact_id() unchanged
+```
+
+### 37.2 Logical ↔ physical geometry seam
+
+`PhysicalTrafficArtifact` refuses to bind a logical rank geometry to a
+bundle compiled from a different geometry, even at equal world size:
+
+```
+logical TP=4 PP=1 EP=1 DP=1   (world_size 4)
+bundle  TP=2 PP=2 EP=1 DP=1   (world_size 4)
+  → MappingInvalid: equal world size is not semantic equivalence
+```
+
+The check compares against `bundle.inventory.parallelism` and the
+compiled design workload geometry. `SrotaControlPlane` applies the same
+seam at compile time against the preset's compiled design.
+
+### 37.3 Bundle revalidation
+
+Physical traffic calls `bundle.revalidate()` (Wave-B's own seam) before
+any rank→endpoint binding: a bundle assembled around a stale/tampered
+child can never feed traffic.
+
+### 37.4 Persisted resources and verified loaders
+
+Six content-addressed resources preserve the chain:
+
+```
+wavedworkload   WaveDWorkload            (declared semantics)
+parallelism     ParallelismArtifact      (rank geometry)
+wavedsemantics  WaveDWorkloadSemantics   (versioned envelope)
+opgraph         OperationGraph           (causal DAG)
+messages        LogicalMessageArtifact   (scheduled messages)
+traffic         PhysicalTrafficArtifact  (packets + flits)
+```
+
+`waved/immutable.py`…`waved/strict.py` implement the persisted-resource
+contract (exact type tag, exact schema version, required embedded ID,
+unknown fields refused); `application/waved_resources.py` implements the
+verified loaders, which require
+
+```
+requested filename ID == embedded resource_id == recomputed ID
+```
+
+plus resolved-and-verified parents and semantic revalidation. The
+ConservationLedger is NOT persisted: it is derived from a verified
+`PhysicalTrafficArtifact` and recomputed on demand, so there is no
+ledger object to forge.
+
+### 37.5 Product integration (one science path)
+
+`SrotaControlPlane` is the single product authority for both workload
+kinds:
+
+```
+LEGACY_TRACE       packet bytes → BookSim (unchanged legacy path)
+WAVE_D_SEMANTIC    declared operations → verified graph → verified
+                   logical messages → verified physical traffic →
+                   DERIVED trace → sealed qualified BookSim
+```
+
+A legacy trace can never be labelled Wave-D provenance, and a Wave-D
+workload cannot bypass its chain: `evaluate()` re-loads the traffic
+through the verified loader and runs conservation + oracle + projection
+gates before the spawn. The BookSim trace is a derived backend input.
+
+### 37.6 Identity separation
+
+`EvaluationPlan` binds the Wave-D chain (`waved_workload_id`,
+`parallelism_id`, `wave_d_semantics_id`, `operation_graph_id`,
+`message_artifact_id`, `physical_traffic_id`, `resolved_fabric_hash`,
+`packet_format_hash`) and the derived workload resource binds it too, so
+identical rendered BookSim bytes from a legacy trace and a Wave-D
+workload never share a plan/experiment identity. A result carries the
+same chain plus the sealed execution counters, and re-derives all of
+them on load.
+
+### 37.7 Wave-B evidence stays frozen
+
+Wave D does NOT modify `CertifiedBookSimEvidence`. The Wave-D
+quiescence proof uses only sealed counters:
+
+```
+delivered_packets == expected_packets
+flits_injected == flits_accepted == expected_flits
+```
+
+A missing counter is a hard failure, never a skipped check.
+
+### 37.8 What is NOT closed
+
+| item | status |
+|---|---|
+| KV / expert-routing lowering | UNSUPPORTED (refused), §14 |
+| physical-node semantics, multi-instance, P/D disaggregation | DEFERRED, §31 |
+| uneven collective chunking | UNSUPPORTED (refused), §10.2 |
+| shape → operation synthesis | DEFERRED, §31 |
+| embedded route dump export | NOT_RUN (external contract, §36) |
+
+## 38. Citation convention (brief → contract)
+
+Code and tests cite THIS document's section numbers. The D0 brief used a
+different numbering; the mapping for older references is:
+
+| D0 brief | contract |
+|---|---|
+| §31–§41 (physical traffic, packetization, flit, ledger) | §18–§19, §24 |
+| §35–§37 (bit-exact rules) | §18, §19 |
+| §38 (oracle) | §26 |
+| §39–§41 (ledger classes, fail-closed) | §24.1, §24 |
+| §42–§43 (mutation, metamorphic matrices) | §30, §29 |
+| §46–§50 (backend projection, trace losslessness, quiescence) | §21, §23.3 |
+| §52 (real execution) | §21 |
+| §56 (serving relationship) | §22 |
+| §60 (identity mutation matrix) | §23.6 |
+| §61–§62 (typed refusals) | §31, §10.2 |
+| §67 (proof classes) | §25 |
+| §68 (independent oracle) | §26 |
+| §72–§73 (real-execution evidence) | §21 |
+| §79 (decision format) | this document's preamble |
