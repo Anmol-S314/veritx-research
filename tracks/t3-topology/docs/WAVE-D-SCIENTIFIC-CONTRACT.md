@@ -511,9 +511,16 @@ KVObject = (layer, phase, owner_rank, logical_bytes)
 - Prefill/decode disaggregation (KV moved between separate prefill and
   decode instances): DEFERRED. The external serving `pd_type` doubling
   (D0-C007) is not adopted.
-- Conservation: `produced = resident + transferred + discarded`, integer
-  bytes; logical bytes ≠ physical replicated bytes when a transfer has
-  more than one destination (multicast, §17).
+- Conservation (state, not traffic): `produced_logical_kv =
+  currently_resident_logical_kv + explicitly_discarded_logical_kv`,
+  integer bytes, within the pipeline-local residency model. No discard
+  operation exists in v1, so the law narrows to `produced = resident` for
+  the modeled lifetime.
+- Transfers are **events**, not state: cross-rank KV movement, when
+  supported, is accounted by the P2P law (one `P2PTransfer` → one
+  message, §24 L7). Cumulative transfer traffic is never added to a
+  residency bucket. MOVE-vs-COPY ownership semantics are not pre-invented
+  in Wave D.
 
 ## 15. Operation graph semantics
 
@@ -697,27 +704,86 @@ rule; unmappable configurations refuse. Serving execution remains
 BLOCKED (`capabilities.py` registry: `SERVING_BOOKSIM2.execution =
 BLOCKED`); nothing in Wave D unblocks it.
 
-## 23. Identity hierarchy
+## 23. Identity hierarchy (explicit parent DAG)
+
+**Fundamental rule.** Every derived content-addressed Wave-D artifact
+includes the identities of its **direct semantic parents** plus its own
+canonical semantic contents. No dependency is expressed only as prose
+("X changes and everything downstream changes") — the parent list below
+is the mechanical guarantee.
+
+### 23.1 Existing artifacts (frozen Wave-B/C semantics)
 
 ```
-workload_id        workload/canonical.py content hash (ops+parallelism)
-parallelism_id     H(tp, pp, ep, dp)                      [new, D1]
-mapping_hash       model/mapping.py                        [existing]
-operation_graph_id H(workload_id, parallelism_id, phase structure) [new, D2]
-message_artifact_id H(operation_graph_id, schedules)       [new, D3]
-packetization_id   H(message_artifact_id, packet_payload_capacity_bits) [new, D4]
-traffic_id         H(packetization_id, flit_width_bits, replication schedule) [new, D4]
-wave_d_semantics_id H(WaveDWorkloadSemantics version + declared fields
-                      + model descriptor content hash)      [new, D1]
+workload_id     = WorkloadArtifact content hash over
+                  {schema_version, num_participants, parallelism, ops}
+                  (workload/canonical.py:_identity_dict) — includes
+                  parallelism AND every operation's kind/bytes/
+                  participants/src/dst/scope
+design_hash     = CompileRequest.design_hash() (frozen; includes
+                  workload.serving_mode)
+mapping_hash    = MappingArtifact.mapping_hash() over rank → AgentInstance
+                  placements ONLY (no tp/pp/ep/dp coordinates)
+fabric_hash     = FabricArtifact hardware identity
+resolved_fabric_hash = H(design_hash, mapping_hash, fabric_hash)
+                  (model/resolved_fabric.py)
+packet_format_hash   = PacketFormatArtifact content identity
 ```
 
-Dependencies: changing the mapping changes `mapping_hash` and everything
-downstream of it, but not `workload_id`. Changing the packet payload
-capacity changes `packetization_id`/`traffic_id` only. Output paths,
-labels and JSON ordering never change any identity (Wave C rule
-preserved).
+### 23.2 Wave-D artifact parent DAG
 
-### 23.1 Frozen CompileRequest identity
+```
+parallelism_id = H(parallelism_schema_version, TP, PP, EP, DP)
+    parents: none (pure parallelism geometry)
+
+wave_d_semantics_id = H(WaveDWorkloadSemantics version, declared
+                        semantic fields, model descriptor content hash)
+    parents: none (pure Wave-D semantic envelope)
+
+operation_graph_id = H(workload_id, parallelism_id, wave_d_semantics_id,
+                       canonical operation nodes, canonical dependency
+                       edges)
+    parents: workload_id, parallelism_id, wave_d_semantics_id
+
+message_artifact_id = H(operation_graph_id, collective schedule
+                        identities, replication intent where it expands
+                        logical messages, canonical LogicalMessage
+                        contents)
+    parents: operation_graph_id
+
+physical_traffic_id = H(message_artifact_id, resolved_fabric_hash,
+                        packet_format_hash, replication schedule,
+                        canonical physical packet/flit contents)
+    parents: message_artifact_id, resolved_fabric_hash,
+             packet_format_hash
+```
+
+One physical traffic artifact is sufficient; no extra ID ladder is
+introduced. Names may follow project vocabulary; the **parent binding** is
+normative.
+
+### 23.3 Logical vs physical separation
+
+```
+logical workload → operation graph → logical messages
+                                        │
+                     ResolvedFabric ────┴──→ physical traffic
+                     PacketFormat
+```
+
+Logical messages use logical rank IDs and are **independent of physical
+placement**. A mapping change does not alter `operation_graph_id` or
+`message_artifact_id`; it alters `mapping_hash`, `resolved_fabric_hash`
+and therefore `physical_traffic_id`.
+
+The physical binding seam is the existing Wave-B `ResolvedFabric` plus
+`PacketFormatArtifact`; `ResolvedFabric.validate_against()` already
+proves design parallelism, canonical rank namespace, mapping placements,
+agent attachment, the fabric child DAG, packet format, VC semantics,
+routes and address decode. Wave D consumes that seam and invents no
+second rank→endpoint authority.
+
+### 23.4 Frozen CompileRequest identity
 
 Wave D does **not** reinterpret the frozen Wave-B/C `design_hash`
 (`model/compile_model.py:CompileRequest.design_hash`). Its
@@ -728,7 +794,7 @@ reinterpretation of a CompileRequest field requires an explicit
 schema/compiler-semantics version bump, after which old documents retain
 their original meaning.
 
-### 23.2 Wave-D semantic version boundary
+### 23.5 Wave-D semantic version boundary
 
 Wave D introduces its own versioned boundary — `WaveDWorkloadSemantics`
 v1 — separate from CompileRequest identity. It owns only the fields an
@@ -743,43 +809,98 @@ collective payload    per-kind meaning (§10.1)
 model descriptor      name + content hash (never a bare name lookup)
 ```
 
-### 23.3 Identity mutation table
+### 23.6 Identity mutation table (mechanical)
 
-| Mutation | IDs that change | IDs that do not change |
+Every row lists **exact direct consequences**. `—` = unaffected.
+
+| Mutation | workload_id | parallelism_id | wave_d_semantics_id | mapping_hash | resolved_fabric_hash | operation_graph_id | message_artifact_id | physical_traffic_id |
+|---|---|---|---|---|---|---|---|---|
+| rename display label | — | — | — | — | — | — | — | — |
+| move workload/trace file | — | — | — | — | — | — | — | — |
+| change trace bytes | CHANGES | — | — | — | CHANGES | CHANGES | CHANGES | CHANGES |
+| change source op payload (kind/bytes/participants/scope) | CHANGES | — | — | — | CHANGES | CHANGES | CHANGES | CHANGES |
+| change canonical P2P src/dst/bytes | CHANGES | — | — | — | CHANGES | CHANGES | CHANGES | CHANGES |
+| change TP/PP/EP/DP | CHANGES | CHANGES | only if it carries such fields | CHANGES iff rank→agent placements change | CHANGES | CHANGES | CHANGES | CHANGES |
+| change phase / model descriptor (Wave-D envelope) | — | — | CHANGES | — | — | CHANGES where graph semantics depend on it | CHANGES | CHANGES |
+| change physical mapping only | — | — | — | CHANGES | CHANGES | — | — | CHANGES |
+| change attachment / fabric / packet format only | — | — | — | — | CHANGES per Wave-B | — | — | CHANGES |
+| change collective algorithm (not a source workload field) | — | — | — | — | — | — | CHANGES | CHANGES |
+| change replication schedule | — | — | — | — | — | — | CHANGES | CHANGES |
+| change output directory | — | — | — | — | — | — | — | — |
+| change legacy `CompileRequest.serving_mode` | — (Wave-D workload artifact unchanged) | — | — | — | design_hash CHANGES (historical) | — | — | — |
+
+Two audit-relevant facts this table encodes:
+
+- **Parallelism is already inside `workload_id`** (the canonical artifact
+  hashes `parallelism`), so a parallelism mutation cannot leave
+  `workload_id` stable. `parallelism_id` exists for independently
+  referencable rank/group geometry; the redundancy is intentional and the
+  frozen workload hash is not modified during Wave D.
+- **`mapping_hash` does not necessarily change when parallelism changes.**
+  `MappingArtifact` hashes `rank integer → AgentInstance`, not
+  coordinates. `TP=4,PP=1,EP=1,DP=1` and `TP=2,PP=2,EP=1,DP=1` both have
+  ranks `0..3`; if those ranks map to the same four agents, the mapping
+  content is identical and `mapping_hash` legitimately stays equal.
+  `ResolvedFabric.validate_against()` remains the authority proving a
+  mapping is compatible with a particular design parallelism.
+
+## 24. Conservation laws (split by operation class)
+
+No law may use a quantity that means different things across operation
+types. In particular there is **no** generic
+`Σ message payload == op logical bytes` law: it is false for collectives
+and for source-replicated multicast.
+
+Notation: `B` = the per-kind payload of §10.1; `k` = participant count;
+`N` = destination count.
+
+| Law | Class | Input | Output | Relation | Proof | Domain |
+|---|---|---|---|---|---|---|
+| L1 rank cardinality | rank space | TP,PP,EP,DP | R | `R = TP·PP·EP·DP` | PROVED_EXACT | all valid |
+| L2 rank bijection | rank space | coords | rank | `coords(rank(c)) = c` | BOUNDED_EXHAUSTIVE | sizes ≤ 4 |
+| L3 mapping completeness | mapping | R ranks | placements | `len = R`, injective, contiguous | PROVED_EXACT | v1 mapping |
+| L4 group membership | rank space | R ranks | groups | one group per family per rank; `Σ sizes = R` | PROVED_EXACT | all valid |
+| L5 collective participants | collective | intent | schedule | `participants(schedule) = participants(intent)` | PROPERTY_VALIDATED | §10.1 |
+| L6 collective scheduled aggregate payload | collective | kind, k, B | `Σ message payload bytes` | equals the §10.1 aggregate: ALLREDUCE `2(k−1)B`, REDUCESCATTER `(k−1)B`, ALLGATHER `k(k−1)B`, ALLTOALL `(k−1)B`, BROADCAST `(k−1)B` | PROVED_EXACT | divisibility rules |
+| L7 P2P message payload | P2P | one `P2PTransfer` payload `B` | messages | exactly one message; `Σ message payload == B` | PROVED_EXACT | canonical P2P |
+| L8 multicast source/delivery | multicast | payload `B`, `N` | messages / delivered | `Σ message payload == N·B`; `delivered == N·B`; source logical payload is `B` (one copy) | PROVED_EXACT | SOURCE_REPLICATION |
+| L9 MoE assignments | MoE | tokens, k | assignments | `= tokens × k`; sent = received | PROVED_EXACT | EXPLICIT_TRACE, no drop |
+| L10 packet payload bits | packet | `message_bits` | packets | `N = ceil(message_bits/(Q·L))`; `Σ payload_bits = message_bits` | PROVED_EXACT | bits, any F |
+| L11 transmitted-bit identity | packet/flit | `P_i`, Q, H, F | `transmitted_bits_i` | `n_i·F = n_i·H + P_i + padding_i` | PROVED_EXACT | bits, any F |
+| L12 flit padding | flit | `P_i`, Q | `padding_i` | `padding_i = n_i·Q − P_i`; `0 ≤ padding_i < Q` | PROVED_EXACT | bits, any F |
+| L13 KV residency state | KV | produced | resident, discarded | `produced = resident + discarded` (no transfer term) | PROVED_EXACT | pipeline-local v1 |
+| L14 backend quiescence | backend | submitted | completed | equal (or explicit cancel/drop/fail) | DIFFERENTIALLY_VALIDATED | backend exact only |
+
+KV transfer traffic is **not** a state bucket: when cross-rank KV becomes
+supported it is accounted by L7 (one `P2PTransfer` per move), never by
+adding cumulative traffic to residency.
+
+### 24.1 Conservation-ledger quantity classes
+
+The future cross-layer ledger records **distinct named quantities**; a
+single `bytes` field is forbidden because its meaning depends on the
+operation/schedule class.
+
+| Quantity | Meaning | Filled by |
 |---|---|---|
-| rename display label | none | all |
-| move workload/trace file | none | all |
-| change trace bytes | workload_id and downstream | — |
-| change explicit phase | wave_d_semantics_id, operation_graph_id+ | workload_id, mapping_hash |
-| change model descriptor content | wave_d_semantics_id+ | mapping_hash |
-| change TP/PP/EP/DP | parallelism_id, mapping_hash+ | workload_id |
-| change physical mapping | mapping_hash+ | workload_id, parallelism_id |
-| change collective schedule | message_artifact_id+ | workload_id, mapping_hash |
-| change collective payload | message_artifact_id+ | mapping_hash |
-| change P2P transfer id/src/dst/bytes | operation_graph_id, message_artifact_id+ | mapping_hash |
-| change packet payload capacity / flit width | packetization_id, traffic_id | everything above |
-| change replication schedule | traffic_id | everything above |
-| change output directory | none | all |
-| change legacy `CompileRequest.serving_mode` | frozen `design_hash` (historical semantics) | no Wave-D phase is fabricated by this change |
+| `source_logical_payload_bytes` | one-copy semantic payload of the operation/transfer | D2 |
+| `aggregate_scheduled_message_bytes` | `Σ` logical message payload after the schedule (collective/multicast expansion) | D3 |
+| `packet_payload_bits` | `Σ` packet payload bits | D4 |
+| `transmitted_wire_bits` | `Σ n_i·F` including headers and padding | D4 |
+| `delivered_payload_bytes` | payload delivered to destinations | D3/D5 |
+| `packet_count`, `flit_count` | integer counts | D4 |
+| `backend_injections`, `backend_retirements` | backend-observed counts | D-FINAL |
 
-## 24. Conservation laws
+Relationships (class-dependent, all integers):
 
-| Law | Input | Output | Relation | Proof | Domain |
-|---|---|---|---|---|---|
-| L1 rank cardinality | TP,PP,EP,DP | R | `R = TP·PP·EP·DP` | PROVED_EXACT | all valid |
-| L2 rank bijection | coords | rank | `coords(rank(c)) = c` | BOUNDED_EXHAUSTIVE | sizes ≤ 4 |
-| L3 mapping completeness | R ranks | placements | `len = R`, injective, contiguous | PROVED_EXACT | v1 mapping |
-| L4 group membership | R ranks | groups | each rank in exactly one group per family; `Σ sizes = R` | PROVED_EXACT | all valid |
-| L5 collective participants | intent | schedule | `participants(schedule) = participants(intent)` | PROPERTY | §10.1 |
-| L6 MoE assignments | tokens, k | assignments | `= tokens × k`; sent = received | PROVED_EXACT | EXPLICIT_TRACE, no drop |
-| L7 message payload | op logical bytes | `Σ message payload` | equal, integers | PROVED_EXACT | all |
-| L8 packet payload | message_bits | packets | `N = ceil(message_bits / (Q·L))`, `Σ payload_bits = message_bits` | PROVED_EXACT | bits, any F |
-| L9 transmitted bits | packet `P_i`, Q, H, F | `transmitted_bits_i` | `n_i·F = n_i·H + P_i + padding_i` | PROVED_EXACT | bits, any F |
-| L10 flit padding | `P_i`, Q | `padding_i` | `padding_i = n_i·Q − P_i`, `0 ≤ padding_i < Q` | PROVED_EXACT | bits, any F |
-| L10b collective aggregate | per-kind `B`, `k` | aggregate network payload | §10.1 table (primary invariant) | PROVED_EXACT | `B % k == 0` where required |
-| L11 multicast delivery | payload, N | delivered | `= payload × N` | PROVED_EXACT | SOURCE_REPLICATION |
-| L12 KV ownership | produced | resident+transferred+discarded | equality, integers | PROVED_EXACT | v1 local |
-| L13 quiescence | submitted | completed | equal (or explicit cancel/drop/fail) | DIFFERENTIAL | backend exact only |
+```
+P2P:          aggregate_scheduled_message_bytes == source_logical_payload_bytes
+collective:   aggregate_scheduled_message_bytes == §10.1 aggregate (L6)
+multicast:    aggregate_scheduled_message_bytes == N · source_logical_payload_bytes
+packet:       Σ packet_payload_bits == 8 · aggregate_scheduled_message_bytes
+flit:         transmitted_wire_bits == header_bits + packet_payload_bits + padding_bits
+```
+
 
 ## 25. Proof classes
 
@@ -863,6 +984,8 @@ statements apply to *operation generation*, not to a degenerate object.)
 | non-divisible collective chunk (`B % k != 0`) | §10.2 refusal |
 | duplicate a SEND/RECV half as two transfers | §15.1 |
 | change dependency / introduce cycle | §15 acyclicity |
+| apply a generic `Σ message payload == op bytes` law to a collective | L6 (aggregate is schedule-dependent) |
+| compare `N·B` multicast traffic against one-copy source payload | L8 |
 | change KV owner; drop KV transfer | L12 |
 | change expert assignment | L6 |
 
@@ -942,6 +1065,27 @@ statements apply to *operation generation*, not to a degenerate object.)
 
 Each slice DoD: algebraic invariants + independent oracle + property
 tests + mutation suite, all checked in.
+
+### 34.1 D1 handoff contract
+
+D1 may implement **only** these, and must not decide any identity-parent
+question itself:
+
+```
+parallelism identity            parallelism_id = H(version, TP, PP, EP, DP)
+rank namespace                  placement.py rank_of/coords_of (reused)
+rank-coordinate bijection       L2
+group construction              §9 families
+mapping validation/composition  MappingArtifact + ResolvedFabric seam (§23.3)
+Wave-D semantics envelope       WaveDWorkloadSemantics v1 skeleton required
+                                by D1 (version + declared fields + bound
+                                model descriptor hash)
+```
+
+The parent DAG in §23.2 is normative for D1: `operation_graph_id` already
+names `workload_id`, `parallelism_id` and `wave_d_semantics_id` as its
+direct parents, so D1 must not restructure the hash dependency graph, and
+D2/D3/D4 must consume the parent lists as written.
 
 ## 35. Wave-D final seal conditions
 

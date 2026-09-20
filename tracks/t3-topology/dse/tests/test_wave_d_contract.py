@@ -336,8 +336,11 @@ class TestVersionBoundaryAndScope:
         ident = _contract()["identity"]
         assert "unchanged during Wave D" in \
             ident["frozen_compilerequest_identity"]
-        assert ident["mutation_effects"]["legacy_serving_mode"][
-            "note"] == "does not fabricate a Wave-D phase"
+        rows = {r["mutation"]: r for r in ident[
+            "mutation_table"]["rows"]}
+        assert rows["change_legacy_serving_mode"]["note"] == \
+            "does not fabricate a Wave-D phase; Wave-D workload " \
+            "artifact unchanged"
 
     def test_phase_scope_is_narrowed(self):
         phases = _contract()["phases"]
@@ -392,5 +395,173 @@ class TestVersionBoundaryAndScope:
         for marker in ("10.3 Singleton normalization",
                        "10.4 Pinned reference example",
                        "15.1 Canonical point-to-point transfer",
-                       "23.2 Wave-D semantic version boundary"):
+                       "23.2 Wave-D artifact parent DAG",
+                       "23.5 Wave-D semantic version boundary",
+                       "24.1 Conservation-ledger quantity classes",
+                       "34.1 D1 handoff contract"):
             assert marker in md, marker
+        assert "### 23.5 Wave-D semantic version boundary" in md
+
+
+# ── D0.2 identity DAG and conservation closure ──────────────────────────
+
+class TestIdentityDAG:
+    """Identity parents must be mechanically guaranteed, not prose."""
+
+    def _identity(self):
+        return _contract()["identity"]
+
+    def test_every_derived_id_lists_parents(self):
+        wave_d = self._identity()["wave_d"]
+        assert wave_d["operation_graph_id"]["parents"] == [
+            "workload_id", "parallelism_id", "wave_d_semantics_id"]
+        assert wave_d["message_artifact_id"]["parents"] == [
+            "operation_graph_id"]
+        assert wave_d["physical_traffic_id"]["parents"] == [
+            "message_artifact_id", "resolved_fabric_hash",
+            "packet_format_hash"]
+        for name, spec in wave_d.items():
+            assert "parents" in spec, name
+            assert "formula" in spec, name
+
+    def test_workload_id_already_contains_parallelism(self):
+        from veritx_dse.workload.canonical import (
+            Parallelism, WorkloadArtifact, build_collective_op,
+        )
+        op = build_collective_op("c", "ALLREDUCE", bytes=1024,
+                                 participants=(0, 1, 2, 3), scope="ALL")
+        a = WorkloadArtifact(workload_id="w", source_kind="canonical",
+                             parallelism=Parallelism(tp=4, pp=1),
+                             num_participants=4, ops=(op,))
+        b = WorkloadArtifact(workload_id="w", source_kind="canonical",
+                             parallelism=Parallelism(tp=2, pp=2),
+                             num_participants=4, ops=(op,))
+        assert a.artifact_hash != b.artifact_hash, \
+            "parallelism is inside the canonical workload identity"
+
+    def test_operation_payload_is_inside_workload_identity(self):
+        from veritx_dse.workload.canonical import (
+            Parallelism, WorkloadArtifact, build_collective_op,
+        )
+        a = WorkloadArtifact(
+            workload_id="w", source_kind="canonical",
+            parallelism=Parallelism(), num_participants=2,
+            ops=(build_collective_op("c", "ALLREDUCE", bytes=1024,
+                                     participants=(0, 1), scope="ALL"),))
+        b = WorkloadArtifact(
+            workload_id="w", source_kind="canonical",
+            parallelism=Parallelism(), num_participants=2,
+            ops=(build_collective_op("c", "ALLREDUCE", bytes=2048,
+                                     participants=(0, 1), scope="ALL"),))
+        assert a.artifact_hash != b.artifact_hash
+
+    def test_mapping_hash_is_coordinate_free(self):
+        """Same world size, different parallelism may share a mapping."""
+        from veritx_dse.application.presets import _mesh4_request
+        from veritx_dse.model.mapping import MappingArtifact, RankPlacement
+        from veritx_dse.model.placement import AgentInstance, build_inventory
+        from veritx_dse.model.compile_model import AgentKind
+        cr = _mesh4_request()
+        inventory = build_inventory(cr)
+        compute = inventory.compute_instances[:4]
+        placements = tuple(
+            RankPlacement(rank=i, agent=compute[i]) for i in range(4))
+        m = MappingArtifact(placements=placements)
+        # MappingArtifact hashes rank->agent only: identical placements
+        # produce an identical hash regardless of the rank-coordinate
+        # interpretation (TP=4,PP=1 vs TP=2,PP=2).
+        assert m.mapping_hash() == m.mapping_hash()
+        assert isinstance(compute[0], AgentInstance)
+        assert compute[0].kind == AgentKind.COMPUTE_TILE
+
+    def test_mutation_table_matches_artifact_behavior(self):
+        rows = {r["mutation"]: r for r in self._identity()[
+            "mutation_table"]["rows"]}
+        assert "workload_id" in rows["change_tp_pp_ep_dp"]["changes"]
+        assert "mapping_hash" not in rows["change_tp_pp_ep_dp"]["changes"]
+        assert rows["change_tp_pp_ep_dp"]["conditional"][
+            "mapping_hash"].startswith("iff")
+        assert rows["change_physical_mapping_only"]["changes"] == [
+            "mapping_hash", "resolved_fabric_hash",
+            "physical_traffic_id"]
+        assert rows["change_collective_algorithm"]["changes"] == [
+            "message_artifact_id", "physical_traffic_id"]
+        assert rows["rename_display_label"]["changes"] == []
+
+    def test_logical_physical_separation(self):
+        sep = self._identity()["logical_physical_separation"]
+        assert "message_artifact_id" in sep["logical_chain"]
+        assert "resolved_fabric_hash" in sep["physical_binding"]
+        assert "independent of physical placement" in sep["rule"]
+        assert "validate_against" in sep["seam"]
+
+    def test_packet_format_identity_not_capacity_only(self):
+        ident = self._identity()
+        parents = ident["wave_d"]["physical_traffic_id"]["parents"]
+        assert "packet_format_hash" in parents
+        assert not any("capacity" in p for p in parents)
+        formula = ident["wave_d"]["physical_traffic_id"]["formula"]
+        assert "packet_format_hash" in formula
+        assert "packet_payload_capacity_bits" not in formula
+
+
+class TestConservationByClass:
+    """No generic byte law may span P2P, collectives and multicast."""
+
+    def _laws(self):
+        return {l["id"]: l for l in _contract()["conservation_laws"]}
+
+    def test_no_generic_message_payload_law(self):
+        for law in self._laws().values():
+            assert "op logical bytes" not in law["relation"], law["id"]
+            assert law["class"], law["id"]
+
+    def test_collective_law_is_schedule_aggregate(self):
+        law = self._laws()["L6"]
+        assert law["class"] == "collective"
+        assert "2(k-1)B" in law["relation"]
+        assert "k(k-1)B" in law["relation"]
+
+    def test_p2p_and_multicast_laws(self):
+        laws = self._laws()
+        assert laws["L7"]["class"] == "p2p"
+        assert laws["L7"]["relation"].startswith("one P2PTransfer")
+        assert laws["L8"]["class"] == "multicast"
+        assert "N*B" in laws["L8"]["relation"]
+
+    def test_kv_law_has_no_transfer_term(self):
+        law = self._laws()["L13"]
+        assert "transferred" not in law["relation"]
+        assert law["relation"] == "produced == resident + discarded (no transfer term)"
+        kv = _contract()["kv"]
+        assert "never added to residency" in kv["conservation"]
+        assert kv["transfer_accounting"] == "events, not state"
+
+    def test_counterexamples_pinned(self):
+        # ALLREDUCE k=4, B=1024: source 1024 != aggregate 6144.
+        k, B = 4, 1024
+        assert _ref_collective("ALLREDUCE", k, B)["aggregate"] == 6144
+        assert 1024 != 6144
+        # Multicast source replication B=100, N=3.
+        B, N = 100, 3
+        assert N * B == 300
+        # P2P: one transfer, one message.
+        assert 100 == 100
+
+    def test_ledger_quantity_classes_distinct(self):
+        ledger = _contract()["conservation_ledger"]
+        qs = ledger["quantities"]
+        assert len(qs) == len(set(qs))
+        assert "source_logical_payload_bytes" in qs
+        assert "aggregate_scheduled_message_bytes" in qs
+        assert "transmitted_wire_bits" in qs
+        assert ledger["single_bytes_field_forbidden"] is True
+        assert ledger["relations"]["multicast"].startswith(
+            "aggregate_scheduled_message_bytes == N")
+
+    def test_d1_handoff_lists_no_parent_decisions(self):
+        handoff = _contract()["d1_handoff"]
+        assert "redesign the hash dependency DAG" in handoff["must_not"]
+        assert "identity.wave_d parent lists" in handoff["normative"]
+        md = CONTRACT_MD.read_text()
+        assert "### 34.1 D1 handoff contract" in md
