@@ -149,6 +149,10 @@ class WaveETemporalEvent:
                 raise WorkloadError(
                     "NETWORK_OPERATION_REF requires wave_d_operation_id "
                     "provenance (§15)")
+            if bytes_count is not None:
+                raise WorkloadError(
+                    "NETWORK_OPERATION_REF does not carry bytes_count; "
+                    "its time comes from the evidence-bound window")
         else:
             if resource is None:
                 raise WorkloadError(
@@ -157,6 +161,13 @@ class WaveETemporalEvent:
                 if not isinstance(bytes_count, int) or bytes_count < 0:
                     raise WorkloadError(
                         "memory events require int bytes_count >= 0")
+            elif bytes_count is not None:
+                # A byte count on a compute/barrier event would look
+                # like modeled memory traffic and is never consumed.
+                raise WorkloadError(
+                    f"{kind} events do not carry bytes_count (only "
+                    f"{MEMORY_KINDS} do); refusing a field that would "
+                    f"silently do nothing")
         if rank is not None and (isinstance(rank, bool) or
                                  not isinstance(rank, int) or rank < 0):
             raise WorkloadError("rank must be None or int >= 0")
@@ -238,6 +249,11 @@ class WaveETemporalWorkload:
                  wave_d_operation_ids: tuple[str, ...] = ()) -> None:
         if not isinstance(performance_model, WaveEPerformanceModel):
             raise WorkloadError("performance_model required")
+        if not events:
+            # A temporal overlay with nothing to schedule would report a
+            # zero makespan that means nothing; refuse it.
+            raise WorkloadError(
+                "a temporal workload must declare at least one event")
         ids = [e.event_id for e in events]
         if len(ids) != len(set(ids)):
             dupes = sorted({i for i in ids if ids.count(i) > 1})

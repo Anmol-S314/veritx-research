@@ -64,22 +64,32 @@ class SchedulerDeadlock(SchedulerError):
 
 
 class ScheduledEvent:
-    """One event's scheduled interval + allocation (§117)."""
+    """One event's scheduled interval + allocation (§117).
+
+    ``bytes_moved`` is the EXACT number of bytes the transfer moved, and
+    ``bandwidth_allocated_bps`` is the time-weighted AVERAGE rate over
+    the interval (bytes / duration), not the instantaneous rate at
+    completion. A fluid transfer's share changes at every boundary, so
+    recording only the final instantaneous rate loses the history: the
+    average is what integrates back to the bytes actually moved.
+    """
 
     __slots__ = ("event_id", "start", "end", "resource",
-                 "bandwidth_allocated_bps")
+                 "bandwidth_allocated_bps", "bytes_moved")
 
     __setattr__ = _freeze
 
     def __init__(self, event_id: str, start: QTime, end: QTime,
                  resource: str | None,
-                 bandwidth_allocated_bps: Fraction | None = None) -> None:
+                 bandwidth_allocated_bps: Fraction | None = None,
+                 bytes_moved: int = 0) -> None:
         object.__setattr__(self, "event_id", event_id)
         object.__setattr__(self, "start", start)
         object.__setattr__(self, "end", end)
         object.__setattr__(self, "resource", resource)
         object.__setattr__(self, "bandwidth_allocated_bps",
                            bandwidth_allocated_bps)
+        object.__setattr__(self, "bytes_moved", bytes_moved)
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -89,6 +99,8 @@ class ScheduledEvent:
         }
         if self.resource is not None:
             d["resource"] = self.resource
+        if self.bytes_moved:
+            d["bytes_moved"] = self.bytes_moved
         if self.bandwidth_allocated_bps is not None:
             d["bandwidth_allocated_bps"] = {
                 "num": self.bandwidth_allocated_bps.numerator,
@@ -199,23 +211,60 @@ def schedule_workload(workload: WaveETemporalWorkload, *,
         for d in ds:
             dependents[d].append(e.event_id)
 
+    # §52/§101: an explicit request arrival is a RELEASE TIME for the
+    # work that request owns, and for any event it declares as a root.
+    # Without this, arrivals are inert bookkeeping: work could start (and
+    # finish) before the request exists, and the latency metric would
+    # then have to refuse a workload the scheduler happily accepted.
+    # This is what makes multiple explicit arrivals real queueing on
+    # shared resources rather than a silently time-zero assumption.
+    release: dict[str, Fraction] = {}
+    for req in workload.requests:
+        gated = {e.event_id for e in workload.events
+                 if e.request_id == req.request_id}
+        gated |= set(req.root_event_ids)
+        for eid in gated:
+            if eid in by_id:
+                release[eid] = max(release.get(eid, Fraction(0)),
+                                   req.arrival.q)
+
     finish: dict[str, Fraction] = {}
     scheduled: dict[str, ScheduledEvent] = {}
     # exclusive resources: name -> list of (end_q, event_id) active
     exclusive_busy: dict[str, list[tuple[Fraction, str]]] = {}
-    # bandwidth: name -> [eid, remaining_bytes, rate, t_ref, start_q]
+    # bandwidth: name -> {"items": [...], "total": bytes/s}
+    #   item = [eid, remaining_bytes, t_ref, start_q, work_bytes];
     #   remaining_bytes is measured at t_ref; start_q is the ORIGINAL
-    #   start (reported in the schedule) — never advanced.
-    bw_active: dict[str, list[list[Any]]] = {}
+    #   start (reported in the schedule) — never advanced. The per-item
+    #   rate is total/len(items), computed on demand: writing the same
+    #   rate into every item at every admission is O(n) per admission,
+    #   which is quadratic for a wide sharing set.
+    bw_active: dict[str, dict[str, Any]] = {}
+
+    def bw_rate(state: dict[str, Any]) -> Fraction:
+        items = state["items"]
+        if not items:
+            return Fraction(0)
+        return state["total"] / len(items)
 
     ready_heap: list[tuple[Fraction, str]] = []  # (ready_q, event_id)
+    # Events ready but blocked by a FULL exclusive resource wait here,
+    # per resource, instead of being re-scanned at every instant: they
+    # can only become admissible when that resource releases, and the
+    # release path re-queues exactly that resource's waiters. Each list
+    # is a heap keyed by (ready, event_id) so an event that bounces
+    # (moved to the ready heap, then blocked again by a rival that took
+    # the slot first) returns to its correct FIFO position in
+    # O(log n) rather than at the tail.
+    blocked_by_res: dict[str, list[tuple[Fraction, str]]] = {}
     indegree = {eid: len(ds) for eid, ds in deps_of.items()}
 
     def ready_time(eid: str) -> Fraction:
+        base = release.get(eid, Fraction(0))
         ds = deps_of[eid]
         if not ds:
-            return Fraction(0)
-        return max(finish[d] for d in ds)
+            return base
+        return max(base, max(finish[d] for d in ds))
 
     def push_ready(eid: str) -> None:
         heapq.heappush(ready_heap, (ready_time(eid), eid))
@@ -233,37 +282,58 @@ def schedule_workload(workload: WaveETemporalWorkload, *,
     t_now = Fraction(0)
     n_events = len(by_id)
 
-    def admit_one() -> bool:
-        """Schedule the single best ADMISSIBLE ready event, or False.
+    def admit_ready_batch() -> bool:
+        """Admit every admissible ready event at ``t_now``, in order.
 
-        Admissible = ready_time <= t_now AND its resource has room
-        (exclusive) / is shareable (bandwidth). Candidate order is
-        earliest-ready then semantic id — fully deterministic (§33).
+        Exactly the previous one-event-at-a-time policy, without the
+        O(n) rescan per admission: the ready heap is already keyed by
+        (ready, event_id), so popping it admits in the same order, and
+        events that become ready mid-batch (a zero-duration predecessor
+        completing) enter the same heap and are therefore considered
+        before any later candidate — which is what the rescan used to
+        guarantee. An event blocked by exclusive capacity is set aside
+        and pushed back for the next instant; it cannot become
+        admissible without a release, and releases only happen when
+        ``t_now`` advances.
         """
-        nonlocal ready_heap
-        candidates: list[tuple[Fraction, str]] = []
-        for rq, eid in ready_heap:
+        admitted_any = False
+        while ready_heap and ready_heap[0][0] <= t_now:
+            rq, eid = heapq.heappop(ready_heap)
             if eid in scheduled:
                 continue
-            if rq > t_now:  # ready-time gate: future arrival
-                continue
             e = by_id[eid]
-            if e.resource is None:
-                candidates.append((rq, eid))
-                continue
-            rdef = model.resource(e.resource)
-            if rdef.kind == RESOURCE_KIND_EXCLUSIVE:
-                if len(exclusive_busy.get(e.resource, [])) < \
+            if e.resource is not None:
+                rdef = model.resource(e.resource)
+                if rdef.kind == RESOURCE_KIND_EXCLUSIVE and \
+                        len(exclusive_busy.get(e.resource, [])) >= \
                         (rdef.capacity or 1):
-                    candidates.append((rq, eid))
-            else:  # BANDWIDTH: always admissible, sharing adapts
-                candidates.append((rq, eid))
-        if not candidates:
-            return False
-        candidates.sort()
-        rq, eid = candidates[0]
-        ready_heap = [(a, b) for (a, b) in ready_heap if b != eid]
-        heapq.heapify(ready_heap)
+                    heapq.heappush(
+                        blocked_by_res.setdefault(e.resource, []),
+                        (rq, eid))
+                    continue
+            _admit(eid, rq)
+            admitted_any = True
+        return admitted_any
+
+    def requeue_unblocked() -> bool:
+        """Move waiters of resources that now have room back to ready."""
+        moved = False
+        for res, waiters in list(blocked_by_res.items()):
+            rdef = model.resource(res)
+            room = (rdef.capacity or 1) - len(exclusive_busy.get(res, []))
+            if room <= 0 or not waiters:
+                continue
+            # Waiters are appended in (ready, id) order, so moving the
+            # first `room` of them preserves FIFO. Moving ALL of them
+            # (and re-blocking the surplus) would rescan the whole queue
+            # at every instant — the O(n^2) this queue exists to avoid.
+            for _ in range(min(room, len(waiters))):
+                heapq.heappush(ready_heap, heapq.heappop(waiters))
+            moved = True
+        return moved
+
+    def _admit(eid: str, rq: Fraction) -> None:
+        """Admit ONE event at ``rq`` (its ready time, <= t_now)."""
         e = by_id[eid]
         dur = net[eid] if eid in net else _duration_of(e, model)
 
@@ -274,7 +344,7 @@ def schedule_workload(workload: WaveETemporalWorkload, *,
                                             QTime(end_q), None)
             finish[eid] = end_q
             complete(eid)
-            return True
+            return
 
         rdef = model.resource(e.resource)
         if rdef.kind == RESOURCE_KIND_EXCLUSIVE:
@@ -287,11 +357,12 @@ def schedule_workload(workload: WaveETemporalWorkload, *,
             # future heap arrivals gated by their ready time.
             finish[eid] = end_q
             complete(eid)
-            return True
+            return
 
         # BANDWIDTH transfer: joins the active set at its own ready
         # time (== now by the gate) — never before it begins (§31).
-        state = bw_active.setdefault(e.resource, [])
+        state = bw_active.setdefault(
+            e.resource, {"items": [], "total": rdef.bandwidth_bps})
         start_q = max(rq, t_now)
         work_bytes = Fraction(e.bytes_count or 0)
         if work_bytes == 0:
@@ -299,13 +370,12 @@ def schedule_workload(workload: WaveETemporalWorkload, *,
             end_q = start_q + dur.q
             scheduled[eid] = ScheduledEvent(
                 eid, QTime(start_q), QTime(end_q), e.resource,
-                bandwidth_allocated_bps=Fraction(0))
+                bandwidth_allocated_bps=Fraction(0), bytes_moved=0)
             finish[eid] = end_q
             complete(eid)
-            return True
-        state.append([eid, work_bytes, None, start_q, start_q])
-        _recompute_bandwidth(state, rdef.bandwidth_bps)
-        return True
+            return
+        state["items"].append(
+            [eid, work_bytes, start_q, start_q, work_bytes])
 
     while len(scheduled) < n_events:
         # 0+1) fixed point: release capacity that is DUE (q <= t_now,
@@ -319,22 +389,32 @@ def schedule_workload(workload: WaveETemporalWorkload, *,
                 if due:
                     busy[:] = [(q, eid) for (q, eid) in busy if q > t_now]
                     progressed = True
-            while admit_one():
+            if requeue_unblocked():
+                progressed = True
+            if admit_ready_batch():
                 progressed = True
         if len(scheduled) == n_events:
             break
 
         # 2) advance to the next STRICTLY FUTURE boundary: a future
         #    arrival, an exclusive release, or a fluid completion
-        next_arrivals = [rq for rq, eid in ready_heap
-                         if eid not in scheduled and rq > t_now]
+        # The ready heap is ordered, so its minimum IS the next arrival:
+        # scanning it (and the blocked waiters, which are all ready at or
+        # before t_now by construction) was the remaining O(n) per
+        # instant — quadratic on wide graphs.
+        next_arrivals = []
+        while ready_heap and ready_heap[0][1] in scheduled:
+            heapq.heappop(ready_heap)  # defensive: stale entry
+        if ready_heap:
+            next_arrivals.append(ready_heap[0][0])
         next_releases = [q for busy in exclusive_busy.values()
                          for (q, _eid) in busy if q > t_now]
         fluid_bounds = []
         for state in bw_active.values():
-            for item in state:
-                _eid, remaining, rate, t_ref, _start = item
-                if rate and rate > 0:
+            rate = bw_rate(state)
+            for item in state["items"]:
+                _eid, remaining, t_ref = item[0], item[1], item[2]
+                if rate > 0:
                     b = t_ref + remaining / rate
                     if b > t_now:
                         fluid_bounds.append(b)
@@ -354,37 +434,33 @@ def schedule_workload(workload: WaveETemporalWorkload, *,
         #    happened deterministically at admission)
         for busy in list(exclusive_busy.values()):
             busy[:] = [(q, eid) for (q, eid) in busy if q > t_now]
+        requeue_unblocked()
 
         # 4) complete / advance bandwidth transfers at t_now
         for rname, state in list(bw_active.items()):
-            rdef = model.resource(rname)
+            rate = bw_rate(state)
             still: list[list[Any]] = []
-            for item in state:
-                eid, remaining, rate, t_ref = item[0], item[1], item[2], item[3]
-                start_q = item[4]  # ORIGINAL start — never advanced
-                end_q = t_ref + remaining / rate
-                if rate and rate > 0 and end_q <= t_now:
+            for item in state["items"]:
+                eid, remaining, t_ref = item[0], item[1], item[2]
+                start_q = item[3]  # ORIGINAL start — never advanced
+                work_bytes = item[4]
+                end_q = t_ref + remaining / rate if rate > 0 else t_ref
+                if rate > 0 and end_q <= t_now:
+                    span = end_q - start_q
+                    avg = Fraction(work_bytes) / span if span > 0 \
+                        else Fraction(0)
                     scheduled[eid] = ScheduledEvent(
                         eid, QTime(start_q), QTime(end_q), rname,
-                        bandwidth_allocated_bps=rate)
+                        bandwidth_allocated_bps=avg,
+                        bytes_moved=int(work_bytes))
                     finish[eid] = end_q
                     complete(eid)
                 else:
-                    if rate and rate > 0 and t_now > t_ref:
+                    if rate > 0 and t_now > t_ref:
                         item[1] = remaining - rate * (t_now - t_ref)
-                        item[3] = t_now
+                        item[2] = t_now
                     still.append(item)
-            bw_active[rname] = still
-            if still:
-                _recompute_bandwidth(still, rdef.bandwidth_bps)
+            bw_active[rname] = {"items": still,
+                                "total": state["total"]}
 
     return Schedule(tuple(scheduled.values()))
-
-
-def _recompute_bandwidth(state: list[list[Any]], total: Fraction) -> None:
-    """EQUAL_SHARE: every active transfer gets total/n (§31)."""
-    if not state:
-        return
-    share = total / len(state)
-    for item in state:
-        item[2] = share

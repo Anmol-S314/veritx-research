@@ -30,6 +30,7 @@ from veritx_dse.wavee.result import (
 from veritx_dse.wavee.scheduler import schedule_workload
 from veritx_dse.wavee.time import QTime
 from veritx_dse.wavee.workload import (
+    EVENT_NETWORK_OPERATION_REF,
     WaveETemporalEvent, WaveETemporalWorkload, WorkloadError,
 )
 
@@ -203,8 +204,34 @@ class TestWorkloadAttacks:
                                    "ghost.r"),))
 
     def test_negative_duration_refused(self):
-        with pytest.raises(WorkloadError):
-            WaveETemporalEvent("X", "COMPUTE", QTime(-1, US), "gpu.compute")
+        """Negative time cannot even be constructed (time.py law)."""
+        from veritx_dse.wavee.time import TimeError
+        with pytest.raises(TimeError):
+            QTime(-1, US)
+        # ... so a negative duration can never reach the workload
+        with pytest.raises(TimeError):
+            QTime(0) - QTime(1)
+
+    def test_bool_is_not_time(self):
+        from veritx_dse.wavee.time import TimeError
+        with pytest.raises(TimeError):
+            QTime(True)
+        with pytest.raises(TimeError):
+            QTime(1, True)
+
+    def test_empty_overlay_refused(self):
+        with pytest.raises(WorkloadError, match="at least one event"):
+            WaveETemporalWorkload(performance_model=make_model(), events=())
+
+    def test_bytes_on_compute_event_refused(self):
+        with pytest.raises(WorkloadError, match="bytes_count"):
+            WaveETemporalEvent("X", "COMPUTE", QTime(1, US), "gpu.compute",
+                               bytes_count=8)
+
+    def test_bytes_on_network_event_refused(self):
+        with pytest.raises(WorkloadError, match="bytes_count"):
+            WaveETemporalEvent("X", EVENT_NETWORK_OPERATION_REF, QTime(0),
+                               wave_d_operation_id="op", bytes_count=8)
 
     def test_unknown_request_refused(self):
         with pytest.raises(WorkloadError, match="unknown request"):

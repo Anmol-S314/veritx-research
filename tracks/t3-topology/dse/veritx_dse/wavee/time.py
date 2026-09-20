@@ -58,6 +58,11 @@ class QTime:
                     "QTime(Fraction) takes no separate denominator")
             q = numerator
         else:
+            # bool is an int subclass: `QTime(True)` must not silently
+            # mean one second.
+            if isinstance(numerator, bool) or isinstance(denominator, bool):
+                raise TimeError(
+                    "QTime numerator/denominator must be int, not bool")
             if not isinstance(numerator, int) or not isinstance(denominator,
                                                                int):
                 raise TimeError("QTime numerator/denominator must be int")
@@ -67,6 +72,13 @@ class QTime:
             q = Fraction(numerator, denominator)
         if q != q or q in (float("inf"), float("-inf")):  # NaN/inf guard
             raise TimeError("QTime cannot be NaN or infinite")
+        if q < 0:
+            # Time is an instant or a duration: neither is negative.
+            # A subtraction that would go backwards refuses here instead
+            # of producing a meaningless negative instant.
+            raise TimeError(
+                f"QTime cannot be negative, got {q} "
+                f"(use duration_between for a guarded difference)")
         object.__setattr__(self, "q", q)
 
     # ── constructors ─────────────────────────────────────────────

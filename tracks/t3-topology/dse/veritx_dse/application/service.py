@@ -1268,7 +1268,8 @@ class SrotaControlPlane:
         kinds = ("result", "attempt", "experiment", "plan", "design",
                  "workload", "comparison", "intent", "links",
                  "studydef", "studyrun", "wavedworkload", "parallelism",
-                 "wavedsemantics", "opgraph", "messages", "traffic")
+                 "wavedsemantics", "opgraph", "messages", "traffic",
+                 "waveeworkload")
         for kind in kinds:
             if self.store.exists(kind, resource_id):
                 record = self.store.get(kind, resource_id)
@@ -1286,6 +1287,7 @@ class SrotaControlPlane:
             load_verified_study, load_verified_studyrun,
             load_verified_workload,
         )
+        from .wave_e_resources import load_verified_wave_e_workload
         from .waved_resources import (
             load_verified_messages, load_verified_operation_graph,
             load_verified_parallelism, load_verified_traffic_record,
@@ -1311,6 +1313,7 @@ class SrotaControlPlane:
             "opgraph": load_verified_operation_graph,
             "messages": load_verified_messages,
             "traffic": load_verified_traffic_record,
+            "waveeworkload": load_verified_wave_e_workload,
         }
         # Wave-D chain links: every child names its verified parents, so
         # inspect can walk intent → design → workload → parallelism →
@@ -1387,19 +1390,22 @@ class SrotaControlPlane:
                     else:
                         related[key] = {"resource_id": target,
                                         "missing": True}
-            if record.get("wave_d") is not None:
-                # A Wave-D plan/workload/result carries its semantic
-                # chain inline; surface each parent that is persisted.
-                for key, target in sorted(record["wave_d"].items()):
-                    if not key.endswith("_id"):
-                        continue
-                    for link_kind in ("parallelism", "wavedsemantics",
-                                      "opgraph", "messages", "traffic",
-                                      "wavedworkload"):
-                        if self.store.exists(link_kind, target):
-                            related[f"wave_d.{key}"] = self.store.get(
-                                link_kind, target)
-                            break
+            if kind == "waveeworkload":
+                for link_kind in ("plan", "result"):
+                    directory = self.store.root / link_kind
+                    users = []
+                    if directory.is_dir():
+                        for path in sorted(directory.glob("*.json")):
+                            try:
+                                other = self.store.get(link_kind, path.stem)
+                            except ControlPlaneError:
+                                continue
+                            block = (other or {}).get("wave_e")
+                            if isinstance(block, dict) and \
+                                    block.get("temporal_workload_id") == \
+                                    record.get("resource_id"):
+                                users.append(path.stem)
+                    related[f"{link_kind}s"] = users
             if kind == "attempt":
                 target = record.get("experiment_id")
                 if isinstance(target, str) and self.store.exists(
@@ -1426,6 +1432,26 @@ class SrotaControlPlane:
                         "studydef", target):
                     related["studydef"] = self.store.get(
                         "studydef", target)
+        # Wave-D chain links and Wave-E overlay links apply to EVERY
+        # record that carries them inline — including results, which are
+        # handled by the branch above.
+        if isinstance(record.get("wave_d"), dict):
+            for key, target in sorted(record["wave_d"].items()):
+                if not key.endswith("_id"):
+                    continue
+                for link_kind in ("parallelism", "wavedsemantics",
+                                  "opgraph", "messages", "traffic",
+                                  "wavedworkload"):
+                    if self.store.exists(link_kind, target):
+                        related[f"wave_d.{key}"] = self.store.get(
+                            link_kind, target)
+                        break
+        wave_e = record.get("wave_e")
+        if isinstance(wave_e, dict) and wave_e.get("temporal_workload_id"):
+            target = wave_e["temporal_workload_id"]
+            if self.store.exists("waveeworkload", target):
+                related["wave_e.temporal_workload_id"] = self.store.get(
+                    "waveeworkload", target)
         return {"kind": kind, "record": record, "related": related,
                 "evidence_status": evidence_status,
                 "integrity": integrity}

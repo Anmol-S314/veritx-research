@@ -98,34 +98,48 @@ def resource_utilization(workload: WaveETemporalWorkload,
             for s in schedule.events:
                 if s.resource == rdef.name:
                     occupied += s.end.q - s.start.q
+            util = float(occupied / (cap * window))
+            if occupied > cap * window:
+                raise ValueError(
+                    f"exclusive resource {rdef.name!r} is occupied "
+                    f"{occupied}s in a window of {window}s with capacity "
+                    f"{cap}: the schedule exceeds the resource capacity "
+                    f"(infeasible schedule)")
             out[rdef.name] = {
                 "kind": "EXCLUSIVE",
                 "capacity": cap,
                 "occupied_time": QTime(occupied).to_dict(),
                 "window": QTime(window).to_dict(),
-                "utilization": float(occupied / (cap * window)),
+                "utilization": util,
             }
         else:
+            # For a fluid transfer the capacity integral is EXACTLY the
+            # bytes it moved (rate x dt integrated == bytes). Using the
+            # recorded average rate here would be equivalent; using the
+            # final instantaneous rate would not — that was a real bug
+            # (a shared transfer's share changes at every boundary).
             moved_bytes = Fraction(0)
-            byte_seconds = Fraction(0)
             for s in schedule.events:
                 if s.resource != rdef.name:
                     continue
-                dur = s.end.q - s.start.q
-                rate = s.bandwidth_allocated_bps or Fraction(0)
-                moved_bytes += rate * dur
-                byte_seconds += rate * dur
+                moved_bytes += Fraction(s.bytes_moved)
+            capacity_integral = moved_bytes
+            util = float(capacity_integral / (rdef.bandwidth_bps * window))
+            if capacity_integral > rdef.bandwidth_bps * window:
+                raise ValueError(
+                    f"bandwidth resource {rdef.name!r} moved "
+                    f"{moved_bytes} bytes in a window of {window}s at "
+                    f"{rdef.bandwidth_bps} B/s: the schedule exceeds the "
+                    f"resource capacity (infeasible schedule)")
             out[rdef.name] = {
                 "kind": "BANDWIDTH",
                 "bandwidth_bps": {
                     "num": rdef.bandwidth_bps.numerator,
                     "den": rdef.bandwidth_bps.denominator},
                 "bytes_moved": moved_bytes,
-                "byte_seconds": byte_seconds,
+                "byte_seconds": capacity_integral,
                 "window": QTime(window).to_dict(),
-                "utilization":
-                    float(byte_seconds /
-                          (rdef.bandwidth_bps * window)),
+                "utilization": util,
             }
     return out
 
@@ -152,15 +166,23 @@ def request_latencies(workload: WaveETemporalWorkload,
             raise ValueError(
                 f"request {req.request_id!r} completes before arrival; "
                 f"workload timing is inconsistent")
+        ft = None
+        if req.first_token_event_id:
+            ft_end = schedule.get(req.first_token_event_id).end.q
+            ft_lat = ft_end - req.arrival.q
+            if ft_lat < 0:
+                raise ValueError(
+                    f"request {req.request_id!r} first-token event "
+                    f"{req.first_token_event_id!r} completes before the "
+                    f"request arrives; refusing a negative time-to-first-"
+                    f"token")
+            ft = QTime(ft_lat).to_dict()
         rows.append({
             "request_id": req.request_id,
             "arrival": req.arrival.to_dict(),
             "completion": QTime(end).to_dict(),
             "latency": QTime(lat).to_dict(),
-            "first_token_latency":
-                (QTime(schedule.get(req.first_token_event_id).end.q
-                       - req.arrival.q).to_dict()
-                 if req.first_token_event_id else None),
+            "first_token_latency": ft,
         })
     return rows
 

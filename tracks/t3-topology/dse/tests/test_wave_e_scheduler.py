@@ -413,7 +413,14 @@ class TestMetrics:
         # occupied 10ms / (2 × 8ms) = 5/8
         assert abs(u["gpu.compute"]["utilization"] - 0.625) < 1e-12
 
-    def test_request_latency_with_arrival(self):
+    def test_request_arrival_gates_its_work(self):
+        """§52/§101: an arrival is a RELEASE TIME, not bookkeeping.
+
+        The request arrives at 1 ms, so none of its work may start
+        before 1 ms — otherwise the request could complete before it
+        exists and the latency metric would have to refuse a workload
+        the scheduler accepted.
+        """
         req = WaveERequest("r1", QTime(1000, US),
                            completion_event_ids=("D",))
         w = WaveETemporalWorkload(
@@ -424,10 +431,49 @@ class TestMetrics:
                     comp("D", 1000, ("B", "C"), request_id="r1")),
             requests=(req,))
         s = schedule_workload(w)
+        assert s.start("A") == QTime(1000, US)
+        assert s.start("B") == QTime(1000, US)
+        assert s.end("C") == QTime(8000, US)
+        assert s.end("D") == QTime(9000, US)
         rows = request_latencies(w, s)
-        assert rows[0]["latency"] == QTime(7000, US).to_dict()
+        assert rows[0]["latency"] == QTime(8000, US).to_dict()
         summary = latency_summary(rows)
         assert summary["sample_count"] == 1
+
+    def test_two_requests_queue_on_a_shared_resource(self):
+        """Deterministic queueing: later arrival, later service."""
+        w = WaveETemporalWorkload(
+            performance_model=make_model(capacity=1),
+            events=(comp("A", 1000, request_id="r1"),
+                    comp("B", 1000, request_id="r2")),
+            requests=(WaveERequest("r1", QTime(0),
+                                   completion_event_ids=("A",)),
+                      WaveERequest("r2", QTime(500, US),
+                                   completion_event_ids=("B",))))
+        s = schedule_workload(w)
+        assert s.start("A") == QTime(0)
+        assert s.start("B") == QTime(1000, US)  # after A, not at arrival
+        rows = request_latencies(w, s)
+        assert Fraction(rows[0]["latency"]["numerator"],
+                        rows[0]["latency"]["denominator"]) == Fraction(1, 1000)
+        # r2: service 1ms..2ms, arrival 0.5ms -> latency 1.5ms
+        assert Fraction(rows[1]["latency"]["numerator"],
+                        rows[1]["latency"]["denominator"]) == Fraction(3, 2000)
+
+    def test_first_token_before_arrival_refuses(self):
+        """A negative TTFT is nonsense; it must refuse, never report."""
+        w = WaveETemporalWorkload(
+            performance_model=make_model(),
+            events=(comp("FT", 1000, request_id="r1", is_first_token=True),
+                    comp("C", 9000, ("FT",), request_id="r1")),
+            requests=(WaveERequest("r1", QTime(5000, US),
+                                   completion_event_ids=("C",),
+                                   first_token_event_id="FT"),))
+        s = schedule_workload(w)
+        # arrival gates the work, so FT now ends AFTER the arrival
+        assert s.end("FT") == QTime(6000, US)
+        rows = request_latencies(w, s)
+        assert rows[0]["first_token_latency"] == QTime(1000, US).to_dict()
 
     def test_ttft_only_with_first_token_event(self):
         req = WaveERequest("r1", QTime(0), completion_event_ids=("D",),
@@ -657,6 +703,55 @@ def _ref_equal_share_completion(transfers: list[tuple[int, int]]
             if remaining[i] <= 0:
                 done_at[i] = t
     return [d for d in done_at]
+
+
+class TestBandwidthAccounting:
+    """The recorded allocation must integrate back to the bytes moved.
+
+    A fluid transfer's share changes at every boundary; recording only
+    the FINAL instantaneous rate made ``bytes_moved`` wrong (2400 instead
+    of 1800 in the staggered case) and reported utilization above 1.
+    """
+
+    def test_bytes_moved_matches_declared_bytes(self):
+        w = WaveETemporalWorkload(
+            performance_model=make_model(),
+            events=(mem("M1", 1200), comp("D", 500), mem("M2", 600, ("D",))))
+        s = schedule_workload(w)
+        assert s.get("M1").bytes_moved == 1200
+        assert s.get("M2").bytes_moved == 600
+        util = resource_utilization(w, s)
+        assert util["hbm"]["bytes_moved"] == 1800
+
+    def test_average_rate_integrates_to_bytes(self):
+        w = WaveETemporalWorkload(
+            performance_model=make_model(),
+            events=(mem("M1", 1200), comp("D", 500), mem("M2", 600, ("D",))))
+        s = schedule_workload(w)
+        for eid in ("M1", "M2"):
+            se = s.get(eid)
+            span = se.end.q - se.start.q
+            assert se.bandwidth_allocated_bps * span == se.bytes_moved
+
+    def test_utilization_never_exceeds_one(self):
+        w = WaveETemporalWorkload(
+            performance_model=make_model(),
+            events=(mem("M1", 1200), mem("M2", 600), mem("M3", 1800)))
+        s = schedule_workload(w)
+        util = resource_utilization(w, s)
+        assert util["hbm"]["utilization"] <= 1.0
+        assert util["gpu.compute"]["utilization"] <= 1.0
+
+    def test_infeasible_schedule_refused(self):
+        """A forged schedule that over-uses a resource refuses."""
+        from veritx_dse.wavee.scheduler import Schedule, ScheduledEvent
+        w = WaveETemporalWorkload(performance_model=make_model(),
+                                  events=(mem("M", 1200),))
+        forged = Schedule((ScheduledEvent(
+            "M", QTime(0), QTime(10), "hbm",
+            bandwidth_allocated_bps=Fraction(1200), bytes_moved=13000),))
+        with pytest.raises(ValueError, match="capacity"):
+            resource_utilization(w, forged)
 
 
 class TestBandwidthOracle:

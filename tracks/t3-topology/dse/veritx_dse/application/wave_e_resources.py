@@ -21,7 +21,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from veritx_dse.wavee.result import reverify_result
 from veritx_dse.wavee.workload import WaveETemporalWorkload
 
 from .errors import ControlPlaneError, ErrorCode

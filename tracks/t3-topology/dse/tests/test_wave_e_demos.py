@@ -28,11 +28,11 @@ from veritx_dse.wavee.model import (
     ClockDef, ResourceDef, WaveEPerformanceModel,
 )
 from veritx_dse.wavee.network import bind_network_window
+from veritx_dse.wavee.sensitivity import sensitivity_analysis
 from veritx_dse.wavee.result import (
     WaveEEventGraph, build_performance_result, reverify_result,
 )
 from veritx_dse.wavee.scheduler import schedule_workload
-from veritx_dse.wavee.sensitivity import sensitivity_analysis
 from veritx_dse.wavee.time import QTime
 from veritx_dse.wavee.workload import (
     EVENT_NETWORK_OPERATION_REF, WaveERequest, WaveETemporalEvent,
@@ -59,6 +59,11 @@ def comp(eid, dur_us, deps=(), **kw):
 def net(eid="NET", deps=()):
     return WaveETemporalEvent(eid, "NETWORK_OPERATION_REF", QTime(0),
                               wave_d_operation_id="op1", deps=tuple(deps))
+
+
+def _mem(eid, nbytes, deps=()):
+    return WaveETemporalEvent(eid, "MEMORY_READ", QTime(0), "hbm",
+                              deps=tuple(deps), bytes_count=nbytes)
 
 
 def _frac(d):
@@ -193,6 +198,62 @@ class TestRequestMetrics:
         assert _frac(rows[0]["latency"]) == Fraction(28, 10000)
 
 
+class TestSensitivityCorrectness:
+    """The counterfactuals must zero EXACTLY the class they name.
+
+    ``exposed_compute`` and ``exposed_memory`` were computed with the
+    same perturbation (zero all non-memory durations), so they were
+    always identical and the memory label was a lie.
+    """
+
+    def _workload(self):
+        return WaveETemporalWorkload(
+            performance_model=model(),
+            events=(comp("K", 3000), _mem("M", 1200),
+                    comp("TAIL", 1000, ("K", "M"))))
+
+    def test_compute_and_memory_counterfactuals_differ(self):
+        w = self._workload()
+        s = schedule_workload(w)
+        out = sensitivity_analysis(w, s)
+        assert _frac(out["exposed_compute"]) != _frac(out["exposed_memory"])
+        # zeroing compute leaves the 1s memory transfer exposed
+        assert _frac(out["exposed_compute"]) == Fraction(1, 1000)
+        # zeroing memory leaves the 3ms compute chain + 1ms tail exposed
+        assert _frac(out["exposed_memory"]) == Fraction(997, 1000)
+
+    def test_network_window_perturbations_exist_and_scale(self):
+        w = WaveETemporalWorkload(
+            performance_model=model(),
+            events=(net(), comp("TAIL", 1000, ("NET",))),
+            wave_d_operation_ids=("op1",))
+        net_dur = {"NET": QTime(2500, US)}
+        s = schedule_workload(w, network_durations=net_dur)
+        out = sensitivity_analysis(w, s, network_durations=net_dur)
+        assert "network_window_0.5x" in out["parameters"]
+        assert "network_window_2x" in out["parameters"]
+        assert _frac(out["parameters"]["network_window_2x"]["makespan"]) \
+            > _frac(out["parameters"]["network_window_0.5x"]["makespan"])
+        # the evidence-bound window is what got scaled, not a dead field
+        assert _frac(out["parameters"]["network_window_2x"]["makespan"]) \
+            == Fraction(6000, US)
+
+    def test_perturbation_identity_is_reported(self):
+        w = self._workload()
+        s = schedule_workload(w)
+        out = sensitivity_analysis(w, s)
+        row = out["parameters"]["bandwidth_2x"]
+        assert row["perturbed_model_id"] != w.performance_model.performance_model_id()
+        assert row["perturbed_workload_id"] != w.temporal_workload_id()
+
+    def test_perturb_model_preserves_arbitration(self):
+        from veritx_dse.wavee.sensitivity import perturb_model
+        base = model()
+        p = perturb_model(base, bandwidth_factor=Fraction(2))
+        assert p.arbitration_exclusive == base.arbitration_exclusive
+        assert p.arbitration_bandwidth == base.arbitration_bandwidth
+
+
 class TestScaling:
     def test_large_synthetic_workload_completes(self):
         """§140: 5000-event layered DAG schedules in event-driven time."""
@@ -213,6 +274,38 @@ class TestScaling:
         # each layer is sequential: makespan = 50 × 10us (min duration)
         assert s.makespan() >= QTime(n_layers * 10, US)
         assert dt < 30.0  # generous CI bound; event-driven, not per-cycle
+
+    def test_wide_flat_graph_scales(self):
+        """§140: 5000 independent events on capacity 4.
+
+        This is the shape that exposed an O(n^2) admission scan: every
+        event is ready at once, so a per-admission rescan of the whole
+        ready set is quadratic. The bound is generous but would catch a
+        return to that behaviour (which took ~10s here, vs ~0.1s).
+        """
+        import time as _time
+        n = 5000
+        events = tuple(comp(f"e{i}", 1 + (i % 5)) for i in range(n))
+        w = WaveETemporalWorkload(performance_model=model(capacity=4),
+                                  events=events)
+        t0 = _time.perf_counter()
+        s = schedule_workload(w)
+        dt = _time.perf_counter() - t0
+        assert len(s) == n
+        assert dt < 5.0
+
+    def test_wide_bandwidth_sharing_scales(self):
+        """§140: 20000 transfers sharing one bandwidth resource."""
+        import time as _time
+        n = 20000
+        events = tuple(_mem(f"m{i}", 120) for i in range(n))
+        w = WaveETemporalWorkload(performance_model=model(),
+                                  events=events)
+        t0 = _time.perf_counter()
+        s = schedule_workload(w)
+        dt = _time.perf_counter() - t0
+        assert len(s) == n
+        assert dt < 5.0
 
 
 @pytest.mark.skipif(

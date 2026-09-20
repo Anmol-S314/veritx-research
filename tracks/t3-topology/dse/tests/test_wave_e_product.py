@@ -412,6 +412,42 @@ class TestWaveEProvenanceBinding:
             cp.compile(_intent(name="we-prov-foreign", wave_e=foreign))
 
 
+class TestWaveENavigation:
+    """Every persisted Wave-E resource must be inspectable and linked."""
+
+    def test_overlay_is_inspectable_and_linked(self, cp):
+        r = cp.evaluate(_intent(name="nav-overlay",
+                                wave_e=_wave_e_workload(1)))
+        wid = r["wave_e"]["temporal_workload_id"]
+        view = cp.inspect(wid)
+        assert view["kind"] == "waveeworkload"
+        assert view["integrity"]["state"] == "VERIFIED"
+        assert r["resource_id"] in view["related"]["results"]
+
+    def test_result_surfaces_its_chain_and_overlay(self, cp):
+        r = cp.evaluate(_intent(name="nav-result",
+                                wave_e=_wave_e_workload(1)))
+        related = cp.inspect(r["resource_id"])["related"]
+        assert "wave_e.temporal_workload_id" in related
+        for key in ("waved_workload_id", "operation_graph_id",
+                    "message_artifact_id", "physical_traffic_id"):
+            assert f"wave_d.{key}" in related
+
+    def test_tampered_overlay_is_invalid_in_inspect(self, cp):
+        import json as _json
+        from veritx_dse.core.spec import canonical_json
+        r = cp.evaluate(_intent(name="nav-tamper",
+                                wave_e=_wave_e_workload(1)))
+        wid = r["wave_e"]["temporal_workload_id"]
+        path = cp.store.root / "waveeworkload" / f"{wid}.json"
+        doc = _json.loads(path.read_text())
+        doc["artifact"]["events"][1]["duration"] = {"numerator": 9,
+                                                    "denominator": 1000}
+        path.write_text(canonical_json(doc))
+        view = cp.inspect(wid)
+        assert view["integrity"]["state"] == "INVALID"
+
+
 class TestWaveEComparisonCompatibility:
     """§119/§120: two latency numbers are not automatically comparable.
 
