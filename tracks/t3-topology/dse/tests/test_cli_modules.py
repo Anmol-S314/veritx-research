@@ -560,7 +560,7 @@ class TestMemoryQuarantine:
         from pathlib import Path
         dse = Path(__file__).resolve().parent.parent
         r = subprocess.run(
-            [sys.executable, "-m", "veritx_dse.cli", "compare",
+            [sys.executable, "-m", "veritx_dse.cli", "legacy", "compare",
              "--trace", str(tmp_trace), "--topos", "mesh_4x4",
              "--seeds", "1", "--timeout", "30", "--memory"],
             cwd=str(dse), capture_output=True, text=True, timeout=120,
@@ -576,16 +576,16 @@ class TestIterativeNodesRemoved:
         import pytest
         parser = build_parser()
         with pytest.raises(SystemExit):
-            parser.parse_args(["synthesize", "iterative", "--trace", "x",
+            parser.parse_args(["legacy", "synthesize-iterative", "--trace", "x",
                                "--nodes", "8"])
 
     def test_timeout_flag_accepted(self):
         from veritx_dse.cli.cli import build_parser
         parser = build_parser()
-        args = parser.parse_args(["synthesize", "iterative", "--trace", "x",
+        args = parser.parse_args(["legacy", "synthesize-iterative", "--trace", "x",
                                   "--timeout", "120"])
         assert args.timeout == 120
-        args = parser.parse_args(["synthesize", "bo", "--traffic", "x"])
+        args = parser.parse_args(["legacy", "synthesize-bo", "--traffic", "x"])
         assert args.timeout is None  # unset → VERITX_TIMEOUT env or builtin
         args = parser.parse_args(["certify", "flow", "--model", "m",
                                   "--topo", "t"])
@@ -593,9 +593,9 @@ class TestIterativeNodesRemoved:
         args = parser.parse_args(["certify", "full", "--model", "m",
                                   "--topo", "t"])
         assert args.timeout is None
-        args = parser.parse_args(["run", "--model", "m"])
+        args = parser.parse_args(["legacy", "run", "--model", "m"])
         assert args.timeout is None
-        args = parser.parse_args(["compare", "--trace", "t"])
+        args = parser.parse_args(["legacy", "compare", "--trace", "t"])
         assert args.timeout is None
 
 
@@ -736,19 +736,19 @@ class TestIterativeBreadthFlags:
     def test_horizon_branch_group(self):
         from veritx_dse.cli.cli import build_parser
         parser = build_parser()
-        args = parser.parse_args(["synthesize", "iterative", "--trace", "x",
+        args = parser.parse_args(["legacy", "synthesize-iterative", "--trace", "x",
                                   "--horizon", "3", "--branch", "2",
                                   "--group", "6"])
         assert (args.horizon, args.branch, args.group) == (3, 2, 6)
-        args = parser.parse_args(["synthesize", "iterative", "--trace", "x"])
+        args = parser.parse_args(["legacy", "synthesize-iterative", "--trace", "x"])
         assert (args.horizon, args.branch, args.group) == (None, None, None)
 
     def test_run_max_edges(self):
         from veritx_dse.cli.cli import build_parser
         parser = build_parser()
-        args = parser.parse_args(["run", "--model", "m"])
+        args = parser.parse_args(["legacy", "run", "--model", "m"])
         assert args.max_edges == 120
-        args = parser.parse_args(["run", "--model", "m",
+        args = parser.parse_args(["legacy", "run", "--model", "m",
                                   "--max-edges", "64"])
         assert args.max_edges == 64
 

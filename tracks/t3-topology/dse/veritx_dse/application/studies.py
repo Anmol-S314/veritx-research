@@ -66,20 +66,23 @@ class StudyRequest:
     def study_id(self) -> str:
         from veritx_dse.core.spec import canonical_json
         from .errors import ControlPlaneError
-        from .requests import parse_intent
+        from .requests import resolve_intent
         import hashlib as _hashlib
         intents = []
         for candidate in self.candidates:
             try:
-                intents.append(parse_intent(candidate).intent_id())
-            except ControlPlaneError:
+                resolved, _, _ = resolve_intent(candidate)
+                intents.append(resolved.intent_id())
+            except (ControlPlaneError, ValueError):
                 # Invalid candidates are RECORDED, not executed; their
                 # bytes still identify the study deterministically.
                 intents.append("invalid:" + _hashlib.sha256(
                     canonical_json(candidate).encode()).hexdigest())
         body = "srota-study/v1\0" + canonical_json({
             "name": self.name,
-            "candidate_intents": sorted(intents),
+            # Candidate order is semantically relevant (index-addressed
+            # execution and comparison pairs): preserve it exactly.
+            "candidate_intents": list(intents),
             "comparison": self.comparison,
         })
         return hashlib.sha256(body.encode()).hexdigest()

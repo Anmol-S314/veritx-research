@@ -3691,14 +3691,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_val = _trace_ps["validate"]
     p_val.add_argument("trace")
 
-    # synthesize
-    p_synth = _top_ps["synthesize"]
-    ss = p_synth.add_subparsers(dest=_SUB_DESTS["synthesize"])
+    # legacy (Wave C.1): historical research commands, NON_CERTIFIED.
+    # Argument definitions below are unchanged; only the registry path
+    # moved (veritx <cmd> -> veritx legacy <cmd>).
+    p_legacy = _top_ps["legacy"]
+    lsc = p_legacy.add_subparsers(dest=_SUB_DESTS["legacy"])
 
-    _synth_ps = {}
-    for _sn, _sm in COMMANDS["synthesize"]["subcommands"].items():
-        _synth_ps[_sn] = ss.add_parser(_sn, help=_sm["help"])
-    p_bo = _synth_ps["bo"]
+    _legacy_ps = {}
+    for _sn, _sm in COMMANDS["legacy"]["subcommands"].items():
+        _legacy_ps[_sn] = lsc.add_parser(_sn, help=_sm["help"])
+    p_bo = _legacy_ps["synthesize-bo"]
     p_bo.add_argument("--nodes", type=int, default=DEFAULT_NODES)
     # --trace alias (Phase 4e vocabulary): every other trace-taking command
     # spells it --trace; --traffic stays working. (--traces/--matrix are
@@ -3710,7 +3712,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_bo.add_argument("--timeout", type=int, default=None,
                       help="Subprocess timeout in seconds (default: VERITX_TIMEOUT or 600)")
 
-    p_iter = _synth_ps["iterative"]
+    p_iter = _legacy_ps["synthesize-iterative"]
     p_iter.add_argument("--trace", required=True)
     p_iter.add_argument("--method", default="rho", choices=["rho", "grpo"])
     p_iter.add_argument("--steps", type=int, default=50)
@@ -3728,7 +3730,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_iter.add_argument("--timeout", type=int, default=None,
                         help="Subprocess timeout in seconds (default: VERITX_TIMEOUT or 600)")
 
-    p_compile = _synth_ps["compile"]
+    p_compile = _legacy_ps["synthesize-compile"]
     p_compile.add_argument("--results", required=True,
                            help="Synthesis results file (SynthResult records from "
                                 "bo/iterative/pareto runs) forming the candidate set")
@@ -3749,14 +3751,7 @@ def build_parser() -> argparse.ArgumentParser:
                            help="Verdict evidence path (default: SYNTH_DIR/compile_verdict_N<nodes>.json)")
     p_compile.add_argument("--timeout", type=int, default=None,
                            help="Per-candidate evaluation timeout in seconds (default: VERITX_TIMEOUT or 600)")
-    p_eval = _top_ps["evaluate"]
-    es = p_eval.add_subparsers(dest=_SUB_DESTS["evaluate"])
-
-    _eval_ps = {}
-    for _sn, _sm in COMMANDS["evaluate"]["subcommands"].items():
-        _eval_ps[_sn] = es.add_parser(_sn, help=_sm["help"])
-
-    p_bs = _eval_ps["booksim"]
+    p_bs = _legacy_ps["evaluate-booksim"]
     p_bs.add_argument("--trace", required=True)
     p_bs.add_argument("--k", type=int, default=None,
                       help="Mesh/fabric parameter (raw-backend form only; "
@@ -3781,7 +3776,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_bs.add_argument("--timeout", type=int, default=None,
                                help="BookSim timeout in seconds (default: VERITX_TIMEOUT or 120)")
 
-    p_anynet = _eval_ps["anynet"]
+    p_anynet = _legacy_ps["evaluate-anynet"]
     p_anynet.add_argument("--topo", required=True)
     p_anynet.add_argument("--trace", required=True)
     p_anynet.add_argument("--vcs", type=int, default=None,
@@ -3796,7 +3791,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_anynet.add_argument("--timeout", type=int, default=None,
                                    help="BookSim timeout in seconds (default: VERITX_TIMEOUT or 120)")
 
-    p_as = _eval_ps["astra"]
+    p_as = _legacy_ps["evaluate-astra"]
     p_as.add_argument("--ets", required=True,
                         help="Base workload file; per-rank <base>.<rank>.et must exist alongside it")
     p_as.add_argument("--system-config", default=str(TRACK_RUNS_DIR / "llm" / "qwen3_tp16" / "system.json"))
@@ -3830,7 +3825,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_ts.add_argument("--out", default=None,
                       help="Write stats JSON to file (default: print table)")
 
-    p_td = _topo_ps["diff"]
+    p_td = _legacy_ps["topology-diff"]
     p_td.add_argument("--ir", required=True, help="TopologyIR JSON file")
     p_td.add_argument("--ets", required=True,
                       help="Base workload file; per-rank <base>.<rank>.et must exist for all IR nodes")
@@ -3873,7 +3868,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Per-stage timeout in seconds (default: VERITX_TIMEOUT or flow=300/rtl=600)")
 
     # run
-    p_run = _top_ps["run"]
+    p_run = _legacy_ps["run"]
     p_run.add_argument("--model", default=None,
                        help="TrafficModel JSON source (short names resolve, "
                             "e.g. --model traffic or --model moe_8npu; "
@@ -3910,7 +3905,7 @@ def build_parser() -> argparse.ArgumentParser:
         "  veritx run --trace runs/astra/input.trace --search iterative --iters 3")
 
     # sweep
-    p_sweep = _top_ps["sweep"]
+    p_sweep = _legacy_ps["sweep"]
     p_sweep.add_argument("--trace", required=True)
     p_sweep.add_argument("--timeout", type=int, default=None,
                           help="Per-run timeout in seconds (default: VERITX_TIMEOUT or 60)")
@@ -3923,7 +3918,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Run-output root (default: results/); t3 passes results/<CONFIG>.")
 
     # compare
-    p_cmp = _top_ps["compare"]
+    p_cmp = _legacy_ps["compare"]
     p_cmp.add_argument("--trace", required=True)
     p_cmp.add_argument("--topos", default="mesh_8x8,torus_8x8")
     p_cmp.add_argument("--anynet", action="append", default=[])
@@ -3951,7 +3946,7 @@ def build_parser() -> argparse.ArgumentParser:
                              "so guided compares co-locate with their sweep and report.")
 
     # pareto
-    p_par = _top_ps["pareto"]
+    p_par = _legacy_ps["pareto"]
     p_par.add_argument("--traces", required=True)
     p_par.add_argument("--topos", default="mesh_8x8,torus_8x8")
     p_par.add_argument("--anynet", default="")
@@ -3962,7 +3957,7 @@ def build_parser() -> argparse.ArgumentParser:
                        help="Output JSON path (default: results/pareto/<ts>_seed<seeds>/pareto.json)")
 
     # diff
-    p_diff = _top_ps["diff"]
+    p_diff = _legacy_ps["diff"]
     p_diff.add_argument("run_a", nargs="?")
     p_diff.add_argument("run_b", nargs="?")
 
@@ -4023,7 +4018,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_report.add_argument("--out")
 
     # ── baseline ──────────────────────────────────────────────
-    p_bl = _top_ps["baseline"]
+    p_bl = _legacy_ps["baseline"]
     p_bl.add_argument("--trace", required=True, help="Trace file to evaluate")
     p_bl.add_argument("--topos", default="mesh_8x8",
                        help="Your topologies to compare (comma-separated)")
@@ -4034,7 +4029,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_bl.add_argument("--seeds", type=int, default=1)
 
     # ── compile (intent-to-fabric) ──────────────────────────────
-    p_compile = _top_ps["compile"]
+    p_compile = _legacy_ps["compile"]
     p_compile.add_argument("request", help="Path to CompileRequest JSON file")
     p_compile.add_argument("--timeout", type=int, default=None,
                             help="BookSim timeout in seconds (default: VERITX_TIMEOUT or 120)")
@@ -4054,7 +4049,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_init.add_argument("--out", "-o", help="Output JSON path (default: runs/compile_requests/<model>.json)")
 
     # ── serve (full-stack LLM serving simulation) ──────────────────
-    p_serve = _top_ps["serve"]
+    p_serve = _legacy_ps["serve"]
     p_serve.add_argument("--cluster-config", required=True, help="Cluster configuration JSON")
     p_serve.add_argument("--dataset", required=True, help="Workload dataset JSONL")
     p_serve.add_argument("--num-reqs", type=int, default=1, help="Number of requests to simulate")
@@ -4128,7 +4123,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_api_plan = _api_ps["plan"]
     p_api_plan.add_argument("--spec", required=True, help="Experiment spec JSON")
 
-    p_api_exec = _api_ps["execute"]
+    p_api_exec = _legacy_ps["api-execute"]
     p_api_exec.add_argument("--spec", required=True, help="Experiment spec JSON")
     p_api_exec.add_argument("--timeout-s", type=int, default=None,
                             help="Declared execution budget (seconds)")
@@ -4143,7 +4138,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_api_res.add_argument("--limit", type=int, default=None,
                            help="Row cap (budget-capped)")
 
-    p_api_cmp = _api_ps["compare"]
+    p_api_cmp = _legacy_ps["api-compare"]
     p_api_cmp.add_argument("--candidates", required=True,
                            help="Candidates JSON (array or {candidates: [...]})")
     p_api_cmp.add_argument("--metrics", required=True, help="Comma-separated metric names")
@@ -4152,7 +4147,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_api_cmp.add_argument("--kind", default="DESIGN_COMPARISON",
                            choices=["DESIGN_COMPARISON", "CROSS_FIDELITY_CALIBRATION"])
 
-    p_api_compile = _api_ps["compile"]
+    p_api_compile = _legacy_ps["api-compile"]
     p_api_compile.add_argument("--request", required=True,
                                help="Compiler request JSON (requirements+candidates)")
 
@@ -4374,26 +4369,58 @@ COMMANDS = {
         "validate": {"help": "Validate trace format", "t3_mode": "forward",
                      "handler": cmd_trace_validate},
     }},
-    "synthesize": {"help": "Topology search", "t3_mode": "forward",
-                   "sub_dest": "synth_cmd", "handler": None, "subcommands": {
-        "bo": {"help": "Bayesian optimization", "t3_mode": "forward",
-               "handler": cmd_synthesize_bo},
-        "iterative": {"help": "RHO/GRPO iterative search", "t3_mode": "forward",
-                      "handler": cmd_synthesize_iterative},
-        "compile": {"help": "Requirements-driven fabric compiler (Phase 13): "
-                            "requirements gate a candidate set; "
-                            "FEASIBLE / NO_FEASIBLE_DESIGN verdicts",
-                    "t3_mode": "forward",
-                    "handler": cmd_synthesize_compile},
-    }},
-    "evaluate": {"help": "Cycle-accurate scoring", "t3_mode": "forward",
-                 "sub_dest": "eval_cmd", "handler": None, "subcommands": {
-        "booksim": {"help": "BookSim2 mesh trace replay", "t3_mode": "forward",
-                    "handler": cmd_evaluate_booksim},
-        "anynet": {"help": "BookSim2 custom topology", "t3_mode": "forward",
-                   "handler": cmd_evaluate_anynet},
-        "astra": {"help": "ASTRA-sim backend", "t3_mode": "blocked",
-                  "handler": cmd_evaluate_astra},
+    "legacy": {"help": "LEGACY RESEARCH (NON_CERTIFIED): historical "
+                       "commands with independent pre-Wave-C semantics. "
+                       "Not reachable from certified/product flows.",
+                "t3_mode": "blocked",
+                "sub_dest": "legacy_cmd", "handler": None,
+                "subcommands": {
+        "run": {"help": "LEGACY full pipeline",
+                  "t3_mode": "blocked", "handler": cmd_run},
+        "sweep": {"help": "LEGACY batch topology evaluation",
+                    "t3_mode": "blocked", "handler": cmd_sweep},
+        "compare": {"help": "LEGACY head-to-head comparison",
+                      "t3_mode": "blocked", "handler": cmd_compare},
+        "pareto": {"help": "LEGACY multi-workload Pareto",
+                     "t3_mode": "blocked", "handler": cmd_pareto},
+        "compile": {"help": "LEGACY intent-to-fabric pipeline",
+                      "t3_mode": "blocked", "handler": cmd_compile},
+        "baseline": {"help": "LEGACY baseline comparison",
+                       "t3_mode": "blocked", "handler": cmd_baseline},
+        "diff": {"help": "LEGACY experiment-run comparison",
+                   "t3_mode": "blocked", "handler": cmd_diff},
+        "serve": {"help": "LEGACY full-stack serving simulation",
+                    "t3_mode": "blocked", "handler": cmd_serve},
+        "synthesize-bo": {"help": "LEGACY Bayesian optimization",
+                            "t3_mode": "blocked",
+                            "handler": cmd_synthesize_bo},
+        "synthesize-iterative": {"help": "LEGACY iterative search",
+                                   "t3_mode": "blocked",
+                                   "handler": cmd_synthesize_iterative},
+        "synthesize-compile": {"help": "LEGACY requirements compiler",
+                                 "t3_mode": "blocked",
+                                 "handler": cmd_synthesize_compile},
+        "evaluate-booksim": {"help": "LEGACY BookSim2 mesh replay",
+                               "t3_mode": "blocked",
+                               "handler": cmd_evaluate_booksim},
+        "evaluate-anynet": {"help": "LEGACY BookSim2 custom topology",
+                              "t3_mode": "blocked",
+                              "handler": cmd_evaluate_anynet},
+        "evaluate-astra": {"help": "LEGACY ASTRA-sim backend",
+                             "t3_mode": "blocked",
+                             "handler": cmd_evaluate_astra},
+        "topology-diff": {"help": "LEGACY BookSim+analytical divergence",
+                            "t3_mode": "blocked",
+                            "handler": cmd_topology_diff},
+        "api-execute": {"help": "LEGACY experiment execution",
+                          "t3_mode": "blocked",
+                          "handler": cmd_api_execute},
+        "api-compare": {"help": "LEGACY spec-gated comparison",
+                          "t3_mode": "blocked",
+                          "handler": cmd_api_compare},
+        "api-compile": {"help": "LEGACY requirements-driven compile",
+                          "t3_mode": "blocked",
+                          "handler": cmd_api_compile},
     }},
     "certify": {"help": "Certification", "t3_mode": "forward",
                 "sub_dest": "cert_cmd", "handler": None, "subcommands": {
@@ -4404,14 +4431,6 @@ COMMANDS = {
         "full": {"help": "Full certification (flow + rtl; every leg must pass)",
                  "t3_mode": "forward", "handler": cmd_certify_full},
     }},
-    "run": {"help": "Full pipeline", "t3_mode": "forward",
-            "sub_dest": None, "handler": cmd_run, "subcommands": None},
-    "sweep": {"help": "Batch-evaluate topologies", "t3_mode": "forward",
-              "sub_dest": None, "handler": cmd_sweep, "subcommands": None},
-    "compare": {"help": "Head-to-head topology comparison", "t3_mode": "forward",
-                "sub_dest": None, "handler": cmd_compare, "subcommands": None},
-    "pareto": {"help": "Multi-workload Pareto", "t3_mode": "forward",
-               "sub_dest": None, "handler": cmd_pareto, "subcommands": None},
     "runs": {"help": "List/inspect experiment runs", "t3_mode": "forward",
              "sub_dest": None, "handler": cmd_runs, "subcommands": None},
     "results": {"help": "Show latest results", "t3_mode": "forward",
@@ -4430,25 +4449,14 @@ COMMANDS = {
                 "sub_dest": None, "handler": cmd_history, "subcommands": None},
     "status": {"help": "Show run history", "t3_mode": "forward",
                "sub_dest": None, "handler": cmd_status, "subcommands": None},
-    "diff": {"help": "Compare two experiment runs", "t3_mode": "forward",
-             "sub_dest": None, "handler": cmd_diff, "subcommands": None},
     "report": {"help": "Generate LaTeX table", "t3_mode": "forward",
                "sub_dest": None, "handler": cmd_report, "subcommands": None},
-    "baseline": {"help": "Compare against published baseline topologies",
-                 "t3_mode": "forward",
-                 "sub_dest": None, "handler": cmd_baseline, "subcommands": None},
-    "compile": {"help": "Intent-to-fabric pipeline from CompileRequest JSON",
-                "t3_mode": "forward",
-                "sub_dest": None, "handler": cmd_compile, "subcommands": None},
     "migrate-design": {"help": "Re-emit a CompileRequest under current compiler semantics",
                 "t3_mode": "forward",
                 "sub_dest": None, "handler": cmd_migrate_design, "subcommands": None},
     "init": {"help": "Interactive wizard to generate a CompileRequest",
              "t3_mode": "forward",
              "sub_dest": None, "handler": cmd_init, "subcommands": None},
-    "serve": {"help": "Full-stack LLM serving simulation (LLMServingSim + AstraSim + BookSim2)",
-              "t3_mode": "forward",
-              "sub_dest": None, "handler": cmd_serve, "subcommands": None},
     "topology": {"help": "TopologyIR: render/stats/diff one fabric across backends",
               "t3_mode": "forward",
               "sub_dest": "topo_cmd", "handler": None, "subcommands": {
@@ -4456,8 +4464,6 @@ COMMANDS = {
                    "t3_mode": "forward", "handler": cmd_topology_render},
         "stats": {"help": "Fabric stats for a TopologyIR file",
                   "t3_mode": "forward", "handler": cmd_topology_stats},
-        "diff": {"help": "Same IR through BookSim + analytical legs (divergence report)",
-                 "t3_mode": "forward", "handler": cmd_topology_diff},
     }},
     "generate": {"help": "Generate collateral (UVM, RTL, reports)",
                  "t3_mode": "forward",
@@ -4516,16 +4522,10 @@ COMMANDS = {
                      "t3_mode": "forward", "handler": cmd_api_validate},
         "plan": {"help": "Resolve spec to a plan without executing",
                  "t3_mode": "forward", "handler": cmd_api_plan},
-        "execute": {"help": "Run one experiment via the stable API",
-                    "t3_mode": "forward", "handler": cmd_api_execute},
         "run": {"help": "Inspect one run by run_id", "t3_mode": "forward",
                 "handler": cmd_api_run},
         "results": {"help": "Query the runs store", "t3_mode": "forward",
                     "handler": cmd_api_results},
-        "compare": {"help": "ComparisonSpec-gated comparison",
-                    "t3_mode": "forward", "handler": cmd_api_compare},
-        "compile": {"help": "Requirements-driven fabric compile",
-                    "t3_mode": "forward", "handler": cmd_api_compile},
         "diagnose": {"help": "Health battery (quick|deep)", "t3_mode": "forward",
                      "handler": cmd_api_diagnose},
         "export": {"help": "Checksummed export bundle for a run (§22)",

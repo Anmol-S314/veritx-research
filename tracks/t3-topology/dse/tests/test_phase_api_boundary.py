@@ -70,7 +70,13 @@ def test_di_seam_is_private_and_not_exported():
     assert not hasattr(api, "compile_fabric_with_evaluator") or \
         api.compile_fabric_with_evaluator is api._compile_fabric_with_evaluator
     assert "_compile_fabric_with_evaluator" not in api.__all__
-    assert "compile_fabric" in api.__all__
+    # Wave C.1: legacy engines stay importable (compat) but are no
+    # longer advertised; the service_* wrappers are the public API.
+    assert "compile_fabric" not in api.__all__
+    assert callable(api.compile_fabric)
+    for name in ("service_compile", "service_evaluate",
+                 "service_compare", "service_inspect"):
+        assert name in api.__all__, name
 
 
 def test_di_seam_works_with_stub_evaluator():

@@ -162,6 +162,17 @@ class TestPolicy:
             check_execution_budget(10 ** 9)
         assert excinfo.value.code == ErrorCode.POLICY_REJECTED
 
+    def test_query_over_budget_rejects(self, clean_service):
+        from veritx_dse.application.capabilities import (  # noqa: PLC0415
+            POLICY,
+        )
+        clean_service.evaluate(_doc())
+        assert clean_service.list_results()["count"] == 1
+        with pytest.raises(ControlPlaneError) as excinfo:
+            clean_service.list_results(
+                limit=POLICY["max_query_rows"] + 1)
+        assert excinfo.value.code == ErrorCode.POLICY_REJECTED
+
     def test_capability_registry_shape(self):
         registry = capability_registry()
         booksim = registry["backends"]["BOOKSIM_STANDALONE"]

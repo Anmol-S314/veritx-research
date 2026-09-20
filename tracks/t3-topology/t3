@@ -268,10 +268,10 @@ _T3_NATIVE="menu start-here env check analysis plot-config viz viz-open compare-
 # intentional and documented there, not a dispatch block. If a veritx command
 # ever needs a hard dispatch block, add its slash-path here with a reason
 # comment and _dispatch will refuse it loudly.
-_T3_BLOCKED=""
+_T3_BLOCKED="legacy/run legacy/sweep legacy/compare legacy/pareto legacy/compile legacy/baseline legacy/diff legacy/serve legacy/synthesize-bo legacy/synthesize-iterative legacy/synthesize-compile legacy/evaluate-booksim legacy/evaluate-anynet legacy/evaluate-astra legacy/topology-diff legacy/api-execute legacy/api-compare legacy/api-compile"
 
 _veritx_verbs_fallback() { # the ONE literal fallback verb list (selfcheck diffs it)
-    echo "baseline certify compare compile diff doctor evaluate generate history init interact pareto report results run runs serve status sweep synthesize topology trace where"
+    echo "api certify doctor generate history init interact legacy migrate-design report results runs service status topology trace where"
 }
 
 _veritx_verbs() { # -> space-separated veritx top-level verbs, live from registry
@@ -1155,7 +1155,7 @@ cmd_veritx_serve() { # guided full-stack serving sim: cluster config × workload
     echo "  veritx serve --cluster-config $_cluster --dataset $_dataset --num-reqs $_nreqs --network-backend $_backend --timeout $_timeout --log-level $_loglevel"
     _confirm_run || return 0
     _RUN_NAME="veritx serve ($_backend)"
-    _RUN=(_dispatch veritx serve --cluster-config "$_cluster" --dataset "$_dataset" \
+    _RUN=(_dispatch veritx legacy serve --cluster-config "$_cluster" --dataset "$_dataset" \
           --num-reqs "$_nreqs" --network-backend "$_backend" --timeout "$_timeout" \
           --log-level "$_loglevel" "${_extra[@]}")
     _ui_open
@@ -1190,7 +1190,7 @@ cmd_quick_compare() { # guided veritx compare: trace × topos, only the 3 key kn
     local _ir="$_PICK"
     echo "  veritx compare --trace $_trace --topos $_topos --mode $_mode --seeds $_seeds --timeout $_timeout --ir $_ir --out-dir \$T3_RESULTS"
     _RUN_NAME="veritx compare (${#_PICKS[@]} topos, $_mode)"
-    _RUN=(_dispatch veritx compare --trace "$_trace" --topos "$_topos" \
+    _RUN=(_dispatch veritx legacy compare --trace "$_trace" --topos "$_topos" \
           --mode "$_mode" --seeds "$_seeds" --timeout "$_timeout" --ir "$_ir" \
           --out-dir "$T3_RESULTS")
     _ui_open
@@ -2006,7 +2006,7 @@ cmd_veritx_compile() { # pick a CompileRequest (from veritx init) and compile it
     fi
     _ui_pick "compile request" "${_reqs[0]}" "${_reqs[@]}" || return 0
     _RUN_NAME="veritx compile ${_PICK##*/}"
-    _RUN=(_dispatch veritx compile "$_PICK")
+    _RUN=(_dispatch veritx legacy compile "$_PICK")
     _ui_open
 }
 
@@ -2051,7 +2051,7 @@ cmd_veritx_sweep() { # sweep builder: trace + timeout/mode/ir
     echo "  veritx sweep --trace $_trace --timeout $_timeout --mode $_mode --ir $_ir"
     _confirm_run || return 0
     _RUN_NAME="veritx sweep"
-    _RUN=(_dispatch veritx sweep --trace "$_trace" --timeout "$_timeout" --mode "$_mode" --ir "$_ir" \
+    _RUN=(_dispatch veritx legacy sweep --trace "$_trace" --timeout "$_timeout" --mode "$_mode" --ir "$_ir" \
           --out-dir "$T3_RESULTS")
     _ui_open
 }
@@ -2138,7 +2138,7 @@ cmd_veritx_run() { # full-pipeline builder: model + search knobs (can run long!)
     echo "  veritx run --model $_model --nodes $_nodes --search $_search --iterative-method $_itmethod --iters $_iters --scorer $_scorer --cert $_cert --max-edges $_maxedges --timeout $_timeout"
     _confirm_run || return 0
     _RUN_NAME="veritx run"
-    _RUN=(_dispatch veritx run --model "$_model" --nodes "$_nodes" --search "$_search" --iterative-method "$_itmethod" --iters "$_iters" --scorer "$_scorer" --cert "$_cert" --max-edges "$_maxedges" --timeout "$_timeout")
+    _RUN=(_dispatch veritx legacy run --model "$_model" --nodes "$_nodes" --search "$_search" --iterative-method "$_itmethod" --iters "$_iters" --scorer "$_scorer" --cert "$_cert" --max-edges "$_maxedges" --timeout "$_timeout")
     _ui_open
 }
 

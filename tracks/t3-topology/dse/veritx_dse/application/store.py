@@ -4,6 +4,11 @@ The smallest practical persistence: content-identified JSON files under
 one root, atomic writes, no mutation. ``<root>/<kind>/<id>.json``.
 Identical content rewrites idempotently; different content under an
 existing content-derived id refuses (CONFLICT). No database, no server.
+
+Wording discipline: this store is write-once through its API. It is
+NOT tamper-evident on read — scientific consumers must use verified
+loaders (result validation, ``read_verified_evidence``), never raw
+``store.get()``. Raw ``get()`` is inspection/internal storage access.
 """
 from __future__ import annotations
 

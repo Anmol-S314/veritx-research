@@ -501,7 +501,14 @@ def export_run(run_id: str, *, out_dir: str | Path | None = None) -> dict[str, A
 
 
 __all__ = [
-    "BUDGETS", "list_capabilities", "list_workloads", "list_topologies",
-    "validate", "plan", "execute", "get_run", "get_results", "compare",
-    "diagnose", "compile_fabric", "export_run",
+    "BUDGETS", "service_validate", "service_compile", "service_plan",
+    "service_evaluate", "service_study", "service_compare",
+    "service_inspect", "service_capabilities", "service_diagnose",
+    "service_list",
 ]
+# NOTE (Wave C.1): everything else in this module predates the unified
+# control plane (validate/plan/execute/get_run/get_results/compare/
+# diagnose/compile_fabric/export_run over run_experiment and legacy
+# stores). Those functions remain importable for the explicitly legacy
+# CLI namespace and historical tests, but they are LEGACY_INTERNAL:
+# not advertised, not certified, not product paths.

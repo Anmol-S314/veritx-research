@@ -260,8 +260,10 @@ class TestInspect:
             res["experiment_id"]
         assert out["related"]["attempt_id"]["resource_id"] == \
             res["attempt_id"]
-        assert out["evidence_status"] == {"checked": True,
-                                          "verified": True, "reason": ""}
+        assert out["evidence_status"]["verified"] is True
+        assert out["evidence_status"]["record_integrity"] is True
+        assert out["evidence_status"]["evidence_integrity"] is True
+        assert out["evidence_status"]["chain_integrity"] is True
 
     def test_inspect_unknown_refuses(self, service):
         with pytest.raises(ControlPlaneError) as excinfo:

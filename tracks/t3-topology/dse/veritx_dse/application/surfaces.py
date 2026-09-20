@@ -9,22 +9,25 @@ from __future__ import annotations
 
 from typing import Any
 
-from .requests import Intent, parse_intent
+from .requests import Intent, resolve_intent
 
 
 def python_intent(doc: Any) -> Intent:
     """Internal Python entry point (documented research script path)."""
-    return parse_intent(doc)
+    resolved, _, _ = resolve_intent(doc)
+    return resolved
 
 
 def api_intent(doc: Any) -> Intent:
     """API adapter entry (decode request -> Intent, no backend logic)."""
-    return parse_intent(doc)
+    resolved, _, _ = resolve_intent(doc)
+    return resolved
 
 
 def t3_intent(doc: Any) -> Intent:
     """T3 adapter entry (T3 forwards intent documents, not semantics)."""
-    return parse_intent(doc)
+    resolved, _, _ = resolve_intent(doc)
+    return resolved
 
 
 def cli_intent(*, request_file: str | None = None,
@@ -48,7 +51,8 @@ def cli_intent(*, request_file: str | None = None,
                 cause_type=type(exc).__name__) from exc
     else:
         doc = document
-    return parse_intent(doc)
+    resolved, _, _ = resolve_intent(doc)
+    return resolved
 
 
 __all__ = ["api_intent", "cli_intent", "python_intent", "t3_intent"]

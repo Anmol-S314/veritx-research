@@ -30,9 +30,14 @@ class ErrorCode(str, Enum):
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
 
-@dataclass(frozen=True)
+@dataclass
 class ControlPlaneError(Exception):
-    """Typed control-plane failure (raised AND serialized)."""
+    """Typed control-plane failure (raised AND serialized).
+
+    Deliberately NOT frozen: frozen dataclass exceptions cannot
+    propagate through generator-based context managers (traceback
+    assignment raises FrozenInstanceError). Value equality retained.
+    """
 
     code: ErrorCode
     message: str

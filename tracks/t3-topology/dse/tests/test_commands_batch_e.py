@@ -66,7 +66,7 @@ def model():
 def winner_anynet(model):
     """Produce a real synthesized winner.anynet via one full pipeline run."""
     import subprocess
-    rc, _ = _cli("run", "--model", model, "--nodes", "4", "--search", "bo",
+    rc, _ = _cli("legacy", "run", "--model", model, "--nodes", "4", "--search", "bo",
                  "--iters", "10", "--cert", "flow", "--timeout", "300",
                  timeout=420)
     assert rc == 0, "run pipeline must succeed to produce winner.anynet"
@@ -154,7 +154,7 @@ class TestEvaluateAnynet:
         bad = tmp_path / "disconnected.anynet"
         bad.write_text("router 0 node 0 router 1\nrouter 1 node 1 router 0\n"
                        "router 2 node 2 router 3\nrouter 3 node 3 router 2\n")
-        rc, err = _cli("evaluate", "anynet", "--topo", str(bad),
+        rc, err = _cli("legacy", "evaluate-anynet", "--topo", str(bad),
                        "--trace", tiny_trace)
         assert rc == 1 and "Disconnected topology" in "\n".join(err)
 
@@ -211,7 +211,7 @@ class TestSweep:
 class TestCompare:
     def test_compare_two_topos(self, tiny_trace, tmp_path, capsys):
         out = tmp_path / "cmp.json"
-        rc, err = _cli("--json", "--output", str(out), "compare",
+        rc, err = _cli("--json", "--output", str(out), "legacy", "compare",
                        "--trace", tiny_trace, "--topos", "mesh_8x8,torus_8x8",
                        "--seeds", "1", "--timeout", "30")
         assert rc == 0
@@ -220,14 +220,14 @@ class TestCompare:
         assert all("mean" in s for s in d["summary"])
 
     def test_compare_unknown_topo_fails(self, tiny_trace, capsys):
-        rc, err = _cli("compare", "--trace", tiny_trace, "--topos", "nope_9x9")
+        rc, err = _cli("legacy", "compare", "--trace", tiny_trace, "--topos", "nope_9x9")
         assert rc == 1 and "Unknown topology" in "\n".join(err)
 
 
 class TestPareto:
     def test_pareto_output_shape(self, tiny_trace, tmp_path):
         out = tmp_path / "par.json"
-        rc, _ = _cli("pareto", "--traces", tiny_trace,
+        rc, _ = _cli("legacy", "pareto", "--traces", tiny_trace,
                      "--topos", "mesh_8x8,torus_8x8", "--seeds", "1",
                      "--timeout", "30", "--out", str(out), timeout=180)
         assert rc == 0
@@ -235,7 +235,7 @@ class TestPareto:
         assert "agg" in d and "front" in d and "traces" in d
 
     def test_pareto_seeds_validation(self, tiny_trace, capsys):
-        rc, err = _cli("pareto", "--traces", tiny_trace, "--seeds", "0")
+        rc, err = _cli("legacy", "pareto", "--traces", tiny_trace, "--seeds", "0")
         assert rc == 1 and "seeds must be >= 1" in "\n".join(err)
 
 
@@ -250,7 +250,7 @@ class TestBaseline:
         assert "mesh_8x8" in names and "torus_8x8" in names
 
     def test_baseline_missing_trace(self, tmp_path, capsys):
-        rc, err = _cli("baseline", "--trace", str(tmp_path / "nope"))
+        rc, err = _cli("legacy", "baseline", "--trace", str(tmp_path / "nope"))
         assert rc == 1 and "trace not found" in "\n".join(err)
 
 
@@ -267,7 +267,7 @@ class TestRun:
         assert m.get("cert") == "PASS"          # real cert, real verdict
 
     def test_run_rejects_tiny_node_count(self, model):
-        rc, err = _cli("run", "--model", model, "--nodes", "1")
+        rc, err = _cli("legacy", "run", "--model", model, "--nodes", "1")
         assert rc == 1 and "nodes must be >= 2" in "\n".join(err)
 
 
@@ -276,20 +276,20 @@ class TestRun:
 class TestCompile:
     def test_compile_example_end_to_end(self, tmp_path):
         out = tmp_path / "compile_out.json"
-        rc, _ = _cli("compile", "examples/moe_8npu.json", "--timeout", "120",
+        rc, _ = _cli("legacy", "compile", "examples/moe_8npu.json", "--timeout", "120",
                      "--output", str(out))
         assert rc == 0
         d = json.loads(out.read_text())
         assert d["manifest"]["revision"] >= 1
 
     def test_compile_missing_request(self, tmp_path, capsys):
-        rc, err = _cli("compile", str(tmp_path / "nope.json"))
+        rc, err = _cli("legacy", "compile", str(tmp_path / "nope.json"))
         assert rc == 1 and "CompileRequest not found" in "\n".join(err)
 
     def test_compile_garbage_request(self, tmp_path, capsys):
         bad = tmp_path / "bad.json"
         bad.write_text('{"nope": true}')
-        rc, err = _cli("compile", str(bad))
+        rc, err = _cli("legacy", "compile", str(bad))
         assert rc == 1 and "Failed to parse" in "\n".join(err)
 
 
@@ -318,7 +318,7 @@ class TestReport:
     def sweep_json(self, tiny_trace):
         p = SWEEP_JSON
         if not p.exists():
-            rc, _ = _cli("sweep", "--trace", tiny_trace, "--timeout", "30")
+            rc, _ = _cli("legacy", "sweep", "--trace", tiny_trace, "--timeout", "30")
             assert rc == 0
         return str(p)
 
@@ -467,9 +467,9 @@ class TestGenerateUvm:
 
 class TestExitCodes:
     @pytest.mark.parametrize("args,needle", [
-        (("compile", "/nope/req.json"), "CompileRequest not found"),
-        (("baseline", "--trace", "/nope/trace"), "trace not found"),
-        (("compare", "--trace", "/nope/trace", "--topos", "mesh_8x8"), "trace not found"),
+        (("legacy", "compile", "/nope/req.json"), "CompileRequest not found"),
+        (("legacy", "baseline", "--trace", "/nope/trace"), "trace not found"),
+        (("legacy", "compare", "--trace", "/nope/trace", "--topos", "mesh_8x8"), "trace not found"),
         (("generate", "uvm", "--request", "/nope/r.json"), "CompileRequest not found"),
     ])
     def test_soft_failures_exit_nonzero(self, args, needle):

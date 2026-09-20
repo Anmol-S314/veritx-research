@@ -32,8 +32,7 @@ from .presets import (
     get_metric_definition,
 )
 from .requests import (
-    EXECUTABLE_BACKEND_TARGETS, Intent, parse_intent,
-    resolve_workload_bytes,
+    EXECUTABLE_BACKEND_TARGETS, Intent, parse_intent, resolve_intent,
 )
 from .resources import (
     AttemptRecord, CompiledDesign, ComparisonResult, EvaluationPlan,
@@ -93,9 +92,13 @@ class SrotaControlPlane:
 
     def compile(self, intent_doc: Any) -> dict[str, Any]:
         """Intent -> validated CompiledDesign + WorkloadRecord (no spawn)."""
+        intent, trace_bytes, trace_source = resolve_intent(intent_doc)
+        return self._compile_resolved(intent, trace_bytes, trace_source)
+
+    def _compile_resolved(self, intent: Intent, trace_bytes: bytes,
+                            trace_source: dict[str, Any]) -> dict[str, Any]:
+        """Compile core over resolved intent + bytes (no rereads)."""
         from veritx_dse.model.compile_model import CompileRequest
-        intent = parse_intent(intent_doc)
-        trace_bytes, trace_source = resolve_workload_bytes(intent)
         request_dict = self._derive_request(intent)
         try:
             compile_request = CompileRequest.from_dict(request_dict)
@@ -124,8 +127,7 @@ class SrotaControlPlane:
         design_id = design.resource_id()
         self._store_intent(intent)
         self.store.put("design", design_id, design.to_dict())
-        self.store.put("workload", workload.workload_id(),
-                       workload.to_dict())
+        self._store_workload(workload)
         return {
             "design": design.to_dict(),
             "workload": workload.to_dict(),
@@ -147,6 +149,24 @@ class SrotaControlPlane:
                 raise
             existing = self.store.get("intent", intent.intent_id())
             if parse_intent(existing).intent_id() != intent.intent_id():
+                raise
+
+    def _store_workload(self, workload: WorkloadRecord) -> None:
+        """Persist the workload record (first source label wins).
+
+        The workload id covers content + universe, not the source label
+        (registry name vs file path): identical bytes from different
+        transports share one id and the first label wins. A genuine
+        same-id/different-content collision refuses.
+        """
+        try:
+            self.store.put("workload", workload.workload_id(),
+                           workload.to_dict())
+        except ControlPlaneError as exc:
+            if exc.code != ErrorCode.CONFLICT:
+                raise
+            existing = self.store.get("workload", workload.workload_id())
+            if existing.get("trace_sha256") != workload.trace_sha256:
                 raise
 
     def _derive_request(self, intent: Intent) -> dict[str, Any]:
@@ -203,8 +223,7 @@ class SrotaControlPlane:
 
     def validate(self, intent_doc: Any) -> dict[str, Any]:
         """Pure request validation (no compile, no backend, no spawn)."""
-        intent = parse_intent(intent_doc)
-        trace_bytes, trace_source = resolve_workload_bytes(intent)
+        intent, trace_bytes, trace_source = resolve_intent(intent_doc)
         from veritx_dse.backend.contracts import sha256_bytes
         return {
             "valid": True,
@@ -280,12 +299,18 @@ class SrotaControlPlane:
 
     def plan(self, intent_doc: Any) -> dict[str, Any]:
         """Intent -> deterministic EvaluationPlan (no spawn, no lowering)."""
+        intent, trace_bytes, trace_source = resolve_intent(intent_doc)
+        return self._plan_resolved(intent, trace_bytes, trace_source)
+
+    def _plan_resolved(self, intent: Intent, trace_bytes: bytes,
+                       trace_source: dict[str, Any]) -> dict[str, Any]:
+        """Plan core over resolved intent + bytes (no rereads)."""
         from veritx_dse.backend.booksim import (
             BOOKSIM_BACKEND_SEMANTICS_VERSION, BOOKSIM_LOWERER_VERSION,
             BOOKSIM_STANDALONE_PROFILE,
         )
-        compiled = self.compile(intent_doc)
-        intent = parse_intent(intent_doc)
+        compiled = self._compile_resolved(intent, trace_bytes,
+                                          trace_source)
         design = compiled["design"]
         workload = compiled["workload"]
         self._require_executable(intent)
@@ -352,13 +377,12 @@ class SrotaControlPlane:
         from veritx_dse.backend.producer import (
             resolve_producer_identity, verify_reusable_evidence,
         )
-        intent = parse_intent(intent_doc)
+        intent, trace_bytes, trace_source = resolve_intent(intent_doc)
         from .capabilities import check_execution_budget
         check_execution_budget(intent.timeout_s)
-        planned = self.plan(intent_doc)
+        planned = self._plan_resolved(intent, trace_bytes, trace_source)
         plan = planned["plan"]
         bundle = self._rebuild_bundle(plan)
-        trace_bytes, _ = resolve_workload_bytes(intent)
         try:
             config = lower_booksim_standalone(bundle)
             rendered = render_booksim_standalone(
@@ -458,7 +482,15 @@ class SrotaControlPlane:
 
     def _try_reuse(self, experiment: ExperimentRecord, plan: dict[str, Any],
                    intent: Intent) -> dict[str, Any] | None:
-        """Verified reuse of an identical experiment (or None to run)."""
+        """Verified reuse of an identical experiment (or None to run).
+
+        Bound to the CURRENT experiment throughout: the link must name
+        this experiment, the result must belong to it with matching
+        config/input hashes, and Wave-B verification runs against the
+        current experiment's hashes — never the stored result's own
+        claims. A transplanted link or result refuses; the caller then
+        executes fresh.
+        """
         from veritx_dse.backend.evidence import EvidenceRef
         from veritx_dse.backend.producer import (
             ProducerError, resolve_producer_identity,
@@ -470,7 +502,16 @@ class SrotaControlPlane:
             return None
         try:
             link = self.store.get("links", link_id)
+            if link.get("experiment_id") != experiment.experiment_id:
+                return None
             result = self.store.get("result", link["result_id"])
+            if result.get("experiment_id") != experiment.experiment_id \
+                    or result.get("plan_id") != experiment.plan_id \
+                    or result.get("backend_config_hash") != \
+                    experiment.backend_config_hash \
+                    or result.get("backend_input_hash") != \
+                    experiment.backend_input_hash:
+                return None
             ref_doc = result["evidence_ref"]
             ref = EvidenceRef(path=ref_doc["path"],
                               sha256=ref_doc["sha256"])
@@ -478,9 +519,13 @@ class SrotaControlPlane:
                 self._resolve_binary(), repo_root=self.repo_root)
             verify_reusable_evidence(
                 ref,
-                backend_config_hash=result["backend_config_hash"],
-                backend_input_hash=result["backend_input_hash"],
+                backend_config_hash=experiment.backend_config_hash,
+                backend_input_hash=experiment.backend_input_hash,
                 producer=producer)
+            from .results import load_verified_result
+            load_verified_result(
+                self.store, result["resource_id"],
+                expected_experiment_id=experiment.experiment_id)
             out = dict(result)
             out["reused"] = True
             return out
@@ -513,8 +558,7 @@ class SrotaControlPlane:
                       experiment: ExperimentRecord, attempt_id: str,
                       attempt_dir: Path, evidence: Any, producer: Any,
                       ref: Any, *, reused: bool) -> EvaluationResult:
-        from veritx_dse.core.spec import canonical_json
-        import hashlib as _hashlib
+        from .results import loss_digest_of
         metrics = []
         for metric_id in plan["metric_ids"]:
             definition = get_metric_definition(metric_id)
@@ -538,8 +582,7 @@ class SrotaControlPlane:
             })
         loss = sorted((dict(r) for r in evidence.semantic_loss),
                       key=lambda r: r.get("dimension", ""))
-        loss_digest = _hashlib.sha256(
-            canonical_json(loss).encode()).hexdigest()
+        loss_digest = loss_digest_of(loss)
         result_id = _content_id("srota-result/v1", {
             "experiment_id": experiment.experiment_id,
             "attempt_id": attempt_id,
@@ -615,7 +658,8 @@ class SrotaControlPlane:
         intents: list[str] = []
         for index, candidate in enumerate(request.candidates):
             try:
-                intent = parse_intent(candidate)
+                from .requests import resolve_intent
+                intent, _, _ = resolve_intent(candidate)
                 intents.append(intent.intent_id())
             except ControlPlaneError as exc:
                 experiments.append({
@@ -711,7 +755,7 @@ class SrotaControlPlane:
                 "candidate_ids must be a list of exactly two result ids",
                 operation="compare")
         contract = parse_contract(request_doc.get("contract", {}))
-        results = [self._load_result(c) for c in candidates]
+        results = [self._load_comparison_result(c) for c in candidates]
         for result in results:
             self._verify_comparison_evidence(result)
         compatibility = check_compatibility(results[0], results[1],
@@ -719,7 +763,9 @@ class SrotaControlPlane:
         metrics = compare_metrics(results[0], results[1],
                                   contract.metric_ids)
         comparison_id = _content_id("srota-comparison/v1", {
-            "candidate_ids": sorted(candidates),
+            # Directional: candidate order shapes deltas, so it shapes
+            # identity (compare(A,B) != compare(B,A)).
+            "candidate_ids": list(candidates),
             "contract": contract.identity_dict(),
             "metric_ids": list(contract.metric_ids),
         })
@@ -739,40 +785,34 @@ class SrotaControlPlane:
         self.store.put("comparison", comparison_id, comparison.to_dict())
         return comparison.to_dict()
 
+    def _load_comparison_result(self, result_id: str) -> dict[str, Any]:
+        """Verified result + comparison-grade evidence policy."""
+        from .results import load_verified_result
+        try:
+            result = load_verified_result(self.store, result_id)
+        except ControlPlaneError as exc:
+            raise ControlPlaneError(
+                ErrorCode.COMPARISON_INCOMPATIBLE,
+                f"candidate {result_id} fails verification: "
+                f"{exc.message}",
+                operation="compare", resource_id=result_id,
+                cause_type=exc.code.value) from exc
+        self._verify_comparison_evidence(result)
+        return result
+
     def _load_result(self, result_id: str) -> dict[str, Any]:
         result = self.store.get("result", result_id)
         return check_envelope(result, "result")
 
     def _verify_comparison_evidence(self, result: dict[str, Any]) -> None:
-        """Digest + recorded-field consistency for comparison inputs.
+        """Recorded-snapshot policy for comparison inputs.
 
-        Live producer pinning was enforced at execution; comparison
-        re-authenticates the persisted bytes and requires the recorded
-        snapshot to be clean, supervised-process evidence. Scientific
-        comparison consumes valid successful results only.
+        Digest authentication and full field consistency already hold
+        (verified loader); comparison additionally requires recorded
+        supervised transport and a recorded clean tree. Live producer
+        pinning was enforced at execution.
         """
-        from veritx_dse.backend.evidence import read_verified_evidence
-        ref_doc = result.get("evidence_ref") or {}
-        try:
-            from veritx_dse.backend.evidence import EvidenceRef
-            ref = EvidenceRef(path=ref_doc["path"],
-                              sha256=ref_doc["sha256"])
-            evidence = read_verified_evidence(ref)
-        except Exception as exc:
-            raise ControlPlaneError(
-                ErrorCode.COMPARISON_INCOMPATIBLE,
-                f"candidate {result.get('resource_id')} evidence fails "
-                f"verification: {exc}",
-                operation="compare",
-                cause_type=type(exc).__name__) from exc
-        for key in ("backend_config_hash", "backend_input_hash"):
-            if evidence.get(key) != result.get(key):
-                raise ControlPlaneError(
-                    ErrorCode.COMPARISON_INCOMPATIBLE,
-                    f"candidate {result.get('resource_id')} evidence "
-                    f"does not match its recorded {key}",
-                    operation="compare")
-        if evidence.get("execution_transport") != "SUPERVISED_PROCESS":
+        if result.get("execution_transport") != "SUPERVISED_PROCESS":
             raise ControlPlaneError(
                 ErrorCode.COMPARISON_INCOMPATIBLE,
                 f"candidate {result.get('resource_id')} is not "
@@ -834,23 +874,42 @@ class SrotaControlPlane:
         return {"kind": kind, "record": record, "related": related,
                 "evidence_status": evidence_status}
 
-    @staticmethod
-    def _evidence_status(result: dict[str, Any]) -> dict[str, Any]:
+    def _evidence_status(self, result: dict[str, Any]) -> dict[str, Any]:
+        """Three-stage integrity: record, evidence bytes, full chain."""
         from veritx_dse.backend.evidence import EvidenceRef
+        record_integrity = isinstance(result, dict) and \
+            result.get("resource_type") == "result"
         ref_doc = result.get("evidence_ref") or {}
         try:
-            from veritx_dse.backend.evidence import read_verified_evidence
+            from veritx_dse.backend.evidence import \
+                read_verified_evidence
             ref = EvidenceRef(path=ref_doc["path"],
                               sha256=ref_doc["sha256"])
-            evidence = read_verified_evidence(ref)
+            read_verified_evidence(ref)
+            evidence_integrity: bool = True
+            evidence_reason = ""
         except Exception as exc:
-            return {"checked": True, "verified": False,
-                    "reason": f"{type(exc).__name__}: {exc}"}
-        matches = all(
-            evidence.get(key) == result.get(key)
-            for key in ("backend_config_hash", "backend_input_hash"))
-        return {"checked": True, "verified": bool(matches),
-                "reason": "" if matches else "record mismatch"}
+            evidence_integrity = False
+            evidence_reason = f"{type(exc).__name__}: {exc}"
+        try:
+            from .results import load_verified_result
+            load_verified_result(self.store,
+                                 result.get("resource_id", ""))
+            chain_integrity: bool = True
+            chain_reason = ""
+        except Exception as exc:
+            chain_integrity = False
+            chain_reason = f"{type(exc).__name__}: {exc}"
+        verified = record_integrity and evidence_integrity and \
+            chain_integrity
+        reason = "" if verified else next(
+            r for r in ("" if record_integrity else "record mismatch",
+                        evidence_reason, chain_reason) if r)
+        return {"checked": True, "verified": verified,
+                "reason": reason,
+                "record_integrity": record_integrity,
+                "evidence_integrity": evidence_integrity,
+                "chain_integrity": chain_integrity}
 
 
 __all__ = [

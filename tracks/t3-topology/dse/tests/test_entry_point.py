@@ -189,8 +189,8 @@ class TestCLIInvocation:
         """Every subcommand has --help."""
         env = {**__import__("os").environ, "PYTHONPATH": str(DSE_DIR)}
         cwd = str(DSE_DIR.parent)
-        for cmd in ["trace", "synthesize", "evaluate", "certify", "run",
-                     "sweep", "compare", "pareto", "compile", "init", "generate"]:
+        for cmd in ["trace", "certify", "init", "generate",
+                     "legacy", "service", "api"]:
             result = subprocess.run(
                 [sys.executable, "-m", "veritx_dse.cli", cmd, "--help"],
                 capture_output=True, text=True, timeout=10,

@@ -168,3 +168,26 @@ Wave E (area/power/energy/synthesis/Studio explanations), RTL re-entry
 serving execution, analytical execution. User-driven mapping variation
 beyond derived rank placement is Wave-D scope; comparison already
 carries `mapping_hash` so it will move when mappings do.
+
+## 10. Wave C.1 integrity closure
+
+- Verified result loading: scientific consumers never read
+  `store.get("result")` directly. `load_verified_result` re-derives
+every field from plan/experiment/attempt records, digest-authenticated
+  Wave-B evidence and the metric registry; anything else refuses with
+  `EVIDENCE_INVALID`.
+- Workload content identity: intent identity carries the trace content
+digest (same bytes at different paths share identity; different bytes
+differ; stale explicit digests refuse). Resolved once per operation;
+downstream stages never reread files.
+- Reuse binds the CURRENT experiment (link/result/experiment/config/
+input agreement) with Wave-B verification on current hashes, then
+full result validation. Transplanted links re-execute fresh.
+- Legacy scientific commands live under `veritx legacy …`
+(`t3_mode: blocked`, T3-blocklisted); the public API advertises only
+`service_*`; the field-only binding helper is private.
+- Comparison and study identities are directional/order-preserving.
+- Query over-budget refuses (`POLICY_REJECTED`); omitted limits default.
+- `ControlPlaneError` is unfrozen (frozen exceptions cannot cross
+generator context managers); intent/workload label collisions resolve
+first-wins with semantic verification.

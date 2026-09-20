@@ -37,7 +37,7 @@ DATASET = SERVING_ROOT / "workloads" / "example_trace.jsonl"
 class TestServeArgForwarding:
     def _parsed(self, *extra):
         parser = build_parser()
-        args = parser.parse_args(["serve", "--cluster-config", str(CLUSTER),
+        args = parser.parse_args(["legacy", "serve", "--cluster-config", str(CLUSTER),
                                   "--dataset", str(DATASET), *extra])
         return args
 
@@ -99,7 +99,7 @@ class TestServeArgForwarding:
         nothing) when every flag is known.
         """
         parser = build_parser()
-        args = parser.parse_args(["serve", "--cluster-config", str(CLUSTER),
+        args = parser.parse_args(["legacy", "serve", "--cluster-config", str(CLUSTER),
                                   "--dataset", str(DATASET),
                                   "--no-cleanup", "--no-prefix-caching",
                                   "--cycle-accurate", "--output", "/tmp/o",
@@ -162,7 +162,7 @@ def test_serve_end_to_end_analytical():
     env = dict(os.environ)
     env.pop("VERITX_TIMEOUT", None)  # don't let ambient env inflate the budget
     proc = subprocess.run(
-        [sys.executable, "-m", "veritx_dse.cli", "serve",
+        [sys.executable, "-m", "veritx_dse.cli", "legacy", "serve",
          "--cluster-config", str(CLUSTER),
          "--dataset", str(DATASET),
          "--num-reqs", "1",
@@ -186,7 +186,7 @@ def _cli_serve(*extra: str, timeout_s: int = 120) -> subprocess.CompletedProcess
     env = dict(os.environ)
     env.pop("VERITX_TIMEOUT", None)
     return subprocess.run(
-        [sys.executable, "-m", "veritx_dse.cli", "serve",
+        [sys.executable, "-m", "veritx_dse.cli", "legacy", "serve",
          "--cluster-config", str(CLUSTER),
          "--dataset", str(DATASET),
          "--num-reqs", "1",

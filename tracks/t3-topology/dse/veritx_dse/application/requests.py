@@ -49,15 +49,20 @@ def _strict_keys(d: dict[str, Any], allowed: frozenset[str]) -> None:
 
 @dataclass(frozen=True)
 class WorkloadRef:
-    """Workload reference: registered trace or external trace file."""
+    """Workload reference with resolved content identity.
+
+    ``trace_sha256`` is the content digest of the exact trace bytes.
+    The filesystem path (for ``trace_file``) is transport metadata and
+    never enters identity; the bytes always do. An intent without a
+    resolved digest has no identity (``intent_id`` refuses).
+    """
 
     trace: str | None = None
     trace_file: str | None = None
+    trace_sha256: str | None = None
 
     def identity_dict(self) -> dict[str, Any]:
-        # Only one arm is ever set; the external path itself is transport
-        # metadata and never enters identity (bytes do).
-        return {"trace": self.trace}
+        return {"trace": self.trace, "trace_sha256": self.trace_sha256}
 
 
 @dataclass(frozen=True)
@@ -87,6 +92,10 @@ class Intent:
         }
 
     def intent_id(self) -> str:
+        if self.workload.trace_sha256 is None:
+            raise ValueError(
+                "intent has no resolved workload digest; resolve the "
+                "trace bytes first (resolve_intent)")
         from veritx_dse.core.spec import canonical_json
         body = INTENT_HASH_TAG + "\0" + canonical_json(self.identity_dict())
         return hashlib.sha256(body.encode()).hexdigest()
@@ -103,8 +112,14 @@ class Intent:
              if k != "type"}
         d["name"] = self.name
         d["timeout_s"] = self.timeout_s
+        workload: dict[str, Any] = {}
+        if self.workload.trace is not None:
+            workload["trace"] = self.workload.trace
         if self.workload.trace_file is not None:
-            d["workload"] = {"trace_file": self.workload.trace_file}
+            workload["trace_file"] = self.workload.trace_file
+        if self.workload.trace_sha256 is not None:
+            workload["trace_sha256"] = self.workload.trace_sha256
+        d["workload"] = workload
         return d
 
     @classmethod
@@ -143,9 +158,15 @@ class Intent:
             workload_raw = _need(d, "workload")
             if not isinstance(workload_raw, dict):
                 raise ValueError("intent.workload must be an object")
-            _strict_keys(workload_raw, frozenset({"trace", "trace_file"}))
+            _strict_keys(workload_raw, frozenset(
+                {"trace", "trace_file", "trace_sha256"}))
             trace = workload_raw.get("trace")
             trace_file = workload_raw.get("trace_file")
+            digest = workload_raw.get("trace_sha256")
+            if digest is not None and not _is_sha256(digest):
+                raise ValueError(
+                    f"intent.workload.trace_sha256 must be a 64-char "
+                    f"hex digest, got {digest!r}")
             if (trace is None) == (trace_file is None):
                 raise ValueError(
                     "intent.workload needs exactly one of "
@@ -185,7 +206,8 @@ class Intent:
             return cls(
                 schema_version=version, name=name, fabric_preset=preset,
                 fabric_overrides=tuple(sorted(raw_overrides.items())),
-                workload=WorkloadRef(trace=trace, trace_file=trace_file),
+                workload=WorkloadRef(trace=trace, trace_file=trace_file,
+                                     trace_sha256=digest),
                 backend_target=backend, seed=seed,
                 metrics=tuple(raw_metrics), timeout_s=timeout)
         except (ValueError, KeyError) as exc:
@@ -193,9 +215,47 @@ class Intent:
                                cause_type=type(exc).__name__) from exc
 
 
+def _is_sha256(value: Any) -> bool:
+    return isinstance(value, str) and len(value) == 64 and all(
+        c in "0123456789abcdef" for c in value)
+
+
 def parse_intent(doc: Any) -> Intent:
     """Parse a canonical intent document (all surfaces use this)."""
     return Intent.from_dict(doc)
+
+
+def resolve_intent(doc: Any) -> tuple[Intent, bytes, dict[str, Any]]:
+    """Parse AND resolve workload content in one step.
+
+    Returns (intent with workload digest filled, exact trace bytes,
+    transport source metadata). Every downstream stage must use these
+    bytes — never reread the file. A document digest that disagrees
+    with the resolved bytes refuses (a file changed after intent
+    resolution never executes under a stale identity). Registry traces
+    resolve without I/O; external files are read here, once.
+    """
+    from veritx_dse.backend.contracts import sha256_bytes
+    intent = parse_intent(doc)
+    trace_bytes, source = resolve_workload_bytes(intent)
+    digest = sha256_bytes(trace_bytes)
+    if intent.workload.trace_sha256 is not None and \
+            intent.workload.trace_sha256 != digest:
+        raise intent_error(
+            f"workload digest mismatch: document claims "
+            f"{intent.workload.trace_sha256} but the resolved trace "
+            f"bytes hash to {digest}; refusing stale execution",
+            operation="resolve_intent")
+    resolved = Intent(
+        schema_version=intent.schema_version, name=intent.name,
+        fabric_preset=intent.fabric_preset,
+        fabric_overrides=intent.fabric_overrides,
+        workload=WorkloadRef(trace=intent.workload.trace,
+                             trace_file=intent.workload.trace_file,
+                             trace_sha256=digest),
+        backend_target=intent.backend_target, seed=intent.seed,
+        metrics=intent.metrics, timeout_s=intent.timeout_s)
+    return resolved, trace_bytes, source
 
 
 def resolve_workload_bytes(intent: Intent) -> tuple[bytes, dict[str, Any]]:

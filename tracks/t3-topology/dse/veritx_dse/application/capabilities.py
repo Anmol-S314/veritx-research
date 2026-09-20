@@ -102,9 +102,17 @@ def check_study_budget(count: int) -> None:
 
 
 def cap_query_rows(limit: int | None) -> int:
+    from .errors import ControlPlaneError, ErrorCode
     if limit is None:
         return POLICY["max_query_rows"]
-    return min(limit, POLICY["max_query_rows"])
+    if limit > POLICY["max_query_rows"]:
+        raise ControlPlaneError(
+            ErrorCode.POLICY_REJECTED,
+            f"query limit {limit} exceeds policy maximum "
+            f"{POLICY['max_query_rows']}; refusing rather than "
+            f"silently truncating the requested listing",
+            operation="list")
+    return limit
 
 
 __all__ = [

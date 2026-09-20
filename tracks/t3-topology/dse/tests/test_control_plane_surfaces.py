@@ -257,3 +257,92 @@ class TestArchitecturalBoundaries:
         for marker in ("LEGACY_INTERNAL", "TEST_ONLY",
                        "run_topology_eval", "simulation.booksim"):
             assert marker in text
+
+
+class TestPublicSurfaceClosure:
+    """Legacy scientific paths must not be normal product operations."""
+
+    LEGACY_TOP_LEVEL = ("run", "sweep", "compare", "pareto",
+                        "compile", "evaluate", "synthesize")
+    LEGACY_HANDLERS = ("cmd_run", "cmd_sweep", "cmd_compare",
+                       "cmd_pareto", "cmd_compile", "cmd_baseline",
+                       "cmd_diff", "cmd_serve", "cmd_synthesize_bo",
+                       "cmd_synthesize_iterative",
+                       "cmd_synthesize_compile",
+                       "cmd_evaluate_booksim", "cmd_evaluate_anynet",
+                       "cmd_evaluate_astra", "cmd_topology_diff",
+                       "cmd_api_execute", "cmd_api_compare",
+                       "cmd_api_compile")
+
+    def _commands(self):
+        from veritx_dse.cli.cli import COMMANDS  # noqa: PLC0415
+        return COMMANDS
+
+    def test_no_legacy_top_level_commands(self):
+        commands = self._commands()
+        for name in self.LEGACY_TOP_LEVEL:
+            assert name not in commands, name
+        assert "legacy" in commands
+        assert "service" in commands
+        legacy = commands["legacy"]["subcommands"]
+        assert len(legacy) == 18
+        for sub, entry in legacy.items():
+            assert entry["t3_mode"] == "blocked", sub
+
+    def test_no_product_handler_reaches_legacy(self):
+        commands = self._commands()
+        for top, entry in commands.items():
+            if top in ("legacy",):
+                continue
+            handler = entry.get("handler")
+            if handler is not None:
+                assert handler.__name__ not in self.LEGACY_HANDLERS, \
+                    (top, handler.__name__)
+            for sub, subentry in \
+                    (entry.get("subcommands") or {}).items():
+                assert subentry["handler"].__name__ not in \
+                    self.LEGACY_HANDLERS, (top, sub)
+
+    def test_api_advertises_service_only(self):
+        from veritx_dse import api as api_mod  # noqa: PLC0415
+        advertised = set(api_mod.__all__)
+        for name in ("service_validate", "service_compile",
+                     "service_plan", "service_evaluate",
+                     "service_study", "service_compare",
+                     "service_inspect", "service_capabilities",
+                     "service_diagnose", "service_list"):
+            assert name in advertised, name
+        for name in ("execute", "compare", "compile_fabric",
+                     "get_run", "get_results", "validate", "plan"):
+            assert name not in advertised, name
+
+    def test_t3_registry_consistency(self):
+        import re
+        t3 = (REPO / "tracks" / "t3-topology" / "t3").read_text()
+        fallback = re.search(
+            r'_veritx_verbs_fallback\(\) \{[^}]*echo "([^"]*)"', t3)
+        assert fallback is not None
+        fallback_verbs = sorted(fallback.group(1).split())
+        live = sorted({r["name"].split()[0]
+                       for r in self._registry_rows()})
+        assert fallback_verbs == live
+        blocked = re.search(r'_T3_BLOCKED="([^"]*)"', t3)
+        assert blocked is not None
+        blocked_set = {b.replace("/", " ")
+                       for b in blocked.group(1).split()}
+        names = {r["name"] for r in self._registry_rows()}
+        for entry in blocked_set:
+            assert entry in names, entry
+        for name in names:
+            if name.split()[0] == "legacy" and " " in name:
+                assert name in blocked_set, name
+
+    @staticmethod
+    def _registry_rows():
+        import subprocess
+        proc = subprocess.run(
+            [sys.executable, "-m", "veritx_dse.cli", "--list-commands"],
+            capture_output=True, text=True, timeout=120, cwd=DSE)
+        assert proc.returncode == 0, proc.stderr[-2000:]
+        import json
+        return json.loads(proc.stdout)

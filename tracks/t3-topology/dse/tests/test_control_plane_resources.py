@@ -41,9 +41,15 @@ def _doc(**over):
     return doc
 
 
+def _resolved(doc):
+    from veritx_dse.application.requests import resolve_intent  # noqa: PLC0415
+    intent, _, _ = resolve_intent(doc)
+    return intent
+
+
 class TestIntentParsing:
     def test_valid_intent_parses(self):
-        intent = parse_intent(_doc())
+        intent = _resolved(_doc())
         assert intent.intent_id()
         assert intent.seed_policy() == "pinned_default"
 
@@ -89,20 +95,20 @@ class TestIntentParsing:
 
 class TestIntentIdentity:
     def test_display_label_excluded(self):
-        assert parse_intent(_doc(name="a")).intent_id() == \
-            parse_intent(_doc(name="b")).intent_id()
+        assert _resolved(_doc(name="a")).intent_id() == \
+            _resolved(_doc(name="b")).intent_id()
 
     def test_json_key_order_excluded(self):
         import json
         doc = _doc()
         reordered = json.loads(
             json.dumps(doc, sort_keys=True))
-        assert parse_intent(doc).intent_id() == \
-            parse_intent(reordered).intent_id()
+        assert _resolved(doc).intent_id() == \
+            _resolved(reordered).intent_id()
 
     def test_round_trip_preserves_identity(self):
-        intent = parse_intent(_doc())
-        assert parse_intent(intent.to_dict()).intent_id() == \
+        intent = _resolved(_doc())
+        assert _resolved(intent.to_dict()).intent_id() == \
             intent.intent_id()
 
     @pytest.mark.parametrize("field,value", [
@@ -113,18 +119,18 @@ class TestIntentIdentity:
         ("backend_target", "SERVING_BOOKSIM2"),
     ])
     def test_semantic_mutation_moves_identity(self, field, value):
-        assert parse_intent(_doc()).intent_id() != \
-            parse_intent(_doc(**{field: value})).intent_id()
+        assert _resolved(_doc()).intent_id() != \
+            _resolved(_doc(**{field: value})).intent_id()
 
     def test_override_mutation_moves_identity(self):
-        base = parse_intent(_doc()).intent_id()
-        altered = parse_intent(_doc(fabric_overrides={
+        base = _resolved(_doc()).intent_id()
+        altered = _resolved(_doc(fabric_overrides={
             "noc_config.link_width": 64})).intent_id()
         assert base != altered
 
     def test_timeout_excluded_from_identity(self):
-        assert parse_intent(_doc(timeout_s=60)).intent_id() == \
-            parse_intent(_doc(timeout_s=600)).intent_id()
+        assert _resolved(_doc(timeout_s=60)).intent_id() == \
+            _resolved(_doc(timeout_s=600)).intent_id()
 
 
 class TestPresetImmutability:
