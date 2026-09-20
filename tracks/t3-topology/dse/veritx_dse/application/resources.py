@@ -12,7 +12,7 @@ everything else is content-derived.
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from .errors import ControlPlaneError, ErrorCode
@@ -173,6 +173,7 @@ class AttemptRecord:
     producer: dict[str, Any]
     error: dict[str, Any] | None = None
     evidence_ref: dict[str, Any] | None = None
+    runtime: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -186,6 +187,7 @@ class AttemptRecord:
             "error": dict(self.error) if self.error is not None else None,
             "evidence_ref": dict(self.evidence_ref)
             if self.evidence_ref is not None else None,
+            "runtime": dict(self.runtime),
         }
 
 
@@ -256,6 +258,26 @@ class EvaluationResult:
 
 
 @dataclass(frozen=True)
+class StudyResult:
+    study_id: str
+    name: str
+    candidate_intents: tuple[str, ...]
+    experiments: tuple[dict[str, Any], ...]
+    comparisons: tuple[dict[str, Any], ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "resource_type": "study",
+            "schema_version": RESOURCE_SCHEMA_VERSION,
+            "resource_id": self.study_id,
+            "name": self.name,
+            "candidate_intents": list(self.candidate_intents),
+            "experiments": [dict(e) for e in self.experiments],
+            "comparisons": [dict(c) for c in self.comparisons],
+        }
+
+
+@dataclass(frozen=True)
 class ComparisonResult:
     comparison_id: str
     candidate_ids: tuple[str, ...]
@@ -308,6 +330,7 @@ __all__ = [
     "EvaluationPlan",
     "EvaluationResult",
     "ExperimentRecord",
+    "StudyResult",
     "WorkloadRecord",
     "check_envelope",
 ]

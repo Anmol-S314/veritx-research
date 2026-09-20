@@ -99,7 +99,8 @@ class Intent:
             else SEED_POLICY_PINNED_DEFAULT
 
     def to_dict(self) -> dict[str, Any]:
-        d = self.identity_dict()
+        d = {k: v for k, v in self.identity_dict().items()
+             if k != "type"}
         d["name"] = self.name
         d["timeout_s"] = self.timeout_s
         if self.workload.trace_file is not None:

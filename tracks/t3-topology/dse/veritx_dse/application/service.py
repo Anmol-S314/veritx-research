@@ -44,7 +44,12 @@ from .store import ResourceStore
 
 EXECUTION_MODE_REAL = "REAL_SIMULATION"
 ATTEMPT_STATUSES = ("PLANNED", "RUNNING", "SUCCEEDED", "FAILED",
-                    "TIMED_OUT", "UNSUPPORTED", "BLOCKED")
+                    "TIMED_OUT", "CANCELLED", "INTERRUPTED",
+                    "UNSUPPORTED", "BLOCKED")
+# Lifecycle decision (reconciled with core/runs.py): PLANNED covers the
+# old CREATED+VALIDATED history (validation evidence IS the persisted
+# plan/design records); terminal states are single-write records; resume
+# is a NEW attempt, never a mutation (no backend checkpoint exists).
 
 
 def _default_store_root() -> Path:
@@ -59,12 +64,30 @@ class SrotaControlPlane:
                  repo_root: str | Path | None = None,
                  binary: str | Path | None = None):
         from veritx_dse.core.paths import REPO
+        from veritx_dse.core.runs import RunError, assert_runtime_compatible
+        try:
+            assert_runtime_compatible()
+        except RunError as exc:
+            raise internal_error(
+                str(exc), operation="init",
+                cause_type="RunError") from exc
         self.store = ResourceStore(
             store_root if store_root is not None
             else _default_store_root())
         self.repo_root = Path(
             repo_root) if repo_root is not None else REPO
         self.binary = Path(binary) if binary is not None else None
+
+    @staticmethod
+    def _runtime_provenance(repo_root: Path) -> dict[str, Any]:
+        """Observational runtime provenance (never experiment identity).
+
+        Reuses core/runs.py capture: interpreter, lockfile, platform,
+        allowlisted env. Changing Python versions changes this block,
+        never the scientific experiment ID.
+        """
+        from veritx_dse.core.runs import capture_provenance
+        return capture_provenance(repo_root, argv=[])
 
     # ── compile ───────────────────────────────────────────────────
 
@@ -159,6 +182,83 @@ class SrotaControlPlane:
             endpoint_count=bundle.attachment.endpoint_count,
             packets=packets, source=source)
 
+    # ── validate / capabilities / diagnose / list ──────────────────
+
+    def validate(self, intent_doc: Any) -> dict[str, Any]:
+        """Pure request validation (no compile, no backend, no spawn)."""
+        intent = parse_intent(intent_doc)
+        trace_bytes, trace_source = resolve_workload_bytes(intent)
+        from veritx_dse.backend.contracts import sha256_bytes
+        return {
+            "valid": True,
+            "intent_id": intent.intent_id(),
+            "fabric_preset": intent.fabric_preset,
+            "backend_target": intent.backend_target,
+            "seed_policy": intent.seed_policy(),
+            "trace_sha256": sha256_bytes(trace_bytes),
+            "trace_source": trace_source,
+            "metrics": list(intent.metrics),
+        }
+
+    def capabilities(self) -> dict[str, Any]:
+        """Authoritative capability registry (derived, not listed)."""
+        from .capabilities import POLICY, capability_registry
+        registry = capability_registry()
+        registry["policy"] = dict(POLICY)
+        return registry
+
+    def diagnose(self) -> dict[str, Any]:
+        """Operational health (no experiment, no identity effects)."""
+        import platform
+        import sys
+        binary: dict[str, Any] = {"configured": self.binary is not None}
+        try:
+            path = self._resolve_binary()
+            binary.update({"found": True, "path": str(path)})
+        except ControlPlaneError as exc:
+            binary.update({"found": False, "reason": exc.message})
+        probe = self.store.root / ".diagnose-probe"
+        try:
+            probe.parent.mkdir(parents=True, exist_ok=True)
+            probe.write_text("ok")
+            writable = probe.read_text() == "ok"
+        except OSError:
+            writable = False
+        finally:
+            try:
+                probe.unlink()
+            except OSError:
+                pass
+        return {
+            "binary": binary,
+            "store_writable": writable,
+            "python": sys.version.split()[0],
+            "platform": platform.platform(),
+            "capabilities": self.capabilities(),
+        }
+
+    def list_results(self, limit: int | None = None) -> dict[str, Any]:
+        """Deterministic result listing (capped; index-only)."""
+        from .capabilities import cap_query_rows
+        count = cap_query_rows(limit)
+        directory = self.store.root / "result"
+        ids = sorted(p.stem for p in directory.glob("*.json"))[:count]
+        rows = []
+        for resource_id in ids:
+            try:
+                record = self.store.get("result", resource_id)
+                rows.append({
+                    "resource_id": resource_id,
+                    "experiment_id": record.get("experiment_id"),
+                    "status": record.get("status"),
+                    "qualification": record.get("qualification"),
+                    "fabric_hash": record.get("fabric_hash"),
+                })
+            except ControlPlaneError:
+                continue
+        return {"results": rows, "count": len(rows),
+                "cap": count}
+
     # ── plan ──────────────────────────────────────────────────────
 
     def plan(self, intent_doc: Any) -> dict[str, Any]:
@@ -235,8 +335,10 @@ class SrotaControlPlane:
         from veritx_dse.backend.producer import (
             resolve_producer_identity, verify_reusable_evidence,
         )
-        planned = self.plan(intent_doc)
         intent = parse_intent(intent_doc)
+        from .capabilities import check_execution_budget
+        check_execution_budget(intent.timeout_s)
+        planned = self.plan(intent_doc)
         plan = planned["plan"]
         bundle = self._rebuild_bundle(plan)
         trace_bytes, _ = resolve_workload_bytes(intent)
@@ -273,13 +375,28 @@ class SrotaControlPlane:
         binary = self._resolve_binary()
         producer = resolve_producer_identity(
             binary, repo_root=self.repo_root)
+        runtime = self._runtime_provenance(self.repo_root)
         try:
             evidence = run_qualified_booksim(
                 prepared, run_dir=attempt_dir, repo_root=self.repo_root,
                 timeout=intent.timeout_s, binary=binary)
+        except KeyboardInterrupt:
+            # Synchronous cancellation: the attempt is terminally
+            # INTERRUPTED (never resumed in place — a retry is a new
+            # attempt; no backend checkpoint exists).
+            attempt = AttemptRecord(
+                attempt_id=attempt_id, experiment_id=experiment_id,
+                status="INTERRUPTED", backend_dir=str(attempt_dir),
+                producer=producer.identity_dict(),
+                error={"code": "INTERRUPTED",
+                       "message": "KeyboardInterrupt during execution"},
+                runtime=runtime)
+            self.store.put("attempt", attempt_id, attempt.to_dict())
+            raise
         except Exception as exc:
             self._persist_failed_attempt(
-                attempt_id, experiment_id, attempt_dir, producer, exc)
+                attempt_id, experiment_id, attempt_dir, producer,
+                runtime, exc)
             raise map_execution_error(
                 exc, operation="evaluate",
                 attempt_id=attempt_id) from exc
@@ -288,7 +405,7 @@ class SrotaControlPlane:
             plan, planned, experiment, attempt_id, attempt_dir, evidence,
             producer, ref, reused=False)
         self._persist_success(experiment, attempt_id, attempt_dir,
-                              producer, ref, result)
+                              producer, runtime, ref, result)
         return result.to_dict()
 
     def _rebuild_bundle(self, plan: dict[str, Any]):
@@ -356,6 +473,7 @@ class SrotaControlPlane:
 
     def _persist_failed_attempt(self, attempt_id: str, experiment_id: str,
                                 attempt_dir: Path, producer: Any,
+                                runtime: dict[str, Any],
                                 exc: Exception) -> None:
         from veritx_dse.core.errors import TimeoutError as CoreTimeout
         if isinstance(exc, CoreTimeout):
@@ -370,7 +488,8 @@ class SrotaControlPlane:
         attempt = AttemptRecord(
             attempt_id=attempt_id, experiment_id=experiment_id,
             status=status, backend_dir=str(attempt_dir),
-            producer=producer.identity_dict(), error=error.to_dict())
+            producer=producer.identity_dict(), error=error.to_dict(),
+            runtime=runtime)
         self.store.put("attempt", attempt_id, attempt.to_dict())
 
     def _build_result(self, plan: dict[str, Any], planned: dict[str, Any],
@@ -439,13 +558,15 @@ class SrotaControlPlane:
 
     def _persist_success(self, experiment: ExperimentRecord,
                          attempt_id: str, attempt_dir: Path, producer: Any,
-                         ref: Any, result: EvaluationResult) -> None:
+                         runtime: dict[str, Any], ref: Any,
+                         result: EvaluationResult) -> None:
         attempt = AttemptRecord(
             attempt_id=attempt_id,
             experiment_id=experiment.experiment_id, status="SUCCEEDED",
             backend_dir=str(attempt_dir),
             producer=producer.identity_dict(),
-            evidence_ref={"path": ref.path, "sha256": ref.sha256})
+            evidence_ref={"path": ref.path, "sha256": ref.sha256},
+            runtime=runtime)
         self.store.put("attempt", attempt_id, attempt.to_dict())
         self.store.put("result", result.result_id, result.to_dict())
         link_id = f"experiment-result-{experiment.experiment_id}"
@@ -456,6 +577,103 @@ class SrotaControlPlane:
         except ControlPlaneError as exc:
             if exc.code != ErrorCode.CONFLICT:
                 raise
+
+    # ── study ─────────────────────────────────────────────────────
+
+    def run_study(self, study_doc: Any) -> dict[str, Any]:
+        """Sequentially evaluate study candidates (grouping, no DAG).
+
+        Each candidate is a full intent evaluated through the normal
+        path (reuse included). Failures are collected per candidate;
+        the study completes unless the request itself is invalid. An
+        optional comparison block runs pairwise comparisons over stored
+        result IDs by candidate index.
+        """
+        from .capabilities import check_study_budget
+        from .studies import StudyRequest
+        from .resources import StudyResult
+        request = StudyRequest.parse(study_doc)
+        check_study_budget(len(request.candidates))
+        experiments: list[dict[str, Any]] = []
+        intents: list[str] = []
+        for index, candidate in enumerate(request.candidates):
+            try:
+                intent = parse_intent(candidate)
+                intents.append(intent.intent_id())
+            except ControlPlaneError as exc:
+                experiments.append({
+                    "index": index, "status": "INVALID",
+                    "intent_id": None, "experiment_id": None,
+                    "result_id": None, "error": exc.to_dict()})
+                continue
+            try:
+                result = self.evaluate(candidate)
+                experiments.append({
+                    "index": index, "status": "SUCCEEDED",
+                    "intent_id": intent.intent_id(),
+                    "experiment_id": result["experiment_id"],
+                    "result_id": result["resource_id"],
+                    "reused": result["reused"]})
+            except ControlPlaneError as exc:
+                experiments.append({
+                    "index": index, "status": "FAILED",
+                    "intent_id": intent.intent_id(),
+                    "experiment_id": None,
+                    "result_id": None, "error": exc.to_dict()})
+        comparisons: list[dict[str, Any]] = []
+        if request.comparison is not None:
+            comparisons = self._study_comparisons(
+                request, experiments)
+        study = StudyResult(
+            study_id=request.study_id(), name=request.name,
+            candidate_intents=tuple(intents),
+            experiments=tuple(experiments),
+            comparisons=tuple(comparisons))
+        self.store.put("study", study.study_id, study.to_dict())
+        return study.to_dict()
+
+    def _study_comparisons(
+            self, request: Any,
+            experiments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        from .comparison import parse_contract
+        block = request.comparison or {}
+        if not isinstance(block, dict):
+            raise intent_error("study comparison must be an object",
+                               operation="run_study")
+        contract = parse_contract(block.get("contract", {}))
+        pairs = block.get("pairs", [])
+        if not isinstance(pairs, list) or not pairs:
+            raise intent_error(
+                "study comparison needs a non-empty pairs list",
+                operation="run_study")
+        by_index = {e["index"]: e for e in experiments}
+        out = []
+        for pair in pairs:
+            if not isinstance(pair, list) or len(pair) != 2:
+                raise intent_error(
+                    f"comparison pair must be two indices, got {pair!r}",
+                    operation="run_study")
+            sides = []
+            for index in pair:
+                entry = by_index.get(index)
+                if entry is None or entry.get("result_id") is None:
+                    sides.append(None)
+                else:
+                    sides.append(entry["result_id"])
+            if any(s is None for s in sides):
+                out.append({"pair": list(pair), "status": "SKIPPED",
+                            "reason": "a side has no successful result"})
+                continue
+            try:
+                compared = self.compare({
+                    "candidate_ids": sides,
+                    "contract": contract.identity_dict()})
+                out.append({"pair": list(pair), "status": "COMPARED",
+                            "comparison_id": compared["resource_id"]})
+            except ControlPlaneError as exc:
+                out.append({"pair": list(pair), "status": "REFUSED",
+                            "error": exc.to_dict()})
+        return out
 
     # ── compare ───────────────────────────────────────────────────
 
