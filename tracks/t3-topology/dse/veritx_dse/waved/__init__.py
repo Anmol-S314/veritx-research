@@ -3,13 +3,18 @@
 Wave D layers an exact, content-addressed semantics chain on top of the
 sealed Wave-B authorities:
 
-    WorkloadArtifact (existing)      — explicit workload operations
-    ParallelismArtifact (new)        — rank-space geometry  [D1]
-    WaveDWorkloadSemantics (new)     — semantic envelope    [D1]
-    OperationGraph (new)             — causal op DAG        [D2]
-    LogicalMessageArtifact (new)     — scheduled messages   [D3]
-    PhysicalTrafficArtifact (new)    — packets + flits      [D4]
-    ConservationLedger (new)         — per-class laws       [D4]
+    WaveDWorkload (new)              — declared operations    [D1]
+    ParallelismArtifact (new)        — rank-space geometry    [D1]
+    WaveDWorkloadSemantics (new)     — semantic envelope      [D1]
+    OperationGraph (new)             — causal op DAG          [D2]
+    LogicalMessageArtifact (new)     — scheduled messages     [D3]
+    PhysicalTrafficArtifact (new)    — packets + flits        [D4]
+    ConservationLedger (derived)     — per-class laws         [D4]
+
+Every artifact is transitively immutable (``immutable.py``), strictly
+parseable (``strict.py``) and persisted as a first-class resource
+through ``veritx_dse.application.waved_resources`` — the only
+scientific trust path for loading one back.
 
 Wave D owns WHAT; Wave B/C own execution and evidence; Wave E owns WHEN.
 Nothing here duplicates a Wave-B authority: rank space is

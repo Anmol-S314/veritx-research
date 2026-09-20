@@ -24,6 +24,10 @@ from veritx_dse.model.placement import coords_of, rank_of  # authority reuse
 from .errors import InvalidInput
 from .identity import content_hash
 from .oracles import ref_coords, ref_group_members, ref_rank
+from .strict import (
+    require_embedded_id, require_fields, require_schema_version,
+    require_type_tag,
+)
 
 SCHEMA_VERSION = 1
 _HASH_TYPE_TAG = "srota/WavedParallelism"
@@ -109,14 +113,30 @@ class ParallelismArtifact:
                 "parallelism_id": self.parallelism_id()}
 
     @classmethod
-    def from_dict(cls, d: Any) -> "ParallelismArtifact":
-        if not isinstance(d, dict):
-            raise InvalidInput("parallelism must be an object")
-        unknown = set(d) - {"type", "schema_version", "tp", "pp", "ep",
-                            "dp", "world_size", "parallelism_id"}
-        if unknown:
+    def from_dict(cls, d: Any, *, strict: bool = False
+                  ) -> "ParallelismArtifact":
+        """Parse a parallelism document.
+
+        ``strict=True`` is the persisted-resource contract: exact type
+        tag, exact schema version, required embedded ID, unknown fields
+        refused. The caller (a verified loader) still owns the
+        requested-filename vs embedded-ID comparison.
+        """
+        allowed = {"type", "schema_version", "tp", "pp", "ep",
+                   "dp", "world_size", "parallelism_id"}
+        require_fields(d, allowed, "parallelism")
+        if strict:
+            require_type_tag(d, _HASH_TYPE_TAG, "parallelism")
+            require_schema_version(d, SCHEMA_VERSION, "parallelism")
+            for key in ("tp", "pp", "ep", "dp", "world_size",
+                        "parallelism_id"):
+                if key not in d:
+                    raise InvalidInput(
+                        f"persisted parallelism is missing {key!r}")
+        elif "type" in d and d["type"] != _HASH_TYPE_TAG:
             raise InvalidInput(
-                f"parallelism has unknown fields: {sorted(unknown)}")
+                f"parallelism type tag {d['type']!r} is not "
+                f"{_HASH_TYPE_TAG!r}")
         if "world_size" in d:
             # Self-integrity only: the stored world size must equal the
             # derived one (it is not part of identity).
@@ -128,7 +148,11 @@ class ParallelismArtifact:
                     f"{expected}")
         art = cls(tp=d["tp"], pp=d["pp"], ep=d["ep"], dp=d["dp"],
                   schema_version=d.get("schema_version", SCHEMA_VERSION))
-        if "parallelism_id" in d and d["parallelism_id"] != art.parallelism_id():
+        if strict:
+            require_embedded_id(d, "parallelism_id", art.parallelism_id(),
+                                "parallelism")
+        elif "parallelism_id" in d \
+                and d["parallelism_id"] != art.parallelism_id():
             raise InvalidInput(
                 "parallelism_id does not match content")
         return art
@@ -218,7 +242,7 @@ class ParallelismArtifact:
                     f"{family} groups do not cover ranks exactly once")
 
     def cross_check_against_oracle(self) -> None:
-        """Independent-oracle cross-check of the rank bijection (§68)."""
+        """Independent-oracle cross-check of the rank bijection (§26)."""
         for r in range(self.world_size):
             c = self.coords_of(r)
             got = self.rank_of(c["tp"], c["pp"], c["ep"], c["dp"])

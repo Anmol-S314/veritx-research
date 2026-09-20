@@ -1,11 +1,11 @@
-"""veritx_dse.waved.oracles — independent pure reference models (§26, §68).
+"""veritx_dse.waved.oracles — independent pure reference models (§26).
 
 These oracles are structurally independent of the production lowering:
 they never import or call it. They exist so Wave-D tests can prove the
 production implementations with ``production(x) == oracle(x)`` instead of
 the forbidden ``production(x) == production(x)``.
 
-Simplicity is a requirement (§68): each oracle is the closed-form
+Simplicity is a requirement (§26): each oracle is the closed-form
 equation itself, not a second simulator.
 """
 from __future__ import annotations

@@ -15,10 +15,18 @@ import hashlib
 import json
 from typing import Any
 
+from .immutable import thaw
+
 
 def canonical_bytes(payload: Any) -> bytes:
-    """Deterministic UTF-8 JSON bytes for ``payload``."""
-    return json.dumps(payload, sort_keys=True, separators=(",", ":"),
+    """Deterministic UTF-8 JSON bytes for ``payload``.
+
+    Frozen Wave-D containers (``FrozenMap``/tuples) are thawed to their
+    plain JSON form first, so the canonical bytes of an artifact never
+    depend on the representation used to carry it.
+    """
+    return json.dumps(thaw(payload), sort_keys=True,
+                      separators=(",", ":"),
                       ensure_ascii=True).encode("utf-8")
 
 

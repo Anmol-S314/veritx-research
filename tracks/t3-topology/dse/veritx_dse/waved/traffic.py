@@ -1,12 +1,12 @@
 """veritx_dse.waved.traffic — PhysicalTrafficArtifact + ConservationLedger
-(D4/D5, §18/§31–§41).
+(D4/D5, §18–§24).
 
 One authoritative projection from logical messages to physical traffic:
 
     LogicalMessageArtifact + ResolvedFabricBundle →
         per-message endpoint binding → packets → flits
 
-Bit-exact rules (§35/§36/§37):
+Bit-exact rules (§18/§19):
 
     message_bits            = payload_bytes × 8
     packet payload capacity = Q × L        (Q = payload_width_bits,
@@ -22,8 +22,8 @@ field layout (every flit repeats the header; A6). Identity binds the
 direct parents (§32): message_artifact_id, resolved_fabric_hash,
 packet_format_hash, canonical packet/flit contents.
 
-The ConservationLedger records the distinct quantity classes of §40 per
-operation and fails closed (§41) on any violated law.
+The ConservationLedger records the distinct quantity classes of §24.1 per
+operation and fails closed (§24) on any violated law.
 """
 from __future__ import annotations
 
@@ -34,10 +34,14 @@ from veritx_dse.backend.bundle import ResolvedFabricBundle
 from veritx_dse.model.packet_format import PacketFormatArtifact
 
 from .errors import (
-    ConservationFailed, InvalidInput, MappingInvalid,
+    ConservationFailed, EvidenceInvalid, InvalidInput, MappingInvalid,
 )
 from .identity import content_hash
 from .messages import LogicalMessageArtifact
+from .strict import (
+    require_embedded_id, require_fields, require_schema_version,
+    require_type_tag,
+)
 
 PHYSICAL_TRAFFIC_SCHEMA_VERSION = 1
 _HASH_TYPE_TAG = "srota/WavedPhysicalTraffic"
@@ -123,7 +127,7 @@ class MessageTraffic:
 
 @dataclass(frozen=True)
 class OperationLedgerEntry:
-    """Per-operation conservation quantities (§39/§40), distinct classes."""
+    """Per-operation conservation quantities (§24.1), distinct classes."""
 
     operation_id: str
     operation_kind: str
@@ -209,6 +213,43 @@ def flitize_packet(p_i: int, pf: PacketFormatArtifact
     return n, padding, n * f
 
 
+def _require_matching_geometry(logical: LogicalMessageArtifact,
+                               bundle: ResolvedFabricBundle) -> None:
+    """Equal world size is NOT semantic equivalence (§9).
+
+    The logical rank geometry must be exactly the geometry the physical
+    bundle was built from: TP=4/PP=1 and TP=2/PP=2 share the integer
+    rank universe {0..3} and can carry identical MappingArtifact
+    content, but they are different deployments. Transposing one onto
+    the other silently relabels every tensor-parallel peer group, so it
+    must refuse before any rank→endpoint binding happens.
+    """
+    pa = logical.graph.parallelism
+    shape = (pa.tp, pa.pp, pa.ep, pa.dp)
+    inventory = getattr(bundle, "inventory", None)
+    inv_shape_obj = getattr(inventory, "parallelism", None)
+    if inv_shape_obj is None:
+        raise MappingInvalid(
+            "physical bundle carries no inventory parallelism shape; "
+            "cannot prove the logical geometry belongs to it")
+    inv_shape = (inv_shape_obj.tp, inv_shape_obj.pp, inv_shape_obj.ep,
+                 inv_shape_obj.dp)
+    if shape != inv_shape:
+        raise MappingInvalid(
+            f"logical rank geometry TP={pa.tp} PP={pa.pp} EP={pa.ep} "
+            f"DP={pa.dp} does not match the physical bundle geometry "
+            f"TP={inv_shape[0]} PP={inv_shape[1]} EP={inv_shape[2]} "
+            f"DP={inv_shape[3]}; equal world size is not semantic "
+            f"equivalence")
+    workload = getattr(getattr(bundle, "design", None), "workload", None)
+    if workload is not None:
+        design_shape = (workload.tp, workload.pp, workload.ep, workload.dp)
+        if design_shape != shape:
+            raise MappingInvalid(
+                f"logical rank geometry {shape} does not match the "
+                f"compiled design workload geometry {design_shape}")
+
+
 @dataclass(frozen=True)
 class PhysicalTrafficArtifact:
     """The one authoritative logical→physical traffic projection (§31)."""
@@ -222,14 +263,22 @@ class PhysicalTrafficArtifact:
             raise InvalidInput("logical must be a LogicalMessageArtifact")
         if not isinstance(self.bundle, ResolvedFabricBundle):
             raise InvalidInput("bundle must be a ResolvedFabricBundle")
+        # Re-prove the complete Wave-B hardware DAG and the design/mapping
+        # seam from the actual child objects immediately before lowering:
+        # a bundle assembled around a stale/tampered child can never feed
+        # physical traffic (Wave-B revalidation, not re-implemented here).
+        try:
+            self.bundle.revalidate()
+        except Exception as exc:
+            raise MappingInvalid(
+                f"physical bundle fails revalidation: {exc}") from None
+        _require_matching_geometry(self.logical, self.bundle)
         pf = self.bundle.packet_format
         H = header_width_bits(pf)
         Q = pf.payload_width_bits
         if H < 0 or Q < 1:
             raise InvalidInput("packet format has no payload capacity")
         r2e, r2a = _rank_to_endpoint_maps(self.bundle)
-        object.__setattr__(self, "_r2e", r2e)
-        object.__setattr__(self, "_r2a", r2a)
 
         traffic: list[MessageTraffic] = []
         R = self.logical.graph.parallelism.world_size
@@ -249,7 +298,7 @@ class PhysicalTrafficArtifact:
             for idx, pbits in enumerate(packetize_message(message_bits, pf)):
                 n, padding, transmitted = flitize_packet(pbits, pf)
                 hbits = n * H
-                # Exact flit transmitted-bit identity (§36) — checked here,
+                # Exact flit transmitted-bit identity (§18) — checked here,
                 # so a violated equation can never persist.
                 if transmitted != hbits + pbits + padding:
                     raise ConservationFailed(
@@ -275,6 +324,20 @@ class PhysicalTrafficArtifact:
                 message_bits=message_bits, packets=tuple(packets)))
         object.__setattr__(self, "_traffic", tuple(traffic))
 
+    def validate_against_bundle(self) -> None:
+        """Re-prove the logical↔physical seam on demand.
+
+        The constructor already refuses a transposed geometry; this is
+        the explicit seam check product code and tests call before
+        treating an artifact as executable.
+        """
+        try:
+            self.bundle.revalidate()
+        except Exception as exc:
+            raise MappingInvalid(
+                f"physical bundle fails revalidation: {exc}") from None
+        _require_matching_geometry(self.logical, self.bundle)
+
     # ── accessors ─────────────────────────────────────────────────────
     @property
     def traffic(self) -> tuple[MessageTraffic, ...]:
@@ -293,7 +356,7 @@ class PhysicalTrafficArtifact:
                                     for t in self._traffic),
         }
 
-    # ── conservation ledger (§39–§41) ─────────────────────────────────
+    # ── conservation ledger (§24) ─────────────────────────────────
     def conservation_ledger(self) -> tuple[OperationLedgerEntry, ...]:
         logical = self.logical
         entries: list[OperationLedgerEntry] = []
@@ -319,7 +382,13 @@ class PhysicalTrafficArtifact:
                 source = scheduled
             elif node.kind == "MULTICAST":
                 scheduled = sum(m.payload_bytes for m in ms)
-                source = d["payload_bytes"]
+                # Source payload comes from the multicast INTENT (the
+                # authority), never from the node's link detail: the
+                # link detail carries only the multicast id.
+                mc = next(
+                    m for m in logical.graph.multicasts
+                    if m.multicast_id == d.get("multicast_id"))
+                source = mc.payload_bytes
             else:
                 scheduled = 0
                 source = 0
@@ -339,7 +408,7 @@ class PhysicalTrafficArtifact:
         return tuple(entries)
 
     def validate_conservation(self) -> None:
-        """Every supported relevant law (§41). Mismatch = hard failure."""
+        """Every supported relevant law (§24). Mismatch = hard failure."""
         pf = self.bundle.packet_format
         Q = pf.payload_width_bits
         logical_bits = sum(m.payload_bytes for m in self.logical.messages) * 8
@@ -374,7 +443,7 @@ class PhysicalTrafficArtifact:
                     f"operation {entry.operation_id!r}: binding invalid")
 
     def cross_check_against_oracle(self) -> None:
-        """Independent-oracle differential check (§22/§26/§38)."""
+        """Independent-oracle differential check (§22/§26)."""
         from .oracles import ref_flitize, ref_packetize
         pf = self.bundle.packet_format
         Q, L = pf.payload_width_bits, pf.max_packet_flits
@@ -417,6 +486,71 @@ class PhysicalTrafficArtifact:
         return {**self.identity_dict(),
                 "physical_traffic_id": self.physical_traffic_id(),
                 "totals": self.totals()}
+
+    # ── strict parsing (persisted-resource contract) ──────────────────
+    @classmethod
+    def from_dict(cls, d: Any, *, logical: LogicalMessageArtifact,
+                  bundle: ResolvedFabricBundle,
+                  strict: bool = False) -> "PhysicalTrafficArtifact":
+        """Rebuild physical traffic from VERIFIED parents.
+
+        The bundle and the logical artifact are supplied by the caller
+        (a verified loader) — never read out of the JSON. In strict
+        mode the embedded parent hashes, the embedded traffic ID and
+        every stored packet row must equal the recomputed content.
+        """
+        require_fields(d, {
+            "type", "schema_version", "message_artifact_id",
+            "resolved_fabric_hash", "packet_format_hash", "traffic",
+            "physical_traffic_id", "totals", "design_id",
+            "design_hash", "mapping_hash",
+        }, "physical traffic")
+        if strict:
+            require_type_tag(d, _HASH_TYPE_TAG, "physical traffic")
+            require_schema_version(d, PHYSICAL_TRAFFIC_SCHEMA_VERSION,
+                                   "physical traffic")
+            for key in ("message_artifact_id", "resolved_fabric_hash",
+                        "packet_format_hash", "traffic",
+                        "physical_traffic_id"):
+                if key not in d:
+                    raise InvalidInput(
+                        f"persisted physical traffic is missing {key!r}")
+            if d["message_artifact_id"] != \
+                    logical.message_artifact_id():
+                raise InvalidInput(
+                    "physical traffic message_artifact_id does not match "
+                    "the verified logical parent")
+            if d["resolved_fabric_hash"] != \
+                    bundle.resolved_fabric.resolved_fabric_hash():
+                raise InvalidInput(
+                    "physical traffic resolved_fabric_hash does not match "
+                    "the verified bundle")
+            if d["packet_format_hash"] != \
+                    bundle.packet_format.packet_format_hash():
+                raise InvalidInput(
+                    "physical traffic packet_format_hash does not match "
+                    "the verified bundle")
+        elif "type" in d and d["type"] != _HASH_TYPE_TAG:
+            raise InvalidInput(
+                f"physical traffic type tag {d['type']!r} is not "
+                f"{_HASH_TYPE_TAG!r}")
+        art = cls(logical=logical, bundle=bundle,
+                  schema_version=d.get("schema_version",
+                                       PHYSICAL_TRAFFIC_SCHEMA_VERSION))
+        if strict:
+            require_embedded_id(d, "physical_traffic_id",
+                                art.physical_traffic_id(),
+                                "physical traffic")
+            recomputed = art.identity_dict()
+            if d.get("traffic") != recomputed["traffic"]:
+                raise EvidenceInvalid(
+                    "persisted physical traffic rows do not equal the "
+                    "recomputed canonical packets: content forged")
+        elif d.get("physical_traffic_id") not in (
+                None, art.physical_traffic_id()):
+            raise InvalidInput(
+                "physical_traffic_id does not match content")
+        return art
 
 
 __all__ = [

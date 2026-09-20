@@ -1,4 +1,4 @@
-"""veritx_dse.waved.errors — Wave-D typed refusals (§61/§62).
+"""veritx_dse.waved.errors — Wave-D typed refusals (§31).
 
 Semantic refusals are typed, never ``False``/``None``/silent. Each error
 carries a machine-readable ``code`` from a closed vocabulary so callers can
@@ -47,7 +47,7 @@ class MappingInvalid(WaveDError):
 
 class ConservationFailed(WaveDError):
     """A per-class conservation law (§24) did not hold. Hard failure,
-    never a warning (§41)."""
+    never a warning (§24)."""
 
     code = "CONSERVATION_FAILED"
 

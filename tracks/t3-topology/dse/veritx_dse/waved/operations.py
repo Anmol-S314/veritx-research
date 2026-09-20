@@ -17,14 +17,20 @@ nodes (step index in the node), never graph cycles.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Any
 
 from .errors import (
     InvalidInput, MappingInvalid, UnsupportedSchedule, UnsupportedSemantics,
 )
 from .identity import content_hash
+from .immutable import FrozenMap, ImmutableError, freeze, thaw
 from .parallelism import ParallelismArtifact
 from .semantics import WaveDWorkloadSemantics
+from .strict import (
+    require_embedded_id, require_fields, require_schema_version,
+    require_type_tag,
+)
 
 OPERATION_GRAPH_SCHEMA_VERSION = 1
 _HASH_TYPE_TAG = "srota/WavedOperationGraph"
@@ -207,14 +213,18 @@ class OperationNode:
                  InvalidInput("step must be a non-negative int"))
         _require(isinstance(self.deps, tuple), InvalidInput(
             "deps must be a tuple of operation ids"))
-        _require(isinstance(self.detail, dict), InvalidInput(
-            "detail must be a canonical dict"))
+        if not isinstance(self.detail, (dict, FrozenMap)):
+            raise InvalidInput("detail must be a canonical dict")
+        try:
+            object.__setattr__(self, "detail", freeze(self.detail))
+        except ImmutableError as exc:
+            raise InvalidInput(f"detail is not canonical: {exc}") from None
 
     def canonical(self) -> dict[str, Any]:
         return {
             "operation_id": self.operation_id, "kind": self.kind,
             "phase": self.phase, "owner": self.owner, "step": self.step,
-            "deps": list(self.deps), "detail": self.detail,
+            "deps": list(self.deps), "detail": thaw(self.detail),
         }
 
 
@@ -251,7 +261,10 @@ class OperationGraph:
                     f"operation {n.operation_id!r} owner rank {n.owner} "
                     f"outside rank space [0, {R})")
             by_id[n.operation_id] = n
-        object.__setattr__(self, "_by_id", by_id)
+        # Read-only index over a dict no one else holds a reference to:
+        # the node objects themselves are frozen, so the graph content
+        # cannot be mutated after construction.
+        object.__setattr__(self, "_by_id", MappingProxyType(by_id))
 
         # Dependency laws (§17)
         for n in self.nodes:
@@ -329,6 +342,126 @@ class OperationGraph:
 
     def node(self, operation_id: str) -> OperationNode:
         return self._by_id[operation_id]
+
+    # ── strict parsing (persisted-resource contract) ──────────────────
+    @classmethod
+    def from_dict(cls, d: Any, *, parallelism: ParallelismArtifact,
+                  semantics: WaveDWorkloadSemantics,
+                  strict: bool = False) -> "OperationGraph":
+        """Rebuild a graph; parents are supplied, never trusted from JSON.
+
+        In strict mode the embedded parent IDs are REQUIRED and must
+        equal the verified parents, and the embedded
+        ``operation_graph_id`` must equal the recomputed one.
+        """
+        require_fields(d, {
+            "type", "schema_version", "workload_id", "parallelism_id",
+            "wave_d_semantics_id", "nodes", "collectives",
+            "p2p_transfers", "multicasts", "operation_graph_id",
+        }, "operation graph")
+        if strict:
+            require_type_tag(d, _HASH_TYPE_TAG, "operation graph")
+            require_schema_version(d, OPERATION_GRAPH_SCHEMA_VERSION,
+                                   "operation graph")
+            for key in ("workload_id", "parallelism_id",
+                        "wave_d_semantics_id", "nodes", "collectives",
+                        "p2p_transfers", "multicasts",
+                        "operation_graph_id"):
+                if key not in d:
+                    raise InvalidInput(
+                        f"persisted operation graph is missing {key!r}")
+            if d["parallelism_id"] != parallelism.parallelism_id():
+                raise InvalidInput(
+                    "operation graph parallelism_id does not match the "
+                    "verified parallelism parent")
+            if d["wave_d_semantics_id"] != semantics.semantics_id():
+                raise InvalidInput(
+                    "operation graph wave_d_semantics_id does not match "
+                    "the verified semantics parent")
+        elif "type" in d and d["type"] != _HASH_TYPE_TAG:
+            raise InvalidInput(
+                f"operation graph type tag {d['type']!r} is not "
+                f"{_HASH_TYPE_TAG!r}")
+
+        nodes = tuple(_node_from_dict(n) for n in d["nodes"])
+        collectives = tuple(_collective_from_dict(c)
+                            for c in d["collectives"])
+        p2p = tuple(_p2p_from_dict(t) for t in d["p2p_transfers"])
+        multicasts = tuple(_multicast_from_dict(m)
+                           for m in d["multicasts"])
+        graph = cls(parallelism=parallelism, semantics=semantics,
+                    workload_id=d["workload_id"], nodes=nodes,
+                    collectives=collectives, p2p_transfers=p2p,
+                    multicasts=multicasts,
+                    schema_version=d.get("schema_version",
+                                         OPERATION_GRAPH_SCHEMA_VERSION))
+        if strict:
+            require_embedded_id(d, "operation_graph_id",
+                                graph.operation_graph_id(),
+                                "operation graph")
+        elif d.get("operation_graph_id") not in (
+                None, graph.operation_graph_id()):
+            raise InvalidInput(
+                "operation_graph_id does not match content")
+        return graph
+
+
+def _node_from_dict(d: Any) -> OperationNode:
+    require_fields(d, {"operation_id", "kind", "phase", "owner", "step",
+                       "deps", "detail"}, "operation node")
+    for key in ("operation_id", "kind", "phase", "owner", "step",
+                "deps"):
+        if key not in d:
+            raise InvalidInput(f"operation node is missing {key!r}")
+    deps = d["deps"]
+    if not isinstance(deps, list):
+        raise InvalidInput("operation node deps must be a list")
+    return OperationNode(operation_id=d["operation_id"], kind=d["kind"],
+                         phase=d["phase"], owner=d["owner"],
+                         step=d["step"], deps=tuple(deps),
+                         detail=d.get("detail") or {})
+
+
+def _collective_from_dict(d: Any) -> CollectiveIntent:
+    require_fields(d, {"kind", "participants", "payload_bytes",
+                       "collective_id"}, "collective intent")
+    for key in ("kind", "participants", "payload_bytes",
+                "collective_id"):
+        if key not in d:
+            raise InvalidInput(f"collective intent is missing {key!r}")
+    if not isinstance(d["participants"], list):
+        raise InvalidInput("collective participants must be a list")
+    return CollectiveIntent(kind=d["kind"],
+                            participants=tuple(d["participants"]),
+                            payload_bytes=d["payload_bytes"],
+                            collective_id=d["collective_id"])
+
+
+def _p2p_from_dict(d: Any) -> P2PTransfer:
+    require_fields(d, {"src_rank", "dst_rank", "payload_bytes",
+                       "transfer_id"}, "P2P transfer")
+    for key in ("src_rank", "dst_rank", "payload_bytes", "transfer_id"):
+        if key not in d:
+            raise InvalidInput(f"P2P transfer is missing {key!r}")
+    return P2PTransfer(src_rank=d["src_rank"], dst_rank=d["dst_rank"],
+                       payload_bytes=d["payload_bytes"],
+                       transfer_id=d["transfer_id"])
+
+
+def _multicast_from_dict(d: Any) -> MulticastIntent:
+    require_fields(d, {"source_rank", "destinations", "payload_bytes",
+                       "replication", "multicast_id"}, "multicast intent")
+    for key in ("source_rank", "destinations", "payload_bytes",
+                "replication", "multicast_id"):
+        if key not in d:
+            raise InvalidInput(f"multicast intent is missing {key!r}")
+    if not isinstance(d["destinations"], list):
+        raise InvalidInput("multicast destinations must be a list")
+    return MulticastIntent(source_rank=d["source_rank"],
+                           destinations=tuple(d["destinations"]),
+                           payload_bytes=d["payload_bytes"],
+                           replication=d["replication"],
+                           multicast_id=d["multicast_id"])
 
 
 __all__ = [

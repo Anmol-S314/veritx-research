@@ -20,13 +20,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .errors import ConservationFailed, InvalidInput, UnsupportedSchedule
+from .errors import (
+    ConservationFailed, EvidenceInvalid, InvalidInput, UnsupportedSchedule,
+)
 from .identity import content_hash
 from .operations import (
     CollectiveIntent, MulticastIntent, OperationGraph, P2PTransfer,
     REPLICATION_SOURCE, SCHEDULES,
 )
 from .oracles import ref_collective
+from .strict import (
+    require_embedded_id, require_fields, require_schema_version,
+    require_type_tag,
+)
 
 LOGICAL_MESSAGE_SCHEMA_VERSION = 1
 _HASH_TYPE_TAG = "srota/WavedLogicalMessages"
@@ -334,6 +340,66 @@ class LogicalMessageArtifact:
     def to_dict(self) -> dict[str, Any]:
         return {**self.identity_dict(),
                 "message_artifact_id": self.message_artifact_id()}
+
+    # ── strict parsing (persisted-resource contract) ──────────────────
+    @classmethod
+    def from_dict(cls, d: Any, *, graph: OperationGraph,
+                  strict: bool = False) -> "LogicalMessageArtifact":
+        """Rebuild the lowering from a VERIFIED graph parent.
+
+        In strict mode the embedded ``operation_graph_id`` and
+        ``message_artifact_id`` are required and must match, and every
+        stored schedule/message row must equal the recomputed canonical
+        content (a tampered row cannot survive verification).
+        """
+        require_fields(d, {
+            "type", "schema_version", "operation_graph_id", "schedules",
+            "replication_schedule", "traffic_class", "messages",
+            "message_artifact_id",
+        }, "logical messages")
+        if strict:
+            require_type_tag(d, _HASH_TYPE_TAG, "logical messages")
+            require_schema_version(d, LOGICAL_MESSAGE_SCHEMA_VERSION,
+                                   "logical messages")
+            for key in ("operation_graph_id", "schedules",
+                        "replication_schedule", "traffic_class",
+                        "messages", "message_artifact_id"):
+                if key not in d:
+                    raise InvalidInput(
+                        f"persisted logical messages is missing {key!r}")
+            if d["operation_graph_id"] != graph.operation_graph_id():
+                raise InvalidInput(
+                    "logical messages operation_graph_id does not match "
+                    "the verified graph parent")
+            if d["replication_schedule"] != REPLICATION_SOURCE:
+                raise InvalidInput(
+                    "logical messages replication_schedule is not the "
+                    "pinned SOURCE_REPLICATION schedule")
+        elif "type" in d and d["type"] != _HASH_TYPE_TAG:
+            raise InvalidInput(
+                f"logical messages type tag {d['type']!r} is not "
+                f"{_HASH_TYPE_TAG!r}")
+        art = cls(graph=graph,
+                  traffic_class=d.get("traffic_class",
+                                      DEFAULT_TRAFFIC_CLASS),
+                  schema_version=d.get("schema_version",
+                                       LOGICAL_MESSAGE_SCHEMA_VERSION))
+        if strict:
+            require_embedded_id(d, "message_artifact_id",
+                                art.message_artifact_id(),
+                                "logical messages")
+            recomputed = art.identity_dict()
+            for key in ("schedules", "messages"):
+                if d.get(key) != recomputed[key]:
+                    raise EvidenceInvalid(
+                        f"persisted logical messages {key} do not equal "
+                        "the recomputed canonical content: content "
+                        "forged")
+        elif d.get("message_artifact_id") not in (
+                None, art.message_artifact_id()):
+            raise InvalidInput(
+                "message_artifact_id does not match content")
+        return art
 
 
 __all__ = [
