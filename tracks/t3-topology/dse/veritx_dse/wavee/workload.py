@@ -342,11 +342,52 @@ class WaveETemporalWorkload:
                         f"event {e.event_id!r} depends on itself")
             if e.resource is not None:
                 try:
-                    model.resource(e.resource)
+                    rdef = model.resource(e.resource)
                 except Exception as exc:
                     raise WorkloadError(
                         f"event {e.event_id!r} references unknown resource "
                         f"{e.resource!r}: {exc}") from exc
+                if e.kind in MEMORY_KINDS:
+                    # The declared memory authority must MATCH what the
+                    # scheduler will actually do, or the model would carry
+                    # false provenance: a declared duration silently
+                    # overridden by the shared rate law (or vice versa).
+                    noop = (e.bytes_count == 0
+                            and e.duration == QTime.zero())
+                    if not noop:
+                        if model.memory_source == "ANALYTICAL_BANDWIDTH":
+                            if rdef.kind != "BANDWIDTH":
+                                raise WorkloadError(
+                                    f"memory event {e.event_id!r} is bound "
+                                    f"to {rdef.kind} resource "
+                                    f"{e.resource!r} but the model declares "
+                                    f"memory_source=ANALYTICAL_BANDWIDTH; "
+                                    f"the rate law needs a BANDWIDTH "
+                                    f"resource")
+                            if not e.bytes_count:
+                                raise WorkloadError(
+                                    f"memory event {e.event_id!r} declares "
+                                    f"ANALYTICAL_BANDWIDTH timing with no "
+                                    f"bytes to derive it from")
+                            if e.duration != QTime.zero():
+                                raise WorkloadError(
+                                    f"memory event {e.event_id!r} declares "
+                                    f"duration {e.duration} but the model "
+                                    f"derives its time from the shared "
+                                    f"rate law; the declared duration must "
+                                    f"be 0 (two authorities cannot own one "
+                                    f"duration)")
+                        else:  # EXPLICIT_DURATION
+                            if rdef.kind == "BANDWIDTH" and e.bytes_count:
+                                raise WorkloadError(
+                                    f"memory event {e.event_id!r} declares "
+                                    f"EXPLICIT_DURATION but is bound to "
+                                    f"BANDWIDTH resource {e.resource!r} "
+                                    f"with {e.bytes_count} bytes: the "
+                                    f"fluid scheduler would override the "
+                                    f"declared duration. Declare "
+                                    f"memory_source=ANALYTICAL_BANDWIDTH "
+                                    f"or use an EXCLUSIVE resource")
             if e.request_id is not None and e.request_id not in req_ids:
                 raise WorkloadError(
                     f"event {e.event_id!r} references unknown request "

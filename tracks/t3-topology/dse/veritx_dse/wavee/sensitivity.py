@@ -59,6 +59,10 @@ def perturb_model(base: WaveEPerformanceModel, *, bandwidth_factor:
     return WaveEPerformanceModel(
         clocks=base.clocks, resources=tuple(resources),
         compute_source=base.compute_source,
+        # A perturbation must change EXACTLY ONE variable: dropping the
+        # memory authority would silently reset it to the constructor
+        # default, making the counterfactual a two-variable experiment.
+        memory_source=base.memory_source,
         network_timing_model=base.network_timing_model,
         network_clock=base.network_clock,
         # §20: a perturbation must not silently reset a DECLARED

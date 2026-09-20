@@ -151,17 +151,9 @@ def wave_e_result_block(*, workload: WaveETemporalWorkload,
 
 
 def wave_e_metrics_warning(model: Any) -> str:
-    """The ONE fidelity classification for a Wave-E result (§64).
-
-    A pure function of the verified performance model, so the verifier
-    re-derives it instead of trusting persisted text: a forged
-    "VALIDATED against H100" claim cannot survive a load.
-    """
-    return (f"compute={model.compute_source} "
-            f"memory={model.memory_source} "
-            f"network={model.network_timing_model} "
-            f"all=UNCALIBRATED "
-            f"(declared/explicit models; no hardware dataset in repo)")
+    """Fidelity classification (delegates to the model layer)."""
+    from veritx_dse.wavee.model import fidelity_warning
+    return fidelity_warning(model)
 
 
 def verify_wave_e_result_block(

@@ -138,9 +138,19 @@ The two sources are SEPARATE identity-bearing fields, because a single
   none exists → `UNCALIBRATED`.
 - `memory_source`: `EXPLICIT_DURATION` (the event's declared duration) or
   `ANALYTICAL_BANDWIDTH` (`T = bytes / bandwidth` for a bandwidth
-  resource). **There is no latency term**: the repository declares no base
-  memory latency, and folding a silent zero into the law would be a hidden
-  timing assumption. Memory latency is UNSUPPORTED in v1.
+  resource). **The declared source must match what the scheduler does**, or
+  the model would carry false provenance — the exact failure the compute
+  split fixed:
+  - `ANALYTICAL_BANDWIDTH` requires a memory event on a BANDWIDTH resource
+    with bytes > 0 and a declared duration of 0 (two authorities cannot own
+    one duration);
+  - `EXPLICIT_DURATION` refuses a memory event on a BANDWIDTH resource that
+    carries bytes, because the fluid scheduler would override the declared
+    duration; explicit memory timing uses an EXCLUSIVE resource;
+  - a zero-byte, zero-duration memory event is a no-op under either source.
+  **There is no latency term**: the repository declares no base memory
+  latency, and folding a silent zero into the law would be a hidden timing
+  assumption. Memory latency is UNSUPPORTED in v1.
 - Memory bytes are explicit; capacity is an exact constraint only where
   residency is explicitly declared (DEFERRED).
 

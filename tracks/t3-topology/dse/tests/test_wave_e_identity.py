@@ -49,6 +49,7 @@ def make_model(**kw) -> WaveEPerformanceModel:
                                capacity=kw.get("capacity", 1)),
                    ResourceDef("hbm", "BANDWIDTH",
                                bandwidth_bytes_per_s=kw.get("bw", 1200))),
+        memory_source=kw.get("memory_source", "ANALYTICAL_BANDWIDTH"),
         network_clock="net")
 
 
@@ -297,7 +298,7 @@ class TestWorkloadAttacks:
                                        capacity=1),
                            ResourceDef("nvm", "BANDWIDTH",
                                        bandwidth_bytes_per_s=1200)),
-                network_clock="net"),
+                memory_source="ANALYTICAL_BANDWIDTH", network_clock="net"),
             events=(WaveETemporalEvent("M", "MEMORY_READ", QTime(0), "nvm",
                                        bytes_count=100),))
         assert m_hbm.temporal_workload_id() != m_other.temporal_workload_id()
@@ -380,25 +381,61 @@ class TestClosureFindings:
                 compute_source="ANALYTICAL_MODEL", network_clock="net")
 
     def test_memory_source_controls_memory_durations(self):
+        """The declared memory authority must match what the scheduler does."""
         from veritx_dse.wavee.scheduler import schedule_workload
-        ev = (WaveETemporalEvent("M", "MEMORY_READ", QTime(0), "hbm",
-                                 bytes_count=1200),)
-        explicit = WaveETemporalWorkload(
-            performance_model=make_model(bw=1200), events=ev)
+        # ANALYTICAL_BANDWIDTH: duration comes from the shared rate law
         analytical = WaveETemporalWorkload(
-            performance_model=WaveEPerformanceModel(
-                clocks=(ClockDef("net", 10 ** 9),),
-                resources=(ResourceDef("hbm", "BANDWIDTH",
-                                       bandwidth_bytes_per_s=1200),),
-                memory_source="ANALYTICAL_BANDWIDTH", network_clock="net"),
-            events=ev)
-        # both derive from bytes/BW for a bandwidth resource, but the
-        # DECLARED source is what the fidelity warning reports
-        assert explicit.performance_model.memory_source == \
-            "EXPLICIT_DURATION"
+            performance_model=make_model(bw=1200),
+            events=(WaveETemporalEvent("M", "MEMORY_READ", QTime(0), "hbm",
+                                       bytes_count=1200),))
         assert analytical.performance_model.memory_source == \
             "ANALYTICAL_BANDWIDTH"
         assert schedule_workload(analytical).end("M") == QTime(1)
+
+        # EXPLICIT_DURATION: the declared duration IS the authority, so a
+        # bandwidth resource with bytes must refuse (the fluid scheduler
+        # would silently override it)
+        explicit = WaveEPerformanceModel(
+            clocks=(ClockDef("net", 10 ** 9),),
+            resources=(ResourceDef("hbm", "BANDWIDTH",
+                                   bandwidth_bytes_per_s=1200),),
+            memory_source="EXPLICIT_DURATION", network_clock="net")
+        with pytest.raises(WorkloadError, match="EXPLICIT_DURATION"):
+            WaveETemporalWorkload(
+                performance_model=explicit,
+                events=(WaveETemporalEvent("M", "MEMORY_READ",
+                                           QTime(100, 1000), "hbm",
+                                           bytes_count=1200),))
+
+        # ... and a memory event with no bytes cannot claim a rate law
+        with pytest.raises(WorkloadError, match="no bytes"):
+            WaveETemporalWorkload(
+                performance_model=make_model(bw=1200),
+                events=(WaveETemporalEvent("M", "MEMORY_READ",
+                                           QTime(1, 1000), "hbm",
+                                           bytes_count=0),))
+
+        # ... and the declared duration must be zero under the rate law
+        with pytest.raises(WorkloadError, match="must be 0"):
+            WaveETemporalWorkload(
+                performance_model=make_model(bw=1200),
+                events=(WaveETemporalEvent("M", "MEMORY_READ",
+                                           QTime(1, 1000), "hbm",
+                                           bytes_count=1200),))
+
+    def test_explicit_duration_memory_uses_an_exclusive_resource(self):
+        """EXPLICIT_DURATION memory timing works on an exclusive resource."""
+        from veritx_dse.wavee.scheduler import schedule_workload
+        m = WaveEPerformanceModel(
+            clocks=(ClockDef("net", 10 ** 9),),
+            resources=(ResourceDef("dma", "EXCLUSIVE", capacity=1),),
+            memory_source="EXPLICIT_DURATION", network_clock="net")
+        w = WaveETemporalWorkload(
+            performance_model=m,
+            events=(WaveETemporalEvent("M", "MEMORY_COPY", QTime(100, 1000),
+                                       "dma", bytes_count=1200),))
+        s = schedule_workload(w)
+        assert s.end("M").q - s.start("M").q == Fraction(1, 10)
 
     # ── F4: no hidden memory latency ────────────────────────────────
     def test_rate_law_has_no_latency_term(self):
@@ -452,7 +489,7 @@ class TestClosureFindings:
         )
         from veritx_dse.wavee.scheduler import schedule_workload
         w = WaveETemporalWorkload(
-            performance_model=make_model(),
+            performance_model=make_model(memory_source="ANALYTICAL_BANDWIDTH"),
             events=(WaveETemporalEvent("M1", "MEMORY_READ", QTime(0), "hbm",
                                        bytes_count=1200),
                     WaveETemporalEvent("D", "COMPUTE", QTime(500, US),
@@ -479,6 +516,68 @@ class TestClosureFindings:
         doc["schedule"]["events"][0]["forged_field"] = 1
         with pytest.raises(ResultError, match="unknown fields"):
             reverify_result(doc, workload=w)
+
+    # ── F9: the library result verifier re-derives EVERY exposed field ─
+    def _doc(self):
+        w, _g, doc = TestResultTamperMatrix().build()
+        return w, doc
+
+    @pytest.mark.parametrize("field,forged", [
+        ("request_latencies", [{"request_id": "r1",
+                                "latency": {"numerator": 1,
+                                            "denominator": 10 ** 9}}]),
+        ("latency_summary", {"sample_count": 1, "mean": {"numerator": 1,
+                                                         "denominator": 1}}),
+        ("metrics_warning", "VALIDATED against NVIDIA H100"),
+        ("sensitivity", {"baseline_makespan": {"numerator": 1,
+                                               "denominator": 1}}),
+        ("temporal_workload_id", "sha256:" + "0" * 64),
+        ("performance_model_id", "sha256:" + "1" * 64),
+        ("event_graph_id", "sha256:" + "2" * 64),
+    ])
+    def test_exposed_field_forgery_refuses(self, field, forged):
+        """A field the verifier does not re-derive is a forgeable field."""
+        w, doc = self._doc()
+        doc[field] = forged
+        with pytest.raises(ResultError):
+            reverify_result(doc, workload=w)
+
+    def test_network_binding_presence_must_match_the_workload(self):
+        """A claimed window with no window event refuses, and vice versa."""
+        # (a) no window event, but a binding is claimed
+        w, doc = self._doc()
+        ev = FakeEvidence({"completion_time": 100, "delivered": 1})
+        binding, _dur = bind_network_window(
+            evidence=ev, chain=CHAIN, network_clock_hz=10 ** 9,
+            evidence_sha256="deadbeef")
+        doc["network_binding"] = binding.to_dict()
+        with pytest.raises(ResultError, match="no NETWORK_TRAFFIC_WINDOW|"
+                                              "event_graph_id"):
+            reverify_result(doc, workload=w)
+
+        # (b) window event declared, but no binding
+        m = make_model()
+        w2 = WaveETemporalWorkload(
+            performance_model=m,
+            events=(WaveETemporalEvent("W", EVENT_NETWORK_TRAFFIC_WINDOW,
+                                       QTime(0)),))
+        g2 = WaveEEventGraph(workload=w2)
+        s2 = schedule_workload(w2, network_durations={"W": QTime(1, 1000)})
+        doc2 = build_performance_result(graph=g2, schedule=s2)
+        with pytest.raises(ResultError, match="no network binding"):
+            reverify_result(doc2, workload=w2)
+
+    def test_wave_d_chain_transplant_refuses(self):
+        w, doc = self._doc()
+        doc["wave_d_chain"] = {"waved_workload_id": "FORGED"}
+        with pytest.raises(ResultError):
+            reverify_result(doc, workload=w)
+
+    def test_roundtrip_carries_plain_json_chain(self):
+        """The serialized chain is canonical JSON data, not a FrozenMap."""
+        _w, doc = self._doc()
+        assert isinstance(doc["wave_d_chain"], dict)
+        assert not hasattr(doc["wave_d_chain"], "_items")
 
     # ── F8: the dependency critical path is named honestly ──────────
     def test_dependency_critical_path_excludes_resource_edges(self):
@@ -643,7 +742,9 @@ class TestResultTamperMatrix:
         doc2 = build_performance_result(graph=g2, schedule=schedule_workload(w2))
         t = copy.deepcopy(doc)
         t["resource_id"] = doc2["resource_id"]
-        with pytest.raises(ResultError, match="canonical content"):
+        with pytest.raises(ResultError,
+                           match="temporal_workload_id|performance_model_id|"
+                                 "canonical content"):
             reverify_result(t, workload=w)
 
     def test_same_output_different_model_transplant_refuses(self):
@@ -669,7 +770,9 @@ class TestResultTamperMatrix:
         t["performance_model_id"] = doc2["performance_model_id"]
         t["event_graph_id"] = doc2["event_graph_id"]
         t["temporal_workload_id"] = doc2["temporal_workload_id"]
-        with pytest.raises(ResultError, match="canonical content"):
+        with pytest.raises(ResultError,
+                           match="temporal_workload_id|performance_model_id|"
+                                 "canonical content"):
             reverify_result(t, workload=w)
 
     def test_incomplete_schedule_refuses(self):

@@ -331,6 +331,21 @@ class WaveEPerformanceModel:
             arbitration_bandwidth=d["arbitration_bandwidth"])
 
 
+def fidelity_warning(model: "WaveEPerformanceModel") -> str:
+    """The ONE fidelity classification for a Wave-E evaluation (§64).
+
+    A pure function of the verified model, so any consumer (product
+    verifier or library result verifier) re-derives it instead of
+    trusting persisted text. Calibration is UNCALIBRATED: the repository
+    holds no measured dataset, and no synthetic data is manufactured.
+    """
+    return (f"compute={model.compute_source} "
+            f"memory={model.memory_source} "
+            f"network={model.network_timing_model} "
+            f"all=UNCALIBRATED "
+            f"(declared/explicit models; no hardware dataset in repo)")
+
+
 def rate_duration(bytes_count: int, bandwidth_bps: int | Fraction
                   ) -> Fraction:
     """Analytical transfer: T = bytes / bandwidth (§30).

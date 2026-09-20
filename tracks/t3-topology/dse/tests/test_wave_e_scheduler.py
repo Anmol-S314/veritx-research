@@ -42,13 +42,19 @@ US = 10 ** 6  # microsecond as Fraction-of-second denominator
 
 
 def make_model(capacity: int = 2, bandwidth: int = 1200,
-               clock: int | Fraction = 10 ** 9) -> WaveEPerformanceModel:
+               clock: int | Fraction = 10 ** 9,
+               memory_source: str = "ANALYTICAL_BANDWIDTH"
+               ) -> WaveEPerformanceModel:
+    """The test model declares ANALYTICAL_BANDWIDTH: these fixtures rely on
+    the shared rate law, and the workload law refuses to let a declared
+    duration and the rate law both claim authority."""
     return WaveEPerformanceModel(
         clocks=(ClockDef("net", clock),),
         resources=(ResourceDef("gpu.compute", "EXCLUSIVE",
                                capacity=capacity),
                    ResourceDef("hbm", "BANDWIDTH",
                                bandwidth_bytes_per_s=bandwidth)),
+        memory_source=memory_source,
         network_clock="net")
 
 

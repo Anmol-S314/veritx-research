@@ -106,6 +106,17 @@ were reproduced, fixed, and locked with tests.
 | 7 | **The library result verifier dropped `bytes_moved`** when rebuilding a persisted schedule, so re-derived bandwidth utilization was wrong again after the audit fix. | The row roundtrip restores `bytes_moved`; schedule rows have a closed key set and an unknown field refuses. |
 | 8 | **The "critical path" was not the realized one.** Two independent events on a capacity-1 resource produce a 20 ms makespan while the metric reported 10 ms, because resource serialization is not a dependency edge. | Renamed to `dependency_critical_path` (and `_duration`) everywhere, with the limitation stated in the contract and pinned by a test. Building resource-causality edges was deliberately NOT done in v1; sensitivity is the bottleneck tool. |
 
+## 1d. Third adversarial audit: the final three
+
+A third independent audit found three remaining correctness problems. All
+reproduced, fixed, locked.
+
+| # | Finding | Fix |
+|---|---|---|
+| 1 | **`memory_source=EXPLICIT_DURATION` did not mean explicit duration.** For a memory event on a BANDWIDTH resource with bytes, the fluid scheduler overrode the declared duration with `bytes/rate` (declared 100 ms, scheduled 1 s). We had fixed false COMPUTE provenance and left false MEMORY provenance. | The declared memory authority must MATCH what the scheduler does: a memory event on a BANDWIDTH resource with bytes requires `memory_source=ANALYTICAL_BANDWIDTH` (and a declared duration of 0); `EXPLICIT_DURATION` refuses that combination and is honoured verbatim on an EXCLUSIVE resource. `ANALYTICAL_BANDWIDTH` with no bytes, or with a nonzero declared duration, refuses. A zero-byte zero-duration event is a no-op under either source. |
+| 2 | **Bandwidth sensitivity silently changed `memory_source`.** `perturb_model` propagated compute_source, network model, clocks and arbitration but not the memory source, so a `bandwidth_2x` counterfactual also reset the memory authority to the constructor default — a two-variable experiment. | `perturb_model` propagates `memory_source`; a test asserts every other declared source is unchanged and that the model id differs only because bandwidth changed. |
+| 3 | **`reverify_result()` accepted forged reported metrics.** It re-derived makespan, the dependency critical path and utilization, but not `request_latencies`, `latency_summary`, `metrics_warning`, `sensitivity`, `network_binding`, `wave_d_chain` or the parent ids — so a document could carry fabricated customer-visible metrics and still verify. | The verifier now re-derives EVERY exposed field: parent ids must be the workload's, the event graph is reconstructed from the workload + binding + chain and its id compared, binding presence must match the window event, and latencies, summary, fidelity warning and sensitivity are recomputed and compared. `build_performance_result` derives the warning itself (a producer can no longer null it). `wave_d_chain` is thawed to plain JSON at the serialization boundary. |
+
 ## 2. Repository audit (Stage A): what timing authority exists
 
 Searched for compute cycles, kernel durations, FLOPs, HBM bandwidth/latency,
@@ -269,12 +280,12 @@ The variation can be allowed only by declaring it in the contract.
 From the committed tree (`934f122f`, clean):
 
 ```
-Wave-E suites (scheduler/identity/demos/product)   153 passed / 1 skipped
+Wave-E suites (scheduler/identity/demos/product)   165 passed / 1 skipped
 Wave-D seal + semantics + physical + authenticity   (with Wave-C below)
 Wave-C control plane                                467 passed together
 frozen Wave-B focused chain                         747 passed
 BookSim goldens                                       6 passed
-broad DSE suite      26 failed / 3133 passed / 41 skipped
+broad DSE suite      26 failed / 3145 passed / 41 skipped
   failed node IDs vs the pre-Wave-D baseline        IDENTICAL (zero new)
 git diff --check                                    clean
 ```

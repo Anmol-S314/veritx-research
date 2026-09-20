@@ -27,6 +27,7 @@ from veritx_dse.wavee.metrics import (
 from veritx_dse.wavee.metrics import (
     latency_summary, request_latencies, resource_utilization,
 )
+from veritx_dse.wavee.model import fidelity_warning
 from veritx_dse.wavee.network import NetworkWindowBinding
 from veritx_dse.wavee.scheduler import Schedule
 from veritx_dse.wavee.time import QTime
@@ -156,6 +157,10 @@ def build_performance_result(*, graph: WaveEEventGraph,
     input.
     """
     workload = graph.workload
+    # The fidelity classification is DERIVED from the model, never
+    # supplied: a producer cannot leave it null (hiding the claim) or
+    # forge it (the verifier re-derives the same function).
+    metrics_warning = fidelity_warning(workload.performance_model)
     if len(schedule) != len(workload.events):
         raise ResultError(
             f"schedule covers {len(schedule)} of {len(workload.events)} "
@@ -182,7 +187,10 @@ def build_performance_result(*, graph: WaveEEventGraph,
             workload.performance_model.performance_model_id(),
         "temporal_workload_id": workload.temporal_workload_id(),
         "network_binding": network_binding_doc,
-        "wave_d_chain": graph.wave_d_chain,
+        # canonical JSON data, not a frozen container: thaw at the
+        # serialization boundary
+        "wave_d_chain": (thaw(graph.wave_d_chain)
+                         if graph.wave_d_chain is not None else None),
         "schedule": schedule.to_dict(),
         "makespan": makespan.to_dict(),
         # The name says exactly what it is: the longest EXPLICIT
@@ -204,11 +212,15 @@ def build_performance_result(*, graph: WaveEEventGraph,
 def reverify_result(result_doc: dict[str, Any], *,
                     workload: WaveETemporalWorkload,
                     schedule: Schedule | None = None) -> dict[str, Any]:
-    """§74/§133: re-derive summaries and re-check identity on load.
+    """§74/§133: re-derive EVERY exposed field and re-check identity.
 
-    Rebuilds a Schedule from the persisted rows (or accepts a freshly
-    computed one), recomputes makespan / critical path / utilization,
-    and refuses ANY mismatch. Also enforces the closed field set.
+    Rebuilds the Schedule from the persisted rows (or accepts a freshly
+    computed one), reconstructs the event graph from the workload plus
+    the persisted binding/chain, and recomputes makespan, the dependency
+    critical path, utilization, request latencies, the latency summary,
+    the fidelity warning and the sensitivity table. A field the document
+    exposes but the verifier does not re-derive is a field an attacker
+    can forge, so there are none.
     """
     unknown = set(result_doc) - RESULT_FIELDS - {"resource_id"}
     if unknown:
@@ -222,6 +234,42 @@ def reverify_result(result_doc: dict[str, Any], *,
             f"performance result missing fields {sorted(missing)}")
     if result_doc["schema_version"] != RESULT_SCHEMA_VERSION:
         raise ResultError("schema_version mismatch")
+    # ── parent binding: ids must be the workload's, and the event graph
+    #    must reconstruct to the same identity ───────────────────────
+    if result_doc["temporal_workload_id"] != workload.temporal_workload_id():
+        raise ResultError(
+            "temporal_workload_id is not the supplied workload's id")
+    model = workload.performance_model
+    if result_doc["performance_model_id"] != \
+            model.performance_model_id():
+        raise ResultError(
+            "performance_model_id is not the workload's model id")
+    binding_doc = result_doc["network_binding"]
+    binding = None
+    if binding_doc is not None:
+        if not isinstance(binding_doc, dict):
+            raise ResultError("network_binding must be an object or null")
+        binding = NetworkWindowBinding.from_dict(binding_doc)
+    chain_doc = result_doc["wave_d_chain"]
+    if chain_doc is not None and not isinstance(chain_doc, dict):
+        raise ResultError("wave_d_chain must be an object or null")
+    graph = WaveEEventGraph(workload=workload, network_binding=binding,
+                            wave_d_chain=chain_doc)
+    if result_doc["event_graph_id"] != graph.event_graph_id():
+        raise ResultError(
+            "event_graph_id does not reconstruct from the workload, "
+            "network binding and Wave-D chain; refusing transplanted "
+            "graph provenance")
+    window_events = [e.event_id for e in workload.events
+                     if e.kind == EVENT_NETWORK_TRAFFIC_WINDOW]
+    if binding is not None and not window_events:
+        raise ResultError(
+            "network_binding present but the workload declares no "
+            "NETWORK_TRAFFIC_WINDOW event")
+    if binding is None and window_events:
+        raise ResultError(
+            "workload declares a NETWORK_TRAFFIC_WINDOW event but the "
+            "result carries no network binding")
     if schedule is None:
         from veritx_dse.wavee.scheduler import ScheduledEvent
         events = []
@@ -267,6 +315,28 @@ def reverify_result(result_doc: dict[str, Any], *,
     if result_doc["utilization"] != util:
         raise ResultError(
             "persisted utilization disagrees with the schedule (§74)")
+    # ── every remaining exposed field is re-derived too ─────────────
+    rows = request_latencies(workload, schedule)
+    if result_doc["request_latencies"] != rows:
+        raise ResultError(
+            "persisted request_latencies disagree with the schedule (§74)")
+    summary = latency_summary(rows) if rows else None
+    if result_doc["latency_summary"] != summary:
+        raise ResultError(
+            "persisted latency_summary disagrees with the schedule (§74)")
+    if result_doc["metrics_warning"] != fidelity_warning(model):
+        raise ResultError(
+            "persisted metrics_warning is not the model's fidelity "
+            "classification (§64)")
+    expected_sensitivity = None
+    if result_doc["sensitivity"] is not None:
+        from veritx_dse.wavee.sensitivity import sensitivity_analysis
+        expected_sensitivity = sensitivity_analysis(
+            workload, schedule, network_durations=graph.network_durations())
+        if result_doc["sensitivity"] != expected_sensitivity:
+            raise ResultError(
+                "persisted sensitivity does not re-derive from the "
+                "verified workload and schedule (§48)")
     # identity re-derivation: the document must hash to its own id
     rebuild = dict(result_doc)
     rid = rebuild.pop("resource_id")

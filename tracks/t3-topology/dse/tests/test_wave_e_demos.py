@@ -50,6 +50,7 @@ def model(capacity=1, bandwidth=1200):
         resources=(ResourceDef("gpu.compute", "EXCLUSIVE", capacity=capacity),
                    ResourceDef("hbm", "BANDWIDTH",
                                bandwidth_bytes_per_s=bandwidth)),
+        memory_source="ANALYTICAL_BANDWIDTH",
         network_clock="net")
 
 
@@ -247,6 +248,20 @@ class TestSensitivityCorrectness:
         row = out["parameters"]["bandwidth_2x"]
         assert row["perturbed_model_id"] != w.performance_model.performance_model_id()
         assert row["perturbed_workload_id"] != w.temporal_workload_id()
+
+    def test_perturb_model_changes_exactly_one_variable(self):
+        """A counterfactual that also changes the memory authority is not
+        a counterfactual."""
+        from veritx_dse.wavee.sensitivity import perturb_model
+        base = model()
+        assert base.memory_source == "ANALYTICAL_BANDWIDTH"
+        for factor in (Fraction(1, 2), Fraction(2)):
+            p = perturb_model(base, bandwidth_factor=factor)
+            assert p.memory_source == base.memory_source
+            assert p.compute_source == base.compute_source
+            assert p.arbitration_exclusive == base.arbitration_exclusive
+            assert p.arbitration_bandwidth == base.arbitration_bandwidth
+            assert p.performance_model_id() != base.performance_model_id()
 
     def test_perturb_model_preserves_arbitration(self):
         from veritx_dse.wavee.sensitivity import perturb_model
