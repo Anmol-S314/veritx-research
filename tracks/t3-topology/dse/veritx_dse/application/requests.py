@@ -19,6 +19,12 @@ from .presets import (
     resolve_trace_bytes, trace_names,
 )
 
+# Workload provenance vocabulary: a packet trace is NOT a semantic
+# workload. Wave D workloads declare operations explicitly and derive
+# their trace; legacy traces stay explicitly classified as such.
+WORKLOAD_KIND_LEGACY_TRACE = "LEGACY_TRACE"
+WORKLOAD_KIND_WAVE_D = "WAVE_D_SEMANTIC"
+
 INTENT_SCHEMA_VERSION = 1
 INTENT_HASH_TAG = "srota-intent/v1"
 
@@ -51,7 +57,15 @@ def _strict_keys(d: dict[str, Any], allowed: frozenset[str]) -> None:
 class WorkloadRef:
     """Workload reference with resolved content identity.
 
-    ``trace_sha256`` is the content digest of the exact trace bytes.
+    Two mutually exclusive provenance kinds:
+
+    * legacy packet trace (``trace``/``trace_file``): the bytes are the
+      ground truth and ``trace_sha256`` is the content digest; no Wave-D
+      semantics can be reconstructed from a trace, ever;
+    * explicit Wave-D semantic workload (``wave_d``): the declared
+      operations are the ground truth and ``wave_d.workload_id()`` is
+      the content digest. The BookSim trace is DERIVED from it.
+
     The filesystem path (for ``trace_file``) is transport metadata and
     never enters identity; the bytes always do. An intent without a
     resolved digest has no identity (``intent_id`` refuses).
@@ -60,8 +74,16 @@ class WorkloadRef:
     trace: str | None = None
     trace_file: str | None = None
     trace_sha256: str | None = None
+    wave_d: Any = None          # WaveDWorkload | None
+
+    @property
+    def workload_kind(self) -> str:
+        return WORKLOAD_KIND_WAVE_D if self.wave_d is not None \
+            else WORKLOAD_KIND_LEGACY_TRACE
 
     def identity_dict(self) -> dict[str, Any]:
+        if self.wave_d is not None:
+            return {"wave_d": self.wave_d.workload_id()}
         return {"trace": self.trace, "trace_sha256": self.trace_sha256}
 
 
@@ -92,7 +114,8 @@ class Intent:
         }
 
     def intent_id(self) -> str:
-        if self.workload.trace_sha256 is None:
+        if self.workload.trace_sha256 is None \
+                and self.workload.wave_d is None:
             raise ValueError(
                 "intent has no resolved workload digest; resolve the "
                 "trace bytes first (resolve_intent)")
@@ -119,6 +142,16 @@ class Intent:
             workload["trace_file"] = self.workload.trace_file
         if self.workload.trace_sha256 is not None:
             workload["trace_sha256"] = self.workload.trace_sha256
+        if self.workload.wave_d is not None:
+            from veritx_dse.waved.workload import WaveDWorkload
+            w = self.workload.wave_d
+            if not isinstance(w, WaveDWorkload):
+                raise ValueError("workload.wave_d must be a WaveDWorkload")
+            workload["wave_d"] = {
+                "parallelism": w.parallelism.to_dict(),
+                "semantics": w.semantics.to_dict(),
+                "operations": [op.to_dict() for op in w.operations],
+            }
         d["workload"] = workload
         return d
 
@@ -159,29 +192,46 @@ class Intent:
             if not isinstance(workload_raw, dict):
                 raise ValueError("intent.workload must be an object")
             _strict_keys(workload_raw, frozenset(
-                {"trace", "trace_file", "trace_sha256"}))
+                {"trace", "trace_file", "trace_sha256", "wave_d"}))
             trace = workload_raw.get("trace")
             trace_file = workload_raw.get("trace_file")
             digest = workload_raw.get("trace_sha256")
-            if digest is not None and not _is_sha256(digest):
-                raise ValueError(
-                    f"intent.workload.trace_sha256 must be a 64-char "
-                    f"hex digest, got {digest!r}")
-            if (trace is None) == (trace_file is None):
-                raise ValueError(
-                    "intent.workload needs exactly one of "
-                    "'trace' or 'trace_file'")
-            if trace is not None:
-                if trace not in trace_names():
+            wave_d_doc = workload_raw.get("wave_d")
+            if wave_d_doc is not None:
+                if trace is not None or trace_file is not None \
+                        or digest is not None:
                     raise ValueError(
-                        f"unknown trace {trace!r} "
-                        f"(known: {list(trace_names())})")
+                        "intent.workload.wave_d is mutually exclusive "
+                        "with trace/trace_file/trace_sha256: a semantic "
+                        "workload derives its own trace")
+                from veritx_dse.waved.workload import WaveDWorkload
+                try:
+                    wave_d = WaveDWorkload.from_dict(wave_d_doc)
+                except Exception as exc:
+                    raise ValueError(
+                        f"intent.workload.wave_d does not parse: {exc}") \
+                        from exc
             else:
-                if not isinstance(trace_file, str) or not Path(
-                        trace_file).is_absolute():
+                wave_d = None
+                if digest is not None and not _is_sha256(digest):
                     raise ValueError(
-                        "intent.workload.trace_file must be an absolute "
-                        "path string")
+                        f"intent.workload.trace_sha256 must be a 64-char "
+                        f"hex digest, got {digest!r}")
+                if (trace is None) == (trace_file is None):
+                    raise ValueError(
+                        "intent.workload needs exactly one of "
+                        "'trace', 'trace_file' or 'wave_d'")
+                if trace is not None:
+                    if trace not in trace_names():
+                        raise ValueError(
+                            f"unknown trace {trace!r} "
+                            f"(known: {list(trace_names())})")
+                else:
+                    if not isinstance(trace_file, str) or not Path(
+                            trace_file).is_absolute():
+                        raise ValueError(
+                            "intent.workload.trace_file must be an "
+                            "absolute path string")
             backend = _need(d, "backend_target")
             if backend not in KNOWN_BACKEND_TARGETS:
                 raise ValueError(
@@ -207,7 +257,7 @@ class Intent:
                 schema_version=version, name=name, fabric_preset=preset,
                 fabric_overrides=tuple(sorted(raw_overrides.items())),
                 workload=WorkloadRef(trace=trace, trace_file=trace_file,
-                                     trace_sha256=digest),
+                                     trace_sha256=digest, wave_d=wave_d),
                 backend_target=backend, seed=seed,
                 metrics=tuple(raw_metrics), timeout_s=timeout)
         except (ValueError, KeyError) as exc:
@@ -225,18 +275,28 @@ def parse_intent(doc: Any) -> Intent:
     return Intent.from_dict(doc)
 
 
-def resolve_intent(doc: Any) -> tuple[Intent, bytes, dict[str, Any]]:
+def resolve_intent(doc: Any) -> tuple[Intent, bytes | None, dict[str, Any]]:
     """Parse AND resolve workload content in one step.
 
-    Returns (intent with workload digest filled, exact trace bytes,
-    transport source metadata). Every downstream stage must use these
-    bytes — never reread the file. A document digest that disagrees
-    with the resolved bytes refuses (a file changed after intent
-    resolution never executes under a stale identity). Registry traces
-    resolve without I/O; external files are read here, once.
+    Returns (intent with workload identity filled, exact trace bytes or
+    ``None`` for a Wave-D semantic workload, transport source metadata).
+    Every downstream stage must use these bytes — never reread the file.
+    A document digest that disagrees with the resolved bytes refuses (a
+    file changed after intent resolution never executes under a stale
+    identity). Registry traces resolve without I/O; external files are
+    read here, once.
+
+    A Wave-D semantic workload has no trace bytes yet: its trace is
+    DERIVED from the verified Wave-D traffic inside the control plane,
+    after the fabric is compiled. ``None`` here is therefore a kind
+    signal, never an empty workload.
     """
     from veritx_dse.backend.contracts import sha256_bytes
     intent = parse_intent(doc)
+    if intent.workload.wave_d is not None:
+        return intent, None, {"source": "wave_d",
+                              "workload_id":
+                                  intent.workload.wave_d.workload_id()}
     trace_bytes, source = resolve_workload_bytes(intent)
     digest = sha256_bytes(trace_bytes)
     if intent.workload.trace_sha256 is not None and \
@@ -282,8 +342,11 @@ __all__ = [
     "INTENT_HASH_TAG",
     "INTENT_SCHEMA_VERSION",
     "KNOWN_BACKEND_TARGETS",
+    "WORKLOAD_KIND_LEGACY_TRACE",
+    "WORKLOAD_KIND_WAVE_D",
     "Intent",
     "WorkloadRef",
     "parse_intent",
+    "resolve_intent",
     "resolve_workload_bytes",
 ]

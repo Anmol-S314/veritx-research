@@ -61,6 +61,27 @@ def capability_registry() -> dict[str, Any]:
             "capabilities", "validate", "compile", "plan", "evaluate",
             "run_study", "compare", "inspect", "list_results", "diagnose",
         ],
+        "workload_kinds": {
+            "LEGACY_TRACE": {
+                "semantic_provenance": "PACKET_SOURCE",
+                "wave_d_chain": "UNAVAILABLE",
+                "note": "a packet trace cannot be reverse-engineered into "
+                        "collectives/phases; it is never presented as "
+                        "Wave-D semantics",
+            },
+            "WAVE_D_SEMANTIC": {
+                "semantic_provenance": "DECLARED_OPERATIONS",
+                "wave_d_chain": "VERIFIED",
+                "execution": "SUPPORTED",
+                "note": "the BookSim trace is DERIVED from verified "
+                        "physical traffic; conservation, oracle and "
+                        "projection gates run before every spawn",
+            },
+        },
+        "waved_resources": [
+            "wavedworkload", "parallelism", "wavedsemantics", "opgraph",
+            "messages", "traffic",
+        ],
         "deferred": {
             "rtl_verification": "NOT_RUN",
             "uvm_verification": "NOT_RUN",

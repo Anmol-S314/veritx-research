@@ -97,7 +97,132 @@ class SrotaControlPlane:
     def compile(self, intent_doc: Any) -> dict[str, Any]:
         """Intent -> validated CompiledDesign + WorkloadRecord (no spawn)."""
         intent, trace_bytes, trace_source = resolve_intent(intent_doc)
+        return self._compile_any(intent, trace_bytes, trace_source)
+
+    def _compile_any(self, intent: Intent, trace_bytes: bytes | None,
+                     trace_source: dict[str, Any]) -> dict[str, Any]:
+        """Compile by workload kind: Wave-D semantics or legacy trace.
+
+        This is the ONE product dispatch. A Wave-D semantic workload
+        goes through the Wave-D chain (declared operations → verified
+        logical messages → verified physical traffic → derived trace);
+        a legacy packet trace keeps the legacy path and is never
+        labelled as Wave-D provenance.
+        """
+        if intent.workload.wave_d is not None:
+            return self._compile_waved(intent, trace_source)
         return self._compile_resolved(intent, trace_bytes, trace_source)
+
+    def _compile_waved(self, intent: Intent,
+                       trace_source: dict[str, Any]) -> dict[str, Any]:
+        """Compile an explicit Wave-D semantic workload (no spawn).
+
+        Order is deliberate and load-bearing:
+
+            design (Wave-B) → geometry seam → Wave-D chain
+            → conservation + oracle gates → derived trace
+
+        Every Wave-D artifact is persisted BEFORE the resource that
+        depends on it, so a verified loader can always walk the chain.
+        """
+        from veritx_dse.backend.contracts import sha256_bytes
+        from veritx_dse.model.compile_model import CompileRequest
+        from veritx_dse.waved.backend import (
+            render_waved_trace, verify_trace_projection,
+        )
+        from veritx_dse.waved.messages import LogicalMessageArtifact
+        from veritx_dse.waved.traffic import PhysicalTrafficArtifact
+
+        from .waved_resources import (
+            messages_record, operation_graph_record, parallelism_record,
+            traffic_record, waved_chain_ids, waved_semantics_record,
+            waved_workload_record,
+        )
+        workload_decl = intent.workload.wave_d
+        request_dict = self._derive_request(intent)
+        try:
+            compile_request = CompileRequest.from_dict(request_dict)
+        except Exception as exc:
+            raise intent_error(
+                f"preset request is not a valid CompileRequest: {exc}",
+                operation="compile",
+                cause_type=type(exc).__name__) from exc
+        try:
+            bundle = compile_bundle(compile_request)
+        except ControlPlaneError:
+            raise
+        except Exception as exc:  # pragma: no cover - mapped above
+            raise map_semantic_error(exc, operation="compile") from exc
+        self._require_waved_geometry(workload_decl, bundle, intent)
+
+        design = CompiledDesign(
+            intent_id=intent.intent_id(),
+            design_hash=compile_request.design_hash(),
+            mapping_hash=bundle.resolved_fabric.mapping_hash,
+            fabric_hash=bundle.fabric.fabric_hash(),
+            topology_hash=bundle.topology.topology_hash(),
+            attachment_hash=bundle.attachment.attachment_hash(),
+            compile_request=compile_request.to_dict())
+        design_id = design.resource_id()
+        self._store_intent(intent)
+        self.store.put("design", design_id, design.to_dict())
+
+        pa, semantics = workload_decl.parallelism, workload_decl.semantics
+        self.store.put("parallelism", pa.parallelism_id(),
+                       parallelism_record(pa))
+        self.store.put("wavedsemantics", semantics.semantics_id(),
+                       waved_semantics_record(semantics))
+        self.store.put("wavedworkload", workload_decl.workload_id(),
+                       waved_workload_record(workload_decl))
+        graph = workload_decl.to_graph()
+        self.store.put("opgraph", graph.operation_graph_id(),
+                       operation_graph_record(graph))
+        logical = LogicalMessageArtifact(graph=graph)
+        logical.validate_against_oracle()
+        self.store.put("messages", logical.message_artifact_id(),
+                       messages_record(logical))
+        traffic = PhysicalTrafficArtifact(logical=logical, bundle=bundle)
+        traffic.validate_conservation()
+        traffic.cross_check_against_oracle()
+        summary = verify_trace_projection(traffic)
+        self.store.put("traffic", traffic.physical_traffic_id(),
+                       traffic_record(traffic, design_id=design_id))
+
+        trace = render_waved_trace(traffic)
+        chain = waved_chain_ids(workload_decl, graph, logical, traffic,
+                                bundle)
+        workload = WorkloadRecord(
+            trace_sha256=sha256_bytes(trace), trace_bytes=len(trace),
+            endpoint_count=bundle.attachment.endpoint_count,
+            packets=summary["num_packets"],
+            source={"source": "wave_d",
+                    "waved_workload_id": workload_decl.workload_id()},
+            wave_d=chain)
+        self._store_workload(workload)
+        return {
+            "design": design.to_dict(),
+            "workload": workload.to_dict(),
+            "bundle_hashes": bundle.root_hashes(),
+            "wave_d": chain,
+        }
+
+    @staticmethod
+    def _require_waved_geometry(workload_decl: Any, bundle: Any,
+                                intent: Intent) -> None:
+        """The declared geometry must be the compiled design's geometry."""
+        pa = workload_decl.parallelism
+        shape = (pa.tp, pa.pp, pa.ep, pa.dp)
+        inv = bundle.inventory.parallelism
+        inv_shape = (inv.tp, inv.pp, inv.ep, inv.dp)
+        if shape != inv_shape:
+            raise intent_error(
+                f"wave_d workload declares TP={pa.tp} PP={pa.pp} "
+                f"EP={pa.ep} DP={pa.dp} but fabric preset "
+                f"{intent.fabric_preset!r} compiles a "
+                f"TP={inv_shape[0]} PP={inv_shape[1]} EP={inv_shape[2]} "
+                f"DP={inv_shape[3]} design; equal world size is not "
+                f"semantic equivalence",
+                operation="compile")
 
     def _compile_resolved(self, intent: Intent, trace_bytes: bytes,
                             trace_source: dict[str, Any]) -> dict[str, Any]:
@@ -229,12 +354,27 @@ class SrotaControlPlane:
         """Pure request validation (no compile, no backend, no spawn)."""
         intent, trace_bytes, trace_source = resolve_intent(intent_doc)
         from veritx_dse.backend.contracts import sha256_bytes
+        if trace_bytes is None:
+            wave_d = intent.workload.wave_d
+            return {
+                "valid": True,
+                "intent_id": intent.intent_id(),
+                "fabric_preset": intent.fabric_preset,
+                "backend_target": intent.backend_target,
+                "seed_policy": intent.seed_policy(),
+                "workload_kind": "WAVE_D_SEMANTIC",
+                "waved_workload_id": wave_d.workload_id(),
+                "trace_sha256": None,
+                "trace_source": trace_source,
+                "metrics": list(intent.metrics),
+            }
         return {
             "valid": True,
             "intent_id": intent.intent_id(),
             "fabric_preset": intent.fabric_preset,
             "backend_target": intent.backend_target,
             "seed_policy": intent.seed_policy(),
+            "workload_kind": "LEGACY_TRACE",
             "trace_sha256": sha256_bytes(trace_bytes),
             "trace_source": trace_source,
             "metrics": list(intent.metrics),
@@ -316,22 +456,22 @@ class SrotaControlPlane:
         intent, trace_bytes, trace_source = resolve_intent(intent_doc)
         return self._plan_resolved(intent, trace_bytes, trace_source)
 
-    def _plan_resolved(self, intent: Intent, trace_bytes: bytes,
+    def _plan_resolved(self, intent: Intent, trace_bytes: bytes | None,
                        trace_source: dict[str, Any]) -> dict[str, Any]:
         """Plan core over resolved intent + bytes (no rereads)."""
         from veritx_dse.backend.booksim import (
             BOOKSIM_BACKEND_SEMANTICS_VERSION, BOOKSIM_LOWERER_VERSION,
             BOOKSIM_STANDALONE_PROFILE,
         )
-        compiled = self._compile_resolved(intent, trace_bytes,
-                                          trace_source)
+        compiled = self._compile_any(intent, trace_bytes, trace_source)
         design = compiled["design"]
         workload = compiled["workload"]
+        wave_d = compiled.get("wave_d")
         self._require_executable(intent)
         profile = BOOKSIM_STANDALONE_PROFILE
         semantics = BOOKSIM_BACKEND_SEMANTICS_VERSION
         lowerer = BOOKSIM_LOWERER_VERSION
-        plan_id = _content_id("srota-plan/v1", {
+        body = {
             "design_hash": design["design_hash"],
             "mapping_hash": design["mapping_hash"],
             "fabric_hash": design["fabric_hash"],
@@ -345,7 +485,13 @@ class SrotaControlPlane:
             "seed_policy": intent.seed_policy(),
             "metric_ids": list(intent.metrics),
             "metric_schema_version": METRIC_SCHEMA_VERSION,
-        })
+        }
+        if wave_d is not None:
+            # A legacy trace and a Wave-D semantic workload must never
+            # share an experiment identity merely because rendered
+            # BookSim bytes coincide (§16).
+            body["wave_d"] = dict(wave_d)
+        plan_id = _content_id("srota-plan/v1", body)
         plan = EvaluationPlan(
             plan_id=plan_id, intent_id=intent.intent_id(),
             design_id=design["resource_id"],
@@ -361,10 +507,11 @@ class SrotaControlPlane:
             execution_mode=EXECUTION_MODE_REAL,
             seed=intent.seed, seed_policy=intent.seed_policy(),
             metric_ids=intent.metrics,
-            metric_schema_version=METRIC_SCHEMA_VERSION)
+            metric_schema_version=METRIC_SCHEMA_VERSION,
+            wave_d=wave_d)
         self.store.put("plan", plan_id, plan.to_dict())
         return {"plan": plan.to_dict(), "design": design,
-                "workload": workload}
+                "workload": workload, "wave_d": wave_d}
 
     @staticmethod
     def _require_executable(intent: Intent) -> None:
@@ -380,20 +527,24 @@ class SrotaControlPlane:
     # ── evaluate ──────────────────────────────────────────────────
 
     def evaluate(self, intent_doc: Any) -> dict[str, Any]:
-        """Intent -> EvaluationResult (reuse or fresh qualified run)."""
+        """Intent -> EvaluationResult (reuse or fresh qualified run).
+
+        One product entry point, two workload kinds. A Wave-D semantic
+        workload executes the DERIVED trace from its verified physical
+        traffic; a legacy packet trace executes its own bytes and is
+        classified as LEGACY_TRACE. There is no second science path.
+        """
         from veritx_dse.backend.booksim import (
             PreparedBackend, bind_booksim_inputs,
             lower_booksim_standalone, render_booksim_standalone,
-            run_qualified_booksim,
         )
         from veritx_dse.backend.contracts import sha256_bytes
-        from veritx_dse.backend.evidence import write_evidence
-        from veritx_dse.backend.producer import (
-            resolve_producer_identity, verify_reusable_evidence,
-        )
-        intent, trace_bytes, trace_source = resolve_intent(intent_doc)
+
         from .capabilities import check_execution_budget
+        intent, trace_bytes, trace_source = resolve_intent(intent_doc)
         check_execution_budget(intent.timeout_s)
+        if intent.workload.wave_d is not None:
+            return self._evaluate_waved(intent, trace_source)
         planned = self._plan_resolved(intent, trace_bytes, trace_source)
         plan = planned["plan"]
         bundle = self._rebuild_bundle(plan)
@@ -409,6 +560,75 @@ class SrotaControlPlane:
             raise map_lowering_error(exc, operation="evaluate") from exc
         prepared = PreparedBackend(bundle=bundle, config=config,
                                    rendered=rendered, manifest=manifest)
+        experiment = self._persist_experiment(plan, config, manifest)
+        reused = self._try_reuse(experiment, plan, intent)
+        if reused is not None:
+            return reused
+
+        def execute(attempt_dir: Path, binary: Path) -> tuple[Any, dict]:
+            from veritx_dse.backend.booksim import run_qualified_booksim
+            evidence = run_qualified_booksim(
+                prepared, run_dir=attempt_dir, repo_root=self.repo_root,
+                timeout=intent.timeout_s, binary=binary)
+            return evidence, {}
+
+        return self._execute_attempt(plan, planned, experiment, intent,
+                                     execute=execute)
+
+    def _evaluate_waved(self, intent: Intent,
+                        trace_source: dict[str, Any]) -> dict[str, Any]:
+        """Wave-D semantic workload -> qualified execution of derived trace.
+
+        The backend input is rendered from a VERIFIED
+        ``PhysicalTrafficArtifact`` (re-loaded from the store, not the
+        in-memory compile result) and every conservation/oracle/projection
+        gate runs before the spawn.
+        """
+        from veritx_dse.backend.booksim import run_qualified_booksim
+        from veritx_dse.waved.backend import (
+            assert_waved_ready, prepare_waved_booksim,
+        )
+
+        from .waved_resources import (
+            load_verified_traffic, waved_execution_block,
+        )
+        planned = self._plan_resolved(intent, None, trace_source)
+        plan = planned["plan"]
+        chain = plan["wave_d"]
+        traffic, _ = load_verified_traffic(
+            self.store, chain["physical_traffic_id"])
+        summary = assert_waved_ready(traffic)
+        prepared, _ = prepare_waved_booksim(traffic, seed=intent.seed)
+        experiment = self._persist_experiment(
+            plan, prepared.config, prepared.manifest)
+        reused = self._try_reuse(experiment, plan, intent)
+        if reused is not None:
+            return reused
+
+        def execute(attempt_dir: Path, binary: Path) -> tuple[Any, dict]:
+            evidence = run_qualified_booksim(
+                prepared, run_dir=attempt_dir, repo_root=self.repo_root,
+                timeout=intent.timeout_s, binary=binary)
+            from veritx_dse.waved.backend import (
+                verify_backend_quiescence,
+            )
+            counters = {
+                "delivered_packets": (evidence.stats or {}).get("delivered"),
+                "flits_injected": (evidence.stats or {}).get(
+                    "flits_injected"),
+                "flits_accepted": (evidence.stats or {}).get(
+                    "flits_accepted"),
+                "drain_verdict": (evidence.stats or {}).get(
+                    "drain_verdict"),
+            }
+            verify_backend_quiescence(summary, counters)
+            return evidence, waved_execution_block(chain, summary, counters)
+
+        return self._execute_attempt(plan, planned, experiment, intent,
+                                     execute=execute)
+
+    def _persist_experiment(self, plan: dict[str, Any], config: Any,
+                            manifest: Any) -> ExperimentRecord:
         experiment_id = _content_id("srota-experiment/v1", {
             "plan_id": plan["resource_id"],
             "backend_config_hash": config.backend_config_hash(),
@@ -421,10 +641,21 @@ class SrotaControlPlane:
             backend_input_hash=manifest.backend_input_hash(),
             execution_mode=plan["execution_mode"])
         self.store.put("experiment", experiment_id, experiment.to_dict())
-        # Reuse first: an identical experiment with verifiable evidence.
-        reused = self._try_reuse(experiment, plan, intent)
-        if reused is not None:
-            return reused
+        return experiment
+
+    def _execute_attempt(self, plan: dict[str, Any],
+                         planned: dict[str, Any],
+                         experiment: ExperimentRecord, intent: Intent, *,
+                         execute: Any) -> dict[str, Any]:
+        """One attempt through the sealed Wave-B execution path.
+
+        ``execute(attempt_dir, binary)`` returns ``(evidence, extra)``;
+        ``extra`` carries derived Wave-D counters (empty for legacy).
+        Interrupt and failure persistence are identical for both
+        workload kinds — one implementation, no duplicated lifecycle.
+        """
+        from veritx_dse.backend.evidence import write_evidence
+        from veritx_dse.backend.producer import resolve_producer_identity
         attempt_id = new_run_id()
         attempt_dir = self.store.root / "attempts" / attempt_id
         binary = self._resolve_binary()
@@ -432,15 +663,14 @@ class SrotaControlPlane:
             binary, repo_root=self.repo_root)
         runtime = self._runtime_provenance(self.repo_root)
         try:
-            evidence = run_qualified_booksim(
-                prepared, run_dir=attempt_dir, repo_root=self.repo_root,
-                timeout=intent.timeout_s, binary=binary)
+            evidence, extra = execute(attempt_dir, binary)
         except KeyboardInterrupt:
             # Synchronous cancellation: the attempt is terminally
             # INTERRUPTED (never resumed in place — a retry is a new
             # attempt; no backend checkpoint exists).
             attempt = AttemptRecord(
-                attempt_id=attempt_id, experiment_id=experiment_id,
+                attempt_id=attempt_id,
+                experiment_id=experiment.experiment_id,
                 status="INTERRUPTED", backend_dir=str(attempt_dir),
                 producer=producer.identity_dict(),
                 error={"code": "INTERRUPTED",
@@ -450,15 +680,15 @@ class SrotaControlPlane:
             raise
         except Exception as exc:
             self._persist_failed_attempt(
-                attempt_id, experiment_id, attempt_dir, producer,
-                runtime, exc)
+                attempt_id, experiment.experiment_id, attempt_dir,
+                producer, runtime, exc)
             raise map_execution_error(
                 exc, operation="evaluate",
                 attempt_id=attempt_id) from exc
         ref = write_evidence(attempt_dir, evidence.to_dict())
         result = self._build_result(
             plan, planned, experiment, attempt_id, attempt_dir, evidence,
-            producer, ref, reused=False)
+            producer, ref, reused=False, wave_d_execution=extra or None)
         self._persist_success(experiment, attempt_id, attempt_dir,
                               producer, runtime, ref, result)
         return result.to_dict()
@@ -571,7 +801,9 @@ class SrotaControlPlane:
     def _build_result(self, plan: dict[str, Any], planned: dict[str, Any],
                       experiment: ExperimentRecord, attempt_id: str,
                       attempt_dir: Path, evidence: Any, producer: Any,
-                      ref: Any, *, reused: bool) -> EvaluationResult:
+                      ref: Any, *, reused: bool,
+                      wave_d_execution: dict[str, Any] | None = None
+                      ) -> EvaluationResult:
         from .results import loss_digest_of
         metrics = []
         for metric_id in plan["metric_ids"]:
@@ -628,7 +860,8 @@ class SrotaControlPlane:
             evidence_ref={"path": ref.path, "sha256": ref.sha256},
             producer=producer.identity_dict(),
             seed=evidence.seed, seed_policy=evidence.seed_policy,
-            reused=reused)
+            reused=reused,
+            wave_d=wave_d_execution)
 
     def _persist_success(self, experiment: ExperimentRecord,
                          attempt_id: str, attempt_dir: Path, producer: Any,
@@ -864,7 +1097,8 @@ class SrotaControlPlane:
         """Read-only forensic navigation (never mutates, never executes)."""
         kinds = ("result", "attempt", "experiment", "plan", "design",
                  "workload", "comparison", "intent", "links",
-                 "studydef", "studyrun")
+                 "studydef", "studyrun", "wavedworkload", "parallelism",
+                 "wavedsemantics", "opgraph", "messages", "traffic")
         for kind in kinds:
             if self.store.exists(kind, resource_id):
                 record = self.store.get(kind, resource_id)
@@ -882,6 +1116,11 @@ class SrotaControlPlane:
             load_verified_study, load_verified_studyrun,
             load_verified_workload,
         )
+        from .waved_resources import (
+            load_verified_messages, load_verified_operation_graph,
+            load_verified_parallelism, load_verified_traffic_record,
+            load_verified_waved_semantics, load_verified_waved_workload,
+        )
         related: dict[str, Any] = {}
         evidence_status: dict[str, Any] = {"checked": False}
         integrity: dict[str, Any] = {"checked": False}
@@ -896,6 +1135,27 @@ class SrotaControlPlane:
             "comparison": load_verified_comparison,
             "studydef": load_verified_study,
             "studyrun": load_verified_studyrun,
+            "wavedworkload": load_verified_waved_workload,
+            "parallelism": load_verified_parallelism,
+            "wavedsemantics": load_verified_waved_semantics,
+            "opgraph": load_verified_operation_graph,
+            "messages": load_verified_messages,
+            "traffic": load_verified_traffic_record,
+        }
+        # Wave-D chain links: every child names its verified parents, so
+        # inspect can walk intent → design → workload → parallelism →
+        # semantics → opgraph → messages → traffic → experiment →
+        # attempt → result without a graph database.
+        waved_links = {
+            "wavedworkload": (("parallelism", "parallelism_id"),
+                              ("wavedsemantics",
+                               "wave_d_semantics_id")),
+            "opgraph": (("wavedworkload", "workload_id"),
+                        ("parallelism", "parallelism_id"),
+                        ("wavedsemantics", "wave_d_semantics_id")),
+            "messages": (("opgraph", "operation_graph_id"),),
+            "traffic": (("messages", "message_artifact_id"),
+                        ("design", "design_id")),
         }
         if kind == "result":
             for link_kind, key in (
@@ -948,6 +1208,28 @@ class SrotaControlPlane:
                     if kind == "experiment" and isinstance(target, str) \
                             and self.store.exists(link_kind, target):
                         related[key] = self.store.get(link_kind, target)
+            if kind in waved_links:
+                for link_kind, key in waved_links[kind]:
+                    target = record.get(key)
+                    if isinstance(target, str) and self.store.exists(
+                            link_kind, target):
+                        related[key] = self.store.get(link_kind, target)
+                    else:
+                        related[key] = {"resource_id": target,
+                                        "missing": True}
+            if record.get("wave_d") is not None:
+                # A Wave-D plan/workload/result carries its semantic
+                # chain inline; surface each parent that is persisted.
+                for key, target in sorted(record["wave_d"].items()):
+                    if not key.endswith("_id"):
+                        continue
+                    for link_kind in ("parallelism", "wavedsemantics",
+                                      "opgraph", "messages", "traffic",
+                                      "wavedworkload"):
+                        if self.store.exists(link_kind, target):
+                            related[f"wave_d.{key}"] = self.store.get(
+                                link_kind, target)
+                            break
             if kind == "attempt":
                 target = record.get("experiment_id")
                 if isinstance(target, str) and self.store.exists(
