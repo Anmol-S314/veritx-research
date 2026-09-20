@@ -94,13 +94,50 @@ reuse            a transplanted result link never reuses another
 | `EXTERNAL-CONTRACT-NEEDED` EXT-1..EXT-5 | open, contract §36 |
 | pre-existing DSE test failures (26) | environment-dependent (gitignored `archive/`/`runs/` assets, unbuilt vendored binaries); identical node set to the pre-Wave-D baseline |
 
-## 6. Evidence-grade reuse note
+## 6. Evidence-grade reuse (verified on the sealed tree)
 
 `_try_reuse` additionally requires a clean source tree (sealed Wave-B
-producer policy). In a dirty working tree, reuse declines and a fresh
+producer policy). In a dirty working tree reuse declines and a fresh
 attempt runs; that is unchanged Wave-B behaviour, not a Wave-D defect.
 
-## 7. Reproduce
+Verified on the sealed tree:
+
+```
+same chain, run 1        reused=False  result c16e105042c0106a
+evaluate again           reused=True   result c16e105042c0106a
+changed operation bytes  reused=False  different result id
+```
+
+## 7. Final battery (from the committed tree)
+
+```
+wave-D suites (semantics/physical/authenticity/contract/seal)  226 passed
+Wave-C control plane                                          221 passed
+frozen Wave-B focused chain                                   747 passed
+frozen production BookSim goldens                               6 passed
+broad DSE pytest                   26 failed / 2961 passed / 40 skipped
+  failed node IDs vs pre-Wave-D baseline    IDENTICAL (zero new)
+```
+
+The 26 pre-existing failures are environment-dependent (gitignored
+`dse/archive/` + `dse/runs/` assets and unbuilt vendored binaries);
+their node set is byte-identical to the baseline recorded before Wave D.
+
+## 8. Real BookSim evidence (production path, sealed counters)
+
+All three required scenarios ran through `SrotaControlPlane.evaluate()`
+and verified through `load_verified_result`:
+
+| scenario | op graph | messages | traffic | pkts exp/del | flits exp/inj/acc | route |
+|---|---|---|---|---|---|---|
+| DP ALLREDUCE | `544f8c86…` | `e59df64b…` | `e875f980…` | 120/120 | 864/864/864 | EXACT |
+| PREFILL mixed P2P+collective | `10c9076d…` | `e315cf3d…` | `55999448…` | 26/26 | 187/187/187 | EXACT |
+| BROADCAST | `a6a989e2…` | `1ba02ec8…` | `3497b036…` | 15/15 | 108/108/108 | EXACT |
+
+Backend-injected packet equality is deliberately NOT claimed: that
+counter does not exist in the sealed Wave-B evidence schema.
+
+## 9. Reproduce
 
 ```bash
 cd tracks/t3-topology
