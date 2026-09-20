@@ -63,7 +63,7 @@ from .contracts import (
     ParameterOwner, RenderedInput, RepresentationStatus, SemanticBinding,
     SemanticDimension, sha256_bytes,
 )
-from .producer import resolve_producer_identity
+from .producer import ProducerError, resolve_producer_identity
 
 BOOKSIM_STANDALONE_PROFILE = "CERTIFIED_BOOKSIM_ANYNET_V1"
 SERVING_BOOKSIM2_PROFILE = "CERTIFIED_SERVING_BOOKSIM2_V1"
@@ -1464,6 +1464,24 @@ def run_qualified_booksim(
         def runner(c, cwd, t):
             return supervised_run(c, cwd=cwd, timeout=t,
                                   on_timeout="complete")
+
+    # B-FINAL.1: close the hash-to-exec window. The producer was
+    # identified before materialization for early refusal; rehash the
+    # exact bytes about to spawn and require the identical producer. A
+    # binary replaced in between invalidates the planned execution — it
+    # must be restarted, never silently adopted.
+    try:
+        spawn_bytes = bin_path.read_bytes()
+    except OSError as exc:
+        raise ProducerError(
+            f"execution producer {bin_path} unreadable immediately "
+            f"before spawn: {exc}; refusing") from exc
+    if hashlib.sha256(spawn_bytes).hexdigest() != \
+            producer.binary_sha256 or \
+            len(spawn_bytes) != producer.binary_size:
+        raise ProducerError(
+            "execution producer changed between resolution and spawn; "
+            "refusing — restart the attempt against the new producer")
 
     t0 = time.perf_counter()
     res = runner(list(cmd), str(backend_dir), timeout)

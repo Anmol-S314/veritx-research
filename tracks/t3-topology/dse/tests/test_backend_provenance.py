@@ -30,6 +30,7 @@ from veritx_dse.backend.evidence import (  # noqa: E402
     EVIDENCE_FILE, BackendEvidenceError, evidence_sha256,
     evidence_sha256_of, read_evidence, write_evidence,
 )
+from veritx_dse.backend.producer import ProducerError  # noqa: E402
 from veritx_dse.backend.serving import (  # noqa: E402
     prepare_serving_booksim, serving_backend_evidence,
 )
@@ -88,6 +89,9 @@ class TestStandaloneProvenance:
         assert shifted.seed == 9 and shifted.seed_policy == "explicit"
 
     def test_binary_digest_is_pre_spawn_identity(self, bundle, tmp_path):
+        from test_backend_producer import (  # noqa: PLC0415
+            make_pinned_repo, write_binary,
+        )
         from veritx_dse.backend.producer import (  # noqa: PLC0415
             resolve_producer_identity, verify_evidence_binding,
         )
@@ -98,16 +102,32 @@ class TestStandaloneProvenance:
         assert ev.backend_input_hash \
             == prepare_booksim_standalone(
                 bundle, workload_trace=TRACE).manifest.backend_input_hash()
-        # ...but the old evidence cannot be reused for the new producer.
-        other = tmp_path / "other-bin"
-        other.write_bytes(b"different-producer-bytes")
+        # ...but evidence only reuses for the identical pinned producer.
+        git = make_pinned_repo(tmp_path, name="reuse-repo")
+        binary = write_binary(
+            git, content=Path("/bin/true").read_bytes())
+        prepared = prepare_booksim_standalone(bundle,
+                                              workload_trace=TRACE)
+        pinned_ev = run_certified_booksim(
+            prepared, run_dir=tmp_path / "pinned", repo_root=git,
+            runner=make_capturing_runner(bundle, prepared.config),
+            binary=binary)
+        pinned = resolve_producer_identity(binary, repo_root=git)
+        assert pinned.source_pinned
+        verify_evidence_binding(
+            pinned_ev.to_dict(),
+            backend_config_hash=pinned_ev.backend_config_hash,
+            backend_input_hash=pinned_ev.backend_input_hash,
+            producer=pinned)
         other_producer = resolve_producer_identity(
-            other, repo_root=tmp_path)
-        with pytest.raises(Exception, match="different binary"):
+            write_binary(git, name="other",
+                         content=b"different-producer-bytes"),
+            repo_root=git)
+        with pytest.raises(ProducerError, match="different binary"):
             verify_evidence_binding(
-                ev.to_dict(),
-                backend_config_hash=ev.backend_config_hash,
-                backend_input_hash=ev.backend_input_hash,
+                pinned_ev.to_dict(),
+                backend_config_hash=pinned_ev.backend_config_hash,
+                backend_input_hash=pinned_ev.backend_input_hash,
                 producer=other_producer)
 
 
@@ -115,10 +135,10 @@ class TestEvidencePersistence:
     def test_write_read_roundtrip(self, bundle, tmp_path):
         _, ev = _run(tmp_path / "run", bundle)
         ref = write_evidence(tmp_path / "run", ev.to_dict())
-        assert Path(ref["path"]).name == EVIDENCE_FILE
-        assert ref["sha256"] == evidence_sha256(Path(ref["path"]))
-        assert read_evidence(ref["path"]) == ev.to_dict()
-        assert evidence_sha256_of(ev.to_dict()) == ref["sha256"]
+        assert Path(ref.path).name == EVIDENCE_FILE
+        assert ref.sha256 == evidence_sha256(Path(ref.path))
+        assert read_evidence(ref.path) == ev.to_dict()
+        assert evidence_sha256_of(ev.to_dict()) == ref.sha256
 
     def test_identical_evidence_is_idempotent(self, bundle, tmp_path):
         _, ev = _run(tmp_path / "run", bundle)
@@ -137,9 +157,9 @@ class TestEvidencePersistence:
     def test_tamper_changes_the_digest(self, bundle, tmp_path):
         _, ev = _run(tmp_path / "run", bundle)
         ref = write_evidence(tmp_path / "run", ev.to_dict())
-        path = Path(ref["path"])
+        path = Path(ref.path)
         path.write_text(path.read_text().replace('"seed":1', '"seed":2'))
-        assert evidence_sha256(path) != ref["sha256"]
+        assert evidence_sha256(path) != ref.sha256
 
 
 class TestServingProvenance:
@@ -164,4 +184,4 @@ class TestServingProvenance:
             bundle, out_dir=tmp_path / "serve", physical_dims=(2, 2))
         ref = write_evidence(tmp_path / "serve",
                              serving_backend_evidence(prepared))
-        assert read_evidence(ref["path"])["flit_bytes"] == 8
+        assert read_evidence(ref.path)["flit_bytes"] == 8

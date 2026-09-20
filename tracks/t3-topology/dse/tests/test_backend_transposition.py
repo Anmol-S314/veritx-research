@@ -200,10 +200,10 @@ class TestEvidenceTransposition:
         payload = {"backend_config_hash":
                    prepared.config.backend_config_hash()}
         ref = write_evidence(tmp_path, payload)
-        path = Path(ref["path"])
+        path = Path(ref.path)
         assert evidence_sha256(path) == evidence_sha256_of(payload)
         prefix = prepared.config.backend_config_hash()[:6]
         path.write_text(path.read_text().replace(prefix, "f" * 6))
-        assert evidence_sha256(path) != ref["sha256"]
+        assert evidence_sha256(path) != ref.sha256
         assert read_evidence(path)["backend_config_hash"] \
             != prepared.config.backend_config_hash()

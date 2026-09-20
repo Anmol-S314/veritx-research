@@ -11,7 +11,7 @@ producer while preserving a false claim. This module binds the producer:
 
     exact binary bytes (sha256, pre-spawn, fail closed)
     source revision (git HEAD at the repo root, when available)
-    dirty-source state and content (porcelain digest of the tracked tree)
+    dirty-source state and content (tracked diff digest of the worktree)
     tool/environment identity (host platform + harness)
 
 plus the safe-reuse rule: an evidence file is valid for reuse only when
@@ -22,7 +22,10 @@ cannot be reused — it can only be re-executed.
 What this does NOT claim: the recorded source revision is provenance, not
 a rebuild proof. Nothing here proves the binary was built from that tree;
 only the binary digest binds what actually executed. A dirty tree is
-recorded honestly (revision + dirt digest), never laundered into clean.
+recorded honestly (revision + diff digest), never laundered into clean.
+Scope is tracked sources only: untracked files are excluded by policy
+(they are outputs and scratch, not sources), documented wherever the
+digest is produced.
 """
 from __future__ import annotations
 
@@ -119,6 +122,19 @@ def _git_text(repo_root: Path, *args: str) -> str | None:
     return proc.stdout
 
 
+def _git_bytes(repo_root: Path, *args: str) -> bytes | None:
+    """Run git and return raw stdout bytes (for possibly-binary output)."""
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(repo_root), *args],
+            capture_output=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    return proc.stdout
+
+
 def resolve_producer_identity(binary: Path, *,
                               repo_root: Path) -> ProducerIdentity:
     """Identify the exact producer bytes before they are spawned.
@@ -127,9 +143,12 @@ def resolve_producer_identity(binary: Path, *,
     claim an execution whose producer digest is unknown. Source revision
     and dirt are recorded when the repo root is a git checkout and left
     explicitly ``None`` otherwise (unpinned provenance, never invented).
-    Tracked-tree state only (``--untracked-files=no``): outputs and
-    scratch files are not sources. The binary digest remains the primary
-    binding either way.
+    The dirty digest is a content digest: the deterministic bytes of
+    ``git diff --no-ext-diff --no-textconv --binary HEAD --`` (staged and
+    unstaged tracked changes, including deletions and mode changes), so
+    different edits to the same files produce different digests; a clean
+    tree hashes the empty diff. Untracked files are excluded by policy.
+    The binary digest remains the primary binding either way.
     """
     try:
         data = Path(binary).read_bytes()
@@ -146,12 +165,11 @@ def resolve_producer_identity(binary: Path, *,
     dirty: bool | None = None
     dirty_digest: str | None = None
     if revision is not None:
-        porcelain = _git_text(repo_root, "status", "--porcelain",
-                              "--untracked-files=no")
-        if porcelain is not None:
-            dirty = bool(porcelain.strip())
-            dirty_digest = hashlib.sha256(
-                porcelain.encode()).hexdigest()
+        diff = _git_bytes(repo_root, "diff", "--no-ext-diff",
+                          "--no-textconv", "--binary", "HEAD", "--")
+        if diff is not None:
+            dirty = bool(diff.strip())
+            dirty_digest = hashlib.sha256(diff).hexdigest()
     return ProducerIdentity(
         binary_sha256=hashlib.sha256(data).hexdigest(),
         binary_size=len(data),
@@ -163,16 +181,28 @@ def resolve_producer_identity(binary: Path, *,
 
 
 def assert_pinned_producer(producer: ProducerIdentity) -> None:
-    """Refuse evidence-grade reuse from an unpinned or dirty producer."""
-    if producer.source_revision is None:
-        raise ProducerError(
-            "producer source is unpinned (no git revision); refusing "
-            "evidence-grade reuse — re-execute under a pinned checkout")
-    if producer.source_dirty:
+    """Refuse evidence-grade reuse from an unpinned or dirty producer.
+
+    Uses the exact ``source_pinned`` invariant: a known revision AND a
+    successfully observed clean tree. ``None`` dirt state is never read
+    as clean.
+    """
+    if not producer.source_pinned:
+        if producer.source_revision is None:
+            raise ProducerError(
+                "producer source revision unavailable (no git revision); "
+                "refusing evidence-grade reuse — re-execute under a "
+                "pinned checkout")
+        if producer.source_dirty is None:
+            raise ProducerError(
+                f"producer dirty-state observation failed at "
+                f"{producer.source_revision}; refusing evidence-grade "
+                f"reuse — dirt state is unknown, never assumed clean")
         raise ProducerError(
             f"producer source tree is dirty at "
             f"{producer.source_revision}; refusing evidence-grade reuse — "
-            f"commit or stash first (dirt {producer.source_dirty_digest})")
+            f"commit or stash first (dirt "
+            f"{producer.source_dirty_digest})")
 
 
 def verify_evidence_binding(
@@ -182,10 +212,14 @@ def verify_evidence_binding(
         producer: ProducerIdentity) -> None:
     """Refuse reuse of an evidence file for a different attempt.
 
-    An evidence file is valid for reuse only when it describes this exact
-    config, this exact input set, and this exact producer binary. Anything
-    else — including evidence that predates producer binding — is refused.
+    The binding primitive for safe reuse: pinning is enforced first, then
+    the recorded config, input and producer identities must match. An
+    evidence file is valid for reuse only when it describes this exact
+    config, this exact input set, and this exact pinned producer binary.
+    Anything else — including evidence that predates producer binding —
+    is refused.
     """
+    assert_pinned_producer(producer)
     if not isinstance(evidence, Mapping):
         raise ProducerError(
             f"evidence must be a mapping, got {type(evidence).__name__}")
@@ -232,10 +266,33 @@ def verify_evidence_binding(
             f"{differing}")
 
 
+def verify_reusable_evidence(
+        ref: Any, *,
+        backend_config_hash: str,
+        backend_input_hash: str,
+        producer: ProducerIdentity) -> dict[str, Any]:
+    """The one authoritative evidence-reuse operation.
+
+    Proves, in order: the producer is pinned; the persisted bytes match
+    the external content identity (``EvidenceRef.sha256``); the bytes
+    parse as evidence; the recorded config, input and producer identities
+    match this attempt. Returns the verified evidence mapping. Anything
+    else refuses — callers must not assemble these checks by hand.
+    """
+    from .evidence import read_verified_evidence
+    assert_pinned_producer(producer)
+    evidence = read_verified_evidence(ref)
+    verify_evidence_binding(
+        evidence, backend_config_hash=backend_config_hash,
+        backend_input_hash=backend_input_hash, producer=producer)
+    return evidence
+
+
 __all__ = [
     "ProducerError",
     "ProducerIdentity",
     "assert_pinned_producer",
     "resolve_producer_identity",
     "verify_evidence_binding",
+    "verify_reusable_evidence",
 ]
