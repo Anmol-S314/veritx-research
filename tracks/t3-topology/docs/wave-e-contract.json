@@ -1,6 +1,6 @@
 {
   "contract": "srota/wave-e",
-  "schema_version": 5,
+  "schema_version": 6,
   "base": {
     "wave_d_branch": "wave-d/distributed-semantics",
     "wave_d_sealed_sha": "d3f3bd63b952b54fb5cac688532caf83ca66c512"
@@ -237,6 +237,8 @@
       "performance_model_id",
       "network_binding presence vs window event"
     ],
-    "rule": "no exposed field is trusted as copied text"
+    "rule": "no exposed field is trusted as copied text",
+    "schedule_derivation": "the deterministic scheduler is RE-RUN from the verified workload + model + network binding and the persisted schedule must equal the expected schedule exactly; summaries are derived from the expected schedule; no caller-supplied schedule parameter exists",
+    "schedule_envelope": "{\"events\": [...]} only"
   }
 }

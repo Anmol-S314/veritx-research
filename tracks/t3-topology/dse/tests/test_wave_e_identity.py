@@ -730,8 +730,10 @@ class TestResultTamperMatrix:
         w, _g, doc = self.build()
         t = copy.deepcopy(doc)
         t["schedule"]["events"][0]["end"] = {"numerator": 1, "denominator": 9}
-        # the re-derived makespan check fires first (schedule is the parent)
-        with pytest.raises(ResultError, match="disagrees with the schedule"):
+        # the schedule-vs-verified-parents check fires first: a schedule is
+        # the parent of every summary, so it is checked before them
+        with pytest.raises(ResultError,
+                           match="does not derive from the verified"):
             reverify_result(t, workload=w)
 
     def test_resource_id_transplant_refuses(self):
@@ -819,3 +821,153 @@ class TestTimeUnits:
         with pytest.raises(TimeError):
             from veritx_dse.wavee.time import duration_between
             duration_between(QTime(2), QTime(1))
+
+
+class TestScheduleDerivationBinding:
+    """The schedule must be DERIVED from the verified parents.
+
+    Proving "summaries follow a schedule" is not proving "the schedule
+    follows the verified workload + model + network binding". Each attack
+    below forges a schedule, then recomputes every summary AND the
+    content id so the document is fully self-consistent, and requires the
+    verifier to refuse because the schedule is not the deterministic one.
+    """
+
+    @staticmethod
+    def _resign(doc, workload, rows):
+        """Rewrite the schedule and re-derive every summary + the id."""
+        from veritx_dse.wavee.metrics import (
+            dependency_critical_path, latency_summary, request_latencies,
+            resource_utilization,
+        )
+        from veritx_dse.wavee.result import _RESULT_TAG, _content_id
+        from veritx_dse.wavee.scheduler import Schedule, ScheduledEvent
+        forged = copy.deepcopy(doc)
+        forged["schedule"]["events"] = rows
+        schedule = Schedule(tuple(
+            ScheduledEvent(r["event_id"], QTime.from_dict(r["start"]),
+                           QTime.from_dict(r["end"]), r.get("resource"),
+                           bandwidth_allocated_bps=(
+                               Fraction(r["bandwidth_allocated_bps"]["num"],
+                                        r["bandwidth_allocated_bps"]["den"])
+                               if r.get("bandwidth_allocated_bps") else None),
+                           bytes_moved=int(r.get("bytes_moved", 0)))
+            for r in rows))
+        path, plen = dependency_critical_path(workload, schedule)
+        forged["makespan"] = schedule.makespan().to_dict()
+        forged["dependency_critical_path"] = list(path)
+        forged["dependency_critical_path_duration"] = plen.to_dict()
+        forged["utilization"] = resource_utilization(workload, schedule)
+        rrows = request_latencies(workload, schedule)
+        forged["request_latencies"] = rrows
+        forged["latency_summary"] = latency_summary(rrows) if rrows else None
+        forged["resource_id"] = _content_id(_RESULT_TAG, {
+            "event_graph_id": forged["event_graph_id"],
+            "performance_model_id": forged["performance_model_id"],
+            "schedule": forged["schedule"],
+            "makespan": forged["makespan"],
+            "dependency_critical_path": forged["dependency_critical_path"],
+        })
+        return forged
+
+    def test_resigned_chain_schedule_refuses(self):
+        """A FEASIBLE but non-deterministic schedule refuses.
+
+        Shifting the whole chain 1 ms later keeps every dependency and
+        every capacity law satisfied and yields a different (still
+        self-consistent) makespan -- but it is not what the scheduler
+        derives from the verified parents.
+        """
+        w, _g, doc = TestResultTamperMatrix().build()
+        rows = copy.deepcopy(doc["schedule"]["events"])
+        shift = Fraction(1, 1000)
+        for r in rows:
+            for key in ("start", "end"):
+                q = Fraction(r[key]["numerator"], r[key]["denominator"])
+                q = q + shift
+                r[key] = {"numerator": q.numerator,
+                          "denominator": q.denominator}
+        forged = self._resign(doc, w, rows)
+        assert forged["resource_id"] != doc["resource_id"]  # truly re-signed
+        assert forged["schedule"] != doc["schedule"]
+        # the makespan is UNCHANGED (both ends shifted together): equal
+        # summaries are not equal schedules, which is exactly why the
+        # schedule itself must be compared
+        assert forged["makespan"] == doc["makespan"]
+        with pytest.raises(ResultError, match="does not derive from the "
+                                              "verified"):
+            reverify_result(forged, workload=w)
+
+    def test_resigned_resource_contention_refuses(self):
+        """A feasible but REORDERED contention schedule refuses.
+
+        Two independent events on capacity 1 must serialize A then B
+        (FIFO by ready time, then id). Running B first is perfectly
+        feasible -- no capacity violation, same makespan -- but it is not
+        the deterministic schedule, so it must refuse.
+        """
+        m = make_model(capacity=1)
+        w = WaveETemporalWorkload(
+            performance_model=m,
+            events=(WaveETemporalEvent("A", "COMPUTE", QTime(10, 1000),
+                                       "gpu.compute"),
+                    WaveETemporalEvent("B", "COMPUTE", QTime(10, 1000),
+                                       "gpu.compute")))
+        g = WaveEEventGraph(workload=w)
+        doc = build_performance_result(graph=g, schedule=schedule_workload(w))
+        assert [r["event_id"] for r in doc["schedule"]["events"]] == ["A", "B"]
+        rows = copy.deepcopy(doc["schedule"]["events"])
+        a, b = rows
+        a["start"] = {"numerator": 1, "denominator": 100}   # A: 10..20ms
+        a["end"] = {"numerator": 1, "denominator": 50}
+        b["start"] = {"numerator": 0, "denominator": 1}     # B: 0..10ms
+        b["end"] = {"numerator": 1, "denominator": 100}
+        forged = self._resign(doc, w, rows)
+        # feasible: no capacity violation, same makespan
+        assert Fraction(forged["makespan"]["numerator"],
+                        forged["makespan"]["denominator"]) == Fraction(1, 50)
+        with pytest.raises(ResultError, match="does not derive from the "
+                                              "verified"):
+            reverify_result(forged, workload=w)
+
+    def test_resigned_network_window_refuses(self):
+        """The authenticated window duration owns the NET interval."""
+        m = make_model()
+        w = WaveETemporalWorkload(
+            performance_model=m,
+            events=(WaveETemporalEvent("W", EVENT_NETWORK_TRAFFIC_WINDOW,
+                                       QTime(0)),
+                    WaveETemporalEvent("T", "COMPUTE", QTime(1, 1000),
+                                       "gpu.compute", deps=("W",))))
+        ev = FakeEvidence({"completion_time": 100, "delivered": 1})
+        binding, _dur = bind_network_window(
+            evidence=ev, chain=CHAIN, network_clock_hz=10 ** 9,
+            evidence_sha256="deadbeef")
+        g = WaveEEventGraph(workload=w, network_binding=binding,
+                            wave_d_chain=CHAIN)
+        doc = build_performance_result(
+            graph=g,
+            schedule=schedule_workload(w,
+                                       network_durations=g.network_durations()))
+        rows = copy.deepcopy(doc["schedule"]["events"])
+        # forge the window interval: half the authenticated duration
+        for r in rows:
+            if r["event_id"] == "W":
+                r["end"] = {"numerator": 1, "denominator": 2 * 10 ** 8}
+        forged = self._resign(doc, w, rows)
+        with pytest.raises(ResultError, match="does not derive from the "
+                                              "verified"):
+            reverify_result(forged, workload=w)
+
+    def test_schedule_envelope_is_closed(self):
+        w, _g, doc = TestResultTamperMatrix().build()
+        doc["schedule"]["extra"] = []
+        with pytest.raises(ResultError, match="exactly the 'events'"):
+            reverify_result(doc, workload=w)
+
+    def test_caller_supplied_schedule_seam_is_gone(self):
+        """One schedule for summaries, another for identity: refused by
+        construction (the parameter no longer exists)."""
+        import inspect
+        params = inspect.signature(reverify_result).parameters
+        assert "schedule" not in params

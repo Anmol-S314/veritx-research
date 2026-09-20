@@ -29,7 +29,9 @@ from veritx_dse.wavee.metrics import (
 )
 from veritx_dse.wavee.model import fidelity_warning
 from veritx_dse.wavee.network import NetworkWindowBinding
-from veritx_dse.wavee.scheduler import Schedule
+from veritx_dse.wavee.scheduler import (
+    Schedule, ScheduledEvent, schedule_workload,
+)
 from veritx_dse.wavee.time import QTime
 # The immutability layer is shared with Wave D: one implementation of
 # "frozen canonical value tree", not a second copy (AGENTS.md rule).
@@ -210,17 +212,18 @@ def build_performance_result(*, graph: WaveEEventGraph,
 
 
 def reverify_result(result_doc: dict[str, Any], *,
-                    workload: WaveETemporalWorkload,
-                    schedule: Schedule | None = None) -> dict[str, Any]:
+                    workload: WaveETemporalWorkload) -> dict[str, Any]:
     """§74/§133: re-derive EVERY exposed field and re-check identity.
 
-    Rebuilds the Schedule from the persisted rows (or accepts a freshly
-    computed one), reconstructs the event graph from the workload plus
-    the persisted binding/chain, and recomputes makespan, the dependency
-    critical path, utilization, request latencies, the latency summary,
-    the fidelity warning and the sensitivity table. A field the document
-    exposes but the verifier does not re-derive is a field an attacker
-    can forge, so there are none.
+    The verified workload + model + network binding are the authority:
+    the deterministic scheduler is RE-RUN from them, the persisted
+    schedule must equal that expected schedule exactly, and only then are
+    the summaries re-derived (from the expected schedule). Proving that
+    summaries follow *a* schedule is not the same as proving the schedule
+    follows the verified parents — a self-consistent re-signed schedule
+    must not verify. There is deliberately no caller-supplied schedule
+    seam: one schedule for summaries and another for identity is exactly
+    the confusion this closes.
     """
     unknown = set(result_doc) - RESULT_FIELDS - {"resource_id"}
     if unknown:
@@ -234,6 +237,12 @@ def reverify_result(result_doc: dict[str, Any], *,
             f"performance result missing fields {sorted(missing)}")
     if result_doc["schema_version"] != RESULT_SCHEMA_VERSION:
         raise ResultError("schema_version mismatch")
+    # ── the schedule envelope is closed ────────────────────────────
+    schedule_doc = result_doc["schedule"]
+    if not isinstance(schedule_doc, dict) or \
+            set(schedule_doc) != {"events"}:
+        raise ResultError(
+            "schedule must be an object with exactly the 'events' field")
     # ── parent binding: ids must be the workload's, and the event graph
     #    must reconstruct to the same identity ───────────────────────
     if result_doc["temporal_workload_id"] != workload.temporal_workload_id():
@@ -270,31 +279,41 @@ def reverify_result(result_doc: dict[str, Any], *,
         raise ResultError(
             "workload declares a NETWORK_TRAFFIC_WINDOW event but the "
             "result carries no network binding")
-    if schedule is None:
-        from veritx_dse.wavee.scheduler import ScheduledEvent
-        events = []
-        for row in result_doc["schedule"]["events"]:
-            if not isinstance(row, dict) or \
-                    not {"event_id", "start", "end"} <= set(row):
-                raise ResultError(f"malformed schedule row {row!r}")
-            unknown = sorted(set(row) - SCHEDULE_ROW_FIELDS)
-            if unknown:
-                raise ResultError(
-                    f"schedule row {row.get('event_id')!r} has unknown "
-                    f"fields {unknown}; the schedule schema is closed")
-            bw = row.get("bandwidth_allocated_bps")
-            events.append(ScheduledEvent(
-                row["event_id"],
-                QTime.from_dict(row["start"]),
-                QTime.from_dict(row["end"]),
-                row.get("resource"),
-                bandwidth_allocated_bps=(Fraction(bw["num"], bw["den"])
-                                         if bw else None),
-                # bytes_moved is identity-bearing for bandwidth
-                # utilization; dropping it on load made the re-derived
-                # utilization wrong.
-                bytes_moved=int(row.get("bytes_moved", 0))))
-        schedule = Schedule(tuple(events))
+    from veritx_dse.wavee.scheduler import (
+    Schedule, ScheduledEvent, schedule_workload,
+)
+    events = []
+    for row in schedule_doc["events"]:
+        if not isinstance(row, dict) or \
+                not {"event_id", "start", "end"} <= set(row):
+            raise ResultError(f"malformed schedule row {row!r}")
+        unknown = sorted(set(row) - SCHEDULE_ROW_FIELDS)
+        if unknown:
+            raise ResultError(
+                f"schedule row {row.get('event_id')!r} has unknown "
+                f"fields {unknown}; the schedule schema is closed")
+        bw = row.get("bandwidth_allocated_bps")
+        events.append(ScheduledEvent(
+            row["event_id"],
+            QTime.from_dict(row["start"]),
+            QTime.from_dict(row["end"]),
+            row.get("resource"),
+            bandwidth_allocated_bps=(Fraction(bw["num"], bw["den"])
+                                     if bw else None),
+            # bytes_moved is identity-bearing for bandwidth utilization;
+            # dropping it on load made the re-derived utilization wrong.
+            bytes_moved=int(row.get("bytes_moved", 0))))
+    persisted_schedule = Schedule(tuple(events))
+    # ── the schedule must be what the deterministic scheduler derives
+    #    from the VERIFIED parents, not merely self-consistent ───────
+    expected_schedule = schedule_workload(
+        workload, network_durations=graph.network_durations())
+    if persisted_schedule.to_dict() != expected_schedule.to_dict():
+        raise ResultError(
+            "persisted schedule does not derive from the verified "
+            "workload/model/network parents; refusing a schedule that is "
+            "internally consistent but not the deterministic one")
+    schedule = expected_schedule
     # re-derive every summary from the schedule (§74)
     path, path_len = compute_critical_path(workload, schedule)
     makespan = schedule.makespan()

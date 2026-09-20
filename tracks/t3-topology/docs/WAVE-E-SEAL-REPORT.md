@@ -117,6 +117,39 @@ reproduced, fixed, locked.
 | 2 | **Bandwidth sensitivity silently changed `memory_source`.** `perturb_model` propagated compute_source, network model, clocks and arbitration but not the memory source, so a `bandwidth_2x` counterfactual also reset the memory authority to the constructor default — a two-variable experiment. | `perturb_model` propagates `memory_source`; a test asserts every other declared source is unchanged and that the model id differs only because bandwidth changed. |
 | 3 | **`reverify_result()` accepted forged reported metrics.** It re-derived makespan, the dependency critical path and utilization, but not `request_latencies`, `latency_summary`, `metrics_warning`, `sensitivity`, `network_binding`, `wave_d_chain` or the parent ids — so a document could carry fabricated customer-visible metrics and still verify. | The verifier now re-derives EVERY exposed field: parent ids must be the workload's, the event graph is reconstructed from the workload + binding + chain and its id compared, binding presence must match the window event, and latencies, summary, fidelity warning and sensitivity are recomputed and compared. `build_performance_result` derives the warning itself (a producer can no longer null it). `wave_d_chain` is thawed to plain JSON at the serialization boundary. |
 
+## 1e. Fourth adversarial audit: the schedule-derivation edge
+
+One final relationship, found by a fourth audit of `d8653682`.
+
+`reverify_result()` re-derived every summary from the persisted
+schedule, which proved *summaries follow a schedule* — but never *the
+schedule follows the verified workload + model + network binding*. A
+self-consistent re-signed schedule therefore verified: shifting a chain
+1 ms later (same makespan, different intervals) or running two
+capacity-1 events in the other order (same makespan, feasible, not FIFO)
+both passed, because every summary agreed with the forged schedule and
+the content id was recomputed.
+
+The verifier now RE-RUNS the deterministic scheduler from the verified
+parents and requires the persisted schedule to equal it exactly, then
+derives every summary from that expected schedule. The caller-supplied
+`schedule=` seam is deleted (no caller used it): one schedule for
+summaries and another for identity is exactly the confusion this closes.
+The schedule envelope is closed to `{"events": [...]}`.
+
+Three attacks lock it, each forging a schedule and re-deriving every
+summary plus the content id so the document is fully self-consistent:
+
+```
+chain shifted 1ms            same makespan, different intervals   REFUSED
+capacity-1 events reordered  feasible, same makespan, not FIFO     REFUSED
+network window halved        disagrees with the authenticated
+                             binding duration                     REFUSED
+```
+
+The product control-plane verifier already re-ran the scheduler; this
+brings the library object to the same standard.
+
 ## 2. Repository audit (Stage A): what timing authority exists
 
 Searched for compute cycles, kernel durations, FLOPs, HBM bandwidth/latency,
@@ -280,12 +313,12 @@ The variation can be allowed only by declaring it in the contract.
 From the committed tree (`934f122f`, clean):
 
 ```
-Wave-E suites (scheduler/identity/demos/product)   165 passed / 1 skipped
+Wave-E suites (scheduler/identity/demos/product)   170 passed / 1 skipped
 Wave-D seal + semantics + physical + authenticity   (with Wave-C below)
 Wave-C control plane                                467 passed together
 frozen Wave-B focused chain                         747 passed
 BookSim goldens                                       6 passed
-broad DSE suite      26 failed / 3145 passed / 41 skipped
+broad DSE suite      26 failed / 3150 passed / 41 skipped
   failed node IDs vs the pre-Wave-D baseline        IDENTICAL (zero new)
 git diff --check                                    clean
 ```
