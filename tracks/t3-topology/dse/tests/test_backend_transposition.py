@@ -24,7 +24,8 @@ from test_backend_booksim import (  # noqa: E402
 from test_backend_bundle import make_bundle  # noqa: E402
 from test_fabric_artifact import _with_hbm, build_chain  # noqa: E402
 
-from veritx_dse.backend.booksim import (  # noqa: E402
+from veritx_dse.backend.booksim import (
+    _run_qualified_booksim_with_runner_for_test,  # noqa: E402
     BackendMaterializationError, BookSimLoweringError, ROUTE_DUMP_FILE,
     compare_route_realization, materialize_backend,
     run_certified_booksim,
@@ -60,7 +61,7 @@ class TestArtifactTransposition:
         transposed = replace(prepared, config=serving)
         with pytest.raises(BackendMaterializationError,
                            match="manifest does not bind"):
-            run_certified_booksim(
+            _run_qualified_booksim_with_runner_for_test(
                 transposed, run_dir=tmp_path, repo_root=tmp_path,
                 runner=_never_called, binary=Path("/bin/true"))
 
@@ -71,7 +72,7 @@ class TestArtifactTransposition:
         transposed = replace(a, manifest=b.manifest)
         with pytest.raises((BackendMaterializationError, BookSimLoweringError),
                            match="manifest|canonical binding"):
-            run_certified_booksim(
+            _run_qualified_booksim_with_runner_for_test(
                 transposed, run_dir=tmp_path, repo_root=tmp_path,
                 runner=_never_called, binary=Path("/bin/true"))
 

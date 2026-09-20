@@ -22,7 +22,8 @@ from test_backend_booksim import (  # noqa: E402
 from test_backend_bundle import make_bundle  # noqa: E402
 from test_fabric_artifact import build_chain  # noqa: E402
 
-from veritx_dse.backend.booksim import (  # noqa: E402
+from veritx_dse.backend.booksim import (
+    _run_qualified_booksim_with_runner_for_test,  # noqa: E402
     prepare_booksim_standalone, run_certified_booksim,
 )
 from veritx_dse.backend.contracts import sha256_bytes  # noqa: E402
@@ -48,7 +49,7 @@ def bundle(chain):
 
 def _run(tmp_path, bundle):
     prepared = prepare_booksim_standalone(bundle, workload_trace=TRACE)
-    return prepared, run_certified_booksim(
+    return prepared, _run_qualified_booksim_with_runner_for_test(
         prepared, run_dir=tmp_path, repo_root=tmp_path,
         runner=make_capturing_runner(bundle, prepared.config),
         binary=Path("/bin/true"))
@@ -79,7 +80,7 @@ class TestStandaloneProvenance:
         _, delta_seed_ev = _run(tmp_path / "s1", bundle)
         prepared = prepare_booksim_standalone(bundle, workload_trace=TRACE,
                                               seed=9)
-        shifted = run_certified_booksim(
+        shifted = _run_qualified_booksim_with_runner_for_test(
             prepared, run_dir=tmp_path / "s2", repo_root=tmp_path,
             runner=make_capturing_runner(bundle, prepared.config),
             binary=Path("/bin/true"))
@@ -90,10 +91,10 @@ class TestStandaloneProvenance:
 
     def test_binary_digest_is_pre_spawn_identity(self, bundle, tmp_path):
         from test_backend_producer import (  # noqa: PLC0415
-            make_pinned_repo, write_binary,
+            make_repo_with_real_binary, write_binary,
         )
         from veritx_dse.backend.producer import (  # noqa: PLC0415
-            resolve_producer_identity, verify_evidence_binding,
+            resolve_producer_identity, verify_reusable_evidence,
         )
         _, ev = _run(tmp_path, bundle)
         assert ev.booksim_binary_sha256 == sha256_bytes(
@@ -103,30 +104,27 @@ class TestStandaloneProvenance:
             == prepare_booksim_standalone(
                 bundle, workload_trace=TRACE).manifest.backend_input_hash()
         # ...but evidence only reuses for the identical pinned producer.
-        git = make_pinned_repo(tmp_path, name="reuse-repo")
-        binary = write_binary(
-            git, content=Path("/bin/true").read_bytes())
+        git, binary = make_repo_with_real_binary(tmp_path, "reuse-repo")
         prepared = prepare_booksim_standalone(bundle,
                                               workload_trace=TRACE)
         pinned_ev = run_certified_booksim(
             prepared, run_dir=tmp_path / "pinned", repo_root=git,
-            runner=make_capturing_runner(bundle, prepared.config),
-            binary=binary)
+            timeout=120, binary=binary)
+        assert pinned_ev.execution_transport == "SUPERVISED_PROCESS"
         pinned = resolve_producer_identity(binary, repo_root=git)
         assert pinned.source_pinned
-        verify_evidence_binding(
-            pinned_ev.to_dict(),
-            backend_config_hash=pinned_ev.backend_config_hash,
+        ref = write_evidence(tmp_path / "pinned", pinned_ev.to_dict())
+        assert verify_reusable_evidence(
+            ref, backend_config_hash=pinned_ev.backend_config_hash,
             backend_input_hash=pinned_ev.backend_input_hash,
-            producer=pinned)
+            producer=pinned) == pinned_ev.to_dict()
         other_producer = resolve_producer_identity(
             write_binary(git, name="other",
                          content=b"different-producer-bytes"),
             repo_root=git)
         with pytest.raises(ProducerError, match="different binary"):
-            verify_evidence_binding(
-                pinned_ev.to_dict(),
-                backend_config_hash=pinned_ev.backend_config_hash,
+            verify_reusable_evidence(
+                ref, backend_config_hash=pinned_ev.backend_config_hash,
                 backend_input_hash=pinned_ev.backend_input_hash,
                 producer=other_producer)
 

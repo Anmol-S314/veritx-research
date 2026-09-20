@@ -41,6 +41,12 @@ class ProducerError(ValueError):
     """The execution producer cannot be identified or reused safely."""
 
 
+# Canonical execution-transport values. The production runner is the only
+# transport whose evidence is reusable; anything else is a test fixture.
+EXECUTION_TRANSPORT_SUPERVISED_PROCESS = "SUPERVISED_PROCESS"
+EXECUTION_TRANSPORT_TEST_INJECTED = "TEST_INJECTED"
+
+
 def _is_sha256(value: Any) -> bool:
     return isinstance(value, str) and len(value) == 64 and all(
         c in "0123456789abcdef" for c in value)
@@ -205,20 +211,27 @@ def assert_pinned_producer(producer: ProducerIdentity) -> None:
             f"{producer.source_dirty_digest})")
 
 
-def verify_evidence_binding(
+def _verify_evidence_binding_fields(
         evidence: Mapping[str, Any], *,
         backend_config_hash: str,
         backend_input_hash: str,
         producer: ProducerIdentity) -> None:
-    """Refuse reuse of an evidence file for a different attempt.
+    """Field binding for safe reuse (internal primitive).
 
-    The binding primitive for safe reuse: pinning is enforced first, then
-    the recorded config, input and producer identities must match. An
-    evidence file is valid for reuse only when it describes this exact
-    config, this exact input set, and this exact pinned producer binary.
-    Anything else — including evidence that predates producer binding —
-    is refused.
+    NOT a reuse API: it accepts an in-memory mapping and therefore cannot
+    authenticate result bytes. The only public reuse operation is
+    ``verify_reusable_evidence``, which digest-verifies persisted bytes
+    first and then calls this. Enforces the transport invariant (only
+    authoritative supervised-process evidence reuses), producer pinning,
+    and the recorded config/input/producer identities.
     """
+    if evidence.get("execution_transport") != \
+            EXECUTION_TRANSPORT_SUPERVISED_PROCESS:
+        raise ProducerError(
+            "evidence cannot be reused: non-production execution "
+            f"transport {evidence.get('execution_transport')!r}; only "
+            f"{EXECUTION_TRANSPORT_SUPERVISED_PROCESS} evidence from the "
+            f"authoritative process runner is reusable")
     assert_pinned_producer(producer)
     if not isinstance(evidence, Mapping):
         raise ProducerError(
@@ -273,26 +286,27 @@ def verify_reusable_evidence(
         producer: ProducerIdentity) -> dict[str, Any]:
     """The one authoritative evidence-reuse operation.
 
-    Proves, in order: the producer is pinned; the persisted bytes match
+    Proves, in order: the evidence transport is the authoritative
+    supervised process; the producer is pinned; the persisted bytes match
     the external content identity (``EvidenceRef.sha256``); the bytes
     parse as evidence; the recorded config, input and producer identities
     match this attempt. Returns the verified evidence mapping. Anything
     else refuses — callers must not assemble these checks by hand.
     """
     from .evidence import read_verified_evidence
-    assert_pinned_producer(producer)
     evidence = read_verified_evidence(ref)
-    verify_evidence_binding(
+    _verify_evidence_binding_fields(
         evidence, backend_config_hash=backend_config_hash,
         backend_input_hash=backend_input_hash, producer=producer)
     return evidence
 
 
 __all__ = [
+    "EXECUTION_TRANSPORT_SUPERVISED_PROCESS",
+    "EXECUTION_TRANSPORT_TEST_INJECTED",
     "ProducerError",
     "ProducerIdentity",
     "assert_pinned_producer",
     "resolve_producer_identity",
-    "verify_evidence_binding",
     "verify_reusable_evidence",
 ]

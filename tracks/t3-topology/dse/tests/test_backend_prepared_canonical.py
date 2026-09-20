@@ -27,7 +27,8 @@ from test_backend_booksim import (  # noqa: E402
 from test_backend_bundle import make_bundle  # noqa: E402
 from test_fabric_artifact import build_chain  # noqa: E402
 
-from veritx_dse.backend.booksim import (  # noqa: E402
+from veritx_dse.backend.booksim import (
+    _run_qualified_booksim_with_runner_for_test,  # noqa: E402
     CONFIG_FILE, TOPOLOGY_FILE, WORKLOAD_FILE, BookSimLoweringError,
     PreparedBackend, RenderedBackend, assert_canonical_prepared_booksim,
     bind_booksim_inputs, materialize_backend, parse_booksim_config_values,
@@ -89,7 +90,7 @@ def _never(calls):
 def _assert_refused(prepared, tmp_path, match=None):
     calls = {"n": 0}
     with pytest.raises(BookSimLoweringError, match=match):
-        run_qualified_booksim(
+        _run_qualified_booksim_with_runner_for_test(
             prepared, run_dir=tmp_path, repo_root=tmp_path,
             runner=_never(calls), binary=tmp_path / "fake")
     assert calls["n"] == 0, "process spawned despite refusal"
@@ -100,7 +101,7 @@ def _assert_refused(prepared, tmp_path, match=None):
 def _run_ok(prepared, tmp_path):
     fake = tmp_path / "fake"
     fake.write_bytes(b"fake-booksim-binary-v1")
-    return run_qualified_booksim(
+    return _run_qualified_booksim_with_runner_for_test(
         prepared, run_dir=tmp_path, repo_root=tmp_path,
         runner=make_capturing_runner(prepared.bundle, prepared.config),
         binary=fake)

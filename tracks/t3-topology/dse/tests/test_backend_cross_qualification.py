@@ -28,7 +28,8 @@ from veritx_dse.backend.analytical import (  # noqa: E402
     AnalyticalLoweringError, lower_analytical_aware,
     lower_analytical_unaware,
 )
-from veritx_dse.backend.booksim import (  # noqa: E402
+from veritx_dse.backend.booksim import (
+    _run_qualified_booksim_with_runner_for_test,  # noqa: E402
     BookSimLoweringError, exact_flit_bytes, lower_booksim_standalone,
 )
 from veritx_dse.backend.contracts import (  # noqa: E402
@@ -410,7 +411,7 @@ class TestExecutionQualification:
         prepared = prepare_booksim_standalone(bundle, workload_trace=TRACE)
         fake = tmp_path / "fake"
         fake.write_bytes(b"fake-booksim-binary-v1")
-        ev = run_certified_booksim(
+        ev = _run_qualified_booksim_with_runner_for_test(
             prepared, run_dir=tmp_path, repo_root=tmp_path,
             runner=make_capturing_runner(bundle, prepared.config),
             binary=fake)
@@ -431,7 +432,7 @@ class TestExecutionQualification:
             blocked_bundle, workload_trace=TRACE)
         fake = tmp_path / "fake"
         fake.write_bytes(b"fake-booksim-binary-v1")
-        ev = run_certified_booksim(
+        ev = _run_qualified_booksim_with_runner_for_test(
             prepared, run_dir=tmp_path, repo_root=tmp_path,
             runner=make_capturing_runner(blocked_bundle, prepared.config),
             binary=fake)
@@ -482,7 +483,7 @@ class TestExecutionQualification:
             from veritx_dse.backend.booksim import (  # noqa: PLC0415
                 run_certified_booksim,
             )
-            run_certified_booksim(
+            _run_qualified_booksim_with_runner_for_test(
                 prepared, run_dir=tmp_path, repo_root=tmp_path,
                 runner=never, binary=tmp_path / "fake")
         assert calls["n"] == 0

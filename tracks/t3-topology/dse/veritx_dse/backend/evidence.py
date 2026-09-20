@@ -63,6 +63,12 @@ def evidence_sha256(path: Path) -> str:
 
 
 def read_evidence(path: Path) -> dict[str, Any]:
+    """Inspection-only read (debugging, display). NOT reusable evidence.
+
+    This performs no digest verification: never pass its output to any
+    reuse operation. Reuse requires ``read_verified_evidence`` against a
+    trusted ``EvidenceRef``.
+    """
     raw = json.loads(Path(path).read_text())
     if not isinstance(raw, dict):
         raise BackendEvidenceError(

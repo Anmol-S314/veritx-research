@@ -26,7 +26,8 @@ from test_backend_bundle import make_bundle  # noqa: E402
 from test_backend_cross_qualification import four_targets  # noqa: E402
 from test_fabric_artifact import build_chain  # noqa: E402
 
-from veritx_dse.backend.booksim import (  # noqa: E402
+from veritx_dse.backend.booksim import (
+    _run_qualified_booksim_with_runner_for_test,  # noqa: E402
     BOOKSIM_BACKEND_SEMANTICS_VERSION, BOOKSIM_LOWERER_VERSION,
     BOOKSIM_STANDALONE_PROFILE, BookSimLoweringError,
     assert_canonical_booksim_projection, execution_qualification,
@@ -79,7 +80,7 @@ def _assert_runner_refuses(bundle, forged, tmp_path):
     canonical = prepare_booksim_standalone(bundle, workload_trace=TRACE)
     prepared = replace(canonical, config=forged)
     with pytest.raises(BookSimLoweringError, match="noncanonical"):
-        run_certified_booksim(
+        _run_qualified_booksim_with_runner_for_test(
             prepared, run_dir=tmp_path, repo_root=tmp_path,
             runner=_never, binary=tmp_path / "fake")
 
@@ -295,7 +296,7 @@ class TestGoldenRegression:
         prepared = prepare_booksim_standalone(bundle, workload_trace=TRACE)
         fake = tmp_path / "fake"
         fake.write_bytes(b"fake-booksim-binary-v1")
-        ev = run_certified_booksim(
+        ev = _run_qualified_booksim_with_runner_for_test(
             prepared, run_dir=tmp_path, repo_root=tmp_path,
             runner=make_capturing_runner(bundle, prepared.config),
             binary=fake)

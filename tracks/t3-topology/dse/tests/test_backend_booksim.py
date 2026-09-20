@@ -19,7 +19,8 @@ sys.path.insert(0, str(TESTS))
 
 from test_fabric_artifact import build_chain, compose, _with_hbm  # noqa: E402
 
-from veritx_dse.backend.booksim import (  # noqa: E402
+from veritx_dse.backend.booksim import (
+    _run_qualified_booksim_with_runner_for_test,  # noqa: E402
     BOOKSIM_BACKEND_SEMANTICS_VERSION, BOOKSIM_LOWERER_VERSION,
     BOOKSIM_STANDALONE_OWNERSHIP, BOOKSIM_STANDALONE_PROFILE, CONFIG_FILE,
     ROUTE_DUMP_FILE, TOPOLOGY_FILE, WORKLOAD_FILE, BackendMaterializationError,
@@ -507,12 +508,15 @@ class TestCertifiedExecution:
     def test_spawn_args_and_evidence(self, bundle, tmp_path):
         prepared = prepare_booksim_standalone(bundle, workload_trace=TRACE)
         capture: dict = {}
-        ev = run_certified_booksim(
+        ev = _run_qualified_booksim_with_runner_for_test(
             prepared, run_dir=tmp_path, repo_root=tmp_path,
             runner=make_capturing_runner(bundle, prepared.config,
                                          capture=capture),
             binary=Path("/bin/true"))
-        assert capture["cmd"] == ["/bin/true", CONFIG_FILE]
+        assert capture["cmd"] == [str(Path("/bin/true").resolve()),
+                                      CONFIG_FILE]
+        assert Path(capture["cmd"][0]).is_absolute()
+        assert ev.command[0] == capture["cmd"][0]
         assert capture["cwd"].endswith("backend")
         assert ev.route_equivalence == "EXACT"
         assert ev.route_expected_sha256 == ev.route_executed_sha256
@@ -525,7 +529,7 @@ class TestCertifiedExecution:
     def test_route_divergence_refused(self, bundle, tmp_path):
         prepared = prepare_booksim_standalone(bundle, workload_trace=TRACE)
         with pytest.raises(BookSimRouteError, match="diverges"):
-            run_certified_booksim(
+            _run_qualified_booksim_with_runner_for_test(
                 prepared, run_dir=tmp_path, repo_root=tmp_path,
                 runner=make_capturing_runner(
                     bundle, prepared.config, mutate={(0, 3): 2}),
@@ -534,7 +538,7 @@ class TestCertifiedExecution:
     def test_missing_route_dump_refused(self, bundle, tmp_path):
         prepared = prepare_booksim_standalone(bundle, workload_trace=TRACE)
         with pytest.raises(BookSimRouteError, match="no route dump"):
-            run_certified_booksim(
+            _run_qualified_booksim_with_runner_for_test(
                 prepared, run_dir=tmp_path, repo_root=tmp_path,
                 runner=make_capturing_runner(bundle, prepared.config,
                                              missing_dump=True),
@@ -550,7 +554,7 @@ class TestCertifiedExecution:
             return _FakeResult(stdout="delivered 0 packets\n")
 
         with pytest.raises(BookSimError, match="0 packets"):
-            run_certified_booksim(
+            _run_qualified_booksim_with_runner_for_test(
                 prepared, run_dir=tmp_path, repo_root=tmp_path,
                 runner=runner, binary=Path("/bin/true"))
 
@@ -562,7 +566,7 @@ class TestCertifiedExecution:
             return _FakeResult(returncode=-9, timed_out=True)
 
         with pytest.raises(TimeoutError):
-            run_certified_booksim(
+            _run_qualified_booksim_with_runner_for_test(
                 prepared, run_dir=tmp_path, repo_root=tmp_path,
                 runner=runner, binary=Path("/bin/true"))
 
@@ -578,7 +582,7 @@ class TestCertifiedExecution:
             return _FakeResult(stdout=_OK_STDOUT)
 
         with pytest.raises(BackendMaterializationError):
-            run_certified_booksim(
+            _run_qualified_booksim_with_runner_for_test(
                 prepared, run_dir=tmp_path, repo_root=tmp_path,
                 runner=runner, binary=Path("/bin/true"))
         assert called["n"] == 0
@@ -591,7 +595,7 @@ class TestCertifiedExecution:
         tampered = replace(prepared, bundle=foreign)
         with pytest.raises((BackendMaterializationError,
                             BookSimLoweringError)):
-            run_certified_booksim(
+            _run_qualified_booksim_with_runner_for_test(
                 tampered, run_dir=tmp_path, repo_root=tmp_path,
                 runner=lambda *a: _FakeResult(stdout=_OK_STDOUT),
                 binary=Path("/bin/true"))

@@ -28,7 +28,8 @@ from test_backend_booksim import (  # noqa: E402
 from test_backend_bundle import make_bundle  # noqa: E402
 from test_fabric_artifact import _with_hbm, build_chain  # noqa: E402
 
-from veritx_dse.backend.booksim import (  # noqa: E402
+from veritx_dse.backend.booksim import (
+    _run_qualified_booksim_with_runner_for_test,  # noqa: E402
     BookSimLoweringError, prepare_booksim_standalone, run_certified_booksim,
     lower_booksim_standalone,
 )
@@ -325,7 +326,7 @@ class TestBypassProof:
         monkeypatch.setattr(legacy, "BASE_PARAMS",
                             {"exploded": explode})
         prepared = prepare_booksim_standalone(bundle, workload_trace=TRACE)
-        ev = run_certified_booksim(
+        ev = _run_qualified_booksim_with_runner_for_test(
             prepared, run_dir=tmp_path, repo_root=tmp_path,
             runner=make_capturing_runner(bundle, prepared.config),
             binary=Path("/bin/true"))

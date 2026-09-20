@@ -63,7 +63,11 @@ from .contracts import (
     ParameterOwner, RenderedInput, RepresentationStatus, SemanticBinding,
     SemanticDimension, sha256_bytes,
 )
-from .producer import ProducerError, resolve_producer_identity
+from .producer import (
+    EXECUTION_TRANSPORT_SUPERVISED_PROCESS,
+    EXECUTION_TRANSPORT_TEST_INJECTED, ProducerError,
+    resolve_producer_identity,
+)
 
 BOOKSIM_STANDALONE_PROFILE = "CERTIFIED_BOOKSIM_ANYNET_V1"
 SERVING_BOOKSIM2_PROFILE = "CERTIFIED_SERVING_BOOKSIM2_V1"
@@ -76,6 +80,13 @@ CONFIG_FILE = "config.cfg"
 TOPOLOGY_FILE = "topology.anynet"
 WORKLOAD_FILE = "workload.trace"
 ROUTE_DUMP_FILE = "routing.dump"
+
+# Execution-transport identity. Only SUPERVISED_PROCESS evidence is
+# reusable/certifiable; TEST_INJECTED products are unit-test fixtures
+# that can never enter the reuse API (enforced in producer's binding
+# check, not by caller discipline).
+EXECUTION_TRANSPORT_SUPERVISED = EXECUTION_TRANSPORT_SUPERVISED_PROCESS
+EXECUTION_TRANSPORT_TEST = EXECUTION_TRANSPORT_TEST_INJECTED
 
 _SEED_DEFAULT = 1
 SEED_POLICY_PINNED_DEFAULT = "pinned_default"
@@ -1355,6 +1366,7 @@ class CertifiedBookSimEvidence:
     producer_source_dirty: bool | None = None
     producer_source_dirty_digest: str | None = None
     producer_tool_identity: str = ""
+    execution_transport: str = EXECUTION_TRANSPORT_SUPERVISED
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -1386,34 +1398,39 @@ class CertifiedBookSimEvidence:
             "producer_source_dirty_digest":
                 self.producer_source_dirty_digest,
             "producer_tool_identity": self.producer_tool_identity,
+            "execution_transport": self.execution_transport,
         }
 
 
-def run_qualified_booksim(
+def _execute_prepared(
         prepared: PreparedBackend, *,
         run_dir: Path,
         repo_root: Path,
-        timeout: int = 60,
-        runner: Any | None = None,
-        binary: Path | None = None,
+        timeout: int,
+        binary: Path | None,
+        transport: str,
+        runner: Any,
 ) -> CertifiedBookSimEvidence:
-    """Execute one prepared BookSim run and return its explicit
-    qualification (EXECUTED_EXACT / EXECUTED_WITH_DECLARED_LOSS /
-    EXECUTED_BLOCKED_FROM_EXACT). UNSUPPORTED_EXECUTION refuses before
-    anything is materialized or spawned.
+    """Shared certified-execution core (transport-explicit).
+
+    Only ``run_qualified_booksim`` (authoritative supervised process
+    runner) may emit reusable ``EXECUTED_*`` evidence; the test-only
+    seam below passes an injected runner with the TEST transport whose
+    products the reuse API mechanically refuses.
 
     Order: revalidate bundle → canonical config → canonical prepared
     inputs (exact render + manifest binding) → qualification guard →
-    producer identity (pre-spawn binary digest, fail closed) →
-    materialize → parse-back topology → verify hashes IMMEDIATELY BEFORE
-    spawn → runtime profile gates → run → executed-route proof → parse
+    producer identity (canonical absolute path, pre-spawn digest, fail
+    closed) → materialize → parse-back topology → verify hashes
+    IMMEDIATELY BEFORE spawn → runtime profile gates → fresh route-output
+    slot → final producer recheck → run → executed-route proof → parse
     stats. Any tamper/stale/forged/unidentified input refuses before
     materialization or spawn.
     """
     import time
 
     from veritx_dse.core.errors import BookSimError, TimeoutError
-    from veritx_dse.simulation.booksim import find_booksim_bin, parse_output
+    from veritx_dse.simulation.booksim import parse_output
 
     config, manifest, rendered = (prepared.config, prepared.manifest,
                                   prepared.rendered)
@@ -1439,8 +1456,7 @@ def run_qualified_booksim(
     assert_canonical_prepared_booksim(prepared)
     qualification = assert_executable(config)
 
-    bin_path = Path(binary) if binary is not None \
-        else find_booksim_bin(repo_root)
+    bin_path = _resolve_producer_path(binary, repo_root)
     # B-FINAL: identify the exact producer BEFORE spawn (and before any
     # filesystem materialization) and bind it into the evidence. An
     # unreadable binary refuses here — certified evidence never carries
@@ -1457,13 +1473,19 @@ def run_qualified_booksim(
     verify_rendered_profile_gates(parse_booksim_config_values(
         (backend_dir / CONFIG_FILE).read_text()))
 
-    cmd = (str(bin_path), CONFIG_FILE)
-    if runner is None:
-        from veritx_dse.core.process import supervised_run
+    # B-FINAL.2: the executed-route output must be fresh output of THIS
+    # attempt. A pre-existing routing.dump (e.g. from an earlier attempt
+    # sharing the directory) is stale/ambiguous: it is refused, never
+    # silently accepted as current evidence and never silently deleted.
+    # Certified re-execution belongs in a new attempt directory.
+    route_dump_path = backend_dir / ROUTE_DUMP_FILE
+    if route_dump_path.exists():
+        raise BookSimRouteError(
+            f"refusing certified execution: {route_dump_path} already "
+            f"exists before spawn; a certified attempt requires a fresh "
+            f"attempt output slot")
 
-        def runner(c, cwd, t):
-            return supervised_run(c, cwd=cwd, timeout=t,
-                                  on_timeout="complete")
+    cmd = (str(bin_path), CONFIG_FILE)
 
     # B-FINAL.1: close the hash-to-exec window. The producer was
     # identified before materialization for early refusal; rehash the
@@ -1538,7 +1560,77 @@ def run_qualified_booksim(
         producer_source_dirty=producer.source_dirty,
         producer_source_dirty_digest=producer.source_dirty_digest,
         producer_tool_identity=producer.tool_identity,
+        execution_transport=transport,
     )
+
+
+def _resolve_producer_path(binary: Path | None,
+                           repo_root: Path) -> Path:
+    """Canonicalize the producer to one absolute resolved path.
+
+    A relative executable path must never be hashed under one working
+    directory and executed under another: the path is resolved strictly
+    (symlinks included) before any hashing, and that same absolute path
+    feeds the initial digest, the pre-spawn recheck, argv and evidence.
+    """
+    from veritx_dse.simulation.booksim import find_booksim_bin
+    raw = binary if binary is not None else find_booksim_bin(repo_root)
+    try:
+        return Path(raw).resolve(strict=True)
+    except OSError as exc:
+        raise ProducerError(
+            f"cannot resolve execution producer {raw}: {exc}; refusing "
+            f"to hash one path and execute another") from exc
+
+
+def run_qualified_booksim(
+        prepared: PreparedBackend, *,
+        run_dir: Path,
+        repo_root: Path,
+        timeout: int = 60,
+        binary: Path | None = None,
+) -> CertifiedBookSimEvidence:
+    """Execute one prepared BookSim run via the authoritative process.
+
+    This is the ONLY entry point that can emit reusable ``EXECUTED_*``
+    evidence: it always spawns the identified BookSim binary through the
+    supervised process runner. There is no runner parameter — injected
+    transports live behind the explicitly test-only seam below, whose
+    products the reuse API mechanically refuses.
+    """
+    from veritx_dse.core.process import supervised_run
+
+    def _supervised(c: Any, cwd: str, t: int) -> Any:
+        return supervised_run(c, cwd=cwd, timeout=t, on_timeout="complete")
+
+    return _execute_prepared(
+        prepared, run_dir=run_dir, repo_root=repo_root, timeout=timeout,
+        binary=binary, transport=EXECUTION_TRANSPORT_SUPERVISED,
+        runner=_supervised)
+
+
+def _run_qualified_booksim_with_runner_for_test(
+        prepared: PreparedBackend, *,
+        run_dir: Path,
+        repo_root: Path,
+        timeout: int = 60,
+        runner: Any = None,
+        binary: Path | None = None,
+) -> CertifiedBookSimEvidence:
+    """Test-only execution seam with an injected transport.
+
+    Unit tests use this to exercise validation ordering, refusal paths
+    and semantic classification without spawning BookSim. Products carry
+    ``execution_transport=TEST_INJECTED`` and can NEVER pass
+    ``verify_reusable_evidence`` — a fake runner that never executes the
+    binary cannot fabricate reusable ``EXECUTED_*`` evidence.
+    """
+    if runner is None:
+        raise BookSimLoweringError(
+            "test seam requires an explicit injected runner")
+    return _execute_prepared(
+        prepared, run_dir=run_dir, repo_root=repo_root, timeout=timeout,
+        binary=binary, transport=EXECUTION_TRANSPORT_TEST, runner=runner)
 
 
 def run_certified_booksim(
@@ -1563,6 +1655,8 @@ __all__ = [
     "BookSimLoweringError",
     "BookSimRouteError",
     "CertifiedBookSimEvidence",
+    "EXECUTION_TRANSPORT_SUPERVISED",
+    "EXECUTION_TRANSPORT_TEST",
     "PreparedBackend",
     "RenderedBackend",
     "SEED_POLICY_EXPLICIT",
@@ -1573,6 +1667,7 @@ __all__ = [
     "compare_route_realization",
     "execution_qualification",
     "expected_route_table",
+    "_run_qualified_booksim_with_runner_for_test",
     "assert_executable",
     "assert_canonical_booksim_projection",
     "parse_booksim_config_values",

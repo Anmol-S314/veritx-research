@@ -15,6 +15,8 @@ from __future__ import annotations
 import copy
 import json
 import platform
+import shutil
+import stat
 import subprocess
 import sys
 from dataclasses import replace
@@ -33,7 +35,9 @@ from test_backend_booksim import (  # noqa: E402
 from test_backend_bundle import make_bundle  # noqa: E402
 from test_fabric_artifact import build_chain  # noqa: E402
 
-from veritx_dse.backend.booksim import run_qualified_booksim  # noqa: E402
+from veritx_dse.backend.booksim import (  # noqa: E402
+    _run_qualified_booksim_with_runner_for_test, run_qualified_booksim,
+)
 from veritx_dse.backend.contracts import sha256_bytes  # noqa: E402
 from veritx_dse.backend.evidence import (  # noqa: E402
     BackendEvidenceError, EvidenceRef, evidence_sha256_of,
@@ -41,8 +45,7 @@ from veritx_dse.backend.evidence import (  # noqa: E402
 )
 from veritx_dse.backend.producer import (  # noqa: E402
     ProducerError, ProducerIdentity, assert_pinned_producer,
-    resolve_producer_identity, verify_evidence_binding,
-    verify_reusable_evidence,
+    resolve_producer_identity, verify_reusable_evidence,
 )
 from veritx_dse.backend.serving import (  # noqa: E402
     ServingBackendError, prepare_serving_booksim, serving_backend_evidence,
@@ -87,11 +90,42 @@ def write_binary(repo, name="fake", content=b"fake-booksim-binary-v1"):
     return path
 
 
+def copy_real_binary(git, name="booksim"):
+    """Stage the real BookSim binary inside a scratch repo (untracked)."""
+    from veritx_dse.simulation.booksim import (  # noqa: PLC0415
+        find_booksim_bin,
+    )
+    try:
+        src = Path(find_booksim_bin(REPO))
+    except FileNotFoundError:
+        pytest.skip("no runnable BookSim binary")
+    dst = Path(git) / name
+    shutil.copy(src, dst)
+    dst.chmod(dst.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP
+              | stat.S_IXOTH)
+    return dst
+
+
+def make_repo_with_real_binary(base, name="realrepo"):
+    git = make_pinned_repo(base, name)
+    return git, copy_real_binary(git)
+
+
+def _run_real(bundle, run_dir, binary, repo_root, *, workload=TRACE,
+              seed=None, timeout=120):
+    """Production-API execution (no injected transport)."""
+    prepared = prepare_booksim_standalone(
+        bundle, workload_trace=workload, seed=seed)
+    return prepared, run_qualified_booksim(
+        prepared, run_dir=run_dir, repo_root=repo_root, timeout=timeout,
+        binary=binary)
+
+
 def _run_ok(bundle, run_dir, binary, repo_root, *, workload=TRACE,
             seed=None):
     prepared = prepare_booksim_standalone(
         bundle, workload_trace=workload, seed=seed)
-    return prepared, run_qualified_booksim(
+    return prepared, _run_qualified_booksim_with_runner_for_test(
         prepared, run_dir=run_dir, repo_root=repo_root,
         runner=make_capturing_runner(bundle, prepared.config),
         binary=binary)
@@ -193,7 +227,8 @@ class TestRunBindsProducer:
         assert ev.booksim_binary_sha256 == sha256_bytes(
             b"fake-booksim-binary-v1")
         assert ev.producer_tool_identity == platform.platform()
-        assert ev.command == (str(binary), "config.cfg")
+        assert ev.command == (str(binary.resolve()), "config.cfg")
+        assert ev.execution_transport == "TEST_INJECTED"
         assert ev.invocation_args == (("config-file", "config.cfg"),)
         assert ev.exit_status == 0
         assert ev.route_equivalence == "EXACT"
@@ -206,8 +241,8 @@ class TestRunBindsProducer:
             calls["n"] += 1
             raise AssertionError("spawned with an unidentified producer")
 
-        with pytest.raises(ProducerError, match="cannot hash"):
-            run_qualified_booksim(
+        with pytest.raises(ProducerError, match="cannot resolve"):
+            _run_qualified_booksim_with_runner_for_test(
                 prepared, run_dir=tmp_path, repo_root=tmp_path,
                 runner=never, binary=tmp_path / "absent")
         assert calls["n"] == 0
@@ -233,7 +268,7 @@ class TestRunBindsProducer:
 
         with pytest.raises(ProducerError,
                            match="changed between resolution and spawn"):
-            run_qualified_booksim(
+            _run_qualified_booksim_with_runner_for_test(
                 prepared, run_dir=tmp_path, repo_root=tmp_path,
                 runner=never, binary=binary)
         assert calls["n"] == 0
@@ -263,9 +298,9 @@ class TestRunBindsProducer:
 
 class TestSafeReuse:
     def _bound(self, bundle, tmp_path):
-        git = make_pinned_repo(tmp_path)
-        binary = write_binary(git)
-        prepared, ev = _run_ok(bundle, tmp_path / "run", binary, git)
+        git, binary = make_repo_with_real_binary(tmp_path)
+        prepared, ev = _run_real(bundle, tmp_path / "run", binary, git)
+        assert ev.execution_transport == "SUPERVISED_PROCESS"
         producer = resolve_producer_identity(binary, repo_root=git)
         ref = write_evidence(tmp_path / "run", ev.to_dict())
         assert isinstance(ref, EvidenceRef)
@@ -297,7 +332,7 @@ class TestSafeReuse:
     def test_dirty_producer_reuse_refused(self, bundle, tmp_path):
         prepared, ev, _, ref, git = self._bound(bundle, tmp_path)
         (git / "src.txt").write_text("post-run dirt")
-        dirty = resolve_producer_identity(git / "fake", repo_root=git)
+        dirty = resolve_producer_identity(git / "booksim", repo_root=git)
         assert dirty.source_dirty is True
         with pytest.raises(ProducerError, match="dirty"):
             verify_reusable_evidence(
@@ -311,8 +346,8 @@ class TestSafeReuse:
         unknown = replace(producer, source_dirty=None,
                           source_dirty_digest=None)
         with pytest.raises(ProducerError, match="unknown"):
-            verify_evidence_binding(
-                ev.to_dict(),
+            verify_reusable_evidence(
+                ref,
                 backend_config_hash=prepared.config.backend_config_hash(),
                 backend_input_hash=prepared.manifest.backend_input_hash(),
                 producer=unknown)
@@ -350,13 +385,15 @@ class TestSafeReuse:
                                                       tmp_path):
         _, ev, producer, _, _ = self._bound(bundle, tmp_path)
         legacy = ev.to_dict()
-        for key in ("booksim_binary_sha256", "producer_source_revision",
-                    "producer_source_dirty", "producer_source_dirty_digest",
+        for key in ("booksim_binary_sha256", "execution_transport",
+                    "producer_source_revision", "producer_source_dirty",
+                    "producer_source_dirty_digest",
                     "producer_tool_identity"):
             del legacy[key]
-        with pytest.raises(ProducerError, match="predates producer"):
-            verify_evidence_binding(
-                legacy, backend_config_hash=ev.backend_config_hash,
+        legacy_ref = write_evidence(tmp_path / "legacy", legacy)
+        with pytest.raises(ProducerError, match="non-production"):
+            verify_reusable_evidence(
+                legacy_ref, backend_config_hash=ev.backend_config_hash,
                 backend_input_hash=ev.backend_input_hash, producer=producer)
 
     def test_tool_change_refused(self, bundle, tmp_path):
@@ -379,9 +416,8 @@ class TestSafeReuse:
 
 class TestResultTamper:
     def _persisted(self, bundle, tmp_path):
-        git = make_pinned_repo(tmp_path)
-        binary = write_binary(git)
-        prepared, ev = _run_ok(bundle, tmp_path / "run", binary, git)
+        git, binary = make_repo_with_real_binary(tmp_path)
+        prepared, ev = _run_real(bundle, tmp_path / "run", binary, git)
         producer = resolve_producer_identity(binary, repo_root=git)
         ref = write_evidence(tmp_path / "run", ev.to_dict())
         raw = Path(ref.path).read_bytes()
@@ -480,25 +516,26 @@ class TestServingEvidenceResidual:
 
 
 class TestFullChainCertification:
-    """Bundle -> reusable result, then every boundary mutated."""
+    """Bundle -> reusable result via the production transport."""
 
     def test_chain_and_all_mutations(self, bundle, tmp_path):
         from veritx_dse.backend.booksim import (  # noqa: PLC0415
             assert_canonical_booksim_projection,
             assert_canonical_prepared_booksim,
         )
-        git = make_pinned_repo(tmp_path)
-        binary = write_binary(git)
+        git, binary = make_repo_with_real_binary(tmp_path)
         prepared = prepare_booksim_standalone(bundle, workload_trace=TRACE)
         assert_canonical_booksim_projection(bundle, prepared.config)
         assert_canonical_prepared_booksim(prepared)
         producer = resolve_producer_identity(binary, repo_root=git)
         assert_pinned_producer(producer)
+        # No injected callback may satisfy this test: production API only.
         ev = run_qualified_booksim(
             prepared, run_dir=tmp_path / "run", repo_root=git,
-            runner=make_capturing_runner(bundle, prepared.config),
-            binary=binary)
+            timeout=120, binary=binary)
+        assert ev.execution_transport == "SUPERVISED_PROCESS"
         assert ev.booksim_binary_sha256 == producer.binary_sha256
+        assert ev.route_equivalence == "EXACT"
         ref = write_evidence(tmp_path / "run", ev.to_dict())
         config_hash = prepared.config.backend_config_hash()
         input_hash = prepared.manifest.backend_input_hash()
@@ -522,12 +559,13 @@ class TestFullChainCertification:
             reuse(backend_input_hash=other_input.manifest
                   .backend_input_hash())
         # Producer bytes move -> reuse refuses.
+        real_bytes = binary.read_bytes()
         binary.write_bytes(b"replacement-producer-bytes")
         moved = resolve_producer_identity(binary, repo_root=git)
         with pytest.raises(ProducerError, match="different binary"):
             reuse(producer=moved)
         # Tracked source state moves -> reuse refuses.
-        binary.write_bytes(b"fake-booksim-binary-v1")
+        binary.write_bytes(real_bytes)
         (git / "src.txt").write_text("post-run source change")
         dirtied = resolve_producer_identity(binary, repo_root=git)
         assert dirtied.source_dirty is True
