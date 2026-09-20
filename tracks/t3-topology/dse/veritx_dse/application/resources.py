@@ -71,25 +71,46 @@ class CompiledDesign:
 
 @dataclass(frozen=True)
 class WorkloadRecord:
+    """One workload resource.
+
+    ``workload_kind`` is the provenance classification: a legacy packet
+    trace (``LEGACY_TRACE``) is never presented as Wave-D semantic
+    provenance, and a Wave-D semantic workload (``WAVE_D_SEMANTIC``)
+    carries its verified semantic chain IDs in ``wave_d``.
+    """
+
     trace_sha256: str
     trace_bytes: int
     endpoint_count: int
     packets: int
     source: dict[str, Any]
+    wave_d: dict[str, Any] | None = None
 
     @property
     def resource_type(self) -> str:
         return "workload"
 
+    @property
+    def workload_kind(self) -> str:
+        return "WAVE_D_SEMANTIC" if self.wave_d is not None \
+            else "LEGACY_TRACE"
+
     def workload_id(self) -> str:
-        return _content_id("srota-workload/v1", {
+        body: dict[str, Any] = {
             "trace_sha256": self.trace_sha256,
             "trace_bytes": self.trace_bytes,
             "endpoint_count": self.endpoint_count,
-        })
+        }
+        if self.wave_d is not None:
+            # A Wave-D workload is identified by its semantic chain, not
+            # by the bytes of a derived trace: identical rendered bytes
+            # from different semantics must never share an identity.
+            body["workload_kind"] = "WAVE_D_SEMANTIC"
+            body["wave_d"] = dict(self.wave_d)
+        return _content_id("srota-workload/v1", body)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        out = {
             "resource_type": self.resource_type,
             "schema_version": RESOURCE_SCHEMA_VERSION,
             "resource_id": self.workload_id(),
@@ -98,7 +119,13 @@ class WorkloadRecord:
             "endpoint_count": self.endpoint_count,
             "packets": self.packets,
             "source": dict(self.source),
+            # Observational provenance label (not identity-bearing for
+            # legacy records; Wave-D records bind it inside wave_d).
+            "workload_kind": self.workload_kind,
         }
+        if self.wave_d is not None:
+            out["wave_d"] = dict(self.wave_d)
+        return out
 
 
 @dataclass(frozen=True)
@@ -120,9 +147,10 @@ class EvaluationPlan:
     seed_policy: str
     metric_ids: tuple[str, ...]
     metric_schema_version: str
+    wave_d: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        out = {
             "resource_type": "plan",
             "schema_version": RESOURCE_SCHEMA_VERSION,
             "resource_id": self.plan_id,
@@ -143,6 +171,9 @@ class EvaluationPlan:
             "metric_ids": list(self.metric_ids),
             "metric_schema_version": self.metric_schema_version,
         }
+        if self.wave_d is not None:
+            out["wave_d"] = dict(self.wave_d)
+        return out
 
 
 @dataclass(frozen=True)
@@ -222,9 +253,10 @@ class EvaluationResult:
     seed: int | None
     seed_policy: str
     reused: bool
+    wave_d: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        out = {
             "resource_type": "result",
             "schema_version": RESOURCE_SCHEMA_VERSION,
             "resource_id": self.result_id,
@@ -256,6 +288,9 @@ class EvaluationResult:
             "seed_policy": self.seed_policy,
             "reused": self.reused,
         }
+        if self.wave_d is not None:
+            out["wave_d"] = dict(self.wave_d)
+        return out
 
 
 @dataclass(frozen=True)

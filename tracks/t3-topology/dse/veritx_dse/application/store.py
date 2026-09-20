@@ -21,7 +21,8 @@ from .errors import ControlPlaneError, ErrorCode
 
 RESOURCE_KINDS = ("intent", "design", "workload", "plan", "experiment",
                   "attempt", "result", "comparison", "links", "studydef",
-                  "studyrun")
+                  "studyrun", "wavedworkload", "parallelism",
+                  "wavedsemantics", "opgraph", "messages", "traffic")
 
 
 class ResourceStore:

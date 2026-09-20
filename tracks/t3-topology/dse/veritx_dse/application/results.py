@@ -148,25 +148,59 @@ def load_verified_design(store: Any, design_id: str) -> dict[str, Any]:
 def load_verified_workload(store: Any, workload_id: str) -> dict[str, Any]:
     """Workload content identity.
 
-    The content ID covers trace bytes, byte length and endpoint count.
-    ``packets`` (derived line count) and ``source`` (transport metadata)
-    are OBSERVATIONAL: they are deliberately outside the content hash
-    and must never be read as authenticated scientific fields.
+    The content ID covers trace bytes, byte length and endpoint count
+    (plus the verified Wave-D semantic chain for a Wave-D workload).
+    ``packets`` and ``source`` are OBSERVATIONAL: they are deliberately
+    outside the content hash and must never be read as authenticated
+    scientific fields. ``workload_kind`` is the provenance label.
+
+    A Wave-D workload is verified all the way down: the persisted
+    semantic chain is re-loaded through its verified loaders, the chain
+    block is recomputed, and the derived trace is re-rendered and
+    re-hashed against the stored digest.
     """
     record = _get(store, "workload", workload_id)
     check_envelope(record, "workload")
     _require_id("workload", workload_id, record)
-    recomputed = _content_id("srota-workload/v1", {
+    wave_d = record.get("wave_d")
+    body: dict[str, Any] = {
         "trace_sha256": record.get("trace_sha256"),
         "trace_bytes": record.get("trace_bytes"),
         "endpoint_count": record.get("endpoint_count"),
-    })
+    }
+    if wave_d is not None:
+        body["workload_kind"] = "WAVE_D_SEMANTIC"
+        body["wave_d"] = wave_d
+    recomputed = _content_id("srota-workload/v1", body)
     if recomputed != workload_id:
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
             f"workload {workload_id} recomputes to {recomputed}: forged",
             operation="verify_resource", resource_id=workload_id)
+    if wave_d is not None:
+        _verify_waved_workload_chain(store, workload_id, record, wave_d)
     return record
+
+
+def _verify_waved_workload_chain(store: Any, workload_id: str,
+                                 record: dict[str, Any],
+                                 wave_d: dict[str, Any]) -> None:
+    """Re-derive a Wave-D workload's chain and its derived trace."""
+    from veritx_dse.backend.contracts import sha256_bytes
+    from veritx_dse.waved.backend import render_waved_trace
+
+    from .waved_resources import (
+        load_verified_traffic, waved_chain_ids_from_traffic,
+    )
+    traffic, _ = load_verified_traffic(
+        store, wave_d.get("physical_traffic_id"))
+    _require_equal("workload.wave_d", wave_d,
+                   waved_chain_ids_from_traffic(traffic), workload_id)
+    trace = render_waved_trace(traffic)
+    _require_equal("workload.trace_sha256", record.get("trace_sha256"),
+                   sha256_bytes(trace), workload_id)
+    _require_equal("workload.trace_bytes", record.get("trace_bytes"),
+                   len(trace), workload_id)
 
 
 def _expected_plan_profile(target: str) -> tuple[str, str, str]:
@@ -188,7 +222,7 @@ def load_verified_plan(store: Any, plan_id: str) -> dict[str, Any]:
     record = _get(store, "plan", plan_id)
     check_envelope(record, "plan")
     _require_id("plan", plan_id, record)
-    recomputed = _content_id("srota-plan/v1", {
+    body: dict[str, Any] = {
         "design_hash": record.get("design_hash"),
         "mapping_hash": record.get("mapping_hash"),
         "fabric_hash": record.get("fabric_hash"),
@@ -203,7 +237,10 @@ def load_verified_plan(store: Any, plan_id: str) -> dict[str, Any]:
         "seed_policy": record.get("seed_policy"),
         "metric_ids": record.get("metric_ids"),
         "metric_schema_version": record.get("metric_schema_version"),
-    })
+    }
+    if record.get("wave_d") is not None:
+        body["wave_d"] = record.get("wave_d")
+    recomputed = _content_id("srota-plan/v1", body)
     if recomputed != plan_id:
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
@@ -211,6 +248,16 @@ def load_verified_plan(store: Any, plan_id: str) -> dict[str, Any]:
             operation="verify_resource", resource_id=plan_id)
     design = load_verified_design(store, record.get("design_id"))
     workload = load_verified_workload(store, record.get("workload_id"))
+    if record.get("wave_d") is not None:
+        from .waved_resources import (
+            load_verified_traffic, waved_chain_ids_from_traffic,
+        )
+        traffic, _ = load_verified_traffic(
+            store, record["wave_d"].get("physical_traffic_id"))
+        _require_equal("plan.wave_d", record["wave_d"],
+                       waved_chain_ids_from_traffic(traffic), plan_id)
+        _require_equal("workload.wave_d", workload.get("wave_d"),
+                       record["wave_d"], plan_id)
     _require_equal("plan.intent_id", record.get("intent_id"),
                    design.get("intent_id"), plan_id)
     _require_equal("plan.design_hash", record.get("design_hash"),
@@ -439,7 +486,53 @@ def load_verified_result(store: Any, result_id: str, *,
             ("tool_identity", "producer_tool_identity")):
         _require_equal(f"producer.{key}", producer.get(key),
                        evidence.get(evidence_key), result_id)
+    if plan.get("wave_d") is not None or result.get("wave_d") is not None:
+        _verify_waved_result(store, result, plan, evidence, result_id)
     return result
+
+
+def _verify_waved_result(store: Any, result: dict[str, Any],
+                         plan: dict[str, Any], evidence: dict[str, Any],
+                         result_id: str) -> None:
+    """A Wave-D result is only VERIFIED if its whole chain re-derives.
+
+    Re-loads the verified traffic parent (which re-verifies every
+    upstream artifact), recomputes the chain block and the expected
+    packet/flit totals, and re-derives the execution counters from the
+    authenticated evidence stats. Tampering any scientific Wave-D
+    parent therefore invalidates the result.
+    """
+    from veritx_dse.waved.backend import verify_trace_projection
+
+    from .waved_resources import (
+        load_verified_traffic, waved_chain_ids_from_traffic,
+    )
+    plan_wave_d = plan.get("wave_d")
+    wave_d = result.get("wave_d")
+    if plan_wave_d is None or wave_d is None:
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"result {result_id} and its plan disagree on workload kind: "
+            "a Wave-D experiment cannot be verified against a legacy "
+            "plan (or the reverse)",
+            operation="verify_result", resource_id=result_id)
+    traffic, _ = load_verified_traffic(
+        store, wave_d.get("physical_traffic_id"))
+    for key, value in waved_chain_ids_from_traffic(traffic).items():
+        _require_equal(f"result.wave_d.{key}", wave_d.get(key), value,
+                       result_id)
+    summary = verify_trace_projection(traffic)
+    _require_equal("wave_d.expected_packets",
+                   wave_d.get("expected_packets"),
+                   summary["num_packets"], result_id)
+    _require_equal("wave_d.expected_flits", wave_d.get("expected_flits"),
+                   summary["flits_total"], result_id)
+    stats = evidence.get("stats") or {}
+    for key, stats_key in (("delivered_packets", "delivered"),
+                           ("flits_injected", "flits_injected"),
+                           ("flits_accepted", "flits_accepted")):
+        _require_equal(f"wave_d.{key}", wave_d.get(key),
+                       stats.get(stats_key), result_id)
 
 
 def _verify_metrics(result: dict[str, Any], evidence: dict[str, Any],
