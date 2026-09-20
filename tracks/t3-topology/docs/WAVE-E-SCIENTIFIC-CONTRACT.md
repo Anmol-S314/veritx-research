@@ -80,6 +80,14 @@ Exactly two resource classes (no taxonomy zoo):
   splits a 1 s transfer into exactly 3/2 s and 1.0005 s when a second 600 B
   transfer arrives at 0.5 ms).
 
+  A schedule records, per transfer, the exact **`bytes_moved`** and the
+  time-weighted **average** rate (`bytes / span`) — never the final
+  instantaneous share, which does not integrate back to the traffic. The
+  capacity integral of a fluid transfer IS the bytes it moved, so
+  `utilization = bytes_moved / (B × window) ≤ 1`; a schedule whose integral
+  exceeds the resource capacity refuses rather than reporting an impossible
+  number.
+
 **The policy is declared and identity-bearing.** Both policy names are fields
 of `WaveEPerformanceModel`, so two evaluations under different arbitration are
 different performance models; the scheduler refuses a policy it does not
@@ -105,6 +113,18 @@ set iteration; no host time in outputs. Invariants (all enforced + tested):
 start ≥ every predecessor end; capacity never exceeded; start ≤ end; each event
 runs exactly once; quiescence schedules everything. Unfinished events with no
 runnable progress raise typed `SchedulerDeadlock` (§35: no spinning).
+
+**Request arrivals are release times.** Work owned by an explicit request
+(and any event it declares as a root) cannot start before that request's
+`arrival`; later arrivals therefore queue behind earlier ones on shared
+resources instead of all starting at time zero. This is what makes the
+latency metric well defined: a request can never complete before it arrives.
+
+Complexity is event-driven, not per-cycle: admission pops the ready heap
+(batch), events blocked on a full exclusive resource wait in a per-resource
+heap and are re-queued only as capacity frees, and the next arrival is the
+ready heap's minimum. 50 000 independent events on capacity 4 schedule in
+about a second; 50 000-deep chains and 50 000-way bandwidth sharing likewise.
 
 ## 6. Compute / memory timing
 
@@ -252,7 +272,7 @@ empirical claim) · `UNCALIBRATED` (no dataset) · `UNSUPPORTED` (refuses)
 | per-operation network completion | UNSUPPORTED | BookSim exposes only a global window (§7) |
 | communication overlap (window vs local work) | EXACT_MODEL_SEMANTICS | causal scheduling; no overlap heuristic |
 | single request latency | EXACT_MODEL_SEMANTICS | completion − arrival for explicit requests |
-| multiple explicit arrivals | EXACT_MODEL_SEMANTICS | arrival times gate via dependency structure |
+| multiple explicit arrivals | EXACT_MODEL_SEMANTICS | arrivals are release times; deterministic queueing on shared resources |
 | TTFT | EXACT_MODEL_SEMANTICS | requires an explicit first-token event, else UNSUPPORTED |
 | decode-step / inter-token latency | EXACT_MODEL_SEMANTICS | requires explicit `step` identities |
 | throughput | UNSUPPORTED | no defined denominator interval in v1 |

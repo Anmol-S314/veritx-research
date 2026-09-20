@@ -47,6 +47,49 @@ oracle:
 | 8 | the contention policy was hard-coded in the scheduler and **absent from `performance_model_id`** — a hidden timing assumption (contract §20) | `arbitration_exclusive` / `arbitration_bandwidth` are declared, identity-bearing model fields; the scheduler refuses a policy it does not implement |
 | 9 | the declared `FIFO_SERIAL` policy is **not makespan-optimal** under contention | recorded, not hidden: three independent jobs 1 µs, 1 µs, 2 µs on capacity 2 → FIFO 3 µs, optimum 2 µs. The oracle asserts soundness (never better than optimum) and proves optimality where the policy is non-idling-optimal (capacity 1, hand corpus) |
 
+## 1b. Adversarial audit (independent, after the seal)
+
+The sealed tree was attacked layer by layer with real objects fed into
+the real production validators. Twelve findings, all reproduced before
+being fixed. Two of them were trust-relevant; the rest were silent
+nonsense or dead fields.
+
+| # | Finding (reproduced) | Fix |
+|---|---|---|
+| 1 | **Bandwidth accounting was wrong.** The scheduler recorded only the FINAL instantaneous share per transfer, so `bytes_moved` and `utilization` multiplied that rate by the whole interval: the staggered case reported 2400 bytes for 1800 bytes of traffic and `utilization = 1.33` — impossible. 72/300 randomized DAGs were affected. | `ScheduledEvent` now records the exact `bytes_moved` and the time-weighted AVERAGE rate (`bytes/span`); `resource_utilization` uses the exact bytes; a schedule that exceeds a resource's capacity integral refuses. |
+| 2 | **`exposed_compute == exposed_memory`, always.** Both counterfactuals ran the SAME perturbation (zero all non-memory durations), so the "memory" number was compute's. | `perturb_workload_durations` gained a `memory_zero` selector; each counterfactual now zeroes exactly the class it names (verified: 1 ms vs 997 ms on the same workload). |
+| 3 | **Request arrivals were inert.** `arrival` and `root_event_ids` were validated and then ignored: a request's work could start (and finish) before the request arrived. A two-request workload that the scheduler accepted then made `request_latencies` raise. Multi-request queueing did not exist. | The scheduler treats an arrival as a RELEASE TIME for the work that request owns (and its declared roots), so arrivals queue on shared resources and latency is non-negative by construction. |
+| 4 | **Negative TTFT could be reported.** The overall latency was guarded; `first_token_latency` was not. | Refuses a first-token completion before arrival. |
+| 5 | `perturb_model` silently dropped the declared arbitration policies (latent: only the defaults exist today). | Propagated through the perturbation. |
+| 6 | `network_factor` was dead code: `network_durations` (the evidence-bound window) overrode the scaled event duration. | `sensitivity_analysis` scales the evidence-bound mapping and reports `network_window_0.5x/2x` rows. |
+| 7 | `QTime(True)` meant one second (bool is an int subclass). | Bools refuse. |
+| 8 | Negative `QTime` was constructible. | Time cannot be negative; a subtraction that goes backwards refuses. |
+| 9 | An empty temporal overlay was accepted, reporting a makespan of 0 that means nothing. | At least one event is required. |
+| 10 | `bytes_count` on a COMPUTE/BARRIER/NETWORK event was silently ignored. | Refused: only memory events carry bytes. |
+| 11 | `inspect` could not see the persisted `waveeworkload` resource, and results never surfaced their chain links (the navigation block sat in the wrong branch). | The overlay is inspectable (with its users), and a result surfaces `wave_d.*` and `wave_e.temporal_workload_id`. |
+| 12 | **The scheduler was O(n^2).** 50 000 independent events on capacity 4 took 139 s: every instant rescanned the ready heap, the blocked waiters and the whole future-arrival set. | Batch admission by heap pop, per-resource wait heaps, O(1) next-arrival. 50 000 events now schedule in 1.27 s — with **0/600 schedule differences** against the previous scheduler on randomized mixed DAGs (semantics preserved, verified differentially). |
+
+The remaining invariants held under attack: across 300 randomized
+mixed-resource DAGs there were **zero** dependency violations, zero
+exclusive-capacity violations, zero fluid-law violations (bytes moved ≤
+bandwidth × window), and after the fixes zero accounting errors. The
+critical path matched an independent brute-force longest-chain
+computation on 300 random DAGs (0 mismatches). Product-level transplant,
+tamper and schema attacks all refuse.
+
+### Boundary (not a defect, but stated)
+
+A writer with full store access who re-signs the overlay, plan,
+experiment, result and attempt consistently can present a different
+*timing model*: the temporal overlay is a DECLARED input, not a
+measurement. Only the network window is anchored in authenticated
+evidence (its sha256 is bound into the result). The verified loaders
+prove internal consistency plus evidence binding; they do not make the
+store tamper-evident — the same boundary Wave C and Wave D declared.
+The library-level `reverify_result` is likewise a self-consistency
+checker; the product path never persists a schedule, so the product
+verifier re-runs the scheduler from the verified overlay and binding.
+
 ## 2. Repository audit (Stage A): what timing authority exists
 
 Searched for compute cycles, kernel durations, FLOPs, HBM bandwidth/latency,
@@ -210,12 +253,12 @@ The variation can be allowed only by declaring it in the contract.
 From the committed tree (`934f122f`, clean):
 
 ```
-Wave-E suites (scheduler/identity/demos/product)   115 passed / 1 skipped
+Wave-E suites (scheduler/identity/demos/product)   134 passed / 1 skipped
 Wave-D seal + semantics + physical + authenticity   (with Wave-C below)
 Wave-C control plane                                467 passed together
 frozen Wave-B focused chain                         747 passed
 BookSim goldens                                       6 passed
-broad DSE suite      26 failed / 3096 passed / 41 skipped
+broad DSE suite      26 failed / 3114 passed / 41 skipped
   failed node IDs vs the pre-Wave-D baseline        IDENTICAL (zero new)
 git diff --check                                    clean
 ```

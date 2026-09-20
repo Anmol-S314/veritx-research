@@ -1,6 +1,6 @@
 {
   "contract": "srota/wave-e",
-  "schema_version": 2,
+  "schema_version": 3,
   "base": {
     "wave_d_branch": "wave-d/distributed-semantics",
     "wave_d_sealed_sha": "d3f3bd63b952b54fb5cac688532caf83ca66c512"
@@ -67,8 +67,10 @@
     },
     "bandwidth": {
       "policy": "EQUAL_SHARE_BANDWIDTH",
-      "law": "fluid equal share among active transfers; a transfer joins at its own ready time; sum(active) <= bandwidth_bytes_per_s; event-driven, no fixed timesteps"
-    }
+      "law": "fluid equal share among active transfers; a transfer joins at its own ready time; sum(active) <= bandwidth_bytes_per_s; event-driven, no fixed timesteps",
+      "accounting": "each transfer records exact bytes_moved and the time-weighted average rate; capacity integral == bytes moved; utilization <= 1; an over-capacity schedule refuses"
+    },
+    "arrivals": "an explicit request arrival is a RELEASE TIME for the work that request owns (and its declared roots); later arrivals queue on shared resources"
   },
   "network_timing": {
     "authority": "BookSim evidence via sealed Wave-B/D qualified path only; Wave E never re-derives traffic or contention",
@@ -157,5 +159,30 @@
       "overlay model id == plan binding",
       "every declared waved operation id exists in the plan's operation graph"
     ]
+  },
+  "scheduler_complexity": {
+    "admission": "ready-heap pop (batch), identical order to the previous one-event loop (verified 0/600 differential)",
+    "blocked_exclusive": "per-resource wait heap, re-queued as capacity frees",
+    "next_arrival": "ready-heap minimum (O(1)), not a full scan",
+    "measured": "50k independent events ~1.3s; 50k chain ~0.7s; 50k bandwidth sharing ~0.9s"
+  },
+  "adversarial_audit": {
+    "findings": 12,
+    "trust_relevant": [
+      "bandwidth bytes_moved/utilization used the final instantaneous rate",
+      "request arrivals were inert (no queueing; metric then refused a workload the scheduler accepted)"
+    ],
+    "fixed": [
+      "exact bytes_moved + average rate; utilization <= 1 enforced",
+      "exposed_compute != exposed_memory (each zeroes one class)",
+      "perturb_model preserves arbitration",
+      "network window perturbation scales the evidence-bound mapping",
+      "negative TTFT refused",
+      "bool and negative QTime refused",
+      "empty overlay and bytes-on-non-memory refused",
+      "waveeworkload inspectable; result navigation surfaces its chain",
+      "O(n^2) scheduler -> near-linear (differential-verified)"
+    ],
+    "boundary": "a store-writer who re-signs the whole chain can present a different declared timing model; only the network window is anchored in authenticated evidence"
   }
 }
