@@ -21,7 +21,8 @@ from veritx_dse.application.errors import (  # noqa: E402
     ControlPlaneError, ErrorCode,
 )
 from veritx_dse.application.results import (  # noqa: E402
-    load_verified_attempt, load_verified_study, load_verified_studyrun,
+    load_verified_attempt, load_verified_result, load_verified_study,
+    load_verified_studyrun,
 )
 from veritx_dse.application.service import (  # noqa: E402
     SrotaControlPlane,
@@ -808,3 +809,53 @@ class TestAttemptStructure:
         assert record.get("evidence_ref") is None
         directory = service.store.root / "result"
         assert not list(directory.glob("*.json"))
+
+
+class TestAttemptTerminalStateClosure:
+    """SUCCEEDED admits no error; every status has an explicit rule."""
+
+    def test_succeeded_with_forged_error_refuses(self, clean_service):
+        result = clean_service.evaluate(_doc(name="ok"))
+        attempt_id = result["attempt_id"]
+        load_verified_attempt(clean_service.store, attempt_id)
+        store = clean_service.store
+        doc = copy.deepcopy(store.get("attempt", attempt_id))
+        doc["error"] = {"code": "EXECUTION_FAILED",
+                        "message": "forged failure",
+                        "operation": "evaluate", "resource_id": attempt_id,
+                        "cause_type": "", "details": {}}
+        _overwrite(store, "attempt", attempt_id, doc)
+        with pytest.raises(ControlPlaneError):
+            load_verified_attempt(store, attempt_id)
+        with pytest.raises(ControlPlaneError):
+            load_verified_result(store, result["resource_id"])
+        described = clean_service.inspect(attempt_id)
+        assert described["integrity"]["state"] == "INVALID"
+
+    def test_succeeded_error_message_only_refuses(self, clean_service):
+        result = clean_service.evaluate(_doc(name="ok2"))
+        attempt_id = result["attempt_id"]
+        store = clean_service.store
+        doc = copy.deepcopy(store.get("attempt", attempt_id))
+        doc["error"] = {"message": "forged"}
+        _overwrite(store, "attempt", attempt_id, doc)
+        with pytest.raises(ControlPlaneError):
+            load_verified_attempt(store, attempt_id)
+
+    def test_every_attempt_status_has_explicit_rule(self):
+        from veritx_dse.application.service import (  # noqa: PLC0415
+            ATTEMPT_STATUSES,
+        )
+        assert set(ATTEMPT_STATUSES) == {
+            "PLANNED", "RUNNING", "SUCCEEDED", "FAILED",
+            "TIMED_OUT", "INTERRUPTED"}
+        # No dead states, and no state may fall through into another
+        # state's structural rule: the final guard in
+        # _verify_attempt_structure refuses anything unlisted.
+        import inspect  # noqa: PLC0415
+        from veritx_dse.application import results as res  # noqa: PLC0415
+        source = inspect.getsource(res._verify_attempt_structure)
+        assert "has no verification rule for status" in source
+        source_loader = inspect.getsource(res.load_verified_attempt)
+        assert "carries an" in source_loader and \
+            "error payload" in source_loader

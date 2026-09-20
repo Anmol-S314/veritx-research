@@ -43,12 +43,16 @@ from .store import ResourceStore
 
 EXECUTION_MODE_REAL = "REAL_SIMULATION"
 ATTEMPT_STATUSES = ("PLANNED", "RUNNING", "SUCCEEDED", "FAILED",
-                    "TIMED_OUT", "CANCELLED", "INTERRUPTED",
-                    "UNSUPPORTED", "BLOCKED")
+                    "TIMED_OUT", "INTERRUPTED")
 # Lifecycle decision (reconciled with core/runs.py): PLANNED covers the
 # old CREATED+VALIDATED history (validation evidence IS the persisted
 # plan/design records); terminal states are single-write records; resume
 # is a NEW attempt, never a mutation (no backend checkpoint exists).
+# Only states the control plane actually produces or legitimately
+# persists: evaluate() emits SUCCEEDED/FAILED/TIMED_OUT/INTERRUPTED,
+# PLANNED/RUNNING are live states. Unsupported/blocked semantics fail
+# before attempt creation, so CANCELLED/UNSUPPORTED/BLOCKED are not
+# attempt states (study entries carry their own typed vocabulary).
 
 
 def _default_store_root() -> Path:

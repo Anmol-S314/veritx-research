@@ -283,6 +283,14 @@ def load_verified_attempt(store: Any, attempt_id: str) -> dict[str, Any]:
     if status != "SUCCEEDED":
         _verify_attempt_structure(attempt_id, record)
         return record
+    # A successful attempt may not simultaneously carry a failure
+    # claim: status, evidence and error must tell one story.
+    if record.get("error") is not None:
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"attempt {attempt_id} is SUCCEEDED but carries an "
+            f"error payload",
+            operation="verify_resource", resource_id=attempt_id)
     ref_doc = record.get("evidence_ref") or {}
     try:
         ref = EvidenceRef(path=ref_doc["path"],
@@ -597,14 +605,24 @@ def _verify_attempt_structure(attempt_id: str,
                 f"error {code!r}",
                 operation="verify_resource", resource_id=attempt_id)
         return
-    # INTERRUPTED: the interruption marker is its own literal (there is
-    # no ErrorCode member for a synchronous cancellation).
-    if code != "INTERRUPTED":
-        raise ControlPlaneError(
-            ErrorCode.EVIDENCE_INVALID,
-            f"attempt {attempt_id} is {status} with error {code!r} "
-            f"(expected the interruption marker)",
-            operation="verify_resource", resource_id=attempt_id)
+    if status == "INTERRUPTED":
+        # The interruption marker is its own literal (there is no
+        # ErrorCode member for a synchronous cancellation).
+        if code != "INTERRUPTED":
+            raise ControlPlaneError(
+                ErrorCode.EVIDENCE_INVALID,
+                f"attempt {attempt_id} is INTERRUPTED with error "
+                f"{code!r} (expected the interruption marker)",
+                operation="verify_resource", resource_id=attempt_id)
+        return
+    # Unreachable under the ATTEMPT_STATUSES membership check above,
+    # but explicit by design: no status may silently fall through
+    # into another state's rule.
+    raise ControlPlaneError(
+        ErrorCode.EVIDENCE_INVALID,
+        f"attempt {attempt_id} has no verification rule for status "
+        f"{status!r}",
+        operation="verify_resource", resource_id=attempt_id)
 
 
 def load_verified_study(store: Any, study_id: str) -> dict[str, Any]:
