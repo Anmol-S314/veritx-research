@@ -1,11 +1,13 @@
 # 2c.4 semantic-parent cutover — v1-parentage ledger
 
-Status: **pre-flight for 2c.4b**, written after a systematic audit rather
+Status: **parentage class CLOSED** — chain generation aware in 2c.4a
+(`db0a17f6`), `NetworkWindowBinding` generation-aware in `06e37487` (§3),
+network-window path generation-aware at all four sites. Originally written
+as the pre-flight for 2c.4b, after a systematic audit rather
 than discovered one site at a time. Every site below reads or persists a
 v1-only ancestry key (`operation_graph_id`, `waved_workload_id`,
-`wave_d_semantics_id`, or an equivalent). Sites are classified by whether
-the v2 cutover must change them, and each unhandled site is pinned by an
-executable test so it cannot be forgotten.
+`wave_d_semantics_id`, or an equivalent). Sections 1–4 record where each
+site landed; §5 is the interlock now constraining the writer switch.
 
 The reason this file exists: during seam 0.1 the *plan-side* hard-coded
 `operation_graph_id` read was found by the architect, and it was fixed as
