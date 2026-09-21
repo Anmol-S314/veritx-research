@@ -47,6 +47,22 @@ from veritx_dse.core.artifact import content_id
 
 RESULT_DOMAIN = "veritx/optimization-result/v2"
 
+OBJECTIVE_STATES = ("MEASURED", "UNMEASURABLE")
+
+
+def _finite_number(value: Any) -> float | None:
+    """float(value) iff value is a finite real number (bool excluded).
+
+    Anything else -- missing, NaN, +/-inf, bool, string, object -- has no
+    measured value and must become UNMEASURABLE, never a fabricated
+    score.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    import math
+    number = float(value)
+    return number if math.isfinite(number) else None
+
 
 def _requirement_report_id(report: dict[str, Any] | None) -> str | None:
     """Report identity (bare digest) or None when no report exists."""
@@ -147,7 +163,9 @@ class CandidateRecord:
     locked_consequences: dict[str, Any]
     evaluation_status: str
     objective_values: dict[str, float]
+    objective_availability: dict[str, str]
     constraint_verdicts: dict[str, str]
+    pareto_eligible: bool
     pareto_member: bool
     performance_result_id: str | None = None
     requirement_report_id: str | None = None
@@ -191,6 +209,9 @@ class OptimizationResult:
                 for k, v in sorted(r.locked_consequences.items())},
             "objective_values": {k: r.objective_values[k]
                                  for k in sorted(r.objective_values)},
+            "objective_availability": {
+                k: str(v)
+                for k, v in sorted(r.objective_availability.items())},
             "constraint_verdicts": {
                 k: str(v) for k, v in sorted(r.constraint_verdicts.items())},
             "product_requirement_details": [
@@ -199,6 +220,7 @@ class OptimizationResult:
                 dict(d) for d in r.constraint_details],
             "objective_details": [dict(d) for d in r.objective_details],
             "constraints_satisfied": r.constraints_satisfied,
+            "pareto_eligible": bool(r.pareto_eligible),
             "pareto_member": bool(r.pareto_member),
         } for r in sorted(self.records, key=lambda r: r.candidate_id)]
         return content_id(RESULT_DOMAIN, {
@@ -280,10 +302,12 @@ def _select(records: list[CandidateRecord], definition: Any,
     if definition.selection == "none":
         return None, "selection policy is none — no candidate selected"
     feasible_pareto = [r for r in records
-                       if r.candidate_id in set(pareto_ids)]
+                       if r.pareto_eligible
+                       and r.candidate_id in set(pareto_ids)]
     for r in feasible_pareto:
         missing = [o.metric for o in definition.objectives
-                   if o.metric not in r.objective_values]
+                   if o.metric not in r.objective_values
+                   or r.objective_availability.get(o.metric) != "MEASURED"]
         if missing:
             raise OptimizationResultError(
                 f"Pareto member {r.candidate_id!r} carries no measured "
@@ -403,9 +427,26 @@ class Optimizer:
             product_satisfied: bool | None = None
             if report is not None:
                 product_satisfied = report_passes(report)
+            raw_values = ev.objective_values
+            if not isinstance(raw_values, Mapping):
+                raise OptimizationResultError(
+                    f"evaluator returned non-mapping objective_values "
+                    f"{type(raw_values).__name__} for candidate "
+                    f"{cand.candidate_id!r}")
+            # Measured values are real finite numbers only; a declared
+            # objective without one is UNMEASURABLE (never 0, never
+            # infinity, never a backend failure masquerading as a score).
+            measured_all: dict[str, float] = {}
+            invalid_values: dict[str, str] = {}
+            for key, raw in raw_values.items():
+                number = _finite_number(raw)
+                if number is None:
+                    invalid_values[str(key)] = repr(raw)
+                else:
+                    measured_all[str(key)] = number
             if ev.status == "EVALUATED":
                 verdicts = evaluate_all(definition.constraints,
-                                        ev.objective_values)
+                                        measured_all)
             else:
                 # No measured values: every declared binding is
                 # UNMEASURABLE (never a pass), with its required bound
@@ -435,24 +476,50 @@ class Optimizer:
                 k: str(v.get("verdict"))
                 for k, v in verdicts["verdicts"].items()}
             constraint_details = _constraint_details(verdicts["verdicts"])
-            unmeasured_objectives = tuple(
-                o.metric for o in definition.objectives
-                if o.metric not in ev.objective_values)
-            objective_details = tuple({
-                "metric": metric,
-                "state": "UNMEASURABLE",
-                "measured": None,
-                "reason": f"objective {metric} not evidenced by "
-                          "evaluation",
-            } for metric in unmeasured_objectives)
+            # Every REQUESTED objective gets an explicit state. A missing,
+            # non-finite or non-real value is UNMEASURABLE with its typed
+            # reason; only MEASURED objectives may score or reach Pareto.
+            objective_availability: dict[str, str] = {}
+            objective_entries: list[dict[str, Any]] = []
+            for o in definition.objectives:
+                if ev.status != "EVALUATED":
+                    state = "UNMEASURABLE"
+                    reason = (f"evaluation status {ev.status} — "
+                              "no measured value")
+                elif o.metric in invalid_values:
+                    state = "UNMEASURABLE"
+                    reason = (f"objective {o.metric} value "
+                              f"{invalid_values[o.metric]} is not a "
+                              "finite real number")
+                elif o.metric in measured_all:
+                    state = "MEASURED"
+                    reason = None
+                else:
+                    state = "UNMEASURABLE"
+                    reason = (f"objective {o.metric} not evidenced by "
+                              "evaluation")
+                objective_availability[o.metric] = state
+                if state != "MEASURED":
+                    objective_entries.append({
+                        "metric": o.metric,
+                        "state": state,
+                        "measured": None,
+                        "reason": reason,
+                    })
+            for key in sorted(measured_all):
+                objective_availability.setdefault(key, "MEASURED")
+            objective_details = tuple(objective_entries)
+            all_objectives_measured = all(
+                objective_availability[o.metric] == "MEASURED"
+                for o in definition.objectives)
             # Pareto input: backend success AND product binding
-            # requirements pass AND every objective measured AND every
-            # hard constraint SATISFIED. Anything else is visible and
-            # ineligible, never a fabricated score.
+            # requirements pass AND every objective measured+finite AND
+            # every hard constraint SATISFIED. Anything else is visible
+            # and ineligible, never a fabricated score.
             eligible = (ev.status == "EVALUATED"
                         and constraints_satisfied is True
                         and product_satisfied is not False
-                        and not unmeasured_objectives)
+                        and all_objectives_measured)
             pareto_member = False  # assigned after the frontier computes
             product_details = tuple(
                 dict(e) for e in report.get("entries", [])) \
@@ -463,8 +530,10 @@ class Optimizer:
                 design_hash=ev.design_hash,
                 locked_consequences=dict(ev.locked_consequences),
                 evaluation_status=ev.status,
-                objective_values=dict(ev.objective_values),
+                objective_values=measured_all,
+                objective_availability=objective_availability,
                 constraint_verdicts=constraint_verdicts,
+                pareto_eligible=eligible,
                 pareto_member=pareto_member,
                 performance_result_id=ev.performance_result_id,
                 requirement_report_id=_requirement_report_id(report),
@@ -478,7 +547,9 @@ class Optimizer:
             )
             records.append(record)
             if eligible:
-                feasible_values[cand.candidate_id] = dict(ev.objective_values)
+                feasible_values[cand.candidate_id] = {
+                    o.metric: measured_all[o.metric]
+                    for o in definition.objectives}
         front = _pareto_ids(feasible_values, definition.objectives)
         front_set = set(front)
         records = [CandidateRecord(
@@ -487,7 +558,9 @@ class Optimizer:
             locked_consequences=r.locked_consequences,
             evaluation_status=r.evaluation_status,
             objective_values=r.objective_values,
+            objective_availability=r.objective_availability,
             constraint_verdicts=r.constraint_verdicts,
+            pareto_eligible=r.pareto_eligible,
             pareto_member=(r.candidate_id in front_set),
             performance_result_id=r.performance_result_id,
             requirement_report_id=r.requirement_report_id,

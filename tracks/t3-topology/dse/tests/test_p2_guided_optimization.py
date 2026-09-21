@@ -579,6 +579,61 @@ class _FixedReportPort:
             requirement_report=report)
 
 
+class _ValuePort:
+    """Evaluator returning exactly the objective_values it is given."""
+
+    def __init__(self, values):
+        self.values = values
+
+    def evaluate(self, candidate):
+        return CandidateEvaluation(
+            candidate_id=candidate.candidate_id,
+            design_hash=candidate.request.design_hash(),
+            status="EVALUATED",
+            objective_values=dict(self.values),
+            locked_consequences={})
+
+
+class TestObjectiveStateCompleteness:
+    """A3: every requested objective has an explicit state; a missing or
+    non-finite value is UNMEASURABLE and can never score or reach Pareto."""
+
+    def _defn(self):
+        return OptimizationDefinition(
+            domain=(DomainParam("link_width", (32, 128)),),
+            objectives=(Objective("latency", "MIN"),),
+            method="grid")
+
+    @pytest.mark.parametrize("bad", [
+        float("nan"), float("inf"), float("-inf"), True, "fast", None])
+    def test_non_finite_or_non_real_objective_is_unmeasurable(self, bad):
+        result = Optimizer().optimize(
+            _base(), self._defn(), _ValuePort({"latency": bad}))
+        assert result.pareto_ids == ()
+        assert result.selected_candidate_id is None
+        for r in result.records:
+            assert r.pareto_eligible is False
+            assert r.objective_availability["latency"] == \
+                "UNMEASURABLE"
+            assert r.objective_values == {}
+            assert r.objective_details
+            entry = dict(r.objective_details[0])
+            assert entry["state"] == "UNMEASURABLE"
+            assert "finite real number" in entry["reason"]
+
+    def test_measured_objective_gets_explicit_measured_state(self):
+        result = Optimizer().optimize(
+            _base(), self._defn(),
+            _ValuePort({"latency": 5.0, "area": 7.0}))
+        assert result.pareto_ids
+        for r in result.records:
+            assert r.pareto_eligible is True
+            assert r.objective_availability["latency"] == "MEASURED"
+            assert r.objective_availability["area"] == "MEASURED"
+            assert r.objective_values["latency"] == 5.0
+            assert r.objective_details == ()
+
+
 class _TransplantedReportPort:
     """Evaluator that returns ANOTHER design's report under this id."""
 
