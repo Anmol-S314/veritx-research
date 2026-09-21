@@ -11,7 +11,7 @@ package     veritx_dse/optimization/ (definition, space, metrics,
             constraints, pareto, result, orchestrator, __init__)
 entry       SrotaControlPlane.optimize() / .inspect_optimization()
 resources   optimizationdef, optimizationresult
-tests       tests/test_optimization_core.py   54 pure unit (oracles)
+tests       tests/test_optimization_core.py   63 pure unit (oracles)
             tests/test_optimization_e2e.py   24 real-BookSim E2E + adversarial
 ```
 
@@ -74,6 +74,32 @@ full dse battery    baseline(seal) 26 failed / 3210 passed / 41 skipped
                     wavef         27 failed / 3204 passed / 65 skipped
                     diff vs seal: +1 failure ONLY (see §5)
 ```
+
+## 4b. Post-commit capability audit (same day)
+
+An audit of the commit against the full §-checklist found the seal
+preserved but the wave not yet complete; the following were closed in a
+second commit:
+
+| # | Gap | Closure |
+|---|---|---|
+| 1 | **§25 violation:** `n_reused` was tallied in the orchestrator but never persisted — the budget block did not report evaluations reused. | `scenario_reused` rides on each candidate record; `scenario_evaluations_reused` is a derived budget field the verifier recomputes from accounting (§62); E2E asserts the rerun reuses all 4 scenario evaluations. |
+| 2 | **§18/§19/§27/§53 untested:** ALIAS dedupe and resolve-before-execute INVALID had production code but zero coverage. | `TestCandidateAccounting`: distinct assignments stay VALID (no false dedupe), §82 canonical domain dedupe, unresolvable template → every assignment INVALID with reasons (→ `NO_VALID_CANDIDATES`), §10 hardware-signature mismatch refuses multi-scenario candidates by name. |
+| 3 | **§30 classification untested.** | `TestFailureClassification` pins the sealed `study_status_for_error` mapping (TIMEOUT→TIMED_OUT, unsupported family→UNSUPPORTED, else FAILED) and the orchestrator's use of it. |
+| 4 | **§89 differential implicit.** | `TestExhaustiveBudgetDifferential`: budgeted plan IS the canonical prefix cut; terminal vs NOT_EVALUATED tails derive different `search_complete`; verdict vocabulary (existential FEASIBLE under budget vs complete-search-only NO_FEASIBLE_DESIGN vs INCONCLUSIVE). |
+
+Pure battery now 63 tests; E2E 24.
+
+## 4c. Environmental finding (not a Wave-F defect)
+
+`test_pp_failclosed::test_effective_copy_matches_vendored_tree` began
+failing mid-session: the user-site chakra install was refreshed at
+14:12 from the **Gate V2.1 converter repair** (`d3e0117b`, present in a
+parallel worktree, postdating the Wave-E seal). This tree's vendored
+copy is seal-era, so the provenance gate refuses — working as designed.
+Resolution is a base-management decision (forward-port d3e0117b into
+the Wave-F base, or reinstall from this tree); either flips exactly one
+tree's result, so it is not resolved unilaterally here.
 
 ## 5. The one battery delta is the seal posture, not a defect
 

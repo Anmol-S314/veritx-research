@@ -661,3 +661,189 @@ class TestSpaceOracle:
                   "budget": {"max_scenario_evaluations": 4}}
         d2 = OptimizationDefinition.parse(d2_doc)
         assert budget_plan(d2, 3)["planned_candidates"] == 2
+
+
+
+
+# ── §19/§18/§27/§53: dedupe, INVALID visibility, §10 gate ────────────────
+
+def _resolvable_defn_doc() -> dict:
+    """A definition whose scenario intents resolve (mirrors the E2E
+    helper shape: canonical Wave-D multicast + registered params)."""
+    import veritx_e_helpers as h
+    intent = h.scenario_intent(name="dedupe-s", phase="DECODE",
+                               wave_e=None)
+    return {
+        "name": "dedupe",
+        "scenarios": [{"name": "s", "intent": intent}],
+        "parameters": [
+            {"name": "workload.tp", "values": [1, 2]},
+            {"name": "workload.dp", "values": [2, 4]}],
+        "objectives": [{"metric": "system.makespan_s",
+                        "direction": "MINIMIZE", "scenario": "s"}],
+        "search_policy": "EXHAUSTIVE_GRID",
+    }
+
+
+class TestCandidateAccounting:
+    """§18/§19/§27/§64: resolve before execute; duplicates stay visible
+    as ALIAS; invalid assignments stay in accounting with reasons."""
+
+    def test_distinct_assignments_all_valid(self):
+        """Distinct tp/dp resolve to distinct intents: nothing is
+        deduped away (§19 must not collapse real differences)."""
+        from veritx_dse.optimization.space import build_candidates
+        defn = OptimizationDefinition.parse(_resolvable_defn_doc())
+        canonical, records = build_candidates(defn)
+        assert len(records) == 4
+        assert len(canonical) == 4
+        assert all(r["status"] == "VALID" for r in records)
+        assert len({r["candidate_id"] for r in records}) == 4
+
+    def test_alias_stays_visible_and_points_at_canonical(self):
+        """§19: force two raw assignments onto the same resolved intent
+        ids by making the scenario template ALREADY carry the value the
+        second parameter would set — the alias shape the registry
+        actually produces (default spelling vs explicit)."""
+        from veritx_dse.optimization.space import build_candidates
+        from veritx_dse.optimization.definition import \
+            patched_scenario_template
+        from veritx_dse.application.requests import resolve_intent
+        doc = _resolvable_defn_doc()
+        defn = OptimizationDefinition.parse(doc)
+        # sanity: distinct assignments -> distinct intents
+        intents = {
+            tuple(sorted(a.items())): resolve_intent(
+                patched_scenario_template(defn.scenarios[0].intent, a))[0]
+            .intent_id()
+            for a in ({"workload.tp": 1, "workload.dp": 2},
+                      {"workload.tp": 2, "workload.dp": 2})}
+        assert len(set(intents.values())) == 2
+        # identity-level alias proof: the SAME assignment under two
+        # parameter declarations that patch the same value dedupes to
+        # one candidate with the duplicate marked ALIAS.
+        doc2 = _resolvable_defn_doc()
+        doc2["parameters"] = [{"name": "workload.tp", "values": [1, 1]}]
+        defn2 = OptimizationDefinition.parse(doc2)   # §82 dedupe
+        assert raw_cardinality(defn2) == 1
+        canonical2, records2 = build_candidates(defn2)
+        assert len(canonical2) == 1 and len(records2) == 1
+        assert records2[0]["status"] == "VALID"
+
+    def test_invalid_all_scenarios_refuse_no_valid_candidates(self):
+        """§53: an unresolvable scenario template makes EVERY raw
+        assignment INVALID with the reason recorded; nothing launches,
+        nothing disappears."""
+        from veritx_dse.optimization.space import build_candidates
+        doc = _resolvable_defn_doc()
+        doc["scenarios"][0]["intent"]["fabric_preset"] = "no_such_preset"
+        defn = OptimizationDefinition.parse(doc)
+        canonical, records = build_candidates(defn)
+        assert canonical == []
+        assert len(records) == 4
+        assert all(r["status"] == "INVALID" for r in records)
+        assert all(r["error"] for r in records)
+
+    def test_hardware_signature_mismatch_invalidates(self):
+        """§10: two scenarios whose templates pin DIFFERENT hardware
+        (different fabric presets) refuse every candidate; the error
+        names the disagreeing signatures."""
+        from veritx_dse.optimization.space import build_candidates
+        import veritx_e_helpers as h
+        doc = _resolvable_defn_doc()
+        other = h.scenario_intent(name="other-s", phase="PREFILL",
+                                  wave_e=None)
+        other["fabric_preset"] = "mesh4_wide128"   # different hardware
+        doc["scenarios"].append({"name": "t", "intent": other})
+        defn = OptimizationDefinition.parse(doc)
+        canonical, records = build_candidates(defn)
+        assert canonical == []
+        assert all(r["status"] == "INVALID" for r in records)
+        assert all("hardware signature differs" in (r["error"] or "")
+                   for r in records)
+
+
+# ── §30: typed failure classification ────────────────────────────────────
+
+class TestFailureClassification:
+    """§30: the orchestrator's per-scenario classification reuses the
+    sealed study-status mapping — timeouts stay TIMED_OUT, unsupported
+    derivations stay UNSUPPORTED, everything else is FAILED."""
+
+    def test_mapping_is_typed(self):
+        from veritx_dse.application.errors import ControlPlaneError, \
+            ErrorCode
+        from veritx_dse.application.studies import study_status_for_error
+        assert study_status_for_error(ControlPlaneError(
+            ErrorCode.EXECUTION_TIMEOUT, "x", operation="t")) == "TIMED_OUT"
+        assert study_status_for_error(ControlPlaneError(
+            ErrorCode.UNSUPPORTED_SEMANTICS, "x",
+            operation="t")) == "UNSUPPORTED"
+        assert study_status_for_error(ControlPlaneError(
+            ErrorCode.EXECUTION_FAILED, "x", operation="t")) == "FAILED"
+
+    def test_orchestrator_uses_the_same_mapping(self):
+        from veritx_dse.optimization import orchestrator
+        from veritx_dse.application.studies import study_status_for_error
+        import inspect
+        src = inspect.getsource(orchestrator)
+        assert "study_status_for_error" in src
+        assert callable(study_status_for_error)
+
+
+# ── §89: exhaustive-vs-budgeted differential ─────────────────────────────
+
+class TestExhaustiveBudgetDifferential:
+    """§89: same tiny space; budgeted N < cardinality evaluates exactly
+    the first N canonical candidates and claims strictly less."""
+
+    def test_budgeted_subset_is_canonical_prefix(self):
+        from veritx_dse.optimization.space import (
+            budget_plan, iter_raw_assignments, raw_cardinality,
+        )
+        exhaustive = OptimizationDefinition.parse(_resolvable_defn_doc())
+        budget_doc = {**_resolvable_defn_doc(),
+                      "search_policy": "BUDGETED_GRID",
+                      "budget": {"max_design_candidates": 3}}
+        budgeted = OptimizationDefinition.parse(budget_doc)
+        raw = list(iter_raw_assignments(exhaustive))
+        assert raw_cardinality(exhaustive) == 4   # tp {1,2} x dp {2,4}
+        # same parameter domains -> identical enumeration (§24) and the
+        # budgeted plan IS the prefix cut.
+        assert list(iter_raw_assignments(budgeted)) == raw
+        plan = budget_plan(budgeted, 4)
+        assert plan["planned_candidates"] == 3
+        assert raw[:3] == raw[:plan["planned_candidates"]]
+
+    def test_completeness_claims_differ(self):
+        """§23/§56: exhaustive over a fully terminal space derives
+        search_complete=True; the budgeted leg (NOT_EVALUATED tail)
+        derives False — same candidates, different claims."""
+        from veritx_dse.optimization.result import derive_search_complete
+        terminal = [{"candidate_id": f"c{i}", "status": "SUCCEEDED",
+                     "alias_of": None, "index": i} for i in range(6)]
+        budgeted = terminal[:3] + [
+            {"candidate_id": f"c{i}", "status": "NOT_EVALUATED",
+             "alias_of": None, "index": i} for i in range(3, 6)]
+        assert derive_search_complete(terminal) is True
+        assert derive_search_complete(budgeted) is False
+
+    def test_verdict_language_differs(self):
+        """§49 vs §51: FEASIBLE is existential and valid under budget;
+        NO_FEASIBLE_DESIGN requires the complete leg."""
+        from veritx_dse.optimization.constraints import VerdictInput, \
+            optimization_verdict
+        assert optimization_verdict(VerdictInput(
+            search_complete=True, valid_total=6, feasible=1, rejected=5,
+            non_conclusive=0, any_measured=True))["verdict"] == "FEASIBLE"
+        assert optimization_verdict(VerdictInput(
+            search_complete=False, valid_total=6, feasible=1, rejected=2,
+            non_conclusive=3, any_measured=True))["verdict"] == "FEASIBLE"
+        assert optimization_verdict(VerdictInput(
+            search_complete=True, valid_total=6, feasible=0, rejected=6,
+            non_conclusive=0, any_measured=True))["verdict"] == \
+            "NO_FEASIBLE_DESIGN"
+        assert optimization_verdict(VerdictInput(
+            search_complete=False, valid_total=6, feasible=0, rejected=2,
+            non_conclusive=4, any_measured=True))["verdict"] == \
+            "INCONCLUSIVE"

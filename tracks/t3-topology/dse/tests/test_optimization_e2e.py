@@ -139,6 +139,13 @@ class TestRealDemonstrations:
                 tuple(sorted((r.get("scenario_result_ids") or {}).values()))
                 for r in result["artifact"]["candidate_records"]}
         assert ids == ids2
+        # §25: the reuse tally is persisted and covers every scenario
+        # evaluation of the rerun (4 candidates x 1 scenario)
+        assert budget["scenario_evaluations_reused"] == 4
+        assert all(
+            all((r.get("scenario_reused") or {}).values())
+            for r in result["artifact"]["candidate_records"]
+            if r["status"] == "SUCCEEDED")
 
     def test_B_multi_objective_no_implicit_winner(self, staged):
         """§161B: frontier reported; no winner without a policy."""

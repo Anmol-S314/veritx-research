@@ -88,7 +88,8 @@ ARTIFACT_FIELDS = frozenset({
 
 CANDIDATE_RECORD_FIELDS = frozenset({
     "index", "assignment", "candidate_id", "status", "alias_of",
-    "scenario_intent_ids", "scenario_result_ids", "error",
+    "scenario_intent_ids", "scenario_result_ids", "scenario_reused",
+    "error",
 })
 
 SEARCH_FIELDS = frozenset({
@@ -98,7 +99,7 @@ SEARCH_FIELDS = frozenset({
 BUDGET_FIELDS = frozenset({
     "raw_assignments", "unique_candidates", "planned_candidates",
     "planned_evaluations", "candidates_evaluated",
-    "scenario_evaluations_attempted",
+    "scenario_evaluations_attempted", "scenario_evaluations_reused",
 })
 
 #: Statuses a valid candidate may carry in a PERSISTED result.
@@ -179,7 +180,13 @@ def derive_search_complete(records: list[dict[str, Any]]) -> bool:
 
 def derive_budget(defn: OptimizationDefinition, unique_count: int,
                   records: list[dict[str, Any]]) -> dict[str, int]:
-    """§25: requested vs actual accounting, all fields derived."""
+    """§25: requested vs actual accounting, all fields derived.
+
+    ``scenario_evaluations_reused`` is derived per record (the count of
+    scenario results the control plane served from verified reuse), so
+    the verifier recomputes it from accounting instead of trusting the
+    builder's tally (§62).
+    """
     plan = budget_plan(defn, unique_count)
     evaluated = [r for r in records
                  if r["status"] in TERMINAL_EVALUATION_STATUSES
@@ -192,6 +199,9 @@ def derive_budget(defn: OptimizationDefinition, unique_count: int,
         "candidates_evaluated": len(evaluated),
         "scenario_evaluations_attempted": sum(
             len(r.get("scenario_result_ids") or {}) for r in records),
+        "scenario_evaluations_reused": sum(
+            1 for r in records
+            for v in (r.get("scenario_reused") or {}).values() if v),
     }
 
 
@@ -268,6 +278,7 @@ class CandidateEvaluation:
     alias_of: str | None
     scenario_intent_ids: dict[str, str | None]
     scenario_result_ids: dict[str, str | None]
+    scenario_reused: dict[str, bool] | None = None
     error: str | None = None
 
     def to_doc(self) -> dict[str, Any]:
@@ -281,6 +292,8 @@ class CandidateEvaluation:
                 self.scenario_intent_ids.items()))),
             "scenario_result_ids": _order_json(dict(sorted(
                 (self.scenario_result_ids or {}).items()))),
+            "scenario_reused": _order_json(dict(sorted(
+                (self.scenario_reused or {}).items()))),
             "error": self.error,
         }
 

@@ -71,6 +71,7 @@ def run_optimization(cp: Any, defn: OptimizationDefinition) -> OptimizationRun:
     for cand in ordered:
         per_scenario_results: dict[str, dict[str, Any] | None] = {}
         result_ids: dict[str, str | None] = {}
+        reused_by_scenario: dict[str, bool] = {}
         statuses: list[str] = []
         for spec in defn.scenarios:
             outcome = cand.scenario_outcomes[
@@ -84,7 +85,9 @@ def run_optimization(cp: Any, defn: OptimizationDefinition) -> OptimizationRun:
                         "backend_target")))
                 per_scenario_results[spec.name] = None
                 result_ids[spec.name] = None
+                reused_by_scenario[spec.name] = False
                 continue
+            reused_by_scenario[spec.name] = bool(ev.get("reused"))
             n_reused += 1 if ev.get("reused") else 0
             try:
                 vres = load_verified_result(
@@ -117,6 +120,7 @@ def run_optimization(cp: Any, defn: OptimizationDefinition) -> OptimizationRun:
             alias_of=None,
             scenario_intent_ids=cand.intent_ids(),
             scenario_result_ids=result_ids,
+            scenario_reused=reused_by_scenario,
             error=None))
         result_docs[cand.candidate_id] = per_scenario_results  # type: ignore[assignment]
 
@@ -129,7 +133,7 @@ def run_optimization(cp: Any, defn: OptimizationDefinition) -> OptimizationRun:
             index=cand.index, assignment=cand.assignment,
             candidate_id=cand.candidate_id, status=NOT_EVALUATED,
             alias_of=None, scenario_intent_ids=cand.intent_ids(),
-            scenario_result_ids={}, error=None))
+            scenario_result_ids={}, scenario_reused={}, error=None))
 
     # INVALID/ALIAS records from the space pass through unchanged
     space_rows = []
@@ -150,6 +154,7 @@ def run_optimization(cp: Any, defn: OptimizationDefinition) -> OptimizationRun:
                 "alias_of": ev.alias_of,
                 "scenario_intent_ids": ev.scenario_intent_ids,
                 "scenario_result_ids": ev.scenario_result_ids,
+                "scenario_reused": ev.scenario_reused or {},
                 "error": ev.error,
             })
         else:
@@ -161,6 +166,7 @@ def run_optimization(cp: Any, defn: OptimizationDefinition) -> OptimizationRun:
                 "alias_of": row["alias_of"],
                 "scenario_intent_ids": row["scenario_intent_ids"],
                 "scenario_result_ids": {},
+                "scenario_reused": {},
                 "error": row["error"],
             })
     space_rows.sort(key=lambda r: r["index"])
@@ -238,6 +244,7 @@ def run_optimization(cp: Any, defn: OptimizationDefinition) -> OptimizationRun:
             alias_of=r["alias_of"],
             scenario_intent_ids=r["scenario_intent_ids"],
             scenario_result_ids=r["scenario_result_ids"],
+            scenario_reused=r["scenario_reused"],
             error=r["error"]) for r in space_rows],
         search_complete=search_complete,
         frontier_complete=frontier_complete,
