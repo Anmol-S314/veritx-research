@@ -276,10 +276,10 @@ legacy compressed-default hash validates as-is            ...LegacyCompressedDef
 oracle-independence AST guard (top-level only)            test_architecture_law
 ```
 
-Not yet green — do not begin the merge:
+Not yet green for the merge — but NOT blocked by Gate V2.2:
 
 ```
-0. Gate V2.2: restore the matching PIM backend (see below) — F17b
+0. 2c PRELUDE (see below): acceptance decoupling + multi-instance case
 1. (resolved) F12b: Chakra IS vendored; runtime is fingerprint-gated
 3. scope=None lowering REFUSAL implemented (currently only pinned as xfail)
 4. PIM_BEGIN/PIM_END added to the vocabulary (flips the PIM xfail)
@@ -292,7 +292,27 @@ therefore sequenced **before** it, as required.
 
 ---
 
-## Gate V2.2 — restore the matching PIM backend (NOT STARTED)
+## Gate V2.2 — restore the matching PIM backend (NOT STARTED, NOT BLOCKING 2c)
+
+**Sequencing correction (accepted).** Gate V2.2 does **not** block Slice
+2c. PIM is a real WORKLOAD semantic, proven by the producer half that
+already exists (PIMModel, PIM configs, the `PIM <channel>` / `PIM END`
+grammar, the PIM latency model, `REMOTE:<device>.<channel>` placement, and
+the converter intent). The defect is a BACKEND CAPABILITY defect: a newer
+producer paired with an older Chakra schema/feeder/ASTRA consumer.
+
+Coupling the canonical IR to whatever simulator build happens to work
+today is the exact failure this consolidation exists to stop. So:
+
+```
+WorkloadGraph            PIM_BEGIN / PIM_END are REAL semantics (2c)
+astra_chakra_et          REFUSES PIM with a typed backend-capability
+                         refusal until Gate V2.2 lands
+Gate V2.2 later          flips ONLY the backend box; WorkloadGraph
+                         semantics and identity do not change
+```
+
+That invariance is the acid test that the abstraction is right.
 
 Ruling: do not formalise PIM as unsupported. Port the matching upstream
 deltas mechanically; do not design anything.
@@ -316,7 +336,26 @@ deltas mechanically; do not design anything.
 10. dense non-PIM regression: ET hashes unchanged before/after
 ```
 
-The killer regression is the currently-xfailing case:
+### PIM test policy (changed)
+
+Do NOT leave "the PIM converter crashes" as a strict xfail once 2c
+lands. The normal passing test becomes an intentional refusal that fires
+BEFORE the version-skewed converter executes:
+
+```python
+with pytest.raises(UnsupportedSemantic):      # existing typed refusal
+    lower_to_et(pim_workload)
+```
+
+`UnsupportedSemantic` (lowering.LoweringError) is the most appropriate
+existing refusal — the lowering refuses because the qualified backend
+cannot represent the semantic. No new exception family, and no
+`BackendCapabilityUnavailable` invented for one case.
+
+Gate V2.2 then REPLACES that refusal test with the positive end-to-end
+execution test, so no xfail has to be re-interpreted later.
+
+### The killer regression (Gate V2.2)
 
 ```
 PIM 0
@@ -333,3 +372,67 @@ re-labelled.
 
 Note: steps 1–4 must not create a second source of truth. The forks are a
 REFERENCE for the deltas, not a new vendoring.
+
+---
+
+## Slice 2c prelude — the work immediately before the WorkloadGraph merge
+
+Sequenced by the ruling. Gate V2.2 and Slice 3 are explicitly NOT here.
+
+| # | task | state |
+|---|---|---|
+| 1 | decouple `acceptance/phase15.py` from `workload/canonical.py` | TODO |
+| 2 | preserve its Ramulator qualification evidence exactly | TODO |
+| 3 | move its workload→memory conservation contract into an integration regression | TODO |
+| 4 | real multi-instance `canonicalize_run_workload` regression (`participant_count != world_size`) | **DONE** |
+| 5 | keep F18 (`scope=None != ALL`) explicitly open in this ledger | **DONE** (see below) |
+| 6 | implement the canonical `WorkloadGraph` | TODO |
+
+### Why item 1 needs care
+
+`acceptance/phase15.py:48-49` imports `Parallelism`, `WorkloadArtifact`
+and `build_compute_op`, and it feeds them to
+`memory_lowering.resolve_memory(art, ...)`, which takes the legacy
+artifact. So the decoupling is NOT a local import swap:
+
+```
+phase15 builds WorkloadArtifact -> resolve_memory(WorkloadArtifact)
+```
+
+Migrating `resolve_memory` to the canonical graph is 2c consumer work. The
+pragmatic order is therefore:
+
+```
+a. move the battery out of veritx_dse (qualification/ramulator.py),
+   keeping its Ramulator evidence byte-identical
+b. keep the legacy import visible there as a MIGRATION CONSUMER, with the
+   contract test (item 3) holding the conservation semantics
+c. migrate resolve_memory to WorkloadGraph during 2c
+d. delete workload/canonical.py; item (b)'s consumer migrates with it
+```
+
+A qualification battery is allowed to be a legacy consumer for one slice.
+A production package module is not, which is why (a) comes first.
+
+### Item 4 — DONE, with the mutation probe
+
+`tests/test_multi_instance_canonicalization.py` (6 tests) drives the real
+entry point with a two-instance cluster (tp=4, 4 NPUs per instance):
+
+```
+parallelism.dp == 2,  world_size == 8,  num_participants == 4
+```
+
+Mutation-proven: monkeypatching the participant rule to return
+`world_size` makes `num_participants == 8`, and the regression fails. The
+test is therefore the thing that would have caught the original silent
+design error, not a decorative assertion.
+
+### Item 5 — F18 stays open
+
+`scope=None != scope="ALL"` is recorded as an OPEN 2c item: the canonical
+lowering must REFUSE an undeclared scope unless the target proves a
+meaning, because the trace projection currently renders both as the bare
+collective form. Pinned as a strict xfail in
+`tests/test_gate_v2_union_evidence.py`; the xfail is removed when the
+canonical lowering owns the refusal.
