@@ -2972,6 +2972,151 @@ def cmd_compile_fabric(ctx: Ctx, args):
     return
 
 
+def _optimize_booksim(ctx: Ctx, args, src: Path, doc: dict):
+    """Real-evaluation optimization: candidates through the genuine pipeline.
+
+    v3 fixture -> GUIDED grid -> RealCandidateEvaluator (compile -> lower
+    -> P1B evaluate -> requirements). Objectives are evidenced measurements
+    only (completion_cycles MIN by default); fake metrics never appear.
+    Infeasible candidates stay visible, never Pareto-eligible.
+    """
+    from veritx_dse.model.compile_model import CompileRequestV3
+    from veritx_dse.optimization.candidate import CandidateError
+    from veritx_dse.optimization.definition import (
+        Constraint,
+        DomainParam,
+        Objective,
+        OptimizationDefinition,
+        OptimizationDefinitionError,
+    )
+    from veritx_dse.optimization.real_evaluator import RealCandidateEvaluator
+    from veritx_dse.optimization.result import Optimizer
+    try:
+        base = CompileRequestV3.from_dict(doc)
+    except Exception as exc:
+        fail(ctx, f"v3 fixture does not parse: {exc}")
+        return
+    method = getattr(args, "search", "grid") or "grid"
+    seed = getattr(args, "seed", 0) or 0
+    seed = int(seed) if int(seed) != 0 else 7
+
+    def _ints(flag: str | None, default: list) -> list:
+        if not flag:
+            return list(default)
+        try:
+            return [int(x) for x in str(flag).split(",") if x.strip()]
+        except ValueError:
+            fail(ctx, f"--{flag} must be comma-separated ints")
+            return []
+
+    link_widths = _ints(getattr(args, "link_widths", None), [64, 128])
+    concentrations = _ints(getattr(args, "concentrations", None), [1])
+    if ctx.failed:
+        return
+    clock = getattr(args, "network_clock_hz", None)
+    clock = int(clock) if clock is not None else None
+    timeout = getattr(args, "timeout", None)
+    timeout = int(timeout) if timeout is not None else 900
+    # Fresh study token per invocation: backend evidence slots refuse
+    # reuse (anti-tamper freshness), so re-running a study must not
+    # collide with previous evidence. The token is transport, never
+    # scientific identity (digests are content-based).
+    import datetime as _dt
+    run_root = getattr(args, "run_root", None)
+    run_root = Path(str(run_root)) if run_root else (
+        Path.cwd() / "runs" / "optimize" / src.stem)
+    run_root = run_root / _dt.datetime.now().strftime("%Y%m%dT%H%M%S")
+    binary = getattr(args, "binary", None)
+    if not binary:
+        try:
+            from veritx_dse.simulation.booksim import find_booksim_bin
+            binary = str(find_booksim_bin(REPO))
+        except Exception as exc:
+            fail(ctx, f"no runnable BookSim binary for --evaluate booksim: "
+                        f"{exc}")
+            return
+    try:
+        constraints: list = []
+        if getattr(args, "latency_ceiling", None) is not None:
+            constraints.append(Constraint(
+                "completion_cycles", "<=",
+                float(args.latency_ceiling)))
+        budget: dict = {}
+        if getattr(args, "max_candidates", None) is not None:
+            budget["max_candidates"] = int(args.max_candidates)
+        defn = OptimizationDefinition(
+            domain=(DomainParam("link_width", tuple(link_widths)),
+                    DomainParam("concentration", tuple(concentrations))),
+            objectives=(Objective("completion_cycles", "MIN"),),
+            constraints=tuple(constraints),
+            method=method,
+            budget=budget,
+            seed=seed,
+            selection="min_first_objective",
+        )
+    except (OptimizationDefinitionError, CandidateError, ValueError) as exc:
+        fail(ctx, f"invalid optimization definition: {exc}")
+        return
+    try:
+        result = Optimizer().optimize(
+            base, defn,
+            RealCandidateEvaluator(
+                binary=str(binary), network_clock_hz=clock,
+                timeout_s=timeout, run_root=str(run_root)))
+    except Exception as exc:
+        fail(ctx, f"optimize failed: {exc}")
+        return
+    view = result.to_study_view()
+    try:
+        import jsonschema
+        schema = json.loads((REPO / "contracts" / "srota" / "v1" /
+                             "optimization.study.view.schema.json").read_text())
+        jsonschema.validate(view, schema)
+    except ImportError:
+        pass
+    except Exception as exc:
+        fail(ctx, f"OptimizationStudyView fails frozen schema: {exc}")
+        return
+    study_out = getattr(args, "study_out", None)
+    if study_out:
+        out_p = Path(study_out)
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        out_p.write_text(json.dumps(view, indent=2, sort_keys=True) + "\n")
+    banner(ctx, f"Optimize: {src.name} [{method}] (real booksim)")
+    obj_names = [o.metric if hasattr(o, "metric") else o["metric"]
+                 for o in defn.objectives]
+    header = (f"{'candidate':<20} {'patch':<34} " +
+              " ".join(f"{n:>14}" for n in obj_names) +
+              f" {'constr':<8} {'pareto':<6}")
+    emit(ctx, header)
+    for r in sorted(result.records, key=lambda r: r.candidate_id):
+        patch = ",".join(f"{k}={v}" for k, v in sorted(r.guided_patch.items()))
+        objs = r.objective_values
+        vals = " ".join(f"{objs.get(n, float('nan')):>14.2f}"
+                          for n in obj_names)
+        verdict = ",".join(
+            f"{k}={'PASS' if v is True else ('?' if v is None else 'FAIL')}"
+            for k, v in sorted(r.constraint_verdicts.items())) or "-"
+        emit(ctx, f"{r.candidate_id:<20} {patch:<34} {vals} "
+                   f"{verdict:<8} {'* ' if r.pareto_member else '':<6}")
+    emit(ctx, f"pareto: {list(result.pareto_ids) or '-'}")
+    for r in sorted(result.records, key=lambda r: r.candidate_id):
+        if r.candidate_id in set(result.pareto_ids):
+            emit(ctx, f"  * {r.candidate_id} "
+                       f"locked(routing={','.join(r.locked_consequences.get('routing_classes', []))} "
+                       f"vc={r.locked_consequences.get('vc_count')} "
+                       f"routers={r.locked_consequences.get('router_count')}) "
+                       f"perf={r.performance_result_id}")
+    if result.selected_candidate_id:
+        ok(ctx, f"selected {result.selected_candidate_id}: "
+                 f"{result.selection_rationale}")
+    else:
+        log(ctx, f"no selection: {result.selection_rationale}")
+    if study_out:
+        log(ctx, f"study view \u2192 {study_out}")
+    log(ctx, f"runs \u2192 {run_root}")
+
+
 def cmd_optimize(ctx: Ctx, args):
     """P2 guided optimization: grid search over GUIDED knobs (fake evaluator).
 
@@ -3004,18 +3149,40 @@ def cmd_optimize(ctx: Ctx, args):
         fail(ctx, f"Optimize fixture not found: {fixture}")
         return
     try:
-        base = CompileRequest.from_dict(json.loads(src.read_text()))
+        doc = json.loads(src.read_text())
+    except Exception as exc:
+        fail(ctx, f"fixture is not valid JSON: {exc}")
+        return
+    mode = getattr(args, "evaluate", "fake") or "fake"
+    if mode not in ("fake", "booksim"):
+        fail(ctx, f"--evaluate must be fake|booksim, got {mode!r}")
+        return
+    is_v3 = isinstance(doc, dict) and doc.get("schema_version") == 3
+    if mode == "booksim":
+        if not is_v3:
+            fail(ctx, "--evaluate booksim requires a v3 fixture "
+                        "(schema_version 3); the real adapter is v3-only")
+            return
+        _optimize_booksim(ctx, args, src, doc)
+        return
+    try:
+        if is_v3:
+            from veritx_dse.model.compile_model import CompileRequestV3
+            base = CompileRequestV3.from_dict(doc)
+        else:
+            base = CompileRequest.from_dict(doc)
     except Exception as exc:
         fail(ctx, f"fixture does not parse as a CompileRequest: {exc}")
         return
-    try:
-        validation = validate(base)
-    except Exception as exc:
-        fail(ctx, f"fixture validation failed: {exc}")
-        return
-    if getattr(validation, "errors", None):
-        fail(ctx, f"fixture invalid: {list(validation.errors)[:5]}")
-        return
+    if not is_v3:
+        try:
+            validation = validate(base)
+        except Exception as exc:
+            fail(ctx, f"fixture validation failed: {exc}")
+            return
+        if getattr(validation, "errors", None):
+            fail(ctx, f"fixture invalid: {list(validation.errors)[:5]}")
+            return
 
     method = getattr(args, "search", "grid") or "grid"
     seed = getattr(args, "seed", 0) or 0
@@ -4291,6 +4458,23 @@ def build_parser() -> argparse.ArgumentParser:
                        help="Budget: evaluate at most N canonical-prefix candidates")
     p_opt.add_argument("--study-out", default=None,
                        help="Write OptimizationStudyView JSON here")
+    p_opt.add_argument("--evaluate", default="fake",
+                       choices=["fake", "booksim"],
+                       help="Candidate evaluator: fake deterministic objectives "
+                       "(offline-safe default) or real BookSim pipeline "
+                       "(requires a v3 fixture + runnable binary)")
+    p_opt.add_argument("--binary", default=None,
+                       help="BookSim binary for --evaluate booksim "
+                       "(default: auto-resolved qualified binary)")
+    p_opt.add_argument("--network-clock-hz", type=int, default=None,
+                       help="Explicit network clock for real evaluations "
+                       "(default: cycles-only, no wall-time claims)")
+    p_opt.add_argument("--run-root", default=None,
+                       help="Per-candidate backend evidence root "
+                       "(default: runs/optimize/<fixture-stem>)")
+    p_opt.add_argument("--timeout", type=int, default=None,
+                       help="Per-candidate backend timeout seconds "
+                       "(real evaluations only)")
 
     # ── init ──────────────────────────────────────────────────────
     p_init = _top_ps["init"]
@@ -4744,7 +4928,7 @@ COMMANDS = {
     "compile": {"help": "Compile a CompileRequest into a verified fabric (P1A slice)",
                 "t3_mode": "forward",
                 "sub_dest": None, "handler": cmd_compile_fabric, "subcommands": None},
-    "optimize": {"help": "Guided optimization grid search over a fixture (P2, fake deterministic evaluator)",
+    "optimize": {"help": "Guided optimization grid search over a fixture (fake objectives default; --evaluate booksim for the real pipeline)",
                 "t3_mode": "forward",
                 "sub_dest": None, "handler": cmd_optimize, "subcommands": None},
     "init": {"help": "Interactive wizard to generate a CompileRequest",

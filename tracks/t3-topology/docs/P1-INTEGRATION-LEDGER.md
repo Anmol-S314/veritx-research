@@ -77,7 +77,12 @@ integration happens here, in stage order. P3 remains deferred.
       backend numerics; NO area/analytics). One justified optimizer touch:
       `apply_patch` accepts v3 (identical replace path). 2/2 real-adapter
       tests (live grid Pareto + uncertified-corner visibility).
-- [ ] Stage 6 — real optimization golden (`--search grid --evaluate booksim`)
+- [x] Stage 6 — `--evaluate booksim` wired (fake stays offline-safe default;
+      booksim requires v3, fail-closed). Golden on llama_dense_64tiles-v3:
+      link_width{64,128} -> 16161 vs 7207 cycles, Pareto={128}, selected,
+      schema-valid view. Found+fixed en route: v3 Objective metric field,
+      evidence-slot reuse across invocations (fresh study token per run).
+      CLI test proves real + repeatable (distinct evidence digests).
 - [ ] Stage 7 — merge P4; regenerate fixtures from integrated engine; view
       boundary gateway
 - [ ] Stage 8 — reconcile handoff branch per-change (ALREADY_IMPLEMENTED /
