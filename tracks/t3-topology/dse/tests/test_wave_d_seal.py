@@ -40,7 +40,7 @@ from veritx_dse.application.errors import ControlPlaneError, ErrorCode  # noqa: 
 from veritx_dse.application.service import SrotaControlPlane  # noqa: E402
 from veritx_dse.application.store import ResourceStore  # noqa: E402
 from veritx_dse.application.waved_resources import (  # noqa: E402
-    EXECUTION_RESULT_KEYS, PLAN_CHAIN_KEYS, RESULT_WAVE_D_KEYS,
+    EXECUTION_RESULT_KEYS, PLAN_CHAIN_KEYS_V1, RESULT_WAVE_D_KEYS_V1,
     load_verified_messages, load_verified_operation_graph,
     load_verified_parallelism, load_verified_traffic,
     load_verified_waved_semantics, load_verified_waved_workload,
@@ -1060,7 +1060,7 @@ class TestResultProvenanceBinding:
         with pytest.raises(ControlPlaneError):
             load_verified_result(cp.store, a["resource_id"])
 
-    @pytest.mark.parametrize("missing", PLAN_CHAIN_KEYS)
+    @pytest.mark.parametrize("missing", PLAN_CHAIN_KEYS_V1)
     def test_missing_chain_field_refused(self, cp, missing):
         from veritx_dse.application.results import load_verified_result
         a = cp.evaluate(_intent(name=f"prov-chain-{missing}"))
@@ -1071,9 +1071,9 @@ class TestResultProvenanceBinding:
 
     def test_result_block_key_set_is_exactly_declared(self, cp):
         a = cp.evaluate(_intent(name="prov-schema"))
-        assert set(a["wave_d"]) == set(RESULT_WAVE_D_KEYS)
+        assert set(a["wave_d"]) == set(RESULT_WAVE_D_KEYS_V1)
         plan = cp.store.get("plan", a["plan_id"])
-        assert set(plan["wave_d"]) == set(PLAN_CHAIN_KEYS)
+        assert set(plan["wave_d"]) == set(PLAN_CHAIN_KEYS_V1)
 
     def test_reuse_cannot_adopt_a_transplanted_result(self, cp,
                                                       monkeypatch):
