@@ -56,6 +56,17 @@ architecture:
   are what make it a ruler. A change to it is an architecture change and needs
   the same evidence discipline as a cutover commit.
 
+## Where consolidation work happens
+
+**Active:** `/home/datavex/veritx-audit` on `wave-e/system-performance`.
+
+The primary worktree `/home/datavex/veritx-research` sits on
+`audit/wave-b-authority`, 113 commits behind, with four local modifications.
+It is not a validation environment: tests run there exercise stale code. Do not
+reset or discard those modifications — they are not ours to destroy, and the
+branch they sit on is a superseded duplicate of the Wave-B1 work that landed on
+`wave-e` under the `design_hash` naming (62 tests vs its 23).
+
 ## Enforcement
 
 `tracks/t3-topology/dse/tests/test_architecture_law.py::TestTargetArchitectureReferenceIsNotRuntime`
