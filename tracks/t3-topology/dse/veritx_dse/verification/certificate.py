@@ -227,16 +227,28 @@ def _deadlock_free(bundle: Any) -> ObligationResult:
         certify_channel_vc_deadlock,
     )
     try:
+        router_behavior = getattr(bundle, "router_behavior", None)
+        behavior_hash = router_behavior.router_behavior_hash()
         cert = certify_channel_vc_deadlock(
             topology=bundle.topology,
             resolved_route=bundle.resolved_route,
             router_route=bundle.router_route,
             vc_assignment=bundle.vc_assignment,
-            router_behavior_hash="",
+            router_behavior_hash=behavior_hash,
         )
     except Exception as exc:
         return _fail("DEADLOCK_FREE", "channel-vc-cdg/v1", str(exc), {})
     ev = dict(cert.evidence)
+    # Preserve the authenticated parent identities in the obligation
+    # evidence itself: the DeadlockCertificate object is dropped after
+    # this function returns, so without these the certificate would name
+    # a deadlock verdict it cannot tie to the exact artifacts proven.
+    ev["topology_hash"] = cert.topology_hash
+    ev["attachment_hash"] = cert.attachment_hash
+    ev["router_route_hash"] = cert.router_route_hash
+    ev["resolved_route_hash"] = cert.resolved_route_hash
+    ev["vc_assignment_hash"] = cert.vc_assignment_hash
+    ev["router_behavior_hash"] = cert.router_behavior_hash
     if cert.verdict != "PASS":
         return _fail("DEADLOCK_FREE", "channel-vc-cdg/v1",
                      f"CDG verdict {cert.verdict}: "
