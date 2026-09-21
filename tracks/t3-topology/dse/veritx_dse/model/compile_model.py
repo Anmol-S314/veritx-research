@@ -2440,6 +2440,14 @@ _SOURCE_REF_KEYS = frozenset({
 })
 
 
+def _strict_keys_v3(d: Any, allowed: frozenset, where: str) -> None:
+    """v3 fail-closed boundary: unknown keys refuse as v3 errors."""
+    try:
+        _strict_keys(d, allowed, where)
+    except CompileRequestSchemaError as e:
+        raise CompileRequestV3SchemaError(str(e)) from e
+
+
 class CollectiveDimension(Enum):
     """Rank-space dimension a v3 collective intent ranges over.
 
@@ -2894,7 +2902,7 @@ class CompileRequestV3:
         Accepts ONLY schema 3 / semantics 3. v2 documents are NEVER
         reinterpreted here — migrate explicitly via migrate_v2_to_v3.
         """
-        _strict_keys(d, _TOP_V3_KEYS, "root")
+        _strict_keys_v3(d, _TOP_V3_KEYS, "root")
         if "schema_version" not in d:
             raise CompileRequestV3SchemaError(
                 "missing schema_version — refusing to guess a schema")
@@ -2914,10 +2922,10 @@ class CompileRequestV3:
         wl = d.get("workload")
         if not isinstance(wl, dict):
             raise CompileRequestV3SchemaError("workload must be a JSON object")
-        _strict_keys(wl, _WORKLOAD_V3_KEYS, "workload")
+        _strict_keys_v3(wl, _WORKLOAD_V3_KEYS, "workload")
         collectives = []
         for i, c in enumerate(wl.get("collectives", [])):
-            _strict_keys(c, _COLLECTIVE_V3_KEYS,
+            _strict_keys_v3(c, _COLLECTIVE_V3_KEYS,
                          f"workload.collectives[{i}]")
             for key in ("kind", "dimension", "payload_bytes",
                         "traffic_class"):
@@ -2939,7 +2947,7 @@ class CompileRequestV3:
         src_ref = None
         if wl.get("workload_source_ref") is not None:
             sr = wl["workload_source_ref"]
-            _strict_keys(sr, _SOURCE_REF_KEYS, "workload.workload_source_ref")
+            _strict_keys_v3(sr, _SOURCE_REF_KEYS, "workload.workload_source_ref")
             try:
                 src_ref = WorkloadSourceRef.from_dict(sr)
             except ValueError as e:
@@ -2962,7 +2970,7 @@ class CompileRequestV3:
 
         requirements = []
         for i, r in enumerate(d.get("requirements", [])):
-            _strict_keys(r, _REQUIREMENT_V3_KEYS, f"requirements[{i}]")
+            _strict_keys_v3(r, _REQUIREMENT_V3_KEYS, f"requirements[{i}]")
             if "qos_class" not in r:
                 raise CompileRequestV3SchemaError(
                     f"missing required field requirements[{i}].qos_class")
@@ -2980,7 +2988,7 @@ class CompileRequestV3:
 
         agents = []
         for i, a in enumerate(d.get("agents", [])):
-            _strict_keys(a, _AGENT_KEYS, f"agents[{i}]")
+            _strict_keys_v3(a, _AGENT_KEYS, f"agents[{i}]")
             try:
                 agents.append(Agent(
                     kind=AgentKind(a["kind"]),
@@ -2996,7 +3004,7 @@ class CompileRequestV3:
                     f"invalid agents[{i}]: {e}") from e
         deps = []
         for i, dep in enumerate(d.get("dependencies", [])):
-            _strict_keys(dep, _DEPENDENCY_KEYS, f"dependencies[{i}]")
+            _strict_keys_v3(dep, _DEPENDENCY_KEYS, f"dependencies[{i}]")
             try:
                 deps.append(Dependency(
                     source=dep["source"],
@@ -3007,7 +3015,7 @@ class CompileRequestV3:
                 raise CompileRequestV3SchemaError(
                     f"invalid dependencies[{i}]: {e}") from e
         nc_d = d.get("noc_config", {})
-        _strict_keys(nc_d, _NOC_KEYS, "noc_config")
+        _strict_keys_v3(nc_d, _NOC_KEYS, "noc_config")
         try:
             noc_config = NocConfig(
                 topology_family=(TopologyFamily(nc_d["topology_family"])
@@ -3028,10 +3036,10 @@ class CompileRequestV3:
             raise CompileRequestV3SchemaError(
                 f"invalid noc_config: {e}") from e
         am_d = d.get("address_map", {})
-        _strict_keys(am_d, _ADDRESS_MAP_KEYS, "address_map")
+        _strict_keys_v3(am_d, _ADDRESS_MAP_KEYS, "address_map")
         ranges = []
         for i, r in enumerate(am_d.get("ranges", [])):
-            _strict_keys(r, _ADDRESS_RANGE_KEYS, f"address_map.ranges[{i}]")
+            _strict_keys_v3(r, _ADDRESS_RANGE_KEYS, f"address_map.ranges[{i}]")
             try:
                 ranges.append(AddressRange(
                     name=r["name"], base=r["base"], size=r["size"],
@@ -3040,7 +3048,7 @@ class CompileRequestV3:
                 raise CompileRequestV3SchemaError(
                     f"invalid address_map.ranges[{i}]: {e}") from e
         ph_d = d.get("physical", {})
-        _strict_keys(ph_d, _PHYSICAL_KEYS, "physical")
+        _strict_keys_v3(ph_d, _PHYSICAL_KEYS, "physical")
         try:
             physical = PhysicalContext(
                 default_clock_freq_mhz=ph_d.get("clock_freq_mhz", 1000.0),
