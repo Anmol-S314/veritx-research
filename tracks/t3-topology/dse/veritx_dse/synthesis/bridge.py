@@ -133,15 +133,15 @@ def compile_from_results_file(results_path: str | Path, request_kwargs: dict,
     """
     import json
 
-    from veritx_dse.synthesis.compiler import CompilerRequest, compile_fabric
+    from veritx_dse.synthesis.compiler import CandidateEvaluationRequest, evaluate_candidates
 
     data = json.loads(Path(results_path).read_text())
     results = data.get("results", data) if isinstance(data, dict) else data
     candidates = results_to_candidates(list(results))
-    request = CompilerRequest(candidates=candidates,
+    request = CandidateEvaluationRequest(candidates=candidates,
                               **{k: v for k, v in request_kwargs.items()
                                  if k != "candidates"})
-    out = compile_fabric(request, _spec_evaluator(
+    out = evaluate_candidates(request, _spec_evaluator(
         trace_path=str(Path(trace_path).resolve()), seed=seed, timeout=timeout))
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)

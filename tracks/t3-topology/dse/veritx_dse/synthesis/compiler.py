@@ -1,6 +1,12 @@
-"""compiler.py — requirements-driven fabric compiler (Phase 13, plan §17).
+"""compiler.py — requirements-driven candidate evaluation (Phase 13, plan §17).
 
-E2 requirements stop being inert data and actively gate synthesis:
+P1.1: this module EVALUATES caller-supplied candidates against E2
+requirements; it synthesizes no fabric. The names say so now:
+CandidateEvaluationRequest / evaluate_candidates. The only
+product-level CompileRequest is the E1–E5 intent in
+model/compile_model.py.
+
+E2 requirements stop being inert data and actively gate selection:
 
   binding requirement   → hard constraint (per-constraint verdicts; every
                           feasible candidate must satisfy every constraint)
@@ -22,7 +28,7 @@ Verdicts (exactly one):
   INCONCLUSIVE          anything else: crashes, prunes, or unmeasurable
                         candidates coexist with violations, so no refusal
                         is warranted; counts per status are retained
-  (incoherent requests raise InvalidCompilerRequest before any evaluation)
+  (incoherent requests raise InvalidEvaluationRequest before any evaluation)
   pareto and relaxation_information are None unless FEASIBLE — never
   computed from an incomplete population.
 
@@ -65,13 +71,16 @@ VERDICT_CONSTRAINT_UNMEASURABLE = "CONSTRAINT_UNMEASURABLE"
 _UNMEASURABLE = {"bandwidth_floor": "bandwidth_floor_gbps"}
 
 
-class InvalidCompilerRequest(ValueError):
+class InvalidEvaluationRequest(ValueError):
     """Incoherent compiler request — fail closed before any evaluation."""
 
 
 @dataclass
-class CompilerRequest:
-    """What to compile: requirements + candidate set + search policy.
+class CandidateEvaluationRequest:
+    """What to evaluate: requirements + candidate set + search policy.
+
+    NOT a compile request: candidates arrive from the caller (a search
+    loop, a results file); this type only gates and scores them.
 
     candidates: entries with at least ``name``; ``pruned: True`` entries
         must carry ``pruning_reason`` and are carried through unevaluated.
@@ -96,12 +105,12 @@ class CompilerRequest:
     @staticmethod
     def _coerce_requirement(r: Any) -> Requirement:
         if not isinstance(r, dict):
-            raise InvalidCompilerRequest(
+            raise InvalidEvaluationRequest(
                 f"requirement must be Requirement or dict, got {type(r).__name__}")
         try:
             qos = QoSClass(r.get("qos_class"))
         except ValueError:
-            raise InvalidCompilerRequest(
+            raise InvalidEvaluationRequest(
                 f"unknown qos_class {r.get('qos_class')!r} — "
                 f"known: {[c.value for c in QoSClass]}") from None
         return Requirement(
@@ -115,7 +124,7 @@ class CompilerRequest:
         for r in self.requirements:
             if r.binding and r.latency_ceiling_cycles is None \
                     and r.bandwidth_floor_gbps is None:
-                raise InvalidCompilerRequest(
+                raise InvalidEvaluationRequest(
                     f"binding requirement {r.qos_class.value} carries no bound "
                     "(no latency ceiling, no bandwidth floor) — a constraint "
                     "with no number can never be evaluated; declare one or "
@@ -123,26 +132,26 @@ class CompilerRequest:
             for kind, val in (("latency_ceiling_cycles", r.latency_ceiling_cycles),
                               ("bandwidth_floor_gbps", r.bandwidth_floor_gbps)):
                 if val is not None and float(val) <= 0:
-                    raise InvalidCompilerRequest(
+                    raise InvalidEvaluationRequest(
                         f"{kind} must be positive, got {val}")
         for c in self.candidates or []:
             if not isinstance(c, dict) or not c.get("name"):
-                raise InvalidCompilerRequest(
+                raise InvalidEvaluationRequest(
                     "every candidate needs a name — unnamed candidates "
                     "cannot appear in evidence")
             if c.get("pruned") and not c.get("pruning_reason"):
-                raise InvalidCompilerRequest(
+                raise InvalidEvaluationRequest(
                     f"candidate {c['name']} is pruned without a "
                     "pruning_reason — invisible pruning is the failure mode "
                     "this compiler exists to prevent")
         if not self.candidates:
-            raise InvalidCompilerRequest(
+            raise InvalidEvaluationRequest(
                 "empty candidate set — an exhausted search is search "
                 "evidence, not an empty request; supply the candidates "
                 "actually generated (possibly PRUNED with reasons)")
 
     @classmethod
-    def from_dict(cls, d: dict) -> "CompilerRequest":
+    def from_dict(cls, d: dict) -> "CandidateEvaluationRequest":
         return cls(
             requirements=list(d.get("requirements", [])),
             candidates=list(d.get("candidates", [])),
@@ -176,9 +185,9 @@ def _evaluate_constraint(r: Requirement, measured_latency: float) -> dict[str, A
             "excess": measured_latency - label["bound"] if not ok else None}
 
 
-def compile_fabric(request: CompilerRequest,
-                   evaluate: Callable[[dict], dict]) -> dict[str, Any]:
-    """Run requirement-gated synthesis over the candidate set.
+def evaluate_candidates(request: CandidateEvaluationRequest,
+                        evaluate: Callable[[dict], dict]) -> dict[str, Any]:
+    """Run requirement-gated evaluation over the candidate set.
 
     ``evaluate`` maps a candidate entry to a SynthResult-shaped dict
     (status ok/error, latency). Exceptions from evaluate become

@@ -464,8 +464,8 @@ def _compile_fabric_with_evaluator(
         return _reject("compile", [
             f"candidate count {len(candidates)} exceeds budget "
             f"{BUDGETS['max_candidates_per_compile']}"])
-    from .synthesis.compiler import CompilerRequest, compile_fabric as _cf
-    req = CompilerRequest(
+    from .synthesis.compiler import CandidateEvaluationRequest, evaluate_candidates as _cf
+    req = CandidateEvaluationRequest(
         requirements=requirements,
         candidates=candidates,
         search_budget=search_budget or {},

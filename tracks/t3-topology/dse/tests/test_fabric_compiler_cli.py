@@ -1,7 +1,7 @@
 """Phase 13 — CLI + bridge seams for the fabric compiler.
 
 Coverage split (never duplicating compiler-core tests, which live in
-test_fabric_compiler.py at the compile_fabric seam):
+test_fabric_compiler.py at the evaluate_candidates seam):
 
   CLI   — registration contract and the fail-fast preflight: an incoherent
           --requirements spec must fail BEFORE any evaluation, and the

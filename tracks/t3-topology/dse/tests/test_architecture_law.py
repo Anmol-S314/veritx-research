@@ -229,3 +229,46 @@ class TestTargetArchitectureReferenceIsNotRuntime:
             elif hashlib.sha256(target.read_bytes()).hexdigest() != digest:
                 bad.append(f"digest mismatch {rel}")
         assert bad == [], bad
+
+
+class TestP1CompilerAuthority:
+    """P1.1: one product CompileRequest, one resolved-topology authority.
+
+    TopologyArtifact is the authoritative resolved hardware topology;
+    TopologyIR is interchange only. The product orchestrator
+    (application/compile.py) must not depend on the IR for resolved
+    semantics, and the candidate-evaluation request must never again
+    be namable as a CompileRequest.
+    """
+
+    def test_orchestrator_does_not_import_topology_ir(self):
+        bad = []
+        for mod in _imports(PKG / "application/compile.py"):
+            if mod == "veritx_dse.model.topology_ir" or \
+                    mod.startswith("veritx_dse.model.topology_ir."):
+                bad.append(mod)
+        assert bad == [], bad
+
+    def test_no_second_compile_request_class(self):
+        """Exactly one request class is NAMED CompileRequest, and it is
+        the E1–E5 product request. (CompileRequestSchemaError is its
+        error type, not a request.)"""
+        found = []
+        for path in sorted(PKG.rglob("*.py")):
+            if "__pycache__" in str(path):
+                continue
+            tree = ast.parse(path.read_text())
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ClassDef) and \
+                        node.name == "CompileRequest":
+                    found.append(
+                        f"{path.relative_to(DSE)}:{node.name}")
+        assert found == [
+            "veritx_dse/model/compile_model.py:CompileRequest"], found
+
+    def test_evaluator_seam_has_no_compile_names(self):
+        import veritx_dse.synthesis.compiler as evaluator
+        assert hasattr(evaluator, "CandidateEvaluationRequest")
+        assert hasattr(evaluator, "evaluate_candidates")
+        assert not hasattr(evaluator, "CompilerRequest")
+        assert not hasattr(evaluator, "compile_fabric")

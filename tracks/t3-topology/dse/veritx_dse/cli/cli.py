@@ -852,7 +852,7 @@ def cmd_synthesize_compile(ctx: Ctx, args):
     from veritx_dse.core.errors import VeritXError
     from veritx_dse.synthesis.bridge import compile_from_results_file
     from veritx_dse.synthesis.compiler import (
-        CompilerRequest, InvalidCompilerRequest,
+        CandidateEvaluationRequest, InvalidEvaluationRequest,
     )
 
     # Parse requirements FIRST: an incoherent spec is deterministic and
@@ -864,9 +864,9 @@ def cmd_synthesize_compile(ctx: Ctx, args):
             "search_budget": {"requested_evaluations": args.max_evals},
             "seed_policy": {"seed": args.seed, "replication": 1},
         }
-        CompilerRequest(candidates=[{"name": "preflight"}],
+        CandidateEvaluationRequest(candidates=[{"name": "preflight"}],
                         **{k: v for k, v in request_kwargs.items()})
-    except (InvalidCompilerRequest, _json.JSONDecodeError) as e:
+    except (InvalidEvaluationRequest, _json.JSONDecodeError) as e:
         fail(ctx, f"invalid --requirements: {e}")
         return
 
@@ -884,7 +884,7 @@ def cmd_synthesize_compile(ctx: Ctx, args):
             seed=args.seed, timeout=_eff_timeout(args, 600),
             out_path=out_path,
         )
-    except InvalidCompilerRequest as e:
+    except InvalidEvaluationRequest as e:
         fail(ctx, f"compiler request invalid: {e}")
         return
     except VeritXError as e:
