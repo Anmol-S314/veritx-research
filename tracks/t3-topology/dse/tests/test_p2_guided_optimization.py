@@ -464,6 +464,29 @@ class TestGridStudyEndToEnd:
         assert result.selected_candidate_id is None
         assert result.selection_rationale
 
+    def test_unmeasured_objective_ineligible_not_keyerror(self):
+        """RT-10: a declared objective the evaluation does not evidence
+        makes every candidate ineligible with a typed reason — never a
+        pareto.py KeyError."""
+        base = _base()
+        defn = OptimizationDefinition(
+            domain=(DomainParam("link_width", (32, 128)),),
+            objectives=(Objective("energy", "MIN"),),
+            method="grid")
+        result = Optimizer().optimize(
+            base, defn, FakeDeterministicEvaluator(seed=7))
+        assert result.pareto_ids == ()
+        assert result.selected_candidate_id is None
+        assert "energy" in (result.selection_rationale or "")
+        for r in result.records:
+            assert r.pareto_member is False
+            entries = [d for d in r.requirement_details
+                       if dict(d)["metric"] == "energy"]
+            assert entries, r.candidate_id
+            assert dict(entries[0])["verdict"] == "UNMEASURABLE"
+            assert dict(entries[0])["reason"] == (
+                "objective energy not evidenced by evaluation")
+
 
 # ── Fix 1: result identity binds evaluation provenance ───────────────────
 

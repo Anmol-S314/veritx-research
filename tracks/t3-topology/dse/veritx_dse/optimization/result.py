@@ -8,6 +8,11 @@ candidate identity (asserted by re-derivation).
 Emits OptimizationStudyView per
 contracts/srota/v1/optimization.study.view.schema.json (contract_version 1).
 
+Candidates whose evaluation evidences none of a declared objective's
+metric are ineligible: they stay visible with a typed UNMEASURABLE
+requirement_details entry, out of feasible_values and out of the Pareto
+frontier (never a pareto.py KeyError).
+
 Provenance: result-identity and re-derivation discipline REPLAY
 synthesis/compiler.py (request/budget/scope accounting, Pareto only over
 the feasible set, relaxation as information) and the reference
@@ -172,6 +177,16 @@ def _select(records: list[CandidateRecord], definition: Any,
         return None, "selection policy is none — no candidate selected"
     feasible_pareto = [r for r in records if r.candidate_id in set(pareto_ids)]
     if not feasible_pareto:
+        unmeasured = sorted({
+            str(d.get("metric")) for r in records
+            for d in r.requirement_details
+            if d.get("verdict") == "UNMEASURABLE"
+            and str(d.get("reason", "")).startswith("objective ")})
+        if unmeasured:
+            return None, (
+                "no feasible Pareto candidate — nothing selected "
+                f"(objectives not evidenced by evaluation: "
+                f"{', '.join(unmeasured)})")
         return None, ("no feasible Pareto candidate — nothing selected "
                       "(all candidates violated a constraint, failed to "
                       "evaluate, or were unmeasurable)")
@@ -277,6 +292,24 @@ class Optimizer:
                     verdicts["feasible"] = False
             feasible = verdicts["feasible"]
             details = _requirement_details(verdicts["verdicts"])
+            unmeasured_objectives = tuple(
+                o.metric for o in definition.objectives
+                if o.metric not in ev.objective_values)
+            if unmeasured_objectives:
+                # An objective with no evidenced value cannot be scored:
+                # the candidate is ineligible (visible, with a typed
+                # UNMEASURABLE reason) and never reaches feasible_values
+                # -- so pareto.py never indexes a missing metric.
+                details = details + tuple({
+                    "metric": metric,
+                    "operator": None,
+                    "required": None,
+                    "measured": None,
+                    "verdict": "UNMEASURABLE",
+                    "reason": f"objective {metric} not evidenced by "
+                              "evaluation",
+                } for metric in unmeasured_objectives)
+                feasible = False
             binding = feasible if isinstance(feasible, bool) else None
             pareto_member = False  # assigned after the frontier computes
             record = CandidateRecord(

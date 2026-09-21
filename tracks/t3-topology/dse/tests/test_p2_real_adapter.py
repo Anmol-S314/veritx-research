@@ -162,3 +162,33 @@ def test_lowering_refusals_are_typed_not_raised(tmp_path):
     assert bad.status == "INVALID"
     assert bad.performance_result_id is None
     assert "InvalidInput" in (bad.error or "")
+
+
+def test_unmeasured_objective_is_typed_ineligible_not_keyerror(tmp_path):
+    """RT-10: an objective the real evaluation does not evidence makes
+    every candidate ineligible with a typed reason — no crash, empty
+    Pareto, and the selection rationale names the absent objective."""
+    result = Optimizer().optimize(
+        _base(),
+        _defn(objectives=(Objective("area", "MIN"),)),
+        _port(tmp_path))
+    assert len(result.records) == 2
+    assert result.pareto_ids == ()
+    assert result.selected_candidate_id is None
+    rationale = result.selection_rationale or ""
+    assert "area" in rationale
+    assert "not evidenced" in rationale
+    for record in result.records:
+        assert record.pareto_member is False
+        assert record.candidate_id not in set(result.pareto_ids)
+        entries = [d for d in record.requirement_details
+                   if dict(d)["metric"] == "area"]
+        assert entries, record.candidate_id
+        assert dict(entries[0])["verdict"] == "UNMEASURABLE"
+        assert dict(entries[0])["reason"] == (
+            "objective area not evidenced by evaluation")
+    # Sanity: the same study with the evidenced objective (fresh
+    # evidence root) still yields a frontier — the ineligibility is
+    # objective-evidence-driven, not a broken study.
+    ok = Optimizer().optimize(_base(), _defn(), _port(tmp_path / "sanity"))
+    assert ok.pareto_ids
