@@ -10,16 +10,20 @@ address. For a two-instance cluster with tp=4:
     parallelism.world_size = 4 x 1 x 1 x 2 = 8
     num_participants       = 4          (the trace's ranks are 0..3)
 
-Any rule that derived `participant_count` from `world_size` would have
-made the canonical workload claim an 8-rank namespace for a 4-rank trace:
-a "successful" consolidation that silently breaks multi-instance serving.
+Any rule deriving `participant_count` from `world_size` would make the
+canonical workload claim an 8-rank namespace for a 4-rank trace: a
+"successful" consolidation that silently breaks multi-instance serving.
 
-This exercises the REAL entry point (``canonicalize_run_workload``),
-not the helper, because the helper-level distinction is what the earlier
-Gate V2 evidence captured and it was not enough.
+Tightened after audit: this file asserts the ACTUAL return contract of
+``canonicalize_run_workload`` (schema_version / source_kind /
+cluster_sha256 / artifacts) instead of walking generic fallbacks, and the
+identity test pins ``workload_identity`` exactly. A regression that can
+walk around an API change is not a regression.
 """
 from __future__ import annotations
 
+import copy
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -29,12 +33,18 @@ import pytest
 DSE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(DSE))
 
-from veritx_dse.workload.canonical import WorkloadArtifact  # noqa: E402
+from veritx_dse.workload.canonical import (  # noqa: E402
+    WorkloadArtifact, WorkloadError,
+)
 from veritx_dse.workload.serve import (  # noqa: E402
     canonicalize_run_workload, workload_identity,
 )
 
 HEADER = "COLOCATED\t\tmodel_parallel_NPU_group: 1"
+
+# the exact artifact-entry contract written by canonicalize_run_workload
+ENTRY_KEYS = {"name", "trace", "artifact_hash", "file", "parallelism",
+              "num_participants", "comm_bytes_total", "op_count"}
 
 
 def _layer_row(name, comp_ns, inp, wt, out, comm="NONE", size=0,
@@ -81,82 +91,144 @@ def _canonicalize(run_root: Path, cluster: dict) -> dict:
     return canonicalize_run_workload(run_root, cpath)
 
 
+def _load(run_root: Path, entry: dict) -> dict:
+    """Read the artifact through the entry's OWN file field."""
+    path = run_root / "workload" / entry["file"]
+    assert path.is_file(), f"index entry points at a missing file: {path}"
+    return json.loads(path.read_text())
+
+
+class TestIndexContract:
+    """The real return shape, asserted exactly."""
+
+    def test_index_shape_is_exact(self, run_root):
+        index = _canonicalize(
+            run_root, _cluster(instances=2, tp=4, num_npus=4))
+        assert index["schema_version"] == 1
+        assert index["source_kind"] == "llmservingsim"
+        assert set(index) == {"schema_version", "source_kind",
+                              "cluster_sha256", "artifacts"}
+        assert index["cluster_sha256"] == hashlib.sha256(
+            (run_root / "cluster.json").read_bytes()).hexdigest()
+        # one entry per saved trace, exactly
+        assert len(index["artifacts"]) == 2
+        for entry in index["artifacts"]:
+            assert ENTRY_KEYS <= set(entry), sorted(entry)
+            assert entry["file"].endswith(".workload.json")
+            assert entry["artifact_hash"].startswith("sha256:")
+            assert entry["op_count"] >= 1
+
+    def test_missing_trace_directory_refuses(self, tmp_path):
+        with pytest.raises(WorkloadError, match="no trace directory"):
+            canonicalize_run_workload(tmp_path / "nothing",
+                                      tmp_path / "cluster.json")
+
+
 class TestParticipantNamespace:
     def test_two_instances_tp4_keeps_participants_per_instance(self, run_root):
         """world_size = 8, participant_count = 4 — and they stay distinct."""
-        cluster = _cluster(instances=2, tp=4, num_npus=4)
-        index = _canonicalize(run_root, cluster)
-        assert index.get("workloads") or index.get("entries") or index
-
-        for entry in (index.get("workloads") or index.get("entries")
-                      or [index]):
-            wl = entry.get("workload", entry)
-            doc = json.loads(
-                (run_root / "workload" /
-                 f"{wl['name']}.workload.json").read_text()) \
-                if "name" in wl else None
-            if doc is None:
-                continue
+        index = _canonicalize(
+            run_root, _cluster(instances=2, tp=4, num_npus=4))
+        for entry in index["artifacts"]:          # no skip, no fallback
+            doc = _load(run_root, entry)
             para = doc["parallelism"]
-            assert para["dp"] == 2, doc
+            assert (para["tp"], para["pp"], para["ep"], para["dp"]) == \
+                (4, 1, 1, 2), doc
             world = (para["tp"] * para["pp"] * para["ep"] * para["dp"])
-            assert world == 8, doc
-            # THE assertion: the rank space is the INSTANCE's, not the world
+            assert world == 8
             assert doc["num_participants"] == 4, doc
             assert doc["num_participants"] != world
+            # the entry and the document must agree
+            assert entry["parallelism"] == para
+            assert entry["num_participants"] == doc["num_participants"]
 
     def test_persisted_artifact_validates_against_participants(self, run_root):
-        """Ranks 0..3 are legal; rank 4 would not be."""
-        cluster = _cluster(instances=2, tp=4, num_npus=4)
-        _canonicalize(run_root, cluster)
-        artifacts = sorted(
-            (run_root / "workload").glob("*.workload.json"))
-        assert artifacts, "no workload documents were written"
-        for path in artifacts:
-            art = WorkloadArtifact.from_dict(json.loads(path.read_text()))
-            assert art.num_participants == 4, path.name
-            assert art.parallelism.dp == 2, path.name
+        """Ranks 0..3 are legal; the artifact validates against 4, not 8."""
+        index = _canonicalize(
+            run_root, _cluster(instances=2, tp=4, num_npus=4))
+        for entry in index["artifacts"]:
+            art = WorkloadArtifact.from_dict(_load(run_root, entry))
+            assert art.num_participants == 4, entry["name"]
+            assert art.parallelism.dp == 2, entry["name"]
             for op in art.ops:
                 for p in op.participants:
-                    assert 0 <= p < art.num_participants, (path.name, p)
+                    assert 0 <= p < art.num_participants, (entry["name"], p)
 
     def test_world_size_change_does_not_change_participants(self, run_root):
         """A third instance changes dp and world_size only."""
-        cluster = _cluster(instances=3, tp=4, num_npus=4)
-        _canonicalize(run_root, cluster)
-        for path in sorted((run_root / "workload").glob("*.workload.json")):
-            doc = json.loads(path.read_text())
-            assert doc["parallelism"]["dp"] == 3
-            world = (doc["parallelism"]["tp"] * doc["parallelism"]["pp"]
-                     * doc["parallelism"]["ep"] * doc["parallelism"]["dp"])
-            assert world == 12
+        index = _canonicalize(
+            run_root, _cluster(instances=3, tp=4, num_npus=4))
+        for entry in index["artifacts"]:
+            doc = _load(run_root, entry)
+            para = doc["parallelism"]
+            assert para["dp"] == 3
+            assert (para["tp"] * para["pp"] * para["ep"] * para["dp"]) == 12
             assert doc["num_participants"] == 4
 
     def test_per_instance_npu_count_is_what_varies_participants(self, run_root):
-        cluster = _cluster(instances=2, tp=4, num_npus=8)
-        _canonicalize(run_root, cluster)
-        for path in sorted((run_root / "workload").glob("*.workload.json")):
-            doc = json.loads(path.read_text())
-            assert doc["num_participants"] == 8
+        index = _canonicalize(
+            run_root, _cluster(instances=2, tp=4, num_npus=8))
+        for entry in index["artifacts"]:
+            assert _load(run_root, entry)["num_participants"] == 8
 
-    def test_deterministic_and_identity_is_content_addressed(self, run_root):
+    def test_canonicalization_is_deterministic(self, run_root):
         cluster = _cluster(instances=2, tp=4, num_npus=4)
         first = _canonicalize(run_root, cluster)
-        docs1 = {p.name: p.read_text()
-                 for p in sorted((run_root / "workload").glob("*.json"))}
+        files1 = {p.name: p.read_text()
+                  for p in sorted((run_root / "workload").glob("*.json"))}
         second = _canonicalize(run_root, cluster)
-        docs2 = {p.name: p.read_text()
-                 for p in sorted((run_root / "workload").glob("*.json"))}
-        assert docs1 == docs2, "canonicalization is not deterministic"
+        files2 = {p.name: p.read_text()
+                  for p in sorted((run_root / "workload").glob("*.json"))}
         assert first == second
+        assert files1 == files2
 
-    def test_identity_is_not_a_stored_arbitrary_id(self, run_root):
-        """workload_identity derives from the document, not a label."""
-        cluster = _cluster(instances=2, tp=4, num_npus=4)
-        index = _canonicalize(run_root, cluster)
-        values = list(index.values()) if isinstance(index, dict) else []
-        if any(isinstance(v, dict) and "workload_id" in v for v in values):
-            for v in values:
-                if isinstance(v, dict) and "workload_id" in v:
-                    assert workload_identity(v) == v["workload_id"] \
-                        or v["workload_id"].startswith("sha256:")
+
+class TestWorkloadIdentityContract:
+    """Pin `workload_identity` exactly — one implementation, one contract.
+
+        hashes = sorted(a["artifact_hash"] for a in artifacts)
+        len == 0  -> WorkloadError
+        len == 1  -> that hash (already "sha256:...")
+        else      -> "sha256:" + sha256(json.dumps(hashes))
+    """
+
+    def test_two_artifacts_composite_identity(self, run_root):
+        index = _canonicalize(
+            run_root, _cluster(instances=2, tp=4, num_npus=4))
+        hashes = sorted(a["artifact_hash"] for a in index["artifacts"])
+        assert len(hashes) == 2
+        expected = "sha256:" + hashlib.sha256(
+            json.dumps(hashes, sort_keys=True).encode()).hexdigest()
+        assert workload_identity(index) == expected
+
+    def test_display_fields_do_not_move_identity(self, run_root):
+        index = _canonicalize(
+            run_root, _cluster(instances=2, tp=4, num_npus=4))
+        before = workload_identity(index)
+        mutated = copy.deepcopy(index)
+        for i, entry in enumerate(mutated["artifacts"]):
+            entry["name"] = f"renamed{i}"
+            entry["trace"] = f"elsewhere/{i}.txt"
+        mutated["cluster_sha256"] = "0" * 64
+        assert workload_identity(mutated) == before
+
+    def test_changing_one_artifact_hash_changes_identity(self, run_root):
+        index = _canonicalize(
+            run_root, _cluster(instances=2, tp=4, num_npus=4))
+        before = workload_identity(index)
+        mutated = copy.deepcopy(index)
+        mutated["artifacts"][0]["artifact_hash"] = "sha256:" + "a" * 64
+        assert workload_identity(mutated) != before
+
+    def test_single_artifact_identity_is_the_artifact_hash(self, run_root):
+        index = _canonicalize(
+            run_root, _cluster(instances=2, tp=4, num_npus=4))
+        single = {"artifacts": [index["artifacts"][0]]}
+        assert workload_identity(single) == \
+            index["artifacts"][0]["artifact_hash"]
+
+    def test_empty_artifacts_refuses(self):
+        with pytest.raises(WorkloadError, match="no artifacts"):
+            workload_identity({"artifacts": []})
+        with pytest.raises(WorkloadError, match="no artifacts"):
+            workload_identity({})

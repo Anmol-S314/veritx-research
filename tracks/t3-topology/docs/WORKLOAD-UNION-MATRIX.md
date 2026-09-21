@@ -381,9 +381,9 @@ Sequenced by the ruling. Gate V2.2 and Slice 3 are explicitly NOT here.
 
 | # | task | state |
 |---|---|---|
-| 1 | decouple `acceptance/phase15.py` from `workload/canonical.py` | TODO |
-| 2 | preserve its Ramulator qualification evidence exactly | TODO |
-| 3 | move its workload→memory conservation contract into an integration regression | TODO |
+| 1 | decouple `acceptance/phase15.py` from `workload/canonical.py` | **PARTIAL** — moved out of the production package (below); its legacy import is now a MIGRATION-CONSUMER boundary that 2c deletes |
+| 2 | preserve its Ramulator qualification evidence exactly | **DONE** — same 13 checks, 7 groups (`audit behavior build determinism drain equiv integrity`), unchanged CLI surface |
+| 3 | move its workload→memory conservation contract into an integration regression | TODO (the target boundary is recorded below) |
 | 4 | real multi-instance `canonicalize_run_workload` regression (`participant_count != world_size`) | **DONE** |
 | 5 | keep F18 (`scope=None != ALL`) explicitly open in this ledger | **DONE** (see below) |
 | 6 | implement the canonical `WorkloadGraph` | TODO |
@@ -436,3 +436,55 @@ meaning, because the trace projection currently renders both as the bare
 collective form. Pinned as a strict xfail in
 `tests/test_gate_v2_union_evidence.py`; the xfail is removed when the
 canonical lowering owns the refusal.
+
+### Item 1/2 — the qualification battery left the production package
+
+```
+before  veritx_dse/acceptance/phase15.py   (production package, 454 lines)
+after   qualification/ramulator.py         (beside veritx_dse/)
+        veritx_dse/acceptance/ deleted entirely (no compat module, no shim)
+```
+
+Scientific checks untouched: the same 13 `report(...)` checks in the same
+7 groups (`audit behavior build determinism drain equiv integrity`), the
+same `--json` surface, verified by diffing `--help` before and after. The
+only code change is the path assumption (`DSE_DIR` was
+`parents[2]` inside `veritx_dse/acceptance/`, now `parents[1]`). Nothing
+imports the battery from production, so the move is inert for the product
+path.
+
+Its legacy import is deliberate and temporary:
+
+```
+qualification/ramulator.py
+    from veritx_dse.workload.canonical import Parallelism, WorkloadArtifact
+    from veritx_dse.workload.memory_lowering import resolve_memory
+```
+
+That is a MIGRATION CONSUMER, not a second production authority. It is
+acceptable for exactly one slice because 2c deletes the dependency.
+
+### Item 3 — the boundary to land during 2c
+
+Agreed target, and no cleanup theatre before the new graph exists:
+
+```
+before 2c   qualification -> old workload -> memory
+after 2c    qualification -> MemoryArtifact
+            integration test -> WorkloadGraph -> memory
+```
+
+Concretely, during 2c:
+
+1. convert the battery's fixture construction from
+   `build_compute_op -> WorkloadArtifact -> resolve_memory` to direct
+   `MemoryArtifact` fixtures wherever that preserves the exact memory
+   accesses being tested;
+2. extract the workload→memory conservation claim as its own integration
+   regression, pinned against the CURRENT legacy behaviour first;
+3. migrate `resolve_memory()` itself to `WorkloadGraph` and move that
+   integration test with it.
+
+Do NOT duplicate `resolve_memory()` logic in the qualification battery to
+make it look independent — the dependency disappears when the authority
+does.

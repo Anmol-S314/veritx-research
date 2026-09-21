@@ -36,7 +36,9 @@ import time
 from pathlib import Path
 from typing import Any
 
-DSE_DIR = Path(__file__).resolve().parent.parent.parent
+# moved out of the production package (Gate V2.1 follow-up):
+# qualification/ sits beside veritx_dse/, so the DSE root is parents[1]
+DSE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(DSE_DIR))
 
 from veritx_dse.core.memory import (  # noqa: E402
