@@ -83,8 +83,11 @@ integration happens here, in stage order. P3 remains deferred.
       schema-valid view. Found+fixed en route: v3 Objective metric field,
       evidence-slot reuse across invocations (fresh study token per run).
       CLI test proves real + repeatable (distinct evidence digests).
-- [ ] Stage 7 — merge P4; regenerate fixtures from integrated engine; view
-      boundary gateway
+- [x] Stage 7 — P4 merged (P1-INT.7, isolated apps/studio). Gateway
+      `application/views.py` (compilation/design projectors; absent facts
+      omitted, never faked). All 5 fixtures regenerated from live engine
+      runs (validator 5/5 incl. new study linkage rule: design/opt.base
+      bind base intent, product views bind one winner hash from candidates).
 - [ ] Stage 8 — reconcile handoff branch per-change (ALREADY_IMPLEMENTED /
       SUPERSEDED / USEFUL_TEST / USEFUL_ORCHESTRATION / REJECT); never
       wholesale-merge

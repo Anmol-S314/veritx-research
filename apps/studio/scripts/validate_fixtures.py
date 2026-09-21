@@ -83,11 +83,43 @@ def check_linkage(doc: dict, errors: list[str]) -> None:
     design = doc.get("design") or {}
     dh = design.get("design_hash")
     comp = doc.get("compilation")
-    if comp and comp.get("design_hash") != dh:
-        errors.append(f"{fid}: compilation.design_hash != design.design_hash")
     ev = doc.get("evaluation")
+    req = doc.get("requirements")
+    opt = doc.get("optimization")
+    # Study rule: an optimization fixture spans base intent + winning
+    # design. design/opt.base bind the BASE; comp/eval/req bind ONE
+    # winner hash that must appear among the study candidates. A study
+    # claiming a winner outside its own candidate set is incoherent.
+    candidate_hashes = set()
+    if isinstance(opt, dict):
+        for row in opt.get("candidates", []):
+            h = (row.get("evaluation_ids") or {}).get("design_hash")
+            if h:
+                candidate_hashes.add(h)
+    product_hashes = {
+        slot for slot in (
+            (comp or {}).get("design_hash"),
+            (ev or {}).get("design_hash"),
+            (req or {}).get("design_hash"),
+        ) if slot}
+    # The winner hash is exempt from single-design equality below, but
+    # never from the completeness checks (EVALUATED slots stay fully
+    # audited whichever design they bind).
+    winner_ok: set[str] = set()
+    if candidate_hashes and product_hashes - {dh}:
+        extra = product_hashes - {dh}
+        if len(extra) != 1 or not extra <= candidate_hashes:
+            errors.append(
+                f"{fid}: study product views must share one winner hash "
+                f"from the study candidates, got {sorted(extra)}")
+        else:
+            winner_ok = extra
+    if comp and comp.get("design_hash") != dh \
+            and comp.get("design_hash") not in winner_ok:
+        errors.append(f"{fid}: compilation.design_hash != design.design_hash")
     if ev:
-        if ev.get("design_hash") != dh:
+        if ev.get("design_hash") != dh \
+                and ev.get("design_hash") not in winner_ok:
             errors.append(f"{fid}: evaluation.design_hash != design.design_hash")
         if ev.get("status") == "EVALUATED":
             for key in (
@@ -106,9 +138,9 @@ def check_linkage(doc: dict, errors: list[str]) -> None:
                     f"{fid}: {ev['status']} must not carry metrics "
                     "(absent metrics are absent, never zero-filled)"
                 )
-    req = doc.get("requirements")
     if req:
-        if req.get("design_hash") != dh:
+        if req.get("design_hash") != dh \
+                and req.get("design_hash") not in winner_ok:
             errors.append(f"{fid}: requirements.design_hash != design.design_hash")
         if ev and ev.get("performance_result_id") and (
             req.get("performance_result_id") != ev["performance_result_id"]

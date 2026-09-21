@@ -1,82 +1,60 @@
 {
-  "fixture_id": "invalid-design",
-  "title": "Refused design (radix 3 cannot seat 78 agents)",
+  "compilation": {
+    "compiler_semantics_version": 3,
+    "contract_version": 1,
+    "design_hash": "sha256:d813ff746a540431dc9eecf09e71b08f20b7db297ca02b6aec0fad218a6da929",
+    "error": "UNSUPPORTED: no certified routing derivation for topology family 'torus' \u2014 P1A certifies MESH and CONCENTRATED_MESH (DOR_XY) only; refusing silent minimum-hop fallback",
+    "status": "UNSUPPORTED"
+  },
   "description": "Engine-typed UNSUPPORTED refusal: radix 3 pins k=3, so 36 seats cannot cover 78 agents. No bundle, no certificate, no obligation list, no resolved fabric hash.",
   "design": {
-    "contract_version": 1,
-    "design_hash": "sha256:1cb2e3b2ce9d24c0588a557932d3d4e59272fb45bbe06e7cc86cdf6b1689d566",
-    "schema_version": 2,
-    "compiler_semantics_version": 2,
-    "workload": {
-      "model_family": "dense_transformer",
-      "model_name": "LLaMA-70B",
-      "parallelism": {
-        "tp": 64,
-        "pp": 1,
-        "ep": 1,
-        "dp": 1
+    "agents": [
+      {
+        "count": 64,
+        "kind": "compute_tile"
       },
-      "serving_mode": "mixed"
+      {
+        "count": 8,
+        "kind": "hbm_controller"
+      }
+    ],
+    "compiler_semantics_version": 3,
+    "contract_version": 1,
+    "design_hash": "sha256:d813ff746a540431dc9eecf09e71b08f20b7db297ca02b6aec0fad218a6da929",
+    "locked_derived": null,
+    "noc_guided": {
+      "arbitration": null,
+      "concentration": 1,
+      "link_width": 64,
+      "radix": null,
+      "rcu_enabled": null,
+      "topology_family": "torus"
     },
     "requirements": [
       {
-        "traffic_class": null,
+        "bandwidth_floor_gbps": null,
+        "binding": true,
+        "latency_ceiling_cycles": 100000.0,
         "qos_class": "latency_critical",
-        "latency_ceiling_cycles": 220,
-        "bandwidth_floor_gbps": null,
-        "binding": true
-      },
-      {
-        "traffic_class": null,
-        "qos_class": "bandwidth",
-        "latency_ceiling_cycles": null,
-        "bandwidth_floor_gbps": 100,
-        "binding": true
-      },
-      {
-        "traffic_class": null,
-        "qos_class": "best_effort",
-        "latency_ceiling_cycles": null,
-        "bandwidth_floor_gbps": null,
-        "binding": false
+        "traffic_class": "tp_collective"
       }
     ],
-    "agents": [
-      {
-        "kind": "compute_tile",
-        "count": 64
+    "schema_version": 3,
+    "workload": {
+      "model_family": "dense_transformer",
+      "model_name": "llama-dense-8b",
+      "parallelism": {
+        "dp": 1,
+        "ep": 1,
+        "pp": 1,
+        "tp": 8
       },
-      {
-        "kind": "hbm_controller",
-        "count": 8
-      },
-      {
-        "kind": "nic",
-        "count": 2
-      },
-      {
-        "kind": "peripheral",
-        "count": 4
-      }
-    ],
-    "noc_guided": {
-      "topology_family": "mesh",
-      "radix": 3,
-      "concentration": 4,
-      "link_width": 128,
-      "rcu_enabled": false,
-      "arbitration": "round_robin"
-    },
-    "locked_derived": null
-  },
-  "compilation": {
-    "contract_version": 1,
-    "status": "UNSUPPORTED",
-    "design_hash": "sha256:1cb2e3b2ce9d24c0588a557932d3d4e59272fb45bbe06e7cc86cdf6b1689d566",
-    "compiler_semantics_version": 2,
-    "error": "radix 3 with concentration 4 provides 36 seats but 78 agents must attach"
+      "serving_mode": "mixed"
+    }
   },
   "evaluation": null,
+  "fixture_id": "invalid-design",
+  "optimization": null,
   "requirements": null,
-  "optimization": null
+  "title": "Refused design (radix 3 cannot seat 78 agents)"
 }
