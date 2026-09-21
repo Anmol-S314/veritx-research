@@ -43,7 +43,7 @@ Lowering laws (all enforced, none assumed):
   never forks messages.py.
 
 B1 audit findings (for the record — see compile_model v3 section for
-full evidence): bytes_per_element meaning unproven (never consumed
+full evidence): the v2 per-element byte-count field meaning unproven (never
 here); DependencyGraph names ad hoc in v2 (v3 unifies through
 derive_v3_traffic_classes); v2 Requirement has no traffic_class;
 LogicalMessageArtifactV2 is single-class (hence the sidecar);
