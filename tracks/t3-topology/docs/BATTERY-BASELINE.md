@@ -1,12 +1,40 @@
 # Battery baseline — the differential set M1 must not grow
 
-Status: **M0.5 COMPLETE.** Hermetic repository, classified failures,
-reproducible node sets, clean-checkout equivalence proven.
+Status: **M6 COMPLETE — foundation campaign closed.** One canonical
+workload path, one mapping authority, one evidence path, one
+performance subsystem, no live Wave-D/E duplication. The pivot to
+`CompileRequest → FabricArtifact` is unblocked.
 
 This is the honest state of the DSE battery in the active consolidation worktree
 (`/home/datavex/veritx-audit`).
 
-## Current run
+## Current run (M6 final)
+
+| | |
+|---|---|
+| commit | `846c8de5` (M6 persistence vocabulary) |
+| command | `cd tracks/t3-topology/dse && python3 -m pytest tests -q --tb=no -p no:cacheprovider` |
+| result | **5 failed, 3716 passed, 40 skipped, 9 xfailed** in 145s |
+| differential | failed-node set IDENTICAL to the 5-node M0.5 baseline (all `QUALIFIED_BACKEND_UNAVAILABLE`); +32 passed vs M1.5, zero regressions |
+
+## M1.6–M6 — what landed since `ae07f071`
+
+| Commit | Milestone |
+|---|---|
+| `d096b7b0` | M1.6 writer cutover: new runs emit workloadgraph/v2 messages/v2 traffic; zero new wavedworkload/wavedsemantics/opgraph; generation-dispatched loaders; seal + wave_e product tests migrated |
+| `ac5a18d2` | M2 differential: same science across generations (byte-identical where v1 respected deps; documented order correction where it didn't) + cross-gen attack matrix |
+| `fe0a9947` | M3 consumers: resolve_memory_graph, build_timeline_graph, rows_from_graph + lower_to_et_graph (real-converter proof), serving emits .workloadgraph.json |
+| `cbd15a75` | M4: five dead v1 writers deleted; v1 readers frozen for history; rename deferred to P1 (authoring still needs graph.py) |
+| `efadb4c2` | M5: wavee/ → performance/ (+ core/time); WaveE* → Performance*/Temporal* classes; sealed tags unchanged |
+| `846c8de5` | M6: temporal workloads persist as performance (dual-kind reader); inline wave_d/wave_e block keys kept (sealed identity vocabulary) |
+
+Deliberate deviations from the program, each recorded in its commit:
+M4 keeps (not deletes) the authoring/verification classes; M5 keeps
+persisted `srota/wavee/…` tags; M6 keeps inline block keys. In all
+three cases renaming would fork identities or destroy auditability
+for cosmetic gain.
+
+## Prior run (M1.5)
 
 | | |
 |---|---|
