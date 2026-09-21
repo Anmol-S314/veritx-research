@@ -33,10 +33,12 @@
  */
 
 #include <cassert>
+#include <fstream>
 #include <sstream>
 
 #include "booksim.hpp"
 #include "network.hpp"
+#include "routefunc.hpp"
 
 #include "kncube.hpp"
 #include "fly.hpp"
@@ -131,7 +133,118 @@ Network * Network::New(const Configuration & config, const string & name)
   if ( n && ( config.GetInt( "link_failures" ) > 0 ) ) {
     n->InsertRandomFaults( config );
   }
+
+  /* VeritX (P1B-Q2): when a routing realization dump is requested, query
+   * the active routing function and write the executed first-hop table.
+   * AnyNet keeps its own historical dump inside buildRoutingTable(), so
+   * it is skipped here byte-for-byte.
+   */
+  if ( n && ( topo != "anynet" ) && ( !config.GetStr( "routing_dump_file" ).empty() ) ) {
+    string why;
+    if ( !n->DumpRoutingRealization( config, config.GetStr( "routing_dump_file" ), why ) ) {
+      cerr << "VeritX: routing realization dump refused: " << why << endl;
+      exit( -1 );
+    }
+  }
   return n;
+}
+
+
+bool Network::DumpRoutingRealization( const Configuration & config,
+				      const string & path, string & why )
+{
+  if ( path.empty() ) {
+    return true;
+  }
+  const string rf_name = config.GetStr( "routing_function" ) + "_" +
+    config.GetStr( "topology" );
+  map<string, tRoutingFunction>::const_iterator it =
+    gRoutingFunctionMap.find( rf_name );
+  if ( it == gRoutingFunctionMap.end() ) {
+    why = "routing function '" + rf_name + "' is not registered";
+    return false;
+  }
+  tRoutingFunction rf = it->second;
+
+  ofstream dump( path.c_str() );
+  if ( !dump.is_open() ) {
+    why = "cannot open routing dump file '" + path + "'";
+    return false;
+  }
+  dump << "# VeritX routing realization dump (executed first-hop realization)\n";
+  dump << "# topology " << config.GetStr( "topology" )
+       << " routing_function " << config.GetStr( "routing_function" ) << "\n";
+  for ( int r = 0; r < _size; ++r ) {
+    Router * router = _routers[r];
+    for ( int d = 0; d < _nodes; ++d ) {
+      int port = -1;
+      if ( !_QueryDeterministicPort( rf, rf_name, router, d, port, why ) ) {
+	dump.close();
+	return false;
+      }
+      const FlitChannel * ch = router->GetOutputChannel( port );
+      int next = ( ( ch != NULL ) && ( ch->GetSink() != NULL ) )
+	? ch->GetSink()->GetID() : r;
+      dump << "src_router " << r << " dst_node " << d
+	   << " next_router " << next << " port " << port << "\n";
+    }
+  }
+  dump.close();
+  return true;
+}
+
+
+bool Network::_QueryDeterministicPort( tRoutingFunction rf,
+				       const string & rf_name,
+				       Router * router, int dest,
+				       int & port, string & why )
+{
+  int ports[2] = { -1, -1 };
+  for ( int pass = 0; pass < 2; ++pass ) {
+    Flit * flit = Flit::New();
+    flit->dest = dest;
+    flit->type = Flit::ANY_TYPE;
+    flit->head = true;
+    flit->vc = 0;   /* an in-flight flit, never an injection */
+    OutputSet outputs;
+    rf( router, flit, -1, &outputs, false );
+    const set<OutputSet::sSetElement> & got = outputs.GetSet();
+    if ( got.size() != 1 ) {
+      ostringstream why_ss;
+      why_ss << "routing function '" << rf_name << "' yields "
+	     << got.size() << " output ports for (router,dst)=("
+	     << router->GetID() << "," << dest << "); a deterministic "
+	     << "first-hop table cannot be certified from an "
+	     << "adaptive/ambiguous realization";
+      why = why_ss.str();
+      flit->Free();
+      return false;
+    }
+    ports[pass] = got.begin()->output_port;
+    if ( ( ports[pass] < 0 ) || ( ports[pass] >= router->NumOutputs() ) ) {
+      ostringstream why_ss;
+      why_ss << "routing function '" << rf_name << "' returned port "
+	     << ports[pass] << " outside [0," << router->NumOutputs()
+	     << ") for (router,dst)=(" << router->GetID() << "," << dest
+	     << ")";
+      why = why_ss.str();
+      flit->Free();
+      return false;
+    }
+    flit->Free();
+  }
+  if ( ports[0] != ports[1] ) {
+    ostringstream why_ss;
+    why_ss << "routing function '" << rf_name << "' returned different "
+	   << "ports (" << ports[0] << " vs " << ports[1] << ") for two "
+	   << "identical queries of (router,dst)=(" << router->GetID()
+	   << "," << dest << "); a state/RNG-dependent function has no "
+	   << "deterministic first-hop table";
+    why = why_ss.str();
+    return false;
+  }
+  port = ports[0];
+  return true;
 }
 
 void Network::_Alloc( )
