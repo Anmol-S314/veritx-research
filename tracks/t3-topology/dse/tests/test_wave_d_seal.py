@@ -38,18 +38,13 @@ from test_backend_bundle import make_bundle  # noqa: E402
 
 from veritx_dse.application.errors import ControlPlaneError, ErrorCode  # noqa: E402
 from veritx_dse.application.service import SrotaControlPlane  # noqa: E402
-from veritx_dse.application.store import ResourceStore  # noqa: E402
 from veritx_dse.application.waved_resources import (  # noqa: E402
-    EXECUTION_RESULT_KEYS, PLAN_CHAIN_KEYS_V1, PLAN_CHAIN_KEYS_V2,
-    RESULT_WAVE_D_KEYS_V1, RESULT_WAVE_D_KEYS_V2,
+    EXECUTION_RESULT_KEYS, PLAN_CHAIN_KEYS_V2,
+    RESULT_WAVE_D_KEYS_V2,
     chain_ids_from_traffic,
-    load_verified_messages, load_verified_operation_graph,
+    load_verified_messages,
     load_verified_parallelism, load_verified_traffic,
-    load_verified_waved_semantics, load_verified_waved_workload,
     load_verified_workload_graph,
-    messages_record, operation_graph_record, parallelism_record,
-    traffic_record, waved_chain_ids_from_traffic, waved_semantics_record,
-    waved_workload_record,
 )
 from veritx_dse.model.compile_model import TopologyFamily  # noqa: E402
 from veritx_dse.core.errors import (  # noqa: E402

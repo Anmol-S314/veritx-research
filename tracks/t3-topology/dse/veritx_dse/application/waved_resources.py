@@ -52,6 +52,13 @@ WAVED_RESOURCE_KINDS = ("wavedworkload", "parallelism", "wavedsemantics",
 
 
 # ── records (write side) ─────────────────────────────────────────────────
+#
+# M4: the v1 writers are DELETED (waved_semantics_record,
+# waved_workload_record, operation_graph_record, messages_record,
+# traffic_record had zero callers after the M1.6 cutover — new runs
+# never emit wavedworkload/wavedsemantics/opgraph resources). The v1
+# READERS below stay frozen for historical verification; the v2
+# records are the only writers.
 
 def _record(kind: str, resource_id: str,
             artifact: dict[str, Any]) -> dict[str, Any]:
@@ -67,21 +74,6 @@ def parallelism_record(art: ParallelismArtifact) -> dict[str, Any]:
     return _record("parallelism", art.parallelism_id(), art.to_dict())
 
 
-def waved_semantics_record(art: WaveDWorkloadSemantics) -> dict[str, Any]:
-    return _record("wavedsemantics", art.semantics_id(), art.to_dict())
-
-
-def waved_workload_record(art: WaveDWorkload) -> dict[str, Any]:
-    return _record("wavedworkload", art.workload_id(), art.to_dict())
-
-
-def operation_graph_record(art: OperationGraph) -> dict[str, Any]:
-    """HISTORICAL READER (deletion owner: 2c.9): the Wave-D opgraph
-    format. Readable for historical verification, never written by new
-    canonical paths once the writer switch lands."""
-    return _record("opgraph", art.operation_graph_id(), art.to_dict())
-
-
 def workload_graph_record(art: Any) -> dict[str, Any]:
     """The canonical WorkloadGraph resource.
 
@@ -91,31 +83,9 @@ def workload_graph_record(art: Any) -> dict[str, Any]:
     return _record("workloadgraph", art.workload_id(), art.to_dict())
 
 
-def messages_record(art: LogicalMessageArtifact) -> dict[str, Any]:
-    """HISTORICAL WRITER (M1.6 cutover): v1 messages. New canonical
-    paths use messages_v2_record; this stays for historical reads."""
-    return _record("messages", art.message_artifact_id(), art.to_dict())
-
-
 def messages_v2_record(art: LogicalMessageArtifactV2) -> dict[str, Any]:
     """Canonical messages record: the v2 artifact is self-contained."""
     return _record("messages", art.message_artifact_id(), art.to_dict())
-
-
-def traffic_record(art: PhysicalTrafficArtifact, *, design_id: str
-                   ) -> dict[str, Any]:
-    """Physical traffic + the navigational link to its compiled design.
-
-    ``design_id``/``design_hash``/``mapping_hash`` are links, not
-    identity: the identity-bearing parent is ``resolved_fabric_hash``,
-    and the loader re-derives the bundle and requires all of them to
-    agree.
-    """
-    doc = dict(art.to_dict())
-    doc["design_id"] = design_id
-    doc["design_hash"] = art.bundle.resolved_fabric.design_hash
-    doc["mapping_hash"] = art.bundle.resolved_fabric.mapping_hash
-    return _record("traffic", art.physical_traffic_id(), doc)
 
 
 def traffic_v2_record(art: PhysicalTrafficArtifactV2, *, design_id: str
@@ -682,16 +652,11 @@ __all__ = [
     "load_verified_traffic_record",
     "load_verified_waved_semantics",
     "load_verified_waved_workload",
-    "messages_record",
     "messages_v2_record",
-    "operation_graph_record",
     "parallelism_record",
     "rebuild_verified_bundle",
-    "traffic_record",
     "traffic_v2_record",
     "waved_chain_ids",
     "waved_chain_ids_from_traffic",
     "waved_execution_block",
-    "waved_semantics_record",
-    "waved_workload_record",
 ]
