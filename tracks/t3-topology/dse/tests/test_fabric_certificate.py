@@ -81,6 +81,39 @@ class TestCertificate:
         by_name = {o.obligation: o for o in cert.obligations}
         assert by_name["VC_ASSIGNMENT_VALID"].status == "FAIL"
 
+    def test_router_behavior_tamper_cannot_masquerade(self):
+        """Only the RouterBehaviorArtifact changes: the resulting
+        certificate must not be presentable as the original — the
+        DEADLOCK_FREE evidence binds the new behavior hash and the
+        certificate id moves."""
+        from veritx_dse.application.compile import compile_bundle
+        bundle = compile_bundle(_mesh_chain().cr)
+        orig = verify_compiled_fabric(bundle)
+        assert orig.overall == "PASS"
+        tampered_behavior = dataclasses.replace(
+            bundle.router_behavior,
+            input_buffer_depth_flits_per_vc=(
+                bundle.router_behavior
+                .input_buffer_depth_flits_per_vc + 1),
+            artifact_hash="")
+        assert tampered_behavior.router_behavior_hash() != \
+            bundle.router_behavior.router_behavior_hash()
+        tampered = dataclasses.replace(
+            bundle, router_behavior=tampered_behavior)
+        forged = verify_compiled_fabric(tampered)
+        assert forged.certificate_id() != orig.certificate_id()
+        by_orig = {o.obligation: o for o in orig.obligations}
+        by_new = {o.obligation: o for o in forged.obligations}
+        assert by_new["DEADLOCK_FREE"].evidence[
+            "router_behavior_hash"] == \
+            tampered_behavior.router_behavior_hash()
+        assert by_orig["DEADLOCK_FREE"].evidence[
+            "router_behavior_hash"] == \
+            bundle.router_behavior.router_behavior_hash()
+        assert by_new["DEADLOCK_FREE"].evidence[
+            "router_behavior_hash"] != \
+            by_orig["DEADLOCK_FREE"].evidence["router_behavior_hash"]
+
     def test_torus_is_unsupported_not_invalid(self):
         comp = FabricCompiler().compile(
             _mesh_chain(family=TopologyFamily.TORUS).cr)

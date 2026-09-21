@@ -232,11 +232,26 @@ def _deadlock_free(bundle: Any) -> ObligationResult:
             resolved_route=bundle.resolved_route,
             router_route=bundle.router_route,
             vc_assignment=bundle.vc_assignment,
-            router_behavior_hash="",
+            # P1B.0: bind the actual router behavior. The proof is still
+            # routing/VC acyclicity, but the certificate now preserves the
+            # full provenance instead of certifying against an empty hash.
+            router_behavior_hash=bundle.router_behavior
+            .router_behavior_hash(),
         )
     except Exception as exc:
         return _fail("DEADLOCK_FREE", "channel-vc-cdg/v1", str(exc), {})
-    ev = dict(cert.evidence)
+    # Preserve the certifier's own identity fields verbatim: the
+    # obligation evidence names the exact proof, never a recomputation
+    # of the same hashes by a second code path.
+    ev = {
+        "proof_method": cert.proof_method,
+        "topology_hash": cert.topology_hash,
+        "router_route_hash": cert.router_route_hash,
+        "resolved_route_hash": cert.resolved_route_hash,
+        "vc_assignment_hash": cert.vc_assignment_hash,
+        "router_behavior_hash": cert.router_behavior_hash,
+        **dict(cert.evidence),
+    }
     if cert.verdict != "PASS":
         return _fail("DEADLOCK_FREE", "channel-vc-cdg/v1",
                      f"CDG verdict {cert.verdict}: "
