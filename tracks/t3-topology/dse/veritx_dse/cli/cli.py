@@ -33,6 +33,7 @@ All evaluation uses trace-replay mode (correct timestamps, no Bernoulli).
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import os
 import re
@@ -90,6 +91,10 @@ CERTIFY_SH = DSE_DIR.parent / "scripts" / "certify.sh"
 # refuse hopeless budgets BEFORE burning them (run 20260916_213026:
 # 56.1M-pkt trace given 600 s — dead on arrival at ~70 min predicted).
 BOOKSIM_PKTS_PER_SEC = 13_000
+
+# Monotonic per-process disambiguator for optimize evidence roots (RT-13):
+# same-second invocations in one process must get distinct run roots.
+_RUN_ROOT_SEQ = itertools.count()
 
 # Timeloop binary homes: the container builds its OWN (ABI matches the
 # image); the vendored bin was built on the host (24.04 sonames — cannot
@@ -3022,10 +3027,9 @@ def _optimize_booksim(ctx: Ctx, args, src: Path, doc: dict):
     # collide with previous evidence. The token is transport, never
     # scientific identity (digests are content-based).
     import datetime as _dt
-    run_root = getattr(args, "run_root", None)
-    run_root = Path(str(run_root)) if run_root else (
+    run_root_base = getattr(args, "run_root", None)
+    run_root_base = Path(str(run_root_base)) if run_root_base else (
         Path.cwd() / "runs" / "optimize" / src.stem)
-    run_root = run_root / _dt.datetime.now().strftime("%Y%m%dT%H%M%S")
     binary = getattr(args, "binary", None)
     if not binary:
         try:
@@ -3035,6 +3039,21 @@ def _optimize_booksim(ctx: Ctx, args, src: Path, doc: dict):
             fail(ctx, f"no runnable BookSim binary for --evaluate booksim: "
                         f"{exc}")
             return
+    # Collision-free evidence root. The 1-second timestamp alone collides
+    # (two invocations in the same second, pid reuse); a reused root either
+    # overwrites evidence or trips the freshness gates. mkdir(exist_ok=False)
+    # makes creation the collision test, the pid + monotonic counter suffix
+    # disambiguates, and the loop retries on FileExistsError. An existing
+    # root — empty or not — is never reused.
+    stamp = _dt.datetime.now().strftime("%Y%m%dT%H%M%S")
+    while True:
+        run_root = run_root_base / (
+            f"{stamp}-{os.getpid()}-{next(_RUN_ROOT_SEQ)}")
+        try:
+            run_root.mkdir(parents=True, exist_ok=False)
+            break
+        except FileExistsError:
+            continue
     try:
         constraints: list = []
         if getattr(args, "latency_ceiling", None) is not None:

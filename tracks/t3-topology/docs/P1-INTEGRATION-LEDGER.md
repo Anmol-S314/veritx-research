@@ -179,3 +179,51 @@ names claimed.
 11. CI runs on `integration/**` with a digest-pinned container.
 
 No P3, no 120-node legacy cleanup, no feature work until these gates pass.
+
+## RT-3 closure note — Studio realizability (branch `rt3/studio-realizability`)
+
+- **RT-5a (stale generator):** `apps/studio/fixtures/generate_fixtures.py`
+  deleted. Single authority is
+  `tracks/t3-topology/dse/veritx_dse/tools/generate_studio_fixtures.py`;
+  `apps/studio/package.json` `gen-fixtures` and the Studio README now point
+  at that tool (and the README no longer repeats the stale generator's
+  5×5/78-agent/radix-3/6-candidate numbers — it documents the engine
+  fixture values actually committed).
+- **RT-5b (engine realizability):** `apps/studio/scripts/validate_fixtures.py`
+  keeps the schema/linkage/enum fast path and adds an engine mode (default
+  ON when `CI`/`GITHUB_ACTIONS` is set; `--engine` forces it, `--skip-engine`
+  opts out offline). It regenerates all five fixtures with the engine tool
+  into a temp dir and compares. Missing engine/BookSim **fails loudly**.
+  Finding: the volatile allowlist cannot be empty as the task assumed — the
+  BookSim evidence artifact embeds its absolute run path and the producer
+  binary digest, so `producer_identity`, `evidence.raw_evidence_digest`, and
+  the performance-result-id chain are regenerated per host/run. Those exact
+  paths are the documented allowlist; every other field (design,
+  certificate/obligations, window, metrics, verdicts, candidates, objectives,
+  Pareto) must match exactly. v2 study-view acceptance is wired: v2 is
+  selected when `contract_version == 2` and
+  `contracts/srota/v1/optimization.study.view.v2.schema.json` exists; v1
+  fixtures keep validating against v1 (verified against RT-1's real v2
+  schema: tri-state verdicts accepted, boolean verdicts refused under v2).
+- **RT-13 (collision):** `cmd_optimize` now creates its evidence root as
+  `%Y%m%dT%H%M%S-<pid>-<counter>` with `mkdir(parents=True, exist_ok=False)`
+  and retries on `FileExistsError` (module-level monotonic counter); a root
+  is never reused. `test_p1_optimize_booksim.py` freezes wall time, runs two
+  invocations against the SAME base root in the SAME second, and asserts both
+  succeed with distinct per-run evidence digests while candidate identities
+  stay stable.
+- **RT-14 (CI):** `integration/**` added to push triggers. Container pinned
+  to `ghcr.io/anmol-s314/veritx-tools-base@sha256:4018cd4786a4d3d64143e1452a76bffecec26922e92ef9590ff9810f2d344bed`
+  (resolved from the registry via `podman pull` → RepoDigests; the
+  `rebuild-docker` job notes that a new `:latest` does not move the pin).
+  **REQUIREMENT / fail-loud:** that image (and the cached local rebuild)
+  ships Python 3.10, which cannot parse `tracks/t3-topology/dse` (PEP 701
+  f-strings) — the t3 container leg fails at `make lint` until the image is
+  rebuilt on Python ≥ 3.12. A separate `studio-fixtures` job was added on a
+  plain 3.12 runner (pip-installs the DSE package, builds the vendored
+  BookSim, runs `validate_fixtures.py --engine`) so gate 10 has CI evidence
+  independent of the stale container.
+
+No engine semantics changed. The only non-`apps/studio` code touched is the
+RT-13-mandated `veritx_dse/cli/cli.py` run-root construction (no scientific
+identity, no evaluation semantics).

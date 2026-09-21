@@ -9,7 +9,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "validate": "python3 scripts/validate_fixtures.py",
-    "gen-fixtures": "python3 fixtures/generate_fixtures.py"
+    "gen-fixtures": "cd ../../tracks/t3-topology/dse && python3 -m veritx_dse.tools.generate_studio_fixtures"
   },
   "dependencies": {
     "react": "^19.0.0",

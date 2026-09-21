@@ -7,16 +7,27 @@ on:
       - 'pareto-analysis-*'   # Manal's analysis branches
       - 'feature/**'
       - 'fix/**'
+      - 'integration/**'      # RT-14: the sealed/closure SHA must get CI
   pull_request:
     branches: [main]
   workflow_dispatch:
+
+# Container pin (RT-14): the toolchain image used to float on `:latest`, so
+# the sealed SHA had no reproducible CI environment. The digest below was
+# resolved from the registry (`podman pull` -> RepoDigests); bump it
+# deliberately via the rebuild-docker job, never silently.
+# REQUIREMENT: the image must ship Python >= 3.12. The currently published
+# digest ships 3.10, which cannot parse tracks/t3-topology/dse (PEP 701
+# f-strings) — the t3 container leg fails at `make lint` until the image is
+# rebuilt on a 3.12 base. Fail loudly, do not paper over.
 
 jobs:
   veritx-ci:
     name: ${{ matrix.track }}
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/anmol-s314/veritx-tools-base:latest
+      # anchored digest, reused by every container job below
+      image: &veritx-tools-image ghcr.io/anmol-s314/veritx-tools-base@sha256:4018cd4786a4d3d64143e1452a76bffecec26922e92ef9590ff9810f2d344bed
     strategy:
       fail-fast: false
       matrix:
@@ -48,7 +59,7 @@ jobs:
     if: always() && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/anmol-s314/veritx-tools-base:latest
+      image: *veritx-tools-image
     steps:
       - uses: actions/checkout@v4
       - name: Download T1 results
@@ -76,7 +87,7 @@ jobs:
           path: tracks/t4-formal/results/
         continue-on-error: true
       - name: Pull tools image
-        run: docker pull ghcr.io/anmol-s314/veritx-tools-base:latest
+        run: docker pull ghcr.io/anmol-s314/veritx-tools-base@sha256:4018cd4786a4d3d64143e1452a76bffecec26922e92ef9590ff9810f2d344bed
       - name: Generate report
         run: make report
       - uses: actions/upload-artifact@v4
@@ -143,6 +154,48 @@ jobs:
           python -m pytest tracks/t3-topology/dse/tests/test_run_core.py -q
           python -m pytest tracks/t3-topology/dse/tests/test_slice_a_booksim.py -q
 
+  # RT-5b / closure gate 10: the Studio fixtures must be reproducible by the
+  # engine, not merely schema-valid. This runs on a plain runner because the
+  # pinned tools container still ships Python 3.10, which cannot parse the
+  # DSE sources (PEP 701 f-strings). BookSim is built from the vendored tree
+  # (the same qualified producer the fixtures were generated from); the
+  # validator regenerates all five fixtures and compares, allowing only
+  # producer-bound fields (binary digest / evidence run path) to differ.
+  # Guarded on the Studio tree existing so refs that predate P1 (e.g. main)
+  # skip it instead of failing.
+  studio-fixtures:
+    name: Studio fixtures (engine realizability)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect Studio tree
+        id: studio
+        run: |
+          if [ -f apps/studio/scripts/validate_fixtures.py ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::apps/studio not present on this ref — skipping engine realizability gate"
+          fi
+      - uses: actions/setup-python@v5
+        if: steps.studio.outputs.present == 'true'
+        with:
+          python-version: "3.12"
+      - name: Install engine + validator deps
+        if: steps.studio.outputs.present == 'true'
+        run: |
+          pip install -e tracks/t3-topology/dse
+          pip install jsonschema
+      - name: Build BookSim (qualified producer)
+        if: steps.studio.outputs.present == 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bison flex
+          make -C third_party/booksim2/src -j"$(nproc)"
+      - name: Validate fixtures (schema + engine realizability)
+        if: steps.studio.outputs.present == 'true'
+        run: python3 apps/studio/scripts/validate_fixtures.py --engine
+
   rebuild-docker:
     name: Rebuild Docker Image
     if: github.event_name == 'workflow_dispatch'
@@ -164,3 +217,5 @@ jobs:
           context: .
           push: true
           tags: ghcr.io/anmol-s314/veritx-tools-base:latest
+          # NOTE (RT-14): pushing a new :latest does NOT move the pinned
+          # digest above; update the pin in this file in the same change.

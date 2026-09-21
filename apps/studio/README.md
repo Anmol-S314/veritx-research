@@ -10,14 +10,15 @@ from contract-validated fixtures** — no engine connectivity yet.
   flat dark/light themes. No gradients, no gloss.
 - Consumes only the frozen views in `contracts/srota/v1/` (Design,
   Compilation, Evaluation, RequirementReport, OptimizationStudy). **Never imports
-  Python engine modules.**
+  Python engine modules** (the validator's engine mode deliberately does, to
+  prove the fixtures are engine-realizable; the UI never does).
 
 ## Layout
 
 ```
 apps/studio/
-  fixtures/         five *.json fixtures + generate_fixtures.py (deterministic)
-  scripts/          validate_fixtures.py (schema + linkage + realizability gate)
+  fixtures/         five engine-generated *.json fixtures (no in-tree generator)
+  scripts/          validate_fixtures.py (schema + linkage + engine realizability)
   src/
     types.ts        contract-mirror TS types
     fixtures.ts     fixture loading (validated JSON only)
@@ -37,30 +38,35 @@ apps/studio/
 npm install
 npm run dev        # local dev server
 npm run build      # typecheck + production build
-npm run validate   # validate all fixtures against contracts/srota/v1
-npm run gen-fixtures  # regenerate fixtures deterministically (then validate)
+npm run validate   # schema/linkage fast path (engine mode on when CI is set)
+npm run gen-fixtures  # regenerate via the engine tool (BookSim required)
+
+# Force/refuse the engine realizability check explicitly:
+python3 scripts/validate_fixtures.py --engine       # regenerate + byte-compare
+python3 scripts/validate_fixtures.py --skip-engine  # offline: fast path only
 ```
 
 ## Fixtures
 
 | File | State demonstrated |
 |---|---|
-| `compiled-mesh.json` | COMPILED, 10/10 PASS, evaluation NOT_RUN (5×5 mesh, 78 agents) |
-| `invalid-design.json` | UNSUPPORTED typed refusal (radix 3 seats 36 < 78 agents; no bundle) |
-| `backend-unavailable.json` | COMPILED + BACKEND_UNAVAILABLE (reason, no metrics) |
-| `evaluated-design.json` | EVALUATED (aggregate window, present metrics, producer, fidelity warning) + RequirementReport |
-| `optimization-study.json` | Study over link_width × concentration: 6 candidates, Pareto set, selected + rationale |
+| `compiled-mesh.json` | COMPILED, 10/10 PASS, evaluation NOT_RUN (9×9 mesh, 72 agents) |
+| `invalid-design.json` | UNSUPPORTED typed refusal (torus has no certified routing derivation; no bundle) |
+| `backend-unavailable.json` | COMPILED + BACKEND_UNAVAILABLE (unidentifiable producer, reason, no metrics) |
+| `evaluated-design.json` | EVALUATED (16161-cycle aggregate window, present metrics, producer, fidelity warning) + RequirementReport |
+| `optimization-study.json` | Study over link_width {64,128}: 2 candidates, Pareto set, selected + rationale |
 
 Every fixture must pass `npm run validate` (Draft 2020-12 schemas + cross-view
 hash linkage: design_hash consistency, performance_result_id binding,
-EVALUATED completeness, no-metrics-on-refusal).
+EVALUATED completeness, no-metrics-on-refusal) plus the engine realizability
+gate below when the engine is available.
 
 ## Realizability gate (fixture semantics, not just shape)
 
 The frozen schemas accept broad strings, so schema validity alone would admit
-impossible products. `scripts/validate_fixtures.py` therefore also checks that
-semantic values come from real engine authorities (no engine import — values
-are mirrored and documented):
+impossible products. `scripts/validate_fixtures.py` runs two gates:
+
+**Fast path (always):** mirrored engine vocabularies + invariants —
 
 - `model_family` ∈ ModelFamily, `kind` ∈ AgentKind, `qos_class` ∈ QoSClass,
   `topology_family` ∈ TopologyFamily, `serving_mode` ∈ ServingMode,
@@ -70,21 +76,34 @@ are mirrored and documented):
 - COMPILED designs must satisfy the materialization sizing rule
   (`radix² × concentration ≥ agent count`), or the compiler would refuse them.
 
-Like the fixtures themselves, these values were verified against the real
-compiler (not assumed): the projected request — canonical P1A dependencies
-(`prefill-attn → prefill-ffn` blocking) and an `allreduce` collective, which
-the frozen DesignView cannot carry — COMPILES with radix 5 / concentration 4 /
-link_width 128 over 78 agents, and every obligation evidence value in
-`compiled-mesh.json` (25 routers, 80 channels, 600 route entries, 64
-placements, vc_count 1, CDG node/edge counts) was read from that run. The
-radix-3 variant is refused UNSUPPORTED with the exact engine message shown in
-`invalid-design.json`.
+**Engine mode** (default ON when `CI`/`GITHUB_ACTIONS` is set; `--engine`
+forces it, `--skip-engine` opts out offline): the validator regenerates all
+five fixtures with the engine tool
+(`python3 -m veritx_dse.tools.generate_studio_fixtures`, from
+`tracks/t3-topology/dse`) into a temp directory and compares them to the
+committed fixtures. Every field must match except the documented
+producer-bound volatile set: the BookSim producer digest
+(`evaluation.backend_producer.producer_identity`), the raw evidence digest
+(the persisted evidence artifact embeds its absolute run path), and the
+performance-result ids derived from that evidence. If the engine or BookSim
+binary is unavailable, engine mode **fails loudly**; it never passes on the
+fast path alone.
+
+The fixtures themselves are engine-originated, not mirrored: the design is
+the `llama_dense_64tiles-v3` request (dense_transformer, tp 8, 64 compute
+tiles + 8 HBM controllers), compiled by `FabricCompiler`;
+`compiled-mesh.json` carries that live run's certificate (9×9 mesh → 81
+routers, 288 directed channels, 6480 route entries, 8 placements, vc_count 1,
+CDG 288 nodes / 508 edges, all 10 obligations PASS); `evaluated-design.json`
+carries the live BookSim window (16161 cycles) and its RequirementReport. The
+negative fixture is the engine's typed UNSUPPORTED refusal for a torus family
+(P1A certifies MESH and CONCENTRATED_MESH DOR_XY only) — the exact engine
+message is shown in `invalid-design.json`.
 
 Note: INVALID means a certificate failed its proof (reachable when persisted
 artifacts are reopened/tampered, per the P1 contract). No fixture claims it
-pre-integration — the negative fixture is the typed UNSUPPORTED refusal the
-engine actually produces for a bad GUIDED config. The UI styles all of
-PASS/FAIL/UNSUPPORTED/INVALID distinctly.
+pre-integration — the negative fixture is a typed UNSUPPORTED refusal. The UI
+styles all of PASS/FAIL/UNSUPPORTED/INVALID distinctly.
 
 ## Honesty rules enforced in UI
 
@@ -93,8 +112,10 @@ PASS/FAIL/UNSUPPORTED/INVALID distinctly.
   the editable `noc_guided` block.
 - Evaluation metrics render **only when present**; absent metrics are omitted,
   never zero-filled. Non-EVALUATED outcomes show reason + explicit no-metrics note.
-- Requirement verdicts stay honest: the bandwidth floor is UNMEASURABLE in the
-  evaluated fixture (cycles-only aggregate window has no valid clock for Gbps).
+- Requirement verdicts come from the engine's RequirementReport
+  (SATISFIED / UNMEASURABLE / VIOLATED / NOT_APPLICABLE); the evaluated
+  fixture's latency ceiling is SATISFIED by the measured 16161-cycle window
+  and no fixture invents a Gbps authority the engine did not produce.
 - Canvas overlays (routing / VC class / traffic class / utilization) are
   **extension points with stated data needs**, never fabricated colors.
 - Design edits are local-only and flagged dirty ("recompile required"); fixture
