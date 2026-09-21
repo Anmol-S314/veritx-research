@@ -41,7 +41,18 @@ misclassification came from reading the line number without checking the
 enclosing function — the same shortcut that produced the original
 one-site-at-a-time fix.
 
-## 3. NOT generation-aware — will break the first v2 plan
+## 3. CLOSED in 06e37487 — NetworkWindowBinding gained a generation
+
+Found by this audit as four sites that would break the first v2 plan.
+Closed by `2c.4b interlock: NetworkWindowBinding gains a generation`:
+the dataclass field is `workload_parent_id` (not a v1 name holding a v2
+value), the binding declares `schema_version` with absence meaning v1,
+v1 serialization is byte-identical, and all four sites dispatch on the
+plan chain's generation. Pins flipped from "gap" to "closed contract" in
+`tests/test_v2_cutover_gaps.py` (13 tests, mutation tested: 6 mutations,
+all bite).
+
+Sites as found:
 
 ### 3.1 `wave_e_resources.py:332` — Wave-E result verification
 
@@ -125,16 +136,18 @@ after 4b it is reachable only through the historical v1 loader.
 
 ## 5. Interlock that constrains the writer switch
 
-4b may not flip writers until 3.1–3.3 are generation-aware, because a v2
-plan produces a v2 chain, and the network-window path consumes that chain
-in three places before any of the new science is even compared. The
-ordered landing is therefore:
+4b may not flip writers until the network-window path is
+generation-aware, because a v2 plan produces a v2 chain and that path
+consumes it in four places before any of the new science is compared.
 
 ```
-chain generation aware (done)
-  → messages v2 + traffic v2 + dual loaders
-  → NETWORK BINDING generation (3.1–3.3)      <-- added by this audit
+chain generation aware            done (2c.4a, db0a17f6)
+NETWORK BINDING generation        done (06e37487)   <-- this audit
+  → messages v2 + traffic v2 + dual loaders        <-- remaining
+  → MappingArtifact as a persisted authority       <-- target-model review
+  → evidence-authentication decision               <-- target-model review
   → writer switch (§27)
+  → 4c differential proof
 ```
 
 ## 6. Evidence-quality findings (mutation tested)
