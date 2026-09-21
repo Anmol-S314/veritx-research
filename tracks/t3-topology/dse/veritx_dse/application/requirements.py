@@ -50,6 +50,7 @@ from __future__ import annotations
 from fractions import Fraction
 from typing import Any
 
+from veritx_dse.core.artifact import content_id
 from veritx_dse.core.errors import InvalidInput, MappingInvalid
 from veritx_dse.model.compile_model import (
     CompileRequestV3,
@@ -59,6 +60,7 @@ from veritx_dse.model.compile_model import (
 from veritx_dse.workload.canonical_graph import WorkloadGraph
 
 REQUIREMENT_REPORT_CONTRACT_VERSION = 1
+REQUIREMENT_REPORT_DOMAIN = "veritx/requirement-report/v1"
 
 VERDICT_SATISFIED = "SATISFIED"
 VERDICT_VIOLATED = "VIOLATED"
@@ -387,6 +389,16 @@ class RequirementEvaluator:
         }
 
 
+def report_identity(report: dict[str, Any]) -> str:
+    """Bare domain-separated digest of a RequirementReport.
+
+    The report contract carries no ID field; this is its
+    identity-equivalent, used to bind requirement provenance into
+    optimization records (CandidateRecord.requirement_report_id).
+    """
+    return content_id(REQUIREMENT_REPORT_DOMAIN, report)
+
+
 def report_passes(report: dict[str, Any]) -> bool:
     """Consumer rule: binding + UNMEASURABLE never passes.
 
@@ -405,10 +417,12 @@ def report_passes(report: dict[str, Any]) -> bool:
 
 __all__ = [
     "REQUIREMENT_REPORT_CONTRACT_VERSION",
+    "REQUIREMENT_REPORT_DOMAIN",
     "RequirementEvaluator",
     "VERDICT_NOT_APPLICABLE",
     "VERDICT_SATISFIED",
     "VERDICT_UNMEASURABLE",
     "VERDICT_VIOLATED",
+    "report_identity",
     "report_passes",
 ]

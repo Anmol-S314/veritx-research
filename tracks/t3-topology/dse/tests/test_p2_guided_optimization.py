@@ -42,6 +42,7 @@ from veritx_dse.optimization.definition import (  # noqa: E402
     OptimizationDefinitionError,
 )
 from veritx_dse.optimization.evaluators import (  # noqa: E402
+    CandidateEvaluation,
     FakeDeterministicEvaluator,
 )
 from veritx_dse.optimization.pareto import (  # noqa: E402
@@ -490,6 +491,41 @@ class TestGridStudyEndToEnd:
 
 # ── Fix 1: result identity binds evaluation provenance ───────────────────
 
+class _FixedReportPort:
+    """Same objectives for every candidate; reports differ by verdict."""
+
+    def __init__(self, violated: bool):
+        self.violated = violated
+
+    def evaluate(self, candidate):
+        verdict = "VIOLATED" if self.violated else "SATISFIED"
+        report = {
+            "contract_version": 1,
+            "design_hash": "sha256:" + candidate.request.design_hash(),
+            "performance_result_id": "perf:fixed",
+            "entries": [{
+                "requirement_index": 0,
+                "traffic_class": "tp_collective",
+                "qos_class": "latency_critical",
+                "verdict": verdict,
+                "binding": True,
+                "required": 600.0,
+                "measured": 10.0,
+                "metric_authority": "test",
+                "performance_result_id": "perf:fixed",
+                "reason": "test",
+            }],
+        }
+        return CandidateEvaluation(
+            candidate_id=candidate.candidate_id,
+            design_hash=candidate.request.design_hash(),
+            status="EVALUATED",
+            objective_values={"latency": 10.0},
+            locked_consequences={},
+            performance_result_id="perf:fixed",
+            requirement_report=report)
+
+
 class TestResultIdBindsProvenance:
     def _study(self):
         base = _base()
@@ -546,6 +582,24 @@ class TestResultIdBindsProvenance:
             selected_candidate_id=None,
             selection_rationale="flipped in test")
         assert altered.result_id() != result.result_id()
+
+    def test_moves_with_requirement_report_identity(self):
+        """RT-11: identical rounded objectives, different requirement
+        verdicts (different report identity) -> different result_id."""
+        base = _base()
+        defn = OptimizationDefinition(
+            domain=(DomainParam("link_width", (32, 128)),),
+            objectives=(Objective("latency", "MIN"),),
+            method="grid")
+        ok = Optimizer().optimize(base, defn, _FixedReportPort(False))
+        bad = Optimizer().optimize(base, defn, _FixedReportPort(True))
+        assert [r.objective_values for r in ok.records] == \
+            [r.objective_values for r in bad.records]
+        assert ok.result_id() != bad.result_id()
+        for record in ok.records:
+            assert record.requirement_report_id
+        assert {r.requirement_report_id for r in ok.records} != \
+            {r.requirement_report_id for r in bad.records}
 
     def test_moves_with_evaluation_status(self):
         import dataclasses

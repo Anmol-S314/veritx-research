@@ -47,6 +47,11 @@ class CandidateEvaluation:
     Hash boundary: engine values are bare digests (design_hash is the
     bare CompileRequest identity); product views add any ``sha256:``
     prefix at the view boundary only (see result.to_study_view).
+
+    ``requirement_report`` carries the real RequirementReport dict when
+    the port produced one (compiled + backend-evaluated requests), so
+    the optimizer can bind the report's identity instead of discarding
+    it; None means no report exists (never an empty stand-in).
     """
     candidate_id: str
     design_hash: str  # bare engine digest, never prefixed here
@@ -56,6 +61,7 @@ class CandidateEvaluation:
     compilation_status: str = "COMPILED"  # FabricCompiler verdict
     error: str | None = None
     performance_result_id: str | None = None
+    requirement_report: dict[str, Any] | None = None
 
 
 class CandidateEvaluationPort(Protocol):

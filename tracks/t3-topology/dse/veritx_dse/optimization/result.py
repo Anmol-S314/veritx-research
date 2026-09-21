@@ -31,6 +31,14 @@ from veritx_dse.core.artifact import content_id
 RESULT_DOMAIN = "veritx/optimization-result/v2"
 
 
+def _requirement_report_id(report: dict[str, Any] | None) -> str | None:
+    """Report identity (bare digest) or None when no report exists."""
+    if not report:
+        return None
+    from veritx_dse.application.requirements import report_identity
+    return report_identity(report)
+
+
 def _view_hash(bare: str) -> str:
     """Engine bare digest -> product-view ``sha256:`` identity.
 
@@ -65,6 +73,7 @@ class CandidateRecord:
     constraint_verdicts: dict[str, bool | None]
     pareto_member: bool
     performance_result_id: str | None = None
+    requirement_report_id: str | None = None
     compilation_status: str = "COMPILED"
     requirement_details: tuple = ()
     all_binding_satisfied: bool | None = None
@@ -94,6 +103,7 @@ class OptimizationResult:
             "evaluation_status": r.evaluation_status,
             "compilation_status": r.compilation_status,
             "performance_result_id": r.performance_result_id,
+            "requirement_report_id": r.requirement_report_id,
             "locked_consequences": {
                 k: (sorted(v) if isinstance(v, list) else v)
                 for k, v in sorted(r.locked_consequences.items())},
@@ -325,6 +335,8 @@ class Optimizer:
                     for k, v in verdicts["verdicts"].items()},
                 pareto_member=pareto_member,
                 performance_result_id=ev.performance_result_id,
+                requirement_report_id=_requirement_report_id(
+                    ev.requirement_report),
                 compilation_status=getattr(
                     ev, "compilation_status", "COMPILED"),
                 requirement_details=details,
@@ -344,6 +356,7 @@ class Optimizer:
             constraint_verdicts=r.constraint_verdicts,
             pareto_member=(r.candidate_id in front_set),
             performance_result_id=r.performance_result_id,
+            requirement_report_id=r.requirement_report_id,
             compilation_status=r.compilation_status,
             requirement_details=r.requirement_details,
             all_binding_satisfied=r.all_binding_satisfied,

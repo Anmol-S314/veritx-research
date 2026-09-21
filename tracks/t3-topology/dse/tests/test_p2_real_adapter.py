@@ -85,7 +85,9 @@ def test_real_grid_end_to_end(tmp_path):
         assert "area" not in record.objective_values
         assert record.locked_consequences["routing_classes"] == ["DOR_XY"]
         assert record.all_binding_satisfied is True
+        assert record.requirement_report_id is not None
     assert len(result.pareto_ids) >= 1
+    assert len({r.requirement_report_id for r in result.records}) == 2
     assert result.selected_candidate_id in result.pareto_ids
     assert len({r.design_hash for r in result.records}) == 2
     assert result.result_id()
@@ -192,3 +194,27 @@ def test_unmeasured_objective_is_typed_ineligible_not_keyerror(tmp_path):
     # objective-evidence-driven, not a broken study.
     ok = Optimizer().optimize(_base(), _defn(), _port(tmp_path / "sanity"))
     assert ok.pareto_ids
+
+
+def test_binding_failure_keeps_requirement_report(tmp_path):
+    """RT-11: a binding-failed evaluation still carries the real
+    RequirementReport (typed per-entry reason), not just a string."""
+    import dataclasses
+    from types import SimpleNamespace
+    req = dataclasses.replace(_base(), requirements=(
+        RequirementV3(qos_class=QoSClass.LATENCY_CRITICAL,
+                      traffic_class="tp_collective",
+                      latency_ceiling_cycles=1, binding=True),))
+    port = RealCandidateEvaluator(
+        binary=str(find_booksim_bin(REPO)),
+        run_root=str(tmp_path / "runs"), timeout_s=600,
+        network_clock_hz=10 ** 9)
+    out = port.evaluate(SimpleNamespace(
+        candidate_id="binding-failure", request=req))
+    assert out.status == "UNSUPPORTED"
+    assert "binding requirements not satisfied" in (out.error or "")
+    assert out.performance_result_id is not None
+    assert out.requirement_report is not None
+    entries = out.requirement_report["entries"]
+    assert entries and entries[0]["verdict"] == "VIOLATED"
+    assert entries[0]["reason"]

@@ -63,13 +63,15 @@ def _refuse(candidate_id: str, design_hash: str, status: str,
             compilation_status: str, error: str,
             locked: dict[str, Any] | None = None,
             performance_result_id: str | None = None,
+            requirement_report: dict[str, Any] | None = None,
             ) -> CandidateEvaluation:
     return CandidateEvaluation(
         candidate_id=candidate_id, design_hash=design_hash,
         status=status, objective_values={},
         locked_consequences=dict(locked or {}),
         compilation_status=compilation_status, error=error,
-        performance_result_id=performance_result_id)
+        performance_result_id=performance_result_id,
+        requirement_report=requirement_report)
 
 
 def _real_objectives(outcome: Any) -> dict[str, float]:
@@ -181,14 +183,15 @@ class RealCandidateEvaluator:
                     f"{e.get('traffic_class')}/"
                     f"{e.get('qos_class')}={e.get('verdict')}]"
                     for e in bad) or "unsatisfied",
-                locked, outcome.performance_result_id)
+                locked, outcome.performance_result_id, report)
         return CandidateEvaluation(
             candidate_id=candidate.candidate_id,
             design_hash=expected_hash, status="EVALUATED",
             objective_values=_real_objectives(outcome),
             locked_consequences=locked, compilation_status="COMPILED",
             error=None,
-            performance_result_id=outcome.performance_result_id)
+            performance_result_id=outcome.performance_result_id,
+            requirement_report=report)
 
 
 __all__ = ["RealCandidateEvaluator"]
