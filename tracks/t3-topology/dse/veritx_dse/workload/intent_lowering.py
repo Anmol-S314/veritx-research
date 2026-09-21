@@ -330,11 +330,65 @@ def assert_traffic_classes_bound(lowered: LoweredWorkload,
                 f"unroutable class instead of silently using VC0")
 
 
+
+
+def bridge_to_evaluation_messages(
+        lowered: LoweredWorkload, *,
+        requested_traffic_class: str | None = None,
+) -> LogicalMessageArtifactV2:
+    """P1B integration bridge: lowered workload → evaluator messages.
+
+    P1C phase-2 (Fix 3). The P1B evaluator takes one global traffic
+    class while LoweredWorkload carries per-operation classes:
+
+    * **Supported first case** — the lowering is single-class
+      (``unified_traffic_class is not None``): route through
+      build_single_class_messages() into the canonical
+      LogicalMessage → PhysicalTraffic → gates → backend chain.
+      Every message honestly carries the lowered class.
+    * **Multi-class → typed refusal** (UnsupportedSemantics, code
+      UNSUPPORTED_SEMANTICS — P1B maps it to EvaluationOutcome
+      UNSUPPORTED): one V2 artifact cannot carry per-message classes,
+      so representing it would be lossy. This stands until a
+      versioned per-operation message artifact lands. The collective
+      schedule is NOT forked, v2 message identity is NOT mutated, and
+      the sidecar (traffic_class_by_operation) is kept as the
+      per-operation record for that future artifact.
+
+    ``requested_traffic_class`` carries the P1B
+    EvaluationOptions.traffic_class through as an ASSERTION, never a
+    label: when given it must equal the lowered class, else refusal.
+    Direction for P1B: that option is legacy/test-only — a user must
+    never relabel traffic at eval time (e.g. best_effort evaluated as
+    latency_critical would forge QoS evidence). The lowered intent
+    owns class names; evaluation only checks them.
+    """
+    if not isinstance(lowered, LoweredWorkload):
+        raise InvalidInput(
+            f"bridge_to_evaluation_messages takes a LoweredWorkload, "
+            f"got {type(lowered).__name__}")
+    unified = lowered.unified_traffic_class
+    if unified is None:
+        raise UnsupportedSemantics(
+            f"lowering spans classes {list(lowered.classes)}: no "
+            f"single-class message artifact can represent per-operation "
+            f"classes without loss — UNSUPPORTED until a versioned "
+            f"per-operation message artifact lands (sidecar retained)")
+    if requested_traffic_class is not None and \
+            requested_traffic_class != unified:
+        raise InvalidInput(
+            f"requested traffic class {requested_traffic_class!r} does "
+            f"not match the lowered class {unified!r}: eval-time "
+            f"relabeling is refused (EvaluationOptions.traffic_class "
+            f"is an assertion, never a label)")
+    return build_single_class_messages(lowered)
+
 __all__ = [
     "LOWERER_ID",
     "LOWERING_SCHEMA_VERSION",
     "LoweredWorkload",
     "assert_traffic_classes_bound",
+    "bridge_to_evaluation_messages",
     "build_single_class_messages",
     "lower_compile_workload",
 ]
