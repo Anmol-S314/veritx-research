@@ -1,0 +1,67 @@
+# P1 Integration Ledger (integration authority: `integration/p1-product`)
+
+Lane branches are evidence sources. Nothing merges INTO them. All
+integration happens here, in stage order. P3 remains deferred.
+
+## Pinned inputs (immutable for this campaign)
+
+| Role | Ref | SHA |
+|---|---|---|
+| Shared base (P1X.0 contracts) | `p1x/product-contracts` | `ec747ffe` |
+| P1B verified evaluation | `p1b/verified-evaluation` | `3def89c3` |
+| P1C workload + requirements | `p1c/workload-requirements` | `33703bd0` |
+| P2 guided optimization | `p2/guided-optimization` | `8c80a38f` |
+| P4 studio | `p4/studio` | `f8e01c4a` |
+| Handoff lane (capability mine, NEVER wholesale-merged) | `p1/fabric-compiler-productization` | reconciled per-change at Stage 8 |
+
+## Lane gates (reconciliation ruler)
+
+- P1B: 47/47 focused; DOR live mesh EVALUATED; 63/63 unprovisioned
+  cross-qualification; 162/162 provisioned cross-qualification; matrix
+  symdiffs empty. Exit: `FabricCompiler → llama_dense_64tiles → DOR_XY →
+  mesh-DOR → EVALUATED` (4257 cycles, schema-valid view).
+- P1C: v3 workload schema (disjoint `srota/CompileRequest/v3` domain);
+  single-class bridge; multi-class honest refusal; requirements with
+  binding+UNMEASURABLE never passing; immutable workload source semantics.
+- P2: GUIDED-only candidates recompiled per candidate; deterministic
+  search/Pareto; evaluation provenance (`evaluation_status`,
+  `performance_result_id`, requirement verdicts) in result identity;
+  `sha256:` view boundary. Fake evaluator unit-tests only.
+- P4: real-engine-projected fixtures; 5/5 schema+realizability validation;
+  Studio UI on views only (no engine imports).
+
+## Law (from review, binding on integration)
+
+1. Evaluator derives the backend projection from fabric semantics
+   (MESH+DOR_XY → CERTIFIED_BOOKSIM_MESH_DOR_XY_V1; ANYNET-compatible →
+   CERTIFIED_BOOKSIM_ANYNET_V1; else UNSUPPORTED). No user routing knob.
+2. Traffic class comes from lowered workload intent; `len(unique) == 1`
+   supported, multi-class → UNSUPPORTED. Never collapse to DEFAULT.
+   `EvaluationOptions.traffic_class` is legacy/test-only.
+3. Requirements stay honest: aggregate-only evidence + bandwidth floor →
+   UNMEASURABLE (never SATISFIED); wrong-class → NOT_APPLICABLE/UNMEASURABLE.
+4. Real optimization metrics only (completion/latency/packets/flits as
+   evidenced); no fake area — UNMEASURABLE instead. Unevaluated or
+   binding-violated candidates never reach Pareto. CMESH-compiled but
+   uncertified-backend candidates stay visible as EVALUATION_UNSUPPORTED.
+5. Studio consumes views only
+   (Compilation/Evaluation/RequirementReport/OptimizationStudy/Design);
+   hash normalization at the view boundary, never in React.
+
+## Stage log
+
+- [ ] Stage 0 — ledger (this file) + tip pins recorded
+- [ ] Stage 1 — merge P1B; focused 47 + matrices + live DOR anchor green
+- [ ] Stage 2 — merge P1C; `product_evaluator.py` orchestration (no semantics)
+- [ ] Stage 3 — real requirement evaluation over the chain
+- [ ] Stage 4 — `llama_dense_64tiles-v3.json` + `test_p1_product_vertical_slice.py`
+      (persisted-reopen second half, no warm-object shortcuts)
+- [ ] Stage 5 — merge P2; real candidate adapter (compile→lower→evaluate→
+      requirements); ruthless metrics
+- [ ] Stage 6 — real optimization golden (`--search grid --evaluate booksim`)
+- [ ] Stage 7 — merge P4; regenerate fixtures from integrated engine; view
+      boundary gateway
+- [ ] Stage 8 — reconcile handoff branch per-change (ALREADY_IMPLEMENTED /
+      SUPERSEDED / USEFUL_TEST / USEFUL_ORCHESTRATION / REJECT); never
+      wholesale-merge
+- [ ] Seal — `p1-product-integration-seal` tag with full provenance record
