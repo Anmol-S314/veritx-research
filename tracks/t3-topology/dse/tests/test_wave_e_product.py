@@ -209,7 +209,7 @@ class TestWaveETamperMatrix:
     """§80–§84: valid-object transplants, not just corrupt hashes."""
 
     def test_workload_id_transplant_detected(self, cp, tmp_path):
-        """Pointing a result at ANOTHER waveeworkload resource refuses."""
+        """Pointing a result at ANOTHER performance resource refuses."""
         result = cp.evaluate(_intent(name="we-tamper",
                                      wave_e=_wave_e_workload(1)))
         other = _wave_e_workload(2)
@@ -217,7 +217,7 @@ class TestWaveETamperMatrix:
         from veritx_dse.application.wave_e_resources import (
             wave_e_workload_record,
         )
-        cp.store.put("waveeworkload", other.temporal_workload_id(),
+        cp.store.put("performance", other.temporal_workload_id(),
                      wave_e_workload_record(other))
         # tamper the persisted result to cite the OTHER workload
         rpath = cp.store.root / "result" / f"{result['resource_id']}.json"
@@ -392,7 +392,7 @@ class TestWaveEProvenanceBinding:
             "metric_ids", "metric_schema_version", "wave_d", "wave_e")}
         forged["resource_id"] = _content_id("srota-plan/v1", body)
         cp.store.put("plan", forged["resource_id"], forged)
-        with pytest.raises(Exception, match="waveeworkload|missing"):
+        with pytest.raises(Exception, match="performance|missing"):
             load_verified_plan(cp.store, forged["resource_id"])
 
     def test_overlay_citing_foreign_operation_refuses(self, cp):
@@ -457,7 +457,7 @@ class TestAggregateNetworkWindow:
         doc = json.loads(path.read_text())
         # drop the window event from the persisted overlay
         wid = doc["wave_e"]["temporal_workload_id"]
-        wpath = cp.store.root / "waveeworkload" / f"{wid}.json"
+        wpath = cp.store.root / "performance" / f"{wid}.json"
         wdoc = json.loads(wpath.read_text())
         wdoc["artifact"]["events"] = [
             e for e in wdoc["artifact"]["events"]
@@ -476,7 +476,7 @@ class TestWaveENavigation:
                                 wave_e=_wave_e_workload(1)))
         wid = r["wave_e"]["temporal_workload_id"]
         view = cp.inspect(wid)
-        assert view["kind"] == "waveeworkload"
+        assert view["kind"] == "performance"
         assert view["integrity"]["state"] == "VERIFIED"
         assert r["resource_id"] in view["related"]["results"]
 
@@ -495,13 +495,45 @@ class TestWaveENavigation:
         r = cp.evaluate(_intent(name="nav-tamper",
                                 wave_e=_wave_e_workload(1)))
         wid = r["wave_e"]["temporal_workload_id"]
-        path = cp.store.root / "waveeworkload" / f"{wid}.json"
+        path = cp.store.root / "performance" / f"{wid}.json"
         doc = _json.loads(path.read_text())
         doc["artifact"]["events"][1]["duration"] = {"numerator": 9,
                                                     "denominator": 1000}
         path.write_text(canonical_json(doc))
         view = cp.inspect(wid)
         assert view["integrity"]["state"] == "INVALID"
+
+
+class TestPerformanceKindMigration:
+    """M6: new temporal workloads persist as performance; the
+    historical waveeworkload kind stays readable."""
+
+    def test_new_writes_land_in_performance(self, cp):
+        r = cp.evaluate(_intent(name="m6-kind",
+                                wave_e=_wave_e_workload(1)))
+        wid = r["wave_e"]["temporal_workload_id"]
+        assert (cp.store.root / "performance" / f"{wid}.json").is_file()
+        assert not (cp.store.root / "waveeworkload" / f"{wid}.json") \
+            .exists()
+
+    def test_legacy_waveeworkload_still_verifies(self, cp):
+        """A pre-M6 document under the old kind loads identically."""
+        from veritx_dse.application.resources import RESOURCE_SCHEMA_VERSION
+        we = _wave_e_workload(1)
+        legacy = {
+            "resource_type": "waveeworkload",
+            "schema_version": RESOURCE_SCHEMA_VERSION,
+            "resource_id": we.temporal_workload_id(),
+            "artifact": we.to_dict(),
+        }
+        cp.store.put("waveeworkload", we.temporal_workload_id(), legacy)
+        loaded = load_verified_wave_e_workload(
+            cp.store, we.temporal_workload_id())
+        assert loaded.temporal_workload_id() == \
+            we.temporal_workload_id()
+        view = cp.inspect(we.temporal_workload_id())
+        assert view["kind"] == "waveeworkload"
+        assert view["integrity"]["state"] == "VERIFIED"
 
 
 class TestWaveEComparisonCompatibility:

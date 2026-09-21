@@ -24,7 +24,10 @@ RESOURCE_KINDS = ("intent", "design", "workload", "plan", "experiment",
                   "studyrun", "wavedworkload", "parallelism",
                   "wavedsemantics", "opgraph", "messages", "traffic",
                   "workloadgraph",
-                  "waveeworkload")
+                  # M6: live vocabulary. waveeworkload stays readable
+                  # (historical), new temporal workloads persist as
+                  # performance.
+                  "waveeworkload", "performance")
 
 
 class ResourceStore:

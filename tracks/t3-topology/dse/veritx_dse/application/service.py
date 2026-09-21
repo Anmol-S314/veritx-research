@@ -251,8 +251,9 @@ class SrotaControlPlane:
             # Persist the temporal workload BEFORE anything depends on
             # its identity (same rule as the Wave-D chain), then bind
             # the minimal Wave-E parents into the plan (§69).
+            # M6: new temporal workloads persist as performance.
             from .wave_e_resources import wave_e_workload_record
-            self.store.put("waveeworkload",
+            self.store.put("performance",
                            wave_e_decl.temporal_workload_id(),
                            wave_e_workload_record(wave_e_decl))
             wave_e = {
@@ -1298,7 +1299,7 @@ class SrotaControlPlane:
                  "workload", "comparison", "intent", "links",
                  "studydef", "studyrun", "wavedworkload", "parallelism",
                  "wavedsemantics", "opgraph", "messages", "traffic",
-                 "waveeworkload", "workloadgraph")
+                 "performance", "waveeworkload", "workloadgraph")
         for kind in kinds:
             if self.store.exists(kind, resource_id):
                 record = self.store.get(kind, resource_id)
@@ -1344,6 +1345,7 @@ class SrotaControlPlane:
             "messages": load_verified_messages,
             "traffic": load_verified_traffic_record,
             "waveeworkload": load_verified_wave_e_workload,
+            "performance": load_verified_wave_e_workload,
             "workloadgraph": load_verified_workload_graph,
         }
         # Wave-D chain links: every child names its verified parents, so
@@ -1425,7 +1427,7 @@ class SrotaControlPlane:
                     else:
                         related[key] = {"resource_id": target,
                                         "missing": True}
-            if kind == "waveeworkload":
+            if kind in ("waveeworkload", "performance"):
                 for link_kind in ("plan", "result"):
                     directory = self.store.root / link_kind
                     users = []
@@ -1484,9 +1486,12 @@ class SrotaControlPlane:
         wave_e = record.get("wave_e")
         if isinstance(wave_e, dict) and wave_e.get("temporal_workload_id"):
             target = wave_e["temporal_workload_id"]
-            if self.store.exists("waveeworkload", target):
-                related["wave_e.temporal_workload_id"] = self.store.get(
-                    "waveeworkload", target)
+            # M6 live kind first, historical kind second.
+            for link_kind in ("performance", "waveeworkload"):
+                if self.store.exists(link_kind, target):
+                    related["wave_e.temporal_workload_id"] = self.store.get(
+                        link_kind, target)
+                    break
         return {"kind": kind, "record": record, "related": related,
                 "evidence_status": evidence_status,
                 "integrity": integrity}

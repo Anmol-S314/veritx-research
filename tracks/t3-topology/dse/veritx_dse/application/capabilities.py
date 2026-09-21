@@ -80,8 +80,7 @@ def capability_registry() -> dict[str, Any]:
             },
         },
         "waved_resources": [
-            "wavedworkload", "parallelism", "wavedsemantics", "opgraph",
-            "messages", "traffic",
+            "workloadgraph", "parallelism", "messages", "traffic",
         ],
         "wave_e": {
             "time": "EXACT_RATIONAL_SECONDS",
@@ -113,7 +112,7 @@ def capability_registry() -> dict[str, Any]:
                             "memory_capacity"],
             "predictive_validation": "NOT_ESTABLISHED",
         },
-        "wave_e_resources": ["waveeworkload"],
+        "wave_e_resources": ["performance"],
         "deferred": {
             "rtl_verification": "NOT_RUN",
             "uvm_verification": "NOT_RUN",

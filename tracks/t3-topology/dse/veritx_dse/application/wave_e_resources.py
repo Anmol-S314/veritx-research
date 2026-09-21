@@ -1,20 +1,17 @@
-"""veritx_dse.application.wave_e_resources — persisted Wave-E resources.
+"""veritx_dse.application.wave_e_resources — persisted performance resources.
 
-Wave-E temporal workloads are scientific resources under the SAME
-contract as Wave-D ones (§56/§149):
+Temporal workloads are scientific resources under the SAME contract as
+the workload ones (§56/§149):
 
     requested filename ID == embedded resource_id == recomputed ID
 
-plus verified Wave-D parents where cited, closed field sets, and
+plus verified workload parents where cited, closed field sets, and
 semantic revalidation. Raw ``store.get()`` is inspection-only.
 
-The store carries:
-
-    waveeworkload   TemporalWorkload (model content + events +
-                    requests + declared Wave-D operation ids)
-
-A Wave-E performance result is NOT a separate loose resource: it rides
-inside the EvaluationResult ``wave_e`` block, verified against the plan
+M6 vocabulary: new temporal workloads persist under the ``performance``
+kind; ``waveeworkload`` documents remain readable (historical). A
+performance result is NOT a separate loose resource: it rides inside
+the EvaluationResult ``wave_e`` block, verified against the plan
 binding and the authenticated BookSim evidence (§71).
 """
 from __future__ import annotations
@@ -26,7 +23,9 @@ from veritx_dse.performance.workload import TemporalWorkload
 from .errors import ControlPlaneError, ErrorCode
 from .resources import RESOURCE_SCHEMA_VERSION, check_envelope
 
-WAVE_E_RESOURCE_KINDS = ("waveeworkload",)
+#: Live kind first, historical kind second. Writers use [0]; readers
+#: accept both.
+WAVE_E_RESOURCE_KINDS = ("performance", "waveeworkload")
 
 # Plan-level Wave-E binding: the minimal identity-bearing parents a
 # Wave-E evaluation must pin BEFORE any execution (§69).
@@ -59,57 +58,70 @@ def _record(kind: str, resource_id: str,
 
 
 def wave_e_workload_record(art: TemporalWorkload) -> dict[str, Any]:
-    return _record("waveeworkload", art.temporal_workload_id(), art.to_dict())
+    """M6: new temporal workloads persist as ``performance``."""
+    return _record("performance", art.temporal_workload_id(), art.to_dict())
 
 
 # ── load side (verified) ─────────────────────────────────────────────────
 
 def load_verified_wave_e_workload(store: Any, workload_id: str
-                                  ) -> TemporalWorkload:
+                                   ) -> TemporalWorkload:
     """Load and re-verify a persisted TemporalWorkload.
 
-    Envelope check, filename/embedded/recomputed ID agreement, semantic
-    revalidation (constructor laws run again), and identity stability.
+    M6 dual-kind read: ``performance`` first, historical
+    ``waveeworkload`` second. Envelope check, filename/embedded/
+    recomputed ID agreement, semantic revalidation (constructor laws
+    run again), and identity stability — identical for both kinds.
     """
     if not isinstance(workload_id, str) or not workload_id:
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
-            f"invalid waveeworkload link {workload_id!r}",
+            f"invalid performance link {workload_id!r}",
             operation="verify_resource")
-    try:
-        record = store.get("waveeworkload", workload_id)
-        check_envelope(record, "waveeworkload")
-    except ControlPlaneError as exc:
+    record: dict[str, Any] | None = None
+    kind = ""
+    for candidate in WAVE_E_RESOURCE_KINDS:
+        try:
+            candidate_record = store.get(candidate, workload_id)
+        except ControlPlaneError:
+            continue
+        try:
+            check_envelope(candidate_record, candidate)
+        except ControlPlaneError:
+            continue
+        record, kind = candidate_record, candidate
+        break
+    if record is None:
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
-            f"persisted waveeworkload {workload_id} fails envelope: "
-            f"{exc.message}",
-            operation="verify_resource", resource_id=workload_id) from exc
+            f"missing linked performance workload {workload_id!r}: "
+            f"unknown performance resource {workload_id!r}",
+            operation="verify_resource", resource_id=workload_id)
     if record.get("resource_id") != workload_id:
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
-            f"waveeworkload filename/id mismatch: {workload_id} vs "
+            f"performance filename/id mismatch: {workload_id} vs "
             f"{record.get('resource_id')}",
             operation="verify_resource", resource_id=workload_id)
     artifact = record.get("artifact")
     if not isinstance(artifact, dict):
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
-            f"waveeworkload {workload_id} artifact is not a mapping",
+            f"performance {workload_id} artifact is not a mapping",
             operation="verify_resource", resource_id=workload_id)
     try:
         workload = TemporalWorkload.from_dict(artifact)
     except Exception as exc:
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
-            f"waveeworkload {workload_id} does not re-validate: {exc}",
+            f"performance {workload_id} does not re-validate: {exc}",
             operation="verify_resource",
             resource_id=workload_id) from exc
     recomputed = workload.temporal_workload_id()
     if recomputed != workload_id:
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
-            f"waveeworkload {workload_id} recomputes to {recomputed}: "
+            f"performance {workload_id} recomputes to {recomputed}: "
             f"content does not match its identity",
             operation="verify_resource", resource_id=workload_id)
     return workload
