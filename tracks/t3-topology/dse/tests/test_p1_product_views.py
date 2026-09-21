@@ -68,3 +68,32 @@ def test_design_view_v2_and_v3_validate():
     bare = design_view(_v3())
     assert bare["locked_derived"] is None
     assert "workload_source_ref" not in bare["workload"]
+
+
+def test_design_view_refuses_cross_design_compilation():
+    """RT-8: a compilation for another request can never fill
+    locked_derived (cross-design locked-state transplant)."""
+    req_a = _v3()
+    comp_a = FabricCompiler().compile(req_a)
+    assert comp_a.status == "COMPILED"
+    v2 = CompileRequest.from_dict(json.loads(
+        (REPO / "tracks/t3-topology/examples/llama_dense_64tiles.json")
+        .read_text()))
+    comp_b = FabricCompiler().compile(v2)
+    assert comp_b.status == "COMPILED"
+    assert req_a.design_hash() != v2.design_hash()
+    with pytest.raises(ValueError) as excinfo:
+        design_view(v2, comp_a)
+    message = str(excinfo.value)
+    assert req_a.design_hash() in message
+    assert v2.design_hash() in message
+    # The same compilation for the matching request still fills the
+    # derived block.
+    matched = design_view(req_a, comp_a)
+    assert matched["locked_derived"] is not None
+    assert matched["locked_derived"]["certificate_overall"] == "PASS"
+
+
+def test_design_view_refuses_non_compilation():
+    with pytest.raises(ValueError):
+        design_view(_v3(), {"status": "COMPILED"})

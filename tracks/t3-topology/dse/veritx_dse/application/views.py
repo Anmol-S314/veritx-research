@@ -71,11 +71,14 @@ def _agent_kind(value: Any) -> str:
 def design_view(request: Any, compilation: Any = None) -> dict[str, Any]:
     """Project a CompileRequest (v2 or v3) to DesignView (contract v1).
 
-    `compilation`, when a COMPILED Compilation for this request, fills
-    the read-only `locked_derived` block. Anything else (or nothing)
-    leaves it null: Studio must never let users edit derived state,
-    and this projector never invents it.
+    `compilation`, when given, must be a Compilation FOR THIS REQUEST
+    (same design_hash); a COMPILED match fills the read-only
+    `locked_derived` block, while an unmatched or non-Compilation
+    object raises ValueError — never a cross-design projection.
+    Nothing (None) leaves locked_derived null: Studio must never let
+    users edit derived state, and this projector never invents it.
     """
+    from veritx_dse.application.fabric_compiler import Compilation
     from veritx_dse.model.compile_model import (
         CompileRequest,
         CompileRequestV3,
@@ -84,6 +87,18 @@ def design_view(request: Any, compilation: Any = None) -> dict[str, Any]:
         raise TypeError(
             f"design_view takes a CompileRequest, got "
             f"{type(request).__name__}")
+    if compilation is not None:
+        if not isinstance(compilation, Compilation):
+            raise ValueError(
+                f"design_view compilation must be a Compilation, got "
+                f"{type(compilation).__name__}")
+        request_hash = request.design_hash()
+        compilation_hash = compilation.request.design_hash()
+        if compilation_hash != request_hash:
+            raise ValueError(
+                f"design_view refuses a cross-design projection: request "
+                f"design_hash {request_hash!r} != compilation "
+                f"design_hash {compilation_hash!r}")
     workload = request.workload
     source_ref = getattr(workload, "source_ref", None)
     workload_view: dict[str, Any] = {
