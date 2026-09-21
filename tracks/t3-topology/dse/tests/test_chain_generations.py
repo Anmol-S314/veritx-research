@@ -107,6 +107,24 @@ class TestChainGenerationDispatch:
                                                    "field set"):
             validate_plan_chain_shape(mixed2)
 
+    def test_v2_version_plus_both_parents_refuses_at_shape(self):
+        """The adversarial case that motivated validating the SHAPE before
+        dispatching: version=2, a workload_graph_id, and an illegal
+        operation_graph_id. A dispatcher that asked chain_version() first
+        would call this "v2" and read a parent before noticing the block
+        was malformed.
+        """
+        block = _v2_block()
+        block["operation_graph_id"] = "sha256:" + "c" * 64
+        with pytest.raises(ControlPlaneError, match="field set"):
+            validate_plan_chain_shape(block)
+
+    def test_v1_version_plus_v2_parent_refuses_at_shape(self):
+        block = _v1_block()
+        block["workload_graph_id"] = "sha256:" + "d" * 64
+        with pytest.raises(ControlPlaneError, match="field set"):
+            validate_plan_chain_shape(block)
+
     def test_missing_field_refuses_per_generation(self):
         broken = _v1_block()
         broken.pop("operation_graph_id")
@@ -216,8 +234,24 @@ class TestPlanSideWaveEParentIsGenerationAware:
 
     def test_dispatches_on_the_chain_generation(self):
         src = self._source()
-        assert "chain_version(" in src
+        assert "validate_plan_chain_shape(" in src
         assert "CHAIN_SCHEMA_VERSION_V2" in src
+
+    def test_shape_is_validated_before_any_parent_key_is_read(self):
+        """A block with chain_schema_version=2, a workload_graph_id AND an
+        illegal operation_graph_id is malformed, not merely "a v2 block".
+        It must refuse at shape validation, before either parent load is
+        attempted — hence validate_plan_chain_shape() and not
+        chain_version() alone.
+        """
+        code = "\n".join(line.split("#")[0]
+                          for line in self._source().splitlines())
+        shape = code.index("validate_plan_chain_shape(")
+        for parent_read in ("workload_graph_id", "operation_graph_id"):
+            assert shape < code.index(parent_read), (
+                f"{parent_read} is read before the chain shape is "
+                "validated")
+        assert "chain_version(" not in code
 
     def test_reads_the_canonical_parent_for_v2(self):
         src = self._source()
@@ -241,8 +275,8 @@ class TestPlanSideWaveEParentIsGenerationAware:
         # dispatch legitimately names operation_graph_id
         code = "\n".join(line.split("#")[0]
                           for line in self._source().splitlines())
-        dispatch = code.index("chain_version(")
-        historical = code.index("operation_graph_id")
+        dispatch = code.index("validate_plan_chain_shape(")
+        historical = code.index("if version == CHAIN_SCHEMA_VERSION_V2")
         assert dispatch < historical, (
             "operation_graph_id is read before the generation dispatch")
 

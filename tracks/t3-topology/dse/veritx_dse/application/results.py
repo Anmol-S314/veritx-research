@@ -327,11 +327,19 @@ def _verify_plan_wave_e(store: Any, record: dict[str, Any],
     # authority supplies the operation ids changes. A hard-coded
     # operation_graph_id here would have broken the first v2 plan.
     from .waved_resources import (
-        CHAIN_SCHEMA_VERSION_V2, chain_version,
+        CHAIN_SCHEMA_VERSION_V2,
         load_verified_operation_graph, load_verified_workload_graph,
+        validate_plan_chain_shape,
     )
+    # The SHAPE is validated before anything generation-specific is read.
+    # A block carrying chain_schema_version=2, a workload_graph_id AND an
+    # illegal operation_graph_id is not "a v2 block we can work with": it
+    # is malformed, and it must be refused here rather than after a parent
+    # load has already been attempted. This is why the version comes from
+    # validate_plan_chain_shape() and not from chain_version() alone.
     wave_d_block = record["wave_d"]
-    if chain_version(wave_d_block) == CHAIN_SCHEMA_VERSION_V2:
+    version = validate_plan_chain_shape(wave_d_block)
+    if version == CHAIN_SCHEMA_VERSION_V2:
         canonical = load_verified_workload_graph(
             store, wave_d_block["workload_graph_id"])
         graph_ids = {op.operation_id for op in canonical.operations}
