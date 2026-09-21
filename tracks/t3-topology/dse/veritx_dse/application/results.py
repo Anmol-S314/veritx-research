@@ -321,10 +321,24 @@ def _verify_plan_wave_e(store: Any, record: dict[str, Any],
                    wave_e["performance_model_id"],
                    overlay.performance_model.performance_model_id(),
                    plan_id)
-    from .waved_resources import load_verified_operation_graph
-    graph = load_verified_operation_graph(
-        store, record["wave_d"]["operation_graph_id"])
-    graph_ids = {n.operation_id for n in graph.nodes}
+    # Parent verification is GENERATION-AWARE: a v1 plan authenticates its
+    # Wave-D opgraph, a v2 plan authenticates the canonical WorkloadGraph.
+    # The scientific gate below is identical either way — only which
+    # authority supplies the operation ids changes. A hard-coded
+    # operation_graph_id here would have broken the first v2 plan.
+    from .waved_resources import (
+        CHAIN_SCHEMA_VERSION_V2, chain_version,
+        load_verified_operation_graph, load_verified_workload_graph,
+    )
+    wave_d_block = record["wave_d"]
+    if chain_version(wave_d_block) == CHAIN_SCHEMA_VERSION_V2:
+        canonical = load_verified_workload_graph(
+            store, wave_d_block["workload_graph_id"])
+        graph_ids = {op.operation_id for op in canonical.operations}
+    else:
+        graph = load_verified_operation_graph(
+            store, wave_d_block["operation_graph_id"])
+        graph_ids = {n.operation_id for n in graph.nodes}
     unknown = sorted(set(overlay.declared_wave_d_operation_ids())
                      - graph_ids)
     if unknown:

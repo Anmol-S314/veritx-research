@@ -198,3 +198,74 @@ class TestCanonicalWorkloadResource:
         assert load_verified_workload_graph(
             cp.store, graph.workload_id()).workload_id() == \
             graph.workload_id()
+
+
+class TestPlanSideWaveEParentIsGenerationAware:
+    """2c.4b seam 0.1: the PLAN-side membership gate must not hard-code the
+    Wave-D parent. A v1 plan authenticates its opgraph; a v2 plan
+    authenticates the canonical WorkloadGraph. The scientific gate is
+    identical either way — only the authority supplying operation ids
+    changes.
+    """
+
+    @staticmethod
+    def _source() -> str:
+        import inspect
+        from veritx_dse.application import results as results_mod
+        return inspect.getsource(results_mod._verify_plan_wave_e)
+
+    def test_dispatches_on_the_chain_generation(self):
+        src = self._source()
+        assert "chain_version(" in src
+        assert "CHAIN_SCHEMA_VERSION_V2" in src
+
+    def test_reads_the_canonical_parent_for_v2(self):
+        src = self._source()
+        assert "load_verified_workload_graph" in src
+        assert "workload_graph_id" in src
+        assert "canonical.operations" in src
+
+    def test_reads_the_historical_parent_for_v1(self):
+        src = self._source()
+        assert "load_verified_operation_graph" in src
+        assert "graph.nodes" in src
+
+    def test_no_unconditional_operation_graph_id_read(self):
+        """The hard-coded read is what would break the first v2 plan.
+
+        Asserted by ORDER: the v2 branch is taken first, and the
+        historical operation_graph_id read appears after it (i.e. in the
+        v1 branch), not before any generation check.
+        """
+        src = self._source()
+        dispatch = src.index("chain_version(")
+        historical = src.index("operation_graph_id")
+        assert dispatch < historical, (
+            "operation_graph_id is read before the generation dispatch")
+
+    def test_the_scientific_gate_is_unchanged(self):
+        src = self._source()
+        assert "declared_wave_d_operation_ids()" in src
+        assert "unknown" in src
+
+
+class TestTrafficDispatchMustNotInfer:
+    """2c.4b item 0.2 — recorded as a strict xfail with an owner.
+
+    `chain_ids_from_traffic()` currently decides the chain generation by
+    inspecting whether the message identity dict contains `workload_id` or
+    `operation_graph_id`. That contradicts the explicit-version principle:
+    generation must come from the artifact's schema version. It is
+    tolerable ONLY while no v2 message writer exists; 4b removes it.
+    """
+
+    @pytest.mark.xfail(strict=True,
+                       reason="2c.4b item 0.2: message schema v2 does not "
+                              "exist yet, so the dispatcher is still "
+                              "key-based. Owner: 2c.4b.")
+    def test_dispatch_uses_an_explicit_schema_version(self):
+        import inspect
+        from veritx_dse.application import waved_resources as wr
+        src = inspect.getsource(wr.chain_ids_from_traffic)
+        assert "schema_version" in src
+        assert 'operation_graph_id" not in chain' not in src
