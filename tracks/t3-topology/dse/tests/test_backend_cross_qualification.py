@@ -40,7 +40,7 @@ from veritx_dse.backend.qualification import (  # noqa: E402
 )
 from veritx_dse.backend.serving import lower_serving_booksim  # noqa: E402
 from veritx_dse.core.route_artifact import (  # noqa: E402
-    ANYNET_MIN_HOPS, DOR_XY,
+    DOR_XY,
 )
 
 @pytest.fixture(scope="module")
@@ -346,10 +346,19 @@ class TestUnsupportedDomains:
         with pytest.raises(BookSimLoweringError, match="parallel"):
             lower_booksim_standalone(rebuild_bundle(chain, topo=topo))
 
-    def test_non_anynet_route_class_refused(self, chain):
-        with pytest.raises(BookSimLoweringError, match="ANYNET_MIN_HOPS"):
-            lower_booksim_standalone(
-                rebuild_bundle(chain, routing_classes=(DOR_XY,)))
+    def test_dor_xy_exact_mesh_selects_mesh_profile(self, chain):
+        # P1B-Q1: DOR_XY on an exact native mesh is certified work, not
+        # a refusal. The 4-router fixture mesh is an exact 2x2 grid, so
+        # the fabric-derived selection picks the native mesh DOR
+        # profile. Route classes with no certified profile still refuse
+        # (see TestProfileSelection::test_unrealizable_route_class_
+        # refused in test_backend_mesh_dor_profile.py).
+        art = lower_booksim_standalone(
+            rebuild_bundle(chain, routing_classes=(DOR_XY,)))
+        assert art.backend_profile == "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1"
+        params = dict(art.normalized_parameters)
+        assert params["routing_function"] == "dim_order"
+        assert (params["k"], params["n"]) == (2, 2)
 
     def test_non_byte_exact_flit_width_refused(self):
         from types import SimpleNamespace

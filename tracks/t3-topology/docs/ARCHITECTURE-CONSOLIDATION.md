@@ -279,6 +279,15 @@ It caught two real mistakes that would otherwise have shipped:
    messages). Fixed to compare message COUNT (confirmatory) while the BYTE
    total stays the differential.
 
+### P1B.3 re-pin (argued schema bump, not a refactor)
+
+P1B.3 made DEFAULT a base VC class. Recomputing the 69-entry corpus at
+P1B.3 moves exactly 2 entries — `traffic/id` and `traffic/to_dict_sha`
+(the PhysicalTrafficArtifact identity binds the VC structure) — while
+rendered trace bytes, the projection summary, and the prepared BookSim
+config/input hashes are byte-identical to P1A. The Q tranche (P1B.3a–Q3)
+moves zero entries. Pin updated `8d8f2fa7…a938eb` → `cdfc6a00…43325779`.
+
 ## New findings
 
 **F5 — the artifact carried its own differential.** `ParallelismArtifact`

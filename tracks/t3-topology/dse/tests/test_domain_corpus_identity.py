@@ -28,7 +28,7 @@ sys.path.insert(0, str(DSE))
 sys.path.insert(0, str(DSE / "tests"))
 
 PINNED_CORPUS_SHA256 = \
-    "8d8f2fa7b90a95259d5b82aad8fe74e0c139f921c06b7441c1223221baa938eb"
+    "cdfc6a00321dbec2af9d6af06dd20fc2aae1112e6ac0c8051af8e43a63325779"
 
 
 def _build_corpus() -> dict:
