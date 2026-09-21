@@ -15,10 +15,12 @@ never an exception, never fabricated performance.
 Canonical chain (reuse, never reimplement):
 
     WorkloadGraph -> LogicalMessageArtifactV2 -> PhysicalTrafficArtifactV2
-    -> traffic-class admission gate -> pre-spawn gates
-    (assert_projection_ready) -> BookSim projection (prepare_waved_booksim)
-    -> producer availability (producer.py) -> qualified execution
-    (run_waved_booksim, quiescence inside) -> EvidenceArtifact
+    -> traffic-class admission gate -> profile selection (derived from
+    fabric semantics, never a user knob) -> pre-spawn gates
+    (assert_projection_ready) -> certified BookSim projection
+    (mesh-DOR native for MESH+DOR_XY fabrics, AnyNet for
+    ANYNET_MIN_HOPS fabrics) -> producer availability (producer.py) ->
+    qualified execution (quiescence inside) -> EvidenceArtifact
     (evidence.py only) -> NetworkWindowBinding v2 (ONE aggregate window)
     -> PerformanceModel + TemporalWorkload (window event only)
     -> schedule_workload -> build_performance_result -> reverify_result
@@ -103,6 +105,7 @@ class EvaluationOutcome:
     message_artifact_id: str | None = None
     physical_traffic_id: str | None = None
     backend: str | None = None
+    backend_profile: str | None = None
     producer_identity: str | None = None
     backend_config_hash: str | None = None
     backend_input_hash: str | None = None
@@ -229,6 +232,32 @@ def _admit_traffic_classes(logical: Any, bundle: Any) -> None:
                     f"materialize (has {sorted(router_classes)}); refusing")
 
 
+def _select_backend_path(bundle: Any) -> str | None:
+    """Derive the certified backend path from fabric semantics.
+
+    Never a user knob: the evaluator routes on what the fabric IS.
+    ``meshdor``: square MESH family, DOR_XY materialized, every VC
+    bound to DOR_XY (the native-mesh DOR profile's door). ``anynet``:
+    ANYNET_MIN_HOPS materialized with every VC bound to it. The
+    lowerers still enforce their full narrow domains; selection only
+    routes to the right lowerer. Anything else (CONCENTRATED_MESH,
+    TORUS/RING remnants, split classes) matches no certified path.
+    """
+    from veritx_dse.core.route_artifact import ANYNET_MIN_HOPS, DOR_XY
+    from veritx_dse.model.topology_artifact import MaterializedFamily
+    vc_classes = {rc for _, rc in
+                  bundle.vc_assignment.vc_to_routing_class}
+    router_classes = {d.id for d in
+                      bundle.router_route.routing_classes}
+    if (bundle.topology.family == MaterializedFamily.MESH
+            and vc_classes == {DOR_XY} and DOR_XY in router_classes):
+        return "meshdor"
+    if (ANYNET_MIN_HOPS in router_classes
+            and vc_classes == {ANYNET_MIN_HOPS}):
+        return "anynet"
+    return None
+
+
 def _valid_clock(value: Any) -> bool:
     if isinstance(value, bool):
         return False
@@ -353,13 +382,36 @@ class FabricEvaluator:
                           message_artifact_id=message_id,
                           physical_traffic_id=traffic_id)
 
+        # ── certified path selection (derived, never a user knob) ─
+        path = _select_backend_path(bundle)
+        if path is None:
+            vc_classes = sorted(
+                {rc for _, rc in
+                 bundle.vc_assignment.vc_to_routing_class})
+            router_classes = sorted(
+                {d.id for d in bundle.router_route.routing_classes})
+            return refuse(
+                UNSUPPORTED,
+                f"fabric matches no certified BookSim path: family "
+                f"{getattr(bundle.topology.family, 'value',
+                            bundle.topology.family)!r}, router classes "
+                f"{router_classes}, VC classes {vc_classes} "
+                f"(mesh-DOR needs MESH+DOR_XY; AnyNet needs "
+                f"ANYNET_MIN_HOPS)",
+                message_artifact_id=message_id,
+                physical_traffic_id=traffic_id)
+
         # ── canonical projection (pure: gates + lowering + render) ─
         try:
-            from veritx_dse.backend.projection import (
-                prepare_waved_booksim,
-            )
-            prepared, summary = prepare_waved_booksim(
-                physical, seed=opts.seed)
+            if path == "meshdor":
+                from veritx_dse.backend.meshdor import (
+                    prepare_meshdor as _prepare,
+                )
+            else:
+                from veritx_dse.backend.projection import (
+                    prepare_waved_booksim as _prepare,
+                )
+            prepared, summary = _prepare(physical, seed=opts.seed)
         except Exception as exc:
             from veritx_dse.backend.booksim import BookSimLoweringError
             if isinstance(exc, BookSimLoweringError):
@@ -374,6 +426,7 @@ class FabricEvaluator:
                           physical_traffic_id=traffic_id)
         config = prepared.config
         manifest = prepared.manifest
+        prof = config.backend_profile
         config_hash = config.backend_config_hash()
         input_hash = manifest.backend_input_hash()
 
@@ -392,7 +445,9 @@ class FabricEvaluator:
                           f"BookSim realization unstatable: "
                           f"{type(exc).__name__}: {exc}",
                           message_artifact_id=message_id,
-                          physical_traffic_id=traffic_id)
+                          physical_traffic_id=traffic_id,
+                          backend=STANDALONE_BACKEND,
+                          backend_profile=prof)
 
         # ── backend availability (producer.py; no FileNotFoundError) ─
         from veritx_dse.backend.producer import (
@@ -417,6 +472,7 @@ class FabricEvaluator:
                           message_artifact_id=message_id,
                           physical_traffic_id=traffic_id,
                           backend=STANDALONE_BACKEND,
+                          backend_profile=prof,
                           backend_config_hash=config_hash,
                           backend_input_hash=input_hash,
                           realization_digest=realization_digest)
@@ -426,6 +482,7 @@ class FabricEvaluator:
                           message_artifact_id=message_id,
                           physical_traffic_id=traffic_id,
                           backend=STANDALONE_BACKEND,
+                          backend_profile=prof,
                           backend_config_hash=config_hash,
                           backend_input_hash=input_hash,
                           realization_digest=realization_digest)
@@ -437,8 +494,15 @@ class FabricEvaluator:
 
         # ── qualified execution (+ quiescence when required) ───────
         try:
-            from veritx_dse.backend.projection import run_waved_booksim
-            result = run_waved_booksim(
+            if path == "meshdor":
+                from veritx_dse.backend.meshdor import (
+                    run_waved_meshdor as _run,
+                )
+            else:
+                from veritx_dse.backend.projection import (
+                    run_waved_booksim as _run,
+                )
+            result = _run(
                 prepared, run_dir=backend_run_dir, repo_root=repo_root,
                 timeout=opts.timeout_s, binary=bin_path,
                 summary=summary if opts.require_quiescence else None)
@@ -449,6 +513,7 @@ class FabricEvaluator:
                           message_artifact_id=message_id,
                           physical_traffic_id=traffic_id,
                           backend=STANDALONE_BACKEND,
+                          backend_profile=prof,
                           producer_identity=producer.binary_sha256,
                           backend_config_hash=config_hash,
                           backend_input_hash=input_hash,
@@ -462,6 +527,7 @@ class FabricEvaluator:
                           message_artifact_id=message_id,
                           physical_traffic_id=traffic_id,
                           backend=STANDALONE_BACKEND,
+                          backend_profile=prof,
                           producer_identity=producer.binary_sha256,
                           backend_config_hash=config_hash,
                           backend_input_hash=input_hash,
@@ -474,6 +540,7 @@ class FabricEvaluator:
                           message_artifact_id=message_id,
                           physical_traffic_id=traffic_id,
                           backend=STANDALONE_BACKEND,
+                          backend_profile=prof,
                           producer_identity=producer.binary_sha256,
                           backend_config_hash=config_hash,
                           backend_input_hash=input_hash,
@@ -504,6 +571,7 @@ class FabricEvaluator:
                           message_artifact_id=message_id,
                           physical_traffic_id=traffic_id,
                           backend=STANDALONE_BACKEND,
+                          backend_profile=prof,
                           producer_identity=producer.binary_sha256,
                           backend_config_hash=config_hash,
                           backend_input_hash=input_hash,
@@ -534,6 +602,7 @@ class FabricEvaluator:
                           message_artifact_id=message_id,
                           physical_traffic_id=traffic_id,
                           backend=STANDALONE_BACKEND,
+                          backend_profile=prof,
                           producer_identity=producer.binary_sha256,
                           backend_config_hash=config_hash,
                           backend_input_hash=input_hash,
@@ -558,6 +627,7 @@ class FabricEvaluator:
                           message_artifact_id=message_id,
                           physical_traffic_id=traffic_id,
                           backend=STANDALONE_BACKEND,
+                          backend_profile=prof,
                           producer_identity=producer.binary_sha256,
                           backend_config_hash=config_hash,
                           backend_input_hash=input_hash,
@@ -630,6 +700,7 @@ class FabricEvaluator:
                           message_artifact_id=message_id,
                           physical_traffic_id=traffic_id,
                           backend=STANDALONE_BACKEND,
+                          backend_profile=prof,
                           producer_identity=producer.binary_sha256,
                           backend_config_hash=config_hash,
                           backend_input_hash=input_hash,
@@ -653,6 +724,7 @@ class FabricEvaluator:
             message_artifact_id=message_id,
             physical_traffic_id=traffic_id,
             backend=STANDALONE_BACKEND,
+            backend_profile=prof,
             producer_identity=producer.binary_sha256,
             backend_config_hash=config_hash,
             backend_input_hash=input_hash,

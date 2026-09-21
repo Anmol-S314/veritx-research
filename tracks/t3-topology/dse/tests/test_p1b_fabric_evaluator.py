@@ -306,44 +306,85 @@ class TestAdmissionGate:
         assert out.metrics is None
         _assert_view_valid(out)
 
-    def test_known_class_passes_admission_reaches_projection(self):
+    def test_known_class_selects_meshdor_path(self, monkeypatch):
         # Class "A" is declared by the compiled VC authority, so the
-        # admission gate passes and the chain proceeds to the BookSim
-        # projection (which refuses DOR_XY — the next test pins why).
+        # admission gate passes and the evaluator selects the native
+        # mesh-DOR path (no binary here -> BACKEND_UNAVAILABLE with the
+        # mesh profile bound, never a projection refusal).
+        import veritx_dse.simulation.booksim as sim_booksim
+        monkeypatch.setattr(
+            sim_booksim, "find_booksim_bin",
+            lambda repo_root: (_ for _ in ()).throw(
+                FileNotFoundError("no booksim here")))
+        from veritx_dse.backend.meshdor_profile import (
+            MESH_DOR_PROFILE_ID,
+        )
         chain, comp = _compiled_mesh()
         out = EVAL.evaluate(comp, _workload(4),
                             EvaluationOptions(traffic_class="A"))
-        assert out.status == UNSUPPORTED
-        assert "ANYNET_MIN_HOPS" in (out.reason or "")
-
-
-# ── projection seam: DOR_XY is unprojectable (honest UNSUPPORTED) ───────
-
-class TestProjectionSeam:
-    def test_mesh_projection_unsupported(self):
-        chain, comp = _compiled_mesh()
-        assert comp.certificate.overall == "PASS"
-        out = EVAL.evaluate(comp, _workload(4),
-                            EvaluationOptions(traffic_class="A"))
-        assert out.status == UNSUPPORTED
-        assert "certified BookSim profile realizes only" in (out.reason or "")
-        assert out.message_artifact_id
-        assert out.physical_traffic_id
+        assert out.status == BACKEND_UNAVAILABLE
+        assert out.backend_profile == MESH_DOR_PROFILE_ID
+        assert out.backend_config_hash
+        assert out.realization_digest
         _assert_view_valid(out)
 
-    def test_mesh_dense_64_full_chain_to_projection(self):
+
+# ── profile selection ───────────────────────────────────────────────
+
+class TestProfileSelection:
+    def test_concentrated_mesh_matches_no_path(self):
+        from veritx_dse.model.compile_model import TopologyFamily
+        from test_fabric_artifact import build_chain as _bc
+        chain = _bc(tp=2, pp=1, ep=1, dp=2, n_agents=4,
+                    family=TopologyFamily.CONCENTRATED_MESH)
+        comp = FabricCompiler().compile(chain.cr)
+        assert comp.status == "COMPILED"
+        out = EVAL.evaluate(comp, _workload(4),
+                            EvaluationOptions(traffic_class="A"))
+        assert out.status == UNSUPPORTED
+        assert "no certified BookSim path" in (out.reason or "")
+        assert out.backend_profile is None
+        _assert_view_valid(out)
+
+    def test_anynet_bundle_selects_anynet_path(self, monkeypatch):
+        import veritx_dse.simulation.booksim as sim_booksim
+        monkeypatch.setattr(
+            sim_booksim, "find_booksim_bin",
+            lambda repo_root: (_ for _ in ()).throw(
+                FileNotFoundError("no booksim here")))
+        from veritx_dse.backend.booksim import (
+            BOOKSIM_STANDALONE_PROFILE,
+        )
+        chain, bundle = _anynet_bundle_2node()
+        comp = _compilation_for(chain, bundle)
+        out = EVAL.evaluate(comp, _workload(2),
+                            EvaluationOptions(traffic_class="A"))
+        assert out.status == BACKEND_UNAVAILABLE
+        assert out.backend_profile == BOOKSIM_STANDALONE_PROFILE
+        _assert_view_valid(out)
+
+    def test_mesh_dense_64_selects_meshdor_path(self, monkeypatch):
         # Canonical scenario: 64-router compiled mesh, certificate PASS,
-        # traffic conserved, VC admission PASS, then the honest
-        # projection refusal (DOR_XY vs ANYNET_MIN_HOPS).
+        # traffic conserved, VC admission PASS, mesh-DOR path selected
+        # (no binary here -> BACKEND_UNAVAILABLE with mesh bindings).
+        import veritx_dse.simulation.booksim as sim_booksim
+        monkeypatch.setattr(
+            sim_booksim, "find_booksim_bin",
+            lambda repo_root: (_ for _ in ()).throw(
+                FileNotFoundError("no booksim here")))
+        from veritx_dse.backend.meshdor_profile import (
+            MESH_DOR_PROFILE_ID,
+        )
         chain, comp = _compiled_mesh(small=False)
         assert comp.status == "COMPILED"
         assert comp.certificate.overall == "PASS"
         out = EVAL.evaluate(comp, _workload(8),
                             EvaluationOptions(traffic_class="A"))
-        assert out.status == UNSUPPORTED
-        assert "ANYNET_MIN_HOPS" in (out.reason or "")
+        assert out.status == BACKEND_UNAVAILABLE
+        assert out.backend_profile == MESH_DOR_PROFILE_ID
         assert out.message_artifact_id
         assert out.physical_traffic_id
+        assert out.backend_config_hash
         _assert_view_valid(out)
 
     def test_unknown_backend_unsupported(self):
