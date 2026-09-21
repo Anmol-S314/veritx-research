@@ -1,0 +1,34 @@
+{
+  "$id": "https://veritx.dev/contracts/srota/v1/requirement.report",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RequirementReport",
+  "description": "Frozen P1 product view of RequirementEvaluator.evaluate over an already-verified PerformanceResult. Binding + UNMEASURABLE never passes.",
+  "type": "object",
+  "required": ["contract_version", "design_hash", "performance_result_id", "entries"],
+  "properties": {
+    "contract_version": {"const": 1},
+    "design_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "performance_result_id": {"type": "string"},
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["requirement_index", "verdict", "metric_authority", "performance_result_id", "reason"],
+        "properties": {
+          "requirement_index": {"type": "integer", "minimum": 0},
+          "traffic_class": {"type": ["string", "null"]},
+          "qos_class": {"type": ["string", "null"]},
+          "verdict": {"enum": ["SATISFIED", "VIOLATED", "UNMEASURABLE", "NOT_APPLICABLE"]},
+          "binding": {"type": "boolean"},
+          "required": {"type": ["number", "string", "null"]},
+          "measured": {"type": ["number", "string", "null"]},
+          "metric_authority": {"type": "string"},
+          "performance_result_id": {"type": "string"},
+          "reason": {"type": "string"}
+        },
+        "unevaluatedProperties": false
+      }
+    }
+  },
+  "unevaluatedProperties": false
+}

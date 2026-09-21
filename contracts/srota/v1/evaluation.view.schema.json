@@ -1,0 +1,58 @@
+{
+  "$id": "https://veritx.dev/contracts/srota/v1/evaluation.view",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EvaluationView",
+  "description": "Frozen P1 product view of FabricEvaluator.evaluate. EVALUATED carries authenticated evidence + performance bindings; non-EVALUATED carries reason and never fabricated metrics.",
+  "type": "object",
+  "required": ["contract_version", "status", "design_hash", "resolved_fabric_hash", "workload_id"],
+  "properties": {
+    "contract_version": {"const": 1},
+    "status": {"enum": ["EVALUATED", "BACKEND_UNAVAILABLE", "UNSUPPORTED", "FAILED"]},
+    "design_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "resolved_fabric_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "workload_id": {"type": "string"},
+    "message_artifact_id": {"type": "string"},
+    "physical_traffic_id": {"type": "string"},
+    "backend_producer": {
+      "type": ["object", "null"],
+      "properties": {
+        "backend": {"type": "string"},
+        "producer_identity": {"type": "string"},
+        "config_hash": {"type": "string"},
+        "input_hash": {"type": "string"}
+      },
+      "unevaluatedProperties": false
+    },
+    "evidence": {
+      "type": ["object", "null"],
+      "properties": {
+        "raw_evidence_digest": {"type": "string"},
+        "stats_digest": {"type": "string"}
+      },
+      "unevaluatedProperties": false
+    },
+    "performance_result_id": {"type": ["string", "null"]},
+    "network_traffic_window": {
+      "type": ["object", "null"],
+      "description": "Single honest aggregate window (BookSim provides no per-operation completion).",
+      "properties": {
+        "window_cycles": {"type": "integer"},
+        "wall_time_ns": {"type": ["number", "null"]},
+        "cycles_only": {"type": "boolean"}
+      },
+      "unevaluatedProperties": false
+    },
+    "metrics": {
+      "type": ["object", "null"],
+      "description": "Only metrics the backend actually produced. Absent metrics are absent, never zero-filled.",
+      "additionalProperties": {"type": "number"}
+    },
+    "fidelity_warning": {"type": ["string", "null"]},
+    "reason": {"type": ["string", "null"]}
+  },
+  "unevaluatedProperties": false,
+  "allOf": [
+    {"if": {"properties": {"status": {"const": "EVALUATED"}}},
+     "then": {"required": ["message_artifact_id", "physical_traffic_id", "backend_producer", "evidence", "performance_result_id", "network_traffic_window"]}}
+  ]
+}
