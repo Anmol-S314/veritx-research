@@ -97,3 +97,37 @@ def test_design_view_refuses_cross_design_compilation():
 def test_design_view_refuses_non_compilation():
     with pytest.raises(ValueError):
         design_view(_v3(), {"status": "COMPILED"})
+
+
+def test_design_view_refuses_same_geometry_cross_design():
+    """B4: identical TP/PP/EP/DP is not identity — a compilation for a
+    same-geometry request with different semantics can never fill
+    another request's locked_derived, and a mismatch raises rather than
+    silently projecting locked_derived=None."""
+    import dataclasses
+    req_a = _v3()
+    req_b = dataclasses.replace(
+        req_a,
+        workload=dataclasses.replace(
+            req_a.workload,
+            collectives=(dataclasses.replace(
+                req_a.workload.collectives[0], payload_bytes=4096),)))
+    comp_a = FabricCompiler().compile(req_a)
+    comp_b = FabricCompiler().compile(req_b)
+    assert comp_a.status == "COMPILED"
+    assert comp_b.status == "COMPILED"
+    assert (req_a.workload.tp, req_a.workload.pp, req_a.workload.ep,
+            req_a.workload.dp) == (
+        req_b.workload.tp, req_b.workload.pp, req_b.workload.ep,
+        req_b.workload.dp)
+    assert req_a.design_hash() != req_b.design_hash()
+    with pytest.raises(ValueError) as excinfo:
+        design_view(req_b, comp_a)
+    message = str(excinfo.value)
+    assert req_a.design_hash() in message
+    assert req_b.design_hash() in message
+    with pytest.raises(ValueError):
+        design_view(req_a, comp_b)
+    matched = design_view(req_b, comp_b)
+    assert matched["locked_derived"] is not None
+    assert matched["locked_derived"]["certificate_overall"] == "PASS"
