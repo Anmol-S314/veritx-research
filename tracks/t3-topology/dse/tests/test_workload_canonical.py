@@ -590,6 +590,24 @@ class TestRunIntegration:
                         / f"{entry['name']}.workload.json").read_text()))
         assert art.artifact_hash == entry["artifact_hash"]
 
+    def test_canonicalize_run_writes_workloadgraph(self, tmp_path):
+        """M3: every trace also yields a verified WorkloadGraph doc."""
+        from veritx_dse.workload.canonical_graph import WorkloadGraph
+        from veritx_dse.workload.serve import (
+            canonicalize_run_workload, workload_graph_identity,
+        )
+        run_root, cpath = self._write_run(tmp_path)
+        index = canonicalize_run_workload(run_root, cpath)
+        entry = index["artifacts"][0]
+        assert entry["workload_graph_id"].startswith("sha256:")
+        doc = json.loads((run_root / "workload"
+                          / entry["workloadgraph_file"]).read_text())
+        graph = WorkloadGraph.from_dict(doc, strict=True)
+        assert graph.workload_id() == entry["workload_graph_id"]
+        assert graph.participant_count == 2
+        assert workload_graph_identity(index) == \
+            entry["workload_graph_id"]
+
     def test_canonicalize_is_deterministic(self, tmp_path):
         from veritx_dse.workload.serve import canonicalize_run_workload
         run_root, cpath = self._write_run(tmp_path)

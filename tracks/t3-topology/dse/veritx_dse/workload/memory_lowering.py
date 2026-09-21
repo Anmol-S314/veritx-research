@@ -156,20 +156,27 @@ def _issue_nodes(art: WorkloadArtifact,
                  ) -> tuple[dict[str, int], tuple[str, ...]]:
     """Per-COMPUTE-op execution attribution + the assumption it records."""
     compute_ids = [op.op_id for op in art.ops if op.kind == "COMPUTE"]
+    return _issue_nodes_for(compute_ids, art.num_participants, issue_node)
+
+
+def _issue_nodes_for(compute_ids: list[str], num_participants: int,
+                     issue_node: int | dict[str, int] | None
+                     ) -> tuple[dict[str, int], tuple[str, ...]]:
+    """Attribution core over explicit ids + namespace (one implementation)."""
     if issue_node is None:
-        if art.num_participants == 1:
+        if num_participants == 1:
             return ({op_id: 0 for op_id in compute_ids}, ())
         raise LoweringError(
-            f"workload has {art.num_participants} participants and COMPUTE "
+            f"workload has {num_participants} participants and COMPUTE "
             "ops carry no placement: pass issue_node (int for all ops, or "
             "an explicit {op_id: node} map). Execution attribution must "
             "not default silently.")
     if isinstance(issue_node, int):
         if isinstance(issue_node, bool) or \
-                not (0 <= issue_node < art.num_participants):
+                not (0 <= issue_node < num_participants):
             raise LoweringError(
                 f"issue_node {issue_node!r} out of range "
-                f"[0, {art.num_participants})")
+                f"[0, {num_participants})")
         return ({op_id: issue_node for op_id in compute_ids},
                 (f"issue-node-mapping: all COMPUTE memory accesses "
                  f"attributed to node {issue_node}",))
@@ -185,10 +192,10 @@ def _issue_nodes(art: WorkloadArtifact,
             f"issue_node map names unknown op(s) {extra} — typo guard")
     for op_id, node in mapping.items():
         if not isinstance(node, int) or isinstance(node, bool) or \
-                not (0 <= node < art.num_participants):
+                not (0 <= node < num_participants):
             raise LoweringError(
                 f"issue_node[{op_id!r}] = {node!r} out of range "
-                f"[0, {art.num_participants})")
+                f"[0, {num_participants})")
     return (mapping,
             ("issue-node-mapping: explicit per-op execution attribution",))
 
@@ -203,23 +210,80 @@ def resolve_memory(art: WorkloadArtifact, design: MemorySystemDesign, *,
     partial artifacts — refuse before building anything) and LoweringError
     for ambiguous attribution or empty memory demand.
     """
+    views = [{"op_id": op.op_id,
+              "input_bytes": op.input_bytes, "input_loc": op.input_loc,
+              "weight_bytes": op.weight_bytes, "weight_loc": op.weight_loc,
+              "output_bytes": op.output_bytes, "output_loc": op.output_loc}
+             for op in art.ops if op.kind == "COMPUTE"]
     nodes, issue_assumption = _issue_nodes(art, issue_node)
+    return _resolve_views(
+        views, design, policy=policy, nodes=nodes,
+        issue_assumption=issue_assumption,
+        source_hash=art.artifact_hash, num_nodes=art.num_participants,
+        name=name or f"mem-{art.workload_id}")
+
+
+def resolve_memory_graph(graph: Any, design: MemorySystemDesign, *,
+                         policy: AddressMappingPolicy = DEFAULT_POLICY,
+                         issue_node: int | dict[str, int] | None = None,
+                         name: str | None = None) -> ResolvedMemory:
+    """Lower a canonical WorkloadGraph to a MemoryArtifact (M3).
+
+    The ONLY runtime memory entry point going forward: COMPUTE operand
+    bytes/locations come from the graph's closed COMPUTE detail, in the
+    graph's total order (positional memory stream needs it — an
+    unordered DAG refuses rather than invents an order). Comm ops and
+    structural markers carry no memory operands and are ignored, exactly
+    as in the artifact path. Allocation, access chaining and
+    conservation are the shared core below — one implementation.
+    """
+    from veritx_dse.core.artifact import thaw
+    from veritx_dse.workload.canonical_graph import KIND_COMPUTE
+    ordered = graph.require_total_order()
+    views = []
+    for op in ordered:
+        if op.kind != KIND_COMPUTE:
+            continue
+        d = thaw(op.detail)
+        views.append({"op_id": op.operation_id,
+                      "input_bytes": d.get("input_bytes"),
+                      "input_loc": d.get("input_loc"),
+                      "weight_bytes": d.get("weight_bytes"),
+                      "weight_loc": d.get("weight_loc"),
+                      "output_bytes": d.get("output_bytes"),
+                      "output_loc": d.get("output_loc")})
+    compute_ids = [v["op_id"] for v in views]
+    nodes, issue_assumption = _issue_nodes_for(
+        compute_ids, graph.participant_count, issue_node)
+    return _resolve_views(
+        views, design, policy=policy, nodes=nodes,
+        issue_assumption=issue_assumption,
+        source_hash=graph.workload_id(),
+        num_nodes=graph.participant_count,
+        name=name or f"mem-{graph.workload_id()}")
+
+
+def _resolve_views(views: list[dict[str, Any]], design: MemorySystemDesign,
+                   *, policy: AddressMappingPolicy,
+                   nodes: dict[str, int],
+                   issue_assumption: tuple[str, ...],
+                   source_hash: str, num_nodes: int,
+                   name: str) -> ResolvedMemory:
+    """Shared resolver core over normalized COMPUTE operand views."""
     specs: list[dict[str, Any]] = []
     operand_bytes = 0
-    for op in art.ops:
-        if op.kind != "COMPUTE":
-            continue
+    for view in views:
         for bytes_f, loc_f, suffix, otype in _OPERANDS:
-            nbytes = getattr(op, bytes_f)
+            nbytes = view[bytes_f]
             if not nbytes:
                 continue  # None/0: no operand bytes declared → no region
             operand_bytes += nbytes
-            placement = _resolve_location(op.op_id, suffix,
-                                          getattr(op, loc_f), design)
+            placement = _resolve_location(view["op_id"], suffix,
+                                          view[loc_f], design)
             specs.append({
-                "region_id": f"{op.op_id}.{suffix}",
+                "region_id": f"{view['op_id']}.{suffix}",
                 "object_type": otype, "size_bytes": nbytes,
-                "placement": placement, "source_op_id": op.op_id,
+                "placement": placement, "source_op_id": view["op_id"],
             })
     if not specs:
         raise LoweringError(
@@ -242,15 +306,13 @@ def resolve_memory(art: WorkloadArtifact, design: MemorySystemDesign, *,
     # previous op's last access (positional chaining — order, not timing).
     accesses = []
     prev_tail: str | None = None
-    for op in art.ops:
-        if op.kind != "COMPUTE":
-            continue
+    for view in views:
         op_acc: list[str] = []
         writes: list[str] = []
         for bytes_f, _loc_f, suffix, _otype in _OPERANDS:
-            if not getattr(op, bytes_f):
+            if not view[bytes_f]:
                 continue
-            reg = by_id[f"{op.op_id}.{suffix}"]
+            reg = by_id[f"{view['op_id']}.{suffix}"]
             aid = f"acc.{reg.region_id}"
             kind = "WRITE" if suffix == "output" else "READ"
             deps: list[str] = []
@@ -259,17 +321,17 @@ def resolve_memory(art: WorkloadArtifact, design: MemorySystemDesign, *,
             if kind == "WRITE":
                 deps.extend(op_acc)  # write after this op's reads
             accesses.append(build_access(
-                aid, op.op_id, reg.region_id, kind, 0, reg.size_bytes,
-                nodes[op.op_id], tuple(deps)))
+                aid, view["op_id"], reg.region_id, kind, 0,
+                reg.size_bytes, nodes[view["op_id"]], tuple(deps)))
             op_acc.append(aid)
             if kind == "WRITE":
                 writes.append(aid)
         if op_acc:
             prev_tail = writes[-1] if writes else op_acc[-1]
     artifact = build_artifact(
-        name=name or f"mem-{art.workload_id}",
-        source_workload_hash=art.artifact_hash,
-        num_nodes=art.num_participants,
+        name=name,
+        source_workload_hash=source_hash,
+        num_nodes=num_nodes,
         regions=regions, accesses=accesses, mapping_policy=policy,
         assumptions=(f"resolver:{RESOLVER_ID}",
                      "op-scoped regions: cross-op tensor persistence "

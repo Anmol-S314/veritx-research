@@ -188,6 +188,17 @@ def _legs_for_op(op: WorkloadOp, default: ServiceBinding | None,
     raise (checked at construction). Memory legs that were not declared
     are ABSENT legs — recorded as assumptions, never zero-filled.
     """
+    return _legs_for_view(op.op_id, op.kind == "COMPUTE",
+                          op.bytes or 0, default, binding)
+
+
+def _legs_for_view(op_id: str, is_compute: bool, nbytes: int,
+                   default: ServiceBinding | None,
+                   binding: OpService | None,
+                   ) -> tuple[dict[str, float], dict[str, dict[str, str]],
+                              list[str]]:
+    """Leg core over an op view (one implementation for both workload
+    authorities)."""
     evidence: dict[str, dict[str, str]] = {}
     assumptions: list[str] = []
 
@@ -196,22 +207,22 @@ def _legs_for_op(op: WorkloadOp, default: ServiceBinding | None,
         return ({"producer": b.producer, "fidelity": b.fidelity} if b
                 else {"producer": "declared", "fidelity": "DECLARED"})
 
-    if op.kind == "COMPUTE":
+    if is_compute:
         if binding is None or binding.compute_cycles is None:
             raise TimelineError(
-                f"op {op.op_id!r}: COMPUTE op has no declared compute "
+                f"op {op_id!r}: COMPUTE op has no declared compute "
                 "service (compute_cycles) — refusing to fabricate one")
-        clk = _clock(default, "compute", op.op_id)
+        clk = _clock(default, "compute", op_id)
         legs: dict[str, float] = {
             "compute": float(binding.compute_cycles) * clk.ns_per_cycle}
         evidence["compute"] = ev("compute")
         if binding.mem_cycles is not None:
-            mem_clk = _clock(default, "mem", op.op_id)
+            mem_clk = _clock(default, "mem", op_id)
             legs["mem"] = float(binding.mem_cycles) * mem_clk.ns_per_cycle
             evidence["mem"] = ev("mem")
         else:
             assumptions.append(
-                f"op {op.op_id!r}: no memory service declared — operand "
+                f"op {op_id!r}: no memory service declared — operand "
                 "memory is unmodeled for this op (absent leg, not zero)")
         return legs, evidence, assumptions
 
@@ -220,15 +231,15 @@ def _legs_for_op(op: WorkloadOp, default: ServiceBinding | None,
     op_mem = binding.mem_bw if binding else None
     op_comp = binding.comp_bw if binding else None
     if op_net is not None:
-        net_clk = _clock(default, "net", op.op_id)
+        net_clk = _clock(default, "net", op_id)
         legs = {"net": float(op_net) * net_clk.ns_per_cycle}
         evidence["net"] = ev("net")
         return legs, evidence, assumptions
     if op_mem is None or op_comp is None:
         raise TimelineError(
-            f"op {op.op_id!r}: comm op has no declared service "
+            f"op {op_id!r}: comm op has no declared service "
             "(net_cycles or mem_bw/comp_bw) — refusing to fabricate one")
-    nbytes = op.bytes or 0
+    nbytes = nbytes or 0
     # Rate form is SI (bytes/second) — no clock involved: s → ns via 1e9.
     legs = {"mem": nbytes / op_mem * NS_PER_SECOND,
             "comp": nbytes / op_comp * NS_PER_SECOND}
@@ -328,7 +339,54 @@ def build_timeline(art: WorkloadArtifact,
     default binding per dimension); an op without them raises — a timeline
     with fabricated services would mis-attribute by construction.
     """
-    services = op_services or {}
+    views = [(op.op_id, op.kind, op.kind == "COMPUTE", op.bytes or 0)
+             for op in art.ops]
+    return _compose_timeline(views, default, op_services or {},
+                             source_hash=art.artifact_hash,
+                             comm_bytes=art.comm_bytes_total())
+
+
+def build_timeline_graph(graph: Any,
+                         default: ServiceBinding | None = None,
+                         op_services: dict[str, OpService] | None = None,
+                         ) -> Timeline:
+    """Compose the dependency timeline over a canonical WorkloadGraph (M3).
+
+    The ONLY runtime timeline entry point going forward. Op order is the
+    graph's total order (positional chaining needs it — an unordered DAG
+    refuses rather than invents an order). COMPUTE legs are identical;
+    comm bytes come from each kind's closed detail (collective payload,
+    transfer payload, multicast payload, expert payload or 0, PIM none).
+    Composition, stall math and verdicts are the shared core below.
+    """
+    from veritx_dse.core.artifact import thaw
+    from veritx_dse.workload.canonical_graph import KIND_COMPUTE
+    views = []
+    for op in graph.require_total_order():
+        d = thaw(op.detail)
+        kind = op.kind
+        if kind == KIND_COMPUTE:
+            views.append((op.operation_id, kind, True, 0))
+            continue
+        if kind in ("COLLECTIVE", "P2P", "MULTICAST"):
+            nbytes = d.get("payload_bytes") or 0
+        elif kind in ("EXPERT_BEGIN", "EXPERT_END"):
+            nbytes = d.get("payload_bytes") or 0
+        else:  # PIM_CHANNEL / PIM_END: structural, no bytes
+            nbytes = 0
+        views.append((op.operation_id, kind, False, nbytes))
+    comm_bytes = sum(v[3] for v in views if not v[2])
+    return _compose_timeline(views, default, op_services or {},
+                             source_hash=graph.workload_id(),
+                             comm_bytes=comm_bytes)
+
+
+def _compose_timeline(views: list[tuple[str, str, bool, int]],
+                      default: ServiceBinding | None,
+                      services: dict[str, OpService],
+                      *, source_hash: str, comm_bytes: int,
+                      ) -> Timeline:
+    """Shared composition core over (op_id, kind, is_compute, nbytes)."""
     records: list[OpRecord] = []
     service_totals: dict[str, float] = {}
     exposed_totals: dict[str, float] = {}
@@ -346,9 +404,9 @@ def build_timeline(art: WorkloadArtifact,
         "the longest leg(s); distinct from stall by design",
     ]
     prev_finish = 0.0
-    for op in art.ops:
-        legs, evidence, asm = _legs_for_op(
-            op, default, services.get(op.op_id))
+    for op_id, kind, is_compute, nbytes in views:
+        legs, evidence, asm = _legs_for_view(
+            op_id, is_compute, nbytes, default, services.get(op_id))
         assumptions.extend(asm)
         ready = prev_finish
         span = max(legs.values())
@@ -373,7 +431,7 @@ def build_timeline(art: WorkloadArtifact,
         for d, v in overlap.items():
             overlap_totals[d] = overlap_totals.get(d, 0.0) + v
         records.append(OpRecord(
-            op_id=op.op_id, kind=op.kind, ready=ready, finish=finish,
+            op_id=op_id, kind=kind, ready=ready, finish=finish,
             legs=dict(legs), exposed=exposed,
             exposed_stall=dict(exposed_stall), overlap=dict(overlap),
             owners=owners,
@@ -381,14 +439,14 @@ def build_timeline(art: WorkloadArtifact,
         prev_finish = finish
 
     attribution = _attribute(records, service_totals, exposed_totals,
-                             stall_totals, art.comm_bytes_total())
+                             stall_totals, comm_bytes)
     clocks: dict[str, float] = {}
     if default is not None:
         for dim in ("compute", "net", "mem", "comp"):
             b = getattr(default, dim)
             if b is not None:
                 clocks[dim] = b.ns_per_cycle
-    return Timeline(artifact_hash=art.artifact_hash,
+    return Timeline(artifact_hash=source_hash,
                     ns_per_cycle=clocks, ops=tuple(records),
                     service_totals=service_totals,
                     exposed_totals=exposed_totals,

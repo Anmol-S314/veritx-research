@@ -138,7 +138,15 @@ def canonicalize_run_workload(run_root: Path,
     <run_root>/workload/index.json. Returns the index. Deterministic:
     identical inputs produce byte-identical files (sorted keys, no
     timestamps).
+
+    M3: every trace ALSO yields <name>.workloadgraph.json — the
+    canonical WorkloadGraph built directly from the parsed rows (never
+    via the legacy authority), with its workload_id in the index. New
+    consumers read the graph; the legacy artifact files stay byte-
+    identical for audit continuity.
     """
+    from veritx_dse.model.parallelism import ParallelismArtifact
+    from veritx_dse.workload.migration import workload_graph_from_trace_rows
     run_root = Path(run_root)
     trace_root = run_root / "inputs" / "trace"
     if not trace_root.is_dir():
@@ -182,11 +190,24 @@ def canonicalize_run_workload(run_root: Path,
         path = workdir / f"{name}.workload.json"
         path.write_text(json.dumps(art.serialize(), indent=2,
                                    sort_keys=True) + "\n")
+        graph = workload_graph_from_trace_rows(
+            rows,
+            parallelism=ParallelismArtifact(
+                tp=parallelism.tp, pp=parallelism.pp, ep=parallelism.ep,
+                dp=parallelism.dp),
+            participant_count=num_participants,
+            provenance={"source_format": "llmservingsim-trace-rows-v1",
+                        "trace": str(rel)})
+        graph_path = workdir / f"{name}.workloadgraph.json"
+        graph_path.write_text(json.dumps(graph.to_dict(), indent=2,
+                                         sort_keys=True) + "\n")
         entries.append({
             "name": name,
             "trace": str(rel),
             "artifact_hash": art.artifact_hash,
             "file": f"{name}.workload.json",
+            "workload_graph_id": graph.workload_id(),
+            "workloadgraph_file": f"{name}.workloadgraph.json",
             "parallelism": parallelism.to_dict(),
             "num_participants": num_participants,
             "comm_bytes_total": art.comm_bytes_total(),
@@ -217,6 +238,25 @@ def workload_identity(index: dict[str, Any]) -> str:
         raise WorkloadError(
             "workload index lists no artifacts — identity undefined "
             "(fail-closed)")
+    if len(hashes) == 1:
+        return hashes[0]
+    return "sha256:" + hashlib.sha256(
+        json.dumps(hashes, sort_keys=True).encode()).hexdigest()
+
+
+def workload_graph_identity(index: dict[str, Any]) -> str:
+    """The run's canonical-graph identity (M3).
+
+    Same composition rule as workload_identity, over the per-trace
+    workload_graph_id values. Lets comparison fingerprints consume
+    graph identity without re-deriving it per trace.
+    """
+    hashes = sorted(a["workload_graph_id"]
+                    for a in index.get("artifacts", []))
+    if not hashes:
+        raise WorkloadError(
+            "workload index lists no workload graphs — identity "
+            "undefined (fail-closed)")
     if len(hashes) == 1:
         return hashes[0]
     return "sha256:" + hashlib.sha256(

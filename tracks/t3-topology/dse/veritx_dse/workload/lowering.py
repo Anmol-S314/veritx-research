@@ -223,8 +223,173 @@ def rows_from_artifact(art: WorkloadArtifact,
     _flush_pending()
     header = f"COLOCATED\t\tmodel_parallel_NPU_group: {pp_groups}"
     return RowsProjection(header_line=header, rows=rows,
-                          root_by_row=root_by_row,
-                          comm_op_by_row=comm_op_by_row)
+                           root_by_row=root_by_row,
+                           comm_op_by_row=comm_op_by_row)
+
+
+# ── graph projection: WorkloadGraph → trace rows (M3) ─────────────────────
+
+def _graph_comm_token(kind: str, payload_bytes: int, scope: Any) -> str:
+    """Collective token in the converter's comm-column grammar."""
+    if scope is None or scope == "ALL":
+        return kind
+    dims = ",".join("1" if v else "0" for v in scope)
+    return f"{kind}:{dims}"
+
+
+def rows_from_graph(graph: Any, *, target: str = "inspection"
+                    ) -> RowsProjection:
+    """Project a canonical WorkloadGraph back to LLMServingSim trace rows.
+
+    Same dialect as rows_from_artifact (11-field layer rows, 1-field
+    marker rows, one comm per layer with pending/flush co-location), in
+    the graph's total order. COMPUTE ops become layer rows; COLLECTIVE
+    ops ride layer comm columns; EXPERT/PIM markers pass through in
+    their source spelling so workload_graph_from_trace_rows recovers
+    them byte-identically.
+
+    Dialect limits (fail-closed, same culture as the artifact path):
+    BROADCAST rows carry no root in this dialect for the ET target —
+    inspection records the explicit source in root_by_row while the ET
+    target refuses; P2P TRANSFER has no row encoding (the converter
+    synthesizes pairs positionally — explicit endpoints would be
+    fabricated); MULTICAST destinations are not representable either.
+    """
+    from veritx_dse.core.artifact import thaw
+    ordered = graph.require_total_order()
+    if target == "astra_chakra_et":
+        bad = [op.operation_id for op in ordered
+               if op.kind == "COLLECTIVE"
+               and thaw(op.detail).get("collective_kind") == "BROADCAST"]
+        if bad:
+            raise UnsupportedSemantic(
+                f"BROADCAST op(s) {bad} cannot be lowered to "
+                "astra_chakra_et: standalone BROADCAST rows carry no root "
+                "in this dialect — refusing rather than inventing one "
+                "(fail-closed). The backend (Workload.cc issue_broadcast) "
+                "is ready; the ET side needs explicit converter support "
+                "first.")
+        for op in ordered:
+            if op.kind == "P2P":
+                raise UnsupportedSemantic(
+                    f"{op.operation_id}: P2P TRANSFER cannot be "
+                    "represented in trace rows (the converter synthesizes "
+                    "P/D pairs positionally; explicit endpoints would be "
+                    "fabricated).")
+            if op.kind == "MULTICAST":
+                raise UnsupportedSemantic(
+                    f"{op.operation_id}: MULTICAST destinations cannot be "
+                    "represented in trace rows (no destination encoding "
+                    "in the dialect).")
+    rows: list = []
+    root_by_row: dict[int, int] = {}
+    comm_op_by_row: dict[int, str] = {}
+    pp_groups = max(graph.parallelism.pp, 1)
+    pending: tuple[str, str, str] | None = None  # (token, size, op_id)
+
+    def _flush_pending() -> None:
+        nonlocal pending
+        if pending is None:
+            return
+        token, size, op_id = pending
+        pending = None
+        rows.append(("compute-flush", "0",
+                     "LOCAL", "0", "LOCAL", "0", "LOCAL", "0",
+                     token, size, "BATCH_1"))
+        comm_op_by_row[len(rows) - 1] = op_id
+
+    last_layer_row: int | None = None
+    last_row_has_comm = False
+    for op in ordered:
+        d = thaw(op.detail)
+        kind = op.kind
+        if kind == "COMPUTE":
+            row = [op.label or op.operation_id, str(d["duration_ns"]),
+                   d["input_loc"], str(d["input_bytes"] or 0),
+                   d["weight_loc"], str(d["weight_bytes"] or 0),
+                   d["output_loc"], str(d["output_bytes"] or 0),
+                   "NONE", "0", d["batch_tag"]]
+            merged = None
+            if pending is not None:
+                merged = pending
+                pending = None
+                row[8], row[9] = merged[0], merged[1]
+            rows.append(tuple(row))
+            last_layer_row = len(rows) - 1
+            last_row_has_comm = row[8] != "NONE"
+            if last_row_has_comm:
+                assert merged is not None
+                comm_op_by_row[last_layer_row] = merged[2]
+            continue
+        if kind in ("EXPERT_BEGIN", "EXPERT_END"):
+            _flush_pending()
+            end = kind == "EXPERT_END"
+            ck = d.get("collective_kind")
+            if ck is not None:
+                scope = d.get("scope")
+                dims = (":" + ",".join("1" if v else "0" for v in scope)
+                        if isinstance(scope, (list, tuple)) else "")
+                num = d.get("expert_num")
+                if end:
+                    marker = f"EXPERT END {ck}{dims} {d['payload_bytes']}"
+                else:
+                    marker = (f"EXPERT {num} {ck}{dims} "
+                              f"{d['payload_bytes']}")
+                rows.append((marker,))
+                comm_op_by_row[len(rows) - 1] = op.operation_id
+            else:
+                rows.append(((f"EXPERT END NONE 0" if end
+                              else f"EXPERT {d.get('expert_num')} NONE 0"),))
+            last_layer_row = None
+            last_row_has_comm = False
+            continue
+        if kind == "PIM_CHANNEL":
+            rows.append((f"PIM {d['channel']}",))
+            last_layer_row = None
+            last_row_has_comm = False
+            continue
+        if kind == "PIM_END":
+            rows.append(("PIM END",))
+            last_layer_row = None
+            last_row_has_comm = False
+            continue
+        if kind == "COLLECTIVE":
+            ck = d["collective_kind"]
+            if ck == "BROADCAST":
+                _flush_pending()
+                root_by_row[len(rows)] = d["source"]
+                rows.append((f"BROADCAST {d['source']} "
+                             f"{d['payload_bytes']}",))
+                last_layer_row = None
+                last_row_has_comm = False
+                continue
+            token = _graph_comm_token(ck, d["payload_bytes"],
+                                      d.get("scope"))
+            size = str(d["payload_bytes"])
+            if last_layer_row is not None and not last_row_has_comm:
+                row = list(rows[last_layer_row])
+                row[8] = token
+                row[9] = size
+                rows[last_layer_row] = tuple(row)
+                comm_op_by_row[last_layer_row] = op.operation_id
+                last_row_has_comm = True
+                continue
+            if pending is not None:
+                _flush_pending()
+            pending = (token, size, op.operation_id)
+            continue
+        # P2P TRANSFER / MULTICAST: no row encoding (refused for the ET
+        # target above); inspection carries them as explicit markers so
+        # the projection is total without fabricating dialect rows.
+        _flush_pending()
+        rows.append((f"{kind} {op.operation_id} {d.get('payload_bytes')}",))
+        last_layer_row = None
+        last_row_has_comm = False
+    _flush_pending()
+    header = f"COLOCATED\t\tmodel_parallel_NPU_group: {pp_groups}"
+    return RowsProjection(header_line=header, rows=rows,
+                           root_by_row=root_by_row,
+                           comm_op_by_row=comm_op_by_row)
 
 
 # ── target: astra_chakra_et (the proven production lowering) ─────────────
@@ -271,6 +436,20 @@ def lower_to_et(art: WorkloadArtifact, rows: list, output_prefix,
             "fail-closed)")
     # Refuse unsupported semantics BEFORE touching the converter.
     rows_from_artifact(art, target="astra_chakra_et")
+    header = _header_for(art, rows)
+    et_paths, et_sha256s = _convert_rows(rows, header, output_prefix,
+                                         num_npus)
+    return LoweredEt(
+        output_prefix=str(output_prefix),
+        et_paths=tuple(et_paths),
+        et_sha256s=tuple(et_sha256s),
+        header_line=header,
+        num_npus=num_npus, num_npu_group=num_npu_group)
+
+
+def _convert_rows(rows: list, header_line: str, output_prefix,
+                  num_npus: int) -> tuple[list, list]:
+    """Shared converter seam: rows + header → ET files + hashes."""
     import os
     from chakra.src.converter.llm_converter import LLMConverter
 
@@ -293,7 +472,7 @@ def lower_to_et(art: WorkloadArtifact, rows: list, output_prefix,
             raise LoweringError(
                 f"trace row {i} has {len(row)} fields; expected "
                 f"{_LAYER_FIELDS} (layer) or 1 (marker): {row!r}")
-    conv.convert_rows(art and rows and _header_for(art, rows), indexed)
+    conv.convert_rows(rows and header_line, indexed)
     et_paths = []
     for npu in range(num_npus):
         p = f"{output_prefix}.{npu}.et"
@@ -301,12 +480,43 @@ def lower_to_et(art: WorkloadArtifact, rows: list, output_prefix,
             raise LoweringError(
                 f"converter produced no ET for npu {npu} at {p!r}")
         et_paths.append(p)
+    return et_paths, [_sha256(p) for p in et_paths]
+
+
+def lower_to_et_graph(graph: Any, output_prefix, *,
+                      num_npus: int, num_npu_group: int,
+                      pp_stage_boundaries: list | None = None,
+                      target: str = "astra_chakra_et") -> LoweredEt:
+    """Lower a canonical WorkloadGraph to Chakra ET (M3).
+
+    The runtime ET entry point: the graph projects to trace rows via
+    rows_from_graph (same dialect the converter consumes), then runs
+    the shared converter seam. Refusals (BROADCAST/P2P/MULTICAST for
+    the ET target, PP boundaries) happen in the projection, before
+    the converter is touched.
+    """
+    if pp_stage_boundaries:
+        raise LoweringError(
+            "pp_stage_boundaries present — UNSUPPORTED_WORKLOAD_SEMANTIC: "
+            "the ET converter has no pipeline-parallel semantics; "
+            "converting would hand every rank the full unpartitioned "
+            "graph with wrong communication semantics (Phase 1 T2, "
+            "fail-closed)")
+    proj = rows_from_graph(graph, target=target)
+    header = _header_for_graph(graph)
+    et_paths, et_sha256s = _convert_rows(proj.rows, header,
+                                         output_prefix, num_npus)
     return LoweredEt(
-        output_prefix=output_prefix,
+        output_prefix=str(output_prefix),
         et_paths=tuple(et_paths),
-        et_sha256s=tuple(_sha256(p) for p in et_paths),
-        header_line=_header_for(art, rows),
+        et_sha256s=tuple(et_sha256s),
+        header_line=header,
         num_npus=num_npus, num_npu_group=num_npu_group)
+
+
+def _header_for_graph(graph: Any) -> str:
+    pp = max(graph.parallelism.pp, 1)
+    return f"COLOCATED\t\tmodel_parallel_NPU_group: {pp}"
 
 
 def _header_for(art: WorkloadArtifact, rows: list) -> str:
@@ -352,6 +562,72 @@ class LoweringManifest:
             "unsupported_operations": self.unsupported_operations,
             "output_hashes": self.output_hashes,
         }
+
+
+def build_lowering_manifest_graph(graph: Any, lowered: LoweredEt,
+                                  target_backend: str) -> LoweringManifest:
+    """Manifest for a graph ET lowering (M3).
+
+    Same culture as the artifact manifest: semantic_losses is [] ONLY
+    because et_readback_conservation_graph ran. Source identity is the
+    graph's workload_id.
+    """
+    from veritx_dse.core.artifact import thaw
+    op_counts: dict[str, int] = {}
+    collective_counts: dict[str, int] = {}
+    coverage: dict[int, int] = {}
+    logical_bytes = 0
+    for op in graph.require_total_order():
+        d = thaw(op.detail)
+        kinds = [op.kind]
+        participants: tuple = ()
+        payload = 0
+        if op.kind in ("EXPERT_BEGIN", "EXPERT_END"):
+            if d.get("collective_kind"):
+                kinds.append(d["collective_kind"])
+                participants = tuple(d.get("participants") or ())
+                payload = d.get("payload_bytes") or 0
+        elif op.kind == "COLLECTIVE":
+            kinds.append(d["collective_kind"])
+            participants = tuple(d["participants"])
+            payload = d["payload_bytes"]
+        for k in kinds:
+            op_counts[k] = op_counts.get(k, 0) + 1
+            if k not in ("COMPUTE", "EXPERT_BEGIN", "EXPERT_END",
+                         "PIM_CHANNEL", "PIM_END"):
+                collective_counts[k] = collective_counts.get(k, 0) + 1
+        if participants:
+            logical_bytes += payload
+            for p in participants:
+                coverage[p] = coverage.get(p, 0) + 1
+    return LoweringManifest(
+        schema_version=1,
+        source_workload_hash=graph.workload_id(),
+        target_backend=target_backend,
+        target_format="chakra_et",
+        lowerer="veritx_dse.workload.lowering/graph/1",
+        op_counts=op_counts,
+        collective_counts=collective_counts,
+        participant_coverage=coverage,
+        logical_bytes=logical_bytes,
+        generated={
+            "et_count": len(lowered.et_paths),
+            "num_npus": lowered.num_npus,
+            "num_npu_group": lowered.num_npu_group,
+        },
+        transformations=[
+            "compute duration_ns → ET comp_deterministic (ns, unchanged)",
+            "logical BYTES → ET comm_size attr (bytes, unchanged)",
+            "dim scope vector → ET involved_dim attr (via :1,0 column)",
+            "operation order → per-rank node order (positional chaining)",
+        ],
+        semantic_losses=[],
+        unsupported_operations=[],
+        output_hashes={
+            "format": "chakra_et",
+            "et_sha256s": list(lowered.et_sha256s),
+        },
+    )
 
 
 def build_lowering_manifest(art: WorkloadArtifact, lowered: LoweredEt,
@@ -542,6 +818,95 @@ def et_readback_conservation(art: WorkloadArtifact, et_paths,
             if per_rank_bytes.get(p, 0) < op.bytes:
                 raise LoweringError(
                     f"participant {p} missing comm volume {op.bytes} "
+                    f"(saw {per_rank_bytes.get(p, 0)}) — participants not "
+                    "conserved")
+    return EtConservation(
+        logical_ops_conserved=True,
+        comm_bytes_conserved=True,
+        participants_conserved=True,
+        detail=detail)
+
+
+def et_readback_conservation_graph(graph: Any, et_paths, *,
+                                   num_npus: int,
+                                   num_npu_group: int) -> EtConservation:
+    """Mechanical §13 check for a graph lowering, against REAL ET bytes.
+
+    Same partitioning law as the artifact check; comm views come from
+    the graph's closed detail (collective payload/participants/scope,
+    expert collectives included, BROADCAST skipped — it cannot ride
+    the ET dialect, exactly as in the artifact path).
+    """
+    from veritx_dse.core.artifact import thaw
+    views: list[tuple[bool, int, tuple, Any]] = []
+    for op in graph.require_total_order():
+        d = thaw(op.detail)
+        if op.kind in ("EXPERT_BEGIN", "EXPERT_END"):
+            if d.get("collective_kind"):
+                views.append((d["collective_kind"] == "ALLTOALL",
+                              d["payload_bytes"],
+                              tuple(d["participants"]), d.get("scope")))
+        elif op.kind == "COLLECTIVE":
+            if d["collective_kind"] == "BROADCAST":
+                continue
+            views.append((d["collective_kind"] == "ALLTOALL",
+                          d["payload_bytes"], tuple(d["participants"]),
+                          d.get("scope")))
+    return _conserve_comm_views(views, et_paths, num_npus=num_npus,
+                                num_npu_group=num_npu_group)
+
+
+def _conserve_comm_views(views: list[tuple[bool, int, tuple, Any]],
+                         et_paths, *, num_npus: int,
+                         num_npu_group: int) -> EtConservation:
+    """Shared per-rank comm conservation over (is_alltoall, bytes,
+    participants, scope) views."""
+    npus_per_group = num_npus // num_npu_group
+    per_rank_bytes = {p: 0 for p in range(num_npus)}
+    detail: dict[str, Any] = {}
+    for r in range(num_npus):
+        group = r // npus_per_group
+        nodes = _read_et_nodes(et_paths[r])
+        found = []
+        for nd in nodes:
+            got = _node_comm(nd)
+            if got is not None:
+                found.append(got)
+        expected = []
+        for is_alltoall, nbytes, members, scope in views:
+            lo = group * npus_per_group
+            hi = lo + npus_per_group
+            in_scope = all(lo <= p < hi for p in members)
+            if is_alltoall:
+                if any(lo <= p < hi for p in members):
+                    expected.append((nbytes, scope))
+            elif in_scope:
+                expected.append((nbytes, scope))
+        got_sizes = sorted((s for s, _ in found), reverse=True)
+        exp_sizes = sorted((s for s, _ in expected), reverse=True)
+        if got_sizes != exp_sizes:
+            raise LoweringError(
+                f"rank {r}: comm byte volumes not conserved — graph "
+                f"expects {exp_sizes}, ET contains {got_sizes}")
+        for (s, exp_scope), (_, got_dims) in zip(
+                sorted(expected, key=lambda t: -t[0]),
+                sorted(found, key=lambda t: -t[0])):
+            scope_list = list(exp_scope) if isinstance(
+                exp_scope, (list, tuple)) else None
+            if scope_list is not None and got_dims is not None \
+                    and list(got_dims) != scope_list:
+                raise LoweringError(
+                    f"rank {r}: dimensional scope not conserved — "
+                    f"graph {scope_list}, ET {list(got_dims)}")
+        per_rank_bytes[r] = sum(s for s, _ in found)
+        detail[f"rank{r}_comm_nodes"] = len(found)
+    for is_alltoall, nbytes, members, _scope in views:
+        if is_alltoall:
+            continue
+        for p in members:
+            if per_rank_bytes.get(p, 0) < nbytes:
+                raise LoweringError(
+                    f"participant {p} missing comm volume {nbytes} "
                     f"(saw {per_rank_bytes.get(p, 0)}) — participants not "
                     "conserved")
     return EtConservation(
