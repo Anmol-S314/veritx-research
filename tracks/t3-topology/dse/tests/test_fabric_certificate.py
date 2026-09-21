@@ -50,7 +50,7 @@ class TestCertificate:
         assert cert.resolved_fabric_hash == \
             comp.bundle.resolved_fabric.resolved_fabric_hash()
         by_name = {o.obligation: o for o in cert.obligations}
-        assert by_name["DEADLOCK_FREE"].method == "channel-vc-cdg/v1"
+        assert by_name["DEADLOCK_FREE"].method == "channel-vc-cdg/v2"
         assert by_name["DEADLOCK_FREE"].evidence["acyclic"] is True
         assert by_name["DEADLOCK_FREE"].evidence["sccs_gt_1"] == 0
 

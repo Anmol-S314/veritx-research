@@ -57,6 +57,11 @@ public:
 
   void InsertRandomFaults( const Configuration &config );
 
+  // VeritX (P1B mesh-DOR): executed first-hop dump for native DOR mesh.
+  // Calls the configured routing function with a probe flit per
+  // (router, node) pair; DOR-only and mesh-guarded (refuses otherwise).
+  void DumpDorRoutes( const Configuration &config );
+
 };
 
 #endif

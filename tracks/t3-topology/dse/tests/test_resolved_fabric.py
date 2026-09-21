@@ -305,11 +305,16 @@ class TestCertificateSeam:
         )
         cert = certify_channel_vc_deadlock(
             topology=chain.topo, resolved_route=chain.rra,
-            router_route=chain.rr, vc_assignment=chain.vc)
+            router_route=chain.rr, vc_assignment=chain.vc,
+            router_behavior_hash=chain.rb.router_behavior_hash())
         assert cert.topology_hash == fabric.topology_hash
         assert cert.attachment_hash == fabric.attachment_hash
         assert cert.router_route_hash == chain.rr.artifact_hash
         assert cert.resolved_route_hash == fabric.resolved_route_hash
         assert cert.vc_assignment_hash == fabric.vc_assignment_hash
-        # router_behavior binding in live certification is deferred (B3.7)
-        assert cert.router_behavior_hash == ""
+        # P1B binds the live router behavior into deadlock certification
+        # (certificate.py passes bundle.router_behavior's hash; "" is
+        # never a certified binding).
+        assert cert.router_behavior_hash == fabric.router_behavior_hash
+        assert cert.router_behavior_hash == \
+            chain.rb.router_behavior_hash()
