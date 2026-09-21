@@ -22,6 +22,17 @@ A LOCKED obligation that is not PASS means the fabric is not
 presented as compile success: the FabricCompiler returns INVALID
 with this certificate as evidence. No obligation may be skipped,
 downgraded, or satisfied by assumption.
+
+Method migration (P1B): the DEADLOCK_FREE obligation method moved from
+``channel-vc-cdg/v1`` to ``channel-vc-cdg/v2``. v1 certified the
+(channel, VC) CDG with ``router_behavior_hash=""`` (the deadlock proof
+floated free of the router behavior it was proven about); v2 binds the
+live ``bundle.router_behavior.router_behavior_hash()`` and preserves the
+authenticated parent hashes in the obligation evidence. The proof itself
+(``CHANNEL_VC_DEPENDENCY_ACYCLIC`` over the realized CDG) is unchanged —
+only the binding moved — so a v1 certificate ID and a v2 certificate ID
+for the same fabric DIFFER, by design: the v2 ID commits to strictly more
+provenance. There is no v1→v2 migration of persisted IDs; re-certify.
 """
 from __future__ import annotations
 
@@ -237,7 +248,7 @@ def _deadlock_free(bundle: Any) -> ObligationResult:
             router_behavior_hash=behavior_hash,
         )
     except Exception as exc:
-        return _fail("DEADLOCK_FREE", "channel-vc-cdg/v1", str(exc), {})
+        return _fail("DEADLOCK_FREE", "channel-vc-cdg/v2", str(exc), {})
     ev = dict(cert.evidence)
     # Preserve the authenticated parent identities in the obligation
     # evidence itself: the DeadlockCertificate object is dropped after
@@ -250,7 +261,7 @@ def _deadlock_free(bundle: Any) -> ObligationResult:
     ev["vc_assignment_hash"] = cert.vc_assignment_hash
     ev["router_behavior_hash"] = cert.router_behavior_hash
     if cert.verdict != "PASS":
-        return _fail("DEADLOCK_FREE", "channel-vc-cdg/v1",
+        return _fail("DEADLOCK_FREE", "channel-vc-cdg/v2",
                      f"CDG verdict {cert.verdict}: "
                      f"{ev.get('unsupported_reason', ev.get('cycle', ''))}",
                      ev)
@@ -263,7 +274,7 @@ def _deadlock_free(bundle: Any) -> ObligationResult:
         ev["sccs_gt_1"] = _scc_count(cdg.adjacency())
     except Exception:
         pass
-    return _pass("DEADLOCK_FREE", "channel-vc-cdg/v1", ev)
+    return _pass("DEADLOCK_FREE", "channel-vc-cdg/v2", ev)
 
 
 def _mapping_valid(bundle: Any) -> ObligationResult:
