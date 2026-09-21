@@ -15,6 +15,7 @@ import inside a function must still be caught.
 from __future__ import annotations
 
 import ast
+import hashlib
 import sys
 from pathlib import Path
 
@@ -22,6 +23,10 @@ import pytest
 
 DSE = Path(__file__).resolve().parents[1]
 PKG = DSE / "veritx_dse"
+REPO = DSE.parents[2]
+REFERENCE = REPO / "reference" / "target-architecture"
+REFERENCE_IMPORT_PREFIXES = ("veritx_target", "target_architecture",
+                             "reference.target_architecture")
 sys.path.insert(0, str(DSE))
 
 
@@ -169,3 +174,58 @@ class TestOracleIndependence:
                              "veritx_dse.backend", "veritx_dse.application"))
         ]
         assert offenders == [], offenders
+
+
+class TestTargetArchitectureReferenceIsNotRuntime:
+    """The frozen North Star is a specification, not a runtime dependency.
+
+    ``reference/target-architecture`` carries a src-layout package that is
+    ALSO named ``veritx_dse``: the destination has the same package name as
+    the repository being cut over to it. If its ``src/`` ever reached
+    ``sys.path`` it would shadow production silently, so the boundary is
+    asserted here instead of trusted. See ``docs/VERITX-NORTH-STAR.md``.
+    """
+
+    def test_production_never_imports_the_reference_tree(self):
+        bad = []
+        for path in sorted(PKG.rglob("*.py")):
+            if "__pycache__" in str(path):
+                continue
+            for mod in _imports(path):
+                if any(mod == f or mod.startswith(f + ".")
+                       for f in REFERENCE_IMPORT_PREFIXES):
+                    bad.append(f"{path.relative_to(DSE)} imports {mod}")
+            if "reference/target-architecture" in path.read_text():
+                bad.append(f"{path.relative_to(DSE)} names the reference path")
+        assert bad == [], bad
+
+    def test_reference_src_is_not_on_sys_path(self):
+        offenders = []
+        for entry in sys.path:
+            if not entry:
+                continue
+            resolved = Path(entry).resolve()
+            if resolved == REFERENCE / "src" or REFERENCE in resolved.parents:
+                offenders.append(str(resolved))
+        assert offenders == [], offenders
+
+    def test_importable_package_is_the_production_one(self):
+        import veritx_dse
+        resolved = Path(veritx_dse.__file__).resolve()
+        assert PKG.resolve() in resolved.parents, (
+            f"veritx_dse resolved to {resolved}, outside {PKG}; the "
+            "reference tree may be shadowing production")
+
+    def test_reference_manifest_verifies_when_present(self):
+        manifest = REFERENCE / "MANIFEST.sha256"
+        if not manifest.exists():
+            pytest.skip("reference tree is not present on this branch")
+        bad = []
+        for line in manifest.read_text().splitlines():
+            digest, _, rel = line.partition("  ")
+            target = REFERENCE / rel.removeprefix("./")
+            if not target.exists():
+                bad.append(f"missing {rel}")
+            elif hashlib.sha256(target.read_bytes()).hexdigest() != digest:
+                bad.append(f"digest mismatch {rel}")
+        assert bad == [], bad

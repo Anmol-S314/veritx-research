@@ -1,0 +1,21 @@
+VeriTX target-state reference package validation
+
+pytest: 32 passed
+exit status: 0
+
+Coverage intent:
+- canonical serialization/domain-separated identity
+- participant_count independent from world_size
+- PIM channel-switch semantics
+- nonzero BROADCAST root through logical + physical traffic
+- identity DAG metamorphic propagation
+- exact request-arrival/resource scheduling
+- canonical optimization ordering + Pareto derivation
+- one cross-layer scientific-chain scenario
+- backend evidence byte authentication (input/raw/stats digests)
+- evidence transplant refusal and tamper-closed persistence
+- unqualified backend refusal
+- live source contains no WaveD/WaveE classes or waved/wavee packages
+
+This is a target architecture reference implementation, not a drop-in
+replacement for all current repository adapters/backends.

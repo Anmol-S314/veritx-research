@@ -1,0 +1,46 @@
+src/veritx_dse/
+├── api.py
+├── core/
+│   ├── artifact.py
+│   ├── errors.py
+│   └── time.py
+├── model/
+│   ├── fabric.py
+│   ├── mapping.py
+│   ├── memory.py
+│   └── parallelism.py
+├── workload/
+│   ├── collectives.py
+│   ├── graph.py
+│   ├── lowering.py
+│   ├── messages.py
+│   ├── migration.py
+│   └── traffic.py
+├── performance/
+│   ├── metrics.py
+│   ├── model.py
+│   ├── result.py
+│   └── scheduler.py
+├── backend/
+│   ├── astra.py
+│   ├── base.py
+│   ├── booksim.py
+│   ├── evidence.py
+│   ├── ramulator.py
+│   └── timeloop.py
+├── verification/
+│   ├── conservation.py
+│   ├── provenance.py
+│   └── scenarios.py
+├── optimization/
+│   ├── constraints.py
+│   ├── definition.py
+│   ├── pareto.py
+│   ├── result.py
+│   └── search.py
+└── application/
+    ├── comparison.py
+    ├── resources.py
+    ├── results.py
+    ├── service.py
+    └── store.py
