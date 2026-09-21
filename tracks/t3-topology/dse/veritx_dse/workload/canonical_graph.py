@@ -33,6 +33,7 @@ Identity uses the shared ``core.artifact`` machinery — one implementation.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from collections.abc import Mapping
 from typing import Any, Iterable
 
 from veritx_dse.core.artifact import (
@@ -107,11 +108,13 @@ DETAIL_KEYS = {
 
 _NODE_KEYS = frozenset({"operation_id", "kind", "deps", "owner", "phase",
                         "step", "label", "detail"})
+_NODE_KEYS_PERSISTED = _NODE_KEYS
 _GRAPH_KEYS = frozenset({"type", "schema_version", "parallelism",
                          "participant_count", "semantics", "operations",
                          "provenance", "workload_id"})
 _SEMANTICS_KEYS = frozenset({"phase", "routing_policy", "shape",
-                             "model_descriptor", "model_descriptor_hash"})
+                             "model_descriptor_hash",
+                             "model_descriptor_name"})
 _PHASES = ("PREFILL", "DECODE")
 _OPTIONAL_NODE_FIELDS = ("owner", "phase", "step")
 
@@ -135,6 +138,62 @@ def _str(value: Any, what: str, *, optional: bool = False) -> str | None:
     return value
 
 
+_LOC_BASES = ("LOCAL", "REMOTE", "CXL", "STORAGE")
+
+
+def _norm_mem_loc(value: Any, what: str) -> str:
+    """Memory-location grammar, ported from the sealed Phase-9 authority.
+
+    LOCAL | REMOTE:<dev>[.<chan>] | CXL... | STORAGE, with a digit-only
+    suffix. Unknown tokens refuse HERE: the converter silently maps an
+    unknown word to INVALID_MEMORY, and a silently invalid location would
+    fabricate memory-side timing.
+    """
+    if not isinstance(value, str) or not value:
+        raise InvalidInput(
+            f"{what} must be a non-empty location string, got {value!r}")
+    base = value.split(":", 1)[0]
+    if base not in _LOC_BASES:
+        raise InvalidInput(
+            f"{what} {value!r} — unknown memory location; supported: "
+            "LOCAL, REMOTE:<dev>[.<chan>], CXL..., STORAGE")
+    if ":" in value:
+        tail = value.split(":", 1)[1]
+        parts = tail.split(".")
+        if not parts or any(part == "" for part in parts) or \
+                not all(part.isdigit() for part in parts):
+            raise InvalidInput(
+                f"{what} {value!r} — malformed <dev>[.<chan>] suffix")
+    return value
+
+
+# EXPERT source grammar carries no broadcast root, so an EXPERT payload
+# must not claim BROADCAST: that would fabricate incomplete semantics.
+EXPERT_COLLECTIVE_KINDS = ("ALLREDUCE", "REDUCESCATTER", "ALLGATHER",
+                           "ALLTOALL")
+
+_SHAPE_KEYS = ("num_layers", "hidden_size", "bytes_per_elem", "decode_steps",
+               "num_experts", "top_k")
+
+
+def _norm_shape(shape: Any) -> None | FrozenMap:
+    """Deep-frozen shape metadata with the Wave-D field rules."""
+    if shape is None:
+        return None
+    if not isinstance(shape, Mapping):
+        raise InvalidInput("semantics shape must be an object or None")
+    unknown = sorted(set(shape) - set(_SHAPE_KEYS))
+    if unknown:
+        raise InvalidInput(
+            f"semantics shape has unsupported fields {unknown}; "
+            f"supported: {sorted(_SHAPE_KEYS)}")
+    for key, value in shape.items():
+        _int(value, f"semantics shape {key!r}")
+    frozen = freeze(dict(shape))          # deep copy: never alias caller
+    assert isinstance(frozen, FrozenMap)
+    return frozen
+
+
 def _norm_scope(scope: Any, what: str) -> str | tuple[bool, ...] | None:
     """Three states, never collapsed: None != ALL != mask."""
     if scope is None:
@@ -149,13 +208,16 @@ def _norm_scope(scope: Any, what: str) -> str | tuple[bool, ...] | None:
         f"non-empty boolean dim mask — got {scope!r}")
 
 
-def _ranks(value: Any, what: str, count: int,
+def _ranks(value: Any, what: str, count: int | None,
            *, minimum: int = 1) -> tuple[int, ...]:
     if not isinstance(value, (list, tuple)) or not value:
         raise InvalidInput(f"{what} must be a non-empty sequence of ranks")
     out: list[int] = []
     for p in value:
-        if type(p) is not int or isinstance(p, bool) or p < 0 or p >= count:
+        if type(p) is not int or isinstance(p, bool) or p < 0:
+            raise InvalidInput(
+                f"{what}: rank {p!r} must be a non-negative int")
+        if count is not None and p >= count:
             raise InvalidInput(
                 f"{what}: rank {p!r} outside the participant namespace "
                 f"[0, {count})")
@@ -169,6 +231,113 @@ def _ranks(value: Any, what: str, count: int,
     return tuple(out)
 
 
+def _canonical_detail(kind: str, raw: Any,
+                      participant_count: int | None) -> FrozenMap:
+    """THE detail validator: exact key set + full semantic revalidation.
+
+    Every canonical detail must have EXACTLY its canonical field set —
+    optional semantic values are represented explicitly as ``None``, never
+    by dropping canonical keys. This is the single implementation used by
+    the builders AND by every reader (a strict reader is an adversarial
+    boundary, so it may not trust that a builder validated the value).
+    """
+    if kind not in DETAIL_KEYS:
+        raise InvalidInput(f"unknown operation kind {kind!r}")
+    if not isinstance(raw, Mapping):
+        raise InvalidInput(
+            f"{kind} detail must be an object, got {type(raw).__name__}")
+    allowed = DETAIL_KEYS[kind]
+    unknown = sorted(set(raw) - allowed)
+    if unknown:
+        raise InvalidInput(f"{kind} detail has unknown fields {unknown}")
+    missing = sorted(allowed - set(raw))
+    if missing:
+        raise InvalidInput(
+            f"{kind} detail is missing canonical field(s) {missing} — "
+            "optional values are explicit nulls, not absent keys")
+    d = dict(raw)
+    if kind == KIND_COMPUTE:
+        _int(d["duration_ns"], "COMPUTE duration_ns")
+        for name in ("input_bytes", "weight_bytes", "output_bytes"):
+            if d[name] is not None:
+                _int(d[name], f"COMPUTE {name}")
+        for name in ("input_loc", "weight_loc", "output_loc"):
+            _norm_mem_loc(d[name], f"COMPUTE {name}")
+        _str(d["batch_tag"], "COMPUTE batch_tag")
+    elif kind == KIND_COLLECTIVE:
+        if d["collective_kind"] not in COLLECTIVE_KINDS:
+            raise UnsupportedSemantics(
+                f"COLLECTIVE kind {d['collective_kind']!r} is outside "
+                f"{COLLECTIVE_KINDS}")
+        _int(d["payload_bytes"], "COLLECTIVE payload_bytes", minimum=1)
+        ranks = _ranks(d["participants"], "COLLECTIVE participants",
+                       participant_count, minimum=2)
+        _norm_scope(d["scope"], "COLLECTIVE scope")
+        if d["collective_kind"] == "BROADCAST":
+            source = d["source"]
+            if source is None:
+                raise InvalidInput(
+                    "BROADCAST requires an explicit source rank — "
+                    "participants[0] is a legacy convenience, not a law")
+            _int(source, "BROADCAST source")
+            if isinstance(source, bool) or source not in ranks:
+                raise InvalidInput(
+                    f"BROADCAST source {source!r} is not a participating "
+                    "rank")
+        elif d["source"] is not None:
+            raise InvalidInput(
+                f"{d['collective_kind']} must not declare a source "
+                f"(got {d['source']!r})")
+    elif kind == KIND_P2P:
+        if d["role"] not in P2P_ROLES:
+            raise InvalidInput(f"P2P role must be one of {P2P_ROLES}, "
+                               f"got {d['role']!r}")
+        _int(d["payload_bytes"], "P2P payload_bytes", minimum=1)
+        _ranks((d["src_rank"],), "P2P src_rank", participant_count)
+        _ranks((d["dst_rank"],), "P2P dst_rank", participant_count)
+        if d["src_rank"] == d["dst_rank"]:
+            raise InvalidInput("P2P src_rank and dst_rank must differ")
+    elif kind == KIND_MULTICAST:
+        if d["replication"] not in REPLICATION_KINDS:
+            raise UnsupportedSemantics(
+                f"multicast replication {d['replication']!r} is outside "
+                f"{REPLICATION_KINDS}")
+        _int(d["payload_bytes"], "MULTICAST payload_bytes", minimum=1)
+        _ranks((d["source_rank"],), "MULTICAST source_rank",
+               participant_count)
+        dests = _ranks(d["destinations"], "MULTICAST destinations",
+                       participant_count)
+        if d["source_rank"] in dests:
+            raise InvalidInput(
+                "multicast source must not appear among its destinations")
+    elif kind in (KIND_EXPERT_BEGIN, KIND_EXPERT_END):
+        if d["expert_num"] is not None:
+            _int(d["expert_num"], "EXPERT expert_num")
+        ck = d["collective_kind"]
+        if ck is None:
+            for name in ("participants", "payload_bytes", "scope"):
+                if d[name] is not None:
+                    raise InvalidInput(
+                        f"EXPERT {name} requires a collective_kind")
+            return freeze(d)
+        if ck not in EXPERT_COLLECTIVE_KINDS:
+            raise UnsupportedSemantics(
+                f"EXPERT collective {ck!r} is outside the expert source "
+                f"grammar {EXPERT_COLLECTIVE_KINDS} (no broadcast root is "
+                "carried, so BROADCAST would fabricate incomplete "
+                "semantics)")
+        if d["participants"] is None or d["payload_bytes"] is None:
+            raise InvalidInput(
+                "EXPERT collective requires participants and payload_bytes")
+        _int(d["payload_bytes"], "EXPERT payload_bytes", minimum=1)
+        _ranks(d["participants"], "EXPERT participants", participant_count,
+               minimum=2)
+        _norm_scope(d["scope"], "EXPERT scope")
+    elif kind == KIND_PIM_BEGIN:
+        _int(d["channel"], "PIM channel")
+    return freeze(d)
+
+
 # ── per-kind detail builders (validated, closed) ────────────────────────
 def compute_detail(*, duration_ns: int, input_bytes: int | None = None,
                    weight_bytes: int | None = None,
@@ -176,27 +345,18 @@ def compute_detail(*, duration_ns: int, input_bytes: int | None = None,
                    input_loc: str = DEFAULT_LOC,
                    weight_loc: str = DEFAULT_LOC,
                    output_loc: str = DEFAULT_LOC,
-                   batch_tag: str = DEFAULT_BATCH_TAG) -> FrozenMap:
+                   batch_tag: str = DEFAULT_BATCH_TAG,
+                   participant_count: int = 1) -> FrozenMap:
     """COMPUTE payload. v2 states the defaults EXPLICITLY (they are values,
     not absences) so the canonical form is readable without knowing the
     legacy compressor."""
-    _int(duration_ns, "duration_ns")
-    _str(batch_tag, "batch_tag")
-    for name, v in (("input_loc", input_loc), ("weight_loc", weight_loc),
-                    ("output_loc", output_loc)):
-        _str(v, name)
-    for name, v in (("input_bytes", input_bytes),
-                    ("weight_bytes", weight_bytes),
-                    ("output_bytes", output_bytes)):
-        if v is not None:
-            _int(v, name)
-    return freeze({
+    return _canonical_detail(KIND_COMPUTE, {
         "duration_ns": duration_ns,
         "input_bytes": input_bytes, "weight_bytes": weight_bytes,
         "output_bytes": output_bytes,
         "input_loc": input_loc, "weight_loc": weight_loc,
         "output_loc": output_loc, "batch_tag": batch_tag,
-    })
+    }, participant_count)
 
 
 def collective_detail(*, collective_kind: str, participants: Iterable[int],
@@ -206,65 +366,34 @@ def collective_detail(*, collective_kind: str, participants: Iterable[int],
     """COLLECTIVE payload. BROADCAST requires an explicit ``source``; every
     other kind refuses one (a declared source on ALLREDUCE would be a
     fabricated field)."""
-    if collective_kind not in COLLECTIVE_KINDS:
-        raise UnsupportedSemantics(
-            f"collective kind {collective_kind!r} is outside the canonical "
-            f"set {COLLECTIVE_KINDS}")
-    _int(payload_bytes, "payload_bytes", minimum=1)
-    ranks = _ranks(participants, "participants", participant_count)
-    if collective_kind == "BROADCAST":
-        if source is None:
-            raise InvalidInput(
-                "BROADCAST requires an explicit source rank — "
-                "participants[0] is a legacy convenience, not a law")
-        if source not in ranks:
-            raise InvalidInput(
-                f"BROADCAST source {source} is not among the participants")
-    elif source is not None:
-        raise InvalidInput(
-            f"{collective_kind} must not declare a source (got {source!r})")
-    return freeze({
-        "collective_kind": collective_kind, "participants": ranks,
-        "payload_bytes": payload_bytes,
-        "scope": _norm_scope(scope, "collective scope"), "source": source,
-    })
+    # NO semantic restatement here: _canonical_detail is the one
+    # implementation (2.5.1). Duplicated laws drift.
+    return _canonical_detail(KIND_COLLECTIVE, {
+        "collective_kind": collective_kind,
+        "participants": tuple(participants),
+        "payload_bytes": payload_bytes, "scope": scope, "source": source,
+    }, participant_count)
 
 
 def p2p_detail(*, role: str, src_rank: int, dst_rank: int,
                payload_bytes: int, participant_count: int) -> FrozenMap:
     """P2P payload. ``TRANSFER`` is a complete Wave-D transfer; ``SEND`` /
     ``RECV`` are legacy identity-bearing roles and are NOT paired here."""
-    if role not in P2P_ROLES:
-        raise InvalidInput(f"p2p role must be one of {P2P_ROLES}, "
-                           f"got {role!r}")
-    _int(payload_bytes, "payload_bytes", minimum=1)
-    _ranks((src_rank,), "src_rank", participant_count)
-    _ranks((dst_rank,), "dst_rank", participant_count)
-    if src_rank == dst_rank:
-        raise InvalidInput("p2p src_rank and dst_rank must differ")
-    return freeze({"role": role, "src_rank": src_rank, "dst_rank": dst_rank,
-                   "payload_bytes": payload_bytes})
+    return _canonical_detail(KIND_P2P, {
+        "role": role, "src_rank": src_rank, "dst_rank": dst_rank,
+        "payload_bytes": payload_bytes}, participant_count)
 
 
 def multicast_detail(*, source_rank: int, destinations: Iterable[int],
                      payload_bytes: int, replication: str,
                      participant_count: int) -> FrozenMap:
-    if replication not in REPLICATION_KINDS:
-        raise UnsupportedSemantics(
-            f"multicast replication {replication!r} is outside "
-            f"{REPLICATION_KINDS}")
-    _int(payload_bytes, "payload_bytes", minimum=1)
-    _ranks((source_rank,), "source_rank", participant_count)
-    dests = _ranks(destinations, "destinations", participant_count)
-    if source_rank in dests:
-        raise InvalidInput(
-            "multicast source must not appear among its destinations "
-            "(source replication sends to OTHERS)")
-    return freeze({"source_rank": source_rank, "destinations": dests,
-                   "payload_bytes": payload_bytes, "replication": replication})
+    return _canonical_detail(KIND_MULTICAST, {
+        "source_rank": source_rank, "destinations": tuple(destinations),
+        "payload_bytes": payload_bytes, "replication": replication},
+        participant_count)
 
 
-def expert_detail(*, expert_num: int | None = None,
+def expert_detail(*, end: bool = False, expert_num: int | None = None,
                   collective_kind: str | None = None,
                   participants: Iterable[int] | None = None,
                   payload_bytes: int | None = None,
@@ -275,39 +404,29 @@ def expert_detail(*, expert_num: int | None = None,
     collective at BEGIN and a combine collective (e.g. REDUCESCATTER) at
     END. ``EXPERT_END`` is therefore NOT payload-free.
     """
-    if expert_num is not None:
-        _int(expert_num, "expert_num")
     if collective_kind is None:
-        if participants is not None or payload_bytes is not None:
-            raise InvalidInput(
-                "expert marker: participants/payload_bytes require a "
-                "collective_kind")
-        return freeze({"expert_num": expert_num, "collective_kind": None,
-                       "participants": None, "payload_bytes": None,
-                       "scope": None})
-    if collective_kind not in COLLECTIVE_KINDS:
-        raise UnsupportedSemantics(
-            f"expert collective kind {collective_kind!r} is outside the "
-            f"canonical set {COLLECTIVE_KINDS}")
-    if participants is None or payload_bytes is None:
-        raise InvalidInput(
-            "expert collective requires participants and payload_bytes")
-    _int(payload_bytes, "payload_bytes", minimum=1)
-    ranks = _ranks(participants, "participants", participant_count)
-    return freeze({"expert_num": expert_num,
-                   "collective_kind": collective_kind, "participants": ranks,
-                   "payload_bytes": payload_bytes,
-                   "scope": _norm_scope(scope, "expert scope")})
+        # pass the caller's values THROUGH: hard-coding None here would
+        # silently drop a declared payload instead of refusing it
+        return _canonical_detail(
+            KIND_EXPERT_END if end else KIND_EXPERT_BEGIN, {
+                "expert_num": expert_num, "collective_kind": None,
+                "participants": participants, "payload_bytes": payload_bytes,
+                "scope": scope}, participant_count)
+    return _canonical_detail(
+        KIND_EXPERT_END if end else KIND_EXPERT_BEGIN, {
+            "expert_num": expert_num, "collective_kind": collective_kind,
+            "participants": participants, "payload_bytes": payload_bytes,
+            "scope": scope}, participant_count)
 
 
-def pim_detail(*, channel: int) -> FrozenMap:
+def pim_detail(*, channel: int, participant_count: int = 1) -> FrozenMap:
     """PIM_BEGIN payload: the channel identifier the region executes on."""
-    _int(channel, "channel")
-    return freeze({"channel": channel})
+    return _canonical_detail(KIND_PIM_BEGIN, {"channel": channel},
+                             participant_count)
 
 
-def pim_end_detail() -> FrozenMap:
-    return freeze({})
+def pim_end_detail(*, participant_count: int = 1) -> FrozenMap:
+    return _canonical_detail(KIND_PIM_END, {}, participant_count)
 
 
 # ── the operation node ──────────────────────────────────────────────────
@@ -324,6 +443,11 @@ class OperationNode:
     phase: str | None = None
     step: int | None = None
     label: str = ""
+    #: the graph's participant namespace. ``None`` means "not yet owned by
+    #: a graph": rank BOUNDS are then checked by the graph (which always
+    #: passes its namespace down), because a bare node does not know the
+    #: namespace. Excluded from identity.
+    _participant_count: int | None = None
 
     def __post_init__(self) -> None:
         _str(self.operation_id, "operation_id")
@@ -360,12 +484,16 @@ class OperationNode:
         if not isinstance(frozen, FrozenMap):
             raise InvalidInput(
                 f"operation {self.operation_id!r}: detail must be an object")
-        unknown = sorted(set(frozen) - DETAIL_KEYS[self.kind])
-        if unknown:
-            raise InvalidInput(
-                f"operation {self.operation_id!r} ({self.kind}) has unknown "
-                f"detail fields {unknown}; the per-kind schema is closed")
-        object.__setattr__(self, "detail", frozen)
+        # ONE validator for builders and readers alike: exact key set plus
+        # full semantic revalidation. A strict reader is adversarial and
+        # may not trust that a builder produced this value.
+        try:
+            object.__setattr__(self, "detail", _canonical_detail(
+                self.kind, thaw(frozen), self._participant_count))
+        except (InvalidInput, UnsupportedSemantics) as exc:  # context
+            raise type(exc)(
+                f"operation {self.operation_id!r} ({self.kind}): "
+                f"{exc}") from None
 
     #: which optional metadata was actually DECLARED (absence is meaningful)
     def declared_metadata(self) -> dict[str, Any]:
@@ -389,16 +517,23 @@ class OperationNode:
         return {**self.identity_dict(), "label": self.label}
 
     @classmethod
-    def from_dict(cls, d: Any, *, strict: bool = False
-                  ) -> "OperationNode":
+    def from_dict(cls, d: Any, *, strict: bool = False,
+                  participant_count: int | None = None) -> "OperationNode":
         if not isinstance(d, dict):
             raise InvalidInput("operation node must be an object")
         require_fields(d, _NODE_KEYS, "operation node")
+        if strict:
+            missing = sorted(_NODE_KEYS_PERSISTED - set(d))
+            if missing:
+                raise InvalidInput(
+                    f"persisted operation is missing canonical field(s) "
+                    f"{missing}")
         return cls(
             operation_id=d.get("operation_id"), kind=d.get("kind"),
             deps=tuple(d.get("deps") or ()), detail=d.get("detail"),
             owner=d.get("owner"), phase=d.get("phase"),
-            step=d.get("step"), label=d.get("label", ""))
+            step=d.get("step"), label=d.get("label", ""),
+            _participant_count=participant_count)
 
 
 # ── the workload semantics envelope ─────────────────────────────────────
@@ -411,8 +546,11 @@ class WorkloadSemantics:
     phase: str | None = None
     routing_policy: str | None = None
     shape: Any = None
-    model_descriptor: str | None = None
+    #: SEMANTIC: the descriptor hash is identity-bearing.
     model_descriptor_hash: str | None = None
+    #: PROVENANCE: a descriptor NAME is human/source metadata. It is kept
+    #: for reconstruction and must NOT move scientific identity.
+    model_descriptor_name: str | None = None
 
     def __post_init__(self) -> None:
         if self.phase is not None and self.phase not in _PHASES:
@@ -420,18 +558,23 @@ class WorkloadSemantics:
                 f"semantics phase {self.phase!r} is outside {_PHASES}")
         if self.routing_policy is not None:
             _str(self.routing_policy, "routing_policy")
-        _str(self.model_descriptor, "model_descriptor", optional=True)
+        _str(self.model_descriptor_name, "model_descriptor_name",
+             optional=True)
         _str(self.model_descriptor_hash, "model_descriptor_hash",
              optional=True)
+        object.__setattr__(self, "shape", _norm_shape(self.shape))
 
+    #: semantic (identity-bearing) content only
     def identity_dict(self) -> dict[str, Any]:
         return {"phase": self.phase, "routing_policy": self.routing_policy,
                 "shape": thaw(self.shape),
-                "model_descriptor": self.model_descriptor,
                 "model_descriptor_hash": self.model_descriptor_hash}
 
     def to_dict(self) -> dict[str, Any]:
-        return self.identity_dict()
+        #: the name rides in the persisted document (reconstruction needs
+        #: it) but not in identity_dict.
+        return {**self.identity_dict(),
+                "model_descriptor_name": self.model_descriptor_name}
 
     @classmethod
     def from_dict(cls, d: Any, *, strict: bool = False
@@ -441,11 +584,17 @@ class WorkloadSemantics:
         if not isinstance(d, dict):
             raise InvalidInput("semantics must be an object")
         require_fields(d, _SEMANTICS_KEYS, "semantics")
+        if strict:
+            missing = sorted(_SEMANTICS_KEYS - set(d))
+            if missing:
+                raise InvalidInput(
+                    f"persisted semantics is missing canonical field(s) "
+                    f"{missing}")
         return cls(phase=d.get("phase"),
                     routing_policy=d.get("routing_policy"),
                     shape=d.get("shape"),
-                    model_descriptor=d.get("model_descriptor"),
-                    model_descriptor_hash=d.get("model_descriptor_hash"))
+                    model_descriptor_hash=d.get("model_descriptor_hash"),
+                    model_descriptor_name=d.get("model_descriptor_name"))
 
 
 # ── the graph ───────────────────────────────────────────────────────────
@@ -485,6 +634,14 @@ class WorkloadGraph:
         dupes = sorted({i for i in ids if ids.count(i) > 1})
         if dupes:
             raise InvalidInput(f"duplicate operation id(s): {dupes}")
+        # nodes built directly carry the default namespace; re-validate
+        # each against THIS graph's namespace so a direct construction
+        # cannot bypass the participant law
+        for op in ops:
+            if op._participant_count != self.participant_count:
+                object.__setattr__(op, "_participant_count",
+                                   self.participant_count)
+                op.__post_init__()   # revalidate against THIS namespace
         known = set(ids)
         for op in ops:
             missing = sorted(set(op.deps) - known)
@@ -498,6 +655,8 @@ class WorkloadGraph:
             raise InvalidInput(f"provenance is not canonical: {exc}") \
                 from None
         self._validate_acyclic()
+        self._validate_owner_namespace()
+        self._validate_phase_consistency()
         self.validate_structure()
 
     # ── structural laws ────────────────────────────────────────────────
@@ -520,17 +679,103 @@ class WorkloadGraph:
         for op in self.operations:
             visit(op.operation_id)
 
+    def _validate_owner_namespace(self) -> None:
+        """The participant namespace law applies to ``owner`` too.
+
+        Rank 4 is a legal WORLD rank when world_size is 8, but it is
+        outside a 4-rank participant namespace: owning work there would
+        address a rank the trace never declared.
+        """
+        for op in self.operations:
+            if op.owner is None:
+                continue
+            if not 0 <= op.owner < self.participant_count:
+                raise InvalidInput(
+                    f"operation {op.operation_id!r}: owner {op.owner} is "
+                    f"outside the participant namespace "
+                    f"[0, {self.participant_count})")
+
+    def _validate_phase_consistency(self) -> None:
+        """A declared global phase and a declared per-op phase must agree."""
+        global_phase = self.semantics.phase
+        if global_phase is None:
+            return
+        for op in self.operations:
+            if op.phase is not None and op.phase != global_phase:
+                raise InvalidInput(
+                    f"operation {op.operation_id!r} declares phase "
+                    f"{op.phase!r} but the graph declares "
+                    f"{global_phase!r}: one graph, one phase meaning")
+
+    # ── canonical ordering (one helper, no per-lowerer orders) ─────────
+    def _unique_topological_order(self) -> tuple[str, ...]:
+        """The dependency-derived order, refusing ambiguity.
+
+        Raises when more than one operation is simultaneously ready: such
+        a graph has no unique dependency order, so region membership
+        (EXPERT/PIM) would have to come from construction order, which
+        identity deliberately ignores. Refusing is the only honest answer;
+        a legitimate positional source (LLMServingSim/ET rows, Phase-9
+        ops) migrates to an explicit chain and satisfies this naturally.
+        """
+        import heapq
+        by_id = {op.operation_id: op for op in self.operations}
+        pending = {i: set(op.deps) for i, op in by_id.items()}
+        ready = [i for i, deps in pending.items() if not deps]
+        heapq.heapify(ready)
+        out: list[str] = []
+        while ready:
+            if len(ready) > 1:
+                raise InvalidInput(
+                    "workload has no unique dependency-derived operation "
+                    "order (independent operations are simultaneously "
+                    "ready): construction order cannot carry semantics, so "
+                    "region membership would be ambiguous. Chain the "
+                    "source operations explicitly (source grammars are "
+                    "positional).")
+            node_id = heapq.heappop(ready)
+            out.append(node_id)
+            for other, deps in pending.items():
+                if node_id in deps:
+                    deps.discard(node_id)
+                    if not deps and other not in out:
+                        heapq.heappush(ready, other)
+        return tuple(out)
+
+    def ordered_operations(self) -> tuple[OperationNode, ...]:
+        """The canonical consumer order (dependency-derived).
+
+        Lowerers that need a TOTAL order (legacy ET row reconstruction,
+        the positional memory stream, timeline v1) must prove it with
+        ``require_total_order()`` first; logical-message lowering may use
+        canonical topological order where a partial DAG is valid.
+        """
+        return tuple(self.by_id(i) for i in self._topological_ids())
+
+    def require_total_order(self) -> tuple[OperationNode, ...]:
+        """A total order, or a refusal — never an invented ordering."""
+        return tuple(self.by_id(i) for i in self._unique_topological_order())
+
     def validate_structure(self) -> None:
         """Region balance for EXPERT and PIM markers.
 
         A stray END or an unclosed BEGIN refuses HERE — a malformed source
         structure must never reach a backend to crash there.
         """
+        markers = any(op.kind in (KIND_EXPERT_BEGIN, KIND_EXPERT_END,
+                                  KIND_PIM_BEGIN, KIND_PIM_END)
+                      for op in self.operations)
+        if markers:
+            # region membership comes from the DEPENDENCY order, never
+            # from construction order (which identity ignores)
+            order = [self.by_id(i) for i in self._unique_topological_order()]
+        else:
+            order = list(self.operations)
         for begin_kind, end_kind, what in (
                 (KIND_EXPERT_BEGIN, KIND_EXPERT_END, "EXPERT"),
                 (KIND_PIM_BEGIN, KIND_PIM_END, "PIM")):
             open_regions = 0
-            for op in self.operations:
+            for op in order:
                 if op.kind == begin_kind:
                     open_regions += 1
                 elif op.kind == end_kind:
@@ -545,9 +790,7 @@ class WorkloadGraph:
                     f"{open_regions} unclosed {what}_BEGIN region(s): the "
                     f"source grammar requires a matching {what}_END")
         for op in self.operations:
-            if op.kind in (KIND_PIM_BEGIN, KIND_PIM_END) and \
-                    op.detail is not None and \
-                    op.kind == KIND_PIM_BEGIN and "channel" not in op.detail:
+            if op.kind == KIND_PIM_BEGIN and "channel" not in op.detail:
                 raise InvalidInput(
                     f"PIM_BEGIN {op.operation_id!r} must declare a channel")
 
@@ -616,6 +859,7 @@ class WorkloadGraph:
         return {
             **self.identity_dict(),
             "parallelism": self.parallelism.to_dict(),
+            "semantics": self.semantics.to_dict(),
             "workload_id": self.workload_id(),
             "operations": [op.to_dict() for op in self.operations],
             "provenance": thaw(self.provenance),
@@ -629,13 +873,23 @@ class WorkloadGraph:
         require_fields(d, _GRAPH_KEYS, "workload graph")
         require_type_tag(d, _HASH_TYPE_TAG, "workload graph")
         require_schema_version(d, SCHEMA_VERSION, "workload graph")
+        if strict:
+            missing = sorted(_GRAPH_KEYS - set(d))
+            if missing:
+                raise InvalidInput(
+                    f"persisted workload graph is missing canonical "
+                    f"field(s) {missing}")
+        count = d.get("participant_count")
         graph = cls(
             parallelism=ParallelismArtifact.from_dict(
                 d.get("parallelism"), strict=strict),
-            participant_count=d.get("participant_count"),
-            operations=tuple(OperationNode.from_dict(op, strict=strict)
-                             for op in (d.get("operations") or ())),
-            semantics=WorkloadSemantics.from_dict(d.get("semantics")),
+            participant_count=count,
+            operations=tuple(
+                OperationNode.from_dict(op, strict=strict,
+                                        participant_count=count)
+                for op in (d.get("operations") or ())),
+            semantics=WorkloadSemantics.from_dict(d.get("semantics"),
+                                                  strict=strict),
             provenance=d.get("provenance"),
         )
         if strict:

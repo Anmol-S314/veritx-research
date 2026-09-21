@@ -19,6 +19,7 @@ from veritx_dse.core.artifact import EvidenceInvalid, InvalidInput  # noqa: E402
 from veritx_dse.core.errors import (  # noqa: E402
     UnsupportedSchedule, UnsupportedSemantics,
 )
+from veritx_dse.core.errors import InvalidInput as InputError  # noqa: E402
 from veritx_dse.model.parallelism import ParallelismArtifact  # noqa: E402
 from veritx_dse.workload.canonical_graph import (  # noqa: E402
     ALL_KINDS, KIND_COLLECTIVE, KIND_COMPUTE, KIND_EXPERT_BEGIN,
@@ -47,6 +48,19 @@ def collective(op_id, kind="ALLREDUCE", *, deps=(), participants=(0, 1, 2, 3),
                              payload_bytes=payload,
                              participant_count=PARTICIPANTS, scope=scope,
                              source=source))
+
+
+def chain(*ops):
+    """Link operations into the explicit dependency chain that positional
+    source grammars (LLMServingSim/ET rows, Phase-9 ops) migrate to."""
+    out = []
+    previous: tuple[str, ...] = ()
+    for op in ops:
+        out.append(OperationNode(op.operation_id, op.kind, previous,
+                                 op.detail, op.owner, op.phase, op.step,
+                                 op.label))
+        previous = (op.operation_id,)
+    return tuple(out)
 
 
 def graph(*ops, participant_count=PARTICIPANTS, semantics=None,
@@ -97,7 +111,7 @@ class TestOperationVocabulary:
             OperationNode("k6", KIND_PIM_BEGIN, (), pim_detail(channel=1)),
             OperationNode("k7", KIND_PIM_END, (), pim_end_detail()),
         ]
-        g = graph(*ops)
+        g = graph(*chain(*ops))
         assert {op.kind for op in g.operations} == set(ALL_KINDS)
 
     def test_unknown_kind_refuses_immediately(self):
@@ -106,7 +120,7 @@ class TestOperationVocabulary:
             OperationNode("x", "NOPE", (), None)
 
     def test_detail_schema_is_closed_per_kind(self):
-        with pytest.raises(InvalidInput, match="unknown detail fields"):
+        with pytest.raises(InvalidInput, match="unknown fields"):
             OperationNode("x", KIND_COMPUTE, (),
                           {"duration_ns": 1, "fabric_rank": 3})
 
@@ -183,7 +197,7 @@ class TestCollectiveScopeThreeStates:
         assert node.detail["source"] == 2
 
     def test_broadcast_source_must_be_a_participant(self):
-        with pytest.raises(InvalidInput, match="not among"):
+        with pytest.raises(InvalidInput, match="not a participating rank"):
             collective("c0", kind="BROADCAST", participants=(0, 1),
                        source=2)
 
@@ -203,7 +217,7 @@ class TestP2PRoles:
         assert roles["SEND"]["role"] != roles["RECV"]["role"]
 
     def test_unknown_role_refuses(self):
-        with pytest.raises(InvalidInput, match="p2p role"):
+        with pytest.raises(InvalidInput, match="P2P role"):
             p2p_detail(role="PAIR", src_rank=0, dst_rank=1, payload_bytes=8,
                        participant_count=PARTICIPANTS)
 
@@ -233,7 +247,7 @@ class TestExpertSemantics:
         assert node.detail["collective_kind"] == "ALLGATHER"
 
     def test_payload_without_a_collective_refuses(self):
-        with pytest.raises(InvalidInput, match="require a collective_kind"):
+        with pytest.raises(InvalidInput, match="requires a collective_kind"):
             expert_detail(participants=(0, 1), payload_bytes=8,
                           participant_count=PARTICIPANTS)
 
@@ -245,43 +259,46 @@ class TestExpertSemantics:
 
 class TestRegionStructure:
     def test_unclosed_expert_region_refuses(self):
-        with pytest.raises(InvalidInput, match="unclosed EXPERT_BEGIN"):
-            graph(compute("k0"),
-                  OperationNode("e0", KIND_EXPERT_BEGIN, (),
-                                expert_detail(participant_count=4)),
-                  compute("k1"))
+        with pytest.raises(InputError, match="unclosed EXPERT_BEGIN"):
+            graph(*chain(
+                compute("k0"),
+                OperationNode("e0", KIND_EXPERT_BEGIN, (),
+                              expert_detail(participant_count=4)),
+                compute("k1")))
 
     def test_stray_expert_end_refuses(self):
         with pytest.raises(InvalidInput, match="stray EXPERT_END"):
-            graph(compute("k0"),
-                  OperationNode("e1", KIND_EXPERT_END, (),
-                                expert_detail(participant_count=4)))
+            graph(*chain(
+                compute("k0"),
+                OperationNode("e1", KIND_EXPERT_END, (),
+                              expert_detail(end=True, participant_count=4))))
 
     def test_balanced_expert_region_passes(self):
-        g = graph(compute("k0"),
-                  OperationNode("e0", KIND_EXPERT_BEGIN, (),
-                                expert_detail(expert_num=0,
-                                              participant_count=4)),
-                  compute("k1"),
-                  OperationNode("e1", KIND_EXPERT_END, (),
-                                expert_detail(participant_count=4)))
+        g = graph(*chain(
+            compute("k0"),
+            OperationNode("e0", KIND_EXPERT_BEGIN, (),
+                          expert_detail(expert_num=0, participant_count=4)),
+            compute("k1"),
+            OperationNode("e1", KIND_EXPERT_END, (),
+                          expert_detail(end=True, participant_count=4))))
         assert not g.requires_pim
 
     def test_unclosed_and_stray_pim_regions_refuse(self):
         with pytest.raises(InvalidInput, match="unclosed PIM_BEGIN"):
-            graph(compute("k0"),
-                  OperationNode("p0", KIND_PIM_BEGIN, (),
-                                pim_detail(channel=0)))
+            graph(*chain(compute("k0"),
+                         OperationNode("p0", KIND_PIM_BEGIN, (),
+                                       pim_detail(channel=0))))
         with pytest.raises(InvalidInput, match="stray PIM_END"):
-            graph(compute("k0"),
-                  OperationNode("p1", KIND_PIM_END, (), pim_end_detail()))
+            graph(*chain(compute("k0"),
+                         OperationNode("p1", KIND_PIM_END, (),
+                                       pim_end_detail())))
 
     def test_pim_region_survives_with_its_channel(self):
-        g = graph(compute("k0"),
-                  OperationNode("p0", KIND_PIM_BEGIN, (),
-                                pim_detail(channel=1)),
-                  compute("k1"),
-                  OperationNode("p1", KIND_PIM_END, (), pim_end_detail()))
+        g = graph(*chain(
+            compute("k0"),
+            OperationNode("p0", KIND_PIM_BEGIN, (), pim_detail(channel=1)),
+            compute("k1"),
+            OperationNode("p1", KIND_PIM_END, (), pim_end_detail())))
         assert g.requires_pim
         assert g.by_id("p0").detail["channel"] == 1
 
@@ -361,8 +378,17 @@ class TestRoundTrip:
             WorkloadGraph.from_dict(doc, strict=True)
 
     def test_missing_embedded_id_refuses_when_strict(self):
+        """Strict completeness fires first: a persisted graph MUST carry
+        its identity field (2.5.2), so a deleted id is a missing-field
+        refusal, not an unauthenticated-content refusal."""
         doc = graph(compute("c0")).to_dict()
         del doc["workload_id"]
+        with pytest.raises(InvalidInput, match="missing canonical field"):
+            WorkloadGraph.from_dict(doc, strict=True)
+
+    def test_empty_embedded_id_refuses_as_unauthenticated(self):
+        doc = graph(compute("c0")).to_dict()
+        doc["workload_id"] = ""
         with pytest.raises(EvidenceInvalid, match="no embedded"):
             WorkloadGraph.from_dict(doc, strict=True)
 
@@ -395,3 +421,293 @@ class TestDeclarationVsSchedule:
         g = graph(collective("c0", participants=(0, 1, 2), payload=1000))
         doc = g.to_dict()
         assert "steps" not in doc and "schedule" not in str(doc)
+
+
+# ══ PHASE 2.5 — authority hardening (adversarial strict-reader matrix) ══
+
+def _node_doc(**over):
+    base = compute("c0").to_dict()
+    base.update(over)
+    return base
+
+
+class TestDetailClosureIsExact:
+    """2.5.1 — a strict reader is adversarial: exact key set, and every
+    field semantically revalidated (it may not trust the builders)."""
+
+    @pytest.mark.parametrize("kind,detail,missing", [
+        (KIND_COMPUTE, {"duration_ns": 1}, "batch_tag"),
+        (KIND_COLLECTIVE, {"collective_kind": "ALLREDUCE"}, "source"),
+        (KIND_P2P, {"src_rank": 0, "dst_rank": 1}, "role"),
+        (KIND_MULTICAST, {"source_rank": 0, "destinations": (1,),
+                          "payload_bytes": 1}, "replication"),
+        (KIND_PIM_BEGIN, {}, "channel"),
+    ])
+    def test_missing_canonical_field_refuses(self, kind, detail, missing):
+        with pytest.raises(InvalidInput, match="missing canonical field"):
+            OperationNode.from_dict(
+                {"operation_id": "x", "kind": kind, "deps": (),
+                 "owner": None, "phase": None, "step": None, "label": "",
+                 "detail": detail}, strict=True, participant_count=4)
+
+    def test_pim_end_carrying_anything_refuses(self):
+        with pytest.raises(InvalidInput, match="unknown fields"):
+            OperationNode.from_dict(
+                {"operation_id": "x", "kind": KIND_PIM_END, "deps": (),
+                 "owner": None, "phase": None, "step": None, "label": "",
+                 "detail": {"channel": 0}},
+                strict=True, participant_count=4)
+
+    def test_unknown_field_still_refuses(self):
+        with pytest.raises(InvalidInput, match="unknown fields"):
+            OperationNode.from_dict(_node_doc(
+                detail={**compute("c0").detail, "fabric_rank": 1}),
+                strict=True, participant_count=4)
+
+    def test_readers_revalidate_semantics_not_just_keys(self):
+        """Complete keys but a semantically invalid value must refuse."""
+        d = compute("c0").detail
+        bad = {**d, "duration_ns": -5}
+        with pytest.raises(InvalidInput, match="duration_ns"):
+            OperationNode.from_dict(_node_doc(detail=bad), strict=True,
+                                    participant_count=4)
+
+
+class TestStrictCompleteness:
+    """2.5.2 — strict mode requires the complete persisted shape."""
+
+    def test_node_missing_persisted_field_refuses(self):
+        doc = _node_doc()
+        del doc["step"]
+        with pytest.raises(InvalidInput, match="missing canonical field"):
+            OperationNode.from_dict(doc, strict=True, participant_count=4)
+
+    def test_semantics_missing_field_refuses(self):
+        with pytest.raises(InvalidInput, match="missing canonical field"):
+            WorkloadSemantics.from_dict({"phase": None}, strict=True)
+
+    def test_non_strict_authoring_still_uses_defaults(self):
+        node = OperationNode.from_dict(
+            {"operation_id": "c0", "kind": KIND_COMPUTE,
+             "detail": compute("c0").detail})
+        assert node.owner is None and node.deps == ()
+
+
+class TestOwnerNamespace:
+    """2.5.3 — the participant law applies to owner as well."""
+
+    def test_owner_outside_the_participant_namespace_refuses(self):
+        node = OperationNode("c0", KIND_COMPUTE, (),
+                             compute_detail(duration_ns=1), owner=4)
+        with pytest.raises(InvalidInput, match="owner 4 is outside"):
+            graph(node)                       # participant_count == 4
+
+    def test_same_owner_is_legal_in_a_wider_namespace(self):
+        node = OperationNode("c0", KIND_COMPUTE, (),
+                             compute_detail(duration_ns=1), owner=4)
+        g = graph(node, participant_count=8)
+        assert g.participant_count == 8
+
+    def test_world_size_does_not_widen_the_namespace(self):
+        """world_size == 8 must not make owner=4 legal at count==4."""
+        assert PARALLELISM.world_size == 8
+        node = OperationNode("c0", KIND_COMPUTE, (),
+                             compute_detail(duration_ns=1), owner=7)
+        with pytest.raises(InvalidInput, match="owner 7 is outside"):
+            graph(node)
+
+
+class TestCollectiveArity:
+    """2.5.4 — a one-rank collective never enters a valid graph."""
+
+    def test_single_participant_collective_refuses(self):
+        with pytest.raises(InvalidInput, match="needs >= 2"):
+            collective("c0", participants=(0,))
+
+    def test_single_participant_expert_collective_refuses(self):
+        with pytest.raises(InvalidInput, match="needs >= 2"):
+            expert_detail(collective_kind="ALLGATHER", participants=(0,),
+                          payload_bytes=8, participant_count=4)
+
+    def test_broadcast_needs_the_root_plus_a_destination(self):
+        with pytest.raises(InvalidInput, match="needs >= 2"):
+            collective("c0", kind="BROADCAST", participants=(0,), source=0)
+
+    def test_divisibility_is_still_schedule_only(self):
+        """Arity is a declaration law; divisibility is not."""
+        g = graph(collective("c0", participants=(0, 1, 2), payload=1000))
+        assert g.by_id("c0").detail["payload_bytes"] == 1000
+
+
+class TestBroadcastSourceStrictness:
+    """2.5.5 — True == 1 must not smuggle a boolean into a rank."""
+
+    @pytest.mark.parametrize("source", [True, False, 1.0, "1", 2.0, None])
+    def test_bad_source_type_refuses(self, source):
+        with pytest.raises((InvalidInput, UnsupportedSemantics)):
+            collective("c0", kind="BROADCAST", participants=(0, 1, 2, 3),
+                       source=source)
+
+    def test_out_of_range_source_refuses(self):
+        with pytest.raises(InvalidInput, match="not a participating rank"):
+            collective("c0", kind="BROADCAST", participants=(0, 1),
+                       source=7)
+
+    def test_integer_source_is_accepted(self):
+        assert collective("c0", kind="BROADCAST", source=2) \
+            .detail["source"] == 2
+
+
+class TestExpertCollectiveVocabulary:
+    """2.5.6 — the expert grammar carries no broadcast root."""
+
+    def test_expert_broadcast_refuses(self):
+        with pytest.raises(UnsupportedSemantics, match="expert source"):
+            expert_detail(collective_kind="BROADCAST", participants=(0, 1),
+                          payload_bytes=8, participant_count=4)
+
+    @pytest.mark.parametrize("kind", ["ALLREDUCE", "ALLGATHER",
+                                      "REDUCESCATTER", "ALLTOALL"])
+    def test_supported_expert_collectives_are_accepted(self, kind):
+        node = expert_detail(collective_kind=kind, participants=(0, 1),
+                             payload_bytes=8, participant_count=4)
+        assert node["collective_kind"] == kind
+
+
+class TestMemoryLocationGrammar:
+    """2.5.7 — the sealed trace grammar, ported (never BANANA:7)."""
+
+    @pytest.mark.parametrize("loc", [
+        "LOCAL", "REMOTE:0", "REMOTE:0.1", "CXL", "CXL:1", "STORAGE",
+    ])
+    def test_admitted_forms(self, loc):
+        node = compute("c0", input_loc=loc)
+        assert node.detail["input_loc"] == loc
+
+    @pytest.mark.parametrize("loc", [
+        "BANANA:7", "LOCAL:abc", "REMOTE:", "REMOTE:0.", "REMOTE:.1",
+        "local", "HBM", "",
+    ])
+    def test_malformed_forms_refuse(self, loc):
+        with pytest.raises(InvalidInput, match="location|malformed"):
+            compute("c0", input_loc=loc)
+
+    def test_grammar_is_checked_before_memory_lowering(self):
+        """A bad location must die at graph construction, not in Ramulator."""
+        with pytest.raises(InvalidInput):
+            graph(compute("c0", weight_loc="BANANA:7"))
+
+
+class TestSemanticsHardening:
+    """2.5.8/9/10 — deep freeze, descriptor provenance, phase agreement."""
+
+    def test_shape_is_deeply_frozen(self):
+        shape = {"num_layers": 32, "hidden_size": 4096}
+        sem = WorkloadSemantics(shape=shape)
+        shape["num_layers"] = 999
+        assert sem.shape["num_layers"] == 32
+
+    def test_shape_field_rules(self):
+        with pytest.raises(InvalidInput, match="unsupported fields"):
+            WorkloadSemantics(shape={"num_heads": 32})
+        with pytest.raises(InvalidInput, match="must be an int"):
+            WorkloadSemantics(shape={"num_layers": -1})
+        assert WorkloadSemantics(shape=None).shape is None
+
+    def test_shape_moves_identity(self):
+        a = graph(compute("c0"), semantics=WorkloadSemantics(
+            shape={"num_layers": 1}))
+        b = graph(compute("c0"), semantics=WorkloadSemantics(
+            shape={"num_layers": 2}))
+        assert a.workload_id() != b.workload_id()
+
+    def test_descriptor_name_is_provenance_not_identity(self):
+        same_hash = "sha256:" + "a" * 64
+        a = graph(compute("c0"), semantics=WorkloadSemantics(
+            model_descriptor_hash=same_hash, model_descriptor_name="llama"))
+        b = graph(compute("c0"), semantics=WorkloadSemantics(
+            model_descriptor_hash=same_hash, model_descriptor_name="qwen"))
+        assert a.workload_id() == b.workload_id()
+
+    def test_descriptor_hash_is_semantics(self):
+        a = graph(compute("c0"), semantics=WorkloadSemantics(
+            model_descriptor_hash="sha256:" + "a" * 64))
+        b = graph(compute("c0"), semantics=WorkloadSemantics(
+            model_descriptor_hash="sha256:" + "b" * 64))
+        assert a.workload_id() != b.workload_id()
+
+    def test_global_and_per_op_phase_must_agree(self):
+        with pytest.raises(InvalidInput, match="one graph, one phase"):
+            graph(OperationNode("c0", KIND_COMPUTE, (),
+                                compute_detail(duration_ns=1),
+                                phase="PREFILL"),
+                  semantics=WorkloadSemantics(phase="DECODE"))
+
+    def test_absence_of_global_phase_permits_declared_op_phases(self):
+        g = graph(OperationNode("c0", KIND_COMPUTE, (),
+                                compute_detail(duration_ns=1),
+                                phase="DECODE"))
+        assert g.semantics.phase is None
+
+
+class TestRegionOrderingLaw:
+    """2.5.11/2.5.12 — region membership comes from the DEPENDENCY order.
+
+    Construction order is excluded from identity, so it may not carry
+    region semantics either. A marker-bearing graph must therefore have a
+    UNIQUE dependency-derived order.
+    """
+
+    MARKERS = (compute("k0"),
+               OperationNode("e0", KIND_EXPERT_BEGIN, (),
+                             expert_detail(expert_num=0,
+                                           participant_count=4)),
+               compute("k1"),
+               OperationNode("e1", KIND_EXPERT_END, (),
+                             expert_detail(end=True, participant_count=4)))
+
+    def test_explicit_chain_passes(self):
+        g = graph(*chain(*self.MARKERS))
+        assert g.require_total_order()[0].operation_id == "k0"
+
+    def test_ambiguous_marker_graph_refuses(self):
+        with pytest.raises(InvalidInput, match="unique dependency"):
+            graph(*self.MARKERS)
+
+    def test_marker_free_graph_keeps_partial_order_freedom(self):
+        """Independent operations are legal when no region depends on order."""
+        g = graph(compute("a"), compute("b"))
+        assert {op.operation_id for op in g.ordered_operations()} == {"a", "b"}
+        with pytest.raises(InvalidInput, match="unique dependency"):
+            g.require_total_order()
+
+    def test_construction_permutation_keeps_identity_and_membership(self):
+        chained = chain(*self.MARKERS)
+        a = graph(*chained)
+        b = graph(*reversed(chained))       # same DAG, different tuple order
+        assert a.workload_id() == b.workload_id()
+        assert [op.operation_id for op in a.require_total_order()] == \
+            [op.operation_id for op in b.require_total_order()]
+
+    def test_region_membership_is_derived_from_the_dependency_order(self):
+        g = graph(*chain(*self.MARKERS))
+        order = [op.operation_id for op in g.require_total_order()]
+        begin = order.index("e0")
+        end = order.index("e1")
+        assert order[begin + 1:end] == ["k1"]
+
+    def test_dependency_order_can_place_a_compute_outside_a_region(self):
+        """An operation that depends on the END is outside the region."""
+        ops = chain(*self.MARKERS)
+        after = OperationNode("k2", KIND_COMPUTE, ("e1",),
+                              compute_detail(duration_ns=1))
+        g = graph(*(ops + (after,)))
+        order = [op.operation_id for op in g.require_total_order()]
+        assert order.index("k2") > order.index("e1")
+
+    def test_ordered_operations_is_stable_and_total_for_chains(self):
+        g = graph(*chain(compute("a"), compute("b"), compute("c")))
+        assert [op.operation_id for op in g.ordered_operations()] == \
+            ["a", "b", "c"]
+        assert [op.operation_id for op in g.require_total_order()] == \
+            ["a", "b", "c"]
