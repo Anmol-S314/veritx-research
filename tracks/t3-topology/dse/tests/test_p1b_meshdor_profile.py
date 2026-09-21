@@ -572,3 +572,29 @@ class TestMeshEvaluatorStub:
                               run_dir=str(tmp_path)))
         assert out.status == FAILED
         assert "delivered" in (out.reason or "")
+
+
+# ── cross-backend qualification dispatch ────────────────────────────────────
+
+class TestCrossQualificationDispatch:
+    def test_mesh_profile_routes_to_mesh_canonical_assert(self):
+        from types import SimpleNamespace as _NS
+        from veritx_dse.backend.contracts import BackendTarget
+        from veritx_dse.backend.meshdor_profile import MESH_DOR_PROFILE_ID
+        from veritx_dse.backend.qualification import (
+            QualificationError, qualify_cross_backend,
+        )
+        chain, comp = _compiled(4, 4)
+        mesh_stub = _NS(backend_target=BackendTarget.BOOKSIM_STANDALONE,
+                        backend_profile=MESH_DOR_PROFILE_ID,
+                        backend_semantics_version="FORGED",
+                        fabric_hash="0" * 64, resolved_fabric_hash="1" * 64)
+        serving_stub = _NS(
+            backend_target=BackendTarget.SERVING_BOOKSIM2,
+            backend_profile="CERTIFIED_SERVING_BOOKSIM2_V1",
+            fabric_hash="0" * 64, resolved_fabric_hash="1" * 64)
+        with pytest.raises(QualificationError, match="mesh-DOR lowering"):
+            qualify_cross_backend(
+                comp.bundle,
+                {"BOOKSIM_STANDALONE": mesh_stub,
+                 "SERVING_BOOKSIM2": serving_stub})
