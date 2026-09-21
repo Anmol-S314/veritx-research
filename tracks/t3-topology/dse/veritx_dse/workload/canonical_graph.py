@@ -56,10 +56,10 @@ KIND_P2P = "P2P"
 KIND_MULTICAST = "MULTICAST"
 KIND_EXPERT_BEGIN = "EXPERT_BEGIN"
 KIND_EXPERT_END = "EXPERT_END"
-KIND_PIM_BEGIN = "PIM_BEGIN"
+KIND_PIM_CHANNEL = "PIM_CHANNEL"
 KIND_PIM_END = "PIM_END"
 ALL_KINDS = (KIND_COMPUTE, KIND_COLLECTIVE, KIND_P2P, KIND_MULTICAST,
-             KIND_EXPERT_BEGIN, KIND_EXPERT_END, KIND_PIM_BEGIN, KIND_PIM_END)
+             KIND_EXPERT_BEGIN, KIND_EXPERT_END, KIND_PIM_CHANNEL, KIND_PIM_END)
 
 # collective kinds a COLLECTIVE / EXPERT payload may name
 COLLECTIVE_KINDS = ("ALLREDUCE", "REDUCESCATTER", "ALLGATHER", "ALLTOALL",
@@ -93,7 +93,7 @@ _MULTICAST_KEYS = frozenset({"source_rank", "destinations", "payload_bytes",
 _EXPERT_KEYS = frozenset({
     "expert_num", "collective_kind", "participants", "payload_bytes", "scope",
 })
-_PIM_BEGIN_KEYS = frozenset({"channel"})
+_PIM_CHANNEL_KEYS = frozenset({"channel"})
 _PIM_END_KEYS = frozenset()
 DETAIL_KEYS = {
     KIND_COMPUTE: _COMPUTE_KEYS,
@@ -102,7 +102,7 @@ DETAIL_KEYS = {
     KIND_MULTICAST: _MULTICAST_KEYS,
     KIND_EXPERT_BEGIN: _EXPERT_KEYS,
     KIND_EXPERT_END: _EXPERT_KEYS,
-    KIND_PIM_BEGIN: _PIM_BEGIN_KEYS,
+    KIND_PIM_CHANNEL: _PIM_CHANNEL_KEYS,
     KIND_PIM_END: _PIM_END_KEYS,
 }
 
@@ -333,7 +333,7 @@ def _canonical_detail(kind: str, raw: Any,
         _ranks(d["participants"], "EXPERT participants", participant_count,
                minimum=2)
         _norm_scope(d["scope"], "EXPERT scope")
-    elif kind == KIND_PIM_BEGIN:
+    elif kind == KIND_PIM_CHANNEL:
         _int(d["channel"], "PIM channel")
     return freeze(d)
 
@@ -420,8 +420,16 @@ def expert_detail(*, end: bool = False, expert_num: int | None = None,
 
 
 def pim_detail(*, channel: int, participant_count: int = 1) -> FrozenMap:
-    """PIM_BEGIN payload: the channel identifier the region executes on."""
-    return _canonical_detail(KIND_PIM_BEGIN, {"channel": channel},
+    """PIM_CHANNEL payload: which PIM channel the FOLLOWING rows execute on.
+
+    NOT a region opener. The producer emits ``PIM 0``, rows, ``PIM 1``,
+    rows, ..., then ONE ``PIM END``; the matching converter keeps
+    ``pim_start`` true across markers and only switches which channel owns
+    the following attention rows. Repeated markers are channel SELECTION,
+    not nesting — modelling them as BEGIN/END nesting would reject a
+    legitimate producer trace.
+    """
+    return _canonical_detail(KIND_PIM_CHANNEL, {"channel": channel},
                              participant_count)
 
 
@@ -767,7 +775,7 @@ class WorkloadGraph:
         structure must never reach a backend to crash there.
         """
         markers = any(op.kind in (KIND_EXPERT_BEGIN, KIND_EXPERT_END,
-                                  KIND_PIM_BEGIN, KIND_PIM_END)
+                                  KIND_PIM_CHANNEL, KIND_PIM_END)
                       for op in self.operations)
         if markers:
             # region membership comes from the DEPENDENCY order, never
@@ -775,26 +783,43 @@ class WorkloadGraph:
             order = [self.by_id(i) for i in self._unique_topological_order()]
         else:
             order = list(self.operations)
-        for begin_kind, end_kind, what in (
-                (KIND_EXPERT_BEGIN, KIND_EXPERT_END, "EXPERT"),
-                (KIND_PIM_BEGIN, KIND_PIM_END, "PIM")):
-            open_regions = 0
-            for op in order:
-                if op.kind == begin_kind:
-                    open_regions += 1
-                elif op.kind == end_kind:
-                    open_regions -= 1
-                    if open_regions < 0:
-                        raise InvalidInput(
-                            f"stray {what}_END at operation "
-                            f"{op.operation_id!r}: no open {what}_BEGIN "
-                            "region (refusing malformed source structure)")
-            if open_regions:
-                raise InvalidInput(
-                    f"{open_regions} unclosed {what}_BEGIN region(s): the "
-                    f"source grammar requires a matching {what}_END")
+        # EXPERT regions nest in the source grammar (BEGIN...END)
+        open_expert = 0
+        for op in order:
+            if op.kind == KIND_EXPERT_BEGIN:
+                open_expert += 1
+            elif op.kind == KIND_EXPERT_END:
+                open_expert -= 1
+                if open_expert < 0:
+                    raise InvalidInput(
+                        f"stray EXPERT_END at operation "
+                        f"{op.operation_id!r}: no open EXPERT_BEGIN region "
+                        "(refusing malformed source structure)")
+        if open_expert:
+            raise InvalidInput(
+                f"{open_expert} unclosed EXPERT_BEGIN region(s): the source "
+                "grammar requires a matching EXPERT_END")
+
+        # PIM is a STATE MACHINE, not nesting: inactive -> (PIM_CHANNEL ch)*
+        # -> PIM_END -> inactive. Consecutive channel markers are legal
+        # (the producer emits them even for empty channels).
+        pim_mode = False
+        for op in order:
+            if op.kind == KIND_PIM_CHANNEL:
+                pim_mode = True          # select or switch the channel
+            elif op.kind == KIND_PIM_END:
+                if not pim_mode:
+                    raise InvalidInput(
+                        f"stray PIM_END at operation "
+                        f"{op.operation_id!r}: PIM mode is not active "
+                        "(refusing malformed source structure)")
+                pim_mode = False
+        if pim_mode:
+            raise InvalidInput(
+                "the workload ends while PIM mode is active: the source "
+                "grammar requires a PIM END")
         for op in self.operations:
-            if op.kind == KIND_PIM_BEGIN and "channel" not in op.detail:
+            if op.kind == KIND_PIM_CHANNEL and "channel" not in op.detail:
                 raise InvalidInput(
                     f"PIM_BEGIN {op.operation_id!r} must declare a channel")
 
@@ -810,7 +835,7 @@ class WorkloadGraph:
 
     @property
     def requires_pim(self) -> bool:
-        return any(op.kind in (KIND_PIM_BEGIN, KIND_PIM_END)
+        return any(op.kind in (KIND_PIM_CHANNEL, KIND_PIM_END)
                    for op in self.operations)
 
     # ── identity ───────────────────────────────────────────────────────
@@ -909,7 +934,7 @@ class WorkloadGraph:
 __all__ = [
     "ALL_KINDS", "COLLECTIVE_KINDS", "DEFAULT_BATCH_TAG", "DEFAULT_LOC",
     "DETAIL_KEYS", "KIND_COLLECTIVE", "KIND_COMPUTE", "KIND_EXPERT_BEGIN",
-    "KIND_EXPERT_END", "KIND_MULTICAST", "KIND_P2P", "KIND_PIM_BEGIN",
+    "KIND_EXPERT_END", "KIND_MULTICAST", "KIND_P2P", "KIND_PIM_CHANNEL",
     "KIND_PIM_END", "OperationNode", "P2P_ROLES", "REPLICATION_KINDS",
     "SCHEMA_VERSION", "SCOPE_ALL", "WorkloadGraph", "WorkloadSemantics",
     "collective_detail", "compute_detail", "expert_detail",

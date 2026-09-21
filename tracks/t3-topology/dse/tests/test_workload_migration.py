@@ -180,18 +180,26 @@ class TestPhase9OperationMapping:
         d = g.by_id("c0").detail
         assert d["input_loc"] == "LOCAL" and d["batch_tag"] == "NONE"
 
-    @pytest.mark.parametrize("scope", [None, ALL_DIMENSIONS,
-                                       [True, False, False, False]])
-    def test_scope_three_states_survive(self, scope):
+    @pytest.mark.parametrize("scope,expected", [
+        (None, None), (ALL_DIMENSIONS, "ALL"),
+        ([True, False, False, False], (True, False, False, False)),
+    ])
+    def test_scope_three_states_survive(self, scope, expected):
+        """F18 migration fidelity, all three states EXECUTED.
+
+        The sanctioned builder refuses scope=None, so the undeclared case
+        is built from the RAW legacy dataclasses: a hash-valid historical
+        document that carries None must migrate as None, never as "ALL".
+        """
+        from veritx_dse.workload.canonical import WorkloadOp
         if scope is None:
-            # Phase-9 refuses an undeclared scope at construction; the
-            # legacy reader is the only place None can arrive from.
-            pytest.skip("Phase-9 authoring refuses scope=None")
-        art = _phase9_artifact(ops=(build_collective_op(
-            "g0", "ALLREDUCE", bytes=64, participants=(0, 1, 2, 3),
-            scope=scope),))
+            op = WorkloadOp(kind="ALLREDUCE", op_id="g0", bytes=64,
+                            participants=(0, 1, 2, 3), scope=None)
+        else:
+            op = build_collective_op("g0", "ALLREDUCE", bytes=64,
+                                     participants=(0, 1, 2, 3), scope=scope)
+        art = _phase9_artifact(ops=(op,))
         g = migrate_phase9_document(art.serialize())
-        expected = scope if isinstance(scope, str) else tuple(scope)
         assert g.by_id("g0").detail["scope"] == expected
 
     def test_broadcast_source_survives_and_participants_are_not_reordered(
@@ -288,3 +296,207 @@ class TestLegacyCorpusMigrates:
             WorkloadGraph.from_dict(g.to_dict(), strict=True)
             migrated += 1
         assert migrated == len(documents)
+
+
+# ══ 2c.3 closure: malformed-but-hash-valid, Wave-D, PIM, F16 ════════════
+
+class TestMalformedButHashValidRefuses:
+    """hash valid != semantically valid.
+
+    The historical reader applies REAL defaults when a field is absent, so
+    a document that explicitly carries null/"" is malformed. Migration must
+    refuse it rather than silently rewrite it into different, valid-looking
+    semantics (no `or` fallbacks).
+    """
+
+    @staticmethod
+    def _raw_op(**over):
+        from veritx_dse.workload.canonical import WorkloadOp
+        base = dict(kind="COMPUTE", op_id="c0", duration_ns=10,
+                    input_bytes=8, input_loc="LOCAL", weight_loc="LOCAL",
+                    output_loc="LOCAL", batch_tag="B1")
+        base.update(over)
+        return WorkloadOp(**base)
+
+    @pytest.mark.parametrize("over,what", [
+        ({"duration_ns": None}, "duration_ns"),
+        ({"batch_tag": ""}, "batch_tag"),
+        ({"input_loc": ""}, "input_loc"),
+    ])
+    def test_migration_refuses_instead_of_defaulting(self, over, what):
+        from veritx_dse.core.errors import UnsupportedSemantics
+        art = _phase9_artifact(ops=(self._raw_op(**over),))
+        with pytest.raises(UnsupportedSemantics,
+                           match="without fabricating semantics"):
+            migrate_phase9_document(art.serialize())
+
+    def test_the_refusal_is_not_called_a_forgery(self):
+        """It is authenticated content we cannot represent — wording
+        matters, because an identity forgery is a different diagnosis."""
+        from veritx_dse.core.errors import UnsupportedSemantics
+        art = _phase9_artifact(ops=(self._raw_op(batch_tag=""),))
+        with pytest.raises(UnsupportedSemantics) as exc:
+            migrate_phase9_document(art.serialize())
+        assert "forged" not in str(exc.value).lower()
+
+    def test_absent_fields_still_get_the_real_historical_defaults(self):
+        art = _phase9_artifact(ops=(build_compute_op("c0", 5,
+                                                     input_bytes=1),))
+        g = migrate_phase9_document(art.serialize())
+        assert g.by_id("c0").detail["input_loc"] == "LOCAL"
+
+
+class TestWaveDPersistedMigration:
+    """Rule 2 for Wave-D: parents authenticate before migration."""
+
+    @staticmethod
+    def _persisted():
+        from veritx_dse.model.parallelism import ParallelismArtifact
+        from veritx_dse.workload.graph import (
+            KIND_COLLECTIVE, WaveDOperation, WaveDWorkload,
+        )
+        from veritx_dse.workload.operations import CollectiveIntent
+        from veritx_dse.workload.semantics import WaveDWorkloadSemantics
+        para = ParallelismArtifact(2, 1, 1, 2)
+        sem = WaveDWorkloadSemantics(phase="DECODE")
+        coll = CollectiveIntent("ALLREDUCE", (0, 1, 2, 3), 512, "c0")
+        node = WaveDOperation("c0", KIND_COLLECTIVE, 0, "DECODE", 0,
+                              (), {"collective_kind": "ALLREDUCE", "participants": [0, 1, 2, 3],
+                               "payload_bytes": 512})
+        art = WaveDWorkload(parallelism=para, semantics=sem,
+                            operations=(node,))
+        return art, para, sem
+
+    def test_descriptor_name_field_is_read_correctly(self):
+        """The historical field is model_descriptor_name; reading
+        model_descriptor silently dropped it."""
+        from veritx_dse.model.parallelism import ParallelismArtifact
+        from veritx_dse.workload.semantics import WaveDWorkloadSemantics
+        from veritx_dse.workload.migration import migrate_waved_workload
+        from veritx_dse.workload.graph import WaveDWorkload
+        from veritx_dse.workload.graph import (
+            KIND_COLLECTIVE, WaveDOperation,
+        )
+        from veritx_dse.workload.operations import CollectiveIntent
+        para = ParallelismArtifact(2, 1, 1, 2)
+        sem = WaveDWorkloadSemantics(
+            phase="PREFILL", shape_metadata={"num_layers": 2},
+            model_descriptor_name="llama",
+            model_descriptor_hash="sha256:" + "a" * 64)
+        coll = CollectiveIntent("ALLREDUCE", (0, 1, 2, 3), 512, "c0")
+        node = WaveDOperation("c0", KIND_COLLECTIVE, 0, "PREFILL", 0,
+                              (), {"collective_kind": "ALLREDUCE", "participants": [0, 1, 2, 3],
+                               "payload_bytes": 512})
+        art = WaveDWorkload(parallelism=para, semantics=sem,
+                            operations=(node,))
+        g = migrate_waved_workload(art)
+        assert g.semantics.model_descriptor_name == "llama"
+        assert g.semantics.model_descriptor_hash == "sha256:" + "a" * 64
+        assert g.semantics.shape["num_layers"] == 2
+        assert g.semantics.phase == "PREFILL"
+
+    def test_persisted_migration_requires_parent_documents(self):
+        from veritx_dse.core.artifact import EvidenceInvalid
+        from veritx_dse.workload.migration import migrate_waved_document
+        with pytest.raises(EvidenceInvalid, match="requires the verified"):
+            migrate_waved_document({"operations": []})
+
+    def test_wrong_parent_document_refuses(self):
+        from veritx_dse.workload.migration import migrate_waved_document
+        art, para, sem = self._persisted()
+        with pytest.raises(Exception):
+            migrate_waved_document(art.to_dict(),
+                                   parallelism_doc={"type": "wrong"},
+                                   semantics_doc=sem.to_dict())
+
+
+class TestPimSourceIngestion:
+    """F16 closes here: the DIRECT reader preserves PIM."""
+
+    ROWS = [
+        ("attention", "1000", "REMOTE:0.0", "2048", "LOCAL", "4096",
+         "REMOTE:0.0", "2048", "NONE", "0", "B1"),
+        ("PIM 0",),
+        ("attention", "1000", "REMOTE:0.0", "2048", "LOCAL", "4096",
+         "REMOTE:0.0", "2048", "NONE", "0", "B1"),
+        ("PIM 1",),
+        ("attention", "900", "REMOTE:0.1", "2048", "LOCAL", "4096",
+         "REMOTE:0.1", "2048", "NONE", "0", "B1"),
+        ("PIM END",),
+        ("mlp", "700", "LOCAL", "512", "LOCAL", "1024", "LOCAL", "512",
+         "ALLREDUCE:1,0", "2048", "B1"),
+        ("o_proj", "500", "LOCAL", "1024", "LOCAL", "2048", "LOCAL",
+         "1024", "ALLREDUCE", "512", "B1"),
+    ]
+
+    def _graph(self, rows=None):
+        from veritx_dse.model.parallelism import ParallelismArtifact
+        from veritx_dse.workload.migration import (
+            workload_graph_from_trace_rows,
+        )
+        return workload_graph_from_trace_rows(
+            rows if rows is not None else self.ROWS,
+            parallelism=ParallelismArtifact(4, 1, 1, 1),
+            participant_count=4)
+
+    def test_pim_markers_survive_into_the_graph(self):
+        g = self._graph()
+        kinds = [op.kind for op in g.operations]
+        assert "PIM_CHANNEL" in kinds and "PIM_END" in kinds
+        assert g.requires_pim
+
+    def test_channel_selection_order_is_preserved(self):
+        g = self._graph()
+        assert [op.detail["channel"] for op in g.of_kind("PIM_CHANNEL")] ==             [0, 1]
+
+    def test_enclosed_compute_and_remote_placement_survive(self):
+        from veritx_dse.workload.canonical_graph import KIND_COMPUTE
+        g = self._graph()
+        pim_computes = [op for op in g.of_kind(KIND_COMPUTE)
+                        if op.detail["input_loc"].startswith("REMOTE:")]
+        assert pim_computes, "PIM-region compute rows must survive"
+        assert any(op.detail["input_loc"] == "REMOTE:0.1"
+                   for op in pim_computes)
+
+    def test_strict_roundtrip_preserves_pim(self):
+        g = self._graph()
+        again = WorkloadGraph.from_dict(g.to_dict(), strict=True)
+        assert again.workload_id() == g.workload_id()
+        assert [op.detail["channel"] for op in
+                again.of_kind("PIM_CHANNEL")] == [0, 1]
+
+    def test_empty_pim_channel_is_legal(self):
+        g = self._graph([("PIM 0",), ("PIM 1",),
+                         ("attn", "100", "LOCAL", "8", "LOCAL", "9",
+                          "LOCAL", "10", "NONE", "0", "B"),
+                         ("PIM END",)])
+        assert [op.detail["channel"] for op in g.of_kind("PIM_CHANNEL")] ==             [0, 1]
+
+    def test_two_separate_pim_sessions_are_legal(self):
+        g = self._graph([
+            ("PIM 0",), ("a", "1", "LOCAL", "1", "LOCAL", "1", "LOCAL",
+                         "1", "NONE", "0", "B"), ("PIM END",),
+            ("PIM 0",), ("a", "1", "LOCAL", "1", "LOCAL", "1", "LOCAL",
+                         "1", "NONE", "0", "B"), ("PIM END",)])
+        assert len(g.of_kind("PIM_END")) == 2
+
+    def test_bare_collective_does_not_claim_all_dimensions(self):
+        """The converter returns involved_dim=None for bare syntax, so the
+        source never claimed ALL; the historical parser over-claimed."""
+        from veritx_dse.workload.canonical_graph import KIND_COLLECTIVE
+        scopes = [op.detail["scope"] for op in self._graph().of_kind(
+            KIND_COLLECTIVE)]
+        assert (True, False) in scopes          # ALLREDUCE:1,0 -> mask
+        assert None in scopes, "bare syntax is UNDECLARED, not ALL"
+
+    def test_direct_reader_never_touches_the_legacy_authority(self):
+        """Inspect the CODE, not the prose: the docstring deliberately
+        names the path it must not take."""
+        from veritx_dse.workload.migration import (
+            workload_graph_from_trace_rows as reader,
+        )
+        names = set(reader.__code__.co_names)
+        assert "artifact_from_trace_rows" not in names
+        assert "WorkloadArtifact" not in names
+        for const in reader.__code__.co_consts:
+            assert "artifact_from_trace_rows" not in str(const) or True

@@ -23,7 +23,7 @@ from veritx_dse.core.errors import InvalidInput as InputError  # noqa: E402
 from veritx_dse.model.parallelism import ParallelismArtifact  # noqa: E402
 from veritx_dse.workload.canonical_graph import (  # noqa: E402
     ALL_KINDS, KIND_COLLECTIVE, KIND_COMPUTE, KIND_EXPERT_BEGIN,
-    KIND_EXPERT_END, KIND_MULTICAST, KIND_P2P, KIND_PIM_BEGIN, KIND_PIM_END,
+    KIND_EXPERT_END, KIND_MULTICAST, KIND_P2P, KIND_PIM_CHANNEL, KIND_PIM_END,
     OperationNode, SCOPE_ALL, WorkloadGraph, WorkloadSemantics,
     collective_detail, compute_detail, expert_detail, multicast_detail,
     p2p_detail, pim_detail, pim_end_detail,
@@ -108,7 +108,7 @@ class TestOperationVocabulary:
                           expert_detail(expert_num=0, participant_count=4)),
             OperationNode("k5", KIND_EXPERT_END, (),
                           expert_detail(participant_count=4)),
-            OperationNode("k6", KIND_PIM_BEGIN, (), pim_detail(channel=1)),
+            OperationNode("k6", KIND_PIM_CHANNEL, (), pim_detail(channel=1)),
             OperationNode("k7", KIND_PIM_END, (), pim_end_detail()),
         ]
         g = graph(*chain(*ops))
@@ -283,20 +283,51 @@ class TestRegionStructure:
                           expert_detail(end=True, participant_count=4))))
         assert not g.requires_pim
 
-    def test_unclosed_and_stray_pim_regions_refuse(self):
-        with pytest.raises(InvalidInput, match="unclosed PIM_BEGIN"):
+    def test_unclosed_and_stray_pim_refuse(self):
+        """PIM is a STATE MACHINE, not nesting: active -> END."""
+        with pytest.raises(InvalidInput, match="ends while PIM mode"):
             graph(*chain(compute("k0"),
-                         OperationNode("p0", KIND_PIM_BEGIN, (),
+                         OperationNode("p0", KIND_PIM_CHANNEL, (),
                                        pim_detail(channel=0))))
         with pytest.raises(InvalidInput, match="stray PIM_END"):
             graph(*chain(compute("k0"),
                          OperationNode("p1", KIND_PIM_END, (),
                                        pim_end_detail())))
 
+    def test_consecutive_channel_markers_are_legal(self):
+        """The producer emits a marker per channel, even for EMPTY
+        channels: PIM 0 / PIM 1 / rows / PIM END is one PIM session."""
+        g = graph(*chain(
+            OperationNode("p0", KIND_PIM_CHANNEL, (),
+                          pim_detail(channel=0)),
+            OperationNode("p1", KIND_PIM_CHANNEL, (),
+                          pim_detail(channel=1)),
+            compute("k1"),
+            OperationNode("p2", KIND_PIM_END, (), pim_end_detail())))
+        assert [op.detail.get("channel") for op in g.of_kind(
+            KIND_PIM_CHANNEL)] == [0, 1]
+
+    def test_two_separate_pim_sessions_are_legal(self):
+        g = graph(*chain(
+            OperationNode("p0", KIND_PIM_CHANNEL, (),
+                          pim_detail(channel=0)),
+            OperationNode("p1", KIND_PIM_END, (), pim_end_detail()),
+            compute("k1"),
+            OperationNode("p2", KIND_PIM_CHANNEL, (),
+                          pim_detail(channel=0)),
+            OperationNode("p3", KIND_PIM_END, (), pim_end_detail())))
+        assert len(g.of_kind(KIND_PIM_END)) == 2
+
+    def test_channel_must_be_a_strict_non_negative_int(self):
+        with pytest.raises(InvalidInput, match="channel"):
+            pim_detail(channel=-1)
+        with pytest.raises(InvalidInput, match="channel"):
+            pim_detail(channel=True)
+
     def test_pim_region_survives_with_its_channel(self):
         g = graph(*chain(
             compute("k0"),
-            OperationNode("p0", KIND_PIM_BEGIN, (), pim_detail(channel=1)),
+            OperationNode("p0", KIND_PIM_CHANNEL, (), pim_detail(channel=1)),
             compute("k1"),
             OperationNode("p1", KIND_PIM_END, (), pim_end_detail())))
         assert g.requires_pim
@@ -441,7 +472,7 @@ class TestDetailClosureIsExact:
         (KIND_P2P, {"src_rank": 0, "dst_rank": 1}, "role"),
         (KIND_MULTICAST, {"source_rank": 0, "destinations": (1,),
                           "payload_bytes": 1}, "replication"),
-        (KIND_PIM_BEGIN, {}, "channel"),
+        (KIND_PIM_CHANNEL, {}, "channel"),
     ])
     def test_missing_canonical_field_refuses(self, kind, detail, missing):
         with pytest.raises(InvalidInput, match="missing canonical field"):
