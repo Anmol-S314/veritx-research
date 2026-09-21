@@ -122,3 +122,60 @@ integration happens here, in stage order. P3 remains deferred.
       slice + views + real adapter + booksim CLI + gates); final battery
       118F/3796P/44E with EMPTY symdiff vs provisioned matrix (162/162);
       P4 validator 5/5 on merged tree. Tag below.
+
+---
+
+# P1 RED-TEAM CLOSURE WAVE (seal WITHDRAWN)
+
+**Status change:** `P1 product integration — SEALED` →
+`P1 integration candidate — functional vertical slice demonstrated;
+adversarial integration closure NOT PASSED`.
+
+The `p1-product-integration-seal` tag was withdrawn (deleted local +
+remote) after adversarial review of `5d252eb5`. The review's process
+critique is accepted without reservation: focused counts and a
+matrix-identical battery are regression evidence, not correctness
+evidence, and several tests encoded weaker propositions than their
+names claimed.
+
+## Finding adjudication (coordinator-verified against the tree)
+
+| # | Finding | Verdict | Evidence |
+|---|---|---|---|
+| RT-1 | Express/missing adjacency passes gates while lowering claims `TOPOLOGY_GRAPH -> DERIVED_EXACT` | **CONFIRMED (P0)** | `mesh_dor.py:_mesh_link_semantics` checks latency/weight/parallelism only; `mesh_dor.py:372` claims DERIVED_EXACT. Unsoundness, not debt. |
+| RT-2 | RequirementEvaluator provenance-transplant hole (no design_hash/workload_graph_id binding) | **CONFIRMED (P0)** | `requirements.py` checks types + geometry + resource_id presence only. |
+| RT-3 | "Cold reopen" never calls `reverify_result` | **CONFIRMED (P0)** | 0 occurrences in `test_p1_product_vertical_slice.py`; warm `scalars` retained. |
+| RT-4 | Caller network clock rescales cycles requirement verdicts | **CONFIRMED (P0)** | evaluator cycles→ns via `network_clock_hz`; requirements ns→cycles via `default_clock_freq_mhz`. All tests used 1GHz/1GHz. |
+| RT-5 | Studio fixtures not live-engine; validator not engine-realizability | **PARTIAL** | Fixture-content claim REFUTED: sealed fixture is engine-generated (`window_cycles=16161, cycles_only=false, measured=16161.0` at `5d252eb5`). BUT: stale stdlib `generate_fixtures.py` (hardcoded 50000/96.4) still ships and would recreate impossible fixtures if run — duplicate-authority hazard, delete it. Validator weakness CONFIRMED (mirrors enums; runs no engine). |
+| RT-6 | Fixture shows EVALUATED+cycles_only+SATISFIED-with-50k | **REFUTED as stated** (stale generator's output, not the committed fixture); the hazard it points at is RT-5's stale-generator half. |
+| RT-7 | Validator cannot catch impossible states | **CONFIRMED (P1)** | `validate_fixtures.py` never invokes compiler/evaluator/requirements. |
+| RT-8 | `design_view` permits cross-design locked-state transplant | **CONFIRMED (P1)** | no isinstance/design_hash match in `views.py::design_view`. |
+| RT-9 | Orchestration leaks typed refusals as exceptions | **CONFIRMED (P1)** | `evaluate_product` calls lowerer/bound-check unguarded; `RealCandidateEvaluator` catches a subset. |
+| RT-10 | Optimizer KeyError on unmeasured objective | **CONFIRMED (P1)** | `pareto.py` indexes `vals[m]` for every declared objective. |
+| RT-11 | P1C RequirementReport discarded at optimization boundary | **CONFIRMED (P1)** | `CandidateEvaluation` has no report field. |
+| RT-12 | Study view destroys VIOLATED vs UNMEASURABLE | **CONFIRMED (P1)** | `to_study_view` maps None→False (fail-closed but lossy). |
+| RT-13 | Repeatability test does not test colliding root; token is 1-second | **CONFIRMED (P1)** | test uses `runs-a`/`runs-b`; token `%Y%m%dT%H%M%S`. |
+| RT-14 | No independent CI on sealed SHA; unpinned container | **CONFIRMED (process)** | `ci.yml` triggers exclude `integration/**`; container tag `:latest`. |
+
+## Exit gates for this wave (no new functionality)
+
+1. Exact adjacency equality gate (channel set == native k×k mesh
+   adjacency) — refuse more, never less; express/missing cases adversarial.
+2. Same-geometry cross-design transplant attacks (evaluator + requirements
+   + views) refused at the earliest authority boundary.
+3. Tampered persisted PerformanceResults with stale IDs refused via
+   `reverify_result`; vertical slice cold half must USE it.
+4. 0.5×/2× clock attack matrix: cycles-based verdicts invariant under
+   caller clock; wall-time claims refuse without a valid clock.
+5. Unsupported-workload typed refusals at the product boundary
+   (`evaluate_product` never leaks InvalidInput/UnsupportedSemantics/…).
+6. Missing real objective → typed UNMEASURABLE/ineligible, never KeyError.
+7. Mismatched request/Compilation view projection refused.
+8. Requirement provenance bound into optimization records (report
+   identity or per-entry verdicts+authority), not discarded.
+9. Truly process-cold replay (subprocess, no warm scalars).
+10. Engine-generated Studio fixtures byte-for-byte, stale generator
+    deleted, validator proves realizability by running the engine.
+11. CI runs on `integration/**` with a digest-pinned container.
+
+No P3, no 120-node legacy cleanup, no feature work until these gates pass.
