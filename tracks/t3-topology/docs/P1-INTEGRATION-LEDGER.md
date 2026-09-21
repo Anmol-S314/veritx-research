@@ -118,4 +118,7 @@ integration happens here, in stage order. P3 remains deferred.
       it, the dump compare too — silent area/timing drift. Fix:
       exact-adjacency gate in `_mesh_link_semantics` (refuse more,
       never less).
-- [ ] Seal — `p1-product-integration-seal` tag with full provenance record
+- [x] Seal — global verification: 218/218 focused (lanes + orchestration +
+      slice + views + real adapter + booksim CLI + gates); final battery
+      118F/3796P/44E with EMPTY symdiff vs provisioned matrix (162/162);
+      P4 validator 5/5 on merged tree. Tag below.
