@@ -70,16 +70,19 @@ def _compiled(n_agents, tp, pp=1, ep=1, dp=1,
 
 
 def _workload(participant_count, parallelism, *, payload=256,
-              kind="ALLREDUCE"):
+              kind="ALLREDUCE", design_hash=None):
     op = OperationNode(
         "c0", KIND_COLLECTIVE, (),
         collective_detail(collective_kind=kind,
                           participants=tuple(range(participant_count)),
                           payload_bytes=payload,
                           participant_count=participant_count))
+    provenance = {"design_hash": design_hash} \
+        if design_hash is not None else None
     return WorkloadGraph(parallelism=parallelism,
                          participant_count=participant_count,
-                         operations=(op,), semantics=WorkloadSemantics())
+                         operations=(op,), semantics=WorkloadSemantics(),
+                         provenance=provenance)
 
 
 def _first_vc_class(bundle):
@@ -442,7 +445,8 @@ class TestExitGate:
         bundle = comp.bundle
         assert bundle.topology.router_count == 81
         pa = ParallelismArtifact(tp=8, pp=1, ep=1, dp=1)
-        workload = _workload(8, pa, payload=2048)
+        workload = _workload(8, pa, payload=2048,
+                             design_hash=request.design_hash())
         binary = _real_binary()
         out = EVAL.evaluate(
             comp, workload,
@@ -529,7 +533,8 @@ class TestMeshEvaluatorStub:
         chain, comp = _compiled(4, 4)
         out = EVAL.evaluate(
             comp, _workload(4, ParallelismArtifact(tp=4, pp=1, ep=1,
-                                                   dp=1)),
+                                                   dp=1),
+                            design_hash=comp.request.design_hash()),
             EvaluationOptions(traffic_class=_first_vc_class(comp.bundle),
                               network_clock_hz=10 ** 9, binary=fake_bin,
                               run_dir=str(tmp_path)))
@@ -566,7 +571,8 @@ class TestMeshEvaluatorStub:
         chain, comp = _compiled(4, 4)
         out = EVAL.evaluate(
             comp, _workload(4, ParallelismArtifact(tp=4, pp=1, ep=1,
-                                                   dp=1)),
+                                                   dp=1),
+                            design_hash=comp.request.design_hash()),
             EvaluationOptions(traffic_class=_first_vc_class(comp.bundle),
                               network_clock_hz=10 ** 9, binary=fake_bin,
                               run_dir=str(tmp_path)))

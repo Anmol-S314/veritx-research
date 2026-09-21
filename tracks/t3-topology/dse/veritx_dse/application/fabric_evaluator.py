@@ -47,12 +47,14 @@ with a cycles-only window (window_cycles set, wall_time_ns None).
 from __future__ import annotations
 
 import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
 from typing import Any
 
 from veritx_dse.application.errors import ControlPlaneError, ErrorCode
+from veritx_dse.core.errors import EvidenceInvalid
 
 EVALUATED = "EVALUATED"
 BACKEND_UNAVAILABLE = "BACKEND_UNAVAILABLE"
@@ -72,6 +74,68 @@ class EvaluationError(ControlPlaneError):
 def _refuse(code: ErrorCode, message: str, *, cause_type: str = "") -> EvaluationError:
     return EvaluationError(code, message, operation="evaluate",
                            cause_type=cause_type)
+
+
+def _require_workload_belongs_to_compilation(
+        workload: Any, *, design_hash: str, workload_id: str) -> None:
+    """Seal the Compilation→WorkloadGraph seam (content identity, never
+    geometry).
+
+    A canonical WorkloadGraph is a standalone artifact: its content
+    identity (``workload_id``) deliberately excludes provenance, so
+    same-geometry graphs from different designs are indistinguishable
+    by shape. The lowering stamps ``provenance['design_hash']``; this
+    gate refuses to evaluate a workload whose provenance does not name
+    THIS compilation's design. Missing provenance is not a pass (fail
+    closed — no fallback to geometry), because an unbindable workload
+    cannot be proven to belong here.
+    """
+    provenance = workload.provenance
+    if not isinstance(provenance, Mapping):
+        raise _refuse(
+            ErrorCode.INVALID_INTENT,
+            f"workload {workload_id!r} carries no provenance block — it "
+            f"cannot be proven to belong to design {design_hash!r}; "
+            f"refusing to evaluate an unbindable workload (geometry is "
+            f"not authority)",
+            cause_type="WorkloadGraph")
+    workload_design_hash = provenance.get("design_hash")
+    if not isinstance(workload_design_hash, str) or \
+            not workload_design_hash:
+        raise _refuse(
+            ErrorCode.INVALID_INTENT,
+            f"workload {workload_id!r} provenance declares no "
+            f"design_hash (has {sorted(provenance)}); refusing to "
+            f"evaluate an unbindable workload",
+            cause_type="WorkloadGraph")
+    if workload_design_hash != design_hash:
+        raise _refuse(
+            ErrorCode.INVALID_INTENT,
+            f"workload {workload_id!r} provenance design_hash "
+            f"{workload_design_hash!r} does not match compilation design "
+            f"hash {design_hash!r} — refusing a workload transplanted "
+            f"from another design",
+            cause_type="WorkloadGraph")
+
+
+def _require_evidence_authentic(
+        artifact: Any, *, backend_input_sha256: str,
+        raw_evidence_sha256: str, stats: Any) -> None:
+    """Seal the evidence-authentication gate with an explicit conditional.
+
+    Deliberately NOT an ``assert``: production invariants must survive
+    ``python3 -O`` (asserts disappear under optimization). A failing
+    authentication raises the typed evidence refusal the caller maps to
+    FAILED — never a silently accepted artifact.
+    """
+    if not artifact.authenticates(
+            backend_input_sha256=backend_input_sha256,
+            raw_evidence_sha256=raw_evidence_sha256,
+            stats=stats):
+        raise EvidenceInvalid(
+            "evidence artifact does not authenticate against the backend "
+            "input digest and raw evidence digest; refusing fabricated "
+            "evidence")
 
 
 @dataclass(frozen=True)
@@ -333,6 +397,10 @@ class FabricEvaluator:
         resolved_fabric_hash = \
             bundle.resolved_fabric.resolved_fabric_hash()
         workload_id = workload.workload_id()
+        # The workload must belong to THIS design before any lowering or
+        # backend work; same geometry never authorizes substitution.
+        _require_workload_belongs_to_compilation(
+            workload, design_hash=design_hash, workload_id=workload_id)
 
         def refuse(status: str, reason: str, **extra: Any) -> EvaluationOutcome:
             return EvaluationOutcome(
