@@ -1,21 +1,24 @@
 # Battery baseline — the differential set M1 must not grow
 
-Status: **M0.5a/b landed (23 → 10 failures). M0.5c classified. M0.5d open.**
+Status: **M0.5 COMPLETE.** Hermetic repository, classified failures,
+reproducible node sets, clean-checkout equivalence proven.
 
 This is the honest state of the DSE battery in the active consolidation worktree
-(`/home/datavex/veritx-audit`), plus the reason it is not yet a reproducible
-gate.
+(`/home/datavex/veritx-audit`).
 
 ## Current run
 
 | | |
 |---|---|
-| commit | `bff62a41` (M0.5b fixtures) |
+| commit | `1bab6dba` (M0.5d) |
 | command | `cd tracks/t3-topology/dse && python3 -m pytest tests -q --tb=no -p no:cacheprovider` |
-| result | **10 failed, 3633 passed, 40 skipped, 9 xfailed** in 138s |
+| result | **5 failed, 3638 passed, 40 skipped, 9 xfailed** in 144s |
 
-Before M0.5a/b, at `208c890a`: 23 failed, 3495 passed, 42 skipped, 9 xfailed.
-The 13 asset failures are gone; the 10 below are what remains.
+The five are exactly the `QUALIFIED_BACKEND_UNAVAILABLE` nodes below. The
+journey: 23 failed (before M0.5a/b) → 10 (after fixtures) → 5 (after the
+sweep/report path fix). Clean-checkout baseline: 51 failed / 3391 passed /
+228 skipped, all of it missing untracked build artifacts — recorded with
+capability flags in `docs/TEST-BASELINE.json`.
 
 ## M0.5c — classification of the remaining 10
 
@@ -31,8 +34,8 @@ category.
 | 3 | `test_serve_fidelity.py::test_serve_emits_structured_result` | `QUALIFIED_BACKEND_UNAVAILABLE` | cascade of #2: parses output that was never produced |
 | 4 | `test_pipeline_preflight.py::TestTimeloopBinPreference::test_real_repo_vendored_binary_exists` | `QUALIFIED_BACKEND_UNAVAILABLE` | vendored Timeloop binary not built in this worktree |
 | 5 | `test_astrasim_spine_contract.py::test_dangling_astrasim_bin_warns_and_falls_back` | `QUALIFIED_BACKEND_UNAVAILABLE` | astrasim binary absent, lookup returns `None` |
-| 6 | `test_commands_batch_e.py::TestSweep::test_sweep_all_topos_real_latencies` | `REPOSITORY_DEFECT` | asserts `REPO/runs/booksim/sweep_tiny.json`; the sweep writes no such file (run-root drift: `RUNS_DIR` vs `TRACK_RUNS_DIR`/`SYNTH_DIR`) |
-| 7–10 | `test_commands_batch_e.py::TestReport::{stdout_table,latex_file,html_file,pdf_compiles}` | `REPOSITORY_DEFECT` | class fixture runs `legacy sweep` and asserts `rc == 0`, gets 1; standalone the same command exits 0, so the fixture's state/run-root differs |
+| 6 | `test_commands_batch_e.py::TestSweep::test_sweep_all_topos_real_latencies` | `REPOSITORY_DEFECT` **FIXED** | asserted `REPO/runs/booksim/sweep_tiny.json`; the sweep writes immutable run dirs. Test now drives `cmd_sweep` into a temp run root |
+| 7–10 | `test_commands_batch_e.py::TestReport::{stdout_table,latex_file,html_file,pdf_compiles}` | `REPOSITORY_DEFECT` **FIXED** | fixture handed `report` a path the sweep never wrote; same fix |
 
 Notes on the two classes:
 
@@ -51,23 +54,28 @@ Notes on the two classes:
 No node is classified `ACTUAL_PRODUCT_BUG` yet. #6–10 are the candidates if the
 run-root drift turns out to be in production code rather than in the test.
 
-## M0.5d — clean-checkout equivalence is still open
+## M0.5d — clean-checkout equivalence PROVEN
 
-The battery remains non-reproducible across worktrees: a fresh detached
-worktree at the same commit reported **61 failed / 3255 passed / 230 skipped /
-10 errors** against 23/3495/42 in the working worktree, with whole clusters
-inverting (`test_wave_e_product.py`, `test_wave_d_seal.py`,
-`test_regression.py::TestTraceReplayInvariants`). M0.5a/b removed the two
-largest causes (untracked `scripts/lib`, ignored trace/config inputs), but the
-equivalence gate has not been re-run since.
+Two fresh detached worktrees at `2d72d99b`, the same command in both, node
+sets compared exactly (not by count):
 
-M0.5d completes when two fresh worktrees at the same commit produce **equal
-node sets** for collected/passed/failed/skipped/xfailed, and the result is
-written to `docs/TEST-BASELINE.json` with the capability flags
-(`booksim`, `astra`, `ramulator`, `timeloop`).
+| outcome | eq1 | eq2 | identical |
+|---|---|---|---|
+| collected | 3689 | 3689 | YES |
+| passed | 3391 | 3391 | YES |
+| failed | 51 | 51 | YES |
+| errors | 10 | 10 | YES |
+| skipped | 228 | 228 | YES |
+| xfailed | 9 | 9 | YES |
+| collected sha256 | `b172182600c69344…` | same | YES |
+
+Recorded in `docs/TEST-BASELINE.json` with capability flags. All 51
+clean-checkout failures are missing untracked build artifacts — BookSim alone
+accounts for ~48 — not code failures.
 
 ## Consequence for M1
 
-Until M0.5d lands, M1's exit condition is **"adds no new failed node against
-this 10-node set"**, not "green". Each M1 commit records the command and the
-worktree used, so the next differential is comparable.
+M1's exit condition is **"adds no new failed node against this 5-node set"**
+(and against the clean baseline's collected digest when run clean). Each M1
+commit records the command and the worktree used, so the differential is
+comparable.
