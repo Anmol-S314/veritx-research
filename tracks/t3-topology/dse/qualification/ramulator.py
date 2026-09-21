@@ -1,4 +1,10 @@
-"""acceptance/phase15.py — Phase-15 memory-backend acceptance battery.
+"""qualification/ramulator.py — Ramulator memory-backend qualification
+battery.
+
+(Formerly veritx_dse/acceptance/phase15.py. The battery left the production
+package; veritx_dse/acceptance/ was deleted with NO compatibility shim, so
+the historical `python3 -m veritx_dse.acceptance.phase15` invocation no
+longer exists and is deliberately not restored.)
 
 The reviewer's gate (2026-09-18), as one machine-readable verdict. Every
 check exercises the REAL vendored backend — an acceptance test whose
@@ -21,7 +27,7 @@ backend is optional is comedy, not acceptance:
               bytes == Ramulator transaction bytes (per kind)
 
 Usage:
-    python3 -m veritx_dse.acceptance.phase15 [--json]
+    python3 qualification/ramulator.py [--json]
 Exit 0 only on VERDICT: PASS.
 """
 

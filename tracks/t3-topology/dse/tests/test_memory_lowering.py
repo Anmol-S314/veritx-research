@@ -237,3 +237,143 @@ class TestDesign:
         res = _resolve([_op("op0")], policy=policy)
         assert res.artifact.mapping_policy.alignment_bytes == 4096
         assert res.conserved()
+
+
+class TestMemorySeamMigrationFixture:
+    """The workload -> memory seam, pinned for the 2c migration.
+
+    This IS the integration seam (strengthened, not duplicated). It drives
+    real serving rows -> canonical workload -> resolve_memory and pins the
+    values 2c must preserve. Identity law for the migration:
+
+        region_table_hash    MUST NOT MOVE  (pure memory semantics)
+        access_stream_hash   MUST NOT MOVE  (pure memory semantics)
+        regions/accesses/ordering/deps/source_node   MUST NOT MOVE
+        Ramulator trace_sha256                       MUST NOT MOVE
+
+        source_workload_hash MAY MOVE (its authenticated parent workload
+        artifact_hash   identity becomes the canonical-v2 identity)
+        MemoryArtifact.artifact_hash  MAY MOVE for the same reason
+        manifest source_memory_artifact_hash MAY MOVE
+
+    Do NOT "preserve" a top-level hash by smuggling legacy identity into
+    the new graph. Semantic continuity with honest new ancestry, not hash
+    cosplay.
+    """
+
+    ROWS = [
+        ("attention", "1000", "LOCAL", "2048", "LOCAL", "4096", "LOCAL",
+         "2048", "ALLREDUCE:1,0", "2048", "BATCH_1"),
+        ("mlp", "700", "LOCAL", "512", "LOCAL", "1024", "LOCAL", "512",
+         "NONE", "0", "BATCH_1"),
+    ]
+
+    # captured from the CURRENT legacy implementation (migration evidence)
+    REGION_TABLE_HASH = ("sha256:2091447e2f21aa7140f580ee8d0fe1d328697b9d"
+                         "c11adcfe3cbeeec3c5c53266")
+    ACCESS_STREAM_HASH = ("sha256:a2037d772e0a975917e3f588af8e939c70c7cc98"
+                          "e0fbd6317eac9d981e0f1690")
+    TRACE_SHA256 = ("sha256:001e5970f648080089983d2478f427f12b6eed743b65"
+                    "6a77d7ec747b87abddc8")
+    REGIONS = [
+        ("comp-0.input", "ACTIVATION", 2048, 0, "HBM", "comp-0"),
+        ("comp-0.output", "OUTPUT", 2048, 2048, "HBM", "comp-0"),
+        ("comp-0.weight", "WEIGHT", 4096, 4096, "HBM", "comp-0"),
+        ("comp-2.input", "ACTIVATION", 512, 8192, "HBM", "comp-2"),
+        ("comp-2.output", "OUTPUT", 512, 8704, "HBM", "comp-2"),
+        ("comp-2.weight", "WEIGHT", 1024, 9216, "HBM", "comp-2"),
+    ]
+    ACCESSES = [
+        ("acc.comp-0.input", "comp-0.input", "READ", 2048, 1, ()),
+        ("acc.comp-0.weight", "comp-0.weight", "READ", 4096, 1, ()),
+        ("acc.comp-0.output", "comp-0.output", "WRITE", 2048, 1,
+         ("acc.comp-0.input", "acc.comp-0.weight")),
+        ("acc.comp-2.input", "comp-2.input", "READ", 512, 1,
+         ("acc.comp-0.output",)),
+        ("acc.comp-2.weight", "comp-2.weight", "READ", 1024, 1, ()),
+        ("acc.comp-2.output", "comp-2.output", "WRITE", 512, 1,
+         ("acc.comp-2.input", "acc.comp-2.weight")),
+    ]
+
+    def _resolved(self, *, issue_node=1, num_participants=2,
+                  parallelism=None):
+        from veritx_dse.workload.canonical import (
+            Parallelism, artifact_from_trace_rows)
+        wl = artifact_from_trace_rows(
+            self.ROWS, workload_id="serve-test",
+            parallelism=parallelism or Parallelism(),
+            num_participants=num_participants)
+        return wl, resolve_memory(wl, DESIGN, issue_node=issue_node)
+
+    def test_regions_and_placements_are_pinned(self):
+        _wl, res = self._resolved()
+        got = [(r.region_id, r.object_type, r.size_bytes, r.base_address,
+                r.placement.tier, r.source_op_id)
+               for r in res.artifact.regions]
+        assert got == self.REGIONS
+
+    def test_access_stream_order_classification_and_deps_are_pinned(self):
+        _wl, res = self._resolved()
+        got = [(a.access_id, a.region_id, a.kind, a.size_bytes,
+                a.source_node, a.dependencies)
+               for a in res.artifact.accesses]
+        assert got == self.ACCESSES
+
+    def test_memory_semantic_hashes_must_not_move(self):
+        """These are the seam invariants that survive 2c."""
+        _wl, res = self._resolved()
+        assert res.artifact.region_table_hash == self.REGION_TABLE_HASH
+        assert res.artifact.access_stream_hash == self.ACCESS_STREAM_HASH
+
+    def test_logical_bytes_and_attribution_are_pinned(self):
+        _wl, res = self._resolved()
+        assert res.workload_operand_bytes == 10240
+        assert (res.region_bytes, res.read_bytes, res.write_bytes) == \
+            (10240, 7680, 2560)
+        assert {a.source_node for a in res.artifact.accesses} == {1}
+        assert res.conserved()
+
+    def test_ramulator_trace_bytes_must_not_move(self):
+        """The trace is the backend input: byte identity is required."""
+        import tempfile
+        from pathlib import Path
+        from veritx_dse.workload.memory_lowering import (
+            hbm3_16gb_8hi_geometry, lower_to_ramulator_trace)
+        _wl, res = self._resolved()
+        with tempfile.TemporaryDirectory() as tmp:
+            man = lower_to_ramulator_trace(
+                res.artifact, hbm3_16gb_8hi_geometry(num_channels=1),
+                out_path=Path(tmp) / "t.trace")
+        assert man.to_dict()["trace_sha256"] == self.TRACE_SHA256
+
+    def test_identity_may_move_but_is_derived_from_its_parent(self):
+        """Documented, not hidden: these MAY change across 2c.
+
+        Asserted as a RELATION (the parent hash is the workload's) rather
+        than a frozen value, so the migration is free to move both
+        together while any silent ancestry break still fails.
+        """
+        wl, res = self._resolved()
+        assert res.artifact.source_workload_hash == wl.artifact_hash
+        assert res.artifact.artifact_hash.startswith("sha256:")
+
+    def test_memory_num_nodes_uses_participant_count_not_world_size(self):
+        """The D ruling: never derive num_nodes from parallelism geometry.
+
+        Two instances, tp=4: world_size = 8, participant_count = 4. The
+        MemoryArtifact must use the PARTICIPANT namespace (4).
+        """
+        from veritx_dse.workload.canonical import (Parallelism,
+                                                   build_compute_op,
+                                                   WorkloadArtifact)
+        para = Parallelism(tp=4, dp=2)
+        world = para.tp * para.pp * para.ep * para.dp
+        wl = WorkloadArtifact(
+            workload_id="m", source_kind="test", parallelism=para,
+            num_participants=4,
+            ops=(build_compute_op("c0", 10, input_bytes=64),))
+        res = resolve_memory(wl, DESIGN, issue_node=0)
+        assert world == 8
+        assert wl.num_participants == 4
+        assert res.artifact.num_nodes == wl.num_participants
+        assert res.artifact.num_nodes != world

@@ -382,7 +382,7 @@ Sequenced by the ruling. Gate V2.2 and Slice 3 are explicitly NOT here.
 | # | task | state |
 |---|---|---|
 | 1 | decouple `acceptance/phase15.py` from `workload/canonical.py` | **PARTIAL** — moved out of the production package (below); its legacy import is now a MIGRATION-CONSUMER boundary that 2c deletes |
-| 2 | preserve its Ramulator qualification evidence exactly | **DONE** — same 13 checks, 7 groups (`audit behavior build determinism drain equiv integrity`), unchanged CLI surface |
+| 2 | preserve its Ramulator qualification evidence exactly | **DONE** — same nine conceptual checks (BUILD DRAIN EQUIV DETERM LOCALITY BANK CLOCK INTEGRITY AUDIT) recorded as the same 13 `report()` calls in 7 groups (`audit behavior build determinism drain equiv integrity`); identical `--help`/`--json` interface |
 | 3 | move its workload→memory conservation contract into an integration regression | TODO (the target boundary is recorded below) |
 | 4 | real multi-instance `canonicalize_run_workload` regression (`participant_count != world_size`) | **DONE** |
 | 5 | keep F18 (`scope=None != ALL`) explicitly open in this ledger | **DONE** (see below) |
@@ -445,9 +445,13 @@ after   qualification/ramulator.py         (beside veritx_dse/)
         veritx_dse/acceptance/ deleted entirely (no compat module, no shim)
 ```
 
-Scientific checks untouched: the same 13 `report(...)` checks in the same
-7 groups (`audit behavior build determinism drain equiv integrity`), the
-same `--json` surface, verified by diffing `--help` before and after. The
+Scientific checks untouched: the same nine conceptual checks (BUILD /
+DRAIN / EQUIV / DETERM / LOCALITY / BANK / CLOCK / INTEGRITY / AUDIT)
+recorded as the same 13 `report(...)` calls in the same 7 groups (`audit
+behavior build determinism drain equiv integrity`) — the nine are the
+checks, the seven are the report groups; both are unchanged. The
+`--help`/`--json` interface is identical, verified by diffing `--help`
+before and after. The
 only code change is the path assumption (`DSE_DIR` was
 `parents[2]` inside `veritx_dse/acceptance/`, now `parents[1]`). Nothing
 imports the battery from production, so the move is inert for the product
@@ -488,3 +492,60 @@ Concretely, during 2c:
 Do NOT duplicate `resolve_memory()` logic in the qualification battery to
 make it look independent — the dependency disappears when the authority
 does.
+
+### Item 2 documentation correction — the invocation DID change
+
+The argument/JSON interface is unchanged, but the **module invocation
+changed** because the battery left the production package:
+
+```
+was   python3 -m veritx_dse.acceptance.phase15 [--json]   (no longer exists)
+now   cd tracks/t3-topology/dse
+      python3 qualification/ramulator.py [--json]
+```
+
+`veritx_dse/acceptance/` is deleted with no compatibility shim, and none
+will be added to preserve an obsolete module name. The docstring states
+this explicitly rather than implying the command still works.
+
+### Item 3 — the seam already existed; strengthened, not duplicated
+
+The integration seam was already `tests/test_memory_lowering.py::
+TestRealWorkloadPath` (real serving rows -> canonical workload ->
+`resolve_memory` -> MemoryArtifact, proving 10 240 operand bytes, six
+regions/accesses, source-node attribution and conservation). No new test
+framework was created. A new class `TestMemorySeamMigrationFixture` in the
+same file pins it for 2c:
+
+```
+MUST NOT MOVE                      MAY MOVE (documented, not hidden)
+region_table_hash  2091447e…       source_workload_hash
+access_stream_hash a2037d77…       MemoryArtifact.artifact_hash
+regions + placements + sizes       manifest source_memory_artifact_hash
+access order + READ/WRITE
+access dependencies
+source_node attribution
+logical bytes 10240 / 7680R+2560W
+Ramulator trace_sha256 001e5970…
+```
+
+The identity test asserts the RELATION (`source_workload_hash ==
+workload.artifact_hash`) rather than a frozen value, so 2c may move both
+together while any silent ancestry break still fails. This is the "hash
+cosplay" guard: the required outcome is semantic continuity with honest
+new ancestry.
+
+### Item D — the participant namespace at the memory seam
+
+`resolve_memory()` binds `num_nodes = art.num_participants`; after
+migration this must be `graph.participant_count`, never
+`parallelism.world_size`. Pinned:
+
+```
+two instances, tp=4 -> world_size = 8, participant_count = 4
+assert res.artifact.num_nodes == wl.num_participants == 4 != world_size
+```
+
+That assertion is the memory-side twin of the
+`test_multi_instance_canonicalization.py` gate: the same design error
+would resurrect here as an 8-node memory artifact for a 4-rank trace.
