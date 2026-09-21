@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from veritx_dse.model.compile_model import CompileRequest
+from veritx_dse.model.compile_model import CompileRequest, CompileRequestV3
 
 from .errors import ControlPlaneError, ErrorCode
 
@@ -32,7 +32,7 @@ class Compilation:
     """
 
     status: str  # COMPILED, INVALID, or UNSUPPORTED
-    request: CompileRequest
+    request: CompileRequest | CompileRequestV3
     bundle: Any | None
     certificate: Any | None
     error: str | None
@@ -59,15 +59,24 @@ class Compilation:
 class FabricCompiler:
     """Deterministic intent → verified fabric (P1A slice)."""
 
-    def compile(self, request: CompileRequest) -> Compilation:
-        """Compile one request: bundle, then certificate, then verdict."""
+    def compile(self, request: CompileRequest | CompileRequestV3
+                ) -> Compilation:
+        """Compile one request: bundle, then certificate, then verdict.
+
+        P1C phase-2: v3 requests compile through compile_bundle_v3
+        (genuine v3 derivation — never a fake-v2 conversion); v2 flows
+        exactly as before.
+        """
         from veritx_dse.verification.certificate import (
             verify_compiled_fabric,
         )
 
-        from .compile import compile_bundle
+        from .compile import compile_bundle, compile_bundle_v3
         try:
-            bundle = compile_bundle(request)
+            if isinstance(request, CompileRequestV3):
+                bundle = compile_bundle_v3(request)
+            else:
+                bundle = compile_bundle(request)
         except ControlPlaneError as exc:
             if exc.code == ErrorCode.UNSUPPORTED_SEMANTICS:
                 return Compilation(status="UNSUPPORTED", request=request,

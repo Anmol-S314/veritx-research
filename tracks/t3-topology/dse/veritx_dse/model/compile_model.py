@@ -2347,3 +2347,1105 @@ def generate_artifacts(
     ))
 
     return artifacts
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# P1C v3 — product workload intent (ADDITION only; v2 above is frozen)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# B1 AUDIT FINDINGS (repository evidence; recorded here, not reinterpreted):
+#
+#  1. CollectiveOp.bytes_per_element — meaning UNPROVEN. Introduced by
+#     commit 25acc222 ("collective-op modeling hardening") as a validated
+#     positive int with default 2048 and a JSON round-trip, but no commit,
+#     test, producer, or report path assigns it a meaning: nothing maps it
+#     to a payload (the schedule authority
+#     workload/collectives.py::collective_schedule(kind, k, B) takes an
+#     explicit per-kind payload B from elsewhere), and the only readers
+#     (reports/reports.py, tests) echo the raw value. It is NOT assumed to
+#     mean payload_bytes. v3 therefore carries payload_bytes explicitly
+#     and never migrates bytes_per_element silently (migrate_v2_to_v3
+#     requires a per-collective payload supplied by the caller).
+#  2. DependencyGraph class names — ad hoc in v2. There is exactly one
+#     DependencyGraph class (this module); its node names (Dependency
+#     .source/.target) are unvalidated free strings with no registry, so
+#     two authors can spell one traffic class two ways and the VC
+#     derivation (derive_vc_assignment) will treat them as two classes.
+#     v3 unifies the namespace: CollectiveIntent.traffic_class /
+#     RequirementV3.traffic_class / Dependency endpoints / VC artifact
+#     classes / LogicalMessage classes are the SAME strings end to end
+#     (derive_v3_traffic_classes is the registry; the evaluator gate
+#     refuses unknown classes instead of silently mapping to VC0).
+#  3. Requirement.qos_class — confirmed: v2 _REQUIREMENT_KEYS admits ONLY
+#     qos_class (+ ceilings/floor/binding). There is NO traffic_class
+#     field in v2, so a v2 requirement cannot name the traffic it
+#     constrains. RequirementV3 gains traffic_class (IDENTITY: which
+#     traffic is constrained) DISTINCT from qos_class (POLICY: how it is
+#     treated), e.g. traffic_class="tp_collective" with
+#     qos_class=LATENCY_CRITICAL.
+#  4. LogicalMessage.traffic_class — one non-empty string per message
+#     (workload/messages.py), but LogicalMessageArtifactV2 assigns ONE
+#     class to EVERY message of the graph (constructor parameter). A
+#     multi-class v3 workload therefore lowers to one graph plus a
+#     per-operation class sidecar (intent_lowering.LoweredWorkload);
+#     per-message classes are P1B evaluator wire-up, not a v3 fork.
+#  5. Workload.trace_path — environment-sensitive in v2: a raw path
+#     string that enters design identity verbatim (_workload_dict), so
+#     the same bytes under two paths (or mutated file contents) hash
+#     differently / equally with no content binding, while compile
+#     merely warns on a missing trace. v3 carries NO path: identity
+#     moves to WorkloadSourceRef (content digest + format + size +
+#     artifact identity), ingested from bytes first
+#     (ingest_workload_source_file); a path never enters v3 identity.
+#
+# v2 INTERPRETATION IS FROZEN: every v2 name above keeps its exact
+# meaning. v3 is a parallel generation (schema 3 / semantics 3, distinct
+# hash domain) consumed only by workload/intent_lowering.py and
+# application/requirements.py.
+
+# Product workload-intent envelope, versioned INDEPENDENTLY of v2: the
+# same user fields under v3 semantics are a different design, and the
+# distinct hash domain below makes v2/v3 identity collision structural.
+COMPILE_REQUEST_SCHEMA_VERSION_V3 = 3
+COMPILER_SEMANTICS_VERSION_V3 = 3
+SUPPORTED_V3_SEMANTICS_VERSIONS = (3,)
+_HASH_TYPE_TAG_V3 = "srota/CompileRequest/v3"
+
+
+class CompileRequestV3SchemaError(ValueError):
+    """Rejected v3 CompileRequest document: unknown field, unsupported
+    envelope, or a value that cannot represent a v3 design."""
+
+
+_TOP_V3_KEYS = frozenset({
+    "schema_version", "compiler_semantics_version", "workload",
+    "requirements", "agents", "dependencies", "noc_config",
+    "address_map", "physical", "design_hash", "guardrail_hash",
+    "_comment", "_docs",
+})
+_WORKLOAD_V3_KEYS = frozenset({
+    "model_family", "model_name", "tp", "pp", "ep", "dp",
+    "serving_mode", "collectives", "workload_source_ref",
+})
+_COLLECTIVE_V3_KEYS = frozenset({
+    "kind", "dimension", "payload_bytes", "traffic_class",
+    "source_rank",
+})
+_REQUIREMENT_V3_KEYS = frozenset({
+    "traffic_class", "qos_class", "latency_ceiling_cycles",
+    "bandwidth_floor_gbps", "binding",
+})
+_SOURCE_REF_KEYS = frozenset({
+    "content_digest", "format", "size_bytes", "artifact_identity",
+})
+
+
+def _strict_keys_v3(d: Any, allowed: frozenset, where: str) -> None:
+    """v3 fail-closed boundary: unknown keys refuse as v3 errors."""
+    try:
+        _strict_keys(d, allowed, where)
+    except CompileRequestSchemaError as e:
+        raise CompileRequestV3SchemaError(str(e)) from e
+
+
+class CollectiveDimension(Enum):
+    """Rank-space dimension a v3 collective intent ranges over.
+
+    TP/DP/EP expand to the ParallelismArtifact groups of that family
+    (deterministic: every rank in exactly one group — e.g. tp=8,dp=4
+    yields four TP groups of eight). GLOBAL is the single all-ranks
+    group. PP names pipeline stages, which are NOT collective peers
+    (stages communicate point-to-point); a PP-dimension COLLECTIVE is a
+    typed refusal at lowering, while pp>1 geometry still scopes TP/DP
+    groups within stages.
+    """
+    TP = "TP"
+    DP = "DP"
+    EP = "EP"
+    PP = "PP"
+    GLOBAL = "GLOBAL"
+
+
+@dataclass(frozen=True)
+class CollectiveIntent:
+    """v3 workload intent: WHAT communicates, with lossless lowering info.
+
+    Unlike v2 CollectiveOp (whose bytes_per_element meaning is unproven —
+    see B1 finding 1), every field here is load-bearing: kind names the
+    pinned schedule, dimension derives the exact participant groups,
+    payload_bytes is the per-kind schedule payload B consumed verbatim
+    by workload/collectives.py::collective_schedule, traffic_class is
+    the unified-namespace identity (B1 finding 2), and source_rank is
+    the explicit BROADCAST root (no participants[0] invention — a
+    BROADCAST without one is unrepresentable).
+    """
+    kind: CollectiveKind
+    dimension: CollectiveDimension
+    payload_bytes: int
+    traffic_class: str
+    source_rank: int | None = None
+
+    def __post_init__(self):
+        _as_enum("kind", self.kind, CollectiveKind)
+        _as_enum("dimension", self.dimension, CollectiveDimension)
+        _as_int("payload_bytes", self.payload_bytes, minimum=1)
+        _as_str("traffic_class", self.traffic_class, allow_empty=False)
+        if self.kind == CollectiveKind.BROADCAST:
+            if self.source_rank is None:
+                raise ValueError(
+                    "CollectiveIntent BROADCAST requires an explicit "
+                    "source_rank — participants[0] is a legacy "
+                    "convenience, not a law (no fabricated roots)")
+            _as_int("source_rank", self.source_rank, minimum=0)
+        elif self.source_rank is not None:
+            raise ValueError(
+                f"CollectiveIntent {self.kind.value} must not declare a "
+                f"source_rank (got {self.source_rank!r})")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "kind": self.kind.value,
+            "dimension": self.dimension.value,
+            "payload_bytes": self.payload_bytes,
+            "traffic_class": self.traffic_class,
+            "source_rank": self.source_rank,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> CollectiveIntent:
+        return cls(
+            kind=CollectiveKind(d["kind"]),
+            dimension=CollectiveDimension(d["dimension"]),
+            payload_bytes=d["payload_bytes"],
+            traffic_class=d["traffic_class"],
+            source_rank=d.get("source_rank"),
+        )
+
+
+def _check_content_digest(name: str, value: Any) -> str:
+    _as_str(name, value, allow_empty=False)
+    if not value.startswith("sha256:") or len(value) != len("sha256:") + 64:
+        raise ValueError(
+            f"{name} must be 'sha256:' + 64 hex chars, got {value!r}")
+    try:
+        int(value[len("sha256:"):], 16)
+    except ValueError:
+        raise ValueError(f"{name} digest is not hex: {value!r}") from None
+    return value
+
+
+@dataclass(frozen=True)
+class WorkloadSourceRef:
+    """Immutable workload source identity (B6).
+
+    Names BYTES, never paths: content_digest is sha256 over the exact
+    ingested bytes, format names the byte dialect (e.g. "packet_trace",
+    "chakra_et", "synthetic"), size_bytes bounds the artifact, and
+    artifact_identity names the producing artifact or producer (provenance,
+    never authority). A filesystem path is transport metadata and MUST
+    NOT enter v3 identity — ingest bytes first via
+    ingest_workload_source_file. A synthetic intent (no external bytes)
+    carries source_ref=None on WorkloadV3: the intent document is then
+    its own source.
+    """
+    content_digest: str
+    format: str
+    size_bytes: int = 0
+    artifact_identity: str = ""
+
+    def __post_init__(self):
+        _check_content_digest("content_digest", self.content_digest)
+        _as_str("format", self.format, allow_empty=False)
+        _as_int("size_bytes", self.size_bytes, minimum=0)
+        _as_str("artifact_identity", self.artifact_identity)
+
+    def identity_dict(self) -> dict[str, Any]:
+        """Identity-bearing content only (P1C phase-2 fix).
+
+        artifact_identity is PROVENANCE (which producer handed us the
+        bytes), never authority: two references to the same bytes from
+        different producers MUST hash identically, so it is excluded
+        here. CompileRequestV3.canonical_dict() consumes ONLY this
+        representation.
+        """
+        return {
+            "content_digest": self.content_digest,
+            "format": self.format,
+            "size_bytes": self.size_bytes,
+        }
+
+    def to_dict(self) -> dict[str, Any]:
+        """Persisted form: identity fields PLUS provenance.
+
+        artifact_identity rides along for reconstruction/debugging but
+        never enters design_hash(). A document carrying provenance still
+        loads (from_dict accepts all four keys) and hashes by identity.
+        """
+        return {
+            **self.identity_dict(),
+            "artifact_identity": self.artifact_identity,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> WorkloadSourceRef:
+        return cls(
+            content_digest=d["content_digest"],
+            format=d["format"],
+            size_bytes=d.get("size_bytes", 0),
+            artifact_identity=d.get("artifact_identity", ""),
+        )
+
+
+def ingest_workload_source(data: bytes, *, format: str,
+                           artifact_identity: str = "") -> WorkloadSourceRef:
+    """Bind already-read bytes to an immutable source reference (B6).
+
+    The caller reads the file; this function digests WHAT WAS READ, so
+    request identity commits to the byte content, never to whatever a
+    mutable path resolves to later.
+    """
+    if not isinstance(data, (bytes, bytearray)):
+        raise ValueError(
+            f"workload source must be bytes, got {type(data).__name__}")
+    return WorkloadSourceRef(
+        content_digest="sha256:" + hashlib.sha256(bytes(data)).hexdigest(),
+        format=format,
+        size_bytes=len(data),
+        artifact_identity=artifact_identity,
+    )
+
+
+def ingest_workload_source_file(path: str | Path, *, format: str,
+                                artifact_identity: str = ""
+                                ) -> tuple[WorkloadSourceRef, bytes]:
+    """CLI seam (B6): accept a path, ingest bytes first, return ref+bytes.
+
+    The returned bytes are the load-bearing workload content the caller
+    lowers; the reference carries only the digest. The path itself is
+    discarded and never enters any identity.
+    """
+    data = Path(path).read_bytes()
+    return ingest_workload_source(data, format=format,
+                                  artifact_identity=artifact_identity), data
+
+
+@dataclass(frozen=True)
+class WorkloadV3:
+    """v3 workload description: model parallelism + lossless intents.
+
+    No trace_path (B1 finding 5): external bytes are bound via source_ref
+    (or None for a synthetic intent, which is its own source). tp/pp/ep/dp
+    are the model geometry the dimension expansion derives groups from.
+    serving_mode is serving characterization ONLY — it never maps to a
+    per-operation phase (no PREFILL_HEAVY -> pure-PREFILL invention; see
+    intent_lowering).
+    """
+    model_family: ModelFamily
+    model_name: str = ""
+    tp: int = 1
+    pp: int = 1
+    ep: int = 1
+    dp: int = 1
+    serving_mode: ServingMode = ServingMode.MIXED
+    collectives: tuple[CollectiveIntent, ...] = ()
+    source_ref: WorkloadSourceRef | None = None
+
+    def __post_init__(self):
+        _as_enum("model_family", self.model_family, ModelFamily)
+        _as_enum("serving_mode", self.serving_mode, ServingMode)
+        object.__setattr__(self, "collectives",
+                           _as_tuple("collectives", self.collectives))
+        for c in self.collectives:
+            if not isinstance(c, CollectiveIntent):
+                raise ValueError(
+                    "collectives must contain CollectiveIntent, got "
+                    f"{type(c).__name__}")
+        for field_name in ("tp", "pp", "ep", "dp"):
+            _as_int(field_name, getattr(self, field_name), minimum=1)
+        _as_str("model_name", self.model_name)
+        if self.source_ref is not None and \
+                not isinstance(self.source_ref, WorkloadSourceRef):
+            raise ValueError("source_ref must be a WorkloadSourceRef or None")
+
+    @property
+    def world_size(self) -> int:
+        from .presets import parallel_world_size
+        return parallel_world_size(self.tp, self.pp, self.ep, self.dp)
+
+
+@dataclass(frozen=True)
+class RequirementV3:
+    """v3 requirement: traffic identity DISTINCT from QoS policy (B3).
+
+    traffic_class names the constrained traffic in the unified namespace
+    (None = fabric-wide); qos_class names the policy applied to it.
+    A binding requirement must be met or the design fails; binding +
+    UNMEASURABLE never passes (requirements.py enforces at report read).
+    """
+    qos_class: QoSClass
+    traffic_class: str | None = None
+    latency_ceiling_cycles: float | None = None
+    bandwidth_floor_gbps: float | None = None
+    binding: bool = False
+
+    def __post_init__(self):
+        _as_enum("qos_class", self.qos_class, QoSClass)
+        if self.traffic_class is not None:
+            _as_str("traffic_class", self.traffic_class, allow_empty=False)
+        _as_bool("binding", self.binding)
+        for name, val in (("latency_ceiling_cycles",
+                           self.latency_ceiling_cycles),
+                          ("bandwidth_floor_gbps",
+                           self.bandwidth_floor_gbps)):
+            if val is None:
+                continue
+            object.__setattr__(self, name,
+                               _as_real(name, val, minimum=0.0))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "traffic_class": self.traffic_class,
+            "qos_class": self.qos_class.value,
+            "latency_ceiling_cycles": self.latency_ceiling_cycles,
+            "bandwidth_floor_gbps": self.bandwidth_floor_gbps,
+            "binding": self.binding,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> RequirementV3:
+        return cls(
+            traffic_class=d.get("traffic_class"),
+            qos_class=QoSClass(d["qos_class"]),
+            latency_ceiling_cycles=d.get("latency_ceiling_cycles"),
+            bandwidth_floor_gbps=d.get("bandwidth_floor_gbps"),
+            binding=d.get("binding", False),
+        )
+
+
+@dataclass(frozen=True)
+class CompileRequestV3:
+    """v3 product design intent: v3 workload + requirements over v2 fabric.
+
+    Agents, dependencies, NoC knobs, address map, and physical context
+    reuse the v2 types UNCHANGED (one authority per concept — no second
+    Agent/NoC types). Only workload and requirements are v3 generations.
+    Envelope (schema 3 / semantics 3, distinct hash domain) keeps v2 and
+    v3 identities disjoint: the same user fields under v2 semantics are a
+    different design and NEVER reinterpreted here (use migrate_v2_to_v3
+    with explicit per-collective specs).
+    """
+    workload: WorkloadV3
+    requirements: tuple[RequirementV3, ...]
+    agents: tuple[Agent, ...]
+    dependencies: DependencyGraph
+    noc_config: NocConfig
+    address_map: AddressMap = field(default_factory=AddressMap)
+    physical: PhysicalContext = field(default_factory=PhysicalContext)
+    schema_version: int = COMPILE_REQUEST_SCHEMA_VERSION_V3
+    compiler_semantics_version: int = COMPILER_SEMANTICS_VERSION_V3
+
+    def __post_init__(self):
+        if not isinstance(self.workload, WorkloadV3):
+            raise ValueError("workload must be a WorkloadV3")
+        object.__setattr__(self, 'requirements',
+                           _as_tuple('requirements', self.requirements))
+        object.__setattr__(self, 'agents',
+                           _as_tuple('agents', self.agents))
+        deps = self.dependencies
+        if isinstance(deps, list):
+            deps = DependencyGraph(deps)
+        elif not isinstance(deps, DependencyGraph):
+            raise ValueError(
+                "dependencies must be a DependencyGraph or list, got "
+                f"{type(deps).__name__}")
+        object.__setattr__(self, 'dependencies', deps)
+        for r in self.requirements:
+            if not isinstance(r, RequirementV3):
+                raise ValueError(
+                    "requirements must contain RequirementV3, got "
+                    f"{type(r).__name__}")
+        for a in self.agents:
+            if not isinstance(a, Agent):
+                raise ValueError(
+                    f"agents must contain Agent, got {type(a).__name__}")
+        if not isinstance(self.noc_config, NocConfig):
+            raise ValueError("noc_config must be a NocConfig")
+        if not isinstance(self.address_map, AddressMap):
+            raise ValueError("address_map must be an AddressMap")
+        if not isinstance(self.physical, PhysicalContext):
+            raise ValueError("physical must be a PhysicalContext")
+        if len(self.agents) == 0:
+            raise ValueError(
+                "agents list cannot be empty — need at least one agent kind")
+        if _as_int("schema_version", self.schema_version) \
+                != COMPILE_REQUEST_SCHEMA_VERSION_V3:
+            raise ValueError(
+                f"unsupported v3 schema_version {self.schema_version}")
+        if _as_int("compiler_semantics_version",
+                   self.compiler_semantics_version) \
+                not in SUPPORTED_V3_SEMANTICS_VERSIONS:
+            raise ValueError(
+                f"unsupported v3 compiler_semantics_version "
+                f"{self.compiler_semantics_version}")
+
+    @property
+    def total_nodes(self) -> int:
+        return sum(a.count for a in self.agents)
+
+    # ── serialization (one per entity, mirroring v2 discipline) ─────
+
+    @staticmethod
+    def _requirement_dict(r: RequirementV3) -> dict:
+        return r.to_dict()
+
+    @staticmethod
+    def _agent_dict(a: Agent) -> dict:
+        return {"kind": a.kind.value, "count": a.count,
+                "data_width": a.data_width, "addr_width": a.addr_width,
+                "protocol": a.protocol, "clock_domain": a.clock_domain,
+                "power_domain": a.power_domain}
+
+    @staticmethod
+    def _dependency_dict(dep: Dependency) -> dict:
+        return {"source": dep.source, "target": dep.target,
+                "kind": dep.kind.value}
+
+    @staticmethod
+    def _address_dict(r: AddressRange) -> dict:
+        return {"name": r.name, "base": r.base, "size": r.size,
+                "target_agent_idx": r.target_agent_idx}
+
+    def _noc_dict(self) -> dict:
+        return {
+            "topology_family": self.noc_config.topology_family.value
+                if self.noc_config.topology_family else None,
+            "radix": self.noc_config.radix,
+            "concentration": self.noc_config.concentration,
+            "arbitration": self.noc_config.arbitration,
+            "rcu_enabled": self.noc_config.rcu_enabled,
+            "link_width": self.noc_config.link_width,
+            "output_formats": [o.value for o in self.noc_config.output_formats],
+            "obfuscation_level": self.noc_config.obfuscation_level,
+            "mcast_groups": self.noc_config.mcast_groups,
+            "mcast_setup_cycles": self.noc_config.mcast_setup_cycles,
+        }
+
+    def _physical_dict(self) -> dict:
+        return {"clock_freq_mhz": self.physical.default_clock_freq_mhz,
+                "data_width": self.physical.default_data_width,
+                "num_power_domains": self.physical.num_power_domains,
+                "process_node_nm": self.physical.process_node_nm}
+
+    def _workload_dict(self) -> dict:
+        wl = self.workload
+        d: dict[str, Any] = {
+            "model_family": wl.model_family.value,
+            "model_name": wl.model_name,
+            "tp": wl.tp,
+            "pp": wl.pp,
+            "ep": wl.ep,
+            "dp": wl.dp,
+            "serving_mode": wl.serving_mode.value,
+            "collectives": [c.to_dict() for c in wl.collectives],
+            "workload_source_ref": (wl.source_ref.to_dict()
+                                      if wl.source_ref is not None else None),
+        }
+        return d
+
+    def _semantic_dict(self) -> dict:
+        return {
+            "workload": self._workload_dict(),
+            "requirements": [self._requirement_dict(r)
+                               for r in self.requirements],
+            "agents": [self._agent_dict(a) for a in self.agents],
+            "dependencies": [self._dependency_dict(dep)
+                               for dep in self.dependencies.dependencies],
+            "noc_config": self._noc_dict(),
+            "address_map": {"ranges": [self._address_dict(r)
+                                         for r in self.address_map.ranges]},
+            "physical": self._physical_dict(),
+        }
+
+    def canonical_dict(self) -> dict:
+        """Canonical v3 envelope — sole input to design_hash().
+
+        Ordering mirrors v2 (requirements/address-ranges/output-formats/
+        dependencies canonicalized) EXCEPT collectives, which stay in
+        declared order: collective index feeds the lowering's operation
+        chain, so declaration order is v3-semantic (reordering intents is
+        a different design).
+        """
+        d = self._semantic_dict()
+        # Identity/persistence split (P1C phase-2 fix): the persisted
+        # workload_source_ref keeps provenance (artifact_identity), but
+        # the canonical envelope hashes the identity representation
+        # ONLY — same bytes from different producers, same design.
+        if self.workload.source_ref is not None:
+            d["workload"]["workload_source_ref"] = \
+                self.workload.source_ref.identity_dict()
+        d["requirements"] = sorted(d["requirements"], key=_canonical_json)
+        d["address_map"]["ranges"] = sorted(d["address_map"]["ranges"],
+                                              key=_canonical_json)
+        d["noc_config"]["output_formats"] = sorted(
+            d["noc_config"]["output_formats"])
+        d["dependencies"] = sorted(d["dependencies"], key=_canonical_json)
+        return {
+            "type": _HASH_TYPE_TAG_V3,
+            "schema_version": self.schema_version,
+            "compiler_semantics_version": self.compiler_semantics_version,
+            **d,
+        }
+
+    def design_hash(self) -> str:
+        """AUTHORITATIVE v3 design-intent identity (SHA-256).
+
+        Domain-separated by the v3 tag AND the v3/c3 envelope: a v2 and
+        a v3 document can never share an identity by construction.
+        """
+        from veritx_dse.core.spec import canonical_json
+        body = (f"{_HASH_TYPE_TAG_V3}/v{self.schema_version}/"
+                f"c{self.compiler_semantics_version}\0"
+                + canonical_json(self.canonical_dict()))
+        return hashlib.sha256(body.encode()).hexdigest()
+
+    def guardrail_hash(self) -> str:
+        return self.design_hash()
+
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {
+            "schema_version": self.schema_version,
+            "compiler_semantics_version": self.compiler_semantics_version,
+            **self._semantic_dict(),
+        }
+        d["design_hash"] = self.design_hash()
+        d["guardrail_hash"] = d["design_hash"]
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> CompileRequestV3:
+        """Strict, versioned, lossless v3 deserialization (fail closed).
+
+        Accepts ONLY schema 3 / semantics 3. v2 documents are NEVER
+        reinterpreted here — migrate explicitly via migrate_v2_to_v3.
+        """
+        _strict_keys_v3(d, _TOP_V3_KEYS, "root")
+        if "schema_version" not in d:
+            raise CompileRequestV3SchemaError(
+                "missing schema_version — refusing to guess a schema")
+        if type(d["schema_version"]) is not int \
+                or d["schema_version"] != COMPILE_REQUEST_SCHEMA_VERSION_V3:
+            raise CompileRequestV3SchemaError(
+                f"unsupported v3 schema_version {d['schema_version']!r} "
+                f"(this v3 reader speaks v{COMPILE_REQUEST_SCHEMA_VERSION_V3}); "
+                "v2 documents are never reinterpreted under v3 semantics")
+        semantics = d.get("compiler_semantics_version")
+        if type(semantics) is not int \
+                or semantics not in SUPPORTED_V3_SEMANTICS_VERSIONS:
+            raise CompileRequestV3SchemaError(
+                f"unsupported v3 compiler_semantics_version {semantics!r} "
+                f"(this v3 reader speaks {SUPPORTED_V3_SEMANTICS_VERSIONS})")
+
+        wl = d.get("workload")
+        if not isinstance(wl, dict):
+            raise CompileRequestV3SchemaError("workload must be a JSON object")
+        _strict_keys_v3(wl, _WORKLOAD_V3_KEYS, "workload")
+        collectives = []
+        for i, c in enumerate(wl.get("collectives", [])):
+            _strict_keys_v3(c, _COLLECTIVE_V3_KEYS,
+                         f"workload.collectives[{i}]")
+            for key in ("kind", "dimension", "payload_bytes",
+                        "traffic_class"):
+                if key not in c:
+                    raise CompileRequestV3SchemaError(
+                        f"missing required field "
+                        f"workload.collectives[{i}].{key}")
+            try:
+                collectives.append(CollectiveIntent(
+                    kind=CollectiveKind(c["kind"]),
+                    dimension=CollectiveDimension(c["dimension"]),
+                    payload_bytes=c["payload_bytes"],
+                    traffic_class=c["traffic_class"],
+                    source_rank=c.get("source_rank"),
+                ))
+            except (ValueError, KeyError) as e:
+                raise CompileRequestV3SchemaError(
+                    f"invalid workload.collectives[{i}]: {e}") from e
+        src_ref = None
+        if wl.get("workload_source_ref") is not None:
+            sr = wl["workload_source_ref"]
+            _strict_keys_v3(sr, _SOURCE_REF_KEYS, "workload.workload_source_ref")
+            try:
+                src_ref = WorkloadSourceRef.from_dict(sr)
+            except ValueError as e:
+                raise CompileRequestV3SchemaError(
+                    f"invalid workload.workload_source_ref: {e}") from e
+        try:
+            workload = WorkloadV3(
+                model_family=ModelFamily(wl["model_family"]),
+                model_name=wl.get("model_name", ""),
+                tp=wl.get("tp", 1),
+                pp=wl.get("pp", 1),
+                ep=wl.get("ep", 1),
+                dp=wl.get("dp", 1),
+                serving_mode=ServingMode(wl.get("serving_mode", "mixed")),
+                collectives=tuple(collectives),
+                source_ref=src_ref,
+            )
+        except (ValueError, KeyError) as e:
+            raise CompileRequestV3SchemaError(f"invalid workload: {e}") from e
+
+        requirements = []
+        for i, r in enumerate(d.get("requirements", [])):
+            _strict_keys_v3(r, _REQUIREMENT_V3_KEYS, f"requirements[{i}]")
+            if "qos_class" not in r:
+                raise CompileRequestV3SchemaError(
+                    f"missing required field requirements[{i}].qos_class")
+            try:
+                requirements.append(RequirementV3(
+                    traffic_class=r.get("traffic_class"),
+                    qos_class=QoSClass(r["qos_class"]),
+                    latency_ceiling_cycles=r.get("latency_ceiling_cycles"),
+                    bandwidth_floor_gbps=r.get("bandwidth_floor_gbps"),
+                    binding=r.get("binding", False),
+                ))
+            except ValueError as e:
+                raise CompileRequestV3SchemaError(
+                    f"invalid requirements[{i}]: {e}") from e
+
+        agents = []
+        for i, a in enumerate(d.get("agents", [])):
+            _strict_keys_v3(a, _AGENT_KEYS, f"agents[{i}]")
+            try:
+                agents.append(Agent(
+                    kind=AgentKind(a["kind"]),
+                    count=a["count"],
+                    data_width=a.get("data_width", 256),
+                    addr_width=a.get("addr_width", 64),
+                    protocol=a.get("protocol", "AXI"),
+                    clock_domain=a.get("clock_domain"),
+                    power_domain=a.get("power_domain"),
+                ))
+            except (ValueError, KeyError) as e:
+                raise CompileRequestV3SchemaError(
+                    f"invalid agents[{i}]: {e}") from e
+        deps = []
+        for i, dep in enumerate(d.get("dependencies", [])):
+            _strict_keys_v3(dep, _DEPENDENCY_KEYS, f"dependencies[{i}]")
+            try:
+                deps.append(Dependency(
+                    source=dep["source"],
+                    target=dep["target"],
+                    kind=DepKind(dep["kind"]),
+                ))
+            except (ValueError, KeyError) as e:
+                raise CompileRequestV3SchemaError(
+                    f"invalid dependencies[{i}]: {e}") from e
+        nc_d = d.get("noc_config", {})
+        _strict_keys_v3(nc_d, _NOC_KEYS, "noc_config")
+        try:
+            noc_config = NocConfig(
+                topology_family=(TopologyFamily(nc_d["topology_family"])
+                                 if nc_d.get("topology_family") else None),
+                radix=nc_d.get("radix"),
+                concentration=nc_d.get("concentration"),
+                arbitration=nc_d.get("arbitration"),
+                rcu_enabled=nc_d.get("rcu_enabled"),
+                link_width=nc_d.get("link_width"),
+                output_formats=tuple(
+                    OutputFormat(o)
+                    for o in nc_d.get("output_formats", ["systemverilog"])),
+                obfuscation_level=nc_d.get("obfuscation_level", 0),
+                mcast_groups=nc_d.get("mcast_groups"),
+                mcast_setup_cycles=nc_d.get("mcast_setup_cycles"),
+            )
+        except ValueError as e:
+            raise CompileRequestV3SchemaError(
+                f"invalid noc_config: {e}") from e
+        am_d = d.get("address_map", {})
+        _strict_keys_v3(am_d, _ADDRESS_MAP_KEYS, "address_map")
+        ranges = []
+        for i, r in enumerate(am_d.get("ranges", [])):
+            _strict_keys_v3(r, _ADDRESS_RANGE_KEYS, f"address_map.ranges[{i}]")
+            try:
+                ranges.append(AddressRange(
+                    name=r["name"], base=r["base"], size=r["size"],
+                    target_agent_idx=r.get("target_agent_idx", 0)))
+            except (ValueError, KeyError) as e:
+                raise CompileRequestV3SchemaError(
+                    f"invalid address_map.ranges[{i}]: {e}") from e
+        ph_d = d.get("physical", {})
+        _strict_keys_v3(ph_d, _PHYSICAL_KEYS, "physical")
+        try:
+            physical = PhysicalContext(
+                default_clock_freq_mhz=ph_d.get("clock_freq_mhz", 1000.0),
+                default_data_width=ph_d.get("data_width", 256),
+                num_power_domains=ph_d.get("num_power_domains", 1),
+                process_node_nm=ph_d.get("process_node_nm", 7),
+            )
+        except ValueError as e:
+            raise CompileRequestV3SchemaError(
+                f"invalid physical: {e}") from e
+
+        try:
+            obj = cls(
+                workload=workload,
+                requirements=tuple(requirements),
+                agents=tuple(agents),
+                dependencies=DependencyGraph(deps),
+                noc_config=noc_config,
+                address_map=AddressMap(ranges=tuple(ranges)),
+                physical=physical,
+                schema_version=d["schema_version"],
+                compiler_semantics_version=semantics,
+            )
+        except ValueError as e:
+            raise CompileRequestV3SchemaError(
+                f"invalid v3 request: {e}") from e
+        for key in ("design_hash", "guardrail_hash"):
+            if key in d and d[key] != obj.design_hash():
+                raise CompileRequestV3SchemaError(
+                    f"{key} does not match the recomputed v3 design identity")
+        return obj
+
+
+def derive_v3_traffic_classes(request: CompileRequestV3
+                              ) -> tuple[str, ...]:
+    """The unified traffic-class registry for a v3 request (B3).
+
+    Sorted distinct CollectiveIntent.traffic_class values. Dependency
+    endpoints, RequirementV3.traffic_class scopes, VC artifact classes,
+    and LogicalMessage classes MUST be drawn from this set: the
+    evaluator admission gate refuses any message class outside the VC
+    artifact instead of silently mapping to VC0.
+    """
+    if not isinstance(request, CompileRequestV3):
+        raise CompileRequestV3SchemaError(
+            "derive_v3_traffic_classes takes a CompileRequestV3")
+    return tuple(sorted({c.traffic_class
+                         for c in request.workload.collectives}))
+
+
+def migrate_v2_to_v3(request: CompileRequest, *,
+                     collective_specs: Any,
+                     source_ref: WorkloadSourceRef | None = None,
+                     ) -> CompileRequestV3:
+    """Re-emit a v2 request under v3 semantics — with explicit new facts.
+
+    v2 CollectiveOp carries NO dimension, NO payload_bytes, and NO
+    traffic_class (bytes_per_element meaning unproven — B1 finding 1),
+    so migration CANNOT be mechanical: the caller supplies one spec per
+    v2 collective, in order, each naming dimension/payload_bytes/
+    traffic_class (+ source_rank for BROADCAST). Guessing is refused:
+    spec count must equal collective count, and every spec is validated
+    as a CollectiveIntent.
+
+    A v2 trace_path is a mutable path, never v3 identity (B1 finding 5):
+    if the v2 workload names one, the caller must supply an ingested
+    source_ref (ingest_workload_source_file) or migration refuses.
+    v2 requirements carry no traffic scope (B1 finding 3) and migrate
+    as fabric-wide (traffic_class=None) — narrowing scope needs intent
+    the v2 document never stated.
+    """
+    if not isinstance(request, CompileRequest):
+        raise CompileRequestV3SchemaError(
+            "migrate_v2_to_v3 takes a v2 CompileRequest")
+    if request.workload.trace_path is not None and source_ref is None:
+        raise CompileRequestV3SchemaError(
+            f"v2 workload names trace_path "
+            f"{request.workload.trace_path!r}: ingest its bytes first "
+            f"(ingest_workload_source_file) — a mutable path never "
+            f"enters v3 identity")
+    v2_colls = request.workload.collectives
+    specs = list(collective_specs or [])
+    if len(specs) != len(v2_colls):
+        raise CompileRequestV3SchemaError(
+            f"collective_specs has {len(specs)} entries for "
+            f"{len(v2_colls)} v2 collectives — one explicit spec per "
+            f"collective, no guessing")
+    intents = []
+    for i, (v2c, spec) in enumerate(zip(v2_colls, specs)):
+        if not isinstance(spec, dict):
+            raise CompileRequestV3SchemaError(
+                f"collective_specs[{i}] must be a dict")
+        allowed = {"dimension", "payload_bytes", "traffic_class",
+                   "source_rank"}
+        unknown = sorted(set(spec) - allowed)
+        if unknown:
+            raise CompileRequestV3SchemaError(
+                f"collective_specs[{i}] has unknown fields {unknown}")
+        for key in ("dimension", "payload_bytes", "traffic_class"):
+            if key not in spec:
+                raise CompileRequestV3SchemaError(
+                    f"collective_specs[{i}] is missing {key!r} — "
+                    f"v2 bytes_per_element is not a payload, supply one")
+        try:
+            intents.append(CollectiveIntent(
+                kind=v2c.kind,
+                dimension=CollectiveDimension(spec["dimension"]),
+                payload_bytes=spec["payload_bytes"],
+                traffic_class=spec["traffic_class"],
+                source_rank=spec.get("source_rank"),
+            ))
+        except ValueError as e:
+            raise CompileRequestV3SchemaError(
+                f"collective_specs[{i}] invalid: {e}") from e
+    wl = request.workload
+    workload_v3 = WorkloadV3(
+        model_family=wl.model_family,
+        model_name=wl.model_name,
+        tp=wl.tp, pp=wl.pp, ep=wl.ep, dp=wl.dp,
+        serving_mode=wl.serving_mode,
+        collectives=tuple(intents),
+        source_ref=source_ref,
+    )
+    requirements_v3 = tuple(
+        RequirementV3(
+            traffic_class=None,
+            qos_class=r.qos_class,
+            latency_ceiling_cycles=r.latency_ceiling_cycles,
+            bandwidth_floor_gbps=r.bandwidth_floor_gbps,
+            binding=r.binding,
+        )
+        for r in request.requirements
+    )
+    return CompileRequestV3(
+        workload=workload_v3,
+        requirements=requirements_v3,
+        agents=request.agents,
+        dependencies=request.dependencies,
+        noc_config=request.noc_config,
+        address_map=request.address_map,
+        physical=request.physical,
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# P1C phase-2 fix 2 — FabricIntentView + v3 VC policy (v3 compilable)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# The v2 compiler stack is overwhelmingly duck-typed already
+# (build_inventory reads .workload.tp/.agents; attachment reads .agents;
+# address_decode reads .address_map/.agents; resolved_fabric reads
+# .design_hash()/.workload geometry/.noc_config) — a v3 request flows
+# through all of it unchanged. Only three sites are v2-gated:
+#   1. derive_vc_assignment() reads v2 CollectiveOp.group_size — v3 gets
+#      its OWN policy below (never a fake-v2 conversion).
+#   2/3. derive_route() / materialize_topology() isinstance gates — widened
+#      to accept the view (they read .noc_config/nothing; v2 flow identical).
+# fabric_intent_view() is the ONE dispatch seam (v2 vs v3 decided here,
+# once); no if-v2/elif-v3 anywhere else.
+
+@dataclass(frozen=True)
+class FabricIntentView:
+    """Non-persisted fabric-facing view over v2/v3 design intent.
+
+    The compiler's fabric derivation consumes this where a gated type is
+    required. Fields: the shared fabric inputs (agents, dependencies,
+    noc_config, address_map, physical), the parallelism geometry as plain
+    ints, the DECLARED traffic classes the fabric must serve, and the
+    design identity string it binds. source_generation ("v2"/"v3") is
+    dispatch metadata selecting the VC policy — never persisted, never
+    hashed (the view itself has no to_dict/from_dict by design).
+    """
+    agents: tuple[Agent, ...]
+    dependencies: DependencyGraph
+    noc_config: NocConfig
+    address_map: AddressMap
+    physical: PhysicalContext
+    tp: int
+    pp: int
+    ep: int
+    dp: int
+    traffic_classes: tuple[str, ...]
+    design_hash: str
+    source_generation: str
+
+    def __post_init__(self):
+        object.__setattr__(self, "agents",
+                           _as_tuple("agents", self.agents))
+        for a in self.agents:
+            if not isinstance(a, Agent):
+                raise ValueError(
+                    f"agents must contain Agent, got {type(a).__name__}")
+        if not isinstance(self.dependencies, DependencyGraph):
+            raise ValueError("dependencies must be a DependencyGraph")
+        if not isinstance(self.noc_config, NocConfig):
+            raise ValueError("noc_config must be a NocConfig")
+        if not isinstance(self.address_map, AddressMap):
+            raise ValueError("address_map must be an AddressMap")
+        if not isinstance(self.physical, PhysicalContext):
+            raise ValueError("physical must be a PhysicalContext")
+        for field_name in ("tp", "pp", "ep", "dp"):
+            _as_int(field_name, getattr(self, field_name), minimum=1)
+        object.__setattr__(self, "traffic_classes",
+                           _as_tuple("traffic_classes", self.traffic_classes))
+        for c in self.traffic_classes:
+            _as_str("traffic_class", c, allow_empty=False)
+        if sorted(set(self.traffic_classes)) != list(self.traffic_classes):
+            raise ValueError("traffic_classes must be sorted and distinct")
+        _as_str("design_hash", self.design_hash, allow_empty=False)
+        if self.source_generation not in ("v2", "v3"):
+            raise ValueError(
+                f"source_generation must be 'v2' or 'v3', got "
+                f"{self.source_generation!r}")
+
+    @property
+    def world_size(self) -> int:
+        from .presets import parallel_world_size
+        return parallel_world_size(self.tp, self.pp, self.ep, self.dp)
+
+
+def fabric_intent_view(request: CompileRequest | CompileRequestV3
+                       ) -> FabricIntentView:
+    """THE dispatch seam: one isinstance decision for the whole compiler.
+
+    v2 traffic classes are the dependency endpoint names (v2 declares no
+    classes; the VC derivation serves exactly the dep-graph namespace —
+    same set derive_vc_assignment covers). v3 classes come from
+    derive_v3_traffic_classes (the declared intent registry). Anything
+    else refuses: the compiler never guesses a generation.
+    """
+    if isinstance(request, CompileRequestV3):
+        wl = request.workload
+        return FabricIntentView(
+            agents=request.agents,
+            dependencies=request.dependencies,
+            noc_config=request.noc_config,
+            address_map=request.address_map,
+            physical=request.physical,
+            tp=wl.tp, pp=wl.pp, ep=wl.ep, dp=wl.dp,
+            traffic_classes=derive_v3_traffic_classes(request),
+            design_hash=request.design_hash(),
+            source_generation="v3",
+        )
+    if isinstance(request, CompileRequest):
+        wl = request.workload
+        dep_classes = sorted({d.source for d in request.dependencies.dependencies}
+                             | {d.target for d in request.dependencies.dependencies})
+        return FabricIntentView(
+            agents=request.agents,
+            dependencies=request.dependencies,
+            noc_config=request.noc_config,
+            address_map=request.address_map,
+            physical=request.physical,
+            tp=wl.tp, pp=wl.pp, ep=wl.ep, dp=wl.dp,
+            traffic_classes=tuple(dep_classes),
+            design_hash=request.design_hash(),
+            source_generation="v2",
+        )
+    raise CompileRequestV3SchemaError(
+        f"fabric_intent_view takes a v2 CompileRequest or a "
+        f"CompileRequestV3, got {type(request).__name__}")
+
+
+def _routing_for_cycle_structure(has_cycles: bool, vc_count: int
+                                 ) -> tuple[str, list[str]]:
+    """LOCKED routing selection from dependency cycle structure.
+
+    Restates the sealed v2 law (derive_vc_assignment: no cycles →
+    dim_order; cycles → dor/min_adapt by count with matching turn
+    restrictions). Restated — not shared — because the v2 function body
+    is frozen; a cross-check test pins v2/v3 parity for identical
+    dependency structures, so drift fails loudly instead of silently.
+    """
+    if not has_cycles:
+        return "dim_order", ["no_negative_dimension_turns"]
+    if vc_count > 2:
+        return "min_adapt", []
+    return "dor", ["west_first", "north_last"]
+
+
+def derive_vc_assignment_v3(request: CompileRequestV3) -> VCAssignment:
+    """v3 VC policy: derive what v3 declares, nothing it doesn't.
+
+    Cycle law is shared (derive_vc_count over the same DependencyGraph
+    type; over-limit is UNSUPPORTED, never clamped). The v2
+    concurrent-collectives floor is DELIBERATELY absent: v2 assumes
+    declared collectives are potentially concurrent, while v3 intents
+    lower to an ordered sequential chain — copying the floor would
+    over-provision VCs for concurrency v3 semantics never claim.
+    Every DECLARED traffic class appears in per_class_vc even when
+    plainly VC0 (fabric must serve what intent declares); dependency
+    endpoint names ride along at VC0; cycle victims separate per the
+    shared least-cost law.
+    """
+    if not isinstance(request, CompileRequestV3):
+        raise CompileRequestV3SchemaError(
+            f"derive_vc_assignment_v3 takes a CompileRequestV3, got "
+            f"{type(request).__name__} — never a converted v2 stand-in")
+    graph = request.dependencies
+    cycles = graph.find_cycles()
+    vc_count = derive_vc_count(graph)
+    if vc_count > PLANE_C_MAX_VC:
+        from .vc_assignment import VCAssignmentError
+        raise VCAssignmentError(
+            f"required {vc_count} VCs exceeds fabric maximum "
+            f"{PLANE_C_MAX_VC} — UNSUPPORTED")
+    routing, turn_restrictions = _routing_for_cycle_structure(
+        bool(cycles), vc_count)
+    per_class_vc: dict[str, int] = {}
+    for cls in sorted({d.source for d in graph.dependencies}
+                      | {d.target for d in graph.dependencies}
+                      | set(derive_v3_traffic_classes(request))):
+        per_class_vc[cls] = 0
+    if cycles:
+        adj = graph._adjacency()
+        for i, cycle in enumerate(cycles):
+            victim = min(cycle[:-1],
+                         key=lambda n: len(adj.get(n, [])),
+                         default=cycle[0])
+            per_class_vc[victim] = i + 1
+    return VCAssignment(
+        vc_count=vc_count,
+        per_class_vc=per_class_vc,
+        routing_function=routing,
+        turn_restrictions=list(turn_restrictions),
+    )
+
+
+def derive_vc_assignment_artifact_v3(
+        request: CompileRequestV3,
+        resolved_route,
+):
+    """Bind the v3 VC policy to the resolved route (mirrors the v2 binder).
+
+    Same binding law as derive_vc_assignment_artifact: every VC names a
+    routing class of the resolved route, and every route class is served
+    by at least one VC (an unserved class would be unroutable hardware).
+    The derivation string is provenance naming v3 inputs (declared
+    classes, victims, no concurrent-context floor).
+    """
+    from .vc_assignment import VCAssignmentError, make_vc_assignment_artifact
+    if not isinstance(request, CompileRequestV3):
+        raise CompileRequestV3SchemaError(
+            "derive_vc_assignment_artifact_v3 takes a CompileRequestV3")
+    va = derive_vc_assignment_v3(request)
+    classes = list(resolved_route.routing_classes)
+    if not classes:
+        raise VCAssignmentError(
+            "resolved route defines no routing classes — VC derivation "
+            "has nothing to bind against")
+    vc_routing = tuple((vc, classes[vc % len(classes)])
+                       for vc in range(va.vc_count))
+    missing = [c for c in classes
+               if c not in {rc for _, rc in vc_routing}]
+    if missing:
+        raise VCAssignmentError(
+            f"VC derivation serves no VC to routing classes {missing} "
+            f"(route defines {classes}, vc_count={va.vc_count}) — "
+            f"refusing a structure that leaves route classes unroutable")
+    separated = sorted(
+        cls for cls, vc in va.per_class_vc.items() if vc != 0
+    )
+    derivation = (
+        f"v3 route_classes={classes}; vc_count={va.vc_count}; "
+        f"declared_classes={list(derive_v3_traffic_classes(request))}; "
+        f"cycle_separated={separated}; no_concurrent_collective_floor"
+    )
+    return make_vc_assignment_artifact(
+        resolved_route=resolved_route,
+        vc_count=va.vc_count,
+        traffic_class_to_vcs={cls: [vc] for cls, vc in va.per_class_vc.items()},
+        vc_to_routing_class=dict(vc_routing),
+        derivation=derivation,
+    )
