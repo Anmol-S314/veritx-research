@@ -56,7 +56,12 @@ integration happens here, in stage order. P3 remains deferred.
       120-vs-P1A set proven env-travel (identical at base); 20 resolved by binary;
       live anchor llama_dense_64tiles -> EVALUATED + schema-valid view green.
       Binary: BookSim sha65d61d3 (copied byte-identical from P1B lane).
-- [ ] Stage 2 — merge P1C; `product_evaluator.py` orchestration (no semantics)
+- [x] Stage 2 — P1C merged (P1-INT.2, 136/136 focused green incl. 2-line gate
+      widenings). `application/product_evaluator.py`: v3 -> compile -> lower ->
+      bound-check -> P1B evaluate -> requirements; class from lowered intent
+      (no relabel knob); multi-class -> UNSUPPORTED pre-spawn; 5/5
+      orchestration tests incl. provisioned tp=4 mesh EVALUATED +
+      SATISFIED report over mesh-DOR.
 - [ ] Stage 3 — real requirement evaluation over the chain
 - [ ] Stage 4 — `llama_dense_64tiles-v3.json` + `test_p1_product_vertical_slice.py`
       (persisted-reopen second half, no warm-object shortcuts)
