@@ -23,15 +23,14 @@ from typing import Any
 from .errors import (
     ConservationFailed, EvidenceInvalid, InvalidInput, UnsupportedSchedule,
 )
-from .identity import content_hash
+from veritx_dse.core.artifact import content_hash
 from .operations import (
     CollectiveIntent, MulticastIntent, OperationGraph, P2PTransfer,
     REPLICATION_SOURCE, SCHEDULES,
 )
 from .oracles import ref_collective
-from .strict import (
-    require_embedded_id, require_fields, require_schema_version,
-    require_type_tag,
+from veritx_dse.core.artifact import (
+    require_embedded_id, require_fields, require_schema_version, require_type_tag,
 )
 
 LOGICAL_MESSAGE_SCHEMA_VERSION = 1

@@ -18,7 +18,6 @@ Two rules from Waves C/D carry over verbatim:
 """
 from __future__ import annotations
 
-import hashlib
 from typing import Any
 
 from veritx_dse.wavee.metrics import (
@@ -35,7 +34,9 @@ from veritx_dse.wavee.scheduler import (
 from veritx_dse.wavee.time import QTime
 # The immutability layer is shared with Wave D: one implementation of
 # "frozen canonical value tree", not a second copy (AGENTS.md rule).
-from veritx_dse.waved.immutable import ImmutableError, freeze, thaw
+from veritx_dse.core.artifact import (
+    ImmutableError, content_id, freeze, thaw,
+)
 
 
 def _freeze(self, name, value):  # noqa: ANN001
@@ -76,9 +77,8 @@ class ResultError(Exception):
 
 
 def _content_id(tag: str, body: dict[str, Any]) -> str:
-    from veritx_dse.core.spec import canonical_json
-    payload = tag + "\0" + canonical_json(body)
-    return hashlib.sha256(payload.encode()).hexdigest()
+    """Wave-E tags ARE the whole domain, so the id is the bare digest."""
+    return content_id(tag, body)
 
 
 class WaveEEventGraph:

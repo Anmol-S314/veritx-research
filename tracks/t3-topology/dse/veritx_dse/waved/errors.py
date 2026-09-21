@@ -2,11 +2,18 @@
 
 Semantic refusals are typed, never ``False``/``None``/silent. Each error
 carries a machine-readable ``code`` from a closed vocabulary so callers can
-distinguish refusal classes without string matching. Existing error codes
-are reused where a suitable one exists; Wave-D-specific classes only name
-boundaries Wave B/C do not have.
+distinguish refusal classes without string matching.
+
+``InvalidInput`` and ``EvidenceInvalid`` are the ARTIFACT contract errors
+and now live in ``veritx_dse.core.artifact`` — the one artifact primitive.
+They are re-exported here (same class objects, so every raise/except site
+and every ``pytest.raises`` is unchanged). What remains defined here is the
+Wave-D SEMANTIC vocabulary: refusals that name Wave-D boundaries rather
+than artifact-shape violations.
 """
 from __future__ import annotations
+
+from veritx_dse.core.artifact import EvidenceInvalid, InvalidInput  # noqa: F401
 
 
 class WaveDError(Exception):
@@ -17,12 +24,6 @@ class WaveDError(Exception):
     def __init__(self, message: str):
         super().__init__(message)
         self.message = message
-
-
-class InvalidInput(WaveDError):
-    """Malformed request: bad types, out-of-range ranks, missing fields."""
-
-    code = "INVALID_INPUT"
 
 
 class UnsupportedSemantics(WaveDError):
@@ -50,13 +51,6 @@ class ConservationFailed(WaveDError):
     never a warning (§24)."""
 
     code = "CONSERVATION_FAILED"
-
-
-class EvidenceInvalid(WaveDError):
-    """Persisted artifact identity failed verification, or backend
-    evidence does not bind the artifacts it claims."""
-
-    code = "EVIDENCE_INVALID"
 
 
 class BackendFailure(WaveDError):

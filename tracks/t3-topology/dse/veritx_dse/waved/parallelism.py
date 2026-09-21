@@ -19,14 +19,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from veritx_dse.model.placement import coords_of, rank_of  # authority reuse
+from veritx_dse.model.placement import (  # authority reuse
+    ParallelismShape, coords_of, rank_of,
+)
 
 from .errors import InvalidInput
-from .identity import content_hash
+from veritx_dse.core.artifact import content_hash
 from .oracles import ref_coords, ref_group_members, ref_rank
-from .strict import (
-    require_embedded_id, require_fields, require_schema_version,
-    require_type_tag,
+from veritx_dse.core.artifact import (
+    require_embedded_id, require_fields, require_schema_version, require_type_tag,
 )
 
 SCHEMA_VERSION = 1
@@ -64,11 +65,19 @@ class ParallelismArtifact:
     schema_version: int = SCHEMA_VERSION
 
     def __post_init__(self) -> None:
-        for name in ("tp", "pp", "ep", "dp"):
-            v = getattr(self, name)
-            if type(v) is not int or isinstance(v, bool) or v < 1:
-                raise InvalidInput(
-                    f"parallelism {name} must be a positive int, got {v!r}")
+        # The dimension law has ONE definition: the sealed Wave-B rank
+        # algebra (model.placement.ParallelismShape). This artifact adds
+        # identity and group derivation; it must not restate the law. A
+        # second copy is a second answer to "is tp=0 legal", which is how
+        # two layers come to disagree.
+        try:
+            ParallelismShape(tp=self.tp, pp=self.pp, ep=self.ep,
+                             dp=self.dp)
+        except ValueError as exc:
+            raise InvalidInput(
+                f"parallelism dimensions must be positive ints "
+                f"(tp={self.tp!r}, pp={self.pp!r}, ep={self.ep!r}, "
+                f"dp={self.dp!r}): {exc}") from None
         if type(self.schema_version) is not int \
                 or self.schema_version != SCHEMA_VERSION:
             raise InvalidInput(

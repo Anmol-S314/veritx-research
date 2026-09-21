@@ -26,17 +26,16 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .errors import InvalidInput
-from .identity import content_hash
-from .immutable import FrozenMap, ImmutableError, freeze, thaw
+from veritx_dse.core.artifact import content_hash
+from veritx_dse.core.artifact import FrozenMap, ImmutableError, freeze, thaw
 from .operations import (
     KIND_COLLECTIVE, KIND_MULTICAST, KIND_P2P, CollectiveIntent,
     MulticastIntent, OperationGraph, OperationNode, P2PTransfer,
 )
 from .parallelism import ParallelismArtifact
 from .semantics import WaveDWorkloadSemantics
-from .strict import (
-    require_embedded_id, require_fields, require_schema_version,
-    require_type_tag,
+from veritx_dse.core.artifact import (
+    require_embedded_id, require_fields, require_schema_version, require_type_tag,
 )
 
 WAVED_WORKLOAD_SCHEMA_VERSION = 1

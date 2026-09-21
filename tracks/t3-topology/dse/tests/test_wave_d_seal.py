@@ -52,7 +52,7 @@ from veritx_dse.model.compile_model import TopologyFamily  # noqa: E402
 from veritx_dse.waved.errors import (  # noqa: E402
     EvidenceInvalid, InvalidInput, MappingInvalid,
 )
-from veritx_dse.waved.immutable import FrozenMap  # noqa: E402
+from veritx_dse.core.artifact import FrozenMap  # noqa: E402
 from veritx_dse.waved.messages import LogicalMessageArtifact  # noqa: E402
 from veritx_dse.waved.operations import (  # noqa: E402
     KIND_COLLECTIVE, KIND_P2P, CollectiveIntent, OperationGraph,

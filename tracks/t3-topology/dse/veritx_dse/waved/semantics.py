@@ -16,11 +16,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .errors import InvalidInput
-from .identity import content_hash
-from .immutable import FrozenMap, freeze, thaw
-from .strict import (
-    require_embedded_id, require_fields, require_schema_version,
-    require_type_tag,
+from veritx_dse.core.artifact import content_hash
+from veritx_dse.core.artifact import FrozenMap, freeze, thaw
+from veritx_dse.core.artifact import (
+    require_embedded_id, require_fields, require_schema_version, require_type_tag,
 )
 
 SCHEMA_VERSION = 1

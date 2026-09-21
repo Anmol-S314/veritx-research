@@ -11,8 +11,8 @@ sealed Wave-B authorities:
     PhysicalTrafficArtifact (new)    — packets + flits        [D4]
     ConservationLedger (derived)     — per-class laws         [D4]
 
-Every artifact is transitively immutable (``immutable.py``), strictly
-parseable (``strict.py``) and persisted as a first-class resource
+Every artifact is transitively immutable and strictly parseable via
+the one artifact primitive (``veritx_dse.core.artifact``) and persisted as a first-class resource
 through ``veritx_dse.application.waved_resources`` — the only
 scientific trust path for loading one back.
 

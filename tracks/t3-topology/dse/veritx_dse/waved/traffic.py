@@ -36,11 +36,10 @@ from veritx_dse.model.packet_format import PacketFormatArtifact
 from .errors import (
     ConservationFailed, EvidenceInvalid, InvalidInput, MappingInvalid,
 )
-from .identity import content_hash
+from veritx_dse.core.artifact import content_hash
 from .messages import LogicalMessageArtifact
-from .strict import (
-    require_embedded_id, require_fields, require_schema_version,
-    require_type_tag,
+from veritx_dse.core.artifact import (
+    require_embedded_id, require_fields, require_schema_version, require_type_tag,
 )
 
 PHYSICAL_TRAFFIC_SCHEMA_VERSION = 1
