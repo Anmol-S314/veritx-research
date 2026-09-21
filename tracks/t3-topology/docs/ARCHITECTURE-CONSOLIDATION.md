@@ -323,3 +323,127 @@ goldens                      6 passed
 broad DSE suite    27 failed / 3195 passed / 41 skipped
                    failed-node set IDENTICAL to the 0bfa5c88 baseline
 ```
+
+---
+
+# Ruling: `wavee/` and `acceptance/` disposition (recorded, not executed)
+
+Recorded at `d3e0117b`. **No new work is started by this entry** — it parks
+the ruling with the verified facts so the next slice executes it instead of
+re-litigating it.
+
+## Where the work actually is
+
+```
+Gate V2 / V2.1            d3e0117b (this branch)         DONE
+2c canonical WorkloadGraph  not started                  <- next
+Slice 3 performance/        not started                  <- immediately after
+wavee/ deletion             not started                  <- falls out of Slice 3
+Slice 4 application cleanup not started
+reclamation / Wave F        not started on this branch
+```
+
+A separate worktree `/home/datavex/veritx-wavef` carries
+`wave-f/design-optimization` at `f34a4361` ("Wave F: design optimization as
+an orchestration layer over the sealed control plane", authored by
+Anmol-S314). It is **divergent**: it is not an ancestor of `d3e0117b` and
+this branch is not an ancestor of it, and it is **not pushed to either
+remote**. So the Wave-F name is ahead of the architecture: 2c, Slice 3 and
+Slice 4 are all still open behind it.
+
+## Slice 3 destination map (kept from the ruling)
+
+| now | destination | semantics |
+|---|---|---|
+| `wavee/time.py` | `core/time.py` | keep |
+| `wavee/model.py` | `performance/model.py` | keep |
+| `wavee/scheduler.py` | `performance/scheduler.py` | **keep exactly — move mechanically, do not rewrite** |
+| `wavee/network.py` | `performance/network.py` | keep |
+| `wavee/metrics.py` | `performance/metrics.py` | keep |
+| `wavee/sensitivity.py` | `performance/sensitivity.py` | keep |
+| `wavee/workload.py` | fold into the canonical workload / system timeline | after 2c |
+| `wavee/result.py` | `performance/result.py`, reassess in Slice 4 | keep |
+| `wavee/__init__.py` | delete with the package | — |
+| `acceptance/phase15.py` | `qualification/ramulator.py` (outside `veritx_dse`) | keep |
+| `acceptance/__init__.py` | delete | — |
+
+Class renames: `WaveEPerformanceModel -> PerformanceModel`,
+`WaveETemporalWorkload -> TemporalWorkload`,
+`WaveETemporalEvent -> TemporalEvent`, `WaveERequest -> Request`,
+`WaveEEventGraph -> PerformanceGraph`. No `wavee` compatibility package
+afterwards.
+
+## Two corrections to the ruling, verified in code
+
+**1. Class renames are free; the CONTENT-HASH DOMAINS are persisted
+schema vocabulary and are not.**
+
+```
+wavee/model.py:29     _MODEL_TAG  = "srota/wavee/performance-model/v1"
+wavee/workload.py:36  _TAG        = "srota/wavee/temporal-workload/v1"
+wavee/result.py:51    _GRAPH_TAG  = "srota/wavee/event-graph/v1"
+wavee/result.py:52    _RESULT_TAG = "srota/wavee/performance-result/v1"
+```
+
+`application/wave_e_resources.py:132-133` persists
+`performance_model_id` **as a value** inside every wave_e resource
+document, and that id is a hash over the `srota/wavee/...` domain. So:
+
+* renaming the Python classes costs nothing (no identity moves);
+* renaming the domain strings moves every persisted Wave-E identity and
+  therefore needs a schema-version bump plus a migration reader — the
+  same "persisted schema vocabulary" rule Slice 2b applied to the
+  `waved*` resource kinds.
+
+Recommendation: rename the classes and the package in Slice 3, and treat
+the domain strings as a separate, deliberate identity migration owned by
+Slice 4 (which also owns persistence).
+
+**2. `acceptance/phase15.py` is a 2c BLOCKER even though its relocation is
+Slice 4.**
+
+```
+acceptance/phase15.py:48-49
+    from veritx_dse.workload.canonical import (
+        Parallelism, WorkloadArtifact, build_compute_op)
+```
+
+It is the last non-test consumer of the old workload authority (454 lines,
+Ramulator qualification: BUILD/DRAIN/EQUIV/DETERM/LOCALITY/BANK/CLOCK/
+INTEGRITY/AUDIT). 2c cannot delete `workload/canonical.py` while this
+imports it, so the *import migration* must land with or before 2c; the
+*relocation* to `qualification/ramulator.py` can follow in Slice 4.
+
+Nothing else in the tree imports the acceptance battery, so moving it is
+safe; it should not be part of an ordinary `pytest tests` run (a
+qualification battery and a unit-test run are different things).
+
+## Ruling for the next slice
+
+```
+DO NOT  start Wave-F capability work on this branch
+        add folders or new historical (wave-named) namespaces
+DO      finish Gate V2.1 remaining evidence (PIM_COMP_NODE boundary,
+        marker byte-roundtrip, unclosed EXPERT refusal)
+        finish 2c
+        Slice 3 immediately after
+        delete wavee/
+        move acceptance/phase15 out of veritx_dse
+        then reclamation
+```
+
+## Gate V2.1 state at this commit
+
+```
+FIXED     EXPERT last-group crash (marker-aware layer resolution)
+FIXED     pim_parent_nodes.append() with no argument
+FIXED     Chakra provenance fingerprint gate (7 tests)
+OPEN      F17b PIM_COMP_NODE undefined in the vendored tree -> PIM execution
+          has never run; needs the intended node-type constant
+OPEN      F23 marker without a collective is not byte-identical on roundtrip
+OPEN      unclosed EXPERT block walks past the layer list (IndexError)
+OPEN      F16 canonicalizer drops PIM (owned by 2c)
+OPEN      multi-instance canonicalize_run_workload end-to-end case
+
+battery: 345 passed, 8 strict xfail
+```
