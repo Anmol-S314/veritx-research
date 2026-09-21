@@ -88,7 +88,34 @@ integration happens here, in stage order. P3 remains deferred.
       omitted, never faked). All 5 fixtures regenerated from live engine
       runs (validator 5/5 incl. new study linkage rule: design/opt.base
       bind base intent, product views bind one winner hash from candidates).
-- [ ] Stage 8 — reconcile handoff branch per-change (ALREADY_IMPLEMENTED /
-      SUPERSEDED / USEFUL_TEST / USEFUL_ORCHESTRATION / REJECT); never
-      wholesale-merge
+- [x] Stage 8 — handoff branch (`p1/...`, tip 662e7ce6) reconciled
+      per-change; never wholesale-merged:
+      - P1B.3a golden re-pin -> REJECT (handoff-only DEFAULT VC base
+        class; integrated golden corpus green unmodified, 6/6).
+      - Q1/Q2 implementation (profile registry, C++ dump, lowering,
+        projection threading) -> SUPERSEDED by integrated meshdor
+        (separate CERTIFIED_BOOKSIM_MESH_DOR_XY_V1, already merged).
+      - Q3 adversarial tests -> USEFUL_TEST replayed as
+        `test_p1b_meshdor_gates.py` (11/11: seat gate, exact-grid
+        positive, native render keys, forged k/n/routing_function,
+        foreign-bundle transplant, path selection x3, multi-endpoint).
+        Deliberately not ported: missing/express-link gate refusals
+        (lane gates don't check exact adjacency; routing divergence
+        still caught by dump compare), trace round-trip (no lane
+        surface), serving-target (P0-sealed layer), synthetic-dump
+        positive (covered by live exit gate).
+      - QB/Q3a + P1B-QUALIFICATION.md -> noted, not replayed as doc
+        (numbers are handoff-tree-specific); useful findings kept here:
+        handoff tree reaches 5 failed/0 errors because Q1 wires mesh
+        lowering into legacy control-plane paths (out of scope: legacy
+        surfaces stay base-identical by design); pinned-producer dirt
+        discipline + flaky supervision-timing pair confirmed.
+      - In-flight evaluator files (prepare/evaluate/performance tests)
+        + P1B.5/6/7 items -> REJECT (authorities exist integrated);
+        left uncommitted on the handoff branch.
+      KNOWN LIMITATION (follow-up, not papered over): a non-grid
+      express channel passes lane gates and, if DOR never routes over
+      it, the dump compare too — silent area/timing drift. Fix:
+      exact-adjacency gate in `_mesh_link_semantics` (refuse more,
+      never less).
 - [ ] Seal — `p1-product-integration-seal` tag with full provenance record
