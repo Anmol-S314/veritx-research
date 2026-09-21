@@ -52,6 +52,10 @@ class CandidateEvaluation:
     the port produced one (compiled + backend-evaluated requests), so
     the optimizer can bind the report's identity instead of discarding
     it; None means no report exists (never an empty stand-in).
+    ``requirement_report_id`` is that report's canonical
+    ``report_identity`` (bare digest); the optimizer re-derives it from
+    the carried report and refuses a mismatch, so a transplanted report
+    can never masquerade as this candidate's provenance.
     """
     candidate_id: str
     design_hash: str  # bare engine digest, never prefixed here
@@ -62,6 +66,7 @@ class CandidateEvaluation:
     error: str | None = None
     performance_result_id: str | None = None
     requirement_report: dict[str, Any] | None = None
+    requirement_report_id: str | None = None  # bare report_identity(report)
 
 
 class CandidateEvaluationPort(Protocol):

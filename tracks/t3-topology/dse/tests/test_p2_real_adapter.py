@@ -211,10 +211,12 @@ def test_binding_failure_keeps_requirement_report(tmp_path):
         network_clock_hz=10 ** 9)
     out = port.evaluate(SimpleNamespace(
         candidate_id="binding-failure", request=req))
+    from veritx_dse.application.requirements import report_identity
     assert out.status == "UNSUPPORTED"
     assert "binding requirements not satisfied" in (out.error or "")
     assert out.performance_result_id is not None
     assert out.requirement_report is not None
+    assert out.requirement_report_id == report_identity(out.requirement_report)
     entries = out.requirement_report["entries"]
     assert entries and entries[0]["verdict"] == "VIOLATED"
     assert entries[0]["reason"]

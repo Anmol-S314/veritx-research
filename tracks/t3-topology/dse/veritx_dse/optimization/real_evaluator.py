@@ -39,6 +39,7 @@ from veritx_dse.application.fabric_evaluator import (
 )
 from veritx_dse.application.requirements import (
     RequirementEvaluator,
+    report_identity,
     report_passes,
 )
 from veritx_dse.core.errors import (
@@ -71,7 +72,9 @@ def _refuse(candidate_id: str, design_hash: str, status: str,
         locked_consequences=dict(locked or {}),
         compilation_status=compilation_status, error=error,
         performance_result_id=performance_result_id,
-        requirement_report=requirement_report)
+        requirement_report=requirement_report,
+        requirement_report_id=(report_identity(requirement_report)
+                               if requirement_report is not None else None))
 
 
 def _real_objectives(outcome: Any) -> dict[str, float]:
@@ -191,7 +194,8 @@ class RealCandidateEvaluator:
             locked_consequences=locked, compilation_status="COMPILED",
             error=None,
             performance_result_id=outcome.performance_result_id,
-            requirement_report=report)
+            requirement_report=report,
+            requirement_report_id=report_identity(report))
 
 
 __all__ = ["RealCandidateEvaluator"]

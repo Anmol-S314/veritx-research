@@ -25,6 +25,7 @@ see CAPABILITY-LEDGER.md).
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -35,10 +36,69 @@ RESULT_DOMAIN = "veritx/optimization-result/v2"
 
 def _requirement_report_id(report: dict[str, Any] | None) -> str | None:
     """Report identity (bare digest) or None when no report exists."""
-    if not report:
+    if report is None:
         return None
     from veritx_dse.application.requirements import report_identity
     return report_identity(report)
+
+
+def _check_report_binding(ev: Any, report: Any, candidate_id: str) -> None:
+    """Refuse a RequirementReport that does not belong to this evaluation.
+
+    The report is the PRODUCT-requirement authority: its design_hash and
+    every entry's performance_result_id must name this candidate's
+    evaluation, and its carried identity must equal the re-derived
+    canonical identity. A transplanted report can never be bound to
+    another candidate's measurements (the only alternatives would be
+    silently changing result identity or accepting foreign provenance —
+    both forbidden).
+    """
+    if report is None:
+        return
+    from veritx_dse.application.requirements import report_identity
+    if not isinstance(report, Mapping):
+        raise OptimizationResultError(
+            f"evaluator returned a non-mapping requirement_report "
+            f"{type(report).__name__} for candidate {candidate_id!r}")
+    entries = report.get("entries")
+    if not isinstance(entries, list):
+        raise OptimizationResultError(
+            f"requirement_report for candidate {candidate_id!r} carries "
+            f"no entries list — an empty stand-in is not a report")
+    if ev.performance_result_id is None:
+        raise OptimizationResultError(
+            f"candidate {candidate_id!r} carries a requirement_report but "
+            "no performance_result_id — the report cannot be bound to "
+            "measurements")
+    expected_design = ev.design_hash if ev.design_hash.startswith(
+        "sha256:") else "sha256:" + ev.design_hash
+    if report.get("design_hash") != expected_design:
+        raise OptimizationResultError(
+            f"requirement_report design_hash {report.get('design_hash')!r} "
+            f"is not candidate {candidate_id!r}'s design "
+            f"{expected_design!r} — refusing a transplanted report")
+    if report.get("performance_result_id") != ev.performance_result_id:
+        raise OptimizationResultError(
+            f"requirement_report performance_result_id "
+            f"{report.get('performance_result_id')!r} is not this "
+            f"evaluation's {ev.performance_result_id!r} — refusing "
+            "measurements transplanted from another candidate")
+    for i, entry in enumerate(entries):
+        if not isinstance(entry, Mapping) or \
+                entry.get("performance_result_id") != ev.performance_result_id:
+            raise OptimizationResultError(
+                f"requirement_report entries[{i}] does not bind this "
+                f"evaluation's performance_result_id "
+                f"{ev.performance_result_id!r} — refusing a report whose "
+                "verdicts belong to another result")
+    computed = report_identity(report)
+    if ev.requirement_report_id is not None and \
+            ev.requirement_report_id != computed:
+        raise OptimizationResultError(
+            f"evaluator-carried requirement_report_id "
+            f"{ev.requirement_report_id!r} != re-derived report identity "
+            f"{computed!r} for candidate {candidate_id!r} — refusing a "
+            "forged report identity")
 
 
 def _view_hash(bare: str) -> str:
@@ -76,6 +136,7 @@ class CandidateRecord:
     pareto_member: bool
     performance_result_id: str | None = None
     requirement_report_id: str | None = None
+    product_requirements_satisfied: bool | None = None
     compilation_status: str = "COMPILED"
     requirement_details: tuple = ()
     all_binding_satisfied: bool | None = None
@@ -106,6 +167,8 @@ class OptimizationResult:
             "compilation_status": r.compilation_status,
             "performance_result_id": r.performance_result_id,
             "requirement_report_id": r.requirement_report_id,
+            "product_requirements_satisfied":
+                r.product_requirements_satisfied,
             "locked_consequences": {
                 k: (sorted(v) if isinstance(v, list) else v)
                 for k, v in sorted(r.locked_consequences.items())},
@@ -270,6 +333,8 @@ class Optimizer:
 
     def optimize(self, base_request: Any, definition: Any,
                  evaluator: Any) -> OptimizationResult:
+        from veritx_dse.application.requirements import report_passes
+
         from .candidate import candidate_id_for
         from .constraints import evaluate_all
         from .pareto import pareto_ids as _pareto_ids
@@ -295,6 +360,16 @@ class Optimizer:
                 raise OptimizationResultError(
                     f"evaluator design_hash {ev.design_hash!r} != candidate "
                     "request hash — refusing transplanted evaluation")
+            # Product-requirement authority (separate from the optimizer's
+            # constraint authority): a report is accepted only when it is
+            # THIS candidate's report, and a binding failure makes the
+            # candidate optimization-ineligible even though the backend
+            # returned EVALUATED.
+            report = ev.requirement_report
+            _check_report_binding(ev, report, cand.candidate_id)
+            product_satisfied: bool | None = None
+            if report is not None:
+                product_satisfied = report_passes(report)
             if ev.status == "EVALUATED":
                 verdicts = evaluate_all(definition.constraints,
                                         ev.objective_values)
@@ -320,6 +395,10 @@ class Optimizer:
                 if not definition.constraints:
                     verdicts["feasible"] = False
             feasible = verdicts["feasible"]
+            if product_satisfied is False:
+                # Backend success alone is never optimization-eligible:
+                # binding product requirements must pass.
+                feasible = False
             details = _requirement_details(verdicts["verdicts"])
             unmeasured_objectives = tuple(
                 o.metric for o in definition.objectives
@@ -354,8 +433,8 @@ class Optimizer:
                     for k, v in verdicts["verdicts"].items()},
                 pareto_member=pareto_member,
                 performance_result_id=ev.performance_result_id,
-                requirement_report_id=_requirement_report_id(
-                    ev.requirement_report),
+                requirement_report_id=_requirement_report_id(report),
+                product_requirements_satisfied=product_satisfied,
                 compilation_status=getattr(
                     ev, "compilation_status", "COMPILED"),
                 requirement_details=details,
@@ -376,6 +455,8 @@ class Optimizer:
             pareto_member=(r.candidate_id in front_set),
             performance_result_id=r.performance_result_id,
             requirement_report_id=r.requirement_report_id,
+            product_requirements_satisfied=
+                r.product_requirements_satisfied,
             compilation_status=r.compilation_status,
             requirement_details=r.requirement_details,
             all_binding_satisfied=r.all_binding_satisfied,

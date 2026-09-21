@@ -578,6 +578,89 @@ class _FixedReportPort:
             requirement_report=report)
 
 
+class _TransplantedReportPort:
+    """Evaluator that returns ANOTHER design's report under this id."""
+
+    def __init__(self, foreign_design_hash: str | None = None):
+        self.foreign = foreign_design_hash
+
+    def evaluate(self, candidate):
+        report = {
+            "contract_version": 1,
+            "design_hash": "sha256:" + (
+                self.foreign if self.foreign is not None
+                else candidate.request.design_hash()),
+            "performance_result_id": "perf:foreign",
+            "entries": [{
+                "requirement_index": 0,
+                "traffic_class": "tp_collective",
+                "qos_class": "latency_critical",
+                "verdict": "SATISFIED",
+                "binding": True,
+                "required": 600.0,
+                "measured": 10.0,
+                "metric_authority": "test",
+                "performance_result_id": "perf:foreign",
+                "reason": "test",
+            }],
+        }
+        return CandidateEvaluation(
+            candidate_id=candidate.candidate_id,
+            design_hash=candidate.request.design_hash(),
+            status="EVALUATED",
+            objective_values={"latency": 10.0},
+            locked_consequences={},
+            performance_result_id="perf:foreign",
+            requirement_report=report,
+            requirement_report_id="forged-not-the-report-identity",
+        )
+
+
+class TestProductRequirementAuthority:
+    """A1: product requirements are a separate authority from the study's
+    optimizer constraints; backend success alone never makes a candidate
+    optimization-eligible when binding product requirements fail."""
+
+    def _defn(self):
+        return OptimizationDefinition(
+            domain=(DomainParam("link_width", (32, 128)),),
+            objectives=(Objective("latency", "MIN"),),
+            method="grid")
+
+    def test_backend_success_with_failing_binding_report_is_ineligible(self):
+        base = _base()
+        result = Optimizer().optimize(
+            base, self._defn(), _FixedReportPort(True))
+        assert result.pareto_ids == ()
+        assert result.selected_candidate_id is None
+        for r in result.records:
+            assert r.evaluation_status == "EVALUATED"
+            assert r.product_requirements_satisfied is False
+            assert r.pareto_member is False
+            assert r.requirement_report_id
+        ok = Optimizer().optimize(
+            base, self._defn(), _FixedReportPort(False))
+        assert ok.pareto_ids
+        for r in ok.records:
+            assert r.product_requirements_satisfied is True
+            assert r.requirement_report_id
+
+    def test_transplanted_report_refuses_even_with_forged_identity(self):
+        base = _base()
+        foreign = "ab" * 32
+        with pytest.raises(OptimizationResultError, match="transplanted"):
+            Optimizer().optimize(
+                base, self._defn(), _TransplantedReportPort(foreign))
+
+    def test_report_id_is_rederived_not_trusted(self):
+        """The carried id is cross-checked: a report whose identity field
+        is forged is refused, never bound."""
+        base = _base()
+        with pytest.raises(OptimizationResultError, match="forged"):
+            Optimizer().optimize(
+                base, self._defn(), _TransplantedReportPort(None))
+
+
 class TestResultIdBindsProvenance:
     def _study(self):
         base = _base()
