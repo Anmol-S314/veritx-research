@@ -217,12 +217,22 @@ def _mesh_routing_class(bundle: Any) -> str:
 
 
 def _mesh_link_semantics(bundle: Any) -> None:
-    """Unit latency/weights and no parallel channels, or refuse.
+    """Unit latency/weights, no parallel channels, and exact native
+    k x k mesh adjacency, or refuse.
 
     Native mesh links are latency 1 (no per-link control exists), DOR
     ignores route weights (a non-unit weight would leave a fabric
     semantic unexecuted), and parallel channels have no native
     representation (last-mention-wins ambiguity, as with AnyNet).
+
+    The channel set must BE the native k x k mesh adjacency (row-major
+    numbering, x = router_id % k, y = router_id // k), both directions.
+    Anything else — an express (non-grid) edge, or a missing grid edge
+    — has no native representation: BookSim derives its link topology
+    from k alone, so the artifact's channels would not be the channels
+    the backend executes. This is the positive proof behind the
+    TOPOLOGY_GRAPH -> DERIVED_EXACT claim; without it that claim is
+    unearned.
     """
     latencies = {c.latency_cycles for c in bundle.topology.channels}
     if latencies != {1}:
@@ -243,6 +253,22 @@ def _mesh_link_semantics(bundle: Any) -> None:
         raise BookSimLoweringError(
             f"UNSUPPORTED: parallel channels between routers "
             f"{parallel[:3]} have no native mesh representation")
+    k = _mesh_shape(bundle)
+    expected: set[tuple[int, int]] = set()
+    for r in range(k * k):
+        x, y = r % k, r // k
+        for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+            if 0 <= nx < k and 0 <= ny < k:
+                expected.add((r, ny * k + nx))
+    actual = set(pairs)
+    if actual != expected:
+        missing = sorted(expected - actual)
+        extra = sorted(actual - expected)
+        raise BookSimLoweringError(
+            f"UNSUPPORTED: the fabric's directed channel set is not the "
+            f"native {k}x{k} mesh adjacency in row-major numbering "
+            f"(x = router_id % k, both directions); missing "
+            f"{missing[:5]}, extra {extra[:5]}")
 
 
 def _vc_exactness(vc: Any) -> tuple[bool, str]:
