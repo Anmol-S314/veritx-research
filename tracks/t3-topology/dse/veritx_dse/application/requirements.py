@@ -23,14 +23,21 @@ Measurement honesty (binding — every rule enforced below):
   window: fabric-wide or single-class aggregates evaluate; class-scoped
   requirements over multi-class workloads are UNMEASURABLE (per-class
   bytes are not evidenced). Absent bytes are absent, never zero-filled.
-* **Cycles meet seconds at the design clock.** Latency ceilings are
-  declared in fabric cycles; the result measures in exact seconds. The
-  conversion uses request.physical.default_clock_freq_mhz (the design's
-  own clock, named in metric_authority) — never a guessed frequency.
-  Preferred measured source is the bound network window duration
-  (network-only); fallback is makespan (compute+network superset —
-  conservative: may false-violate, never false-pass; the reason says
-  which source was used).
+* **Cycles are compared to cycles.** A latency ceiling is declared in
+  fabric cycles, so it is compared against the fabric cycles the bound
+  network window AUTHENTICATED: the binding records the exact pair
+  (duration seconds, network_clock_hz) produced by
+  completion_time / network_clock_hz, so multiplying them recovers the
+  backend's completion_time exactly and the CALLER's clock cancels. A
+  caller clock can rescale the wall duration but never the authenticated
+  cycles. When no network window is bound, the makespan (compute+network
+  wall-time superset) is converted with the DESIGN's own clock and the
+  authority string says so — a documented conservative fallback, never a
+  caller-clock rescale.
+* **Wall-time stays wall-time.** Cycles-only evidence (no valid network
+  clock) still refuses wall-time claims upstream (FabricEvaluator
+  UNSUPPORTED, cycles-only window); requirement evaluation never
+  invents the missing frequency.
 * **Binding + UNMEASURABLE never passes.** report_passes() is False
   unless every BINDING entry is SATISFIED. Non-binding entries are
   advisory. A requirement with no thresholds at all is NOT_APPLICABLE,
@@ -39,6 +46,13 @@ Measurement honesty (binding — every rule enforced below):
   request geometry (same TP/PP/EP/DP law as the traffic seam: equal
   world size is not equivalence); a class-scoped requirement naming a
   class outside the request's intent registry refuses fail-closed.
+* **The triple must belong to one design.** Geometry equality alone
+  admits a same-shape transplant: two v3 requests with identical
+  TP/PP/EP/DP but different payloads/semantics lower to same-geometry
+  graphs. The workload's provenance design_hash must equal the
+  request's design_hash(), and the performance result's Wave-D chain
+  must bind THIS workload's workload_id(). Missing provenance or a
+  missing chain refuses — an absent binding is not a pass.
 
 Report shape follows contracts/srota/v1/requirement.report.schema.json
 (contract_version 1): per-requirement {requirement_index,
@@ -47,10 +61,15 @@ metric_authority, performance_result_id, reason}.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from fractions import Fraction
 from typing import Any
 
-from veritx_dse.core.errors import InvalidInput, MappingInvalid
+from veritx_dse.core.errors import (
+    EvidenceInvalid,
+    InvalidInput,
+    MappingInvalid,
+)
 from veritx_dse.model.compile_model import (
     CompileRequestV3,
     RequirementV3,
@@ -112,30 +131,94 @@ def _bytes_fraction(v: Any) -> Fraction | None:
 
 
 def _design_clock_hz(request: CompileRequestV3) -> Fraction:
-    """The design's own clock (exact Hz) — the only legal converter."""
+    """The design's own clock (exact Hz) — the only legal converter for
+    the makespan fallback (never a caller-supplied network clock)."""
     mhz = request.physical.default_clock_freq_mhz
     return Fraction(str(mhz)) * 10 ** 6
 
 
-def _measured_latency_seconds(performance: dict[str, Any]
-                              ) -> tuple[Fraction, str]:
-    """(seconds, authority) for the latency bound comparison.
+def _binding_clock_hz(raw: Any) -> Fraction | None:
+    """The binding's recorded network clock as exact Hz, or None if the
+    persisted field is null (cycles-only binding)."""
+    if raw is None:
+        return None
+    if isinstance(raw, bool) or not isinstance(raw, (int, Fraction, dict)):
+        raise EvidenceInvalid(
+            f"network_binding.network_clock_hz must be null, an exact "
+            f"number or {{num, den}}, got {raw!r}")
+    if isinstance(raw, dict):
+        if set(raw) != {"num", "den"}:
+            raise EvidenceInvalid(
+                f"network_binding.network_clock_hz must have exactly "
+                f"{{num, den}}, got {sorted(raw)}")
+        n, den = raw["num"], raw["den"]
+        if not isinstance(n, int) or isinstance(n, bool) or \
+                not isinstance(den, int) or isinstance(den, bool) \
+                or den <= 0:
+            raise EvidenceInvalid(
+                f"network_binding.network_clock_hz has a malformed value "
+                f"{raw!r}")
+        hz = Fraction(n, den)
+    else:
+        hz = Fraction(raw)
+    if hz <= 0:
+        raise EvidenceInvalid(
+            f"network_binding.network_clock_hz must be > 0, got {raw!r}")
+    return hz
 
-    Prefers the bound network window duration (network-only, tighter);
-    falls back to makespan (compute+network superset — conservative).
-    Refuses only when neither exists: a verified result always carries
-    a makespan, so this is a malformed-document refusal, not a metric
-    gap.
+
+def _authenticated_latency_cycles(
+        performance: dict[str, Any]) -> tuple[Fraction | None, str]:
+    """The bound network window's authenticated completion cycles.
+
+    The binding is the only source of AUTHENTICATED fabric cycles: it
+    records (duration, network_clock_hz) as the exact image of the
+    backend's integer completion_time under that clock. Multiplying the
+    pair recovers that integer exactly — the caller's clock cancels —
+    and a pair that does not reconstruct an integer cycle count is
+    refused rather than measured. Returns (None, "") when no window
+    duration is bound (cycles-only or compute-only evidence).
     """
     binding = performance.get("network_binding")
-    if isinstance(binding, dict) and binding.get("duration") is not None:
-        return (_qtime_fraction(binding["duration"],
-                                "network_binding.duration"),
-                "performance_result.network_binding.duration")
+    if not isinstance(binding, dict) or binding.get("duration") is None:
+        return None, ""
+    seconds = _qtime_fraction(binding["duration"],
+                              "network_binding.duration")
+    hz = _binding_clock_hz(binding.get("network_clock_hz"))
+    if hz is None:
+        raise EvidenceInvalid(
+            "network_binding.duration is recorded without the network "
+            "clock that produced it — a wall duration without its clock "
+            "cannot authenticate cycles, and the missing clock is not "
+            "a pass")
+    cycles = seconds * hz
+    if cycles.denominator != 1:
+        raise EvidenceInvalid(
+            f"network_binding duration {seconds} s x clock {hz} Hz is "
+            f"not an integer cycle count ({cycles}); BookSim "
+            f"completion_time is integral, so this pair cannot be the "
+            f"authenticated window — refusing to measure it")
+    return (cycles,
+            "performance_result.network_binding.duration x "
+            "network_binding.network_clock_hz (authenticated "
+            "completion_time cycles)")
+
+
+def _makespan_latency_seconds(performance: dict[str, Any]
+                              ) -> tuple[Fraction, str]:
+    """(seconds, authority) for the wall-time fallback.
+
+    The bound network window is measured as AUTHENTICATED CYCLES
+    (``_authenticated_latency_cycles``); this fallback is reached only
+    when no window duration is bound. The verified makespan
+    (compute+network superset) is wall time, converted by the DESIGN's
+    clock at the call site — conservative: may false-violate, never
+    false-pass, and never driven by a caller clock.
+    """
     makespan = performance.get("makespan")
     if makespan is None:
         raise InvalidInput(
-            "performance result carries neither network_binding.duration "
+            "performance result carries neither a bound network window "
             "nor makespan — no latency evidence at all")
     return (_qtime_fraction(makespan, "makespan"),
             "performance_result.makespan (conservative: compute+network)")
@@ -183,19 +266,21 @@ def _measured_bandwidth_bps(performance: dict[str, Any]
 
 
 def _evaluate_latency(*, requirement: RequirementV3,
-                      measured_s: Fraction,
+                      measured_cycles: Fraction,
                       measured_authority: str,
-                      clock_hz: Fraction,
+                      rescaled_fallback: bool,
                       scoped_conservative: bool,
                       intent_classes: tuple[str, ...],
                       ) -> tuple[str, float, float, str, str]:
     """(verdict, required_cycles, measured_cycles, authority, reason)."""
     ceiling = requirement.latency_ceiling_cycles
     assert ceiling is not None
-    required_s = Fraction(str(ceiling)) / clock_hz
-    measured_cycles = measured_s * clock_hz
-    authority = (f"{measured_authority} @ "
-                 f"design.physical.default_clock_freq_mhz")
+    required_cycles = Fraction(str(ceiling))
+    authority = measured_authority
+    if rescaled_fallback:
+        authority = (f"{measured_authority} @ "
+                     f"design.physical.default_clock_freq_mhz "
+                     f"(wall-time superset, conservative)")
     scope_note = ""
     if requirement.traffic_class is not None:
         if scoped_conservative:
@@ -207,7 +292,7 @@ def _evaluate_latency(*, requirement: RequirementV3,
             scope_note = (
                 f" class-scoped to {requirement.traffic_class!r} "
                 f"(single-class workload: aggregate == class evidence)")
-    if measured_s <= required_s:
+    if measured_cycles <= required_cycles:
         return (VERDICT_SATISFIED, float(ceiling), float(measured_cycles),
                 authority,
                 f"measured {measured_cycles} cycles <= ceiling {ceiling} "
@@ -267,9 +352,12 @@ class RequirementEvaluator:
         """Build the RequirementReport for one (request, workload, result).
 
         Refuses (typed): non-v3 request, non-graph workload, geometry
-        mismatch between request and workload, unknown class scope, or
-        a result missing its identity/makespan spine. Per-metric gaps
-        become UNMEASURABLE entries, never exceptions and never passes.
+        mismatch between request and workload, workload provenance that
+        does not name this request's design, a performance result whose
+        Wave-D chain binds another workload (or that carries no chain),
+        unknown class scope, or a result missing its identity/makespan
+        spine. Per-metric gaps become UNMEASURABLE entries, never
+        exceptions and never passes.
         """
         if not isinstance(request, CompileRequestV3):
             raise InvalidInput(
@@ -296,6 +384,49 @@ class RequirementEvaluator:
                 "performance result carries no resource_id — cannot bind "
                 "report entries to evidence")
 
+        # ── provenance law: the triple must belong to ONE design ─────
+        # Geometry equality is necessary, not sufficient: payload bytes,
+        # traffic classes and collective semantics do not enter the
+        # geometry, so a same-shape transplant would otherwise yield a
+        # report carrying B's design_hash over A's measurements.
+        request_design_hash = request.design_hash()
+        provenance = workload.provenance
+        if not isinstance(provenance, Mapping):
+            raise EvidenceInvalid(
+                "workload carries no provenance block — the request, "
+                "workload and performance cannot be proven to belong "
+                "together, and missing provenance is not a pass")
+        workload_design_hash = provenance.get("design_hash")
+        if not isinstance(workload_design_hash, str) \
+                or not workload_design_hash:
+            raise EvidenceInvalid(
+                f"workload provenance declares no design_hash (has "
+                f"{sorted(provenance)}); refusing an unbindable workload")
+        if workload_design_hash != request_design_hash:
+            raise MappingInvalid(
+                f"workload provenance design_hash "
+                f"{workload_design_hash!r} does not match request "
+                f"design_hash {request_design_hash!r} — refusing a "
+                f"workload transplanted from another design")
+        chain = performance.get("wave_d_chain")
+        if not isinstance(chain, Mapping):
+            raise EvidenceInvalid(
+                "performance result carries no wave_d_chain block — the "
+                "measurements cannot be bound to this workload, and a "
+                "missing binding is not a pass")
+        chain_workload_id = chain.get("workload_graph_id")
+        if not isinstance(chain_workload_id, str) or not chain_workload_id:
+            raise EvidenceInvalid(
+                f"performance wave_d_chain declares no workload_graph_id "
+                f"(has {sorted(chain)}); refusing an unbindable result")
+        workload_id = workload.workload_id()
+        if chain_workload_id != workload_id:
+            raise MappingInvalid(
+                f"performance wave_d_chain.workload_graph_id "
+                f"{chain_workload_id!r} is not this workload's id "
+                f"{workload_id!r} — refusing measurements transplanted "
+                f"from another workload")
+
         intent_classes = derive_v3_traffic_classes(request)
         single_class = len(intent_classes) <= 1
         clock_hz = _design_clock_hz(request)
@@ -317,13 +448,28 @@ class RequirementEvaluator:
                                    and not single_class)
             parts: list[tuple[str, Any, Any, str, str]] = []
             if req.latency_ceiling_cycles is not None:
-                measured_s, authority = _measured_latency_seconds(
-                    performance)
-                parts.append(_evaluate_latency(
-                    requirement=req, measured_s=measured_s,
-                    measured_authority=authority, clock_hz=clock_hz,
-                    scoped_conservative=scoped_conservative,
-                    intent_classes=intent_classes))
+                measured_cycles, cycles_authority = \
+                    _authenticated_latency_cycles(performance)
+                if measured_cycles is None:
+                    # No bound network window: the verified makespan
+                    # (compute+network wall-time superset) converted by
+                    # the DESIGN's own clock. Never the caller's clock.
+                    measured_s, authority = _makespan_latency_seconds(
+                        performance)
+                    measured_cycles = measured_s * clock_hz
+                    parts.append(_evaluate_latency(
+                        requirement=req, measured_cycles=measured_cycles,
+                        measured_authority=authority,
+                        rescaled_fallback=True,
+                        scoped_conservative=scoped_conservative,
+                        intent_classes=intent_classes))
+                else:
+                    parts.append(_evaluate_latency(
+                        requirement=req, measured_cycles=measured_cycles,
+                        measured_authority=cycles_authority,
+                        rescaled_fallback=False,
+                        scoped_conservative=scoped_conservative,
+                        intent_classes=intent_classes))
             if req.bandwidth_floor_gbps is not None:
                 measured_bps, bw_authority = _measured_bandwidth_bps(
                     performance)
