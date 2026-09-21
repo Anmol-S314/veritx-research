@@ -1,0 +1,25 @@
+{
+  "name": "srota-studio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Srota Studio — fixture-backed NoC fabric product UI (P4). No engine connectivity; boots from contract-validated fixtures only.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "validate": "python3 scripts/validate_fixtures.py",
+    "gen-fixtures": "python3 fixtures/generate_fixtures.py"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "~5.7.2",
+    "vite": "^6.0.7"
+  }
+}

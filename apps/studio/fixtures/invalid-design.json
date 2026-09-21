@@ -1,0 +1,174 @@
+{
+  "fixture_id": "invalid-design",
+  "title": "INVALID design (concentration 7 vs 64 tiles)",
+  "description": "Compiler-typed refusal: 2 of 10 obligations FAIL, no bundle, no resolved fabric hash. Verify section shows the failing obligations with reasons.",
+  "design": {
+    "contract_version": 1,
+    "design_hash": "sha256:1fb982ed91a8c811b4fdaaf4fa2e6eecc8b41eb0e6bc8a9c8a843b64e6e5dfe3",
+    "schema_version": 3,
+    "compiler_semantics_version": 1,
+    "workload": {
+      "model_family": "llama3",
+      "model_name": "llama3-70b",
+      "parallelism": {
+        "tp": 8,
+        "pp": 2,
+        "ep": 4,
+        "dp": 2
+      },
+      "serving_mode": "decode",
+      "workload_source_ref": {
+        "content_digest": "sha256:b152c6631db51783a6d820ef591f3b63f3c0a08f3e23b457f316b267b6078ea7",
+        "format": "srota-workload-v3",
+        "size_bytes": 4096
+      }
+    },
+    "requirements": [
+      {
+        "traffic_class": "hbm_read",
+        "qos_class": "latency_sensitive",
+        "latency_ceiling_cycles": 220,
+        "bandwidth_floor_gbps": null,
+        "binding": true
+      },
+      {
+        "traffic_class": "allreduce",
+        "qos_class": "throughput_sensitive",
+        "latency_ceiling_cycles": null,
+        "bandwidth_floor_gbps": 1800,
+        "binding": true
+      },
+      {
+        "traffic_class": "control",
+        "qos_class": "best_effort",
+        "latency_ceiling_cycles": null,
+        "bandwidth_floor_gbps": null,
+        "binding": false
+      }
+    ],
+    "agents": [
+      {
+        "kind": "compute",
+        "count": 64
+      },
+      {
+        "kind": "hbm",
+        "count": 8
+      },
+      {
+        "kind": "nic",
+        "count": 2
+      },
+      {
+        "kind": "peripheral",
+        "count": 4
+      }
+    ],
+    "noc_guided": {
+      "topology_family": "MESH",
+      "radix": 9,
+      "concentration": 7,
+      "link_width": 128,
+      "rcu_enabled": false,
+      "arbitration": "round_robin"
+    },
+    "locked_derived": null
+  },
+  "compilation": {
+    "contract_version": 1,
+    "status": "INVALID",
+    "design_hash": "sha256:1fb982ed91a8c811b4fdaaf4fa2e6eecc8b41eb0e6bc8a9c8a843b64e6e5dfe3",
+    "compiler_semantics_version": 1,
+    "certificate_id": "sha256:f11476861d19dde8420bc3126c7ddffb9ddeb76d619752e7c30ada8421a5c8cb",
+    "certificate_overall": "FAIL",
+    "obligations": [
+      {
+        "obligation": "TOPOLOGY_CONNECTED",
+        "status": "PASS",
+        "method": "undirected-bfs/v1",
+        "evidence": {
+          "digest": "3b07e167cecca230"
+        }
+      },
+      {
+        "obligation": "ATTACHMENT_COMPLETE",
+        "status": "FAIL",
+        "method": "seat-ledger/v1",
+        "evidence": {
+          "digest": "f1cc80f101b246b7",
+          "reason": "concentration 7 leaves 1 compute tile unseated (64 mod 7 != 0); 63/64 agents attached"
+        }
+      },
+      {
+        "obligation": "ADDRESS_DECODE_VALID",
+        "status": "PASS",
+        "method": "decode-cover/v1",
+        "evidence": {
+          "digest": "c72d018212548c78"
+        }
+      },
+      {
+        "obligation": "ROUTE_COMPLETE",
+        "status": "PASS",
+        "method": "class-src-dst-cover/v1",
+        "evidence": {
+          "digest": "dd3e2ed5e8e0dedd"
+        }
+      },
+      {
+        "obligation": "ROUTE_LEGAL",
+        "status": "PASS",
+        "method": "channel-legal/v1",
+        "evidence": {
+          "digest": "6879716185655a3b"
+        }
+      },
+      {
+        "obligation": "VC_ASSIGNMENT_VALID",
+        "status": "PASS",
+        "method": "route-bound-vc/v1",
+        "evidence": {
+          "digest": "c90682b6ed545848"
+        }
+      },
+      {
+        "obligation": "DEADLOCK_FREE",
+        "status": "PASS",
+        "method": "channel-vc-cdg-acyclic/v1",
+        "evidence": {
+          "digest": "9f7130c25bd6d5ec"
+        }
+      },
+      {
+        "obligation": "MAPPING_VALID",
+        "status": "FAIL",
+        "method": "rank-attachment/v1",
+        "evidence": {
+          "digest": "a79c850604f18763",
+          "reason": "concentration 7 leaves 1 compute tile unseated (64 mod 7 != 0); 63/64 agents attached"
+        }
+      },
+      {
+        "obligation": "PACKET_FORMAT_VALID",
+        "status": "PASS",
+        "method": "wire-format-fit/v1",
+        "evidence": {
+          "digest": "087a01ae71e6f2d0"
+        }
+      },
+      {
+        "obligation": "FABRIC_DAG_VALID",
+        "status": "PASS",
+        "method": "bundle.revalidate/v1",
+        "evidence": {
+          "digest": "f38c87b5240185be"
+        }
+      }
+    ],
+    "artifact_hashes": {},
+    "error": "INVALID: concentration 7 does not divide 64 compute tiles; ATTACHMENT_COMPLETE and MAPPING_VALID FAIL. No bundle produced."
+  },
+  "evaluation": null,
+  "requirements": null,
+  "optimization": null
+}

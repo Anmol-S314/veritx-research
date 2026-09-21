@@ -1,0 +1,212 @@
+{
+  "fixture_id": "backend-unavailable",
+  "title": "Compiled design, no qualified simulator backend",
+  "description": "Preconditions met but no qualified BookSim producer exists, so the outcome is BACKEND_UNAVAILABLE with a reason and no metrics.",
+  "design": {
+    "contract_version": 1,
+    "design_hash": "sha256:8ea5d20620ff662635e4540687ea34f00e3cebd7af9e75756af45fab3bcc63d7",
+    "schema_version": 3,
+    "compiler_semantics_version": 1,
+    "workload": {
+      "model_family": "llama3",
+      "model_name": "llama3-70b",
+      "parallelism": {
+        "tp": 8,
+        "pp": 2,
+        "ep": 4,
+        "dp": 2
+      },
+      "serving_mode": "decode",
+      "workload_source_ref": {
+        "content_digest": "sha256:2a57db812eec72627787186f1503cf19f1b15779d54e09e61f2011a4b63f776b",
+        "format": "srota-workload-v3",
+        "size_bytes": 4096
+      }
+    },
+    "requirements": [
+      {
+        "traffic_class": "hbm_read",
+        "qos_class": "latency_sensitive",
+        "latency_ceiling_cycles": 220,
+        "bandwidth_floor_gbps": null,
+        "binding": true
+      },
+      {
+        "traffic_class": "allreduce",
+        "qos_class": "throughput_sensitive",
+        "latency_ceiling_cycles": null,
+        "bandwidth_floor_gbps": 1800,
+        "binding": true
+      },
+      {
+        "traffic_class": "control",
+        "qos_class": "best_effort",
+        "latency_ceiling_cycles": null,
+        "bandwidth_floor_gbps": null,
+        "binding": false
+      }
+    ],
+    "agents": [
+      {
+        "kind": "compute",
+        "count": 64
+      },
+      {
+        "kind": "hbm",
+        "count": 8
+      },
+      {
+        "kind": "nic",
+        "count": 2
+      },
+      {
+        "kind": "peripheral",
+        "count": 4
+      }
+    ],
+    "noc_guided": {
+      "topology_family": "MESH",
+      "radix": 5,
+      "concentration": 4,
+      "link_width": 128,
+      "rcu_enabled": true,
+      "arbitration": "round_robin"
+    },
+    "locked_derived": {
+      "routing": "DOR_XY",
+      "vc_count": 4,
+      "turn_restrictions": [
+        "no Y-to-X turn (dimension-order XY)"
+      ],
+      "certificate_overall": "PASS"
+    }
+  },
+  "compilation": {
+    "contract_version": 1,
+    "status": "COMPILED",
+    "design_hash": "sha256:8ea5d20620ff662635e4540687ea34f00e3cebd7af9e75756af45fab3bcc63d7",
+    "compiler_semantics_version": 1,
+    "resolved_fabric_hash": "sha256:0451903ff9a15bd573557887a69e0eccfdbc77f086f0f39f6dca0129275a63be",
+    "certificate_id": "sha256:ab8f7897e5cdae6a41251f49083e9527103014a9c5498464e8e753ab906bd737",
+    "certificate_overall": "PASS",
+    "obligations": [
+      {
+        "obligation": "TOPOLOGY_CONNECTED",
+        "status": "PASS",
+        "method": "undirected-bfs/v1",
+        "evidence": {
+          "digest": "aa71cd45cc7ec717",
+          "bound": "sha256:0451903ff9a15bd573557887a69e0eccfdbc77f086f0f39f6dca0129275a63be"
+        }
+      },
+      {
+        "obligation": "ATTACHMENT_COMPLETE",
+        "status": "PASS",
+        "method": "seat-ledger/v1",
+        "evidence": {
+          "digest": "138d124cea7581de",
+          "bound": "sha256:0451903ff9a15bd573557887a69e0eccfdbc77f086f0f39f6dca0129275a63be"
+        }
+      },
+      {
+        "obligation": "ADDRESS_DECODE_VALID",
+        "status": "PASS",
+        "method": "decode-cover/v1",
+        "evidence": {
+          "digest": "ae07378466a94f4a",
+          "bound": "sha256:0451903ff9a15bd573557887a69e0eccfdbc77f086f0f39f6dca0129275a63be"
+        }
+      },
+      {
+        "obligation": "ROUTE_COMPLETE",
+        "status": "PASS",
+        "method": "class-src-dst-cover/v1",
+        "evidence": {
+          "digest": "fdef012fdf5e047e",
+          "bound": "sha256:0451903ff9a15bd573557887a69e0eccfdbc77f086f0f39f6dca0129275a63be"
+        }
+      },
+      {
+        "obligation": "ROUTE_LEGAL",
+        "status": "PASS",
+        "method": "channel-legal/v1",
+        "evidence": {
+          "digest": "278b0ecdb9e03be3",
+          "bound": "sha256:0451903ff9a15bd573557887a69e0eccfdbc77f086f0f39f6dca0129275a63be"
+        }
+      },
+      {
+        "obligation": "VC_ASSIGNMENT_VALID",
+        "status": "PASS",
+        "method": "route-bound-vc/v1",
+        "evidence": {
+          "digest": "7d1ee3fade87f9c5",
+          "bound": "sha256:0451903ff9a15bd573557887a69e0eccfdbc77f086f0f39f6dca0129275a63be"
+        }
+      },
+      {
+        "obligation": "DEADLOCK_FREE",
+        "status": "PASS",
+        "method": "channel-vc-cdg-acyclic/v1",
+        "evidence": {
+          "digest": "44f3e27e325786c1",
+          "bound": "sha256:0451903ff9a15bd573557887a69e0eccfdbc77f086f0f39f6dca0129275a63be"
+        }
+      },
+      {
+        "obligation": "MAPPING_VALID",
+        "status": "PASS",
+        "method": "rank-attachment/v1",
+        "evidence": {
+          "digest": "cc10e1531e6005f1",
+          "bound": "sha256:0451903ff9a15bd573557887a69e0eccfdbc77f086f0f39f6dca0129275a63be"
+        }
+      },
+      {
+        "obligation": "PACKET_FORMAT_VALID",
+        "status": "PASS",
+        "method": "wire-format-fit/v1",
+        "evidence": {
+          "digest": "aa63bc484ac60cd1",
+          "bound": "sha256:0451903ff9a15bd573557887a69e0eccfdbc77f086f0f39f6dca0129275a63be"
+        }
+      },
+      {
+        "obligation": "FABRIC_DAG_VALID",
+        "status": "PASS",
+        "method": "bundle.revalidate/v1",
+        "evidence": {
+          "digest": "4255e2901e6be639",
+          "bound": "sha256:0451903ff9a15bd573557887a69e0eccfdbc77f086f0f39f6dca0129275a63be"
+        }
+      }
+    ],
+    "artifact_hashes": {
+      "topology": "sha256:a8ee7127c51f4a8a6c81ba0540a2bd388c634b5f9ffd50d8d61e96a0e5a9d2dd",
+      "attachment": "sha256:3e2b466355b719f54f2d65d6dc532dea951f8b559ad9ab819a0e4d25e3f287a9",
+      "routes": "sha256:94e3520614406184490db97ba99aa6affefc6b259c9a7aed5cfb0e7431e03a09",
+      "vc_assignment": "sha256:bbc85d932ec60b8797c6c3d9db5af9fc8ce191cb11a191c6a16bc65f6a93e0f0",
+      "packet_format": "sha256:6ab0768409995badd4691be5ccd423e226752773067d71725045927ef5e77cf3",
+      "router_behavior": "sha256:60509e272d13eabaf599644ba449e625c0d994309bacf1e9bf9b353890130cb3",
+      "address_decode": "sha256:ca8ca13208fbdbca66f3360f6e60a275f441642e3b3d64d9247674a9b74a6b16",
+      "fabric": "sha256:0451903ff9a15bd573557887a69e0eccfdbc77f086f0f39f6dca0129275a63be"
+    },
+    "error": null
+  },
+  "evaluation": {
+    "contract_version": 1,
+    "status": "BACKEND_UNAVAILABLE",
+    "design_hash": "sha256:8ea5d20620ff662635e4540687ea34f00e3cebd7af9e75756af45fab3bcc63d7",
+    "resolved_fabric_hash": "sha256:0451903ff9a15bd573557887a69e0eccfdbc77f086f0f39f6dca0129275a63be",
+    "workload_id": "wl-mesh64-nobe",
+    "backend_producer": null,
+    "evidence": null,
+    "performance_result_id": null,
+    "network_traffic_window": null,
+    "metrics": null,
+    "fidelity_warning": null,
+    "reason": "No qualified BookSim producer on this host. Preconditions met (COMPILED + certificate PASS); no backend work attempted, no performance fabricated."
+  },
+  "requirements": null,
+  "optimization": null
+}

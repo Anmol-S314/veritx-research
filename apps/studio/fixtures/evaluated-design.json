@@ -1,0 +1,274 @@
+{
+  "fixture_id": "evaluated-design",
+  "title": "Evaluated design (BookSim aggregate window + requirements)",
+  "description": "EVALUATED outcome with the single honest aggregate window, backend-present metrics only, producer identity, fidelity warning, and a RequirementReport bound to the performance result.",
+  "design": {
+    "contract_version": 1,
+    "design_hash": "sha256:ff214988cb2b3a2f1aa20f17775f346ae8d52b787d3557b25659b409f6ad0b11",
+    "schema_version": 3,
+    "compiler_semantics_version": 1,
+    "workload": {
+      "model_family": "llama3",
+      "model_name": "llama3-70b",
+      "parallelism": {
+        "tp": 8,
+        "pp": 2,
+        "ep": 4,
+        "dp": 2
+      },
+      "serving_mode": "decode",
+      "workload_source_ref": {
+        "content_digest": "sha256:244b6ba56c0023f08b30b7d997c87fab76c0aebcc580ad390c2e8c678eae8e5a",
+        "format": "srota-workload-v3",
+        "size_bytes": 4096
+      }
+    },
+    "requirements": [
+      {
+        "traffic_class": "hbm_read",
+        "qos_class": "latency_sensitive",
+        "latency_ceiling_cycles": 220,
+        "bandwidth_floor_gbps": null,
+        "binding": true
+      },
+      {
+        "traffic_class": "allreduce",
+        "qos_class": "throughput_sensitive",
+        "latency_ceiling_cycles": null,
+        "bandwidth_floor_gbps": 1800,
+        "binding": true
+      },
+      {
+        "traffic_class": "control",
+        "qos_class": "best_effort",
+        "latency_ceiling_cycles": null,
+        "bandwidth_floor_gbps": null,
+        "binding": false
+      }
+    ],
+    "agents": [
+      {
+        "kind": "compute",
+        "count": 64
+      },
+      {
+        "kind": "hbm",
+        "count": 8
+      },
+      {
+        "kind": "nic",
+        "count": 2
+      },
+      {
+        "kind": "peripheral",
+        "count": 4
+      }
+    ],
+    "noc_guided": {
+      "topology_family": "MESH",
+      "radix": 5,
+      "concentration": 4,
+      "link_width": 128,
+      "rcu_enabled": true,
+      "arbitration": "round_robin"
+    },
+    "locked_derived": {
+      "routing": "DOR_XY",
+      "vc_count": 4,
+      "turn_restrictions": [
+        "no Y-to-X turn (dimension-order XY)"
+      ],
+      "certificate_overall": "PASS"
+    }
+  },
+  "compilation": {
+    "contract_version": 1,
+    "status": "COMPILED",
+    "design_hash": "sha256:ff214988cb2b3a2f1aa20f17775f346ae8d52b787d3557b25659b409f6ad0b11",
+    "compiler_semantics_version": 1,
+    "resolved_fabric_hash": "sha256:d7be9f92bdc1652c24ccf98b10915bdd18c517eff5adbc581a0153111e4275c1",
+    "certificate_id": "sha256:9d9be19c4ec8e8278eca0d8c358b43b2d666fd91242329f806e70947c54f8edb",
+    "certificate_overall": "PASS",
+    "obligations": [
+      {
+        "obligation": "TOPOLOGY_CONNECTED",
+        "status": "PASS",
+        "method": "undirected-bfs/v1",
+        "evidence": {
+          "digest": "f8af396059195c48",
+          "bound": "sha256:d7be9f92bdc1652c24ccf98b10915bdd18c517eff5adbc581a0153111e4275c1"
+        }
+      },
+      {
+        "obligation": "ATTACHMENT_COMPLETE",
+        "status": "PASS",
+        "method": "seat-ledger/v1",
+        "evidence": {
+          "digest": "d10e2ee7ebc09df3",
+          "bound": "sha256:d7be9f92bdc1652c24ccf98b10915bdd18c517eff5adbc581a0153111e4275c1"
+        }
+      },
+      {
+        "obligation": "ADDRESS_DECODE_VALID",
+        "status": "PASS",
+        "method": "decode-cover/v1",
+        "evidence": {
+          "digest": "af77bc7e5c7a6166",
+          "bound": "sha256:d7be9f92bdc1652c24ccf98b10915bdd18c517eff5adbc581a0153111e4275c1"
+        }
+      },
+      {
+        "obligation": "ROUTE_COMPLETE",
+        "status": "PASS",
+        "method": "class-src-dst-cover/v1",
+        "evidence": {
+          "digest": "c2c5fbafc30405f5",
+          "bound": "sha256:d7be9f92bdc1652c24ccf98b10915bdd18c517eff5adbc581a0153111e4275c1"
+        }
+      },
+      {
+        "obligation": "ROUTE_LEGAL",
+        "status": "PASS",
+        "method": "channel-legal/v1",
+        "evidence": {
+          "digest": "b2b53b3933258f89",
+          "bound": "sha256:d7be9f92bdc1652c24ccf98b10915bdd18c517eff5adbc581a0153111e4275c1"
+        }
+      },
+      {
+        "obligation": "VC_ASSIGNMENT_VALID",
+        "status": "PASS",
+        "method": "route-bound-vc/v1",
+        "evidence": {
+          "digest": "44bd84fc61ea9802",
+          "bound": "sha256:d7be9f92bdc1652c24ccf98b10915bdd18c517eff5adbc581a0153111e4275c1"
+        }
+      },
+      {
+        "obligation": "DEADLOCK_FREE",
+        "status": "PASS",
+        "method": "channel-vc-cdg-acyclic/v1",
+        "evidence": {
+          "digest": "a510ae7be3ad5edc",
+          "bound": "sha256:d7be9f92bdc1652c24ccf98b10915bdd18c517eff5adbc581a0153111e4275c1"
+        }
+      },
+      {
+        "obligation": "MAPPING_VALID",
+        "status": "PASS",
+        "method": "rank-attachment/v1",
+        "evidence": {
+          "digest": "c1815aa21ac0d5c4",
+          "bound": "sha256:d7be9f92bdc1652c24ccf98b10915bdd18c517eff5adbc581a0153111e4275c1"
+        }
+      },
+      {
+        "obligation": "PACKET_FORMAT_VALID",
+        "status": "PASS",
+        "method": "wire-format-fit/v1",
+        "evidence": {
+          "digest": "e860c66767890ebe",
+          "bound": "sha256:d7be9f92bdc1652c24ccf98b10915bdd18c517eff5adbc581a0153111e4275c1"
+        }
+      },
+      {
+        "obligation": "FABRIC_DAG_VALID",
+        "status": "PASS",
+        "method": "bundle.revalidate/v1",
+        "evidence": {
+          "digest": "305deb52e4691da4",
+          "bound": "sha256:d7be9f92bdc1652c24ccf98b10915bdd18c517eff5adbc581a0153111e4275c1"
+        }
+      }
+    ],
+    "artifact_hashes": {
+      "topology": "sha256:e954225b27fbd37b06c8a1bbc915af5981f77d9409dca3b2d6eaf3545f7ef3c9",
+      "attachment": "sha256:ebf4a28aa7775d302d3218c69541edb4d51d77fbb2c7d0e505eeeaced314ccbf",
+      "routes": "sha256:3efc6b6c5d1d3865ad2d44673cb363bd4b18dbab5d59fd3cada3e273aa57ad67",
+      "vc_assignment": "sha256:073773910ec64524a9c49cf1d3f34b7a53dced357e7725db90cdb4d89b5317b4",
+      "packet_format": "sha256:0e766af1125d948a3ec7cd3f3b3077a46b3756b6b5f358de40198063536f9e3a",
+      "router_behavior": "sha256:cb3dca5f86560286f27653d3ce07c8c40659761e2819d8b529e82a22abc6127f",
+      "address_decode": "sha256:6b0d263bf3ab651fee52292ad08f34d069b92d71251cbfa7c89d94b0778de781",
+      "fabric": "sha256:d7be9f92bdc1652c24ccf98b10915bdd18c517eff5adbc581a0153111e4275c1"
+    },
+    "error": null
+  },
+  "evaluation": {
+    "contract_version": 1,
+    "status": "EVALUATED",
+    "design_hash": "sha256:ff214988cb2b3a2f1aa20f17775f346ae8d52b787d3557b25659b409f6ad0b11",
+    "resolved_fabric_hash": "sha256:d7be9f92bdc1652c24ccf98b10915bdd18c517eff5adbc581a0153111e4275c1",
+    "workload_id": "wl-mesh64-eval",
+    "message_artifact_id": "msg-mesh64-eval-v1",
+    "physical_traffic_id": "pt-mesh64-eval-v1",
+    "backend_producer": {
+      "backend": "booksim2",
+      "producer_identity": "booksim2@tools-base:2026.09 (qualified)",
+      "config_hash": "sha256:6742cd58e5988808a808852a814b4c3f297e21d0c6d3eacd5f341e3c2bfd20da",
+      "input_hash": "sha256:16ca906e2a3fb3ee37b0bc22692f7cddce28a0a6da96f98c50090bb41099d8c2"
+    },
+    "evidence": {
+      "raw_evidence_digest": "f0da750d0a314094",
+      "stats_digest": "008b9e4842c4e6af"
+    },
+    "performance_result_id": "perf-mesh64-eval-v1",
+    "network_traffic_window": {
+      "window_cycles": 50000,
+      "wall_time_ns": null,
+      "cycles_only": true
+    },
+    "metrics": {
+      "packets_injected": 128000,
+      "packets_completed": 128000,
+      "flits_completed": 512000,
+      "avg_packet_latency_cycles": 96.4,
+      "sustained_throughput_flits_per_cycle": 10.24
+    },
+    "fidelity_warning": "Cycle-approximate BookSim-class model. Cycles only \u2014 no valid network clock established, so no wall-time authority. Single aggregate NETWORK_TRAFFIC_WINDOW; never per-operation latency.",
+    "reason": null
+  },
+  "requirements": {
+    "contract_version": 1,
+    "design_hash": "sha256:ff214988cb2b3a2f1aa20f17775f346ae8d52b787d3557b25659b409f6ad0b11",
+    "performance_result_id": "perf-mesh64-eval-v1",
+    "entries": [
+      {
+        "requirement_index": 0,
+        "traffic_class": "hbm_read",
+        "qos_class": "latency_sensitive",
+        "verdict": "SATISFIED",
+        "binding": true,
+        "required": 220,
+        "measured": 96.4,
+        "metric_authority": "performance/result.py::build_performance_result",
+        "performance_result_id": "perf-mesh64-eval-v1",
+        "reason": "avg_packet_latency_cycles 96.4 <= ceiling 220"
+      },
+      {
+        "requirement_index": 1,
+        "traffic_class": "allreduce",
+        "qos_class": "throughput_sensitive",
+        "verdict": "SATISFIED",
+        "binding": true,
+        "required": 1800,
+        "measured": 10.24,
+        "metric_authority": "performance/result.py::build_performance_result",
+        "performance_result_id": "perf-mesh64-eval-v1",
+        "reason": "sustained throughput meets floor in model units"
+      },
+      {
+        "requirement_index": 2,
+        "traffic_class": "control",
+        "qos_class": "best_effort",
+        "verdict": "UNMEASURABLE",
+        "binding": false,
+        "required": null,
+        "measured": null,
+        "metric_authority": "performance/result.py::build_performance_result",
+        "performance_result_id": "perf-mesh64-eval-v1",
+        "reason": "best-effort class has no bound; UNMEASURABLE never passes and is reported, not zero-filled"
+      }
+    ]
+  },
+  "optimization": null
+}

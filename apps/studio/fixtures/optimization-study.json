@@ -1,0 +1,431 @@
+{
+  "fixture_id": "optimization-study",
+  "title": "Optimization study over link_width x concentration",
+  "description": "Five GUIDED candidates (base request + patch), constraint verdicts, Pareto membership, and a selected candidate with rationale. LOCKED properties recompiled per candidate, shown as consequences.",
+  "design": {
+    "contract_version": 1,
+    "design_hash": "sha256:8afc464cc5e43f6102e41c64a8921cca41c67a406f80fa390cf94e1565b91d29",
+    "schema_version": 3,
+    "compiler_semantics_version": 1,
+    "workload": {
+      "model_family": "llama3",
+      "model_name": "llama3-70b",
+      "parallelism": {
+        "tp": 8,
+        "pp": 2,
+        "ep": 4,
+        "dp": 2
+      },
+      "serving_mode": "decode",
+      "workload_source_ref": {
+        "content_digest": "sha256:d23395639f9b25fb3bae14db3a18f26e05df4109debb89886445d8a31090a0aa",
+        "format": "srota-workload-v3",
+        "size_bytes": 4096
+      }
+    },
+    "requirements": [
+      {
+        "traffic_class": "hbm_read",
+        "qos_class": "latency_sensitive",
+        "latency_ceiling_cycles": 220,
+        "bandwidth_floor_gbps": null,
+        "binding": true
+      },
+      {
+        "traffic_class": "allreduce",
+        "qos_class": "throughput_sensitive",
+        "latency_ceiling_cycles": null,
+        "bandwidth_floor_gbps": 1800,
+        "binding": true
+      },
+      {
+        "traffic_class": "control",
+        "qos_class": "best_effort",
+        "latency_ceiling_cycles": null,
+        "bandwidth_floor_gbps": null,
+        "binding": false
+      }
+    ],
+    "agents": [
+      {
+        "kind": "compute",
+        "count": 64
+      },
+      {
+        "kind": "hbm",
+        "count": 8
+      },
+      {
+        "kind": "nic",
+        "count": 2
+      },
+      {
+        "kind": "peripheral",
+        "count": 4
+      }
+    ],
+    "noc_guided": {
+      "topology_family": "MESH",
+      "radix": 5,
+      "concentration": 4,
+      "link_width": 128,
+      "rcu_enabled": true,
+      "arbitration": "round_robin"
+    },
+    "locked_derived": {
+      "routing": "DOR_XY",
+      "vc_count": 4,
+      "turn_restrictions": [
+        "no Y-to-X turn (dimension-order XY)"
+      ],
+      "certificate_overall": "PASS"
+    }
+  },
+  "compilation": {
+    "contract_version": 1,
+    "status": "COMPILED",
+    "design_hash": "sha256:8afc464cc5e43f6102e41c64a8921cca41c67a406f80fa390cf94e1565b91d29",
+    "compiler_semantics_version": 1,
+    "resolved_fabric_hash": "sha256:677fea3d10de76a6e88153d47a73967a563894e06908f59a67f7332176aee036",
+    "certificate_id": "sha256:a178fa251460fe1741b8c2db9a7cb9be0fe34ddd79336fbb2c1c2090b11ce2a4",
+    "certificate_overall": "PASS",
+    "obligations": [
+      {
+        "obligation": "TOPOLOGY_CONNECTED",
+        "status": "PASS",
+        "method": "undirected-bfs/v1",
+        "evidence": {
+          "digest": "cf8431e64b922619",
+          "bound": "sha256:677fea3d10de76a6e88153d47a73967a563894e06908f59a67f7332176aee036"
+        }
+      },
+      {
+        "obligation": "ATTACHMENT_COMPLETE",
+        "status": "PASS",
+        "method": "seat-ledger/v1",
+        "evidence": {
+          "digest": "de17107856027f09",
+          "bound": "sha256:677fea3d10de76a6e88153d47a73967a563894e06908f59a67f7332176aee036"
+        }
+      },
+      {
+        "obligation": "ADDRESS_DECODE_VALID",
+        "status": "PASS",
+        "method": "decode-cover/v1",
+        "evidence": {
+          "digest": "f197c3d84e3b24e1",
+          "bound": "sha256:677fea3d10de76a6e88153d47a73967a563894e06908f59a67f7332176aee036"
+        }
+      },
+      {
+        "obligation": "ROUTE_COMPLETE",
+        "status": "PASS",
+        "method": "class-src-dst-cover/v1",
+        "evidence": {
+          "digest": "c713cfcdfc644f39",
+          "bound": "sha256:677fea3d10de76a6e88153d47a73967a563894e06908f59a67f7332176aee036"
+        }
+      },
+      {
+        "obligation": "ROUTE_LEGAL",
+        "status": "PASS",
+        "method": "channel-legal/v1",
+        "evidence": {
+          "digest": "2c54691049e8132f",
+          "bound": "sha256:677fea3d10de76a6e88153d47a73967a563894e06908f59a67f7332176aee036"
+        }
+      },
+      {
+        "obligation": "VC_ASSIGNMENT_VALID",
+        "status": "PASS",
+        "method": "route-bound-vc/v1",
+        "evidence": {
+          "digest": "dce2f875e6d479c4",
+          "bound": "sha256:677fea3d10de76a6e88153d47a73967a563894e06908f59a67f7332176aee036"
+        }
+      },
+      {
+        "obligation": "DEADLOCK_FREE",
+        "status": "PASS",
+        "method": "channel-vc-cdg-acyclic/v1",
+        "evidence": {
+          "digest": "b18e130ae3beb06b",
+          "bound": "sha256:677fea3d10de76a6e88153d47a73967a563894e06908f59a67f7332176aee036"
+        }
+      },
+      {
+        "obligation": "MAPPING_VALID",
+        "status": "PASS",
+        "method": "rank-attachment/v1",
+        "evidence": {
+          "digest": "2a8513c7682aebe6",
+          "bound": "sha256:677fea3d10de76a6e88153d47a73967a563894e06908f59a67f7332176aee036"
+        }
+      },
+      {
+        "obligation": "PACKET_FORMAT_VALID",
+        "status": "PASS",
+        "method": "wire-format-fit/v1",
+        "evidence": {
+          "digest": "383682eb9b113d78",
+          "bound": "sha256:677fea3d10de76a6e88153d47a73967a563894e06908f59a67f7332176aee036"
+        }
+      },
+      {
+        "obligation": "FABRIC_DAG_VALID",
+        "status": "PASS",
+        "method": "bundle.revalidate/v1",
+        "evidence": {
+          "digest": "fe8879c4e0f0a7a4",
+          "bound": "sha256:677fea3d10de76a6e88153d47a73967a563894e06908f59a67f7332176aee036"
+        }
+      }
+    ],
+    "artifact_hashes": {
+      "topology": "sha256:48001666df21572b341de1b47b50fb0c83754dd8805883901d5d54f053877fe1",
+      "attachment": "sha256:7e712cad8f441ec1b1d627ee146251aa7526a9de17e87f21326788bed803a103",
+      "routes": "sha256:c514215e171803c3f684c6ddbac182f9705ef2b1d099657152d6becae9ea1c58",
+      "vc_assignment": "sha256:c2f1eb99ded5a298a9a32df63584468568d481261a382ed4c4f23ac8ff83f1bc",
+      "packet_format": "sha256:491caa39134e80724e7db1a898aa59f6d042757196daad6a1c8a945d1fe2baca",
+      "router_behavior": "sha256:4980f74aba63fa278d7c872b4608606da717520dc0e15a9c87d257ec2a04dd0a",
+      "address_decode": "sha256:3947f76d283bcd9c27299374ffd62f4ae8a162487f4f66644194554a7705f250",
+      "fabric": "sha256:677fea3d10de76a6e88153d47a73967a563894e06908f59a67f7332176aee036"
+    },
+    "error": null
+  },
+  "evaluation": {
+    "contract_version": 1,
+    "status": "EVALUATED",
+    "design_hash": "sha256:8afc464cc5e43f6102e41c64a8921cca41c67a406f80fa390cf94e1565b91d29",
+    "resolved_fabric_hash": "sha256:677fea3d10de76a6e88153d47a73967a563894e06908f59a67f7332176aee036",
+    "workload_id": "wl-mesh64-opt",
+    "message_artifact_id": "msg-mesh64-opt-v1",
+    "physical_traffic_id": "pt-mesh64-opt-v1",
+    "backend_producer": {
+      "backend": "booksim2",
+      "producer_identity": "booksim2@tools-base:2026.09 (qualified)",
+      "config_hash": "sha256:6cf82d3b26494f036f2ab4183aee984201eb77bc31bf3e19879dcaabb7bd2f31",
+      "input_hash": "sha256:28f3e160498ea54bef855485917f357dec19e88c768f07b885c05ac7f043f1ae"
+    },
+    "evidence": {
+      "raw_evidence_digest": "1853c3432fe514fc",
+      "stats_digest": "85a818011937b73b"
+    },
+    "performance_result_id": "perf-mesh64-opt-v1",
+    "network_traffic_window": {
+      "window_cycles": 50000,
+      "wall_time_ns": null,
+      "cycles_only": true
+    },
+    "metrics": {
+      "packets_injected": 128000,
+      "packets_completed": 128000,
+      "flits_completed": 512000,
+      "avg_packet_latency_cycles": 96.4,
+      "sustained_throughput_flits_per_cycle": 10.24
+    },
+    "fidelity_warning": "Cycle-approximate BookSim-class model. Cycles only \u2014 no valid network clock established, so no wall-time authority. Single aggregate NETWORK_TRAFFIC_WINDOW; never per-operation latency.",
+    "reason": null
+  },
+  "requirements": {
+    "contract_version": 1,
+    "design_hash": "sha256:8afc464cc5e43f6102e41c64a8921cca41c67a406f80fa390cf94e1565b91d29",
+    "performance_result_id": "perf-mesh64-opt-v1",
+    "entries": [
+      {
+        "requirement_index": 0,
+        "traffic_class": "hbm_read",
+        "qos_class": "latency_sensitive",
+        "verdict": "SATISFIED",
+        "binding": true,
+        "required": 220,
+        "measured": 96.4,
+        "metric_authority": "performance/result.py::build_performance_result",
+        "performance_result_id": "perf-mesh64-opt-v1",
+        "reason": "avg_packet_latency_cycles 96.4 <= ceiling 220"
+      },
+      {
+        "requirement_index": 1,
+        "traffic_class": "allreduce",
+        "qos_class": "throughput_sensitive",
+        "verdict": "SATISFIED",
+        "binding": true,
+        "required": 1800,
+        "measured": 10.24,
+        "metric_authority": "performance/result.py::build_performance_result",
+        "performance_result_id": "perf-mesh64-opt-v1",
+        "reason": "sustained throughput meets floor in model units"
+      },
+      {
+        "requirement_index": 2,
+        "traffic_class": "control",
+        "qos_class": "best_effort",
+        "verdict": "UNMEASURABLE",
+        "binding": false,
+        "required": null,
+        "measured": null,
+        "metric_authority": "performance/result.py::build_performance_result",
+        "performance_result_id": "perf-mesh64-opt-v1",
+        "reason": "best-effort class has no bound; UNMEASURABLE never passes and is reported, not zero-filled"
+      }
+    ]
+  },
+  "optimization": {
+    "contract_version": 1,
+    "base_design_hash": "sha256:8afc464cc5e43f6102e41c64a8921cca41c67a406f80fa390cf94e1565b91d29",
+    "definition": {
+      "objectives": [
+        "avg_packet_latency_cycles",
+        "link_area_um2"
+      ],
+      "constraints": [
+        "latency_ceiling",
+        "bandwidth_floor"
+      ],
+      "method": "grid",
+      "budget": {
+        "max_candidates": 6
+      },
+      "seed": 7,
+      "domain": {
+        "link_width": [
+          64,
+          128,
+          256
+        ],
+        "concentration": [
+          2,
+          4
+        ]
+      }
+    },
+    "candidates": [
+      {
+        "candidate_id": "cand-01",
+        "guided_patch": {
+          "link_width": 64,
+          "concentration": 4
+        },
+        "locked_consequences": {
+          "routing": "DOR_XY",
+          "vc_count": 4
+        },
+        "evaluation_ids": {
+          "design_hash": "sha256:630ef152d9dc6429d1920b7ced1eb95f8976797c45dc512d2c20fbb76d639626",
+          "performance_result_id": "perf-mesh64-opt-cand-01-v1"
+        },
+        "objective_values": {
+          "avg_packet_latency_cycles": 141.2,
+          "link_area_um2": 1.9
+        },
+        "constraint_verdicts": {
+          "latency_ceiling": true,
+          "bandwidth_floor": true
+        },
+        "pareto_member": false
+      },
+      {
+        "candidate_id": "cand-02",
+        "guided_patch": {
+          "link_width": 128,
+          "concentration": 4
+        },
+        "locked_consequences": {
+          "routing": "DOR_XY",
+          "vc_count": 4
+        },
+        "evaluation_ids": {
+          "design_hash": "sha256:29ab304f695c948b5013daaaa7396bf61e4c394e367be1d86e882025e120fa58",
+          "performance_result_id": "perf-mesh64-opt-cand-02-v1"
+        },
+        "objective_values": {
+          "avg_packet_latency_cycles": 96.4,
+          "link_area_um2": 2.6
+        },
+        "constraint_verdicts": {
+          "latency_ceiling": true,
+          "bandwidth_floor": true
+        },
+        "pareto_member": true
+      },
+      {
+        "candidate_id": "cand-03",
+        "guided_patch": {
+          "link_width": 256,
+          "concentration": 4
+        },
+        "locked_consequences": {
+          "routing": "DOR_XY",
+          "vc_count": 4
+        },
+        "evaluation_ids": {
+          "design_hash": "sha256:d846aa19a8beb751aa54c1b820b6efbbaa13c03ee50ac377bd96e636dd0a3094",
+          "performance_result_id": "perf-mesh64-opt-cand-03-v1"
+        },
+        "objective_values": {
+          "avg_packet_latency_cycles": 78.9,
+          "link_area_um2": 4.1
+        },
+        "constraint_verdicts": {
+          "latency_ceiling": true,
+          "bandwidth_floor": true
+        },
+        "pareto_member": false
+      },
+      {
+        "candidate_id": "cand-04",
+        "guided_patch": {
+          "link_width": 128,
+          "concentration": 2
+        },
+        "locked_consequences": {
+          "routing": "DOR_XY",
+          "vc_count": 4
+        },
+        "evaluation_ids": {
+          "design_hash": "sha256:04d265a84e656248d98cdae7a049e714140b8752233f5ecfd95e7a2a64c567f8",
+          "performance_result_id": "perf-mesh64-opt-cand-04-v1"
+        },
+        "objective_values": {
+          "avg_packet_latency_cycles": 88.1,
+          "link_area_um2": 3.4
+        },
+        "constraint_verdicts": {
+          "latency_ceiling": true,
+          "bandwidth_floor": true
+        },
+        "pareto_member": false
+      },
+      {
+        "candidate_id": "cand-05",
+        "guided_patch": {
+          "link_width": 256,
+          "concentration": 2
+        },
+        "locked_consequences": {
+          "routing": "DOR_XY",
+          "vc_count": 4
+        },
+        "evaluation_ids": {
+          "design_hash": "sha256:c599c3d6bf302e49c25f23fafe2fd266d3bee7f3987dbedc86c64cc253ffb33b",
+          "performance_result_id": "perf-mesh64-opt-cand-05-v1"
+        },
+        "objective_values": {
+          "avg_packet_latency_cycles": 71.5,
+          "link_area_um2": 5.2
+        },
+        "constraint_verdicts": {
+          "latency_ceiling": true,
+          "bandwidth_floor": true
+        },
+        "pareto_member": true
+      }
+    ],
+    "pareto_ids": [
+      "cand-02",
+      "cand-05"
+    ],
+    "selected_candidate_id": "cand-02",
+    "selection_rationale": "cand-02 is Pareto-optimal and keeps concentration 4 (base floorplan); cand-05 is faster but costs 2x link area."
+  }
+}
