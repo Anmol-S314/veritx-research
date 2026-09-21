@@ -193,6 +193,52 @@ class TestSourceRef:
         assert "workload_source_ref" in cm._WORKLOAD_V3_KEYS
 
 
+class TestSourceIdentitySplit:
+    """P1C phase-2 fix: provenance never moves design identity."""
+
+    def _sourced(self, producer):
+        from veritx_dse.model.compile_model import ingest_workload_source
+        ref = ingest_workload_source(b"bytes", format="packet_trace",
+                                     artifact_identity=producer)
+        wl = WorkloadV3(
+            model_family=ModelFamily.DENSE_TRANSFORMER, tp=8, dp=4,
+            source_ref=ref,
+            collectives=(CollectiveIntent(
+                kind=CollectiveKind.ALLREDUCE,
+                dimension=CollectiveDimension.TP,
+                payload_bytes=8192, traffic_class="tp_collective"),))
+        return _v3_request(workload=wl)
+
+    def test_same_bytes_different_producers_same_hash(self):
+        a, b = self._sourced("producer-A"), self._sourced("producer-B")
+        assert a.design_hash() == b.design_hash()
+        # ...while persistence still distinguishes provenance.
+        assert a.to_dict() != b.to_dict()
+        assert (a.to_dict()["workload"]["workload_source_ref"]
+                ["artifact_identity"]) == "producer-A"
+
+    def test_identity_dict_excludes_provenance(self):
+        from veritx_dse.model.compile_model import ingest_workload_source
+        ref = ingest_workload_source(b"x", format="packet_trace",
+                                     artifact_identity="p")
+        assert ref.identity_dict() == {
+            "content_digest": ref.content_digest,
+            "format": "packet_trace", "size_bytes": 1}
+        assert ref.to_dict()["artifact_identity"] == "p"
+
+    def test_sourced_hash_pinned(self):
+        # Re-pinned after the phase-2 identity split (provenance no
+        # longer hashed): this exact sourced document hashes here.
+        assert self._sourced("producer-A").design_hash() == \
+            "8b2961d5fead51498bdc61ec79842edc4564c2a8bcc9dd9ec4399b56dd4c3dfb"
+
+    def test_provenance_survives_roundtrip(self):
+        a = self._sourced("producer-A")
+        back = CompileRequestV3.from_dict(a.to_dict())
+        assert back.workload.source_ref.artifact_identity == "producer-A"
+        assert back.design_hash() == a.design_hash()
+
+
 class TestMigration:
     def _v2(self, **kw):
         return CompileRequest(

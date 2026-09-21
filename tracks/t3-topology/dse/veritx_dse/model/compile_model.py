@@ -2559,11 +2559,30 @@ class WorkloadSourceRef:
         _as_int("size_bytes", self.size_bytes, minimum=0)
         _as_str("artifact_identity", self.artifact_identity)
 
-    def to_dict(self) -> dict[str, Any]:
+    def identity_dict(self) -> dict[str, Any]:
+        """Identity-bearing content only (P1C phase-2 fix).
+
+        artifact_identity is PROVENANCE (which producer handed us the
+        bytes), never authority: two references to the same bytes from
+        different producers MUST hash identically, so it is excluded
+        here. CompileRequestV3.canonical_dict() consumes ONLY this
+        representation.
+        """
         return {
             "content_digest": self.content_digest,
             "format": self.format,
             "size_bytes": self.size_bytes,
+        }
+
+    def to_dict(self) -> dict[str, Any]:
+        """Persisted form: identity fields PLUS provenance.
+
+        artifact_identity rides along for reconstruction/debugging but
+        never enters design_hash(). A document carrying provenance still
+        loads (from_dict accepts all four keys) and hashes by identity.
+        """
+        return {
+            **self.identity_dict(),
             "artifact_identity": self.artifact_identity,
         }
 
@@ -2857,6 +2876,13 @@ class CompileRequestV3:
         a different design).
         """
         d = self._semantic_dict()
+        # Identity/persistence split (P1C phase-2 fix): the persisted
+        # workload_source_ref keeps provenance (artifact_identity), but
+        # the canonical envelope hashes the identity representation
+        # ONLY — same bytes from different producers, same design.
+        if self.workload.source_ref is not None:
+            d["workload"]["workload_source_ref"] = \
+                self.workload.source_ref.identity_dict()
         d["requirements"] = sorted(d["requirements"], key=_canonical_json)
         d["address_map"]["ranges"] = sorted(d["address_map"]["ranges"],
                                               key=_canonical_json)
