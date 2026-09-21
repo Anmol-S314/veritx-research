@@ -62,9 +62,13 @@ integration happens here, in stage order. P3 remains deferred.
       (no relabel knob); multi-class -> UNSUPPORTED pre-spawn; 5/5
       orchestration tests incl. provisioned tp=4 mesh EVALUATED +
       SATISFIED report over mesh-DOR.
-- [ ] Stage 3 — real requirement evaluation over the chain
-- [ ] Stage 4 — `llama_dense_64tiles-v3.json` + `test_p1_product_vertical_slice.py`
-      (persisted-reopen second half, no warm-object shortcuts)
+- [x] Stage 3 — demonstrated by provisioned orchestration test (tp=4 mesh
+      EVALUATED over mesh-DOR + SATISFIED report) and the Stage-4 slice below.
+- [x] Stage 4 — `llama_dense_64tiles-v3.json` (square MESH, 1 class, 1 binding
+      latency req, inside DOR certified domain) + vertical slice green:
+      COMPILED -> 10/10 PASS -> 8-rank graph -> admission -> mesh-DOR
+      EVALUATED -> evidence digest match -> SATISFIED report, then cold
+      reopen (cert/graph/message/traffic IDs, evidence, verdicts) all equal.
 - [ ] Stage 5 — merge P2; real candidate adapter (compile→lower→evaluate→
       requirements); ruthless metrics
 - [ ] Stage 6 — real optimization golden (`--search grid --evaluate booksim`)

@@ -1,0 +1,75 @@
+{
+  "_comment": "P1 integration golden: dense transformer on 64 compute tiles + 8 HBM (9x9 MESH, concentration 1). v3 semantics: one TP allreduce intent (payload_bytes explicit), one traffic class, one binding latency requirement. Compiler derives topology, DOR_XY, VCs, deadlock certificate. No LOCKED fields below. Stays inside CERTIFIED_BOOKSIM_MESH_DOR_XY_V1 (square MESH, seat 1, DOR_XY).",
+  "schema_version": 3,
+  "compiler_semantics_version": 3,
+  "workload": {
+    "model_family": "dense_transformer",
+    "model_name": "llama-dense-8b",
+    "tp": 8,
+    "pp": 1,
+    "ep": 1,
+    "dp": 1,
+    "serving_mode": "mixed",
+    "collectives": [
+      {
+        "kind": "allreduce",
+        "dimension": "TP",
+        "payload_bytes": 8192,
+        "traffic_class": "tp_collective"
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "traffic_class": "tp_collective",
+      "qos_class": "latency_critical",
+      "latency_ceiling_cycles": 100000.0,
+      "bandwidth_floor_gbps": null,
+      "binding": true
+    }
+  ],
+  "agents": [
+    {
+      "kind": "compute_tile",
+      "count": 64,
+      "data_width": 256,
+      "addr_width": 64,
+      "protocol": "AXI",
+      "clock_domain": null,
+      "power_domain": null
+    },
+    {
+      "kind": "hbm_controller",
+      "count": 8,
+      "data_width": 256,
+      "addr_width": 64,
+      "protocol": "AXI",
+      "clock_domain": null,
+      "power_domain": null
+    }
+  ],
+  "dependencies": [],
+  "noc_config": {
+    "topology_family": "mesh",
+    "radix": null,
+    "concentration": 1,
+    "arbitration": null,
+    "rcu_enabled": null,
+    "link_width": 64,
+    "mcast_groups": null,
+    "mcast_setup_cycles": null,
+    "output_formats": [
+      "json"
+    ],
+    "obfuscation_level": 0
+  },
+  "address_map": {
+    "ranges": []
+  },
+  "physical": {
+    "clock_freq_mhz": 1000.0,
+    "data_width": 256,
+    "num_power_domains": 1,
+    "process_node_nm": 7
+  }
+}
