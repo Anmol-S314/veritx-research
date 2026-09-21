@@ -174,14 +174,168 @@ def read_verified_evidence(ref: EvidenceRef) -> dict[str, Any]:
     return data
 
 
+PARSER_VERSION = "veritx/evidence-parser/v1"
+LEGACY_PARSER_VERSION = "veritx/evidence-parser/v0-unversioned"
+_EVIDENCE_ARTIFACT_DOMAIN = "veritx/evidence-artifact/v1"
+_HEX = frozenset("0123456789abcdef")
+
+
+def stats_sha256_of(stats: dict[str, Any]) -> str:
+    """Canonical digest of the parsed stats mapping."""
+    if not isinstance(stats, dict) or not stats:
+        raise BackendEvidenceError(
+            "evidence without parsed stats is not a measurement")
+    return hashlib.sha256(
+        canonical_evidence_json(stats).encode()).hexdigest()
+
+
+def _require_hex64(value: Any, where: str) -> None:
+    if not isinstance(value, str) or len(value) != 64 \
+            or any(c not in _HEX for c in value):
+        raise BackendEvidenceError(
+            f"{where} must be a 64-char lowercase hex digest, got "
+            f"{value!r}")
+
+
+@dataclass(frozen=True)
+class EvidenceArtifact:
+    """One executed backend run, content-addressed (M1.4).
+
+    Where ``EvidenceRef`` is the external identity of the persisted bytes,
+    this is the internal identity of what those bytes MEAN: the backend
+    input they were executed from, the raw bytes themselves, the parser
+    version that read them and the stats digest they carry. A result that
+    cannot name its evidence_id has evidence it cannot authenticate.
+    """
+
+    backend: str
+    backend_input_id: str
+    backend_input_sha256: str
+    raw_evidence_sha256: str
+    parser_version: str
+    stats_sha256: str
+
+    def __post_init__(self):
+        for name in ("backend", "backend_input_id", "parser_version"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value:
+                raise BackendEvidenceError(
+                    f"{name} must be a non-empty string")
+        for name in ("backend_input_sha256", "raw_evidence_sha256",
+                      "stats_sha256"):
+            _require_hex64(getattr(self, name), name)
+
+    @classmethod
+    def build(cls, *, backend, backend_input_id, backend_input_sha256,
+              raw_evidence_sha256, stats,
+              parser_version=PARSER_VERSION) -> "EvidenceArtifact":
+        return cls(
+            backend=backend, backend_input_id=backend_input_id,
+            backend_input_sha256=backend_input_sha256,
+            raw_evidence_sha256=raw_evidence_sha256,
+            parser_version=parser_version,
+            stats_sha256=stats_sha256_of(stats))
+
+    def identity_dict(self) -> dict[str, Any]:
+        return {
+            "backend": self.backend,
+            "backend_input_id": self.backend_input_id,
+            "backend_input_sha256": self.backend_input_sha256,
+            "raw_evidence_sha256": self.raw_evidence_sha256,
+            "parser_version": self.parser_version,
+            "stats_sha256": self.stats_sha256,
+        }
+
+    def evidence_id(self) -> str:
+        from veritx_dse.core.artifact import content_hash
+        return content_hash(_EVIDENCE_ARTIFACT_DOMAIN, 1,
+                            self.identity_dict())
+
+    def authenticates(self, *, backend_input_sha256, raw_evidence_sha256,
+                      stats) -> bool:
+        """True only if these exact inputs name this exact artifact."""
+        return (self.backend_input_sha256 == backend_input_sha256
+                and self.raw_evidence_sha256 == raw_evidence_sha256
+                and self.stats_sha256 == stats_sha256_of(stats))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"schema_version": 1, **self.identity_dict(),
+                "evidence_id": self.evidence_id()}
+
+    @classmethod
+    def from_dict(cls, doc: Any) -> "EvidenceArtifact":
+        if not isinstance(doc, dict):
+            raise BackendEvidenceError(
+                "persisted evidence artifact must be an object")
+        expected = {"schema_version", "backend", "backend_input_id",
+                    "backend_input_sha256", "raw_evidence_sha256",
+                    "parser_version", "stats_sha256", "evidence_id"}
+        if set(doc) != expected:
+            raise BackendEvidenceError(
+                f"evidence artifact field mismatch; "
+                f"missing={sorted(expected - set(doc))}, "
+                f"extra={sorted(set(doc) - expected)}")
+        if doc["schema_version"] != 1:
+            raise BackendEvidenceError(
+                "unsupported evidence artifact schema")
+        obj = cls(backend=doc["backend"],
+                  backend_input_id=doc["backend_input_id"],
+                  backend_input_sha256=doc["backend_input_sha256"],
+                  raw_evidence_sha256=doc["raw_evidence_sha256"],
+                  parser_version=doc["parser_version"],
+                  stats_sha256=doc["stats_sha256"])
+        if doc["evidence_id"] != obj.evidence_id():
+            raise BackendEvidenceError(
+                "persisted evidence_id does not match the recomputed "
+                "identity: content forged")
+        return obj
+
+    @classmethod
+    def from_verified_evidence(cls, evidence: dict[str, Any], ref
+                               ) -> "EvidenceArtifact":
+        """Derive the artifact from verified evidence + its EvidenceRef.
+
+        The document must already have passed ``read_verified_evidence``:
+        only then can the ref digest be trusted as the raw-bytes identity.
+        ``parser_version`` is stamped from the document when the producer
+        wrote one; historical documents predate versioning and get the
+        legacy tag, so a different reader is a different claim.
+        """
+        if not isinstance(evidence, dict):
+            raise BackendEvidenceError(
+                "verified evidence must be a mapping")
+        if not isinstance(ref, EvidenceRef):
+            raise BackendEvidenceError(
+                "an EvidenceArtifact requires an EvidenceRef; a naked "
+                "path carries no raw-bytes identity")
+        for key in ("backend_input_hash", "stats"):
+            if key not in evidence:
+                raise BackendEvidenceError(
+                    f"verified evidence is missing {key!r}")
+        backend = (evidence.get("producer_tool_identity")
+                   or evidence.get("execution_transport") or "UNKNOWN")
+        return cls.build(
+            backend=backend,
+            backend_input_id=evidence["backend_input_hash"],
+            backend_input_sha256=evidence["backend_input_hash"],
+            raw_evidence_sha256=ref.sha256,
+            stats=evidence["stats"],
+            parser_version=evidence.get("parser_version",
+                                        LEGACY_PARSER_VERSION))
+
+
 __all__ = [
     "EVIDENCE_FILE",
     "BackendEvidenceError",
+    "EvidenceArtifact",
     "EvidenceRef",
+    "LEGACY_PARSER_VERSION",
+    "PARSER_VERSION",
     "canonical_evidence_json",
     "evidence_sha256",
     "evidence_sha256_of",
     "read_evidence",
     "read_verified_evidence",
+    "stats_sha256_of",
     "write_evidence",
 ]

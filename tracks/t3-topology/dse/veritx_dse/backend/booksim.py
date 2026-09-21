@@ -68,6 +68,7 @@ from .producer import (
     EXECUTION_TRANSPORT_TEST_INJECTED, ProducerError,
     resolve_producer_identity,
 )
+from .evidence import PARSER_VERSION
 
 BOOKSIM_STANDALONE_PROFILE = "CERTIFIED_BOOKSIM_ANYNET_V1"
 SERVING_BOOKSIM2_PROFILE = "CERTIFIED_SERVING_BOOKSIM2_V1"
@@ -1367,6 +1368,7 @@ class CertifiedBookSimEvidence:
     producer_source_dirty_digest: str | None = None
     producer_tool_identity: str = ""
     execution_transport: str = EXECUTION_TRANSPORT_SUPERVISED
+    parser_version: str = PARSER_VERSION
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -1399,6 +1401,7 @@ class CertifiedBookSimEvidence:
                 self.producer_source_dirty_digest,
             "producer_tool_identity": self.producer_tool_identity,
             "execution_transport": self.execution_transport,
+            "parser_version": self.parser_version,
         }
 
 
