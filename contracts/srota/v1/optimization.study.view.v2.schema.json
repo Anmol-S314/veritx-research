@@ -1,0 +1,63 @@
+{
+  "$id": "https://veritx.dev/contracts/srota/v1/optimization.study.view.v2",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OptimizationStudyViewV2",
+  "description": "P1 product view of Optimizer.optimize (contract v2). Additive to v1: constraint_verdicts values are SATISFIED|VIOLATED|UNMEASURABLE so an unmeasured binding is never destroyed into a boolean. Every other field shape is identical to v1. Candidates are base-request + GUIDED patch; LOCKED consequences shown, never searched.",
+  "type": "object",
+  "required": ["contract_version", "base_design_hash", "definition", "candidates", "pareto_ids"],
+  "properties": {
+    "contract_version": {"const": 2},
+    "base_design_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "definition": {
+      "type": "object",
+      "required": ["objectives", "method", "budget"],
+      "properties": {
+        "objectives": {"type": "array", "items": {"type": "string"}},
+        "constraints": {"type": "array", "items": {"type": "string"}},
+        "method": {"type": "string"},
+        "budget": {"type": "object"},
+        "seed": {"type": ["integer", "string", "null"]},
+        "domain": {
+          "type": "object",
+          "description": "GUIDED knob ranges only. LOCKED dimensions are inexpressible here.",
+          "additionalProperties": true
+        }
+      },
+      "unevaluatedProperties": false
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["candidate_id", "guided_patch", "evaluation_ids", "objective_values", "constraint_verdicts", "pareto_member"],
+        "properties": {
+          "candidate_id": {"type": "string"},
+          "guided_patch": {"type": "object"},
+          "locked_consequences": {"type": "object"},
+          "evaluation_ids": {
+            "type": "object",
+            "properties": {
+              "design_hash": {"type": "string"},
+              "performance_result_id": {"type": ["string", "null"]}
+            },
+            "unevaluatedProperties": false
+          },
+          "objective_values": {"type": "object", "additionalProperties": {"type": "number"}},
+          "constraint_verdicts": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "enum": ["SATISFIED", "VIOLATED", "UNMEASURABLE"]
+            }
+          },
+          "pareto_member": {"type": "boolean"}
+        },
+        "unevaluatedProperties": false
+      }
+    },
+    "pareto_ids": {"type": "array", "items": {"type": "string"}},
+    "selected_candidate_id": {"type": ["string", "null"]},
+    "selection_rationale": {"type": ["string", "null"]}
+  },
+  "unevaluatedProperties": false
+}

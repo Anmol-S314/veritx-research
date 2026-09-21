@@ -6,7 +6,9 @@ membership, selection rationale. Execution order never changes
 candidate identity (asserted by re-derivation).
 
 Emits OptimizationStudyView per
-contracts/srota/v1/optimization.study.view.schema.json (contract_version 1).
+contracts/srota/v1/optimization.study.view.v2.schema.json
+(contract_version 2 by default; contract_version=1 keeps the frozen
+boolean-only v1 shape for pinned callers).
 
 Candidates whose evaluation evidences none of a declared objective's
 metric are ineligible: they stay visible with a typed UNMEASURABLE
@@ -131,14 +133,37 @@ class OptimizationResult:
             "selected_candidate_id": self.selected_candidate_id,
         })
 
-    def to_study_view(self) -> dict[str, Any]:
-        """Emit the frozen OptimizationStudyView (contract v1)."""
+    def to_study_view(self, contract_version: int = 2) -> dict[str, Any]:
+        """Emit the OptimizationStudyView.
+
+        Contract v2 (default) keeps SATISFIED/VIOLATED/UNMEASURABLE
+        distinct in ``constraint_verdicts``; contract v1 (opt-in, for
+        callers pinning the frozen boolean-only shape) collapses
+        UNMEASURABLE to false.
+        """
+        if contract_version not in (1, 2):
+            raise OptimizationResultError(
+                f"unknown OptimizationStudyView contract_version "
+                f"{contract_version!r}; supported: 1, 2")
         defn = self.definition
         candidates = []
         for r in sorted(self.records, key=lambda r: r.candidate_id):
             evaluations: dict[str, Any] = {
                 "design_hash": _view_hash(r.design_hash)}
             evaluations["performance_result_id"] = r.performance_result_id
+            if contract_version == 2:
+                verdicts: dict[str, Any] = {
+                    k: ("UNMEASURABLE" if v is None
+                        else "SATISFIED" if v else "VIOLATED")
+                    for k, v in r.constraint_verdicts.items()}
+            else:
+                # v1 is boolean-only: UNMEASURABLE collapses to false
+                # (fail-closed means unmeasurable is never satisfied).
+                # The full OptimizationResult retains the None
+                # distinction; v2 projects it without loss.
+                verdicts = {
+                    k: (False if v is None else bool(v))
+                    for k, v in r.constraint_verdicts.items()}
             candidates.append({
                 "candidate_id": r.candidate_id,
                 "guided_patch": dict(r.guided_patch),
@@ -146,19 +171,13 @@ class OptimizationResult:
                 "evaluation_ids": evaluations,
                 "objective_values": {k: float(v)
                                      for k, v in r.objective_values.items()},
-                "constraint_verdicts": {
-                    k: (False if v is None else bool(v))
-                    for k, v in r.constraint_verdicts.items()},
+                "constraint_verdicts": verdicts,
                 "pareto_member": bool(r.pareto_member),
             })
         # ONE hash boundary (P1B rule): engine values are bare digests,
         # product views are sha256:-prefixed, converted HERE only.
-        # UNMEASURABLE verdicts (None) collapse to false here: the
-        # view's constraint_verdicts is boolean-only (frozen schema),
-        # and fail-closed means unmeasurable is never satisfied. The
-        # full OptimizationResult retains the None distinction.
         return {
-            "contract_version": 1,
+            "contract_version": contract_version,
             "base_design_hash": _view_hash(self.base_design_hash),
             "definition": {
                 "objectives": [o.metric for o in defn.objectives],
