@@ -10,9 +10,10 @@ This is the honest state of the DSE battery in the active consolidation worktree
 
 | | |
 |---|---|
-| commit | `1bab6dba` (M0.5d) |
+| commit | `ae07f071` (M1 through the M1.5 dispatch proof) |
 | command | `cd tracks/t3-topology/dse && python3 -m pytest tests -q --tb=no -p no:cacheprovider` |
-| result | **5 failed, 3638 passed, 40 skipped, 9 xfailed** in 144s |
+| result | **5 failed, 3684 passed, 40 skipped, 9 xfailed** in 169s |
+| differential | identical failed-node set vs the 5-node baseline; +46 tests since M0.5, all new |
 
 The five are exactly the `QUALIFIED_BACKEND_UNAVAILABLE` nodes below. The
 journey: 23 failed (before M0.5a/b) → 10 (after fixtures) → 5 (after the
