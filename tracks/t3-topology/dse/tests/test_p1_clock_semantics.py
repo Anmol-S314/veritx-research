@@ -133,6 +133,7 @@ def _verified_window_doc(request, *, completion_cycles, caller_clock_hz):
         workload=temporal,
         network_binding=NetworkWindowBinding.from_dict(binding.to_dict()),
         wave_d_chain={"workload_graph_id": lw.graph.workload_id(),
+                      "design_hash": request.design_hash(),
                       "physical_traffic_id": "pt"})
     schedule = schedule_workload(
         temporal, network_durations=graph.network_durations())

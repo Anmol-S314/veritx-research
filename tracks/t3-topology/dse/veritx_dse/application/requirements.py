@@ -51,8 +51,11 @@ Measurement honesty (binding — every rule enforced below):
   TP/PP/EP/DP but different payloads/semantics lower to same-geometry
   graphs. The workload's provenance design_hash must equal the
   request's design_hash(), and the performance result's Wave-D chain
-  must bind THIS workload's workload_id(). Missing provenance or a
-  missing chain refuses — an absent binding is not a pass.
+  must bind BOTH this workload's workload_id() AND this request's
+  design_hash (traffic-class semantics live in the lowering sidecar,
+  not in the canonical graph identity, so two designs differing only
+  in traffic class share a workload_id). Missing provenance or a
+  missing chain binding refuses — an absent binding is not a pass.
 
 Report shape follows contracts/srota/v1/requirement.report.schema.json
 (contract_version 1): per-requirement {requirement_index,
@@ -356,10 +359,10 @@ class RequirementEvaluator:
         Refuses (typed): non-v3 request, non-graph workload, geometry
         mismatch between request and workload, workload provenance that
         does not name this request's design, a performance result whose
-        Wave-D chain binds another workload (or that carries no chain),
-        unknown class scope, or a result missing its identity/makespan
-        spine. Per-metric gaps become UNMEASURABLE entries, never
-        exceptions and never passes.
+        Wave-D chain binds another workload or another design (or that
+        carries no chain binding), unknown class scope, or a result
+        missing its identity/makespan spine. Per-metric gaps become
+        UNMEASURABLE entries, never exceptions and never passes.
         """
         if not isinstance(request, CompileRequestV3):
             raise InvalidInput(
@@ -428,6 +431,25 @@ class RequirementEvaluator:
                 f"{chain_workload_id!r} is not this workload's id "
                 f"{workload_id!r} — refusing measurements transplanted "
                 f"from another workload")
+        # The workload graph identity deliberately excludes traffic-class
+        # semantics (the lowering sidecar carries them), so two designs
+        # differing ONLY in traffic class lower to the same workload_id.
+        # The chain must therefore name the design it measured; a chain
+        # without that binding is not a pass.
+        chain_design_hash = chain.get("design_hash")
+        if not isinstance(chain_design_hash, str) or not chain_design_hash:
+            raise EvidenceInvalid(
+                f"performance wave_d_chain declares no design_hash (has "
+                f"{sorted(chain)}); the measurements cannot be bound to "
+                f"this design, and a missing binding is not a pass")
+        if chain_design_hash != request_design_hash:
+            raise MappingInvalid(
+                f"performance wave_d_chain.design_hash "
+                f"{chain_design_hash!r} does not match request design "
+                f"hash {request_design_hash!r} — refusing measurements "
+                f"taken for another design (same-geometry graphs with "
+                f"different traffic-class semantics share a "
+                f"workload_id)")
 
         intent_classes = derive_v3_traffic_classes(request)
         single_class = len(intent_classes) <= 1

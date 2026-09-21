@@ -741,6 +741,7 @@ class FabricEvaluator:
             temporal = TemporalWorkload(performance_model=model,
                                         events=(net_event,))
             wave_d_chain = {
+                "design_hash": design_hash,
                 "workload_graph_id": workload_id,
                 "message_artifact_id": message_id,
                 "physical_traffic_id": traffic_id,

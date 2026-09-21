@@ -85,7 +85,7 @@ def _net_workload(model, with_memory=False):
                             wave_d_operation_ids=("op1",))
 
 
-def _result(workload, window_us, *, workload_graph_id="w"):
+def _result(workload, window_us, *, workload_graph_id, design_hash):
     """Verified result with a window of window_us, bound to the graph."""
     binding = NetworkWindowBinding(
         workload_parent_id=workload_graph_id, schema_version=2,
@@ -96,6 +96,7 @@ def _result(workload, window_us, *, workload_graph_id="w"):
     graph = PerformanceEventGraph(
         workload=workload, network_binding=binding,
         wave_d_chain={"workload_graph_id": workload_graph_id,
+                      "design_hash": design_hash,
                       "physical_traffic_id": "pt"})
     schedule = schedule_workload(
         workload, network_durations={"NET": QTime(window_us, US)})
@@ -110,7 +111,8 @@ def _bound_result(request, workload, window_us):
     requires)."""
     graph = lower_compile_workload(request).graph
     res = _result(workload, window_us,
-                  workload_graph_id=graph.workload_id())
+                  workload_graph_id=graph.workload_id(),
+                  design_hash=request.design_hash())
     return res, graph
 
 
@@ -193,7 +195,8 @@ class TestLatencyVerdicts:
         graph = PerformanceEventGraph(
             workload=workload,
             wave_d_chain={"workload_graph_id":
-                          lw.graph.workload_id()})
+                          lw.graph.workload_id(),
+                          "design_hash": req.design_hash()})
         schedule = schedule_workload(workload)
         res = build_performance_result(graph=graph, schedule=schedule)
         reverify_result(res, workload=workload)

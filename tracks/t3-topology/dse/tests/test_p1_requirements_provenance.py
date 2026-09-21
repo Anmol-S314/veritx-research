@@ -91,6 +91,31 @@ class TestSameGeometryTransplants:
         with pytest.raises(MappingInvalid):
             RequirementEvaluator.evaluate(req_b, graph_b, perf_a)
 
+    def test_same_geometry_different_traffic_class_refuses(self):
+        """Traffic class lives in the lowering sidecar, NOT in the
+        canonical workload identity: two designs differing only in
+        traffic class lower to the SAME workload_id, so the chain's
+        design_hash binding is the only thing that can refuse."""
+        req_a = _request([_ci(kind="allreduce", dim="TP", payload=2048,
+                              tc="tp_collective")],
+                         [_lat_req(ceiling=10 ** 9, tc="tp_collective")],
+                         tp=4, dp=2)
+        req_b = _request([_ci(kind="allreduce", dim="TP", payload=2048,
+                              tc="dp_collective")],
+                         [_lat_req(ceiling=10 ** 9, tc="dp_collective")],
+                         tp=4, dp=2)
+        graph_a = lower_compile_workload(req_a).graph
+        graph_b = lower_compile_workload(req_b).graph
+        assert req_a.design_hash() != req_b.design_hash()
+        assert graph_a.workload_id() == graph_b.workload_id()
+        perf_a, _ = _bound_result(req_a, _net_workload(_model()), 2500)
+        with pytest.raises(MappingInvalid) as ei:
+            RequirementEvaluator.evaluate(req_b, graph_b, perf_a)
+        message = str(ei.value)
+        assert "design_hash" in message
+        assert req_a.design_hash() in message
+        assert req_b.design_hash() in message
+
     def test_transplanted_workload_refuses(self):
         """Same request, workload lowered from ANOTHER design."""
         req_a, req_b, graph_a, graph_b = _design_pair()
