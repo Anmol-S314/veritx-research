@@ -1,174 +1,265 @@
-# Slice 2c — Workload Authority Inventory (the union gate)
+# Slice 2c — Workload Authority Inventory (Gate V2)
 
-**Status:** inventory complete, **no workload code changed yet**.
-**Base:** `dc0a704b`.
-**Rule for the merge:** the canonical `WorkloadGraph` must be a semantic
-**SUPERSET** of both authorities. Neither is deleted because the other lacks
-a feature.
+**Status:** inventory **corrected** after audit. No workload code changed yet.
+**Base:** `31d1558c`. **Gate:** V2 — see §6 for what is green and what is not.
 
 Two corpora are captured and pinned before any edit:
 
 ```
-tests/test_domain_corpus_identity.py   69 entries   the new graph
-tests/test_phase9_workload_corpus.py  173 entries   the old authority
-                                      builder: tests/fixtures/phase9_workload_corpus.py
+tests/test_domain_corpus_identity.py                          69 entries
+tests/test_phase9_workload_corpus.py + fixtures/...py        173 entries
 ```
+
+Gate V2 evidence: `tests/test_gate_v2_union_evidence.py` (20 passed,
+2 strict xfail — the two defects below that are still unfixed).
 
 ---
 
 ## 1. Field-by-field union matrix
 
-`D` = Wave-D graph/operations (`workload/graph.py`, `operations.py`,
-`semantics.py`, `messages.py`, `traffic.py`).
-`O` = Phase-9/14/16 authority (`workload/canonical.py`, `lowering.py`,
-`memory_lowering.py`, `serve.py`, `timeline.py`).
+`D` = Wave-D graph/operations · `O` = Phase-9/14/16 authority.
 
 | semantic content | D | O | canonical target |
 |---|---|---|---|
-| explicit operation id | yes (`event_id`/`op_id`) | yes (`op_id`) | `OperationNode.operation_id` (required) |
-| explicit DAG deps | yes | **no** (order is the carrier) | `deps` (required); legacy order → sequential deps |
+| explicit operation id | yes | yes | `OperationNode.operation_id` (required) |
+| explicit DAG deps | yes | **no** (order is the carrier) | `deps`; legacy order → sequential deps |
 | acyclicity | yes | n/a | validated on the graph |
 | owner rank | yes | no | `owner: int \| None` — **optional** |
-| phase | yes (workload-global) | no | `phase: str \| None` on op; optional envelope phase |
+| phase | yes (global) | no | `phase: str \| None` per op; envelope phase optional |
 | step | yes | no | `step: int \| None` |
-| label | no | yes (presentation) | `label: str` — NOT identity-bearing |
-| TP/PP/EP/DP binding | yes (`ParallelismArtifact`) | yes (`Parallelism` tp,dp,ep,pp) | `ParallelismArtifact` only |
-| `num_participants` | derived (`world_size`) | **independent field** | derived + consistency-checked |
-| COMPUTE | kind exists, no payload | full | `COMPUTE` detail |
-| `duration_ns` | no | yes | COMPUTE detail (required) |
-| `input/weight/output_bytes` | no | yes | COMPUTE detail (optional each) |
-| `input/weight/output_loc` | no | yes | COMPUTE detail, default `LOCAL` |
-| `batch_tag` | no | yes (default `NONE`) | COMPUTE detail |
+| label | no | yes (presentation) | `label` — NOT identity-bearing |
+| **participant/rank space** | = world_size | **separate field** | `participant_count: int` — identity-bearing |
+| TP/PP/EP/DP geometry | `ParallelismArtifact` | `Parallelism` (tp,dp,ep,pp) | `ParallelismArtifact` only |
+| COMPUTE | kind only | full | COMPUTE detail |
+| `duration_ns` | no | yes | required |
+| `input/weight/output_bytes` | no | yes | optional each |
+| `input/weight/output_loc` | no | yes (default LOCAL) | **explicit in v2**, default `LOCAL` |
+| `batch_tag` | no | yes (default NONE) | **explicit in v2**, default `NONE` |
 | COLLECTIVE (AR/RS/AG/A2A) | yes | yes | COLLECTIVE detail |
-| payload bytes | yes | yes | `payload_bytes` |
-| participants | yes | yes | `participants` |
-| **dimensional scope** | **no** | yes (`"ALL"` or bool vector) | `scope` — **OPTIONAL, absent ≠ "ALL"** |
-| BROADCAST | no separate kind | yes, explicit `src` | COLLECTIVE kind + `source` |
-| P2P | yes | yes (`SEND`/`RECV` + src/dst) | P2P detail |
+| payload bytes / participants | yes | yes | required |
+| **dimensional scope** | **no** | yes (`"ALL"` or bool mask) | `scope: str \| None` + mask — three distinct states |
+| BROADCAST | kind only, root = `participants[0]` | yes, **explicit `source`** | COLLECTIVE + `source` (required) |
+| P2P | one transfer | `SEND` / `RECV` | P2P + `role: TRANSFER \| SEND \| RECV` |
 | MULTICAST | yes (+ replication) | no | MULTICAST detail |
-| EXPERT_BEGIN/END | constants only | yes (`expert_num`, `comm_kind`, bytes) | EXPERT detail |
-| KV_READ/KV_WRITE | constant only | no | **not implemented** — drop the constants |
-| EXPERT_DISPATCH/COMBINE | constant only | no | **not implemented** — drop or record as future |
-| collective schedule | yes (`workload/collectives.py`) | no | keep, from graph ops |
-| logical messages | yes | no | keep |
-| packetization/flitization | yes | no | keep unchanged |
-| conservation + references | yes | ET/memory conservation | keep both |
-| physical traffic + BookSim trace | yes | no | keep unchanged |
+| EXPERT_BEGIN | constant only | yes (`expert_num`, optional collective) | EXPERT detail |
+| **EXPERT_END** | constant only | **yes — carries the combine collective** | EXPERT_END detail with the same optional collective fields |
+| **PIM_BEGIN / PIM_END** | no | **markers emitted, currently DROPPED** | PIM detail (`channel`) |
+| KV_READ/KV_WRITE, EXPERT_DISPATCH/COMBINE | constants only | no | **not implemented** — no producer, no consumer |
+| collective schedule | `workload/collectives.py` | no | keep |
+| logical messages, packetization, flitization | yes | no | keep unchanged |
+| conservation + reference differentials | yes | ET/memory conservation | keep both |
+| physical traffic + BookSim rendering | yes | no | keep unchanged |
 | memory lowering | no | yes | keep, consume the graph |
 | ET/Chakra lowering | no | yes | keep, consume the graph |
-| trace-row projection/regeneration | no | yes (byte-identical round trip) | keep, consume the graph |
+| trace-row projection/regeneration | no | yes (byte-identical) | keep, consume the graph |
 | serving canonicalization | no | yes | keep, produce the graph |
-| timeline/attribution | no (slice 3) | yes (Phase 16) | adapt minimally in 2c; replaced in slice 3 |
+| timeline/attribution | no (slice 3) | yes | minimal adaptation in 2c |
 
-## 2. Findings from capturing the corpora
+## 2. Findings (corrected)
 
-**F9 — the old authority never had the divisibility law.** A k=3 ALLREDUCE
-with B=1000 constructs fine in the old path and refuses in Wave D
-(`UnsupportedSchedule`, "B % k == 0"). The canonical graph must keep the
-Wave-D law (it is the stronger, audited semantics) — which means **legacy
-workloads that used to be accepted may now refuse**. That is a behaviour
-change and is reported, not slipped in.
+**F9 (CORRECTED) — divisibility belongs to the schedule, not the
+declaration.** `ALLREDUCE(k=3, B=1000)` is a **valid canonical
+declaration**. The pinned exact RING expansion refuses with
+`UnsupportedSchedule` because equal chunks cannot be produced. No
+padding, rounding, uneven chunking or algorithm substitution, and no
+legacy permissive mode. The canonical graph must not inherit BookSim's
+schedule restriction as a declaration-time law.
 
-**F10 — the location law lives in the resolver, not the constructor.** The
-old authority accepts `REMOTE`/`CXL`/`STORAGE` at construction, *serializes*
-them (non-default fields appear in `to_dict`), and refuses them in
-`resolve_memory` with `UnsupportedSemantic`. The canonical COMPUTE detail
-must therefore keep locations as declared data and let the memory lowerer
-refuse — dropping the field would destroy the refusal contract.
+**F9b (NEW) — the old path never had the law at all.** The Phase-9
+builder accepts k=3/B=1000 (corpus: `refusal/non_divisible_allreduce ==
+"NO REFUSAL"`). So the merge makes the *declaration* permissive like the
+old path and keeps the *lowering* strict like Wave D. Both halves are
+tested.
 
-**F11 — `WorkloadOp.to_dict()` is a COMPRESSED canonical form.** Defaults
-(`loc=LOCAL`, `batch_tag=NONE`) are omitted; non-defaults appear. Identity is
-built from the same dict, so omission is consistent. The canonical schema
-must not "fix" this by always emitting defaults: that would move every legacy
-identity hash.
+**F10 — the location law lives in the resolver.** `REMOTE`/`CXL`/
+`STORAGE` construct and serialize; `resolve_memory` refuses with
+`UnsupportedSemantic`. The canonical COMPUTE detail keeps locations as
+declared data or the refusal contract dies with the field.
 
-**F12 — EXPERT markers round-trip to rows but do not lower to ET.** The
-corpus shows `trace/serving_expert_rows/rows_roundtrip_equal == True` while
-ET lowering fails inside the third-party Chakra converter (`'Layer' object
-has no attribute 'output_memory_loc'`). The existing suite only tests the
-round trip, so this was previously untested. Recorded, not fixed here (it is
-a converter-contract issue, not a workload-schema one).
+**F11 (CORRECTED) — a legacy-reader rule, not a v2 serialization rule.**
+Legacy compressed-hash validation must reproduce `to_dict()` omission
+exactly. That does NOT constrain the new schema: v2 normalizes *values*
+(`input_loc="LOCAL"`, `batch_tag="NONE"`) explicitly, and keeps *absences*
+(`scope`, `owner`, `phase`, `routing_policy`) genuinely absent.
 
-**F13 — old-path refusals are part of the semantics.** Captured exactly:
-compute with comm bytes, duplicate ids, empty ops, out-of-range participants,
-negative duration, empty batch tag. The canonical graph must reproduce them
-(or report a deliberate change).
+**F12 (CORRECTED) — a repairable implementation defect, not an
+unsupported feature.** Chakra contains explicit `expert_start` /
+`expert_end` collective emission (llm_converter.py:471, :482), so EXPERT
+is an intended capability. Root cause of the crash: when the last row of
+a layer group is a marker, the **last-NPU-group branch**
+(llm_converter.py:547-553) reads `layers[layer_end-1].output_memory_loc`,
+and marker rows (parsed at :24-43) never set memory attributes. The
+*other* branch explicitly guards markers. The fix is a guard at that one
+site; it belongs in an isolated commit **before** the merge.
 
-**F14 — `unknown_kind` is refused by the ARTIFACT, not the operation.**
-`WorkloadOp(kind="NOPE")` constructs; `WorkloadArtifact.__post_init__`
-refuses. The canonical graph validates at construction — a tightening to be
-reported, not assumed.
+**F12b (NEW, blocking) — Chakra is a pip dependency (0.0.4), not
+vendored, and the repo has no patch mechanism.** A converter repair
+therefore requires a **vendoring-or-fork decision** (as with BookSim2) or
+an upstream fix. Reported, not worked around: patching site-packages is
+not a repo change, and a `lowering.py` workaround would alter the trace
+dialect that the byte-identical round-trip contract depends on.
 
-## 3. Canonical target schema (to implement)
+**F13 — old refusals are semantics too** (compute with comm bytes,
+duplicate ids, empty ops, out-of-range participants, negative duration,
+empty batch tag). Captured exactly.
+
+**F14 (CORRECTED) — not a compatibility requirement.** Constructing
+`WorkloadOp(kind="NOPE")` and failing only at artifact construction is
+not valuable. The canonical node refuses an unknown kind immediately.
+What must survive is *no invalid workload becomes valid*, not the
+historical exception site. Documented as an intentional API tightening.
+
+**F15 (NEW) — the participant namespace is not the parallelism geometry.**
+`serve._parallelism_from_cluster` sets `dp = number of INSTANCES` and
+takes tp/ep/pp from the FIRST instance, while `num_participants` is the
+per-instance rank space the trace's collectives address. For a
+two-instance cluster, `world_size = 8` and `participant_count = 4`.
+Deriving one from the other would silently break multi-instance serving.
+Canonical `WorkloadGraph` therefore carries `participant_count` as an
+identity-bearing field. Migration: Wave D → `world_size`; Phase 9 →
+`num_participants`. A lowering needing global ranks must refuse unless
+`participant_count == world_size` or an explicit binding exists.
+
+**F16 (NEW) — PIM semantics are silently dropped.** `artifact_from_trace_
+rows` does `if marker == "PIM": continue`, while LLMServingSim emits
+`PIM <channel>` / `PIM END` and Chakra consumes PIM flags
+(llm_converter.py:31-45, 261-262, 341-430). The 173-entry corpus missed it
+because no PIM case existed. Gate V2 adds one and pins the loss.
+
+**F17 (NEW) — the Chakra PIM path contains a genuine crash.**
+`pim_parent_nodes.append()` with **no argument** (llm_converter.py:513) on
+the `npu_group == 0` path — a `TypeError` wherever that branch runs.
+Whether it is reachable from the emitted trace grammar is being
+determined; it is not assumed to work.
+
+**F18 (NEW) — `scope=None` and `scope="ALL"` collapse to the same trace
+form.** `_comm_field` emits the bare kind unless scope is a list, so both
+states render `ALLREDUCE`. After the merge, "all dimensions" and "nobody
+declared" would be indistinguishable at the backend. Canonical lowering
+must refuse `None` unless the target has an independently proven meaning.
+
+**F19 (NEW) — BROADCAST root is a Wave-D assumption.** `messages.py`
+hard-codes `root_idx = 0`; the old authority stores an explicit `source`
+and refuses its absence. Migration sets `source = participants[0]` for
+Wave D (keeping packets identical) and preserves the declared source
+otherwise; message generation and the reference differential must use it.
+
+**F20 (NEW) — SEND/RECV and TRANSFER are different abstractions.** Old
+`SEND`/`RECV` are identity-bearing kinds; a Wave-D P2P is a whole
+transfer. One canonical P2P operation with `role = TRANSFER | SEND | RECV`
+preserves both. Only `TRANSFER` is proven to lower into one logical
+message; standalone legacy SEND/RECV stay representable and their
+lowering refuses rather than fabricating a pairing.
+
+**F21 (NEW) — identity ownership.** A canonical `WorkloadGraph` must not
+carry an externally supplied `workload_id` while claiming content-derived
+identity. `workload_id()` is the content hash of the canonical semantic
+payload; legacy `workload_id`/`source_kind` become provenance.
+
+**F22 (NEW) — `routing_policy` has the same fabrication trap as `phase`.**
+Phase-9 declared neither. Migration must not insert `EXPLICIT_TRACE` or
+`"PREFILL"`. `WorkloadSemantics` fields one authority lacked are optional;
+consumers that require them refuse.
+
+## 3. Canonical target schema
 
 ```
 WorkloadGraph
-  parallelism: ParallelismArtifact          # the ONE parallelism authority
-  semantics:   WorkloadSemantics            # renamed from WaveDWorkloadSemantics
-  workload_id: str
-  operations:  tuple[OperationNode, ...]    # ONE entry per operation
-  schema_version: int
-  identity = content_hash(...)              # core/artifact.py
+├── parallelism: ParallelismArtifact      # system geometry authority
+├── participant_count: int                # rank space the ops address
+├── semantics: WorkloadSemantics          # optional fields, no fabrication
+├── operations: tuple[OperationNode, ...] # ONE entry per operation
+├── provenance: source metadata (non-identity, minimal)
+└── schema_version
+
+workload_id() = content_hash(canonical semantic payload)   # core/artifact.py
 
 OperationNode
-  operation_id: str
-  kind: COMPUTE | COLLECTIVE | P2P | MULTICAST | EXPERT_BEGIN | EXPERT_END
-  deps: tuple[str, ...]
-  owner: int | None                         # absent means undeclared
-  phase: str | None                         # absent means undeclared
-  step:  int | None
-  label: str                                # presentation, NOT identity
-  detail: FrozenMap                         # ONE closed per-kind payload
+├── operation_id, kind, deps
+├── owner: int | None, phase: str | None, step: int | None
+├── label                                # presentation, non-identity
+└── detail: FrozenMap                    # ONE closed per-kind payload
 ```
 
-**No side lists.** The current `OperationGraph` carries `nodes` plus
-`collectives` / `p2p_transfers` / `multicasts`, and `LogicalMessageArtifact`
-reconstructs the relationship by ID. The canonical graph carries each
-operation's semantic payload exactly once; messages derive from the nodes.
-
-Per-kind detail schemas (closed):
+Kind union (eight, not six):
 
 ```
-COMPUTE       duration_ns (req), input_bytes?, weight_bytes?, output_bytes?,
-              input_loc, weight_loc, output_loc, batch_tag
-COLLECTIVE    kind (AR/RS/AG/A2A/BROADCAST), participants, payload_bytes,
-              scope?, source? (BROADCAST only)
-P2P           src_rank, dst_rank, payload_bytes
+COMPUTE COLLECTIVE P2P MULTICAST EXPERT_BEGIN EXPERT_END PIM_BEGIN PIM_END
+```
+
+```
+COMPUTE       duration_ns(req), input/weight/output_bytes?, locs, batch_tag
+COLLECTIVE    kind(AR/RS/AG/A2A/BROADCAST), participants, payload_bytes,
+              scope(3-state, optional), source(BROADCAST, required)
+P2P           role(TRANSFER|SEND|RECV), src_rank, dst_rank, payload_bytes
 MULTICAST     source_rank, destinations, payload_bytes, replication
-EXPERT_BEGIN  expert_num?, comm_kind?, bytes?, participants?, scope?
-EXPERT_END    (marker; no payload)
+EXPERT_BEGIN  expert_num?, comm_kind?, payload_bytes?, participants?, scope?
+EXPERT_END    same optional collective fields as EXPERT_BEGIN
+PIM_BEGIN     channel
+PIM_END       (region close)
 ```
+
+**No side lists**: the graph carries each operation's payload exactly once;
+`messages.py` derives messages from the nodes instead of joining IDs.
 
 ## 4. Migration rules
 
-1. **Ordered legacy → explicit deps.** `op0..opN` becomes a chain because the
-   ET lowering chains positionally. No extra concurrency is inferred.
-2. **Identity.** Old `workload_id`/`artifact_hash`/`source_kind` become
-   provenance; the graph's scientific identity is content-derived via
-   `core/artifact.py`. Migration validates the OLD document under the OLD hash
-   rules first, then converts and computes the new identity.
-3. **`num_participants` is derived** from `parallelism.world_size`, with an
-   explicit consistency check for legacy documents that declare it.
-4. **Field name order is a trap.** The old `Parallelism` declares
-   `tp, dp, ep, pp`; `ParallelismArtifact` declares `tp, pp, ep, dp`.
-   Conversions use **named** fields; a positional-swap regression test is
-   required.
-5. **Optional ≠ default.** `owner`/`phase`/`step`/`scope` must support
-   genuine absence. Filling `owner=0, phase="PREFILL", step=0` would invent
-   semantics the source never had (and the memory lowerer already refuses
-   ambiguous attribution rather than assigning node zero).
+1. **Ordered legacy → explicit deps** (chain). No inferred concurrency.
+2. **Participant count**: Wave D → `world_size`; Phase 9 →
+   `num_participants`. Never synthesise a local→global rank map.
+3. **Field order trap**: `tp,dp,ep,pp` (old) vs `tp,pp,ep,dp`
+   (canonical) — conversions use named fields; positional-swap test.
+4. **Legacy hash first**: validate the old compressed document under the
+   OLD rules, then convert, then compute the new identity.
+5. **No fabricated defaults** for `owner`, `phase`, `step`, `scope`,
+   `routing_policy`. Optional means absent.
+6. **Broadcast**: Wave D `source = participants[0]`; legacy keeps its
+   declared source even when it is not first.
+7. **PIM/EXPERT** markers become first-class operations; they are never
+   skipped.
 
-## 5. What must NOT change (exactness contracts)
+## 5. Exactness contracts (must not change)
 
 ```
 collective arithmetic + reference equations
 logical-message sequencing, packetization, flitization
-conservation equations, physical binding, bundle validation
+conservation, physical binding, bundle validation
 BookSim rendering (trace bytes identical for an equivalent workload)
-old-path trace-row round trip (byte-identical)
-old-path ET lowering bytes for an equivalent workload
+old trace-row round trip (byte-identical)
+old ET lowering bytes for an equivalent workload
 memory-lowering bytes and conservation
 ```
 
-Graph identity WILL change (new canonical schema). Derived artifact ids may
-follow. Packets and trace bytes may not.
+Graph identity changes (new schema); packets and trace bytes do not.
+
+## 6. Gate V2 status
+
+Green:
+
+```
+multi-instance participant_count != world_size          test_gate_v2 ...ParticipantNamespace
+EXPERT_END with combine collective survives roundtrip   ...ExpertEndIsNotPayloadFree
+PIM marker loss pinned (strict xfail)                   ...PimSemantics
+PIM converter no-argument append pinned                 ...PimSemantics
+scope=None vs scope=ALL collapse pinned (strict xfail)  ...ScopeAbsenceIsNotAll
+BROADCAST explicit source preserved; Wave-D root pinned  ...BroadcastSource
+SEND/RECV role distinction preserved                     ...P2PRoles
+declaration vs schedule divisibility split                ...DivisibilityIsAScheduleLaw
+legacy compressed-default hash validates as-is            ...LegacyCompressedDefaults
+oracle-independence AST guard (top-level only)            test_architecture_law
+```
+
+Not yet green — do not begin the merge:
+
+```
+1. F12b: Chakra vendoring/fork decision (EXPERT converter repair needs it)
+2. F17: PIM converter execution audited end-to-end (append() crash + whether
+   the emitted grammar reaches it)
+3. scope=None lowering REFUSAL implemented (currently only pinned as xfail)
+4. PIM_BEGIN/PIM_END added to the vocabulary (flips the PIM xfail)
+5. multi-instance corpus case captured through serve.canonicalize_run_workload
+   (currently captured at the _parallelism_from_cluster level)
+```
+
+Items 1 and 2 are decisions/repairs outside the workload authority and are
+therefore sequenced **before** it, as required.
