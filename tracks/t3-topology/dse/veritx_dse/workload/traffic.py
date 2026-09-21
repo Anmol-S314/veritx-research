@@ -37,7 +37,9 @@ from veritx_dse.core.errors import (
     ConservationFailed, EvidenceInvalid, InvalidInput, MappingInvalid,
 )
 from veritx_dse.core.artifact import content_hash
-from veritx_dse.workload.messages import LogicalMessageArtifact
+from veritx_dse.workload.messages import (
+    LogicalMessageArtifact, LogicalMessageArtifactV2,
+)
 from veritx_dse.core.artifact import (
     require_embedded_id, require_fields, require_schema_version, require_type_tag,
 )
@@ -212,8 +214,7 @@ def flitize_packet(p_i: int, pf: PacketFormatArtifact
     return n, padding, n * f
 
 
-def _require_matching_geometry(logical: LogicalMessageArtifact,
-                               bundle: ResolvedFabricBundle) -> None:
+def _require_geometry_shape(pa: Any, bundle: ResolvedFabricBundle) -> None:
     """Equal world size is NOT semantic equivalence (§9).
 
     The logical rank geometry must be exactly the geometry the physical
@@ -223,7 +224,6 @@ def _require_matching_geometry(logical: LogicalMessageArtifact,
     the other silently relabels every tensor-parallel peer group, so it
     must refuse before any rank→endpoint binding happens.
     """
-    pa = logical.graph.parallelism
     shape = (pa.tp, pa.pp, pa.ep, pa.dp)
     inventory = getattr(bundle, "inventory", None)
     inv_shape_obj = getattr(inventory, "parallelism", None)
@@ -247,6 +247,109 @@ def _require_matching_geometry(logical: LogicalMessageArtifact,
             raise MappingInvalid(
                 f"logical rank geometry {shape} does not match the "
                 f"compiled design workload geometry {design_shape}")
+
+
+def _require_matching_geometry(logical: LogicalMessageArtifact,
+                               bundle: ResolvedFabricBundle) -> None:
+    """v1 wrapper: the logical artifact's graph carries the geometry."""
+    _require_geometry_shape(logical.graph.parallelism, bundle)
+
+
+def _packet_records(m: Any, src: BindingRecord, dst: BindingRecord,
+                    pf: PacketFormatArtifact, H: int, Q: int
+                    ) -> tuple[PacketRecord, ...]:
+    """Packetize ONE logical message under the Wave-B authority.
+
+    Shared by both traffic generations: the transmitted-bit identity and
+    the padding bound are checked here, so a violated equation can never
+    persist in either schema.
+    """
+    message_bits = m.payload_bytes * 8
+    packets: list[PacketRecord] = []
+    for idx, pbits in enumerate(packetize_message(message_bits, pf)):
+        n, padding, transmitted = flitize_packet(pbits, pf)
+        hbits = n * H
+        if transmitted != hbits + pbits + padding:
+            raise ConservationFailed(
+                f"packet {idx} of {m.message_id!r}: transmitted "
+                f"{transmitted} != header {hbits} + payload {pbits} + "
+                f"padding {padding}")
+        if not (0 <= padding < Q):
+            raise ConservationFailed(
+                f"packet {idx} of {m.message_id!r}: padding {padding} "
+                f"outside [0, {Q})")
+        packets.append(PacketRecord(
+            message_id=m.message_id, packet_index=idx, payload_bits=pbits,
+            flit_count=n, padding_bits=padding, header_bits=hbits,
+            transmitted_bits=transmitted, src_endpoint=src.endpoint_id,
+            dst_endpoint=dst.endpoint_id))
+    return tuple(packets)
+
+
+PARTICIPANT_MAPPING_SCHEMA_VERSION = 1
+_PEM_TYPE_TAG = "srota/ParticipantEndpointMapping"
+
+
+@dataclass(frozen=True)
+class ParticipantEndpointMapping:
+    """Participant rank → physical endpoint, identified and refused.
+
+    B2 MappingArtifact answers rank→agent and deliberately carries no
+    fabric field; the attachment answers agent→endpoint. This is the
+    participant-scoped projection of both — the binding physical
+    lowering must prove before it sends, instead of assuming the
+    participant namespace equals the world rank space (F15).
+    """
+
+    participant_count: int
+    rank_to_endpoint: tuple[tuple[int, int], ...]
+    fabric_id: str
+    schema_version: int = PARTICIPANT_MAPPING_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        if type(self.participant_count) is not int \
+                or self.participant_count <= 0:
+            raise MappingInvalid("participant_count must be a positive int")
+        if len(self.rank_to_endpoint) != self.participant_count:
+            raise MappingInvalid(
+                f"participant mapping covers {len(self.rank_to_endpoint)} "
+                f"ranks but participant_count is {self.participant_count}")
+        ranks = [r for r, _ in self.rank_to_endpoint]
+        if sorted(ranks) != list(range(self.participant_count)):
+            raise MappingInvalid(
+                "participant mapping must cover exactly "
+                "[0, participant_count)")
+        endpoints = [e for _, e in self.rank_to_endpoint]
+        if any(type(e) is not int or e < 0 for e in endpoints):
+            raise MappingInvalid("endpoint ids must be non-negative ints")
+        if len(set(endpoints)) != len(endpoints):
+            raise MappingInvalid("one endpoint per participant required")
+        if not isinstance(self.fabric_id, str) or not self.fabric_id:
+            raise MappingInvalid("fabric_id required")
+
+    def endpoint_for(self, rank: int) -> int:
+        if type(rank) is not int or not 0 <= rank < self.participant_count:
+            raise MappingInvalid(
+                f"participant rank {rank!r} outside "
+                f"[0, {self.participant_count})")
+        return dict(self.rank_to_endpoint)[rank]
+
+    def canonical_dict(self) -> dict[str, Any]:
+        return {
+            "type": _PEM_TYPE_TAG,
+            "schema_version": self.schema_version,
+            "participant_count": self.participant_count,
+            "rank_to_endpoint": [[r, e] for r, e in self.rank_to_endpoint],
+            "fabric_id": self.fabric_id,
+        }
+
+    def binding_id(self) -> str:
+        return content_hash(_PEM_TYPE_TAG, self.schema_version,
+                            self.canonical_dict())
+
+
+PHYSICAL_TRAFFIC_SCHEMA_VERSION_V2 = 2
+_V2_HASH_TYPE_TAG = "srota/PhysicalTrafficArtifactV2"
 
 
 @dataclass(frozen=True)
@@ -293,26 +396,7 @@ class PhysicalTrafficArtifact:
                                 agent_instance_id=r2a[m.dst_rank],
                                 endpoint_id=r2e[m.dst_rank])
             message_bits = m.payload_bytes * 8
-            packets: list[PacketRecord] = []
-            for idx, pbits in enumerate(packetize_message(message_bits, pf)):
-                n, padding, transmitted = flitize_packet(pbits, pf)
-                hbits = n * H
-                # Exact flit transmitted-bit identity (§18) — checked here,
-                # so a violated equation can never persist.
-                if transmitted != hbits + pbits + padding:
-                    raise ConservationFailed(
-                        f"packet {idx} of {m.message_id!r}: transmitted "
-                        f"{transmitted} != header {hbits} + payload "
-                        f"{pbits} + padding {padding}")
-                if not (0 <= padding < Q):
-                    raise ConservationFailed(
-                        f"packet {idx} of {m.message_id!r}: padding "
-                        f"{padding} outside [0, {Q})")
-                packets.append(PacketRecord(
-                    message_id=m.message_id, packet_index=idx,
-                    payload_bits=pbits, flit_count=n, padding_bits=padding,
-                    header_bits=hbits, transmitted_bits=transmitted,
-                    src_endpoint=src.endpoint_id, dst_endpoint=dst.endpoint_id))
+            packets = list(_packet_records(m, src, dst, pf, H, Q))
             if sum(p.payload_bits for p in packets) != message_bits:
                 raise ConservationFailed(
                     f"message {m.message_id!r}: packet payload bits do not "
@@ -528,9 +612,204 @@ class PhysicalTrafficArtifact:
         return art
 
 
+@dataclass(frozen=True)
+class PhysicalTrafficArtifactV2:
+    """Physical traffic from the canonical logical messages (M1.3).
+
+    Binds message_artifact_id, the resolved fabric, the packet format AND
+    the participant→endpoint mapping it actually used. Packet endpoints
+    come from that mapping, so logical rank == physical endpoint is never
+    assumed: a 4-participant workload on an 8-rank fabric lowers through
+    its own explicit binding, and refuses only when a participant has no
+    authenticated binding.
+    """
+
+    logical: LogicalMessageArtifactV2
+    bundle: ResolvedFabricBundle
+    schema_version: int = PHYSICAL_TRAFFIC_SCHEMA_VERSION_V2
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.logical, LogicalMessageArtifactV2):
+            raise InvalidInput(
+                "logical must be a LogicalMessageArtifactV2")
+        if not isinstance(self.bundle, ResolvedFabricBundle):
+            raise InvalidInput("bundle must be a ResolvedFabricBundle")
+        if self.schema_version != PHYSICAL_TRAFFIC_SCHEMA_VERSION_V2:
+            raise InvalidInput(
+                f"unsupported physical traffic schema_version "
+                f"{self.schema_version!r}")
+        try:
+            self.bundle.revalidate()
+        except Exception as exc:
+            raise MappingInvalid(
+                f"physical bundle fails revalidation: {exc}") from None
+        _require_geometry_shape(self.logical.graph.parallelism, self.bundle)
+        pf = self.bundle.packet_format
+        H = header_width_bits(pf)
+        Q = pf.payload_width_bits
+        if H < 0 or Q < 1:
+            raise InvalidInput("packet format has no payload capacity")
+        _, r2a = _rank_to_endpoint_maps(self.bundle)
+        pem = self.participant_endpoint_mapping()
+        count = self.logical.participant_count
+
+        traffic: list[MessageTraffic] = []
+        for m in self.logical.messages:
+            for rank in (m.src_rank, m.dst_rank):
+                if not 0 <= rank < count:
+                    raise MappingInvalid(
+                        f"message {m.message_id!r} addresses rank {rank} "
+                        f"outside the participant namespace [0, {count})")
+            src = BindingRecord(rank=m.src_rank,
+                                agent_instance_id=r2a[m.src_rank],
+                                endpoint_id=pem.endpoint_for(m.src_rank))
+            dst = BindingRecord(rank=m.dst_rank,
+                                agent_instance_id=r2a[m.dst_rank],
+                                endpoint_id=pem.endpoint_for(m.dst_rank))
+            message_bits = m.payload_bytes * 8
+            packets = list(_packet_records(m, src, dst, pf, H, Q))
+            if sum(p.payload_bits for p in packets) != message_bits:
+                raise ConservationFailed(
+                    f"message {m.message_id!r}: packet payload bits do not "
+                    f"conserve message bits")
+            traffic.append(MessageTraffic(
+                message_id=m.message_id, operation_id=m.operation_id,
+                src=src, dst=dst, payload_bytes=m.payload_bytes,
+                message_bits=message_bits, packets=tuple(packets)))
+        object.__setattr__(self, "_traffic", tuple(traffic))
+
+    # ── the binding this lowering actually used ─────────────────────
+    def participant_endpoint_mapping(self) -> ParticipantEndpointMapping:
+        r2e, _ = _rank_to_endpoint_maps(self.bundle)
+        count = self.logical.participant_count
+        rows: list[tuple[int, int]] = []
+        for rank in range(count):
+            if rank not in r2e:
+                raise MappingInvalid(
+                    f"participant rank {rank} has no authenticated "
+                    f"rank→endpoint binding in the resolved fabric "
+                    f"(participant_count={count}); physical lowering "
+                    f"requires an explicit mapping")
+            rows.append((rank, r2e[rank]))
+        return ParticipantEndpointMapping(
+            participant_count=count, rank_to_endpoint=tuple(rows),
+            fabric_id=self.bundle.resolved_fabric.resolved_fabric_hash())
+
+    # ── accessors ─────────────────────────────────────────────────────
+    @property
+    def traffic(self) -> tuple[MessageTraffic, ...]:
+        return self._traffic
+
+    def totals(self) -> dict[str, int]:
+        return {
+            "message_count": len(self._traffic),
+            "packet_count": sum(len(t.packets) for t in self._traffic),
+            "flit_count": sum(t.flit_count for t in self._traffic),
+            "packet_payload_bits": sum(t.packet_payload_bits
+                                       for t in self._traffic),
+            "header_bits": sum(t.header_bits for t in self._traffic),
+            "padding_bits": sum(t.padding_bits for t in self._traffic),
+            "transmitted_bits": sum(t.transmitted_bits
+                                    for t in self._traffic),
+        }
+
+    def validate_conservation(self) -> None:
+        """Packet conservation + per-collective generated == scheduled."""
+        logical_bits = sum(m.payload_bytes for m in self.logical.messages) * 8
+        totals = self.totals()
+        if totals["packet_payload_bits"] != logical_bits:
+            raise ConservationFailed(
+                f"packet payload bits {totals['packet_payload_bits']} != "
+                f"logical message bits {logical_bits}")
+        for rec in self.logical.schedules:
+            rows = [t for t in self._traffic
+                    if t.operation_id == rec.collective_id]
+            if len(rows) != rec.message_count:
+                raise ConservationFailed(
+                    f"collective {rec.collective_id!r}: projected "
+                    f"{len(rows)} messages, schedule requires "
+                    f"{rec.message_count}")
+            if sum(t.payload_bytes for t in rows) != rec.aggregate_payload:
+                raise ConservationFailed(
+                    f"collective {rec.collective_id!r}: projected payload "
+                    f"does not equal the scheduled "
+                    f"{rec.aggregate_payload}")
+
+    # ── identity ──────────────────────────────────────────────────────
+    def identity_dict(self) -> dict[str, Any]:
+        return {
+            "type": _V2_HASH_TYPE_TAG,
+            "schema_version": self.schema_version,
+            "message_artifact_id": self.logical.message_artifact_id(),
+            "resolved_fabric_hash":
+                self.bundle.resolved_fabric.resolved_fabric_hash(),
+            "packet_format_hash":
+                self.bundle.packet_format.packet_format_hash(),
+            "participant_endpoint_mapping_id":
+                self.participant_endpoint_mapping().binding_id(),
+            "traffic": [t.canonical_packets() for t in self._traffic],
+        }
+
+    def physical_traffic_id(self) -> str:
+        return content_hash(_V2_HASH_TYPE_TAG, self.schema_version,
+                            self.identity_dict())
+
+    def to_dict(self) -> dict[str, Any]:
+        return {**self.identity_dict(),
+                "physical_traffic_id": self.physical_traffic_id(),
+                "totals": self.totals()}
+
+    @classmethod
+    def from_dict(cls, d: Any, *, logical: LogicalMessageArtifactV2,
+                  bundle: ResolvedFabricBundle,
+                  strict: bool = False) -> "PhysicalTrafficArtifactV2":
+        """Rebuild v2 traffic from VERIFIED parents (never from the JSON)."""
+        require_fields(d, {
+            "type", "schema_version", "message_artifact_id",
+            "resolved_fabric_hash", "packet_format_hash",
+            "participant_endpoint_mapping_id", "traffic",
+            "physical_traffic_id", "totals",
+        }, "physical traffic v2")
+        if strict:
+            require_type_tag(d, _V2_HASH_TYPE_TAG, "physical traffic v2")
+            require_schema_version(d, PHYSICAL_TRAFFIC_SCHEMA_VERSION_V2,
+                                   "physical traffic v2")
+            if d["message_artifact_id"] != logical.message_artifact_id():
+                raise InvalidInput(
+                    "physical traffic v2 message_artifact_id does not "
+                    "match the verified logical parent")
+        elif "type" in d and d["type"] != _V2_HASH_TYPE_TAG:
+            raise InvalidInput(
+                f"physical traffic v2 type tag {d['type']!r} is not "
+                f"{_V2_HASH_TYPE_TAG!r}")
+        art = cls(logical=logical, bundle=bundle,
+                  schema_version=d.get("schema_version",
+                                       PHYSICAL_TRAFFIC_SCHEMA_VERSION_V2))
+        if strict:
+            require_embedded_id(d, "physical_traffic_id",
+                                art.physical_traffic_id(),
+                                "physical traffic v2")
+            recomputed = art.identity_dict()
+            for key in ("traffic", "resolved_fabric_hash",
+                        "packet_format_hash",
+                        "participant_endpoint_mapping_id"):
+                if d.get(key) != recomputed[key]:
+                    raise EvidenceInvalid(
+                        f"persisted physical traffic v2 {key} does not "
+                        f"equal the recomputed canonical content: content "
+                        f"forged")
+        elif d.get("physical_traffic_id") not in (
+                None, art.physical_traffic_id()):
+            raise InvalidInput(
+                "physical_traffic_id does not match content")
+        return art
+
+
 __all__ = [
     "BindingRecord", "header_width_bits", "flitize_packet",
     "packetize_message", "PacketRecord",
-    "PHYSICAL_TRAFFIC_SCHEMA_VERSION", "PhysicalTrafficArtifact",
+    "PHYSICAL_TRAFFIC_SCHEMA_VERSION", "PHYSICAL_TRAFFIC_SCHEMA_VERSION_V2",
+    "PhysicalTrafficArtifact", "PhysicalTrafficArtifactV2",
+    "ParticipantEndpointMapping", "PARTICIPANT_MAPPING_SCHEMA_VERSION",
     "OperationLedgerEntry", "MessageTraffic",
 ]
