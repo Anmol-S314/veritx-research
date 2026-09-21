@@ -23,7 +23,7 @@ RESOURCE_KINDS = ("intent", "design", "workload", "plan", "experiment",
                   "attempt", "result", "comparison", "links", "studydef",
                   "studyrun", "wavedworkload", "parallelism",
                   "wavedsemantics", "opgraph", "messages", "traffic",
-                  "waveeworkload")
+                  "waveeworkload", "optimizationdef", "optimizationresult")
 
 
 class ResourceStore:

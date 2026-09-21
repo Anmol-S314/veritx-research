@@ -61,6 +61,19 @@ def _default_store_root() -> Path:
     return REPO / "runs" / "veritx-control-plane"
 
 
+def _parse_optimization_definition(request_doc: Any):
+    """OptimizationRequest -> OptimizationDefinition (fail-closed)."""
+    from veritx_dse.optimization.definition import OptimizationDefinition
+    return OptimizationDefinition.parse(request_doc)
+
+
+def _persist_optimization_definition(store: ResourceStore, defn: Any):
+    """Persist the content-addressed definition resource (§111)."""
+    doc = defn.to_dict()
+    store.put("optimizationdef", doc["resource_id"], doc)
+    return doc
+
+
 class SrotaControlPlane:
     """The single product-facing control plane (boring on purpose)."""
 
@@ -1174,6 +1187,80 @@ class SrotaControlPlane:
                 out.append({"pair": list(pair), "status": "REFUSED",
                             "error": exc.to_dict()})
         return out
+
+    # ── optimize (Wave F) ─────────────────────────────────────────
+
+    def optimize(self, request_doc: Any) -> dict[str, Any]:
+        """OptimizationRequest -> verified OptimizationResult (Wave F).
+
+        The ONE product entry point (§4). Orchestration sits ABOVE the
+        control plane (§3): candidates are resolved through the sealed
+        intent system, evaluated through ``evaluate`` (reuse included,
+        §26), and every persisted summary is re-derivable by the
+        verified loader in ``optimization.result``. The optimizer never
+        launches a backend itself (§107) and never invents a metric
+        (§31): objectives/constraints come only from verified parents
+        via the closed metric registry.
+        """
+        from veritx_dse.optimization.definition import (
+            OptimizationDefinitionError,
+        )
+        from veritx_dse.optimization.orchestrator import run_optimization
+        from veritx_dse.optimization.result import (
+            OptimizationResultError,
+        )
+        try:
+            defn = _parse_optimization_definition(request_doc)
+        except OptimizationDefinitionError as exc:
+            raise intent_error(
+                str(exc), operation="optimize") from exc
+        definition = _persist_optimization_definition(self.store, defn)
+        try:
+            run = run_optimization(self, defn)
+            result_doc = run.build()
+        except OptimizationResultError as exc:
+            raise internal_error(
+                f"optimization produced a non-verifiable artifact: {exc}",
+                operation="optimize") from exc
+        self.store.put("optimizationresult", result_doc["resource_id"],
+                       result_doc)
+        # Seal discipline: the freshly built artifact must already pass
+        # the full verified load (production and verifier share code).
+        from veritx_dse.optimization.result import (
+            load_verified_optimization_result,
+        )
+        load_verified_optimization_result(
+            self.store, result_doc["resource_id"])
+        return result_doc
+
+    def inspect_optimization(self, result_id: str) -> dict[str, Any]:
+        """Verified load + relationship navigation (§112).
+
+        Re-runs the full verifier (inspection is never a raw get) and
+        exposes the identity DAG edges: definition, per-candidate
+        scenario result IDs, frontier, selection, completeness.
+        """
+        from veritx_dse.optimization.result import (
+            load_verified_optimization_result,
+        )
+        report = load_verified_optimization_result(self.store, result_id)
+        artifact = report["artifact"]
+        return {
+            "optimization_result_id": result_id,
+            "optimization_definition_id": report["definition"].definition_id(),
+            "scenario_names": report["definition"].scenario_names(),
+            "candidate_count": len(artifact["candidate_records"]),
+            "unique_candidates": report["budget"]["unique_candidates"],
+            "verdict": artifact["verdict"],
+            "search": artifact["search"],
+            "front": list(artifact["pareto"].get("front", [])),
+            "selection": artifact["selection"],
+            "scenario_result_ids": {
+                r["candidate_id"]: r["scenario_result_ids"]
+                for r in artifact["candidate_records"]
+                if r["status"] == "SUCCEEDED"},
+            "fidelity_warning": artifact["fidelity_warning"],
+        }
 
     # ── compare ───────────────────────────────────────────────────
 
