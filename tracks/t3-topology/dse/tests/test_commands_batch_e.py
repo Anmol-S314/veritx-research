@@ -32,7 +32,18 @@ MODEL = "/tmp/tm_proto.json"             # allreduce traffic model
 WINNER = REPO / "runs/experiments"       # run pipeline artifacts live here
 
 CL = [sys.executable, "-m", "veritx_dse.cli.cli"]
-SWEEP_JSON = REPO / "runs/booksim/sweep_tiny.json"
+
+
+def _sweep_artifact(root: Path) -> Path:
+    """The sweep's own output path.
+
+    Results live in immutable run dirs (``new_run_dir``: <root>/sweep/
+    <ts>_seed<seed>/sweep.json). The tests used to assert a hard-coded
+    REPO/runs/booksim/sweep_tiny.json that the sweep stopped writing, so
+    five nodes failed on a missing file rather than on sweep or report
+    behaviour.
+    """
+    return next(iter(sorted(root.glob("sweep/*/sweep.json"))))
 
 
 def _cli(*args, timeout=120):
@@ -199,10 +210,11 @@ class TestCertify:
 # ── sweep / compare / pareto / baseline (real BookSim, tiny trace) ────────
 
 class TestSweep:
-    def test_sweep_all_topos_real_latencies(self, tiny_trace, capsys):
+    def test_sweep_all_topos_real_latencies(self, tiny_trace, tmp_path, capsys):
         cmd_sweep(Ctx(verbosity=1, seed=42), SimpleNamespace(
-            trace=tiny_trace, mode="latency", ir=0.05, timeout=30))
-        res = json.loads(SWEEP_JSON.read_text())
+            trace=tiny_trace, mode="latency", ir=0.05, timeout=30,
+            out_dir=str(tmp_path)))
+        res = json.loads(_sweep_artifact(tmp_path).read_text())
         assert len(res) == 13  # mesh4x4/8x8, torus, flatfly, 3×gec, fbfly, cmesh, fattree, qtree, tree4, dragonfly
         assert all(isinstance(r["latency"], float) for r in res)
         assert "Results:" in capsys.readouterr().err
@@ -315,12 +327,18 @@ class TestInit:
 
 class TestReport:
     @pytest.fixture(scope="class")
-    def sweep_json(self, tiny_trace):
-        p = SWEEP_JSON
-        if not p.exists():
-            rc, _ = _cli("legacy", "sweep", "--trace", tiny_trace, "--timeout", "30")
-            assert rc == 0
-        return str(p)
+    def sweep_json(self, tiny_trace, tmp_path_factory):
+        """A real sweep artifact for the report leg, in a temp run root.
+
+        The old fixture ran the sweep and then handed `report` a hard-coded
+        REPO/runs/booksim/sweep_tiny.json the sweep no longer writes, so all
+        four report nodes failed on a missing file, not on report logic.
+        """
+        root = tmp_path_factory.mktemp("sweep-root")
+        cmd_sweep(Ctx(verbosity=1, seed=42), SimpleNamespace(
+            trace=tiny_trace, mode="latency", ir=0.05, timeout=30,
+            out_dir=str(root)))
+        return str(_sweep_artifact(root))
 
     def test_report_stdout_table(self, sweep_json, capsys):
         rc, _ = _cli("legacy", "report", "--json", sweep_json)
