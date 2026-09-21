@@ -131,6 +131,57 @@ class TestGroupLawsAgainstOracle:
                     (c["tp"], c["pp"], c["ep"], c["dp"]))
                 assert g.members == oracle
 
+    def test_group_derivation_does_not_use_the_oracle(self):
+        """The oracle must be independent OF the production derivation.
+
+        Consolidation finding: ``ParallelismArtifact.groups()`` used to
+        derive its members by calling the oracle's ``ref_rank``, and
+        ``group_of()`` by calling ``ref_group_members``. So the
+        "independent oracle" tests above were comparing the oracle against
+        itself: patching the oracle to return garbage on both sides still
+        passed. That is proven by the reverse probe now kept below.
+
+        The derivation is production-side (``self.rank_of`` via the sealed
+        Wave-B rank algebra) and ``group_of`` looks the rank up in
+        ``groups`` rather than restating the members. The oracle import is
+        confined to ``cross_check_against_oracle``.
+        """
+        import veritx_dse.waved.parallelism as wpar
+        # the derivation entry points must not even be imported
+        assert not hasattr(wpar, "ref_rank"), \
+            "group derivation must not call the oracle"
+        assert not hasattr(wpar, "ref_group_members"), \
+            "group_of must not call the oracle"
+        # the explicit verifier still owns the oracle
+        assert hasattr(wpar, "ref_coords")
+
+    def test_a_broken_oracle_is_detected(self, monkeypatch):
+        """Reverse probe: garbage oracle -> the differential FAILS.
+
+        Guards the guard: if the derivation ever goes back to using the
+        oracle, this test stops detecting a broken oracle and fails.
+        """
+        import veritx_dse.waved.parallelism as wpar
+        pa = ParallelismArtifact(tp=2, pp=2, ep=2, dp=2)
+        garbage = (999,)
+        monkeypatch.setattr(wpar, "ref_rank",
+                            lambda *a, **k: -1, raising=False)
+        monkeypatch.setattr(wpar, "ref_group_members",
+                            lambda *a, **k: garbage, raising=False)
+        # patch the ORACLE ITSELF wherever it is used: this module's own
+        # binding. Patching only one side would prove nothing.
+        monkeypatch.setattr(sys.modules[__name__], "ref_group_members",
+                            lambda *a, **k: garbage)
+        # production output is UNCHANGED by a broken oracle
+        for family in ("TP", "EP", "DP", "PP"):
+            for r in range(pa.world_size):
+                c = pa.coords_of(r)
+                oracle = ref_group_members(
+                    family, (2, 2, 2, 2),
+                    (c["tp"], c["pp"], c["ep"], c["dp"]))
+                assert oracle == garbage       # the oracle IS broken
+                assert pa.group_of(family, r).members != garbage
+
     def test_singleton_dimension_produces_no_groups_of_that_family(self):
         # §10.3/§29 metamorphic: the FAMILY still partitions ranks but a
         # singleton axis means no collective is ever GENERATED for it —

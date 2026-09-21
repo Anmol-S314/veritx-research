@@ -25,7 +25,7 @@ from veritx_dse.model.placement import (  # authority reuse
 
 from .errors import InvalidInput
 from veritx_dse.core.artifact import content_hash
-from .oracles import ref_coords, ref_group_members, ref_rank
+from .oracles import ref_coords  # verifier only, never derivation
 from veritx_dse.core.artifact import (
     require_embedded_id, require_fields, require_schema_version, require_type_tag,
 )
@@ -184,8 +184,7 @@ class ParallelismArtifact:
                             if (t, e, d) != (0, 0, 0):
                                 continue
                             members = tuple(
-                                ref_rank(i, p, j, k, tp=self.tp, pp=self.pp,
-                                         ep=self.ep, dp=self.dp)
+                                self.rank_of(i, p, j, k)
                                 for i in range(self.tp)
                                 for j in range(self.ep)
                                 for k in range(self.dp))
@@ -194,27 +193,21 @@ class ParallelismArtifact:
                                 if t != 0:
                                     continue
                                 members = tuple(
-                                    ref_rank(i, p, e, d, tp=self.tp,
-                                             pp=self.pp, ep=self.ep,
-                                             dp=self.dp)
+                                    self.rank_of(i, p, e, d)
                                     for i in range(self.tp))
                                 key = (p, e, d)
                             elif family == "EP":
                                 if e != 0:
                                     continue
                                 members = tuple(
-                                    ref_rank(t, p, i, d, tp=self.tp,
-                                             pp=self.pp, ep=self.ep,
-                                             dp=self.dp)
+                                    self.rank_of(t, p, i, d)
                                     for i in range(self.ep))
                                 key = (t, p, d)
                             else:  # DP
                                 if d != 0:
                                     continue
                                 members = tuple(
-                                    ref_rank(t, p, e, i, tp=self.tp,
-                                             pp=self.pp, ep=self.ep,
-                                             dp=self.dp)
+                                    self.rank_of(t, p, e, i)
                                     for i in range(self.dp))
                                 key = (t, p, e)
                         out.append(Group(family=family, index=key,
@@ -222,19 +215,19 @@ class ParallelismArtifact:
         return tuple(out)
 
     def group_of(self, family: str, rank: int) -> Group:
-        """The one family group containing ``rank`` (law: exactly one)."""
-        c = self.coords_of(rank)
-        members = ref_group_members(family, self.sizes(),
-                                    (c["tp"], c["pp"], c["ep"], c["dp"]))
-        if family == "TP":
-            key = (c["pp"], c["ep"], c["dp"])
-        elif family == "EP":
-            key = (c["tp"], c["pp"], c["dp"])
-        elif family == "DP":
-            key = (c["tp"], c["pp"], c["ep"])
-        else:
-            key = (c["pp"],)
-        return Group(family=family, index=key, members=members)
+        """The one family group containing ``rank`` (law: exactly one).
+
+        Derived by looking the rank up in the ONE group derivation
+        (``groups``), not by a second formula. Two derivations of the same
+        groups is how a group law and a group listing come to disagree.
+        """
+        self.coords_of(rank)  # range/type validation, and the error contract
+        for group in self.groups(family):
+            if rank in group.members:
+                return group
+        raise ConservationLikeError(
+            f"rank {rank} is in no {family} group: the group partition "
+            "does not cover the rank space")
 
     def validate_group_laws(self) -> None:
         """Mechanical §9 proof: coverage, disjointness, cardinality."""
