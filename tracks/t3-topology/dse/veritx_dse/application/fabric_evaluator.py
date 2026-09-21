@@ -628,8 +628,8 @@ class FabricEvaluator:
                 backend_input_sha256=input_hash,
                 raw_evidence_sha256=ref.sha256,
                 stats=cert_evidence.stats)
-            assert artifact.authenticates(
-                backend_input_sha256=input_hash,
+            _require_evidence_authentic(
+                artifact, backend_input_sha256=input_hash,
                 raw_evidence_sha256=ref.sha256,
                 stats=cert_evidence.stats)
         except Exception as exc:
