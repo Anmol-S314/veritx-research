@@ -56,6 +56,28 @@ ATTEMPT_STATUSES = ("PLANNED", "RUNNING", "SUCCEEDED", "FAILED",
 # attempt states (study entries carry their own typed vocabulary).
 
 
+def _binder_chain(chain: dict[str, Any], evidence: Any
+                  ) -> dict[str, Any]:
+    """The chain a network window is bound from.
+
+    The plan chain names its workload authority under a generation-specific
+    key, and bind_network_window dispatches on that generation. The backend
+    hashes come from the run's evidence and are generation-neutral. Passing
+    the generation through explicitly lets the binder refuse an unknown one
+    instead of defaulting to the historical parent.
+    """
+    version = chain.get("chain_schema_version", 1)
+    if version == 2:
+        out: dict[str, Any] = {"chain_schema_version": 2,
+                               "workload_graph_id": chain["workload_graph_id"]}
+    else:
+        out = {"operation_graph_id": chain["operation_graph_id"]}
+    out["physical_traffic_id"] = chain["physical_traffic_id"]
+    out["backend_config_hash"] = evidence.backend_config_hash
+    out["backend_input_hash"] = evidence.backend_input_hash
+    return out
+
+
 def _default_store_root() -> Path:
     from veritx_dse.core.paths import REPO
     return REPO / "runs" / "veritx-control-plane"
@@ -995,16 +1017,7 @@ class SrotaControlPlane:
             binding, window = bind_network_window(
                 evidence=run_evidence,
                 evidence_sha256=ref.sha256,
-                chain={
-                    "operation_graph_id":
-                        chain["operation_graph_id"],
-                    "physical_traffic_id":
-                        chain["physical_traffic_id"],
-                    "backend_config_hash":
-                        run_evidence.backend_config_hash,
-                    "backend_input_hash":
-                        run_evidence.backend_input_hash,
-                },
+                chain=_binder_chain(chain, run_evidence),
                 network_clock_hz=clock_hz,
                 expected_packets=run_summary["num_packets"])
             net_binding_doc = binding.to_dict()

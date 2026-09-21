@@ -36,9 +36,36 @@ NETWORK_STATS_KEYS = ("completion_time", "delivered", "pkt_count",
                       "drain_verdict")
 
 
+# The binding names the workload AUTHORITY it was bound to, and that
+# authority changed generation in 2c.4. Rather than keep a v1 field name
+# (operation_graph_id) holding a v2 value, the field is named for what it
+# is and the binding declares which generation it belongs to. Absence of
+# ``schema_version`` means v1, exactly as in the plan chain: the boundary
+# is explicit, not inferred from which keys happen to be present.
+NETWORK_BINDING_SCHEMA_VERSION_V1 = 1
+NETWORK_BINDING_SCHEMA_VERSION_V2 = 2
+
+_BINDING_KEYS_V1 = frozenset({
+    "operation_graph_id", "physical_traffic_id", "backend_config_hash",
+    "backend_input_hash", "evidence_sha256", "stats_sha256",
+    "network_clock_hz", "window_kind", "duration",
+})
+_BINDING_KEYS_V2 = frozenset({
+    "schema_version", "workload_graph_id", "physical_traffic_id",
+    "backend_config_hash", "backend_input_hash", "evidence_sha256",
+    "stats_sha256", "network_clock_hz", "window_kind", "duration",
+})
+
+
 @dataclass(frozen=True)
 class NetworkWindowBinding:
     """Provenance-complete network timing for one traffic window.
+
+    ``workload_parent_id`` names the workload authority this window was
+    bound to: the historical OperationGraph in generation 1, the canonical
+    WorkloadGraph in generation 2. Values are never compared across
+    generations — a v1 binding proves a v1 parent, a v2 binding proves a
+    v2 parent.
 
     ``duration`` is the exact wall-time window (completion_time /
     network_clock_hz) when a clock is bound, else ``None``: cycles-only
@@ -46,7 +73,7 @@ class NetworkWindowBinding:
     time without a declared frequency (§37 — never guess one).
     """
 
-    operation_graph_id: str
+    workload_parent_id: str
     physical_traffic_id: str
     backend_config_hash: str
     backend_input_hash: str
@@ -55,10 +82,19 @@ class NetworkWindowBinding:
     network_clock_hz: int | Fraction | None  # None => cycles-only
     window_kind: str = WINDOW_KIND_BARRIER
     duration: QTime | None = None
+    schema_version: int = NETWORK_BINDING_SCHEMA_VERSION_V1
 
     def to_dict(self) -> dict[str, Any]:
-        d: dict[str, Any] = {
-            "operation_graph_id": self.operation_graph_id,
+        # v1 output is byte-identical to what it always was: no version
+        # field, and the historical parent key. Only a v2 binding emits
+        # the version and the canonical parent key.
+        d: dict[str, Any] = {}
+        if self.schema_version == NETWORK_BINDING_SCHEMA_VERSION_V2:
+            d["schema_version"] = NETWORK_BINDING_SCHEMA_VERSION_V2
+            d["workload_graph_id"] = self.workload_parent_id
+        else:
+            d["operation_graph_id"] = self.workload_parent_id
+        d.update({
             "physical_traffic_id": self.physical_traffic_id,
             "backend_config_hash": self.backend_config_hash,
             "backend_input_hash": self.backend_input_hash,
@@ -70,17 +106,26 @@ class NetworkWindowBinding:
             "window_kind": self.window_kind,
             "duration": (None if self.duration is None
                          else self.duration.to_dict()),
-        }
+        })
         return d
 
     @staticmethod
     def from_dict(d: Any) -> "NetworkWindowBinding":
         if not isinstance(d, dict):
             raise TimeError("network binding must be a dict")
-        allowed = {"operation_graph_id", "physical_traffic_id",
-                   "backend_config_hash", "backend_input_hash",
-                   "evidence_sha256", "stats_sha256", "network_clock_hz",
-                   "window_kind", "duration"}
+        # An explicit version, never inferred from key presence: absence
+        # means v1, and an unknown version refuses rather than being read
+        # as whichever generation happens to match its keys.
+        version = d.get("schema_version", NETWORK_BINDING_SCHEMA_VERSION_V1)
+        if version == NETWORK_BINDING_SCHEMA_VERSION_V1:
+            allowed = _BINDING_KEYS_V1
+            parent_key = "operation_graph_id"
+        elif version == NETWORK_BINDING_SCHEMA_VERSION_V2:
+            allowed = _BINDING_KEYS_V2
+            parent_key = "workload_graph_id"
+        else:
+            raise TimeError(
+                f"unknown network binding schema_version {version!r}")
         if set(d) != allowed:
             raise TimeError(
                 f"network binding fields must be exactly {sorted(allowed)}, "
@@ -95,7 +140,8 @@ class NetworkWindowBinding:
         if dur is not None:
             dur = QTime.from_dict(dur)
         return NetworkWindowBinding(
-            operation_graph_id=d["operation_graph_id"],
+            workload_parent_id=d[parent_key],
+            schema_version=version,
             physical_traffic_id=d["physical_traffic_id"],
             backend_config_hash=d["backend_config_hash"],
             backend_input_hash=d["backend_input_hash"],
@@ -137,7 +183,7 @@ def bind_network_window(*, evidence: Any, chain: dict[str, Any],
     cross-domain wall-time claims refuse downstream).
 
     ``chain`` is the Wave-D plan chain block (physical_traffic_id,
-    operation_graph_id, backend hashes) — passed through, never
+    workload parent id, backend hashes) — passed through, never
     re-derived here. ``evidence_sha256`` is the digest of the exact
     authenticated evidence bytes (``EvidenceRef.sha256``), supplied by
     the caller that read the evidence; a binding that cannot name its
@@ -167,8 +213,25 @@ def bind_network_window(*, evidence: Any, chain: dict[str, Any],
     dur: QTime | None = None
     if network_clock_hz is not None:
         dur = network_window_duration(cycles, network_clock_hz)
+    chain_version = chain.get("chain_schema_version",
+                              NETWORK_BINDING_SCHEMA_VERSION_V1)
+    if chain_version == NETWORK_BINDING_SCHEMA_VERSION_V1:
+        binding_version = NETWORK_BINDING_SCHEMA_VERSION_V1
+        parent_key = "operation_graph_id"
+    elif chain_version == NETWORK_BINDING_SCHEMA_VERSION_V2:
+        binding_version = NETWORK_BINDING_SCHEMA_VERSION_V2
+        parent_key = "workload_graph_id"
+    else:
+        raise TimeError(
+            f"cannot bind a network window to chain schema_version "
+            f"{chain_version!r}")
+    if parent_key not in chain:
+        raise TimeError(
+            f"chain generation {chain_version} must name its workload "
+            f"authority as {parent_key!r}")
     binding = NetworkWindowBinding(
-        operation_graph_id=str(chain["operation_graph_id"]),
+        workload_parent_id=str(chain[parent_key]),
+        schema_version=binding_version,
         physical_traffic_id=str(chain["physical_traffic_id"]),
         backend_config_hash=str(chain["backend_config_hash"]),
         backend_input_hash=str(chain["backend_input_hash"]),

@@ -217,8 +217,12 @@ def verify_wave_e_result_block(
             operation="verify_result", resource_id=result_id)
     # 4. Wave-D provenance (§71): timing never replaces communication,
     #    and the timing block may not cite a DIFFERENT valid chain.
+    from veritx_dse.wavee.network import (
+        NETWORK_BINDING_SCHEMA_VERSION_V1, NETWORK_BINDING_SCHEMA_VERSION_V2,
+    )
     from .waved_resources import (
-        chain_version, plan_chain_keys, validate_plan_chain_shape,
+        CHAIN_SCHEMA_VERSION_V2, chain_version, plan_chain_keys,
+        validate_plan_chain_shape,
     )
     if plan_wave_d is None or result_wave_d is None:
         raise ControlPlaneError(
@@ -328,8 +332,26 @@ def verify_wave_e_result_block(
                 f"({rebuilt.window_kind!r}) is not the supported "
                 f"{WINDOW_KIND_BARRIER}",
                 operation="verify_result", resource_id=result_id)
+        # The binding names a workload AUTHORITY, and which key names it
+        # depends on the chain generation — the same dispatch as the plan
+        # gate. A v1 binding proves a v1 parent; comparing a v2 binding
+        # against a v1 key (or the reverse) is a transplant, not a match.
+        _binding_v2 = (plan_version
+                       == CHAIN_SCHEMA_VERSION_V2)
+        _parent_key = ("workload_graph_id" if _binding_v2
+                       else "operation_graph_id")
+        if rebuilt.schema_version != (
+                NETWORK_BINDING_SCHEMA_VERSION_V2 if _binding_v2
+                else NETWORK_BINDING_SCHEMA_VERSION_V1):
+            raise ControlPlaneError(
+                ErrorCode.EVIDENCE_INVALID,
+                f"result {result_id} network_binding is generation "
+                f"{rebuilt.schema_version} but the plan chain is v"
+                f"{plan_version}: refusing transplanted communication "
+                f"provenance",
+                operation="verify_result", resource_id=result_id)
         for key, expected in (
-                ("operation_graph_id", plan_wave_d["operation_graph_id"]),
+                ("workload_parent_id", plan_wave_d[_parent_key]),
                 ("physical_traffic_id", plan_wave_d["physical_traffic_id"]),
                 ("backend_config_hash", backend_config_hash),
                 ("backend_input_hash", backend_input_hash)):
