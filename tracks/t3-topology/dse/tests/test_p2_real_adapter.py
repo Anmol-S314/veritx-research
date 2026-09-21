@@ -84,7 +84,7 @@ def test_real_grid_end_to_end(tmp_path):
         assert "completion_cycles" in record.objective_values
         assert "area" not in record.objective_values
         assert record.locked_consequences["routing_classes"] == ["DOR_XY"]
-        assert record.all_binding_satisfied is True
+        assert record.constraints_satisfied is True
         assert record.requirement_report_id is not None
     assert len(result.pareto_ids) >= 1
     assert len({r.requirement_report_id for r in result.records}) == 2
@@ -111,9 +111,9 @@ def test_uncertified_corner_stays_visible_but_infeasible(tmp_path):
     assert bad.performance_result_id is None
     # Infeasibility stays visible in the record: non-passing verdicts
     # on every declared constraint, never a pass, never Pareto.
-    assert bad.requirement_details, "refusal must bind its verdicts"
+    assert bad.constraint_details, "refusal must bind its verdicts"
     assert all(d["verdict"] != "SATISFIED"
-               for d in bad.requirement_details)
+               for d in bad.constraint_details)
     good = by_patch[(("rcu_enabled", False),)]
     assert good.evaluation_status == "EVALUATED"
 
@@ -183,10 +183,10 @@ def test_unmeasured_objective_is_typed_ineligible_not_keyerror(tmp_path):
     for record in result.records:
         assert record.pareto_member is False
         assert record.candidate_id not in set(result.pareto_ids)
-        entries = [d for d in record.requirement_details
+        entries = [d for d in record.objective_details
                    if dict(d)["metric"] == "area"]
         assert entries, record.candidate_id
-        assert dict(entries[0])["verdict"] == "UNMEASURABLE"
+        assert dict(entries[0])["state"] == "UNMEASURABLE"
         assert dict(entries[0])["reason"] == (
             "objective area not evidenced by evaluation")
     # Sanity: the same study with the evidenced objective (fresh

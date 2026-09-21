@@ -3,17 +3,31 @@
 OptimizationResult binds: base request identity, definition,
 candidate/evaluation IDs, objective values, constraint verdicts, Pareto
 membership, selection rationale. Execution order never changes
-candidate identity (asserted by re-derivation).
+candidate identity (re-derived and refused on mismatch, never an
+assert).
+
+TWO AUTHORITIES, NEVER MERGED:
+
+* the PRODUCT RequirementReport answers "did the design satisfy the
+  customer's requirements?" — carried as requirement_report_id,
+  product_requirements_satisfied and product_requirement_details;
+* the optimizer's own hard constraints answer "did the candidate
+  satisfy the study's constraints?" — carried as constraint_verdicts
+  (SATISFIED/VIOLATED/UNMEASURABLE), constraint_details and
+  constraints_satisfied.
+
+Objectives are a third, measured-only namespace (objective_values).
+A candidate is Pareto-eligible only when its evaluation succeeded AND
+its binding product requirements pass AND every requested objective is
+measured and finite AND every hard constraint is SATISFIED. Ineligible
+candidates stay visible with typed reasons and never reach pareto.py's
+indexing (never a KeyError).
 
 Emits OptimizationStudyView per
 contracts/srota/v1/optimization.study.view.v2.schema.json
 (contract_version 2 by default; contract_version=1 keeps the frozen
-boolean-only v1 shape for pinned callers).
-
-Candidates whose evaluation evidences none of a declared objective's
-metric are ineligible: they stay visible with a typed UNMEASURABLE
-requirement_details entry, out of feasible_values and out of the Pareto
-frontier (never a pareto.py KeyError).
+boolean-only v1 shape for pinned callers — that projector is LOSSY and
+never claims to preserve three-state semantics).
 
 Provenance: result-identity and re-derivation discipline REPLAY
 synthesis/compiler.py (request/budget/scope accounting, Pareto only over
@@ -121,10 +135,11 @@ class CandidateRecord:
     """One evaluated candidate with verdicts and Pareto membership.
 
     Binds the reason the candidate won or lost: compilation and
-    evaluation status, performance_result_id, per-requirement bindings
-    ({metric, operator, required, measured, verdict}), the
-    all-binding-satisfied flag, and the locked consequences. Engine
-    hashes stay bare; views prefix at the boundary.
+    evaluation status, performance_result_id, the product
+    RequirementReport identity and pass state (product_* fields), the
+    optimizer's own constraint verdicts/details (constraint_* fields),
+    the measured objectives (objective_* fields) and the locked
+    consequences. Engine hashes stay bare; views prefix at the boundary.
     """
     candidate_id: str
     guided_patch: dict[str, Any]
@@ -132,14 +147,16 @@ class CandidateRecord:
     locked_consequences: dict[str, Any]
     evaluation_status: str
     objective_values: dict[str, float]
-    constraint_verdicts: dict[str, bool | None]
+    constraint_verdicts: dict[str, str]
     pareto_member: bool
     performance_result_id: str | None = None
     requirement_report_id: str | None = None
     product_requirements_satisfied: bool | None = None
     compilation_status: str = "COMPILED"
-    requirement_details: tuple = ()
-    all_binding_satisfied: bool | None = None
+    product_requirement_details: tuple = ()
+    constraint_details: tuple = ()
+    objective_details: tuple = ()
+    constraints_satisfied: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -175,17 +192,13 @@ class OptimizationResult:
             "objective_values": {k: r.objective_values[k]
                                  for k in sorted(r.objective_values)},
             "constraint_verdicts": {
-                k: (None if v is None else bool(v))
-                for k, v in sorted(r.constraint_verdicts.items())},
-            "requirement_details": [{
-                "metric": d.get("metric"),
-                "operator": d.get("operator"),
-                "required": d.get("required"),
-                "measured": d.get("measured"),
-                "verdict": d.get("verdict"),
-            } for d in sorted(r.requirement_details,
-                               key=lambda d: str(d.get("metric")))],
-            "all_binding_satisfied": r.all_binding_satisfied,
+                k: str(v) for k, v in sorted(r.constraint_verdicts.items())},
+            "product_requirement_details": [
+                dict(d) for d in r.product_requirement_details],
+            "constraint_details": [
+                dict(d) for d in r.constraint_details],
+            "objective_details": [dict(d) for d in r.objective_details],
+            "constraints_satisfied": r.constraints_satisfied,
             "pareto_member": bool(r.pareto_member),
         } for r in sorted(self.records, key=lambda r: r.candidate_id)]
         return content_id(RESULT_DOMAIN, {
@@ -215,17 +228,16 @@ class OptimizationResult:
                 "design_hash": _view_hash(r.design_hash)}
             evaluations["performance_result_id"] = r.performance_result_id
             if contract_version == 2:
-                verdicts: dict[str, Any] = {
-                    k: ("UNMEASURABLE" if v is None
-                        else "SATISFIED" if v else "VIOLATED")
-                    for k, v in r.constraint_verdicts.items()}
+                # v2 preserves three-state semantics losslessly.
+                verdicts: dict[str, Any] = dict(r.constraint_verdicts)
             else:
                 # v1 is boolean-only: UNMEASURABLE collapses to false
                 # (fail-closed means unmeasurable is never satisfied).
-                # The full OptimizationResult retains the None
-                # distinction; v2 projects it without loss.
+                # This projector is LOSSY BY DESIGN — the v1 booleans do
+                # not preserve three-state semantics; the authoritative
+                # v2 view does.
                 verdicts = {
-                    k: (False if v is None else bool(v))
+                    k: (v == "SATISFIED")
                     for k, v in r.constraint_verdicts.items()}
             candidates.append({
                 "candidate_id": r.candidate_id,
@@ -267,13 +279,21 @@ def _select(records: list[CandidateRecord], definition: Any,
     """
     if definition.selection == "none":
         return None, "selection policy is none — no candidate selected"
-    feasible_pareto = [r for r in records if r.candidate_id in set(pareto_ids)]
+    feasible_pareto = [r for r in records
+                       if r.candidate_id in set(pareto_ids)]
+    for r in feasible_pareto:
+        missing = [o.metric for o in definition.objectives
+                   if o.metric not in r.objective_values]
+        if missing:
+            raise OptimizationResultError(
+                f"Pareto member {r.candidate_id!r} carries no measured "
+                f"value for objective(s) {missing} — refusing selection "
+                "over incomplete measurements")
     if not feasible_pareto:
         unmeasured = sorted({
             str(d.get("metric")) for r in records
-            for d in r.requirement_details
-            if d.get("verdict") == "UNMEASURABLE"
-            and str(d.get("reason", "")).startswith("objective ")})
+            for d in r.objective_details
+            if d.get("state") == "UNMEASURABLE"})
         if unmeasured:
             return None, (
                 "no feasible Pareto candidate — nothing selected "
@@ -311,10 +331,12 @@ def _select(records: list[CandidateRecord], definition: Any,
     return winner.candidate_id, rationale
 
 
-def _requirement_details(verdict_docs: dict[str, Any]) -> tuple:
-    """Per-requirement bindings: {metric, operator, required, measured,
-    verdict}, canonical metric order. This is the auditable reason a
-    candidate passed or failed its bindings — and part of result_id."""
+def _constraint_details(verdict_docs: dict[str, Any]) -> tuple:
+    """Per-optimization-constraint bindings in canonical metric order:
+    {metric, operator, required, measured, verdict, margin_or_excess,
+    reason}. This is the auditable reason a candidate satisfied or lost
+    the STUDY's constraints — a different authority from the product
+    RequirementReport — and part of result_id."""
     out = []
     for metric in sorted(verdict_docs):
         d = verdict_docs[metric] or {}
@@ -324,6 +346,8 @@ def _requirement_details(verdict_docs: dict[str, Any]) -> tuple:
             "required": d.get("bound"),
             "measured": d.get("value"),
             "verdict": d.get("verdict"),
+            "margin_or_excess": d.get("margin_or_excess"),
+            "reason": d.get("reason"),
         })
     return tuple(out)
 
@@ -347,10 +371,19 @@ class Optimizer:
         feasible_values: dict[str, dict[str, float]] = {}
         for cand in candidates:
             # Identity stability: order never changes candidate identity.
-            assert cand.candidate_id == candidate_id_for(
-                base_hash, cand.guided_patch), \
-                f"candidate identity drifted for {cand.guided_patch!r}"
-            assert cand.base_design_hash == base_hash
+            # Explicit conditionals (not assert) so production gates do not
+            # vanish under python -O.
+            if cand.candidate_id != candidate_id_for(
+                    base_hash, cand.guided_patch):
+                raise OptimizationResultError(
+                    f"candidate identity drifted for {cand.guided_patch!r}: "
+                    f"{cand.candidate_id!r} != re-derived "
+                    f"{candidate_id_for(base_hash, cand.guided_patch)!r}")
+            if cand.base_design_hash != base_hash:
+                raise OptimizationResultError(
+                    f"candidate base_design_hash {cand.base_design_hash!r} "
+                    f"!= search base {base_hash!r} — execution order must "
+                    "never change candidate identity")
             ev = evaluator.evaluate(cand)
             if ev.candidate_id != cand.candidate_id:
                 raise OptimizationResultError(
@@ -394,32 +427,36 @@ class Optimizer:
                     "feasible": (None if definition.constraints else False)}
                 if not definition.constraints:
                     verdicts["feasible"] = False
-            feasible = verdicts["feasible"]
-            if product_satisfied is False:
-                # Backend success alone is never optimization-eligible:
-                # binding product requirements must pass.
-                feasible = False
-            details = _requirement_details(verdicts["verdicts"])
+            # Optimization-constraint authority (a DIFFERENT namespace
+            # from the product RequirementReport above): pure tri-state
+            # verdicts over this candidate's measured values.
+            constraints_satisfied = verdicts["feasible"]
+            constraint_verdicts = {
+                k: str(v.get("verdict"))
+                for k, v in verdicts["verdicts"].items()}
+            constraint_details = _constraint_details(verdicts["verdicts"])
             unmeasured_objectives = tuple(
                 o.metric for o in definition.objectives
                 if o.metric not in ev.objective_values)
-            if unmeasured_objectives:
-                # An objective with no evidenced value cannot be scored:
-                # the candidate is ineligible (visible, with a typed
-                # UNMEASURABLE reason) and never reaches feasible_values
-                # -- so pareto.py never indexes a missing metric.
-                details = details + tuple({
-                    "metric": metric,
-                    "operator": None,
-                    "required": None,
-                    "measured": None,
-                    "verdict": "UNMEASURABLE",
-                    "reason": f"objective {metric} not evidenced by "
-                              "evaluation",
-                } for metric in unmeasured_objectives)
-                feasible = False
-            binding = feasible if isinstance(feasible, bool) else None
+            objective_details = tuple({
+                "metric": metric,
+                "state": "UNMEASURABLE",
+                "measured": None,
+                "reason": f"objective {metric} not evidenced by "
+                          "evaluation",
+            } for metric in unmeasured_objectives)
+            # Pareto input: backend success AND product binding
+            # requirements pass AND every objective measured AND every
+            # hard constraint SATISFIED. Anything else is visible and
+            # ineligible, never a fabricated score.
+            eligible = (ev.status == "EVALUATED"
+                        and constraints_satisfied is True
+                        and product_satisfied is not False
+                        and not unmeasured_objectives)
             pareto_member = False  # assigned after the frontier computes
+            product_details = tuple(
+                dict(e) for e in report.get("entries", [])) \
+                if report is not None else ()
             record = CandidateRecord(
                 candidate_id=cand.candidate_id,
                 guided_patch=dict(cand.guided_patch),
@@ -427,21 +464,20 @@ class Optimizer:
                 locked_consequences=dict(ev.locked_consequences),
                 evaluation_status=ev.status,
                 objective_values=dict(ev.objective_values),
-                constraint_verdicts={
-                    k: (None if v.get("verdict") == "UNMEASURABLE"
-                        else bool(v.get("verdict") == "SATISFIED"))
-                    for k, v in verdicts["verdicts"].items()},
+                constraint_verdicts=constraint_verdicts,
                 pareto_member=pareto_member,
                 performance_result_id=ev.performance_result_id,
                 requirement_report_id=_requirement_report_id(report),
                 product_requirements_satisfied=product_satisfied,
                 compilation_status=getattr(
                     ev, "compilation_status", "COMPILED"),
-                requirement_details=details,
-                all_binding_satisfied=binding,
+                product_requirement_details=product_details,
+                constraint_details=constraint_details,
+                objective_details=objective_details,
+                constraints_satisfied=constraints_satisfied,
             )
             records.append(record)
-            if ev.status == "EVALUATED" and feasible is True:
+            if eligible:
                 feasible_values[cand.candidate_id] = dict(ev.objective_values)
         front = _pareto_ids(feasible_values, definition.objectives)
         front_set = set(front)
@@ -458,8 +494,10 @@ class Optimizer:
             product_requirements_satisfied=
                 r.product_requirements_satisfied,
             compilation_status=r.compilation_status,
-            requirement_details=r.requirement_details,
-            all_binding_satisfied=r.all_binding_satisfied,
+            product_requirement_details=r.product_requirement_details,
+            constraint_details=r.constraint_details,
+            objective_details=r.objective_details,
+            constraints_satisfied=r.constraints_satisfied,
         ) for r in records]
         selected, rationale = _select(records, definition, front)
         return OptimizationResult(

@@ -369,7 +369,8 @@ class TestGridStudyEndToEnd:
         by = {r.candidate_id: r for r in result.records}
         # Constraint latency<=600 splits the grid: wide link feasible.
         feasible = sorted(r.candidate_id for r in result.records
-                          if all(v is True for v in r.constraint_verdicts.values()))
+                          if all(v == "SATISFIED"
+                                 for v in r.constraint_verdicts.values()))
         assert len(feasible) == 2
         assert set(result.pareto_ids) <= set(feasible)
         # (link_width 128, concentration 1) dominates (128, 2) on both
@@ -533,10 +534,10 @@ class TestGridStudyEndToEnd:
         assert "energy" in (result.selection_rationale or "")
         for r in result.records:
             assert r.pareto_member is False
-            entries = [d for d in r.requirement_details
+            entries = [d for d in r.objective_details
                        if dict(d)["metric"] == "energy"]
             assert entries, r.candidate_id
-            assert dict(entries[0])["verdict"] == "UNMEASURABLE"
+            assert dict(entries[0])["state"] == "UNMEASURABLE"
             assert dict(entries[0])["reason"] == (
                 "objective energy not evidenced by evaluation")
 
@@ -703,12 +704,12 @@ class TestResultIdBindsProvenance:
             {**dict(d), "verdict": "VIOLATED",
              "measured": float(dict(d)["required"]) + 100.0}
             if dict(d)["verdict"] == "SATISFIED" else dict(d)
-            for d in target.requirement_details)
+            for d in target.constraint_details)
         flipped = dataclasses.replace(
-            target, requirement_details=flipped_details,
-            constraint_verdicts={k: False
+            target, constraint_details=flipped_details,
+            constraint_verdicts={k: "VIOLATED"
                                  for k in target.constraint_verdicts},
-            all_binding_satisfied=False, pareto_member=False)
+            constraints_satisfied=False, pareto_member=False)
         altered = dataclasses.replace(
             result, records=tuple(
                 flipped if r.candidate_id == target.candidate_id else r
@@ -759,17 +760,18 @@ class TestResultIdBindsProvenance:
             if r.evaluation_status == "EVALUATED":
                 assert r.compilation_status == "COMPILED"
                 assert r.performance_result_id is not None
-                assert r.requirement_details, r.candidate_id
-                for d in r.requirement_details:
-                    assert set(d) == {"metric", "operator", "required",
-                                      "measured", "verdict"}
+                assert r.constraint_details, r.candidate_id
+                for d in r.constraint_details:
+                    assert {"metric", "operator", "required", "measured",
+                            "verdict", "margin_or_excess",
+                            "reason"} == set(d)
                     assert d["required"] == pytest.approx(600.0)
                     assert d["measured"] == pytest.approx(
                         r.objective_values["latency"])
                 expect = all(
                     dict(d)["verdict"] == "SATISFIED"
-                    for d in r.requirement_details)
-                assert r.all_binding_satisfied is expect
+                    for d in r.constraint_details)
+                assert r.constraints_satisfied is expect
 
 
 # ── `veritx optimize` CLI ────────────────────────────────────────────────

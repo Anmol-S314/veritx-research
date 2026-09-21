@@ -96,6 +96,10 @@ BOOKSIM_PKTS_PER_SEC = 13_000
 # same-second invocations in one process must get distinct run roots.
 _RUN_ROOT_SEQ = itertools.count()
 
+# Console shorthand for the three-state optimization constraint verdicts.
+_CONSTRAINT_DISPLAY = {"SATISFIED": "PASS", "VIOLATED": "FAIL",
+                       "UNMEASURABLE": "?"}
+
 # Timeloop binary homes: the container builds its OWN (ABI matches the
 # image); the vendored bin was built on the host (24.04 sonames — cannot
 # load in the 22.04 container: 'libconfig++.so.11: cannot open shared').
@@ -3118,7 +3122,7 @@ def _optimize_booksim(ctx: Ctx, args, src: Path, doc: dict):
         vals = " ".join(f"{objs.get(n, float('nan')):>14.2f}"
                           for n in obj_names)
         verdict = ",".join(
-            f"{k}={'PASS' if v is True else ('?' if v is None else 'FAIL')}"
+            f"{k}={_CONSTRAINT_DISPLAY.get(v, v)}"
             for k, v in sorted(r.constraint_verdicts.items())) or "-"
         emit(ctx, f"{r.candidate_id:<20} {patch:<34} {vals} "
                    f"{verdict:<8} {'* ' if r.pareto_member else '':<6}")
@@ -3292,7 +3296,7 @@ def cmd_optimize(ctx: Ctx, args):
         patch = ",".join(f"{k}={v}" for k, v in sorted(r.guided_patch.items()))
         objs = r.objective_values
         verdict = ",".join(
-            f"{k}={'PASS' if v is True else ('?' if v is None else 'FAIL')}"
+            f"{k}={_CONSTRAINT_DISPLAY.get(v, v)}"
             for k, v in sorted(r.constraint_verdicts.items())) or "-"
         emit(ctx, f"{r.candidate_id:<20} {patch:<34} "
                    f"{objs.get('latency', float('nan')):>10.2f} "
