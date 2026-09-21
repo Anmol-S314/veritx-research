@@ -27,7 +27,7 @@ needs_booksim = pytest.mark.skipif(
     not (BOOKSIM_DIR / "booksim").exists(), reason="booksim binary not built"
 )
 
-TRACE = "archive/inputs/traces/qwen3_20k.trace"  # 20k pkts, max_node 3
+TRACE = "tests/fixtures/traces/qwen3_20k.trace"  # 20k pkts, max_node 3
 
 
 def _spec(**over):

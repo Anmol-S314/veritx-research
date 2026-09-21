@@ -296,7 +296,7 @@ def _require_file(ctx: Ctx, p: str, what: str, kind: str | None = "model") -> bo
 # name → (search dirs, extensions tried in order). Dirs are relative to DSE_DIR
 # unless absolute. Kept as data so adding an asset class is one line.
 _ASSET_KINDS = {
-    "trace": (["archive/inputs/traces", "runs/astra", "runs/booksim"], [".trace"]),
+    "trace": (["tests/fixtures/traces", "archive/inputs/traces", "runs/astra", "runs/booksim"], [".trace"]),
     "example": (["examples"], [".json"]),
     "fixture": (["tests/fixtures"], [".et", ".json", ".cfg"]),
     "anynet": (["archive/inputs", "runs/booksim", "scripts/rtlgen"], [".anynet"]),
@@ -725,30 +725,18 @@ def cmd_trace_model(ctx: Ctx, args):
 
 def cmd_trace_hpc(ctx: Ctx, args):
     """Install a trace into the runs tree: explicit path, or a name looked
-    up in the built-in trace library (dse/archive/inputs/traces)."""
+    up in the trace library (one resolver: ``_ASSET_KINDS['trace']``)."""
     import shutil
-    src = None
-    try:
-        cand = Path(_resolve_path(args.trace_file))
-        if cand.is_file():
-            src = cand
-    except ValueError:
-        src = None
+    src = _resolve_asset(args.trace_file, kind="trace")
     if src is None:
-        src = Path(args.trace_file)
-    if not src.is_file():
-        lib = DSE_DIR / "archive" / "inputs" / "traces"
-        name = args.trace_file if args.trace_file.endswith(".trace") \
-            else f"{args.trace_file}.trace"
-        candidate = lib / name
-        if candidate.is_file():
-            src = candidate
-        else:
-            fail(ctx, f"Trace not found: {args.trace_file}")
-            available = sorted(p.name for p in lib.glob("*.trace"))
+        fail(ctx, f"Trace not found: {args.trace_file}")
+        for d in _ASSET_KINDS["trace"][0]:
+            base = Path(d) if Path(d).is_absolute() else DSE_DIR / d
+            available = sorted(p.name for p in base.glob("*.trace")) \
+                if base.is_dir() else []
             if available:
-                log(ctx, f"Trace library ({lib.name}/): {', '.join(available)}")
-            return
+                log(ctx, f"Trace library ({base.name}/): {', '.join(available)}")
+        return
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, out)

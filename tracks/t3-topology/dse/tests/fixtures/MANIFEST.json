@@ -1,0 +1,299 @@
+{
+  "fixtures": [
+    {
+      "bytes": 14992,
+      "generation": "STATIC",
+      "kind": "trace",
+      "name": "test_dynamic",
+      "path": "tracks/t3-topology/dse/tests/fixtures/traces/test_dynamic.trace",
+      "provenance": "recovered from dse/archive/inputs/traces (untracked: the repo's `archive/` ignore rule swallowed the live input library)",
+      "required_by": [
+        "tests/test_integration.py",
+        "tests/test_prd_gaps.py",
+        "tests/test_trace_commands.py",
+        "tests/test_where_interact.py"
+      ],
+      "sha256": "9aa23ce62676cd3577f0b7760d03a995542a82b00c61d43ab156f4ca64cc469b"
+    },
+    {
+      "bytes": 27935,
+      "generation": "STATIC",
+      "kind": "trace",
+      "name": "input",
+      "path": "tracks/t3-topology/dse/tests/fixtures/traces/input.trace",
+      "provenance": "recovered from dse/archive/inputs/traces (untracked: the repo's `archive/` ignore rule swallowed the live input library)",
+      "required_by": [
+        "tests/test_commands_batch_e.py",
+        "tests/test_trace_commands.py"
+      ],
+      "sha256": "a0ecb8ebc34bc4335fa5318d471100f73f8594477977f41564bf363028857f73"
+    },
+    {
+      "bytes": 43272,
+      "generation": "STATIC",
+      "kind": "trace",
+      "name": "chakra_converted",
+      "path": "tracks/t3-topology/dse/tests/fixtures/traces/chakra_converted.trace",
+      "provenance": "recovered from dse/archive/inputs/traces (untracked: the repo's `archive/` ignore rule swallowed the live input library)",
+      "required_by": [
+        "tests/test_run_core.py"
+      ],
+      "sha256": "20957b5b66c24ce28bf8449be5a05ca78a5326cef1f3d7aa86833fd33d0ce8c6"
+    },
+    {
+      "bytes": 313473,
+      "generation": "STATIC",
+      "kind": "trace",
+      "name": "qwen3_20k",
+      "path": "tracks/t3-topology/dse/tests/fixtures/traces/qwen3_20k.trace",
+      "provenance": "recovered from dse/archive/inputs/traces (untracked: the repo's `archive/` ignore rule swallowed the live input library)",
+      "required_by": [
+        "tests/test_pareto_honesty.py",
+        "tests/test_slice_a_booksim.py"
+      ],
+      "sha256": "04b4b0cdc60bf9344698417d54d02bb9a4fba01c190b8d9b93dca17e26c58c80"
+    },
+    {
+      "bytes": 313411,
+      "generation": "STATIC",
+      "kind": "trace",
+      "name": "qwen3_20k_slice",
+      "path": "tracks/t3-topology/dse/tests/fixtures/traces/qwen3_20k_slice.trace",
+      "provenance": "recovered from dse/archive/inputs/traces (untracked: the repo's `archive/` ignore rule swallowed the live input library)",
+      "required_by": [
+        "tests/test_pareto_honesty.py"
+      ],
+      "sha256": "6d582a47fdc464db768cebe8154b5ed4c7023a81bb48330f39865dceeadfeb37"
+    },
+    {
+      "bytes": 202,
+      "generation": "STATIC",
+      "kind": "astra_config",
+      "name": "n64/SIZES.md",
+      "path": "tracks/t3-topology/configs/n64/SIZES.md",
+      "provenance": "production ASTRA size config (select_cfgdir size-honesty contract)",
+      "required_by": [
+        "tests/test_unified_contracts.py"
+      ],
+      "sha256": "bb3554cb9cd0cde6f37e56f304e8d099b7b86350233ebd4fde3b0ba14f2a977d"
+    },
+    {
+      "bytes": 575,
+      "generation": "STATIC",
+      "kind": "astra_config",
+      "name": "n64/cmesh64.cfg",
+      "path": "tracks/t3-topology/configs/n64/cmesh64.cfg",
+      "provenance": "production ASTRA size config (select_cfgdir size-honesty contract)",
+      "required_by": [
+        "tests/test_unified_contracts.py"
+      ],
+      "sha256": "e3afa36cc9c4178179e34926c1d14effda48824f2dfc571c0710b52594b6c0d3"
+    },
+    {
+      "bytes": 442,
+      "generation": "STATIC",
+      "kind": "astra_config",
+      "name": "n64/fattree64.cfg",
+      "path": "tracks/t3-topology/configs/n64/fattree64.cfg",
+      "provenance": "production ASTRA size config (select_cfgdir size-honesty contract)",
+      "required_by": [
+        "tests/test_unified_contracts.py"
+      ],
+      "sha256": "2cdd4c314ee92c0b007d4d645249d7b88fea013d3455e2080dfb03336043b67e"
+    },
+    {
+      "bytes": 394,
+      "generation": "STATIC",
+      "kind": "astra_config",
+      "name": "n64/flatfly64.cfg",
+      "path": "tracks/t3-topology/configs/n64/flatfly64.cfg",
+      "provenance": "production ASTRA size config (select_cfgdir size-honesty contract)",
+      "required_by": [
+        "tests/test_unified_contracts.py"
+      ],
+      "sha256": "0cfa10e74a7b1d7528d8c59d36a7ec3245e150b4fa8e282bdb9fa2c21393c920"
+    },
+    {
+      "bytes": 365,
+      "generation": "STATIC",
+      "kind": "astra_config",
+      "name": "n64/fly64.cfg",
+      "path": "tracks/t3-topology/configs/n64/fly64.cfg",
+      "provenance": "production ASTRA size config (select_cfgdir size-honesty contract)",
+      "required_by": [
+        "tests/test_unified_contracts.py"
+      ],
+      "sha256": "c8e90dd1e9758496acd816e5edec4599716400a323a7107512b8f7fb0e84695f"
+    },
+    {
+      "bytes": 444,
+      "generation": "STATIC",
+      "kind": "astra_config",
+      "name": "n64/mesh8x8.cfg",
+      "path": "tracks/t3-topology/configs/n64/mesh8x8.cfg",
+      "provenance": "production ASTRA size config (select_cfgdir size-honesty contract)",
+      "required_by": [
+        "tests/test_unified_contracts.py"
+      ],
+      "sha256": "d73f68f6e784374358eb4fc27827207c9f9c2df5281124c8b30238c86f6e7217"
+    },
+    {
+      "bytes": 513,
+      "generation": "STATIC",
+      "kind": "astra_config",
+      "name": "n64/qtree64.cfg",
+      "path": "tracks/t3-topology/configs/n64/qtree64.cfg",
+      "provenance": "production ASTRA size config (select_cfgdir size-honesty contract)",
+      "required_by": [
+        "tests/test_unified_contracts.py"
+      ],
+      "sha256": "13f6f269c316be9be5b47fd311c534651858bf49322409a983fb77aeecb9893f"
+    },
+    {
+      "bytes": 142,
+      "generation": "STATIC",
+      "kind": "astra_config",
+      "name": "n64/sizes.json",
+      "path": "tracks/t3-topology/configs/n64/sizes.json",
+      "provenance": "production ASTRA size config (select_cfgdir size-honesty contract)",
+      "required_by": [
+        "tests/test_unified_contracts.py"
+      ],
+      "sha256": "91392103480561aacc88af16a18b978699a3a3d8b2be7cf70be84ba21603f226"
+    },
+    {
+      "bytes": 452,
+      "generation": "STATIC",
+      "kind": "astra_config",
+      "name": "n64/torus8x8.cfg",
+      "path": "tracks/t3-topology/configs/n64/torus8x8.cfg",
+      "provenance": "production ASTRA size config (select_cfgdir size-honesty contract)",
+      "required_by": [
+        "tests/test_unified_contracts.py"
+      ],
+      "sha256": "41f450fd3fe8dcc07cf18550f8fa49cb548fe036a70545bfa7dbde5415f27bfe"
+    },
+    {
+      "bytes": 512,
+      "generation": "STATIC",
+      "kind": "astra_config",
+      "name": "n64/tree4_64.cfg",
+      "path": "tracks/t3-topology/configs/n64/tree4_64.cfg",
+      "provenance": "production ASTRA size config (select_cfgdir size-honesty contract)",
+      "required_by": [
+        "tests/test_unified_contracts.py"
+      ],
+      "sha256": "5df06651a1d14391ea6a8ed82025bf009dea6e417931398f4806185364f1efb7"
+    },
+    {
+      "bytes": 180,
+      "generation": "STATIC",
+      "kind": "astra_config",
+      "name": "n16/SIZES.md",
+      "path": "tracks/t3-topology/configs/n16/SIZES.md",
+      "provenance": "production ASTRA size config (select_cfgdir size-honesty contract)",
+      "required_by": [
+        "tests/test_unified_contracts.py"
+      ],
+      "sha256": "3a6eeaf492d1e2a0b96a5891fff736bbd6d92805937a94250156a1775f208618"
+    },
+    {
+      "bytes": 882,
+      "generation": "STATIC",
+      "kind": "astra_config",
+      "name": "n16/anynet16.cfg",
+      "path": "tracks/t3-topology/configs/n16/anynet16.cfg",
+      "provenance": "production ASTRA size config (select_cfgdir size-honesty contract)",
+      "required_by": [
+        "tests/test_unified_contracts.py"
+      ],
+      "sha256": "0dd5cf978475589135c2f5de53f5387703d5b4ee533c3e310915fdb1a8fdc5bb"
+    },
+    {
+      "bytes": 629,
+      "generation": "STATIC",
+      "kind": "astra_config",
+      "name": "n16/cmesh16.cfg",
+      "path": "tracks/t3-topology/configs/n16/cmesh16.cfg",
+      "provenance": "production ASTRA size config (select_cfgdir size-honesty contract)",
+      "required_by": [
+        "tests/test_unified_contracts.py"
+      ],
+      "sha256": "277f52d334ad747006b3b8f6d753829820441b2b7467782533ee090ce6dfad20"
+    },
+    {
+      "bytes": 400,
+      "generation": "STATIC",
+      "kind": "astra_config",
+      "name": "n16/flatfly16.cfg",
+      "path": "tracks/t3-topology/configs/n16/flatfly16.cfg",
+      "provenance": "production ASTRA size config (select_cfgdir size-honesty contract)",
+      "required_by": [
+        "tests/test_unified_contracts.py"
+      ],
+      "sha256": "6f6e00e23a58b630dce9c99ecddddeb4ffb8041b1420790c560b0431c9e5a6a7"
+    },
+    {
+      "bytes": 365,
+      "generation": "STATIC",
+      "kind": "astra_config",
+      "name": "n16/fly4.cfg",
+      "path": "tracks/t3-topology/configs/n16/fly4.cfg",
+      "provenance": "production ASTRA size config (select_cfgdir size-honesty contract)",
+      "required_by": [
+        "tests/test_unified_contracts.py"
+      ],
+      "sha256": "a2370ffada18b48115598a2061d22e8cf0518776129e7bedf056b1991493c86d"
+    },
+    {
+      "bytes": 442,
+      "generation": "STATIC",
+      "kind": "astra_config",
+      "name": "n16/ftree.cfg",
+      "path": "tracks/t3-topology/configs/n16/ftree.cfg",
+      "provenance": "production ASTRA size config (select_cfgdir size-honesty contract)",
+      "required_by": [
+        "tests/test_unified_contracts.py"
+      ],
+      "sha256": "3a5c2918ecc6c1e131469323e5489bf737847149503fe5e89186d34b95b9b238"
+    },
+    {
+      "bytes": 444,
+      "generation": "STATIC",
+      "kind": "astra_config",
+      "name": "n16/mesh4x4.cfg",
+      "path": "tracks/t3-topology/configs/n16/mesh4x4.cfg",
+      "provenance": "production ASTRA size config (select_cfgdir size-honesty contract)",
+      "required_by": [
+        "tests/test_unified_contracts.py"
+      ],
+      "sha256": "df77b89b6b67929ce3872751fb4f313d0ccbd1c26d15c990b1e07a4932c216fb"
+    },
+    {
+      "bytes": 120,
+      "generation": "STATIC",
+      "kind": "astra_config",
+      "name": "n16/sizes.json",
+      "path": "tracks/t3-topology/configs/n16/sizes.json",
+      "provenance": "production ASTRA size config (select_cfgdir size-honesty contract)",
+      "required_by": [
+        "tests/test_unified_contracts.py"
+      ],
+      "sha256": "b9d5176ec4bcfac43d0ecaeeef7eae6979afc8a6eae03e841807fd78a430afb5"
+    },
+    {
+      "bytes": 452,
+      "generation": "STATIC",
+      "kind": "astra_config",
+      "name": "n16/torus4x4.cfg",
+      "path": "tracks/t3-topology/configs/n16/torus4x4.cfg",
+      "provenance": "production ASTRA size config (select_cfgdir size-honesty contract)",
+      "required_by": [
+        "tests/test_unified_contracts.py"
+      ],
+      "sha256": "1c7b34885a486b576b1b147da52c2aae26e18681b261a34f97bcce5c34d6912f"
+    }
+  ],
+  "note": "Paths are repo-root-relative. A shipped fixture must be tracked and must not be gitignored; test_fixture_manifest.py enforces it.",
+  "schema_version": 1
+}

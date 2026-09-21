@@ -1,0 +1,10 @@
+{
+  "mesh8x8": 64,
+  "torus8x8": 64,
+  "flatfly64": 64,
+  "fly64": 64,
+  "cmesh64": 64,
+  "fattree64": 64,
+  "qtree64": 64,
+  "tree4_64": 64
+}

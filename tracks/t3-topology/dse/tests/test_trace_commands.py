@@ -27,7 +27,7 @@ from veritx_dse.cli.cli import (
 )
 from veritx_dse.core.logging import Ctx
 
-LIB_TRACES = DSE / "archive" / "inputs" / "traces"
+LIB_TRACES = DSE / "tests" / "fixtures" / "traces"
 TINY_TRACE = LIB_TRACES / "test_dynamic.trace"   # runs fast
 
 
