@@ -114,3 +114,51 @@ def test_uncertified_corner_stays_visible_but_infeasible(tmp_path):
                for d in bad.requirement_details)
     good = by_patch[(("rcu_enabled", False),)]
     assert good.evaluation_status == "EVALUATED"
+
+
+def _pp_request():
+    import dataclasses
+    req = _base()
+    wl = dataclasses.replace(
+        req.workload,
+        collectives=(CollectiveIntent(
+            kind=CollectiveKind.ALLREDUCE,
+            dimension=CollectiveDimension.PP,
+            payload_bytes=2048,
+            traffic_class="tp_collective"),))
+    return dataclasses.replace(req, workload=wl)
+
+
+def _invalid_root_request():
+    import dataclasses
+    req = _base()
+    wl = dataclasses.replace(
+        req.workload,
+        collectives=(CollectiveIntent(
+            kind=CollectiveKind.BROADCAST,
+            dimension=CollectiveDimension.TP,
+            payload_bytes=1024,
+            traffic_class="tp_collective",
+            source_rank=99),))
+    return dataclasses.replace(req, workload=wl)
+
+
+def test_lowering_refusals_are_typed_not_raised(tmp_path):
+    """RT-9: the adapter's catch covers the lowerer's full declared
+    space — out-of-domain semantics are UNSUPPORTED, malformed input is
+    INVALID, and neither escapes as an exception."""
+    from types import SimpleNamespace
+    port = RealCandidateEvaluator(
+        binary="/no-such-booksim", run_root=str(tmp_path / "runs"))
+    pp = port.evaluate(SimpleNamespace(
+        candidate_id="pp-lowering-refusal", request=_pp_request()))
+    assert pp.status == "UNSUPPORTED"
+    assert pp.performance_result_id is None
+    assert "UnsupportedSemantics" in (pp.error or "")
+    assert "PP-dimension" in (pp.error or "")
+    bad = port.evaluate(SimpleNamespace(
+        candidate_id="invalid-lowering-input",
+        request=_invalid_root_request()))
+    assert bad.status == "INVALID"
+    assert bad.performance_result_id is None
+    assert "InvalidInput" in (bad.error or "")

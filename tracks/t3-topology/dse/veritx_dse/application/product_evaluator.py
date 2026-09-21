@@ -38,6 +38,12 @@ from veritx_dse.application.requirements import (
     RequirementEvaluator,
     report_passes,
 )
+from veritx_dse.core.errors import (
+    InvalidInput,
+    MappingInvalid,
+    UnsupportedSchedule,
+    UnsupportedSemantics,
+)
 from veritx_dse.model.compile_model import CompileRequestV3
 from veritx_dse.workload.intent_lowering import (
     LoweredWorkload,
@@ -91,8 +97,22 @@ def evaluate_product(
             status=compilation.status, requirements_pass=None,
             reason=compilation.error)
     bundle = compilation.bundle
-    lowered = lower_compile_workload(request)
-    assert_traffic_classes_bound(lowered, bundle.vc_assignment)
+    try:
+        lowered = lower_compile_workload(request)
+        assert_traffic_classes_bound(lowered, bundle.vc_assignment)
+    except (InvalidInput, UnsupportedSemantics, UnsupportedSchedule,
+            MappingInvalid) as exc:
+        # The lowerer's declared refusal space ends at this boundary:
+        # typed status + message, never a raised exception. Malformed
+        # input is INVALID; out-of-domain semantics/scheduling/mapping
+        # are UNSUPPORTED (never approximated).
+        return ProductEvaluation(
+            request=request, compilation=compilation, lowered=None,
+            outcome=None, requirement_report=None,
+            status=("INVALID" if isinstance(exc, InvalidInput)
+                    else "UNSUPPORTED"),
+            requirements_pass=None,
+            reason=f"{type(exc).__name__}: {exc}")
     unified = lowered.unified_traffic_class
     if unified is None:
         return ProductEvaluation(

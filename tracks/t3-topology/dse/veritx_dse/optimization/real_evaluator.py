@@ -12,11 +12,12 @@ The production route (fake stays unit-only):
 
 Feasibility law (no optimizer changes needed — enforced by status):
 EVALUATED here means compiled AND backend-evaluated AND all binding
-requirements SATISFIED. Anything else maps to COMPILE_FAILED/UNSUPPORTED
-with the true cause in `error` and whatever provenance exists still
-bound (locked consequences, performance_result_id) — visible, auditable,
-never Pareto-eligible. Binding-failed evaluations are NOT relabeled
-successes; the error names the failing entries.
+requirements SATISFIED. Anything else maps to COMPILE_FAILED/
+UNSUPPORTED/INVALID with the true cause in `error` and whatever
+provenance exists still bound (locked consequences,
+performance_result_id) — visible, auditable, never Pareto-eligible.
+Binding-failed evaluations are NOT relabeled successes; the error names
+the failing entries.
 
 Objectives are evidenced measurements only: network completion cycles
 (+ wall-time when a valid clock was declared) plus backend-reported
@@ -40,7 +41,12 @@ from veritx_dse.application.requirements import (
     RequirementEvaluator,
     report_passes,
 )
-from veritx_dse.core.errors import MappingInvalid, UnsupportedSemantics
+from veritx_dse.core.errors import (
+    InvalidInput,
+    MappingInvalid,
+    UnsupportedSchedule,
+    UnsupportedSemantics,
+)
 from veritx_dse.model.compile_model import CompileRequestV3
 from veritx_dse.optimization.evaluators import (
     CandidateEvaluation,
@@ -127,9 +133,12 @@ class RealCandidateEvaluator:
             lowered = lower_compile_workload(request)
             assert_traffic_classes_bound(
                 lowered, compilation.bundle.vc_assignment)
-        except (UnsupportedSemantics, MappingInvalid) as exc:
+        except (InvalidInput, UnsupportedSemantics, UnsupportedSchedule,
+                MappingInvalid) as exc:
             return _refuse(
-                candidate.candidate_id, expected_hash, "UNSUPPORTED",
+                candidate.candidate_id, expected_hash,
+                "INVALID" if isinstance(exc, InvalidInput)
+                else "UNSUPPORTED",
                 "COMPILED", f"{type(exc).__name__}: {exc}", locked)
         unified = lowered.unified_traffic_class
         if unified is None:

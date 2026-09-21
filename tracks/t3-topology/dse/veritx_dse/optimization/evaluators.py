@@ -50,7 +50,7 @@ class CandidateEvaluation:
     """
     candidate_id: str
     design_hash: str  # bare engine digest, never prefixed here
-    status: str  # evaluation status: EVALUATED | COMPILE_FAILED | UNSUPPORTED
+    status: str  # evaluation status: EVALUATED | COMPILE_FAILED | UNSUPPORTED | INVALID
     objective_values: dict[str, float]
     locked_consequences: dict[str, Any]
     compilation_status: str = "COMPILED"  # FabricCompiler verdict
