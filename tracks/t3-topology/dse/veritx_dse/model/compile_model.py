@@ -997,29 +997,47 @@ def derive_vc_assignment_artifact(
         cr: CompileRequest,
         resolved_route,
 ) -> VCAssignmentArtifact:
-    """Bind the derived VC structure to the endpoint-resolved route.
+    """Derive the VC structure AGAINST the actual resolved route (P1.3).
 
-    Wave B3.3. The legacy ``VCAssignment`` stays the compiler-internal
-    derivation result; this is the semantic artifact downstream consumers
-    reference by hash. VCs that exist only to break dependency cycles are
-    recorded in the derivation provenance, not claimed as escape VCs —
-    escape semantics require a routing class that implements one, and the
-    router-level route artifact does not yet define classes.
+    The candidate VC structure (dependency-graph cycles + collective
+    floor as policy input) is bound explicitly to the route the
+    compiler derived: every VC names its routing class, and every
+    routing class the route defines is served by at least one VC
+    (coverage assertion — a class with no VC would be unroutable
+    hardware). The derivation string names the route classes,
+    victims and floor; it is provenance, never authority. Acyclicity
+    is proven by the P1.4 certificate's CDG obligation over
+    (topology, route, VC assignment), not by this string.
     """
-    from .vc_assignment import make_vc_assignment_artifact
+    from .vc_assignment import VCAssignmentError, make_vc_assignment_artifact
     va = derive_vc_assignment(cr)
+    classes = list(resolved_route.routing_classes)
+    if not classes:
+        raise VCAssignmentError(
+            "resolved route defines no routing classes — VC derivation "
+            "has nothing to bind against")
+    vc_routing = tuple((vc, classes[vc % len(classes)])
+                       for vc in range(va.vc_count))
+    missing = [c for c in classes
+               if c not in {rc for _, rc in vc_routing}]
+    if missing:
+        raise VCAssignmentError(
+            f"VC derivation serves no VC to routing classes {missing} "
+            f"(route defines {classes}, vc_count={va.vc_count}) — "
+            f"refusing a structure that leaves route classes unroutable")
     separated = sorted(
         cls for cls, vc in va.per_class_vc.items() if vc != 0
     )
     derivation = (
-        f"graph_cycles+collective_floor v1; routing_function="
-        f"{va.routing_function}; cycle_separated={separated}; "
+        f"route_classes={classes}; vc_count={va.vc_count}; "
+        f"cycle_separated={separated}; "
         f"collective_vc_map={sorted(va.collective_vc_map.items())}"
     )
     return make_vc_assignment_artifact(
         resolved_route=resolved_route,
         vc_count=va.vc_count,
         traffic_class_to_vcs={cls: [vc] for cls, vc in va.per_class_vc.items()},
+        vc_to_routing_class=dict(vc_routing),
         derivation=derivation,
     )
 

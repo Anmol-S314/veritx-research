@@ -85,3 +85,64 @@ class TestDeriveRoute:
         assert [d.id for d in
                 bundle.router_route.routing_classes] == [DOR_XY]
         assert bundle.resolved_route is not None
+
+
+class TestVCRouteBinding:
+    """P1.3: the VC structure binds the actual derived route."""
+
+    def test_vcs_name_the_derived_class(self):
+        from types import SimpleNamespace
+
+        from veritx_dse.application.compile import compile_bundle
+        from veritx_dse.model.compile_model import (
+            derive_vc_assignment_artifact,
+        )
+        bundle = compile_bundle(_request())
+        art = derive_vc_assignment_artifact(
+            bundle.design, bundle.resolved_route)
+        assert art.vc_count >= 1
+        assert [rc for _, rc in art.vc_to_routing_class] == \
+            [DOR_XY] * art.vc_count
+        assert "DOR_XY" in art.derivation
+        assert "cycle_separated=" in art.derivation
+        art.validate_against(bundle.resolved_route)
+
+    def test_unserved_routing_class_refuses(self):
+        """A route class with no VC is unroutable hardware — refuse,
+        never silently leave it uncovered."""
+        from types import SimpleNamespace
+
+        from veritx_dse.model.compile_model import (
+            Agent, AgentKind, CompileRequest, DependencyGraph,
+            NocConfig, Workload, ModelFamily,
+            derive_vc_assignment_artifact,
+        )
+        from veritx_dse.model.vc_assignment import VCAssignmentError
+        cr = CompileRequest(
+            workload=Workload(model_family=ModelFamily.DENSE_TRANSFORMER,
+                              tp=2, pp=1, ep=1, dp=2),
+            requirements=[],
+            agents=[Agent(kind=AgentKind.COMPUTE_TILE, count=4)],
+            dependencies=DependencyGraph([]),
+            noc_config=NocConfig(topology_family=TopologyFamily.MESH),
+        )
+        stub_route = SimpleNamespace(
+            routing_classes=["DOR_XY", "ESCAPE"],
+            resolved_route_hash=lambda: "sha256:" + "0" * 64,
+        )
+        with pytest.raises(VCAssignmentError, match="no VC"):
+            derive_vc_assignment_artifact(cr, stub_route)
+
+    def test_empty_routing_classes_refuse(self):
+        from types import SimpleNamespace
+
+        from veritx_dse.model.compile_model import (
+            derive_vc_assignment_artifact,
+        )
+        from veritx_dse.model.vc_assignment import VCAssignmentError
+        stub_route = SimpleNamespace(
+            routing_classes=[],
+            resolved_route_hash=lambda: "sha256:" + "0" * 64,
+        )
+        with pytest.raises(VCAssignmentError, match="no routing classes"):
+            derive_vc_assignment_artifact(_request(), stub_route)
