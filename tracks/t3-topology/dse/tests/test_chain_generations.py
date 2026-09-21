@@ -306,3 +306,65 @@ class TestTrafficDispatchMustNotInfer:
         src = inspect.getsource(wr.chain_ids_from_traffic)
         assert "schema_version" in src
         assert 'operation_graph_id" not in chain' not in src
+
+
+class TestCanonicalResourceForgery:
+    """The adversarial case the earlier tamper/transplant tests missed.
+
+    Mutation testing showed those two tests pass even with BOTH of
+    load_verified_workload_graph's defenses removed, because they were
+    being caught one layer earlier: the transplant by _envelope's
+    filename-vs-embedded-id check, the tamper by WorkloadGraph.from_dict's
+    own content recomputation. Correct behaviour, wrong evidence — they
+    never exercised the loader.
+
+    This is the forgery that targets the loader: a fully self-consistent
+    document that names the requested workload id in BOTH the file name
+    and the embedded resource_id, while carrying another graph's content.
+    _envelope is satisfied; only a loader that recomputes the identity
+    from content refuses it.
+    """
+
+    @pytest.fixture
+    def cp(self, tmp_path):
+        from veritx_dse.application.service import SrotaControlPlane
+        return SrotaControlPlane(store_root=tmp_path / "store",
+                                 repo_root=DSE.parent.parent.parent)
+
+    def test_self_consistent_but_forged_document_refuses(self, cp):
+        from veritx_dse.application.errors import ControlPlaneError
+        from veritx_dse.application.waved_resources import (
+            load_verified_workload_graph, workload_graph_record,
+        )
+        honest = _graph()
+        impostor = WorkloadGraph(
+            parallelism=PARALLELISM, participant_count=4,
+            operations=(OperationNode("c0", KIND_COLLECTIVE, (),
+                                      collective_detail(
+                                          collective_kind="ALLGATHER",
+                                          participants=(0, 1, 2, 3),
+                                          payload_bytes=8,
+                                          participant_count=4)),),
+            semantics=WorkloadSemantics())
+        record = json.loads(json.dumps(workload_graph_record(impostor)))
+        record["resource_id"] = honest.workload_id()   # forged
+        record["artifact"]["workload_id"] = honest.workload_id()  # forged
+        cp.store.put("workloadgraph", honest.workload_id(), record)
+        with pytest.raises(ControlPlaneError):
+            load_verified_workload_graph(cp.store, honest.workload_id())
+
+    def test_forged_id_matching_content_still_refuses(self, cp):
+        """The id is recomputed, not read: naming the impostor's own id in
+        the file name is fine only if the loader recomputes it too, so a
+        document whose embedded and file ids AGREE but whose content hash
+        does not must refuse."""
+        from veritx_dse.application.errors import ControlPlaneError
+        from veritx_dse.application.waved_resources import (
+            load_verified_workload_graph, workload_graph_record,
+        )
+        honest = _graph()
+        record = json.loads(json.dumps(workload_graph_record(honest)))
+        record["artifact"]["participant_count"] = 5   # content now stale
+        cp.store.put("workloadgraph", honest.workload_id(), record)
+        with pytest.raises(ControlPlaneError):
+            load_verified_workload_graph(cp.store, honest.workload_id())
