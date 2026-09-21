@@ -38,8 +38,9 @@ from .booksim import (
     SERVING_BOOKSIM2_PROFILE, SERVING_BOOKSIM2_SEMANTICS_VERSION,
     TOPOLOGY_FILE, assert_canonical_booksim_projection, exact_flit_bytes,
     lower_booksim_projection, materialize_backend,
-    parse_booksim_config_values, render_topology_anynet,
-    verify_materialized, verify_rendered_profile_gates,
+    parse_booksim_config_values, profile_key_order,
+    render_topology_anynet, verify_materialized,
+    verify_rendered_profile_gates,
 )
 from .booksim_profile import BOOKSIM_SERVING_PROFILE as SERVING_PROFILE_SPEC
 from veritx_dse.model.resolved_bundle import ResolvedFabricBundle
@@ -72,7 +73,7 @@ class ServingBackendError(ValueError):
 SERVING_BOOKSIM2_OWNERSHIP: dict[str, ParameterOwner] = \
     SERVING_PROFILE_SPEC.ownership()
 
-_SERVING_KEY_ORDER: tuple[str, ...] = BOOKSIM_CONFIG_KEY_ORDER
+_SERVING_KEY_ORDER: tuple[str, ...] = profile_key_order(SERVING_PROFILE_SPEC)
 
 _PROJECTION_ONLY_KEYS = frozenset({"routing_class",
                                    "channel_latency_cycles"})

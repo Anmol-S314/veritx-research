@@ -51,6 +51,28 @@ from veritx_dse.workload.traffic import PhysicalTrafficArtifact
 WAVED_TRACE_DIALECT = "waved-derived-whitespace-v1"
 
 
+def render_physical_traffic_trace(
+        pt: PhysicalTrafficArtifact,
+        *, node_of_endpoint: dict[int, int] | None = None) -> bytes:
+    """Render canonical physical traffic as a BookSim trace.
+
+    ``node_of_endpoint`` is the backend node projection (None = the
+    backend addresses canonical endpoint ids directly, the AnyNet
+    convention). The ONE trace renderer: both profile paths call this.
+    """
+    lines: list[str] = []
+    ts = 0
+    for t in pt.traffic:            # deterministic: message seq order
+        for p in t.packets:         # deterministic: packet index order
+            src = p.src_endpoint if node_of_endpoint is None \
+                else node_of_endpoint[p.src_endpoint]
+            dst = p.dst_endpoint if node_of_endpoint is None \
+                else node_of_endpoint[p.dst_endpoint]
+            lines.append(f"{ts} {src} 0 {dst} {p.flit_count}")
+            ts += 1
+    return ("\n".join(lines) + "\n").encode()
+
+
 def render_waved_trace(pt: PhysicalTrafficArtifact) -> bytes:
     """Render the canonical Wave-D traffic as a BookSim trace.
 
@@ -61,22 +83,22 @@ def render_waved_trace(pt: PhysicalTrafficArtifact) -> bytes:
     column is 0: single-class certified runs (§21). Deterministic
     timestamps in emission order keep packet ordering semantic.
     """
-    lines: list[str] = []
-    ts = 0
-    for t in pt.traffic:            # deterministic: message seq order
-        for p in t.packets:         # deterministic: packet index order
-            lines.append(f"{ts} {p.src_endpoint} 0 {p.dst_endpoint} "
-                         f"{p.flit_count}")
-            ts += 1
-    return ("\n".join(lines) + "\n").encode()
+    return render_physical_traffic_trace(pt)
+
+
+def _node_projection_or_none(pt):
+    """The selected profile's endpoint→node projection (None = identity)."""
+    from veritx_dse.backend.booksim import endpoint_node_projection
+    return endpoint_node_projection(pt.bundle)
 
 
 def prepare_waved_booksim(pt: PhysicalTrafficArtifact,
                           *, seed: int | None = None
                           ) -> tuple[PreparedBackend, dict[str, Any]]:
     """Sealed Wave-B preparation of the Wave-D canonical traffic."""
-    summary = assert_projection_ready(pt)
-    trace = render_waved_trace(pt)
+    node_of = _node_projection_or_none(pt)
+    summary = assert_projection_ready(pt, node_of_endpoint=node_of)
+    trace = render_physical_traffic_trace(pt, node_of_endpoint=node_of)
     prepared = prepare_booksim_standalone(pt.bundle, workload_trace=trace,
                                           seed=seed)
     return prepared, summary
@@ -108,27 +130,41 @@ def run_waved_booksim(prepared: PreparedBackend, *, run_dir: Path,
     return {"evidence": evidence, "backend_counters": counters}
 
 
-__all__ = [
-    "assert_waved_ready", "prepare_waved_booksim", "render_waved_trace",
-    "run_waved_booksim", "verify_backend_quiescence",
-    "verify_trace_projection", "WAVED_TRACE_DIALECT",
-]
-
-
-def verify_trace_projection(pt: PhysicalTrafficArtifact) -> dict[str, Any]:
+def verify_trace_projection(
+        pt: PhysicalTrafficArtifact,
+        *, node_of_endpoint: dict[int, int] | None = None) -> dict[str, Any]:
     """Mechanical losslessness proof for the representable fields (§21).
 
     Parses back the rendered trace and compares it against the artifact:
-    line count, endpoint pairs, per-line flit counts, and ordering.
+    line count, endpoint pairs (through the backend node projection when
+    one exists), per-line flit counts, and ordering.
 
     Owned by the renderer, not by verification: it needs the trace
     grammar and the scanner, both of which live in the backend. The
     reference differentials live in verification/reference_semantics.py.
     """
     from veritx_dse.backend.booksim import _scan_trace
-    trace = render_waved_trace(pt)
+    # The projection is not a free parameter: when the resolved fabric's
+    # certified profile defines one, it is DERIVED here and a supplied
+    # projection must equal it. Otherwise a caller could render/verify
+    # against a self-consistent but unauthorized address map.
+    derived = _node_projection_or_none(pt)
+    if derived is not None:
+        if node_of_endpoint is not None and \
+                dict(node_of_endpoint) != derived:
+            raise EvidenceInvalid(
+                "supplied node projection is not the projection the "
+                "resolved fabric certifies — refusing a self-consistent "
+                "but unauthorized address map")
+        node_of_endpoint = derived
+    if node_of_endpoint is None:
+        node_count = pt.bundle.attachment.endpoint_count
+    else:
+        node_count = max(node_of_endpoint.values()) + 1
+    trace = render_physical_traffic_trace(
+        pt, node_of_endpoint=node_of_endpoint)
     summary = _scan_trace(
-        trace, endpoint_count=pt.bundle.attachment.endpoint_count,
+        trace, endpoint_count=node_count,
         max_packet_flits=pt.bundle.packet_format.max_packet_flits)
     expected_lines = sum(len(t.packets) for t in pt.traffic)
     if summary.num_packets != expected_lines:
@@ -136,8 +172,13 @@ def verify_trace_projection(pt: PhysicalTrafficArtifact) -> dict[str, Any]:
             f"trace projection lost packets: {summary.num_packets} != "
             f"{expected_lines}")
     rendered = [line.split() for line in trace.decode().splitlines()]
-    flat = [(t.message_id, p.packet_index, p.src_endpoint, p.dst_endpoint,
-             p.flit_count)
+
+    def node(endpoint: int) -> int:
+        return endpoint if node_of_endpoint is None \
+            else node_of_endpoint[endpoint]
+
+    flat = [(t.message_id, p.packet_index, node(p.src_endpoint),
+             node(p.dst_endpoint), p.flit_count)
             for t in pt.traffic for p in t.packets]
     if len(rendered) != len(flat):
         raise EvidenceInvalid("trace projection line count mismatch")
@@ -166,14 +207,30 @@ def verify_trace_projection(pt: PhysicalTrafficArtifact) -> dict[str, Any]:
     }
 
 
-def assert_projection_ready(pt: PhysicalTrafficArtifact) -> dict[str, Any]:
+def assert_projection_ready(
+        pt: PhysicalTrafficArtifact,
+        *, node_of_endpoint: dict[int, int] | None = None) -> dict[str, Any]:
     """Every pre-spawn gate: workload gates, then the projection check."""
     assert_workload_ready(pt)
-    return verify_trace_projection(pt)
+    return verify_trace_projection(pt, node_of_endpoint=node_of_endpoint)
+
+
+# ── product names (P1B.4) ────────────────────────────────────────────
+# The live implementation above is generation-agnostic (it reads the
+# shared traffic/packet record API both generations expose). The
+# product path names what it means: canonical physical traffic, not
+# the historical Wave-D spelling. One implementation, two names — no
+# copy-paste, no second renderer.
+
+def prepare_physical_traffic_booksim(
+        pt: Any, *, seed: int | None = None) -> tuple[Any, dict[str, Any]]:
+    """Sealed preparation of canonical physical traffic for BookSim."""
+    return prepare_waved_booksim(pt, seed=seed)
 
 
 __all__ = [
-    "assert_projection_ready", "prepare_waved_booksim",
+    "assert_projection_ready", "prepare_physical_traffic_booksim",
+    "prepare_waved_booksim", "render_physical_traffic_trace",
     "render_waved_trace", "run_waved_booksim", "verify_trace_projection",
     "WAVED_TRACE_DIALECT",
 ]

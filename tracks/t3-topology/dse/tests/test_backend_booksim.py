@@ -227,7 +227,8 @@ class TestLoweringRefusals:
             lower_booksim_standalone(rebuild_bundle(chain, topo=topo))
 
     def test_unknown_profile_refused(self, bundle):
-        with pytest.raises(BookSimLoweringError, match="unknown"):
+        with pytest.raises(BookSimLoweringError,
+                           match="no certified BookSim profile"):
             lower_booksim_standalone(bundle, profile="NOPE")
 
     def test_vc_routing_class_split_refused(self, chain):

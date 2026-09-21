@@ -96,6 +96,11 @@ MECHANISM_JUSTIFICATIONS: dict[str, str] = {
     "conditional_presence": (
         "read only when config.GetIntMap().count(field) (veritx_embed.cpp); "
         "the certified projector never emits k/n/c"),
+    "topology_dispatch": (
+        "read only inside a network class that Network::New never "
+        "constructs for this profile (topology dispatch in "
+        "networks/network.cpp); the certified mesh profile constructs "
+        "KNCube only, so no other network class is instantiated"),
 }
 
 
@@ -425,6 +430,56 @@ def verify_site_gates(
 
 def verify_gates(rendered_values: dict[str, str]) -> None:
     verify_site_gates(GATED_READ_SITES, rendered_values)
+
+
+# ── per-profile read sites (P1B-Q1) ────────────────────────────────────
+# Network::New constructs KNCube and nothing else for topology=mesh, so
+# every read inside another network class is unreachable by dispatch.
+# The mesh profile therefore re-gates those sites on the dispatch
+# mechanism instead of a pin the mesh config cannot satisfy. KNCube's
+# own fail_seed read is gated by link_failures=0 (pinned in the profile).
+
+_MESH_OTHER_NETWORK_FILES = frozenset({
+    "networks/anynet.cpp", "networks/cmesh.cpp", "networks/fly.cpp",
+    "networks/fattree.cpp", "networks/qtree.cpp", "networks/tree4.cpp",
+    "networks/flatfly_onchip.cpp", "networks/dragonfly.cpp",
+    "networks/gec.cpp",
+})
+
+# Extra declarations that only the mesh profile needs: fields inactive
+# for mesh whose reads live in files that are dispatch-unreachable.
+_MESH_EXTRA_SITES: dict[str, tuple[GatedReadSite, ...]] = {
+    "network_file": (
+        GatedReadSite("networks/anynet.cpp", 1,
+                      ("AnyNet::_ComputeSize",), ("topology_dispatch",)),
+    ),
+}
+
+
+def mesh_gated_read_sites() -> dict[str, tuple[GatedReadSite, ...]]:
+    """GATED_READ_SITES re-gated for the certified native-mesh profile."""
+    out: dict[str, tuple[GatedReadSite, ...]] = {}
+    for field, sites in GATED_READ_SITES.items():
+        rows = []
+        for site in sites:
+            gates = site.gates
+            if site.path in _MESH_OTHER_NETWORK_FILES:
+                gates = tuple("topology_dispatch" for _ in site.gates)
+            elif site.path == "networks/kncube.cpp":
+                # KNCube IS constructed for topology=mesh; its reads are
+                # either active fields (k, n, use_noc_latency) or gated by
+                # fail_seed's own switch.
+                gates = ("pin:link_failures=0",) if field == "fail_seed" \
+                    else ("pin:topology=mesh",)
+            rows.append(GatedReadSite(site.path, site.occurrences,
+                                      site.functions, gates))
+        out[field] = tuple(rows)
+    for field, sites in _MESH_EXTRA_SITES.items():
+        out[field] = out.get(field, ()) + sites
+    return out
+
+
+MESH_GATED_READ_SITES = mesh_gated_read_sites()
 
 
 __all__ = [

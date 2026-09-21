@@ -91,7 +91,24 @@ class TestAuditTable:
     def test_ownership_tables_derive_from_the_profiles(self):
         assert BOOKSIM_STANDALONE_OWNERSHIP == _PROFILE.ownership()
         assert SERVING_BOOKSIM2_OWNERSHIP == _SERVING.ownership()
-        assert set(BOOKSIM_CONFIG_KEY_ORDER) == _PROFILE.active_names()
+        # P1B-Q1: the master key order covers EVERY certified profile;
+        # each profile emits its own active subset in master order.
+        from veritx_dse.backend.booksim import (
+            BOOKSIM_MESH_DOR_PROFILE, profile_key_order,
+        )
+        from veritx_dse.backend.booksim_profile import (
+            BOOKSIM_MESH_DOR_PROFILE as MESH_SPEC,
+        )
+        assert set(_PROFILE.active_names()) <= set(BOOKSIM_CONFIG_KEY_ORDER)
+        assert set(MESH_SPEC.active_names()) <= \
+            set(BOOKSIM_CONFIG_KEY_ORDER)
+        assert profile_key_order(_PROFILE) == tuple(
+            k for k in BOOKSIM_CONFIG_KEY_ORDER
+            if k in _PROFILE.active_names())
+        assert profile_key_order(MESH_SPEC) == tuple(
+            k for k in BOOKSIM_CONFIG_KEY_ORDER
+            if k in MESH_SPEC.active_names())
+        assert BOOKSIM_MESH_DOR_PROFILE == MESH_SPEC.profile_id
 
     def test_source_locations_spot_check(self):
         assert "iq_router.cpp:61" in _PROFILE.source_of("speculative")
@@ -105,9 +122,10 @@ class TestAuditTable:
 class TestClosedWorldEmission:
     def test_standalone_config_is_exactly_the_active_audit_set(
             self, bundle):
+        from veritx_dse.backend.booksim import profile_key_order
         prepared = prepare_booksim_standalone(bundle, workload_trace=TRACE)
         keys = _config_keys(prepared)
-        assert keys == BOOKSIM_CONFIG_KEY_ORDER
+        assert keys == profile_key_order(_PROFILE)
         assert set(keys) == _PROFILE.active_names()
         assert not (set(keys) & _PROFILE.inactive_names())
 

@@ -325,25 +325,36 @@ BOOKSIM_CERTIFIED_CONFIG_AUDIT: tuple[ConfigRead, ...] = (
 
 @dataclass(frozen=True)
 class BookSimCertifiedProfile:
-    """One target's closed-world view of the audited config surface."""
+    """One target's closed-world view of the audited config surface.
+
+    ``extra_reads`` carries fields this profile activates that the base
+    AnyNet audit does not (native mesh ``k``/``n``/``use_noc_latency``).
+    They are profile-local on purpose: the AnyNet profile's audited
+    surface and rendered bytes must not move.
+    """
 
     profile_id: str
     semantics_version: str
     audit: tuple[ConfigRead, ...] = BOOKSIM_CERTIFIED_CONFIG_AUDIT
     overrides: tuple[tuple[str, ParameterOwner, Any], ...] = ()
+    extra_reads: tuple[ConfigRead, ...] = ()
 
     def __post_init__(self):
-        names = [r.name for r in self.audit]
+        rows = self.audit + self.extra_reads
+        names = [r.name for r in rows]
         if len(set(names)) != len(names):
             dupes = sorted(n for n in set(names) if names.count(n) > 1)
             raise ValueError(f"audit has duplicate fields: {dupes}")
-        known = {r.name for r in self.audit}
+        known = set(names)
         for name, _owner, _value in self.overrides:
             if name not in known:
                 raise ValueError(
                     f"profile override {name!r} is not in the audit")
 
     def read(self, name: str) -> ConfigRead:
+        for row in self.extra_reads:
+            if row.name == name:
+                return row
         for row in self.audit:
             if row.name == name:
                 return row
@@ -355,14 +366,17 @@ class BookSimCertifiedProfile:
                 return owner
         return self.read(name).owner
 
+    def _rows(self) -> tuple[ConfigRead, ...]:
+        return self.audit + self.extra_reads
+
     def active_names(self) -> frozenset[str]:
         return frozenset(
-            row.name for row in self.audit
+            row.name for row in self._rows()
             if self.owner_of(row.name)
             is not ParameterOwner.INACTIVE_FOR_PROFILE)
 
     def inactive_names(self) -> frozenset[str]:
-        return frozenset(row.name for row in self.audit
+        return frozenset(row.name for row in self._rows()
                          if self.owner_of(row.name)
                          is ParameterOwner.INACTIVE_FOR_PROFILE)
 
@@ -371,7 +385,7 @@ class BookSimCertifiedProfile:
         overrides = {name: (owner, value)
                      for name, owner, value in self.overrides}
         values: dict[str, Any] = {}
-        for row in self.audit:
+        for row in self._rows():
             owner, value = overrides.get(row.name, (row.owner, row.pin))
             if owner is ParameterOwner.BACKEND_PROFILE and value is not None:
                 values[row.name] = value
@@ -380,7 +394,7 @@ class BookSimCertifiedProfile:
     def ownership(self) -> dict[str, ParameterOwner]:
         """name -> owner for every active field (the closed table)."""
         return {row.name: self.owner_of(row.name)
-                for row in self.audit
+                for row in self._rows()
                 if self.owner_of(row.name)
                 is not ParameterOwner.INACTIVE_FOR_PROFILE}
 
@@ -391,6 +405,40 @@ class BookSimCertifiedProfile:
 BOOKSIM_STANDALONE_PROFILE = BookSimCertifiedProfile(
     profile_id=BOOKSIM_CERTIFIED_PROFILE_ID,
     semantics_version=BOOKSIM_CERTIFIED_SEMANTICS_VERSION,
+)
+
+# ── native mesh DOR profile (P1B-Q1) ───────────────────────────────────
+# A SECOND certified standalone projection for fabrics the P1A compiler
+# actually emits: a regular 2D mesh routed by DOR_XY. BookSim executes
+# that natively (topology=mesh -> KNCube, routing_function=dim_order ->
+# dim_order_mesh); the gap was qualification, not capability. The AnyNet
+# profile above is untouched: this profile activates its own extra
+# fields (k, n, use_noc_latency) and pins topology=mesh, so the AnyNet
+# rendered bytes and audited surface do not move.
+BOOKSIM_MESH_DOR_PROFILE_ID = "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1"
+BOOKSIM_MESH_DOR_SEMANTICS_VERSION = "booksim2-fork+B3.7d-native-mesh-dor"
+
+BOOKSIM_MESH_DOR_CONFIG_READS: tuple[ConfigRead, ...] = (
+    ConfigRead("k", A.FABRIC_DERIVED, "networks/kncube.cpp:57",
+               note="native mesh dimension size, derived from the "
+                    "TopologyArtifact grid (k x k)"),
+    ConfigRead("n", A.FABRIC_DERIVED, "networks/kncube.cpp:58",
+               note="native mesh dimensionality; this profile certifies "
+                    "2D meshes only"),
+    ConfigRead("use_noc_latency", A.BACKEND_PROFILE,
+               "networks/kncube.cpp:113", 1,
+               note="mesh link latency is 1 cycle in KNCube either way; "
+                    "pinned explicit so no compiled default is consulted"),
+)
+
+BOOKSIM_MESH_DOR_PROFILE = BookSimCertifiedProfile(
+    profile_id=BOOKSIM_MESH_DOR_PROFILE_ID,
+    semantics_version=BOOKSIM_MESH_DOR_SEMANTICS_VERSION,
+    overrides=(
+        ("topology", A.BACKEND_PROFILE, "mesh"),
+        ("network_file", A.INACTIVE_FOR_PROFILE, None),
+    ),
+    extra_reads=BOOKSIM_MESH_DOR_CONFIG_READS,
 )
 
 BOOKSIM_SERVING_PROFILE = BookSimCertifiedProfile(
@@ -407,6 +455,10 @@ __all__ = [
     "BOOKSIM_CERTIFIED_CONFIG_AUDIT",
     "BOOKSIM_CERTIFIED_PROFILE_ID",
     "BOOKSIM_CERTIFIED_SEMANTICS_VERSION",
+    "BOOKSIM_MESH_DOR_CONFIG_READS",
+    "BOOKSIM_MESH_DOR_PROFILE",
+    "BOOKSIM_MESH_DOR_PROFILE_ID",
+    "BOOKSIM_MESH_DOR_SEMANTICS_VERSION",
     "BOOKSIM_SERVING_PROFILE",
     "BOOKSIM_STANDALONE_PROFILE",
     "BookSimCertifiedProfile",

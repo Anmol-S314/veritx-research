@@ -40,20 +40,25 @@ manifest/runner validates every trace packet against
 from __future__ import annotations
 
 import hashlib
+import math
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from veritx_dse.core.anynet import parse_anynet_file
-from veritx_dse.core.route_artifact import ANYNET_MIN_HOPS
+from veritx_dse.core.route_artifact import ANYNET_MIN_HOPS, DOR_XY
+from veritx_dse.model.topology_artifact import MaterializedFamily
 from veritx_dse.model.router_behavior import (
     AllocatorPolicy, VCReusePolicy,
 )
 
 from .booksim_profile import (
+    BOOKSIM_MESH_DOR_PROFILE as MESH_PROFILE_SPEC,
+    BOOKSIM_MESH_DOR_SEMANTICS_VERSION,
     BOOKSIM_SERVING_PROFILE as SERVING_PROFILE_SPEC,
     BOOKSIM_STANDALONE_PROFILE as STANDALONE_PROFILE_SPEC,
+    BookSimCertifiedProfile,
 )
 from veritx_dse.model.resolved_bundle import ResolvedFabricBundle
 from .contracts import (
@@ -71,11 +76,15 @@ from .producer import (
 from .evidence import PARSER_VERSION
 
 BOOKSIM_STANDALONE_PROFILE = "CERTIFIED_BOOKSIM_ANYNET_V1"
+BOOKSIM_MESH_DOR_PROFILE = MESH_PROFILE_SPEC.profile_id
 SERVING_BOOKSIM2_PROFILE = "CERTIFIED_SERVING_BOOKSIM2_V1"
 BOOKSIM_BACKEND_SEMANTICS_VERSION = "booksim2-fork+B3.7b-anynet-dump"
+BOOKSIM_MESH_DOR_BACKEND_SEMANTICS_VERSION = \
+    BOOKSIM_MESH_DOR_SEMANTICS_VERSION
 SERVING_BOOKSIM2_SEMANTICS_VERSION = \
     "booksim2-fork+B3.7c-embedded-injection"
 BOOKSIM_LOWERER_VERSION = "B37/1"
+BOOKSIM_MESH_DOR_LOWERER_VERSION = "B37/2"
 
 CONFIG_FILE = "config.cfg"
 TOPOLOGY_FILE = "topology.anynet"
@@ -97,9 +106,28 @@ _CFG_LINE_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^;]*);$")
 _SAMPLE_PERIOD_MIN = 200
 _SAMPLE_PERIOD_MARGIN = 1000
 
-# Authoritative profile/version identity per BookSim target. A forged
-# artifact can recompute its own hash; it cannot change what its target's
-# certified lowering must be.
+# Authoritative profile/version identity per (target, profile). A forged
+# artifact can recompute its own hash; it cannot change what its
+# registered profile's certified lowering must be. One target may carry
+# MORE than one certified projection (AnyNet min-hop and native mesh
+# DOR); each (target, profile) pair names exactly one lowerer identity.
+_BOOKSIM_PROFILES: dict[
+    tuple[BackendTarget, str],
+    tuple[str, str, "BookSimCertifiedProfile"],
+] = {
+    (BackendTarget.BOOKSIM_STANDALONE, BOOKSIM_STANDALONE_PROFILE): (
+        BOOKSIM_BACKEND_SEMANTICS_VERSION, BOOKSIM_LOWERER_VERSION,
+        STANDALONE_PROFILE_SPEC),
+    (BackendTarget.BOOKSIM_STANDALONE, BOOKSIM_MESH_DOR_PROFILE): (
+        BOOKSIM_MESH_DOR_BACKEND_SEMANTICS_VERSION,
+        BOOKSIM_MESH_DOR_LOWERER_VERSION, MESH_PROFILE_SPEC),
+    (BackendTarget.SERVING_BOOKSIM2, SERVING_BOOKSIM2_PROFILE): (
+        SERVING_BOOKSIM2_SEMANTICS_VERSION, BOOKSIM_LOWERER_VERSION,
+        SERVING_PROFILE_SPEC),
+}
+
+# The canonical profile for a target when no fabric-derived selection
+# applies (serving is embedded-only; the standalone default is AnyNet).
 _EXPECTED_BOOKSIM_IDENTITY: dict[BackendTarget, tuple[str, str, str]] = {
     BackendTarget.BOOKSIM_STANDALONE: (
         BOOKSIM_STANDALONE_PROFILE, BOOKSIM_BACKEND_SEMANTICS_VERSION,
@@ -108,6 +136,18 @@ _EXPECTED_BOOKSIM_IDENTITY: dict[BackendTarget, tuple[str, str, str]] = {
         SERVING_BOOKSIM2_PROFILE, SERVING_BOOKSIM2_SEMANTICS_VERSION,
         BOOKSIM_LOWERER_VERSION),
 }
+
+
+def profile_spec_for(
+        target: BackendTarget,
+        profile_id: str) -> "BookSimCertifiedProfile":
+    """The registered spec for a (target, profile) pair, or refuse."""
+    entry = _BOOKSIM_PROFILES.get((target, profile_id))
+    if entry is None:
+        raise BookSimLoweringError(
+            f"no certified BookSim profile {profile_id!r} for target "
+            f"{target.value}")
+    return entry[2]
 
 
 class BookSimLoweringError(ValueError):
@@ -133,10 +173,12 @@ BOOKSIM_STANDALONE_OWNERSHIP: dict[str, ParameterOwner] = \
     STANDALONE_PROFILE_SPEC.ownership()
 
 # Rendered in a fixed order so the config bytes are deterministic.
-# The set must equal the profile's active field set (asserted below).
+# The master order covers EVERY certified profile's active field; each
+# profile emits its own active subset in this order. A profile's active
+# set must be a subset of the master order (asserted below).
 BOOKSIM_CONFIG_KEY_ORDER: tuple[str, ...] = (
     # topology + projection
-    "topology", "network_file", "routing_function",
+    "topology", "network_file", "k", "n", "routing_function",
     # fabric-derived router/VC/flow behavior
     "num_vcs", "vc_buf_size", "wait_for_tail_credit",
     "hold_switch_for_packet", "vc_allocator", "sw_allocator", "alloc_iters",
@@ -150,7 +192,8 @@ BOOKSIM_CONFIG_KEY_ORDER: tuple[str, ...] = (
     "write_request_begin_vc", "write_request_end_vc",
     "write_reply_begin_vc", "write_reply_end_vc",
     # explicit backend-profile pins (no compiled defaults)
-    "router", "classes", "subnets", "link_failures", "priority",
+    "router", "classes", "subnets", "link_failures", "use_noc_latency",
+    "priority",
     "vc_priority_donation", "vc_busy_when_full", "vc_prioritize_empty",
     "vc_shuffle_requests", "speculative", "spec_check_elig",
     "spec_check_cred", "spec_mask_by_reqs", "spec_sw_allocator", "noq",
@@ -171,22 +214,36 @@ _PROJECTION_ONLY_KEYS = frozenset({"routing_class",
                                    "channel_latency_cycles"})
 
 
+def profile_key_order(spec: "BookSimCertifiedProfile") -> tuple[str, ...]:
+    """The profile's active fields in the certified master order."""
+    active = spec.active_names()
+    return tuple(key for key in BOOKSIM_CONFIG_KEY_ORDER if key in active)
+
+
 def _assert_ownership() -> None:
-    active = set(STANDALONE_PROFILE_SPEC.active_names())
-    serving_active = set(SERVING_PROFILE_SPEC.active_names())
-    if active != serving_active:
+    if len(BOOKSIM_CONFIG_KEY_ORDER) != len(set(BOOKSIM_CONFIG_KEY_ORDER)):
+        seen: set[str] = set()
+        dupes = sorted(k for k in BOOKSIM_CONFIG_KEY_ORDER
+                       if k in seen or seen.add(k))
+        raise BookSimLoweringError(
+            f"config key order has duplicate fields: {dupes}")
+    if STANDALONE_PROFILE_SPEC.active_names() != \
+            SERVING_PROFILE_SPEC.active_names():
         raise BookSimLoweringError(
             "standalone and serving profiles audit different field sets")
-    if set(BOOKSIM_CONFIG_KEY_ORDER) != active:
-        missing = set(BOOKSIM_CONFIG_KEY_ORDER) - active
-        extra = active - set(BOOKSIM_CONFIG_KEY_ORDER)
-        raise BookSimLoweringError(
-            f"config key order does not match the audited active field set "
-            f"(unemitted {sorted(missing)}, unlisted {sorted(extra)})")
-    for name in active:
-        if not STANDALONE_PROFILE_SPEC.source_of(name):
+    master = set(BOOKSIM_CONFIG_KEY_ORDER)
+    for entry in _BOOKSIM_PROFILES.values():
+        spec = entry[2]
+        active = spec.active_names()
+        unlisted = active - master
+        if unlisted:
             raise BookSimLoweringError(
-                f"audited field {name!r} has no source location")
+                f"profile {spec.profile_id!r} activates fields outside the "
+                f"master key order: {sorted(unlisted)}")
+        for name in active:
+            if not spec.source_of(name):
+                raise BookSimLoweringError(
+                    f"audited field {name!r} has no source location")
 
 
 _assert_ownership()
@@ -208,6 +265,162 @@ def _selected_routing_class(bundle: ResolvedFabricBundle) -> str:
             f"function, but VCs map to routing classes {sorted(vc_classes)}; "
             "per-VC routing-class separation is not representable")
     return ANYNET_MIN_HOPS
+
+
+@dataclass(frozen=True)
+class NativeMeshProjection:
+    """Exact native-mesh realization of a compiled fabric (P1B-Q1).
+
+    ``endpoint_to_node`` is the explicit canonical-endpoint → BookSim
+    node projection derived from the AgentAttachmentArtifact. Backend
+    node numbering is projection detail: canonical physical traffic and
+    the attachment artifact never carry BookSim node ids.
+    """
+
+    k: int
+    n: int
+    router_count: int
+    endpoint_to_node: tuple[tuple[int, int], ...]
+
+    @property
+    def node_count(self) -> int:
+        return self.router_count
+
+    def node_of(self, endpoint_id: int) -> int:
+        for ep, node in self.endpoint_to_node:
+            if ep == endpoint_id:
+                return node
+        raise BookSimLoweringError(
+            f"endpoint {endpoint_id} has no native-mesh node projection")
+
+    def projection_dict(self) -> dict[str, Any]:
+        return {"k": self.k, "n": self.n, "router_count": self.router_count,
+                "endpoint_to_node": [list(p) for p in
+                                     self.endpoint_to_node]}
+
+
+def _native_mesh_projection(bundle: ResolvedFabricBundle
+                            ) -> NativeMeshProjection:
+    """Prove the fabric is exactly what KNCube(mesh) executes, or refuse.
+
+    Deliberately narrow first domain: a regular 2D k x k mesh, no wrap,
+    no express links, no missing internal links, no parallel
+    router-router channels, one-cycle links, DOR_XY routing, and at most
+    one attached endpoint per router (one native terminal per router).
+    CONCENTRATED_MESH is refused: concentration is a different hardware
+    projection.
+    """
+    topo, att = bundle.topology, bundle.attachment
+    if topo.family is not MaterializedFamily.MESH:
+        raise BookSimLoweringError(
+            f"UNSUPPORTED: the native mesh DOR profile realizes a MESH "
+            f"TopologyArtifact only; got family {topo.family.value!r}")
+    R = topo.router_count
+    k = math.isqrt(R)
+    if k < 2 or k * k != R:
+        raise BookSimLoweringError(
+            f"UNSUPPORTED: the native mesh DOR profile realizes square "
+            f"k x k grids only; {R} routers is not k^2 for k >= 2")
+    n = 2
+    expected: set[tuple[int, int]] = set()
+    for r in range(R):
+        x, y = r % k, r // k
+        if x + 1 < k:
+            expected.add((r, r + 1))
+            expected.add((r + 1, r))
+        if y + 1 < k:
+            expected.add((r, r + k))
+            expected.add((r + k, r))
+    actual: dict[tuple[int, int], int] = {}
+    for c in topo.channels:
+        key = (c.src_router, c.dst_router)
+        if key in actual:
+            raise BookSimLoweringError(
+                f"UNSUPPORTED: parallel router-router channels "
+                f"{key} -> 2 channels; KNCube builds one link per "
+                f"direction per dimension")
+        actual[key] = c.latency_cycles
+    missing = sorted(expected - set(actual))[:3]
+    extra = sorted(set(actual) - expected)[:3]
+    if missing or extra:
+        raise BookSimLoweringError(
+            f"UNSUPPORTED: topology is not the exact {k}x{k} grid the "
+            f"native mesh realizes (missing {missing}, extra {extra})")
+    bad_latency = sorted({lat for lat in actual.values() if lat != 1})
+    if bad_latency:
+        raise BookSimLoweringError(
+            f"UNSUPPORTED: KNCube mesh links are exactly one cycle; the "
+            f"artifact declares latencies {bad_latency}. A multi-cycle "
+            f"mesh needs a different projection, not a silenter run")
+    by_router: dict[int, list[int]] = {}
+    for ep in att.endpoints:
+        by_router.setdefault(ep.router_id, []).append(ep.endpoint_id)
+    crowded = sorted((r, sorted(eps))
+                     for r, eps in by_router.items() if len(eps) > 1)
+    if crowded:
+        raise BookSimLoweringError(
+            f"UNSUPPORTED: native mesh has exactly one terminal per "
+            f"router; router(s) {crowded[:3]} host multiple endpoints — "
+            f"concentration is not representable by KNCube(mesh)")
+    rows = tuple((ep.endpoint_id, ep.router_id)
+                 for ep in sorted(att.endpoints,
+                                  key=lambda e: e.endpoint_id))
+    return NativeMeshProjection(k=k, n=n, router_count=R,
+                                endpoint_to_node=rows)
+
+
+def select_booksim_profile(
+        bundle: ResolvedFabricBundle,
+        *,
+        target: BackendTarget = BackendTarget.BOOKSIM_STANDALONE,
+) -> "BookSimCertifiedProfile":
+    """The certified profile a fabric's semantics select (never a caller
+    preference). Selection is derived from the authenticated
+    RouteArtifact/TopologyArtifact: AnyNet min-hop → the AnyNet profile;
+    DOR_XY on an exact native mesh → the native mesh profile; anything
+    else → UNSUPPORTED with the reason."""
+    if target is not BackendTarget.BOOKSIM_STANDALONE:
+        raise BookSimLoweringError(
+            f"fabric-derived profile selection applies to the standalone "
+            f"target only; got {target.value}")
+    classes = [d.id for d in bundle.router_route.routing_classes]
+    if ANYNET_MIN_HOPS in classes:
+        return STANDALONE_PROFILE_SPEC
+    if classes == [DOR_XY]:
+        _native_mesh_projection(bundle)
+        return MESH_PROFILE_SPEC
+    raise BookSimLoweringError(
+        f"UNSUPPORTED: no certified BookSim profile realizes routing "
+        f"classes {classes}; certified profiles: "
+        f"{[p for _t, p in _BOOKSIM_PROFILES]}")
+
+
+def endpoint_node_projection(
+        bundle: ResolvedFabricBundle,
+        profile_spec: "BookSimCertifiedProfile | None" = None
+) -> dict[int, int] | None:
+    """Canonical endpoint → backend node projection, or None = identity.
+
+    Backend node numbering is projection detail: AnyNet renders one
+    node per attached endpoint (identity), the native mesh addresses
+    BookSim router ids. Canonical traffic artifacts never carry either.
+    """
+    spec = profile_spec if profile_spec is not None \
+        else select_booksim_profile(bundle)
+    if spec is MESH_PROFILE_SPEC:
+        return dict(_native_mesh_projection(bundle).endpoint_to_node)
+    return None
+
+
+def backend_node_count(
+        bundle: ResolvedFabricBundle,
+        profile_spec: "BookSimCertifiedProfile | None" = None) -> int:
+    """The backend's node universe size for this fabric's profile."""
+    spec = profile_spec if profile_spec is not None \
+        else select_booksim_profile(bundle)
+    if spec is MESH_PROFILE_SPEC:
+        return _native_mesh_projection(bundle).node_count
+    return bundle.attachment.endpoint_count
 
 
 def _uniform_link_latency(bundle: ResolvedFabricBundle) -> int:
@@ -288,22 +501,35 @@ def exact_flit_bytes(packet_format: Any) -> int:
 
 def lower_booksim_standalone(
         bundle: ResolvedFabricBundle, *,
-        profile: str = BOOKSIM_STANDALONE_PROFILE) -> BackendConfigArtifact:
-    """Lower one validated fabric to the certified standalone BookSim
-    projection. Raises BookSimLoweringError for UNSUPPORTED fabrics."""
-    if profile != BOOKSIM_STANDALONE_PROFILE:
-        raise BookSimLoweringError(
-            f"unknown standalone BookSim profile {profile!r}")
+        profile: str | None = None) -> BackendConfigArtifact:
+    """Lower one validated fabric to a certified standalone BookSim
+    projection.
+
+    Without an explicit ``profile`` the fabric's own routing semantics
+    select the certified profile (never a caller preference): AnyNet
+    min-hop designs use the AnyNet profile, DOR_XY native meshes use the
+    native mesh profile, anything else is UNSUPPORTED. Raises
+    BookSimLoweringError for UNSUPPORTED fabrics.
+    """
+    if profile is None:
+        spec = select_booksim_profile(bundle)
+    else:
+        spec = profile_spec_for(BackendTarget.BOOKSIM_STANDALONE, profile)
+    semantics, lowerer, _spec = _BOOKSIM_PROFILES[
+        (BackendTarget.BOOKSIM_STANDALONE, spec.profile_id)]
     return lower_booksim_projection(
-        bundle, target=BackendTarget.BOOKSIM_STANDALONE, profile=profile,
-        semantics_version=BOOKSIM_BACKEND_SEMANTICS_VERSION,
-        lowerer_version=BOOKSIM_LOWERER_VERSION)
+        bundle, target=BackendTarget.BOOKSIM_STANDALONE,
+        profile=spec.profile_id,
+        semantics_version=semantics, lowerer_version=lowerer,
+        profile_spec=spec)
 
 
 def lower_booksim_projection(
         bundle: ResolvedFabricBundle, *, target: BackendTarget,
         profile: str, semantics_version: str,
-        lowerer_version: str) -> BackendConfigArtifact:
+        lowerer_version: str,
+        profile_spec: "BookSimCertifiedProfile | None" = None
+        ) -> BackendConfigArtifact:
     """The one BookSim fabric projection, parameterized by backend target.
 
     Standalone and embedded serving share every fabric-derived parameter;
@@ -316,6 +542,17 @@ def lower_booksim_projection(
         raise BookSimLoweringError(
             f"unsupported BookSim backend target {target.value}")
     serving = target is BackendTarget.SERVING_BOOKSIM2
+    spec = profile_spec if profile_spec is not None \
+        else profile_spec_for(target, profile)
+    if spec.profile_id != profile:
+        raise BookSimLoweringError(
+            f"profile spec {spec.profile_id!r} does not match the "
+            f"requested profile {profile!r}")
+    mesh = spec is MESH_PROFILE_SPEC
+    if mesh and serving:
+        raise BookSimLoweringError(
+            "the native mesh DOR profile is standalone-only; embedded "
+            "serving stays on its frozen AnyNet projection")
     try:
         bundle.revalidate()
     except ValueError as exc:
@@ -328,8 +565,21 @@ def lower_booksim_projection(
     pf, rb = bundle.packet_format, bundle.router_behavior
     ad, fabric = bundle.address_decode, bundle.fabric
 
-    selected = _selected_routing_class(bundle)
-    latency = _uniform_link_latency(bundle)
+    mesh_projection: NativeMeshProjection | None = None
+    if mesh:
+        mesh_projection = _native_mesh_projection(bundle)
+        selected = DOR_XY
+        vc_classes = {cls for _vc, cls in vc.vc_to_routing_class}
+        if vc_classes != {DOR_XY}:
+            raise BookSimLoweringError(
+                f"UNSUPPORTED: the native mesh profile executes "
+                f"dim_order_mesh for every VC, but VCs map to routing "
+                f"classes {sorted(vc_classes)}; per-VC routing-class "
+                f"separation is not representable")
+        latency = 1
+    else:
+        selected = _selected_routing_class(bundle)
+        latency = _uniform_link_latency(bundle)
     serving_flit_bytes = exact_flit_bytes(pf) if serving else None
 
     vc_class_exact, vc_class_reason = _vc_exactness(vc)
@@ -358,7 +608,10 @@ def lower_booksim_projection(
         ("read_request_end_vc", half - 1),
         ("routing_class", selected),
         ("routing_delay", rb.route_compute_cycles),
-        ("routing_function", "min"),
+        # One routing authority per profile: AnyNet's hop-count min over
+        # the rendered anynet graph, or KNCube's native DOR (dimension
+        # order, X then Y) whose executed table the route dump proves.
+        ("routing_function", "dim_order" if mesh else "min"),
         ("st_final_delay", rb.switch_traversal_cycles),
         ("st_prepare_delay", 0),
         ("sw_alloc_delay", rb.switch_alloc_cycles),
@@ -374,8 +627,10 @@ def lower_booksim_projection(
         ("write_request_begin_vc", 0),
         ("write_request_end_vc", half - 1),
     )
-    profile_spec = SERVING_PROFILE_SPEC if serving \
-        else STANDALONE_PROFILE_SPEC
+    if mesh_projection is not None:
+        fabric_params = fabric_params + (
+            ("k", mesh_projection.k), ("n", mesh_projection.n))
+    profile_spec = spec
     combined = dict(fabric_params)
     for name, value in profile_spec.pinned_values().items():
         if name in combined:
@@ -412,14 +667,61 @@ def lower_booksim_projection(
     pf_hash, rb_hash = pf.packet_format_hash(), rb.router_behavior_hash()
     ad_hash = ad.address_decode_hash()
 
+    topology_fields = (
+        (("topology_kind", "anynet"),
+         ("parse_back", "required before spawn") if not serving
+         else ("parse_back", "required at preparation"))
+        if not mesh else
+        (("topology_kind", "mesh"),
+         ("grid", f"{mesh_projection.k}x{mesh_projection.k}"),
+         ("parse_back", "native grid verified against TopologyArtifact "
+                        "before spawn"))
+    )
+    latency_fields = (
+        (("mesh_link_latency", 1),) if mesh
+        else (("anynet_link_weight", latency),)
+    )
+    latency_domain = (
+        "KNCube mesh links are exactly one cycle, matching the artifact"
+        if mesh else
+        "uniform channel latency >= 1 cycle only (AnyNet couples latency "
+        "and route cost)"
+    )
+    route_fields = (
+        (("routing_function", "dim_order"),
+         ("routing_class", selected),
+         ("route_evidence", ROUTE_DUMP_FILE)) if mesh else
+        (("routing_function", "min"),
+         ("routing_class", selected),
+         ("route_evidence", "no embedded route dump") if serving
+         else ("route_evidence", ROUTE_DUMP_FILE))
+    )
+    route_domain = (
+        "DOR_XY native dim_order_mesh; the executed first-hop table is "
+        "compared mechanically against the RouteArtifact"
+        if mesh else
+        "" if serving else
+        "ANYNET_MIN_HOPS with uniform unit-cost links; the executed "
+        "first-hop table is compared mechanically"
+    )
+    vc_routing_fields = (
+        (("routing_function", "dim_order"),) if mesh
+        else (("routing_function", "min"),)
+    )
+    vc_routing_domain = (
+        "all VCs map to the native DOR_XY routing class" if mesh
+        else "all VCs map to the selected ANYNET_MIN_HOPS class"
+    )
+
     bindings = (
         bind(SemanticDimension.TOPOLOGY_GRAPH, t_hash,
              RepresentationStatus.DERIVED_EXACT,
-             (("topology_kind", "anynet"),
-              ("parse_back", "required before spawn") if not serving
-              else ("parse_back", "required at preparation")),
+             topology_fields,
              domain="the full materialized router/channel graph "
-                    "(parallel channels already refused by lowering)"),
+                    "(parallel channels already refused by lowering)"
+             if not mesh else
+             "the exact k x k mesh grid KNCube builds (no wraparound, no "
+             "express links, no parallel channels, one terminal per router)"),
         bind(SemanticDimension.ENDPOINT_ATTACHMENT, a_hash,
              RepresentationStatus.EXACT,
              (("node_lines", att.endpoint_count),
@@ -432,28 +734,28 @@ def lower_booksim_projection(
                     "transfer one flit per cycle and no width-dependent "
                     "serialization/occupancy exists"),
         bind(SemanticDimension.CHANNEL_LATENCY, t_hash,
-             RepresentationStatus.EXACT,
-             (("anynet_link_weight", latency),),
-             domain="uniform channel latency >= 1 cycle only (AnyNet "
-                    "couples latency and route cost)"),
+             RepresentationStatus.DERIVED_EXACT if mesh
+             else RepresentationStatus.EXACT,
+             latency_fields,
+             domain=latency_domain),
         bind(SemanticDimension.ROUTE_WEIGHT, t_hash,
-             RepresentationStatus.EXACT, (("route_weight", 1),),
-             domain="every channel route_weight == 1 only"),
+             RepresentationStatus.BACKEND_IRRELEVANT if mesh
+             else RepresentationStatus.EXACT,
+             tuple() if mesh else (("route_weight", 1),),
+             reason="native dim_order_mesh routes topologically; channel "
+                    "route_weight is not read by the executed routing "
+                    "function" if mesh else "",
+             domain="" if mesh else "every channel route_weight == 1 only"),
         bind(SemanticDimension.ROUTE_REALIZATION, rra_hash,
              RepresentationStatus.UNREPRESENTABLE if serving
              else RepresentationStatus.EXACT,
-             (("routing_function", "min"),
-              ("routing_class", selected),
-              ("route_evidence", "no embedded route dump") if serving
-              else ("route_evidence", ROUTE_DUMP_FILE)),
+             route_fields,
              reason="the embedded BookSim frontend exposes no executed-route "
                     "dump; route execution is not proven for serving"
              if serving else "",
              effect=CertificationEffect.BLOCKS_EXACT_FABRIC
              if serving else None,
-             domain="" if serving else
-             "ANYNET_MIN_HOPS with uniform unit-cost links; the executed "
-             "first-hop table is compared mechanically"),
+             domain=route_domain),
         bind(SemanticDimension.VC_COUNT, vc_hash,
              RepresentationStatus.EXACT, (("num_vcs", vc.vc_count),),
              domain="all vc_count >= 1"),
@@ -466,8 +768,8 @@ def lower_booksim_projection(
              if vc_class_exact else ""),
         bind(SemanticDimension.VC_ROUTING_CLASS, vc_hash,
              RepresentationStatus.EXACT,
-             (("routing_function", "min"),),
-             domain="all VCs map to the selected ANYNET_MIN_HOPS class"),
+             vc_routing_fields,
+             domain=vc_routing_domain),
         bind(SemanticDimension.VC_TRANSITIONS, vc_hash,
              RepresentationStatus.EXACT if transitions_exact
              else RepresentationStatus.UNREPRESENTABLE,
@@ -642,9 +944,10 @@ def lower_booksim_projection(
     for key, _value in artifact.normalized_parameters:
         if key in _PROJECTION_ONLY_KEYS:
             continue
-        if key not in BOOKSIM_STANDALONE_OWNERSHIP:
+        if key not in profile_spec.ownership():
             raise BookSimLoweringError(
-                f"emitted parameter {key!r} has no ownership entry")
+                f"emitted parameter {key!r} has no ownership entry in "
+                f"profile {profile_spec.profile_id!r}")
     return artifact
 
 
@@ -668,12 +971,14 @@ def assert_canonical_booksim_projection(
         raise BookSimLoweringError(
             f"no canonical BookSim lowering for target "
             f"{config.backend_target.value}")
-    profile, semantics, lowerer = _EXPECTED_BOOKSIM_IDENTITY[
-        config.backend_target]
-    if config.backend_profile != profile:
+    entry = _BOOKSIM_PROFILES.get(
+        (config.backend_target, config.backend_profile))
+    if entry is None:
         raise BookSimLoweringError(
             f"noncanonical backend_profile {config.backend_profile!r}; "
-            f"{config.backend_target.value} requires {profile!r}")
+            f"{config.backend_target.value} certifies "
+            f"{sorted(p for t, p in _BOOKSIM_PROFILES if t is config.backend_target)}")
+    semantics, lowerer, spec = entry
     if config.backend_semantics_version != semantics:
         raise BookSimLoweringError(
             f"noncanonical backend_semantics_version "
@@ -691,8 +996,9 @@ def assert_canonical_booksim_projection(
             "config resolved_fabric_hash does not match the supplied "
             "bundle")
     expected = lower_booksim_projection(
-        bundle, target=config.backend_target, profile=profile,
-        semantics_version=semantics, lowerer_version=lowerer)
+        bundle, target=config.backend_target, profile=config.backend_profile,
+        semantics_version=semantics, lowerer_version=lowerer,
+        profile_spec=spec)
     actual_identity = config.identity_dict()
     expected_identity = expected.identity_dict()
     if actual_identity != expected_identity:
@@ -731,18 +1037,30 @@ def parse_booksim_config_values(text: str) -> dict[str, str]:
     return values
 
 
-def verify_rendered_profile_gates(rendered_values: dict[str, str]) -> None:
+def verify_rendered_profile_gates(
+        rendered_values: dict[str, str],
+        *, profile_id: str = BOOKSIM_STANDALONE_PROFILE) -> None:
     """Verify the exact bytes about to execute satisfy every site pin gate.
 
     The static source audit proves these gates make inactive backend
     source paths unreachable; this is the runtime half: the rendered
     config must actually hold them. Mechanism gates are declaration-only
-    here. No C++ source is scanned at runtime.
+    here. No C++ source is scanned at runtime. Each certified profile
+    declares which read sites are reachable for its topology dispatch.
     """
-    from .source_audit import (GATED_READ_SITES, SourceAuditError,
-                               verify_site_gates)
+    from .source_audit import (
+        GATED_READ_SITES, MESH_GATED_READ_SITES, SourceAuditError,
+        verify_site_gates,
+    )
+    if profile_id == BOOKSIM_MESH_DOR_PROFILE:
+        sites = MESH_GATED_READ_SITES
+    elif profile_id == BOOKSIM_STANDALONE_PROFILE:
+        sites = GATED_READ_SITES
+    else:
+        raise BookSimLoweringError(
+            f"no read-site gate table for profile {profile_id!r}")
     try:
-        verify_site_gates(GATED_READ_SITES, rendered_values)
+        verify_site_gates(sites, rendered_values)
     except SourceAuditError as exc:
         raise BookSimLoweringError(
             f"rendered config violates certified profile gates: {exc}"
@@ -911,9 +1229,17 @@ def render_booksim_standalone(
         raise BookSimLoweringError(
             f"seed must be a non-negative int or None, got {seed!r}")
 
+    spec = profile_spec_for(config.backend_target, config.backend_profile)
+    if spec is MESH_PROFILE_SPEC:
+        projection = _native_mesh_projection(bundle)
+        node_count = projection.node_count
+    else:
+        projection = None
+        node_count = bundle.attachment.endpoint_count
+
     summary = _scan_trace(
         workload_trace,
-        endpoint_count=bundle.attachment.endpoint_count,
+        endpoint_count=node_count,
         max_packet_flits=bundle.packet_format.max_packet_flits)
     sample_period = max(_SAMPLE_PERIOD_MIN,
                         summary.max_timestamp + 1 + _SAMPLE_PERIOD_MARGIN)
@@ -926,12 +1252,13 @@ def render_booksim_standalone(
             f"config is missing projection parameters {missing}")
 
     values: dict[str, Any] = {
-        "network_file": TOPOLOGY_FILE,
         "traffic": f"trace({WORKLOAD_FILE})",
         "sample_period": sample_period,
         "seed": _SEED_DEFAULT if seed is None else seed,
         "routing_dump_file": ROUTE_DUMP_FILE,
     }
+    if projection is None:
+        values["network_file"] = TOPOLOGY_FILE
     for key, value in config.normalized_parameters:
         if key in _PROJECTION_ONLY_KEYS:
             continue
@@ -939,20 +1266,23 @@ def render_booksim_standalone(
             raise BookSimLoweringError(
                 f"duplicate rendered parameter {key!r}")
         values[key] = value
-    unowned = set(values) - set(BOOKSIM_STANDALONE_OWNERSHIP)
+    ownership = spec.ownership()
+    unowned = set(values) - set(ownership)
     if unowned:
         raise BookSimLoweringError(
             f"rendered parameters without an owner: {sorted(unowned)}")
-    missing_keys = set(BOOKSIM_STANDALONE_OWNERSHIP) - set(values)
+    missing_keys = set(ownership) - set(values)
     if missing_keys:
         raise BookSimLoweringError(
             f"ownership table keys not rendered: {sorted(missing_keys)}")
 
     cfg_lines = [f"{key} = {_format_cfg_value(values[key])};"
-                 for key in BOOKSIM_CONFIG_KEY_ORDER]
+                 for key in profile_key_order(spec)]
     cfg = ("\n".join(cfg_lines) + "\n").encode()
-    files = ((CONFIG_FILE, cfg), (TOPOLOGY_FILE, _render_anynet(bundle)),
-             (WORKLOAD_FILE, workload_trace))
+    files: tuple[tuple[str, bytes], ...] = (
+        (CONFIG_FILE, cfg), (WORKLOAD_FILE, workload_trace))
+    if projection is None:
+        files = files + ((TOPOLOGY_FILE, _render_anynet(bundle)),)
     return RenderedBackend(files=tuple(sorted(files)),
                            sample_period=sample_period,
                            trace_summary=summary)
@@ -1005,7 +1335,7 @@ class PreparedBackend:
 def prepare_booksim_standalone(
         bundle: ResolvedFabricBundle, *, workload_trace: bytes,
         seed: int | None = None,
-        profile: str = BOOKSIM_STANDALONE_PROFILE) -> PreparedBackend:
+        profile: str | None = None) -> PreparedBackend:
     config = lower_booksim_standalone(bundle, profile=profile)
     rendered = render_booksim_standalone(
         bundle, config, workload_trace=workload_trace, seed=seed)
@@ -1202,6 +1532,45 @@ def verify_anynet_roundtrip(bundle: ResolvedFabricBundle,
 
 # ── executed-route proof ────────────────────────────────────────────────
 
+def verify_native_mesh_projection(bundle: ResolvedFabricBundle,
+                                  config: BackendConfigArtifact,
+                                  backend_dir: Path) -> dict[str, int]:
+    """Re-prove the native mesh realization immediately before spawn.
+
+    There is no rendered topology file for the mesh profile: KNCube
+    builds the grid from ``k``/``n``. So the proof is (a) the bundle
+    still satisfies the exact-grid gate, (b) the rendered config's k/n
+    equal the derived grid, and (c) every rendered input file still
+    hashes to its manifest record (the caller's next step).
+    """
+    projection = _native_mesh_projection(bundle)
+    values = parse_booksim_config_values(
+        (backend_dir / CONFIG_FILE).read_text())
+    if values.get("topology") != "mesh":
+        raise BackendMaterializationError(
+            f"rendered native mesh config declares topology "
+            f"{values.get('topology')!r}, expected 'mesh'")
+    if values.get("k") != str(projection.k) or \
+            values.get("n") != str(projection.n):
+        raise BackendMaterializationError(
+            f"rendered native mesh grid k={values.get('k')!r} "
+            f"n={values.get('n')!r} does not equal the derived "
+            f"{projection.k}x{projection.k} grid")
+    if values.get("routing_function") != "dim_order":
+        raise BackendMaterializationError(
+            f"rendered native mesh config declares routing_function "
+            f"{values.get('routing_function')!r}, expected 'dim_order'")
+    if values.get("routing_dump_file") != ROUTE_DUMP_FILE:
+        raise BackendMaterializationError(
+            "rendered native mesh config does not request the executed "
+            "route dump")
+    return {"routers": projection.router_count,
+            "nodes": projection.node_count,
+            "endpoints": len(projection.endpoint_to_node)}
+
+
+# ── executed-route proof ────────────────────────────────────────────────
+
 _DUMP_RE = re.compile(
     r"^src_router (\d+) dst_node (\d+) next_router (\d+) port (\d+)$")
 
@@ -1209,36 +1578,58 @@ _DUMP_RE = re.compile(
 def expected_route_table(bundle: ResolvedFabricBundle,
                          config: BackendConfigArtifact
                          ) -> dict[tuple[int, int], int]:
-    """Expected executed first-hop table: (router, endpoint) -> next router.
+    """Expected executed first-hop table: (router, dst_node) -> next router.
 
     Derived from RouteArtifact for the artifact's selected routing class
-    and every attached endpoint. This is the semantic expectation the
-    executed dump is compared against; exported so golden corpora can
-    pin it without executing the backend.
+    and the backend's OWN node universe:
+      * AnyNet: node ids are attached endpoint ids (the renderer assigns
+        them), so the table covers routers x attached endpoints;
+      * native mesh: node ids are BookSim router ids (k^n of them), so
+        the table covers the full router x node matrix — including
+        routers with no attached endpoint, which KNCube still routes to.
+
+    This is the semantic expectation the executed dump is compared
+    against; exported so golden corpora can pin it without executing the
+    backend.
     """
     selected = dict(config.normalized_parameters)["routing_class"]
-    endpoints = bundle.attachment.endpoints
-    e2r = dict(bundle.resolved_route.endpoint_to_router)
     channels = {c.channel_id: c for c in bundle.topology.channels}
     entries = bundle.router_route.entries
+    spec = profile_spec_for(config.backend_target, config.backend_profile)
     expected: dict[tuple[int, int], int] = {}
+
+    def expect(r: int, dst_router: int, node: int) -> None:
+        if r == dst_router:
+            expected[(r, node)] = r
+            return
+        key = (selected, r, dst_router)
+        if key not in entries:
+            raise BookSimRouteError(
+                f"RouteArtifact has no entry for {key!r}")
+        channel_id = entries[key]
+        if channel_id not in channels:
+            raise BookSimRouteError(
+                f"RouteArtifact ({selected},{r},{dst_router}) -> channel "
+                f"{channel_id} does not exist in this topology's channels "
+                f"— refusing a route artifact from another fabric")
+        channel = channels[channel_id]
+        if channel.src_router != r:
+            raise BookSimRouteError(
+                f"RouteArtifact ({selected},{r},{dst_router}) -> "
+                f"channel {channel.channel_id} leaves router "
+                f"{channel.src_router}, not {r}")
+        expected[(r, node)] = channel.dst_router
+
+    if spec is MESH_PROFILE_SPEC:
+        projection = _native_mesh_projection(bundle)
+        for r in range(projection.router_count):
+            for node in range(projection.node_count):
+                expect(r, node, node)
+        return expected
+    e2r = dict(bundle.resolved_route.endpoint_to_router)
     for r in range(bundle.topology.router_count):
-        for ep in endpoints:
-            dst_router = e2r[ep.endpoint_id]
-            if r == dst_router:
-                expected[(r, ep.endpoint_id)] = r
-                continue
-            key = (selected, r, dst_router)
-            if key not in entries:
-                raise BookSimRouteError(
-                    f"RouteArtifact has no entry for {key!r}")
-            channel = channels[entries[key]]
-            if channel.src_router != r:
-                raise BookSimRouteError(
-                    f"RouteArtifact ({selected},{r},{dst_router}) -> "
-                    f"channel {channel.channel_id} leaves router "
-                    f"{channel.src_router}, not {r}")
-            expected[(r, ep.endpoint_id)] = channel.dst_router
+        for ep in bundle.attachment.endpoints:
+            expect(r, e2r[ep.endpoint_id], ep.endpoint_id)
     return expected
 
 
@@ -1468,13 +1859,21 @@ def _execute_prepared(
 
     backend_dir = Path(run_dir) / "backend"
     materialize_backend(rendered, manifest, backend_dir)
-    verify_anynet_roundtrip(bundle, backend_dir / TOPOLOGY_FILE)
+    if config.backend_profile == BOOKSIM_STANDALONE_PROFILE:
+        verify_anynet_roundtrip(bundle, backend_dir / TOPOLOGY_FILE)
+    elif config.backend_profile == BOOKSIM_MESH_DOR_PROFILE:
+        verify_native_mesh_projection(bundle, config, backend_dir)
+    else:
+        raise BookSimLoweringError(
+            f"no pre-spawn projection verifier for profile "
+            f"{config.backend_profile!r}")
     # Re-verify the exact bytes the child is about to execute.
     verify_materialized(manifest, backend_dir)
     # Runtime half of the profile-gate proof: the exact rendered bytes must
     # satisfy every site pin gate before anything spawns.
     verify_rendered_profile_gates(parse_booksim_config_values(
-        (backend_dir / CONFIG_FILE).read_text()))
+        (backend_dir / CONFIG_FILE).read_text()),
+        profile_id=config.backend_profile)
 
     # B-FINAL.2: the executed-route output must be fresh output of THIS
     # attempt. A pre-existing routing.dump (e.g. from an earlier attempt
