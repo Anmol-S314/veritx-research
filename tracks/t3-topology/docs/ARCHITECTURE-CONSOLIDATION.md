@@ -203,6 +203,11 @@ backend     imports core + model + workload + verification gates
 application orchestrates everything
 ```
 
+The `core` line is the **TARGET law, not the literal current state**: five
+pre-existing legacy edges are allowlisted below. The other four lines are
+literal and enforced. Until slice 5 removes those five edges, "core imports
+nothing from the domain" must not be read as an achieved property.
+
 Five **pre-existing** `core -> domain` edges remain (legacy research stack):
 `comparison->workload.serve`, `doctor->model`, `experiment->model.presets`,
 `experiment_serving->workload.serve`, `spec->model.presets`. They are encoded

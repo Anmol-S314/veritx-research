@@ -144,16 +144,28 @@ class TestOracleIndependence:
         assert bad == [], bad
 
     def test_reference_module_does_not_import_production_artifacts(self):
-        """A reference implemented with production code is not a reference."""
-        offenders = [m for m in _imports(
-            PKG / "verification/reference_semantics.py")
-            if m.startswith(("veritx_dse.workload", "veritx_dse.model"))]
-        # lazy imports inside verifier FUNCTIONS are allowed (the verifier
-        # inspects an artifact); module-level production imports are not.
-        src = (PKG / "verification/reference_semantics.py").read_text()
-        head = src.split("def ", 1)[0]
-        module_level = [line for line in head.splitlines()
-                        if line.startswith(("import ", "from "))]
-        assert not any("workload" in line or "model" in line
-                       for line in module_level), module_level
-        _ = offenders
+        """A reference implemented with production code is not a reference.
+
+        AST, not text: only TRUE TOP-LEVEL import statements count. The
+        previous version scanned source text before the first ``def`` and
+        then discarded its own AST findings, so a module-level import
+        placed after the first function would have bypassed it.
+        Imports nested INSIDE a verifier function are allowed: the
+        verifier inspects an artifact, and the artifact must never be able
+        to import the reference back.
+        """
+        path = PKG / "verification/reference_semantics.py"
+        tree = ast.parse(path.read_text())
+        module_level: list[str] = []
+        for node in tree.body:  # top level ONLY
+            if isinstance(node, ast.Import):
+                module_level.extend(a.name for a in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                module_level.append(node.module or "")
+        assert module_level, "expected at least one module-level import"
+        offenders = [
+            m for m in module_level
+            if m.startswith(("veritx_dse.model", "veritx_dse.workload",
+                             "veritx_dse.backend", "veritx_dse.application"))
+        ]
+        assert offenders == [], offenders
