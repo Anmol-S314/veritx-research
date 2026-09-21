@@ -465,6 +465,100 @@ class TestGridStudyEndToEnd:
         assert result.selection_rationale
 
 
+# ── Fix 1: result identity binds evaluation provenance ───────────────────
+
+class TestResultIdBindsProvenance:
+    def _study(self):
+        base = _base()
+        defn = OptimizationDefinition(
+            domain=(DomainParam("link_width", (32, 128)),
+                    DomainParam("concentration", (1, 2))),
+            objectives=(Objective("latency", "MIN"),
+                          Objective("area", "MIN")),
+            constraints=(Constraint("latency", "<=", 600.0),),
+            method="grid")
+        return base, defn, Optimizer().optimize(
+            base, defn, FakeDeterministicEvaluator(seed=7))
+
+    def test_moves_with_performance_result_id(self):
+        """Equal rounded objectives + different authenticated evaluation
+        must hash differently."""
+        import dataclasses
+        _, _, result = self._study()
+        target = result.records[0]
+        swapped = dataclasses.replace(
+            target, performance_result_id="fake:deadbeefdeadbeef")
+        altered = dataclasses.replace(
+            result, records=tuple(
+                swapped if r.candidate_id == target.candidate_id else r
+                for r in result.records))
+        assert altered.result_id() != result.result_id()
+        # The richer internal object still projects into the frozen view.
+        jsonschema = pytest.importorskip("jsonschema")
+        schema = json.loads(
+            (DSE.parent.parent.parent / "contracts" / "srota" / "v1" /
+             "optimization.study.view.schema.json").read_text())
+        jsonschema.validate(altered.to_study_view(), schema)
+
+    def test_moves_with_flipped_requirement_verdict(self):
+        import dataclasses
+        _, _, result = self._study()
+        target = next(r for r in result.records if r.pareto_member)
+        flipped_details = tuple(
+            {**dict(d), "verdict": "VIOLATED",
+             "measured": float(dict(d)["required"]) + 100.0}
+            if dict(d)["verdict"] == "SATISFIED" else dict(d)
+            for d in target.requirement_details)
+        flipped = dataclasses.replace(
+            target, requirement_details=flipped_details,
+            constraint_verdicts={k: False
+                                 for k in target.constraint_verdicts},
+            all_binding_satisfied=False, pareto_member=False)
+        altered = dataclasses.replace(
+            result, records=tuple(
+                flipped if r.candidate_id == target.candidate_id else r
+                for r in result.records),
+            pareto_ids=tuple(p for p in result.pareto_ids
+                             if p != target.candidate_id),
+            selected_candidate_id=None,
+            selection_rationale="flipped in test")
+        assert altered.result_id() != result.result_id()
+
+    def test_moves_with_evaluation_status(self):
+        import dataclasses
+        _, _, result = self._study()
+        target = result.records[0]
+        failed = dataclasses.replace(
+            target, evaluation_status="EVALUATION_FAILED",
+            compilation_status="COMPILED",
+            objective_values={}, performance_result_id=None)
+        altered = dataclasses.replace(
+            result, records=tuple(
+                failed if r.candidate_id == target.candidate_id else r
+                for r in result.records))
+        assert altered.result_id() != result.result_id()
+
+    def test_records_bind_requirement_required_measured(self):
+        """Every evaluated record carries the auditable binding that
+        decided its fate."""
+        _, _, result = self._study()
+        for r in result.records:
+            if r.evaluation_status == "EVALUATED":
+                assert r.compilation_status == "COMPILED"
+                assert r.performance_result_id is not None
+                assert r.requirement_details, r.candidate_id
+                for d in r.requirement_details:
+                    assert set(d) == {"metric", "operator", "required",
+                                      "measured", "verdict"}
+                    assert d["required"] == pytest.approx(600.0)
+                    assert d["measured"] == pytest.approx(
+                        r.objective_values["latency"])
+                expect = all(
+                    dict(d)["verdict"] == "SATISFIED"
+                    for d in r.requirement_details)
+                assert r.all_binding_satisfied is expect
+
+
 # ── `veritx optimize` CLI ────────────────────────────────────────────────
 
 class TestOptimizeCli:
@@ -502,6 +596,33 @@ class TestOptimizeCli:
                                 "objective_values", "constraint_verdicts",
                                 "pareto_member"}
             assert row["locked_consequences"]["routing_classes"] == ["DOR_XY"]
+
+    def test_view_hashes_prefixed_engine_hashes_bare(self, tmp_path):
+        """Fix 2: every hash crossing into the study view is
+        sha256:-prefixed; engine objects stay bare."""
+        import argparse
+        from veritx_dse.cli.cli import cmd_optimize
+        from veritx_dse.core.logging import Ctx
+        study_out = tmp_path / "study.json"
+        ctx = Ctx(verbosity=0)
+        args = argparse.Namespace(
+            fixture=str(FIXTURE), search="grid", link_widths=None,
+            concentrations=None, latency_ceiling=None,
+            max_candidates=None, study_out=str(study_out))
+        cmd_optimize(ctx, args)
+        assert not ctx.failed
+        view = json.loads(study_out.read_text())
+        assert view["base_design_hash"].startswith("sha256:")
+        for row in view["candidates"]:
+            assert row["evaluation_ids"]["design_hash"].startswith(
+                "sha256:"), row["candidate_id"]
+        # Engine side stays bare: rebuild and check the records.
+        base = _base()
+        result = Optimizer().optimize(
+            base, _defn(), FakeDeterministicEvaluator(seed=7))
+        assert not result.base_design_hash.startswith("sha256:")
+        for r in result.records:
+            assert not r.design_hash.startswith("sha256:")
 
     def test_missing_fixture_fails_closed(self, tmp_path):
         import argparse

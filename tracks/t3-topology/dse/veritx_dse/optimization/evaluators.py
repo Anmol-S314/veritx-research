@@ -42,12 +42,18 @@ class EvaluationError(ValueError):
 
 @dataclass(frozen=True)
 class CandidateEvaluation:
-    """One candidate's evaluation outcome through a port."""
+    """One candidate's evaluation outcome through a port.
+
+    Hash boundary: engine values are bare digests (design_hash is the
+    bare CompileRequest identity); product views add any ``sha256:``
+    prefix at the view boundary only (see result.to_study_view).
+    """
     candidate_id: str
-    design_hash: str
-    status: str  # EVALUATED | COMPILE_FAILED | UNSUPPORTED
+    design_hash: str  # bare engine digest, never prefixed here
+    status: str  # evaluation status: EVALUATED | COMPILE_FAILED | UNSUPPORTED
     objective_values: dict[str, float]
     locked_consequences: dict[str, Any]
+    compilation_status: str = "COMPILED"  # FabricCompiler verdict
     error: str | None = None
     performance_result_id: str | None = None
 
@@ -140,6 +146,7 @@ class FakeDeterministicEvaluator:
                 status=comp.status,
                 objective_values={},
                 locked_consequences={},
+                compilation_status=comp.status,
                 error=comp.error,
                 performance_result_id=None,
             )
@@ -155,6 +162,7 @@ class FakeDeterministicEvaluator:
             status="EVALUATED",
             objective_values=objectives,
             locked_consequences=locked,
+            compilation_status="COMPILED",
             error=None,
             performance_result_id="fake:" + expected_hash[:16],
         )

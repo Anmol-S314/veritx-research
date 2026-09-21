@@ -26,22 +26,43 @@ from veritx_dse.core.artifact import content_id
 RESULT_DOMAIN = "veritx/optimization-result/v2"
 
 
+def _view_hash(bare: str) -> str:
+    """Engine bare digest -> product-view ``sha256:`` identity.
+
+    Idempotent: values that already carry the prefix pass through, so
+    the boundary never double-prefixes.
+    """
+    if bare.startswith("sha256:"):
+        return bare
+    return "sha256:" + bare
+
+
 class OptimizationResultError(ValueError):
     """Invalid optimization result state (fail-closed)."""
 
 
 @dataclass(frozen=True)
 class CandidateRecord:
-    """One evaluated candidate with verdicts and Pareto membership."""
+    """One evaluated candidate with verdicts and Pareto membership.
+
+    Binds the reason the candidate won or lost: compilation and
+    evaluation status, performance_result_id, per-requirement bindings
+    ({metric, operator, required, measured, verdict}), the
+    all-binding-satisfied flag, and the locked consequences. Engine
+    hashes stay bare; views prefix at the boundary.
+    """
     candidate_id: str
     guided_patch: dict[str, Any]
-    design_hash: str
+    design_hash: str  # bare engine digest, never prefixed here
     locked_consequences: dict[str, Any]
     evaluation_status: str
     objective_values: dict[str, float]
     constraint_verdicts: dict[str, bool | None]
     pareto_member: bool
     performance_result_id: str | None = None
+    compilation_status: str = "COMPILED"
+    requirement_details: tuple = ()
+    all_binding_satisfied: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -55,16 +76,36 @@ class OptimizationResult:
     selection_rationale: str | None
 
     def result_id(self) -> str:
+        # Binds evaluation provenance, not just rounded objectives: two
+        # authenticated evaluations with equal objective floats but
+        # different performance_result_id, status, requirement bindings
+        # or locked consequences hash differently. It must move when the
+        # evaluation provenance moves.
         rows = [{
             "candidate_id": r.candidate_id,
             "guided_patch": {k: r.guided_patch[k]
                              for k in sorted(r.guided_patch)},
             "design_hash": r.design_hash,
+            "evaluation_status": r.evaluation_status,
+            "compilation_status": r.compilation_status,
+            "performance_result_id": r.performance_result_id,
+            "locked_consequences": {
+                k: (sorted(v) if isinstance(v, list) else v)
+                for k, v in sorted(r.locked_consequences.items())},
             "objective_values": {k: r.objective_values[k]
                                  for k in sorted(r.objective_values)},
             "constraint_verdicts": {
                 k: (None if v is None else bool(v))
                 for k, v in sorted(r.constraint_verdicts.items())},
+            "requirement_details": [{
+                "metric": d.get("metric"),
+                "operator": d.get("operator"),
+                "required": d.get("required"),
+                "measured": d.get("measured"),
+                "verdict": d.get("verdict"),
+            } for d in sorted(r.requirement_details,
+                               key=lambda d: str(d.get("metric")))],
+            "all_binding_satisfied": r.all_binding_satisfied,
             "pareto_member": bool(r.pareto_member),
         } for r in sorted(self.records, key=lambda r: r.candidate_id)]
         return content_id(RESULT_DOMAIN, {
@@ -80,7 +121,8 @@ class OptimizationResult:
         defn = self.definition
         candidates = []
         for r in sorted(self.records, key=lambda r: r.candidate_id):
-            evaluations: dict[str, Any] = {"design_hash": r.design_hash}
+            evaluations: dict[str, Any] = {
+                "design_hash": _view_hash(r.design_hash)}
             evaluations["performance_result_id"] = r.performance_result_id
             candidates.append({
                 "candidate_id": r.candidate_id,
@@ -94,15 +136,15 @@ class OptimizationResult:
                     for k, v in r.constraint_verdicts.items()},
                 "pareto_member": bool(r.pareto_member),
             })
-        # Frozen view requires sha256:-prefixed identities; the
-        # in-memory result carries the bare CompileRequest design hash.
+        # ONE hash boundary (P1B rule): engine values are bare digests,
+        # product views are sha256:-prefixed, converted HERE only.
         # UNMEASURABLE verdicts (None) collapse to false here: the
         # view's constraint_verdicts is boolean-only (frozen schema),
         # and fail-closed means unmeasurable is never satisfied. The
         # full OptimizationResult retains the None distinction.
         return {
             "contract_version": 1,
-            "base_design_hash": "sha256:" + self.base_design_hash,
+            "base_design_hash": _view_hash(self.base_design_hash),
             "definition": {
                 "objectives": [o.metric for o in defn.objectives],
                 "constraints": [f"{c.metric}{c.op}{c.threshold:g}"
@@ -162,6 +204,23 @@ def _select(records: list[CandidateRecord], definition: Any,
     return winner.candidate_id, rationale
 
 
+def _requirement_details(verdict_docs: dict[str, Any]) -> tuple:
+    """Per-requirement bindings: {metric, operator, required, measured,
+    verdict}, canonical metric order. This is the auditable reason a
+    candidate passed or failed its bindings — and part of result_id."""
+    out = []
+    for metric in sorted(verdict_docs):
+        d = verdict_docs[metric] or {}
+        out.append({
+            "metric": metric,
+            "operator": d.get("operator"),
+            "required": d.get("bound"),
+            "measured": d.get("value"),
+            "verdict": d.get("verdict"),
+        })
+    return tuple(out)
+
+
 class Optimizer:
     """Deterministic optimize: search -> evaluate -> verdicts -> Pareto."""
 
@@ -196,14 +255,29 @@ class Optimizer:
                 verdicts = evaluate_all(definition.constraints,
                                         ev.objective_values)
             else:
-                verdicts = {"verdicts": {
-                    c.metric if hasattr(c, "metric") else c["metric"]:
-                    {"verdict": "UNMEASURABLE", "value": None}
-                    for c in (definition.constraints or [])},
+                # No measured values: every declared binding is
+                # UNMEASURABLE (never a pass), with its required bound
+                # still recorded so the refusal is auditable.
+                unmeasured = {}
+                for c in (definition.constraints or []):
+                    metric = c.metric if hasattr(c, "metric") else c["metric"]
+                    op = c.op if hasattr(c, "op") else c["op"]
+                    bound = (c.threshold if hasattr(c, "threshold")
+                             else c["threshold"])
+                    unmeasured[metric] = {
+                        "metric": metric, "operator": op,
+                        "bound": float(bound), "verdict": "UNMEASURABLE",
+                        "value": None,
+                        "reason": f"evaluation status {ev.status} — "
+                                  "no measured value"}
+                verdicts = {
+                    "verdicts": unmeasured,
                     "feasible": (None if definition.constraints else False)}
                 if not definition.constraints:
                     verdicts["feasible"] = False
             feasible = verdicts["feasible"]
+            details = _requirement_details(verdicts["verdicts"])
+            binding = feasible if isinstance(feasible, bool) else None
             pareto_member = False  # assigned after the frontier computes
             record = CandidateRecord(
                 candidate_id=cand.candidate_id,
@@ -218,6 +292,10 @@ class Optimizer:
                     for k, v in verdicts["verdicts"].items()},
                 pareto_member=pareto_member,
                 performance_result_id=ev.performance_result_id,
+                compilation_status=getattr(
+                    ev, "compilation_status", "COMPILED"),
+                requirement_details=details,
+                all_binding_satisfied=binding,
             )
             records.append(record)
             if ev.status == "EVALUATED" and feasible is True:
@@ -233,6 +311,9 @@ class Optimizer:
             constraint_verdicts=r.constraint_verdicts,
             pareto_member=(r.candidate_id in front_set),
             performance_result_id=r.performance_result_id,
+            compilation_status=r.compilation_status,
+            requirement_details=r.requirement_details,
+            all_binding_satisfied=r.all_binding_satisfied,
         ) for r in records]
         selected, rationale = _select(records, definition, front)
         return OptimizationResult(
