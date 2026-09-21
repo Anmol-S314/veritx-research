@@ -1,4 +1,4 @@
-"""veritx_dse.wavee.result — EventGraph + PerformanceResult (§65/§66/§74).
+"""veritx_dse.performance.result — EventGraph + PerformanceResult (§65/§66/§74).
 
 Identity DAG (direct parents, mechanically hashed):
 
@@ -20,18 +20,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from veritx_dse.wavee.metrics import (
+from veritx_dse.performance.metrics import (
     dependency_critical_path as compute_critical_path,
 )
-from veritx_dse.wavee.metrics import (
+from veritx_dse.performance.metrics import (
     latency_summary, request_latencies, resource_utilization,
 )
-from veritx_dse.wavee.model import fidelity_warning
-from veritx_dse.wavee.network import NetworkWindowBinding
-from veritx_dse.wavee.scheduler import (
+from veritx_dse.performance.model import fidelity_warning
+from veritx_dse.performance.network import NetworkWindowBinding
+from veritx_dse.performance.scheduler import (
     Schedule, ScheduledEvent, schedule_workload,
 )
-from veritx_dse.wavee.time import QTime
+from veritx_dse.core.time import QTime
 # The immutability layer is shared with Wave D: one implementation of
 # "frozen canonical value tree", not a second copy (AGENTS.md rule).
 from veritx_dse.core.artifact import (
@@ -43,8 +43,8 @@ def _freeze(self, name, value):  # noqa: ANN001
     raise AttributeError(
         f"{type(self).__name__} is immutable (Wave-E §11); construct a "
         f"new instance instead")
-from veritx_dse.wavee.workload import (
-    EVENT_NETWORK_TRAFFIC_WINDOW, WaveETemporalWorkload,
+from veritx_dse.performance.workload import (
+    EVENT_NETWORK_TRAFFIC_WINDOW, TemporalWorkload,
 )
 
 RESULT_SCHEMA_VERSION = 1
@@ -81,7 +81,7 @@ def _content_id(tag: str, body: dict[str, Any]) -> str:
     return content_id(tag, body)
 
 
-class WaveEEventGraph:
+class PerformanceEventGraph:
     """Validated temporal workload + model + optional network binding.
 
     Transitively immutable, like every other Wave-E/D artifact: the
@@ -95,7 +95,7 @@ class WaveEEventGraph:
 
     __setattr__ = _freeze
 
-    def __init__(self, *, workload: WaveETemporalWorkload,
+    def __init__(self, *, workload: TemporalWorkload,
                  network_binding: NetworkWindowBinding | None = None,
                  wave_d_chain: dict[str, Any] | None = None) -> None:
         object.__setattr__(self, "workload", workload)
@@ -147,7 +147,7 @@ class WaveEEventGraph:
                 if e.kind == EVENT_NETWORK_TRAFFIC_WINDOW}
 
 
-def build_performance_result(*, graph: WaveEEventGraph,
+def build_performance_result(*, graph: PerformanceEventGraph,
                              schedule: Schedule,
                              sensitivity: dict[str, Any] | None = None,
                              metrics_warning: str | None = None,
@@ -212,7 +212,7 @@ def build_performance_result(*, graph: WaveEEventGraph,
 
 
 def reverify_result(result_doc: dict[str, Any], *,
-                    workload: WaveETemporalWorkload) -> dict[str, Any]:
+                    workload: TemporalWorkload) -> dict[str, Any]:
     """§74/§133: re-derive EVERY exposed field and re-check identity.
 
     The verified workload + model + network binding are the authority:
@@ -262,7 +262,7 @@ def reverify_result(result_doc: dict[str, Any], *,
     chain_doc = result_doc["wave_d_chain"]
     if chain_doc is not None and not isinstance(chain_doc, dict):
         raise ResultError("wave_d_chain must be an object or null")
-    graph = WaveEEventGraph(workload=workload, network_binding=binding,
+    graph = PerformanceEventGraph(workload=workload, network_binding=binding,
                             wave_d_chain=chain_doc)
     if result_doc["event_graph_id"] != graph.event_graph_id():
         raise ResultError(
@@ -279,7 +279,7 @@ def reverify_result(result_doc: dict[str, Any], *,
         raise ResultError(
             "workload declares a NETWORK_TRAFFIC_WINDOW event but the "
             "result carries no network binding")
-    from veritx_dse.wavee.scheduler import (
+    from veritx_dse.performance.scheduler import (
     Schedule, ScheduledEvent, schedule_workload,
 )
     events = []
@@ -349,7 +349,7 @@ def reverify_result(result_doc: dict[str, Any], *,
             "classification (§64)")
     expected_sensitivity = None
     if result_doc["sensitivity"] is not None:
-        from veritx_dse.wavee.sensitivity import sensitivity_analysis
+        from veritx_dse.performance.sensitivity import sensitivity_analysis
         expected_sensitivity = sensitivity_analysis(
             workload, schedule, network_durations=graph.network_durations())
         if result_doc["sensitivity"] != expected_sensitivity:

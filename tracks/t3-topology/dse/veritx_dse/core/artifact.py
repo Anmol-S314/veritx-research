@@ -10,8 +10,9 @@ implementation of four rules:
 
 These rules were previously implemented three times
 (``waved/identity.py``, ``waved/immutable.py``, ``waved/strict.py``) plus a
-second content-id convention inside ``wavee/result.py``. The duplicates were
-behaviourally identical for plain JSON and subtly different for frozen
+second content-id convention inside ``performance/result.py`` (moved
+from ``wavee/`` in M5). The duplicates were behaviourally identical for
+plain JSON and subtly different for frozen
 containers — worse than merely redundant, because a hash that depends on the
 representation used to carry a value can be changed by changing the carrier.
 

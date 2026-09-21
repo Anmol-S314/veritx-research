@@ -23,29 +23,29 @@ from fractions import Fraction
 
 import pytest
 
-from veritx_dse.wavee.metrics import (
+from veritx_dse.performance.metrics import (
     dependency_critical_path, resource_utilization,
 )
-from veritx_dse.wavee.model import (
-    ClockDef, ResourceDef, WaveEPerformanceModel,
+from veritx_dse.performance.model import (
+    ClockDef, ResourceDef, PerformanceModel,
 )
-from veritx_dse.wavee.network import bind_network_window
-from veritx_dse.wavee.sensitivity import sensitivity_analysis
-from veritx_dse.wavee.result import (
-    WaveEEventGraph, build_performance_result, reverify_result,
+from veritx_dse.performance.network import bind_network_window
+from veritx_dse.performance.sensitivity import sensitivity_analysis
+from veritx_dse.performance.result import (
+    PerformanceEventGraph, build_performance_result, reverify_result,
 )
-from veritx_dse.wavee.scheduler import schedule_workload
-from veritx_dse.wavee.time import QTime
-from veritx_dse.wavee.workload import (
-    EVENT_NETWORK_TRAFFIC_WINDOW, WaveERequest, WaveETemporalEvent,
-    WaveETemporalWorkload,
+from veritx_dse.performance.scheduler import schedule_workload
+from veritx_dse.core.time import QTime
+from veritx_dse.performance.workload import (
+    EVENT_NETWORK_TRAFFIC_WINDOW, PerformanceRequest, TemporalEvent,
+    TemporalWorkload,
 )
 
 US = 10 ** 6
 
 
 def model(capacity=1, bandwidth=1200):
-    return WaveEPerformanceModel(
+    return PerformanceModel(
         clocks=(ClockDef("net", 10 ** 9),),
         resources=(ResourceDef("gpu.compute", "EXCLUSIVE", capacity=capacity),
                    ResourceDef("hbm", "BANDWIDTH",
@@ -55,17 +55,17 @@ def model(capacity=1, bandwidth=1200):
 
 
 def comp(eid, dur_us, deps=(), **kw):
-    return WaveETemporalEvent(eid, "COMPUTE", QTime(dur_us, US),
+    return TemporalEvent(eid, "COMPUTE", QTime(dur_us, US),
                               "gpu.compute", deps=tuple(deps), **kw)
 
 
 def net(eid="NET", deps=()):
-    return WaveETemporalEvent(eid, "NETWORK_TRAFFIC_WINDOW", QTime(0),
+    return TemporalEvent(eid, "NETWORK_TRAFFIC_WINDOW", QTime(0),
                               deps=tuple(deps))
 
 
 def _mem(eid, nbytes, deps=()):
-    return WaveETemporalEvent(eid, "MEMORY_READ", QTime(0), "hbm",
+    return TemporalEvent(eid, "MEMORY_READ", QTime(0), "hbm",
                               deps=tuple(deps), bytes_count=nbytes)
 
 
@@ -77,7 +77,7 @@ class TestDemoAComputeDominant:
     """§135.A: 2x compute matters; 2x network barely changes anything."""
 
     def test_derived_from_schedule(self):
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=model(),
             events=(comp("K", 4000), net(),
                     comp("TAIL", 1000, ("K", "NET"))),
@@ -107,7 +107,7 @@ class TestDemoBNetworkExposed:
     """§135.B: network acceleration materially changes makespan."""
 
     def test_derived_from_schedule(self):
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=model(),
             events=(net(), comp("TAIL", 1000, ("NET",))),
             wave_d_operation_ids=("op1",))
@@ -127,7 +127,7 @@ class TestDemoCOverlap:
     """§135.C: large network active time, mostly hidden by compute."""
 
     def test_derived_from_schedule(self):
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=model(),
             events=(comp("K1", 3000), net(deps=()),
                     comp("K2", 3000, ("K1",)),
@@ -155,10 +155,10 @@ class TestDemoCOverlap:
 
 class TestRequestMetrics:
     def test_two_requests_arrival_and_summary(self):
-        reqs = (WaveERequest("r1", QTime(0), completion_event_ids=("D1",)),
-                WaveERequest("r2", QTime(600, US),
+        reqs = (PerformanceRequest("r1", QTime(0), completion_event_ids=("D1",)),
+                PerformanceRequest("r2", QTime(600, US),
                              completion_event_ids=("D2",)))
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=model(capacity=1),
             events=(comp("P1", 2000, request_id="r1"),
                     comp("D1", 500, ("P1",), request_id="r1"),
@@ -166,7 +166,7 @@ class TestRequestMetrics:
                     comp("D2", 500, ("P2",), request_id="r2")),
             requests=reqs)
         s = schedule_workload(w)
-        from veritx_dse.wavee.metrics import latency_summary, request_latencies
+        from veritx_dse.performance.metrics import latency_summary, request_latencies
         rows = request_latencies(w, s)
         assert len(rows) == 2
         # §20 FIFO by earliest-ready across ALL events (not per-request):
@@ -183,9 +183,9 @@ class TestRequestMetrics:
         assert _frac(rows[1]["arrival"]) == Fraction(6, 10000)
 
     def test_ttft_requires_explicit_first_token(self):
-        req = (WaveERequest("r1", QTime(0), completion_event_ids=("D",),
+        req = (PerformanceRequest("r1", QTime(0), completion_event_ids=("D",),
                             first_token_event_id="T1"),)
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=model(),
             events=(comp("P", 2000, request_id="r1"),
                     comp("T1", 300, ("P",), request_id="r1"),
@@ -193,7 +193,7 @@ class TestRequestMetrics:
                     comp("D", 200, ("T2",), request_id="r1")),
             requests=req)
         s = schedule_workload(w)
-        from veritx_dse.wavee.metrics import request_latencies
+        from veritx_dse.performance.metrics import request_latencies
         rows = request_latencies(w, s)
         # TTFT = end of T1 (2.3ms) - arrival (0)
         assert _frac(rows[0]["first_token_latency"]) == Fraction(23, 10000)
@@ -210,7 +210,7 @@ class TestSensitivityCorrectness:
     """
 
     def _workload(self):
-        return WaveETemporalWorkload(
+        return TemporalWorkload(
             performance_model=model(),
             events=(comp("K", 3000), _mem("M", 1200),
                     comp("TAIL", 1000, ("K", "M"))))
@@ -226,7 +226,7 @@ class TestSensitivityCorrectness:
         assert _frac(out["exposed_memory"]) == Fraction(997, 1000)
 
     def test_network_window_perturbations_exist_and_scale(self):
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=model(),
             events=(net(), comp("TAIL", 1000, ("NET",))),
             wave_d_operation_ids=("op1",))
@@ -252,7 +252,7 @@ class TestSensitivityCorrectness:
     def test_perturb_model_changes_exactly_one_variable(self):
         """A counterfactual that also changes the memory authority is not
         a counterfactual."""
-        from veritx_dse.wavee.sensitivity import perturb_model
+        from veritx_dse.performance.sensitivity import perturb_model
         base = model()
         assert base.memory_source == "ANALYTICAL_BANDWIDTH"
         for factor in (Fraction(1, 2), Fraction(2)):
@@ -264,7 +264,7 @@ class TestSensitivityCorrectness:
             assert p.performance_model_id() != base.performance_model_id()
 
     def test_perturb_model_preserves_arbitration(self):
-        from veritx_dse.wavee.sensitivity import perturb_model
+        from veritx_dse.performance.sensitivity import perturb_model
         base = model()
         p = perturb_model(base, bandwidth_factor=Fraction(2))
         assert p.arbitration_exclusive == base.arbitration_exclusive
@@ -282,7 +282,7 @@ class TestScaling:
                 eid = f"e{layer}_{i}"
                 deps = (f"e{layer-1}_{i}",) if layer else ()
                 events.append(comp(eid, 10 + (i % 7), deps))
-        w = WaveETemporalWorkload(performance_model=model(capacity=4),
+        w = TemporalWorkload(performance_model=model(capacity=4),
                                   events=tuple(events))
         t0 = _time.perf_counter()
         s = schedule_workload(w)
@@ -303,7 +303,7 @@ class TestScaling:
         import time as _time
         n = 5000
         events = tuple(comp(f"e{i}", 1 + (i % 5)) for i in range(n))
-        w = WaveETemporalWorkload(performance_model=model(capacity=4),
+        w = TemporalWorkload(performance_model=model(capacity=4),
                                   events=events)
         t0 = _time.perf_counter()
         s = schedule_workload(w)
@@ -316,7 +316,7 @@ class TestScaling:
         import time as _time
         n = 20000
         events = tuple(_mem(f"m{i}", 120) for i in range(n))
-        w = WaveETemporalWorkload(performance_model=model(),
+        w = TemporalWorkload(performance_model=model(),
                                   events=events)
         t0 = _time.perf_counter()
         s = schedule_workload(w)
@@ -337,7 +337,7 @@ class TestRealBookSimE2E:
 
         sealed Wave-D semantics → prepare (conservation gates) →
         qualified BookSim execution → CertifiedBookSimEvidence →
-        bind_network_window (§42 provenance) → WaveEEventGraph →
+        bind_network_window (§42 provenance) → PerformanceEventGraph →
         deterministic schedule → verified performance result
 
     Every hash in the result's wave_d_chain / network_binding is the
@@ -358,10 +358,10 @@ class TestRealBookSimE2E:
         from veritx_dse.model.parallelism import ParallelismArtifact
         from veritx_dse.workload.semantics import WaveDWorkloadSemantics
         from veritx_dse.workload.traffic import PhysicalTrafficArtifact
-        from veritx_dse.wavee.network import (
+        from veritx_dse.performance.network import (
             WINDOW_KIND_BARRIER, bind_network_window,
         )
-        from veritx_dse.wavee.result import reverify_result
+        from veritx_dse.performance.result import reverify_result
 
         binary = find_booksim_bin(REPO_ROOT)
 
@@ -425,24 +425,24 @@ class TestRealBookSimE2E:
         assert window == QTime(stats["completion_time"], 10 ** 9)
 
         # ── 5) Wave-E event graph: NET ref + local compute tail ─────
-        model = WaveEPerformanceModel(
+        model = PerformanceModel(
             clocks=(ClockDef("net", 10 ** 9),),
             resources=(ResourceDef("gpu.compute", "EXCLUSIVE",
                                    capacity=1),),
             network_clock="net")
         events = (
-            WaveETemporalEvent(
+            TemporalEvent(
                 "NET", EVENT_NETWORK_TRAFFIC_WINDOW, QTime(0),
                 phase="DECODE", rank=0),
-            WaveETemporalEvent(
+            TemporalEvent(
                 "TAIL", "COMPUTE", QTime(500, 10 ** 6), "gpu.compute",
                 deps=("NET",), phase="DECODE", rank=0),
         )
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=model, events=events,
             wave_d_operation_ids=("p2p0",))
         # (provenance check runs in __init__: NET cites a declared op)
-        egraph = WaveEEventGraph(workload=w, network_binding=binding,
+        egraph = PerformanceEventGraph(workload=w, network_binding=binding,
                                  wave_d_chain=wd_chain)
 
         # ── 6) deterministic schedule over the REAL window ──────────

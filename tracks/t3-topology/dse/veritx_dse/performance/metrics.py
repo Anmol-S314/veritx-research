@@ -1,4 +1,4 @@
-"""veritx_dse.wavee.metrics — re-derived metrics from a schedule (§45/§46).
+"""veritx_dse.performance.metrics — re-derived metrics from a schedule (§45/§46).
 
 Every metric here is computed FROM a verified ``Schedule`` — never
 trusted from a persisted summary (§74). Definitions:
@@ -18,18 +18,18 @@ from __future__ import annotations
 from fractions import Fraction
 from typing import Any
 
-from veritx_dse.wavee.model import (
+from veritx_dse.performance.model import (
     RESOURCE_KIND_BANDWIDTH, RESOURCE_KIND_EXCLUSIVE,
-    WaveEPerformanceModel,
+    PerformanceModel,
 )
-from veritx_dse.wavee.scheduler import Schedule
-from veritx_dse.wavee.time import QTime
-from veritx_dse.wavee.workload import (
-    EVENT_NETWORK_TRAFFIC_WINDOW, WaveETemporalWorkload,
+from veritx_dse.performance.scheduler import Schedule
+from veritx_dse.core.time import QTime
+from veritx_dse.performance.workload import (
+    EVENT_NETWORK_TRAFFIC_WINDOW, TemporalWorkload,
 )
 
 
-def dependency_critical_path(workload: WaveETemporalWorkload,
+def dependency_critical_path(workload: TemporalWorkload,
                              schedule: Schedule,
                              ) -> tuple[tuple[str, ...], QTime]:
     """Longest EXPLICIT dependency chain under scheduled durations (§45).
@@ -87,7 +87,7 @@ def dependency_critical_path(workload: WaveETemporalWorkload,
     return best_path, QTime(best_len)
 
 
-def resource_utilization(workload: WaveETemporalWorkload,
+def resource_utilization(workload: TemporalWorkload,
                          schedule: Schedule) -> dict[str, dict[str, Any]]:
     """§46: exact utilization per resource over the makespan window."""
     model = workload.performance_model
@@ -150,7 +150,7 @@ def resource_utilization(workload: WaveETemporalWorkload,
     return out
 
 
-def request_latencies(workload: WaveETemporalWorkload,
+def request_latencies(workload: TemporalWorkload,
                       schedule: Schedule) -> list[dict[str, Any]]:
     """§53: latency = completion - arrival per explicit request.
 

@@ -26,11 +26,11 @@ sys.path.insert(0, str(DSE))
 from veritx_dse.application.waved_resources import (  # noqa: E402
     CHAIN_SCHEMA_VERSION_V2, PLAN_CHAIN_KEYS_V2,
 )
-from veritx_dse.wavee.network import (  # noqa: E402
+from veritx_dse.performance.network import (  # noqa: E402
     NETWORK_BINDING_SCHEMA_VERSION_V1, NETWORK_BINDING_SCHEMA_VERSION_V2,
     NetworkWindowBinding, bind_network_window,
 )
-from veritx_dse.wavee.time import TimeError  # noqa: E402
+from veritx_dse.core.time import TimeError  # noqa: E402
 
 
 def _v1_binding() -> dict:

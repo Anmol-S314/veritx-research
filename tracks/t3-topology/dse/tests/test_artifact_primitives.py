@@ -260,7 +260,7 @@ class TestNoSecondImplementation:
 
     def test_wavee_content_id_is_delegation_not_duplication(self):
         import inspect
-        from veritx_dse.wavee import result as wavee_result
+        from veritx_dse.performance import result as wavee_result
         src = inspect.getsource(wavee_result._content_id)
         assert "core.artifact" in src or "content_id" in src
         assert "json.dumps" not in src

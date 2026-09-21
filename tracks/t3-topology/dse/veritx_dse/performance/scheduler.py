@@ -1,4 +1,4 @@
-"""veritx_dse.wavee.scheduler — deterministic discrete-event scheduler (§33/§34).
+"""veritx_dse.performance.scheduler — deterministic discrete-event scheduler (§33/§34).
 
 One authoritative scheduler. Event boundaries are dependency
 completions, resource releases, bandwidth completions, and future
@@ -37,15 +37,15 @@ import heapq
 from fractions import Fraction
 from typing import Any
 
-from veritx_dse.wavee.model import (
+from veritx_dse.performance.model import (
     ARBITRATION_EQUAL_SHARE, ARBITRATION_FIFO,
     RESOURCE_KIND_BANDWIDTH, RESOURCE_KIND_EXCLUSIVE,
-    WaveEPerformanceModel,
+    PerformanceModel,
 )
-from veritx_dse.wavee.time import QTime, TimeError
-from veritx_dse.wavee.workload import (
-    EVENT_NETWORK_TRAFFIC_WINDOW, MEMORY_KINDS, WaveETemporalEvent,
-    WaveETemporalWorkload,
+from veritx_dse.core.time import QTime, TimeError
+from veritx_dse.performance.workload import (
+    EVENT_NETWORK_TRAFFIC_WINDOW, MEMORY_KINDS, TemporalEvent,
+    TemporalWorkload,
 )
 
 
@@ -145,7 +145,7 @@ class Schedule:
         return {"events": [s.to_dict() for s in self.events]}
 
 
-def _duration_of(e: WaveETemporalEvent, model: WaveEPerformanceModel
+def _duration_of(e: TemporalEvent, model: PerformanceModel
                  ) -> QTime:
     """Duration under the model's declared timing sources (§22).
 
@@ -157,7 +157,7 @@ def _duration_of(e: WaveETemporalEvent, model: WaveEPerformanceModel
     """
     if model.memory_source == "ANALYTICAL_BANDWIDTH" and \
             e.kind in MEMORY_KINDS and e.resource is not None:
-        from veritx_dse.wavee.model import rate_duration
+        from veritx_dse.performance.model import rate_duration
         rdef = model.resource(e.resource)
         if rdef.kind == RESOURCE_KIND_BANDWIDTH:
             return QTime(rate_duration(e.bytes_count or 0,
@@ -165,7 +165,7 @@ def _duration_of(e: WaveETemporalEvent, model: WaveEPerformanceModel
     return e.duration
 
 
-def schedule_workload(workload: WaveETemporalWorkload, *,
+def schedule_workload(workload: TemporalWorkload, *,
                       network_durations: dict[str, QTime] | None = None
                       ) -> Schedule:
     """Deterministic earliest-start schedule under model policies.

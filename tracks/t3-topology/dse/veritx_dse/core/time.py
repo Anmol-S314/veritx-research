@@ -1,4 +1,4 @@
-"""veritx_dse.wavee.time — canonical exact rational time (§12/§13/§86/§87).
+"""veritx_dse.core.time — canonical exact rational time (§12/§13/§86/§87).
 
 Wave E never mixes GPU cycles, BookSim cycles, and seconds as if they
 were interchangeable. The canonical scheduler time is an exact rational

@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from veritx_dse.core.runs import new_run_id
-from veritx_dse.wavee.workload import EVENT_NETWORK_TRAFFIC_WINDOW
+from veritx_dse.performance.workload import EVENT_NETWORK_TRAFFIC_WINDOW
 
 from .compile import compile_bundle
 from .comparison import (
@@ -996,8 +996,8 @@ class SrotaControlPlane:
         window_events = [e.event_id for e in workload.events
                          if e.kind == EVENT_NETWORK_TRAFFIC_WINDOW]
         if wave_e_extra is not None and window_events:
-            from veritx_dse.wavee.model import NETWORK_TIMING_BOOKSIM
-            from veritx_dse.wavee.network import (
+            from veritx_dse.performance.model import NETWORK_TIMING_BOOKSIM
+            from veritx_dse.performance.network import (
                 NetworkWindowBinding, bind_network_window,
             )
             run_evidence = wave_e_extra["_wave_e_evidence"]
@@ -1039,11 +1039,11 @@ class SrotaControlPlane:
                 if e.kind == EVENT_NETWORK_TRAFFIC_WINDOW}
 
         # ── deterministic schedule over verified inputs ─────────────
-        from veritx_dse.wavee.result import (
-            WaveEEventGraph, build_performance_result,
+        from veritx_dse.performance.result import (
+            PerformanceEventGraph, build_performance_result,
         )
-        from veritx_dse.wavee.scheduler import schedule_workload
-        egraph = WaveEEventGraph(
+        from veritx_dse.performance.scheduler import schedule_workload
+        egraph = PerformanceEventGraph(
             workload=workload,
             network_binding=(NetworkWindowBinding.from_dict(
                 net_binding_doc) if net_binding_doc else None),

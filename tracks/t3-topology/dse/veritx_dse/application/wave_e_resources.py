@@ -10,7 +10,7 @@ semantic revalidation. Raw ``store.get()`` is inspection-only.
 
 The store carries:
 
-    waveeworkload   WaveETemporalWorkload (model content + events +
+    waveeworkload   TemporalWorkload (model content + events +
                     requests + declared Wave-D operation ids)
 
 A Wave-E performance result is NOT a separate loose resource: it rides
@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from veritx_dse.wavee.workload import WaveETemporalWorkload
+from veritx_dse.performance.workload import TemporalWorkload
 
 from .errors import ControlPlaneError, ErrorCode
 from .resources import RESOURCE_SCHEMA_VERSION, check_envelope
@@ -58,15 +58,15 @@ def _record(kind: str, resource_id: str,
     }
 
 
-def wave_e_workload_record(art: WaveETemporalWorkload) -> dict[str, Any]:
+def wave_e_workload_record(art: TemporalWorkload) -> dict[str, Any]:
     return _record("waveeworkload", art.temporal_workload_id(), art.to_dict())
 
 
 # ── load side (verified) ─────────────────────────────────────────────────
 
 def load_verified_wave_e_workload(store: Any, workload_id: str
-                                  ) -> WaveETemporalWorkload:
-    """Load and re-verify a persisted WaveETemporalWorkload.
+                                  ) -> TemporalWorkload:
+    """Load and re-verify a persisted TemporalWorkload.
 
     Envelope check, filename/embedded/recomputed ID agreement, semantic
     revalidation (constructor laws run again), and identity stability.
@@ -98,7 +98,7 @@ def load_verified_wave_e_workload(store: Any, workload_id: str
             f"waveeworkload {workload_id} artifact is not a mapping",
             operation="verify_resource", resource_id=workload_id)
     try:
-        workload = WaveETemporalWorkload.from_dict(artifact)
+        workload = TemporalWorkload.from_dict(artifact)
     except Exception as exc:
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
@@ -115,7 +115,7 @@ def load_verified_wave_e_workload(store: Any, workload_id: str
     return workload
 
 
-def wave_e_result_block(*, workload: WaveETemporalWorkload,
+def wave_e_result_block(*, workload: TemporalWorkload,
                         performance_result: dict[str, Any],
                         wave_d_chain: dict[str, Any] | None,
                         metrics_warning: str) -> dict[str, Any]:
@@ -152,7 +152,7 @@ def wave_e_result_block(*, workload: WaveETemporalWorkload,
 
 def wave_e_metrics_warning(model: Any) -> str:
     """Fidelity classification (delegates to the model layer)."""
-    from veritx_dse.wavee.model import fidelity_warning
+    from veritx_dse.performance.model import fidelity_warning
     return fidelity_warning(model)
 
 
@@ -217,7 +217,7 @@ def verify_wave_e_result_block(
             operation="verify_result", resource_id=result_id)
     # 4. Wave-D provenance (§71): timing never replaces communication,
     #    and the timing block may not cite a DIFFERENT valid chain.
-    from veritx_dse.wavee.network import (
+    from veritx_dse.performance.network import (
         NETWORK_BINDING_SCHEMA_VERSION_V1, NETWORK_BINDING_SCHEMA_VERSION_V2,
     )
     from .waved_resources import (
@@ -258,7 +258,7 @@ def verify_wave_e_result_block(
                 f"communication provenance",
                 operation="verify_result", resource_id=result_id)
     # 5. Network binding: THIS run's evidence, chain, clock, kind.
-    from veritx_dse.wavee.network import (
+    from veritx_dse.performance.network import (
         WINDOW_KIND_BARRIER, NetworkWindowBinding, stats_sha256,
     )
     binding = wave_e.get("network_binding")
@@ -385,9 +385,9 @@ def verify_wave_e_result_block(
                 f"binding's duration ({rebuilt.duration.to_dict()!r})",
                 operation="verify_result", resource_id=result_id)
     # 6. Re-run the schedule from verified inputs and compare summaries.
-    from veritx_dse.wavee.result import WaveEEventGraph
-    from veritx_dse.wavee.scheduler import schedule_workload
-    egraph = WaveEEventGraph(workload=workload, network_binding=rebuilt,
+    from veritx_dse.performance.result import PerformanceEventGraph
+    from veritx_dse.performance.scheduler import schedule_workload
+    egraph = PerformanceEventGraph(workload=workload, network_binding=rebuilt,
                              wave_d_chain=dict(plan_wave_d))
     try:
         schedule = schedule_workload(

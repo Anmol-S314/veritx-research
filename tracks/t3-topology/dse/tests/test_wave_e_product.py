@@ -29,38 +29,38 @@ from veritx_dse.application.results import load_verified_result  # noqa: E402
 from veritx_dse.application.wave_e_resources import (  # noqa: E402
     load_verified_wave_e_workload,
 )
-from veritx_dse.wavee.model import (  # noqa: E402
-    ClockDef, ResourceDef, WaveEPerformanceModel,
+from veritx_dse.performance.model import (  # noqa: E402
+    ClockDef, ResourceDef, PerformanceModel,
 )
-from veritx_dse.wavee.scheduler import schedule_workload  # noqa: E402
-from veritx_dse.wavee.time import QTime  # noqa: E402
-from veritx_dse.wavee.workload import (  # noqa: E402
-    EVENT_NETWORK_TRAFFIC_WINDOW, WaveETemporalEvent,
-    WaveETemporalWorkload,
+from veritx_dse.performance.scheduler import schedule_workload  # noqa: E402
+from veritx_dse.core.time import QTime  # noqa: E402
+from veritx_dse.performance.workload import (  # noqa: E402
+    EVENT_NETWORK_TRAFFIC_WINDOW, TemporalEvent,
+    TemporalWorkload,
 )
 
 REPO = DSE.parents[2]
 
 
 def _wave_e_workload(compute_ms: int = 1, *, clock_hz: int = 10 ** 9
-                     ) -> WaveETemporalWorkload:
+                     ) -> TemporalWorkload:
     """One network window + an explicit compute tail on gpu.compute.
 
     The NETWORK_TRAFFIC_WINDOW event covers the WHOLE Wave-D traffic
     artifact (BookSim exposes one global completion window); its
     duration comes only from the evidence seam at evaluation time.
     """
-    model = WaveEPerformanceModel(
+    model = PerformanceModel(
         clocks=(ClockDef("net", clock_hz),),
         resources=(ResourceDef("gpu.compute", "EXCLUSIVE", capacity=1),),
         network_clock="net")
-    return WaveETemporalWorkload(
+    return TemporalWorkload(
         performance_model=model,
         events=(
-            WaveETemporalEvent(
+            TemporalEvent(
                 "NET", EVENT_NETWORK_TRAFFIC_WINDOW, QTime(0),
                 phase="DECODE", rank=0),
-            WaveETemporalEvent(
+            TemporalEvent(
                 "TAIL", "COMPUTE", QTime(compute_ms, 1000), "gpu.compute",
                 deps=("NET",), phase="DECODE", rank=0),
         ),
@@ -184,8 +184,8 @@ class TestProductEvaluation:
 
     def test_wave_e_result_survives_persistence(self, cp, tmp_path):
         """Store roundtrip: workload + persisted binding re-derive it."""
-        from veritx_dse.wavee.network import NetworkWindowBinding
-        from veritx_dse.wavee.result import WaveEEventGraph
+        from veritx_dse.performance.network import NetworkWindowBinding
+        from veritx_dse.performance.result import PerformanceEventGraph
         we = _wave_e_workload()
         result = cp.evaluate(_intent(name="we-persist", wave_e=we))
         wid = result["wave_e"]["temporal_workload_id"]
@@ -195,7 +195,7 @@ class TestProductEvaluation:
         # binding; re-running the schedule over both must reproduce it
         binding = NetworkWindowBinding.from_dict(
             result["wave_e"]["network_binding"])
-        graph = WaveEEventGraph(
+        graph = PerformanceEventGraph(
             workload=loaded, network_binding=binding,
             wave_d_chain=result["wave_e"]["wave_d_chain"])
         s = schedule_workload(
@@ -397,16 +397,16 @@ class TestWaveEProvenanceBinding:
 
     def test_overlay_citing_foreign_operation_refuses(self, cp):
         """An overlay may only schedule communication this workload does."""
-        from veritx_dse.wavee.workload import (
-            EVENT_NETWORK_OPERATION_REF, WaveETemporalEvent,
-            WaveETemporalWorkload,
+        from veritx_dse.performance.workload import (
+            EVENT_NETWORK_OPERATION_REF, TemporalEvent,
+            TemporalWorkload,
         )
         we = _wave_e_workload()
         # A local compute event may cite a Wave-D operation id; an
         # overlay that cites one this workload does not perform refuses.
-        foreign = WaveETemporalWorkload(
+        foreign = TemporalWorkload(
             performance_model=we.performance_model,
-            events=(WaveETemporalEvent(
+            events=(TemporalEvent(
                 "K", "COMPUTE", QTime(1, 1000), "gpu.compute",
                 wave_d_operation_id="not-an-op", phase="DECODE",
                 rank=0),),
@@ -436,9 +436,9 @@ class TestAggregateNetworkWindow:
     def test_pure_compute_overlay_claims_no_network_window(self, cp):
         """No window event => the timing block claims no network time."""
         we = _wave_e_workload()
-        pure = WaveETemporalWorkload(
+        pure = TemporalWorkload(
             performance_model=we.performance_model,
-            events=(WaveETemporalEvent("K", "COMPUTE", QTime(1, 1000),
+            events=(TemporalEvent("K", "COMPUTE", QTime(1, 1000),
                                        "gpu.compute", phase="DECODE",
                                        rank=0),))
         r = cp.evaluate(_intent(name="agg-pure", wave_e=pure))

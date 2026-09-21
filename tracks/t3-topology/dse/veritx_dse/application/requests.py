@@ -66,7 +66,7 @@ class WorkloadRef:
       operations are the ground truth and ``wave_d.workload_id()`` is
       the content digest. The BookSim trace is DERIVED from it.
     * optional Wave-E temporal overlay (``wave_e``): an explicit
-      WaveETemporalWorkload layered OVER a Wave-D workload — it adds
+      TemporalWorkload layered OVER a Wave-D workload — it adds
       WHEN (events/resources/requests) but owns no communication
       semantics (§8: never retrofit compute into Wave D).
 
@@ -79,7 +79,7 @@ class WorkloadRef:
     trace_file: str | None = None
     trace_sha256: str | None = None
     wave_d: Any = None          # WaveDWorkload | None
-    wave_e: Any = None          # WaveETemporalWorkload | None
+    wave_e: Any = None          # TemporalWorkload | None
 
     @property
     def workload_kind(self) -> str:
@@ -161,11 +161,11 @@ class Intent:
                 "operations": [op.to_dict() for op in w.operations],
             }
         if self.workload.wave_e is not None:
-            from veritx_dse.wavee.workload import WaveETemporalWorkload
+            from veritx_dse.performance.workload import TemporalWorkload
             we = self.workload.wave_e
-            if not isinstance(we, WaveETemporalWorkload):
+            if not isinstance(we, TemporalWorkload):
                 raise ValueError(
-                    "workload.wave_e must be a WaveETemporalWorkload")
+                    "workload.wave_e must be a TemporalWorkload")
             workload["wave_e"] = we.to_dict()
         d["workload"] = workload
         return d
@@ -220,9 +220,9 @@ class Intent:
                         "intent.workload.wave_e requires workload.wave_d: "
                         "a temporal overlay extends Wave-D semantics, it "
                         "never replaces them (§8)")
-                from veritx_dse.wavee.workload import WaveETemporalWorkload
+                from veritx_dse.performance.workload import TemporalWorkload
                 try:
-                    wave_e = WaveETemporalWorkload.from_dict(wave_e_doc)
+                    wave_e = TemporalWorkload.from_dict(wave_e_doc)
                 except Exception as exc:
                     raise ValueError(
                         f"intent.workload.wave_e does not parse: {exc}") \

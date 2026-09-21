@@ -1,4 +1,4 @@
-"""veritx_dse.wavee.workload — temporal overlay + event graph (§14–§17).
+"""veritx_dse.performance.workload — temporal overlay + event graph (§14–§17).
 
 Wave E does **not** add COMPUTE/KV timing to sealed Wave-D semantics
 (§8). The overlay *references* Wave-D operations by id and declares
@@ -26,11 +26,11 @@ def _freeze(self, name: str, value: object) -> None:
 from fractions import Fraction
 from typing import Any
 
-from veritx_dse.wavee.model import (
+from veritx_dse.performance.model import (
     RESOURCE_KIND_BANDWIDTH, RESOURCE_KIND_EXCLUSIVE,
-    WaveEPerformanceModel,
+    PerformanceModel,
 )
-from veritx_dse.wavee.time import QTime
+from veritx_dse.core.time import QTime
 
 SCHEMA_VERSION = 1
 _TAG = "srota/wavee/temporal-workload/v1"
@@ -66,7 +66,7 @@ class WorkloadError(Exception):
         self.message = message
 
 
-class WaveERequest:
+class PerformanceRequest:
     """Explicit request grouping (§52). Never inferred from packets.
 
     ``request_id`` is the identity the scheduler keys release times by, so
@@ -117,7 +117,7 @@ class WaveERequest:
         return d
 
     @staticmethod
-    def from_dict(d: Any) -> "WaveERequest":
+    def from_dict(d: Any) -> "PerformanceRequest":
         required = {"request_id", "arrival", "root_event_ids",
                     "completion_event_ids"}
         allowed = required | {"first_token_event_id"}
@@ -128,14 +128,14 @@ class WaveERequest:
             raise WorkloadError(
                 f"request has unknown fields {unknown}; the request schema "
                 f"is closed")
-        return WaveERequest(
+        return PerformanceRequest(
             request_id=d["request_id"], arrival=QTime.from_dict(d["arrival"]),
             root_event_ids=tuple(d["root_event_ids"]),
             completion_event_ids=tuple(d["completion_event_ids"]),
             first_token_event_id=d.get("first_token_event_id"))
 
 
-class WaveETemporalEvent:
+class TemporalEvent:
     """One local/communication event with provenance (§15)."""
 
     __slots__ = ("event_id", "kind", "duration", "resource", "deps",
@@ -241,7 +241,7 @@ class WaveETemporalEvent:
         return d
 
     @staticmethod
-    def from_dict(d: Any) -> "WaveETemporalEvent":
+    def from_dict(d: Any) -> "TemporalEvent":
         required = {"event_id", "kind", "duration", "deps"}
         allowed = required | {"resource", "phase", "rank", "step",
                               "request_id", "wave_d_operation_id",
@@ -253,7 +253,7 @@ class WaveETemporalEvent:
             raise WorkloadError(
                 f"event {d.get('event_id')!r} has unknown fields {unknown}; "
                 f"the event schema is closed")
-        return WaveETemporalEvent(
+        return TemporalEvent(
             event_id=d["event_id"], kind=d["kind"],
             duration=QTime.from_dict(d["duration"]),
             resource=d.get("resource"), deps=tuple(d["deps"]),
@@ -264,8 +264,8 @@ class WaveETemporalEvent:
             is_first_token=bool(d.get("is_first_token", False)))
 
 
-def canonical_events(events: tuple[WaveETemporalEvent, ...]
-                     ) -> tuple[WaveETemporalEvent, ...]:
+def canonical_events(events: tuple[TemporalEvent, ...]
+                     ) -> tuple[TemporalEvent, ...]:
     """Semantic canonical order: (rank, step, event_id).
 
     Declaration order is nonsemantic (§77): identity and scheduling
@@ -279,7 +279,7 @@ def canonical_events(events: tuple[WaveETemporalEvent, ...]
                                                e.event_id)))
 
 
-class WaveETemporalWorkload:
+class TemporalWorkload:
     """Immutable event graph + explicit requests, bound to a model."""
 
     __slots__ = ("performance_model", "events", "requests", "_id",
@@ -287,11 +287,11 @@ class WaveETemporalWorkload:
 
     __setattr__ = _freeze
 
-    def __init__(self, *, performance_model: WaveEPerformanceModel,
-                 events: tuple[WaveETemporalEvent, ...],
-                 requests: tuple[WaveERequest, ...] = (),
+    def __init__(self, *, performance_model: PerformanceModel,
+                 events: tuple[TemporalEvent, ...],
+                 requests: tuple[PerformanceRequest, ...] = (),
                  wave_d_operation_ids: tuple[str, ...] = ()) -> None:
-        if not isinstance(performance_model, WaveEPerformanceModel):
+        if not isinstance(performance_model, PerformanceModel):
             raise WorkloadError("performance_model required")
         if not events:
             # A temporal overlay with nothing to schedule would report a
@@ -469,7 +469,7 @@ class WaveETemporalWorkload:
         """The Wave-D operation ids this overlay claims to schedule."""
         return self._wave_d_operation_ids
 
-    def event(self, event_id: str) -> WaveETemporalEvent:
+    def event(self, event_id: str) -> TemporalEvent:
         for e in self.events:
             if e.event_id == event_id:
                 return e
@@ -480,7 +480,7 @@ class WaveETemporalWorkload:
         return self.canonical()
 
     @staticmethod
-    def from_dict(d: Any) -> "WaveETemporalWorkload":
+    def from_dict(d: Any) -> "TemporalWorkload":
         if not isinstance(d, dict):
             raise WorkloadError("temporal workload must be a dict")
         allowed = {"schema_version", "performance_model", "events",
@@ -491,9 +491,9 @@ class WaveETemporalWorkload:
                 f"got {sorted(d)}")
         if d["schema_version"] != SCHEMA_VERSION:
             raise WorkloadError(f"schema_version must be {SCHEMA_VERSION}")
-        model = WaveEPerformanceModel.from_dict(d["performance_model"])
-        events = tuple(WaveETemporalEvent.from_dict(e) for e in d["events"])
-        requests = tuple(WaveERequest.from_dict(r) for r in d["requests"])
-        return WaveETemporalWorkload(
+        model = PerformanceModel.from_dict(d["performance_model"])
+        events = tuple(TemporalEvent.from_dict(e) for e in d["events"])
+        requests = tuple(PerformanceRequest.from_dict(r) for r in d["requests"])
+        return TemporalWorkload(
             performance_model=model, events=events, requests=requests,
             wave_d_operation_ids=tuple(d["wave_d_operation_ids"]))

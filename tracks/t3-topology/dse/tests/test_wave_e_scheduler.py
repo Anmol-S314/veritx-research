@@ -22,20 +22,20 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from veritx_dse.wavee.metrics import (
+from veritx_dse.performance.metrics import (
     dependency_critical_path, latency_summary, request_latencies,
     resource_utilization,
 )
-from veritx_dse.wavee.model import (
-    ClockDef, ResourceDef, WaveEPerformanceModel,
+from veritx_dse.performance.model import (
+    ClockDef, ResourceDef, PerformanceModel,
 )
-from veritx_dse.wavee.scheduler import (
+from veritx_dse.performance.scheduler import (
     SchedulerDeadlock, schedule_workload,
 )
-from veritx_dse.wavee.time import QTime
-from veritx_dse.wavee.workload import (
-    EVENT_MEMORY_READ, EVENT_NETWORK_TRAFFIC_WINDOW, WaveERequest,
-    WaveETemporalEvent, WaveETemporalWorkload, WorkloadError,
+from veritx_dse.core.time import QTime
+from veritx_dse.performance.workload import (
+    EVENT_MEMORY_READ, EVENT_NETWORK_TRAFFIC_WINDOW, PerformanceRequest,
+    TemporalEvent, TemporalWorkload, WorkloadError,
 )
 
 US = 10 ** 6  # microsecond as Fraction-of-second denominator
@@ -44,11 +44,11 @@ US = 10 ** 6  # microsecond as Fraction-of-second denominator
 def make_model(capacity: int = 2, bandwidth: int = 1200,
                clock: int | Fraction = 10 ** 9,
                memory_source: str = "ANALYTICAL_BANDWIDTH"
-               ) -> WaveEPerformanceModel:
+               ) -> PerformanceModel:
     """The test model declares ANALYTICAL_BANDWIDTH: these fixtures rely on
     the shared rate law, and the workload law refuses to let a declared
     duration and the rate law both claim authority."""
-    return WaveEPerformanceModel(
+    return PerformanceModel(
         clocks=(ClockDef("net", clock),),
         resources=(ResourceDef("gpu.compute", "EXCLUSIVE",
                                capacity=capacity),
@@ -59,21 +59,21 @@ def make_model(capacity: int = 2, bandwidth: int = 1200,
 
 
 def comp(eid: str, dur_us: int, deps: tuple[str, ...] = (),
-         res: str = "gpu.compute", **kw) -> WaveETemporalEvent:
-    return WaveETemporalEvent(eid, "COMPUTE", QTime(dur_us, US), res,
+         res: str = "gpu.compute", **kw) -> TemporalEvent:
+    return TemporalEvent(eid, "COMPUTE", QTime(dur_us, US), res,
                               deps=tuple(deps), **kw)
 
 
 def mem(eid: str, nbytes: int, deps: tuple[str, ...] = (),
-        ) -> WaveETemporalEvent:
-    return WaveETemporalEvent(eid, EVENT_MEMORY_READ, QTime(0), "hbm",
+        ) -> TemporalEvent:
+    return TemporalEvent(eid, EVENT_MEMORY_READ, QTime(0), "hbm",
                               deps=tuple(deps), bytes_count=nbytes)
 
 
 def net_event(eid: str = "NET", op: str | None = None,
-              deps: tuple[str, ...] = ()) -> WaveETemporalEvent:
+              deps: tuple[str, ...] = ()) -> TemporalEvent:
     """The ONE aggregate network window event (§39)."""
-    return WaveETemporalEvent(eid, EVENT_NETWORK_TRAFFIC_WINDOW, QTime(0),
+    return TemporalEvent(eid, EVENT_NETWORK_TRAFFIC_WINDOW, QTime(0),
                               deps=deps)
 
 
@@ -82,7 +82,7 @@ def net_event(eid: str = "NET", op: str | None = None,
 class TestReferenceSchedules:
     def test_simple_chain(self):
         """A(10us) → B(5us): starts exactly at predecessor end."""
-        w = WaveETemporalWorkload(performance_model=make_model(),
+        w = TemporalWorkload(performance_model=make_model(),
                                   events=(comp("A", 10), comp("B", 5, ("A",))))
         s = schedule_workload(w)
         assert s.start("A") == QTime(0)
@@ -93,7 +93,7 @@ class TestReferenceSchedules:
 
     def test_fork_join_oracle_18(self):
         """§18: A=10; B=5,C=7 after A (cap 2) → makespan exactly 17us."""
-        w = WaveETemporalWorkload(performance_model=make_model(),
+        w = TemporalWorkload(performance_model=make_model(),
                                   events=(comp("B", 5, ("A",)),
                                           comp("A", 10),
                                           comp("C", 7, ("A",))))
@@ -104,7 +104,7 @@ class TestReferenceSchedules:
         assert s.makespan() == QTime(17, US)
 
     def test_two_independent_capacity1_serialized(self):
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=make_model(capacity=1),
             events=(comp("P", 10), comp("Q", 10)))
         s = schedule_workload(w)
@@ -114,7 +114,7 @@ class TestReferenceSchedules:
         assert s.makespan() == QTime(20, US)
 
     def test_resource_capacity2_parallel(self):
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=make_model(capacity=2),
             events=(comp("P", 10), comp("Q", 10)))
         s = schedule_workload(w)
@@ -123,7 +123,7 @@ class TestReferenceSchedules:
 
     def test_bandwidth_equal_share_simultaneous(self):
         """2×1200B @1200B/s sharing → both finish at exactly 2s."""
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=make_model(),
             events=(mem("M1", 1200), mem("M2", 1200)))
         s = schedule_workload(w)
@@ -132,14 +132,14 @@ class TestReferenceSchedules:
         assert s.end("M1") == s.end("M2") == QTime(2)
 
     def test_bandwidth_single_transfer(self):
-        w = WaveETemporalWorkload(performance_model=make_model(),
+        w = TemporalWorkload(performance_model=make_model(),
                                   events=(mem("S", 1200),))
         s = schedule_workload(w)
         assert s.end("S") == QTime(1)
 
     def test_bandwidth_staggered_arrival(self):
         """M1 alone [0,1s); M2 joins at 0.5ms; hand-recomputed split."""
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=make_model(),
             events=(mem("M1", 1200), comp("D", 500),
                     mem("M2", 600, ("D",))))
@@ -153,7 +153,7 @@ class TestReferenceSchedules:
 
     def test_arrival_time_delay(self):
         """A compute gated by a long memory transfer arrives late."""
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=make_model(),
             events=(comp("A", 10, ("BIG",)), mem("BIG", 2400),
                     comp("IDLEFILLER", 1)))
@@ -162,7 +162,7 @@ class TestReferenceSchedules:
 
     def test_compute_network_overlap(self):
         """§43: compute [0,4ms], network [0,2.5ms] → makespan 5ms."""
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=make_model(),
             events=(comp("K", 4000), net_event(),
                     comp("TAIL", 1000, ("K", "NET"))),
@@ -174,7 +174,7 @@ class TestReferenceSchedules:
 
     def test_memory_network_overlap_window(self):
         """Memory transfer runs concurrently with the network window."""
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=make_model(),
             events=(mem("M", 1200), net_event(),
                     comp("TAIL", 1000, ("M", "NET"))),
@@ -187,7 +187,7 @@ class TestReferenceSchedules:
 
     def test_three_resource_critical_path(self):
         """A(3ms)→C(4ms)→D(1ms) critical; B(2ms) branch excluded."""
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=make_model(),
             events=(comp("A", 3000), comp("B", 2000),
                     comp("C", 4000, ("A",)),
@@ -199,7 +199,7 @@ class TestReferenceSchedules:
         assert length == QTime(8000, US)
 
     def test_zero_duration_event(self):
-        w = WaveETemporalWorkload(performance_model=make_model(),
+        w = TemporalWorkload(performance_model=make_model(),
                                   events=(comp("Z", 0), comp("A", 5, ("Z",))))
         s = schedule_workload(w)
         assert s.end("Z") == s.start("A") == QTime(0)
@@ -221,7 +221,7 @@ class TestSchedulerInvariants:
             deps = tuple(ids[-j - 1] for j in range(ndeps) if j < len(ids))
             events.append(comp(f"e{i}", dur, deps))
             ids.append(f"e{i}")
-        w = WaveETemporalWorkload(performance_model=model,
+        w = TemporalWorkload(performance_model=model,
                                   events=tuple(events))
         s = schedule_workload(w)
         by_id = {e.event_id: e for e in w.events}
@@ -242,7 +242,7 @@ class TestSchedulerInvariants:
             assert active <= 2
 
     def test_quiescence_schedules_everything(self):
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=make_model(),
             events=tuple(comp(f"e{i}", i + 1,
                               (f"e{i-1}",) if i else ()) for i in range(20)))
@@ -259,14 +259,14 @@ class TestPermutationInvariance:
         base_events = (
             comp("A", 10), comp("B", 5, ("A",)), comp("C", 7, ("A",)),
             mem("M", 600, ("B",)), comp("D", 3, ("C", "M")))
-        ref_w = WaveETemporalWorkload(performance_model=make_model(),
+        ref_w = TemporalWorkload(performance_model=make_model(),
                                       events=base_events)
         ref_s = schedule_workload(ref_w)
         ref_id = ref_w.temporal_workload_id()
         for trial in range(10):
             shuffled = list(base_events)
             rng.shuffle(shuffled)
-            w = WaveETemporalWorkload(performance_model=make_model(),
+            w = TemporalWorkload(performance_model=make_model(),
                                       events=tuple(shuffled))
             assert w.temporal_workload_id() == ref_id
             s = schedule_workload(w)
@@ -277,10 +277,10 @@ class TestPermutationInvariance:
 
 class TestMonotonicity:
     def test_increase_duration_makespan_not_decrease(self):
-        w1 = WaveETemporalWorkload(performance_model=make_model(),
+        w1 = TemporalWorkload(performance_model=make_model(),
                                    events=(comp("A", 10),
                                            comp("B", 5, ("A",))))
-        w2 = WaveETemporalWorkload(performance_model=make_model(),
+        w2 = TemporalWorkload(performance_model=make_model(),
                                    events=(comp("A", 20),
                                            comp("B", 5, ("A",))))
         t1 = schedule_workload(w1).makespan()
@@ -289,27 +289,27 @@ class TestMonotonicity:
 
     def test_increase_capacity_makespan_not_increase(self):
         evs = (comp("P", 10), comp("Q", 10), comp("R", 10))
-        t1 = schedule_workload(WaveETemporalWorkload(
+        t1 = schedule_workload(TemporalWorkload(
             performance_model=make_model(capacity=1), events=evs)).makespan()
-        t2 = schedule_workload(WaveETemporalWorkload(
+        t2 = schedule_workload(TemporalWorkload(
             performance_model=make_model(capacity=2), events=evs)).makespan()
         assert t2 <= t1
 
     def test_increase_bandwidth_completion_not_later(self):
-        w_fast = WaveETemporalWorkload(
+        w_fast = TemporalWorkload(
             performance_model=make_model(bandwidth=2400),
             events=(mem("S", 1200),))
-        w_slow = WaveETemporalWorkload(
+        w_slow = TemporalWorkload(
             performance_model=make_model(bandwidth=1200),
             events=(mem("S", 1200),))
         assert schedule_workload(w_fast).end("S") == QTime(1, 2)
         assert schedule_workload(w_slow).end("S") == QTime(1)
 
     def test_remove_dependency_makespan_not_increase(self):
-        with_dep = WaveETemporalWorkload(
+        with_dep = TemporalWorkload(
             performance_model=make_model(),
             events=(comp("A", 10), comp("B", 5, ("A",))))
-        without = WaveETemporalWorkload(
+        without = TemporalWorkload(
             performance_model=make_model(),
             events=(comp("A", 10), comp("B", 5)))
         assert schedule_workload(without).makespan() \
@@ -321,16 +321,16 @@ class TestMonotonicity:
 class TestMetamorphicOverlap:
     def test_hidden_noncritical_event_double_duration_no_effect(self):
         """Doubling a fully-hidden event leaves makespan unchanged."""
-        base = WaveETemporalWorkload(
+        base = TemporalWorkload(
             performance_model=make_model(),
             events=(comp("A", 10), comp("B", 20), comp("J", 1, ("A", "B"))))
-        bigger = WaveETemporalWorkload(
+        bigger = TemporalWorkload(
             performance_model=make_model(),
             events=(comp("A", 10), comp("B", 40), comp("J", 1, ("A", "B"))))
         assert schedule_workload(base).makespan() == QTime(21, US)
         assert schedule_workload(bigger).makespan() == QTime(41, US)
         # B (40) dominates; extending the HIDDEN A branch does nothing:
-        hidden = WaveETemporalWorkload(
+        hidden = TemporalWorkload(
             performance_model=make_model(),
             events=(comp("A", 30), comp("B", 40), comp("J", 1, ("A", "B"))))
         assert schedule_workload(hidden).makespan() == QTime(41, US)
@@ -338,10 +338,10 @@ class TestMetamorphicOverlap:
     def test_independent_compute_insertion_changes_nothing_critical(self):
         """Insert an event on an unused second capacity slot: the
         original chain's completion is unchanged."""
-        base = WaveETemporalWorkload(
+        base = TemporalWorkload(
             performance_model=make_model(capacity=2),
             events=(comp("A", 10), comp("B", 5, ("A",))))
-        w2 = WaveETemporalWorkload(
+        w2 = TemporalWorkload(
             performance_model=make_model(capacity=2),
             events=(comp("A", 10), comp("B", 5, ("A",)),
                     comp("X", 3), comp("Y", 2, ("X",))))
@@ -351,7 +351,7 @@ class TestMetamorphicOverlap:
 
     def test_network_active_time_vs_makespan_contribution_distinct(self):
         """§43: network active 2.5ms but contributes 0 when hidden."""
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=make_model(),
             events=(comp("K", 4000), net_event(),
                     comp("TAIL", 1000, ("K", "NET"))),
@@ -371,14 +371,14 @@ class TestRefusals:
         # every event waits on a resource that does not exist → the
         # workload validator refuses before scheduling
         with pytest.raises(WorkloadError):
-            WaveETemporalWorkload(
+            TemporalWorkload(
                 performance_model=make_model(),
-                events=(WaveETemporalEvent(
+                events=(TemporalEvent(
                     "E", "COMPUTE", QTime(5, US), "ghost.resource"),))
 
     def test_cycle_refused_before_scheduling(self):
         with pytest.raises(WorkloadError, match="cycle"):
-            WaveETemporalWorkload(
+            TemporalWorkload(
                 performance_model=make_model(),
                 events=(comp("X", 1, ("Y",)), comp("Y", 1, ("X",))))
 
@@ -388,7 +388,7 @@ class TestRefusals:
 class TestExactness:
     def test_no_float_drift_in_fluid_sharing(self):
         """1/3-second style splits stay exact: 1000B@900B/s, two sharers."""
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=make_model(bandwidth=900),
             events=(mem("M1", 1000), mem("M2", 1000)))
         s = schedule_workload(w)
@@ -397,7 +397,7 @@ class TestExactness:
         assert Fraction(s.end("M1").q) == Fraction(20, 9)
 
     def test_schedule_dict_roundtrip_exact(self):
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=make_model(),
             events=(mem("M1", 1200), mem("M2", 600)))
         s = schedule_workload(w)
@@ -411,7 +411,7 @@ class TestExactness:
 
 class TestMetrics:
     def test_utilization_exact_fraction(self):
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=make_model(),
             events=(comp("A", 3000), comp("B", 2000),
                     comp("C", 4000, ("A",)),
@@ -429,9 +429,9 @@ class TestMetrics:
         exists and the latency metric would have to refuse a workload
         the scheduler accepted.
         """
-        req = WaveERequest("r1", QTime(1000, US),
+        req = PerformanceRequest("r1", QTime(1000, US),
                            completion_event_ids=("D",))
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=make_model(),
             events=(comp("A", 3000, request_id="r1"),
                     comp("B", 2000, request_id="r1"),
@@ -450,13 +450,13 @@ class TestMetrics:
 
     def test_two_requests_queue_on_a_shared_resource(self):
         """Deterministic queueing: later arrival, later service."""
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=make_model(capacity=1),
             events=(comp("A", 1000, request_id="r1"),
                     comp("B", 1000, request_id="r2")),
-            requests=(WaveERequest("r1", QTime(0),
+            requests=(PerformanceRequest("r1", QTime(0),
                                    completion_event_ids=("A",)),
-                      WaveERequest("r2", QTime(500, US),
+                      PerformanceRequest("r2", QTime(500, US),
                                    completion_event_ids=("B",))))
         s = schedule_workload(w)
         assert s.start("A") == QTime(0)
@@ -470,11 +470,11 @@ class TestMetrics:
 
     def test_first_token_before_arrival_refuses(self):
         """A negative TTFT is nonsense; it must refuse, never report."""
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=make_model(),
             events=(comp("FT", 1000, request_id="r1", is_first_token=True),
                     comp("C", 9000, ("FT",), request_id="r1")),
-            requests=(WaveERequest("r1", QTime(5000, US),
+            requests=(PerformanceRequest("r1", QTime(5000, US),
                                    completion_event_ids=("C",),
                                    first_token_event_id="FT"),))
         s = schedule_workload(w)
@@ -484,9 +484,9 @@ class TestMetrics:
         assert rows[0]["first_token_latency"] == QTime(1000, US).to_dict()
 
     def test_ttft_only_with_first_token_event(self):
-        req = WaveERequest("r1", QTime(0), completion_event_ids=("D",),
+        req = PerformanceRequest("r1", QTime(0), completion_event_ids=("D",),
                            first_token_event_id="T")
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=make_model(),
             events=(comp("P", 2000, request_id="r1"),
                     comp("T", 500, ("P",), request_id="r1"),
@@ -499,7 +499,7 @@ class TestMetrics:
 
 # ── §83/§84: independent bounded-exhaustive oracles ──────────────────
 
-def _brute_force_makespan(workload: WaveETemporalWorkload) -> Fraction:
+def _brute_force_makespan(workload: TemporalWorkload) -> Fraction:
     """Exhaustive independent scheduler for TINY exclusive-resource DAGs.
 
     Plain recursion over states ``(done, running, now)``: complete
@@ -605,7 +605,7 @@ class TestBoundedExhaustiveScheduler:
 
     def test_recorded_fifo_counterexample(self):
         """Two short jobs admitted first can block a long one."""
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=make_model(capacity=2),
             events=(comp("a", 1), comp("b", 1), comp("c", 2)))
         got = schedule_workload(w).makespan().q
@@ -629,7 +629,7 @@ class TestBoundedExhaustiveScheduler:
             (4, (comp("A", 3), comp("B", 2), comp("C", 2), comp("D", 2))),
         )
         for capacity, events in cases:
-            w = WaveETemporalWorkload(
+            w = TemporalWorkload(
                 performance_model=make_model(capacity=capacity),
                 events=events)
             got = schedule_workload(w).makespan().q
@@ -647,7 +647,7 @@ class TestBoundedExhaustiveScheduler:
             deps = tuple(ids[-j - 1] for j in range(ndeps) if j < len(ids))
             events.append(comp(f"e{i}", dur, deps))
             ids.append(f"e{i}")
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=make_model(capacity=1), events=tuple(events))
         got = schedule_workload(w).makespan().q
         total = sum(e.duration.q for e in w.events)
@@ -665,7 +665,7 @@ class TestBoundedExhaustiveScheduler:
             deps = tuple(ids[-j - 1] for j in range(ndeps) if j < len(ids))
             events.append(comp(f"e{i}", dur, deps))
             ids.append(f"e{i}")
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=make_model(capacity=capacity),
             events=tuple(events))
         got = schedule_workload(w).makespan().q
@@ -722,7 +722,7 @@ class TestBandwidthAccounting:
     """
 
     def test_bytes_moved_matches_declared_bytes(self):
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=make_model(),
             events=(mem("M1", 1200), comp("D", 500), mem("M2", 600, ("D",))))
         s = schedule_workload(w)
@@ -732,7 +732,7 @@ class TestBandwidthAccounting:
         assert util["hbm"]["bytes_moved"] == 1800
 
     def test_average_rate_integrates_to_bytes(self):
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=make_model(),
             events=(mem("M1", 1200), comp("D", 500), mem("M2", 600, ("D",))))
         s = schedule_workload(w)
@@ -742,7 +742,7 @@ class TestBandwidthAccounting:
             assert se.bandwidth_allocated_bps * span == se.bytes_moved
 
     def test_utilization_never_exceeds_one(self):
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=make_model(),
             events=(mem("M1", 1200), mem("M2", 600), mem("M3", 1800)))
         s = schedule_workload(w)
@@ -752,8 +752,8 @@ class TestBandwidthAccounting:
 
     def test_infeasible_schedule_refused(self):
         """A forged schedule that over-uses a resource refuses."""
-        from veritx_dse.wavee.scheduler import Schedule, ScheduledEvent
-        w = WaveETemporalWorkload(performance_model=make_model(),
+        from veritx_dse.performance.scheduler import Schedule, ScheduledEvent
+        w = TemporalWorkload(performance_model=make_model(),
                                   events=(mem("M", 1200),))
         forged = Schedule((ScheduledEvent(
             "M", QTime(0), QTime(10), "hbm",
@@ -766,13 +766,13 @@ class TestBandwidthOracle:
     """§84: equal-share bandwidth against an independent reference."""
 
     def test_one_transfer(self):
-        w = WaveETemporalWorkload(performance_model=make_model(),
+        w = TemporalWorkload(performance_model=make_model(),
                                   events=(mem("M", 1200),))
         s = schedule_workload(w)
         assert s.end("M").q == _ref_equal_share_completion([(0, 1200)])[0]
 
     def test_two_equal_simultaneous(self):
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=make_model(),
             events=(mem("M1", 1200), mem("M2", 1200)))
         s = schedule_workload(w)
@@ -780,7 +780,7 @@ class TestBandwidthOracle:
         assert [s.end("M1").q, s.end("M2").q] == ref
 
     def test_unequal_sizes(self):
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=make_model(),
             events=(mem("M1", 600), mem("M2", 1800)))
         s = schedule_workload(w)
@@ -789,7 +789,7 @@ class TestBandwidthOracle:
 
     def test_staggered_start(self):
         """M2 arrives after M1 has already made progress."""
-        w = WaveETemporalWorkload(
+        w = TemporalWorkload(
             performance_model=make_model(),
             events=(mem("M1", 1200), comp("D", 500),
                     mem("M2", 600, ("D",))))

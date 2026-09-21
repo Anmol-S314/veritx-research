@@ -1,4 +1,4 @@
-"""veritx_dse.wavee.sensitivity — counterfactual sensitivity (§48–§51).
+"""veritx_dse.performance.sensitivity — counterfactual sensitivity (§48–§51).
 
 Bottleneck evidence is counterfactual, never "component total larger"
 (§47). For each parameter we RE-RUN the actual schedule under explicit
@@ -24,13 +24,13 @@ from __future__ import annotations
 from fractions import Fraction
 from typing import Any
 
-from veritx_dse.wavee.model import (
-    RESOURCE_KIND_BANDWIDTH, WaveEPerformanceModel,
+from veritx_dse.performance.model import (
+    RESOURCE_KIND_BANDWIDTH, PerformanceModel,
 )
-from veritx_dse.wavee.scheduler import Schedule, schedule_workload
-from veritx_dse.wavee.time import QTime
-from veritx_dse.wavee.workload import (
-    EVENT_NETWORK_TRAFFIC_WINDOW, MEMORY_KINDS, WaveETemporalWorkload,
+from veritx_dse.performance.scheduler import Schedule, schedule_workload
+from veritx_dse.core.time import QTime
+from veritx_dse.performance.workload import (
+    EVENT_NETWORK_TRAFFIC_WINDOW, MEMORY_KINDS, TemporalWorkload,
 )
 
 SENSITIVITY_SCHEMA_VERSION = 1
@@ -40,10 +40,10 @@ def _scale(q: Fraction, factor: Fraction) -> Fraction:
     return q * factor
 
 
-def perturb_model(base: WaveEPerformanceModel, *, bandwidth_factor:
-                  Fraction | None = None) -> WaveEPerformanceModel:
+def perturb_model(base: PerformanceModel, *, bandwidth_factor:
+                  Fraction | None = None) -> PerformanceModel:
     """Perturbed model identity: same clocks, scaled bandwidths (§51)."""
-    from veritx_dse.wavee.model import ResourceDef
+    from veritx_dse.performance.model import ResourceDef
     resources = []
     for r in base.resources:
         if bandwidth_factor is not None and \
@@ -56,7 +56,7 @@ def perturb_model(base: WaveEPerformanceModel, *, bandwidth_factor:
                 r.name, r.kind,
                 capacity=r.capacity,
                 bandwidth_bytes_per_s=r.bandwidth_bps))
-    return WaveEPerformanceModel(
+    return PerformanceModel(
         clocks=base.clocks, resources=tuple(resources),
         compute_source=base.compute_source,
         # A perturbation must change EXACTLY ONE variable: dropping the
@@ -71,12 +71,12 @@ def perturb_model(base: WaveEPerformanceModel, *, bandwidth_factor:
         arbitration_bandwidth=base.arbitration_bandwidth)
 
 
-def perturb_workload_durations(workload: WaveETemporalWorkload, *,
+def perturb_workload_durations(workload: TemporalWorkload, *,
                                duration_factor: Fraction | None = None,
                                memory_zero: bool = False,
                                network_factor: Fraction | None = None,
                                network_zero: bool = False,
-                               ) -> WaveETemporalWorkload:
+                               ) -> TemporalWorkload:
     """Perturbed workload: scale/zero ONE declared duration class.
 
     Each selector touches exactly one class, so the counterfactuals are
@@ -96,7 +96,7 @@ def perturb_workload_durations(workload: WaveETemporalWorkload, *,
     Because events are immutable, a perturbed workload is a NEW object;
     its ``temporal_workload_id`` differs (identity rule, §51).
     """
-    from veritx_dse.wavee.workload import WaveETemporalEvent
+    from veritx_dse.performance.workload import TemporalEvent
     events = []
     for e in workload.events:
         dur = e.duration
@@ -112,20 +112,20 @@ def perturb_workload_durations(workload: WaveETemporalWorkload, *,
                 nbytes = 0
         elif duration_factor is not None:
             dur = QTime(e.duration.q * duration_factor)
-        events.append(WaveETemporalEvent(
+        events.append(TemporalEvent(
             e.event_id, e.kind, dur, e.resource, deps=e.deps,
             phase=e.phase, rank=e.rank, step=e.step,
             request_id=e.request_id,
             wave_d_operation_id=e.wave_d_operation_id,
             bytes_count=nbytes,
             is_first_token=e.is_first_token))
-    return WaveETemporalWorkload(
+    return TemporalWorkload(
         performance_model=workload.performance_model,
         events=tuple(events), requests=workload.requests,
         wave_d_operation_ids=workload.declared_wave_d_operation_ids())
 
 
-def sensitivity_analysis(workload: WaveETemporalWorkload,
+def sensitivity_analysis(workload: TemporalWorkload,
                          base_schedule: Schedule, *,
                          network_durations: dict[str, QTime] | None = None
                          ) -> dict[str, Any]:
@@ -137,12 +137,12 @@ def sensitivity_analysis(workload: WaveETemporalWorkload,
         "parameters": {},
     }
 
-    def run(wl: WaveETemporalWorkload, model: WaveEPerformanceModel,
+    def run(wl: TemporalWorkload, model: PerformanceModel,
             net: dict[str, QTime] | None) -> Fraction:
         return schedule_workload(wl, network_durations=net).makespan().q
 
-    def record(wl: WaveETemporalWorkload, T: Fraction,
-               model: WaveEPerformanceModel | None = None) -> dict[str, Any]:
+    def record(wl: TemporalWorkload, T: Fraction,
+               model: PerformanceModel | None = None) -> dict[str, Any]:
         """One perturbation row: the derived identity IS reported (§51)."""
         m = model or wl.performance_model
         return {
@@ -180,7 +180,7 @@ def sensitivity_analysis(workload: WaveETemporalWorkload,
     for factor, label in ((Fraction(1, 2), "0.5x"), (Fraction(2), "2x")):
         m2 = perturb_model(workload.performance_model,
                            bandwidth_factor=factor)
-        wl2 = WaveETemporalWorkload(
+        wl2 = TemporalWorkload(
             performance_model=m2, events=workload.events,
             requests=workload.requests,
             wave_d_operation_ids=workload.declared_wave_d_operation_ids())

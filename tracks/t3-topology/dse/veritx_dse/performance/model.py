@@ -1,4 +1,4 @@
-"""veritx_dse.wavee.model — WaveEPerformanceModel (§10/§13/§63).
+"""veritx_dse.performance.model — PerformanceModel (§10/§13/§63).
 
 One immutable, versioned, content-addressed artifact binding every
 timing-affecting assumption of a Wave-E evaluation:
@@ -23,7 +23,7 @@ def _freeze(self, name: str, value: object) -> None:
 from fractions import Fraction
 from typing import Any
 
-from veritx_dse.wavee.time import TimeError
+from veritx_dse.core.time import TimeError
 
 SCHEMA_VERSION = 2
 _MODEL_TAG = "srota/wavee/performance-model/v1"
@@ -186,7 +186,7 @@ class ResourceDef:
                                            d["bandwidth_bps_den"]))
 
 
-class WaveEPerformanceModel:
+class PerformanceModel:
     """Immutable binding of every timing-affecting assumption (§10)."""
 
     __slots__ = ("clocks", "resources", "compute_source", "memory_source",
@@ -305,7 +305,7 @@ class WaveEPerformanceModel:
         return self.canonical()
 
     @staticmethod
-    def from_dict(d: Any) -> "WaveEPerformanceModel":
+    def from_dict(d: Any) -> "PerformanceModel":
         if not isinstance(d, dict):
             raise ModelError("performance model must be a dict")
         allowed = {"schema_version", "clocks", "compute_source",
@@ -321,7 +321,7 @@ class WaveEPerformanceModel:
                 f"schema_version must be {SCHEMA_VERSION}")
         clocks = tuple(ClockDef.from_dict(c) for c in d["clocks"])
         resources = tuple(ResourceDef.from_dict(r) for r in d["resources"])
-        return WaveEPerformanceModel(
+        return PerformanceModel(
             clocks=clocks, resources=resources,
             compute_source=d["compute_source"],
             memory_source=d["memory_source"],
@@ -331,7 +331,7 @@ class WaveEPerformanceModel:
             arbitration_bandwidth=d["arbitration_bandwidth"])
 
 
-def fidelity_warning(model: "WaveEPerformanceModel") -> str:
+def fidelity_warning(model: "PerformanceModel") -> str:
     """The ONE fidelity classification for a Wave-E evaluation (§64).
 
     A pure function of the verified model, so any consumer (product

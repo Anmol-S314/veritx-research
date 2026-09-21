@@ -1,4 +1,4 @@
-"""veritx_dse.wavee.network — BookSim evidence → network timing (§36–§42).
+"""veritx_dse.performance.network — BookSim evidence → network timing (§36–§42).
 
 Wave D owns WHAT traffic; Wave E owns WHEN — but only through explicit
 backend timing evidence. This module is the single seam:
@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from fractions import Fraction
 from typing import Any
 
-from veritx_dse.wavee.time import QTime, TimeError
+from veritx_dse.core.time import QTime, TimeError
 
 WINDOW_KIND_BARRIER = "BARRIER_TRAFFIC_WINDOW"
 
