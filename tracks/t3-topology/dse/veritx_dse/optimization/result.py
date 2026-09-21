@@ -42,7 +42,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from veritx_dse.application.resources import check_envelope
-from veritx_dse.application.results import load_verified_result
+from veritx_dse.application.errors import ControlPlaneError
+from veritx_dse.application.results import (
+    load_verified_experiment, load_verified_plan, load_verified_result,
+)
+from veritx_dse.application.studies import study_status_for_code
 from veritx_dse.core.spec import canonical_json
 from veritx_dse.optimization.constraints import (
     VerdictInput, evaluate_constraint, optimization_verdict,
@@ -63,8 +67,12 @@ from veritx_dse.optimization.space import (
     NOT_EVALUATED, budget_plan, build_candidates, raw_cardinality,
 )
 
-RESULT_SCHEMA_VERSION = 1
-_RESULT_TAG = "srota/optimization/result/v1"
+RESULT_SCHEMA_VERSION = 2
+_RESULT_TAG = "srota/optimization/result/v2"
+# Schema v2 (pre-seal audit closure): adds per-scenario outcome
+# evidence (scenario_outcomes) whose aggregate the verifier RE-DERIVES.
+# This branch is unsealed and nothing external persisted v1 artifacts;
+# bumping the version honestly rather than shipping migration machinery.
 
 #: Closed result envelope (§113).
 RESULT_FIELDS = frozenset({
@@ -89,7 +97,7 @@ ARTIFACT_FIELDS = frozenset({
 CANDIDATE_RECORD_FIELDS = frozenset({
     "index", "assignment", "candidate_id", "status", "alias_of",
     "scenario_intent_ids", "scenario_result_ids", "scenario_reused",
-    "error",
+    "scenario_outcomes", "error",
 })
 
 SEARCH_FIELDS = frozenset({
@@ -108,7 +116,7 @@ BUDGET_FIELDS = frozenset({
 #: search_complete=True for budgeted runs (§23/§62/§75).
 TERMINAL_EVALUATION_STATUSES = (
     "SUCCEEDED", "FAILED", "TIMED_OUT", "UNSUPPORTED", "BLOCKED",
-    "UNMEASURABLE", "PRUNED_PROVEN",
+    "UNMEASURABLE",
 )
 
 
@@ -160,6 +168,33 @@ def _fidelity_warning(defn: OptimizationDefinition,
 
 
 # ── shared derivations (builder and verifier use the SAME code) ─────────
+
+#: Aggregate candidate status precedence. One derivation, used by the
+#: builder AND re-derived by the verifier (pre-seal audit finding 2):
+#: a timeout is worse than unsupported (it proves nothing), unsupported
+#: than a plain failure; only ALL scenarios succeeding yields SUCCEEDED.
+_AGGREGATE_PRECEDENCE = ("TIMED_OUT", "BLOCKED", "UNSUPPORTED", "FAILED",
+                         "UNMEASURABLE")
+
+
+def aggregate_status(statuses: list[str]) -> str:
+    """Derive the candidate status from per-scenario statuses (§30).
+
+    Raises on non-terminal input — a candidate with an unterminated
+    scenario can never be persisted, which is exactly the property the
+    verifier leans on when it re-derives the aggregate.
+    """
+    if not statuses:
+        raise OptimizationResultError(
+            "cannot aggregate an empty per-scenario status list")
+    if all(s == "SUCCEEDED" for s in statuses):
+        return "SUCCEEDED"
+    for s in _AGGREGATE_PRECEDENCE:
+        if s in statuses:
+            return s
+    raise OptimizationResultError(
+        f"candidate produced non-terminal scenario outcomes: {statuses}")
+
 
 def candidate_valid_ids(records: list[dict[str, Any]]) -> list[str]:
     """Valid unique candidate IDs from accounting (aliases excluded)."""
@@ -279,6 +314,7 @@ class CandidateEvaluation:
     scenario_intent_ids: dict[str, str | None]
     scenario_result_ids: dict[str, str | None]
     scenario_reused: dict[str, bool] | None = None
+    scenario_outcomes: dict[str, dict[str, Any]] | None = None
     error: str | None = None
 
     def to_doc(self) -> dict[str, Any]:
@@ -294,6 +330,8 @@ class CandidateEvaluation:
                 (self.scenario_result_ids or {}).items()))),
             "scenario_reused": _order_json(dict(sorted(
                 (self.scenario_reused or {}).items()))),
+            "scenario_outcomes": _order_json(dict(sorted(
+                (self.scenario_outcomes or {}).items()))),
             "error": self.error,
         }
 
@@ -399,6 +437,270 @@ def _require(cond: Any, message: str) -> None:
         raise OptimizationResultError(message)
 
 
+# ── evidence binding (pre-seal audit finding 2) ──────────────────────────
+
+#: Error codes that mean "the control plane itself is unhealthy". These
+#: are NEVER candidate science: they must escape the verifier (and the
+#: orchestrator) instead of becoming FAILED evidence. Typed taxonomy,
+#: never message text.
+_NON_CANDIDATE_ERROR_CODES = frozenset({
+    "EVIDENCE_INVALID", "INTERNAL_ERROR", "NOT_FOUND", "CONFLICT",
+    "INVALID_INTENT",
+})
+
+#: Codes that legitimately terminalize a candidate as UNSUPPORTED or
+#: BLOCKED BEFORE any execution attempt exists. Classified ONLY through
+#: the sealed study_status_for_code (capability registry included).
+_PRE_EXECUTION_CODES = frozenset({
+    "UNSUPPORTED_SEMANTICS", "LOWERING_UNSUPPORTED", "INVALID_INTENT",
+    "EVIDENCE_INVALID", "COMPARISON_INCOMPATIBLE", "NO_FEASIBLE_DESIGN",
+    "POLICY_REJECTED",
+})
+
+_OUTCOME_FIELDS = frozenset({
+    "status", "intent_id", "result_id", "reused", "error",
+})
+
+
+def _is_candidate_terminal_error(exc: ControlPlaneError) -> bool:
+    """True when a ControlPlaneError may terminalize a candidate.
+
+    EVIDENCE_INVALID / INTERNAL_ERROR / NOT_FOUND / CONFLICT (and an
+    unexpected INVALID_INTENT after resolution) are control-plane
+    defects, not evidence that a design failed — they must escape and
+    fail the run (pre-seal audit finding 3).
+    """
+    return exc.code.value not in _NON_CANDIDATE_ERROR_CODES
+
+
+def _expected_outcome_error_code(status: str) -> frozenset[str]:
+    """Typed codes the sealed classifier maps to a scenario status."""
+    if status == "TIMED_OUT":
+        return frozenset({"EXECUTION_TIMEOUT"})
+    if status == "FAILED":
+        return frozenset({"EXECUTION_FAILED"})
+    if status in ("UNSUPPORTED", "BLOCKED"):
+        return frozenset(c for c in _PRE_EXECUTION_CODES
+                         if study_status_for_code(c) == status)
+    return frozenset()
+
+
+def _verify_successful_outcome(r: dict[str, Any], sname: str,
+                               outcome: dict[str, Any], store: Any
+                               ) -> dict[str, Any]:
+    """SUCCEEDED outcome: load the verified result and bind it to THIS
+    candidate's scenario intent (§65/§71/§72/§73)."""
+    _require(isinstance(outcome["reused"], bool),
+             f"candidate {r['index']} scenario {sname}: malformed "
+             f"SUCCEEDED outcome (reused must be bool)")
+    _require(outcome["error"] is None,
+             f"candidate {r['index']} scenario {sname}: SUCCEEDED "
+             f"outcome carries an error payload")
+    rid = outcome["result_id"]
+    _require(isinstance(rid, str) and bool(rid),
+             f"candidate {r['index']} scenario {sname} has no result id "
+             f"despite SUCCEEDED status")
+    vres = load_verified_result(store, rid)
+    _require(vres.get("status") == "SUCCEEDED",
+             f"result {rid} is not SUCCEEDED")
+    plan = store.get("plan", vres["plan_id"])
+    _require(plan.get("intent_id") == outcome["intent_id"],
+             f"result {rid} was produced from intent "
+             f"{plan.get('intent_id')!r}, not this candidate's scenario "
+             f"{sname} intent {outcome['intent_id']!r}: refusing "
+             f"transplanted evidence (§72/§73)")
+    return vres
+
+
+def _verify_execution_failure_outcome(r: dict[str, Any], sname: str,
+                                      outcome: dict[str, Any],
+                                      store: Any) -> None:
+    """FAILED/TIMED_OUT outcome: authenticate the persisted attempt and
+    bind it back to THIS scenario through experiment -> plan ->
+    intent_id. A serialized error document alone is NOT evidence — a
+    forger can fabricate both status and error inside the artifact."""
+    from veritx_dse.application.results import load_verified_attempt
+    err = outcome["error"]
+    _require(isinstance(err, dict) and err.get("error") is True and
+             isinstance(err.get("code"), str) and
+             isinstance(err.get("resource_id"), str) and err["resource_id"],
+             f"candidate {r['index']} scenario {sname}: {outcome['status']} "
+             f"outcome lacks a typed execution-error document with the "
+             f"persisted attempt id")
+    _require(err["code"] in _expected_outcome_error_code(
+                 outcome["status"]),
+             f"candidate {r['index']} scenario {sname}: outcome status "
+             f"{outcome['status']!r} disagrees with the typed error code "
+             f"{err['code']!r} under the sealed classifier")
+    try:
+        attempt = load_verified_attempt(store, err["resource_id"])
+    except ControlPlaneError as exc:
+        # A claimed execution failure with no authenticatable attempt
+        # behind it is fabricated evidence — the decisive refusal for
+        # the fully re-signed demotion attack (pre-seal audit finding
+        # 2/§24). A missing/malformed attempt is not "machinery
+        # unhealthy" here: it is proof the claimed event never
+        # happened under seal.
+        raise OptimizationResultError(
+            f"candidate {r['index']} scenario {sname}: {outcome['status']} "
+            f"outcome cites attempt {err['resource_id']!r} which does "
+            f"not verify against the sealed store ({exc.code.value}): "
+            f"no sealed failure evidence supports the claimed outcome"
+            ) from exc
+    _require(attempt.get("status") == outcome["status"],
+             f"candidate {r['index']} scenario {sname}: outcome claims "
+             f"{outcome['status']} but verified attempt "
+             f"{err['resource_id']} has status {attempt.get('status')!r} "
+             f"— fabricated failure evidence")
+    attempt_error = attempt.get("error") or {}
+    _require(attempt_error.get("code") == err["code"],
+             f"candidate {r['index']} scenario {sname}: outcome error "
+             f"code {err['code']!r} disagrees with the verified attempt's "
+             f"persisted code {attempt_error.get('code')!r}")
+    try:
+        experiment = load_verified_experiment(store,
+                                              attempt.get("experiment_id"))
+        plan = load_verified_plan(store, experiment.get("plan_id"))
+    except ControlPlaneError as exc:
+        raise OptimizationResultError(
+            f"candidate {r['index']} scenario {sname}: attempt "
+            f"{err['resource_id']!r} does not bind back through "
+            f"experiment/plan under seal ({exc.code.value})") from exc
+    _require(plan.get("intent_id") == outcome["intent_id"],
+             f"attempt {err['resource_id']} belongs to plan intent "
+             f"{plan.get('intent_id')!r}, not this candidate's scenario "
+             f"{sname} intent {outcome['intent_id']!r}: refusing a "
+             f"transplanted failure (§72/§73)")
+
+
+def _verify_pre_execution_outcome(defn: Any, r: dict[str, Any],
+                                  sname: str, outcome: dict[str, Any],
+                                  assignment: dict[str, Any],
+                                  store: Any) -> None:
+    """UNSUPPORTED/BLOCKED outcome: REPRODUCE the deterministic refusal
+    through the SEALED PRE-EXECUTION path on the candidate-patched
+    intent — never trust the stored error document (pre-seal audit:
+    'a verifier that only checks whether a forgery is internally
+    tidy'). Reproduction walks the SAME deterministic chain the builder
+    walked — resolve_intent, then the sealed plan() entry (which
+    subsumes compile, the geometry seam, capability/_require_executable
+    and lowerability); the plan core spawns nothing and the store
+    accepts identical bytes idempotently, so re-verification is
+    side-effect-free. The same sealed classifier assigns the status."""
+    from veritx_dse.optimization.definition import patched_scenario_template
+    from veritx_dse.application.requests import resolve_intent
+    template = next(s.intent for s in defn.scenarios if s.name == sname)
+    patched = patched_scenario_template(template, assignment)
+    error: ControlPlaneError | None = None
+    try:
+        intent, _, _ = resolve_intent(patched)
+    except ControlPlaneError as exc:
+        error = exc
+    if error is None:
+        # Bind an UNINITIALIZED service to the verifying store: the
+        # pre-execution chain is deterministic over (intent, store), so
+        # this re-walks exactly what the builder's cp.evaluate did up
+        # to (but excluding) the spawn.
+        from veritx_dse.application.service import SrotaControlPlane
+        cp = SrotaControlPlane.__new__(SrotaControlPlane)
+        cp.store = store
+        try:
+            cp.plan(dict(patched))
+        except ControlPlaneError as exc:
+            error = exc
+        except Exception as exc:
+            raise OptimizationResultError(
+                f"candidate {r['index']} scenario {sname}: the sealed "
+                "pre-execution path failed unexpectedly while "
+                "reproducing the claimed refusal: "
+                f"{type(exc).__name__}: {exc} (machinery failure, not "
+                "candidate science)") from exc
+    if error is None:
+        raise OptimizationResultError(
+            f"candidate {r['index']} scenario {sname}: outcome claims "
+            f"{outcome['status']} but the patched scenario intent "
+            "resolves and pre-executes cleanly through the sealed "
+            "control plane: fabricated refusal evidence (pre-seal "
+            "audit finding 2)")
+    if error.code.value in _NON_CANDIDATE_ERROR_CODES:
+        # Machinery unhealth surfaced during reproduction: it is not
+        # evidence about the candidate in EITHER direction.
+        raise OptimizationResultError(
+            f"candidate {r['index']} scenario {sname}: refusal "
+            f"reproduction hit control-plane machinery error "
+            f"{error.code.value}: cannot authenticate the claimed "
+            f"{outcome['status']} outcome") from error
+    reproduced = study_status_for_code(
+        error.code, backend_target=patched.get("backend_target"))
+    _require(reproduced == outcome["status"],
+             f"candidate {r['index']} scenario {sname}: outcome "
+             f"claims {outcome['status']} but the deterministic "
+             "control-plane path refuses with "
+             f"{error.code.value} -> {reproduced}: fabricated refusal "
+             "evidence")
+    _require(outcome["error"] is not None and
+             outcome["error"].get("code") == error.code.value,
+             f"candidate {r['index']} scenario {sname}: persisted "
+             f"error document disagrees with the reproduced "
+             f"{error.code.value} refusal")
+
+
+def _verify_outcome_evidence(defn: Any, r: dict[str, Any], store: Any
+                             ) -> dict[str, str]:
+    """Authenticate every per-scenario outcome of one candidate.
+
+    Returns the VERIFIED per-scenario status list. Nothing here reads a
+    persisted status without binding it to sealed evidence: success to
+    the verified result chain, execution failure to the verified
+    attempt chain, pre-execution refusal to deterministic reproduction.
+    """
+    outcomes = r["scenario_outcomes"]
+    snames = set(defn.scenario_names())
+    _require(isinstance(outcomes, dict) and
+             set(outcomes) == snames,
+             f"candidate {r['index']} scenario_outcomes are not exactly "
+             f"the declared scenario set {sorted(snames)} (pre-seal "
+             f"audit finding 5)")
+    assignment = dict(r["assignment"])
+    verified: list[str] = []
+    for sname in sorted(snames):
+        outcome = outcomes[sname]
+        _require(isinstance(outcome, dict) and
+                 set(outcome) == _OUTCOME_FIELDS,
+                 f"candidate {r['index']} scenario {sname}: outcome field "
+                 f"set is not closed: {sorted(outcome) if isinstance(outcome, dict) else outcome}")
+        status = outcome["status"]
+        _require(status in TERMINAL_EVALUATION_STATUSES,
+                 f"candidate {r['index']} scenario {sname}: non-terminal "
+                 f"outcome status {status!r}")
+        if status == "SUCCEEDED":
+            _verify_successful_outcome(r, sname, outcome, store)
+        elif status in ("FAILED", "TIMED_OUT"):
+            _verify_execution_failure_outcome(r, sname, outcome, store)
+        else:
+            _verify_pre_execution_outcome(defn, r, sname, outcome,
+                                          assignment, store)
+        # The convenience projections must be EXACT projections of the
+        # authoritative outcome — two independently editable truths are
+        # not allowed (pre-seal audit finding 5).
+        _require(r["scenario_result_ids"].get(sname) ==
+                 outcome["result_id"],
+                 f"candidate {r['index']} scenario {sname}: "
+                 f"scenario_result_ids is not the projection of the "
+                 f"authoritative scenario_outcomes")
+        _require(r["scenario_reused"].get(sname) == outcome["reused"],
+                 f"candidate {r['index']} scenario {sname}: "
+                 f"scenario_reused is not the projection of the "
+                 f"authoritative scenario_outcomes")
+        _require(r["scenario_intent_ids"].get(sname) ==
+                 outcome["intent_id"],
+                 f"candidate {r['index']} scenario {sname}: "
+                 f"scenario_intent_ids is not the projection of the "
+                 f"authoritative scenario_outcomes")
+        verified.append(status)
+    return verified
+
+
 def load_verified_optimization_result(store: Any, result_id: str
                                       ) -> dict[str, Any]:
     """§115: full re-derivation. Returns the verification report.
@@ -472,6 +774,11 @@ def load_verified_optimization_result(store: Any, result_id: str
                      r["status"] == NOT_EVALUATED,
                      f"candidate {r['index']} has non-terminal status "
                      f"{r['status']!r}")
+        if r["status"] in ("ALIAS", "INVALID"):
+            _require(r["scenario_intent_ids"] == {},
+                     f"candidate {r['index']} ({r['status']}): intent "
+                     f"ids must be empty (no fabricated resolution "
+                     f"evidence)")
 
     # 2b) budget-tail agreement (§23/§62/§70/§75): the NOT_EVALUATED set
     #     must be EXACTLY the canonical budget cut — never a hand-picked
@@ -489,29 +796,49 @@ def load_verified_optimization_result(store: Any, result_id: str
              "budget cut: an evaluated candidate was marked unevaluated "
              "or unevaluated candidates were hidden (§23/§75)")
 
-    # 3) load every successful scenario result through the verified
-    #    loader and bind it to THIS candidate's scenario intent (§65/§71)
+    # 3) EVIDENCE BINDING (pre-seal audit finding 2): authenticate the
+    #    per-scenario outcome of EVERY valid evaluated candidate —
+    #    success to the verified result chain, execution failure to the
+    #    verified attempt chain, pre-execution refusal by deterministic
+    #    reproduction through the sealed control-plane path. Then (and
+    #    only then) re-derive the aggregate with the ONE shared rule.
     results_by_candidate: dict[str, dict[str, dict[str, Any]]] = {}
+    verified_status_by_candidate: dict[str, list[str]] = {}
     for r in records:
+        if r["status"] == NOT_EVALUATED:
+            # Budget tail: NO fabricated EXECUTION evidence may exist.
+            # (scenario_intent_ids is the deterministic regeneration
+            # projection — it stays and is identity-checked in step 2;
+            # results/reuse/outcomes must be empty.)
+            _require(r["scenario_result_ids"] == {} and
+                     r["scenario_reused"] == {} and
+                     r["scenario_outcomes"] == {},
+                     f"candidate {r['index']}: NOT_EVALUATED carries "
+                     f"fabricated scenario evidence")
+            continue
+        if r["status"] in ("ALIAS", "INVALID"):
+            _require(r["scenario_result_ids"] == {} and
+                     r["scenario_reused"] == {} and
+                     r["scenario_outcomes"] == {} and
+                     r["scenario_intent_ids"] == {},
+                     f"candidate {r['index']} ({r['status']}): carries "
+                     f"fabricated backend evidence")
+            continue
+        verified = _verify_outcome_evidence(defn, r, store)
+        verified_status_by_candidate[r["candidate_id"]] = verified
+        derived = aggregate_status(verified)
+        _require(r["status"] == derived,
+                 f"candidate {r['index']}: persisted status "
+                 f"{r['status']!r} != aggregate_status of VERIFIED "
+                 f"scenario outcomes ({derived!r}) — a status not "
+                 f"supported by authenticated evidence refuses "
+                 f"(pre-seal audit finding 2/4)")
         if r["status"] != "SUCCEEDED":
             continue
         per_scenario: dict[str, dict[str, Any]] = {}
-        for sname in defn.scenario_names():
-            rid = (r["scenario_result_ids"] or {}).get(sname)
-            _require(isinstance(rid, str) and rid,
-                     f"candidate {r['index']} scenario {sname} has no "
-                     f"result id despite SUCCEEDED status")
+        for sname in sorted(set(defn.scenario_names())):
+            rid = r["scenario_result_ids"][sname]
             vres = load_verified_result(store, rid)
-            _require(vres.get("status") == "SUCCEEDED",
-                     f"result {rid} is not SUCCEEDED")
-            plan = store.get("plan", vres["plan_id"])
-            _require(plan.get("intent_id") ==
-                     r["scenario_intent_ids"].get(sname),
-                     f"result {rid} was produced from intent "
-                     f"{plan.get('intent_id')!r}, not this candidate's "
-                     f"scenario {sname} intent "
-                     f"{r['scenario_intent_ids'].get(sname)!r}: "
-                     f"refusing transplanted evidence (§72/§73)")
             per_scenario[sname] = vres
         results_by_candidate[r["candidate_id"]] = per_scenario
 
@@ -547,27 +874,50 @@ def load_verified_optimization_result(store: Any, result_id: str
         constraint_docs[cid] = sorted(
             docs, key=lambda c: (c["metric"], str(c["scenario"])))
 
-    # 5) compare re-extracted objective values with persisted (§66)
+    # 5) compare re-extracted objective values with persisted (§66),
+    #    with EXACT candidate-keyset closure (pre-seal audit finding 7):
+    #    only SUCCEEDED candidates carry evidence, so the persisted key
+    #    set must equal the re-derived one — no ghost candidates.
     persisted_objectives = artifact["objectives"]
     _require(isinstance(persisted_objectives, dict),
              "objectives must be an object")
+    _require(set(persisted_objectives) == set(objective_values),
+             "persisted objective candidate keyset != re-derived "
+             "keyset: ghost or missing candidate entries (pre-seal "
+             "audit finding 7)")
     for cid, vals in objective_values.items():
         persisted = persisted_objectives.get(cid)
         _require(persisted is not None,
                  f"candidate {cid} objective values missing from the "
                  f"persisted result (§64)")
+        parsed = value_map_from_doc(persisted)
+        _require(set(parsed) == set(vals),
+                 f"candidate {cid}: persisted objective metric/scenario "
+                 f"keyset != the declared objective dimensions (pre-seal "
+                 f"audit finding 8)")
         _require(canonical_json(value_map_doc(vals)) ==
-                 canonical_json(value_map_doc(
-                     value_map_from_doc(persisted))),
+                 canonical_json(value_map_doc(parsed)),
                  f"candidate {cid} persisted objective values disagree "
                  f"with re-extraction from verified parents (§66)")
 
-    # 6) compare re-derived constraint verdicts with persisted (§67)
+    # 6) compare re-derived constraint verdicts with persisted (§67),
+    #    with EXACT candidate-keyset closure (pre-seal audit finding 9).
     persisted_constraints = artifact["constraints"]
+    _require(isinstance(persisted_constraints, dict),
+             "constraints must be an object")
+    _require(set(persisted_constraints) == set(constraint_docs),
+             "persisted constraint candidate keyset != re-derived "
+             "keyset: ghost or missing candidate entries (pre-seal "
+             "audit finding 9)")
     for cid, docs in constraint_docs.items():
         persisted = persisted_constraints.get(cid)
         _require(persisted is not None,
                  f"candidate {cid} constraint verdicts missing (§64)")
+        _require(len(persisted) == len(defn.hard_constraints),
+                 f"candidate {cid}: persisted constraint rows "
+                 f"({len(persisted)}) != declared hard constraints "
+                 f"({len(defn.hard_constraints)}): extra or missing "
+                 f"rows refuse (pre-seal audit finding 9)")
         _require(canonical_json(docs) == canonical_json(persisted),
                  f"candidate {cid} persisted constraint verdicts "
                  f"disagree with re-derivation (§67)")

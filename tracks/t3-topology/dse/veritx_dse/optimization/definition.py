@@ -51,14 +51,13 @@ class ParamDef:
     """One registered design variable.
 
     ``kind`` distinguishes hardware/design variables from workload
-    semantics (§12); ``scenario_key`` is the intent-dict path the value
-    patches (currently the verified ``fabric_overrides`` seam).
+    semantics (§12); ``intent_key`` is the dotted ``fabric_overrides``
+    path the value patches (the verified seam).
     """
     name: str
     kind: str                     # HARDWARE | WORKLOAD
     scenario_key: str             # "fabric_overrides" (the verified seam)
-    intent_key: str               # key inside the intent dict
-    allowed: tuple[Any, ...]      # finite closed domain
+    intent_key: str               # dotted override path inside the intent
 
 
 def _canonical_value(v: Any) -> Any:
@@ -72,6 +71,17 @@ def _canonical_value(v: Any) -> Any:
         f"unsupported domain value {v!r}; Wave-F v1 supports int/str")
 
 
+def _canonical_json_sort_key(v: Any) -> str:
+    """Sort key = the canonical JSON rendering itself.
+
+    One definition of 'canonical' everywhere (§16/§84): identity,
+    enumeration order and budget prefix all use the same rendering, so
+    a mixed int/string domain can never order differently between the
+    contract and the budgeted evaluated subset.
+    """
+    return canonical_json(v)
+
+
 #: The closed registry. Only paths the sealed intent system actually
 #: accepts (verified seam: ``fabric_overrides`` -> strict dotted-path
 #: override of an existing CompileRequest leaf, see
@@ -83,12 +93,12 @@ PARAM_REGISTRY: dict[str, ParamDef] = {}
 for _name in ("workload.tp", "workload.pp", "workload.ep", "workload.dp"):
     PARAM_REGISTRY[_name] = ParamDef(
         name=_name, kind="HARDWARE", scenario_key="fabric_overrides",
-        intent_key=_name, allowed=())
+        intent_key=_name)
 for _name, _key in (("fabric.topology", "noc_config.topology_family"),
                     ("fabric.link_width", "noc_config.link_width")):
     PARAM_REGISTRY[_name] = ParamDef(
         name=_name, kind="HARDWARE", scenario_key="fabric_overrides",
-        intent_key=_key, allowed=())
+        intent_key=_key)
 
 
 def registered_param(name: str) -> ParamDef:
@@ -140,11 +150,12 @@ class ParameterSpec:
             raise OptimizationDefinitionError(
                 f"parameter {name!r} needs a non-empty values list")
         canon = tuple(_canonical_value(v) for v in values)
-        # §84: domain-value order is not semantic; canonical sort.
-        # §82: a duplicated domain value canonicalizes away — it does
-        # not change the space or the identity.
+        # §84: domain-value order is not semantic; canonical sort by the
+        # canonical-JSON rendering — the SAME ordering the identity
+        # machinery uses (§16), because BUDGETED_GRID prefix selection
+        # makes this order scientifically consequential.
         ordered = tuple(dict.fromkeys(
-            sorted(canon, key=lambda v: (str(type(v)), str(v)))))
+            sorted(canon, key=_canonical_json_sort_key)))
         return cls(name=name, values=ordered)
 
     def identity(self) -> dict[str, Any]:
@@ -325,6 +336,7 @@ class MetricDef:
     source: str                     # WAVE_E | WAVE_D_CHAIN | STRUCTURAL
     fidelity: str                   # EXACT_STRUCTURAL | MODEL_DERIVED
     applicability: str              # WAVE_E_TIMING | WAVE_D_TRAFFIC | ANY
+    scenario_scoped: bool           # True = depends on the workload
 
 
 #: Registry entries declare the unit and provenance of every metric a
@@ -334,28 +346,28 @@ class MetricDef:
 METRIC_REGISTRY: dict[str, MetricDef] = {
     "system.makespan_s": MetricDef(
         "system.makespan_s", "s", "WAVE_E", "MODEL_DERIVED",
-        "WAVE_E_TIMING"),
+        "WAVE_E_TIMING", True),
     "network.window_s": MetricDef(
         "network.window_s", "s", "WAVE_E", "MODEL_DERIVED",
-        "WAVE_E_TIMING"),
+        "WAVE_E_TIMING", True),
     "request.mean_latency_s": MetricDef(
         "request.mean_latency_s", "s", "WAVE_E", "MODEL_DERIVED",
-        "WAVE_E_TIMING"),
+        "WAVE_E_TIMING", True),
     "request.p95_latency_s": MetricDef(
         "request.p95_latency_s", "s", "WAVE_E", "MODEL_DERIVED",
-        "WAVE_E_TIMING"),
+        "WAVE_E_TIMING", True),
     "network.delivered_packets": MetricDef(
         "network.delivered_packets", "packets", "WAVE_D_CHAIN",
-        "MODEL_DERIVED", "WAVE_D_TRAFFIC"),
+        "MODEL_DERIVED", "WAVE_D_TRAFFIC", True),
     "fabric.router_count": MetricDef(
         "fabric.router_count", "routers", "STRUCTURAL",
-        "EXACT_STRUCTURAL", "ANY"),
+        "EXACT_STRUCTURAL", "ANY", False),
     "fabric.endpoint_count": MetricDef(
         "fabric.endpoint_count", "endpoints", "STRUCTURAL",
-        "EXACT_STRUCTURAL", "ANY"),
+        "EXACT_STRUCTURAL", "ANY", False),
     "fabric.channel_count": MetricDef(
         "fabric.channel_count", "channels", "STRUCTURAL",
-        "EXACT_STRUCTURAL", "ANY"),
+        "EXACT_STRUCTURAL", "ANY", False),
 }
 
 
@@ -494,6 +506,23 @@ class OptimizationDefinition:
         _validate_selection(doc_name=name, sel_policy=sel_policy,
                             sel_order=sel_order, objectives=objectives,
                             scenarios=scenarios)
+
+        # §44 scenario scope (pre-seal audit finding 5): a metric that
+        # DEPENDS on the workload must name its scenario explicitly when
+        # the definition declares more than one scenario — "prefill" and
+        # "decode" may never collapse to whichever name sorts first.
+        # Scenario-INVARIANT structural metrics (fabric.*) may remain
+        # scenario-free: §10 already forces one effective hardware
+        # across scenarios and the counts derive from that hardware.
+        if len(scenarios) > 1:
+            for spec in (*objectives, *hard):
+                mdef = METRIC_REGISTRY[spec.metric]
+                if mdef.scenario_scoped and spec.scenario is None:
+                    raise OptimizationDefinitionError(
+                        f"metric {spec.metric!r} depends on the workload "
+                        f"and must name an explicit scenario in a "
+                        f"multi-scenario definition (got scenario=null; "
+                        f"declared: {[s.name for s in scenarios]})")
 
         return cls(name=name, scenarios=scenarios, parameters=parameters,
                    objectives=objectives, hard_constraints=hard,

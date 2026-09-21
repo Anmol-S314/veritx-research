@@ -38,8 +38,9 @@ from veritx_dse.optimization.pareto import (
     frontier_is_complete, select,
 )
 from veritx_dse.optimization.result import (
-    CandidateEvaluation, OptimizationRun, candidate_valid_ids,
-    derive_budget, derive_feasible_ids, derive_search_complete,
+    CandidateEvaluation, OptimizationRun, aggregate_status,
+    candidate_valid_ids, derive_budget, derive_feasible_ids,
+    derive_search_complete, _is_candidate_terminal_error,
 )
 from veritx_dse.optimization.space import (
     NOT_EVALUATED, budget_plan, build_candidates,
@@ -63,7 +64,6 @@ def run_optimization(cp: Any, defn: OptimizationDefinition) -> OptimizationRun:
     constraint_values: dict[str, dict] = {}
     constraint_docs: dict[str, list[dict[str, Any]]] = {}
     result_docs: dict[str, dict[str, dict[str, Any]]] = {}
-    n_reused = 0
 
     # 2) canonical budgeted prefix (§24): candidates are already in
     #    canonical order; the budget cuts the prefix, never a sample.
@@ -72,6 +72,7 @@ def run_optimization(cp: Any, defn: OptimizationDefinition) -> OptimizationRun:
         per_scenario_results: dict[str, dict[str, Any] | None] = {}
         result_ids: dict[str, str | None] = {}
         reused_by_scenario: dict[str, bool] = {}
+        outcome_docs: dict[str, dict[str, Any]] = {}
         statuses: list[str] = []
         for spec in defn.scenarios:
             outcome = cand.scenario_outcomes[
@@ -80,15 +81,31 @@ def run_optimization(cp: Any, defn: OptimizationDefinition) -> OptimizationRun:
             try:
                 ev = cp.evaluate(patched)
             except ControlPlaneError as exc:
-                statuses.append(study_status_for_error(
-                    exc, backend_target=spec.intent.get(
-                        "backend_target")))
+                # Pre-seal audit finding 2: a non-success status is
+                # EVIDENCE-BOUND. Persist the typed refusal document
+                # (code/message/resource_id — resource_id names the
+                # persisted attempt for execution failures, which
+                # load_verified_attempt verifies) and classify through
+                # the SEALED study-status mapping — never Wave-F text.
+                # Finding 3: machinery defects are NOT candidate
+                # science — they must escape and fail the run.
+                if not _is_candidate_terminal_error(exc):
+                    raise
+                status = study_status_for_error(
+                    exc, backend_target=spec.intent.get("backend_target"))
+                statuses.append(status)
                 per_scenario_results[spec.name] = None
                 result_ids[spec.name] = None
                 reused_by_scenario[spec.name] = False
+                outcome_docs[spec.name] = {
+                    "status": status,
+                    "intent_id": outcome.intent_id,
+                    "result_id": None,
+                    "reused": False,
+                    "error": exc.to_dict(),
+                }
                 continue
             reused_by_scenario[spec.name] = bool(ev.get("reused"))
-            n_reused += 1 if ev.get("reused") else 0
             try:
                 vres = load_verified_result(
                     cp.store, ev["resource_id"],
@@ -101,19 +118,17 @@ def run_optimization(cp: Any, defn: OptimizationDefinition) -> OptimizationRun:
             statuses.append("SUCCEEDED")
             per_scenario_results[spec.name] = vres
             result_ids[spec.name] = ev["resource_id"]
-        if all(s == "SUCCEEDED" for s in statuses):
-            status = "SUCCEEDED"
-        elif any(s == "TIMED_OUT" for s in statuses):
-            status = "TIMED_OUT"
-        elif any(s in ("UNSUPPORTED", "BLOCKED") for s in statuses):
-            status = next(s for s in statuses
-                          if s in ("UNSUPPORTED", "BLOCKED"))
-        elif any(s == "FAILED" for s in statuses):
-            status = "FAILED"
-        else:
-            raise OrchestratorError(
-                f"candidate produced non-terminal scenario outcomes: "
-                f"{statuses}")
+            outcome_docs[spec.name] = {
+                "status": "SUCCEEDED",
+                "intent_id": outcome.intent_id,
+                "result_id": ev["resource_id"],
+                "reused": reused_by_scenario[spec.name],
+                "error": None,
+            }
+        # The aggregate is DERIVED from the per-scenario evidence by the
+        # SAME function the verifier uses — the builder has no private
+        # aggregation rule to drift from (§62).
+        status = aggregate_status(statuses)
         evaluated.append(CandidateEvaluation(
             index=cand.index, assignment=cand.assignment,
             candidate_id=cand.candidate_id, status=status,
@@ -121,6 +136,7 @@ def run_optimization(cp: Any, defn: OptimizationDefinition) -> OptimizationRun:
             scenario_intent_ids=cand.intent_ids(),
             scenario_result_ids=result_ids,
             scenario_reused=reused_by_scenario,
+            scenario_outcomes=outcome_docs,
             error=None))
         result_docs[cand.candidate_id] = per_scenario_results  # type: ignore[assignment]
 
@@ -133,7 +149,8 @@ def run_optimization(cp: Any, defn: OptimizationDefinition) -> OptimizationRun:
             index=cand.index, assignment=cand.assignment,
             candidate_id=cand.candidate_id, status=NOT_EVALUATED,
             alias_of=None, scenario_intent_ids=cand.intent_ids(),
-            scenario_result_ids={}, scenario_reused={}, error=None))
+            scenario_result_ids={}, scenario_reused={},
+            scenario_outcomes={}, error=None))
 
     # INVALID/ALIAS records from the space pass through unchanged
     space_rows = []
@@ -155,6 +172,7 @@ def run_optimization(cp: Any, defn: OptimizationDefinition) -> OptimizationRun:
                 "scenario_intent_ids": ev.scenario_intent_ids,
                 "scenario_result_ids": ev.scenario_result_ids,
                 "scenario_reused": ev.scenario_reused or {},
+                "scenario_outcomes": ev.scenario_outcomes or {},
                 "error": ev.error,
             })
         else:
@@ -167,6 +185,7 @@ def run_optimization(cp: Any, defn: OptimizationDefinition) -> OptimizationRun:
                 "scenario_intent_ids": row["scenario_intent_ids"],
                 "scenario_result_ids": {},
                 "scenario_reused": {},
+                "scenario_outcomes": {},
                 "error": row["error"],
             })
     space_rows.sort(key=lambda r: r["index"])
@@ -245,6 +264,7 @@ def run_optimization(cp: Any, defn: OptimizationDefinition) -> OptimizationRun:
             scenario_intent_ids=r["scenario_intent_ids"],
             scenario_result_ids=r["scenario_result_ids"],
             scenario_reused=r["scenario_reused"],
+            scenario_outcomes=r["scenario_outcomes"],
             error=r["error"]) for r in space_rows],
         search_complete=search_complete,
         frontier_complete=frontier_complete,

@@ -53,10 +53,15 @@ metric.
 ## 4. Verification
 
 ```
-optimization_core   54 passed   (independent oracles: Pareto brute-force,
+optimization_core   80 passed   (independent oracles: Pareto brute-force,
                                 constraints truth table, space enumeration,
-                                selection, verdicts, permutation invariance)
-optimization_e2e    24 passed   (real BookSim, WAVE_F_E2E=1)
+                                selection, verdicts, permutation invariance,
+                                + pre-seal closure: effective-hardware
+                                signature A/B/C, canonical-JSON exact
+                                ordering, scenario-scope rules, duplicate
+                                row refusal, closed budget accounting,
+                                dead-state absence, escape hatches)
+optimization_e2e    26 passed   (real BookSim, WAVE_F_E2E=1)
   demonstrations    exhaustive single-objective, multi-objective no-implicit-
                     winner, two-scenario frontier, budgeted scope with visible
                     tail, NO_FEASIBLE_DESIGN (complete + conclusive),
@@ -70,9 +75,24 @@ optimization_e2e    24 passed   (real BookSim, WAVE_F_E2E=1)
                     §83/§84 permutation invariance, §136 forged verdict,
                     §137 winner without policy — every forgery refused with
                     a SPECIFIC re-derivation failure
+  pre-seal attacks  FULLY RE-SIGNED SUCCEEDED→FAILED and SUCCEEDED→
+                    TIMED_OUT demotions: every derived block recomputed
+                    (objectives, constraints, feasible set, Pareto,
+                    selection, dominance, relaxation, completeness,
+                    budget, verdict, outer ID) — load STILL refuses: no
+                    sealed failure evidence supports the fabricated
+                    outcome. Real-attempt transplant (donor's verified
+                    attempt cited behind a FAILED outcome) refuses on
+                    status/intent binding.
+control-plane       251 passed  (lifecycle/service/studies/resources/
+integrity                       integrity — evidence-binding refactors
+                                left the sealed chain intact)
+wave C/D/E focused  478 passed / 1 dirty-tree-reuse refusal (resolves
+                                on commit)
 full dse battery    baseline(seal) 26 failed / 3210 passed / 41 skipped
-                    wavef         27 failed / 3204 passed / 65 skipped
-                    diff vs seal: +1 failure ONLY (see §5)
+                    pre-seal      28 failed / 3218 passed / 63 skipped
+                    failed-node diff: 26 identical + 2 documented deltas
+                    (chakra environment drift + dirty-tree reuse; §5/§5b)
 ```
 
 ## 4b. Post-commit capability audit (same day)
@@ -121,3 +141,64 @@ silicon (area/power/energy remain unregistered), no heuristic pruning, no
 `wavef/` package (it is `veritx_dse/optimization/`), Wave-D/E semantics
 untouched (two-file delta: `service.py` +87 lines, `store.py` +2 resource
 kinds).
+
+## 7. Pre-seal audit closure (this commit)
+
+The external audit of pushed `a571a184` raised 8 findings. All are
+closed here in ONE commit on top of `a571a184` (no history rewrite, no
+consolidation merge, no new capability):
+
+1. **P0 effective hardware signature** — `hardware_signature` now
+   hashes the EFFECTIVE patched scenario document; superseded base
+   overrides can no longer falsely invalidate valid hardware. Both
+   directions regressed (false-mismatch fixed, real mismatch still
+   refuses, override-dict ordering invariance, teeth preserved).
+2. **P0 evidence-bound non-success statuses** — serialized error
+   documents are NOT evidence. The verifier authenticates execution
+   failures/timeouts through `load_verified_attempt` bound back to the
+   candidate's scenario intent, and REPRODUCES pre-execution
+   UNSUPPORTED/BLOCKED refusals through the sealed control-plane path
+   and the one `study_status_for_code` classifier. The decisive attack
+   (fully re-signed demotion with every derived block recomputed)
+   refuses. Aggregate status re-derived with the ONE shared
+   `aggregate_status` rule.
+3. **P0/P1 exact nested closure** — objective/constraint keysets equal
+   re-derived keysets; duplicate `(metric, scenario)` rows refuse;
+   scenario outcome maps close exactly against the declared scenario
+   set; convenience projections must equal exact projections;
+   `NOT_EVALUATED`/`ALIAS`/`INVALID` carry no fabricated evidence;
+   budget accounting derives only from closed records.
+4. **P1 exception narrowing** — only `INVALID_INTENT` invalidates a
+   candidate; machinery codes and programming errors escape (space,
+   orchestrator, and every metrics extraction site). Monkeypatch
+   regressions prove a `RuntimeError("internal bug")` never becomes
+   INVALID/UNMEASURABLE/FAILED science.
+5. **P1 scenario-free metric rule** — `MetricDef.scenario_scoped` is
+   the authority; multi-scenario definitions refuse unscoped
+   workload-dependent metrics at parse; structural metrics stay
+   scenario-free.
+6. **P1 canonical ordering** — domain order IS the canonical-JSON
+   rendering (same ordering as identity); exact-order and
+   budgeted-prefix permutation regressions added.
+7. **P1 dead state removed** — `PRUNED_PROVEN`, dead reuse counter,
+   `ParamDef.allowed` all gone (grep-clean); status vocabularies and
+   docs updated.
+8. **Isolation** — see §8.
+
+Result schema honestly bumped to `schema_version = 2` (the unsealed v1
+shape is not loadable; no migration machinery — documented in the
+scientific contract).
+
+## 8. Architecture isolation (deliberate)
+
+Wave F is sealed against the Wave-E base `d878cf5e`. It is intentionally
+NOT merged into the active workload/performance consolidation line
+(2c → Slice 3 → Slice 4). It currently imports pre-consolidation Wave-E
+and Wave-D-era application surfaces (`veritx_dse.wavee.*`, the old
+workload authority). After the consolidation line is sealed, Wave F will
+be replayed onto the consolidated semantic domains (`WorkloadGraph`,
+`performance/*`, final persistence/application domains). That replay
+must preserve Wave-F optimization semantics unchanged; obsolete
+`wavee`/`waved` package boundaries must NOT be retained merely to
+satisfy Wave-F imports. If the replay would require changing
+optimization scientific semantics, it stops and reports the dependency.

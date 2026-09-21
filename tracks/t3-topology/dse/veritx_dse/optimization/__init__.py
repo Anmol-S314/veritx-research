@@ -43,9 +43,10 @@ __all__ = [
     "METRIC_REGISTRY", "NOT_EVALUATED", "OPTIMIZATION_SCHEMA_VERSION",
     "PARAM_REGISTRY", "HardConstraintSpec", "MetricDef", "ObjectiveSpec",
     "OptimizationDefinition", "OptimizationDefinitionError", "ParamDef",
-    "ParameterSpec", "ScenarioSpec", "budget_accounting", "budget_plan",
-    "build_candidates", "candidate_identity", "compute_frontier",
-    "extract_metric", "hardware_signature", "iter_raw_assignments",
+    "ParameterSpec", "ScenarioSpec", "aggregate_status",
+    "budget_accounting", "budget_plan", "build_candidates",
+    "candidate_identity", "compute_frontier", "extract_metric",
+    "hardware_signature", "iter_raw_assignments",
     "load_verified_optimization_result", "registered_param",
     "raw_cardinality", "select",
 ]
@@ -62,6 +63,9 @@ def __getattr__(name: str):  # late bindings keep import order simple
         from veritx_dse.optimization.result import (
             load_verified_optimization_result)
         return load_verified_optimization_result
+    if name == "aggregate_status":
+        from veritx_dse.optimization.result import aggregate_status
+        return aggregate_status
     if name == "select":
         from veritx_dse.optimization.pareto import select
         return select

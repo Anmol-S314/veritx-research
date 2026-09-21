@@ -847,3 +847,306 @@ class TestExhaustiveBudgetDifferential:
             search_complete=False, valid_total=6, feasible=0, rejected=2,
             non_conclusive=4, any_measured=True))["verdict"] == \
             "INCONCLUSIVE"
+
+
+# ── pre-seal audit closure: pure-side regressions ────────────────────────
+
+class TestPreSealHardwareSignature:
+    """Finding 1/14: the §10 signature is computed over the EFFECTIVE
+    patched scenario document — base-template overrides that the
+    candidate assignment supersedes cannot fabricate a mismatch."""
+
+    def _two_scenario_doc(self) -> dict:
+        import veritx_e_helpers as h
+        doc = _resolvable_defn_doc()
+        other = h.scenario_intent(name="t", phase="PREFILL", wave_e=None)
+        # different BASE link-width override on the second scenario only
+        # (mutate — never replace — the overrides dict: the helpers pin
+        # real parallelism overrides there that must survive)
+        other["fabric_overrides"]["noc_config.link_width"] = 128
+        doc["scenarios"].append({"name": "t", "intent": other})
+        # the candidate assignment overwrites BOTH bases
+        doc["parameters"] = [
+            {"name": "fabric.link_width", "values": [256]}]
+        doc["objectives"] = [{"metric": "system.makespan_s",
+                              "direction": "MINIMIZE",
+                              "scenario": "s"}]
+        return doc
+
+    def test_overridden_base_difference_is_same_hardware(self):
+        """Case A: A base=64 / B base=128, assignment sets 256 for both
+        -> SAME effective hardware -> candidate must stay VALID. (The
+        pre-fix base-template signature saw 64 vs 128 and falsely
+        invalidated this candidate.)"""
+        from veritx_dse.optimization.space import build_candidates
+        doc = self._two_scenario_doc()
+        doc["scenarios"][0]["intent"]["fabric_overrides"][
+            "noc_config.link_width"] = 64
+        defn = OptimizationDefinition.parse(doc)
+        canonical, records = build_candidates(defn)
+        assert len(canonical) == 1 and records[0]["status"] == "VALID"
+
+    def test_surviving_effective_difference_refuses(self):
+        """Case B: a hardware difference the assignment does NOT patch
+        survives into the effective docs -> cross-scenario mismatch
+        must still refuse."""
+        from veritx_dse.optimization.space import build_candidates
+        import veritx_e_helpers as h
+        doc = self._two_scenario_doc()
+        # a preset-level hardware difference no parameter varies
+        doc["scenarios"][1]["intent"]["fabric_preset"] = "mesh4_wide128"
+        defn = OptimizationDefinition.parse(doc)
+        canonical, records = build_candidates(defn)
+        assert canonical == []
+        assert all("hardware signature differs" in (r["error"] or "")
+                   for r in records)
+
+    def test_signature_ignores_override_dict_ordering(self):
+        """Case C: same effective hardware reached through differently
+        ORDERED override dicts -> identical signature (canonical
+        effective hardware, not source formatting)."""
+        from veritx_dse.optimization.space import hardware_signature
+        from veritx_dse.optimization.definition import \
+            patched_scenario_template
+        import veritx_e_helpers as h
+        assignment = {"workload.tp": 2}
+        t1 = h.scenario_intent(name="s", phase="DECODE", wave_e=None)
+        t1["fabric_overrides"] = {"noc_config.link_width": 64,
+                                  "noc_config.topology_family": "torus"}
+        t2 = dict(t1)
+        t2["fabric_overrides"] = {"noc_config.topology_family": "torus",
+                                  "noc_config.link_width": 64}
+        assert hardware_signature(
+            patched_scenario_template(t1, assignment), assignment) == \
+            hardware_signature(
+                patched_scenario_template(t2, assignment), assignment)
+
+    def test_signature_still_separates_real_hardware(self):
+        """The §10 gate keeps its teeth: different effective presets
+        produce different signatures."""
+        from veritx_dse.optimization.space import hardware_signature
+        from veritx_dse.optimization.definition import \
+            patched_scenario_template
+        import veritx_e_helpers as h
+        assignment = {}
+        a = h.scenario_intent(name="s", phase="DECODE", wave_e=None)
+        b = dict(a)
+        b["fabric_preset"] = "mesh4_wide128"
+        assert hardware_signature(
+            patched_scenario_template(a, assignment), assignment) != \
+            hardware_signature(
+                patched_scenario_template(b, assignment), assignment)
+
+
+class TestPreSealDomainOrdering:
+    """Finding 6/15: domain order IS the canonical-JSON rendering (the
+    same ordering identity uses), and the budgeted prefix follows it."""
+
+    def test_exact_canonical_order_mixed_kinds(self):
+        """Exact expected order — not just permutation invariance.
+        Canonical-JSON string rendering: '128' < '2' < '4' < '8'."""
+        from veritx_dse.optimization.definition import ParameterSpec
+        p1 = ParameterSpec.parse({"name": "fabric.link_width",
+                                  "values": [8, 2, 128, 4]})
+        p2 = ParameterSpec.parse({"name": "fabric.link_width",
+                                  "values": [4, 128, 2, 8]})
+        assert p1.values == (128, 2, 4, 8)   # canonical-JSON string
+        # order: '128' < '2' < '4' < '8'; type preserved
+        assert p1.values == p2.values
+
+    def test_budgeted_prefix_invariant_to_input_permutation(self):
+        """Same domain, different input order -> identical canonical
+        assignment sequence (§24), so BUDGETED_GRID evaluates the same
+        subset."""
+        doc_a = _resolvable_defn_doc()
+        doc_a["parameters"] = [{"name": "workload.tp",
+                                "values": [4, 1, 2]}]
+        doc_b = _resolvable_defn_doc()
+        doc_b["parameters"] = [{"name": "workload.tp",
+                                "values": [2, 4, 1]}]
+        da = OptimizationDefinition.parse(doc_a)
+        db = OptimizationDefinition.parse(doc_b)
+        assert da.definition_id() == db.definition_id()
+        assert list(iter_raw_assignments(da)) == \
+            list(iter_raw_assignments(db))
+        assert list(iter_raw_assignments(da)) == \
+            [{"workload.tp": 1}, {"workload.tp": 2}, {"workload.tp": 4}]
+
+
+class TestPreSealScenarioScope:
+    """Finding 5/13: workload-dependent metrics must name their scenario
+    in multi-scenario definitions; structural metrics stay scenario-free."""
+
+    def _two_scenario(self) -> dict:
+        import veritx_e_helpers as h
+        doc = _resolvable_defn_doc()
+        other = h.scenario_intent(name="t", phase="PREFILL", wave_e=None)
+        doc["scenarios"].append({"name": "t", "intent": other})
+        return doc
+
+    def test_multi_scenario_unscoped_timing_metric_refuses(self):
+        doc = self._two_scenario()
+        doc["objectives"] = [{"metric": "system.makespan_s",
+                              "direction": "MINIMIZE", "scenario": None}]
+        with pytest.raises(OptimizationDefinitionError, match="scenario"):
+            OptimizationDefinition.parse(doc)
+
+    def test_multi_scenario_scoped_timing_metric_valid(self):
+        doc = self._two_scenario()
+        doc["objectives"] = [{"metric": "system.makespan_s",
+                              "direction": "MINIMIZE", "scenario": "s"}]
+        assert OptimizationDefinition.parse(doc).objectives
+
+    def test_multi_scenario_structural_metric_scenario_free_valid(self):
+        doc = self._two_scenario()
+        doc["objectives"] = [{"metric": "fabric.channel_count",
+                              "direction": "MINIMIZE", "scenario": None}]
+        assert OptimizationDefinition.parse(doc).objectives
+
+
+class TestPreSealClosureHelpers:
+    """Finding 8: duplicate (metric, scenario) rows refuse. Findings
+    7/9/10: keysets close exactly."""
+
+    def test_duplicate_metric_rows_refuse(self):
+        from veritx_dse.optimization.metrics import value_map_from_doc
+        row = {"metric": "system.makespan_s", "scenario": None,
+               "value": {"metric": "system.makespan_s", "status":
+                         "MEASURED", "value": {"numerator": 1,
+                                               "denominator": 1},
+                         "unit": "s", "source_result_id": "r",
+                         "fidelity": "MODEL_DERIVED", "reason": None}}
+        with pytest.raises(Exception, match="duplicate"):
+            value_map_from_doc([row, row])
+
+    def test_duplicate_scoped_metric_row_refuses(self):
+        from veritx_dse.optimization.metrics import value_map_from_doc
+        row = {"metric": "system.makespan_s", "scenario": "s",
+               "value": {"metric": "system.makespan_s", "status":
+                         "MEASURED", "value": {"numerator": 1,
+                                               "denominator": 1},
+                         "unit": "s", "source_result_id": "r",
+                         "fidelity": "MODEL_DERIVED", "reason": None}}
+        with pytest.raises(Exception, match="duplicate"):
+            value_map_from_doc([row, dict(row, scenario="s")])
+
+    def test_budget_counts_ignore_ghost_scenarios(self):
+        """Finding 10/18: budget/accounting derive from CLOSED evidence —
+        a ghost scenario key cannot inflate attempted/reused counts
+        (verifier validates outcomes first; derive_budget only counts
+        terminal records' real keys)."""
+        from veritx_dse.optimization.result import derive_budget
+        defn = OptimizationDefinition.parse(_resolvable_defn_doc())
+        records = [{"index": 0, "assignment": {}, "candidate_id": "c0",
+                    "status": "SUCCEEDED", "alias_of": None,
+                    "scenario_intent_ids": {"s": "i"},
+                    "scenario_result_ids": {"s": "r1"},
+                    "scenario_reused": {"s": True},
+                    "scenario_outcomes": {}, "error": None}]
+        budget = derive_budget(defn, 1, records)
+        assert budget["scenario_evaluations_attempted"] == 1
+        assert budget["scenario_evaluations_reused"] == 1
+
+    def test_no_pruned_proven_anywhere(self):
+        """Finding 7/16: unreachable PRUNED_PROVEN state is gone —
+        production vocabulary and the verification gate agree."""
+        from veritx_dse.optimization import result, space
+        assert "PRUNED_PROVEN" not in result.TERMINAL_EVALUATION_STATUSES
+        assert "PRUNED_PROVEN" not in space.CANDIDATE_STATUS
+        with pytest.raises(Exception):
+            result.aggregate_status(["PRUNED_PROVEN"])
+
+
+class TestPreSealEscapeHatches:
+    """Finding 4/11: unexpected internal exceptions must ESCAPE — a bug
+    may never become scientific INVALID/UNMEASURABLE evidence."""
+
+    def test_machinery_error_in_resolve_intent_escapes(self):
+        """EVIDENCE_INVALID from resolve_intent is control-plane
+        unhealth, not an invalid candidate: it must escape
+        build_candidates (finding 3/4), not shrink the space."""
+        from veritx_dse.optimization import space as space_mod
+        from veritx_dse.optimization.space import build_candidates
+        from veritx_dse.application.errors import ControlPlaneError, \
+            ErrorCode
+        defn = OptimizationDefinition.parse(_resolvable_defn_doc())
+        original = space_mod.resolve_intent
+
+        def boom(_intent):
+            raise ControlPlaneError(ErrorCode.EVIDENCE_INVALID,
+                                    "internal bug", operation="plan")
+
+        space_mod.resolve_intent = boom   # the namespace build_candidates uses
+        try:
+            with pytest.raises(ControlPlaneError):
+                build_candidates(defn)
+        finally:
+            space_mod.resolve_intent = original
+
+    def test_programming_error_in_resolve_intent_escapes(self):
+        """A bug's RuntimeError/AttributeError must escape
+        build_candidates, never become INVALID science (finding 4)."""
+        from veritx_dse.optimization import space as space_mod
+        from veritx_dse.optimization.space import build_candidates
+        defn = OptimizationDefinition.parse(_resolvable_defn_doc())
+        original = space_mod.resolve_intent
+
+        def boom(_intent):
+            raise RuntimeError("internal bug")
+
+        space_mod.resolve_intent = boom
+        try:
+            with pytest.raises(RuntimeError, match="internal bug"):
+                build_candidates(defn)
+        finally:
+            space_mod.resolve_intent = original
+
+    def test_machinery_error_in_evaluate_escapes_orchestrator(self):
+        """Finding 3: EVIDENCE_INVALID from cp.evaluate() is machinery
+        failure — run_optimization must raise, not record a FAILED
+        candidate."""
+        from veritx_dse.optimization.orchestrator import run_optimization
+        from veritx_dse.application.errors import ControlPlaneError, \
+            ErrorCode
+
+        class FakeCP:
+            store = object()
+
+            def evaluate(self, intent):
+                raise ControlPlaneError(ErrorCode.EVIDENCE_INVALID,
+                                        "machinery", operation="evaluate")
+
+        defn = OptimizationDefinition.parse(_resolvable_defn_doc())
+        with pytest.raises(ControlPlaneError):
+            run_optimization(FakeCP(), defn)
+
+    def test_internal_error_in_metric_extraction_escapes(self):
+        """Finding 11: a RuntimeError inside the latency re-derivation
+        must escape extract_metric — it may not become UNMEASURABLE."""
+        from veritx_dse.optimization.metrics import extract_metric
+        import veritx_dse.application.wave_e_resources as wer_mod
+        import veritx_dse.wavee.scheduler as sched_mod
+
+        class FakeWorkload:
+            requests = (object(),)
+            events = ()
+
+        result_doc = {"resource_id": "r1", "wave_e": {
+            "temporal_workload_id": "tw1"}}
+        original_load = wer_mod.load_verified_wave_e_workload
+        original_sched = sched_mod.schedule_workload
+        # patch at the SOURCE module: _derive_request_latencies imports
+        # these inside the function body, so the fresh name resolution
+        # must hit the patched attribute.
+        wer_mod.load_verified_wave_e_workload = \
+            lambda store, wid: FakeWorkload()
+        sched_mod.schedule_workload = \
+            lambda w, network_durations=None: (_ for _ in ()).throw(
+                RuntimeError("internal bug"))
+        try:
+            with pytest.raises(RuntimeError, match="internal bug"):
+                extract_metric("request.mean_latency_s", result_doc,
+                               store=object())
+        finally:
+            wer_mod.load_verified_wave_e_workload = original_load
+            sched_mod.schedule_workload = original_sched

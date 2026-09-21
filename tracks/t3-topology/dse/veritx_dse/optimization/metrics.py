@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from fractions import Fraction
 from typing import Any
 
+from veritx_dse.application.errors import ControlPlaneError
 from veritx_dse.wavee.metrics import latency_summary, request_latencies
 from veritx_dse.wavee.time import QTime
 from veritx_dse.wavee.workload import EVENT_NETWORK_TRAFFIC_WINDOW
@@ -195,7 +196,10 @@ def _derive_request_latencies(result: dict[str, Any], name: str,
         load_verified_wave_e_workload
     try:
         workload = load_verified_wave_e_workload(store, tw_id)
-    except Exception as exc:
+    except ControlPlaneError as exc:
+        # A typed refusal of the overlay link is expected absence of
+        # evidence -> UNMEASURABLE. Anything else (a bug) must escape
+        # (pre-seal audit finding 11).
         return _unmeasurable(
             name, rid,
             f"temporal workload {tw_id} fails verification: {exc}")
@@ -207,13 +211,21 @@ def _derive_request_latencies(result: dict[str, Any], name: str,
             reason="temporal workload declares no requests (§33: "
                    "absent producer, never zero)")
     from veritx_dse.wavee.scheduler import schedule_workload
+    from veritx_dse.wavee.scheduler import SchedulerError
+    from veritx_dse.wavee.time import TimeError
+    from veritx_dse.wavee.workload import WorkloadError
     try:
         schedule = schedule_workload(
             workload,
             network_durations=_network_durations_from_block(
                 workload, block))
         rows = request_latencies(workload, schedule)
-    except Exception as exc:
+    except (SchedulerError, TimeError, WorkloadError, KeyError,
+            TypeError, ValueError) as exc:
+        # Typed scheduler/latency domain failures are expected absence
+        # of measurable behavior -> UNMEASURABLE. An AttributeError or
+        # RuntimeError is a BUG and must escape (pre-seal audit
+        # finding 11/12).
         return _unmeasurable(
             name, rid, f"schedule re-derivation failed: {exc}")
     summary = latency_summary(rows) if rows else None
@@ -243,17 +255,23 @@ def request_latency_summary(result: dict[str, Any],
         return None
     from veritx_dse.application.wave_e_resources import \
         load_verified_wave_e_workload
+    from veritx_dse.wavee.scheduler import SchedulerError
+    from veritx_dse.wavee.scheduler import schedule_workload
+    from veritx_dse.wavee.time import TimeError
+    from veritx_dse.wavee.workload import WorkloadError
     try:
         workload = load_verified_wave_e_workload(
             store, block["temporal_workload_id"])
-        from veritx_dse.wavee.scheduler import schedule_workload
         schedule = schedule_workload(
             workload,
             network_durations=_network_durations_from_block(
                 workload, block))
         rows = request_latencies(workload, schedule)
         return latency_summary(rows) if rows else None
-    except Exception:
+    except (ControlPlaneError, SchedulerError, TimeError, WorkloadError,
+            KeyError, TypeError, ValueError):
+        # Typed domain/absence failures -> "summary not available".
+        # Unexpected exceptions are bugs and escape (finding 11).
         return None
 
 
@@ -299,10 +317,16 @@ def _extract_structural(result: dict[str, Any], name: str
             "extraction")
     try:
         routers, channels, endpoints = _structural_counts(template)
-    except Exception as exc:
+    except (KeyError, TypeError, ValueError) as exc:
+        # The sealed compile chain's typed domain refusals: unknown
+        # preset/path (KeyError), override type change (TypeError),
+        # CompileRequestSchemaError (ValueError subclass). An
+        # AttributeError/RuntimeError/AssertionError from this chain is
+        # a BUG and must escape, not become scientific UNMEASURABLE
+        # (pre-seal audit finding 12).
         return _unmeasurable(
             name, rid,
-            f"structural derivation failed through the Wave-B chain: "
+            f"structural derivation refused by the Wave-B chain: "
             f"{type(exc).__name__}: {exc}")
     value = {"fabric.router_count": routers,
              "fabric.channel_count": channels,
@@ -465,7 +489,11 @@ def value_map_doc(values: dict[MetricKey, MetricValue]) -> list[dict]:
 
 
 def value_map_from_doc(docs: Any) -> dict[MetricKey, MetricValue]:
-    """Rebuild a keyed metric-value map; malformed entries refuse."""
+    """Rebuild a keyed metric-value map; malformed entries refuse.
+
+    Duplicate (metric, scenario) rows refuse (pre-seal audit finding 8):
+    a silent last-one-wins overwrite would let a forger replace a
+    value by appending a row instead of editing one."""
     if not isinstance(docs, list):
         raise MetricError("metric value map must be a list")
     out: dict[MetricKey, MetricValue] = {}
@@ -475,5 +503,9 @@ def value_map_from_doc(docs: Any) -> dict[MetricKey, MetricValue]:
             raise MetricError(f"malformed metric map entry: {doc!r}")
         key = metric_key_from_doc(
             {"metric": doc["metric"], "scenario": doc["scenario"]})
+        if key in out:
+            raise MetricError(
+                f"duplicate metric map row for "
+                f"({key[0]!r}, {key[1]!r}): forged evidence refuses")
         out[key] = MetricValue.from_dict(doc["value"])
     return out

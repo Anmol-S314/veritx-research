@@ -24,15 +24,20 @@ import hashlib
 from dataclasses import dataclass
 from typing import Any
 
+from veritx_dse.application.errors import ControlPlaneError
 from veritx_dse.application.requests import resolve_intent
 from veritx_dse.core.spec import canonical_json
 
 from .definition import PARAM_REGISTRY, OptimizationDefinition, \
-    registered_param
+    patched_scenario_template, registered_param
 
 CANDIDATE_STATUS = (
-    "SUCCEEDED", "INVALID", "PRUNED_PROVEN", "FAILED", "TIMED_OUT",
+    "SUCCEEDED", "INVALID", "FAILED", "TIMED_OUT",
     "UNSUPPORTED", "BLOCKED", "UNMEASURABLE", "ALIAS", "NOT_EVALUATED")
+# Pre-seal audit finding 7: PRUNED_PROVEN is removed — Wave-F v1 has no
+# pruning producer (§28), and carrying unreachable vocabulary invites a
+# silent second search policy. It returns only with a real producer
+# and a contract amendment (§29).
 
 #: A valid unique candidate that the budget did not reach. It stays
 #: visible in accounting (§64) and keeps search_complete False (§23).
@@ -138,16 +143,24 @@ def _merge_intent(template: dict[str, Any],
 
 def _hardware_dict(template: dict[str, Any],
                    assignment: dict[str, Any]) -> dict[str, Any]:
-    """The hardware-defining projection of one patched scenario (§10).
+    """The hardware-defining projection of the EFFECTIVE scenario (§10).
+
+    ``template`` MUST already be the candidate-patched scenario
+    document (``patched_scenario_template``) — the same document the
+    evaluator resolves. Superseded base-override values therefore
+    cannot enter the signature: two scenarios whose base overrides
+    differ but whose candidate assignment overwrites the difference
+    resolve to the SAME patched document and get the SAME signature
+    (pre-seal audit finding 1: base-template signatures falsely
+    invalidated valid hardware).
 
     Exactly: every registered HARDWARE parameter's assigned value, plus
-    the scenario template's fabric-defining fields (fabric_preset and
-    the full fabric_overrides mapping, so template-pinned hardware that
-    no declared parameter varies still counts). Everything else in the
-    template — wave_d/wave_e blocks (which carry the PHASE: PREFILL vs
-    DECODE), trace, mapping — deliberately does NOT enter: a signature
-    that changes because PREFILL became DECODE is not a hardware
-    signature (§10).
+    the effective document's fabric-defining fields (fabric_preset and
+    the full effective fabric_overrides mapping, so template-pinned
+    hardware that no declared parameter varies still counts). Everything
+    else — wave_d/wave_e blocks (which carry the PHASE), trace, mapping
+    — deliberately does NOT enter: a signature that changes because
+    PREFILL became DECODE is not a hardware signature (§10).
     """
     hw: dict[str, Any] = {}
     for pname in sorted(PARAM_REGISTRY):
@@ -162,7 +175,11 @@ def _hardware_dict(template: dict[str, Any],
 
 def hardware_signature(template: dict[str, Any],
                        assignment: dict[str, Any]) -> str:
-    """Content address of the hardware-defining projection (§10)."""
+    """Content address of the hardware-defining projection (§10).
+
+    ``template`` must be the EFFECTIVE (candidate-patched) scenario
+    document, not the base template.
+    """
     body = "srota/optimization/hardware/v1\0" + canonical_json(
         _order_json(_hardware_dict(template, assignment)))
     return hashlib.sha256(body.encode()).hexdigest()
@@ -211,7 +228,18 @@ def build_candidates(
                 outcomes.append(ScenarioOutcome(
                     scenario=spec.name, status="RESOLVED",
                     intent_id=intent.intent_id(), resolved_intent=intent))
-            except Exception as exc:  # resolve_intent is the authority
+            except ControlPlaneError as exc:
+                # Pre-seal audit finding 4: only TYPED control-plane
+                # refusals mean "this assignment is invalid". A bug's
+                # AttributeError/TypeError/RuntimeError must escape —
+                # it must never silently shrink the design space as
+                # fabricated INVALID science. And within the typed
+                # taxonomy, machinery defects (EVIDENCE_INVALID,
+                # INTERNAL_ERROR, NOT_FOUND, CONFLICT) are control-plane
+                # unhealth, not candidate science (finding 3): only the
+                # input-refusal code INVALID_INTENT terminalizes here.
+                if exc.code.value != "INVALID_INTENT":
+                    raise
                 outcomes.append(ScenarioOutcome(
                     scenario=spec.name, status="INVALID", intent_id=None,
                     error=f"{type(exc).__name__}: {exc}"))
@@ -229,10 +257,15 @@ def build_candidates(
         }
         invalid_reason: str | None = next(
             (o.error for o in outcomes if o.error), None)
-        # §10: multi-scenario hardware consistency must be PROVEN.
+        # §10: multi-scenario hardware consistency must be PROVEN over
+        # the EFFECTIVE patched scenario documents (pre-seal audit
+        # finding 1) — never over base templates whose superseded
+        # overrides would fabricate hardware differences.
         if invalid_reason is None and len(outcomes) > 1:
             sigs = {
-                spec.name: hardware_signature(spec.intent, assignment)
+                spec.name: hardware_signature(
+                    patched_scenario_template(spec.intent, assignment),
+                    assignment)
                 for spec in defn.scenarios}
             if len(set(sigs.values())) != 1:
                 invalid_reason = "hardware signature differs across " \
@@ -247,7 +280,10 @@ def build_candidates(
                 scenario_outcomes=tuple(outcomes), candidate_id=None,
                 hardware_signature=None, error=invalid_reason))
         else:
-            sig = (hardware_signature(defn.scenarios[0].intent, assignment)
+            sig = (hardware_signature(
+                       patched_scenario_template(
+                           defn.scenarios[0].intent, assignment),
+                       assignment)
                    if len(outcomes) > 1 else None)
             resolved.append(Candidate(
                 index=index, assignment=assignment, assignment_id=cid,

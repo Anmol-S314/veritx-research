@@ -44,11 +44,20 @@ Exactly two persisted resources:
 - `optimizationdef` — the parsed, content-addressed `OptimizationDefinition`
   (`identity_dict()` round-trips through `parse`; the definition ID is
   `H(identity_dict)`).
-- `optimizationresult` — the run record: per-raw-assignment accounting,
-  objective values, constraint docs, Pareto scope/front, selection,
-  completeness, verdict, budget, fidelity warning. Frontier, selection,
-  verdicts and completeness are **derived summaries**: persisted for
-  inspection, re-checked on load, never authority.
+- `optimizationresult` — the run record: per-raw-assignment accounting
+  (including per-scenario `scenario_outcomes` evidence), objective
+  values, constraint docs, Pareto scope/front, selection, completeness,
+  verdict, budget, fidelity warning. Frontier, selection, verdicts and
+  completeness are **derived summaries**: persisted for inspection,
+  re-checked on load, never authority.
+
+**Schema version:** the result artifact is `schema_version = 2` (the
+pre-seal audit closure added `scenario_outcomes` evidence and the
+strict refusal of execution-refusal statuses without authenticatable
+attempts). The branch is not sealed and nothing external consumed the
+unsealed v1 shape, so no migration machinery exists — v1 artifacts are
+simply not loadable under the final pre-seal schema. This was a
+deliberate reset, not a compatibility pretense.
 
 ## 4. Identity (§16/§17)
 
@@ -67,10 +76,17 @@ domains changes `definition_id` — no stale result reuse (§79–§81).
 ## 5. Hardware consistency across scenarios (§10)
 
 A multi-scenario candidate is one architecture evaluated against several
-workloads. The hardware signature is the **hardware-only projection**:
-every registered HARDWARE parameter's assigned value plus the template's
-`fabric_preset` and `fabric_overrides`. Nothing else enters — in particular
-the Wave-D/E blocks (which carry the PHASE) and the workload do not.
+workloads. The hardware signature is the **hardware-only projection of
+the EFFECTIVE (candidate-patched) scenario document**:
+`patched_scenario_template(template, assignment)` — the same document
+the evaluator resolves — projected onto every registered HARDWARE
+parameter's assigned value plus the effective `fabric_preset` and
+effective `fabric_overrides`. Nothing else enters — in particular the
+Wave-D/E blocks (which carry the PHASE), the workload, and SUPERSEDED
+base-override values do not: two scenarios whose base overrides differ
+but whose candidate assignment overwrites the difference are the SAME
+candidate hardware (pre-seal audit finding 1 — the base-template
+signature falsely invalidated valid hardware).
 A candidate whose scenarios disagree on this signature is `INVALID`; the
 error names the disagreeing signatures. Do not guess.
 
@@ -106,6 +122,11 @@ structural metric always sees the intent its evaluation saw.
   language is "best observed", never "global optimum" or
   `NO_FEASIBLE_DESIGN` unless the space happened to be exhausted (§23).
 - Canonical order: parameters sorted by name, values sorted by canonical
+  JSON rendering (the SAME ordering identity uses; type preserved —
+  `"128" < "2" < "4" < "8"` as strings, so `[8, 2, 128, 4]` enumerates
+  as `128, 2, 4, 8`), lexicographic Cartesian enumeration. This order is
+  scientifically consequential: it selects the BUDGETED_GRID evaluated
+  prefix (pre-seal audit finding 6).
   JSON, lexicographic Cartesian enumeration (§24).
 - Budget accounting reports requested vs planned vs evaluated vs reused
   (§25). The unevaluated tail stays visible as `NOT_EVALUATED` and must
@@ -123,6 +144,36 @@ structural metric always sees the intent its evaluation saw.
 bucket, no disappearing candidates (§64). `NOT_EVALUATED` is **not**
 terminal: including it in the terminal set would derive
 `search_complete=True` for budgeted runs — the §75 forgery from within.
+`PRUNED_PROVEN` does NOT exist in v1: there is no pruning producer
+(§28), and carrying unreachable vocabulary invites a silent second
+search policy. It returns only with a real producer and a contract
+amendment (§29).
+
+### 8b. Non-success statuses are EVIDENCE-BOUND (pre-seal audit)
+
+A serialized error document inside the optimization artifact is **not
+evidence by itself** — a forger can fabricate status and error together
+and re-sign. The verifier therefore proves every non-success outcome
+against sealed evidence:
+
+- `FAILED`/`TIMED_OUT` → the cited attempt must authenticate through
+  `load_verified_attempt`, bind back through verified
+  experiment → plan to THIS scenario's intent id, agree in status with
+  the verified attempt, and agree in error code with the attempt's
+  persisted error. A transplanted attempt (real evidence, wrong
+  candidate/scenario/status) refuses.
+- `UNSUPPORTED`/`BLOCKED` → the refusal is REPRODUCED deterministically:
+  the candidate's patched scenario intent is re-resolved through the
+  sealed control-plane path and the same sealed classifier
+  (`study_status_for_code`) must yield the claimed status. Parsing the
+  stored error code alone closes the syntax, not the evidence hole.
+- The aggregate candidate status is re-derived with the ONE shared
+  `aggregate_status` rule from the VERIFIED per-scenario outcomes; the
+  persisted aggregate is a summary, never authority.
+- Control-plane machinery defects (`EVIDENCE_INVALID`,
+  `INTERNAL_ERROR`, `NOT_FOUND`, `CONFLICT`) are NEVER candidate
+  science on either side: they escape and fail the run instead of
+  becoming a `FAILED`/`INVALID`/`UNMEASURABLE` observation.
 
 ## 9. Constraints and verdicts (§45–§53)
 
@@ -133,12 +184,35 @@ terminal: including it in the terminal set would derive
   constraints this is vacuous for SUCCEEDED candidates — an evaluated
   candidate with no binding constraints IS feasible; FAILED/TIMED_OUT
   candidates are never feasible.
-- Verdict ladder: `FEASIBLE` (existential, valid even budgeted) >
-  `CONSTRAINT_UNMEASURABLE` (no measurable evidence anywhere) >
-  `NO_FEASIBLE_DESIGN` (complete search AND every valid candidate
-  conclusively rejected by measured evidence — timeouts/unsupported/
-  unmeasurable never prove it) > `INCONCLUSIVE` > `NO_VALID_CANDIDATES`
-  (every assignment invalid before evaluation; not a feasibility claim).
+
+## 9b. Exact closure of nested collections (pre-seal audit)
+
+The verifier proves exact membership, never merely expected ⊆ persisted:
+
+- objective/constraint candidate keysets equal the re-derived keysets —
+  no ghost candidate entries survive;
+- `value_map_from_doc` REFUSES duplicate `(metric, scenario)` rows (a
+  silent last-one-wins overwrite would let a forger replace a value by
+  appending a row);
+- per-candidate constraint rows correspond exactly to the declared
+  constraint dimensions (no extra/missing rows);
+- `scenario_outcomes` (per evaluated candidate) is exactly the declared
+  scenario set with a closed field set; the convenience projections
+  `scenario_result_ids`/`scenario_reused`/`scenario_intent_ids` must be
+  EXACT projections of the authoritative outcomes — two independently
+  editable truths are not allowed;
+- `NOT_EVALUATED`/`ALIAS`/`INVALID` records carry no fabricated
+  execution evidence;
+- budget accounting (`scenario_evaluations_attempted/_reused`) is
+  recomputed only from closed verified records — a ghost scenario key
+  cannot inflate the counts.
+
+Verdict ladder: `FEASIBLE` (existential, valid even budgeted) >
+`CONSTRAINT_UNMEASURABLE` (no measurable evidence anywhere) >
+`NO_FEASIBLE_DESIGN` (complete search AND every valid candidate
+conclusively rejected by measured evidence — timeouts/unsupported/
+unmeasurable never prove it) > `INCONCLUSIVE` > `NO_VALID_CANDIDATES`
+(every assignment invalid before evaluation; not a feasibility claim).
 
 ## 10. Pareto and selection (§40–§42, §57–§61)
 
@@ -164,6 +238,46 @@ search + every valid candidate accounted + every feasible candidate
 measurable on every objective + all comparable (`comparable_count` is the
 scoped comparison's comparable input count — the size of the front is an
 output, not the scope). Budgeted runs report the observed frontier only.
+
+## 11b. Scenario scope of metrics (pre-seal audit)
+
+Every registry metric declares `scenario_scoped`: does the value depend
+on the WORKLOAD?
+
+- `scenario_scoped = True` (`system.makespan_s`, `network.window_s`,
+  `request.mean_latency_s`, `request.p95_latency_s`,
+  `network.delivered_packets`): in a multi-scenario definition the
+  request MUST name an explicit scenario — `"prefill"` vs `"decode"`
+  never collapses to whichever name sorts first. Parse-time refusal,
+  not extraction-time guessing.
+- `scenario_scoped = False` (`fabric.router_count`,
+  `fabric.endpoint_count`, `fabric.channel_count`): scenario-free is
+  valid — §10 already proves one effective hardware across scenarios
+  and the counts derive from that hardware.
+
+No metric-name conditionals in parsing code; `MetricDef.scenario_scoped`
+is the single authority.
+
+## 11c. Exception policy (pre-seal audit)
+
+Expected typed failures map to scientific outcomes; unexpected internal
+failures ESCAPE and fail the run. A bug may never become evidence:
+
+- `resolve_intent` during candidate construction: only `INVALID_INTENT`
+  means "this assignment is invalid". Machinery codes
+  (`EVIDENCE_INVALID`/`INTERNAL_ERROR`/`NOT_FOUND`/`CONFLICT`) and
+  raw programming errors (`RuntimeError`, `AttributeError`, …) escape —
+  a bug must never silently shrink the design space as fabricated
+  `INVALID` science.
+- `cp.evaluate`: the same machinery-code filter guards the candidate
+  terminal path; only genuine candidate-terminal refusals classify
+  through the sealed `study_status_for_error`.
+- Wave-E metric re-derivation: typed scheduler/workload/time domain
+  errors and the compile chain's typed refusals
+  (`KeyError`/`TypeError`/`ValueError`) mean absent behavior →
+  `UNMEASURABLE`; anything else is a bug and propagates.
+- Verification-aid helpers (`request_latency_summary`) follow the same
+  narrowed families.
 
 ## 12. Verification (§65–§71, §113–§120)
 
