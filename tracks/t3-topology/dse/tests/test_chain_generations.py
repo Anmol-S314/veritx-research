@@ -237,9 +237,12 @@ class TestPlanSideWaveEParentIsGenerationAware:
         historical operation_graph_id read appears after it (i.e. in the
         v1 branch), not before any generation check.
         """
-        src = self._source()
-        dispatch = src.index("chain_version(")
-        historical = src.index("operation_graph_id")
+        # comments are stripped: the explanatory comment above the
+        # dispatch legitimately names operation_graph_id
+        code = "\n".join(line.split("#")[0]
+                          for line in self._source().splitlines())
+        dispatch = code.index("chain_version(")
+        historical = code.index("operation_graph_id")
         assert dispatch < historical, (
             "operation_graph_id is read before the generation dispatch")
 
