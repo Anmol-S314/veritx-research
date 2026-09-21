@@ -69,8 +69,14 @@ integration happens here, in stage order. P3 remains deferred.
       COMPILED -> 10/10 PASS -> 8-rank graph -> admission -> mesh-DOR
       EVALUATED -> evidence digest match -> SATISFIED report, then cold
       reopen (cert/graph/message/traffic IDs, evidence, verdicts) all equal.
-- [ ] Stage 5 — merge P2; real candidate adapter (compile→lower→evaluate→
-      requirements); ruthless metrics
+- [x] Stage 5 — P2 merged (P1-INT.5). `optimization/real_evaluator.py`:
+      v3 candidate -> compile -> lower -> bound-check -> P1B evaluate ->
+      requirements; EVALUATED ⟺ compiled+evaluated+binding-SATISFIED,
+      else COMPILE_FAILED/UNSUPPORTED with cause in error (visible, never
+      Pareto); objectives = evidenced only (completion_cycles/ns +
+      backend numerics; NO area/analytics). One justified optimizer touch:
+      `apply_patch` accepts v3 (identical replace path). 2/2 real-adapter
+      tests (live grid Pareto + uncertified-corner visibility).
 - [ ] Stage 6 — real optimization golden (`--search grid --evaluate booksim`)
 - [ ] Stage 7 — merge P4; regenerate fixtures from integrated engine; view
       boundary gateway

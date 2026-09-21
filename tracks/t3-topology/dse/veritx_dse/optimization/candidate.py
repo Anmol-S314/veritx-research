@@ -70,10 +70,17 @@ def apply_patch(base: Any, patch: dict[str, Any]) -> Any:
     the base request is never mutated). Unknown/LOCKED keys raise.
     NocConfig's own __post_init__ validates value types.
     """
-    from veritx_dse.model.compile_model import CompileRequest
-    if not isinstance(base, CompileRequest):
+    from veritx_dse.model.compile_model import (
+        CompileRequest,
+        CompileRequestV3,
+    )
+    # Integration: v3 bases patch through the identical replace path
+    # (same NocConfig class, same frozen-replace mechanics); v2 flow
+    # is byte-identical — only the gate widens, nothing else branches.
+    if not isinstance(base, (CompileRequest, CompileRequestV3)):
         raise CandidateError(
-            f"base must be a CompileRequest, got {type(base).__name__}")
+            f"base must be a CompileRequest or CompileRequestV3, got "
+            f"{type(base).__name__}")
     norm = normalize_patch(patch)
     if not norm:
         raise CandidateError("patch must set at least one GUIDED knob")
