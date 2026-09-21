@@ -2,6 +2,9 @@
 
 Search semantics ABOVE the compiler: objectives, constraints, search
 budget, seed policy, search method, and the GUIDED design domain.
+Identity is per-metric: duplicate objective metrics and duplicate
+constraint metrics refuse at construction (one metric, one verdict;
+no silent last-write-wins).
 
 Allowed domain dimensions are NocConfig GUIDED knobs only
 (link_width, concentration, radix, rcu_enabled, topology_family,
@@ -176,7 +179,7 @@ class OptimizationDefinition:
     """
     domain: tuple[DomainParam, ...] = ()
     objectives: tuple[Objective, ...] = ()
-    constraints: tuple[Constraint, ...] = ()
+    constraints: tuple[Constraint, ...] = ()  # at most one per metric
     method: str = "grid"
     budget: dict[str, Any] = field(default_factory=dict)
     seed: int | None = None
@@ -212,6 +215,26 @@ class OptimizationDefinition:
             raise OptimizationDefinitionError("duplicate parameter names")
         if not objectives:
             raise OptimizationDefinitionError("at least one objective is required")
+        # Duplicate identity refuses. Two objectives over the same metric
+        # are one destination declared twice (declaration order is
+        # non-semantic), and two constraints over the same metric would
+        # silently overwrite each other in the metric-indexed verdict map
+        # (latency<=100 + latency>=50 is deliberately NOT expressible by
+        # accident: fail-closed refusal beats last-write-wins).
+        obj_metrics = [o.metric for o in objectives]
+        dup_obj = sorted({m for m in obj_metrics if obj_metrics.count(m) > 1})
+        if dup_obj:
+            raise OptimizationDefinitionError(
+                f"duplicate objective metric(s) {dup_obj}: each requested "
+                "objective must be declared exactly once")
+        con_metrics = [c.metric for c in constraints]
+        dup_con = sorted({m for m in con_metrics if con_metrics.count(m) > 1})
+        if dup_con:
+            raise OptimizationDefinitionError(
+                f"duplicate constraint metric(s) {dup_con}: one constraint "
+                "per metric; two bounds over the same metric would "
+                "silently overwrite each other — refused at construction, "
+                "never last-write-wins")
         if self.method not in SEARCH_METHODS:
             if self.method in ("bayes", "bo", "milp", "sa", "rho", "grpo"):
                 raise OptimizationDefinitionError(

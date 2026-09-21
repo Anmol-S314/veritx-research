@@ -31,6 +31,7 @@ from veritx_dse.optimization.candidate import (  # noqa: E402
     make_candidate,
 )
 from veritx_dse.optimization.constraints import (  # noqa: E402
+    ConstraintError,
     evaluate_all,
     evaluate_constraint_value,
 )
@@ -110,6 +111,27 @@ class TestDefinitionGuards:
                 domain=(DomainParam("link_width", (32,)),
                         DomainParam("noc_config.link_width", (64,))),
                 objectives=(Objective("latency", "MIN"),))
+
+    def test_duplicate_objective_metric_refused(self):
+        """A4: the same destination declared twice refuses, even with
+        different directions."""
+        with pytest.raises(OptimizationDefinitionError,
+                           match="duplicate objective"):
+            OptimizationDefinition(
+                domain=(DomainParam("link_width", (32, 64)),),
+                objectives=(Objective("latency", "MIN"),
+                            Objective("latency", "MAX")))
+
+    def test_duplicate_constraint_metric_refused_at_construction(self):
+        """A4 option B: one constraint per metric. latency<=100 plus
+        latency>=50 cannot silently overwrite; the definition refuses."""
+        with pytest.raises(OptimizationDefinitionError,
+                           match="duplicate constraint"):
+            OptimizationDefinition(
+                domain=(DomainParam("link_width", (32, 64)),),
+                objectives=(Objective("latency", "MIN"),),
+                constraints=(Constraint("latency", "<=", 100.0),
+                             Constraint("latency", ">=", 50.0)))
 
     def test_bayes_milp_refused(self):
         for method in ("bayes", "bo", "milp", "sa", "rho", "grpo"):
@@ -305,6 +327,14 @@ class TestConstraints:
         assert evaluate_all(cons, {"latency": 100.0})["feasible"] is True
         assert evaluate_all(cons, {"latency": 700.0})["feasible"] is False
         assert evaluate_all(cons, {})["feasible"] is None
+
+    def test_duplicate_metric_refuses_at_evaluation_too(self):
+        """A4 defense in depth: even below the definition seam, the
+        metric-keyed verdict map refuses to overwrite."""
+        cons = (Constraint("latency", "<=", 100.0),
+                Constraint("latency", ">=", 50.0))
+        with pytest.raises(ConstraintError, match="duplicate constraint"):
+            evaluate_all(cons, {"latency": 75.0})
 
 
 # ── pareto ───────────────────────────────────────────────────────────────
