@@ -575,3 +575,134 @@ class TestWaveEComparisonCompatibility:
                                           plain["resource_id"]],
                         "contract": self._contract()})
         assert "timing_model" in exc.value.message
+
+
+class TestPlanSideWaveEParentBehavioural:
+    """seam 0.1, proven BEHAVIOURALLY rather than by source inspection.
+
+    An earlier version of these checks read the function's source text.
+    That can only show the dispatch is written down, not that the v2
+    branch runs, so it is exactly how a latent cutover bug survives. Here
+    a real canonical WorkloadGraph is persisted and a v2 plan chain is
+    pointed at it, which is the code path that will execute the first time
+    a v2 writer exists.
+    """
+
+    @staticmethod
+    def _v2_chain(graph, template):
+        from veritx_dse.application.waved_resources import (
+            CHAIN_SCHEMA_VERSION_V2, PLAN_CHAIN_KEYS_V2,
+        )
+        block = {key: template[key] for key in PLAN_CHAIN_KEYS_V2
+                 if key not in ("chain_schema_version", "workload_graph_id",
+                                "parallelism_id")}
+        block["chain_schema_version"] = CHAIN_SCHEMA_VERSION_V2
+        block["workload_graph_id"] = graph.workload_id()
+        block["parallelism_id"] = graph.parallelism.parallelism_id()
+        assert set(block) == set(PLAN_CHAIN_KEYS_V2)
+        return block
+
+    def _canonical(self, cp, plan):
+        """The canonical graph for the plan's own Wave-D declaration."""
+        from veritx_dse.application.waved_resources import (
+            load_verified_waved_workload, workload_graph_record)
+        from veritx_dse.workload.migration import migrate_waved_workload
+        art = load_verified_waved_workload(
+            cp.store, plan["wave_d"]["waved_workload_id"])
+        graph = migrate_waved_workload(art)
+        cp.store.put("workloadgraph", graph.workload_id(),
+                     workload_graph_record(graph))
+        return graph
+
+    def test_v2_plan_membership_verifies(self, cp):
+        from veritx_dse.application.results import _verify_plan_wave_e
+        result = cp.evaluate(_intent(name="seam01-v2-ok",
+                                     wave_e=_wave_e_workload()))
+        plan = cp.store.get("plan", result["plan_id"])
+        graph = self._canonical(cp, plan)
+        # the overlay schedules c0; the canonical graph must contain it,
+        # or this test is vacuous
+        assert "c0" in {op.operation_id for op in graph.operations}
+        _verify_plan_wave_e(
+            cp.store,
+            {"wave_d": self._v2_chain(graph, plan["wave_d"]),
+             "wave_e": plan["wave_e"]},
+            "synthetic-v2-plan")
+
+    def test_v2_unknown_temporal_operation_refuses(self, cp):
+        """The same gate as v1: timing may not schedule communication the
+        canonical parent does not perform."""
+        from veritx_dse.application.errors import ControlPlaneError
+        from veritx_dse.application.results import _verify_plan_wave_e
+        from veritx_dse.application.waved_resources import (
+            workload_graph_record)
+        from veritx_dse.model.parallelism import ParallelismArtifact
+        from veritx_dse.workload.canonical_graph import (
+            KIND_COLLECTIVE, OperationNode, WorkloadGraph,
+            WorkloadSemantics, collective_detail)
+        result = cp.evaluate(_intent(name="seam01-v2-unknown",
+                                     wave_e=_wave_e_workload()))
+        plan = cp.store.get("plan", result["plan_id"])
+        # a perfectly valid canonical workload that happens not to
+        # perform the operation the overlay schedules
+        other = WorkloadGraph(
+            parallelism=ParallelismArtifact(tp=1, pp=1, ep=1, dp=4),
+            participant_count=4,
+            operations=(OperationNode(
+                "other", KIND_COLLECTIVE, (),
+                collective_detail(collective_kind="ALLREDUCE",
+                                  participants=(0, 1, 2, 3),
+                                  payload_bytes=8, participant_count=4,
+                                  scope=None)),),
+            semantics=WorkloadSemantics())
+        cp.store.put("workloadgraph", other.workload_id(),
+                     workload_graph_record(other))
+        with pytest.raises(ControlPlaneError, match="not in the plan's"):
+            _verify_plan_wave_e(
+                cp.store,
+                {"wave_d": self._v2_chain(other, plan["wave_d"]),
+                 "wave_e": plan["wave_e"]},
+                "synthetic-v2-unknown")
+
+    def test_shape_is_checked_before_either_parent_is_loaded(self, cp):
+        """Discriminated by the ERROR, not by reading the source.
+
+        The store holds NEITHER parent. If the gate classified this block
+        as v2 and loaded a parent first, the failure would be a lookup
+        error for the graph/opgraph. It must instead be the shape
+        refusal: version=2, a workload_graph_id, and an illegal
+        operation_graph_id is a malformed block, not a v2 one.
+        """
+        from veritx_dse.application.errors import ControlPlaneError
+        from veritx_dse.application.results import _verify_plan_wave_e
+        result = cp.evaluate(_intent(name="seam01-shape-first",
+                                     wave_e=_wave_e_workload()))
+        plan = cp.store.get("plan", result["plan_id"])
+        chain = {key: plan["wave_d"][key]
+                 for key in plan["wave_d"]}          # the real v1 block
+        chain["chain_schema_version"] = 2
+        chain["workload_graph_id"] = "sha256:" + "e" * 64
+        with pytest.raises(ControlPlaneError) as exc:
+            _verify_plan_wave_e(
+                cp.store, {"wave_d": chain, "wave_e": plan["wave_e"]},
+                "synthetic-shape-first")
+        # the illegal operation_graph_id is still present alongside the v2
+        # fields, so this block fails shape closure
+        assert "field set" in str(exc.value)
+        assert chain["operation_graph_id"]
+
+    def test_v1_and_v2_parents_are_not_interchangeable(self, cp):
+        """A v2 chain naming a graph that does not exist must refuse at
+        the parent load, not silently fall back to the v1 opgraph."""
+        from veritx_dse.application.errors import ControlPlaneError
+        from veritx_dse.application.results import _verify_plan_wave_e
+        result = cp.evaluate(_intent(name="seam01-dangling",
+                                     wave_e=_wave_e_workload()))
+        plan = cp.store.get("plan", result["plan_id"])
+        graph = self._canonical(cp, plan)
+        chain = self._v2_chain(graph, plan["wave_d"])
+        chain["workload_graph_id"] = "sha256:" + "f" * 64
+        with pytest.raises(ControlPlaneError):
+            _verify_plan_wave_e(
+                cp.store, {"wave_d": chain, "wave_e": plan["wave_e"]},
+                "synthetic-v2-dangling")
