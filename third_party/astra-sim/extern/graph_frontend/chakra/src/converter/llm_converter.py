@@ -114,6 +114,32 @@ class LLMConverter:
         metadata = GlobalMetadata(attr=attr)
         return metadata
     
+    # ── VeriTX (Gate V2.1): marker-aware layer resolution ──────────────
+    # EXPERT/PIM marker rows carry no memory fields (see Layer.__init__).
+    # The group-boundary paths below need a MATERIALIZED layer for the
+    # input load / output store / inter-group send. Asking a marker is an
+    # AttributeError; treating one as a compute layer would also bind the
+    # store to the wrong node. One helper, used at every such site.
+    @staticmethod
+    def _first_materialized_index(layers: List[Layer], start: int) -> int:
+        """Index of the first real layer at or after ``start``."""
+        i = start
+        while i < len(layers) and (layers[i].is_expert or layers[i].is_pim):
+            i += 1
+        return i if i < len(layers) else start
+
+    @staticmethod
+    def _last_materialized_index(layers: List[Layer], end: int) -> int:
+        """Index of the last real layer at or before ``end``.
+
+        ``end`` is inclusive; markers are skipped backwards. Falls back to
+        ``end`` only if the whole prefix is markers (a malformed trace).
+        """
+        i = end
+        while i >= 0 and (layers[i].is_expert or layers[i].is_pim):
+            i -= 1
+        return i if i >= 0 else end
+
     def get_layers(self, f: TextIOWrapper) -> List[Layer]:
         layers: List[Layer] = []
         for line in f:
@@ -329,12 +355,16 @@ class LLMConverter:
                     if load != None:
                         encode_message(g, load)
                     if npu_group == 0:
-                        # Load Input
+                        # Load Input (VeriTX: from the first MATERIALIZED
+                        # layer at or after layer_start — a leading
+                        # EXPERT/PIM marker has no memory fields)
+                        _src_idx = self._first_materialized_index(
+                            layers, layer_start)
                         input_load_node = self.get_memory_load_node(
-                            layers[layer_start].name,
+                            layers[_src_idx].name,
                             "INPUT",
-                            layers[layer_start].input_memory_loc,
-                            layers[layer_start].input_memory_size,
+                            layers[_src_idx].input_memory_loc,
+                            layers[_src_idx].input_memory_size,
                         )
                         encode_message(g, input_load_node)                  
                     else:
@@ -510,7 +540,13 @@ class LLMConverter:
                             elif int(layers[layer_num].pim_num) == 0:
                                 if first_comp_node:
                                     if npu_group == 0:
-                                        pim_parent_nodes.append()
+                                        # VeriTX (Gate V2.1): the first PIM
+                                        # block in group 0 legitimately has
+                                        # NO predecessor — appending a dummy
+                                        # parent would invent a dependency.
+                                        # Upstream called append() with no
+                                        # argument (TypeError) here.
+                                        pass
                                     else:
                                         pim_parent_nodes.append(receive_input_node)
                                     if evict != None:
@@ -542,24 +578,31 @@ class LLMConverter:
                     layer_end = layer_num
 
                     if npu_group == (num_npu_group - 1):
-                        # Store output (for the last layer)
+                        # Store output (for the last layer). VeriTX: the
+                        # store binds to the last MATERIALIZED layer — a
+                        # trailing EXPERT/PIM marker is not output-bearing.
+                        _out_idx = self._last_materialized_index(
+                            layers, layer_end - 1)
                         output_store_node = self.get_memory_store_node(
-                            layers[layer_end - 1].name,
+                            layers[_out_idx].name,
                             "OUTPUT",
-                            layers[layer_end - 1].output_memory_loc,
-                            layers[layer_end - 1].input_memory_size,
+                            layers[_out_idx].output_memory_loc,
+                            layers[_out_idx].input_memory_size,
                         )
                         # if pim_comp_nodes are not consumed yet, add dependency
                         if len(pim_comp_nodes) != 0:
                             for pim_comp in pim_comp_nodes:
                                 self.add_parent(send_output_node, pim_comp)
                                 pim_comp_nodes = []
-                        if layers[layer_end - 1].comm_type != "NONE" and use_comm:
+                        if layers[_out_idx].comm_type != "NONE" and use_comm:
                             self.add_parent(output_store_node, comm_coll_node)
-                        elif layers[layer_end - 1].comp_node != None:
+                        elif layers[_out_idx].comp_node != None:
                             self.add_parent(output_store_node, comp_node)
                         else:
-                            self.add_parent(output_store_node, layers[layer_end - 2].comp_node)
+                            self.add_parent(
+                                output_store_node,
+                                layers[self._last_materialized_index(
+                                    layers, _out_idx - 1)].comp_node)
                         encode_message(g, output_store_node)
                     else:
                         if layers[layer_end - 1].is_expert or layers[layer_end - 1].is_pim:
@@ -573,11 +616,13 @@ class LLMConverter:
                                 comm_dst=npu_id + npus_per_group
                             )
                         else:
+                            _send_idx = self._last_materialized_index(
+                                layers, layer_end - 1)
                             send_output_node = self.get_comm_node(
                                 is_send=True,
-                                layer_name=layers[layer_end - 1].name,
-                                comm_type=layers[layer_end - 1].comm_type,
-                                comm_size=layers[layer_end - 1].output_memory_size,
+                                layer_name=layers[_send_idx].name,
+                                comm_type=layers[_send_idx].comm_type,
+                                comm_size=layers[_send_idx].output_memory_size,
                                 comm_src=npu_id,
                                 comm_dst=npu_id + npus_per_group
                             )
@@ -586,12 +631,15 @@ class LLMConverter:
                             for pim_comp in pim_comp_nodes:
                                 self.add_parent(send_output_node, pim_comp)
                                 pim_comp_nodes = []
-                        if layers[layer_end - 1].comm_type != "NONE" and use_comm:
+                        if layers[_send_idx].comm_type != "NONE" and use_comm:
                             self.add_parent(send_output_node, comm_coll_node)
-                        elif layers[layer_end - 1].comp_node != None:
+                        elif layers[_send_idx].comp_node != None:
                             self.add_parent(send_output_node, comp_node)
                         else:
-                            self.add_parent(send_output_node, layers[layer_end - 2].comp_node)
+                            self.add_parent(
+                                send_output_node,
+                                layers[self._last_materialized_index(
+                                    layers, _send_idx - 1)].comp_node)
                         encode_message(g, send_output_node)
             remain_layers -= 1
     
@@ -656,12 +704,16 @@ class LLMConverter:
                     if load != None:
                         encode_message(g, load)
                     if npu_group == 0:
-                        # Load Input
+                        # Load Input (VeriTX: from the first MATERIALIZED
+                        # layer at or after layer_start — a leading
+                        # EXPERT/PIM marker has no memory fields)
+                        _src_idx = self._first_materialized_index(
+                            layers, layer_start)
                         input_load_node = self.get_memory_load_node(
-                            layers[layer_start].name,
+                            layers[_src_idx].name,
                             "INPUT",
-                            layers[layer_start].input_memory_loc,
-                            layers[layer_start].input_memory_size,
+                            layers[_src_idx].input_memory_loc,
+                            layers[_src_idx].input_memory_size,
                         )
                         encode_message(g, input_load_node)                  
                     else:
@@ -819,12 +871,15 @@ class LLMConverter:
                             comm_src=npu_id,
                             comm_dst=npu_id + self.num_npus
                         )
-                        if layers[layer_end - 1].comm_type != "NONE" and use_comm:
+                        if layers[_send_idx].comm_type != "NONE" and use_comm:
                             self.add_parent(send_output_node, comm_coll_node)
-                        elif layers[layer_end - 1].comp_node != None:
+                        elif layers[_send_idx].comp_node != None:
                             self.add_parent(send_output_node, comp_node)
                         else:
-                            self.add_parent(send_output_node, layers[layer_end - 2].comp_node)
+                            self.add_parent(
+                                send_output_node,
+                                layers[self._last_materialized_index(
+                                    layers, _send_idx - 1)].comp_node)
                         encode_message(g, send_output_node)
                         # paired decode npu receive output
                         recv_output_node = self.get_comm_node(
@@ -848,20 +903,25 @@ class LLMConverter:
                                 comm_dst=npu_id + npus_per_group
                             )
                         else:
+                            _send_idx = self._last_materialized_index(
+                                layers, layer_end - 1)
                             send_output_node = self.get_comm_node(
                                 is_send=True,
-                                layer_name=layers[layer_end - 1].name,
-                                comm_type=layers[layer_end - 1].comm_type,
-                                comm_size=layers[layer_end - 1].output_memory_size,
+                                layer_name=layers[_send_idx].name,
+                                comm_type=layers[_send_idx].comm_type,
+                                comm_size=layers[_send_idx].output_memory_size,
                                 comm_src=npu_id,
                                 comm_dst=npu_id + npus_per_group
                             )
-                        if layers[layer_end - 1].comm_type != "NONE" and use_comm:
+                        if layers[_send_idx].comm_type != "NONE" and use_comm:
                             self.add_parent(send_output_node, comm_coll_node)
-                        elif layers[layer_end - 1].comp_node != None:
+                        elif layers[_send_idx].comp_node != None:
                             self.add_parent(send_output_node, comp_node)
                         else:
-                            self.add_parent(send_output_node, layers[layer_end - 2].comp_node)
+                            self.add_parent(
+                                send_output_node,
+                                layers[self._last_materialized_index(
+                                    layers, _send_idx - 1)].comp_node)
                         encode_message(g, send_output_node)
             remain_layers -= 1
 

@@ -23,6 +23,7 @@ from pathlib import Path
 import pytest
 
 DSE = Path(__file__).resolve().parents[1]
+REPO = DSE.parents[2]
 sys.path.insert(0, str(DSE))
 
 from veritx_dse.workload.canonical import (  # noqa: E402
@@ -32,9 +33,9 @@ from veritx_dse.workload.canonical import (  # noqa: E402
 )
 from veritx_dse.workload.lowering import rows_from_artifact  # noqa: E402
 
-CHAKRA = Path(
-    "/home/datavex/.local/lib/python3.14/site-packages/chakra/src/"
-    "converter/llm_converter.py")
+CHAKRA = (REPO / "third_party" / "astra-sim" / "extern"
+          / "graph_frontend" / "chakra" / "src" / "converter"
+          / "llm_converter.py")
 
 
 def layer_row(name, comp_ns, inp, wt, out, comm="NONE", size=0,
@@ -170,16 +171,20 @@ class TestPimSemantics:
         # the input rows cannot be regenerated from the artifact either
         assert rows_from_artifact(art).rows != self.PIM_ROWS
 
-    def test_the_third_party_converter_has_a_no_argument_append(self):
-        """Suspicious PIM converter code (finding E), pinned textually.
+    def test_the_no_argument_append_is_repaired(self):
+        """F17a is FIXED: the source no longer contains the broken call.
 
-        A genuine ``list.append()`` TypeError on the npu_group == 0 path.
+        Gate V2.1 replaced ``pim_parent_nodes.append()`` with an explicit
+        no-predecessor branch (the first PIM block in group 0 has no parent
+        to append; a dummy would invent a dependency).
         """
-        if not CHAKRA.exists():
-            pytest.skip("chakra converter not installed")
-        src = CHAKRA.read_text()
-        assert "pim_parent_nodes.append()" in src, (
-            "chakra may have been fixed/updated: re-audit PIM execution")
+        vendored = (REPO / "third_party" / "astra-sim" / "extern"
+                    / "graph_frontend" / "chakra" / "src" / "converter"
+                    / "llm_converter.py")
+        if not vendored.exists():
+            pytest.skip("vendored chakra converter not present")
+        assert "pim_parent_nodes.append()" not in vendored.read_text(), (
+            "the no-argument append came back")
 
 
 # ── F. scope absence must never become "ALL" ────────────────────────────

@@ -1,6 +1,6 @@
 {
   "name": "astra-sim",
-  "description": "ASTRA-sim 2.0 — system-level multi-die AI accelerator simulator",
+  "description": "ASTRA-sim 2.0 \u2014 system-level multi-die AI accelerator simulator",
   "upstream": "https://github.com/ASTRA-Sim/ASTRA-sim",
   "commit": "518bd51",
   "date_vendored": "2026-08-17",
@@ -10,20 +10,26 @@
     "BookSim2Fabric wrapper added (extern/network_backend/booksim2/)"
   ],
   "local_modifications": [
-    "network_frontend/booksim2/main.cc — VeritX entry point with EmbedTM integration",
-    "network_frontend/booksim2/Booksim2NetworkApi.cc — sim_send/sim_recv via fabric",
-    "extern/network_backend/booksim2/Booksim2Fabric.cc/hh — fabric wrapper",
-    "extern/graph_frontend/chakra/src/converter/llm_converter.py — convert_rows() shim for newer LLMServingSim graph_generator (materializes legacy text; PP headers raise UNSUPPORTED_WORKLOAD_SEMANTIC fail-closed per program Phase 1 T2)"
+    "network_frontend/booksim2/main.cc \u2014 VeritX entry point with EmbedTM integration",
+    "network_frontend/booksim2/Booksim2NetworkApi.cc \u2014 sim_send/sim_recv via fabric",
+    "extern/network_backend/booksim2/Booksim2Fabric.cc/hh \u2014 fabric wrapper",
+    "extern/graph_frontend/chakra/src/converter/llm_converter.py \u2014 convert_rows() shim for newer LLMServingSim graph_generator (materializes legacy text; PP headers raise UNSUPPORTED_WORKLOAD_SEMANTIC fail-closed per program Phase 1 T2)",
+    "extern/graph_frontend/chakra/src/converter/llm_converter.py \u2014 Gate V2.1 (VeriTX): marker-aware layer resolution (_first_materialized_index/_last_materialized_index). EXPERT/PIM marker rows carry no memory fields, so the group-boundary paths (input load, last-group output store, inter-group send) now bind to the nearest MATERIALIZED layer instead of reading output_memory_loc/input_memory_loc off a marker (AttributeError).",
+    "extern/graph_frontend/chakra/src/converter/llm_converter.py \u2014 Gate V2.1 (VeriTX): repaired pim_parent_nodes.append() with no argument (a TypeError on the npu_group == 0 / first-PIM-block path). The first PIM block in group 0 legitimately has NO predecessor, so nothing is appended; a dummy parent would invent a dependency."
   ],
   "known_gaps": [
     "Build artifacts not tracked (cmake --build needed)",
     "chakra_to_et binary must be built separately",
-    "convert_rows shim has no PP support — pp_size > 1 is refused (T1 preflight + converter raise), never converted as unpartitioned"
+    "convert_rows shim has no PP support \u2014 pp_size > 1 is refused (T1 preflight + converter raise), never converted as unpartitioned",
+    "llm_converter.py get_pim_compute_node() references the constant PIM_COMP_NODE, which is DEFINED NOWHERE in this vendored tree \u2014 the PIM execution path has never run (Gate V2.1 finding F17b). Qualified PIM conversion is therefore UNSUPPORTED until the intended node-type constant is established from the graph semantics.",
+    "llm_converter.py main conversion loop can walk past the end of the layer list (IndexError) when an EXPERT block is never closed with EXPERT END; it should refuse an unclosed block (Gate V2.1)."
   ],
   "used_by": [
     "t3-topology"
   ],
-  "deps": ["booksim2"],
+  "deps": [
+    "booksim2"
+  ],
   "build_command": "cd build/astra_booksim2 && BOOKSIM2_SRC_DIR=$(realpath ../../../../third_party/booksim2) cmake . && cmake --build . -j$(nproc)",
   "clean_command": "rm -rf build/astra_booksim2/build",
   "install_location": "astra-sim/network_frontend/booksim2/bin/AstraSim_BookSim2"

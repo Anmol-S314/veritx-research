@@ -22,7 +22,7 @@ FIXTURES = DSE / "tests" / "fixtures"
 sys.path.insert(0, str(DSE))
 
 PINNED_PHASE9_CORPUS_SHA256 = (
-    "285eecbbd20558ee7d034a0192fc64bf02c00bbe1ec67f7ee54618d571c2b942")
+    "68f7401ec8cb32a34c9309481d33db0eb3641ddc1f55421844933f15e049ad0e")
 
 
 def _load_builder():
