@@ -443,11 +443,7 @@ class OperationNode:
     phase: str | None = None
     step: int | None = None
     label: str = ""
-    #: the graph's participant namespace. ``None`` means "not yet owned by
-    #: a graph": rank BOUNDS are then checked by the graph (which always
-    #: passes its namespace down), because a bare node does not know the
-    #: namespace. Excluded from identity.
-    _participant_count: int | None = None
+
 
     def __post_init__(self) -> None:
         _str(self.operation_id, "operation_id")
@@ -488,8 +484,13 @@ class OperationNode:
         # full semantic revalidation. A strict reader is adversarial and
         # may not trust that a builder produced this value.
         try:
+            # STRUCTURE ONLY: a bare node does not know the participant
+            # namespace, and it must not cache one (a frozen object that
+            # changes depending on which graph touched it last is an
+            # aliasing bug). The GRAPH validates bounds against its own
+            # namespace, without writing anything back into the node.
             object.__setattr__(self, "detail", _canonical_detail(
-                self.kind, thaw(frozen), self._participant_count))
+                self.kind, thaw(frozen), None))
         except (InvalidInput, UnsupportedSemantics) as exc:  # context
             raise type(exc)(
                 f"operation {self.operation_id!r} ({self.kind}): "
@@ -528,12 +529,16 @@ class OperationNode:
                 raise InvalidInput(
                     f"persisted operation is missing canonical field(s) "
                     f"{missing}")
-        return cls(
+        node = cls(
             operation_id=d.get("operation_id"), kind=d.get("kind"),
             deps=tuple(d.get("deps") or ()), detail=d.get("detail"),
             owner=d.get("owner"), phase=d.get("phase"),
-            step=d.get("step"), label=d.get("label", ""),
-            _participant_count=participant_count)
+            step=d.get("step"), label=d.get("label", ""))
+        if participant_count is not None:
+            # validate against the reader's namespace, store NOTHING
+            _canonical_detail(node.kind, thaw(node.detail),
+                              participant_count)
+        return node
 
 
 # ── the workload semantics envelope ─────────────────────────────────────
@@ -634,14 +639,13 @@ class WorkloadGraph:
         dupes = sorted({i for i in ids if ids.count(i) > 1})
         if dupes:
             raise InvalidInput(f"duplicate operation id(s): {dupes}")
-        # nodes built directly carry the default namespace; re-validate
-        # each against THIS graph's namespace so a direct construction
-        # cannot bypass the participant law
+        # Namespace law enforced HERE, read-only: the node is frozen and
+        # stays byte-identical no matter which graphs reference it. The
+        # same node may legally live in graphs with different participant
+        # counts; passing validation is what makes that legal.
         for op in ops:
-            if op._participant_count != self.participant_count:
-                object.__setattr__(op, "_participant_count",
-                                   self.participant_count)
-                op.__post_init__()   # revalidate against THIS namespace
+            _canonical_detail(op.kind, thaw(op.detail),
+                              self.participant_count)
         known = set(ids)
         for op in ops:
             missing = sorted(set(op.deps) - known)

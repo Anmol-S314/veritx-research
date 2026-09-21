@@ -711,3 +711,92 @@ class TestRegionOrderingLaw:
             ["a", "b", "c"]
         assert [op.operation_id for op in g.require_total_order()] == \
             ["a", "b", "c"]
+
+
+class TestNoAliasingAcrossGraphs:
+    """2c.2.1 — a frozen node must not change because a graph touched it.
+
+    The authority previously wrote its participant namespace INTO the
+    caller's node (`object.__setattr__(op, "_participant_count", ...)`).
+    Constructing a second graph then mutated state reachable from the
+    first — a frozen dataclass that silently changes depending on which
+    graph referenced it last.
+    """
+
+    @staticmethod
+    def _rank_node():
+        return OperationNode("c0", KIND_COLLECTIVE, (),
+                             collective_detail(
+                                 collective_kind="ALLREDUCE",
+                                 participants=(0, 1),
+                                 payload_bytes=8, participant_count=None))
+
+    def test_same_node_in_two_graphs_leaves_it_unchanged(self):
+        node = self._rank_node()
+        before = node.to_dict()
+        g4 = WorkloadGraph(parallelism=PARALLELISM, participant_count=4,
+                           operations=(node,))
+        after_first = node.to_dict()
+        g8 = WorkloadGraph(parallelism=PARALLELISM, participant_count=8,
+                           operations=(node,))
+        assert node.to_dict() == before == after_first
+        assert g4.to_dict() == g4.to_dict()
+        assert g4.workload_id() == g4.workload_id()
+        assert g8.workload_id() == g8.workload_id()
+        assert g4.workload_id() != g8.workload_id()
+
+    def test_graph_serialization_is_unaffected_by_a_later_graph(self):
+        node = self._rank_node()
+        g4 = WorkloadGraph(parallelism=PARALLELISM, participant_count=4,
+                           operations=(node,))
+        frozen = g4.to_dict()
+        WorkloadGraph(parallelism=PARALLELISM, participant_count=8,
+                      operations=(node,))
+        assert g4.to_dict() == frozen
+
+    def test_node_has_no_namespace_state_at_all(self):
+        node = self._rank_node()
+        assert not hasattr(node, "_participant_count")
+        assert set(node.to_dict()) == {"operation_id", "kind", "deps",
+                                       "owner", "phase", "step", "detail",
+                                       "label"}
+        assert not any("participant" in f for f in node.to_dict())
+
+    def test_out_of_namespace_node_refuses_in_a_narrow_graph(self):
+        """rank 5 is legal in count=8 and refused in count=4 — with the
+        SAME node object and no mutation between attempts."""
+        node = OperationNode("c0", KIND_COLLECTIVE, (),
+                             collective_detail(
+                                 collective_kind="ALLREDUCE",
+                                 participants=(0, 5, 6, 7),
+                                 payload_bytes=8, participant_count=None))
+        snapshot = node.to_dict()
+        with pytest.raises(InvalidInput, match="participant namespace"):
+            WorkloadGraph(parallelism=PARALLELISM, participant_count=4,
+                          operations=(node,))
+        assert node.to_dict() == snapshot, "the failed graph mutated it"
+        g8 = WorkloadGraph(parallelism=PARALLELISM, participant_count=8,
+                           operations=(node,))
+        assert g8.participant_count == 8
+        assert node.to_dict() == snapshot
+        with pytest.raises(InvalidInput, match="owner 5 is outside"):
+            WorkloadGraph(parallelism=PARALLELISM, participant_count=4,
+                          operations=(OperationNode(
+                              "o0", KIND_COMPUTE, (),
+                              compute_detail(duration_ns=1), owner=5),))
+
+    def test_direct_construction_validates_bounds_at_the_graph(self):
+        """Structure is checked at the node; BOUNDS at the graph."""
+        node = OperationNode("c0", KIND_COLLECTIVE, (),
+                             collective_detail(
+                                 collective_kind="ALLREDUCE",
+                                 participants=(0, 1, 2),
+                                 payload_bytes=8, participant_count=None))
+        assert node.detail["participants"] == (0, 1, 2)   # node: legal
+        with pytest.raises(InvalidInput, match="participant namespace"):
+            WorkloadGraph(parallelism=PARALLELISM, participant_count=2,
+                          operations=(node,))                 # graph: refuse
+        # the same node in a wide enough namespace is fine
+        g = WorkloadGraph(parallelism=PARALLELISM, participant_count=4,
+                          operations=(node,))
+        assert g.participant_count == 4
