@@ -1,5 +1,5 @@
 {
-  "_comment": "P1A vertical slice: dense transformer on 64 compute tiles + 8 HBM. The compiler derives topology, placement, routing, VCs, link widths and the deadlock certificate. No routing_function, vc_count, turn_restrictions or escape_vc appears below \u2014 those are LOCKED compiler outputs.",
+  "_comment": "P1B evaluation slice: dense transformer on 64 compute tiles + 8 HBM. The compiler derives topology, placement, routing, VCs, link widths and the deadlock certificate; the evaluator lowers the declared collective onto the fabric and runs qualified BookSim.: dense transformer on 64 compute tiles + 8 HBM. The compiler derives topology, placement, routing, VCs, link widths and the deadlock certificate. No routing_function, vc_count, turn_restrictions or escape_vc appears below \u2014 those are LOCKED compiler outputs.",
   "address_map": {
     "ranges": []
   },
@@ -72,7 +72,8 @@
       {
         "bytes_per_element": 2048,
         "group_size": 8,
-        "kind": "allreduce"
+        "kind": "allreduce",
+        "payload_bytes": 65536
       }
     ],
     "dp": 1,

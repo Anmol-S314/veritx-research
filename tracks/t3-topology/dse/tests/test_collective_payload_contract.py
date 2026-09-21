@@ -6,7 +6,6 @@ Old documents must serialize and hash exactly as before.
 """
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
@@ -55,14 +54,22 @@ class TestPayloadContract:
             CollectiveOp(kind=CollectiveKind.ALLREDUCE, group_size=8,
                          payload_bytes=bad)
 
-    def test_p1a_example_hash_unmoved_by_new_field(self):
-        """The P1A slice example declares no payload_bytes: its design
-        identity must equal the value the sealed P1A tree computed
-        (verified identical with and without this change)."""
-        doc = json.loads((DSE.parent / "examples"
-                          / "llama_dense_64tiles.json").read_text())
+    def test_old_shape_hash_unmoved_by_new_field(self):
+        """A pre-P1B document (no payload_bytes anywhere) keeps its
+        design identity under the new code: the optional field is
+        omitted from serialization when undeclared. Hash verified
+        identical on the sealed P1A tree and with this change."""
+        doc = {
+            "schema_version": 2, "compiler_semantics_version": 2,
+            "workload": {
+                "model_family": "dense_transformer", "tp": 2,
+                "collectives": [{"kind": "allreduce", "group_size": 2,
+                                 "bytes_per_element": 2048}],
+            },
+            "agents": [{"kind": "compute_tile", "count": 2}],
+        }
         req = CompileRequest.from_dict(doc)
         assert req.design_hash() == (
-            "47cefaa0d0527e8249b64b96b5e721c1052aef1788c653711222b670e4246d88")
+            "da32daeae0187608e24fdb286d0294bb3ac3c7b49a9be9d43bbfbb41a566eed3")
         assert all("payload_bytes" not in c for c in
                    req.to_dict()["workload"]["collectives"])
