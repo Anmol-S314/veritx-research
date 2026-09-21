@@ -227,3 +227,33 @@ No P3, no 120-node legacy cleanup, no feature work until these gates pass.
 No engine semantics changed. The only non-`apps/studio` code touched is the
 RT-13-mandated `veritx_dse/cli/cli.py` run-root construction (no scientific
 identity, no evaluation semantics).
+
+## RT-A closure note — optimization truth / contract v2 (branch `rt-final/optimization-truth`)
+
+- **Contract v2 moved to the versioned directory (A5).** The
+  authoritative study-view schema is now
+  `contracts/srota/v2/optimization.study.view.schema.json` (contract v2);
+  `contracts/srota/v1/optimization.study.view.v2.schema.json` no longer
+  exists. `contracts/srota/v1/optimization.study.view.schema.json`
+  (frozen, boolean-only, LOSSY) is the only v1 study view; the v1
+  projector is now explicitly `OptimizationResult._to_study_view_v1()`.
+  Both CLI validators select `contracts/srota/{v1,v2}/...` by the emitted
+  `contract_version`.
+- **Studio action required (Worker C, do NOT hand-patch engine
+  semantics).** `apps/studio/scripts/validate_fixtures.py` still points
+  `STUDY_SCHEMA_V2` at the removed
+  `contracts/srota/v1/optimization.study.view.v2.schema.json`; retarget it
+  to `contracts/srota/v2/optimization.study.view.schema.json`. The v2
+  view gains the separated authorities
+  (`evaluation_ids.requirement_report_id`, `product_requirements`,
+  `objective_availability`, `pareto_eligible`), so committed
+  `apps/studio/fixtures/optimization-study.json` must be regenerated from
+  the engine tool once the engine closure SHA lands.
+- **Optimization truth (A1–A4).** Product RequirementReport identity and
+  pass state are carried into `CandidateEvaluation`/`CandidateRecord` and
+  bound transitively by `OptimizationResult.result_id()`; transplanted or
+  forged reports refuse. Optimizer constraints are a separate
+  tri-state authority (`SATISFIED|VIOLATED|UNMEASURABLE`) and are never
+  named "requirements". Missing/non-finite objectives are typed
+  `UNMEASURABLE` and Pareto-ineligible; duplicate objective/constraint
+  metrics refuse at construction (and in `evaluate_all`).

@@ -23,11 +23,12 @@ measured and finite AND every hard constraint is SATISFIED. Ineligible
 candidates stay visible with typed reasons and never reach pareto.py's
 indexing (never a KeyError).
 
-Emits OptimizationStudyView per
-contracts/srota/v1/optimization.study.view.v2.schema.json
+Emits OptimizationStudyView per the authoritative
+contracts/srota/v2/optimization.study.view.schema.json
 (contract_version 2 by default; contract_version=1 keeps the frozen
-boolean-only v1 shape for pinned callers — that projector is LOSSY and
-never claims to preserve three-state semantics).
+boolean-only v1 shape at contracts/srota/v1/ for pinned callers — that
+projector is explicitly LOSSY and never claims to preserve three-state
+semantics).
 
 Provenance: result-identity and re-derivation discipline REPLAY
 synthesis/compiler.py (request/budget/scope accounting, Pareto only over
@@ -231,65 +232,111 @@ class OptimizationResult:
             "selected_candidate_id": self.selected_candidate_id,
         })
 
-    def to_study_view(self, contract_version: int = 2) -> dict[str, Any]:
-        """Emit the OptimizationStudyView.
-
-        Contract v2 (default) keeps SATISFIED/VIOLATED/UNMEASURABLE
-        distinct in ``constraint_verdicts``; contract v1 (opt-in, for
-        callers pinning the frozen boolean-only shape) collapses
-        UNMEASURABLE to false.
-        """
-        if contract_version not in (1, 2):
-            raise OptimizationResultError(
-                f"unknown OptimizationStudyView contract_version "
-                f"{contract_version!r}; supported: 1, 2")
+    def _definition_view(self) -> dict[str, Any]:
         defn = self.definition
+        return {
+            "objectives": [o.metric for o in defn.objectives],
+            "constraints": [f"{c.metric}{c.op}{c.threshold:g}"
+                            for c in defn.constraints],
+            "method": defn.method,
+            "budget": dict(defn.budget),
+            "seed": defn.seed,
+            "domain": {p.name: list(p.values) for p in defn.domain},
+        }
+
+    def _to_study_view_v2(self) -> dict[str, Any]:
+        """Authoritative v2 projector (contract_version 2).
+
+        Keeps the three authorities separate and lossless: product
+        requirement identity/pass state, optimization constraint
+        tri-state verdicts, and objective availability. ONE hash
+        boundary (P1B rule): engine values are bare digests, product
+        views are sha256:-prefixed, converted HERE only.
+        """
         candidates = []
         for r in sorted(self.records, key=lambda r: r.candidate_id):
-            evaluations: dict[str, Any] = {
-                "design_hash": _view_hash(r.design_hash)}
-            evaluations["performance_result_id"] = r.performance_result_id
-            if contract_version == 2:
-                # v2 preserves three-state semantics losslessly.
-                verdicts: dict[str, Any] = dict(r.constraint_verdicts)
-            else:
-                # v1 is boolean-only: UNMEASURABLE collapses to false
-                # (fail-closed means unmeasurable is never satisfied).
-                # This projector is LOSSY BY DESIGN — the v1 booleans do
-                # not preserve three-state semantics; the authoritative
-                # v2 view does.
-                verdicts = {
-                    k: (v == "SATISFIED")
-                    for k, v in r.constraint_verdicts.items()}
             candidates.append({
                 "candidate_id": r.candidate_id,
                 "guided_patch": dict(r.guided_patch),
                 "locked_consequences": dict(r.locked_consequences),
-                "evaluation_ids": evaluations,
+                "evaluation_ids": {
+                    "design_hash": _view_hash(r.design_hash),
+                    "performance_result_id": r.performance_result_id,
+                    "requirement_report_id": r.requirement_report_id,
+                },
+                "product_requirements": {
+                    "satisfied": r.product_requirements_satisfied,
+                    "verdicts": [dict(d)
+                                 for d in r.product_requirement_details],
+                },
                 "objective_values": {k: float(v)
                                      for k, v in r.objective_values.items()},
-                "constraint_verdicts": verdicts,
+                "objective_availability": dict(r.objective_availability),
+                "constraint_verdicts": dict(r.constraint_verdicts),
+                "pareto_eligible": bool(r.pareto_eligible),
                 "pareto_member": bool(r.pareto_member),
             })
-        # ONE hash boundary (P1B rule): engine values are bare digests,
-        # product views are sha256:-prefixed, converted HERE only.
         return {
-            "contract_version": contract_version,
+            "contract_version": 2,
             "base_design_hash": _view_hash(self.base_design_hash),
-            "definition": {
-                "objectives": [o.metric for o in defn.objectives],
-                "constraints": [f"{c.metric}{c.op}{c.threshold:g}"
-                                for c in defn.constraints],
-                "method": defn.method,
-                "budget": dict(defn.budget),
-                "seed": defn.seed,
-                "domain": {p.name: list(p.values) for p in defn.domain},
-            },
+            "definition": self._definition_view(),
             "candidates": candidates,
             "pareto_ids": list(self.pareto_ids),
             "selected_candidate_id": self.selected_candidate_id,
             "selection_rationale": self.selection_rationale,
         }
+
+    def _to_study_view_v1(self) -> dict[str, Any]:
+        """LOSSY v1 compatibility projector (contract_version 1).
+
+        Frozen boolean-only shape for pinned callers. UNMEASURABLE
+        collapses to false (fail-closed: unmeasurable is never
+        satisfied) and the v2 availability/product provenance fields are
+        absent — these booleans do NOT preserve three-state semantics;
+        callers that need the distinction must consume v2.
+        """
+        candidates = []
+        for r in sorted(self.records, key=lambda r: r.candidate_id):
+            candidates.append({
+                "candidate_id": r.candidate_id,
+                "guided_patch": dict(r.guided_patch),
+                "locked_consequences": dict(r.locked_consequences),
+                "evaluation_ids": {
+                    "design_hash": _view_hash(r.design_hash),
+                    "performance_result_id": r.performance_result_id,
+                },
+                "objective_values": {k: float(v)
+                                     for k, v in r.objective_values.items()},
+                "constraint_verdicts": {
+                    k: (v == "SATISFIED")
+                    for k, v in r.constraint_verdicts.items()},
+                "pareto_member": bool(r.pareto_member),
+            })
+        return {
+            "contract_version": 1,
+            "base_design_hash": _view_hash(self.base_design_hash),
+            "definition": self._definition_view(),
+            "candidates": candidates,
+            "pareto_ids": list(self.pareto_ids),
+            "selected_candidate_id": self.selected_candidate_id,
+            "selection_rationale": self.selection_rationale,
+        }
+
+    def to_study_view(self, contract_version: int = 2) -> dict[str, Any]:
+        """Emit the OptimizationStudyView.
+
+        Contract v2 (default, authoritative) keeps the product /
+        constraint / objective authorities separate and preserves
+        SATISFIED/VIOLATED/UNMEASURABLE losslessly. Contract v1 is the
+        explicitly-named LOSSY compatibility projector.
+        """
+        if contract_version == 2:
+            return self._to_study_view_v2()
+        if contract_version == 1:
+            return self._to_study_view_v1()
+        raise OptimizationResultError(
+            f"unknown OptimizationStudyView contract_version "
+            f"{contract_version!r}; supported: 1, 2")
 
 
 def _select(records: list[CandidateRecord], definition: Any,

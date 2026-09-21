@@ -3092,12 +3092,11 @@ def _optimize_booksim(ctx: Ctx, args, src: Path, doc: dict):
     view = result.to_study_view()
     try:
         import jsonschema
-        schema_name = (
-            "optimization.study.view.v2.schema.json"
-            if view.get("contract_version") == 2
-            else "optimization.study.view.schema.json")
-        schema = json.loads((REPO / "contracts" / "srota" / "v1" /
-                             schema_name).read_text())
+        schema_dir = ("v2" if view.get("contract_version") == 2
+                      else "v1")
+        schema = json.loads((REPO / "contracts" / "srota" / schema_dir /
+                             "optimization.study.view.schema.json"
+                             ).read_text())
         jsonschema.validate(view, schema)
     except ImportError:
         pass
@@ -3267,12 +3266,11 @@ def cmd_optimize(ctx: Ctx, args):
     try:
         import jsonschema
         from veritx_dse.core.paths import REPO as _REPO
-        schema_name = (
-            "optimization.study.view.v2.schema.json"
-            if view.get("contract_version") == 2
-            else "optimization.study.view.schema.json")
-        schema = json.loads((_REPO / "contracts" / "srota" / "v1" /
-                             schema_name).read_text())
+        schema_dir = ("v2" if view.get("contract_version") == 2
+                      else "v1")
+        schema = json.loads((_REPO / "contracts" / "srota" / schema_dir /
+                             "optimization.study.view.schema.json"
+                             ).read_text())
         jsonschema.validate(view, schema)
     except ImportError:
         pass

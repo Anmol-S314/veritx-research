@@ -442,20 +442,36 @@ class TestGridStudyEndToEnd:
         assert view["selected_candidate_id"] in set(view["pareto_ids"])
 
     def test_study_view_v2_validates_by_default(self):
-        """RT-12: the default projection is contract v2, with typed
-        constraint verdicts; v1 stays available for pinned callers."""
+        """A5: the default projection is the authoritative v2 contract
+        at contracts/srota/v2/, with typed constraint verdicts and the
+        separated product/objective authorities; v1 stays available for
+        pinned callers."""
         jsonschema = pytest.importorskip("jsonschema")
         _, _, result = self._study()
         view = result.to_study_view()
         assert view["contract_version"] == 2
         schema = json.loads(
-            (DSE.parent.parent.parent / "contracts" / "srota" / "v1" /
-             "optimization.study.view.v2.schema.json").read_text())
+            (DSE.parent.parent.parent / "contracts" / "srota" / "v2" /
+             "optimization.study.view.schema.json").read_text())
         jsonschema.validate(view, schema)
         verdicts = {c["constraint_verdicts"]["latency"]
                     for c in view["candidates"]}
         assert verdicts <= {"SATISFIED", "VIOLATED", "UNMEASURABLE"}
         assert "SATISFIED" in verdicts
+        for cand in view["candidates"]:
+            assert set(cand) == {
+                "candidate_id", "guided_patch", "locked_consequences",
+                "evaluation_ids", "product_requirements",
+                "objective_values", "objective_availability",
+                "constraint_verdicts", "pareto_eligible",
+                "pareto_member"}
+            assert set(cand["evaluation_ids"]) == {
+                "design_hash", "performance_result_id",
+                "requirement_report_id"}
+            assert cand["pareto_member"] is False or \
+                cand["pareto_eligible"] is True
+            assert set(cand["objective_availability"].values()) <= {
+                "MEASURED", "UNMEASURABLE"}
 
     def test_study_view_v2_preserves_unmeasurable(self):
         """RT-12: UNMEASURABLE survives the v2 view; the v1 path still
@@ -472,8 +488,8 @@ class TestGridStudyEndToEnd:
         v2 = result.to_study_view()
         assert v2["contract_version"] == 2
         schema2 = json.loads(
-            (DSE.parent.parent.parent / "contracts" / "srota" / "v1" /
-             "optimization.study.view.v2.schema.json").read_text())
+            (DSE.parent.parent.parent / "contracts" / "srota" / "v2" /
+             "optimization.study.view.schema.json").read_text())
         jsonschema.validate(v2, schema2)
         for cand in v2["candidates"]:
             assert cand["constraint_verdicts"]["energy"] == \
@@ -894,7 +910,9 @@ class TestOptimizeCli:
         for row in view["candidates"]:
             assert set(row) == {"candidate_id", "guided_patch",
                                 "locked_consequences", "evaluation_ids",
-                                "objective_values", "constraint_verdicts",
+                                "product_requirements",
+                                "objective_values", "objective_availability",
+                                "constraint_verdicts", "pareto_eligible",
                                 "pareto_member"}
             assert row["locked_consequences"]["routing_classes"] == ["DOR_XY"]
 
