@@ -28,11 +28,17 @@ from __future__ import annotations
 
 from typing import Any
 
-from veritx_dse.workload.messages import LogicalMessageArtifact
+from veritx_dse.workload.messages import (
+    LogicalMessageArtifact,
+    LogicalMessageArtifactV2,
+)
 from veritx_dse.workload.operations import OperationGraph
 from veritx_dse.model.parallelism import ParallelismArtifact
 from veritx_dse.workload.semantics import WaveDWorkloadSemantics
-from veritx_dse.workload.traffic import PhysicalTrafficArtifact
+from veritx_dse.workload.traffic import (
+    PhysicalTrafficArtifact,
+    PhysicalTrafficArtifactV2,
+)
 from veritx_dse.workload.graph import WaveDWorkload
 
 from .errors import ControlPlaneError, ErrorCode
@@ -86,6 +92,13 @@ def workload_graph_record(art: Any) -> dict[str, Any]:
 
 
 def messages_record(art: LogicalMessageArtifact) -> dict[str, Any]:
+    """HISTORICAL WRITER (M1.6 cutover): v1 messages. New canonical
+    paths use messages_v2_record; this stays for historical reads."""
+    return _record("messages", art.message_artifact_id(), art.to_dict())
+
+
+def messages_v2_record(art: LogicalMessageArtifactV2) -> dict[str, Any]:
+    """Canonical messages record: the v2 artifact is self-contained."""
     return _record("messages", art.message_artifact_id(), art.to_dict())
 
 
@@ -103,6 +116,21 @@ def traffic_record(art: PhysicalTrafficArtifact, *, design_id: str
     doc["design_hash"] = art.bundle.resolved_fabric.design_hash
     doc["mapping_hash"] = art.bundle.resolved_fabric.mapping_hash
     return _record("traffic", art.physical_traffic_id(), doc)
+
+
+def traffic_v2_record(art: PhysicalTrafficArtifactV2, *, design_id: str
+                      ) -> dict[str, Any]:
+    """Canonical traffic record.
+
+    The v2 artifact's persisted shape is closed (no design keys inside
+    it), so the navigational design link rides at the RECORD level,
+    never inside the artifact the strict loader authenticates.
+    """
+    record = _record("traffic", art.physical_traffic_id(), art.to_dict())
+    record["design_id"] = design_id
+    record["design_hash"] = art.bundle.resolved_fabric.design_hash
+    record["mapping_hash"] = art.bundle.resolved_fabric.mapping_hash
+    return record
 
 
 # ── load side (verified) ─────────────────────────────────────────────────
@@ -248,12 +276,28 @@ def load_verified_workload_graph(store: Any, workload_id: str) -> Any:
 
 def load_verified_messages(store: Any,
                            message_artifact_id: str
-                           ) -> LogicalMessageArtifact:
+                           ) -> Any:
+    """Generation-dispatched verified messages.
+
+    v1 (``srota/WavedLogicalMessages``) authenticates the historical
+    OperationGraph parent; v2 (``srota/LogicalMessageArtifactV2``)
+    authenticates the canonical WorkloadGraph parent. The dispatch is
+    on the persisted type tag — never inferred from which keys happen
+    to be present.
+    """
     _, doc = _envelope(store, "messages", message_artifact_id)
-    graph = load_verified_operation_graph(store,
-                                          doc.get("operation_graph_id"))
-    art = _parse("messages", message_artifact_id, lambda: (
-        LogicalMessageArtifact.from_dict(doc, graph=graph, strict=True)))
+    if doc.get("type") == "srota/LogicalMessageArtifactV2":
+        graph = load_verified_workload_graph(store,
+                                             doc.get("workload_id"))
+        art = _parse("messages", message_artifact_id, lambda: (
+            LogicalMessageArtifactV2.from_dict(doc, graph=graph,
+                                               strict=True)))
+    else:
+        graph = load_verified_operation_graph(store,
+                                              doc.get("operation_graph_id"))
+        art = _parse("messages", message_artifact_id, lambda: (
+            LogicalMessageArtifact.from_dict(doc, graph=graph,
+                                             strict=True)))
     _require_equal("message_artifact_id", art.message_artifact_id(),
                    message_artifact_id, message_artifact_id)
     art.validate_conservation()
@@ -284,26 +328,39 @@ def rebuild_verified_bundle(store: Any, design_id: str) -> Any:
 
 
 def load_verified_traffic(store: Any, traffic_id: str
-                          ) -> tuple[PhysicalTrafficArtifact, dict[str, Any]]:
-    """Verified physical traffic: rebuilt from verified parents only."""
+                          ) -> tuple[Any, dict[str, Any]]:
+    """Verified physical traffic: rebuilt from verified parents only.
+
+    Generation-dispatched on the persisted type tag. v1 keeps its
+    artifact-level design link; v2 carries it at the record level (its
+    artifact shape is closed). Both re-derive the bundle and require
+    the design/mapping hashes to agree.
+    """
     record, doc = _envelope(store, "traffic", traffic_id)
     logical = load_verified_messages(store,
                                      doc.get("message_artifact_id"))
-    design_id = doc.get("design_id")
+    design_id = record.get("design_id", doc.get("design_id"))
+    design_hash = record.get("design_hash", doc.get("design_hash"))
+    mapping_hash = record.get("mapping_hash", doc.get("mapping_hash"))
     if not isinstance(design_id, str) or not design_id:
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
             f"persisted traffic {traffic_id} carries no design_id link",
             operation="verify_resource", resource_id=traffic_id)
     bundle = rebuild_verified_bundle(store, design_id)
-    art = _parse("traffic", traffic_id, lambda: (
-        PhysicalTrafficArtifact.from_dict(
-            doc, logical=logical, bundle=bundle, strict=True)))
+    if doc.get("type") == "srota/PhysicalTrafficArtifactV2":
+        art = _parse("traffic", traffic_id, lambda: (
+            PhysicalTrafficArtifactV2.from_dict(
+                doc, logical=logical, bundle=bundle, strict=True)))
+    else:
+        art = _parse("traffic", traffic_id, lambda: (
+            PhysicalTrafficArtifact.from_dict(
+                doc, logical=logical, bundle=bundle, strict=True)))
     _require_equal("physical_traffic_id", art.physical_traffic_id(),
                    traffic_id, traffic_id)
-    _require_equal("traffic.design_hash", doc.get("design_hash"),
+    _require_equal("traffic.design_hash", design_hash,
                    bundle.resolved_fabric.design_hash, traffic_id)
-    _require_equal("traffic.mapping_hash", doc.get("mapping_hash"),
+    _require_equal("traffic.mapping_hash", mapping_hash,
                    bundle.resolved_fabric.mapping_hash, traffic_id)
     art.validate_conservation()
     from veritx_dse.verification.reference_semantics import (
@@ -575,7 +632,13 @@ def _workload_from_graph(graph: OperationGraph) -> WaveDWorkload:
 
 def waved_execution_block(chain: dict[str, Any], summary: dict[str, Any],
                           counters: dict[str, Any]) -> dict[str, Any]:
-    """Result-level Wave-D provenance + the sealed execution counters."""
+    """Result-level Wave-D provenance + the sealed execution counters.
+
+    Generation-aware: the chain's own shape declares v1 vs v2, and the
+    result block must match that generation's closed key set.
+    """
+    version = validate_plan_chain_shape(dict(chain))
+    expected = result_wave_d_keys(version)
     block = dict(chain)
     block.update({
         "expected_packets": summary["num_packets"],
@@ -584,11 +647,11 @@ def waved_execution_block(chain: dict[str, Any], summary: dict[str, Any],
         "flits_injected": counters.get("flits_injected"),
         "flits_accepted": counters.get("flits_accepted"),
     })
-    if set(block) != set(RESULT_WAVE_D_KEYS_V1):  # pragma: no cover
+    if set(block) != set(expected):  # pragma: no cover - guard
         raise ControlPlaneError(
             ErrorCode.INTERNAL_ERROR,
-            "wave_d result block does not match RESULT_WAVE_D_KEYS_V1: "
-            f"{sorted(block)} vs {sorted(RESULT_WAVE_D_KEYS_V1)}",
+            f"wave_d result block does not match RESULT_WAVE_D_KEYS_V"
+            f"{version}: {sorted(block)} vs {sorted(expected)}",
             operation="verify_resource")
     return block
 
@@ -620,10 +683,12 @@ __all__ = [
     "load_verified_waved_semantics",
     "load_verified_waved_workload",
     "messages_record",
+    "messages_v2_record",
     "operation_graph_record",
     "parallelism_record",
     "rebuild_verified_bundle",
     "traffic_record",
+    "traffic_v2_record",
     "waved_chain_ids",
     "waved_chain_ids_from_traffic",
     "waved_execution_block",

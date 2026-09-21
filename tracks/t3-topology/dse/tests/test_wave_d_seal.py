@@ -40,10 +40,13 @@ from veritx_dse.application.errors import ControlPlaneError, ErrorCode  # noqa: 
 from veritx_dse.application.service import SrotaControlPlane  # noqa: E402
 from veritx_dse.application.store import ResourceStore  # noqa: E402
 from veritx_dse.application.waved_resources import (  # noqa: E402
-    EXECUTION_RESULT_KEYS, PLAN_CHAIN_KEYS_V1, RESULT_WAVE_D_KEYS_V1,
+    EXECUTION_RESULT_KEYS, PLAN_CHAIN_KEYS_V1, PLAN_CHAIN_KEYS_V2,
+    RESULT_WAVE_D_KEYS_V1, RESULT_WAVE_D_KEYS_V2,
+    chain_ids_from_traffic,
     load_verified_messages, load_verified_operation_graph,
     load_verified_parallelism, load_verified_traffic,
     load_verified_waved_semantics, load_verified_waved_workload,
+    load_verified_workload_graph,
     messages_record, operation_graph_record, parallelism_record,
     traffic_record, waved_chain_ids_from_traffic, waved_semantics_record,
     waved_workload_record,
@@ -434,20 +437,16 @@ class TestStrictParsing:
 
 class TestVerifiedLoaders:
     def test_every_resource_round_trips_through_its_loader(self, persisted):
+        """M1.6 canonical round-trip: parallelism + workloadgraph +
+        messages(v2) + traffic(v2), re-derived chain equals the plan."""
         cp, chain, _ = persisted
         store = cp.store
         assert load_verified_parallelism(
             store, chain["parallelism_id"]).parallelism_id() \
             == chain["parallelism_id"]
-        assert load_verified_waved_semantics(
-            store, chain["wave_d_semantics_id"]).semantics_id() \
-            == chain["wave_d_semantics_id"]
-        workload = load_verified_waved_workload(
-            store, chain["waved_workload_id"])
-        assert workload.workload_id() == chain["waved_workload_id"]
-        graph = load_verified_operation_graph(
-            store, chain["operation_graph_id"])
-        assert graph.operation_graph_id() == chain["operation_graph_id"]
+        graph = load_verified_workload_graph(
+            store, chain["workload_graph_id"])
+        assert graph.workload_id() == chain["workload_graph_id"]
         logical = load_verified_messages(
             store, chain["message_artifact_id"])
         assert logical.message_artifact_id() == chain["message_artifact_id"]
@@ -455,17 +454,17 @@ class TestVerifiedLoaders:
             store, chain["physical_traffic_id"])
         assert traffic.physical_traffic_id() == \
             chain["physical_traffic_id"]
-        assert record["artifact"]["design_id"]
-        assert waved_chain_ids_from_traffic(traffic) == chain
+        assert record["design_id"]
+        assert chain_ids_from_traffic(traffic) == chain
 
     def test_loader_refuses_a_forged_filename_id(self, persisted):
         cp, chain, _ = persisted
         store = cp.store
-        record = store.get("opgraph", chain["operation_graph_id"])
+        record = store.get("workloadgraph", chain["workload_graph_id"])
         forged = {**record, "resource_id": "not-the-filename"}
-        store.put("opgraph", "forged-name", forged)
+        store.put("workloadgraph", "forged-name", forged)
         with pytest.raises(ControlPlaneError) as exc:
-            load_verified_operation_graph(store, "forged-name")
+            load_verified_workload_graph(store, "forged-name")
         assert exc.value.code == ErrorCode.EVIDENCE_INVALID
 
     def test_loader_refuses_unknown_fields(self, persisted):
@@ -485,7 +484,7 @@ class TestVerifiedLoaders:
         store.put("messages", "orphan",
                   {**record, "resource_id": "orphan",
                    "artifact": {**record["artifact"],
-                                "operation_graph_id": "sha256:" + "1" * 64}})
+                                "workload_id": "sha256:" + "1" * 64}})
         with pytest.raises(ControlPlaneError) as exc:
             load_verified_messages(store, "orphan")
         assert exc.value.code == ErrorCode.EVIDENCE_INVALID
@@ -514,24 +513,37 @@ def _transplant(store, kind, source_id, *, field, value, new_id):
 
 class TestParentTransplants:
     def test_operation_graph_parent_transplants_refused(self, two_chains):
+        """M1.6: the canonical parent is the workloadgraph. A transplant
+        of the other chain's parallelism geometry, or an out-of-range
+        participant count, must refuse on load."""
         cp, a, b = two_chains
         store = cp.store
-        for i, (field, value) in enumerate((
-                ("workload_id", b["waved_workload_id"]),
-                ("parallelism_id", b["parallelism_id"]),
-                ("wave_d_semantics_id", b["wave_d_semantics_id"]))):
-            new_id = f"transplant-{i}"
-            _transplant(store, "opgraph", a["operation_graph_id"],
-                        field=field, value=value, new_id=new_id)
-            with pytest.raises(ControlPlaneError):
-                load_verified_operation_graph(store, new_id)
+        other = store.get("workloadgraph", b["workload_graph_id"])
+        record = store.get("workloadgraph", a["workload_graph_id"])
+        # Geometry transplant: another chain's parallelism document.
+        artifact = dict(record["artifact"])
+        artifact["parallelism"] = dict(other["artifact"]["parallelism"])
+        artifact["operations"] = list(other["artifact"]["operations"])
+        store.put("workloadgraph", "transplant-0",
+                  {**record, "resource_id": "transplant-0",
+                   "artifact": artifact})
+        with pytest.raises(ControlPlaneError):
+            load_verified_workload_graph(store, "transplant-0")
+        # Namespace transplant: a participant count the ops don't cover.
+        artifact2 = dict(record["artifact"])
+        artifact2["participant_count"] = 999
+        store.put("workloadgraph", "transplant-1",
+                  {**record, "resource_id": "transplant-1",
+                   "artifact": artifact2})
+        with pytest.raises(ControlPlaneError):
+            load_verified_workload_graph(store, "transplant-1")
 
     def test_messages_graph_transplant_refused(self, two_chains):
         cp, a, b = two_chains
         store = cp.store
         _transplant(store, "messages", a["message_artifact_id"],
-                    field="operation_graph_id",
-                    value=b["operation_graph_id"], new_id="msg-transplant")
+                    field="workload_id",
+                    value=b["workload_graph_id"], new_id="msg-transplant")
         with pytest.raises(ControlPlaneError):
             load_verified_messages(store, "msg-transplant")
 
@@ -561,24 +573,39 @@ class TestParentTransplants:
             load_verified_traffic(store, "traffic-tamper")
 
     def test_workload_parent_transplant_refused(self, two_chains):
+        """M1.6: the declared-workload parent is gone; the transplant
+        surface is the workloadgraph content itself — another chain's
+        operations under this chain's identity must refuse."""
         cp, a, b = two_chains
         store = cp.store
-        _transplant(store, "wavedworkload", a["waved_workload_id"],
-                    field="parallelism_id", value=b["parallelism_id"],
-                    new_id="workload-transplant")
+        other = store.get("workloadgraph", b["workload_graph_id"])
+        record = store.get("workloadgraph", a["workload_graph_id"])
+        artifact = dict(record["artifact"])
+        artifact["operations"] = list(other["artifact"]["operations"])
+        store.put("workloadgraph", "workload-transplant",
+                  {**record, "resource_id": "workload-transplant",
+                   "artifact": artifact})
         with pytest.raises(ControlPlaneError):
-            load_verified_waved_workload(store, "workload-transplant")
+            load_verified_workload_graph(store, "workload-transplant")
 
     def test_semantics_swap_between_chains_refused(self, two_chains):
         cp, a, b = two_chains
         store = cp.store
         # Same operation content, different semantics envelope: the
-        # graph must not accept the other chain's semantics resource.
-        _transplant(store, "opgraph", a["operation_graph_id"],
-                    field="wave_d_semantics_id",
-                    value=b["wave_d_semantics_id"], new_id="sem-swap")
+        # canonical graph must not accept a foreign semantics envelope.
+        # (Both fixtures declare DECODE, so the envelope is forged
+        # outright to PREFILL — a swap of an identical envelope would
+        # be a no-op, not an attack.)
+        record = store.get("workloadgraph", a["workload_graph_id"])
+        artifact = dict(record["artifact"])
+        semantics = dict(artifact["semantics"])
+        semantics["phase"] = "PREFILL"
+        artifact["semantics"] = semantics
+        store.put("workloadgraph", "sem-swap",
+                  {**record, "resource_id": "sem-swap",
+                   "artifact": artifact})
         with pytest.raises(ControlPlaneError):
-            load_verified_operation_graph(store, "sem-swap")
+            load_verified_workload_graph(store, "sem-swap")
 
 
 # ══ 10/11. real separation and real packet-format mutation ══════════════
@@ -587,15 +614,11 @@ class TestLogicalPhysicalBinding:
     def test_two_valid_presets_move_only_the_physical_chain(self, cp):
         narrow = cp.compile(_intent(preset="mesh4", name="narrow"))
         wide = cp.compile(_intent(preset="mesh4_wide128", name="wide"))
-        # Same declared workload and geometry ...
-        assert narrow["wave_d"]["waved_workload_id"] == \
-            wide["wave_d"]["waved_workload_id"]
+        # Same canonical workload and logical lowering ...
+        assert narrow["wave_d"]["workload_graph_id"] == \
+            wide["wave_d"]["workload_graph_id"]
         assert narrow["wave_d"]["parallelism_id"] == \
             wide["wave_d"]["parallelism_id"]
-        assert narrow["wave_d"]["wave_d_semantics_id"] == \
-            wide["wave_d"]["wave_d_semantics_id"]
-        assert narrow["wave_d"]["operation_graph_id"] == \
-            wide["wave_d"]["operation_graph_id"]
         assert narrow["wave_d"]["message_artifact_id"] == \
             wide["wave_d"]["message_artifact_id"]
         # ... different wire layout, therefore different physical traffic.
@@ -626,8 +649,8 @@ class TestLogicalPhysicalBinding:
         assert narrow["plan"]["resource_id"] != wide["plan"]["resource_id"]
         # The DECLARED semantic workload is design-independent; the
         # derived workload resource is not (it binds the wire layout).
-        assert narrow["wave_d"]["waved_workload_id"] == \
-            wide["wave_d"]["waved_workload_id"]
+        assert narrow["wave_d"]["workload_graph_id"] == \
+            wide["wave_d"]["workload_graph_id"]
         assert narrow["workload"]["resource_id"] != \
             wide["workload"]["resource_id"]
 
@@ -683,8 +706,8 @@ class TestLegacyBoundary:
     def test_wave_d_plan_binds_the_whole_chain(self, cp):
         plan = cp.plan(_intent())["plan"]
         assert set(plan["wave_d"]) >= {
-            "waved_workload_id", "parallelism_id", "wave_d_semantics_id",
-            "operation_graph_id", "message_artifact_id",
+            "chain_schema_version", "workload_graph_id", "parallelism_id",
+            "message_artifact_id",
             "physical_traffic_id", "resolved_fabric_hash",
             "packet_format_hash"}
 
@@ -704,8 +727,8 @@ class TestReuseIdentity:
         base = cp.plan(_intent())
         changed = cp.plan(_intent(operations=[
             _collective(participants=(0, 1, 2, 3), payload=4096)]))
-        assert changed["wave_d"]["operation_graph_id"] != \
-            base["wave_d"]["operation_graph_id"]
+        assert changed["wave_d"]["workload_graph_id"] != \
+            base["wave_d"]["workload_graph_id"]
         assert changed["plan"]["resource_id"] != \
             base["plan"]["resource_id"]
 
@@ -757,7 +780,7 @@ class TestReuseIdentity:
         result = cp.evaluate(_intent())
         traffic, _ = load_verified_traffic(
             cp.store, result["wave_d"]["physical_traffic_id"])
-        chain = waved_chain_ids_from_traffic(traffic)
+        chain = chain_ids_from_traffic(traffic)
         for key, value in chain.items():
             assert result["wave_d"][key] == value
         assert result["wave_d"]["expected_packets"] > 0
@@ -798,19 +821,16 @@ class TestProductCertification:
         assert verified["resource_id"] == result["resource_id"]
 
         # Walk backward through every persisted verified parent.
-        workload = load_verified_waved_workload(
-            cp.store, chain["waved_workload_id"])
-        graph = load_verified_operation_graph(
-            cp.store, chain["operation_graph_id"])
+        graph = load_verified_workload_graph(
+            cp.store, chain["workload_graph_id"])
         logical = load_verified_messages(
             cp.store, chain["message_artifact_id"])
         traffic, _ = load_verified_traffic(
             cp.store, chain["physical_traffic_id"])
-        assert graph.workload_id == workload.workload_id()
-        assert logical.graph.operation_graph_id() == graph.operation_graph_id()
+        assert logical.graph.workload_id() == graph.workload_id()
         assert traffic.logical.message_artifact_id() == \
             logical.message_artifact_id()
-        assert waved_chain_ids_from_traffic(traffic) == chain
+        assert chain_ids_from_traffic(traffic) == chain
         # The executed trace is DERIVED from that verified traffic.
         from veritx_dse.backend.contracts import sha256_bytes
         from veritx_dse.backend.projection import render_waved_trace
@@ -833,10 +853,8 @@ class TestProductCertification:
 
     def test_inspect_navigates_the_wave_d_chain(self, cp):
         result = cp.evaluate(_intent(name="inspect-chain"))
-        for kind, key in (("wavedworkload", "waved_workload_id"),
+        for kind, key in (("workloadgraph", "workload_graph_id"),
                           ("parallelism", "parallelism_id"),
-                          ("wavedsemantics", "wave_d_semantics_id"),
-                          ("opgraph", "operation_graph_id"),
                           ("messages", "message_artifact_id"),
                           ("traffic", "physical_traffic_id")):
             resource_id = result["wave_d"][key]
@@ -850,7 +868,7 @@ class TestProductCertification:
 # ══ 24. product tamper invalidates the result ═══════════════════════════
 
 def _tamper_graph(doc):
-    doc["artifact"]["nodes"][0]["owner"] = 3
+    doc["artifact"]["operations"][0]["owner"] = 3
 
 
 def _tamper_messages(doc):
@@ -862,7 +880,7 @@ def _tamper_traffic(doc):
 
 
 _TAMPERERS = {
-    ("opgraph", "operation_graph_id"): _tamper_graph,
+    ("workloadgraph", "workload_graph_id"): _tamper_graph,
     ("messages", "message_artifact_id"): _tamper_messages,
     ("traffic", "physical_traffic_id"): _tamper_traffic,
 }
@@ -879,7 +897,7 @@ class TestProductTamper:
         path.write_text(canonical_json(doc))
 
     @pytest.mark.parametrize("kind,field", [
-        ("opgraph", "operation_graph_id"),
+        ("workloadgraph", "workload_graph_id"),
         ("messages", "message_artifact_id"),
         ("traffic", "physical_traffic_id"),
     ])
@@ -887,7 +905,7 @@ class TestProductTamper:
         from veritx_dse.application.results import load_verified_result
         result = cp.evaluate(_intent(name=f"tamper-{kind}"))
         assert load_verified_result(cp.store, result["resource_id"])
-        key = {"opgraph": "operation_graph_id",
+        key = {"workloadgraph": "workload_graph_id",
                "messages": "message_artifact_id",
                "traffic": "physical_traffic_id"}[kind]
         target = result["wave_d"][key]
@@ -900,12 +918,12 @@ class TestProductTamper:
     def test_tampered_operation_row_invalidates_the_result(self, cp):
         from veritx_dse.application.results import load_verified_result
         result = cp.evaluate(_intent(name="tamper-row"))
-        target = result["wave_d"]["operation_graph_id"]
+        target = result["wave_d"]["workload_graph_id"]
 
         def mutate(doc):
-            doc["artifact"]["nodes"][0]["owner"] = 3
+            doc["artifact"]["operations"][0]["owner"] = 3
 
-        self._tamper_file(cp, "opgraph", target, mutate)
+        self._tamper_file(cp, "workloadgraph", target, mutate)
         with pytest.raises(ControlPlaneError):
             load_verified_result(cp.store, result["resource_id"])
 
@@ -981,10 +999,8 @@ class TestResultProvenanceBinding:
             render_waved_trace, verify_trace_projection)
         a, b = self._phase_pair(cp)
         assert a["plan_id"] != b["plan"]["resource_id"]
-        assert a["wave_d"]["wave_d_semantics_id"] != \
-            b["wave_d"]["wave_d_semantics_id"]
-        assert a["wave_d"]["operation_graph_id"] != \
-            b["wave_d"]["operation_graph_id"]
+        assert a["wave_d"]["workload_graph_id"] != \
+            b["wave_d"]["workload_graph_id"]
         assert a["wave_d"]["message_artifact_id"] != \
             b["wave_d"]["message_artifact_id"]
         assert a["wave_d"]["physical_traffic_id"] != \
@@ -1060,7 +1076,7 @@ class TestResultProvenanceBinding:
         with pytest.raises(ControlPlaneError):
             load_verified_result(cp.store, a["resource_id"])
 
-    @pytest.mark.parametrize("missing", PLAN_CHAIN_KEYS_V1)
+    @pytest.mark.parametrize("missing", PLAN_CHAIN_KEYS_V2)
     def test_missing_chain_field_refused(self, cp, missing):
         from veritx_dse.application.results import load_verified_result
         a = cp.evaluate(_intent(name=f"prov-chain-{missing}"))
@@ -1071,9 +1087,9 @@ class TestResultProvenanceBinding:
 
     def test_result_block_key_set_is_exactly_declared(self, cp):
         a = cp.evaluate(_intent(name="prov-schema"))
-        assert set(a["wave_d"]) == set(RESULT_WAVE_D_KEYS_V1)
+        assert set(a["wave_d"]) == set(RESULT_WAVE_D_KEYS_V2)
         plan = cp.store.get("plan", a["plan_id"])
-        assert set(plan["wave_d"]) == set(PLAN_CHAIN_KEYS_V1)
+        assert set(plan["wave_d"]) == set(PLAN_CHAIN_KEYS_V2)
 
     def test_reuse_cannot_adopt_a_transplanted_result(self, cp,
                                                       monkeypatch):

@@ -713,6 +713,22 @@ class PhysicalTrafficArtifactV2:
                                     for t in self._traffic),
         }
 
+    def validate_against_bundle(self) -> None:
+        """Re-prove the logical↔physical seam on demand (v2).
+
+        Mirrors the v1 seam check: the bundle revalidates and the
+        canonical graph's parallelism geometry must equal the bundle
+        geometry. The constructor already refuses a transposed
+        geometry; this is the explicit gate product code calls.
+        """
+        try:
+            self.bundle.revalidate()
+        except Exception as exc:
+            raise MappingInvalid(
+                f"physical bundle fails revalidation: {exc}") from None
+        _require_geometry_shape(self.logical.graph.parallelism,
+                                self.bundle)
+
     def validate_conservation(self) -> None:
         """Packet conservation + per-collective generated == scheduled."""
         logical_bits = sum(m.payload_bytes for m in self.logical.messages) * 8

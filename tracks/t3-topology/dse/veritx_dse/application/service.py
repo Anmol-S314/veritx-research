@@ -140,12 +140,19 @@ class SrotaControlPlane:
                        trace_source: dict[str, Any]) -> dict[str, Any]:
         """Compile an explicit Wave-D semantic workload (no spawn).
 
-        Order is deliberate and load-bearing:
+        M1.6 CANONICAL WRITER: the migration boundary runs first
+        (WaveDWorkload -> WorkloadGraph), then the v2 generations:
 
-            design (Wave-B) → geometry seam → Wave-D chain
+            design (Wave-B) → geometry seam → canonical WorkloadGraph
+            → LogicalMessageArtifactV2 → PhysicalTrafficArtifactV2
             → conservation + oracle gates → derived trace
 
-        Every Wave-D artifact is persisted BEFORE the resource that
+        New runs persist workloadgraph/messages/traffic(v2) and NEVER
+        wavedworkload/wavedsemantics/opgraph resources. Historical
+        readers still verify old resources; historical writers are
+        unreachable from this path.
+
+        Every canonical artifact is persisted BEFORE the resource that
         depends on it, so a verified loader can always walk the chain.
         """
         from veritx_dse.backend.contracts import sha256_bytes
@@ -153,13 +160,14 @@ class SrotaControlPlane:
         from veritx_dse.backend.projection import (
             render_waved_trace, verify_trace_projection,
         )
-        from veritx_dse.workload.messages import LogicalMessageArtifact
-        from veritx_dse.workload.traffic import PhysicalTrafficArtifact
+        from veritx_dse.workload.messages import LogicalMessageArtifactV2
+        from veritx_dse.workload.traffic import PhysicalTrafficArtifactV2
+        from veritx_dse.workload.migration import migrate_waved_workload
 
         from .waved_resources import (
-            messages_record, operation_graph_record, parallelism_record,
-            traffic_record, waved_chain_ids, waved_semantics_record,
-            waved_workload_record,
+            messages_v2_record, parallelism_record,
+            semantic_chain_ids_v2, traffic_v2_record,
+            workload_graph_record,
         )
         workload_decl = intent.workload.wave_d
         wave_e_decl = intent.workload.wave_e
@@ -194,18 +202,17 @@ class SrotaControlPlane:
         pa, semantics = workload_decl.parallelism, workload_decl.semantics
         self.store.put("parallelism", pa.parallelism_id(),
                        parallelism_record(pa))
-        self.store.put("wavedsemantics", semantics.semantics_id(),
-                       waved_semantics_record(semantics))
-        self.store.put("wavedworkload", workload_decl.workload_id(),
-                       waved_workload_record(workload_decl))
-        graph = workload_decl.to_graph()
-        self.store.put("opgraph", graph.operation_graph_id(),
-                       operation_graph_record(graph))
-        logical = LogicalMessageArtifact(graph=graph)
+        # Migration boundary: the declared workload is authenticated by
+        # its own historical identity inside migrate_waved_workload,
+        # then the canonical graph becomes the ONLY semantic parent.
+        graph = migrate_waved_workload(workload_decl)
+        self.store.put("workloadgraph", graph.workload_id(),
+                       workload_graph_record(graph))
+        logical = LogicalMessageArtifactV2(graph=graph)
         logical.validate_conservation()
         self.store.put("messages", logical.message_artifact_id(),
-                       messages_record(logical))
-        traffic = PhysicalTrafficArtifact(logical=logical, bundle=bundle)
+                       messages_v2_record(logical))
+        traffic = PhysicalTrafficArtifactV2(logical=logical, bundle=bundle)
         traffic.validate_conservation()
         from veritx_dse.verification.reference_semantics import (
             verify_packetization_reference,
@@ -213,32 +220,31 @@ class SrotaControlPlane:
         verify_packetization_reference(traffic)
         summary = verify_trace_projection(traffic)
         self.store.put("traffic", traffic.physical_traffic_id(),
-                       traffic_record(traffic, design_id=design_id))
+                       traffic_v2_record(traffic, design_id=design_id))
 
         trace = render_waved_trace(traffic)
-        chain = waved_chain_ids(workload_decl, graph, logical, traffic,
-                                bundle)
+        chain = semantic_chain_ids_v2(graph, logical, traffic, bundle)
         workload = WorkloadRecord(
             trace_sha256=sha256_bytes(trace), trace_bytes=len(trace),
             endpoint_count=bundle.attachment.endpoint_count,
             packets=summary["num_packets"],
             source={"source": "wave_d",
-                    "waved_workload_id": workload_decl.workload_id()},
+                    "workload_graph_id": graph.workload_id()},
             wave_d=chain)
         self._store_workload(workload)
         wave_e = None
         if wave_e_decl is not None:
             # §8/§15: the temporal overlay may only cite operations that
-            # exist in THIS workload's compiled operation graph — the
-            # overlay references Wave-D semantics, it never invents them.
-            graph_ids = {n.operation_id for n in graph.nodes}
+            # exist in THIS workload's canonical graph — the overlay
+            # references Wave-D semantics, it never invents them.
+            graph_ids = {op.operation_id for op in graph.operations}
             cited = set(wave_e_decl.declared_wave_d_operation_ids())
             unknown_ops = sorted(cited - graph_ids)
             if unknown_ops:
                 raise intent_error(
                     f"wave_e temporal overlay cites Wave-D operations "
                     f"{unknown_ops} that are not in the compiled "
-                    f"operation graph: refusing an overlay that "
+                    f"canonical workload graph: refusing an overlay that "
                     f"references communication this workload does not "
                     f"perform (§8)",
                     operation="compile")
@@ -416,6 +422,7 @@ class SrotaControlPlane:
         intent, trace_bytes, trace_source = resolve_intent(intent_doc)
         from veritx_dse.backend.contracts import sha256_bytes
         if trace_bytes is None:
+            from veritx_dse.workload.migration import migrate_waved_workload
             wave_d = intent.workload.wave_d
             return {
                 "valid": True,
@@ -425,6 +432,8 @@ class SrotaControlPlane:
                 "seed_policy": intent.seed_policy(),
                 "workload_kind": "WAVE_D_SEMANTIC",
                 "waved_workload_id": wave_d.workload_id(),
+                "workload_graph_id": migrate_waved_workload(
+                    wave_d).workload_id(),
                 "trace_sha256": None,
                 "trace_source": trace_source,
                 "metrics": list(intent.metrics),
@@ -1289,7 +1298,7 @@ class SrotaControlPlane:
                  "workload", "comparison", "intent", "links",
                  "studydef", "studyrun", "wavedworkload", "parallelism",
                  "wavedsemantics", "opgraph", "messages", "traffic",
-                 "waveeworkload")
+                 "waveeworkload", "workloadgraph")
         for kind in kinds:
             if self.store.exists(kind, resource_id):
                 record = self.store.get(kind, resource_id)
@@ -1312,6 +1321,7 @@ class SrotaControlPlane:
             load_verified_messages, load_verified_operation_graph,
             load_verified_parallelism, load_verified_traffic_record,
             load_verified_waved_semantics, load_verified_waved_workload,
+            load_verified_workload_graph,
         )
         related: dict[str, Any] = {}
         evidence_status: dict[str, Any] = {"checked": False}
@@ -1334,19 +1344,24 @@ class SrotaControlPlane:
             "messages": load_verified_messages,
             "traffic": load_verified_traffic_record,
             "waveeworkload": load_verified_wave_e_workload,
+            "workloadgraph": load_verified_workload_graph,
         }
         # Wave-D chain links: every child names its verified parents, so
         # inspect can walk intent → design → workload → parallelism →
-        # semantics → opgraph → messages → traffic → experiment →
-        # attempt → result without a graph database.
+        # semantics → opgraph/workloadgraph → messages → traffic →
+        # experiment → attempt → result without a graph database.
+        # messages/traffic are generation-dual: v1 names the opgraph,
+        # v2 names the workloadgraph; both links resolve, one per doc.
         waved_links = {
             "wavedworkload": (("parallelism", "parallelism_id"),
                               ("wavedsemantics",
                                "wave_d_semantics_id")),
+            "workloadgraph": (("parallelism", "parallelism_id"),),
             "opgraph": (("wavedworkload", "workload_id"),
                         ("parallelism", "parallelism_id"),
                         ("wavedsemantics", "wave_d_semantics_id")),
-            "messages": (("opgraph", "operation_graph_id"),),
+            "messages": (("opgraph", "operation_graph_id"),
+                         ("workloadgraph", "workload_id")),
             "traffic": (("messages", "message_artifact_id"),
                         ("design", "design_id")),
         }
@@ -1461,7 +1476,7 @@ class SrotaControlPlane:
                     continue
                 for link_kind in ("parallelism", "wavedsemantics",
                                   "opgraph", "messages", "traffic",
-                                  "wavedworkload"):
+                                  "wavedworkload", "workloadgraph"):
                     if self.store.exists(link_kind, target):
                         related[f"wave_d.{key}"] = self.store.get(
                             link_kind, target)

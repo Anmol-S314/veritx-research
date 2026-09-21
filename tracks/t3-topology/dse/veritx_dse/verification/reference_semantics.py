@@ -255,11 +255,32 @@ def verify_packetization_reference(traffic) -> None:
 def verify_logical_messages_reference(messages) -> None:
     """Differential of generated logical messages vs the reference law.
 
-    Distinct from ``LogicalMessageArtifact.validate_conservation``: that
-    one proves generated == declared schedule (an intrinsic invariant),
-    this one compares against an independent implementation of the law.
+    Distinct from ``validate_conservation``: that one proves generated
+    == declared schedule (an intrinsic invariant), this one compares
+    against an independent implementation of the law.
+
+    Generation-aware: v1 iterates the OperationGraph side lists; v2
+    iterates the schedule records the canonical lowering selected.
     """
     from veritx_dse.core.errors import ConservationFailed
+    if hasattr(messages, "schedules") and not hasattr(
+            getattr(messages, "graph", None), "collectives"):
+        for rec in messages.schedules:
+            ref = ref_collective(rec.kind, rec.k, rec.payload_bytes)
+            mine = [m for m in messages.messages
+                    if m.operation_id == rec.collective_id]
+            sent = sum(m.payload_bytes for m in mine)
+            if sent != ref["aggregate_payload"]:
+                raise ConservationFailed(
+                    f"collective {rec.collective_id!r}: generated {sent} "
+                    f"payload bytes, reference requires "
+                    f"{ref['aggregate_payload']}")
+            if len(mine) != ref["message_count"]:
+                raise ConservationFailed(
+                    f"collective {rec.collective_id!r}: generated "
+                    f"{len(mine)} messages, reference law requires "
+                    f"{ref['message_count']}")
+        return
     op_ids = messages._collective_op_ids()
     for ci in messages.graph.collectives:
         ref = ref_collective(ci.kind, ci.k, ci.payload_bytes)

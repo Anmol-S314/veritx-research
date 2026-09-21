@@ -485,7 +485,7 @@ class TestWaveENavigation:
                                 wave_e=_wave_e_workload(1)))
         related = cp.inspect(r["resource_id"])["related"]
         assert "wave_e.temporal_workload_id" in related
-        for key in ("waved_workload_id", "operation_graph_id",
+        for key in ("workload_graph_id",
                     "message_artifact_id", "physical_traffic_id"):
             assert f"wave_d.{key}" in related
 
@@ -603,16 +603,15 @@ class TestPlanSideWaveEParentBehavioural:
         return block
 
     def _canonical(self, cp, plan):
-        """The canonical graph for the plan's own Wave-D declaration."""
+        """The canonical graph for the plan's own Wave-D chain.
+
+        M1.6: the plan IS v2, so the graph loads directly — no
+        migration from a wavedworkload resource needed.
+        """
         from veritx_dse.application.waved_resources import (
-            load_verified_waved_workload, workload_graph_record)
-        from veritx_dse.workload.migration import migrate_waved_workload
-        art = load_verified_waved_workload(
-            cp.store, plan["wave_d"]["waved_workload_id"])
-        graph = migrate_waved_workload(art)
-        cp.store.put("workloadgraph", graph.workload_id(),
-                     workload_graph_record(graph))
-        return graph
+            load_verified_workload_graph)
+        return load_verified_workload_graph(
+            cp.store, plan["wave_d"]["workload_graph_id"])
 
     def test_v2_plan_membership_verifies(self, cp):
         from veritx_dse.application.results import _verify_plan_wave_e
@@ -679,9 +678,8 @@ class TestPlanSideWaveEParentBehavioural:
                                      wave_e=_wave_e_workload()))
         plan = cp.store.get("plan", result["plan_id"])
         chain = {key: plan["wave_d"][key]
-                 for key in plan["wave_d"]}          # the real v1 block
-        chain["chain_schema_version"] = 2
-        chain["workload_graph_id"] = "sha256:" + "e" * 64
+                 for key in plan["wave_d"]}          # the real v2 block
+        chain["operation_graph_id"] = "sha256:" + "a" * 64
         with pytest.raises(ControlPlaneError) as exc:
             _verify_plan_wave_e(
                 cp.store, {"wave_d": chain, "wave_e": plan["wave_e"]},
