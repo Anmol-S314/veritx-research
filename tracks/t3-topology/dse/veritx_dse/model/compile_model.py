@@ -997,6 +997,14 @@ def derive_vc_assignment(cr: CompileRequest) -> VCAssignment:
     for cls in sorted(all_classes):
         if cls not in per_class_vc:
             per_class_vc[cls] = 0
+    # P1B.3: DEFAULT is always a valid base class. The product
+    # workload lowerer emits DEFAULT-class messages, and a
+    # dependency-derived map alone cannot admit them. Seeding
+    # DEFAULT on VC 0 reuses the default VC — it adds no VC and
+    # moves no cycle separation. A dependency literally named
+    # DEFAULT keeps whatever separation the cycle analysis gave
+    # it (setdefault never demotes a separated victim).
+    per_class_vc.setdefault("DEFAULT", 0)
 
     # Derive turn restrictions from routing function
     turn_restrictions: list[str] = []

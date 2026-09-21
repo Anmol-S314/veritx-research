@@ -110,7 +110,14 @@ class TestCurrentContradictions:
         assert "packet_size;      // flits" in hpp
 
     def test_bytes_per_element_is_unconsumed(self):
-        """D0-C008: declared payload default, no message consumer."""
+        """D0-C008: declared payload default, no message consumer.
+
+        P1B.1 note: the field may be NAMED in refusal prose (the
+        product lowerer cites it when refusing to infer a payload),
+        but no module outside the definition/reports echo may READ
+        it — hence attribute-access detection, not substring match.
+        """
+        import re
         from veritx_dse.model.compile_model import CollectiveOp
         op = CollectiveOp.__dataclass_fields__
         assert "bytes_per_element" in op
@@ -119,7 +126,7 @@ class TestCurrentContradictions:
             if "__pycache__" in str(path):
                 continue
             text = path.read_text()
-            if "bytes_per_element" in text and \
+            if re.search(r"\.bytes_per_element\b", text) and \
                     "compile_model" not in path.name and \
                     "reports" not in path.name:
                 hits.append(path.name)

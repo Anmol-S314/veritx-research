@@ -18,10 +18,56 @@ from __future__ import annotations
 
 from typing import Any
 
-from veritx_dse.core.errors import BackendFailure
+from veritx_dse.core.errors import BackendFailure, UnsupportedSemantics
 from veritx_dse.verification.reference_semantics import (
     verify_logical_messages_reference, verify_packetization_reference,
 )
+
+
+def assert_vc_admission(pt) -> None:
+    """Every message class must be admitted by the fabric VC structure.
+
+    The cross-layer check P1A could not exercise: the VC artifact owns
+    ``traffic_class → VCs`` while logical messages carry their own
+    class. Before any backend spawn, every message class must exist in
+    the fabric's VC map with at least one legal VC, every referenced
+    VC must exist, and every referenced VC must map to a routing class
+    the resolved route defines. A compiled fabric offering {A, B} with
+    DEFAULT messages refuses HERE — never as a silent VC0 injection
+    or a backend misroute.
+
+    Raises UnsupportedSemantics: a deterministic semantic mismatch,
+    not a backend failure.
+    """
+    vc = pt.bundle.vc_assignment
+    class_to_vcs = dict(vc.traffic_class_to_vcs)
+    vc_to_route = dict(vc.vc_to_routing_class)
+    route_classes = set(pt.bundle.resolved_route.routing_classes)
+    seen: set[str] = set()
+    for m in pt.logical.messages:
+        cls = m.traffic_class
+        if cls in seen:
+            continue
+        seen.add(cls)
+        if cls not in class_to_vcs:
+            raise UnsupportedSemantics(
+                f"traffic class {cls!r} is not admitted by the fabric "
+                f"VC structure (VC classes: {sorted(class_to_vcs)}) — "
+                f"refusing to send unadmitted workload traffic")
+        vcs = class_to_vcs[cls]
+        if not vcs:
+            raise UnsupportedSemantics(
+                f"traffic class {cls!r} maps to no VC — refusing")
+        for v in vcs:
+            if v not in vc_to_route:
+                raise UnsupportedSemantics(
+                    f"traffic class {cls!r} references VC {v} with no "
+                    f"routing-class binding — refusing")
+            if vc_to_route[v] not in route_classes:
+                raise UnsupportedSemantics(
+                    f"traffic class {cls!r} VC {v} maps to routing class "
+                    f"{vc_to_route[v]!r} outside the resolved route "
+                    f"{sorted(route_classes)} — refusing")
 
 
 def assert_workload_ready(pt) -> None:
@@ -36,6 +82,9 @@ def assert_workload_ready(pt) -> None:
     property of the RENDERER and is checked in backend/projection.py
     immediately after rendering, where the grammar lives.
     """
+    # P1B.3: cross-layer admission first — an unadmitted workload must
+    # refuse before any conservation/projection work, let alone a spawn.
+    assert_vc_admission(pt)
     pt.validate_against_bundle()
     pt.logical.validate_conservation()
     verify_logical_messages_reference(pt.logical)
@@ -66,4 +115,5 @@ def verify_backend_quiescence(summary: dict[str, Any],
             f"accepted={accepted!r}, expected {expected_flits} each")
 
 
-__all__ = ["assert_workload_ready", "verify_backend_quiescence"]
+__all__ = ["assert_vc_admission", "assert_workload_ready",
+           "verify_backend_quiescence"]
