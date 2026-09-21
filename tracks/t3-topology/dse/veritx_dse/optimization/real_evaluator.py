@@ -138,7 +138,10 @@ class RealCandidateEvaluator:
                 "COMPILE_FAILED"
                 if compilation.status == "INVALID" else "UNSUPPORTED",
                 compilation.status, compilation.error or compilation.status)
-        assert compilation.bundle is not None
+        if compilation.bundle is None:
+            raise EvaluationError(
+                "FabricCompiler returned COMPILED without a bundle — "
+                "refusing to bind fabricated LOCKED consequences")
         locked = locked_consequences_of(compilation)
         try:
             lowered = lower_compile_workload(request)

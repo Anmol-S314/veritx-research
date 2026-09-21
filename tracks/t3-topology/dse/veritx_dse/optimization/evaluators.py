@@ -161,7 +161,10 @@ class FakeDeterministicEvaluator:
                 error=comp.error,
                 performance_result_id=None,
             )
-        assert comp.bundle is not None
+        if comp.bundle is None:
+            raise EvaluationError(
+                "FabricCompiler returned COMPILED without a bundle — "
+                "refusing to fabricate LOCKED consequences")
         locked = locked_consequences_of(comp)
         objectives = fake_objectives(candidate.request)
         for metric in list(objectives):
