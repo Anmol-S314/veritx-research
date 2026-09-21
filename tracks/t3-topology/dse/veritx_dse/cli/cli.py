@@ -2972,6 +2972,155 @@ def cmd_compile_fabric(ctx: Ctx, args):
     return
 
 
+def cmd_optimize(ctx: Ctx, args):
+    """P2 guided optimization: grid search over GUIDED knobs (fake evaluator).
+
+    Loads a base CompileRequest fixture, searches link_width ×
+    concentration (overridable), evaluates every candidate through the
+    REAL FabricCompiler (LOCKED routing/VC consequences recompiled, never
+    set) plus the deterministic fake objectives, then prints the candidate
+    table + constraint results + Pareto frontier + selection. Emits the
+    frozen OptimizationStudyView (contract v1), optionally to --study-out.
+    """
+    from veritx_dse.model.compile_model import CompileRequest, validate
+    from veritx_dse.optimization.candidate import CandidateError
+    from veritx_dse.optimization.definition import (
+        Constraint,
+        DomainParam,
+        Objective,
+        OptimizationDefinition,
+        OptimizationDefinitionError,
+    )
+    from veritx_dse.optimization.evaluators import FakeDeterministicEvaluator
+    from veritx_dse.optimization.result import Optimizer
+
+    fixture = args.fixture
+    if not Path(str(_resolve_path(fixture))).exists():
+        hit = _resolve_asset(fixture, "request")
+        if hit is not None:
+            fixture = str(hit)
+    src = Path(_resolve_path(fixture))
+    if not src.exists():
+        fail(ctx, f"Optimize fixture not found: {fixture}")
+        return
+    try:
+        base = CompileRequest.from_dict(json.loads(src.read_text()))
+    except Exception as exc:
+        fail(ctx, f"fixture does not parse as a CompileRequest: {exc}")
+        return
+    try:
+        validation = validate(base)
+    except Exception as exc:
+        fail(ctx, f"fixture validation failed: {exc}")
+        return
+    if getattr(validation, "errors", None):
+        fail(ctx, f"fixture invalid: {list(validation.errors)[:5]}")
+        return
+
+    method = getattr(args, "search", "grid") or "grid"
+    seed = getattr(args, "seed", 0) or 0
+    seed = int(seed) if int(seed) != 0 else 7
+
+    def _ints(flag: str | None, default: list) -> list:
+        if not flag:
+            return list(default)
+        try:
+            vals = [int(x) for x in str(flag).split(",") if x.strip()]
+        except ValueError:
+            fail(ctx, f"--{flag} must be comma-separated ints")
+            return []
+        return vals
+
+    link_widths = _ints(getattr(args, "link_widths", None), [32, 128])
+    concentrations = _ints(getattr(args, "concentrations", None), [1, 2])
+    if ctx.failed:
+        return
+    try:
+        domain = (DomainParam("link_width", tuple(link_widths)),
+                  DomainParam("concentration", tuple(concentrations)))
+        constraints: list = []
+        for r in base.requirements:
+            if r.binding and r.latency_ceiling_cycles is not None:
+                constraints.append(Constraint(
+                    "latency", "<=", float(r.latency_ceiling_cycles)))
+        if getattr(args, "latency_ceiling", None) is not None:
+            constraints.append(Constraint(
+                "latency", "<=", float(args.latency_ceiling)))
+        budget: dict = {}
+        if getattr(args, "max_candidates", None) is not None:
+            budget["max_candidates"] = int(args.max_candidates)
+        defn = OptimizationDefinition(
+            domain=domain,
+            objectives=(Objective("latency", "MIN"),
+                          Objective("area", "MIN")),
+            constraints=tuple(constraints),
+            method=method,
+            budget=budget,
+            seed=seed,
+            selection="min_first_objective",
+        )
+    except (OptimizationDefinitionError, CandidateError, ValueError) as exc:
+        fail(ctx, f"invalid optimization definition: {exc}")
+        return
+
+    try:
+        result = Optimizer().optimize(
+            base, defn, FakeDeterministicEvaluator(seed=seed))
+    except Exception as exc:
+        fail(ctx, f"optimize failed: {exc}")
+        return
+    view = result.to_study_view()
+    try:
+        import jsonschema
+        from veritx_dse.core.paths import REPO as _REPO
+        schema = json.loads((_REPO / "contracts" / "srota" / "v1" /
+                             "optimization.study.view.schema.json").read_text())
+        jsonschema.validate(view, schema)
+    except ImportError:
+        pass
+    except Exception as exc:
+        fail(ctx, f"OptimizationStudyView fails frozen schema: {exc}")
+        return
+
+    study_out = getattr(args, "study_out", None)
+    if study_out:
+        out_p = Path(study_out)
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        out_p.write_text(json.dumps(view, indent=2, sort_keys=True) + "\n")
+
+    banner(ctx, f"Optimize: {src.name} [{method}] (fake deterministic)")
+    log(ctx, f"  base: sha256:{result.base_design_hash[:16]}... "
+               f"definition: {defn.definition_id()[:16]}... "
+               f"seed: {seed}")
+    emit(ctx, f"{'candidate':<20} {'patch':<34} {'latency':>10} "
+               f"{'area':>10} {'constr':<8} {'pareto':<6}")
+    for r in sorted(result.records, key=lambda r: r.candidate_id):
+        patch = ",".join(f"{k}={v}" for k, v in sorted(r.guided_patch.items()))
+        objs = r.objective_values
+        verdict = ",".join(
+            f"{k}={'PASS' if v is True else ('?' if v is None else 'FAIL')}"
+            for k, v in sorted(r.constraint_verdicts.items())) or "-"
+        emit(ctx, f"{r.candidate_id:<20} {patch:<34} "
+                   f"{objs.get('latency', float('nan')):>10.2f} "
+                   f"{objs.get('area', float('nan')):>10.2f} "
+                   f"{verdict:<8} {'* ' if r.pareto_member else '':<6}")
+    emit(ctx, f"pareto: {list(result.pareto_ids) or '-'}")
+    for r in sorted(result.records, key=lambda r: r.candidate_id):
+        if r.candidate_id in set(result.pareto_ids):
+            emit(ctx, f"  * {r.candidate_id} "
+                       f"locked(routing={','.join(r.locked_consequences.get('routing_classes', []))} "
+                       f"vc={r.locked_consequences.get('vc_count')} "
+                       f"routers={r.locked_consequences.get('router_count')})")
+    if result.selected_candidate_id:
+        ok(ctx, f"selected {result.selected_candidate_id}: "
+                 f"{result.selection_rationale}")
+    else:
+        log(ctx, f"no selection: {result.selection_rationale}")
+    if study_out:
+        log(ctx, f"study view → {study_out}")
+    return
+
+
 def cmd_compile(ctx: Ctx, args):
     # Short-name nicety: `veritx compile moe_8npu` resolves the CompileRequest
     # through the asset registry like every other kind.
@@ -4126,6 +4275,23 @@ def build_parser() -> argparse.ArgumentParser:
                                help="Build output directory "
                                     "(default: build/<design-hash>)")
 
+    # ── optimize (P2 guided optimization, fake deterministic evaluator) ──
+    p_opt = _top_ps["optimize"]
+    p_opt.add_argument("fixture", help="Path to base CompileRequest JSON fixture")
+    p_opt.add_argument("--search", default="grid",
+                       choices=["grid", "enumeration", "random"],
+                       help="Search method (default: grid)")
+    p_opt.add_argument("--link-widths", default=None,
+                       help="Comma-separated link_width domain (default: 32,128)")
+    p_opt.add_argument("--concentrations", default=None,
+                       help="Comma-separated concentration domain (default: 1,2)")
+    p_opt.add_argument("--latency-ceiling", type=float, default=None,
+                       help="Extra latency<=X hard constraint (cycles)")
+    p_opt.add_argument("--max-candidates", type=int, default=None,
+                       help="Budget: evaluate at most N canonical-prefix candidates")
+    p_opt.add_argument("--study-out", default=None,
+                       help="Write OptimizationStudyView JSON here")
+
     # ── init ──────────────────────────────────────────────────────
     p_init = _top_ps["init"]
     p_init.add_argument("--out", "-o", help="Output JSON path (default: runs/compile_requests/<model>.json)")
@@ -4578,6 +4744,9 @@ COMMANDS = {
     "compile": {"help": "Compile a CompileRequest into a verified fabric (P1A slice)",
                 "t3_mode": "forward",
                 "sub_dest": None, "handler": cmd_compile_fabric, "subcommands": None},
+    "optimize": {"help": "Guided optimization grid search over a fixture (P2, fake deterministic evaluator)",
+                "t3_mode": "forward",
+                "sub_dest": None, "handler": cmd_optimize, "subcommands": None},
     "init": {"help": "Interactive wizard to generate a CompileRequest",
              "t3_mode": "forward",
              "sub_dest": None, "handler": cmd_init, "subcommands": None},
