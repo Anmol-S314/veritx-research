@@ -28,6 +28,7 @@ qualified producer, not adding a key here.
 from __future__ import annotations
 
 import math
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -97,9 +98,14 @@ def _real_objectives(outcome: Any) -> dict[str, float]:
 class RealCandidateEvaluator:
     """Production port: every candidate through the real pipeline.
 
-    run_root/<candidate_id>/ isolates each candidate's backend evidence;
-    directory names derive from candidate identity, so execution order
-    never changes scientific identity.
+    Storage layout: run_root/<candidate_id>/<eval-slot>/ holds one
+    evaluation's backend evidence. The candidate directory derives from
+    candidate identity (stable transport, never scientific identity) and
+    each evaluation gets a fresh OS-atomic slot via
+    ``tempfile.mkdtemp()``, so the SAME evaluator instance can evaluate
+    the SAME candidate repeatedly without overwriting a previous
+    evaluation's evidence. No timestamp, PID or random token ever feeds
+    a scientific identity: digests remain content-based.
     """
 
     def __init__(self, *, binary: str | Path,
@@ -154,8 +160,15 @@ class RealCandidateEvaluator:
                 f"multi-class refused until a per-operation message "
                 f"artifact lands", locked)
         self.calls += 1
-        run_dir = self.run_root / candidate.candidate_id
-        run_dir.mkdir(parents=True, exist_ok=True)
+        # Collision-free per-evaluation evidence slot. The candidate
+        # directory is stable transport; mkdtemp() is the OS-atomic
+        # uniqueness mechanism (the path is transport, not science), so
+        # re-evaluating the same candidate with the same evaluator both
+        # completes and never overwrites a prior slot.
+        candidate_dir = self.run_root / candidate.candidate_id
+        candidate_dir.mkdir(parents=True, exist_ok=True)
+        run_dir = Path(tempfile.mkdtemp(dir=str(candidate_dir),
+                                        prefix="eval-"))
         outcome = FabricEvaluator().evaluate(
             compilation, lowered.graph,
             EvaluationOptions(

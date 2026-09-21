@@ -257,3 +257,8 @@ identity, no evaluation semantics).
   named "requirements". Missing/non-finite objectives are typed
   `UNMEASURABLE` and Pareto-ineligible; duplicate objective/constraint
   metrics refuse at construction (and in `evaluate_all`).
+- **Evidence-slot reuse (A6).** `RealCandidateEvaluator` now allocates a
+  fresh per-evaluation slot via `tempfile.mkdtemp()` under
+  `run_root/<candidate_id>/`; repeated evaluations of the same candidate
+  with the same evaluator instance both complete with distinct paths and
+  equal measured science, while candidate/design identities stay put.
