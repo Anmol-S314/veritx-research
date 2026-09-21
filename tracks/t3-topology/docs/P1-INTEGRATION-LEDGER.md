@@ -50,8 +50,12 @@ integration happens here, in stage order. P3 remains deferred.
 
 ## Stage log
 
-- [ ] Stage 0 — ledger (this file) + tip pins recorded
-- [ ] Stage 1 — merge P1B; focused 47 + matrices + live DOR anchor green
+- [x] Stage 0 — ledger + tip pins recorded (P1-INT.0)
+- [x] Stage 1 — P1B merged (P1-INT.1). Gates: 47/47 focused green; merged-tree
+      battery 118F/44E with EMPTY symdiff vs P1B provisioned matrix (162/162);
+      120-vs-P1A set proven env-travel (identical at base); 20 resolved by binary;
+      live anchor llama_dense_64tiles -> EVALUATED + schema-valid view green.
+      Binary: BookSim sha65d61d3 (copied byte-identical from P1B lane).
 - [ ] Stage 2 — merge P1C; `product_evaluator.py` orchestration (no semantics)
 - [ ] Stage 3 — real requirement evaluation over the chain
 - [ ] Stage 4 — `llama_dense_64tiles-v3.json` + `test_p1_product_vertical_slice.py`
