@@ -129,8 +129,35 @@ because no PIM case existed. Gate V2 adds one and pins the loss.
 **F17 (NEW) — the Chakra PIM path contains a genuine crash.**
 `pim_parent_nodes.append()` with **no argument** (llm_converter.py:513) on
 the `npu_group == 0` path — a `TypeError` wherever that branch runs.
-Whether it is reachable from the emitted trace grammar is being
-determined; it is not assumed to work.
+**FIXED at Gate V2.1** (the first PIM block in group 0 has no
+predecessor, so nothing is appended).
+
+**F17b (CORRECTED) — PIM is SUPPORTED upstream; OUR STACK IS
+VERSION-SKEWED.** The earlier "PIM is unsupported because Chakra has no
+PIM node type" conclusion was wrong. Verified in-tree:
+
+```
+present (producer half)   LLMServingSim PIMModel, PIM configs,
+                          PIM trace markers, converter
+                          get_pim_compute_node() -> PIM_COMP_NODE
+                          + tensor_channel
+missing (consumer half)   et_def.proto has NO PIM_COMP_NODE and still
+                          numbers COMP_NODE = 4
+                          Chakra feeder has no tensor_channel/tensor_device
+                          astra-sim/workload/Workload.cc: 0 PIM references
+                          WorkloadLayerHandlerData: no pim_enabled /
+                          pim_channel_id / pim_runtime
+```
+
+There is exactly ONE ASTRA source tree:
+`third_party/llmservingsim/astra-sim/astra-sim` is a **symlink** to
+`third_party/astra-sim/astra-sim`, so the LLMServingSim frontend is bound
+to the vanilla tree rather than to its matching fork. The matching
+`casys-kaist` forks are **not vendored**; both are fetchable (verified):
+`chakra` HEAD `30221ab8…`, `astra-sim` HEAD `d3469945…`.
+
+The danger this creates: encoding "PIM unsupported" into `WorkloadGraph`
+would fossilise an integration regression as permanent architecture.
 
 **F18 (NEW) — `scope=None` and `scope="ALL"` collapse to the same trace
 form.** `_comm_field` emits the bare kind unless scope is a list, so both
@@ -252,9 +279,8 @@ oracle-independence AST guard (top-level only)            test_architecture_law
 Not yet green — do not begin the merge:
 
 ```
-1. F12b: Chakra vendoring/fork decision (EXPERT converter repair needs it)
-2. F17: PIM converter execution audited end-to-end (append() crash + whether
-   the emitted grammar reaches it)
+0. Gate V2.2: restore the matching PIM backend (see below) — F17b
+1. (resolved) F12b: Chakra IS vendored; runtime is fingerprint-gated
 3. scope=None lowering REFUSAL implemented (currently only pinned as xfail)
 4. PIM_BEGIN/PIM_END added to the vocabulary (flips the PIM xfail)
 5. multi-instance corpus case captured through serve.canonicalize_run_workload
@@ -263,3 +289,47 @@ Not yet green — do not begin the merge:
 
 Items 1 and 2 are decisions/repairs outside the workload authority and are
 therefore sequenced **before** it, as required.
+
+---
+
+## Gate V2.2 — restore the matching PIM backend (NOT STARTED)
+
+Ruling: do not formalise PIM as unsupported. Port the matching upstream
+deltas mechanically; do not design anything.
+
+```
+1. fetch casys-kaist/chakra (30221ab8…) and casys-kaist/astra-sim (d3469945…)
+   into a scratch tree — NOT as a second vendored copy
+2. diff our vendored Chakra against the fork; isolate the PIM deltas
+   (et_def.proto enum, feeder tensor_device/tensor_channel)
+3. diff our ASTRA against the fork; isolate the PIM deltas
+   (Workload.cc issue_mem path + metadata propagation,
+    WorkloadLayerHandlerData fields)
+4. port ONLY those deltas into the existing vendored trees, VeriTX-marked
+5. regenerate the protobuf bindings (PIM_COMP_NODE = 4 SHIFTS COMP_NODE to 5
+   and every later enum; generated code and all components must be rebuilt
+   together, and old .et files are not assumed compatible)
+6. rebuild ASTRA + Chakra
+7. run the real PIM trace
+8. verify ET contains PIM_COMP_NODE with tensor channel/device
+9. verify ASTRA consumes it (issue_mem + pim_runtime propagation)
+10. dense non-PIM regression: ET hashes unchanged before/after
+```
+
+The killer regression is the currently-xfailing case:
+
+```
+PIM 0
+attention ... REMOTE:0.0
+PIM 1
+attention ... REMOTE:0.1
+PIM END
+```
+
+proving trace -> converter -> ET(PIM_COMP_NODE) -> feeder(tensor_channel)
+-> Workload::issue_mem -> pim_runtime propagated -> simulation completes.
+The xfail is removed only when that chain is real, not when it is
+re-labelled.
+
+Note: steps 1–4 must not create a second source of truth. The forks are a
+REFERENCE for the deltas, not a new vendoring.

@@ -18,10 +18,11 @@
     "extern/graph_frontend/chakra/src/converter/llm_converter.py \u2014 Gate V2.1 (VeriTX): repaired pim_parent_nodes.append() with no argument (a TypeError on the npu_group == 0 / first-PIM-block path). The first PIM block in group 0 legitimately has NO predecessor, so nothing is appended; a dummy parent would invent a dependency."
   ],
   "known_gaps": [
+    "PIM (Gate V2.2): this vendored stack is VERSION-SKEWED, not PIM-incapable. The LLMServingSim producer half is present (PIMModel, PIM configs, PIM trace markers, converter.get_pim_compute_node() with tensor_channel), but the consumer half is missing: our et_def.proto has no PIM_COMP_NODE and still numbers COMP_NODE = 4 (the upstream casys-kaist fork inserts PIM_COMP_NODE = 4 and shifts COMP_NODE to 5), the vendored Chakra feeder has no tensor_channel/tensor_device support, and astra-sim/workload/Workload.cc has ZERO PIM references (no issue_mem path, no pim_enabled/pim_channel_id/pim_runtime in WorkloadLayerHandlerData). There is only ONE ASTRA source tree here: third_party/llmservingsim/astra-sim/astra-sim is a SYMLINK to third_party/astra-sim/astra-sim.",
+    "PIM port (Gate V2.2) requires the matching casys-kaist forks, which are NOT in this repository. Verified fetchable: casys-kaist/chakra HEAD 30221ab8bfd9212aa9c063cd0b14a7d0a2ea6dd7, casys-kaist/astra-sim HEAD d3469945c50410cac2e727c9ab627670c965db2a. The protobuf change is NOT local: adding PIM_COMP_NODE = 4 shifts COMP_NODE 4->5 and every subsequent enum, so generated bindings must be regenerated and all Chakra/ASTRA components rebuilt together, and old .et files cannot be assumed compatible (ET schema compatibility check required).",
     "Build artifacts not tracked (cmake --build needed)",
     "chakra_to_et binary must be built separately",
     "convert_rows shim has no PP support \u2014 pp_size > 1 is refused (T1 preflight + converter raise), never converted as unpartitioned",
-    "llm_converter.py get_pim_compute_node() references the constant PIM_COMP_NODE, which is DEFINED NOWHERE in this vendored tree \u2014 the PIM execution path has never run (Gate V2.1 finding F17b). Qualified PIM conversion is therefore UNSUPPORTED until the intended node-type constant is established from the graph semantics.",
     "llm_converter.py main conversion loop can walk past the end of the layer list (IndexError) when an EXPERT block is never closed with EXPERT END; it should refuse an unclosed block (Gate V2.1)."
   ],
   "used_by": [
