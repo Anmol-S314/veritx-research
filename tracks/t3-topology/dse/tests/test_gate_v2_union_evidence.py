@@ -244,20 +244,24 @@ class TestBroadcastSource:
         with pytest.raises(WorkloadError, match="explicit source"):
             build_broadcast_op("g0", bytes=2048, participants=(0, 1, 2, 3))
 
-    def test_waved_broadcast_uses_participants_zero_today(self):
-        """The Wave-D root assumption, pinned for the migration rule.
+    def test_waved_broadcast_still_expands_from_participants_zero(self):
+        """The Wave-D root assumption, preserved BEHAVIOURALLY.
 
-        Wave D's root is participants[0]; the canonical graph must record
-        it EXPLICITLY when migrating so existing packets stay identical,
-        and messages.py must stop assuming it.
+        The v1 CollectiveIntent carries no source field, so its historical
+        root is participants[0]; migration must record that explicitly so
+        existing packets stay identical. The v2 path
+        (LogicalMessageArtifactV2) honours the declared source — see
+        tests/test_logical_messages_v2.py. Behavioural, not a source-text
+        check: moving the expansion into a shared helper must not fail a
+        pin that the packets are unchanged.
         """
         from veritx_dse.workload.messages import _expand_collective
         from veritx_dse.workload.operations import CollectiveIntent
-        import inspect
-        src = inspect.getsource(_expand_collective)
-        assert "root_idx = 0" in src, (
-            "messages.py no longer assumes participants[0] for BROADCAST: "
-            "update the migration rule in WORKLOAD-UNION-MATRIX.md")
+        ci = CollectiveIntent("BROADCAST", (0, 1, 2, 3), 2048, "c0")
+        triples, rec = _expand_collective(ci)
+        assert {src for _, src, _ in triples} == {0}
+        assert {dst for _, _, dst in triples} == {1, 2, 3}
+        assert rec.message_count == len(triples) == 3
 
 
 # ── H. SEND/RECV are identity-bearing roles ────────────────────────────

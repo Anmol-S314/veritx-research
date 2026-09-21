@@ -171,6 +171,14 @@ and refuses its absence. Migration sets `source = participants[0]` for
 Wave D (keeping packets identical) and preserves the declared source
 otherwise; message generation and the reference differential must use it.
 
+**F19 — CLOSED in M1.2.** The assumption is now generation-scoped rather
+than textual: v1 (CollectiveIntent, which carries no source) still expands
+from `participants[0]` and its packets are byte-identical, while v2
+(`LogicalMessageArtifactV2` over `WorkloadGraph`) requires the declared
+`source` and refuses one outside the participant list. Both generations
+share one expansion helper (`_collective_triples`), so the two rules
+cannot drift. The pin is behavioural now, not a source-text check.
+
 **F20 (NEW) — SEND/RECV and TRANSFER are different abstractions.** Old
 `SEND`/`RECV` are identity-bearing kinds; a Wave-D P2P is a whole
 transfer. One canonical P2P operation with `role = TRANSFER | SEND | RECV`
