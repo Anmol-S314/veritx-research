@@ -1,45 +1,40 @@
 {
   "fixture_id": "optimization-study",
-  "title": "Optimization study over link_width x concentration",
-  "description": "Five GUIDED candidates (base request + patch), constraint verdicts, Pareto membership, and a selected candidate with rationale. LOCKED properties recompiled per candidate, shown as consequences.",
+  "title": "Optimization study over link_width \u00d7 concentration",
+  "description": "Six GUIDED candidates (base request + patch), constraint verdicts, Pareto membership (cand-03 dominated), and selected cand-02 with rationale. LOCKED properties recompiled per candidate, shown as consequences.",
   "design": {
     "contract_version": 1,
     "design_hash": "sha256:8afc464cc5e43f6102e41c64a8921cca41c67a406f80fa390cf94e1565b91d29",
-    "schema_version": 3,
-    "compiler_semantics_version": 1,
+    "schema_version": 2,
+    "compiler_semantics_version": 2,
     "workload": {
-      "model_family": "llama3",
-      "model_name": "llama3-70b",
+      "model_family": "dense_transformer",
+      "model_name": "LLaMA-70B",
       "parallelism": {
-        "tp": 8,
-        "pp": 2,
-        "ep": 4,
-        "dp": 2
+        "tp": 64,
+        "pp": 1,
+        "ep": 1,
+        "dp": 1
       },
-      "serving_mode": "decode",
-      "workload_source_ref": {
-        "content_digest": "sha256:d23395639f9b25fb3bae14db3a18f26e05df4109debb89886445d8a31090a0aa",
-        "format": "srota-workload-v3",
-        "size_bytes": 4096
-      }
+      "serving_mode": "mixed"
     },
     "requirements": [
       {
-        "traffic_class": "hbm_read",
-        "qos_class": "latency_sensitive",
+        "traffic_class": null,
+        "qos_class": "latency_critical",
         "latency_ceiling_cycles": 220,
         "bandwidth_floor_gbps": null,
         "binding": true
       },
       {
-        "traffic_class": "allreduce",
-        "qos_class": "throughput_sensitive",
+        "traffic_class": null,
+        "qos_class": "bandwidth",
         "latency_ceiling_cycles": null,
-        "bandwidth_floor_gbps": 1800,
+        "bandwidth_floor_gbps": 100,
         "binding": true
       },
       {
-        "traffic_class": "control",
+        "traffic_class": null,
         "qos_class": "best_effort",
         "latency_ceiling_cycles": null,
         "bandwidth_floor_gbps": null,
@@ -48,11 +43,11 @@
     ],
     "agents": [
       {
-        "kind": "compute",
+        "kind": "compute_tile",
         "count": 64
       },
       {
-        "kind": "hbm",
+        "kind": "hbm_controller",
         "count": 8
       },
       {
@@ -65,18 +60,18 @@
       }
     ],
     "noc_guided": {
-      "topology_family": "MESH",
+      "topology_family": "mesh",
       "radix": 5,
       "concentration": 4,
       "link_width": 128,
-      "rcu_enabled": true,
+      "rcu_enabled": false,
       "arbitration": "round_robin"
     },
     "locked_derived": {
       "routing": "DOR_XY",
-      "vc_count": 4,
+      "vc_count": 1,
       "turn_restrictions": [
-        "no Y-to-X turn (dimension-order XY)"
+        "no_negative_dimension_turns"
       ],
       "certificate_overall": "PASS"
     }
@@ -85,7 +80,7 @@
     "contract_version": 1,
     "status": "COMPILED",
     "design_hash": "sha256:8afc464cc5e43f6102e41c64a8921cca41c67a406f80fa390cf94e1565b91d29",
-    "compiler_semantics_version": 1,
+    "compiler_semantics_version": 2,
     "resolved_fabric_hash": "sha256:677fea3d10de76a6e88153d47a73967a563894e06908f59a67f7332176aee036",
     "certificate_id": "sha256:a178fa251460fe1741b8c2db9a7cb9be0fe34ddd79336fbb2c1c2090b11ce2a4",
     "certificate_overall": "PASS",
@@ -95,80 +90,99 @@
         "status": "PASS",
         "method": "undirected-bfs/v1",
         "evidence": {
-          "digest": "cf8431e64b922619",
-          "bound": "sha256:677fea3d10de76a6e88153d47a73967a563894e06908f59a67f7332176aee036"
+          "routers": 25,
+          "directed_channels": 80,
+          "components": 1
         }
       },
       {
         "obligation": "ATTACHMENT_COMPLETE",
         "status": "PASS",
-        "method": "seat-ledger/v1",
+        "method": "attachment.validate_against/v1",
         "evidence": {
-          "digest": "de17107856027f09",
-          "bound": "sha256:677fea3d10de76a6e88153d47a73967a563894e06908f59a67f7332176aee036"
+          "endpoints": 78
         }
       },
       {
         "obligation": "ADDRESS_DECODE_VALID",
         "status": "PASS",
-        "method": "decode-cover/v1",
+        "method": "address_decode.validate_against/v1",
         "evidence": {
-          "digest": "f197c3d84e3b24e1",
-          "bound": "sha256:677fea3d10de76a6e88153d47a73967a563894e06908f59a67f7332176aee036"
+          "entries": 0
         }
       },
       {
         "obligation": "ROUTE_COMPLETE",
         "status": "PASS",
-        "method": "class-src-dst-cover/v1",
+        "method": "entry-coverage/v1",
         "evidence": {
-          "digest": "c713cfcdfc644f39",
-          "bound": "sha256:677fea3d10de76a6e88153d47a73967a563894e06908f59a67f7332176aee036"
+          "routing_classes": [
+            "DOR_XY"
+          ],
+          "routers": 25,
+          "expected_entries": 600,
+          "entries": 600
         }
       },
       {
         "obligation": "ROUTE_LEGAL",
         "status": "PASS",
-        "method": "channel-legal/v1",
+        "method": "route.validate_against/v1",
         "evidence": {
-          "digest": "2c54691049e8132f",
-          "bound": "sha256:677fea3d10de76a6e88153d47a73967a563894e06908f59a67f7332176aee036"
+          "routing_classes": [
+            "DOR_XY"
+          ]
         }
       },
       {
         "obligation": "VC_ASSIGNMENT_VALID",
         "status": "PASS",
-        "method": "route-bound-vc/v1",
+        "method": "vc.validate_against/v1",
         "evidence": {
-          "digest": "dce2f875e6d479c4",
-          "bound": "sha256:677fea3d10de76a6e88153d47a73967a563894e06908f59a67f7332176aee036"
+          "vc_count": 1,
+          "vc_to_routing_class": [
+            [
+              0,
+              "DOR_XY"
+            ]
+          ]
         }
       },
       {
         "obligation": "DEADLOCK_FREE",
         "status": "PASS",
-        "method": "channel-vc-cdg-acyclic/v1",
+        "method": "channel-vc-cdg/v1",
         "evidence": {
-          "digest": "b18e130ae3beb06b",
-          "bound": "sha256:677fea3d10de76a6e88153d47a73967a563894e06908f59a67f7332176aee036"
+          "vc_count": 1,
+          "routing_classes": [
+            "DOR_XY"
+          ],
+          "escape_vcs": [],
+          "node_count": 80,
+          "edge_count": 124,
+          "route_realization": "v2_channel_id",
+          "cdg_route_classes": [
+            "DOR_XY"
+          ],
+          "acyclic": true,
+          "sccs_gt_1": 0
         }
       },
       {
         "obligation": "MAPPING_VALID",
         "status": "PASS",
-        "method": "rank-attachment/v1",
+        "method": "mapping-attachment-seam/v1",
         "evidence": {
-          "digest": "2a8513c7682aebe6",
-          "bound": "sha256:677fea3d10de76a6e88153d47a73967a563894e06908f59a67f7332176aee036"
+          "placements": 64
         }
       },
       {
         "obligation": "PACKET_FORMAT_VALID",
         "status": "PASS",
-        "method": "wire-format-fit/v1",
+        "method": "packet_format.validate_against/v1",
         "evidence": {
-          "digest": "383682eb9b113d78",
-          "bound": "sha256:677fea3d10de76a6e88153d47a73967a563894e06908f59a67f7332176aee036"
+          "flit_width_bits": 128,
+          "vc_count": 1
         }
       },
       {
@@ -176,20 +190,30 @@
         "status": "PASS",
         "method": "bundle.revalidate/v1",
         "evidence": {
-          "digest": "fe8879c4e0f0a7a4",
-          "bound": "sha256:677fea3d10de76a6e88153d47a73967a563894e06908f59a67f7332176aee036"
+          "fabric_hash": "sha256:a9d5d149d5b62389efdad5254bfec93337b4ac6d00ff6b8d9bc75c556aa1a836",
+          "mapping_hash": "sha256:9d9f55d5a965901b4f425ffff1450648e9e37cf84da2741e9f7b6381167d851f",
+          "topology_hash": "sha256:48001666df21572b341de1b47b50fb0c83754dd8805883901d5d54f053877fe1",
+          "attachment_hash": "sha256:7e712cad8f441ec1b1d627ee146251aa7526a9de17e87f21326788bed803a103",
+          "router_route_hash": "sha256:2736373b6cb0b2451cab950cd05e1376240042a6c237ad7b3d35a918cdfce817",
+          "resolved_route_hash": "sha256:651c4391ef829552f3548c35688bfe46640fc1808d8f846cdfae7bc4c7b19bbc",
+          "vc_assignment_hash": "sha256:cababc98c19e07751212485174f402296d4027e39cdbc8df0bcf666695c388bc",
+          "packet_format_hash": "sha256:4153afa61064175ad6f2275481df7caac386345286d63fb9c46d38bf8647983a",
+          "router_behavior_hash": "sha256:035bc793489800eb7f73bd26be19343145c0e385449729aabcb386a7b78a43df",
+          "address_decode_hash": "sha256:21d21595058f34471871d5757375ef13d77dd06f4b4a9c612a5b640aa518c1b6"
         }
       }
     ],
     "artifact_hashes": {
-      "topology": "sha256:48001666df21572b341de1b47b50fb0c83754dd8805883901d5d54f053877fe1",
-      "attachment": "sha256:7e712cad8f441ec1b1d627ee146251aa7526a9de17e87f21326788bed803a103",
-      "routes": "sha256:c514215e171803c3f684c6ddbac182f9705ef2b1d099657152d6becae9ea1c58",
-      "vc_assignment": "sha256:c2f1eb99ded5a298a9a32df63584468568d481261a382ed4c4f23ac8ff83f1bc",
-      "packet_format": "sha256:491caa39134e80724e7db1a898aa59f6d042757196daad6a1c8a945d1fe2baca",
-      "router_behavior": "sha256:4980f74aba63fa278d7c872b4608606da717520dc0e15a9c87d257ec2a04dd0a",
-      "address_decode": "sha256:3947f76d283bcd9c27299374ffd62f4ae8a162487f4f66644194554a7705f250",
-      "fabric": "sha256:677fea3d10de76a6e88153d47a73967a563894e06908f59a67f7332176aee036"
+      "fabric_hash": "sha256:a9d5d149d5b62389efdad5254bfec93337b4ac6d00ff6b8d9bc75c556aa1a836",
+      "mapping_hash": "sha256:9d9f55d5a965901b4f425ffff1450648e9e37cf84da2741e9f7b6381167d851f",
+      "topology_hash": "sha256:48001666df21572b341de1b47b50fb0c83754dd8805883901d5d54f053877fe1",
+      "attachment_hash": "sha256:7e712cad8f441ec1b1d627ee146251aa7526a9de17e87f21326788bed803a103",
+      "router_route_hash": "sha256:2736373b6cb0b2451cab950cd05e1376240042a6c237ad7b3d35a918cdfce817",
+      "resolved_route_hash": "sha256:651c4391ef829552f3548c35688bfe46640fc1808d8f846cdfae7bc4c7b19bbc",
+      "vc_assignment_hash": "sha256:cababc98c19e07751212485174f402296d4027e39cdbc8df0bcf666695c388bc",
+      "packet_format_hash": "sha256:4153afa61064175ad6f2275481df7caac386345286d63fb9c46d38bf8647983a",
+      "router_behavior_hash": "sha256:035bc793489800eb7f73bd26be19343145c0e385449729aabcb386a7b78a43df",
+      "address_decode_hash": "sha256:21d21595058f34471871d5757375ef13d77dd06f4b4a9c612a5b640aa518c1b6"
     },
     "error": null
   },
@@ -198,20 +222,20 @@
     "status": "EVALUATED",
     "design_hash": "sha256:8afc464cc5e43f6102e41c64a8921cca41c67a406f80fa390cf94e1565b91d29",
     "resolved_fabric_hash": "sha256:677fea3d10de76a6e88153d47a73967a563894e06908f59a67f7332176aee036",
-    "workload_id": "wl-mesh64-opt",
-    "message_artifact_id": "msg-mesh64-opt-v1",
-    "physical_traffic_id": "pt-mesh64-opt-v1",
+    "workload_id": "sha256:9822680eaf5489df0fa75df9c204e9daccf161734c34400285cc6142e180070c",
+    "message_artifact_id": "sha256:4b1e800eb70423ee87c664c4fed628479e2e979d4333a92f412c85063d549353",
+    "physical_traffic_id": "sha256:b1eb3018dee8de325dbe87c460480535d15b85ef1630e64f462c8969dc90c5f2",
     "backend_producer": {
-      "backend": "booksim2",
-      "producer_identity": "booksim2@tools-base:2026.09 (qualified)",
+      "backend": "booksim2-fork",
+      "producer_identity": "binary sha256:699825f243af5b890e23ebbf8075a78f37faeb56edd78d1c7483b07030695b63 transport=SUPERVISED_PROCESS revision=ec747ffe",
       "config_hash": "sha256:6cf82d3b26494f036f2ab4183aee984201eb77bc31bf3e19879dcaabb7bd2f31",
       "input_hash": "sha256:28f3e160498ea54bef855485917f357dec19e88c768f07b885c05ac7f043f1ae"
     },
     "evidence": {
-      "raw_evidence_digest": "1853c3432fe514fc",
-      "stats_digest": "85a818011937b73b"
+      "raw_evidence_digest": "sha256:1853c3432fe514fc77563110490af70d0fab4191039bf763be00cebbc79666ce",
+      "stats_digest": "sha256:85a818011937b73b28e94d495210dc648338f68c0e85ea1dd2ab3f97a2f9f7ed"
     },
-    "performance_result_id": "perf-mesh64-opt-v1",
+    "performance_result_id": "sha256:a5dac27df9a73b688bde823839ff0427dfe28372daa267863a6106b671c39d46",
     "network_traffic_window": {
       "window_cycles": 50000,
       "wall_time_ns": null,
@@ -224,49 +248,49 @@
       "avg_packet_latency_cycles": 96.4,
       "sustained_throughput_flits_per_cycle": 10.24
     },
-    "fidelity_warning": "Cycle-approximate BookSim-class model. Cycles only \u2014 no valid network clock established, so no wall-time authority. Single aggregate NETWORK_TRAFFIC_WINDOW; never per-operation latency.",
+    "fidelity_warning": "Cycle-approximate BookSim-class model. Cycles only \u2014 no valid network clock established, so no wall-time or Gbps authority. Single aggregate NETWORK_TRAFFIC_WINDOW; never per-operation latency.",
     "reason": null
   },
   "requirements": {
     "contract_version": 1,
     "design_hash": "sha256:8afc464cc5e43f6102e41c64a8921cca41c67a406f80fa390cf94e1565b91d29",
-    "performance_result_id": "perf-mesh64-opt-v1",
+    "performance_result_id": "sha256:a5dac27df9a73b688bde823839ff0427dfe28372daa267863a6106b671c39d46",
     "entries": [
       {
         "requirement_index": 0,
-        "traffic_class": "hbm_read",
-        "qos_class": "latency_sensitive",
+        "traffic_class": null,
+        "qos_class": "latency_critical",
         "verdict": "SATISFIED",
         "binding": true,
         "required": 220,
         "measured": 96.4,
         "metric_authority": "performance/result.py::build_performance_result",
-        "performance_result_id": "perf-mesh64-opt-v1",
+        "performance_result_id": "sha256:a5dac27df9a73b688bde823839ff0427dfe28372daa267863a6106b671c39d46",
         "reason": "avg_packet_latency_cycles 96.4 <= ceiling 220"
       },
       {
         "requirement_index": 1,
-        "traffic_class": "allreduce",
-        "qos_class": "throughput_sensitive",
-        "verdict": "SATISFIED",
+        "traffic_class": null,
+        "qos_class": "bandwidth",
+        "verdict": "UNMEASURABLE",
         "binding": true,
-        "required": 1800,
-        "measured": 10.24,
+        "required": 100,
+        "measured": null,
         "metric_authority": "performance/result.py::build_performance_result",
-        "performance_result_id": "perf-mesh64-opt-v1",
-        "reason": "sustained throughput meets floor in model units"
+        "performance_result_id": "sha256:a5dac27df9a73b688bde823839ff0427dfe28372daa267863a6106b671c39d46",
+        "reason": "bandwidth_floor_gbps 100 requires a valid network clock; the aggregate window is cycles-only, so Gbps is not derivable. Binding + UNMEASURABLE never passes."
       },
       {
         "requirement_index": 2,
-        "traffic_class": "control",
+        "traffic_class": null,
         "qos_class": "best_effort",
-        "verdict": "UNMEASURABLE",
+        "verdict": "NOT_APPLICABLE",
         "binding": false,
         "required": null,
         "measured": null,
         "metric_authority": "performance/result.py::build_performance_result",
-        "performance_result_id": "perf-mesh64-opt-v1",
-        "reason": "best-effort class has no bound; UNMEASURABLE never passes and is reported, not zero-filled"
+        "performance_result_id": "sha256:a5dac27df9a73b688bde823839ff0427dfe28372daa267863a6106b671c39d46",
+        "reason": "non-binding best-effort class carries no threshold"
       }
     ]
   },
@@ -276,11 +300,11 @@
     "definition": {
       "objectives": [
         "avg_packet_latency_cycles",
-        "link_area_um2"
+        "links_mm2"
       ],
       "constraints": [
         "latency_ceiling",
-        "bandwidth_floor"
+        "link_area_budget"
       ],
       "method": "grid",
       "budget": {
@@ -295,7 +319,8 @@
         ],
         "concentration": [
           2,
-          4
+          4,
+          8
         ]
       }
     },
@@ -308,21 +333,21 @@
         },
         "locked_consequences": {
           "routing": "DOR_XY",
-          "vc_count": 4
+          "vc_count": 1
         },
         "evaluation_ids": {
           "design_hash": "sha256:630ef152d9dc6429d1920b7ced1eb95f8976797c45dc512d2c20fbb76d639626",
-          "performance_result_id": "perf-mesh64-opt-cand-01-v1"
+          "performance_result_id": "sha256:48630003dbd02e393b66ee4cb4fa4933272aad21ca9ae82f9f842d5a756b3df4"
         },
         "objective_values": {
           "avg_packet_latency_cycles": 141.2,
-          "link_area_um2": 1.9
+          "links_mm2": 0.42
         },
         "constraint_verdicts": {
           "latency_ceiling": true,
-          "bandwidth_floor": true
+          "link_area_budget": true
         },
-        "pareto_member": false
+        "pareto_member": true
       },
       {
         "candidate_id": "cand-02",
@@ -332,43 +357,43 @@
         },
         "locked_consequences": {
           "routing": "DOR_XY",
-          "vc_count": 4
+          "vc_count": 1
         },
         "evaluation_ids": {
           "design_hash": "sha256:29ab304f695c948b5013daaaa7396bf61e4c394e367be1d86e882025e120fa58",
-          "performance_result_id": "perf-mesh64-opt-cand-02-v1"
+          "performance_result_id": "sha256:c4b044cb9f9c47e439dcf1672cc245dbaa73caa6a28509f05069cf115be82340"
         },
         "objective_values": {
           "avg_packet_latency_cycles": 96.4,
-          "link_area_um2": 2.6
+          "links_mm2": 0.84
         },
         "constraint_verdicts": {
           "latency_ceiling": true,
-          "bandwidth_floor": true
+          "link_area_budget": true
         },
         "pareto_member": true
       },
       {
         "candidate_id": "cand-03",
         "guided_patch": {
-          "link_width": 256,
-          "concentration": 4
+          "link_width": 128,
+          "concentration": 8
         },
         "locked_consequences": {
           "routing": "DOR_XY",
-          "vc_count": 4
+          "vc_count": 1
         },
         "evaluation_ids": {
           "design_hash": "sha256:d846aa19a8beb751aa54c1b820b6efbbaa13c03ee50ac377bd96e636dd0a3094",
-          "performance_result_id": "perf-mesh64-opt-cand-03-v1"
+          "performance_result_id": "sha256:c1beba32b2999cc56a563f3e77307972fc47fc71b9411daee86f13c5c113fc74"
         },
         "objective_values": {
-          "avg_packet_latency_cycles": 78.9,
-          "link_area_um2": 4.1
+          "avg_packet_latency_cycles": 112.0,
+          "links_mm2": 0.84
         },
         "constraint_verdicts": {
           "latency_ceiling": true,
-          "bandwidth_floor": true
+          "link_area_budget": true
         },
         "pareto_member": false
       },
@@ -380,52 +405,79 @@
         },
         "locked_consequences": {
           "routing": "DOR_XY",
-          "vc_count": 4
+          "vc_count": 1
         },
         "evaluation_ids": {
           "design_hash": "sha256:04d265a84e656248d98cdae7a049e714140b8752233f5ecfd95e7a2a64c567f8",
-          "performance_result_id": "perf-mesh64-opt-cand-04-v1"
+          "performance_result_id": "sha256:bd0b5383c7e23d918798d3a64f78a8610a15af948122cf762250aadc9ec0055e"
         },
         "objective_values": {
           "avg_packet_latency_cycles": 88.1,
-          "link_area_um2": 3.4
+          "links_mm2": 1.12
         },
         "constraint_verdicts": {
           "latency_ceiling": true,
-          "bandwidth_floor": true
+          "link_area_budget": true
         },
-        "pareto_member": false
+        "pareto_member": true
       },
       {
         "candidate_id": "cand-05",
+        "guided_patch": {
+          "link_width": 256,
+          "concentration": 4
+        },
+        "locked_consequences": {
+          "routing": "DOR_XY",
+          "vc_count": 1
+        },
+        "evaluation_ids": {
+          "design_hash": "sha256:c599c3d6bf302e49c25f23fafe2fd266d3bee7f3987dbedc86c64cc253ffb33b",
+          "performance_result_id": "sha256:1b2cbbcf5c1bd3eacca03fd2b65b39d465e25b3dd423e93a55183ef43346b732"
+        },
+        "objective_values": {
+          "avg_packet_latency_cycles": 78.9,
+          "links_mm2": 1.68
+        },
+        "constraint_verdicts": {
+          "latency_ceiling": true,
+          "link_area_budget": true
+        },
+        "pareto_member": true
+      },
+      {
+        "candidate_id": "cand-06",
         "guided_patch": {
           "link_width": 256,
           "concentration": 2
         },
         "locked_consequences": {
           "routing": "DOR_XY",
-          "vc_count": 4
+          "vc_count": 1
         },
         "evaluation_ids": {
-          "design_hash": "sha256:c599c3d6bf302e49c25f23fafe2fd266d3bee7f3987dbedc86c64cc253ffb33b",
-          "performance_result_id": "perf-mesh64-opt-cand-05-v1"
+          "design_hash": "sha256:21645764aa885d3ddc693d4b2e5175bac7a43e21e6eff6dc00cb4634394a50dd",
+          "performance_result_id": "sha256:73cb3473122388f37250afbf4b66836d3ca0e00cbfa80c173164145f2208ebf3"
         },
         "objective_values": {
           "avg_packet_latency_cycles": 71.5,
-          "link_area_um2": 5.2
+          "links_mm2": 2.24
         },
         "constraint_verdicts": {
           "latency_ceiling": true,
-          "bandwidth_floor": true
+          "link_area_budget": false
         },
         "pareto_member": true
       }
     ],
     "pareto_ids": [
+      "cand-01",
       "cand-02",
-      "cand-05"
+      "cand-04",
+      "cand-05",
+      "cand-06"
     ],
     "selected_candidate_id": "cand-02",
-    "selection_rationale": "cand-02 is Pareto-optimal and keeps concentration 4 (base floorplan); cand-05 is faster but costs 2x link area."
+    "selection_rationale": "cand-02 is the base GUIDED config (link_width 128, concentration 4) and sits on the Pareto frontier: it keeps the 5x5 mesh floorplan, meets the latency ceiling, and costs less than half the link area of the faster cand-06."
   }
 }

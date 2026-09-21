@@ -1,15 +1,50 @@
 import { useEffect, useState, type ReactElement } from 'react';
 import type { DesignView, Requirement } from '../types';
 import { Hash, TierBadge } from './badges';
-import FabricCanvas from './FabricCanvas';
+import FabricCanvas, { agentLabel } from './FabricCanvas';
 
 function clone<T>(v: T): T {
   return JSON.parse(JSON.stringify(v)) as T;
 }
 
-const KIND_OPTIONS = ['compute', 'hbm', 'nic', 'peripheral', 'ucie'];
-const TOPO_OPTIONS = ['MESH', 'C_MESH', 'TORUS', 'RING'];
-const ARB_OPTIONS = ['round_robin', 'priority', 'age_based'];
+// Engine enum values with presentation labels. Fixture semantic values must
+// project from real engine semantics, so the option value is the engine value
+// and only the visible label is friendlier.
+
+// model/compile_model.py::ModelFamily
+const MODEL_FAMILIES: [string, string][] = [
+  ['dense_transformer', 'Dense transformer'],
+  ['mixture_of_experts', 'Mixture of experts'],
+  ['diffusion', 'Diffusion'],
+  ['cnn', 'CNN'],
+  ['custom', 'Custom'],
+];
+// model/compile_model.py::ServingMode
+const SERVING_MODES: [string, string][] = [
+  ['prefill_heavy', 'Prefill heavy'],
+  ['decode_heavy', 'Decode heavy'],
+  ['mixed', 'Mixed'],
+];
+// model/compile_model.py::QoSClass
+const QOS_CLASSES: [string, string][] = [
+  ['latency_critical', 'Latency critical'],
+  ['bandwidth', 'Bandwidth'],
+  ['best_effort', 'Best effort'],
+];
+// model/compile_model.py::TopologyFamily (torus/gec/fat_tree are typed
+// refusals on the P1A routing path — selectable, never silently downgraded).
+const TOPO_OPTIONS: [string, string][] = [
+  ['mesh', 'Mesh'],
+  ['concentrated_mesh', 'Concentrated mesh'],
+  ['torus', 'Torus — route-refused'],
+  ['gec', 'GEC — refused'],
+  ['fat_tree', 'Fat tree — refused'],
+];
+// model/router_behavior.py::_ARBITRATION_ALIASES
+const ARB_OPTIONS: [string, string][] = [
+  ['islip', 'iSLIP'],
+  ['round_robin', 'Round robin'],
+];
 
 /**
  * E1–E5 design editor. GUIDED/FREE knobs are editable; LOCKED properties are
@@ -103,10 +138,18 @@ export default function DesignEditor({ design }: { design: DesignView }): ReactE
           <div className="form-row">
             <label>
               Model family
-              <input
+              <select
                 value={w.model_family}
-                onChange={(e) => touch({ ...clone(draft), workload: { ...w, model_family: e.target.value } })}
-              />
+                onChange={(e) =>
+                  touch({ ...clone(draft), workload: { ...w, model_family: e.target.value } })
+                }
+              >
+                {MODEL_FAMILIES.map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
             </label>
             <label>
               Model name
@@ -117,10 +160,19 @@ export default function DesignEditor({ design }: { design: DesignView }): ReactE
             </label>
             <label>
               Serving mode
-              <input
+              <select
                 value={w.serving_mode ?? ''}
-                onChange={(e) => touch({ ...clone(draft), workload: { ...w, serving_mode: e.target.value } })}
-              />
+                onChange={(e) =>
+                  touch({ ...clone(draft), workload: { ...w, serving_mode: e.target.value || undefined } })
+                }
+              >
+                <option value="">—</option>
+                {SERVING_MODES.map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
             </label>
           </div>
           <div className="form-row">
@@ -165,7 +217,13 @@ export default function DesignEditor({ design }: { design: DesignView }): ReactE
                     <input value={r.traffic_class ?? ''} onChange={(e) => setReq(i, { traffic_class: e.target.value || null })} />
                   </td>
                   <td>
-                    <input value={r.qos_class} onChange={(e) => setReq(i, { qos_class: e.target.value })} />
+                    <select value={r.qos_class} onChange={(e) => setReq(i, { qos_class: e.target.value })}>
+                      {QOS_CLASSES.map(([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
                   </td>
                   <td>
                     <input
@@ -212,7 +270,7 @@ export default function DesignEditor({ design }: { design: DesignView }): ReactE
           <div className="form-row">
             {draft.agents.map((a, i) => (
               <label key={`${a.kind}-${i}`}>
-                {KIND_OPTIONS.includes(a.kind) ? a.kind : `kind: ${a.kind}`} · count
+                {agentLabel(a.kind)} · count
                 <input type="number" min={1} value={a.count} onChange={(e) => setAgent(i, Number(e.target.value) || 1)} />
               </label>
             ))}
@@ -257,9 +315,9 @@ export default function DesignEditor({ design }: { design: DesignView }): ReactE
                 onChange={(e) => setGuided('topology_family', e.target.value || null)}
               >
                 <option value="">—</option>
-                {TOPO_OPTIONS.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
+                {TOPO_OPTIONS.map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
                   </option>
                 ))}
               </select>
@@ -295,9 +353,9 @@ export default function DesignEditor({ design }: { design: DesignView }): ReactE
                 onChange={(e) => setGuided('arbitration', e.target.value || null)}
               >
                 <option value="">—</option>
-                {ARB_OPTIONS.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
+                {ARB_OPTIONS.map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
                   </option>
                 ))}
               </select>
@@ -311,6 +369,14 @@ export default function DesignEditor({ design }: { design: DesignView }): ReactE
               RCU (in-network reduction) <TierBadge tier="GUIDED" />
             </label>
           </div>
+          {g.rcu_enabled === true && (
+            <div className="rcu-refusal">
+              <strong>Compiler refusal:</strong> <code>rcu_enabled=true</code> has
+              no RCU realization in the current fabric — the compiler returns
+              UNSUPPORTED rather than silently dropping the intent. In fixture
+              mode this edit stays local and nothing recompiles.
+            </div>
+          )}
 
           <h4 className="locked-head">
             Derived properties <TierBadge tier="LOCKED" />

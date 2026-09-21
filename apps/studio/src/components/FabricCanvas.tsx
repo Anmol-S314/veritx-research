@@ -32,6 +32,19 @@ function agentCount(d: DesignView, kind: string): number {
   return d.agents.filter((a) => a.kind === kind).reduce((s, a) => s + a.count, 0);
 }
 
+/** Presentation labels are friendlier than engine values (AgentKind). */
+export const AGENT_LABELS: Record<string, string> = {
+  compute_tile: 'Compute tile',
+  hbm_controller: 'HBM controller',
+  nic: 'NIC',
+  peripheral: 'Peripheral',
+  ucie_port: 'UCIe port',
+};
+
+export function agentLabel(kind: string): string {
+  return AGENT_LABELS[kind] ?? kind;
+}
+
 function gridFor(routers: number): { cols: number; rows: number } {
   const cols = Math.max(1, Math.ceil(Math.sqrt(Math.max(1, routers))));
   const rows = Math.max(1, Math.ceil(Math.max(1, routers) / cols));
@@ -49,8 +62,8 @@ function strokeFor(linkWidth: number | null): number {
 export default function FabricCanvas({ design }: { design: DesignView }): ReactElement {
   const [overlay, setOverlay] = useState<Overlay>('structure');
 
-  const compute = agentCount(design, 'compute');
-  const hbm = agentCount(design, 'hbm');
+  const compute = agentCount(design, 'compute_tile');
+  const hbm = agentCount(design, 'hbm_controller');
   const edge = agentCount(design, 'nic') + agentCount(design, 'peripheral');
   const conc = design.noc_guided.concentration ?? 1;
   const routerCount = Math.max(1, Math.ceil(compute / Math.max(1, conc)));
@@ -111,10 +124,10 @@ export default function FabricCanvas({ design }: { design: DesignView }): ReactE
             </button>
           ))}
         </div>
-        <div className="canvas-meta">
-          {routerCount} routers · {links.length} links · {compute} tiles · {hbm} HBM ·
+        <span className="canvas-meta">
+          {routerCount} routers · {links.length} links · {compute} compute tiles · {hbm} HBM ·
           link width {design.noc_guided.link_width ?? '—'}
-        </div>
+        </span>
       </div>
 
       {overlay !== 'structure' && activeOverlay && (

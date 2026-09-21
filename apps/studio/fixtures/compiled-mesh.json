@@ -1,45 +1,40 @@
 {
   "fixture_id": "compiled-mesh",
-  "title": "Compiled 4x4 concentrated mesh (64 compute + 8 HBM)",
-  "description": "Fresh COMPILED design. All 10 obligations PASS. No evaluation has been run yet, so the Evaluate section shows NOT_RUN.",
+  "title": "Compiled 5x5 mesh \u00b7 64 compute tiles + 8 HBM (dense_transformer)",
+  "description": "Fresh COMPILED design (DOR_XY, VC count 1). All 10 obligations PASS. No evaluation has been run yet, so Evaluate shows NOT_RUN.",
   "design": {
     "contract_version": 1,
     "design_hash": "sha256:6d7be8e1a0ff83666d11ae1e3d1b6010a64e9d9b7e7e40a1f8b850584581e0de",
-    "schema_version": 3,
-    "compiler_semantics_version": 1,
+    "schema_version": 2,
+    "compiler_semantics_version": 2,
     "workload": {
-      "model_family": "llama3",
-      "model_name": "llama3-70b",
+      "model_family": "dense_transformer",
+      "model_name": "LLaMA-70B",
       "parallelism": {
-        "tp": 8,
-        "pp": 2,
-        "ep": 4,
-        "dp": 2
+        "tp": 64,
+        "pp": 1,
+        "ep": 1,
+        "dp": 1
       },
-      "serving_mode": "decode",
-      "workload_source_ref": {
-        "content_digest": "sha256:39afdf4ec1f879abf540adc68abf71d14951fe4ea0c8c773c76edca22d5d75b3",
-        "format": "srota-workload-v3",
-        "size_bytes": 4096
-      }
+      "serving_mode": "mixed"
     },
     "requirements": [
       {
-        "traffic_class": "hbm_read",
-        "qos_class": "latency_sensitive",
+        "traffic_class": null,
+        "qos_class": "latency_critical",
         "latency_ceiling_cycles": 220,
         "bandwidth_floor_gbps": null,
         "binding": true
       },
       {
-        "traffic_class": "allreduce",
-        "qos_class": "throughput_sensitive",
+        "traffic_class": null,
+        "qos_class": "bandwidth",
         "latency_ceiling_cycles": null,
-        "bandwidth_floor_gbps": 1800,
+        "bandwidth_floor_gbps": 100,
         "binding": true
       },
       {
-        "traffic_class": "control",
+        "traffic_class": null,
         "qos_class": "best_effort",
         "latency_ceiling_cycles": null,
         "bandwidth_floor_gbps": null,
@@ -48,11 +43,11 @@
     ],
     "agents": [
       {
-        "kind": "compute",
+        "kind": "compute_tile",
         "count": 64
       },
       {
-        "kind": "hbm",
+        "kind": "hbm_controller",
         "count": 8
       },
       {
@@ -65,18 +60,18 @@
       }
     ],
     "noc_guided": {
-      "topology_family": "MESH",
+      "topology_family": "mesh",
       "radix": 5,
       "concentration": 4,
       "link_width": 128,
-      "rcu_enabled": true,
+      "rcu_enabled": false,
       "arbitration": "round_robin"
     },
     "locked_derived": {
       "routing": "DOR_XY",
-      "vc_count": 4,
+      "vc_count": 1,
       "turn_restrictions": [
-        "no Y-to-X turn (dimension-order XY)"
+        "no_negative_dimension_turns"
       ],
       "certificate_overall": "PASS"
     }
@@ -85,7 +80,7 @@
     "contract_version": 1,
     "status": "COMPILED",
     "design_hash": "sha256:6d7be8e1a0ff83666d11ae1e3d1b6010a64e9d9b7e7e40a1f8b850584581e0de",
-    "compiler_semantics_version": 1,
+    "compiler_semantics_version": 2,
     "resolved_fabric_hash": "sha256:8e42c9b7bbcabe397a6de57f3a6626cf72f77b4f879ff06dc1d7674b2150aa46",
     "certificate_id": "sha256:20a008151df811437aca5b0ff3711cdd37c35ee6636341cd3484602f14d4f4b6",
     "certificate_overall": "PASS",
@@ -95,80 +90,99 @@
         "status": "PASS",
         "method": "undirected-bfs/v1",
         "evidence": {
-          "digest": "b6d42792124646c1",
-          "bound": "sha256:8e42c9b7bbcabe397a6de57f3a6626cf72f77b4f879ff06dc1d7674b2150aa46"
+          "routers": 25,
+          "directed_channels": 80,
+          "components": 1
         }
       },
       {
         "obligation": "ATTACHMENT_COMPLETE",
         "status": "PASS",
-        "method": "seat-ledger/v1",
+        "method": "attachment.validate_against/v1",
         "evidence": {
-          "digest": "eabfe5693c913b89",
-          "bound": "sha256:8e42c9b7bbcabe397a6de57f3a6626cf72f77b4f879ff06dc1d7674b2150aa46"
+          "endpoints": 78
         }
       },
       {
         "obligation": "ADDRESS_DECODE_VALID",
         "status": "PASS",
-        "method": "decode-cover/v1",
+        "method": "address_decode.validate_against/v1",
         "evidence": {
-          "digest": "5c8e94391708c392",
-          "bound": "sha256:8e42c9b7bbcabe397a6de57f3a6626cf72f77b4f879ff06dc1d7674b2150aa46"
+          "entries": 0
         }
       },
       {
         "obligation": "ROUTE_COMPLETE",
         "status": "PASS",
-        "method": "class-src-dst-cover/v1",
+        "method": "entry-coverage/v1",
         "evidence": {
-          "digest": "2d4501bb82d28ccc",
-          "bound": "sha256:8e42c9b7bbcabe397a6de57f3a6626cf72f77b4f879ff06dc1d7674b2150aa46"
+          "routing_classes": [
+            "DOR_XY"
+          ],
+          "routers": 25,
+          "expected_entries": 600,
+          "entries": 600
         }
       },
       {
         "obligation": "ROUTE_LEGAL",
         "status": "PASS",
-        "method": "channel-legal/v1",
+        "method": "route.validate_against/v1",
         "evidence": {
-          "digest": "5933fcd5d309fd92",
-          "bound": "sha256:8e42c9b7bbcabe397a6de57f3a6626cf72f77b4f879ff06dc1d7674b2150aa46"
+          "routing_classes": [
+            "DOR_XY"
+          ]
         }
       },
       {
         "obligation": "VC_ASSIGNMENT_VALID",
         "status": "PASS",
-        "method": "route-bound-vc/v1",
+        "method": "vc.validate_against/v1",
         "evidence": {
-          "digest": "a9bc31ba0c6e03b9",
-          "bound": "sha256:8e42c9b7bbcabe397a6de57f3a6626cf72f77b4f879ff06dc1d7674b2150aa46"
+          "vc_count": 1,
+          "vc_to_routing_class": [
+            [
+              0,
+              "DOR_XY"
+            ]
+          ]
         }
       },
       {
         "obligation": "DEADLOCK_FREE",
         "status": "PASS",
-        "method": "channel-vc-cdg-acyclic/v1",
+        "method": "channel-vc-cdg/v1",
         "evidence": {
-          "digest": "fbecbe95c7222469",
-          "bound": "sha256:8e42c9b7bbcabe397a6de57f3a6626cf72f77b4f879ff06dc1d7674b2150aa46"
+          "vc_count": 1,
+          "routing_classes": [
+            "DOR_XY"
+          ],
+          "escape_vcs": [],
+          "node_count": 80,
+          "edge_count": 124,
+          "route_realization": "v2_channel_id",
+          "cdg_route_classes": [
+            "DOR_XY"
+          ],
+          "acyclic": true,
+          "sccs_gt_1": 0
         }
       },
       {
         "obligation": "MAPPING_VALID",
         "status": "PASS",
-        "method": "rank-attachment/v1",
+        "method": "mapping-attachment-seam/v1",
         "evidence": {
-          "digest": "bb9c1b45ae29f1a3",
-          "bound": "sha256:8e42c9b7bbcabe397a6de57f3a6626cf72f77b4f879ff06dc1d7674b2150aa46"
+          "placements": 64
         }
       },
       {
         "obligation": "PACKET_FORMAT_VALID",
         "status": "PASS",
-        "method": "wire-format-fit/v1",
+        "method": "packet_format.validate_against/v1",
         "evidence": {
-          "digest": "6067535155b236fd",
-          "bound": "sha256:8e42c9b7bbcabe397a6de57f3a6626cf72f77b4f879ff06dc1d7674b2150aa46"
+          "flit_width_bits": 128,
+          "vc_count": 1
         }
       },
       {
@@ -176,20 +190,30 @@
         "status": "PASS",
         "method": "bundle.revalidate/v1",
         "evidence": {
-          "digest": "365a25df7ed8653f",
-          "bound": "sha256:8e42c9b7bbcabe397a6de57f3a6626cf72f77b4f879ff06dc1d7674b2150aa46"
+          "fabric_hash": "sha256:d6c4afde565b9d0ef54cf488e12fc91bf04470a5fb4c2528ac637afa02c185bf",
+          "mapping_hash": "sha256:26e4fba70279feb59473ea05bd17ba32aac793d8963a9b7107389f2af03aded8",
+          "topology_hash": "sha256:772e04a411ad8b8566976482cbccabc93e25ad214f50dbfb48062811bfe1362f",
+          "attachment_hash": "sha256:72bbad209343e631254f2b708959d2ebcea4c89970941ae60803fc16a3165f9e",
+          "router_route_hash": "sha256:93a92a33fe8a530e2ed4a03737af7949bfef5fba43c2c3f3dd078344e9280a11",
+          "resolved_route_hash": "sha256:b24a7a68895e3ecbcde4574aa500f2b42b5c5d27ff996093fde6e49639298cf5",
+          "vc_assignment_hash": "sha256:176478460357cf2ed0e2187e8889cbbf28647e844175d05c31514cdf74678036",
+          "packet_format_hash": "sha256:861279fada61910c69954ba46342198b383303650fb6fafa2a5580f57bd915e1",
+          "router_behavior_hash": "sha256:774aaeb73b61b59e5a01086f11cf00ec4d9a7116ce3afc40a4852f9a094e25d5",
+          "address_decode_hash": "sha256:e283f7a5757465673b98f9427901a2febbe7974511ad27bb97cc07d122d2b7e8"
         }
       }
     ],
     "artifact_hashes": {
-      "topology": "sha256:772e04a411ad8b8566976482cbccabc93e25ad214f50dbfb48062811bfe1362f",
-      "attachment": "sha256:72bbad209343e631254f2b708959d2ebcea4c89970941ae60803fc16a3165f9e",
-      "routes": "sha256:aba4140a1edaaccbf88853aebc920066418dc8aca5e1a5de7350a5b7129c1871",
-      "vc_assignment": "sha256:e96e2639f7121fa22d563348a3f20d9bb7b6d68e6d05f440705afda348dbf55a",
-      "packet_format": "sha256:ceefecf3b9f742aa7184aeb83959098380f6f1fc6815816b1fbaf579c5d0f4ab",
-      "router_behavior": "sha256:9528f489314c6f5c866e17abeac92a4c9749ceb62278024479293f2799b245fe",
-      "address_decode": "sha256:f6ec6ea6dbf738a0034c8c2ca4423832dd0598104bd6a9492628168a5ef82717",
-      "fabric": "sha256:8e42c9b7bbcabe397a6de57f3a6626cf72f77b4f879ff06dc1d7674b2150aa46"
+      "fabric_hash": "sha256:d6c4afde565b9d0ef54cf488e12fc91bf04470a5fb4c2528ac637afa02c185bf",
+      "mapping_hash": "sha256:26e4fba70279feb59473ea05bd17ba32aac793d8963a9b7107389f2af03aded8",
+      "topology_hash": "sha256:772e04a411ad8b8566976482cbccabc93e25ad214f50dbfb48062811bfe1362f",
+      "attachment_hash": "sha256:72bbad209343e631254f2b708959d2ebcea4c89970941ae60803fc16a3165f9e",
+      "router_route_hash": "sha256:93a92a33fe8a530e2ed4a03737af7949bfef5fba43c2c3f3dd078344e9280a11",
+      "resolved_route_hash": "sha256:b24a7a68895e3ecbcde4574aa500f2b42b5c5d27ff996093fde6e49639298cf5",
+      "vc_assignment_hash": "sha256:176478460357cf2ed0e2187e8889cbbf28647e844175d05c31514cdf74678036",
+      "packet_format_hash": "sha256:861279fada61910c69954ba46342198b383303650fb6fafa2a5580f57bd915e1",
+      "router_behavior_hash": "sha256:774aaeb73b61b59e5a01086f11cf00ec4d9a7116ce3afc40a4852f9a094e25d5",
+      "address_decode_hash": "sha256:e283f7a5757465673b98f9427901a2febbe7974511ad27bb97cc07d122d2b7e8"
     },
     "error": null
   },

@@ -477,6 +477,15 @@ input:disabled {
   margin-bottom: 12px;
 }
 
+.rcu-refusal {
+  background: var(--warn-bg);
+  border: 1px solid var(--warn);
+  border-radius: 4px;
+  padding: 6px 10px;
+  margin: 4px 0 8px;
+  font-size: 12px;
+}
+
 .locked-head {
   border-top: 1px solid var(--border);
   padding-top: 12px;

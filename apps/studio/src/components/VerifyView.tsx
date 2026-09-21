@@ -40,7 +40,11 @@ export default function VerifyView({
         <div className="card">
           <h3>Obligations ({obs.length})</h3>
           {obs.length === 0 && (
-            <p className="muted">No obligations carried by this outcome.</p>
+            <p className="muted">
+              No obligation list carried by this outcome. A build-time refusal
+              (INVALID/UNSUPPORTED) fails before certification, so no bundle and
+              no certificate exist — the error above is the evidence.
+            </p>
           )}
           <ul className="ob-list">
             {obs.map((o) => (
