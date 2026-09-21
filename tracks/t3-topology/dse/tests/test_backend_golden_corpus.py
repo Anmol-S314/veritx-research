@@ -4,6 +4,7 @@ Five deterministic fabrics with pinned artifact/route/loss hashes and a
 real BookSim execution per case. Any semantic change to the lowering,
 projection or route authority shows up as a diff here, and the executed
 route dump must match the pinned expectation.
+P1B.3a re-pin: DEFAULT became a base VC class (P1B.3), moving 18 config/fabric hashes across 3 cases; traces, route digests and loss digests unchanged.
 """
 from __future__ import annotations
 
