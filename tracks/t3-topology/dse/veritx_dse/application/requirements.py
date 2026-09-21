@@ -39,6 +39,13 @@ Measurement honesty (binding — every rule enforced below):
   request geometry (same TP/PP/EP/DP law as the traffic seam: equal
   world size is not equivalence); a class-scoped requirement naming a
   class outside the request's intent registry refuses fail-closed.
+* **The triple must belong to one design.** Geometry equality alone
+  admits a same-shape transplant: two v3 requests with identical
+  TP/PP/EP/DP but different payloads/semantics lower to same-geometry
+  graphs. The workload's provenance design_hash must equal the
+  request's design_hash(), and the performance result's Wave-D chain
+  must bind THIS workload's workload_id(). Missing provenance or a
+  missing chain refuses — an absent binding is not a pass.
 
 Report shape follows contracts/srota/v1/requirement.report.schema.json
 (contract_version 1): per-requirement {requirement_index,
@@ -47,10 +54,15 @@ metric_authority, performance_result_id, reason}.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from fractions import Fraction
 from typing import Any
 
-from veritx_dse.core.errors import InvalidInput, MappingInvalid
+from veritx_dse.core.errors import (
+    EvidenceInvalid,
+    InvalidInput,
+    MappingInvalid,
+)
 from veritx_dse.model.compile_model import (
     CompileRequestV3,
     RequirementV3,
@@ -267,9 +279,12 @@ class RequirementEvaluator:
         """Build the RequirementReport for one (request, workload, result).
 
         Refuses (typed): non-v3 request, non-graph workload, geometry
-        mismatch between request and workload, unknown class scope, or
-        a result missing its identity/makespan spine. Per-metric gaps
-        become UNMEASURABLE entries, never exceptions and never passes.
+        mismatch between request and workload, workload provenance that
+        does not name this request's design, a performance result whose
+        Wave-D chain binds another workload (or that carries no chain),
+        unknown class scope, or a result missing its identity/makespan
+        spine. Per-metric gaps become UNMEASURABLE entries, never
+        exceptions and never passes.
         """
         if not isinstance(request, CompileRequestV3):
             raise InvalidInput(
@@ -295,6 +310,49 @@ class RequirementEvaluator:
             raise InvalidInput(
                 "performance result carries no resource_id — cannot bind "
                 "report entries to evidence")
+
+        # ── provenance law: the triple must belong to ONE design ─────
+        # Geometry equality is necessary, not sufficient: payload bytes,
+        # traffic classes and collective semantics do not enter the
+        # geometry, so a same-shape transplant would otherwise yield a
+        # report carrying B's design_hash over A's measurements.
+        request_design_hash = request.design_hash()
+        provenance = workload.provenance
+        if not isinstance(provenance, Mapping):
+            raise EvidenceInvalid(
+                "workload carries no provenance block — the request, "
+                "workload and performance cannot be proven to belong "
+                "together, and missing provenance is not a pass")
+        workload_design_hash = provenance.get("design_hash")
+        if not isinstance(workload_design_hash, str) \
+                or not workload_design_hash:
+            raise EvidenceInvalid(
+                f"workload provenance declares no design_hash (has "
+                f"{sorted(provenance)}); refusing an unbindable workload")
+        if workload_design_hash != request_design_hash:
+            raise MappingInvalid(
+                f"workload provenance design_hash "
+                f"{workload_design_hash!r} does not match request "
+                f"design_hash {request_design_hash!r} — refusing a "
+                f"workload transplanted from another design")
+        chain = performance.get("wave_d_chain")
+        if not isinstance(chain, Mapping):
+            raise EvidenceInvalid(
+                "performance result carries no wave_d_chain block — the "
+                "measurements cannot be bound to this workload, and a "
+                "missing binding is not a pass")
+        chain_workload_id = chain.get("workload_graph_id")
+        if not isinstance(chain_workload_id, str) or not chain_workload_id:
+            raise EvidenceInvalid(
+                f"performance wave_d_chain declares no workload_graph_id "
+                f"(has {sorted(chain)}); refusing an unbindable result")
+        workload_id = workload.workload_id()
+        if chain_workload_id != workload_id:
+            raise MappingInvalid(
+                f"performance wave_d_chain.workload_graph_id "
+                f"{chain_workload_id!r} is not this workload's id "
+                f"{workload_id!r} — refusing measurements transplanted "
+                f"from another workload")
 
         intent_classes = derive_v3_traffic_classes(request)
         single_class = len(intent_classes) <= 1

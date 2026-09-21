@@ -85,19 +85,33 @@ def _net_workload(model, with_memory=False):
                             wave_d_operation_ids=("op1",))
 
 
-def _result(workload, window_us):
-    """Verified result with a window of window_us."""
+def _result(workload, window_us, *, workload_graph_id="w"):
+    """Verified result with a window of window_us, bound to the graph."""
     binding = NetworkWindowBinding(
-        workload_parent_id="w", physical_traffic_id="pt",
+        workload_parent_id=workload_graph_id, schema_version=2,
+        physical_traffic_id="pt",
         backend_config_hash="c", backend_input_hash="i",
         evidence_sha256="e", stats_sha256="s",
         network_clock_hz=NET_HZ, duration=QTime(window_us, US))
-    graph = PerformanceEventGraph(workload=workload, network_binding=binding)
+    graph = PerformanceEventGraph(
+        workload=workload, network_binding=binding,
+        wave_d_chain={"workload_graph_id": workload_graph_id,
+                      "physical_traffic_id": "pt"})
     schedule = schedule_workload(
         workload, network_durations={"NET": QTime(window_us, US)})
     res = build_performance_result(graph=graph, schedule=schedule)
     reverify_result(res, workload=workload)
     return res
+
+
+def _bound_result(request, workload, window_us):
+    """(res, graph): verified result whose Wave-D chain binds request's
+    lowered workload graph (the honest triple RequirementEvaluator now
+    requires)."""
+    graph = lower_compile_workload(request).graph
+    res = _result(workload, window_us,
+                  workload_graph_id=graph.workload_id())
+    return res, graph
 
 
 def _request(collectives, requirements, tp=2, dp=1, pp=1, ep=1):
@@ -146,10 +160,9 @@ def _check_contract(report):
 
 class TestLatencyVerdicts:
     def test_satisfied_from_window_duration(self):
-        res = _result(_net_workload(_model()), window_us=2500)
         req = _request([_ci()], [_lat_req(ceiling=10 ** 9)])
-        lw = lower_compile_workload(req)
-        rep = RequirementEvaluator.evaluate(req, lw.graph, res)
+        res, graph = _bound_result(req, _net_workload(_model()), 2500)
+        rep = RequirementEvaluator.evaluate(req, graph, res)
         (entry,) = rep["entries"]
         assert entry["verdict"] == "SATISFIED"
         assert entry["measured"] == pytest.approx(2.5 * 10 ** 6)  # 1GHz
@@ -159,41 +172,39 @@ class TestLatencyVerdicts:
         assert report_passes(rep)
 
     def test_violated_fabric_wide(self):
-        res = _result(_net_workload(_model()), window_us=2500)
         req = _request([_ci()], [RequirementV3(
             qos_class=QoSClass.LATENCY_CRITICAL, traffic_class=None,
             latency_ceiling_cycles=1000, binding=True)])
-        rep = RequirementEvaluator.evaluate(
-            req, lower_compile_workload(req).graph, res)
+        res, graph = _bound_result(req, _net_workload(_model()), 2500)
+        rep = RequirementEvaluator.evaluate(req, graph, res)
         assert rep["entries"][0]["verdict"] == "VIOLATED"
         assert not report_passes(rep)
         _check_contract(rep)
 
     def test_makespan_fallback_without_network_binding(self):
-        # Compute-only temporal workload: no window event, no binding.
-        # The verified result carries makespan only; latency measures
-        # against it (conservative superset, stated in the authority).
+        req = _request([_ci()], [_lat_req(ceiling=10 ** 12)])
+        lw = lower_compile_workload(req)
         model = _model(with_bandwidth=False)
         workload = TemporalWorkload(
             performance_model=model,
             events=(TemporalEvent("K", "COMPUTE", QTime(4000, US),
                                    "gpu.compute"),),
             wave_d_operation_ids=("op1",))
-        graph = PerformanceEventGraph(workload=workload)
+        graph = PerformanceEventGraph(
+            workload=workload,
+            wave_d_chain={"workload_graph_id":
+                          lw.graph.workload_id()})
         schedule = schedule_workload(workload)
         res = build_performance_result(graph=graph, schedule=schedule)
         reverify_result(res, workload=workload)
         assert res["network_binding"] is None
-        req = _request([_ci()], [_lat_req(ceiling=10 ** 12)])
-        rep = RequirementEvaluator.evaluate(
-            req, lower_compile_workload(req).graph, res)
+        rep = RequirementEvaluator.evaluate(req, lw.graph, res)
         entry = rep["entries"][0]
         assert entry["verdict"] == "SATISFIED"
         assert "makespan" in entry["metric_authority"]
         _check_contract(rep)
 
     def test_multi_class_excess_is_unmeasurable_not_violated(self):
-        res = _result(_net_workload(_model()), window_us=2500)
         req = _request(
             [_ci(tc="tp_collective"),
              CollectiveIntent(kind=CollectiveKind.ALLGATHER,
@@ -201,15 +212,14 @@ class TestLatencyVerdicts:
                               payload_bytes=1024,
                               traffic_class="dp_collective")],
             [_lat_req(ceiling=1000, binding=True)], tp=2, dp=2)
-        rep = RequirementEvaluator.evaluate(
-            req, lower_compile_workload(req).graph, res)
+        res, graph = _bound_result(req, _net_workload(_model()), 2500)
+        rep = RequirementEvaluator.evaluate(req, graph, res)
         entry = rep["entries"][0]
         assert entry["verdict"] == "UNMEASURABLE"
         assert not report_passes(rep)  # binding + UNMEASURABLE never passes
         _check_contract(rep)
 
     def test_multi_class_satisfied_still_passes(self):
-        res = _result(_net_workload(_model()), window_us=2500)
         req = _request(
             [_ci(tc="tp_collective"),
              CollectiveIntent(kind=CollectiveKind.ALLGATHER,
@@ -217,20 +227,19 @@ class TestLatencyVerdicts:
                               payload_bytes=1024,
                               traffic_class="dp_collective")],
             [_lat_req(ceiling=10 ** 9, binding=True)], tp=2, dp=2)
-        rep = RequirementEvaluator.evaluate(
-            req, lower_compile_workload(req).graph, res)
+        res, graph = _bound_result(req, _net_workload(_model()), 2500)
+        rep = RequirementEvaluator.evaluate(req, graph, res)
         assert rep["entries"][0]["verdict"] == "SATISFIED"
         assert report_passes(rep)
 
 
 class TestBandwidthVerdicts:
     def test_violated_without_bytes(self):
-        res = _result(_net_workload(_model()), window_us=2500)
         req = _request([_ci()], [RequirementV3(
             qos_class=QoSClass.BANDWIDTH, traffic_class="tp_collective",
             bandwidth_floor_gbps=0.0001, binding=False)])
-        rep = RequirementEvaluator.evaluate(
-            req, lower_compile_workload(req).graph, res)
+        res, graph = _bound_result(req, _net_workload(_model()), 2500)
+        rep = RequirementEvaluator.evaluate(req, graph, res)
         entry = rep["entries"][0]
         # hbm moved 0 bytes here: 0 < floor is a real measurement.
         assert entry["verdict"] == "VIOLATED"
@@ -238,33 +247,29 @@ class TestBandwidthVerdicts:
         _check_contract(rep)
 
     def test_unmeasurable_without_bandwidth_resource(self):
-        res = _result(_net_workload(_model(with_bandwidth=False)),
-                      window_us=2500)
         req = _request([_ci()], [RequirementV3(
             qos_class=QoSClass.BANDWIDTH, bandwidth_floor_gbps=1.0,
             binding=True)])
-        rep = RequirementEvaluator.evaluate(
-            req, lower_compile_workload(req).graph, res)
+        res, graph = _bound_result(
+            req, _net_workload(_model(with_bandwidth=False)), 2500)
+        rep = RequirementEvaluator.evaluate(req, graph, res)
         assert rep["entries"][0]["verdict"] == "UNMEASURABLE"
         assert not report_passes(rep)
         _check_contract(rep)
 
     def test_satisfied_with_moved_bytes(self):
-        res = _result(_net_workload(_model(), with_memory=True),
-                      window_us=2500)
         req = _request([_ci()], [RequirementV3(
             qos_class=QoSClass.BANDWIDTH, bandwidth_floor_gbps=1e-9,
             binding=True)])
-        rep = RequirementEvaluator.evaluate(
-            req, lower_compile_workload(req).graph, res)
+        res, graph = _bound_result(
+            req, _net_workload(_model(), with_memory=True), 2500)
+        rep = RequirementEvaluator.evaluate(req, graph, res)
         entry = rep["entries"][0]
         assert entry["verdict"] == "SATISFIED"
         assert entry["measured"] > 0
         _check_contract(rep)
 
     def test_class_scoped_multi_class_unmeasurable(self):
-        res = _result(_net_workload(_model(), with_memory=True),
-                      window_us=2500)
         req = _request(
             [_ci(tc="tp_collective"),
              CollectiveIntent(kind=CollectiveKind.ALLGATHER,
@@ -275,19 +280,19 @@ class TestBandwidthVerdicts:
                            traffic_class="dp_collective",
                            bandwidth_floor_gbps=1e-9, binding=True)],
             tp=2, dp=2)
-        rep = RequirementEvaluator.evaluate(
-            req, lower_compile_workload(req).graph, res)
+        res, graph = _bound_result(
+            req, _net_workload(_model(), with_memory=True), 2500)
+        rep = RequirementEvaluator.evaluate(req, graph, res)
         assert rep["entries"][0]["verdict"] == "UNMEASURABLE"
         assert not report_passes(rep)
 
 
 class TestShapesAndRefusals:
     def test_not_applicable_without_thresholds(self):
-        res = _result(_net_workload(_model()), window_us=2500)
         req = _request([_ci()], [RequirementV3(
             qos_class=QoSClass.BEST_EFFORT, binding=False)])
-        rep = RequirementEvaluator.evaluate(
-            req, lower_compile_workload(req).graph, res)
+        res, graph = _bound_result(req, _net_workload(_model()), 2500)
+        rep = RequirementEvaluator.evaluate(req, graph, res)
         entry = rep["entries"][0]
         assert entry["verdict"] == "NOT_APPLICABLE"
         assert entry["required"] is None and entry["measured"] is None
@@ -295,13 +300,12 @@ class TestShapesAndRefusals:
         _check_contract(rep)
 
     def test_dual_threshold_entry(self):
-        res = _result(_net_workload(_model()), window_us=2500)
         req = _request([_ci()], [RequirementV3(
             qos_class=QoSClass.LATENCY_CRITICAL,
             latency_ceiling_cycles=10 ** 9,
             bandwidth_floor_gbps=10 ** 9, binding=True)])
-        rep = RequirementEvaluator.evaluate(
-            req, lower_compile_workload(req).graph, res)
+        res, graph = _bound_result(req, _net_workload(_model()), 2500)
+        rep = RequirementEvaluator.evaluate(req, graph, res)
         entry = rep["entries"][0]
         assert entry["verdict"] == "VIOLATED"  # bandwidth fails
         assert isinstance(entry["required"], str)
@@ -309,25 +313,23 @@ class TestShapesAndRefusals:
         _check_contract(rep)
 
     def test_unknown_class_scope_refuses(self):
-        res = _result(_net_workload(_model()), window_us=2500)
         req = _request([_ci()], [_lat_req(ceiling=10 ** 9, tc="ghost")])
+        res, graph = _bound_result(req, _net_workload(_model()), 2500)
         with pytest.raises(InvalidInput):
-            RequirementEvaluator.evaluate(
-                req, lower_compile_workload(req).graph, res)
+            RequirementEvaluator.evaluate(req, graph, res)
 
     def test_geometry_mismatch_refuses(self):
-        res = _result(_net_workload(_model()), window_us=2500)
         req = _request([_ci()], [_lat_req(ceiling=10 ** 9)], tp=2, dp=1)
         other = _request([_ci()], [_lat_req(ceiling=10 ** 9)], tp=4, dp=1)
+        res, _ = _bound_result(other, _net_workload(_model()), 2500)
         with pytest.raises(MappingInvalid):
             RequirementEvaluator.evaluate(
                 req, lower_compile_workload(other).graph, res)
 
     def test_non_v3_request_refuses(self):
         from veritx_dse.workload.canonical_graph import WorkloadGraph
-        res = _result(_net_workload(_model()), window_us=2500)
         req = _request([_ci()], [_lat_req(ceiling=10 ** 9)])
-        graph = lower_compile_workload(req).graph
+        res, graph = _bound_result(req, _net_workload(_model()), 2500)
         v2 = Workload(
             model_family=ModelFamily.DENSE_TRANSFORMER, tp=2, dp=1)
         from veritx_dse.model.compile_model import (
@@ -340,17 +342,15 @@ class TestShapesAndRefusals:
             RequirementEvaluator.evaluate(v2req, graph, res)
 
     def test_missing_result_identity_refuses(self):
-        res = _result(_net_workload(_model()), window_us=2500)
-        del res["resource_id"]
         req = _request([_ci()], [_lat_req(ceiling=10 ** 9)])
+        res, graph = _bound_result(req, _net_workload(_model()), 2500)
+        del res["resource_id"]
         with pytest.raises(InvalidInput):
-            RequirementEvaluator.evaluate(
-                req, lower_compile_workload(req).graph, res)
+            RequirementEvaluator.evaluate(req, graph, res)
 
     def test_evaluate_is_deterministic(self):
-        res = _result(_net_workload(_model()), window_us=2500)
         req = _request([_ci()], [_lat_req(ceiling=10 ** 9)])
-        graph = lower_compile_workload(req).graph
+        res, graph = _bound_result(req, _net_workload(_model()), 2500)
         assert RequirementEvaluator.evaluate(req, graph, res) == \
             RequirementEvaluator.evaluate(req, graph, res)
 
@@ -371,8 +371,8 @@ class TestMeshDenseEndToEnd:
         lowered = lower_compile_workload(req)
         assert lowered.graph.participant_count == 8
         assert len(lowered.graph.of_kind("COLLECTIVE")) == 2
-        res = _result(_net_workload(_model()), window_us=2500)
-        rep = RequirementEvaluator.evaluate(req, lowered.graph, res)
+        res, graph = _bound_result(req, _net_workload(_model()), 2500)
+        rep = RequirementEvaluator.evaluate(req, graph, res)
         _check_contract(rep)
         assert rep["entries"][0]["verdict"] == "SATISFIED"
         assert report_passes(rep)
