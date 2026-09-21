@@ -90,7 +90,8 @@ IDENTITY_FIELDS = {
         "param_count_b", "sequence_length", "batch_size", "precision",
         "serving_mode", "collectives", "trace_path",
     }),
-    CollectiveOp: frozenset({"kind", "group_size", "bytes_per_element"}),
+    CollectiveOp: frozenset({"kind", "group_size", "bytes_per_element",
+                               "payload_bytes"}),
     Requirement: frozenset({
         "qos_class", "latency_ceiling_cycles", "bandwidth_floor_gbps",
         "binding",
@@ -302,6 +303,7 @@ MUTATORS = {
     (CollectiveOp, "kind"): lambda: _coll(kind=CollectiveKind.ALLREDUCE),
     (CollectiveOp, "group_size"): lambda: _coll(group_size=4),
     (CollectiveOp, "bytes_per_element"): lambda: _coll(bytes_per_element=8192),
+    (CollectiveOp, "payload_bytes"): lambda: _coll(payload_bytes=65536),
     # Requirement
     (Requirement, "qos_class"): lambda: _req(0, qos_class=QoSClass.BEST_EFFORT),
     (Requirement, "latency_ceiling_cycles"): lambda: _req(0, latency_ceiling_cycles=4321.0),

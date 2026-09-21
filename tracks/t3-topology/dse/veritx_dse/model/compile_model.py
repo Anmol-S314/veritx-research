@@ -72,7 +72,8 @@ _WORKLOAD_KEYS = frozenset({
     "sequence_length", "batch_size", "precision", "serving_mode",
     "collectives", "trace_path",
 })
-_COLLECTIVE_KEYS = frozenset({"kind", "group_size", "bytes_per_element"})
+_COLLECTIVE_KEYS = frozenset(
+    {"kind", "group_size", "bytes_per_element", "payload_bytes"})
 _REQUIREMENT_KEYS = frozenset({
     "qos_class", "latency_ceiling_cycles", "bandwidth_floor_gbps", "binding",
 })
@@ -294,23 +295,44 @@ class CollectiveKind(Enum):
 
 @dataclass(frozen=True)
 class CollectiveOp:
-    """PRD §5.2: A collective communication operation."""
+    """PRD §5.2: A collective communication operation.
+
+    ``bytes_per_element`` is a historical opaque scalar: no producer
+    ever defined it as a computable payload and no consumer ever
+    computed one from it (see docs/WORKLOAD-EVALUATION-AUTHORITY.md).
+    It still parses and still hashes — old designs keep their
+    identity — but lowering never reads it. The lowering authority
+    is ``payload_bytes`` (total logical payload bytes contributed by
+    one rank, declared explicitly); ``None`` means undeclared and
+    refuses lowering instead of guessing.
+    """
     kind: CollectiveKind
     group_size: int = 1
     bytes_per_element: int = 2048
+    payload_bytes: int | None = None
 
     def __post_init__(self):
         _as_enum("kind", self.kind, CollectiveKind)
         _as_int("group_size", self.group_size, minimum=1)
         _as_int("bytes_per_element", self.bytes_per_element, minimum=1)
+        if self.payload_bytes is not None:
+            _as_int("payload_bytes", self.payload_bytes, minimum=1)
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize to dict (JSON-safe)."""
-        return {
+        """Serialize to dict (JSON-safe).
+
+        ``payload_bytes`` is omitted when undeclared so pre-P1B
+        documents serialize byte-identically (their design_hash is
+        never reinterpreted under new semantics).
+        """
+        d = {
             "kind": self.kind.value,
             "group_size": self.group_size,
             "bytes_per_element": self.bytes_per_element,
         }
+        if self.payload_bytes is not None:
+            d["payload_bytes"] = self.payload_bytes
+        return d
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> CollectiveOp:
@@ -319,6 +341,7 @@ class CollectiveOp:
             kind=CollectiveKind(d["kind"]),
             group_size=d.get("group_size", 1),
             bytes_per_element=d.get("bytes_per_element", 2048),
+            payload_bytes=d.get("payload_bytes"),
         )
 
 
