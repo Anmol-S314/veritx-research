@@ -217,7 +217,9 @@ def verify_wave_e_result_block(
             operation="verify_result", resource_id=result_id)
     # 4. Wave-D provenance (§71): timing never replaces communication,
     #    and the timing block may not cite a DIFFERENT valid chain.
-    from .waved_resources import PLAN_CHAIN_KEYS
+    from .waved_resources import (
+        chain_version, plan_chain_keys, validate_plan_chain_shape,
+    )
     if plan_wave_d is None or result_wave_d is None:
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
@@ -231,13 +233,18 @@ def verify_wave_e_result_block(
             ErrorCode.EVIDENCE_INVALID,
             f"result {result_id} wave_e.wave_d_chain is missing",
             operation="verify_result", resource_id=result_id)
-    if set(chain) != set(PLAN_CHAIN_KEYS):
+    # the timing block must cite the SAME chain generation as the plan
+    if chain_version(chain) != chain_version(plan_wave_d):
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
-            f"result {result_id} wave_e.wave_d_chain has the wrong "
-            f"field set for a Wave-D chain block",
+            f"result {result_id} wave_e.wave_d_chain is chain v"
+            f"{chain_version(chain)} but the plan is chain v"
+            f"{chain_version(plan_wave_d)}: refusing transplanted "
+            f"communication provenance",
             operation="verify_result", resource_id=result_id)
-    for key in PLAN_CHAIN_KEYS:
+    plan_version = validate_plan_chain_shape(plan_wave_d)
+    validate_plan_chain_shape(chain)
+    for key in plan_chain_keys(plan_version):
         if chain.get(key) != plan_wave_d.get(key):
             raise ControlPlaneError(
                 ErrorCode.EVIDENCE_INVALID,

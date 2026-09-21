@@ -39,7 +39,10 @@ from .errors import ControlPlaneError, ErrorCode
 from .resources import RESOURCE_SCHEMA_VERSION, check_envelope
 
 WAVED_RESOURCE_KINDS = ("wavedworkload", "parallelism", "wavedsemantics",
-                        "opgraph", "messages", "traffic")
+                        "opgraph", "messages", "traffic",
+                        # canonical workload authority: the parent the v2
+                        # message/chain generations authenticate
+                        "workloadgraph")
 
 
 # ── records (write side) ─────────────────────────────────────────────────
@@ -67,7 +70,19 @@ def waved_workload_record(art: WaveDWorkload) -> dict[str, Any]:
 
 
 def operation_graph_record(art: OperationGraph) -> dict[str, Any]:
+    """HISTORICAL READER (deletion owner: 2c.9): the Wave-D opgraph
+    format. Readable for historical verification, never written by new
+    canonical paths once the writer switch lands."""
     return _record("opgraph", art.operation_graph_id(), art.to_dict())
+
+
+def workload_graph_record(art: Any) -> dict[str, Any]:
+    """The canonical WorkloadGraph resource.
+
+    ``resource_id`` is the graph's content-derived ``workload_id()`` —
+    there is no arbitrary second identifier.
+    """
+    return _record("workloadgraph", art.workload_id(), art.to_dict())
 
 
 def messages_record(art: LogicalMessageArtifact) -> dict[str, Any]:
@@ -215,6 +230,22 @@ def load_verified_operation_graph(store: Any,
     return graph
 
 
+def load_verified_workload_graph(store: Any, workload_id: str) -> Any:
+    """Verified canonical workload graph.
+
+    Self-contained scientific semantics: it needs NO Wave-D parents. The
+    strict parse recomputes the embedded workload_id, so a forged or
+    transplanted document cannot pass.
+    """
+    from veritx_dse.workload.canonical_graph import WorkloadGraph
+    _, doc = _envelope(store, "workloadgraph", workload_id)
+    graph = _parse("workloadgraph", workload_id,
+                   lambda: WorkloadGraph.from_dict(doc, strict=True))
+    _require_equal("workload_id", graph.workload_id(), workload_id,
+                   workload_id)
+    return graph
+
+
 def load_verified_messages(store: Any,
                            message_artifact_id: str
                            ) -> LogicalMessageArtifact:
@@ -288,7 +319,27 @@ def load_verified_traffic(store: Any, traffic_id: str
 # chain; the result adds only execution-derived counters. Both
 # constructors assert they emit exactly these keys, so a field can never
 # be added to a VERIFIED block without this verifier knowing about it.
-PLAN_CHAIN_KEYS = (
+# ── chain generations ──────────────────────────────────────────────────
+# v1 (historical) authenticates the Wave-D runtime ancestry:
+# wavedworkload + wavedsemantics + opgraph. It is READ-ONLY science; new
+# writers must not emit it.
+# v2 (canonical) authenticates the semantic parent by workload_graph_id
+# alone. Absence of chain_schema_version means v1, so the boundary is
+# unambiguous without guessing from which keys happen to be present.
+CHAIN_SCHEMA_VERSION_V2 = 2
+
+PLAN_CHAIN_KEYS_V2 = (
+    "chain_schema_version",
+    "workload_kind",
+    "workload_graph_id",
+    "parallelism_id",
+    "message_artifact_id",
+    "physical_traffic_id",
+    "resolved_fabric_hash",
+    "packet_format_hash",
+)
+
+PLAN_CHAIN_KEYS_V1 = (
     "workload_kind",
     "waved_workload_id",
     "parallelism_id",
@@ -299,6 +350,47 @@ PLAN_CHAIN_KEYS = (
     "resolved_fabric_hash",
     "packet_format_hash",
 )
+def chain_version(block: dict[str, Any]) -> int:
+    """Which chain generation a block is.
+
+    v1 documents did not carry a version field, so ABSENCE means v1: the
+    boundary is unambiguous without inferring it from which keys happen to
+    be present. An unknown version refuses rather than being interpreted.
+    """
+    if "chain_schema_version" not in block:
+        return 1
+    version = block["chain_schema_version"]
+    if version != CHAIN_SCHEMA_VERSION_V2:
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"unknown chain_schema_version {version!r}",
+            operation="verify_resource")
+    return version
+
+
+def plan_chain_keys(version: int) -> tuple[str, ...]:
+    if version == 1:
+        return PLAN_CHAIN_KEYS_V1
+    if version == CHAIN_SCHEMA_VERSION_V2:
+        return PLAN_CHAIN_KEYS_V2
+    raise ControlPlaneError(ErrorCode.EVIDENCE_INVALID,
+                            f"unknown chain version {version!r}",
+                            operation="verify_resource")
+
+
+def validate_plan_chain_shape(block: dict[str, Any]) -> int:
+    """Exact per-generation schema closure: no extra or missing keys."""
+    version = chain_version(block)
+    expected = plan_chain_keys(version)
+    if set(block) != set(expected):
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"chain block (v{version}) does not match its field set: "
+            f"{sorted(block)} vs {sorted(expected)}",
+            operation="verify_resource")
+    return version
+
+
 EXECUTION_RESULT_KEYS = (
     "expected_packets",
     "expected_flits",
@@ -306,7 +398,23 @@ EXECUTION_RESULT_KEYS = (
     "flits_injected",
     "flits_accepted",
 )
-RESULT_WAVE_D_KEYS = PLAN_CHAIN_KEYS + EXECUTION_RESULT_KEYS
+RESULT_WAVE_D_KEYS_V1 = PLAN_CHAIN_KEYS_V1 + EXECUTION_RESULT_KEYS
+RESULT_WAVE_D_KEYS_V2 = PLAN_CHAIN_KEYS_V2 + EXECUTION_RESULT_KEYS
+
+
+def result_wave_d_keys(version: int) -> tuple[str, ...]:
+    """The exact result-block field set for a chain generation.
+
+    A v1 result may never verify against a v2 plan or the reverse: the
+    generations are different contracts, not different spellings.
+    """
+    if version == 1:
+        return RESULT_WAVE_D_KEYS_V1
+    if version == CHAIN_SCHEMA_VERSION_V2:
+        return RESULT_WAVE_D_KEYS_V2
+    raise ControlPlaneError(ErrorCode.EVIDENCE_INVALID,
+                            f"unknown chain version {version!r}",
+                            operation="verify_result")
 
 
 def waved_chain_ids(workload: WaveDWorkload, graph: OperationGraph,
@@ -333,13 +441,75 @@ def waved_chain_ids(workload: WaveDWorkload, graph: OperationGraph,
         "packet_format_hash":
             bundle.packet_format.packet_format_hash(),
     }
-    if set(block) != set(PLAN_CHAIN_KEYS):  # pragma: no cover - guard
+    if set(block) != set(PLAN_CHAIN_KEYS_V1):  # pragma: no cover - guard
         raise ControlPlaneError(
             ErrorCode.INTERNAL_ERROR,
-            "wave_d chain block does not match PLAN_CHAIN_KEYS: "
-            f"{sorted(block)} vs {sorted(PLAN_CHAIN_KEYS)}",
+            "wave_d chain block does not match PLAN_CHAIN_KEYS_V1: "
+            f"{sorted(block)} vs {sorted(PLAN_CHAIN_KEYS_V1)}",
             operation="verify_resource")
     return block
+
+
+def semantic_chain_ids_v2(graph: Any, messages: Any, traffic: Any,
+                          bundle: Any) -> dict[str, Any]:
+    """The CANONICAL chain: the semantic parent is the WorkloadGraph.
+
+    No legacy IDs: not waved_workload_id, not wave_d_semantics_id, not
+    operation_graph_id. Old resources prove old ancestry; this proves the
+    new one, and it must not need the ghosts of deleted authorities.
+    """
+    block = {
+        "chain_schema_version": CHAIN_SCHEMA_VERSION_V2,
+        "workload_kind": "WAVE_D_SEMANTIC",
+        "workload_graph_id": graph.workload_id(),
+        "parallelism_id": graph.parallelism.parallelism_id(),
+        "message_artifact_id": messages.message_artifact_id(),
+        "physical_traffic_id": traffic.physical_traffic_id(),
+        "resolved_fabric_hash":
+            bundle.resolved_fabric.resolved_fabric_hash(),
+        "packet_format_hash":
+            bundle.packet_format.packet_format_hash(),
+    }
+    if set(block) != set(PLAN_CHAIN_KEYS_V2):  # pragma: no cover - guard
+        raise ControlPlaneError(
+            ErrorCode.INTERNAL_ERROR,
+            "canonical chain block does not match PLAN_CHAIN_KEYS_V2: "
+            f"{sorted(block)} vs {sorted(PLAN_CHAIN_KEYS_V2)}",
+            operation="verify_resource")
+    return block
+
+
+def semantic_chain_ids_from_traffic_v2(traffic: Any) -> dict[str, Any]:
+    """Re-derive the canonical chain from a verified traffic artifact.
+
+    This is the replacement for ``waved_chain_ids_from_traffic``: it reads
+    ``traffic.logical.graph`` directly (a WorkloadGraph) and never
+    reconstructs a WaveDWorkload from side lists.
+    """
+    logical = traffic.logical
+    return semantic_chain_ids_v2(graph=logical.graph, messages=logical,
+                                 traffic=traffic, bundle=traffic.bundle)
+
+
+def chain_ids_from_traffic(traffic: Any) -> dict[str, Any]:
+    """Generation-dispatched re-derivation from a traffic artifact."""
+    chain = traffic.logical.identity_dict()
+    if "workload_id" in chain and "operation_graph_id" not in chain:
+        validate_plan_chain_shape({
+            "chain_schema_version": CHAIN_SCHEMA_VERSION_V2,
+            "workload_kind": "WAVE_D_SEMANTIC",
+            "workload_graph_id": chain["workload_id"],
+            "parallelism_id":
+                traffic.logical.graph.parallelism.parallelism_id(),
+            "message_artifact_id": traffic.logical.message_artifact_id(),
+            "physical_traffic_id": traffic.physical_traffic_id(),
+            "resolved_fabric_hash":
+                traffic.bundle.resolved_fabric.resolved_fabric_hash(),
+            "packet_format_hash":
+                traffic.bundle.packet_format.packet_format_hash(),
+        })
+        return semantic_chain_ids_from_traffic_v2(traffic)
+    return waved_chain_ids_from_traffic(traffic)
 
 
 def waved_chain_ids_from_traffic(traffic: PhysicalTrafficArtifact
@@ -414,11 +584,11 @@ def waved_execution_block(chain: dict[str, Any], summary: dict[str, Any],
         "flits_injected": counters.get("flits_injected"),
         "flits_accepted": counters.get("flits_accepted"),
     })
-    if set(block) != set(RESULT_WAVE_D_KEYS):  # pragma: no cover - guard
+    if set(block) != set(RESULT_WAVE_D_KEYS_V1):  # pragma: no cover
         raise ControlPlaneError(
             ErrorCode.INTERNAL_ERROR,
-            "wave_d result block does not match RESULT_WAVE_D_KEYS: "
-            f"{sorted(block)} vs {sorted(RESULT_WAVE_D_KEYS)}",
+            "wave_d result block does not match RESULT_WAVE_D_KEYS_V1: "
+            f"{sorted(block)} vs {sorted(RESULT_WAVE_D_KEYS_V1)}",
             operation="verify_resource")
     return block
 
@@ -433,9 +603,16 @@ def load_verified_traffic_record(store: Any, traffic_id: str
 __all__ = [
     "EXECUTION_RESULT_KEYS",
     "PLAN_CHAIN_KEYS",
-    "RESULT_WAVE_D_KEYS",
+    "RESULT_WAVE_D_KEYS_V1", "RESULT_WAVE_D_KEYS_V2",
+    "result_wave_d_keys",
     "WAVED_RESOURCE_KINDS",
-    "load_verified_messages",
+    "load_verified_messages", "load_verified_workload_graph",
+    "workload_graph_record",
+    "CHAIN_SCHEMA_VERSION_V2", "PLAN_CHAIN_KEYS_V1", "PLAN_CHAIN_KEYS_V2",
+    "RESULT_WAVE_D_KEYS_V1", "RESULT_WAVE_D_KEYS_V2", "result_wave_d_keys",
+    "chain_ids_from_traffic", "chain_version", "plan_chain_keys",
+    "semantic_chain_ids_from_traffic_v2", "semantic_chain_ids_v2",
+    "validate_plan_chain_shape",
     "load_verified_operation_graph",
     "load_verified_parallelism",
     "load_verified_traffic",

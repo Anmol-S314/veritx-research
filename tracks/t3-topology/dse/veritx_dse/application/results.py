@@ -195,12 +195,12 @@ def _verify_waved_workload_chain(store: Any, workload_id: str,
     from veritx_dse.backend.projection import render_waved_trace
 
     from .waved_resources import (
-        load_verified_traffic, waved_chain_ids_from_traffic,
+        chain_ids_from_traffic, load_verified_traffic,
     )
     traffic, _ = load_verified_traffic(
         store, wave_d.get("physical_traffic_id"))
     _require_equal("workload.wave_d", wave_d,
-                   waved_chain_ids_from_traffic(traffic), workload_id)
+                   chain_ids_from_traffic(traffic), workload_id)
     trace = render_waved_trace(traffic)
     _require_equal("workload.trace_sha256", record.get("trace_sha256"),
                    sha256_bytes(trace), workload_id)
@@ -259,12 +259,12 @@ def load_verified_plan(store: Any, plan_id: str) -> dict[str, Any]:
         _verify_plan_wave_e(store, record, plan_id)
     if record.get("wave_d") is not None:
         from .waved_resources import (
-            load_verified_traffic, waved_chain_ids_from_traffic,
+            chain_ids_from_traffic, load_verified_traffic,
         )
         traffic, _ = load_verified_traffic(
             store, record["wave_d"].get("physical_traffic_id"))
         _require_equal("plan.wave_d", record["wave_d"],
-                       waved_chain_ids_from_traffic(traffic), plan_id)
+                       chain_ids_from_traffic(traffic), plan_id)
         _require_equal("workload.wave_d", workload.get("wave_d"),
                        record["wave_d"], plan_id)
     # The design link is content-addressed; intent binding is on the
@@ -580,8 +580,8 @@ def _verify_waved_result(store: Any, result: dict[str, Any],
     from veritx_dse.backend.projection import verify_trace_projection
 
     from .waved_resources import (
-        PLAN_CHAIN_KEYS, RESULT_WAVE_D_KEYS, load_verified_traffic,
-        waved_chain_ids_from_traffic,
+        chain_ids_from_traffic, plan_chain_keys, result_wave_d_keys,
+        validate_plan_chain_shape, load_verified_traffic,
     )
     plan_wave_d = plan.get("wave_d")
     wave_d = result.get("wave_d")
@@ -594,31 +594,33 @@ def _verify_waved_result(store: Any, result: dict[str, Any],
             operation="verify_result", resource_id=result_id)
     # 1. Schema closure: a VERIFIED block carries exactly the declared
     #    chain + execution fields, nothing else.
-    if set(wave_d) != set(RESULT_WAVE_D_KEYS):
+    # 1b. Chain GENERATION: the plan's generation is the contract, and the
+    #     result must be the same one. A v1 result never verifies against a
+    #     v2 plan, or the reverse: they are different contracts.
+    plan_version = validate_plan_chain_shape(plan_wave_d)
+    expected_result_keys = result_wave_d_keys(plan_version)
+    if set(wave_d) != set(expected_result_keys):
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
-            f"result {result_id} wave_d block has the wrong field set: "
-            f"unknown {sorted(set(wave_d) - set(RESULT_WAVE_D_KEYS))}, "
-            f"missing {sorted(set(RESULT_WAVE_D_KEYS) - set(wave_d))}",
-            operation="verify_result", resource_id=result_id)
-    if set(plan_wave_d) != set(PLAN_CHAIN_KEYS):
-        raise ControlPlaneError(
-            ErrorCode.EVIDENCE_INVALID,
-            f"plan {plan.get('resource_id')} wave_d chain has the wrong "
-            f"field set: unknown "
-            f"{sorted(set(plan_wave_d) - set(PLAN_CHAIN_KEYS))}, missing "
-            f"{sorted(set(PLAN_CHAIN_KEYS) - set(plan_wave_d))}",
+            f"result {result_id} wave_d block has the wrong field set for "
+            f"chain v{plan_version}: unknown "
+            f"{sorted(set(wave_d) - set(expected_result_keys))}, missing "
+            f"{sorted(set(expected_result_keys) - set(wave_d))}",
             operation="verify_result", resource_id=result_id)
     # 2. Provenance binding: the result must claim the PLAN's chain.
-    for key in PLAN_CHAIN_KEYS:
+    for key in plan_chain_keys(plan_version):
         _require_equal(f"result.wave_d.{key}", wave_d.get(key),
                        plan_wave_d.get(key), result_id)
     # 3. Re-derive from the plan's traffic parent (the authority), then
     #    confirm the plan's own chain is what that traffic produces.
     traffic, _ = load_verified_traffic(
         store, plan_wave_d.get("physical_traffic_id"))
-    recomputed_chain = waved_chain_ids_from_traffic(traffic)
-    for key in PLAN_CHAIN_KEYS:
+    # the generation-dispatched re-derivation: v1 rebuilds the Wave-D
+    # ancestry from its historical resources, v2 reads the WorkloadGraph
+    # parent directly (no reconstruction, no legacy IDs)
+    validate_plan_chain_shape(recomputed := chain_ids_from_traffic(traffic))
+    recomputed_chain = recomputed
+    for key in plan_chain_keys(plan_version):
         _require_equal(f"plan.wave_d.{key}", plan_wave_d.get(key),
                        recomputed_chain[key], result_id)
     summary = verify_trace_projection(traffic)
