@@ -50,9 +50,83 @@ class CertificationError(VeritXError):
     pass
 
 
-class ArtifactError(VeritXError):
-    """Artifact signing/manifest errors."""
-    pass
+class Refusal(VeritXError):
+    """A typed, machine-coded refusal (fail closed, never silent).
+
+    Domain refusals carry a stable ``code`` so callers distinguish refusal
+    classes without string matching. Every refusal type in the repository
+    derives from this one base.
+    """
+
+    code = "REFUSAL"
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
+
+
+class ArtifactError(Refusal):
+    """Artifact contract failure: bad shape, unknown field, forged ID.
+
+    ONE definition for the whole repository (``core.artifact`` derives its
+    ``InvalidInput``/``EvidenceInvalid`` from this class).
+    """
+
+    code = "ARTIFACT_ERROR"
+
+
+class InvalidInput(ArtifactError):
+    """Malformed input to an artifact: bad types, out-of-range values,
+    out-of-range ranks, missing fields."""
+
+    code = "INVALID_INPUT"
+
+
+class EvidenceInvalid(ArtifactError):
+    """Persisted artifact identity failed verification, or backend
+    evidence does not bind the artifacts it claims."""
+
+    code = "EVIDENCE_INVALID"
+
+
+# ── domain refusals (formerly waved.errors) ─────────────────────────────
+class UnsupportedSemantics(Refusal):
+    """The semantics exist as a concept but are outside the supported v1
+    domain. Never approximated silently."""
+
+    code = "UNSUPPORTED_SEMANTICS"
+
+
+class UnsupportedSchedule(Refusal):
+    """A collective/multicast algorithm outside the pinned set, or a
+    payload violating the schedule's divisibility law."""
+
+    code = "UNSUPPORTED_SCHEDULE"
+
+
+class MappingInvalid(Refusal):
+    """Rank space / mapping / endpoint binding seam failure."""
+
+    code = "MAPPING_INVALID"
+
+
+class ConservationFailed(Refusal):
+    """A conservation law did not hold. Hard failure, never a warning."""
+
+    code = "CONSERVATION_FAILED"
+
+
+class BackendFailure(Refusal):
+    """Qualified backend execution failed: nonzero exit, missing evidence,
+    route divergence."""
+
+    code = "BACKEND_FAILURE"
+
+
+class BackendTimeout(BackendFailure):
+    """Qualified backend execution exceeded its time limit."""
+
+    code = "TIMEOUT"
 
 
 class ServingPreflightError(VeritXError):

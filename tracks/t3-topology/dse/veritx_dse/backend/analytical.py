@@ -39,7 +39,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .bundle import ResolvedFabricBundle
+from veritx_dse.model.resolved_bundle import ResolvedFabricBundle
 from .contracts import (
     BackendConfigArtifact, BackendConfigError, BackendTarget,
     CertificationEffect, ParameterOwner, RepresentationStatus,

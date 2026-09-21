@@ -1,4 +1,4 @@
-"""veritx_dse.waved.operations — OperationGraph (D2, §15–§19, §27–§29).
+"""veritx_dse.workload.operations — OperationGraph (D2, §15–§19, §27–§29).
 
 One immutable deterministic operation graph per (workload, parallelism,
 semantics). The graph contains EXACTLY the operations the workload
@@ -20,12 +20,12 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any
 
-from .errors import (
+from veritx_dse.core.errors import (
     InvalidInput, MappingInvalid, UnsupportedSchedule, UnsupportedSemantics,
 )
 from veritx_dse.core.artifact import content_hash
 from veritx_dse.core.artifact import FrozenMap, ImmutableError, freeze, thaw
-from .parallelism import ParallelismArtifact
+from veritx_dse.model.parallelism import ParallelismArtifact
 from .semantics import WaveDWorkloadSemantics
 from veritx_dse.core.artifact import (
     require_embedded_id, require_fields, require_schema_version, require_type_tag,

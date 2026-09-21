@@ -1,4 +1,4 @@
-"""veritx_dse.waved.parallelism — ParallelismArtifact (D1, §4/§5/§7/§8/§9).
+"""veritx_dse.model.parallelism — ParallelismArtifact (D1, §4/§5/§7/§8/§9).
 
 One immutable, strict, versioned Wave-D authority for rank-space
 geometry. Identity covers exactly (schema_version, tp, pp, ep, dp):
@@ -23,9 +23,8 @@ from veritx_dse.model.placement import (  # authority reuse
     ParallelismShape, coords_of, rank_of,
 )
 
-from .errors import InvalidInput
+from veritx_dse.core.errors import InvalidInput
 from veritx_dse.core.artifact import content_hash
-from .oracles import ref_coords  # verifier only, never derivation
 from veritx_dse.core.artifact import (
     require_embedded_id, require_fields, require_schema_version, require_type_tag,
 )
@@ -242,30 +241,6 @@ class ParallelismArtifact:
             if sorted(seen) != list(range(self.world_size)):
                 raise ConservationLikeError(
                     f"{family} groups do not cover ranks exactly once")
-
-    def cross_check_against_oracle(self) -> None:
-        """Independent-oracle cross-check of the rank bijection (§26)."""
-        for r in range(self.world_size):
-            c = self.coords_of(r)
-            got = self.rank_of(c["tp"], c["pp"], c["ep"], c["dp"])
-            if got != r:
-                raise ConservationLikeError(
-                    f"rank bijection broken at {r}: got {got}")
-            if ref_coords(r, tp=self.tp, pp=self.pp, ep=self.ep,
-                          dp=self.dp) != \
-                    (c["tp"], c["pp"], c["ep"], c["dp"]):
-                raise ConservationLikeError(
-                    f"coords disagree with the independent oracle at "
-                    f"rank {r}")
-
-
-class ConservationLikeError(InvalidInput):
-    """A structural group/bijection law failed inside ParallelismArtifact.
-
-    Named distinctly for test targeting; still an INVALID_INPUT-class
-    refusal because the artifact itself cannot be valid if these fail.
-    """
-
 
 __all__ = [
     "ALL_FAMILIES", "COLLECTIVE_FAMILIES", "ConservationLikeError", "Group",

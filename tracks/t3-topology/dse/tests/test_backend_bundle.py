@@ -19,7 +19,7 @@ sys.path.insert(0, str(TESTS))
 
 from test_fabric_artifact import build_chain, compose  # noqa: E402
 
-from veritx_dse.backend.bundle import (  # noqa: E402
+from veritx_dse.model.resolved_bundle import (  # noqa: E402
     ResolvedFabricBundleError, make_resolved_fabric_bundle,
 )
 from veritx_dse.model.resolved_fabric import make_resolved_fabric  # noqa: E402

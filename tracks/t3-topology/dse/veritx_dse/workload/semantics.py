@@ -1,4 +1,4 @@
-"""veritx_dse.waved.semantics — WaveDWorkloadSemantics (D1/D2, §12/§14).
+"""veritx_dse.workload.semantics — WaveDWorkloadSemantics (D1/D2, §12/§14).
 
 A separate immutable versioned Wave-D semantic envelope, orthogonal to
 the frozen CompileRequest ``design_hash`` (§23.4): it carries ONLY the
@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from .errors import InvalidInput
+from veritx_dse.core.errors import InvalidInput
 from veritx_dse.core.artifact import content_hash
 from veritx_dse.core.artifact import FrozenMap, freeze, thaw
 from veritx_dse.core.artifact import (

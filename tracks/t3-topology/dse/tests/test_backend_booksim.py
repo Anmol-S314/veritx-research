@@ -28,7 +28,7 @@ from veritx_dse.backend.booksim import (
     lower_booksim_standalone, materialize_backend, prepare_booksim_standalone,
     render_booksim_standalone, run_certified_booksim, verify_materialized,
 )
-from veritx_dse.backend.bundle import make_resolved_fabric_bundle  # noqa: E402
+from veritx_dse.model.resolved_bundle import make_resolved_fabric_bundle  # noqa: E402
 from veritx_dse.backend.contracts import (  # noqa: E402
     BackendConfigArtifact, BackendTarget, CertificationEffect,
     ParameterOwner, RepresentationStatus, SemanticDimension, sha256_bytes,

@@ -19,7 +19,7 @@ from .errors import map_semantic_error
 
 def compile_bundle(compile_request: Any):
     """Derive and validate a ResolvedFabricBundle from a CompileRequest."""
-    from veritx_dse.backend.bundle import make_resolved_fabric_bundle
+    from veritx_dse.model.resolved_bundle import make_resolved_fabric_bundle
     from veritx_dse.core.route_artifact import ANYNET_MIN_HOPS, RouteArtifact
     from veritx_dse.model.address_decode import derive_address_decode
     from veritx_dse.model.attachment import derive_attachment

@@ -55,7 +55,7 @@ from .booksim_profile import (
     BOOKSIM_SERVING_PROFILE as SERVING_PROFILE_SPEC,
     BOOKSIM_STANDALONE_PROFILE as STANDALONE_PROFILE_SPEC,
 )
-from .bundle import ResolvedFabricBundle
+from veritx_dse.model.resolved_bundle import ResolvedFabricBundle
 from .contracts import (
     BackendConfigArtifact, BackendConfigError, BackendInputError,
     BackendInputManifest, BackendTarget, CertificationEffect,

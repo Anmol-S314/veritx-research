@@ -49,19 +49,19 @@ from veritx_dse.application.waved_resources import (  # noqa: E402
     waved_workload_record,
 )
 from veritx_dse.model.compile_model import TopologyFamily  # noqa: E402
-from veritx_dse.waved.errors import (  # noqa: E402
+from veritx_dse.core.errors import (  # noqa: E402
     EvidenceInvalid, InvalidInput, MappingInvalid,
 )
 from veritx_dse.core.artifact import FrozenMap  # noqa: E402
-from veritx_dse.waved.messages import LogicalMessageArtifact  # noqa: E402
-from veritx_dse.waved.operations import (  # noqa: E402
+from veritx_dse.workload.messages import LogicalMessageArtifact  # noqa: E402
+from veritx_dse.workload.operations import (  # noqa: E402
     KIND_COLLECTIVE, KIND_P2P, CollectiveIntent, OperationGraph,
     OperationNode, P2PTransfer,
 )
-from veritx_dse.waved.parallelism import ParallelismArtifact  # noqa: E402
-from veritx_dse.waved.semantics import WaveDWorkloadSemantics  # noqa: E402
-from veritx_dse.waved.traffic import PhysicalTrafficArtifact  # noqa: E402
-from veritx_dse.waved.workload import WaveDOperation, WaveDWorkload  # noqa: E402
+from veritx_dse.model.parallelism import ParallelismArtifact  # noqa: E402
+from veritx_dse.workload.semantics import WaveDWorkloadSemantics  # noqa: E402
+from veritx_dse.workload.traffic import PhysicalTrafficArtifact  # noqa: E402
+from veritx_dse.workload.graph import WaveDOperation, WaveDWorkload  # noqa: E402
 
 REPO = DSE.parents[2]
 METRICS = ["sim.latency.avg_cycles", "sim.delivered.packets",
@@ -658,7 +658,7 @@ class TestLegacyBoundary:
         waved = cp.compile(_intent())
         traffic, _ = load_verified_traffic(
             cp.store, waved["wave_d"]["physical_traffic_id"])
-        from veritx_dse.waved.backend import render_waved_trace
+        from veritx_dse.backend.projection import render_waved_trace
         derived = render_waved_trace(traffic)
         path = tmp_path / "derived.trace"
         path.write_bytes(derived)
@@ -813,7 +813,7 @@ class TestProductCertification:
         assert waved_chain_ids_from_traffic(traffic) == chain
         # The executed trace is DERIVED from that verified traffic.
         from veritx_dse.backend.contracts import sha256_bytes
-        from veritx_dse.waved.backend import render_waved_trace
+        from veritx_dse.backend.projection import render_waved_trace
         assert sha256_bytes(render_waved_trace(traffic)) == \
             result["workload_hash"]
 
@@ -977,8 +977,8 @@ class TestResultProvenanceBinding:
     def test_identical_traffic_different_semantics_is_a_real_collision(
             self, cp):
         """Preconditions: identical bytes and counters, different chains."""
-        from veritx_dse.waved.backend import (render_waved_trace,
-                                              verify_trace_projection)
+        from veritx_dse.backend.projection import (
+            render_waved_trace, verify_trace_projection)
         a, b = self._phase_pair(cp)
         assert a["plan_id"] != b["plan"]["resource_id"]
         assert a["wave_d"]["wave_d_semantics_id"] != \

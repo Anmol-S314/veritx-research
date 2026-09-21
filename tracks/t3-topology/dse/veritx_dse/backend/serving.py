@@ -42,7 +42,7 @@ from .booksim import (
     verify_materialized, verify_rendered_profile_gates,
 )
 from .booksim_profile import BOOKSIM_SERVING_PROFILE as SERVING_PROFILE_SPEC
-from .bundle import ResolvedFabricBundle
+from veritx_dse.model.resolved_bundle import ResolvedFabricBundle
 from .contracts import (
     BackendConfigArtifact, BackendInputManifest, BackendTarget,
     ParameterOwner, RenderedInput, sha256_bytes,

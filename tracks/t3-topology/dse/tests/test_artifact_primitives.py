@@ -81,7 +81,7 @@ class TestCanonicalIdentity:
             content_hash("srota/Test", 2, {"x": 1})
 
     def test_sealed_artifact_identity_survives(self):
-        from veritx_dse.waved.parallelism import ParallelismArtifact
+        from veritx_dse.model.parallelism import ParallelismArtifact
         assert ParallelismArtifact(tp=2, pp=1, ep=1,
                                    dp=2).parallelism_id() == _PARALLELISM_ID
 
@@ -171,24 +171,42 @@ class TestOneErrorTaxonomy:
     per refusal.
     """
 
-    def test_waved_errors_are_the_core_classes(self):
-        from veritx_dse.waved import errors as waved_errors
-        assert waved_errors.InvalidInput is InvalidInput
-        assert waved_errors.EvidenceInvalid is EvidenceInvalid
+    def test_artifact_errors_are_the_core_classes(self):
+        from veritx_dse.core import errors as core_errors
+        assert core_errors.InvalidInput is InvalidInput
+        assert core_errors.EvidenceInvalid is EvidenceInvalid
+
+    def test_there_is_exactly_one_artifact_error(self):
+        """Slice 1 accidentally introduced a second ArtifactError."""
+        from veritx_dse.core import errors as core_errors
+        from veritx_dse.core.artifact import ArtifactError
+        assert ArtifactError is core_errors.ArtifactError
+        assert issubclass(InvalidInput, core_errors.ArtifactError)
+        assert issubclass(EvidenceInvalid, core_errors.ArtifactError)
+        import subprocess
+        root = DSE / "veritx_dse"
+        hits = subprocess.run(
+            ["grep", "-rn", "class ArtifactError", str(root)],
+            capture_output=True, text=True).stdout.strip().splitlines()
+        assert len(hits) == 1, hits
+        assert hits[0].startswith(str(root / "core" / "errors.py")), hits
 
     def test_codes_are_preserved(self):
         assert InvalidInput("x").code == "INVALID_INPUT"
         assert EvidenceInvalid("x").code == "EVIDENCE_INVALID"
         assert InvalidInput("x").message == "x"
 
-    def test_wave_semantic_errors_still_have_their_base(self):
-        from veritx_dse.waved.errors import (
-            ConservationFailed, MappingInvalid, UnsupportedSemantics,
-            WaveDError,
+    def test_domain_refusals_share_one_base(self):
+        from veritx_dse.core.errors import (
+            BackendFailure, BackendTimeout, ConservationFailed,
+            MappingInvalid, Refusal, UnsupportedSchedule,
+            UnsupportedSemantics,
         )
-        for cls in (ConservationFailed, MappingInvalid,
-                    UnsupportedSemantics):
-            assert issubclass(cls, WaveDError)
+        for cls in (ConservationFailed, MappingInvalid, UnsupportedSemantics,
+                    UnsupportedSchedule, BackendFailure, BackendTimeout):
+            assert issubclass(cls, Refusal)
+            assert cls("x").code != "REFUSAL"
+        assert issubclass(BackendTimeout, BackendFailure)
 
 
 class TestOneDimensionLaw:
@@ -204,7 +222,7 @@ class TestOneDimensionLaw:
     ])
     def test_artifact_and_algebra_agree(self, kw):
         from veritx_dse.model.placement import ParallelismShape
-        from veritx_dse.waved.parallelism import ParallelismArtifact
+        from veritx_dse.model.parallelism import ParallelismArtifact
         with pytest.raises(ValueError):
             ParallelismShape(**kw)
         with pytest.raises(InvalidInput):
@@ -212,7 +230,7 @@ class TestOneDimensionLaw:
 
     def test_legal_shapes_agree(self):
         from veritx_dse.model.placement import ParallelismShape
-        from veritx_dse.waved.parallelism import ParallelismArtifact
+        from veritx_dse.model.parallelism import ParallelismArtifact
         for dims in ((1, 1, 1, 1), (2, 1, 1, 2), (4, 2, 1, 1)):
             shape = ParallelismShape(*dims)
             art = ParallelismArtifact(*dims)

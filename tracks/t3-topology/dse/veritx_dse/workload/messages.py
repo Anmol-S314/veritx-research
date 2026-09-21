@@ -1,4 +1,4 @@
-"""veritx_dse.waved.messages — LogicalMessageArtifact (D3, §20/§24–§26).
+"""veritx_dse.workload.messages — LogicalMessageArtifact (D3, §20/§24–§26).
 
 One lowering: OperationGraph + intents → canonical LogicalMessages.
 
@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .errors import (
+from veritx_dse.core.errors import (
     ConservationFailed, EvidenceInvalid, InvalidInput, UnsupportedSchedule,
 )
 from veritx_dse.core.artifact import content_hash
@@ -28,7 +28,8 @@ from .operations import (
     CollectiveIntent, MulticastIntent, OperationGraph, P2PTransfer,
     REPLICATION_SOURCE, SCHEDULES,
 )
-from .oracles import ref_collective
+
+from veritx_dse.workload.collectives import collective_schedule
 from veritx_dse.core.artifact import (
     require_embedded_id, require_fields, require_schema_version, require_type_tag,
 )
@@ -113,7 +114,7 @@ def _expand_collective(ci: CollectiveIntent) -> tuple[
         list[tuple[int, int, int]], CollectiveScheduleRecord]:
     """Pinned schedule → ordered (step, src_idx, dst_idx) triples."""
     k, B = ci.k, ci.payload_bytes
-    ref = ref_collective(ci.kind, k, B)  # raises on divisibility refusal
+    ref = collective_schedule(ci.kind, k, B)  # raises on divisibility refusal
     triples: list[tuple[int, int, int]] = []
     if ci.kind in ("ALLREDUCE", "REDUCESCATTER", "ALLGATHER"):
         steps = ref["steps"]
@@ -230,10 +231,10 @@ class LogicalMessageArtifact:
                      if m.operation_id == operation_id)
 
     # ── conservation (§26) against the independent oracle ─────────────
-    def validate_against_oracle(self) -> None:
+    def validate_conservation(self) -> None:
         messages = self._messages
         for ci in self.graph.collectives:
-            ref = ref_collective(ci.kind, ci.k, ci.payload_bytes)
+            ref = collective_schedule(ci.kind, ci.k, ci.payload_bytes)
             got_count = sum(
                 1 for m in messages
                 if m.operation_id in

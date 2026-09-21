@@ -4,7 +4,7 @@ packetization, flitization.
 Methods (§25): algebraic exact checks, bounded exhaustive enumeration,
 independent-oracle differential checks, Hypothesis property tests.
 
-The oracles in ``veritx_dse.waved.oracles`` are structurally independent
+The oracles in ``veritx_dse.verification.reference_semantics`` are structurally independent
 of the production code (§26): they import nothing from it and the
 production modules import nothing from them outside tests.
 """
@@ -20,24 +20,25 @@ from hypothesis import given, settings, strategies as st
 DSE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(DSE))
 
-from veritx_dse.waved.errors import (  # noqa: E402
+from veritx_dse.core.errors import (  # noqa: E402
     ConservationFailed, InvalidInput, MappingInvalid, UnsupportedSchedule,
     UnsupportedSemantics,
 )
-from veritx_dse.waved.messages import LogicalMessageArtifact  # noqa: E402
-from veritx_dse.waved.operations import (  # noqa: E402
+from veritx_dse.workload.messages import LogicalMessageArtifact  # noqa: E402
+from veritx_dse.workload.operations import (  # noqa: E402
     KIND_COLLECTIVE, KIND_MULTICAST, KIND_P2P, CollectiveIntent,
     MulticastIntent, OperationGraph, OperationNode, P2PTransfer,
 )
-from veritx_dse.waved.oracles import (  # noqa: E402
+from veritx_dse.verification.reference_semantics import (  # noqa: E402
     ref_collective, ref_coords, ref_flitize, ref_group_members,
     ref_multicast, ref_packetize, ref_rank,
+    verify_parallelism_reference,
 )
-from veritx_dse.waved.parallelism import ParallelismArtifact  # noqa: E402
-from veritx_dse.waved.semantics import (  # noqa: E402
+from veritx_dse.model.parallelism import ParallelismArtifact  # noqa: E402
+from veritx_dse.workload.semantics import (  # noqa: E402
     WaveDWorkloadSemantics,
 )
-from veritx_dse.waved.traffic import (  # noqa: E402
+from veritx_dse.workload.traffic import (  # noqa: E402
     PhysicalTrafficArtifact, flitize_packet, header_width_bits,
     packetize_message,
 )
@@ -106,7 +107,7 @@ class TestRankBijectionBoundedExhaustive:
                 assert (c["tp"], c["pp"], c["ep"], c["dp"]) == (t, p, e, d)
             assert seen == set(range(R))
             pa.validate_group_laws()
-            pa.cross_check_against_oracle()
+            verify_parallelism_reference(pa)
 
 
 # ══ §9 group laws vs independent oracle ═════════════════════════════════
@@ -144,16 +145,18 @@ class TestGroupLawsAgainstOracle:
         The derivation is production-side (``self.rank_of`` via the sealed
         Wave-B rank algebra) and ``group_of`` looks the rank up in
         ``groups`` rather than restating the members. The oracle import is
-        confined to ``cross_check_against_oracle``.
+        confined to ``verification.reference_semantics``.
         """
-        import veritx_dse.waved.parallelism as wpar
+        import veritx_dse.model.parallelism as wpar
         # the derivation entry points must not even be imported
         assert not hasattr(wpar, "ref_rank"), \
             "group derivation must not call the oracle"
         assert not hasattr(wpar, "ref_group_members"), \
             "group_of must not call the oracle"
-        # the explicit verifier still owns the oracle
-        assert hasattr(wpar, "ref_coords")
+        # and the artifact has no reference dependency at all: the
+        # rank-space differential moved to verification.reference_semantics
+        assert not hasattr(wpar, "ref_coords"), \
+            "the artifact must not carry its own differential"
 
     def test_a_broken_oracle_is_detected(self, monkeypatch):
         """Reverse probe: garbage oracle -> the differential FAILS.
@@ -161,7 +164,7 @@ class TestGroupLawsAgainstOracle:
         Guards the guard: if the derivation ever goes back to using the
         oracle, this test stops detecting a broken oracle and fails.
         """
-        import veritx_dse.waved.parallelism as wpar
+        import veritx_dse.model.parallelism as wpar
         pa = ParallelismArtifact(tp=2, pp=2, ep=2, dp=2)
         garbage = (999,)
         monkeypatch.setattr(wpar, "ref_rank",
@@ -234,7 +237,7 @@ class TestMessageLoweringDifferential:
         ci = CollectiveIntent(kind, tuple(range(k)), B, f"c-{kind}-{k}-{B}")
         g = _graph_for(pa, collectives=(ci,))
         lm = LogicalMessageArtifact(graph=g)  # refuses non-divisible here
-        lm.validate_against_oracle()
+        lm.validate_conservation()
         ref = ref_collective(kind, k, B)
         ms = lm.messages
         assert len(ms) == ref["message_count"]
@@ -250,7 +253,9 @@ class TestMessageLoweringDifferential:
         pa = ParallelismArtifact(tp=1, pp=1, ep=1, dp=3)
         ci = CollectiveIntent("ALLREDUCE", (0, 1, 2), 1000, "cx")
         g = _graph_for(pa, collectives=(ci,))
-        with pytest.raises(ValueError, match="B % k"):
+        # the production spec refuses with the TYPED schedule refusal;
+        # the reference keeps ValueError (tested separately above)
+        with pytest.raises(UnsupportedSchedule, match="B % k"):
             LogicalMessageArtifact(graph=g)
 
     def test_p2p_exactly_one_message(self):
@@ -258,7 +263,7 @@ class TestMessageLoweringDifferential:
         tr = P2PTransfer(0, 1, 300, "t0")
         g = _graph_for(pa, p2p=(tr,))
         lm = LogicalMessageArtifact(graph=g)
-        lm.validate_against_oracle()
+        lm.validate_conservation()
         assert len(lm.messages) == 1
         assert lm.messages[0].payload_bytes == 300
 
@@ -267,7 +272,7 @@ class TestMessageLoweringDifferential:
         mc = MulticastIntent(0, (1, 2, 3), 100, "SOURCE_REPLICATION", "m0")
         g = _graph_for(pa, multicasts=(mc,))
         lm = LogicalMessageArtifact(graph=g)
-        lm.validate_against_oracle()
+        lm.validate_conservation()
         assert sum(m.payload_bytes for m in lm.messages) == 3 * 100
         ref = ref_multicast(100, 3)
         assert ref["delivered_payload"] == 300
@@ -418,7 +423,9 @@ class TestMutations:
         # intent is schedule-free per §20; the divisibility law is a
         # property of the pinned equal-chunk schedule).
         pa, g = self._one_coll_graph(513)
-        with pytest.raises(ValueError, match="B % k"):
+        # the production spec refuses with the TYPED schedule refusal;
+        # the reference keeps ValueError (tested separately above)
+        with pytest.raises(UnsupportedSchedule, match="B % k"):
             LogicalMessageArtifact(graph=g)
 
     def test_participant_mutation_changes_graph_id(self):
@@ -446,12 +453,12 @@ class TestMutations:
         mc3 = MulticastIntent(0, (1, 2, 3), 100, "SOURCE_REPLICATION", "m0")
         g3 = _graph_for(pa, multicasts=(mc3,))
         lm3 = LogicalMessageArtifact(graph=g3)
-        lm3.validate_against_oracle()
+        lm3.validate_conservation()
         assert len(lm3.messages) == 3
         mc2 = MulticastIntent(0, (1, 2), 100, "SOURCE_REPLICATION", "m0")
         g2 = _graph_for(pa, multicasts=(mc2,))
         lm2 = LogicalMessageArtifact(graph=g2)
-        lm2.validate_against_oracle()
+        lm2.validate_conservation()
         assert g2.operation_graph_id() != g3.operation_graph_id()
         assert lm2.message_artifact_id() != lm3.message_artifact_id()
 

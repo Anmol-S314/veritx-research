@@ -1,4 +1,6 @@
-"""veritx_dse.waved.backend — backend projection (D5, §21/§23.3).
+"""veritx_dse.backend.projection — derived-traffic backend input.
+
+(Formerly veritx_dse.waved.backend; slice 2b moved it here by ownership.)
 
 Wave D contributes TRAFFIC semantics; Wave B/C remain the execution and
 evidence authorities. This module renders the canonical Wave-D physical
@@ -38,9 +40,13 @@ from typing import Any
 from veritx_dse.backend.booksim import (
     PreparedBackend, prepare_booksim_standalone, run_qualified_booksim,
 )
+from veritx_dse.core.errors import BackendFailure, EvidenceInvalid
+from veritx_dse.verification.gates import (
+    assert_workload_ready, verify_backend_quiescence,
+)
+from veritx_dse.workload.traffic import PhysicalTrafficArtifact
 
-from .errors import BackendFailure, EvidenceInvalid
-from .traffic import PhysicalTrafficArtifact
+
 
 WAVED_TRACE_DIALECT = "waved-derived-whitespace-v1"
 
@@ -65,11 +71,59 @@ def render_waved_trace(pt: PhysicalTrafficArtifact) -> bytes:
     return ("\n".join(lines) + "\n").encode()
 
 
+def prepare_waved_booksim(pt: PhysicalTrafficArtifact,
+                          *, seed: int | None = None
+                          ) -> tuple[PreparedBackend, dict[str, Any]]:
+    """Sealed Wave-B preparation of the Wave-D canonical traffic."""
+    summary = assert_projection_ready(pt)
+    trace = render_waved_trace(pt)
+    prepared = prepare_booksim_standalone(pt.bundle, workload_trace=trace,
+                                          seed=seed)
+    return prepared, summary
+
+
+def run_waved_booksim(prepared: PreparedBackend, *, run_dir: Path,
+                      repo_root: Path, timeout: int, binary: Path,
+                      summary: dict[str, Any] | None = None
+                      ) -> dict[str, Any]:
+    """Sealed execution + Wave-D conservation summary (§21)."""
+    evidence = run_qualified_booksim(
+        prepared, run_dir=run_dir, repo_root=repo_root, timeout=timeout,
+        binary=binary)
+    if evidence.exit_status != 0:
+        raise BackendFailure(
+            f"qualified BookSim execution failed with exit status "
+            f"{evidence.exit_status}")
+    stats = evidence.stats or {}
+    counters = {
+        # Counters the qualified fork actually prints; absent counters
+        # stay None — never fabricated (§21).
+        "delivered_packets": stats.get("delivered"),
+        "flits_injected": stats.get("flits_injected"),
+        "flits_accepted": stats.get("flits_accepted"),
+        "drain_verdict": stats.get("drain_verdict"),
+    }
+    if summary is not None:
+        verify_backend_quiescence(summary, counters)
+    return {"evidence": evidence, "backend_counters": counters}
+
+
+__all__ = [
+    "assert_waved_ready", "prepare_waved_booksim", "render_waved_trace",
+    "run_waved_booksim", "verify_backend_quiescence",
+    "verify_trace_projection", "WAVED_TRACE_DIALECT",
+]
+
+
 def verify_trace_projection(pt: PhysicalTrafficArtifact) -> dict[str, Any]:
     """Mechanical losslessness proof for the representable fields (§21).
 
     Parses back the rendered trace and compares it against the artifact:
     line count, endpoint pairs, per-line flit counts, and ordering.
+
+    Owned by the renderer, not by verification: it needs the trace
+    grammar and the scanner, both of which live in the backend. The
+    reference differentials live in verification/reference_semantics.py.
     """
     from veritx_dse.backend.booksim import _scan_trace
     trace = render_waved_trace(pt)
@@ -112,83 +166,14 @@ def verify_trace_projection(pt: PhysicalTrafficArtifact) -> dict[str, Any]:
     }
 
 
-def assert_waved_ready(pt: PhysicalTrafficArtifact) -> dict[str, Any]:
-    """Every Wave-D conservation gate before any backend spawn (§24/§22).
-
-    Order is deliberate: the logical/physical seam, then the per-class
-    conservation laws, then the independent oracle differential, then
-    the trace projection. A backend must never receive traffic from an
-    artifact that failed any of these.
-    """
-    pt.validate_against_bundle()
-    pt.logical.validate_against_oracle()
-    pt.validate_conservation()
-    pt.cross_check_against_oracle()
+def assert_projection_ready(pt: PhysicalTrafficArtifact) -> dict[str, Any]:
+    """Every pre-spawn gate: workload gates, then the projection check."""
+    assert_workload_ready(pt)
     return verify_trace_projection(pt)
 
 
-def prepare_waved_booksim(pt: PhysicalTrafficArtifact,
-                          *, seed: int | None = None
-                          ) -> tuple[PreparedBackend, dict[str, Any]]:
-    """Sealed Wave-B preparation of the Wave-D canonical traffic."""
-    summary = assert_waved_ready(pt)
-    trace = render_waved_trace(pt)
-    prepared = prepare_booksim_standalone(pt.bundle, workload_trace=trace,
-                                          seed=seed)
-    return prepared, summary
-
-
-def verify_backend_quiescence(summary: dict[str, Any],
-                              counters: dict[str, Any]) -> None:
-    """§21: the backend must have drained exactly the derived traffic.
-
-    Uses only sealed Wave-B evidence counters (delivered packets, flit
-    injected/accepted totals). A missing counter is a hard failure, not
-    a skipped check: quiescence cannot be asserted from silence.
-    """
-    expected_packets = summary["num_packets"]
-    expected_flits = summary["flits_total"]
-    delivered = counters.get("delivered_packets")
-    injected = counters.get("flits_injected")
-    accepted = counters.get("flits_accepted")
-    if delivered != expected_packets:
-        raise BackendFailure(
-            f"backend delivered {delivered!r} packets, expected "
-            f"{expected_packets} — trace did not drain exactly")
-    if injected != expected_flits or accepted != expected_flits:
-        raise BackendFailure(
-            f"backend flit counters injected={injected!r} "
-            f"accepted={accepted!r}, expected {expected_flits} each")
-
-
-def run_waved_booksim(prepared: PreparedBackend, *, run_dir: Path,
-                      repo_root: Path, timeout: int, binary: Path,
-                      summary: dict[str, Any] | None = None
-                      ) -> dict[str, Any]:
-    """Sealed execution + Wave-D conservation summary (§21)."""
-    evidence = run_qualified_booksim(
-        prepared, run_dir=run_dir, repo_root=repo_root, timeout=timeout,
-        binary=binary)
-    if evidence.exit_status != 0:
-        raise BackendFailure(
-            f"qualified BookSim execution failed with exit status "
-            f"{evidence.exit_status}")
-    stats = evidence.stats or {}
-    counters = {
-        # Counters the qualified fork actually prints; absent counters
-        # stay None — never fabricated (§21).
-        "delivered_packets": stats.get("delivered"),
-        "flits_injected": stats.get("flits_injected"),
-        "flits_accepted": stats.get("flits_accepted"),
-        "drain_verdict": stats.get("drain_verdict"),
-    }
-    if summary is not None:
-        verify_backend_quiescence(summary, counters)
-    return {"evidence": evidence, "backend_counters": counters}
-
-
 __all__ = [
-    "assert_waved_ready", "prepare_waved_booksim", "render_waved_trace",
-    "run_waved_booksim", "verify_backend_quiescence",
-    "verify_trace_projection", "WAVED_TRACE_DIALECT",
+    "assert_projection_ready", "prepare_waved_booksim",
+    "render_waved_trace", "run_waved_booksim", "verify_trace_projection",
+    "WAVED_TRACE_DIALECT",
 ]

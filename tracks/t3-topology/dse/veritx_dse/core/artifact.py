@@ -40,39 +40,16 @@ import math
 from collections.abc import Mapping
 from typing import Any, Iterable, Iterator
 
-from veritx_dse.core.errors import VeritXError
+from veritx_dse.core.errors import (
+    ArtifactError, EvidenceInvalid, InvalidInput,
+)
 
 
 # ── errors ───────────────────────────────────────────────────────────────
-class ArtifactError(VeritXError):
-    """Base class for artifact-contract failures (fail closed)."""
-
-    code = "ARTIFACT_ERROR"
-
-    def __init__(self, message: str):
-        super().__init__(message)
-        self.message = message
-
-
-class InvalidInput(ArtifactError):
-    """Malformed input: bad types, out-of-range values, missing fields.
-
-    Formerly ``waved.errors.InvalidInput``. The Wave-D modules re-export
-    this exact class, so ``raise``/``except`` sites are unchanged.
-    """
-
-    code = "INVALID_INPUT"
-
-
-class EvidenceInvalid(ArtifactError):
-    """Persisted artifact identity failed verification.
-
-    Formerly ``waved.errors.EvidenceInvalid``; re-exported there.
-    """
-
-    code = "EVIDENCE_INVALID"
-
-
+# The error TAXONOMY lives in core.errors (one module, one hierarchy).
+# This module re-exports the artifact-contract errors so callers that
+# think in artifacts can import them from here; the class objects are the
+# same, so every raise/except site is unchanged.
 class ImmutableError(TypeError):
     """A value cannot be represented as an immutable canonical value."""
 

@@ -28,12 +28,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from veritx_dse.waved.messages import LogicalMessageArtifact
-from veritx_dse.waved.operations import OperationGraph
-from veritx_dse.waved.parallelism import ParallelismArtifact
-from veritx_dse.waved.semantics import WaveDWorkloadSemantics
-from veritx_dse.waved.traffic import PhysicalTrafficArtifact
-from veritx_dse.waved.workload import WaveDWorkload
+from veritx_dse.workload.messages import LogicalMessageArtifact
+from veritx_dse.workload.operations import OperationGraph
+from veritx_dse.model.parallelism import ParallelismArtifact
+from veritx_dse.workload.semantics import WaveDWorkloadSemantics
+from veritx_dse.workload.traffic import PhysicalTrafficArtifact
+from veritx_dse.workload.graph import WaveDWorkload
 
 from .errors import ControlPlaneError, ErrorCode
 from .resources import RESOURCE_SCHEMA_VERSION, check_envelope
@@ -225,7 +225,7 @@ def load_verified_messages(store: Any,
         LogicalMessageArtifact.from_dict(doc, graph=graph, strict=True)))
     _require_equal("message_artifact_id", art.message_artifact_id(),
                    message_artifact_id, message_artifact_id)
-    art.validate_against_oracle()
+    art.validate_conservation()
     return art
 
 
@@ -275,7 +275,10 @@ def load_verified_traffic(store: Any, traffic_id: str
     _require_equal("traffic.mapping_hash", doc.get("mapping_hash"),
                    bundle.resolved_fabric.mapping_hash, traffic_id)
     art.validate_conservation()
-    art.cross_check_against_oracle()
+    from veritx_dse.verification.reference_semantics import (
+        verify_packetization_reference,
+    )
+    verify_packetization_reference(art)
     return art, record
 
 
@@ -357,7 +360,7 @@ def _workload_from_graph(graph: OperationGraph) -> WaveDWorkload:
     same content. This is used ONLY to recompute identity for
     comparison, never to author a graph.
     """
-    from veritx_dse.waved.workload import WaveDOperation
+    from veritx_dse.workload.graph import WaveDOperation
     ops: list[WaveDOperation] = []
     by_id = {n.operation_id: n for n in graph.nodes}
     for n in graph.nodes:

@@ -7,7 +7,8 @@ runs the sealed qualified BookSim execution when the binary exists.
 
 Discipline: every adversarial test feeds a MUTATED OBJECT INTO A REAL
 PRODUCTION VALIDATOR (``PhysicalTrafficArtifact.from_dict(strict=True)``,
-``validate_conservation``, ``cross_check_against_oracle``,
+``validate_conservation``,
+``verify_packetization_reference``,
 ``verify_trace_projection``). A test that mutates a copy and then
 validates the original proves nothing and does not belong here.
 """
@@ -27,7 +28,7 @@ sys.path.insert(0, str(TESTS))
 from test_fabric_artifact import build_chain, compose  # noqa: E402
 from test_backend_bundle import make_bundle  # noqa: E402
 
-from veritx_dse.backend.bundle import (  # noqa: E402
+from veritx_dse.model.resolved_bundle import (  # noqa: E402
     make_resolved_fabric_bundle,
 )
 from veritx_dse.model.compile_model import TopologyFamily  # noqa: E402
@@ -35,21 +36,26 @@ from veritx_dse.model.mapping import (  # noqa: E402
     MappingArtifact, RankPlacement,
 )
 from veritx_dse.model.resolved_fabric import make_resolved_fabric  # noqa: E402
-from veritx_dse.waved.backend import (  # noqa: E402
-    prepare_waved_booksim, render_waved_trace, verify_backend_quiescence,
-    verify_trace_projection,
+from veritx_dse.backend.projection import (  # noqa: E402
+    prepare_waved_booksim, render_waved_trace, verify_trace_projection,
 )
-from veritx_dse.waved.errors import (  # noqa: E402
+from veritx_dse.verification.gates import (  # noqa: E402
+    verify_backend_quiescence,
+)
+from veritx_dse.verification.reference_semantics import (  # noqa: E402
+    verify_packetization_reference,
+)
+from veritx_dse.core.errors import (  # noqa: E402
     ConservationFailed, EvidenceInvalid, InvalidInput, MappingInvalid,
 )
-from veritx_dse.waved.messages import LogicalMessageArtifact  # noqa: E402
-from veritx_dse.waved.operations import (  # noqa: E402
+from veritx_dse.workload.messages import LogicalMessageArtifact  # noqa: E402
+from veritx_dse.workload.operations import (  # noqa: E402
     KIND_COLLECTIVE, KIND_MULTICAST, KIND_P2P, CollectiveIntent,
     MulticastIntent, OperationGraph, OperationNode, P2PTransfer,
 )
-from veritx_dse.waved.parallelism import ParallelismArtifact  # noqa: E402
-from veritx_dse.waved.semantics import WaveDWorkloadSemantics  # noqa: E402
-from veritx_dse.waved.traffic import (  # noqa: E402
+from veritx_dse.model.parallelism import ParallelismArtifact  # noqa: E402
+from veritx_dse.workload.semantics import WaveDWorkloadSemantics  # noqa: E402
+from veritx_dse.workload.traffic import (  # noqa: E402
     PhysicalTrafficArtifact, header_width_bits,
 )
 
@@ -131,7 +137,7 @@ def _logical(bundle, **kw):
     tr = P2PTransfer(0, 2, 300, "t0")
     graph = _graph(pa, collectives=(coll,), p2p=(tr,))
     art = LogicalMessageArtifact(graph=graph)
-    art.validate_against_oracle()
+    art.validate_conservation()
     return art
 
 
@@ -140,7 +146,7 @@ def _pt(bundle=None, **kw):
     logical = _logical(bundle)
     pt = PhysicalTrafficArtifact(logical=logical, bundle=bundle)
     pt.validate_conservation()
-    pt.cross_check_against_oracle()
+    verify_packetization_reference(pt)
     return pt
 
 
@@ -324,7 +330,7 @@ class TestPhysicalMutations:
         forged = (replace(first, packets=forged_packets),) + pt.traffic[1:]
         object.__setattr__(pt, "_traffic", forged)
         with pytest.raises(ConservationFailed):
-            pt.cross_check_against_oracle()
+            verify_packetization_reference(pt)
         with pytest.raises(ConservationFailed):
             pt.validate_conservation()
 
@@ -400,7 +406,7 @@ class TestRealExecution:
 
     def _run(self, pt, real_binary, tmp_path):
         from veritx_dse.core.paths import REPO as REPO_ROOT
-        from veritx_dse.waved.backend import run_waved_booksim
+        from veritx_dse.backend.projection import run_waved_booksim
         prepared, summary = prepare_waved_booksim(pt)
         result = run_waved_booksim(prepared, run_dir=tmp_path,
                                    repo_root=REPO_ROOT, timeout=120,
@@ -466,7 +472,7 @@ class TestRealExecution:
         """verify_backend_quiescence is not vacuous."""
         pt = _pt(_bundle())
         result, summary = self._run(pt, real_binary, tmp_path)
-        from veritx_dse.waved.errors import BackendFailure
+        from veritx_dse.core.errors import BackendFailure
         forged = dict(summary)
         forged["num_packets"] = summary["num_packets"] + 1
         with pytest.raises(BackendFailure):

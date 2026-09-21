@@ -151,7 +151,7 @@ class Intent:
         if self.workload.trace_sha256 is not None:
             workload["trace_sha256"] = self.workload.trace_sha256
         if self.workload.wave_d is not None:
-            from veritx_dse.waved.workload import WaveDWorkload
+            from veritx_dse.workload.graph import WaveDWorkload
             w = self.workload.wave_d
             if not isinstance(w, WaveDWorkload):
                 raise ValueError("workload.wave_d must be a WaveDWorkload")
@@ -236,7 +236,7 @@ class Intent:
                         "intent.workload.wave_d is mutually exclusive "
                         "with trace/trace_file/trace_sha256: a semantic "
                         "workload derives its own trace")
-                from veritx_dse.waved.workload import WaveDWorkload
+                from veritx_dse.workload.graph import WaveDWorkload
                 try:
                     wave_d = WaveDWorkload.from_dict(wave_d_doc)
                 except Exception as exc:

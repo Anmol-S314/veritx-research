@@ -1,4 +1,4 @@
-"""veritx_dse.waved.traffic — PhysicalTrafficArtifact + ConservationLedger
+"""veritx_dse.workload.traffic — PhysicalTrafficArtifact + ConservationLedger
 (D4/D5, §18–§24).
 
 One authoritative projection from logical messages to physical traffic:
@@ -30,14 +30,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from veritx_dse.backend.bundle import ResolvedFabricBundle
+from veritx_dse.model.resolved_bundle import ResolvedFabricBundle
 from veritx_dse.model.packet_format import PacketFormatArtifact
 
-from .errors import (
+from veritx_dse.core.errors import (
     ConservationFailed, EvidenceInvalid, InvalidInput, MappingInvalid,
 )
 from veritx_dse.core.artifact import content_hash
-from .messages import LogicalMessageArtifact
+from veritx_dse.workload.messages import LogicalMessageArtifact
 from veritx_dse.core.artifact import (
     require_embedded_id, require_fields, require_schema_version, require_type_tag,
 )
@@ -441,30 +441,6 @@ class PhysicalTrafficArtifact:
                 raise ConservationFailed(
                     f"operation {entry.operation_id!r}: binding invalid")
 
-    def cross_check_against_oracle(self) -> None:
-        """Independent-oracle differential check (§22/§26)."""
-        from .oracles import ref_flitize, ref_packetize
-        pf = self.bundle.packet_format
-        Q, L = pf.payload_width_bits, pf.max_packet_flits
-        H = header_width_bits(pf)
-        for m in self.logical.messages:
-            expected_pkts = ref_packetize(m.payload_bytes * 8, Q, L)
-            got = next(t for t in self._traffic
-                       if t.message_id == m.message_id)
-            if [p.payload_bits for p in got.packets] != expected_pkts:
-                raise ConservationFailed(
-                    f"packetization oracle mismatch for {m.message_id!r}")
-            for p in got.packets:
-                n, padding, transmitted = ref_flitize(p.payload_bits, Q, H,
-                                                      pf.flit_width_bits)
-                if (n, padding, transmitted) != (
-                        p.flit_count, p.padding_bits,
-                        p.transmitted_bits):
-                    raise ConservationFailed(
-                        f"flitization oracle mismatch for packet "
-                        f"{p.packet_index} of {m.message_id!r}")
-
-    # ── identity (§32) ────────────────────────────────────────────────
     def identity_dict(self) -> dict[str, Any]:
         return {
             "type": _HASH_TYPE_TAG,

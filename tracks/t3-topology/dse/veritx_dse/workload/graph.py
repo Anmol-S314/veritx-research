@@ -1,4 +1,4 @@
-"""veritx_dse.waved.workload — the explicit Wave-D semantic workload.
+"""veritx_dse.workload.graph — the explicit Wave-D semantic workload.
 
 This is the smallest versioned input seam that lets a product intent
 declare WHAT is communicated, rather than shipping a packet trace and
@@ -25,14 +25,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from .errors import InvalidInput
+from veritx_dse.core.errors import InvalidInput
 from veritx_dse.core.artifact import content_hash
 from veritx_dse.core.artifact import FrozenMap, ImmutableError, freeze, thaw
 from .operations import (
     KIND_COLLECTIVE, KIND_MULTICAST, KIND_P2P, CollectiveIntent,
     MulticastIntent, OperationGraph, OperationNode, P2PTransfer,
 )
-from .parallelism import ParallelismArtifact
+from veritx_dse.model.parallelism import ParallelismArtifact
 from .semantics import WaveDWorkloadSemantics
 from veritx_dse.core.artifact import (
     require_embedded_id, require_fields, require_schema_version, require_type_tag,

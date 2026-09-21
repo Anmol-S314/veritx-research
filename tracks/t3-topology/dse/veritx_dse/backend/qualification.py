@@ -28,7 +28,7 @@ from typing import Any, Mapping
 from .booksim import assert_canonical_booksim_projection
 from .booksim_profile import BOOKSIM_SERVING_PROFILE, \
     BOOKSIM_STANDALONE_PROFILE
-from .bundle import ResolvedFabricBundle
+from veritx_dse.model.resolved_bundle import ResolvedFabricBundle
 from .contracts import (
     BackendConfigArtifact, BackendTarget, RepresentationStatus,
     SemanticDimension,

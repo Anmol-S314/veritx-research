@@ -16,16 +16,16 @@ import pytest
 DSE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(DSE))
 
-from veritx_dse.waved.errors import (  # noqa: E402
+from veritx_dse.core.errors import (  # noqa: E402
     EvidenceInvalid, InvalidInput,
 )
-from veritx_dse.waved.messages import LogicalMessageArtifact  # noqa: E402
-from veritx_dse.waved.operations import (  # noqa: E402
+from veritx_dse.workload.messages import LogicalMessageArtifact  # noqa: E402
+from veritx_dse.workload.operations import (  # noqa: E402
     KIND_COLLECTIVE, KIND_P2P, CollectiveIntent, OperationGraph,
     OperationNode, P2PTransfer,
 )
-from veritx_dse.waved.parallelism import ParallelismArtifact  # noqa: E402
-from veritx_dse.waved.semantics import WaveDWorkloadSemantics  # noqa: E402
+from veritx_dse.model.parallelism import ParallelismArtifact  # noqa: E402
+from veritx_dse.workload.semantics import WaveDWorkloadSemantics  # noqa: E402
 
 
 def _pa():

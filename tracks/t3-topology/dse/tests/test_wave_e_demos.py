@@ -350,14 +350,14 @@ class TestRealBookSimE2E:
         from veritx_dse.backend.booksim import run_qualified_booksim
         from veritx_dse.core.paths import REPO as REPO_ROOT
         from veritx_dse.simulation.booksim import find_booksim_bin
-        from veritx_dse.waved.backend import prepare_waved_booksim
-        from veritx_dse.waved.messages import LogicalMessageArtifact
-        from veritx_dse.waved.operations import (
+        from veritx_dse.backend.projection import prepare_waved_booksim
+        from veritx_dse.workload.messages import LogicalMessageArtifact
+        from veritx_dse.workload.operations import (
             KIND_P2P, OperationGraph, OperationNode, P2PTransfer,
         )
-        from veritx_dse.waved.parallelism import ParallelismArtifact
-        from veritx_dse.waved.semantics import WaveDWorkloadSemantics
-        from veritx_dse.waved.traffic import PhysicalTrafficArtifact
+        from veritx_dse.model.parallelism import ParallelismArtifact
+        from veritx_dse.workload.semantics import WaveDWorkloadSemantics
+        from veritx_dse.workload.traffic import PhysicalTrafficArtifact
         from veritx_dse.wavee.network import (
             WINDOW_KIND_BARRIER, bind_network_window,
         )
@@ -376,12 +376,12 @@ class TestRealBookSimE2E:
             collectives=(), p2p_transfers=(P2PTransfer(0, 1, 300, "t0"),),
             multicasts=())
         logical = LogicalMessageArtifact(graph=graph)
-        logical.validate_against_oracle()
+        logical.validate_conservation()
 
         # reuse the Wave-D certified bundle chain (2-rank mesh)
         from test_fabric_artifact import build_chain, compose
         from test_backend_bundle import make_bundle
-        from veritx_dse.backend.bundle import make_resolved_fabric_bundle
+        from veritx_dse.model.resolved_bundle import make_resolved_fabric_bundle
         from veritx_dse.model.compile_model import TopologyFamily
         chain = build_chain(tp=2, pp=1, ep=1, dp=1, n_agents=2,
                             family=TopologyFamily.MESH)

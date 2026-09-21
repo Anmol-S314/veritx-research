@@ -1,4 +1,4 @@
-"""veritx_dse.waved.oracles — independent pure reference models (§26).
+"""veritx_dse.verification.reference_semantics — independent pure reference models (§26).
 
 These oracles are structurally independent of the production lowering:
 they never import or call it. They exist so Wave-D tests can prove the
@@ -192,4 +192,98 @@ __all__ = [
     "ref_collective", "ref_collective_messages", "ref_coords",
     "ref_flitize", "ref_group_members", "ref_multicast", "ref_packetize",
     "ref_rank",
+]
+
+
+# ── verifiers moved out of the artifacts (slice 2b) ─────────────────────
+# An artifact must not carry its own differential check: the check would
+# then live inside the thing it checks, and the artifact would depend on
+# the reference module. These functions are the verifier side of that
+# seam. Callers: the verified loaders, the service, the projection gates.
+
+def verify_parallelism_reference(artifact) -> None:
+    """Rank-bijection differential for a ParallelismArtifact.
+
+    Compares the production coordinates (model.placement) against this
+    module's closed-form inverse. Genuine differential: two independent
+    implementations of the same bijection.
+    """
+    from veritx_dse.core.errors import ConservationFailed
+    sizes = artifact.sizes()
+    tp, pp, ep, dp = sizes
+    for r in range(artifact.world_size):
+        c = artifact.coords_of(r)
+        got = artifact.rank_of(c["tp"], c["pp"], c["ep"], c["dp"])
+        if got != r:
+            raise ConservationFailed(
+                f"rank bijection broken at {r}: got {got}")
+        if ref_coords(r, tp=tp, pp=pp, ep=ep, dp=dp) != \
+                (c["tp"], c["pp"], c["ep"], c["dp"]):
+            raise ConservationFailed(
+                f"coords disagree with the independent reference at "
+                f"rank {r}")
+
+
+def verify_packetization_reference(traffic) -> None:
+    """Packetization/flitization differential for physical traffic.
+
+    The production packetizer is an independent implementation; this
+    re-derives both laws from the closed forms and compares.
+    """
+    from veritx_dse.core.errors import ConservationFailed
+    from veritx_dse.workload.traffic import header_width_bits
+    pf = traffic.bundle.packet_format
+    Q, L = pf.payload_width_bits, pf.max_packet_flits
+    H = header_width_bits(pf)
+    for m in traffic.logical.messages:
+        expected_pkts = ref_packetize(m.payload_bytes * 8, Q, L)
+        got = next(t for t in traffic._traffic
+                   if t.message_id == m.message_id)
+        if [p.payload_bits for p in got.packets] != expected_pkts:
+            raise ConservationFailed(
+                f"packetization reference mismatch for {m.message_id!r}")
+        for p in got.packets:
+            n, padding, transmitted = ref_flitize(
+                p.payload_bits, Q, H, pf.flit_width_bits)
+            if (n, padding, transmitted) != (
+                    p.flit_count, p.padding_bits, p.transmitted_bits):
+                raise ConservationFailed(
+                    f"flitization reference mismatch for packet "
+                    f"{p.packet_index} of {m.message_id!r}")
+
+
+def verify_logical_messages_reference(messages) -> None:
+    """Differential of generated logical messages vs the reference law.
+
+    Distinct from ``LogicalMessageArtifact.validate_conservation``: that
+    one proves generated == declared schedule (an intrinsic invariant),
+    this one compares against an independent implementation of the law.
+    """
+    from veritx_dse.core.errors import ConservationFailed
+    op_ids = messages._collective_op_ids()
+    for ci in messages.graph.collectives:
+        ref = ref_collective(ci.kind, ci.k, ci.payload_bytes)
+        mine = [m for m in messages.messages
+                if m.operation_id in op_ids[ci.collective_id]]
+        sent = sum(m.payload_bytes for m in mine)
+        if sent != ref["aggregate_payload"]:
+            raise ConservationFailed(
+                f"collective {ci.collective_id!r}: generated {sent} "
+                f"payload bytes, reference requires "
+                f"{ref['aggregate_payload']}")
+        # NB: message COUNT is confirmatory here — the production spec and
+        # this reference are two implementations of the same pinned
+        # equation, and expansion reads the spec. The BYTE total below is
+        # the differential: production sums generated messages, this
+        # reference computes the law independently.
+        if len(mine) != ref["message_count"]:
+            raise ConservationFailed(
+                f"collective {ci.collective_id!r}: generated "
+                f"{len(mine)} messages, reference law requires "
+                f"{ref['message_count']}")
+
+
+__all__ = __all__ + [
+    "verify_logical_messages_reference", "verify_packetization_reference",
+    "verify_parallelism_reference",
 ]

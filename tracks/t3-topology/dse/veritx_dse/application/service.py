@@ -128,11 +128,11 @@ class SrotaControlPlane:
         """
         from veritx_dse.backend.contracts import sha256_bytes
         from veritx_dse.model.compile_model import CompileRequest
-        from veritx_dse.waved.backend import (
+        from veritx_dse.backend.projection import (
             render_waved_trace, verify_trace_projection,
         )
-        from veritx_dse.waved.messages import LogicalMessageArtifact
-        from veritx_dse.waved.traffic import PhysicalTrafficArtifact
+        from veritx_dse.workload.messages import LogicalMessageArtifact
+        from veritx_dse.workload.traffic import PhysicalTrafficArtifact
 
         from .waved_resources import (
             messages_record, operation_graph_record, parallelism_record,
@@ -180,12 +180,15 @@ class SrotaControlPlane:
         self.store.put("opgraph", graph.operation_graph_id(),
                        operation_graph_record(graph))
         logical = LogicalMessageArtifact(graph=graph)
-        logical.validate_against_oracle()
+        logical.validate_conservation()
         self.store.put("messages", logical.message_artifact_id(),
                        messages_record(logical))
         traffic = PhysicalTrafficArtifact(logical=logical, bundle=bundle)
         traffic.validate_conservation()
-        traffic.cross_check_against_oracle()
+        from veritx_dse.verification.reference_semantics import (
+            verify_packetization_reference,
+        )
+        verify_packetization_reference(traffic)
         summary = verify_trace_projection(traffic)
         self.store.put("traffic", traffic.physical_traffic_id(),
                        traffic_record(traffic, design_id=design_id))
@@ -627,8 +630,8 @@ class SrotaControlPlane:
         gate runs before the spawn.
         """
         from veritx_dse.backend.booksim import run_qualified_booksim
-        from veritx_dse.waved.backend import (
-            assert_waved_ready, prepare_waved_booksim,
+        from veritx_dse.backend.projection import (
+            assert_projection_ready, prepare_waved_booksim,
         )
 
         from .waved_resources import (
@@ -640,7 +643,7 @@ class SrotaControlPlane:
         wave_e_plan = plan.get("wave_e")
         traffic, _ = load_verified_traffic(
             self.store, chain["physical_traffic_id"])
-        summary = assert_waved_ready(traffic)
+        summary = assert_projection_ready(traffic)
         prepared, _ = prepare_waved_booksim(traffic, seed=intent.seed)
         experiment = self._persist_experiment(
             plan, prepared.config, prepared.manifest)
@@ -652,7 +655,7 @@ class SrotaControlPlane:
             evidence = run_qualified_booksim(
                 prepared, run_dir=attempt_dir, repo_root=self.repo_root,
                 timeout=intent.timeout_s, binary=binary)
-            from veritx_dse.waved.backend import (
+            from veritx_dse.verification.gates import (
                 verify_backend_quiescence,
             )
             counters = {

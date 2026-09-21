@@ -192,7 +192,7 @@ def _verify_waved_workload_chain(store: Any, workload_id: str,
                                  wave_d: dict[str, Any]) -> None:
     """Re-derive a Wave-D workload's chain and its derived trace."""
     from veritx_dse.backend.contracts import sha256_bytes
-    from veritx_dse.waved.backend import render_waved_trace
+    from veritx_dse.backend.projection import render_waved_trace
 
     from .waved_resources import (
         load_verified_traffic, waved_chain_ids_from_traffic,
@@ -577,7 +577,7 @@ def _verify_waved_result(store: Any, result: dict[str, Any],
       4. re-derives the execution counters from that traffic and from
          the authenticated evidence.
     """
-    from veritx_dse.waved.backend import verify_trace_projection
+    from veritx_dse.backend.projection import verify_trace_projection
 
     from .waved_resources import (
         PLAN_CHAIN_KEYS, RESULT_WAVE_D_KEYS, load_verified_traffic,

@@ -1,4 +1,4 @@
-"""veritx_dse.backend.bundle — ResolvedFabricBundle (B3.7a).
+"""veritx_dse.model.resolved_bundle — ResolvedFabricBundle (B3.7a).
 
 A lowerer must receive the ACTUAL semantic objects needed to revalidate
 the DAG — never a root hash alone. Because ResolvedFabric stores only
