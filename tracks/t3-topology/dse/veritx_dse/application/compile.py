@@ -20,7 +20,6 @@ from .errors import map_semantic_error
 def compile_bundle(compile_request: Any):
     """Derive and validate a ResolvedFabricBundle from a CompileRequest."""
     from veritx_dse.model.resolved_bundle import make_resolved_fabric_bundle
-    from veritx_dse.core.route_artifact import ANYNET_MIN_HOPS, RouteArtifact
     from veritx_dse.model.address_decode import derive_address_decode
     from veritx_dse.model.attachment import derive_attachment
     from veritx_dse.model.compile_model import derive_vc_assignment_artifact
@@ -31,18 +30,19 @@ def compile_bundle(compile_request: Any):
     from veritx_dse.model.resolved_fabric import make_resolved_fabric
     from veritx_dse.model.resolved_route import derive_resolved_route
     from veritx_dse.model.router_behavior import derive_router_behavior
+    from veritx_dse.model.routing import derive_route
     from veritx_dse.model.topology_artifact import materialize_topology
 
-    route_name = "srota-compile"
     try:
         inventory = build_inventory(compile_request)
         mapping = derive_mapping(compile_request)
         topology = materialize_topology(inventory, compile_request)
         attachment = derive_attachment(
             design=compile_request, inventory=inventory, topology=topology)
-        router_route = RouteArtifact.from_topology(
-            topology, name=route_name,
-            routing_classes=(ANYNET_MIN_HOPS,))
+        # P1.2: the route is compiler-derived (LOCKED) — never a
+        # hardcoded class beside a separately derived routing string.
+        router_route = derive_route(
+            request=compile_request, topology=topology)
         resolved_route = derive_resolved_route(topology, attachment,
                                                router_route)
         vc_assignment = derive_vc_assignment_artifact(
