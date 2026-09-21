@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from .booksim import assert_canonical_booksim_projection
+from .meshdor_profile import MESH_DOR_PROFILE_ID
 from .booksim_profile import BOOKSIM_SERVING_PROFILE, \
     BOOKSIM_STANDALONE_PROFILE
 from veritx_dse.model.resolved_bundle import ResolvedFabricBundle
@@ -208,12 +209,26 @@ def qualify_cross_backend(
     for name, art in artifacts.items():
         if art.backend_target in (BackendTarget.BOOKSIM_STANDALONE,
                                   BackendTarget.SERVING_BOOKSIM2):
-            try:
-                assert_canonical_booksim_projection(bundle, art)
-            except ValueError as exc:
-                raise QualificationError(
-                    f"{name}: artifact is not the canonical lowering of "
-                    f"the supplied bundle: {exc}") from exc
+            # Profile-aware canonical check: the mesh-DOR profile has
+            # its own lowerer and identity; the AnyNet assert would
+            # refuse it for the wrong reason (profile mismatch).
+            if art.backend_profile == MESH_DOR_PROFILE_ID:
+                try:
+                    from veritx_dse.backend.meshdor import (
+                        assert_canonical_meshdor_projection,
+                    )
+                    assert_canonical_meshdor_projection(bundle, art)
+                except ValueError as exc:
+                    raise QualificationError(
+                        f"{name}: artifact is not the canonical mesh-DOR "
+                        f"lowering of the supplied bundle: {exc}") from exc
+            else:
+                try:
+                    assert_canonical_booksim_projection(bundle, art)
+                except ValueError as exc:
+                    raise QualificationError(
+                        f"{name}: artifact is not the canonical lowering "
+                        f"of the supplied bundle: {exc}") from exc
     problems: list[str] = []
     fabric_hashes = {a.fabric_hash for a in artifacts.values()}
     resolved_hashes = {a.resolved_fabric_hash for a in artifacts.values()}

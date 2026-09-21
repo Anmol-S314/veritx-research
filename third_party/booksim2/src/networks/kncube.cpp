@@ -34,9 +34,15 @@
 #include "booksim.hpp"
 #include <vector>
 #include <sstream>
+#include <fstream>
 #include <ctime>
 #include <cassert>
 #include "kncube.hpp"
+#include "routefunc.hpp"
+#include "outputset.hpp"
+#include "flit.hpp"
+#include "routers/router.hpp"
+#include "flitchannel.hpp"
 #include "random_utils.hpp"
 #include "misc_utils.hpp"
  //#include "iq_router.hpp"
@@ -166,6 +172,7 @@ void KNCube::_BuildNet( const Configuration &config )
     _inject[node]->SetLatency( 1 );
     _eject[node]->SetLatency( 1 );
   }
+  DumpDorRoutes( config );
 }
 
 int KNCube::_LeftChannel( int node, int dim )
@@ -322,4 +329,96 @@ void KNCube::InsertRandomFaults( const Configuration &config )
 double KNCube::Capacity( ) const
 {
   return (double)_k / ( _mesh ? 8.0 : 4.0 );
+}
+
+// ===========================================================================
+// VeritX (P1B mesh-DOR): executed first-hop dump for native DOR mesh.
+//
+// The native mesh computes routes per flit (no precomputed table), so the
+// AnyNet table dump does not apply. This hook calls the CONFIGURED routing
+// function — resolved with the same key rule both consumers use
+// (routing_function + "_" + topology, see trafficmanager.cpp and
+// routers/iq_router.cpp) — with a probe flit for every (router, node)
+// pair, and resolves the returned output port to the next router through
+// this network's own wired channels. The dump format matches the AnyNet
+// seam so the Python compare is shared:
+//   "src_router <r> dst_node <n> next_router <m> port <p>"
+// (next_router == r means local ejection). DOR-only: any configured
+// function other than dim_order_mesh refuses here, because a single probe
+// cannot represent stateful or adaptive routing. Mesh-guarded: this object
+// also builds tori, which the certified mesh profile does not cover.
+// Ejection uses the dor eject port (2*gN); anything else outside the
+// network port range refuses (fail closed, never an unchecked index).
+// ===========================================================================
+void KNCube::DumpDorRoutes( const Configuration &config )
+{
+  string dump_file = config.GetStr( "routing_dump_file" );
+  if ( dump_file.empty( ) ) {
+    return;
+  }
+  if ( config.GetStr( "topology" ) != "mesh" ) {
+    cout << "KNCube: routing_dump_file requested for non-mesh topology; "
+         << "the certified mesh dump covers native mesh only -- refusing"
+         << endl;
+    exit( -1 );
+  }
+  string key = config.GetStr( "routing_function" ) + "_mesh";
+  if ( key != "dim_order_mesh" ) {
+    cout << "KNCube: routing_dump_file supports dim_order_mesh only, got "
+         << key << "; a single probe cannot represent stateful or adaptive "
+         << "routing -- refusing" << endl;
+    exit( -1 );
+  }
+  map<string, tRoutingFunction>::const_iterator rf_iter =
+    gRoutingFunctionMap.find( key );
+  if ( rf_iter == gRoutingFunctionMap.end( ) ) {
+    cout << "KNCube: routing function " << key << " not registered; refusing"
+         << endl;
+    exit( -1 );
+  }
+  tRoutingFunction rf = rf_iter->second;
+  ofstream dump( dump_file.c_str( ) );
+  if ( !dump.is_open( ) ) {
+    cout << "KNCube: cannot open routing_dump_file " << dump_file << endl;
+    exit( -1 );
+  }
+  dump << "# VeritX native-mesh DOR routing table dump "
+       << "(executed first-hop realization)\n";
+  Flit *probe = Flit::New( );
+  probe->vc = 0;
+  for ( int r = 0; r < _size; r++ ) {
+    for ( int n = 0; n < _nodes; n++ ) {
+      probe->dest = n;
+      OutputSet outputs;
+      rf( _routers[r], probe, 0, &outputs, false );
+      const set<OutputSet::sSetElement> &s = outputs.GetSet( );
+      if ( s.size( ) != 1 ) {
+        cout << "KNCube: routing function returned " << s.size( )
+             << " output options for (" << r << "," << n << "); the mesh "
+             << "dump requires exactly one -- refusing" << endl;
+        exit( -1 );
+      }
+      int port = s.begin( )->output_port;
+      int next;
+      if ( port == 2 * gN ) {
+        next = r;  // local ejection
+      } else if ( port >= 0 && port < 2 * gN ) {
+        FlitChannel *ch = _routers[r]->GetOutputChannel( port );
+        if ( !ch || !ch->GetSink( ) ) {
+          cout << "KNCube: output port " << port << " of router " << r
+               << " is unwired; refusing" << endl;
+          exit( -1 );
+        }
+        next = ch->GetSink( )->GetID( );
+      } else {
+        cout << "KNCube: output port " << port << " out of range for ("
+             << r << "," << n << "); refusing" << endl;
+        exit( -1 );
+      }
+      dump << "src_router " << r << " dst_node " << n
+           << " next_router " << next << " port " << port << "\n";
+    }
+  }
+  probe->Free( );
+  dump.close( );
 }
