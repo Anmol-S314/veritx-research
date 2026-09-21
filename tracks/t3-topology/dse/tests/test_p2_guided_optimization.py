@@ -1,0 +1,516 @@
+"""P2 guided optimization — contract tests (deterministic search + Pareto).
+
+Style: independent oracles written in-file (brute-force Pareto, canonical
+re-enumeration), never calls into production code under test except
+through the documented seams. No BookSim binary, no subprocess, no
+network: the fake evaluator compiles through the REAL FabricCompiler
+(pure function of the request) and scores analytic objectives.
+
+Covers: definition GUIDED/LOCKED guards, candidate identity, deterministic
+search, fake-evaluator determinism, constraint truth table, Pareto oracle
+agreement + sealed-gate cross-check, end-to-end grid study incl. frozen
+OptimizationStudyView validation, and the no-LOCKED-mutation invariant.
+"""
+from __future__ import annotations
+
+import itertools
+import json
+import random
+import sys
+from pathlib import Path
+
+import pytest
+
+DSE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(DSE))
+
+from veritx_dse.optimization.candidate import (  # noqa: E402
+    CandidateError,
+    apply_patch,
+    candidate_id_for,
+    make_candidate,
+)
+from veritx_dse.optimization.constraints import (  # noqa: E402
+    evaluate_all,
+    evaluate_constraint_value,
+)
+from veritx_dse.optimization.definition import (  # noqa: E402
+    Constraint,
+    DomainParam,
+    Objective,
+    OptimizationDefinition,
+    OptimizationDefinitionError,
+)
+from veritx_dse.optimization.evaluators import (  # noqa: E402
+    FakeDeterministicEvaluator,
+)
+from veritx_dse.optimization.pareto import (  # noqa: E402
+    pareto_front,
+    pareto_ids,
+)
+from veritx_dse.optimization.result import (  # noqa: E402
+    Optimizer,
+)
+from veritx_dse.optimization.search import (  # noqa: E402
+    canonical_assignments,
+    raw_cardinality,
+    search_candidates,
+)
+
+FIXTURE = Path(__file__).resolve().parent / "fixtures" / "optimize_mesh16.json"
+
+
+def _base():
+    from veritx_dse.model.compile_model import CompileRequest
+    return CompileRequest.from_dict(json.loads(FIXTURE.read_text()))
+
+
+def _defn(**kw):
+    base = dict(
+        domain=(DomainParam("link_width", (32, 128)),
+                DomainParam("concentration", (1, 2))),
+        objectives=(Objective("latency", "MIN"), Objective("area", "MIN")),
+        constraints=(Constraint("latency", "<=", 600.0),),
+        method="grid",
+    )
+    base.update(kw)
+    return OptimizationDefinition(**base)
+
+
+# ── definition guards ────────────────────────────────────────────────────
+
+class TestDefinitionGuards:
+    @pytest.mark.parametrize("locked", [
+        "routing", "routing_function", "routing_algorithm",
+        "vc_count", "vc_map", "num_vcs", "vcs",
+        "turn_restrictions", "escape_vc", "escapeVC",
+        "noc_config.routing", "noc_config.vc_count",
+    ])
+    def test_locked_dimensions_inconceivable(self, locked):
+        with pytest.raises(OptimizationDefinitionError, match="[Ll][Oo][Cc][Kk][Ee][Dd]"):
+            OptimizationDefinition(
+                domain=(DomainParam(locked, (1, 2)),),
+                objectives=(Objective("latency", "MIN"),))
+
+    def test_unknown_guided_refused(self):
+        with pytest.raises(OptimizationDefinitionError, match="unknown GUIDED"):
+            OptimizationDefinition(
+                domain=(DomainParam("hyperdrive", (1, 2)),),
+                objectives=(Objective("latency", "MIN"),))
+
+    def test_empty_objectives_refused(self):
+        with pytest.raises(OptimizationDefinitionError, match="objective"):
+            OptimizationDefinition(domain=(), objectives=())
+
+    def test_duplicate_params_refused(self):
+        with pytest.raises(OptimizationDefinitionError, match="duplicate"):
+            OptimizationDefinition(
+                domain=(DomainParam("link_width", (32,)),
+                        DomainParam("noc_config.link_width", (64,))),
+                objectives=(Objective("latency", "MIN"),))
+
+    def test_bayes_milp_refused(self):
+        for method in ("bayes", "bo", "milp", "sa", "rho", "grpo"):
+            with pytest.raises(OptimizationDefinitionError, match="Bayes/MILP"):
+                OptimizationDefinition(
+                    domain=(DomainParam("link_width", (32, 64)),),
+                    objectives=(Objective("latency", "MIN"),),
+                    method=method)
+
+    def test_random_requires_seed(self):
+        with pytest.raises(OptimizationDefinitionError, match="seed"):
+            OptimizationDefinition(
+                domain=(DomainParam("link_width", (32, 64)),),
+                objectives=(Objective("latency", "MIN"),),
+                method="random", seed=None)
+
+    def test_definition_id_ignores_declaration_order(self):
+        a = OptimizationDefinition(
+            domain=(DomainParam("link_width", (128, 32)),
+                    DomainParam("concentration", (2, 1))),
+            objectives=(Objective("latency", "MIN"),))
+        b = OptimizationDefinition(
+            domain=(DomainParam("concentration", (1, 2)),
+                    DomainParam("link_width", (32, 128))),
+            objectives=(Objective("latency", "MIN"),))
+        assert a.definition_id() == b.definition_id()
+
+    def test_definition_id_moves_with_semantics(self):
+        a = _defn()
+        b = _defn(constraints=(Constraint("latency", "<=", 601.0),))
+        assert a.definition_id() != b.definition_id()
+
+
+# ── candidate identity ───────────────────────────────────────────────────
+
+class TestCandidateIdentity:
+    def test_patch_applies_guided_only_and_leaves_base_untouched(self):
+        base = _base()
+        before = base.design_hash()
+        cand = make_candidate(base, {"link_width": 128})
+        assert base.design_hash() == before
+        assert cand.request.noc_config.link_width == 128
+        assert base.noc_config.link_width is None
+        assert cand.base_design_hash == before
+
+    def test_identity_ignores_key_order(self):
+        base = _base()
+        h = base.design_hash()
+        a = candidate_id_for(h, {"link_width": 128, "concentration": 2})
+        b = candidate_id_for(h, {"concentration": 2, "link_width": 128})
+        assert a == b
+
+    def test_dotted_alias_normalizes(self):
+        base = _base()
+        a = make_candidate(base, {"noc_config.link_width": 64})
+        b = make_candidate(base, {"link_width": 64})
+        assert a.candidate_id == b.candidate_id
+        assert a.guided_patch == {"link_width": 64}
+
+    def test_locked_patch_refused(self):
+        base = _base()
+        with pytest.raises((CandidateError, OptimizationDefinitionError)):
+            apply_patch(base, {"routing": "dor"})
+        with pytest.raises((CandidateError, OptimizationDefinitionError)):
+            apply_patch(base, {"vc_count": 4})
+
+    def test_empty_patch_refused(self):
+        with pytest.raises(CandidateError, match="at least one"):
+            make_candidate(_base(), {})
+
+    def test_transplanted_id_refused(self):
+        from veritx_dse.optimization.candidate import Candidate
+        base = _base()
+        good = make_candidate(base, {"link_width": 64})
+        with pytest.raises(CandidateError, match="content identity"):
+            Candidate(candidate_id="cand_forged", base_design_hash=good.base_design_hash,
+                      guided_patch=dict(good.guided_patch), request=good.request)
+
+
+# ── deterministic search ─────────────────────────────────────────────────
+
+class TestDeterministicSearch:
+    def test_grid_cardinality_and_canonical_order(self):
+        base = _base()
+        defn = _defn()
+        assert raw_cardinality(defn) == 4
+        first = [c.guided_patch for c in search_candidates(base, defn)]
+        second = [c.guided_patch for c in search_candidates(base, defn)]
+        assert first == second
+        # Canonical: concentration (first alphabetically) varies slowest;
+        # domain values sort by canonical JSON rendering (MOVED reference
+        # rule), so 128 ("128") orders before 32 ("32").
+        assert first == [
+            {"concentration": 1, "link_width": 128},
+            {"concentration": 1, "link_width": 32},
+            {"concentration": 2, "link_width": 128},
+            {"concentration": 2, "link_width": 32},
+        ]
+
+    def test_grid_budget_keeps_canonical_prefix(self):
+        base = _base()
+        full = search_candidates(base, _defn())
+        budgeted = search_candidates(
+            base, _defn(budget={"max_candidates": 2}))
+        assert [c.candidate_id for c in budgeted] == \
+            [c.candidate_id for c in full[:2]]
+
+    def test_random_is_seeded_deterministic_and_bounded(self):
+        base = _base()
+        kw = dict(domain=(DomainParam("link_width", (32, 64, 128, 256)),
+                          DomainParam("concentration", (1, 2, 4)),
+                          DomainParam("rcu_enabled", (False, True))),
+                  objectives=(Objective("latency", "MIN"),),
+                  method="random", budget={"max_candidates": 5}, seed=1234)
+        a = [c.candidate_id for c in search_candidates(base, OptimizationDefinition(**kw))]
+        b = [c.candidate_id for c in search_candidates(base, OptimizationDefinition(**kw))]
+        assert a == b
+        assert len(a) == 5
+        c = [c.candidate_id for c in search_candidates(
+            base, OptimizationDefinition(**{**kw, "seed": 999}))]
+        assert sorted(a) != sorted(c)  # seed actually drives the sample
+
+    def test_canonical_assignments_reenumeration_agrees(self):
+        """Independent reimplementation: sorted names x sorted values product."""
+        defn = _defn()
+        params = sorted(defn.domain, key=lambda p: p.name)
+        expected = [dict(zip([p.name for p in params], vals))
+                    for vals in itertools.product(
+                        *[[32, 128], [1, 2]][:len(params)])]
+        # Alphabetical param order: concentration first; values in
+        # canonical-JSON order (128 before 32).
+        assert list(canonical_assignments(defn)) == [
+            {"concentration": 1, "link_width": 128},
+            {"concentration": 1, "link_width": 32},
+            {"concentration": 2, "link_width": 128},
+            {"concentration": 2, "link_width": 32},
+        ]
+
+
+# ── fake evaluator ───────────────────────────────────────────────────────
+
+class TestFakeEvaluator:
+    def test_deterministic_across_calls_and_instances(self):
+        base = _base()
+        cand = make_candidate(base, {"link_width": 128})
+        e1, e2 = FakeDeterministicEvaluator(seed=7), FakeDeterministicEvaluator(seed=7)
+        assert e1.evaluate(cand).objective_values == \
+            e2.evaluate(cand).objective_values == \
+            e1.evaluate(cand).objective_values
+
+    def test_locked_consequences_match_direct_recompilation(self):
+        from veritx_dse.application.fabric_compiler import FabricCompiler
+        base = _base()
+        cand = make_candidate(base, {"link_width": 128, "concentration": 2})
+        ev = FakeDeterministicEvaluator(seed=7).evaluate(cand)
+        assert ev.status == "EVALUATED"
+        direct = FabricCompiler().compile(cand.request)
+        assert direct.status == "COMPILED"
+        assert ev.locked_consequences["vc_count"] == \
+            direct.bundle.vc_assignment.vc_count
+        assert ev.locked_consequences["routing_classes"] == \
+            sorted({str(rc) for _, rc in
+                    direct.bundle.vc_assignment.vc_to_routing_class})
+        assert ev.locked_consequences["router_count"] == \
+            direct.bundle.topology.router_count
+        assert ev.design_hash == cand.request.design_hash()
+
+    def test_link_width_trades_latency_for_area(self):
+        ev = FakeDeterministicEvaluator(seed=7)
+        base = _base()
+        narrow = ev.evaluate(make_candidate(base, {"link_width": 32}))
+        wide = ev.evaluate(make_candidate(base, {"link_width": 128}))
+        assert wide.objective_values["latency"] < narrow.objective_values["latency"]
+        assert wide.objective_values["area"] > narrow.objective_values["area"]
+
+
+# ── constraints truth table ──────────────────────────────────────────────
+
+class TestConstraints:
+    def test_satisfied_violated_unmeasurable(self):
+        sat = evaluate_constraint_value("latency", "<=", 600.0, 179.0)
+        assert sat["verdict"] == "SATISFIED" and sat["margin_or_excess"] > 0
+        viol = evaluate_constraint_value("latency", "<=", 600.0, 629.0)
+        assert viol["verdict"] == "VIOLATED"
+        un = evaluate_constraint_value("latency", "<=", 600.0, None)
+        assert un["verdict"] == "UNMEASURABLE"
+        missing = evaluate_all(
+            (Constraint("latency", "<=", 600.0),), {})
+        assert missing["feasible"] is None  # never a silent pass
+
+    def test_feasibility_ladder(self):
+        cons = (Constraint("latency", "<=", 600.0),)
+        assert evaluate_all(cons, {"latency": 100.0})["feasible"] is True
+        assert evaluate_all(cons, {"latency": 700.0})["feasible"] is False
+        assert evaluate_all(cons, {})["feasible"] is None
+
+
+# ── pareto ───────────────────────────────────────────────────────────────
+
+def _brute_front(points: dict[str, tuple]) -> set[str]:
+    front = set()
+    for a, va in points.items():
+        if not any(a != b and all(x <= y for x, y in zip(vb, va))
+                   and any(x < y for x, y in zip(vb, va))
+                   for b, vb in points.items()):
+            front.add(a)
+    return front
+
+
+class TestPareto:
+    def test_matches_brute_oracle_on_random_fronts(self):
+        rng = random.Random(20260921)
+        objs = (Objective("latency", "MIN"), Objective("area", "MIN"))
+        for _ in range(25):
+            pts = {f"c{i}": (rng.randint(1, 50), rng.randint(1, 50))
+                   for i in range(8)}
+            moved = pareto_front(
+                {k: v for k, v in pts.items()}, ["MIN", "MIN"])
+            assert set(moved) == _brute_front(pts)
+
+    def test_ties_stay_ties(self):
+        objs = (Objective("latency", "MIN"),)
+        out = pareto_ids({"a": {"latency": 5.0}, "b": {"latency": 5.0},
+                          "c": {"latency": 6.0}}, objs)
+        assert set(out) == {"a", "b"}
+
+    def test_max_direction(self):
+        objs = (Objective("score", "MAX"),)
+        out = pareto_ids({"a": {"score": 9.0}, "b": {"score": 3.0}}, objs)
+        assert out == ("a",)
+
+    def test_agrees_with_sealed_gate(self):
+        from veritx_dse.optimization.pareto import pareto_with_sealed_gate
+        objs = (Objective("latency", "MIN"), Objective("area", "MIN"))
+        vals = {"a": {"latency": 1.0, "area": 9.0},
+                "b": {"latency": 9.0, "area": 1.0},
+                "c": {"latency": 5.0, "area": 5.0},
+                "d": {"latency": 9.0, "area": 9.0}}
+        checked = pareto_with_sealed_gate(vals, objs)
+        assert set(checked["front"]) == set(checked["scope"]["front"])
+        assert "d" not in checked["front"]
+
+
+# ── end-to-end grid study ────────────────────────────────────────────────
+
+class TestGridStudyEndToEnd:
+    def _study(self, **kw):
+        base = _base()
+        defn = _defn(**kw)
+        result = Optimizer().optimize(
+            base, defn, FakeDeterministicEvaluator(seed=7))
+        return base, defn, result
+
+    def test_grid_yields_table_pareto_selection(self):
+        base, defn, result = self._study()
+        assert len(result.records) == 4
+        by = {r.candidate_id: r for r in result.records}
+        # Constraint latency<=600 splits the grid: wide link feasible.
+        feasible = sorted(r.candidate_id for r in result.records
+                          if all(v is True for v in r.constraint_verdicts.values()))
+        assert len(feasible) == 2
+        assert set(result.pareto_ids) <= set(feasible)
+        # (link_width 128, concentration 1) dominates (128, 2) on both
+        # objectives, so the feasible frontier is a singleton.
+        assert len(result.pareto_ids) == 1
+        winner = by[result.pareto_ids[0]]
+        assert winner.guided_patch == {"concentration": 1,
+                                        "link_width": 128}
+        assert result.selected_candidate_id == result.pareto_ids[0]
+        assert result.selection_rationale
+        # Every record binds evaluation identity + locked consequences.
+        for r in result.records:
+            assert r.design_hash and len(r.design_hash) == 64
+            assert r.locked_consequences["routing_classes"] == ["DOR_XY"]
+            assert r.locked_consequences["vc_count"] == 2
+
+    def test_execution_order_never_changes_identity(self):
+        base = _base()
+        defn = _defn()
+        r1 = Optimizer().optimize(base, defn, FakeDeterministicEvaluator(seed=7))
+        r2 = Optimizer().optimize(base, defn, FakeDeterministicEvaluator(seed=7))
+        assert [r.candidate_id for r in r1.records] == \
+            [r.candidate_id for r in r2.records]
+        assert r1.result_id() == r2.result_id()
+
+    def test_study_view_validates_against_frozen_schema(self):
+        jsonschema = pytest.importorskip("jsonschema")
+        _, _, result = self._study()
+        view = result.to_study_view()
+        schema = json.loads(
+            (DSE.parent.parent.parent / "contracts" / "srota" / "v1" /
+             "optimization.study.view.schema.json").read_text())
+        jsonschema.validate(view, schema)
+        assert view["contract_version"] == 1
+        assert view["base_design_hash"].startswith("sha256:")
+        assert set(view["pareto_ids"]) == {
+            c["candidate_id"] for c in view["candidates"]
+            if c["pareto_member"]}
+        assert view["selected_candidate_id"] in set(view["pareto_ids"])
+
+    def test_no_locked_mutation(self):
+        """Patches never express LOCKED dims; every candidate's VC/route
+        is the compiler's derivation for THAT candidate request."""
+        from veritx_dse.application.fabric_compiler import FabricCompiler
+        from veritx_dse.model.compile_model import derive_vc_assignment
+        base = _base()
+        defn = _defn(domain=(
+            DomainParam("link_width", (32, 128)),
+            DomainParam("concentration", (1, 2)),
+        ))
+        result = Optimizer().optimize(
+            base, defn, FakeDeterministicEvaluator(seed=7))
+        assert len(result.records) == 4
+        for r in result.records:
+            assert not (set(r.guided_patch)
+                        & {"routing", "vc_count", "turn_restrictions",
+                           "escape_vc"})
+            comp = FabricCompiler().compile(
+                next(c.request for c in
+                     __import__("veritx_dse.optimization.search",
+                                fromlist=["search_candidates"])
+                     .search_candidates(base, defn)
+                     if c.candidate_id == r.candidate_id))
+            assert comp.status == "COMPILED"
+            assert r.locked_consequences["vc_count"] == \
+                comp.bundle.vc_assignment.vc_count
+
+    def test_unsupported_rcu_stays_visible_and_excluded(self):
+        """rcu_enabled=True is a GUIDED knob the v3 compiler refuses
+        (typed UNSUPPORTED, no RCU artifact). The refusal must stay
+        visible and never enter the Pareto set — never a silent drop."""
+        base = _base()
+        defn = OptimizationDefinition(
+            domain=(DomainParam("rcu_enabled", (False, True)),),
+            objectives=(Objective("latency", "MIN"),),
+            method="grid")
+        result = Optimizer().optimize(
+            base, defn, FakeDeterministicEvaluator(seed=7))
+        assert len(result.records) == 2
+        by_patch = {tuple(sorted(r.guided_patch.items())): r
+                      for r in result.records}
+        refused = by_patch[(("rcu_enabled", True),)]
+        assert refused.evaluation_status == "UNSUPPORTED"
+        assert refused.objective_values == {}
+        assert refused.candidate_id not in set(result.pareto_ids)
+        ok = by_patch[(("rcu_enabled", False),)]
+        assert ok.evaluation_status == "EVALUATED"
+        assert result.selected_candidate_id == ok.candidate_id
+
+    def test_infeasible_grid_selects_nothing(self):
+        _, _, result = self._study(
+            constraints=(Constraint("latency", "<=", 1.0),))
+        assert result.pareto_ids == ()
+        assert result.selected_candidate_id is None
+        assert result.selection_rationale
+
+
+# ── `veritx optimize` CLI ────────────────────────────────────────────────
+
+class TestOptimizeCli:
+    def test_registered_with_documented_flags(self):
+        from veritx_dse.cli.cli import COMMANDS, DISPATCH, build_parser
+        assert COMMANDS["optimize"]["handler"].__name__ == "cmd_optimize"
+        assert COMMANDS["optimize"]["t3_mode"] == "forward"
+        assert callable(DISPATCH["optimize"])
+        args = build_parser().parse_args(
+            ["optimize", str(FIXTURE), "--search", "grid"])
+        assert args.fixture == str(FIXTURE)
+        assert args.search == "grid"
+
+    def test_grid_run_prints_table_pareto_selection(self, tmp_path, capsys=None):
+        import argparse
+        from veritx_dse.cli.cli import cmd_optimize
+        from veritx_dse.core.logging import Ctx
+        study_out = tmp_path / "study.json"
+        ctx = Ctx(verbosity=1)
+        args = argparse.Namespace(
+            fixture=str(FIXTURE), search="grid", link_widths=None,
+            concentrations=None, latency_ceiling=None,
+            max_candidates=None, study_out=str(study_out))
+        cmd_optimize(ctx, args)
+        assert not ctx.failed
+        view = json.loads(study_out.read_text())
+        assert view["contract_version"] == 1
+        assert view["base_design_hash"].startswith("sha256:")
+        assert len(view["candidates"]) == 4
+        assert view["selected_candidate_id"] in set(view["pareto_ids"])
+        # Constraint results + Pareto membership ride every row.
+        for row in view["candidates"]:
+            assert set(row) == {"candidate_id", "guided_patch",
+                                "locked_consequences", "evaluation_ids",
+                                "objective_values", "constraint_verdicts",
+                                "pareto_member"}
+            assert row["locked_consequences"]["routing_classes"] == ["DOR_XY"]
+
+    def test_missing_fixture_fails_closed(self, tmp_path):
+        import argparse
+        from veritx_dse.cli.cli import cmd_optimize
+        from veritx_dse.core.logging import Ctx
+        ctx = Ctx(verbosity=0)
+        args = argparse.Namespace(
+            fixture=str(tmp_path / "nope.json"), search="grid",
+            link_widths=None, concentrations=None, latency_ceiling=None,
+            max_candidates=None, study_out=None)
+        cmd_optimize(ctx, args)
+        assert ctx.failed
