@@ -269,3 +269,187 @@ class TestRouteEvidenceStillRequired:
         with pytest.raises(BookSimRouteError, match="no route dump"):
             compare_route_realization(
                 bundle, config, tmp_path / "routing.dump")
+
+
+# ── P1B-Q3 live/tamper matrix (item 2) ────────────────────────────────
+# Live tests skip with "no runnable BookSim binary" when
+# find_booksim_bin(REPO) fails. Tamper tests need no binary: they prove
+# the verifier refuses forged bytes before any spawn. The pre-spawn
+# fresh-dump slot rule and tampered-materialized-input rule are P0
+# coverage and are not duplicated here.
+
+
+def _mesh_traffic():
+    """The P1A dense-64 workload bound to the compiled 9x9 DOR mesh."""
+    req = CompileRequest.from_dict(json.loads(REPO_EXAMPLE.read_text()))
+    comp = FabricCompiler().compile(req)
+    assert comp.status == "COMPILED"
+    graph = lower_compile_workload(req)
+    logical = LogicalMessageArtifactV2(graph=graph,
+                                       traffic_class="DEFAULT")
+    return comp, PhysicalTrafficArtifactV2(logical=logical,
+                                           bundle=comp.bundle)
+
+
+class TestMeshLiveEvaluation:
+    def test_valid_mesh_evaluates_with_exact_evidence(self, tmp_path):
+        from veritx_dse.backend.projection import (
+            prepare_physical_traffic_booksim, run_waved_booksim,
+        )
+        from veritx_dse.core.paths import REPO
+        from veritx_dse.simulation.booksim import find_booksim_bin
+        try:
+            binary = find_booksim_bin(REPO)
+        except FileNotFoundError:
+            pytest.skip("no runnable BookSim binary")
+        comp, pt = _mesh_traffic()
+        assert comp.status == "COMPILED"
+        assert lower_booksim_standalone(
+            comp.bundle).backend_profile == BOOKSIM_MESH_DOR_PROFILE
+        prepared, summary = prepare_physical_traffic_booksim(pt)
+        assert prepared.config.backend_profile == \
+            BOOKSIM_MESH_DOR_PROFILE
+        result = run_waved_booksim(
+            prepared, run_dir=tmp_path, repo_root=REPO, timeout=600,
+            binary=Path(binary), summary=summary)
+        evidence = result["evidence"]
+        counters = result["backend_counters"]
+        assert evidence.exit_status == 0
+        assert evidence.route_equivalence == "EXACT"
+        assert evidence.route_pairs_compared == 81 * 81
+        assert counters["delivered_packets"] == summary["num_packets"]
+        assert counters["flits_injected"] == summary["flits_total"]
+        assert counters["flits_accepted"] == summary["flits_total"]
+        assert evidence.backend_config_hash == \
+            prepared.config.backend_config_hash()
+        assert evidence.backend_input_hash == \
+            prepared.manifest.backend_input_hash()
+
+
+class TestForgedMeshProfileConfig:
+    def test_forged_routing_function_refused(self):
+        from dataclasses import replace
+        from veritx_dse.backend.booksim import (
+            assert_canonical_booksim_projection,
+        )
+        bundle = _p1a_bundle()
+        config = lower_booksim_standalone(bundle)
+        values = dict(config.normalized_parameters)
+        assert values["routing_function"] == "dim_order"
+        values["routing_function"] = "planar_adapt"
+        forged = replace(
+            config,
+            normalized_parameters=tuple(sorted(values.items())),
+            artifact_hash="")
+        with pytest.raises(BookSimLoweringError, match="noncanonical"):
+            assert_canonical_booksim_projection(bundle, forged)
+
+
+class TestTamperedRouteDump:
+    def _synthetic_dump_text(self, bundle, config, *, flip=None):
+        from veritx_dse.backend.booksim import expected_route_table
+        table = expected_route_table(bundle, config)
+        lines = ["# synthetic executed-route dump"]
+        for r, d in sorted(table):
+            nxt = table[(r, d)]
+            if flip is not None and (r, d) == flip[0]:
+                nxt = flip[1]
+            lines.append(f"src_router {r} dst_node {d} "
+                         f"next_router {nxt} port 0")
+        return table, "\n".join(lines) + "\n"
+
+    def test_pristine_synthetic_dump_compares_exact(self, tmp_path):
+        bundle = _p1a_bundle()
+        config = lower_booksim_standalone(bundle)
+        _table, text = self._synthetic_dump_text(bundle, config)
+        dump = tmp_path / "routing.dump"
+        dump.write_text(text)
+        verdict = compare_route_realization(bundle, config, dump)
+        assert verdict["status"] == "EXACT"
+        assert verdict["pairs_compared"] == 81 * 81
+
+    def test_single_flipped_hop_refuses(self, tmp_path):
+        bundle = _p1a_bundle()
+        config = lower_booksim_standalone(bundle)
+        table, _text = self._synthetic_dump_text(bundle, config)
+        victim = next(k for k in sorted(table) if table[k] != k[0])
+        flipped = (table[victim] + 1) % 81
+        assert flipped != table[victim]
+        _table, text = self._synthetic_dump_text(
+            bundle, config, flip=(victim, flipped))
+        dump = tmp_path / "routing.dump"
+        dump.write_text(text)
+        with pytest.raises(BookSimRouteError, match="diverges"):
+            compare_route_realization(bundle, config, dump)
+
+
+class TestTransplantedRouteArtifact:
+    def test_foreign_anynet_route_artifact_refuses(self):
+        """A valid route artifact from another fabric must not execute.
+
+        The transplant is the 4-router ANYNET fixture artifact
+        (make_bundle(build_chain()).router_route): compile_bundle on the
+        same chain re-derives product routing, which P1.2 locks to
+        DOR_XY on MESH — so only the fixture artifact carries the
+        foreign ANYNET_MIN_HOPS keys this refusal message pins.
+        """
+        from dataclasses import replace
+        from veritx_dse.backend.booksim import expected_route_table
+        bundle = _p1a_bundle()
+        config = lower_booksim_standalone(bundle)
+        foreign = make_bundle(build_chain()).router_route
+        assert [d.id for d in foreign.routing_classes] == \
+            ["ANYNET_MIN_HOPS"]
+        transplant = replace(bundle, router_route=foreign)
+        with pytest.raises(BookSimRouteError, match="no entry"):
+            expected_route_table(transplant, config)
+
+
+class TestForgedRenderedGrid:
+    def _materialized(self, tmp_path):
+        from veritx_dse.backend.booksim import materialize_backend
+        bundle = _p1a_bundle()
+        config = lower_booksim_standalone(bundle)
+        prepared = prepare_booksim_standalone(
+            bundle, workload_trace=b"0 0 0 1 1\n")
+        backend_dir = tmp_path / "backend"
+        materialize_backend(
+            prepared.rendered, prepared.manifest, backend_dir)
+        return bundle, config, backend_dir
+
+    def _forge_cfg(self, backend_dir, key, value):
+        cfg = backend_dir / "config.cfg"
+        lines = [f"{key} = {value};" if raw.split(" = ")[0] == key
+                 else raw
+                 for raw in cfg.read_text().splitlines()]
+        cfg.write_text("\n".join(lines) + "\n")
+
+    def test_forged_k_refuses(self, tmp_path):
+        from veritx_dse.backend.booksim import (
+            BackendMaterializationError, verify_native_mesh_projection,
+        )
+        bundle, config, backend_dir = self._materialized(tmp_path)
+        self._forge_cfg(backend_dir, "k", "8")
+        with pytest.raises(BackendMaterializationError,
+                            match="does not equal"):
+            verify_native_mesh_projection(bundle, config, backend_dir)
+
+    def test_forged_n_refuses(self, tmp_path):
+        from veritx_dse.backend.booksim import (
+            BackendMaterializationError, verify_native_mesh_projection,
+        )
+        bundle, config, backend_dir = self._materialized(tmp_path)
+        self._forge_cfg(backend_dir, "n", "3")
+        with pytest.raises(BackendMaterializationError,
+                            match="does not equal"):
+            verify_native_mesh_projection(bundle, config, backend_dir)
+
+    def test_forged_routing_function_refuses(self, tmp_path):
+        from veritx_dse.backend.booksim import (
+            BackendMaterializationError, verify_native_mesh_projection,
+        )
+        bundle, config, backend_dir = self._materialized(tmp_path)
+        self._forge_cfg(backend_dir, "routing_function", "min")
+        with pytest.raises(BackendMaterializationError,
+                            match="dim_order"):
+            verify_native_mesh_projection(bundle, config, backend_dir)
