@@ -49,10 +49,17 @@ def derive_route(*, request: Any, topology: Any) -> RouteArtifact:
     routing class is chosen here, never by user override (no such
     field exists on NocConfig — structurally inexpressible).
     """
-    from veritx_dse.model.compile_model import CompileRequest
-    if not isinstance(request, CompileRequest):
+    from veritx_dse.model.compile_model import (
+        CompileRequest, FabricIntentView,
+    )
+    # P1C phase-2: the gate accepts the fabric view too. It reads
+    # NOTHING from the request (routing is LOCKED off the topology),
+    # so the v2 flow is provably identical — the view only lets v3
+    # reach the same derivation without a fake-v2 conversion.
+    if not isinstance(request, (CompileRequest, FabricIntentView)):
         raise RouteArtifactError(
-            f"derive_route requires a CompileRequest, got "
+            f"derive_route requires a CompileRequest or "
+            f"FabricIntentView, got "
             f"{type(request).__name__}")
     family = getattr(topology, "family", None)
     if family not in _CERTIFIED_FAMILIES:

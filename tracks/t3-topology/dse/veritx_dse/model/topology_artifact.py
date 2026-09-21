@@ -408,10 +408,15 @@ def materialize_topology(inventory: NodeInventory,
     anynet arrive via TopologyIR in a later wave. GEC and fat-tree are
     refused rather than silently downgraded to mesh.
     """
-    noc = (cr_or_noc.noc_config if isinstance(cr_or_noc, CompileRequest)
+    # P1C phase-2: the gate accepts the fabric view too (it carries
+    # .noc_config like a v2 request). v2 objects flow byte-identically.
+    from veritx_dse.model.compile_model import FabricIntentView
+    noc = (cr_or_noc.noc_config
+           if isinstance(cr_or_noc, (CompileRequest, FabricIntentView))
            else cr_or_noc)
     if not isinstance(noc, NocConfig):
-        raise TopologyError("expected a CompileRequest or NocConfig")
+        raise TopologyError(
+            "expected a CompileRequest, FabricIntentView, or NocConfig")
     family = _family_of(noc)
     concentration = _concentration_of(family, noc)
     width = noc.link_width if noc.link_width is not None else _DEFAULT_LINK_WIDTH_BITS

@@ -3217,3 +3217,235 @@ def migrate_v2_to_v3(request: CompileRequest, *,
         address_map=request.address_map,
         physical=request.physical,
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# P1C phase-2 fix 2 — FabricIntentView + v3 VC policy (v3 compilable)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# The v2 compiler stack is overwhelmingly duck-typed already
+# (build_inventory reads .workload.tp/.agents; attachment reads .agents;
+# address_decode reads .address_map/.agents; resolved_fabric reads
+# .design_hash()/.workload geometry/.noc_config) — a v3 request flows
+# through all of it unchanged. Only three sites are v2-gated:
+#   1. derive_vc_assignment() reads v2 CollectiveOp.group_size — v3 gets
+#      its OWN policy below (never a fake-v2 conversion).
+#   2/3. derive_route() / materialize_topology() isinstance gates — widened
+#      to accept the view (they read .noc_config/nothing; v2 flow identical).
+# fabric_intent_view() is the ONE dispatch seam (v2 vs v3 decided here,
+# once); no if-v2/elif-v3 anywhere else.
+
+@dataclass(frozen=True)
+class FabricIntentView:
+    """Non-persisted fabric-facing view over v2/v3 design intent.
+
+    The compiler's fabric derivation consumes this where a gated type is
+    required. Fields: the shared fabric inputs (agents, dependencies,
+    noc_config, address_map, physical), the parallelism geometry as plain
+    ints, the DECLARED traffic classes the fabric must serve, and the
+    design identity string it binds. source_generation ("v2"/"v3") is
+    dispatch metadata selecting the VC policy — never persisted, never
+    hashed (the view itself has no to_dict/from_dict by design).
+    """
+    agents: tuple[Agent, ...]
+    dependencies: DependencyGraph
+    noc_config: NocConfig
+    address_map: AddressMap
+    physical: PhysicalContext
+    tp: int
+    pp: int
+    ep: int
+    dp: int
+    traffic_classes: tuple[str, ...]
+    design_hash: str
+    source_generation: str
+
+    def __post_init__(self):
+        object.__setattr__(self, "agents",
+                           _as_tuple("agents", self.agents))
+        for a in self.agents:
+            if not isinstance(a, Agent):
+                raise ValueError(
+                    f"agents must contain Agent, got {type(a).__name__}")
+        if not isinstance(self.dependencies, DependencyGraph):
+            raise ValueError("dependencies must be a DependencyGraph")
+        if not isinstance(self.noc_config, NocConfig):
+            raise ValueError("noc_config must be a NocConfig")
+        if not isinstance(self.address_map, AddressMap):
+            raise ValueError("address_map must be an AddressMap")
+        if not isinstance(self.physical, PhysicalContext):
+            raise ValueError("physical must be a PhysicalContext")
+        for field_name in ("tp", "pp", "ep", "dp"):
+            _as_int(field_name, getattr(self, field_name), minimum=1)
+        object.__setattr__(self, "traffic_classes",
+                           _as_tuple("traffic_classes", self.traffic_classes))
+        for c in self.traffic_classes:
+            _as_str("traffic_class", c, allow_empty=False)
+        if sorted(set(self.traffic_classes)) != list(self.traffic_classes):
+            raise ValueError("traffic_classes must be sorted and distinct")
+        _as_str("design_hash", self.design_hash, allow_empty=False)
+        if self.source_generation not in ("v2", "v3"):
+            raise ValueError(
+                f"source_generation must be 'v2' or 'v3', got "
+                f"{self.source_generation!r}")
+
+    @property
+    def world_size(self) -> int:
+        from .presets import parallel_world_size
+        return parallel_world_size(self.tp, self.pp, self.ep, self.dp)
+
+
+def fabric_intent_view(request: CompileRequest | CompileRequestV3
+                       ) -> FabricIntentView:
+    """THE dispatch seam: one isinstance decision for the whole compiler.
+
+    v2 traffic classes are the dependency endpoint names (v2 declares no
+    classes; the VC derivation serves exactly the dep-graph namespace —
+    same set derive_vc_assignment covers). v3 classes come from
+    derive_v3_traffic_classes (the declared intent registry). Anything
+    else refuses: the compiler never guesses a generation.
+    """
+    if isinstance(request, CompileRequestV3):
+        wl = request.workload
+        return FabricIntentView(
+            agents=request.agents,
+            dependencies=request.dependencies,
+            noc_config=request.noc_config,
+            address_map=request.address_map,
+            physical=request.physical,
+            tp=wl.tp, pp=wl.pp, ep=wl.ep, dp=wl.dp,
+            traffic_classes=derive_v3_traffic_classes(request),
+            design_hash=request.design_hash(),
+            source_generation="v3",
+        )
+    if isinstance(request, CompileRequest):
+        wl = request.workload
+        dep_classes = sorted({d.source for d in request.dependencies.dependencies}
+                             | {d.target for d in request.dependencies.dependencies})
+        return FabricIntentView(
+            agents=request.agents,
+            dependencies=request.dependencies,
+            noc_config=request.noc_config,
+            address_map=request.address_map,
+            physical=request.physical,
+            tp=wl.tp, pp=wl.pp, ep=wl.ep, dp=wl.dp,
+            traffic_classes=tuple(dep_classes),
+            design_hash=request.design_hash(),
+            source_generation="v2",
+        )
+    raise CompileRequestV3SchemaError(
+        f"fabric_intent_view takes a v2 CompileRequest or a "
+        f"CompileRequestV3, got {type(request).__name__}")
+
+
+def _routing_for_cycle_structure(has_cycles: bool, vc_count: int
+                                 ) -> tuple[str, list[str]]:
+    """LOCKED routing selection from dependency cycle structure.
+
+    Restates the sealed v2 law (derive_vc_assignment: no cycles →
+    dim_order; cycles → dor/min_adapt by count with matching turn
+    restrictions). Restated — not shared — because the v2 function body
+    is frozen; a cross-check test pins v2/v3 parity for identical
+    dependency structures, so drift fails loudly instead of silently.
+    """
+    if not has_cycles:
+        return "dim_order", ["no_negative_dimension_turns"]
+    if vc_count > 2:
+        return "min_adapt", []
+    return "dor", ["west_first", "north_last"]
+
+
+def derive_vc_assignment_v3(request: CompileRequestV3) -> VCAssignment:
+    """v3 VC policy: derive what v3 declares, nothing it doesn't.
+
+    Cycle law is shared (derive_vc_count over the same DependencyGraph
+    type; over-limit is UNSUPPORTED, never clamped). The v2
+    concurrent-collectives floor is DELIBERATELY absent: v2 assumes
+    declared collectives are potentially concurrent, while v3 intents
+    lower to an ordered sequential chain — copying the floor would
+    over-provision VCs for concurrency v3 semantics never claim.
+    Every DECLARED traffic class appears in per_class_vc even when
+    plainly VC0 (fabric must serve what intent declares); dependency
+    endpoint names ride along at VC0; cycle victims separate per the
+    shared least-cost law.
+    """
+    if not isinstance(request, CompileRequestV3):
+        raise CompileRequestV3SchemaError(
+            f"derive_vc_assignment_v3 takes a CompileRequestV3, got "
+            f"{type(request).__name__} — never a converted v2 stand-in")
+    graph = request.dependencies
+    cycles = graph.find_cycles()
+    vc_count = derive_vc_count(graph)
+    if vc_count > PLANE_C_MAX_VC:
+        from .vc_assignment import VCAssignmentError
+        raise VCAssignmentError(
+            f"required {vc_count} VCs exceeds fabric maximum "
+            f"{PLANE_C_MAX_VC} — UNSUPPORTED")
+    routing, turn_restrictions = _routing_for_cycle_structure(
+        bool(cycles), vc_count)
+    per_class_vc: dict[str, int] = {}
+    for cls in sorted({d.source for d in graph.dependencies}
+                      | {d.target for d in graph.dependencies}
+                      | set(derive_v3_traffic_classes(request))):
+        per_class_vc[cls] = 0
+    if cycles:
+        adj = graph._adjacency()
+        for i, cycle in enumerate(cycles):
+            victim = min(cycle[:-1],
+                         key=lambda n: len(adj.get(n, [])),
+                         default=cycle[0])
+            per_class_vc[victim] = i + 1
+    return VCAssignment(
+        vc_count=vc_count,
+        per_class_vc=per_class_vc,
+        routing_function=routing,
+        turn_restrictions=list(turn_restrictions),
+    )
+
+
+def derive_vc_assignment_artifact_v3(
+        request: CompileRequestV3,
+        resolved_route,
+):
+    """Bind the v3 VC policy to the resolved route (mirrors the v2 binder).
+
+    Same binding law as derive_vc_assignment_artifact: every VC names a
+    routing class of the resolved route, and every route class is served
+    by at least one VC (an unserved class would be unroutable hardware).
+    The derivation string is provenance naming v3 inputs (declared
+    classes, victims, no concurrent-context floor).
+    """
+    from .vc_assignment import VCAssignmentError, make_vc_assignment_artifact
+    if not isinstance(request, CompileRequestV3):
+        raise CompileRequestV3SchemaError(
+            "derive_vc_assignment_artifact_v3 takes a CompileRequestV3")
+    va = derive_vc_assignment_v3(request)
+    classes = list(resolved_route.routing_classes)
+    if not classes:
+        raise VCAssignmentError(
+            "resolved route defines no routing classes — VC derivation "
+            "has nothing to bind against")
+    vc_routing = tuple((vc, classes[vc % len(classes)])
+                       for vc in range(va.vc_count))
+    missing = [c for c in classes
+               if c not in {rc for _, rc in vc_routing}]
+    if missing:
+        raise VCAssignmentError(
+            f"VC derivation serves no VC to routing classes {missing} "
+            f"(route defines {classes}, vc_count={va.vc_count}) — "
+            f"refusing a structure that leaves route classes unroutable")
+    separated = sorted(
+        cls for cls, vc in va.per_class_vc.items() if vc != 0
+    )
+    derivation = (
+        f"v3 route_classes={classes}; vc_count={va.vc_count}; "
+        f"declared_classes={list(derive_v3_traffic_classes(request))}; "
+        f"cycle_separated={separated}; no_concurrent_collective_floor"
+    )
+    return make_vc_assignment_artifact(
+        resolved_route=resolved_route,
+        vc_count=va.vc_count,
+        traffic_class_to_vcs={cls: [vc] for cls, vc in va.per_class_vc.items()},
+        vc_to_routing_class=dict(vc_routing),
+        derivation=derivation,
+    )
