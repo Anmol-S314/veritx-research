@@ -5,19 +5,14 @@ Source: handoff lane `test_backend_mesh_dor_profile.py` (27 tests) on
 lane authorities (`backend/meshdor.py` gates, `assert_canonical_*`,
 `_select_backend_path`) — same adversarial intent, lane mechanics.
 Deliberately NOT ported (documented divergences, see bottom):
-- missing-internal-link / express-link gate refusals: lane gates check
-  shape/seats/attachment/routing/latency/weights/parallelism, not exact
-  grid adjacency. Routing divergence is still caught by the executed
-  dump compare (every (router,node) pair); see KNOWN LIMITATION below.
 - trace round-trip / node-projection IDs: no lane equivalent surface.
 - serving-target refusal: qualification-target layer is P0-sealed.
 - pristine-synthetic-dump positive: covered by the live exit gate.
 
-KNOWN LIMITATION (flagged, not papered over): an express (non-grid)
-channel passes the lane gates and, if DOR never routes over it, also
-passes the dump compare — silent area/timing drift. Recommended
-follow-up: exact-adjacency gate (channels == kxk grid adjacency) in
-`_mesh_link_semantics`. Not added here: lane code is integrated-sealed.
+The lane's flagged KNOWN LIMITATION (express/missing grid edges passing
+the link gates) is CLOSED here: `_mesh_link_semantics` now requires the
+directed channel set to equal the native k x k adjacency exactly, so the
+DERIVED_EXACT topology claim is earned rather than assumed.
 """
 from __future__ import annotations
 
@@ -28,7 +23,11 @@ import pytest
 from test_fabric_artifact import build_chain  # noqa: E402
 from veritx_dse.application.compile import compile_bundle  # noqa: E402
 from veritx_dse.backend.booksim import BookSimLoweringError  # noqa: E402
-from veritx_dse.backend.contracts import BackendConfigArtifact  # noqa: E402
+from veritx_dse.backend.contracts import (  # noqa: E402
+    BackendConfigArtifact,
+    RepresentationStatus,
+    SemanticDimension,
+)
 from veritx_dse.backend.meshdor import (  # noqa: E402
     _mesh_attachment,
     _mesh_link_semantics,
@@ -43,6 +42,7 @@ from veritx_dse.core.route_artifact import (  # noqa: E402
 )
 from veritx_dse.model.compile_model import TopologyFamily  # noqa: E402
 from veritx_dse.model.topology_artifact import (  # noqa: E402
+    DirectedChannel,
     MaterializedFamily,
 )
 
@@ -79,6 +79,64 @@ class TestExactGridPositive:
         _mesh_attachment(bundle)
         assert _mesh_routing_class(bundle) == DOR_XY
         _mesh_link_semantics(bundle)
+
+
+def _link_channels(a: int, b: int, template: DirectedChannel,
+                   first_id: int) -> tuple[DirectedChannel, ...]:
+    """Two directed channels a<->b shaped like a native link."""
+    return tuple(
+        DirectedChannel(
+            channel_id=first_id + i, src_router=src, src_port=0,
+            dst_router=dst, dst_port=0,
+            width_bits=template.width_bits,
+            latency_cycles=template.latency_cycles,
+            route_weight=template.route_weight)
+        for i, (src, dst) in enumerate(((a, b), (b, a))))
+
+
+class TestExactAdjacencyGate:
+    """RT-1: the channel set must BE the native k x k mesh adjacency.
+
+    The executed DOR grid is derived from k alone, so any express or
+    missing edge would otherwise be certified DERIVED_EXACT without
+    ever being executed. These are direct `_mesh_link_semantics`
+    adversarial calls plus the earned-claim check through the real
+    lowering.
+    """
+
+    def test_express_diagonal_edges_refused_naming_extra_pair(self):
+        bundle = _bundle_2x2()
+        template = bundle.topology.channels[0]
+        # Routers 0 and 3 are diagonal neighbours in a 2x2 mesh: not
+        # adjacent, but latency/weight/parallelism all look native.
+        express = _link_channels(0, 3, template, first_id=10_000)
+        double = _topo_double(
+            channels=bundle.topology.channels + express)
+        with pytest.raises(BookSimLoweringError) as excinfo:
+            _mesh_link_semantics(double)
+        message = str(excinfo.value)
+        assert "(0, 3)" in message and "(3, 0)" in message
+        assert "extra" in message
+
+    def test_missing_internal_edge_refused_naming_pair(self):
+        bundle = _bundle_2x2()
+        pruned = tuple(
+            c for c in bundle.topology.channels
+            if (c.src_router, c.dst_router) != (0, 1))
+        double = _topo_double(channels=pruned)
+        with pytest.raises(BookSimLoweringError) as excinfo:
+            _mesh_link_semantics(double)
+        message = str(excinfo.value)
+        assert "(0, 1)" in message
+        assert "missing" in message
+
+    def test_real_2x2_lowering_earns_derived_exact(self):
+        cfg = lower_meshdor_standalone(_bundle_2x2())
+        binding = next(
+            b for b in cfg.semantic_bindings
+            if b.dimension is SemanticDimension.TOPOLOGY_GRAPH)
+        assert binding.representation_status is \
+            RepresentationStatus.DERIVED_EXACT
 
 
 class TestNativeRenderKeys:

@@ -118,3 +118,37 @@ def test_invalid_compilation_stops_before_lowering():
     assert prod.status == prod.compilation.status
     assert prod.lowered is None
     assert prod.outcome is None
+
+
+def test_lowering_refusal_is_typed_not_raised():
+    """RT-9: a request that COMPILES but is outside the lowering domain
+    returns ProductEvaluation(UNSUPPORTED) instead of raising."""
+    pp = CollectiveIntent(kind=CollectiveKind.ALLREDUCE,
+                          dimension=CollectiveDimension.PP,
+                          payload_bytes=2048,
+                          traffic_class="tp_collective")
+    prod = evaluate_product(_request([pp]))
+    assert prod.compilation.status == "COMPILED"
+    assert prod.status == "UNSUPPORTED"
+    assert prod.lowered is None
+    assert prod.outcome is None
+    assert prod.requirement_report is None
+    assert prod.requirements_pass is None
+    assert "UnsupportedSemantics" in (prod.reason or "")
+    assert "PP-dimension" in (prod.reason or "")
+
+
+def test_invalid_lowering_input_maps_to_invalid():
+    """RT-9: malformed lowering input (BROADCAST root outside the
+    expanded group) is INVALID, still never raised."""
+    bad_root = CollectiveIntent(kind=CollectiveKind.BROADCAST,
+                                dimension=CollectiveDimension.TP,
+                                payload_bytes=1024,
+                                traffic_class="tp_collective",
+                                source_rank=99)
+    prod = evaluate_product(_request([bad_root]))
+    assert prod.compilation.status == "COMPILED"
+    assert prod.status == "INVALID"
+    assert prod.lowered is None
+    assert prod.outcome is None
+    assert "InvalidInput" in (prod.reason or "")

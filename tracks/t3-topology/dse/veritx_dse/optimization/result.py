@@ -6,7 +6,14 @@ membership, selection rationale. Execution order never changes
 candidate identity (asserted by re-derivation).
 
 Emits OptimizationStudyView per
-contracts/srota/v1/optimization.study.view.schema.json (contract_version 1).
+contracts/srota/v1/optimization.study.view.v2.schema.json
+(contract_version 2 by default; contract_version=1 keeps the frozen
+boolean-only v1 shape for pinned callers).
+
+Candidates whose evaluation evidences none of a declared objective's
+metric are ineligible: they stay visible with a typed UNMEASURABLE
+requirement_details entry, out of feasible_values and out of the Pareto
+frontier (never a pareto.py KeyError).
 
 Provenance: result-identity and re-derivation discipline REPLAY
 synthesis/compiler.py (request/budget/scope accounting, Pareto only over
@@ -24,6 +31,14 @@ from typing import Any
 from veritx_dse.core.artifact import content_id
 
 RESULT_DOMAIN = "veritx/optimization-result/v2"
+
+
+def _requirement_report_id(report: dict[str, Any] | None) -> str | None:
+    """Report identity (bare digest) or None when no report exists."""
+    if not report:
+        return None
+    from veritx_dse.application.requirements import report_identity
+    return report_identity(report)
 
 
 def _view_hash(bare: str) -> str:
@@ -60,6 +75,7 @@ class CandidateRecord:
     constraint_verdicts: dict[str, bool | None]
     pareto_member: bool
     performance_result_id: str | None = None
+    requirement_report_id: str | None = None
     compilation_status: str = "COMPILED"
     requirement_details: tuple = ()
     all_binding_satisfied: bool | None = None
@@ -89,6 +105,7 @@ class OptimizationResult:
             "evaluation_status": r.evaluation_status,
             "compilation_status": r.compilation_status,
             "performance_result_id": r.performance_result_id,
+            "requirement_report_id": r.requirement_report_id,
             "locked_consequences": {
                 k: (sorted(v) if isinstance(v, list) else v)
                 for k, v in sorted(r.locked_consequences.items())},
@@ -116,14 +133,37 @@ class OptimizationResult:
             "selected_candidate_id": self.selected_candidate_id,
         })
 
-    def to_study_view(self) -> dict[str, Any]:
-        """Emit the frozen OptimizationStudyView (contract v1)."""
+    def to_study_view(self, contract_version: int = 2) -> dict[str, Any]:
+        """Emit the OptimizationStudyView.
+
+        Contract v2 (default) keeps SATISFIED/VIOLATED/UNMEASURABLE
+        distinct in ``constraint_verdicts``; contract v1 (opt-in, for
+        callers pinning the frozen boolean-only shape) collapses
+        UNMEASURABLE to false.
+        """
+        if contract_version not in (1, 2):
+            raise OptimizationResultError(
+                f"unknown OptimizationStudyView contract_version "
+                f"{contract_version!r}; supported: 1, 2")
         defn = self.definition
         candidates = []
         for r in sorted(self.records, key=lambda r: r.candidate_id):
             evaluations: dict[str, Any] = {
                 "design_hash": _view_hash(r.design_hash)}
             evaluations["performance_result_id"] = r.performance_result_id
+            if contract_version == 2:
+                verdicts: dict[str, Any] = {
+                    k: ("UNMEASURABLE" if v is None
+                        else "SATISFIED" if v else "VIOLATED")
+                    for k, v in r.constraint_verdicts.items()}
+            else:
+                # v1 is boolean-only: UNMEASURABLE collapses to false
+                # (fail-closed means unmeasurable is never satisfied).
+                # The full OptimizationResult retains the None
+                # distinction; v2 projects it without loss.
+                verdicts = {
+                    k: (False if v is None else bool(v))
+                    for k, v in r.constraint_verdicts.items()}
             candidates.append({
                 "candidate_id": r.candidate_id,
                 "guided_patch": dict(r.guided_patch),
@@ -131,19 +171,13 @@ class OptimizationResult:
                 "evaluation_ids": evaluations,
                 "objective_values": {k: float(v)
                                      for k, v in r.objective_values.items()},
-                "constraint_verdicts": {
-                    k: (False if v is None else bool(v))
-                    for k, v in r.constraint_verdicts.items()},
+                "constraint_verdicts": verdicts,
                 "pareto_member": bool(r.pareto_member),
             })
         # ONE hash boundary (P1B rule): engine values are bare digests,
         # product views are sha256:-prefixed, converted HERE only.
-        # UNMEASURABLE verdicts (None) collapse to false here: the
-        # view's constraint_verdicts is boolean-only (frozen schema),
-        # and fail-closed means unmeasurable is never satisfied. The
-        # full OptimizationResult retains the None distinction.
         return {
-            "contract_version": 1,
+            "contract_version": contract_version,
             "base_design_hash": _view_hash(self.base_design_hash),
             "definition": {
                 "objectives": [o.metric for o in defn.objectives],
@@ -172,6 +206,16 @@ def _select(records: list[CandidateRecord], definition: Any,
         return None, "selection policy is none — no candidate selected"
     feasible_pareto = [r for r in records if r.candidate_id in set(pareto_ids)]
     if not feasible_pareto:
+        unmeasured = sorted({
+            str(d.get("metric")) for r in records
+            for d in r.requirement_details
+            if d.get("verdict") == "UNMEASURABLE"
+            and str(d.get("reason", "")).startswith("objective ")})
+        if unmeasured:
+            return None, (
+                "no feasible Pareto candidate — nothing selected "
+                f"(objectives not evidenced by evaluation: "
+                f"{', '.join(unmeasured)})")
         return None, ("no feasible Pareto candidate — nothing selected "
                       "(all candidates violated a constraint, failed to "
                       "evaluate, or were unmeasurable)")
@@ -277,6 +321,24 @@ class Optimizer:
                     verdicts["feasible"] = False
             feasible = verdicts["feasible"]
             details = _requirement_details(verdicts["verdicts"])
+            unmeasured_objectives = tuple(
+                o.metric for o in definition.objectives
+                if o.metric not in ev.objective_values)
+            if unmeasured_objectives:
+                # An objective with no evidenced value cannot be scored:
+                # the candidate is ineligible (visible, with a typed
+                # UNMEASURABLE reason) and never reaches feasible_values
+                # -- so pareto.py never indexes a missing metric.
+                details = details + tuple({
+                    "metric": metric,
+                    "operator": None,
+                    "required": None,
+                    "measured": None,
+                    "verdict": "UNMEASURABLE",
+                    "reason": f"objective {metric} not evidenced by "
+                              "evaluation",
+                } for metric in unmeasured_objectives)
+                feasible = False
             binding = feasible if isinstance(feasible, bool) else None
             pareto_member = False  # assigned after the frontier computes
             record = CandidateRecord(
@@ -292,6 +354,8 @@ class Optimizer:
                     for k, v in verdicts["verdicts"].items()},
                 pareto_member=pareto_member,
                 performance_result_id=ev.performance_result_id,
+                requirement_report_id=_requirement_report_id(
+                    ev.requirement_report),
                 compilation_status=getattr(
                     ev, "compilation_status", "COMPILED"),
                 requirement_details=details,
@@ -311,6 +375,7 @@ class Optimizer:
             constraint_verdicts=r.constraint_verdicts,
             pareto_member=(r.candidate_id in front_set),
             performance_result_id=r.performance_result_id,
+            requirement_report_id=r.requirement_report_id,
             compilation_status=r.compilation_status,
             requirement_details=r.requirement_details,
             all_binding_satisfied=r.all_binding_satisfied,

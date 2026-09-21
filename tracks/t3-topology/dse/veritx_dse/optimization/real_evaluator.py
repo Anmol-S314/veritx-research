@@ -12,11 +12,12 @@ The production route (fake stays unit-only):
 
 Feasibility law (no optimizer changes needed — enforced by status):
 EVALUATED here means compiled AND backend-evaluated AND all binding
-requirements SATISFIED. Anything else maps to COMPILE_FAILED/UNSUPPORTED
-with the true cause in `error` and whatever provenance exists still
-bound (locked consequences, performance_result_id) — visible, auditable,
-never Pareto-eligible. Binding-failed evaluations are NOT relabeled
-successes; the error names the failing entries.
+requirements SATISFIED. Anything else maps to COMPILE_FAILED/
+UNSUPPORTED/INVALID with the true cause in `error` and whatever
+provenance exists still bound (locked consequences,
+performance_result_id) — visible, auditable, never Pareto-eligible.
+Binding-failed evaluations are NOT relabeled successes; the error names
+the failing entries.
 
 Objectives are evidenced measurements only: network completion cycles
 (+ wall-time when a valid clock was declared) plus backend-reported
@@ -40,7 +41,12 @@ from veritx_dse.application.requirements import (
     RequirementEvaluator,
     report_passes,
 )
-from veritx_dse.core.errors import MappingInvalid, UnsupportedSemantics
+from veritx_dse.core.errors import (
+    InvalidInput,
+    MappingInvalid,
+    UnsupportedSchedule,
+    UnsupportedSemantics,
+)
 from veritx_dse.model.compile_model import CompileRequestV3
 from veritx_dse.optimization.evaluators import (
     CandidateEvaluation,
@@ -57,13 +63,15 @@ def _refuse(candidate_id: str, design_hash: str, status: str,
             compilation_status: str, error: str,
             locked: dict[str, Any] | None = None,
             performance_result_id: str | None = None,
+            requirement_report: dict[str, Any] | None = None,
             ) -> CandidateEvaluation:
     return CandidateEvaluation(
         candidate_id=candidate_id, design_hash=design_hash,
         status=status, objective_values={},
         locked_consequences=dict(locked or {}),
         compilation_status=compilation_status, error=error,
-        performance_result_id=performance_result_id)
+        performance_result_id=performance_result_id,
+        requirement_report=requirement_report)
 
 
 def _real_objectives(outcome: Any) -> dict[str, float]:
@@ -127,9 +135,12 @@ class RealCandidateEvaluator:
             lowered = lower_compile_workload(request)
             assert_traffic_classes_bound(
                 lowered, compilation.bundle.vc_assignment)
-        except (UnsupportedSemantics, MappingInvalid) as exc:
+        except (InvalidInput, UnsupportedSemantics, UnsupportedSchedule,
+                MappingInvalid) as exc:
             return _refuse(
-                candidate.candidate_id, expected_hash, "UNSUPPORTED",
+                candidate.candidate_id, expected_hash,
+                "INVALID" if isinstance(exc, InvalidInput)
+                else "UNSUPPORTED",
                 "COMPILED", f"{type(exc).__name__}: {exc}", locked)
         unified = lowered.unified_traffic_class
         if unified is None:
@@ -172,14 +183,15 @@ class RealCandidateEvaluator:
                     f"{e.get('traffic_class')}/"
                     f"{e.get('qos_class')}={e.get('verdict')}]"
                     for e in bad) or "unsatisfied",
-                locked, outcome.performance_result_id)
+                locked, outcome.performance_result_id, report)
         return CandidateEvaluation(
             candidate_id=candidate.candidate_id,
             design_hash=expected_hash, status="EVALUATED",
             objective_values=_real_objectives(outcome),
             locked_consequences=locked, compilation_status="COMPILED",
             error=None,
-            performance_result_id=outcome.performance_result_id)
+            performance_result_id=outcome.performance_result_id,
+            requirement_report=report)
 
 
 __all__ = ["RealCandidateEvaluator"]

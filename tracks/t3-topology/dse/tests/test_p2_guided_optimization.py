@@ -42,6 +42,7 @@ from veritx_dse.optimization.definition import (  # noqa: E402
     OptimizationDefinitionError,
 )
 from veritx_dse.optimization.evaluators import (  # noqa: E402
+    CandidateEvaluation,
     FakeDeterministicEvaluator,
 )
 from veritx_dse.optimization.pareto import (  # noqa: E402
@@ -49,6 +50,7 @@ from veritx_dse.optimization.pareto import (  # noqa: E402
     pareto_ids,
 )
 from veritx_dse.optimization.result import (  # noqa: E402
+    OptimizationResultError,
     Optimizer,
 )
 from veritx_dse.optimization.search import (  # noqa: E402
@@ -396,7 +398,7 @@ class TestGridStudyEndToEnd:
     def test_study_view_validates_against_frozen_schema(self):
         jsonschema = pytest.importorskip("jsonschema")
         _, _, result = self._study()
-        view = result.to_study_view()
+        view = result.to_study_view(contract_version=1)
         schema = json.loads(
             (DSE.parent.parent.parent / "contracts" / "srota" / "v1" /
              "optimization.study.view.schema.json").read_text())
@@ -407,6 +409,57 @@ class TestGridStudyEndToEnd:
             c["candidate_id"] for c in view["candidates"]
             if c["pareto_member"]}
         assert view["selected_candidate_id"] in set(view["pareto_ids"])
+
+    def test_study_view_v2_validates_by_default(self):
+        """RT-12: the default projection is contract v2, with typed
+        constraint verdicts; v1 stays available for pinned callers."""
+        jsonschema = pytest.importorskip("jsonschema")
+        _, _, result = self._study()
+        view = result.to_study_view()
+        assert view["contract_version"] == 2
+        schema = json.loads(
+            (DSE.parent.parent.parent / "contracts" / "srota" / "v1" /
+             "optimization.study.view.v2.schema.json").read_text())
+        jsonschema.validate(view, schema)
+        verdicts = {c["constraint_verdicts"]["latency"]
+                    for c in view["candidates"]}
+        assert verdicts <= {"SATISFIED", "VIOLATED", "UNMEASURABLE"}
+        assert "SATISFIED" in verdicts
+
+    def test_study_view_v2_preserves_unmeasurable(self):
+        """RT-12: UNMEASURABLE survives the v2 view; the v1 path still
+        validates its own schema and collapses it fail-closed."""
+        jsonschema = pytest.importorskip("jsonschema")
+        base = _base()
+        defn = OptimizationDefinition(
+            domain=(DomainParam("link_width", (32, 128)),),
+            objectives=(Objective("latency", "MIN"),),
+            constraints=(Constraint("energy", "<=", 1.0),),
+            method="grid")
+        result = Optimizer().optimize(
+            base, defn, FakeDeterministicEvaluator(seed=7))
+        v2 = result.to_study_view()
+        assert v2["contract_version"] == 2
+        schema2 = json.loads(
+            (DSE.parent.parent.parent / "contracts" / "srota" / "v1" /
+             "optimization.study.view.v2.schema.json").read_text())
+        jsonschema.validate(v2, schema2)
+        for cand in v2["candidates"]:
+            assert cand["constraint_verdicts"]["energy"] == \
+                "UNMEASURABLE"
+        v1 = result.to_study_view(contract_version=1)
+        assert v1["contract_version"] == 1
+        schema1 = json.loads(
+            (DSE.parent.parent.parent / "contracts" / "srota" / "v1" /
+             "optimization.study.view.schema.json").read_text())
+        jsonschema.validate(v1, schema1)
+        for cand in v1["candidates"]:
+            assert cand["constraint_verdicts"]["energy"] is False
+
+    def test_study_view_rejects_unknown_contract_version(self):
+        _, _, result = self._study()
+        with pytest.raises(OptimizationResultError):
+            result.to_study_view(contract_version=3)
 
     def test_no_locked_mutation(self):
         """Patches never express LOCKED dims; every candidate's VC/route
@@ -464,8 +517,66 @@ class TestGridStudyEndToEnd:
         assert result.selected_candidate_id is None
         assert result.selection_rationale
 
+    def test_unmeasured_objective_ineligible_not_keyerror(self):
+        """RT-10: a declared objective the evaluation does not evidence
+        makes every candidate ineligible with a typed reason — never a
+        pareto.py KeyError."""
+        base = _base()
+        defn = OptimizationDefinition(
+            domain=(DomainParam("link_width", (32, 128)),),
+            objectives=(Objective("energy", "MIN"),),
+            method="grid")
+        result = Optimizer().optimize(
+            base, defn, FakeDeterministicEvaluator(seed=7))
+        assert result.pareto_ids == ()
+        assert result.selected_candidate_id is None
+        assert "energy" in (result.selection_rationale or "")
+        for r in result.records:
+            assert r.pareto_member is False
+            entries = [d for d in r.requirement_details
+                       if dict(d)["metric"] == "energy"]
+            assert entries, r.candidate_id
+            assert dict(entries[0])["verdict"] == "UNMEASURABLE"
+            assert dict(entries[0])["reason"] == (
+                "objective energy not evidenced by evaluation")
+
 
 # ── Fix 1: result identity binds evaluation provenance ───────────────────
+
+class _FixedReportPort:
+    """Same objectives for every candidate; reports differ by verdict."""
+
+    def __init__(self, violated: bool):
+        self.violated = violated
+
+    def evaluate(self, candidate):
+        verdict = "VIOLATED" if self.violated else "SATISFIED"
+        report = {
+            "contract_version": 1,
+            "design_hash": "sha256:" + candidate.request.design_hash(),
+            "performance_result_id": "perf:fixed",
+            "entries": [{
+                "requirement_index": 0,
+                "traffic_class": "tp_collective",
+                "qos_class": "latency_critical",
+                "verdict": verdict,
+                "binding": True,
+                "required": 600.0,
+                "measured": 10.0,
+                "metric_authority": "test",
+                "performance_result_id": "perf:fixed",
+                "reason": "test",
+            }],
+        }
+        return CandidateEvaluation(
+            candidate_id=candidate.candidate_id,
+            design_hash=candidate.request.design_hash(),
+            status="EVALUATED",
+            objective_values={"latency": 10.0},
+            locked_consequences={},
+            performance_result_id="perf:fixed",
+            requirement_report=report)
+
 
 class TestResultIdBindsProvenance:
     def _study(self):
@@ -498,7 +609,8 @@ class TestResultIdBindsProvenance:
         schema = json.loads(
             (DSE.parent.parent.parent / "contracts" / "srota" / "v1" /
              "optimization.study.view.schema.json").read_text())
-        jsonschema.validate(altered.to_study_view(), schema)
+        jsonschema.validate(altered.to_study_view(contract_version=1),
+                            schema)
 
     def test_moves_with_flipped_requirement_verdict(self):
         import dataclasses
@@ -523,6 +635,24 @@ class TestResultIdBindsProvenance:
             selected_candidate_id=None,
             selection_rationale="flipped in test")
         assert altered.result_id() != result.result_id()
+
+    def test_moves_with_requirement_report_identity(self):
+        """RT-11: identical rounded objectives, different requirement
+        verdicts (different report identity) -> different result_id."""
+        base = _base()
+        defn = OptimizationDefinition(
+            domain=(DomainParam("link_width", (32, 128)),),
+            objectives=(Objective("latency", "MIN"),),
+            method="grid")
+        ok = Optimizer().optimize(base, defn, _FixedReportPort(False))
+        bad = Optimizer().optimize(base, defn, _FixedReportPort(True))
+        assert [r.objective_values for r in ok.records] == \
+            [r.objective_values for r in bad.records]
+        assert ok.result_id() != bad.result_id()
+        for record in ok.records:
+            assert record.requirement_report_id
+        assert {r.requirement_report_id for r in ok.records} != \
+            {r.requirement_report_id for r in bad.records}
 
     def test_moves_with_evaluation_status(self):
         import dataclasses
@@ -585,7 +715,8 @@ class TestOptimizeCli:
         cmd_optimize(ctx, args)
         assert not ctx.failed
         view = json.loads(study_out.read_text())
-        assert view["contract_version"] == 1
+        # RT-12: the CLI emits (and validates) contract v2 by default.
+        assert view["contract_version"] == 2
         assert view["base_design_hash"].startswith("sha256:")
         assert len(view["candidates"]) == 4
         assert view["selected_candidate_id"] in set(view["pareto_ids"])

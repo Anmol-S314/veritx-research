@@ -85,7 +85,9 @@ def test_real_grid_end_to_end(tmp_path):
         assert "area" not in record.objective_values
         assert record.locked_consequences["routing_classes"] == ["DOR_XY"]
         assert record.all_binding_satisfied is True
+        assert record.requirement_report_id is not None
     assert len(result.pareto_ids) >= 1
+    assert len({r.requirement_report_id for r in result.records}) == 2
     assert result.selected_candidate_id in result.pareto_ids
     assert len({r.design_hash for r in result.records}) == 2
     assert result.result_id()
@@ -114,3 +116,105 @@ def test_uncertified_corner_stays_visible_but_infeasible(tmp_path):
                for d in bad.requirement_details)
     good = by_patch[(("rcu_enabled", False),)]
     assert good.evaluation_status == "EVALUATED"
+
+
+def _pp_request():
+    import dataclasses
+    req = _base()
+    wl = dataclasses.replace(
+        req.workload,
+        collectives=(CollectiveIntent(
+            kind=CollectiveKind.ALLREDUCE,
+            dimension=CollectiveDimension.PP,
+            payload_bytes=2048,
+            traffic_class="tp_collective"),))
+    return dataclasses.replace(req, workload=wl)
+
+
+def _invalid_root_request():
+    import dataclasses
+    req = _base()
+    wl = dataclasses.replace(
+        req.workload,
+        collectives=(CollectiveIntent(
+            kind=CollectiveKind.BROADCAST,
+            dimension=CollectiveDimension.TP,
+            payload_bytes=1024,
+            traffic_class="tp_collective",
+            source_rank=99),))
+    return dataclasses.replace(req, workload=wl)
+
+
+def test_lowering_refusals_are_typed_not_raised(tmp_path):
+    """RT-9: the adapter's catch covers the lowerer's full declared
+    space — out-of-domain semantics are UNSUPPORTED, malformed input is
+    INVALID, and neither escapes as an exception."""
+    from types import SimpleNamespace
+    port = RealCandidateEvaluator(
+        binary="/no-such-booksim", run_root=str(tmp_path / "runs"))
+    pp = port.evaluate(SimpleNamespace(
+        candidate_id="pp-lowering-refusal", request=_pp_request()))
+    assert pp.status == "UNSUPPORTED"
+    assert pp.performance_result_id is None
+    assert "UnsupportedSemantics" in (pp.error or "")
+    assert "PP-dimension" in (pp.error or "")
+    bad = port.evaluate(SimpleNamespace(
+        candidate_id="invalid-lowering-input",
+        request=_invalid_root_request()))
+    assert bad.status == "INVALID"
+    assert bad.performance_result_id is None
+    assert "InvalidInput" in (bad.error or "")
+
+
+def test_unmeasured_objective_is_typed_ineligible_not_keyerror(tmp_path):
+    """RT-10: an objective the real evaluation does not evidence makes
+    every candidate ineligible with a typed reason — no crash, empty
+    Pareto, and the selection rationale names the absent objective."""
+    result = Optimizer().optimize(
+        _base(),
+        _defn(objectives=(Objective("area", "MIN"),)),
+        _port(tmp_path))
+    assert len(result.records) == 2
+    assert result.pareto_ids == ()
+    assert result.selected_candidate_id is None
+    rationale = result.selection_rationale or ""
+    assert "area" in rationale
+    assert "not evidenced" in rationale
+    for record in result.records:
+        assert record.pareto_member is False
+        assert record.candidate_id not in set(result.pareto_ids)
+        entries = [d for d in record.requirement_details
+                   if dict(d)["metric"] == "area"]
+        assert entries, record.candidate_id
+        assert dict(entries[0])["verdict"] == "UNMEASURABLE"
+        assert dict(entries[0])["reason"] == (
+            "objective area not evidenced by evaluation")
+    # Sanity: the same study with the evidenced objective (fresh
+    # evidence root) still yields a frontier — the ineligibility is
+    # objective-evidence-driven, not a broken study.
+    ok = Optimizer().optimize(_base(), _defn(), _port(tmp_path / "sanity"))
+    assert ok.pareto_ids
+
+
+def test_binding_failure_keeps_requirement_report(tmp_path):
+    """RT-11: a binding-failed evaluation still carries the real
+    RequirementReport (typed per-entry reason), not just a string."""
+    import dataclasses
+    from types import SimpleNamespace
+    req = dataclasses.replace(_base(), requirements=(
+        RequirementV3(qos_class=QoSClass.LATENCY_CRITICAL,
+                      traffic_class="tp_collective",
+                      latency_ceiling_cycles=1, binding=True),))
+    port = RealCandidateEvaluator(
+        binary=str(find_booksim_bin(REPO)),
+        run_root=str(tmp_path / "runs"), timeout_s=600,
+        network_clock_hz=10 ** 9)
+    out = port.evaluate(SimpleNamespace(
+        candidate_id="binding-failure", request=req))
+    assert out.status == "UNSUPPORTED"
+    assert "binding requirements not satisfied" in (out.error or "")
+    assert out.performance_result_id is not None
+    assert out.requirement_report is not None
+    entries = out.requirement_report["entries"]
+    assert entries and entries[0]["verdict"] == "VIOLATED"
+    assert entries[0]["reason"]
