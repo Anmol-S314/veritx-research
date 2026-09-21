@@ -104,3 +104,34 @@ class TestCertificate:
         with pytest.raises(Exception, match="must not present a bundle"):
             Compilation(status="INVALID", request=_mesh_chain().cr,
                         bundle=object(), certificate=None, error="x")
+
+    def test_failing_proof_is_invalid_never_compiled(self):
+        """The compiler cannot report success when the CDG proof fails:
+        a FAIL certificate means INVALID with evidence, never a bundle."""
+        import veritx_dse.verification.certificate as cert_mod
+        from veritx_dse.application.compile import compile_bundle
+        bundle = compile_bundle(_mesh_chain().cr)
+        failing = verify_compiled_fabric(bundle)
+        assert failing.overall == "PASS"  # precondition: real proof passes
+        objects = list(failing.obligations)
+        failed_deadlock = dataclasses.replace(
+            next(o for o in objects if o.obligation == "DEADLOCK_FREE"),
+            status="FAIL",
+            evidence={"failure_reason": "injected cycle", "cycle": [[0, 0]]})
+        forged = VerificationCertificate(
+            resolved_fabric_hash=failing.resolved_fabric_hash,
+            compiler_semantics_version=failing.compiler_semantics_version,
+            obligations=tuple(
+                failed_deadlock if o.obligation == "DEADLOCK_FREE" else o
+                for o in objects),
+            overall="FAIL")
+        real = cert_mod.verify_compiled_fabric
+        cert_mod.verify_compiled_fabric = lambda _b: forged
+        try:
+            comp = FabricCompiler().compile(_mesh_chain().cr)
+        finally:
+            cert_mod.verify_compiled_fabric = real
+        assert comp.status == "INVALID"
+        assert comp.bundle is None
+        assert comp.certificate is forged
+        assert "DEADLOCK_FREE" in (comp.error or "")

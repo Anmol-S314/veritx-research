@@ -1,0 +1,89 @@
+{
+  "_comment": "P1A vertical slice: dense transformer on 64 compute tiles + 8 HBM. The compiler derives topology, placement, routing, VCs, link widths and the deadlock certificate. No routing_function, vc_count, turn_restrictions or escape_vc appears below \u2014 those are LOCKED compiler outputs.",
+  "address_map": {
+    "ranges": []
+  },
+  "agents": [
+    {
+      "addr_width": 64,
+      "clock_domain": null,
+      "count": 64,
+      "data_width": 256,
+      "kind": "compute_tile",
+      "power_domain": null,
+      "protocol": "AXI"
+    },
+    {
+      "addr_width": 64,
+      "clock_domain": null,
+      "count": 8,
+      "data_width": 256,
+      "kind": "hbm_controller",
+      "power_domain": null,
+      "protocol": "AXI"
+    }
+  ],
+  "compiler_semantics_version": 2,
+  "dependencies": [
+    {
+      "kind": "blocking",
+      "source": "prefill-attn",
+      "target": "prefill-ffn"
+    }
+  ],
+  "noc_config": {
+    "arbitration": null,
+    "concentration": 1,
+    "link_width": 64,
+    "mcast_groups": null,
+    "mcast_setup_cycles": null,
+    "obfuscation_level": 0,
+    "output_formats": [
+      "json"
+    ],
+    "radix": null,
+    "rcu_enabled": null,
+    "topology_family": "mesh"
+  },
+  "physical": {
+    "clock_freq_mhz": 1000.0,
+    "data_width": 256,
+    "num_power_domains": 1,
+    "process_node_nm": 7
+  },
+  "requirements": [
+    {
+      "bandwidth_floor_gbps": null,
+      "binding": true,
+      "latency_ceiling_cycles": 100000.0,
+      "qos_class": "latency_critical"
+    },
+    {
+      "bandwidth_floor_gbps": 100.0,
+      "binding": false,
+      "latency_ceiling_cycles": null,
+      "qos_class": "bandwidth"
+    }
+  ],
+  "schema_version": 2,
+  "workload": {
+    "batch_size": 4,
+    "collectives": [
+      {
+        "bytes_per_element": 2048,
+        "group_size": 8,
+        "kind": "allreduce"
+      }
+    ],
+    "dp": 1,
+    "ep": 1,
+    "model_family": "dense_transformer",
+    "model_name": "llama-dense-8b",
+    "param_count_b": 8.0,
+    "pp": 1,
+    "precision": "fp16",
+    "sequence_length": 4096,
+    "serving_mode": "prefill_heavy",
+    "tp": 8
+  }
+}

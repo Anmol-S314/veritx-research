@@ -2875,7 +2875,101 @@ def cmd_migrate_design(ctx: Ctx, args):
                  f"{provenance['to_design_hash'][:16]}…")
     else:
         log(ctx, f"  already compiler_semantics_version "
-                 f"{COMPILER_SEMANTICS_VERSION}; nothing to migrate")
+                  f"{COMPILER_SEMANTICS_VERSION}; nothing to migrate")
+
+
+def cmd_compile_fabric(ctx: Ctx, args):
+    """P1A product slice: CompileRequest -> verified ResolvedFabric.
+
+    Parse + validate the request, compile the deterministic fabric,
+    verify it (VerificationCertificate), and persist the
+    content-addressed artifacts under build/<design-hash>/. No
+    simulation, no optimization, no RTL yet. INVALID/UNSUPPORTED
+    outcomes fail with their evidence (the certificate is still
+    written on INVALID).
+    """
+    from veritx_dse.application.fabric_compiler import FabricCompiler
+    from veritx_dse.model.compile_model import CompileRequest, validate
+
+    src = Path(_resolve_path(args.request))
+    if not src.exists():
+        fail(ctx, f"CompileRequest not found: {src}")
+        return
+    try:
+        request = CompileRequest.from_dict(json.loads(src.read_text()))
+    except Exception as exc:
+        fail(ctx, f"request does not parse as a CompileRequest: {exc}")
+        return
+    try:
+        validation = validate(request)
+    except Exception as exc:
+        fail(ctx, f"request validation failed: {exc}")
+        return
+    if getattr(validation, "errors", None):
+        fail(ctx, f"request invalid: {list(validation.errors)[:5]}")
+        return
+
+    comp = FabricCompiler().compile(request)
+    design_hash = request.design_hash()
+    out = Path(args.out) if getattr(args, "out", None) \
+        else Path("build") / design_hash
+    out.mkdir(parents=True, exist_ok=True)
+
+    def _write(name: str, doc: dict) -> None:
+        (out / name).write_text(
+            json.dumps(doc, indent=2, sort_keys=True) + "\n")
+
+    _write("compile_request.json", request.to_dict())
+    manifest: dict = {
+        "status": comp.status,
+        "design_hash": design_hash,
+        "error": comp.error,
+    }
+    if comp.status == "COMPILED":
+        bundle = comp.bundle
+        assert bundle is not None and comp.certificate is not None
+        _write("resolved_fabric.json",
+               bundle.resolved_fabric.to_dict())
+        _write("topology.json", bundle.topology.to_dict())
+        _write("mapping.json", bundle.mapping.to_dict())
+        _write("route.json", bundle.router_route.to_dict())
+        _write("vc_assignment.json", bundle.vc_assignment.to_dict())
+        vdir = out / "verification"
+        vdir.mkdir(parents=True, exist_ok=True)
+        (vdir / "certificate.json").write_text(json.dumps(
+            comp.certificate.to_dict(), indent=2, sort_keys=True) + "\n")
+        manifest.update({
+            "resolved_fabric_hash": bundle.resolved_fabric
+            .resolved_fabric_hash(),
+            "fabric_hash": bundle.fabric.fabric_hash(),
+            "topology_hash": bundle.topology.topology_hash(),
+            "mapping_hash": bundle.mapping.mapping_hash(),
+            "route_hash": bundle.router_route.artifact_hash,
+            "vc_assignment_hash": bundle.vc_assignment
+            .vc_assignment_hash(),
+            "certificate_id": comp.certificate.certificate_id(),
+            "files": ["compile_request.json", "resolved_fabric.json",
+                      "topology.json", "mapping.json", "route.json",
+                      "vc_assignment.json",
+                      "verification/certificate.json"],
+        })
+        _write("manifest.json", manifest)
+        ok(ctx, f"COMPILED {design_hash[:16]}… "
+                f"({bundle.topology.router_count} routers, "
+                f"{bundle.vc_assignment.vc_count} VC(s)) → {out}")
+        return
+    if comp.certificate is not None:
+        vdir = out / "verification"
+        vdir.mkdir(parents=True, exist_ok=True)
+        (vdir / "certificate.json").write_text(json.dumps(
+            comp.certificate.to_dict(), indent=2, sort_keys=True) + "\n")
+        manifest["certificate_id"] = comp.certificate.certificate_id()
+        manifest["failed_obligations"] = sorted(
+            o.obligation for o in comp.certificate.obligations
+            if o.status != "PASS")
+    _write("manifest.json", manifest)
+    fail(ctx, f"{comp.status}: {comp.error} (evidence → {out})")
+    return
 
 
 def cmd_compile(ctx: Ctx, args):
@@ -4025,6 +4119,13 @@ def build_parser() -> argparse.ArgumentParser:
                            help="Target compiler semantics (only the current "
                                 "version is supported)")
 
+    # ── compile (product fabric compiler, P1A slice) ───────────────
+    p_fab_compile = _top_ps["compile"]
+    p_fab_compile.add_argument("request", help="Path to CompileRequest JSON file")
+    p_fab_compile.add_argument("--out", "-o", default=None,
+                               help="Build output directory "
+                                    "(default: build/<design-hash>)")
+
     # ── init ──────────────────────────────────────────────────────
     p_init = _top_ps["init"]
     p_init.add_argument("--out", "-o", help="Output JSON path (default: runs/compile_requests/<model>.json)")
@@ -4474,6 +4575,9 @@ COMMANDS = {
     "migrate-design": {"help": "Re-emit a CompileRequest under current compiler semantics",
                 "t3_mode": "forward",
                 "sub_dest": None, "handler": cmd_migrate_design, "subcommands": None},
+    "compile": {"help": "Compile a CompileRequest into a verified fabric (P1A slice)",
+                "t3_mode": "forward",
+                "sub_dest": None, "handler": cmd_compile_fabric, "subcommands": None},
     "init": {"help": "Interactive wizard to generate a CompileRequest",
              "t3_mode": "forward",
              "sub_dest": None, "handler": cmd_init, "subcommands": None},

@@ -279,8 +279,12 @@ class TestArchitecturalBoundaries:
 class TestPublicSurfaceClosure:
     """Legacy scientific paths must not be normal product operations."""
 
+    # P1A: top-level "compile" is the PRODUCT fabric compiler
+    # (cmd_compile_fabric). The legacy intent-to-fabric pipeline lives
+    # only as legacy/compile (cmd_compile, blocked). So "compile" is
+    # absent from this list by design — see test_product_compile_is_not_legacy.
     LEGACY_TOP_LEVEL = ("run", "sweep", "compare", "pareto",
-                        "compile", "evaluate", "synthesize",
+                        "evaluate", "synthesize",
                         "certify", "baseline", "diff", "serve",
                         "runs", "results", "status", "history",
                         "report")
@@ -326,6 +330,18 @@ class TestPublicSurfaceClosure:
             for entry in commands["service"]["subcommands"].values()}
         assert api_handlers == service_handlers
         assert api_handlers <= set(service_cli.__all__)
+
+    def test_product_compile_is_not_legacy(self):
+        """P1A: top-level compile is the product fabric compiler, not
+        the legacy pipeline. Handler, mode, and legacy placement."""
+        commands = self._commands()
+        assert commands["compile"]["handler"].__name__ == \
+            "cmd_compile_fabric"
+        assert commands["compile"]["t3_mode"] == "forward"
+        assert commands["legacy"]["subcommands"]["compile"][
+            "handler"].__name__ == "cmd_compile"
+        assert commands["legacy"]["subcommands"]["compile"][
+            "t3_mode"] == "blocked"
 
     def test_trusted_observability_uses_service(self):
         """Normal run/result status flows through verified resources."""

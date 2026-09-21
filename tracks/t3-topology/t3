@@ -271,7 +271,7 @@ _T3_NATIVE="menu start-here env check analysis plot-config viz viz-open compare-
 _T3_BLOCKED="legacy/run legacy/sweep legacy/compare legacy/pareto legacy/compile legacy/baseline legacy/diff legacy/serve legacy/synthesize-bo legacy/synthesize-iterative legacy/synthesize-compile legacy/evaluate-booksim legacy/evaluate-anynet legacy/evaluate-astra legacy/topology-diff legacy/api-execute legacy/api-compare legacy/api-compile legacy/api-validate legacy/api-plan legacy/api-run legacy/api-results legacy/api-diagnose legacy/api-export legacy/api-capabilities legacy/api-workloads legacy/api-topologies legacy/certify-flow legacy/certify-rtl legacy/certify-full legacy/runs legacy/results legacy/status legacy/history legacy/report"
 
 _veritx_verbs_fallback() { # the ONE literal fallback verb list (selfcheck diffs it)
-    echo "api doctor generate init interact legacy migrate-design service topology trace where"
+    echo "api compile doctor generate init interact legacy migrate-design service topology trace where"
 }
 
 _veritx_verbs() { # -> space-separated veritx top-level verbs, live from registry
