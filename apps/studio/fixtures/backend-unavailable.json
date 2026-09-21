@@ -1,0 +1,236 @@
+{
+  "fixture_id": "backend-unavailable",
+  "title": "Compiled design, no qualified simulator backend",
+  "description": "Preconditions met but no qualified BookSim producer exists, so the outcome is BACKEND_UNAVAILABLE with a reason and no metrics.",
+  "design": {
+    "contract_version": 1,
+    "design_hash": "sha256:8ea5d20620ff662635e4540687ea34f00e3cebd7af9e75756af45fab3bcc63d7",
+    "schema_version": 2,
+    "compiler_semantics_version": 2,
+    "workload": {
+      "model_family": "dense_transformer",
+      "model_name": "LLaMA-70B",
+      "parallelism": {
+        "tp": 64,
+        "pp": 1,
+        "ep": 1,
+        "dp": 1
+      },
+      "serving_mode": "mixed"
+    },
+    "requirements": [
+      {
+        "traffic_class": null,
+        "qos_class": "latency_critical",
+        "latency_ceiling_cycles": 220,
+        "bandwidth_floor_gbps": null,
+        "binding": true
+      },
+      {
+        "traffic_class": null,
+        "qos_class": "bandwidth",
+        "latency_ceiling_cycles": null,
+        "bandwidth_floor_gbps": 100,
+        "binding": true
+      },
+      {
+        "traffic_class": null,
+        "qos_class": "best_effort",
+        "latency_ceiling_cycles": null,
+        "bandwidth_floor_gbps": null,
+        "binding": false
+      }
+    ],
+    "agents": [
+      {
+        "kind": "compute_tile",
+        "count": 64
+      },
+      {
+        "kind": "hbm_controller",
+        "count": 8
+      },
+      {
+        "kind": "nic",
+        "count": 2
+      },
+      {
+        "kind": "peripheral",
+        "count": 4
+      }
+    ],
+    "noc_guided": {
+      "topology_family": "mesh",
+      "radix": 5,
+      "concentration": 4,
+      "link_width": 128,
+      "rcu_enabled": false,
+      "arbitration": "round_robin"
+    },
+    "locked_derived": {
+      "routing": "DOR_XY",
+      "vc_count": 1,
+      "turn_restrictions": [
+        "no_negative_dimension_turns"
+      ],
+      "certificate_overall": "PASS"
+    }
+  },
+  "compilation": {
+    "contract_version": 1,
+    "status": "COMPILED",
+    "design_hash": "sha256:8ea5d20620ff662635e4540687ea34f00e3cebd7af9e75756af45fab3bcc63d7",
+    "compiler_semantics_version": 2,
+    "resolved_fabric_hash": "sha256:0451903ff9a15bd573557887a69e0eccfdbc77f086f0f39f6dca0129275a63be",
+    "certificate_id": "sha256:ab8f7897e5cdae6a41251f49083e9527103014a9c5498464e8e753ab906bd737",
+    "certificate_overall": "PASS",
+    "obligations": [
+      {
+        "obligation": "TOPOLOGY_CONNECTED",
+        "status": "PASS",
+        "method": "undirected-bfs/v1",
+        "evidence": {
+          "routers": 25,
+          "directed_channels": 80,
+          "components": 1
+        }
+      },
+      {
+        "obligation": "ATTACHMENT_COMPLETE",
+        "status": "PASS",
+        "method": "attachment.validate_against/v1",
+        "evidence": {
+          "endpoints": 78
+        }
+      },
+      {
+        "obligation": "ADDRESS_DECODE_VALID",
+        "status": "PASS",
+        "method": "address_decode.validate_against/v1",
+        "evidence": {
+          "entries": 0
+        }
+      },
+      {
+        "obligation": "ROUTE_COMPLETE",
+        "status": "PASS",
+        "method": "entry-coverage/v1",
+        "evidence": {
+          "routing_classes": [
+            "DOR_XY"
+          ],
+          "routers": 25,
+          "expected_entries": 600,
+          "entries": 600
+        }
+      },
+      {
+        "obligation": "ROUTE_LEGAL",
+        "status": "PASS",
+        "method": "route.validate_against/v1",
+        "evidence": {
+          "routing_classes": [
+            "DOR_XY"
+          ]
+        }
+      },
+      {
+        "obligation": "VC_ASSIGNMENT_VALID",
+        "status": "PASS",
+        "method": "vc.validate_against/v1",
+        "evidence": {
+          "vc_count": 1,
+          "vc_to_routing_class": [
+            [
+              0,
+              "DOR_XY"
+            ]
+          ]
+        }
+      },
+      {
+        "obligation": "DEADLOCK_FREE",
+        "status": "PASS",
+        "method": "channel-vc-cdg/v1",
+        "evidence": {
+          "vc_count": 1,
+          "routing_classes": [
+            "DOR_XY"
+          ],
+          "escape_vcs": [],
+          "node_count": 80,
+          "edge_count": 124,
+          "route_realization": "v2_channel_id",
+          "cdg_route_classes": [
+            "DOR_XY"
+          ],
+          "acyclic": true,
+          "sccs_gt_1": 0
+        }
+      },
+      {
+        "obligation": "MAPPING_VALID",
+        "status": "PASS",
+        "method": "mapping-attachment-seam/v1",
+        "evidence": {
+          "placements": 64
+        }
+      },
+      {
+        "obligation": "PACKET_FORMAT_VALID",
+        "status": "PASS",
+        "method": "packet_format.validate_against/v1",
+        "evidence": {
+          "flit_width_bits": 128,
+          "vc_count": 1
+        }
+      },
+      {
+        "obligation": "FABRIC_DAG_VALID",
+        "status": "PASS",
+        "method": "bundle.revalidate/v1",
+        "evidence": {
+          "fabric_hash": "sha256:ad35d82e430e926517cf58b76454ee59c2ad95e92951f42edffc48da997a1db5",
+          "mapping_hash": "sha256:876b6bb550ce080b1a45728011d85d94e68ac1171fb92b7c06c96b3cf64e5a89",
+          "topology_hash": "sha256:a8ee7127c51f4a8a6c81ba0540a2bd388c634b5f9ffd50d8d61e96a0e5a9d2dd",
+          "attachment_hash": "sha256:3e2b466355b719f54f2d65d6dc532dea951f8b559ad9ab819a0e4d25e3f287a9",
+          "router_route_hash": "sha256:a0e107ea849ff36bae33960dbeb7b7f3945727253fc5d46099426db96c718482",
+          "resolved_route_hash": "sha256:f5647f55639ecd8328e697f3a15eb21d9385179de45d52a5b719a5bfdab5d7b9",
+          "vc_assignment_hash": "sha256:994973aa58c99c48c2e0c7ea320ffb2b481254de0b154cdb81d3e1e51ce13614",
+          "packet_format_hash": "sha256:5786878dcdcc4d85c406753792b021504972a6a292719ea2d380a1c304f1d9e7",
+          "router_behavior_hash": "sha256:102d242493754b19f082f0d07a5b96b0704719b65f85896d28c87e9c06585f70",
+          "address_decode_hash": "sha256:0d7b67965b40747093ee020333ffdf236552ad6d915dec3e3097802e1fc3cd6a"
+        }
+      }
+    ],
+    "artifact_hashes": {
+      "fabric_hash": "sha256:ad35d82e430e926517cf58b76454ee59c2ad95e92951f42edffc48da997a1db5",
+      "mapping_hash": "sha256:876b6bb550ce080b1a45728011d85d94e68ac1171fb92b7c06c96b3cf64e5a89",
+      "topology_hash": "sha256:a8ee7127c51f4a8a6c81ba0540a2bd388c634b5f9ffd50d8d61e96a0e5a9d2dd",
+      "attachment_hash": "sha256:3e2b466355b719f54f2d65d6dc532dea951f8b559ad9ab819a0e4d25e3f287a9",
+      "router_route_hash": "sha256:a0e107ea849ff36bae33960dbeb7b7f3945727253fc5d46099426db96c718482",
+      "resolved_route_hash": "sha256:f5647f55639ecd8328e697f3a15eb21d9385179de45d52a5b719a5bfdab5d7b9",
+      "vc_assignment_hash": "sha256:994973aa58c99c48c2e0c7ea320ffb2b481254de0b154cdb81d3e1e51ce13614",
+      "packet_format_hash": "sha256:5786878dcdcc4d85c406753792b021504972a6a292719ea2d380a1c304f1d9e7",
+      "router_behavior_hash": "sha256:102d242493754b19f082f0d07a5b96b0704719b65f85896d28c87e9c06585f70",
+      "address_decode_hash": "sha256:0d7b67965b40747093ee020333ffdf236552ad6d915dec3e3097802e1fc3cd6a"
+    },
+    "error": null
+  },
+  "evaluation": {
+    "contract_version": 1,
+    "status": "BACKEND_UNAVAILABLE",
+    "design_hash": "sha256:8ea5d20620ff662635e4540687ea34f00e3cebd7af9e75756af45fab3bcc63d7",
+    "resolved_fabric_hash": "sha256:0451903ff9a15bd573557887a69e0eccfdbc77f086f0f39f6dca0129275a63be",
+    "workload_id": "sha256:95ad93c685d049b68681eaa2f78f431a781289a4c5d6e200a9f80fb8a7dc79d3",
+    "backend_producer": null,
+    "evidence": null,
+    "performance_result_id": null,
+    "network_traffic_window": null,
+    "metrics": null,
+    "fidelity_warning": null,
+    "reason": "No qualified BookSim producer on this host (qualification binds the exact binary digest + source revision). Preconditions met (COMPILED + certificate PASS); no backend work attempted, no performance fabricated."
+  },
+  "requirements": null,
+  "optimization": null
+}
