@@ -23,6 +23,7 @@ typing).
 
     exact evidence bytes -> sha256 == EvidenceRef.sha256
       -> read_verified_evidence (digest re-check + parse)
+      -> validate_evidence_document (generation-aware closed schema)
       -> EvidenceArtifact (raw evidence digest, stats digest, backend
          input digest)
       -> NetworkWindowBinding: same evidence digest, same stats digest,
@@ -55,6 +56,7 @@ from veritx_dse.backend.evidence import (
     EvidenceArtifact,
     EvidenceRef,
     read_verified_evidence,
+    validate_evidence_document,
 )
 from veritx_dse.core.errors import (
     ArtifactError,
@@ -178,7 +180,8 @@ def _open_evidence(evidence_path: Any, binding: NetworkWindowBinding
             f"exact persisted evidence bytes")
     ref = EvidenceRef(path=str(path), sha256=digest)
     try:
-        evidence_doc = read_verified_evidence(ref)
+        evidence_doc = validate_evidence_document(
+            read_verified_evidence(ref))
         artifact = EvidenceArtifact.from_verified_evidence(
             evidence_doc, ref)
     except (BackendEvidenceError, ArtifactError) as exc:

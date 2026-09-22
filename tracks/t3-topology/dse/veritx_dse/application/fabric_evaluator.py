@@ -667,14 +667,16 @@ class FabricEvaluator:
         # ── evidence authentication (evidence.py only) ─────────────
         from veritx_dse.backend.evidence import (
             BackendEvidenceError, EvidenceArtifact, read_verified_evidence,
-            write_evidence, write_execution_attempt,
+            validate_evidence_document, write_evidence,
+            write_execution_attempt,
         )
         from veritx_dse.core.artifact import ArtifactError
         try:
             ref = write_evidence(evidence_dir, cert_evidence.to_dict())
             attempt_ref = write_execution_attempt(
                 evidence_dir, cert_evidence.to_attempt_dict())
-            verified_doc = read_verified_evidence(ref)
+            verified_doc = validate_evidence_document(
+                read_verified_evidence(ref))
             artifact = EvidenceArtifact.build(
                 backend=STANDALONE_BACKEND,
                 backend_input_id=input_hash,

@@ -406,6 +406,59 @@ class ScientificBackendEvidence:
             parser_version=doc["parser_version"])
 
 
+# Fields every unversioned historical (v1) consumer needed. v1 predates
+# the schema marker, so there is no closed field set to enforce; these
+# are the minimum keys that make the document readable as certified
+# evidence at all.
+_LEGACY_V1_REQUIRED_FIELDS = ("backend_input_hash", "stats")
+
+
+def _validate_legacy_v1(doc: dict[str, Any]) -> dict[str, Any]:
+    """Acceptance rules for unversioned historical evidence (v1).
+
+    The old consumers checked only the binding keys they needed and
+    treated every other field as informational, so this preserves that
+    permissiveness: require the minimum evidence keys, accept and return
+    the historical extras unchanged. The v1 producer acceptance
+    semantics (including ``producer_tool_identity``) live in the reuse
+    binding, not here.
+    """
+    for key in _LEGACY_V1_REQUIRED_FIELDS:
+        if key not in doc:
+            raise BackendEvidenceError(
+                f"legacy v1 evidence is missing {key!r}")
+    stats_sha256_of(doc["stats"])
+    return doc
+
+
+def validate_evidence_document(doc: Any) -> dict[str, Any]:
+    """The one generation-aware evidence-schema authority.
+
+    v2 documents are validated against the CLOSED
+    ``veritx/backend-scientific-evidence/v2`` schema: exactly the
+    scientific fields, no leaked-back attempt metadata, no extras; the
+    canonical validated document is returned. Unversioned documents are
+    historical v1 and keep their legacy acceptance semantics. Any other
+    declared generation refuses — an unknown schema is never read as a
+    known one.
+
+    Every consumption path (reuse, authenticated proof, control-plane
+    verification) must pass bytes through this before using any field.
+    """
+    if not isinstance(doc, dict):
+        raise BackendEvidenceError(
+            f"evidence document must be a JSON object, got "
+            f"{type(doc).__name__}")
+    version = doc.get("schema_version")
+    if version == SCIENTIFIC_EVIDENCE_SCHEMA_VERSION:
+        return ScientificBackendEvidence.from_dict(doc).to_dict()
+    if version is None:
+        return _validate_legacy_v1(doc)
+    raise BackendEvidenceError(
+        f"unsupported evidence schema_version {version!r}; refusing to "
+        f"read an unknown generation as a known one")
+
+
 @dataclass(frozen=True)
 class ExecutionAttempt:
     """Run-varying execution facts, outside every scientific identity.
@@ -605,11 +658,13 @@ class EvidenceArtifact:
                                ) -> "EvidenceArtifact":
         """Derive the artifact from verified evidence + its EvidenceRef.
 
-        The document must already have passed ``read_verified_evidence``:
-        only then can the ref digest be trusted as the raw-bytes identity.
-        ``parser_version`` is stamped from the document when the producer
-        wrote one; historical documents predate versioning and get the
-        legacy tag, so a different reader is a different claim.
+        The document must already have passed ``read_verified_evidence``
+        AND ``validate_evidence_document``: only then can the ref digest
+        be trusted as the raw-bytes identity and the fields be read as
+        the declared generation's contract. ``parser_version`` is stamped
+        from the document when the producer wrote one; historical
+        documents predate versioning and get the legacy tag, so a
+        different reader is a different claim.
         """
         if not isinstance(evidence, dict):
             raise BackendEvidenceError(
@@ -657,6 +712,7 @@ __all__ = [
     "read_evidence",
     "read_verified_evidence",
     "stats_sha256_of",
+    "validate_evidence_document",
     "write_evidence",
     "write_execution_attempt",
 ]

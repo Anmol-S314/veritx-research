@@ -223,8 +223,14 @@ def _verify_evidence_binding_fields(
     ``verify_reusable_evidence``, which digest-verifies persisted bytes
     first and then calls this. Enforces the transport invariant (only
     authoritative supervised-process evidence reuses), producer pinning,
-    and the recorded config/input/producer identities.
+    and the recorded config/input/producer identities — generation-aware:
+    v2 verifies source revision/dirt only (platform text is attempt
+    metadata); historical v1 still verifies ``producer_tool_identity``
+    exactly as it did before evidence-v2.
     """
+    from .evidence import (
+        BackendEvidenceError, SCIENTIFIC_EVIDENCE_SCHEMA_VERSION,
+    )
     if evidence.get("execution_transport") != \
             EXECUTION_TRANSPORT_SUPERVISED_PROCESS:
         raise ProducerError(
@@ -254,8 +260,23 @@ def _verify_evidence_binding_fields(
         raise ProducerError(
             "evidence cannot be reused: it was produced by a different "
             "binary")
-    for key in ("producer_source_revision", "producer_source_dirty",
-                "producer_source_dirty_digest"):
+    version = evidence.get("schema_version")
+    if version == SCIENTIFIC_EVIDENCE_SCHEMA_VERSION:
+        producer_fields = ("producer_source_revision",
+                           "producer_source_dirty",
+                           "producer_source_dirty_digest")
+    elif version is None:
+        # Historical v1 acceptance semantics: the platform text WAS part
+        # of the reuse binding and must still be verified.
+        producer_fields = ("producer_source_revision",
+                           "producer_source_dirty",
+                           "producer_source_dirty_digest",
+                           "producer_tool_identity")
+    else:
+        raise BackendEvidenceError(
+            f"unsupported evidence schema_version {version!r}; refusing "
+            f"to reuse evidence from an unknown generation")
+    for key in producer_fields:
         if key not in evidence:
             raise ProducerError(
                 f"evidence cannot be reused: missing {key!r} (predates "
@@ -270,6 +291,9 @@ def _verify_evidence_binding_fields(
         "source_dirty": producer.source_dirty,
         "source_dirty_digest": producer.source_dirty_digest,
     }
+    if "producer_tool_identity" in producer_fields:
+        recorded["tool_identity"] = evidence["producer_tool_identity"]
+        actual["tool_identity"] = producer.tool_identity
     if recorded != actual:
         differing = sorted(k for k in recorded if recorded[k] != actual[k])
         raise ProducerError(
@@ -287,12 +311,13 @@ def verify_reusable_evidence(
     Proves, in order: the evidence transport is the authoritative
     supervised process; the producer is pinned; the persisted bytes match
     the external content identity (``EvidenceRef.sha256``); the bytes
-    parse as evidence; the recorded config, input and producer identities
-    match this attempt. Returns the verified evidence mapping. Anything
-    else refuses — callers must not assemble these checks by hand.
+    parse as evidence; the document passes generation-aware CLOSED-schema
+    validation; the recorded config, input and producer identities match
+    this attempt. Returns the verified evidence mapping. Anything else
+    refuses — callers must not assemble these checks by hand.
     """
-    from .evidence import read_verified_evidence
-    evidence = read_verified_evidence(ref)
+    from .evidence import read_verified_evidence, validate_evidence_document
+    evidence = validate_evidence_document(read_verified_evidence(ref))
     _verify_evidence_binding_fields(
         evidence, backend_config_hash=backend_config_hash,
         backend_input_hash=backend_input_hash, producer=producer)

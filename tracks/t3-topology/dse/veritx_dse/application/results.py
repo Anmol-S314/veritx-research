@@ -425,7 +425,7 @@ def load_verified_attempt(store: Any, attempt_id: str) -> dict[str, Any]:
     cryptographically authenticated success.
     """
     from veritx_dse.backend.evidence import EvidenceRef, \
-        read_verified_evidence
+        read_verified_evidence, validate_evidence_document
     record = _get(store, "attempt", attempt_id)
     check_envelope(record, "attempt")
     _require_id("attempt", attempt_id, record)
@@ -453,7 +453,8 @@ def load_verified_attempt(store: Any, attempt_id: str) -> dict[str, Any]:
     try:
         ref = EvidenceRef(path=ref_doc["path"],
                           sha256=ref_doc["sha256"])
-        evidence = read_verified_evidence(ref)
+        evidence = validate_evidence_document(
+            read_verified_evidence(ref))
     except Exception as exc:
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,
@@ -499,7 +500,9 @@ def load_verified_result(store: Any, result_id: str, *,
     requires filename == embedded == recomputed result ID, and
     re-derives all scientific fields. Only then is the record trusted.
     """
-    from veritx_dse.backend.evidence import EvidenceRef, read_verified_evidence
+    from veritx_dse.backend.evidence import (
+        EvidenceRef, read_verified_evidence, validate_evidence_document,
+    )
     result = store.get("result", result_id)
     check_envelope(result, "result")
     _require_id("result", result_id, result)
@@ -556,7 +559,8 @@ def load_verified_result(store: Any, result_id: str, *,
             f"result {result_id} carries a malformed EvidenceRef: {exc}",
             operation="verify_result", resource_id=result_id) from exc
     try:
-        evidence = read_verified_evidence(ref)
+        evidence = validate_evidence_document(
+            read_verified_evidence(ref))
     except Exception as exc:
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,

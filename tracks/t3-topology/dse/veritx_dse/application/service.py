@@ -1507,10 +1507,10 @@ class SrotaControlPlane:
         ref_doc = result.get("evidence_ref") or {}
         try:
             from veritx_dse.backend.evidence import \
-                read_verified_evidence
+                read_verified_evidence, validate_evidence_document
             ref = EvidenceRef(path=ref_doc["path"],
                               sha256=ref_doc["sha256"])
-            read_verified_evidence(ref)
+            validate_evidence_document(read_verified_evidence(ref))
             evidence_integrity: bool = True
             evidence_reason = ""
         except Exception as exc:
