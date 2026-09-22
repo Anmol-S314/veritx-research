@@ -43,7 +43,6 @@ from veritx_dse.optimization.definition import (  # noqa: E402
     OptimizationDefinition,
     OptimizationDefinitionError,
 )
-from veritx_dse.application.requirements import report_identity  # noqa: E402
 from veritx_dse.optimization.evaluators import (  # noqa: E402
     AUTHORITY_ANALYTIC_FAKE,
     AUTHORITY_CERTIFIED_BACKEND,
@@ -63,6 +62,7 @@ from veritx_dse.optimization.search import (  # noqa: E402
     raw_cardinality,
     search_candidates,
 )
+from p2_verified_support import certified_evaluation  # noqa: E402
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "optimize_mesh16.json"
 
@@ -70,6 +70,47 @@ FIXTURE = Path(__file__).resolve().parent / "fixtures" / "optimize_mesh16.json"
 def _base():
     from veritx_dse.model.compile_model import CompileRequest
     return CompileRequest.from_dict(json.loads(FIXTURE.read_text()))
+
+
+def _certified_base():
+    """v3 base for CERTIFIED ports (A3).
+
+    A certified evaluation's proof includes the exact lowered
+    WorkloadGraph, and only v3 requests lower (v2 interpretation is
+    frozen). Same MESH defaults and latency ceiling as the v2 fixture,
+    so the analytic objective values and report verdicts stay
+    comparable; the study's optimizer constraint still splits the grid.
+    """
+    from veritx_dse.model.compile_model import (
+        Agent,
+        AgentKind,
+        CollectiveDimension,
+        CollectiveIntent,
+        CollectiveKind,
+        CompileRequestV3,
+        DependencyGraph,
+        ModelFamily,
+        NocConfig,
+        QoSClass,
+        RequirementV3,
+        TopologyFamily,
+        WorkloadV3,
+    )
+    return CompileRequestV3(
+        workload=WorkloadV3(
+            model_family=ModelFamily.DENSE_TRANSFORMER, tp=4, dp=1,
+            collectives=(CollectiveIntent(
+                kind=CollectiveKind.ALLREDUCE,
+                dimension=CollectiveDimension.TP,
+                payload_bytes=2048,
+                traffic_class="tp_collective"),)),
+        requirements=(RequirementV3(
+            qos_class=QoSClass.LATENCY_CRITICAL,
+            traffic_class="tp_collective",
+            latency_ceiling_cycles=600, binding=True),),
+        agents=(Agent(kind=AgentKind.COMPUTE_TILE, count=4),),
+        dependencies=DependencyGraph([]),
+        noc_config=NocConfig(topology_family=TopologyFamily.MESH))
 
 
 def _defn(**kw):
@@ -87,16 +128,18 @@ def _defn(**kw):
 class _CertifiedEvaluator:
     """Test double declaring CERTIFIED_BACKEND authority.
 
-    Reuses the deterministic fake's real-compile + analytic mechanics,
-    but binds a contract-shaped (empty) RequirementReport and a
-    non-fake performance_result_id under the certified authority, so the
-    Pareto/selection machinery stays covered without BookSim. The
-    authority is declared explicitly here by design — production code
-    never fabricates it (see A-P0.1).
+    A3: the label is not proof, so every EVALUATED candidate carries
+    REAL proof — the exact lowered WorkloadGraph, a genuinely verified
+    performance result, and the RequirementEvaluator report re-derived
+    from exactly those objects (p2_verified_support). The analytic
+    objectives these tests exercise have no registered metric authority
+    and therefore ride on the authenticated evaluation. Use only with
+    _certified_base(): lowering is v3-only.
     """
 
-    def __init__(self, seed: int = 7):
+    def __init__(self, seed: int = 7, *, cycles: int = 100):
         self.inner = FakeDeterministicEvaluator(seed=seed)
+        self.cycles = cycles
 
     def evaluate(self, candidate):
         ev = self.inner.evaluate(candidate)
@@ -105,17 +148,10 @@ class _CertifiedEvaluator:
                 ev, evaluation_authority=AUTHORITY_CERTIFIED_BACKEND,
                 performance_result_id=None, requirement_report=None,
                 requirement_report_id=None)
-        perf = "test-certified:" + candidate.candidate_id
-        report = {
-            "contract_version": 1,
-            "design_hash": "sha256:" + candidate.request.design_hash(),
-            "performance_result_id": perf,
-            "entries": [],
-        }
-        return dataclasses.replace(
-            ev, performance_result_id=perf, requirement_report=report,
-            requirement_report_id=report_identity(report),
-            evaluation_authority=AUTHORITY_CERTIFIED_BACKEND)
+        return certified_evaluation(
+            candidate, cycles=self.cycles,
+            objective_values=ev.objective_values,
+            locked=ev.locked_consequences)
 
 
 # ── definition guards ────────────────────────────────────────────────────
@@ -425,7 +461,7 @@ class TestPareto:
 
 class TestGridStudyEndToEnd:
     def _study(self, **kw):
-        base = _base()
+        base = _certified_base()
         defn = _defn(**kw)
         result = Optimizer().optimize(
             base, defn, _CertifiedEvaluator())
@@ -453,7 +489,7 @@ class TestGridStudyEndToEnd:
         for r in result.records:
             assert r.design_hash and len(r.design_hash) == 64
             assert r.locked_consequences["routing_classes"] == ["DOR_XY"]
-            assert r.locked_consequences["vc_count"] == 2
+            assert r.locked_consequences["vc_count"] == 1
 
     def test_execution_order_never_changes_identity(self):
         base = _base()
@@ -597,7 +633,7 @@ class TestGridStudyEndToEnd:
         """rcu_enabled=True is a GUIDED knob the v3 compiler refuses
         (typed UNSUPPORTED, no RCU artifact). The refusal must stay
         visible and never enter the Pareto set — never a silent drop."""
-        base = _base()
+        base = _certified_base()
         defn = OptimizationDefinition(
             domain=(DomainParam("rcu_enabled", (False, True)),),
             objectives=(Objective("latency", "MIN"),),
@@ -651,65 +687,30 @@ class TestGridStudyEndToEnd:
 # ── Fix 1: result identity binds evaluation provenance ───────────────────
 
 class _FixedReportPort:
-    """Same objectives for every candidate; reports differ by verdict."""
+    """Same objectives for every candidate; the GENUINE report verdict
+    differs (under/over the request's 600-cycle latency ceiling)."""
 
     def __init__(self, violated: bool):
         self.violated = violated
 
     def evaluate(self, candidate):
-        verdict = "VIOLATED" if self.violated else "SATISFIED"
-        report = {
-            "contract_version": 1,
-            "design_hash": "sha256:" + candidate.request.design_hash(),
-            "performance_result_id": "perf:fixed",
-            "entries": [{
-                "requirement_index": 0,
-                "traffic_class": "tp_collective",
-                "qos_class": "latency_critical",
-                "verdict": verdict,
-                "binding": True,
-                "required": 600.0,
-                "measured": 10.0,
-                "metric_authority": "test",
-                "performance_result_id": "perf:fixed",
-                "reason": "test",
-            }],
-        }
-        return CandidateEvaluation(
-            candidate_id=candidate.candidate_id,
-            design_hash=candidate.request.design_hash(),
-            status="EVALUATED",
-            objective_values={"latency": 10.0},
-            locked_consequences={},
-            performance_result_id="perf:fixed",
-            requirement_report=report,
-            evaluation_authority=AUTHORITY_CERTIFIED_BACKEND)
+        return certified_evaluation(
+            candidate, cycles=(1000 if self.violated else 100),
+            objective_values={"latency": 10.0})
 
 
 class _ValuePort:
-    """Certified test port returning exactly the objective_values given."""
+    """Certified port with REAL proof returning exactly the
+    objective_values given. The analytic stand-in metrics these tests
+    exercise have no registered metric authority, so they ride on the
+    authenticated evaluation (never on the authority label)."""
 
     def __init__(self, values):
         self.values = values
 
     def evaluate(self, candidate):
-        perf = "test-certified:" + candidate.candidate_id
-        report = {
-            "contract_version": 1,
-            "design_hash": "sha256:" + candidate.request.design_hash(),
-            "performance_result_id": perf,
-            "entries": [],
-        }
-        return CandidateEvaluation(
-            candidate_id=candidate.candidate_id,
-            design_hash=candidate.request.design_hash(),
-            status="EVALUATED",
-            objective_values=dict(self.values),
-            locked_consequences={},
-            performance_result_id=perf,
-            requirement_report=report,
-            requirement_report_id=report_identity(report),
-            evaluation_authority=AUTHORITY_CERTIFIED_BACKEND)
+        return certified_evaluation(
+            candidate, cycles=100, objective_values=dict(self.values))
 
 
 class TestObjectiveStateCompleteness:
@@ -726,7 +727,7 @@ class TestObjectiveStateCompleteness:
         float("nan"), float("inf"), float("-inf"), True, "fast", None])
     def test_non_finite_or_non_real_objective_is_unmeasurable(self, bad):
         result = Optimizer().optimize(
-            _base(), self._defn(), _ValuePort({"latency": bad}))
+            _certified_base(), self._defn(), _ValuePort({"latency": bad}))
         assert result.pareto_ids == ()
         assert result.selected_candidate_id is None
         for r in result.records:
@@ -741,7 +742,7 @@ class TestObjectiveStateCompleteness:
 
     def test_measured_objective_gets_explicit_measured_state(self):
         result = Optimizer().optimize(
-            _base(), self._defn(),
+            _certified_base(), self._defn(),
             _ValuePort({"latency": 5.0, "area": 7.0}))
         assert result.pareto_ids
         for r in result.records:
@@ -802,7 +803,7 @@ class TestProductRequirementAuthority:
             method="grid")
 
     def test_backend_success_with_failing_binding_report_is_ineligible(self):
-        base = _base()
+        base = _certified_base()
         result = Optimizer().optimize(
             base, self._defn(), _FixedReportPort(True))
         assert result.pareto_ids == ()
@@ -820,7 +821,7 @@ class TestProductRequirementAuthority:
             assert r.requirement_report_id
 
     def test_transplanted_report_refuses_even_with_forged_identity(self):
-        base = _base()
+        base = _certified_base()
         foreign = "ab" * 32
         with pytest.raises(OptimizationResultError, match="transplanted"):
             Optimizer().optimize(
@@ -829,7 +830,7 @@ class TestProductRequirementAuthority:
     def test_report_id_is_rederived_not_trusted(self):
         """The carried id is cross-checked: a report whose identity field
         is forged is refused, never bound."""
-        base = _base()
+        base = _certified_base()
         with pytest.raises(OptimizationResultError, match="forged"):
             Optimizer().optimize(
                 base, self._defn(), _TransplantedReportPort(None))
@@ -837,7 +838,7 @@ class TestProductRequirementAuthority:
 
 class TestResultIdBindsProvenance:
     def _study(self):
-        base = _base()
+        base = _certified_base()
         defn = OptimizationDefinition(
             domain=(DomainParam("link_width", (32, 128)),
                     DomainParam("concentration", (1, 2))),
@@ -896,7 +897,7 @@ class TestResultIdBindsProvenance:
     def test_moves_with_requirement_report_identity(self):
         """RT-11: identical rounded objectives, different requirement
         verdicts (different report identity) -> different result_id."""
-        base = _base()
+        base = _certified_base()
         defn = OptimizationDefinition(
             domain=(DomainParam("link_width", (32, 128)),),
             objectives=(Objective("latency", "MIN"),),

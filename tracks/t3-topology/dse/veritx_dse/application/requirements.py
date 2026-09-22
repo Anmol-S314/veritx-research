@@ -226,9 +226,13 @@ def _binding_clock_hz(raw: Any) -> Fraction | None:
     return hz
 
 
-def _authenticated_latency_cycles(
+def authenticated_network_cycles(
         performance: dict[str, Any]) -> tuple[Fraction | None, str]:
     """The bound network window's authenticated completion cycles.
+
+    The single cycle-recovery authority (RequirementEvaluator's latency
+    adjudication and the optimization metric registry both call THIS
+    function — the rule exists once, never mirrored).
 
     The binding is the only source of AUTHENTICATED fabric cycles: it
     records (duration, network_clock_hz) as the exact image of the
@@ -263,12 +267,17 @@ def _authenticated_latency_cycles(
             "completion_time cycles)")
 
 
+#: Backward-compatible private alias (pinned callers/tests); the public
+#: name above is the one authority.
+_authenticated_latency_cycles = authenticated_network_cycles
+
+
 def _makespan_latency_seconds(performance: dict[str, Any]
                               ) -> tuple[Fraction, str]:
     """(seconds, authority) for the wall-time fallback.
 
     The bound network window is measured as AUTHENTICATED CYCLES
-    (``_authenticated_latency_cycles``); this fallback is reached only
+    (``authenticated_network_cycles``); this fallback is reached only
     when no window duration is bound. The verified makespan
     (compute+network superset) is wall time, converted by the DESIGN's
     clock at the call site — conservative: may false-violate, never
@@ -548,7 +557,7 @@ class RequirementEvaluator:
             parts: list[tuple[str, Any, Any, str, str]] = []
             if req.latency_ceiling_cycles is not None:
                 measured_cycles, cycles_authority = \
-                    _authenticated_latency_cycles(performance)
+                    authenticated_network_cycles(performance)
                 if measured_cycles is None:
                     # No bound network window: the verified makespan
                     # (compute+network wall-time superset) converted by
@@ -645,14 +654,23 @@ def report_identity(report: dict[str, Any]) -> str:
 def report_passes(report: dict[str, Any]) -> bool:
     """Consumer rule: binding + UNMEASURABLE never passes.
 
-    True iff every BINDING entry is SATISFIED. Non-binding entries are
-    advisory (a non-binding VIOLATED warns, never fails). NOT_APPLICABLE
-    binding entries... declare no bound: vacuously they constrain
-    nothing, but a binding entry that constrains nothing is a spec
-    smell — it does NOT fail the gate (fail-closed applies to evidence,
-    not to vacuous specs).
+    True iff the report carries at least one entry AND every BINDING
+    entry is SATISFIED. Non-binding entries are advisory (a non-binding
+    VIOLATED warns, never fails). NOT_APPLICABLE binding entries...
+    declare no bound: vacuously they constrain nothing, but a binding
+    entry that constrains nothing is a spec smell — it does NOT fail the
+    gate (fail-closed applies to evidence, not to vacuous specs).
+
+    An EMPTY entry set is NEVER a vacuous success: a report with no
+    entries is evidence for nothing (it cannot be distinguished from a
+    fabricated empty stand-in), so it returns False — "no entries =>
+    not satisfied", the explicit form of the typed refusal.
     """
-    for entry in report.get("entries", []):
+    entries = report.get("entries") if isinstance(report, Mapping) \
+        else None
+    if not isinstance(entries, list) or not entries:
+        return False
+    for entry in entries:
         if entry.get("binding") and entry.get("verdict") != VERDICT_SATISFIED:
             return False
     return True
@@ -667,6 +685,7 @@ __all__ = [
     "VERDICT_UNMEASURABLE",
     "VERDICT_VIOLATED",
     "VerifiedPerformanceResult",
+    "authenticated_network_cycles",
     "report_identity",
     "report_passes",
     "validate_requirement_scopes",

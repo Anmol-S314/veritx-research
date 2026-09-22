@@ -34,6 +34,8 @@ from test_p2_real_adapter import _base as _real_base
 from test_p2_real_adapter import _port as _real_port
 from test_p2_real_adapter import _pp_request
 
+from p2_verified_support import certified_evaluation
+
 from veritx_dse.application.requirements import report_identity
 from veritx_dse.optimization.constraints import (
     ConstraintError,
@@ -84,9 +86,13 @@ def _report_for(design_hash: str, *, verdict: str = "SATISFIED",
 class _StubPort:
     """EVALUATED candidate with given values and an optional report.
 
-    Declares CERTIFIED_BACKEND authority by default so tests of the
-    eligibility machinery can reach it; authority=fake/no-report
-    variants are used by the authority-refusal tests.
+    A3: this is deliberately the SELF-DECLARED certified double — it
+    labels itself ``certified-backend``, makes up a
+    ``performance_result_id`` and fabricates a locally consistent
+    RequirementReport, without carrying the verified performance result
+    that is the actual proof. It exists only so the adversarial test can
+    prove such a claim is REFUSED; use ``_VerifiedStubPort`` when a test
+    needs a genuinely certified candidate.
     """
 
     def __init__(self, values, *, report_verdict=None, authority="test",
@@ -113,6 +119,27 @@ class _StubPort:
             requirement_report_id=(report_identity(report)
                                    if report is not None else None),
             evaluation_authority=self.evaluation_authority)
+
+
+class _VerifiedStubPort:
+    """Certified port that carries REAL proof (A3).
+
+    Same observable shape as _StubPort — EVALUATED candidates with the
+    given objective values — but every candidate carries the exact
+    lowered WorkloadGraph and a genuinely verified performance result,
+    and the report is the one the Optimizer independently re-derives
+    from them. ``cycles`` chooses the report verdict against the base
+    request's latency ceiling (100 cycles -> SATISFIED; 2e9 -> VIOLATED).
+    """
+
+    def __init__(self, values, *, cycles=100):
+        self.values = values
+        self.cycles = cycles
+
+    def evaluate(self, candidate):
+        return certified_evaluation(
+            candidate, cycles=self.cycles,
+            objective_values=dict(self.values))
 
 
 class _ForeignReportPort:
@@ -161,14 +188,84 @@ def test_ap01_fake_v2_pareto_refusal_for_authority():
         assert cand["pareto_member"] is False
         assert cand["eligibility_reason"]
         assert "analytic-fake" in cand["eligibility_reason"]
-    # The same candidate mechanics under declared certified authority do
-    # reach the frontier (the refusal is authority-driven, not a broken
-    # study).
+    # The same candidate mechanics with REAL proof (carried verified
+    # performance result + re-derivable report) do reach the frontier:
+    # the refusal is proof-driven, not a broken study.
     certified = Optimizer().optimize(
-        _real_base(), _defn(), _StubPort({"latency": 10.0},
-                                         report_verdict="SATISFIED"))
+        _real_base(), _defn(), _VerifiedStubPort({"latency": 10.0}))
     assert certified.pareto_ids
     assert certified.selected_candidate_id in certified.pareto_ids
+
+
+def test_self_declared_certified_evaluator_cannot_enter_authoritative_pareto():
+    """A3 mandatory: a self-declared certified evaluator is REFUSED.
+
+    This is precisely the double the suite used to admit into Pareto:
+    status EVALUATED, evaluation_authority 'certified-backend', a
+    made-up performance_result_id, a locally consistent
+    RequirementReport and finite objective values — but no verified
+    performance result. The label is descriptive; the proof is B's
+    boundary, so the optimizer refuses before any Pareto indexing.
+    """
+    from veritx_dse.optimization.candidate import make_candidate
+
+    fake = _StubPort({"latency": 10.0}, report_verdict="SATISFIED")
+    probe = make_candidate(_real_base(), {"link_width": 64})
+    out = fake.evaluate(probe)
+    assert out.status == "EVALUATED"
+    assert out.evaluation_authority == AUTHORITY_CERTIFIED_BACKEND
+    assert out.performance_result_id == "perf:fixed"  # made up
+    assert out.requirement_report["entries"]  # locally consistent
+    assert out.objective_values == {"latency": 10.0}  # finite
+    assert out.verified_performance_result is None
+    assert out.workload is None
+    with pytest.raises(OptimizationResultError,
+                       match="verified performance result"):
+        Optimizer().optimize(_real_base(), _defn(), fake)
+    # Positive control: genuinely proven certified evaluations still
+    # reach authoritative Pareto in the same study shape.
+    genuine = Optimizer().optimize(
+        _real_base(), _defn(), _VerifiedStubPort({"latency": 10.0}))
+    assert genuine.pareto_ids
+
+
+def test_empty_requirement_report_is_never_a_vacuous_pass():
+    """A3: report_passes() refuses an empty entry set explicitly.
+
+    An empty report is evidence for nothing (it cannot be distinguished
+    from a fabricated empty stand-in), so "no entries => not satisfied"
+    — never a vacuous success."""
+    from veritx_dse.application.requirements import report_passes
+
+    assert report_passes({"entries": []}) is False
+    assert report_passes({}) is False
+    assert report_passes(_report_for("sha256:" + "ab" * 32)) is True
+
+
+def test_fabricated_report_over_genuine_verified_result_refuses():
+    """A3: carrying B's proof is necessary but not sufficient — the
+    carried report must be the one RequirementEvaluator re-derives.
+
+    A port that keeps the genuine verified result and rewrites the
+    verdict (while keeping the report internally consistent) is refused
+    by the canonical identity comparison, not by the authority label."""
+    import dataclasses
+
+    class _FabricatedVerdict(_VerifiedStubPort):
+        def evaluate(self, candidate):
+            ev = super().evaluate(candidate)
+            report = json.loads(json.dumps(ev.requirement_report))
+            for entry in report["entries"]:
+                entry["verdict"] = "VIOLATED"
+                entry["measured"] = float(entry["required"]) + 1.0
+            return dataclasses.replace(
+                ev, requirement_report=report,
+                requirement_report_id=report_identity(report))
+
+    with pytest.raises(OptimizationResultError, match="re-derivation"):
+        Optimizer().optimize(
+            _real_base(), _defn(),
+            _FabricatedVerdict({"latency": 10.0}))
 
 
 def test_1_missing_objective_unmeasurable_ineligible_no_keyerror(tmp_path):
@@ -227,11 +324,17 @@ def test_ap02_backend_unavailable_preserved_into_record(tmp_path):
 
 def test_ap02_backend_failed_preserved_into_record(tmp_path, monkeypatch):
     """A-P0.2: a backend execution failure keeps FAILED through the real
-    adapter and the Optimizer (never collapsed to UNSUPPORTED)."""
+    adapter and the Optimizer (never collapsed to UNSUPPORTED).
+
+    B-P1.4 narrowed the evaluator's execution seam to its documented
+    taxonomy, so the injected failure is a documented ``BookSimError``
+    (an arbitrary RuntimeError is a programming bug and must escape).
+    """
+    from veritx_dse.core.errors import BookSimError
     from veritx_dse.optimization.candidate import make_candidate
 
     def _boom(*args, **kwargs):
-        raise RuntimeError("synthetic backend crash")
+        raise BookSimError("synthetic backend crash")
 
     # The mesh base request routes to the certified meshdor path; patch
     # both runners so the synthetic crash is exercised regardless.
@@ -339,7 +442,7 @@ def test_ap14_status_and_reason_bound_into_result_id():
     import dataclasses
 
     base = _real_base()
-    port = _StubPort({"latency": 10.0}, report_verdict="SATISFIED")
+    port = _VerifiedStubPort({"latency": 10.0})
     result = Optimizer().optimize(base, _defn(), port)
     view = result.to_study_view()
     for cand in view["candidates"]:
@@ -368,7 +471,7 @@ def test_ap13_min_vs_max_definition_distinction():
     """A-P1.3: objective direction is explicit in v2, and MIN vs MAX
     changes the definition payload and the result identity."""
     base = _real_base()
-    port = _StubPort({"latency": 10.0}, report_verdict="SATISFIED")
+    port = _VerifiedStubPort({"latency": 10.0})
     minimize = Optimizer().optimize(
         base, _defn(), port)
     maximize = Optimizer().optimize(
@@ -391,7 +494,7 @@ def test_ap13_selection_policy_definition_distinction():
     """A-P1.3: the selection policy is explicit in v2 and changing it
     changes the definition payload."""
     base = _real_base()
-    port = _StubPort({"latency": 10.0}, report_verdict="SATISFIED")
+    port = _VerifiedStubPort({"latency": 10.0})
     first = Optimizer().optimize(base, _defn(), port)
     lexicographic = Optimizer().optimize(
         base, _defn(selection="lexicographic"), port)
@@ -406,8 +509,7 @@ def test_ap13_selection_policy_definition_distinction():
 
 def test_3_report_identity_in_candidate_record():
     result = Optimizer().optimize(
-        _real_base(), _defn(), _StubPort({"latency": 10.0},
-                                         report_verdict="SATISFIED"))
+        _real_base(), _defn(), _VerifiedStubPort({"latency": 10.0}))
     assert result.records
     for record in result.records:
         assert record.requirement_report_id
@@ -415,11 +517,10 @@ def test_3_report_identity_in_candidate_record():
         assert record.product_requirement_details
     # The bound result identity moves when the report identity moves.
     good = Optimizer().optimize(
-        _real_base(), _defn(), _StubPort({"latency": 10.0},
-                                         report_verdict="SATISFIED"))
+        _real_base(), _defn(), _VerifiedStubPort({"latency": 10.0}))
     flipped = Optimizer().optimize(
-        _real_base(), _defn(), _StubPort({"latency": 10.0},
-                                         report_verdict="VIOLATED"))
+        _real_base(), _defn(),
+        _VerifiedStubPort({"latency": 10.0}, cycles=2 * 10 ** 9))
     assert good.result_id() != flipped.result_id()
 
 
@@ -485,8 +586,7 @@ def test_6_product_requirements_and_constraints_stay_separate():
     defn = _defn(constraints=(Constraint("latency", "<=", 5.0),))
     # Product passes, study constraint fails.
     product_ok = Optimizer().optimize(
-        _real_base(), defn,
-        _StubPort({"latency": 10.0}, report_verdict="SATISFIED"))
+        _real_base(), defn, _VerifiedStubPort({"latency": 10.0}))
     for r in product_ok.records:
         assert r.product_requirements_satisfied is True
         assert r.constraints_satisfied is False
@@ -495,7 +595,7 @@ def test_6_product_requirements_and_constraints_stay_separate():
     # Product binding fails, study constraint passes.
     constraint_ok = Optimizer().optimize(
         _real_base(), _defn(),
-        _StubPort({"latency": 10.0}, report_verdict="VIOLATED"))
+        _VerifiedStubPort({"latency": 10.0}, cycles=2 * 10 ** 9))
     for r in constraint_ok.records:
         assert r.product_requirements_satisfied is False
         assert r.constraints_satisfied is True
@@ -503,7 +603,7 @@ def test_6_product_requirements_and_constraints_stay_separate():
     # The two authorities answer different questions in one record.
     both = Optimizer().optimize(
         _real_base(), _defn(constraints=(Constraint("latency", "<=", 600.0),)),
-        _StubPort({"latency": 10.0}, report_verdict="SATISFIED"))
+        _VerifiedStubPort({"latency": 10.0}))
     for r in both.records:
         assert r.product_requirements_satisfied is True
         assert r.constraints_satisfied is True

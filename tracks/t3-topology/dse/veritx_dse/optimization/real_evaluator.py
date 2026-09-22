@@ -22,15 +22,22 @@ FAILED / UNSUPPORTED. Whatever provenance exists is still bound
 never Pareto-eligible. `compilation_status` separately keeps the
 FabricCompiler verdict.
 
-Objectives are evidenced measurements only: network completion cycles
-(+ wall-time when a valid clock was declared) plus backend-reported
-numerics. There is deliberately no area/latency-analytic key: unmeasured
+Objectives are evidenced measurements only: metrics the registered
+metric authority can extract from the carried VerifiedPerformanceResult
+(network completion cycles/timestamp from the authenticated window
+binding). There is deliberately no area/latency-analytic key: unmeasured
 is absent, never faked. Widening the metric set means binding a new
-qualified producer, not adding a key here.
+qualified producer (metric_authority.py), not adding a key here.
+
+A3 proof: every EVALUATED outcome (including a requirement-violating
+one) carries the exact lowered WorkloadGraph and B's
+VerifiedPerformanceResult, so the Optimizer can independently re-derive
+the RequirementReport instead of trusting the `certified-backend`
+label. A non-EVALUATED outcome carries no measurements and therefore no
+proof.
 """
 from __future__ import annotations
 
-import math
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -63,6 +70,9 @@ from veritx_dse.optimization.evaluators import (
     EvaluationError,
     locked_consequences_of,
 )
+from veritx_dse.optimization.metric_authority import (
+    extract_authoritative_metrics,
+)
 from veritx_dse.workload.intent_lowering import (
     assert_traffic_classes_bound,
     lower_compile_workload,
@@ -75,6 +85,8 @@ def _refuse(candidate_id: str, design_hash: str, status: str,
             performance_result_id: str | None = None,
             requirement_report: dict[str, Any] | None = None,
             objective_values: dict[str, float] | None = None,
+            workload: Any = None,
+            verified_performance_result: Any = None,
             ) -> CandidateEvaluation:
     """Build a non-success outcome (or a requirement-violating EVALUATED
     outcome when measurements exist). The status is the evaluator's own
@@ -88,24 +100,17 @@ def _refuse(candidate_id: str, design_hash: str, status: str,
         requirement_report=requirement_report,
         requirement_report_id=(report_identity(requirement_report)
                                if requirement_report is not None else None),
-        evaluation_authority=AUTHORITY_CERTIFIED_BACKEND)
+        evaluation_authority=AUTHORITY_CERTIFIED_BACKEND,
+        workload=workload,
+        verified_performance_result=verified_performance_result)
 
 
-def _real_objectives(outcome: Any) -> dict[str, float]:
-    """Evidenced measurements only. No analytic stand-ins."""
-    window = outcome.network_traffic_window or {}
-    objectives: dict[str, float] = {}
-    if window.get("window_cycles") is not None:
-        objectives["completion_cycles"] = \
-            float(window["window_cycles"])
-    if window.get("wall_time_ns") is not None:
-        objectives["completion_ns"] = float(window["wall_time_ns"])
-    for key, value in (outcome.metrics or {}).items():
-        if isinstance(value, bool):
-            continue
-        if isinstance(value, (int, float)) and math.isfinite(value):
-            objectives.setdefault(str(key), float(value))
-    return objectives
+def _verified_objectives(verified: Any) -> dict[str, float]:
+    """Evidenced measurements only, from the registered metric authority
+    over the VERIFIED performance result. No analytic stand-ins and no
+    bare backend statistics: a metric with no registered producer is
+    absent, never faked."""
+    return extract_authoritative_metrics(verified)
 
 
 class RealCandidateEvaluator:
@@ -216,6 +221,7 @@ class RealCandidateEvaluator:
                 "do not exist")
         report = RequirementEvaluator.evaluate(
             request, lowered.graph, outcome.performance_result)
+        objectives = _verified_objectives(outcome.performance_result)
         if not report_passes(report):
             bad = [e for e in report.get("entries", [])
                    if e.get("binding") and
@@ -233,17 +239,21 @@ class RealCandidateEvaluator:
                     f"{e.get('qos_class')}={e.get('verdict')}]"
                     for e in bad) or "unsatisfied",
                 locked, outcome.performance_result_id, report,
-                objective_values=_real_objectives(outcome))
+                objective_values=objectives,
+                workload=lowered.graph,
+                verified_performance_result=outcome.performance_result)
         return CandidateEvaluation(
             candidate_id=candidate.candidate_id,
             design_hash=expected_hash, status="EVALUATED",
-            objective_values=_real_objectives(outcome),
+            objective_values=objectives,
             locked_consequences=locked, compilation_status="COMPILED",
             error=None,
             performance_result_id=outcome.performance_result_id,
             requirement_report=report,
             requirement_report_id=report_identity(report),
-            evaluation_authority=AUTHORITY_CERTIFIED_BACKEND)
+            evaluation_authority=AUTHORITY_CERTIFIED_BACKEND,
+            workload=lowered.graph,
+            verified_performance_result=outcome.performance_result)
 
 
 __all__ = ["RealCandidateEvaluator"]

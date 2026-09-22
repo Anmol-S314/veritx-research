@@ -45,6 +45,12 @@ class EvaluationError(ValueError):
 #: analytic/fake evaluations are development doubles and are NEVER
 #: authoritative (they carry no RequirementReport and no authenticated
 #: performance_result_id).
+#:
+#: ``evaluation_authority`` is DESCRIPTIVE, never proof: the Optimizer
+#: does not admit a candidate to authoritative Pareto because a port
+#: says "certified-backend". The proof is the carried
+#: ``VerifiedPerformanceResult`` (B's boundary) plus the independently
+#: re-derived RequirementReport — see Optimizer.optimize.
 AUTHORITY_CERTIFIED_BACKEND = "certified-backend"
 AUTHORITY_ANALYTIC_FAKE = "analytic-fake"
 EVALUATION_AUTHORITIES = (
@@ -72,6 +78,24 @@ class CandidateEvaluation:
     must declare ``AUTHORITY_CERTIFIED_BACKEND`` for evaluations that
     went through the certified backend pipeline. Omitted/None means the
     evaluation is not authoritative and can never be Pareto-eligible.
+
+    AUTHORITATIVE PROOF (A3). For an EVALUATED, certified-backend
+    evaluation the label is not enough: the evaluation must carry the
+    actual verified evidence object, not just its id.
+
+    ``workload`` is the exact lowered WorkloadGraph this evaluation
+    measured (``lower_compile_workload(request).graph``);
+    ``verified_performance_result`` is B's boundary object
+    (``VerifiedPerformanceResult``). The Optimizer independently
+    re-derives ``RequirementEvaluator.evaluate(request, workload,
+    verified_performance_result)`` and requires the canonical report
+    identity to equal the carried ``requirement_report`` — a fabricated
+    report or a made-up ``performance_result_id`` refuses before any
+    candidate can become Pareto-eligible. Registered objective metrics
+    are extracted from the verified result (metric_authority); a port
+    may not misreport one. A fake/development evaluator may still return
+    analytic CandidateEvaluations, but it cannot produce certified
+    Pareto science without carrying this proof.
     """
     candidate_id: str
     design_hash: str  # bare engine digest, never prefixed here
@@ -84,6 +108,9 @@ class CandidateEvaluation:
     requirement_report: dict[str, Any] | None = None
     requirement_report_id: str | None = None  # bare report_identity(report)
     evaluation_authority: str | None = None  # certified-backend | analytic-fake
+    workload: Any = None  # exact lowered WorkloadGraph (proof, A3)
+    # B's VerifiedPerformanceResult boundary object (proof, A3)
+    verified_performance_result: Any = None
 
 
 class CandidateEvaluationPort(Protocol):
