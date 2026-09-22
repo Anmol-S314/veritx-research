@@ -134,6 +134,14 @@ def _as_real(name: str, value: Any, minimum: float | None = None) -> float:
     return v
 
 
+def _as_enum(name: str, value: Any, cls: Any) -> Any:
+    if not isinstance(value, cls):
+        raise ValueError(
+            f"{name} must be {cls.__name__}, got {type(value).__name__} "
+            f"{value!r}")
+    return value
+
+
 def _as_bool(name: str, value: Any) -> bool:
     if type(value) is not bool:
         raise ValueError(
