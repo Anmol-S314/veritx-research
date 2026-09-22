@@ -45,6 +45,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from veritx_dse.core.artifact import content_id
+from veritx_dse.optimization.evaluators import (
+    AUTHORITY_CERTIFIED_BACKEND,
+)
 
 RESULT_DOMAIN = "veritx/optimization-result/v2"
 
@@ -171,11 +174,13 @@ class CandidateRecord:
     performance_result_id: str | None = None
     requirement_report_id: str | None = None
     product_requirements_satisfied: bool | None = None
+    evaluation_authority: str | None = None
     compilation_status: str = "COMPILED"
     product_requirement_details: tuple = ()
     constraint_details: tuple = ()
     objective_details: tuple = ()
     constraints_satisfied: bool | None = None
+    eligibility_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -205,6 +210,8 @@ class OptimizationResult:
             "requirement_report_id": r.requirement_report_id,
             "product_requirements_satisfied":
                 r.product_requirements_satisfied,
+            "evaluation_authority": r.evaluation_authority,
+            "eligibility_reason": r.eligibility_reason,
             "locked_consequences": {
                 k: (sorted(v) if isinstance(v, list) else v)
                 for k, v in sorted(r.locked_consequences.items())},
@@ -273,6 +280,8 @@ class OptimizationResult:
                                      for k, v in r.objective_values.items()},
                 "objective_availability": dict(r.objective_availability),
                 "constraint_verdicts": dict(r.constraint_verdicts),
+                "evaluation_authority": r.evaluation_authority,
+                "eligibility_reason": r.eligibility_reason,
                 "pareto_eligible": bool(r.pareto_eligible),
                 "pareto_member": bool(r.pareto_member),
             })
@@ -370,6 +379,12 @@ def _select(records: list[CandidateRecord], definition: Any,
                 "no feasible Pareto candidate — nothing selected "
                 f"(objectives not evidenced by evaluation: "
                 f"{', '.join(unmeasured)})")
+        reasons = sorted({str(r.eligibility_reason) for r in records
+                          if r.eligibility_reason})
+        if reasons:
+            return None, ("no feasible Pareto candidate — nothing "
+                          "selected (ineligible: " + "; ".join(reasons) +
+                          ")")
         return None, ("no feasible Pareto candidate — nothing selected "
                       "(all candidates violated a constraint, failed to "
                       "evaluate, or were unmeasurable)")
@@ -559,14 +574,51 @@ class Optimizer:
             all_objectives_measured = all(
                 objective_availability[o.metric] == "MEASURED"
                 for o in definition.objectives)
-            # Pareto input: backend success AND product binding
-            # requirements pass AND every objective measured+finite AND
-            # every hard constraint SATISFIED. Anything else is visible
-            # and ineligible, never a fabricated score.
-            eligible = (ev.status == "EVALUATED"
-                        and constraints_satisfied is True
-                        and product_satisfied is not False
-                        and all_objectives_measured)
+            # Pareto input (authoritative): a CERTIFIED-BACKEND evaluation
+            # succeeded AND a product RequirementReport is bound and
+            # passing AND a real (non-fake) performance result is bound
+            # AND every objective measured+finite AND every hard
+            # constraint SATISFIED. Anything else is visible and
+            # ineligible with a typed reason, never a fabricated score —
+            # analytic/fake doubles can never masquerade as authority.
+            authority = getattr(ev, "evaluation_authority", None)
+            eligibility_reasons: list[str] = []
+            if ev.status != "EVALUATED":
+                eligibility_reasons.append(f"evaluation status {ev.status}")
+            if authority != AUTHORITY_CERTIFIED_BACKEND:
+                eligibility_reasons.append(
+                    f"evaluation authority {authority!r} is not "
+                    f"{AUTHORITY_CERTIFIED_BACKEND!r} — non-certified "
+                    "(analytic/fake) evaluations are never "
+                    "optimization-eligible")
+            if report is None:
+                eligibility_reasons.append(
+                    "no product RequirementReport is bound — product "
+                    "requirements cannot be shown to pass")
+            if ev.performance_result_id is None:
+                eligibility_reasons.append(
+                    "no performance_result_id is bound")
+            elif str(ev.performance_result_id).startswith("fake:"):
+                eligibility_reasons.append(
+                    f"performance_result_id "
+                    f"{ev.performance_result_id!r} is a fake result, not "
+                    "authenticated backend evidence")
+            if report is not None and product_satisfied is not True:
+                eligibility_reasons.append(
+                    "binding product requirements are not satisfied")
+            if not all_objectives_measured:
+                missing = [o.metric for o in definition.objectives
+                           if objective_availability[o.metric]
+                           != "MEASURED"]
+                eligibility_reasons.append(
+                    f"requested objectives not measured: "
+                    f"{', '.join(missing)}")
+            if constraints_satisfied is not True:
+                eligibility_reasons.append(
+                    "hard constraints are not all SATISFIED")
+            eligible = not eligibility_reasons
+            eligibility_reason = ("; ".join(eligibility_reasons)
+                                  if eligibility_reasons else None)
             pareto_member = False  # assigned after the frontier computes
             product_details = tuple(
                 dict(e) for e in report.get("entries", [])) \
@@ -585,12 +637,14 @@ class Optimizer:
                 performance_result_id=ev.performance_result_id,
                 requirement_report_id=_requirement_report_id(report),
                 product_requirements_satisfied=product_satisfied,
+                evaluation_authority=authority,
                 compilation_status=getattr(
                     ev, "compilation_status", "COMPILED"),
                 product_requirement_details=product_details,
                 constraint_details=constraint_details,
                 objective_details=objective_details,
                 constraints_satisfied=constraints_satisfied,
+                eligibility_reason=eligibility_reason,
             )
             records.append(record)
             if eligible:
@@ -613,11 +667,13 @@ class Optimizer:
             requirement_report_id=r.requirement_report_id,
             product_requirements_satisfied=
                 r.product_requirements_satisfied,
+            evaluation_authority=r.evaluation_authority,
             compilation_status=r.compilation_status,
             product_requirement_details=r.product_requirement_details,
             constraint_details=r.constraint_details,
             objective_details=r.objective_details,
             constraints_satisfied=r.constraints_satisfied,
+            eligibility_reason=r.eligibility_reason,
         ) for r in records]
         selected, rationale = _select(records, definition, front)
         return OptimizationResult(

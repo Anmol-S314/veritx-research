@@ -46,6 +46,8 @@ from veritx_dse.optimization.definition import (
     OptimizationDefinitionError,
 )
 from veritx_dse.optimization.evaluators import (
+    AUTHORITY_ANALYTIC_FAKE,
+    AUTHORITY_CERTIFIED_BACKEND,
     CandidateEvaluation,
     FakeDeterministicEvaluator,
 )
@@ -79,12 +81,19 @@ def _report_for(design_hash: str, *, verdict: str = "SATISFIED",
 
 
 class _StubPort:
-    """EVALUATED candidate with given values and an optional report."""
+    """EVALUATED candidate with given values and an optional report.
 
-    def __init__(self, values, *, report_verdict=None, authority="test"):
+    Declares CERTIFIED_BACKEND authority by default so tests of the
+    eligibility machinery can reach it; authority=fake/no-report
+    variants are used by the authority-refusal tests.
+    """
+
+    def __init__(self, values, *, report_verdict=None, authority="test",
+                 evaluation_authority=AUTHORITY_CERTIFIED_BACKEND):
         self.values = values
         self.report_verdict = report_verdict
         self.authority = authority
+        self.evaluation_authority = evaluation_authority
 
     def evaluate(self, candidate):
         report = None
@@ -101,7 +110,8 @@ class _StubPort:
             performance_result_id="perf:fixed" if report else None,
             requirement_report=report,
             requirement_report_id=(report_identity(report)
-                                   if report is not None else None))
+                                   if report is not None else None),
+            evaluation_authority=self.evaluation_authority)
 
 
 class _ForeignReportPort:
@@ -131,6 +141,34 @@ def _defn(**kw):
 
 
 # ── 1-2: missing objective with the REAL evaluator ──────────────────────
+
+def test_0_fake_evaluation_never_pareto_or_selected_in_v2():
+    """A-P0.1: an analytic fake evaluation is visible but structurally
+    ineligible in the authoritative v2 view — no Pareto, no selection."""
+    result = Optimizer().optimize(
+        _real_base(), _defn(), FakeDeterministicEvaluator(seed=7))
+    assert result.pareto_ids == ()
+    assert result.selected_candidate_id is None
+    assert "analytic-fake" in (result.selection_rationale or "")
+    view = result.to_study_view()
+    assert view["contract_version"] == 2
+    assert view["pareto_ids"] == []
+    assert view["selected_candidate_id"] is None
+    for cand in view["candidates"]:
+        assert cand["evaluation_authority"] == AUTHORITY_ANALYTIC_FAKE
+        assert cand["pareto_eligible"] is False
+        assert cand["pareto_member"] is False
+        assert cand["eligibility_reason"]
+        assert "analytic-fake" in cand["eligibility_reason"]
+    # The same candidate mechanics under declared certified authority do
+    # reach the frontier (the refusal is authority-driven, not a broken
+    # study).
+    certified = Optimizer().optimize(
+        _real_base(), _defn(), _StubPort({"latency": 10.0},
+                                         report_verdict="SATISFIED"))
+    assert certified.pareto_ids
+    assert certified.selected_candidate_id in certified.pareto_ids
+
 
 def test_1_missing_objective_unmeasurable_ineligible_no_keyerror(tmp_path):
     result = Optimizer().optimize(

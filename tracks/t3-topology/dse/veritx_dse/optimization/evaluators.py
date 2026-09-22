@@ -40,6 +40,17 @@ class EvaluationError(ValueError):
     """Evaluator refusal (fail-closed)."""
 
 
+#: Evaluation-authority markers. An optimization result is only eligible
+#: when its evaluation was produced by the certified backend pipeline;
+#: analytic/fake evaluations are development doubles and are NEVER
+#: authoritative (they carry no RequirementReport and no authenticated
+#: performance_result_id).
+AUTHORITY_CERTIFIED_BACKEND = "certified-backend"
+AUTHORITY_ANALYTIC_FAKE = "analytic-fake"
+EVALUATION_AUTHORITIES = (
+    AUTHORITY_CERTIFIED_BACKEND, AUTHORITY_ANALYTIC_FAKE)
+
+
 @dataclass(frozen=True)
 class CandidateEvaluation:
     """One candidate's evaluation outcome through a port.
@@ -56,6 +67,11 @@ class CandidateEvaluation:
     ``report_identity`` (bare digest); the optimizer re-derives it from
     the carried report and refuses a mismatch, so a transplanted report
     can never masquerade as this candidate's provenance.
+
+    ``evaluation_authority`` is the structural fidelity marker: a port
+    must declare ``AUTHORITY_CERTIFIED_BACKEND`` for evaluations that
+    went through the certified backend pipeline. Omitted/None means the
+    evaluation is not authoritative and can never be Pareto-eligible.
     """
     candidate_id: str
     design_hash: str  # bare engine digest, never prefixed here
@@ -67,6 +83,7 @@ class CandidateEvaluation:
     performance_result_id: str | None = None
     requirement_report: dict[str, Any] | None = None
     requirement_report_id: str | None = None  # bare report_identity(report)
+    evaluation_authority: str | None = None  # certified-backend | analytic-fake
 
 
 class CandidateEvaluationPort(Protocol):
@@ -137,6 +154,10 @@ class FakeDeterministicEvaluator:
     a pure function of the request plus content-hash jitter).
     Non-COMPILED candidates yield status COMPILE_FAILED/UNSUPPORTED
     with no objective values (excluded from Pareto, never silent).
+
+    Every outcome is marked ``AUTHORITY_ANALYTIC_FAKE``: the fake has no
+    RequirementReport and no authenticated performance_result_id, so its
+    candidates are structurally ineligible in authoritative studies.
     """
 
     def __init__(self, seed: int = 0):
@@ -160,6 +181,7 @@ class FakeDeterministicEvaluator:
                 compilation_status=comp.status,
                 error=comp.error,
                 performance_result_id=None,
+                evaluation_authority=AUTHORITY_ANALYTIC_FAKE,
             )
         if comp.bundle is None:
             raise EvaluationError(
@@ -179,11 +201,13 @@ class FakeDeterministicEvaluator:
             compilation_status="COMPILED",
             error=None,
             performance_result_id="fake:" + expected_hash[:16],
+            evaluation_authority=AUTHORITY_ANALYTIC_FAKE,
         )
 
 
 __all__ = [
-    "CandidateEvaluation", "CandidateEvaluationPort", "EvaluationError",
-    "FakeDeterministicEvaluator", "fake_objectives",
+    "AUTHORITY_ANALYTIC_FAKE", "AUTHORITY_CERTIFIED_BACKEND",
+    "CandidateEvaluation", "CandidateEvaluationPort", "EVALUATION_AUTHORITIES",
+    "EvaluationError", "FakeDeterministicEvaluator", "fake_objectives",
     "locked_consequences_of",
 ]

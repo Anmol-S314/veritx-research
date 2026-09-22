@@ -51,6 +51,7 @@ from veritx_dse.core.errors import (
 )
 from veritx_dse.model.compile_model import CompileRequestV3
 from veritx_dse.optimization.evaluators import (
+    AUTHORITY_CERTIFIED_BACKEND,
     CandidateEvaluation,
     EvaluationError,
     locked_consequences_of,
@@ -75,7 +76,8 @@ def _refuse(candidate_id: str, design_hash: str, status: str,
         performance_result_id=performance_result_id,
         requirement_report=requirement_report,
         requirement_report_id=(report_identity(requirement_report)
-                               if requirement_report is not None else None))
+                               if requirement_report is not None else None),
+        evaluation_authority=AUTHORITY_CERTIFIED_BACKEND)
 
 
 def _real_objectives(outcome: Any) -> dict[str, float]:
@@ -211,7 +213,8 @@ class RealCandidateEvaluator:
             error=None,
             performance_result_id=outcome.performance_result_id,
             requirement_report=report,
-            requirement_report_id=report_identity(report))
+            requirement_report_id=report_identity(report),
+            evaluation_authority=AUTHORITY_CERTIFIED_BACKEND)
 
 
 __all__ = ["RealCandidateEvaluator"]

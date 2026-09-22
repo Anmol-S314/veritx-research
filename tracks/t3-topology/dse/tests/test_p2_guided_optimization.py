@@ -13,6 +13,7 @@ OptimizationStudyView validation, and the no-LOCKED-mutation invariant.
 """
 from __future__ import annotations
 
+import dataclasses
 import itertools
 import json
 import random
@@ -42,7 +43,10 @@ from veritx_dse.optimization.definition import (  # noqa: E402
     OptimizationDefinition,
     OptimizationDefinitionError,
 )
+from veritx_dse.application.requirements import report_identity  # noqa: E402
 from veritx_dse.optimization.evaluators import (  # noqa: E402
+    AUTHORITY_ANALYTIC_FAKE,
+    AUTHORITY_CERTIFIED_BACKEND,
     CandidateEvaluation,
     FakeDeterministicEvaluator,
 )
@@ -78,6 +82,40 @@ def _defn(**kw):
     )
     base.update(kw)
     return OptimizationDefinition(**base)
+
+
+class _CertifiedEvaluator:
+    """Test double declaring CERTIFIED_BACKEND authority.
+
+    Reuses the deterministic fake's real-compile + analytic mechanics,
+    but binds a contract-shaped (empty) RequirementReport and a
+    non-fake performance_result_id under the certified authority, so the
+    Pareto/selection machinery stays covered without BookSim. The
+    authority is declared explicitly here by design — production code
+    never fabricates it (see A-P0.1).
+    """
+
+    def __init__(self, seed: int = 7):
+        self.inner = FakeDeterministicEvaluator(seed=seed)
+
+    def evaluate(self, candidate):
+        ev = self.inner.evaluate(candidate)
+        if ev.status != "EVALUATED":
+            return dataclasses.replace(
+                ev, evaluation_authority=AUTHORITY_CERTIFIED_BACKEND,
+                performance_result_id=None, requirement_report=None,
+                requirement_report_id=None)
+        perf = "test-certified:" + candidate.candidate_id
+        report = {
+            "contract_version": 1,
+            "design_hash": "sha256:" + candidate.request.design_hash(),
+            "performance_result_id": perf,
+            "entries": [],
+        }
+        return dataclasses.replace(
+            ev, performance_result_id=perf, requirement_report=report,
+            requirement_report_id=report_identity(report),
+            evaluation_authority=AUTHORITY_CERTIFIED_BACKEND)
 
 
 # ── definition guards ────────────────────────────────────────────────────
@@ -390,7 +428,7 @@ class TestGridStudyEndToEnd:
         base = _base()
         defn = _defn(**kw)
         result = Optimizer().optimize(
-            base, defn, FakeDeterministicEvaluator(seed=7))
+            base, defn, _CertifiedEvaluator())
         return base, defn, result
 
     def test_grid_yields_table_pareto_selection(self):
@@ -463,13 +501,20 @@ class TestGridStudyEndToEnd:
                 "candidate_id", "guided_patch", "locked_consequences",
                 "evaluation_ids", "product_requirements",
                 "objective_values", "objective_availability",
-                "constraint_verdicts", "pareto_eligible",
+                "constraint_verdicts", "evaluation_authority",
+                "eligibility_reason", "pareto_eligible",
                 "pareto_member"}
             assert set(cand["evaluation_ids"]) == {
                 "design_hash", "performance_result_id",
                 "requirement_report_id"}
             assert cand["pareto_member"] is False or \
                 cand["pareto_eligible"] is True
+            assert cand["evaluation_authority"] == \
+                AUTHORITY_CERTIFIED_BACKEND
+            if cand["pareto_eligible"]:
+                assert cand["eligibility_reason"] is None
+            else:
+                assert cand["eligibility_reason"]
             assert set(cand["objective_availability"].values()) <= {
                 "MEASURED", "UNMEASURABLE"}
 
@@ -545,12 +590,14 @@ class TestGridStudyEndToEnd:
             objectives=(Objective("latency", "MIN"),),
             method="grid")
         result = Optimizer().optimize(
-            base, defn, FakeDeterministicEvaluator(seed=7))
+            base, defn, _CertifiedEvaluator())
         assert len(result.records) == 2
         by_patch = {tuple(sorted(r.guided_patch.items())): r
                       for r in result.records}
         refused = by_patch[(("rcu_enabled", True),)]
         assert refused.evaluation_status == "UNSUPPORTED"
+        assert refused.evaluation_authority == \
+            AUTHORITY_CERTIFIED_BACKEND
         assert refused.objective_values == {}
         assert refused.candidate_id not in set(result.pareto_ids)
         ok = by_patch[(("rcu_enabled", False),)]
@@ -622,22 +669,34 @@ class _FixedReportPort:
             objective_values={"latency": 10.0},
             locked_consequences={},
             performance_result_id="perf:fixed",
-            requirement_report=report)
+            requirement_report=report,
+            evaluation_authority=AUTHORITY_CERTIFIED_BACKEND)
 
 
 class _ValuePort:
-    """Evaluator returning exactly the objective_values it is given."""
+    """Certified test port returning exactly the objective_values given."""
 
     def __init__(self, values):
         self.values = values
 
     def evaluate(self, candidate):
+        perf = "test-certified:" + candidate.candidate_id
+        report = {
+            "contract_version": 1,
+            "design_hash": "sha256:" + candidate.request.design_hash(),
+            "performance_result_id": perf,
+            "entries": [],
+        }
         return CandidateEvaluation(
             candidate_id=candidate.candidate_id,
             design_hash=candidate.request.design_hash(),
             status="EVALUATED",
             objective_values=dict(self.values),
-            locked_consequences={})
+            locked_consequences={},
+            performance_result_id=perf,
+            requirement_report=report,
+            requirement_report_id=report_identity(report),
+            evaluation_authority=AUTHORITY_CERTIFIED_BACKEND)
 
 
 class TestObjectiveStateCompleteness:
@@ -774,7 +833,7 @@ class TestResultIdBindsProvenance:
             constraints=(Constraint("latency", "<=", 600.0),),
             method="grid")
         return base, defn, Optimizer().optimize(
-            base, defn, FakeDeterministicEvaluator(seed=7))
+            base, defn, _CertifiedEvaluator())
 
     def test_moves_with_performance_result_id(self):
         """Equal rounded objectives + different authenticated evaluation
@@ -901,20 +960,29 @@ class TestOptimizeCli:
         cmd_optimize(ctx, args)
         assert not ctx.failed
         view = json.loads(study_out.read_text())
-        # RT-12: the CLI emits (and validates) contract v2 by default.
+        # RT-12/A-P0.1: the CLI emits (and validates) contract v2 by
+        # default, but the FAKE evaluator is analytic authority: its rows
+        # are visible with typed reasons and can never be Pareto or
+        # selected.
         assert view["contract_version"] == 2
         assert view["base_design_hash"].startswith("sha256:")
         assert len(view["candidates"]) == 4
-        assert view["selected_candidate_id"] in set(view["pareto_ids"])
-        # Constraint results + Pareto membership ride every row.
+        assert view["pareto_ids"] == []
+        assert view["selected_candidate_id"] is None
         for row in view["candidates"]:
             assert set(row) == {"candidate_id", "guided_patch",
                                 "locked_consequences", "evaluation_ids",
                                 "product_requirements",
                                 "objective_values", "objective_availability",
-                                "constraint_verdicts", "pareto_eligible",
+                                "constraint_verdicts",
+                                "evaluation_authority",
+                                "eligibility_reason", "pareto_eligible",
                                 "pareto_member"}
             assert row["locked_consequences"]["routing_classes"] == ["DOR_XY"]
+            assert row["evaluation_authority"] == AUTHORITY_ANALYTIC_FAKE
+            assert row["pareto_eligible"] is False
+            assert row["pareto_member"] is False
+            assert "analytic-fake" in row["eligibility_reason"]
 
     def test_view_hashes_prefixed_engine_hashes_bare(self, tmp_path):
         """Fix 2: every hash crossing into the study view is
