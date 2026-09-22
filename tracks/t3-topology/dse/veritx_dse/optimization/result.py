@@ -669,8 +669,8 @@ class Optimizer:
     def optimize_with_port(self, base_request: Any, definition: Any,
                            port: Any) -> OptimizationResult:
         """Analytic/test/research mode. Never yields certified results."""
-        return self._optimize(base_request, definition, port,
-                              certified_mode=False, metric_registry=None)
+        return self._optimize_core(base_request, definition, port,
+                                   accept_certified_claims=False)
 
     def optimize(self, base_request: Any, definition: Any,
                  evaluator: Any) -> OptimizationResult:
@@ -698,15 +698,25 @@ class Optimizer:
                 f"optimize_certified requires a CertifiedBackendConfig, "
                 f"got {type(backend_config).__name__}")
         evaluator = _make_real_certified_evaluator(backend_config)
-        return self._optimize(base_request, definition, evaluator,
-                              certified_mode=True,
-                              metric_registry=CERTIFIED_METRIC_REGISTRY)
+        core = self._optimize_core(
+            base_request, definition, evaluator,
+            accept_certified_claims=True,
+            metric_registry=CERTIFIED_METRIC_REGISTRY)
+        # C4: THE single production assignment site of CERTIFIED_PRODUCT.
+        # Core mechanics never classify and never stamp registry identity;
+        # only this wrapper may, and only from the product-controlled
+        # registry (never a caller-supplied one).
+        import dataclasses as _dc
+        return _dc.replace(
+            core,
+            result_class=RESULT_CLASS_CERTIFIED,
+            metric_registry_id=CERTIFIED_METRIC_REGISTRY.registry_id(),
+            metric_registry_version=CERTIFIED_METRIC_REGISTRY.version)
 
-    def _optimize(self, base_request: Any, definition: Any,
-                  evaluator: Any, *,
-                  certified_mode: bool,
-                  metric_registry: Any,
-                  result_class: str | None = None) -> OptimizationResult:
+    def _optimize_core(self, base_request: Any, definition: Any,
+                       evaluator: Any, *,
+                       accept_certified_claims: bool,
+                       metric_registry: Any = None) -> OptimizationResult:
         from veritx_dse.application.requirements import report_passes
 
         from .candidate import candidate_id_for
@@ -762,7 +772,7 @@ class Optimizer:
                 authority == AUTHORITY_CERTIFIED_BACKEND
                 and ev.status == "EVALUATED")
             if certified_claim:
-                if not certified_mode:
+                if not accept_certified_claims:
                     # R1: the analytic entry point structurally refuses
                     # certified claims — an arbitrary port can never
                     # reach certified eligibility here.
@@ -779,7 +789,7 @@ class Optimizer:
                 # authoritative facts. Never duck-type the proof.
                 claims, report = _verified_certified_claims(cand, ev)
             else:
-                if not certified_mode and getattr(
+                if not accept_certified_claims and getattr(
                         ev, "authenticated_proof", None) is not None:
                     raise OptimizationResultError(
                         f"candidate {cand.candidate_id!r} carries an "
@@ -1016,13 +1026,12 @@ class Optimizer:
             pareto_ids=tuple(front),
             selected_candidate_id=selected,
             selection_rationale=rationale,
-            result_class=(result_class if result_class is not None
-                          else (RESULT_CLASS_CERTIFIED if certified_mode
-                                else RESULT_CLASS_ANALYTIC)),
-            metric_registry_id=(registry.registry_id()
-                                if certified_mode else None),
-            metric_registry_version=(registry.version
-                                     if certified_mode else None),
+            # C4: core mechanics NEVER mint certification. Classification
+            # and registry identity are stamped by optimize_certified()
+            # alone; every path through this core is ANALYTIC_RESEARCH.
+            result_class=RESULT_CLASS_ANALYTIC,
+            metric_registry_id=None,
+            metric_registry_version=None,
         )
 
 

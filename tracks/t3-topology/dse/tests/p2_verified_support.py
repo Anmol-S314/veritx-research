@@ -232,15 +232,13 @@ def run_certified_mechanics_for_tests(base: Any, definition: Any, port: Any,
     which is classified ANALYTIC_RESEARCH and therefore can NEVER
     manufacture a CERTIFIED_PRODUCT result.
     """
-    from veritx_dse.optimization.result import (
-        RESULT_CLASS_ANALYTIC,
-        Optimizer,
-    )
-    return Optimizer()._optimize(
+    from veritx_dse.optimization.result import Optimizer
+    # C4: certified *mechanics* without certification authority — the core
+    # accepts certified claims but can never classify them CERTIFIED_PRODUCT.
+    return Optimizer()._optimize_core(
         base, definition, port,
-        certified_mode=True,
-        metric_registry=metric_registry,
-        result_class=RESULT_CLASS_ANALYTIC)
+        accept_certified_claims=True,
+        metric_registry=metric_registry)
 
 
 def certified_evaluation(candidate: Any, *, cycles: int = 100,

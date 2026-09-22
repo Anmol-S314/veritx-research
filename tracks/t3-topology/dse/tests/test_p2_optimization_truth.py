@@ -78,9 +78,12 @@ def _optimize(base, defn, port):
         return run_certified_mechanics_for_tests(base, defn, port,
                                             TEST_METRIC_REGISTRY)
     if isinstance(port, RealCandidateEvaluator):
-        return Optimizer()._optimize(base, defn, port,
-                                     certified_mode=True,
-                                     metric_registry=CERTIFIED_METRIC_REGISTRY)
+        # C4: real backend mechanics through the core — still classified
+        # ANALYTIC_RESEARCH, because only optimize_certified() may stamp
+        # CERTIFIED_PRODUCT.
+        return Optimizer()._optimize_core(
+            base, defn, port, accept_certified_claims=True,
+            metric_registry=CERTIFIED_METRIC_REGISTRY)
     return Optimizer().optimize_with_port(base, defn, port)
 
 from veritx_dse.application.requirements import report_identity
@@ -609,10 +612,11 @@ def test_c2_certified_registry_is_not_caller_selectable():
             metric_registry=ExperimentalMetricRegistry("plugin-v1"))
 
 
-def test_c2_registry_identity_binds_declared_producer_semantics():
+def test_c2_registry_identity_binds_declared_producer_semantics(tmp_path):
     """C2 attack 3: registry_id() binds metric + producer_id +
-    semantics_version; the result binds the registry identity and a
-    semantics change moves result_id()."""
+    semantics_version. C4: only the certified entry point stamps registry
+    identity (from the product-controlled registry); mechanics calls never
+    do, so a caller-minted registry cannot influence certified identity."""
     from veritx_dse.optimization.metric_registry import (
         CERTIFIED_METRIC_REGISTRY,
         MetricRegistryBuilder,
@@ -638,16 +642,33 @@ def test_c2_registry_identity_binds_declared_producer_semantics():
             _real_base(), _defn(), _VerifiedStubPort({"latency": 10.0}),
             registry)
 
-    res_a = _run(reg_a)
-    res_a2 = _run(reg_a2)
-    res_b = _run(reg_b)
-    assert res_a.metric_registry_id == reg_a.registry_id()
-    assert res_a.metric_registry_version == "same-version"
-    assert res_a.result_id() == res_a2.result_id()
-    assert res_a.result_id() != res_b.result_id()
-    view = res_a.to_study_view()
-    assert view["metric_registry_id"] == reg_a.registry_id()
-    assert view["metric_registry_version"] == "same-version"
+    # C4: mechanics calls are ANALYTIC and stamp no registry identity —
+    # a caller-built registry can therefore never move a certified result.
+    res_mech = _run(reg_a)
+    assert res_mech.result_class == "ANALYTIC_RESEARCH"
+    assert res_mech.metric_registry_id is None
+    assert res_mech.metric_registry_version is None
+
+    # The certified entry point stamps the PRODUCT-CONTROLLED registry
+    # identity, and that identity participates in result_id()/the v2 view.
+    from veritx_dse.core.paths import REPO
+    from veritx_dse.optimization.result import CertifiedBackendConfig
+    from veritx_dse.simulation.booksim import find_booksim_bin
+    result = Optimizer().optimize_certified(
+        _real_base(),
+        _defn(objectives=(Objective("completion_cycles", "MIN"),)),
+        backend_config=CertifiedBackendConfig(
+            binary=str(find_booksim_bin(REPO)),
+            run_root=str(tmp_path / "c2-runs"),
+            network_clock_hz=10 ** 9, timeout_s=600))
+    assert result.result_class == "CERTIFIED_PRODUCT"
+    assert result.metric_registry_id == \
+        CERTIFIED_METRIC_REGISTRY.registry_id()
+    assert result.metric_registry_version == CERTIFIED_METRIC_REGISTRY.version
+    view = result.to_study_view()
+    assert view["metric_registry_id"] == \
+        CERTIFIED_METRIC_REGISTRY.registry_id()
+    assert view["metric_registry_version"] == CERTIFIED_METRIC_REGISTRY.version
 
 
 def test_c3_quiescence_is_mandatory_for_certified():
@@ -1144,3 +1165,52 @@ def test_14_repeated_runs_allocate_distinct_slots(two_cli_runs):
         assert found, token
         digests.append(found)
     assert digests[0] != digests[1]
+
+
+def test_c4_core_mechanics_cannot_mint_certification():
+    """C4: `_optimize_core` has no certification switch at all.
+
+    Accepting certified claims still classifies ANALYTIC_RESEARCH and
+    stamps no registry identity — the old `certified_mode=True` bypass is
+    structurally gone, not merely discouraged.
+    """
+    import inspect
+
+    from veritx_dse.optimization.result import (
+        RESULT_CLASS_ANALYTIC,
+        Optimizer,
+    )
+
+    params = inspect.signature(Optimizer._optimize_core).parameters
+    assert "certified_mode" not in params, (
+        "caller-controlled certification switch is back — only "
+        "optimize_certified() may classify CERTIFIED_PRODUCT")
+    assert "result_class" not in params, (
+        "caller-controlled classification parameter is back")
+
+    port = _VerifiedStubPort({"completion_cycles": 100.0}, cycles=100)
+    result = Optimizer()._optimize_core(
+        _real_base(), _defn(), port, accept_certified_claims=True)
+    assert result.result_class == RESULT_CLASS_ANALYTIC
+    assert result.result_class != "CERTIFIED_PRODUCT"
+    assert result.metric_registry_id is None
+    assert result.metric_registry_version is None
+
+
+def test_c4_certified_product_has_exactly_one_assignment_site():
+    """C4: there is exactly ONE production assignment site of
+    CERTIFIED_PRODUCT, and it lives inside `optimize_certified`."""
+    import inspect
+
+    from veritx_dse.optimization import result as result_mod
+    from veritx_dse.optimization.result import Optimizer
+
+    src = inspect.getsource(result_mod)
+    assert src.count("result_class=RESULT_CLASS_CERTIFIED") == 1, (
+        "CERTIFIED_PRODUCT must have exactly one assignment site")
+    assert "result_class=RESULT_CLASS_CERTIFIED" in inspect.getsource(
+        Optimizer.optimize_certified)
+    assert "result_class=RESULT_CLASS_CERTIFIED" not in inspect.getsource(
+        Optimizer._optimize_core)
+    assert "RESULT_CLASS_CERTIFIED" not in inspect.getsource(
+        Optimizer.optimize_with_port)
