@@ -9,9 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from veritx_dse.application.fabric_compiler import FabricCompiler
 from veritx_dse.application.product_evaluator import evaluate_product
-from veritx_dse.core.errors import MappingInvalid
+from veritx_dse.core.errors import InvalidInput, MappingInvalid
 from veritx_dse.model.compile_model import (
     Agent,
     AgentKind,
@@ -195,3 +194,30 @@ class TestProductTaxonomy:
         assert product.outcome.performance_result is None
         assert product.requirement_report is None
         assert product.requirements_pass is None
+
+    def test_scope_rule_has_exactly_one_implementation(self, tmp_path):
+        """Verifier-named test: the scope rule exists once. Both callers
+        bind the SAME authority object, the authority refuses, and the
+        refusal text appears exactly once in production code."""
+        import pathlib
+        import veritx_dse.application.product_evaluator as pe
+        import veritx_dse.application.requirements as reqs
+        assert pe.validate_requirement_scopes is \
+            reqs.validate_requirement_scopes
+        request = _request([_intent()],
+                           requirement_classes=("tp_collective",
+                                                "ghost_class"))
+        with pytest.raises(InvalidInput) as ei:
+            reqs.validate_requirement_scopes(request)
+        assert "ghost_class" in str(ei.value)
+        run = tmp_path / "run"
+        product = pe.evaluate_product(
+            request, run_dir=str(run),
+            binary=str(tmp_path / "no-such-booksim"))
+        assert product.status == "INVALID"
+        assert "ghost_class" in (product.reason or "")
+        assert not run.exists()
+        app_dir = pathlib.Path(reqs.__file__).parent
+        hits = sum(path.read_text().count("constrains traffic class")
+                   for path in app_dir.rglob("*.py"))
+        assert hits == 1, hits

@@ -402,6 +402,32 @@ def _evaluate_bandwidth(*, requirement: RequirementV3,
             f"via {measured_authority}")
 
 
+def validate_requirement_scopes(
+        request: CompileRequestV3) -> tuple[str, ...]:
+    """The ONE requirement-scope authority.
+
+    Returns the request's intent-class registry and refuses (InvalidInput)
+    any requirement scope naming a class outside it. Both the product
+    pre-spawn gate and RequirementEvaluator call THIS function — the rule
+    exists once, never mirrored.
+    """
+    if not isinstance(request, CompileRequestV3):
+        raise InvalidInput(
+            f"validate_requirement_scopes takes a CompileRequestV3, got "
+            f"{type(request).__name__}")
+    intent_classes = derive_v3_traffic_classes(request)
+    for index, requirement in enumerate(request.requirements):
+        scope = getattr(requirement, "traffic_class", None)
+        if scope is not None and intent_classes and \
+                scope not in intent_classes:
+            raise InvalidInput(
+                f"requirements[{index}] constrains traffic class "
+                f"{scope!r}, which no workload intent declares "
+                f"(registry: {list(intent_classes)}) — refusing a "
+                f"constraint over absent traffic")
+    return intent_classes
+
+
 class RequirementEvaluator:
     """Evaluates v3 requirements over a verified PerformanceResult."""
 
@@ -507,7 +533,7 @@ class RequirementEvaluator:
                 f"different traffic-class semantics share a "
                 f"workload_id)")
 
-        intent_classes = derive_v3_traffic_classes(request)
+        intent_classes = validate_requirement_scopes(request)
         single_class = len(intent_classes) <= 1
         clock_hz = _design_clock_hz(request)
         design_hash = "sha256:" + request.design_hash()
@@ -517,13 +543,6 @@ class RequirementEvaluator:
             if not isinstance(req, RequirementV3):
                 raise InvalidInput(
                     f"requirements[{i}] must be a RequirementV3")
-            if req.traffic_class is not None and intent_classes \
-                    and req.traffic_class not in intent_classes:
-                raise InvalidInput(
-                    f"requirements[{i}] constrains traffic class "
-                    f"{req.traffic_class!r}, which no workload intent "
-                    f"declares (registry: {list(intent_classes)}) — "
-                    f"refusing a constraint over absent traffic")
             scoped_conservative = (req.traffic_class is not None
                                    and not single_class)
             parts: list[tuple[str, Any, Any, str, str]] = []
@@ -647,6 +666,9 @@ __all__ = [
     "VERDICT_SATISFIED",
     "VERDICT_UNMEASURABLE",
     "VERDICT_VIOLATED",
+    "VerifiedPerformanceResult",
     "report_identity",
     "report_passes",
+    "validate_requirement_scopes",
+    "verify_performance_result",
 ]

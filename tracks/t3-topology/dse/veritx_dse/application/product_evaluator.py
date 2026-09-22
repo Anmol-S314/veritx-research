@@ -39,6 +39,7 @@ from veritx_dse.application.fabric_evaluator import (
 from veritx_dse.application.requirements import (
     RequirementEvaluator,
     report_passes,
+    validate_requirement_scopes,
 )
 from veritx_dse.core.errors import (
     EvidenceInvalid,
@@ -47,10 +48,7 @@ from veritx_dse.core.errors import (
     UnsupportedSchedule,
     UnsupportedSemantics,
 )
-from veritx_dse.model.compile_model import (
-    CompileRequestV3,
-    derive_v3_traffic_classes,
-)
+from veritx_dse.model.compile_model import CompileRequestV3
 from veritx_dse.workload.intent_lowering import (
     LoweredWorkload,
     assert_traffic_classes_bound,
@@ -120,25 +118,17 @@ def evaluate_product(
             requirements_pass=None,
             reason=f"{type(exc).__name__}: {exc}")
     unified = lowered.unified_traffic_class
-    # Pre-spawn mirror of RequirementEvaluator's request-only refusal: a
-    # requirement scope naming a class no intent declares is malformed
-    # input, fully determinable before backend work — so it must refuse
-    # here, not after a BookSim run. RequirementEvaluator still enforces
-    # the same law at report time (defense in depth).
-    intent_classes = derive_v3_traffic_classes(request)
-    for index, requirement in enumerate(request.requirements):
-        scope = requirement.traffic_class
-        if scope is not None and intent_classes and \
-                scope not in intent_classes:
-            return ProductEvaluation(
-                request=request, compilation=compilation, lowered=lowered,
-                outcome=None, requirement_report=None, status="INVALID",
-                requirements_pass=None,
-                reason=(
-                    f"InvalidInput: requirements[{index}] constrains "
-                    f"traffic class {scope!r}, which no workload intent "
-                    f"declares (registry: {list(intent_classes)}) — "
-                    f"refusing a constraint over absent traffic"))
+    # Pre-spawn gate: the ONE requirement-scope authority (shared with
+    # RequirementEvaluator) refuses a scope naming a class no intent
+    # declares — malformed input, fully determinable before backend
+    # work, so it must refuse here, not after a BookSim run.
+    try:
+        validate_requirement_scopes(request)
+    except InvalidInput as exc:
+        return ProductEvaluation(
+            request=request, compilation=compilation, lowered=lowered,
+            outcome=None, requirement_report=None, status="INVALID",
+            requirements_pass=None, reason=f"InvalidInput: {exc}")
     if unified is None:
         return ProductEvaluation(
             request=request, compilation=compilation, lowered=lowered,
