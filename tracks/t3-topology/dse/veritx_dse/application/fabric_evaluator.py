@@ -76,46 +76,55 @@ def _refuse(code: ErrorCode, message: str, *, cause_type: str = "") -> Evaluatio
                            cause_type=cause_type)
 
 
-def _require_workload_belongs_to_compilation(
-        workload: Any, *, design_hash: str, workload_id: str) -> None:
-    """Seal the Compilation→WorkloadGraph seam (content identity, never
-    geometry).
+def _require_workload_is_compilation_lowering(
+        compilation: Any, *, workload_id: str) -> Any:
+    """Seal the Compilation→WorkloadGraph seam by RE-DERIVATION.
 
-    A canonical WorkloadGraph is a standalone artifact: its content
-    identity (``workload_id``) deliberately excludes provenance, so
-    same-geometry graphs from different designs are indistinguishable
-    by shape. The lowering stamps ``provenance['design_hash']``; this
-    gate refuses to evaluate a workload whose provenance does not name
-    THIS compilation's design. Missing provenance is not a pass (fail
-    closed — no fallback to geometry), because an unbindable workload
-    cannot be proven to belong here.
+    Provenance is metadata, not authority: ``WorkloadGraph`` identity
+    deliberately excludes it, so a forged ``provenance['design_hash']``
+    cannot bind a foreign semantic graph. The only authority is what the
+    compilation's v3 request actually lowers to — re-derive it and
+    compare content identity, never ask the workload who its parent is.
+    Returns the expected ``LoweredWorkload`` (graph + traffic-class
+    sidecar) for the caller's sidecar comparison.
     """
-    provenance = workload.provenance
-    if not isinstance(provenance, Mapping):
+    from veritx_dse.core.errors import (
+        InvalidInput, UnsupportedSchedule, UnsupportedSemantics,
+    )
+    from veritx_dse.model.compile_model import CompileRequestV3
+    from veritx_dse.workload.intent_lowering import lower_compile_workload
+    request = compilation.request
+    if not isinstance(request, CompileRequestV3):
         raise _refuse(
             ErrorCode.INVALID_INTENT,
-            f"workload {workload_id!r} carries no provenance block — it "
-            f"cannot be proven to belong to design {design_hash!r}; "
-            f"refusing to evaluate an unbindable workload (geometry is "
-            f"not authority)",
-            cause_type="WorkloadGraph")
-    workload_design_hash = provenance.get("design_hash")
-    if not isinstance(workload_design_hash, str) or \
-            not workload_design_hash:
+            f"cannot evaluate: compilation request is "
+            f"{type(request).__name__}, not a v3 intent — there is no "
+            f"lowering authority to re-derive the workload from, and an "
+            f"unverifiable workload is not a pass",
+            cause_type=type(request).__name__)
+    try:
+        expected = lower_compile_workload(request)
+    except InvalidInput as exc:
         raise _refuse(
             ErrorCode.INVALID_INTENT,
-            f"workload {workload_id!r} provenance declares no "
-            f"design_hash (has {sorted(provenance)}); refusing to "
-            f"evaluate an unbindable workload",
-            cause_type="WorkloadGraph")
-    if workload_design_hash != design_hash:
+            f"cannot evaluate: the compilation request does not lower to "
+            f"a workload: {exc}",
+            cause_type="CompileRequestV3") from exc
+    except (UnsupportedSemantics, UnsupportedSchedule) as exc:
+        raise _refuse(
+            ErrorCode.UNSUPPORTED_SEMANTICS,
+            f"cannot evaluate: the compilation request lowering is "
+            f"unsupported: {exc}",
+            cause_type=type(exc).__name__) from exc
+    if expected.graph.workload_id() != workload_id:
         raise _refuse(
             ErrorCode.INVALID_INTENT,
-            f"workload {workload_id!r} provenance design_hash "
-            f"{workload_design_hash!r} does not match compilation design "
-            f"hash {design_hash!r} — refusing a workload transplanted "
-            f"from another design",
+            f"workload {workload_id!r} is not the lowering of compilation "
+            f"request design {request.design_hash()!r} "
+            f"({expected.graph.workload_id()!r}) — refusing a semantic "
+            f"transplant; provenance cannot bind a foreign graph",
             cause_type="WorkloadGraph")
+    return expected
 
 
 def _require_evidence_authentic(
@@ -397,10 +406,11 @@ class FabricEvaluator:
         resolved_fabric_hash = \
             bundle.resolved_fabric.resolved_fabric_hash()
         workload_id = workload.workload_id()
-        # The workload must belong to THIS design before any lowering or
-        # backend work; same geometry never authorizes substitution.
-        _require_workload_belongs_to_compilation(
-            workload, design_hash=design_hash, workload_id=workload_id)
+        # The workload must be EXACTLY this compilation's lowering before
+        # any backend work; re-derivation is the authority (provenance is
+        # forgeable metadata).
+        expected_lowered = _require_workload_is_compilation_lowering(
+            compilation, workload_id=workload_id)
 
         def refuse(status: str, reason: str, **extra: Any) -> EvaluationOutcome:
             return EvaluationOutcome(
@@ -449,6 +459,31 @@ class FabricEvaluator:
                                        f"{exc}",
                           message_artifact_id=message_id,
                           physical_traffic_id=traffic_id)
+
+        # ── intent-class sidecar (semantics outside workload_id) ───
+        # Traffic-class semantics live in the lowering sidecar, not in
+        # the canonical graph identity; the options class is an
+        # ASSERTION against the re-derived lowering, never a label.
+        expected_class = expected_lowered.unified_traffic_class
+        if expected_class is None:
+            return refuse(
+                UNSUPPORTED,
+                f"lowering spans traffic classes "
+                f"{list(expected_lowered.classes)}: no single-class "
+                f"message artifact can represent per-operation classes — "
+                f"UNSUPPORTED until a versioned per-operation message "
+                f"artifact lands",
+                message_artifact_id=message_id,
+                physical_traffic_id=traffic_id)
+        if opts.traffic_class != expected_class:
+            return refuse(
+                UNSUPPORTED,
+                f"evaluation traffic class {opts.traffic_class!r} does "
+                f"not match the lowered intent class {expected_class!r}: "
+                f"eval-time relabeling is refused (the intent owns class "
+                f"names; evaluation only asserts them)",
+                message_artifact_id=message_id,
+                physical_traffic_id=traffic_id)
 
         # ── certified path selection (derived, never a user knob) ─
         path = _select_backend_path(bundle)

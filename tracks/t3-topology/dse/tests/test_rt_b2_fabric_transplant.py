@@ -9,12 +9,15 @@ provenance is not a pass either (fail closed).
 """
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 
 from veritx_dse.application.errors import ControlPlaneError
 from veritx_dse.application.fabric_compiler import FabricCompiler
 from veritx_dse.application.fabric_evaluator import (
     BACKEND_UNAVAILABLE,
+    UNSUPPORTED,
     EvaluationOptions,
     FabricEvaluator,
 )
@@ -25,7 +28,9 @@ from veritx_dse.model.compile_model import (
     CollectiveIntent,
     CollectiveKind,
     CompileRequestV3,
+    Dependency,
     DependencyGraph,
+    DepKind,
     ModelFamily,
     NocConfig,
     QoSClass,
@@ -71,20 +76,14 @@ def _compiled(request):
 
 
 class TestFabricTransplant:
-    @pytest.mark.parametrize("variant", ["payload", "traffic_class",
-                                         "ordered_intent"])
-    def test_compilation_a_with_workload_b_refuses_before_backend(
+    @pytest.mark.parametrize("variant", ["payload", "ordered_intent"])
+    def test_foreign_semantic_graph_refuses_before_backend(
             self, tmp_path, variant):
         req_a = _request([_intent(payload=2048),
                           _intent(kind="allgather", payload=1024)])
         if variant == "payload":
             req_b = _request([_intent(payload=4096),
                               _intent(kind="allgather", payload=1024)])
-        elif variant == "traffic_class":
-            req_b = _request([_intent(payload=2048, tc="dp_collective"),
-                              _intent(kind="allgather", payload=1024,
-                                      tc="dp_collective")],
-                             requirement_classes=("dp_collective",))
         else:
             req_b = _request([_intent(kind="allgather", payload=1024),
                               _intent(payload=2048)])
@@ -99,13 +98,7 @@ class TestFabricTransplant:
             req_b.workload.tp, req_b.workload.pp, req_b.workload.ep,
             req_b.workload.dp)
         assert req_a.design_hash() != req_b.design_hash()
-        if variant == "traffic_class":
-            # Traffic class is sidecar semantics: the canonical graph id
-            # cannot distinguish the two designs, so only the design
-            # provenance binding can (and does) refuse.
-            assert graph_a.workload_id() == graph_b.workload_id()
-        else:
-            assert graph_a.workload_id() != graph_b.workload_id()
+        assert graph_a.workload_id() != graph_b.workload_id()
         run = tmp_path / "run"
         never_used = tmp_path / "never-spawned-booksim"
         with pytest.raises(ControlPlaneError) as excinfo:
@@ -116,12 +109,73 @@ class TestFabricTransplant:
                                   binary=str(never_used)))
         message = str(excinfo.value)
         assert excinfo.value.code.value == "INVALID_INTENT"
-        assert req_a.design_hash() in message
-        assert req_b.design_hash() in message
+        assert "not the lowering" in message
+        assert graph_a.workload_id() in message
         assert graph_b.workload_id() in message
-        assert "transplanted" in message
         assert not run.exists()
         assert not never_used.exists()
+
+    def test_forged_provenance_cannot_bind_a_foreign_graph(self, tmp_path):
+        """Mandatory forged-provenance attack: B's semantic graph with
+        provenance.design_hash = A. Provenance is excluded from
+        workload_id(), so identity passes; re-derivation refuses."""
+        req_a = _request([_intent(payload=2048)])
+        req_b = _request([_intent(payload=4096)])
+        compilation_a = _compiled(req_a)
+        graph_b = lower_compile_workload(req_b).graph
+        forged = WorkloadGraph(
+            parallelism=graph_b.parallelism,
+            participant_count=graph_b.participant_count,
+            operations=graph_b.operations,
+            semantics=graph_b.semantics,
+            provenance={"design_hash": req_a.design_hash(),
+                        "lowerer": "forged"})
+        assert forged.workload_id() == graph_b.workload_id()
+        run = tmp_path / "run"
+        with pytest.raises(ControlPlaneError) as excinfo:
+            FabricEvaluator().evaluate(
+                compilation_a, forged,
+                EvaluationOptions(traffic_class="tp_collective",
+                                  run_dir=str(run)))
+        assert excinfo.value.code.value == "INVALID_INTENT"
+        assert "not the lowering" in str(excinfo.value)
+        assert not run.exists()
+
+    def test_traffic_class_only_difference_refuses_when_asserted(
+            self, tmp_path):
+        """Traffic class lives in the lowering sidecar, not in the
+        canonical graph: the evaluator asserts the options class against
+        the RE-DERIVED sidecar. Asserting B's class over compilation A
+        refuses; A's own class on the identical graph is honest."""
+        req_a = _request([_intent(payload=2048, tc="tp_collective")])
+        # A dependency names both classes so the compiled VC assignment
+        # declares both: the refusal then comes from the SIDECAR
+        # assertion, not from the admission gate.
+        req_a = dataclasses.replace(
+            req_a, dependencies=DependencyGraph([
+                Dependency("tp_collective", "dp_collective",
+                           DepKind.BLOCKING)]))
+        req_b = _request([_intent(payload=2048, tc="dp_collective")],
+                         requirement_classes=("dp_collective",))
+        compilation_a = _compiled(req_a)
+        graph_b = lower_compile_workload(req_b).graph
+        assert graph_b.workload_id() == \
+            lower_compile_workload(req_a).graph.workload_id()
+        run = tmp_path / "run"
+        out = FabricEvaluator().evaluate(
+            compilation_a, graph_b,
+            EvaluationOptions(traffic_class="dp_collective",
+                              run_dir=str(run)))
+        assert out.status == UNSUPPORTED
+        assert "relabeling" in (out.reason or "")
+        assert not run.exists()
+        # A's own class on the identical graph is the honest call.
+        out2 = FabricEvaluator().evaluate(
+            compilation_a, graph_b,
+            EvaluationOptions(traffic_class="tp_collective",
+                              binary=str(tmp_path / "no-such-booksim"),
+                              run_dir=str(run)))
+        assert out2.status == BACKEND_UNAVAILABLE, out2.reason
 
     def test_compilation_b_with_workload_a_refuses(self, tmp_path):
         req_a = _request([_intent(payload=2048)])
@@ -134,24 +188,8 @@ class TestFabricTransplant:
                 EvaluationOptions(traffic_class="tp_collective",
                                   run_dir=str(tmp_path / "run")))
         assert excinfo.value.code.value == "INVALID_INTENT"
+        assert "not the lowering" in str(excinfo.value)
         assert not (tmp_path / "run").exists()
-
-    def test_workload_without_provenance_refuses(self, tmp_path):
-        request = _request([_intent(payload=2048)])
-        compilation = _compiled(request)
-        lowered = lower_compile_workload(request)
-        bare = WorkloadGraph(
-            parallelism=lowered.graph.parallelism,
-            participant_count=lowered.graph.participant_count,
-            operations=lowered.graph.operations,
-            semantics=lowered.graph.semantics, provenance=None)
-        with pytest.raises(ControlPlaneError) as excinfo:
-            FabricEvaluator().evaluate(
-                compilation, bare,
-                EvaluationOptions(traffic_class="tp_collective",
-                                  run_dir=str(tmp_path / "run")))
-        assert excinfo.value.code.value == "INVALID_INTENT"
-        assert "provenance" in str(excinfo.value)
 
     def test_matching_identity_reaches_availability_not_refusal(
             self, tmp_path):

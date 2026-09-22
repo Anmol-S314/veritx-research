@@ -75,7 +75,7 @@ def main() -> int:
             EvaluationOptions(traffic_class="tp_collective"))
     except ControlPlaneError as exc:
         transplant_refused = (exc.code.value == "INVALID_INTENT"
-                              and "transplanted" in str(exc))
+                              and "transplant" in str(exc))
     except Exception as exc:  # pragma: no cover - diagnostic only
         print(json.dumps({"ok": False, "stage": "transplant",
                           "error": f"{type(exc).__name__}: {exc}"}))

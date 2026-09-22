@@ -172,18 +172,16 @@ class TestIdentityChain:
             req_b, graph_b, _hermetic_performance(req_b)[0])
         assert report_identity(report_a) != report_identity(report_b)
 
-    def test_missing_provenance_or_chain_is_not_a_pass(self):
-        """An absent binding refuses (EvidenceInvalid), never passes."""
+    def test_foreign_graph_and_missing_chain_binding_refuse(self):
+        """Re-derivation is the authority: a foreign semantic graph
+        refuses, and a result without its chain binding refuses."""
         request = _request([_intent(payload=2048)])
         graph = lower_compile_workload(request).graph
         perf, _ = _hermetic_performance(request)
-        bare = WorkloadGraph(
-            parallelism=graph.parallelism,
-            participant_count=graph.participant_count,
-            operations=graph.operations,
-            semantics=graph.semantics, provenance=None)
-        with pytest.raises(EvidenceInvalid):
-            RequirementEvaluator.evaluate(request, bare, perf)
+        foreign = lower_compile_workload(
+            _request([_intent(payload=4096)])).graph
+        with pytest.raises(MappingInvalid):
+            RequirementEvaluator.evaluate(request, foreign, perf)
         without_chain = {k: v for k, v in perf.items()
                          if k != "wave_d_chain"}
         with pytest.raises(EvidenceInvalid):

@@ -154,7 +154,7 @@ class TestProductTaxonomy:
             binary=str(tmp_path / "no-such-booksim"))
         assert product.status == "INVALID"
         assert "INVALID_INTENT" in (product.reason or "")
-        assert "transplanted" in (product.reason or "")
+        assert "transplant" in (product.reason or "")
         assert not run.exists()
 
     def test_bad_option_refusal_is_typed_not_raised(self, tmp_path):

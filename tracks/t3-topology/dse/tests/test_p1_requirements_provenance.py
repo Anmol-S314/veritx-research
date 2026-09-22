@@ -126,9 +126,9 @@ class TestSameGeometryTransplants:
         with pytest.raises(MappingInvalid) as ei:
             RequirementEvaluator.evaluate(req_a, graph_b, perf_a)
         message = str(ei.value)
-        assert "design_hash" in message
-        assert req_a.design_hash() in message
-        assert req_b.design_hash() in message
+        assert "not the lowering" in message
+        assert graph_a.workload_id() in message
+        assert graph_b.workload_id() in message
 
     def test_honest_triple_is_satisfied(self):
         req_a, _, graph_a, _ = _design_pair()
@@ -164,31 +164,34 @@ class TestMissingProvenanceRefuses:
             RequirementEvaluator.evaluate(req, graph, perf)
         assert "workload_graph_id" in str(ei.value)
 
-    def test_workload_without_provenance_refuses(self):
-        req = _request([_ci()], [_lat_req(ceiling=10 ** 9)], tp=2, dp=1)
-        graph = lower_compile_workload(req).graph
-        bare = WorkloadGraph(
-            parallelism=graph.parallelism,
-            participant_count=graph.participant_count,
-            operations=graph.operations,
-            semantics=graph.semantics,
-            provenance=None)
-        assert bare.workload_id() == graph.workload_id()  # provenance is not identity
-        perf, _ = _bound_result(req, _net_workload(_model()), 2500)
-        with pytest.raises(EvidenceInvalid) as ei:
-            RequirementEvaluator.evaluate(req, bare, perf)
-        assert "provenance" in str(ei.value)
+    def test_foreign_graph_with_forged_provenance_refuses(self):
+        """Provenance is metadata: forging a matching design_hash onto a
+        foreign semantic graph cannot pass the re-derivation gate."""
+        req_a, req_b, graph_a, graph_b = _design_pair()
+        forged = WorkloadGraph(
+            parallelism=graph_b.parallelism,
+            participant_count=graph_b.participant_count,
+            operations=graph_b.operations,
+            semantics=graph_b.semantics,
+            provenance={"design_hash": req_a.design_hash()})
+        assert forged.workload_id() == graph_b.workload_id()
+        perf_a, _ = _bound_result(req_a, _net_workload(_model()), 2500)
+        with pytest.raises(MappingInvalid) as ei:
+            RequirementEvaluator.evaluate(req_a, forged, perf_a)
+        assert "not the lowering" in str(ei.value)
 
-    def test_provenance_without_design_hash_refuses(self):
-        req = _request([_ci()], [_lat_req(ceiling=10 ** 9)], tp=2, dp=1)
-        graph = lower_compile_workload(req).graph
+    def test_same_content_provenance_is_not_authority(self):
+        """A provenance-free copy of the EXACT lowering is accepted:
+        content identity, not provenance, is the authority."""
+        req_a, _, graph_a, _ = _design_pair()
         bare = WorkloadGraph(
-            parallelism=graph.parallelism,
-            participant_count=graph.participant_count,
-            operations=graph.operations,
-            semantics=graph.semantics,
-            provenance={"lowerer": "someone-else"})
-        perf, _ = _bound_result(req, _net_workload(_model()), 2500)
-        with pytest.raises(EvidenceInvalid) as ei:
-            RequirementEvaluator.evaluate(req, bare, perf)
-        assert "design_hash" in str(ei.value)
+            parallelism=graph_a.parallelism,
+            participant_count=graph_a.participant_count,
+            operations=graph_a.operations,
+            semantics=graph_a.semantics,
+            provenance=None)
+        assert bare.workload_id() == graph_a.workload_id()
+        perf_a, _ = _bound_result(req_a, _net_workload(_model()), 2500)
+        report = RequirementEvaluator.evaluate(req_a, bare, perf_a)
+        assert report["design_hash"] == "sha256:" + req_a.design_hash()
+        assert report_passes(report) is True
