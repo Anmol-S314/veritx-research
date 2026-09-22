@@ -190,7 +190,8 @@ def test_unmeasured_objective_is_typed_ineligible_not_keyerror(tmp_path):
         assert entries, record.candidate_id
         assert dict(entries[0])["state"] == "UNMEASURABLE"
         assert dict(entries[0])["reason"] == (
-            "objective area not evidenced by evaluation")
+            "objective area has no registered metric authority over "
+            "the authenticated proof")
     # Sanity: the same study with the evidenced objective (fresh
     # evidence root) still yields a frontier — the ineligibility is
     # objective-evidence-driven, not a broken study.

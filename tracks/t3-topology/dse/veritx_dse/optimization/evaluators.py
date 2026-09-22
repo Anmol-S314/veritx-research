@@ -79,23 +79,29 @@ class CandidateEvaluation:
     went through the certified backend pipeline. Omitted/None means the
     evaluation is not authoritative and can never be Pareto-eligible.
 
-    AUTHORITATIVE PROOF (A3). For an EVALUATED, certified-backend
+    AUTHORITATIVE PROOF (A3/A4). For an EVALUATED, certified-backend
     evaluation the label is not enough: the evaluation must carry the
-    actual verified evidence object, not just its id.
+    authenticated backend proof object built by
+    ``application.authenticated_evaluation.authenticate_backend_evaluation``
+    and verified by ``verify_authenticated_backend_evaluation``.
 
-    ``workload`` is the exact lowered WorkloadGraph this evaluation
-    measured (``lower_compile_workload(request).graph``);
-    ``verified_performance_result`` is B's boundary object
-    (``VerifiedPerformanceResult``). The Optimizer independently
-    re-derives ``RequirementEvaluator.evaluate(request, workload,
-    verified_performance_result)`` and requires the canonical report
-    identity to equal the carried ``requirement_report`` — a fabricated
-    report or a made-up ``performance_result_id`` refuses before any
-    candidate can become Pareto-eligible. Registered objective metrics
-    are extracted from the verified result (metric_authority); a port
-    may not misreport one. A fake/development evaluator may still return
-    analytic CandidateEvaluations, but it cannot produce certified
-    Pareto science without carrying this proof.
+    ``authenticated_proof`` is that proof (an
+    ``AuthenticatedBackendEvaluation``): the dereferenced evidence
+    reference/artifact, the network binding they authenticate, the
+    producer identity, B's verified result and the canonical
+    RequirementReport. The Optimizer imports Worker B's verifier
+    authority and calls it — it never duck-types the proof — and
+    authoritative metrics are extracted from the returned derived
+    claims, never from ``objective_values``. ``workload`` and
+    ``verified_performance_result`` are the legacy A3 carriers (kept
+    for display/refusal context); the proof is the authority.
+
+    ``objective_values`` remain the evaluation's own report of what it
+    measured for ANALYTIC/TEST/RESEARCH ports; for certified Pareto
+    they are ignored (except that a registered metric misreport
+    refuses). A fake/development evaluator may still return analytic
+    CandidateEvaluations, but it cannot produce certified Pareto
+    science without the authenticated proof.
     """
     candidate_id: str
     design_hash: str  # bare engine digest, never prefixed here
@@ -111,6 +117,8 @@ class CandidateEvaluation:
     workload: Any = None  # exact lowered WorkloadGraph (proof, A3)
     # B's VerifiedPerformanceResult boundary object (proof, A3)
     verified_performance_result: Any = None
+    # AuthenticatedBackendEvaluation proof (A4); the eligibility authority
+    authenticated_proof: Any = None
 
 
 class CandidateEvaluationPort(Protocol):

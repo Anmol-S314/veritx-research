@@ -18,13 +18,17 @@ TWO AUTHORITIES, NEVER MERGED:
 
 Objectives are a third, measured-only namespace (objective_values).
 A candidate is Pareto-eligible only when its evaluation succeeded AND
-the evaluation PROVES its certified claim (A3: the carried
-VerifiedPerformanceResult is independently re-derived into the binding
-RequirementReport; the `certified-backend` label alone admits nothing)
+Worker B's verifier authority re-proved the carried authenticated proof
+for this request (A4: the verifier's derived claims are the authority;
+the `certified-backend` label alone admits nothing) AND every requested
+objective/constraint metric has a registered producer over those claims
 AND its binding product requirements pass AND every requested objective
-is measured and finite AND every hard constraint is SATISFIED. Ineligible
-candidates stay visible with typed reasons and never reach pareto.py's
-indexing (never a KeyError).
+is measured and finite AND every hard constraint is SATISFIED. For a
+certified candidate the evaluator's `objective_values` never score —
+registered metrics are extracted from the proof and an unregistered
+requested metric is UNMEASURABLE/ineligible. Ineligible candidates stay
+visible with typed reasons and never reach pareto.py's indexing (never
+a KeyError).
 
 Emits OptimizationStudyView per the authoritative
 contracts/srota/v2/optimization.study.view.schema.json
@@ -47,6 +51,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from veritx_dse.application.authenticated_evaluation import (
+    verify_authenticated_backend_evaluation,
+)
 from veritx_dse.core.artifact import content_id
 from veritx_dse.optimization.evaluators import (
     AUTHORITY_CERTIFIED_BACKEND,
@@ -153,130 +160,118 @@ class OptimizationResultError(ValueError):
     """Invalid optimization result state (fail-closed)."""
 
 
-def _authenticate_certified_evaluation(cand: Any, ev: Any,
-                                       report: Any) -> dict[str, Any]:
-    """Independently re-derive a certified evaluation's report (A3).
+def _verified_certified_claims(cand: Any, ev: Any):
+    """Bind a certified evaluation to Worker B's verifier authority (A4).
 
-    The ``evaluation_authority`` label is descriptive, never proof: a
-    purported certified EVALUATED evaluation must carry the exact
-    lowered WorkloadGraph and B's VerifiedPerformanceResult, its
-    performance_result_id must be that verified result's resource_id, and
-    ``RequirementEvaluator.evaluate(request, workload, verified_result)``
-    must re-derive a report whose canonical identity equals the carried
-    report. A fabricated report, a made-up performance_result_id or a
-    self-declared authority refuses here — before Pareto.
+    The ``evaluation_authority`` label is descriptive, never proof. The
+    optimizer imports and calls
+    ``verify_authenticated_backend_evaluation(request, proof)`` — it does
+    NOT duck-type the proof — and uses the returned derived claims as the
+    authoritative facts. The port's carried RequirementReport must be the
+    one the proof derives, and its performance_result_id must be the
+    verified result's resource_id; anything else is a forgery and
+    refuses hard.
     """
-    from veritx_dse.application.requirements import (
-        RequirementEvaluator,
-        VerifiedPerformanceResult,
-        report_identity,
-    )
-    from veritx_dse.core.errors import (
-        EvidenceInvalid,
-        InvalidInput,
-        MappingInvalid,
-    )
-    from veritx_dse.workload.canonical_graph import WorkloadGraph
+    from veritx_dse.application.requirements import report_identity
+    from veritx_dse.core.errors import EvidenceInvalid, InvalidInput
 
-    workload = getattr(ev, "workload", None)
-    verified = getattr(ev, "verified_performance_result", None)
-    if not isinstance(verified, VerifiedPerformanceResult):
+    proof = getattr(ev, "authenticated_proof", None)
+    try:
+        claims = verify_authenticated_backend_evaluation(cand.request, proof)
+    except (InvalidInput, EvidenceInvalid) as exc:
         raise OptimizationResultError(
             f"candidate {cand.candidate_id!r} claims certified authority "
-            f"but carries no verified performance result — the "
-            f"'certified-backend' label is not proof (a naked result "
-            f"dict or a made-up performance_result_id is not "
-            f"authentication)")
-    if not isinstance(workload, WorkloadGraph):
+            f"but its authenticated proof was refused "
+            f"({type(exc).__name__}: {exc}) — the 'certified-backend' "
+            f"label is not proof; a verified performance result with an "
+            f"authenticated evidence chain is required") from exc
+    report = getattr(claims, "requirement_report", None)
+    verified = getattr(claims, "verified_result", None)
+    if not isinstance(report, Mapping) or verified is None:
         raise OptimizationResultError(
-            f"candidate {cand.candidate_id!r} claims certified authority "
-            f"but carries no lowered WorkloadGraph — the "
-            f"'certified-backend' label is not proof")
-    result_id = verified.get("resource_id")
+            f"Worker B's verifier returned claims for "
+            f"{cand.candidate_id!r} without a RequirementReport and "
+            f"verified result — refusing unverifiable derived claims")
+    carried = ev.requirement_report
+    if carried is None or report_identity(carried) != report_identity(report):
+        raise OptimizationResultError(
+            f"candidate {cand.candidate_id!r} carries a "
+            f"RequirementReport that is not the one the authenticated "
+            f"proof derives — refusing a fabricated or transplanted "
+            f"report")
+    result_id = getattr(claims, "performance_result_id", None)
     if not isinstance(result_id, str) or not result_id:
         raise OptimizationResultError(
-            f"certified evaluation for {cand.candidate_id!r} carries a "
-            f"verified result with no resource_id — refusing an "
-            f"unbindable proof object")
+            f"the authenticated proof for {cand.candidate_id!r} carries "
+            f"a verified result with no resource_id — refusing an "
+            f"unbindable proof")
     if ev.performance_result_id != result_id:
         raise OptimizationResultError(
             f"candidate {cand.candidate_id!r} carries "
             f"performance_result_id {ev.performance_result_id!r} but its "
-            f"verified performance result is {result_id!r} — refusing a "
-            f"made-up result id")
-    if not isinstance(report, Mapping) or not report.get("entries"):
-        raise OptimizationResultError(
-            f"certified evaluation for {cand.candidate_id!r} carries no "
-            f"RequirementReport entries — an empty (or absent) report is "
-            f"evidence for nothing and can never pass as a vacuous "
-            f"success")
-    try:
-        derived = RequirementEvaluator.evaluate(
-            cand.request, workload, verified)
-    except (InvalidInput, MappingInvalid, EvidenceInvalid) as exc:
-        raise OptimizationResultError(
-            f"certified evaluation for {cand.candidate_id!r} failed "
-            f"independent re-derivation ({type(exc).__name__}: {exc}) — "
-            f"refusing measurements that do not reconstruct") from exc
-    carried_id = report_identity(report)
-    derived_id = report_identity(derived)
-    if carried_id != derived_id:
-        raise OptimizationResultError(
-            f"certified evaluation for {cand.candidate_id!r} carries "
-            f"report identity {carried_id!r} but independent "
-            f"re-derivation gives {derived_id!r} — refusing a fabricated "
-            f"or transplanted report")
-    return derived
+            f"authenticated proof is {result_id!r} — refusing a made-up "
+            f"result id")
+    return claims, report
 
 
-def _apply_metric_authority(ev: Any, verified: Any, definition: Any,
-                            measured_all: dict[str, float],
-                            invalid_values: dict[str, str]) -> None:
-    """Re-extract registered metrics from the verified result (A3).
+def _has_metric_authority(metric: str) -> bool:
+    """Is there a registered producer for this metric? (A4 gate)."""
+    from .metric_authority import registered_metric_authorities
+    return metric in registered_metric_authorities()
 
-    Every metric with a registered authority is authoritative from the
-    verified performance result, so a certified port may not misreport
-    one: a carried value that disagrees (or that claims a metric the
-    verified result does not evidence) refuses. Metrics without a
-    registered producer keep the authenticated evaluation's value — the
-    proof object is what makes them admissible, never the label.
+
+def _authoritative_metrics(ev: Any, definition: Any, claims: Any,
+                           port_measured: dict[str, float],
+                           port_invalid: dict[str, str],
+                           ) -> dict[str, float]:
+    """Registered metrics from Worker B's DERIVED claims (A4).
+
+    ``claims.metrics`` is the registered metric authority's extraction
+    over the re-opened evidence (the verifier ran the producers); there
+    is NO fallback to the evaluator's ``objective_values``. A registered
+    metric the evaluator carried with a different (or non-finite) value
+    refuses — the proof's extracted value is authoritative, never the
+    port's. A registered metric the claims do not evidence is
+    UNMEASURABLE and the evaluator's number is ignored.
     """
-    from .metric_authority import (
-        extract_metric,
-        registered_metric_authorities,
-    )
-    requested = {o.metric for o in definition.objectives}
+    from .metric_authority import registered_metric_authorities
+
+    derived = getattr(claims, "metrics", None)
+    if not isinstance(derived, Mapping):
+        raise OptimizationResultError(
+            f"Worker B's verifier returned claims for "
+            f"{ev.candidate_id!r} without a metric mapping — refusing "
+            f"unverifiable derived claims")
+    needed = {o.metric for o in definition.objectives} | \
+        {c.metric for c in (definition.constraints or [])}
+    measured_all: dict[str, float] = {}
+    for metric in sorted(needed):
+        value = _finite_number(derived.get(metric))
+        if value is not None:
+            measured_all[metric] = value
     for metric in registered_metric_authorities():
-        if metric not in requested and metric not in measured_all \
-                and metric not in invalid_values:
+        if metric not in port_measured and metric not in port_invalid:
             continue
-        authoritative = extract_metric(metric, verified)
+        authoritative = _finite_number(derived.get(metric))
         if authoritative is None:
-            if metric in measured_all or metric in invalid_values:
-                carried = measured_all.get(metric,
-                                           invalid_values.get(metric))
-                raise OptimizationResultError(
-                    f"certified evaluation for {ev.candidate_id!r} "
-                    f"claims registered metric {metric!r}={carried!r} "
-                    f"but the verified performance result does not "
-                    f"evidence it — refusing an unbacked measurement")
-            # Not evidenced and not claimed: the requested objective is
-            # UNMEASURABLE (typed by the objective-state machinery).
+            # The proof does not evidence a finite value for this
+            # registered metric: it is UNMEASURABLE and the evaluator's
+            # number is ignored, never used.
             continue
-        if metric in invalid_values:
+        if metric in port_invalid:
             raise OptimizationResultError(
                 f"certified evaluation for {ev.candidate_id!r} reports "
                 f"registered metric {metric!r} as "
-                f"{invalid_values[metric]} while the verified result "
+                f"{port_invalid[metric]} while the authenticated proof "
                 f"evidences {authoritative!r} — refusing a misreported "
-                f"authenticated metric")
-        if metric in measured_all and measured_all[metric] != authoritative:
+                f"metric")
+        if port_measured[metric] != authoritative:
             raise OptimizationResultError(
                 f"certified evaluation for {ev.candidate_id!r} reports "
-                f"registered metric {metric!r}={measured_all[metric]!r} "
-                f"but the verified result evidences {authoritative!r} — "
-                f"refusing a misreported authenticated metric")
-        measured_all[metric] = authoritative
+                f"registered metric {metric!r}={port_measured[metric]!r} "
+                f"but the authenticated proof evidences "
+                f"{authoritative!r} — refusing a misreported metric")
+    return measured_all
 
 
 @dataclass(frozen=True)
@@ -643,17 +638,19 @@ class Optimizer:
             # THIS candidate's report, and a binding failure makes the
             # candidate optimization-ineligible even though the backend
             # returned EVALUATED.
-            report = ev.requirement_report
-            _check_report_binding(ev, report, cand.candidate_id)
             authority = getattr(ev, "evaluation_authority", None)
-            # A3: a purported certified EVALUATED evaluation must prove it
-            # carried B's verified boundary; the re-derived report is the
-            # one bound below, never the port's self-description.
-            authenticated = (
+            claims = None
+            certified_claim = (
                 authority == AUTHORITY_CERTIFIED_BACKEND
                 and ev.status == "EVALUATED")
-            if authenticated:
-                report = _authenticate_certified_evaluation(cand, ev, report)
+            if certified_claim:
+                # A4: import and call Worker B's verifier authority; the
+                # derived claims (and the report they derive) are the only
+                # authoritative facts. Never duck-type the proof.
+                claims, report = _verified_certified_claims(cand, ev)
+            else:
+                report = ev.requirement_report
+                _check_report_binding(ev, report, cand.candidate_id)
             product_satisfied: bool | None = None
             if report is not None:
                 product_satisfied = report_passes(report)
@@ -674,12 +671,14 @@ class Optimizer:
                     invalid_values[str(key)] = repr(raw)
                 else:
                     measured_all[str(key)] = number
-            if authenticated:
-                # Registered metrics are re-extracted from the verified
-                # result; a port may not misreport them (A3).
-                _apply_metric_authority(
-                    ev, ev.verified_performance_result, definition,
-                    measured_all, invalid_values)
+            if claims is not None:
+                # A4: certified metrics come ONLY from the registered
+                # producers over the derived claims; the evaluator's
+                # objective_values never score (a registered-metric
+                # misreport refuses).
+                measured_all = _authoritative_metrics(
+                    ev, definition, claims, measured_all, invalid_values)
+                invalid_values = {}
             if ev.status == "EVALUATED":
                 verdicts = evaluate_all(definition.constraints,
                                         measured_all)
@@ -722,6 +721,12 @@ class Optimizer:
                     state = "UNMEASURABLE"
                     reason = (f"evaluation status {ev.status} — "
                               "no measured value")
+                elif claims is not None and not _has_metric_authority(
+                        o.metric):
+                    state = "UNMEASURABLE"
+                    reason = (f"objective {o.metric} has no registered "
+                              f"metric authority over the authenticated "
+                              f"proof")
                 elif o.metric in invalid_values:
                     state = "UNMEASURABLE"
                     reason = (f"objective {o.metric} value "
@@ -733,7 +738,9 @@ class Optimizer:
                 else:
                     state = "UNMEASURABLE"
                     reason = (f"objective {o.metric} not evidenced by "
-                              "evaluation")
+                              "the authenticated proof" if claims is not None
+                              else f"objective {o.metric} not evidenced "
+                                   "by evaluation")
                 objective_availability[o.metric] = state
                 if state != "MEASURED":
                     objective_entries.append({
@@ -788,6 +795,19 @@ class Optimizer:
             if constraints_satisfied is not True:
                 eligibility_reasons.append(
                     "hard constraints are not all SATISFIED")
+            if claims is not None:
+                # A4: every requested objective AND constraint metric must
+                # have a registered producer over the derived claims.
+                needed = sorted(
+                    {o.metric for o in definition.objectives} |
+                    {c.metric for c in (definition.constraints or [])})
+                missing_authority = [m for m in needed
+                                     if not _has_metric_authority(m)]
+                if missing_authority:
+                    eligibility_reasons.append(
+                        "metric(s) without a registered metric authority "
+                        "over the authenticated proof: "
+                        + ", ".join(missing_authority))
             eligible = not eligibility_reasons
             eligibility_reason = ("; ".join(eligibility_reasons)
                                   if eligibility_reasons else None)

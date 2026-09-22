@@ -64,6 +64,15 @@ from veritx_dse.optimization.search import (  # noqa: E402
 )
 from p2_verified_support import certified_evaluation  # noqa: E402
 
+
+@pytest.fixture(autouse=True)
+def _overlay_metric_authorities():
+    """Certified test doubles carry analytic stand-ins through registered
+    producers over the proof (A4); production registers only real ones."""
+    from p2_verified_support import test_metric_authorities
+    with test_metric_authorities():
+        yield
+
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "optimize_mesh16.json"
 
 
@@ -726,6 +735,12 @@ class TestObjectiveStateCompleteness:
     @pytest.mark.parametrize("bad", [
         float("nan"), float("inf"), float("-inf"), True, "fast", None])
     def test_non_finite_or_non_real_objective_is_unmeasurable(self, bad):
+        from veritx_dse.optimization.metric_authority import (
+            register_metric_authority,
+        )
+        # A registered producer that returns a non-finite/non-real value
+        # is UNMEASURABLE; the evaluator's own value never scores.
+        register_metric_authority("latency", lambda verified: bad)
         result = Optimizer().optimize(
             _certified_base(), self._defn(), _ValuePort({"latency": bad}))
         assert result.pareto_ids == ()
@@ -738,7 +753,8 @@ class TestObjectiveStateCompleteness:
             assert r.objective_details
             entry = dict(r.objective_details[0])
             assert entry["state"] == "UNMEASURABLE"
-            assert "finite real number" in entry["reason"]
+            assert "not evidenced by the authenticated proof" in \
+                entry["reason"]
 
     def test_measured_objective_gets_explicit_measured_state(self):
         result = Optimizer().optimize(
@@ -748,8 +764,11 @@ class TestObjectiveStateCompleteness:
         for r in result.records:
             assert r.pareto_eligible is True
             assert r.objective_availability["latency"] == "MEASURED"
-            assert r.objective_availability["area"] == "MEASURED"
             assert r.objective_values["latency"] == 5.0
+            # A4: unrequested metrics are not authoritative facts of
+            # this study — only requested objective/constraint metrics
+            # are extracted from the proof.
+            assert "area" not in r.objective_values
             assert r.objective_details == ()
 
 
