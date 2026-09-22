@@ -385,10 +385,12 @@ class TestSafeReuse:
                                                       tmp_path):
         _, ev, producer, _, _ = self._bound(bundle, tmp_path)
         legacy = ev.to_dict()
+        # A genuine historical v1 document: no schema marker, no
+        # producer binding fields at all.
+        legacy.pop("schema_version")
         for key in ("booksim_binary_sha256", "execution_transport",
                     "producer_source_revision", "producer_source_dirty",
-                    "producer_source_dirty_digest",
-                    "producer_tool_identity"):
+                    "producer_source_dirty_digest"):
             del legacy[key]
         legacy_ref = write_evidence(tmp_path / "legacy", legacy)
         with pytest.raises(ProducerError, match="non-production"):
@@ -396,13 +398,20 @@ class TestSafeReuse:
                 legacy_ref, backend_config_hash=ev.backend_config_hash,
                 backend_input_hash=ev.backend_input_hash, producer=producer)
 
-    def test_tool_change_refused(self, bundle, tmp_path):
+    def test_tool_identity_is_attempt_metadata_not_science(self, bundle,
+                                                           tmp_path):
+        """evidence-v2: platform text never enters scientific reuse."""
         _, ev, producer, ref, _ = self._bound(bundle, tmp_path)
         moved = replace(producer, tool_identity="other-platform")
-        with pytest.raises(ProducerError, match="differs in"):
-            verify_reusable_evidence(
-                ref, backend_config_hash=ev.backend_config_hash,
-                backend_input_hash=ev.backend_input_hash, producer=moved)
+        got = verify_reusable_evidence(
+            ref, backend_config_hash=ev.backend_config_hash,
+            backend_input_hash=ev.backend_input_hash, producer=moved)
+        assert got == ev.to_dict()
+        assert "producer_tool_identity" not in got
+        # The run STILL records the environment text — just elsewhere.
+        assert ev.producer_tool_identity
+        assert ev.to_attempt_dict()["producer_tool_identity"] == \
+            ev.producer_tool_identity
 
     def test_naked_path_cannot_reuse(self, bundle, tmp_path):
         _, ev, producer, ref, _ = self._bound(bundle, tmp_path)
@@ -427,7 +436,6 @@ class TestResultTamper:
         assert isinstance(evidence["stats"]["latency"], (int, float))
         assert evidence["route_pairs_compared"] > 0
         assert isinstance(evidence["semantic_loss"], list)
-        assert isinstance(evidence["command"], list)
         return [
             ("stats.latency",
              lambda d: d["stats"].__setitem__("latency", 0.1)),
@@ -449,14 +457,11 @@ class TestResultTamper:
             ("semantic_loss",
              lambda d: d.__setitem__(
                  "semantic_loss", d["semantic_loss"] + [{"forged": True}])),
-            ("exact_fabric_eligible",
+            ("parser_version",
              lambda d: d.__setitem__(
-                 "exact_fabric_eligible", not d["exact_fabric_eligible"])),
+                 "parser_version", "forged/parser")),
             ("exit_status",
              lambda d: d.__setitem__("exit_status", 1)),
-            ("command",
-             lambda d: d.__setitem__(
-                 "command", ["/forged/binary", "config.cfg"])),
             ("seed",
              lambda d: d.__setitem__("seed", 424242)),
         ]

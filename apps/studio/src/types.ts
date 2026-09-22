@@ -1,5 +1,7 @@
-// Contract-mirror types for the five frozen views in contracts/srota/v1/.
-// Studio consumes these views only — never engine internals.
+// Contract-mirror types for the frozen product views. The
+// OptimizationStudyView is contract v2 (contracts/srota/v2/); the other
+// four views are v1 (contracts/srota/v1/). Studio consumes these views
+// only — never engine internals.
 
 export interface Parallelism {
   tp: number;
@@ -149,34 +151,109 @@ export interface RequirementReport {
   entries: RequirementEntry[];
 }
 
+// ── OptimizationStudyView v2 (contracts/srota/v2) ──────────────────────────
+// Three independent authorities are never merged by the engine:
+//   product requirements   -> product_requirements (satisfied | null)
+//   optimization constraints -> constraint_verdicts (SATISFIED|VIOLATED|UNMEASURABLE)
+//   measured objectives    -> objective_values + objective_availability
+// Studio renders these fields as-is; it never infers a state from an
+// absent value.
+
+export type ConstraintVerdict = 'SATISFIED' | 'VIOLATED' | 'UNMEASURABLE';
+export type ObjectiveAvailability = 'MEASURED' | 'UNMEASURABLE';
+export type CandidateCompilationStatus = 'COMPILED' | 'INVALID' | 'UNSUPPORTED';
+export type CandidateEvaluationStatus =
+  | 'EVALUATED'
+  | 'COMPILE_FAILED'
+  | 'INVALID'
+  | 'UNSUPPORTED'
+  | 'BACKEND_UNAVAILABLE'
+  | 'FAILED';
+export type EvaluationAuthority = 'certified-backend' | 'analytic-fake' | null;
+
+export interface StudyObjective {
+  metric: string;
+  direction: 'MIN' | 'MAX';
+}
+
+export interface StudyConstraint {
+  metric: string;
+  op: '<=' | '>=';
+  threshold: number;
+}
+
+export interface CandidateProductRequirements {
+  satisfied: boolean | null;
+  verdicts: RequirementEntry[];
+}
+
+export interface CandidateEvaluationIds {
+  design_hash: string;
+  performance_result_id: string | null;
+  requirement_report_id: string | null;
+}
+
 export interface Candidate {
   candidate_id: string;
   guided_patch: Record<string, number | string | boolean>;
   locked_consequences?: Record<string, unknown>;
-  evaluation_ids: {
-    design_hash: string;
-    performance_result_id?: string | null;
-  };
+  evaluation_ids: CandidateEvaluationIds;
+  product_requirements: CandidateProductRequirements;
   objective_values: Record<string, number>;
-  constraint_verdicts: Record<string, boolean>;
+  objective_availability: Record<string, ObjectiveAvailability>;
+  constraint_verdicts: Record<string, ConstraintVerdict>;
+  evaluation_authority: EvaluationAuthority;
+  compilation_status: CandidateCompilationStatus;
+  evaluation_status: CandidateEvaluationStatus;
+  evaluation_reason: string | null;
+  eligibility_reason: string | null;
+  pareto_eligible: boolean;
   pareto_member: boolean;
 }
 
+export interface StudyDefinition {
+  definition_id: string;
+  objectives: StudyObjective[];
+  constraints: StudyConstraint[];
+  method: 'grid' | 'enumeration' | 'random';
+  selection: 'min_first_objective' | 'lexicographic' | 'none';
+  budget: Record<string, unknown>;
+  seed?: number | string | null;
+  domain?: Record<string, unknown>;
+}
+
 export interface OptimizationStudyView {
-  contract_version: 1;
+  contract_version: 2;
+  result_class: 'CERTIFIED_PRODUCT' | 'ANALYTIC_RESEARCH';
+  metric_registry_id: string | null;
+  metric_registry_version: string | null;
+  optimization_result_id: string;
   base_design_hash: string;
-  definition: {
-    objectives: string[];
-    constraints?: string[];
-    method: string;
-    budget?: Record<string, unknown>;
-    seed?: number | string | null;
-    domain?: Record<string, unknown>;
-  };
+  definition: StudyDefinition;
   candidates: Candidate[];
   pareto_ids: string[];
   selected_candidate_id?: string | null;
   selection_rationale?: string | null;
+}
+
+// Presentation policy keyed ONLY by the engine's explicit contract values
+// (src/presentation.json is the single source; a test proves every state
+// maps to a distinct rendering and that none is inferred).
+export interface PresentationEntry {
+  class: string;
+  label: string;
+}
+
+export type PresentationMap = Record<string, PresentationEntry>;
+
+export interface CandidatePresentation {
+  constraintVerdict: PresentationMap;
+  objectiveState: PresentationMap;
+  compilationStatus: PresentationMap;
+  evaluationStatus: PresentationMap;
+  productRequirements: PresentationMap;
+  eligibility: PresentationMap;
+  pareto: PresentationMap;
 }
 
 export interface FixtureBundle {

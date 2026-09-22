@@ -3,22 +3,22 @@
     "artifact_hashes": {
       "address_decode_hash": "585527fdc7918096d21f7da78634a41fa0b38dc5a3a4633249cf9f4affee9297",
       "attachment_hash": "392d77ccb875491020bd10c7f12ea0624782d2eabdb7276ff6bad7b7ea56851d",
-      "design_hash": "97e7e116d2d88b7f62d629dc2701ce7fcb94a4c8ce7b78362317293cb52884c5",
+      "design_hash": "4d858f032c55cbd31013f32e017138b64923a3879f83d325cd65a8f998212634",
       "fabric_hash": "a47a6a8503044f4664b395fe3d74d4c13c4e3015b98f8c289efa5e8ceba18312",
       "mapping_hash": "ae85233fa2611ce1ac6c251bcb4120cc4a482207da36972639ffe6dd598a3789",
       "packet_format_hash": "89217e537b44bf8fb5969ead63ab6281b5bcefca964aafa39620d1821b9c7524",
-      "resolved_fabric_hash": "3a6deed78cf02b02daba8979ca79d4e24f789694c6c015271852246966fcbbff",
+      "resolved_fabric_hash": "9277e2af0154cb887d64ff9ccfe34b21ec5acc5c51235a12c4903b43cf0b2906",
       "resolved_route_hash": "f8cdbac5ca3f21fc4ac43ef519566d1a9227791d0a57cb7a365d90a01cc6b949",
       "router_behavior_hash": "e57b92401216d9eae557c55150b4aa36689fad9dd95fd92b317df163f4467dc4",
       "router_route_hash": "sha256:35b46b09bc2106e9badbbe316675671d19c266e9f8b61b5415638f14f05adb98",
       "topology_hash": "efef602b155a1a3ed5ee20579e5daf5feb817fec1f04df2a2e18110ac5b2d8e1",
       "vc_assignment_hash": "eab1c3d50938a99f3472fe713b125b656459eeca3dc57c028153c18f7a96fc6d"
     },
-    "certificate_id": "sha256:704646f30d94149cf0fead7ad74f1d5eadc272d977bd6528b54b22640d40860d",
+    "certificate_id": "sha256:c5005de110cf18bb4d732f2b646f2d91fafae1522636dda8d01960069a1bfc1b",
     "certificate_overall": "PASS",
     "compiler_semantics_version": 3,
     "contract_version": 1,
-    "design_hash": "sha256:97e7e116d2d88b7f62d629dc2701ce7fcb94a4c8ce7b78362317293cb52884c5",
+    "design_hash": "sha256:4d858f032c55cbd31013f32e017138b64923a3879f83d325cd65a8f998212634",
     "error": null,
     "obligations": [
       {
@@ -131,11 +131,11 @@
         "evidence": {
           "address_decode_hash": "585527fdc7918096d21f7da78634a41fa0b38dc5a3a4633249cf9f4affee9297",
           "attachment_hash": "392d77ccb875491020bd10c7f12ea0624782d2eabdb7276ff6bad7b7ea56851d",
-          "design_hash": "97e7e116d2d88b7f62d629dc2701ce7fcb94a4c8ce7b78362317293cb52884c5",
+          "design_hash": "4d858f032c55cbd31013f32e017138b64923a3879f83d325cd65a8f998212634",
           "fabric_hash": "a47a6a8503044f4664b395fe3d74d4c13c4e3015b98f8c289efa5e8ceba18312",
           "mapping_hash": "ae85233fa2611ce1ac6c251bcb4120cc4a482207da36972639ffe6dd598a3789",
           "packet_format_hash": "89217e537b44bf8fb5969ead63ab6281b5bcefca964aafa39620d1821b9c7524",
-          "resolved_fabric_hash": "3a6deed78cf02b02daba8979ca79d4e24f789694c6c015271852246966fcbbff",
+          "resolved_fabric_hash": "9277e2af0154cb887d64ff9ccfe34b21ec5acc5c51235a12c4903b43cf0b2906",
           "resolved_route_hash": "f8cdbac5ca3f21fc4ac43ef519566d1a9227791d0a57cb7a365d90a01cc6b949",
           "router_behavior_hash": "e57b92401216d9eae557c55150b4aa36689fad9dd95fd92b317df163f4467dc4",
           "router_route_hash": "sha256:35b46b09bc2106e9badbbe316675671d19c266e9f8b61b5415638f14f05adb98",
@@ -147,10 +147,10 @@
         "status": "PASS"
       }
     ],
-    "resolved_fabric_hash": "sha256:3a6deed78cf02b02daba8979ca79d4e24f789694c6c015271852246966fcbbff",
+    "resolved_fabric_hash": "sha256:9277e2af0154cb887d64ff9ccfe34b21ec5acc5c51235a12c4903b43cf0b2906",
     "status": "COMPILED"
   },
-  "description": "Six GUIDED candidates (base request + patch), constraint verdicts, Pareto membership (cand-03 dominated), and selected cand-02 with rationale. LOCKED properties recompiled per candidate, shown as consequences.",
+  "description": "Certified v2 study (optimize_certified): six engine candidates over link_width {32,64,128} \u00d7 rcu_enabled {false,true}. Three-state constraint verdicts, one eligible Pareto member, evaluated-but-ineligible candidates (binding requirement violated / hard constraint violated), and compile-refused RCU candidates with UNMEASURABLE objectives. LOCKED properties recompiled per candidate.",
   "design": {
     "agents": [
       {
@@ -160,7 +160,7 @@
     ],
     "compiler_semantics_version": 3,
     "contract_version": 1,
-    "design_hash": "sha256:0ba9c33a4b4d5cb929cca0c9ae341ce120bb356d287c6db70190484b1283e90e",
+    "design_hash": "sha256:ad7601ad02637939798b37ffde24494f1111a5c9bae5115eb9af4508fe6f7280",
     "locked_derived": null,
     "noc_guided": {
       "arbitration": null,
@@ -174,7 +174,7 @@
       {
         "bandwidth_floor_gbps": null,
         "binding": true,
-        "latency_ceiling_cycles": 1000000000.0,
+        "latency_ceiling_cycles": 600.0,
         "qos_class": "latency_critical",
         "traffic_class": "tp_collective"
       }
@@ -195,14 +195,14 @@
   "evaluation": {
     "backend_producer": {
       "backend": "BOOKSIM_STANDALONE",
-      "config_hash": "35058062f1ff6e21dc5ee8619c92e8e70ca33414af4c4f6c78142270e7449fd7",
-      "input_hash": "6c1d17584a3b25cb7cd145e3062ccdd7c0a9500fb38803757a82377e88f5278b",
+      "config_hash": "0a21c45a479ea52b868087f3acc7538f1e7fbc2b3acd989a5991a1c809031434",
+      "input_hash": "0e068661c839567d8521e86d4d6671c543fa9827e4ff3c6e9f4ed7ed8904a9b3",
       "producer_identity": "65d61d336fabfb6a4ea6e8fd47826f5e9a707834ef1450cbde11bd32defc7c11"
     },
     "contract_version": 1,
-    "design_hash": "sha256:97e7e116d2d88b7f62d629dc2701ce7fcb94a4c8ce7b78362317293cb52884c5",
+    "design_hash": "sha256:4d858f032c55cbd31013f32e017138b64923a3879f83d325cd65a8f998212634",
     "evidence": {
-      "raw_evidence_digest": "e4d6c57866e67e0ff92f5cec83243227fc366c6104132c952a27bdbe9bce7805",
+      "raw_evidence_digest": "4d78d966dfaf2073ae18d7212d7066046b43223ac827048138668c263c6f001d",
       "stats_digest": "85b4c1d8165afce0cb13750136f9973fda3dbf7e99bc23a11098705dbe15a483"
     },
     "fidelity_warning": "compute=EXPLICIT_DURATION memory=EXPLICIT_DURATION network=QUALIFIED_BOOKSIM_WINDOW all=UNCALIBRATED (declared/explicit models; no hardware dataset in repo)",
@@ -227,26 +227,66 @@
       "wall_time_ns": 437.0,
       "window_cycles": 437
     },
-    "performance_result_id": "7141fb992bb2e4ab6cf0c4e7f0fa929f069dfa8028c2bed64d444fedf78a233d",
-    "physical_traffic_id": "sha256:9e83e2227e38268f5ce6070d85bc08221a893a999f755522e4d2ef89743ab2d1",
+    "performance_result_id": "8a924e702fe28cf788de90b506dbb101c131eaafb8a846162f1b7ec863543af0",
+    "physical_traffic_id": "sha256:c02eed1d9cef4b671df75a9df2ac62c3ba52d77d0d2036b33fdc03a47056a719",
     "reason": null,
-    "resolved_fabric_hash": "sha256:3a6deed78cf02b02daba8979ca79d4e24f789694c6c015271852246966fcbbff",
+    "resolved_fabric_hash": "sha256:9277e2af0154cb887d64ff9ccfe34b21ec5acc5c51235a12c4903b43cf0b2906",
     "status": "EVALUATED",
     "workload_id": "sha256:c19bee81444ecc7e0ea220fd2e5aa50d500ce8c60dac6f3f65c15cf5859ceb89"
   },
   "fixture_id": "optimization-study",
   "optimization": {
-    "base_design_hash": "sha256:0ba9c33a4b4d5cb929cca0c9ae341ce120bb356d287c6db70190484b1283e90e",
+    "base_design_hash": "sha256:ad7601ad02637939798b37ffde24494f1111a5c9bae5115eb9af4508fe6f7280",
     "candidates": [
       {
-        "candidate_id": "cand_12a5c2475ee651a0",
-        "constraint_verdicts": {},
-        "evaluation_ids": {
-          "design_hash": "sha256:9d24a316c7a9adfd5287d0b047d8cda406a9f9af8ef4b32f720fdd31b50a07ee",
-          "performance_result_id": "c7bf57544fb2e07048a6b8921b839b065c4e5180fc1c76d1d1f2d8b4ea2f012a"
+        "candidate_id": "cand_329a1f5e54f47c92",
+        "compilation_status": "UNSUPPORTED",
+        "constraint_verdicts": {
+          "completion_cycles": "UNMEASURABLE"
         },
+        "eligibility_reason": "evaluation status COMPILE_FAILED; no product RequirementReport is bound \u2014 product requirements cannot be shown to pass; no performance_result_id is bound; requested objectives not measured: completion_cycles; hard constraints are not all SATISFIED",
+        "evaluation_authority": "certified-backend",
+        "evaluation_ids": {
+          "design_hash": "sha256:8755a196449a23c72e0f612f30fbe2cf1231242e74ac2c163d11c2d08df3e795",
+          "performance_result_id": null,
+          "requirement_report_id": null
+        },
+        "evaluation_reason": "UNSUPPORTED: NocConfig.rcu_enabled=True has no RCU artifact/behavior in Fabric v3; refusing to resolve the ordinary non-RCU fabric for an RCU-intent design",
+        "evaluation_status": "COMPILE_FAILED",
         "guided_patch": {
-          "link_width": 64
+          "link_width": 128,
+          "rcu_enabled": true
+        },
+        "locked_consequences": {},
+        "objective_availability": {
+          "completion_cycles": "UNMEASURABLE"
+        },
+        "objective_values": {},
+        "pareto_eligible": false,
+        "pareto_member": false,
+        "product_requirements": {
+          "satisfied": null,
+          "verdicts": []
+        }
+      },
+      {
+        "candidate_id": "cand_9efc2ddb4234981b",
+        "compilation_status": "COMPILED",
+        "constraint_verdicts": {
+          "completion_cycles": "SATISFIED"
+        },
+        "eligibility_reason": "binding product requirements are not satisfied",
+        "evaluation_authority": "certified-backend",
+        "evaluation_ids": {
+          "design_hash": "sha256:71b39380f046ccf9fa71ca369bcbae8c73ef6c55e477f4ee5d56bc93b4cb3665",
+          "performance_result_id": "48d6c0ae6f0a007aa5866808306558460c145a365cc761d3d68d70b88a4d3f51",
+          "requirement_report_id": "58bf7acbb929a272fdbe7cf4c2e5fa1028121bd6a0b36a897fff189f2eb472e8"
+        },
+        "evaluation_reason": "binding requirements not satisfied: [0:tp_collective/latency_critical=VIOLATED]",
+        "evaluation_status": "EVALUATED",
+        "guided_patch": {
+          "link_width": 64,
+          "rcu_enabled": false
         },
         "locked_consequences": {
           "route_hash": "sha256:c3f2e5fd87e0efeb53f38d0532854c4727422725077ee44cfd59e6f5a637177b",
@@ -257,34 +297,50 @@
           "topology_family": "mesh",
           "vc_count": 1
         },
-        "objective_values": {
-          "completion_cycles": 845.0,
-          "completion_ns": 845.0,
-          "completion_time": 845.0,
-          "delivered": 216.0,
-          "flits_accepted": 1728.0,
-          "flits_injected": 1728.0,
-          "honest_latency": 331.708,
-          "hops": 2.33333,
-          "latency": 399.208,
-          "max_packet_latency": 792.0,
-          "p50": 332.0,
-          "p95": 613.0,
-          "p99": 641.0,
-          "pkt_count": 216.0,
-          "throughput": 0.0444079
+        "objective_availability": {
+          "completion_cycles": "MEASURED"
         },
-        "pareto_member": false
+        "objective_values": {
+          "completion_cycles": 845.0
+        },
+        "pareto_eligible": false,
+        "pareto_member": false,
+        "product_requirements": {
+          "satisfied": false,
+          "verdicts": [
+            {
+              "binding": true,
+              "measured": 845.0,
+              "metric_authority": "performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles)",
+              "performance_result_id": "48d6c0ae6f0a007aa5866808306558460c145a365cc761d3d68d70b88a4d3f51",
+              "qos_class": "latency_critical",
+              "reason": "measured 845 cycles > ceiling 600.0 cycles via performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles). class-scoped to 'tp_collective' (single-class workload: aggregate == class evidence)",
+              "required": 600.0,
+              "requirement_index": 0,
+              "traffic_class": "tp_collective",
+              "verdict": "VIOLATED"
+            }
+          ]
+        }
       },
       {
-        "candidate_id": "cand_21a6a44ea93b2ec0",
-        "constraint_verdicts": {},
-        "evaluation_ids": {
-          "design_hash": "sha256:97e7e116d2d88b7f62d629dc2701ce7fcb94a4c8ce7b78362317293cb52884c5",
-          "performance_result_id": "b258216feac4c29c43eff6646e3aa50ccc8165b41a0a495fd023035e36ebc73e"
+        "candidate_id": "cand_b1c45e8e462f4558",
+        "compilation_status": "COMPILED",
+        "constraint_verdicts": {
+          "completion_cycles": "SATISFIED"
         },
+        "eligibility_reason": null,
+        "evaluation_authority": "certified-backend",
+        "evaluation_ids": {
+          "design_hash": "sha256:4d858f032c55cbd31013f32e017138b64923a3879f83d325cd65a8f998212634",
+          "performance_result_id": "8a924e702fe28cf788de90b506dbb101c131eaafb8a846162f1b7ec863543af0",
+          "requirement_report_id": "5fd0590372201ad33d9cf2e9a0956bf7384f7282d616ab961805a484fcc73add"
+        },
+        "evaluation_reason": null,
+        "evaluation_status": "EVALUATED",
         "guided_patch": {
-          "link_width": 128
+          "link_width": 128,
+          "rcu_enabled": false
         },
         "locked_consequences": {
           "route_hash": "sha256:35b46b09bc2106e9badbbe316675671d19c266e9f8b61b5415638f14f05adb98",
@@ -295,66 +351,209 @@
           "topology_family": "mesh",
           "vc_count": 1
         },
-        "objective_values": {
-          "completion_cycles": 437.0,
-          "completion_ns": 437.0,
-          "completion_time": 437.0,
-          "delivered": 120.0,
-          "flits_accepted": 816.0,
-          "flits_injected": 816.0,
-          "honest_latency": 173.433,
-          "hops": 2.33333,
-          "latency": 210.933,
-          "max_packet_latency": 408.0,
-          "p50": 175.0,
-          "p95": 313.0,
-          "p99": 325.0,
-          "pkt_count": 120.0,
-          "throughput": 0.0267857
+        "objective_availability": {
+          "completion_cycles": "MEASURED"
         },
-        "pareto_member": true
+        "objective_values": {
+          "completion_cycles": 437.0
+        },
+        "pareto_eligible": true,
+        "pareto_member": true,
+        "product_requirements": {
+          "satisfied": true,
+          "verdicts": [
+            {
+              "binding": true,
+              "measured": 437.0,
+              "metric_authority": "performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles)",
+              "performance_result_id": "8a924e702fe28cf788de90b506dbb101c131eaafb8a846162f1b7ec863543af0",
+              "qos_class": "latency_critical",
+              "reason": "measured 437 cycles <= ceiling 600.0 cycles via performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles). class-scoped to 'tp_collective' (single-class workload: aggregate == class evidence)",
+              "required": 600.0,
+              "requirement_index": 0,
+              "traffic_class": "tp_collective",
+              "verdict": "SATISFIED"
+            }
+          ]
+        }
+      },
+      {
+        "candidate_id": "cand_ba52eaecd294b497",
+        "compilation_status": "UNSUPPORTED",
+        "constraint_verdicts": {
+          "completion_cycles": "UNMEASURABLE"
+        },
+        "eligibility_reason": "evaluation status COMPILE_FAILED; no product RequirementReport is bound \u2014 product requirements cannot be shown to pass; no performance_result_id is bound; requested objectives not measured: completion_cycles; hard constraints are not all SATISFIED",
+        "evaluation_authority": "certified-backend",
+        "evaluation_ids": {
+          "design_hash": "sha256:f73c6620bef18fc9397281e3f1945ec4f10775d896fed0ef345e9284136741d7",
+          "performance_result_id": null,
+          "requirement_report_id": null
+        },
+        "evaluation_reason": "UNSUPPORTED: NocConfig.rcu_enabled=True has no RCU artifact/behavior in Fabric v3; refusing to resolve the ordinary non-RCU fabric for an RCU-intent design",
+        "evaluation_status": "COMPILE_FAILED",
+        "guided_patch": {
+          "link_width": 64,
+          "rcu_enabled": true
+        },
+        "locked_consequences": {},
+        "objective_availability": {
+          "completion_cycles": "UNMEASURABLE"
+        },
+        "objective_values": {},
+        "pareto_eligible": false,
+        "pareto_member": false,
+        "product_requirements": {
+          "satisfied": null,
+          "verdicts": []
+        }
+      },
+      {
+        "candidate_id": "cand_d8df2c67f77f931a",
+        "compilation_status": "COMPILED",
+        "constraint_verdicts": {
+          "completion_cycles": "VIOLATED"
+        },
+        "eligibility_reason": "binding product requirements are not satisfied; hard constraints are not all SATISFIED",
+        "evaluation_authority": "certified-backend",
+        "evaluation_ids": {
+          "design_hash": "sha256:6cb709cdde15db7ba8132e8734aa430dd53ff7cc97c1a62be89c566c5876753c",
+          "performance_result_id": "808611213b4c0fd7950414e22244df016b2ccb299fe889dfe421a4c269a95437",
+          "requirement_report_id": "3138830ea0d31fa4c626e07956e100182f72fa9ab79e919084000b59b75931fb"
+        },
+        "evaluation_reason": "binding requirements not satisfied: [0:tp_collective/latency_critical=VIOLATED]",
+        "evaluation_status": "EVALUATED",
+        "guided_patch": {
+          "link_width": 32,
+          "rcu_enabled": false
+        },
+        "locked_consequences": {
+          "route_hash": "sha256:3b20622a9b878a82c020d3564fbc4de868334cf2e3379d45f0b932716a1033e0",
+          "router_count": 4,
+          "routing_classes": [
+            "DOR_XY"
+          ],
+          "topology_family": "mesh",
+          "vc_count": 1
+        },
+        "objective_availability": {
+          "completion_cycles": "MEASURED"
+        },
+        "objective_values": {
+          "completion_cycles": 1950.0
+        },
+        "pareto_eligible": false,
+        "pareto_member": false,
+        "product_requirements": {
+          "satisfied": false,
+          "verdicts": [
+            {
+              "binding": true,
+              "measured": 1950.0,
+              "metric_authority": "performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles)",
+              "performance_result_id": "808611213b4c0fd7950414e22244df016b2ccb299fe889dfe421a4c269a95437",
+              "qos_class": "latency_critical",
+              "reason": "measured 1950 cycles > ceiling 600.0 cycles via performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles). class-scoped to 'tp_collective' (single-class workload: aggregate == class evidence)",
+              "required": 600.0,
+              "requirement_index": 0,
+              "traffic_class": "tp_collective",
+              "verdict": "VIOLATED"
+            }
+          ]
+        }
+      },
+      {
+        "candidate_id": "cand_e8479905cda8ae43",
+        "compilation_status": "UNSUPPORTED",
+        "constraint_verdicts": {
+          "completion_cycles": "UNMEASURABLE"
+        },
+        "eligibility_reason": "evaluation status COMPILE_FAILED; no product RequirementReport is bound \u2014 product requirements cannot be shown to pass; no performance_result_id is bound; requested objectives not measured: completion_cycles; hard constraints are not all SATISFIED",
+        "evaluation_authority": "certified-backend",
+        "evaluation_ids": {
+          "design_hash": "sha256:9f9a6a8108e80f9fe51011de179341ebce7f53db4a50e0d373b583ec9702252c",
+          "performance_result_id": null,
+          "requirement_report_id": null
+        },
+        "evaluation_reason": "UNSUPPORTED: NocConfig.rcu_enabled=True has no RCU artifact/behavior in Fabric v3; refusing to resolve the ordinary non-RCU fabric for an RCU-intent design",
+        "evaluation_status": "COMPILE_FAILED",
+        "guided_patch": {
+          "link_width": 32,
+          "rcu_enabled": true
+        },
+        "locked_consequences": {},
+        "objective_availability": {
+          "completion_cycles": "UNMEASURABLE"
+        },
+        "objective_values": {},
+        "pareto_eligible": false,
+        "pareto_member": false,
+        "product_requirements": {
+          "satisfied": null,
+          "verdicts": []
+        }
       }
     ],
-    "contract_version": 1,
+    "contract_version": 2,
     "definition": {
       "budget": {},
-      "constraints": [],
+      "constraints": [
+        {
+          "metric": "completion_cycles",
+          "op": "<=",
+          "threshold": 1000.0
+        }
+      ],
+      "definition_id": "73539b8ffb6ef9ca08e20e37744f1d359d8bc21dd548df8d1d6a27bebac0faae",
       "domain": {
         "link_width": [
           128,
+          32,
           64
+        ],
+        "rcu_enabled": [
+          false,
+          true
         ]
       },
       "method": "grid",
       "objectives": [
-        "completion_cycles"
+        {
+          "direction": "MIN",
+          "metric": "completion_cycles"
+        }
       ],
-      "seed": null
+      "seed": null,
+      "selection": "min_first_objective"
     },
+    "metric_registry_id": "316e403f447f90431f761f084539c934aaded9581f15d58d72aa121627a9e938",
+    "metric_registry_version": "certified-builtin-v1",
+    "optimization_result_id": "e9e2ee5eb03388fe77b2f36e823c2c2b776db900ec0fb9fc99df8c45cc4b8d41",
     "pareto_ids": [
-      "cand_21a6a44ea93b2ec0"
+      "cand_b1c45e8e462f4558"
     ],
-    "selected_candidate_id": "cand_21a6a44ea93b2ec0",
-    "selection_rationale": "selected cand_21a6a44ea93b2ec0 minimizing completion_cycles (MIN) over 1 Pareto candidate(s); policy=min_first_objective; values={completion_cycles=437, completion_ns=437, completion_time=437, delivered=120, flits_accepted=816, flits_injected=816, honest_latency=173.433, hops=2.33333, latency=210.933, max_packet_latency=408, p50=175, p95=313, p99=325, pkt_count=120, throughput=0.0267857}"
+    "result_class": "CERTIFIED_PRODUCT",
+    "selected_candidate_id": "cand_b1c45e8e462f4558",
+    "selection_rationale": "selected cand_b1c45e8e462f4558 minimizing completion_cycles (MIN) over 1 Pareto candidate(s); policy=min_first_objective; values={completion_cycles=437}"
   },
   "requirements": {
     "contract_version": 1,
-    "design_hash": "sha256:97e7e116d2d88b7f62d629dc2701ce7fcb94a4c8ce7b78362317293cb52884c5",
+    "design_hash": "sha256:4d858f032c55cbd31013f32e017138b64923a3879f83d325cd65a8f998212634",
     "entries": [
       {
         "binding": true,
         "measured": 437.0,
-        "metric_authority": "performance_result.network_binding.duration @ design.physical.default_clock_freq_mhz",
-        "performance_result_id": "7141fb992bb2e4ab6cf0c4e7f0fa929f069dfa8028c2bed64d444fedf78a233d",
+        "metric_authority": "performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles)",
+        "performance_result_id": "8a924e702fe28cf788de90b506dbb101c131eaafb8a846162f1b7ec863543af0",
         "qos_class": "latency_critical",
-        "reason": "measured 437 cycles <= ceiling 1000000000.0 cycles via performance_result.network_binding.duration. class-scoped to 'tp_collective' (single-class workload: aggregate == class evidence)",
-        "required": 1000000000.0,
+        "reason": "measured 437 cycles <= ceiling 600.0 cycles via performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles). class-scoped to 'tp_collective' (single-class workload: aggregate == class evidence)",
+        "required": 600.0,
         "requirement_index": 0,
         "traffic_class": "tp_collective",
         "verdict": "SATISFIED"
       }
     ],
-    "performance_result_id": "7141fb992bb2e4ab6cf0c4e7f0fa929f069dfa8028c2bed64d444fedf78a233d"
+    "performance_result_id": "8a924e702fe28cf788de90b506dbb101c131eaafb8a846162f1b7ec863543af0"
   },
-  "title": "Optimization study over link_width \u00d7 concentration"
+  "title": "Optimization study over link_width \u00d7 rcu_enabled"
 }

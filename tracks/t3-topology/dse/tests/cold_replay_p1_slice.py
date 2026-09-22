@@ -32,7 +32,11 @@ from veritx_dse.application.requirements import (
     report_passes,
     verify_performance_result,
 )
-from veritx_dse.backend.evidence import EvidenceRef, read_verified_evidence
+from veritx_dse.backend.evidence import (
+    EvidenceRef,
+    read_verified_evidence,
+    validate_evidence_document,
+)
 from veritx_dse.core.spec import canonical_json
 from veritx_dse.core.time import QTime
 from veritx_dse.model.compile_model import CompileRequestV3
@@ -157,8 +161,8 @@ def verify_cold(persist_dir) -> dict:
     evidence_digest = hashlib.sha256(raw).hexdigest()
     binding = perf["network_binding"]
     assert evidence_digest == binding["evidence_sha256"]
-    parsed = read_verified_evidence(
-        EvidenceRef(path=evidence_path, sha256=evidence_digest))
+    parsed = validate_evidence_document(read_verified_evidence(
+        EvidenceRef(path=evidence_path, sha256=evidence_digest)))
     assert stats_sha256(parsed["stats"]) == binding["stats_sha256"]
 
     # ── the rigorous verifier: reverify_result over the rebuilt parents

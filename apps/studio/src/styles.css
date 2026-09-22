@@ -857,6 +857,115 @@ input:disabled {
   border-color: var(--bad);
 }
 
+/* v2 study states: every engine value gets its own style; unknown states
+   render as a visible warning, never as a passing style. */
+.verdict-chip.warn {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+.verdict-chip.muted {
+  color: var(--muted);
+  border-color: var(--muted);
+}
+
+.verdict-chip.info {
+  color: var(--info);
+  border-color: var(--info);
+}
+
+.verdict-chip.unknown {
+  color: var(--bad);
+  border-color: var(--bad);
+  border-style: dashed;
+}
+
+.obj-state {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.obj-state.ok { color: var(--ok); }
+.obj-state.warn { color: var(--warn); }
+.obj-state.muted { color: var(--muted); }
+.obj-state.unknown { color: var(--bad); }
+
+.pareto-tag {
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 3px;
+  padding: 1px 6px;
+  border: 1px solid;
+  white-space: nowrap;
+}
+
+.pareto-tag.pareto-member {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.pareto-tag.pareto-eligible-only {
+  color: var(--ok);
+  border-color: var(--ok);
+}
+
+.pareto-tag.pareto-ineligible {
+  color: var(--muted);
+  border-color: var(--muted);
+}
+
+.result-class {
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 3px;
+  padding: 1px 7px;
+  border: 1px solid;
+}
+
+.result-class.result-certified {
+  color: var(--ok);
+  border-color: var(--ok);
+  background: var(--ok-bg);
+}
+
+.result-class.result-analytic {
+  color: var(--warn);
+  border-color: var(--warn);
+  background: var(--warn-bg);
+}
+
+.badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.badge-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.reason-block {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--bad);
+  background: var(--bad-bg);
+  font-size: 12px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.reason-block.reason-ineligible {
+  border-left-color: var(--warn);
+  background: var(--warn-bg);
+}
+
 .selected-tag {
   margin-left: 6px;
   font-size: 10px;
@@ -891,6 +1000,16 @@ input:disabled {
 
 .pareto .pt-pareto {
   fill: var(--accent);
+}
+
+.pareto .pt-eligible {
+  fill: var(--ok);
+}
+
+.pareto .pt-ineligible {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.5;
 }
 
 .pareto .pt-dom {
