@@ -136,14 +136,14 @@ RESULT_CLASSES = {"CERTIFIED_PRODUCT", "ANALYTIC_RESEARCH"}
 # optimization/metric_registry.py — product-controlled registry
 ENGINE_REGISTRY_VERSION = "certified-builtin-v1"
 
-# ── byte-reproducibility defect classification ──────────────────────────────
-# The persisted evidence bytes (backend/evidence.py) embed two NON-semantic
-# runtime fields: the absolute run directory (``backend_dir``, path includes
-# the OS-atomic mkdtemp slot) and the measured wall time (``wall_time_s``).
-# Because ``evaluation.evidence.raw_evidence_digest`` is the sha256 of those
-# bytes, every derived identity moves on a fresh run. These paths are the
-# complete identity closure of that leak; a byte difference confined to them
-# is an ENGINE DEFECT to report, NOT an equivalence to bless.
+# ── byte-reproducibility regression classification ───────────────────────────
+# evidence-v2 (backend/evidence.py) removed the non-semantic runtime fields
+# (absolute run directory, measured wall time, host platform text) from the
+# scientific evidence document, so none of them can enter
+# ``evaluation.evidence.raw_evidence_digest`` or its identity closure any
+# more. If a future change re-introduces one, the byte diff lands exactly on
+# the paths below: that is an ENGINE DEFECT to report, NOT an equivalence to
+# bless (a difference here still fails the gate).
 _PROVENANCE_DIFF_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
     re.compile(p) for p in (
         r"^\.evaluation\.evidence\.raw_evidence_digest$",
@@ -864,15 +864,14 @@ def check_engine_realizability() -> tuple[list[str], list[str], int, int, int]:
                 continue
             provenance_only += 1
             byte_errors.append(
-                f"ENGINE DEFECT (REPORTED, NOT NORMALIZED) {stem}.json: the "
-                "persisted evidence bytes embed non-semantic runtime "
-                "provenance (evidence.backend_dir and evidence.wall_time_s), "
-                "so raw_evidence_digest and its identity closure move on "
-                "every run. Byte-for-byte reproducibility FAILS on: "
+                f"ENGINE DEFECT (REPORTED, NOT NORMALIZED) {stem}.json: a "
+                "byte difference lands on runtime-provenance-derived "
+                "identity paths (evidence.backend_dir/wall_time_s/tool "
+                "identity leaked back into the scientific digest). "
+                "Byte-for-byte reproducibility FAILS on: "
                 + ", ".join(prov)
-                + ". This is an engine-side contract leak "
-                "(backend/evidence.py + backend/booksim.py) — fix belongs in "
-                "the frozen engine, not in this checker.")
+                + ". This is an engine-side evidence-v2 contract "
+                "regression (backend/evidence.py + backend/booksim.py).")
     return proof_errors, byte_errors, identical, provenance_only, semantic
 
 

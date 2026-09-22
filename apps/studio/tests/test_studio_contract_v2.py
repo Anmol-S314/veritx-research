@@ -6,8 +6,9 @@ deliverable:
  1. all committed fixtures validate against their declared contract versions;
  2. the fast validator explicitly says backend realizability is not proven;
  3. the provisioned validator proves the backend fixtures through the engine;
- 4. fresh provisioned regeneration bytes: reproducible, or the known engine
-    defect is reported (never normalized);
+ 4. fresh provisioned regeneration bytes: byte-identical across two fresh
+    roots and against the committed fixtures (evidence-v2: no runtime
+    provenance in scientific identity; no volatility allowlist);
  5. generated hashes originate from engine objects (no label hashing);
  6. the optimization fixture originates from ``optimize_certified``;
  7. UNMEASURABLE renders differently from VIOLATED;
@@ -127,17 +128,15 @@ def test_provisioned_validator_proves_backend_fixtures_through_engine():
     proc = _run_validator("--engine")
     out = proc.stdout
     # The EVALUATED fixture + RequirementReport + certified study were
-    # proven through engine objects (C-3). The byte gate either passes
-    # (engine defect fixed) or fails ONLY on the reported non-semantic
-    # runtime-provenance leak (C-4) — never on a semantic mismatch.
+    # proven through engine objects (C-3), and the byte gate passes: the
+    # evidence-v2 split keeps runtime provenance out of scientific
+    # identity, so no defect class may appear.
     assert ("Engine objects verified: EVALUATED fixture + RequirementReport"
             " + CERTIFIED_PRODUCT OptimizationStudy") in out, out
     assert "SEMANTIC field" not in out, out
-    if proc.returncode == 0:
-        assert vf.PROVEN_LINE in out
-    else:
-        assert proc.returncode == 1, out
-        assert "ENGINE DEFECT (REPORTED, NOT NORMALIZED)" in out, out
+    assert "ENGINE DEFECT" not in out, out
+    assert proc.returncode == 0, out
+    assert vf.PROVEN_LINE in out, out
 
 
 # ── C-6 (4) byte reproducibility / reported defect ──────────────────────────
@@ -161,35 +160,43 @@ def regenerated(tmp_path_factory):
 
 
 def test_fresh_provisioned_regeneration_bytes(regenerated):
-    """C-6 (4): byte-for-byte, or the known engine defect is reported.
+    """C-6 (4): byte-for-byte against the committed fixtures.
 
-    The producer-independent fixtures ARE byte-identical. The two
-    EVALUATED fixtures are NOT, because the persisted evidence bytes
-    embed the absolute run directory and the measured wall time, whose
-    digest is part of the contract identity chain. That is an engine
-    defect; this test asserts the difference is EXACTLY that defect and
-    carries no semantic drift. It never normalizes the fields away.
+    evidence-v2 removed the runtime provenance (wall time, absolute run
+    paths, platform text) from the scientific evidence document; the
+    attempt record is separate and never hashed. Fresh regeneration must
+    therefore be byte-identical on every fixture, with no volatile field.
     """
-    for stem in ("compiled-mesh", "invalid-design", "backend-unavailable"):
+    for stem in sorted(vf.EXPECTED_FIXTURES):
         identical, prov, semantic = vf.compare_bytes(
             FIXTURES / f"{stem}.json", regenerated / f"{stem}.json")
         assert identical, (stem, prov, semantic)
-    for stem in ("evaluated-design", "optimization-study"):
-        identical, prov, semantic = vf.compare_bytes(
-            FIXTURES / f"{stem}.json", regenerated / f"{stem}.json")
-        if identical:
-            continue  # engine-side leak fixed; byte-identical again
-        assert semantic == [], (stem, semantic)
-        assert prov, stem
-        assert all(
-            "raw_evidence_digest" in p or "performance_result_id" in p
-            or "requirement_report_id" in p or "optimization_result_id" in p
-            for p in prov), (stem, prov)
-    # The engine defect, when present, is reported by the provisioned gate
-    # itself (never silently normalized away).
-    proc = _run_validator("--engine")
-    if proc.returncode != 0:
-        assert "ENGINE DEFECT (REPORTED, NOT NORMALIZED)" in proc.stdout
+
+
+def test_two_fresh_regeneration_roots_are_byte_identical(tmp_path):
+    """The required proof: generator twice from fresh roots, exact bytes."""
+    ok, detail = _provisioned()
+    if not ok:
+        pytest.skip(f"not provisioned: {detail}")
+    from veritx_dse.tools import generate_studio_fixtures as engine
+    roots = [tmp_path / "fixtures-A", tmp_path / "fixtures-B"]
+    for root in roots:
+        root.mkdir()
+        for stem in vf.EXPECTED_FIXTURES:
+            shutil.copy2(FIXTURES / f"{stem}.json", root / f"{stem}.json")
+    old = engine.FIXTURE_DIR
+    try:
+        for root in roots:
+            engine.FIXTURE_DIR = str(root)
+            engine.main()
+    finally:
+        engine.FIXTURE_DIR = old
+    names_a = sorted(p.name for p in roots[0].glob("*.json"))
+    names_b = sorted(p.name for p in roots[1].glob("*.json"))
+    assert names_a == names_b and names_a, (names_a, names_b)
+    for name in names_a:
+        assert (roots[0] / name).read_bytes() == \
+            (roots[1] / name).read_bytes(), name
 
 
 # ── C-6 (5) hashes originate from engine objects ────────────────────────────
