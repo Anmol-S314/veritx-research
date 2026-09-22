@@ -224,24 +224,28 @@ def _authoritative_metrics(ev: Any, definition: Any, claims: Any,
                            port_measured: dict[str, float],
                            port_invalid: dict[str, str],
                            ) -> dict[str, float]:
-    """Registered metrics from Worker B's DERIVED claims (A4).
+    """Registered metrics extracted from the verified claims (A4/R3).
 
-    ``claims.metrics`` is the registered metric authority's extraction
-    over the re-opened evidence (the verifier ran the producers); there
-    is NO fallback to the evaluator's ``objective_values``. A registered
-    metric the evaluator carried with a different (or non-finite) value
-    refuses — the proof's extracted value is authoritative, never the
-    port's. A registered metric the claims do not evidence is
-    UNMEASURABLE and the evaluator's number is ignored.
+    The verifier returns authenticated PRIMITIVES; optimization runs the
+    registered producers over ``claims.verified_result`` afterwards
+    (evidence truth never depends upward on optimization). There is NO
+    fallback to the evaluator's ``objective_values``: a registered metric
+    the evaluator carried with a different (or non-finite) value refuses;
+    a registered metric the claims do not evidence is UNMEASURABLE and
+    the evaluator's number is ignored.
     """
-    from .metric_authority import registered_metric_authorities
+    from .metric_authority import (
+        extract_authoritative_metrics,
+        registered_metric_authorities,
+    )
 
-    derived = getattr(claims, "metrics", None)
-    if not isinstance(derived, Mapping):
+    verified = getattr(claims, "verified_result", None)
+    if verified is None:
         raise OptimizationResultError(
             f"Worker B's verifier returned claims for "
-            f"{ev.candidate_id!r} without a metric mapping — refusing "
+            f"{ev.candidate_id!r} without a verified result — refusing "
             f"unverifiable derived claims")
+    derived = extract_authoritative_metrics(verified)
     needed = {o.metric for o in definition.objectives} | \
         {c.metric for c in (definition.constraints or [])}
     measured_all: dict[str, float] = {}

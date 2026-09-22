@@ -99,31 +99,17 @@ class AuthenticatedBackendEvaluation:
 
 
 @dataclass(frozen=True)
-class MetricEvidenceHandle:
-    """One authenticated metric value with its evidence provenance.
-
-    ``producer`` is the registered metric-authority name that extracted
-    the value; ``evidence_sha256``/``stats_sha256`` name the exact
-    authenticated evidence the value derives from, so a consumer can
-    display or re-check provenance without trusting a label.
-    """
-
-    metric: str
-    value: float
-    producer: str
-    evidence_sha256: str
-    stats_sha256: str
-
-
-@dataclass(frozen=True)
 class VerifiedEvaluationClaims:
     """Consumption-time derived claims for one authenticated evaluation.
 
     Every field is derived by ``verify_authenticated_backend_evaluation``
     from the re-checked evidence chain — none is accepted from the
-    caller's proof object. ``metrics`` are the registered metric
-    authority's values over the verified result; ``metric_evidence``
-    carries the same values with their evidence handles.
+    caller's proof object. These are authenticated PRIMITIVES (the
+    verified result, its binding, the evidence ref/artifact, backend and
+    producer identities, the canonical RequirementReport); metric
+    extraction is the optimization layer's job, applied afterwards over
+    ``verified_result`` — evidence truth never depends upward on
+    optimization.
 
     The evidence schema does not persist a backend profile id, so
     ``backend`` is the authenticated producer/transport identity and
@@ -137,8 +123,6 @@ class VerifiedEvaluationClaims:
     performance_result_id: str
     requirement_report: dict[str, Any]
     requirement_report_id: str
-    metrics: dict[str, float]
-    metric_evidence: tuple[MetricEvidenceHandle, ...]
     producer_identity: str
     backend: str
     backend_profile: str | None
@@ -429,29 +413,6 @@ def authenticate_backend_evaluation(
     )
 
 
-def _metric_handles(verified_result: VerifiedPerformanceResult,
-                    ref: EvidenceRef, artifact: EvidenceArtifact
-                    ) -> tuple[dict[str, float],
-                               tuple[MetricEvidenceHandle, ...]]:
-    """Registered metric authority over the verified result (one
-    producer registry, imported lazily so ``application`` does not pull
-    ``optimization`` at module load)."""
-    from veritx_dse.optimization.metric_authority import (
-        extract_authoritative_metrics,
-    )
-    metrics: dict[str, float] = {}
-    handles: list[MetricEvidenceHandle] = []
-    values = extract_authoritative_metrics(verified_result)
-    for metric in sorted(values):
-        value = values[metric]
-        metrics[metric] = value
-        handles.append(MetricEvidenceHandle(
-            metric=metric, value=value, producer=metric,
-            evidence_sha256=ref.sha256,
-            stats_sha256=artifact.stats_sha256))
-    return metrics, tuple(handles)
-
-
 def verify_authenticated_backend_evaluation(
     candidate_request: Any, proof: Any,
 ) -> VerifiedEvaluationClaims:
@@ -581,8 +542,6 @@ def verify_authenticated_backend_evaluation(
             f"{report.get('performance_result_id')!r} is not the "
             f"verified result's resource_id {result_id!r}")
 
-    metrics, handles = _metric_handles(verified_result, reopened_ref,
-                                       artifact)
     execution_transport = evidence_doc.get("execution_transport")
     backend = (execution_transport
                if isinstance(execution_transport, str) and
@@ -598,8 +557,6 @@ def verify_authenticated_backend_evaluation(
         performance_result_id=result_id,
         requirement_report=report,
         requirement_report_id=derived_id,
-        metrics=metrics,
-        metric_evidence=handles,
         producer_identity=evidence_producer,
         backend=backend,
         backend_profile=backend_profile,
@@ -616,7 +573,6 @@ def verify_authenticated_backend_evaluation(
 __all__ = [
     "AuthenticatedBackendEvaluation",
     "EVALUATION_AUTHORITY",
-    "MetricEvidenceHandle",
     "VerifiedEvaluationClaims",
     "authenticate_backend_evaluation",
     "verify_authenticated_backend_evaluation",
