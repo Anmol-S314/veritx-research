@@ -2,8 +2,10 @@
 
 Proves the production route end to end (compile -> real candidates ->
 Pareto -> schema-valid study view) and that two invocations against the
-SAME evidence root in the SAME second both succeed with distinct evidence
-(run roots are per-invocation, never reused).
+SAME evidence root in the SAME second both succeed with FRESH evidence
+slots whose scientific bytes are identical: run roots are per-invocation,
+never reused, but identical deterministic science must share every
+content identity (evidence-v2).
 """
 from __future__ import annotations
 
@@ -71,10 +73,11 @@ def _run_booksim_study(tmp_path, tag, run_root):
 
 
 def _evidence_digests(token_dir):
-    """raw evidence digests (sha256 of each persisted evidence artifact)."""
+    """raw scientific evidence digests (one per persisted run slot)."""
+    from veritx_dse.backend.evidence import EVIDENCE_FILE
     return sorted(
         hashlib.sha256(p.read_bytes()).hexdigest()
-        for p in token_dir.rglob("evidence/*.json"))
+        for p in token_dir.rglob(f"evidence/{EVIDENCE_FILE}"))
 
 
 def test_booksim_study_is_real_and_repeatable(tmp_path, monkeypatch):
@@ -116,14 +119,22 @@ def test_booksim_study_is_real_and_repeatable(tmp_path, monkeypatch):
         [t.name for t in tokens]
     assert tokens[0].name != tokens[1].name
 
-    # Same science, fresh evidence: identities stable, results real, and
-    # each run's persisted evidence digests are distinct.
+    # Same science, fresh evidence slots: every content identity is
+    # stable, results are real, and the persisted scientific evidence
+    # bytes are IDENTICAL (evidence-v2: no run-varying provenance in the
+    # digest). Distinctness lives in the per-invocation paths only.
     assert [c["candidate_id"] for c in first["candidates"]] == \
         [c["candidate_id"] for c in second["candidates"]]
     assert [c["evaluation_ids"]["performance_result_id"]
-            for c in first["candidates"]] != \
+            for c in first["candidates"]] == \
         [c["evaluation_ids"]["performance_result_id"]
             for c in second["candidates"]]
     digests = [_evidence_digests(t) for t in tokens]
     assert digests[0] and digests[1], digests
-    assert digests[0] != digests[1], digests
+    assert digests[0] == digests[1], digests
+    assert _evidence_digests(tokens[0]) == _evidence_digests(tokens[1])
+    first_paths = sorted(p for p in tokens[0].rglob("evidence/*.json"))
+    second_paths = sorted(p for p in tokens[1].rglob("evidence/*.json"))
+    assert first_paths and second_paths
+    assert [p.name for p in first_paths] == [p.name for p in second_paths]
+    assert first_paths != second_paths
