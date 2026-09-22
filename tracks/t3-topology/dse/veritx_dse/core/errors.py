@@ -43,3 +43,13 @@ class CertificationError(VeritXError):
 class ArtifactError(VeritXError):
     """Artifact signing/manifest errors."""
     pass
+
+
+class InvalidInput(ArtifactError):
+    """Malformed persisted artifact input."""
+    pass
+
+
+class EvidenceInvalid(ArtifactError):
+    """Persisted artifact identity failed verification."""
+    pass
