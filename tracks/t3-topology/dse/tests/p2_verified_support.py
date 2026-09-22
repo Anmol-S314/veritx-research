@@ -220,19 +220,29 @@ TEST_METRIC_REGISTRY = build_test_metric_registry()
 
 def optimize_certified_for_tests(base: Any, definition: Any, port: Any,
                                 metric_registry: Any) -> Any:
-    """Unit-test seam for the CERTIFIED pipeline (R1).
+    """Unit-test seam for the CERTIFIED entry point (R1).
 
     Production ``Optimizer.optimize_certified`` owns the real evaluator
-    and accepts no port; this helper drives the same certified pipeline
-    with a test port so the certified semantics (verifier authority,
-    frozen registry, eligibility) stay covered without BookSim. The
-    public boundary itself is covered by the real-BookSim tests and the
-    R1 refusal attack.
+    and accepts no port. This helper overrides only the evaluator
+    FACTORY of that same public entry point, so the certified semantics
+    (verifier authority, frozen registry, eligibility) stay covered
+    without BookSim. The public boundary itself is covered by the
+    real-BookSim tests and the R1 refusal attack.
     """
-    from veritx_dse.optimization.result import Optimizer
-    return Optimizer()._optimize(base, definition, port,
-                                 certified_mode=True,
-                                 metric_registry=metric_registry)
+    from veritx_dse.optimization.result import (
+        CertifiedBackendConfig,
+        Optimizer,
+    )
+
+    class _TestCertifiedOptimizer(Optimizer):
+        def _build_certified_evaluator(self, backend_config):
+            return port
+
+    return _TestCertifiedOptimizer().optimize_certified(
+        base, definition,
+        backend_config=CertifiedBackendConfig(
+            binary="test-only", run_root="test-only"),
+        metric_registry=metric_registry)
 
 
 def certified_evaluation(candidate: Any, *, cycles: int = 100,

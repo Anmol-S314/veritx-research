@@ -411,6 +411,10 @@ def test_r1_synthetic_evidence_cannot_enter_certified_entry_point():
     assert "evaluator" not in params
     assert "port" not in params
     assert "backend_config" in params
+    # The certified entry refuses a port masquerading as its config.
+    with pytest.raises(OptimizationResultError, match="CertifiedBackendConfig"):
+        Optimizer().optimize_certified(_real_base(), _defn(),
+                                       backend_config=port)
 
 
 def test_r1_optimize_with_port_is_research_only_never_certified():
@@ -538,8 +542,7 @@ def test_r2_certified_registry_is_frozen_and_experimental_is_isolated():
 
 
 def _optimize_registry(base, defn, port, registry):
-    return Optimizer()._optimize(base, defn, port, certified_mode=True,
-                                 metric_registry=registry)
+    return optimize_certified_for_tests(base, defn, port, registry)
 
 
 def test_1_missing_objective_unmeasurable_ineligible_no_keyerror(tmp_path):

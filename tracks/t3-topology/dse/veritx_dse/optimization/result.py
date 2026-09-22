@@ -668,7 +668,6 @@ class Optimizer:
         ``backend_config``; no caller-supplied evaluator is accepted.
         Only this path can produce ``CERTIFIED_PRODUCT`` results.
         """
-        from .real_evaluator import RealCandidateEvaluator
         if not isinstance(backend_config, CertifiedBackendConfig):
             raise OptimizationResultError(
                 f"optimize_certified requires a CertifiedBackendConfig, "
@@ -681,15 +680,26 @@ class Optimizer:
                 f"CertifiedMetricRegistry, got {type(registry).__name__} "
                 f"— experimental/plugin registries can never yield "
                 f"CERTIFIED_PRODUCT results")
-        evaluator = RealCandidateEvaluator(
+        evaluator = self._build_certified_evaluator(backend_config)
+        return self._optimize(base_request, definition, evaluator,
+                              certified_mode=True, metric_registry=registry)
+
+    def _build_certified_evaluator(self, backend_config: Any) -> Any:
+        """Construct the optimizer-OWNED certified evaluator (R1).
+
+        Production always builds ``RealCandidateEvaluator`` here; no
+        caller-supplied evaluator can enter the certified path. Unit
+        tests override this factory (never the public signature) to
+        drive certified-pipeline semantics without BookSim.
+        """
+        from .real_evaluator import RealCandidateEvaluator
+        return RealCandidateEvaluator(
             binary=backend_config.binary,
             run_root=backend_config.run_root,
             network_clock_hz=backend_config.network_clock_hz,
             timeout_s=backend_config.timeout_s,
             repo_root=backend_config.repo_root,
             require_quiescence=backend_config.require_quiescence)
-        return self._optimize(base_request, definition, evaluator,
-                              certified_mode=True, metric_registry=registry)
 
     def _optimize(self, base_request: Any, definition: Any,
                   evaluator: Any, *,
