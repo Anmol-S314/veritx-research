@@ -23,6 +23,17 @@ evaluated candidate violating a hard optimization constraint, and
 compile-refused candidates whose objectives/constraints are
 UNMEASURABLE. ``main()`` asserts those states were actually produced.
 
+Producer provenance: every evaluation here passes the fixture run root
+as the producer ``repo_root``. The git revision of the harness checkout
+is deliberately NOT recorded in fixture evidence: a committed fixture
+can never name the commit that contains it (generating the artifact
+changes the revision it would have to record), so recording the
+checkout revision would make the fixtures non-reproducible at their own
+commit. The exact executed producer stays pinned by
+``booksim_binary_sha256``; the source fields are honestly recorded as
+unavailable (``None`` — never invented), which is also why fixture
+evidence is never eligible for the pinned-producer reuse path.
+
 Usage: python3 -m veritx_dse.tools.generate_studio_fixtures
 (from tracks/t3-topology/dse; needs a runnable BookSim binary for the
 evaluated + study fixtures).
@@ -128,7 +139,8 @@ def _generate(out_dir: Path, llama, binary, run_root: Path,
     # 4. evaluated-design: the full integrated chain, live.
     prod = evaluate_product(
         llama, binary=str(binary), network_clock_hz=10 ** 9,
-        timeout_s=900, run_dir=run_root / "evaluated-design")
+        timeout_s=900, run_dir=run_root / "evaluated-design",
+        repo_root=run_root / "evaluated-design")
     assert prod.status == "EVALUATED", prod.reason
     assert prod.requirements_pass is True
     old = _load_json(out_dir / "evaluated-design.json")
@@ -197,7 +209,8 @@ def _generate(out_dir: Path, llama, binary, run_root: Path,
             method="grid"),
         backend_config=CertifiedBackendConfig(
             binary=str(binary), network_clock_hz=10 ** 9,
-            timeout_s=600, run_root=run_root / "optimization-study"))
+            timeout_s=600, run_root=run_root / "optimization-study",
+            repo_root=run_root / "optimization-study"))
     # The fixture must actually demonstrate the three-state taxonomy.
     verdicts = {v for r in study.records
                 for v in r.constraint_verdicts.values()}
@@ -216,7 +229,8 @@ def _generate(out_dir: Path, llama, binary, run_root: Path,
     winner = evaluate_product(
         winner_request,
         binary=str(binary), network_clock_hz=10 ** 9, timeout_s=600,
-        run_dir=run_root / "optimization-winner")
+        run_dir=run_root / "optimization-winner",
+        repo_root=run_root / "optimization-winner")
     assert winner.status == "EVALUATED", winner.reason
     old = _load_json(out_dir / "optimization-study.json")
     _write(out_dir / "optimization-study.json", envelope(
