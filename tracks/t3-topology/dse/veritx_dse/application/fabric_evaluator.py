@@ -47,14 +47,14 @@ with a cycles-only window (window_cycles set, wall_time_ns None).
 from __future__ import annotations
 
 import tempfile
-from collections.abc import Mapping
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
 from typing import Any
 
 from veritx_dse.application.errors import ControlPlaneError, ErrorCode
-from veritx_dse.core.errors import EvidenceInvalid
+from veritx_dse.application.requirements import verify_performance_result
+from veritx_dse.core.errors import BookSimError, EvidenceInvalid, Refusal
 
 EVALUATED = "EVALUATED"
 BACKEND_UNAVAILABLE = "BACKEND_UNAVAILABLE"
@@ -819,6 +819,34 @@ class FabricEvaluator:
                           run_dir=str(run_dir),
                           evidence_path=ref.path,
                           realization_digest=realization_digest)
+        # ── verified boundary (the wrapper is the only input
+        #    RequirementEvaluator accepts; a stale resource_id is not
+        #    authentication) ─────────────────────────────────────────
+        try:
+            verified_perf = verify_performance_result(perf,
+                                                      workload=temporal)
+        except ArtifactError as exc:
+            return refuse(FAILED,
+                          f"performance verification failed: "
+                          f"{type(exc).__name__}: {exc}",
+                          message_artifact_id=message_id,
+                          physical_traffic_id=traffic_id,
+                          backend=STANDALONE_BACKEND,
+                          backend_profile=prof,
+                          producer_identity=producer.binary_sha256,
+                          backend_config_hash=config_hash,
+                          backend_input_hash=input_hash,
+                          evidence_id=artifact.evidence_id(),
+                          raw_evidence_digest=ref.sha256,
+                          stats_digest=artifact.stats_sha256,
+                          network_traffic_window={
+                              "window_cycles": window_cycles,
+                              "wall_time_ns": None,
+                              "cycles_only": True},
+                          metrics=metrics,
+                          run_dir=str(run_dir),
+                          evidence_path=ref.path,
+                          realization_digest=realization_digest)
         wall_ns = window.to_float() * 1e9 if isinstance(window, QTime) \
             else None
         return EvaluationOutcome(
@@ -835,8 +863,8 @@ class FabricEvaluator:
             evidence_id=artifact.evidence_id(),
             raw_evidence_digest=ref.sha256,
             stats_digest=artifact.stats_sha256,
-            performance_result_id=perf["resource_id"],
-            performance_result=perf,
+            performance_result_id=verified_perf["resource_id"],
+            performance_result=verified_perf,
             network_traffic_window={
                 "window_cycles": window_cycles,
                 "wall_time_ns": wall_ns,

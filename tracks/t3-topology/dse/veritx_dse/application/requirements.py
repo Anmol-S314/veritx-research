@@ -96,6 +96,54 @@ VERDICT_UNMEASURABLE = "UNMEASURABLE"
 VERDICT_NOT_APPLICABLE = "NOT_APPLICABLE"
 
 
+class VerifiedPerformanceResult(dict):
+    """A PerformanceResult document that passed ``reverify_result``.
+
+    The authoritative input to :meth:`RequirementEvaluator.evaluate`: a
+    naked dict is NOT authentication — a nonempty ``resource_id`` proves
+    nothing about the persisted content — so the evaluator refuses one
+    and requires this wrapper. The evaluator re-runs ``reverify_result``
+    on every call, so even a hand-constructed wrapper whose content was
+    mutated after verification refuses. ``temporal_workload`` is the
+    verified parent the result was re-derived against.
+    """
+
+    __slots__ = ("temporal_workload",)
+
+    def __init__(self, document: Mapping[str, Any], *,
+                 temporal_workload: TemporalWorkload) -> None:
+        super().__init__(document)
+        self.temporal_workload = temporal_workload
+
+
+def verify_performance_result(
+        document: Any, *, workload: TemporalWorkload,
+        ) -> VerifiedPerformanceResult:
+    """The verified boundary: raw result -> ``reverify_result`` -> wrapper.
+
+    Re-derives the event graph, the deterministic schedule and every
+    summary from the supplied verified TemporalWorkload. A document that
+    no longer matches its own ``resource_id`` (stale ID after mutation)
+    refuses here — before any requirement is adjudicated.
+    """
+    if not isinstance(document, Mapping):
+        raise InvalidInput(
+            f"verify_performance_result takes a result document mapping, "
+            f"got {type(document).__name__}")
+    if not isinstance(workload, TemporalWorkload):
+        raise InvalidInput(
+            f"verify_performance_result takes a TemporalWorkload, got "
+            f"{type(workload).__name__}")
+    try:
+        reverify_result(document, workload=workload)
+    except ResultError as exc:
+        raise EvidenceInvalid(
+            f"performance result failed reverify_result: {exc} — a stale "
+            f"resource_id is not authentication; refusing the persisted "
+            f"content") from exc
+    return VerifiedPerformanceResult(document, temporal_workload=workload)
+
+
 def _qtime_fraction(d: Any, what: str) -> Fraction:
     """Exact seconds from a persisted QTime {numerator, denominator}."""
     if not isinstance(d, dict) or set(d) != {"numerator", "denominator"}:
@@ -379,6 +427,19 @@ class RequirementEvaluator:
             raise InvalidInput(
                 f"RequirementEvaluator takes a WorkloadGraph, got "
                 f"{type(workload).__name__}")
+        if not isinstance(performance, VerifiedPerformanceResult):
+            raise InvalidInput(
+                "RequirementEvaluator takes a VerifiedPerformanceResult "
+                "produced by verify_performance_result(); a naked result "
+                "dict is not authenticated content — a nonempty "
+                "resource_id is not authentication")
+        try:
+            reverify_result(performance,
+                            workload=performance.temporal_workload)
+        except ResultError as exc:
+            raise EvidenceInvalid(
+                f"performance result no longer re-verifies: {exc} — "
+                f"refusing mutated persisted content") from exc
         req_shape = (request.workload.tp, request.workload.pp,
                      request.workload.ep, request.workload.dp)
         graph_shape = workload.parallelism.sizes()

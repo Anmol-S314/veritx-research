@@ -22,8 +22,13 @@ from veritx_dse.application.product_evaluator import evaluate_product
 from veritx_dse.application.requirements import (
     RequirementEvaluator,
     report_identity,
+    verify_performance_result,
 )
-from veritx_dse.core.errors import EvidenceInvalid, MappingInvalid
+from veritx_dse.core.errors import (
+    EvidenceInvalid,
+    InvalidInput,
+    MappingInvalid,
+)
 from veritx_dse.core.paths import REPO
 from veritx_dse.model.compile_model import (
     Agent,
@@ -174,7 +179,8 @@ class TestIdentityChain:
 
     def test_foreign_graph_and_missing_chain_binding_refuse(self):
         """Re-derivation is the authority: a foreign semantic graph
-        refuses, and a result without its chain binding refuses."""
+        refuses, and a result without its chain binding cannot pass the
+        verified boundary (a naked dict is refused by the API)."""
         request = _request([_intent(payload=2048)])
         graph = lower_compile_workload(request).graph
         perf, _ = _hermetic_performance(request)
@@ -185,6 +191,9 @@ class TestIdentityChain:
         without_chain = {k: v for k, v in perf.items()
                          if k != "wave_d_chain"}
         with pytest.raises(EvidenceInvalid):
+            verify_performance_result(
+                without_chain, workload=perf.temporal_workload)
+        with pytest.raises(InvalidInput):
             RequirementEvaluator.evaluate(request, graph, without_chain)
 
 

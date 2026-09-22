@@ -14,7 +14,11 @@ from pathlib import Path
 
 import pytest
 
-from veritx_dse.core.errors import InvalidInput, MappingInvalid
+from veritx_dse.core.errors import (
+    EvidenceInvalid,
+    InvalidInput,
+    MappingInvalid,
+)
 from veritx_dse.core.time import QTime
 from veritx_dse.model.compile_model import (
     Agent,
@@ -42,7 +46,6 @@ from veritx_dse.performance.network import NetworkWindowBinding
 from veritx_dse.performance.result import (
     PerformanceEventGraph,
     build_performance_result,
-    reverify_result,
 )
 from veritx_dse.performance.scheduler import schedule_workload
 from veritx_dse.performance.workload import (
@@ -52,6 +55,7 @@ from veritx_dse.performance.workload import (
 from veritx_dse.application.requirements import (
     RequirementEvaluator,
     report_passes,
+    verify_performance_result,
 )
 from veritx_dse.workload.intent_lowering import lower_compile_workload
 
@@ -101,8 +105,7 @@ def _result(workload, window_us, *, workload_graph_id, design_hash):
     schedule = schedule_workload(
         workload, network_durations={"NET": QTime(window_us, US)})
     res = build_performance_result(graph=graph, schedule=schedule)
-    reverify_result(res, workload=workload)
-    return res
+    return verify_performance_result(res, workload=workload)
 
 
 def _bound_result(request, workload, window_us):
@@ -198,8 +201,9 @@ class TestLatencyVerdicts:
                           lw.graph.workload_id(),
                           "design_hash": req.design_hash()})
         schedule = schedule_workload(workload)
-        res = build_performance_result(graph=graph, schedule=schedule)
-        reverify_result(res, workload=workload)
+        res = verify_performance_result(
+            build_performance_result(graph=graph, schedule=schedule),
+            workload=workload)
         assert res["network_binding"] is None
         rep = RequirementEvaluator.evaluate(req, lw.graph, res)
         entry = rep["entries"][0]
@@ -347,9 +351,15 @@ class TestShapesAndRefusals:
     def test_missing_result_identity_refuses(self):
         req = _request([_ci()], [_lat_req(ceiling=10 ** 9)])
         res, graph = _bound_result(req, _net_workload(_model()), 2500)
-        del res["resource_id"]
+        without_id = dict(res)
+        del without_id["resource_id"]
+        # A missing/stale identity cannot pass the verified boundary...
+        with pytest.raises(EvidenceInvalid):
+            verify_performance_result(
+                without_id, workload=res.temporal_workload)
+        # ...and the evaluator never accepts the naked dict.
         with pytest.raises(InvalidInput):
-            RequirementEvaluator.evaluate(req, graph, res)
+            RequirementEvaluator.evaluate(req, graph, without_id)
 
     def test_evaluate_is_deterministic(self):
         req = _request([_ci()], [_lat_req(ceiling=10 ** 9)])
