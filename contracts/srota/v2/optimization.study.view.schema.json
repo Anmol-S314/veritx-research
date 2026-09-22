@@ -4,9 +4,13 @@
   "title": "OptimizationStudyViewV2",
   "description": "Authoritative P1-RT OptimizationStudyView (contract v2). Three independent authorities are never merged: product Requirements (requirement_report_id + product_requirements: did the design satisfy the customer?), optimization constraints (constraint_verdicts: SATISFIED|VIOLATED|UNMEASURABLE), and measured objectives (objective_values + objective_availability: MEASURED|UNMEASURABLE). Pareto input requires evaluation success, binding product requirements pass, every requested objective measured+finite, and every hard constraint SATISFIED, so pareto_member implies pareto_eligible. The v1 boolean-only projector is LOSSY by design and lives at contracts/srota/v1/optimization.study.view.schema.json.",
   "type": "object",
-  "required": ["contract_version", "optimization_result_id", "base_design_hash", "definition", "candidates", "pareto_ids"],
+  "required": ["contract_version", "result_class", "optimization_result_id", "base_design_hash", "definition", "candidates", "pareto_ids"],
   "properties": {
     "contract_version": {"const": 2},
+    "result_class": {
+      "enum": ["CERTIFIED_PRODUCT", "ANALYTIC_RESEARCH"],
+      "description": "Result class (R1): CERTIFIED_PRODUCT comes only from Optimizer.optimize_certified, which owns the real evaluator; ANALYTIC_RESEARCH comes from optimize_with_port and can never contain certified Pareto."
+    },
     "optimization_result_id": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$",

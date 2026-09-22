@@ -218,6 +218,23 @@ def build_test_metric_registry(*, version: str = "test-overlay-v1",
 TEST_METRIC_REGISTRY = build_test_metric_registry()
 
 
+def optimize_certified_for_tests(base: Any, definition: Any, port: Any,
+                                metric_registry: Any) -> Any:
+    """Unit-test seam for the CERTIFIED pipeline (R1).
+
+    Production ``Optimizer.optimize_certified`` owns the real evaluator
+    and accepts no port; this helper drives the same certified pipeline
+    with a test port so the certified semantics (verifier authority,
+    frozen registry, eligibility) stay covered without BookSim. The
+    public boundary itself is covered by the real-BookSim tests and the
+    R1 refusal attack.
+    """
+    from veritx_dse.optimization.result import Optimizer
+    return Optimizer()._optimize(base, definition, port,
+                                 certified_mode=True,
+                                 metric_registry=metric_registry)
+
+
 def certified_evaluation(candidate: Any, *, cycles: int = 100,
                          objective_values: dict[str, Any] | None = None,
                          locked: dict[str, Any] | None = None,
@@ -265,5 +282,5 @@ def certified_evaluation(candidate: Any, *, cycles: int = 100,
 __all__ = [
     "CLOCK_HZ", "OVERLAY_METRICS", "TEST_METRIC_REGISTRY",
     "build_authenticated", "build_test_metric_registry", "build_verified",
-    "certified_evaluation",
+    "certified_evaluation", "optimize_certified_for_tests",
 ]

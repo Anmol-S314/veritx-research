@@ -30,7 +30,10 @@ from veritx_dse.optimization.definition import (
 )
 from veritx_dse.optimization.evaluators import AUTHORITY_CERTIFIED_BACKEND
 from veritx_dse.optimization.real_evaluator import RealCandidateEvaluator
-from veritx_dse.optimization.result import Optimizer
+from veritx_dse.optimization.result import (
+    CertifiedBackendConfig,
+    Optimizer,
+)
 from veritx_dse.simulation.booksim import find_booksim_bin
 
 
@@ -74,9 +77,18 @@ def _port(tmp_path, **kw):
         run_root=str(tmp_path / "runs"), timeout_s=600, **kw)
 
 
+def _backend_config(tmp_path, **kw):
+    # The study declares the network clock explicitly (adapter default
+    # None would honestly adjudicate cycles-only UNSUPPORTED instead).
+    kw.setdefault("network_clock_hz", 10 ** 9)
+    return CertifiedBackendConfig(
+        binary=str(find_booksim_bin(REPO)),
+        run_root=str(tmp_path / "runs"), timeout_s=600, **kw)
+
+
 def test_real_grid_end_to_end(tmp_path):
-    result = Optimizer().optimize(
-        _base(), _defn(), _port(tmp_path))
+    result = Optimizer().optimize_certified(
+        _base(), _defn(), backend_config=_backend_config(tmp_path))
     assert len(result.records) == 2
     for record in result.records:
         assert record.evaluation_status == "EVALUATED"
@@ -97,13 +109,13 @@ def test_real_grid_end_to_end(tmp_path):
 
 def test_uncertified_corner_stays_visible_but_infeasible(tmp_path):
     from veritx_dse.optimization.definition import Constraint
-    result = Optimizer().optimize(
+    result = Optimizer().optimize_certified(
         _base(), _defn(
             domain=(DomainParam("rcu_enabled", (False, True)),),
             objectives=(Objective("completion_cycles", "MIN"),),
             constraints=(Constraint("completion_cycles", "<=", 10 ** 12),),
         ),
-        _port(tmp_path))
+        backend_config=_backend_config(tmp_path))
     by_patch = {tuple(sorted(r.guided_patch.items())): r
                 for r in result.records}
     bad = by_patch[(("rcu_enabled", True),)]
@@ -172,10 +184,10 @@ def test_unmeasured_objective_is_typed_ineligible_not_keyerror(tmp_path):
     """RT-10: an objective the real evaluation does not evidence makes
     every candidate ineligible with a typed reason — no crash, empty
     Pareto, and the selection rationale names the absent objective."""
-    result = Optimizer().optimize(
+    result = Optimizer().optimize_certified(
         _base(),
         _defn(objectives=(Objective("area", "MIN"),)),
-        _port(tmp_path))
+        backend_config=_backend_config(tmp_path))
     assert len(result.records) == 2
     assert result.pareto_ids == ()
     assert result.selected_candidate_id is None
@@ -195,7 +207,9 @@ def test_unmeasured_objective_is_typed_ineligible_not_keyerror(tmp_path):
     # Sanity: the same study with the evidenced objective (fresh
     # evidence root) still yields a frontier — the ineligibility is
     # objective-evidence-driven, not a broken study.
-    ok = Optimizer().optimize(_base(), _defn(), _port(tmp_path / "sanity"))
+    ok = Optimizer().optimize_certified(
+        _base(), _defn(),
+        backend_config=_backend_config(tmp_path / "sanity"))
     assert ok.pareto_ids
 
 

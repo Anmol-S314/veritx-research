@@ -65,14 +65,18 @@ from veritx_dse.optimization.search import (  # noqa: E402
 from p2_verified_support import (  # noqa: E402
     TEST_METRIC_REGISTRY,
     certified_evaluation,
+    optimize_certified_for_tests,
 )
 
 
 def _optimize(base, defn, port):
-    """Guided-study helper: certified test doubles run with the
-    test-owned FROZEN registry (R2); analytic ports ignore it."""
-    return Optimizer().optimize(base, defn, port,
-                                metric_registry=TEST_METRIC_REGISTRY)
+    """Guided-study helper: certified test doubles drive the CERTIFIED
+    pipeline with the test-owned FROZEN registry (R1/R2); analytic ports
+    use the analytic entry point."""
+    if getattr(port, "certified_pipeline", False):
+        return optimize_certified_for_tests(base, defn, port,
+                                            TEST_METRIC_REGISTRY)
+    return Optimizer().optimize_with_port(base, defn, port)
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "optimize_mesh16.json"
 
@@ -150,6 +154,8 @@ class _CertifiedEvaluator:
     def __init__(self, seed: int = 7, *, cycles: int = 100):
         self.inner = FakeDeterministicEvaluator(seed=seed)
         self.cycles = cycles
+        # R1: this double drives the certified pipeline (test seam).
+        self.certified_pipeline = True
 
     def evaluate(self, candidate):
         ev = self.inner.evaluate(candidate)
@@ -700,6 +706,8 @@ class _FixedReportPort:
     """Same objectives for every candidate; the GENUINE report verdict
     differs (under/over the request's 600-cycle latency ceiling)."""
 
+    certified_pipeline = True
+
     def __init__(self, violated: bool):
         self.violated = violated
 
@@ -712,8 +720,10 @@ class _FixedReportPort:
 class _ValuePort:
     """Certified port with REAL proof returning exactly the
     objective_values given. The analytic stand-in metrics these tests
-    exercise have no registered metric authority, so they ride on the
-    authenticated evaluation (never on the authority label)."""
+    exercise are frozen test-registry producers over the proof, never
+    production globals (R2)."""
+
+    certified_pipeline = True
 
     def __init__(self, values):
         self.values = values
@@ -736,16 +746,19 @@ class TestObjectiveStateCompleteness:
     @pytest.mark.parametrize("bad", [
         float("nan"), float("inf"), float("-inf"), True, "fast", None])
     def test_non_finite_or_non_real_objective_is_unmeasurable(self, bad):
-        from p2_verified_support import build_test_metric_registry
+        from p2_verified_support import (
+            build_test_metric_registry,
+            optimize_certified_for_tests,
+        )
         # A frozen test registry whose latency producer returns a
         # non-finite/non-real value: UNMEASURABLE, and the evaluator's
         # own value never scores (R2: the test owns its registry).
         registry = build_test_metric_registry(
             version="test-nonfinite-v1",
             latency=lambda verified: bad)
-        result = Optimizer().optimize(
+        result = optimize_certified_for_tests(
             _certified_base(), self._defn(), _ValuePort({"latency": bad}),
-            metric_registry=registry)
+            registry)
         assert result.pareto_ids == ()
         assert result.selected_candidate_id is None
         for r in result.records:

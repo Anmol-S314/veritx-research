@@ -129,8 +129,10 @@ def main() -> dict[str, str]:
         Objective,
         OptimizationDefinition,
     )
-    from veritx_dse.optimization.real_evaluator import RealCandidateEvaluator
-    from veritx_dse.optimization.result import Optimizer
+    from veritx_dse.optimization.result import (
+        CertifiedBackendConfig,
+        Optimizer,
+    )
     tiny = CompileRequestV3(
         workload=WorkloadV3(
             model_family=ModelFamily.DENSE_TRANSFORMER, tp=4, dp=1,
@@ -147,13 +149,13 @@ def main() -> dict[str, str]:
         dependencies=DependencyGraph([]),
         noc_config=NocConfig(topology_family=TopologyFamily.MESH,
                              concentration=1))
-    study = Optimizer().optimize(
+    study = Optimizer().optimize_certified(
         tiny,
         OptimizationDefinition(
             domain=(DomainParam("link_width", (64, 128)),),
             objectives=(Objective("completion_cycles", "MIN"),),
             constraints=(), method="grid"),
-        RealCandidateEvaluator(
+        backend_config=CertifiedBackendConfig(
             binary=str(binary), network_clock_hz=10 ** 9,
             timeout_s=600, run_root=(
                 "/tmp/studio-fixture-runs-"

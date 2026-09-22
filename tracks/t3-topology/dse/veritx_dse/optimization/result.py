@@ -164,6 +164,29 @@ class OptimizationResultError(ValueError):
     """Invalid optimization result state (fail-closed)."""
 
 
+#: Result classes. Only ``CERTIFIED_PRODUCT`` comes from the optimizer-
+#: owned certified entry point; ``ANALYTIC_RESEARCH`` can never contain
+#: certified Pareto.
+RESULT_CLASS_CERTIFIED = "CERTIFIED_PRODUCT"
+RESULT_CLASS_ANALYTIC = "ANALYTIC_RESEARCH"
+
+
+@dataclass(frozen=True)
+class CertifiedBackendConfig:
+    """Inputs for the optimizer-owned certified evaluator (R1).
+
+    ``Optimizer.optimize_certified`` constructs ``RealCandidateEvaluator``
+    from this config itself; no caller-supplied evaluator can enter the
+    certified path.
+    """
+    binary: Any
+    run_root: Any
+    network_clock_hz: int | None = None
+    timeout_s: int = 300
+    repo_root: Any = None
+    require_quiescence: bool = True
+
+
 def _verified_certified_claims(cand: Any, ev: Any):
     """Bind a certified evaluation to Worker B's verifier authority (A4).
 
@@ -327,6 +350,7 @@ class OptimizationResult:
     pareto_ids: tuple[str, ...]
     selected_candidate_id: str | None
     selection_rationale: str | None
+    result_class: str = RESULT_CLASS_ANALYTIC
 
     def result_id(self) -> str:
         # Binds evaluation provenance, not just rounded objectives: two
@@ -370,6 +394,7 @@ class OptimizationResult:
         return content_id(RESULT_DOMAIN, {
             "base_design_hash": self.base_design_hash,
             "definition_id": self.definition.definition_id(),
+            "result_class": self.result_class,
             "candidates": rows,
             "pareto_ids": list(self.pareto_ids),
             "selected_candidate_id": self.selected_candidate_id,
@@ -450,6 +475,7 @@ class OptimizationResult:
             })
         return {
             "contract_version": 2,
+            "result_class": self.result_class,
             "optimization_result_id": self.result_id(),
             "base_design_hash": _view_hash(self.base_design_hash),
             "definition": self._definition_view_v2(),
@@ -603,11 +629,72 @@ def _constraint_details(verdict_docs: dict[str, Any]) -> tuple:
 
 
 class Optimizer:
-    """Deterministic optimize: search -> evaluate -> verdicts -> Pareto."""
+    """Deterministic optimize: search -> evaluate -> verdicts -> Pareto.
+
+    TWO EXPLICIT MODES (R1). ``optimize_with_port`` is the
+    ANALYTIC/TEST/RESEARCH entry point: an arbitrary
+    ``CandidateEvaluationPort`` is structurally unable to reach certified
+    eligibility there — any certified claim or authenticated proof is a
+    typed refusal. ``optimize_certified`` is the ONLY certified entry
+    point: it internally constructs and owns ``RealCandidateEvaluator``
+    (compile -> qualified BookSim -> authenticated evidence), so the call
+    path proves how the evidence was created. The persistence/replay/
+    tamper verifier stays as-is for the certified path.
+    """
+
+    def optimize_with_port(self, base_request: Any, definition: Any,
+                           port: Any) -> OptimizationResult:
+        """Analytic/test/research mode. Never yields certified results."""
+        return self._optimize(base_request, definition, port,
+                              certified_mode=False, metric_registry=None)
 
     def optimize(self, base_request: Any, definition: Any,
-                 evaluator: Any, *,
-                 metric_registry: Any = None) -> OptimizationResult:
+                 evaluator: Any) -> OptimizationResult:
+        """Backward-compatible alias for :meth:`optimize_with_port`.
+
+        Analytic-only: a certified claim from a caller-supplied evaluator
+        is a typed refusal (certified results come only from
+        :meth:`optimize_certified`).
+        """
+        return self.optimize_with_port(base_request, definition, evaluator)
+
+    def optimize_certified(self, base_request: Any, definition: Any, *,
+                           backend_config: Any,
+                           metric_registry: Any = None,
+                           ) -> OptimizationResult:
+        """The ONLY certified entry point (R1).
+
+        The optimizer constructs and owns ``RealCandidateEvaluator`` from
+        ``backend_config``; no caller-supplied evaluator is accepted.
+        Only this path can produce ``CERTIFIED_PRODUCT`` results.
+        """
+        from .real_evaluator import RealCandidateEvaluator
+        if not isinstance(backend_config, CertifiedBackendConfig):
+            raise OptimizationResultError(
+                f"optimize_certified requires a CertifiedBackendConfig, "
+                f"got {type(backend_config).__name__}")
+        registry = metric_registry if metric_registry is not None \
+            else CERTIFIED_METRIC_REGISTRY
+        if not isinstance(registry, CertifiedMetricRegistry):
+            raise OptimizationResultError(
+                f"optimize_certified requires a frozen "
+                f"CertifiedMetricRegistry, got {type(registry).__name__} "
+                f"— experimental/plugin registries can never yield "
+                f"CERTIFIED_PRODUCT results")
+        evaluator = RealCandidateEvaluator(
+            binary=backend_config.binary,
+            run_root=backend_config.run_root,
+            network_clock_hz=backend_config.network_clock_hz,
+            timeout_s=backend_config.timeout_s,
+            repo_root=backend_config.repo_root,
+            require_quiescence=backend_config.require_quiescence)
+        return self._optimize(base_request, definition, evaluator,
+                              certified_mode=True, metric_registry=registry)
+
+    def _optimize(self, base_request: Any, definition: Any,
+                  evaluator: Any, *,
+                  certified_mode: bool,
+                  metric_registry: Any) -> OptimizationResult:
         from veritx_dse.application.requirements import report_passes
 
         from .candidate import candidate_id_for
@@ -657,11 +744,30 @@ class Optimizer:
                 authority == AUTHORITY_CERTIFIED_BACKEND
                 and ev.status == "EVALUATED")
             if certified_claim:
+                if not certified_mode:
+                    # R1: the analytic entry point structurally refuses
+                    # certified claims — an arbitrary port can never
+                    # reach certified eligibility here.
+                    raise OptimizationResultError(
+                        f"candidate {cand.candidate_id!r} claims certified "
+                        f"authority through optimize_with_port — that "
+                        f"entry point is ANALYTIC/TEST/RESEARCH only. A "
+                        f"certified result requires a verified performance "
+                        f"result produced by the optimizer-owned "
+                        f"evaluator: use Optimizer.optimize_certified, "
+                        f"which owns the real backend path")
                 # A4: import and call Worker B's verifier authority; the
                 # derived claims (and the report they derive) are the only
                 # authoritative facts. Never duck-type the proof.
                 claims, report = _verified_certified_claims(cand, ev)
             else:
+                if not certified_mode and getattr(
+                        ev, "authenticated_proof", None) is not None:
+                    raise OptimizationResultError(
+                        f"candidate {cand.candidate_id!r} carries an "
+                        f"authenticated proof through optimize_with_port "
+                        f"— the analytic entry point refuses certified "
+                        f"evidence; use Optimizer.optimize_certified")
                 report = ev.requirement_report
                 _check_report_binding(ev, report, cand.candidate_id)
             product_satisfied: bool | None = None
@@ -892,10 +998,13 @@ class Optimizer:
             pareto_ids=tuple(front),
             selected_candidate_id=selected,
             selection_rationale=rationale,
+            result_class=(RESULT_CLASS_CERTIFIED if certified_mode
+                          else RESULT_CLASS_ANALYTIC),
         )
 
 
 __all__ = [
-    "RESULT_DOMAIN", "CandidateRecord", "OptimizationResult",
+    "RESULT_CLASS_ANALYTIC", "RESULT_CLASS_CERTIFIED", "RESULT_DOMAIN",
+    "CandidateRecord", "CertifiedBackendConfig", "OptimizationResult",
     "OptimizationResultError", "Optimizer",
 ]
