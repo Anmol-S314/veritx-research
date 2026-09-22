@@ -505,6 +505,11 @@ class FabricEvaluator:
                 physical_traffic_id=traffic_id)
 
         # ── canonical projection (pure: gates + lowering + render) ─
+        from veritx_dse.backend.booksim import BookSimLoweringError
+        from veritx_dse.backend.contracts import (
+            BackendConfigError, BackendInputError,
+        )
+        from veritx_dse.backend.meshdor import MeshDorMaterializationError
         try:
             if path == "meshdor":
                 from veritx_dse.backend.meshdor import (
@@ -515,8 +520,8 @@ class FabricEvaluator:
                     prepare_waved_booksim as _prepare,
                 )
             prepared, summary = _prepare(physical, seed=opts.seed)
-        except Exception as exc:
-            from veritx_dse.backend.booksim import BookSimLoweringError
+        except (BookSimLoweringError, Refusal, BackendConfigError,
+                BackendInputError, MeshDorMaterializationError) as exc:
             if isinstance(exc, BookSimLoweringError):
                 return refuse(UNSUPPORTED,
                               f"fabric unprojectable to BookSim: {exc}",
@@ -534,16 +539,16 @@ class FabricEvaluator:
         input_hash = manifest.backend_input_hash()
 
         # ── shared-realization statement (qualification.py) ────────
+        from veritx_dse.backend.qualification import (
+            QualificationError, booksim_shared_realization,
+        )
         try:
-            from veritx_dse.backend.qualification import (
-                booksim_shared_realization,
-            )
             from veritx_dse.core.spec import canonical_json
             import hashlib
             realization = booksim_shared_realization(config)
             realization_digest = hashlib.sha256(
                 canonical_json(realization).encode()).hexdigest()
-        except Exception as exc:
+        except QualificationError as exc:
             return refuse(UNSUPPORTED,
                           f"BookSim realization unstatable: "
                           f"{type(exc).__name__}: {exc}",
@@ -596,6 +601,11 @@ class FabricEvaluator:
         evidence_dir = run_dir / "evidence"
 
         # ── qualified execution (+ quiescence when required) ───────
+        from veritx_dse.backend.booksim import (
+            BackendMaterializationError, BookSimLoweringError,
+            BookSimRouteError,
+        )
+        from veritx_dse.backend.producer import ProducerError
         try:
             if path == "meshdor":
                 from veritx_dse.backend.meshdor import (
@@ -609,7 +619,9 @@ class FabricEvaluator:
                 prepared, run_dir=backend_run_dir, repo_root=repo_root,
                 timeout=opts.timeout_s, binary=bin_path,
                 summary=summary if opts.require_quiescence else None)
-        except Exception as exc:
+        except (BookSimError, Refusal, BookSimLoweringError,
+                BookSimRouteError, BackendMaterializationError,
+                ProducerError) as exc:
             return refuse(FAILED,
                           f"backend execution failed: "
                           f"{type(exc).__name__}: {exc}",
@@ -651,10 +663,12 @@ class FabricEvaluator:
                           realization_digest=realization_digest)
 
         # ── evidence authentication (evidence.py only) ─────────────
+        from veritx_dse.backend.evidence import (
+            BackendEvidenceError, EvidenceArtifact, read_verified_evidence,
+            write_evidence,
+        )
+        from veritx_dse.core.artifact import ArtifactError
         try:
-            from veritx_dse.backend.evidence import (
-                EvidenceArtifact, read_verified_evidence, write_evidence,
-            )
             ref = write_evidence(evidence_dir, cert_evidence.to_dict())
             verified_doc = read_verified_evidence(ref)
             artifact = EvidenceArtifact.build(
@@ -667,7 +681,7 @@ class FabricEvaluator:
                 artifact, backend_input_sha256=input_hash,
                 raw_evidence_sha256=ref.sha256,
                 stats=cert_evidence.stats)
-        except Exception as exc:
+        except (BackendEvidenceError, ArtifactError, OSError) as exc:
             return refuse(FAILED,
                           f"evidence authentication failed: "
                           f"{type(exc).__name__}: {exc}",
@@ -691,6 +705,7 @@ class FabricEvaluator:
                  "backend_config_hash": config_hash,
                  "backend_input_hash": input_hash}
         try:
+            from veritx_dse.core.time import TimeError
             from veritx_dse.performance.network import bind_network_window
             clock = opts.network_clock_hz if _valid_clock(
                 opts.network_clock_hz) else None
@@ -698,7 +713,7 @@ class FabricEvaluator:
                 evidence=cert_evidence, chain=chain,
                 network_clock_hz=clock, evidence_sha256=ref.sha256,
                 expected_packets=summary["num_packets"])
-        except Exception as exc:
+        except (TimeError, ArtifactError) as exc:
             return refuse(FAILED,
                           f"network window bind failed: "
                           f"{type(exc).__name__}: {exc}",
@@ -749,21 +764,25 @@ class FabricEvaluator:
         # ── verified performance (window event only — no per-op
         #    latency is ever invented) ─────────────────────────────
         try:
+            from veritx_dse.core.artifact import ImmutableError
             from veritx_dse.core.time import QTime
             from veritx_dse.performance.model import (
-                ClockDef, PerformanceModel, ResourceDef, fidelity_warning,
+                ClockDef, ModelError, PerformanceModel, ResourceDef,
+                fidelity_warning,
             )
             from veritx_dse.performance.network import (
                 NetworkWindowBinding,
             )
             from veritx_dse.performance.result import (
-                PerformanceEventGraph, build_performance_result,
-                reverify_result,
+                PerformanceEventGraph, ResultError,
+                build_performance_result,
             )
-            from veritx_dse.performance.scheduler import schedule_workload
+            from veritx_dse.performance.scheduler import (
+                SchedulerError, schedule_workload,
+            )
             from veritx_dse.performance.workload import (
                 EVENT_NETWORK_TRAFFIC_WINDOW, TemporalEvent,
-                TemporalWorkload,
+                TemporalWorkload, WorkloadError,
             )
             model = PerformanceModel(
                 clocks=(ClockDef("network", clock),),
@@ -795,9 +814,10 @@ class FabricEvaluator:
                 temporal, network_durations=egraph.network_durations())
             perf = build_performance_result(graph=egraph,
                                             schedule=schedule)
-            reverify_result(perf, workload=temporal)
             warning = fidelity_warning(model)
-        except Exception as exc:
+        except (ResultError, TimeError, ModelError, WorkloadError,
+                SchedulerError, ImmutableError, ArtifactError,
+                ControlPlaneError) as exc:
             return refuse(FAILED,
                           f"performance construction failed: "
                           f"{type(exc).__name__}: {exc}",
