@@ -108,10 +108,12 @@ export default function App(): ReactElement {
 
       <footer className="statusbar">
         <span>
-          contract views v1 · <Hash value={fixture.design?.design_hash} label="design" />
+          study view v2 · other views v1 ·{' '}
+          <Hash value={fixture.design?.design_hash} label="design" />
         </span>
         <span>
-          fixtures validate against <code>contracts/srota/v1/*.schema.json</code> (
+          fixtures validate against <code>contracts/srota/v1/*.schema.json</code>{' '}
+          + <code>contracts/srota/v2/optimization.study.view.schema.json</code> (
           <code>npm run validate</code>)
         </span>
       </footer>

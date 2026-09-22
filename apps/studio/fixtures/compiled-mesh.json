@@ -150,7 +150,7 @@
     "resolved_fabric_hash": "sha256:31101953af6bf2f58078d461a815129e950c894f1a7e62d9192acfc83a317c47",
     "status": "COMPILED"
   },
-  "description": "Fresh COMPILED design (DOR_XY, VC count 1). All 10 obligations PASS. No evaluation has been run yet, so Evaluate shows NOT_RUN.",
+  "description": "Fresh COMPILED design (DOR_XY, VC count 1, certificate proven). All 10 obligations PASS. No evaluation has been run yet, so Evaluate shows NOT_RUN.",
   "design": {
     "agents": [
       {
@@ -204,5 +204,5 @@
   "fixture_id": "compiled-mesh",
   "optimization": null,
   "requirements": null,
-  "title": "Compiled 5x5 mesh \u00b7 64 compute tiles + 8 HBM (dense_transformer)"
+  "title": "Compiled mesh \u00b7 64 compute tiles + 8 HBM (dense_transformer)"
 }

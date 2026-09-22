@@ -1,6 +1,7 @@
 // Fixture loading. Studio boots from these contract-validated fixtures only.
 // Every file here must pass scripts/validate_fixtures.py against the frozen
-// contracts/srota/v1 schemas. No engine connectivity, no fetched data.
+// contracts (study view v2, the other four views v1). No engine
+// connectivity, no fetched data.
 import type { FixtureBundle } from './types';
 
 import compiledMesh from '../fixtures/compiled-mesh.json';

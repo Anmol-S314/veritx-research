@@ -6,7 +6,7 @@
     "error": "UNSUPPORTED: no certified routing derivation for topology family 'torus' \u2014 P1A certifies MESH and CONCENTRATED_MESH (DOR_XY) only; refusing silent minimum-hop fallback",
     "status": "UNSUPPORTED"
   },
-  "description": "Engine-typed UNSUPPORTED refusal: radix 3 pins k=3, so 36 seats cannot cover 78 agents. No bundle, no certificate, no obligation list, no resolved fabric hash.",
+  "description": "Engine-typed UNSUPPORTED refusal: the torus topology family has no certified routing derivation, so there is no bundle, no certificate, no obligation list, and no resolved fabric hash.",
   "design": {
     "agents": [
       {
@@ -56,5 +56,5 @@
   "fixture_id": "invalid-design",
   "optimization": null,
   "requirements": null,
-  "title": "Refused design (radix 3 cannot seat 78 agents)"
+  "title": "Refused design (uncertified topology family)"
 }

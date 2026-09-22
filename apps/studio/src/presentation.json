@@ -1,0 +1,39 @@
+{
+  "_comment": "Presentation policy for OptimizationStudyView v2. Keys are the ENGINE's explicit contract values (never inferred from missing fields). Studio picks class+label from here, so every engine state renders distinctly and a schema change cannot silently collapse two states into one style.",
+  "constraintVerdict": {
+    "SATISFIED": { "class": "ok", "label": "SATISFIED" },
+    "VIOLATED": { "class": "bad", "label": "VIOLATED" },
+    "UNMEASURABLE": { "class": "warn", "label": "UNMEASURABLE" }
+  },
+  "objectiveState": {
+    "MEASURED": { "class": "ok", "label": "MEASURED" },
+    "UNMEASURABLE": { "class": "warn", "label": "UNMEASURABLE" }
+  },
+  "compilationStatus": {
+    "COMPILED": { "class": "ok", "label": "COMPILED" },
+    "INVALID": { "class": "bad", "label": "INVALID" },
+    "UNSUPPORTED": { "class": "muted", "label": "UNSUPPORTED" }
+  },
+  "evaluationStatus": {
+    "EVALUATED": { "class": "ok", "label": "EVALUATED" },
+    "COMPILE_FAILED": { "class": "bad", "label": "COMPILE_FAILED" },
+    "INVALID": { "class": "bad", "label": "INVALID" },
+    "UNSUPPORTED": { "class": "muted", "label": "UNSUPPORTED" },
+    "BACKEND_UNAVAILABLE": { "class": "warn", "label": "BACKEND_UNAVAILABLE" },
+    "FAILED": { "class": "bad", "label": "FAILED" }
+  },
+  "productRequirements": {
+    "PASS": { "class": "ok", "label": "REQUIREMENTS SATISFIED" },
+    "FAIL": { "class": "bad", "label": "REQUIREMENTS VIOLATED" },
+    "UNBOUND": { "class": "muted", "label": "NO REQUIREMENT REPORT" }
+  },
+  "eligibility": {
+    "ELIGIBLE": { "class": "ok", "label": "PARETO-ELIGIBLE" },
+    "INELIGIBLE": { "class": "warn", "label": "OPTIMIZATION-INELIGIBLE" }
+  },
+  "pareto": {
+    "MEMBER": { "class": "pareto-member", "label": "PARETO MEMBER" },
+    "ELIGIBLE": { "class": "pareto-eligible-only", "label": "ELIGIBLE · NOT PARETO" },
+    "INELIGIBLE": { "class": "pareto-ineligible", "label": "NOT PARETO" }
+  }
+}

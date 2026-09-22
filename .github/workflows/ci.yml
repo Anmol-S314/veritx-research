@@ -159,8 +159,13 @@ jobs:
   # pinned tools container still ships Python 3.10, which cannot parse the
   # DSE sources (PEP 701 f-strings). BookSim is built from the vendored tree
   # (the same qualified producer the fixtures were generated from); the
-  # validator regenerates all five fixtures and compares, allowing only
-  # producer-bound fields (binary digest / evidence run path) to differ.
+  # validator regenerates all five fixtures into a temp dir, proves the
+  # EVALUATED fixture + RequirementReport + CERTIFIED_PRODUCT study through
+  # engine objects, and compares BYTES byte-for-byte (C-4). The two evaluated
+  # fixtures currently differ only by a reported engine defect (runtime
+  # evidence provenance leaking into contract identities), so the provisioned
+  # step fails loudly with ENGINE DEFECT (REPORTED, NOT NORMALIZED) rather
+  # than blessing a normalized comparison.
   # Guarded on the Studio tree existing so refs that predate P1 (e.g. main)
   # skip it instead of failing.
   studio-fixtures:
@@ -184,7 +189,7 @@ jobs:
       - name: Install engine + validator deps
         if: steps.studio.outputs.present == 'true'
         run: |
-          pip install -e tracks/t3-topology/dse
+          pip install -e "tracks/t3-topology/dse[dev]"
           pip install jsonschema
       - name: Build BookSim (qualified producer)
         if: steps.studio.outputs.present == 'true'
@@ -192,7 +197,12 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq bison flex
           make -C third_party/booksim2/src -j"$(nproc)"
-      - name: Validate fixtures (schema + engine realizability)
+      - name: Fast path + C-6 required tests
+        if: steps.studio.outputs.present == 'true'
+        run: |
+          python3 apps/studio/scripts/validate_fixtures.py --skip-engine
+          python3 -m pytest apps/studio/tests -q
+      - name: Provisioned backend proof + byte-for-byte reproducibility
         if: steps.studio.outputs.present == 'true'
         run: python3 apps/studio/scripts/validate_fixtures.py --engine
 
