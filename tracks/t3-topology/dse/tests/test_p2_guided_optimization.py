@@ -62,16 +62,21 @@ from veritx_dse.optimization.search import (  # noqa: E402
     raw_cardinality,
     search_candidates,
 )
-from p2_verified_support import certified_evaluation  # noqa: E402
+from p2_verified_support import (  # noqa: E402
+    TEST_METRIC_REGISTRY,
+    certified_evaluation,
+    run_certified_mechanics_for_tests,
+)
 
 
-@pytest.fixture(autouse=True)
-def _overlay_metric_authorities():
-    """Certified test doubles carry analytic stand-ins through registered
-    producers over the proof (A4); production registers only real ones."""
-    from p2_verified_support import test_metric_authorities
-    with test_metric_authorities():
-        yield
+def _optimize(base, defn, port):
+    """Guided-study helper: certified test doubles drive the CERTIFIED
+    pipeline with the test-owned FROZEN registry (R1/R2); analytic ports
+    use the analytic entry point."""
+    if getattr(port, "certified_pipeline", False):
+        return run_certified_mechanics_for_tests(base, defn, port,
+                                            TEST_METRIC_REGISTRY)
+    return Optimizer().optimize_with_port(base, defn, port)
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "optimize_mesh16.json"
 
@@ -149,6 +154,8 @@ class _CertifiedEvaluator:
     def __init__(self, seed: int = 7, *, cycles: int = 100):
         self.inner = FakeDeterministicEvaluator(seed=seed)
         self.cycles = cycles
+        # R1: this double drives the certified pipeline (test seam).
+        self.certified_pipeline = True
 
     def evaluate(self, candidate):
         ev = self.inner.evaluate(candidate)
@@ -472,7 +479,7 @@ class TestGridStudyEndToEnd:
     def _study(self, **kw):
         base = _certified_base()
         defn = _defn(**kw)
-        result = Optimizer().optimize(
+        result = _optimize(
             base, defn, _CertifiedEvaluator())
         return base, defn, result
 
@@ -503,8 +510,8 @@ class TestGridStudyEndToEnd:
     def test_execution_order_never_changes_identity(self):
         base = _base()
         defn = _defn()
-        r1 = Optimizer().optimize(base, defn, FakeDeterministicEvaluator(seed=7))
-        r2 = Optimizer().optimize(base, defn, FakeDeterministicEvaluator(seed=7))
+        r1 = _optimize(base, defn, FakeDeterministicEvaluator(seed=7))
+        r2 = _optimize(base, defn, FakeDeterministicEvaluator(seed=7))
         assert [r.candidate_id for r in r1.records] == \
             [r.candidate_id for r in r2.records]
         assert r1.result_id() == r2.result_id()
@@ -586,7 +593,7 @@ class TestGridStudyEndToEnd:
             objectives=(Objective("latency", "MIN"),),
             constraints=(Constraint("energy", "<=", 1.0),),
             method="grid")
-        result = Optimizer().optimize(
+        result = _optimize(
             base, defn, FakeDeterministicEvaluator(seed=7))
         v2 = result.to_study_view()
         assert v2["contract_version"] == 2
@@ -621,7 +628,7 @@ class TestGridStudyEndToEnd:
             DomainParam("link_width", (32, 128)),
             DomainParam("concentration", (1, 2)),
         ))
-        result = Optimizer().optimize(
+        result = _optimize(
             base, defn, FakeDeterministicEvaluator(seed=7))
         assert len(result.records) == 4
         for r in result.records:
@@ -647,7 +654,7 @@ class TestGridStudyEndToEnd:
             domain=(DomainParam("rcu_enabled", (False, True)),),
             objectives=(Objective("latency", "MIN"),),
             method="grid")
-        result = Optimizer().optimize(
+        result = _optimize(
             base, defn, _CertifiedEvaluator())
         assert len(result.records) == 2
         by_patch = {tuple(sorted(r.guided_patch.items())): r
@@ -678,7 +685,7 @@ class TestGridStudyEndToEnd:
             domain=(DomainParam("link_width", (32, 128)),),
             objectives=(Objective("energy", "MIN"),),
             method="grid")
-        result = Optimizer().optimize(
+        result = _optimize(
             base, defn, FakeDeterministicEvaluator(seed=7))
         assert result.pareto_ids == ()
         assert result.selected_candidate_id is None
@@ -699,6 +706,8 @@ class _FixedReportPort:
     """Same objectives for every candidate; the GENUINE report verdict
     differs (under/over the request's 600-cycle latency ceiling)."""
 
+    certified_pipeline = True
+
     def __init__(self, violated: bool):
         self.violated = violated
 
@@ -711,8 +720,10 @@ class _FixedReportPort:
 class _ValuePort:
     """Certified port with REAL proof returning exactly the
     objective_values given. The analytic stand-in metrics these tests
-    exercise have no registered metric authority, so they ride on the
-    authenticated evaluation (never on the authority label)."""
+    exercise are frozen test-registry producers over the proof, never
+    production globals (R2)."""
+
+    certified_pipeline = True
 
     def __init__(self, values):
         self.values = values
@@ -735,14 +746,19 @@ class TestObjectiveStateCompleteness:
     @pytest.mark.parametrize("bad", [
         float("nan"), float("inf"), float("-inf"), True, "fast", None])
     def test_non_finite_or_non_real_objective_is_unmeasurable(self, bad):
-        from veritx_dse.optimization.metric_authority import (
-            register_metric_authority,
+        from p2_verified_support import (
+            build_test_metric_registry,
+            run_certified_mechanics_for_tests,
         )
-        # A registered producer that returns a non-finite/non-real value
-        # is UNMEASURABLE; the evaluator's own value never scores.
-        register_metric_authority("latency", lambda verified: bad)
-        result = Optimizer().optimize(
-            _certified_base(), self._defn(), _ValuePort({"latency": bad}))
+        # A frozen test registry whose latency producer returns a
+        # non-finite/non-real value: UNMEASURABLE, and the evaluator's
+        # own value never scores (R2: the test owns its registry).
+        registry = build_test_metric_registry(
+            version="test-nonfinite-v1",
+            latency=lambda verified: bad)
+        result = run_certified_mechanics_for_tests(
+            _certified_base(), self._defn(), _ValuePort({"latency": bad}),
+            registry)
         assert result.pareto_ids == ()
         assert result.selected_candidate_id is None
         for r in result.records:
@@ -757,7 +773,7 @@ class TestObjectiveStateCompleteness:
                 entry["reason"]
 
     def test_measured_objective_gets_explicit_measured_state(self):
-        result = Optimizer().optimize(
+        result = _optimize(
             _certified_base(), self._defn(),
             _ValuePort({"latency": 5.0, "area": 7.0}))
         assert result.pareto_ids
@@ -823,7 +839,7 @@ class TestProductRequirementAuthority:
 
     def test_backend_success_with_failing_binding_report_is_ineligible(self):
         base = _certified_base()
-        result = Optimizer().optimize(
+        result = _optimize(
             base, self._defn(), _FixedReportPort(True))
         assert result.pareto_ids == ()
         assert result.selected_candidate_id is None
@@ -832,7 +848,7 @@ class TestProductRequirementAuthority:
             assert r.product_requirements_satisfied is False
             assert r.pareto_member is False
             assert r.requirement_report_id
-        ok = Optimizer().optimize(
+        ok = _optimize(
             base, self._defn(), _FixedReportPort(False))
         assert ok.pareto_ids
         for r in ok.records:
@@ -843,7 +859,7 @@ class TestProductRequirementAuthority:
         base = _certified_base()
         foreign = "ab" * 32
         with pytest.raises(OptimizationResultError, match="transplanted"):
-            Optimizer().optimize(
+            _optimize(
                 base, self._defn(), _TransplantedReportPort(foreign))
 
     def test_report_id_is_rederived_not_trusted(self):
@@ -851,7 +867,7 @@ class TestProductRequirementAuthority:
         is forged is refused, never bound."""
         base = _certified_base()
         with pytest.raises(OptimizationResultError, match="forged"):
-            Optimizer().optimize(
+            _optimize(
                 base, self._defn(), _TransplantedReportPort(None))
 
 
@@ -865,7 +881,7 @@ class TestResultIdBindsProvenance:
                           Objective("area", "MIN")),
             constraints=(Constraint("latency", "<=", 600.0),),
             method="grid")
-        return base, defn, Optimizer().optimize(
+        return base, defn, _optimize(
             base, defn, _CertifiedEvaluator())
 
     def test_moves_with_performance_result_id(self):
@@ -921,8 +937,8 @@ class TestResultIdBindsProvenance:
             domain=(DomainParam("link_width", (32, 128)),),
             objectives=(Objective("latency", "MIN"),),
             method="grid")
-        ok = Optimizer().optimize(base, defn, _FixedReportPort(False))
-        bad = Optimizer().optimize(base, defn, _FixedReportPort(True))
+        ok = _optimize(base, defn, _FixedReportPort(False))
+        bad = _optimize(base, defn, _FixedReportPort(True))
         assert [r.objective_values for r in ok.records] == \
             [r.objective_values for r in bad.records]
         assert ok.result_id() != bad.result_id()
@@ -1039,7 +1055,7 @@ class TestOptimizeCli:
                 "sha256:"), row["candidate_id"]
         # Engine side stays bare: rebuild and check the records.
         base = _base()
-        result = Optimizer().optimize(
+        result = _optimize(
             base, _defn(), FakeDeterministicEvaluator(seed=7))
         assert not result.base_design_hash.startswith("sha256:")
         for r in result.records:

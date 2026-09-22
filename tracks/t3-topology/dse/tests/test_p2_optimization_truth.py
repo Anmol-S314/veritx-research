@@ -37,6 +37,13 @@ RT-final A4 attacks (final repair, half 2):
 
 A3 attacks (self-declared certified double, fabricated report over a
 genuine proof, empty report vacuity) remain in place.
+
+RT-final v2 boundary corrections:
+
+ C1  subclass factory override cannot hijack the certified evaluator
+ C2  certified registry not caller-selectable; registry identity binds
+     declared producer semantics and is bound into the result
+ C3  quiescence is mandatory for CERTIFIED_PRODUCT (not a config knob)
 """
 from __future__ import annotations
 
@@ -51,16 +58,33 @@ from test_p2_real_adapter import _base as _real_base
 from test_p2_real_adapter import _port as _real_port
 from test_p2_real_adapter import _pp_request
 
-from p2_verified_support import certified_evaluation
+from p2_verified_support import (  # noqa: E402
+    TEST_METRIC_REGISTRY,
+    certified_evaluation,
+    run_certified_mechanics_for_tests,
+)
 
 
-@pytest.fixture(autouse=True)
-def _overlay_metric_authorities():
-    """Certified test doubles carry analytic stand-ins through registered
-    producers over the proof (A4); production registers only real ones."""
-    from p2_verified_support import test_metric_authorities
-    with test_metric_authorities():
-        yield
+def _optimize(base, defn, port):
+    """Adversarial-study helper: certified test doubles drive the
+    CERTIFIED pipeline with the test-owned FROZEN registry (R1/R2); real
+    ports drive the certified pipeline with the production registry;
+    everything else uses the analytic entry point."""
+    from veritx_dse.optimization.metric_registry import (
+        CERTIFIED_METRIC_REGISTRY,
+    )
+    from veritx_dse.optimization.real_evaluator import RealCandidateEvaluator
+    if getattr(port, "certified_pipeline", False):
+        return run_certified_mechanics_for_tests(base, defn, port,
+                                            TEST_METRIC_REGISTRY)
+    if isinstance(port, RealCandidateEvaluator):
+        # C4: real backend mechanics through the core — still classified
+        # ANALYTIC_RESEARCH, because only optimize_certified() may stamp
+        # CERTIFIED_PRODUCT.
+        return Optimizer()._optimize_core(
+            base, defn, port, accept_certified_claims=True,
+            metric_registry=CERTIFIED_METRIC_REGISTRY)
+    return Optimizer().optimize_with_port(base, defn, port)
 
 from veritx_dse.application.requirements import report_identity
 from veritx_dse.optimization.constraints import (
@@ -148,7 +172,7 @@ class _StubPort:
 
 
 class _VerifiedStubPort:
-    """Certified port that carries REAL proof (A3).
+    """Certified port that carries REAL proof (A3/R1 test seam).
 
     Same observable shape as _StubPort — EVALUATED candidates with the
     given objective values — but every candidate carries the exact
@@ -157,6 +181,8 @@ class _VerifiedStubPort:
     from them. ``cycles`` chooses the report verdict against the base
     request's latency ceiling (100 cycles -> SATISFIED; 2e9 -> VIOLATED).
     """
+
+    certified_pipeline = True
 
     def __init__(self, values, *, cycles=100):
         self.values = values
@@ -199,7 +225,7 @@ def _defn(**kw):
 def test_ap01_fake_v2_pareto_refusal_for_authority():
     """A-P0.1: an analytic fake evaluation is visible but structurally
     ineligible in the authoritative v2 view — no Pareto, no selection."""
-    result = Optimizer().optimize(
+    result = _optimize(
         _real_base(), _defn(), FakeDeterministicEvaluator(seed=7))
     assert result.pareto_ids == ()
     assert result.selected_candidate_id is None
@@ -217,7 +243,7 @@ def test_ap01_fake_v2_pareto_refusal_for_authority():
     # The same candidate mechanics with REAL proof (carried verified
     # performance result + re-derivable report) do reach the frontier:
     # the refusal is proof-driven, not a broken study.
-    certified = Optimizer().optimize(
+    certified = _optimize(
         _real_base(), _defn(), _VerifiedStubPort({"latency": 10.0}))
     assert certified.pareto_ids
     assert certified.selected_candidate_id in certified.pareto_ids
@@ -247,10 +273,10 @@ def test_self_declared_certified_evaluator_cannot_enter_authoritative_pareto():
     assert out.workload is None
     with pytest.raises(OptimizationResultError,
                        match="verified performance result"):
-        Optimizer().optimize(_real_base(), _defn(), fake)
+        _optimize(_real_base(), _defn(), fake)
     # Positive control: genuinely proven certified evaluations still
     # reach authoritative Pareto in the same study shape.
-    genuine = Optimizer().optimize(
+    genuine = _optimize(
         _real_base(), _defn(), _VerifiedStubPort({"latency": 10.0}))
     assert genuine.pareto_ids
 
@@ -290,7 +316,7 @@ def test_fabricated_report_over_genuine_verified_result_refuses():
 
     with pytest.raises(OptimizationResultError,
                        match="authenticated proof derives"):
-        Optimizer().optimize(
+        _optimize(
             _real_base(), _defn(),
             _FabricatedVerdict({"latency": 10.0}))
 
@@ -300,7 +326,7 @@ def test_6_unregistered_objective_with_evaluator_value_is_unmeasurable_never_par
     is not a certified measurement. The requested objective is typed
     UNMEASURABLE, the candidate is ineligible, and nothing enters Pareto
     (no KeyError)."""
-    result = Optimizer().optimize(
+    result = _optimize(
         _real_base(),
         _defn(objectives=(Objective("magic_score", "MIN"),)),
         _VerifiedStubPort({"magic_score": 999999.0}))
@@ -320,7 +346,7 @@ def test_6_unregistered_objective_with_evaluator_value_is_unmeasurable_never_par
             (r.eligibility_reason or "")
     # The same rule binds optimization constraints: an unregistered
     # constraint metric is UNMEASURABLE, never scored from the port.
-    constrained = Optimizer().optimize(
+    constrained = _optimize(
         _real_base(),
         _defn(constraints=(Constraint("magic_score", "<=", 5.0),)),
         _VerifiedStubPort({"magic_score": 1.0}))
@@ -337,7 +363,7 @@ def test_7_registered_metric_misreport_refuses():
     is authoritative; an evaluator value that disagrees refuses."""
     port = _VerifiedStubPort({"completion_cycles": 12345.0}, cycles=100)
     with pytest.raises(OptimizationResultError, match="misreported"):
-        Optimizer().optimize(
+        _optimize(
             _real_base(),
             _defn(objectives=(Objective("completion_cycles", "MIN"),)),
             port)
@@ -345,11 +371,16 @@ def test_7_registered_metric_misreport_refuses():
 
 def test_8_real_fabric_evaluator_execution_authenticates_and_stays_eligible(
         tmp_path):
-    """A4 attack 8 (positive control): a genuine FabricEvaluator/BookSim
-    execution carries the authenticated proof through the real adapter
-    and stays Pareto-eligible."""
+    """A4/R1 attack 3+8: the PUBLIC certified entry point
+    (``Optimizer.optimize_certified``, which owns RealCandidateEvaluator)
+    authenticates a genuine FabricEvaluator/BookSim execution and stays
+    Pareto-eligible."""
+    from veritx_dse.core.paths import REPO
     from veritx_dse.optimization.candidate import make_candidate
+    from veritx_dse.optimization.result import CertifiedBackendConfig
+    from veritx_dse.simulation.booksim import find_booksim_bin
 
+    # Port-level: the real adapter carries the authenticated proof.
     port = _real_port(tmp_path)
     out = port.evaluate(make_candidate(_real_base(), {"link_width": 64}))
     assert out.status == "EVALUATED"
@@ -359,12 +390,55 @@ def test_8_real_fabric_evaluator_execution_authenticates_and_stays_eligible(
     assert proof.binding.evidence_sha256 == proof.evidence_ref.sha256
     assert proof.verified_result["resource_id"] == \
         out.performance_result_id
-    result = Optimizer().optimize(
+    # Public certified entry point (optimizer-owned evaluator).
+    result = Optimizer().optimize_certified(
         _real_base(),
         _defn(objectives=(Objective("completion_cycles", "MIN"),)),
-        port)
+        backend_config=CertifiedBackendConfig(
+            binary=str(find_booksim_bin(REPO)),
+            run_root=str(tmp_path / "certified-runs"),
+            network_clock_hz=10 ** 9, timeout_s=600))
+    assert result.result_class == "CERTIFIED_PRODUCT"
     assert result.pareto_ids
     assert result.selected_candidate_id in result.pareto_ids
+
+
+def test_r1_synthetic_evidence_cannot_enter_certified_entry_point():
+    """R1 attack 1: fully self-consistent synthetic evidence produced
+    without FabricEvaluator cannot enter the certified entry point.
+
+    The synthetic proof (persisted evidence bytes + real builder +
+    verifier) is refused by the analytic entry point, and the certified
+    entry point accepts no evaluator/port at all — the optimizer owns it.
+    """
+    import inspect
+
+    port = _VerifiedStubPort({"latency": 10.0})
+    with pytest.raises(OptimizationResultError,
+                       match="verified performance result"):
+        Optimizer().optimize_with_port(_real_base(), _defn(), port)
+    params = inspect.signature(Optimizer.optimize_certified).parameters
+    assert "evaluator" not in params
+    assert "port" not in params
+    assert "backend_config" in params
+    # The certified entry refuses a port masquerading as its config.
+    with pytest.raises(OptimizationResultError, match="CertifiedBackendConfig"):
+        Optimizer().optimize_certified(_real_base(), _defn(),
+                                       backend_config=port)
+
+
+def test_r1_optimize_with_port_is_research_only_never_certified():
+    """R1 attack 4: the analytic entry point still works for research
+    and can never produce certified Pareto."""
+    result = Optimizer().optimize_with_port(
+        _real_base(), _defn(), FakeDeterministicEvaluator(seed=7))
+    assert result.result_class == "ANALYTIC_RESEARCH"
+    assert result.records
+    assert result.pareto_ids == ()
+    assert result.selected_candidate_id is None
+    view = result.to_study_view()
+    assert view["result_class"] == "ANALYTIC_RESEARCH"
+    assert view["pareto_ids"] == []
 
 
 def test_11_arbitrary_programmer_error_escapes(monkeypatch):
@@ -378,7 +452,7 @@ def test_11_arbitrary_programmer_error_escapes(monkeypatch):
     monkeypatch.setattr(result_module,
                         "verify_authenticated_backend_evaluation", _bug)
     with pytest.raises(KeyError):
-        Optimizer().optimize(
+        _optimize(
             _real_base(), _defn(), _VerifiedStubPort({"latency": 10.0}))
 
 
@@ -409,6 +483,21 @@ def test_12_python_O_cannot_bypass_the_eligibility_gates():
          "test_self_declared_certified_evaluator_cannot_enter_"
          "authoritative_pareto",
          "tests/test_p2_optimization_truth.py::"
+         "test_r1_synthetic_evidence_cannot_enter_certified_entry_point",
+         "tests/test_p2_optimization_truth.py::"
+         "test_r1_optimize_with_port_is_research_only_never_certified",
+         "tests/test_p2_optimization_truth.py::"
+         "test_c1_subclass_cannot_hijack_the_certified_evaluator",
+         "tests/test_p2_optimization_truth.py::"
+         "test_c2_certified_registry_is_not_caller_selectable",
+         "tests/test_p2_optimization_truth.py::"
+         "test_c2_registry_identity_binds_declared_producer_semantics",
+         "tests/test_p2_optimization_truth.py::"
+         "test_c3_quiescence_is_mandatory_for_certified",
+         "tests/test_p2_optimization_truth.py::"
+         "test_r2_certified_registry_is_frozen_and_experimental_is_"
+         "isolated",
+         "tests/test_p2_optimization_truth.py::"
          "test_6_unregistered_objective_with_evaluator_value_is_"
          "unmeasurable_never_pareto",
          "tests/test_p2_optimization_truth.py::"
@@ -418,8 +507,193 @@ def test_12_python_O_cannot_bypass_the_eligibility_gates():
     assert proc.returncode == 0, proc.stdout + proc.stderr
 
 
+def test_r2_certified_registry_is_frozen_and_experimental_is_isolated():
+    """R2 attack 2: no runtime mutation of the certified registry.
+
+    Registration either refuses (builder duplicate) or affects only an
+    explicitly non-certified plugin registry, which the certified path
+    refuses — it can never yield CERTIFIED_PRODUCT Pareto."""
+    from veritx_dse.optimization.metric_registry import (
+        CERTIFIED_METRIC_REGISTRY,
+        CertifiedMetricRegistry,
+        ExperimentalMetricRegistry,
+        MetricRegistryBuilder,
+        MetricRegistryError,
+    )
+
+    # The frozen registry exposes no mutation API; its producer mapping
+    # is read-only.
+    assert not hasattr(CERTIFIED_METRIC_REGISTRY, "register")
+    assert not hasattr(CERTIFIED_METRIC_REGISTRY, "unregister")
+    before = CERTIFIED_METRIC_REGISTRY.registry_id()
+    with pytest.raises(TypeError):
+        CERTIFIED_METRIC_REGISTRY.authorities["magic_score"] = \
+            lambda verified: 1e-6
+    # A plugin registry may register/replace freely — isolated from the
+    # certified authority.
+    experimental = ExperimentalMetricRegistry("plugin-v1")
+    experimental.register("completion_cycles", lambda verified: 1.0)
+    experimental.register("magic_score", lambda verified: 1e-6)
+    assert experimental.extract("completion_cycles", {}) == 1.0
+    assert CERTIFIED_METRIC_REGISTRY.registry_id() == before
+    assert not CERTIFIED_METRIC_REGISTRY.has_metric("magic_score")
+    # The certified extraction path refuses an experimental registry.
+    with pytest.raises(OptimizationResultError,
+                       match="CertifiedMetricRegistry"):
+        _optimize_registry(
+            _real_base(), _defn(),
+            _VerifiedStubPort({"latency": 10.0}), experimental)
+    # A builder-produced frozen registry is a NEW identity/version; the
+    # certified global is untouched.
+    built = (MetricRegistryBuilder("test-v2",
+                                   base=CERTIFIED_METRIC_REGISTRY)
+             .register("latency", lambda verified: 1.0,
+                       producer_id="test-latency")
+             .freeze())
+    assert isinstance(built, CertifiedMetricRegistry)
+    assert built.registry_id() != CERTIFIED_METRIC_REGISTRY.registry_id()
+    assert built.has_metric("latency")
+    assert not CERTIFIED_METRIC_REGISTRY.has_metric("latency")
+    with pytest.raises(MetricRegistryError, match="already registered"):
+        (MetricRegistryBuilder("dup")
+         .register("x", lambda verified: 1, producer_id="x")
+         .register("x", lambda verified: 2, producer_id="x"))
+
+
+def _optimize_registry(base, defn, port, registry):
+    return run_certified_mechanics_for_tests(base, defn, port, registry)
+
+
+def test_c1_subclass_cannot_hijack_the_certified_evaluator(tmp_path):
+    """C1 attack 1: the certified evaluator factory is a module-private
+    function, not an overridable method. A subclass override is never
+    consulted, the real evaluator runs, and no synthetic port can
+    manufacture certified eligibility."""
+    from veritx_dse.optimization.result import CertifiedBackendConfig
+
+    calls = []
+
+    class _Hijack(Optimizer):
+        def _build_certified_evaluator(self, backend_config):
+            calls.append(backend_config)
+            return _VerifiedStubPort({"latency": 10.0})
+
+    result = _Hijack().optimize_certified(
+        _real_base(),
+        _defn(objectives=(Objective("completion_cycles", "MIN"),)),
+        backend_config=CertifiedBackendConfig(
+            binary="/no-such-booksim", run_root=str(tmp_path / "hijack")))
+    assert calls == []  # the override was never consulted
+    assert result.result_class == "CERTIFIED_PRODUCT"
+    assert result.pareto_ids == ()
+    for r in result.records:
+        assert r.evaluation_status == "BACKEND_UNAVAILABLE"
+        assert r.pareto_eligible is False
+
+
+def test_c2_certified_registry_is_not_caller_selectable():
+    """C2 attack 2: the public certified entry point has no registry
+    parameter; a caller-minted registry (e.g. magic_score) cannot reach
+    certified execution."""
+    import inspect
+
+    from veritx_dse.optimization.metric_registry import (
+        ExperimentalMetricRegistry,
+    )
+    from veritx_dse.optimization.result import CertifiedBackendConfig
+
+    params = inspect.signature(Optimizer.optimize_certified).parameters
+    assert "metric_registry" not in params
+    with pytest.raises(TypeError):
+        Optimizer().optimize_certified(
+            _real_base(), _defn(),
+            backend_config=CertifiedBackendConfig(
+                binary="/no-such-booksim", run_root="/tmp/x"),
+            metric_registry=ExperimentalMetricRegistry("plugin-v1"))
+
+
+def test_c2_registry_identity_binds_declared_producer_semantics(tmp_path):
+    """C2 attack 3: registry_id() binds metric + producer_id +
+    semantics_version. C4: only the certified entry point stamps registry
+    identity (from the product-controlled registry); mechanics calls never
+    do, so a caller-minted registry cannot influence certified identity."""
+    from veritx_dse.optimization.metric_registry import (
+        CERTIFIED_METRIC_REGISTRY,
+        MetricRegistryBuilder,
+    )
+
+    def _same(verified):
+        return 10.0
+
+    def _build(producer_id):
+        return (MetricRegistryBuilder("same-version",
+                                      base=CERTIFIED_METRIC_REGISTRY)
+                .register("latency", _same, producer_id=producer_id)
+                .freeze())
+
+    reg_a = _build("sem-a")
+    reg_a2 = _build("sem-a")   # same declared semantics
+    reg_b = _build("sem-b")    # different declared semantics
+    assert reg_a.registry_id() != reg_b.registry_id()
+    assert reg_a.registry_id() == reg_a2.registry_id()
+
+    def _run(registry):
+        return run_certified_mechanics_for_tests(
+            _real_base(), _defn(), _VerifiedStubPort({"latency": 10.0}),
+            registry)
+
+    # C4: mechanics calls are ANALYTIC and stamp no registry identity —
+    # a caller-built registry can therefore never move a certified result.
+    res_mech = _run(reg_a)
+    assert res_mech.result_class == "ANALYTIC_RESEARCH"
+    assert res_mech.metric_registry_id is None
+    assert res_mech.metric_registry_version is None
+
+    # The certified entry point stamps the PRODUCT-CONTROLLED registry
+    # identity, and that identity participates in result_id()/the v2 view.
+    from veritx_dse.core.paths import REPO
+    from veritx_dse.optimization.result import CertifiedBackendConfig
+    from veritx_dse.simulation.booksim import find_booksim_bin
+    result = Optimizer().optimize_certified(
+        _real_base(),
+        _defn(objectives=(Objective("completion_cycles", "MIN"),)),
+        backend_config=CertifiedBackendConfig(
+            binary=str(find_booksim_bin(REPO)),
+            run_root=str(tmp_path / "c2-runs"),
+            network_clock_hz=10 ** 9, timeout_s=600))
+    assert result.result_class == "CERTIFIED_PRODUCT"
+    assert result.metric_registry_id == \
+        CERTIFIED_METRIC_REGISTRY.registry_id()
+    assert result.metric_registry_version == CERTIFIED_METRIC_REGISTRY.version
+    view = result.to_study_view()
+    assert view["metric_registry_id"] == \
+        CERTIFIED_METRIC_REGISTRY.registry_id()
+    assert view["metric_registry_version"] == CERTIFIED_METRIC_REGISTRY.version
+
+
+def test_c3_quiescence_is_mandatory_for_certified():
+    """C3 attack 4: quiescence is not a certified config knob; certified
+    execution always requires it, so a caller cannot disable a
+    certification obligation and still be certified."""
+    import dataclasses
+
+    from veritx_dse.optimization.result import (
+        CertifiedBackendConfig,
+        _make_real_certified_evaluator,
+    )
+
+    names = {f.name for f in dataclasses.fields(CertifiedBackendConfig)}
+    assert "require_quiescence" not in names
+    with pytest.raises(TypeError):
+        CertifiedBackendConfig(binary="x", run_root="y",
+                               require_quiescence=False)
+    evaluator = _make_real_certified_evaluator(
+        CertifiedBackendConfig(binary="/no-such-booksim", run_root="/tmp/x"))
+    assert evaluator.require_quiescence is True
+
+
 def test_1_missing_objective_unmeasurable_ineligible_no_keyerror(tmp_path):
-    result = Optimizer().optimize(
+    result = _optimize(
         _real_base(), _defn(objectives=(Objective("area", "MIN"),)),
         _real_port(tmp_path))
     assert len(result.records) == 2
@@ -434,7 +708,7 @@ def test_1_missing_objective_unmeasurable_ineligible_no_keyerror(tmp_path):
 
 
 def test_2_missing_objective_candidate_never_pareto(tmp_path):
-    result = Optimizer().optimize(
+    result = _optimize(
         _real_base(), _defn(objectives=(Objective("area", "MIN"),)),
         _real_port(tmp_path))
     assert result.pareto_ids == ()
@@ -457,7 +731,7 @@ def test_ap02_backend_unavailable_preserved_into_record(tmp_path):
     assert out.status == "BACKEND_UNAVAILABLE"
     assert out.evaluation_authority == AUTHORITY_CERTIFIED_BACKEND
     assert out.performance_result_id is None
-    result = Optimizer().optimize(_real_base(), _defn(), port)
+    result = _optimize(_real_base(), _defn(), port)
     assert result.pareto_ids == ()
     assert result.selected_candidate_id is None
     for r in result.records:
@@ -496,7 +770,7 @@ def test_ap02_backend_failed_preserved_into_record(tmp_path, monkeypatch):
     out = port.evaluate(make_candidate(_real_base(), {"link_width": 64}))
     assert out.status == "FAILED"
     assert out.evaluation_authority == AUTHORITY_CERTIFIED_BACKEND
-    result = Optimizer().optimize(_real_base(), _defn(), port)
+    result = _optimize(_real_base(), _defn(), port)
     assert result.pareto_ids == ()
     for r in result.records:
         assert r.evaluation_status == "FAILED"
@@ -528,7 +802,7 @@ def test_ap02_requirement_violation_stays_evaluated(tmp_path):
     assert out.objective_values.get("completion_cycles") is not None
     assert "binding requirements not satisfied" in (out.error or "")
     defn = _defn(domain=(DomainParam("link_width", (64,)),))
-    result = Optimizer().optimize(req, defn, port)
+    result = _optimize(req, defn, port)
     (record,) = result.records
     assert record.evaluation_status == "EVALUATED"
     assert record.product_requirements_satisfied is False
@@ -565,7 +839,7 @@ def test_ap02_unsupported_and_compile_failed_preserved_in_v2(tmp_path):
     pp_req = _pp_request()
     out = port.evaluate(make_candidate(pp_req, {"link_width": 64}))
     assert out.status == "UNSUPPORTED"
-    result = Optimizer().optimize(
+    result = _optimize(
         pp_req, _defn(domain=(DomainParam("link_width", (64,)),)), port)
     (record,) = result.records
     assert record.evaluation_status == "UNSUPPORTED"
@@ -574,7 +848,7 @@ def test_ap02_unsupported_and_compile_failed_preserved_in_v2(tmp_path):
     assert cand["evaluation_reason"]
     # Compile refusal (rcu_enabled=True) is COMPILE_FAILED with the
     # compiler's own verdict preserved separately.
-    result2 = Optimizer().optimize(
+    result2 = _optimize(
         _real_base(),
         _defn(domain=(DomainParam("rcu_enabled", (True,)),)), port)
     (record2,) = result2.records
@@ -593,7 +867,7 @@ def test_ap14_status_and_reason_bound_into_result_id():
 
     base = _real_base()
     port = _VerifiedStubPort({"latency": 10.0})
-    result = Optimizer().optimize(base, _defn(), port)
+    result = _optimize(base, _defn(), port)
     view = result.to_study_view()
     for cand in view["candidates"]:
         assert cand["compilation_status"] == "COMPILED"
@@ -622,9 +896,9 @@ def test_ap13_min_vs_max_definition_distinction():
     changes the definition payload and the result identity."""
     base = _real_base()
     port = _VerifiedStubPort({"latency": 10.0})
-    minimize = Optimizer().optimize(
+    minimize = _optimize(
         base, _defn(), port)
-    maximize = Optimizer().optimize(
+    maximize = _optimize(
         base, _defn(objectives=(Objective("latency", "MAX"),)), port)
     v_min = minimize.to_study_view()
     v_max = maximize.to_study_view()
@@ -645,8 +919,8 @@ def test_ap13_selection_policy_definition_distinction():
     changes the definition payload."""
     base = _real_base()
     port = _VerifiedStubPort({"latency": 10.0})
-    first = Optimizer().optimize(base, _defn(), port)
-    lexicographic = Optimizer().optimize(
+    first = _optimize(base, _defn(), port)
+    lexicographic = _optimize(
         base, _defn(selection="lexicographic"), port)
     v_first = first.to_study_view()
     v_lex = lexicographic.to_study_view()
@@ -658,7 +932,7 @@ def test_ap13_selection_policy_definition_distinction():
 
 
 def test_3_report_identity_in_candidate_record():
-    result = Optimizer().optimize(
+    result = _optimize(
         _real_base(), _defn(), _VerifiedStubPort({"latency": 10.0}))
     assert result.records
     for record in result.records:
@@ -666,9 +940,9 @@ def test_3_report_identity_in_candidate_record():
         assert record.product_requirements_satisfied is True
         assert record.product_requirement_details
     # The bound result identity moves when the report identity moves.
-    good = Optimizer().optimize(
+    good = _optimize(
         _real_base(), _defn(), _VerifiedStubPort({"latency": 10.0}))
-    flipped = Optimizer().optimize(
+    flipped = _optimize(
         _real_base(), _defn(),
         _VerifiedStubPort({"latency": 10.0}, cycles=2 * 10 ** 9))
     assert good.result_id() != flipped.result_id()
@@ -710,7 +984,7 @@ def test_4_changing_verdict_or_authority_moves_report_identity():
 
 def test_5_transplanted_requirement_provenance_refuses():
     with pytest.raises(OptimizationResultError, match="transplanted"):
-        Optimizer().optimize(_real_base(), _defn(), _ForeignReportPort())
+        _optimize(_real_base(), _defn(), _ForeignReportPort())
     # A report whose design_hash belongs to THIS candidate but whose
     # carried identity is forged is refused too (never trusted).
     class _ForgedIdentity(_ForeignReportPort):
@@ -727,7 +1001,7 @@ def test_5_transplanted_requirement_provenance_refuses():
                 requirement_report=report,
                 requirement_report_id="forged")
     with pytest.raises(OptimizationResultError, match="forged"):
-        Optimizer().optimize(_real_base(), _defn(), _ForgedIdentity())
+        _optimize(_real_base(), _defn(), _ForgedIdentity())
 
 
 # ── 6: separate authorities ─────────────────────────────────────────────
@@ -735,7 +1009,7 @@ def test_5_transplanted_requirement_provenance_refuses():
 def test_6_product_requirements_and_constraints_stay_separate():
     defn = _defn(constraints=(Constraint("latency", "<=", 5.0),))
     # Product passes, study constraint fails.
-    product_ok = Optimizer().optimize(
+    product_ok = _optimize(
         _real_base(), defn, _VerifiedStubPort({"latency": 10.0}))
     for r in product_ok.records:
         assert r.product_requirements_satisfied is True
@@ -743,7 +1017,7 @@ def test_6_product_requirements_and_constraints_stay_separate():
         assert r.constraint_verdicts["latency"] == "VIOLATED"
         assert r.pareto_eligible is False
     # Product binding fails, study constraint passes.
-    constraint_ok = Optimizer().optimize(
+    constraint_ok = _optimize(
         _real_base(), _defn(),
         _VerifiedStubPort({"latency": 10.0}, cycles=2 * 10 ** 9))
     for r in constraint_ok.records:
@@ -751,7 +1025,7 @@ def test_6_product_requirements_and_constraints_stay_separate():
         assert r.constraints_satisfied is True
         assert r.pareto_eligible is False
     # The two authorities answer different questions in one record.
-    both = Optimizer().optimize(
+    both = _optimize(
         _real_base(), _defn(constraints=(Constraint("latency", "<=", 600.0),)),
         _VerifiedStubPort({"latency": 10.0}))
     for r in both.records:
@@ -763,7 +1037,7 @@ def test_6_product_requirements_and_constraints_stay_separate():
 # ── 7-8: three-state study semantics survive ────────────────────────────
 
 def test_7_violated_survives_study_view():
-    result = Optimizer().optimize(
+    result = _optimize(
         _real_base(),
         _defn(constraints=(Constraint("latency", "<=", 1.0),)),
         FakeDeterministicEvaluator(seed=7))
@@ -778,7 +1052,7 @@ def test_7_violated_survives_study_view():
 
 
 def test_8_unmeasurable_survives_study_view():
-    result = Optimizer().optimize(
+    result = _optimize(
         _real_base(),
         _defn(constraints=(Constraint("energy", "<=", 1.0),)),
         FakeDeterministicEvaluator(seed=7))
@@ -891,3 +1165,52 @@ def test_14_repeated_runs_allocate_distinct_slots(two_cli_runs):
         assert found, token
         digests.append(found)
     assert digests[0] != digests[1]
+
+
+def test_c4_core_mechanics_cannot_mint_certification():
+    """C4: `_optimize_core` has no certification switch at all.
+
+    Accepting certified claims still classifies ANALYTIC_RESEARCH and
+    stamps no registry identity — the old `certified_mode=True` bypass is
+    structurally gone, not merely discouraged.
+    """
+    import inspect
+
+    from veritx_dse.optimization.result import (
+        RESULT_CLASS_ANALYTIC,
+        Optimizer,
+    )
+
+    params = inspect.signature(Optimizer._optimize_core).parameters
+    assert "certified_mode" not in params, (
+        "caller-controlled certification switch is back — only "
+        "optimize_certified() may classify CERTIFIED_PRODUCT")
+    assert "result_class" not in params, (
+        "caller-controlled classification parameter is back")
+
+    port = _VerifiedStubPort({"completion_cycles": 100.0}, cycles=100)
+    result = Optimizer()._optimize_core(
+        _real_base(), _defn(), port, accept_certified_claims=True)
+    assert result.result_class == RESULT_CLASS_ANALYTIC
+    assert result.result_class != "CERTIFIED_PRODUCT"
+    assert result.metric_registry_id is None
+    assert result.metric_registry_version is None
+
+
+def test_c4_certified_product_has_exactly_one_assignment_site():
+    """C4: there is exactly ONE production assignment site of
+    CERTIFIED_PRODUCT, and it lives inside `optimize_certified`."""
+    import inspect
+
+    from veritx_dse.optimization import result as result_mod
+    from veritx_dse.optimization.result import Optimizer
+
+    src = inspect.getsource(result_mod)
+    assert src.count("result_class=RESULT_CLASS_CERTIFIED") == 1, (
+        "CERTIFIED_PRODUCT must have exactly one assignment site")
+    assert "result_class=RESULT_CLASS_CERTIFIED" in inspect.getsource(
+        Optimizer.optimize_certified)
+    assert "result_class=RESULT_CLASS_CERTIFIED" not in inspect.getsource(
+        Optimizer._optimize_core)
+    assert "RESULT_CLASS_CERTIFIED" not in inspect.getsource(
+        Optimizer.optimize_with_port)

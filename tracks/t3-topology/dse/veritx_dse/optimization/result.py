@@ -58,6 +58,10 @@ from veritx_dse.core.artifact import content_id
 from veritx_dse.optimization.evaluators import (
     AUTHORITY_CERTIFIED_BACKEND,
 )
+from veritx_dse.optimization.metric_registry import (
+    CERTIFIED_METRIC_REGISTRY,
+    CertifiedMetricRegistry,
+)
 
 RESULT_DOMAIN = "veritx/optimization-result/v2"
 
@@ -160,6 +164,47 @@ class OptimizationResultError(ValueError):
     """Invalid optimization result state (fail-closed)."""
 
 
+#: Result classes. Only ``CERTIFIED_PRODUCT`` comes from the optimizer-
+#: owned certified entry point; ``ANALYTIC_RESEARCH`` can never contain
+#: certified Pareto.
+RESULT_CLASS_CERTIFIED = "CERTIFIED_PRODUCT"
+RESULT_CLASS_ANALYTIC = "ANALYTIC_RESEARCH"
+
+
+@dataclass(frozen=True)
+class CertifiedBackendConfig:
+    """Inputs for the optimizer-owned certified evaluator (R1/C3).
+
+    ``Optimizer.optimize_certified`` constructs ``RealCandidateEvaluator``
+    from this config itself; no caller-supplied evaluator can enter the
+    certified path. Quiescence is a certification obligation and is NOT a
+    config knob: certified execution is always quiescent.
+    """
+    binary: Any
+    run_root: Any
+    network_clock_hz: int | None = None
+    timeout_s: int = 300
+    repo_root: Any = None
+
+
+def _make_real_certified_evaluator(config: CertifiedBackendConfig) -> Any:
+    """Module-private, non-overridable certified evaluator factory (C1).
+
+    ``optimize_certified`` calls THIS function, not a method, so ordinary
+    subclass polymorphism cannot substitute a synthetic evaluator into
+    the certified path. Quiescence is hard-coded True (C3): a certified
+    result cannot be produced by a non-quiescent execution.
+    """
+    from .real_evaluator import RealCandidateEvaluator
+    return RealCandidateEvaluator(
+        binary=config.binary,
+        run_root=config.run_root,
+        network_clock_hz=config.network_clock_hz,
+        timeout_s=config.timeout_s,
+        repo_root=config.repo_root,
+        require_quiescence=True)
+
+
 def _verified_certified_claims(cand: Any, ev: Any):
     """Bind a certified evaluation to Worker B's verifier authority (A4).
 
@@ -214,34 +259,40 @@ def _verified_certified_claims(cand: Any, ev: Any):
     return claims, report
 
 
-def _has_metric_authority(metric: str) -> bool:
-    """Is there a registered producer for this metric? (A4 gate)."""
-    from .metric_authority import registered_metric_authorities
-    return metric in registered_metric_authorities()
+def _has_metric_authority(registry: Any, metric: str) -> bool:
+    """Does the frozen certified registry carry this metric? (A4/R2)."""
+    return isinstance(registry, CertifiedMetricRegistry) and \
+        registry.has_metric(metric)
 
 
 def _authoritative_metrics(ev: Any, definition: Any, claims: Any,
                            port_measured: dict[str, float],
                            port_invalid: dict[str, str],
+                           registry: Any,
                            ) -> dict[str, float]:
-    """Registered metrics from Worker B's DERIVED claims (A4).
+    """Registered metrics extracted from the verified claims (A4/R2/R3).
 
-    ``claims.metrics`` is the registered metric authority's extraction
-    over the re-opened evidence (the verifier ran the producers); there
-    is NO fallback to the evaluator's ``objective_values``. A registered
-    metric the evaluator carried with a different (or non-finite) value
-    refuses — the proof's extracted value is authoritative, never the
-    port's. A registered metric the claims do not evidence is
-    UNMEASURABLE and the evaluator's number is ignored.
+    The verifier returns authenticated PRIMITIVES; optimization runs the
+    FROZEN certified registry's producers over ``claims.verified_result``
+    afterwards (evidence truth never depends upward on optimization).
+    There is NO fallback to the evaluator's ``objective_values``: a
+    registered metric the evaluator carried with a different (or
+    non-finite) value refuses; a registered metric the claims do not
+    evidence is UNMEASURABLE and the evaluator's number is ignored.
     """
-    from .metric_authority import registered_metric_authorities
-
-    derived = getattr(claims, "metrics", None)
-    if not isinstance(derived, Mapping):
+    if not isinstance(registry, CertifiedMetricRegistry):
+        raise OptimizationResultError(
+            f"certified extraction requires a frozen "
+            f"CertifiedMetricRegistry, got {type(registry).__name__} — "
+            f"experimental/plugin registries can never yield "
+            f"CERTIFIED_PRODUCT results")
+    verified = getattr(claims, "verified_result", None)
+    if verified is None:
         raise OptimizationResultError(
             f"Worker B's verifier returned claims for "
-            f"{ev.candidate_id!r} without a metric mapping — refusing "
+            f"{ev.candidate_id!r} without a verified result — refusing "
             f"unverifiable derived claims")
+    derived = registry.extract_all(verified)
     needed = {o.metric for o in definition.objectives} | \
         {c.metric for c in (definition.constraints or [])}
     measured_all: dict[str, float] = {}
@@ -249,7 +300,7 @@ def _authoritative_metrics(ev: Any, definition: Any, claims: Any,
         value = _finite_number(derived.get(metric))
         if value is not None:
             measured_all[metric] = value
-    for metric in registered_metric_authorities():
+    for metric in registry.metric_names():
         if metric not in port_measured and metric not in port_invalid:
             continue
         authoritative = _finite_number(derived.get(metric))
@@ -317,6 +368,9 @@ class OptimizationResult:
     pareto_ids: tuple[str, ...]
     selected_candidate_id: str | None
     selection_rationale: str | None
+    result_class: str = RESULT_CLASS_ANALYTIC
+    metric_registry_id: str | None = None
+    metric_registry_version: str | None = None
 
     def result_id(self) -> str:
         # Binds evaluation provenance, not just rounded objectives: two
@@ -360,6 +414,9 @@ class OptimizationResult:
         return content_id(RESULT_DOMAIN, {
             "base_design_hash": self.base_design_hash,
             "definition_id": self.definition.definition_id(),
+            "result_class": self.result_class,
+            "metric_registry_id": self.metric_registry_id,
+            "metric_registry_version": self.metric_registry_version,
             "candidates": rows,
             "pareto_ids": list(self.pareto_ids),
             "selected_candidate_id": self.selected_candidate_id,
@@ -440,6 +497,9 @@ class OptimizationResult:
             })
         return {
             "contract_version": 2,
+            "result_class": self.result_class,
+            "metric_registry_id": self.metric_registry_id,
+            "metric_registry_version": self.metric_registry_version,
             "optimization_result_id": self.result_id(),
             "base_design_hash": _view_hash(self.base_design_hash),
             "definition": self._definition_view_v2(),
@@ -593,16 +653,84 @@ def _constraint_details(verdict_docs: dict[str, Any]) -> tuple:
 
 
 class Optimizer:
-    """Deterministic optimize: search -> evaluate -> verdicts -> Pareto."""
+    """Deterministic optimize: search -> evaluate -> verdicts -> Pareto.
+
+    TWO EXPLICIT MODES (R1). ``optimize_with_port`` is the
+    ANALYTIC/TEST/RESEARCH entry point: an arbitrary
+    ``CandidateEvaluationPort`` is structurally unable to reach certified
+    eligibility there — any certified claim or authenticated proof is a
+    typed refusal. ``optimize_certified`` is the ONLY certified entry
+    point: it internally constructs and owns ``RealCandidateEvaluator``
+    (compile -> qualified BookSim -> authenticated evidence), so the call
+    path proves how the evidence was created. The persistence/replay/
+    tamper verifier stays as-is for the certified path.
+    """
+
+    def optimize_with_port(self, base_request: Any, definition: Any,
+                           port: Any) -> OptimizationResult:
+        """Analytic/test/research mode. Never yields certified results."""
+        return self._optimize_core(base_request, definition, port,
+                                   accept_certified_claims=False)
 
     def optimize(self, base_request: Any, definition: Any,
                  evaluator: Any) -> OptimizationResult:
+        """Backward-compatible alias for :meth:`optimize_with_port`.
+
+        Analytic-only: a certified claim from a caller-supplied evaluator
+        is a typed refusal (certified results come only from
+        :meth:`optimize_certified`).
+        """
+        return self.optimize_with_port(base_request, definition, evaluator)
+
+    def optimize_certified(self, base_request: Any, definition: Any, *,
+                           backend_config: Any,
+                           ) -> OptimizationResult:
+        """The ONLY certified entry point (R1/C1/C2/C3).
+
+        The optimizer constructs and owns ``RealCandidateEvaluator`` via
+        the module-private factory; no caller-supplied evaluator is
+        accepted, and the certified metric registry is NOT caller-
+        selectable (product-controlled ``CERTIFIED_METRIC_REGISTRY``
+        only). Only this path can produce ``CERTIFIED_PRODUCT`` results.
+        """
+        if not isinstance(backend_config, CertifiedBackendConfig):
+            raise OptimizationResultError(
+                f"optimize_certified requires a CertifiedBackendConfig, "
+                f"got {type(backend_config).__name__}")
+        evaluator = _make_real_certified_evaluator(backend_config)
+        core = self._optimize_core(
+            base_request, definition, evaluator,
+            accept_certified_claims=True,
+            metric_registry=CERTIFIED_METRIC_REGISTRY)
+        # C4: THE single production assignment site of CERTIFIED_PRODUCT.
+        # Core mechanics never classify and never stamp registry identity;
+        # only this wrapper may, and only from the product-controlled
+        # registry (never a caller-supplied one).
+        import dataclasses as _dc
+        return _dc.replace(
+            core,
+            result_class=RESULT_CLASS_CERTIFIED,
+            metric_registry_id=CERTIFIED_METRIC_REGISTRY.registry_id(),
+            metric_registry_version=CERTIFIED_METRIC_REGISTRY.version)
+
+    def _optimize_core(self, base_request: Any, definition: Any,
+                       evaluator: Any, *,
+                       accept_certified_claims: bool,
+                       metric_registry: Any = None) -> OptimizationResult:
         from veritx_dse.application.requirements import report_passes
 
         from .candidate import candidate_id_for
         from .constraints import evaluate_all
         from .pareto import pareto_ids as _pareto_ids
         from .search import search_candidates
+        registry = metric_registry if metric_registry is not None \
+            else CERTIFIED_METRIC_REGISTRY
+        if not isinstance(registry, CertifiedMetricRegistry):
+            raise OptimizationResultError(
+                f"certified metric extraction requires a frozen "
+                f"CertifiedMetricRegistry, got {type(registry).__name__} "
+                f"— experimental/plugin registries can never yield "
+                f"certified claims")
         base_hash = base_request.design_hash()
         candidates = search_candidates(base_request, definition)
         if not candidates:
@@ -644,11 +772,30 @@ class Optimizer:
                 authority == AUTHORITY_CERTIFIED_BACKEND
                 and ev.status == "EVALUATED")
             if certified_claim:
+                if not accept_certified_claims:
+                    # R1: the analytic entry point structurally refuses
+                    # certified claims — an arbitrary port can never
+                    # reach certified eligibility here.
+                    raise OptimizationResultError(
+                        f"candidate {cand.candidate_id!r} claims certified "
+                        f"authority through optimize_with_port — that "
+                        f"entry point is ANALYTIC/TEST/RESEARCH only. A "
+                        f"certified result requires a verified performance "
+                        f"result produced by the optimizer-owned "
+                        f"evaluator: use Optimizer.optimize_certified, "
+                        f"which owns the real backend path")
                 # A4: import and call Worker B's verifier authority; the
                 # derived claims (and the report they derive) are the only
                 # authoritative facts. Never duck-type the proof.
                 claims, report = _verified_certified_claims(cand, ev)
             else:
+                if not accept_certified_claims and getattr(
+                        ev, "authenticated_proof", None) is not None:
+                    raise OptimizationResultError(
+                        f"candidate {cand.candidate_id!r} carries an "
+                        f"authenticated proof through optimize_with_port "
+                        f"— the analytic entry point refuses certified "
+                        f"evidence; use Optimizer.optimize_certified")
                 report = ev.requirement_report
                 _check_report_binding(ev, report, cand.candidate_id)
             product_satisfied: bool | None = None
@@ -672,12 +819,13 @@ class Optimizer:
                 else:
                     measured_all[str(key)] = number
             if claims is not None:
-                # A4: certified metrics come ONLY from the registered
-                # producers over the derived claims; the evaluator's
-                # objective_values never score (a registered-metric
-                # misreport refuses).
+                # A4/R2: certified metrics come ONLY from the frozen
+                # certified registry over the verified claims; the
+                # evaluator's objective_values never score (a
+                # registered-metric misreport refuses).
                 measured_all = _authoritative_metrics(
-                    ev, definition, claims, measured_all, invalid_values)
+                    ev, definition, claims, measured_all, invalid_values,
+                    registry)
                 invalid_values = {}
             if ev.status == "EVALUATED":
                 verdicts = evaluate_all(definition.constraints,
@@ -722,7 +870,7 @@ class Optimizer:
                     reason = (f"evaluation status {ev.status} — "
                               "no measured value")
                 elif claims is not None and not _has_metric_authority(
-                        o.metric):
+                        registry, o.metric):
                     state = "UNMEASURABLE"
                     reason = (f"objective {o.metric} has no registered "
                               f"metric authority over the authenticated "
@@ -802,7 +950,8 @@ class Optimizer:
                     {o.metric for o in definition.objectives} |
                     {c.metric for c in (definition.constraints or [])})
                 missing_authority = [m for m in needed
-                                     if not _has_metric_authority(m)]
+                                     if not _has_metric_authority(registry,
+                                                                  m)]
                 if missing_authority:
                     eligibility_reasons.append(
                         "metric(s) without a registered metric authority "
@@ -877,10 +1026,17 @@ class Optimizer:
             pareto_ids=tuple(front),
             selected_candidate_id=selected,
             selection_rationale=rationale,
+            # C4: core mechanics NEVER mint certification. Classification
+            # and registry identity are stamped by optimize_certified()
+            # alone; every path through this core is ANALYTIC_RESEARCH.
+            result_class=RESULT_CLASS_ANALYTIC,
+            metric_registry_id=None,
+            metric_registry_version=None,
         )
 
 
 __all__ = [
-    "RESULT_DOMAIN", "CandidateRecord", "OptimizationResult",
+    "RESULT_CLASS_ANALYTIC", "RESULT_CLASS_CERTIFIED", "RESULT_DOMAIN",
+    "CandidateRecord", "CertifiedBackendConfig", "OptimizationResult",
     "OptimizationResultError", "Optimizer",
 ]

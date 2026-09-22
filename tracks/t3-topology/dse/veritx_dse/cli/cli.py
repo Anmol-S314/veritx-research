@@ -2998,8 +2998,10 @@ def _optimize_booksim(ctx: Ctx, args, src: Path, doc: dict):
         OptimizationDefinition,
         OptimizationDefinitionError,
     )
-    from veritx_dse.optimization.real_evaluator import RealCandidateEvaluator
-    from veritx_dse.optimization.result import Optimizer
+    from veritx_dse.optimization.result import (
+        CertifiedBackendConfig,
+        Optimizer,
+    )
     try:
         base = CompileRequestV3.from_dict(doc)
     except Exception as exc:
@@ -3081,9 +3083,9 @@ def _optimize_booksim(ctx: Ctx, args, src: Path, doc: dict):
         fail(ctx, f"invalid optimization definition: {exc}")
         return
     try:
-        result = Optimizer().optimize(
+        result = Optimizer().optimize_certified(
             base, defn,
-            RealCandidateEvaluator(
+            backend_config=CertifiedBackendConfig(
                 binary=str(binary), network_clock_hz=clock,
                 timeout_s=timeout, run_root=str(run_root)))
     except Exception as exc:
@@ -3257,7 +3259,7 @@ def cmd_optimize(ctx: Ctx, args):
         return
 
     try:
-        result = Optimizer().optimize(
+        result = Optimizer().optimize_with_port(
             base, defn, FakeDeterministicEvaluator(seed=seed))
     except Exception as exc:
         fail(ctx, f"optimize failed: {exc}")

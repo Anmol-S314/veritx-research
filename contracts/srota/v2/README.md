@@ -34,6 +34,16 @@ The definition block is lossless and identified: `definition_id`,
 content digest of the bound `OptimizationResult` (the engine re-derives
 it from definition identity + candidate rows + frontier).
 
+The top level also carries `result_class` (R1):
+`CERTIFIED_PRODUCT` comes only from `Optimizer.optimize_certified`,
+which internally owns the real backend evaluator;
+`ANALYTIC_RESEARCH` comes from `Optimizer.optimize_with_port` and can
+never contain certified Pareto (`pareto_ids` is empty there).
+`metric_registry_id` / `metric_registry_version` (R2/C2) bind the
+certified metric registry identity (version + per-metric
+`producer_id` + `semantics_version`) into the view and the result
+identity; they are `null` for analytic/research results.
+
 The v1 file at `contracts/srota/v1/optimization.study.view.schema.json`
 remains frozen for pinned callers. The v1 projector
 (`to_study_view(contract_version=1)`) is LOSSY by design: it collapses

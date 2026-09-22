@@ -273,12 +273,11 @@ class TestConsumptionRechecks:
         assert claims.requirement_report["performance_result_id"] == \
             genuine.outcome.performance_result_id
         assert claims.requirement_report_id
-        assert claims.metrics
-        assert claims.metric_evidence
-        for handle in claims.metric_evidence:
-            assert handle.evidence_sha256 == \
-                genuine.outcome.raw_evidence_digest
-            assert handle.stats_sha256 == genuine.outcome.stats_digest
+        # R3: the verifier returns authenticated primitives only; metric
+        # extraction belongs to the optimization layer (applied over
+        # claims.verified_result afterwards).
+        assert not hasattr(claims, "metrics")
+        assert not hasattr(claims, "metric_evidence")
         assert claims.producer_identity == genuine.outcome.producer_identity
         assert claims.backend
         assert claims.backend_config_hash == \
