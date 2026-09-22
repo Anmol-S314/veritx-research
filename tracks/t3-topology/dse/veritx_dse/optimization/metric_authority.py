@@ -1,13 +1,16 @@
 """veritx_dse.optimization.metric_authority — registered metric producers.
 
-Law (RT-final A3): for an authoritative (certified-backend) evaluation,
-an objective measurement is not whatever the port says it is. Every
-metric that has a registered authority is re-extracted from the carried
-``VerifiedPerformanceResult`` (B's boundary) by the registered producer
-and the port's own value must agree exactly. A metric with no registered
-producer has no independent extraction authority; its value is taken
-from the authenticated evaluation itself (never from a self-declared
-label) and a certified port may not misreport a registered metric.
+Law (RT-final A4): for certified optimization an objective measurement is
+NEVER whatever the evaluator says it is. Worker B's verifier authority
+(``application.authenticated_evaluation.verify_authenticated_backend_evaluation``)
+re-opens the authenticated evidence and runs the registered producers
+over the verified result, returning ``VerifiedEvaluationClaims.metrics``.
+The optimizer consumes ONLY those derived claims: there is no fallback to
+``CandidateEvaluation.objective_values`` for a certified candidate. A
+metric with no registered producer is UNMEASURABLE (and the candidate is
+ineligible); a producer that returns no finite value is UNMEASURABLE;
+only a finite derived value scores. ``objective_values`` remain
+meaningful for ANALYTIC/TEST/RESEARCH evaluators only.
 
 One authority per metric, exactly like ``validate_requirement_scopes``:
 the cycle-recovery rule lives in
@@ -85,7 +88,12 @@ def extract_metric(metric: str, verified: Any) -> float | None:
 
 
 def extract_authoritative_metrics(verified: Any) -> dict[str, float]:
-    """Every registered metric this verified result evidences (sorted)."""
+    """Every registered metric this verified result evidences (sorted).
+
+    Called by Worker B's verifier authority over the re-opened evidence;
+    the optimizer consumes the resulting derived claims
+    (``VerifiedEvaluationClaims.metrics``), never raw evaluator values.
+    """
     out: dict[str, float] = {}
     for metric in registered_metric_authorities():
         value = extract_metric(metric, verified)
