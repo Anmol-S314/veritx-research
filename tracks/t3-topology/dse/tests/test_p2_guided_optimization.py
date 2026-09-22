@@ -13,6 +13,7 @@ OptimizationStudyView validation, and the no-LOCKED-mutation invariant.
 """
 from __future__ import annotations
 
+import dataclasses
 import itertools
 import json
 import random
@@ -31,6 +32,7 @@ from veritx_dse.optimization.candidate import (  # noqa: E402
     make_candidate,
 )
 from veritx_dse.optimization.constraints import (  # noqa: E402
+    ConstraintError,
     evaluate_all,
     evaluate_constraint_value,
 )
@@ -42,6 +44,8 @@ from veritx_dse.optimization.definition import (  # noqa: E402
     OptimizationDefinitionError,
 )
 from veritx_dse.optimization.evaluators import (  # noqa: E402
+    AUTHORITY_ANALYTIC_FAKE,
+    AUTHORITY_CERTIFIED_BACKEND,
     CandidateEvaluation,
     FakeDeterministicEvaluator,
 )
@@ -58,6 +62,7 @@ from veritx_dse.optimization.search import (  # noqa: E402
     raw_cardinality,
     search_candidates,
 )
+from p2_verified_support import certified_evaluation  # noqa: E402
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "optimize_mesh16.json"
 
@@ -65,6 +70,47 @@ FIXTURE = Path(__file__).resolve().parent / "fixtures" / "optimize_mesh16.json"
 def _base():
     from veritx_dse.model.compile_model import CompileRequest
     return CompileRequest.from_dict(json.loads(FIXTURE.read_text()))
+
+
+def _certified_base():
+    """v3 base for CERTIFIED ports (A3).
+
+    A certified evaluation's proof includes the exact lowered
+    WorkloadGraph, and only v3 requests lower (v2 interpretation is
+    frozen). Same MESH defaults and latency ceiling as the v2 fixture,
+    so the analytic objective values and report verdicts stay
+    comparable; the study's optimizer constraint still splits the grid.
+    """
+    from veritx_dse.model.compile_model import (
+        Agent,
+        AgentKind,
+        CollectiveDimension,
+        CollectiveIntent,
+        CollectiveKind,
+        CompileRequestV3,
+        DependencyGraph,
+        ModelFamily,
+        NocConfig,
+        QoSClass,
+        RequirementV3,
+        TopologyFamily,
+        WorkloadV3,
+    )
+    return CompileRequestV3(
+        workload=WorkloadV3(
+            model_family=ModelFamily.DENSE_TRANSFORMER, tp=4, dp=1,
+            collectives=(CollectiveIntent(
+                kind=CollectiveKind.ALLREDUCE,
+                dimension=CollectiveDimension.TP,
+                payload_bytes=2048,
+                traffic_class="tp_collective"),)),
+        requirements=(RequirementV3(
+            qos_class=QoSClass.LATENCY_CRITICAL,
+            traffic_class="tp_collective",
+            latency_ceiling_cycles=600, binding=True),),
+        agents=(Agent(kind=AgentKind.COMPUTE_TILE, count=4),),
+        dependencies=DependencyGraph([]),
+        noc_config=NocConfig(topology_family=TopologyFamily.MESH))
 
 
 def _defn(**kw):
@@ -77,6 +123,35 @@ def _defn(**kw):
     )
     base.update(kw)
     return OptimizationDefinition(**base)
+
+
+class _CertifiedEvaluator:
+    """Test double declaring CERTIFIED_BACKEND authority.
+
+    A3: the label is not proof, so every EVALUATED candidate carries
+    REAL proof — the exact lowered WorkloadGraph, a genuinely verified
+    performance result, and the RequirementEvaluator report re-derived
+    from exactly those objects (p2_verified_support). The analytic
+    objectives these tests exercise have no registered metric authority
+    and therefore ride on the authenticated evaluation. Use only with
+    _certified_base(): lowering is v3-only.
+    """
+
+    def __init__(self, seed: int = 7, *, cycles: int = 100):
+        self.inner = FakeDeterministicEvaluator(seed=seed)
+        self.cycles = cycles
+
+    def evaluate(self, candidate):
+        ev = self.inner.evaluate(candidate)
+        if ev.status != "EVALUATED":
+            return dataclasses.replace(
+                ev, evaluation_authority=AUTHORITY_CERTIFIED_BACKEND,
+                performance_result_id=None, requirement_report=None,
+                requirement_report_id=None)
+        return certified_evaluation(
+            candidate, cycles=self.cycles,
+            objective_values=ev.objective_values,
+            locked=ev.locked_consequences)
 
 
 # ── definition guards ────────────────────────────────────────────────────
@@ -110,6 +185,27 @@ class TestDefinitionGuards:
                 domain=(DomainParam("link_width", (32,)),
                         DomainParam("noc_config.link_width", (64,))),
                 objectives=(Objective("latency", "MIN"),))
+
+    def test_duplicate_objective_metric_refused(self):
+        """A4: the same destination declared twice refuses, even with
+        different directions."""
+        with pytest.raises(OptimizationDefinitionError,
+                           match="duplicate objective"):
+            OptimizationDefinition(
+                domain=(DomainParam("link_width", (32, 64)),),
+                objectives=(Objective("latency", "MIN"),
+                            Objective("latency", "MAX")))
+
+    def test_duplicate_constraint_metric_refused_at_construction(self):
+        """A4 option B: one constraint per metric. latency<=100 plus
+        latency>=50 cannot silently overwrite; the definition refuses."""
+        with pytest.raises(OptimizationDefinitionError,
+                           match="duplicate constraint"):
+            OptimizationDefinition(
+                domain=(DomainParam("link_width", (32, 64)),),
+                objectives=(Objective("latency", "MIN"),),
+                constraints=(Constraint("latency", "<=", 100.0),
+                             Constraint("latency", ">=", 50.0)))
 
     def test_bayes_milp_refused(self):
         for method in ("bayes", "bo", "milp", "sa", "rho", "grpo"):
@@ -306,6 +402,14 @@ class TestConstraints:
         assert evaluate_all(cons, {"latency": 700.0})["feasible"] is False
         assert evaluate_all(cons, {})["feasible"] is None
 
+    def test_duplicate_metric_refuses_at_evaluation_too(self):
+        """A4 defense in depth: even below the definition seam, the
+        metric-keyed verdict map refuses to overwrite."""
+        cons = (Constraint("latency", "<=", 100.0),
+                Constraint("latency", ">=", 50.0))
+        with pytest.raises(ConstraintError, match="duplicate constraint"):
+            evaluate_all(cons, {"latency": 75.0})
+
 
 # ── pareto ───────────────────────────────────────────────────────────────
 
@@ -357,10 +461,10 @@ class TestPareto:
 
 class TestGridStudyEndToEnd:
     def _study(self, **kw):
-        base = _base()
+        base = _certified_base()
         defn = _defn(**kw)
         result = Optimizer().optimize(
-            base, defn, FakeDeterministicEvaluator(seed=7))
+            base, defn, _CertifiedEvaluator())
         return base, defn, result
 
     def test_grid_yields_table_pareto_selection(self):
@@ -369,7 +473,8 @@ class TestGridStudyEndToEnd:
         by = {r.candidate_id: r for r in result.records}
         # Constraint latency<=600 splits the grid: wide link feasible.
         feasible = sorted(r.candidate_id for r in result.records
-                          if all(v is True for v in r.constraint_verdicts.values()))
+                          if all(v == "SATISFIED"
+                                 for v in r.constraint_verdicts.values()))
         assert len(feasible) == 2
         assert set(result.pareto_ids) <= set(feasible)
         # (link_width 128, concentration 1) dominates (128, 2) on both
@@ -384,7 +489,7 @@ class TestGridStudyEndToEnd:
         for r in result.records:
             assert r.design_hash and len(r.design_hash) == 64
             assert r.locked_consequences["routing_classes"] == ["DOR_XY"]
-            assert r.locked_consequences["vc_count"] == 2
+            assert r.locked_consequences["vc_count"] == 1
 
     def test_execution_order_never_changes_identity(self):
         base = _base()
@@ -411,20 +516,56 @@ class TestGridStudyEndToEnd:
         assert view["selected_candidate_id"] in set(view["pareto_ids"])
 
     def test_study_view_v2_validates_by_default(self):
-        """RT-12: the default projection is contract v2, with typed
-        constraint verdicts; v1 stays available for pinned callers."""
+        """A5: the default projection is the authoritative v2 contract
+        at contracts/srota/v2/, with typed constraint verdicts and the
+        separated product/objective authorities; v1 stays available for
+        pinned callers."""
         jsonschema = pytest.importorskip("jsonschema")
         _, _, result = self._study()
         view = result.to_study_view()
         assert view["contract_version"] == 2
         schema = json.loads(
-            (DSE.parent.parent.parent / "contracts" / "srota" / "v1" /
-             "optimization.study.view.v2.schema.json").read_text())
+            (DSE.parent.parent.parent / "contracts" / "srota" / "v2" /
+             "optimization.study.view.schema.json").read_text())
         jsonschema.validate(view, schema)
+        # A-P1.3: the definition is lossless and identified; the result
+        # identity is exposed at the view top level.
+        assert view["optimization_result_id"] == result.result_id()
+        assert view["definition"]["definition_id"] == \
+            result.definition.definition_id()
+        assert view["definition"]["objectives"] == [
+            {"metric": o.metric, "direction": o.direction}
+            for o in result.definition.objectives]
+        assert view["definition"]["constraints"] == [
+            {"metric": c.metric, "op": c.op, "threshold": c.threshold}
+            for c in result.definition.constraints]
+        assert view["definition"]["selection"] == "min_first_objective"
         verdicts = {c["constraint_verdicts"]["latency"]
                     for c in view["candidates"]}
         assert verdicts <= {"SATISFIED", "VIOLATED", "UNMEASURABLE"}
         assert "SATISFIED" in verdicts
+        for cand in view["candidates"]:
+            assert set(cand) == {
+                "candidate_id", "guided_patch", "locked_consequences",
+                "evaluation_ids", "product_requirements",
+                "objective_values", "objective_availability",
+                "constraint_verdicts", "evaluation_authority",
+                "compilation_status", "evaluation_status",
+                "evaluation_reason", "eligibility_reason",
+                "pareto_eligible", "pareto_member"}
+            assert set(cand["evaluation_ids"]) == {
+                "design_hash", "performance_result_id",
+                "requirement_report_id"}
+            assert cand["pareto_member"] is False or \
+                cand["pareto_eligible"] is True
+            assert cand["evaluation_authority"] == \
+                AUTHORITY_CERTIFIED_BACKEND
+            if cand["pareto_eligible"]:
+                assert cand["eligibility_reason"] is None
+            else:
+                assert cand["eligibility_reason"]
+            assert set(cand["objective_availability"].values()) <= {
+                "MEASURED", "UNMEASURABLE"}
 
     def test_study_view_v2_preserves_unmeasurable(self):
         """RT-12: UNMEASURABLE survives the v2 view; the v1 path still
@@ -441,8 +582,8 @@ class TestGridStudyEndToEnd:
         v2 = result.to_study_view()
         assert v2["contract_version"] == 2
         schema2 = json.loads(
-            (DSE.parent.parent.parent / "contracts" / "srota" / "v1" /
-             "optimization.study.view.v2.schema.json").read_text())
+            (DSE.parent.parent.parent / "contracts" / "srota" / "v2" /
+             "optimization.study.view.schema.json").read_text())
         jsonschema.validate(v2, schema2)
         for cand in v2["candidates"]:
             assert cand["constraint_verdicts"]["energy"] == \
@@ -492,18 +633,20 @@ class TestGridStudyEndToEnd:
         """rcu_enabled=True is a GUIDED knob the v3 compiler refuses
         (typed UNSUPPORTED, no RCU artifact). The refusal must stay
         visible and never enter the Pareto set — never a silent drop."""
-        base = _base()
+        base = _certified_base()
         defn = OptimizationDefinition(
             domain=(DomainParam("rcu_enabled", (False, True)),),
             objectives=(Objective("latency", "MIN"),),
             method="grid")
         result = Optimizer().optimize(
-            base, defn, FakeDeterministicEvaluator(seed=7))
+            base, defn, _CertifiedEvaluator())
         assert len(result.records) == 2
         by_patch = {tuple(sorted(r.guided_patch.items())): r
                       for r in result.records}
         refused = by_patch[(("rcu_enabled", True),)]
         assert refused.evaluation_status == "UNSUPPORTED"
+        assert refused.evaluation_authority == \
+            AUTHORITY_CERTIFIED_BACKEND
         assert refused.objective_values == {}
         assert refused.candidate_id not in set(result.pareto_ids)
         ok = by_patch[(("rcu_enabled", False),)]
@@ -533,10 +676,10 @@ class TestGridStudyEndToEnd:
         assert "energy" in (result.selection_rationale or "")
         for r in result.records:
             assert r.pareto_member is False
-            entries = [d for d in r.requirement_details
+            entries = [d for d in r.objective_details
                        if dict(d)["metric"] == "energy"]
             assert entries, r.candidate_id
-            assert dict(entries[0])["verdict"] == "UNMEASURABLE"
+            assert dict(entries[0])["state"] == "UNMEASURABLE"
             assert dict(entries[0])["reason"] == (
                 "objective energy not evidenced by evaluation")
 
@@ -544,27 +687,95 @@ class TestGridStudyEndToEnd:
 # ── Fix 1: result identity binds evaluation provenance ───────────────────
 
 class _FixedReportPort:
-    """Same objectives for every candidate; reports differ by verdict."""
+    """Same objectives for every candidate; the GENUINE report verdict
+    differs (under/over the request's 600-cycle latency ceiling)."""
 
     def __init__(self, violated: bool):
         self.violated = violated
 
     def evaluate(self, candidate):
-        verdict = "VIOLATED" if self.violated else "SATISFIED"
+        return certified_evaluation(
+            candidate, cycles=(1000 if self.violated else 100),
+            objective_values={"latency": 10.0})
+
+
+class _ValuePort:
+    """Certified port with REAL proof returning exactly the
+    objective_values given. The analytic stand-in metrics these tests
+    exercise have no registered metric authority, so they ride on the
+    authenticated evaluation (never on the authority label)."""
+
+    def __init__(self, values):
+        self.values = values
+
+    def evaluate(self, candidate):
+        return certified_evaluation(
+            candidate, cycles=100, objective_values=dict(self.values))
+
+
+class TestObjectiveStateCompleteness:
+    """A3: every requested objective has an explicit state; a missing or
+    non-finite value is UNMEASURABLE and can never score or reach Pareto."""
+
+    def _defn(self):
+        return OptimizationDefinition(
+            domain=(DomainParam("link_width", (32, 128)),),
+            objectives=(Objective("latency", "MIN"),),
+            method="grid")
+
+    @pytest.mark.parametrize("bad", [
+        float("nan"), float("inf"), float("-inf"), True, "fast", None])
+    def test_non_finite_or_non_real_objective_is_unmeasurable(self, bad):
+        result = Optimizer().optimize(
+            _certified_base(), self._defn(), _ValuePort({"latency": bad}))
+        assert result.pareto_ids == ()
+        assert result.selected_candidate_id is None
+        for r in result.records:
+            assert r.pareto_eligible is False
+            assert r.objective_availability["latency"] == \
+                "UNMEASURABLE"
+            assert r.objective_values == {}
+            assert r.objective_details
+            entry = dict(r.objective_details[0])
+            assert entry["state"] == "UNMEASURABLE"
+            assert "finite real number" in entry["reason"]
+
+    def test_measured_objective_gets_explicit_measured_state(self):
+        result = Optimizer().optimize(
+            _certified_base(), self._defn(),
+            _ValuePort({"latency": 5.0, "area": 7.0}))
+        assert result.pareto_ids
+        for r in result.records:
+            assert r.pareto_eligible is True
+            assert r.objective_availability["latency"] == "MEASURED"
+            assert r.objective_availability["area"] == "MEASURED"
+            assert r.objective_values["latency"] == 5.0
+            assert r.objective_details == ()
+
+
+class _TransplantedReportPort:
+    """Evaluator that returns ANOTHER design's report under this id."""
+
+    def __init__(self, foreign_design_hash: str | None = None):
+        self.foreign = foreign_design_hash
+
+    def evaluate(self, candidate):
         report = {
             "contract_version": 1,
-            "design_hash": "sha256:" + candidate.request.design_hash(),
-            "performance_result_id": "perf:fixed",
+            "design_hash": "sha256:" + (
+                self.foreign if self.foreign is not None
+                else candidate.request.design_hash()),
+            "performance_result_id": "perf:foreign",
             "entries": [{
                 "requirement_index": 0,
                 "traffic_class": "tp_collective",
                 "qos_class": "latency_critical",
-                "verdict": verdict,
+                "verdict": "SATISFIED",
                 "binding": True,
                 "required": 600.0,
                 "measured": 10.0,
                 "metric_authority": "test",
-                "performance_result_id": "perf:fixed",
+                "performance_result_id": "perf:foreign",
                 "reason": "test",
             }],
         }
@@ -574,13 +785,60 @@ class _FixedReportPort:
             status="EVALUATED",
             objective_values={"latency": 10.0},
             locked_consequences={},
-            performance_result_id="perf:fixed",
-            requirement_report=report)
+            performance_result_id="perf:foreign",
+            requirement_report=report,
+            requirement_report_id="forged-not-the-report-identity",
+        )
+
+
+class TestProductRequirementAuthority:
+    """A1: product requirements are a separate authority from the study's
+    optimizer constraints; backend success alone never makes a candidate
+    optimization-eligible when binding product requirements fail."""
+
+    def _defn(self):
+        return OptimizationDefinition(
+            domain=(DomainParam("link_width", (32, 128)),),
+            objectives=(Objective("latency", "MIN"),),
+            method="grid")
+
+    def test_backend_success_with_failing_binding_report_is_ineligible(self):
+        base = _certified_base()
+        result = Optimizer().optimize(
+            base, self._defn(), _FixedReportPort(True))
+        assert result.pareto_ids == ()
+        assert result.selected_candidate_id is None
+        for r in result.records:
+            assert r.evaluation_status == "EVALUATED"
+            assert r.product_requirements_satisfied is False
+            assert r.pareto_member is False
+            assert r.requirement_report_id
+        ok = Optimizer().optimize(
+            base, self._defn(), _FixedReportPort(False))
+        assert ok.pareto_ids
+        for r in ok.records:
+            assert r.product_requirements_satisfied is True
+            assert r.requirement_report_id
+
+    def test_transplanted_report_refuses_even_with_forged_identity(self):
+        base = _certified_base()
+        foreign = "ab" * 32
+        with pytest.raises(OptimizationResultError, match="transplanted"):
+            Optimizer().optimize(
+                base, self._defn(), _TransplantedReportPort(foreign))
+
+    def test_report_id_is_rederived_not_trusted(self):
+        """The carried id is cross-checked: a report whose identity field
+        is forged is refused, never bound."""
+        base = _certified_base()
+        with pytest.raises(OptimizationResultError, match="forged"):
+            Optimizer().optimize(
+                base, self._defn(), _TransplantedReportPort(None))
 
 
 class TestResultIdBindsProvenance:
     def _study(self):
-        base = _base()
+        base = _certified_base()
         defn = OptimizationDefinition(
             domain=(DomainParam("link_width", (32, 128)),
                     DomainParam("concentration", (1, 2))),
@@ -589,7 +847,7 @@ class TestResultIdBindsProvenance:
             constraints=(Constraint("latency", "<=", 600.0),),
             method="grid")
         return base, defn, Optimizer().optimize(
-            base, defn, FakeDeterministicEvaluator(seed=7))
+            base, defn, _CertifiedEvaluator())
 
     def test_moves_with_performance_result_id(self):
         """Equal rounded objectives + different authenticated evaluation
@@ -620,12 +878,12 @@ class TestResultIdBindsProvenance:
             {**dict(d), "verdict": "VIOLATED",
              "measured": float(dict(d)["required"]) + 100.0}
             if dict(d)["verdict"] == "SATISFIED" else dict(d)
-            for d in target.requirement_details)
+            for d in target.constraint_details)
         flipped = dataclasses.replace(
-            target, requirement_details=flipped_details,
-            constraint_verdicts={k: False
+            target, constraint_details=flipped_details,
+            constraint_verdicts={k: "VIOLATED"
                                  for k in target.constraint_verdicts},
-            all_binding_satisfied=False, pareto_member=False)
+            constraints_satisfied=False, pareto_member=False)
         altered = dataclasses.replace(
             result, records=tuple(
                 flipped if r.candidate_id == target.candidate_id else r
@@ -639,7 +897,7 @@ class TestResultIdBindsProvenance:
     def test_moves_with_requirement_report_identity(self):
         """RT-11: identical rounded objectives, different requirement
         verdicts (different report identity) -> different result_id."""
-        base = _base()
+        base = _certified_base()
         defn = OptimizationDefinition(
             domain=(DomainParam("link_width", (32, 128)),),
             objectives=(Objective("latency", "MIN"),),
@@ -676,17 +934,18 @@ class TestResultIdBindsProvenance:
             if r.evaluation_status == "EVALUATED":
                 assert r.compilation_status == "COMPILED"
                 assert r.performance_result_id is not None
-                assert r.requirement_details, r.candidate_id
-                for d in r.requirement_details:
-                    assert set(d) == {"metric", "operator", "required",
-                                      "measured", "verdict"}
+                assert r.constraint_details, r.candidate_id
+                for d in r.constraint_details:
+                    assert {"metric", "operator", "required", "measured",
+                            "verdict", "margin_or_excess",
+                            "reason"} == set(d)
                     assert d["required"] == pytest.approx(600.0)
                     assert d["measured"] == pytest.approx(
                         r.objective_values["latency"])
                 expect = all(
                     dict(d)["verdict"] == "SATISFIED"
-                    for d in r.requirement_details)
-                assert r.all_binding_satisfied is expect
+                    for d in r.constraint_details)
+                assert r.constraints_satisfied is expect
 
 
 # ── `veritx optimize` CLI ────────────────────────────────────────────────
@@ -715,18 +974,30 @@ class TestOptimizeCli:
         cmd_optimize(ctx, args)
         assert not ctx.failed
         view = json.loads(study_out.read_text())
-        # RT-12: the CLI emits (and validates) contract v2 by default.
+        # RT-12/A-P0.1: the CLI emits (and validates) contract v2 by
+        # default, but the FAKE evaluator is analytic authority: its rows
+        # are visible with typed reasons and can never be Pareto or
+        # selected.
         assert view["contract_version"] == 2
         assert view["base_design_hash"].startswith("sha256:")
         assert len(view["candidates"]) == 4
-        assert view["selected_candidate_id"] in set(view["pareto_ids"])
-        # Constraint results + Pareto membership ride every row.
+        assert view["pareto_ids"] == []
+        assert view["selected_candidate_id"] is None
         for row in view["candidates"]:
             assert set(row) == {"candidate_id", "guided_patch",
                                 "locked_consequences", "evaluation_ids",
-                                "objective_values", "constraint_verdicts",
-                                "pareto_member"}
+                                "product_requirements",
+                                "objective_values", "objective_availability",
+                                "constraint_verdicts",
+                                "evaluation_authority",
+                                "compilation_status", "evaluation_status",
+                                "evaluation_reason", "eligibility_reason",
+                                "pareto_eligible", "pareto_member"}
             assert row["locked_consequences"]["routing_classes"] == ["DOR_XY"]
+            assert row["evaluation_authority"] == AUTHORITY_ANALYTIC_FAKE
+            assert row["pareto_eligible"] is False
+            assert row["pareto_member"] is False
+            assert "analytic-fake" in row["eligibility_reason"]
 
     def test_view_hashes_prefixed_engine_hashes_bare(self, tmp_path):
         """Fix 2: every hash crossing into the study view is

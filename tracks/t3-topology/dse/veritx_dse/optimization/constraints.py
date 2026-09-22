@@ -16,7 +16,9 @@ Provenance: REPLAYS the North-Star reference constraints module
 UNMEASURABLE fail-closed arm from synthesis/compiler.py
 (_UNMEASURABLE bandwidth floors) and wave-f constraints.py §47
 (unmeasurable never passes). No expression parsing: operators are
-exactly <= / >= (wave-f §45 rule, REPLAYED).
+exactly <= / >= (wave-f §45 rule, REPLAYED). Duplicate metric
+constraints refuse (one metric, one verdict slot) instead of
+last-write-wins.
 """
 from __future__ import annotations
 
@@ -61,6 +63,11 @@ def evaluate_all(constraints: Any,
 
     Returns {"verdicts": {metric: doc}, "feasible": True/False/None}.
     None = not proven (some UNMEASURABLE, none VIOLATED).
+
+    Refuses duplicate metric constraints instead of silently letting the
+    last verdict win: a verdict map keyed by metric has exactly one slot
+    per metric, so a second constraint over the same metric is an
+    ambiguity, not a second opinion.
     """
     verdicts: dict[str, dict[str, Any]] = {}
     for con in constraints or []:
@@ -68,6 +75,11 @@ def evaluate_all(constraints: Any,
         op = con.op if hasattr(con, "op") else con["op"]
         threshold = (con.threshold if hasattr(con, "threshold")
                      else con["threshold"])
+        if metric in verdicts:
+            raise ConstraintError(
+                f"duplicate constraint for metric {metric!r} — a "
+                "metric-indexed verdict map has one slot per metric; "
+                "refusing to overwrite the earlier verdict")
         value = (objective_values or {}).get(metric)
         verdicts[metric] = evaluate_constraint_value(
             metric, op, float(threshold), value)

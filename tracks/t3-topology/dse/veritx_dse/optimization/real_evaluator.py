@@ -10,35 +10,51 @@ The production route (fake stays unit-only):
       -> RequirementEvaluator.evaluate()       (P1C RequirementReport)
       -> CandidateEvaluation (evidenced objectives only)
 
-Feasibility law (no optimizer changes needed — enforced by status):
-EVALUATED here means compiled AND backend-evaluated AND all binding
-requirements SATISFIED. Anything else maps to COMPILE_FAILED/
-UNSUPPORTED/INVALID with the true cause in `error` and whatever
-provenance exists still bound (locked consequences,
-performance_result_id) — visible, auditable, never Pareto-eligible.
-Binding-failed evaluations are NOT relabeled successes; the error names
-the failing entries.
+Feasibility law: `evaluation_status` preserves the REAL taxonomy and
+is never collapsed. EVALUATED means compiled AND backend-evaluated
+(binding product requirements may still fail — those candidates keep
+their measurements and a typed reason, and the Optimizer makes them
+ineligible). Compile-phase refusals (INVALID or UNSUPPORTED compiler
+verdicts) are COMPILE_FAILED; lowering refusals are INVALID or
+UNSUPPORTED; backend-phase outcomes stay BACKEND_UNAVAILABLE /
+FAILED / UNSUPPORTED. Whatever provenance exists is still bound
+(locked consequences, performance_result_id) — visible, auditable,
+never Pareto-eligible. `compilation_status` separately keeps the
+FabricCompiler verdict.
 
-Objectives are evidenced measurements only: network completion cycles
-(+ wall-time when a valid clock was declared) plus backend-reported
-numerics. There is deliberately no area/latency-analytic key: unmeasured
+Objectives are evidenced measurements only: metrics the registered
+metric authority can extract from the carried VerifiedPerformanceResult
+(network completion cycles/timestamp from the authenticated window
+binding). There is deliberately no area/latency-analytic key: unmeasured
 is absent, never faked. Widening the metric set means binding a new
-qualified producer, not adding a key here.
+qualified producer (metric_authority.py), not adding a key here.
+
+A3 proof: every EVALUATED outcome (including a requirement-violating
+one) carries the exact lowered WorkloadGraph and B's
+VerifiedPerformanceResult, so the Optimizer can independently re-derive
+the RequirementReport instead of trusting the `certified-backend`
+label. A non-EVALUATED outcome carries no measurements and therefore no
+proof.
 """
 from __future__ import annotations
 
-import math
+import tempfile
 from pathlib import Path
 from typing import Any
 
 from veritx_dse.application.fabric_compiler import FabricCompiler
 from veritx_dse.application.fabric_evaluator import (
+    BACKEND_UNAVAILABLE,
+    EVALUATED,
+    FAILED,
     STANDALONE_BACKEND,
+    UNSUPPORTED,
     EvaluationOptions,
     FabricEvaluator,
 )
 from veritx_dse.application.requirements import (
     RequirementEvaluator,
+    report_identity,
     report_passes,
 )
 from veritx_dse.core.errors import (
@@ -49,9 +65,13 @@ from veritx_dse.core.errors import (
 )
 from veritx_dse.model.compile_model import CompileRequestV3
 from veritx_dse.optimization.evaluators import (
+    AUTHORITY_CERTIFIED_BACKEND,
     CandidateEvaluation,
     EvaluationError,
     locked_consequences_of,
+)
+from veritx_dse.optimization.metric_authority import (
+    extract_authoritative_metrics,
 )
 from veritx_dse.workload.intent_lowering import (
     assert_traffic_classes_bound,
@@ -64,39 +84,46 @@ def _refuse(candidate_id: str, design_hash: str, status: str,
             locked: dict[str, Any] | None = None,
             performance_result_id: str | None = None,
             requirement_report: dict[str, Any] | None = None,
+            objective_values: dict[str, float] | None = None,
+            workload: Any = None,
+            verified_performance_result: Any = None,
             ) -> CandidateEvaluation:
+    """Build a non-success outcome (or a requirement-violating EVALUATED
+    outcome when measurements exist). The status is the evaluator's own
+    taxonomy value and is never collapsed into UNSUPPORTED here."""
     return CandidateEvaluation(
         candidate_id=candidate_id, design_hash=design_hash,
-        status=status, objective_values={},
+        status=status, objective_values=dict(objective_values or {}),
         locked_consequences=dict(locked or {}),
         compilation_status=compilation_status, error=error,
         performance_result_id=performance_result_id,
-        requirement_report=requirement_report)
+        requirement_report=requirement_report,
+        requirement_report_id=(report_identity(requirement_report)
+                               if requirement_report is not None else None),
+        evaluation_authority=AUTHORITY_CERTIFIED_BACKEND,
+        workload=workload,
+        verified_performance_result=verified_performance_result)
 
 
-def _real_objectives(outcome: Any) -> dict[str, float]:
-    """Evidenced measurements only. No analytic stand-ins."""
-    window = outcome.network_traffic_window or {}
-    objectives: dict[str, float] = {}
-    if window.get("window_cycles") is not None:
-        objectives["completion_cycles"] = \
-            float(window["window_cycles"])
-    if window.get("wall_time_ns") is not None:
-        objectives["completion_ns"] = float(window["wall_time_ns"])
-    for key, value in (outcome.metrics or {}).items():
-        if isinstance(value, bool):
-            continue
-        if isinstance(value, (int, float)) and math.isfinite(value):
-            objectives.setdefault(str(key), float(value))
-    return objectives
+def _verified_objectives(verified: Any) -> dict[str, float]:
+    """Evidenced measurements only, from the registered metric authority
+    over the VERIFIED performance result. No analytic stand-ins and no
+    bare backend statistics: a metric with no registered producer is
+    absent, never faked."""
+    return extract_authoritative_metrics(verified)
 
 
 class RealCandidateEvaluator:
     """Production port: every candidate through the real pipeline.
 
-    run_root/<candidate_id>/ isolates each candidate's backend evidence;
-    directory names derive from candidate identity, so execution order
-    never changes scientific identity.
+    Storage layout: run_root/<candidate_id>/<eval-slot>/ holds one
+    evaluation's backend evidence. The candidate directory derives from
+    candidate identity (stable transport, never scientific identity) and
+    each evaluation gets a fresh OS-atomic slot via
+    ``tempfile.mkdtemp()``, so the SAME evaluator instance can evaluate
+    the SAME candidate repeatedly without overwriting a previous
+    evaluation's evidence. No timestamp, PID or random token ever feeds
+    a scientific identity: digests remain content-based.
     """
 
     def __init__(self, *, binary: str | Path,
@@ -124,12 +151,18 @@ class RealCandidateEvaluator:
         expected_hash = request.design_hash()
         compilation = FabricCompiler().compile(request)
         if compilation.status != "COMPILED":
+            # Compile-phase refusal: ALL compiler verdicts (INVALID or
+            # UNSUPPORTED) map to COMPILE_FAILED, kept distinct from the
+            # backend-phase BACKEND_UNAVAILABLE/FAILED/UNSUPPORTED below;
+            # the compiler's own verdict stays in compilation_status.
             return _refuse(
                 candidate.candidate_id, expected_hash,
-                "COMPILE_FAILED"
-                if compilation.status == "INVALID" else "UNSUPPORTED",
-                compilation.status, compilation.error or compilation.status)
-        assert compilation.bundle is not None
+                "COMPILE_FAILED", compilation.status,
+                compilation.error or compilation.status)
+        if compilation.bundle is None:
+            raise EvaluationError(
+                "FabricCompiler returned COMPILED without a bundle — "
+                "refusing to bind fabricated LOCKED consequences")
         locked = locked_consequences_of(compilation)
         try:
             lowered = lower_compile_workload(request)
@@ -145,14 +178,21 @@ class RealCandidateEvaluator:
         unified = lowered.unified_traffic_class
         if unified is None:
             return _refuse(
-                candidate.candidate_id, expected_hash, "UNSUPPORTED",
+                candidate.candidate_id, expected_hash, UNSUPPORTED,
                 "COMPILED",
                 f"lowering spans classes {list(lowered.classes)}: "
                 f"multi-class refused until a per-operation message "
                 f"artifact lands", locked)
         self.calls += 1
-        run_dir = self.run_root / candidate.candidate_id
-        run_dir.mkdir(parents=True, exist_ok=True)
+        # Collision-free per-evaluation evidence slot. The candidate
+        # directory is stable transport; mkdtemp() is the OS-atomic
+        # uniqueness mechanism (the path is transport, not science), so
+        # re-evaluating the same candidate with the same evaluator both
+        # completes and never overwrites a prior slot.
+        candidate_dir = self.run_root / candidate.candidate_id
+        candidate_dir.mkdir(parents=True, exist_ok=True)
+        run_dir = Path(tempfile.mkdtemp(dir=str(candidate_dir),
+                                        prefix="eval-"))
         outcome = FabricEvaluator().evaluate(
             compilation, lowered.graph,
             EvaluationOptions(
@@ -162,36 +202,58 @@ class RealCandidateEvaluator:
                 require_quiescence=self.require_quiescence,
                 run_dir=str(run_dir), binary=self.binary,
                 repo_root=self.repo_root))
-        if outcome.status != "EVALUATED" or \
-                outcome.performance_result is None:
+        if outcome.status != EVALUATED:
+            if outcome.status not in (BACKEND_UNAVAILABLE, UNSUPPORTED,
+                                      FAILED):
+                raise EvaluationError(
+                    f"FabricEvaluator returned unknown status "
+                    f"{outcome.status!r} — refusing to collapse an "
+                    "unknown outcome into the status taxonomy")
             return _refuse(
-                candidate.candidate_id, expected_hash, "UNSUPPORTED",
+                candidate.candidate_id, expected_hash, outcome.status,
                 "COMPILED",
                 f"{outcome.status}: {outcome.reason}", locked,
                 outcome.performance_result_id)
+        if outcome.performance_result is None:
+            raise EvaluationError(
+                "FabricEvaluator returned EVALUATED without a verified "
+                "performance result — refusing to bind measurements that "
+                "do not exist")
         report = RequirementEvaluator.evaluate(
             request, lowered.graph, outcome.performance_result)
+        objectives = _verified_objectives(outcome.performance_result)
         if not report_passes(report):
             bad = [e for e in report.get("entries", [])
                    if e.get("binding") and
                    e.get("verdict") != "SATISFIED"]
+            # Simulated successfully, product requirements failed: the
+            # evaluation stays EVALUATED with its measurements and a
+            # typed reason; the Optimizer makes it Pareto-ineligible.
+            # Never relabel a measured run as UNSUPPORTED.
             return _refuse(
-                candidate.candidate_id, expected_hash, "UNSUPPORTED",
+                candidate.candidate_id, expected_hash, EVALUATED,
                 "COMPILED",
                 "binding requirements not satisfied: " + "; ".join(
                     f"[{e.get('requirement_index')}:"
                     f"{e.get('traffic_class')}/"
                     f"{e.get('qos_class')}={e.get('verdict')}]"
                     for e in bad) or "unsatisfied",
-                locked, outcome.performance_result_id, report)
+                locked, outcome.performance_result_id, report,
+                objective_values=objectives,
+                workload=lowered.graph,
+                verified_performance_result=outcome.performance_result)
         return CandidateEvaluation(
             candidate_id=candidate.candidate_id,
             design_hash=expected_hash, status="EVALUATED",
-            objective_values=_real_objectives(outcome),
+            objective_values=objectives,
             locked_consequences=locked, compilation_status="COMPILED",
             error=None,
             performance_result_id=outcome.performance_result_id,
-            requirement_report=report)
+            requirement_report=report,
+            requirement_report_id=report_identity(report),
+            evaluation_authority=AUTHORITY_CERTIFIED_BACKEND,
+            workload=lowered.graph,
+            verified_performance_result=outcome.performance_result)
 
 
 __all__ = ["RealCandidateEvaluator"]
