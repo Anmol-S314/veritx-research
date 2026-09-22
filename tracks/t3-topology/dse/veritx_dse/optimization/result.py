@@ -188,7 +188,7 @@ class CertifiedBackendConfig:
 
 
 def _make_real_certified_evaluator(config: CertifiedBackendConfig) -> Any:
-    """Module-private, non-overridable certified evaluator factory (C1/C3).
+    """Module-private, non-overridable certified evaluator factory (C1).
 
     ``optimize_certified`` calls THIS function, not a method, so ordinary
     subclass polymorphism cannot substitute a synthetic evaluator into
@@ -369,6 +369,8 @@ class OptimizationResult:
     selected_candidate_id: str | None
     selection_rationale: str | None
     result_class: str = RESULT_CLASS_ANALYTIC
+    metric_registry_id: str | None = None
+    metric_registry_version: str | None = None
 
     def result_id(self) -> str:
         # Binds evaluation provenance, not just rounded objectives: two
@@ -413,6 +415,8 @@ class OptimizationResult:
             "base_design_hash": self.base_design_hash,
             "definition_id": self.definition.definition_id(),
             "result_class": self.result_class,
+            "metric_registry_id": self.metric_registry_id,
+            "metric_registry_version": self.metric_registry_version,
             "candidates": rows,
             "pareto_ids": list(self.pareto_ids),
             "selected_candidate_id": self.selected_candidate_id,
@@ -494,6 +498,8 @@ class OptimizationResult:
         return {
             "contract_version": 2,
             "result_class": self.result_class,
+            "metric_registry_id": self.metric_registry_id,
+            "metric_registry_version": self.metric_registry_version,
             "optimization_result_id": self.result_id(),
             "base_design_hash": _view_hash(self.base_design_hash),
             "definition": self._definition_view_v2(),
@@ -678,29 +684,23 @@ class Optimizer:
 
     def optimize_certified(self, base_request: Any, definition: Any, *,
                            backend_config: Any,
-                           metric_registry: Any = None,
                            ) -> OptimizationResult:
-        """The ONLY certified entry point (R1).
+        """The ONLY certified entry point (R1/C1/C2/C3).
 
-        The optimizer constructs and owns ``RealCandidateEvaluator`` from
-        ``backend_config``; no caller-supplied evaluator is accepted.
-        Only this path can produce ``CERTIFIED_PRODUCT`` results.
+        The optimizer constructs and owns ``RealCandidateEvaluator`` via
+        the module-private factory; no caller-supplied evaluator is
+        accepted, and the certified metric registry is NOT caller-
+        selectable (product-controlled ``CERTIFIED_METRIC_REGISTRY``
+        only). Only this path can produce ``CERTIFIED_PRODUCT`` results.
         """
         if not isinstance(backend_config, CertifiedBackendConfig):
             raise OptimizationResultError(
                 f"optimize_certified requires a CertifiedBackendConfig, "
                 f"got {type(backend_config).__name__}")
-        registry = metric_registry if metric_registry is not None \
-            else CERTIFIED_METRIC_REGISTRY
-        if not isinstance(registry, CertifiedMetricRegistry):
-            raise OptimizationResultError(
-                f"optimize_certified requires a frozen "
-                f"CertifiedMetricRegistry, got {type(registry).__name__} "
-                f"— experimental/plugin registries can never yield "
-                f"CERTIFIED_PRODUCT results")
         evaluator = _make_real_certified_evaluator(backend_config)
         return self._optimize(base_request, definition, evaluator,
-                              certified_mode=True, metric_registry=registry)
+                              certified_mode=True,
+                              metric_registry=CERTIFIED_METRIC_REGISTRY)
 
     def _optimize(self, base_request: Any, definition: Any,
                   evaluator: Any, *,
@@ -715,6 +715,12 @@ class Optimizer:
         from .search import search_candidates
         registry = metric_registry if metric_registry is not None \
             else CERTIFIED_METRIC_REGISTRY
+        if not isinstance(registry, CertifiedMetricRegistry):
+            raise OptimizationResultError(
+                f"certified metric extraction requires a frozen "
+                f"CertifiedMetricRegistry, got {type(registry).__name__} "
+                f"— experimental/plugin registries can never yield "
+                f"certified claims")
         base_hash = base_request.design_hash()
         candidates = search_candidates(base_request, definition)
         if not candidates:
@@ -1013,6 +1019,10 @@ class Optimizer:
             result_class=(result_class if result_class is not None
                           else (RESULT_CLASS_CERTIFIED if certified_mode
                                 else RESULT_CLASS_ANALYTIC)),
+            metric_registry_id=(registry.registry_id()
+                                if certified_mode else None),
+            metric_registry_version=(registry.version
+                                     if certified_mode else None),
         )
 
 

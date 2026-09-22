@@ -37,6 +37,13 @@ RT-final A4 attacks (final repair, half 2):
 
 A3 attacks (self-declared certified double, fabricated report over a
 genuine proof, empty report vacuity) remain in place.
+
+RT-final v2 boundary corrections:
+
+ C1  subclass factory override cannot hijack the certified evaluator
+ C2  certified registry not caller-selectable; registry identity binds
+     declared producer semantics and is bound into the result
+ C3  quiescence is mandatory for CERTIFIED_PRODUCT (not a config knob)
 """
 from __future__ import annotations
 
@@ -477,6 +484,14 @@ def test_12_python_O_cannot_bypass_the_eligibility_gates():
          "tests/test_p2_optimization_truth.py::"
          "test_r1_optimize_with_port_is_research_only_never_certified",
          "tests/test_p2_optimization_truth.py::"
+         "test_c1_subclass_cannot_hijack_the_certified_evaluator",
+         "tests/test_p2_optimization_truth.py::"
+         "test_c2_certified_registry_is_not_caller_selectable",
+         "tests/test_p2_optimization_truth.py::"
+         "test_c2_registry_identity_binds_declared_producer_semantics",
+         "tests/test_p2_optimization_truth.py::"
+         "test_c3_quiescence_is_mandatory_for_certified",
+         "tests/test_p2_optimization_truth.py::"
          "test_r2_certified_registry_is_frozen_and_experimental_is_"
          "isolated",
          "tests/test_p2_optimization_truth.py::"
@@ -509,7 +524,7 @@ def test_r2_certified_registry_is_frozen_and_experimental_is_isolated():
     assert not hasattr(CERTIFIED_METRIC_REGISTRY, "unregister")
     before = CERTIFIED_METRIC_REGISTRY.registry_id()
     with pytest.raises(TypeError):
-        CERTIFIED_METRIC_REGISTRY.producers["magic_score"] = \
+        CERTIFIED_METRIC_REGISTRY.authorities["magic_score"] = \
             lambda verified: 1e-6
     # A plugin registry may register/replace freely — isolated from the
     # certified authority.
@@ -529,7 +544,8 @@ def test_r2_certified_registry_is_frozen_and_experimental_is_isolated():
     # certified global is untouched.
     built = (MetricRegistryBuilder("test-v2",
                                    base=CERTIFIED_METRIC_REGISTRY)
-             .register("latency", lambda verified: 1.0)
+             .register("latency", lambda verified: 1.0,
+                       producer_id="test-latency")
              .freeze())
     assert isinstance(built, CertifiedMetricRegistry)
     assert built.registry_id() != CERTIFIED_METRIC_REGISTRY.registry_id()
@@ -537,8 +553,8 @@ def test_r2_certified_registry_is_frozen_and_experimental_is_isolated():
     assert not CERTIFIED_METRIC_REGISTRY.has_metric("latency")
     with pytest.raises(MetricRegistryError, match="already registered"):
         (MetricRegistryBuilder("dup")
-         .register("x", lambda verified: 1)
-         .register("x", lambda verified: 2))
+         .register("x", lambda verified: 1, producer_id="x")
+         .register("x", lambda verified: 2, producer_id="x"))
 
 
 def _optimize_registry(base, defn, port, registry):
@@ -570,6 +586,68 @@ def test_c1_subclass_cannot_hijack_the_certified_evaluator(tmp_path):
     for r in result.records:
         assert r.evaluation_status == "BACKEND_UNAVAILABLE"
         assert r.pareto_eligible is False
+
+
+def test_c2_certified_registry_is_not_caller_selectable():
+    """C2 attack 2: the public certified entry point has no registry
+    parameter; a caller-minted registry (e.g. magic_score) cannot reach
+    certified execution."""
+    import inspect
+
+    from veritx_dse.optimization.metric_registry import (
+        ExperimentalMetricRegistry,
+    )
+    from veritx_dse.optimization.result import CertifiedBackendConfig
+
+    params = inspect.signature(Optimizer.optimize_certified).parameters
+    assert "metric_registry" not in params
+    with pytest.raises(TypeError):
+        Optimizer().optimize_certified(
+            _real_base(), _defn(),
+            backend_config=CertifiedBackendConfig(
+                binary="/no-such-booksim", run_root="/tmp/x"),
+            metric_registry=ExperimentalMetricRegistry("plugin-v1"))
+
+
+def test_c2_registry_identity_binds_declared_producer_semantics():
+    """C2 attack 3: registry_id() binds metric + producer_id +
+    semantics_version; the result binds the registry identity and a
+    semantics change moves result_id()."""
+    from veritx_dse.optimization.metric_registry import (
+        CERTIFIED_METRIC_REGISTRY,
+        MetricRegistryBuilder,
+    )
+
+    def _same(verified):
+        return 10.0
+
+    def _build(producer_id):
+        return (MetricRegistryBuilder("same-version",
+                                      base=CERTIFIED_METRIC_REGISTRY)
+                .register("latency", _same, producer_id=producer_id)
+                .freeze())
+
+    reg_a = _build("sem-a")
+    reg_a2 = _build("sem-a")   # same declared semantics
+    reg_b = _build("sem-b")    # different declared semantics
+    assert reg_a.registry_id() != reg_b.registry_id()
+    assert reg_a.registry_id() == reg_a2.registry_id()
+
+    def _run(registry):
+        return run_certified_mechanics_for_tests(
+            _real_base(), _defn(), _VerifiedStubPort({"latency": 10.0}),
+            registry)
+
+    res_a = _run(reg_a)
+    res_a2 = _run(reg_a2)
+    res_b = _run(reg_b)
+    assert res_a.metric_registry_id == reg_a.registry_id()
+    assert res_a.metric_registry_version == "same-version"
+    assert res_a.result_id() == res_a2.result_id()
+    assert res_a.result_id() != res_b.result_id()
+    view = res_a.to_study_view()
+    assert view["metric_registry_id"] == reg_a.registry_id()
+    assert view["metric_registry_version"] == "same-version"
 
 
 def test_c3_quiescence_is_mandatory_for_certified():

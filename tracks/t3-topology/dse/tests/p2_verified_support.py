@@ -209,8 +209,10 @@ def build_test_metric_registry(*, version: str = "test-overlay-v1",
     builder = MetricRegistryBuilder(version, base=CERTIFIED_METRIC_REGISTRY)
     builder.register("latency",
                      latency if latency is not None
-                     else _overlay_extractor("latency"))
-    builder.register("area", _overlay_extractor("area"))
+                     else _overlay_extractor("latency"),
+                     producer_id="test-overlay-latency")
+    builder.register("area", _overlay_extractor("area"),
+                     producer_id="test-overlay-area")
     return builder.freeze()
 
 
