@@ -68,7 +68,7 @@ from .producer import (
     EXECUTION_TRANSPORT_TEST_INJECTED, ProducerError,
     resolve_producer_identity,
 )
-from .evidence import PARSER_VERSION
+from .evidence import PARSER_VERSION, ExecutionAttempt, ScientificBackendEvidence
 
 BOOKSIM_STANDALONE_PROFILE = "CERTIFIED_BOOKSIM_ANYNET_V1"
 SERVING_BOOKSIM2_PROFILE = "CERTIFIED_SERVING_BOOKSIM2_V1"
@@ -1339,7 +1339,14 @@ def assert_executable(config: BackendConfigArtifact) -> ExecutionQualification:
 
 @dataclass(frozen=True)
 class CertifiedBookSimEvidence:
-    """Everything a certified standalone BookSim run must carry."""
+    """Everything a certified standalone BookSim run must carry.
+
+    ``to_dict()`` emits ONLY the run-stable scientific document
+    (``ScientificBackendEvidence``, evidence-v2); the measured wall time,
+    command/backend paths and host platform text are exposed through
+    ``execution_attempt()`` / ``to_attempt_dict()`` as a separate attempt
+    record that never enters a scientific digest.
+    """
 
     backend_config_hash: str
     backend_input_hash: str
@@ -1357,6 +1364,7 @@ class CertifiedBookSimEvidence:
     wall_time_s: float
     command: tuple[str, ...]
     backend_dir: str
+    run_dir: str = ""
     workload_hash: str | None = None
     seed: int | None = None
     seed_policy: str = ""
@@ -1370,39 +1378,49 @@ class CertifiedBookSimEvidence:
     execution_transport: str = EXECUTION_TRANSPORT_SUPERVISED
     parser_version: str = PARSER_VERSION
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "backend_config_hash": self.backend_config_hash,
-            "backend_input_hash": self.backend_input_hash,
-            "resolved_fabric_hash": self.resolved_fabric_hash,
-            "fabric_hash": self.fabric_hash,
-            "route_equivalence": self.route_equivalence,
-            "route_expected_sha256": self.route_expected_sha256,
-            "route_executed_sha256": self.route_executed_sha256,
-            "route_pairs_compared": self.route_pairs_compared,
-            "exact_fabric_eligible": self.exact_fabric_eligible,
-            "qualification": self.qualification,
-            "semantic_loss": [dict(row) for row in self.semantic_loss],
-            "stats": dict(self.stats),
-            "exit_status": self.exit_status,
-            "wall_time_s": self.wall_time_s,
-            "command": list(self.command),
-            "backend_dir": self.backend_dir,
-            "workload_hash": self.workload_hash,
-            "seed": self.seed,
-            "seed_policy": self.seed_policy,
-            "rendered_inputs": [dict(row) for row in self.rendered_inputs],
-            "invocation_args": {k: v
-                                for k, v in self.invocation_args},
-            "booksim_binary_sha256": self.booksim_binary_sha256,
-            "producer_source_revision": self.producer_source_revision,
-            "producer_source_dirty": self.producer_source_dirty,
-            "producer_source_dirty_digest":
+    def scientific_evidence(self) -> ScientificBackendEvidence:
+        """The run-stable scientific half (canonical evidence v2)."""
+        return ScientificBackendEvidence(
+            backend_config_hash=self.backend_config_hash,
+            backend_input_hash=self.backend_input_hash,
+            resolved_fabric_hash=self.resolved_fabric_hash,
+            fabric_hash=self.fabric_hash,
+            route_equivalence=self.route_equivalence,
+            route_expected_sha256=self.route_expected_sha256,
+            route_executed_sha256=self.route_executed_sha256,
+            route_pairs_compared=self.route_pairs_compared,
+            qualification=self.qualification,
+            semantic_loss=self.semantic_loss,
+            stats=self.stats,
+            exit_status=self.exit_status,
+            workload_hash=self.workload_hash,
+            seed=self.seed,
+            seed_policy=self.seed_policy,
+            rendered_inputs=self.rendered_inputs,
+            invocation_args=self.invocation_args,
+            booksim_binary_sha256=self.booksim_binary_sha256,
+            producer_source_revision=self.producer_source_revision,
+            producer_source_dirty=self.producer_source_dirty,
+            producer_source_dirty_digest=
                 self.producer_source_dirty_digest,
-            "producer_tool_identity": self.producer_tool_identity,
-            "execution_transport": self.execution_transport,
-            "parser_version": self.parser_version,
-        }
+            execution_transport=self.execution_transport,
+            parser_version=self.parser_version)
+
+    def to_dict(self) -> dict[str, Any]:
+        """The persisted scientific document (never attempt metadata)."""
+        return self.scientific_evidence().to_dict()
+
+    def execution_attempt(self) -> ExecutionAttempt:
+        """The run-varying attempt record for this exact execution."""
+        return ExecutionAttempt(
+            wall_time_s=float(self.wall_time_s),
+            command=tuple(self.command),
+            backend_dir=self.backend_dir,
+            run_dir=self.run_dir or self.backend_dir,
+            producer_tool_identity=self.producer_tool_identity)
+
+    def to_attempt_dict(self) -> dict[str, Any]:
+        return self.execution_attempt().to_dict()
 
 
 def _execute_prepared(
@@ -1552,6 +1570,7 @@ def _execute_prepared(
         wall_time_s=wall,
         command=cmd,
         backend_dir=str(backend_dir),
+        run_dir=str(run_dir),
         workload_hash=manifest.workload_hash,
         seed=manifest.seed,
         seed_policy=manifest.seed_policy,

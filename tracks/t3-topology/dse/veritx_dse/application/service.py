@@ -737,7 +737,9 @@ class SrotaControlPlane:
         Interrupt and failure persistence are identical for both
         workload kinds — one implementation, no duplicated lifecycle.
         """
-        from veritx_dse.backend.evidence import write_evidence
+        from veritx_dse.backend.evidence import (
+            write_evidence, write_execution_attempt,
+        )
         from veritx_dse.backend.producer import resolve_producer_identity
         attempt_id = new_run_id()
         attempt_dir = self.store.root / "attempts" / attempt_id
@@ -769,6 +771,7 @@ class SrotaControlPlane:
                 exc, operation="evaluate",
                 attempt_id=attempt_id) from exc
         ref = write_evidence(attempt_dir, evidence.to_dict())
+        write_execution_attempt(attempt_dir, evidence.to_attempt_dict())
         # The private _wave_e_* keys carry live objects (evidence,
         # traffic, summary) for Wave-E derivation; they are never
         # persisted inside the wave_d block.

@@ -17,7 +17,17 @@ derived view of already-verified facts:
     invocation_args       command-line-only semantics
     booksim_binary_sha256 producer identity (B-FINAL binds it pre-spawn;
                           B3.7-era "observation" wording is obsolete)
-    producer_*            source revision, dirt, tool identity
+    producer_*            source revision and dirt (NOT tool identity)
+
+evidence-v2: the persisted ``backend-evidence.json`` is the
+run-STABLE scientific half only (``ScientificBackendEvidence``, contract
+``veritx/backend-scientific-evidence/v2``). Measured wall time, absolute
+paths and host platform text are execution-attempt metadata; they live
+in the separate ``execution-attempt.json`` record (contract
+``veritx/execution-attempt/v1``) and never enter any scientific digest.
+The v1 document shape (which embedded those fields in the same file)
+remains readable history: its bytes still hash to the same digest and
+its scientific fields mean exactly what they meant before.
 
 The file ``backend-evidence.json`` is a fixed run-owned filename; it is
 content-*identified* (not content-addressed) by the external
@@ -38,6 +48,15 @@ from pathlib import Path
 from typing import Any
 
 EVIDENCE_FILE = "backend-evidence.json"
+ATTEMPT_FILE = "execution-attempt.json"
+
+# evidence-v2 contract identities. The v2 scientific document is the ONLY
+# input to EvidenceRef.sha256 -> EvidenceArtifact -> NetworkWindowBinding
+# -> wave_d_chain -> PerformanceResult identity. The attempt record is a
+# sibling artifact, never hashed into that chain.
+SCIENTIFIC_EVIDENCE_SCHEMA_VERSION = \
+    "veritx/backend-scientific-evidence/v2"
+EXECUTION_ATTEMPT_SCHEMA_VERSION = "veritx/execution-attempt/v1"
 
 
 class BackendEvidenceError(ValueError):
@@ -197,6 +216,297 @@ def _require_hex64(value: Any, where: str) -> None:
             f"{value!r}")
 
 
+# The exact run-stable field set of the v2 scientific evidence document.
+_SCIENTIFIC_FIELDS = (
+    "backend_config_hash",
+    "backend_input_hash",
+    "resolved_fabric_hash",
+    "fabric_hash",
+    "route_equivalence",
+    "route_expected_sha256",
+    "route_executed_sha256",
+    "route_pairs_compared",
+    "qualification",
+    "semantic_loss",
+    "stats",
+    "exit_status",
+    "workload_hash",
+    "seed",
+    "seed_policy",
+    "rendered_inputs",
+    "invocation_args",
+    "booksim_binary_sha256",
+    "producer_source_revision",
+    "producer_source_dirty",
+    "producer_source_dirty_digest",
+    "execution_transport",
+    "parser_version",
+)
+
+
+@dataclass(frozen=True)
+class ScientificBackendEvidence:
+    """The run-stable scientific half of certified backend evidence (v2).
+
+    Every field here is a property of the scientific claim (what was
+    executed, from which bytes, with what result); none varies between
+    two identical deterministic runs in different directories. The
+    canonical JSON of this document is exactly what ``EvidenceRef.sha256``
+    covers, so this identity propagates unchanged into ``EvidenceArtifact``,
+    the network window binding, the Wave-D chain and the PerformanceResult.
+
+    Runtime facts (wall time, absolute command/backend paths, host
+    platform text) are NOT here; they belong to ``ExecutionAttempt`` and
+    never enter a scientific digest.
+    """
+
+    backend_config_hash: str
+    backend_input_hash: str
+    resolved_fabric_hash: str
+    fabric_hash: str
+    route_equivalence: str
+    route_expected_sha256: str
+    route_executed_sha256: str
+    route_pairs_compared: int
+    qualification: str
+    semantic_loss: tuple[dict[str, Any], ...]
+    stats: dict[str, Any]
+    exit_status: int
+    workload_hash: str | None
+    seed: int | None
+    seed_policy: str
+    rendered_inputs: tuple[dict[str, Any], ...]
+    invocation_args: tuple[tuple[str, str], ...]
+    booksim_binary_sha256: str | None
+    producer_source_revision: str | None
+    producer_source_dirty: bool | None
+    producer_source_dirty_digest: str | None
+    execution_transport: str
+    parser_version: str
+
+    def __post_init__(self):
+        for name in ("backend_config_hash", "backend_input_hash",
+                     "resolved_fabric_hash", "fabric_hash",
+                     "route_expected_sha256", "route_executed_sha256"):
+            _require_hex64(getattr(self, name), name)
+        for name in ("route_equivalence", "qualification",
+                     "execution_transport", "parser_version"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value:
+                raise BackendEvidenceError(
+                    f"{name} must be a non-empty string, got {value!r}")
+        if type(self.route_pairs_compared) is not int or \
+                self.route_pairs_compared < 0:
+            raise BackendEvidenceError(
+                "route_pairs_compared must be a non-negative int, got "
+                f"{self.route_pairs_compared!r}")
+        if type(self.exit_status) is not int:
+            raise BackendEvidenceError(
+                f"exit_status must be an int, got {self.exit_status!r}")
+        stats_sha256_of(self.stats)
+        if self.booksim_binary_sha256 is not None:
+            _require_hex64(self.booksim_binary_sha256,
+                           "booksim_binary_sha256")
+        if self.producer_source_dirty_digest is not None:
+            _require_hex64(self.producer_source_dirty_digest,
+                           "producer_source_dirty_digest")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": SCIENTIFIC_EVIDENCE_SCHEMA_VERSION,
+            "backend_config_hash": self.backend_config_hash,
+            "backend_input_hash": self.backend_input_hash,
+            "resolved_fabric_hash": self.resolved_fabric_hash,
+            "fabric_hash": self.fabric_hash,
+            "route_equivalence": self.route_equivalence,
+            "route_expected_sha256": self.route_expected_sha256,
+            "route_executed_sha256": self.route_executed_sha256,
+            "route_pairs_compared": self.route_pairs_compared,
+            "qualification": self.qualification,
+            "semantic_loss": [dict(row) for row in self.semantic_loss],
+            "stats": dict(self.stats),
+            "exit_status": self.exit_status,
+            "workload_hash": self.workload_hash,
+            "seed": self.seed,
+            "seed_policy": self.seed_policy,
+            "rendered_inputs": [dict(row)
+                                for row in self.rendered_inputs],
+            "invocation_args": {k: v for k, v in self.invocation_args},
+            "booksim_binary_sha256": self.booksim_binary_sha256,
+            "producer_source_revision": self.producer_source_revision,
+            "producer_source_dirty": self.producer_source_dirty,
+            "producer_source_dirty_digest":
+                self.producer_source_dirty_digest,
+            "execution_transport": self.execution_transport,
+            "parser_version": self.parser_version,
+        }
+
+    def digest(self) -> str:
+        """The scientific evidence digest: sha256 of the canonical bytes.
+
+        This is the exact value ``write_evidence`` returns as
+        ``EvidenceRef.sha256`` for a v2 document.
+        """
+        return evidence_sha256_of(self.to_dict())
+
+    @classmethod
+    def from_dict(cls, doc: Any) -> "ScientificBackendEvidence":
+        if not isinstance(doc, dict):
+            raise BackendEvidenceError(
+                "scientific evidence must be a JSON object")
+        if doc.get("schema_version") != SCIENTIFIC_EVIDENCE_SCHEMA_VERSION:
+            raise BackendEvidenceError(
+                f"scientific evidence must declare schema_version "
+                f"{SCIENTIFIC_EVIDENCE_SCHEMA_VERSION!r}, got "
+                f"{doc.get('schema_version')!r}")
+        expected = {"schema_version", *_SCIENTIFIC_FIELDS}
+        if set(doc) != expected:
+            raise BackendEvidenceError(
+                f"scientific evidence field mismatch; "
+                f"missing={sorted(expected - set(doc))}, "
+                f"extra={sorted(set(doc) - expected)}")
+        loss = doc["semantic_loss"]
+        rendered = doc["rendered_inputs"]
+        args = doc["invocation_args"]
+        if not isinstance(loss, list) or \
+                not all(isinstance(r, dict) for r in loss):
+            raise BackendEvidenceError(
+                "semantic_loss must be a list of objects")
+        if not isinstance(rendered, list) or \
+                not all(isinstance(r, dict) for r in rendered):
+            raise BackendEvidenceError(
+                "rendered_inputs must be a list of objects")
+        if not isinstance(args, dict):
+            raise BackendEvidenceError(
+                "invocation_args must be an object")
+        return cls(
+            backend_config_hash=doc["backend_config_hash"],
+            backend_input_hash=doc["backend_input_hash"],
+            resolved_fabric_hash=doc["resolved_fabric_hash"],
+            fabric_hash=doc["fabric_hash"],
+            route_equivalence=doc["route_equivalence"],
+            route_expected_sha256=doc["route_expected_sha256"],
+            route_executed_sha256=doc["route_executed_sha256"],
+            route_pairs_compared=doc["route_pairs_compared"],
+            qualification=doc["qualification"],
+            semantic_loss=tuple(dict(r) for r in loss),
+            stats=dict(doc["stats"]),
+            exit_status=doc["exit_status"],
+            workload_hash=doc["workload_hash"],
+            seed=doc["seed"],
+            seed_policy=doc["seed_policy"],
+            rendered_inputs=tuple(dict(r) for r in rendered),
+            invocation_args=tuple((k, v) for k, v in args.items()),
+            booksim_binary_sha256=doc["booksim_binary_sha256"],
+            producer_source_revision=doc["producer_source_revision"],
+            producer_source_dirty=doc["producer_source_dirty"],
+            producer_source_dirty_digest=
+                doc["producer_source_dirty_digest"],
+            execution_transport=doc["execution_transport"],
+            parser_version=doc["parser_version"])
+
+
+@dataclass(frozen=True)
+class ExecutionAttempt:
+    """Run-varying execution facts, outside every scientific identity.
+
+    Contract ``veritx/execution-attempt/v1``. The measured wall time, the
+    absolute command/backend paths and the host platform text are honest
+    diagnostics of ONE attempt; two identical deterministic runs will
+    (and must) disagree here without that disagreement touching the
+    scientific evidence digest or any downstream result identity.
+    """
+
+    wall_time_s: float
+    command: tuple[str, ...]
+    backend_dir: str
+    run_dir: str
+    producer_tool_identity: str
+
+    def __post_init__(self):
+        if isinstance(self.wall_time_s, bool) or \
+                not isinstance(self.wall_time_s, (int, float)) or \
+                self.wall_time_s < 0:
+            raise BackendEvidenceError(
+                f"wall_time_s must be a non-negative number, got "
+                f"{self.wall_time_s!r}")
+        if not self.command or not all(
+                isinstance(part, str) and part for part in self.command):
+            raise BackendEvidenceError(
+                "command must be a non-empty sequence of non-empty "
+                "strings")
+        for name in ("backend_dir", "run_dir"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value:
+                raise BackendEvidenceError(
+                    f"{name} must be a non-empty string, got {value!r}")
+        if not isinstance(self.producer_tool_identity, str):
+            raise BackendEvidenceError(
+                "producer_tool_identity must be a string")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": EXECUTION_ATTEMPT_SCHEMA_VERSION,
+            "wall_time_s": self.wall_time_s,
+            "command": list(self.command),
+            "backend_dir": self.backend_dir,
+            "run_dir": self.run_dir,
+            "producer_tool_identity": self.producer_tool_identity,
+        }
+
+
+@dataclass(frozen=True)
+class ExecutionAttemptRef:
+    """External content identity for one persisted attempt record.
+
+    Deliberately NOT an ``EvidenceRef``: an attempt record authenticates
+    nothing scientific and must never be passed to evidence-reuse APIs.
+    """
+
+    path: str
+    sha256: str
+
+    def __post_init__(self):
+        if not isinstance(self.path, str) or not self.path:
+            raise BackendEvidenceError(
+                f"attempt path must be a non-empty string, got "
+                f"{self.path!r}")
+        if not isinstance(self.sha256, str) or len(self.sha256) != 64 \
+                or any(c not in "0123456789abcdef"
+                       for c in self.sha256):
+            raise BackendEvidenceError(
+                f"attempt sha256 must be a 64-char hex digest, got "
+                f"{self.sha256!r}")
+
+
+def write_execution_attempt(directory: Path,
+                            attempt: dict[str, Any]) \
+        -> ExecutionAttemptRef:
+    """Persist the attempt record beside the scientific evidence.
+
+    Idempotent for identical content; refuses to overwrite a different
+    attempt at the same path (one attempt slot, one attempt). The record
+    is canonical JSON but its digest is never mixed into the scientific
+    chain.
+    """
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / ATTEMPT_FILE
+    payload = canonical_evidence_json(attempt)
+    digest = hashlib.sha256(payload.encode()).hexdigest()
+    if path.exists():
+        existing = path.read_text()
+        if hashlib.sha256(existing.encode()).hexdigest() != digest:
+            raise BackendEvidenceError(
+                f"{path} already holds a different execution attempt; "
+                "refusing to overwrite attempt history")
+        return ExecutionAttemptRef(path=str(path), sha256=digest)
+    from veritx_dse.core.recovery import atomic_write
+    with atomic_write(path) as tmp:
+        tmp.write_text(payload)
+    return ExecutionAttemptRef(path=str(path), sha256=digest)
+
+
 @dataclass(frozen=True)
 class EvidenceArtifact:
     """One executed backend run, content-addressed (M1.4).
@@ -312,6 +622,10 @@ class EvidenceArtifact:
             if key not in evidence:
                 raise BackendEvidenceError(
                     f"verified evidence is missing {key!r}")
+        # The label order preserves v1 artifact identity exactly: v1
+        # documents carry host platform text and it remains the label.
+        # v2 documents carry no platform text, so the authenticated
+        # transport is the stable label.
         backend = (evidence.get("producer_tool_identity")
                    or evidence.get("execution_transport") or "UNKNOWN")
         return cls.build(
@@ -327,10 +641,16 @@ class EvidenceArtifact:
 __all__ = [
     "EVIDENCE_FILE",
     "BackendEvidenceError",
+    "ATTEMPT_FILE",
+    "EXECUTION_ATTEMPT_SCHEMA_VERSION",
+    "SCIENTIFIC_EVIDENCE_SCHEMA_VERSION",
     "EvidenceArtifact",
     "EvidenceRef",
+    "ExecutionAttempt",
+    "ExecutionAttemptRef",
     "LEGACY_PARSER_VERSION",
     "PARSER_VERSION",
+    "ScientificBackendEvidence",
     "canonical_evidence_json",
     "evidence_sha256",
     "evidence_sha256_of",
@@ -338,4 +658,5 @@ __all__ = [
     "read_verified_evidence",
     "stats_sha256_of",
     "write_evidence",
+    "write_execution_attempt",
 ]

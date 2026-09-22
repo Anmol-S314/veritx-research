@@ -1208,6 +1208,7 @@ def _execute_prepared_meshdor(
         wall_time_s=wall,
         command=cmd,
         backend_dir=str(backend_dir),
+        run_dir=str(run_dir),
         workload_hash=manifest.workload_hash,
         seed=manifest.seed,
         seed_policy=manifest.seed_policy,

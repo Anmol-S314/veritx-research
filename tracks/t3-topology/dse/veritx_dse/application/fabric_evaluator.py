@@ -193,6 +193,8 @@ class EvaluationOutcome:
     reason: str | None = None
     run_dir: str | None = None
     evidence_path: str | None = None
+    attempt_path: str | None = None
+    attempt_digest: str | None = None
     realization_digest: str | None = None
 
     def __post_init__(self) -> None:
@@ -665,11 +667,13 @@ class FabricEvaluator:
         # ── evidence authentication (evidence.py only) ─────────────
         from veritx_dse.backend.evidence import (
             BackendEvidenceError, EvidenceArtifact, read_verified_evidence,
-            write_evidence,
+            write_evidence, write_execution_attempt,
         )
         from veritx_dse.core.artifact import ArtifactError
         try:
             ref = write_evidence(evidence_dir, cert_evidence.to_dict())
+            attempt_ref = write_execution_attempt(
+                evidence_dir, cert_evidence.to_attempt_dict())
             verified_doc = read_verified_evidence(ref)
             artifact = EvidenceArtifact.build(
                 backend=STANDALONE_BACKEND,
@@ -730,6 +734,8 @@ class FabricEvaluator:
                           metrics=metrics,
                           run_dir=str(run_dir),
                           evidence_path=ref.path,
+                          attempt_path=attempt_ref.path,
+                          attempt_digest=attempt_ref.sha256,
                           realization_digest=realization_digest)
         window_cycles = stats.get("completion_time")
 
@@ -759,6 +765,8 @@ class FabricEvaluator:
                           metrics=metrics,
                           run_dir=str(run_dir),
                           evidence_path=ref.path,
+                          attempt_path=attempt_ref.path,
+                          attempt_digest=attempt_ref.sha256,
                           realization_digest=realization_digest)
 
         # ── verified performance (window event only — no per-op
@@ -838,6 +846,8 @@ class FabricEvaluator:
                           metrics=metrics,
                           run_dir=str(run_dir),
                           evidence_path=ref.path,
+                          attempt_path=attempt_ref.path,
+                          attempt_digest=attempt_ref.sha256,
                           realization_digest=realization_digest)
         # ── verified boundary (the wrapper is the only input
         #    RequirementEvaluator accepts; a stale resource_id is not
@@ -866,6 +876,8 @@ class FabricEvaluator:
                           metrics=metrics,
                           run_dir=str(run_dir),
                           evidence_path=ref.path,
+                          attempt_path=attempt_ref.path,
+                          attempt_digest=attempt_ref.sha256,
                           realization_digest=realization_digest)
         wall_ns = window.to_float() * 1e9 if isinstance(window, QTime) \
             else None
@@ -894,6 +906,8 @@ class FabricEvaluator:
             reason=None,
             run_dir=str(run_dir),
             evidence_path=ref.path,
+            attempt_path=attempt_ref.path,
+            attempt_digest=attempt_ref.sha256,
             realization_digest=realization_digest)
 
     @staticmethod

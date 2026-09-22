@@ -255,7 +255,7 @@ def _verify_evidence_binding_fields(
             "evidence cannot be reused: it was produced by a different "
             "binary")
     for key in ("producer_source_revision", "producer_source_dirty",
-                "producer_source_dirty_digest", "producer_tool_identity"):
+                "producer_source_dirty_digest"):
         if key not in evidence:
             raise ProducerError(
                 f"evidence cannot be reused: missing {key!r} (predates "
@@ -264,13 +264,11 @@ def _verify_evidence_binding_fields(
         "source_revision": evidence["producer_source_revision"],
         "source_dirty": evidence["producer_source_dirty"],
         "source_dirty_digest": evidence["producer_source_dirty_digest"],
-        "tool_identity": evidence["producer_tool_identity"],
     }
     actual = {
         "source_revision": producer.source_revision,
         "source_dirty": producer.source_dirty,
         "source_dirty_digest": producer.source_dirty_digest,
-        "tool_identity": producer.tool_identity,
     }
     if recorded != actual:
         differing = sorted(k for k in recorded if recorded[k] != actual[k])

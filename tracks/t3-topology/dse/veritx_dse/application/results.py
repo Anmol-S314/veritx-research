@@ -13,6 +13,8 @@ with EVIDENCE_INVALID (corrupt store links) or NOT_FOUND. Raw
 from __future__ import annotations
 
 import hashlib
+import json
+from pathlib import Path
 from typing import Any
 
 from .errors import ControlPlaneError, ErrorCode
@@ -69,6 +71,38 @@ def _require_equal(what: str, actual: Any, expected: Any,
             f"result field {what!r} does not match its authority "
             f"({actual!r} != {expected!r})",
             operation="verify_result", resource_id=resource_id)
+
+
+def _read_attempt_record(backend_dir: Any, resource_id: str) \
+        -> dict[str, Any]:
+    """Read the separate execution-attempt record (evidence-v2).
+
+    Host/tool text lives here, not in scientific evidence. A v2 evidence
+    document names no ``producer_tool_identity``; the environment record
+    does, and the control plane still refuses a store-record tamper by
+    re-reading it.
+    """
+    from veritx_dse.backend.evidence import ATTEMPT_FILE
+    if not isinstance(backend_dir, str) or not backend_dir:
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"resource {resource_id} names no backend_dir for its "
+            f"execution-attempt record",
+            operation="verify_resource", resource_id=resource_id)
+    path = Path(backend_dir) / ATTEMPT_FILE
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError) as exc:
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"execution-attempt record {path} unreadable: {exc}",
+            operation="verify_resource", resource_id=resource_id) from exc
+    if not isinstance(data, dict):
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"execution-attempt record {path} is not an object",
+            operation="verify_resource", resource_id=resource_id)
+    return data
 
 
 def load_verified_intent(store: Any, intent_id: str) -> dict[str, Any]:
@@ -435,14 +469,24 @@ def load_verified_attempt(store: Any, attempt_id: str) -> dict[str, Any]:
         _require_equal(f"attempt.evidence.{key}", evidence.get(key),
                        experiment.get(key), attempt_id)
     producer = record.get("producer") or {}
+    attempt_doc = None
     for key, evidence_key in (
             ("binary_sha256", "booksim_binary_sha256"),
             ("source_revision", "producer_source_revision"),
             ("source_dirty", "producer_source_dirty"),
             ("source_dirty_digest", "producer_source_dirty_digest"),
             ("tool_identity", "producer_tool_identity")):
+        if evidence_key in evidence:
+            # v1 evidence embedded tool identity; v2 does not.
+            _require_equal(f"attempt.producer.{key}",
+                           producer.get(key),
+                           evidence.get(evidence_key), attempt_id)
+            continue
+        if attempt_doc is None:
+            attempt_doc = _read_attempt_record(
+                record.get("backend_dir"), attempt_id)
         _require_equal(f"attempt.producer.{key}", producer.get(key),
-                       evidence.get(evidence_key), attempt_id)
+                       attempt_doc.get(evidence_key), attempt_id)
     return record
 
 
@@ -555,14 +599,22 @@ def load_verified_result(store: Any, result_id: str, *,
                    result_id)
     _verify_metrics(result, evidence, plan, result_id)
     producer = result.get("producer") or {}
+    attempt_doc = None
     for key, evidence_key in (
             ("binary_sha256", "booksim_binary_sha256"),
             ("source_revision", "producer_source_revision"),
             ("source_dirty", "producer_source_dirty"),
             ("source_dirty_digest", "producer_source_dirty_digest"),
             ("tool_identity", "producer_tool_identity")):
+        if evidence_key in evidence:
+            _require_equal(f"producer.{key}", producer.get(key),
+                           evidence.get(evidence_key), result_id)
+            continue
+        if attempt_doc is None:
+            attempt_doc = _read_attempt_record(
+                attempt.get("backend_dir"), result_id)
         _require_equal(f"producer.{key}", producer.get(key),
-                       evidence.get(evidence_key), result_id)
+                       attempt_doc.get(evidence_key), result_id)
     if plan.get("wave_d") is not None or result.get("wave_d") is not None:
         _verify_waved_result(store, result, plan, evidence, result_id)
     if plan.get("wave_e") is not None or result.get("wave_e") is not None:
