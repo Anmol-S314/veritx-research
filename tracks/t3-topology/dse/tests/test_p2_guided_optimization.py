@@ -514,8 +514,9 @@ class TestGridStudyEndToEnd:
                 "evaluation_ids", "product_requirements",
                 "objective_values", "objective_availability",
                 "constraint_verdicts", "evaluation_authority",
-                "eligibility_reason", "pareto_eligible",
-                "pareto_member"}
+                "compilation_status", "evaluation_status",
+                "evaluation_reason", "eligibility_reason",
+                "pareto_eligible", "pareto_member"}
             assert set(cand["evaluation_ids"]) == {
                 "design_hash", "performance_result_id",
                 "requirement_report_id"}
@@ -988,8 +989,9 @@ class TestOptimizeCli:
                                 "objective_values", "objective_availability",
                                 "constraint_verdicts",
                                 "evaluation_authority",
-                                "eligibility_reason", "pareto_eligible",
-                                "pareto_member"}
+                                "compilation_status", "evaluation_status",
+                                "evaluation_reason", "eligibility_reason",
+                                "pareto_eligible", "pareto_member"}
             assert row["locked_consequences"]["routing_classes"] == ["DOR_XY"]
             assert row["evaluation_authority"] == AUTHORITY_ANALYTIC_FAKE
             assert row["pareto_eligible"] is False

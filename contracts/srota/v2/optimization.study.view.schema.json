@@ -64,7 +64,9 @@
         "required": ["candidate_id", "guided_patch", "evaluation_ids",
                       "product_requirements", "objective_values",
                       "objective_availability", "constraint_verdicts",
-                      "evaluation_authority", "eligibility_reason",
+                      "evaluation_authority", "compilation_status",
+                      "evaluation_status", "evaluation_reason",
+                      "eligibility_reason",
                       "pareto_eligible", "pareto_member"],
         "properties": {
           "candidate_id": {"type": "string"},
@@ -120,6 +122,19 @@
             "type": ["string", "null"],
             "enum": ["certified-backend", "analytic-fake", null],
             "description": "Structural fidelity of the evaluator that produced this row. Only certified-backend results can be Pareto-eligible; analytic-fake is a development double."
+          },
+          "compilation_status": {
+            "enum": ["COMPILED", "INVALID", "UNSUPPORTED"],
+            "description": "FabricCompiler verdict for this candidate's request."
+          },
+          "evaluation_status": {
+            "enum": ["EVALUATED", "COMPILE_FAILED", "INVALID",
+                      "UNSUPPORTED", "BACKEND_UNAVAILABLE", "FAILED"],
+            "description": "Real evaluation taxonomy, never collapsed: a simulated run that fails a binding product requirement is still EVALUATED (product_requirements.satisfied=false)."
+          },
+          "evaluation_reason": {
+            "type": ["string", "null"],
+            "description": "Evaluator message for non-success outcomes and for EVALUATED runs with failing product requirements; null for a clean evaluated run."
           },
           "eligibility_reason": {
             "type": ["string", "null"],

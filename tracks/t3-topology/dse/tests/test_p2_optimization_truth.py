@@ -32,6 +32,7 @@ import pytest
 from test_p1_optimize_booksim import _fixture as _cli_fixture
 from test_p2_real_adapter import _base as _real_base
 from test_p2_real_adapter import _port as _real_port
+from test_p2_real_adapter import _pp_request
 
 from veritx_dse.application.requirements import report_identity
 from veritx_dse.optimization.constraints import (
@@ -216,6 +217,12 @@ def test_ap02_backend_unavailable_preserved_into_record(tmp_path):
         assert r.evaluation_status == "BACKEND_UNAVAILABLE"
         assert r.pareto_eligible is False
         assert "BACKEND_UNAVAILABLE" in (r.eligibility_reason or "")
+    view = result.to_study_view()
+    assert view["pareto_ids"] == []
+    for cand in view["candidates"]:
+        assert cand["evaluation_status"] == "BACKEND_UNAVAILABLE"
+        assert cand["compilation_status"] == "COMPILED"
+        assert cand["evaluation_reason"]
 
 
 def test_ap02_backend_failed_preserved_into_record(tmp_path, monkeypatch):
@@ -242,6 +249,11 @@ def test_ap02_backend_failed_preserved_into_record(tmp_path, monkeypatch):
         assert r.evaluation_status == "FAILED"
         assert r.pareto_eligible is False
         assert "FAILED" in (r.eligibility_reason or "")
+    view = result.to_study_view()
+    assert view["pareto_ids"] == []
+    for cand in view["candidates"]:
+        assert cand["evaluation_status"] == "FAILED"
+        assert cand["evaluation_reason"]
 
 
 def test_ap02_requirement_violation_stays_evaluated(tmp_path):
@@ -273,9 +285,84 @@ def test_ap02_requirement_violation_stays_evaluated(tmp_path):
         (record.eligibility_reason or "")
     assert result.pareto_ids == ()
     assert result.selected_candidate_id is None
+    view = result.to_study_view()
+    (cand,) = view["candidates"]
+    assert cand["evaluation_status"] == "EVALUATED"
+    assert cand["compilation_status"] == "COMPILED"
+    assert cand["product_requirements"]["satisfied"] is False
+    assert "binding requirements not satisfied" in \
+        (cand["evaluation_reason"] or "")
+    assert cand["pareto_eligible"] is False
 
 
 # ── 3-4: report identity transitively carried ───────────────────────────
+
+def test_ap02_unsupported_and_compile_failed_preserved_in_v2(tmp_path):
+    """A-P0.2/A-P1.4: lowering-UNSUPPORTED and compile-failed outcomes
+    keep their taxonomy and are renderable from v2 status/reason."""
+    from veritx_dse.optimization.candidate import make_candidate
+    from veritx_dse.optimization.real_evaluator import (
+        RealCandidateEvaluator,
+    )
+
+    port = RealCandidateEvaluator(
+        binary="/no-such-booksim", run_root=str(tmp_path / "runs"),
+        network_clock_hz=10 ** 9, timeout_s=60)
+    # Lowering refusal (PP-dimension collective) stays UNSUPPORTED.
+    pp_req = _pp_request()
+    out = port.evaluate(make_candidate(pp_req, {"link_width": 64}))
+    assert out.status == "UNSUPPORTED"
+    result = Optimizer().optimize(
+        pp_req, _defn(domain=(DomainParam("link_width", (64,)),)), port)
+    (record,) = result.records
+    assert record.evaluation_status == "UNSUPPORTED"
+    (cand,) = result.to_study_view()["candidates"]
+    assert cand["evaluation_status"] == "UNSUPPORTED"
+    assert cand["evaluation_reason"]
+    # Compile refusal (rcu_enabled=True) is COMPILE_FAILED with the
+    # compiler's own verdict preserved separately.
+    result2 = Optimizer().optimize(
+        _real_base(),
+        _defn(domain=(DomainParam("rcu_enabled", (True,)),)), port)
+    (record2,) = result2.records
+    assert record2.evaluation_status == "COMPILE_FAILED"
+    assert record2.compilation_status in ("INVALID", "UNSUPPORTED")
+    (cand2,) = result2.to_study_view()["candidates"]
+    assert cand2["evaluation_status"] == "COMPILE_FAILED"
+    assert cand2["compilation_status"] in ("INVALID", "UNSUPPORTED")
+    assert cand2["evaluation_reason"]
+
+
+def test_ap14_status_and_reason_bound_into_result_id():
+    """A-P1.4: compilation_status, evaluation_status and
+    evaluation_reason are exposed in v2 and bound into result_id."""
+    import dataclasses
+
+    base = _real_base()
+    port = _StubPort({"latency": 10.0}, report_verdict="SATISFIED")
+    result = Optimizer().optimize(base, _defn(), port)
+    view = result.to_study_view()
+    for cand in view["candidates"]:
+        assert cand["compilation_status"] == "COMPILED"
+        assert cand["evaluation_status"] == "EVALUATED"
+        assert cand["evaluation_reason"] is None
+    target = result.records[0]
+
+    def _with(replacement):
+        return dataclasses.replace(result, records=tuple(
+            replacement if r.candidate_id == target.candidate_id else r
+            for r in result.records))
+
+    assert _with(dataclasses.replace(
+        target, evaluation_reason="changed reason")).result_id() != \
+        result.result_id()
+    assert _with(dataclasses.replace(
+        target, evaluation_status="FAILED")).result_id() != \
+        result.result_id()
+    assert _with(dataclasses.replace(
+        target, compilation_status="UNSUPPORTED")).result_id() != \
+        result.result_id()
+
 
 def test_ap13_min_vs_max_definition_distinction():
     """A-P1.3: objective direction is explicit in v2, and MIN vs MAX

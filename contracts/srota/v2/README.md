@@ -18,7 +18,14 @@ It intentionally separates three authorities that must never be merged:
 requested objective measured+finite AND every hard constraint
 SATISFIED); `pareto_member` implies it. `evaluation_authority`
 (`certified-backend` | `analytic-fake` | null) is structural: analytic
-fakes are development doubles and can never be eligible.
+fakes are development doubles and can never be eligible. Every row also
+carries `compilation_status` (COMPILED/INVALID/UNSUPPORTED),
+`evaluation_status` (EVALUATED/COMPILE_FAILED/INVALID/UNSUPPORTED/
+BACKEND_UNAVAILABLE/FAILED) and `evaluation_reason` (the typed message,
+null for a clean run), so a consumer renders refusals without inferring
+them from missing metrics; a simulated run that fails a binding product
+requirement stays EVALUATED with
+`product_requirements.satisfied=false` and an `evaluation_reason`.
 
 The definition block is lossless and identified: `definition_id`,
 `objectives` as `{metric, direction}`, `constraints` as

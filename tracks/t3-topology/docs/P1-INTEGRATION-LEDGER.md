@@ -262,3 +262,34 @@ identity, no evaluation semantics).
   `run_root/<candidate_id>/`; repeated evaluations of the same candidate
   with the same evaluator instance both complete with distinct paths and
   equal measured science, while candidate/design identities stay put.
+
+### RT-A audit-v2 repairs (branch `rt-final/optimization-truth`)
+
+Independent verification BLOCKED the first RT-A tip; the audit-v2 tip
+implements four repairs:
+
+- **A-P0.1 — authority gate.** `CandidateEvaluation` carries
+  `evaluation_authority` (`certified-backend` | `analytic-fake` | null).
+  Pareto eligibility requires a certified-backend evaluation AND a bound
+  product RequirementReport AND a non-fake `performance_result_id`; every
+  refusal is a typed `eligibility_reason`. The fake evaluator can never
+  be Pareto or selected, and v2 exposes the authority.
+- **A-P0.2 — status taxonomy preserved.** Compile refusals are
+  COMPILE_FAILED (compiler verdict kept in `compilation_status`), backend
+  outcomes stay BACKEND_UNAVAILABLE/FAILED/UNSUPPORTED, and a simulated
+  run that violates a binding product requirement stays EVALUATED with
+  measurements + reason, ineligible.
+- **A-P1.3 — lossless definition.** v2 `definition` now emits
+  `definition_id`, `{metric,direction}` objectives, `{metric,op,threshold}`
+  constraints, `method`, `selection`, `budget`, `seed`, `domain`; the
+  view top level exposes `optimization_result_id` (bare result digest).
+- **A-P1.4 — status/reason in v2.** Each v2 candidate exposes
+  `compilation_status`, `evaluation_status`, `evaluation_reason`
+  (plus `eligibility_reason`), all bound into
+  `OptimizationResult.result_id()`.
+
+**Studio action (Worker C) unchanged but broader:** retarget
+`STUDY_SCHEMA_V2` to `contracts/srota/v2/optimization.study.view.schema.json`
+and regenerate `apps/studio/fixtures/optimization-study.json`; the v2
+payload gained the authority/status/reason fields and the lossless
+definition, and the v1-dir v2-named schema no longer exists.

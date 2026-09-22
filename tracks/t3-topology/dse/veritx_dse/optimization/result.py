@@ -175,6 +175,7 @@ class CandidateRecord:
     requirement_report_id: str | None = None
     product_requirements_satisfied: bool | None = None
     evaluation_authority: str | None = None
+    evaluation_reason: str | None = None
     compilation_status: str = "COMPILED"
     product_requirement_details: tuple = ()
     constraint_details: tuple = ()
@@ -205,6 +206,7 @@ class OptimizationResult:
                              for k in sorted(r.guided_patch)},
             "design_hash": r.design_hash,
             "evaluation_status": r.evaluation_status,
+            "evaluation_reason": r.evaluation_reason,
             "compilation_status": r.compilation_status,
             "performance_result_id": r.performance_result_id,
             "requirement_report_id": r.requirement_report_id,
@@ -305,6 +307,9 @@ class OptimizationResult:
                 "objective_availability": dict(r.objective_availability),
                 "constraint_verdicts": dict(r.constraint_verdicts),
                 "evaluation_authority": r.evaluation_authority,
+                "compilation_status": r.compilation_status,
+                "evaluation_status": r.evaluation_status,
+                "evaluation_reason": r.evaluation_reason,
                 "eligibility_reason": r.eligibility_reason,
                 "pareto_eligible": bool(r.pareto_eligible),
                 "pareto_member": bool(r.pareto_member),
@@ -625,8 +630,7 @@ class Optimizer:
                     "no performance_result_id is bound")
             elif str(ev.performance_result_id).startswith("fake:"):
                 eligibility_reasons.append(
-                    f"performance_result_id "
-                    f"{ev.performance_result_id!r} is a fake result, not "
+                    "performance_result_id is a fake result, not "
                     "authenticated backend evidence")
             if report is not None and product_satisfied is not True:
                 eligibility_reasons.append(
@@ -663,6 +667,7 @@ class Optimizer:
                 requirement_report_id=_requirement_report_id(report),
                 product_requirements_satisfied=product_satisfied,
                 evaluation_authority=authority,
+                evaluation_reason=getattr(ev, "error", None),
                 compilation_status=getattr(
                     ev, "compilation_status", "COMPILED"),
                 product_requirement_details=product_details,
@@ -693,6 +698,7 @@ class Optimizer:
             product_requirements_satisfied=
                 r.product_requirements_satisfied,
             evaluation_authority=r.evaluation_authority,
+            evaluation_reason=r.evaluation_reason,
             compilation_status=r.compilation_status,
             product_requirement_details=r.product_requirement_details,
             constraint_details=r.constraint_details,
