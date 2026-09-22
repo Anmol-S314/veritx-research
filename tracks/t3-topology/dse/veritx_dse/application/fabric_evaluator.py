@@ -53,6 +53,8 @@ from pathlib import Path
 from typing import Any
 
 from veritx_dse.application.errors import ControlPlaneError, ErrorCode
+from veritx_dse.application.requirements import verify_performance_result
+from veritx_dse.core.errors import BookSimError, EvidenceInvalid, Refusal
 
 EVALUATED = "EVALUATED"
 BACKEND_UNAVAILABLE = "BACKEND_UNAVAILABLE"
@@ -72,6 +74,77 @@ class EvaluationError(ControlPlaneError):
 def _refuse(code: ErrorCode, message: str, *, cause_type: str = "") -> EvaluationError:
     return EvaluationError(code, message, operation="evaluate",
                            cause_type=cause_type)
+
+
+def _require_workload_is_compilation_lowering(
+        compilation: Any, *, workload_id: str) -> Any:
+    """Seal the Compilation→WorkloadGraph seam by RE-DERIVATION.
+
+    Provenance is metadata, not authority: ``WorkloadGraph`` identity
+    deliberately excludes it, so a forged ``provenance['design_hash']``
+    cannot bind a foreign semantic graph. The only authority is what the
+    compilation's v3 request actually lowers to — re-derive it and
+    compare content identity, never ask the workload who its parent is.
+    Returns the expected ``LoweredWorkload`` (graph + traffic-class
+    sidecar) for the caller's sidecar comparison.
+    """
+    from veritx_dse.core.errors import (
+        InvalidInput, UnsupportedSchedule, UnsupportedSemantics,
+    )
+    from veritx_dse.model.compile_model import CompileRequestV3
+    from veritx_dse.workload.intent_lowering import lower_compile_workload
+    request = compilation.request
+    if not isinstance(request, CompileRequestV3):
+        raise _refuse(
+            ErrorCode.INVALID_INTENT,
+            f"cannot evaluate: compilation request is "
+            f"{type(request).__name__}, not a v3 intent — there is no "
+            f"lowering authority to re-derive the workload from, and an "
+            f"unverifiable workload is not a pass",
+            cause_type=type(request).__name__)
+    try:
+        expected = lower_compile_workload(request)
+    except InvalidInput as exc:
+        raise _refuse(
+            ErrorCode.INVALID_INTENT,
+            f"cannot evaluate: the compilation request does not lower to "
+            f"a workload: {exc}",
+            cause_type="CompileRequestV3") from exc
+    except (UnsupportedSemantics, UnsupportedSchedule) as exc:
+        raise _refuse(
+            ErrorCode.UNSUPPORTED_SEMANTICS,
+            f"cannot evaluate: the compilation request lowering is "
+            f"unsupported: {exc}",
+            cause_type=type(exc).__name__) from exc
+    if expected.graph.workload_id() != workload_id:
+        raise _refuse(
+            ErrorCode.INVALID_INTENT,
+            f"workload {workload_id!r} is not the lowering of compilation "
+            f"request design {request.design_hash()!r} "
+            f"({expected.graph.workload_id()!r}) — refusing a semantic "
+            f"transplant; provenance cannot bind a foreign graph",
+            cause_type="WorkloadGraph")
+    return expected
+
+
+def _require_evidence_authentic(
+        artifact: Any, *, backend_input_sha256: str,
+        raw_evidence_sha256: str, stats: Any) -> None:
+    """Seal the evidence-authentication gate with an explicit conditional.
+
+    Deliberately NOT an ``assert``: production invariants must survive
+    ``python3 -O`` (asserts disappear under optimization). A failing
+    authentication raises the typed evidence refusal the caller maps to
+    FAILED — never a silently accepted artifact.
+    """
+    if not artifact.authenticates(
+            backend_input_sha256=backend_input_sha256,
+            raw_evidence_sha256=raw_evidence_sha256,
+            stats=stats):
+        raise EvidenceInvalid(
+            "evidence artifact does not authenticate against the backend "
+            "input digest and raw evidence digest; refusing fabricated "
+            "evidence")
 
 
 @dataclass(frozen=True)
@@ -333,6 +406,11 @@ class FabricEvaluator:
         resolved_fabric_hash = \
             bundle.resolved_fabric.resolved_fabric_hash()
         workload_id = workload.workload_id()
+        # The workload must be EXACTLY this compilation's lowering before
+        # any backend work; re-derivation is the authority (provenance is
+        # forgeable metadata).
+        expected_lowered = _require_workload_is_compilation_lowering(
+            compilation, workload_id=workload_id)
 
         def refuse(status: str, reason: str, **extra: Any) -> EvaluationOutcome:
             return EvaluationOutcome(
@@ -382,6 +460,31 @@ class FabricEvaluator:
                           message_artifact_id=message_id,
                           physical_traffic_id=traffic_id)
 
+        # ── intent-class sidecar (semantics outside workload_id) ───
+        # Traffic-class semantics live in the lowering sidecar, not in
+        # the canonical graph identity; the options class is an
+        # ASSERTION against the re-derived lowering, never a label.
+        expected_class = expected_lowered.unified_traffic_class
+        if expected_class is None:
+            return refuse(
+                UNSUPPORTED,
+                f"lowering spans traffic classes "
+                f"{list(expected_lowered.classes)}: no single-class "
+                f"message artifact can represent per-operation classes — "
+                f"UNSUPPORTED until a versioned per-operation message "
+                f"artifact lands",
+                message_artifact_id=message_id,
+                physical_traffic_id=traffic_id)
+        if opts.traffic_class != expected_class:
+            return refuse(
+                UNSUPPORTED,
+                f"evaluation traffic class {opts.traffic_class!r} does "
+                f"not match the lowered intent class {expected_class!r}: "
+                f"eval-time relabeling is refused (the intent owns class "
+                f"names; evaluation only asserts them)",
+                message_artifact_id=message_id,
+                physical_traffic_id=traffic_id)
+
         # ── certified path selection (derived, never a user knob) ─
         path = _select_backend_path(bundle)
         if path is None:
@@ -402,6 +505,11 @@ class FabricEvaluator:
                 physical_traffic_id=traffic_id)
 
         # ── canonical projection (pure: gates + lowering + render) ─
+        from veritx_dse.backend.booksim import BookSimLoweringError
+        from veritx_dse.backend.contracts import (
+            BackendConfigError, BackendInputError,
+        )
+        from veritx_dse.backend.meshdor import MeshDorMaterializationError
         try:
             if path == "meshdor":
                 from veritx_dse.backend.meshdor import (
@@ -412,8 +520,8 @@ class FabricEvaluator:
                     prepare_waved_booksim as _prepare,
                 )
             prepared, summary = _prepare(physical, seed=opts.seed)
-        except Exception as exc:
-            from veritx_dse.backend.booksim import BookSimLoweringError
+        except (BookSimLoweringError, Refusal, BackendConfigError,
+                BackendInputError, MeshDorMaterializationError) as exc:
             if isinstance(exc, BookSimLoweringError):
                 return refuse(UNSUPPORTED,
                               f"fabric unprojectable to BookSim: {exc}",
@@ -431,16 +539,16 @@ class FabricEvaluator:
         input_hash = manifest.backend_input_hash()
 
         # ── shared-realization statement (qualification.py) ────────
+        from veritx_dse.backend.qualification import (
+            QualificationError, booksim_shared_realization,
+        )
         try:
-            from veritx_dse.backend.qualification import (
-                booksim_shared_realization,
-            )
             from veritx_dse.core.spec import canonical_json
             import hashlib
             realization = booksim_shared_realization(config)
             realization_digest = hashlib.sha256(
                 canonical_json(realization).encode()).hexdigest()
-        except Exception as exc:
+        except QualificationError as exc:
             return refuse(UNSUPPORTED,
                           f"BookSim realization unstatable: "
                           f"{type(exc).__name__}: {exc}",
@@ -493,6 +601,11 @@ class FabricEvaluator:
         evidence_dir = run_dir / "evidence"
 
         # ── qualified execution (+ quiescence when required) ───────
+        from veritx_dse.backend.booksim import (
+            BackendMaterializationError, BookSimLoweringError,
+            BookSimRouteError,
+        )
+        from veritx_dse.backend.producer import ProducerError
         try:
             if path == "meshdor":
                 from veritx_dse.backend.meshdor import (
@@ -506,7 +619,9 @@ class FabricEvaluator:
                 prepared, run_dir=backend_run_dir, repo_root=repo_root,
                 timeout=opts.timeout_s, binary=bin_path,
                 summary=summary if opts.require_quiescence else None)
-        except Exception as exc:
+        except (BookSimError, Refusal, BookSimLoweringError,
+                BookSimRouteError, BackendMaterializationError,
+                ProducerError) as exc:
             return refuse(FAILED,
                           f"backend execution failed: "
                           f"{type(exc).__name__}: {exc}",
@@ -548,10 +663,12 @@ class FabricEvaluator:
                           realization_digest=realization_digest)
 
         # ── evidence authentication (evidence.py only) ─────────────
+        from veritx_dse.backend.evidence import (
+            BackendEvidenceError, EvidenceArtifact, read_verified_evidence,
+            write_evidence,
+        )
+        from veritx_dse.core.artifact import ArtifactError
         try:
-            from veritx_dse.backend.evidence import (
-                EvidenceArtifact, read_verified_evidence, write_evidence,
-            )
             ref = write_evidence(evidence_dir, cert_evidence.to_dict())
             verified_doc = read_verified_evidence(ref)
             artifact = EvidenceArtifact.build(
@@ -560,11 +677,11 @@ class FabricEvaluator:
                 backend_input_sha256=input_hash,
                 raw_evidence_sha256=ref.sha256,
                 stats=cert_evidence.stats)
-            assert artifact.authenticates(
-                backend_input_sha256=input_hash,
+            _require_evidence_authentic(
+                artifact, backend_input_sha256=input_hash,
                 raw_evidence_sha256=ref.sha256,
                 stats=cert_evidence.stats)
-        except Exception as exc:
+        except (BackendEvidenceError, ArtifactError, OSError) as exc:
             return refuse(FAILED,
                           f"evidence authentication failed: "
                           f"{type(exc).__name__}: {exc}",
@@ -588,6 +705,7 @@ class FabricEvaluator:
                  "backend_config_hash": config_hash,
                  "backend_input_hash": input_hash}
         try:
+            from veritx_dse.core.time import TimeError
             from veritx_dse.performance.network import bind_network_window
             clock = opts.network_clock_hz if _valid_clock(
                 opts.network_clock_hz) else None
@@ -595,7 +713,7 @@ class FabricEvaluator:
                 evidence=cert_evidence, chain=chain,
                 network_clock_hz=clock, evidence_sha256=ref.sha256,
                 expected_packets=summary["num_packets"])
-        except Exception as exc:
+        except (TimeError, ArtifactError) as exc:
             return refuse(FAILED,
                           f"network window bind failed: "
                           f"{type(exc).__name__}: {exc}",
@@ -646,21 +764,25 @@ class FabricEvaluator:
         # ── verified performance (window event only — no per-op
         #    latency is ever invented) ─────────────────────────────
         try:
+            from veritx_dse.core.artifact import ImmutableError
             from veritx_dse.core.time import QTime
             from veritx_dse.performance.model import (
-                ClockDef, PerformanceModel, ResourceDef, fidelity_warning,
+                ClockDef, ModelError, PerformanceModel, ResourceDef,
+                fidelity_warning,
             )
             from veritx_dse.performance.network import (
                 NetworkWindowBinding,
             )
             from veritx_dse.performance.result import (
-                PerformanceEventGraph, build_performance_result,
-                reverify_result,
+                PerformanceEventGraph, ResultError,
+                build_performance_result,
             )
-            from veritx_dse.performance.scheduler import schedule_workload
+            from veritx_dse.performance.scheduler import (
+                SchedulerError, schedule_workload,
+            )
             from veritx_dse.performance.workload import (
                 EVENT_NETWORK_TRAFFIC_WINDOW, TemporalEvent,
-                TemporalWorkload,
+                TemporalWorkload, WorkloadError,
             )
             model = PerformanceModel(
                 clocks=(ClockDef("network", clock),),
@@ -673,6 +795,7 @@ class FabricEvaluator:
             temporal = TemporalWorkload(performance_model=model,
                                         events=(net_event,))
             wave_d_chain = {
+                "design_hash": design_hash,
                 "workload_graph_id": workload_id,
                 "message_artifact_id": message_id,
                 "physical_traffic_id": traffic_id,
@@ -691,11 +814,40 @@ class FabricEvaluator:
                 temporal, network_durations=egraph.network_durations())
             perf = build_performance_result(graph=egraph,
                                             schedule=schedule)
-            reverify_result(perf, workload=temporal)
             warning = fidelity_warning(model)
-        except Exception as exc:
+        except (ResultError, TimeError, ModelError, WorkloadError,
+                SchedulerError, ImmutableError, ArtifactError,
+                ControlPlaneError) as exc:
             return refuse(FAILED,
                           f"performance construction failed: "
+                          f"{type(exc).__name__}: {exc}",
+                          message_artifact_id=message_id,
+                          physical_traffic_id=traffic_id,
+                          backend=STANDALONE_BACKEND,
+                          backend_profile=prof,
+                          producer_identity=producer.binary_sha256,
+                          backend_config_hash=config_hash,
+                          backend_input_hash=input_hash,
+                          evidence_id=artifact.evidence_id(),
+                          raw_evidence_digest=ref.sha256,
+                          stats_digest=artifact.stats_sha256,
+                          network_traffic_window={
+                              "window_cycles": window_cycles,
+                              "wall_time_ns": None,
+                              "cycles_only": True},
+                          metrics=metrics,
+                          run_dir=str(run_dir),
+                          evidence_path=ref.path,
+                          realization_digest=realization_digest)
+        # ── verified boundary (the wrapper is the only input
+        #    RequirementEvaluator accepts; a stale resource_id is not
+        #    authentication) ─────────────────────────────────────────
+        try:
+            verified_perf = verify_performance_result(perf,
+                                                      workload=temporal)
+        except ArtifactError as exc:
+            return refuse(FAILED,
+                          f"performance verification failed: "
                           f"{type(exc).__name__}: {exc}",
                           message_artifact_id=message_id,
                           physical_traffic_id=traffic_id,
@@ -731,8 +883,8 @@ class FabricEvaluator:
             evidence_id=artifact.evidence_id(),
             raw_evidence_digest=ref.sha256,
             stats_digest=artifact.stats_sha256,
-            performance_result_id=perf["resource_id"],
-            performance_result=perf,
+            performance_result_id=verified_perf["resource_id"],
+            performance_result=verified_perf,
             network_traffic_window={
                 "window_cycles": window_cycles,
                 "wall_time_ns": wall_ns,

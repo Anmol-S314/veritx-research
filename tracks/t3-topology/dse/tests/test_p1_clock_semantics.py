@@ -34,6 +34,7 @@ from veritx_dse.application.product_evaluator import evaluate_product
 from veritx_dse.application.requirements import (
     RequirementEvaluator,
     report_passes,
+    verify_performance_result,
 )
 from veritx_dse.core.errors import EvidenceInvalid
 from veritx_dse.core.paths import REPO
@@ -66,7 +67,6 @@ from veritx_dse.performance.network import (
 from veritx_dse.performance.result import (
     PerformanceEventGraph,
     build_performance_result,
-    reverify_result,
 )
 from veritx_dse.performance.scheduler import schedule_workload
 from veritx_dse.performance.workload import (
@@ -133,12 +133,12 @@ def _verified_window_doc(request, *, completion_cycles, caller_clock_hz):
         workload=temporal,
         network_binding=NetworkWindowBinding.from_dict(binding.to_dict()),
         wave_d_chain={"workload_graph_id": lw.graph.workload_id(),
+                      "design_hash": request.design_hash(),
                       "physical_traffic_id": "pt"})
     schedule = schedule_workload(
         temporal, network_durations=graph.network_durations())
     result = build_performance_result(graph=graph, schedule=schedule)
-    reverify_result(result, workload=temporal)
-    return lw.graph, result
+    return lw.graph, verify_performance_result(result, workload=temporal)
 
 
 def _measured(request, caller_factor):
@@ -217,30 +217,44 @@ class TestWallTimeRefuses:
     def test_duration_without_its_clock_refuses(self):
         """A wall duration without the clock that produced it cannot
         authenticate cycles — refuse, never rescale with the design clock."""
+        from veritx_dse.application.requirements import (
+            _authenticated_latency_cycles,
+        )
         request = _request(ceiling=100000.0)
         graph, result = _verified_window_doc(
             request, completion_cycles=COMPLETION_CYCLES,
             caller_clock_hz=DESIGN_HZ)
-        result = json.loads(json.dumps(result))
-        result["network_binding"]["network_clock_hz"] = None
+        tampered = json.loads(json.dumps(result))
+        tampered["network_binding"]["network_clock_hz"] = None
         with pytest.raises(EvidenceInvalid) as ei:
-            RequirementEvaluator.evaluate(request, graph, result)
+            _authenticated_latency_cycles(tampered)
         assert "clock" in str(ei.value)
+        # The verified boundary refuses the mutation outright (stale id).
+        with pytest.raises(EvidenceInvalid):
+            verify_performance_result(
+                tampered, workload=result.temporal_workload)
 
     def test_non_integral_cycle_product_refuses(self):
         """BookSim completion_time is integral; a (duration, clock) pair
         that does not reconstruct one is not the authenticated window."""
+        from veritx_dse.application.requirements import (
+            _authenticated_latency_cycles,
+        )
         request = _request(ceiling=100000.0)
         graph, result = _verified_window_doc(
             request, completion_cycles=COMPLETION_CYCLES,
             caller_clock_hz=DESIGN_HZ)
-        result = json.loads(json.dumps(result))
+        tampered = json.loads(json.dumps(result))
         # duration = 1/3 s at 1e9 Hz -> 1e9/3 cycles: not integral.
-        result["network_binding"]["duration"] = \
+        tampered["network_binding"]["duration"] = \
             QTime.from_seconds(Fraction(1, 3)).to_dict()
         with pytest.raises(EvidenceInvalid) as ei:
-            RequirementEvaluator.evaluate(request, graph, result)
+            _authenticated_latency_cycles(tampered)
         assert "integer cycle" in str(ei.value)
+        # The verified boundary refuses the mutation outright (stale id).
+        with pytest.raises(EvidenceInvalid):
+            verify_performance_result(
+                tampered, workload=result.temporal_workload)
 
 
 class TestRealBackendAuthenticatedCycles:

@@ -40,7 +40,11 @@ from veritx_dse.backend.meshdor_profile import (  # noqa: E402
     MESH_DOR_PROFILE, MESH_DOR_PROFILE_ID, MESH_DOR_SITES,
 )
 from veritx_dse.core.route_artifact import DOR_XY  # noqa: E402
-from veritx_dse.model.compile_model import TopologyFamily  # noqa: E402
+from veritx_dse.model.compile_model import (  # noqa: E402
+    Agent, AgentKind, CollectiveDimension, CollectiveIntent,
+    CollectiveKind, CompileRequestV3, DependencyGraph, ModelFamily,
+    NocConfig, TopologyFamily, WorkloadV3,
+)
 from veritx_dse.model.parallelism import ParallelismArtifact  # noqa: E402
 from veritx_dse.model.topology_artifact import (  # noqa: E402
     MaterializedFamily,
@@ -48,6 +52,9 @@ from veritx_dse.model.topology_artifact import (  # noqa: E402
 from veritx_dse.workload.canonical_graph import (  # noqa: E402
     KIND_COLLECTIVE, OperationNode, WorkloadGraph, WorkloadSemantics,
     collective_detail,
+)
+from veritx_dse.workload.intent_lowering import (  # noqa: E402
+    lower_compile_workload,
 )
 
 EVAL = FabricEvaluator()
@@ -69,17 +76,48 @@ def _compiled(n_agents, tp, pp=1, ep=1, dp=1,
     return chain, comp
 
 
+def _v3_request(*, tp, pp=1, ep=1, dp=1, payload=256, tc="A"):
+    """The v3 intent whose lowering is the evaluator workload."""
+    return CompileRequestV3(
+        workload=WorkloadV3(
+            model_family=ModelFamily.DENSE_TRANSFORMER,
+            tp=tp, pp=pp, ep=ep, dp=dp,
+            collectives=(CollectiveIntent(
+                kind=CollectiveKind.ALLREDUCE,
+                dimension=CollectiveDimension.GLOBAL,
+                payload_bytes=payload, traffic_class=tc),)),
+        requirements=(),
+        agents=(Agent(kind=AgentKind.COMPUTE_TILE,
+                      count=tp * pp * ep * dp),),
+        dependencies=DependencyGraph([]),
+        noc_config=NocConfig(topology_family=TopologyFamily.MESH))
+
+
+def _with_request(comp, request):
+    """Pair a certified v2 bundle with the v3 intent under test."""
+    return Compilation(status=comp.status, request=request,
+                       bundle=comp.bundle, certificate=comp.certificate,
+                       error=comp.error)
+
+
+def _lowered(comp):
+    return lower_compile_workload(comp.request).graph
+
+
 def _workload(participant_count, parallelism, *, payload=256,
-              kind="ALLREDUCE"):
+              kind="ALLREDUCE", design_hash=None):
     op = OperationNode(
         "c0", KIND_COLLECTIVE, (),
         collective_detail(collective_kind=kind,
                           participants=tuple(range(participant_count)),
                           payload_bytes=payload,
                           participant_count=participant_count))
+    provenance = {"design_hash": design_hash} \
+        if design_hash is not None else None
     return WorkloadGraph(parallelism=parallelism,
                          participant_count=participant_count,
-                         operations=(op,), semantics=WorkloadSemantics())
+                         operations=(op,), semantics=WorkloadSemantics(),
+                         provenance=provenance)
 
 
 def _first_vc_class(bundle):
@@ -441,12 +479,13 @@ class TestExitGate:
         assert comp.certificate.overall == "PASS"
         bundle = comp.bundle
         assert bundle.topology.router_count == 81
-        pa = ParallelismArtifact(tp=8, pp=1, ep=1, dp=1)
-        workload = _workload(8, pa, payload=2048)
+        tc = _first_vc_class(bundle)
+        comp = _with_request(comp, _v3_request(tp=8, payload=2048, tc=tc))
+        workload = _lowered(comp)
         binary = _real_binary()
         out = EVAL.evaluate(
             comp, workload,
-            EvaluationOptions(traffic_class=_first_vc_class(bundle),
+            EvaluationOptions(traffic_class=tc,
                               network_clock_hz=10 ** 9,
                               run_dir=str(tmp_path),
                               binary=str(binary), timeout_s=600))
@@ -527,10 +566,11 @@ class TestMeshEvaluatorStub:
         _stub_meshdor_run(monkeypatch, completion=59,
                           producer_sha=fake_sha)
         chain, comp = _compiled(4, 4)
+        tc = _first_vc_class(comp.bundle)
+        comp = _with_request(comp, _v3_request(tp=4, tc=tc))
         out = EVAL.evaluate(
-            comp, _workload(4, ParallelismArtifact(tp=4, pp=1, ep=1,
-                                                   dp=1)),
-            EvaluationOptions(traffic_class=_first_vc_class(comp.bundle),
+            comp, _lowered(comp),
+            EvaluationOptions(traffic_class=tc,
                               network_clock_hz=10 ** 9, binary=fake_bin,
                               run_dir=str(tmp_path)))
         assert out.status == EVALUATED, out.reason
@@ -564,10 +604,11 @@ class TestMeshEvaluatorStub:
         _stub_meshdor_run(monkeypatch, delivered_override=1,
                           producer_sha=fake_sha)
         chain, comp = _compiled(4, 4)
+        tc = _first_vc_class(comp.bundle)
+        comp = _with_request(comp, _v3_request(tp=4, tc=tc))
         out = EVAL.evaluate(
-            comp, _workload(4, ParallelismArtifact(tp=4, pp=1, ep=1,
-                                                   dp=1)),
-            EvaluationOptions(traffic_class=_first_vc_class(comp.bundle),
+            comp, _lowered(comp),
+            EvaluationOptions(traffic_class=tc,
                               network_clock_hz=10 ** 9, binary=fake_bin,
                               run_dir=str(tmp_path)))
         assert out.status == FAILED

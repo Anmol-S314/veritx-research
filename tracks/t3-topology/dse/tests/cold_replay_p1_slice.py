@@ -30,6 +30,7 @@ from veritx_dse.application.fabric_compiler import FabricCompiler
 from veritx_dse.application.requirements import (
     RequirementEvaluator,
     report_passes,
+    verify_performance_result,
 )
 from veritx_dse.backend.evidence import EvidenceRef, read_verified_evidence
 from veritx_dse.core.spec import canonical_json
@@ -41,7 +42,6 @@ from veritx_dse.performance.model import (
     ResourceDef,
 )
 from veritx_dse.performance.network import stats_sha256
-from veritx_dse.performance.result import reverify_result
 from veritx_dse.performance.workload import (
     EVENT_NETWORK_TRAFFIC_WINDOW,
     TemporalEvent,
@@ -164,10 +164,12 @@ def verify_cold(persist_dir) -> dict:
     # ── the rigorous verifier: reverify_result over the rebuilt parents
     temporal = rebuild_temporal_workload(perf)
     assert temporal.temporal_workload_id() == perf["temporal_workload_id"]
-    reverify_result(perf, workload=temporal)   # raises on any tamper
+    # The verified boundary: reverify_result raises on any tamper; the
+    # wrapper it returns is the only input RequirementEvaluator accepts.
+    verified = verify_performance_result(perf, workload=temporal)
 
     # ── requirements over the rebuilt triple ───────────────────────
-    report = RequirementEvaluator.evaluate(request, graph, perf)
+    report = RequirementEvaluator.evaluate(request, graph, verified)
     persisted_report = docs["requirement_report"]
     verdicts = [e["verdict"] for e in report["entries"]]
     assert report["design_hash"] == persisted_report["design_hash"]

@@ -39,11 +39,13 @@ from veritx_dse.application.fabric_evaluator import (  # noqa: E402
     BACKEND_UNAVAILABLE, EVALUATED, FAILED, UNSUPPORTED,
     EvaluationOptions, EvaluationOutcome, FabricEvaluator,
 )
-from veritx_dse.model.compile_model import TopologyFamily  # noqa: E402
-from veritx_dse.model.parallelism import ParallelismArtifact  # noqa: E402
-from veritx_dse.workload.canonical_graph import (  # noqa: E402
-    KIND_COLLECTIVE, OperationNode, WorkloadGraph, WorkloadSemantics,
-    collective_detail,
+from veritx_dse.model.compile_model import (  # noqa: E402
+    Agent, AgentKind, CollectiveDimension, CollectiveIntent,
+    CollectiveKind, CompileRequestV3, DependencyGraph, ModelFamily,
+    NocConfig, TopologyFamily, WorkloadV3,
+)
+from veritx_dse.workload.intent_lowering import (  # noqa: E402
+    lower_compile_workload,
 )
 
 EVAL = FabricEvaluator()
@@ -59,9 +61,45 @@ def _mesh_request_chain(small=True):
                        family=TopologyFamily.MESH)
 
 
+def _v3_request(participant_count, *, payload=1024, tc="A"):
+    """The v3 intent whose lowering is the workload under test.
+
+    participant_count maps to the compiled test chain's geometry
+    (4 -> tp2/dp2, 2 -> tp2/dp1, 8 -> tp8/dp1). One GLOBAL ALLREDUCE in
+    class ``tc`` lowers to a graph covering every rank.
+    """
+    shapes = {4: (2, 1, 1, 2), 2: (2, 1, 1, 1), 8: (8, 1, 1, 1)}
+    if participant_count not in shapes:
+        raise AssertionError("test helper covers 2/4/8 participants")
+    tp, pp, ep, dp = shapes[participant_count]
+    return CompileRequestV3(
+        workload=WorkloadV3(
+            model_family=ModelFamily.DENSE_TRANSFORMER,
+            tp=tp, pp=pp, ep=ep, dp=dp,
+            collectives=(CollectiveIntent(
+                kind=CollectiveKind.ALLREDUCE,
+                dimension=CollectiveDimension.GLOBAL,
+                payload_bytes=payload, traffic_class=tc),)),
+        requirements=(),
+        agents=(Agent(kind=AgentKind.COMPUTE_TILE,
+                      count=participant_count),),
+        dependencies=DependencyGraph([]),
+        noc_config=NocConfig(topology_family=TopologyFamily.MESH))
+
+
+def _lowered(comp):
+    """The workload the compilation's request lowers to (the authority)."""
+    return lower_compile_workload(comp.request).graph
+
+
 def _compiled_mesh(small=True):
     chain = _mesh_request_chain(small)
-    return chain, FabricCompiler().compile(chain.cr)
+    compiled = FabricCompiler().compile(chain.cr)
+    request = _v3_request(4 if small else 8)
+    comp = Compilation(status="COMPILED", request=request,
+                       bundle=compiled.bundle,
+                       certificate=compiled.certificate, error=None)
+    return chain, comp
 
 
 def _anynet_bundle_2node():
@@ -101,33 +139,13 @@ def _anynet_bundle_2node():
     return chain, bundle
 
 
-def _compilation_for(chain, bundle):
+def _compilation_for(chain, bundle, *, participant_count=2):
     from veritx_dse.verification.certificate import verify_compiled_fabric
     cert = verify_compiled_fabric(bundle)
     assert cert.overall == "PASS"
-    return Compilation(status="COMPILED", request=chain.cr, bundle=bundle,
-                       certificate=cert, error=None)
-
-
-def _workload(participant_count, *, payload=1024, kind="ALLREDUCE"):
-    pa = None
-    if participant_count == 4:
-        pa = ParallelismArtifact(tp=2, pp=1, ep=1, dp=2)
-    elif participant_count == 2:
-        pa = ParallelismArtifact(tp=2, pp=1, ep=1, dp=1)
-    elif participant_count == 8:
-        pa = ParallelismArtifact(tp=8, pp=1, ep=1, dp=1)
-    else:
-        raise AssertionError("test helper covers 2/4/8 participants")
-    op = OperationNode(
-        "c0", KIND_COLLECTIVE, (),
-        collective_detail(collective_kind=kind,
-                          participants=tuple(range(participant_count)),
-                          payload_bytes=payload,
-                          participant_count=participant_count))
-    return WorkloadGraph(parallelism=pa,
-                         participant_count=participant_count,
-                         operations=(op,), semantics=WorkloadSemantics())
+    return Compilation(status="COMPILED",
+                       request=_v3_request(participant_count),
+                       bundle=bundle, certificate=cert, error=None)
 
 
 def _fake_binary(tmp_path):
@@ -224,19 +242,17 @@ def _assert_view_valid(outcome: EvaluationOutcome):
 
 class TestPreconditions:
     def test_invalid_compilation_raises(self):
-        chain = _mesh_request_chain()
-        bad = Compilation(status="INVALID", request=chain.cr, bundle=None,
-                          certificate=None, error="boom")
+        bad = Compilation(status="INVALID", request=_v3_request(4),
+                          bundle=None, certificate=None, error="boom")
         with pytest.raises(ControlPlaneError) as ei:
-            EVAL.evaluate(bad, _workload(4))
+            EVAL.evaluate(bad, _lowered(bad))
         assert ei.value.code.value == "INVALID_INTENT"
 
     def test_unsupported_compilation_raises(self):
-        chain = _mesh_request_chain()
-        bad = Compilation(status="UNSUPPORTED", request=chain.cr,
+        bad = Compilation(status="UNSUPPORTED", request=_v3_request(4),
                           bundle=None, certificate=None, error="torus")
         with pytest.raises(ControlPlaneError) as ei:
-            EVAL.evaluate(bad, _workload(4))
+            EVAL.evaluate(bad, _lowered(bad))
         assert ei.value.code.value == "UNSUPPORTED_SEMANTICS"
 
     def test_failed_certificate_raises(self):
@@ -256,35 +272,35 @@ class TestPreconditions:
         )
         cert = verify_compiled_fabric(tampered)
         assert cert.overall == "FAIL"
-        bad = Compilation(status="COMPILED", request=chain.cr,
+        bad = Compilation(status="COMPILED", request=comp.request,
                           bundle=comp.bundle, certificate=cert, error=None)
         with pytest.raises(ControlPlaneError) as ei:
-            EVAL.evaluate(bad, _workload(4))
+            EVAL.evaluate(bad, _lowered(comp))
         assert ei.value.code.value == "EVIDENCE_INVALID"
 
     @pytest.mark.parametrize("bad", ["nope", 42])
     def test_wrong_types_raise(self, bad):
         chain, comp = _compiled_mesh()
         with pytest.raises(ControlPlaneError):
-            EVAL.evaluate(bad, _workload(4))
+            EVAL.evaluate(bad, _lowered(comp))
         with pytest.raises(ControlPlaneError):
             EVAL.evaluate(comp, bad)
         with pytest.raises(ControlPlaneError):
-            EVAL.evaluate(comp, _workload(4), options=bad)
+            EVAL.evaluate(comp, _lowered(comp), options=bad)
 
     def test_options_none_means_defaults(self):
         # options=None is the documented default (not a type error).
         # Defaults use traffic_class="DEFAULT", which the compiled VC
         # authority does not declare — the admission gate fires first.
         chain, comp = _compiled_mesh()
-        out = EVAL.evaluate(comp, _workload(4), options=None)
+        out = EVAL.evaluate(comp, _lowered(comp), options=None)
         assert out.status == UNSUPPORTED
         assert "VC0" in (out.reason or "")
 
     def test_bad_timeout_raises(self):
         chain, comp = _compiled_mesh()
         with pytest.raises(ControlPlaneError):
-            EVAL.evaluate(comp, _workload(4),
+            EVAL.evaluate(comp, _lowered(comp),
                           EvaluationOptions(timeout_s=0))
 
 
@@ -294,7 +310,7 @@ class TestAdmissionGate:
     def test_unknown_traffic_class_is_typed_refusal(self):
         chain, comp = _compiled_mesh()
         assert comp.status == "COMPILED"
-        out = EVAL.evaluate(comp, _workload(4),
+        out = EVAL.evaluate(comp, _lowered(comp),
                             EvaluationOptions(traffic_class="NOPE"))
         assert out.status == UNSUPPORTED
         assert "NOPE" in (out.reason or "")
@@ -320,7 +336,7 @@ class TestAdmissionGate:
             MESH_DOR_PROFILE_ID,
         )
         chain, comp = _compiled_mesh()
-        out = EVAL.evaluate(comp, _workload(4),
+        out = EVAL.evaluate(comp, _lowered(comp),
                             EvaluationOptions(traffic_class="A"))
         assert out.status == BACKEND_UNAVAILABLE
         assert out.backend_profile == MESH_DOR_PROFILE_ID
@@ -337,9 +353,12 @@ class TestProfileSelection:
         from test_fabric_artifact import build_chain as _bc
         chain = _bc(tp=2, pp=1, ep=1, dp=2, n_agents=4,
                     family=TopologyFamily.CONCENTRATED_MESH)
-        comp = FabricCompiler().compile(chain.cr)
-        assert comp.status == "COMPILED"
-        out = EVAL.evaluate(comp, _workload(4),
+        compiled = FabricCompiler().compile(chain.cr)
+        assert compiled.status == "COMPILED"
+        comp = Compilation(status="COMPILED", request=_v3_request(4),
+                           bundle=compiled.bundle,
+                           certificate=compiled.certificate, error=None)
+        out = EVAL.evaluate(comp, _lowered(comp),
                             EvaluationOptions(traffic_class="A"))
         assert out.status == UNSUPPORTED
         assert "no certified BookSim path" in (out.reason or "")
@@ -357,7 +376,7 @@ class TestProfileSelection:
         )
         chain, bundle = _anynet_bundle_2node()
         comp = _compilation_for(chain, bundle)
-        out = EVAL.evaluate(comp, _workload(2),
+        out = EVAL.evaluate(comp, _lowered(comp),
                             EvaluationOptions(traffic_class="A"))
         assert out.status == BACKEND_UNAVAILABLE
         assert out.backend_profile == BOOKSIM_STANDALONE_PROFILE
@@ -378,7 +397,7 @@ class TestProfileSelection:
         chain, comp = _compiled_mesh(small=False)
         assert comp.status == "COMPILED"
         assert comp.certificate.overall == "PASS"
-        out = EVAL.evaluate(comp, _workload(8),
+        out = EVAL.evaluate(comp, _lowered(comp),
                             EvaluationOptions(traffic_class="A"))
         assert out.status == BACKEND_UNAVAILABLE
         assert out.backend_profile == MESH_DOR_PROFILE_ID
@@ -389,7 +408,7 @@ class TestProfileSelection:
 
     def test_unknown_backend_unsupported(self):
         chain, comp = _compiled_mesh()
-        out = EVAL.evaluate(comp, _workload(4),
+        out = EVAL.evaluate(comp, _lowered(comp),
                             EvaluationOptions(backend="NOPE"))
         assert out.status == UNSUPPORTED
         assert "NOPE" in (out.reason or "")
@@ -406,7 +425,7 @@ class TestAvailability:
                 FileNotFoundError("no booksim here")))
         chain, bundle = _anynet_bundle_2node()
         comp = _compilation_for(chain, bundle)
-        out = EVAL.evaluate(comp, _workload(2),
+        out = EVAL.evaluate(comp, _lowered(comp),
                             EvaluationOptions(traffic_class="A"))
         assert out.status == BACKEND_UNAVAILABLE
         assert "producer" in (out.reason or "").lower()
@@ -420,7 +439,7 @@ class TestAvailability:
         chain, bundle = _anynet_bundle_2node()
         comp = _compilation_for(chain, bundle)
         out = EVAL.evaluate(
-            comp, _workload(2),
+            comp, _lowered(comp),
             EvaluationOptions(traffic_class="A",
                               binary=str(tmp_path / "missing-booksim")))
         assert out.status == BACKEND_UNAVAILABLE
@@ -436,7 +455,7 @@ class TestCyclesOnly:
         _stub_qualified_booksim(monkeypatch, producer_sha=fake_sha)
         chain, bundle = _anynet_bundle_2node()
         comp = _compilation_for(chain, bundle)
-        out = EVAL.evaluate(comp, _workload(2),
+        out = EVAL.evaluate(comp, _lowered(comp),
                             EvaluationOptions(traffic_class="A",
                                               binary=fake_bin,
                                               run_dir=str(tmp_path)))
@@ -466,7 +485,7 @@ class TestEvaluated:
         chain, bundle = _anynet_bundle_2node()
         comp = _compilation_for(chain, bundle)
         out = EVAL.evaluate(
-            comp, _workload(2),
+            comp, _lowered(comp),
             EvaluationOptions(traffic_class="A", network_clock_hz=10 ** 9,
                               binary=fake_bin, run_dir=str(tmp_path)))
         assert out.status == EVALUATED, out.reason
@@ -516,7 +535,7 @@ class TestEvaluated:
         chain, bundle = _anynet_bundle_2node()
         comp = _compilation_for(chain, bundle)
         out = EVAL.evaluate(
-            comp, _workload(2),
+            comp, _lowered(comp),
             EvaluationOptions(traffic_class="A", network_clock_hz=10 ** 9,
                               binary=fake_bin, run_dir=str(tmp_path)))
         view = out.to_view_dict()
@@ -539,7 +558,7 @@ class TestFailures:
         chain, bundle = _anynet_bundle_2node()
         comp = _compilation_for(chain, bundle)
         out = EVAL.evaluate(
-            comp, _workload(2),
+            comp, _lowered(comp),
             EvaluationOptions(traffic_class="A", network_clock_hz=10 ** 9,
                               binary=fake_bin, run_dir=str(tmp_path)))
         assert out.status == FAILED
@@ -555,29 +574,37 @@ class TestFailures:
         chain, bundle = _anynet_bundle_2node()
         comp = _compilation_for(chain, bundle)
         out = EVAL.evaluate(
-            comp, _workload(2),
+            comp, _lowered(comp),
             EvaluationOptions(traffic_class="A", network_clock_hz=10 ** 9,
                               binary=fake_bin, run_dir=str(tmp_path)))
         assert out.status == FAILED
         assert "crashed" in (out.reason or "")
         _assert_view_valid(out)
 
-    def test_unprojectable_workload_is_unsupported(self):
-        from veritx_dse.workload.canonical_graph import (
-            KIND_P2P, p2p_detail,
-        )
+    def test_foreign_semantic_graph_refuses_by_rederivation(self):
+        """A same-geometry graph from another design refuses: the
+        evaluator re-derives what the compilation's request must have
+        lowered to instead of trusting provenance."""
         chain, comp = _compiled_mesh()
-        pa = ParallelismArtifact(tp=2, pp=1, ep=1, dp=2)
-        op = OperationNode("s", KIND_P2P, (),
-                           p2p_detail(role="SEND", src_rank=0, dst_rank=1,
-                                      payload_bytes=64, participant_count=4))
-        graph = WorkloadGraph(parallelism=pa, participant_count=4,
-                              operations=(op,),
-                              semantics=WorkloadSemantics())
-        out = EVAL.evaluate(comp, graph,
-                            EvaluationOptions(traffic_class="A"))
+        foreign = lower_compile_workload(
+            _v3_request(4, payload=4096)).graph
+        assert foreign.workload_id() != _lowered(comp).workload_id()
+        with pytest.raises(ControlPlaneError) as ei:
+            EVAL.evaluate(comp, foreign,
+                          EvaluationOptions(traffic_class="A"))
+        assert ei.value.code.value == "INVALID_INTENT"
+        assert "not the lowering" in str(ei.value)
+
+    def test_relabeling_to_a_valid_other_class_refuses(self):
+        """The options class is an assertion against the lowered sidecar:
+        a class that exists in the fabric but is not the intent's class
+        is refused (never a QoS relabel)."""
+        chain, comp = _compiled_mesh()
+        out = EVAL.evaluate(comp, _lowered(comp),
+                            EvaluationOptions(traffic_class="B"))
         assert out.status == UNSUPPORTED
-        assert "complete transfer" in (out.reason or "")
+        assert "relabeling" in (out.reason or "")
+        assert out.performance_result_id is None
 
 
 # ── real binary (provisioned env only) ──────────────────────────────────
@@ -597,7 +624,7 @@ class TestRealBookSim:
         chain, bundle = _anynet_bundle_2node()
         comp = _compilation_for(chain, bundle)
         out = EVAL.evaluate(
-            comp, _workload(2),
+            comp, _lowered(comp),
             EvaluationOptions(traffic_class="A", network_clock_hz=10 ** 9,
                               run_dir=str(tmp_path), binary=str(binary),
                               timeout_s=120))

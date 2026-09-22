@@ -28,8 +28,10 @@ from dataclasses import dataclass
 from fractions import Fraction
 from typing import Any
 
+from veritx_dse.application.errors import ErrorCode
 from veritx_dse.application.fabric_compiler import Compilation, FabricCompiler
 from veritx_dse.application.fabric_evaluator import (
+    EvaluationError,
     EvaluationOptions,
     EvaluationOutcome,
     FabricEvaluator,
@@ -37,8 +39,10 @@ from veritx_dse.application.fabric_evaluator import (
 from veritx_dse.application.requirements import (
     RequirementEvaluator,
     report_passes,
+    validate_requirement_scopes,
 )
 from veritx_dse.core.errors import (
+    EvidenceInvalid,
     InvalidInput,
     MappingInvalid,
     UnsupportedSchedule,
@@ -114,6 +118,17 @@ def evaluate_product(
             requirements_pass=None,
             reason=f"{type(exc).__name__}: {exc}")
     unified = lowered.unified_traffic_class
+    # Pre-spawn gate: the ONE requirement-scope authority (shared with
+    # RequirementEvaluator) refuses a scope naming a class no intent
+    # declares — malformed input, fully determinable before backend
+    # work, so it must refuse here, not after a BookSim run.
+    try:
+        validate_requirement_scopes(request)
+    except InvalidInput as exc:
+        return ProductEvaluation(
+            request=request, compilation=compilation, lowered=lowered,
+            outcome=None, requirement_report=None, status="INVALID",
+            requirements_pass=None, reason=f"InvalidInput: {exc}")
     if unified is None:
         return ProductEvaluation(
             request=request, compilation=compilation, lowered=lowered,
@@ -132,13 +147,26 @@ def evaluate_product(
             requirement_report=None, status="UNSUPPORTED",
             requirements_pass=None,
             reason="multi-class workload refused before backend work")
-    outcome = FabricEvaluator().evaluate(
-        compilation, lowered.graph,
-        EvaluationOptions(
-            backend=backend, traffic_class=unified,
-            network_clock_hz=network_clock_hz, timeout_s=timeout_s,
-            require_quiescence=require_quiescence, run_dir=run_dir,
-            binary=binary, repo_root=repo_root, seed=seed))
+    try:
+        outcome = FabricEvaluator().evaluate(
+            compilation, lowered.graph,
+            EvaluationOptions(
+                backend=backend, traffic_class=unified,
+                network_clock_hz=network_clock_hz, timeout_s=timeout_s,
+                require_quiescence=require_quiescence, run_dir=run_dir,
+                binary=binary, repo_root=repo_root, seed=seed))
+    except EvaluationError as exc:
+        # Deliberate mapping of the evaluator's documented precondition
+        # space; an unknown code (e.g. INTERNAL_ERROR) stays a bug and
+        # propagates rather than being laundered into a product status.
+        status = _FABRIC_REFUSAL_STATUS.get(exc.code)
+        if status is None:
+            raise
+        return ProductEvaluation(
+            request=request, compilation=compilation, lowered=lowered,
+            outcome=None, requirement_report=None, status=status,
+            requirements_pass=None,
+            reason=f"{exc.code.value}: {exc.message}")
     if outcome.status != "EVALUATED" or \
             outcome.performance_result is None:
         return ProductEvaluation(
@@ -146,14 +174,40 @@ def evaluate_product(
             outcome=outcome, requirement_report=None,
             status=outcome.status, requirements_pass=None,
             reason=outcome.reason)
-    report = RequirementEvaluator.evaluate(
-        request, lowered.graph, outcome.performance_result)
+    try:
+        report = RequirementEvaluator.evaluate(
+            request, lowered.graph, outcome.performance_result)
+    except InvalidInput as exc:
+        return ProductEvaluation(
+            request=request, compilation=compilation, lowered=lowered,
+            outcome=outcome, requirement_report=None, status="INVALID",
+            requirements_pass=None, reason=f"InvalidInput: {exc}")
+    except MappingInvalid as exc:
+        return ProductEvaluation(
+            request=request, compilation=compilation, lowered=lowered,
+            outcome=outcome, requirement_report=None,
+            status="UNSUPPORTED", requirements_pass=None,
+            reason=f"MappingInvalid: {exc}")
+    except EvidenceInvalid as exc:
+        return ProductEvaluation(
+            request=request, compilation=compilation, lowered=lowered,
+            outcome=outcome, requirement_report=None, status="FAILED",
+            requirements_pass=None, reason=f"EvidenceInvalid: {exc}")
     return ProductEvaluation(
         request=request, compilation=compilation, lowered=lowered,
         outcome=outcome, requirement_report=report,
         status=outcome.status, requirements_pass=report_passes(report),
         reason=None if report_passes(report)
         else "binding requirements not satisfied")
+
+
+# The evaluator's documented precondition space -> product taxonomy. An
+# unknown code is not mapped (unexpected errors stay bugs).
+_FABRIC_REFUSAL_STATUS = {
+    ErrorCode.INVALID_INTENT: "INVALID",
+    ErrorCode.UNSUPPORTED_SEMANTICS: "UNSUPPORTED",
+    ErrorCode.EVIDENCE_INVALID: "FAILED",
+}
 
 
 __all__ = ["ProductEvaluation", "evaluate_product"]

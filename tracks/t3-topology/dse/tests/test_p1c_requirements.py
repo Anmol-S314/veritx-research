@@ -14,7 +14,11 @@ from pathlib import Path
 
 import pytest
 
-from veritx_dse.core.errors import InvalidInput, MappingInvalid
+from veritx_dse.core.errors import (
+    EvidenceInvalid,
+    InvalidInput,
+    MappingInvalid,
+)
 from veritx_dse.core.time import QTime
 from veritx_dse.model.compile_model import (
     Agent,
@@ -42,7 +46,6 @@ from veritx_dse.performance.network import NetworkWindowBinding
 from veritx_dse.performance.result import (
     PerformanceEventGraph,
     build_performance_result,
-    reverify_result,
 )
 from veritx_dse.performance.scheduler import schedule_workload
 from veritx_dse.performance.workload import (
@@ -52,6 +55,7 @@ from veritx_dse.performance.workload import (
 from veritx_dse.application.requirements import (
     RequirementEvaluator,
     report_passes,
+    verify_performance_result,
 )
 from veritx_dse.workload.intent_lowering import lower_compile_workload
 
@@ -85,7 +89,7 @@ def _net_workload(model, with_memory=False):
                             wave_d_operation_ids=("op1",))
 
 
-def _result(workload, window_us, *, workload_graph_id="w"):
+def _result(workload, window_us, *, workload_graph_id, design_hash):
     """Verified result with a window of window_us, bound to the graph."""
     binding = NetworkWindowBinding(
         workload_parent_id=workload_graph_id, schema_version=2,
@@ -96,12 +100,12 @@ def _result(workload, window_us, *, workload_graph_id="w"):
     graph = PerformanceEventGraph(
         workload=workload, network_binding=binding,
         wave_d_chain={"workload_graph_id": workload_graph_id,
+                      "design_hash": design_hash,
                       "physical_traffic_id": "pt"})
     schedule = schedule_workload(
         workload, network_durations={"NET": QTime(window_us, US)})
     res = build_performance_result(graph=graph, schedule=schedule)
-    reverify_result(res, workload=workload)
-    return res
+    return verify_performance_result(res, workload=workload)
 
 
 def _bound_result(request, workload, window_us):
@@ -110,7 +114,8 @@ def _bound_result(request, workload, window_us):
     requires)."""
     graph = lower_compile_workload(request).graph
     res = _result(workload, window_us,
-                  workload_graph_id=graph.workload_id())
+                  workload_graph_id=graph.workload_id(),
+                  design_hash=request.design_hash())
     return res, graph
 
 
@@ -193,10 +198,12 @@ class TestLatencyVerdicts:
         graph = PerformanceEventGraph(
             workload=workload,
             wave_d_chain={"workload_graph_id":
-                          lw.graph.workload_id()})
+                          lw.graph.workload_id(),
+                          "design_hash": req.design_hash()})
         schedule = schedule_workload(workload)
-        res = build_performance_result(graph=graph, schedule=schedule)
-        reverify_result(res, workload=workload)
+        res = verify_performance_result(
+            build_performance_result(graph=graph, schedule=schedule),
+            workload=workload)
         assert res["network_binding"] is None
         rep = RequirementEvaluator.evaluate(req, lw.graph, res)
         entry = rep["entries"][0]
@@ -344,9 +351,15 @@ class TestShapesAndRefusals:
     def test_missing_result_identity_refuses(self):
         req = _request([_ci()], [_lat_req(ceiling=10 ** 9)])
         res, graph = _bound_result(req, _net_workload(_model()), 2500)
-        del res["resource_id"]
+        without_id = dict(res)
+        del without_id["resource_id"]
+        # A missing/stale identity cannot pass the verified boundary...
+        with pytest.raises(EvidenceInvalid):
+            verify_performance_result(
+                without_id, workload=res.temporal_workload)
+        # ...and the evaluator never accepts the naked dict.
         with pytest.raises(InvalidInput):
-            RequirementEvaluator.evaluate(req, graph, res)
+            RequirementEvaluator.evaluate(req, graph, without_id)
 
     def test_evaluate_is_deterministic(self):
         req = _request([_ci()], [_lat_req(ceiling=10 ** 9)])

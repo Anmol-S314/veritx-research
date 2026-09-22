@@ -49,10 +49,16 @@ Measurement honesty (binding — every rule enforced below):
 * **The triple must belong to one design.** Geometry equality alone
   admits a same-shape transplant: two v3 requests with identical
   TP/PP/EP/DP but different payloads/semantics lower to same-geometry
-  graphs. The workload's provenance design_hash must equal the
-  request's design_hash(), and the performance result's Wave-D chain
-  must bind THIS workload's workload_id(). Missing provenance or a
-  missing chain refuses — an absent binding is not a pass.
+  graphs. The workload must be EXACTLY this request's re-derived
+  lowering (provenance is metadata, not authority — it is excluded from
+  workload_id()), and the performance result must have passed the
+  verified boundary (``verify_performance_result`` -> a
+  ``VerifiedPerformanceResult``); its Wave-D chain must bind BOTH this
+  workload's workload_id() AND this request's design_hash (traffic-class
+  semantics live in the lowering sidecar, not in the canonical graph
+  identity, so two designs differing only in traffic class share a
+  workload_id). A naked result dict, a missing chain binding or a
+  foreign graph refuses — an absent binding is not a pass.
 
 Report shape follows contracts/srota/v1/requirement.report.schema.json
 (contract_version 1): per-requirement {requirement_index,
@@ -76,7 +82,10 @@ from veritx_dse.model.compile_model import (
     RequirementV3,
     derive_v3_traffic_classes,
 )
+from veritx_dse.performance.result import ResultError, reverify_result
+from veritx_dse.performance.workload import TemporalWorkload
 from veritx_dse.workload.canonical_graph import WorkloadGraph
+from veritx_dse.workload.intent_lowering import lower_compile_workload
 
 REQUIREMENT_REPORT_CONTRACT_VERSION = 1
 REQUIREMENT_REPORT_DOMAIN = "veritx/requirement-report/v1"
@@ -85,6 +94,54 @@ VERDICT_SATISFIED = "SATISFIED"
 VERDICT_VIOLATED = "VIOLATED"
 VERDICT_UNMEASURABLE = "UNMEASURABLE"
 VERDICT_NOT_APPLICABLE = "NOT_APPLICABLE"
+
+
+class VerifiedPerformanceResult(dict):
+    """A PerformanceResult document that passed ``reverify_result``.
+
+    The authoritative input to :meth:`RequirementEvaluator.evaluate`: a
+    naked dict is NOT authentication — a nonempty ``resource_id`` proves
+    nothing about the persisted content — so the evaluator refuses one
+    and requires this wrapper. The evaluator re-runs ``reverify_result``
+    on every call, so even a hand-constructed wrapper whose content was
+    mutated after verification refuses. ``temporal_workload`` is the
+    verified parent the result was re-derived against.
+    """
+
+    __slots__ = ("temporal_workload",)
+
+    def __init__(self, document: Mapping[str, Any], *,
+                 temporal_workload: TemporalWorkload) -> None:
+        super().__init__(document)
+        self.temporal_workload = temporal_workload
+
+
+def verify_performance_result(
+        document: Any, *, workload: TemporalWorkload,
+        ) -> VerifiedPerformanceResult:
+    """The verified boundary: raw result -> ``reverify_result`` -> wrapper.
+
+    Re-derives the event graph, the deterministic schedule and every
+    summary from the supplied verified TemporalWorkload. A document that
+    no longer matches its own ``resource_id`` (stale ID after mutation)
+    refuses here — before any requirement is adjudicated.
+    """
+    if not isinstance(document, Mapping):
+        raise InvalidInput(
+            f"verify_performance_result takes a result document mapping, "
+            f"got {type(document).__name__}")
+    if not isinstance(workload, TemporalWorkload):
+        raise InvalidInput(
+            f"verify_performance_result takes a TemporalWorkload, got "
+            f"{type(workload).__name__}")
+    try:
+        reverify_result(document, workload=workload)
+    except ResultError as exc:
+        raise EvidenceInvalid(
+            f"performance result failed reverify_result: {exc} — a stale "
+            f"resource_id is not authentication; refusing the persisted "
+            f"content") from exc
+    return VerifiedPerformanceResult(document, temporal_workload=workload)
 
 
 def _qtime_fraction(d: Any, what: str) -> Fraction:
@@ -345,6 +402,32 @@ def _evaluate_bandwidth(*, requirement: RequirementV3,
             f"via {measured_authority}")
 
 
+def validate_requirement_scopes(
+        request: CompileRequestV3) -> tuple[str, ...]:
+    """The ONE requirement-scope authority.
+
+    Returns the request's intent-class registry and refuses (InvalidInput)
+    any requirement scope naming a class outside it. Both the product
+    pre-spawn gate and RequirementEvaluator call THIS function — the rule
+    exists once, never mirrored.
+    """
+    if not isinstance(request, CompileRequestV3):
+        raise InvalidInput(
+            f"validate_requirement_scopes takes a CompileRequestV3, got "
+            f"{type(request).__name__}")
+    intent_classes = derive_v3_traffic_classes(request)
+    for index, requirement in enumerate(request.requirements):
+        scope = getattr(requirement, "traffic_class", None)
+        if scope is not None and intent_classes and \
+                scope not in intent_classes:
+            raise InvalidInput(
+                f"requirements[{index}] constrains traffic class "
+                f"{scope!r}, which no workload intent declares "
+                f"(registry: {list(intent_classes)}) — refusing a "
+                f"constraint over absent traffic")
+    return intent_classes
+
+
 class RequirementEvaluator:
     """Evaluates v3 requirements over a verified PerformanceResult."""
 
@@ -354,12 +437,13 @@ class RequirementEvaluator:
         """Build the RequirementReport for one (request, workload, result).
 
         Refuses (typed): non-v3 request, non-graph workload, geometry
-        mismatch between request and workload, workload provenance that
-        does not name this request's design, a performance result whose
-        Wave-D chain binds another workload (or that carries no chain),
-        unknown class scope, or a result missing its identity/makespan
-        spine. Per-metric gaps become UNMEASURABLE entries, never
-        exceptions and never passes.
+        mismatch between request and workload, a workload that is not
+        exactly this request's re-derived lowering, a naked performance
+        result (the verified boundary is required), a performance result
+        whose Wave-D chain binds another workload or another design (or
+        that carries no chain binding), unknown class scope, or a result
+        missing its identity/makespan spine. Per-metric gaps become
+        UNMEASURABLE entries, never exceptions and never passes.
         """
         if not isinstance(request, CompileRequestV3):
             raise InvalidInput(
@@ -369,6 +453,19 @@ class RequirementEvaluator:
             raise InvalidInput(
                 f"RequirementEvaluator takes a WorkloadGraph, got "
                 f"{type(workload).__name__}")
+        if not isinstance(performance, VerifiedPerformanceResult):
+            raise InvalidInput(
+                "RequirementEvaluator takes a VerifiedPerformanceResult "
+                "produced by verify_performance_result(); a naked result "
+                "dict is not authenticated content — a nonempty "
+                "resource_id is not authentication")
+        try:
+            reverify_result(performance,
+                            workload=performance.temporal_workload)
+        except ResultError as exc:
+            raise EvidenceInvalid(
+                f"performance result no longer re-verifies: {exc} — "
+                f"refusing mutated persisted content") from exc
         req_shape = (request.workload.tp, request.workload.pp,
                      request.workload.ep, request.workload.dp)
         graph_shape = workload.parallelism.sizes()
@@ -378,38 +475,27 @@ class RequirementEvaluator:
                 f"request geometry TP={req_shape} — equal world size is "
                 f"not semantic equivalence; refusing a transposed "
                 f"evaluation")
-        if not isinstance(performance, dict):
-            raise InvalidInput("performance must be a verified result dict")
         result_id = performance.get("resource_id")
         if not isinstance(result_id, str) or not result_id:
             raise InvalidInput(
                 "performance result carries no resource_id — cannot bind "
                 "report entries to evidence")
 
-        # ── provenance law: the triple must belong to ONE design ─────
-        # Geometry equality is necessary, not sufficient: payload bytes,
-        # traffic classes and collective semantics do not enter the
-        # geometry, so a same-shape transplant would otherwise yield a
-        # report carrying B's design_hash over A's measurements.
+        # ── the workload must be exactly this request's lowering ────
+        # Provenance is metadata, not authority: it is excluded from
+        # workload_id() by canonical law, so any caller can forge a
+        # matching design_hash onto a foreign semantic graph. Re-derive
+        # what the request must have produced and compare content
+        # identity — never ask the workload who its parent is.
         request_design_hash = request.design_hash()
-        provenance = workload.provenance
-        if not isinstance(provenance, Mapping):
-            raise EvidenceInvalid(
-                "workload carries no provenance block — the request, "
-                "workload and performance cannot be proven to belong "
-                "together, and missing provenance is not a pass")
-        workload_design_hash = provenance.get("design_hash")
-        if not isinstance(workload_design_hash, str) \
-                or not workload_design_hash:
-            raise EvidenceInvalid(
-                f"workload provenance declares no design_hash (has "
-                f"{sorted(provenance)}); refusing an unbindable workload")
-        if workload_design_hash != request_design_hash:
+        expected = lower_compile_workload(request)
+        workload_id = workload.workload_id()
+        if workload_id != expected.graph.workload_id():
             raise MappingInvalid(
-                f"workload provenance design_hash "
-                f"{workload_design_hash!r} does not match request "
-                f"design_hash {request_design_hash!r} — refusing a "
-                f"workload transplanted from another design")
+                f"workload {workload_id!r} is not the lowering of this "
+                f"request ({expected.graph.workload_id()!r}) — refusing "
+                f"a semantic transplant; provenance cannot bind a "
+                f"foreign graph")
         chain = performance.get("wave_d_chain")
         if not isinstance(chain, Mapping):
             raise EvidenceInvalid(
@@ -421,15 +507,33 @@ class RequirementEvaluator:
             raise EvidenceInvalid(
                 f"performance wave_d_chain declares no workload_graph_id "
                 f"(has {sorted(chain)}); refusing an unbindable result")
-        workload_id = workload.workload_id()
         if chain_workload_id != workload_id:
             raise MappingInvalid(
                 f"performance wave_d_chain.workload_graph_id "
                 f"{chain_workload_id!r} is not this workload's id "
                 f"{workload_id!r} — refusing measurements transplanted "
                 f"from another workload")
+        # The workload graph identity deliberately excludes traffic-class
+        # semantics (the lowering sidecar carries them), so two designs
+        # differing ONLY in traffic class lower to the same workload_id.
+        # The chain must therefore name the design it measured; a chain
+        # without that binding is not a pass.
+        chain_design_hash = chain.get("design_hash")
+        if not isinstance(chain_design_hash, str) or not chain_design_hash:
+            raise EvidenceInvalid(
+                f"performance wave_d_chain declares no design_hash (has "
+                f"{sorted(chain)}); the measurements cannot be bound to "
+                f"this design, and a missing binding is not a pass")
+        if chain_design_hash != request_design_hash:
+            raise MappingInvalid(
+                f"performance wave_d_chain.design_hash "
+                f"{chain_design_hash!r} does not match request design "
+                f"hash {request_design_hash!r} — refusing measurements "
+                f"taken for another design (same-geometry graphs with "
+                f"different traffic-class semantics share a "
+                f"workload_id)")
 
-        intent_classes = derive_v3_traffic_classes(request)
+        intent_classes = validate_requirement_scopes(request)
         single_class = len(intent_classes) <= 1
         clock_hz = _design_clock_hz(request)
         design_hash = "sha256:" + request.design_hash()
@@ -439,13 +543,6 @@ class RequirementEvaluator:
             if not isinstance(req, RequirementV3):
                 raise InvalidInput(
                     f"requirements[{i}] must be a RequirementV3")
-            if req.traffic_class is not None and intent_classes \
-                    and req.traffic_class not in intent_classes:
-                raise InvalidInput(
-                    f"requirements[{i}] constrains traffic class "
-                    f"{req.traffic_class!r}, which no workload intent "
-                    f"declares (registry: {list(intent_classes)}) — "
-                    f"refusing a constraint over absent traffic")
             scoped_conservative = (req.traffic_class is not None
                                    and not single_class)
             parts: list[tuple[str, Any, Any, str, str]] = []
@@ -569,6 +666,9 @@ __all__ = [
     "VERDICT_SATISFIED",
     "VERDICT_UNMEASURABLE",
     "VERDICT_VIOLATED",
+    "VerifiedPerformanceResult",
     "report_identity",
     "report_passes",
+    "validate_requirement_scopes",
+    "verify_performance_result",
 ]
