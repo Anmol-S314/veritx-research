@@ -71,18 +71,21 @@ from collections.abc import Mapping
 from fractions import Fraction
 from typing import Any
 
-from veritx_dse.core.artifact import content_id
+from veritx_dse.core.artifact import ImmutableError, content_id
 from veritx_dse.core.errors import (
+    ArtifactError,
     EvidenceInvalid,
     InvalidInput,
     MappingInvalid,
 )
+from veritx_dse.core.time import TimeError
 from veritx_dse.model.compile_model import (
     CompileRequestV3,
     RequirementV3,
     derive_v3_traffic_classes,
 )
 from veritx_dse.performance.result import ResultError, reverify_result
+from veritx_dse.performance.scheduler import SchedulerError
 from veritx_dse.performance.workload import TemporalWorkload
 from veritx_dse.workload.canonical_graph import WorkloadGraph
 from veritx_dse.workload.intent_lowering import lower_compile_workload
@@ -134,14 +137,33 @@ def verify_performance_result(
         raise InvalidInput(
             f"verify_performance_result takes a TemporalWorkload, got "
             f"{type(workload).__name__}")
+    _reverify_or_refuse(document, workload)
+    return VerifiedPerformanceResult(document, temporal_workload=workload)
+
+
+# Every documented refusal of the persisted-result verification stack:
+# reverify_result (ResultError), NetworkWindowBinding/QTime parsing
+# (TimeError), deterministic scheduling (SchedulerError), canonical
+# freezing (ImmutableError) and artifact validation (ArtifactError). A
+# document that trips any of these is "not verifiable" — callers get one
+# EvidenceInvalid taxonomy. Unexpected programming errors
+# (KeyError/AttributeError/TypeError) still escape as bugs: this is not
+# a broad catch.
+_VERIFY_REFUSAL_TYPES = (ResultError, TimeError, SchedulerError,
+                         ImmutableError, ArtifactError)
+
+
+def _reverify_or_refuse(document: Any,
+                        workload: TemporalWorkload) -> None:
+    """Run ``reverify_result`` and normalize its refusal taxonomy."""
     try:
         reverify_result(document, workload=workload)
-    except ResultError as exc:
+    except _VERIFY_REFUSAL_TYPES as exc:
         raise EvidenceInvalid(
-            f"performance result failed reverify_result: {exc} — a stale "
-            f"resource_id is not authentication; refusing the persisted "
-            f"content") from exc
-    return VerifiedPerformanceResult(document, temporal_workload=workload)
+            f"performance result failed reverify_result: "
+            f"{type(exc).__name__}: {exc} — refusing the persisted "
+            f"content (a stale resource_id is not authentication)"
+        ) from exc
 
 
 def _qtime_fraction(d: Any, what: str) -> Fraction:
@@ -459,13 +481,7 @@ class RequirementEvaluator:
                 "produced by verify_performance_result(); a naked result "
                 "dict is not authenticated content — a nonempty "
                 "resource_id is not authentication")
-        try:
-            reverify_result(performance,
-                            workload=performance.temporal_workload)
-        except ResultError as exc:
-            raise EvidenceInvalid(
-                f"performance result no longer re-verifies: {exc} — "
-                f"refusing mutated persisted content") from exc
+        _reverify_or_refuse(performance, performance.temporal_workload)
         req_shape = (request.workload.tp, request.workload.pp,
                      request.workload.ep, request.workload.dp)
         graph_shape = workload.parallelism.sizes()
