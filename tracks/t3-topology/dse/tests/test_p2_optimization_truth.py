@@ -54,7 +54,7 @@ from test_p2_real_adapter import _pp_request
 from p2_verified_support import (  # noqa: E402
     TEST_METRIC_REGISTRY,
     certified_evaluation,
-    optimize_certified_for_tests,
+    run_certified_mechanics_for_tests,
 )
 
 
@@ -68,7 +68,7 @@ def _optimize(base, defn, port):
     )
     from veritx_dse.optimization.real_evaluator import RealCandidateEvaluator
     if getattr(port, "certified_pipeline", False):
-        return optimize_certified_for_tests(base, defn, port,
+        return run_certified_mechanics_for_tests(base, defn, port,
                                             TEST_METRIC_REGISTRY)
     if isinstance(port, RealCandidateEvaluator):
         return Optimizer()._optimize(base, defn, port,
@@ -542,7 +542,34 @@ def test_r2_certified_registry_is_frozen_and_experimental_is_isolated():
 
 
 def _optimize_registry(base, defn, port, registry):
-    return optimize_certified_for_tests(base, defn, port, registry)
+    return run_certified_mechanics_for_tests(base, defn, port, registry)
+
+
+def test_c1_subclass_cannot_hijack_the_certified_evaluator(tmp_path):
+    """C1 attack 1: the certified evaluator factory is a module-private
+    function, not an overridable method. A subclass override is never
+    consulted, the real evaluator runs, and no synthetic port can
+    manufacture certified eligibility."""
+    from veritx_dse.optimization.result import CertifiedBackendConfig
+
+    calls = []
+
+    class _Hijack(Optimizer):
+        def _build_certified_evaluator(self, backend_config):
+            calls.append(backend_config)
+            return _VerifiedStubPort({"latency": 10.0})
+
+    result = _Hijack().optimize_certified(
+        _real_base(),
+        _defn(objectives=(Objective("completion_cycles", "MIN"),)),
+        backend_config=CertifiedBackendConfig(
+            binary="/no-such-booksim", run_root=str(tmp_path / "hijack")))
+    assert calls == []  # the override was never consulted
+    assert result.result_class == "CERTIFIED_PRODUCT"
+    assert result.pareto_ids == ()
+    for r in result.records:
+        assert r.evaluation_status == "BACKEND_UNAVAILABLE"
+        assert r.pareto_eligible is False
 
 
 def test_1_missing_objective_unmeasurable_ineligible_no_keyerror(tmp_path):

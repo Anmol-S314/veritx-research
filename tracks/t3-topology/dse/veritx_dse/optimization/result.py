@@ -187,6 +187,23 @@ class CertifiedBackendConfig:
     require_quiescence: bool = True
 
 
+def _make_real_certified_evaluator(config: CertifiedBackendConfig) -> Any:
+    """Module-private, non-overridable certified evaluator factory (C1).
+
+    ``optimize_certified`` calls THIS function, not a method, so ordinary
+    subclass polymorphism cannot substitute a synthetic evaluator into
+    the certified path.
+    """
+    from .real_evaluator import RealCandidateEvaluator
+    return RealCandidateEvaluator(
+        binary=config.binary,
+        run_root=config.run_root,
+        network_clock_hz=config.network_clock_hz,
+        timeout_s=config.timeout_s,
+        repo_root=config.repo_root,
+        require_quiescence=config.require_quiescence)
+
+
 def _verified_certified_claims(cand: Any, ev: Any):
     """Bind a certified evaluation to Worker B's verifier authority (A4).
 
@@ -680,31 +697,15 @@ class Optimizer:
                 f"CertifiedMetricRegistry, got {type(registry).__name__} "
                 f"— experimental/plugin registries can never yield "
                 f"CERTIFIED_PRODUCT results")
-        evaluator = self._build_certified_evaluator(backend_config)
+        evaluator = _make_real_certified_evaluator(backend_config)
         return self._optimize(base_request, definition, evaluator,
                               certified_mode=True, metric_registry=registry)
-
-    def _build_certified_evaluator(self, backend_config: Any) -> Any:
-        """Construct the optimizer-OWNED certified evaluator (R1).
-
-        Production always builds ``RealCandidateEvaluator`` here; no
-        caller-supplied evaluator can enter the certified path. Unit
-        tests override this factory (never the public signature) to
-        drive certified-pipeline semantics without BookSim.
-        """
-        from .real_evaluator import RealCandidateEvaluator
-        return RealCandidateEvaluator(
-            binary=backend_config.binary,
-            run_root=backend_config.run_root,
-            network_clock_hz=backend_config.network_clock_hz,
-            timeout_s=backend_config.timeout_s,
-            repo_root=backend_config.repo_root,
-            require_quiescence=backend_config.require_quiescence)
 
     def _optimize(self, base_request: Any, definition: Any,
                   evaluator: Any, *,
                   certified_mode: bool,
-                  metric_registry: Any) -> OptimizationResult:
+                  metric_registry: Any,
+                  result_class: str | None = None) -> OptimizationResult:
         from veritx_dse.application.requirements import report_passes
 
         from .candidate import candidate_id_for
@@ -1008,8 +1009,9 @@ class Optimizer:
             pareto_ids=tuple(front),
             selected_candidate_id=selected,
             selection_rationale=rationale,
-            result_class=(RESULT_CLASS_CERTIFIED if certified_mode
-                          else RESULT_CLASS_ANALYTIC),
+            result_class=(result_class if result_class is not None
+                          else (RESULT_CLASS_CERTIFIED if certified_mode
+                                else RESULT_CLASS_ANALYTIC)),
         )
 
 

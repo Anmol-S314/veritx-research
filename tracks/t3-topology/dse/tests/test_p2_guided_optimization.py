@@ -65,7 +65,7 @@ from veritx_dse.optimization.search import (  # noqa: E402
 from p2_verified_support import (  # noqa: E402
     TEST_METRIC_REGISTRY,
     certified_evaluation,
-    optimize_certified_for_tests,
+    run_certified_mechanics_for_tests,
 )
 
 
@@ -74,7 +74,7 @@ def _optimize(base, defn, port):
     pipeline with the test-owned FROZEN registry (R1/R2); analytic ports
     use the analytic entry point."""
     if getattr(port, "certified_pipeline", False):
-        return optimize_certified_for_tests(base, defn, port,
+        return run_certified_mechanics_for_tests(base, defn, port,
                                             TEST_METRIC_REGISTRY)
     return Optimizer().optimize_with_port(base, defn, port)
 
@@ -748,7 +748,7 @@ class TestObjectiveStateCompleteness:
     def test_non_finite_or_non_real_objective_is_unmeasurable(self, bad):
         from p2_verified_support import (
             build_test_metric_registry,
-            optimize_certified_for_tests,
+            run_certified_mechanics_for_tests,
         )
         # A frozen test registry whose latency producer returns a
         # non-finite/non-real value: UNMEASURABLE, and the evaluator's
@@ -756,7 +756,7 @@ class TestObjectiveStateCompleteness:
         registry = build_test_metric_registry(
             version="test-nonfinite-v1",
             latency=lambda verified: bad)
-        result = optimize_certified_for_tests(
+        result = run_certified_mechanics_for_tests(
             _certified_base(), self._defn(), _ValuePort({"latency": bad}),
             registry)
         assert result.pareto_ids == ()

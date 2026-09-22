@@ -218,31 +218,27 @@ def build_test_metric_registry(*, version: str = "test-overlay-v1",
 TEST_METRIC_REGISTRY = build_test_metric_registry()
 
 
-def optimize_certified_for_tests(base: Any, definition: Any, port: Any,
-                                metric_registry: Any) -> Any:
-    """Unit-test seam for the CERTIFIED entry point (R1).
+def run_certified_mechanics_for_tests(base: Any, definition: Any, port: Any,
+                                      metric_registry: Any) -> Any:
+    """Research-classified exercise of the certified pipeline mechanics.
 
-    Production ``Optimizer.optimize_certified`` owns the real evaluator
-    and accepts no port. This helper overrides only the evaluator
-    FACTORY of that same public entry point, so the certified semantics
-    (verifier authority, frozen registry, eligibility) stay covered
-    without BookSim. The public boundary itself is covered by the
-    real-BookSim tests and the R1 refusal attack.
+    C1 removed every overridable certified-evaluator seam: the PUBLIC
+    ``optimize_certified`` always builds ``RealCandidateEvaluator`` via a
+    module-private factory. Tests needing synthetic evaluators exercise
+    the optimizer's certified MECHANICS (verifier authority, frozen
+    registry extraction, eligibility) through this test/research path,
+    which is classified ANALYTIC_RESEARCH and therefore can NEVER
+    manufacture a CERTIFIED_PRODUCT result.
     """
     from veritx_dse.optimization.result import (
-        CertifiedBackendConfig,
+        RESULT_CLASS_ANALYTIC,
         Optimizer,
     )
-
-    class _TestCertifiedOptimizer(Optimizer):
-        def _build_certified_evaluator(self, backend_config):
-            return port
-
-    return _TestCertifiedOptimizer().optimize_certified(
-        base, definition,
-        backend_config=CertifiedBackendConfig(
-            binary="test-only", run_root="test-only"),
-        metric_registry=metric_registry)
+    return Optimizer()._optimize(
+        base, definition, port,
+        certified_mode=True,
+        metric_registry=metric_registry,
+        result_class=RESULT_CLASS_ANALYTIC)
 
 
 def certified_evaluation(candidate: Any, *, cycles: int = 100,
@@ -292,5 +288,5 @@ def certified_evaluation(candidate: Any, *, cycles: int = 100,
 __all__ = [
     "CLOCK_HZ", "OVERLAY_METRICS", "TEST_METRIC_REGISTRY",
     "build_authenticated", "build_test_metric_registry", "build_verified",
-    "certified_evaluation", "optimize_certified_for_tests",
+    "certified_evaluation", "run_certified_mechanics_for_tests",
 ]
