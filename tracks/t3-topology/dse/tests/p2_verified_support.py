@@ -14,18 +14,18 @@ builder dereferences its bytes, so the proof is as strong as the
 persisted-evidence boundary allows. ``build_verified`` remains the
 synthetic A3-shape helper used by refusal attacks.
 
-Certified metrics come ONLY from registered producers over the derived
-claims. Analytic stand-in metrics (``latency``/``area``) are registered
-by ``test_metric_authorities()``, whose producers read a
-``wave_d_chain.test_metrics`` overlay carried inside the verified result
-— never the evaluator's ``objective_values``.
+Certified metrics come ONLY from the FROZEN certified registry over
+``claims.verified_result``. Tests that need analytic stand-in metrics
+(``latency``/``area``) construct their OWN frozen test registry through
+``MetricRegistryBuilder`` — never production globals; the producers read
+a ``wave_d_chain.test_metrics`` overlay carried inside the verified
+result, never the evaluator's ``objective_values``.
 """
 from __future__ import annotations
 
 import math
 import tempfile
 from collections.abc import Mapping
-from contextlib import contextmanager
 from fractions import Fraction
 from pathlib import Path
 from typing import Any
@@ -44,9 +44,10 @@ from veritx_dse.optimization.evaluators import (
     AUTHORITY_CERTIFIED_BACKEND,
     CandidateEvaluation,
 )
-from veritx_dse.optimization.metric_authority import (
-    register_metric_authority,
-    unregister_metric_authority,
+from veritx_dse.optimization.metric_registry import (
+    CERTIFIED_METRIC_REGISTRY,
+    CertifiedMetricRegistry,
+    MetricRegistryBuilder,
 )
 from veritx_dse.performance.model import (
     ClockDef,
@@ -196,16 +197,25 @@ def _overlay_extractor(metric: str):
     return extract
 
 
-@contextmanager
-def test_metric_authorities():
-    """Register the analytic stand-in producers for certified test ports."""
-    for metric in OVERLAY_METRICS:
-        register_metric_authority(metric, _overlay_extractor(metric))
-    try:
-        yield
-    finally:
-        for metric in OVERLAY_METRICS:
-            unregister_metric_authority(metric)
+def build_test_metric_registry(*, version: str = "test-overlay-v1",
+                               latency: Any = None,
+                               ) -> CertifiedMetricRegistry:
+    """A frozen TEST-OWNED registry (never a production global).
+
+    Extends the product built-ins with the analytic stand-in producers
+    used by certified test doubles. ``latency`` overrides the latency
+    producer (used by the non-finite-value attack).
+    """
+    builder = MetricRegistryBuilder(version, base=CERTIFIED_METRIC_REGISTRY)
+    builder.register("latency",
+                     latency if latency is not None
+                     else _overlay_extractor("latency"))
+    builder.register("area", _overlay_extractor("area"))
+    return builder.freeze()
+
+
+#: Module-level frozen test registry for the standard certified doubles.
+TEST_METRIC_REGISTRY = build_test_metric_registry()
 
 
 def certified_evaluation(candidate: Any, *, cycles: int = 100,
@@ -253,6 +263,7 @@ def certified_evaluation(candidate: Any, *, cycles: int = 100,
 
 
 __all__ = [
-    "CLOCK_HZ", "OVERLAY_METRICS", "build_authenticated", "build_verified",
-    "certified_evaluation", "test_metric_authorities",
+    "CLOCK_HZ", "OVERLAY_METRICS", "TEST_METRIC_REGISTRY",
+    "build_authenticated", "build_test_metric_registry", "build_verified",
+    "certified_evaluation",
 ]

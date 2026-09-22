@@ -58,6 +58,10 @@ from veritx_dse.core.artifact import content_id
 from veritx_dse.optimization.evaluators import (
     AUTHORITY_CERTIFIED_BACKEND,
 )
+from veritx_dse.optimization.metric_registry import (
+    CERTIFIED_METRIC_REGISTRY,
+    CertifiedMetricRegistry,
+)
 
 RESULT_DOMAIN = "veritx/optimization-result/v2"
 
@@ -214,38 +218,40 @@ def _verified_certified_claims(cand: Any, ev: Any):
     return claims, report
 
 
-def _has_metric_authority(metric: str) -> bool:
-    """Is there a registered producer for this metric? (A4 gate)."""
-    from .metric_authority import registered_metric_authorities
-    return metric in registered_metric_authorities()
+def _has_metric_authority(registry: Any, metric: str) -> bool:
+    """Does the frozen certified registry carry this metric? (A4/R2)."""
+    return isinstance(registry, CertifiedMetricRegistry) and \
+        registry.has_metric(metric)
 
 
 def _authoritative_metrics(ev: Any, definition: Any, claims: Any,
                            port_measured: dict[str, float],
                            port_invalid: dict[str, str],
+                           registry: Any,
                            ) -> dict[str, float]:
-    """Registered metrics extracted from the verified claims (A4/R3).
+    """Registered metrics extracted from the verified claims (A4/R2/R3).
 
     The verifier returns authenticated PRIMITIVES; optimization runs the
-    registered producers over ``claims.verified_result`` afterwards
-    (evidence truth never depends upward on optimization). There is NO
-    fallback to the evaluator's ``objective_values``: a registered metric
-    the evaluator carried with a different (or non-finite) value refuses;
-    a registered metric the claims do not evidence is UNMEASURABLE and
-    the evaluator's number is ignored.
+    FROZEN certified registry's producers over ``claims.verified_result``
+    afterwards (evidence truth never depends upward on optimization).
+    There is NO fallback to the evaluator's ``objective_values``: a
+    registered metric the evaluator carried with a different (or
+    non-finite) value refuses; a registered metric the claims do not
+    evidence is UNMEASURABLE and the evaluator's number is ignored.
     """
-    from .metric_authority import (
-        extract_authoritative_metrics,
-        registered_metric_authorities,
-    )
-
+    if not isinstance(registry, CertifiedMetricRegistry):
+        raise OptimizationResultError(
+            f"certified extraction requires a frozen "
+            f"CertifiedMetricRegistry, got {type(registry).__name__} — "
+            f"experimental/plugin registries can never yield "
+            f"CERTIFIED_PRODUCT results")
     verified = getattr(claims, "verified_result", None)
     if verified is None:
         raise OptimizationResultError(
             f"Worker B's verifier returned claims for "
             f"{ev.candidate_id!r} without a verified result — refusing "
             f"unverifiable derived claims")
-    derived = extract_authoritative_metrics(verified)
+    derived = registry.extract_all(verified)
     needed = {o.metric for o in definition.objectives} | \
         {c.metric for c in (definition.constraints or [])}
     measured_all: dict[str, float] = {}
@@ -253,7 +259,7 @@ def _authoritative_metrics(ev: Any, definition: Any, claims: Any,
         value = _finite_number(derived.get(metric))
         if value is not None:
             measured_all[metric] = value
-    for metric in registered_metric_authorities():
+    for metric in registry.metric_names():
         if metric not in port_measured and metric not in port_invalid:
             continue
         authoritative = _finite_number(derived.get(metric))
@@ -600,13 +606,16 @@ class Optimizer:
     """Deterministic optimize: search -> evaluate -> verdicts -> Pareto."""
 
     def optimize(self, base_request: Any, definition: Any,
-                 evaluator: Any) -> OptimizationResult:
+                 evaluator: Any, *,
+                 metric_registry: Any = None) -> OptimizationResult:
         from veritx_dse.application.requirements import report_passes
 
         from .candidate import candidate_id_for
         from .constraints import evaluate_all
         from .pareto import pareto_ids as _pareto_ids
         from .search import search_candidates
+        registry = metric_registry if metric_registry is not None \
+            else CERTIFIED_METRIC_REGISTRY
         base_hash = base_request.design_hash()
         candidates = search_candidates(base_request, definition)
         if not candidates:
@@ -676,12 +685,13 @@ class Optimizer:
                 else:
                     measured_all[str(key)] = number
             if claims is not None:
-                # A4: certified metrics come ONLY from the registered
-                # producers over the derived claims; the evaluator's
-                # objective_values never score (a registered-metric
-                # misreport refuses).
+                # A4/R2: certified metrics come ONLY from the frozen
+                # certified registry over the verified claims; the
+                # evaluator's objective_values never score (a
+                # registered-metric misreport refuses).
                 measured_all = _authoritative_metrics(
-                    ev, definition, claims, measured_all, invalid_values)
+                    ev, definition, claims, measured_all, invalid_values,
+                    registry)
                 invalid_values = {}
             if ev.status == "EVALUATED":
                 verdicts = evaluate_all(definition.constraints,
@@ -726,7 +736,7 @@ class Optimizer:
                     reason = (f"evaluation status {ev.status} — "
                               "no measured value")
                 elif claims is not None and not _has_metric_authority(
-                        o.metric):
+                        registry, o.metric):
                     state = "UNMEASURABLE"
                     reason = (f"objective {o.metric} has no registered "
                               f"metric authority over the authenticated "
@@ -806,7 +816,8 @@ class Optimizer:
                     {o.metric for o in definition.objectives} |
                     {c.metric for c in (definition.constraints or [])})
                 missing_authority = [m for m in needed
-                                     if not _has_metric_authority(m)]
+                                     if not _has_metric_authority(registry,
+                                                                  m)]
                 if missing_authority:
                     eligibility_reasons.append(
                         "metric(s) without a registered metric authority "

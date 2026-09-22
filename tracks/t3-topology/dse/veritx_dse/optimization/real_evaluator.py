@@ -27,7 +27,7 @@ metric authority can extract from the carried VerifiedPerformanceResult
 (network completion cycles/timestamp from the authenticated window
 binding). There is deliberately no area/latency-analytic key: unmeasured
 is absent, never faked. Widening the metric set means binding a new
-qualified producer (metric_authority.py), not adding a key here.
+qualified producer (metric_registry.py), not adding a key here.
 
 A4 proof: every EVALUATED outcome (including a requirement-violating
 one) carries the `AuthenticatedBackendEvaluation` built by Worker B's
@@ -73,8 +73,8 @@ from veritx_dse.optimization.evaluators import (
     EvaluationError,
     locked_consequences_of,
 )
-from veritx_dse.optimization.metric_authority import (
-    extract_authoritative_metrics,
+from veritx_dse.optimization.metric_registry import (
+    CERTIFIED_METRIC_REGISTRY,
 )
 from veritx_dse.workload.intent_lowering import (
     assert_traffic_classes_bound,
@@ -111,11 +111,12 @@ def _refuse(candidate_id: str, design_hash: str, status: str,
 
 
 def _verified_objectives(verified: Any) -> dict[str, float]:
-    """Evidenced measurements only, from the registered metric authority
-    over the VERIFIED performance result. No analytic stand-ins and no
-    bare backend statistics: a metric with no registered producer is
-    absent, never faked."""
-    return extract_authoritative_metrics(verified)
+    """Evidenced measurements only, from the FROZEN certified metric
+    registry over the VERIFIED performance result. No analytic stand-ins
+    and no bare backend statistics: a metric with no registered producer
+    is absent, never faked. (Display projection only — the certified
+    optimizer path re-extracts from the verified claims.)"""
+    return CERTIFIED_METRIC_REGISTRY.extract_all(verified)
 
 
 class RealCandidateEvaluator:
