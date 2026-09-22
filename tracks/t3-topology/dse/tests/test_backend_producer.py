@@ -385,6 +385,9 @@ class TestSafeReuse:
                                                       tmp_path):
         _, ev, producer, _, _ = self._bound(bundle, tmp_path)
         legacy = ev.to_dict()
+        # A genuine historical v1 document: no schema marker, no
+        # producer binding fields at all.
+        legacy.pop("schema_version")
         for key in ("booksim_binary_sha256", "execution_transport",
                     "producer_source_revision", "producer_source_dirty",
                     "producer_source_dirty_digest"):

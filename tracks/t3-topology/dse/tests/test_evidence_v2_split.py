@@ -55,8 +55,15 @@ from veritx_dse.backend.evidence import (  # noqa: E402
     evidence_sha256_of,
     read_evidence,
     read_verified_evidence,
+    validate_evidence_document,
+    write_evidence,
 )
 from veritx_dse.core.errors import EvidenceInvalid  # noqa: E402
+from veritx_dse.backend.producer import (  # noqa: E402
+    ProducerError,
+    ProducerIdentity,
+    verify_reusable_evidence,
+)
 from veritx_dse.core.paths import REPO as ENGINE_REPO  # noqa: E402
 from veritx_dse.model.compile_model import (  # noqa: E402
     Agent,
@@ -414,3 +421,130 @@ class TestAdversarial:
             assert (roots[0] / name).read_bytes() == \
                 (roots[1] / name).read_bytes(), \
                 f"{name} differs between two fresh generation roots"
+
+
+# ── verifier follow-up: generation-aware consumption ────────────────────────
+
+class TestGenerationAwareConsumption:
+    """v1 acceptance semantics preserved; v2 closed at every consumer.
+
+    Blocker 1: historical v1 evidence still verifies
+    ``producer_tool_identity`` (the v2 split must not relax the old
+    acceptance). Blocker 2: v2 documents are schema-closed at
+    consumption, so leaked-back attempt metadata is refused before any
+    field is used.
+    """
+
+    @staticmethod
+    def _v2_doc(**over) -> dict:
+        return _evidence(**over).to_dict()
+
+    @staticmethod
+    def _v1_doc(**over) -> dict:
+        """The exact historical v1 shape (attempt fields included)."""
+        doc = _evidence(**over).to_dict()
+        doc.pop("schema_version")
+        doc.update({
+            "exact_fabric_eligible": True,
+            "wall_time_s": 0.008,
+            "command": ["/opt/booksim", "config.cfg"],
+            "backend_dir": "/tmp/run/backend",
+            "producer_tool_identity": "Linux-test-x86_64",
+        })
+        return doc
+
+    @staticmethod
+    def _producer(**over) -> ProducerIdentity:
+        kw = dict(binary_sha256="8" * 64, binary_size=1,
+                  source_revision="a" * 40, source_dirty=False,
+                  source_dirty_digest="9" * 64,
+                  tool_identity="Linux-test-x86_64")
+        kw.update(over)
+        return ProducerIdentity(**kw)
+
+    def test_v2_clean_document_round_trips(self):
+        doc = self._v2_doc()
+        assert validate_evidence_document(doc) == doc
+
+    @pytest.mark.parametrize("key,value", [
+        ("wall_time_s", 0.25),
+        ("backend_dir", "/tmp/run-a/backend"),
+        ("producer_tool_identity", "Linux-x86_64"),
+        ("arbitrary_extra", {"forged": True}),
+    ])
+    def test_v2_closed_schema_rejects_leaked_attempt_fields(self, key,
+                                                            value):
+        doc = self._v2_doc()
+        doc[key] = value
+        with pytest.raises(BackendEvidenceError, match="mismatch"):
+            validate_evidence_document(doc)
+
+    def test_v2_unknown_schema_version_refuses(self):
+        doc = self._v2_doc()
+        doc["schema_version"] = "veritx/backend-scientific-evidence/v3"
+        with pytest.raises(BackendEvidenceError, match="unsupported"):
+            validate_evidence_document(doc)
+
+    def test_v2_reuse_refuses_leaked_attempt_field(self, tmp_path):
+        doc = self._v2_doc()
+        doc["wall_time_s"] = 0.25
+        ref = write_evidence(tmp_path, doc)
+        with pytest.raises(BackendEvidenceError, match="mismatch"):
+            verify_reusable_evidence(
+                ref, backend_config_hash="1" * 64,
+                backend_input_hash="2" * 64, producer=self._producer())
+
+    def test_authenticated_open_refuses_leaked_attempt_field(
+            self, tmp_path):
+        from veritx_dse.application.authenticated_evaluation import (
+            _open_evidence,
+        )
+        from veritx_dse.performance.network import NetworkWindowBinding
+        doc = self._v2_doc()
+        doc["wall_time_s"] = 0.25
+        ref = write_evidence(tmp_path, doc)
+        binding = NetworkWindowBinding(
+            workload_parent_id="7" * 64, schema_version=2,
+            physical_traffic_id="a" * 64,
+            backend_config_hash="1" * 64, backend_input_hash="2" * 64,
+            evidence_sha256=ref.sha256, stats_sha256="b" * 64,
+            network_clock_hz=None,
+            window_kind="BARRIER_TRAFFIC_WINDOW", duration=None)
+        with pytest.raises(EvidenceInvalid, match="evidence"):
+            _open_evidence(ref.path, binding)
+
+    def test_historical_v1_exact_document_still_reuses(self, tmp_path):
+        ref = write_evidence(tmp_path, self._v1_doc())
+        got = verify_reusable_evidence(
+            ref, backend_config_hash="1" * 64,
+            backend_input_hash="2" * 64, producer=self._producer())
+        assert got["producer_tool_identity"] == "Linux-test-x86_64"
+
+    def test_historical_v1_changed_tool_identity_refuses(self, tmp_path):
+        ref = write_evidence(tmp_path, self._v1_doc())
+        with pytest.raises(ProducerError, match="differs in"):
+            verify_reusable_evidence(
+                ref, backend_config_hash="1" * 64,
+                backend_input_hash="2" * 64,
+                producer=self._producer(tool_identity="Darwin-arm64"))
+
+    def test_v2_changed_platform_text_still_reuses(self, tmp_path):
+        ref = write_evidence(tmp_path, self._v2_doc())
+        got = verify_reusable_evidence(
+            ref, backend_config_hash="1" * 64,
+            backend_input_hash="2" * 64,
+            producer=self._producer(tool_identity="Darwin-arm64"))
+        assert "producer_tool_identity" not in got
+
+    def test_historical_v1_missing_minimum_keys_refuses(self):
+        with pytest.raises(BackendEvidenceError, match="missing"):
+            validate_evidence_document({"backend_config_hash": "1" * 64})
+
+    def test_historical_v1_producer_fields_still_required(self, tmp_path):
+        doc = self._v1_doc()
+        del doc["producer_tool_identity"]
+        ref = write_evidence(tmp_path, doc)
+        with pytest.raises(ProducerError, match="missing"):
+            verify_reusable_evidence(
+                ref, backend_config_hash="1" * 64,
+                backend_input_hash="2" * 64, producer=self._producer())
