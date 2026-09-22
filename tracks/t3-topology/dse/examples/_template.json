@@ -1,4 +1,6 @@
 {
+  "schema_version": 2,
+  "compiler_semantics_version": 1,
   "_comment": "VeritX CompileRequest template \u2014 see README.md for field descriptions",
   "_docs": {
     "E1_workload": "Model family, parallelism, serving mode, trace binding",

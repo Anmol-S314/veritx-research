@@ -1,4 +1,6 @@
 {
+  "schema_version": 2,
+  "compiler_semantics_version": 1,
   "workload": {
     "model_family": "mixture_of_experts",
     "model_name": "Qwen3-30B-A3B",

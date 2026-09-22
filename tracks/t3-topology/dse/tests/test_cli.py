@@ -106,6 +106,8 @@ class TestCompileRequestValidation:
     def test_agent_count_zero_rejected(self):
         with pytest.raises(ValueError, match="count must be >= 1"):
             CompileRequest.from_dict({
+                "schema_version": 2,
+                "compiler_semantics_version": 1,
                 "workload": {"model_family": "dense_transformer", "tp": 4, "dp": 1, "serving_mode": "mixed"},
                 "agents": [{"kind": "compute_tile", "count": 0}],
                 "noc_config": {},
@@ -114,6 +116,8 @@ class TestCompileRequestValidation:
     def test_agent_count_negative_rejected(self):
         with pytest.raises(ValueError, match="count must be >= 1"):
             CompileRequest.from_dict({
+                "schema_version": 2,
+                "compiler_semantics_version": 1,
                 "workload": {"model_family": "dense_transformer", "tp": 4, "dp": 1, "serving_mode": "mixed"},
                 "agents": [{"kind": "compute_tile", "count": -1}],
                 "noc_config": {},
@@ -122,6 +126,8 @@ class TestCompileRequestValidation:
     def test_agent_data_width_small_rejected(self):
         with pytest.raises(ValueError, match="data_width"):
             CompileRequest.from_dict({
+                "schema_version": 2,
+                "compiler_semantics_version": 1,
                 "workload": {"model_family": "dense_transformer", "tp": 4, "dp": 1, "serving_mode": "mixed"},
                 "agents": [{"kind": "compute_tile", "count": 1, "data_width": 4}],
                 "noc_config": {},
