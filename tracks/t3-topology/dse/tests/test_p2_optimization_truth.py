@@ -20,6 +20,23 @@ One test per mandated case:
 Real-BookSim tests use the vendored binary through the qualified
 producer; everything else uses stub ports so the adversarial property is
 isolated from backend behavior.
+
+RT-final A4 attacks (final repair, half 2):
+
+ 6  unregistered objective with a numeric evaluator value ->
+    UNMEASURABLE, ineligible, never Pareto (constraint variant too)
+ 7  registered metric with an evaluator value different from the
+    proof's extracted value -> refuses
+ 8  real FabricEvaluator execution authenticates and stays eligible
+ 9  requirement violation stays EVALUATED but ineligible
+    (`test_ap02_requirement_violation_stays_evaluated`)
+10  BookSimError stays FAILED
+    (`test_ap02_backend_failed_preserved_into_record`)
+11  arbitrary programmer error escapes the verifier taxonomy
+12  `python -O` cannot bypass the proof/registry gates
+
+A3 attacks (self-declared certified double, fabricated report over a
+genuine proof, empty report vacuity) remain in place.
 """
 from __future__ import annotations
 
@@ -35,6 +52,15 @@ from test_p2_real_adapter import _port as _real_port
 from test_p2_real_adapter import _pp_request
 
 from p2_verified_support import certified_evaluation
+
+
+@pytest.fixture(autouse=True)
+def _overlay_metric_authorities():
+    """Certified test doubles carry analytic stand-ins through registered
+    producers over the proof (A4); production registers only real ones."""
+    from p2_verified_support import test_metric_authorities
+    with test_metric_authorities():
+        yield
 
 from veritx_dse.application.requirements import report_identity
 from veritx_dse.optimization.constraints import (
@@ -244,11 +270,11 @@ def test_empty_requirement_report_is_never_a_vacuous_pass():
 
 def test_fabricated_report_over_genuine_verified_result_refuses():
     """A3: carrying B's proof is necessary but not sufficient — the
-    carried report must be the one RequirementEvaluator re-derives.
+    carried report must be the one Worker B's verifier derives.
 
-    A port that keeps the genuine verified result and rewrites the
+    A port that keeps the genuine authenticated proof and rewrites the
     verdict (while keeping the report internally consistent) is refused
-    by the canonical identity comparison, not by the authority label."""
+    by the derived-claims comparison, not by the authority label."""
     import dataclasses
 
     class _FabricatedVerdict(_VerifiedStubPort):
@@ -262,10 +288,134 @@ def test_fabricated_report_over_genuine_verified_result_refuses():
                 ev, requirement_report=report,
                 requirement_report_id=report_identity(report))
 
-    with pytest.raises(OptimizationResultError, match="re-derivation"):
+    with pytest.raises(OptimizationResultError,
+                       match="authenticated proof derives"):
         Optimizer().optimize(
             _real_base(), _defn(),
             _FabricatedVerdict({"latency": 10.0}))
+
+
+def test_6_unregistered_objective_with_evaluator_value_is_unmeasurable_never_pareto():
+    """A4 attack 6: a numeric evaluator value for an UNREGISTERED metric
+    is not a certified measurement. The requested objective is typed
+    UNMEASURABLE, the candidate is ineligible, and nothing enters Pareto
+    (no KeyError)."""
+    result = Optimizer().optimize(
+        _real_base(),
+        _defn(objectives=(Objective("magic_score", "MIN"),)),
+        _VerifiedStubPort({"magic_score": 999999.0}))
+    assert result.pareto_ids == ()
+    assert result.selected_candidate_id is None
+    for r in result.records:
+        assert r.evaluation_status == "EVALUATED"
+        assert r.pareto_eligible is False
+        assert r.pareto_member is False
+        assert "magic_score" not in r.objective_values
+        assert r.objective_availability["magic_score"] == "UNMEASURABLE"
+        entry = next(dict(d) for d in r.objective_details
+                     if d["metric"] == "magic_score")
+        assert entry["state"] == "UNMEASURABLE"
+        assert "no registered metric authority" in entry["reason"]
+        assert "without a registered metric authority" in \
+            (r.eligibility_reason or "")
+    # The same rule binds optimization constraints: an unregistered
+    # constraint metric is UNMEASURABLE, never scored from the port.
+    constrained = Optimizer().optimize(
+        _real_base(),
+        _defn(constraints=(Constraint("magic_score", "<=", 5.0),)),
+        _VerifiedStubPort({"magic_score": 1.0}))
+    assert constrained.pareto_ids == ()
+    assert constrained.selected_candidate_id is None
+    for r in constrained.records:
+        assert r.constraint_verdicts["magic_score"] == "UNMEASURABLE"
+        assert r.constraints_satisfied is not True
+        assert r.pareto_eligible is False
+
+
+def test_7_registered_metric_misreport_refuses():
+    """A4 attack 7: for a registered metric the proof's extracted value
+    is authoritative; an evaluator value that disagrees refuses."""
+    port = _VerifiedStubPort({"completion_cycles": 12345.0}, cycles=100)
+    with pytest.raises(OptimizationResultError, match="misreported"):
+        Optimizer().optimize(
+            _real_base(),
+            _defn(objectives=(Objective("completion_cycles", "MIN"),)),
+            port)
+
+
+def test_8_real_fabric_evaluator_execution_authenticates_and_stays_eligible(
+        tmp_path):
+    """A4 attack 8 (positive control): a genuine FabricEvaluator/BookSim
+    execution carries the authenticated proof through the real adapter
+    and stays Pareto-eligible."""
+    from veritx_dse.optimization.candidate import make_candidate
+
+    port = _real_port(tmp_path)
+    out = port.evaluate(make_candidate(_real_base(), {"link_width": 64}))
+    assert out.status == "EVALUATED"
+    proof = out.authenticated_proof
+    assert proof is not None
+    assert proof.producer_identity
+    assert proof.binding.evidence_sha256 == proof.evidence_ref.sha256
+    assert proof.verified_result["resource_id"] == \
+        out.performance_result_id
+    result = Optimizer().optimize(
+        _real_base(),
+        _defn(objectives=(Objective("completion_cycles", "MIN"),)),
+        port)
+    assert result.pareto_ids
+    assert result.selected_candidate_id in result.pareto_ids
+
+
+def test_11_arbitrary_programmer_error_escapes(monkeypatch):
+    """A4 attack 11: only the documented refusal taxonomy is caught; an
+    unexpected programming error in the verifier authority escapes."""
+    import veritx_dse.optimization.result as result_module
+
+    def _bug(request, proof):
+        raise KeyError("injected programming bug")
+
+    monkeypatch.setattr(result_module,
+                        "verify_authenticated_backend_evaluation", _bug)
+    with pytest.raises(KeyError):
+        Optimizer().optimize(
+            _real_base(), _defn(), _VerifiedStubPort({"latency": 10.0}))
+
+
+def test_12_python_O_cannot_bypass_the_eligibility_gates():
+    """A4 attack 12: the proof/registry gates are explicit conditionals,
+    not asserts — they survive ``python -O``. Static audit plus a real
+    ``-O`` subprocess run of the named attacks."""
+    import ast
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    dse = Path(__file__).resolve().parents[1]
+    for relative in ("veritx_dse/optimization/result.py",
+                     "veritx_dse/application/authenticated_evaluation.py"):
+        source = (dse / relative).read_text()
+        asserts = [node.lineno for node in ast.walk(ast.parse(source))
+                   if isinstance(node, ast.Assert)]
+        assert asserts == [], (relative, asserts)
+    env = dict(os.environ)
+    pypath = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = str(dse) + (os.pathsep + pypath if pypath else "")
+    proc = subprocess.run(
+        [sys.executable, "-O", "-m", "pytest", "-q",
+         "-p", "no:cacheprovider",
+         "tests/test_p2_optimization_truth.py::"
+         "test_self_declared_certified_evaluator_cannot_enter_"
+         "authoritative_pareto",
+         "tests/test_p2_optimization_truth.py::"
+         "test_6_unregistered_objective_with_evaluator_value_is_"
+         "unmeasurable_never_pareto",
+         "tests/test_p2_optimization_truth.py::"
+         "test_7_registered_metric_misreport_refuses"],
+        cwd=str(dse), capture_output=True, text=True, timeout=900,
+        env=env)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
 
 
 def test_1_missing_objective_unmeasurable_ineligible_no_keyerror(tmp_path):
