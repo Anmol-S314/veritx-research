@@ -142,7 +142,7 @@ def _defn(**kw):
 
 # ── 1-2: missing objective with the REAL evaluator ──────────────────────
 
-def test_0_fake_evaluation_never_pareto_or_selected_in_v2():
+def test_ap01_fake_v2_pareto_refusal_for_authority():
     """A-P0.1: an analytic fake evaluation is visible but structurally
     ineligible in the authoritative v2 view — no Pareto, no selection."""
     result = Optimizer().optimize(
@@ -193,6 +193,86 @@ def test_2_missing_objective_candidate_never_pareto(tmp_path):
     assert result.selected_candidate_id is None
     assert all(r.pareto_member is False for r in result.records)
     assert "area" in (result.selection_rationale or "")
+
+
+def test_ap02_backend_unavailable_preserved_into_record(tmp_path):
+    """A-P0.2: a backend-unavailable outcome keeps its own status through
+    the real adapter and the Optimizer (never collapsed to UNSUPPORTED)."""
+    from veritx_dse.optimization.candidate import make_candidate
+    from veritx_dse.optimization.real_evaluator import (
+        RealCandidateEvaluator,
+    )
+    port = RealCandidateEvaluator(
+        binary="/no-such-booksim", run_root=str(tmp_path / "runs"),
+        network_clock_hz=10 ** 9, timeout_s=60)
+    out = port.evaluate(make_candidate(_real_base(), {"link_width": 64}))
+    assert out.status == "BACKEND_UNAVAILABLE"
+    assert out.evaluation_authority == AUTHORITY_CERTIFIED_BACKEND
+    assert out.performance_result_id is None
+    result = Optimizer().optimize(_real_base(), _defn(), port)
+    assert result.pareto_ids == ()
+    assert result.selected_candidate_id is None
+    for r in result.records:
+        assert r.evaluation_status == "BACKEND_UNAVAILABLE"
+        assert r.pareto_eligible is False
+        assert "BACKEND_UNAVAILABLE" in (r.eligibility_reason or "")
+
+
+def test_ap02_backend_failed_preserved_into_record(tmp_path, monkeypatch):
+    """A-P0.2: a backend execution failure keeps FAILED through the real
+    adapter and the Optimizer (never collapsed to UNSUPPORTED)."""
+    from veritx_dse.optimization.candidate import make_candidate
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("synthetic backend crash")
+
+    # The mesh base request routes to the certified meshdor path; patch
+    # both runners so the synthetic crash is exercised regardless.
+    monkeypatch.setattr(
+        "veritx_dse.backend.meshdor.run_waved_meshdor", _boom)
+    monkeypatch.setattr(
+        "veritx_dse.backend.projection.run_waved_booksim", _boom)
+    port = _real_port(tmp_path)
+    out = port.evaluate(make_candidate(_real_base(), {"link_width": 64}))
+    assert out.status == "FAILED"
+    assert out.evaluation_authority == AUTHORITY_CERTIFIED_BACKEND
+    result = Optimizer().optimize(_real_base(), _defn(), port)
+    assert result.pareto_ids == ()
+    for r in result.records:
+        assert r.evaluation_status == "FAILED"
+        assert r.pareto_eligible is False
+        assert "FAILED" in (r.eligibility_reason or "")
+
+
+def test_ap02_requirement_violation_stays_evaluated(tmp_path):
+    """A-P0.2: a simulated run that violates a binding product
+    requirement stays EVALUATED with measurements and a typed reason,
+    and the Optimizer keeps it visible but not eligible."""
+    import dataclasses
+
+    from veritx_dse.model.compile_model import QoSClass, RequirementV3
+    from veritx_dse.optimization.candidate import make_candidate
+
+    req = dataclasses.replace(_real_base(), requirements=(
+        RequirementV3(qos_class=QoSClass.LATENCY_CRITICAL,
+                      traffic_class="tp_collective",
+                      latency_ceiling_cycles=1, binding=True),))
+    port = _real_port(tmp_path)
+    out = port.evaluate(make_candidate(req, {"link_width": 64}))
+    assert out.status == "EVALUATED"
+    assert out.objective_values.get("completion_cycles") is not None
+    assert "binding requirements not satisfied" in (out.error or "")
+    defn = _defn(domain=(DomainParam("link_width", (64,)),))
+    result = Optimizer().optimize(req, defn, port)
+    (record,) = result.records
+    assert record.evaluation_status == "EVALUATED"
+    assert record.product_requirements_satisfied is False
+    assert record.pareto_eligible is False
+    assert record.pareto_member is False
+    assert "binding product requirements" in \
+        (record.eligibility_reason or "")
+    assert result.pareto_ids == ()
+    assert result.selected_candidate_id is None
 
 
 # ── 3-4: report identity transitively carried ───────────────────────────

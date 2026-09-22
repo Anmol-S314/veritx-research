@@ -10,14 +10,17 @@ The production route (fake stays unit-only):
       -> RequirementEvaluator.evaluate()       (P1C RequirementReport)
       -> CandidateEvaluation (evidenced objectives only)
 
-Feasibility law (no optimizer changes needed — enforced by status):
-EVALUATED here means compiled AND backend-evaluated AND all binding
-requirements SATISFIED. Anything else maps to COMPILE_FAILED/
-UNSUPPORTED/INVALID with the true cause in `error` and whatever
-provenance exists still bound (locked consequences,
-performance_result_id) — visible, auditable, never Pareto-eligible.
-Binding-failed evaluations are NOT relabeled successes; the error names
-the failing entries.
+Feasibility law: `evaluation_status` preserves the REAL taxonomy and
+is never collapsed. EVALUATED means compiled AND backend-evaluated
+(binding product requirements may still fail — those candidates keep
+their measurements and a typed reason, and the Optimizer makes them
+ineligible). Compile-phase refusals (INVALID or UNSUPPORTED compiler
+verdicts) are COMPILE_FAILED; lowering refusals are INVALID or
+UNSUPPORTED; backend-phase outcomes stay BACKEND_UNAVAILABLE /
+FAILED / UNSUPPORTED. Whatever provenance exists is still bound
+(locked consequences, performance_result_id) — visible, auditable,
+never Pareto-eligible. `compilation_status` separately keeps the
+FabricCompiler verdict.
 
 Objectives are evidenced measurements only: network completion cycles
 (+ wall-time when a valid clock was declared) plus backend-reported
@@ -34,7 +37,11 @@ from typing import Any
 
 from veritx_dse.application.fabric_compiler import FabricCompiler
 from veritx_dse.application.fabric_evaluator import (
+    BACKEND_UNAVAILABLE,
+    EVALUATED,
+    FAILED,
     STANDALONE_BACKEND,
+    UNSUPPORTED,
     EvaluationOptions,
     FabricEvaluator,
 )
@@ -67,10 +74,14 @@ def _refuse(candidate_id: str, design_hash: str, status: str,
             locked: dict[str, Any] | None = None,
             performance_result_id: str | None = None,
             requirement_report: dict[str, Any] | None = None,
+            objective_values: dict[str, float] | None = None,
             ) -> CandidateEvaluation:
+    """Build a non-success outcome (or a requirement-violating EVALUATED
+    outcome when measurements exist). The status is the evaluator's own
+    taxonomy value and is never collapsed into UNSUPPORTED here."""
     return CandidateEvaluation(
         candidate_id=candidate_id, design_hash=design_hash,
-        status=status, objective_values={},
+        status=status, objective_values=dict(objective_values or {}),
         locked_consequences=dict(locked or {}),
         compilation_status=compilation_status, error=error,
         performance_result_id=performance_result_id,
@@ -135,11 +146,14 @@ class RealCandidateEvaluator:
         expected_hash = request.design_hash()
         compilation = FabricCompiler().compile(request)
         if compilation.status != "COMPILED":
+            # Compile-phase refusal: ALL compiler verdicts (INVALID or
+            # UNSUPPORTED) map to COMPILE_FAILED, kept distinct from the
+            # backend-phase BACKEND_UNAVAILABLE/FAILED/UNSUPPORTED below;
+            # the compiler's own verdict stays in compilation_status.
             return _refuse(
                 candidate.candidate_id, expected_hash,
-                "COMPILE_FAILED"
-                if compilation.status == "INVALID" else "UNSUPPORTED",
-                compilation.status, compilation.error or compilation.status)
+                "COMPILE_FAILED", compilation.status,
+                compilation.error or compilation.status)
         if compilation.bundle is None:
             raise EvaluationError(
                 "FabricCompiler returned COMPILED without a bundle — "
@@ -159,7 +173,7 @@ class RealCandidateEvaluator:
         unified = lowered.unified_traffic_class
         if unified is None:
             return _refuse(
-                candidate.candidate_id, expected_hash, "UNSUPPORTED",
+                candidate.candidate_id, expected_hash, UNSUPPORTED,
                 "COMPILED",
                 f"lowering spans classes {list(lowered.classes)}: "
                 f"multi-class refused until a per-operation message "
@@ -183,28 +197,43 @@ class RealCandidateEvaluator:
                 require_quiescence=self.require_quiescence,
                 run_dir=str(run_dir), binary=self.binary,
                 repo_root=self.repo_root))
-        if outcome.status != "EVALUATED" or \
-                outcome.performance_result is None:
+        if outcome.status != EVALUATED:
+            if outcome.status not in (BACKEND_UNAVAILABLE, UNSUPPORTED,
+                                      FAILED):
+                raise EvaluationError(
+                    f"FabricEvaluator returned unknown status "
+                    f"{outcome.status!r} — refusing to collapse an "
+                    "unknown outcome into the status taxonomy")
             return _refuse(
-                candidate.candidate_id, expected_hash, "UNSUPPORTED",
+                candidate.candidate_id, expected_hash, outcome.status,
                 "COMPILED",
                 f"{outcome.status}: {outcome.reason}", locked,
                 outcome.performance_result_id)
+        if outcome.performance_result is None:
+            raise EvaluationError(
+                "FabricEvaluator returned EVALUATED without a verified "
+                "performance result — refusing to bind measurements that "
+                "do not exist")
         report = RequirementEvaluator.evaluate(
             request, lowered.graph, outcome.performance_result)
         if not report_passes(report):
             bad = [e for e in report.get("entries", [])
                    if e.get("binding") and
                    e.get("verdict") != "SATISFIED"]
+            # Simulated successfully, product requirements failed: the
+            # evaluation stays EVALUATED with its measurements and a
+            # typed reason; the Optimizer makes it Pareto-ineligible.
+            # Never relabel a measured run as UNSUPPORTED.
             return _refuse(
-                candidate.candidate_id, expected_hash, "UNSUPPORTED",
+                candidate.candidate_id, expected_hash, EVALUATED,
                 "COMPILED",
                 "binding requirements not satisfied: " + "; ".join(
                     f"[{e.get('requirement_index')}:"
                     f"{e.get('traffic_class')}/"
                     f"{e.get('qos_class')}={e.get('verdict')}]"
                     for e in bad) or "unsatisfied",
-                locked, outcome.performance_result_id, report)
+                locked, outcome.performance_result_id, report,
+                objective_values=_real_objectives(outcome))
         return CandidateEvaluation(
             candidate_id=candidate.candidate_id,
             design_hash=expected_hash, status="EVALUATED",

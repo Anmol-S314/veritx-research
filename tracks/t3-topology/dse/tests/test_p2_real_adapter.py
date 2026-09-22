@@ -28,6 +28,7 @@ from veritx_dse.optimization.definition import (
     Objective,
     OptimizationDefinition,
 )
+from veritx_dse.optimization.evaluators import AUTHORITY_CERTIFIED_BACKEND
 from veritx_dse.optimization.real_evaluator import RealCandidateEvaluator
 from veritx_dse.optimization.result import Optimizer
 from veritx_dse.simulation.booksim import find_booksim_bin
@@ -86,6 +87,7 @@ def test_real_grid_end_to_end(tmp_path):
         assert record.locked_consequences["routing_classes"] == ["DOR_XY"]
         assert record.constraints_satisfied is True
         assert record.requirement_report_id is not None
+        assert record.evaluation_authority == AUTHORITY_CERTIFIED_BACKEND
     assert len(result.pareto_ids) >= 1
     assert len({r.requirement_report_id for r in result.records}) == 2
     assert result.selected_candidate_id in result.pareto_ids
@@ -250,11 +252,16 @@ def test_binding_failure_keeps_requirement_report(tmp_path):
     out = port.evaluate(SimpleNamespace(
         candidate_id="binding-failure", request=req))
     from veritx_dse.application.requirements import report_identity
-    assert out.status == "UNSUPPORTED"
+    # A-P0.2: a simulated run that fails a binding PRODUCT requirement is
+    # still EVALUATED (with measurements and a typed reason), never
+    # relabeled UNSUPPORTED; eligibility is the Optimizer's job.
+    assert out.status == "EVALUATED"
+    assert out.evaluation_authority == AUTHORITY_CERTIFIED_BACKEND
     assert "binding requirements not satisfied" in (out.error or "")
     assert out.performance_result_id is not None
     assert out.requirement_report is not None
     assert out.requirement_report_id == report_identity(out.requirement_report)
+    assert out.objective_values.get("completion_cycles") is not None
     entries = out.requirement_report["entries"]
     assert entries and entries[0]["verdict"] == "VIOLATED"
     assert entries[0]["reason"]
