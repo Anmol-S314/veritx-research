@@ -173,26 +173,27 @@ RESULT_CLASS_ANALYTIC = "ANALYTIC_RESEARCH"
 
 @dataclass(frozen=True)
 class CertifiedBackendConfig:
-    """Inputs for the optimizer-owned certified evaluator (R1).
+    """Inputs for the optimizer-owned certified evaluator (R1/C3).
 
     ``Optimizer.optimize_certified`` constructs ``RealCandidateEvaluator``
     from this config itself; no caller-supplied evaluator can enter the
-    certified path.
+    certified path. Quiescence is a certification obligation and is NOT a
+    config knob: certified execution is always quiescent.
     """
     binary: Any
     run_root: Any
     network_clock_hz: int | None = None
     timeout_s: int = 300
     repo_root: Any = None
-    require_quiescence: bool = True
 
 
 def _make_real_certified_evaluator(config: CertifiedBackendConfig) -> Any:
-    """Module-private, non-overridable certified evaluator factory (C1).
+    """Module-private, non-overridable certified evaluator factory (C1/C3).
 
     ``optimize_certified`` calls THIS function, not a method, so ordinary
     subclass polymorphism cannot substitute a synthetic evaluator into
-    the certified path.
+    the certified path. Quiescence is hard-coded True (C3): a certified
+    result cannot be produced by a non-quiescent execution.
     """
     from .real_evaluator import RealCandidateEvaluator
     return RealCandidateEvaluator(
@@ -201,7 +202,7 @@ def _make_real_certified_evaluator(config: CertifiedBackendConfig) -> Any:
         network_clock_hz=config.network_clock_hz,
         timeout_s=config.timeout_s,
         repo_root=config.repo_root,
-        require_quiescence=config.require_quiescence)
+        require_quiescence=True)
 
 
 def _verified_certified_claims(cand: Any, ev: Any):

@@ -572,6 +572,27 @@ def test_c1_subclass_cannot_hijack_the_certified_evaluator(tmp_path):
         assert r.pareto_eligible is False
 
 
+def test_c3_quiescence_is_mandatory_for_certified():
+    """C3 attack 4: quiescence is not a certified config knob; certified
+    execution always requires it, so a caller cannot disable a
+    certification obligation and still be certified."""
+    import dataclasses
+
+    from veritx_dse.optimization.result import (
+        CertifiedBackendConfig,
+        _make_real_certified_evaluator,
+    )
+
+    names = {f.name for f in dataclasses.fields(CertifiedBackendConfig)}
+    assert "require_quiescence" not in names
+    with pytest.raises(TypeError):
+        CertifiedBackendConfig(binary="x", run_root="y",
+                               require_quiescence=False)
+    evaluator = _make_real_certified_evaluator(
+        CertifiedBackendConfig(binary="/no-such-booksim", run_root="/tmp/x"))
+    assert evaluator.require_quiescence is True
+
+
 def test_1_missing_objective_unmeasurable_ineligible_no_keyerror(tmp_path):
     result = _optimize(
         _real_base(), _defn(objectives=(Objective("area", "MIN"),)),
