@@ -277,6 +277,46 @@ def test_ap02_requirement_violation_stays_evaluated(tmp_path):
 
 # ── 3-4: report identity transitively carried ───────────────────────────
 
+def test_ap13_min_vs_max_definition_distinction():
+    """A-P1.3: objective direction is explicit in v2, and MIN vs MAX
+    changes the definition payload and the result identity."""
+    base = _real_base()
+    port = _StubPort({"latency": 10.0}, report_verdict="SATISFIED")
+    minimize = Optimizer().optimize(
+        base, _defn(), port)
+    maximize = Optimizer().optimize(
+        base, _defn(objectives=(Objective("latency", "MAX"),)), port)
+    v_min = minimize.to_study_view()
+    v_max = maximize.to_study_view()
+    assert v_min["definition"]["objectives"] == [
+        {"metric": "latency", "direction": "MIN"}]
+    assert v_max["definition"]["objectives"] == [
+        {"metric": "latency", "direction": "MAX"}]
+    assert v_min["definition"] != v_max["definition"]
+    assert v_min["definition"]["definition_id"] != \
+        v_max["definition"]["definition_id"]
+    assert v_min["optimization_result_id"] != \
+        v_max["optimization_result_id"]
+    assert v_min["optimization_result_id"] == minimize.result_id()
+
+
+def test_ap13_selection_policy_definition_distinction():
+    """A-P1.3: the selection policy is explicit in v2 and changing it
+    changes the definition payload."""
+    base = _real_base()
+    port = _StubPort({"latency": 10.0}, report_verdict="SATISFIED")
+    first = Optimizer().optimize(base, _defn(), port)
+    lexicographic = Optimizer().optimize(
+        base, _defn(selection="lexicographic"), port)
+    v_first = first.to_study_view()
+    v_lex = lexicographic.to_study_view()
+    assert v_first["definition"]["selection"] == "min_first_objective"
+    assert v_lex["definition"]["selection"] == "lexicographic"
+    assert v_first["definition"] != v_lex["definition"]
+    assert v_first["definition"]["definition_id"] != \
+        v_lex["definition"]["definition_id"]
+
+
 def test_3_report_identity_in_candidate_record():
     result = Optimizer().optimize(
         _real_base(), _defn(), _StubPort({"latency": 10.0},

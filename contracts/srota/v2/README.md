@@ -13,9 +13,19 @@ It intentionally separates three authorities that must never be merged:
 | Measured objectives | `objective_values`, `objective_availability` (MEASURED/UNMEASURABLE) | Was each requested objective actually measured? |
 
 `pareto_eligible` is the conjunction required for Pareto input
-(evaluation succeeded AND binding product requirements pass AND every
+(evaluation succeeded AND the evaluation authority is
+`certified-backend` AND binding product requirements pass AND every
 requested objective measured+finite AND every hard constraint
-SATISFIED); `pareto_member` implies it.
+SATISFIED); `pareto_member` implies it. `evaluation_authority`
+(`certified-backend` | `analytic-fake` | null) is structural: analytic
+fakes are development doubles and can never be eligible.
+
+The definition block is lossless and identified: `definition_id`,
+`objectives` as `{metric, direction}`, `constraints` as
+`{metric, op, threshold}`, `method`, `selection`, `budget`, `seed` and
+`domain`. The view top level exposes `optimization_result_id`, the bare
+content digest of the bound `OptimizationResult` (the engine re-derives
+it from definition identity + candidate rows + frontier).
 
 The v1 file at `contracts/srota/v1/optimization.study.view.schema.json`
 remains frozen for pinned callers. The v1 projector

@@ -4,17 +4,49 @@
   "title": "OptimizationStudyViewV2",
   "description": "Authoritative P1-RT OptimizationStudyView (contract v2). Three independent authorities are never merged: product Requirements (requirement_report_id + product_requirements: did the design satisfy the customer?), optimization constraints (constraint_verdicts: SATISFIED|VIOLATED|UNMEASURABLE), and measured objectives (objective_values + objective_availability: MEASURED|UNMEASURABLE). Pareto input requires evaluation success, binding product requirements pass, every requested objective measured+finite, and every hard constraint SATISFIED, so pareto_member implies pareto_eligible. The v1 boolean-only projector is LOSSY by design and lives at contracts/srota/v1/optimization.study.view.schema.json.",
   "type": "object",
-  "required": ["contract_version", "base_design_hash", "definition", "candidates", "pareto_ids"],
+  "required": ["contract_version", "optimization_result_id", "base_design_hash", "definition", "candidates", "pareto_ids"],
   "properties": {
     "contract_version": {"const": 2},
+    "optimization_result_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Bare content_id digest of the OptimizationResult (re-derivable from definition_id + candidate rows + frontier)."
+    },
     "base_design_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
     "definition": {
       "type": "object",
-      "required": ["objectives", "method", "budget"],
+      "description": "Lossless definition: identity, objective directions, constraint operators/thresholds, method and selection policy are all explicit.",
+      "required": ["definition_id", "objectives", "constraints",
+                    "method", "selection", "budget"],
       "properties": {
-        "objectives": {"type": "array", "items": {"type": "string"}},
-        "constraints": {"type": "array", "items": {"type": "string"}},
-        "method": {"type": "string"},
+        "definition_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "objectives": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["metric", "direction"],
+            "properties": {
+              "metric": {"type": "string"},
+              "direction": {"enum": ["MIN", "MAX"]}
+            },
+            "unevaluatedProperties": false
+          }
+        },
+        "constraints": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["metric", "op", "threshold"],
+            "properties": {
+              "metric": {"type": "string"},
+              "op": {"enum": ["<=", ">="]},
+              "threshold": {"type": "number"}
+            },
+            "unevaluatedProperties": false
+          }
+        },
+        "method": {"enum": ["grid", "enumeration", "random"]},
+        "selection": {"enum": ["min_first_objective", "lexicographic", "none"]},
         "budget": {"type": "object"},
         "seed": {"type": ["integer", "string", "null"]},
         "domain": {

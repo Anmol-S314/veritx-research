@@ -239,13 +239,37 @@ class OptimizationResult:
             "selected_candidate_id": self.selected_candidate_id,
         })
 
-    def _definition_view(self) -> dict[str, Any]:
+    def _definition_view_v1(self) -> dict[str, Any]:
+        """LOSSY v1 definition projection (bare metric strings)."""
         defn = self.definition
         return {
             "objectives": [o.metric for o in defn.objectives],
             "constraints": [f"{c.metric}{c.op}{c.threshold:g}"
                             for c in defn.constraints],
             "method": defn.method,
+            "budget": dict(defn.budget),
+            "seed": defn.seed,
+            "domain": {p.name: list(p.values) for p in defn.domain},
+        }
+
+    def _definition_view_v2(self) -> dict[str, Any]:
+        """Lossless v2 definition projection.
+
+        Identity (`definition_id`), objective direction (MIN/MAX),
+        constraint operator and threshold, search method and selection
+        policy are all explicit — a consumer never has to infer
+        semantics from bare metric strings.
+        """
+        defn = self.definition
+        return {
+            "definition_id": defn.definition_id(),
+            "objectives": [{"metric": o.metric, "direction": o.direction}
+                           for o in defn.objectives],
+            "constraints": [{"metric": c.metric, "op": c.op,
+                             "threshold": c.threshold}
+                            for c in defn.constraints],
+            "method": defn.method,
+            "selection": defn.selection,
             "budget": dict(defn.budget),
             "seed": defn.seed,
             "domain": {p.name: list(p.values) for p in defn.domain},
@@ -287,8 +311,9 @@ class OptimizationResult:
             })
         return {
             "contract_version": 2,
+            "optimization_result_id": self.result_id(),
             "base_design_hash": _view_hash(self.base_design_hash),
-            "definition": self._definition_view(),
+            "definition": self._definition_view_v2(),
             "candidates": candidates,
             "pareto_ids": list(self.pareto_ids),
             "selected_candidate_id": self.selected_candidate_id,
@@ -324,7 +349,7 @@ class OptimizationResult:
         return {
             "contract_version": 1,
             "base_design_hash": _view_hash(self.base_design_hash),
-            "definition": self._definition_view(),
+            "definition": self._definition_view_v1(),
             "candidates": candidates,
             "pareto_ids": list(self.pareto_ids),
             "selected_candidate_id": self.selected_candidate_id,

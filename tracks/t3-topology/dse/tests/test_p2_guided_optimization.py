@@ -492,6 +492,18 @@ class TestGridStudyEndToEnd:
             (DSE.parent.parent.parent / "contracts" / "srota" / "v2" /
              "optimization.study.view.schema.json").read_text())
         jsonschema.validate(view, schema)
+        # A-P1.3: the definition is lossless and identified; the result
+        # identity is exposed at the view top level.
+        assert view["optimization_result_id"] == result.result_id()
+        assert view["definition"]["definition_id"] == \
+            result.definition.definition_id()
+        assert view["definition"]["objectives"] == [
+            {"metric": o.metric, "direction": o.direction}
+            for o in result.definition.objectives]
+        assert view["definition"]["constraints"] == [
+            {"metric": c.metric, "op": c.op, "threshold": c.threshold}
+            for c in result.definition.constraints]
+        assert view["definition"]["selection"] == "min_first_objective"
         verdicts = {c["constraint_verdicts"]["latency"]
                     for c in view["candidates"]}
         assert verdicts <= {"SATISFIED", "VIOLATED", "UNMEASURABLE"}
