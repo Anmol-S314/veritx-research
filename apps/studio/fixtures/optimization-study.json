@@ -202,7 +202,7 @@
     "contract_version": 1,
     "design_hash": "sha256:4d858f032c55cbd31013f32e017138b64923a3879f83d325cd65a8f998212634",
     "evidence": {
-      "raw_evidence_digest": "d67990c4c8d5fe420344bcf5ba59374881e89b81c36302119e800c3c5f77491b",
+      "raw_evidence_digest": "4d78d966dfaf2073ae18d7212d7066046b43223ac827048138668c263c6f001d",
       "stats_digest": "85b4c1d8165afce0cb13750136f9973fda3dbf7e99bc23a11098705dbe15a483"
     },
     "fidelity_warning": "compute=EXPLICIT_DURATION memory=EXPLICIT_DURATION network=QUALIFIED_BOOKSIM_WINDOW all=UNCALIBRATED (declared/explicit models; no hardware dataset in repo)",
@@ -227,7 +227,7 @@
       "wall_time_ns": 437.0,
       "window_cycles": 437
     },
-    "performance_result_id": "1e8a02b3d57ffec0b1606c6664a3e00b44972482d90679589daac133e29ae9e7",
+    "performance_result_id": "8a924e702fe28cf788de90b506dbb101c131eaafb8a846162f1b7ec863543af0",
     "physical_traffic_id": "sha256:c02eed1d9cef4b671df75a9df2ac62c3ba52d77d0d2036b33fdc03a47056a719",
     "reason": null,
     "resolved_fabric_hash": "sha256:9277e2af0154cb887d64ff9ccfe34b21ec5acc5c51235a12c4903b43cf0b2906",
@@ -279,8 +279,8 @@
         "evaluation_authority": "certified-backend",
         "evaluation_ids": {
           "design_hash": "sha256:71b39380f046ccf9fa71ca369bcbae8c73ef6c55e477f4ee5d56bc93b4cb3665",
-          "performance_result_id": "8f44b25a44d80a0978700b6f599c31a1055a17012d92469dbacce2a9f5e1ffff",
-          "requirement_report_id": "15fc50387608e637c80ed7d2ca8dbfe217cb33e9eec2ea461be256364caa988e"
+          "performance_result_id": "48d6c0ae6f0a007aa5866808306558460c145a365cc761d3d68d70b88a4d3f51",
+          "requirement_report_id": "58bf7acbb929a272fdbe7cf4c2e5fa1028121bd6a0b36a897fff189f2eb472e8"
         },
         "evaluation_reason": "binding requirements not satisfied: [0:tp_collective/latency_critical=VIOLATED]",
         "evaluation_status": "EVALUATED",
@@ -312,7 +312,7 @@
               "binding": true,
               "measured": 845.0,
               "metric_authority": "performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles)",
-              "performance_result_id": "8f44b25a44d80a0978700b6f599c31a1055a17012d92469dbacce2a9f5e1ffff",
+              "performance_result_id": "48d6c0ae6f0a007aa5866808306558460c145a365cc761d3d68d70b88a4d3f51",
               "qos_class": "latency_critical",
               "reason": "measured 845 cycles > ceiling 600.0 cycles via performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles). class-scoped to 'tp_collective' (single-class workload: aggregate == class evidence)",
               "required": 600.0,
@@ -333,8 +333,8 @@
         "evaluation_authority": "certified-backend",
         "evaluation_ids": {
           "design_hash": "sha256:4d858f032c55cbd31013f32e017138b64923a3879f83d325cd65a8f998212634",
-          "performance_result_id": "cde9c3d6f29de6c7e3ae64bbf204e6c9469b1a074af32de3f3707ca3079c95d9",
-          "requirement_report_id": "9b68b33598f1af3525a9a0561533cca4b624913db12543ed67aa243a38114230"
+          "performance_result_id": "8a924e702fe28cf788de90b506dbb101c131eaafb8a846162f1b7ec863543af0",
+          "requirement_report_id": "5fd0590372201ad33d9cf2e9a0956bf7384f7282d616ab961805a484fcc73add"
         },
         "evaluation_reason": null,
         "evaluation_status": "EVALUATED",
@@ -366,7 +366,7 @@
               "binding": true,
               "measured": 437.0,
               "metric_authority": "performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles)",
-              "performance_result_id": "cde9c3d6f29de6c7e3ae64bbf204e6c9469b1a074af32de3f3707ca3079c95d9",
+              "performance_result_id": "8a924e702fe28cf788de90b506dbb101c131eaafb8a846162f1b7ec863543af0",
               "qos_class": "latency_critical",
               "reason": "measured 437 cycles <= ceiling 600.0 cycles via performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles). class-scoped to 'tp_collective' (single-class workload: aggregate == class evidence)",
               "required": 600.0,
@@ -418,8 +418,8 @@
         "evaluation_authority": "certified-backend",
         "evaluation_ids": {
           "design_hash": "sha256:6cb709cdde15db7ba8132e8734aa430dd53ff7cc97c1a62be89c566c5876753c",
-          "performance_result_id": "227b84a65ebef4ebd257b0ab1499f23fbde2ac10136ad3c762b714f3e597cc7f",
-          "requirement_report_id": "034a2d852e0b697b747fbd1608914822ce790898b6a24bc026768f5e74a8d781"
+          "performance_result_id": "808611213b4c0fd7950414e22244df016b2ccb299fe889dfe421a4c269a95437",
+          "requirement_report_id": "3138830ea0d31fa4c626e07956e100182f72fa9ab79e919084000b59b75931fb"
         },
         "evaluation_reason": "binding requirements not satisfied: [0:tp_collective/latency_critical=VIOLATED]",
         "evaluation_status": "EVALUATED",
@@ -451,7 +451,7 @@
               "binding": true,
               "measured": 1950.0,
               "metric_authority": "performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles)",
-              "performance_result_id": "227b84a65ebef4ebd257b0ab1499f23fbde2ac10136ad3c762b714f3e597cc7f",
+              "performance_result_id": "808611213b4c0fd7950414e22244df016b2ccb299fe889dfe421a4c269a95437",
               "qos_class": "latency_critical",
               "reason": "measured 1950 cycles > ceiling 600.0 cycles via performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles). class-scoped to 'tp_collective' (single-class workload: aggregate == class evidence)",
               "required": 600.0,
@@ -528,7 +528,7 @@
     },
     "metric_registry_id": "316e403f447f90431f761f084539c934aaded9581f15d58d72aa121627a9e938",
     "metric_registry_version": "certified-builtin-v1",
-    "optimization_result_id": "521b7f7ac1b0cc920e0aa04748e23fce26a1bdbbb2472b9b76ed484f3d991884",
+    "optimization_result_id": "e9e2ee5eb03388fe77b2f36e823c2c2b776db900ec0fb9fc99df8c45cc4b8d41",
     "pareto_ids": [
       "cand_b1c45e8e462f4558"
     ],
@@ -544,7 +544,7 @@
         "binding": true,
         "measured": 437.0,
         "metric_authority": "performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles)",
-        "performance_result_id": "1e8a02b3d57ffec0b1606c6664a3e00b44972482d90679589daac133e29ae9e7",
+        "performance_result_id": "8a924e702fe28cf788de90b506dbb101c131eaafb8a846162f1b7ec863543af0",
         "qos_class": "latency_critical",
         "reason": "measured 437 cycles <= ceiling 600.0 cycles via performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles). class-scoped to 'tp_collective' (single-class workload: aggregate == class evidence)",
         "required": 600.0,
@@ -553,7 +553,7 @@
         "verdict": "SATISFIED"
       }
     ],
-    "performance_result_id": "1e8a02b3d57ffec0b1606c6664a3e00b44972482d90679589daac133e29ae9e7"
+    "performance_result_id": "8a924e702fe28cf788de90b506dbb101c131eaafb8a846162f1b7ec863543af0"
   },
   "title": "Optimization study over link_width \u00d7 rcu_enabled"
 }

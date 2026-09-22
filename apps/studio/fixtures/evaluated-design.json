@@ -210,7 +210,7 @@
     "contract_version": 1,
     "design_hash": "sha256:28ffcebf4b4f89e759911504aedbfb8b64b415546ae263392b820b614e99cbae",
     "evidence": {
-      "raw_evidence_digest": "4c4b078d1d15192aca7042e812df108c9699df6499b8f7eb425199e928eb87cc",
+      "raw_evidence_digest": "4f41b2e9444d65e9ec0607becfe874cbd940f97bc3cc6772506149be5bef149e",
       "stats_digest": "40be55c1e1f69d6fa73208b22335ad66f483ec0622c9b2e11d321d361160e45b"
     },
     "fidelity_warning": "compute=EXPLICIT_DURATION memory=EXPLICIT_DURATION network=QUALIFIED_BOOKSIM_WINDOW all=UNCALIBRATED (declared/explicit models; no hardware dataset in repo)",
@@ -235,7 +235,7 @@
       "wall_time_ns": 16161.0,
       "window_cycles": 16161
     },
-    "performance_result_id": "85efb8eca931ce6bf339695c351d5161a51e4f4465b19745b56e38ff64c40c2e",
+    "performance_result_id": "c19e5f10e4ffbcfa3c4b3f9be5686ecf4850aab145138e5edcf574a833f8096c",
     "physical_traffic_id": "sha256:aa07a43f7f99459eaaa59e646c9de2d31c823305aa8bc52a94007ca25d25ac88",
     "reason": null,
     "resolved_fabric_hash": "sha256:31101953af6bf2f58078d461a815129e950c894f1a7e62d9192acfc83a317c47",
@@ -252,7 +252,7 @@
         "binding": true,
         "measured": 16161.0,
         "metric_authority": "performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles)",
-        "performance_result_id": "85efb8eca931ce6bf339695c351d5161a51e4f4465b19745b56e38ff64c40c2e",
+        "performance_result_id": "c19e5f10e4ffbcfa3c4b3f9be5686ecf4850aab145138e5edcf574a833f8096c",
         "qos_class": "latency_critical",
         "reason": "measured 16161 cycles <= ceiling 100000.0 cycles via performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles). class-scoped to 'tp_collective' (single-class workload: aggregate == class evidence)",
         "required": 100000.0,
@@ -261,7 +261,7 @@
         "verdict": "SATISFIED"
       }
     ],
-    "performance_result_id": "85efb8eca931ce6bf339695c351d5161a51e4f4465b19745b56e38ff64c40c2e"
+    "performance_result_id": "c19e5f10e4ffbcfa3c4b3f9be5686ecf4850aab145138e5edcf574a833f8096c"
   },
   "title": "Evaluated design (BookSim aggregate window + requirement verdicts)"
 }
