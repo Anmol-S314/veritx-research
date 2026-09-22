@@ -245,3 +245,54 @@ class TestVerifiedBoundaryRefuses:
         report = RequirementEvaluator.evaluate(req_a, bare, perf_a)
         assert report["design_hash"] == "sha256:" + req_a.design_hash()
         assert report_passes(report) is True
+
+
+class TestMalformedPersistedResults:
+    """One taxonomy for "this persisted result is not verifiable": every
+    documented refusal of the verification stack surfaces as
+    EvidenceInvalid, while unexpected programming errors escape."""
+
+    @pytest.mark.parametrize("mutation", [
+        "binding_schema_version",
+        "binding_clock_shape",
+        "qtime_start_shape",
+        "chain_non_canonical",
+        "schedule_missing_event_id",
+    ])
+    def test_malformed_variant_is_evidence_invalid(self, mutation):
+        req = _request([_ci()], [_lat_req(ceiling=10 ** 9)], tp=2, dp=1)
+        graph = lower_compile_workload(req).graph
+        perf, _ = _bound_result(req, _net_workload(_model()), 2500)
+        tampered = copy.deepcopy(dict(perf))
+        if mutation == "binding_schema_version":
+            tampered["network_binding"]["schema_version"] = 999
+        elif mutation == "binding_clock_shape":
+            tampered["network_binding"]["network_clock_hz"] = {"bad": 1}
+        elif mutation == "qtime_start_shape":
+            tampered["schedule"]["events"][0]["start"] = {
+                "numerator": "x", "denominator": 1}
+        elif mutation == "chain_non_canonical":
+            tampered["wave_d_chain"] = {"ok": {1: 2}}
+        else:
+            del tampered["schedule"]["events"][0]["event_id"]
+        with pytest.raises(EvidenceInvalid):
+            verify_performance_result(
+                tampered, workload=perf.temporal_workload)
+        # Even a hand-forged wrapper is re-verified by the evaluator.
+        forged = VerifiedPerformanceResult(
+            tampered, temporal_workload=perf.temporal_workload)
+        with pytest.raises(EvidenceInvalid):
+            RequirementEvaluator.evaluate(req, graph, forged)
+
+    def test_unexpected_exception_still_escapes(self, monkeypatch):
+        import veritx_dse.application.requirements as reqs
+        req = _request([_ci()], [_lat_req(ceiling=10 ** 9)], tp=2, dp=1)
+        perf, _ = _bound_result(req, _net_workload(_model()), 2500)
+
+        def _boom(document, *, workload):
+            raise KeyError("injected programming bug")
+
+        monkeypatch.setattr(reqs, "reverify_result", _boom)
+        with pytest.raises(KeyError):
+            verify_performance_result(
+                dict(perf), workload=perf.temporal_workload)
