@@ -1,0 +1,96 @@
+{
+  "$id": "https://veritx.dev/contracts/srota/v1/design.view",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DesignView",
+  "description": "Studio-facing design intent (E1-E5) plus derived LOCKED block. LOCKED values are display-only; Studio must never submit them as editable inputs.",
+  "type": "object",
+  "required": ["contract_version", "design_hash", "schema_version", "compiler_semantics_version", "workload", "requirements", "agents", "noc_guided"],
+  "properties": {
+    "contract_version": {"const": 1},
+    "design_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "schema_version": {"type": "integer"},
+    "compiler_semantics_version": {"type": "integer"},
+    "workload": {
+      "type": "object",
+      "required": ["model_family", "parallelism"],
+      "properties": {
+        "model_family": {"type": "string"},
+        "model_name": {"type": "string"},
+        "parallelism": {
+          "type": "object",
+          "required": ["tp", "pp", "ep", "dp"],
+          "properties": {
+            "tp": {"type": "integer", "minimum": 1},
+            "pp": {"type": "integer", "minimum": 1},
+            "ep": {"type": "integer", "minimum": 1},
+            "dp": {"type": "integer", "minimum": 1}
+          },
+          "unevaluatedProperties": false
+        },
+        "serving_mode": {"type": "string"},
+        "workload_source_ref": {
+          "type": "object",
+          "description": "Immutable workload source identity (P1C v3). Filesystem paths are never identity.",
+          "required": ["content_digest", "format"],
+          "properties": {
+            "content_digest": {"type": "string"},
+            "format": {"type": "string"},
+            "size_bytes": {"type": "integer", "minimum": 0}
+          },
+          "unevaluatedProperties": false
+        }
+      }
+    },
+    "requirements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["qos_class", "binding"],
+        "properties": {
+          "traffic_class": {"type": ["string", "null"]},
+          "qos_class": {"type": "string"},
+          "latency_ceiling_cycles": {"type": ["number", "null"]},
+          "bandwidth_floor_gbps": {"type": ["number", "null"]},
+          "binding": {"type": "boolean"}
+        },
+        "unevaluatedProperties": false
+      }
+    },
+    "agents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "count"],
+        "properties": {
+          "kind": {"type": "string"},
+          "count": {"type": "integer", "minimum": 1}
+        }
+      }
+    },
+    "noc_guided": {
+      "type": "object",
+      "description": "GUIDED/FREE knobs only. LOCKED fields are inexpressible here by construction.",
+      "properties": {
+        "topology_family": {"type": ["string", "null"]},
+        "radix": {"type": ["integer", "null"]},
+        "concentration": {"type": ["integer", "null"]},
+        "link_width": {"type": ["integer", "null"]},
+        "rcu_enabled": {"type": ["boolean", "null"]},
+        "arbitration": {"type": ["string", "null"]}
+      },
+      "unevaluatedProperties": false
+    },
+    "locked_derived": {
+      "type": ["object", "null"],
+      "description": "Compiler-derived LOCKED properties. Null when not compiled. Read-only in Studio.",
+      "properties": {
+        "routing": {"type": "string"},
+        "vc_count": {"type": "integer"},
+        "turn_restrictions": {"type": "array", "items": {"type": "string"}},
+        "certificate_overall": {"enum": ["PASS", "FAIL"]}
+      },
+      "unevaluatedProperties": false
+    }
+  },
+  "unevaluatedProperties": false
+}

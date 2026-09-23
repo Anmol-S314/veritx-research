@@ -1,0 +1,48 @@
+{
+  "$id": "https://veritx.dev/contracts/srota/v1/compilation.view",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CompilationView",
+  "description": "Frozen P1 product view of FabricCompiler.compile. COMPILED carries bundle+certificate hashes; non-COMPILED carries evidence and never a bundle.",
+  "type": "object",
+  "required": ["contract_version", "status", "design_hash", "compiler_semantics_version"],
+  "properties": {
+    "contract_version": {"const": 1},
+    "status": {"enum": ["COMPILED", "INVALID", "UNSUPPORTED"]},
+    "design_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "compiler_semantics_version": {"type": "integer"},
+    "resolved_fabric_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "certificate_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "certificate_overall": {"enum": ["PASS", "FAIL"]},
+    "obligations": {
+      "type": "array",
+      "minItems": 10,
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "required": ["obligation", "status", "method", "evidence"],
+        "properties": {
+          "obligation": {"type": "string"},
+          "status": {"enum": ["PASS", "FAIL"]},
+          "method": {"type": "string"},
+          "evidence": {"type": "object"}
+        },
+        "unevaluatedProperties": false
+      }
+    },
+    "artifact_hashes": {
+      "type": "object",
+      "description": "Content hashes of bundle children (topology, attachment, routes, VC, packet format, router behavior, address decode, fabric).",
+      "additionalProperties": {"type": "string"}
+    },
+    "error": {"type": ["string", "null"]}
+  },
+  "unevaluatedProperties": false,
+  "allOf": [
+    {"if": {"properties": {"status": {"const": "COMPILED"}}},
+     "then": {"required": ["resolved_fabric_hash", "certificate_id", "certificate_overall", "obligations"]}},
+    {"if": {"properties": {"status": {"const": "INVALID"}}},
+     "then": {"not": {"required": ["resolved_fabric_hash"]}}},
+    {"if": {"properties": {"status": {"const": "UNSUPPORTED"}}},
+     "then": {"not": {"required": ["resolved_fabric_hash"]}}}
+  ]
+}

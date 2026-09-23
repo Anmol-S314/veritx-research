@@ -32,3 +32,20 @@ DEFAULT_TIMEOUT = 60           # seconds
 DEFAULT_ITERS = 20             # BO iterations
 DEFAULT_PROCESS_NM = 7         # technology node
 PLANE_C_MAX_VC = 8             # max VCs per plane
+
+
+def env_int(name: str, default: int) -> int:
+    """Read an integer env var with fail-fast validation.
+
+    Unset -> default. Set-but-not-integer -> ValueError (never silently
+    coerce: a typo'd env var must not become a mystery default).
+    """
+    import os
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise ValueError(f"environment variable {name} must be an integer, "
+                         f"got {raw!r}") from exc

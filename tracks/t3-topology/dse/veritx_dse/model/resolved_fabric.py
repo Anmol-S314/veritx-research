@@ -517,3 +517,28 @@ def make_resolved_adaptive_fabric(
         router_behavior=router_behavior, address_decode=address_decode,
         fabric=fabric, policy=policy, relation=relation, binding=binding)
     return resolved
+
+def make_resolved_fabric(*, design, inventory,
+                         mapping,
+                         topology,
+                         attachment,
+                         router_route,
+                         resolved_route,
+                         vc_assignment,
+                         packet_format,
+                         router_behavior,
+                         address_decode,
+                         fabric) -> ResolvedFabric:
+    """Bind design + mapping to an already-composed FabricArtifact (RT seam).
+
+    Reclaimed adapter (veritx-integrate): the RT compile path composes the
+    child artifacts itself and binds them through this one seam. Identity
+    is the canonical triple (design_hash, mapping_hash, fabric_hash); the
+    child artifacts are accepted as already-resolved authorities exactly
+    as RT composed them — composition only, no child is rederived.
+    """
+    return ResolvedFabric(
+        design_hash=design.design_hash(),
+        mapping_hash=mapping.mapping_hash(),
+        fabric_hash=fabric.fabric_hash,
+    )

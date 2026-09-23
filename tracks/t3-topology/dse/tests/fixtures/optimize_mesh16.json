@@ -1,0 +1,51 @@
+{
+  "schema_version": 2,
+  "compiler_semantics_version": 2,
+  "workload": {
+    "model_family": "dense_transformer",
+    "model_name": "p2_opt_demo_16",
+    "tp": 16,
+    "pp": 1,
+    "ep": 1,
+    "dp": 1,
+    "serving_mode": "mixed",
+    "trace_path": null
+  },
+  "requirements": [
+    {
+      "qos_class": "latency_critical",
+      "latency_ceiling_cycles": 600.0,
+      "bandwidth_floor_gbps": null,
+      "binding": true
+    }
+  ],
+  "agents": [
+    {
+      "kind": "compute_tile",
+      "count": 16,
+      "data_width": 256,
+      "addr_width": 64,
+      "protocol": "AXI"
+    }
+  ],
+  "dependencies": [
+    {"source": "A", "target": "B", "kind": "blocking"},
+    {"source": "B", "target": "A", "kind": "blocking"}
+  ],
+  "noc_config": {
+    "topology_family": "mesh",
+    "radix": null,
+    "concentration": null,
+    "arbitration": null,
+    "rcu_enabled": null,
+    "link_width": null,
+    "output_formats": ["systemverilog"],
+    "obfuscation_level": 0
+  },
+  "address_map": {"ranges": []},
+  "physical": {
+    "clock_freq_mhz": 1000.0,
+    "data_width": 256,
+    "process_node_nm": 7
+  }
+}
