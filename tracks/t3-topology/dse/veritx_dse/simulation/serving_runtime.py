@@ -92,19 +92,27 @@ def run_live_round(*, backend: CanonicalServingNetworkBackend,
                    dispatched_instances: frozenset[int],
                    round_index: int = 0, timeout_s: int = 900,
                    session_factory: Callable[..., Any] | None = None,
-                   stem: str = "workload", ledger: bool = True) -> RoundOutcome:
+                   stem: str = "workload", ledger: bool = True,
+                   staged: StagedWorkload | None = None) -> RoundOutcome:
     """Stage one round and execute it on the real canonical backend.
 
     The frontend runs its argv workload during startup, so that one is left
     deliberately idle and the round is delivered through the real
     ``load``/``run`` protocol instead of being executed twice in one process.
+
+    ``staged`` lets a caller that already staged this round (to qualify it)
+    reuse the staging instead of translating the same workload twice; the
+    staging is deterministic, so this is an optimisation, not a second
+    authority.
     """
     backend.assert_network_authority()
     # last-instant proof the qualified binary is the one being executed
     backend.recheck_before_spawn()
     target = Path(run_dir)
     target.mkdir(parents=True, exist_ok=True)
-    staged = backend.stage_round(workload=workload, directory=target, stem=stem)
+    if staged is None:
+        staged = backend.stage_round(workload=workload, directory=target,
+                                     stem=stem)
     startup = backend.startup_workload_path(cwd=target)
     argv = backend.qualified_argv(workload_path=str(startup), cwd=target)
 
@@ -148,16 +156,26 @@ def run_live_round(*, backend: CanonicalServingNetworkBackend,
     )
 
 
+#: the runtime's collective-submission line (Workload.cc: veritx_ledger_coll_submit)
+_LEDGER_SUBMIT = "[LEDGER][COLL_SUBMIT]"
+
+
 def collective_ledger_lines(stderr_text: str) -> tuple[str, ...]:
     """The runtime's own collective-submission contract lines.
 
-    ``VERITX_LEDGER=1`` makes the frontend emit ``[LEDGER][COLL]`` with the
-    collective type, size, members and whether a communicator group was used.
-    That is the runtime's own statement of expansion authority -- evidence,
-    not inference.
+    ``VERITX_LEDGER=1`` makes the frontend emit ``[LEDGER][COLL_SUBMIT]``
+    with the collective type, size, members and whether a communicator group
+    was used.  That is the runtime's own statement of expansion authority --
+    evidence, not inference.
+
+    The match is on the full ``[LEDGER][COLL_SUBMIT]`` tag, not a
+    ``[LEDGER][COLL]`` prefix: every ledger tag the runtime emits
+    (``COLL_SUBMIT``/``COLL_CONSTRUCTED``/``COLL_COMPLETE``) carries a suffix,
+    so a prefix match silently yields no lines and makes the ledger
+    validation unreachable.
     """
     return tuple(line.strip() for line in stderr_text.splitlines()
-                 if "[LEDGER][COLL]" in line)
+                 if _LEDGER_SUBMIT in line)
 
 
 def build_serving_evidence(*, backend: CanonicalServingNetworkBackend,

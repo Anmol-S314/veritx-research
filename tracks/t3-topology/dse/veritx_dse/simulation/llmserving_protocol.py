@@ -28,7 +28,9 @@ Where this client is deliberately stricter than the traced frontend:
     process group is killed — a stall cannot leak (§21: cancellation must
     reach the real OS process).
   * stderr is drained by a bounded daemon thread (the undrained-pipe stall
-    at ~round 1500 in the forward-port history is what this prevents).
+    at ~round 1500 in the forward-port history is what this prevents), with
+    evidence lines (ledger / Comm time / injection counter) kept in a
+    separate non-evictable buffer from the diagnostic tail.
   * The substring terminator rule is reproduced EXACTLY (a line merely
     containing "Waiting" terminates) — see protocol doc §7; tests pin it.
 
@@ -53,7 +55,16 @@ from typing import Optional
 _TERMINATOR_SUBSTR = "Waiting"
 _LEGACY_TERMINATOR = "Checking Non-Exited Systems ..."
 _LINE_CAP = 300
-_STDERR_KEEP = 200  # bounded tail; protocol tests need the death message
+_STDERR_KEEP = 200  # bounded diagnostic tail; protocol tests need the death message
+#: Evidence lines are kept in their own buffer and are NOT evictable by
+#: binary chatter: a real canonical round emits ~300 stderr lines of which
+#: the collective ledger is a small, early, load-bearing subset.  A single
+#: shared tail silently drops it (measured: a 16-rank AllReduce round emits
+#: 16 [LEDGER][COLL_SUBMIT] lines and 310 lines total).
+_EVIDENCE_KEEP = 8192
+#: exactly the lines the evidence path parses -- see serving_runtime
+#: ``parse_round_output`` and ``collective_ledger_lines``
+_EVIDENCE_MARKERS = ("[LEDGER][COLL_SUBMIT]", "Comm time:", "injected=")
 _STARTUP_TIMEOUT_S = 30.0
 _REPLY_TIMEOUT_S = 60.0
 _EXIT_TIMEOUT_S = 10.0
@@ -108,24 +119,28 @@ class BackendReply:
         return "\n".join(self.lines)
 
 
-def _start_stderr_drain(stderr_file) -> tuple[threading.Thread, deque]:
+def _start_stderr_drain(stderr_file) -> tuple[threading.Thread, deque, deque]:
     tail: deque = deque(maxlen=_STDERR_KEEP)
+    evidence: deque = deque(maxlen=_EVIDENCE_KEEP)
 
     if stderr_file is None:
         t = threading.Thread(target=lambda: None, daemon=True)
         t.start()
-        return t, tail
+        return t, tail, evidence
 
     def _drain() -> None:
         try:
             for raw in iter(stderr_file.readline, b""):
-                tail.append(raw.decode("utf-8", errors="replace")[:_LINE_CAP])
+                line = raw.decode("utf-8", errors="replace")[:_LINE_CAP]
+                tail.append(line)
+                if any(marker in line for marker in _EVIDENCE_MARKERS):
+                    evidence.append(line)
         except (ValueError, OSError):
             pass  # closed under us during teardown
 
     t = threading.Thread(target=_drain, daemon=True)
     t.start()
-    return t, tail
+    return t, tail, evidence
 
 
 def _kill_group(proc: subprocess.Popen) -> None:
@@ -181,6 +196,7 @@ class ServingBackendSession:
         self._proc: Optional[subprocess.Popen] = None
         self._stderr_thread: Optional[threading.Thread] = None
         self._stderr_tail: deque = deque(maxlen=_STDERR_KEEP)
+        self._stderr_evidence: deque = deque(maxlen=_EVIDENCE_KEEP)
         self._readbuf = b""       # partially-read line (binary assembly)
         self._closed = False
 
@@ -207,8 +223,8 @@ class ServingBackendSession:
             env=self._env,
             start_new_session=True,  # own group: our signals are ours alone
         )
-        self._stderr_thread, self._stderr_tail = _start_stderr_drain(
-            self._proc.stderr)
+        self._stderr_thread, self._stderr_tail, self._stderr_evidence = (
+            _start_stderr_drain(self._proc.stderr))
 
     @property
     def pid(self) -> Optional[int]:
@@ -218,7 +234,14 @@ class ServingBackendSession:
         return self._proc.poll() if self._proc else None
 
     def stderr_text(self) -> str:
-        return "".join(self._stderr_tail)
+        """The evidence-bearing stderr lines the backend emitted.
+
+        This is the filtered evidence buffer (ledger submissions, per-endpoint
+        ``Comm time`` and the injection counter), not the diagnostic tail:
+        evidence must not be evictable by how chatty the binary happens to be.
+        ``ProtocolError`` still carries the bounded raw tail separately.
+        """
+        return "".join(self._stderr_evidence)
 
     # -- protocol operations ----------------------------------------------
 

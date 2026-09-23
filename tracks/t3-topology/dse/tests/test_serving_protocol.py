@@ -377,3 +377,46 @@ class TestSessionDiscipline:
             s.read_startup()
             with pytest.raises(ProtocolError):
                 s.command("pass\nexit")
+
+
+class TestStderrEvidenceBuffer:
+    """Evidence must not be evictable by how chatty the binary is.
+
+    Measured on a real 16-rank AllReduce round: 310 stderr lines total, of
+    which the 16 ``[LEDGER][COLL_SUBMIT]`` lines are an early subset.  With a
+    single bounded tail the ledger is silently dropped and §9 validation
+    becomes unreachable, so evidence lines get their own buffer.
+    """
+
+    @staticmethod
+    def _stream(lines):
+        import io
+        return io.BytesIO(b"".join(l.encode() + b"\n" for l in lines))
+
+    def test_ledger_survives_more_chatter_than_the_diagnostic_tail(self):
+        from veritx_dse.simulation import llmserving_protocol as proto
+        ledger = ("[LEDGER][COLL_SUBMIT] rank=0 astra_node=0 comm_type=0 "
+                  "comm_size=4096 priority=0 involved_dims=[1,1,1,1] "
+                  "group_members=[0,1] tick=0")
+        comm = "[statistics] sys[0], Comm time: 7"
+        chatter = [f"booksim chatter {i}"
+                   for i in range(proto._STDERR_KEEP + 50)]
+        thread, tail, evidence = proto._start_stderr_drain(
+            self._stream([ledger, comm] + chatter))
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+        # the diagnostic tail evicted the ledger (the measured failure)...
+        assert not any(proto._EVIDENCE_MARKERS[0] in line for line in tail)
+        assert len(tail) == proto._STDERR_KEEP
+        # ...but the evidence buffer kept every load-bearing line
+        joined = "".join(evidence)
+        assert ledger in joined
+        assert comm in joined
+        assert "booksim chatter" not in joined
+
+    def test_injection_counter_is_evidence_too(self):
+        from veritx_dse.simulation import llmserving_protocol as proto
+        thread, _tail, evidence = proto._start_stderr_drain(
+            self._stream(["[trace] All 0 cycles, injected=42 — draining"]))
+        thread.join(timeout=5)
+        assert "injected=42" in "".join(evidence)

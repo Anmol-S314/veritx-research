@@ -29,7 +29,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 from veritx_dse.core.artifact import content_hash
 
@@ -185,6 +185,48 @@ def plan_from_batch(batch: Any, *, instance_id: int, participant_ranks: Iterable
         compute_ns=compute_ns)
 
 
+def plan_from_round(*, round_id: int, batches: Mapping[int, Any],
+                    participant_ranks: Iterable[int], collective_kind: str,
+                    collective_bytes: int, compute_ns: int) -> ServingBatchPlan:
+    """One *global* round plan over every instance that has a real batch.
+
+    A certified round carries one communicator group, so it spans the full
+    participant set; ``batches`` maps serving instance -> real ``Batch``.
+    Only fields a real batch owns are read.  The phase is prefill if *any*
+    instance is prefilling, because the round's collective is one workload
+    and a mixed round must not be labelled decode.
+
+    ``instance_id = -1`` marks a round that belongs to no single instance;
+    the plan identity still binds every contributing batch id and request id.
+    """
+    if not batches:
+        raise ServingRoundError("a round requires at least one real batch")
+    ids: list[str] = []
+    tokens = 0
+    phase = "decode"
+    for instance_id in sorted(batches):
+        batch = batches[instance_id]
+        batch_id = getattr(batch, "batch_id", None)
+        if not isinstance(batch_id, int):
+            raise ServingRoundError(
+                f"instance {instance_id} supplied a non-Batch with no "
+                "integer batch_id")
+        for request in getattr(batch, "requests", ()) or ():
+            ids.append(f"inst{instance_id}:req{getattr(request, 'id', len(ids))}")
+        tokens += int(getattr(batch, "total_len", 0) or 0)
+        if getattr(batch, "num_prefill", 0):
+            phase = "prefill"
+    if not ids:
+        raise ServingRoundError(
+            "a round's batches carry no requests; an empty round is not "
+            "service evidence")
+    return ServingBatchPlan(
+        batch_id=int(round_id), instance_id=-1, request_ids=tuple(ids),
+        participant_ranks=tuple(sorted(participant_ranks)), phase=phase,
+        tokens=tokens, collective_kind=collective_kind,
+        collective_bytes=collective_bytes, compute_ns=compute_ns)
+
+
 # ── collective ledger validation (§9) ─────────────────────────────────────
 
 @dataclass(frozen=True)
@@ -284,6 +326,16 @@ def validate_collective_ledger(entries: tuple[LedgerCollective, ...], *,
             f"the runtime submitted the collective from ranks "
             f"{sorted(ranks - set(expected))} outside the projected "
             "participant set")
+    # The NUMBER of submissions is part of the contract, not just their
+    # content: every participant submits the collective, so a ledger holding
+    # only some ranks' lines must not validate green.  A subset check alone
+    # accepts a single submission for a 16-rank round -- which is exactly how
+    # a truncated/partially-evicted ledger slipped through once.
+    if ranks != set(expected):
+        missing = sorted(set(expected) - ranks)
+        raise ServingRoundError(
+            f"the runtime submitted the collective from only {len(ranks)} of "
+            f"{len(set(expected))} participant ranks (missing {missing})")
 
 
 # ── round qualification (§6) ──────────────────────────────────────────────

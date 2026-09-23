@@ -583,3 +583,25 @@ def test_endpoint_permutation_is_retained_in_the_round(tmp_path):
     # the mapping is non-identity even though the endpoint SET coincides
     assert dict(ns.rank_to_endpoint) != {r: r for r in range(16)}
     assert ns.endpoint_for(0) != 0
+
+
+def test_partial_ledger_is_refused():
+    """§9: the *number* of submissions is part of the contract.
+
+    A subset check alone accepts one submission for a four-rank round, which
+    is how a truncated ledger once validated green.
+    """
+    plan = _plan()
+    entries = sround.parse_collective_ledger(
+        [_ledger_line(rank=0, members="{0,1,2,3}")])
+    with pytest.raises(sround.ServingRoundError, match="only 1 of 4"):
+        sround.validate_collective_ledger(
+            entries, plan=plan, expected_members=(0, 1, 2, 3))
+
+
+def test_complete_ledger_covers_every_participant():
+    plan = _plan()
+    entries = sround.parse_collective_ledger(
+        [_ledger_line(rank=r, members="{0,1,2,3}") for r in range(4)])
+    sround.validate_collective_ledger(
+        entries, plan=plan, expected_members=(0, 1, 2, 3))
