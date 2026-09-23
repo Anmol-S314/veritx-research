@@ -776,6 +776,38 @@ def test_tracked_example_round_trips(path):
         json.loads(path.read_text())).design_hash()
 
 
+@pytest.mark.parametrize("path", sorted(EXAMPLES_DIR.glob("*.json")),
+                         ids=lambda p: p.name)
+def test_tracked_examples_carry_no_computed_identity(path):
+    """Examples are EDITABLE SOURCES (README: copy, edit, compile).
+
+    Computed identity belongs in emitted canonical snapshots, never in a
+    source template: an embedded design_hash goes stale the moment a user
+    edits a copied field, and from_dict() correctly refuses it.
+    """
+    doc = json.loads(path.read_text())
+    for field in ("design_hash", "guardrail_hash"):
+        assert field not in doc, f"{path.name} must not embed {field}"
+    assert doc["compiler_semantics_version"] == 2
+
+
+@pytest.mark.parametrize("path", sorted(EXAMPLES_DIR.glob("*.json")),
+                         ids=lambda p: p.name)
+def test_edited_example_copy_reparses(path, tmp_path):
+    """The documented user workflow: copy an example, edit a field, compile."""
+    original = CompileRequest.from_dict(json.loads(path.read_text()))
+    doc = json.loads(path.read_text())
+    doc["workload"]["model_name"] = "edited-copy"
+    copy = tmp_path / path.name
+    copy.write_text(json.dumps(doc))
+    edited = CompileRequest.from_dict(json.loads(copy.read_text()))
+    # the edit is accepted, and identity is RECOMPUTED rather than stale
+    assert edited.workload.model_name == "edited-copy"
+    assert edited.design_hash() != original.design_hash()
+    assert edited.to_dict()["design_hash"] == edited.design_hash()
+    assert "design_hash" not in json.loads(copy.read_text())
+
+
 # ── compiler-semantics versions and migration ────────────────────────────
 
 def test_legacy_semantics_v1_is_loadable():

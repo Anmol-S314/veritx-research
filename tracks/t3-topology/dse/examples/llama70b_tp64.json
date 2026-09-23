@@ -67,7 +67,5 @@
     "data_width": 256,
     "num_power_domains": 1,
     "process_node_nm": 7
-  },
-  "design_hash": "1e319bbe753bd8700a814e6ba5e88204d58e6f56e01141eb7c229f65d9ff099e",
-  "guardrail_hash": "1e319bbe753bd8700a814e6ba5e88204d58e6f56e01141eb7c229f65d9ff099e"
+  }
 }
