@@ -31,14 +31,34 @@ from veritx_dse.workload.messages import LogicalMessageArtifactV2
 REPO = Path(__file__).resolve().parents[4]
 BOOKSIM_SOURCE = REPO
 
+BUILT_FROM_SOURCE = (
+    REPO / "third_party" / "astra-sim" / "astra-sim" / "network_frontend"
+    / "booksim2" / "bin" / "AstraSim_BookSim2")
+
 REAL_CANDIDATES = (
     os.environ.get("VERITX_ASTRA_BIN"),
+    str(BUILT_FROM_SOURCE),
     "/home/datavex/worktree-archive/veritx-manal/third_party/astra-sim/"
     "astra-sim/network_frontend/booksim2/bin/AstraSim_BookSim2",
     "/home/datavex/worktree-archive/veritx-main/serving/astra-sim/build/"
     "astra_booksim2/build/bin/AstraSim_BookSim2",
 )
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "astra_tiny"
+
+
+ARCHIVED_BINARY = Path(
+    "/home/datavex/worktree-archive/veritx-manal/third_party/astra-sim/"
+    "astra-sim/network_frontend/booksim2/bin/AstraSim_BookSim2")
+
+
+def archived_astra_binary() -> Path | None:
+    """The pre-existing binary: a DIFFERENTIAL REFERENCE only.
+
+    Slice 33 proved it was built from source that differs from the vendored
+    tree (it unwraps ``network.json``; the vendored source cannot), so it is
+    never the canonical qualification producer.
+    """
+    return ARCHIVED_BINARY if ARCHIVED_BINARY.is_file() else None
 
 
 def real_astra_binary() -> Path | None:
@@ -315,9 +335,9 @@ def test_fixture_machine_authority_is_reference_only():
 
 
 def test_binary_source_abi_divergence_is_recorded_honestly():
-    binary = real_astra_binary()
+    binary = archived_astra_binary()
     if binary is None:
-        pytest.skip("no ASTRA binary available")
+        pytest.skip("no archived ASTRA binary available")
     accepts_json = ax.probe_binary_network_abi(binary)
     source_unwraps = ax.booksim_source_has_json_unwrap(BOOKSIM_SOURCE)
     # the archived binary was built from JSON-capable source, the vendored
@@ -375,7 +395,11 @@ def test_memory_scope_is_runtime_required_and_proven_inert():
     memory = json.loads(machine.memory_config_text)
     assert memory["remote-mem-latency"] == 0
     assert memory["remote-mem-bw"] == 0
-    assert memory["num-nodes"] == machine.router_count
+    # Slice-34 correction: the ASTRA Sys namespace is the BookSim NODE count
+    # (k**n), not the attached-endpoint count
+    assert memory["num-nodes"] == machine.astra_sys_count
+    assert machine.astra_sys_count == 25
+    assert machine.endpoint_count == 17
 
 
 def test_historical_memory_constants_are_not_presented_as_canonical():
@@ -451,17 +475,22 @@ def test_ns_per_cycle_keeps_fabric_and_workload_domains_aligned():
 
 def _fake_outcome(machine, *, ranks=16, cycles=50000, exposed=30000,
                   injected=0, returncode=0, duplicate=False):
-    lines = []
-    for rank in range(ranks):
-        lines.append(f"[workload] sys[{rank}] finished, {cycles} cycles, "
-                     f"exposed communication {exposed} cycles.")
+    # main.cc prints one GLOBAL wall time in both fields of its [workload]
+    # line; per-endpoint numbers come from the statistics logger.
+    lines = [f"[workload] sys[{e}] finished, {max(cycles, 1)} cycles, "
+             f"exposed communication {max(cycles, 1)} cycles."
+             for e in range(machine.astra_sys_count)]
     if duplicate:
         lines.append("[workload] sys[0] finished, 1 cycles, exposed "
                      "communication 1 cycles.")
+    logs = "".join(
+        f"[statistics] sys[{e}], Wall time: {cycles}\n"
+        f"[statistics] sys[{e}], Comm time: {exposed}\n"
+        for e in range(ranks))
     return ax.AstraOutcome(
         returncode=returncode, stdout="\n".join(lines) + "\n",
-        stderr=(f"[trace] All 0 cycles, injected={injected} — draining\n"
-                if injected is not None else ""))
+        stderr=logs + (f"[trace] All 0 cycles, injected={injected} — "
+                       "draining\n" if injected is not None else ""))
 
 
 def _runner(machine, **kwargs):
@@ -561,7 +590,7 @@ def test_evidence_identity_excludes_host_facts(tmp_path):
 
 def test_rank_omission_and_duplication_refuse(tmp_path):
     _, _, _, _, machine = _machine()
-    with pytest.raises(ax.AstraExecutionError, match="projected ranks"):
+    with pytest.raises(ax.AstraExecutionError, match="projected endpoints"):
         _execute_fake(machine, tmp_path, ranks=15)
     with pytest.raises(ax.AstraExecutionError, match="duplicate"):
         _execute_fake(machine, tmp_path / "b", duplicate=True)
@@ -712,16 +741,19 @@ def test_real_run_is_either_scoped_or_refused_with_a_diagnosis(tmp_path):
             workload_configuration=workload, timeout_s=600,
             booksim_source_root=BOOKSIM_SOURCE)
     except ax.AstraExecutionError as exc:
-        message = str(exc)
-        assert "non-participant fabric node" in message, message
-        assert "did not ask for" in message
-        print(f"\n[real] REFUSED (silent rank replication): {message[:160]}")
+        # Any refusal is acceptable here; what must never happen is this run
+        # being reported as scoped evidence.  The strict qualification gate
+        # lives in tests/test_backend_astra_namespace.py (endpoint-indexed ETs
+        # + communicator groups), which is what the canonical path requires.
+        print(f"\n[real] refused by the gate: {str(exc)[:160]}")
         return
     # if the runtime ever isolates participants, the evidence must be scoped
     assert evidence.evidence_tier in (ax.EVIDENCE_TIER_ASTRA_COLLECTIVE,
                                       ax.EVIDENCE_TIER_ASTRA_MESSAGES)
     assert evidence.rank_count == machine.participant_count
-    assert evidence.idle_fabric_ranks == ()
+    assert evidence.namespace_binding == ax.NAMESPACE_BINDING_IDENTITY
+    assert evidence.idle_fabric_endpoints == tuple(
+        range(machine.participant_count, machine.astra_sys_count))
     assert evidence.autonomous_injection_packets in (None, 0)
     print(f"\n[real] SCOPED tier={evidence.evidence_tier} "
           f"ranks={evidence.rank_count} aggregate={evidence.aggregate_cycles} "
@@ -768,11 +800,11 @@ def _try_real_run(tmp_path, *, granularity="collectives"):
 # ── 13. historical differential / regression reference ────────────────────
 
 def _fixture_run(tmp_path, *, network_config="mesh4x4.cfg"):
-    """Run the qualified historical fixture through the real binary."""
+    """Run the historical fixture through the ARCHIVED reference binary."""
     import shutil
     directory = tmp_path / "fixture"
     shutil.copytree(FIXTURE, directory)
-    binary = real_astra_binary()
+    binary = archived_astra_binary() or real_astra_binary()
     command = (
         str(binary),
         f"--system-configuration=system.json",
@@ -789,7 +821,8 @@ def _fixture_run(tmp_path, *, network_config="mesh4x4.cfg"):
     return proc
 
 
-@_requires_binary
+@pytest.mark.skipif(archived_astra_binary() is None,
+                    reason="no archived reference binary available")
 def test_reference_fixture_reproduces_the_qualified_cycles(tmp_path):
     """§13: the 30,310-cycle communication component stays a reference."""
     proc = _fixture_run(tmp_path)
@@ -804,7 +837,8 @@ def test_reference_fixture_reproduces_the_qualified_cycles(tmp_path):
     assert ax.autonomous_injection_packets(proc.stderr) in (None, 0)
 
 
-@_requires_binary
+@pytest.mark.skipif(archived_astra_binary() is None,
+                    reason="no archived reference binary available")
 def test_historical_json_and_canonical_cfg_abis_agree_on_the_fixture(tmp_path):
     """The legacy JSON wrapper and the canonical .cfg ABI are equivalent."""
     cfg = _fixture_run(tmp_path / "cfg", network_config="mesh4x4.cfg")
@@ -829,3 +863,63 @@ def test_reference_fixture_has_no_canonical_machine_authority():
     for key in system:
         assert key in am.SYSTEM_FIELD_OWNERS
     assert "mesh4x4" not in json.dumps(machine.identity_dict())
+
+
+def test_parser_never_infers_participation_from_global_wall_time():
+    """main.cc's [workload] line carries ONE global wall time for every Sys.
+
+    It therefore cannot prove that endpoint ``i`` communicated.  Participation
+    must come from the statistics logger; an idle Sys has no entry and must
+    stay idle rather than inherit the global wall time.
+    """
+    _, _, _, _, machine = _machine()
+    participants = tuple(range(machine.participant_count))
+    idle = tuple(range(machine.participant_count, machine.astra_sys_count))
+    assert idle, "the fixture must have non-participant Sys ids"
+    # identical, non-zero global wall time for participants AND idle Sys
+    stdout = "".join(
+        f"[workload] sys[{e}] finished, 50000 cycles, exposed communication "
+        "50000 cycles.\n" for e in range(machine.astra_sys_count))
+    stderr = "".join(
+        f"[statistics] sys[{e}], Wall time: 50000\n"
+        f"[statistics] sys[{e}], Comm time: 30000\n" for e in participants)
+
+    money = ax.parse_astra_stats(stdout, stderr)
+    exposed = dict(money.exposed_comm)
+    assert set(exposed) == set(participants), \
+        "an idle Sys inherited the global wall time as exposure"
+    for endpoint in idle:
+        assert exposed.get(endpoint) is None
+        assert endpoint not in dict(money.exposed_comm)
+
+    admitted = ax.assert_astra_gate(
+        money, machine=machine, injected=0,
+        participant_endpoints=participants,
+        endpoint_count=machine.astra_sys_count)
+    assert admitted == idle
+    assert max(exposed.values()) == 30000
+
+    # a participant without a statistics entry is an omission, not a wall time
+    partial = "".join(
+        f"[statistics] sys[{e}], Wall time: 50000\n"
+        f"[statistics] sys[{e}], Comm time: 30000\n" for e in participants[:-1])
+    with pytest.raises(ax.AstraExecutionError, match="projected endpoints"):
+        ax.assert_astra_gate(
+            ax.parse_astra_stats(stdout, partial), machine=machine, injected=0,
+            participant_endpoints=participants,
+            endpoint_count=machine.astra_sys_count)
+
+
+def test_global_line_alone_is_not_execution_evidence():
+    """A run that only prints the global line proves nothing per endpoint."""
+    _, _, _, _, machine = _machine()
+    stdout = "".join(
+        f"[workload] sys[{e}] finished, 50000 cycles, exposed communication "
+        "50000 cycles.\n" for e in range(machine.astra_sys_count))
+    money = ax.parse_astra_stats(stdout, "")
+    assert dict(money.exposed_comm) == {}
+    with pytest.raises(ax.AstraExecutionError, match="projected endpoints"):
+        ax.assert_astra_gate(
+            money, machine=machine, injected=0,
+            participant_endpoints=tuple(range(machine.participant_count)),
+            endpoint_count=machine.astra_sys_count)

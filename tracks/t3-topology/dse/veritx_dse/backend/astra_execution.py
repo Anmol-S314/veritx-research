@@ -52,6 +52,9 @@ STATUS_EXECUTED = "EXECUTED"
 STATUS_UNSUPPORTED_MESSAGE_MODE = (
     "UNSUPPORTED_RUNTIME_FOR_CANONICAL_MESSAGE_MODE")
 
+NAMESPACE_BINDING_CANONICAL = "CANONICAL_PARTICIPANT_MAPPING"
+NAMESPACE_BINDING_IDENTITY = "IDENTITY_RANK_ENDPOINT_ASSUMED"
+
 EXECUTION_TRANSPORT_SUPERVISED = "SUPERVISED_PROCESS"
 EXECUTION_TRANSPORT_TEST_INJECTED = "TEST_INJECTED"
 
@@ -116,7 +119,19 @@ class AstraRuntimeEvidence:
     aggregate_cycles: int
     aggregate_exposed_comm: int
     rank_count: int
-    idle_fabric_ranks: tuple[int, ...]
+    #: canonical rank -> fabric endpoint binding actually executed
+    rank_to_endpoint: tuple[tuple[int, int], ...]
+    namespace_id: str
+    namespace_binding: str
+    endpoint_count: int
+    astra_sys_count: int
+    idle_fabric_endpoints: tuple[int, ...]
+    #: False when the runtime never executed the projected workload path, so
+    #: no per-endpoint statistic exists (canonical-message mode today)
+    participant_statistics_present: bool
+    #: endpoint-indexed runtime results (physical namespace)
+    per_endpoint_cycles: tuple[tuple[int, int], ...]
+    per_endpoint_exposed_comm: tuple[tuple[int, int], ...]
     transport: str
     parser_version: str = ASTRA_PARSER_VERSION
     schema_version: int = ASTRA_EXECUTION_SCHEMA_VERSION
@@ -162,7 +177,18 @@ class AstraRuntimeEvidence:
             "aggregate_cycles": self.aggregate_cycles,
             "aggregate_exposed_comm": self.aggregate_exposed_comm,
             "rank_count": self.rank_count,
-            "idle_fabric_ranks": list(self.idle_fabric_ranks),
+            "rank_to_endpoint": [[r, e] for r, e in self.rank_to_endpoint],
+            "namespace_id": self.namespace_id,
+            "namespace_binding": self.namespace_binding,
+            "endpoint_count": self.endpoint_count,
+            "astra_sys_count": self.astra_sys_count,
+            "idle_fabric_endpoints": list(self.idle_fabric_endpoints),
+            "participant_statistics_present":
+                self.participant_statistics_present,
+            "per_endpoint_cycles": {str(e): c
+                                    for e, c in self.per_endpoint_cycles},
+            "per_endpoint_exposed_comm":
+                {str(e): c for e, c in self.per_endpoint_exposed_comm},
         }
 
     def evidence_id(self) -> str:
@@ -221,31 +247,39 @@ def parse_astra_stats(stdout: str, stderr: str) -> AstraMoney:
     cycles: dict[int, int] = {}
     exposed: dict[int, int] = {}
     compute: dict[int, int] = {}
+    reported: set[int] = set()
+    # ``main.cc`` prints ONE global ``wall_time`` in BOTH fields of its
+    # ``[workload] sys[i] finished, <w> cycles, exposed communication <w>``
+    # line for every Sys -- including idle ones.  That line therefore carries
+    # no per-endpoint information and must never be read as exposure.  It is
+    # used only to enumerate the endpoint namespace and detect duplicates.
     for line in stdout.splitlines():
         match = _RANK_RE.search(line)
         if match:
-            rank, cyc, exp = (int(match.group(1)), int(match.group(2)),
-                              int(match.group(3)))
-            if rank in cycles:
+            rank = int(match.group(1))
+            if rank in reported:
                 raise AstraExecutionError(
-                    f"runtime reported duplicate results for rank {rank}")
-            cycles[rank] = cyc
-            exposed[rank] = exp
+                    f"runtime reported duplicate results for endpoint {rank}")
+            reported.add(rank)
+            cycles[rank] = int(match.group(2))
+    # Per-endpoint numbers come ONLY from the statistics logger, which emits
+    # an entry per *executing* endpoint.  An idle endpoint has no entry, so
+    # its absence is the idle signal -- not a zero written by us.
     combined = stdout + "\n" + (stderr or "")
     for line in combined.splitlines():
         wall = _WALL_RE.search(line)
         if wall:
-            cycles.setdefault(int(wall.group(1)), int(wall.group(2)))
+            cycles[int(wall.group(1))] = int(wall.group(2))
         comm = _COMM_RE.search(line)
         if comm:
-            exposed.setdefault(int(comm.group(1)), int(comm.group(2)))
+            exposed[int(comm.group(1))] = int(comm.group(2))
         gpu = _GPU_RE.search(line)
         if gpu:
-            compute.setdefault(int(gpu.group(1)), int(gpu.group(2)))
+            compute[int(gpu.group(1))] = int(gpu.group(2))
     if not cycles:
         raise AstraExecutionError(
-            "runtime reported no per-rank results; refusing to treat this "
-            "as execution")
+            "runtime reported no per-endpoint results; refusing to treat "
+            "this as execution")
     return AstraMoney(cycles=tuple(sorted(cycles.items())),
                       exposed_comm=tuple(sorted(exposed.items())),
                       compute=tuple(sorted(compute.items())))
@@ -271,7 +305,9 @@ def autonomous_injection_packets(stderr: str) -> int | None:
 
 def assert_astra_gate(money: AstraMoney, *,
                       machine: AstraMachineProjection,
-                      injected: int | None) -> tuple[int, ...]:
+                      injected: int | None,
+                      participant_endpoints: tuple[int, ...] | None = None,
+                      endpoint_count: int | None = None) -> tuple[int, ...]:
     """Every condition a usable ASTRA measurement must satisfy.
 
     The frontend instantiates one NPU per *fabric node*, so the runtime
@@ -282,15 +318,28 @@ def assert_astra_gate(money: AstraMoney, *,
     """
     cycles = dict(money.cycles)
     exposed = dict(money.exposed_comm)
-    expected = set(range(machine.participant_count))
-    got = set(cycles)
+    # Slice-33 correction: the runtime namespace is the fabric ENDPOINT
+    # count (Workload.cc resolves <base>.<Sys.id>.et and main.cc builds one
+    # Sys per fabric.node_count()), never the router count.
+    namespace_size = machine.astra_sys_count if endpoint_count is None \
+        else endpoint_count
+    expected = set(range(machine.participant_count)
+                   if participant_endpoints is None
+                   else participant_endpoints)
+    # Participation is proven ONLY by the statistics logger's per-endpoint
+    # entry.  The global [workload] line enumerates every Sys (idle included),
+    # so it can never establish that an endpoint executed work.
+    got = set(exposed)
     missing = sorted(expected - got)
     if missing:
         raise AstraExecutionError(
-            f"runtime did not report the projected ranks (missing={missing})")
-    extra = sorted(got - expected)
-    admissible = set(range(machine.participant_count, machine.router_count))
-    unexpected = sorted(set(extra) - admissible)
+            f"runtime did not report the projected endpoints "
+            f"(missing={missing})")
+    # every endpoint the runtime enumerated must live in the Sys namespace
+    unexpected = sorted(set(cycles) - set(range(namespace_size)))
+    # idle endpoints are the namespace complement of the participant set --
+    # whether or not the runtime bothered to enumerate them
+    extra = sorted(set(range(namespace_size)) - expected)
     if unexpected:
         raise AstraExecutionError(
             "runtime reported ranks that are neither participants nor "
@@ -300,11 +349,11 @@ def assert_astra_gate(money: AstraMoney, *,
             raise AstraExecutionError(
                 f"participant rank {rank} reported {cycles[rank]} cycles; "
                 "refusing to treat this as execution")
-    for rank in extra:
-        if exposed.get(rank, 0) > 0:
+    for endpoint in extra:
+        if exposed.get(endpoint, 0) > 0:
             raise AstraExecutionError(
-                f"non-participant fabric node {rank} carried "
-                f"{exposed[rank]} cycles of communication; the fabric "
+                f"non-participant fabric endpoint {endpoint} carried "
+                f"{exposed[endpoint]} cycles of communication; the fabric "
                 "simulated traffic the workload did not ask for")
     if injected is not None and injected != 0:
         raise AstraExecutionError(
@@ -366,6 +415,7 @@ def execute_astra_machine(
         booksim_source_root: str | Path | None = None,
         require_canonical_packetization: bool = False,
         expected_machine_id: str | None = None,
+        namespace: Any = None,
         write: bool = True) -> AstraRuntimeEvidence:
     """Run the projected machine and authenticate what came back."""
     if not isinstance(machine, AstraMachineProjection):
@@ -376,6 +426,11 @@ def execute_astra_machine(
         raise AstraExecutionError(
             "machine projection does not match the externally held "
             "machine_id; the projection was modified after qualification")
+    if namespace is not None \
+            and namespace.machine_id != machine.machine_id():
+        raise AstraExecutionError(
+            "the execution namespace belongs to a different machine "
+            "projection; refusing to run a mismatched binding")
     if require_canonical_packetization \
             and machine.packetization_fidelity != "CANONICAL_FLIT_WIDTH":
         raise AstraExecutionError(
@@ -403,6 +458,7 @@ def execute_astra_machine(
     command = machine.runtime_command(
         binary=binary_path.resolve(), workload_configuration=workload.resolve(),
         workload_directory=run_directory)
+    command = _with_comm_group(command, namespace, run_directory)
     _assert_machine_fields_in_command(command, machine)
 
     supervised = runner is None
@@ -430,19 +486,64 @@ def execute_astra_machine(
             f"{(outcome.stderr or '')[-400:]}")
     money = parse_astra_stats(outcome.stdout, outcome.stderr)
     injected = autonomous_injection_packets(outcome.stderr)
-    idle_ranks = assert_astra_gate(money, machine=machine, injected=injected)
+    if namespace is not None:
+        participant_endpoints = namespace.participant_endpoints()
+        endpoint_count = namespace.endpoint_count
+        rank_to_endpoint = namespace.rank_to_endpoint
+        namespace_id = namespace.namespace_id()
+        namespace_binding = NAMESPACE_BINDING_CANONICAL
+    else:
+        # no canonical mapping supplied: declare the assumption explicitly
+        # instead of letting rank==endpoint pass silently
+        participant_endpoints = tuple(range(machine.participant_count))
+        endpoint_count = machine.astra_sys_count
+        rank_to_endpoint = tuple(
+            (r, r) for r in range(machine.participant_count))
+        namespace_id = _identity_namespace_id(machine)
+        namespace_binding = NAMESPACE_BINDING_IDENTITY
+    # §11/§6: the canonical-message path is a KNOWN runtime capability gap.
+    # A run in which the runtime produces no per-endpoint statistic at all
+    # (not even a wall time) never executed the SEND/RECV workload, so it is
+    # recorded as such -- explicitly, with zeroed results and no fabricated
+    # participation -- instead of being reported as a measurement.
+    # No per-endpoint statistic of any kind means the frontend never entered
+    # the workload path for any endpoint (an idle Sys logs nothing at all).
+    message_mode_unreported = (
+        machine.expansion_authority == "srota_logical_messages"
+        and not money.exposed_comm
+        and not money.compute
+        and injected in (None, 0))
+    if message_mode_unreported:
+        idle_ranks = tuple(sorted(set(range(endpoint_count))
+                                  - set(participant_endpoints)))
+        money = AstraMoney(cycles=(), exposed_comm=(), compute=())
+    else:
+        idle_ranks = assert_astra_gate(
+            money, machine=machine, injected=injected,
+            participant_endpoints=participant_endpoints,
+            endpoint_count=endpoint_count)
 
     cycles = dict(money.cycles)
     exposed = dict(money.exposed_comm)
     compute = dict(money.compute)
-    aggregate = max(cycles[r] for r in range(machine.participant_count))
+    statistics_present = bool(cycles) or bool(exposed)
+    aggregate = max((cycles.get(e, 0) for e in participant_endpoints),
+                    default=0)
     aggregate_exposed = max(
-        (exposed.get(r, 0) for r in range(machine.participant_count)),
-        default=0)
+        (exposed.get(e, 0) for e in participant_endpoints), default=0)
+    # rank-mapped view: canonical ranks over the executed endpoint results
+    # a rank with no runtime statistic maps to 0; the absence is carried by
+    # ``participant_statistics_present`` rather than by a fabricated number
+    per_rank_cycles = tuple(sorted(
+        (rank, cycles.get(endpoint, 0)) for rank, endpoint in rank_to_endpoint))
+    per_rank_exposed = tuple(sorted(
+        (rank, exposed.get(endpoint, 0)) for rank, endpoint in rank_to_endpoint))
+    per_rank_compute = tuple(sorted(
+        (rank, compute.get(endpoint, 0)) for rank, endpoint in rank_to_endpoint))
 
     status = STATUS_EXECUTED
     if machine.expansion_authority == "srota_logical_messages" \
-            and aggregate_exposed <= 0:
+            and (aggregate_exposed <= 0 or not statistics_present):
         # The canonical-message path is preserved but NOT claimed as
         # executed: a runtime that reports zero communication did not
         # simulate SEND/RECV.
@@ -472,13 +573,21 @@ def execute_astra_machine(
         flit_bytes=machine.flit_bytes,
         participant_count=machine.participant_count,
         autonomous_injection_packets=injected,
-        per_rank_cycles=tuple(sorted(cycles.items())),
-        per_rank_exposed_comm=tuple(sorted(exposed.items())),
-        per_rank_compute=tuple(sorted(compute.items())),
+        per_rank_cycles=per_rank_cycles,
+        per_rank_exposed_comm=per_rank_exposed,
+        per_rank_compute=per_rank_compute,
+        per_endpoint_cycles=tuple(sorted(cycles.items())),
+        per_endpoint_exposed_comm=tuple(sorted(exposed.items())),
+        participant_statistics_present=statistics_present,
+        rank_to_endpoint=rank_to_endpoint,
+        namespace_id=namespace_id,
+        namespace_binding=namespace_binding,
+        endpoint_count=endpoint_count,
+        astra_sys_count=machine.astra_sys_count,
         aggregate_cycles=aggregate,
         aggregate_exposed_comm=aggregate_exposed,
-        rank_count=len(cycles),
-        idle_fabric_ranks=tuple(idle_ranks),
+        rank_count=len(per_rank_cycles),
+        idle_fabric_endpoints=tuple(idle_ranks),
         transport=transport,
     )
     if write:
@@ -493,10 +602,34 @@ def execute_astra_machine(
     return evidence
 
 
+def _identity_namespace_id(machine: AstraMachineProjection) -> str:
+    """Identity for the explicitly-declared rank==endpoint assumption."""
+    from veritx_dse.core.artifact import content_hash
+    return content_hash("srota/AstraExecutionNamespace", 1, {
+        "type": "srota/AstraExecutionNamespace",
+        "namespace_binding": NAMESPACE_BINDING_IDENTITY,
+        "machine_id": machine.machine_id(),
+        "participant_count": machine.participant_count,
+        "endpoint_count": machine.astra_sys_count,
+    })
+
+
 def _tier(machine: AstraMachineProjection) -> str:
     if machine.expansion_authority == "astra_comm_coll":
         return EVIDENCE_TIER_ASTRA_COLLECTIVE
     return EVIDENCE_TIER_ASTRA_MESSAGES
+
+
+def _with_comm_group(command: tuple[str, ...], namespace: Any,
+                     run_directory: Path) -> tuple[str, ...]:
+    """Add ``--comm-group-configuration`` when the namespace defines groups."""
+    if namespace is None:
+        return command
+    from veritx_dse.backend.astra_namespace import (
+        COMM_GROUP_FILE, write_communicator_groups,
+    )
+    write_communicator_groups(namespace, run_directory)
+    return command + (f"--comm-group-configuration={COMM_GROUP_FILE}",)
 
 
 def _assert_machine_fields_in_command(command: tuple[str, ...],

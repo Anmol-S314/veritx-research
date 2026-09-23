@@ -478,6 +478,8 @@ class AstraMachineProjection:
     network_config_abi: str
     # -- derived facts ----------------------------------------------------
     participant_count: int
+    #: BookSim node count == the ASTRA ``Sys.id`` namespace ``[0, N)``
+    astra_sys_count: int
     workload_compute_floor: int
     workload_payload_bytes: int
     logical_dimensions: tuple[int, ...]
@@ -542,6 +544,7 @@ class AstraMachineProjection:
             "expansion_authority": self.expansion_authority,
             "workload_evidence_scope": self.workload_evidence_scope,
             "participant_count": self.participant_count,
+            "astra_sys_count": self.astra_sys_count,
             "workload_compute_floor": self.workload_compute_floor,
             "workload_payload_bytes": self.workload_payload_bytes,
             "logical_dimensions": list(self.logical_dimensions),
@@ -683,7 +686,16 @@ def qualify_astra_machine(*, parents: Any, prepared: Any, projection: Any,
         **ASTRA_COLLECTIVE_IMPLEMENTATIONS,
     }
     _assert_rendered_ownership(system)
-    memory = {**RUNTIME_REQUIRED_MEMORY, "num-nodes": prepared.router_count}
+    # Slice-33 correction: the ASTRA node namespace is the fabric ENDPOINT
+    # (node) count -- ``fabric.node_count() -> NumNodes()`` -- never the
+    # router count.  AnyNet legitimately has routers != nodes.
+    sys_count = fabric_node_count(prepared)
+    if sys_count < prepared.endpoint_count:
+        raise AstraMachineError(
+            f"the fabric has {sys_count} nodes but {prepared.endpoint_count} "
+            "agent endpoints are attached; the ASTRA Sys namespace cannot be "
+            "smaller than the attached endpoint set")
+    memory = {**RUNTIME_REQUIRED_MEMORY, "num-nodes": sys_count}
     logical_config = {"logical-dimensions": list(derived_topology.dimensions)}
 
     return AstraMachineProjection(
@@ -709,6 +721,7 @@ def qualify_astra_machine(*, parents: Any, prepared: Any, projection: Any,
         memory_profile_version=MEMORY_PROFILE_VERSION,
         network_config_abi=NETWORK_CONFIG_ABI,
         participant_count=participant_count,
+        astra_sys_count=sys_count,
         workload_compute_floor=projection.declared_compute_cycles(),
         workload_payload_bytes=projection.total_payload_bytes(),
         logical_dimensions=derived_topology.dimensions,
@@ -745,6 +758,59 @@ def _assert_rendered_ownership(system: dict[str, Any]) -> None:
             raise AstraMachineError(
                 f"system field {key!r} is UNSUPPORTED and must not be "
                 "rendered")
+
+
+# ── ASTRA Sys namespace ───────────────────────────────────────────────────
+
+def fabric_node_count(prepared: Any) -> int:
+    """The ASTRA ``Sys.id`` namespace size: BookSim's NODE count.
+
+    ``BookSim2Fabric::node_count()`` returns ``_tm->NumNodes()`` and the
+    frontend builds one ``Sys`` per node, so the runtime namespace is the
+    fabric node count -- *not* the number of attached agent endpoints and
+    *not* "routers" in the AnyNet sense (where routers != nodes).  Derived
+    from the canonical rendered BookSim projection, so there is still one
+    topology authority.
+    """
+    values = parse_config_values(prepared.config_text)
+    topology = values.get("topology", "").strip()
+    if topology in ("mesh", "torus"):
+        try:
+            k = int(values["k"])
+            n = int(values["n"])
+        except (KeyError, ValueError) as exc:
+            raise AstraMachineError(
+                f"{topology} projection lacks integer k/n: {exc}") from exc
+        if k <= 0 or n <= 0:
+            raise AstraMachineError(f"invalid {topology} dims k={k} n={n}")
+        return k ** n
+    if topology == "anynet":
+        text = prepared.topology_text
+        if not text:
+            raise AstraMachineError(
+                "an anynet projection must carry its rendered topology file")
+        # AnyNet render grammar (Slice 31): per line
+        #   router <r> node <n> ... router <dst> <latency>
+        # "--nodes" are the BookSim endpoints; "--routers" are not nodes.
+        nodes: set[int] = set()
+        for line in text.splitlines():
+            line = line.split("#")[0].split("//")[0].strip()
+            tokens = line.replace(",", " ").split()
+            for index, token in enumerate(tokens):
+                if token == "node" and index + 1 < len(tokens):
+                    try:
+                        nodes.add(int(tokens[index + 1]))
+                    except ValueError:
+                        raise AstraMachineError(
+                            f"malformed anynet node id "
+                            f"{tokens[index + 1]!r}") from None
+        if not nodes:
+            raise AstraMachineError(
+                "the rendered anynet topology names no nodes")
+        return len(nodes)
+    raise AstraMachineError(
+        f"cannot derive the ASTRA Sys namespace for topology "
+        f"{topology!r}; refusing to guess a node count")
 
 
 # ── workload staging ──────────────────────────────────────────────────────
