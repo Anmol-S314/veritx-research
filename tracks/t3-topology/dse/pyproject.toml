@@ -21,7 +21,7 @@ dev = [
 ]
 
 [project.scripts]
-veritx = "veritx_dse.cli:main"
+veritx = "veritx_dse.cli.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["veritx_dse*"]
