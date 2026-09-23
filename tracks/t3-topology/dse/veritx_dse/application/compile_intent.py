@@ -37,14 +37,22 @@ semantics, not a product trace-transport concern.
 INTENT IDENTITY
 
     intent_id = content_id(
-        "srota/CompileIntent/v1",
-        {type, schema_version, fabric_preset, fabric_overrides,
-         candidate_policy})
+        "srota/CompileIntent/v2",
+        {type, schema_version, compiler_semantics_version, fabric_preset,
+         preset_design_hash, fabric_overrides, candidate_policy})
 
 ``name`` is presentation: it round-trips and never enters the id.
 The id represents the DECLARED product request, not the resulting
 hardware — a changed override changes intent identity even if a compiler
 later produced equivalent hardware.
+
+The intent is CLOSED over every semantics needed to reproduce its derived
+design: it pins the compiler semantics version and the exact semantic
+revision of the named preset (``preset_design_hash`` is the
+``design_hash()`` of the un-overridden base preset under that compiler
+semantics version — the existing canonical design hash, not an invented
+preset fingerprint). A schema-v1 CompileIntent predates this pinning and
+is refused explicitly; it is never silently reinterpreted.
 
 OVERRIDE MODEL
 
@@ -64,17 +72,18 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any
 
 from veritx_dse.compiler.candidate_policy import CandidatePolicy
 from veritx_dse.core.artifact import content_id
 from veritx_dse.model.compile_model import (
-    AddressMap, AddressRange, Agent, AgentKind, CompileRequest, DepKind,
-    Dependency, DependencyGraph, ModelFamily, NocConfig, TopologyFamily,
-    Workload,
+    COMPILER_SEMANTICS_VERSION, AddressMap, AddressRange, Agent, AgentKind,
+    CompileRequest, DepKind, Dependency, DependencyGraph, ModelFamily,
+    NocConfig, TopologyFamily, Workload,
 )
 
-COMPILE_INTENT_SCHEMA_VERSION = 1
+COMPILE_INTENT_SCHEMA_VERSION = 2
 _HASH_TYPE_TAG = "srota/CompileIntent"
 
 # Exactly the computed identity fields CompileRequest.to_dict() serializes.
@@ -160,9 +169,10 @@ def _mesh4_wide128_request() -> CompileRequest:
         address_map=AddressMap())
 
 
-# Module-level immutable descriptor; builders always construct fresh
-# CompileRequest objects and never share mutable state.
-_PRESETS: dict[str, CompilePreset] = {
+# Structurally immutable module-level registries: no runtime caller can
+# mutate preset descriptors or the preset->builder association. Builders
+# always construct fresh CompileRequest objects (see test_preset_requests_are_fresh_and_frozen).
+_PRESETS: Mapping[str, CompilePreset] = MappingProxyType({
     "mesh4": CompilePreset(
         name="mesh4",
         description="4-tile mesh fabric (multi-class baseline derivation)"),
@@ -172,12 +182,12 @@ _PRESETS: dict[str, CompilePreset] = {
     "mesh4_wide128": CompilePreset(
         name="mesh4_wide128",
         description="4-tile mesh with 128-bit links"),
-}
-_PRESET_BUILDERS = {
+})
+_PRESET_BUILDERS: Mapping[str, Any] = MappingProxyType({
     "mesh4": _mesh4_request,
     "mesh4_hbm": _mesh4_hbm_request,
     "mesh4_wide128": _mesh4_wide128_request,
-}
+})
 
 
 def preset_names() -> tuple[str, ...]:
@@ -309,27 +319,44 @@ def derive_compile_request(intent: CompileIntent) -> CompileRequest:
     Fresh preset -> canonical to_dict() -> strict overrides -> strip the
     computed identity fields -> canonical CompileRequest.from_dict().
     The preset object itself is never mutated; the canonical parser is the
-    final type authority for null leaves.
+    final type authority for null leaves. Every user/product declaration
+    failure surfaces as CompileIntentError with the canonical underlying
+    exception preserved through ``__cause__`` — canonical semantic
+    authority is never flattened into this boundary.
     """
     _require_intent(intent)
     d = build_preset_request(intent.fabric_preset).to_dict()
     for field in COMPUTED_IDENTITY_FIELDS:
         d.pop(field, None)
     _apply_overrides(d, intent.fabric_overrides)
-    return CompileRequest.from_dict(d)
+    try:
+        return CompileRequest.from_dict(d)
+    except ValueError as exc:
+        raise CompileIntentError(
+            f"preset {intent.fabric_preset!r} with the declared overrides "
+            f"does not form a valid CompileRequest: {exc}") from exc
 
 
 # ── compile-only product intent ───────────────────────────────────────────
 
 @dataclass(frozen=True)
 class CompileIntent:
-    """Immutable compile-only declaration of a product compile request."""
+    """Immutable compile-only declaration of a product compile request.
+
+    ``compiler_semantics_version`` and ``preset_design_hash`` are bound on
+    construction (callers do not supply them): they pin the compiler
+    semantics and the exact semantic revision of the named preset. If
+    explicitly present (deserialization), they must equal the current
+    expected values — a stale pin is refused, never accepted silently.
+    """
 
     name: str
     fabric_preset: str
     fabric_overrides: tuple[tuple[str, Any], ...]
     candidate_policy: CandidatePolicy
     schema_version: int = COMPILE_INTENT_SCHEMA_VERSION
+    compiler_semantics_version: int | None = None
+    preset_design_hash: str | None = None
 
     def __post_init__(self):
         if not isinstance(self.name, str) or not self.name:
@@ -350,13 +377,38 @@ class CompileIntent:
                 f"unsupported CompileIntent schema_version "
                 f"{self.schema_version!r} (expected "
                 f"{COMPILE_INTENT_SCHEMA_VERSION})")
+        expected_semantics = COMPILER_SEMANTICS_VERSION
+        expected_preset_hash = build_preset_request(
+            self.fabric_preset).design_hash()
+        if self.compiler_semantics_version is None:
+            object.__setattr__(self, "compiler_semantics_version",
+                               expected_semantics)
+        elif type(self.compiler_semantics_version) is not int \
+                or self.compiler_semantics_version != expected_semantics:
+            raise CompileIntentError(
+                f"compiler_semantics_version "
+                f"{self.compiler_semantics_version!r} does not match the "
+                f"current compiler semantics {expected_semantics}; a stale "
+                "pin is refused — rebuild the intent")
+        if self.preset_design_hash is None:
+            object.__setattr__(self, "preset_design_hash",
+                               expected_preset_hash)
+        elif not isinstance(self.preset_design_hash, str) \
+                or self.preset_design_hash != expected_preset_hash:
+            raise CompileIntentError(
+                f"preset_design_hash {self.preset_design_hash!r} does not "
+                f"match the current revision of preset "
+                f"{self.fabric_preset!r} ({expected_preset_hash}); a stale "
+                "pin is refused — rebuild the intent")
 
     def identity_dict(self) -> dict[str, Any]:
         """Declared-request identity: no display name, no derived state."""
         return {
             "type": _HASH_TYPE_TAG,
             "schema_version": self.schema_version,
+            "compiler_semantics_version": self.compiler_semantics_version,
             "fabric_preset": self.fabric_preset,
+            "preset_design_hash": self.preset_design_hash,
             "fabric_overrides": [[path, value]
                                  for path, value in self.fabric_overrides],
             "candidate_policy": self.candidate_policy.value,
@@ -370,7 +422,9 @@ class CompileIntent:
         return {
             "schema_version": self.schema_version,
             "name": self.name,
+            "compiler_semantics_version": self.compiler_semantics_version,
             "fabric_preset": self.fabric_preset,
+            "preset_design_hash": self.preset_design_hash,
             "fabric_overrides": {path: value
                                  for path, value in self.fabric_overrides},
             "candidate_policy": self.candidate_policy.value,
@@ -381,11 +435,20 @@ class CompileIntent:
     def from_dict(cls, d: Any) -> "CompileIntent":
         allowed = frozenset({"schema_version", "name", "fabric_preset",
                              "fabric_overrides", "candidate_policy",
-                             "intent_id"})
+                             "intent_id", "compiler_semantics_version",
+                             "preset_design_hash"})
         if not isinstance(d, dict):
             raise CompileIntentError(
                 f"compile intent must be an object, got "
                 f"{type(d).__name__}")
+        # A schema-v1 document predates the compiler-semantics and
+        # preset-revision pins; it is refused explicitly and never
+        # silently reinterpreted or auto-migrated here.
+        if type(d.get("schema_version")) is int and d["schema_version"] == 1:
+            raise CompileIntentError(
+                "CompileIntent v1 predates compiler-semantics and "
+                "preset-revision pinning; rebuild the intent under schema "
+                "v2.")
         unknown = set(d) - allowed
         if unknown:
             raise CompileIntentError(
@@ -419,6 +482,8 @@ class CompileIntent:
             fabric_overrides=_normalize_overrides(d["fabric_overrides"]),
             candidate_policy=policy,
             schema_version=d["schema_version"],
+            compiler_semantics_version=d["compiler_semantics_version"],
+            preset_design_hash=d["preset_design_hash"],
         )
         if d["intent_id"] != intent.intent_id():
             raise CompileIntentError(

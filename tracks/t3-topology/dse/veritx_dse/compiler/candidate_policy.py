@@ -29,16 +29,23 @@ Division of authority:
 
 This module does NOT compile, claim correctness, prove deadlock freedom,
 score performance, or check backend capability. It makes one versioned
-statement: ``BASELINE_DETERMINISTIC_V1`` proposes this exact candidate
+statement: ``BASELINE_DETERMINISTIC_V2`` proposes this exact candidate
 for this design.
 
 POLICY VOCABULARY
 
-``CandidatePolicy.BASELINE_DETERMINISTIC_V1``
+``CandidatePolicy.BASELINE_DETERMINISTIC_V2``
     The only policy implemented. It is one versioned policy, not a
     "default" and not universally preferred. It proposes DOR_XY routing,
     dependency-cycle-derived VC separation, rank-order mapping and the
     historical-baseline compile settings.
+
+    V1 HISTORY: ``BASELINE_DETERMINISTIC_V1`` was superseded before any
+    durable application persistence existed because its dependency-cycle
+    witnesses were not cross-process deterministic (Python set/hash
+    iteration and dependency declaration order could change the proposed
+    hardware). V2 consumes the deterministic semantics-v2 graph
+    traversal and is current; the closed vocabulary carries V2 only.
 
 ``MappingPolicy.RANK_ORDER_V1``
     The only mapping policy. Rank r maps to the r-th canonical compute
@@ -46,11 +53,14 @@ POLICY VOCABULARY
     generation is precisely the layer that owns this choice; Slice 23
     still receives the resulting ``MappingArtifact`` explicitly.
 
-BASELINE_DETERMINISTIC_V1 SEMANTICS (all PROPOSALS, never theorems)
+BASELINE_DETERMINISTIC_V2 SEMANTICS (all PROPOSALS, never theorems)
 
     traffic classes : sorted unique {dependency.source, dependency.target};
                       FAIL CLOSED if none (no invented "default" class)
     blocking cycles : canonical ``DependencyGraph.find_cycles()``
+                      (deterministic DFS back-edge witnesses of the
+                      BLOCKING subgraph — not an exhaustive enumeration
+                      of every mathematical simple cycle)
     cycle victims    : per cycle, member minimizing
                       (BLOCKING out-degree, class name) — deterministic,
                       lexically tie-broken, independent of traversal order
@@ -114,7 +124,7 @@ _DOR_ROUTING_CLASS = "DOR_XY"
 class CandidatePolicy(Enum):
     """Closed candidate-generation policy vocabulary."""
 
-    BASELINE_DETERMINISTIC_V1 = "baseline_deterministic_v1"
+    BASELINE_DETERMINISTIC_V2 = "baseline_deterministic_v2"
 
 
 class MappingPolicy(Enum):
@@ -170,7 +180,7 @@ def _traffic_classes(design: CompileRequest) -> tuple[str, ...]:
     if not classes:
         raise CandidatePolicyError(
             "UNSUPPORTED_POLICY_DOMAIN",
-            "BASELINE_DETERMINISTIC_V1 requires at least one traffic class "
+            "BASELINE_DETERMINISTIC_V2 requires at least one traffic class "
             "from the design dependency graph; this design declares none, "
             "and the policy will not invent a 'default' class absent from "
             "design intent")
@@ -213,7 +223,7 @@ def _check_collectives(design: CompileRequest) -> None:
         if collective.group_size > 1:
             raise CandidatePolicyError(
                 "UNSUPPORTED_POLICY_DOMAIN",
-                "BASELINE_DETERMINISTIC_V1 does not yet model "
+                "BASELINE_DETERMINISTIC_V2 does not yet model "
                 "collective-context VC separation; this design declares a "
                 f"{collective.kind.value} collective with group_size "
                 f"{collective.group_size}, which would change the proposed "
@@ -236,7 +246,7 @@ def _vc_spec(design: CompileRequest) -> DeterministicVCSpec:
         (name, (separated[name],)) if name in separated else (name, (0,))
         for name in classes)
     derivation = (
-        f"candidate_policy {CandidatePolicy.BASELINE_DETERMINISTIC_V1.value}: "
+        f"candidate_policy {CandidatePolicy.BASELINE_DETERMINISTIC_V2.value}: "
         f"victims={list(victims)}; proposed_vc_count={vc_count}")
     return DeterministicVCSpec(
         vc_count=vc_count,
@@ -250,9 +260,14 @@ def _vc_spec(design: CompileRequest) -> DeterministicVCSpec:
 
 @dataclass(frozen=True)
 class CandidatePlan:
-    """One explicit candidate proposal. No independent artifact hash."""
+    """One explicit candidate proposal. No independent artifact hash.
+
+    ``mapping_policy`` is proposal provenance (which mapping rule was
+    chosen); it does NOT become Fabric or ResolvedFabric identity.
+    """
 
     policy: CandidatePolicy
+    mapping_policy: MappingPolicy
     inventory: NodeInventory
     mapping: MappingArtifact
     routing_policy: RoutingPolicyDefinition
@@ -262,10 +277,11 @@ class CandidatePlan:
 
 def generate_baseline_candidate(*,
                                 design: CompileRequest) -> CandidatePlan:
-    """Propose the ``BASELINE_DETERMINISTIC_V1`` candidate for a design.
+    """Propose the ``BASELINE_DETERMINISTIC_V2`` candidate for a design.
 
     Generation only: no compilation, no proof, no evaluation. Fails closed
-    when the design falls outside this policy's supported domain.
+    when the design falls outside this policy's supported domain (legacy
+    semantics-v1 designs require explicit migrate_design() first).
     """
     _require_design(design)
     try:
@@ -277,7 +293,8 @@ def generate_baseline_candidate(*,
             f"rank-order mapping could not be derived for this design: "
             f"{exc}") from exc
     return CandidatePlan(
-        policy=CandidatePolicy.BASELINE_DETERMINISTIC_V1,
+        policy=CandidatePolicy.BASELINE_DETERMINISTIC_V2,
+        mapping_policy=MappingPolicy.RANK_ORDER_V1,
         inventory=inventory,
         mapping=mapping,
         routing_policy=_dor_xy_policy(),

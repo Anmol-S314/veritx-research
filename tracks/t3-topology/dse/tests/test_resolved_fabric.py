@@ -60,12 +60,14 @@ from veritx_dse.model.topology_artifact import (
 from veritx_dse.model.vc_assignment import make_vc_assignment_artifact
 from veritx_dse.model.vc_resource import VCResourceArtifact
 
+# ResolvedFabric goldens: identity-only move under compiler semantics v2
+# (the design_hash parent moved); hardware children stay pinned elsewhere.
 GOLDEN_DET_RESOLVED = (
-    "0fba2ac3b154e7fe567e389a0865fa7fa7246f4c74c7d9afd6f63685b8a2f3e6")
+    "9d74cd9678e28c0c99493866bf90ae3f036f51f0d6abc834bfca94d9c2ebb6f1")
 GOLDEN_ADAPTIVE_RESOLVED = (
-    "128eb287b066d1f1d69be68f08acf1ae988370b2abe8702372ffd46c14f4ce56")
+    "80ea0a88e5f7cbdff9406809efb9b5a5076dfdc1222675767157b97e0866cf15")
 GOLDEN_ADAPTIVE_3X3_RESOLVED = (
-    "a687f660a866931b9de11c926d47df5367db731efb101b09577447675191fcbb")
+    "400ddd28a38cb83cde641c9b19fa7df3a14a4c509ef308253bb565b910eb6bde")
 
 _MIN_ADAPT_TRANSITIONS = (
     (0, 0), (1, 0), (1, 1), (1, 2), (1, 3),

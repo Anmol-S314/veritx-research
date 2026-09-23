@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "compiler_semantics_version": 1,
+  "compiler_semantics_version": 2,
   "workload": {
     "model_family": "mixture_of_experts",
     "model_name": "generic_moe",
@@ -8,13 +8,18 @@
     "pp": 1,
     "ep": 4,
     "dp": 1,
+    "param_count_b": null,
+    "sequence_length": null,
+    "batch_size": 1,
+    "precision": "fp16",
     "serving_mode": "decode_heavy",
+    "collectives": [],
     "trace_path": null
   },
   "requirements": [
     {
       "qos_class": "latency_critical",
-      "latency_ceiling_cycles": 2000,
+      "latency_ceiling_cycles": 2000.0,
       "bandwidth_floor_gbps": null,
       "binding": true
     }
@@ -25,14 +30,18 @@
       "count": 8,
       "data_width": 256,
       "addr_width": 64,
-      "protocol": "AXI"
+      "protocol": "AXI",
+      "clock_domain": null,
+      "power_domain": null
     },
     {
       "kind": "hbm_controller",
       "count": 2,
       "data_width": 256,
       "addr_width": 64,
-      "protocol": "AXI"
+      "protocol": "AXI",
+      "clock_domain": null,
+      "power_domain": null
     }
   ],
   "dependencies": [
@@ -52,7 +61,9 @@
     "output_formats": [
       "systemverilog"
     ],
-    "obfuscation_level": 0
+    "obfuscation_level": 0,
+    "mcast_groups": null,
+    "mcast_setup_cycles": null
   },
   "address_map": {
     "ranges": []
@@ -60,6 +71,9 @@
   "physical": {
     "clock_freq_mhz": 1000.0,
     "data_width": 256,
+    "num_power_domains": 1,
     "process_node_nm": 7
-  }
+  },
+  "design_hash": "0ec6ef848a3c6376c818496276e83dab1eb01878860c18430b6a762e34f75327",
+  "guardrail_hash": "0ec6ef848a3c6376c818496276e83dab1eb01878860c18430b6a762e34f75327"
 }

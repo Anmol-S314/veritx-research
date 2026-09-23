@@ -9,6 +9,7 @@ from __future__ import annotations
 import ast
 import dataclasses
 import inspect
+import json
 
 import pytest
 
@@ -36,8 +37,10 @@ GOLDEN_DOR_POLICY_HASH = (
     "c451979bf68ac87535cf117adc1b9ff98cb45ea6a50ff42d22f7e312f68a2426")
 # Slice-23 integration: baseline mesh4-equivalent candidate compiled end to
 # end (NOT the Slice-22 golden — see test_golden_fixture_is_outside_domain).
+# Identity-only move under compiler semantics v2 (design_hash parent moved);
+# the FABRIC golden below must NOT move.
 GOLDEN_BASELINE_RESOLVED = (
-    "3b472dc759e3ac25423ec58de338253b43620eb7a5d9e264e73c1c2687af23ca")
+    "c05d4c19bf3bdd955da97f33fd665d2325441966906b1bb23290d0dcc3296fa1")
 GOLDEN_BASELINE_FABRIC = (
     "d7fde891d47c7a6ffb1e0746429a784f95bd20a0014324b8757fdc2841716094")
 GOLDEN_BASELINE_VC_ASSIGNMENT = (
@@ -104,27 +107,43 @@ def _compile(plan: CandidatePlan, design: CompileRequest):
 # ── vocabulary / shape ─────────────────────────────────────────────────────
 
 def test_policy_vocabulary_is_exactly_pinned():
+    # V1 was superseded before durable application persistence: its
+    # dependency-cycle witnesses were not cross-process deterministic.
     assert [(p.name, p.value) for p in CandidatePolicy] == [
-        ("BASELINE_DETERMINISTIC_V1", "baseline_deterministic_v1")]
+        ("BASELINE_DETERMINISTIC_V2", "baseline_deterministic_v2")]
     assert [(m.name, m.value) for m in MappingPolicy] == [
         ("RANK_ORDER_V1", "rank_order_v1")]
 
 
 def test_candidate_plan_fields_are_exactly_pinned():
     names = {f.name for f in dataclasses.fields(CandidatePlan)}
-    assert names == {"policy", "inventory", "mapping", "routing_policy",
-                     "vc_spec", "compile_settings"}
+    assert names == {"policy", "mapping_policy", "inventory", "mapping",
+                     "routing_policy", "vc_spec", "compile_settings"}
     plan = _plan()
-    assert plan.policy is CandidatePolicy.BASELINE_DETERMINISTIC_V1
+    assert plan.policy is CandidatePolicy.BASELINE_DETERMINISTIC_V2
+    assert plan.mapping_policy is MappingPolicy.RANK_ORDER_V1
     assert isinstance(plan.inventory, NodeInventory)
     for field in ("hash", "fabric", "resolved", "certificate", "backend"):
         assert not hasattr(plan, field)
 
 
+def test_mapping_policy_is_proposal_provenance_only():
+    plan = _plan()
+    # carried by the plan, never as Fabric/ResolvedFabric identity
+    assert plan.mapping_policy is MappingPolicy.RANK_ORDER_V1
+    compiled = _compile(plan, _mesh4_design())
+    blob = json.dumps(compiled.fabric.to_dict(), sort_keys=True)
+    assert "rank_order" not in blob
+    assert not hasattr(compiled.fabric, "mapping_policy")
+    assert not hasattr(compiled.resolved_fabric, "mapping_policy")
+
+
 def test_plan_and_specs_are_frozen():
     plan = _plan()
     with pytest.raises(dataclasses.FrozenInstanceError):
-        plan.policy = CandidatePolicy.BASELINE_DETERMINISTIC_V1
+        plan.policy = CandidatePolicy.BASELINE_DETERMINISTIC_V2
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        plan.mapping_policy = MappingPolicy.RANK_ORDER_V1
     with pytest.raises(dataclasses.FrozenInstanceError):
         plan.vc_spec.derivation = "tampered"
     with pytest.raises(dataclasses.FrozenInstanceError):
@@ -150,7 +169,7 @@ def test_mesh4_fixture_pins_the_whole_candidate():
     assert spec.vc_to_routing_class == ((0, "DOR_XY"), (1, "DOR_XY"))
     assert spec.allowed_transitions == ((0, 0), (1, 1))
     assert spec.escape_vcs == ()
-    assert "baseline_deterministic_v1" in spec.derivation
+    assert "baseline_deterministic_v2" in spec.derivation
     assert "proposed_vc_count=2" in spec.derivation
     assert "victims=['A']" in spec.derivation
     # settings: historical canonical baseline
@@ -254,7 +273,10 @@ def test_non_compile_request_is_refused():
 
 def test_unsupported_compiler_semantics_version_is_refused():
     design = _mesh4_design()
-    object.__setattr__(design, "compiler_semantics_version", 2)
+    # legacy semantics v1: canonical candidate generation requires CURRENT
+    # semantics (migrate_design first); here the version field is forged
+    # directly so no valid v1 request object needs to exist for this gate.
+    object.__setattr__(design, "compiler_semantics_version", 1)
     with pytest.raises(CandidatePolicyError) as excinfo:
         generate_baseline_candidate(design=design)
     assert excinfo.value.reason == "INPUT"
@@ -325,7 +347,7 @@ def test_torus_gets_no_fallback_routing():
 def _plan_snapshot(plan: CandidatePlan) -> tuple:
     return (plan.inventory.to_dict(), plan.mapping.to_dict(),
             plan.routing_policy.to_dict(), plan.vc_spec,
-            plan.compile_settings)
+            plan.compile_settings, plan.policy, plan.mapping_policy)
 
 
 @pytest.mark.parametrize("deps", [ONE_CYCLE, ACYCLIC, MULTI_CYCLE,

@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "compiler_semantics_version": 1,
+  "compiler_semantics_version": 2,
   "_comment": "VeritX CompileRequest template \u2014 see README.md for field descriptions",
   "_docs": {
     "E1_workload": "Model family, parallelism, serving mode, trace binding",
@@ -16,16 +16,18 @@
     "pp": 1,
     "ep": 8,
     "dp": 1,
-    "serving_mode": "decode_heavy",
-    "param_count_b": 30,
+    "param_count_b": 30.0,
     "sequence_length": 4096,
+    "batch_size": 1,
     "precision": "fp8",
+    "serving_mode": "decode_heavy",
+    "collectives": [],
     "trace_path": "runs/traces/qwen3_serving_16rank.trace"
   },
   "requirements": [
     {
       "qos_class": "latency_critical",
-      "latency_ceiling_cycles": 5000,
+      "latency_ceiling_cycles": 5000.0,
       "bandwidth_floor_gbps": null,
       "binding": true
     }
@@ -36,14 +38,18 @@
       "count": 16,
       "data_width": 256,
       "addr_width": 64,
-      "protocol": "AXI"
+      "protocol": "AXI",
+      "clock_domain": null,
+      "power_domain": null
     },
     {
       "kind": "hbm_controller",
       "count": 4,
       "data_width": 256,
       "addr_width": 64,
-      "protocol": "AXI"
+      "protocol": "AXI",
+      "clock_domain": null,
+      "power_domain": null
     }
   ],
   "dependencies": [
@@ -63,7 +69,9 @@
     "output_formats": [
       "systemverilog"
     ],
-    "obfuscation_level": 0
+    "obfuscation_level": 0,
+    "mcast_groups": null,
+    "mcast_setup_cycles": null
   },
   "address_map": {
     "ranges": [
@@ -78,6 +86,9 @@
   "physical": {
     "clock_freq_mhz": 1000.0,
     "data_width": 256,
+    "num_power_domains": 1,
     "process_node_nm": 7
-  }
+  },
+  "design_hash": "34f5085f7655c4c2d7571e20f9d2d033020d2b13abcedb8f488a1dc35d606d56",
+  "guardrail_hash": "34f5085f7655c4c2d7571e20f9d2d033020d2b13abcedb8f488a1dc35d606d56"
 }

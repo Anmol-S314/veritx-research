@@ -24,24 +24,32 @@ from veritx_dse.compiler.canonical import (
 from veritx_dse.compiler.candidate_policy import (
     CandidatePolicy, generate_baseline_candidate,
 )
-from veritx_dse.model.compile_model import DepKind
+from veritx_dse.model.compile_model import (
+    COMPILER_SEMANTICS_VERSION, DepKind,
+)
 
 GOLDEN_MESH4_RESOLVED = (
-    "3b472dc759e3ac25423ec58de338253b43620eb7a5d9e264e73c1c2687af23ca")
+    "c05d4c19bf3bdd955da97f33fd665d2325441966906b1bb23290d0dcc3296fa1")
 GOLDEN_WIDE128_RESOLVED = (
-    "e1862d0e97d9864b9e7e77d7d18c50ddd531e0dc01230fee5200f76765d7cbc9")
+    "47d8cb6c386b22cbc6b4bbf152f40d3c1c72dd1900a48d099afd2bda8fbc9c7f")
+# Design hashes are identity-only movers under compiler semantics v2; the
+# old semantics-v1 values were 306dc86a… (mesh4), c5bac8e5… (hbm),
+# 02ad4c72… (wide128) and remain reproducible via
+# replace(request, compiler_semantics_version=1).design_hash().
 GOLDEN_MESH4_DESIGN = (
-    "306dc86a9d7e63aa58d0ca594edc9a81e13593e956394dac02e91d1652ada4b5")
+    "f13b8d7d61776d863f3f554c32f7d8dab2a622dbf62bdfe697afc6b95ee4547f")
 GOLDEN_HBM_DESIGN = (
-    "c5bac8e54fe1be3f28dc6ea2db4558c48561b45392267fbd4562299efb4894b8")
+    "0fe2e62ae06c67c5dc781eafd69ff9138f505c62a16f29ad5ea16494abc2bc13")
 GOLDEN_WIDE128_DESIGN = (
-    "02ad4c724441abf6de311a63540f9be8293a792bd740711d8bf521e0f171ac3b")
+    "d94dde8d87bdac52316bcfd8c2f210a2598a564045f7e60f3da92650da2968b3")
+# Hardware children: MUST NOT move (execution semantics unchanged).
 GOLDEN_HBM_ADDRESS_DECODE = (
     "b498a6f0a7dfd3ca3261998f3239bb4178150f7fa6f4ff4c69184b853051ebef")
 GOLDEN_HBM_FABRIC = (
     "264a857c1978fa44c0f17f150c929a2aff18691189405e5b7754c7fef42a79f1")
+# ResolvedFabric moves only because its design_hash parent moved.
 GOLDEN_HBM_RESOLVED = (
-    "9d38b0d6cdbcde34106e795cd8d88cf1dd9c6e8270fd3d139fb3345467845abf")
+    "2bf76043e6c653147842b341a04d2600b6201a13ea10d7fe2f0b3e18fad099e6")
 GOLDEN_DOR_POLICY = (
     "c451979bf68ac87535cf117adc1b9ff98cb45ea6a50ff42d22f7e312f68a2426")
 PRESOLVED = {"mesh4": GOLDEN_MESH4_RESOLVED,
@@ -54,7 +62,7 @@ def _intent(preset: str, overrides=(), *,
     return CompileIntent(
         name=intent_name, fabric_preset=preset,
         fabric_overrides=tuple(overrides),
-        candidate_policy=CandidatePolicy.BASELINE_DETERMINISTIC_V1)
+        candidate_policy=CandidatePolicy.BASELINE_DETERMINISTIC_V2)
 
 
 def _compile(intent: CompileIntent):
@@ -174,11 +182,17 @@ def test_preset_requests_are_fresh_and_frozen():
 def test_identity_equation_is_exactly_pinned():
     intent = _intent("mesh4", (("noc_config.link_width", 128),))
     assert set(intent.identity_dict()) == {
-        "type", "schema_version", "fabric_preset", "fabric_overrides",
+        "type", "schema_version", "compiler_semantics_version",
+        "fabric_preset", "preset_design_hash", "fabric_overrides",
         "candidate_policy"}
     assert set(intent.to_dict()) == {
-        "schema_version", "name", "fabric_preset", "fabric_overrides",
+        "schema_version", "name", "compiler_semantics_version",
+        "fabric_preset", "preset_design_hash", "fabric_overrides",
         "candidate_policy", "intent_id"}
+    # both pins are bound on construction, never caller-supplied
+    assert intent.compiler_semantics_version == COMPILER_SEMANTICS_VERSION
+    assert intent.preset_design_hash \
+        == build_preset_request("mesh4").design_hash()
     assert COMPUTED_IDENTITY_FIELDS == frozenset(
         {"design_hash", "guardrail_hash"})
     assert RESERVED_OVERRIDE_PATHS == frozenset({
@@ -202,9 +216,26 @@ def test_candidate_policy_is_required_and_persisted_verbatim():
                       fabric_overrides=())
     intent = _intent("mesh4")
     assert intent.candidate_policy is \
-        CandidatePolicy.BASELINE_DETERMINISTIC_V1
-    assert intent.to_dict()["candidate_policy"] == "baseline_deterministic_v1"
-    assert [p.value for p in CandidatePolicy] == ["baseline_deterministic_v1"]
+        CandidatePolicy.BASELINE_DETERMINISTIC_V2
+    assert intent.to_dict()["candidate_policy"] == "baseline_deterministic_v2"
+    assert [p.value for p in CandidatePolicy] == ["baseline_deterministic_v2"]
+
+
+def test_candidate_policy_v1_to_v2_changes_intent_identity():
+    """The policy value participates in identity; a v1-carrying document
+    is refused because V1 left the closed vocabulary."""
+    from veritx_dse.core.artifact import content_id
+    intent = _intent("mesh4")
+    v1_identity = dict(intent.identity_dict())
+    v1_identity["candidate_policy"] = "baseline_deterministic_v1"
+    assert content_id(f"srota/CompileIntent/v{intent.schema_version}",
+                      v1_identity) != intent.intent_id()
+    persisted = intent.to_dict()
+    persisted["candidate_policy"] = "baseline_deterministic_v1"
+    persisted.pop("intent_id")
+    with pytest.raises(CompileIntentError, match="candidate_policy"):
+        CompileIntent.from_dict(dict(persisted,
+                                     intent_id=intent.intent_id()))
 
 
 def test_preset_change_moves_intent_and_design():
@@ -268,11 +299,16 @@ def test_type_mismatch_on_known_leaf_is_refused_by_intent_layer():
             _intent("mesh4_wide128", (("noc_config.link_width", "128"),)))
 
 
-def test_null_leaf_defers_to_canonical_parser():
-    with pytest.raises(ValueError, match="link_width") as excinfo:
+def test_null_leaf_defers_to_canonical_parser_at_the_boundary():
+    # the canonical parser stays the type authority; the application
+    # boundary wraps it as CompileIntentError with the cause preserved
+    with pytest.raises(CompileIntentError, match="link_width") as excinfo:
         derive_compile_request(
             _intent("mesh4", (("noc_config.link_width", "128"),)))
-    assert not isinstance(excinfo.value, CompileIntentError)
+    cause = excinfo.value.__cause__
+    assert isinstance(cause, ValueError)
+    assert not isinstance(cause, CompileIntentError)
+    assert "link_width" in str(cause)
 
 
 def test_legal_null_leaf_override_derives():
@@ -414,19 +450,132 @@ def test_unknown_and_missing_fields_are_refused():
     with pytest.raises(CompileIntentError, match="unknown fields"):
         CompileIntent.from_dict(with_extra)
     for field in ("schema_version", "name", "fabric_preset",
-                  "fabric_overrides", "candidate_policy", "intent_id"):
+                  "fabric_overrides", "candidate_policy", "intent_id",
+                  "compiler_semantics_version", "preset_design_hash"):
         incomplete = dict(persisted)
         del incomplete[field]
         with pytest.raises(CompileIntentError):
             CompileIntent.from_dict(incomplete)
 
 
-@pytest.mark.parametrize("bad", [0, 2, True, "1"])
+@pytest.mark.parametrize("bad", [0, 3, True, "2"])
 def test_schema_version_is_strict(bad):
     persisted = _intent("mesh4").to_dict()
     persisted["schema_version"] = bad
     with pytest.raises(CompileIntentError, match="schema_version"):
         CompileIntent.from_dict(persisted)
+
+
+def test_schema_v1_documents_are_refused_explicitly():
+    """v1 predates compiler-semantics and preset-revision pinning."""
+    v1_document = {
+        "schema_version": 1,
+        "name": "old",
+        "fabric_preset": "mesh4",
+        "fabric_overrides": {},
+        "candidate_policy": "baseline_deterministic_v1",
+        "intent_id": "0" * 64,
+    }
+    with pytest.raises(CompileIntentError,
+                       match="CompileIntent v1 predates compiler-semantics") as excinfo:
+        CompileIntent.from_dict(v1_document)
+    assert "rebuild the intent under schema v2" in str(excinfo.value)
+
+
+def test_stale_preset_and_semantics_pins_are_refused():
+    with pytest.raises(CompileIntentError, match="preset_design_hash"):
+        CompileIntent(name="stale", fabric_preset="mesh4",
+                      fabric_overrides=(),
+                      candidate_policy=CandidatePolicy.BASELINE_DETERMINISTIC_V2,
+                      preset_design_hash="0" * 64)
+    with pytest.raises(CompileIntentError, match="compiler_semantics_version"):
+        CompileIntent(name="stale", fabric_preset="mesh4",
+                      fabric_overrides=(),
+                      candidate_policy=CandidatePolicy.BASELINE_DETERMINISTIC_V2,
+                      compiler_semantics_version=COMPILER_SEMANTICS_VERSION + 1)
+
+
+def test_deserialized_pins_must_match_current_values():
+    persisted = _intent("mesh4").to_dict()
+    for field, bad in (("preset_design_hash", "0" * 64),
+                       ("compiler_semantics_version",
+                        COMPILER_SEMANTICS_VERSION + 1)):
+        doc = dict(persisted)
+        doc[field] = bad
+        with pytest.raises(CompileIntentError, match=field):
+            CompileIntent.from_dict(doc)
+
+
+def test_preset_semantic_revision_changes_intent_id(monkeypatch):
+    """A changed base-preset revision rebinds preset_design_hash, and the
+    intent id changes mechanically with it."""
+    from dataclasses import replace as dc_replace
+
+    from veritx_dse.application import compile_intent as module
+    baseline = _intent("mesh4")
+    original_builders = dict(module._PRESET_BUILDERS)
+
+    def revised_mesh4():
+        request = original_builders["mesh4"]()
+        return dc_replace(
+            request,
+            noc_config=dc_replace(request.noc_config, link_width=256))
+
+    patched = dict(original_builders)
+    patched["mesh4"] = revised_mesh4
+    monkeypatch.setattr(module, "_PRESET_BUILDERS", patched)
+    revised = _intent("mesh4")
+    assert revised.preset_design_hash != baseline.preset_design_hash
+    assert revised.intent_id() != baseline.intent_id()
+
+
+def test_identity_binds_the_pins_themselves():
+    """Forging a bound pin post-construction moves the id — the pins are
+    identity-bearing, not decorative."""
+    from veritx_dse.core.artifact import content_id
+    intent = _intent("mesh4")
+    forged_semantics = dict(intent.identity_dict())
+    forged_semantics["compiler_semantics_version"] = \
+        COMPILER_SEMANTICS_VERSION + 1
+    assert content_id(f"srota/CompileIntent/v{intent.schema_version}",
+                      forged_semantics) != intent.intent_id()
+    forged_preset = dict(intent.identity_dict())
+    forged_preset["preset_design_hash"] = "0" * 64
+    assert content_id(f"srota/CompileIntent/v{intent.schema_version}",
+                      forged_preset) != intent.intent_id()
+
+
+def test_preset_registry_is_structurally_immutable():
+    from veritx_dse.application import compile_intent as module
+    for registry in (module._PRESETS, module._PRESET_BUILDERS):
+        with pytest.raises(TypeError):
+            registry["mesh4"] = "forged"
+        with pytest.raises(TypeError):
+            del registry["mesh4"]
+        with pytest.raises(AttributeError):
+            registry.clear()
+    # preset->builder association cannot be re-pointed at runtime
+    with pytest.raises(TypeError):
+        module._PRESET_BUILDERS["mesh4"] = lambda: None
+    assert set(module.preset_names()) == {"mesh4", "mesh4_hbm",
+                                          "mesh4_wide128"}
+    assert build_preset_request("mesh4").design_hash() \
+        == GOLDEN_MESH4_DESIGN
+
+
+def test_declaration_failures_keep_the_canonical_cause():
+    # an unknown leaf path is an application-layer refusal (no cause)
+    with pytest.raises(CompileIntentError, match="unknown field") as excinfo:
+        derive_compile_request(
+            _intent("mesh4", (("noc_config.brand_new", 1),)))
+    assert excinfo.value.__cause__ is None
+    # a canonical semantic refusal keeps the canonical exception as cause
+    with pytest.raises(CompileIntentError, match="arbitration") as excinfo:
+        derive_compile_request(
+            _intent("mesh4", (("noc_config.arbitration", 7),)))
+    assert isinstance(excinfo.value.__cause__, ValueError)
+    assert not isinstance(excinfo.value.__cause__, CompileIntentError)
+    assert "arbitration" in str(excinfo.value.__cause__)
 
 
 def test_bad_intent_id_is_refused():

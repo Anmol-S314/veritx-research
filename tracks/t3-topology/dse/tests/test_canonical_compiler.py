@@ -58,9 +58,11 @@ from veritx_dse.model.vc_resource import (
     VCResourceArtifact, vc_resources_from_assignment,
 )
 
-GOLDEN_DET = "0fba2ac3b154e7fe567e389a0865fa7fa7246f4c74c7d9afd6f63685b8a2f3e6"
-GOLDEN_ADAPT = "128eb287b066d1f1d69be68f08acf1ae988370b2abe8702372ffd46c14f4ce56"
-GOLDEN_ADAPT_3X3 = "a687f660a866931b9de11c926d47df5367db731efb101b09577447675191fcbb"
+# ResolvedFabric goldens: identity-only move under compiler semantics v2
+# (the design_hash parent moved); every hardware child stays pinned below.
+GOLDEN_DET = "9d74cd9678e28c0c99493866bf90ae3f036f51f0d6abc834bfca94d9c2ebb6f1"
+GOLDEN_ADAPT = "80ea0a88e5f7cbdff9406809efb9b5a5076dfdc1222675767157b97e0866cf15"
+GOLDEN_ADAPT_3X3 = "400ddd28a38cb83cde641c9b19fa7df3a14a4c509ef308253bb565b910eb6bde"
 
 _MIN_ADAPT_TRANSITIONS = (
     (0, 0), (1, 0), (1, 1), (1, 2), (1, 3),
@@ -467,10 +469,27 @@ def test_address_decode_is_order_independent():
 
 def test_unsupported_compiler_semantics_version_fails_at_input():
     design = _design()
-    object.__setattr__(design, "compiler_semantics_version", 2)
+    # legacy semantics v1 is loadable but must be migrated explicitly
+    # before canonical candidate compilation (CURRENT semantics only).
+    object.__setattr__(design, "compiler_semantics_version", 1)
     with pytest.raises(CanonicalCompileError) as excinfo:
         _det(design)
     assert excinfo.value.stage is CompileStage.INPUT
+
+
+def test_legacy_v1_refused_then_migrated_compile_succeeds():
+    from dataclasses import replace
+
+    from veritx_dse.model.compile_model import migrate_design
+    design = replace(_design(), compiler_semantics_version=1)
+    with pytest.raises(CanonicalCompileError) as excinfo:
+        _det(design)
+    assert excinfo.value.stage is CompileStage.INPUT
+    migrated, prov = migrate_design(design)
+    assert migrated.compiler_semantics_version == 2
+    assert prov["from_semantics"] == 1
+    compiled = _det(migrated)
+    assert compiled.resolved_fabric.resolved_fabric_hash == GOLDEN_DET
 
 
 # ── error-stage matrix ─────────────────────────────────────────────────────

@@ -68,7 +68,7 @@ class TestGenerateReport:
         """generate_report with valid CompileRequest should work."""
         cr = CompileRequest.from_dict({
             "schema_version": 2,
-            "compiler_semantics_version": 1,
+            "compiler_semantics_version": 2,
             "workload": {"model_family": "dense_transformer", "tp": 4, "dp": 1, "serving_mode": "mixed"},
             "agents": [{"kind": "compute_tile", "count": 4}],
             "noc_config": {},

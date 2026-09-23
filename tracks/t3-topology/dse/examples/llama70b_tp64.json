@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "compiler_semantics_version": 1,
+  "compiler_semantics_version": 2,
   "workload": {
     "model_family": "dense_transformer",
     "model_name": "LLaMA-70B",
@@ -8,14 +8,19 @@
     "pp": 1,
     "ep": 1,
     "dp": 1,
+    "param_count_b": null,
+    "sequence_length": null,
+    "batch_size": 1,
+    "precision": "fp16",
     "serving_mode": "mixed",
+    "collectives": [],
     "trace_path": "runs/traces/llama70b_tp64_ring.trace"
   },
   "requirements": [
     {
       "qos_class": "bandwidth",
       "latency_ceiling_cycles": null,
-      "bandwidth_floor_gbps": 100,
+      "bandwidth_floor_gbps": 100.0,
       "binding": true
     }
   ],
@@ -25,14 +30,18 @@
       "count": 64,
       "data_width": 256,
       "addr_width": 64,
-      "protocol": "AXI"
+      "protocol": "AXI",
+      "clock_domain": null,
+      "power_domain": null
     },
     {
       "kind": "hbm_controller",
       "count": 8,
       "data_width": 256,
       "addr_width": 64,
-      "protocol": "AXI"
+      "protocol": "AXI",
+      "clock_domain": null,
+      "power_domain": null
     }
   ],
   "dependencies": [],
@@ -46,7 +55,9 @@
     "output_formats": [
       "systemverilog"
     ],
-    "obfuscation_level": 0
+    "obfuscation_level": 0,
+    "mcast_groups": null,
+    "mcast_setup_cycles": null
   },
   "address_map": {
     "ranges": []
@@ -54,6 +65,9 @@
   "physical": {
     "clock_freq_mhz": 1000.0,
     "data_width": 256,
+    "num_power_domains": 1,
     "process_node_nm": 7
-  }
+  },
+  "design_hash": "1e319bbe753bd8700a814e6ba5e88204d58e6f56e01141eb7c229f65d9ff099e",
+  "guardrail_hash": "1e319bbe753bd8700a814e6ba5e88204d58e6f56e01141eb7c229f65d9ff099e"
 }

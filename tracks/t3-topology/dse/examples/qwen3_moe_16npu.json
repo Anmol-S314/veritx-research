@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "compiler_semantics_version": 1,
+  "compiler_semantics_version": 2,
   "workload": {
     "model_family": "mixture_of_experts",
     "model_name": "Qwen3-30B-A3B",
@@ -8,13 +8,18 @@
     "pp": 1,
     "ep": 8,
     "dp": 1,
+    "param_count_b": null,
+    "sequence_length": null,
+    "batch_size": 1,
+    "precision": "fp16",
     "serving_mode": "decode_heavy",
+    "collectives": [],
     "trace_path": "runs/traces/qwen3_serving_16rank.trace"
   },
   "requirements": [
     {
       "qos_class": "latency_critical",
-      "latency_ceiling_cycles": 5000,
+      "latency_ceiling_cycles": 5000.0,
       "bandwidth_floor_gbps": null,
       "binding": true
     }
@@ -25,14 +30,18 @@
       "count": 16,
       "data_width": 256,
       "addr_width": 64,
-      "protocol": "AXI"
+      "protocol": "AXI",
+      "clock_domain": null,
+      "power_domain": null
     },
     {
       "kind": "hbm_controller",
       "count": 4,
       "data_width": 256,
       "addr_width": 64,
-      "protocol": "AXI"
+      "protocol": "AXI",
+      "clock_domain": null,
+      "power_domain": null
     }
   ],
   "dependencies": [
@@ -52,7 +61,9 @@
     "output_formats": [
       "systemverilog"
     ],
-    "obfuscation_level": 0
+    "obfuscation_level": 0,
+    "mcast_groups": null,
+    "mcast_setup_cycles": null
   },
   "address_map": {
     "ranges": []
@@ -60,6 +71,9 @@
   "physical": {
     "clock_freq_mhz": 1000.0,
     "data_width": 256,
+    "num_power_domains": 1,
     "process_node_nm": 7
-  }
+  },
+  "design_hash": "12981da5cc0dedd83ea3ccc453d37c60de409f75eb6bd7ae605f9fb0cf0190af",
+  "guardrail_hash": "12981da5cc0dedd83ea3ccc453d37c60de409f75eb6bd7ae605f9fb0cf0190af"
 }

@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "compiler_semantics_version": 1,
+  "compiler_semantics_version": 2,
   "workload": {
     "model_family": "dense_transformer",
     "model_name": "generic_dense",
@@ -8,7 +8,12 @@
     "pp": 1,
     "ep": 1,
     "dp": 1,
+    "param_count_b": null,
+    "sequence_length": null,
+    "batch_size": 1,
+    "precision": "fp16",
     "serving_mode": "mixed",
+    "collectives": [],
     "trace_path": null
   },
   "requirements": [],
@@ -18,14 +23,18 @@
       "count": 64,
       "data_width": 256,
       "addr_width": 64,
-      "protocol": "AXI"
+      "protocol": "AXI",
+      "clock_domain": null,
+      "power_domain": null
     },
     {
       "kind": "hbm_controller",
       "count": 8,
       "data_width": 256,
       "addr_width": 64,
-      "protocol": "AXI"
+      "protocol": "AXI",
+      "clock_domain": null,
+      "power_domain": null
     }
   ],
   "dependencies": [],
@@ -39,7 +48,9 @@
     "output_formats": [
       "systemverilog"
     ],
-    "obfuscation_level": 0
+    "obfuscation_level": 0,
+    "mcast_groups": null,
+    "mcast_setup_cycles": null
   },
   "address_map": {
     "ranges": []
@@ -47,6 +58,9 @@
   "physical": {
     "clock_freq_mhz": 1000.0,
     "data_width": 256,
+    "num_power_domains": 1,
     "process_node_nm": 7
-  }
+  },
+  "design_hash": "abe83b9943d0943e7522e29ee84b8b7c4aeb8fd03f79810b2e1e0fd87c1e3c55",
+  "guardrail_hash": "abe83b9943d0943e7522e29ee84b8b7c4aeb8fd03f79810b2e1e0fd87c1e3c55"
 }

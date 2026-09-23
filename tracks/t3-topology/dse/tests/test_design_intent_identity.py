@@ -18,18 +18,21 @@ COLLECTION ORDER RULING (inspected against the code, not assumed):
                                                 index (derive_vc_assignment)
   CompileRequest   agents            ORDERED   AddressRange.target_agent_idx
                                                 indexes this tuple
-  DependencyGraph  dependencies      ORDERED   TEMPORARY B1 ruling — see note
+  DependencyGraph  dependencies      UNORDERED (semantics v2; graph
+                                                processing is deterministic)
   CompileRequest   requirements      UNORDERED per-class bounds; min()/all()
                                                 are order-independent
   AddressMap       ranges            UNORDERED validate_no_overlaps sorts by
                                                 base; no decode-order consumer
   NocConfig        output_formats    UNORDERED a set of requested artifacts
 
-TEMPORARY B1 RULING: dependency edge order is identity-bearing only
-because the current compiler observes it (adjacency insertion order
-feeds the DFS in DependencyGraph.find_cycles). MANDATORY B3 FIX: make
-graph processing deterministic, then make dependency edge order
-non-semantic and bump compiler_semantics_version.
+RESOLVED (compiler semantics v2): the B1 temporary ruling made dependency
+declaration order identity-bearing because adjacency insertion order fed
+the DFS in DependencyGraph.find_cycles. find_cycles now traverses sorted
+adjacency from sorted DFS roots, so semantics v2 makes dependency
+declaration order NON-semantic. Legacy semantics v1 documents remain
+loadable and are hashed in declared order; migrate_design() re-emits them
+explicitly and never silently.
 """
 import dataclasses
 import json
@@ -67,7 +70,16 @@ EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples"
 
 # Golden design identity of the fully-populated baseline. Bump a schema or
 # compiler-semantics version to change it legitimately, never silently.
+#
+# COMPILER_SEMANTICS_VERSION 1 -> 2 made dependency declaration order
+# non-semantic. The hash body's semantics-version component (c1 -> c2) and
+# the canonical sorting of dependencies both move the current value; that
+# is the intended consequence of the semantics change, not drift.
 GOLDEN_DESIGN_HASH = \
+    "941e403861f5f71fd6c8235ef5ac0efd3ac1cc226aada28cdf67110eac7ac779"
+# Legacy semantics-v1 identity of the SAME fully-populated fixture,
+# preserved exactly to prove old identity has not been reinterpreted.
+GOLDEN_DESIGN_HASH_V1 = \
     "6b95eb820150f06d2b155f807160675f7f43e7af5e3e8ae07977164f065a6707"
 
 # ── explicit positive field classification ──────────────────────────────────
@@ -113,8 +125,8 @@ IDENTITY_FIELDS = {
 NON_SEMANTIC_FIELDS = {cls: frozenset() for cls in IDENTITY_FIELDS}
 
 # Version fields are identity-bearing constants: construction refuses any
-# value other than the implemented version, so they cannot be mutated and
-# therefore cannot appear in the mutation matrix.
+# unsupported version (only the supported set is representable), so they
+# cannot be freely mutated and do not appear in the mutation matrix.
 IMMUTABLE_CONSTANT_FIELDS = frozenset({
     (CompileRequest, "schema_version"),
     (CompileRequest, "compiler_semantics_version"),
@@ -581,11 +593,21 @@ def test_collectives_order_is_semantic():
     assert a.design_hash() != b.design_hash()
 
 
-def test_dependencies_order_is_semantic():
+def test_dependencies_order_is_irrelevant():
     deps = (Dependency(source="a", target="b", kind=DepKind.BLOCKING),
             Dependency(source="b", target="c", kind=DepKind.ORDERING))
     a = replace(B, dependencies=DependencyGraph(deps))
     b = replace(B, dependencies=DependencyGraph(tuple(reversed(deps))))
+    assert a.design_hash() == b.design_hash()
+
+
+def test_dependencies_order_is_semantic_under_legacy_v1():
+    deps = (Dependency(source="a", target="b", kind=DepKind.BLOCKING),
+            Dependency(source="b", target="c", kind=DepKind.ORDERING))
+    a = replace(B, compiler_semantics_version=1,
+                dependencies=DependencyGraph(deps))
+    b = replace(B, compiler_semantics_version=1,
+                dependencies=DependencyGraph(tuple(reversed(deps))))
     assert a.design_hash() != b.design_hash()
 
 
@@ -737,6 +759,12 @@ def test_golden_design_hash_is_stable():
     assert B.design_hash() == GOLDEN_DESIGN_HASH
 
 
+def test_golden_design_hash_v1_is_preserved():
+    """Legacy v1 identity is never reinterpreted under v2 rules."""
+    assert replace(B, compiler_semantics_version=1).design_hash() \
+        == GOLDEN_DESIGN_HASH_V1
+
+
 # ── tracked examples ────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("path", sorted(EXAMPLES_DIR.glob("*.json")),
@@ -746,3 +774,116 @@ def test_tracked_example_round_trips(path):
     assert CompileRequest.from_dict(cr.to_dict()).design_hash() == cr.design_hash()
     assert cr.design_hash() == CompileRequest.from_dict(
         json.loads(path.read_text())).design_hash()
+
+
+# ── compiler-semantics versions and migration ────────────────────────────
+
+def test_legacy_semantics_v1_is_loadable():
+    v1 = replace(B, compiler_semantics_version=1)
+    loaded = CompileRequest.from_dict(v1.to_dict())
+    assert loaded.compiler_semantics_version == 1
+    assert loaded.design_hash() == v1.design_hash()
+
+
+def test_semantics_versions_produce_distinct_identities():
+    assert replace(B, compiler_semantics_version=1).design_hash() \
+        != replace(B, compiler_semantics_version=2).design_hash()
+
+
+@pytest.mark.parametrize("bad", [0, 3, 99])
+def test_unsupported_compiler_semantics_refused(bad):
+    d = B.to_dict()
+    d["compiler_semantics_version"] = bad
+    with pytest.raises(CompileRequestSchemaError, match="compiler_semantics"):
+        CompileRequest.from_dict(d)
+
+
+@pytest.mark.parametrize("bad", [0, 3, 99])
+def test_direct_construction_rejects_unsupported_semantics(bad):
+    with pytest.raises(ValueError, match="compiler_semantics_version"):
+        replace(B, compiler_semantics_version=bad)
+
+
+def test_migrate_design_from_v1_reemits_current_semantics():
+    from veritx_dse.model.compile_model import migrate_design
+    v1 = replace(B, compiler_semantics_version=1)
+    migrated, prov = migrate_design(v1.to_dict())
+    assert migrated.compiler_semantics_version == COMPILER_SEMANTICS_VERSION
+    assert migrated.design_hash() == CompileRequest.from_dict(
+        migrated.to_dict()).design_hash()
+    assert prov["from_semantics"] == 1
+    assert prov["to_semantics"] == COMPILER_SEMANTICS_VERSION
+    assert prov["from_design_hash"] == v1.design_hash()
+    assert prov["to_design_hash"] == migrated.design_hash()
+    assert prov["changed"] is True
+    assert prov["dependency_order_canonicalized"] is True
+
+
+def test_migrate_design_current_semantics_is_noop():
+    from veritx_dse.model.compile_model import migrate_design
+    migrated, prov = migrate_design(B)
+    assert migrated is B
+    assert migrated.design_hash() == B.design_hash()
+    assert prov["changed"] is False
+    assert prov["dependency_order_canonicalized"] is False
+
+
+def test_migrated_identity_is_dependency_order_independent():
+    from veritx_dse.model.compile_model import migrate_design
+    deps = (Dependency(source="a", target="b", kind=DepKind.BLOCKING),
+            Dependency(source="b", target="c", kind=DepKind.ORDERING))
+    v1a = replace(B, compiler_semantics_version=1,
+                  dependencies=DependencyGraph(deps))
+    v1b = replace(B, compiler_semantics_version=1,
+                  dependencies=DependencyGraph(tuple(reversed(deps))))
+    assert v1a.design_hash() != v1b.design_hash()
+    migrated_a, _ = migrate_design(v1a)
+    migrated_b, _ = migrate_design(v1b)
+    assert migrated_a.design_hash() == migrated_b.design_hash()
+
+
+def test_migrated_documents_are_byte_identical():
+    """Stored tuple, not just the hash projection, is canonicalized."""
+    from veritx_dse.model.compile_model import migrate_design
+    deps = (Dependency(source="a", target="b", kind=DepKind.BLOCKING),
+            Dependency(source="b", target="c", kind=DepKind.ORDERING),
+            Dependency(source="a", target="c", kind=DepKind.INDEPENDENT))
+    migrated_a, _ = migrate_design(replace(
+        B, compiler_semantics_version=1,
+        dependencies=DependencyGraph(deps)).to_dict())
+    migrated_b, _ = migrate_design(replace(
+        B, compiler_semantics_version=1,
+        dependencies=DependencyGraph(tuple(reversed(deps)))).to_dict())
+    assert migrated_a.to_dict() == migrated_b.to_dict()
+    assert json.dumps(migrated_a.to_dict(), sort_keys=True) \
+        == json.dumps(migrated_b.to_dict(), sort_keys=True)
+
+
+def test_migration_preserves_every_design_semantic():
+    from veritx_dse.model.compile_model import migrate_design
+    v1 = replace(B, compiler_semantics_version=1)
+    migrated, _ = migrate_design(v1)
+    for key in ("workload", "requirements", "agents", "noc_config",
+                "address_map", "physical"):
+        assert v1.canonical_dict()[key] == migrated.canonical_dict()[key]
+    assert sorted(v1.canonical_dict()["dependencies"], key=str) \
+        == sorted(migrated.canonical_dict()["dependencies"], key=str)
+
+
+def test_migration_provenance_is_non_semantic():
+    from veritx_dse.model.compile_model import migrate_design
+    v1 = replace(B, compiler_semantics_version=1)
+    migrated, prov = migrate_design(v1)
+    assert set(prov) == {"from_semantics", "to_semantics",
+                         "from_design_hash", "to_design_hash", "changed",
+                         "dependency_order_canonicalized"}
+    canon = json.dumps(migrated.canonical_dict(), sort_keys=True)
+    for token in prov:
+        assert token not in canon, token
+
+
+def test_migration_is_never_silent_in_from_dict():
+    v1 = replace(B, compiler_semantics_version=1)
+    loaded = CompileRequest.from_dict(v1.to_dict())
+    assert loaded.compiler_semantics_version == 1
+    assert loaded.to_dict() == v1.to_dict()
