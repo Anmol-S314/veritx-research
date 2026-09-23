@@ -40,16 +40,57 @@ class CertificationError(VeritXError):
     pass
 
 
-class ArtifactError(VeritXError):
+class Refusal(VeritXError):
+    """A semantic refusal: the input is understood and outside the
+    supported domain. Never approximated silently."""
+
+    code = "REFUSAL"
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
+
+
+class ArtifactError(Refusal):
     """Artifact signing/manifest errors."""
-    pass
+
+    code = "ARTIFACT_ERROR"
 
 
 class InvalidInput(ArtifactError):
     """Malformed persisted artifact input."""
-    pass
+
+    code = "INVALID_INPUT"
 
 
 class EvidenceInvalid(ArtifactError):
     """Persisted artifact identity failed verification."""
-    pass
+
+    code = "EVIDENCE_INVALID"
+
+
+# ── domain refusals (workload semantics) ────────────────────────────────
+class UnsupportedSemantics(Refusal):
+    """The semantics exist as a concept but are outside the supported
+    domain. Never approximated silently."""
+
+    code = "UNSUPPORTED_SEMANTICS"
+
+
+class UnsupportedSchedule(Refusal):
+    """A collective/multicast algorithm outside the pinned set, or a
+    payload violating the schedule's divisibility law."""
+
+    code = "UNSUPPORTED_SCHEDULE"
+
+
+class MappingInvalid(Refusal):
+    """Rank space / mapping / endpoint binding seam failure."""
+
+    code = "MAPPING_INVALID"
+
+
+class ConservationFailed(Refusal):
+    """A conservation law did not hold. Hard failure, never a warning."""
+
+    code = "CONSERVATION_FAILED"
