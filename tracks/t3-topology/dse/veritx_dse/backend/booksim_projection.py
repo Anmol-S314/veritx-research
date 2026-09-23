@@ -51,7 +51,7 @@ from typing import Any
 
 from veritx_dse.backend.source_audit import audit_profile_reads
 from veritx_dse.core.artifact import content_hash
-from veritx_dse.core.route_artifact import DOR_XY
+from veritx_dse.core.route_artifact import ANYNET_MIN_HOPS, DOR_XY
 from veritx_dse.model.topology_artifact import MaterializedFamily
 from veritx_dse.workload.traffic import PhysicalTrafficArtifactV2
 
@@ -64,6 +64,17 @@ _MESH_DOR_ROUTING_FUNCTION = "dim_order"
 
 _ANYNET_PROFILE_ID = "CERTIFIED_BOOKSIM_ANYNET_V1"
 _ANYNET_SEMANTICS_VERSION = "booksim2-fork+B3.7b-anynet-dump"
+
+#: trace scheduling semantics (bound into the prepared identity)
+TRACE_SCHEDULE_VERSION = "srota/booksim-trace-schedule/v1"
+#: historical certified convergence constants
+_SAMPLE_PERIOD_MIN = 200
+_SAMPLE_PERIOD_MARGIN = 1000
+#: AnyNet routing VALUE that composes the fork's registry key:
+#:   routing_function + "_" + topology == "min_anynet"
+#: (networks/anynet.cpp: gRoutingFunctionMap["min_anynet"] = &min_anynet)
+_ANYNET_ROUTING_FUNCTION = "min"
+_ANYNET_ROUTING_KEY = "min_anynet"
 
 CONFIG_FILE = "config.cfg"
 TOPOLOGY_FILE = "topology.anynet"
@@ -177,7 +188,7 @@ CONFIG_KEY_ORDER = (
     "topology", "k", "n", "use_noc_latency", "network_file",
     "routing_function", "routing_dump_file",
     "num_vcs", "classes", "router", "priority", "link_failures",
-    "traffic", "sample_period", "injection_rate",
+    "traffic", "sample_period", "max_samples", "injection_rate",
     "injection_rate_uses_flits", "injection_process", "sim_type",
     "sim_count", "warmup_periods", "measure_stats", "print_activity",
     "viewer_trace", "sim_power", "seed",
@@ -205,9 +216,18 @@ _AUDIT: tuple[ConfigRead, ...] = (
     ConfigRead("priority", _A.BACKEND_PROFILE, "vc.cpp", "none",
                note="no priority scheme; class_priority is dead"),
     ConfigRead("link_failures", _A.BACKEND_PROFILE, "networks/network.cpp", 0),
-    ConfigRead("traffic", _A.BACKEND_PROFILE, "trafficmanager.cpp", "trace",
-               note="trace-driven injection"),
-    ConfigRead("sample_period", _A.BACKEND_PROFILE, "trafficmanager.cpp"),
+    ConfigRead("traffic", _A.DERIVED, "traffic.cpp",
+               note="DERIVED workload binding: traffic.cpp rejects a bare "
+                    "'trace' pattern (exit -1) and requires the expression "
+                    "trace(<file>); the renderer embeds the prepared "
+                    "logical filename, never an absolute path"),
+    ConfigRead("sample_period", _A.DERIVED, "trafficmanager.cpp",
+               note="DERIVED convergence control: "
+                    "max(200, max_trace_timestamp + 1 + 1000)"),
+    ConfigRead("max_samples", _A.DERIVED, "trafficmanager.cpp",
+               note="DERIVED so that sample_period * max_samples covers the "
+                    "final trace timestamp; a long trace is never silently "
+                    "truncated"),
     ConfigRead("injection_rate", _A.BACKEND_PROFILE, "trafficmanager.cpp", 0.0,
                note="embedded trace owns injection"),
     ConfigRead("injection_rate_uses_flits", _A.BACKEND_PROFILE,
@@ -554,13 +574,27 @@ def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
         values = dict(profile.pinned_values())
         values.update({
             "topology": "anynet", "network_file": TOPOLOGY_FILE,
-            "routing_function": "min_wt",
+            "routing_function": _ANYNET_ROUTING_FUNCTION,
             "routing_dump_file": "",
             "num_vcs": parents.vc_resource.vc_count,
         })
     else:
         raise BookSimProjectionError(
             f"unknown certified profile {profile.profile_id!r}")
+
+    # DERIVED trace controls: the workload binding and the convergence
+    # controls that guarantee every trace event is consumed.
+    schedule = trace_schedule(parents.physical_traffic)
+    values["traffic"] = f"trace({TRACE_FILE})"
+    values["sample_period"] = schedule["sample_period"]
+    values["max_samples"] = schedule["max_samples"]
+    if schedule["sample_period"] * schedule["max_samples"] \
+            < schedule["max_timestamp"] + 1:
+        raise BookSimProjectionError(
+            "convergence controls cannot cover the trace: "
+            f"sample_period={schedule['sample_period']} * "
+            f"max_samples={schedule['max_samples']} < "
+            f"{schedule['max_timestamp'] + 1}")
 
     lines: list[str] = []
     for key in CONFIG_KEY_ORDER:
@@ -570,6 +604,89 @@ def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
             continue
         lines.append(f"{key} = {_format_value(values[key])};")
     return ("\n".join(lines) + "\n").encode()
+
+
+def trace_schedule(physical_traffic: PhysicalTrafficArtifactV2
+                   ) -> dict[str, int]:
+    """The declared injection schedule of the canonical traffic projection.
+
+    Timestamps are PROJECTION-DEFINED emission order (0, 1, 2, ...), not
+    application wall-clock scheduling: BookSim completion time measured
+    under this schedule is the completion time of the canonical network
+    traffic projection, and must never be reported as end-to-end workload
+    runtime.
+    """
+    expected_packets = sum(len(m.packets) for m in physical_traffic.traffic)
+    if expected_packets <= 0:
+        raise BookSimProjectionError(
+            "a trace-driven execution requires a non-empty trace")
+    max_timestamp = expected_packets - 1
+    sample_period = max(_SAMPLE_PERIOD_MIN,
+                        max_timestamp + 1 + _SAMPLE_PERIOD_MARGIN)
+    max_samples = max(1, -(-(max_timestamp + 1) // sample_period))
+    return {"expected_packets": expected_packets,
+            "max_timestamp": max_timestamp,
+            "sample_period": sample_period,
+            "max_samples": max_samples}
+
+
+def qualify_anynet_min_hops(parents: BookSimProjectionParents) -> None:
+    """Narrow, fail-closed domain for ANYNET_MIN_HOPS on this fork.
+
+    The vendored ``AnyNet::route`` adds the edge's LINK LATENCY to the
+    Dijkstra distance (``anynet.cpp``: ``dist[min_cand] +
+    i->second.second``) even though an old comment claims "distance is
+    hops". Under unit latency/weight that reduces to min-hop routing with
+    the fork's strict-``<``, ascending-map tie behaviour. With any
+    non-unit value the two algorithms differ, so ANYNET_MIN_HOPS is NOT
+    representable and we refuse rather than silently reinterpreting it as
+    weighted shortest path.
+    """
+    classes = [d.id for d in parents.route.routing_classes]
+    if ANYNET_MIN_HOPS not in classes:
+        raise SemanticLoss(
+            f"UNSUPPORTED: the certified AnyNet profile represents "
+            f"ANYNET_MIN_HOPS only, got route classes {classes}")
+    if len(classes) != 1 and set(classes) != {ANYNET_MIN_HOPS}:
+        raise SemanticLoss(
+            "UNSUPPORTED: the certified AnyNet profile executes one "
+            f"min-hop routing function, got classes {classes}")
+
+    latencies = {c.latency_cycles for c in parents.topology.channels}
+    if latencies != {1}:
+        raise SemanticLoss(
+            "UNSUPPORTED: AnyNet on this fork adds link latency to the "
+            f"route distance, so hop-count semantics require unit latency; "
+            f"channels carry {sorted(latencies)} (use a weighted routing "
+            "class instead)")
+    weights = {c.route_weight for c in parents.topology.channels}
+    if weights != {1}:
+        raise SemanticLoss(
+            f"UNSUPPORTED: ANYNET_MIN_HOPS requires unit route weights, "
+            f"got {sorted(weights)}")
+
+    pairs: dict[tuple[int, int], int] = {}
+    for channel in parents.topology.channels:
+        key = (channel.src_router, channel.dst_router)
+        pairs[key] = pairs.get(key, 0) + 1
+    parallel = sorted(key for key, count in pairs.items() if count > 1)
+    if parallel:
+        raise SemanticLoss(
+            f"UNSUPPORTED: parallel router-to-router channels {parallel[:3]} "
+            "would be collapsed/overwritten by the rendered AnyNet graph")
+
+    router_ids = sorted(r.router_id for r in parents.topology.routers)
+    if router_ids != list(range(len(router_ids))):
+        raise SemanticLoss(
+            "UNSUPPORTED: the fork requires a sequential router namespace "
+            "0..N-1; got "
+            f"{router_ids[:3]}...{router_ids[-3:] if router_ids else []}")
+    for endpoint in parents.attachment.endpoints:
+        if not 0 <= endpoint.router_id < len(router_ids):
+            raise SemanticLoss(
+                f"UNSUPPORTED: endpoint {endpoint.endpoint_id} attaches to "
+                f"router {endpoint.router_id} outside the rendered AnyNet "
+                "graph")
 
 
 def parse_config_values(text: str) -> dict[str, str]:
@@ -613,6 +730,10 @@ class PreparedBookSimInput:
     num_vcs: int
     endpoint_count: int
     router_count: int
+    trace_schedule_version: str = TRACE_SCHEDULE_VERSION
+    sample_period: int = 0
+    max_samples: int = 0
+    expected_packets: int = 0
     schema_version: int = BOOKSIM_PROJECTION_SCHEMA_VERSION
 
     def identity_dict(self) -> dict[str, Any]:
@@ -634,6 +755,10 @@ class PreparedBookSimInput:
             "num_vcs": self.num_vcs,
             "endpoint_count": self.endpoint_count,
             "router_count": self.router_count,
+            "trace_schedule_version": self.trace_schedule_version,
+            "sample_period": self.sample_period,
+            "max_samples": self.max_samples,
+            "expected_packets": self.expected_packets,
             "config_sha256": content_hash("srota/PreparedBookSimConfig", 1,
                                           {"text": self.config_text}),
             "trace_sha256": content_hash("srota/PreparedBookSimTrace", 1,
@@ -673,6 +798,7 @@ def select_booksim_profile(parents: BookSimProjectionParents) -> BookSimProfile:
     try:
         qualify_native_mesh_dor(parents)
     except SemanticLoss:
+        qualify_anynet_min_hops(parents)   # refuse if also unrepresentable
         return ANYNET_PROFILE
     return MESH_DOR_PROFILE
 
@@ -699,6 +825,7 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
     topology_text = (render_anynet_topology(parents).decode()
                      if profile.profile_id == _ANYNET_PROFILE_ID else None)
     pt = parents.physical_traffic
+    schedule = trace_schedule(pt)
     return PreparedBookSimInput(
         profile_id=profile.profile_id,
         semantics_version=profile.semantics_version,
@@ -718,7 +845,10 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
         message_artifact_id=pt.logical.message_artifact_id(),
         num_vcs=parents.vc_resource.vc_count,
         endpoint_count=len(parents.attachment.endpoints),
-        router_count=parents.topology.router_count)
+        router_count=parents.topology.router_count,
+        sample_period=int(values["sample_period"]),
+        max_samples=int(values["max_samples"]),
+        expected_packets=schedule["expected_packets"])
 
 
 def assert_canonical_booksim_projection(
@@ -800,9 +930,10 @@ __all__ = [
     "CONFIG_FILE", "CONFIG_KEY_ORDER", "ConfigRead", "MESH_DOR_PROFILE",
     "MeshDorQualification", "ParameterOwner", "PreparedBookSimInput",
     "ROUTE_DUMP_FILE", "SemanticLoss", "TOPOLOGY_FILE", "TRACE_FILE",
-    "assert_canonical_booksim_projection", "compare_route_realization",
-    "parse_config_values", "prepare_booksim_input",
+    "TRACE_SCHEDULE_VERSION", "assert_canonical_booksim_projection",
+    "compare_route_realization", "parse_config_values",
+    "prepare_booksim_input", "qualify_anynet_min_hops",
     "qualify_native_mesh_dor", "render_anynet_topology", "render_config",
     "render_trace", "select_booksim_profile", "source_audit_report",
-    "vc_exactness", "verify_trace_conservation",
+    "trace_schedule", "vc_exactness", "verify_trace_conservation",
 ]

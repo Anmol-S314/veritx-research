@@ -15,7 +15,9 @@ from pathlib import Path
 
 import pytest
 
-from test_canonical_compiler import _det, _design  # test-only canonical fixture
+from test_canonical_compiler import (  # test-only canonical fixtures
+    _anynet_policy, _det, _design, _vs,
+)
 
 from veritx_dse.backend import booksim_projection as bp
 from veritx_dse.backend import source_audit
@@ -36,8 +38,11 @@ BOOKSIM_SRC = REPO / "third_party" / "booksim2" / "src"
 # ── fixtures ───────────────────────────────────────────────────────────────
 
 def _parents(*, compute=16, tp=16, family=TopologyFamily.MESH,
-             ops=None, multicast=False):
-    compiled = _det(_design(compute=compute, tp=tp, family=family))
+             ops=None, multicast=False, anynet=False):
+    design = _design(compute=compute, tp=tp, family=family)
+    compiled = (_det(design, policy=_anynet_policy(),
+                     vc_spec=_vs(vc_to_routing_class=((0, ANYNET_MIN_HOPS),)))
+                if anynet else _det(design))
     if ops is None:
         operations = [
             OperationNode(operation_id="pre", kind=KIND_COMPUTE,
@@ -221,7 +226,8 @@ def test_native_dor_refuses_non_unit_link_latency():
 # ── 10. explicit AnyNet projection ─────────────────────────────────────────
 
 def test_non_mesh_family_falls_back_to_explicit_anynet():
-    compiled, parents = _parents(family=TopologyFamily.CONCENTRATED_MESH)
+    compiled, parents = _parents(family=TopologyFamily.CONCENTRATED_MESH,
+                                 anynet=True)
     assert compiled.topology.family is MaterializedFamily.CONCENTRATED_MESH
     assert bp.select_booksim_profile(parents).profile_id \
         == "CERTIFIED_BOOKSIM_ANYNET_V1"
@@ -237,7 +243,8 @@ def test_non_mesh_family_falls_back_to_explicit_anynet():
 
 
 def test_anynet_render_binds_routers_to_their_attached_nodes():
-    compiled, parents = _parents(family=TopologyFamily.CONCENTRATED_MESH)
+    compiled, parents = _parents(family=TopologyFamily.CONCENTRATED_MESH,
+                                 anynet=True)
     text = bp.render_anynet_topology(parents).decode().splitlines()
     by_router = {}
     for endpoint in compiled.attachment.endpoints:
@@ -447,5 +454,117 @@ def test_optional_dump_field_is_never_emitted_by_default():
     _, parents = _parents()
     prepared = bp.prepare_booksim_input(parents)
     assert "routing_dump_file" not in prepared.config_text
-    _, torus = _parents(family=TopologyFamily.CONCENTRATED_MESH)
-    assert "routing_dump_file" not in bp.prepare_booksim_input(torus).config_text
+    _, other = _parents(family=TopologyFamily.CONCENTRATED_MESH, anynet=True)
+    assert "routing_dump_file" not in \
+        bp.prepare_booksim_input(other).config_text
+
+
+# ── Slice-31 correction: trace binding, convergence, AnyNet semantics ──────
+
+def test_traffic_is_a_derived_workload_binding_not_a_profile_constant():
+    """traffic.cpp rejects a bare `trace` pattern and exits -1."""
+    _, parents = _parents()
+    prepared = bp.prepare_booksim_input(parents)
+    values = bp.parse_config_values(prepared.config_text)
+    assert values["traffic"] == "trace(workload.trace)"
+    assert "/" not in values["traffic"]          # never an absolute path
+    ownership = bp.MESH_DOR_PROFILE.ownership()
+    assert ownership["traffic"] is bp.ParameterOwner.DERIVED
+    assert ownership["sample_period"] is bp.ParameterOwner.DERIVED
+    assert ownership["max_samples"] is bp.ParameterOwner.DERIVED
+    assert "traffic" not in bp.MESH_DOR_PROFILE.pinned_values()
+
+
+def test_convergence_controls_cover_the_final_trace_timestamp():
+    _, parents = _parents()
+    schedule = bp.trace_schedule(parents.physical_traffic)
+    assert schedule["expected_packets"] > 0
+    assert schedule["sample_period"] == max(
+        200, schedule["max_timestamp"] + 1 + 1000)
+    assert schedule["sample_period"] * schedule["max_samples"] \
+        >= schedule["max_timestamp"] + 1
+    prepared = bp.prepare_booksim_input(parents)
+    values = bp.parse_config_values(prepared.config_text)
+    assert int(values["sample_period"]) == schedule["sample_period"]
+    assert int(values["max_samples"]) == schedule["max_samples"]
+    # the schedule is identity-bearing
+    doc = prepared.identity_dict()
+    assert doc["trace_schedule_version"] == bp.TRACE_SCHEDULE_VERSION
+    assert doc["expected_packets"] == schedule["expected_packets"]
+
+
+def test_a_late_event_still_fits_the_declared_schedule():
+    """A deliberately late event must not be truncated."""
+    _, parents = _parents()
+    schedule = bp.trace_schedule(parents.physical_traffic)
+    late = schedule["max_timestamp"]
+    # a trace whose final timestamp is 'late' still has a covering schedule
+    assert schedule["sample_period"] >= late + 1
+    assert schedule["max_samples"] >= 1
+
+
+def test_anynet_routing_value_composes_the_registry_key():
+    _, parents = _parents(family=TopologyFamily.CONCENTRATED_MESH,
+                          anynet=True)
+    prepared = bp.prepare_booksim_input(parents)
+    values = bp.parse_config_values(prepared.config_text)
+    assert values["routing_function"] == "min"
+    assert values["topology"] == "anynet"
+    assert f"{values['routing_function']}_{values['topology']}" == "min_anynet"
+
+
+@pytest.mark.skipif(not BOOKSIM_SRC.is_dir(),
+                    reason="vendored BookSim source not present")
+def test_fork_registers_min_anynet_and_rejects_bare_trace():
+    """Source/fork compatibility: identities the projection depends on."""
+    anynet = (BOOKSIM_SRC / "networks" / "anynet.cpp").read_text()
+    assert 'gRoutingFunctionMap["min_anynet"]' in anynet
+    traffic = (BOOKSIM_SRC / "traffic.cpp").read_text()
+    assert 'pattern_name == "trace"' in traffic
+    assert "requires a filename" in traffic
+    # AnyNet's Dijkstra adds link latency, not a hop count
+    assert "dist[min_cand] + i->second.second" in anynet
+
+
+def test_anynet_refuses_non_unit_link_semantics():
+    compiled, parents = _parents(family=TopologyFamily.CONCENTRATED_MESH,
+                                 anynet=True)
+    channels = list(compiled.topology.channels)
+    object.__setattr__(channels[0], "latency_cycles", 4)
+    object.__setattr__(parents.topology, "channels", tuple(channels))
+    with pytest.raises(bp.SemanticLoss, match="unit latency"):
+        bp.qualify_anynet_min_hops(parents)
+    compiled_w, parents_w = _parents(
+        family=TopologyFamily.CONCENTRATED_MESH, anynet=True)
+    channels = list(compiled_w.topology.channels)
+    object.__setattr__(channels[0], "route_weight", 3)
+    object.__setattr__(parents_w.topology, "channels", tuple(channels))
+    with pytest.raises(bp.SemanticLoss, match="unit route weights"):
+        bp.qualify_anynet_min_hops(parents_w)
+
+
+def test_anynet_refuses_parallel_channels_and_non_sequential_routers():
+    compiled, parents = _parents(family=TopologyFamily.CONCENTRATED_MESH,
+                                 anynet=True)
+    channels = list(compiled.topology.channels)
+    object.__setattr__(channels[0], "dst_router",
+                       channels[1].dst_router if len(channels) > 1 else 0)
+    object.__setattr__(parents.topology, "channels", tuple(channels))
+    with pytest.raises(bp.SemanticLoss):
+        bp.qualify_anynet_min_hops(parents)
+
+
+def test_anynet_refuses_a_dor_routed_fabric():
+    """A DOR fabric is NOT silently reinterpreted as min-hop."""
+    _, parents = _parents()          # DOR_XY route class
+    with pytest.raises(bp.SemanticLoss, match="ANYNET_MIN_HOPS only"):
+        bp.qualify_anynet_min_hops(parents)
+
+
+def test_prepared_identity_binds_the_trace_schedule():
+    _, parents = _parents()
+    base = bp.prepare_booksim_input(parents)
+    later = dataclasses.replace(base, max_samples=base.max_samples + 1)
+    assert later.prepared_id() != base.prepared_id()
+    renamed = dataclasses.replace(base, trace_schedule_version="other")
+    assert renamed.prepared_id() != base.prepared_id()
