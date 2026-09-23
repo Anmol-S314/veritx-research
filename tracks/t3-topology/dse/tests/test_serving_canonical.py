@@ -42,10 +42,16 @@ def _qualified(*, instance_count=4, granularity="collectives"):
 
 
 def _backend(machine, serving, *, mode=cs.MODE_LIVE_CANONICAL, binary=None):
+    path = Path(binary or BUILT_FROM_SOURCE)
+    if mode == cs.MODE_LIVE_CANONICAL:
+        from veritx_dse.backend.producer import resolve_producer_identity
+        identity = resolve_producer_identity(path)
+        digest, size = identity.binary_sha256, identity.binary_size
+    else:
+        digest, size = "a" * 64, 123
     return cs.CanonicalServingNetworkBackend(
-        machine=machine, binding=serving,
-        astra_binary=str(binary or BUILT_FROM_SOURCE),
-        astra_binary_sha256="a" * 64, astra_binary_size=123,
+        machine=machine, binding=serving, astra_binary=str(path),
+        astra_binary_sha256=digest, astra_binary_size=size,
         astra_source_revision="deadbeef", execution_mode=mode)
 
 
@@ -488,11 +494,15 @@ _requires_built = pytest.mark.skipif(
 
 
 def _live_backend(instance_count=4):
+    from veritx_dse.backend.producer import resolve_producer_identity
     machine, ns, serving = _qualified(instance_count=instance_count)
+    identity = resolve_producer_identity(BUILT_FROM_SOURCE)
     backend = cs.CanonicalServingNetworkBackend(
         machine=machine, binding=serving, astra_binary=str(BUILT_FROM_SOURCE),
-        astra_binary_sha256="pending", astra_binary_size=0,
-        astra_source_revision=None, execution_mode=cs.MODE_LIVE_CANONICAL)
+        astra_binary_sha256=identity.binary_sha256,
+        astra_binary_size=identity.binary_size,
+        astra_source_revision=identity.source_revision,
+        execution_mode=cs.MODE_LIVE_CANONICAL)
     return machine, ns, serving, backend
 
 

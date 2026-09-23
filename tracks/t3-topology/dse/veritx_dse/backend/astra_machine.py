@@ -564,6 +564,48 @@ class AstraMachineProjection:
         return content_hash("srota/AstraMachineProjection", 1,
                             self.identity_dict())
 
+    def physical_id(self) -> str:
+        """Stable machine facts only -- independent of the workload.
+
+        ``machine_id`` folds in the projection that *qualified* the machine
+        (workload id, payload bytes, compute floor), which is right for a
+        one-shot qualification but wrong for a live service loop where every
+        round has a different batch.  ``physical_id`` hashes only the
+        workload-independent machine surface, so a stable machine can be
+        re-used across rounds while each round carries its own qualified
+        workload identity (see AstraServingRoundQualification).
+        """
+        return content_hash("srota/AstraMachinePhysical", 1, {
+            "type": "srota/AstraMachinePhysical",
+            "schema_version": self.schema_version,
+            "machine_profile_version": self.machine_profile_version,
+            "machine_derivation_version": self.machine_derivation_version,
+            "embedded_fabric_abi_version": self.embedded_fabric_abi_version,
+            "astra_collective_profile_version":
+                self.astra_collective_profile_version,
+            "memory_profile_version": self.memory_profile_version,
+            "network_config_abi": self.network_config_abi,
+            "resolved_fabric_hash": self.resolved_fabric_hash,
+            "mapping_hash": self.mapping_hash,
+            "attachment_hash": self.attachment_hash,
+            "topology_hash": self.topology_hash,
+            "packet_format_hash": self.packet_format_hash,
+            "vc_resource_hash": self.vc_resource_hash,
+            "route_artifact_hash": self.route_artifact_hash,
+            "prepared_id": self.prepared_id,
+            "booksim_profile_id": self.booksim_profile_id,
+            "standalone_config_sha256": self.standalone_config_sha256,
+            "astra_sys_count": self.astra_sys_count,
+            "router_count": self.router_count,
+            "endpoint_count": self.endpoint_count,
+            "num_vcs": self.num_vcs,
+            "flit_bytes": self.flit_bytes,
+            "packetization_fidelity": self.packetization_fidelity,
+            "ns_per_cycle": self.ns_per_cycle,
+            "memory_scope": self.memory_scope,
+            "config_digests": self.file_digests(),
+        })
+
     def to_dict(self) -> dict[str, Any]:
         payload = dict(self.identity_dict())
         payload["machine_id"] = self.machine_id()

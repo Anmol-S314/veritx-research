@@ -38,6 +38,12 @@ from veritx_dse.backend.astra_namespace import (
     stage_endpoint_workload,
     write_communicator_groups,
 )
+from veritx_dse.backend.producer import (
+    ProducerError,
+    ProducerIdentity,
+    recheck_binary_digest,
+    resolve_producer_identity,
+)
 from veritx_dse.core.artifact import content_hash
 
 SERVING_SCHEMA_VERSION = 1
@@ -246,6 +252,9 @@ class CanonicalServingNetworkBackend:
     astra_binary_size: int
     astra_source_revision: str | None
     execution_mode: str = MODE_LIVE_CANONICAL
+    #: resolved once at construction and rechecked before every spawn; a
+    #: fresh re-resolution would compare the binary against itself
+    producer: Any = None
 
     # -- validation --------------------------------------------------------
     def __post_init__(self) -> None:
@@ -266,9 +275,42 @@ class CanonicalServingNetworkBackend:
             if not Path(self.astra_binary).is_file():
                 raise ServingBoundaryError(
                     f"qualified ASTRA binary not found: {self.astra_binary}")
-        for token in ("://",):
-            if token in self.astra_binary:
-                raise ServingBoundaryError("binary must be a local path")
+            # A caller-supplied digest is a CLAIM, never evidence: resolve the
+            # real binary and refuse any disagreement, so a false digest or a
+            # substituted binary cannot become scientific evidence.
+            identity = resolve_producer_identity(Path(self.astra_binary))
+            object.__setattr__(self, "producer", identity)
+            if self.astra_binary_sha256 != identity.binary_sha256:
+                raise ServingBoundaryError(
+                    "declared ASTRA binary digest does not match the binary "
+                    f"on disk ({self.astra_binary_sha256[:16]}... != "
+                    f"{identity.binary_sha256[:16]}...)")
+            if self.astra_binary_size != identity.binary_size:
+                raise ServingBoundaryError(
+                    "declared ASTRA binary size does not match the binary on "
+                    f"disk ({self.astra_binary_size} != "
+                    f"{identity.binary_size})")
+
+    def producer_identity(self) -> ProducerIdentity:
+        """The ASTRA binary's real identity, resolved from the artifact."""
+        if self.producer is not None:
+            return self.producer
+        try:
+            identity = resolve_producer_identity(Path(self.astra_binary))
+        except ProducerError as exc:  # pragma: no cover - thin wrapper
+            raise ServingBoundaryError(str(exc)) from exc
+        object.__setattr__(self, "producer", identity)
+        return identity
+
+    def recheck_before_spawn(self) -> None:
+        """Last-instant proof the qualified binary is the one being executed."""
+        if self.execution_mode != MODE_LIVE_CANONICAL:
+            return
+        try:
+            recheck_binary_digest(self.producer_identity())
+        except ProducerError as exc:
+            raise ServingBoundaryError(
+                f"the ASTRA binary changed before spawn: {exc}") from exc
 
     def assert_network_authority(self) -> None:
         """Every precondition that makes this a qualified execution."""

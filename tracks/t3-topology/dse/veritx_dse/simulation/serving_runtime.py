@@ -100,6 +100,8 @@ def run_live_round(*, backend: CanonicalServingNetworkBackend,
     ``load``/``run`` protocol instead of being executed twice in one process.
     """
     backend.assert_network_authority()
+    # last-instant proof the qualified binary is the one being executed
+    backend.recheck_before_spawn()
     target = Path(run_dir)
     target.mkdir(parents=True, exist_ok=True)
     staged = backend.stage_round(workload=workload, directory=target, stem=stem)
@@ -162,7 +164,8 @@ def build_serving_evidence(*, backend: CanonicalServingNetworkBackend,
                            rounds: tuple[RoundOutcome, ...],
                            workload_id: str,
                            request_metrics: tuple[RequestMetric, ...] = (),
-                           served_instances: tuple[int, ...] | None = None
+                           served_instances: tuple[int, ...] | None = None,
+                           round_evidence: tuple[Any, ...] = ()
                            ) -> CanonicalServingEvidence:
     """Compose round outcomes into content-addressed serving evidence."""
     merged: dict[int, int] = {}
@@ -197,8 +200,9 @@ def build_serving_evidence(*, backend: CanonicalServingNetworkBackend,
         request_metrics=request_metrics,
         rounds=len(rounds),
         endpoint_completions=tuple(sorted(merged.items())),
+        # real, content-addressed round evidence ids -- never a synthetic
+        # ``backend_id:round_index`` string dressed up as evidence identity
         backend_evidence_ids=tuple(
-            f"{backend.backend_id()}:{outcome.round_index}"
-            for outcome in rounds),
+            evidence.evidence_id() for evidence in round_evidence),
         autonomous_injection_packets=injected,
     )
