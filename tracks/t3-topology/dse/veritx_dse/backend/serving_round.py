@@ -50,6 +50,74 @@ class ServingRoundError(ValueError):
     """A round could not be qualified, or the runtime deviated from it."""
 
 
+# ── dense data-parallel participation (serving/scheduling semantics) ─────
+
+@dataclass(frozen=True)
+class DpMemberRecord:
+    """One DP group member's participation in a synchronized round.
+
+    ``original_total_len`` is the member's real batch shape; ``padded``
+    is the shape it actually executes after quorum padding.  ``is_dummy``
+    is explicit -- it is never inferred from an empty request list.
+    """
+
+    instance_id: int
+    batch_id: int
+    is_dummy: bool
+    original_total_len: int
+    padded_total_len: int
+
+    def identity_dict(self) -> dict[str, Any]:
+        return {
+            "instance_id": self.instance_id,
+            "batch_id": self.batch_id,
+            "participation": "DUMMY" if self.is_dummy else "REAL",
+            "original_total_len": self.original_total_len,
+            "padded_total_len": self.padded_total_len,
+        }
+
+
+@dataclass(frozen=True)
+class DpQuorumRecord:
+    """One synchronized dense-DP round: the decision, made auditable.
+
+    ``dp_sum_total_len`` is deliberately ``max_total_len`` and NOT
+    ``max_total_len * group_size`` -- that is the historical rule and the
+    seam a later EP slice will read.
+    """
+
+    group_id: str
+    members: tuple[DpMemberRecord, ...]
+    max_total_len: int
+    dp_sum_total_len: int
+
+    def __post_init__(self) -> None:
+        if not self.group_id:
+            raise ServingRoundError("a DP quorum needs a group id")
+        if len(self.members) < 2:
+            raise ServingRoundError(
+                f"DP group {self.group_id!r} quorum has "
+                f"{len(self.members)} member(s)")
+        if self.dp_sum_total_len != self.max_total_len:
+            raise ServingRoundError(
+                "dp_sum_total_len must equal max_total_len, not "
+                "max_total_len * group_size")
+
+    def real_members(self) -> tuple[DpMemberRecord, ...]:
+        return tuple(m for m in self.members if not m.is_dummy)
+
+    def dummy_members(self) -> tuple[DpMemberRecord, ...]:
+        return tuple(m for m in self.members if m.is_dummy)
+
+    def identity_dict(self) -> dict[str, Any]:
+        return {
+            "group_id": self.group_id,
+            "members": [m.identity_dict() for m in self.members],
+            "max_total_len": self.max_total_len,
+            "dp_sum_total_len": self.dp_sum_total_len,
+        }
+
+
 # ── serving batch plan (serving intent only) ──────────────────────────────
 
 @dataclass(frozen=True)
@@ -70,8 +138,22 @@ class ServingBatchPlan:
     collective_kind: str
     collective_bytes: int
     compute_ns: int
+    #: dense-DP participation.  Defaults keep non-DP plan identities
+    #: byte-identical; a dummy is explicit, never inferred from empty requests.
+    is_dp_dummy: bool = False
+    dp_group_id: str = ""
 
     def __post_init__(self) -> None:
+        if self.is_dp_dummy and self.request_ids:
+            raise ServingRoundError(
+                f"DP dummy for instance {self.instance_id} carries user "
+                f"request(s) {list(self.request_ids)}; a dummy retires none")
+        if self.is_dp_dummy and not self.dp_group_id:
+            raise ServingRoundError(
+                "a DP dummy must name the DP group it synchronizes")
+        if self.dp_group_id and not self.is_dp_dummy and not self.request_ids:
+            raise ServingRoundError(
+                "a DP member with no requests is a dummy and must say so")
         if self.phase not in ("prefill", "decode"):
             raise ServingRoundError(
                 f"batch phase must be prefill or decode, got {self.phase!r}")
@@ -110,6 +192,9 @@ class ServingBatchPlan:
             "collective_type_number": self.collective_type_number,
             "collective_bytes": self.collective_bytes,
             "compute_ns": self.compute_ns,
+            **({"dp_group_id": self.dp_group_id,
+                "dp_participation": "DUMMY" if self.is_dp_dummy else "REAL"}
+               if (self.is_dp_dummy or self.dp_group_id) else {}),
         }
 
     def plan_id(self) -> str:
@@ -260,6 +345,8 @@ class ServingRoundPlan:
     round_id: int
     participant_count: int
     batches: tuple[ServingBatchPlan, ...]
+    #: dense-DP quorums resolved in this round (empty for non-DP rounds)
+    dp_quorums: tuple[DpQuorumRecord, ...] = ()
     schema_version: int = ROUND_PLAN_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
@@ -312,6 +399,8 @@ class ServingRoundPlan:
             "round_id": self.round_id,
             "participant_count": self.participant_count,
             "batches": [batch.identity_dict() for batch in self.batches],
+            **({"dp_quorums": [q.identity_dict() for q in self.dp_quorums]}
+               if self.dp_quorums else {}),
         }
 
     def plan_id(self) -> str:
@@ -372,16 +461,25 @@ def plan_from_round(*, round_id: int, batches: Mapping[int, Any],
                     instance_ranks: Mapping[int, tuple[int, ...]],
                     participant_count: int, collective_kind: str,
                     collective_bytes_for: Any,
-                    compute_ns_for: Any) -> ServingRoundPlan:
+                    compute_ns_for: Any,
+                    dummy_instances: frozenset[int] = frozenset(),
+                    dp_group_ids: Mapping[int, str] | None = None,
+                    dp_quorums: tuple[DpQuorumRecord, ...] = ()
+                    ) -> ServingRoundPlan:
     """Build one round plan from the real ``Batch`` of each instance.
 
     Only fields a real batch owns are read from it (id, requests, total_len,
     prefill/decode).  The declared profile values are computed per batch --
-    never over an aggregate token count -- so a later perf-model reclamation
-    has a per-batch seam to plug into.
+    never over an aggregate token count -- and, for DP members, only AFTER
+    quorum padding, so ``batch.total_len`` here is the *executed* shape.
+
+    ``dummy_instances`` names the members whose batch is an explicit DP dummy:
+    an empty request list is accepted for those and refused for everyone else,
+    so an arbitrary empty batch can never masquerade as DP participation.
     """
     if not batches:
         raise ServingRoundError("a round requires at least one real batch")
+    dp_group_ids = dict(dp_group_ids or {})
     plans: list[ServingBatchPlan] = []
     for instance_id in sorted(batches):
         batch = batches[instance_id]
@@ -394,10 +492,11 @@ def plan_from_round(*, round_id: int, batches: Mapping[int, Any],
             raise ServingRoundError(
                 f"no canonical ranks are bound to serving instance "
                 f"{instance_id}")
+        is_dummy = instance_id in dummy_instances
         ids = tuple(f"inst{instance_id}:req{getattr(request, 'id', index)}"
                     for index, request in
                     enumerate(getattr(batch, "requests", ()) or ()))
-        if not ids:
+        if not ids and not is_dummy:
             raise ServingRoundError(
                 f"instance {instance_id} scheduled a batch with no requests")
         tokens = int(getattr(batch, "total_len", 0) or 0)
@@ -407,10 +506,12 @@ def plan_from_round(*, round_id: int, batches: Mapping[int, Any],
             phase="prefill" if getattr(batch, "num_prefill", 0) else "decode",
             tokens=tokens, collective_kind=collective_kind,
             collective_bytes=int(collective_bytes_for(tokens=tokens)),
-            compute_ns=int(compute_ns_for(tokens=tokens))))
+            compute_ns=int(compute_ns_for(tokens=tokens)),
+            is_dp_dummy=is_dummy,
+            dp_group_id=dp_group_ids.get(instance_id, "")))
     return ServingRoundPlan(round_id=int(round_id),
                             participant_count=participant_count,
-                            batches=tuple(plans))
+                            batches=tuple(plans), dp_quorums=dp_quorums)
 
 
 # ── collective ledger validation (§9) ─────────────────────────────────────
@@ -656,6 +757,8 @@ class AstraServingRoundQualification:
     collective_binding_id: str = ""
     #: per-collective runtime contract, ordered by operation id
     collective_contract: tuple[CollectiveContract, ...] = ()
+    #: dense-DP quorums synchronized in this round
+    dp_quorums: tuple[DpQuorumRecord, ...] = ()
     schema_version: int = SERVING_ROUND_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
@@ -696,6 +799,8 @@ class AstraServingRoundQualification:
                 "collective_contract": [row.identity_dict()
                                         for row in self.collective_contract]}
                if self.collective_binding_id else {}),
+            **({"dp_quorums": [q.identity_dict() for q in self.dp_quorums]}
+               if self.dp_quorums else {}),
         }
 
     def round_id(self) -> str:
@@ -706,13 +811,15 @@ class AstraServingRoundQualification:
 def qualify_round(*, machine: Any, plan: Any, backend: Any,
                   staged: Any, directory: str | Path,
                   resolved_fabric: Any, mapping: Any, attachment: Any,
-                  parallelism: Any, collective_binding: Any = None
+                  parallelism: Any, collective_binding: Any = None,
+                  dp_quorums: Any = None
                   ) -> tuple[AstraServingRoundQualification, Any]:
     """Qualify one serving round against the stable machine + namespace.
 
     ``collective_binding`` supplies the round's own collective memberships and
     communicator groups.  Without one, the stable namespace's groups are used
-    (the historical single-group behaviour).
+    (the historical single-group behaviour).  ``dp_quorums`` defaults to the
+    plan's own record, so DP participation can never be qualified away.
     """
     backend.assert_network_authority()
     projection = plan.to_round_projection(
@@ -766,6 +873,8 @@ def qualify_round(*, machine: Any, plan: Any, backend: Any,
         collective_binding_id=(collective_binding.binding_id()
                                if collective_binding is not None else ""),
         collective_contract=contract,
+        dp_quorums=tuple(getattr(plan, "dp_quorums", ())
+                         if dp_quorums is None else dp_quorums),
         backend_id=backend.backend_id(),
         astra_binary_sha256=backend.astra_binary_sha256,
         et_granularity=projection.et_granularity,
@@ -805,6 +914,8 @@ class CanonicalServingRoundEvidence:
     #: round-specific collective binding + per-collective runtime contract
     collective_binding_id: str = ""
     collective_contract: tuple[CollectiveContract, ...] = ()
+    #: dense-DP quorums synchronized in this round
+    dp_quorums: tuple[DpQuorumRecord, ...] = ()
     schema_version: int = SERVING_ROUND_SCHEMA_VERSION
 
     def identity_dict(self) -> dict[str, Any]:
@@ -832,6 +943,8 @@ class CanonicalServingRoundEvidence:
                 "collective_contract": [row.identity_dict()
                                         for row in self.collective_contract]}
                if self.collective_binding_id else {}),
+            **({"dp_quorums": [q.identity_dict() for q in self.dp_quorums]}
+               if self.dp_quorums else {}),
             "dispatched_instances": list(self.dispatched_instances),
             "per_endpoint_completions":
                 [[e, c] for e, c in self.per_endpoint_completions],
@@ -891,4 +1004,5 @@ def round_evidence_from_outcome(*, qualification: AstraServingRoundQualification
         backend_cycles=outcome.backend_cycles,
         collective_binding_id=qualification.collective_binding_id,
         collective_contract=tuple(qualification.collective_contract),
+        dp_quorums=tuple(qualification.dp_quorums),
         parser_version=parser_version)

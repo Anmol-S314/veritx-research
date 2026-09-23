@@ -260,7 +260,8 @@ def _session_factory(**kwargs):
 def _write_trace(directory: Path, rows) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
     dataset = directory / "requests.jsonl"
-    dataset.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    body = "\n".join(json.dumps(r) for r in rows)
+    dataset.write_text(body + "\n" if body else "")
     return dataset
 
 

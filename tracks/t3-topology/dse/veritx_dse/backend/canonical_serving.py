@@ -184,6 +184,127 @@ class ServingNamespaceBinding:
                             self.identity_dict())
 
 
+# ── dense data-parallel grouping (service-side only) ─────────────────────
+
+@dataclass(frozen=True)
+class ServingDataParallelGroup:
+    """An explicit dense-DP synchronization group of serving instances.
+
+    DP grouping is a SERVICE fact: which replicas must synchronize their
+    forwards.  It is not a parallelism axis of the fabric.  It never adds
+    ranks, never renumbers endpoints, and never touches topology -- it only
+    names serving instances that already exist in a
+    ``ServingNamespaceBinding``.
+    """
+
+    group_id: str
+    instance_ids: tuple[int, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.group_id, str) or not self.group_id:
+            raise ServingBoundaryError("a DP group needs a non-empty id")
+        if len(self.instance_ids) < 2:
+            raise ServingBoundaryError(
+                f"DP group {self.group_id!r} needs at least two members")
+        if len(set(self.instance_ids)) != len(self.instance_ids):
+            raise ServingBoundaryError(
+                f"DP group {self.group_id!r} repeats a member")
+        if self.instance_ids != tuple(sorted(self.instance_ids)):
+            raise ServingBoundaryError(
+                f"DP group {self.group_id!r} members must be sorted")
+
+    def identity_dict(self) -> dict[str, Any]:
+        return {"group_id": self.group_id,
+                "instance_ids": list(self.instance_ids)}
+
+
+@dataclass(frozen=True)
+class ServingDataParallelGroups:
+    """The dense-DP grouping declared over one serving binding.
+
+    Content-addressed, and deliberately *only* a grouping: it does not
+    participate in the rank namespace, the endpoint mapping, the namespace id,
+    the machine identity or the resolved fabric.
+    """
+
+    serving_binding_id: str
+    groups: tuple[ServingDataParallelGroup, ...]
+    schema_version: int = SERVING_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        if not self.serving_binding_id:
+            raise ServingBoundaryError(
+                "DP groups must name the serving binding they belong to")
+        ids = [group.group_id for group in self.groups]
+        if len(set(ids)) != len(ids):
+            raise ServingBoundaryError(
+                f"duplicate DP group id(s): {sorted(ids)}")
+        seen: dict[int, str] = {}
+        for group in self.groups:
+            for instance_id in group.instance_ids:
+                if instance_id in seen:
+                    raise ServingBoundaryError(
+                        f"serving instance {instance_id} is in more than one "
+                        f"DP group ({seen[instance_id]!r} and "
+                        f"{group.group_id!r})")
+                seen[instance_id] = group.group_id
+
+    @classmethod
+    def build(cls, *, binding: ServingNamespaceBinding,
+              groups: tuple[ServingDataParallelGroup, ...]
+              ) -> "ServingDataParallelGroups":
+        """Validate a declaration against the real serving binding."""
+        built = cls(serving_binding_id=binding.binding_id(), groups=groups)
+        for group in built.groups:
+            widths = set()
+            for instance_id in group.instance_ids:
+                instance = binding.instance_for(instance_id)
+                widths.add(len(instance.ranks))
+            if len(widths) != 1:
+                raise ServingBoundaryError(
+                    f"DP group {group.group_id!r} mixes TP widths "
+                    f"{sorted(widths)}; dense DP members must be compatible")
+            if next(iter(widths)) < 2:
+                raise ServingBoundaryError(
+                    f"DP group {group.group_id!r} has TP width 1; a "
+                    "single-rank replica has no TP collective to project, so "
+                    "dense DP over it would have to emit a degenerate "
+                    "collective. The certified profile refuses that rather "
+                    "than faking one.")
+        return built
+
+    # -- queries ----------------------------------------------------------
+    def group_of(self, instance_id: int) -> ServingDataParallelGroup | None:
+        for group in self.groups:
+            if instance_id in group.instance_ids:
+                return group
+        return None
+
+    def is_member(self, instance_id: int) -> bool:
+        return self.group_of(instance_id) is not None
+
+    def group(self, group_id: str) -> ServingDataParallelGroup:
+        for group in self.groups:
+            if group.group_id == group_id:
+                return group
+        raise ServingBoundaryError(f"unknown DP group {group_id!r}")
+
+    def group_ids(self) -> tuple[str, ...]:
+        return tuple(group.group_id for group in self.groups)
+
+    def identity_dict(self) -> dict[str, Any]:
+        return {
+            "type": "srota/ServingDataParallelGroups",
+            "schema_version": self.schema_version,
+            "serving_binding_id": self.serving_binding_id,
+            "groups": [group.identity_dict() for group in self.groups],
+        }
+
+    def groups_id(self) -> str:
+        return content_hash("srota/ServingDataParallelGroups", 1,
+                            self.identity_dict())
+
+
 # ── completion attribution ────────────────────────────────────────────────
 
 @dataclass(frozen=True)

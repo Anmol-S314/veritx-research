@@ -68,6 +68,10 @@ from veritx_dse.backend.serving_round import (
     validate_collective_ledger_contract,
 )
 from veritx_dse.core.artifact import content_hash
+from veritx_dse.simulation.serving_dp import (
+    DpQuorumCoordinator,
+    make_dp_dummy,
+)
 from veritx_dse.simulation.serving_runtime import (
     RoundOutcome,
     build_serving_evidence,
@@ -378,8 +382,11 @@ class RoundRecord:
     clock_after: int
     retired_request_ids: tuple[str, ...]
     #: instances that participated in the round but had no batch in flight;
-    #: they must not report execution work
+    #: they must not report execution work.  A DP dummy member is NOT idle:
+    #: it is dispatched and appears in ``dispatched_instances``.
     idle_instances: tuple[int, ...]
+    #: dense-DP quorums resolved in this round (empty for non-DP rounds)
+    dp_quorums: tuple[Any, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -453,7 +460,8 @@ def run_request_driven_service(
         workload_id: str, lowering: Any,
         timeout_s: int = 900, max_rounds: int = 10_000,
         session_factory: Any = None, ledger: bool = True,
-        expected_requests: int = 0) -> ServiceRunResult:
+        expected_requests: int = 0,
+        dp_groups: Any = None) -> ServiceRunResult:
     """Drive a real request trace to real per-request service metrics.
 
     One iteration of the loop is one certified round: route arrivals, ask
@@ -461,6 +469,10 @@ def run_request_driven_service(
     the canonical boundary as collective *intent*, execute it, retire what
     the runtime actually finished, and advance the service clock by the
     fabric's own cycle count.
+
+    ``dp_groups`` declares dense-DP synchronization groups.  Without it the
+    behaviour and identities are exactly Slice 38: independent replicas are
+    never turned into an implicit DP group.
     """
     backend.assert_network_authority()
     if len(schedulers) != len(npus.binding.instances):
@@ -486,6 +498,13 @@ def run_request_driven_service(
     instance_ranks = {instance.instance_id: tuple(sorted(instance.ranks))
                       for instance in npus.binding.instances}
 
+    # DP synchronization state only; it never touches the fabric
+    dp = DpQuorumCoordinator(groups=dp_groups) if dp_groups is not None else None
+    dp_group_ids = ({} if dp_groups is None
+                    else {instance_id: group.group_id
+                          for group in dp_groups.groups
+                          for instance_id in group.instance_ids})
+
     clock = 0
     retired: list[RequestOutcome] = []
     seen: set[str] = set()
@@ -495,13 +514,48 @@ def run_request_driven_service(
 
     for round_index in range(max_rounds):
         router.route_arrived_requests(clock)
-        batches: dict[int, Any] = {}
+        produced: dict[int, Any] = {}
         for scheduler in schedulers:
             batch = scheduler.schedule(clock, npus.start_npu(scheduler.instance_id))
             if batch is not None:
-                batches[scheduler.instance_id] = batch
+                produced[scheduler.instance_id] = batch
+
+        # independent replicas dispatch immediately (Slice 38); a DP member's
+        # real batch is HELD UNSENT until its whole quorum is ready
+        batches: dict[int, Any] = {}
+        for instance_id, batch in produced.items():
+            if dp is not None and dp.is_member(instance_id):
+                dp.note_real_batch(instance_id, batch)
+            else:
+                batch.sent = True
+                batches[instance_id] = batch
+
+        quorums: list[Any] = []
+        if dp is not None:
+            # close every already-open quorum with an explicit dummy for each
+            # member that is genuinely idle (no batch this round, nothing in
+            # flight).  A group with no real batch is never opened.
+            for group_id in dp.open_groups():
+                for instance_id in dp.groups.group(group_id).instance_ids:
+                    if instance_id in dp.pending_instances(group_id):
+                        continue
+                    scheduler = schedulers[instance_id]
+                    if scheduler.inflight:
+                        continue
+                    dummy = make_dp_dummy(scheduler=scheduler, clock=clock,
+                                          start_npu=npus.start_npu(instance_id))
+                    dp.add_dummy(group_id=group_id, instance_id=instance_id,
+                                 dummy=dummy)
+            for completed in dp.complete_ready():
+                quorums.append(completed)
+                batches.update(completed.batch_map())
 
         if not batches:
+            if dp is not None and dp.has_pending():
+                raise ServingLoopError(
+                    f"round {round_index} holds a pending DP batch that no "
+                    "quorum can resolve (a group member is blocked); "
+                    "refusing to report the run as finished")
             if _quiescent(schedulers, router):
                 break
             nxt = _next_schedulable_time(schedulers, router, clock)
@@ -515,12 +569,17 @@ def run_request_driven_service(
         # a batch handed to the fabric is 'sent' -- the historical pass-echo
         # guard: an unsent batch must never be retired by a fabric echo
         for batch in batches.values():
-            batch.sent = True
+            if not batch.sent:
+                raise ServingLoopError(
+                    "a batch reached dispatch without being marked sent; a "
+                    "pending DP batch must never be dispatched early")
 
-        # only instances that actually supplied a batch are dispatched; an
-        # idle instance gets no compute and no collective, so it must report
-        # no execution work (attribute_completions refuses if it does)
+        # every instance that executes the round, dummies included: a dummy
+        # member is network-dispatched, it is not an idle instance
         dispatched = frozenset(batches)
+        dummy_instances = frozenset(
+            instance_id for completed in quorums
+            for instance_id in completed.dummy_instances())
 
         plan = plan_from_round(
             round_id=round_index, batches=batches,
@@ -528,7 +587,10 @@ def run_request_driven_service(
             participant_count=participant_count,
             collective_kind=profile.collective_kind,
             collective_bytes_for=profile.collective_bytes,
-            compute_ns_for=profile.compute_ns)
+            compute_ns_for=profile.compute_ns,
+            dummy_instances=dummy_instances,
+            dp_group_ids=dp_group_ids,
+            dp_quorums=tuple(c.record for c in quorums))
 
         projection = plan.to_round_projection(
             resolved_fabric=lowering.resolved_fabric, mapping=lowering.mapping,
@@ -546,7 +608,8 @@ def run_request_driven_service(
             directory=run_dir, resolved_fabric=lowering.resolved_fabric,
             mapping=lowering.mapping, attachment=lowering.attachment,
             parallelism=lowering.parallelism,
-            collective_binding=collective_binding)
+            collective_binding=collective_binding,
+            dp_quorums=tuple(c.record for c in quorums))
 
         outcome = run_live_round(
             backend=backend, workload=projection, run_dir=run_dir,
@@ -581,6 +644,11 @@ def run_request_driven_service(
             for sys_id in npus.quorum_sys(instance_id):
                 _prompt, _gen, finished = scheduler.add_done(
                     batch.batch_id, sys_id, clock)
+                if instance_id in dummy_instances and finished:
+                    raise ServingLoopError(
+                        f"a DP dummy on instance {instance_id} retired "
+                        f"{[r.id for r in finished]}; a dummy must produce "
+                        "zero user request completions")
                 for request in finished:
                     key = str(request.id)
                     if key in seen:  # pragma: no cover - defensive
@@ -616,8 +684,13 @@ def run_request_driven_service(
             backend_cycles=cycles, clock_after=clock,
             retired_request_ids=tuple(round_retired),
             idle_instances=tuple(sorted(
-                set(npus.binding.served_instance_set()) - set(batches)))))
+                set(npus.binding.served_instance_set()) - set(batches))),
+            dp_quorums=tuple(c.record for c in quorums)))
 
+        # pending DP work means the run is NOT quiescent: never conclude
+        # "finished" while a real unsent batch is held
+        if dp is not None and dp.has_pending():
+            continue
         if _quiescent(schedulers, router):
             break
     else:
