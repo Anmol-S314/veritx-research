@@ -9,6 +9,18 @@ endif ()
 
 project(AstraSim_BookSim2)
 
+# VeritX: the embedded fabric frontend must compile its BookSim headers from ONE
+# fork -- the canonical ``third_party/booksim2`` that standalone BookSim
+# qualification also uses. The nested ``extern/network_backend/booksim2/booksim2``
+# copy is vendored third-party and is NOT an implementation authority; it is kept
+# on the include path only as a fallback for a standalone configure that does not
+# pass -DBOOKSIM2_SRC_DIR (the qualification build always passes it).
+if (NOT DEFINED BOOKSIM2_SRC_DIR)
+    set(BOOKSIM2_SRC_DIR
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../../extern/network_backend/booksim2/booksim2"
+            CACHE PATH "Canonical booksim2 fork source tree")
+endif ()
+
 file(GLOB srcs_common
         ${CMAKE_CURRENT_SOURCE_DIR}/common/*.cc
 )
@@ -34,6 +46,15 @@ target_include_directories(AstraSim_BookSim2 PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../../../extern/graph_frontend/chakra
         ${CMAKE_CURRENT_SOURCE_DIR}/../../../extern/graph_frontend/chakra/schema/protobuf
         ${CMAKE_CURRENT_SOURCE_DIR}/../../../extern/graph_frontend/chakra/src/third_party/utils
+        # VeritX: canonical fork FIRST -- this is the honest source of the
+        # embedded fabric's headers (must match the linked BookSim2Fabric).
+        ${BOOKSIM2_SRC_DIR}/src
+        ${BOOKSIM2_SRC_DIR}/src/arbiters
+        ${BOOKSIM2_SRC_DIR}/src/allocators
+        ${BOOKSIM2_SRC_DIR}/src/routers
+        ${BOOKSIM2_SRC_DIR}/src/networks
+        ${BOOKSIM2_SRC_DIR}/src/power
+        # fallback only; not an authority (see BOOKSIM2_SRC_DIR note above)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../../extern/network_backend/booksim2/booksim2/src
         ${CMAKE_CURRENT_SOURCE_DIR}/../../../extern/network_backend/booksim2/booksim2/src/arbiters
         ${CMAKE_CURRENT_SOURCE_DIR}/../../../extern/network_backend/booksim2/booksim2/src/allocators

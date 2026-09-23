@@ -64,6 +64,56 @@ public:
   bool HasRetired(int node) const { return !_retired_q[node].empty(); }
   std::vector<Retired> DrainRetired(int node);
 
+  // VeritX ledger diagnostics: cheap counters/snapshots over
+  // traffic-manager state, used by the frontend LEDGER dumps. All O(1)
+  // except the two scans, which are O(in-flight) and only run on the
+  // diagnostic path.
+  int64_t InFlightFlitCount() const {
+    int64_t n = 0;
+    for (size_t c = 0; c < _total_in_flight_flits.size(); ++c)
+      n += (int64_t)_total_in_flight_flits[c].size();
+    return n;
+  }
+  int64_t PartialQueueFlitCount() const {
+    int64_t n = 0;
+    for (size_t s = 0; s < _partial_packets.size(); ++s)
+      for (size_t c = 0; c < _partial_packets[s].size(); ++c)
+        n += (int64_t)_partial_packets[s][c].size();
+    return n;
+  }
+  int64_t PacketsRequested() const { return _packets_requested; }
+  int64_t UnicastFlitsConstructed() const { return _unicast_flits; }
+  int64_t McastDeliveriesConstructed() const { return _mcast_deliveries; }
+  int64_t FlitsRetired() const { return _flits_retired; }
+  int64_t TailDeliveriesRecorded() const { return _tails_retired; }
+  // Oldest in-flight flit by injection (head-flit ctime); false if idle.
+  bool SampleOldestInFlight(int & id, int & src, int & dst,
+                            int64_t & ctime, int64_t & itime, bool & head,
+                            bool & tail, int & vc) const {
+    bool found = false;
+    int64_t best = 0;
+    for (size_t c = 0; c < _total_in_flight_flits.size(); ++c) {
+      for (std::map<int, Flit *>::const_iterator it =
+               _total_in_flight_flits[c].begin();
+           it != _total_in_flight_flits[c].end(); ++it) {
+        Flit const * f = it->second;
+        if (!found || f->ctime < best) {
+          found = true;
+          best = f->ctime;
+          id = f->id;
+          src = f->src;
+          dst = f->dest;
+          ctime = f->ctime;
+          itime = f->itime;
+          head = f->head;
+          tail = f->tail;
+          vc = f->vc;
+        }
+      }
+    }
+    return found;
+  }
+
 protected:
   void _RetireFlit(Flit * f, int dest) override;
 
@@ -73,6 +123,12 @@ private:
                          int64_t time);
 
   std::vector<std::vector<Retired> > _retired_q;
+  // Cumulative ledger counters (monotonic; never drained).
+  int64_t _packets_requested = 0;
+  int64_t _unicast_flits = 0;
+  int64_t _mcast_deliveries = 0;
+  int64_t _flits_retired = 0;
+  int64_t _tails_retired = 0;
 };
 
 // Build the full fabric (networks + EmbedTM) from a booksim cfg file path.
