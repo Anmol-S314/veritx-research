@@ -29,6 +29,9 @@ Failure modes (deterministic, one per test):
   eof_before_waiting    data line then EOF (death mid-reply)
   crash_after_cmd       exit 7 on first command
   ignore_exit           answers normally but never exits on 'exit'
+  late_stderr           replies on stdout FIRST, then writes the ledger to
+                        stderr after a delay (the drain-lag shape: reading
+                        evidence at reply time loses measured statistics)
 
 Observable state: env FAKE_BACKEND_STATE (a JSON file) records
 {clock, rounds, loads, dones, exit_seen} after each command, so tests
@@ -207,6 +210,27 @@ def main() -> int:
             update_state(loads=loads)
             continue  # silent ack — no reply (traced: main.cc:345-349)
         if cmd == "run":
+            if mode == "late_stderr":
+                # the reply lands while the ledger is still in flight: this is
+                # the measured shape where reading evidence too early drops
+                # statistics (stdout and stderr are separate pipes)
+                clock += 1000
+                rounds += 1
+                update_state(clock=clock, rounds=rounds, loads=loads)
+                emit_plat(clock)
+                for i in range(npus):
+                    emit_completion(i, clock)
+                emit_waiting()
+                time.sleep(0.4)
+                for i in range(npus):
+                    for rep in range(2):
+                        sys.stderr.write(
+                            f"[LEDGER][COLL_SUBMIT] rank={i} astra_node=9 "
+                            f"comm_type=0 comm_size=4096 priority=0 "
+                            f"involved_dims=[1,1,1,1] group_members=[0,1] "
+                            f"tick={rep}\n")
+                sys.stderr.flush()
+                continue
             pass  # apply queued loads (empty queue = re-report round)
         else:
             loads = [cmd]  # legacy single-load round

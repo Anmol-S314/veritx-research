@@ -420,3 +420,52 @@ class TestStderrEvidenceBuffer:
             self._stream(["[trace] All 0 cycles, injected=42 — draining"]))
         thread.join(timeout=5)
         assert "injected=42" in "".join(evidence)
+
+
+class TestStderrQuiescence:
+    """stdout and stderr are separate pipes: evidence read too early is lost.
+
+    ``await_stderr_quiescence`` is on the protocol/evidence boundary, so it
+    must be BOUNDED (a stderr stream that never falls silent must not hang it)
+    and must not spin on a closed pipe.
+    """
+
+    def test_late_ledger_written_after_the_reply_is_recovered(self):
+        """The measured failure: a reply lands before the ledger does.
+
+        The contract is "the pipe has been quiet for ``idle_s``", so the
+        fixture's 0.4s pause is covered by ``idle_s=0.5``.  In production the
+        producer has already written its statistics before the reply, so the
+        default 0.1s window is enough; what this pins is that a reply is never
+        read as complete evidence while stderr is still in flight.
+        """
+        with session("late_stderr", npus=2) as s:
+            s.read_startup()
+            s.command("run")
+            # the reply is already in hand while stderr is still in flight
+            assert "[LEDGER][COLL_SUBMIT]" not in s.stderr_text()
+            assert s.await_stderr_quiescence(timeout_s=5.0, idle_s=0.5) is True
+            text = s.stderr_text()
+        assert text.count("[LEDGER][COLL_SUBMIT]") == 4      # 2 NPUs x 2
+
+    def test_quiescence_is_bounded_under_a_permanent_stderr_flood(self):
+        """A never-silent stderr must not be able to block the wait."""
+        with session("stderr_flood", npus=1, reply_timeout_s=10.0) as s:
+            s.read_startup()
+            s.command("pass")
+            started = time.monotonic()
+            result = s.await_stderr_quiescence(timeout_s=0.3, idle_s=0.05)
+            elapsed = time.monotonic() - started
+        assert result is False              # budget expired, did not hang
+        assert elapsed < 5.0
+
+    def test_quiescence_after_child_exit_returns_promptly(self):
+        """EOF/closed pipe is quiescent by definition, not a 5s spin."""
+        s = session("normal", npus=2)
+        s.start()
+        s.read_startup()
+        s.close()
+        started = time.monotonic()
+        assert s.await_stderr_quiescence(timeout_s=5.0) is True
+        assert s.await_stderr_quiescence(timeout_s=5.0) is True   # idempotent
+        assert time.monotonic() - started < 2.0

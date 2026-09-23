@@ -227,7 +227,300 @@ def plan_from_round(*, round_id: int, batches: Mapping[int, Any],
         collective_bytes=collective_bytes, compute_ns=compute_ns)
 
 
+# ── the round plan: one batch plan per scheduled instance ────────────────
+
+ROUND_PLAN_SCHEMA_VERSION = 1
+
+
+def compute_operation_id(*, round_id: int, instance_id: int, batch_id: int,
+                         rank: int) -> str:
+    """Globally unambiguous owned-compute operation id.
+
+    ``batch_id`` alone is NOT unique: every ``Scheduler`` numbers its own
+    batches from zero, so two instances routinely produce batch 0.
+    """
+    return (f"round{round_id}-inst{instance_id}-batch{batch_id}"
+            f"-compute-r{rank}")
+
+
+def collective_operation_id(*, round_id: int, instance_id: int,
+                            batch_id: int) -> str:
+    return f"round{round_id}-inst{instance_id}-batch{batch_id}-tp"
+
+
+@dataclass(frozen=True)
+class ServingRoundPlan:
+    """One service round: the serving batches of every scheduled instance.
+
+    This is a *container*, not a workload model.  Each instance keeps its own
+    ``ServingBatchPlan`` -- its own ranks, phase, tokens, collective size and
+    compute -- so independent TP groups never collapse into one collective.
+    """
+
+    round_id: int
+    participant_count: int
+    batches: tuple[ServingBatchPlan, ...]
+    schema_version: int = ROUND_PLAN_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        if not self.batches:
+            raise ServingRoundError(
+                "a round requires at least one scheduled instance")
+        if self.participant_count <= 0:
+            raise ServingRoundError("participant_count must be positive")
+        ids = [b.instance_id for b in self.batches]
+        if len(set(ids)) != len(ids):
+            raise ServingRoundError(
+                f"a round repeats a serving instance: {sorted(ids)}")
+        if ids != sorted(ids):
+            raise ServingRoundError(
+                "a round's batches must be ordered by instance id")
+        for batch in self.batches:
+            for rank in batch.participant_ranks:
+                if not 0 <= rank < self.participant_count:
+                    raise ServingRoundError(
+                        f"instance {batch.instance_id} names rank {rank} "
+                        f"outside the serving participant namespace "
+                        f"[0, {self.participant_count})")
+
+    # -- queries ----------------------------------------------------------
+    def instance_ids(self) -> tuple[int, ...]:
+        return tuple(b.instance_id for b in self.batches)
+
+    def batch_for(self, instance_id: int) -> ServingBatchPlan:
+        for batch in self.batches:
+            if batch.instance_id == instance_id:
+                return batch
+        raise ServingRoundError(f"no batch for instance {instance_id}")
+
+    def operation_ids(self) -> tuple[str, ...]:
+        ids: list[str] = []
+        for batch in self.batches:
+            for rank in batch.participant_ranks:
+                ids.append(compute_operation_id(
+                    round_id=self.round_id, instance_id=batch.instance_id,
+                    batch_id=batch.batch_id, rank=rank))
+            ids.append(collective_operation_id(
+                round_id=self.round_id, instance_id=batch.instance_id,
+                batch_id=batch.batch_id))
+        return tuple(ids)
+
+    def identity_dict(self) -> dict[str, Any]:
+        return {
+            "type": "srota/ServingRoundPlan",
+            "schema_version": self.schema_version,
+            "round_id": self.round_id,
+            "participant_count": self.participant_count,
+            "batches": [batch.identity_dict() for batch in self.batches],
+        }
+
+    def plan_id(self) -> str:
+        return content_hash("srota/ServingRoundPlan", 1, self.identity_dict())
+
+    # -- canonical lowering ------------------------------------------------
+    def to_workload_graph(self, *, parallelism: Any) -> Any:
+        """One owned compute chain + one TP collective per instance.
+
+        The graph's participant namespace is the whole serving namespace, so
+        operation participant sets stay explicit: a TP group of two ranks in
+        an eight-rank namespace is legal without inventing a DP axis.
+        """
+        from veritx_dse.workload.graph import (
+            KIND_COLLECTIVE, KIND_COMPUTE, OperationNode, WorkloadGraph,
+            collective_detail, compute_detail,
+        )
+        operations: list[Any] = []
+        for batch in self.batches:
+            participants = tuple(sorted(batch.participant_ranks))
+            compute_ids = []
+            for rank in participants:
+                op_id = compute_operation_id(
+                    round_id=self.round_id, instance_id=batch.instance_id,
+                    batch_id=batch.batch_id, rank=rank)
+                compute_ids.append(op_id)
+                operations.append(OperationNode(
+                    operation_id=op_id, kind=KIND_COMPUTE, owner=rank,
+                    detail=compute_detail(
+                        duration_ns=batch.compute_ns,
+                        participant_count=self.participant_count)))
+            operations.append(OperationNode(
+                operation_id=collective_operation_id(
+                    round_id=self.round_id, instance_id=batch.instance_id,
+                    batch_id=batch.batch_id),
+                kind=KIND_COLLECTIVE, deps=tuple(compute_ids),
+                detail=collective_detail(
+                    collective_kind=batch.collective_kind,
+                    participants=participants,
+                    payload_bytes=batch.collective_bytes,
+                    participant_count=self.participant_count)))
+        return WorkloadGraph(parallelism=parallelism,
+                             participant_count=self.participant_count,
+                             operations=tuple(operations))
+
+    def to_round_projection(self, *, resolved_fabric: Any, mapping: Any,
+                            attachment: Any, parallelism: Any) -> Any:
+        from veritx_dse.backend.astra import AstraWorkloadProjection
+        from veritx_dse.workload.messages import LogicalMessageArtifactV2
+        graph = self.to_workload_graph(parallelism=parallelism)
+        return AstraWorkloadProjection.build(
+            logical=LogicalMessageArtifactV2(graph=graph),
+            resolved_fabric=resolved_fabric, mapping=mapping,
+            attachment=attachment, et_granularity="collectives")
+
+
+def plan_from_round(*, round_id: int, batches: Mapping[int, Any],
+                    instance_ranks: Mapping[int, tuple[int, ...]],
+                    participant_count: int, collective_kind: str,
+                    collective_bytes_for: Any,
+                    compute_ns_for: Any) -> ServingRoundPlan:
+    """Build one round plan from the real ``Batch`` of each instance.
+
+    Only fields a real batch owns are read from it (id, requests, total_len,
+    prefill/decode).  The declared profile values are computed per batch --
+    never over an aggregate token count -- so a later perf-model reclamation
+    has a per-batch seam to plug into.
+    """
+    if not batches:
+        raise ServingRoundError("a round requires at least one real batch")
+    plans: list[ServingBatchPlan] = []
+    for instance_id in sorted(batches):
+        batch = batches[instance_id]
+        batch_id = getattr(batch, "batch_id", None)
+        if not isinstance(batch_id, int):
+            raise ServingRoundError(
+                f"instance {instance_id} supplied a non-Batch with no "
+                "integer batch_id")
+        if instance_id not in instance_ranks:
+            raise ServingRoundError(
+                f"no canonical ranks are bound to serving instance "
+                f"{instance_id}")
+        ids = tuple(f"inst{instance_id}:req{getattr(request, 'id', index)}"
+                    for index, request in
+                    enumerate(getattr(batch, "requests", ()) or ()))
+        if not ids:
+            raise ServingRoundError(
+                f"instance {instance_id} scheduled a batch with no requests")
+        tokens = int(getattr(batch, "total_len", 0) or 0)
+        plans.append(ServingBatchPlan(
+            batch_id=batch_id, instance_id=instance_id, request_ids=ids,
+            participant_ranks=tuple(sorted(instance_ranks[instance_id])),
+            phase="prefill" if getattr(batch, "num_prefill", 0) else "decode",
+            tokens=tokens, collective_kind=collective_kind,
+            collective_bytes=int(collective_bytes_for(tokens=tokens)),
+            compute_ns=int(compute_ns_for(tokens=tokens))))
+    return ServingRoundPlan(round_id=int(round_id),
+                            participant_count=participant_count,
+                            batches=tuple(plans))
+
+
 # ── collective ledger validation (§9) ─────────────────────────────────────
+
+@dataclass(frozen=True)
+class CollectiveContract:
+    """The exact runtime contract of ONE collective operation.
+
+    Keyed by the ASTRA node id, so two collectives that share a kind and byte
+    size but differ in membership stay distinguishable.
+    """
+
+    operation_id: str
+    astra_node_id: int
+    collective_kind: str
+    payload_bytes: int
+    endpoints: tuple[int, ...]
+
+    def identity_dict(self) -> dict[str, Any]:
+        return {
+            "operation_id": self.operation_id,
+            "astra_node_id": self.astra_node_id,
+            "collective_kind": self.collective_kind,
+            "payload_bytes": self.payload_bytes,
+            "endpoints": list(self.endpoints),
+        }
+
+
+def collective_contract(*, projection: Any, binding: Any
+                        ) -> tuple[CollectiveContract, ...]:
+    """Derive the expected runtime contract from projection + binding.
+
+    Node ids come from the projection's own deterministic node plan, which is
+    the same plan ``write_chakra`` emits, so the contract cannot drift from
+    what the runtime was actually given.
+    """
+    node_ids = dict(projection.collective_node_ids())
+    rows: list[CollectiveContract] = []
+    for op_id, kind, payload, _participants in projection.collective_operations:
+        if op_id not in node_ids:
+            raise ServingRoundError(
+                f"collective {op_id!r} has no emitted Chakra node id")
+        rows.append(CollectiveContract(
+            operation_id=op_id, astra_node_id=node_ids[op_id],
+            collective_kind=kind, payload_bytes=payload,
+            endpoints=binding.membership_for(op_id)))
+    if not rows:
+        raise ServingRoundError("the round declares no collective")
+    return tuple(rows)
+
+
+def validate_collective_ledger_contract(
+        entries: tuple[LedgerCollective, ...],
+        *, contract: tuple[CollectiveContract, ...]) -> None:
+    """Fail closed unless every collective matches its own node's contract.
+
+    Aggregate counts are not evidence: each collective is checked against its
+    own ASTRA node id, its own membership, its own submitter set and its own
+    declared size/type, and unexpected collective nodes refuse.
+    """
+    by_node: dict[int, list[LedgerCollective]] = {}
+    for entry in entries:
+        by_node.setdefault(entry.astra_node, []).append(entry)
+    expected_nodes = {row.astra_node_id for row in contract}
+    unexpected = sorted(set(by_node) - expected_nodes)
+    if unexpected:
+        raise ServingRoundError(
+            f"the runtime submitted collective node id(s) {unexpected} that "
+            "this round never projected")
+
+    for row in contract:
+        submissions = by_node.get(row.astra_node_id, [])
+        if not submissions:
+            raise ServingRoundError(
+                f"the runtime never submitted collective "
+                f"{row.operation_id!r} (ASTRA node {row.astra_node_id}); "
+                "the projected collective was not executed")
+        kinds = {entry.kind for entry in submissions}
+        if kinds != {row.collective_kind}:
+            raise ServingRoundError(
+                f"collective {row.operation_id!r} (node "
+                f"{row.astra_node_id}): projected {row.collective_kind} but "
+                f"the runtime submitted {sorted(k for k in kinds if k)}")
+        sizes = {entry.comm_size for entry in submissions}
+        if sizes != {row.payload_bytes}:
+            raise ServingRoundError(
+                f"collective {row.operation_id!r} (node "
+                f"{row.astra_node_id}): projected {row.payload_bytes} bytes "
+                f"but the runtime submitted {sorted(sizes)}")
+        for entry in submissions:
+            if not entry.has_group:
+                raise ServingRoundError(
+                    f"collective {row.operation_id!r}: rank {entry.rank} "
+                    "submitted without a communicator group")
+            if tuple(sorted(entry.members)) != row.endpoints:
+                raise ServingRoundError(
+                    f"collective {row.operation_id!r} (node "
+                    f"{row.astra_node_id}): projected membership "
+                    f"{list(row.endpoints)} but the runtime used "
+                    f"{list(entry.members)}")
+        submitters = {entry.rank for entry in submissions}
+        if submitters != set(row.endpoints):
+            missing = sorted(set(row.endpoints) - submitters)
+            extra = sorted(submitters - set(row.endpoints))
+            raise ServingRoundError(
+                f"collective {row.operation_id!r} (node "
+                f"{row.astra_node_id}) was submitted by {len(submitters)} of "
+                f"{len(row.endpoints)} endpoints (missing {missing}, "
+                f"unexpected {extra})")
+
 
 @dataclass(frozen=True)
 class LedgerCollective:
@@ -358,6 +651,11 @@ class AstraServingRoundQualification:
     et_granularity: str
     expansion_authority: str
     network_evidence_tier: str
+    #: the round's collective binding -- round-specific membership over the
+    #: stable namespace; empty for historical namespace-group rounds
+    collective_binding_id: str = ""
+    #: per-collective runtime contract, ordered by operation id
+    collective_contract: tuple[CollectiveContract, ...] = ()
     schema_version: int = SERVING_ROUND_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
@@ -394,6 +692,10 @@ class AstraServingRoundQualification:
             "et_granularity": self.et_granularity,
             "expansion_authority": self.expansion_authority,
             "network_evidence_tier": self.network_evidence_tier,
+            **({"collective_binding_id": self.collective_binding_id,
+                "collective_contract": [row.identity_dict()
+                                        for row in self.collective_contract]}
+               if self.collective_binding_id else {}),
         }
 
     def round_id(self) -> str:
@@ -401,12 +703,17 @@ class AstraServingRoundQualification:
                             self.identity_dict())
 
 
-def qualify_round(*, machine: Any, plan: ServingBatchPlan, backend: Any,
+def qualify_round(*, machine: Any, plan: Any, backend: Any,
                   staged: Any, directory: str | Path,
                   resolved_fabric: Any, mapping: Any, attachment: Any,
-                  parallelism: Any) -> tuple[AstraServingRoundQualification,
-                                             Any]:
-    """Qualify one serving round against the stable machine + namespace."""
+                  parallelism: Any, collective_binding: Any = None
+                  ) -> tuple[AstraServingRoundQualification, Any]:
+    """Qualify one serving round against the stable machine + namespace.
+
+    ``collective_binding`` supplies the round's own collective memberships and
+    communicator groups.  Without one, the stable namespace's groups are used
+    (the historical single-group behaviour).
+    """
     backend.assert_network_authority()
     projection = plan.to_round_projection(
         resolved_fabric=resolved_fabric, mapping=mapping,
@@ -417,14 +724,35 @@ def qualify_round(*, machine: Any, plan: ServingBatchPlan, backend: Any,
             f"{projection.expansion_authority()}; canonical-message mode is "
             "not certified for serving")
     namespace = backend.binding.namespace
-    expected_members = namespace.participant_endpoints()
+    participants = namespace.participant_endpoints()
     staged_members = tuple(sorted(endpoint for endpoint, _ in
                                   staged.endpoint_files))
-    if staged_members != expected_members:
+    if not set(staged_members) <= set(participants):
         raise ServingRoundError(
-            f"staged endpoints {list(staged_members)} do not match the "
-            f"canonical participant endpoints {list(expected_members)}")
-    group_json = backend.binding.namespace.groups.to_json()
+            f"staged endpoints {list(staged_members)} are not canonical "
+            f"participants {list(participants)}")
+    if collective_binding is None:
+        # historical: one round over the whole participant set
+        if staged_members != participants:
+            raise ServingRoundError(
+                f"staged endpoints {list(staged_members)} do not match the "
+                f"canonical participant endpoints {list(participants)}")
+    else:
+        # a round stages exactly the endpoints its collectives name; an idle
+        # serving instance stages nothing and must not be forced to work
+        needed: set[int] = set()
+        for _op_id, members, _mechanism in collective_binding.operations:
+            needed |= set(members)
+        if not needed <= set(staged_members):
+            raise ServingRoundError(
+                "the round's collectives name endpoint(s) "
+                f"{sorted(needed - set(staged_members))} that were never "
+                "staged")
+    groups = (collective_binding.groups if collective_binding is not None
+              else backend.binding.namespace.groups)
+    contract = (collective_contract(projection=projection,
+                                    binding=collective_binding)
+                if collective_binding is not None else ())
     qualification = AstraServingRoundQualification(
         physical_machine_id=machine.physical_id(),
         machine_id=machine.machine_id(),
@@ -434,9 +762,10 @@ def qualify_round(*, machine: Any, plan: ServingBatchPlan, backend: Any,
         participant_mapping_id=namespace.participant_mapping_id,
         serving_binding_id=backend.binding.binding_id(),
         staged_workload_id=staged.translation_id,
-        communicator_group_id=content_hash(
-            "srota/AstraCommunicatorGroups", 1,
-            {"text": group_json}),
+        communicator_group_id=groups.groups_id(),
+        collective_binding_id=(collective_binding.binding_id()
+                               if collective_binding is not None else ""),
+        collective_contract=contract,
         backend_id=backend.backend_id(),
         astra_binary_sha256=backend.astra_binary_sha256,
         et_granularity=projection.et_granularity,
@@ -473,6 +802,9 @@ class CanonicalServingRoundEvidence:
     autonomous_injection_packets: int | None
     backend_cycles: int | None
     parser_version: str
+    #: round-specific collective binding + per-collective runtime contract
+    collective_binding_id: str = ""
+    collective_contract: tuple[CollectiveContract, ...] = ()
     schema_version: int = SERVING_ROUND_SCHEMA_VERSION
 
     def identity_dict(self) -> dict[str, Any]:
@@ -496,6 +828,10 @@ class CanonicalServingRoundEvidence:
             "standalone_config_sha256": self.standalone_config_sha256,
             "network_evidence_tier": self.network_evidence_tier,
             "expansion_authority": self.expansion_authority,
+            **({"collective_binding_id": self.collective_binding_id,
+                "collective_contract": [row.identity_dict()
+                                        for row in self.collective_contract]}
+               if self.collective_binding_id else {}),
             "dispatched_instances": list(self.dispatched_instances),
             "per_endpoint_completions":
                 [[e, c] for e, c in self.per_endpoint_completions],
@@ -553,4 +889,6 @@ def round_evidence_from_outcome(*, qualification: AstraServingRoundQualification
             for entry in ledger),
         autonomous_injection_packets=outcome.autonomous_injection_packets,
         backend_cycles=outcome.backend_cycles,
+        collective_binding_id=qualification.collective_binding_id,
+        collective_contract=tuple(qualification.collective_contract),
         parser_version=parser_version)

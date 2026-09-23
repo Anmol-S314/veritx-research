@@ -105,6 +105,144 @@ class CommunicatorGroups:
                             self.identity_dict())
 
 
+# ── round-specific collective binding ─────────────────────────────────────
+
+@dataclass(frozen=True)
+class AstraCollectiveBinding:
+    """Workload-specific collective membership over a STABLE namespace.
+
+    ``AstraExecutionNamespace`` owns what does not change per round: the
+    canonical ``rank -> endpoint`` mapping, the endpoint count and the router
+    count.  A live serving workload changes every round, so its collective
+    memberships cannot be frozen into the namespace.
+
+    This binding owns only the round-varying part, keyed by *operation id*:
+
+        operation_id -> exact endpoint membership
+        operation_id -> runtime collective mechanism
+        membership   -> deterministic communicator group number
+
+    It never renumbers endpoints, never regenerates the fabric and never
+    re-derives the rank mapping.  Group numbering is transport representation;
+    membership is semantic.
+    """
+
+    namespace_id: str
+    workload_projection_id: str
+    endpoint_count: int
+    #: (operation_id, endpoint membership, mechanism) ordered by operation id
+    operations: tuple[tuple[str, tuple[int, ...], str], ...]
+    groups: CommunicatorGroups
+    schema_version: int = ASTRA_NAMESPACE_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        if not self.operations:
+            raise AstraNamespaceError(
+                "a collective binding needs at least one collective")
+        ids = [op_id for op_id, _, _ in self.operations]
+        if len(set(ids)) != len(ids):
+            raise AstraNamespaceError(
+                "a collective binding repeats an operation id")
+        if ids != sorted(ids):
+            raise AstraNamespaceError(
+                "a collective binding must be ordered by operation id")
+        memberships = {m for _, m, _ in self.operations}
+        declared = {m for _, m in self.groups.memberships}
+        if memberships != declared:
+            raise AstraNamespaceError(
+                "the communicator groups do not cover exactly the bound "
+                "collective memberships")
+        for op_id, members, mechanism in self.operations:
+            if not members:
+                raise AstraNamespaceError(
+                    f"collective {op_id!r} has an empty membership")
+            if tuple(sorted(members)) != members:
+                raise AstraNamespaceError(
+                    f"collective {op_id!r} membership must be sorted")
+            if any(not 0 <= e < self.endpoint_count for e in members):
+                raise AstraNamespaceError(
+                    f"collective {op_id!r} names an endpoint outside "
+                    f"[0, {self.endpoint_count})")
+            if mechanism not in (MECHANISM_GLOBAL_LOGICAL_TOPOLOGY,
+                                 MECHANISM_COMMUNICATOR_GROUP_RING):
+                raise AstraNamespaceError(
+                    f"collective {op_id!r} declares unknown mechanism "
+                    f"{mechanism!r}")
+
+    # -- queries ----------------------------------------------------------
+    def membership_for(self, operation_id: str) -> tuple[int, ...]:
+        for op_id, members, _ in self.operations:
+            if op_id == operation_id:
+                return members
+        raise AstraNamespaceError(
+            f"no collective binding for operation {operation_id!r}; the "
+            "staged workload names a collective this round never projected")
+
+    def mechanism_for(self, operation_id: str) -> str:
+        for op_id, _, mechanism in self.operations:
+            if op_id == operation_id:
+                return mechanism
+        raise AstraNamespaceError(
+            f"no collective binding for operation {operation_id!r}")
+
+    def group_id_for(self, operation_id: str) -> int:
+        return self.groups.id_for(self.membership_for(operation_id))
+
+    def memberships(self) -> tuple[tuple[int, ...], ...]:
+        return tuple(m for _, m in self.groups.memberships)
+
+    def identity_dict(self) -> dict[str, Any]:
+        return {
+            "type": "srota/AstraCollectiveBinding",
+            "schema_version": self.schema_version,
+            "version": COMMUNICATOR_GROUP_VERSION,
+            "namespace_id": self.namespace_id,
+            "workload_projection_id": self.workload_projection_id,
+            "endpoint_count": self.endpoint_count,
+            "operations": [[op_id, list(members), mechanism]
+                           for op_id, members, mechanism in self.operations],
+            "groups_id": self.groups.groups_id(),
+        }
+
+    def binding_id(self) -> str:
+        return content_hash("srota/AstraCollectiveBinding", 1,
+                            self.identity_dict())
+
+
+def derive_collective_binding(*, namespace: AstraExecutionNamespace,
+                              workload: Any) -> AstraCollectiveBinding:
+    """The round's collective binding over the stable execution namespace.
+
+    Membership comes from the workload's own collective operations, mapped
+    through the namespace's stable ``rank -> endpoint`` table.  Nothing here
+    touches the fabric.
+    """
+    rows: list[tuple[str, tuple[int, ...], str]] = []
+    for op_id, _kind, _payload, participants in \
+            workload.collective_operations:
+        endpoints = tuple(sorted(namespace.endpoint_for(rank)
+                                 for rank in participants))
+        if not endpoints:
+            raise AstraNamespaceError(
+                f"collective {op_id!r} has an empty participant set")
+        rows.append((op_id, endpoints, collective_mechanism(
+            endpoints=endpoints, endpoint_count=namespace.endpoint_count)))
+    if not rows:
+        raise AstraNamespaceError(
+            "the round workload declares no collective; there is nothing "
+            "to bind")
+    rows.sort(key=lambda row: row[0])
+    memberships = sorted({members for _, members, _ in rows})
+    groups = CommunicatorGroups(
+        memberships=tuple((index + 1, members)
+                          for index, members in enumerate(memberships)))
+    return AstraCollectiveBinding(
+        namespace_id=namespace.namespace_id(),
+        workload_projection_id=workload.projection_id(),
+        endpoint_count=namespace.endpoint_count,
+        operations=tuple(rows), groups=groups)
+
+
 # ── the execution namespace ───────────────────────────────────────────────
 
 @dataclass(frozen=True)
@@ -292,6 +430,9 @@ class StagedWorkload:
     translated_send_recv: int
     pg_name_nodes: int
     translation_id: str
+    #: the round's collective binding, when staging used one; ``None`` keeps
+    #: the historical namespace-group staging identity byte for byte
+    collective_binding_id: str | None = None
 
     def endpoints(self) -> tuple[int, ...]:
         return tuple(sorted(e for e, _ in self.endpoint_files))
@@ -300,7 +441,9 @@ class StagedWorkload:
 def stage_endpoint_workload(*, workload: Any, namespace: AstraExecutionNamespace,
                             source_directory: str | Path,
                             target_directory: str | Path,
-                            stem: str = "workload") -> StagedWorkload:
+                            stem: str = "workload",
+                            collective_binding: AstraCollectiveBinding | None = None
+                            ) -> StagedWorkload:
     """Write ``<stem>.et.<endpoint>.et`` for participants only.
 
     Canonical ETs are generated per **rank** by the Slice-30 writer.  This
@@ -326,9 +469,13 @@ def stage_endpoint_workload(*, workload: Any, namespace: AstraExecutionNamespace
             f"the Chakra protobuf bindings are required: {exc}") from exc
 
     mechanisms = dict(namespace.collective_mechanisms)
+    groups = (collective_binding.groups if collective_binding is not None
+              else namespace.groups)
+    active = getattr(workload, "active_ranks", None)
+    ranks = tuple(active()) if callable(active) else tuple(workload.ranks())
     staged: list[tuple[int, Path]] = []
     sends = pg_nodes = 0
-    for rank in workload.ranks():
+    for rank in ranks:
         endpoint = namespace.endpoint_for(rank)
         source_file = source / f"{stem}.et.{rank}.et"
         if not source_file.is_file():
@@ -337,7 +484,8 @@ def stage_endpoint_workload(*, workload: Any, namespace: AstraExecutionNamespace
         destination = target / f"{stem}.et.{endpoint}.et"
         translated = _translate_et(
             source_file, destination, pb=pb, protolib=protolib,
-            namespace=namespace, mechanisms=mechanisms)
+            namespace=namespace, mechanisms=mechanisms, groups=groups,
+            collective_binding=collective_binding)
         sends += translated["send_recv"]
         pg_nodes += translated["pg_name"]
         staged.append((endpoint, destination))
@@ -358,14 +506,29 @@ def stage_endpoint_workload(*, workload: Any, namespace: AstraExecutionNamespace
              "translation_version": MESSAGE_TRANSLATION_VERSION,
              "endpoints": [e for e, _ in sorted(staged)],
              "send_recv_translated": sends,
-             "pg_name_nodes": pg_nodes}),
+             "pg_name_nodes": pg_nodes,
+             **({"collective_binding_id": collective_binding.binding_id()}
+                if collective_binding is not None else {})}),
+        collective_binding_id=(collective_binding.binding_id()
+                               if collective_binding is not None else None),
     )
 
 
 def _translate_et(source: Path, destination: Path, *, pb: Any, protolib: Any,
                   namespace: AstraExecutionNamespace,
-                  mechanisms: dict[str, str]) -> dict[str, int]:
-    """Rewrite one rank ET into the endpoint namespace, in place-safe order."""
+                  mechanisms: dict[str, str], groups: Any = None,
+                  collective_binding: AstraCollectiveBinding | None = None
+                  ) -> dict[str, int]:
+    """Rewrite one rank ET into the endpoint namespace, in place-safe order.
+
+    Collective membership is resolved from the Chakra node's ``name`` -- the
+    canonical *operation id* -- through the round's collective binding when
+    one is supplied.  With several independent TP groups in one workload,
+    inferring membership from the node's collective type would be a guess;
+    the operation id is the fact.
+    """
+    if groups is None:
+        groups = namespace.groups
     counters = {"send_recv": 0, "pg_name": 0}
     with open(source, "rb") as handle:
         metadata = pb.GlobalMetadata()
@@ -386,9 +549,14 @@ def _translate_et(source: Path, destination: Path, *, pb: Any, protolib: Any,
                             attr.int32_val = endpoint
                             counters["send_recv"] += 1
                 elif node.type == pb.COMM_COLL_NODE:
-                    endpoints = _collective_membership(node, namespace)
-                    group_id = namespace.groups.id_for(endpoints)
-                    expected = mechanisms.get(node.name)
+                    if collective_binding is not None:
+                        endpoints = collective_binding.membership_for(
+                            node.name)
+                        expected = collective_binding.mechanism_for(node.name)
+                    else:
+                        endpoints = _collective_membership(node, namespace)
+                        expected = mechanisms.get(node.name)
+                    group_id = groups.id_for(endpoints)
                     actual = collective_mechanism(
                         endpoints=endpoints,
                         endpoint_count=namespace.endpoint_count)
@@ -438,11 +606,28 @@ def _collective_membership(node: Any,
 
 def write_communicator_groups(namespace: AstraExecutionNamespace,
                               directory: str | Path) -> Path:
+    return write_communicator_group_document(namespace.groups, directory)
+
+
+def write_communicator_group_document(groups: CommunicatorGroups,
+                                      directory: str | Path,
+                                      *, replace: bool = False) -> Path:
+    """Write the ASTRA communicator-group document for a group set.
+
+    ``groups`` may be the stable namespace's groups or a round's collective
+    binding groups; only the membership document changes, never the fabric.
+
+    ``replace`` is for a sequential round driver: rounds share one run
+    directory and each round legitimately has different memberships, so the
+    document must be replaced.  Without it a differing existing document
+    still refuses, which is what catches inconsistent staging within a round.
+    """
     target = Path(directory)
     target.mkdir(parents=True, exist_ok=True)
     path = target / COMM_GROUP_FILE
-    text = namespace.groups.to_json() + "\n"
-    if path.exists() and path.read_text(encoding="utf-8") != text:
+    text = groups.to_json() + "\n"
+    if (not replace and path.exists()
+            and path.read_text(encoding="utf-8") != text):
         raise AstraNamespaceError(
             f"{path} already holds a different communicator-group document")
     path.write_text(text, encoding="utf-8")

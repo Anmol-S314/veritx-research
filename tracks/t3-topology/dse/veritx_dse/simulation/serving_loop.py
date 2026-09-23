@@ -58,13 +58,14 @@ from veritx_dse.backend.canonical_serving import (
     RequestMetric,
     ServingNamespaceBinding,
 )
+from veritx_dse.backend.astra_namespace import derive_collective_binding
 from veritx_dse.backend.serving_round import (
     CanonicalServingRoundEvidence,
     parse_collective_ledger,
     plan_from_round,
     qualify_round,
     round_evidence_from_outcome,
-    validate_collective_ledger,
+    validate_collective_ledger_contract,
 )
 from veritx_dse.core.artifact import content_hash
 from veritx_dse.simulation.serving_runtime import (
@@ -368,13 +369,16 @@ class RoundRecord:
     plan_id: str
     qualification_id: str
     evidence_id: str
+    #: the round's collective binding and its deterministic group numbers
+    collective_binding_id: str
+    group_ids: tuple[int, ...]
     batch_ids: tuple[tuple[int, int], ...]
     dispatched_instances: tuple[int, ...]
     backend_cycles: int | None
     clock_after: int
     retired_request_ids: tuple[str, ...]
-    #: instances that participated in the full-participant round but had no
-    #: batch in flight; they exercise the fabric and retire nothing
+    #: instances that participated in the round but had no batch in flight;
+    #: they must not report execution work
     idle_instances: tuple[int, ...]
 
 
@@ -470,17 +474,17 @@ def run_request_driven_service(
                 "prefill instance needs a second NPU span to retire")
 
     run_dir = Path(run_dir)
-    participant_ranks = npus.canonical_ranks()
     expected_endpoints = npus.canonical_endpoints()
     namespace = npus.binding.namespace
     if expected_endpoints != namespace.participant_endpoints():
         raise ServingLoopError(
             "the virtual NPU namespace does not cover the canonical "
             "participant endpoints")
-    # a certified round spans the full participant set (one stable group), so
-    # every instance's endpoints execute the round and every instance is
-    # dispatched; retirement is gated separately, below
-    dispatched = frozenset(npus.binding.served_instance_set())
+    # the serving namespace is the graph's participant namespace, so a TP
+    # group of two ranks inside it stays explicit -- no DP axis is invented
+    participant_count = namespace.participant_count
+    instance_ranks = {instance.instance_id: tuple(sorted(instance.ranks))
+                      for instance in npus.binding.instances}
 
     clock = 0
     retired: list[RequestOutcome] = []
@@ -513,26 +517,36 @@ def run_request_driven_service(
         for batch in batches.values():
             batch.sent = True
 
-        tokens = sum(int(getattr(b, "total_len", 0) or 0)
-                     for b in batches.values())
+        # only instances that actually supplied a batch are dispatched; an
+        # idle instance gets no compute and no collective, so it must report
+        # no execution work (attribute_completions refuses if it does)
+        dispatched = frozenset(batches)
+
         plan = plan_from_round(
             round_id=round_index, batches=batches,
-            participant_ranks=participant_ranks,
+            instance_ranks=instance_ranks,
+            participant_count=participant_count,
             collective_kind=profile.collective_kind,
-            collective_bytes=profile.collective_bytes(tokens=tokens),
-            compute_ns=profile.compute_ns(tokens=tokens))
+            collective_bytes_for=profile.collective_bytes,
+            compute_ns_for=profile.compute_ns)
 
         projection = plan.to_round_projection(
             resolved_fabric=lowering.resolved_fabric, mapping=lowering.mapping,
             attachment=lowering.attachment, parallelism=lowering.parallelism)
+        # the round's collective memberships over the STABLE namespace; the
+        # fabric is never regenerated here
+        collective_binding = derive_collective_binding(
+            namespace=namespace, workload=projection)
         stem = f"round{round_index:06d}"
         staged = backend.stage_round(workload=projection, directory=run_dir,
-                                     stem=stem)
+                                     stem=stem,
+                                     collective_binding=collective_binding)
         qualification, projection = qualify_round(
             machine=machine, plan=plan, backend=backend, staged=staged,
             directory=run_dir, resolved_fabric=lowering.resolved_fabric,
             mapping=lowering.mapping, attachment=lowering.attachment,
-            parallelism=lowering.parallelism)
+            parallelism=lowering.parallelism,
+            collective_binding=collective_binding)
 
         outcome = run_live_round(
             backend=backend, workload=projection, run_dir=run_dir,
@@ -540,25 +554,24 @@ def run_request_driven_service(
             timeout_s=timeout_s, session_factory=session_factory,
             stem=stem, ledger=ledger, staged=staged)
 
-        # the runtime's own ledger is an execution contract, not a hint
-        validate_collective_ledger(
-            parse_collective_ledger(outcome.collective_ledger), plan=plan,
-            expected_members=expected_endpoints)
+        # the runtime's own ledger is an execution contract per collective,
+        # keyed by ASTRA node id -- never an aggregate count
+        validate_collective_ledger_contract(
+            parse_collective_ledger(outcome.collective_ledger),
+            contract=qualification.collective_contract)
 
         cycles = outcome.backend_cycles
         clock += cycles if cycles and cycles > 0 else 1
 
-        # the round claimed the full participant set, so every instance's
-        # endpoints must have done fabric work.  If an instance is missing,
-        # the round was not actually full-participant and the claim -- and the
-        # single communicator group it rests on -- is false.
+        # every dispatched instance must show execution evidence; an idle one
+        # must not (already enforced by attribute_completions)
         exercised = {row.instance for row in outcome.attributions}
         silent = sorted(set(dispatched) - exercised)
         if silent:
             raise ServingLoopError(
-                f"round {round_index} projected the full participant set but "
-                f"serving instance(s) {silent} reported no endpoint work; a "
-                "partial round is not certifiable under one group")
+                f"round {round_index} dispatched serving instance(s) "
+                f"{silent} but they produced no endpoint execution evidence; "
+                "retirement is bookkeeping, not execution proof")
 
         # retire through the real Scheduler, using the virtual NPU quorum
         round_retired: list[str] = []
@@ -595,12 +608,15 @@ def run_request_driven_service(
             round_index=round_index, plan_id=plan.plan_id(),
             qualification_id=qualification.round_id(),
             evidence_id=evidence.evidence_id(),
+            collective_binding_id=collective_binding.binding_id(),
+            group_ids=collective_binding.groups.group_ids(),
             batch_ids=tuple(sorted((i, b.batch_id)
                                    for i, b in batches.items())),
             dispatched_instances=tuple(sorted(dispatched)),
             backend_cycles=cycles, clock_after=clock,
             retired_request_ids=tuple(round_retired),
-            idle_instances=tuple(sorted(set(dispatched) - set(batches)))))
+            idle_instances=tuple(sorted(
+                set(npus.binding.served_instance_set()) - set(batches)))))
 
         if _quiescent(schedulers, router):
             break

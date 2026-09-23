@@ -213,6 +213,12 @@ class AstraWorkloadProjection:
     mapping_hash: str
     attachment_hash: str
     compute_operations: tuple[tuple[str, int], ...] = ()
+    #: (operation_id, owner) parallel to ``compute_operations``; ``owner=None``
+    #: keeps the historical global-compute semantics (the node appears in
+    #: every rank's ET), ``owner=rank`` emits it only into that rank's ET.
+    #: Kept separate from ``compute_operations`` so existing global-compute
+    #: projections keep their identity byte for byte.
+    compute_owners: tuple[tuple[str, int | None], ...] = ()
     #: (operation_id, collective_kind, declared payload_bytes, participants)
     collective_operations: tuple[tuple[str, str, int, tuple[int, ...]], ...] = ()
     mtu_bytes: int | None = None
@@ -246,6 +252,21 @@ class AstraWorkloadProjection:
                 raise AstraError(
                     f"message {message.sequence}: fragmentation does not "
                     "conserve payload bytes")
+        if self.compute_owners:
+            declared = tuple(op_id for op_id, _ in self.compute_operations)
+            mirrored = tuple(op_id for op_id, _ in self.compute_owners)
+            if mirrored != declared:
+                raise AstraError(
+                    "compute_owners must mirror compute_operations exactly "
+                    f"({mirrored} != {declared})")
+            for op_id, owner in self.compute_owners:
+                if owner is None:
+                    continue
+                if not 0 <= owner < self.participant_count:
+                    raise AstraError(
+                        f"compute operation {op_id!r} is owned by rank "
+                        f"{owner}, outside the participant namespace "
+                        f"[0, {self.participant_count})")
 
     # -- construction ----------------------------------------------------
     @classmethod
@@ -290,6 +311,13 @@ class AstraWorkloadProjection:
             (op.operation_id, int(op.detail.get("duration_ns") or 0))
             for op in logical.graph.ordered_operations()
             if op.kind == KIND_COMPUTE)
+        # Ownership is a projection fact, not a second participant model:
+        # it reuses the canonical OperationNode.owner the graph already
+        # validates against the participant namespace.
+        owners = tuple(
+            (op.operation_id, op.owner)
+            for op in logical.graph.ordered_operations()
+            if op.kind == KIND_COMPUTE)
         # The DECLARED per-operation collective payload is design intent; it
         # is what a delegating ET must carry. Ring chunk sizes are schedule
         # detail and must never be mistaken for the collective's payload.
@@ -308,6 +336,7 @@ class AstraWorkloadProjection:
             mapping_hash=mapping.mapping_hash(),
             attachment_hash=attachment.attachment_hash(),
             compute_operations=compute,
+            compute_owners=owners,
             collective_operations=collectives,
             mtu_bytes=mtu_bytes,
             comm_attr_abi=comm_attr_abi,
@@ -316,6 +345,30 @@ class AstraWorkloadProjection:
     # -- accessors -------------------------------------------------------
     def ranks(self) -> tuple[int, ...]:
         return tuple(range(self.participant_count))
+
+    def active_ranks(self) -> tuple[int, ...]:
+        """Ranks that emit at least one Chakra node in this workload.
+
+        An idle participant emits nothing: no ET file is written for it, which
+        is exactly how the runtime expresses an idle NPU.  Global (unowned)
+        compute touches every rank, so it keeps the historical full set.
+        """
+        ranks: set[int] = set()
+        for op_id, _duration_ns in self.compute_operations:
+            owner = self.compute_owner(op_id)
+            if owner is None:
+                return self.ranks()
+            ranks.add(owner)
+        for _op_id, _kind, _payload, participants in \
+                self.collective_operations:
+            ranks.update(participants)
+        for message in self.messages:
+            if self.et_granularity == "collectives" \
+                    and message.collective_kind is not None:
+                continue
+            ranks.add(message.src_rank)
+            ranks.add(message.dst_rank)
+        return tuple(sorted(ranks))
 
     def total_payload_bytes(self) -> int:
         return sum(m.payload_bytes for m in self.messages)
@@ -335,9 +388,32 @@ class AstraWorkloadProjection:
                 if self.et_granularity == "messages" else "astra_comm_coll")
 
     def declared_compute_cycles(self) -> int:
-        """Compute-only cycle floor declared by the workload (1 cycle/ns)."""
-        return sum(max(1, int(ns) // 1000)
-                   for _, ns in self.compute_operations) * 1000
+        """Compute-only cycle floor declared by the workload (1 cycle/ns).
+
+        Rank-parallel owned compute must not be summed as if every rank ran
+        every chain serially: a rank's chain is the global (unowned) compute
+        plus the compute it owns, and the floor is the *maximum* chain.  With
+        no owned compute this is exactly the historical
+        ``sum(cycles) * 1000``.
+        """
+        global_micros = 0
+        owned_micros: dict[int, int] = {}
+        for op_id, duration_ns in self.compute_operations:
+            micros = max(1, int(duration_ns) // 1000)
+            owner = self.compute_owner(op_id)
+            if owner is None:
+                global_micros += micros
+            else:
+                owned_micros[owner] = owned_micros.get(owner, 0) + micros
+        if not owned_micros:
+            return global_micros * 1000
+        return (global_micros + max(owned_micros.values())) * 1000
+
+    def compute_owner(self, operation_id: str) -> int | None:
+        for op_id, owner in self.compute_owners:
+            if op_id == operation_id:
+                return owner
+        return None
 
     # -- identity --------------------------------------------------------
     def identity_dict(self) -> dict[str, Any]:
@@ -359,6 +435,11 @@ class AstraWorkloadProjection:
             "compute_operations": [[op_id, duration_ns]
                                    for op_id, duration_ns
                                    in self.compute_operations],
+            **({"compute_ownership": [[op_id, owner]
+                                      for op_id, owner
+                                      in self.compute_owners]}
+               if any(owner is not None
+                      for _, owner in self.compute_owners) else {}),
             "collective_operations": [[op_id, kind, payload, list(parts)]
                                       for op_id, kind, payload, parts
                                       in self.collective_operations],
@@ -377,6 +458,42 @@ class AstraWorkloadProjection:
         return json.dumps(self.to_dict(), sort_keys=True,
                           separators=(",", ":"), ensure_ascii=False,
                           allow_nan=False).encode("utf-8") + b"\n"
+
+    def node_plan(self) -> tuple[tuple[int, str, dict], ...]:
+        """The deterministic Chakra node plan shared by every rank.
+
+        Node ids are assigned here, once, in canonical order (compute, then
+        collectives, then messages), so the runtime's ``astra_node`` ledger
+        field is reproducible from the projection alone.
+        """
+        plan: list[tuple[int, str, dict]] = []
+        next_id = 1
+        for op_id, duration_ns in self.compute_operations:
+            plan.append((next_id, "COMP", {
+                "operation_id": op_id, "duration_ns": duration_ns,
+                "owner": self.compute_owner(op_id)}))
+            next_id += 1
+        if self.et_granularity == "collectives":
+            for op_id, kind, payload_bytes, participants in \
+                    self.collective_operations:
+                plan.append((next_id, "COLL", {
+                    "operation_id": op_id, "collective_kind": kind,
+                    "payload_bytes": payload_bytes,
+                    "participants": participants}))
+                next_id += 1
+        for message in self.messages:
+            if self.et_granularity == "collectives" \
+                    and message.collective_kind is not None:
+                continue
+            plan.append((next_id, "MSG", {"message": message}))
+            next_id += 1
+        return tuple(plan)
+
+    def collective_node_ids(self) -> tuple[tuple[str, int], ...]:
+        """(operation_id, Chakra node id) for every emitted collective."""
+        return tuple((payload["operation_id"], node_id)
+                     for node_id, kind, payload in self.node_plan()
+                     if kind == "COLL")
 
     # -- Chakra ET emission (real protobuf, never a JSON imitation) ------
     def write_chakra(self, *, directory: str | os.PathLike[str],
@@ -403,105 +520,100 @@ class AstraWorkloadProjection:
         target.mkdir(parents=True, exist_ok=True)
 
         # one canonical node plan, shared by every rank
-        plan: list[tuple[int, str, dict]] = []
-        next_id = 1
-        for op_id, duration_ns in self.compute_operations:
-            plan.append((next_id, "COMP", {"operation_id": op_id,
-                                           "duration_ns": duration_ns}))
-            next_id += 1
-        if self.et_granularity == "collectives":
-            for op_id, kind, payload_bytes, participants in \
-                    self.collective_operations:
-                plan.append((next_id, "COLL", {
-                    "operation_id": op_id, "collective_kind": kind,
-                    "payload_bytes": payload_bytes,
-                    "participants": participants}))
-                next_id += 1
-        for message in self.messages:
-            if self.et_granularity == "collectives" \
-                    and message.collective_kind is not None:
-                continue
-            plan.append((next_id, "MSG", {"message": message}))
-            next_id += 1
+        plan = self.node_plan()
 
         written: list[Path] = []
         for rank in self.ranks():
             # the runtime derives per-rank paths as
             # ``<workload-configuration>.<rank>.et`` (Workload.cc)
             path = target / f"{stem}.et.{rank}.et"
+            nodes: list[Any] = []
+            previous = 0
+            for node_id, kind, payload in plan:
+                node = None
+                if kind == "COMP":
+                    owner = payload.get("owner")
+                    if owner is not None and owner != rank:
+                        continue    # owned compute: this rank's ET only
+                    node = pb.Node()
+                    node.id = node_id
+                    node.name = payload["operation_id"]
+                    node.type = pb.COMP_NODE
+                    node.duration_micros = max(
+                        1, int(payload["duration_ns"]) // 1000)
+                elif kind == "COLL":
+                    participants = payload["participants"]
+                    if rank not in participants:
+                        continue        # no node on this rank
+                    node = pb.Node()
+                    node.id = node_id
+                    node.name = payload["operation_id"]
+                    node.type = pb.COMM_COLL_NODE
+                    node.duration_micros = 1
+                    type_attr = node.attr.add()
+                    type_attr.name = "comm_type"
+                    setattr(type_attr,
+                            _COMM_ATTR_FIELDS[self.comm_attr_abi][1],
+                            _CHAKRA_COLLECTIVE_TYPE[
+                                payload["collective_kind"]])
+                    size_attr = node.attr.add()
+                    size_attr.name = "comm_size"
+                    setattr(size_attr,
+                            _COMM_ATTR_FIELDS[self.comm_attr_abi][1],
+                            payload["payload_bytes"])
+                    dim = node.attr.add()
+                    dim.name = "involved_dim"
+                    dim.bool_list.values.append(True)
+                else:
+                    message = payload["message"]
+                    is_src = message.src_rank == rank
+                    is_dst = message.dst_rank == rank
+                    if not (is_src or is_dst):
+                        continue
+                    node = pb.Node()
+                    node.id = node_id
+                    node.type = (pb.COMM_SEND_NODE if is_src
+                                 else pb.COMM_RECV_NODE)
+                    node.name = (f"{message.operation_id}#"
+                                 f"{message.sequence}")
+                    src = node.attr.add()
+                    src.name = "comm_src"
+                    setattr(src, _COMM_ATTR_FIELDS[self.comm_attr_abi][0],
+                            message.src_rank)
+                    dst = node.attr.add()
+                    dst.name = "comm_dst"
+                    setattr(dst, _COMM_ATTR_FIELDS[self.comm_attr_abi][0],
+                            message.dst_rank)
+                    size = node.attr.add()
+                    size.name = "comm_size"
+                    setattr(size, _COMM_ATTR_FIELDS[self.comm_attr_abi][1],
+                            message.payload_bytes)
+                if node is None:  # pragma: no cover - defensive
+                    continue
+                if previous:
+                    node.data_deps.append(previous)
+                nodes.append(node)
+                previous = node_id
+            if not nodes:
+                # An EMPTY ET is not a valid workload: the runtime's
+                # dependency solver refuses a layer with no dependency-free
+                # node.  A MISSING rank file is how the runtime expresses an
+                # idle NPU (Workload.cc + the interactive loader), so an
+                # idle rank is expressed by writing nothing at all.
+                continue
             with open(path, "wb") as handle:
                 metadata = pb.GlobalMetadata()
                 attribute = metadata.attr.add()
                 attribute.name = "schema"
                 attribute.string_val = _CHAKRA_SCHEMA
                 protolib.encodeMessage(handle, metadata)
-
-                previous = 0
-                for node_id, kind, payload in plan:
-                    node = None
-                    if kind == "COMP":
-                        node = pb.Node()
-                        node.id = node_id
-                        node.name = payload["operation_id"]
-                        node.type = pb.COMP_NODE
-                        node.duration_micros = max(
-                            1, int(payload["duration_ns"]) // 1000)
-                    elif kind == "COLL":
-                        participants = payload["participants"]
-                        if rank not in participants:
-                            previous = previous  # no node on this rank
-                            continue
-                        node = pb.Node()
-                        node.id = node_id
-                        node.name = payload["operation_id"]
-                        node.type = pb.COMM_COLL_NODE
-                        node.duration_micros = 1
-                        type_attr = node.attr.add()
-                        type_attr.name = "comm_type"
-                        setattr(type_attr,
-                                _COMM_ATTR_FIELDS[self.comm_attr_abi][1],
-                                _CHAKRA_COLLECTIVE_TYPE[
-                                    payload["collective_kind"]])
-                        size_attr = node.attr.add()
-                        size_attr.name = "comm_size"
-                        setattr(size_attr,
-                                _COMM_ATTR_FIELDS[self.comm_attr_abi][1],
-                                payload["payload_bytes"])
-                        dim = node.attr.add()
-                        dim.name = "involved_dim"
-                        dim.bool_list.values.append(True)
-                    else:
-                        message = payload["message"]
-                        is_src = message.src_rank == rank
-                        is_dst = message.dst_rank == rank
-                        if not (is_src or is_dst):
-                            continue
-                        node = pb.Node()
-                        node.id = node_id
-                        node.type = (pb.COMM_SEND_NODE if is_src
-                                     else pb.COMM_RECV_NODE)
-                        node.name = (f"{message.operation_id}#"
-                                     f"{message.sequence}")
-                        src = node.attr.add()
-                        src.name = "comm_src"
-                        setattr(src, _COMM_ATTR_FIELDS[self.comm_attr_abi][0],
-                                message.src_rank)
-                        dst = node.attr.add()
-                        dst.name = "comm_dst"
-                        setattr(dst, _COMM_ATTR_FIELDS[self.comm_attr_abi][0],
-                                message.dst_rank)
-                        size = node.attr.add()
-                        size.name = "comm_size"
-                        setattr(size, _COMM_ATTR_FIELDS[self.comm_attr_abi][1],
-                                message.payload_bytes)
-                    if previous:
-                        node.data_deps.append(previous)
+                for node in nodes:
                     protolib.encodeMessage(handle, node)
-                    previous = node_id
             written.append(path)
-        base = target / f"{stem}.et"
-        base.write_bytes((target / f"{stem}.et.0.et").read_bytes())
-        written.append(base)
+        if written:
+            base = target / f"{stem}.et"
+            base.write_bytes(written[0].read_bytes())
+            written.append(base)
         return tuple(written)
 
 # ── runtime adapter ────────────────────────────────────────────────────────

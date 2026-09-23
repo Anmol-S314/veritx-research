@@ -240,8 +240,68 @@ class ServingBackendSession:
         ``Comm time`` and the injection counter), not the diagnostic tail:
         evidence must not be evictable by how chatty the binary happens to be.
         ``ProtocolError`` still carries the bounded raw tail separately.
+
+        Call ``await_stderr_quiescence`` first: stdout and stderr are separate
+        pipes and the drain thread can still be behind when a reply lands.
         """
         return "".join(self._stderr_evidence)
+
+    def await_stderr_quiescence(self, *, timeout_s: float = 5.0,
+                                idle_s: float = 0.1) -> bool:
+        """Wait until the stderr drain has caught up with the pipe.
+
+        stdout (the reply) and stderr are independent pipes, so the backend can
+        answer a round while its stderr ledger/statistics are still in flight.
+        The drain is a Python readline loop and is slower than the C++
+        producer, so with ``VERITX_LEDGER=1`` it can be thousands of lines
+        behind when a reply lands; reading the evidence buffer immediately then
+        silently loses measured statistics.
+
+        BOUNDED: the loop is driven by an absolute deadline, so a stderr stream
+        that never falls silent (e.g. a permanent flood) cannot make this wait
+        forever.  Returns True if the pipe went quiet within the budget, False
+        if the budget expired with stderr still busy.  A closed pipe or an
+        exited child is quiescent by definition.
+        """
+        proc = self._proc
+        if proc is None or proc.stderr is None:
+            return True
+        try:
+            fd = proc.stderr.fileno()
+        except (OSError, ValueError):
+            return True                      # already closed
+        deadline = time.monotonic() + timeout_s
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False                 # bounded: stderr never went quiet
+            if proc.poll() is not None:
+                # the child is gone, so the pipe is at EOF and the drain thread
+                # finishes on its own: join it instead of spinning on a
+                # readable-forever fd
+                thread = self._stderr_thread
+                if thread is not None:
+                    thread.join(timeout=min(idle_s * 2, remaining))
+                return True
+            try:
+                ready, _, _ = select.select([fd], [], [], min(idle_s,
+                                                             remaining))
+            except (OSError, ValueError):
+                return True
+            if ready:
+                continue
+            # quiet for idle_s: give the drain thread its last append, then
+            # confirm the pipe is still quiet
+            time.sleep(0.01)
+            try:
+                ready, _, _ = select.select([fd], [], [],
+                                            min(idle_s, max(
+                                                0.0, deadline
+                                                - time.monotonic())))
+            except (OSError, ValueError):
+                return True
+            if not ready:
+                return True
 
     # -- protocol operations ----------------------------------------------
 

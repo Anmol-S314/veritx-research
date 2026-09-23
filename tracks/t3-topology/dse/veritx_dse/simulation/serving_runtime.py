@@ -131,6 +131,11 @@ def run_live_round(*, backend: CanonicalServingNetworkBackend,
         reply = session.command("run", timeout=timeout_s)
         if reply is None:  # pragma: no cover - defensive
             raise ProtocolError("backend produced no reply to 'run'")
+        # stdout and stderr are separate pipes: let the drain catch up before
+        # reading evidence, or measured statistics are silently lost
+        quiesce = getattr(session, "await_stderr_quiescence", None)
+        if callable(quiesce):
+            quiesce()
         stderr_text = session.stderr_text()
     enumerated, comm, injected, cycles = parse_round_output(
         reply_text=reply.text(), stderr_text=stderr_text)

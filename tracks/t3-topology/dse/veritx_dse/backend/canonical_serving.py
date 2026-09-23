@@ -36,6 +36,7 @@ from veritx_dse.backend.astra_namespace import (
     AstraExecutionNamespace,
     StagedWorkload,
     stage_endpoint_workload,
+    write_communicator_group_document,
     write_communicator_groups,
 )
 from veritx_dse.backend.producer import (
@@ -362,17 +363,29 @@ class CanonicalServingNetworkBackend:
         return Path(cwd) / "startup.et"
 
     def stage_round(self, *, workload: Any, directory: str | Path,
-                    stem: str = "workload") -> StagedWorkload:
-        """Stage one serving round's communication through Slice-34 staging."""
+                    stem: str = "workload",
+                    collective_binding: Any = None) -> StagedWorkload:
+        """Stage one serving round's communication through Slice-34 staging.
+
+        ``collective_binding`` supplies the round's own collective memberships
+        and communicator groups.  The *fabric* is never touched here: the
+        machine is materialised from the same qualified projection every
+        round, and only the communicator-group document is round-specific.
+        """
         self.assert_network_authority()
         target = Path(directory)
         self.machine.materialize(target)
-        write_communicator_groups(self.binding.namespace, target)
+        if collective_binding is not None:
+            write_communicator_group_document(collective_binding.groups, target,
+                                              replace=True)
+        else:
+            write_communicator_groups(self.binding.namespace, target)
         canonical = target / "canonical"
         workload.write_chakra(directory=canonical, stem=stem)
         return stage_endpoint_workload(
             workload=workload, namespace=self.binding.namespace,
-            source_directory=canonical, target_directory=target, stem=stem)
+            source_directory=canonical, target_directory=target, stem=stem,
+            collective_binding=collective_binding)
 
     def covers(self, *, machine_id: str, namespace_id: str,
                participant_mapping_id: str) -> bool:
