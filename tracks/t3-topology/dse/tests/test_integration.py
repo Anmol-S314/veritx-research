@@ -47,86 +47,76 @@ def _cli(*args: str, input_text: str = "\n", timeout: int = 60,
 # ── Compile from preset JSON ────────────────────────────────────────────
 
 class TestCompilePipeline:
-    """veritx compile <json> — full 6-stage pipeline."""
+    """veritx compile — canonical product compile surface (no BookSim)."""
 
-    @pytest.mark.parametrize("example", [
-        "qwen3_moe_16npu.json",
-        "llama70b_tp64.json",
-        "llama1b_tp64.json",
-        "dense_64npu.json",
-        "moe_8npu.json",
-    ])
-    def test_all_presets_compile(self, example):
-        """Each example JSON → compile succeeds with 6 stages."""
-        json_path = EXAMPLES_DIR / example
-        if not json_path.exists():
-            pytest.skip(f"Example {example} not found")
-        result = _cli("compile", str(json_path), timeout=90)
+    @pytest.mark.parametrize("preset", ["mesh4", "mesh4_hbm",
+                                        "mesh4_wide128"])
+    def test_canonical_presets_compile(self, preset, tmp_path):
+        """Each named CompileIntent preset resolves structurally."""
+        result = _cli(
+            "compile", "--preset", preset,
+            "--policy", "baseline_deterministic_v2",
+            "--store", str(tmp_path / "store"), timeout=90)
         assert result.returncode == 0, (
-            f"Example {example} failed:\n"
+            f"Preset {preset} failed:\n"
             f"stdout[-300:]: {result.stdout[-300:]}\n"
             f"stderr[-300:]: {result.stderr[-300:]}"
         )
         clean = _strip_ansi(result.stdout)
-        # Should show some compile output (may not have full result if no trace)
-        assert len(clean.strip()) > 50, f"Compile produced no output for {example}"
+        assert "RESOLVED" in clean
+        assert "resolved_fabric_hash" in clean or "resolved_fabric" in clean
 
-    def test_compile_shows_area_power_timing(self):
-        """compile qwen3 → shows area, power, timing numbers."""
-        json_path = EXAMPLES_DIR / "qwen3_moe_16npu.json"
-        if not json_path.exists():
-            pytest.skip("Example not found")
-        result = _cli("compile", str(json_path), timeout=90)
-        assert result.returncode == 0
-        clean = _strip_ansi(result.stdout)
-        # Should show physical estimates
-        has_numbers = any(kw in clean for kw in ["mm", "MHz", "pJ", "W"])
-        assert has_numbers, f"Missing area/power/timing in output:\n{clean[-500:]}"
-
-    def test_compile_shows_accuracy_notes(self):
-        """compile --output → JSON report includes accuracy notes."""
-        json_path = EXAMPLES_DIR / "qwen3_moe_16npu.json"
-        if not json_path.exists():
-            pytest.skip("Example not found")
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-            out_path = f.name
-        try:
-            result = _cli("compile", str(json_path), "--output", out_path, timeout=90)
-            assert result.returncode == 0
-            report = json.loads(Path(out_path).read_text())
-            report_str = json.dumps(report).lower()
-            has_caveat = any(kw in report_str for kw in [
-                "estimat", "caveat", "relative", "limitation", "note", "accuracy"
-            ])
-            assert has_caveat, f"Missing accuracy notes in JSON report. Keys: {list(report.keys())}"
-        finally:
-            os.unlink(out_path)
-
-    def test_compile_shows_manifest_signature(self):
-        """compile → manifest with HMAC-SHA256 signature."""
-        json_path = EXAMPLES_DIR / "qwen3_moe_16npu.json"
-        if not json_path.exists():
-            pytest.skip("Example not found")
-        result = _cli("compile", str(json_path), timeout=90)
+    def test_compile_reports_structural_state_only(self, tmp_path):
+        """The canonical compile command makes no execution claims."""
+        result = _cli(
+            "compile", "--preset", "mesh4",
+            "--policy", "baseline_deterministic_v2",
+            "--store", str(tmp_path / "store"), timeout=90)
         assert result.returncode == 0
         clean = _strip_ansi(result.stdout).lower()
-        assert any(kw in clean for kw in ["hmac", "sign", "manifest", "guardrail"])
+        assert "compile state" in clean and "resolved" in clean
+        assert "backend execution" in clean and "not performed" in clean
+        for token in ("latency", "verified", "qualified", "executable",
+                      "booksim", "area", "power"):
+            assert token not in clean, token
 
-    def test_compile_json_output(self):
-        """compile --output → produces valid JSON report."""
-        json_path = EXAMPLES_DIR / "qwen3_moe_16npu.json"
-        if not json_path.exists():
-            pytest.skip("Example not found")
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-            out_path = f.name
-        try:
-            result = _cli("compile", str(json_path), "--output", out_path, timeout=90)
-            assert result.returncode == 0
-            report = json.loads(Path(out_path).read_text())
-            # Should have key sections
-            assert "veritx_version" in report or "result" in report or "area" in report
-        finally:
-            os.unlink(out_path)
+    def test_compile_commits_a_resolution(self, tmp_path):
+        """A committed resolution exists under the explicit store path."""
+        store = tmp_path / "store"
+        result = _cli(
+            "compile", "--preset", "mesh4",
+            "--policy", "baseline_deterministic_v2",
+            "--store", str(store), timeout=90)
+        assert result.returncode == 0
+        assert len(list((store / "resolutions").glob("*.json"))) == 1
+        assert len(list((store / "designs").glob("*.json"))) == 1
+
+    def test_compile_json_output_summary(self, tmp_path):
+        """--output writes the same non-persisted summary as presentation."""
+        out_path = tmp_path / "summary.json"
+        result = _cli(
+            "compile", "--preset", "mesh4",
+            "--policy", "baseline_deterministic_v2",
+            "--store", str(tmp_path / "store"),
+            "--output", str(out_path), timeout=90)
+        assert result.returncode == 0
+        summary = json.loads(out_path.read_text())
+        assert summary["status"] == "RESOLVED"
+        assert set(summary) == {
+            "status", "intent_id", "design_hash", "fabric_hash",
+            "resolved_fabric_hash", "topology_hash", "mapping_hash",
+            "vc_count"}
+
+    def test_compile_override_converges_on_wide128(self, tmp_path):
+        """Preset override and named preset resolve to the same hardware."""
+        result = _cli(
+            "compile", "--preset", "mesh4",
+            "--policy", "baseline_deterministic_v2",
+            "--store", str(tmp_path / "store"),
+            "--set", "noc_config.link_width=128", timeout=90)
+        assert result.returncode == 0
+        assert "47d8cb6c386b22cbc6b4bbf152f40d3c1c72dd1900a48d099afd2bda8fbc9c7f" \
+            in _strip_ansi(result.stdout)
 
 
 # ── Init wizard ──────────────────────────────────────────────────────────
@@ -256,20 +246,29 @@ class TestComparePipeline:
 class TestErrorHandling:
     """Verify CLI handles errors gracefully."""
 
-    def test_compile_missing_file(self):
-        """compile with missing JSON → clear error."""
-        result = _cli("compile", "/nonexistent/request.json", timeout=10)
-        # May return 0 but show error in stdout, or non-zero
-        assert result.returncode != 0 or "error" in (result.stdout + result.stderr).lower() or "not found" in (result.stdout + result.stderr).lower()
+    def test_compile_rejects_raw_request_positional(self, tmp_path):
+        """A bare CompileRequest path is no longer the CLI contract."""
+        result = _cli("compile", str(EXAMPLES_DIR / "moe_8npu.json"),
+                      "--store", str(tmp_path / "store"), timeout=10)
+        assert result.returncode != 0
+        assert "Traceback" not in result.stderr
 
-    def test_compile_invalid_json(self):
-        """compile with invalid JSON → clear error."""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            f.write("not valid json {{{")
-            f.flush()
-            result = _cli("compile", f.name, timeout=10)
-            os.unlink(f.name)
-            assert result.returncode != 0 or "error" in _strip_ansi(result.stderr + result.stdout).lower() or "failed" in _strip_ansi(result.stderr).lower()
+    def test_compile_requires_store_and_valid_declaration(self, tmp_path):
+        """--store is required; malformed --set is a clean user error."""
+        missing_store = _cli("compile", "--preset", "mesh4",
+                             "--policy", "baseline_deterministic_v2",
+                             timeout=10)
+        assert missing_store.returncode != 0
+        assert "Traceback" not in missing_store.stderr
+        bad_override = _cli(
+            "compile", "--preset", "mesh4",
+            "--policy", "baseline_deterministic_v2",
+            "--store", str(tmp_path / "store"),
+            "--set", "noc_config.arbitration=rr", timeout=10)
+        assert bad_override.returncode != 0
+        assert "Traceback" not in bad_override.stderr
+        assert "JSON scalar" in _strip_ansi(bad_override.stderr
+                                            + bad_override.stdout)
 
     def test_help_all_commands(self):
         """veritx <cmd> --help works for all commands."""

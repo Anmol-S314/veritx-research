@@ -26,6 +26,8 @@ Usage:
     veritx status [--last N]
     veritx diff [run_a] [run_b]
     veritx report --json <results.json>
+    veritx compile --preset mesh4 --policy baseline_deterministic_v2 \
+        --store runs/canonical-store [--set noc_config.link_width=128]
 
 Pipeline: trace → synthesize → evaluate → certify → done
 All evaluation uses trace-replay mode (correct timestamps, no Bernoulli).
@@ -55,6 +57,7 @@ from .pipeline import (
     run_compare, print_compare_table, print_sweep_table,
     list_runs, show_results, diff_runs, generate_latex,
 )
+from . import commands_compile
 
 
 # ── Path constants ──────────────────────────────────────────────────────────
@@ -901,177 +904,6 @@ def cmd_baseline(ctx: Ctx, args):
     output(ctx, result.to_dict())
 
 
-def cmd_compile(ctx: Ctx, args):
-    """PRD §13: Intent-to-fabric pipeline from CompileRequest JSON.
-
-    Reads a CompileRequest JSON (E1–E5), validates, derives topology,
-    runs BookSim simulation, and outputs results.
-
-    This is the PRD's 'intent-to-fabric compiler' entry point.
-    """
-    from veritx_dse.model.compile_model import (
-        CompileRequest, validate, derive_topology_spec,
-        derive_vc_assignment, Tier, OutputFormat,
-    )
-    from veritx_dse.simulation.booksim import build_config, run_booksim, detect_trace_stats
-    from veritx_dse.reports.reports import generate_report
-    from veritx_dse.reports.artifact import DesignManifest
-
-    # Step 1: Ingest — load CompileRequest from JSON
-    cr_path = _resolve_path(args.request)
-    if not Path(cr_path).exists():
-        fail(ctx, f"CompileRequest not found: {cr_path}")
-        return
-
-    try:
-        cr = CompileRequest.from_dict(json.loads(Path(cr_path).read_text()))
-    except Exception as e:
-        fail(ctx, f"Failed to parse CompileRequest: {e}")
-        return
-
-    banner(ctx, f"Compile: {cr.workload.model_name or cr.workload.model_family.value}")
-    log(ctx, f"Agents: {', '.join(f'{a.kind.value}×{a.count}' for a in cr.agents)}")
-    log(ctx, f"Total nodes: {cr.total_nodes}")
-    log(ctx, f"Guardrail hash: {cr.guardrail_hash()[:16]}...")
-
-    # ── Step 1/6: Validate — guardrail check (catches errors in seconds) ──
-    log(ctx, "Step 1/6: Validating configuration...")
-    vr = validate(cr)
-    if not vr.ok:
-        fail(ctx, "Validation FAILED:")
-        for e in vr.errors:
-            fail(ctx, f"  {e}")
-        return
-    if vr.warnings:
-        for w in vr.warnings:
-            log(ctx, f"  Warning: {w}")
-    ok(ctx, f"Validation passed (vc_count={vr.vc_count}, nodes={vr.total_nodes})")
-
-    # ── Step 2/6: Derive — VC assignment + topology (LOCKED parameters) ──
-    log(ctx, "Step 2/6: Deriving fabric configuration...")
-    va = derive_vc_assignment(cr)
-    log(ctx, f"  Routing (LOCKED): {va.routing_function}")
-    log(ctx, f"  VC count: {va.vc_count}")
-    if va.per_class_vc:
-        log(ctx, f"  VC assignments: {va.per_class_vc}")
-    if va.turn_restrictions:
-        log(ctx, f"  Turn restrictions (LOCKED): {va.turn_restrictions}")
-
-    topo = derive_topology_spec(cr)
-    ok(ctx, f"Derived topology: {topo.backend} k={topo.params.get('k', '?')} routing={topo.routing}")
-
-    # ── Step 3/6: Simulate — BookSim cycle-accurate ──
-    log(ctx, "Step 3/6: Running BookSim simulation...")
-    trace_raw = cr.workload.trace_path
-    trace = None
-    result = {}
-    if not trace_raw:
-        log(ctx, "  No trace_path in workload — skipping simulation")
-    else:
-        trace = _resolve_path(trace_raw)
-        if not Path(trace).exists():
-            log(ctx, f"  Trace not found: {trace_raw} (resolved: {trace})")
-            log(ctx, "  Skipping simulation — using analytical estimates only")
-        else:
-            config = build_config(topo, trace, seed=ctx.seed)
-            try:
-                result = run_booksim(ctx, config, repo_root=REPO, timeout=args.timeout)
-                result["seed"] = ctx.seed
-                ok(ctx, f"Latency: {result['latency']:.2f}c | Hops: {result.get('hops', '?')}")
-            except Exception as e:
-                fail(ctx, f"BookSim failed: {e}")
-                result = {}
-
-    # ── Step 4/6: Verify — F1-F8 proof obligations ──
-    from veritx_dse.model.compile_model import verify_design
-    log(ctx, "Step 4/6: Running verification checks...")
-    vr_verify = verify_design(cr, topology_name=topo.backend)
-    for check in vr_verify.checks:
-        status_sym = "✓" if check["status"] == "PASS" else "⚠" if check["status"] == "WARN" else "✗"
-        log(ctx, f"  {status_sym} {check['name']}: {check['detail']}")
-    if vr_verify.errors:
-        for e in vr_verify.errors:
-            fail(ctx, f"  ✗ {e}")
-    ok(ctx, f"Verification: {sum(1 for c in vr_verify.checks if c['status']=='PASS')}/{len(vr_verify.checks)} PASS")
-
-    # ── Step 5/6: Generate — RTL + UVM + artifacts ──
-    from veritx_dse.model.compile_model import generate_artifacts
-    from veritx_dse.verification.uvm_gen import generate_uvm
-    log(ctx, "Step 5/6: Generating collateral...")
-    artifacts = generate_artifacts(cr)
-    log(ctx, f"  Tracked artifacts: {', '.join(a.kind for a in artifacts)}")
-
-    # Generate UVM if requested in output formats
-    if OutputFormat.UVM in cr.noc_config.output_formats:
-        uvm_out = Path(RUNS_DIR / "uvm")
-        uvm_out.mkdir(parents=True, exist_ok=True)
-        try:
-            n_nodes = cr.total_nodes
-            k = int(n_nodes ** 0.5)
-            if k * k != n_nodes:
-                k = int(cr.noc_config.radix or 8)
-            uvm_result = generate_uvm(cr, n_nodes=n_nodes, k=k)
-            for filename, content in [
-                ("tb_noc.sv", uvm_result["tb_top"]),
-                ("seq_lib.sv", uvm_result["sequences"]),
-                ("assertions.sv", uvm_result["assertions"]),
-                ("cov.sv", uvm_result["coverage"]),
-            ]:
-                fpath = uvm_out / filename
-                fpath.write_text(content)
-                log(ctx, f"  Generated: {fpath}")
-            ok(ctx, f"UVM testbench: {uvm_out}/")
-        except Exception as e:
-            fail(ctx, f"UVM generation failed: {e}")
-    else:
-        log(ctx, "  UVM not in output_formats — skipping")
-
-    # ── Step 6/6: Report — formal area/power/timing + manifest + signing ──
-    log(ctx, "Step 6/6: Generating report...")
-    report = generate_report(cr, result)
-    report["compile_request"] = cr.to_dict()
-    report["topology"] = {
-        "backend": topo.backend,
-        "routing": topo.routing,
-        "params": topo.params,
-    }
-    report["verification"] = {
-        "ok": vr_verify.ok,
-        "checks": vr_verify.checks,
-        "errors": vr_verify.errors,
-    }
-    report["artifacts"] = [a.to_dict() for a in artifacts]
-
-    # Design manifest with signing + revision chain (PRD §12, §14)
-    dm = DesignManifest.create(cr, metadata={"engine": "veritx-cli", "version": "0.3.0"})
-    report["manifest"] = dm.to_dict()
-
-    out_path = RUNS_DIR / "booksim" / f"compile_{cr.workload.model_family.value}.json"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(report, indent=2))
-    ok(ctx, f"Report: {out_path}")
-
-    # Print summary
-    print(f"\n  \033[1mCompile Result\033[0m")
-    print(f"  {'─' * 55}")
-    print(f"  Model:      {cr.workload.model_name or cr.workload.model_family.value}")
-    print(f"  Topology:   {topo.backend} k={topo.params.get('k', '?')}")
-    print(f"  Routing:    {va.routing_function} (LOCKED)")
-    print(f"  VCs:        {va.vc_count}")
-    print(f"  Latency:    {result.get('latency', '?')}c")
-    print(f"  Area:       {report['area']['total_mm2']:.4f} mm²")
-    print(f"  Power:      {report['power']['total_w']:.4f} W")
-    print(f"  Fmax:       {report['timing']['max_freq_mhz']:.0f} MHz")
-    print(f"  Energy:     {report['energy']['per_bit_pj']:.3f} pJ/bit")
-    print(f"  Verify:     {sum(1 for c in vr_verify.checks if c['status']=='PASS')}/{len(vr_verify.checks)} PASS")
-    print(f"  Artifacts:  {', '.join(a.kind for a in artifacts)}")
-    print(f"  Manifest:   rev={report['manifest']['revision']} signed={len(report['manifest']['signature'])==64}")
-    print(f"  Hash:       {cr.guardrail_hash()[:16]}...")
-    print(f"  {'─' * 55}\n")
-
-    output(ctx, report)
-
-
 def cmd_serve(ctx: Ctx, args):
     """Full-stack LLM serving simulation: LLMServingSim + AstraSim + BookSim2."""
     import subprocess
@@ -1439,7 +1271,12 @@ def cmd_init(ctx: Ctx, args):
     log(ctx, f"  Topology: {tf.value}, VCs: (derived from deps)")
     log(ctx, f"  Deps:     {len(deps)} blocking edges")
     print()
-    print(f"  \033[32m✓ Next: veritx compile {out_path}\033[0m")
+    print("  This is a low-level CompileRequest document (E1–E5).")
+    print("  It is NOT consumed by the canonical product compile command")
+    print("  directly; canonical compilation takes a named CompileIntent.")
+    print("  To compile a product design, declare an intent, e.g.:")
+    print("    veritx compile --preset mesh4 \\")
+    print("      --policy baseline_deterministic_v2 --store runs/canonical-store")
     print()
 
     output(ctx, d)
@@ -1668,11 +1505,36 @@ def build_parser() -> argparse.ArgumentParser:
     p_bl.add_argument("--timeout", type=int, default=60)
     p_bl.add_argument("--seeds", type=int, default=1)
 
-    # ── compile (intent-to-fabric) ──────────────────────────────
-    p_compile = sub.add_parser("compile", help="Intent-to-fabric pipeline from CompileRequest JSON")
-    p_compile.add_argument("request", help="Path to CompileRequest JSON file")
-    p_compile.add_argument("--timeout", type=int, default=120)
-    p_compile.add_argument("--output", "-o", help="Save results to JSON file")
+    # ── compile (canonical product compile surface) ──────────────
+    # Vocabulary is derived from the authorities: preset names from
+    # preset_names(), policy values from CandidatePolicy. No duplicate list.
+    from ..application.compile_intent import preset_names
+    from ..compiler.candidate_policy import CandidatePolicy
+    p_compile = sub.add_parser(
+        "compile",
+        help="Canonical product compile (CompileIntent -> ResolvedFabric)")
+    compile_mode = p_compile.add_mutually_exclusive_group(required=True)
+    compile_mode.add_argument(
+        "--preset", choices=preset_names(),
+        help="Named CompileIntent preset declaration")
+    compile_mode.add_argument(
+        "--intent",
+        help="Path to an exact persisted CompileIntent JSON document")
+    p_compile.add_argument(
+        "--policy", choices=[p.value for p in CandidatePolicy],
+        help="Declared candidate policy (required with --preset)")
+    p_compile.add_argument(
+        "--set", action="append", dest="overrides", default=[],
+        metavar="PATH=JSON_SCALAR",
+        help="Preset override; may repeat. Values are strict JSON scalars "
+             '(quote strings: --set noc_config.arbitration="rr")')
+    p_compile.add_argument(
+        "--name", help="Presentation-only intent name (never identity)")
+    p_compile.add_argument(
+        "--store", required=True,
+        help="Explicit ResourceStore root directory (never implicit)")
+    p_compile.add_argument(
+        "--output", "-o", help="Save the compile summary JSON (presentation)")
 
     # ── init ──────────────────────────────────────────────────────
     p_init = sub.add_parser("init", help="Interactive wizard to generate a CompileRequest")
@@ -1744,7 +1606,7 @@ DISPATCH = {
     "diff": cmd_diff,
     "report": cmd_report,
     "baseline": cmd_baseline,
-    "compile": cmd_compile,
+    "compile": commands_compile.cmd_compile,
     "init": cmd_init,
     "serve": cmd_serve,
     "generate": {

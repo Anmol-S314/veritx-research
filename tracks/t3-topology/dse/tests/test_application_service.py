@@ -395,6 +395,68 @@ def test_post_commit_mismatch_fails_persistence(tmp_path, monkeypatch):
     assert excinfo.value.stage is CompileServiceStage.PERSISTENCE
 
 
+# ── programmer errors are never relabelled as product failures ────────────
+
+def test_derivation_runtime_error_propagates_raw(tmp_path, monkeypatch):
+    _, control = _control(tmp_path)
+
+    def boom(intent):
+        raise RuntimeError("programmer bug in derivation")
+
+    monkeypatch.setattr(service_module, "derive_compile_request", boom)
+    with pytest.raises(RuntimeError, match="programmer bug in derivation") as ei:
+        control.compile(_intent())
+    assert not isinstance(ei.value, CompileServiceError)
+
+
+def test_candidate_runtime_error_propagates_raw(tmp_path, monkeypatch):
+    _, control = _control(tmp_path)
+
+    def boom(*, design):
+        raise RuntimeError("programmer bug in candidate generation")
+
+    monkeypatch.setattr(service_module, "generate_baseline_candidate", boom)
+    with pytest.raises(RuntimeError, match="programmer bug in candidate") as ei:
+        control.compile(_intent())
+    assert not isinstance(ei.value, CompileServiceError)
+
+
+def test_compile_runtime_error_propagates_raw(tmp_path, monkeypatch):
+    _, control = _control(tmp_path)
+
+    def boom(**kwargs):
+        raise RuntimeError("programmer bug in canonical compile")
+
+    monkeypatch.setattr(service_module, "compile_deterministic_candidate", boom)
+    with pytest.raises(RuntimeError, match="programmer bug in canonical") as ei:
+        control.compile(_intent())
+    assert not isinstance(ei.value, CompileServiceError)
+
+
+def test_persistence_runtime_error_propagates_raw(tmp_path, monkeypatch):
+    store, control = _control(tmp_path)
+
+    def boom(**kwargs):
+        raise RuntimeError("programmer bug in persistence")
+
+    monkeypatch.setattr(store, "commit_resolution", boom)
+    with pytest.raises(RuntimeError, match="programmer bug in persistence") as ei:
+        control.compile(_intent())
+    assert not isinstance(ei.value, CompileServiceError)
+
+
+@pytest.mark.parametrize("error", [AttributeError, AssertionError])
+def test_other_programmer_errors_propagate_raw(tmp_path, monkeypatch, error):
+    _, control = _control(tmp_path)
+
+    def boom(**kwargs):
+        raise error("programmer bug")
+
+    monkeypatch.setattr(service_module, "compile_deterministic_candidate", boom)
+    with pytest.raises(error):
+        control.compile(_intent())
+
+
 # ── scope sentinels ────────────────────────────────────────────────────────
 
 def _docstring_stripped_source(module) -> str:
@@ -433,6 +495,7 @@ def test_service_imports_only_the_authority_groups():
     local = {name for name in modules if name.startswith("veritx_dse")}
     assert local == {
         "veritx_dse.application.compile_intent",
+        "veritx_dse.application.resources",
         "veritx_dse.application.store",
         "veritx_dse.compiler.candidate_policy",
         "veritx_dse.compiler.canonical",

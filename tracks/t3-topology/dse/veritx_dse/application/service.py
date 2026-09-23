@@ -56,16 +56,18 @@ from enum import Enum
 from types import MappingProxyType
 
 from veritx_dse.application.compile_intent import (
-    CompileIntent, derive_compile_request,
+    CompileIntent, CompileIntentError, derive_compile_request,
 )
+from veritx_dse.application.resources import ResourceValidationError
 from veritx_dse.application.store import (
-    ResourceStore, StoredCompileResolution,
+    ResourceStore, ResourceStoreError, StoredCompileResolution,
 )
 from veritx_dse.compiler.candidate_policy import (
-    CandidatePlan, CandidatePolicy, generate_baseline_candidate,
+    CandidatePlan, CandidatePolicy, CandidatePolicyError,
+    generate_baseline_candidate,
 )
 from veritx_dse.compiler.canonical import (
-    CompiledFabric, compile_deterministic_candidate,
+    CanonicalCompileError, CompiledFabric, compile_deterministic_candidate,
 )
 from veritx_dse.model.compile_model import CompileRequest
 
@@ -174,7 +176,7 @@ class SrotaControlPlane:
         # 1-2. exact canonical request declared by the intent
         try:
             design = derive_compile_request(intent)
-        except Exception as exc:
+        except CompileIntentError as exc:
             raise CompileServiceError(
                 CompileServiceStage.INTENT,
                 f"could not derive a CompileRequest: {exc}") from exc
@@ -190,7 +192,7 @@ class SrotaControlPlane:
         # 4. generate the explicit candidate plan
         try:
             plan = dispatch.generate(design)
-        except Exception as exc:
+        except CandidatePolicyError as exc:
             raise CompileServiceError(
                 CompileServiceStage.CANDIDATE,
                 f"candidate generation failed: {exc}") from exc
@@ -208,7 +210,7 @@ class SrotaControlPlane:
         # 5. canonical candidate compiler (exact plan -> exact hardware)
         try:
             compiled = dispatch.compile(design, plan)
-        except Exception as exc:
+        except CanonicalCompileError as exc:
             raise CompileServiceError(
                 CompileServiceStage.COMPILE,
                 f"canonical compilation failed: {exc}") from exc
@@ -222,15 +224,15 @@ class SrotaControlPlane:
                 "canonical compiler design_hash does not match the design")
 
         # 6-7. commit the resolution root, then reload it and validate.
-        # ResourceStoreError / ResourceCorruptionError /
-        # ResourceValidationError and any other store-domain failure are all
-        # classified PERSISTENCE; the underlying cause is preserved.
+        # Only store-domain failures are classified PERSISTENCE: an
+        # unexpected RuntimeError/TypeError from a broken internal call is a
+        # programmer bug and must propagate unchanged.
         try:
             self._store.commit_resolution(
                 intent=intent, design=design,
                 resolved_fabric=compiled.resolved_fabric)
             committed = self._store.load_committed(intent.intent_id())
-        except Exception as exc:
+        except (ResourceStoreError, ResourceValidationError) as exc:
             raise CompileServiceError(
                 CompileServiceStage.PERSISTENCE,
                 f"could not commit or reload the resolution: {exc}") from exc
