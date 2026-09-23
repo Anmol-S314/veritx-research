@@ -30,6 +30,16 @@ class BookSimError(VeritXError):
         self.stderr = stderr
 
 
+class TimeoutError(BookSimError):
+    """Raised when BookSim exceeds the time limit.
+
+    Subclasses BookSimError so existing ``except BookSimError`` handlers
+    keep catching timeouts, while carrying returncode/stdout/stderr like
+    its parent for debuggability.
+    """
+    pass
+
+
 class TopologyError(VeritXError):
     """Topology-related errors."""
     pass
@@ -94,3 +104,17 @@ class ConservationFailed(Refusal):
     """A conservation law did not hold. Hard failure, never a warning."""
 
     code = "CONSERVATION_FAILED"
+
+
+class BackendFailure(Refusal):
+    """Qualified backend execution failed: nonzero exit, missing evidence,
+    route divergence."""
+
+    code = "BACKEND_FAILURE"
+
+
+class BackendTimeout(BackendFailure):
+    """Qualified backend execution exceeded its time limit."""
+
+    code = "TIMEOUT"
+
