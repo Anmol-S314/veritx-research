@@ -20,6 +20,7 @@ INDEPENDENCE = {
     "standalone_booksim": "semi_independent",
     "canonical_altrouting": "semi_independent",
     "rtl": "independent",
+    "rtl_calibrated": "semi_independent",
     "astra": "independent",
     "ramulator": "independent",
     "hardware": "independent",
@@ -227,3 +228,70 @@ def monotonicity_check(spec, points: list[dict]) -> CheckResult:
                 "series": {str(p["value"]): p["quantity"] for p in points},
                 "authority_series": {str(p["value"]): p.get(
                     "authority_quantity") for p in points}})
+
+
+def run_rtl_checks(*, spec, built, veritx_stats: dict, rtl) -> list[CheckResult]:
+    """Layer 3 with a different engine: T3 2D mesh RTL vs the canonical path.
+
+    Conservation and route parity are independent; absolute latency is
+    semi-independent because the testbench was calibrated to the BookSim
+    cycle model.
+    """
+    results: list[CheckResult] = []
+    expected = spec.expected
+
+    problems = []
+    if rtl.injected_packets != built.packets:
+        problems.append(
+            f"RTL injected {rtl.injected_packets} != canonical "
+            f"packets {built.packets}")
+    if rtl.ejected_packets != built.packets:
+        problems.append(
+            f"RTL ejected {rtl.ejected_packets} != canonical "
+            f"packets {built.packets}")
+    if rtl.ejected_flits != built.flits:
+        problems.append(
+            f"RTL ejected flits {rtl.ejected_flits} != canonical "
+            f"flits {built.flits}")
+    results.append(CheckResult(
+        name="rtl_conservation", authority_class="rtl",
+        detail="; ".join(problems) or "RTL injects and ejects the exact workload",
+        verdict=_verdict(not problems),
+        values={"rtl_injected_packets": rtl.injected_packets,
+                "rtl_ejected_packets": rtl.ejected_packets,
+                "rtl_ejected_flits": rtl.ejected_flits,
+                "canonical_packets": built.packets,
+                "canonical_flits": built.flits}))
+
+    if expected.route_hops is not None:
+        problems = []
+        bad = [p for p in rtl.packets if p.hops != expected.route_hops]
+        if bad:
+            problems.append(
+                f"{len(bad)}/{len(rtl.packets)} RTL packets routed "
+                f"{bad[0].hops} hops, hand says {expected.route_hops}")
+        results.append(CheckResult(
+            name="rtl_route", authority_class="rtl",
+            detail="; ".join(problems)
+            or (f"every RTL packet routes {expected.route_hops} hops "
+                "(matches hand Manhattan)"),
+            verdict=_verdict(not problems),
+            values={"hand_router_hops": expected.route_hops,
+                    "rtl_hops": sorted({p.hops for p in rtl.packets})}))
+
+        problems = []
+        v = veritx_stats["completion_cycles"]
+        rtl_latency = (max(p.latency for p in rtl.packets)
+                       if rtl.packets else None)
+        if rtl_latency != v:
+            problems.append(
+                f"RTL latency {rtl_latency} != canonical completion {v}")
+        results.append(CheckResult(
+            name="rtl_latency", authority_class="rtl_calibrated",
+            detail="; ".join(problems)
+            or (f"RTL latency {rtl_latency} == canonical completion {v} "
+                "(tb calibrated to the BookSim cycle model)"),
+            verdict=_verdict(not problems),
+            values={"veritx_completion": v, "rtl_latency": rtl_latency,
+                    "rtl_law": "7 + 5*hop"}))
+    return results

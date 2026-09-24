@@ -55,7 +55,8 @@
           "hand_counts",
           "standalone_parity",
           "window_invariance",
-          "monotonicity"
+          "monotonicity",
+          "rtl_parity"
         ]
       }
     },

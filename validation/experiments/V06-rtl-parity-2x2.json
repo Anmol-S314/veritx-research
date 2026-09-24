@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "id": "V06",
+  "title": "2x2 mesh, single 1-flit P2P 0 -> 3: T3 RTL (Verilator) parity",
+  "fabric": {
+    "topology_family": "mesh",
+    "compute_tiles": 4,
+    "tp": 4,
+    "link_width": 64,
+    "concentration": 1,
+    "num_vcs": 1
+  },
+  "workload": {
+    "kind": "p2p",
+    "src_rank": 0,
+    "dst_rank": 3,
+    "payload_bytes": 7
+  },
+  "expected": {
+    "packets": 1,
+    "flits": 1,
+    "route_hops": 2,
+    "notes": "Same stimulus as V01, now executed by the T3 2D mesh RTL under Verilator (R1 trace replay). The RTL injects and ejects the exact workload, routes 0->3 in 2 hops (recovered from its latency law 7+5d), and its single-packet latency must equal the canonical completion. 2D unicast only: multicast (F1-F3) and 3D/4D are out of the qualified domain."
+  },
+  "checks": [
+    "conservation",
+    "hand_counts",
+    "hand_route",
+    "standalone_parity",
+    "rtl_parity"
+  ]
+}

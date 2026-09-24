@@ -15,6 +15,7 @@ SCHEMA_VERSION = 1
 KNOWN_CHECKS = frozenset({
     "conservation", "hand_route", "hand_counts",
     "standalone_parity", "window_invariance", "monotonicity",
+    "rtl_parity",
 })
 
 #: sweep parameter -> (field, quantity that must be monotone, direction)

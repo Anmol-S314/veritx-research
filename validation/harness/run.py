@@ -17,12 +17,13 @@ import tempfile
 from pathlib import Path
 
 from .authority import run_standalone
-from .compare import EXACT, monotonicity_check, run_checks
+from .compare import EXACT, monotonicity_check, run_checks, run_rtl_checks
 from .fabric import build
 from .spec import ExperimentSpec
 
 HERE = Path(__file__).resolve().parent
 VALIDATION_ROOT = HERE.parent
+REPO_ROOT = VALIDATION_ROOT.parent
 DEFAULT_EXPERIMENTS = VALIDATION_ROOT / "experiments"
 DEFAULT_REPORTS = VALIDATION_ROOT / "reports"
 
@@ -66,6 +67,13 @@ def _run_single(spec: ExperimentSpec, binary: Path, work_root: Path) -> dict:
                 timeout_s=spec.timeout_s, window_margin=3000)
         checks = run_checks(spec=spec, built=built, veritx_stats=veritx_stats,
                             authority=authority, authority_alt=authority_alt)
+        if "rtl_parity" in spec.checks:
+            from .rtl import run_authority as run_rtl_authority
+            rtl = run_rtl_authority(spec=spec, built=built,
+                                    repo_root=REPO_ROOT,
+                                    work_root=work_root)
+            checks = list(checks) + run_rtl_checks(
+                spec=spec, built=built, veritx_stats=veritx_stats, rtl=rtl)
     finally:
         shutil.rmtree(run_root, ignore_errors=True)
     return {"built": built, "veritx_stats": veritx_stats,

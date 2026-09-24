@@ -88,6 +88,22 @@ sweep `payload_bytes` → `flits` (non_decreasing)  ·  fabric: {'compute_tiles'
 
 **PASS**
 
+## V06 — 2x2 mesh, single 1-flit P2P 0 -> 3: T3 RTL (Verilator) parity
+
+profile: `CERTIFIED_BOOKSIM_MESH_DOR_XY_V1`  ·  fabric: {'compute_tiles': 4, 'tp': 4, 'link_width': 64, 'num_vcs': 1}  ·  workload: p2p
+
+| check | authority | independence | value | verdict |
+|---|---|---|---|---|
+| conservation | conservation | independent | packets=1, flits=1, auth_flits=1/1 | exact |
+| hand_counts | hand_calculated | independent | {"flits": 1, "packets": 1} | exact |
+| hand_route | hand_calculated | independent | hand=2, canonical=2.0, authority=3.0 (expected 3) | exact |
+| standalone_parity | standalone_booksim | semi_independent | 17 == 17 | exact |
+| rtl_conservation | rtl | independent | {"canonical_flits": 1, "canonical_packets": 1, "rtl_ejected_flits": 1, "rtl_ejected_packets": 1, "rtl_injected_packets": 1} | exact |
+| rtl_route | rtl | independent | {"hand_router_hops": 2, "rtl_hops": [2]} | exact |
+| rtl_latency | rtl_calibrated | semi_independent | {"rtl_latency": 17, "rtl_law": "7 + 5*hop", "veritx_completion": 17} | exact |
+
+**PASS**
+
 ---
 
-checks exact: 29/29
+checks exact: 36/36
