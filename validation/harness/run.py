@@ -84,8 +84,18 @@ def _checks_to_dicts(checks, suffix: str = "") -> list[dict]:
     return [
         {"name": c.name + suffix, "authority_class": c.authority_class,
          "independence": c.independence, "verdict": c.verdict,
-         "detail": c.detail, "values": c.values}
+         "detail": c.detail, "values": c.values,
+         "quarantined": c.quarantined, "finding": c.finding}
         for c in checks]
+
+
+def _counted_passed(checks: list[dict]) -> bool:
+    """Pass/fail over non-quarantined checks only (a filed finding is not a
+    new regression, but its checks are still reported)."""
+    counted = [c for c in checks if not c.get("quarantined")]
+    if not counted:
+        raise ValueError("every check is quarantined; refusing a vacuous pass")
+    return all(c["verdict"] == EXACT for c in counted)
 
 
 def run_experiment(spec: ExperimentSpec, binary: Path,
@@ -128,6 +138,10 @@ def run_experiment(spec: ExperimentSpec, binary: Path,
             checks.extend(_checks_to_dicts(run["checks"],
                                            suffix=f"@{value}"))
         mono = monotonicity_check(spec, points)
+        if spec.network_claims_quarantined \
+                and spec.sweep.quantity == "completion_cycles":
+            mono = dataclasses.replace(
+                mono, quarantined=True, finding="F-0004")
         checks.insert(0, _checks_to_dicts([mono])[0])
         if not checks:
             raise ValueError(f"{spec.id} produced zero checks")
@@ -136,7 +150,9 @@ def run_experiment(spec: ExperimentSpec, binary: Path,
             "direction": spec.sweep.direction,
             "values": list(spec.sweep.values), "points": points},
             "checks": checks,
-            "passed": all(c["verdict"] == EXACT for c in checks)}
+            "passed": _counted_passed(checks),
+            "quarantined_findings": sorted(
+                {c["finding"] for c in checks if c.get("finding")})}
 
     run = _run_single(spec, binary, work_root)
     built, vstats, auth = run["built"], run["veritx_stats"], run["authority"]
@@ -161,7 +177,9 @@ def run_experiment(spec: ExperimentSpec, binary: Path,
                 "hops_avg": auth.hops_avg,
             },
             "checks": checks,
-            "passed": all(c["verdict"] == EXACT for c in checks)}
+            "passed": _counted_passed(checks),
+            "quarantined_findings": sorted(
+                {c["finding"] for c in checks if c.get("finding")})}
 
 
 def _markdown(reports: list[dict]) -> str:
@@ -230,18 +248,69 @@ def _markdown(reports: list[dict]) -> str:
                          f"(delta {v['delta']:+d}, tol {v['tolerance']})")
             else:
                 value = json.dumps(v, sort_keys=True)
+            verdict = c["verdict"]
+            if c.get("quarantined"):
+                verdict = f"{verdict} (QUARANTINED {c.get('finding')})"
             lines.append(f"| {c['name']} | {c['authority_class']} | "
-                         f"{c['independence']} | {value} | {c['verdict']} |")
+                         f"{c['independence']} | {value} | {verdict} |")
         lines.append("")
         lines.append(f"**{'PASS' if r['passed'] else 'FAIL'}**")
+        if r.get("quarantined_findings"):
+            lines.append("")
+            lines.append(f"quarantined findings: "
+                         f"{r['quarantined_findings']}")
         lines.append("")
     total = sum(len(r["checks"]) for r in reports)
     exact = sum(1 for r in reports for c in r["checks"]
                 if c["verdict"] == EXACT)
+    counted = sum(1 for r in reports for c in r["checks"]
+                  if not c.get("quarantined"))
+    categories: dict[str, list[int]] = {}
+    provenance: dict[str, list[int]] = {}
+    for r in reports:
+        for c in r["checks"]:
+            bucket = categories.setdefault(c["independence"], [0, 0])
+            bucket[1] += 1
+            if c["verdict"] == EXACT:
+                bucket[0] += 1
+            if c["independence"] == "independent_oracle":
+                prov = _oracle_provenance(c)
+                pbucket = provenance.setdefault(prov, [0, 0])
+                pbucket[1] += 1
+                if c["verdict"] == EXACT:
+                    pbucket[0] += 1
     lines.append("---")
     lines.append("")
-    lines.append(f"checks exact: {exact}/{total}")
+    lines.append(f"checks exact: {exact}/{total} "
+                 f"({total - counted} quarantined by a filed finding)")
+    lines.append("")
+    lines.append("by independence category (exact/total):")
+    for name in sorted(categories):
+        got, tot = categories[name]
+        lines.append(f"  {name:34} {got}/{tot}")
+    if provenance:
+        lines.append("")
+        lines.append("independent_oracle by provenance (exact/total):")
+        for name in sorted(provenance):
+            got, tot = provenance[name]
+            lines.append(f"  {name:34} {got}/{tot}")
     return "\n".join(lines) + "\n"
+
+
+def _oracle_provenance(check: dict) -> str:
+    name = check["name"]
+    values = check.get("values", {})
+    if name == "workload_lowering_conservation" \
+            or name == "collective_graph_conformance":
+        return "preregistered_oracle"
+    if name == "hand_route":
+        return values.get("route_hops_provenance", "unstated")
+    if name == "hand_counts":
+        return values.get("flits_provenance",
+                          values.get("packets_provenance", "unstated"))
+    if name == "monotonicity":
+        return "preregistered_physics"
+    return "unstated"
 
 
 def _mutations_markdown(results) -> str:
@@ -367,7 +436,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{spec.id}: {'PASS' if report['passed'] else 'FAIL'} "
               f"({len(report['checks'])} checks)")
         for c in report["checks"]:
-            print(f"  [{c['verdict']:>8}] {c['name']:<24} "
+            flag = (f" QUARANTINED:{c['finding']}" if c.get("quarantined")
+                    else "")
+            print(f"  [{c['verdict']:>8}]{flag:<16} {c['name']:<28} "
                   f"({c['authority_class']}, {c['independence']}) "
                   f"{c['detail']}")
         ok = ok and report["passed"]

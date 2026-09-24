@@ -37,7 +37,9 @@
         "flits": 2400,
         "authority_injected_flits": 2400,
         "authority_accepted_flits": 2400
-      }
+      },
+      "quarantined": false,
+      "finding": null
     },
     {
       "name": "standalone_parity",
@@ -50,7 +52,9 @@
         "authority_completion": 719,
         "veritx_window": 1480,
         "authority_window": 2480
-      }
+      },
+      "quarantined": false,
+      "finding": null
     },
     {
       "name": "window_invariance",
@@ -65,8 +69,11 @@
           "authority": 2480,
           "authority_alt": 3480
         }
-      }
+      },
+      "quarantined": false,
+      "finding": null
     }
   ],
-  "passed": true
+  "passed": true,
+  "quarantined_findings": []
 }

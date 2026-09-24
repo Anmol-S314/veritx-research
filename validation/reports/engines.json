@@ -2,7 +2,7 @@
   {
     "name": "ramulator_battery",
     "passed": true,
-    "detail": "2.1s, 16/16 checks; 16/16 checks",
+    "detail": "2.0s, 16/16 checks; 16/16 checks",
     "checks": [
       [
         "vendored-ext-present",

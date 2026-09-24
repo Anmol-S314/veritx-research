@@ -55,15 +55,18 @@ from veritx_dse.core.route_artifact import ANYNET_MIN_HOPS, DOR_XY
 from veritx_dse.model.topology_artifact import MaterializedFamily
 from veritx_dse.workload.traffic import PhysicalTrafficArtifactV2
 
-BOOKSIM_PROJECTION_SCHEMA_VERSION = 1
+#: v2: the prepared identity includes the executed run ``seed`` (reseal
+#: audit). v1 omitted an executed input, so the generations are declared
+#: incompatible rather than left to differ by hash only.
+BOOKSIM_PROJECTION_SCHEMA_VERSION = 2
 
 _MESH_DOR_PROFILE_ID = "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1"
-_MESH_DOR_SEMANTICS_VERSION = "booksim2-fork+P1B-meshdor-dump"
+_MESH_DOR_SEMANTICS_VERSION = "booksim2-fork+P1B-meshdor-dump+prepared-v2"
 _MESH_DOR_LOWERER_VERSION = "DORXY/1"
 _MESH_DOR_ROUTING_FUNCTION = "dim_order"
 
 _ANYNET_PROFILE_ID = "CERTIFIED_BOOKSIM_ANYNET_V1"
-_ANYNET_SEMANTICS_VERSION = "booksim2-fork+B3.7b-anynet-dump"
+_ANYNET_SEMANTICS_VERSION = "booksim2-fork+B3.7b-anynet-dump+prepared-v2"
 
 #: trace scheduling semantics (bound into the prepared identity)
 TRACE_SCHEDULE_VERSION = "srota/booksim-trace-schedule/v1"
@@ -822,12 +825,20 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
     conservation = verify_trace_conservation(parents.physical_traffic)
     del conservation
     config = render_config(parents, profile, seed=seed)
-    values = parse_config_values(config.decode())
-    # the profile's own pins must survive rendering verbatim
+    rendered = parse_config_values(config.decode())
+    # Every REQUIRED rendered field must appear (a required pin silently
+    # vanishing from the render is itself a projection defect — the old
+    # `if name in values` guard could not see it), and every pin must be
+    # rendered verbatim.
+    missing = profile.rendered_names() - set(rendered)
+    if missing:
+        raise BookSimProjectionError(
+            f"rendered config is missing required profile fields "
+            f"{sorted(missing)} for {profile.profile_id}")
     for name, pin in profile.pinned_values().items():
-        if name in values and values[name] != _format_value(pin):
+        if rendered.get(name) != _format_value(pin):
             raise BookSimProjectionError(
-                f"rendered {name}={values[name]!r} does not equal the "
+                f"rendered {name}={rendered.get(name)!r} does not equal the "
                 f"profile pin {pin!r}")
     topology_text = (render_anynet_topology(parents).decode()
                      if profile.profile_id == _ANYNET_PROFILE_ID else None)
@@ -853,8 +864,8 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
         num_vcs=parents.vc_resource.vc_count,
         endpoint_count=len(parents.attachment.endpoints),
         router_count=parents.topology.router_count,
-        sample_period=int(values["sample_period"]),
-        max_samples=int(values["max_samples"]),
+        sample_period=int(rendered["sample_period"]),
+        max_samples=int(rendered["max_samples"]),
         expected_packets=schedule["expected_packets"],
         seed=seed)
 

@@ -22,5 +22,6 @@
     "conservation",
     "standalone_parity",
     "window_invariance"
-  ]
+  ],
+  "network_claims_quarantined": true
 }

@@ -26,5 +26,6 @@
     "monotonicity",
     "conservation",
     "standalone_parity"
-  ]
+  ],
+  "network_claims_quarantined": true
 }

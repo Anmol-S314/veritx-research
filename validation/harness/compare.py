@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from .oracle import ring_allreduce_oracle
+from .oracle import graph_conformance, ring_allreduce_oracle
 
 EXACT = "exact"
 MISMATCH = "mismatch"
@@ -65,6 +65,10 @@ class CheckResult:
     detail: str
     verdict: str
     values: dict[str, Any] = field(default_factory=dict)
+    #: a known, filed finding whose failure does not count as a new
+    #: regression (e.g. F-0004 withdraws network-performance claims)
+    quarantined: bool = False
+    finding: str | None = None
 
     @property
     def independence(self) -> str:
@@ -95,6 +99,7 @@ def run_checks(*, spec, built, veritx_stats: dict, authority,
     results: list[CheckResult] = []
     expected = spec.expected
     declared_packets = built.packets
+    quarantine = bool(getattr(spec, "network_claims_quarantined", False))
 
     # ── trace execution conservation (integration gate) ────────────────
     # The authority consumes the SAME trace VERITX produced, so this proves
@@ -179,6 +184,42 @@ def run_checks(*, spec, built, veritx_stats: dict, authority,
                 verdict=_verdict(not problems),
                 values=oracle.as_dict()))
 
+        # ── communication-graph conformance (independent) ──────────────
+        # The counts above cannot see WHICH ranks talk. Ring ALLREDUCE
+        # moves data only between logical neighbours; a schedule that uses
+        # every pair is a different algorithm (F-0004).
+        try:
+            from collections import Counter
+            observed = Counter((m.src_rank, m.dst_rank)
+                               for m in built.logical.messages)
+            conf = graph_conformance(spec.fabric.compute_tiles, dict(observed))
+        except Exception as exc:  # noqa: BLE001
+            results.append(CheckResult(
+                name="collective_graph_conformance",
+                authority_class="ring_oracle",
+                detail=f"conformance oracle unavailable: "
+                       f"{type(exc).__name__}: {exc}",
+                verdict=UNSUPPORTED))
+        else:
+            conforms = conf["conforms"]
+            if conforms:
+                detail = ("every pair is a ring neighbour pair with "
+                          "multiplicity 2(k-1)")
+            else:
+                detail = (
+                    f"{len(conf['extra_non_neighbour_pairs'])} non-neighbour "
+                    f"pairs used (e.g. "
+                    f"{sorted(conf['extra_non_neighbour_pairs'])[:3]}); the "
+                    "communication graph is NOT a ring")
+            results.append(CheckResult(
+                name="collective_graph_conformance",
+                authority_class="ring_oracle",
+                detail=detail,
+                verdict=_verdict(conforms),
+                values=conf,
+                quarantined=(not conforms and quarantine),
+                finding=(None if conforms else "F-0004")))
+
     # ── hand counts (independent) ──────────────────────────────────────
     if "hand_counts" in spec.checks and expected.packets is not None:
         problems = []
@@ -242,6 +283,7 @@ def run_checks(*, spec, built, veritx_stats: dict, authority,
             detail=(f"VERITX completion {v} == authority {a}" if ok else
                     f"VERITX completion {v} != authority {a}"),
             verdict=_verdict(ok),
+            quarantined=quarantine, finding=("F-0004" if quarantine else None),
             values={"veritx_completion": v, "authority_completion": a,
                     "veritx_window": veritx_stats.get("sample_window_cycles"),
                     "authority_window": authority.sample_window_cycles}))
@@ -271,6 +313,7 @@ def run_checks(*, spec, built, veritx_stats: dict, authority,
             detail="; ".join(problems)
             or "completion invariant across independent windows",
             verdict=_verdict(not problems),
+            quarantined=quarantine, finding=("F-0004" if quarantine else None),
             values={"completion": v, "windows": windows}))
 
     return _require_nonempty(results, "run_checks")
@@ -336,6 +379,7 @@ def run_rtl_checks(*, spec, built, veritx_stats: dict, rtl) -> list[CheckResult]
     """
     results: list[CheckResult] = []
     expected = spec.expected
+    quarantine = bool(getattr(spec, "network_claims_quarantined", False))
 
     if not rtl.packets:
         results.append(CheckResult(
@@ -391,7 +435,9 @@ def run_rtl_checks(*, spec, built, veritx_stats: dict, rtl) -> list[CheckResult]
             detail="; ".join(problems)
             or (f"every RTL flit's calibrated hop-equivalent is "
                 f"{expected.route_hops} (path LENGTH, not identity)"),
-            verdict=_verdict(not problems), values=values))
+            verdict=_verdict(not problems),
+            quarantined=quarantine, finding=("F-0004" if quarantine else None),
+            values=values))
 
     problems = []
     v = veritx_stats["completion_cycles"]
@@ -419,6 +465,7 @@ def run_rtl_checks(*, spec, built, veritx_stats: dict, rtl) -> list[CheckResult]
         name="rtl_completion", authority_class="rtl_calibrated",
         detail="; ".join(problems) or detail,
         verdict=_verdict(not problems),
+        quarantined=quarantine, finding=("F-0004" if quarantine else None),
         values={"veritx_completion": v, "rtl_completion": rtl_completion,
                 "tolerance": tolerance, "delta": rtl_completion - v}))
 

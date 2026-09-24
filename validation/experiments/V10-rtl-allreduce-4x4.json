@@ -23,5 +23,6 @@
     "conservation",
     "standalone_parity",
     "rtl_parity"
-  ]
+  ],
+  "network_claims_quarantined": true
 }

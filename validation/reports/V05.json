@@ -81,7 +81,9 @@
           "512": 78,
           "4096": 619
         }
-      }
+      },
+      "quarantined": false,
+      "finding": null
     },
     {
       "name": "trace_execution_conservation@7",
@@ -94,7 +96,9 @@
         "flits": 2,
         "authority_injected_flits": 2,
         "authority_accepted_flits": 2
-      }
+      },
+      "quarantined": false,
+      "finding": null
     },
     {
       "name": "standalone_parity@7",
@@ -107,7 +111,9 @@
         "authority_completion": 38,
         "veritx_window": 1001,
         "authority_window": 2001
-      }
+      },
+      "quarantined": false,
+      "finding": null
     },
     {
       "name": "trace_execution_conservation@64",
@@ -120,7 +126,9 @@
         "flits": 10,
         "authority_injected_flits": 10,
         "authority_accepted_flits": 10
-      }
+      },
+      "quarantined": false,
+      "finding": null
     },
     {
       "name": "standalone_parity@64",
@@ -133,7 +141,9 @@
         "authority_completion": 48,
         "veritx_window": 1002,
         "authority_window": 2002
-      }
+      },
+      "quarantined": false,
+      "finding": null
     },
     {
       "name": "trace_execution_conservation@512",
@@ -146,7 +156,9 @@
         "flits": 78,
         "authority_injected_flits": 78,
         "authority_accepted_flits": 78
-      }
+      },
+      "quarantined": false,
+      "finding": null
     },
     {
       "name": "standalone_parity@512",
@@ -159,7 +171,9 @@
         "authority_completion": 132,
         "veritx_window": 1010,
         "authority_window": 2010
-      }
+      },
+      "quarantined": false,
+      "finding": null
     },
     {
       "name": "trace_execution_conservation@4096",
@@ -172,7 +186,9 @@
         "flits": 619,
         "authority_injected_flits": 619,
         "authority_accepted_flits": 619
-      }
+      },
+      "quarantined": false,
+      "finding": null
     },
     {
       "name": "standalone_parity@4096",
@@ -185,8 +201,11 @@
         "authority_completion": 809,
         "veritx_window": 1078,
         "authority_window": 2078
-      }
+      },
+      "quarantined": false,
+      "finding": null
     }
   ],
-  "passed": true
+  "passed": true,
+  "quarantined_findings": []
 }

@@ -52,6 +52,48 @@ class RingAllReduceOracle:
         }
 
 
+def ring_allreduce_graph(ranks: int) -> dict[tuple[int, int], int]:
+    """Expected directed-pair MULTISET of a ring ALLREDUCE.
+
+    A ring reduce-scatter + all-gather moves data only between logical
+    neighbours: rank i sends to rank (i+1) mod k. Each neighbour edge
+    carries k-1 reduce-scatter messages and k-1 all-gather messages =
+    2(k-1) messages. Every other pair carries ZERO.
+
+    This is the check `ring_allreduce_oracle` cannot make: it validates
+    counts, this validates the communication GRAPH.
+    """
+    if ranks < 2:
+        raise ValueError(f"ring needs >= 2 ranks, got {ranks}")
+    pairs: dict[tuple[int, int], int] = {}
+    for i in range(ranks):
+        pairs[(i, (i + 1) % ranks)] = 2 * (ranks - 1)
+    return pairs
+
+
+def graph_conformance(ranks: int, observed: dict[tuple[int, int], int]
+                      ) -> dict:
+    """Compare an observed directed-pair multiset to the ring graph."""
+    expected = ring_allreduce_graph(ranks)
+
+    def _key(pair: tuple[int, int]) -> str:
+        return f"{pair[0]}->{pair[1]}"
+
+    extra = {_key(p): c for p, c in observed.items() if p not in expected}
+    missing = {_key(p): c for p, c in expected.items() if p not in observed}
+    wrong_count = {_key(p): [observed[p], expected[p]] for p in expected
+                   if p in observed and observed[p] != expected[p]}
+    return {
+        "ring_pairs": {_key(p): c for p, c in sorted(expected.items())},
+        "extra_non_neighbour_pairs": extra,
+        "missing_neighbour_pairs": missing,
+        "wrong_multiplicity": wrong_count,
+        "conforms": not (extra or missing or wrong_count),
+        "observed_distinct_pairs": len(observed),
+        "ring_distinct_pairs": len(expected),
+    }
+
+
 def ring_allreduce_oracle(*, ranks: int, payload_bytes: int,
                           flit_width_bits: int,
                           max_packet_flits: int = DEFAULT_MAX_PACKET_FLITS

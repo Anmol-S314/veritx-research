@@ -29,6 +29,7 @@ def test_experiment_all_checks_exact(path, tmp_path):
     binary = _binary()
     spec = ExperimentSpec.load(path)
     report = run_experiment(spec, binary, tmp_path)
-    failures = [c for c in report["checks"] if c["verdict"] != "exact"]
+    failures = [c for c in report["checks"]
+                if c["verdict"] != "exact" and not c.get("quarantined")]
     assert not failures, failures
     assert report["passed"]

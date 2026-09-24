@@ -37,7 +37,9 @@
         "flits": 1,
         "authority_injected_flits": 1,
         "authority_accepted_flits": 1
-      }
+      },
+      "quarantined": false,
+      "finding": null
     },
     {
       "name": "hand_counts",
@@ -50,7 +52,9 @@
         "flits": 1,
         "packets_provenance": "preregistered_hand",
         "flits_provenance": "posthoc_hand"
-      }
+      },
+      "quarantined": false,
+      "finding": null
     },
     {
       "name": "hand_route",
@@ -64,7 +68,9 @@
         "canonical_hops_avg": 2.0,
         "authority_hops_avg": 3.0,
         "authority_expected": 3
-      }
+      },
+      "quarantined": false,
+      "finding": null
     },
     {
       "name": "standalone_parity",
@@ -77,7 +83,9 @@
         "authority_completion": 17,
         "veritx_window": 1001,
         "authority_window": 2001
-      }
+      },
+      "quarantined": false,
+      "finding": null
     },
     {
       "name": "window_invariance",
@@ -92,8 +100,11 @@
           "authority": 2001,
           "authority_alt": 3001
         }
-      }
+      },
+      "quarantined": false,
+      "finding": null
     }
   ],
-  "passed": true
+  "passed": true,
+  "quarantined_findings": []
 }

@@ -134,8 +134,8 @@ BookSim's `Hops average`, so no product value is affected.
 
 ## F-0003 — collective completion is injection-schedule-bound
 
-**Status:** SUPPORTED BY INTERVENTION (low-pressure regime); departure
-regime not expressible in the current trace model
+**Status:** SUPPORTED BY INTERVENTION (low-pressure regime only);
+network claim quarantined by F-0004
 **Severity:** medium — limits what `completion_cycles` can rank
 **Found:** 2026-09-24, during experiments V09/V10; intervention added
 in the adversarial-hardening pass
@@ -145,9 +145,16 @@ in the adversarial-hardening pass
 The canonical trace projection assigns timestamps `0, 1, 2, ...` — one
 packet per cycle in emission order (`backend/booksim_projection.py`
 `trace_schedule`, documented as projection-defined emission order, not
-application wall-clock). The hypothesis is that the measured completion
-of a trace-driven run is dominated by the injection window, not by the
-network's ability to deliver.
+application wall-clock).
+
+**Claim, stated precisely:** under the tested low-pressure injection
+schedules, the completion follows the injection horizon with a small
+drain term. This is NOT a claim that "ALLREDUCE is injection-bound":
+(a) the current ALLREDUCE traffic graph is not a ring (F-0004), (b) the
+intervention can only make injection slower, never exceed one packet per
+cycle, and (c) the `max(50, 5%)` support threshold is a chosen
+heuristic, not an independently justified physical boundary. Rerun after
+F-0004 is resolved.
 
 ### Intervention (not correlation)
 
@@ -184,3 +191,73 @@ For workloads below the injection rate, `Optimizer`'s
 (which depends on packetisation) rather than by network contention.
 `workload_lowering_conservation` independently validates the packet
 count via the ring oracle, so at least that part is a checked quantity.
+
+---
+
+## F-0004 — the collective labelled `RING` is a complete directed exchange, not a ring
+
+**Status:** OPEN — HIGH (network-performance claims quarantined)
+**Severity:** high — invalidates the topology traffic of every ALLREDUCE
+network claim until resolved
+**Found:** 2026-09-24, by external audit of `1a6e4761`
+
+### What is wrong
+
+Production declares the ALLREDUCE algorithm as `RING`
+(`workload/messages.py` `SCHEDULES`, `workload/operations.py`), but
+`_collective_triples()` builds a complete directed exchange:
+
+```python
+for step in range(ref["steps"]):        # 2(k-1) steps
+    off = step % (k - 1) + 1            # offsets 1..k-1, cycling
+    for i in range(k):
+        triples.append((step, i, (i + off) % k))
+```
+
+A ring reduce-scatter/all-gather moves data only between logical
+neighbours `i -> (i+1) mod k`, with the chunk ownership rotating. The
+offset scheme above sends every rank to every other rank, so the
+communication graph is not a ring.
+
+### Measured
+
+```text
+V09 k=4 : 12 distinct directed pairs (all pairs), only 4 are ring
+          neighbours; 8 non-neighbour pairs; each pair used twice
+V02 k=16: 240 distinct directed pairs, only 16 are ring neighbours;
+          224 non-neighbour pairs
+```
+
+The counts are identical to a ring (`2(k-1)` steps, `2k(k-1)` messages,
+`2(k-1)B` bytes) — which is exactly why the count oracle agreed. On a
+4x4 row-major mesh the two graphs have very different hop distributions
+(ring: neighbour links only; this: all-pairs, ~2.667 mean Manhattan vs
+~1.875 for a logical ring), hence different link utilisation, hotspots,
+contention and completion.
+
+### Why B4 missed it
+
+`validation/harness/oracle.py` validated message count, total bytes,
+packet count and flit count, but never `(step, src, dst)`. Worse, the
+existing `verification/reference_semantics.py::ref_collective_messages()`
+uses the same offset scheme, so calling either "independent" would have
+been circular. The corpus now adds `collective_graph_conformance`
+(ring-neighbour pair multiset, no `veritx_dse` import), which fails on
+the current lowering.
+
+### Consequence
+
+Network-performance claims are **withdrawn/quarantined** for V02, V04,
+V09, V10 and F-0003. Their conservation/count/oracle checks remain
+valid and useful.
+
+### Resolution (product decision, not a harness change)
+
+- **A. RING means ring.** Change the schedule so each rank communicates
+  with its fixed logical neighbour per step and track the rotating chunk
+  separately.
+- **B. The exchange schedule is intentional.** Stop calling it `RING`;
+  give it an accurate identity (e.g. a direct permutation exchange) so
+  its topology sensitivity is not read as ring ALLREDUCE.
+
+Rerun V02/V04/V09/V10 and the F-0003 intervention after either choice.

@@ -152,6 +152,9 @@ class ExperimentSpec:
     timeout_s: int = 600
     path: Path | None = None
     sweep: SweepSpec | None = None
+    #: withdraw network-performance claims for a filed finding (F-0004):
+    #: network checks are reported but excluded from the pass/fail verdict
+    network_claims_quarantined: bool = False
 
     @classmethod
     def from_dict(cls, doc: Any, *, path: Path | None = None
@@ -219,7 +222,9 @@ class ExperimentSpec:
                    workload=workload, expected=expected, checks=checks,
                    seed=int(doc.get("seed", 0)),
                    timeout_s=int(doc.get("timeout_s", 600)), path=path,
-                   sweep=_parse_sweep(doc))
+                   sweep=_parse_sweep(doc),
+                   network_claims_quarantined=bool(
+                       doc.get("network_claims_quarantined", False)))
 
     @classmethod
     def load(cls, path: str | Path) -> "ExperimentSpec":

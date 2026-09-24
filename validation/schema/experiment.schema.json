@@ -101,6 +101,7 @@
       }
     },
     "seed": {"type": "integer", "minimum": 0, "default": 0},
-    "timeout_s": {"type": "integer", "minimum": 1, "default": 600}
+    "timeout_s": {"type": "integer", "minimum": 1, "default": 600},
+    "network_claims_quarantined": {"type": "boolean", "default": false}
   }
 }
