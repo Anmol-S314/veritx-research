@@ -155,14 +155,30 @@ because the script resolves its own path via `command -v "$0"` and
 `build.sh` is not on PATH. This is a reproducibility trap (P0 in the
 closure plan's reproducible-build phase).
 
-### 5.5 Full validation battery
+### 5.5 Full validation battery (all engines built)
 
 ```text
 python3 -m validation.harness.run --all --mutations --metamorphic --engines --intervention
 ```
 
-Pending a clean-build run. The engine gate is now green with all three
-engines built (above); the full command is the P1.5 release gate.
+Result: **72/72 checks exact, 0 quarantined**. V01–V10 PASS, mutations
+M1–M8 CAUGHT, metamorphic M1–M8 PASS, F-0003 SUPPORTED, engine gates:
+
+```text
+ramulator_battery  PASS  established      16/16 checks
+rtl_selfcheck      PASS  established      GATE R0 ALL CHECKS PASSED
+astra_runtime      PASS  NOT_ESTABLISHED  executes; aggregate/exposed_comm unexplained
+```
+
+ASTRA numerical validity remains explicitly NOT_ESTABLISHED and is
+excluded from scientific comparison. The generated report files
+(`validation/reports/*.json`, `ENGINES.md`, `MUTATIONS.md`) differ from
+the committed B4 freeze only in run-varying metadata (wall time, local
+binary SHA, ephemeral scratch paths), so they were **not** committed —
+committing them would put untracked-run provenance into tracked evidence.
+Finding: the harness embeds the run's temp directory path in report text;
+that should be normalized before reports are used as durable evidence
+(§7).
 
 ## 6. Known failures / skips at baseline
 

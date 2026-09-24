@@ -34,7 +34,7 @@ item. A `BLOCKER` is release-critical: the seal is refused until closed.
 | P1.2 | Ring oracle exact step labels + exact phase ranges | DONE (`190d04f1`) |
 | P1.3 | Scope statement: network-level ring semantics only (no chunk ownership) | DONE (`FINDINGS.md`) |
 | P1.4 | Keep pre-F-0004 numbers permanently in `FINDINGS.md` | DONE |
-| P1.5 | Run `validation.harness.run --all --mutations --metamorphic --engines --intervention` green from a clean build | OPEN |
+| P1.5 | Run `validation.harness.run --all --mutations --metamorphic --engines --intervention` green from a clean build | **DONE locally** (72/72 exact, 0 quarantined); clean-build re-run owed |
 
 ## P2 — durable run bundles (§7)
 
