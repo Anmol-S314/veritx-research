@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "id": "V07",
+  "title": "4x4 mesh, single 1-flit P2P 0 -> 15 (longest route): RTL parity",
+  "fabric": {
+    "topology_family": "mesh",
+    "compute_tiles": 16,
+    "tp": 16,
+    "link_width": 64,
+    "concentration": 1,
+    "num_vcs": 1
+  },
+  "workload": {
+    "kind": "p2p",
+    "src_rank": 0,
+    "dst_rank": 15,
+    "payload_bytes": 7
+  },
+  "expected": {
+    "packets": 1,
+    "flits": 2,
+    "route_hops": 6,
+    "notes": "Opposite corners of a 4x4 mesh: Manhattan distance 3+3 = 6. A 4x4 mesh flit header is 11 bits (4+4 source/dest, 2 flit_type, 1 vc), leaving 53 payload bits, so 7 payload bytes = 56 bits needs 2 flits. Exercises the longest route and the RTL 7+5d law at d=6."
+  },
+  "checks": [
+    "conservation",
+    "hand_counts",
+    "hand_route",
+    "standalone_parity",
+    "rtl_parity"
+  ]
+}

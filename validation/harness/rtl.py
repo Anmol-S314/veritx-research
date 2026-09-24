@@ -38,6 +38,10 @@ SOURCES = ("noc_pkg.sv", "mesh.sv", "router.sv", "nic.sv", "islip.sv")
 LATENCY_BASE = 7
 LATENCY_PER_HOP = 5
 
+#: every injection cycle is shifted by this much (R1 treats cycle 0 as a
+#: multicast range word). Completion = max_atime - CYCLE_OFFSET.
+CYCLE_OFFSET = 1
+
 _TOTALS = re.compile(r"R1 totals: injected=(\d+) ejected=(\d+)")
 
 
@@ -68,19 +72,24 @@ class RtlPacket:
 
 @dataclass(frozen=True)
 class RtlResult:
-    injected_packets: int
-    ejected_packets: int
+    injected_flits: int
+    ejected_flits: int
     packets: tuple[RtlPacket, ...]
     run_cycles: int
 
     @property
-    def ejected_flits(self) -> int:
-        # the dump carries one line per ejected flit
+    def flit_lines(self) -> int:
+        """Ejected flit records in the dump (one line per ejected flit)."""
         return len(self.packets)
 
     @property
     def max_atime(self) -> int:
         return max((p.atime for p in self.packets), default=0)
+
+    @property
+    def completion_cycles(self) -> int:
+        """Last-ejection cycle in the canonical time base (offset removed)."""
+        return self.max_atime - CYCLE_OFFSET
 
 
 def mesh_radix(spec) -> tuple[int, int]:
@@ -168,8 +177,8 @@ def run(*, binary: Path, run_dir: Path, run_cycles: int) -> RtlResult:
         atime, cl, src, dst, pid, itime = (int(x) for x in fields)
         packets.append(RtlPacket(atime=atime, cl=cl, src=src, dst=dst,
                                  pid=pid, itime=itime))
-    return RtlResult(injected_packets=int(totals.group(1)),
-                     ejected_packets=int(totals.group(2)),
+    return RtlResult(injected_flits=int(totals.group(1)),
+                     ejected_flits=int(totals.group(2)),
                      packets=tuple(packets), run_cycles=run_cycles)
 
 

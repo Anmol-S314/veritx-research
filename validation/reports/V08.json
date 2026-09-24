@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "id": "V06",
-  "title": "2x2 mesh, single 1-flit P2P 0 -> 3: T3 RTL (Verilator) parity",
+  "id": "V08",
+  "title": "4x4 mesh, 3-flit P2P burst 0 -> 15: RTL tail latency + cadence",
   "fabric": {
-    "compute_tiles": 4,
-    "tp": 4,
+    "compute_tiles": 16,
+    "tp": 16,
     "link_width": 64,
     "num_vcs": 1
   },
@@ -12,18 +12,18 @@
   "profile_id": "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1",
   "veritx": {
     "packets": 1,
-    "flits": 1,
-    "completion_cycles": 17,
+    "flits": 3,
+    "completion_cycles": 39,
     "sample_window_cycles": 1001,
-    "canonical_hops_avg": 2.0
+    "canonical_hops_avg": 6.0
   },
   "authority": {
     "class": "standalone_booksim",
-    "completion_cycles": 17,
+    "completion_cycles": 39,
     "sample_window_cycles": 2001,
-    "injected_flits": 1,
-    "accepted_flits": 1,
-    "hops_avg": 3.0
+    "injected_flits": 3,
+    "accepted_flits": 3,
+    "hops_avg": 7.0
   },
   "checks": [
     {
@@ -34,9 +34,9 @@
       "detail": "packets and flits close exactly",
       "values": {
         "packets": 1,
-        "flits": 1,
-        "authority_injected_flits": 1,
-        "authority_accepted_flits": 1
+        "flits": 3,
+        "authority_injected_flits": 3,
+        "authority_accepted_flits": 3
       }
     },
     {
@@ -47,7 +47,7 @@
       "detail": "packet/flit counts match by hand",
       "values": {
         "packets": 1,
-        "flits": 1
+        "flits": 3
       }
     },
     {
@@ -57,10 +57,10 @@
       "verdict": "exact",
       "detail": "router hops match hand arithmetic; authority = hand + 1 (destination ejection counted)",
       "values": {
-        "hand_router_hops": 2,
-        "canonical_hops_avg": 2.0,
-        "authority_hops_avg": 3.0,
-        "authority_expected": 3
+        "hand_router_hops": 6,
+        "canonical_hops_avg": 6.0,
+        "authority_hops_avg": 7.0,
+        "authority_expected": 7
       }
     },
     {
@@ -68,10 +68,10 @@
       "authority_class": "standalone_booksim",
       "independence": "semi_independent",
       "verdict": "exact",
-      "detail": "VERITX completion 17 == authority 17",
+      "detail": "VERITX completion 39 == authority 39",
       "values": {
-        "veritx_completion": 17,
-        "authority_completion": 17,
+        "veritx_completion": 39,
+        "authority_completion": 39,
         "veritx_window": 1001,
         "authority_window": 2001
       }
@@ -83,10 +83,10 @@
       "verdict": "exact",
       "detail": "RTL injects and ejects the exact workload",
       "values": {
-        "rtl_injected_flits": 1,
-        "rtl_ejected_flits": 1,
-        "rtl_dump_flits": 1,
-        "canonical_flits": 1
+        "rtl_injected_flits": 3,
+        "rtl_ejected_flits": 3,
+        "rtl_dump_flits": 3,
+        "canonical_flits": 3
       }
     },
     {
@@ -94,11 +94,11 @@
       "authority_class": "rtl",
       "independence": "independent",
       "verdict": "exact",
-      "detail": "every RTL flit routes 2 hops (matches hand Manhattan)",
+      "detail": "every RTL flit routes 6 hops (matches hand Manhattan)",
       "values": {
-        "hand_router_hops": 2,
+        "hand_router_hops": 6,
         "rtl_hops": [
-          2
+          6
         ]
       }
     },
@@ -107,10 +107,10 @@
       "authority_class": "rtl_calibrated",
       "independence": "semi_independent",
       "verdict": "exact",
-      "detail": "RTL completion 17 == canonical completion 17; RTL tail latency obeys 7+5*hop",
+      "detail": "RTL completion 39 == canonical completion 39; RTL tail latency obeys 7+5*hop",
       "values": {
-        "veritx_completion": 17,
-        "rtl_completion": 17,
+        "veritx_completion": 39,
+        "rtl_completion": 39,
         "rtl_law": "7 + 5*hop"
       }
     }

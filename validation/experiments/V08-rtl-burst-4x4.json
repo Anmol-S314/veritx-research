@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "id": "V08",
+  "title": "4x4 mesh, 3-flit P2P burst 0 -> 15: RTL tail latency + cadence",
+  "fabric": {
+    "topology_family": "mesh",
+    "compute_tiles": 16,
+    "tp": 16,
+    "link_width": 64,
+    "concentration": 1,
+    "num_vcs": 1
+  },
+  "workload": {
+    "kind": "p2p",
+    "src_rank": 0,
+    "dst_rank": 15,
+    "payload_bytes": 14
+  },
+  "expected": {
+    "packets": 1,
+    "flits": 3,
+    "route_hops": 6,
+    "notes": "A 3-flit packet over the longest route. 14 payload bytes = 112 bits over a 53-bit usable flit needs 3 flits. RTL tail latency must still obey 7+5d and every flit must eject (1/cycle cadence). Exercises multi-flit packet handling, not just single-flit."
+  },
+  "checks": [
+    "conservation",
+    "hand_counts",
+    "hand_route",
+    "standalone_parity",
+    "rtl_parity"
+  ]
+}

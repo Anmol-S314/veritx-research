@@ -241,26 +241,25 @@ def run_rtl_checks(*, spec, built, veritx_stats: dict, rtl) -> list[CheckResult]
     expected = spec.expected
 
     problems = []
-    if rtl.injected_packets != built.packets:
+    if rtl.injected_flits != built.flits:
         problems.append(
-            f"RTL injected {rtl.injected_packets} != canonical "
-            f"packets {built.packets}")
-    if rtl.ejected_packets != built.packets:
-        problems.append(
-            f"RTL ejected {rtl.ejected_packets} != canonical "
-            f"packets {built.packets}")
+            f"RTL injected {rtl.injected_flits} flits != canonical "
+            f"{built.flits}")
     if rtl.ejected_flits != built.flits:
         problems.append(
-            f"RTL ejected flits {rtl.ejected_flits} != canonical "
-            f"flits {built.flits}")
+            f"RTL ejected {rtl.ejected_flits} flits != canonical "
+            f"{built.flits}")
+    if rtl.flit_lines != built.flits:
+        problems.append(
+            f"RTL dump carries {rtl.flit_lines} ejected flits != canonical "
+            f"{built.flits}")
     results.append(CheckResult(
         name="rtl_conservation", authority_class="rtl",
         detail="; ".join(problems) or "RTL injects and ejects the exact workload",
         verdict=_verdict(not problems),
-        values={"rtl_injected_packets": rtl.injected_packets,
-                "rtl_ejected_packets": rtl.ejected_packets,
+        values={"rtl_injected_flits": rtl.injected_flits,
                 "rtl_ejected_flits": rtl.ejected_flits,
-                "canonical_packets": built.packets,
+                "rtl_dump_flits": rtl.flit_lines,
                 "canonical_flits": built.flits}))
 
     if expected.route_hops is not None:
@@ -268,12 +267,12 @@ def run_rtl_checks(*, spec, built, veritx_stats: dict, rtl) -> list[CheckResult]
         bad = [p for p in rtl.packets if p.hops != expected.route_hops]
         if bad:
             problems.append(
-                f"{len(bad)}/{len(rtl.packets)} RTL packets routed "
+                f"{len(bad)}/{len(rtl.packets)} RTL flits routed "
                 f"{bad[0].hops} hops, hand says {expected.route_hops}")
         results.append(CheckResult(
             name="rtl_route", authority_class="rtl",
             detail="; ".join(problems)
-            or (f"every RTL packet routes {expected.route_hops} hops "
+            or (f"every RTL flit routes {expected.route_hops} hops "
                 "(matches hand Manhattan)"),
             verdict=_verdict(not problems),
             values={"hand_router_hops": expected.route_hops,
@@ -281,17 +280,24 @@ def run_rtl_checks(*, spec, built, veritx_stats: dict, rtl) -> list[CheckResult]
 
         problems = []
         v = veritx_stats["completion_cycles"]
-        rtl_latency = (max(p.latency for p in rtl.packets)
-                       if rtl.packets else None)
-        if rtl_latency != v:
+        rtl_completion = rtl.completion_cycles
+        if rtl_completion != v:
             problems.append(
-                f"RTL latency {rtl_latency} != canonical completion {v}")
+                f"RTL completion {rtl_completion} != canonical completion {v}")
+        # self-consistency: the tail latency must obey the RTL's own law
+        for p in rtl.packets:
+            if p.hops is None or p.latency != 7 + 5 * p.hops:
+                problems.append(
+                    f"RTL flit latency {p.latency} violates its 7+5*hop law "
+                    f"for {p.hops} hops")
+                break
         results.append(CheckResult(
             name="rtl_latency", authority_class="rtl_calibrated",
             detail="; ".join(problems)
-            or (f"RTL latency {rtl_latency} == canonical completion {v} "
-                "(tb calibrated to the BookSim cycle model)"),
+            or (f"RTL completion {rtl_completion} == canonical completion {v}; "
+                "RTL tail latency obeys 7+5*hop"),
             verdict=_verdict(not problems),
-            values={"veritx_completion": v, "rtl_latency": rtl_latency,
+            values={"veritx_completion": v,
+                    "rtl_completion": rtl_completion,
                     "rtl_law": "7 + 5*hop"}))
     return results
