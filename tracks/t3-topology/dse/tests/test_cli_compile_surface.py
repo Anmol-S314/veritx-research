@@ -94,8 +94,12 @@ def _preset_argv(store: Path, preset: str = "mesh4", extra=()) -> list[str]:
             "--store", str(store), *extra]
 
 
-def _cli(args: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess:
+def _cli(args: list[str], cwd: Path | None = None,
+         env_extra: dict[str, str] | None = None
+         ) -> subprocess.CompletedProcess:
     env = {**os.environ, "PYTHONPATH": str(DSE_DIR)}
+    if env_extra:
+        env.update(env_extra)
     return subprocess.run(
         [sys.executable, "-m", "veritx_dse.cli", *args],
         capture_output=True, text=True, timeout=180,
@@ -351,16 +355,15 @@ def test_human_output_does_not_imply_execution(tmp_path, capsys):
 # ── no BookSim / no legacy reachability ────────────────────────────────────
 
 def test_no_booksim_binary_needed_for_canonical_compile(tmp_path):
-    booksim_paths = [
-        DSE_DIR.parent.parent.parent / "third_party" / "booksim2" / "src"
-        / "booksim",
-        DSE_DIR.parent.parent.parent / "third_party" / "booksim2" / "build"
-        / "booksim",
-    ]
-    assert not any(path.exists() for path in booksim_paths), \
-        "this proof assumes the BookSim binary is absent"
+    # The property is "canonical compile never resolves or runs BookSim",
+    # not "this checkout happens to lack a binary". Point the BookSim
+    # discovery seam at a path that cannot exist; a compile that reached
+    # for it would fail. This stays true in a release build where the
+    # backend IS built.
+    missing = tmp_path / "no-such-booksim"
     result = _cli(["compile", "--preset", "mesh4", "--policy", POLICY,
-                   "--store", str(tmp_path / "store")], cwd=tmp_path)
+                   "--store", str(tmp_path / "store")], cwd=tmp_path,
+                  env_extra={"VERITX_BOOKSIM_BIN": str(missing)})
     assert result.returncode == 0, result.stderr[-800:]
     assert "RESOLVED" in result.stdout
 
