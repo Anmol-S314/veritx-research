@@ -103,7 +103,8 @@ def _workload_graph(spec: ExperimentSpec, parallelism: Any) -> Any:
                          participant_count=participants, operations=tuple(ops))
 
 
-def build(spec: ExperimentSpec) -> BuiltExperiment:
+def build(spec: ExperimentSpec, *, request_doc: dict[str, Any] | None = None
+          ) -> BuiltExperiment:
     from veritx_dse.application.compile import compile_bundle_v3
     from veritx_dse.backend.booksim_projection import (
         BookSimProjectionParents, prepare_booksim_input,
@@ -114,7 +115,8 @@ def build(spec: ExperimentSpec) -> BuiltExperiment:
     from veritx_dse.workload.messages import LogicalMessageArtifactV2
     from veritx_dse.workload.traffic import PhysicalTrafficArtifactV2
 
-    request = CompileRequestV3.from_dict(_request_doc(spec))
+    doc = request_doc if request_doc is not None else _request_doc(spec)
+    request = CompileRequestV3.from_dict(doc)
     bundle = compile_bundle_v3(request)
     graph = _workload_graph(spec, bundle.inventory.parallelism)
     logical = LogicalMessageArtifactV2(graph=graph)

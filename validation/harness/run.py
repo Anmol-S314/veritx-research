@@ -236,6 +236,21 @@ def _mutations_markdown(results) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _metamorphic_markdown(results) -> str:
+    lines = ["# VERITX Metamorphic Report", "",
+             "Transforms with a known invariant; the physics must not move.",
+             "", "| transform | invariant | result | detail |", "|---|---|---|---|"]
+    for m in results:
+        lines.append(f"| {m.name} | {m.invariant} | "
+                     f"{'PASS' if m.passed else '**FAIL**'} | {m.detail} |")
+    passed = sum(1 for m in results if m.passed)
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+    lines.append(f"invariants held: {passed}/{len(results)}")
+    return "\n".join(lines) + "\n"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="validation.harness.run")
     parser.add_argument("experiments", nargs="*",
@@ -244,6 +259,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="run every experiment in validation/experiments")
     parser.add_argument("--mutations", action="store_true",
                         help="also run the negative mutation layer")
+    parser.add_argument("--metamorphic", action="store_true",
+                        help="also run the metamorphic invariant layer")
     parser.add_argument("--reports", default=str(DEFAULT_REPORTS))
     args = parser.parse_args(argv)
 
@@ -251,8 +268,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.all:
         paths = sorted(DEFAULT_EXPERIMENTS.glob("V*.json"))
     paths += [Path(p) for p in args.experiments]
-    if not paths and not args.mutations:
-        parser.error("no experiments given (pass files, --all or --mutations)")
+    if not paths and not args.mutations and not args.metamorphic:
+        parser.error("no experiments given (pass files, --all, --mutations or "
+                     "--metamorphic)")
 
     binary = _binary()
     reports_dir = Path(args.reports)
@@ -292,6 +310,19 @@ def main(argv: list[str] | None = None) -> int:
                   f"{m.detail}")
         ok = ok and all(m.caught for m in mutations)
         print(f"mutations: {reports_dir / 'MUTATIONS.md'}")
+
+    if args.metamorphic:
+        from .metamorphic import run_metamorphic
+        meta = run_metamorphic(binary, work_root)
+        (reports_dir / "METAMORPHIC.md").write_text(
+            _metamorphic_markdown(meta))
+        (reports_dir / "metamorphic.json").write_text(json.dumps(
+            [dataclasses.asdict(m) for m in meta], indent=2) + "\n")
+        print("\nmetamorphic layer:")
+        for m in meta:
+            print(f"  [{'pass' if m.passed else 'FAIL'}] {m.name}: {m.detail}")
+        ok = ok and all(m.passed for m in meta)
+        print(f"metamorphic: {reports_dir / 'METAMORPHIC.md'}")
 
     shutil.rmtree(work_root, ignore_errors=True)
     return 0 if ok else 1

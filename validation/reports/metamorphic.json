@@ -1,0 +1,66 @@
+[
+  {
+    "name": "M1_request_key_reorder",
+    "invariant": "identity and physics unchanged under JSON key reordering",
+    "passed": true,
+    "detail": "prepared_id and physics identical",
+    "observations": {}
+  },
+  {
+    "name": "M2_requirement_threshold",
+    "invariant": "non-physical field does not move physics",
+    "passed": true,
+    "detail": "physics identical",
+    "observations": {
+      "identity_moved": true
+    }
+  },
+  {
+    "name": "M3_output_format",
+    "invariant": "non-physical field does not move physics",
+    "passed": true,
+    "detail": "physics identical",
+    "observations": {
+      "identity_moved": true
+    }
+  },
+  {
+    "name": "M4_model_rename",
+    "invariant": "non-physical field does not move physics",
+    "passed": true,
+    "detail": "physics identical",
+    "observations": {
+      "identity_moved": true
+    }
+  },
+  {
+    "name": "M5_duplicate_requirement",
+    "invariant": "non-physical field does not move physics",
+    "passed": true,
+    "detail": "physics identical",
+    "observations": {
+      "identity_moved": true
+    }
+  },
+  {
+    "name": "M6_seed_change",
+    "invariant": "seed does not move prepared identity or physics",
+    "passed": true,
+    "detail": "prepared_id and physics identical",
+    "observations": {}
+  },
+  {
+    "name": "M7_repeat_run",
+    "invariant": "two runs of one input share evidence identity",
+    "passed": true,
+    "detail": "evidence_id and stats identical",
+    "observations": {}
+  },
+  {
+    "name": "M8_run_dir_independence",
+    "invariant": "moving the run directory does not move scientific identity",
+    "passed": true,
+    "detail": "evidence_id identical",
+    "observations": {}
+  }
+]
