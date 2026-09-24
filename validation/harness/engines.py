@@ -105,6 +105,60 @@ def run_rtl_selfcheck(repo_root: Path, work_root: Path,
     return EngineResult("rtl_selfcheck", passed, detail, checks)
 
 
+def run_astra(repo_root: Path, work_root: Path,
+              *, timeout: int = 300) -> EngineResult:
+    """Run the canonical ASTRA projection on the real AstraSim_BookSim2.
+
+    This is an engine gate, not an independent-parity check: ASTRA's
+    BookSim2 frontend shares the BookSim2 network engine, so it cannot
+    independently falsify the network. It proves the ASTRA path executes
+    the canonical projection and reports per-rank cycles for every rank.
+    """
+    from veritx_dse.backend import astra
+    from .fabric import build as build_fabric
+    from .spec import ExperimentSpec
+
+    binary = astra.resolve_runtime_binary()
+    if binary is None:
+        return EngineResult(
+            "astra_runtime", False,
+            "no AstraSim_BookSim2 binary; build it with "
+            "third_party/astra-sim/build/astra_booksim2/build.sh")
+    spec = ExperimentSpec.load(
+        Path(__file__).resolve().parents[1] / "experiments"
+        / "V02-allreduce-4x4.json")
+    built = build_fabric(spec)
+    try:
+        projection = astra.AstraWorkloadProjection.build(
+            logical=built.logical,
+            resolved_fabric=built.bundle.resolved_fabric,
+            mapping=built.bundle.mapping, attachment=built.bundle.attachment,
+            et_granularity="collectives")
+        et_dir = Path(work_root) / "astra-et"
+        projection.write_chakra(directory=et_dir, stem="canon")
+        fixture = (Path(repo_root) / "tracks" / "t3-topology" / "dse"
+                   / "tests" / "fixtures" / "astra_tiny")
+        evidence = astra.run_astra(
+            binary=binary, projection=projection,
+            workload_configuration=et_dir / "canon.et",
+            system_configuration=fixture / "system.json",
+            network_configuration=fixture / "mesh4x4.cfg",
+            memory_configuration=fixture / "memory.json",
+            logging_folder=Path(work_root) / "astra-logs",
+            timeout_s=timeout)
+    except Exception as exc:  # noqa: BLE001
+        return EngineResult("astra_runtime", False,
+                            f"{type(exc).__name__}: {exc}")
+    ranks = len(evidence.per_rank_cycles)
+    comm = evidence.aggregate_cycles - projection.declared_compute_cycles()
+    ok = evidence.status == "EXECUTED" and ranks == 16 and comm > 0
+    return EngineResult(
+        "astra_runtime", ok,
+        f"status={evidence.status}, ranks={ranks}, aggregate="
+        f"{evidence.aggregate_cycles}c, exposed_comm={comm}c")
+
+
 def run_engines(repo_root: Path, work_root: Path) -> list[EngineResult]:
     return [run_ramulator(repo_root),
-            run_rtl_selfcheck(repo_root, work_root)]
+            run_rtl_selfcheck(repo_root, work_root),
+            run_astra(repo_root, work_root)]

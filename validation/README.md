@@ -73,6 +73,13 @@ The BookSim binary is discovered via `veritx_dse.core.paths.BOOKSIM_BIN`
 or `VERITX_BOOKSIM_BIN`. A missing binary fails the corpus; it never
 silently skips a differential check.
 
+Independent-engine gates (`--engines`) qualify the second engines
+themselves: the Ramulator memory battery (run under its vendored Python
+3.12), the T3 RTL R0 self-checks, and the ASTRA-Sim runtime executing the
+canonical 4x4 projection. The ASTRA gate proves the path executes; it is
+NOT independent parity, because ASTRA's frontend shares the BookSim2
+network engine.
+
 ## Layout
 
 ```text

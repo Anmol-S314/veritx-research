@@ -24,6 +24,7 @@ class BuiltExperiment:
     packets: int
     flits: int
     canonical_hops_avg: float | None
+    logical: Any = None
 
 
 def _request_doc(spec: ExperimentSpec) -> dict[str, Any]:
@@ -140,7 +141,7 @@ def build(spec: ExperimentSpec, *, request_doc: dict[str, Any] | None = None
     return BuiltExperiment(spec=spec, bundle=bundle, parents=parents,
                            prepared=prepared, profile_id=profile.profile_id,
                            packets=packets, flits=flits,
-                           canonical_hops_avg=hops)
+                           canonical_hops_avg=hops, logical=logical)
 
 
 def _canonical_hops_avg(prepared: Any, packets: int) -> float | None:

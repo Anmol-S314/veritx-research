@@ -21,7 +21,7 @@
     "name": "M4_config_tamper_in_run_dir",
     "caught": true,
     "expected": "BookSimExecutionError: different bytes",
-    "detail": "refused: /tmp/validation-work-4fh8szqg/m4/config.cfg already holds different bytes; refusing to overwrite a prepared input"
+    "detail": "refused: /tmp/validation-work-nj4on9st/m4/config.cfg already holds different bytes; refusing to overwrite a prepared input"
   },
   {
     "name": "M5_binary_swap_after_identification",
@@ -33,7 +33,7 @@
     "name": "M6_evidence_byte_flip",
     "caught": true,
     "expected": "BackendEvidenceError: modified after execution",
-    "detail": "refused: evidence file /tmp/validation-work-4fh8szqg/m-real/backend-evidence.json digest b3eb52d9fb960f1d3deee8bab9eaf41bfcab2b93"
+    "detail": "refused: evidence file /tmp/validation-work-nj4on9st/m-real/backend-evidence.json digest c0fb2bb644512ee268a310fe701d32b716ae6fbe"
   },
   {
     "name": "M7_wrong_producer_sha",

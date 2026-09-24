@@ -2,7 +2,7 @@
   {
     "name": "ramulator_battery",
     "passed": true,
-    "detail": "1.9s, 16/16 checks; 16/16 checks",
+    "detail": "1.7s, 16/16 checks; 16/16 checks",
     "checks": [
       [
         "vendored-ext-present",
@@ -167,5 +167,11 @@
         ""
       ]
     ]
+  },
+  {
+    "name": "astra_runtime",
+    "passed": true,
+    "detail": "status=EXECUTED, ranks=16, aggregate=30010310c, exposed_comm=30000310c",
+    "checks": []
   }
 ]
