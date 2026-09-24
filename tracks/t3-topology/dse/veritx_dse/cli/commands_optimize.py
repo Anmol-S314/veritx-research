@@ -28,10 +28,15 @@ def _parse_clock_hz(text: Any) -> int | None:
     """Transport parsing for --network-clock-hz (exact Hz required).
 
     The evaluation core accepts only exact int/None clocks (float Hz
-    would make wall-time claims inexact). An integral float string
-    such as "1e9" coerces exactly; anything else refuses here at the
-    CLI boundary, never inside the science.
+    would make wall-time claims inexact). An integral decimal/scientific
+    string such as "1e9" is parsed EXACTLY (``Fraction``), never through
+    binary float: ``float("9007199254740993")`` silently becomes
+    9007199254740992, so a frequency would move without anyone changing
+    it. Non-integral or non-finite strings refuse here at the CLI
+    boundary, never inside the science.
     """
+    from fractions import Fraction
+
     if text is None:
         return None
     if isinstance(text, bool):
@@ -39,12 +44,16 @@ def _parse_clock_hz(text: Any) -> int | None:
     if isinstance(text, int):
         value = text
     else:
-        number = float(str(text))
-        if number != int(number):
+        try:
+            number = Fraction(text)
+        except (TypeError, ValueError, ZeroDivisionError) as exc:
+            raise ValueError(
+                f"network clock {text!r} is not an exact number") from exc
+        if number.denominator != 1:
             raise ValueError(
                 f"network clock {text!r} Hz is not an exact integer "
                 "count — refusing inexact wall-time claims")
-        value = int(number)
+        value = number.numerator
     if value <= 0:
         raise ValueError("network clock must be positive")
     return value
