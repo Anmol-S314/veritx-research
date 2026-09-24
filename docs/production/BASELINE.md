@@ -136,11 +136,12 @@ inventory) and the 160 deselected live-backend tests.
 
 ```text
 PYTHONPATH=... pytest validation/tests -q
+16 passed in 306.34s   (0 failed)
 ```
 
-Baseline with ASTRA absent: `15 passed, 1 failed` (engine gate). With
-BookSim + ASTRA + Ramulator built, the engine gate itself passes:
-`validation/tests/test_engines.py` → `1 passed in 191.51s`.
+Baseline with ASTRA absent was `15 passed, 1 failed` (engine gate). With
+BookSim + ASTRA + Ramulator built the engine gate itself passes
+(`validation/tests/test_engines.py` → `1 passed in 191.51s`).
 
 ### 5.4b Backend build commands that actually work in this environment
 ```bash
