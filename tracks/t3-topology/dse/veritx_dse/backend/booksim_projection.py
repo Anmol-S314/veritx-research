@@ -58,7 +58,10 @@ from veritx_dse.workload.traffic import PhysicalTrafficArtifactV2
 #: v2: the prepared identity includes the executed run ``seed`` (reseal
 #: audit). v1 omitted an executed input, so the generations are declared
 #: incompatible rather than left to differ by hash only.
-BOOKSIM_PROJECTION_SCHEMA_VERSION = 2
+#: v3: the prepared identity also binds ``expected_flits``, so the
+#: execution gate can enforce the fork's flit-injected == flit-accepted ==
+#: expected conservation law instead of only packet count.
+BOOKSIM_PROJECTION_SCHEMA_VERSION = 3
 
 _MESH_DOR_PROFILE_ID = "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1"
 _MESH_DOR_SEMANTICS_VERSION = "booksim2-fork+P1B-meshdor-dump+prepared-v2"
@@ -740,6 +743,9 @@ class PreparedBookSimInput:
     sample_period: int = 0
     max_samples: int = 0
     expected_packets: int = 0
+    #: total flits the trace declares (bound so flit conservation can be
+    #: checked against the fork's emitted injected/accepted counters).
+    expected_flits: int = 0
     #: the executed BookSim seed: a per-run simulation input, so it is part
     #: of the prepared identity (reseal audit) and rendered into the config.
     seed: int = 0
@@ -768,6 +774,7 @@ class PreparedBookSimInput:
             "sample_period": self.sample_period,
             "max_samples": self.max_samples,
             "expected_packets": self.expected_packets,
+            "expected_flits": self.expected_flits,
             "seed": self.seed,
             "config_sha256": content_hash("srota/PreparedBookSimConfig", 1,
                                           {"text": self.config_text}),
@@ -823,7 +830,6 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
         raise BookSimProjectionError("seed must be a non-negative int")
     profile = select_booksim_profile(parents)
     conservation = verify_trace_conservation(parents.physical_traffic)
-    del conservation
     config = render_config(parents, profile, seed=seed)
     rendered = parse_config_values(config.decode())
     # Every REQUIRED rendered field must appear (a required pin silently
@@ -867,6 +873,7 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
         sample_period=int(rendered["sample_period"]),
         max_samples=int(rendered["max_samples"]),
         expected_packets=schedule["expected_packets"],
+        expected_flits=conservation["flits_total"],
         seed=seed)
 
 

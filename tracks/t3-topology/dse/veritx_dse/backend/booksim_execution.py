@@ -69,6 +69,11 @@ _WINDOW_RE = re.compile(r"Time taken is (\d+) cycles")
 _COMPLETION_RE = re.compile(r"Completion time is (\d+) cycles")
 _LOADED_RE = re.compile(r"Loaded (?:text|binary) trace: (\d+) packets")
 _INJECTED_RE = re.compile(r"injected=(\d+)")
+#: fork conservation counters, emitted once at the drain-success point
+#: (trafficmanager.cpp). Required for a supervised (non-injected) run.
+_DELIVERED_RE = re.compile(r"Trace replay complete: delivered (\d+) packets")
+_FLITS_INJECTED_RE = re.compile(r"VeritX: injected flits total = (\d+)")
+_FLITS_ACCEPTED_RE = re.compile(r"VeritX: accepted flits total = (\d+)")
 #: tokens the fork prints when a statistic has no samples
 UNAVAILABLE_TOKENS = ("-", "nan", "-nan", "+nan", "inf", "-inf", "+inf",
                       "infinity", "-infinity")
@@ -254,6 +259,15 @@ def parse_booksim_stats(stdout: str, stderr: str) -> dict[str, Any]:
     injected_match = _INJECTED_RE.search(combined)
     injected = int(injected_match.group(1)) if injected_match else None
 
+    delivered_match = _DELIVERED_RE.search(combined)
+    delivered = int(delivered_match.group(1)) if delivered_match else None
+    flits_inj_match = _FLITS_INJECTED_RE.search(combined)
+    flits_injected = (int(flits_inj_match.group(1))
+                      if flits_inj_match else None)
+    flits_acc_match = _FLITS_ACCEPTED_RE.search(combined)
+    flits_accepted = (int(flits_acc_match.group(1))
+                      if flits_acc_match else None)
+
     hops = {int(rank): [float(v) for v in values.split(",") if v]
             for rank, values in _HOPS_RE.findall(stdout)}
     unstable = _UNSTABLE_TOKEN in stdout or _UNSTABLE_TOKEN in stderr
@@ -270,18 +284,26 @@ def parse_booksim_stats(stdout: str, stderr: str) -> dict[str, Any]:
         "flit_latency_avg": _optional_number(_FLAT_RE, stdout,
                                              "flit latency"),
         "hops": hops,
-        # counters this fork does not print in every mode stay absent
-        "delivered_packets": None,
-        "flits_injected": None,
-        "flits_accepted": None,
+        # fork conservation counters (present for a drained trace run;
+        # absent only for modes that do not emit them)
+        "delivered_packets": delivered,
+        "flits_injected": flits_injected,
+        "flits_accepted": flits_accepted,
         "simulation_unstable": unstable,
         "abort_token": abort,
     }
 
 
-def assert_execution_gate(stats: dict[str, Any], *, expected_packets: int
-                          ) -> None:
-    """The scientific gate for a trace-driven run."""
+def assert_execution_gate(stats: dict[str, Any], *, expected_packets: int,
+                          expected_flits: int | None = None,
+                          require_conservation: bool = False) -> None:
+    """The scientific gate for a trace-driven run.
+
+    ``require_conservation`` is set for a supervised production execution:
+    the fork's emitted delivered-packet and injected/accepted-flit totals
+    must then be present and must conserve. Injected-runner diagnostics
+    (TEST_INJECTED) may omit them.
+    """
     loaded = stats.get("loaded_trace_packets")
     if loaded != expected_packets:
         raise BookSimExecutionError(
@@ -292,6 +314,32 @@ def assert_execution_gate(stats: dict[str, Any], *, expected_packets: int
         raise BookSimExecutionError(
             f"trace evidence mismatch: injected {injected} != declared "
             f"{expected_packets} — the trace was truncated")
+    if require_conservation:
+        delivered = stats.get("delivered_packets")
+        if delivered is None:
+            raise BookSimExecutionError(
+                "conservation evidence missing: the backend did not emit "
+                "'Trace replay complete: delivered N packets'")
+        if delivered != expected_packets:
+            raise BookSimExecutionError(
+                f"packet conservation failed: delivered {delivered} != "
+                f"declared {expected_packets}")
+        flits_in = stats.get("flits_injected")
+        flits_accepted = stats.get("flits_accepted")
+        if flits_in is None or flits_accepted is None:
+            raise BookSimExecutionError(
+                "conservation evidence missing: the backend did not emit "
+                "the injected/accepted flit totals")
+        if expected_flits is not None and (
+                flits_in != expected_flits
+                or flits_accepted != expected_flits):
+            raise BookSimExecutionError(
+                f"flit conservation failed: injected {flits_in} / accepted "
+                f"{flits_accepted} != declared {expected_flits}")
+        if flits_in != flits_accepted:
+            raise BookSimExecutionError(
+                f"flit conservation failed: injected {flits_in} != accepted "
+                f"{flits_accepted}")
     completion = stats.get("completion_cycles")
     if completion is None or completion < 0:
         raise BookSimExecutionError(
@@ -387,7 +435,11 @@ def execute_prepared_booksim(
             f"{(outcome.stderr or '')[-300:]}")
 
     stats = parse_booksim_stats(outcome.stdout, outcome.stderr)
-    assert_execution_gate(stats, expected_packets=prepared.expected_packets)
+    assert_execution_gate(
+        stats, expected_packets=prepared.expected_packets,
+        expected_flits=prepared.expected_flits,
+        require_conservation=(
+            transport != EXECUTION_TRANSPORT_TEST_INJECTED))
 
     evidence = ScientificBackendEvidence(
         prepared_id=prepared.prepared_id(),
