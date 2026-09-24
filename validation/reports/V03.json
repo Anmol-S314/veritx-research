@@ -74,6 +74,7 @@
       "finding": null
     }
   ],
+  "status": "PASS",
   "passed": true,
   "quarantined_findings": []
 }

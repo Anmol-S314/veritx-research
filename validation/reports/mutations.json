@@ -21,7 +21,7 @@
     "name": "M4_config_tamper_in_run_dir",
     "caught": true,
     "expected": "BookSimExecutionError: different bytes",
-    "detail": "refused: /home/datavex/veritx-scratch/validation-work-t2k0cd2i/m4/config.cfg already holds different bytes; refusing to overwrite"
+    "detail": "refused: /home/datavex/veritx-scratch/validation-work-87pdb5l1/m4/config.cfg already holds different bytes; refusing to overwrite"
   },
   {
     "name": "M5_binary_swap_after_identification",
@@ -33,7 +33,7 @@
     "name": "M6_evidence_byte_flip",
     "caught": true,
     "expected": "BackendEvidenceError: modified after execution",
-    "detail": "refused: evidence file /home/datavex/veritx-scratch/validation-work-t2k0cd2i/m-real/backend-evidence.json digest a8fd1268c3a4e784"
+    "detail": "refused: evidence file /home/datavex/veritx-scratch/validation-work-87pdb5l1/m-real/backend-evidence.json digest b3cc532ab43a453a"
   },
   {
     "name": "M7_wrong_producer_sha",

@@ -63,3 +63,6 @@ def test_fixed_production_lowering_conforms():
         assert report["checks"]["dst_is_next_ring_neighbour"]
         assert report["checks"]["every_rank_sends_once_per_step"]
         assert report["checks"]["every_rank_receives_once_per_step"]
+        assert report["checks"]["steps_exact"]
+        assert report["checks"]["phase_labels_exact"]
+        assert report["checks"]["no_non_neighbour_pairs"]

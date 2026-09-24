@@ -137,7 +137,7 @@
         "chunk_bytes": 64,
         "aggregate_bytes": 30720,
         "checks": {
-          "steps_match": true,
+          "steps_exact": true,
           "message_count_match": true,
           "every_step_has_k_messages": true,
           "every_rank_sends_once_per_step": true,
@@ -147,7 +147,7 @@
           "chunk_bytes_match": true,
           "aggregate_bytes_match": true,
           "no_non_neighbour_pairs": true,
-          "two_phases_present": true
+          "phase_labels_exact": true
         },
         "conforms": true,
         "problems": [],
@@ -224,7 +224,7 @@
         "chunk_bytes": 64,
         "aggregate_bytes": 30720,
         "checks": {
-          "steps_match": true,
+          "steps_exact": true,
           "message_count_match": true,
           "every_step_has_k_messages": true,
           "every_rank_sends_once_per_step": true,
@@ -234,7 +234,7 @@
           "chunk_bytes_match": true,
           "aggregate_bytes_match": true,
           "no_non_neighbour_pairs": true,
-          "two_phases_present": true
+          "phase_labels_exact": true
         },
         "conforms": true,
         "problems": [],
@@ -311,7 +311,7 @@
         "chunk_bytes": 64,
         "aggregate_bytes": 30720,
         "checks": {
-          "steps_match": true,
+          "steps_exact": true,
           "message_count_match": true,
           "every_step_has_k_messages": true,
           "every_rank_sends_once_per_step": true,
@@ -321,7 +321,7 @@
           "chunk_bytes_match": true,
           "aggregate_bytes_match": true,
           "no_non_neighbour_pairs": true,
-          "two_phases_present": true
+          "phase_labels_exact": true
         },
         "conforms": true,
         "problems": [],
@@ -398,7 +398,7 @@
         "chunk_bytes": 64,
         "aggregate_bytes": 30720,
         "checks": {
-          "steps_match": true,
+          "steps_exact": true,
           "message_count_match": true,
           "every_step_has_k_messages": true,
           "every_rank_sends_once_per_step": true,
@@ -408,7 +408,7 @@
           "chunk_bytes_match": true,
           "aggregate_bytes_match": true,
           "no_non_neighbour_pairs": true,
-          "two_phases_present": true
+          "phase_labels_exact": true
         },
         "conforms": true,
         "problems": [],

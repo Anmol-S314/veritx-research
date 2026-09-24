@@ -109,7 +109,7 @@ def collective_graph_report(kind: str, ranks: int, payload_bytes: int,
     expected_rank_set = list(range(ranks))
 
     checks = {
-        "steps_match": len(steps) == expected_steps,
+        "steps_exact": steps == list(range(expected_steps)),
         "message_count_match": n == expected_messages,
         "every_step_has_k_messages": all(v == ranks
                                          for v in per_step.values()),
@@ -136,10 +136,12 @@ def collective_graph_report(kind: str, ranks: int, payload_bytes: int,
              if (i, j) not in expected_pairs}
     checks["no_non_neighbour_pairs"] = not extra
     if kind == "ALLREDUCE":
-        rs = [s for s in steps if s <= ranks - 2]
-        ag = [s for s in steps if s >= ranks - 1]
-        checks["two_phases_present"] = len(rs) == ranks - 1 \
-            and len(ag) == ranks - 1
+        # exact phases, not just their sizes: reduce-scatter then all-gather
+        rs = sorted(s for s in steps if s < ranks - 1)
+        ag = sorted(s for s in steps if s >= ranks - 1)
+        checks["phase_labels_exact"] = (
+            rs == list(range(0, ranks - 1))
+            and ag == list(range(ranks - 1, 2 * (ranks - 1))))
 
     problems = [name for name, ok in checks.items() if not ok]
     return {

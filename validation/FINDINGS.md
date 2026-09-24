@@ -272,6 +272,17 @@ yet a HIGHER completion: concentrating all traffic on k neighbour edges
 creates hotspots the all-pairs schedule avoided. That delta is the
 scientific consequence of F-0004.
 
+### Scope of the claim (network-level)
+
+What the repaired lowering and the oracle now prove is a **network-level
+ring lowering**: the correct ring communication graph, exact step labels
+and phases, the correct per-step send/receive permutation, the correct
+message size and aggregate traffic. `LogicalMessage` carries no chunk
+identity, so chunk ROTATION (which reduction chunk moves at which step)
+is **not** validated — no reduce-scatter/all-gather data-dependency claim
+is made. Introducing `chunk_id` / phase ownership would be needed before
+claiming full collective data semantics.
+
 ### Consequence
 
 Network-performance claims were quarantined for V02/V04/V09/V10 while the
