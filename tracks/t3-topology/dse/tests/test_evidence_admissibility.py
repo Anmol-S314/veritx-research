@@ -82,6 +82,63 @@ def test_valid_document_still_admits():
         == doc["evidence_id"]
 
 
+# ── the single certified-product admission rule (P0.5) ───────────────────
+
+def _evidence(**over) -> "ev.ScientificBackendEvidence":
+    fields = {
+        "prepared_id": "a" * 64,
+        "profile_id": "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1",
+        "projection_semantics_version": "v1",
+        "config_sha256": "b" * 64,
+        "trace_sha256": "c" * 64,
+        "topology_sha256": None,
+        "resolved_fabric_hash": "d" * 64,
+        "physical_traffic_id": "e" * 64,
+        "message_artifact_id": "f" * 64,
+        "binary_sha256": "0" * 64,
+        "binary_size": 123,
+        "producer_source_revision": "1" * 40,
+        "producer_dirty": False,
+        "seed": 0,
+        "parser_version": ev.PARSER_VERSION,
+        "execution_fidelity": "QUALIFIED",
+        "route_observation": "DOMAIN_QUALIFIED_ROUTE_NOT_OBSERVED",
+        "stats": {"completion_cycles": 100},
+        "exit_status": 0,
+        "transport": ev.EXECUTION_TRANSPORT_SUPERVISED_PROCESS,
+    }
+    fields.update(over)
+    return ev.ScientificBackendEvidence(**fields)
+
+
+def test_admission_accepts_a_qualified_pinned_record():
+    ev.admit_for_certified_product(_evidence())
+
+
+@pytest.mark.parametrize("over,match", [
+    ({"execution_fidelity": "DIAGNOSTIC_UNPINNED_PRODUCER"},
+     "not QUALIFIED"),
+    ({"producer_source_revision": None}, "revision is unknown"),
+    ({"transport": ev.EXECUTION_TRANSPORT_TEST_INJECTED,
+      "execution_fidelity": "TEST_INJECTED"}, "supervised production"),
+])
+def test_admission_refuses_unqualified_records(over, match):
+    with pytest.raises(ev.BackendEvidenceError, match=match):
+        ev.admit_for_certified_product(_evidence(**over))
+
+
+def test_admission_is_the_only_rule_used_by_reuse():
+    record = ev.ExecutionRecord(
+        evidence=_evidence(producer_source_revision=None),
+        attempt=ev.ExecutionAttempt(
+            wall_time_s=0.0, run_dir="", binary_path="", command=(),
+            host="", platform=""))
+    with pytest.raises(ev.BackendEvidenceError, match="revision is unknown"):
+        ev.verify_reusable_record(
+            record, prepared_id="a" * 64, config_sha256="b" * 64,
+            trace_sha256="c" * 64, binary_sha256="0" * 64)
+
+
 # ── restored legacy v1 reader (was an undefined-name crash) ──────────────
 
 def test_unversioned_v1_document_reads_with_required_keys():

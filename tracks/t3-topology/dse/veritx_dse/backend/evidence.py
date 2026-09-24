@@ -434,17 +434,53 @@ class ExecutionRecord:
         }
 
 
+def admit_for_certified_product(
+        evidence: "ScientificBackendEvidence") -> None:
+    """THE single admission rule for evidence entering a certified product.
+
+    Content authenticity (a valid ``evidence_id``) is not admission: a
+    document can hash correctly and still describe a diagnostic, dirty,
+    unpinned or test-injected run. This function is the one place that
+    decides qualification; call sites must not re-implement it.
+
+    Requires: supervised production transport, QUALIFIED fidelity, a known
+    producer source revision, a clean (not dirty) producer and exit 0.
+    ``TEST_INJECTED``, diagnostic, dirty, unpinned and unknown-build runs
+    are refused.
+    """
+    if not isinstance(evidence, ScientificBackendEvidence):
+        raise BackendEvidenceError(
+            "certified-product admission requires "
+            f"ScientificBackendEvidence, got {type(evidence).__name__}")
+    if evidence.transport != EXECUTION_TRANSPORT_SUPERVISED_PROCESS:
+        raise BackendEvidenceError(
+            f"evidence transport {evidence.transport!r} is not a supervised "
+            "production process; it cannot enter a certified product")
+    if evidence.execution_fidelity != "QUALIFIED":
+        raise BackendEvidenceError(
+            f"evidence execution_fidelity {evidence.execution_fidelity!r} "
+            "is not QUALIFIED; it cannot enter a certified product")
+    if evidence.producer_source_revision is None:
+        raise BackendEvidenceError(
+            "producer source revision is unknown; a binary digest alone "
+            "cannot certify provenance for a certified product")
+    if evidence.producer_dirty is not False:
+        raise BackendEvidenceError(
+            f"producer dirty state {evidence.producer_dirty!r} is not False; "
+            "a dirty or unknown build cannot enter a certified product")
+    if evidence.exit_status != 0:
+        raise BackendEvidenceError(
+            f"evidence exit_status {evidence.exit_status!r} is not 0; a "
+            "failed execution cannot enter a certified product")
+
+
 def verify_reusable_record(record: ExecutionRecord, *,
                            prepared_id: str, config_sha256: str,
                            trace_sha256: str, binary_sha256: str
                            ) -> ScientificBackendEvidence:
     """Every condition required before evidence may be reused."""
     evidence = record.evidence
-    if not evidence.reusable:
-        raise BackendEvidenceError(
-            "evidence was not produced by a supervised production "
-            f"execution (transport={evidence.transport}, "
-            f"exit={evidence.exit_status}); it is not reusable")
+    admit_for_certified_product(evidence)
     if evidence.prepared_id != prepared_id:
         raise BackendEvidenceError(
             "evidence prepared_id does not match the prepared input")

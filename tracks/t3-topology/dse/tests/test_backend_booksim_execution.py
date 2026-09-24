@@ -326,13 +326,16 @@ def test_evidence_bytes_tamper_and_transplant_are_refused(tmp_path):
         ev.read_verified_evidence(record.ref)
     path.write_bytes(original)
 
-    # reuse conditions are tested against a SUPERVISED record (an injected
-    # record is refused earlier, which is correct precedence)
+    # reuse conditions are tested against a SUPERVISED, QUALIFIED, pinned
+    # record (an injected or unpinned record is refused earlier, which is
+    # correct precedence)
     supervised = ev.ExecutionRecord(
         evidence=dataclasses.replace(
             record.evidence,
             transport=ev.EXECUTION_TRANSPORT_SUPERVISED_PROCESS,
-            execution_fidelity=bx.FIDELITY_QUALIFIED),
+            execution_fidelity=bx.FIDELITY_QUALIFIED,
+            producer_source_revision="a" * 40,
+            producer_dirty=False),
         attempt=record.attempt)
     ok = ev.verify_reusable_record(
         supervised, prepared_id=record.evidence.prepared_id,
