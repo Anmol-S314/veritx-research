@@ -289,3 +289,46 @@ Network-performance claims were quarantined for V02/V04/V09/V10 while the
 graph was non-conformant; with the graph repaired the quarantine is
 automatically lifted (`network_claims_quarantined` withdraws claims only
 while `collective_graph_conformance` fails).
+
+---
+
+## F-0005 — B7 layering allow-list missed `test_routing_realization.py`
+
+**Status:** FIXED (working tree at `cf626566` + one-line allow-list update;
+pending commit)
+**Severity:** low — architecture-scope test failure, no scientific value
+affected
+**Found:** 2026-09-25, full-suite baseline run of the production branch
+
+### What happened
+
+`ff141c68` (B7 SemanticError taxonomy) added
+`from veritx_dse.core.errors import SemanticError` to
+`veritx_dse/model/routing_realization.py` and updated the allow-lists of
+seven layering tests (`test_address_decode.py`, `test_candidate_policy.py`,
+`test_certificate_failclosed.py`, `test_fabric_artifact.py`,
+`test_packet_format.py`, `test_router_behavior.py`,
+`test_routing_resource_binding.py`, `test_vc_resource.py`) — but missed
+`test_module_imports_only_allowed_layers` in `test_routing_realization.py`.
+
+### Reproduction
+
+```text
+cd tracks/t3-topology/dse
+python3 -m pytest tests/test_routing_realization.py::test_module_imports_only_allowed_layers
+# FAILED: 'veritx_dse.core.errors' extra in imported set
+```
+
+Deterministic (not the load-flakiness class recorded in SKIP-INVENTORY).
+
+### Fix
+
+Allow-list `veritx_dse.core.errors` in the test, matching the pattern used by
+the seven sibling tests in the same commit ("layering tests allow the one
+core.errors import").
+
+### Baseline suite result (recorded for the production program)
+
+`python3 -m pytest tests -q` at `cf626566`: **3661 passed, 24 skipped,
+1 failed (F-0005)** in 882 s. With F-0005's one-line fix applied:
+`test_routing_realization.py` 79/79 PASS.
