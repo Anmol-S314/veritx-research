@@ -39,12 +39,25 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from veritx_dse.core.errors import VeritXError
+
 CERTIFICATE_SCHEMA_VERSION = 1
 _HASH_TYPE_TAG = "srota/VerificationCertificate"
 
 
 class CertificateError(ValueError):
     """A fabric failed certification, or a certificate is malformed."""
+
+
+#: The ONLY exception classes an obligation may turn into a design verdict.
+#: Every semantic-invalidity error in this codebase is a ``ValueError``
+#: subclass (AttachmentError, ResolvedRouteError, CDGError, …); the typed
+#: product refusals are ``VeritXError``. Anything else — AttributeError,
+#: NameError, TypeError, RuntimeError, MemoryError — is a software fault in
+#: a trusted internal function and MUST abort certification instead of being
+#: laundered into FAIL. The set is deliberately an allow-list: a new error
+#: type that is not semantic fails closed (aborts) rather than passing.
+_SEMANTIC_ERRORS: tuple[type[BaseException], ...] = (ValueError, VeritXError)
 
 
 OBLIGATIONS = (
@@ -135,7 +148,7 @@ def _attachment_complete(bundle: Any) -> ObligationResult:
     try:
         bundle.attachment.validate_against(
             bundle.design, bundle.inventory, bundle.topology)
-    except Exception as exc:
+    except _SEMANTIC_ERRORS as exc:
         return _fail("ATTACHMENT_COMPLETE",
                      "attachment.validate_against/v1", str(exc),
                      {"endpoints": len(bundle.attachment.endpoints)})
@@ -147,7 +160,7 @@ def _address_decode_valid(bundle: Any) -> ObligationResult:
     try:
         bundle.address_decode.validate_against(
             bundle.design.address_map, bundle.attachment)
-    except Exception as exc:
+    except _SEMANTIC_ERRORS as exc:
         return _fail("ADDRESS_DECODE_VALID",
                      "address_decode.validate_against/v1", str(exc),
                      {"entries": len(bundle.address_decode.entries)})
@@ -173,7 +186,7 @@ def _route_complete(bundle: Any) -> ObligationResult:
 def _route_legal(bundle: Any) -> ObligationResult:
     try:
         bundle.router_route.validate_against(bundle.topology)
-    except Exception as exc:
+    except _SEMANTIC_ERRORS as exc:
         return _fail("ROUTE_LEGAL", "route.validate_against/v1",
                      str(exc), {})
     return _pass("ROUTE_LEGAL", "route.validate_against/v1",
@@ -184,7 +197,7 @@ def _route_legal(bundle: Any) -> ObligationResult:
 def _vc_assignment_valid(bundle: Any) -> ObligationResult:
     try:
         bundle.vc_assignment.validate_against(bundle.resolved_route)
-    except Exception as exc:
+    except _SEMANTIC_ERRORS as exc:
         return _fail("VC_ASSIGNMENT_VALID",
                      "vc.validate_against/v1", str(exc),
                      {"vc_count": bundle.vc_assignment.vc_count})
@@ -255,7 +268,7 @@ def _deadlock_free(bundle: Any) -> ObligationResult:
             vc_assignment=bundle.vc_assignment,
             router_behavior_hash=behavior_hash,
         )
-    except Exception as exc:
+    except _SEMANTIC_ERRORS as exc:
         return _fail("DEADLOCK_FREE", "channel-vc-cdg/v2", str(exc), {})
     ev = dict(cert.evidence)
     # Preserve the authenticated parent identities in the obligation
@@ -273,15 +286,14 @@ def _deadlock_free(bundle: Any) -> ObligationResult:
                      f"CDG verdict {cert.verdict}: "
                      f"{ev.get('unsupported_reason', ev.get('cycle', ''))}",
                      ev)
-    try:
-        from veritx_dse.verification.channel_vc_cdg import (
-            build_channel_vc_cdg,
-        )
-        cdg = build_channel_vc_cdg(
-            bundle.topology, bundle.router_route, bundle.vc_assignment)
-        ev["sccs_gt_1"] = _scc_count(cdg.adjacency())
-    except Exception:
-        pass
+    # Required diagnostic evidence: the SCC count is part of the DEADLOCK_FREE
+    # PASS record. It shares the same validated inputs the verdict just ran on,
+    # so it can only fail on a software fault — which must abort certification
+    # rather than emit a PASS whose evidence silently omits the diagnostic.
+    from veritx_dse.verification.channel_vc_cdg import build_channel_vc_cdg
+    cdg = build_channel_vc_cdg(
+        bundle.topology, bundle.router_route, bundle.vc_assignment)
+    ev["sccs_gt_1"] = _scc_count(cdg.adjacency())
     return _pass("DEADLOCK_FREE", "channel-vc-cdg/v2", ev)
 
 
@@ -313,7 +325,7 @@ def _packet_format_valid(bundle: Any) -> ObligationResult:
         bundle.packet_format.validate_against(
             bundle.topology, bundle.attachment,
             vc_resources_from_assignment(bundle.vc_assignment))
-    except Exception as exc:
+    except _SEMANTIC_ERRORS as exc:
         return _fail("PACKET_FORMAT_VALID",
                      "packet_format.validate_against/v1", str(exc),
                      {"flit_width_bits":
@@ -327,7 +339,7 @@ def _packet_format_valid(bundle: Any) -> ObligationResult:
 def _fabric_dag_valid(bundle: Any) -> ObligationResult:
     try:
         bundle.revalidate()
-    except Exception as exc:
+    except _SEMANTIC_ERRORS as exc:
         return _fail("FABRIC_DAG_VALID", "bundle.revalidate/v1",
                      f"{type(exc).__name__}: {exc}", {})
     return _pass("FABRIC_DAG_VALID", "bundle.revalidate/v1",
