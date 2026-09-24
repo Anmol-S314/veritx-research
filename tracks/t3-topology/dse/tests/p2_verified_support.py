@@ -38,7 +38,11 @@ from veritx_dse.application.requirements import (
     report_identity,
     verify_performance_result,
 )
-from veritx_dse.backend.evidence import stats_sha256_of, write_evidence
+from veritx_dse.backend.evidence import (
+    PARSER_VERSION,
+    stats_sha256_of,
+    write_evidence,
+)
 from veritx_dse.core.time import QTime
 from veritx_dse.optimization.evaluators import (
     AUTHORITY_CERTIFIED_BACKEND,
@@ -190,7 +194,7 @@ def build_authenticated(request: Any, *, cycles: int = 100,
         producer_source_revision=None,
         producer_dirty=False,
         seed=0,
-        parser_version="veritx/booksim-stats-parser/v1",
+        parser_version=PARSER_VERSION,
         execution_fidelity="QUALIFIED",
         route_observation="DOMAIN_QUALIFIED_ROUTE_NOT_OBSERVED",
         stats=dict(stats),

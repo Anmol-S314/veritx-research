@@ -30,7 +30,8 @@ GOOD_STDOUT = (
     "Packet latency average = 12.5\n"
     "Flit latency average = 4.5\n"
     "Hops average = 3.0\n"
-    "Time taken is 777 cycles\n"
+    "Time taken is 900 cycles\n"
+    "Completion time is 777 cycles\n"
 )
 GOOD_STDERR = "[trace] All 800 cycles, injected=5 — draining\n"
 
@@ -59,7 +60,8 @@ def _runner_for(prepared, *, returncode=0, timed_out=False,
         f"Loaded text trace: {count} packets from workload.trace\n"
         "Packet latency average = 12.5\n"
         "Flit latency average = 4.5\n"
-        "Time taken is 777 cycles\n")
+        "Time taken is 900 cycles\n"
+        "Completion time is 777 cycles\n")
     stderr = stderr if stderr is not None else (
         f"[trace] All 800 cycles, injected={count} — draining\n")
 
@@ -96,16 +98,45 @@ def test_unavailable_and_nonfinite_metrics_become_none(token):
 
 def test_latency_is_not_required_for_trace_driven_runs():
     stdout = ("Loaded text trace: 5 packets from workload.trace\n"
-              "Time taken is 777 cycles\n")
+              "Time taken is 900 cycles\n"
+              "Completion time is 777 cycles\n")
     stats = bx.parse_booksim_stats(stdout, GOOD_STDERR)
     assert stats["packet_latency_avg"] is None
     bx.assert_execution_gate(stats, expected_packets=5)
 
 
+def test_completion_metric_is_window_invariant_and_time_taken_is_diagnostic():
+    """F-0001: completion_cycles is last-ejection, not `Time taken is`."""
+    narrow = bx.parse_booksim_stats(
+        "Loaded text trace: 5 packets\n"
+        "Time taken is 900 cycles\nCompletion time is 777 cycles\n",
+        GOOD_STDERR)
+    wide = bx.parse_booksim_stats(
+        "Loaded text trace: 5 packets\n"
+        "Time taken is 5000 cycles\nCompletion time is 777 cycles\n",
+        GOOD_STDERR)
+    assert narrow["completion_cycles"] == 777
+    assert wide["completion_cycles"] == 777
+    assert narrow["sample_window_cycles"] == 900
+    assert wide["sample_window_cycles"] == 5000
+
+
+def test_completion_after_the_run_window_is_refused():
+    with pytest.raises(bx.BookSimExecutionError, match="exceeds the run window"):
+        bx.parse_booksim_stats(
+            "Loaded text trace: 5 packets\n"
+            "Time taken is 100 cycles\nCompletion time is 777 cycles\n",
+            GOOD_STDERR)
+
+
 def test_required_evidence_is_fail_closed():
     with pytest.raises(bx.BookSimExecutionError, match="Loaded text trace"):
-        bx.parse_booksim_stats("Time taken is 5 cycles\n", "")
-    with pytest.raises(bx.BookSimExecutionError, match="Time taken"):
+        bx.parse_booksim_stats("Completion time is 5 cycles\n", "")
+    with pytest.raises(bx.BookSimExecutionError, match="Completion time"):
+        bx.parse_booksim_stats("Loaded text trace: 5 packets\n"
+                               "Time taken is 9 cycles\n", "")
+    # a window-only run must never be read as a completion measurement
+    with pytest.raises(bx.BookSimExecutionError, match="not a completion"):
         bx.parse_booksim_stats("Loaded text trace: 5 packets\n", "")
 
 

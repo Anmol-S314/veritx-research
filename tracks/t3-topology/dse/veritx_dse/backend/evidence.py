@@ -32,7 +32,11 @@ from veritx_dse.core.artifact import canonical_bytes, content_hash
 EVIDENCE_FILE = "backend-evidence.json"
 
 EVIDENCE_SCHEMA_VERSION = 1
-PARSER_VERSION = "veritx/booksim-stats-parser/v1"
+#: v2 (F-0001): ``completion_cycles`` is read from the fork's
+#: ``Completion time is N cycles`` (last-ejected-flit cycle), not from the
+#: sampling-window ``Time taken is``. v1 evidence recorded a
+#: window-dependent value and is deliberately not reusable under v2.
+PARSER_VERSION = "veritx/booksim-stats-parser/v2"
 LEGACY_PARSER_VERSION = "veritx/evidence-parser/v0-unversioned"
 ATTEMPT_FILE = "execution-attempt.json"
 EXECUTION_ATTEMPT_SCHEMA_VERSION = "veritx/execution-attempt/v1"

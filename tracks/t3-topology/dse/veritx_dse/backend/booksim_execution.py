@@ -61,7 +61,12 @@ FIDELITY_TEST_INJECTED = "TEST_INJECTED"
 ROUTE_OBSERVATION_QUALIFIED_ONLY = "DOMAIN_QUALIFIED_ROUTE_NOT_OBSERVED"
 ROUTE_OBSERVATION_OBSERVED = "EXECUTED_ROUTE_OBSERVED"
 
-_TIME_RE = re.compile(r"Time taken is (\d+) cycles")
+#: the sampling-window time (diagnostic only; window-dependent, never physics)
+_WINDOW_RE = re.compile(r"Time taken is (\d+) cycles")
+#: the physically meaningful completion: cycle of the last ejected flit.
+#: The fork emits this exactly once per sim (trafficmanager.cpp:1926) and
+#: it is invariant under the sampling window (F-0001).
+_COMPLETION_RE = re.compile(r"Completion time is (\d+) cycles")
 _LOADED_RE = re.compile(r"Loaded (?:text|binary) trace: (\d+) packets")
 _INJECTED_RE = re.compile(r"injected=(\d+)")
 #: tokens the fork prints when a statistic has no samples
@@ -196,7 +201,15 @@ def parse_booksim_stats(stdout: str, stderr: str) -> dict[str, Any]:
 
     Contract (``PARSER_VERSION``):
       * ``Loaded text trace: N packets`` is REQUIRED trace evidence;
-      * ``Time taken is N cycles`` is REQUIRED completion evidence;
+      * ``Completion time is N cycles`` is REQUIRED completion evidence:
+        the cycle of the last ejected flit — the network-physical
+        completion, invariant under the sampling window (F-0001);
+      * ``Time taken is N cycles`` is RECORDED as ``sample_window_cycles``
+        (diagnostic only): it is a function of ``sample_period *
+        max_samples``, not of network behaviour, and must never be
+        reported as latency or used as an objective;
+      * ``sample_window_cycles`` must bound ``completion_cycles`` — a
+        completion after the run window is a parse error, refused;
       * the trace drain line (stderr, ``[trace] All <c> cycles, injected=N``)
         is RECORDED when present and may be absent in other modes;
       * ordinary latencies/hops that are absent or printed as
@@ -220,12 +233,23 @@ def parse_booksim_stats(stdout: str, stderr: str) -> dict[str, Any]:
             "— refusing to treat this run as a measurement")
     loaded_packets = int(loaded.group(1))
 
-    match = _TIME_RE.search(stdout)
+    match = _COMPLETION_RE.search(stdout)
     if match is None:
         raise BookSimExecutionError(
-            "missing required completion evidence 'Time taken is N cycles' "
-            "— refusing to treat this run as a measurement")
+            "missing required completion evidence 'Completion time is N "
+            "cycles' (the last-ejected-flit cycle; F-0001) — refusing to "
+            "treat this run as a measurement. 'Time taken is' is a "
+            "sampling-window value and is not a completion measurement.")
     completion_cycles = int(match.group(1))
+
+    window_match = _WINDOW_RE.search(stdout)
+    sample_window_cycles = (int(window_match.group(1))
+                            if window_match is not None else None)
+    if sample_window_cycles is not None \
+            and completion_cycles > sample_window_cycles:
+        raise BookSimExecutionError(
+            f"completion evidence {completion_cycles} exceeds the run "
+            f"window {sample_window_cycles} — inconsistent timing evidence")
 
     injected_match = _INJECTED_RE.search(combined)
     injected = int(injected_match.group(1)) if injected_match else None
@@ -240,6 +264,7 @@ def parse_booksim_stats(stdout: str, stderr: str) -> dict[str, Any]:
         "loaded_trace_packets": loaded_packets,
         "injected_trace_packets": injected,
         "completion_cycles": completion_cycles,
+        "sample_window_cycles": sample_window_cycles,
         "packet_latency_avg": _optional_number(_PLAT_RE, stdout,
                                                "packet latency"),
         "flit_latency_avg": _optional_number(_FLAT_RE, stdout,

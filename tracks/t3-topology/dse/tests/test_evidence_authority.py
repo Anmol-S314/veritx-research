@@ -40,7 +40,7 @@ def _doc(**over):
         "producer_source_revision": None,
         "producer_dirty": False,
         "seed": 0,
-        "parser_version": "veritx/booksim-stats-parser/v1",
+        "parser_version": ev.PARSER_VERSION,
         "execution_fidelity": "QUALIFIED",
         "route_observation": "DOMAIN_QUALIFIED_ROUTE_NOT_OBSERVED",
         "stats": {"completion_cycles": 100, "loaded_trace_packets": 7},
@@ -148,7 +148,7 @@ def test_rt_evidence_is_not_canonical_evidence():
         producer_source_dirty_digest=None,
         producer_tool_identity="linux",
         execution_transport="SUPERVISED_PROCESS",
-        parser_version="veritx/booksim-stats-parser/v1")
+        parser_version=ev.PARSER_VERSION)
     rt_doc = rt.to_dict() if False else None
     # NOTE: rt.to_dict() is intentionally not called: it coerces through
     # the canonical ScientificBackendEvidence constructor and is
