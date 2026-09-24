@@ -113,44 +113,38 @@ def _make_bundle(*, design, inventory, mapping, topology, attachment,
 
 
 def build_resolved_bundle(compile_request: Any):
-    """Derive and validate a ResolvedFabricBundle from a CompileRequest."""
-    from veritx_dse.model.attachment import derive_attachment
-    from veritx_dse.model.compile_model import derive_vc_assignment_artifact
-    from veritx_dse.model.mapping import derive_mapping
-    from veritx_dse.model.placement import build_inventory
-    from veritx_dse.model.resolved_route import derive_resolved_route
-    from veritx_dse.model.routing import derive_route
-    from veritx_dse.model.topology_artifact import materialize_topology
+    """Derive a ResolvedFabricBundle through the ONE canonical compiler.
+
+    The reclaimed Wave-C entry point no longer performs a second v2
+    derivation: it generates the declared BASELINE_DETERMINISTIC_V2
+    candidate plan and compiles it with
+    ``compiler.canonical.compile_deterministic_candidate`` — the same
+    compiler the ``SrotaControlPlane`` service uses. Child identities are
+    pinned equal by ``tests/test_compiler_path_parity.py``.
+    """
+    from veritx_dse.compiler.canonical import compile_deterministic_candidate
+    from veritx_dse.compiler.candidate_policy import (
+        generate_baseline_candidate,
+    )
+    from veritx_dse.model.resolved_bundle import make_resolved_fabric_bundle
 
     try:
-        inventory = build_inventory(compile_request)
-        mapping = derive_mapping(compile_request)
-        topology = materialize_topology(inventory, compile_request)
-        attachment = derive_attachment(
-            design=compile_request, inventory=inventory, topology=topology)
-        # P1.2: the route is compiler-derived (LOCKED) — never a
-        # hardcoded class beside a separately derived routing string.
-        router_route = derive_route(
-            request=compile_request, topology=topology)
-        resolved_route = derive_resolved_route(topology, attachment,
-                                               router_route)
-        vc_assignment = derive_vc_assignment_artifact(
-            compile_request, resolved_route)
-        children = _derive_canonical_fabric(
-            design=compile_request, view=compile_request, topology=topology,
-            attachment=attachment, router_route=router_route,
-            resolved_route=resolved_route, vc_assignment=vc_assignment)
-        resolved_fabric = _bind_resolved(
-            design=compile_request, inventory=inventory, mapping=mapping,
-            topology=topology, attachment=attachment,
-            router_route=router_route, resolved_route=resolved_route,
-            vc_assignment=vc_assignment, children=children)
-        return _make_bundle(
-            design=compile_request, inventory=inventory, mapping=mapping,
-            topology=topology, attachment=attachment,
-            router_route=router_route, resolved_route=resolved_route,
-            vc_assignment=vc_assignment, children=children,
-            resolved_fabric=resolved_fabric)
+        plan = generate_baseline_candidate(design=compile_request)
+        compiled = compile_deterministic_candidate(
+            design=compile_request, inventory=plan.inventory,
+            mapping=plan.mapping, routing_policy=plan.routing_policy,
+            vc_spec=plan.vc_spec, settings=plan.compile_settings)
+        return make_resolved_fabric_bundle(
+            design=compiled.design, inventory=compiled.inventory,
+            mapping=compiled.mapping, topology=compiled.topology,
+            attachment=compiled.attachment,
+            router_route=compiled.routing.route,
+            resolved_route=compiled.routing.resolved_route,
+            vc_assignment=compiled.routing.vc_assignment,
+            packet_format=compiled.packet_format,
+            router_behavior=compiled.router_behavior,
+            address_decode=compiled.address_decode, fabric=compiled.fabric,
+            resolved_fabric=compiled.resolved_fabric)
     except ControlPlaneError:
         raise
     except VeritXError as exc:
