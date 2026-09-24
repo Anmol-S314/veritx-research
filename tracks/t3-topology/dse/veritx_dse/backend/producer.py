@@ -35,6 +35,10 @@ class ProducerIdentity:
     source_revision: str | None
     dirty: bool | None
     dirty_digest: str | None
+    #: True only when a build-time manifest verified the binary against
+    #: the source revision/dirty state observed AT BUILD. Ambient git HEAD
+    #: is not build provenance and never sets this.
+    manifest_verified: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.binary_sha256, str) \
@@ -49,8 +53,9 @@ class ProducerIdentity:
 
     @property
     def pinned(self) -> bool:
-        """A clean, revision-identified producer."""
-        return self.source_revision is not None and self.dirty is False
+        """A clean, revision-identified, manifest-verified producer."""
+        return (self.source_revision is not None and self.dirty is False
+                and self.manifest_verified)
 
     @property
     def tool_identity(self) -> str:
@@ -73,6 +78,7 @@ class ProducerIdentity:
             "dirty": self.dirty,
             "dirty_digest": self.dirty_digest,
             "pinned": self.pinned,
+            "manifest_verified": self.manifest_verified,
         }
 
 
@@ -102,9 +108,19 @@ def _git(repo_root: Path, *args: str) -> str | None:
 
 
 def resolve_producer_identity(binary: Path, *,
-                              repo_root: Path | None = None
+                              repo_root: Path | None = None,
+                              manifest_path: Path | None = None,
+                              require_manifest_recipe: str | None = None
                               ) -> ProducerIdentity:
-    """SHA-256 + size (+ git revision/dirty state when a repo is given)."""
+    """SHA-256 + size, plus BUILD-TIME provenance when a manifest exists.
+
+    A verified build-time manifest is authoritative: it names the source
+    revision and dirty state observed when the binary was built, so a
+    binary built at A stays attributed to A even after the tree is
+    checked out at B. With no manifest, only ambient git state is
+    available and ``manifest_verified`` stays False, so the producer can
+    never be pinned for reusable evidence.
+    """
     path = Path(binary)
     if not path.is_file():
         raise ProducerError(f"BookSim binary not found: {path}")
@@ -115,9 +131,29 @@ def resolve_producer_identity(binary: Path, *,
     except OSError as exc:
         raise ProducerError(
             f"BookSim binary is unreadable: {path}: {exc}") from exc
+    from veritx_dse.core.build_manifest import (
+        BuildManifestError, load_and_verify_manifest,
+    )
+    try:
+        manifest = load_and_verify_manifest(
+            path, path=manifest_path,
+            recipe_version=require_manifest_recipe)
+    except BuildManifestError as exc:
+        raise ProducerError(str(exc)) from exc
+    if manifest is not None:
+        dirty_digest = None
+        if manifest.source_dirty:
+            dirty_digest = hashlib.sha256(
+                (str(manifest.source_revision) + "\n" + digest)
+                .encode()).hexdigest()
+        return ProducerIdentity(
+            binary_path=str(path), binary_sha256=digest, binary_size=size,
+            source_revision=manifest.source_revision,
+            dirty=manifest.source_dirty, dirty_digest=dirty_digest,
+            manifest_verified=True)
     revision: str | None = None
     dirty: bool | None = None
-    dirty_digest: str | None = None
+    dirty_digest = None
     if repo_root is not None:
         root = Path(repo_root)
         revision = _git(root, "rev-parse", "HEAD")
@@ -131,7 +167,8 @@ def resolve_producer_identity(binary: Path, *,
                     (status + "\n" + digest).encode()).hexdigest()
     return ProducerIdentity(
         binary_path=str(path), binary_sha256=digest, binary_size=size,
-        source_revision=revision, dirty=dirty, dirty_digest=dirty_digest)
+        source_revision=revision, dirty=dirty, dirty_digest=dirty_digest,
+        manifest_verified=False)
 
 
 def recheck_binary_digest(identity: ProducerIdentity) -> None:
@@ -149,7 +186,17 @@ def recheck_binary_digest(identity: ProducerIdentity) -> None:
 
 
 def assert_pinned_producer(identity: ProducerIdentity) -> None:
-    """Reusable evidence requires a pinned (clean, revisioned) producer."""
+    """Reusable evidence requires a manifest-verified, clean producer.
+
+    Ambient git HEAD is not build provenance: without a verified
+    build-time manifest the binary cannot be attributed to the source it
+    was built from, so it is never pinned.
+    """
+    if not identity.manifest_verified:
+        raise ProducerError(
+            "producer has no verified build-time manifest; ambient git "
+            "state cannot attribute a binary to a source revision — "
+            "reusable evidence is refused (build with a manifest)")
     if identity.source_revision is None:
         raise ProducerError(
             "producer source revision is unknown: a binary digest alone "

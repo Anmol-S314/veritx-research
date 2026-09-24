@@ -244,15 +244,17 @@ def test_dirty_or_unpinned_producer_cannot_be_reused(tmp_path):
     prepared = prepare_booksim_input(parents)
     unpinned = pd.ProducerIdentity(
         binary_path=str(_binary(tmp_path)), binary_sha256="a" * 64,
-        binary_size=10, source_revision=None, dirty=None, dirty_digest=None)
-    with pytest.raises(pd.ProducerError, match="source revision is unknown"):
+        binary_size=10, source_revision=None, dirty=None, dirty_digest=None,
+        manifest_verified=False)
+    with pytest.raises(pd.ProducerError, match="build-time manifest"):
         pd.assert_pinned_producer(unpinned)
     dirty = dataclasses.replace(unpinned, source_revision="deadbeef",
-                                dirty=True, dirty_digest="b" * 64)
+                                dirty=True, dirty_digest="b" * 64,
+                                manifest_verified=True)
     with pytest.raises(pd.ProducerError, match="DIRTY"):
         pd.assert_pinned_producer(dirty)
     # requiring pinning refuses the execution outright
-    with pytest.raises(bx.BookSimExecutionError, match="source revision"):
+    with pytest.raises(bx.BookSimExecutionError, match="build-time manifest"):
         bx.execute_prepared_booksim(
             prepared=prepared, binary=_binary(tmp_path),
             run_dir=tmp_path / "run", timeout=10,
