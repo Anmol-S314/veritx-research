@@ -113,10 +113,10 @@ class VerifiedEvaluationClaims:
     ``verified_result`` — evidence truth never depends upward on
     optimization.
 
-    The evidence schema does not persist a backend profile id, so
-    ``backend`` is the authenticated producer/transport identity and
-    ``backend_profile`` the executed qualification label; the exact
-    backend configuration identity is ``backend_config_hash``.
+    ``backend`` is the executed canonical backend profile id and
+    ``backend_profile`` its ``execution_fidelity`` label; the exact
+    executed configuration identity is ``backend_config_hash`` (the
+    binding's key for the canonical evidence ``config_sha256`` bytes).
     """
 
     design_hash: str
@@ -424,7 +424,7 @@ def authenticate_backend_evaluation(
             raise _refuse(
                 "producer_identity",
                 f"{producer_identity!r} does not match the evidence's "
-                f"booksim_binary_sha256 {evidence_producer!r}")
+                f"binary_sha256 {evidence_producer!r}")
 
     # ── canonical requirement report, re-derived (never trusted) ───
     report = _derive_report(request, workload, verified_result)
@@ -543,7 +543,7 @@ def verify_authenticated_backend_evaluation(
         raise _refuse(
             "proof.producer_identity",
             f"{proof.producer_identity!r} is not the evidence's "
-            f"booksim_binary_sha256 {evidence_producer!r}")
+            f"binary_sha256 {evidence_producer!r}")
 
     # ── canonical report re-derived over the CANDIDATE lowering ────
     report = _derive_report(candidate_request, expected.graph,
@@ -572,14 +572,12 @@ def verify_authenticated_backend_evaluation(
             f"{report.get('performance_result_id')!r} is not the "
             f"verified result's resource_id {result_id!r}")
 
-    execution_transport = evidence_doc.get("execution_transport")
-    backend = (execution_transport
-               if isinstance(execution_transport, str) and
-               execution_transport else artifact.backend)
-    qualification = evidence_doc.get("qualification")
-    backend_profile = (qualification
-                       if isinstance(qualification, str) and qualification
-                       else None)
+    # Canonical evidence fields only. ``profile_id`` is the executed
+    # backend profile, ``execution_fidelity`` the executed qualification
+    # label. No RT vocabulary (execution_transport / qualification) is
+    # read; those keys do not exist in the canonical document.
+    backend = evidence_doc["profile_id"]
+    backend_profile = evidence_doc["execution_fidelity"]
     return VerifiedEvaluationClaims(
         design_hash=design_hash,
         workload_id=workload_id,
