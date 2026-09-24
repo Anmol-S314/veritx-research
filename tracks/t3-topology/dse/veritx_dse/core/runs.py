@@ -10,6 +10,7 @@ of functions over a run directory.
 from __future__ import annotations
 
 import datetime as _dt
+import fcntl
 import hashlib
 import json
 import os
@@ -20,11 +21,31 @@ import subprocess
 import sys
 import time
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from .paths import VERITX_RUNS_DIR
 from .recovery import atomic_write
+
+
+@contextmanager
+def _exclusive_lock(path: Path) -> Iterator[None]:
+    """Interprocess exclusive lock for a run's read-modify-write authority.
+
+    ``flock`` on a dedicated lock file (POSIX, as the product targets
+    Linux containers). Two concurrent ``add_result`` writers are
+    serialized, so neither can observe a stale manifest and drop the
+    other's result. The lock file is created but never contains data.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
 
 # State machine (redesign §11). States are added only when behavior needs
 # them; RUNNING -> SUCCEEDED requires finalized results, never just exit 0.
@@ -48,8 +69,8 @@ def _uuid7() -> uuid.UUID:
     """RFC 9562 UUIDv7 from stdlib only.
 
     uuid.uuid7() exists only on Python >= 3.14, but this package declares
-    >=3.12 (verified-PRD Integrity PR A) — so the sortable-time identity
-    (ADR 0002) is implemented here rather than imported. Layout:
+    >=3.10, so the sortable-time identity (ADR 0002) is implemented here
+    rather than imported. Layout:
     unix_ts_ms[48] | ver 0111 | rand_a[12] | var 10 | rand_b[62].
     74 fresh random bits per millisecond make collision odds negligible
     at run-creation scale; monotonic sorting falls out of the timestamp.
@@ -81,7 +102,21 @@ def _dependency_lock_identity() -> dict[str, Any]:
         return {"requirements.lock.sha256": None}  # say so, never invent
 
 
-_RUNTIME_FLOOR = (3, 12)  # must match pyproject requires-python (PR A gate)
+_RUNTIME_FLOOR = (3, 10)  # must match pyproject requires-python (PR A gate)
+
+
+def _declared_floor() -> tuple[int, int]:
+    """The floor declared by pyproject, so the two cannot silently drift."""
+    import re
+    pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    try:
+        text = pyproject.read_text(encoding="utf-8")
+    except OSError:
+        return _RUNTIME_FLOOR
+    match = re.search(r'requires-python\s*=\s*">=\s*(\d+)\.(\d+)"', text)
+    if match is None:
+        return _RUNTIME_FLOOR
+    return (int(match.group(1)), int(match.group(2)))
 
 
 # ── Provenance (ADR 0006: automatic, allowlisted env) ───────────────────────
@@ -135,10 +170,10 @@ def capture_provenance(repo: Path, argv: list[str]) -> dict[str, Any]:
 def assert_runtime_compatible() -> None:
     """Fail loudly on an unsupported interpreter (PR A gate).
 
-    pyproject declares requires-python >=3.12; enforced at run creation so
-    a mismatched environment cannot quietly produce runs with unknown
-    semantics. Verified-PRD §0.4: silent incompatibility is how the
-    uuid7 defect survived.
+    The enforced floor is ``_RUNTIME_FLOOR``; ``test_run_core`` pins it to
+    the pyproject ``requires-python`` floor so the declared and enforced
+    contracts cannot drift. Verified-PRD §0.4: silent incompatibility is
+    how the uuid7 defect survived.
     """
     if sys.version_info[:2] < _RUNTIME_FLOOR:
         raise RunError(
@@ -209,6 +244,12 @@ def binary_identity(path) -> dict[str, Any]:
 
 # ── Run directory lifecycle ─────────────────────────────────────────────────
 
+def _write_json_atomic(path: Path, obj: Any) -> None:
+    """Publish a JSON file atomically (temp file + rename, ADR 0003)."""
+    with atomic_write(path) as tmp:
+        tmp.write_text(json.dumps(obj, indent=2, sort_keys=True) + "\n")
+
+
 class Run:
     """One realized execution's directory + state (ADR 0001).
 
@@ -241,11 +282,11 @@ class Run:
         ehash = experiment_hash(resolved_spec)
         prov = capture_provenance(repo, argv or [])
 
-        # Frozen files — written once, never updated (ADR 0001).
-        (root / "spec.resolved.json").write_text(
-            json.dumps(resolved_spec, indent=2, sort_keys=True) + "\n")
-        (root / "provenance.json").write_text(
-            json.dumps(prov, indent=2, sort_keys=True) + "\n")
+        # Frozen files — written once, never updated (ADR 0001), each
+        # published atomically so a crash mid-create cannot leave a
+        # partially valid run directory.
+        _write_json_atomic(root / "spec.resolved.json", resolved_spec)
+        _write_json_atomic(root / "provenance.json", prov)
         manifest = {
             "schema_version": 1,
             "run_id": run_id,
@@ -257,8 +298,7 @@ class Run:
             "provenance": "provenance.json",
             "results": [],
         }
-        (root / "manifest.json").write_text(
-            json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+        _write_json_atomic(root / "manifest.json", manifest)
         r._write_state("CREATED", note="initialized")
         return r
 
@@ -297,15 +337,19 @@ class Run:
 
     def add_result(self, task_id: str, result: dict[str, Any]) -> None:
         """Record one task result into manifest.results, atomically.
-        Appending to a terminal-state run is refused (immutability)."""
+
+        The manifest read-modify-write runs under an interprocess lock, so
+        two concurrent writers cannot both read the same list and drop one
+        result. Appending to a terminal-state run is refused (immutability).
+        """
         if self.state in _TERMINAL:
             raise RunError(
                 f"run {self.run_id} is {self.state}; results are immutable")
-        manifest = json.loads((self.root / "manifest.json").read_text())
-        manifest["results"].append({"task_id": task_id,
-                                    "recorded_at": _utcnow(), **result})
-        with atomic_write(self.root / "manifest.json") as tmp:
-            tmp.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+        with _exclusive_lock(self.root / "manifest.lock"):
+            manifest = json.loads((self.root / "manifest.json").read_text())
+            manifest["results"].append({"task_id": task_id,
+                                        "recorded_at": _utcnow(), **result})
+            _write_json_atomic(self.root / "manifest.json", manifest)
 
     def finalize(self, status: str, note: str = "") -> None:
         """Close the run. SUCCEEDED only after results are recorded —

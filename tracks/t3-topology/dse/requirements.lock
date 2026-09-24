@@ -1,0 +1,11 @@
+# veritx_dse runtime dependency lock.
+#
+# Runtime dependencies: none. pyproject declares [project] dependencies = [],
+# so the runtime environment is the interpreter plus the standard library.
+# The release battery's test toolchain (pytest, pytest-cov) is installed
+# from the pyproject optional-dependencies [dev] extra and is pinned by the
+# release container image, not here.
+#
+# core.runs fingerprints this file into every run's provenance. A missing
+# lock records requirements.lock.sha256 = null; a release build must ship
+# this file so the recorded fingerprint is non-null.
