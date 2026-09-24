@@ -36,6 +36,8 @@ the authoritative path; there is no migration here.
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -51,7 +53,7 @@ _ENDPOINT_TABLE_DOMAIN = "srota/ResolvedRouteArtifact/endpoint-table/v2"
 LOCAL_EJECTION = "LOCAL_EJECTION"
 
 
-class ResolvedRouteError(ValueError):
+class ResolvedRouteError(ValueError, SemanticError):
     """The endpoint-resolved routing binding is invalid — fail closed."""
 
 

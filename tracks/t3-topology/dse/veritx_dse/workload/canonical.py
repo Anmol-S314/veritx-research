@@ -38,6 +38,8 @@ Rulings encoded here (Phase 9 handoff documents the evidence):
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 import hashlib
 import json
 from dataclasses import dataclass, field, replace
@@ -50,7 +52,7 @@ SCHEMA_VERSION = 1
 ALL_DIMENSIONS = "ALL"
 
 
-class WorkloadError(ValueError):
+class WorkloadError(ValueError, SemanticError):
     """The workload cannot be represented without scientific loss.
 
     Raised on unknown operation kinds, invalid participants, missing

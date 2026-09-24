@@ -66,6 +66,8 @@ The one rule (2026-09-18 consolidation-2):
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 from dataclasses import dataclass
 from typing import Any
 
@@ -76,7 +78,7 @@ NS_PER_SECOND = 1e9
 COMM_DIMS = ("net", "mem", "comp")
 
 
-class TimelineError(ValueError):
+class TimelineError(ValueError, SemanticError):
     """The Binding/dimension contract is violated — fail closed, never
     substitute a default service time or clock."""
 

@@ -92,6 +92,8 @@ module.
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -133,7 +135,7 @@ class MappingPolicy(Enum):
     RANK_ORDER_V1 = "rank_order_v1"
 
 
-class CandidatePolicyError(ValueError):
+class CandidatePolicyError(ValueError, SemanticError):
     """Candidate generation failed closed; ``reason`` is a stable category."""
 
     def __init__(self, reason: str, detail: str):

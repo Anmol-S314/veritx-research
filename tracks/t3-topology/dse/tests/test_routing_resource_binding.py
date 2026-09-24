@@ -514,6 +514,7 @@ def test_module_imports_only_allowed_layers():
             imported.add(node.module or "")
     local = {name for name in imported if name.startswith("veritx_dse")}
     assert local == {"veritx_dse.core.artifact",
+                     "veritx_dse.core.errors",
                      "veritx_dse.model.routing_policy",
                      "veritx_dse.model.vc_resource"}
     forbidden = ("routing_relation", "route_artifact", "resolved_route",

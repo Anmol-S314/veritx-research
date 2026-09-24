@@ -33,6 +33,8 @@ eligibility and in-network role transitions are separate semantics.
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 from dataclasses import dataclass
 from typing import Any
 
@@ -44,7 +46,7 @@ ROUTING_RESOURCE_BINDING_SCHEMA_VERSION = 1
 _HASH_TYPE_TAG = "srota/RoutingResourceBindingArtifact"
 
 
-class RoutingResourceBindingError(ValueError):
+class RoutingResourceBindingError(ValueError, SemanticError):
     """The role-to-VC binding is malformed or inconsistent — fail closed."""
 
 

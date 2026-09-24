@@ -36,6 +36,8 @@ provenance. There is no v1→v2 migration of persisted IDs; re-certify.
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 from dataclasses import dataclass
 from typing import Any
 
@@ -45,19 +47,19 @@ CERTIFICATE_SCHEMA_VERSION = 1
 _HASH_TYPE_TAG = "srota/VerificationCertificate"
 
 
-class CertificateError(ValueError):
+class CertificateError(ValueError, SemanticError):
     """A fabric failed certification, or a certificate is malformed."""
 
 
 #: The ONLY exception classes an obligation may turn into a design verdict.
-#: Every semantic-invalidity error in this codebase is a ``ValueError``
-#: subclass (AttachmentError, ResolvedRouteError, CDGError, …); the typed
-#: product refusals are ``VeritXError``. Anything else — AttributeError,
+#: Semantic artifact errors now inherit ``SemanticError`` (which is a
+#: ``VeritXError``), so this catches the taxonomy — never Python's
+#: built-in ``ValueError``. Anything else — AttributeError,
 #: NameError, TypeError, RuntimeError, MemoryError — is a software fault in
 #: a trusted internal function and MUST abort certification instead of being
 #: laundered into FAIL. The set is deliberately an allow-list: a new error
 #: type that is not semantic fails closed (aborts) rather than passing.
-_SEMANTIC_ERRORS: tuple[type[BaseException], ...] = (ValueError, VeritXError)
+_SEMANTIC_ERRORS: tuple[type[BaseException], ...] = (VeritXError,)
 
 
 OBLIGATIONS = (

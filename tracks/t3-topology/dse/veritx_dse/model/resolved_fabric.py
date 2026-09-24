@@ -36,6 +36,8 @@ likewise outside this artifact.
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 import dataclasses
 from dataclasses import dataclass
 from typing import Any
@@ -99,7 +101,7 @@ NOC_FIELD_CLASSIFICATION = {
 }
 
 
-class ResolvedFabricError(ValueError):
+class ResolvedFabricError(ValueError, SemanticError):
     """The resolved fabric seam is invalid or unsupported — fail closed."""
 
 

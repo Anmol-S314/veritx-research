@@ -709,6 +709,7 @@ def test_module_imports_only_allowed_layers():
     local = {name for name in imported if name.startswith("veritx_dse")}
     assert local == {
         "veritx_dse.core.artifact",
+        "veritx_dse.core.errors",
         "veritx_dse.model.attachment",
         "veritx_dse.model.compile_model",
     }

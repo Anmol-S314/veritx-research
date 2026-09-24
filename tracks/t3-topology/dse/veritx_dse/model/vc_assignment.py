@@ -29,6 +29,8 @@ by ``to_dict()`` but deliberately excluded from ``vc_assignment_hash``.
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 import hashlib
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -46,7 +48,7 @@ _HASH_TYPE_TAG = "srota/VCAssignmentArtifact"
 DEFAULT_ROUTING_CLASS = "DEFAULT"
 
 
-class VCAssignmentError(ValueError):
+class VCAssignmentError(ValueError, SemanticError):
     """The VC assignment is invalid or exceeds the fabric — fail closed."""
 
 

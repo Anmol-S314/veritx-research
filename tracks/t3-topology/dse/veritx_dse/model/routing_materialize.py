@@ -34,6 +34,8 @@ intended semantics and exact realized tables are separate objects.
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 import heapq
 from collections.abc import Mapping
 from enum import Enum
@@ -65,7 +67,7 @@ _WEIGHTED_PARAMETERS = {
 }
 
 
-class RoutingMaterializationError(ValueError):
+class RoutingMaterializationError(ValueError, SemanticError):
     """The policy cannot be realized by RouteArtifact — fail closed."""
 
 

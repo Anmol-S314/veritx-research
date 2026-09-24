@@ -153,7 +153,7 @@ def build_resolved_bundle(compile_request: Any):
             resolved_fabric=resolved_fabric)
     except ControlPlaneError:
         raise
-    except (ValueError, VeritXError) as exc:
+    except VeritXError as exc:
         # Typed semantic refusal -> product outcome. A programmer fault
         # (AttributeError/TypeError/RuntimeError/NameError) is NOT a
         # semantic result and must propagate, not be laundered into
@@ -224,7 +224,7 @@ def build_resolved_bundle_v3(compile_request: Any):
             resolved_fabric=resolved_fabric)
     except ControlPlaneError:
         raise
-    except (ValueError, VeritXError) as exc:
+    except VeritXError as exc:
         # Typed semantic refusal -> product outcome. A programmer fault
         # (AttributeError/TypeError/RuntimeError/NameError) is NOT a
         # semantic result and must propagate, not be laundered into

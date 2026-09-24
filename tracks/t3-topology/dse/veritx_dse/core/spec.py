@@ -13,6 +13,8 @@ consumes plain dicts/dataclasses from resolve().
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 import hashlib
 import json
 from typing import Any, Literal
@@ -33,7 +35,7 @@ PLAN_SCHEMA_VERSION = 1
 NON_SCIENTIFIC_FIELDS = frozenset({"name", "notes"})
 
 
-class SpecError(ValueError):
+class SpecError(ValueError, SemanticError):
     """Rejected experiment spec (unknown field, bad type, bad value)."""
 
 

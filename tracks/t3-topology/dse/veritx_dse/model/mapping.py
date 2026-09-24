@@ -16,6 +16,8 @@ path), content-addressed, schema-versioned, and fails closed.
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 from dataclasses import dataclass
 from typing import Any
 
@@ -26,7 +28,7 @@ MAPPING_SCHEMA_VERSION = 1
 _HASH_TYPE_TAG = "srota/MappingArtifact"
 
 
-class MappingError(ValueError):
+class MappingError(ValueError, SemanticError):
     """Invalid placement (fail-closed, never guessed or oversubscribed)."""
 
 

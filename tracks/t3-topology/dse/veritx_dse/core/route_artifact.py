@@ -38,6 +38,8 @@ deadlock theorem and gets its own class later.
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 import hashlib
 import json
 from collections.abc import Mapping
@@ -70,7 +72,7 @@ DOR_XY = "DOR_XY"
 _PARALLEL_REALIZATION = "min_channel_id"
 
 
-class RouteArtifactError(ValueError):
+class RouteArtifactError(ValueError, SemanticError):
     """The routing truth cannot be represented or trusted — fail closed."""
 
 

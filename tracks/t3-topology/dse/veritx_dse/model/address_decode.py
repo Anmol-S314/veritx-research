@@ -57,6 +57,8 @@ hashing or address-bit interleave.
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -74,7 +76,7 @@ ADDRESS_DOMAIN_BITS = 64
 ADDRESS_DOMAIN_SIZE = 1 << ADDRESS_DOMAIN_BITS
 
 
-class AddressDecodeError(ValueError):
+class AddressDecodeError(ValueError, SemanticError):
     """The address decode is invalid or unsupported — fail closed."""
 
 

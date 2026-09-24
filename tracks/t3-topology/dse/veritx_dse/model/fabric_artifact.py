@@ -31,6 +31,8 @@ explicitly unmodelled: they fail closed rather than being approximated.
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -64,7 +66,7 @@ _HASH_TYPE_TAG = "srota/FabricArtifact"
 _DEFAULT_DOMAIN = "DEFAULT"
 
 
-class FabricArtifactError(ValueError):
+class FabricArtifactError(ValueError, SemanticError):
     """The fabric composition is invalid or unsupported — fail closed."""
 
 

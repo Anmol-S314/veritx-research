@@ -15,6 +15,8 @@ The manifest is canonical JSON beside the binary:
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 import hashlib
 import json
 from dataclasses import dataclass
@@ -34,7 +36,7 @@ _FIELDS = frozenset({
 })
 
 
-class BuildManifestError(ValueError):
+class BuildManifestError(ValueError, SemanticError):
     """A build manifest is malformed, missing or does not match the binary."""
 
 

@@ -50,6 +50,23 @@ class CertificationError(VeritXError):
     pass
 
 
+class SemanticError(VeritXError):
+    """Base for a typed SEMANTIC refusal.
+
+    The input is understood and outside the supported domain, or two
+    semantic facts contradict. Trust boundaries (certificate obligations,
+    compiler orchestration) catch this base — never Python's built-in
+    ``ValueError`` — so a programmer fault (including a bare ``ValueError``
+    from an invariant that exploded) propagates and aborts certification
+    instead of being laundered into a design verdict.
+
+    Artifact/model error classes that are already ``ValueError`` subclasses
+    also inherit this, so existing ``except ValueError`` call sites keep
+    working while boundaries get a precise handle.
+    """
+    code = "SEMANTIC_ERROR"
+
+
 class Refusal(VeritXError):
     """A semantic refusal: the input is understood and outside the
     supported domain. Never approximated silently."""

@@ -19,6 +19,8 @@ in-memory proof carrier, and every child is separately content-addressed.
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 from dataclasses import dataclass
 from typing import Any
 
@@ -36,7 +38,7 @@ from veritx_dse.model.topology_artifact import TopologyArtifact
 from veritx_dse.model.vc_assignment import VCAssignmentArtifact
 
 
-class ResolvedFabricBundleError(ValueError):
+class ResolvedFabricBundleError(ValueError, SemanticError):
     """The bundle cannot be validated as one semantic fabric — fail closed."""
 
 

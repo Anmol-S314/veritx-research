@@ -38,6 +38,8 @@ Excluded from identity: display name, JSON formatting, file paths.
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 import hashlib
 import json
 from dataclasses import dataclass, field
@@ -69,7 +71,7 @@ ADDRESS_POLICIES = frozenset({"contiguous_aligned_v1"})
 _ADDR_SPACE_BITS = 64
 
 
-class MemoryArtifactError(ValueError):
+class MemoryArtifactError(ValueError, SemanticError):
     """Resolved memory semantics cannot be represented or trusted."""
 
 

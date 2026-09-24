@@ -74,6 +74,9 @@ def test_semantic_invalidity_becomes_obligation_fail(monkeypatch):
     AttributeError("injected programmer fault"),
     NameError("injected programmer fault"),
     TypeError("injected programmer fault"),
+    # B7: a bare programmer ValueError is NOT a SemanticError and must not
+    # become a design verdict.
+    ValueError("injected programmer fault"),
 ])
 def test_programmer_fault_aborts_certification(monkeypatch, fault):
     bundle = _bundle()

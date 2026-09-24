@@ -37,6 +37,8 @@ escape designation proves deadlock freedom.
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
@@ -50,7 +52,7 @@ ROUTING_POLICY_SCHEMA_VERSION = 1
 _HASH_TYPE_TAG = "srota/RoutingPolicyDefinition"
 
 
-class RoutingPolicyError(ValueError):
+class RoutingPolicyError(ValueError, SemanticError):
     """The routing-policy definition is malformed — fail closed."""
 
 

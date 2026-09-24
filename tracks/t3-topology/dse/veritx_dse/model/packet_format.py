@@ -33,6 +33,8 @@ multicast are not wire fields.
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -61,7 +63,7 @@ FLIT_TYPE_ENCODING = (
 FLIT_TYPES = tuple(name for name, _code in FLIT_TYPE_ENCODING)
 
 
-class PacketFormatError(ValueError):
+class PacketFormatError(ValueError, SemanticError):
     """The packet/flit format is invalid or unsupported — fail closed."""
 
 

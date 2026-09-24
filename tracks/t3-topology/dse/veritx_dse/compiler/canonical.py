@@ -34,6 +34,8 @@ artifact.
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 from collections.abc import Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -110,7 +112,7 @@ class CompileStage(Enum):
     RESOLVED_FABRIC = "RESOLVED_FABRIC"
 
 
-class CanonicalCompileError(ValueError):
+class CanonicalCompileError(ValueError, SemanticError):
     """A compile stage failed; the original cause is preserved."""
 
     def __init__(self, stage: CompileStage, cause: str):

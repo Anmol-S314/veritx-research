@@ -22,11 +22,13 @@ header) — we keep that as a documented precondition, same as upstream.
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 from dataclasses import dataclass, field
 from pathlib import Path
 
 
-class AnynetError(ValueError):
+class AnynetError(ValueError, SemanticError):
     """Malformed anynet file — mirrors BookSim's assert-and-die, loudly."""
 
 

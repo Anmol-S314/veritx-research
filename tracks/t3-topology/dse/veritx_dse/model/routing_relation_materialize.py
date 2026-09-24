@@ -29,6 +29,8 @@ resource roles are different semantic actions.
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 from collections.abc import Mapping
 from typing import Any
 
@@ -71,7 +73,7 @@ _ELIGIBLE_FAMILIES = (MaterializedFamily.MESH,
                       MaterializedFamily.CONCENTRATED_MESH)
 
 
-class RoutingRelationMaterializationError(ValueError):
+class RoutingRelationMaterializationError(ValueError, SemanticError):
     """The policy/topology cannot be materialized exactly — fail closed."""
 
 

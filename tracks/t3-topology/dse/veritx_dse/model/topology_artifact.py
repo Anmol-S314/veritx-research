@@ -25,6 +25,8 @@ changes identity and requires a schema bump.
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 import math
 from dataclasses import dataclass
 from enum import Enum
@@ -46,7 +48,7 @@ _DEFAULT_LINK_WIDTH_BITS = 64
 _DEFAULT_LINK_LATENCY_CYCLES = 1
 
 
-class TopologyError(ValueError):
+class TopologyError(ValueError, SemanticError):
     """Unmaterializable topology family/params (fail closed, no fallback)."""
 
 

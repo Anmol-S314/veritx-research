@@ -21,6 +21,8 @@ Three seams, each pure and unit-tested at:
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 import hashlib
 import json
 from dataclasses import dataclass, field
@@ -43,7 +45,7 @@ __all__ = [
 ]
 
 
-class ComparisonSpecError(ValueError):
+class ComparisonSpecError(ValueError, SemanticError):
     """Invalid comparison intent or unfingerprintable candidate."""
 
 

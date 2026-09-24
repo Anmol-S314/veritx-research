@@ -36,6 +36,8 @@ concrete VC-resource universe.
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -71,7 +73,7 @@ _ADAPTIVE_ROUTING_DOMAIN = "srota/AdaptiveRoutingExecutionSemantics/v1"
 _ADAPTIVE_VC_ROUTING_DOMAIN = "srota/AdaptiveVCRoutingSemantics/v1"
 
 
-class RoutingRealizationError(ValueError):
+class RoutingRealizationError(ValueError, SemanticError):
     """The routing realization is invalid or unsupported — fail closed."""
 
 

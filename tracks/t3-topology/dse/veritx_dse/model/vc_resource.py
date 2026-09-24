@@ -23,6 +23,8 @@ structure carries no routing-class binding.
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -34,7 +36,7 @@ VC_RESOURCE_SCHEMA_VERSION = 1
 _HASH_TYPE_TAG = "srota/VCResourceArtifact"
 
 
-class VCResourceError(ValueError):
+class VCResourceError(ValueError, SemanticError):
     """The VC resource structure is malformed — fail closed."""
 
 

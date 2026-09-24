@@ -31,6 +31,8 @@ and never contribute VCs or alter the E4 verdict.
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -57,7 +59,7 @@ COLLECTIVE_SEMANTICS_NOT_MODELED = "NOT_MODELED"
 Verdict = str  # "PASS" | "FAIL"
 
 
-class ProtocolVCError(ValueError):
+class ProtocolVCError(ValueError, SemanticError):
     """The protocol/VC separation request is malformed — fail closed."""
 
 

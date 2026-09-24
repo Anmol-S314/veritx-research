@@ -32,6 +32,8 @@ routing authority.
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 import itertools
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -51,7 +53,7 @@ _HASH_TYPE_TAG = "srota/RoutingRelationArtifact"
 StateValue = int | str
 
 
-class RoutingRelationError(ValueError):
+class RoutingRelationError(ValueError, SemanticError):
     """The routing relation is malformed, tampered with, or not total."""
 
 

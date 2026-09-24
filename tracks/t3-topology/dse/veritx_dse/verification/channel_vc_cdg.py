@@ -39,6 +39,8 @@ into UNSUPPORTED or PASS. A cyclic graph FAILs with a deterministic witness.
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -73,7 +75,7 @@ Verdict = str  # "PASS" | "FAIL" | "UNSUPPORTED" | "NOT_RUN"
 ChannelVC = tuple[int, int]
 
 
-class CDGError(ValueError):
+class CDGError(ValueError, SemanticError):
     """The CDG request is inconsistent or tampered with — fail closed."""
 
 

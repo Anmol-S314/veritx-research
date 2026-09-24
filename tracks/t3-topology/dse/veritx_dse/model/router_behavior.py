@@ -74,6 +74,8 @@ consumer may assume omitted defaults from serialized data.
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -95,7 +97,7 @@ DEFAULT_SWITCH_TRAVERSAL_CYCLES = 1
 DEFAULT_OUTPUT_DELAY_CYCLES = 0
 
 
-class RouterBehaviorError(ValueError):
+class RouterBehaviorError(ValueError, SemanticError):
     """The router behavior is invalid or unsupported — fail closed."""
 
 

@@ -62,6 +62,8 @@ silently converted to v3.
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 from dataclasses import dataclass
 from typing import Any
 
@@ -73,7 +75,7 @@ ATTACHMENT_SCHEMA_VERSION = 3
 _HASH_TYPE_TAG = "srota/AgentAttachment"
 
 
-class AttachmentError(ValueError):
+class AttachmentError(ValueError, SemanticError):
     """Unprovable attachment (fail-closed, never guessed)."""
 
 

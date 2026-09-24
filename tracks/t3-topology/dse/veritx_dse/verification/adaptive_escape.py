@@ -29,6 +29,8 @@ Malformed or tampered parents raise ``AdaptiveEscapeVerificationError``;
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -70,7 +72,7 @@ _NOT_VERIFIED = (
 )
 
 
-class AdaptiveEscapeVerificationError(ValueError):
+class AdaptiveEscapeVerificationError(ValueError, SemanticError):
     """A parent is malformed, tampered with or inconsistent — fail closed."""
 
 

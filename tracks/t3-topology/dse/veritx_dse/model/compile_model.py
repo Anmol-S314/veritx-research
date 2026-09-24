@@ -19,6 +19,8 @@ Architecture:
 """
 from __future__ import annotations
 
+from veritx_dse.core.errors import SemanticError
+
 import hashlib
 import json
 import math
@@ -50,7 +52,7 @@ SUPPORTED_COMPILER_SEMANTICS_VERSIONS = (1, 2)
 _HASH_TYPE_TAG = "srota/CompileRequest"
 
 
-class CompileRequestSchemaError(ValueError):
+class CompileRequestSchemaError(ValueError, SemanticError):
     """Rejected CompileRequest document: unknown field, unsupported
     schema, or a value that cannot represent a design."""
 
@@ -1850,7 +1852,7 @@ SUPPORTED_V3_SEMANTICS_VERSIONS = (3,)
 _HASH_TYPE_TAG_V3 = "srota/CompileRequest/v3"
 
 
-class CompileRequestV3SchemaError(ValueError):
+class CompileRequestV3SchemaError(ValueError, SemanticError):
     """Rejected v3 CompileRequest document: unknown field, unsupported
     envelope, or a value that cannot represent a v3 design."""
 

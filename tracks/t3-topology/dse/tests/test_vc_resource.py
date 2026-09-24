@@ -498,6 +498,7 @@ def test_module_imports_only_core_and_vc_assignment():
     local = {name for name in imported
              if name.startswith("veritx_dse")}
     assert local == {"veritx_dse.core.artifact",
+                     "veritx_dse.core.errors",
                      "veritx_dse.model.vc_assignment"}
     forbidden = ("routing_policy", "routing_relation", "route_artifact",
                  "topology_artifact", "verification", "backend", "booksim",
