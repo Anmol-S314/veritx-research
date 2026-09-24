@@ -106,3 +106,23 @@ The seal report `docs/production/PRODUCTION-SEAL.md` is written only when
 every seal condition in §30 is met. At present the verdict is
 **NOT READY** (P0.10 route observation, plus the P2–P17 operational
 program and clean-clone qualification).
+
+## Architectural hardening (wave 2) — authority collapse & reproducibility
+
+After the scientific P0 layer, the residual risk is architectural
+duplication, reproducibility and operational integrity, not one hidden
+arithmetic bug.
+
+| id | item | status |
+|----|------|--------|
+| A1 | Adversarial parity test: service vs orchestration produce identical child identities | DONE (`c70a1b9e`) |
+| A2 | Collapse the duplicate v2 compiler path onto `compile_deterministic_candidate` | DONE (`c70a1b9e`); v3 path remains the sole v3 orchestrator (no canonical v3 compiler yet) |
+| A3 | Run authority: atomic init + interprocess lock in `core.runs` | DONE (`39f50578`) |
+| A4 | Environment contract: pyproject floor == enforced floor; ship `requirements.lock` | DONE (`39f50578`) |
+| A5 | CI runs the release gate on `prod/**` / `validation/**` | DONE (`1fea26ab`) |
+| A6 | Unify run/persistence under one `RunBundle` lifecycle (P2) | OPEN |
+| A7 | Clean-clone reproducibility: pinned container digest, pinned external source commits, lockfile | OPEN |
+| A8 | Move the v3 orchestration into the canonical compiler | OPEN |
+| A9 | Workload-model authority: enumerate `workload.graph`/`operations`/`canonical` layers and prove no two writers of one semantic fact | OPEN (VERIFY) |
+| A10 | Separate product VERITX from research history (repo move) — do NOT do before RC | DEFERRED |
+| A11 | Generated/checked facts (schema matrix, release SHA, test counts, tool versions) instead of hand-maintained prose | OPEN |

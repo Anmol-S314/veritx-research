@@ -32,6 +32,19 @@ test_serving_loop.py real live gate (VERITX_LIVE_SERVING=1)
 test_serving_canonical.py real live gate
 ```
 
+## Flaky (not skipped) — real-time subprocess timing
+
+Two serving-protocol tests are timing-sensitive and fail only under a
+loaded machine, never in isolation:
+
+| test | symptom | class | owner |
+|------|---------|-------|-------|
+| `test_serving_protocol.py::TestStderrQuiescence::test_quiescence_is_bounded_under_a_permanent_stderr_flood` | quiescence observed within the budget under load | TEMPORARY_BLOCKER | serving |
+| `test_serving_protocol.py::TestProtocolViolations::test_crash_mid_session` | EOF observed before the exit code under load | TEMPORARY_BLOCKER | serving |
+
+Fix: add `pytest-timeout` and make the flood/crash fixtures provide a
+hard, non-racy signal (or run them in a dedicated non-parallel job).
+
 ## Open risks surfaced by this inventory
 
 1. `test_astra_runtime.py` differential is gated on an external binary;

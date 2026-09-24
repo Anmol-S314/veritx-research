@@ -8,9 +8,10 @@ until every seal condition is met.
 
 ## 1. Release candidate SHA
 
-`prod/production-readiness` HEAD (local, unpushed). Base `190d04f1`
-(B4 freeze). See `BASELINE.md` for the exact per-commit list. The branch
-has not been tagged, and `main` has not been modified.
+`prod/production-readiness`, pushed to `github` (Anmol-S314/veritx-research);
+see `BASELINE.md` for the base SHAs and the per-commit list. The branch is
+not tagged and `main` has not been modified. A release tag must point at
+the exact audited SHA.
 
 ## 2. Base SHAs
 
@@ -54,6 +55,10 @@ taxonomy).
 | Conservation accepted a missing trace-injected packet count | high | optional check | `a274d4b0` | `test_booksim_conservation.py` |
 | Bare programmer `ValueError` could be laundered into a verdict (B7) | high | ValueError-rooted catch | `ff141c68` | `test_certificate_failclosed.py` |
 | Legacy-reader reachability guard missed aliased imports | low | regex, not AST | `466c9fa8` | `test_results_legacy_boundary.py` |
+| Two v2 compile orchestration implementations (drift risk) | high | duplicated derivation | `c70a1b9e` | `test_compiler_path_parity.py` |
+| `core.runs` initial publication non-atomic; results RMW unlocked | high | `write_text`; no lock | `39f50578` | `test_run_core.py` |
+| Environment contract contradiction (pyproject >=3.10 vs enforced 3.12) and missing `requirements.lock` | medium | inconsistent floor | `39f50578` | `test_run_core.py` |
+| CI did not trigger on the production branch | high | missing branch glob + no release workflow | `1fea26ab` | `.github/workflows/release.yml` |
 
 Historical scientific findings F-0001 and F-0004 are FIXED in
 `validation/FINDINGS.md`; F-0002 ACCEPTED.
@@ -69,12 +74,21 @@ Historical scientific findings F-0001 and F-0004 are FIXED in
   is a vendored Python extension executed through `simulation/ramulator.py`
   (not the binary-manifest producer path), qualified by the engine gate
   (16/16) and its pinned vendored source.
-- Run directories are timestamped, not content-addressed/atomic (P2).
+- Run directories are timestamped, not content-addressed/atomic (P2); three
+  run notions (`core.runs.Run`, `core.paths.new_run_dir`, evaluator temp
+  dirs) still coexist — `core.runs` is hardened but unused.
+- The v3 compile orchestration has no canonical-compiler equivalent yet
+  (only the v2 path was collapsed).
+- Workload model (`graph`/`operations`/`canonical`) authority is still
+  `VERIFY`.
+- CI image/toolchain not yet pinned by digest; several Docker dependencies
+  clone moving HEADs.
 - No clean-clone qualification has been run.
+- Prose is beginning to stale (generated/checked facts are owed).
 - Report files embed ephemeral scratch paths.
 - `bash third_party/ramulator2/build.sh` fails silently (use `./build.sh`).
-- One timing-sensitive serving test (`test_quiescence_is_bounded_under_a_
-  permanent_stderr_flood`) is flaky under load.
+- Two serving-protocol tests are flaky under load (see
+  `SKIP-INVENTORY.md`).
 - Evidence schema v2 and PreparedBookSimInput schema v3 are incompatible
   with v1/v2 fixtures by design; older persisted documents are refused,
   not migrated.
@@ -153,7 +167,8 @@ Clean at the time of writing.
 ## 18. Branch status
 
 Historical branches untouched (no cleanup performed). `main` untouched.
-`prod/production-readiness` tracks no upstream; push is a human decision.
+`prod/production-readiness` is pushed to `github` and tracks
+`github/prod/production-readiness`.
 
 ## 19. Release decision
 
