@@ -54,8 +54,23 @@
           "hand_route",
           "hand_counts",
           "standalone_parity",
-          "window_invariance"
+          "window_invariance",
+          "monotonicity"
         ]
+      }
+    },
+    "sweep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["param", "values"],
+      "properties": {
+        "param": {"enum": ["link_width", "payload_bytes"]},
+        "values": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": {"type": "integer", "minimum": 1}
+        }
       }
     },
     "seed": {"type": "integer", "minimum": 0, "default": 0},

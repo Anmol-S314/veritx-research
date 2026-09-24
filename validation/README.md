@@ -61,6 +61,9 @@ PYTHONPATH=tracks/t3-topology/dse python3 -m validation.harness.run \
 # the whole corpus
 PYTHONPATH=tracks/t3-topology/dse python3 -m validation.harness.run --all
 
+# corpus + the negative mutation layer
+PYTHONPATH=tracks/t3-topology/dse python3 -m validation.harness.run --all --mutations
+
 # as tests (CI gate)
 PYTHONPATH=tracks/t3-topology/dse:tracks/t3-topology/dse/tests \
     python3 -m pytest validation/tests -q

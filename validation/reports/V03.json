@@ -2,7 +2,6 @@
   "schema_version": 1,
   "id": "V03",
   "title": "4x4 mesh, 16-node EP ALLTOALL, 1024 B payload",
-  "profile_id": "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1",
   "fabric": {
     "compute_tiles": 16,
     "tp": 16,
@@ -10,6 +9,7 @@
     "num_vcs": 1
   },
   "workload": "collective",
+  "profile_id": "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1",
   "veritx": {
     "packets": 480,
     "flits": 2400,

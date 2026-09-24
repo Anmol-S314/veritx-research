@@ -2,7 +2,6 @@
   "schema_version": 1,
   "id": "V01",
   "title": "2x2 mesh, single 1-flit P2P router 0 -> router 3",
-  "profile_id": "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1",
   "fabric": {
     "compute_tiles": 4,
     "tp": 4,
@@ -10,6 +9,7 @@
     "num_vcs": 1
   },
   "workload": "p2p",
+  "profile_id": "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1",
   "veritx": {
     "packets": 1,
     "flits": 1,

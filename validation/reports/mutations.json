@@ -1,0 +1,50 @@
+[
+  {
+    "name": "M1_window_only_completion",
+    "caught": true,
+    "expected": "BookSimExecutionError: Completion time",
+    "detail": "refused: missing required completion evidence 'Completion time is N cycles' (the last-ejected-flit cycle; F-0001) \u2014 refusing to t"
+  },
+  {
+    "name": "M2_completion_after_window",
+    "caught": true,
+    "expected": "BookSimExecutionError: exceeds the run window",
+    "detail": "refused: completion evidence 99 exceeds the run window 10 \u2014 inconsistent timing evidence"
+  },
+  {
+    "name": "M3_trace_tamper_after_prepare",
+    "caught": true,
+    "expected": "BookSimExecutionError: modified after preparation",
+    "detail": "refused: prepared input does not match the externally held prepared_id (sha256:76347da4dd58ef2926d147db6ca18c9e6a5b243528c452cf23"
+  },
+  {
+    "name": "M4_config_tamper_in_run_dir",
+    "caught": true,
+    "expected": "BookSimExecutionError: different bytes",
+    "detail": "refused: /tmp/validation-work-rg1fc3qm/m4/config.cfg already holds different bytes; refusing to overwrite a prepared input"
+  },
+  {
+    "name": "M5_binary_swap_after_identification",
+    "caught": true,
+    "expected": "ProducerError: changed between identification",
+    "detail": "refused: BookSim binary changed between identification and execution (6294b6bf519e162c71fccfb59e95dc58c91b3b132fd9dff69a754c146d4"
+  },
+  {
+    "name": "M6_evidence_byte_flip",
+    "caught": true,
+    "expected": "BackendEvidenceError: modified after execution",
+    "detail": "refused: evidence file /tmp/validation-work-rg1fc3qm/m-real/backend-evidence.json digest 0e4b1f8e03eb0601116370bc87fee2188de5e74a"
+  },
+  {
+    "name": "M7_wrong_producer_sha",
+    "caught": true,
+    "expected": "BackendEvidenceError: different BookSim binary",
+    "detail": "refused: evidence was produced by a different BookSim binary; refusing reuse"
+  },
+  {
+    "name": "M8_evidence_transplant",
+    "caught": true,
+    "expected": "BackendEvidenceError: prepared_id",
+    "detail": "refused: evidence prepared_id does not match the prepared input"
+  }
+]

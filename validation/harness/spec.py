@@ -14,8 +14,15 @@ SCHEMA_VERSION = 1
 
 KNOWN_CHECKS = frozenset({
     "conservation", "hand_route", "hand_counts",
-    "standalone_parity", "window_invariance",
+    "standalone_parity", "window_invariance", "monotonicity",
 })
+
+#: sweep parameter -> (field, quantity that must be monotone, direction)
+#: direction is stated for ASCENDING parameter values.
+SWEEP_RULES = {
+    "link_width": ("fabric", "completion_cycles", "non_increasing"),
+    "payload_bytes": ("workload", "flits", "non_decreasing"),
+}
 
 _P2P = "p2p"
 _COLLECTIVE = "collective"
@@ -68,6 +75,44 @@ class Expected:
 
 
 @dataclass(frozen=True)
+class SweepSpec:
+    param: str
+    values: tuple[int, ...]
+    field: str
+    quantity: str
+    direction: str
+
+    def apply(self, spec: "ExperimentSpec", value: int) -> "ExperimentSpec":
+        """Return a copy of ``spec`` with the swept field set to ``value``."""
+        import dataclasses
+        if self.field == "fabric":
+            fabric = dataclasses.replace(spec.fabric, **{self.param: value})
+            return dataclasses.replace(spec, fabric=fabric, sweep=None)
+        workload = dataclasses.replace(spec.workload, **{self.param: value})
+        return dataclasses.replace(spec, workload=workload, sweep=None)
+
+
+def _parse_sweep(doc: dict[str, Any]) -> SweepSpec | None:
+    raw = doc.get("sweep")
+    if raw is None:
+        return None
+    param = str(raw.get("param", ""))
+    if param not in SWEEP_RULES:
+        raise SpecError(
+            f"unknown sweep param {param!r}; known: {sorted(SWEEP_RULES)}")
+    values = tuple(int(v) for v in raw.get("values", ()))
+    if len(values) < 2:
+        raise SpecError("a sweep needs at least two values")
+    if list(values) != sorted(set(values)):
+        raise SpecError(
+            f"sweep values must be strictly ascending and unique, got "
+            f"{list(values)}")
+    field, quantity, direction = SWEEP_RULES[param]
+    return SweepSpec(param=param, values=values, field=field,
+                     quantity=quantity, direction=direction)
+
+
+@dataclass(frozen=True)
 class ExperimentSpec:
     id: str
     title: str
@@ -78,6 +123,7 @@ class ExperimentSpec:
     seed: int = 0
     timeout_s: int = 600
     path: Path | None = None
+    sweep: SweepSpec | None = None
 
     @classmethod
     def from_dict(cls, doc: Any, *, path: Path | None = None
@@ -140,7 +186,8 @@ class ExperimentSpec:
         return cls(id=str(doc["id"]), title=str(doc["title"]), fabric=fabric,
                    workload=workload, expected=expected, checks=checks,
                    seed=int(doc.get("seed", 0)),
-                   timeout_s=int(doc.get("timeout_s", 600)), path=path)
+                   timeout_s=int(doc.get("timeout_s", 600)), path=path,
+                   sweep=_parse_sweep(doc))
 
     @classmethod
     def load(cls, path: str | Path) -> "ExperimentSpec":

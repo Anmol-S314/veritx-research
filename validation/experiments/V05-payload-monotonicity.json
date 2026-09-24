@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "id": "V05",
+  "title": "4x4 mesh P2P: transmitted flits are non-decreasing in payload size",
+  "fabric": {
+    "topology_family": "mesh",
+    "compute_tiles": 16,
+    "tp": 16,
+    "link_width": 64,
+    "concentration": 1,
+    "num_vcs": 1
+  },
+  "workload": {
+    "kind": "p2p",
+    "src_rank": 0,
+    "dst_rank": 15,
+    "payload_bytes": 64
+  },
+  "sweep": {
+    "param": "payload_bytes",
+    "values": [7, 64, 512, 4096]
+  },
+  "expected": {
+    "notes": "Layer 4: a larger payload cannot reduce the number of transmitted flits. Flit count (VERITX canonical and authority-injected) must be non-decreasing in payload_bytes."
+  },
+  "checks": [
+    "monotonicity",
+    "conservation",
+    "standalone_parity"
+  ]
+}

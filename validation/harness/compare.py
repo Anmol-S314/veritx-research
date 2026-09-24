@@ -177,3 +177,53 @@ def run_checks(*, spec, built, veritx_stats: dict, authority,
             values={"completion": v, "windows": windows}))
 
     return results
+
+
+def monotonicity_check(spec, points: list[dict]) -> CheckResult:
+    """Layer 4: the swept quantity must move in the physically known way.
+
+    ``points`` is an ascending list of
+    ``{"value", "quantity", "authority_quantity"}``. The direction is
+    declared by the spec's sweep rule; a curve that moves the wrong way is
+    a mismatch, not a curiosity.
+    """
+    sweep = spec.sweep
+    if sweep is None:
+        raise ValueError("monotonicity_check requires a sweep spec")
+    problems: list[str] = []
+    quantities = [p["quantity"] for p in points]
+    pairs = list(zip(points, points[1:]))
+    for (a, b) in pairs:
+        qa, qb = a["quantity"], b["quantity"]
+        if sweep.direction == "non_increasing" and qb > qa:
+            problems.append(
+                f"{sweep.param} {a['value']}->{b['value']}: "
+                f"{sweep.quantity} increased {qa}->{qb} (must not increase)")
+        elif sweep.direction == "non_decreasing" and qb < qa:
+            problems.append(
+                f"{sweep.param} {a['value']}->{b['value']}: "
+                f"{sweep.quantity} decreased {qa}->{qb} (must not decrease)")
+    # the authority must show the same direction
+    authority_quantities = [p.get("authority_quantity") for p in points]
+    if all(q is not None for q in authority_quantities):
+        for (a, b) in zip(points, points[1:]):
+            qa, qb = a["authority_quantity"], b["authority_quantity"]
+            if sweep.direction == "non_increasing" and qb > qa:
+                problems.append(
+                    f"authority {sweep.quantity} increased {qa}->{qb} across "
+                    f"{sweep.param} {a['value']}->{b['value']}")
+            elif sweep.direction == "non_decreasing" and qb < qa:
+                problems.append(
+                    f"authority {sweep.quantity} decreased {qa}->{qb} across "
+                    f"{sweep.param} {a['value']}->{b['value']}")
+    return CheckResult(
+        name="monotonicity", authority_class="monotonicity",
+        detail="; ".join(problems)
+        or (f"{sweep.quantity} is {sweep.direction} across "
+            f"{sweep.param}={list(sweep.values)} for VERITX and authority"),
+        verdict=_verdict(not problems),
+        values={"param": sweep.param, "quantity": sweep.quantity,
+                "direction": sweep.direction,
+                "series": {str(p["value"]): p["quantity"] for p in points},
+                "authority_series": {str(p["value"]): p.get(
+                    "authority_quantity") for p in points}})

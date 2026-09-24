@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "V04",
+  "title": "4x4 mesh ALLREDUCE: completion is non-increasing in link width",
+  "fabric": {
+    "topology_family": "mesh",
+    "compute_tiles": 16,
+    "tp": 16,
+    "link_width": 64,
+    "concentration": 1,
+    "num_vcs": 1
+  },
+  "workload": {
+    "kind": "collective",
+    "collective_kind": "ALLREDUCE",
+    "payload_bytes": 1024
+  },
+  "sweep": {
+    "param": "link_width",
+    "values": [32, 64, 128, 256]
+  },
+  "expected": {
+    "notes": "Layer 4: a wider link must never make the same workload slower. Completion cycles (last ejection, F-0001) must be non-increasing as link_width rises, for VERITX and for the independent authority."
+  },
+  "checks": [
+    "monotonicity",
+    "conservation",
+    "standalone_parity"
+  ]
+}

@@ -1,0 +1,192 @@
+{
+  "schema_version": 1,
+  "id": "V04",
+  "title": "4x4 mesh ALLREDUCE: completion is non-increasing in link width",
+  "fabric": {
+    "compute_tiles": 16,
+    "tp": 16,
+    "link_width": 64,
+    "num_vcs": 1
+  },
+  "workload": "collective",
+  "sweep": {
+    "param": "link_width",
+    "quantity": "completion_cycles",
+    "direction": "non_increasing",
+    "values": [
+      32,
+      64,
+      128,
+      256
+    ],
+    "points": [
+      {
+        "value": 32,
+        "quantity": 1962,
+        "authority_quantity": 1962,
+        "packets": 1920,
+        "flits": 12000,
+        "completion_cycles": 1962,
+        "authority_completion": 1962
+      },
+      {
+        "value": 64,
+        "quantity": 990,
+        "authority_quantity": 990,
+        "packets": 960,
+        "flits": 4800,
+        "completion_cycles": 990,
+        "authority_completion": 990
+      },
+      {
+        "value": 128,
+        "quantity": 507,
+        "authority_quantity": 507,
+        "packets": 480,
+        "flits": 2400,
+        "completion_cycles": 507,
+        "authority_completion": 507
+      },
+      {
+        "value": 256,
+        "quantity": 505,
+        "authority_quantity": 505,
+        "packets": 480,
+        "flits": 1440,
+        "completion_cycles": 505,
+        "authority_completion": 505
+      }
+    ]
+  },
+  "checks": [
+    {
+      "name": "monotonicity",
+      "authority_class": "monotonicity",
+      "independence": "independent",
+      "verdict": "exact",
+      "detail": "completion_cycles is non_increasing across link_width=[32, 64, 128, 256] for VERITX and authority",
+      "values": {
+        "param": "link_width",
+        "quantity": "completion_cycles",
+        "direction": "non_increasing",
+        "series": {
+          "32": 1962,
+          "64": 990,
+          "128": 507,
+          "256": 505
+        },
+        "authority_series": {
+          "32": 1962,
+          "64": 990,
+          "128": 507,
+          "256": 505
+        }
+      }
+    },
+    {
+      "name": "conservation@32",
+      "authority_class": "conservation",
+      "independence": "independent",
+      "verdict": "exact",
+      "detail": "packets and flits close exactly",
+      "values": {
+        "packets": 1920,
+        "flits": 12000,
+        "authority_injected_flits": 12000,
+        "authority_accepted_flits": 12000
+      }
+    },
+    {
+      "name": "standalone_parity@32",
+      "authority_class": "standalone_booksim",
+      "independence": "semi_independent",
+      "verdict": "exact",
+      "detail": "VERITX completion 1962 == authority 1962",
+      "values": {
+        "veritx_completion": 1962,
+        "authority_completion": 1962,
+        "veritx_window": 2920,
+        "authority_window": 3920
+      }
+    },
+    {
+      "name": "conservation@64",
+      "authority_class": "conservation",
+      "independence": "independent",
+      "verdict": "exact",
+      "detail": "packets and flits close exactly",
+      "values": {
+        "packets": 960,
+        "flits": 4800,
+        "authority_injected_flits": 4800,
+        "authority_accepted_flits": 4800
+      }
+    },
+    {
+      "name": "standalone_parity@64",
+      "authority_class": "standalone_booksim",
+      "independence": "semi_independent",
+      "verdict": "exact",
+      "detail": "VERITX completion 990 == authority 990",
+      "values": {
+        "veritx_completion": 990,
+        "authority_completion": 990,
+        "veritx_window": 1960,
+        "authority_window": 2960
+      }
+    },
+    {
+      "name": "conservation@128",
+      "authority_class": "conservation",
+      "independence": "independent",
+      "verdict": "exact",
+      "detail": "packets and flits close exactly",
+      "values": {
+        "packets": 480,
+        "flits": 2400,
+        "authority_injected_flits": 2400,
+        "authority_accepted_flits": 2400
+      }
+    },
+    {
+      "name": "standalone_parity@128",
+      "authority_class": "standalone_booksim",
+      "independence": "semi_independent",
+      "verdict": "exact",
+      "detail": "VERITX completion 507 == authority 507",
+      "values": {
+        "veritx_completion": 507,
+        "authority_completion": 507,
+        "veritx_window": 1480,
+        "authority_window": 2480
+      }
+    },
+    {
+      "name": "conservation@256",
+      "authority_class": "conservation",
+      "independence": "independent",
+      "verdict": "exact",
+      "detail": "packets and flits close exactly",
+      "values": {
+        "packets": 480,
+        "flits": 1440,
+        "authority_injected_flits": 1440,
+        "authority_accepted_flits": 1440
+      }
+    },
+    {
+      "name": "standalone_parity@256",
+      "authority_class": "standalone_booksim",
+      "independence": "semi_independent",
+      "verdict": "exact",
+      "detail": "VERITX completion 505 == authority 505",
+      "values": {
+        "veritx_completion": 505,
+        "authority_completion": 505,
+        "veritx_window": 1480,
+        "authority_window": 2480
+      }
+    }
+  ],
+  "passed": true
+}
