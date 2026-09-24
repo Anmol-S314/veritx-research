@@ -1,4 +1,4 @@
-"""veritx_dse.application.compile — Wave-C bundle compiler (orchestration).
+"""veritx_dse.compiler.orchestration — bundle compiler (orchestration).
 
 The compiler sequences the SEALED Wave-B derivation only:
 
@@ -25,7 +25,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from .errors import map_semantic_error
+from veritx_dse.application.errors import ControlPlaneError, map_semantic_error
+from veritx_dse.core.errors import VeritXError
 
 # Canonical hardware settings for the application compile path. These
 # mirror the RT-candidate v1 defaults (packet bound 8 flits, 8-flit
@@ -111,7 +112,7 @@ def _make_bundle(*, design, inventory, mapping, topology, attachment,
         fabric=fabric, resolved_fabric=resolved_fabric)
 
 
-def compile_bundle(compile_request: Any):
+def build_resolved_bundle(compile_request: Any):
     """Derive and validate a ResolvedFabricBundle from a CompileRequest."""
     from veritx_dse.model.attachment import derive_attachment
     from veritx_dse.model.compile_model import derive_vc_assignment_artifact
@@ -150,14 +151,17 @@ def compile_bundle(compile_request: Any):
             router_route=router_route, resolved_route=resolved_route,
             vc_assignment=vc_assignment, children=children,
             resolved_fabric=resolved_fabric)
-    except Exception as exc:
-        from .errors import ControlPlaneError
-        if isinstance(exc, ControlPlaneError):
-            raise
+    except ControlPlaneError:
+        raise
+    except (ValueError, VeritXError) as exc:
+        # Typed semantic refusal -> product outcome. A programmer fault
+        # (AttributeError/TypeError/RuntimeError/NameError) is NOT a
+        # semantic result and must propagate, not be laundered into
+        # UNSUPPORTED_SEMANTICS.
         raise map_semantic_error(exc, operation="compile") from exc
 
 
-def compile_bundle_v3(compile_request: Any):
+def build_resolved_bundle_v3(compile_request: Any):
     """Derive and validate a ResolvedFabricBundle from a v3 request.
 
     P1C phase-2 (Fix 2): makes CompileRequestV3 genuinely compilable
@@ -187,7 +191,7 @@ def compile_bundle_v3(compile_request: Any):
     if not isinstance(compile_request, CompileRequestV3):
         raise map_semantic_error(
             TypeError(
-                f"compile_bundle_v3 takes a CompileRequestV3, got "
+                f"build_resolved_bundle_v3 takes a CompileRequestV3, got "
                 f"{type(compile_request).__name__}"),
             operation="compile")
     try:
@@ -218,11 +222,14 @@ def compile_bundle_v3(compile_request: Any):
             router_route=router_route, resolved_route=resolved_route,
             vc_assignment=vc_assignment, children=children,
             resolved_fabric=resolved_fabric)
-    except Exception as exc:
-        from .errors import ControlPlaneError
-        if isinstance(exc, ControlPlaneError):
-            raise
+    except ControlPlaneError:
+        raise
+    except (ValueError, VeritXError) as exc:
+        # Typed semantic refusal -> product outcome. A programmer fault
+        # (AttributeError/TypeError/RuntimeError/NameError) is NOT a
+        # semantic result and must propagate, not be laundered into
+        # UNSUPPORTED_SEMANTICS.
         raise map_semantic_error(exc, operation="compile") from exc
 
 
-__all__ = ["compile_bundle", "compile_bundle_v3"]
+__all__ = ["build_resolved_bundle", "build_resolved_bundle_v3"]

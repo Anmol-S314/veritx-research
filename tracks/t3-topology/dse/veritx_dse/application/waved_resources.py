@@ -323,7 +323,7 @@ def rebuild_verified_bundle(store: Any, design_id: str) -> Any:
     """Recompile the Wave-B bundle from a VERIFIED design resource."""
     from veritx_dse.model.compile_model import CompileRequest
 
-    from .compile import compile_bundle
+    from veritx_dse.compiler.orchestration import build_resolved_bundle
     from .results import load_verified_design
     record = load_verified_design(store, design_id)
     try:
@@ -334,7 +334,7 @@ def rebuild_verified_bundle(store: Any, design_id: str) -> Any:
             f"design {design_id} compile_request does not parse: {exc}",
             operation="verify_resource", resource_id=design_id) from exc
     try:
-        return compile_bundle(request)
+        return build_resolved_bundle(request)
     except ControlPlaneError as exc:
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,

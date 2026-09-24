@@ -162,7 +162,7 @@ def load_verified_design(store: Any, design_id: str) -> dict[str, Any]:
     differ). The design-to-intent link lives on the plan, verified
     there.
     """
-    from .compile import compile_bundle
+    from veritx_dse.compiler.orchestration import build_resolved_bundle
     from veritx_dse.model.compile_model import CompileRequest
     record = _get(store, "design", design_id)
     check_envelope(record, "design")
@@ -194,7 +194,7 @@ def load_verified_design(store: Any, design_id: str) -> dict[str, Any]:
             f"{record.get('design_hash')}",
             operation="verify_resource", resource_id=design_id)
     try:
-        bundle = compile_bundle(compile_request)
+        bundle = build_resolved_bundle(compile_request)
     except ControlPlaneError as exc:
         raise ControlPlaneError(
             ErrorCode.EVIDENCE_INVALID,

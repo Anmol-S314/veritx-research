@@ -25,7 +25,7 @@ from typing import Any
 # ── fabric presets ────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
-class FabricPreset:
+class Preset:
     """One immutable named fabric preset."""
 
     name: str
@@ -76,8 +76,8 @@ _PRESET_BUILDERS = {
         "tiny2", 4, lambda: _mesh4_request(link_width=128)),
 }
 
-FABRIC_PRESETS: tuple[FabricPreset, ...] = tuple(
-    FabricPreset(name=name, description=desc, default_trace=trace,
+FABRIC_PRESETS: tuple[Preset, ...] = tuple(
+    Preset(name=name, description=desc, default_trace=trace,
                  endpoint_count=endpoints)
     for name, (desc, trace, endpoints, _) in _PRESET_BUILDERS.items())
 
@@ -86,7 +86,7 @@ def preset_names() -> tuple[str, ...]:
     return tuple(p.name for p in FABRIC_PRESETS)
 
 
-def get_preset(name: str) -> FabricPreset:
+def get_preset(name: str) -> Preset:
     for preset in FABRIC_PRESETS:
         if preset.name == name:
             return preset
@@ -251,7 +251,7 @@ __all__ = [
     "METRIC_SCHEMA_VERSION",
     "STATS_TO_METRIC",
     "TRACE_REGISTRY",
-    "FabricPreset",
+    "Preset",
     "MetricDefinition",
     "build_preset_request",
     "derive_request",

@@ -63,7 +63,7 @@ class FabricCompiler:
                 ) -> Compilation:
         """Compile one request: bundle, then certificate, then verdict.
 
-        P1C phase-2: v3 requests compile through compile_bundle_v3
+        P1C phase-2: v3 requests compile through the v3 bundle builder
         (genuine v3 derivation — never a fake-v2 conversion); v2 flows
         exactly as before.
         """
@@ -71,12 +71,13 @@ class FabricCompiler:
             verify_compiled_fabric,
         )
 
-        from .compile import compile_bundle, compile_bundle_v3
+        from veritx_dse.compiler.orchestration import (
+            build_resolved_bundle, build_resolved_bundle_v3)
         try:
             if isinstance(request, CompileRequestV3):
-                bundle = compile_bundle_v3(request)
+                bundle = build_resolved_bundle_v3(request)
             else:
-                bundle = compile_bundle(request)
+                bundle = build_resolved_bundle(request)
         except ControlPlaneError as exc:
             if exc.code == ErrorCode.UNSUPPORTED_SEMANTICS:
                 return Compilation(status="UNSUPPORTED", request=request,
@@ -85,10 +86,6 @@ class FabricCompiler:
             return Compilation(status="INVALID", request=request,
                                bundle=None, certificate=None,
                                error=f"{exc.code.value}: {exc.message}")
-        except Exception as exc:  # pragma: no cover - mapped inside
-            return Compilation(status="INVALID", request=request,
-                               bundle=None, certificate=None,
-                               error=f"{type(exc).__name__}: {exc}")
         certificate = verify_compiled_fabric(bundle)
         if certificate.overall != "PASS":
             failed = sorted(o.obligation for o in certificate.obligations
