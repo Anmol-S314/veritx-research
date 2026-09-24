@@ -10,6 +10,28 @@ trace VERITX itself generated. The ring-ALLREDUCE model is textbook:
 
 Packetisation is then derived from the declared flit geometry (flit
 width, header width, max packet flits), independently of VERITX.
+
+PW2 extends the same discipline to the remaining pinned schedules. Every
+law below is written from the ALGORITHM definition (who must learn what),
+not from the implementation under test:
+
+    ALLGATHER ring      every rank ends with all k chunks; each ring
+                        edge carries k-1 messages, chunk = B/k
+                        (k(k-1) messages of B/k -> aggregate (k-1)B)
+    REDUCESCATTER ring  every rank ends owning one reduced chunk; each
+                        ring edge carries k-1 messages, chunk = B/k
+    ALLTOALL direct     every ordered pair (i, j), i != j, carries
+                        exactly one message of B/k bytes; each rank
+                        sends k-1 distinct chunks
+    BROADCAST fanout    the declared root sends one B-byte message to
+                        each of the k-1 other participants; nobody
+                        else sends anything
+
+Chunk-identity caveat (network-level semantics, see
+PRODUCTION-CLAIMS.md C-16): these oracles validate the communication
+SCHEDULE — who sends how many bytes to whom, in which step. They cannot
+see which DATA VALUE a message carries; reduction-ownership semantics
+are out of scope until a chunk-identity artifact exists.
 """
 from __future__ import annotations
 
@@ -92,8 +114,11 @@ def collective_graph_report(kind: str, ranks: int, payload_bytes: int,
         payload_ok_unit = chunk
     elif kind in ("REDUCESCATTER", "ALLGATHER"):
         expected_steps = ranks - 1
-        chunk = payload_bytes // ranks if kind == "REDUCESCATTER" \
-            else payload_bytes
+        # Ring law for BOTH: every message carries one B/k chunk; a full
+        # ALLGATHER or REDUCESCATTER moves (k-1)B bytes in k(k-1) messages.
+        # (The previous ALLGATHER branch used chunk = B, which is
+        # inconsistent with its own aggregate (k-1)B.)
+        chunk = payload_bytes // ranks
         expected_messages = ranks * (ranks - 1)
         expected_aggregate = (ranks - 1) * payload_bytes
         payload_ok_unit = chunk
@@ -191,3 +216,148 @@ def ring_allreduce_oracle(*, ranks: int, payload_bytes: int,
         packets_per_message=packets_per_message,
         total_flits=messages * flits_per_message,
         total_packets=messages * packets_per_message)
+
+
+# ── PW2: per-collective communication-graph laws ─────────────────────────
+
+def collective_count_oracle(kind: str, ranks: int, payload_bytes: int,
+                            flit_width_bits: int,
+                            max_packet_flits: int = DEFAULT_MAX_PACKET_FLITS
+                            ) -> RingAllReduceOracle:
+    """Message/byte/flit/packet counts for the pinned schedule of `kind`.
+
+    Same closed-form discipline as ring_allreduce_oracle: steps, message
+    count and bytes from the algorithm definition, then packetisation from
+    the declared flit geometry. Supported for every pinned kind.
+    """
+    if ranks < 2:
+        raise ValueError(f"{kind} needs >= 2 ranks, got {ranks}")
+    if payload_bytes < 1:
+        raise ValueError("payload_bytes must be positive")
+    if kind == "ALLGATHER":
+        # F-0005: each of the k(k-1) ring messages carries one B/k chunk.
+        if payload_bytes % ranks:
+            raise ValueError(
+                f"payload {payload_bytes} is not divisible by {ranks} "
+                "ranks; the ring chunk model does not apply")
+        messages = ranks * (ranks - 1)
+        message_bytes = payload_bytes // ranks
+        total_bytes = (ranks - 1) * payload_bytes
+    elif kind == "REDUCESCATTER":
+        if payload_bytes % ranks:
+            raise ValueError(
+                f"payload {payload_bytes} is not divisible by {ranks} "
+                "ranks; the ring chunk model does not apply")
+        messages = ranks * (ranks - 1)
+        message_bytes = payload_bytes // ranks
+        total_bytes = (ranks - 1) * payload_bytes
+    elif kind == "ALLTOALL":
+        if payload_bytes % ranks:
+            raise ValueError(
+                f"payload {payload_bytes} is not divisible by {ranks} "
+                "ranks; the direct chunk model does not apply")
+        messages = ranks * (ranks - 1)
+        message_bytes = payload_bytes // ranks
+        total_bytes = (ranks - 1) * payload_bytes
+    elif kind == "BROADCAST":
+        messages = ranks - 1
+        message_bytes = payload_bytes
+        total_bytes = (ranks - 1) * payload_bytes
+    elif kind == "ALLREDUCE":
+        return ring_allreduce_oracle(
+            ranks=ranks, payload_bytes=payload_bytes,
+            flit_width_bits=flit_width_bits,
+            max_packet_flits=max_packet_flits)
+    else:
+        raise ValueError(f"no count oracle for {kind!r}")
+
+    endpoint_bits = max(1, (ranks - 1).bit_length())
+    header_bits = 2 * endpoint_bits + 3
+    usable_bits = flit_width_bits - header_bits
+    if usable_bits <= 0:
+        raise ValueError(
+            f"flit width {flit_width_bits} cannot hold a {header_bits}-bit "
+            "header")
+    chunk_bits = message_bytes * 8
+    flits_per_message = max(1, math.ceil(chunk_bits / usable_bits))
+    packets_per_message = max(1, math.ceil(flits_per_message
+                                           / max_packet_flits))
+    return RingAllReduceOracle(
+        ranks=ranks, payload_bytes=payload_bytes,
+        flit_width_bits=flit_width_bits, max_packet_flits=max_packet_flits,
+        messages=messages, total_bytes=total_bytes,
+        chunk_bytes=message_bytes, header_bits=header_bits,
+        usable_payload_bits=usable_bits, flits_per_message=flits_per_message,
+        packets_per_message=packets_per_message,
+        total_flits=messages * flits_per_message,
+        total_packets=messages * packets_per_message)
+
+
+def direct_or_broadcast_graph_law(kind: str, ranks: int,
+                                  payload_bytes: int, messages,
+                                  source: int | None = None) -> dict:
+    """Exact communication-graph laws for ALLTOALL and BROADCAST.
+
+    ALLTOALL (direct): every ordered pair (i, j), i != j, carries exactly
+    one message of B/k bytes; each rank sends exactly k-1 messages.
+
+    BROADCAST (root fanout): only the declared root sends; it sends one
+    B-byte message to each other participant; nobody else sends anything.
+
+    Every invariant is reported individually so a failure names exactly
+    what broke (F-0004 discipline).
+    """
+    from collections import Counter
+    msgs = [(int(m.step), int(m.src_rank), int(m.dst_rank),
+             int(m.payload_bytes)) for m in messages]
+    n = len(msgs)
+    checks: dict[str, bool] = {}
+
+    if kind == "ALLTOALL":
+        expected_count = ranks * (ranks - 1)
+        chunk = payload_bytes // ranks
+        checks["no_self_messages"] = all(i != j for _, i, j, _ in msgs)
+        checks["message_count_match"] = n == expected_count
+        observed_pairs = Counter((i, j) for _, i, j, _ in msgs)
+        expected_pairs = {(i, j): 1 for i in range(ranks)
+                          for j in range(ranks) if i != j}
+        checks["pair_multiplicity_exact"] = observed_pairs == expected_pairs
+        checks["chunk_bytes_match"] = all(b == chunk
+                                          for _, _, _, b in msgs)
+        checks["aggregate_bytes_match"] = (
+            sum(b for _, _, _, b in msgs) == (ranks - 1) * payload_bytes)
+        sends = Counter(i for _, i, _, _ in msgs)
+        recvs = Counter(j for _, _, j, _ in msgs)
+        checks["every_rank_sends_k_minus_1"] = all(
+            sends.get(i, 0) == ranks - 1 for i in range(ranks))
+        checks["every_rank_receives_k_minus_1"] = all(
+            recvs.get(j, 0) == ranks - 1 for j in range(ranks))
+        checks["steps_exact"] = all(s == 0 for s, _, _, _ in msgs)
+    elif kind == "BROADCAST":
+        if source is None:
+            raise ValueError("BROADCAST law needs the declared source rank")
+        if not 0 <= source < ranks:
+            raise ValueError(f"source {source} is not a rank")
+        expected_count = ranks - 1
+        checks["message_count_match"] = n == expected_count
+        checks["only_root_sends"] = all(i == source
+                                        for _, i, _, _ in msgs)
+        checks["root_sends_to_every_other_exactly_once"] = (
+            Counter(j for _, _, j, _ in msgs)
+            == {j: 1 for j in range(ranks) if j != source})
+        checks["no_self_messages"] = all(i != j for _, i, j, _ in msgs)
+        checks["chunk_bytes_match"] = all(b == payload_bytes
+                                          for _, _, _, b in msgs)
+        checks["aggregate_bytes_match"] = (
+            sum(b for _, _, _, b in msgs)
+            == (ranks - 1) * payload_bytes)
+        checks["steps_exact"] = all(s == 0 for s, _, _, _ in msgs)
+    else:
+        raise ValueError(f"no direct/broadcast law for {kind!r}")
+
+    problems = [name for name, ok in checks.items() if not ok]
+    return {
+        "kind": kind, "ranks": ranks, "payload_bytes": payload_bytes,
+        "source": source, "messages": len(msgs),
+        "checks": checks, "conforms": not problems, "problems": problems,
+    }

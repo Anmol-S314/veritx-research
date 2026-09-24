@@ -332,3 +332,58 @@ core.errors import").
 `python3 -m pytest tests -q` at `cf626566`: **3661 passed, 24 skipped,
 1 failed (F-0005)** in 882 s. With F-0005's one-line fix applied:
 `test_routing_realization.py` 79/79 PASS.
+
+---
+
+## F-0006 — ring ALLGATHER over-transmitted by a factor k
+
+**Status:** FIXED (production + independent reference + oracle corrected)
+**Severity:** high — every ALLGATHER network-traffic and completion claim
+was inflated by factor k
+**Found:** 2026-09-25, by the PW2 ALLGATHER probe (V11) against the
+production branch
+
+### What was wrong
+
+`workload/collectives.py::collective_schedule("ALLGATHER", k, B)` used
+`message_bytes = B` (the whole payload) for each of the `k(k-1)` ring
+messages. Ring ALLGATHER forwards CHUNKS of `B/k`, so the aggregate was
+`k(k-1)B` instead of the ring law `(k-1)B` — a factor-k over-transmission.
+
+`verification/reference_semantics.py::ref_collective` repeated the same
+expression, so the "independent" reference agreed with the defect (the
+F-0004 failure mode again). The harness oracle's ALLGATHER branch was also
+internally inconsistent (chunk = B but aggregate = `(k-1)B`), which is why
+the mismatch surfaced on `aggregate_bytes_match` rather than the chunk
+check.
+
+Measured (V11, 4x4 mesh, k=16, B=1024):
+
+```text
+production bytes   245760  (= k(k-1)B)
+oracle bytes        15360  (= (k-1)B)
+```
+
+### Fix
+
+- `collectives.py`: ALLGATHER now `message_bytes = B/k` with the same
+  `B % k == 0` divisibility refusal as REDUCESCATTER; aggregate `(k-1)B`.
+- `reference_semantics.py`: re-derived the same law independently.
+- `harness/oracle.py`: ALLGATHER chunk is `B/k` in both
+  `collective_graph_report` and `collective_count_oracle` (removing the
+  internal inconsistency).
+- regression: `tests/test_collective_allgather.py` pins the law and the
+  consistency of every pinned schedule.
+
+### Post-fix corpus
+
+V11 (ALLGATHER k=16) PASS, V12 (REDUCESCATTER) PASS, V14 (ALLGATHER k=2)
+PASS.
+
+### Still open (surfaced by the same PW2 probe)
+
+V13 (BROADCAST from a non-zero root) fails the packet-conservation gate:
+`delivered 132 != declared 300`. The gate correctly refuses a run in which
+declared packets do not all arrive; whether the cause is the BROADCAST
+lowering, the trace injection, or an unsupported domain is under
+investigation (separate finding to follow).
