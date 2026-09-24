@@ -15,6 +15,8 @@ LICENSE file in the root directory of this source tree.
 
 #include <iostream>
 #include <cstdlib>
+#include <mutex>
+#include <sstream>
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -37,6 +39,13 @@ bool veritx_ledger_enabled() {
     }();
     return level >= 1;
 }
+
+// VeritX: Sys instances log from independent threads. A multi-<< chain to
+// std::cerr is NOT atomic across threads: two collectives submitting at the
+// same tick interleave mid-line and the strict ledger regex then (correctly)
+// refuses the corrupted evidence. Every ledger line is therefore assembled
+// locally and written under one lock in a single call.
+std::mutex veritx_ledger_mutex;
 
 std::string veritx_format_bools(const std::vector<bool>& values) {
     std::string out = "[";
@@ -64,27 +73,36 @@ void veritx_ledger_coll_submit(int rank, uint64_t astra_node,
                                const std::vector<bool>& involved_dims,
                                const std::vector<int>& members,
                                bool has_group, uint64_t tick) {
-    std::cerr << "[LEDGER][COLL_SUBMIT] rank=" << rank
-              << " astra_node=" << astra_node << " comm_type=" << comm_type
-              << " comm_size=" << comm_size << " priority=" << priority
-              << " involved_dims=" << veritx_format_bools(involved_dims)
-              << " group_members=" << (has_group ? veritx_format_members(members) : std::string("none"))
-              << " tick=" << tick << std::endl;
+    std::ostringstream line;
+    line << "[LEDGER][COLL_SUBMIT] rank=" << rank
+         << " astra_node=" << astra_node << " comm_type=" << comm_type
+         << " comm_size=" << comm_size << " priority=" << priority
+         << " involved_dims=" << veritx_format_bools(involved_dims)
+         << " group_members=" << (has_group ? veritx_format_members(members) : std::string("none"))
+         << " tick=" << tick;
+    const std::lock_guard<std::mutex> guard(veritx_ledger_mutex);
+    std::cerr << line.str() << std::endl;
 }
 
 void veritx_ledger_coll_constructed(int rank, int generated_id) {
-    std::cerr << "[LEDGER][COLL_CONSTRUCTED] rank=" << rank
-              << " dataset_id=" << generated_id << std::endl;
+    std::ostringstream line;
+    line << "[LEDGER][COLL_CONSTRUCTED] rank=" << rank
+         << " dataset_id=" << generated_id;
+    const std::lock_guard<std::mutex> guard(veritx_ledger_mutex);
+    std::cerr << line.str() << std::endl;
 }
 
 void veritx_ledger_coll_complete(int rank, uint64_t coll_comm_id,
                                  uint64_t astra_node, uint64_t node_type,
                                  uint64_t tick) {
-    std::cerr << "[LEDGER][COLL_COMPLETE] rank=" << rank
-              << " dataset_id=" << coll_comm_id
-              << " astra_node=" << astra_node
-              << " node_type=" << node_type
-              << " tick=" << tick << std::endl;
+    std::ostringstream line;
+    line << "[LEDGER][COLL_COMPLETE] rank=" << rank
+         << " dataset_id=" << coll_comm_id
+         << " astra_node=" << astra_node
+         << " node_type=" << node_type
+         << " tick=" << tick;
+    const std::lock_guard<std::mutex> guard(veritx_ledger_mutex);
+    std::cerr << line.str() << std::endl;
 }
 }  // namespace
 

@@ -17,6 +17,14 @@ class ProducerError(ValueError):
     """The producer cannot be identified or is not reusable."""
 
 
+# Canonical execution-transport values (reclaimed verbatim from the RT
+# candidate 26e6f9dc, additive only): the production runner is the only
+# transport whose evidence is reusable; anything else is a test fixture.
+# The RT backend stack (backend/meshdor.py) imports these names.
+EXECUTION_TRANSPORT_SUPERVISED_PROCESS = "SUPERVISED_PROCESS"
+EXECUTION_TRANSPORT_TEST_INJECTED = "TEST_INJECTED"
+
+
 @dataclass(frozen=True)
 class ProducerIdentity:
     """Exact identity of the executable that ran."""
@@ -43,6 +51,18 @@ class ProducerIdentity:
     def pinned(self) -> bool:
         """A clean, revision-identified producer."""
         return self.source_revision is not None and self.dirty is False
+
+    @property
+    def tool_identity(self) -> str:
+        """RT-reclaim compatibility: execution-platform descriptor.
+
+        Historical RT evidence records ``producer_tool_identity`` as the
+        platform string captured at resolve time; it is attempt metadata,
+        not science. Derived on access so the canonical frozen dataclass
+        stays unchanged.
+        """
+        import platform
+        return platform.platform()
 
     def to_dict(self) -> dict:
         return {

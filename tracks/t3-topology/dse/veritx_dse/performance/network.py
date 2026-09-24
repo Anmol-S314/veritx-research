@@ -198,11 +198,21 @@ def bind_network_window(*, evidence: Any, chain: dict[str, Any],
         (evidence.get("stats") if isinstance(evidence, dict) else None)
     if not isinstance(stats, dict):
         raise TimeError("no BookSim stats on evidence (§42)")
+    # Canonical-key acceptance (veritx-integrate §26): the canonical
+    # BookSim parser records the backend's reported completion cycles
+    # as ``completion_cycles``; historical stats used
+    # ``completion_time``. One measured quantity — the backend's
+    # reported completion cycles — two labels. The historical label
+    # keeps precedence when both are present; a bool is never a count.
     cycles = stats.get("completion_time")
-    if not isinstance(cycles, int) or cycles < 0:
+    if not isinstance(cycles, int) or isinstance(cycles, bool):
+        cycles = stats.get("completion_cycles")
+    if not isinstance(cycles, int) or isinstance(cycles, bool) \
+            or cycles < 0:
         raise TimeError(
             f"BookSim stats carry no integer completion_time "
-            f"(got {cycles!r}); no network timing can be bound (§38/§42)")
+            f"(completion_cycles accepted as the canonical alias, got "
+            f"{cycles!r}); no network timing can be bound (§38/§42)")
     if expected_packets is not None and \
             isinstance(stats.get("delivered"), int) and \
             stats["delivered"] != expected_packets:

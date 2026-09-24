@@ -89,6 +89,14 @@ def _fail(obligation: str, method: str, reason: str,
     return ObligationResult(obligation, "FAIL", method, ev)
 
 
+def _hash_of(obj: Any, name: str) -> str:
+    """Read a child-artifact hash that may be a method (RT v1) or a
+    stored attribute (canonical v2). Identity comes from the child;
+    this shim only normalizes the accessor."""
+    value = getattr(obj, name)
+    return value() if callable(value) else value
+
+
 def _topology_connected(bundle: Any) -> ObligationResult:
     topo = bundle.topology
     routers = [r.router_id for r in topo.routers]
@@ -239,7 +247,7 @@ def _deadlock_free(bundle: Any) -> ObligationResult:
     )
     try:
         router_behavior = getattr(bundle, "router_behavior", None)
-        behavior_hash = router_behavior.router_behavior_hash()
+        behavior_hash = _hash_of(router_behavior, "router_behavior_hash")
         cert = certify_channel_vc_deadlock(
             topology=bundle.topology,
             resolved_route=bundle.resolved_route,
@@ -299,8 +307,12 @@ def _mapping_valid(bundle: Any) -> ObligationResult:
 
 def _packet_format_valid(bundle: Any) -> ObligationResult:
     try:
+        from veritx_dse.model.vc_resource import (
+            vc_resources_from_assignment,
+        )
         bundle.packet_format.validate_against(
-            bundle.topology, bundle.attachment, bundle.vc_assignment)
+            bundle.topology, bundle.attachment,
+            vc_resources_from_assignment(bundle.vc_assignment))
     except Exception as exc:
         return _fail("PACKET_FORMAT_VALID",
                      "packet_format.validate_against/v1", str(exc),
@@ -424,7 +436,8 @@ def verify_compiled_fabric(bundle: Any) -> VerificationCertificate:
     overall = "PASS" if all(
         o.status == "PASS" for o in results) else "FAIL"
     return VerificationCertificate(
-        resolved_fabric_hash=bundle.resolved_fabric.resolved_fabric_hash(),
+        resolved_fabric_hash=_hash_of(
+            bundle.resolved_fabric, "resolved_fabric_hash"),
         compiler_semantics_version=COMPILER_SEMANTICS_VERSION,
         obligations=results, overall=overall)
 

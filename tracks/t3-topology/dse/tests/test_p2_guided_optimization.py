@@ -983,92 +983,11 @@ class TestResultIdBindsProvenance:
                 assert r.constraints_satisfied is expect
 
 
-# ── `veritx optimize` CLI ────────────────────────────────────────────────
-
-class TestOptimizeCli:
-    def test_registered_with_documented_flags(self):
-        from veritx_dse.cli.cli import COMMANDS, DISPATCH, build_parser
-        assert COMMANDS["optimize"]["handler"].__name__ == "cmd_optimize"
-        assert COMMANDS["optimize"]["t3_mode"] == "forward"
-        assert callable(DISPATCH["optimize"])
-        args = build_parser().parse_args(
-            ["optimize", str(FIXTURE), "--search", "grid"])
-        assert args.fixture == str(FIXTURE)
-        assert args.search == "grid"
-
-    def test_grid_run_prints_table_pareto_selection(self, tmp_path, capsys=None):
-        import argparse
-        from veritx_dse.cli.cli import cmd_optimize
-        from veritx_dse.core.logging import Ctx
-        study_out = tmp_path / "study.json"
-        ctx = Ctx(verbosity=1)
-        args = argparse.Namespace(
-            fixture=str(FIXTURE), search="grid", link_widths=None,
-            concentrations=None, latency_ceiling=None,
-            max_candidates=None, study_out=str(study_out))
-        cmd_optimize(ctx, args)
-        assert not ctx.failed
-        view = json.loads(study_out.read_text())
-        # RT-12/A-P0.1: the CLI emits (and validates) contract v2 by
-        # default, but the FAKE evaluator is analytic authority: its rows
-        # are visible with typed reasons and can never be Pareto or
-        # selected.
-        assert view["contract_version"] == 2
-        assert view["base_design_hash"].startswith("sha256:")
-        assert len(view["candidates"]) == 4
-        assert view["pareto_ids"] == []
-        assert view["selected_candidate_id"] is None
-        for row in view["candidates"]:
-            assert set(row) == {"candidate_id", "guided_patch",
-                                "locked_consequences", "evaluation_ids",
-                                "product_requirements",
-                                "objective_values", "objective_availability",
-                                "constraint_verdicts",
-                                "evaluation_authority",
-                                "compilation_status", "evaluation_status",
-                                "evaluation_reason", "eligibility_reason",
-                                "pareto_eligible", "pareto_member"}
-            assert row["locked_consequences"]["routing_classes"] == ["DOR_XY"]
-            assert row["evaluation_authority"] == AUTHORITY_ANALYTIC_FAKE
-            assert row["pareto_eligible"] is False
-            assert row["pareto_member"] is False
-            assert "analytic-fake" in row["eligibility_reason"]
-
-    def test_view_hashes_prefixed_engine_hashes_bare(self, tmp_path):
-        """Fix 2: every hash crossing into the study view is
-        sha256:-prefixed; engine objects stay bare."""
-        import argparse
-        from veritx_dse.cli.cli import cmd_optimize
-        from veritx_dse.core.logging import Ctx
-        study_out = tmp_path / "study.json"
-        ctx = Ctx(verbosity=0)
-        args = argparse.Namespace(
-            fixture=str(FIXTURE), search="grid", link_widths=None,
-            concentrations=None, latency_ceiling=None,
-            max_candidates=None, study_out=str(study_out))
-        cmd_optimize(ctx, args)
-        assert not ctx.failed
-        view = json.loads(study_out.read_text())
-        assert view["base_design_hash"].startswith("sha256:")
-        for row in view["candidates"]:
-            assert row["evaluation_ids"]["design_hash"].startswith(
-                "sha256:"), row["candidate_id"]
-        # Engine side stays bare: rebuild and check the records.
-        base = _base()
-        result = _optimize(
-            base, _defn(), FakeDeterministicEvaluator(seed=7))
-        assert not result.base_design_hash.startswith("sha256:")
-        for r in result.records:
-            assert not r.design_hash.startswith("sha256:")
-
-    def test_missing_fixture_fails_closed(self, tmp_path):
-        import argparse
-        from veritx_dse.cli.cli import cmd_optimize
-        from veritx_dse.core.logging import Ctx
-        ctx = Ctx(verbosity=0)
-        args = argparse.Namespace(
-            fixture=str(tmp_path / "nope.json"), search="grid",
-            link_widths=None, concentrations=None, latency_ceiling=None,
-            max_candidates=None, study_out=None)
-        cmd_optimize(ctx, args)
-        assert ctx.failed
+# ── `veritx optimize` CLI: RETIRED (reclamation ledger, §26 Option 2) ─
+#
+# The P2 TestOptimizeCli block drove the retired RT CLI surface
+# (``COMMANDS`` registry, ``Ctx.failed``, fake-default optimization,
+# v1 StudyView). It is superseded by the canonical battery:
+# - tests/test_optimize_canonical_cli.py (registration, fail-closed
+#   missing input, exact-clock boundary, live study-view conventions);
+# - tests/test_p1_optimize_booksim.py (live repeatability + Pareto).

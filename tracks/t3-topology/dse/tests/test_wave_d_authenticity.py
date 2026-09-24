@@ -19,7 +19,15 @@ sys.path.insert(0, str(DSE))
 from veritx_dse.core.errors import (  # noqa: E402
     EvidenceInvalid, InvalidInput,
 )
-from veritx_dse.workload.messages import LogicalMessageArtifact  # noqa: E402
+try:  # historical v1 chain (deleted per §4/§7; V2 in test_wave_d_contract)
+    from veritx_dse.workload.messages import (  # noqa: E402
+        LogicalMessageArtifact,
+    )
+except ImportError:
+    pytest.skip(
+        "historical v1 LogicalMessageArtifact deleted per §4/§7; "
+        "canonical V2 coverage in test_wave_d_contract.py",
+        allow_module_level=True)
 from veritx_dse.workload.operations import (  # noqa: E402
     KIND_COLLECTIVE, KIND_P2P, CollectiveIntent, OperationGraph,
     OperationNode, P2PTransfer,

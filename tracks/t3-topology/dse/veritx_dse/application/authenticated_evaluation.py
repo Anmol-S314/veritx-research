@@ -69,7 +69,7 @@ from veritx_dse.core.errors import (
 from veritx_dse.core.time import TimeError
 from veritx_dse.model.compile_model import CompileRequestV3
 from veritx_dse.performance.network import NetworkWindowBinding
-from veritx_dse.workload.canonical_graph import WorkloadGraph
+from veritx_dse.workload.graph import WorkloadGraph
 from veritx_dse.workload.intent_lowering import lower_compile_workload
 
 #: Display metadata only (mirrors optimization.evaluators'
@@ -179,11 +179,31 @@ def _open_evidence(evidence_path: Any, binding: NetworkWindowBinding
             f"synthetic or forged result; the binding must name the "
             f"exact persisted evidence bytes")
     ref = EvidenceRef(path=str(path), sha256=digest)
+    # Canonical evidence seam (§26 Option 2): the evidence chain file
+    # holds the bare scientific document (the evaluator persists the
+    # validated scientific bytes deterministically; run-varying attempt
+    # metadata lives only in the execution run directory, never in the
+    # chain). Every digest below is read under its CANONICAL key, each
+    # naming the same executed fact the canonical execution path proved:
+    # - profile_id: which backend profile executed (its identity);
+    # - trace_sha256: digest of the exact executed trace bytes
+    #   (materialized and re-hashed before spawn by
+    #   execute_prepared_booksim); the evaluator binds this same
+    #   digest as backend_input_hash in binding and chain, so
+    #   artifact↔binding agreement is by construction, not by
+    #   cross-schema guessing;
+    # - parser_version / stats / binary_sha256: pinned by the
+    #   canonical document itself. No RT field is read here.
     try:
         evidence_doc = validate_evidence_document(
             read_verified_evidence(ref))
-        artifact = EvidenceArtifact.from_verified_evidence(
-            evidence_doc, ref)
+        artifact = EvidenceArtifact.build(
+            backend=evidence_doc["profile_id"],
+            backend_input_id=evidence_doc["trace_sha256"],
+            backend_input_sha256=evidence_doc["trace_sha256"],
+            raw_evidence_sha256=ref.sha256,
+            stats=evidence_doc["stats"],
+            parser_version=evidence_doc["parser_version"])
     except (BackendEvidenceError, ArtifactError) as exc:
         raise _refuse(
             "evidence", f"{type(exc).__name__}: {exc}") from exc
@@ -218,8 +238,12 @@ def _check_artifact_against_binding(
             "evidence.backend_input_id",
             f"{artifact.backend_input_id!r} is not the binding's "
             f"backend_input_hash {binding.backend_input_hash!r}")
+    # Executed-config digest under its canonical key: config_sha256
+    # is the digest of the exact executed config bytes (re-hashed
+    # before spawn); the binding names the same executed bytes'
+    # digest as backend_config_hash. Same bytes, each side's own key.
     evidence_config_hash = _require_str(evidence_doc,
-                                        "backend_config_hash", "evidence")
+                                        "config_sha256", "evidence")
     if evidence_config_hash != binding.backend_config_hash:
         raise _refuse(
             "evidence.backend_config_hash",
@@ -291,10 +315,13 @@ def _re_derive_lowering(request: CompileRequestV3) -> Any:
 
 
 def _evidence_producer(evidence_doc: Mapping[str, Any]) -> str:
-    producer = evidence_doc.get("booksim_binary_sha256")
+    # Canonical producer key: binary_sha256 is the digest of the exact
+    # executed binary (resolved and re-checked before spawn by
+    # execute_prepared_booksim).
+    producer = evidence_doc.get("binary_sha256")
     if not isinstance(producer, str) or not producer:
         raise _refuse(
-            "evidence.booksim_binary_sha256",
+            "evidence.binary_sha256",
             f"evidence names no producer identity, got {producer!r}")
     return producer
 
@@ -371,7 +398,7 @@ def authenticate_backend_evaluation(
     ref, artifact, evidence_doc = _open_evidence(evidence_path, binding)
 
     resolved_fabric_hash = \
-        compilation.bundle.resolved_fabric.resolved_fabric_hash()
+        compilation.bundle.resolved_fabric.resolved_fabric_hash
     chain = verified_result.get("wave_d_chain")
     chain_traffic_id, chain_resolved = _check_chain_identity(
         chain, design_hash=design_hash, workload_id=workload_id,

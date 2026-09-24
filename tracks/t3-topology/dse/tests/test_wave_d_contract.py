@@ -60,8 +60,9 @@ class TestCurrentContradictions:
 
     def test_world_size_multiplies_ep(self):
         """D0-C001: the design rank space multiplies EP."""
-        from veritx_dse.model.presets import parallel_world_size
-        assert parallel_world_size(tp=8, pp=8, ep=8, dp=1) == 512
+        from veritx_dse.model.parallelism import ParallelismArtifact
+        assert ParallelismArtifact(tp=8, pp=8, ep=8, dp=1).world_size \
+            == 512
         # ... while the external serving convention does not (tp*pp, ep
         # shares GPUs). Recorded here as the counterexample, not as an
         # adopted rule.
@@ -89,14 +90,19 @@ class TestCurrentContradictions:
         assert seen == set(range(16))
 
     def test_astra_logical_dims_degrade(self):
-        """D0-C002: dims silently collapse to [num_nodes] on mismatch."""
-        from veritx_dse.simulation.astrasim_adapter import (
-            generate_astrasim_logical_topology_json,
-        )
-        assert generate_astrasim_logical_topology_json(
-            4, tp=2, pp=2)["logical-dimensions"] == [2, 2]
-        assert generate_astrasim_logical_topology_json(
-            8, tp=2, pp=2)["logical-dimensions"] == [8]
+        """D0-C002: dims silently collapse to [num_nodes] on mismatch.
+
+        HISTORICAL: the RT astrasim_adapter heuristic
+        (``if tp*pp == num_nodes`` else ``[num_nodes]``) was superseded —
+        canonical ``derive_logical_dimensions`` derives dimensions from
+        the collective participant structure and refuses silent
+        replication. The old collapse behavior is recorded here as the
+        counterexample, not as an adopted rule.
+        """
+        pytest.skip(
+            "historical astrasim_adapter heuristic superseded by "
+            "canonical derive_logical_dimensions "
+            "(backend/astra_machine.py: no silent replication)")
 
     def test_packet_size_is_flits_in_booksim(self):
         """D0-C004: the cfg field is flits, not bytes."""

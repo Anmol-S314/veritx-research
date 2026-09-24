@@ -54,7 +54,7 @@ from typing import Any
 
 from veritx_dse.application.errors import ControlPlaneError, ErrorCode
 from veritx_dse.application.requirements import verify_performance_result
-from veritx_dse.core.errors import BookSimError, EvidenceInvalid, Refusal
+from veritx_dse.core.errors import EvidenceInvalid
 
 EVALUATED = "EVALUATED"
 BACKEND_UNAVAILABLE = "BACKEND_UNAVAILABLE"
@@ -74,6 +74,14 @@ class EvaluationError(ControlPlaneError):
 def _refuse(code: ErrorCode, message: str, *, cause_type: str = "") -> EvaluationError:
     return EvaluationError(code, message, operation="evaluate",
                            cause_type=cause_type)
+
+
+def _hash_of(obj: Any, name: str) -> str:
+    """Read a child-artifact hash that may be a method (RT v1) or a
+    stored attribute (canonical v2). Identity comes from the child;
+    this shim only normalizes the accessor."""
+    value = getattr(obj, name)
+    return value() if callable(value) else value
 
 
 def _require_workload_is_compilation_lowering(
@@ -307,32 +315,6 @@ def _admit_traffic_classes(logical: Any, bundle: Any) -> None:
                     f"materialize (has {sorted(router_classes)}); refusing")
 
 
-def _select_backend_path(bundle: Any) -> str | None:
-    """Derive the certified backend path from fabric semantics.
-
-    Never a user knob: the evaluator routes on what the fabric IS.
-    ``meshdor``: square MESH family, DOR_XY materialized, every VC
-    bound to DOR_XY (the native-mesh DOR profile's door). ``anynet``:
-    ANYNET_MIN_HOPS materialized with every VC bound to it. The
-    lowerers still enforce their full narrow domains; selection only
-    routes to the right lowerer. Anything else (CONCENTRATED_MESH,
-    TORUS/RING remnants, split classes) matches no certified path.
-    """
-    from veritx_dse.core.route_artifact import ANYNET_MIN_HOPS, DOR_XY
-    from veritx_dse.model.topology_artifact import MaterializedFamily
-    vc_classes = {rc for _, rc in
-                  bundle.vc_assignment.vc_to_routing_class}
-    router_classes = {d.id for d in
-                      bundle.router_route.routing_classes}
-    if (bundle.topology.family == MaterializedFamily.MESH
-            and vc_classes == {DOR_XY} and DOR_XY in router_classes):
-        return "meshdor"
-    if (ANYNET_MIN_HOPS in router_classes
-            and vc_classes == {ANYNET_MIN_HOPS}):
-        return "anynet"
-    return None
-
-
 def _valid_clock(value: Any) -> bool:
     if isinstance(value, bool):
         return False
@@ -365,7 +347,7 @@ class FabricEvaluator:
     def evaluate(self, compilation: Any, workload: Any,
                  options: EvaluationOptions | None = None) -> EvaluationOutcome:
         from veritx_dse.application.fabric_compiler import Compilation
-        from veritx_dse.workload.canonical_graph import WorkloadGraph
+        from veritx_dse.workload.graph import WorkloadGraph
 
         opts = options if options is not None else EvaluationOptions()
         if not isinstance(opts, EvaluationOptions):
@@ -406,7 +388,7 @@ class FabricEvaluator:
         bundle = compilation.bundle
         design_hash = compilation.request.design_hash()
         resolved_fabric_hash = \
-            bundle.resolved_fabric.resolved_fabric_hash()
+            _hash_of(bundle.resolved_fabric, "resolved_fabric_hash")
         workload_id = workload.workload_id()
         # The workload must be EXACTLY this compilation's lowering before
         # any backend work; re-derivation is the authority (provenance is
@@ -439,8 +421,12 @@ class FabricEvaluator:
             )
             logical = LogicalMessageArtifactV2(
                 workload, traffic_class=opts.traffic_class)
-            physical = PhysicalTrafficArtifactV2(logical=logical,
-                                                 bundle=bundle)
+            physical = PhysicalTrafficArtifactV2(
+                logical=logical,
+                resolved_fabric=bundle.resolved_fabric,
+                mapping=bundle.mapping, attachment=bundle.attachment,
+                inventory=bundle.inventory,
+                packet_format=bundle.packet_format)
         except (UnsupportedSemantics, UnsupportedSchedule) as exc:
             return refuse(UNSUPPORTED,
                           f"workload semantics unprojectable: {exc}",
@@ -487,77 +473,59 @@ class FabricEvaluator:
                 message_artifact_id=message_id,
                 physical_traffic_id=traffic_id)
 
-        # ── certified path selection (derived, never a user knob) ─
-        path = _select_backend_path(bundle)
-        if path is None:
-            vc_classes = sorted(
-                {rc for _, rc in
-                 bundle.vc_assignment.vc_to_routing_class})
-            router_classes = sorted(
-                {d.id for d in bundle.router_route.routing_classes})
-            return refuse(
-                UNSUPPORTED,
-                f"fabric matches no certified BookSim path: family "
-                f"{getattr(bundle.topology.family, 'value',
-                            bundle.topology.family)!r}, router classes "
-                f"{router_classes}, VC classes {vc_classes} "
-                f"(mesh-DOR needs MESH+DOR_XY; AnyNet needs "
-                f"ANYNET_MIN_HOPS)",
-                message_artifact_id=message_id,
-                physical_traffic_id=traffic_id)
-
         # ── canonical projection (pure: gates + lowering + render) ─
-        from veritx_dse.backend.booksim import BookSimLoweringError
-        from veritx_dse.backend.contracts import (
-            BackendConfigError, BackendInputError,
+        # §26 Option 2: the optimizer evaluates through the canonical
+        # BookSim stack ONLY (booksim_projection → booksim_execution →
+        # ScientificBackendEvidence). The RT meshdor/projection seams are
+        # not used here and no RT→canonical evidence translation exists:
+        # the prepared execution objects own the canonical identifiers
+        # and construct the canonical evidence directly.
+        from veritx_dse.backend.booksim_projection import (
+            CONFIG_FILE, TRACE_FILE, BookSimProjectionError,
+            BookSimProjectionParents, prepare_booksim_input,
         )
-        from veritx_dse.backend.meshdor import MeshDorMaterializationError
+        from veritx_dse.backend.booksim_execution import (
+            prepared_file_digests,
+        )
+        from veritx_dse.core.errors import (
+            InvalidInput, MappingInvalid, UnsupportedSchedule,
+            UnsupportedSemantics,
+        )
+        from veritx_dse.model.vc_resource import (
+            vc_resources_from_assignment,
+        )
+        seed = opts.seed if type(opts.seed) is int \
+            and not isinstance(opts.seed, bool) and opts.seed >= 0 else 0
         try:
-            if path == "meshdor":
-                from veritx_dse.backend.meshdor import (
-                    prepare_meshdor as _prepare,
-                )
-            else:
-                from veritx_dse.backend.projection import (
-                    prepare_waved_booksim as _prepare,
-                )
-            prepared, summary = _prepare(physical, seed=opts.seed)
-        except (BookSimLoweringError, Refusal, BackendConfigError,
-                BackendInputError, MeshDorMaterializationError) as exc:
-            if isinstance(exc, BookSimLoweringError):
-                return refuse(UNSUPPORTED,
-                              f"fabric unprojectable to BookSim: {exc}",
-                              message_artifact_id=message_id,
-                              physical_traffic_id=traffic_id)
-            return refuse(FAILED,
-                          f"pre-spawn projection failed: "
+            parents = BookSimProjectionParents(
+                resolved_fabric=bundle.resolved_fabric,
+                topology=bundle.topology,
+                attachment=bundle.attachment, mapping=bundle.mapping,
+                vc_resource=vc_resources_from_assignment(
+                    bundle.vc_assignment),
+                vc_assignment=bundle.vc_assignment,
+                packet_format=bundle.packet_format,
+                route=bundle.router_route,
+                physical_traffic=physical)
+            prepared = prepare_booksim_input(parents, seed=seed)
+        except (BookSimProjectionError, InvalidInput, MappingInvalid,
+                UnsupportedSemantics, UnsupportedSchedule) as exc:
+            return refuse(UNSUPPORTED,
+                          f"fabric unprojectable to BookSim: "
                           f"{type(exc).__name__}: {exc}",
                           message_artifact_id=message_id,
                           physical_traffic_id=traffic_id)
-        config = prepared.config
-        manifest = prepared.manifest
-        prof = config.backend_profile
-        config_hash = config.backend_config_hash()
-        input_hash = manifest.backend_input_hash()
-
-        # ── shared-realization statement (qualification.py) ────────
-        from veritx_dse.backend.qualification import (
-            QualificationError, booksim_shared_realization,
-        )
-        try:
-            from veritx_dse.core.spec import canonical_json
-            import hashlib
-            realization = booksim_shared_realization(config)
-            realization_digest = hashlib.sha256(
-                canonical_json(realization).encode()).hexdigest()
-        except QualificationError as exc:
-            return refuse(UNSUPPORTED,
-                          f"BookSim realization unstatable: "
-                          f"{type(exc).__name__}: {exc}",
-                          message_artifact_id=message_id,
-                          physical_traffic_id=traffic_id,
-                          backend=STANDALONE_BACKEND,
-                          backend_profile=prof)
+        prof = prepared.profile_id
+        digests = prepared_file_digests(prepared)
+        # Evaluator bookkeeping labels name canonical executed-byte
+        # digests: the config/input bytes about to be executed. These
+        # are the canonical measurements, not RT values under new names.
+        config_hash = digests[CONFIG_FILE]
+        input_hash = digests[TRACE_FILE]
+        # Canonical realization statement: the content identity of the
+        # exact prepared input (config + topology + trace bytes). No
+        # separate qualification module is consulted.
+        realization_digest = prepared.prepared_id()
 
         # ── backend availability (producer.py; no FileNotFoundError) ─
         from veritx_dse.backend.producer import (
@@ -602,28 +570,21 @@ class FabricEvaluator:
         backend_run_dir = run_dir / "run"
         evidence_dir = run_dir / "evidence"
 
-        # ── qualified execution (+ quiescence when required) ───────
-        from veritx_dse.backend.booksim import (
-            BackendMaterializationError, BookSimLoweringError,
-            BookSimRouteError,
+        # ── canonical qualified execution ──────────────────────────
+        # Quiescence is unconditional here: execute_prepared_booksim
+        # always enforces the trace-drain gate (loaded == declared,
+        # injected == declared, valid completion). The certified path
+        # requires it; this evaluator offers no weaker mode.
+        from veritx_dse.backend.booksim_execution import (
+            BookSimExecutionError, execute_prepared_booksim,
         )
         from veritx_dse.backend.producer import ProducerError
         try:
-            if path == "meshdor":
-                from veritx_dse.backend.meshdor import (
-                    run_waved_meshdor as _run,
-                )
-            else:
-                from veritx_dse.backend.projection import (
-                    run_waved_booksim as _run,
-                )
-            result = _run(
-                prepared, run_dir=backend_run_dir, repo_root=repo_root,
-                timeout=opts.timeout_s, binary=bin_path,
-                summary=summary if opts.require_quiescence else None)
-        except (BookSimError, Refusal, BookSimLoweringError,
-                BookSimRouteError, BackendMaterializationError,
-                ProducerError) as exc:
+            record = execute_prepared_booksim(
+                prepared=prepared, binary=bin_path,
+                run_dir=backend_run_dir, timeout=opts.timeout_s,
+                seed=seed, repo_root=repo_root, write=True)
+        except (BookSimExecutionError, ProducerError) as exc:
             return refuse(FAILED,
                           f"backend execution failed: "
                           f"{type(exc).__name__}: {exc}",
@@ -636,35 +597,29 @@ class FabricEvaluator:
                           backend_input_hash=input_hash,
                           run_dir=str(run_dir),
                           realization_digest=realization_digest)
-        cert_evidence = result["evidence"]
-        if cert_evidence.exit_status != 0:
-            return refuse(FAILED,
-                          f"backend execution failed with exit status "
-                          f"{cert_evidence.exit_status}",
-                          message_artifact_id=message_id,
-                          physical_traffic_id=traffic_id,
-                          backend=STANDALONE_BACKEND,
-                          backend_profile=prof,
-                          producer_identity=producer.binary_sha256,
-                          backend_config_hash=config_hash,
-                          backend_input_hash=input_hash,
-                          run_dir=str(run_dir),
-                          realization_digest=realization_digest)
-        if cert_evidence.route_equivalence != "EXACT":
-            return refuse(FAILED,
-                          f"executed route not proven EXACT "
-                          f"(got {cert_evidence.route_equivalence!r})",
-                          message_artifact_id=message_id,
-                          physical_traffic_id=traffic_id,
-                          backend=STANDALONE_BACKEND,
-                          backend_profile=prof,
-                          producer_identity=producer.binary_sha256,
-                          backend_config_hash=config_hash,
-                          backend_input_hash=input_hash,
-                          run_dir=str(run_dir),
-                          realization_digest=realization_digest)
+        evidence = record.evidence
+        # execute_prepared_booksim fails closed on nonzero exit, so a
+        # completed record always carries exit_status 0 and parsed stats.
+        # Stats flow unmodified from here on: the proof re-derives the
+        # stats digest from the persisted bytes, so any local key alias
+        # would break artifact↔binding agreement. The canonical
+        # ``completion_cycles`` key is consumed as-is downstream.
+        stats = evidence.stats
 
         # ── evidence authentication (evidence.py only) ─────────────
+        # §26 reload gate: the persisted bytes must read back through
+        # the canonical reader and validate — proving the write/read
+        # contract, not just in-memory construction. execute wrote the
+        # canonical {"evidence","attempt"} wrapper to the run
+        # directory; the SCIENTIFIC document inside it is what validates
+        # as evidence.
+        #
+        # The evidence CHAIN (binding, artifact, outcome, proof) then
+        # names the pure scientific document only: the wrapper mixes
+        # run-varying attempt metadata (run_dir, wall time) into its
+        # bytes, so a wrapper digest can never be run-stable. The bare
+        # scientific bytes are deterministic for identical science, and
+        # write_evidence refuses to overwrite them with anything else.
         from veritx_dse.backend.evidence import (
             BackendEvidenceError, EvidenceArtifact, read_verified_evidence,
             validate_evidence_document, write_evidence,
@@ -672,21 +627,26 @@ class FabricEvaluator:
         )
         from veritx_dse.core.artifact import ArtifactError
         try:
-            ref = write_evidence(evidence_dir, cert_evidence.to_dict())
-            attempt_ref = write_execution_attempt(
-                evidence_dir, cert_evidence.to_attempt_dict())
+            persisted = read_verified_evidence(record.ref)
+            if not isinstance(persisted.get("evidence"), dict):
+                raise BackendEvidenceError(
+                    "persisted evidence wrapper carries no scientific "
+                    "evidence document")
             verified_doc = validate_evidence_document(
-                read_verified_evidence(ref))
+                persisted["evidence"])
+            eref = write_evidence(evidence_dir, verified_doc)
+            attempt_ref = write_execution_attempt(
+                evidence_dir, record.attempt.to_dict())
             artifact = EvidenceArtifact.build(
                 backend=STANDALONE_BACKEND,
                 backend_input_id=input_hash,
                 backend_input_sha256=input_hash,
-                raw_evidence_sha256=ref.sha256,
-                stats=cert_evidence.stats)
+                raw_evidence_sha256=eref.sha256,
+                stats=stats)
             _require_evidence_authentic(
                 artifact, backend_input_sha256=input_hash,
-                raw_evidence_sha256=ref.sha256,
-                stats=cert_evidence.stats)
+                raw_evidence_sha256=eref.sha256,
+                stats=stats)
         except (BackendEvidenceError, ArtifactError, OSError) as exc:
             return refuse(FAILED,
                           f"evidence authentication failed: "
@@ -701,7 +661,6 @@ class FabricEvaluator:
                           run_dir=str(run_dir),
                           realization_digest=realization_digest)
         _ = verified_doc
-        stats = cert_evidence.stats
         metrics = _numeric_metrics(stats) or None
 
         # ── network window bind (ONE aggregate window, v2 chain) ───
@@ -715,10 +674,12 @@ class FabricEvaluator:
             from veritx_dse.performance.network import bind_network_window
             clock = opts.network_clock_hz if _valid_clock(
                 opts.network_clock_hz) else None
+            from types import SimpleNamespace as _NS
             binding, window = bind_network_window(
-                evidence=cert_evidence, chain=chain,
-                network_clock_hz=clock, evidence_sha256=ref.sha256,
-                expected_packets=summary["num_packets"])
+                evidence=_NS(stats=stats), chain=chain,
+                network_clock_hz=clock,
+                evidence_sha256=eref.sha256,
+                expected_packets=prepared.expected_packets)
         except (TimeError, ArtifactError) as exc:
             return refuse(FAILED,
                           f"network window bind failed: "
@@ -731,15 +692,20 @@ class FabricEvaluator:
                           backend_config_hash=config_hash,
                           backend_input_hash=input_hash,
                           evidence_id=artifact.evidence_id(),
-                          raw_evidence_digest=ref.sha256,
+                          raw_evidence_digest=eref.sha256,
                           stats_digest=artifact.stats_sha256,
                           metrics=metrics,
                           run_dir=str(run_dir),
-                          evidence_path=ref.path,
+                          evidence_path=eref.path,
                           attempt_path=attempt_ref.path,
                           attempt_digest=attempt_ref.sha256,
                           realization_digest=realization_digest)
+        # Same canonical-key acceptance as bind_network_window above:
+        # completion cycles under either the historical or canonical key.
         window_cycles = stats.get("completion_time")
+        if not isinstance(window_cycles, int) \
+                or isinstance(window_cycles, bool):
+            window_cycles = stats.get("completion_cycles")
 
         if clock is None:
             # Honest cycles-only refusal: the evidence is authenticated
@@ -758,7 +724,7 @@ class FabricEvaluator:
                           backend_config_hash=config_hash,
                           backend_input_hash=input_hash,
                           evidence_id=artifact.evidence_id(),
-                          raw_evidence_digest=ref.sha256,
+                          raw_evidence_digest=eref.sha256,
                           stats_digest=artifact.stats_sha256,
                           network_traffic_window={
                               "window_cycles": window_cycles,
@@ -766,7 +732,7 @@ class FabricEvaluator:
                               "cycles_only": True},
                           metrics=metrics,
                           run_dir=str(run_dir),
-                          evidence_path=ref.path,
+                          evidence_path=eref.path,
                           attempt_path=attempt_ref.path,
                           attempt_digest=attempt_ref.sha256,
                           realization_digest=realization_digest)
@@ -812,7 +778,7 @@ class FabricEvaluator:
                 "resolved_fabric_hash": resolved_fabric_hash,
                 "backend_config_hash": config_hash,
                 "backend_input_hash": input_hash,
-                "evidence_sha256": ref.sha256,
+                "evidence_sha256": eref.sha256,
                 "stats_sha256": artifact.stats_sha256,
             }
             egraph = PerformanceEventGraph(
@@ -839,7 +805,7 @@ class FabricEvaluator:
                           backend_config_hash=config_hash,
                           backend_input_hash=input_hash,
                           evidence_id=artifact.evidence_id(),
-                          raw_evidence_digest=ref.sha256,
+                          raw_evidence_digest=eref.sha256,
                           stats_digest=artifact.stats_sha256,
                           network_traffic_window={
                               "window_cycles": window_cycles,
@@ -847,7 +813,7 @@ class FabricEvaluator:
                               "cycles_only": True},
                           metrics=metrics,
                           run_dir=str(run_dir),
-                          evidence_path=ref.path,
+                          evidence_path=eref.path,
                           attempt_path=attempt_ref.path,
                           attempt_digest=attempt_ref.sha256,
                           realization_digest=realization_digest)
@@ -869,7 +835,7 @@ class FabricEvaluator:
                           backend_config_hash=config_hash,
                           backend_input_hash=input_hash,
                           evidence_id=artifact.evidence_id(),
-                          raw_evidence_digest=ref.sha256,
+                          raw_evidence_digest=eref.sha256,
                           stats_digest=artifact.stats_sha256,
                           network_traffic_window={
                               "window_cycles": window_cycles,
@@ -877,7 +843,7 @@ class FabricEvaluator:
                               "cycles_only": True},
                           metrics=metrics,
                           run_dir=str(run_dir),
-                          evidence_path=ref.path,
+                          evidence_path=eref.path,
                           attempt_path=attempt_ref.path,
                           attempt_digest=attempt_ref.sha256,
                           realization_digest=realization_digest)
@@ -895,7 +861,7 @@ class FabricEvaluator:
             backend_config_hash=config_hash,
             backend_input_hash=input_hash,
             evidence_id=artifact.evidence_id(),
-            raw_evidence_digest=ref.sha256,
+            raw_evidence_digest=eref.sha256,
             stats_digest=artifact.stats_sha256,
             performance_result_id=verified_perf["resource_id"],
             performance_result=verified_perf,
@@ -907,7 +873,7 @@ class FabricEvaluator:
             fidelity_warning=warning,
             reason=None,
             run_dir=str(run_dir),
-            evidence_path=ref.path,
+            evidence_path=eref.path,
             attempt_path=attempt_ref.path,
             attempt_digest=attempt_ref.sha256,
             realization_digest=realization_digest)

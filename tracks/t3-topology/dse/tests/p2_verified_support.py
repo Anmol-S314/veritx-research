@@ -150,7 +150,9 @@ def build_verified(request: Any, *, cycles: int = 100,
     prove a synthetic result cannot become authoritative.
     """
     compilation = _compile(request)
-    resolved = compilation.bundle.resolved_fabric.resolved_fabric_hash()
+    # Canonical ResolvedFabric stores its hash as an attribute (not a
+    # method like the RT lineage exposed it).
+    resolved = compilation.bundle.resolved_fabric.resolved_fabric_hash
     stats = _stats(cycles)
     return _assemble(request, cycles=cycles, metrics=metrics,
                      resolved_fabric_hash=resolved,
@@ -161,19 +163,43 @@ def build_authenticated(request: Any, *, cycles: int = 100,
                         metrics: Mapping | None = None,
                         evidence_root: Any = None):
     """(graph, verified_result, proof) with a genuine evidence chain."""
+    from veritx_dse.backend.evidence import ScientificBackendEvidence
     compilation = _compile(request)
-    resolved = compilation.bundle.resolved_fabric.resolved_fabric_hash()
+    # Canonical ResolvedFabric stores its hash as an attribute (not a
+    # method like the RT lineage exposed it).
+    resolved = compilation.bundle.resolved_fabric.resolved_fabric_hash
     stats = _stats(cycles)
+    # Canonical scientific evidence (§26 Option 2): the persisted
+    # document speaks the canonical schema. Digests bound by the
+    # proof (trace/input, config, stats, producer) match the binding
+    # exactly; the remaining identifiers are synthetic but
+    # self-consistent hex. Stats ride verbatim so the stats digest
+    # agrees with the binding.
+    evidence_doc = ScientificBackendEvidence(
+        prepared_id="2" * 64,
+        profile_id="CERTIFIED_BOOKSIM_MESH_DOR_XY_V1",
+        projection_semantics_version="test",
+        config_sha256=_CONFIG_HASH,
+        trace_sha256=_INPUT_HASH,
+        topology_sha256=None,
+        resolved_fabric_hash=resolved,
+        physical_traffic_id="3" * 64,
+        message_artifact_id="4" * 64,
+        binary_sha256=_PRODUCER,
+        binary_size=1,
+        producer_source_revision=None,
+        producer_dirty=False,
+        seed=0,
+        parser_version="veritx/booksim-stats-parser/v1",
+        execution_fidelity="QUALIFIED",
+        route_observation="DOMAIN_QUALIFIED_ROUTE_NOT_OBSERVED",
+        stats=dict(stats),
+        exit_status=0,
+        transport="SUPERVISED_PROCESS").to_dict()
     root = Path(tempfile.mkdtemp(
         prefix="p2-proof-",
         dir=str(evidence_root) if evidence_root is not None else None))
-    ref = write_evidence(root, {
-        "backend_input_hash": _INPUT_HASH,
-        "backend_config_hash": _CONFIG_HASH,
-        "resolved_fabric_hash": resolved,
-        "stats": stats,
-        "booksim_binary_sha256": _PRODUCER,
-    })
+    ref = write_evidence(root, evidence_doc)
     graph, verified = _assemble(
         request, cycles=cycles, metrics=metrics,
         resolved_fabric_hash=resolved, evidence_sha256=ref.sha256,

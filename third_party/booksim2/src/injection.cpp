@@ -266,3 +266,16 @@ void TraceInjectionProcess::reset()
   _current_cycle = 0;
   _injected_this_cycle = 0;
 }
+
+size_t TraceInjectionProcess::pending() const
+{
+  size_t n = 0;
+  for (auto const& kv : _queues) n += kv.second.size();
+  return n;
+}
+
+size_t TraceInjectionProcess::pending_source(int source) const
+{
+  auto it = _queues.find(source);
+  return (it == _queues.end()) ? 0 : it->second.size();
+}

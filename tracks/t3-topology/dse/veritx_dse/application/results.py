@@ -18,8 +18,35 @@ from pathlib import Path
 from typing import Any
 
 from .errors import ControlPlaneError, ErrorCode
-from .resources import check_envelope
 from .studies import STUDY_CANDIDATE_STATUSES
+
+# Wave-C resource envelope (local — the canonical resources.py owns the
+# 4-kind CompileIntent persistence and must not be overwritten with the
+# old generic envelope; evaluation-plane records carry their own).
+RESOURCE_SCHEMA_VERSION = 1
+
+
+def check_envelope(d: Any, expected_type: str) -> dict[str, Any]:
+    """Validate a persisted evaluation resource envelope."""
+    if not isinstance(d, dict):
+        raise ControlPlaneError(
+            ErrorCode.INTERNAL_ERROR,
+            f"resource must be an object, got {type(d).__name__}",
+            operation="inspect")
+    if d.get("resource_type") != expected_type:
+        raise ControlPlaneError(
+            ErrorCode.INTERNAL_ERROR,
+            f"expected resource_type {expected_type!r}, got "
+            f"{d.get('resource_type')!r}",
+            operation="inspect")
+    if d.get("schema_version") != RESOURCE_SCHEMA_VERSION:
+        raise ControlPlaneError(
+            ErrorCode.INTERNAL_ERROR,
+            f"unsupported {expected_type} schema_version "
+            f"{d.get('schema_version')!r} (this build speaks "
+            f"v{RESOURCE_SCHEMA_VERSION})",
+            operation="inspect")
+    return d
 
 
 def loss_digest_of(loss: list[dict[str, Any]]) -> str:
@@ -177,7 +204,7 @@ def load_verified_design(store: Any, design_id: str) -> dict[str, Any]:
             resource_id=design_id) from exc
     for key, actual in (
             ("mapping_hash", bundle.resolved_fabric.mapping_hash),
-            ("fabric_hash", bundle.fabric.fabric_hash()),
+            ("fabric_hash", bundle.fabric.fabric_hash),
             ("topology_hash", bundle.topology.topology_hash()),
             ("attachment_hash", bundle.attachment.attachment_hash())):
         _require_equal(f"design.{key}", record.get(key), actual, design_id)

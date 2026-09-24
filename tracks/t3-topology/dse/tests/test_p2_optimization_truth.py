@@ -750,22 +750,22 @@ def test_ap02_backend_failed_preserved_into_record(tmp_path, monkeypatch):
     """A-P0.2: a backend execution failure keeps FAILED through the real
     adapter and the Optimizer (never collapsed to UNSUPPORTED).
 
-    B-P1.4 narrowed the evaluator's execution seam to its documented
-    taxonomy, so the injected failure is a documented ``BookSimError``
-    (an arbitrary RuntimeError is a programming bug and must escape).
+    Canonical seam (§26 Option 2): the crash is injected at
+    ``booksim_execution.execute_prepared_booksim`` and must surface as
+    the documented ``BookSimExecutionError`` taxonomy (an arbitrary
+    RuntimeError is a programming bug and must escape).
     """
-    from veritx_dse.core.errors import BookSimError
+    from veritx_dse.backend.booksim_execution import BookSimExecutionError
     from veritx_dse.optimization.candidate import make_candidate
 
     def _boom(*args, **kwargs):
-        raise BookSimError("synthetic backend crash")
+        raise BookSimExecutionError("synthetic backend crash")
 
-    # The mesh base request routes to the certified meshdor path; patch
-    # both runners so the synthetic crash is exercised regardless.
+    # The canonical BookSim stack has one execution seam; patch it so
+    # the synthetic crash is exercised regardless of fabric profile.
     monkeypatch.setattr(
-        "veritx_dse.backend.meshdor.run_waved_meshdor", _boom)
-    monkeypatch.setattr(
-        "veritx_dse.backend.projection.run_waved_booksim", _boom)
+        "veritx_dse.backend.booksim_execution.execute_prepared_booksim",
+        _boom)
     port = _real_port(tmp_path)
     out = port.evaluate(make_candidate(_real_base(), {"link_width": 64}))
     assert out.status == "FAILED"
@@ -1106,65 +1106,20 @@ def test_11_same_evaluator_same_candidate_twice(tmp_path):
     assert all(p.name.startswith("eval-") for p in slots)
 
 
-# ── 12-14: same CLI run root, immediately, no sleep ─────────────────────
-
-def _cli_args(fixture, study_out, run_root):
-    return argparse.Namespace(
-        fixture=fixture, search="grid", link_widths="64,128",
-        concentrations="1", latency_ceiling=None, max_candidates=None,
-        study_out=study_out, evaluate="booksim", binary=None,
-        network_clock_hz=10 ** 9, run_root=run_root, timeout=600, seed=7)
-
-
-@pytest.fixture(scope="module")
-def two_cli_runs(tmp_path_factory):
-    """Two immediate CLI studies against ONE explicit run root (no sleep)."""
-    from veritx_dse.cli.cli import cmd_optimize
-    from veritx_dse.core.logging import Ctx
-    work = tmp_path_factory.mktemp("rt-a8-cli")
-    fixture = _cli_fixture(work)
-    shared_root = work / "runs"
-    views = []
-    for tag in ("a", "b"):
-        study_out = work / f"study-{tag}.json"
-        ctx = Ctx(verbosity=0)
-        cmd_optimize(ctx, _cli_args(fixture, str(study_out),
-                                    str(shared_root)))
-        assert not ctx.failed
-        views.append(json.loads(study_out.read_text()))
-    return shared_root, views[0], views[1]
-
-
-def test_12_same_cli_run_root_twice_immediately(two_cli_runs):
-    shared_root, first, second = two_cli_runs
-    assert first["candidates"] and second["candidates"]
-    assert first["pareto_ids"] and second["pareto_ids"]
-    tokens = sorted(p for p in shared_root.iterdir() if p.is_dir())
-    assert len(tokens) == 2, [p.name for p in tokens]
-    assert tokens[0].name != tokens[1].name
-
-
-def test_13_repeated_runs_preserve_candidate_design_identity(two_cli_runs):
-    _, first, second = two_cli_runs
-    assert [c["candidate_id"] for c in first["candidates"]] == \
-        [c["candidate_id"] for c in second["candidates"]]
-    assert [c["evaluation_ids"]["design_hash"]
-            for c in first["candidates"]] == \
-        [c["evaluation_ids"]["design_hash"]
-         for c in second["candidates"]]
-
-
-def test_14_repeated_runs_allocate_distinct_slots(two_cli_runs):
-    shared_root, _, _ = two_cli_runs
-    tokens = sorted(p for p in shared_root.iterdir() if p.is_dir())
-    digests = []
-    for token in tokens:
-        found = sorted(
-            hashlib.sha256(p.read_bytes()).hexdigest()
-            for p in token.rglob("evidence/*.json"))
-        assert found, token
-        digests.append(found)
-    assert digests[0] != digests[1]
+# ── 12-14: RETIRED (reclamation ledger, §26 Option 2) ─────────────
+#
+# These three tests drove the retired RT CLI surface
+# (``veritx_dse.cli.cli.cmd_optimize`` + ``Ctx.failed``) and are
+# superseded as follows:
+# - test_12 / test_13 (two invocation roots, stable candidate/design
+#   identities): covered canonically by
+#   tests/test_p1_optimize_booksim.py::test_booksim_study_is_real_and_repeatable.
+# - test_14 (evidence bytes DIFFER across runs): intentionally
+#   rejected — it contradicts the canonical identical-science →
+#   identical-bytes contract proven by the same p1 test
+#   (``digests[0] == digests[1]``). The RT evidence files carried
+#   run-varying provenance; canonical ScientificBackendEvidence
+#   documents do not.
 
 
 def test_c4_core_mechanics_cannot_mint_certification():

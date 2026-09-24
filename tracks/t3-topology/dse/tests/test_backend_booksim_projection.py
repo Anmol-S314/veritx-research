@@ -264,8 +264,9 @@ def test_route_realization_binding_and_dump_validation():
     assert report["route_artifact_hash"] == parents.route.artifact_hash
     assert report["attachment_hash"] == parents.attachment.attachment_hash()
     assert report["dump_present"] is False
-    # the vendored fork has no dump hook; the audit proves it
-    assert report["dump_supported_by_fork"] is False
+    # the vendored fork carries the B3.7b route-dump hook; the audit
+    # proves it (no dump was supplied, so none is present to compare)
+    assert report["dump_supported_by_fork"] is True
 
     k = report["k"]
     good = {0: 1, 1: 2}
@@ -438,8 +439,9 @@ def test_source_audit_observes_real_reads_and_rejects_drift(tmp_path):
     observed = source_audit.observed_fields(BOOKSIM_SRC)
     assert len(observed) > 50
     assert {"topology", "routing_function", "num_vcs", "k", "n"} <= observed
-    # the route-dump hook is absent from this fork: the audit says so
-    assert "routing_dump_file" not in observed
+    # the B3.7b route-dump hook is present in this fork: the audit
+    # observes the read the patch added
+    assert "routing_dump_file" in observed
 
     # a fork that reads nothing cannot vouch for a certified profile
     (tmp_path / "empty.cpp").write_text("int main() { return 0; }\n")

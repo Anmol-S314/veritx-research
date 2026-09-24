@@ -1,8 +1,8 @@
 """veritx_dse.workload.intent_lowering — v3 intent → canonical WorkloadGraph.
 
 P1C: product workload intent lowers deterministically to the ONE canonical
-WorkloadGraph authority (workload/canonical_graph.py — consumed, never
-forked). v2 requests are REFUSED here: v2 interpretation is frozen, and a
+WorkloadGraph authority (workload/graph.py — consumed, never forked). v2
+requests are REFUSED here: v2 interpretation is frozen, and a
 v2 CollectiveOp carries no dimension/payload/traffic-class facts to lower
 from (compile_model B1 finding 1). Migrate explicitly first.
 
@@ -68,8 +68,8 @@ from veritx_dse.model.compile_model import (
     ModelFamily,
     derive_v3_traffic_classes,
 )
-from veritx_dse.model.parallelism import ParallelismArtifact
-from veritx_dse.workload.canonical_graph import (
+from veritx_dse.model.placement import ParallelismShape, rank_of
+from veritx_dse.workload.graph import (
     WorkloadGraph,
     WorkloadSemantics,
     collective_detail,
@@ -141,26 +141,62 @@ def _intent_kind_name(intent: CollectiveIntent) -> str:
     return intent.kind.value.upper()
 
 
+def _groups_for_dimension(tp: int, pp: int, ep: int, dp: int,
+                          family: str) -> tuple[tuple[int, ...], ...]:
+    """All groups of one family in canonical order, via the sealed rank
+    algebra (model.placement.rank_of). Mirrors the retired
+    ParallelismArtifact.groups derivation exactly: TP groups vary t at
+    fixed (p,e,d); EP groups vary e at fixed (t,p,d); DP groups vary d
+    at fixed (t,p,e); GLOBAL is the single all-ranks group."""
+    out: list[tuple[int, ...]] = []
+    if family == "TP":
+        for p in range(pp):
+            for d in range(dp):
+                for e in range(ep):
+                    out.append(tuple(
+                        rank_of(i, p, e, d, tp=tp, pp=pp, ep=ep, dp=dp)
+                        for i in range(tp)))
+    elif family == "EP":
+        for t in range(tp):
+            for p in range(pp):
+                for d in range(dp):
+                    out.append(tuple(
+                        rank_of(t, p, i, d, tp=tp, pp=pp, ep=ep, dp=dp)
+                        for i in range(ep)))
+    elif family == "DP":
+        for t in range(tp):
+            for p in range(pp):
+                for e in range(ep):
+                    out.append(tuple(
+                        rank_of(t, p, e, i, tp=tp, pp=pp, ep=ep, dp=dp)
+                        for i in range(dp)))
+    else:  # GLOBAL
+        out.append(tuple(range(tp * pp * ep * dp)))
+    return tuple(out)
+
+
 def _expand_dimension(intent: CollectiveIntent, index: int,
-                      parallelism: ParallelismArtifact,
+                      parallelism: ParallelismShape,
                       ) -> tuple[tuple[int, ...], ...]:
     """Participant groups for one intent's dimension (B4).
 
-    Total and deterministic: ParallelismArtifact.groups is law-checked
-    (coverage, disjointness, cardinality), so no rank is guessed.
+    Total and deterministic: groups derive from the sealed rank algebra
+    (coverage, disjointness, cardinality by construction), so no rank is
+    guessed.
     """
     dim = intent.dimension
+    tp, pp, ep, dp = (parallelism.tp, parallelism.pp,
+                      parallelism.ep, parallelism.dp)
     if dim == CollectiveDimension.GLOBAL:
-        world = parallelism.world_size
-        return (tuple(range(world)),)
+        return _groups_for_dimension(tp, pp, ep, dp, "GLOBAL")
     if dim == CollectiveDimension.PP:
         raise UnsupportedSemantics(
             f"collective #{index} ({intent.kind.value}): PP-dimension "
             f"collectives are UNSUPPORTED — pipeline stages are not "
             f"collective peers (stages communicate point-to-point); "
             f"pp>1 geometry still scopes TP/DP groups within stages")
-    family = dim.value  # TP / DP / EP match the artifact families
-    return tuple(g.members for g in parallelism.groups(family))
+    family = dim.value  # TP / DP / EP match the group families
+    return _groups_for_dimension(tp, pp, ep, dp, family)
 
 
 def lower_compile_workload(request: CompileRequestV3) -> LoweredWorkload:
@@ -197,10 +233,10 @@ def lower_compile_workload(request: CompileRequestV3) -> LoweredWorkload:
             "communication is under-specified (compute lowering is not "
             "established: fabricating compute durations would be "
             "dishonest)")
-    parallelism = ParallelismArtifact(tp=wl.tp, pp=wl.pp, ep=wl.ep, dp=wl.dp)
+    parallelism = ParallelismShape(tp=wl.tp, pp=wl.pp, ep=wl.ep, dp=wl.dp)
     participant_count = parallelism.world_size
 
-    from veritx_dse.workload.canonical_graph import OperationNode
+    from veritx_dse.workload.graph import OperationNode
 
     operations: list[OperationNode] = []
     class_pairs: list[tuple[str, str]] = []

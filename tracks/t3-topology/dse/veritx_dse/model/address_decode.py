@@ -63,7 +63,9 @@ from typing import Any
 
 from veritx_dse.core.artifact import content_id
 from veritx_dse.model.attachment import AgentAttachmentArtifact
-from veritx_dse.model.compile_model import AddressMap, CompileRequest
+from veritx_dse.model.compile_model import (
+    AddressMap, CompileRequest, CompileRequestV3,
+)
 
 ADDRESS_DECODE_SCHEMA_VERSION = 3
 _HASH_TYPE_TAG = "srota/AddressDecodeArtifact"
@@ -457,7 +459,7 @@ def _expected_entries(address_map: AddressMap,
     return tuple(sorted(expected, key=_semantic_key))
 
 
-def derive_address_decode(*, design: CompileRequest,
+def derive_address_decode(*, design: CompileRequest | CompileRequestV3,
                           attachment: AgentAttachmentArtifact
                           ) -> AddressDecodeArtifact:
     """Materialize the decode table from a design address map + attachment.
@@ -466,8 +468,11 @@ def derive_address_decode(*, design: CompileRequest,
     nothing to do with NI address decode. The design-level checks (group
     exists, singleton count) fail closed with UNSUPPORTED before any
     endpoint is selected.
+
+    v3 requests are accepted for the fields they share with v2 (agents,
+    address_map); the v3-only schema is never reinterpreted as v2.
     """
-    if not isinstance(design, CompileRequest):
+    if not isinstance(design, (CompileRequest, CompileRequestV3)):
         raise AddressDecodeError(
             f"design must be a CompileRequest, got "
             f"{type(design).__name__}")

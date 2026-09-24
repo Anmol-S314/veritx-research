@@ -33,8 +33,24 @@ TESTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(DSE))
 sys.path.insert(0, str(TESTS))
 
-from test_fabric_artifact import build_chain  # noqa: E402
-from test_backend_bundle import make_bundle  # noqa: E402
+from test_rt_chain_helpers import build_chain  # noqa: E402
+from test_rt_chain_helpers import make_bundle  # noqa: E402
+
+try:  # historical v1 chain (deleted per §4/§7; V2 in test_wave_d_contract)
+    from veritx_dse.workload.messages import (  # noqa: E402
+        LogicalMessageArtifact,
+    )
+    from veritx_dse.workload.traffic import (  # noqa: E402
+        PhysicalTrafficArtifact,
+    )
+    from veritx_dse.workload.graph import (  # noqa: E402
+        WaveDOperation, WaveDWorkload,
+    )
+except ImportError:
+    pytest.skip(
+        "historical v1 WaveDWorkload/messages/traffic deleted per §4/§7; "
+        "canonical V2 coverage in test_wave_d_contract.py",
+        allow_module_level=True)
 
 from veritx_dse.application.errors import ControlPlaneError, ErrorCode  # noqa: E402
 from veritx_dse.application.service import SrotaControlPlane  # noqa: E402
@@ -51,15 +67,12 @@ from veritx_dse.core.errors import (  # noqa: E402
     EvidenceInvalid, InvalidInput, MappingInvalid,
 )
 from veritx_dse.core.artifact import FrozenMap  # noqa: E402
-from veritx_dse.workload.messages import LogicalMessageArtifact  # noqa: E402
 from veritx_dse.workload.operations import (  # noqa: E402
     KIND_COLLECTIVE, KIND_P2P, CollectiveIntent, OperationGraph,
     OperationNode, P2PTransfer,
 )
 from veritx_dse.model.parallelism import ParallelismArtifact  # noqa: E402
 from veritx_dse.workload.semantics import WaveDWorkloadSemantics  # noqa: E402
-from veritx_dse.workload.traffic import PhysicalTrafficArtifact  # noqa: E402
-from veritx_dse.workload.graph import WaveDOperation, WaveDWorkload  # noqa: E402
 
 REPO = DSE.parents[2]
 METRICS = ["sim.latency.avg_cycles", "sim.delivered.packets",

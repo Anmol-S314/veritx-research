@@ -431,6 +431,36 @@ class PhysicalTrafficArtifactV2:
             mapping=self.mapping, attachment=self.attachment,
             resolved_fabric=self.resolved_fabric)
 
+    def validate_against_bundle(self) -> None:
+        """Re-prove the logical↔physical seam on demand.
+
+        The constructor already refused a transposed geometry or a
+        foreign mapping/packet-format; this re-runs exactly those seam
+        checks (mapping↔fabric hash, packet-format↔attachment hash,
+        geometry equality, binding re-derivation) so pre-spawn gates
+        written against the historical bundle seam keep proving the
+        same facts over the canonical children. Raises MappingInvalid
+        on any drift since construction.
+        """
+        if self.mapping.mapping_hash() != self.resolved_fabric.mapping_hash:
+            raise MappingInvalid(
+                "mapping does not belong to the resolved fabric")
+        if self.packet_format.attachment_hash \
+                != self.attachment.attachment_hash():
+            raise MappingInvalid(
+                "packet format was not derived from this attachment")
+        graph_shape = self.logical.graph.parallelism
+        if graph_shape != self.inventory.parallelism:
+            raise MappingInvalid(
+                f"logical rank geometry {graph_shape.to_dict()} does not "
+                f"match the physical inventory geometry "
+                f"{self.inventory.parallelism.to_dict()}; equal world "
+                "size is not semantic equivalence")
+        bind_participants(
+            participant_count=self.logical.participant_count,
+            mapping=self.mapping, attachment=self.attachment,
+            resolved_fabric=self.resolved_fabric)
+
     # ── accessors ─────────────────────────────────────────────────────
     @property
     def traffic(self) -> tuple[MessageTraffic, ...]:

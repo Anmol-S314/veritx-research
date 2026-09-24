@@ -114,6 +114,18 @@ class CertifiedServiceProfile:
     collective_bytes_per_rank: int = 4096
     compute_base_ns: int = 10_000
     compute_per_token_ns: int = 1_000
+    # ── expert-parallel (MoE) extension ──────────────────────────────
+    # ep_size == 1 is dense (default; all dense identities byte-identical).
+    # ep_size > 1 preserves the executable EP semantics: dispatch
+    # ALLGATHER + per-rank expert compute + combine REDUCESCATTER over
+    # the SAME ranks (ep_size <= instance ranks; no rank multiplication).
+    ep_size: int = 1
+    ep_dispatch_kind: str = "ALLGATHER"
+    ep_combine_kind: str = "REDUCESCATTER"
+    ep_dispatch_bytes_per_rank: int = 4096
+    ep_combine_bytes_per_rank: int = 4096
+    expert_compute_base_ns: int = 10_000
+    expert_compute_per_token_ns: int = 1_000
     schema_version: int = SERVICE_LOOP_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
@@ -136,6 +148,17 @@ class CertifiedServiceProfile:
                 "a certified round must carry a positive collective size")
         if self.compute_base_ns <= 0 or self.compute_per_token_ns < 0:
             raise ServingLoopError("the compute model must be positive")
+        if self.ep_size < 1:
+            raise ServingLoopError("ep_size must be a positive int")
+        if self.ep_size > 1:
+            if self.ep_dispatch_bytes_per_rank <= 0 \
+                    or self.ep_combine_bytes_per_rank <= 0:
+                raise ServingLoopError(
+                    "EP dispatch/combine sizes must be positive")
+            if self.expert_compute_base_ns <= 0 \
+                    or self.expert_compute_per_token_ns < 0:
+                raise ServingLoopError(
+                    "the expert compute model must be positive")
 
     def compute_ns(self, *, tokens: int) -> int:
         return self.compute_base_ns + self.compute_per_token_ns * max(0, tokens)
@@ -143,6 +166,17 @@ class CertifiedServiceProfile:
     def collective_bytes(self, *, tokens: int) -> int:
         """Declared per-rank collective size for a round of ``tokens``."""
         return self.collective_bytes_per_rank
+
+    def expert_compute_ns(self, *, tokens: int) -> int:
+        """Declared per-rank expert compute for a round of ``tokens``."""
+        return self.expert_compute_base_ns \
+            + self.expert_compute_per_token_ns * max(0, tokens)
+
+    def ep_dispatch_bytes(self, *, tokens: int) -> int:
+        return self.ep_dispatch_bytes_per_rank
+
+    def ep_combine_bytes(self, *, tokens: int) -> int:
+        return self.ep_combine_bytes_per_rank
 
     def identity_dict(self) -> dict[str, Any]:
         return {
@@ -160,6 +194,13 @@ class CertifiedServiceProfile:
             "collective_bytes_per_rank": self.collective_bytes_per_rank,
             "compute_base_ns": self.compute_base_ns,
             "compute_per_token_ns": self.compute_per_token_ns,
+            "ep_size": self.ep_size,
+            "ep_dispatch_kind": self.ep_dispatch_kind,
+            "ep_combine_kind": self.ep_combine_kind,
+            "ep_dispatch_bytes_per_rank": self.ep_dispatch_bytes_per_rank,
+            "ep_combine_bytes_per_rank": self.ep_combine_bytes_per_rank,
+            "expert_compute_base_ns": self.expert_compute_base_ns,
+            "expert_compute_per_token_ns": self.expert_compute_per_token_ns,
         }
 
     def profile_id(self) -> str:
@@ -303,7 +344,8 @@ def build_schedulers(*, profile: CertifiedServiceProfile,
             pd_type=None, fp=profile.fp_bits, block_size=profile.block_size,
             req_num=req_num, prioritize_prefill=False,
             enable_prefix_caching=False, enable_prefix_sharing=False,
-            prefix_pool=None, prefix_storage=0))
+            prefix_pool=None, prefix_storage=0,
+            ep_size=profile.ep_size))
     return tuple(built)
 
 
@@ -590,7 +632,13 @@ def run_request_driven_service(
             compute_ns_for=profile.compute_ns,
             dummy_instances=dummy_instances,
             dp_group_ids=dp_group_ids,
-            dp_quorums=tuple(c.record for c in quorums))
+            dp_quorums=tuple(c.record for c in quorums),
+            ep_size=profile.ep_size,
+            ep_dispatch_kind=profile.ep_dispatch_kind,
+            ep_combine_kind=profile.ep_combine_kind,
+            ep_dispatch_bytes_for=profile.ep_dispatch_bytes,
+            ep_combine_bytes_for=profile.ep_combine_bytes,
+            expert_compute_ns_for=profile.expert_compute_ns)
 
         projection = plan.to_round_projection(
             resolved_fabric=lowering.resolved_fabric, mapping=lowering.mapping,

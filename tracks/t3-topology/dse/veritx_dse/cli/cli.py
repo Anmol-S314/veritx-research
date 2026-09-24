@@ -58,6 +58,8 @@ from .pipeline import (
     list_runs, show_results, diff_runs, generate_latex,
 )
 from . import commands_compile
+from . import commands_optimize
+from .commands_optimize import cmd_optimize
 
 
 # ── Path constants ──────────────────────────────────────────────────────────
@@ -905,9 +907,60 @@ def cmd_baseline(ctx: Ctx, args):
 
 
 def cmd_serve(ctx: Ctx, args):
-    """Full-stack LLM serving simulation: LLMServingSim + AstraSim + BookSim2."""
+    """Canonical LLM serving simulation (default) or legacy LLMServingSim.
+
+    Canonical: cluster/service config → LLMServingSim service semantics →
+    CompileRequest/fabric → canonical serving loop → ASTRA/BookSim → real
+    request metrics. Legacy (``--legacy``): ``python -m serving`` owns the
+    network; labelled legacy and never canonical evidence.
+    """
+    if not getattr(args, "legacy", False):
+        _cmd_serve_canonical(ctx, args)
+        return
+    _cmd_serve_legacy(ctx, args)
+
+
+def _cmd_serve_canonical(ctx: Ctx, args):
+    """Route the canonical serve path through the integrated product."""
+    import time
+    from pathlib import Path as _Path
+
+    from veritx_dse.simulation.serve_canonical import run_canonical_serve
+
+    out = _Path(args.output).resolve() if args.output else \
+        _Path.cwd() / "runs" / "serve-canonical"
+    out.mkdir(parents=True, exist_ok=True)
+    banner(ctx, "veritx serve (canonical)")
+    log(ctx, "Cluster (service semantics): "
+             f"{_Path(args.cluster_config).name}")
+    log(ctx, f"Dataset: {_Path(args.dataset).name} "
+             f"({args.num_reqs} requests)")
+    log(ctx, "Fabric: "
+             f"{_Path(args.compile_request).name if args.compile_request else 'derived-canonical-mesh'}")
+    t0 = time.time()
+    try:
+        result = run_canonical_serve(
+            cluster_config=args.cluster_config, dataset=args.dataset,
+            num_reqs=args.num_reqs, run_dir=out,
+            compile_request=args.compile_request,
+            timeout_s=args.timeout)
+    except Exception as exc:
+        fail(ctx, f"canonical serve failed: {type(exc).__name__}: {exc}")
+        return
+    elapsed = time.time() - t0
+    ok(ctx, f"canonical serve completed in {elapsed:.1f}s: "
+            f"{result.requests_completed}/{result.requests_expected} "
+            f"requests in {result.rounds} rounds")
+    output(ctx, result.to_dict())
+
+
+def _cmd_serve_legacy(ctx: Ctx, args):
+    """Explicit legacy/debug mode: LLMServingSim owns the network."""
     import subprocess
     import os
+
+    log(ctx, "LEGACY mode: LLMServingSim owns network generation; "
+             "output is NOT canonical evidence")
 
     # Resolve paths - LLMServingSim runs from astra-sim/ and prepends ../ to relative paths
     llmserving_root = REPO / "third_party" / "llmservingsim"
@@ -1541,18 +1594,36 @@ def build_parser() -> argparse.ArgumentParser:
     p_init.add_argument("--out", "-o", help="Output JSON path (default: runs/compile_requests/<model>.json)")
 
     # ── serve (full-stack LLM serving simulation) ──────────────────
-    p_serve = sub.add_parser("serve", help="Full-stack LLM serving simulation (LLMServingSim + AstraSim + BookSim2)")
-    p_serve.add_argument("--cluster-config", required=True, help="Cluster configuration JSON")
+    p_serve = sub.add_parser("serve", help="Canonical LLM serving simulation (LLMServingSim semantics over the canonical fabric; --legacy for the old network path)")
+    p_serve.add_argument("--cluster-config", required=True, help="Cluster configuration JSON (service semantics)")
     p_serve.add_argument("--dataset", required=True, help="Workload dataset JSONL")
     p_serve.add_argument("--num-reqs", type=int, default=1, help="Number of requests to simulate")
+    p_serve.add_argument("--compile-request", default=None, help="Canonical CompileRequest JSON for the serving fabric (default: derived canonical mesh)")
+    p_serve.add_argument("--legacy", action="store_true", help="Explicit legacy/debug mode: LLMServingSim owns the network (NOT canonical evidence)")
     p_serve.add_argument("--network-backend", default="booksim", choices=["booksim", "analytical", "ns3"],
-                          help="Network simulation backend")
+                          help="Network simulation backend (legacy mode only)")
     p_serve.add_argument("--output", help="Output directory for results")
     p_serve.add_argument("--timeout", type=int, default=600, help="Simulation timeout in seconds")
     p_serve.add_argument("--log-level", default="WARNING", choices=["DEBUG", "INFO", "WARNING", "ERROR"],
                           help="LLMServingSim log level")
     p_serve.add_argument("--no-cleanup", action="store_true", help="Keep intermediate files")
     p_serve.add_argument("--no-prefix-caching", action="store_true", help="Disable prefix caching")
+
+    # ── optimize (certified fabric optimization) ───────────────
+    p_opt = sub.add_parser("optimize", help="Certified fabric optimization: real candidates through qualified BookSim to a Pareto study")
+    p_opt.add_argument("--fixture", required=True, help="Base v3 CompileRequest JSON")
+    p_opt.add_argument("--search", default="grid", choices=["grid", "enumeration", "random"], help="Search method")
+    p_opt.add_argument("--link-widths", default=None, help="Comma-separated link widths (e.g. 64,128)")
+    p_opt.add_argument("--concentrations", default=None, help="Comma-separated concentrations (e.g. 1,2)")
+    p_opt.add_argument("--latency-ceiling", type=float, default=None, help="Optional completion_cycles ceiling constraint")
+    p_opt.add_argument("--max-candidates", type=int, default=None, help="Optional candidate budget")
+    p_opt.add_argument("--study-out", required=True, help="Output study JSON path")
+    p_opt.add_argument("--evaluate", default="booksim", choices=["booksim"], help="Backend evaluator")
+    p_opt.add_argument("--binary", default=None, help="BookSim binary (default: vendored build)")
+    p_opt.add_argument("--network-clock-hz", default=None, help="Network clock in Hz, exact integer (e.g. 1000000000 or 1e9)")
+    p_opt.add_argument("--run-root", required=True, help="Evidence root (per-invocation subdirs created inside)")
+    p_opt.add_argument("--timeout", type=int, default=600, help="Per-evaluation timeout in seconds")
+    p_opt.add_argument("--seed", type=int, default=7, help="Search seed")
 
     # ── generate ──────────────────────────────────────────────────
     p_gen = sub.add_parser("generate", help="Generate collateral (UVM, RTL, reports)")
@@ -1607,6 +1678,7 @@ DISPATCH = {
     "report": cmd_report,
     "baseline": cmd_baseline,
     "compile": commands_compile.cmd_compile,
+    "optimize": commands_optimize.cmd_optimize,
     "init": cmd_init,
     "serve": cmd_serve,
     "generate": {

@@ -1,0 +1,1233 @@
+{
+  "schema": "srota/wave-d-contract/v1",
+  "revision": 6,
+  "status": "SEALED_V1",
+  "base": {
+    "wave_c_seal": "8455c0450e27486ae034028b76c9a05b94f2ea72",
+    "branch": "wave-d/distributed-semantics",
+    "contract_doc": "docs/WAVE-D-SCIENTIFIC-CONTRACT.md",
+    "d0_freeze_candidate": "75452bd34c0673303a51da83b0d0871fc9623acb"
+  },
+  "rank_space": {
+    "dimensions": [
+      "tp",
+      "pp",
+      "ep",
+      "dp"
+    ],
+    "cardinality": "TP*PP*EP*DP",
+    "rank_of": "((p*DP + d)*EP + e)*TP + t",
+    "coords_of": {
+      "t": "r % TP",
+      "e": "(r // TP) % EP",
+      "d": "(r // (TP*EP)) % DP",
+      "p": "r // (TP*EP*DP)"
+    },
+    "min_dimension_size": 1,
+    "enumeration_semantic": true,
+    "singleton_rule": "dimension size 1 generates no collective operation; an explicit collective with fewer than 2 participants is invalid and refuses; a one-member CollectiveIntent is never represented"
+  },
+  "mapping": {
+    "supported": [
+      "one_rank_one_compute_agent"
+    ],
+    "invariants": [
+      "contiguous_from_0",
+      "injective_over_agents",
+      "complete",
+      "compute_tile_only"
+    ],
+    "unsupported": [
+      "multiple_ranks_per_accelerator",
+      "rank_spanning_accelerators"
+    ],
+    "deferred": [
+      "multiple_endpoints_per_accelerator",
+      "shared_endpoint",
+      "memory_affinity",
+      "physical_node_aware_semantics"
+    ]
+  },
+  "groups": {
+    "TP": {
+      "varies": "tp",
+      "fixes": [
+        "pp",
+        "ep",
+        "dp"
+      ],
+      "size": "TP",
+      "count": "R/TP"
+    },
+    "EP": {
+      "varies": "ep",
+      "fixes": [
+        "tp",
+        "pp",
+        "dp"
+      ],
+      "size": "EP",
+      "count": "R/EP"
+    },
+    "DP": {
+      "varies": "dp",
+      "fixes": [
+        "tp",
+        "pp",
+        "ep"
+      ],
+      "size": "DP",
+      "count": "R/DP"
+    },
+    "PP_stage": {
+      "fixes": [
+        "pp"
+      ],
+      "varies": [
+        "tp",
+        "ep",
+        "dp"
+      ],
+      "size": "R/PP",
+      "count": "PP"
+    }
+  },
+  "collectives": {
+    "intent": [
+      "kind",
+      "participants",
+      "payload"
+    ],
+    "payload_is_per_kind": true,
+    "aggregate_invariant_primary": true,
+    "schedules": {
+      "ALLREDUCE": {
+        "algorithm": "ring",
+        "B_means": "input tensor bytes per rank",
+        "divisibility": "B % k == 0",
+        "chunk": "C = B/k",
+        "steps": "2*(k-1)",
+        "messages": "2*k*(k-1)",
+        "message_bytes": "C",
+        "per_rank_sent": "2*(k-1)*C",
+        "aggregate_network_payload": "2*(k-1)*B",
+        "result_per_rank_bytes": "B"
+      },
+      "REDUCESCATTER": {
+        "algorithm": "ring",
+        "B_means": "input tensor bytes per rank",
+        "divisibility": "B % k == 0",
+        "chunk": "C = B/k",
+        "steps": "k-1",
+        "messages": "k*(k-1)",
+        "message_bytes": "C",
+        "per_rank_sent": "(k-1)*C",
+        "aggregate_network_payload": "(k-1)*B",
+        "output_per_rank_bytes": "B/k"
+      },
+      "ALLGATHER": {
+        "algorithm": "ring",
+        "B_means": "local contribution bytes per rank",
+        "divisibility": "none",
+        "steps": "k-1",
+        "messages": "k*(k-1)",
+        "message_bytes": "B",
+        "per_rank_sent": "(k-1)*B",
+        "aggregate_network_payload": "k*(k-1)*B",
+        "result_per_rank_bytes": "k*B"
+      },
+      "ALLTOALL": {
+        "algorithm": "direct",
+        "B_means": "total input bytes per rank, equal split over k destinations",
+        "divisibility": "B % k == 0",
+        "chunk": "C = B/k",
+        "steps": 1,
+        "messages": "k*(k-1)",
+        "message_bytes": "C",
+        "per_rank_sent": "(k-1)*C",
+        "aggregate_network_payload": "(k-1)*B",
+        "self_chunk_on_network": false
+      },
+      "BROADCAST": {
+        "algorithm": "root_fanout",
+        "B_means": "root payload bytes",
+        "divisibility": "none",
+        "steps": 1,
+        "messages": "k-1",
+        "message_bytes": "B",
+        "per_rank_sent": "(k-1)*B (root only)",
+        "aggregate_network_payload": "(k-1)*B",
+        "non_root_sent": 0
+      }
+    },
+    "reference_example": {
+      "k": 4,
+      "B": 1024,
+      "ALLREDUCE": {
+        "messages": 24,
+        "message_bytes": 256,
+        "per_rank_sent": 1536,
+        "aggregate": 6144
+      },
+      "REDUCESCATTER": {
+        "messages": 12,
+        "message_bytes": 256,
+        "per_rank_sent": 768,
+        "aggregate": 3072
+      },
+      "ALLGATHER": {
+        "messages": 12,
+        "message_bytes": 1024,
+        "per_rank_sent": 3072,
+        "aggregate": 12288
+      },
+      "ALLTOALL": {
+        "messages": 12,
+        "message_bytes": 256,
+        "per_rank_sent": 768,
+        "aggregate": 3072
+      },
+      "BROADCAST": {
+        "messages": 3,
+        "message_bytes": 1024,
+        "root_sent": 3072,
+        "aggregate": 3072
+      }
+    },
+    "unsupported_algorithms": [
+      "tree_allreduce",
+      "recursive_doubling",
+      "halving_doubling",
+      "one_ring"
+    ],
+    "unsupported_partitioning": "B % k != 0 for ALLREDUCE/REDUCESCATTER/ALLTOALL refuses; uneven chunking is a future extension",
+    "symmetric_identity": "aggregate == k * per_rank_sent for ALLREDUCE/REDUCESCATTER/ALLGATHER/ALLTOALL",
+    "asymmetric": {
+      "BROADCAST": "aggregate == root_sent (non-root ranks send zero); NOT k * root_sent"
+    }
+  },
+  "phases": {
+    "phase_tagging": "EXACT",
+    "explicit_ops_and_declared_comm_bytes": "EXACT",
+    "automatic_model_shape_to_operations": "DEFERRED",
+    "shape_metadata_authority": "explicit versioned Wave-D workload document, or a named immutable model descriptor whose content hash is bound into Wave-D workload identity; implicit preset lookup by name refuses",
+    "shape_fields": [
+      "num_layers",
+      "hidden_size",
+      "bytes_per_elem",
+      "decode_steps",
+      "num_experts",
+      "top_k"
+    ],
+    "labels_nonsemantic_for_phases": [
+      "PREFILL_HEAVY",
+      "DECODE_HEAVY",
+      "MIXED"
+    ],
+    "labels_frozen_in_compilerequest_identity": true,
+    "unsupported": [
+      "continuous_batching",
+      "chunked_prefill",
+      "sub_batch_interleaving"
+    ]
+  },
+  "pp": {
+    "inference_only": true,
+    "stage_owns": "contiguous_layer_range",
+    "transfer": "canonical P2PTransfer",
+    "unsupported": [
+      "training_backward",
+      "1F1B",
+      "interleaved_pp",
+      "virtual_pp"
+    ]
+  },
+  "p2p": {
+    "canonical_object": [
+      "transfer_id",
+      "phase",
+      "src_rank",
+      "dst_rank",
+      "logical_payload_bytes",
+      "dependencies"
+    ],
+    "one_transfer_one_message": true,
+    "legacy_send_recv_pairing": "explicit shared identifier only; otherwise refuse",
+    "forbidden_pairing": [
+      "adjacent_rows",
+      "equal_byte_counts",
+      "source_order"
+    ]
+  },
+  "ep_moe": {
+    "shard": "contiguous_experts",
+    "constraint": "num_experts % EP == 0",
+    "routing_policies": {
+      "EXPLICIT_TRACE": "EXACT",
+      "DETERMINISTIC_BALANCED": "DEFERRED"
+    },
+    "unsupported": [
+      "uniform_random_without_declared_policy",
+      "token_dropping"
+    ],
+    "conservation": {
+      "assignments": "tokens * k",
+      "phase": "sent == received"
+    },
+    "crosses_tp": true
+  },
+  "kv": {
+    "object": [
+      "layer",
+      "phase",
+      "owner_rank",
+      "logical_bytes"
+    ],
+    "v1": "pipeline_local_residency",
+    "movement": "canonical P2PTransfer only",
+    "deferred": [
+      "prefill_decode_disaggregation",
+      "cross_node_kv_transfer"
+    ],
+    "conservation": "produced == resident + discarded (state); transfer traffic is accounted by the P2P law, never added to residency",
+    "transfer_accounting": "events, not state"
+  },
+  "messages": {
+    "fields": [
+      "message_id",
+      "operation_id",
+      "phase",
+      "src_rank",
+      "dst_rank_or_multicast_group",
+      "logical_payload_bytes",
+      "traffic_class",
+      "order_key"
+    ],
+    "identity_fields": "all fields above",
+    "physical_endpoints": "from_mapping_only",
+    "message_bits": "logical_payload_bytes * 8"
+  },
+  "multicast": {
+    "intent": "LogicalMulticastIntent(payload, destination_set)",
+    "schedules": {
+      "SOURCE_REPLICATION": "EXACT",
+      "HARDWARE_REPLICATION": "UNSUPPORTED_DEFERRED"
+    },
+    "logical_bytes": "payload",
+    "injected_bytes": "payload * N",
+    "delivered_bytes": "payload * N",
+    "hardware_request_behavior": "refuse; never substitute or label the different schedule an approximation",
+    "fidelity_note": "source replication is exact for the selected schedule; fidelity loss is reserved for unrepresentable requests"
+  },
+  "packetization": {
+    "authority": "model/packet_format.py",
+    "unit": "bits",
+    "notation": {
+      "message_bits": "logical_payload_bytes * 8",
+      "F": "flit_width_bits",
+      "H": "header_width_bits",
+      "Q": "payload_width_bits = F - H",
+      "L": "max_packet_flits",
+      "packet_payload_capacity_bits": "Q * L"
+    },
+    "packets": "ceil(message_bits / (Q*L))",
+    "payload_conservation": "sum(packet_payload_bits) == message_bits",
+    "per_packet": {
+      "n_i": "ceil(P_i / Q)",
+      "padding_i": "n_i*Q - P_i",
+      "padding_bound": "0 <= padding_i < Q",
+      "header_bits_i": "n_i*H",
+      "transmitted_bits_i": "n_i*F",
+      "identity": "transmitted_bits_i == header_bits_i + P_i + padding_i"
+    },
+    "byte_alignment_required": false,
+    "packet_wire_bytes_field": "none (bits are the wire unit)",
+    "zero_length": "refused_upstream",
+    "banned_names": [
+      "packet_size"
+    ],
+    "replaced_legacy": [
+      "bytes_per_element"
+    ]
+  },
+  "flits": {
+    "authority": "model/packet_format.py",
+    "v1": "one_flit_per_channel_beat",
+    "types": [
+      "SINGLE",
+      "HEAD",
+      "BODY",
+      "TAIL"
+    ],
+    "byte_alignment_required": false,
+    "homogeneous_width_required": true,
+    "terminology": [
+      "logical_payload_bytes",
+      "logical_payload_bits",
+      "packet_payload_capacity_bits",
+      "header_bits",
+      "padding_bits",
+      "transmitted_wire_bits",
+      "flit_count"
+    ],
+    "padding_note": "padding bits are transmitted and are part of transmitted_bits_i"
+  },
+  "traffic_class": {
+    "authority": "model/vc_assignment.py",
+    "rule": "message traffic class must exist in VC assignment; no second mapping"
+  },
+  "trace_authority": {
+    "dse_trace": "SEMANTIC_SOURCE_PACKET_LEVEL_LOSSY",
+    "chakra_et": "DERIVED_ARTIFACT",
+    "astra_configs": "DERIVED_ARTIFACT",
+    "serving_cluster": "SEMANTIC_SOURCE_EXTERNAL_SERVING_ONLY",
+    "anynet": "FABRIC_WAVE_B",
+    "rule": "derived traces are never a second authority; intent+trace disagreement refuses"
+  },
+  "serving": {
+    "role": "workload_event_source",
+    "execution": "BLOCKED",
+    "unmappable_config": "refuse"
+  },
+  "identity": {
+    "rule": "every derived artifact includes the identities of its direct semantic parents plus its own canonical semantic contents",
+    "existing": {
+      "workload_id": {
+        "hash": "WorkloadArtifact._identity_dict",
+        "covers": [
+          "schema_version",
+          "num_participants",
+          "parallelism",
+          "ops (kind/bytes/participants/src/dst/scope, ordered)"
+        ],
+        "note": "parallelism and operation payloads are already inside workload_id; frozen"
+      },
+      "design_hash": {
+        "hash": "CompileRequest.design_hash",
+        "covers": [
+          "all CompileRequest semantic fields including workload.serving_mode"
+        ],
+        "note": "frozen; unchanged during Wave D"
+      },
+      "mapping_hash": {
+        "hash": "MappingArtifact.mapping_hash",
+        "covers": [
+          "rank integer -> AgentInstance placements"
+        ],
+        "note": "does NOT hash tp/pp/ep/dp coordinates"
+      },
+      "fabric_hash": {
+        "hash": "FabricArtifact.fabric_hash",
+        "covers": [
+          "hardware fabric"
+        ]
+      },
+      "resolved_fabric_hash": {
+        "hash": "ResolvedFabric._compute_hash",
+        "parents": [
+          "design_hash",
+          "mapping_hash",
+          "fabric_hash"
+        ]
+      },
+      "packet_format_hash": {
+        "hash": "PacketFormatArtifact.packet_format_hash",
+        "covers": [
+          "field layout",
+          "endpoint/VC widths",
+          "flit width",
+          "flit encoding"
+        ]
+      }
+    },
+    "wave_d": {
+      "parallelism_id": {
+        "formula": "H(parallelism_schema_version, TP, PP, EP, DP)",
+        "parents": [],
+        "note": "intentional redundancy with workload_id; provides independently referencable rank/group geometry"
+      },
+      "wave_d_semantics_id": {
+        "formula": "H(WaveDWorkloadSemantics version, declared semantic fields, model descriptor content hash)",
+        "parents": []
+      },
+      "operation_graph_id": {
+        "formula": "H(workload_id, parallelism_id, wave_d_semantics_id, canonical operation nodes, canonical dependency edges)",
+        "parents": [
+          "workload_id",
+          "parallelism_id",
+          "wave_d_semantics_id"
+        ]
+      },
+      "message_artifact_id": {
+        "formula": "H(operation_graph_id, collective schedule identities, replication intent/schedule, canonical LogicalMessage contents)",
+        "parents": [
+          "operation_graph_id"
+        ]
+      },
+      "physical_traffic_id": {
+        "formula": "H(message_artifact_id, resolved_fabric_hash, packet_format_hash, replication schedule, canonical physical packet/flit contents)",
+        "parents": [
+          "message_artifact_id",
+          "resolved_fabric_hash",
+          "packet_format_hash"
+        ]
+      }
+    },
+    "logical_physical_separation": {
+      "logical_chain": [
+        "workload_id",
+        "operation_graph_id",
+        "message_artifact_id"
+      ],
+      "physical_binding": [
+        "resolved_fabric_hash",
+        "packet_format_hash",
+        "physical_traffic_id"
+      ],
+      "rule": "logical messages use logical rank IDs and are independent of physical placement; mapping changes do not alter logical identities",
+      "seam": "ResolvedFabric.validate_against() (design parallelism, rank namespace, mapping placements, attachment, fabric DAG, packet format, VC, routes, address decode)"
+    },
+    "path_independence": true,
+    "frozen_compilerequest_identity": "unchanged during Wave D; serving_mode remains identity-bearing in design_hash; removing or reinterpreting any CompileRequest field requires an explicit schema/compiler-semantics version bump",
+    "mutation_table": {
+      "columns": [
+        "workload_id",
+        "parallelism_id",
+        "wave_d_semantics_id",
+        "mapping_hash",
+        "resolved_fabric_hash",
+        "operation_graph_id",
+        "message_artifact_id",
+        "physical_traffic_id"
+      ],
+      "rows": [
+        {
+          "mutation": "rename_display_label",
+          "changes": []
+        },
+        {
+          "mutation": "move_workload_or_trace_file",
+          "changes": []
+        },
+        {
+          "mutation": "change_trace_bytes",
+          "changes": [
+            "workload_id",
+            "resolved_fabric_hash",
+            "operation_graph_id",
+            "message_artifact_id",
+            "physical_traffic_id"
+          ]
+        },
+        {
+          "mutation": "change_source_operation_payload",
+          "changes": [
+            "workload_id",
+            "resolved_fabric_hash",
+            "operation_graph_id",
+            "message_artifact_id",
+            "physical_traffic_id"
+          ]
+        },
+        {
+          "mutation": "change_canonical_p2p_src_dst_bytes",
+          "changes": [
+            "workload_id",
+            "resolved_fabric_hash",
+            "operation_graph_id",
+            "message_artifact_id",
+            "physical_traffic_id"
+          ]
+        },
+        {
+          "mutation": "change_tp_pp_ep_dp",
+          "changes": [
+            "workload_id",
+            "parallelism_id",
+            "operation_graph_id",
+            "message_artifact_id",
+            "physical_traffic_id"
+          ],
+          "conditional": {
+            "wave_d_semantics_id": "only if it carries such fields",
+            "mapping_hash": "iff rank->agent placements change",
+            "resolved_fabric_hash": "changes when design_hash or mapping_hash changes"
+          }
+        },
+        {
+          "mutation": "change_phase_or_model_descriptor",
+          "changes": [
+            "wave_d_semantics_id",
+            "operation_graph_id",
+            "message_artifact_id",
+            "physical_traffic_id"
+          ]
+        },
+        {
+          "mutation": "change_physical_mapping_only",
+          "changes": [
+            "mapping_hash",
+            "resolved_fabric_hash",
+            "physical_traffic_id"
+          ]
+        },
+        {
+          "mutation": "change_attachment_fabric_or_packet_format",
+          "changes": [
+            "resolved_fabric_hash",
+            "physical_traffic_id"
+          ]
+        },
+        {
+          "mutation": "change_collective_algorithm",
+          "changes": [
+            "message_artifact_id",
+            "physical_traffic_id"
+          ]
+        },
+        {
+          "mutation": "change_replication_schedule",
+          "changes": [
+            "message_artifact_id",
+            "physical_traffic_id"
+          ]
+        },
+        {
+          "mutation": "change_output_directory",
+          "changes": []
+        },
+        {
+          "mutation": "change_legacy_serving_mode",
+          "changes": [
+            "design_hash"
+          ],
+          "note": "does not fabricate a Wave-D phase; Wave-D workload artifact unchanged"
+        }
+      ],
+      "invariants": [
+        "parallelism is inside workload_id, so a parallelism mutation cannot leave workload_id stable",
+        "mapping_hash changes iff rank->AgentInstance placements change; TP=4,PP=1 and TP=2,PP=2 with identical rank->agent placements share a mapping hash",
+        "a derived artifact never pretends its parent stayed the same"
+      ]
+    }
+  },
+  "conservation_laws": [
+    {
+      "id": "L1",
+      "name": "rank_cardinality",
+      "class": "rank_space",
+      "relation": "R = TP*PP*EP*DP",
+      "proof": "PROVED_EXACT"
+    },
+    {
+      "id": "L2",
+      "name": "rank_bijection",
+      "class": "rank_space",
+      "relation": "coords(rank(c)) == c",
+      "proof": "BOUNDED_EXHAUSTIVE"
+    },
+    {
+      "id": "L3",
+      "name": "mapping_completeness",
+      "class": "mapping",
+      "relation": "len == R and injective",
+      "proof": "PROVED_EXACT"
+    },
+    {
+      "id": "L4",
+      "name": "group_membership",
+      "class": "rank_space",
+      "relation": "sum(sizes) == R per family",
+      "proof": "PROVED_EXACT"
+    },
+    {
+      "id": "L5",
+      "name": "collective_participants",
+      "class": "collective",
+      "relation": "schedule participants == intent",
+      "proof": "PROPERTY_VALIDATED"
+    },
+    {
+      "id": "L6",
+      "name": "collective_scheduled_aggregate",
+      "class": "collective",
+      "relation": "sum(message payload) == per-kind aggregate (ALLREDUCE 2(k-1)B; REDUCESCATTER (k-1)B; ALLGATHER k(k-1)B; ALLTOALL (k-1)B; BROADCAST (k-1)B)",
+      "proof": "PROVED_EXACT",
+      "domain": "divisibility rules"
+    },
+    {
+      "id": "L7",
+      "name": "p2p_message_payload",
+      "class": "p2p",
+      "relation": "one P2PTransfer -> exactly one message; sum(message payload) == transfer payload",
+      "proof": "PROVED_EXACT"
+    },
+    {
+      "id": "L8",
+      "name": "multicast_source_delivery",
+      "class": "multicast",
+      "relation": "sum(message payload) == N*B; delivered == N*B; source logical payload == B",
+      "proof": "PROVED_EXACT",
+      "domain": "SOURCE_REPLICATION"
+    },
+    {
+      "id": "L9",
+      "name": "moe_assignments",
+      "class": "moe",
+      "relation": "tokens*k; sent == received",
+      "proof": "PROVED_EXACT",
+      "domain": "EXPLICIT_TRACE, no drop"
+    },
+    {
+      "id": "L10",
+      "name": "packet_payload_bits",
+      "class": "packet",
+      "relation": "N == ceil(message_bits/(Q*L)); sum(payload_bits) == message_bits",
+      "proof": "PROVED_EXACT",
+      "unit": "bits"
+    },
+    {
+      "id": "L11",
+      "name": "transmitted_bit_identity",
+      "class": "packet_flit",
+      "relation": "n_i*F == n_i*H + P_i + padding_i",
+      "proof": "PROVED_EXACT",
+      "unit": "bits"
+    },
+    {
+      "id": "L12",
+      "name": "flit_padding",
+      "class": "flit",
+      "relation": "padding_i == n_i*Q - P_i; 0 <= padding_i < Q",
+      "proof": "PROVED_EXACT",
+      "unit": "bits"
+    },
+    {
+      "id": "L13",
+      "name": "kv_residency_state",
+      "class": "kv",
+      "relation": "produced == resident + discarded (no transfer term)",
+      "proof": "PROVED_EXACT",
+      "domain": "pipeline-local v1"
+    },
+    {
+      "id": "L14",
+      "name": "backend_quiescence",
+      "class": "backend",
+      "relation": "submitted == completed",
+      "proof": "DIFFERENTIALLY_VALIDATED"
+    }
+  ],
+  "proof_classes": [
+    "PROVED_EXACT",
+    "BOUNDED_EXHAUSTIVE",
+    "PROPERTY_VALIDATED",
+    "DIFFERENTIALLY_VALIDATED",
+    "EMPIRICALLY_CALIBRATED",
+    "OBSERVED",
+    "NOT_RUN",
+    "UNSUPPORTED"
+  ],
+  "bounded_domains": {
+    "parallelism": [
+      1,
+      4
+    ],
+    "world_size_cap": 64,
+    "message_bits": [
+      8,
+      16,
+      504,
+      512,
+      520,
+      2040,
+      2048,
+      2056,
+      32760,
+      32768,
+      32776
+    ],
+    "payload_width_bits": [
+      1,
+      8,
+      64,
+      256,
+      1024
+    ],
+    "flit_width_bits": [
+      16,
+      32,
+      64,
+      65,
+      128,
+      256
+    ],
+    "max_packet_flits": [
+      1,
+      8
+    ],
+    "destinations": [
+      1,
+      8
+    ],
+    "participants": [
+      2,
+      8
+    ]
+  },
+  "unsupported_matrix": {
+    "training": "UNSUPPORTED",
+    "inference": "EXACT",
+    "endpoint_level_mapping": "EXACT",
+    "physical_node_aware_semantics": "DEFERRED",
+    "multi_instance": "DEFERRED",
+    "TP": "EXACT",
+    "PP": "EXACT",
+    "EP": "EXACT",
+    "DP": "EXACT",
+    "moe_topk_explicit_trace": "EXACT",
+    "moe_deterministic_balanced": "DEFERRED",
+    "token_dropping": "UNSUPPORTED",
+    "continuous_batching": "UNSUPPORTED",
+    "static_batching": "EXACT",
+    "phase_tagging": "EXACT",
+    "explicit_ops_declared_bytes": "EXACT",
+    "model_shape_to_operations": "DEFERRED",
+    "pd_disaggregation": "DEFERRED",
+    "kv_transfer": "UNSUPPORTED_IN_ROW_LOWERING",
+    "multiple_ranks_per_accelerator": "UNSUPPORTED",
+    "multiple_endpoints_per_accelerator": "DEFERRED",
+    "multicast_source_replication": "EXACT_FOR_SELECTED_SCHEDULE",
+    "multicast_hardware_replication": "UNSUPPORTED_DEFERRED",
+    "non_ring_algorithms": "UNSUPPORTED",
+    "uneven_collective_chunks": "UNSUPPORTED",
+    "serving_execution": "BLOCKED",
+    "analytical_execution": "UNSUPPORTED",
+    "rtl_uvm_formal": "NOT_RUN"
+  },
+  "assumptions": [
+    {
+      "id": "A1",
+      "description": "one rank per accelerator",
+      "fidelity": "PHYSICAL_MAPPING",
+      "removal": "Wave E"
+    },
+    {
+      "id": "A2",
+      "description": "SOURCE_REPLICATION is the selected multicast schedule",
+      "fidelity": "MULTICAST_REPLICATION",
+      "removal": "Wave E/HW"
+    },
+    {
+      "id": "A3",
+      "description": "ring allreduce / direct alltoall",
+      "fidelity": "MESSAGE_PAYLOAD",
+      "removal": "later"
+    },
+    {
+      "id": "A4",
+      "description": "no token dropping",
+      "fidelity": "MOE_ROUTING",
+      "removal": "later"
+    },
+    {
+      "id": "A5",
+      "description": "static batching",
+      "fidelity": "OPERATION_GRAPH",
+      "removal": "later"
+    },
+    {
+      "id": "A6",
+      "description": "header repeats in every flit",
+      "fidelity": "FLITIZATION",
+      "removal": "later"
+    },
+    {
+      "id": "A7",
+      "description": "pipeline-local KV",
+      "fidelity": "KV_PLACEMENT",
+      "removal": "Wave D5+"
+    },
+    {
+      "id": "A8",
+      "description": "homogeneous channel width",
+      "fidelity": "FLITIZATION",
+      "removal": "later"
+    },
+    {
+      "id": "A9",
+      "description": "equal collective chunks (B % k == 0)",
+      "fidelity": "MESSAGE_PAYLOAD",
+      "removal": "later"
+    },
+    {
+      "id": "A10",
+      "description": "explicit workload ops (no shape-derived synthesis)",
+      "fidelity": "OPERATION_GRAPH",
+      "removal": "later"
+    }
+  ],
+  "contradiction_tally": {
+    "P0": 4,
+    "P1": 5,
+    "P2": 2,
+    "total": 11
+  },
+  "contradictions": [
+    {
+      "id": "D0-C001",
+      "severity": "P0",
+      "concept": "world_size",
+      "a": "tp*pp*ep*dp (presets.parallel_world_size)",
+      "b": "num_npus = tp*pp with ep sharing GPUs (serving config_builder._resolve_parallelism)",
+      "resolution": "design rank space multiplies; serving convention is external and must be mapped or refused"
+    },
+    {
+      "id": "D0-C002",
+      "severity": "P0",
+      "concept": "rank_enumeration",
+      "a": "tp fastest, pp slowest (placement.rank_of)",
+      "b": "vLLM DP x PP x TP layout + ASTRA logical dims degrading to [num_nodes]",
+      "resolution": "one canonical bijection; ASTRA dim derivation refuses rather than degrading"
+    },
+    {
+      "id": "D0-C003",
+      "severity": "P0",
+      "concept": "trace_authority",
+      "a": "trace_path is ground truth (compile_model.Workload docstring)",
+      "b": "artifact is semantic source; lowering is conservation-checked",
+      "resolution": "intent+trace must agree; disagreement refuses"
+    },
+    {
+      "id": "D0-C004",
+      "severity": "P0",
+      "concept": "packet_size_units",
+      "a": "flits (BookSim cfg/trace)",
+      "b": "unlabeled 8 (synthesis evaluator)",
+      "resolution": "unit-suffixed names only; packet_size banned; wire accounting in bits"
+    },
+    {
+      "id": "D0-C005",
+      "severity": "P1",
+      "concept": "collective_algorithm",
+      "a": "ASTRA system.json ring/direct",
+      "b": "model_to_trace ring with pkt_flits",
+      "c": "scripts/collectives.py float ring",
+      "resolution": "CollectiveIntent vs CollectiveSchedule; per-kind payload semantics; integer reference equations"
+    },
+    {
+      "id": "D0-C006",
+      "severity": "P1",
+      "concept": "kv_movement",
+      "a": "artifact refuses inferred P/D KV",
+      "b": "row lowering refuses standalone SEND/RECV",
+      "resolution": "one canonical P2PTransfer; pairing requires an explicit shared identifier"
+    },
+    {
+      "id": "D0-C007",
+      "severity": "P1",
+      "concept": "first_instance",
+      "a": "members[0]/first_group (validated representative)",
+      "b": "pd_type prefill doubling",
+      "resolution": "representative only behind all-members-agree proof; P/D doubling deferred"
+    },
+    {
+      "id": "D0-C008",
+      "severity": "P1",
+      "concept": "bytes_per_element",
+      "a": "declared default 2048",
+      "b": "unconsumed by any message/packet path",
+      "resolution": "not a payload authority; explicit per-kind payload fields in Wave D"
+    },
+    {
+      "id": "D0-C009",
+      "severity": "P1",
+      "concept": "multicast",
+      "a": "hardware group budget with unicast fallback warning",
+      "b": "no lowering exists",
+      "resolution": "SOURCE_REPLICATION defined as an exact schedule; hardware replication refused"
+    },
+    {
+      "id": "D0-C010",
+      "severity": "P2",
+      "concept": "prefill_decode",
+      "a": "traffic-mix labels",
+      "b": "no phase semantics",
+      "resolution": "labels stay in frozen CompileRequest identity; Wave-D phases are separate and require explicit ops"
+    },
+    {
+      "id": "D0-C011",
+      "severity": "P2",
+      "concept": "total_npus",
+      "a": "legacy tp*ep / tp",
+      "b": "world_size",
+      "resolution": "remove alias in Wave D"
+    }
+  ],
+  "slices": [
+    {
+      "id": "D1",
+      "invariant": "every logical rank has one deterministic identity and one valid supported placement; TP/PP/EP/DP groups derive from that authority"
+    },
+    {
+      "id": "D2",
+      "invariant": "every supported workload becomes one deterministic causal operation graph with exact rank/group ownership; unsupported behavior refuses"
+    },
+    {
+      "id": "D3",
+      "invariant": "every communication operation lowers to exactly the expected logical messages and payload bytes (per-kind semantics)"
+    },
+    {
+      "id": "D4",
+      "invariant": "every logical payload bit is accounted for through packetization and flitization with exact header/padding accounting"
+    },
+    {
+      "id": "D5",
+      "invariant": "prefill, decode, pipeline, expert routing, multicast and supported KV movement compose without violating rank, causality or conservation"
+    },
+    {
+      "id": "D-FINAL",
+      "invariant": "nothing can be added, removed, duplicated, reassigned or silently approximated between intent and backend traffic without identity change, declared fidelity loss, or refusal"
+    }
+  ],
+  "external_contract_needed": [
+    {
+      "id": "EXT-1",
+      "system": "ASTRA-Sim",
+      "question": "do ring/direct match the Wave-D per-kind collective byte accounting exactly?"
+    },
+    {
+      "id": "EXT-2",
+      "system": "BookSim",
+      "question": "is cfg packet_size fully overridden by trace packet sizes; is flit width the channel width?"
+    },
+    {
+      "id": "EXT-3",
+      "system": "Chakra",
+      "question": "semantics of involved_dim and comm_size per node type?"
+    },
+    {
+      "id": "EXT-4",
+      "system": "LLMServingSim",
+      "question": "exact mapping of (tp_size, pp_size, ep_size, dp_group, pd_type) onto a Cartesian rank space?"
+    },
+    {
+      "id": "EXT-5",
+      "system": "Ramulator",
+      "question": "memory timing contract (Wave E scope)"
+    }
+  ],
+  "fidelity_dimensions": [
+    "RANK_SPACE",
+    "PHYSICAL_MAPPING",
+    "COLLECTIVE_GROUPS",
+    "OPERATION_GRAPH",
+    "MESSAGE_PAYLOAD",
+    "PACKETIZATION",
+    "FLITIZATION",
+    "MULTICAST_REPLICATION",
+    "KV_PLACEMENT",
+    "MOE_ROUTING"
+  ],
+  "conservation_ledger": {
+    "quantities": [
+      "source_logical_payload_bytes",
+      "aggregate_scheduled_message_bytes",
+      "packet_payload_bits",
+      "transmitted_wire_bits",
+      "delivered_payload_bytes",
+      "packet_count",
+      "flit_count",
+      "backend_injections",
+      "backend_retirements"
+    ],
+    "relations": {
+      "p2p": "aggregate_scheduled_message_bytes == source_logical_payload_bytes",
+      "collective": "aggregate_scheduled_message_bytes == per-kind aggregate (L6)",
+      "multicast": "aggregate_scheduled_message_bytes == N * source_logical_payload_bytes",
+      "packet": "sum(packet_payload_bits) == 8 * aggregate_scheduled_message_bytes",
+      "flit": "transmitted_wire_bits == header_bits + packet_payload_bits + padding_bits"
+    },
+    "single_bytes_field_forbidden": true
+  },
+  "d1_handoff": {
+    "may_implement": [
+      "parallelism identity",
+      "rank namespace",
+      "rank-coordinate bijection",
+      "group construction",
+      "mapping validation/composition via MappingArtifact + ResolvedFabric",
+      "WaveDWorkloadSemantics v1 skeleton required by D1"
+    ],
+    "must_not": [
+      "redesign the hash dependency DAG",
+      "decide identity-parent questions"
+    ],
+    "normative": "identity.wave_d parent lists"
+  },
+  "implementation": {
+    "modules": {
+      "parallelism": "dse/veritx_dse/waved/parallelism.py",
+      "semantics": "dse/veritx_dse/waved/semantics.py",
+      "operations": "dse/veritx_dse/waved/operations.py",
+      "messages": "dse/veritx_dse/waved/messages.py",
+      "traffic": "dse/veritx_dse/waved/traffic.py",
+      "backend": "dse/veritx_dse/waved/backend.py",
+      "errors": "dse/veritx_dse/waved/errors.py",
+      "oracles": "dse/veritx_dse/waved/oracles.py",
+      "immutable": "dse/veritx_dse/waved/immutable.py",
+      "strict": "dse/veritx_dse/waved/strict.py",
+      "workload": "dse/veritx_dse/waved/workload.py",
+      "waved_resources": "dse/veritx_dse/application/waved_resources.py"
+    },
+    "tests": [
+      "dse/tests/test_wave_d_semantics.py",
+      "dse/tests/test_wave_d_physical.py",
+      "dse/tests/test_wave_d_authenticity.py",
+      "dse/tests/test_wave_d_contract.py",
+      "dse/tests/test_wave_d_seal.py"
+    ],
+    "backend_status": {
+      "BOOKSIM_STANDALONE": "VALIDATED: qualified supervised execution of the DERIVED trace; route EXACT; quiescence delivered_packets==expected_packets and flits_injected==flits_accepted==expected_flits from sealed Wave-B evidence counters (§21); the sealed evidence schema is NOT modified",
+      "ASTRA": "NOT INTEGRATED for Wave-D semantics (EXT-1 unanswered)",
+      "SERVING_BOOKSIM2": "BLOCKED (unchanged)",
+      "ANALYTICAL": "UNSUPPORTED",
+      "RTL_UVM_FORMAL": "NOT_RUN"
+    },
+    "proof_methods": {
+      "bounded_exhaustive": "TP,PP,EP,DP in [1,4]^4 (256 combos): bijection, group laws, oracle cross-check",
+      "property": "Hypothesis: bijection, collective conservation, packet payload conservation, flit identity, multicast law",
+      "differential": "production lowering vs independent pure oracles (§26/§68)",
+      "metamorphic": "singleton dims, payload doubling, capacity monotonicity, path independence",
+      "mutation": "identity mutation matrix + adversarial tamper suite feeding mutated objects into real production validators/loaders (§30, §23.6)"
+    },
+    "identity_dag": {
+      "parallelism_id": "H(schema_version, TP, PP, EP, DP)",
+      "wave_d_semantics_id": "H(schema_version, phase, routing_policy, shape_metadata, model_descriptor_hash)",
+      "operation_graph_id": "H(workload_id, parallelism_id, wave_d_semantics_id, nodes, collectives, p2p, multicasts)",
+      "message_artifact_id": "H(operation_graph_id, schedules, replication_schedule, traffic_class, messages)",
+      "physical_traffic_id": "H(message_artifact_id, resolved_fabric_hash, packet_format_hash, packets)"
+    },
+    "trace_projection": {
+      "dialect": "waved-derived-whitespace-v1 (cyc src cl dst sz; size in flits)",
+      "lossless_fields": [
+        "src endpoint",
+        "dst endpoint",
+        "flit count",
+        "packet ordering"
+      ],
+      "lossy_fields": [
+        "operation id",
+        "phase"
+      ],
+      "provenance_authority": "PhysicalTrafficArtifact (trace is a derived backend input, §48)"
+    },
+    "persisted_resources": {
+      "kinds": [
+        "wavedworkload",
+        "parallelism",
+        "wavedsemantics",
+        "opgraph",
+        "messages",
+        "traffic"
+      ],
+      "loader_contract": "requested filename ID == embedded resource_id == recomputed ID, exact type tag, exact schema version, unknown fields refused, parents resolved and verified, semantic revalidation",
+      "ledger": "DERIVED, never persisted: recomputed from a verified PhysicalTrafficArtifact"
+    },
+    "deep_immutability": {
+      "mechanism": "waved/immutable.py: caller-owned containers are copied into FrozenMap/tuple; thaw() at JSON boundaries",
+      "guarantee": "mutating a caller's dict after construction cannot change artifact content, identity, or a lowered child"
+    },
+    "geometry_seam": {
+      "rule": "logical.graph.parallelism must equal bundle.inventory.parallelism and the compiled design workload geometry; equal world size is not semantic equivalence",
+      "enforced_at": [
+        "PhysicalTrafficArtifact.__post_init__",
+        "PhysicalTrafficArtifact.validate_against_bundle",
+        "SrotaControlPlane._require_waved_geometry"
+      ],
+      "bundle_revalidation": "bundle.revalidate() runs before rank binding"
+    },
+    "product_integration": {
+      "authority": "SrotaControlPlane (single product path)",
+      "workload_kinds": {
+        "LEGACY_TRACE": "packet bytes -> BookSim (unchanged legacy path)",
+        "WAVE_D_SEMANTIC": "declared operations -> verified graph -> verified messages -> verified traffic -> derived trace -> sealed qualified BookSim"
+      },
+      "intent_seam": "Intent.workload.wave_d (versioned, content-hashed)",
+      "plan_binding": [
+        "waved_workload_id",
+        "parallelism_id",
+        "wave_d_semantics_id",
+        "operation_graph_id",
+        "message_artifact_id",
+        "physical_traffic_id",
+        "resolved_fabric_hash",
+        "packet_format_hash"
+      ],
+      "result_provenance": "the result carries the chain plus expected/delivered packet and flit counters; load_verified_result re-derives all of them",
+      "pre_spawn_gates": [
+        "validate_against_bundle",
+        "validate_against_oracle",
+        "validate_conservation",
+        "cross_check_against_oracle",
+        "verify_trace_projection",
+        "verify_backend_quiescence"
+      ]
+    },
+    "not_closed": {
+      "kv_and_expert_routing_lowering": "UNSUPPORTED (refused), §14",
+      "physical_node_semantics": "DEFERRED, §31",
+      "multi_instance": "DEFERRED, §31",
+      "pd_disaggregation": "DEFERRED, §31",
+      "uneven_collective_chunking": "UNSUPPORTED (refused), §10.2",
+      "shape_to_operation_synthesis": "DEFERRED, §31",
+      "embedded_route_dump_export": "NOT_RUN (external contract, §36)"
+    },
+    "result_provenance_binding": {
+      "authority": "the verified plan's wave_d chain",
+      "rule": "result.wave_d[chain key] must equal plan.wave_d[chain key] on every field; the chain is re-derived from the plan's traffic parent",
+      "schema": {
+        "plan_chain_keys": [
+          "workload_kind",
+          "waved_workload_id",
+          "parallelism_id",
+          "wave_d_semantics_id",
+          "operation_graph_id",
+          "message_artifact_id",
+          "physical_traffic_id",
+          "resolved_fabric_hash",
+          "packet_format_hash"
+        ],
+        "execution_keys": [
+          "expected_packets",
+          "expected_flits",
+          "delivered_packets",
+          "flits_injected",
+          "flits_accepted"
+        ],
+        "closure": "set(result.wave_d) must equal exactly chain keys + execution keys; unknown/missing fields refuse"
+      },
+      "attack": "two workloads with identical rendered BookSim traffic but different semantic identities (phase is not representable in the trace) cannot share a result chain",
+      "reuse": "inherits the binding through load_verified_result"
+    }
+  },
+  "citation_convention": {
+    "rule": "code and tests cite WAVE-D-SCIENTIFIC-CONTRACT.md sections",
+    "brief_map": {
+      "31-41": "18-19, 24",
+      "35-37": "18, 19",
+      "38": "26",
+      "39-41": "24.1, 24",
+      "42-43": "30, 29",
+      "46-50": "21, 23.3",
+      "52": "21",
+      "56": "22",
+      "60": "23.6",
+      "61-62": "31, 10.2",
+      "67": "25",
+      "68": "26",
+      "72-73": "21",
+      "79": "preamble"
+    }
+  }
+}

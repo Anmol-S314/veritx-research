@@ -454,9 +454,12 @@ def materialize_topology(inventory: NodeInventory,
     NocConfig can express mesh, torus and concentrated mesh; ring/custom/
     anynet arrive via TopologyIR in a later wave. GEC and fat-tree are
     refused rather than silently downgraded to mesh.
+
+    The v3 path passes the FabricIntentView (which carries the shared
+    noc_config); it is read by attribute so the view needs no import
+    here and no second topology authority exists.
     """
-    noc = (cr_or_noc.noc_config if isinstance(cr_or_noc, CompileRequest)
-           else cr_or_noc)
+    noc = getattr(cr_or_noc, "noc_config", cr_or_noc)
     if not isinstance(noc, NocConfig):
         raise TopologyError("expected a CompileRequest or NocConfig")
     family = _family_of(noc)

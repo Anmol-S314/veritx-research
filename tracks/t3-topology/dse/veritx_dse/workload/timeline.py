@@ -360,7 +360,7 @@ def build_timeline_graph(graph: Any,
     Composition, stall math and verdicts are the shared core below.
     """
     from veritx_dse.core.artifact import thaw
-    from veritx_dse.workload.canonical_graph import KIND_COMPUTE
+    from veritx_dse.workload.graph import KIND_COMPUTE
     views = []
     for op in graph.require_total_order():
         d = thaw(op.detail)

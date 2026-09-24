@@ -62,7 +62,14 @@ TrafficManager * TrafficManager::New(Configuration const & config,
 }
 
 TrafficManager::TrafficManager( const Configuration &config, const vector<Network *> & net )
-    : Module( 0, "traffic_manager" ), _net(net), _empty_network(false), _trace_injection_done_checked(false), _last_ejection_time(0), _deadlock_timer(0), _reset_time(0), _drain_time(-1), _cur_id(0), _cur_pid(0), _time(0)
+    : Module( 0, "traffic_manager" ), _net(net), _empty_network(false), _trace_injection_done_checked(false), _last_ejection_time(0), _deadlock_timer(0), _reset_time(0), _drain_time(-1), _cur_id(0), _cur_pid(0), _time(0),
+      // VeritX: embedded mode (EmbedTM) never enters _Run(), which is the
+      // only place _Run assigns _sim_state — leaving it uninitialized made
+      // the retire-stats gate ( (_sim_state == warming_up) || f->record )
+      // depend on garbage memory. warming_up is the stats-recording state
+      // and standalone _Run overwrites it immediately, so this init only
+      // affects embedded callers — deterministically.
+      _sim_state(warming_up)
 {
 
     _nodes = _net[0]->NumNodes( );
@@ -513,6 +520,9 @@ TrafficManager::TrafficManager( const Configuration &config, const vector<Networ
     _overall_min_accepted.resize(_classes, 0.0);
     _overall_avg_accepted.resize(_classes, 0.0);
     _overall_max_accepted.resize(_classes, 0.0);
+    // VeritX: flit total + latency-max accumulators (see header note)
+    _veritx_total_sent_flits.resize(_classes, 0);
+    _veritx_total_accepted_flits.resize(_classes, 0);
 
 #ifdef TRACK_STALLS
     _buffer_busy_stalls.resize(_classes);
@@ -1039,6 +1049,9 @@ void TrafficManager::_Step( )
                 flits[subnet].insert(make_pair(n, f));
                 if((_sim_state == warming_up) || (_sim_state == running)) {
                     ++_accepted_flits[f->cl][n];
+                    // VeritX: run-total ejected flits (increment-on-event;
+                    // immune to the per-phase stats clears)
+                    ++_veritx_total_accepted_flits[f->cl];
                     if(f->tail) {
                         ++_accepted_packets[f->cl][n];
                     }
@@ -1066,14 +1079,21 @@ void TrafficManager::_Step( )
   
     if ( !_empty_network ) {
         _Inject();
-        // VeritX: check if all trace events consumed
+        // VeritX: check if all trace events consumed. Gate on has_trace:
+        // EmbedTM (ASTRA collective injection) owns no TraceInjectionProcess,
+        // so an ungated check is vacuously true and prints a false
+        // "injected=0 — draining" on every embedded run.
         if (!_trace_injection_done_checked) {
+            bool has_trace = false;
             bool all_done = true;
             for (int c = 0; c < _classes; ++c) {
                 TraceInjectionProcess *tip = dynamic_cast<TraceInjectionProcess*>(_injection_process[c]);
-                if (tip && !tip->all_done()) { all_done = false; break; }
+                if (tip) {
+                    has_trace = true;
+                    if (!tip->all_done()) { all_done = false; break; }
+                }
             }
-            if (all_done) {
+            if (has_trace && all_done) {
                 _trace_injection_done_checked = true;
                 std::cerr << "[trace] All " << GetSimTime() << " cycles,"
                           << " injected=" << _injected_packets_total()
@@ -1295,6 +1315,9 @@ void TrafficManager::_Step( )
 	
                 if((_sim_state == warming_up) || (_sim_state == running)) {
                     ++_sent_flits[c][n];
+                    // VeritX: run-total injected flits (increment-on-event;
+                    // immune to the per-phase stats clears)
+                    ++_veritx_total_sent_flits[c];
                     if(f->head) {
                         ++_sent_packets[c][n];
                     }
@@ -1697,7 +1720,18 @@ bool TrafficManager::_SingleSim( )
             }
         }
     } else {
-        cout << "Too many sample periods needed to converge" << endl;
+        // VeritX: finite trace replay never reaches steady state by
+        // construction (max_samples=1 spans the whole trace), so this
+        // verdict is meaningless in trace mode — Run() reports the drain
+        // outcome instead. Only print for synthetic traffic.
+        bool trace_mode = false;
+        for (int cc = 0; cc < _classes; ++cc) {
+            TraceInjectionProcess *tip = dynamic_cast<TraceInjectionProcess*>(_injection_process[cc]);
+            if (tip) { trace_mode = true; break; }
+        }
+        if (!trace_mode) {
+            cout << "Too many sample periods needed to converge" << endl;
+        }
     }
   
     return ( converged > 0 );
@@ -1740,7 +1774,15 @@ bool TrafficManager::Run( )
         }
 
         bool sim_converged = _SingleSim( );
-        if ( !sim_converged ) {
+        // VeritX: finite trace replay has no steady state, so _SingleSim
+        // convergence is the wrong verdict for trace mode. The bounded
+        // drain below decides instead: drained = success, cap hit = stuck.
+        bool trace_mode = false;
+        for (int c = 0; c < _classes; ++c) {
+            TraceInjectionProcess *tip = dynamic_cast<TraceInjectionProcess*>(_injection_process[c]);
+            if (tip) { trace_mode = true; break; }
+        }
+        if ( !sim_converged && !trace_mode ) {
             cout << "Simulation unstable — draining remaining packets ..." << endl;
         }
 
@@ -1748,27 +1790,128 @@ bool TrafficManager::Run( )
         // For trace-driven mode, completion time is the primary metric,
         // not steady-state convergence.
         cout << "Draining remaining packets ..." << endl;
-        _empty_network = true;
+        // VeritX: _Step skips _Inject once _empty_network is set, so trace
+        // events still queued at phase end (e.g. behind a momentarily
+        // congested source) would starve and be miscounted as a stuck drain.
+        // The gate opens only for trace mode and closes once every event
+        // has fired; it gates nothing but _Inject, so delivery is unaffected.
+        _empty_network = !trace_mode;
         int empty_steps = 0;
+        // VeritX: _drain_time was only ever set on the converged/latency-abort
+        // paths, so trace replays (which never converge by construction) left
+        // it at -1 and every overall rate printed as count/-1 (negative).
+        // The drain starts here regardless of how we got here.
+        _drain_time = _time;
 
         bool packets_left = false;
         for(int c = 0; c < _classes; ++c) {
             packets_left |= !_total_in_flight_flits[c].empty();
         }
+        // VeritX: source-held partial packets are neither in flight nor
+        // future events — without this the drain can exit while heads wait
+        // on returning credits, stranding packets that then never inject.
+        bool partials_busy = false;
+        for (int n = 0; n < _nodes && !partials_busy; ++n) {
+            for (int c = 0; c < _classes; ++c) {
+                if (!_partial_packets[n][c].empty()) { partials_busy = true; break; }
+            }
+        }
+        bool injected = true;
+        if (trace_mode) {
+            for (int c = 0; c < _classes; ++c) {
+                TraceInjectionProcess *tip = dynamic_cast<TraceInjectionProcess*>(_injection_process[c]);
+                if (tip && !tip->all_done()) { injected = false; break; }
+            }
+        }
 
-        while( packets_left ) { 
-            _Step( ); 
+        // ponytail: hard cap, not a config knob. Healthy drains finish in
+        // ~1k steps; only a stuck (deadlocked) network hits this. Raise it
+        // if a healthy drain ever gets near it.
+        const int MAX_DRAIN_STEPS = 1000000;
+        while ((packets_left || !injected || partials_busy) && empty_steps < MAX_DRAIN_STEPS) {
+            _Step( );
 
             ++empty_steps;
 
             if ( empty_steps % 1000 == 0 ) {
-                _DisplayRemaining( ); 
+                _DisplayRemaining( );
             }
-      
+
+            if (trace_mode && !injected) {
+                injected = true;
+                for (int c = 0; c < _classes; ++c) {
+                    TraceInjectionProcess *tip = dynamic_cast<TraceInjectionProcess*>(_injection_process[c]);
+                    if (tip && !tip->all_done()) { injected = false; break; }
+                }
+                if (injected) _empty_network = true;
+            }
+
             packets_left = false;
             for(int c = 0; c < _classes; ++c) {
                 packets_left |= !_total_in_flight_flits[c].empty();
             }
+            partials_busy = false;
+            for (int n = 0; n < _nodes && !partials_busy; ++n) {
+                for (int c = 0; c < _classes; ++c) {
+                    if (!_partial_packets[n][c].empty()) { partials_busy = true; break; }
+                }
+            }
+        }
+        if (trace_mode) {
+            if (packets_left || !injected || partials_busy) {
+                // Keep the word "unstable": veritx_dse flags on it, and
+                // here it means genuinely stuck, not unconverged stats.
+                int inj_total = 0;
+                size_t ev_pending = 0;
+                for (int cc = 0; cc < _classes; ++cc) {
+                    TraceInjectionProcess *t2 = dynamic_cast<TraceInjectionProcess*>(_injection_process[cc]);
+                    if (t2) { inj_total += t2->injected(); ev_pending += t2->pending(); }
+                }
+                cout << "Simulation unstable: drain incomplete after " << empty_steps
+                     << " cycles, packets still outstanding (possible deadlock)"
+                     << " [detail classes=" << _classes << " time=" << _time
+                     << " packets_left=" << packets_left << " injected_flag=" << injected
+                     << " injected_total=" << inj_total << " events_pending=" << ev_pending << "]" << endl;
+                // VeritX: stuck-drain census — which sources still hold
+                // partial packets or unfired events when the cap fires.
+                for (int n = 0; n < _nodes; ++n) {
+                    for (int cc = 0; cc < _classes; ++cc) {
+                        size_t pp = _partial_packets[n][cc].size();
+                        size_t ep = 0;
+                        TraceInjectionProcess *t3 = dynamic_cast<TraceInjectionProcess*>(_injection_process[cc]);
+                        if (t3) ep = t3->pending_source(n);
+                        if (pp || ep) {
+                            cout << "  stuck src=" << n << " class=" << cc
+                                 << " partial_flits=" << pp << " events_pending=" << ep;
+                            if (pp) {
+                                Flit *front = _partial_packets[n][cc].front();
+                                cout << " front_head=" << front->head << " front_tail=" << front->tail
+                                     << " front_vc=" << front->vc << " front_id=" << front->id;
+                            }
+                            cout << endl;
+                        }
+                    }
+                }
+            } else {
+                int delivered = 0;
+                for (int cc = 0; cc < _classes; ++cc)
+                    for (int n = 0; n < _nodes; ++n) delivered += _accepted_packets[cc][n];
+                cout << "Trace replay complete: delivered " << delivered
+                     << " packets, drain took "
+                     << empty_steps << " cycles" << endl;
+            }
+            // VeritX: flit conservation totals — SUM over the per-class
+            // run-total accumulators (increment-on-event since sim start,
+            // immune to per-phase stats clears; classes are disjoint
+            // traffic, so the sum is the network conservation quantity).
+            // Emitted once at the drain-success point.
+            long v_inj = 0, v_acc = 0;
+            for (int cc = 0; cc < _classes; ++cc) {
+                v_inj += _veritx_total_sent_flits[cc];
+                v_acc += _veritx_total_accepted_flits[cc];
+            }
+            cout << "VeritX: injected flits total = " << v_inj << endl
+                 << "VeritX: accepted flits total = " << v_acc << endl;
         }
         //wait until all the credits are drained as well
         while(Credit::OutStanding()!=0){
@@ -2090,10 +2233,17 @@ void TrafficManager::DisplayStats(ostream & os) const {
             std::vector<double> sorted_lat(_all_latencies[c]);
             std::sort(sorted_lat.begin(), sorted_lat.end());
             int n = sorted_lat.size();
+            double hsum = 0.0;
+            for (int i = 0; i < n; ++i) hsum += sorted_lat[i];
             cout << "\tp50 = " << sorted_lat[n/2] << endl
                  << "\tp95 = " << sorted_lat[(int)(n*0.95)] << endl
                  << "\tp99 = " << sorted_lat[(int)(n*0.99)] << endl
                  << "\tpkt_count = " << n << endl;
+            // VeritX: honest mean (arrival - trace timestamp). The stock
+            // "Packet latency average" above is ctime-based: qtime slots go
+            // stale across idle gaps, so sparse traces inflate it by 100x+
+            // and unrelated fabrics tie to the decimal. Rank on this.
+            cout << "\thonest_avg = " << hsum / n << endl;
         }
         cout << "Network latency average = " << _nlat_stats[c]->Average() << endl
             << "\tminimum = " << _nlat_stats[c]->Min() << endl
@@ -2281,7 +2431,6 @@ void TrafficManager::DisplayOverallStats( ostream & os ) const {
 #endif
     
     }
-  
 }
 
 string TrafficManager::_OverallStatsCSV(int c) const

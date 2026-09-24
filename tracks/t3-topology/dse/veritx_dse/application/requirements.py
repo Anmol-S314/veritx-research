@@ -87,7 +87,7 @@ from veritx_dse.model.compile_model import (
 from veritx_dse.performance.result import ResultError, reverify_result
 from veritx_dse.performance.scheduler import SchedulerError
 from veritx_dse.performance.workload import TemporalWorkload
-from veritx_dse.workload.canonical_graph import WorkloadGraph
+from veritx_dse.workload.graph import WorkloadGraph
 from veritx_dse.workload.intent_lowering import lower_compile_workload
 
 REQUIREMENT_REPORT_CONTRACT_VERSION = 1
@@ -493,7 +493,10 @@ class RequirementEvaluator:
         _reverify_or_refuse(performance, performance.temporal_workload)
         req_shape = (request.workload.tp, request.workload.pp,
                      request.workload.ep, request.workload.dp)
-        graph_shape = workload.parallelism.sizes()
+        # Canonical geometry is ParallelismShape (plain dimensions, no
+        # derived helpers); read the four sizes directly.
+        _pshape = workload.parallelism
+        graph_shape = (_pshape.tp, _pshape.pp, _pshape.ep, _pshape.dp)
         if req_shape != graph_shape:
             raise MappingInvalid(
                 f"workload geometry TP={graph_shape} does not match the "

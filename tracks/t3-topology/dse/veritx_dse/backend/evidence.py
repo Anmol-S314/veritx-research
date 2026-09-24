@@ -290,6 +290,76 @@ class ScientificBackendEvidence:
     def to_dict(self) -> dict[str, Any]:
         return {**self.scientific_payload(), "evidence_id": self.evidence_id()}
 
+    @classmethod
+    def from_dict(cls, doc: Any) -> "ScientificBackendEvidence":
+        """Rebuild validated evidence from a persisted scientific document.
+
+        Closed field set (exactly what to_dict emits — no extras, no
+        missing keys), type-tag and schema-version pinned, and the
+        embedded evidence_id must equal the recomputed one: a forged or
+        transplanted document cannot pass. This is the read half of the
+        write/read contract validate_evidence_document enforces.
+        """
+        if not isinstance(doc, dict):
+            raise BackendEvidenceError(
+                f"evidence document must be a JSON object, got "
+                f"{type(doc).__name__}")
+        expected = {
+            "type", "schema_version", "prepared_id", "profile_id",
+            "projection_semantics_version", "config_sha256",
+            "trace_sha256", "topology_sha256", "resolved_fabric_hash",
+            "physical_traffic_id", "message_artifact_id", "binary_sha256",
+            "binary_size", "producer_source_revision", "producer_dirty",
+            "seed", "parser_version", "execution_fidelity",
+            "route_observation", "stats", "exit_status", "transport",
+            "evidence_id",
+        }
+        unknown = set(doc) - expected
+        if unknown:
+            raise BackendEvidenceError(
+                f"evidence document has unknown fields: "
+                f"{sorted(unknown)}")
+        missing = expected - set(doc)
+        if missing:
+            raise BackendEvidenceError(
+                f"evidence document is missing required fields: "
+                f"{sorted(missing)}")
+        if doc["type"] != _EVIDENCE_DOMAIN:
+            raise BackendEvidenceError(
+                f"evidence type must be {_EVIDENCE_DOMAIN!r}, got "
+                f"{doc['type']!r}")
+        for name in ("binary_size", "seed", "exit_status"):
+            if not isinstance(doc[name], int) \
+                    or isinstance(doc[name], bool):
+                raise BackendEvidenceError(
+                    f"evidence field {name!r} must be an exact int, got "
+                    f"{type(doc[name]).__name__}")
+        evidence = cls(
+            prepared_id=doc["prepared_id"], profile_id=doc["profile_id"],
+            projection_semantics_version=doc[
+                "projection_semantics_version"],
+            config_sha256=doc["config_sha256"],
+            trace_sha256=doc["trace_sha256"],
+            topology_sha256=doc["topology_sha256"],
+            resolved_fabric_hash=doc["resolved_fabric_hash"],
+            physical_traffic_id=doc["physical_traffic_id"],
+            message_artifact_id=doc["message_artifact_id"],
+            binary_sha256=doc["binary_sha256"],
+            binary_size=doc["binary_size"],
+            producer_source_revision=doc["producer_source_revision"],
+            producer_dirty=doc["producer_dirty"],
+            seed=doc["seed"], parser_version=doc["parser_version"],
+            execution_fidelity=doc["execution_fidelity"],
+            route_observation=doc["route_observation"],
+            stats=doc["stats"], exit_status=doc["exit_status"],
+            transport=doc["transport"],
+            schema_version=doc["schema_version"])
+        if evidence.evidence_id() != doc["evidence_id"]:
+            raise BackendEvidenceError(
+                "evidence_id does not match the recomputed content "
+                "identity — document tampered with or transplanted")
+        return evidence
+
     def stats_sha256(self) -> str:
         return hashlib.sha256(
             canonical_evidence_json(self.stats).encode()).hexdigest()
@@ -387,13 +457,12 @@ def read_reusable_record(ref: EvidenceRef, **conditions: Any
 def validate_evidence_document(doc: Any) -> dict[str, Any]:
     """The one generation-aware evidence-schema authority.
 
-    v2 documents are validated against the CLOSED
-    ``veritx/backend-scientific-evidence/v2`` schema: exactly the
-    scientific fields, no leaked-back attempt metadata, no extras; the
-    canonical validated document is returned. Unversioned documents are
-    historical v1 and keep their legacy acceptance semantics. Any other
-    declared generation refuses — an unknown schema is never read as a
-    known one.
+    Current-version documents are validated against the CLOSED
+    scientific-evidence schema: exactly the scientific fields, no
+    leaked-back attempt metadata, no extras; the canonical validated
+    document is returned. Unversioned documents are historical v1 and
+    keep their legacy acceptance semantics. Any other declared
+    generation refuses — an unknown schema is never read as a known one.
 
     Every consumption path (reuse, authenticated proof, control-plane
     verification) must pass bytes through this before using any field.
@@ -403,7 +472,7 @@ def validate_evidence_document(doc: Any) -> dict[str, Any]:
             f"evidence document must be a JSON object, got "
             f"{type(doc).__name__}")
     version = doc.get("schema_version")
-    if version == SCIENTIFIC_EVIDENCE_SCHEMA_VERSION:
+    if version == EVIDENCE_SCHEMA_VERSION:
         return ScientificBackendEvidence.from_dict(doc).to_dict()
     if version is None:
         return _validate_legacy_v1(doc)
@@ -494,7 +563,7 @@ class EvidenceArtifact:
                     f"{name} must be a non-empty string")
         for name in ("backend_input_sha256", "raw_evidence_sha256",
                       "stats_sha256"):
-            _require_hex64(getattr(self, name), name)
+            require_hex64(getattr(self, name), name)
 
     @classmethod
     def build(cls, *, backend, backend_input_id, backend_input_sha256,

@@ -16,7 +16,9 @@ import pytest
 DSE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(DSE))
 
-from veritx_dse.model.parallelism import ParallelismArtifact  # noqa: E402
+from veritx_dse.model.placement import (  # noqa: E402
+    ParallelismShape,
+)
 from veritx_dse.workload.canonical import (  # noqa: E402
     Parallelism, WorkloadArtifact, build_collective_op, build_compute_op,
 )
@@ -29,7 +31,7 @@ from veritx_dse.workload.timeline import (  # noqa: E402
     build_timeline, build_timeline_graph,
 )
 
-PA = ParallelismArtifact(tp=1, pp=1, ep=1, dp=4)
+PA = ParallelismShape(tp=1, pp=1, ep=1, dp=4)
 BINDING = ServiceBinding(
     compute=BackendBinding("c", "COMPUTE_MODEL", ns_per_cycle=2.0),
     net=BackendBinding("b", "NETWORK_CYCLE_SIMULATION", ns_per_cycle=2.0))

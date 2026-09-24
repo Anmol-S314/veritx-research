@@ -42,6 +42,7 @@
 #include "config_utils.hpp"
 #include "globals.hpp"
 #include "multidropchannel.hpp"
+#include "routefunc.hpp"
 
 typedef Channel<Credit> CreditChannel;
 
@@ -122,6 +123,25 @@ public:
   const vector<Router *> & GetRouters(){return _routers;}
   Router * GetRouter(int index) {return _routers[index];}
   int NumRouters() const {return _size;}
+
+  // VeritX (P1B-Q2): deterministic first-hop realization dump.
+  // Queries the ACTIVE routing function for every (router, destination
+  // node) pair and writes "src_router r dst_node d next_router m port p";
+  // next_router == r means the destination is local to router r. Refuses
+  // (returns false with a reason) when the active function does not yield
+  // exactly one output port, so an adaptive/random realization can never
+  // masquerade as a deterministic table. Zero simulation-state effect:
+  // the synthetic flit is pooled and freed, no packet is injected, no
+  // credit moves.
+  bool DumpRoutingRealization( const Configuration & config,
+			       const string & path, string & why );
+  // VeritX (P1B-Q2): one (router, dest) routing query. Requires exactly
+  // one output port and identical results across two independent queries
+  // (an RNG/state-dependent function is refused, never certified as a
+  // deterministic table). Returns false with a reason.
+  bool _QueryDeterministicPort( tRoutingFunction rf,
+				const string & rf_name, Router * router,
+				int dest, int & port, string & why );
 };
 
 #endif 

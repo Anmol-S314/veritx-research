@@ -24,7 +24,18 @@ from veritx_dse.core.errors import (  # noqa: E402
     ConservationFailed, InvalidInput, MappingInvalid, UnsupportedSchedule,
     UnsupportedSemantics,
 )
-from veritx_dse.workload.messages import LogicalMessageArtifact  # noqa: E402
+try:  # historical v1 chain (deleted per §4/§7; V2 in test_wave_d_contract)
+    from veritx_dse.workload.messages import (  # noqa: E402
+        LogicalMessageArtifact,
+    )
+    from veritx_dse.workload.traffic import (  # noqa: E402
+        PhysicalTrafficArtifact,
+    )
+except ImportError:
+    pytest.skip(
+        "historical v1 Logical/PhysicalTrafficArtifact deleted per "
+        "§4/§7; canonical V2 coverage in test_wave_d_contract.py",
+        allow_module_level=True)
 from veritx_dse.workload.operations import (  # noqa: E402
     KIND_COLLECTIVE, KIND_MULTICAST, KIND_P2P, CollectiveIntent,
     MulticastIntent, OperationGraph, OperationNode, P2PTransfer,
@@ -39,8 +50,7 @@ from veritx_dse.workload.semantics import (  # noqa: E402
     WaveDWorkloadSemantics,
 )
 from veritx_dse.workload.traffic import (  # noqa: E402
-    PhysicalTrafficArtifact, flitize_packet, header_width_bits,
-    packetize_message,
+    flitize_packet, header_width_bits, packetize_message,
 )
 
 

@@ -238,7 +238,7 @@ def resolve_memory_graph(graph: Any, design: MemorySystemDesign, *,
     conservation are the shared core below — one implementation.
     """
     from veritx_dse.core.artifact import thaw
-    from veritx_dse.workload.canonical_graph import KIND_COMPUTE
+    from veritx_dse.workload.graph import KIND_COMPUTE
     ordered = graph.require_total_order()
     views = []
     for op in ordered:

@@ -16,7 +16,9 @@ import pytest
 DSE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(DSE))
 
-from veritx_dse.model.parallelism import ParallelismArtifact  # noqa: E402
+from veritx_dse.model.placement import (  # noqa: E402
+    ParallelismShape,
+)
 from veritx_dse.workload.canonical import (  # noqa: E402
     Parallelism, WorkloadArtifact, build_compute_op,
 )
@@ -31,7 +33,7 @@ from veritx_dse.workload.memory_lowering import (  # noqa: E402
 )
 
 DESIGN = MemorySystemDesign(hbm_devices=(0,))
-PA = ParallelismArtifact(tp=1, pp=1, ep=1, dp=1)
+PA = ParallelismShape(tp=1, pp=1, ep=1, dp=1)
 
 BYTES = {"input_bytes": 1024, "weight_bytes": 8192, "output_bytes": 512}
 
@@ -82,7 +84,7 @@ class TestGraphParity:
         assert g.source_workload_hash == _graph().workload_id()
 
     def test_comm_ops_and_markers_ignored(self):
-        pa2 = ParallelismArtifact(tp=1, pp=1, ep=1, dp=2)
+        pa2 = ParallelismShape(tp=1, pp=1, ep=1, dp=2)
         ops = (OperationNode("c0", KIND_COLLECTIVE, (), collective_detail(
             collective_kind="ALLREDUCE", participants=(0, 1),
             payload_bytes=512, participant_count=2, scope=None)),
@@ -127,7 +129,7 @@ class TestGraphRefusals:
             resolve_memory_graph(_graph(ops), DESIGN)
 
     def test_multi_participant_needs_attribution(self):
-        pa2 = ParallelismArtifact(tp=1, pp=1, ep=1, dp=2)
+        pa2 = ParallelismShape(tp=1, pp=1, ep=1, dp=2)
         ops = (OperationNode("op0", "COMPUTE", (), compute_detail(
             duration_ns=100, participant_count=2, **BYTES)),)
         g = WorkloadGraph(parallelism=pa2, participant_count=2,

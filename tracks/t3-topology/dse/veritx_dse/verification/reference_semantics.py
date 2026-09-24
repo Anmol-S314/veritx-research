@@ -231,9 +231,11 @@ def verify_packetization_reference(traffic) -> None:
     re-derives both laws from the closed forms and compares.
     """
     from veritx_dse.core.errors import ConservationFailed
-    from veritx_dse.workload.traffic import header_width_bits
-    pf = traffic.bundle.packet_format
-    Q, L = pf.payload_width_bits, pf.max_packet_flits
+    from veritx_dse.workload.traffic import header_width_bits, payload_width_bits
+    pf = getattr(traffic, "packet_format", None)
+    if pf is None:  # historical v1 traffic nests children under .bundle
+        pf = traffic.bundle.packet_format
+    Q, L = payload_width_bits(pf), pf.max_packet_flits
     H = header_width_bits(pf)
     for m in traffic.logical.messages:
         expected_pkts = ref_packetize(m.payload_bytes * 8, Q, L)

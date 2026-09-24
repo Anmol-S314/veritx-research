@@ -40,7 +40,6 @@ class ResolvedFabricBundleError(ValueError):
     """The bundle cannot be validated as one semantic fabric — fail closed."""
 
 
-@dataclass(frozen=True)
 def _hash_of(obj: Any, name: str) -> str:
     """Read a child-artifact hash that may be a method (RT v1) or a
     stored attribute (canonical v2). Identity comes from the child;
@@ -48,6 +47,8 @@ def _hash_of(obj: Any, name: str) -> str:
     value = getattr(obj, name)
     return value() if callable(value) else value
 
+
+@dataclass(frozen=True)
 class ResolvedFabricBundle:
     """The complete, revalidated semantic fabric a lowerer consumes."""
 
@@ -72,30 +73,47 @@ class ResolvedFabricBundle:
         Raises the child artifact's own error type (FabricArtifactError /
         ResolvedFabricError) — callers wrap into their lowering error.
         """
-        # Child-hash accessor shims: RT v1 exposes hashes as methods,
-        # canonical v2 as stored attributes (veritx-integrate adapter).
-        fabric_validate = getattr(self.fabric, "validate_against", None) \
-            or self.fabric.validate_against_deterministic
-        fabric_validate(
-            topology=self.topology, attachment=self.attachment,
-            router_route=self.router_route,
-            resolved_route=self.resolved_route,
-            vc_assignment=self.vc_assignment,
-            packet_format=self.packet_format,
-            router_behavior=self.router_behavior,
-            address_decode=self.address_decode)
-        resolved_validate = getattr(self.resolved_fabric,
-                                    "validate_against", None) \
-            or self.resolved_fabric.validate_against_deterministic
-        resolved_validate(
+        # Canonical revalidation: the two canonical children are pure
+        # one-way projections of the sealed VC assignment, so the bundle
+        # re-derives them instead of storing a second copy.
+        from veritx_dse.model.vc_resource import vc_resources_from_assignment
+        vc_resource = vc_resources_from_assignment(self.vc_assignment)
+        self._validate_fabric(vc_resource)
+        self.resolved_fabric.validate_against_deterministic(
             design=self.design, inventory=self.inventory,
             mapping=self.mapping, topology=self.topology,
-            attachment=self.attachment, router_route=self.router_route,
-            resolved_route=self.resolved_route,
-            vc_assignment=self.vc_assignment,
+            attachment=self.attachment, vc_resource=vc_resource,
+            routing_realization=self._realization(vc_resource),
             packet_format=self.packet_format,
             router_behavior=self.router_behavior,
-            address_decode=self.address_decode, fabric=self.fabric)
+            address_decode=self.address_decode, fabric=self.fabric,
+            route=self.router_route, resolved_route=self.resolved_route,
+            vc_assignment=self.vc_assignment)
+
+    def _realization(self, vc_resource):
+        """Re-derive the deterministic routing realization for revalidation."""
+        from veritx_dse.model.routing_realization import (
+            make_deterministic_routing_realization)
+        return make_deterministic_routing_realization(
+            topology=self.topology, attachment=self.attachment,
+            route=self.router_route, resolved_route=self.resolved_route,
+            vc_assignment=self.vc_assignment, vc_resource=vc_resource)
+
+    def _validate_fabric(self, vc_resource):
+        from veritx_dse.model.routing_realization import (
+            make_deterministic_routing_realization)
+        realization = make_deterministic_routing_realization(
+            topology=self.topology, attachment=self.attachment,
+            route=self.router_route, resolved_route=self.resolved_route,
+            vc_assignment=self.vc_assignment, vc_resource=vc_resource)
+        self.fabric.validate_against_deterministic(
+            topology=self.topology, attachment=self.attachment,
+            vc_resource=vc_resource, routing_realization=realization,
+            packet_format=self.packet_format,
+            router_behavior=self.router_behavior,
+            address_decode=self.address_decode, route=self.router_route,
+            resolved_route=self.resolved_route,
+            vc_assignment=self.vc_assignment)
 
     # ── evidence convenience ───────────────────────────────────────────
     def root_hashes(self) -> dict[str, str]:

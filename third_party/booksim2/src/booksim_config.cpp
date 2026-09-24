@@ -320,6 +320,9 @@ BookSimConfig::BookSimConfig( )
 
   //==================Network file===========================
   AddStrField("network_file","");
+  // VeritX (B3.7b): optional path for the anynet executed-route dump.
+  // Empty (default) means no dump and no behavior change.
+  AddStrField("routing_dump_file","");
 }
 
 

@@ -289,6 +289,20 @@ def parse_output(stdout: str) -> dict:
             result["throughput"] = float(m.group(1))
         if "unstable" in line.lower() or "Too many sample periods" in line:
             result["unstable"] = True
+        # VeritX (RT reclaim): the qualified fork prints a drain verdict and
+        # delivered/flit-total counters at the trace-drain point. Stock
+        # BookSim prints none of these — keys stay absent, never fabricated.
+        if "Trace replay complete" in line or "drain incomplete" in line:
+            result["drain_verdict"] = line.strip()
+        m = re.search(r"delivered (\d+) packets", line)
+        if m:
+            result["delivered"] = int(m.group(1))
+        m = re.search(r"VeritX: injected flits total = (\d+)", line)
+        if m:
+            result["flits_injected"] = int(m.group(1))
+        m = re.search(r"VeritX: accepted flits total = (\d+)", line)
+        if m:
+            result["flits_accepted"] = int(m.group(1))
     return result
 
 

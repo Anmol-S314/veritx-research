@@ -142,6 +142,17 @@ class ServingBatchPlan:
     #: byte-identical; a dummy is explicit, never inferred from empty requests.
     is_dp_dummy: bool = False
     dp_group_id: str = ""
+    #: expert-parallel (MoE) participation.  Defaults keep dense plan
+    #: identities byte-identical; EP reuses the same participant ranks
+    #: (ep_size <= instance ranks; TP/EP overlap, no rank multiplication).
+    #: The executable semantics are dispatch ALLGATHER + per-rank expert
+    #: compute + combine REDUCESCATTER, exactly as LLMServingSim emits.
+    is_ep: bool = False
+    ep_dispatch_kind: str = "ALLGATHER"
+    ep_dispatch_bytes: int = 0
+    ep_combine_kind: str = "REDUCESCATTER"
+    ep_combine_bytes: int = 0
+    expert_compute_ns: int = 0
 
     def __post_init__(self) -> None:
         if self.is_dp_dummy and self.request_ids:
@@ -154,6 +165,30 @@ class ServingBatchPlan:
         if self.dp_group_id and not self.is_dp_dummy and not self.request_ids:
             raise ServingRoundError(
                 "a DP member with no requests is a dummy and must say so")
+        if self.is_ep:
+            if self.ep_dispatch_kind not in CHAKRA_COLLECTIVE_TYPE:
+                raise ServingRoundError(
+                    f"unsupported EP dispatch kind "
+                    f"{self.ep_dispatch_kind!r}; the certified profile "
+                    f"supports {sorted(CHAKRA_COLLECTIVE_TYPE)}")
+            if self.ep_combine_kind not in CHAKRA_COLLECTIVE_TYPE:
+                raise ServingRoundError(
+                    f"unsupported EP combine kind "
+                    f"{self.ep_combine_kind!r}; the certified profile "
+                    f"supports {sorted(CHAKRA_COLLECTIVE_TYPE)}")
+            if self.ep_dispatch_bytes <= 0 or self.ep_combine_bytes <= 0:
+                raise ServingRoundError(
+                    "an EP batch must carry positive dispatch/combine sizes")
+            if self.expert_compute_ns <= 0:
+                raise ServingRoundError(
+                    "an EP batch must carry positive expert compute")
+        elif (self.ep_dispatch_bytes or self.ep_combine_bytes
+                or self.expert_compute_ns
+                or self.ep_dispatch_kind != "ALLGATHER"
+                or self.ep_combine_kind != "REDUCESCATTER"):
+            raise ServingRoundError(
+                "a dense batch must not carry EP dispatch/combine state; "
+                "EP participation is explicit, never inferred")
         if self.phase not in ("prefill", "decode"):
             raise ServingRoundError(
                 f"batch phase must be prefill or decode, got {self.phase!r}")
@@ -195,6 +230,12 @@ class ServingBatchPlan:
             **({"dp_group_id": self.dp_group_id,
                 "dp_participation": "DUMMY" if self.is_dp_dummy else "REAL"}
                if (self.is_dp_dummy or self.dp_group_id) else {}),
+            **({"ep_dispatch_kind": self.ep_dispatch_kind,
+                "ep_dispatch_bytes": self.ep_dispatch_bytes,
+                "ep_combine_kind": self.ep_combine_kind,
+                "ep_combine_bytes": self.ep_combine_bytes,
+                "expert_compute_ns": self.expert_compute_ns}
+               if self.is_ep else {}),
         }
 
     def plan_id(self) -> str:
@@ -205,14 +246,55 @@ class ServingBatchPlan:
         """Lower serving intent to a canonical workload graph.
 
         The collective is expressed as *intent* with its participant set -- it
-        is never expanded into ring messages here.
+        is never expanded into ring messages here.  In EP mode the batch
+        lowers to dispatch ALLGATHER + per-rank expert compute + combine
+        REDUCESCATTER, exactly as LLMServingSim emits (TP/EP overlap, no
+        rank multiplication).
         """
         from veritx_dse.workload.graph import (
-            KIND_COLLECTIVE, KIND_COMPUTE, OperationNode, WorkloadGraph,
-            collective_detail, compute_detail,
+            KIND_COLLECTIVE, KIND_COMPUTE, KIND_EXPERT_BEGIN,
+            KIND_EXPERT_END, OperationNode, WorkloadGraph,
+            collective_detail, compute_detail, expert_detail,
         )
         participants = tuple(sorted(self.participant_ranks))
         count = len(participants)
+        if self.is_ep:
+            dispatch_id = f"batch{self.batch_id}-ep-dispatch"
+            combine_id = f"batch{self.batch_id}-ep-combine"
+            expert_ids = tuple(
+                f"batch{self.batch_id}-expert-r{rank}"
+                for rank in participants)
+            expert_ops = []
+            prev = dispatch_id
+            for op_id, rank in zip(expert_ids, participants):
+                expert_ops.append(OperationNode(
+                    operation_id=op_id, kind=KIND_COMPUTE, owner=rank,
+                    deps=(prev,),
+                    detail=compute_detail(
+                        duration_ns=self.expert_compute_ns,
+                        participant_count=count)))
+                prev = op_id
+            operations = (
+                OperationNode(
+                    operation_id=dispatch_id, kind=KIND_EXPERT_BEGIN,
+                    detail=expert_detail(
+                        collective_kind=self.ep_dispatch_kind,
+                        participants=participants,
+                        payload_bytes=self.ep_dispatch_bytes,
+                        participant_count=count)),
+                *expert_ops,
+                OperationNode(
+                    operation_id=combine_id, kind=KIND_EXPERT_END,
+                    deps=(prev,),
+                    detail=expert_detail(
+                        end=True, collective_kind=self.ep_combine_kind,
+                        participants=participants,
+                        payload_bytes=self.ep_combine_bytes,
+                        participant_count=count)),
+            )
+            return WorkloadGraph(
+                parallelism=parallelism, participant_count=count,
+                operations=operations)
         operations = (
             OperationNode(operation_id=f"batch{self.batch_id}-{self.phase}",
                           kind=KIND_COMPUTE,
@@ -413,14 +495,55 @@ class ServingRoundPlan:
         The graph's participant namespace is the whole serving namespace, so
         operation participant sets stay explicit: a TP group of two ranks in
         an eight-rank namespace is legal without inventing a DP axis.
+        EP batches lower to dispatch + expert compute + combine over the
+        same ranks (no rank multiplication).
         """
         from veritx_dse.workload.graph import (
-            KIND_COLLECTIVE, KIND_COMPUTE, OperationNode, WorkloadGraph,
-            collective_detail, compute_detail,
+            KIND_COLLECTIVE, KIND_COMPUTE, KIND_EXPERT_BEGIN,
+            KIND_EXPERT_END, OperationNode, WorkloadGraph,
+            collective_detail, compute_detail, expert_detail,
         )
         operations: list[Any] = []
         for batch in self.batches:
             participants = tuple(sorted(batch.participant_ranks))
+            if batch.is_ep:
+                dispatch_id = collective_operation_id(
+                    round_id=self.round_id, instance_id=batch.instance_id,
+                    batch_id=batch.batch_id) + "-ep-dispatch"
+                combine_id = collective_operation_id(
+                    round_id=self.round_id, instance_id=batch.instance_id,
+                    batch_id=batch.batch_id) + "-ep-combine"
+                # Chain expert computes positionally: the canonical graph
+                # requires a unique dependency-derived order, so parallel
+                # expert ranks migrate to an explicit chain (structural,
+                # not temporal — service time is still the max rank).
+                prev_ep = dispatch_id
+                operations.append(OperationNode(
+                    operation_id=dispatch_id, kind=KIND_EXPERT_BEGIN,
+                    detail=expert_detail(
+                        collective_kind=batch.ep_dispatch_kind,
+                        participants=participants,
+                        payload_bytes=batch.ep_dispatch_bytes,
+                        participant_count=self.participant_count)))
+                for rank in participants:
+                    op_id = (f"round{self.round_id}-inst{batch.instance_id}"
+                             f"-batch{batch.batch_id}-expert-r{rank}")
+                    operations.append(OperationNode(
+                        operation_id=op_id, kind=KIND_COMPUTE, owner=rank,
+                        deps=(prev_ep,),
+                        detail=compute_detail(
+                            duration_ns=batch.expert_compute_ns,
+                            participant_count=self.participant_count)))
+                    prev_ep = op_id
+                operations.append(OperationNode(
+                    operation_id=combine_id, kind=KIND_EXPERT_END,
+                    deps=(prev_ep,),
+                    detail=expert_detail(
+                        end=True, collective_kind=batch.ep_combine_kind,
+                        participants=participants,
+                        payload_bytes=batch.ep_combine_bytes,
+                        participant_count=self.participant_count)))
+                continue
             compute_ids = []
             for rank in participants:
                 op_id = compute_operation_id(
@@ -464,7 +587,13 @@ def plan_from_round(*, round_id: int, batches: Mapping[int, Any],
                     compute_ns_for: Any,
                     dummy_instances: frozenset[int] = frozenset(),
                     dp_group_ids: Mapping[int, str] | None = None,
-                    dp_quorums: tuple[DpQuorumRecord, ...] = ()
+                    dp_quorums: tuple[DpQuorumRecord, ...] = (),
+                    ep_size: int = 1,
+                    ep_dispatch_kind: str = "ALLGATHER",
+                    ep_combine_kind: str = "REDUCESCATTER",
+                    ep_dispatch_bytes_for: Any = None,
+                    ep_combine_bytes_for: Any = None,
+                    expert_compute_ns_for: Any = None,
                     ) -> ServingRoundPlan:
     """Build one round plan from the real ``Batch`` of each instance.
 
@@ -480,6 +609,15 @@ def plan_from_round(*, round_id: int, batches: Mapping[int, Any],
     if not batches:
         raise ServingRoundError("a round requires at least one real batch")
     dp_group_ids = dict(dp_group_ids or {})
+    is_ep = ep_size > 1
+    if is_ep:
+        for instance_id in sorted(batches):
+            ranks = instance_ranks.get(instance_id, ())
+            if len(ranks) < ep_size:
+                raise ServingRoundError(
+                    f"EP size {ep_size} exceeds the ranks bound to serving "
+                    f"instance {instance_id} ({len(ranks)}); TP/EP groups "
+                    "overlap, the rank count is never multiplied")
     plans: list[ServingBatchPlan] = []
     for instance_id in sorted(batches):
         batch = batches[instance_id]
@@ -508,7 +646,16 @@ def plan_from_round(*, round_id: int, batches: Mapping[int, Any],
             collective_bytes=int(collective_bytes_for(tokens=tokens)),
             compute_ns=int(compute_ns_for(tokens=tokens)),
             is_dp_dummy=is_dummy,
-            dp_group_id=dp_group_ids.get(instance_id, "")))
+            dp_group_id=dp_group_ids.get(instance_id, ""),
+            is_ep=is_ep,
+            ep_dispatch_kind=ep_dispatch_kind,
+            ep_dispatch_bytes=int(ep_dispatch_bytes_for(tokens=tokens))
+            if is_ep and ep_dispatch_bytes_for is not None else 0,
+            ep_combine_kind=ep_combine_kind,
+            ep_combine_bytes=int(ep_combine_bytes_for(tokens=tokens))
+            if is_ep and ep_combine_bytes_for is not None else 0,
+            expert_compute_ns=int(expert_compute_ns_for(tokens=tokens))
+            if is_ep and expert_compute_ns_for is not None else 0))
     return ServingRoundPlan(round_id=int(round_id),
                             participant_count=participant_count,
                             batches=tuple(plans), dp_quorums=dp_quorums)

@@ -44,7 +44,9 @@ from veritx_dse.core.artifact import content_id
 from veritx_dse.core.route_artifact import RouteArtifact
 from veritx_dse.model.address_decode import AddressDecodeArtifact
 from veritx_dse.model.attachment import AgentAttachmentArtifact
-from veritx_dse.model.compile_model import CompileRequest, NocConfig
+from veritx_dse.model.compile_model import (
+    CompileRequest, CompileRequestV3, NocConfig,
+)
 from veritx_dse.model.fabric_artifact import FabricArtifact
 from veritx_dse.model.mapping import MappingArtifact
 from veritx_dse.model.packet_format import PacketFormatArtifact
@@ -128,8 +130,10 @@ def _need(d: dict[str, Any], key: str, where: str) -> Any:
 
 def _require_instance(name: str, value: Any, cls: type) -> None:
     if not isinstance(value, cls):
+        names = (cls.__name__ if isinstance(cls, type)
+                 else "(" + ", ".join(c.__name__ for c in cls) + ")")
         raise ResolvedFabricError(
-            f"{name} must be a {cls.__name__}, got {type(value).__name__}")
+            f"{name} must be a {names}, got {type(value).__name__}")
 
 
 # ── NocConfig classification sentinel ─────────────────────────────────────
@@ -224,7 +228,7 @@ class ResolvedFabric:
         )
 
     # ── root hashes ────────────────────────────────────────────────────
-    def _validate_root_hashes(self, *, design: CompileRequest,
+    def _validate_root_hashes(self, *, design: CompileRequest | CompileRequestV3,
                               mapping: MappingArtifact,
                               fabric: FabricArtifact) -> None:
         if self.design_hash != design.design_hash():
@@ -241,7 +245,7 @@ class ResolvedFabric:
                 "resolved_fabric_hash does not match content")
 
     # ── unsupported design intent ──────────────────────────────────────
-    def _validate_supported_intent(self, design: CompileRequest) -> None:
+    def _validate_supported_intent(self, design: CompileRequest | CompileRequestV3) -> None:
         check_noc_field_classification()
         noc = design.noc_config
         if noc.rcu_enabled:
@@ -268,7 +272,7 @@ class ResolvedFabric:
 
     # ── design / inventory / mapping / attachment / hardware seams ─────
     def _validate_seams(
-            self, *, design: CompileRequest, inventory: NodeInventory,
+            self, *, design: CompileRequest | CompileRequestV3, inventory: NodeInventory,
             mapping: MappingArtifact, topology: TopologyArtifact,
             attachment: AgentAttachmentArtifact,
             vc_resource: VCResourceArtifact,
@@ -276,7 +280,7 @@ class ResolvedFabric:
             packet_format: PacketFormatArtifact,
             router_behavior: RouterBehaviorArtifact,
             address_decode: AddressDecodeArtifact) -> None:
-        _require_instance("design", design, CompileRequest)
+        _require_instance("design", design, (CompileRequest, CompileRequestV3))
         _require_instance("inventory", inventory, NodeInventory)
         _require_instance("mapping", mapping, MappingArtifact)
         _require_instance("topology", topology, TopologyArtifact)
@@ -392,7 +396,7 @@ class ResolvedFabric:
 
     # ── deterministic branch ───────────────────────────────────────────
     def validate_against_deterministic(
-            self, *, design: CompileRequest, inventory: NodeInventory,
+            self, *, design: CompileRequest | CompileRequestV3, inventory: NodeInventory,
             mapping: MappingArtifact, topology: TopologyArtifact,
             attachment: AgentAttachmentArtifact,
             vc_resource: VCResourceArtifact,
@@ -427,7 +431,7 @@ class ResolvedFabric:
 
     # ── adaptive branch ────────────────────────────────────────────────
     def validate_against_adaptive(
-            self, *, design: CompileRequest, inventory: NodeInventory,
+            self, *, design: CompileRequest | CompileRequestV3, inventory: NodeInventory,
             mapping: MappingArtifact, topology: TopologyArtifact,
             attachment: AgentAttachmentArtifact,
             vc_resource: VCResourceArtifact,
@@ -463,9 +467,9 @@ class ResolvedFabric:
 
 # ── builders (binding only, never derivation) ─────────────────────────────
 
-def _bind(*, design: CompileRequest, mapping: MappingArtifact,
+def _bind(*, design: CompileRequest | CompileRequestV3, mapping: MappingArtifact,
           fabric: FabricArtifact) -> ResolvedFabric:
-    for name, value, cls in (("design", design, CompileRequest),
+    for name, value, cls in (("design", design, (CompileRequest, CompileRequestV3)),
                              ("mapping", mapping, MappingArtifact),
                              ("fabric", fabric, FabricArtifact)):
         _require_instance(name, value, cls)
@@ -477,7 +481,7 @@ def _bind(*, design: CompileRequest, mapping: MappingArtifact,
 
 
 def make_resolved_deterministic_fabric(
-        *, design: CompileRequest, inventory: NodeInventory,
+        *, design: CompileRequest | CompileRequestV3, inventory: NodeInventory,
         mapping: MappingArtifact, topology: TopologyArtifact,
         attachment: AgentAttachmentArtifact, vc_resource: VCResourceArtifact,
         routing_realization: RoutingRealizationArtifact,
@@ -499,7 +503,7 @@ def make_resolved_deterministic_fabric(
 
 
 def make_resolved_adaptive_fabric(
-        *, design: CompileRequest, inventory: NodeInventory,
+        *, design: CompileRequest | CompileRequestV3, inventory: NodeInventory,
         mapping: MappingArtifact, topology: TopologyArtifact,
         attachment: AgentAttachmentArtifact, vc_resource: VCResourceArtifact,
         routing_realization: RoutingRealizationArtifact,

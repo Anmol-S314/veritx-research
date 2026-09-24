@@ -1,0 +1,267 @@
+{
+  "compilation": {
+    "artifact_hashes": {
+      "address_decode_hash": "ff881b1a89c038c2afef298cfa913103a029f4cc231d1d7bbd3cd25e577f7045",
+      "attachment_hash": "1b7150b86d7881b0131e05afe263f7e84e9a3fb9e3926eb8ae45b416180b00f8",
+      "design_hash": "28ffcebf4b4f89e759911504aedbfb8b64b415546ae263392b820b614e99cbae",
+      "fabric_hash": "dafc7d6a2ee16add667cd9f9b7fc00fe895e0dc0077a41858a39afba07d11aee",
+      "mapping_hash": "a4fefbe600d78b93ea9b9c52b8e28f88eb0ee85dbcb868f153ba7b3a802d2100",
+      "packet_format_hash": "826d98acff8aaea8ecfc29aaf39706458e634c00a3f6121a9d31274520625e19",
+      "resolved_fabric_hash": "31101953af6bf2f58078d461a815129e950c894f1a7e62d9192acfc83a317c47",
+      "resolved_route_hash": "699a3bdde1ff70b3717ea7378df2e15c421d05ccf5924a5255a23075118b4374",
+      "router_behavior_hash": "86ab868a71e7874a613a4552337f8f42114b1441eb1df81c95c20e15124fbb2d",
+      "router_route_hash": "sha256:e495aa876f7d7e4b81a427133b2acd73ed12c42f622a29fb463851a6ff467579",
+      "topology_hash": "e3f51fa212992d36414a3832ba32e2643bf6d848952021327fa397a8c3836d4a",
+      "vc_assignment_hash": "a11717d8f569be26db05da1142260d14d308096f8f5b604ad1d9d060cd4fcfda"
+    },
+    "certificate_id": "sha256:4648f03512035280fdfd4e09324e8689fc4c4214add95f61b8ee44feb05b98cb",
+    "certificate_overall": "PASS",
+    "compiler_semantics_version": 3,
+    "contract_version": 1,
+    "design_hash": "sha256:28ffcebf4b4f89e759911504aedbfb8b64b415546ae263392b820b614e99cbae",
+    "error": null,
+    "obligations": [
+      {
+        "evidence": {
+          "components": 1,
+          "directed_channels": 288,
+          "routers": 81
+        },
+        "method": "undirected-bfs/v1",
+        "obligation": "TOPOLOGY_CONNECTED",
+        "status": "PASS"
+      },
+      {
+        "evidence": {
+          "endpoints": 72
+        },
+        "method": "attachment.validate_against/v1",
+        "obligation": "ATTACHMENT_COMPLETE",
+        "status": "PASS"
+      },
+      {
+        "evidence": {
+          "entries": 0
+        },
+        "method": "address_decode.validate_against/v1",
+        "obligation": "ADDRESS_DECODE_VALID",
+        "status": "PASS"
+      },
+      {
+        "evidence": {
+          "entries": 6480,
+          "expected_entries": 6480,
+          "routers": 81,
+          "routing_classes": [
+            "DOR_XY"
+          ]
+        },
+        "method": "entry-coverage/v1",
+        "obligation": "ROUTE_COMPLETE",
+        "status": "PASS"
+      },
+      {
+        "evidence": {
+          "routing_classes": [
+            "DOR_XY"
+          ]
+        },
+        "method": "route.validate_against/v1",
+        "obligation": "ROUTE_LEGAL",
+        "status": "PASS"
+      },
+      {
+        "evidence": {
+          "vc_count": 1,
+          "vc_to_routing_class": [
+            [
+              0,
+              "DOR_XY"
+            ]
+          ]
+        },
+        "method": "vc.validate_against/v1",
+        "obligation": "VC_ASSIGNMENT_VALID",
+        "status": "PASS"
+      },
+      {
+        "evidence": {
+          "acyclic": true,
+          "attachment_hash": "1b7150b86d7881b0131e05afe263f7e84e9a3fb9e3926eb8ae45b416180b00f8",
+          "cdg_route_classes": [
+            "DOR_XY"
+          ],
+          "edge_count": 508,
+          "escape_vcs": [],
+          "node_count": 288,
+          "resolved_route_hash": "699a3bdde1ff70b3717ea7378df2e15c421d05ccf5924a5255a23075118b4374",
+          "route_realization": "v2_channel_id",
+          "router_behavior_hash": "86ab868a71e7874a613a4552337f8f42114b1441eb1df81c95c20e15124fbb2d",
+          "router_route_hash": "sha256:e495aa876f7d7e4b81a427133b2acd73ed12c42f622a29fb463851a6ff467579",
+          "routing_classes": [
+            "DOR_XY"
+          ],
+          "sccs_gt_1": 0,
+          "topology_hash": "e3f51fa212992d36414a3832ba32e2643bf6d848952021327fa397a8c3836d4a",
+          "vc_assignment_hash": "a11717d8f569be26db05da1142260d14d308096f8f5b604ad1d9d060cd4fcfda",
+          "vc_count": 1
+        },
+        "method": "channel-vc-cdg/v2",
+        "obligation": "DEADLOCK_FREE",
+        "status": "PASS"
+      },
+      {
+        "evidence": {
+          "placements": 8
+        },
+        "method": "mapping-attachment-seam/v1",
+        "obligation": "MAPPING_VALID",
+        "status": "PASS"
+      },
+      {
+        "evidence": {
+          "flit_width_bits": 64,
+          "vc_count": 1
+        },
+        "method": "packet_format.validate_against/v1",
+        "obligation": "PACKET_FORMAT_VALID",
+        "status": "PASS"
+      },
+      {
+        "evidence": {
+          "address_decode_hash": "ff881b1a89c038c2afef298cfa913103a029f4cc231d1d7bbd3cd25e577f7045",
+          "attachment_hash": "1b7150b86d7881b0131e05afe263f7e84e9a3fb9e3926eb8ae45b416180b00f8",
+          "design_hash": "28ffcebf4b4f89e759911504aedbfb8b64b415546ae263392b820b614e99cbae",
+          "fabric_hash": "dafc7d6a2ee16add667cd9f9b7fc00fe895e0dc0077a41858a39afba07d11aee",
+          "mapping_hash": "a4fefbe600d78b93ea9b9c52b8e28f88eb0ee85dbcb868f153ba7b3a802d2100",
+          "packet_format_hash": "826d98acff8aaea8ecfc29aaf39706458e634c00a3f6121a9d31274520625e19",
+          "resolved_fabric_hash": "31101953af6bf2f58078d461a815129e950c894f1a7e62d9192acfc83a317c47",
+          "resolved_route_hash": "699a3bdde1ff70b3717ea7378df2e15c421d05ccf5924a5255a23075118b4374",
+          "router_behavior_hash": "86ab868a71e7874a613a4552337f8f42114b1441eb1df81c95c20e15124fbb2d",
+          "router_route_hash": "sha256:e495aa876f7d7e4b81a427133b2acd73ed12c42f622a29fb463851a6ff467579",
+          "topology_hash": "e3f51fa212992d36414a3832ba32e2643bf6d848952021327fa397a8c3836d4a",
+          "vc_assignment_hash": "a11717d8f569be26db05da1142260d14d308096f8f5b604ad1d9d060cd4fcfda"
+        },
+        "method": "bundle.revalidate/v1",
+        "obligation": "FABRIC_DAG_VALID",
+        "status": "PASS"
+      }
+    ],
+    "resolved_fabric_hash": "sha256:31101953af6bf2f58078d461a815129e950c894f1a7e62d9192acfc83a317c47",
+    "status": "COMPILED"
+  },
+  "description": "EVALUATED outcome with the single honest aggregate network window, backend-present metrics only, producer identity, fidelity warning, and a RequirementReport bound to the performance result. Metrics render only when present.",
+  "design": {
+    "agents": [
+      {
+        "count": 64,
+        "kind": "compute_tile"
+      },
+      {
+        "count": 8,
+        "kind": "hbm_controller"
+      }
+    ],
+    "compiler_semantics_version": 3,
+    "contract_version": 1,
+    "design_hash": "sha256:28ffcebf4b4f89e759911504aedbfb8b64b415546ae263392b820b614e99cbae",
+    "locked_derived": {
+      "certificate_overall": "PASS",
+      "routing": "DOR_XY",
+      "vc_count": 1
+    },
+    "noc_guided": {
+      "arbitration": null,
+      "concentration": 1,
+      "link_width": 64,
+      "radix": null,
+      "rcu_enabled": null,
+      "topology_family": "mesh"
+    },
+    "requirements": [
+      {
+        "bandwidth_floor_gbps": null,
+        "binding": true,
+        "latency_ceiling_cycles": 100000.0,
+        "qos_class": "latency_critical",
+        "traffic_class": "tp_collective"
+      }
+    ],
+    "schema_version": 3,
+    "workload": {
+      "model_family": "dense_transformer",
+      "model_name": "llama-dense-8b",
+      "parallelism": {
+        "dp": 1,
+        "ep": 1,
+        "pp": 1,
+        "tp": 8
+      },
+      "serving_mode": "mixed"
+    }
+  },
+  "evaluation": {
+    "backend_producer": {
+      "backend": "BOOKSIM_STANDALONE",
+      "config_hash": "bb9e9313179cc1469e629bb0b34d9fe6fba7ea5f90ee2702a392475c2e6491c7",
+      "input_hash": "74c57485a6ce58f4b935863deee0e17ed97b506b9433426a3e4684a6f099fd87",
+      "producer_identity": "65d61d336fabfb6a4ea6e8fd47826f5e9a707834ef1450cbde11bd32defc7c11"
+    },
+    "contract_version": 1,
+    "design_hash": "sha256:28ffcebf4b4f89e759911504aedbfb8b64b415546ae263392b820b614e99cbae",
+    "evidence": {
+      "raw_evidence_digest": "4f41b2e9444d65e9ec0607becfe874cbd940f97bc3cc6772506149be5bef149e",
+      "stats_digest": "40be55c1e1f69d6fa73208b22335ad66f483ec0622c9b2e11d321d361160e45b"
+    },
+    "fidelity_warning": "compute=EXPLICIT_DURATION memory=EXPLICIT_DURATION network=QUALIFIED_BOOKSIM_WINDOW all=UNCALIBRATED (declared/explicit models; no hardware dataset in repo)",
+    "message_artifact_id": "sha256:0bb2ce65cc049d6b84f1f7d0d6c28fc8e6a4f0de049e39ec17cbbe01478560ff",
+    "metrics": {
+      "completion_time": 16161,
+      "delivered": 2464,
+      "flits_accepted": 19600,
+      "flits_injected": 19600,
+      "honest_latency": 1006.58,
+      "hops": 4.0,
+      "latency": 6735.09,
+      "max_packet_latency": 3372.0,
+      "p50": 754.0,
+      "p95": 2508.0,
+      "p99": 2792.0,
+      "pkt_count": 683,
+      "throughput": 0.00878168
+    },
+    "network_traffic_window": {
+      "cycles_only": false,
+      "wall_time_ns": 16161.0,
+      "window_cycles": 16161
+    },
+    "performance_result_id": "c19e5f10e4ffbcfa3c4b3f9be5686ecf4850aab145138e5edcf574a833f8096c",
+    "physical_traffic_id": "sha256:aa07a43f7f99459eaaa59e646c9de2d31c823305aa8bc52a94007ca25d25ac88",
+    "reason": null,
+    "resolved_fabric_hash": "sha256:31101953af6bf2f58078d461a815129e950c894f1a7e62d9192acfc83a317c47",
+    "status": "EVALUATED",
+    "workload_id": "sha256:25cc4fd07f0c12a6c5103e3d226d61c13e5444ba3b07efca7455a224151dad25"
+  },
+  "fixture_id": "evaluated-design",
+  "optimization": null,
+  "requirements": {
+    "contract_version": 1,
+    "design_hash": "sha256:28ffcebf4b4f89e759911504aedbfb8b64b415546ae263392b820b614e99cbae",
+    "entries": [
+      {
+        "binding": true,
+        "measured": 16161.0,
+        "metric_authority": "performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles)",
+        "performance_result_id": "c19e5f10e4ffbcfa3c4b3f9be5686ecf4850aab145138e5edcf574a833f8096c",
+        "qos_class": "latency_critical",
+        "reason": "measured 16161 cycles <= ceiling 100000.0 cycles via performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles). class-scoped to 'tp_collective' (single-class workload: aggregate == class evidence)",
+        "required": 100000.0,
+        "requirement_index": 0,
+        "traffic_class": "tp_collective",
+        "verdict": "SATISFIED"
+      }
+    ],
+    "performance_result_id": "c19e5f10e4ffbcfa3c4b3f9be5686ecf4850aab145138e5edcf574a833f8096c"
+  },
+  "title": "Evaluated design (BookSim aggregate window + requirement verdicts)"
+}

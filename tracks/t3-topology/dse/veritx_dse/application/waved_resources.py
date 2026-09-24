@@ -29,20 +29,67 @@ from __future__ import annotations
 from typing import Any
 
 from veritx_dse.workload.messages import (
-    LogicalMessageArtifact,
     LogicalMessageArtifactV2,
 )
 from veritx_dse.workload.operations import OperationGraph
 from veritx_dse.model.parallelism import ParallelismArtifact
 from veritx_dse.workload.semantics import WaveDWorkloadSemantics
 from veritx_dse.workload.traffic import (
-    PhysicalTrafficArtifact,
     PhysicalTrafficArtifactV2,
 )
-from veritx_dse.workload.graph import WaveDWorkload
+# Historical v1 authorities (WaveDWorkload, LogicalMessageArtifact v1,
+# PhysicalTrafficArtifact v1) were intentionally deleted per §4/§7: the
+# canonical WorkloadGraph + V2 artifacts are the sole execution authority.
+# v1 persisted resources are therefore explicitly unsupported — the v1
+# readers below fail closed rather than resurrecting a second authority.
+try:  # pragma: no cover - historical surface, expected absent
+    from veritx_dse.workload.messages import (  # type: ignore
+        LogicalMessageArtifact as _V1Messages,
+    )
+except ImportError:  # canonical product has V2 only
+    _V1Messages = None  # type: ignore
+try:  # pragma: no cover - historical surface, expected absent
+    from veritx_dse.workload.traffic import (  # type: ignore
+        PhysicalTrafficArtifact as _V1Traffic,
+    )
+except ImportError:  # canonical product has V2 only
+    _V1Traffic = None  # type: ignore
+try:  # pragma: no cover - historical surface, expected absent
+    from veritx_dse.workload.graph import (  # type: ignore
+        WaveDWorkload as _V1Workload,
+    )
+except ImportError:  # canonical product has WorkloadGraph only
+    _V1Workload = None  # type: ignore
 
 from .errors import ControlPlaneError, ErrorCode
-from .resources import RESOURCE_SCHEMA_VERSION, check_envelope
+
+# Wave-C resource envelope (local shim — the canonical resources.py now
+# owns the 4-kind CompileIntent persistence and must not be overwritten
+# with the old generic envelope; waved v1/v2 records carry their own).
+RESOURCE_SCHEMA_VERSION = 1
+
+
+def check_envelope(d: Any, expected_type: str) -> dict[str, Any]:
+    """Validate a persisted waved resource envelope (type + version)."""
+    if not isinstance(d, dict):
+        raise ControlPlaneError(
+            ErrorCode.INTERNAL_ERROR,
+            f"resource must be an object, got {type(d).__name__}",
+            operation="inspect")
+    if d.get("resource_type") != expected_type:
+        raise ControlPlaneError(
+            ErrorCode.INTERNAL_ERROR,
+            f"expected resource_type {expected_type!r}, got "
+            f"{d.get('resource_type')!r}",
+            operation="inspect")
+    if d.get("schema_version") != RESOURCE_SCHEMA_VERSION:
+        raise ControlPlaneError(
+            ErrorCode.INTERNAL_ERROR,
+            f"unsupported {expected_type} schema_version "
+            f"{d.get('schema_version')!r} (this build speaks "
+            f"v{RESOURCE_SCHEMA_VERSION})",
+            operation="inspect")
+    return d
 
 WAVED_RESOURCE_KINDS = ("wavedworkload", "parallelism", "wavedsemantics",
                         "opgraph", "messages", "traffic",
@@ -68,6 +115,14 @@ def _record(kind: str, resource_id: str,
         "resource_id": resource_id,
         "artifact": artifact,
     }
+
+
+def _hash_of(obj: Any, name: str) -> str:
+    """Read a child-artifact hash that may be a method (RT v1) or a
+    stored attribute (canonical v2). Identity comes from the child;
+    this shim only normalizes the accessor."""
+    value = getattr(obj, name)
+    return value() if callable(value) else value
 
 
 def parallelism_record(art: ParallelismArtifact) -> dict[str, Any]:
@@ -189,43 +244,32 @@ def load_verified_waved_semantics(store: Any, semantics_id: str
 
 
 def load_verified_waved_workload(store: Any,
-                                 workload_id: str) -> WaveDWorkload:
-    """Verified Wave-D workload: parents resolved by ID and verified."""
-    _, doc = _envelope(store, "wavedworkload", workload_id)
-    parallelism = load_verified_parallelism(store,
-                                            doc.get("parallelism_id"))
-    semantics = load_verified_waved_semantics(
-        store, doc.get("wave_d_semantics_id"))
-    art = _parse("wavedworkload", workload_id, lambda: (
-        WaveDWorkload.from_dict(doc, parallelism=parallelism,
-                                semantics=semantics, strict=True)))
-    _require_equal("workload_id", art.workload_id(), workload_id,
-                   workload_id)
-    return art
+                                 workload_id: str) -> Any:
+    """Verified Wave-D workload: HISTORICAL v1, explicitly unsupported.
+
+    The v1 WaveDWorkload authority was deleted per §4/§7. Old persisted
+    wavedworkload resources fail closed here; canonical runs use the
+    workloadgraph path (load_verified_workload_graph).
+    """
+    raise ControlPlaneError(
+        ErrorCode.EVIDENCE_INVALID,
+        f"historical v1 wavedworkload {workload_id!r} is not supported "
+        "in the canonical product (WorkloadGraph + V2 only)",
+        operation="verify_resource", resource_id=workload_id)
 
 
 def load_verified_operation_graph(store: Any,
                                   graph_id: str) -> OperationGraph:
-    """Verified graph: exactly the graph its declared workload produces."""
-    _, doc = _envelope(store, "opgraph", graph_id)
-    workload = load_verified_waved_workload(store, doc.get("workload_id"))
-    parallelism = load_verified_parallelism(store, doc.get("parallelism_id"))
-    semantics = load_verified_waved_semantics(
-        store, doc.get("wave_d_semantics_id"))
-    _require_equal("workload.parallelism_id",
-                   workload.parallelism.parallelism_id(),
-                   parallelism.parallelism_id(), graph_id)
-    _require_equal("workload.wave_d_semantics_id",
-                   workload.semantics.semantics_id(),
-                   semantics.semantics_id(), graph_id)
-    graph = _parse("opgraph", graph_id, lambda: OperationGraph.from_dict(
-        doc, parallelism=parallelism, semantics=semantics, strict=True))
-    _require_equal("operation_graph_id", graph.operation_graph_id(),
-                   graph_id, graph_id)
-    derived = workload.to_graph()
-    _require_equal("operation_graph_id", derived.operation_graph_id(),
-                   graph.operation_graph_id(), graph_id)
-    return graph
+    """Verified graph: HISTORICAL v1, explicitly unsupported.
+
+    The v1 OperationGraph ancestry (WaveDWorkload parent) was superseded
+    by the canonical WorkloadGraph. Old opgraph resources fail closed.
+    """
+    raise ControlPlaneError(
+        ErrorCode.EVIDENCE_INVALID,
+        f"historical v1 opgraph {graph_id!r} is not supported in the "
+        "canonical product (WorkloadGraph + V2 only)",
+        operation="verify_resource", resource_id=graph_id)
 
 
 def load_verified_workload_graph(store: Any, workload_id: str) -> Any:
@@ -235,7 +279,7 @@ def load_verified_workload_graph(store: Any, workload_id: str) -> Any:
     strict parse recomputes the embedded workload_id, so a forged or
     transplanted document cannot pass.
     """
-    from veritx_dse.workload.canonical_graph import WorkloadGraph
+    from veritx_dse.workload.graph import WorkloadGraph
     _, doc = _envelope(store, "workloadgraph", workload_id)
     graph = _parse("workloadgraph", workload_id,
                    lambda: WorkloadGraph.from_dict(doc, strict=True))
@@ -263,11 +307,12 @@ def load_verified_messages(store: Any,
             LogicalMessageArtifactV2.from_dict(doc, graph=graph,
                                                strict=True)))
     else:
-        graph = load_verified_operation_graph(store,
-                                              doc.get("operation_graph_id"))
-        art = _parse("messages", message_artifact_id, lambda: (
-            LogicalMessageArtifact.from_dict(doc, graph=graph,
-                                             strict=True)))
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"historical v1 messages {message_artifact_id!r} are not "
+            "supported in the canonical product (V2 only)",
+            operation="verify_resource",
+            resource_id=message_artifact_id)
     _require_equal("message_artifact_id", art.message_artifact_id(),
                    message_artifact_id, message_artifact_id)
     art.validate_conservation()
@@ -323,9 +368,11 @@ def load_verified_traffic(store: Any, traffic_id: str
             PhysicalTrafficArtifactV2.from_dict(
                 doc, logical=logical, bundle=bundle, strict=True)))
     else:
-        art = _parse("traffic", traffic_id, lambda: (
-            PhysicalTrafficArtifact.from_dict(
-                doc, logical=logical, bundle=bundle, strict=True)))
+        raise ControlPlaneError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"historical v1 traffic {traffic_id!r} is not supported in "
+            "the canonical product (V2 only)",
+            operation="verify_resource", resource_id=traffic_id)
     _require_equal("physical_traffic_id", art.physical_traffic_id(),
                    traffic_id, traffic_id)
     _require_equal("traffic.design_hash", design_hash,
@@ -444,37 +491,20 @@ def result_wave_d_keys(version: int) -> tuple[str, ...]:
                             operation="verify_result")
 
 
-def waved_chain_ids(workload: WaveDWorkload, graph: OperationGraph,
-                    messages: LogicalMessageArtifact,
-                    traffic: PhysicalTrafficArtifact,
+def waved_chain_ids(workload: Any, graph: OperationGraph,
+                    messages: Any,
+                    traffic: Any,
                     bundle: Any) -> dict[str, Any]:
     """Every ID a Wave-D experiment/result binds, derived from artifacts.
 
-    One implementation: plan identity, workload identity, result
-    provenance and the verified re-derivation on load all call this, so
-    a stored block can be compared field-by-field against a recomputed
-    one.
+    HISTORICAL v1: explicitly unsupported in the canonical product.
+    New runs use semantic_chain_ids_v2.
     """
-    block = {
-        "workload_kind": "WAVE_D_SEMANTIC",
-        "waved_workload_id": workload.workload_id(),
-        "parallelism_id": workload.parallelism.parallelism_id(),
-        "wave_d_semantics_id": workload.semantics.semantics_id(),
-        "operation_graph_id": graph.operation_graph_id(),
-        "message_artifact_id": messages.message_artifact_id(),
-        "physical_traffic_id": traffic.physical_traffic_id(),
-        "resolved_fabric_hash":
-            bundle.resolved_fabric.resolved_fabric_hash(),
-        "packet_format_hash":
-            bundle.packet_format.packet_format_hash(),
-    }
-    if set(block) != set(PLAN_CHAIN_KEYS_V1):  # pragma: no cover - guard
-        raise ControlPlaneError(
-            ErrorCode.INTERNAL_ERROR,
-            "wave_d chain block does not match PLAN_CHAIN_KEYS_V1: "
-            f"{sorted(block)} vs {sorted(PLAN_CHAIN_KEYS_V1)}",
-            operation="verify_resource")
-    return block
+    raise ControlPlaneError(
+        ErrorCode.EVIDENCE_INVALID,
+        "historical v1 wave_d chain block is not supported in the "
+        "canonical product (v2 canonical chain only)",
+        operation="verify_resource")
 
 
 def semantic_chain_ids_v2(graph: Any, messages: Any, traffic: Any,
@@ -493,9 +523,9 @@ def semantic_chain_ids_v2(graph: Any, messages: Any, traffic: Any,
         "message_artifact_id": messages.message_artifact_id(),
         "physical_traffic_id": traffic.physical_traffic_id(),
         "resolved_fabric_hash":
-            bundle.resolved_fabric.resolved_fabric_hash(),
+            _hash_of(bundle.resolved_fabric, "resolved_fabric_hash"),
         "packet_format_hash":
-            bundle.packet_format.packet_format_hash(),
+            _hash_of(bundle.packet_format, "packet_format_hash"),
     }
     if set(block) != set(PLAN_CHAIN_KEYS_V2):  # pragma: no cover - guard
         raise ControlPlaneError(
@@ -531,73 +561,40 @@ def chain_ids_from_traffic(traffic: Any) -> dict[str, Any]:
             "message_artifact_id": traffic.logical.message_artifact_id(),
             "physical_traffic_id": traffic.physical_traffic_id(),
             "resolved_fabric_hash":
-                traffic.bundle.resolved_fabric.resolved_fabric_hash(),
+                _hash_of(traffic.bundle.resolved_fabric,
+                         "resolved_fabric_hash"),
             "packet_format_hash":
-                traffic.bundle.packet_format.packet_format_hash(),
+                _hash_of(traffic.bundle.packet_format,
+                         "packet_format_hash"),
         })
         return semantic_chain_ids_from_traffic_v2(traffic)
     return waved_chain_ids_from_traffic(traffic)
 
 
-def waved_chain_ids_from_traffic(traffic: PhysicalTrafficArtifact
+def waved_chain_ids_from_traffic(traffic: Any
                                  ) -> dict[str, Any]:
-    """Recompute the chain block from a verified traffic artifact."""
-    logical = traffic.logical
-    return waved_chain_ids(
-        workload=_workload_from_graph(logical.graph),
-        graph=logical.graph, messages=logical, traffic=traffic,
-        bundle=traffic.bundle)
+    """Recompute the chain block from a verified traffic artifact.
+
+    HISTORICAL v1: explicitly unsupported in the canonical product.
+    """
+    raise ControlPlaneError(
+        ErrorCode.EVIDENCE_INVALID,
+        "historical v1 wave_d chain re-derivation is not supported in "
+        "the canonical product (v2 canonical chain only)",
+        operation="verify_resource")
 
 
-def _workload_from_graph(graph: OperationGraph) -> WaveDWorkload:
+def _workload_from_graph(graph: OperationGraph) -> Any:
     """Reconstruct the declared workload that a graph was lowered from.
 
-    The graph carries only link details, so the workload is rebuilt from
-    the graph's own intents; ``workload_id`` then re-derives from the
-    same content. This is used ONLY to recompute identity for
-    comparison, never to author a graph.
+    HISTORICAL v1 helper: explicitly unsupported (v1 WaveDWorkload
+    authority deleted per §4/§7).
     """
-    from veritx_dse.workload.graph import WaveDOperation
-    ops: list[WaveDOperation] = []
-    by_id = {n.operation_id: n for n in graph.nodes}
-    for n in graph.nodes:
-        detail: dict[str, Any] = {}
-        if n.kind == "COLLECTIVE":
-            cid = n.detail.get("collective_id")
-            ci = next(c for c in graph.collectives
-                      if c.collective_id == cid)
-            detail = {"collective_id": ci.collective_id,
-                      "collective_kind": ci.kind,
-                      "participants": list(ci.participants),
-                      "payload_bytes": ci.payload_bytes}
-        elif n.kind == "P2P":
-            tid = n.detail.get("transfer_id")
-            tr = next(t for t in graph.p2p_transfers
-                      if t.transfer_id == tid)
-            detail = {"transfer_id": tr.transfer_id,
-                      "src_rank": tr.src_rank, "dst_rank": tr.dst_rank,
-                      "payload_bytes": tr.payload_bytes}
-        elif n.kind == "MULTICAST":
-            mid = n.detail.get("multicast_id")
-            mc = next(m for m in graph.multicasts
-                      if m.multicast_id == mid)
-            detail = {"multicast_id": mc.multicast_id,
-                      "source_rank": mc.source_rank,
-                      "destinations": list(mc.destinations),
-                      "payload_bytes": mc.payload_bytes,
-                      "replication": mc.replication}
-        else:  # pragma: no cover - declared workloads have no other kind
-            raise ControlPlaneError(
-                ErrorCode.EVIDENCE_INVALID,
-                f"operation {n.operation_id!r} kind {n.kind!r} is not a "
-                "declared Wave-D workload operation",
-                operation="verify_resource")
-        ops.append(WaveDOperation(
-            operation_id=n.operation_id, kind=n.kind, owner=n.owner,
-            phase=n.phase, step=n.step, deps=tuple(n.deps), detail=detail))
-    return WaveDWorkload(parallelism=graph.parallelism,
-                         semantics=graph.semantics,
-                         operations=tuple(ops))
+    raise ControlPlaneError(
+        ErrorCode.EVIDENCE_INVALID,
+        "historical v1 workload reconstruction is not supported in the "
+        "canonical product",
+        operation="verify_resource")
 
 
 def waved_execution_block(chain: dict[str, Any], summary: dict[str, Any],

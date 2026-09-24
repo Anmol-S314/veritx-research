@@ -21,7 +21,32 @@ from typing import Any
 from veritx_dse.performance.workload import TemporalWorkload
 
 from .errors import ControlPlaneError, ErrorCode
-from .resources import RESOURCE_SCHEMA_VERSION, check_envelope
+
+# Wave-C resource envelope (local — see waved_resources.py note).
+RESOURCE_SCHEMA_VERSION = 1
+
+
+def check_envelope(d: Any, expected_type: str) -> dict[str, Any]:
+    """Validate a persisted performance resource envelope."""
+    if not isinstance(d, dict):
+        raise ControlPlaneError(
+            ErrorCode.INTERNAL_ERROR,
+            f"resource must be an object, got {type(d).__name__}",
+            operation="inspect")
+    if d.get("resource_type") != expected_type:
+        raise ControlPlaneError(
+            ErrorCode.INTERNAL_ERROR,
+            f"expected resource_type {expected_type!r}, got "
+            f"{d.get('resource_type')!r}",
+            operation="inspect")
+    if d.get("schema_version") != RESOURCE_SCHEMA_VERSION:
+        raise ControlPlaneError(
+            ErrorCode.INTERNAL_ERROR,
+            f"unsupported {expected_type} schema_version "
+            f"{d.get('schema_version')!r} (this build speaks "
+            f"v{RESOURCE_SCHEMA_VERSION})",
+            operation="inspect")
+    return d
 
 #: Live kind first, historical kind second. Writers use [0]; readers
 #: accept both.
