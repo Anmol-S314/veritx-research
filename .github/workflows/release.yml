@@ -1,0 +1,97 @@
+name: VeritX Release Gate
+
+# The production-readiness branch and validation branches are exactly the
+# branches the generic CI did not cover. This workflow is the release
+# gate: it runs on prod/** and on version tags, and it separates the
+# test pyramid into independently visible jobs.
+#
+# The container tag is parameterised so a release can pin it by digest
+# (Repository variable VERITX_TOOLS_IMAGE); the default is a moving tag
+# and must be replaced by an immutable digest for a real release.
+
+on:
+  push:
+    branches:
+      - 'prod/**'
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  VERITX_TOOLS_IMAGE: ${{ vars.VERITX_TOOLS_IMAGE || 'ghcr.io/anmol-s314/veritx-tools-base:latest' }}
+
+jobs:
+  fast-gate:
+    name: T0/T1 fast contracts + scientific proof tests
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ vars.VERITX_TOOLS_IMAGE || 'ghcr.io/anmol-s314/veritx-tools-base:latest' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build release backends (BookSim/ASTRA/Ramulator) + manifests
+        run: make release-build
+      - name: Fast DSE tier
+        run: |
+          PYTHONPATH=tracks/t3-topology/dse:tracks/t3-topology/dse/tests \
+            python3 -m pytest tracks/t3-topology/dse/tests -q -p no:randomly \
+              -k "not real"
+
+  scientific-gate:
+    name: B4 validation corpus (mutations + metamorphic + engines + intervention)
+    runs-on: ubuntu-latest
+    needs: [fast-gate]
+    container:
+      image: ${{ vars.VERITX_TOOLS_IMAGE || 'ghcr.io/anmol-s314/veritx-tools-base:latest' }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: make release-build
+      - name: Validation pytest
+        run: |
+          PYTHONPATH=tracks/t3-topology/dse:tracks/t3-topology/dse/tests \
+            python3 -m pytest validation/tests -q
+      - name: Validation harness (fail on FAIL/QUARANTINED/empty)
+        run: |
+          PYTHONPATH=tracks/t3-topology/dse:tracks/t3-topology/dse/tests \
+            python3 -m validation.harness.run \
+              --all --mutations --metamorphic --engines --intervention
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: validation-reports
+          path: validation/reports/
+
+  backend-gate:
+    name: T4 live backend matrix (real executions, per-test timeout)
+    runs-on: ubuntu-latest
+    needs: [fast-gate]
+    container:
+      image: ${{ vars.VERITX_TOOLS_IMAGE || 'ghcr.io/anmol-s314/veritx-tools-base:latest' }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: make release-build
+      - name: Real executions
+        run: |
+          PYTHONPATH=tracks/t3-topology/dse:tracks/t3-topology/dse/tests \
+            python3 -m pytest tracks/t3-topology/dse/tests -q -p no:randomly \
+              -k "real"
+
+  clean-clone:
+    name: T6 clean-clone release qualification
+    runs-on: ubuntu-latest
+    needs: [fast-gate, scientific-gate]
+    container:
+      image: ${{ vars.VERITX_TOOLS_IMAGE || 'ghcr.io/anmol-s314/veritx-tools-base:latest' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Assert clean tree
+        run: test -z "$(git status --porcelain)" || (git status; exit 1)
+      - run: make release-build
+      - name: One certified example (QUICKSTART smoke)
+        run: |
+          PYTHONPATH=tracks/t3-topology/dse python3 -m veritx_dse.cli compile \
+            --preset mesh4 --policy baseline_deterministic_v2 \
+            --store "$RUNNER_TEMP/store"
