@@ -53,6 +53,20 @@ _EVIDENCE_DOMAIN = "srota/ScientificBackendEvidence"
 EXECUTION_TRANSPORT_SUPERVISED_PROCESS = "SUPERVISED_PROCESS"
 EXECUTION_TRANSPORT_TEST_INJECTED = "TEST_INJECTED"
 
+#: The build recipe every certified BookSim profile must have been built by.
+#: Admission checks it by profile, so a self-consistent document that names
+#: an arbitrary valid-looking recipe cannot enter a certified product.
+BOOKSIM_BUILD_RECIPE_VERSION = "booksim2-fork/v1"
+CERTIFIED_BOOKSIM_PROFILE_PREFIX = "CERTIFIED_BOOKSIM_"
+
+
+def required_build_recipe(profile_id: str) -> str | None:
+    """The recipe a certified profile must bind (None for non-BookSim)."""
+    if isinstance(profile_id, str) \
+            and profile_id.startswith(CERTIFIED_BOOKSIM_PROFILE_PREFIX):
+        return BOOKSIM_BUILD_RECIPE_VERSION
+    return None
+
 _HEX = frozenset("0123456789abcdef")
 
 #: Closed vocabularies for the run-stable scientific fields. An unknown
@@ -520,6 +534,24 @@ def admit_for_certified_product(
         raise BackendEvidenceError(
             "evidence binds no build recipe version; it cannot enter a "
             "certified product")
+    required = required_build_recipe(evidence.profile_id)
+    if required is not None:
+        if evidence.build_recipe_version != required:
+            raise BackendEvidenceError(
+                f"evidence build recipe {evidence.build_recipe_version!r} is "
+                f"not the certified {required!r} for profile "
+                f"{evidence.profile_id!r}")
+        # A certified BookSim profile must have OBSERVED its executed route:
+        # a rehashed current-schema document that skipped observation must
+        # not enter the certified chain.
+        if evidence.route_observation != "EXECUTED_ROUTE_OBSERVED":
+            raise BackendEvidenceError(
+                "certified BookSim evidence requires executed-route "
+                f"observation, got {evidence.route_observation!r}")
+        if evidence.route_dump_sha256 is None:
+            raise BackendEvidenceError(
+                "certified BookSim evidence requires the executed route "
+                "dump digest")
 
 
 def verify_reusable_record(record: ExecutionRecord, *,

@@ -40,7 +40,8 @@ from veritx_dse.backend.booksim_projection import (
     PreparedBookSimInput,
 )
 from veritx_dse.backend.evidence import (
-    EVIDENCE_SCHEMA_VERSION, EXECUTION_TRANSPORT_SUPERVISED_PROCESS,
+    BOOKSIM_BUILD_RECIPE_VERSION, EVIDENCE_SCHEMA_VERSION,
+    EXECUTION_TRANSPORT_SUPERVISED_PROCESS,
     EXECUTION_TRANSPORT_TEST_INJECTED, BackendEvidenceError, EvidenceRef,
     ExecutionAttempt, ExecutionRecord, PARSER_VERSION,
     ScientificBackendEvidence, write_evidence,
@@ -61,11 +62,8 @@ FIDELITY_TEST_INJECTED = "TEST_INJECTED"
 #: route-observation classes (honesty about what was actually observed)
 ROUTE_OBSERVATION_QUALIFIED_ONLY = "DOMAIN_QUALIFIED_ROUTE_NOT_OBSERVED"
 ROUTE_OBSERVATION_OBSERVED = "EXECUTED_ROUTE_OBSERVED"
-
-#: the build recipe the canonical BookSim binary must have been built by.
-#: A certified run requires a manifest whose recipe_version matches this,
-#: so an arbitrary valid-looking manifest cannot qualify the producer.
-BOOKSIM_BUILD_RECIPE_VERSION = "booksim2-fork/v1"
+#: the certified build recipe is owned by the evidence admission rule; it is
+#: re-exported here for the evaluator's require_manifest_recipe=...
 
 #: the sampling-window time (diagnostic only; window-dependent, never physics)
 _WINDOW_RE = re.compile(r"Time taken is (\d+) cycles")

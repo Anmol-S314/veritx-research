@@ -38,12 +38,13 @@ def _valid_doc() -> dict:
         seed=0,
         parser_version=ev.PARSER_VERSION,
         execution_fidelity="QUALIFIED",
-        route_observation="DOMAIN_QUALIFIED_ROUTE_NOT_OBSERVED",
+        route_observation="EXECUTED_ROUTE_OBSERVED",
         stats={"completion_cycles": 100, "loaded_trace_packets": 7},
         exit_status=0,
         transport=ev.EXECUTION_TRANSPORT_SUPERVISED_PROCESS,
         build_manifest_sha256="9" * 64,
         build_recipe_version="booksim2-fork/v1",
+        route_dump_sha256="7" * 64,
     ).to_dict()
 
 
@@ -104,12 +105,13 @@ def _evidence(**over) -> "ev.ScientificBackendEvidence":
         "seed": 0,
         "parser_version": ev.PARSER_VERSION,
         "execution_fidelity": "QUALIFIED",
-        "route_observation": "DOMAIN_QUALIFIED_ROUTE_NOT_OBSERVED",
+        "route_observation": "EXECUTED_ROUTE_OBSERVED",
         "stats": {"completion_cycles": 100},
         "exit_status": 0,
         "transport": ev.EXECUTION_TRANSPORT_SUPERVISED_PROCESS,
         "build_manifest_sha256": "9" * 64,
         "build_recipe_version": "booksim2-fork/v1",
+        "route_dump_sha256": "7" * 64,
     }
     fields.update(over)
     return ev.ScientificBackendEvidence(**fields)
@@ -149,6 +151,43 @@ def test_admission_is_the_only_rule_used_by_reuse():
         ev.verify_reusable_record(
             record, prepared_id="a" * 64, config_sha256="b" * 64,
             trace_sha256="c" * 64, binary_sha256="0" * 64)
+
+
+# ── the certification theorem: certified BookSim requires observation and
+#    the exact certified recipe (a rehashed document must not slip through)
+
+def test_certified_profile_requires_executed_route_observation():
+    unobserved = _evidence(
+        route_observation="DOMAIN_QUALIFIED_ROUTE_NOT_OBSERVED",
+        route_dump_sha256=None)
+    with pytest.raises(ev.BackendEvidenceError, match="executed-route"):
+        ev.admit_for_certified_product(unobserved)
+    with pytest.raises(ev.BackendEvidenceError, match="executed-route"):
+        ev.verify_reusable_record(
+            ev.ExecutionRecord(evidence=unobserved,
+                               attempt=ev.ExecutionAttempt(
+                                   wall_time_s=0.0, run_dir="",
+                                   binary_path="", command=(), host="",
+                                   platform="")),
+            prepared_id="a" * 64, config_sha256="b" * 64,
+            trace_sha256="c" * 64, binary_sha256="0" * 64)
+
+
+def test_certified_profile_requires_the_exact_build_recipe():
+    with pytest.raises(ev.BackendEvidenceError, match="not the certified"):
+        ev.admit_for_certified_product(
+            _evidence(build_recipe_version="evil/v1"))
+
+
+def test_observed_without_dump_digest_is_unconstructible():
+    with pytest.raises(ev.BackendEvidenceError, match="route dump digest"):
+        _evidence(route_dump_sha256=None)
+
+
+def test_admission_uses_the_recipe_constant_by_profile():
+    assert ev.required_build_recipe("CERTIFIED_BOOKSIM_ANYNET_V1") \
+        == ev.BOOKSIM_BUILD_RECIPE_VERSION
+    assert ev.required_build_recipe("SOME_FUTURE_BACKEND") is None
 
 
 # ── restored legacy v1 reader (was an undefined-name crash) ──────────────

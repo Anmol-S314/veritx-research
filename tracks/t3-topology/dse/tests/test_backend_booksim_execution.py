@@ -340,7 +340,9 @@ def test_evidence_bytes_tamper_and_transplant_are_refused(tmp_path):
             producer_source_revision="a" * 40,
             producer_dirty=False,
             build_manifest_sha256="c" * 64,
-            build_recipe_version="booksim2-fork/v1"),
+            build_recipe_version="booksim2-fork/v1",
+            route_observation=bx.ROUTE_OBSERVATION_OBSERVED,
+            route_dump_sha256="d" * 64),
         attempt=record.attempt)
     ok = ev.verify_reusable_record(
         supervised, prepared_id=record.evidence.prepared_id,
