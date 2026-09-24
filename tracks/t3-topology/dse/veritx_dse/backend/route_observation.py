@@ -1,14 +1,24 @@
 """veritx_dse.backend.route_observation — executed route realization (P0.10).
 
 The canonical route is proven STATICALLY (RouteArtifact + ResolvedRoute).
-This module proves the EXECUTED realization: the vendored fork's
-``routing_dump_file`` writes its configured all-pairs first-hop table, and
-we compare it destination-by-destination against the canonical route.
+This module proves the runtime routing realization: the vendored fork's
+``routing_dump_file`` writes the routing function/table actually built at
+network construction, and we compare it destination-by-destination against
+the canonical route.
 
-Scope of the claim: this is first-hop realization equivalence over the
-full (router x attached-endpoint) universe — coverage, exact next-router
-equality and legal adjacency. It does not (and cannot) prove the remainder
-of the path beyond the first hop; the fork's dump is a first-hop table.
+Precise claim:
+
+    The runtime routing-function/table first-hop realization is exactly
+    equivalent to the canonical route over the complete source x
+    destination domain.
+
+This is stronger than static configuration checking but narrower than
+per-packet instrumentation: for mesh-DOR the dump calls the active
+registered routing function for every router/destination pair after
+network construction; for AnyNet it dumps the routing table AnyNet itself
+uses. It does not record head flits as packets traverse the router, so it
+proves deterministic first-hop routing equivalence, not observed packet
+paths.
 
 Id mapping (why this is exact, not assumed):
   * mesh-DOR: the profile qualification proves endpoint ids are dense

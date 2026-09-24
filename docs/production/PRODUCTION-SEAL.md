@@ -66,8 +66,10 @@ Historical scientific findings F-0001 and F-0004 are FIXED in
 
 ## 5. Remaining limitations
 
-- P0.10 observes FIRST-HOP realization equivalence only (the fork's dump
-  is a first-hop table); the remainder of the path is not observed.
+- P0.10 claim is precise: runtime routing-function/table FIRST-HOP
+  realization equivalence over the complete source x destination domain —
+  stronger than static config checking, narrower than per-packet
+  instrumentation. No flit path trace exists.
 - Build manifests are local files, not a cryptographic trust root: a
   clean-clone CI must generate them and the release manifest must tie
   them to the tag. `release-manifest` covers BookSim and ASTRA; Ramulator
@@ -156,6 +158,10 @@ clone and a release manifest tying manifests to a tag. Owed.
 
 ## 16. Known unsupported domains
 
+- Certified-product admission theorem: profile CERTIFIED_BOOKSIM_* implies
+  supervised transport, QUALIFIED fidelity, known/clean producer, exit 0,
+  verified manifest, recipe == booksim2-fork/v1, observed route + dump
+  digest.
 - ASTRA numerical comparison (NOT_ESTABLISHED).
 - Reduce-scatter/all-gather chunk ownership/rotation (not modeled).
 - Route realization beyond the first hop (the fork dumps first hops only).

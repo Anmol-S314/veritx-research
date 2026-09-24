@@ -109,6 +109,12 @@ binds the canonical first-hop table (`expected_route_rows`). A supervised
 execution reads the dump, compares destination-by-destination (coverage,
 exact next-router equality, malformed/duplicate refusal), and records
 `EXECUTED_ROUTE_OBSERVED` + the dump digest; a missing or divergent dump
-refuses. Native mesh-DOR proves endpoint==router 1:1; AnyNet renders the
-canonical router/node ids verbatim, so the id mapping is exact, not
-assumed. Scope: FIRST-HOP realization equivalence only.
+refuses. Admission additionally requires observed route + the certified
+recipe for every `CERTIFIED_BOOKSIM_*` profile. Native mesh-DOR proves
+endpoint==router 1:1; AnyNet renders the canonical router/node ids
+verbatim, so the id mapping is exact, not assumed.
+
+Precise claim: the runtime routing-function/table first-hop realization is
+exactly equivalent to the canonical route over the complete source x
+destination domain. It is stronger than static config checking, narrower
+than per-packet instrumentation (no flit path trace).
