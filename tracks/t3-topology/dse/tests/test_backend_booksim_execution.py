@@ -282,7 +282,8 @@ def test_injected_runner_never_produces_reusable_evidence(tmp_path):
     evidence = record.evidence
     assert evidence.transport == ev.EXECUTION_TRANSPORT_TEST_INJECTED
     assert evidence.execution_fidelity == bx.FIDELITY_TEST_INJECTED
-    assert evidence.reusable is False
+    with pytest.raises(ev.BackendEvidenceError, match="supervised production"):
+        ev.admit_for_certified_product(evidence)
     with pytest.raises(ev.BackendEvidenceError, match="supervised production"):
         ev.verify_reusable_record(
             record, prepared_id=prepared.prepared_id(),
@@ -337,7 +338,9 @@ def test_evidence_bytes_tamper_and_transplant_are_refused(tmp_path):
             transport=ev.EXECUTION_TRANSPORT_SUPERVISED_PROCESS,
             execution_fidelity=bx.FIDELITY_QUALIFIED,
             producer_source_revision="a" * 40,
-            producer_dirty=False),
+            producer_dirty=False,
+            build_manifest_sha256="c" * 64,
+            build_recipe_version="booksim2-fork/v1"),
         attempt=record.attempt)
     ok = ev.verify_reusable_record(
         supervised, prepared_id=record.evidence.prepared_id,

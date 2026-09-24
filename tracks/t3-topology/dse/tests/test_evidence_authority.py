@@ -37,7 +37,7 @@ def _doc(**over):
         "message_artifact_id": "f" * 64,
         "binary_sha256": "0" * 64,
         "binary_size": 123,
-        "producer_source_revision": None,
+        "producer_source_revision": "1" * 40,
         "producer_dirty": False,
         "seed": 0,
         "parser_version": ev.PARSER_VERSION,
@@ -46,6 +46,8 @@ def _doc(**over):
         "stats": {"completion_cycles": 100, "loaded_trace_packets": 7},
         "exit_status": 0,
         "transport": "SUPERVISED_PROCESS",
+        "build_manifest_sha256": "9" * 64,
+        "build_recipe_version": "booksim2-fork/v1",
     }
     fields.update(over)
     return ev.ScientificBackendEvidence(**fields).to_dict()

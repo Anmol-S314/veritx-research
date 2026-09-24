@@ -61,6 +61,11 @@ FIDELITY_TEST_INJECTED = "TEST_INJECTED"
 ROUTE_OBSERVATION_QUALIFIED_ONLY = "DOMAIN_QUALIFIED_ROUTE_NOT_OBSERVED"
 ROUTE_OBSERVATION_OBSERVED = "EXECUTED_ROUTE_OBSERVED"
 
+#: the build recipe the canonical BookSim binary must have been built by.
+#: A certified run requires a manifest whose recipe_version matches this,
+#: so an arbitrary valid-looking manifest cannot qualify the producer.
+BOOKSIM_BUILD_RECIPE_VERSION = "booksim2-fork/v1"
+
 #: the sampling-window time (diagnostic only; window-dependent, never physics)
 _WINDOW_RE = re.compile(r"Time taken is (\d+) cycles")
 #: the physically meaningful completion: cycle of the last ejected flit.
@@ -310,6 +315,11 @@ def assert_execution_gate(stats: dict[str, Any], *, expected_packets: int,
             f"trace evidence mismatch: the backend loaded {loaded} packets "
             f"but the prepared trace declares {expected_packets}")
     injected = stats.get("injected_trace_packets")
+    if require_conservation and injected is None:
+        raise BookSimExecutionError(
+            "conservation evidence missing: the backend did not emit the "
+            "trace-injected packet count ('injected=N'); a supervised run "
+            "must prove loaded == injected == delivered == declared")
     if injected is not None and injected != expected_packets:
         raise BookSimExecutionError(
             f"trace evidence mismatch: injected {injected} != declared "
@@ -365,6 +375,7 @@ def execute_prepared_booksim(
         | None = None,
         repo_root: Path | None = None,
         require_pinned_producer: bool = False,
+        require_manifest_recipe: str | None = None,
         expected_prepared_id: str | None = None,
         write: bool = True) -> ExecutionRecord:
     """Execute exactly the prepared bytes with an identified producer."""
@@ -400,7 +411,9 @@ def execute_prepared_booksim(
 
     # 2. producer identity + pre-spawn re-hash
     try:
-        identity = resolve_producer_identity(binary, repo_root=repo_root)
+        identity = resolve_producer_identity(
+            binary, repo_root=repo_root,
+            require_manifest_recipe=require_manifest_recipe)
         recheck_binary_digest(identity)
     except ProducerError as exc:
         raise BookSimExecutionError(str(exc)) from exc
@@ -464,6 +477,8 @@ def execute_prepared_booksim(
         stats=stats,
         exit_status=outcome.returncode,
         transport=transport,
+        build_manifest_sha256=identity.build_manifest_sha256,
+        build_recipe_version=identity.build_recipe_version,
         schema_version=EVIDENCE_SCHEMA_VERSION,
     )
     attempt = ExecutionAttempt(
@@ -478,7 +493,8 @@ def execute_prepared_booksim(
 
 
 __all__ = [
-    "BookSimExecutionError", "EVIDENCE_OUTPUT_NAME", "FIDELITY_QUALIFIED",
+    "BOOKSIM_BUILD_RECIPE_VERSION", "BookSimExecutionError",
+    "EVIDENCE_OUTPUT_NAME", "FIDELITY_QUALIFIED",
     "FIDELITY_TEST_INJECTED", "FIDELITY_UNPINNED_PRODUCER",
     "MATERIALIZED_FILES", "ProcessOutcome", "ROUTE_OBSERVATION_OBSERVED",
     "ROUTE_OBSERVATION_QUALIFIED_ONLY", "UNAVAILABLE_TOKENS",

@@ -42,6 +42,8 @@ def _valid_doc() -> dict:
         stats={"completion_cycles": 100, "loaded_trace_packets": 7},
         exit_status=0,
         transport=ev.EXECUTION_TRANSPORT_SUPERVISED_PROCESS,
+        build_manifest_sha256="9" * 64,
+        build_recipe_version="booksim2-fork/v1",
     ).to_dict()
 
 
@@ -106,6 +108,8 @@ def _evidence(**over) -> "ev.ScientificBackendEvidence":
         "stats": {"completion_cycles": 100},
         "exit_status": 0,
         "transport": ev.EXECUTION_TRANSPORT_SUPERVISED_PROCESS,
+        "build_manifest_sha256": "9" * 64,
+        "build_recipe_version": "booksim2-fork/v1",
     }
     fields.update(over)
     return ev.ScientificBackendEvidence(**fields)
@@ -115,12 +119,19 @@ def test_admission_accepts_a_qualified_pinned_record():
     ev.admit_for_certified_product(_evidence())
 
 
+def test_qualified_requires_revision_at_construction():
+    with pytest.raises(ev.BackendEvidenceError,
+                       match="known producer source revision"):
+        _evidence(producer_source_revision=None)
+
+
 @pytest.mark.parametrize("over,match", [
     ({"execution_fidelity": "DIAGNOSTIC_UNPINNED_PRODUCER"},
      "not QUALIFIED"),
-    ({"producer_source_revision": None}, "revision is unknown"),
     ({"transport": ev.EXECUTION_TRANSPORT_TEST_INJECTED,
       "execution_fidelity": "TEST_INJECTED"}, "supervised production"),
+    ({"build_manifest_sha256": None}, "binds no build manifest"),
+    ({"build_recipe_version": None}, "binds no build recipe"),
 ])
 def test_admission_refuses_unqualified_records(over, match):
     with pytest.raises(ev.BackendEvidenceError, match=match):
@@ -129,11 +140,12 @@ def test_admission_refuses_unqualified_records(over, match):
 
 def test_admission_is_the_only_rule_used_by_reuse():
     record = ev.ExecutionRecord(
-        evidence=_evidence(producer_source_revision=None),
+        evidence=_evidence(build_manifest_sha256=None),
         attempt=ev.ExecutionAttempt(
             wall_time_s=0.0, run_dir="", binary_path="", command=(),
             host="", platform=""))
-    with pytest.raises(ev.BackendEvidenceError, match="revision is unknown"):
+    with pytest.raises(ev.BackendEvidenceError,
+                       match="binds no build manifest"):
         ev.verify_reusable_record(
             record, prepared_id="a" * 64, config_sha256="b" * 64,
             trace_sha256="c" * 64, binary_sha256="0" * 64)

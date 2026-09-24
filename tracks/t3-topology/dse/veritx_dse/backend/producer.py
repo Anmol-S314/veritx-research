@@ -39,6 +39,11 @@ class ProducerIdentity:
     #: the source revision/dirty state observed AT BUILD. Ambient git HEAD
     #: is not build provenance and never sets this.
     manifest_verified: bool = False
+    #: identity of the manifest that established qualification, and the
+    #: build recipe it was produced by. Bound into evidence so a certified
+    #: product can name exactly which manifest qualified its binary.
+    build_manifest_sha256: str | None = None
+    build_recipe_version: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.binary_sha256, str) \
@@ -50,12 +55,19 @@ class ProducerIdentity:
             raise ProducerError(
                 f"binary_size must be a positive int, got "
                 f"{self.binary_size!r}")
+        if self.build_manifest_sha256 is not None \
+                and (not isinstance(self.build_manifest_sha256, str)
+                     or len(self.build_manifest_sha256) != 64):
+            raise ProducerError(
+                "build_manifest_sha256 must be a 64-char hex digest or null")
 
     @property
     def pinned(self) -> bool:
         """A clean, revision-identified, manifest-verified producer."""
         return (self.source_revision is not None and self.dirty is False
-                and self.manifest_verified)
+                and self.manifest_verified
+                and self.build_manifest_sha256 is not None
+                and self.build_recipe_version is not None)
 
     @property
     def tool_identity(self) -> str:
@@ -79,6 +91,8 @@ class ProducerIdentity:
             "dirty_digest": self.dirty_digest,
             "pinned": self.pinned,
             "manifest_verified": self.manifest_verified,
+            "build_manifest_sha256": self.build_manifest_sha256,
+            "build_recipe_version": self.build_recipe_version,
         }
 
 
@@ -132,15 +146,19 @@ def resolve_producer_identity(binary: Path, *,
         raise ProducerError(
             f"BookSim binary is unreadable: {path}: {exc}") from exc
     from veritx_dse.core.build_manifest import (
-        BuildManifestError, load_and_verify_manifest,
+        BuildManifestError, load_and_verify_manifest, manifest_path_for,
     )
+    effective_manifest = Path(manifest_path) if manifest_path is not None \
+        else manifest_path_for(path)
     try:
         manifest = load_and_verify_manifest(
-            path, path=manifest_path,
+            path, path=effective_manifest,
             recipe_version=require_manifest_recipe)
     except BuildManifestError as exc:
         raise ProducerError(str(exc)) from exc
     if manifest is not None:
+        manifest_sha256 = hashlib.sha256(
+            effective_manifest.read_bytes()).hexdigest()
         dirty_digest = None
         if manifest.source_dirty:
             dirty_digest = hashlib.sha256(
@@ -150,7 +168,9 @@ def resolve_producer_identity(binary: Path, *,
             binary_path=str(path), binary_sha256=digest, binary_size=size,
             source_revision=manifest.source_revision,
             dirty=manifest.source_dirty, dirty_digest=dirty_digest,
-            manifest_verified=True)
+            manifest_verified=True,
+            build_manifest_sha256=manifest_sha256,
+            build_recipe_version=manifest.recipe_version)
     revision: str | None = None
     dirty: bool | None = None
     dirty_digest = None
@@ -205,6 +225,11 @@ def assert_pinned_producer(identity: ProducerIdentity) -> None:
         raise ProducerError(
             "producer tree is DIRTY; a dirty build may be executed for "
             "diagnosis but cannot receive reusable evidence status")
+    if identity.build_manifest_sha256 is None \
+            or identity.build_recipe_version is None:
+        raise ProducerError(
+            "producer does not bind a build manifest identity/recipe; "
+            "reusable evidence is refused")
 
 
 __all__ = [

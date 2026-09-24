@@ -529,7 +529,11 @@ class FabricEvaluator:
 
         # ── backend availability (producer.py; no FileNotFoundError) ─
         from veritx_dse.backend.producer import (
-            ProducerError, resolve_producer_identity,
+            ProducerError, assert_pinned_producer,
+            resolve_producer_identity,
+        )
+        from veritx_dse.backend.booksim_execution import (
+            BOOKSIM_BUILD_RECIPE_VERSION,
         )
         from veritx_dse.core.paths import REPO as _REPO
         repo_root = Path(opts.repo_root) if opts.repo_root is not None \
@@ -537,13 +541,16 @@ class FabricEvaluator:
         try:
             if opts.binary is not None:
                 bin_path = Path(opts.binary)
-                producer = resolve_producer_identity(
-                    bin_path, repo_root=repo_root)
             else:
                 from veritx_dse.simulation.booksim import find_booksim_bin
                 bin_path = find_booksim_bin(repo_root)
-                producer = resolve_producer_identity(
-                    bin_path, repo_root=repo_root)
+            producer = resolve_producer_identity(
+                bin_path, repo_root=repo_root,
+                require_manifest_recipe=BOOKSIM_BUILD_RECIPE_VERSION)
+            # The certified evaluator never accepts an unpinned producer:
+            # a binary whose build manifest does not verify against the
+            # canonical recipe cannot produce certified evidence.
+            assert_pinned_producer(producer)
         except FileNotFoundError as exc:
             return refuse(BACKEND_UNAVAILABLE,
                           f"no qualified BookSim producer available: {exc}",
@@ -556,7 +563,7 @@ class FabricEvaluator:
                           realization_digest=realization_digest)
         except ProducerError as exc:
             return refuse(BACKEND_UNAVAILABLE,
-                          f"BookSim producer unidentifiable: {exc}",
+                          f"BookSim producer not qualified: {exc}",
                           message_artifact_id=message_id,
                           physical_traffic_id=traffic_id,
                           backend=STANDALONE_BACKEND,
@@ -576,14 +583,17 @@ class FabricEvaluator:
         # injected == declared, valid completion). The certified path
         # requires it; this evaluator offers no weaker mode.
         from veritx_dse.backend.booksim_execution import (
-            BookSimExecutionError, execute_prepared_booksim,
+            BOOKSIM_BUILD_RECIPE_VERSION, BookSimExecutionError,
+            execute_prepared_booksim,
         )
         from veritx_dse.backend.producer import ProducerError
         try:
             record = execute_prepared_booksim(
                 prepared=prepared, binary=bin_path,
                 run_dir=backend_run_dir, timeout=opts.timeout_s,
-                seed=seed, repo_root=repo_root, write=True)
+                seed=seed, repo_root=repo_root, write=True,
+                require_pinned_producer=True,
+                require_manifest_recipe=BOOKSIM_BUILD_RECIPE_VERSION)
         except (BookSimExecutionError, ProducerError) as exc:
             return refuse(FAILED,
                           f"backend execution failed: "
@@ -621,8 +631,9 @@ class FabricEvaluator:
         # scientific bytes are deterministic for identical science, and
         # write_evidence refuses to overwrite them with anything else.
         from veritx_dse.backend.evidence import (
-            BackendEvidenceError, EvidenceArtifact, read_verified_evidence,
-            validate_evidence_document, write_evidence,
+            EVIDENCE_SCHEMA_VERSION, BackendEvidenceError, EvidenceArtifact,
+            ScientificBackendEvidence, admit_for_certified_product,
+            read_verified_evidence, validate_evidence_document, write_evidence,
             write_execution_attempt,
         )
         from veritx_dse.core.artifact import ArtifactError
@@ -634,6 +645,14 @@ class FabricEvaluator:
                     "evidence document")
             verified_doc = validate_evidence_document(
                 persisted["evidence"])
+            if verified_doc.get("schema_version") != EVIDENCE_SCHEMA_VERSION:
+                raise BackendEvidenceError(
+                    "persisted evidence is not the current schema; it "
+                    "cannot certify")
+            # The certified evaluator only ever emits admitted evidence:
+            # content authentication alone is not qualification.
+            admit_for_certified_product(
+                ScientificBackendEvidence.from_dict(verified_doc))
             eref = write_evidence(evidence_dir, verified_doc)
             attempt_ref = write_execution_attempt(
                 evidence_dir, record.attempt.to_dict())

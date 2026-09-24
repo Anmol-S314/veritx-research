@@ -52,9 +52,12 @@ from veritx_dse.application.requirements import (
     report_identity,
 )
 from veritx_dse.backend.evidence import (
+    EVIDENCE_SCHEMA_VERSION,
     BackendEvidenceError,
     EvidenceArtifact,
     EvidenceRef,
+    ScientificBackendEvidence,
+    admit_for_certified_product,
     read_verified_evidence,
     validate_evidence_document,
 )
@@ -197,6 +200,15 @@ def _open_evidence(evidence_path: Any, binding: NetworkWindowBinding
     try:
         evidence_doc = validate_evidence_document(
             read_verified_evidence(ref))
+        if evidence_doc.get("schema_version") != EVIDENCE_SCHEMA_VERSION:
+            raise BackendEvidenceError(
+                "evidence is not the current schema; it cannot certify")
+        # Certification admission: content authenticity is not
+        # qualification. Every authenticated-evaluation open runs the one
+        # admission rule, so an unpinned/diagnostic/dirty/legacy run can
+        # never reach a certified claim.
+        admit_for_certified_product(
+            ScientificBackendEvidence.from_dict(evidence_doc))
         artifact = EvidenceArtifact.build(
             backend=evidence_doc["profile_id"],
             backend_input_id=evidence_doc["trace_sha256"],

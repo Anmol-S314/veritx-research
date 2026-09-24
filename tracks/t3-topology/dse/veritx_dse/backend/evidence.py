@@ -31,11 +31,14 @@ from veritx_dse.core.artifact import canonical_bytes, content_hash
 
 EVIDENCE_FILE = "backend-evidence.json"
 
-EVIDENCE_SCHEMA_VERSION = 1
-#: v2 (F-0001): ``completion_cycles`` is read from the fork's
-#: ``Completion time is N cycles`` (last-ejected-flit cycle), not from the
-#: sampling-window ``Time taken is``. v1 evidence recorded a
-#: window-dependent value and is deliberately not reusable under v2.
+#: v2: the run-stable scientific payload also binds the BUILD provenance
+#: that established producer qualification: ``build_manifest_sha256`` (the
+#: exact build manifest the binary was verified against) and
+#: ``build_recipe_version``. A v1 document cannot prove which manifest (or
+#: recipe) qualified its binary, so the generations are declared
+#: incompatible: v1 is refused, never silently reread as v2.
+EVIDENCE_SCHEMA_VERSION = 2
+#: parser generation (independent of the evidence-schema generation)
 PARSER_VERSION = "veritx/booksim-stats-parser/v2"
 LEGACY_PARSER_VERSION = "veritx/evidence-parser/v0-unversioned"
 ATTEMPT_FILE = "execution-attempt.json"
@@ -245,6 +248,11 @@ class ScientificBackendEvidence:
     stats: dict[str, Any]
     exit_status: int
     transport: str
+    #: exact build manifest the binary was verified against, and its recipe
+    #: version. Required for a certified-product admission: without them the
+    #: evidence cannot prove WHICH manifest established qualification.
+    build_manifest_sha256: str | None = None
+    build_recipe_version: str | None = None
     schema_version: int = EVIDENCE_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
@@ -254,8 +262,21 @@ class ScientificBackendEvidence:
             value = getattr(self, name)
             if value is not None:
                 require_hex64(value, name)
+        require_hex64(self.binary_sha256, "binary_sha256")
         if self.topology_sha256 is not None:
             require_hex64(self.topology_sha256, "topology_sha256")
+        if self.build_manifest_sha256 is not None:
+            require_hex64(self.build_manifest_sha256,
+                          "build_manifest_sha256")
+        if self.build_recipe_version is not None \
+                and (not isinstance(self.build_recipe_version, str)
+                     or not self.build_recipe_version):
+            raise BackendEvidenceError(
+                "build_recipe_version must be a non-empty string or null")
+        if type(self.seed) is not int or isinstance(self.seed, bool) \
+                or self.seed < 0:
+            raise BackendEvidenceError(
+                f"seed must be a non-negative int, got {self.seed!r}")
         if not isinstance(self.stats, dict) or not self.stats:
             raise BackendEvidenceError(
                 "evidence without parsed stats is not a measurement")
@@ -288,9 +309,13 @@ class ScientificBackendEvidence:
                 raise BackendEvidenceError(
                     "QUALIFIED fidelity over a non-supervised transport is "
                     "impossible")
-            if self.producer_dirty is True:
+            if self.producer_source_revision is None:
                 raise BackendEvidenceError(
-                    "a dirty producer cannot yield QUALIFIED evidence")
+                    "QUALIFIED fidelity requires a known producer source "
+                    "revision")
+            if self.producer_dirty is not False:
+                raise BackendEvidenceError(
+                    "QUALIFIED fidelity requires producer_dirty to be False")
             if self.exit_status != 0:
                 raise BackendEvidenceError(
                     "QUALIFIED evidence cannot carry a nonzero exit status")
@@ -298,13 +323,6 @@ class ScientificBackendEvidence:
                 and self.execution_fidelity != "TEST_INJECTED":
             raise BackendEvidenceError(
                 "TEST_INJECTED transport must carry TEST_INJECTED fidelity")
-
-    #: True only for a real supervised production execution
-    @property
-    def reusable(self) -> bool:
-        return (self.transport == EXECUTION_TRANSPORT_SUPERVISED_PROCESS
-                and self.execution_fidelity != "TEST_INJECTED"
-                and self.exit_status == 0)
 
     def scientific_payload(self) -> dict[str, Any]:
         """Everything run-stable. Attempt metadata is absent by design."""
@@ -332,6 +350,8 @@ class ScientificBackendEvidence:
             "stats": self.stats,
             "exit_status": self.exit_status,
             "transport": self.transport,
+            "build_manifest_sha256": self.build_manifest_sha256,
+            "build_recipe_version": self.build_recipe_version,
         }
 
     def evidence_id(self) -> str:
@@ -363,6 +383,7 @@ class ScientificBackendEvidence:
             "binary_size", "producer_source_revision", "producer_dirty",
             "seed", "parser_version", "execution_fidelity",
             "route_observation", "stats", "exit_status", "transport",
+            "build_manifest_sha256", "build_recipe_version",
             "evidence_id",
         }
         unknown = set(doc) - expected
@@ -404,6 +425,8 @@ class ScientificBackendEvidence:
             route_observation=doc["route_observation"],
             stats=doc["stats"], exit_status=doc["exit_status"],
             transport=doc["transport"],
+            build_manifest_sha256=doc["build_manifest_sha256"],
+            build_recipe_version=doc["build_recipe_version"],
             schema_version=doc["schema_version"])
         if evidence.evidence_id() != doc["evidence_id"]:
             raise BackendEvidenceError(
@@ -444,9 +467,10 @@ def admit_for_certified_product(
     decides qualification; call sites must not re-implement it.
 
     Requires: supervised production transport, QUALIFIED fidelity, a known
-    producer source revision, a clean (not dirty) producer and exit 0.
-    ``TEST_INJECTED``, diagnostic, dirty, unpinned and unknown-build runs
-    are refused.
+    producer source revision, a clean (not dirty) producer, exit 0, and a
+    verified build manifest + recipe bound into the evidence.
+    ``TEST_INJECTED``, diagnostic, dirty, unpinned, unknown-build and
+    unmanifested runs are refused.
     """
     if not isinstance(evidence, ScientificBackendEvidence):
         raise BackendEvidenceError(
@@ -472,6 +496,14 @@ def admit_for_certified_product(
         raise BackendEvidenceError(
             f"evidence exit_status {evidence.exit_status!r} is not 0; a "
             "failed execution cannot enter a certified product")
+    if evidence.build_manifest_sha256 is None:
+        raise BackendEvidenceError(
+            "evidence binds no build manifest; qualification cannot be "
+            "traced to a verified build — it cannot enter a certified product")
+    if evidence.build_recipe_version is None:
+        raise BackendEvidenceError(
+            "evidence binds no build recipe version; it cannot enter a "
+            "certified product")
 
 
 def verify_reusable_record(record: ExecutionRecord, *,
@@ -502,37 +534,20 @@ def verify_reusable_record(record: ExecutionRecord, *,
 
 def read_reusable_record(ref: EvidenceRef, **conditions: Any
                          ) -> ScientificBackendEvidence:
-    """Digest-verified read + full reuse gating."""
+    """Digest-verified read + schema validation + full reuse gating.
+
+    No alternate reader: the persisted bytes are verified against the
+    external ``EvidenceRef`` digest, then the document must pass the
+    canonical ``validate_evidence_document`` (which recomputes and checks
+    the embedded ``evidence_id``), then ``admit_for_certified_product``.
+    """
     data = read_verified_evidence(ref)
     evidence_doc = data.get("evidence")
     if not isinstance(evidence_doc, dict):
         raise BackendEvidenceError(
             "evidence file does not carry an evidence document")
-    evidence = ScientificBackendEvidence(
-        prepared_id=evidence_doc.get("prepared_id"),
-        profile_id=evidence_doc.get("profile_id"),
-        projection_semantics_version=evidence_doc.get(
-            "projection_semantics_version"),
-        config_sha256=evidence_doc.get("config_sha256"),
-        trace_sha256=evidence_doc.get("trace_sha256"),
-        topology_sha256=evidence_doc.get("topology_sha256"),
-        resolved_fabric_hash=evidence_doc.get("resolved_fabric_hash"),
-        physical_traffic_id=evidence_doc.get("physical_traffic_id"),
-        message_artifact_id=evidence_doc.get("message_artifact_id"),
-        binary_sha256=evidence_doc.get("binary_sha256"),
-        binary_size=evidence_doc.get("binary_size"),
-        producer_source_revision=evidence_doc.get("producer_source_revision"),
-        producer_dirty=evidence_doc.get("producer_dirty"),
-        seed=evidence_doc.get("seed"),
-        parser_version=evidence_doc.get("parser_version"),
-        execution_fidelity=evidence_doc.get("execution_fidelity"),
-        route_observation=evidence_doc.get("route_observation"),
-        stats=evidence_doc.get("stats"),
-        exit_status=evidence_doc.get("exit_status"),
-        transport=evidence_doc.get("transport"),
-        schema_version=evidence_doc.get("schema_version",
-                                        EVIDENCE_SCHEMA_VERSION),
-    )
+    validated = validate_evidence_document(evidence_doc)
+    evidence = ScientificBackendEvidence.from_dict(validated)
     return verify_reusable_record(
         ExecutionRecord(evidence=evidence,
                         attempt=ExecutionAttempt(
