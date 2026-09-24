@@ -48,9 +48,13 @@ def oracle_schedule(kind: str, k: int, b: int) -> dict[str, int]:
                 "per_rank_sent": (k - 1) * chunk,
                 "aggregate_payload": (k - 1) * b}
     if kind == "ALLGATHER":
+        # F-0006: ring ALLGATHER forwards CHUNKS of b/k (like REDUCESCATTER);
+        # the previous oracle here used the whole b and over-counted by k.
+        chunk = b // k
         return {"steps": k - 1, "message_count": k * (k - 1),
-                "message_bytes": b, "per_rank_sent": (k - 1) * b,
-                "aggregate_payload": k * (k - 1) * b}
+                "message_bytes": chunk,
+                "per_rank_sent": (k - 1) * chunk,
+                "aggregate_payload": (k - 1) * b}
     if kind == "ALLTOALL":
         chunk = b // k
         return {"steps": 1, "message_count": k * (k - 1),
@@ -75,7 +79,8 @@ def test_production_schedule_matches_independent_oracle(kind, k):
                                                                    payload)
 
 
-@pytest.mark.parametrize("kind", ("ALLREDUCE", "REDUCESCATTER", "ALLTOALL"))
+@pytest.mark.parametrize("kind", ("ALLREDUCE", "REDUCESCATTER", "ALLGATHER",
+                                  "ALLTOALL"))
 def test_non_divisible_payload_is_refused(kind):
     with pytest.raises(UnsupportedSchedule, match="requires B % k == 0"):
         collective_schedule(kind, 4, 10)
