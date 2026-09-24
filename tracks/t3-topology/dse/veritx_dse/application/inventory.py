@@ -113,11 +113,22 @@ LEDGER: tuple[dict[str, Any], ...] = (
     },
     {
         "path": "veritx_dse/application/results.py",
-        "symbol": "StudyDefinition/StudyRun + load_verified_studyrun",
-        "responsibility": "deterministic study identity vs "
-                          "execution-dependent run records",
+        "symbol": "load_verified_design",
+        "responsibility": "canonical verified design resource loading "
+                          "(recompiles the stored CompileRequest)",
         "classification": "AUTHORITATIVE",
         "replacement": "itself",
+    },
+    {
+        "path": "veritx_dse/application/results.py",
+        "symbol": "load_verified_result/attempt/experiment/comparison/"
+                  "study/studyrun",
+        "responsibility": "historical RT result-resource vocabulary "
+                          "(backend_config_hash/qualification/"
+                          "execution_transport/booksim_binary_sha256)",
+        "classification": "LEGACY_INTERNAL",
+        "replacement": "ScientificBackendEvidence + VerifiedPerformanceResult "
+                       "(canonical evidence boundary); test-only today",
     },
     {
         "path": "veritx_dse/cli/cli.py",

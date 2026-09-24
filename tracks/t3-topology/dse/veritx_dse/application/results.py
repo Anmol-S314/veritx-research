@@ -9,6 +9,25 @@ contents still produce its claimed ID:
 plus linkage and Wave-B evidence derivations. Anything else refuses
 with EVIDENCE_INVALID (corrupt store links) or NOT_FOUND. Raw
 ``store.get()`` is inspection/internal storage access only.
+
+LEGACY BOUNDARY (P0.11)
+-----------------------
+The result/attempt/comparison/study readers below
+(``load_verified_result``, ``load_verified_attempt``,
+``load_verified_experiment``, ``load_verified_comparison``,
+``load_verified_study``, ``load_verified_studyrun`` and their helpers
+``_read_attempt_record`` / ``_verify_waved_result`` / ``_verify_metrics``)
+speak the HISTORICAL RT result-resource vocabulary
+(``backend_config_hash``, ``qualification``, ``execution_transport``,
+``booksim_binary_sha256``). They are **not production-reachable**: no CLI
+or application service imports them, and the canonical production path
+persists and verifies ``ScientificBackendEvidence`` / performance results
+instead. They exist only for the legacy Wave-D/E seal tests and are
+retained until those tests migrate to the canonical evidence schema.
+
+Canonical usage is ``load_verified_design`` (used by
+``waved_resources.rebuild_verified_bundle``). Do not add a new caller of
+the legacy result readers; migrate the caller to canonical evidence.
 """
 from __future__ import annotations
 
