@@ -17,7 +17,7 @@ import math
 from dataclasses import dataclass
 
 #: hardware parameter of the canonical compile path
-#: (application/compile.py _MAX_PACKET_FLITS); declared, not imported.
+#: (compiler/orchestration.py _MAX_PACKET_FLITS); declared, not imported.
 DEFAULT_MAX_PACKET_FLITS = 8
 
 

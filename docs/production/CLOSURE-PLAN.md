@@ -11,10 +11,10 @@ item. A `BLOCKER` is release-critical: the seal is refused until closed.
 
 | id | item | mandate | status |
 |----|------|---------|--------|
-| P0.1 | Remove the second compile authority (`application/compile.py`); route `fabric_compiler.py`/`results.py`/`waved_resources.py` through the canonical service; restore `test_application_package_reaches_no_legacy_compiler` | §3, §5 | OPEN (B1) |
+| P0.1 | Remove the second compile authority (`application/compile.py`); route `fabric_compiler.py`/`results.py`/`waved_resources.py` through the canonical service; restore `test_application_package_reaches_no_legacy_compiler` | §3, §5 | **DONE** (`9eb7c2e6`, B1) |
 | P0.2 | Certificate fail-closed exception discipline + adversarial injection tests | §5.1, §5.2 | **DONE** (`8d61da35`) |
 | P0.3 | VC-assignment authoring/persistence contract: dup keys, malformed rows, non-artifact parent, JSON-list shape, artifact_hash | §5.3 | **DONE** (`a0b934b6`) |
-| P0.4 | `ScientificBackendEvidence` admissibility: closed vocabularies + cross-field invariants; self-consistent impossible documents recomputed and refused | §5.4 | OPEN (B3) |
+| P0.4 | `ScientificBackendEvidence` admissibility: closed vocabularies + cross-field invariants; self-consistent impossible documents recomputed and refused | §5.4 | **DONE** (`facf645b`) |
 | P0.5 | One producer-qualification admission rule; no duplicate `reusable` checks at call sites | §5.5 | OPEN (B3) |
 | P0.6 | Build-time manifest binding source rev + dirty + binary sha/size + compiler + recipe; execution verifies the binary against it | §5.6 | OPEN (B4) |
 | P0.7 | Seed identity: rendered → prepared_id → evidence; not overrideable at execution; search vs sim seed distinct | §5.7 | VERIFY |
@@ -23,7 +23,7 @@ item. A `BLOCKER` is release-critical: the seal is refused until closed.
 | P0.10 | Executed route realization: destination-aware next-hop observation vs resolved route; refuse to claim equivalence when unobservable | §5.10 | OPEN |
 | P0.11 | Resolve `application/results.py` (migrate or mark legacy + remove from production reachability) | §5.11 | OPEN (B2) |
 | P0.12 | Authenticated evaluation: remove stale RT vocabulary from canonical code | §5.12 | OPEN |
-| P0.13 | Exact numeric parsing: no binary float for identity-bearing clock/frequency; test `9007199254740993`, `>2^53` | §5.13 | VERIFY |
+| P0.13 | Exact numeric parsing: no binary float for identity-bearing clock/frequency; test `9007199254740993`, `>2^53` | §5.13 | **DONE** (`e7a85911`) |
 | P0.14 | Optimizer edge cases: reject empty guided domains; candidate identity uses full content hash | §5.14 | VERIFY |
 
 ## P1 — seal B4 as a permanent contract (§6)
@@ -82,18 +82,20 @@ pyramid, skip inventory, release manifest, branch retirement.
 ## Immediate next commits (this program, in order)
 
 ```text
-P0.1  remove the second compile authority
-P0.4+5 evidence admissibility + single producer admission rule
-P0.6  build-time provenance manifest
+P0.1  remove the second compile authority            [DONE 9eb7c2e6]
+P0.4  evidence admissibility + legacy reader          [DONE facf645b]
+P0.5  single producer-qualification admission rule   [NEXT]
+P0.6  build-time provenance manifest                 [NEXT]
 P0.9+10 booksim conservation + executed route realization
 P0.11 resolve application/results.py
 P1.5  full validation battery green from a clean build
 P2    durable run bundles
 P3    failure injection
 P4    concurrency/idempotency
-...
+P0.2/P0.3/P0.13                                       [DONE]
 ```
 
 The seal report `docs/production/PRODUCTION-SEAL.md` is written only when
 every seal condition in §30 is met. At present the verdict is
-**NOT READY** (P0.1, P0.4–P0.6, P0.10–P0.12 open).
+**NOT READY** (P0.5–P0.12 apart from the closed items, plus P0.14 and
+clean-clone qualification).

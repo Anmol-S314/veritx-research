@@ -119,36 +119,60 @@ were previously failing because ASTRA was unbuilt; with ASTRA built they
 execute real backend rounds (up to 600 s each), which is why the default
 run must exclude them (see `SKIP-INVENTORY.md`).
 
-### 5.3 Validation corpus pytest
+### 5.2b Fast tier AFTER all P0 closures (all three engines built)
+
+```text
+pytest tracks/t3-topology/dse/tests -q -p no:randomly -k "not real"
+3458 passed, 13 skipped, 160 deselected in 103.80s   (0 failed)
+```
+
+Closed since 5.2: legacy compiler authority, VC contract, certificate
+laundering, model duplicate, exact clock, evidence admissibility, plus
+the environment-conditional BookSim-absence proof (now a positive proof).
+Remaining risk in this tier is the 13 unexplained skips (§23 skip
+inventory) and the 160 deselected live-backend tests.
+
+### 5.3b Validation corpus pytest (all engines built)
 
 ```text
 PYTHONPATH=... pytest validation/tests -q
-15 passed, 1 failed   (ASTRA unbuilt)
 ```
 
-The single failure was the engine gate requiring the ASTRA binary
-(`test_independent_engines_pass`); `ramulator_battery` also reported
-`0/1 checks`. Re-run with ASTRA built is recorded in the closure plan.
+Baseline with ASTRA absent: `15 passed, 1 failed` (engine gate). With
+BookSim + ASTRA + Ramulator built, the engine gate itself passes:
+`validation/tests/test_engines.py` → `1 passed in 191.51s`.
 
-### 5.4 Full validation battery
+### 5.4b Backend build commands that actually work in this environment
+```bash
+cd third_party/booksim2/src && make -j$(nproc)          # -> src/booksim
+JOBS=12 bash third_party/astra-sim/build/astra_booksim2/build.sh
+cd third_party/ramulator2 && JOBS=12 ./build.sh          # NOT "bash build.sh"
+```
+
+Note: `bash third_party/ramulator2/build.sh` fails silently with exit 1
+because the script resolves its own path via `command -v "$0"` and
+`build.sh` is not on PATH. This is a reproducibility trap (P0 in the
+closure plan's reproducible-build phase).
+
+### 5.5 Full validation battery
 
 ```text
 python3 -m validation.harness.run --all --mutations --metamorphic --engines --intervention
 ```
 
-Not green at baseline (engines require ASTRA; ASTRA was unbuilt at the
-first fetch). Re-run after the ASTRA build is required before any seal.
+Pending a clean-build run. The engine gate is now green with all three
+engines built (above); the full command is the P1.5 release gate.
 
 ## 6. Known failures / skips at baseline
 
 | Item | Classification | Release-critical? |
 |------|----------------|-------------------|
-| legacy compiler reachable (`application/compile.py`) | real authority defect | yes (P0) |
-| `test_no_booksim_binary_needed_for_canonical_compile` | environment-conditional proof | no (test hygiene) |
-| 9 ASTRA-absent serving failures | fixed by building ASTRA | no |
-| `ramulator_battery` 0/1 checks | backend not built / gating | yes (engine gate) |
-| 15 skipped (fast tier) | unclassified | must inventory |
-| 160 deselected `real` tests | live backend tier, slow | structural |
+| legacy compiler reachable (`application/compile.py`) | CLOSED `9eb7c2e6` | — |
+| `test_no_booksim_binary_needed_for_canonical_compile` | CLOSED `7e7c440e` (positive proof) | — |
+| 9 ASTRA-absent serving failures | CLOSED by building ASTRA | — |
+| `ramulator_battery` 0/1 checks | CLOSED by building Ramulator | — |
+| 13 skipped (fast tier) | unclassified | must inventory (§23) |
+| 160 deselected `real` tests | live backend tier, slow | structural (§22) |
 
 ## 7. B4 validation result at baseline
 

@@ -48,24 +48,14 @@ Rule enforced by this map:
 
 ## Known second-authority / legacy blockers
 
-### B1 — `application/compile.py` is a second compile authority (P0)
+### B1 — second compile authority removed (CLOSED)
 
-`application/compile.py` defines `compile_bundle` / `compile_bundle_v3`
-and is imported by `application/fabric_compiler.py`,
-`application/results.py` and `application/waved_resources.py`. The
-canonical control plane is `application/service.py`
-(`SrotaControlPlane`) built on `application/compile_intent.py`. The test
-`test_application_service.py::test_application_package_reaches_no_legacy_compiler`
-asserts `compile.py` does not exist and that no `application/*.py`
-mentions `compile_bundle`, `derive_route`, `derive_vc_assignment`,
-`derive_vc_count`, `FabricPreset` or `p4/studio`.
-
-Resolution (planned P0.1): move the orchestration body into a
-non-application module (`veritx_dse/compiler/`), delete
-`application/compile.py`, and route the three callers through the
-canonical service surface with a name that does not collide with the
-forbidden tokens. Behavioural equivalence must be pinned by the existing
-compile tests.
+Resolved by `9eb7c2e6`: `application/compile.py` was deleted and its
+orchestration moved to `veritx_dse/compiler/orchestration.py` as
+`build_resolved_bundle` / `build_resolved_bundle_v3`; the three callers
+now import from the compiler package. `FabricPreset` was renamed to
+`Preset`. The canonical control plane remains
+`application/service.py` (SrotaControlPlane).
 
 ### B2 — `application/results.py` persists RT-vocabulary resources (P0, §5.11)
 
