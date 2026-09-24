@@ -38,13 +38,13 @@ Rule enforced by this map:
 | prepared backend input | `backend.booksim_projection.PreparedBookSimInput` | 2 | projection | `from_dict` | id recompute | canonical JSON + config/trace | none | yes | canonical |
 | backend evidence (scientific) | `backend.evidence.ScientificBackendEvidence` | 1 | execution | `ScientificBackendEvidence.from_dict` | closed fields + id recompute | canonical JSON | legacy unversioned v1 via `validate_evidence_document` | yes | canonical; admissibility incomplete (P0.4) |
 | backend evidence (artifact) | `backend.evidence.EvidenceArtifact` | 1 | M1.4 | `from_dict` | id recompute | canonical JSON | v1 label ordering preserved | yes | VERIFY vs ScientificBackendEvidence |
-| RT certified evidence | `backend.booksim.CertifiedBookSimEvidence` | — | RT | — | `to_dict` coerces | none | **legacy vocabulary** | BLOCKER: reachable via `application/results.py` | legacy |
-| performance result | `performance.result` | 1 | performance | `from_dict` | VERIFY | canonical JSON | `application/results.py` (RT vocabulary) | yes | BLOCKER (§5.11) |
+| RT certified evidence | `backend.booksim.CertifiedBookSimEvidence` | — | RT | — | `to_dict` coerces | none | **legacy vocabulary** | not production-reachable (test-only readers in `application/results.py`) | legacy |
+| performance result | `performance.result` | 1 | performance | `from_dict` | VERIFY | canonical JSON | RT readers in `application/results.py` (legacy, test-only) | yes | canonical production path |
 | optimization definition | `optimization.definition` | VERIFY | optimizer | `from_dict` | `OptimizationDefinitionError` | canonical JSON | none | yes | canonical |
 | optimization result | `optimization.result` | VERIFY | optimizer | `from_dict` | VERIFY | canonical JSON | none | yes | canonical |
-| backend producer identity | `backend.producer.resolve_producer_identity` | — | producer | — | `ProducerIdentity` | in-memory + evidence fields | none | yes | **no build manifest** (P0.6) |
-| build provenance | — | — | — | — | — | none | — | yes | BLOCKER: ambient git HEAD only |
-| run bundle | `core.runs` (`new_run_dir`) | — | CLI | — | none | timestamped dir | — | yes | BLOCKER: not content-addressed/atomic |
+| backend producer identity | `backend.producer.resolve_producer_identity` | — | producer | — | `ProducerIdentity` | in-memory + evidence fields | none | yes | canonical |
+| build provenance | `core.build_manifest.BuildManifest` | 1 | build (`make release-manifest`) | `load_and_verify_manifest` | sha256/size + recipe | canonical JSON beside binary | none | yes | canonical |
+| run bundle | `core.runs` (`new_run_dir`) | — | CLI | — | none | timestamped dir | — | yes | BLOCKER B5: not content-addressed/atomic |
 
 ## Known second-authority / legacy blockers
 
@@ -57,52 +57,58 @@ now import from the compiler package. `FabricPreset` was renamed to
 `Preset`. The canonical control plane remains
 `application/service.py` (SrotaControlPlane).
 
-### B2 — `application/results.py` persists RT-vocabulary resources (P0, §5.11)
+### B2 — `application/results.py` RT vocabulary (CLOSED as option B)
 
-`load_verified_result` / `load_verified_design` read resources with
-legacy field aliases (`backend_config_hash`, `qualification`,
-`execution_transport`, `booksim_binary_sha256`). It is reachable from
-`application/waved_resources.py` (production) and is exercised by
-`test_wave_d_seal.py`. Resolution: either migrate to
-`ScientificBackendEvidence` with versioned persistence and
-write→reload→verify tests, or mark it legacy and remove it from
-production reachability. Must not keep stale aliases in canonical code.
+The canonical design loader `load_verified_design` is authoritative and
+production-used. The historical RT-vocabulary result/attempt/comparison/
+study readers are marked LEGACY, are not production-reachable (no CLI or
+service imports them), and the capability inventory was split accordingly
+(`c78e54af`). A guard test enforces that no production module imports or
+calls them. Migration of the Wave-D/E seal tests to canonical evidence is
+the remaining cleanup.
 
-### B3 — `ScientificBackendEvidence` admissibility is content-only (P0, §5.4/§5.5)
+### B3 — evidence admissibility and producer qualification (CLOSED)
 
-The class enforces closed fields, `evidence_id` recompute, finite stats
-and exact ints. It does NOT yet enforce closed vocabularies for
-`execution_fidelity`, `transport`, `route_observation`, or family-specific
-cross-field invariants on `producer_source_revision` / `producer_dirty` /
-`profile_id` / `projection_semantics_version`. Producer qualification
-(`transport == SUPERVISED_PROCESS`, `execution_fidelity == QUALIFIED`,
-revision present, not dirty, exit 0) is split between the `reusable`
-property and `verify_reusable_record`. One function must own it.
+Closed by `facf645b` (closed vocabularies + impossible-combination
+refusal + restored legacy v1 reader) and `978a38ed` (one
+`admit_for_certified_product` rule: supervised transport, QUALIFIED
+fidelity, known revision, clean producer, exit 0).
 
-### B4 — build provenance is ambient (P0, §5.6)
+### B4 — build provenance (CLOSED)
 
-`resolve_producer_identity` hashes the binary and reads live git HEAD.
-The counterexample (build at A, checkout B, binary untouched, clean tree
-→ binary attributed to B) is NOT detected. A build-time manifest binding
-source revision + dirty state + binary sha + size + compiler + recipe
-version is owed.
+Closed by `43f55d94`: `core/build_manifest.py` binds the build-time source
+revision + dirty state + binary sha/size + compiler + flags + recipe; the
+binary is verified against the manifest at resolve time, so the A→B
+counterexample is detected and a manifest-less binary is never pinned.
+`make release-build` generates manifests.
 
-### B5 — run bundles are timestamped temp directories (P0, §7)
+### B5 — run bundles are timestamped temp directories (OPEN)
 
 `core.paths.new_run_dir` and `core.runs` create timestamped directories.
 They are not content-addressed, not atomic, and cannot be independently
 re-verified. `veritx reproduce` / `veritx verify-run` do not exist.
+This is the P2 phase.
 
 ### B6 — `CompileRequest`/`migrate_design` duplicate (CLOSED)
 
 Resolved by `8c32ccc2`: the shadow copy from `a5b806fe` was removed and
 the canonical (dependency-canonicalizing) definition is live.
 
-### B7 — semantic-error taxonomy is ValueError-rooted (VERIFY, §5.1)
+### B7 — semantic-error taxonomy is ValueError-rooted (OPEN, residual)
 
-The certificate boundary now catches `(ValueError, VeritXError)` as the
-declared semantic taxonomy and aborts on everything else. A programmer
-fault raised as a bare `ValueError` would still be laundered into a
-verdict. Eliminating that residual risk means introducing one
+The certificate and compiler boundaries catch `(ValueError, VeritXError)`
+as the declared semantic taxonomy and abort on everything else, so the
+mandate's injected faults (RuntimeError/AttributeError/NameError/TypeError)
+propagate. A programmer fault raised as a bare `ValueError` would still be
+laundered into a verdict. Closing this means introducing one
 `SemanticError` base in `core.errors` and re-parenting the ~30
-`*Error(ValueError)` classes. Recorded, not yet done.
+`*Error(ValueError)` classes so the boundaries catch the base only.
+
+### B8 — executed route realization is not observed (OPEN, honest)
+
+The vendored fork emits a first-hop route dump (`routing_dump_file`), but
+the canonical execution does not yet render it and compare it against the
+resolved route, so evidence honestly records
+`DOMAIN_QUALIFIED_ROUTE_NOT_OBSERVED`. No profile claims observed route
+equivalence. Implementing exact destination-aware observation (coverage,
+first-hop equality, adjacency, routing class) is the remaining work.

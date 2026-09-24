@@ -123,14 +123,16 @@ run must exclude them (see `SKIP-INVENTORY.md`).
 
 ```text
 pytest tracks/t3-topology/dse/tests -q -p no:randomly -k "not real"
-3458 passed, 13 skipped, 160 deselected in 103.80s   (0 failed)
+3489 passed, 13 skipped, 160 deselected in 102.24s   (0 failed)
 ```
 
 Closed since 5.2: legacy compiler authority, VC contract, certificate
-laundering, model duplicate, exact clock, evidence admissibility, plus
-the environment-conditional BookSim-absence proof (now a positive proof).
-Remaining risk in this tier is the 13 unexplained skips (§23 skip
-inventory) and the 160 deselected live-backend tests.
+laundering, model duplicate, exact clock, evidence admissibility, the
+producer admission rule, build-time provenance manifest, seed/projection
+closure, BookSim conservation, results.py legacy boundary, authenticated
+evaluation vocabulary, optimizer identity, and the environment-conditional
+BookSim-absence proof. Remaining risk in this tier is the 13 classified
+skips (`SKIP-INVENTORY.md`) and the 160 deselected live-backend tests.
 
 ### 5.3b Validation corpus pytest (all engines built)
 
@@ -161,8 +163,8 @@ closure plan's reproducible-build phase).
 python3 -m validation.harness.run --all --mutations --metamorphic --engines --intervention
 ```
 
-Result: **72/72 checks exact, 0 quarantined**. V01–V10 PASS, mutations
-M1–M8 CAUGHT, metamorphic M1–M8 PASS, F-0003 SUPPORTED, engine gates:
+Result (re-run after the P0 closures): V01–V10 **PASS**, mutations M1–M8
+**CAUGHT**, metamorphic M1–M8 **PASS**, F-0003 SUPPORTED, engine gates:
 
 ```text
 ramulator_battery  PASS  established      16/16 checks
@@ -171,14 +173,13 @@ astra_runtime      PASS  NOT_ESTABLISHED  executes; aggregate/exposed_comm unexp
 ```
 
 ASTRA numerical validity remains explicitly NOT_ESTABLISHED and is
-excluded from scientific comparison. The generated report files
-(`validation/reports/*.json`, `ENGINES.md`, `MUTATIONS.md`) differ from
-the committed B4 freeze only in run-varying metadata (wall time, local
-binary SHA, ephemeral scratch paths), so they were **not** committed —
-committing them would put untracked-run provenance into tracked evidence.
-Finding: the harness embeds the run's temp directory path in report text;
-that should be normalized before reports are used as durable evidence
-(§7).
+excluded from scientific comparison. The generated report files differ
+from the committed B4 freeze only in run-varying metadata (wall time,
+local binary SHA, ephemeral scratch paths) and the P0.9 schema bump to
+``PreparedBookSimInput`` (which moves prepared ids), so they were **not**
+committed. Finding: the harness embeds the run's temp directory path in
+report text; that should be normalized before reports are used as durable
+evidence (§7).
 
 ## 6. Known failures / skips at baseline
 
