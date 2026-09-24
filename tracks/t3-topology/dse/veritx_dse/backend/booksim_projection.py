@@ -841,6 +841,12 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
         raise BookSimProjectionError(
             f"rendered config is missing required profile fields "
             f"{sorted(missing)} for {profile.profile_id}")
+    undeclared = set(rendered) - profile.known_names()
+    if undeclared:
+        raise BookSimProjectionError(
+            f"rendered config carries fields outside the audited profile "
+            f"surface {sorted(undeclared)} for {profile.profile_id}: an "
+            "undeclared simulation-relevant value is never emitted")
     for name, pin in profile.pinned_values().items():
         if rendered.get(name) != _format_value(pin):
             raise BookSimProjectionError(
