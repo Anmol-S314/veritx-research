@@ -36,7 +36,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from veritx_dse.backend.booksim_projection import (
-    CONFIG_FILE, TOPOLOGY_FILE, TRACE_FILE, PreparedBookSimInput,
+    CONFIG_FILE, ROUTE_DUMP_FILE, TOPOLOGY_FILE, TRACE_FILE,
+    PreparedBookSimInput,
 )
 from veritx_dse.backend.evidence import (
     EVIDENCE_SCHEMA_VERSION, EXECUTION_TRANSPORT_SUPERVISED_PROCESS,
@@ -454,6 +455,34 @@ def execute_prepared_booksim(
         require_conservation=(
             transport != EXECUTION_TRANSPORT_TEST_INJECTED))
 
+    # ── executed route realization (P0.10) ─────────────────────────────
+    # A supervised certified run must emit the fork's first-hop dump and
+    # realize exactly the canonical route. The dump is compared against the
+    # expectation bound into the prepared input, so no second authority is
+    # consulted at execution time.
+    route_observation = ROUTE_OBSERVATION_QUALIFIED_ONLY
+    route_dump_sha256: str | None = None
+    if transport != EXECUTION_TRANSPORT_TEST_INJECTED \
+            and prepared.expected_route_rows:
+        dump_path = Path(run_dir) / ROUTE_DUMP_FILE
+        try:
+            dump_text = dump_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise BookSimExecutionError(
+                f"executed route dump missing at {dump_path} ({exc}); the "
+                "certified profile requires executed-route evidence") from exc
+        from veritx_dse.backend.route_observation import (
+            RouteObservationError, compare_route_realization,
+        )
+        try:
+            compare_route_realization(
+                expected_rows=prepared.expected_route_rows,
+                dump_text=dump_text)
+        except RouteObservationError as exc:
+            raise BookSimExecutionError(str(exc)) from exc
+        route_observation = ROUTE_OBSERVATION_OBSERVED
+        route_dump_sha256 = hashlib.sha256(dump_text.encode()).hexdigest()
+
     evidence = ScientificBackendEvidence(
         prepared_id=prepared.prepared_id(),
         profile_id=prepared.profile_id,
@@ -471,14 +500,13 @@ def execute_prepared_booksim(
         seed=seed,
         parser_version=PARSER_VERSION,
         execution_fidelity=fidelity,
-        # the current fork has no route-dump hook: qualification yes,
-        # runtime route observation NO
-        route_observation=ROUTE_OBSERVATION_QUALIFIED_ONLY,
+        route_observation=route_observation,
         stats=stats,
         exit_status=outcome.returncode,
         transport=transport,
         build_manifest_sha256=identity.build_manifest_sha256,
         build_recipe_version=identity.build_recipe_version,
+        route_dump_sha256=route_dump_sha256,
         schema_version=EVIDENCE_SCHEMA_VERSION,
     )
     attempt = ExecutionAttempt(

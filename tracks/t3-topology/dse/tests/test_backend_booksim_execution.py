@@ -434,7 +434,10 @@ def test_real_native_mesh_execution_gate(tmp_path):
     injected = evidence.stats["injected_trace_packets"]
     assert injected in (None, prepared.expected_packets)
     assert evidence.stats["completion_cycles"] > 0
-    assert evidence.route_observation == bx.ROUTE_OBSERVATION_QUALIFIED_ONLY
+    # P0.10: a supervised certified run now OBSERVES the executed first-hop
+    # realization and binds the dump digest.
+    assert evidence.route_observation == bx.ROUTE_OBSERVATION_OBSERVED
+    assert evidence.route_dump_sha256 is not None
     assert evidence.to_dict()["evidence_id"] == evidence.evidence_id()
     print(f"\nmesh prepared_id={prepared.prepared_id()[:20]} "
           f"binary={evidence.binary_sha256[:20]} "
@@ -455,6 +458,9 @@ def test_real_anynet_execution_gate(tmp_path):
     assert record.evidence.stats["loaded_trace_packets"] \
         == prepared.expected_packets
     assert record.evidence.stats["completion_cycles"] > 0
+    assert record.evidence.route_observation \
+        == bx.ROUTE_OBSERVATION_OBSERVED
+    assert record.evidence.route_dump_sha256 is not None
     print(f"\nanynet completion="
           f"{record.evidence.stats['completion_cycles']} "
           f"latency={record.evidence.stats['packet_latency_avg']}")

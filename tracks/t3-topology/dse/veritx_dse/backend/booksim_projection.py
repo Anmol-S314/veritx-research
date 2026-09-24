@@ -61,7 +61,11 @@ from veritx_dse.workload.traffic import PhysicalTrafficArtifactV2
 #: v3: the prepared identity also binds ``expected_flits``, so the
 #: execution gate can enforce the fork's flit-injected == flit-accepted ==
 #: expected conservation law instead of only packet count.
-BOOKSIM_PROJECTION_SCHEMA_VERSION = 3
+#: v4: the prepared identity binds the canonical first-hop route table
+#: (``expected_route_rows``) and renders the route-dump path, so execution
+#: can prove the EXECUTED route realization rather than only qualify it
+#: statically (P0.10).
+BOOKSIM_PROJECTION_SCHEMA_VERSION = 4
 
 _MESH_DOR_PROFILE_ID = "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1"
 _MESH_DOR_SEMANTICS_VERSION = "booksim2-fork+P1B-meshdor-dump+prepared-v2"
@@ -581,7 +585,7 @@ def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
         values.update({
             "topology": "anynet", "network_file": TOPOLOGY_FILE,
             "routing_function": _ANYNET_ROUTING_FUNCTION,
-            "routing_dump_file": "",
+            "routing_dump_file": ROUTE_DUMP_FILE,
             "num_vcs": parents.vc_resource.vc_count,
         })
     else:
@@ -746,6 +750,10 @@ class PreparedBookSimInput:
     #: total flits the trace declares (bound so flit conservation can be
     #: checked against the fork's emitted injected/accepted counters).
     expected_flits: int = 0
+    #: canonical first-hop expectation: (src_router, node, next_router)
+    #: rows over the execution node universe. Bound so execution can prove
+    #: the executed route realization (P0.10).
+    expected_route_rows: tuple[tuple[int, int, int], ...] = ()
     #: the executed BookSim seed: a per-run simulation input, so it is part
     #: of the prepared identity (reseal audit) and rendered into the config.
     seed: int = 0
@@ -775,6 +783,7 @@ class PreparedBookSimInput:
             "max_samples": self.max_samples,
             "expected_packets": self.expected_packets,
             "expected_flits": self.expected_flits,
+            "expected_route_rows": [list(r) for r in self.expected_route_rows],
             "seed": self.seed,
             "config_sha256": content_hash("srota/PreparedBookSimConfig", 1,
                                           {"text": self.config_text}),
@@ -830,7 +839,10 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
         raise BookSimProjectionError("seed must be a non-negative int")
     profile = select_booksim_profile(parents)
     conservation = verify_trace_conservation(parents.physical_traffic)
-    config = render_config(parents, profile, seed=seed)
+    # include_optional renders the route-dump path: the executed first-hop
+    # realization is required evidence (P0.10), so it is not optional for a
+    # certified prepared input.
+    config = render_config(parents, profile, include_optional=True, seed=seed)
     rendered = parse_config_values(config.decode())
     # Every REQUIRED rendered field must appear (a required pin silently
     # vanishing from the render is itself a projection defect — the old
@@ -856,6 +868,21 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
                      if profile.profile_id == _ANYNET_PROFILE_ID else None)
     pt = parents.physical_traffic
     schedule = trace_schedule(pt)
+    # Canonical executed-route expectation. mesh-DOR addresses every router
+    # as a node (native mesh node n <-> router n); AnyNet addresses the
+    # attached endpoint nodes.
+    from veritx_dse.backend.route_observation import expected_route_rows
+    if profile.profile_id == _MESH_DOR_PROFILE_ID:
+        routing_class = DOR_XY
+        node_to_router = {n: n
+                          for n in range(parents.topology.router_count)}
+    else:
+        routing_class = ANYNET_MIN_HOPS
+        node_to_router = {e.endpoint_id: e.router_id
+                          for e in parents.attachment.endpoints}
+    route_rows = expected_route_rows(
+        routing_class=routing_class, topology=parents.topology,
+        route=parents.route, node_to_router=node_to_router)
     return PreparedBookSimInput(
         profile_id=profile.profile_id,
         semantics_version=profile.semantics_version,
@@ -880,6 +907,7 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
         max_samples=int(rendered["max_samples"]),
         expected_packets=schedule["expected_packets"],
         expected_flits=conservation["flits_total"],
+        expected_route_rows=route_rows,
         seed=seed)
 
 

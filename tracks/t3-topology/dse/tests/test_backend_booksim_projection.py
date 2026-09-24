@@ -452,13 +452,19 @@ def test_source_audit_observes_real_reads_and_rejects_drift(tmp_path):
         source_audit.scan_config_reads(tmp_path / "absent")
 
 
-def test_optional_dump_field_is_never_emitted_by_default():
+def test_route_dump_field_is_rendered_for_executed_route_evidence():
+    """P0.10: the certified prepared input renders the route-dump path so
+    the executed first-hop realization can be compared (relative path, so
+    identity stays path-independent)."""
     _, parents = _parents()
     prepared = bp.prepare_booksim_input(parents)
-    assert "routing_dump_file" not in prepared.config_text
+    assert bp.parse_config_values(prepared.config_text)["routing_dump_file"] \
+        == bp.ROUTE_DUMP_FILE
+    assert "/" not in bp.ROUTE_DUMP_FILE
     _, other = _parents(family=TopologyFamily.CONCENTRATED_MESH, anynet=True)
-    assert "routing_dump_file" not in \
-        bp.prepare_booksim_input(other).config_text
+    assert bp.parse_config_values(
+        bp.prepare_booksim_input(other).config_text)["routing_dump_file"] \
+        == bp.ROUTE_DUMP_FILE
 
 
 # ── Slice-31 correction: trace binding, convergence, AnyNet semantics ──────

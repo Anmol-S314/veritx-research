@@ -37,7 +37,10 @@ EVIDENCE_FILE = "backend-evidence.json"
 #: ``build_recipe_version``. A v1 document cannot prove which manifest (or
 #: recipe) qualified its binary, so the generations are declared
 #: incompatible: v1 is refused, never silently reread as v2.
-EVIDENCE_SCHEMA_VERSION = 2
+#: v3: binds ``route_dump_sha256`` — the exact executed first-hop dump the
+#: route realization was compared against (P0.10). OBSERVED without it is
+#: impossible.
+EVIDENCE_SCHEMA_VERSION = 3
 #: parser generation (independent of the evidence-schema generation)
 PARSER_VERSION = "veritx/booksim-stats-parser/v2"
 LEGACY_PARSER_VERSION = "veritx/evidence-parser/v0-unversioned"
@@ -253,6 +256,9 @@ class ScientificBackendEvidence:
     #: evidence cannot prove WHICH manifest established qualification.
     build_manifest_sha256: str | None = None
     build_recipe_version: str | None = None
+    #: digest of the exact executed route dump the first-hop realization
+    #: was compared against (required iff route_observation is OBSERVED).
+    route_dump_sha256: str | None = None
     schema_version: int = EVIDENCE_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
@@ -300,6 +306,13 @@ class ScientificBackendEvidence:
         if self.route_observation not in ROUTE_OBSERVATIONS:
             raise BackendEvidenceError(
                 f"unknown route_observation {self.route_observation!r}")
+        if self.route_dump_sha256 is not None:
+            require_hex64(self.route_dump_sha256, "route_dump_sha256")
+        if self.route_observation == "EXECUTED_ROUTE_OBSERVED" \
+                and self.route_dump_sha256 is None:
+            raise BackendEvidenceError(
+                "EXECUTED_ROUTE_OBSERVED requires the executed route dump "
+                "digest (route_dump_sha256)")
         if self.producer_dirty is not None \
                 and not isinstance(self.producer_dirty, bool):
             raise BackendEvidenceError(
@@ -352,6 +365,7 @@ class ScientificBackendEvidence:
             "transport": self.transport,
             "build_manifest_sha256": self.build_manifest_sha256,
             "build_recipe_version": self.build_recipe_version,
+            "route_dump_sha256": self.route_dump_sha256,
         }
 
     def evidence_id(self) -> str:
@@ -384,6 +398,7 @@ class ScientificBackendEvidence:
             "seed", "parser_version", "execution_fidelity",
             "route_observation", "stats", "exit_status", "transport",
             "build_manifest_sha256", "build_recipe_version",
+            "route_dump_sha256",
             "evidence_id",
         }
         unknown = set(doc) - expected
@@ -427,6 +442,7 @@ class ScientificBackendEvidence:
             transport=doc["transport"],
             build_manifest_sha256=doc["build_manifest_sha256"],
             build_recipe_version=doc["build_recipe_version"],
+            route_dump_sha256=doc["route_dump_sha256"],
             schema_version=doc["schema_version"])
         if evidence.evidence_id() != doc["evidence_id"]:
             raise BackendEvidenceError(
