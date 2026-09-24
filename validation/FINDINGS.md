@@ -134,8 +134,10 @@ BookSim's `Hops average`, so no product value is affected.
 
 ## F-0003 — collective completion is injection-schedule-bound
 
-**Status:** SUPPORTED BY INTERVENTION (low-pressure regime only);
-network claim quarantined by F-0004
+**Status:** SUPPORTED (measured, low-pressure regime); the intervention
+figures below were run on the pre-F-0004 offset-exchange trace and are
+retained as `SUPPORTED_FOR_F0004_QUARANTINED_TRACE`; the corrected-trace
+rerun is recorded at the end of this section
 **Severity:** medium — limits what `completion_cycles` can rank
 **Found:** 2026-09-24, during experiments V09/V10; intervention added
 in the adversarial-hardening pass
@@ -192,72 +194,87 @@ For workloads below the injection rate, `Optimizer`'s
 `workload_lowering_conservation` independently validates the packet
 count via the ring oracle, so at least that part is a checked quantity.
 
----
-
-## F-0004 — the collective labelled `RING` is a complete directed exchange, not a ring
-
-**Status:** OPEN — HIGH (network-performance claims quarantined)
-**Severity:** high — invalidates the topology traffic of every ALLREDUCE
-network claim until resolved
-**Found:** 2026-09-24, by external audit of `1a6e4761`
-
-### What is wrong
-
-Production declares the ALLREDUCE algorithm as `RING`
-(`workload/messages.py` `SCHEDULES`, `workload/operations.py`), but
-`_collective_triples()` builds a complete directed exchange:
-
-```python
-for step in range(ref["steps"]):        # 2(k-1) steps
-    off = step % (k - 1) + 1            # offsets 1..k-1, cycling
-    for i in range(k):
-        triples.append((step, i, (i + off) % k))
-```
-
-A ring reduce-scatter/all-gather moves data only between logical
-neighbours `i -> (i+1) mod k`, with the chunk ownership rotating. The
-offset scheme above sends every rank to every other rank, so the
-communication graph is not a ring.
-
-### Measured
+### Corrected-trace rerun (after F-0004 repair)
 
 ```text
-V09 k=4 : 12 distinct directed pairs (all pairs), only 4 are ring
-          neighbours; 8 non-neighbour pairs; each pair used twice
-V02 k=16: 240 distinct directed pairs, only 16 are ring neighbours;
-          224 non-neighbour pairs
+schedule       spacing   horizon   completion   drain
+per_cycle            1       959         1006      47
+half_rate            2      1918         1964      46
+quarter_rate         4      3836         3880      44
+eighth_rate          8      7672         7712      40
 ```
 
-The counts are identical to a ring (`2(k-1)` steps, `2k(k-1)` messages,
-`2(k-1)B` bytes) — which is exactly why the count oracle agreed. On a
-4x4 row-major mesh the two graphs have very different hop distributions
-(ring: neighbour links only; this: all-pairs, ~2.667 mean Manhattan vs
-~1.875 for a logical ring), hence different link utilisation, hotspots,
-contention and completion.
+The ring trace supports the same conclusion with a larger, but still
+load-independent, drain (40–47 cycles). Retention is unchanged.
 
-### Why B4 missed it
+---
 
-`validation/harness/oracle.py` validated message count, total bytes,
-packet count and flit count, but never `(step, src, dst)`. Worse, the
-existing `verification/reference_semantics.py::ref_collective_messages()`
-uses the same offset scheme, so calling either "independent" would have
-been circular. The corpus now adds `collective_graph_conformance`
-(ring-neighbour pair multiset, no `veritx_dse` import), which fails on
-the current lowering.
+## F-0004 — the collective labelled `RING` was a complete directed exchange, not a ring
+
+**Status:** FIXED (production schedule repaired; old numbers preserved below)
+**Severity:** high — invalidated the topology traffic of every ALLREDUCE
+network claim until repaired
+**Found:** 2026-09-24, by external audit of `1a6e4761`
+
+### What was wrong
+
+Production declared the ALLREDUCE algorithm as `RING`
+(`workload/messages.py` `SCHEDULES`), but `_collective_triples()` built a
+complete directed exchange with `off = step % (k - 1) + 1`, so every rank
+talked to every other rank. `verification/reference_semantics.py`
+repeated the same offset scheme, so the "independent" reference agreed
+with the defect.
+
+Measured (pre-fix):
+
+```text
+V09 k=4 : 12 distinct directed pairs (all pairs), only 4 ring neighbours
+          -> exactly 8 non-neighbour pairs
+V02 k=16: 240 distinct directed pairs, only 16 ring neighbours
+          -> exactly 224 non-neighbour pairs
+```
+
+Counts were identical to a ring (`2(k-1)` steps, `2k(k-1)` messages,
+`2(k-1)B` bytes), which is why the arithmetic oracle agreed: it never
+checked `(src, dst)`.
+
+### Fix
+
+- `workload/messages.py::_collective_triples` now emits neighbour edges:
+  every step, rank `i` sends to `(i+1) % k`; the chunk rotates, the edge
+  does not.
+- `verification/reference_semantics.py::ref_collective_messages` was
+  re-derived independently from the ring law (explicit reduce-scatter then
+  all-gather phases), not copied from production.
+- `validation/harness/oracle.py::collective_graph_report` checks the whole
+  ring law (steps, k sends and k receives per step, `dst == next neighbour`,
+  no non-neighbour pairs, `chunk == B/k`, message/aggregate counts, two
+  phases). `validation/harness/compare.py` runs it as
+  `collective_graph_conformance`; `validation/tests/test_collective_graph.py`
+  pins that the old offset exchange fails with exactly 8 / 224.
+- `BOOKSIM_PROJECTION_SCHEMA_VERSION` 1→2 (see below) and the collective
+  and `PreparedBookSimInput` identities regenerate.
+
+### Old vs new (preserved)
+
+```text
+                     OLD offset exchange   FIXED ring
+V02 k=16  avg hops         2.667              1.875
+          completion        990               1006
+          packets           960                960
+          flits            4800               4800
+V09 k=4   avg hops         1.333              1.500
+          completion         39                 40
+```
+
+Counts are unchanged (as predicted). The ring has SHORTER average hops
+yet a HIGHER completion: concentrating all traffic on k neighbour edges
+creates hotspots the all-pairs schedule avoided. That delta is the
+scientific consequence of F-0004.
 
 ### Consequence
 
-Network-performance claims are **withdrawn/quarantined** for V02, V04,
-V09, V10 and F-0003. Their conservation/count/oracle checks remain
-valid and useful.
-
-### Resolution (product decision, not a harness change)
-
-- **A. RING means ring.** Change the schedule so each rank communicates
-  with its fixed logical neighbour per step and track the rotating chunk
-  separately.
-- **B. The exchange schedule is intentional.** Stop calling it `RING`;
-  give it an accurate identity (e.g. a direct permutation exchange) so
-  its topology sensitivity is not read as ring ALLREDUCE.
-
-Rerun V02/V04/V09/V10 and the F-0003 intervention after either choice.
+Network-performance claims were quarantined for V02/V04/V09/V10 while the
+graph was non-conformant; with the graph repaired the quarantine is
+automatically lifted (`network_claims_quarantined` withdraws claims only
+while `collective_graph_conformance` fails).

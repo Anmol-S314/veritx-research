@@ -13,17 +13,17 @@
   "veritx": {
     "packets": 24,
     "flits": 24,
-    "completion_cycles": 39,
+    "completion_cycles": 40,
     "sample_window_cycles": 1024,
-    "canonical_hops_avg": 1.3333333333333333
+    "canonical_hops_avg": 1.5
   },
   "authority": {
     "class": "standalone_booksim",
-    "completion_cycles": 39,
+    "completion_cycles": 40,
     "sample_window_cycles": 2024,
     "injected_flits": 24,
     "accepted_flits": 24,
-    "hops_avg": 2.33333
+    "hops_avg": 2.5
   },
   "checks": [
     {
@@ -67,65 +67,51 @@
       "name": "collective_graph_conformance",
       "authority_class": "ring_oracle",
       "independence": "independent_oracle",
-      "verdict": "mismatch",
-      "detail": "8 non-neighbour pairs used (e.g. ['0->2', '0->3', '1->0']); the communication graph is NOT a ring",
+      "verdict": "exact",
+      "detail": "ring law holds: neighbour edges only, k sends and k receives per step, chunk = B/k, two phases",
       "values": {
-        "ring_pairs": {
-          "0->1": 6,
-          "1->2": 6,
-          "2->3": 6,
-          "3->0": 6
+        "kind": "ALLREDUCE",
+        "ranks": 4,
+        "payload_bytes": 8,
+        "steps": 6,
+        "messages": 24,
+        "chunk_bytes": 2,
+        "aggregate_bytes": 48,
+        "checks": {
+          "steps_match": true,
+          "message_count_match": true,
+          "every_step_has_k_messages": true,
+          "every_rank_sends_once_per_step": true,
+          "every_rank_receives_once_per_step": true,
+          "dst_is_next_ring_neighbour": true,
+          "no_self_messages": true,
+          "chunk_bytes_match": true,
+          "aggregate_bytes_match": true,
+          "no_non_neighbour_pairs": true,
+          "two_phases_present": true
         },
-        "extra_non_neighbour_pairs": {
-          "0->2": 2,
-          "1->3": 2,
-          "2->0": 2,
-          "3->1": 2,
-          "0->3": 2,
-          "1->0": 2,
-          "2->1": 2,
-          "3->2": 2
-        },
-        "missing_neighbour_pairs": {},
-        "wrong_multiplicity": {
-          "0->1": [
-            2,
-            6
-          ],
-          "1->2": [
-            2,
-            6
-          ],
-          "2->3": [
-            2,
-            6
-          ],
-          "3->0": [
-            2,
-            6
-          ]
-        },
-        "conforms": false,
-        "observed_distinct_pairs": 12,
-        "ring_distinct_pairs": 4
+        "conforms": true,
+        "problems": [],
+        "extra_non_neighbour_pairs": {},
+        "observed_distinct_pairs": 4
       },
-      "quarantined": true,
-      "finding": "F-0004"
+      "quarantined": false,
+      "finding": null
     },
     {
       "name": "standalone_parity",
       "authority_class": "standalone_booksim",
       "independence": "semi_independent_shared_engine",
       "verdict": "exact",
-      "detail": "VERITX completion 39 == authority 39",
+      "detail": "VERITX completion 40 == authority 40",
       "values": {
-        "veritx_completion": 39,
-        "authority_completion": 39,
+        "veritx_completion": 40,
+        "authority_completion": 40,
         "veritx_window": 1024,
         "authority_window": 2024
       },
-      "quarantined": true,
-      "finding": "F-0004"
+      "quarantined": false,
+      "finding": null
     },
     {
       "name": "rtl_execution_conservation",
@@ -147,19 +133,18 @@
       "authority_class": "rtl_calibrated",
       "independence": "calibrated_cross_engine",
       "verdict": "exact",
-      "detail": "RTL completion 39 == canonical completion 39",
+      "detail": "RTL completion 40 == canonical completion 40",
       "values": {
-        "veritx_completion": 39,
-        "rtl_completion": 39,
+        "veritx_completion": 40,
+        "rtl_completion": 40,
         "tolerance": 0,
         "delta": 0
       },
-      "quarantined": true,
-      "finding": "F-0004"
+      "quarantined": false,
+      "finding": null
     }
   ],
+  "status": "PASS",
   "passed": true,
-  "quarantined_findings": [
-    "F-0004"
-  ]
+  "quarantined_findings": []
 }

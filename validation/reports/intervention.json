@@ -2,40 +2,40 @@
   "supported": true,
   "problems": [],
   "drains": [
-    31,
-    24,
-    19,
-    15
+    47,
+    46,
+    44,
+    40
   ],
-  "drain_spread": 16,
+  "drain_spread": 7,
   "rows": [
     {
       "schedule": "per_cycle",
       "spacing": 1,
       "horizon": 959,
-      "completion": 990,
-      "drain": 31
+      "completion": 1006,
+      "drain": 47
     },
     {
       "schedule": "half_rate",
       "spacing": 2,
       "horizon": 1918,
-      "completion": 1942,
-      "drain": 24
+      "completion": 1964,
+      "drain": 46
     },
     {
       "schedule": "quarter_rate",
       "spacing": 4,
       "horizon": 3836,
-      "completion": 3855,
-      "drain": 19
+      "completion": 3880,
+      "drain": 44
     },
     {
       "schedule": "eighth_rate",
       "spacing": 8,
       "horizon": 7672,
-      "completion": 7687,
-      "drain": 15
+      "completion": 7712,
+      "drain": 40
     }
   ]
 }

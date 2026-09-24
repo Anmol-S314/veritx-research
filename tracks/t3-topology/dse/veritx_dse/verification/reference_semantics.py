@@ -109,32 +109,37 @@ def ref_collective_messages(kind: str, k: int, B: int
     """Exact (step, src, dst) message triples per pinned schedule.
 
     Participant indices are 0..k-1 within the collective's participant
-    tuple (canonical order = ring order). Each ring step is a full
-    permutation cycle (every participant sends and receives exactly one
-    message of the step's size); the chunk CONTENT index is not part of
-    the message-level accounting (all messages of a step carry the same
-    byte count), matching the §10.1 contract which pins counts and
-    bytes, not per-message chunk ownership.
+    tuple (canonical order = ring order).
+
+    Ring law, implemented from first principles (NOT copied from the
+    production spec): in a ring collective data moves ONLY between logical
+    neighbours — every step, rank i sends one chunk to rank (i+1) mod k.
+    The CHUNK ownership rotates around the ring; the network edge does not.
+    The message-level accounting abstracts chunk identity away (all
+    messages of a step carry the same byte count), matching the §10.1
+    contract which pins counts and bytes, not per-message chunk ownership.
+
+    ALLREDUCE has two logical phases over the same edge set:
+      steps [0, k-2]       reduce-scatter
+      steps [k-1, 2k-3]    all-gather
     """
     if k < 2:
         raise ValueError("a collective needs k >= 2")
+
+    def _ring(steps: int, base: int) -> list[tuple[int, int, int]]:
+        return [(base + step, i, (i + 1) % k)
+                for step in range(steps) for i in range(k)]
+
     if kind == "ALLREDUCE":
         if B % k:
             raise ValueError("ALLREDUCE requires B % k == 0")
-        out: list[tuple[int, int, int]] = []
-        for step in range(2 * (k - 1)):
-            off = step % (k - 1) + 1
-            for i in range(k):
-                out.append((step, i, (i + off) % k))
-        return out
+        return _ring(k - 1, 0) + _ring(k - 1, k - 1)
     if kind == "REDUCESCATTER":
         if B % k:
             raise ValueError("REDUCESCATTER requires B % k == 0")
-        return [(step, i, (i + step + 1) % k)
-                for step in range(k - 1) for i in range(k)]
+        return _ring(k - 1, 0)
     if kind == "ALLGATHER":
-        return [(step, i, (i + step + 1) % k)
-                for step in range(k - 1) for i in range(k)]
+        return _ring(k - 1, 0)
     if kind == "ALLTOALL":
         if B % k:
             raise ValueError("ALLTOALL requires B % k == 0")

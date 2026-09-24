@@ -145,10 +145,13 @@ def _collective_triples(kind: str, participants: tuple[int, ...],
     ref = collective_schedule(kind, k, payload_bytes)
     triples: list[tuple[int, int, int]] = []
     if kind in ("ALLREDUCE", "REDUCESCATTER", "ALLGATHER"):
+        # F-0004: a ring collective moves data ONLY between logical
+        # neighbours. Every step, each rank sends one chunk to its next
+        # ring neighbour; the CHUNK ownership rotates, the network edge
+        # does not. (The previous offset exchange used all pairs.)
         for step in range(ref["steps"]):
-            off = step % (k - 1) + 1
             for i in range(k):
-                triples.append((step, i, (i + off) % k))
+                triples.append((step, i, (i + 1) % k))
     elif kind == "ALLTOALL":
         for i in range(k):
             for j in range(k):

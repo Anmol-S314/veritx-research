@@ -71,26 +71,84 @@ def ring_allreduce_graph(ranks: int) -> dict[tuple[int, int], int]:
     return pairs
 
 
-def graph_conformance(ranks: int, observed: dict[tuple[int, int], int]
-                      ) -> dict:
-    """Compare an observed directed-pair multiset to the ring graph."""
-    expected = ring_allreduce_graph(ranks)
+def collective_graph_report(kind: str, ranks: int, payload_bytes: int,
+                            messages) -> dict:
+    """The exact ring communication-graph law, as individual invariants.
 
-    def _key(pair: tuple[int, int]) -> str:
-        return f"{pair[0]}->{pair[1]}"
+    ``messages`` is any iterable of objects exposing ``step``, ``src_rank``,
+    ``dst_rank`` and ``payload_bytes``. Every invariant is reported
+    separately so a failure names exactly what broke.
+    """
+    from collections import Counter
+    msgs = [(int(m.step), int(m.src_rank), int(m.dst_rank),
+             int(m.payload_bytes)) for m in messages]
+    steps = sorted({s for s, _, _, _ in msgs})
+    n = len(msgs)
+    if kind == "ALLREDUCE":
+        expected_steps = 2 * (ranks - 1)
+        chunk = payload_bytes // ranks
+        expected_messages = 2 * ranks * (ranks - 1)
+        expected_aggregate = 2 * (ranks - 1) * payload_bytes
+        payload_ok_unit = chunk
+    elif kind in ("REDUCESCATTER", "ALLGATHER"):
+        expected_steps = ranks - 1
+        chunk = payload_bytes // ranks if kind == "REDUCESCATTER" \
+            else payload_bytes
+        expected_messages = ranks * (ranks - 1)
+        expected_aggregate = (ranks - 1) * payload_bytes
+        payload_ok_unit = chunk
+    else:
+        raise ValueError(f"no ring graph law for {kind!r}")
 
-    extra = {_key(p): c for p, c in observed.items() if p not in expected}
-    missing = {_key(p): c for p, c in expected.items() if p not in observed}
-    wrong_count = {_key(p): [observed[p], expected[p]] for p in expected
-                   if p in observed and observed[p] != expected[p]}
+    per_step = Counter(s for s, _, _, _ in msgs)
+    sends = {s: Counter() for s in steps}
+    recvs = {s: Counter() for s in steps}
+    for s, i, j, _ in msgs:
+        sends[s][i] += 1
+        recvs[s][j] += 1
+    expected_rank_set = list(range(ranks))
+
+    checks = {
+        "steps_match": len(steps) == expected_steps,
+        "message_count_match": n == expected_messages,
+        "every_step_has_k_messages": all(v == ranks
+                                         for v in per_step.values()),
+        "every_rank_sends_once_per_step": all(
+            sorted(c) == expected_rank_set
+            and all(v == 1 for v in c.values()) for c in sends.values()),
+        "every_rank_receives_once_per_step": all(
+            sorted(c) == expected_rank_set
+            and all(v == 1 for v in c.values()) for c in recvs.values()),
+        "dst_is_next_ring_neighbour": all(
+            j == (i + 1) % ranks for _, i, j, _ in msgs),
+        "no_self_messages": all(i != j for _, i, j, _ in msgs),
+        "chunk_bytes_match": all(b == payload_ok_unit for _, _, _, b in msgs),
+        "aggregate_bytes_match": sum(b for _, _, _, b in msgs)
+        == expected_aggregate,
+    }
+    observed_pairs = Counter((i, j) for _, i, j, _ in msgs)
+    expected_pairs = ring_allreduce_graph(ranks) if kind == "ALLREDUCE" else {
+        (i, (i + 1) % ranks): 2 * (ranks - 1) for i in range(ranks)}
+    if kind in ("REDUCESCATTER", "ALLGATHER"):
+        expected_pairs = {(i, (i + 1) % ranks): ranks - 1
+                          for i in range(ranks)}
+    extra = {f"{i}->{j}": c for (i, j), c in observed_pairs.items()
+             if (i, j) not in expected_pairs}
+    checks["no_non_neighbour_pairs"] = not extra
+    if kind == "ALLREDUCE":
+        rs = [s for s in steps if s <= ranks - 2]
+        ag = [s for s in steps if s >= ranks - 1]
+        checks["two_phases_present"] = len(rs) == ranks - 1 \
+            and len(ag) == ranks - 1
+
+    problems = [name for name, ok in checks.items() if not ok]
     return {
-        "ring_pairs": {_key(p): c for p, c in sorted(expected.items())},
+        "kind": kind, "ranks": ranks, "payload_bytes": payload_bytes,
+        "steps": expected_steps, "messages": expected_messages,
+        "chunk_bytes": payload_ok_unit, "aggregate_bytes": expected_aggregate,
+        "checks": checks, "conforms": not problems, "problems": problems,
         "extra_non_neighbour_pairs": extra,
-        "missing_neighbour_pairs": missing,
-        "wrong_multiplicity": wrong_count,
-        "conforms": not (extra or missing or wrong_count),
-        "observed_distinct_pairs": len(observed),
-        "ring_distinct_pairs": len(expected),
+        "observed_distinct_pairs": len(observed_pairs),
     }
 
 

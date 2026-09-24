@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from .oracle import graph_conformance, ring_allreduce_oracle
+from .oracle import collective_graph_report, ring_allreduce_oracle
 
 EXACT = "exact"
 MISMATCH = "mismatch"
@@ -87,6 +87,30 @@ def _require_nonempty(checks: list[CheckResult], where: str) -> list[CheckResult
     return checks
 
 
+_RING_KINDS = ("ALLREDUCE", "REDUCESCATTER", "ALLGATHER")
+
+
+def network_claims_quarantined(spec, built) -> bool:
+    """True only while the collective communication graph is non-conformant.
+
+    ``network_claims_quarantined`` in the experiment opts into the policy;
+    the actual withdrawal happens only when the graph FAILS its ring law,
+    so once F-0004 is fixed the claims are automatically reinstated.
+    """
+    if not getattr(spec, "network_claims_quarantined", False):
+        return False
+    if spec.workload.kind != "collective" \
+            or spec.workload.collective_kind not in _RING_KINDS:
+        return False
+    try:
+        report = collective_graph_report(
+            spec.workload.collective_kind, spec.fabric.compute_tiles,
+            spec.workload.payload_bytes, built.logical.messages)
+    except Exception:  # noqa: BLE001
+        return True
+    return not report["conforms"]
+
+
 def _logical_message_stats(logical) -> tuple[int, int]:
     messages = getattr(logical, "messages", None)
     if messages is None:
@@ -99,7 +123,21 @@ def run_checks(*, spec, built, veritx_stats: dict, authority,
     results: list[CheckResult] = []
     expected = spec.expected
     declared_packets = built.packets
-    quarantine = bool(getattr(spec, "network_claims_quarantined", False))
+    ring_kinds = _RING_KINDS
+    graph_report = None
+    if spec.workload.kind == "collective" \
+            and spec.workload.collective_kind in ring_kinds:
+        try:
+            graph_report = collective_graph_report(
+                spec.workload.collective_kind, spec.fabric.compute_tiles,
+                spec.workload.payload_bytes, built.logical.messages)
+        except Exception as exc:  # noqa: BLE001
+            graph_report = {
+                "conforms": False, "checks": {}, "problems": ["oracle_error"],
+                "detail": f"{type(exc).__name__}: {exc}"}
+    # network-performance claims are withdrawn only while the communication
+    # graph is non-conformant (a filed finding), never unconditionally
+    quarantine = network_claims_quarantined(spec, built)
 
     # ── trace execution conservation (integration gate) ────────────────
     # The authority consumes the SAME trace VERITX produced, so this proves
@@ -141,7 +179,7 @@ def run_checks(*, spec, built, veritx_stats: dict, authority,
                     "authority_accepted_flits": authority.accepted_flits}))
 
     # ── workload-lowering oracle (independent) ─────────────────────────
-    # First-principles ring-ALLREDUCE arithmetic vs VERITX's lowering.
+    # First-principles ring arithmetic vs VERITX's lowering.
     if spec.workload.kind == "collective" \
             and spec.workload.collective_kind == "ALLREDUCE":
         problems = []
@@ -184,41 +222,29 @@ def run_checks(*, spec, built, veritx_stats: dict, authority,
                 verdict=_verdict(not problems),
                 values=oracle.as_dict()))
 
-        # ── communication-graph conformance (independent) ──────────────
-        # The counts above cannot see WHICH ranks talk. Ring ALLREDUCE
-        # moves data only between logical neighbours; a schedule that uses
-        # every pair is a different algorithm (F-0004).
-        try:
-            from collections import Counter
-            observed = Counter((m.src_rank, m.dst_rank)
-                               for m in built.logical.messages)
-            conf = graph_conformance(spec.fabric.compute_tiles, dict(observed))
-        except Exception as exc:  # noqa: BLE001
-            results.append(CheckResult(
-                name="collective_graph_conformance",
-                authority_class="ring_oracle",
-                detail=f"conformance oracle unavailable: "
-                       f"{type(exc).__name__}: {exc}",
-                verdict=UNSUPPORTED))
+    # ── communication-graph conformance (independent) ──────────────────
+    # The counts above cannot see WHICH ranks talk. A ring moves data only
+    # between logical neighbours; a schedule that uses every pair is a
+    # different algorithm (F-0004).
+    if graph_report is not None:
+        conforms = graph_report["conforms"]
+        if conforms:
+            detail = ("ring law holds: neighbour edges only, k sends and k "
+                      "receives per step, chunk = B/k, two phases")
         else:
-            conforms = conf["conforms"]
-            if conforms:
-                detail = ("every pair is a ring neighbour pair with "
-                          "multiplicity 2(k-1)")
-            else:
-                detail = (
-                    f"{len(conf['extra_non_neighbour_pairs'])} non-neighbour "
-                    f"pairs used (e.g. "
-                    f"{sorted(conf['extra_non_neighbour_pairs'])[:3]}); the "
-                    "communication graph is NOT a ring")
-            results.append(CheckResult(
-                name="collective_graph_conformance",
-                authority_class="ring_oracle",
-                detail=detail,
-                verdict=_verdict(conforms),
-                values=conf,
-                quarantined=(not conforms and quarantine),
-                finding=(None if conforms else "F-0004")))
+            extra = graph_report.get("extra_non_neighbour_pairs", {})
+            detail = ("communication graph violates the ring law: "
+                      f"{graph_report.get('problems')}"
+                      + (f"; {len(extra)} non-neighbour pairs (e.g. "
+                         f"{sorted(extra)[:3]})" if extra else ""))
+        results.append(CheckResult(
+            name="collective_graph_conformance",
+            authority_class="ring_oracle",
+            detail=detail,
+            verdict=_verdict(conforms),
+            values=graph_report,
+            quarantined=(not conforms and quarantine),
+            finding=(None if conforms else "F-0004")))
 
     # ── hand counts (independent) ──────────────────────────────────────
     if "hand_counts" in spec.checks and expected.packets is not None:
@@ -379,7 +405,7 @@ def run_rtl_checks(*, spec, built, veritx_stats: dict, rtl) -> list[CheckResult]
     """
     results: list[CheckResult] = []
     expected = spec.expected
-    quarantine = bool(getattr(spec, "network_claims_quarantined", False))
+    quarantine = network_claims_quarantined(spec, built)
 
     if not rtl.packets:
         results.append(CheckResult(

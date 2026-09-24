@@ -17,7 +17,10 @@ import tempfile
 from pathlib import Path
 
 from .authority import run_standalone
-from .compare import EXACT, monotonicity_check, run_checks, run_rtl_checks
+from .compare import (
+    EXACT, monotonicity_check, network_claims_quarantined, run_checks,
+    run_rtl_checks,
+)
 from .fabric import build
 from .spec import ExperimentSpec
 
@@ -89,13 +92,24 @@ def _checks_to_dicts(checks, suffix: str = "") -> list[dict]:
         for c in checks]
 
 
-def _counted_passed(checks: list[dict]) -> bool:
-    """Pass/fail over non-quarantined checks only (a filed finding is not a
-    new regression, but its checks are still reported)."""
+def _experiment_status(checks: list[dict]) -> str:
+    """PASS | FAIL | QUARANTINED. A quarantined mismatch is never a PASS."""
     counted = [c for c in checks if not c.get("quarantined")]
     if not counted:
         raise ValueError("every check is quarantined; refusing a vacuous pass")
-    return all(c["verdict"] == EXACT for c in counted)
+    if any(c["verdict"] != EXACT for c in counted):
+        return "FAIL"
+    if any(c.get("quarantined") for c in checks):
+        return "QUARANTINED"
+    return "PASS"
+
+
+def _status_ok(status: str, allow_quarantine: bool) -> bool:
+    if status == "PASS":
+        return True
+    if status == "QUARANTINED":
+        return allow_quarantine
+    return False
 
 
 def run_experiment(spec: ExperimentSpec, binary: Path,
@@ -116,9 +130,13 @@ def run_experiment(spec: ExperimentSpec, binary: Path,
     if spec.sweep is not None:
         points: list[dict] = []
         checks: list[dict] = []
+        first_sub = None
+        first_built = None
         for value in spec.sweep.values:
             sub = spec.sweep.apply(spec, value)
             run = _run_single(sub, binary, work_root)
+            if first_built is None:
+                first_sub, first_built = sub, run["built"]
             vstats = run["veritx_stats"]
             auth = run["authority"]
             built = run["built"]
@@ -138,8 +156,8 @@ def run_experiment(spec: ExperimentSpec, binary: Path,
             checks.extend(_checks_to_dicts(run["checks"],
                                            suffix=f"@{value}"))
         mono = monotonicity_check(spec, points)
-        if spec.network_claims_quarantined \
-                and spec.sweep.quantity == "completion_cycles":
+        if spec.sweep.quantity == "completion_cycles" \
+                and network_claims_quarantined(first_sub, first_built):
             mono = dataclasses.replace(
                 mono, quarantined=True, finding="F-0004")
         checks.insert(0, _checks_to_dicts([mono])[0])
@@ -150,7 +168,8 @@ def run_experiment(spec: ExperimentSpec, binary: Path,
             "direction": spec.sweep.direction,
             "values": list(spec.sweep.values), "points": points},
             "checks": checks,
-            "passed": _counted_passed(checks),
+            "status": _experiment_status(checks),
+            "passed": _experiment_status(checks) == "PASS",
             "quarantined_findings": sorted(
                 {c["finding"] for c in checks if c.get("finding")})}
 
@@ -177,7 +196,8 @@ def run_experiment(spec: ExperimentSpec, binary: Path,
                 "hops_avg": auth.hops_avg,
             },
             "checks": checks,
-            "passed": _counted_passed(checks),
+            "status": _experiment_status(checks),
+            "passed": _experiment_status(checks) == "PASS",
             "quarantined_findings": sorted(
                 {c["finding"] for c in checks if c.get("finding")})}
 
@@ -254,7 +274,7 @@ def _markdown(reports: list[dict]) -> str:
             lines.append(f"| {c['name']} | {c['authority_class']} | "
                          f"{c['independence']} | {value} | {verdict} |")
         lines.append("")
-        lines.append(f"**{'PASS' if r['passed'] else 'FAIL'}**")
+        lines.append(f"**{r.get('status', 'PASS' if r['passed'] else 'FAIL')}**")
         if r.get("quarantined_findings"):
             lines.append("")
             lines.append(f"quarantined findings: "
@@ -409,7 +429,13 @@ def main(argv: list[str] | None = None) -> int:
                         help="also run the F-0003 injection-schedule "
                              "intervention")
     parser.add_argument("--reports", default=str(DEFAULT_REPORTS))
+    parser.add_argument("--allow-quarantine", action="store_true",
+                        help="exploratory mode: a QUARANTINED experiment "
+                             "(active filed finding) does not fail the run; "
+                             "seal/release mode (default) returns nonzero "
+                             "while any active quarantine exists")
     args = parser.parse_args(argv)
+    allow_quarantine = args.allow_quarantine
 
     paths: list[Path] = []
     if args.all:
@@ -433,7 +459,7 @@ def main(argv: list[str] | None = None) -> int:
         reports.append(report)
         (reports_dir / f"{spec.id}.json").write_text(
             json.dumps(report, indent=2) + "\n")
-        print(f"{spec.id}: {'PASS' if report['passed'] else 'FAIL'} "
+        print(f"{spec.id}: {report['status']} "
               f"({len(report['checks'])} checks)")
         for c in report["checks"]:
             flag = (f" QUARANTINED:{c['finding']}" if c.get("quarantined")
@@ -441,7 +467,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  [{c['verdict']:>8}]{flag:<16} {c['name']:<28} "
                   f"({c['authority_class']}, {c['independence']}) "
                   f"{c['detail']}")
-        ok = ok and report["passed"]
+        ok = ok and _status_ok(report["status"], allow_quarantine)
 
     if reports:
         (reports_dir / "REPORT.md").write_text(_markdown(reports))
