@@ -129,21 +129,28 @@ def write_traces(trace_text: str, out_dir: Path, *, cycle_offset: int = 1
 
 
 def build(*, repo_root: Path, build_dir: Path, x_dim: int, y_dim: int,
-          vcs: int, t_depth: int) -> Path:
-    """Build the RTL testbench in R1_MODE with Verilator (cached by dir)."""
+          vcs: int, t_depth: int, r1_mode: bool = True) -> Path:
+    """Build the RTL testbench with Verilator (cached by dir).
+
+    ``r1_mode`` selects the trace-replay path (default) or the R0
+    self-check path.
+    """
     binary = Path(build_dir) / "noc_tb"
     if binary.is_file():
         return binary
     sources = [str(Path(repo_root) / RTL_DIR / s) for s in SOURCES]
     command = [
         "verilator", "--binary", "-j", "4", "--timing", "-Wno-fatal",
-        "-DR1_MODE", f"-I{Path(repo_root) / RTL_DIR}",
+        f"-I{Path(repo_root) / RTL_DIR}",
         *sources, str(Path(repo_root) / TB_FILE),
         "--top-module", "noc_tb",
         f"-GX_DIM={x_dim}", f"-GY_DIM={y_dim}", f"-GVCS={vcs}",
-        f"-GT_DEPTH={t_depth}",
         "--Mdir", str(build_dir), "-o", "noc_tb",
     ]
+    if r1_mode:
+        # T_DEPTH is declared only under R1_MODE
+        command.insert(5, "-DR1_MODE")
+        command.append(f"-GT_DEPTH={t_depth}")
     proc = subprocess.run(command, capture_output=True, text=True)
     if proc.returncode != 0 or not binary.is_file():
         raise RtlError(

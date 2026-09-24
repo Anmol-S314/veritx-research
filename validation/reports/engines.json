@@ -1,0 +1,171 @@
+[
+  {
+    "name": "ramulator_battery",
+    "passed": true,
+    "detail": "2.0s, 16/16 checks; 16/16 checks",
+    "checks": [
+      [
+        "vendored-ext-present",
+        true,
+        ""
+      ],
+      [
+        "ext-hash-recorded",
+        true,
+        "sha256:152614ac3"
+      ],
+      [
+        "drain-1R",
+        true,
+        ""
+      ],
+      [
+        "drain-192R+32W",
+        true,
+        ""
+      ],
+      [
+        "drain-4096R",
+        true,
+        ""
+      ],
+      [
+        "drain-4096W",
+        true,
+        ""
+      ],
+      [
+        "drain-mixed-2k+2k",
+        true,
+        ""
+      ],
+      [
+        "backpressure-drain",
+        true,
+        ""
+      ],
+      [
+        "wrapper-vs-direct",
+        true,
+        "identical counters on shared trace"
+      ],
+      [
+        "replay-x3",
+        true,
+        "identical scientific metrics across 3 runs"
+      ],
+      [
+        "row-locality-sensitivity",
+        true,
+        ""
+      ],
+      [
+        "bank-parallelism-isolated",
+        true,
+        "4-bank 75.0% faster under equal conflicts"
+      ],
+      [
+        "clock-ratio-semantics",
+        true,
+        "default-ratio deterministic (229c); clock_ratio not exposed by v1 seam \u2014 documented envelope limit"
+      ],
+      [
+        "capacity-fails-closed",
+        true,
+        "refused: LoweringError"
+      ],
+      [
+        "tamper-refusal",
+        true,
+        "refused: RamulatorError"
+      ],
+      [
+        "canonical-artifact-transaction-bytes",
+        true,
+        "canonical 640B == artifact == 8R+2W tx (512B+128B incl. declared padding)"
+      ]
+    ]
+  },
+  {
+    "name": "rtl_selfcheck",
+    "passed": true,
+    "detail": "GATE R0: ALL CHECKS PASSED",
+    "checks": [
+      [
+        "S1",
+        true,
+        ""
+      ],
+      [
+        "S2a",
+        true,
+        ""
+      ],
+      [
+        "S2a",
+        true,
+        ""
+      ],
+      [
+        "S2b",
+        true,
+        ""
+      ],
+      [
+        "S2b",
+        true,
+        ""
+      ],
+      [
+        "S3",
+        true,
+        ""
+      ],
+      [
+        "S3",
+        true,
+        ""
+      ],
+      [
+        "S2/S3",
+        true,
+        ""
+      ],
+      [
+        "S3",
+        true,
+        ""
+      ],
+      [
+        "S2a",
+        true,
+        ""
+      ],
+      [
+        "S2b",
+        true,
+        ""
+      ],
+      [
+        "S2/S3",
+        true,
+        ""
+      ],
+      [
+        "S4",
+        true,
+        ""
+      ],
+      [
+        "S4",
+        true,
+        ""
+      ],
+      [
+        "S4",
+        true,
+        ""
+      ]
+    ]
+  }
+]

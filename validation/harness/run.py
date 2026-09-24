@@ -251,6 +251,21 @@ def _metamorphic_markdown(results) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _engines_markdown(results) -> str:
+    lines = ["# VERITX Engine Gate Report", "",
+             "Independent engines: availability and self-consistency.", "",
+             "| engine | result | detail |", "|---|---|---|"]
+    for e in results:
+        lines.append(f"| {e.name} | {'PASS' if e.passed else '**FAIL**'} | "
+                     f"{e.detail} |")
+    passed = sum(1 for e in results if e.passed)
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+    lines.append(f"engines passing: {passed}/{len(results)}")
+    return "\n".join(lines) + "\n"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="validation.harness.run")
     parser.add_argument("experiments", nargs="*",
@@ -261,6 +276,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="also run the negative mutation layer")
     parser.add_argument("--metamorphic", action="store_true",
                         help="also run the metamorphic invariant layer")
+    parser.add_argument("--engines", action="store_true",
+                        help="also run the independent engine gates")
     parser.add_argument("--reports", default=str(DEFAULT_REPORTS))
     args = parser.parse_args(argv)
 
@@ -268,9 +285,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.all:
         paths = sorted(DEFAULT_EXPERIMENTS.glob("V*.json"))
     paths += [Path(p) for p in args.experiments]
-    if not paths and not args.mutations and not args.metamorphic:
-        parser.error("no experiments given (pass files, --all, --mutations or "
-                     "--metamorphic)")
+    if not paths and not args.mutations and not args.metamorphic \
+            and not args.engines:
+        parser.error("no experiments given (pass files, --all, --mutations, "
+                     "--metamorphic or --engines)")
 
     binary = _binary()
     reports_dir = Path(args.reports)
@@ -323,6 +341,18 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  [{'pass' if m.passed else 'FAIL'}] {m.name}: {m.detail}")
         ok = ok and all(m.passed for m in meta)
         print(f"metamorphic: {reports_dir / 'METAMORPHIC.md'}")
+
+    if args.engines:
+        from .engines import run_engines
+        engines = run_engines(REPO_ROOT, work_root)
+        (reports_dir / "ENGINES.md").write_text(_engines_markdown(engines))
+        (reports_dir / "engines.json").write_text(json.dumps(
+            [dataclasses.asdict(e) for e in engines], indent=2) + "\n")
+        print("\nengine gates:")
+        for e in engines:
+            print(f"  [{'pass' if e.passed else 'FAIL'}] {e.name}: {e.detail}")
+        ok = ok and all(e.passed for e in engines)
+        print(f"engines: {reports_dir / 'ENGINES.md'}")
 
     shutil.rmtree(work_root, ignore_errors=True)
     return 0 if ok else 1
