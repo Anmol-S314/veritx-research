@@ -54,6 +54,27 @@ image-build:  ## build the tools image locally
 image-push:  ## push the tools image to the registry (needs write auth)
 	$(CONTAINER) push $(IMAGE)
 
+# -- Release backend build + provenance manifests (host toolchain) --
+# Builds every backend the release gates need from tracked source only and
+# writes a build-time provenance manifest beside each binary. A released
+# binary without a manifest is never pinned for reusable evidence.
+
+.PHONY: release-build release-manifest
+release-build:  ## build all release-gate backends from source + manifests
+	$(MAKE) -C third_party/booksim2/src
+	JOBS=$${JOBS:-$$(nproc)} sh third_party/astra-sim/build/astra_booksim2/build.sh
+	cd third_party/ramulator2 && JOBS=$${JOBS:-$$(nproc)} ./build.sh
+	$(MAKE) release-manifest
+
+release-manifest:  ## write build-time provenance manifests for built backends
+	python3 scripts/write_build_manifest.py third_party/booksim2/src/booksim \
+	    --recipe-version booksim2-fork/v1 --compiler g++ \
+	    --build-config Release --flag=-O3 --flag=-g
+	python3 scripts/write_build_manifest.py \
+	    third_party/astra-sim/astra-sim/network_frontend/booksim2/bin/AstraSim_BookSim2 \
+	    --recipe-version astra-sim+booksim2/v1 --compiler g++ \
+	    --build-config Release
+
 # -- Vendored tool management (scripts/tools.py) --
 
 tools:  ## list all vendored tools with status

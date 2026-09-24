@@ -91,3 +91,6 @@ serving/LLMServingSim/astra-sim/
 /docs/VM-SETUP.md
 # Archived docs (incl. the old VM-SETUP.md) - keep out of the tree
 /docs/archive/
+
+# Build-time binary provenance manifests (per-binary build artifacts)
+*.build-manifest.json
