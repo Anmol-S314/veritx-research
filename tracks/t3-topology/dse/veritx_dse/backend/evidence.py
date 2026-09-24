@@ -49,6 +49,21 @@ EXECUTION_TRANSPORT_TEST_INJECTED = "TEST_INJECTED"
 
 _HEX = frozenset("0123456789abcdef")
 
+#: Closed vocabularies for the run-stable scientific fields. An unknown
+#: token is not a known measurement: a reader must never treat an invented
+#: fidelity or transport as qualified, and a self-consistent document with
+#: an impossible combination must refuse even though its evidence_id
+#: recomputes.
+EXECUTION_FIDELITIES = frozenset({
+    "QUALIFIED", "DIAGNOSTIC_UNPINNED_PRODUCER", "TEST_INJECTED",
+})
+ROUTE_OBSERVATIONS = frozenset({
+    "DOMAIN_QUALIFIED_ROUTE_NOT_OBSERVED", "EXECUTED_ROUTE_OBSERVED",
+})
+EXECUTION_TRANSPORTS = frozenset({
+    EXECUTION_TRANSPORT_SUPERVISED_PROCESS, EXECUTION_TRANSPORT_TEST_INJECTED,
+})
+
 
 class BackendEvidenceError(ValueError):
     """Evidence disagrees with its reference — fail closed."""
@@ -251,6 +266,38 @@ class ScientificBackendEvidence:
             raise BackendEvidenceError(
                 f"unsupported evidence schema_version "
                 f"{self.schema_version!r}")
+        # Closed vocabularies + cross-field impossibility. Content
+        # authenticity (the evidence_id) is necessary but not sufficient:
+        # a self-consistent document can still describe a run that cannot
+        # exist, and must refuse before it can be read as a measurement.
+        if self.transport not in EXECUTION_TRANSPORTS:
+            raise BackendEvidenceError(
+                f"unknown execution transport {self.transport!r}")
+        if self.execution_fidelity not in EXECUTION_FIDELITIES:
+            raise BackendEvidenceError(
+                f"unknown execution_fidelity {self.execution_fidelity!r}")
+        if self.route_observation not in ROUTE_OBSERVATIONS:
+            raise BackendEvidenceError(
+                f"unknown route_observation {self.route_observation!r}")
+        if self.producer_dirty is not None \
+                and not isinstance(self.producer_dirty, bool):
+            raise BackendEvidenceError(
+                "producer_dirty must be a bool or null")
+        if self.execution_fidelity == "QUALIFIED":
+            if self.transport != EXECUTION_TRANSPORT_SUPERVISED_PROCESS:
+                raise BackendEvidenceError(
+                    "QUALIFIED fidelity over a non-supervised transport is "
+                    "impossible")
+            if self.producer_dirty is True:
+                raise BackendEvidenceError(
+                    "a dirty producer cannot yield QUALIFIED evidence")
+            if self.exit_status != 0:
+                raise BackendEvidenceError(
+                    "QUALIFIED evidence cannot carry a nonzero exit status")
+        if self.transport == EXECUTION_TRANSPORT_TEST_INJECTED \
+                and self.execution_fidelity != "TEST_INJECTED":
+            raise BackendEvidenceError(
+                "TEST_INJECTED transport must carry TEST_INJECTED fidelity")
 
     #: True only for a real supervised production execution
     @property
@@ -456,6 +503,31 @@ def read_reusable_record(ref: EvidenceRef, **conditions: Any
                             wall_time_s=0.0, run_dir="", binary_path="",
                             command=(), host="", platform="")),
         **conditions)
+
+
+# Fields every unversioned historical (v1) consumer needed. v1 predates
+# the schema marker, so there is no closed field set to enforce; these
+# are the minimum keys that make the document readable as certified
+# evidence at all.
+_LEGACY_V1_REQUIRED_FIELDS = ("backend_input_hash", "stats")
+
+
+def _validate_legacy_v1(doc: dict[str, Any]) -> dict[str, Any]:
+    """Acceptance rules for unversioned historical evidence (v1).
+
+    The old consumers checked only the binding keys they needed and
+    treated every other field as informational, so this preserves that
+    permissiveness: require the minimum evidence keys, accept and return
+    the historical extras unchanged. The v1 producer acceptance
+    semantics (including ``producer_tool_identity``) live in the reuse
+    binding, not here.
+    """
+    for key in _LEGACY_V1_REQUIRED_FIELDS:
+        if key not in doc:
+            raise BackendEvidenceError(
+                f"legacy v1 evidence is missing {key!r}")
+    stats_sha256_of(doc["stats"])
+    return doc
 
 
 def validate_evidence_document(doc: Any) -> dict[str, Any]:
