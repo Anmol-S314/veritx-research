@@ -15,7 +15,7 @@ item. A `BLOCKER` is release-critical: the seal is refused until closed.
 | P0.2 | Certificate fail-closed exception discipline + adversarial injection tests | §5.1, §5.2 | **DONE** (`8d61da35`) |
 | P0.3 | VC-assignment authoring/persistence contract: dup keys, malformed rows, non-artifact parent, JSON-list shape, artifact_hash | §5.3 | **DONE** (`a0b934b6`) |
 | P0.4 | `ScientificBackendEvidence` admissibility: closed vocabularies + cross-field invariants; self-consistent impossible documents recomputed and refused | §5.4 | **DONE** (`facf645b`) |
-| P0.5 | One producer-qualification admission rule; no duplicate `reusable` checks at call sites | §5.5 | **DONE** (`978a38ed`) |
+| P0.5 | One producer-qualification admission rule; no duplicate `reusable` checks at call sites | §5.5 | **DONE** (`978a38ed`, enforced end-to-end + manifest binding in `a274d4b0`) |
 | P0.6 | Build-time manifest binding source rev + dirty + binary sha/size + compiler + recipe; execution verifies the binary against it | §5.6 | **DONE** (`43f55d94`, `48152452`); release-build target added |
 | P0.7 | Seed identity: rendered → prepared_id → evidence; not overrideable at execution; search vs sim seed distinct | §5.7 | **DONE** (`dc858a29`, tests) |
 | P0.8 | Projection closure: rendered keys == required keys; pins exact; missing required field fails | §5.8 | **DONE** (`dc858a29`) |
@@ -96,7 +96,7 @@ P0.12 authenticated evaluation vocabulary            [DONE 5d2a991b]
 P0.13 exact clock parsing                            [DONE e7a85911]
 P0.14 optimizer empty domain / full identity         [DONE 85b7e5cf]
 P0.10 executed route realization                     [OPEN, honest NOT_OBSERVED]
-B7    SemanticError taxonomy for boundaries          [OPEN]
+B7    SemanticError taxonomy for boundaries          [DONE ff141c68]
 P2    durable run bundles
 P3    failure injection
 P4    concurrency/idempotency
@@ -104,5 +104,5 @@ P4    concurrency/idempotency
 
 The seal report `docs/production/PRODUCTION-SEAL.md` is written only when
 every seal condition in §30 is met. At present the verdict is
-**NOT READY** (P0.10 route observation, B7, plus the P2–P17 operational
+**NOT READY** (P0.10 route observation, plus the P2–P17 operational
 program and clean-clone qualification).

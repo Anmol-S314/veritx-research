@@ -49,6 +49,11 @@ taxonomy).
 | Empty optimizer domain created an illegal empty-patch candidate | medium | late failure | `85b7e5cf` | `test_optimization_identity_exact.py` |
 | Authenticated evaluation read stale RT keys (`execution_transport`/`qualification`) | medium | stale vocabulary | `5d2a991b` | `test_p2_optimization_truth.py` |
 | `application/results.py` mixed canonical and RT-vocabulary readers | medium | unmarked legacy | `c78e54af` | `test_results_legacy_boundary.py` |
+| Certified path bypassed producer admission (unpinned → EVALUATED → CERTIFIED_PRODUCT) | critical | admission not enforced end-to-end | `a274d4b0` | `test_certified_admission.py` |
+| Evidence did not bind which manifest/recipe qualified it; `reusable` was a second weak rule; reuse reader skipped `evidence_id` | high | provenance not persisted | `a274d4b0` | `test_evidence_admissibility.py` |
+| Conservation accepted a missing trace-injected packet count | high | optional check | `a274d4b0` | `test_booksim_conservation.py` |
+| Bare programmer `ValueError` could be laundered into a verdict (B7) | high | ValueError-rooted catch | `ff141c68` | `test_certificate_failclosed.py` |
+| Legacy-reader reachability guard missed aliased imports | low | regex, not AST | `466c9fa8` | `test_results_legacy_boundary.py` |
 
 Historical scientific findings F-0001 and F-0004 are FIXED in
 `validation/FINDINGS.md`; F-0002 ACCEPTED.
@@ -58,15 +63,21 @@ Historical scientific findings F-0001 and F-0004 are FIXED in
 - P0.10 executed route realization is not implemented; evidence honestly
   records `DOMAIN_QUALIFIED_ROUTE_NOT_OBSERVED` (no false equivalence
   claim).
-- B7: the semantic-error taxonomy is ValueError-rooted; a programmer
-  fault raised as a bare `ValueError` could still be laundered at a
-  boundary (the mandate's injected fault types already propagate).
+- Build manifests are local files, not a cryptographic trust root: a
+  clean-clone CI must generate them and the release manifest must tie
+  them to the tag. `release-manifest` covers BookSim and ASTRA; Ramulator
+  is a vendored Python extension executed through `simulation/ramulator.py`
+  (not the binary-manifest producer path), qualified by the engine gate
+  (16/16) and its pinned vendored source.
 - Run directories are timestamped, not content-addressed/atomic (P2).
 - No clean-clone qualification has been run.
 - Report files embed ephemeral scratch paths.
 - `bash third_party/ramulator2/build.sh` fails silently (use `./build.sh`).
 - One timing-sensitive serving test (`test_quiescence_is_bounded_under_a_
   permanent_stderr_flood`) is flaky under load.
+- Evidence schema v2 and PreparedBookSimInput schema v3 are incompatible
+  with v1/v2 fixtures by design; older persisted documents are refused,
+  not migrated.
 
 ## 6. Schema / version matrix
 
@@ -124,8 +135,10 @@ Not performed (`THREAT-MODEL.md` owed).
 
 ## 15. Reproducibility proof
 
-Partial: source-only build of BookSim/ASTRA/Ramulator works; no manifest,
-no lockfile, no container-qualified clean clone. Owed.
+Partial: source-only build of BookSim/ASTRA/Ramulator works and
+`make release-build` writes build-time manifests for BookSim and ASTRA
+(verified at resolve time). Missing: a lockfile/container-qualified clean
+clone and a release manifest tying manifests to a tag. Owed.
 
 ## 16. Known unsupported domains
 
@@ -144,9 +157,11 @@ Historical branches untouched (no cleanup performed). `main` untouched.
 
 ## 19. Release decision
 
-**NOT READY.** All §5 scientific-authority P0 items are closed except
-P0.10 (executed route realization, honestly unobserved) and the B7
-residual. The operational program remains open: durable run bundles
+**NOT READY.** Producer admission/provenance and full conservation are
+now enforced end-to-end (schema v2 evidence binds the verified manifest and
+recipe; the certified evaluator refuses unpinned producers; B7 is closed).
+Remaining scientific item: P0.10 executed route realization (honestly
+unobserved). The operational program remains open: durable run bundles
 (P2), failure injection (P3), concurrency/idempotency (P4), API/schema
 freeze (P5), observability/limits, security review, clean-clone
 qualification, and the release manifest.

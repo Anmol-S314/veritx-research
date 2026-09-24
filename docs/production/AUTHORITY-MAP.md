@@ -35,8 +35,8 @@ Rule enforced by this map:
 | logical messages | `workload.messages.LogicalMessage` | — | lowering | — | oracle checks | not persisted | — | yes | scope-limited: no chunk id (F-0004) |
 | physical traffic | `workload.traffic.PhysicalTrafficArtifact` | 1 | lowering | `from_dict` | `validate_conservation` | canonical JSON | none | yes | canonical |
 | participant mapping | `workload.traffic.ParticipantEndpointMapping` | 1 | lowering | `from_dict` | validate | canonical JSON | none | yes | canonical |
-| prepared backend input | `backend.booksim_projection.PreparedBookSimInput` | 2 | projection | `from_dict` | id recompute | canonical JSON + config/trace | none | yes | canonical |
-| backend evidence (scientific) | `backend.evidence.ScientificBackendEvidence` | 1 | execution | `ScientificBackendEvidence.from_dict` | closed fields + id recompute | canonical JSON | legacy unversioned v1 via `validate_evidence_document` | yes | canonical; admissibility incomplete (P0.4) |
+| prepared backend input | `backend.booksim_projection.PreparedBookSimInput` | 3 | projection | `from_dict` | id recompute | canonical JSON + config/trace | v2 (seed) refused | yes | canonical (v3 binds expected_flits) |
+| backend evidence (scientific) | `backend.evidence.ScientificBackendEvidence` | 2 | execution | `ScientificBackendEvidence.from_dict` | closed fields + id recompute + admission | canonical JSON | v1 refused (cannot name its manifest) | yes | canonical; binds build manifest digest/recipe |
 | backend evidence (artifact) | `backend.evidence.EvidenceArtifact` | 1 | M1.4 | `from_dict` | id recompute | canonical JSON | v1 label ordering preserved | yes | VERIFY vs ScientificBackendEvidence |
 | RT certified evidence | `backend.booksim.CertifiedBookSimEvidence` | — | RT | — | `to_dict` coerces | none | **legacy vocabulary** | not production-reachable (test-only readers in `application/results.py`) | legacy |
 | performance result | `performance.result` | 1 | performance | `from_dict` | VERIFY | canonical JSON | RT readers in `application/results.py` (legacy, test-only) | yes | canonical production path |
@@ -94,15 +94,13 @@ This is the P2 phase.
 Resolved by `8c32ccc2`: the shadow copy from `a5b806fe` was removed and
 the canonical (dependency-canonicalizing) definition is live.
 
-### B7 — semantic-error taxonomy is ValueError-rooted (OPEN, residual)
+### B7 — semantic-error taxonomy (CLOSED)
 
-The certificate and compiler boundaries catch `(ValueError, VeritXError)`
-as the declared semantic taxonomy and abort on everything else, so the
-mandate's injected faults (RuntimeError/AttributeError/NameError/TypeError)
-propagate. A programmer fault raised as a bare `ValueError` would still be
-laundered into a verdict. Closing this means introducing one
-`SemanticError` base in `core.errors` and re-parenting the ~30
-`*Error(ValueError)` classes so the boundaries catch the base only.
+Closed by the dedicated `SemanticError(VeritXError)` base in
+`core.errors`; the scientific/compiler artifact errors inherit it, and the
+certificate and compiler boundaries catch the taxonomy rather than Python's
+built-in `ValueError`. A bare programmer `ValueError` (or
+TypeError/AttributeError/RuntimeError/NameError) now propagates and aborts.
 
 ### B8 — executed route realization is not observed (OPEN, honest)
 
