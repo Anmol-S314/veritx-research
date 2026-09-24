@@ -20,7 +20,7 @@ item. A `BLOCKER` is release-critical: the seal is refused until closed.
 | P0.7 | Seed identity: rendered → prepared_id → evidence; not overrideable at execution; search vs sim seed distinct | §5.7 | **DONE** (`dc858a29`, tests) |
 | P0.8 | Projection closure: rendered keys == required keys; pins exact; missing required field fails | §5.8 | **DONE** (`dc858a29`) |
 | P0.9 | BookSim conservation: parse/enforce loaded/injected/delivered packets and flits-injected/accepted; no unexplained `None` | §5.9 | **DONE** (`03e50675`) |
-| P0.10 | Executed route realization: destination-aware next-hop observation vs resolved route; refuse to claim equivalence when unobservable | §5.10 | OPEN — honestly `ROUTE_NOT_OBSERVED` (no false claim); implementation owed |
+| P0.10 | Executed route realization: destination-aware next-hop observation vs resolved route; refuse to claim equivalence when unobservable | §5.10 | **DONE** — observed for mesh-DOR + AnyNet; missing/divergent dump refuses |
 | P0.11 | Resolve `application/results.py` (migrate or mark legacy + remove from production reachability) | §5.11 | **DONE** as option B (`c78e54af`): RT readers marked legacy, not production-reachable, inventory corrected, guard test |
 | P0.12 | Authenticated evaluation: remove stale RT vocabulary from canonical code | §5.12 | **DONE** (`5d2a991b`) |
 | P0.13 | Exact numeric parsing: no binary float for identity-bearing clock/frequency; test `9007199254740993`, `>2^53` | §5.13 | **DONE** (`e7a85911`) |
@@ -95,7 +95,7 @@ P0.11 results.py legacy boundary                     [DONE c78e54af]
 P0.12 authenticated evaluation vocabulary            [DONE 5d2a991b]
 P0.13 exact clock parsing                            [DONE e7a85911]
 P0.14 optimizer empty domain / full identity         [DONE 85b7e5cf]
-P0.10 executed route realization                     [OPEN, honest NOT_OBSERVED]
+P0.10 executed route realization                     [DONE P0.10]
 B7    SemanticError taxonomy for boundaries          [DONE ff141c68]
 P2    durable run bundles
 P3    failure injection
@@ -104,8 +104,8 @@ P4    concurrency/idempotency
 
 The seal report `docs/production/PRODUCTION-SEAL.md` is written only when
 every seal condition in §30 is met. At present the verdict is
-**NOT READY** (P0.10 route observation, plus the P2–P17 operational
-program and clean-clone qualification).
+**NOT READY** (P2–P17 operational program, clean-clone qualification, and
+the wave-2 architectural items).
 
 ## Architectural hardening (wave 2) — authority collapse & reproducibility
 

@@ -59,15 +59,15 @@ taxonomy).
 | `core.runs` initial publication non-atomic; results RMW unlocked | high | `write_text`; no lock | `39f50578` | `test_run_core.py` |
 | Environment contract contradiction (pyproject >=3.10 vs enforced 3.12) and missing `requirements.lock` | medium | inconsistent floor | `39f50578` | `test_run_core.py` |
 | CI did not trigger on the production branch | high | missing branch glob + no release workflow | `1fea26ab` | `.github/workflows/release.yml` |
+| Executed route realization was never observed (P0.10) | high | no dump render/compare | P0.10 commit | `test_route_observation.py`, real backend gates |
 
 Historical scientific findings F-0001 and F-0004 are FIXED in
 `validation/FINDINGS.md`; F-0002 ACCEPTED.
 
 ## 5. Remaining limitations
 
-- P0.10 executed route realization is not implemented; evidence honestly
-  records `DOMAIN_QUALIFIED_ROUTE_NOT_OBSERVED` (no false equivalence
-  claim).
+- P0.10 observes FIRST-HOP realization equivalence only (the fork's dump
+  is a first-hop table); the remainder of the path is not observed.
 - Build manifests are local files, not a cryptographic trust root: a
   clean-clone CI must generate them and the release manifest must tie
   them to the tag. `release-manifest` covers BookSim and ASTRA; Ramulator
@@ -158,6 +158,7 @@ clone and a release manifest tying manifests to a tag. Owed.
 
 - ASTRA numerical comparison (NOT_ESTABLISHED).
 - Reduce-scatter/all-gather chunk ownership/rotation (not modeled).
+- Route realization beyond the first hop (the fork dumps first hops only).
 - Injection faster than one packet per cycle (trace model limit).
 
 ## 17. Dirty-tree status
@@ -172,11 +173,11 @@ Historical branches untouched (no cleanup performed). `main` untouched.
 
 ## 19. Release decision
 
-**NOT READY.** Producer admission/provenance and full conservation are
-now enforced end-to-end (schema v2 evidence binds the verified manifest and
-recipe; the certified evaluator refuses unpinned producers; B7 is closed).
-Remaining scientific item: P0.10 executed route realization (honestly
-unobserved). The operational program remains open: durable run bundles
+**NOT READY.** Producer admission/provenance, conservation, executed-route
+observation and the fail-closed semantic taxonomy are enforced end-to-end
+(evidence schema v3 binds the manifest, recipe and route dump; the certified
+evaluator refuses unpinned producers and divergent routes). The operational
+program remains open: durable run bundles
 (P2), failure injection (P3), concurrency/idempotency (P4), API/schema
 freeze (P5), observability/limits, security review, clean-clone
 qualification, and the release manifest.

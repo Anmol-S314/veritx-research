@@ -35,8 +35,8 @@ Rule enforced by this map:
 | logical messages | `workload.messages.LogicalMessage` | — | lowering | — | oracle checks | not persisted | — | yes | scope-limited: no chunk id (F-0004) |
 | physical traffic | `workload.traffic.PhysicalTrafficArtifact` | 1 | lowering | `from_dict` | `validate_conservation` | canonical JSON | none | yes | canonical |
 | participant mapping | `workload.traffic.ParticipantEndpointMapping` | 1 | lowering | `from_dict` | validate | canonical JSON | none | yes | canonical |
-| prepared backend input | `backend.booksim_projection.PreparedBookSimInput` | 3 | projection | `from_dict` | id recompute | canonical JSON + config/trace | v2 (seed) refused | yes | canonical (v3 binds expected_flits) |
-| backend evidence (scientific) | `backend.evidence.ScientificBackendEvidence` | 2 | execution | `ScientificBackendEvidence.from_dict` | closed fields + id recompute + admission | canonical JSON | v1 refused (cannot name its manifest) | yes | canonical; binds build manifest digest/recipe |
+| prepared backend input | `backend.booksim_projection.PreparedBookSimInput` | 4 | projection | `from_dict` | id recompute | canonical JSON + config/trace | v2/v3 refused | yes | canonical (v4 binds expected_flits + expected_route_rows + dump render) |
+| backend evidence (scientific) | `backend.evidence.ScientificBackendEvidence` | 3 | execution | `ScientificBackendEvidence.from_dict` | closed fields + id recompute + admission | canonical JSON | v1/v2 refused | yes | canonical; binds build manifest + route dump |
 | backend evidence (artifact) | `backend.evidence.EvidenceArtifact` | 1 | M1.4 | `from_dict` | id recompute | canonical JSON | v1 label ordering preserved | yes | VERIFY vs ScientificBackendEvidence |
 | RT certified evidence | `backend.booksim.CertifiedBookSimEvidence` | — | RT | — | `to_dict` coerces | none | **legacy vocabulary** | not production-reachable (test-only readers in `application/results.py`) | legacy |
 | performance result | `performance.result` | 1 | performance | `from_dict` | VERIFY | canonical JSON | RT readers in `application/results.py` (legacy, test-only) | yes | canonical production path |
@@ -102,11 +102,13 @@ certificate and compiler boundaries catch the taxonomy rather than Python's
 built-in `ValueError`. A bare programmer `ValueError` (or
 TypeError/AttributeError/RuntimeError/NameError) now propagates and aborts.
 
-### B8 — executed route realization is not observed (OPEN, honest)
+### B8 — executed route realization (CLOSED)
 
-The vendored fork emits a first-hop route dump (`routing_dump_file`), but
-the canonical execution does not yet render it and compare it against the
-resolved route, so evidence honestly records
-`DOMAIN_QUALIFIED_ROUTE_NOT_OBSERVED`. No profile claims observed route
-equivalence. Implementing exact destination-aware observation (coverage,
-first-hop equality, adjacency, routing class) is the remaining work.
+The certified prepared input now renders the fork's route-dump path and
+binds the canonical first-hop table (`expected_route_rows`). A supervised
+execution reads the dump, compares destination-by-destination (coverage,
+exact next-router equality, malformed/duplicate refusal), and records
+`EXECUTED_ROUTE_OBSERVED` + the dump digest; a missing or divergent dump
+refuses. Native mesh-DOR proves endpoint==router 1:1; AnyNet renders the
+canonical router/node ids verbatim, so the id mapping is exact, not
+assumed. Scope: FIRST-HOP realization equivalence only.
