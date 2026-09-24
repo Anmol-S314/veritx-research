@@ -1,0 +1,64 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "VERITX validation experiment",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "id", "title", "fabric", "workload", "checks"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "id": {"type": "string", "pattern": "^V[0-9]{2,}$"},
+    "title": {"type": "string", "minLength": 1},
+    "fabric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["compute_tiles", "tp", "link_width"],
+      "properties": {
+        "topology_family": {"enum": ["mesh"], "default": "mesh"},
+        "compute_tiles": {"type": "integer", "minimum": 1},
+        "tp": {"type": "integer", "minimum": 1},
+        "link_width": {"type": "integer", "minimum": 1},
+        "concentration": {"type": "integer", "minimum": 1, "default": 1},
+        "num_vcs": {"type": "integer", "minimum": 1, "default": 1}
+      }
+    },
+    "workload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {"enum": ["p2p", "collective"]},
+        "collective_kind": {"enum": ["ALLREDUCE", "ALLTOALL", "ALLGATHER", "REDUCESCATTER"]},
+        "payload_bytes": {"type": "integer", "minimum": 1},
+        "src_rank": {"type": "integer", "minimum": 0},
+        "dst_rank": {"type": "integer", "minimum": 0}
+      }
+    },
+    "expected": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "packets": {"type": "integer", "minimum": 1},
+        "flits": {"type": "integer", "minimum": 1},
+        "route_hops": {"type": "integer", "minimum": 1},
+        "route_hops_avg": {"type": "number", "minimum": 0},
+        "notes": {"type": "string"}
+      }
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "conservation",
+          "hand_route",
+          "hand_counts",
+          "standalone_parity",
+          "window_invariance"
+        ]
+      }
+    },
+    "seed": {"type": "integer", "minimum": 0, "default": 0},
+    "timeout_s": {"type": "integer", "minimum": 1, "default": 600}
+  }
+}

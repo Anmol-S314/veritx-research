@@ -96,3 +96,36 @@ with packet count.
 `tests/test_backend_booksim_execution.py`: window-invariance,
 completion-after-window refusal, window-only refusal, and the real
 native-mesh / AnyNet execution gates.
+
+---
+
+## F-0002 — BookSim `Hops average` is router hops + 1 (ejection counted)
+
+**Status:** ACCEPTED (known definitional difference, not a defect)
+**Severity:** low — a reporting-basis difference, not a routing error
+**Found:** 2026-09-24, during experiment V01
+
+### What it is
+
+BookSim increments `Flit::hops` once per router traversal, including the
+traversal that ejects the flit at the destination
+(`third_party/booksim2/src/routers/iq_router.cpp`, the
+`f->hops++` in the input-to-output scheduling path). Its reported
+`Hops average` is therefore the **router-to-router** hop count plus one.
+VERITX's canonical route artifact counts router-to-router hops.
+
+### Evidence (2x2 mesh, single 1-flit packet from router 0)
+
+```text
+0 -> 1 : Manhattan 1, BookSim Hops average 2
+0 -> 2 : Manhattan 1, BookSim Hops average 2
+0 -> 3 : Manhattan 2, BookSim Hops average 3
+```
+
+### Handling
+
+The corpus `hand_route` check pins the exact relationship
+`authority_hops == hand_router_hops + 1` and documents the cause, rather
+than demanding equality (which would be wrong) or ignoring the statistic
+(which would hide a real routing error). No VERITX product claim consumes
+BookSim's `Hops average`, so no product value is affected.

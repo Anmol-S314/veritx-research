@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "id": "V02",
+  "title": "4x4 mesh, 16-node TP ALLREDUCE, 1024 B payload",
+  "fabric": {
+    "topology_family": "mesh",
+    "compute_tiles": 16,
+    "tp": 16,
+    "link_width": 64,
+    "concentration": 1,
+    "num_vcs": 1
+  },
+  "workload": {
+    "kind": "collective",
+    "collective_kind": "ALLREDUCE",
+    "payload_bytes": 1024
+  },
+  "expected": {
+    "notes": "Collective packetisation is workload-defined, so no hand packet count is claimed. Checks: conservation (packets/flits close), standalone BookSim completion parity, and window invariance."
+  },
+  "checks": [
+    "conservation",
+    "standalone_parity",
+    "window_invariance"
+  ]
+}

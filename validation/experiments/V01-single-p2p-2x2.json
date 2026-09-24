@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "id": "V01",
+  "title": "2x2 mesh, single 1-flit P2P router 0 -> router 3",
+  "fabric": {
+    "topology_family": "mesh",
+    "compute_tiles": 4,
+    "tp": 4,
+    "link_width": 64,
+    "concentration": 1,
+    "num_vcs": 1
+  },
+  "workload": {
+    "kind": "p2p",
+    "src_rank": 0,
+    "dst_rank": 3,
+    "payload_bytes": 7
+  },
+  "expected": {
+    "packets": 1,
+    "flits": 1,
+    "route_hops": 2,
+    "notes": "Opposite corners of a 2x2 mesh: router-to-router Manhattan distance |1-0|+|1-0| = 2. A flit carries a 7-bit header (2-bit source, 2-bit destination, 2-bit flit_type, 1-bit vc_id) out of 64 bits, leaving 57 usable payload bits; 7 payload bytes = 56 bits fits in one flit, so packets=flits=1. BookSim's reported hop average is the router-to-router count plus one because it counts the destination ejection (routers/iq_router.cpp), so the authority must report 2 + 1 = 3."
+  },
+  "checks": [
+    "conservation",
+    "hand_counts",
+    "hand_route",
+    "standalone_parity",
+    "window_invariance"
+  ]
+}

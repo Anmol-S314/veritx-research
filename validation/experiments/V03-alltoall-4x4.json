@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "id": "V03",
+  "title": "4x4 mesh, 16-node EP ALLTOALL, 1024 B payload",
+  "fabric": {
+    "topology_family": "mesh",
+    "compute_tiles": 16,
+    "tp": 16,
+    "link_width": 64,
+    "concentration": 1,
+    "num_vcs": 1
+  },
+  "workload": {
+    "kind": "collective",
+    "collective_kind": "ALLTOALL",
+    "payload_bytes": 1024
+  },
+  "expected": {
+    "notes": "Expert-parallel all-to-all: every rank sends to every rank. No hand packet count claimed; checks are conservation, standalone completion parity and window invariance."
+  },
+  "checks": [
+    "conservation",
+    "standalone_parity",
+    "window_invariance"
+  ]
+}

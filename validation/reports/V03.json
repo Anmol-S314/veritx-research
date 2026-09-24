@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "id": "V03",
+  "title": "4x4 mesh, 16-node EP ALLTOALL, 1024 B payload",
+  "profile_id": "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1",
+  "fabric": {
+    "compute_tiles": 16,
+    "tp": 16,
+    "link_width": 64,
+    "num_vcs": 1
+  },
+  "workload": "collective",
+  "veritx": {
+    "packets": 480,
+    "flits": 2400,
+    "completion_cycles": 719,
+    "sample_window_cycles": 1480,
+    "canonical_hops_avg": 2.6666666666666665
+  },
+  "authority": {
+    "class": "standalone_booksim",
+    "completion_cycles": 719,
+    "sample_window_cycles": 2480,
+    "injected_flits": 2400,
+    "accepted_flits": 2400,
+    "hops_avg": 3.66667
+  },
+  "checks": [
+    {
+      "name": "conservation",
+      "authority_class": "conservation",
+      "independence": "independent",
+      "verdict": "exact",
+      "detail": "packets and flits close exactly",
+      "values": {
+        "packets": 480,
+        "flits": 2400,
+        "authority_injected_flits": 2400,
+        "authority_accepted_flits": 2400
+      }
+    },
+    {
+      "name": "standalone_parity",
+      "authority_class": "standalone_booksim",
+      "independence": "semi_independent",
+      "verdict": "exact",
+      "detail": "VERITX completion 719 == authority 719",
+      "values": {
+        "veritx_completion": 719,
+        "authority_completion": 719,
+        "veritx_window": 1480,
+        "authority_window": 2480
+      }
+    },
+    {
+      "name": "window_invariance",
+      "authority_class": "standalone_booksim",
+      "independence": "semi_independent",
+      "verdict": "exact",
+      "detail": "completion invariant across independent windows",
+      "values": {
+        "completion": 719,
+        "windows": {
+          "veritx": 1480,
+          "authority": 2480,
+          "authority_alt": 3480
+        }
+      }
+    }
+  ],
+  "passed": true
+}

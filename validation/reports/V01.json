@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "id": "V01",
+  "title": "2x2 mesh, single 1-flit P2P router 0 -> router 3",
+  "profile_id": "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1",
+  "fabric": {
+    "compute_tiles": 4,
+    "tp": 4,
+    "link_width": 64,
+    "num_vcs": 1
+  },
+  "workload": "p2p",
+  "veritx": {
+    "packets": 1,
+    "flits": 1,
+    "completion_cycles": 17,
+    "sample_window_cycles": 1001,
+    "canonical_hops_avg": 2.0
+  },
+  "authority": {
+    "class": "standalone_booksim",
+    "completion_cycles": 17,
+    "sample_window_cycles": 2001,
+    "injected_flits": 1,
+    "accepted_flits": 1,
+    "hops_avg": 3.0
+  },
+  "checks": [
+    {
+      "name": "conservation",
+      "authority_class": "conservation",
+      "independence": "independent",
+      "verdict": "exact",
+      "detail": "packets and flits close exactly",
+      "values": {
+        "packets": 1,
+        "flits": 1,
+        "authority_injected_flits": 1,
+        "authority_accepted_flits": 1
+      }
+    },
+    {
+      "name": "hand_counts",
+      "authority_class": "hand_calculated",
+      "independence": "independent",
+      "verdict": "exact",
+      "detail": "packet/flit counts match by hand",
+      "values": {
+        "packets": 1,
+        "flits": 1
+      }
+    },
+    {
+      "name": "hand_route",
+      "authority_class": "hand_calculated",
+      "independence": "independent",
+      "verdict": "exact",
+      "detail": "router hops match hand arithmetic; authority = hand + 1 (destination ejection counted)",
+      "values": {
+        "hand_router_hops": 2,
+        "canonical_hops_avg": 2.0,
+        "authority_hops_avg": 3.0,
+        "authority_expected": 3
+      }
+    },
+    {
+      "name": "standalone_parity",
+      "authority_class": "standalone_booksim",
+      "independence": "semi_independent",
+      "verdict": "exact",
+      "detail": "VERITX completion 17 == authority 17",
+      "values": {
+        "veritx_completion": 17,
+        "authority_completion": 17,
+        "veritx_window": 1001,
+        "authority_window": 2001
+      }
+    },
+    {
+      "name": "window_invariance",
+      "authority_class": "standalone_booksim",
+      "independence": "semi_independent",
+      "verdict": "exact",
+      "detail": "completion invariant across independent windows",
+      "values": {
+        "completion": 17,
+        "windows": {
+          "veritx": 1001,
+          "authority": 2001,
+          "authority_alt": 3001
+        }
+      }
+    }
+  ],
+  "passed": true
+}
