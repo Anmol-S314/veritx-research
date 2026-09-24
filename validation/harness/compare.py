@@ -278,26 +278,48 @@ def run_rtl_checks(*, spec, built, veritx_stats: dict, rtl) -> list[CheckResult]
             values={"hand_router_hops": expected.route_hops,
                     "rtl_hops": sorted({p.hops for p in rtl.packets})}))
 
+    if rtl.packets:
         problems = []
         v = veritx_stats["completion_cycles"]
         rtl_completion = rtl.completion_cycles
-        if rtl_completion != v:
-            problems.append(
-                f"RTL completion {rtl_completion} != canonical completion {v}")
-        # self-consistency: the tail latency must obey the RTL's own law
-        for p in rtl.packets:
-            if p.hops is None or p.latency != 7 + 5 * p.hops:
+        tolerance = expected.rtl_completion_tolerance
+        if tolerance == 0:
+            if rtl_completion != v:
                 problems.append(
-                    f"RTL flit latency {p.latency} violates its 7+5*hop law "
-                    f"for {p.hops} hops")
-                break
+                    f"RTL completion {rtl_completion} != canonical "
+                    f"completion {v}")
+        else:
+            delta = rtl_completion - v
+            if abs(delta) > tolerance:
+                problems.append(
+                    f"|RTL {rtl_completion} - canonical {v}| = {abs(delta)} "
+                    f"exceeds tolerance {tolerance}")
+        # the 7+5*hop law is the UNCONTENDED single-route law: enforce it
+        # only for single-route experiments with zero tolerance, never on
+        # a collective where flits legitimately queue.
+        if expected.route_hops is not None and tolerance == 0:
+            for p in rtl.packets:
+                if p.hops is None or p.latency != 7 + 5 * p.hops:
+                    problems.append(
+                        f"RTL flit latency {p.latency} violates its "
+                        f"7+5*hop law for {p.hops} hops")
+                    break
+        if tolerance == 0:
+            detail = (f"RTL completion {rtl_completion} == canonical "
+                      f"completion {v}")
+            if expected.route_hops is not None:
+                detail += "; RTL tail latency obeys 7+5*hop"
+        else:
+            delta = rtl_completion - v
+            detail = (f"RTL completion {rtl_completion} vs canonical {v} "
+                      f"(delta {delta:+d}, tolerance +/-{tolerance})")
         results.append(CheckResult(
             name="rtl_latency", authority_class="rtl_calibrated",
-            detail="; ".join(problems)
-            or (f"RTL completion {rtl_completion} == canonical completion {v}; "
-                "RTL tail latency obeys 7+5*hop"),
+            detail="; ".join(problems) or detail,
             verdict=_verdict(not problems),
             values={"veritx_completion": v,
                     "rtl_completion": rtl_completion,
-                    "rtl_law": "7 + 5*hop"}))
+                    "tolerance": tolerance,
+                    "delta": rtl_completion - v,
+                    "rtl_law": "7 + 5*hop (uncontended single-route)"}))
     return results

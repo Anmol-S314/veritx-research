@@ -72,6 +72,9 @@ class Expected:
     flits: int | None = None
     route_hops: int | None = None
     route_hops_avg: float | None = None
+    #: allowed |RTL - canonical| completion delta in cycles. 0 means the
+    #: uncontended case, where exact equality and the 7+5*hop law must hold.
+    rtl_completion_tolerance: int = 0
     notes: str = ""
 
 
@@ -176,6 +179,8 @@ class ExperimentSpec:
             route_hops_avg=(float(exp_doc["route_hops_avg"])
                             if exp_doc.get("route_hops_avg") is not None
                             else None),
+            rtl_completion_tolerance=int(
+                exp_doc.get("rtl_completion_tolerance", 0)),
             notes=str(exp_doc.get("notes", "")))
 
         checks = tuple(str(c) for c in doc["checks"])

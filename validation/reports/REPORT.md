@@ -100,7 +100,7 @@ profile: `CERTIFIED_BOOKSIM_MESH_DOR_XY_V1`  ·  fabric: {'compute_tiles': 4, 't
 | standalone_parity | standalone_booksim | semi_independent | 17 == 17 | exact |
 | rtl_conservation | rtl | independent | {"canonical_flits": 1, "rtl_dump_flits": 1, "rtl_ejected_flits": 1, "rtl_injected_flits": 1} | exact |
 | rtl_route | rtl | independent | {"hand_router_hops": 2, "rtl_hops": [2]} | exact |
-| rtl_latency | rtl_calibrated | semi_independent | {"rtl_completion": 17, "rtl_law": "7 + 5*hop", "veritx_completion": 17} | exact |
+| rtl_latency | rtl_calibrated | semi_independent | {"delta": 0, "rtl_completion": 17, "rtl_law": "7 + 5*hop (uncontended single-route)", "tolerance": 0, "veritx_completion": 17} | exact |
 
 **PASS**
 
@@ -116,7 +116,7 @@ profile: `CERTIFIED_BOOKSIM_MESH_DOR_XY_V1`  ·  fabric: {'compute_tiles': 16, '
 | standalone_parity | standalone_booksim | semi_independent | 38 == 38 | exact |
 | rtl_conservation | rtl | independent | {"canonical_flits": 2, "rtl_dump_flits": 2, "rtl_ejected_flits": 2, "rtl_injected_flits": 2} | exact |
 | rtl_route | rtl | independent | {"hand_router_hops": 6, "rtl_hops": [6]} | exact |
-| rtl_latency | rtl_calibrated | semi_independent | {"rtl_completion": 38, "rtl_law": "7 + 5*hop", "veritx_completion": 38} | exact |
+| rtl_latency | rtl_calibrated | semi_independent | {"delta": 0, "rtl_completion": 38, "rtl_law": "7 + 5*hop (uncontended single-route)", "tolerance": 0, "veritx_completion": 38} | exact |
 
 **PASS**
 
@@ -132,10 +132,36 @@ profile: `CERTIFIED_BOOKSIM_MESH_DOR_XY_V1`  ·  fabric: {'compute_tiles': 16, '
 | standalone_parity | standalone_booksim | semi_independent | 39 == 39 | exact |
 | rtl_conservation | rtl | independent | {"canonical_flits": 3, "rtl_dump_flits": 3, "rtl_ejected_flits": 3, "rtl_injected_flits": 3} | exact |
 | rtl_route | rtl | independent | {"hand_router_hops": 6, "rtl_hops": [6]} | exact |
-| rtl_latency | rtl_calibrated | semi_independent | {"rtl_completion": 39, "rtl_law": "7 + 5*hop", "veritx_completion": 39} | exact |
+| rtl_latency | rtl_calibrated | semi_independent | {"delta": 0, "rtl_completion": 39, "rtl_law": "7 + 5*hop (uncontended single-route)", "tolerance": 0, "veritx_completion": 39} | exact |
+
+**PASS**
+
+## V09 — 2x2 mesh, 4-node ALLREDUCE: RTL cross-engine completion
+
+profile: `CERTIFIED_BOOKSIM_MESH_DOR_XY_V1`  ·  fabric: {'compute_tiles': 4, 'tp': 4, 'link_width': 64, 'num_vcs': 1}  ·  workload: collective
+
+| check | authority | independence | value | verdict |
+|---|---|---|---|---|
+| conservation | conservation | independent | packets=24, flits=24, auth_flits=24/24 | exact |
+| standalone_parity | standalone_booksim | semi_independent | 39 == 39 | exact |
+| rtl_conservation | rtl | independent | {"canonical_flits": 24, "rtl_dump_flits": 24, "rtl_ejected_flits": 24, "rtl_injected_flits": 24} | exact |
+| rtl_latency | rtl_calibrated | semi_independent | {"delta": 0, "rtl_completion": 39, "rtl_law": "7 + 5*hop (uncontended single-route)", "tolerance": 0, "veritx_completion": 39} | exact |
+
+**PASS**
+
+## V10 — 4x4 mesh, 16-node ALLREDUCE 1024B: RTL cross-engine completion
+
+profile: `CERTIFIED_BOOKSIM_MESH_DOR_XY_V1`  ·  fabric: {'compute_tiles': 16, 'tp': 16, 'link_width': 64, 'num_vcs': 1}  ·  workload: collective
+
+| check | authority | independence | value | verdict |
+|---|---|---|---|---|
+| conservation | conservation | independent | packets=960, flits=4800, auth_flits=4800/4800 | exact |
+| standalone_parity | standalone_booksim | semi_independent | 990 == 990 | exact |
+| rtl_conservation | rtl | independent | {"canonical_flits": 4800, "rtl_dump_flits": 4800, "rtl_ejected_flits": 4800, "rtl_injected_flits": 4800} | exact |
+| rtl_latency | rtl_calibrated | semi_independent | {"delta": 0, "rtl_completion": 990, "rtl_law": "7 + 5*hop (uncontended single-route)", "tolerance": 0, "veritx_completion": 990} | exact |
 
 **PASS**
 
 ---
 
-checks exact: 50/50
+checks exact: 58/58

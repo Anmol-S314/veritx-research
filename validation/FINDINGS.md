@@ -129,3 +129,48 @@ The corpus `hand_route` check pins the exact relationship
 than demanding equality (which would be wrong) or ignoring the statistic
 (which would hide a real routing error). No VERITX product claim consumes
 BookSim's `Hops average`, so no product value is affected.
+
+---
+
+## F-0003 — collective completion is injection-schedule-bound
+
+**Status:** ACCEPTED (documented projection semantics, with a real
+consequence for using completion as an objective)
+**Severity:** medium — limits what `completion_cycles` can rank
+**Found:** 2026-09-24, during experiments V09/V10
+
+### What it is
+
+The canonical trace projection assigns timestamps `0, 1, 2, ...` — one
+packet per cycle in emission order (`backend/booksim_projection.py`
+`trace_schedule`, documented as projection-defined emission order, not
+application wall-clock). As a result the measured completion of a
+trace-driven run is dominated by the injection window, not by the
+network's ability to deliver.
+
+### Evidence
+
+```text
+V02/V10  16-node ALLREDUCE, 960 packets, 4800 flits
+         completion = 990 cycles   (~= 960 injection cycles + 30 drain)
+V09      4-node ALLREDUCE
+         completion = 39 cycles
+```
+
+The 960-packet run moves ~4.85 flits/cycle, so the network has spare
+capacity; the injection schedule (1 packet/cycle) is the bottleneck. The
+RTL, an independent engine, reproduces the same completion exactly,
+confirming this is the projection's schedule, not a network effect.
+
+### Consequence
+
+`Optimizer`'s `completion_cycles` objective, for workloads that stay
+below the injection rate, ranks candidates largely by packet count
+(which depends on packetisation) rather than by network contention. The
+network's contribution is only visible above saturation. A saturating
+injection model (multiple packets per cycle, or a burst model) would be
+required for completion to exercise the network.
+
+This is a measurement-validity limitation of the same family as F-0001,
+but it is documented projection semantics rather than a parser bug, so
+it is recorded rather than "fixed".

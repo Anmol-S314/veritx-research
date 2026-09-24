@@ -4,7 +4,7 @@ Independent engines: availability and self-consistency.
 
 | engine | result | detail |
 |---|---|---|
-| ramulator_battery | PASS | 2.0s, 16/16 checks; 16/16 checks |
+| ramulator_battery | PASS | 1.9s, 16/16 checks; 16/16 checks |
 | rtl_selfcheck | PASS | GATE R0: ALL CHECKS PASSED |
 
 ---

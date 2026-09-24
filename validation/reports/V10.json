@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "id": "V10",
+  "title": "4x4 mesh, 16-node ALLREDUCE 1024B: RTL cross-engine completion",
+  "fabric": {
+    "compute_tiles": 16,
+    "tp": 16,
+    "link_width": 64,
+    "num_vcs": 1
+  },
+  "workload": "collective",
+  "profile_id": "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1",
+  "veritx": {
+    "packets": 960,
+    "flits": 4800,
+    "completion_cycles": 990,
+    "sample_window_cycles": 1960,
+    "canonical_hops_avg": 2.6666666666666665
+  },
+  "authority": {
+    "class": "standalone_booksim",
+    "completion_cycles": 990,
+    "sample_window_cycles": 2960,
+    "injected_flits": 4800,
+    "accepted_flits": 4800,
+    "hops_avg": 3.66667
+  },
+  "checks": [
+    {
+      "name": "conservation",
+      "authority_class": "conservation",
+      "independence": "independent",
+      "verdict": "exact",
+      "detail": "packets and flits close exactly",
+      "values": {
+        "packets": 960,
+        "flits": 4800,
+        "authority_injected_flits": 4800,
+        "authority_accepted_flits": 4800
+      }
+    },
+    {
+      "name": "standalone_parity",
+      "authority_class": "standalone_booksim",
+      "independence": "semi_independent",
+      "verdict": "exact",
+      "detail": "VERITX completion 990 == authority 990",
+      "values": {
+        "veritx_completion": 990,
+        "authority_completion": 990,
+        "veritx_window": 1960,
+        "authority_window": 2960
+      }
+    },
+    {
+      "name": "rtl_conservation",
+      "authority_class": "rtl",
+      "independence": "independent",
+      "verdict": "exact",
+      "detail": "RTL injects and ejects the exact workload",
+      "values": {
+        "rtl_injected_flits": 4800,
+        "rtl_ejected_flits": 4800,
+        "rtl_dump_flits": 4800,
+        "canonical_flits": 4800
+      }
+    },
+    {
+      "name": "rtl_latency",
+      "authority_class": "rtl_calibrated",
+      "independence": "semi_independent",
+      "verdict": "exact",
+      "detail": "RTL completion 990 == canonical completion 990",
+      "values": {
+        "veritx_completion": 990,
+        "rtl_completion": 990,
+        "tolerance": 0,
+        "delta": 0,
+        "rtl_law": "7 + 5*hop (uncontended single-route)"
+      }
+    }
+  ],
+  "passed": true
+}

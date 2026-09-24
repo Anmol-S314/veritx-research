@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "id": "V09",
+  "title": "2x2 mesh, 4-node ALLREDUCE: RTL cross-engine completion",
+  "fabric": {
+    "topology_family": "mesh",
+    "compute_tiles": 4,
+    "tp": 4,
+    "link_width": 64,
+    "concentration": 1,
+    "num_vcs": 1
+  },
+  "workload": {
+    "kind": "collective",
+    "collective_kind": "ALLREDUCE",
+    "payload_bytes": 8
+  },
+  "expected": {
+    "rtl_completion_tolerance": 0,
+    "notes": "A collective through a second engine. VERITX lowers ALLREDUCE to a set of unicast packets; the RTL executes the same trace on its own router microarchitecture. Measured exact parity (RTL == canonical), so the tolerance is 0. Under a contended workload a non-zero tolerance would be set from evidence; see FINDINGS F-0003 on injection-bound completion."
+  },
+  "checks": [
+    "conservation",
+    "standalone_parity",
+    "rtl_parity"
+  ]
+}

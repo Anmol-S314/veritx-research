@@ -41,6 +41,7 @@
         "flits": {"type": "integer", "minimum": 1},
         "route_hops": {"type": "integer", "minimum": 1},
         "route_hops_avg": {"type": "number", "minimum": 0},
+        "rtl_completion_tolerance": {"type": "integer", "minimum": 0},
         "notes": {"type": "string"}
       }
     },

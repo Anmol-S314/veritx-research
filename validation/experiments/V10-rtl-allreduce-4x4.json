@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "id": "V10",
+  "title": "4x4 mesh, 16-node ALLREDUCE 1024B: RTL cross-engine completion",
+  "fabric": {
+    "topology_family": "mesh",
+    "compute_tiles": 16,
+    "tp": 16,
+    "link_width": 64,
+    "concentration": 1,
+    "num_vcs": 1
+  },
+  "workload": {
+    "kind": "collective",
+    "collective_kind": "ALLREDUCE",
+    "payload_bytes": 1024
+  },
+  "expected": {
+    "rtl_completion_tolerance": 0,
+    "notes": "The 960-packet 16-node ALLREDUCE, replayed through the RTL. Exact completion parity (990 == 990). Completion is injection-bound here (960 packets at the projection's 1 packet/cycle schedule), so the network is not the bottleneck; see FINDINGS F-0003. The check still catches any change in either engine's timing or routing."
+  },
+  "checks": [
+    "conservation",
+    "standalone_parity",
+    "rtl_parity"
+  ]
+}

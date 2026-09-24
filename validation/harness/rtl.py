@@ -199,8 +199,15 @@ def run_authority(*, spec, built, repo_root: Path, work_root: Path
     lines = [ln for ln in trace.splitlines() if ln.strip()]
     max_ts = max(int(ln.split()[0]) for ln in lines)
     run_cycles = max_ts + 1 + 200
-    per_nic = len({int(ln.split()[1]) for ln in lines})
-    t_depth = max(16, 1 << (per_nic.bit_length()))
+    # T_DEPTH must cover the busiest NIC's entry count plus the appended
+    # empty marker, not the number of NICs.
+    per_nic: dict[int, int] = {}
+    for ln in lines:
+        src = int(ln.split()[1])
+        per_nic[src] = per_nic.get(src, 0) + 1
+    busiest = max(per_nic.values(), default=1)
+    needed = busiest + 1
+    t_depth = max(16, 1 << (needed - 1).bit_length())
     build_dir = Path(work_root) / f"rtlbuild-{x_dim}x{y_dim}-vcs{spec.fabric.num_vcs}-t{t_depth}"
     binary = build(repo_root=repo_root, build_dir=build_dir, x_dim=x_dim,
                    y_dim=y_dim, vcs=spec.fabric.num_vcs, t_depth=t_depth)
