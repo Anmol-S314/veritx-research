@@ -30,6 +30,7 @@ by ``to_dict()`` but deliberately excluded from ``vc_assignment_hash``.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -95,6 +96,57 @@ def _pairs(name: str, value: Any) -> tuple[tuple[int, int], ...]:
         out.append((_as_int(f"{name} key", item[0]),
                     _as_int(f"{name} value", item[1])))
     return tuple(out)
+
+
+def _authoring_rows(value: Any, *, name: str) -> tuple[tuple[Any, Any], ...]:
+    """Normalize an AUTHORING argument to ordered 2-element rows.
+
+    Accepts a mapping or a sequence of pairs. A ``str`` is refused here:
+    iterating it yields characters, which is never a row sequence, and
+    silently repairing one is how malformed authoring becomes a fabric.
+    Duplicate keys are deliberately NOT collapsed — the caller decides
+    whether a repeated key is an authoring error.
+    """
+    if isinstance(value, str):
+        raise VCAssignmentError(
+            f"{name} must be a mapping or a sequence of pairs, got str")
+    if isinstance(value, Mapping):
+        rows = list(value.items())
+    elif isinstance(value, (tuple, list)):
+        rows = list(value)
+    else:
+        raise VCAssignmentError(
+            f"{name} must be a mapping or a sequence of pairs, got "
+            f"{type(value).__name__}")
+    out: list[tuple[Any, Any]] = []
+    for row in rows:
+        if not isinstance(row, (tuple, list)) or len(row) != 2:
+            raise VCAssignmentError(f"{name} entries must be 2-element pairs")
+        out.append((row[0], row[1]))
+    return tuple(out)
+
+
+def _reject_duplicate_keys(rows: tuple[tuple[Any, Any], ...],
+                           name: str) -> None:
+    """Refuse repeated keys BEFORE they can be collapsed into a dict."""
+    seen: list[Any] = []
+    for key, _value in rows:
+        if key in seen:
+            raise VCAssignmentError(
+                f"{name} key {key!r} declared more than once")
+        seen.append(key)
+
+
+def _require_json_list(value: Any, name: str) -> list[Any]:
+    """Persisted sequence fields must be JSON lists — not tuples or str.
+
+    ``type(value) is list`` (not ``isinstance``) so JSON tuples smuggled
+    back through a Python round-trip are refused, not repaired.
+    """
+    if type(value) is not list:
+        raise VCAssignmentError(
+            f"{name} must be a JSON list, got {type(value).__name__}")
+    return value
 
 
 @dataclass(frozen=True)
@@ -178,6 +230,8 @@ class VCAssignmentArtifact:
             if not isinstance(routing_class, str) or not routing_class:
                 raise VCAssignmentError(
                     "routing class names must be non-empty strings")
+        if not isinstance(self.allowed_transitions, tuple):
+            raise VCAssignmentError("allowed_transitions must be a tuple")
         transitions = _pairs("allowed_transitions", self.allowed_transitions)
         if tuple(sorted(set(transitions))) != transitions:
             raise VCAssignmentError(
@@ -262,32 +316,62 @@ class VCAssignmentArtifact:
             raise VCAssignmentError(
                 f"unexpected artifact type {d.get('type')!r}")
         try:
-            traffic = tuple(
-                (cls, tuple(vcs))
-                for cls, vcs in _need(
-                    d, "traffic_class_to_vcs", "vc_assignment")
-            )
+            vc_ids = _require_json_list(
+                _need(d, "vc_ids", "vc_assignment"), "vc_ids")
+            traffic: list[tuple[str, tuple[int, ...]]] = []
+            for row in _require_json_list(
+                    _need(d, "traffic_class_to_vcs", "vc_assignment"),
+                    "traffic_class_to_vcs"):
+                if type(row) is not list or len(row) != 2:
+                    raise VCAssignmentError(
+                        "traffic_class_to_vcs entries must be 2-element "
+                        "JSON lists")
+                cls_name, vcs = row
+                if type(vcs) is not list:
+                    raise VCAssignmentError(
+                        f"traffic class {cls_name!r} VC set must be a JSON list")
+                traffic.append((cls_name, tuple(vcs)))
+            routing: list[tuple[Any, Any]] = []
+            for row in _require_json_list(
+                    _need(d, "vc_to_routing_class", "vc_assignment"),
+                    "vc_to_routing_class"):
+                if type(row) is not list or len(row) != 2:
+                    raise VCAssignmentError(
+                        "vc_to_routing_class entries must be 2-element "
+                        "JSON lists")
+                routing.append((row[0], row[1]))
+            transitions: list[tuple[int, int]] = []
+            for row in _require_json_list(
+                    _need(d, "allowed_transitions", "vc_assignment"),
+                    "allowed_transitions"):
+                if type(row) is not list or len(row) != 2:
+                    raise VCAssignmentError(
+                        "allowed_transitions entries must be 2-element "
+                        "JSON lists")
+                transitions.append((
+                    _as_int("allowed_transitions key", row[0]),
+                    _as_int("allowed_transitions value", row[1])))
+            escape_vcs = _require_json_list(
+                _need(d, "escape_vcs", "vc_assignment"), "escape_vcs")
+            artifact_hash = _need(d, "artifact_hash", "vc_assignment")
+            if not isinstance(artifact_hash, str) or not artifact_hash:
+                raise VCAssignmentError(
+                    "artifact_hash must be a non-empty string")
             # No int()/str() repair: malformed persisted values must be
             # rejected by __post_init__, never canonicalized into valid
             # state (True / 1.0 / "1" are impostors, not integers).
-            routing = tuple(
-                (vc, rc)
-                for vc, rc in _need(
-                    d, "vc_to_routing_class", "vc_assignment")
-            )
             return cls(
-                resolved_route_hash=_need(d, "resolved_route_hash", "vc_assignment"),
+                resolved_route_hash=_need(
+                    d, "resolved_route_hash", "vc_assignment"),
                 vc_count=_need(d, "vc_count", "vc_assignment"),
-                vc_ids=tuple(_need(d, "vc_ids", "vc_assignment")),
-                traffic_class_to_vcs=traffic,
-                vc_to_routing_class=routing,
-                allowed_transitions=_pairs(
-                    "allowed_transitions",
-                    _need(d, "allowed_transitions", "vc_assignment")),
-                escape_vcs=tuple(_need(d, "escape_vcs", "vc_assignment")),
+                vc_ids=tuple(vc_ids),
+                traffic_class_to_vcs=tuple(traffic),
+                vc_to_routing_class=tuple(routing),
+                allowed_transitions=tuple(transitions),
+                escape_vcs=tuple(escape_vcs),
                 derivation=_need(d, "derivation", "vc_assignment"),
                 schema_version=_need(d, "schema_version", "vc_assignment"),
-                artifact_hash=_need(d, "artifact_hash", "vc_assignment"),
+                artifact_hash=artifact_hash,
             )
         except VCAssignmentError:
             raise
@@ -298,6 +382,10 @@ class VCAssignmentArtifact:
     # ── parent legality ────────────────────────────────────────────────
     def validate_against(self, resolved_route: ResolvedRouteArtifact) -> None:
         """Prove every reference lands in the resolved route artifact."""
+        if not isinstance(resolved_route, ResolvedRouteArtifact):
+            raise VCAssignmentError(
+                "resolved_route must be a ResolvedRouteArtifact, got "
+                f"{type(resolved_route).__name__}")
         if self.resolved_route_hash != resolved_route.resolved_route_hash():
             raise VCAssignmentError(
                 "resolved_route_hash does not match the resolved route "
@@ -336,12 +424,31 @@ def make_vc_assignment_artifact(
         deadlock proofs get falsified);
       * no escape VC is designated.
     """
+    if not isinstance(resolved_route, ResolvedRouteArtifact):
+        raise VCAssignmentError(
+            "resolved_route must be a ResolvedRouteArtifact, got "
+            f"{type(resolved_route).__name__}")
     _as_int("vc_count", vc_count)
-    tc_pairs = tuple(
-        (cls, tuple(sorted(set(_int_tuple(
-            f"traffic class {cls!r} VC set", vcs)))))
-        for cls, vcs in sorted(dict(traffic_class_to_vcs).items())
-    )
+    if vc_count < 1:
+        raise VCAssignmentError("vc_count must be >= 1")
+    tc_rows = _authoring_rows(
+        traffic_class_to_vcs, name="traffic_class_to_vcs")
+    _reject_duplicate_keys(tc_rows, "traffic_class_to_vcs")
+    tc_pairs_list: list[tuple[str, tuple[int, ...]]] = []
+    for cls, vcs in tc_rows:
+        if not isinstance(cls, str) or not cls:
+            raise VCAssignmentError(
+                "traffic class names must be non-empty strings")
+        if isinstance(vcs, str) or not isinstance(vcs, (tuple, list)):
+            raise VCAssignmentError(
+                f"traffic class {cls!r} VC set must be a sequence of ints")
+        tc_pairs_list.append(
+            (cls, tuple(sorted(set(_int_tuple(
+                f"traffic class {cls!r} VC set", vcs))))))
+    if not tc_pairs_list:
+        raise VCAssignmentError(
+            "traffic_class_to_vcs must be non-empty")
+    tc_pairs = tuple(sorted(tc_pairs_list, key=lambda kv: kv[0]))
     ids = tuple(range(vc_count))
     if vc_to_routing_class is None:
         default_cls = (resolved_route.routing_classes[0]
@@ -349,16 +456,20 @@ def make_vc_assignment_artifact(
                        else DEFAULT_ROUTING_CLASS)
         vc_routing = tuple((vc, default_cls) for vc in ids)
     else:
+        vr_rows = _authoring_rows(
+            vc_to_routing_class, name="vc_to_routing_class")
+        _reject_duplicate_keys(vr_rows, "vc_to_routing_class")
         vc_routing = tuple(sorted(
-            (_as_int("vc id", vc), rc)
-            for vc, rc in dict(vc_to_routing_class).items()
+            (_as_int("vc id", vc), rc) for vc, rc in vr_rows
         ))
     if allowed_transitions is None:
         transitions = tuple((vc, vc) for vc in ids)
     else:
+        tr_rows = _authoring_rows(
+            allowed_transitions, name="allowed_transitions")
         transitions = tuple(sorted({
             (_as_int("transition src", a), _as_int("transition dst", b))
-            for a, b in allowed_transitions
+            for a, b in tr_rows
         }))
     artifact = VCAssignmentArtifact(
         resolved_route_hash=resolved_route.resolved_route_hash(),
