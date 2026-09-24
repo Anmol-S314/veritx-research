@@ -27,11 +27,11 @@
   },
   "checks": [
     {
-      "name": "conservation",
-      "authority_class": "conservation",
-      "independence": "independent",
+      "name": "trace_execution_conservation",
+      "authority_class": "trace_conservation",
+      "independence": "integration_gate",
       "verdict": "exact",
-      "detail": "packets and flits close exactly",
+      "detail": "the engine consumed exactly the produced trace",
       "values": {
         "packets": 1,
         "flits": 1,
@@ -42,22 +42,25 @@
     {
       "name": "hand_counts",
       "authority_class": "hand_calculated",
-      "independence": "independent",
+      "independence": "independent_oracle",
       "verdict": "exact",
       "detail": "packet/flit counts match by hand",
       "values": {
         "packets": 1,
-        "flits": 1
+        "flits": 1,
+        "packets_provenance": "preregistered_hand",
+        "flits_provenance": "posthoc_hand"
       }
     },
     {
       "name": "hand_route",
       "authority_class": "hand_calculated",
-      "independence": "independent",
+      "independence": "independent_oracle",
       "verdict": "exact",
       "detail": "router hops match hand arithmetic; authority = hand + 1 (destination ejection counted)",
       "values": {
         "hand_router_hops": 2,
+        "route_hops_provenance": "preregistered_hand",
         "canonical_hops_avg": 2.0,
         "authority_hops_avg": 3.0,
         "authority_expected": 3
@@ -66,7 +69,7 @@
     {
       "name": "standalone_parity",
       "authority_class": "standalone_booksim",
-      "independence": "semi_independent",
+      "independence": "semi_independent_shared_engine",
       "verdict": "exact",
       "detail": "VERITX completion 17 == authority 17",
       "values": {
@@ -79,7 +82,7 @@
     {
       "name": "window_invariance",
       "authority_class": "standalone_booksim",
-      "independence": "semi_independent",
+      "independence": "semi_independent_shared_engine",
       "verdict": "exact",
       "detail": "completion invariant across independent windows",
       "values": {

@@ -31,6 +31,10 @@ class EngineResult:
     passed: bool
     detail: str
     checks: tuple[tuple[str, bool, str], ...] = field(default_factory=tuple)
+    #: True when the engine's OUTPUT is scientifically meaningful, not just
+    #: that it ran. A liveness pass with validated=False must never feed a
+    #: scientific comparison.
+    validated: bool = True
 
 
 def find_python312() -> str | None:
@@ -154,8 +158,11 @@ def run_astra(repo_root: Path, work_root: Path,
     ok = evidence.status == "EXECUTED" and ranks == 16 and comm > 0
     return EngineResult(
         "astra_runtime", ok,
-        f"status={evidence.status}, ranks={ranks}, aggregate="
-        f"{evidence.aggregate_cycles}c, exposed_comm={comm}c")
+        f"ASTRA_RUNTIME_EXECUTES={'PASS' if ok else 'FAIL'}; "
+        f"ASTRA_NUMERICAL_VALIDITY=NOT_ESTABLISHED (aggregate "
+        f"{evidence.aggregate_cycles}c, exposed_comm {comm}c are unexplained "
+        "and must not enter a scientific comparison)",
+        validated=False)
 
 
 def run_engines(repo_root: Path, work_root: Path) -> list[EngineResult]:

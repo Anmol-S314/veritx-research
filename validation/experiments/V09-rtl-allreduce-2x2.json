@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "V09",
-  "title": "2x2 mesh, 4-node ALLREDUCE: RTL cross-engine completion",
+  "title": "2x2 mesh, 4-node ALLREDUCE: independent RTL execution of the canonical trace",
   "fabric": {
     "topology_family": "mesh",
     "compute_tiles": 4,
@@ -17,7 +17,7 @@
   },
   "expected": {
     "rtl_completion_tolerance": 0,
-    "notes": "A collective through a second engine. VERITX lowers ALLREDUCE to a set of unicast packets; the RTL executes the same trace on its own router microarchitecture. Measured exact parity (RTL == canonical), so the tolerance is 0. Under a contended workload a non-zero tolerance would be set from evidence; see FINDINGS F-0003 on injection-bound completion."
+    "notes": "Two distinct claims. (1) workload_lowering_conservation: the ring ALLREDUCE oracle (independent arithmetic, no veritx_dse import) predicts messages=2k(k-1)=24, bytes=2(k-1)B=48, chunk=B/k=2, flits=24, packets=24; VERITX's lowering must match BEFORE any simulator runs. (2) The RTL independently EXECUTES the trace VERITX derived from that lowering (it cannot validate the lowering itself). The RTL completion is calibrated to BookSim, so rtl_completion is semi-independent."
   },
   "checks": [
     "conservation",

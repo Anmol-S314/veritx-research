@@ -6,7 +6,7 @@ the hand-calculable layers — the expected answer computed outside VERITX.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -66,6 +66,12 @@ class WorkloadSpec:
             raise SpecError(f"unknown workload kind {self.kind!r}")
 
 
+PROVENANCE_KINDS = frozenset({
+    "preregistered_hand", "preregistered_oracle", "posthoc_hand",
+    "calibrated", "observed_regression", "external_reference", "unstated",
+})
+
+
 @dataclass(frozen=True)
 class Expected:
     packets: int | None = None
@@ -73,9 +79,27 @@ class Expected:
     route_hops: int | None = None
     route_hops_avg: float | None = None
     #: allowed |RTL - canonical| completion delta in cycles. 0 means the
-    #: uncontended case, where exact equality and the 7+5*hop law must hold.
+    #: uncontended case, where exact equality must hold.
     rtl_completion_tolerance: int = 0
     notes: str = ""
+    provenance_map: dict[str, str] = field(default_factory=dict)
+
+    def provenance(self, name: str) -> str:
+        return self.provenance_map.get(name, "unstated")
+
+
+def _expected_value(doc: dict[str, Any], key: str) -> tuple[Any, str]:
+    """Accept a bare value or ``{"value":..., "provenance":...}``."""
+    raw = doc.get(key)
+    if raw is None:
+        return None, "unstated"
+    if isinstance(raw, dict):
+        provenance = str(raw.get("provenance", "unstated"))
+        if provenance not in PROVENANCE_KINDS:
+            raise SpecError(
+                f"expected.{key} has unknown provenance {provenance!r}")
+        return raw.get("value"), provenance
+    return raw, "unstated"
 
 
 @dataclass(frozen=True)
@@ -169,19 +193,21 @@ class ExperimentSpec:
                       else None))
 
         exp_doc = doc.get("expected", {})
+        packets, packets_prov = _expected_value(exp_doc, "packets")
+        flits, flits_prov = _expected_value(exp_doc, "flits")
+        route_hops, route_prov = _expected_value(exp_doc, "route_hops")
+        hops_avg, hops_prov = _expected_value(exp_doc, "route_hops_avg")
         expected = Expected(
-            packets=(int(exp_doc["packets"])
-                     if exp_doc.get("packets") is not None else None),
-            flits=(int(exp_doc["flits"])
-                   if exp_doc.get("flits") is not None else None),
-            route_hops=(int(exp_doc["route_hops"])
-                        if exp_doc.get("route_hops") is not None else None),
-            route_hops_avg=(float(exp_doc["route_hops_avg"])
-                            if exp_doc.get("route_hops_avg") is not None
-                            else None),
+            packets=(int(packets) if packets is not None else None),
+            flits=(int(flits) if flits is not None else None),
+            route_hops=(int(route_hops) if route_hops is not None else None),
+            route_hops_avg=(float(hops_avg) if hops_avg is not None else None),
             rtl_completion_tolerance=int(
                 exp_doc.get("rtl_completion_tolerance", 0)),
-            notes=str(exp_doc.get("notes", "")))
+            notes=str(exp_doc.get("notes", "")),
+            provenance_map={
+                "packets": packets_prov, "flits": flits_prov,
+                "route_hops": route_prov, "route_hops_avg": hops_prov})
 
         checks = tuple(str(c) for c in doc["checks"])
         unknown = set(checks) - KNOWN_CHECKS

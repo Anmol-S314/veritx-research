@@ -27,11 +27,11 @@
   },
   "checks": [
     {
-      "name": "conservation",
-      "authority_class": "conservation",
-      "independence": "independent",
+      "name": "trace_execution_conservation",
+      "authority_class": "trace_conservation",
+      "independence": "integration_gate",
       "verdict": "exact",
-      "detail": "packets and flits close exactly",
+      "detail": "the engine consumed exactly the produced trace",
       "values": {
         "packets": 480,
         "flits": 2400,
@@ -42,7 +42,7 @@
     {
       "name": "standalone_parity",
       "authority_class": "standalone_booksim",
-      "independence": "semi_independent",
+      "independence": "semi_independent_shared_engine",
       "verdict": "exact",
       "detail": "VERITX completion 719 == authority 719",
       "values": {
@@ -55,7 +55,7 @@
     {
       "name": "window_invariance",
       "authority_class": "standalone_booksim",
-      "independence": "semi_independent",
+      "independence": "semi_independent_shared_engine",
       "verdict": "exact",
       "detail": "completion invariant across independent windows",
       "values": {

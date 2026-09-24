@@ -3,6 +3,31 @@
   "title": "VERITX validation experiment",
   "type": "object",
   "additionalProperties": false,
+  "definitions": {
+    "provenance": {
+      "enum": ["preregistered_hand", "preregistered_oracle", "posthoc_hand",
+               "calibrated", "observed_regression", "external_reference",
+               "unstated"]
+    },
+    "expected_value_int": {
+      "oneOf": [
+        {"type": "integer", "minimum": 1},
+        {"type": "object", "additionalProperties": false,
+         "required": ["value", "provenance"],
+         "properties": {"value": {"type": "integer", "minimum": 1},
+                        "provenance": {"$ref": "#/definitions/provenance"}}}
+      ]
+    },
+    "expected_value_num": {
+      "oneOf": [
+        {"type": "number", "minimum": 0},
+        {"type": "object", "additionalProperties": false,
+         "required": ["value", "provenance"],
+         "properties": {"value": {"type": "number", "minimum": 0},
+                        "provenance": {"$ref": "#/definitions/provenance"}}}
+      ]
+    }
+  },
   "required": ["schema_version", "id", "title", "fabric", "workload", "checks"],
   "properties": {
     "schema_version": {"const": 1},
@@ -37,10 +62,10 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "packets": {"type": "integer", "minimum": 1},
-        "flits": {"type": "integer", "minimum": 1},
-        "route_hops": {"type": "integer", "minimum": 1},
-        "route_hops_avg": {"type": "number", "minimum": 0},
+        "packets": {"$ref": "#/definitions/expected_value_int"},
+        "flits": {"$ref": "#/definitions/expected_value_int"},
+        "route_hops": {"$ref": "#/definitions/expected_value_int"},
+        "route_hops_avg": {"$ref": "#/definitions/expected_value_num"},
         "rtl_completion_tolerance": {"type": "integer", "minimum": 0},
         "notes": {"type": "string"}
       }

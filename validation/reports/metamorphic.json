@@ -43,11 +43,15 @@
     }
   },
   {
-    "name": "M6_seed_change",
-    "invariant": "seed does not move prepared identity or physics",
+    "name": "M6_seed_is_prepared_identity",
+    "invariant": "seed is part of prepared identity; different seed changes it",
     "passed": true,
-    "detail": "prepared_id and physics identical",
-    "observations": {}
+    "detail": "same seed stable; different seed changes config, prepared_id and evidence_id",
+    "observations": {
+      "physics_moved_with_seed": false,
+      "base_seed": 0,
+      "other_seed": 1
+    }
   },
   {
     "name": "M7_repeat_run",

@@ -312,7 +312,7 @@ def assert_execution_gate(stats: dict[str, Any], *, expected_packets: int
 
 def execute_prepared_booksim(
         *, prepared: PreparedBookSimInput, binary: Path, run_dir: Path,
-        timeout: int, seed: int = 0,
+        timeout: int, seed: int | None = None,
         runner: Callable[[tuple[str, ...], Path, int], ProcessOutcome]
         | None = None,
         repo_root: Path | None = None,
@@ -325,6 +325,15 @@ def execute_prepared_booksim(
             "execution consumes a PreparedBookSimInput only")
     if type(timeout) is not int or timeout <= 0:
         raise BookSimExecutionError("timeout must be a positive int")
+
+    # the run seed is part of the prepared identity and is rendered into the
+    # config; a caller may only confirm it, never override it.
+    if seed is None:
+        seed = prepared.seed
+    elif seed != prepared.seed:
+        raise BookSimExecutionError(
+            f"run seed {seed} does not match the prepared identity seed "
+            f"{prepared.seed}; the executed seed is fixed at preparation")
 
     transport = (EXECUTION_TRANSPORT_TEST_INJECTED if runner is not None
                  else EXECUTION_TRANSPORT_SUPERVISED_PROCESS)

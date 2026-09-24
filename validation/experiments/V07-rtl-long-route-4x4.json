@@ -17,10 +17,10 @@
     "payload_bytes": 7
   },
   "expected": {
-    "packets": 1,
-    "flits": 2,
-    "route_hops": 6,
-    "notes": "Opposite corners of a 4x4 mesh: Manhattan distance 3+3 = 6. A 4x4 mesh flit header is 11 bits (4+4 source/dest, 2 flit_type, 1 vc), leaving 53 payload bits, so 7 payload bytes = 56 bits needs 2 flits. Exercises the longest route and the RTL 7+5d law at d=6."
+    "packets": {"value": 1, "provenance": "preregistered_hand"},
+    "flits": {"value": 2, "provenance": "posthoc_hand"},
+    "route_hops": {"value": 6, "provenance": "preregistered_hand"},
+    "notes": "Opposite corners of a 4x4 mesh: Manhattan distance 3+3 = 6 (preregistered). flits=2 is post-hoc: a 4x4 flit header is 11 bits (4+4 source/dest, 2 flit_type, 1 vc), leaving 53 payload bits, so 7 payload bytes = 56 bits needs 2 flits."
   },
   "checks": [
     "conservation",

@@ -64,10 +64,39 @@ PYTHONPATH=tracks/t3-topology/dse python3 -m validation.harness.run --all
 # corpus + the negative mutation layer
 PYTHONPATH=tracks/t3-topology/dse python3 -m validation.harness.run --all --mutations
 
+# + metamorphic invariants + engine gates + the F-0003 intervention
+PYTHONPATH=tracks/t3-topology/dse python3 -m validation.harness.run \
+    --all --mutations --metamorphic --engines --intervention
+
 # as tests (CI gate)
 PYTHONPATH=tracks/t3-topology/dse:tracks/t3-topology/dse/tests \
     python3 -m pytest validation/tests -q
 ```
+
+## Independence taxonomy
+
+Every check carries an authority class mapped to an independence
+category (see `harness/compare.py`). They are not one boolean axis:
+
+```text
+independent_oracle              arithmetic from first principles
+independent_execution_engine    a genuinely different engine
+calibrated_cross_engine         a different engine tuned to match
+semi_independent_shared_engine  one engine, different configuration
+engine_qualification            the engine runs at all (liveness)
+integration_gate                the product consumed its own output
+refusal_gate                    a corruption is refused
+```
+
+`independent_oracle` includes `workload_lowering_conservation`: a
+ring-ALLREDUCE closed form (`harness/oracle.py`, no `veritx_dse` import)
+predicts messages/bytes/flits/packets from `(k, B)` and is compared to
+VERITX's lowering *before* any simulator runs. This is what validates the
+lowering; a second engine executing the derived trace cannot.
+
+An engine gate may pass (liveness) while its numerical output is marked
+`validated=False`; such output must not enter a scientific comparison
+(currently the ASTRA runtime aggregate).
 
 The BookSim binary is discovered via `veritx_dse.core.paths.BOOKSIM_BIN`
 or `VERITX_BOOKSIM_BIN`. A missing binary fails the corpus; it never

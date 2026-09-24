@@ -17,10 +17,10 @@
     "payload_bytes": 14
   },
   "expected": {
-    "packets": 1,
-    "flits": 3,
-    "route_hops": 6,
-    "notes": "A 3-flit packet over the longest route. 14 payload bytes = 112 bits over a 53-bit usable flit needs 3 flits. RTL tail latency must still obey 7+5d and every flit must eject (1/cycle cadence). Exercises multi-flit packet handling, not just single-flit."
+    "packets": {"value": 1, "provenance": "preregistered_hand"},
+    "flits": {"value": 3, "provenance": "posthoc_hand"},
+    "route_hops": {"value": 6, "provenance": "preregistered_hand"},
+    "notes": "A multi-flit packet over the longest route. flits=3 is post-hoc: 14 payload bytes = 112 bits over a 53-bit usable flit needs 3 flits; route_hops=6 (4x4 corners) was preregistered."
   },
   "checks": [
     "conservation",

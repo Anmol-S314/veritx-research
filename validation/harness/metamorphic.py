@@ -10,6 +10,7 @@ design intent) but must never move the simulated network.
 from __future__ import annotations
 
 import copy
+import dataclasses as _dataclasses
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -27,15 +28,17 @@ class MetaResult:
     observations: dict[str, Any] = field(default_factory=dict)
 
 
-def _exec(built, binary: Path, run_dir: Path, seed: int = 0) -> dict:
+def _exec(built, binary: Path, run_dir: Path) -> dict:
     from veritx_dse.backend.booksim_execution import execute_prepared_booksim
     shutil.rmtree(run_dir, ignore_errors=True)
     record = execute_prepared_booksim(
         prepared=built.prepared, binary=binary, run_dir=run_dir,
-        timeout=60, seed=seed)
+        timeout=60)
     return {"stats": record.evidence.stats,
             "evidence_id": record.evidence.evidence_id(),
             "prepared_id": built.prepared.prepared_id(),
+            "config_text": built.prepared.config_text,
+            "seed": built.prepared.seed,
             "fabric_hash": built.bundle.resolved_fabric.resolved_fabric_hash,
             "packets": built.packets, "flits": built.flits,
             "vcs": built.prepared.num_vcs}
@@ -115,15 +118,34 @@ def run_metamorphic(binary: Path, work_root: Path,
              f"physics moved: {_physics(run)} vs {base_physics}"),
             {"identity_moved": run["fabric_hash"] != base_run["fabric_hash"]}))
 
-    # M6 — a seed is a per-run input, not prepared identity, and must not
-    # move trace-driven physics
-    seeded = _exec(base, binary, work_root / "meta-seed", seed=8)
-    ok = (seeded["prepared_id"] == base_run["prepared_id"]
-          and _physics(seeded) == base_physics)
+    # M6 — the run seed is part of prepared identity (reseal audit):
+    #   same seed  -> same prepared_id, same evidence identity
+    #   other seed -> config changes, prepared_id changes, evidence changes
+    # (Whether trace-driven physics changes is a separate question, reported
+    # as an observation, not asserted.)
+    same = _exec(base, binary, work_root / "meta-seed-same")
+    seeded_built = build(_dataclasses.replace(spec, seed=base_run["seed"] + 1))
+    other = _exec(seeded_built, binary, work_root / "meta-seed-other")
+    problems = []
+    if same["prepared_id"] != base_run["prepared_id"]:
+        problems.append("same seed moved prepared_id")
+    if same["evidence_id"] != base_run["evidence_id"]:
+        problems.append("same seed moved evidence_id")
+    if other["prepared_id"] == base_run["prepared_id"]:
+        problems.append("a different seed left prepared_id unchanged")
+    if other["evidence_id"] == base_run["evidence_id"]:
+        problems.append("a different seed left evidence_id unchanged")
+    if other["config_text"] == base_run["config_text"]:
+        problems.append("a different seed left the rendered config unchanged")
     results.append(MetaResult(
-        "M6_seed_change", "seed does not move prepared identity or physics",
-        ok,
-        ("prepared_id and physics identical" if ok else "seed moved them")))
+        "M6_seed_is_prepared_identity",
+        "seed is part of prepared identity; different seed changes it",
+        not problems,
+        "; ".join(problems)
+        or ("same seed stable; different seed changes config, prepared_id "
+            "and evidence_id"),
+        {"physics_moved_with_seed": _physics(other) != _physics(base_run),
+         "base_seed": base_run["seed"], "other_seed": other["seed"]}))
 
     # M7 — the same input run twice is the same science
     again = _exec(base, binary, work_root / "meta-repeat")

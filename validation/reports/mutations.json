@@ -15,13 +15,13 @@
     "name": "M3_trace_tamper_after_prepare",
     "caught": true,
     "expected": "BookSimExecutionError: modified after preparation",
-    "detail": "refused: prepared input does not match the externally held prepared_id (sha256:76347da4dd58ef2926d147db6ca18c9e6a5b243528c452cf23"
+    "detail": "refused: prepared input does not match the externally held prepared_id (sha256:5625e1f74d0861d7e43f7b360d289b5ac7387ce4a0b45b6619"
   },
   {
     "name": "M4_config_tamper_in_run_dir",
     "caught": true,
     "expected": "BookSimExecutionError: different bytes",
-    "detail": "refused: /tmp/validation-work-nj4on9st/m4/config.cfg already holds different bytes; refusing to overwrite a prepared input"
+    "detail": "refused: /home/datavex/veritx-scratch/validation-work-nkpnbeqh/m4/config.cfg already holds different bytes; refusing to overwrite"
   },
   {
     "name": "M5_binary_swap_after_identification",
@@ -33,7 +33,7 @@
     "name": "M6_evidence_byte_flip",
     "caught": true,
     "expected": "BackendEvidenceError: modified after execution",
-    "detail": "refused: evidence file /tmp/validation-work-nj4on9st/m-real/backend-evidence.json digest c0fb2bb644512ee268a310fe701d32b716ae6fbe"
+    "detail": "refused: evidence file /home/datavex/veritx-scratch/validation-work-nkpnbeqh/m-real/backend-evidence.json digest 8757ee2938550af7"
   },
   {
     "name": "M7_wrong_producer_sha",

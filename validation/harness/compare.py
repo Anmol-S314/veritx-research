@@ -1,29 +1,60 @@
-"""Checks: compare the canonical run against the independent authority.
+"""Checks: compare the canonical run against independent authorities.
 
-Every check records its authority class and independence so a report can
-never present a same-engine comparison as if it were independent.
+Every check carries an explicit AUTHORITY CLASS mapped to an independence
+CATEGORY, so a report can never present a same-engine comparison as if it
+were independent. Categories (weakest to strongest evidence):
+
+    independent_oracle              arithmetic from first principles
+    independent_execution_engine    a genuinely different engine
+    calibrated_cross_engine         a different engine tuned to match
+    semi_independent_shared_engine  a different configuration of one engine
+    engine_qualification            the engine runs at all (liveness)
+    integration_gate                the product consumed its own output
+    refusal_gate                    a corruption is refused
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
 
+from .oracle import ring_allreduce_oracle
+
 EXACT = "exact"
 MISMATCH = "mismatch"
 UNSUPPORTED = "unsupported"
 
-#: authority class -> independence level
-INDEPENDENCE = {
-    "hand_calculated": "independent",
-    "conservation": "independent",
-    "monotonicity": "independent",
-    "standalone_booksim": "semi_independent",
-    "canonical_altrouting": "semi_independent",
-    "rtl": "independent",
-    "rtl_calibrated": "semi_independent",
-    "astra": "independent",
-    "ramulator": "independent",
-    "hardware": "independent",
+#: authority_class -> independence category
+TAXONOMY = {
+    "hand_calculated": "independent_oracle",
+    "monotonicity": "independent_oracle",
+    "ring_oracle": "independent_oracle",
+    "rtl_execution": "independent_execution_engine",
+    "rtl_calibrated": "calibrated_cross_engine",
+    "standalone_booksim": "semi_independent_shared_engine",
+    "trace_conservation": "integration_gate",
+    "astra": "engine_qualification",
+    "ramulator": "engine_qualification",
+    "rtl_selfcheck": "engine_qualification",
+    "mutation": "refusal_gate",
+}
+
+#: what each category can and cannot falsify (for the report)
+CATEGORY_MEANING = {
+    "independent_oracle": "first-principles arithmetic; can falsify both "
+                          "lowering and execution",
+    "independent_execution_engine": "a different engine; can falsify the "
+                                    "shared trace's execution, not the "
+                                    "lowering that produced it",
+    "calibrated_cross_engine": "a different engine tuned to match BookSim; "
+                               "can detect drift, not independent physics",
+    "semi_independent_shared_engine": "same engine, different configuration; "
+                                      "can falsify the projector, not the "
+                                      "engine",
+    "engine_qualification": "liveness/qualification only; no scientific "
+                            "parity claim",
+    "integration_gate": "the product consumed its own output; no external "
+                        "claim",
+    "refusal_gate": "a corruption must be refused",
 }
 
 
@@ -37,11 +68,26 @@ class CheckResult:
 
     @property
     def independence(self) -> str:
-        return INDEPENDENCE.get(self.authority_class, "unknown")
+        return TAXONOMY.get(self.authority_class, "unknown")
 
 
 def _verdict(ok: bool) -> str:
     return EXACT if ok else MISMATCH
+
+
+def _require_nonempty(checks: list[CheckResult], where: str) -> list[CheckResult]:
+    """A check set is never empty: an empty all() is not a PASS."""
+    if not checks:
+        raise ValueError(
+            f"{where} produced zero checks; an empty check set is not a PASS")
+    return checks
+
+
+def _logical_message_stats(logical) -> tuple[int, int]:
+    messages = getattr(logical, "messages", None)
+    if messages is None:
+        raise ValueError("logical artifact exposes no messages")
+    return len(messages), sum(int(m.payload_bytes) for m in messages)
 
 
 def run_checks(*, spec, built, veritx_stats: dict, authority,
@@ -50,7 +96,10 @@ def run_checks(*, spec, built, veritx_stats: dict, authority,
     expected = spec.expected
     declared_packets = built.packets
 
-    # ── conservation (independent) ─────────────────────────────────────
+    # ── trace execution conservation (integration gate) ────────────────
+    # The authority consumes the SAME trace VERITX produced, so this proves
+    # the engine consumed the stimulus; it does NOT prove the stimulus is
+    # the right one. That is the oracle check below.
     if "conservation" in spec.checks:
         problems: list[str] = []
         if veritx_stats["loaded_trace_packets"] != declared_packets:
@@ -77,12 +126,58 @@ def run_checks(*, spec, built, veritx_stats: dict, authority,
                 f"authority injected flits {authority.injected_flits} != "
                 f"canonical flits {built.flits}")
         results.append(CheckResult(
-            name="conservation", authority_class="conservation",
-            detail="; ".join(problems) or "packets and flits close exactly",
+            name="trace_execution_conservation",
+            authority_class="trace_conservation",
+            detail="; ".join(problems)
+            or "the engine consumed exactly the produced trace",
             verdict=_verdict(not problems),
             values={"packets": declared_packets, "flits": built.flits,
                     "authority_injected_flits": authority.injected_flits,
                     "authority_accepted_flits": authority.accepted_flits}))
+
+    # ── workload-lowering oracle (independent) ─────────────────────────
+    # First-principles ring-ALLREDUCE arithmetic vs VERITX's lowering.
+    if spec.workload.kind == "collective" \
+            and spec.workload.collective_kind == "ALLREDUCE":
+        problems = []
+        try:
+            oracle = ring_allreduce_oracle(
+                ranks=spec.fabric.compute_tiles,
+                payload_bytes=spec.workload.payload_bytes,
+                flit_width_bits=spec.fabric.link_width)
+            n_messages, total_bytes = _logical_message_stats(built.logical)
+        except Exception as exc:  # noqa: BLE001
+            results.append(CheckResult(
+                name="workload_lowering_conservation",
+                authority_class="ring_oracle",
+                detail=f"oracle unavailable: {type(exc).__name__}: {exc}",
+                verdict=UNSUPPORTED))
+        else:
+            if n_messages != oracle.messages:
+                problems.append(
+                    f"messages {n_messages} != ring oracle "
+                    f"{oracle.messages} (=2k(k-1))")
+            if total_bytes != oracle.total_bytes:
+                problems.append(
+                    f"bytes {total_bytes} != ring oracle "
+                    f"{oracle.total_bytes} (=2(k-1)B)")
+            if built.flits != oracle.total_flits:
+                problems.append(
+                    f"flits {built.flits} != oracle {oracle.total_flits}")
+            if built.packets != oracle.total_packets:
+                problems.append(
+                    f"packets {built.packets} != oracle "
+                    f"{oracle.total_packets}")
+            results.append(CheckResult(
+                name="workload_lowering_conservation",
+                authority_class="ring_oracle",
+                detail="; ".join(problems)
+                or ("lowering matches ring ALLREDUCE arithmetic "
+                    f"(messages={oracle.messages}, bytes={oracle.total_bytes}, "
+                    f"flits={oracle.total_flits}, "
+                    f"packets={oracle.total_packets})"),
+                verdict=_verdict(not problems),
+                values=oracle.as_dict()))
 
     # ── hand counts (independent) ──────────────────────────────────────
     if "hand_counts" in spec.checks and expected.packets is not None:
@@ -95,7 +190,9 @@ def run_checks(*, spec, built, veritx_stats: dict, authority,
             name="hand_counts", authority_class="hand_calculated",
             detail="; ".join(problems) or "packet/flit counts match by hand",
             verdict=_verdict(not problems),
-            values={"packets": built.packets, "flits": built.flits}))
+            values={"packets": built.packets, "flits": built.flits,
+                    "packets_provenance": expected.provenance("packets"),
+                    "flits_provenance": expected.provenance("flits")}))
 
     # ── hand route (independent) ───────────────────────────────────────
     if "hand_route" in spec.checks:
@@ -109,11 +206,8 @@ def run_checks(*, spec, built, veritx_stats: dict, authority,
                 problems.append(
                     f"canonical router hops {built.canonical_hops_avg} != "
                     f"hand {expected.route_hops}")
-            # BookSim's Flit::hops is incremented once per router
-            # traversal, INCLUDING the destination ejection
-            # (routers/iq_router.cpp), so its reported hop average is the
-            # router-to-router count plus one. The corpus pins that exact
-            # relationship rather than demanding equality.
+            # BookSim's Flit::hops counts the destination ejection, so its
+            # reported hop average is router-to-router hops + 1.
             if authority.hops_avg is None:
                 problems.append("authority reported no hops average")
             else:
@@ -130,13 +224,15 @@ def run_checks(*, spec, built, veritx_stats: dict, authority,
                 "(destination ejection counted)"),
             verdict=_verdict(not problems),
             values={"hand_router_hops": expected.route_hops,
+                    "route_hops_provenance":
+                        expected.provenance("route_hops"),
                     "canonical_hops_avg": built.canonical_hops_avg,
                     "authority_hops_avg": authority.hops_avg,
                     "authority_expected": (expected.route_hops + 1
                                            if expected.route_hops is not None
                                            else None)}))
 
-    # ── standalone parity (semi-independent) ───────────────────────────
+    # ── standalone parity (same engine, different config) ──────────────
     if "standalone_parity" in spec.checks:
         v = veritx_stats["completion_cycles"]
         a = authority.completion_cycles
@@ -150,7 +246,7 @@ def run_checks(*, spec, built, veritx_stats: dict, authority,
                     "veritx_window": veritx_stats.get("sample_window_cycles"),
                     "authority_window": authority.sample_window_cycles}))
 
-    # ── window invariance (semi-independent) ───────────────────────────
+    # ── window invariance ──────────────────────────────────────────────
     if "window_invariance" in spec.checks:
         v = veritx_stats["completion_cycles"]
         problems = []
@@ -177,24 +273,18 @@ def run_checks(*, spec, built, veritx_stats: dict, authority,
             verdict=_verdict(not problems),
             values={"completion": v, "windows": windows}))
 
-    return results
+    return _require_nonempty(results, "run_checks")
 
 
 def monotonicity_check(spec, points: list[dict]) -> CheckResult:
-    """Layer 4: the swept quantity must move in the physically known way.
-
-    ``points`` is an ascending list of
-    ``{"value", "quantity", "authority_quantity"}``. The direction is
-    declared by the spec's sweep rule; a curve that moves the wrong way is
-    a mismatch, not a curiosity.
-    """
+    """Layer 4: the swept quantity must move in the physically known way."""
     sweep = spec.sweep
     if sweep is None:
         raise ValueError("monotonicity_check requires a sweep spec")
+    if len(points) < 2:
+        raise ValueError("monotonicity needs at least two points")
     problems: list[str] = []
-    quantities = [p["quantity"] for p in points]
-    pairs = list(zip(points, points[1:]))
-    for (a, b) in pairs:
+    for (a, b) in zip(points, points[1:]):
         qa, qb = a["quantity"], b["quantity"]
         if sweep.direction == "non_increasing" and qb > qa:
             problems.append(
@@ -204,7 +294,6 @@ def monotonicity_check(spec, points: list[dict]) -> CheckResult:
             problems.append(
                 f"{sweep.param} {a['value']}->{b['value']}: "
                 f"{sweep.quantity} decreased {qa}->{qb} (must not decrease)")
-    # the authority must show the same direction
     authority_quantities = [p.get("authority_quantity") for p in points]
     if all(q is not None for q in authority_quantities):
         for (a, b) in zip(points, points[1:]):
@@ -231,14 +320,30 @@ def monotonicity_check(spec, points: list[dict]) -> CheckResult:
 
 
 def run_rtl_checks(*, spec, built, veritx_stats: dict, rtl) -> list[CheckResult]:
-    """Layer 3 with a different engine: T3 2D mesh RTL vs the canonical path.
+    """RTL (a different engine) executing the canonical trace.
 
-    Conservation and route parity are independent; absolute latency is
-    semi-independent because the testbench was calibrated to the BookSim
-    cycle model.
+    Two claims are made and never conflated:
+
+      rtl_execution_conservation   INDEPENDENT execution engine: the RTL
+                                   injects and ejects exactly the trace
+                                   VERITX produced.
+      rtl_calibrated_hop_equivalent / rtl_completion
+                                   CALIBRATED cross-engine: the RTL's
+                                   latency was tuned to the BookSim cycle
+                                   model, so this detects drift, not
+                                   independent physics. It does NOT
+                                   observe the route (see below).
     """
     results: list[CheckResult] = []
     expected = spec.expected
+
+    if not rtl.packets:
+        results.append(CheckResult(
+            name="rtl_execution_conservation",
+            authority_class="rtl_execution",
+            detail="RTL ejected nothing; refusing a vacuous pass",
+            verdict=MISMATCH))
+        return results
 
     problems = []
     if rtl.injected_flits != built.flits:
@@ -254,8 +359,9 @@ def run_rtl_checks(*, spec, built, veritx_stats: dict, rtl) -> list[CheckResult]
             f"RTL dump carries {rtl.flit_lines} ejected flits != canonical "
             f"{built.flits}")
     results.append(CheckResult(
-        name="rtl_conservation", authority_class="rtl",
-        detail="; ".join(problems) or "RTL injects and ejects the exact workload",
+        name="rtl_execution_conservation", authority_class="rtl_execution",
+        detail="; ".join(problems)
+        or "the RTL injected and ejected exactly the produced trace",
         verdict=_verdict(not problems),
         values={"rtl_injected_flits": rtl.injected_flits,
                 "rtl_ejected_flits": rtl.ejected_flits,
@@ -263,63 +369,57 @@ def run_rtl_checks(*, spec, built, veritx_stats: dict, rtl) -> list[CheckResult]
                 "canonical_flits": built.flits}))
 
     if expected.route_hops is not None:
+        # HONEST LABEL: the RTL dump carries latency, not a route. Hops are
+        # INFERRED by inverting the calibrated law latency = 7 + 5*hop, so
+        # this is a hop-equivalent, not an observed route. A different
+        # equal-length route would pass. Genuine route identity needs RTL
+        # instrumentation to dump (router, output port, next router).
         problems = []
-        bad = [p for p in rtl.packets if p.hops != expected.route_hops]
-        if bad:
-            problems.append(
-                f"{len(bad)}/{len(rtl.packets)} RTL flits routed "
-                f"{bad[0].hops} hops, hand says {expected.route_hops}")
+        values = {"hand_router_hops": expected.route_hops,
+                  "route_hops_provenance": expected.provenance("route_hops")}
+        for p in rtl.packets:
+            if p.hops is None or p.hops != expected.route_hops:
+                problems.append(
+                    f"RTL calibrated hop-equivalent {p.hops} != hand "
+                    f"{expected.route_hops}")
+                break
+        values["rtl_hop_equivalents"] = sorted(
+            {p.hops for p in rtl.packets})
         results.append(CheckResult(
-            name="rtl_route", authority_class="rtl",
+            name="rtl_calibrated_hop_equivalent",
+            authority_class="rtl_calibrated",
             detail="; ".join(problems)
-            or (f"every RTL flit routes {expected.route_hops} hops "
-                "(matches hand Manhattan)"),
-            verdict=_verdict(not problems),
-            values={"hand_router_hops": expected.route_hops,
-                    "rtl_hops": sorted({p.hops for p in rtl.packets})}))
+            or (f"every RTL flit's calibrated hop-equivalent is "
+                f"{expected.route_hops} (path LENGTH, not identity)"),
+            verdict=_verdict(not problems), values=values))
 
-    if rtl.packets:
-        problems = []
-        v = veritx_stats["completion_cycles"]
-        rtl_completion = rtl.completion_cycles
-        tolerance = expected.rtl_completion_tolerance
-        if tolerance == 0:
-            if rtl_completion != v:
-                problems.append(
-                    f"RTL completion {rtl_completion} != canonical "
-                    f"completion {v}")
-        else:
-            delta = rtl_completion - v
-            if abs(delta) > tolerance:
-                problems.append(
-                    f"|RTL {rtl_completion} - canonical {v}| = {abs(delta)} "
-                    f"exceeds tolerance {tolerance}")
-        # the 7+5*hop law is the UNCONTENDED single-route law: enforce it
-        # only for single-route experiments with zero tolerance, never on
-        # a collective where flits legitimately queue.
-        if expected.route_hops is not None and tolerance == 0:
-            for p in rtl.packets:
-                if p.hops is None or p.latency != 7 + 5 * p.hops:
-                    problems.append(
-                        f"RTL flit latency {p.latency} violates its "
-                        f"7+5*hop law for {p.hops} hops")
-                    break
-        if tolerance == 0:
-            detail = (f"RTL completion {rtl_completion} == canonical "
-                      f"completion {v}")
-            if expected.route_hops is not None:
-                detail += "; RTL tail latency obeys 7+5*hop"
-        else:
-            delta = rtl_completion - v
-            detail = (f"RTL completion {rtl_completion} vs canonical {v} "
-                      f"(delta {delta:+d}, tolerance +/-{tolerance})")
-        results.append(CheckResult(
-            name="rtl_latency", authority_class="rtl_calibrated",
-            detail="; ".join(problems) or detail,
-            verdict=_verdict(not problems),
-            values={"veritx_completion": v,
-                    "rtl_completion": rtl_completion,
-                    "tolerance": tolerance,
-                    "delta": rtl_completion - v,
-                    "rtl_law": "7 + 5*hop (uncontended single-route)"}))
-    return results
+    problems = []
+    v = veritx_stats["completion_cycles"]
+    rtl_completion = rtl.completion_cycles
+    tolerance = expected.rtl_completion_tolerance
+    if tolerance == 0:
+        if rtl_completion != v:
+            problems.append(
+                f"RTL completion {rtl_completion} != canonical "
+                f"completion {v}")
+    else:
+        delta = rtl_completion - v
+        if abs(delta) > tolerance:
+            problems.append(
+                f"|RTL {rtl_completion} - canonical {v}| = {abs(delta)} "
+                f"exceeds tolerance {tolerance}")
+    if tolerance == 0:
+        detail = (f"RTL completion {rtl_completion} == canonical "
+                  f"completion {v}")
+    else:
+        detail = (f"RTL completion {rtl_completion} vs canonical {v} "
+                  f"(delta {rtl_completion - v:+d}, tolerance "
+                  f"+/-{tolerance})")
+    results.append(CheckResult(
+        name="rtl_completion", authority_class="rtl_calibrated",
+        detail="; ".join(problems) or detail,
+        verdict=_verdict(not problems),
+        values={"veritx_completion": v, "rtl_completion": rtl_completion,
+                "tolerance": tolerance, "delta": rtl_completion - v}))
+
+    return _require_nonempty(results, "run_rtl_checks")

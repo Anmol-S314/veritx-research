@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "V10",
-  "title": "4x4 mesh, 16-node ALLREDUCE 1024B: RTL cross-engine completion",
+  "title": "4x4 mesh, 16-node ALLREDUCE 1024B: independent RTL execution of the canonical trace",
   "fabric": {
     "compute_tiles": 16,
     "tp": 16,
@@ -27,11 +27,11 @@
   },
   "checks": [
     {
-      "name": "conservation",
-      "authority_class": "conservation",
-      "independence": "independent",
+      "name": "trace_execution_conservation",
+      "authority_class": "trace_conservation",
+      "independence": "integration_gate",
       "verdict": "exact",
-      "detail": "packets and flits close exactly",
+      "detail": "the engine consumed exactly the produced trace",
       "values": {
         "packets": 960,
         "flits": 4800,
@@ -40,9 +40,29 @@
       }
     },
     {
+      "name": "workload_lowering_conservation",
+      "authority_class": "ring_oracle",
+      "independence": "independent_oracle",
+      "verdict": "exact",
+      "detail": "lowering matches ring ALLREDUCE arithmetic (messages=480, bytes=30720, flits=4800, packets=960)",
+      "values": {
+        "ranks": 16,
+        "payload_bytes": 1024,
+        "messages": 480,
+        "total_bytes": 30720,
+        "chunk_bytes": 64,
+        "header_bits": 11,
+        "usable_payload_bits": 53,
+        "flits_per_message": 10,
+        "packets_per_message": 2,
+        "total_flits": 4800,
+        "total_packets": 960
+      }
+    },
+    {
       "name": "standalone_parity",
       "authority_class": "standalone_booksim",
-      "independence": "semi_independent",
+      "independence": "semi_independent_shared_engine",
       "verdict": "exact",
       "detail": "VERITX completion 990 == authority 990",
       "values": {
@@ -53,11 +73,11 @@
       }
     },
     {
-      "name": "rtl_conservation",
-      "authority_class": "rtl",
-      "independence": "independent",
+      "name": "rtl_execution_conservation",
+      "authority_class": "rtl_execution",
+      "independence": "independent_execution_engine",
       "verdict": "exact",
-      "detail": "RTL injects and ejects the exact workload",
+      "detail": "the RTL injected and ejected exactly the produced trace",
       "values": {
         "rtl_injected_flits": 4800,
         "rtl_ejected_flits": 4800,
@@ -66,17 +86,16 @@
       }
     },
     {
-      "name": "rtl_latency",
+      "name": "rtl_completion",
       "authority_class": "rtl_calibrated",
-      "independence": "semi_independent",
+      "independence": "calibrated_cross_engine",
       "verdict": "exact",
       "detail": "RTL completion 990 == canonical completion 990",
       "values": {
         "veritx_completion": 990,
         "rtl_completion": 990,
         "tolerance": 0,
-        "delta": 0,
-        "rtl_law": "7 + 5*hop (uncontended single-route)"
+        "delta": 0
       }
     }
   ],

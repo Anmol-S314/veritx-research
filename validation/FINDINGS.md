@@ -134,43 +134,53 @@ BookSim's `Hops average`, so no product value is affected.
 
 ## F-0003 — collective completion is injection-schedule-bound
 
-**Status:** ACCEPTED (documented projection semantics, with a real
-consequence for using completion as an objective)
+**Status:** SUPPORTED BY INTERVENTION (low-pressure regime); departure
+regime not expressible in the current trace model
 **Severity:** medium — limits what `completion_cycles` can rank
-**Found:** 2026-09-24, during experiments V09/V10
+**Found:** 2026-09-24, during experiments V09/V10; intervention added
+in the adversarial-hardening pass
 
 ### What it is
 
 The canonical trace projection assigns timestamps `0, 1, 2, ...` — one
 packet per cycle in emission order (`backend/booksim_projection.py`
 `trace_schedule`, documented as projection-defined emission order, not
-application wall-clock). As a result the measured completion of a
-trace-driven run is dominated by the injection window, not by the
+application wall-clock). The hypothesis is that the measured completion
+of a trace-driven run is dominated by the injection window, not by the
 network's ability to deliver.
 
-### Evidence
+### Intervention (not correlation)
+
+Same packets, topology, routing and packet sizes; only the injection
+schedule changes (`validation/harness/intervention.py`, run on the
+authority engine — the same BookSim the canonical path uses):
 
 ```text
-V02/V10  16-node ALLREDUCE, 960 packets, 4800 flits
-         completion = 990 cycles   (~= 960 injection cycles + 30 drain)
-V09      4-node ALLREDUCE
-         completion = 39 cycles
+schedule       spacing   horizon   completion   drain
+per_cycle            1       959          990      31
+half_rate            2      1918         1942      24
+quarter_rate         4      3836         3855      19
+eighth_rate          8      7672         7687      15
 ```
 
-The 960-packet run moves ~4.85 flits/cycle, so the network has spare
-capacity; the injection schedule (1 packet/cycle) is the bottleneck. The
-RTL, an independent engine, reproduces the same completion exactly,
-confirming this is the projection's schedule, not a network effect.
+Over an 8x horizon range the completion tracks the horizon: the drain
+beyond injection is 15–31 cycles (0.2–3.2% of the horizon) and does not
+grow with load. That supports the injection-bound hypothesis: completion
+is the injection horizon plus a small, load-independent drain.
+
+### Scope and limit
+
+All measured schedules are at or below the projection's maximum injection
+rate (1 packet/cycle). The departure regime — where completion stops
+tracking the horizon because the network saturates — is not expressible
+in the current trace model, which cannot inject faster than one packet
+per cycle. Demonstrating departure needs a sub-cycle / burst injection
+model. Until then F-0003 is supported only for the low-pressure regime.
 
 ### Consequence
 
-`Optimizer`'s `completion_cycles` objective, for workloads that stay
-below the injection rate, ranks candidates largely by packet count
-(which depends on packetisation) rather than by network contention. The
-network's contribution is only visible above saturation. A saturating
-injection model (multiple packets per cycle, or a burst model) would be
-required for completion to exercise the network.
-
-This is a measurement-validity limitation of the same family as F-0001,
-but it is documented projection semantics rather than a parser bug, so
-it is recorded rather than "fixed".
+For workloads below the injection rate, `Optimizer`'s
+`completion_cycles` objective ranks candidates largely by packet count
+(which depends on packetisation) rather than by network contention.
+`workload_lowering_conservation` independently validates the packet
+count via the ring oracle, so at least that part is a checked quantity.

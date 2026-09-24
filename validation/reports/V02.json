@@ -27,11 +27,11 @@
   },
   "checks": [
     {
-      "name": "conservation",
-      "authority_class": "conservation",
-      "independence": "independent",
+      "name": "trace_execution_conservation",
+      "authority_class": "trace_conservation",
+      "independence": "integration_gate",
       "verdict": "exact",
-      "detail": "packets and flits close exactly",
+      "detail": "the engine consumed exactly the produced trace",
       "values": {
         "packets": 960,
         "flits": 4800,
@@ -40,9 +40,29 @@
       }
     },
     {
+      "name": "workload_lowering_conservation",
+      "authority_class": "ring_oracle",
+      "independence": "independent_oracle",
+      "verdict": "exact",
+      "detail": "lowering matches ring ALLREDUCE arithmetic (messages=480, bytes=30720, flits=4800, packets=960)",
+      "values": {
+        "ranks": 16,
+        "payload_bytes": 1024,
+        "messages": 480,
+        "total_bytes": 30720,
+        "chunk_bytes": 64,
+        "header_bits": 11,
+        "usable_payload_bits": 53,
+        "flits_per_message": 10,
+        "packets_per_message": 2,
+        "total_flits": 4800,
+        "total_packets": 960
+      }
+    },
+    {
       "name": "standalone_parity",
       "authority_class": "standalone_booksim",
-      "independence": "semi_independent",
+      "independence": "semi_independent_shared_engine",
       "verdict": "exact",
       "detail": "VERITX completion 990 == authority 990",
       "values": {
@@ -55,7 +75,7 @@
     {
       "name": "window_invariance",
       "authority_class": "standalone_booksim",
-      "independence": "semi_independent",
+      "independence": "semi_independent_shared_engine",
       "verdict": "exact",
       "detail": "completion invariant across independent windows",
       "values": {

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "V10",
-  "title": "4x4 mesh, 16-node ALLREDUCE 1024B: RTL cross-engine completion",
+  "title": "4x4 mesh, 16-node ALLREDUCE 1024B: independent RTL execution of the canonical trace",
   "fabric": {
     "topology_family": "mesh",
     "compute_tiles": 16,
@@ -17,7 +17,7 @@
   },
   "expected": {
     "rtl_completion_tolerance": 0,
-    "notes": "The 960-packet 16-node ALLREDUCE, replayed through the RTL. Exact completion parity (990 == 990). Completion is injection-bound here (960 packets at the projection's 1 packet/cycle schedule), so the network is not the bottleneck; see FINDINGS F-0003. The check still catches any change in either engine's timing or routing."
+    "notes": "Ring oracle (independent): messages=2k(k-1)=480, bytes=2(k-1)B=30720, chunk=64, flits=4800, packets=960. VERITX's lowering must match the oracle; the RTL then independently executes the derived trace. Completion is injection-bound here (F-0003 hypothesis), so the network is not the bottleneck."
   },
   "checks": [
     "conservation",

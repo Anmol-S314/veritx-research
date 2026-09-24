@@ -62,7 +62,7 @@
     {
       "name": "monotonicity",
       "authority_class": "monotonicity",
-      "independence": "independent",
+      "independence": "independent_oracle",
       "verdict": "exact",
       "detail": "flits is non_decreasing across payload_bytes=[7, 64, 512, 4096] for VERITX and authority",
       "values": {
@@ -84,11 +84,11 @@
       }
     },
     {
-      "name": "conservation@7",
-      "authority_class": "conservation",
-      "independence": "independent",
+      "name": "trace_execution_conservation@7",
+      "authority_class": "trace_conservation",
+      "independence": "integration_gate",
       "verdict": "exact",
-      "detail": "packets and flits close exactly",
+      "detail": "the engine consumed exactly the produced trace",
       "values": {
         "packets": 1,
         "flits": 2,
@@ -99,7 +99,7 @@
     {
       "name": "standalone_parity@7",
       "authority_class": "standalone_booksim",
-      "independence": "semi_independent",
+      "independence": "semi_independent_shared_engine",
       "verdict": "exact",
       "detail": "VERITX completion 38 == authority 38",
       "values": {
@@ -110,11 +110,11 @@
       }
     },
     {
-      "name": "conservation@64",
-      "authority_class": "conservation",
-      "independence": "independent",
+      "name": "trace_execution_conservation@64",
+      "authority_class": "trace_conservation",
+      "independence": "integration_gate",
       "verdict": "exact",
-      "detail": "packets and flits close exactly",
+      "detail": "the engine consumed exactly the produced trace",
       "values": {
         "packets": 2,
         "flits": 10,
@@ -125,7 +125,7 @@
     {
       "name": "standalone_parity@64",
       "authority_class": "standalone_booksim",
-      "independence": "semi_independent",
+      "independence": "semi_independent_shared_engine",
       "verdict": "exact",
       "detail": "VERITX completion 48 == authority 48",
       "values": {
@@ -136,11 +136,11 @@
       }
     },
     {
-      "name": "conservation@512",
-      "authority_class": "conservation",
-      "independence": "independent",
+      "name": "trace_execution_conservation@512",
+      "authority_class": "trace_conservation",
+      "independence": "integration_gate",
       "verdict": "exact",
-      "detail": "packets and flits close exactly",
+      "detail": "the engine consumed exactly the produced trace",
       "values": {
         "packets": 10,
         "flits": 78,
@@ -151,7 +151,7 @@
     {
       "name": "standalone_parity@512",
       "authority_class": "standalone_booksim",
-      "independence": "semi_independent",
+      "independence": "semi_independent_shared_engine",
       "verdict": "exact",
       "detail": "VERITX completion 132 == authority 132",
       "values": {
@@ -162,11 +162,11 @@
       }
     },
     {
-      "name": "conservation@4096",
-      "authority_class": "conservation",
-      "independence": "independent",
+      "name": "trace_execution_conservation@4096",
+      "authority_class": "trace_conservation",
+      "independence": "integration_gate",
       "verdict": "exact",
-      "detail": "packets and flits close exactly",
+      "detail": "the engine consumed exactly the produced trace",
       "values": {
         "packets": 78,
         "flits": 619,
@@ -177,7 +177,7 @@
     {
       "name": "standalone_parity@4096",
       "authority_class": "standalone_booksim",
-      "independence": "semi_independent",
+      "independence": "semi_independent_shared_engine",
       "verdict": "exact",
       "detail": "VERITX completion 809 == authority 809",
       "values": {

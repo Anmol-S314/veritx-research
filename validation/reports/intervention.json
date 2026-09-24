@@ -1,0 +1,41 @@
+{
+  "supported": true,
+  "problems": [],
+  "drains": [
+    31,
+    24,
+    19,
+    15
+  ],
+  "drain_spread": 16,
+  "rows": [
+    {
+      "schedule": "per_cycle",
+      "spacing": 1,
+      "horizon": 959,
+      "completion": 990,
+      "drain": 31
+    },
+    {
+      "schedule": "half_rate",
+      "spacing": 2,
+      "horizon": 1918,
+      "completion": 1942,
+      "drain": 24
+    },
+    {
+      "schedule": "quarter_rate",
+      "spacing": 4,
+      "horizon": 3836,
+      "completion": 3855,
+      "drain": 19
+    },
+    {
+      "schedule": "eighth_rate",
+      "spacing": 8,
+      "horizon": 7672,
+      "completion": 7687,
+      "drain": 15
+    }
+  ]
+}

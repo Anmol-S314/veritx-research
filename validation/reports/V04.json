@@ -62,7 +62,7 @@
     {
       "name": "monotonicity",
       "authority_class": "monotonicity",
-      "independence": "independent",
+      "independence": "independent_oracle",
       "verdict": "exact",
       "detail": "completion_cycles is non_increasing across link_width=[32, 64, 128, 256] for VERITX and authority",
       "values": {
@@ -84,11 +84,11 @@
       }
     },
     {
-      "name": "conservation@32",
-      "authority_class": "conservation",
-      "independence": "independent",
+      "name": "trace_execution_conservation@32",
+      "authority_class": "trace_conservation",
+      "independence": "integration_gate",
       "verdict": "exact",
-      "detail": "packets and flits close exactly",
+      "detail": "the engine consumed exactly the produced trace",
       "values": {
         "packets": 1920,
         "flits": 12000,
@@ -97,9 +97,29 @@
       }
     },
     {
+      "name": "workload_lowering_conservation@32",
+      "authority_class": "ring_oracle",
+      "independence": "independent_oracle",
+      "verdict": "exact",
+      "detail": "lowering matches ring ALLREDUCE arithmetic (messages=480, bytes=30720, flits=12000, packets=1920)",
+      "values": {
+        "ranks": 16,
+        "payload_bytes": 1024,
+        "messages": 480,
+        "total_bytes": 30720,
+        "chunk_bytes": 64,
+        "header_bits": 11,
+        "usable_payload_bits": 21,
+        "flits_per_message": 25,
+        "packets_per_message": 4,
+        "total_flits": 12000,
+        "total_packets": 1920
+      }
+    },
+    {
       "name": "standalone_parity@32",
       "authority_class": "standalone_booksim",
-      "independence": "semi_independent",
+      "independence": "semi_independent_shared_engine",
       "verdict": "exact",
       "detail": "VERITX completion 1962 == authority 1962",
       "values": {
@@ -110,11 +130,11 @@
       }
     },
     {
-      "name": "conservation@64",
-      "authority_class": "conservation",
-      "independence": "independent",
+      "name": "trace_execution_conservation@64",
+      "authority_class": "trace_conservation",
+      "independence": "integration_gate",
       "verdict": "exact",
-      "detail": "packets and flits close exactly",
+      "detail": "the engine consumed exactly the produced trace",
       "values": {
         "packets": 960,
         "flits": 4800,
@@ -123,9 +143,29 @@
       }
     },
     {
+      "name": "workload_lowering_conservation@64",
+      "authority_class": "ring_oracle",
+      "independence": "independent_oracle",
+      "verdict": "exact",
+      "detail": "lowering matches ring ALLREDUCE arithmetic (messages=480, bytes=30720, flits=4800, packets=960)",
+      "values": {
+        "ranks": 16,
+        "payload_bytes": 1024,
+        "messages": 480,
+        "total_bytes": 30720,
+        "chunk_bytes": 64,
+        "header_bits": 11,
+        "usable_payload_bits": 53,
+        "flits_per_message": 10,
+        "packets_per_message": 2,
+        "total_flits": 4800,
+        "total_packets": 960
+      }
+    },
+    {
       "name": "standalone_parity@64",
       "authority_class": "standalone_booksim",
-      "independence": "semi_independent",
+      "independence": "semi_independent_shared_engine",
       "verdict": "exact",
       "detail": "VERITX completion 990 == authority 990",
       "values": {
@@ -136,11 +176,11 @@
       }
     },
     {
-      "name": "conservation@128",
-      "authority_class": "conservation",
-      "independence": "independent",
+      "name": "trace_execution_conservation@128",
+      "authority_class": "trace_conservation",
+      "independence": "integration_gate",
       "verdict": "exact",
-      "detail": "packets and flits close exactly",
+      "detail": "the engine consumed exactly the produced trace",
       "values": {
         "packets": 480,
         "flits": 2400,
@@ -149,9 +189,29 @@
       }
     },
     {
+      "name": "workload_lowering_conservation@128",
+      "authority_class": "ring_oracle",
+      "independence": "independent_oracle",
+      "verdict": "exact",
+      "detail": "lowering matches ring ALLREDUCE arithmetic (messages=480, bytes=30720, flits=2400, packets=480)",
+      "values": {
+        "ranks": 16,
+        "payload_bytes": 1024,
+        "messages": 480,
+        "total_bytes": 30720,
+        "chunk_bytes": 64,
+        "header_bits": 11,
+        "usable_payload_bits": 117,
+        "flits_per_message": 5,
+        "packets_per_message": 1,
+        "total_flits": 2400,
+        "total_packets": 480
+      }
+    },
+    {
       "name": "standalone_parity@128",
       "authority_class": "standalone_booksim",
-      "independence": "semi_independent",
+      "independence": "semi_independent_shared_engine",
       "verdict": "exact",
       "detail": "VERITX completion 507 == authority 507",
       "values": {
@@ -162,11 +222,11 @@
       }
     },
     {
-      "name": "conservation@256",
-      "authority_class": "conservation",
-      "independence": "independent",
+      "name": "trace_execution_conservation@256",
+      "authority_class": "trace_conservation",
+      "independence": "integration_gate",
       "verdict": "exact",
-      "detail": "packets and flits close exactly",
+      "detail": "the engine consumed exactly the produced trace",
       "values": {
         "packets": 480,
         "flits": 1440,
@@ -175,9 +235,29 @@
       }
     },
     {
+      "name": "workload_lowering_conservation@256",
+      "authority_class": "ring_oracle",
+      "independence": "independent_oracle",
+      "verdict": "exact",
+      "detail": "lowering matches ring ALLREDUCE arithmetic (messages=480, bytes=30720, flits=1440, packets=480)",
+      "values": {
+        "ranks": 16,
+        "payload_bytes": 1024,
+        "messages": 480,
+        "total_bytes": 30720,
+        "chunk_bytes": 64,
+        "header_bits": 11,
+        "usable_payload_bits": 245,
+        "flits_per_message": 3,
+        "packets_per_message": 1,
+        "total_flits": 1440,
+        "total_packets": 480
+      }
+    },
+    {
       "name": "standalone_parity@256",
       "authority_class": "standalone_booksim",
-      "independence": "semi_independent",
+      "independence": "semi_independent_shared_engine",
       "verdict": "exact",
       "detail": "VERITX completion 505 == authority 505",
       "values": {

@@ -551,7 +551,7 @@ def verify_trace_conservation(physical_traffic: PhysicalTrafficArtifactV2
 
 
 def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
-                  *, include_optional: bool = False) -> bytes:
+                  *, include_optional: bool = False, seed: int = 0) -> bytes:
     """Render the certified config for a profile (deterministic bytes).
 
     ``include_optional`` emits optional fields (e.g. the route-dump path);
@@ -588,6 +588,9 @@ def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
     values["traffic"] = f"trace({TRACE_FILE})"
     values["sample_period"] = schedule["sample_period"]
     values["max_samples"] = schedule["max_samples"]
+    # the run seed is an executed input: render it so the identity that
+    # binds it is also the identity BookSim runs
+    values["seed"] = seed
     if schedule["sample_period"] * schedule["max_samples"] \
             < schedule["max_timestamp"] + 1:
         raise BookSimProjectionError(
@@ -734,6 +737,9 @@ class PreparedBookSimInput:
     sample_period: int = 0
     max_samples: int = 0
     expected_packets: int = 0
+    #: the executed BookSim seed: a per-run simulation input, so it is part
+    #: of the prepared identity (reseal audit) and rendered into the config.
+    seed: int = 0
     schema_version: int = BOOKSIM_PROJECTION_SCHEMA_VERSION
 
     def identity_dict(self) -> dict[str, Any]:
@@ -759,6 +765,7 @@ class PreparedBookSimInput:
             "sample_period": self.sample_period,
             "max_samples": self.max_samples,
             "expected_packets": self.expected_packets,
+            "seed": self.seed,
             "config_sha256": content_hash("srota/PreparedBookSimConfig", 1,
                                           {"text": self.config_text}),
             "trace_sha256": content_hash("srota/PreparedBookSimTrace", 1,
@@ -814,7 +821,7 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
     profile = select_booksim_profile(parents)
     conservation = verify_trace_conservation(parents.physical_traffic)
     del conservation
-    config = render_config(parents, profile)
+    config = render_config(parents, profile, seed=seed)
     values = parse_config_values(config.decode())
     # the profile's own pins must survive rendering verbatim
     for name, pin in profile.pinned_values().items():
@@ -848,14 +855,15 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
         router_count=parents.topology.router_count,
         sample_period=int(values["sample_period"]),
         max_samples=int(values["max_samples"]),
-        expected_packets=schedule["expected_packets"])
+        expected_packets=schedule["expected_packets"],
+        seed=seed)
 
 
 def assert_canonical_booksim_projection(
         prepared: PreparedBookSimInput,
         parents: BookSimProjectionParents) -> None:
     """Re-prove a prepared input against its parents (tamper refusal)."""
-    rebuilt = prepare_booksim_input(parents)
+    rebuilt = prepare_booksim_input(parents, seed=prepared.seed)
     if rebuilt.prepared_id() != prepared.prepared_id():
         raise BookSimProjectionError(
             "prepared input does not match a fresh projection of these "
