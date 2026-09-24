@@ -263,12 +263,14 @@ class OptimizationDefinition:
         if self.seed is not None and type(self.seed) is not int:
             raise OptimizationDefinitionError(
                 f"seed must be an int or None, got {self.seed!r}")
+        if not params:
+            raise OptimizationDefinitionError(
+                "the guided domain is empty: an optimization with no guided "
+                "dimension would only re-evaluate the base design, and its "
+                "empty patch is illegal. Declare at least one DomainParam.")
         if self.method == "random" and self.seed is None:
             raise OptimizationDefinitionError(
                 "search method 'random' requires an explicit seed for determinism")
-        if not params and self.method == "random":
-            raise OptimizationDefinitionError(
-                "search method 'random' needs a non-empty domain to sample from")
 
     def definition_id(self) -> str:
         return content_id(DOMAIN, {

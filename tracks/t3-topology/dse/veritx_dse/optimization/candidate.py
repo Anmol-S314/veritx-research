@@ -55,12 +55,17 @@ def normalize_patch(patch: dict[str, Any]) -> dict[str, Any]:
 
 
 def candidate_id_for(base_design_hash: str, patch: dict[str, Any]) -> str:
-    """Content identity of a candidate: H(base hash, canonical patch)."""
+    """Full content identity of a candidate: H(base hash, canonical patch).
+
+    The digest is used IN FULL: a truncated hash is not an identity. A
+    display layer may shorten ``cand_<64 hex>`` for presentation, but the
+    scientific identity is the whole digest.
+    """
     norm = normalize_patch(patch)
     return "cand_" + content_id(CANDIDATE_DOMAIN, {
         "base_design_hash": base_design_hash,
         "patch": {k: norm[k] for k in sorted(norm)},
-    })[:16]
+    })
 
 
 def apply_patch(base: Any, patch: dict[str, Any]) -> Any:
