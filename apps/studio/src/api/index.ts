@@ -13,6 +13,8 @@ import type {
   QualificationView,
   ValidationCampaignsView,
   PreflightView,
+  ServingSummary,
+  ServingView,
   WorkloadLoweringView,
   RunIntegrityView,
   RunVerifyView,
@@ -113,6 +115,19 @@ export const api = {
 
   compare: (a: string, b: string) =>
     get<CompareView>(`/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`),
+
+  servingList: (projectId: string) =>
+    get<{ contract_version: 1; experiments: ServingSummary[] }>(
+      `/projects/${encodeURIComponent(projectId)}/serving`,
+    ),
+  servingSubmit: (
+    projectId: string,
+    body?: { num_reqs?: number; workload_id?: string },
+  ) =>
+    post<JobView>(`/projects/${encodeURIComponent(projectId)}/serving`,
+      body ?? {}),
+  serving: (servingId: string) =>
+    get<ServingView>(`/serving/${encodeURIComponent(servingId)}`),
 };
 
 export * from './types';

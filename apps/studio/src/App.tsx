@@ -6,6 +6,7 @@ import {
 } from './pages';
 import { CompileVerify, Design, Simulate } from './pages/design';
 import { Compare, Optimize } from './pages/optimize';
+import { Serving } from './pages/serving';
 import OfflineDemo from './pages/offline';
 import BrandMark from './components/BrandMark';
 
@@ -17,8 +18,9 @@ const RAIL = [
   { section: 'design', no: '03', label: 'Design' },
   { section: 'compile', no: '04', label: 'Verify' },
   { section: 'simulate', no: '05', label: 'Simulate' },
-  { section: 'decide', no: '06', label: 'Compare' },
-  { section: 'optimize', no: '07', label: 'Optimize' },
+  { section: 'serving', no: '06', label: 'Serving' },
+  { section: 'decide', no: '07', label: 'Compare' },
+  { section: 'optimize', no: '08', label: 'Optimize' },
 ] as const;
 
 function Shell(): ReactElement {
@@ -71,6 +73,7 @@ function Shell(): ReactElement {
           case 'design': return <Design projectId={pid} />;
           case 'compile': return <CompileVerify projectId={pid} />;
           case 'simulate': return <Simulate projectId={pid} />;
+          case 'serving': return <Serving projectId={pid} />;
           case 'decide': return <Compare projectId={pid} />;
           case 'optimize': return <Optimize projectId={pid} />;
           default: return <Overview projectId={pid} />;

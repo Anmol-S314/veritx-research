@@ -140,6 +140,8 @@ export interface JobView {
   result: {
     run_id?: string;
     optimization_id?: string;
+    /** SERVING jobs: the created experiment's id. */
+    serving_id?: string;
     /** REPRODUCTION jobs: canonical scientific outcome label. */
     outcome?: 'SCIENTIFICALLY_REPRODUCED' | 'DIVERGED';
   } | null;
@@ -492,4 +494,37 @@ export interface CompareSide {
   noc: Record<string, unknown> | null;
   locked_derived: Record<string, unknown> | null;
   requirements_pass: boolean | null;
+}
+
+/** ServingExperiment resource (v1): one canonical serve run — submitted
+ * as a Job, stored with its CanonicalServingEvidence verbatim. A refused
+ * experiment keeps its exact refusal reason; nothing is upgraded. */
+export interface ServingSummary {
+  serving_id: string | null;
+  state: string | null;
+  workload_id: string | null;
+  created_at: string | null;
+  request_count: number | null;
+  rounds: number | null;
+  reusable: boolean | null;
+}
+
+export interface ServingView {
+  schema_version: 1;
+  serving_id: string;
+  project_id: string;
+  state: string;
+  workload_id: string | null;
+  num_reqs: number | null;
+  error: string | null;
+  evidence: {
+    request_count: number;
+    requests_expected: number;
+    rounds: number;
+    machine_id: string;
+    namespace_id: string;
+    evidence_ids: string[];
+    document: Record<string, unknown> | null;
+  } | null;
+  created_at: string | null;
 }
