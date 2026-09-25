@@ -416,6 +416,22 @@ def test_validation_campaigns_view_contract(tmp_path):
         assert all(c["verdict"] == "exact" for c in experiment["checks"]
                    if not c["quarantined"])
 
+    # Machine-readable campaign ledgers are projected verbatim; a mutation
+    # the gates did not catch would surface here as data, never upgraded.
+    assert body["mutations"]["total"] >= 1
+    assert body["mutations"]["caught"] == body["mutations"]["total"] or any(
+        not m["caught"] for m in body["mutations"]["mutations"])
+    assert body["mutations"]["document"] == "mutations.json"
+    assert body["metamorphic"]["total"] >= 1
+    assert body["metamorphic"]["probes"][0]["invariant"]
+    assert body["engines"]["engines"]
+    ramulator = next(e for e in body["engines"]["engines"]
+                     if e["name"] == "ramulator_battery")
+    assert ramulator["passed"] is True
+    assert ramulator["checks"], "per-check verdicts are carried"
+    assert body["intervention"]["document"] == "intervention.json"
+    assert body["intervention"]["rows"], "intervention rows verbatim"
+
     # Prose campaigns are references only: no parsed content.
     assert body["findings_document"] == "FINDINGS.md"
     prose = {c["document"] for c in body["prose_campaigns"]}

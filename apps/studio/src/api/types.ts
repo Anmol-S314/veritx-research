@@ -291,9 +291,63 @@ export interface ValidationExperiment {
   checks: ValidationCheck[];
 }
 
+export interface MutationRecord {
+  name: string | null;
+  caught: boolean;
+  expected: string | null;
+  detail: string | null;
+}
+
+export interface MetamorphicProbe {
+  name: string | null;
+  invariant: string | null;
+  passed: boolean;
+  detail: string | null;
+  observations: Record<string, unknown>;
+}
+
+export interface EngineGateCheck {
+  name: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface EngineGate {
+  name: string | null;
+  passed: boolean;
+  detail: string | null;
+  checks: EngineGateCheck[];
+}
+
 export interface ValidationCampaignsView {
   contract_version: 1;
   experiments: ValidationExperiment[];
+  mutations: {
+    kind: string;
+    document: string;
+    caught: number;
+    total: number;
+    mutations: MutationRecord[];
+  };
+  metamorphic: {
+    kind: string;
+    document: string;
+    passed: number;
+    total: number;
+    probes: MetamorphicProbe[];
+  };
+  engines: {
+    kind: string;
+    document: string;
+    engines: EngineGate[];
+  };
+  intervention: {
+    kind: string;
+    document: string;
+    supported: boolean;
+    problems: unknown[];
+    rows: Record<string, unknown>[];
+  };
   prose_campaigns: { document: string }[];
   findings_document: string;
 }

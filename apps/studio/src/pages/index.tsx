@@ -576,6 +576,109 @@ function ValidationCampaigns(): ReactElement {
             {data.experiments
               .filter((e) => e.id === openId)
               .map((e) => <CampaignDetail key={e.id} experiment={e} />)}
+            <h4>Campaign ledgers</h4>
+            <div className="campaign-ledgers">
+              <details>
+                <summary>
+                  Mutation tests — {data.mutations.caught}/{data.mutations.total}{' '}
+                  injected faults caught by the canonical gates
+                </summary>
+                <table className="tbl">
+                  <thead>
+                    <tr><th>mutation</th><th>caught</th><th>gate expected</th><th>what happened</th></tr>
+                  </thead>
+                  <tbody>
+                    {data.mutations.mutations.map((m) => (
+                      <tr key={m.name ?? ''}>
+                        <td><code>{m.name}</code></td>
+                        <td className={m.caught ? 'good' : 'bad'}>
+                          {m.caught ? 'CAUGHT' : 'MISSED'}
+                        </td>
+                        <td className="muted">{m.expected}</td>
+                        <td className="muted">{m.detail}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </details>
+              <details>
+                <summary>
+                  Metamorphic checks — {data.metamorphic.passed}/{data.metamorphic.total}{' '}
+                  invariants held (non-physical fields never move physics)
+                </summary>
+                <table className="tbl">
+                  <thead>
+                    <tr><th>probe</th><th>invariant</th><th>result</th><th>observed</th></tr>
+                  </thead>
+                  <tbody>
+                    {data.metamorphic.probes.map((p) => (
+                      <tr key={p.name ?? ''}>
+                        <td><code>{p.name}</code></td>
+                        <td className="muted">{p.invariant}</td>
+                        <td className={p.passed ? 'good' : 'bad'}>
+                          {p.passed ? 'HELD' : 'VIOLATED'}
+                        </td>
+                        <td className="muted">{JSON.stringify(p.observations)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </details>
+              <details>
+                <summary>
+                  Engine gates —{' '}
+                  {data.engines.engines.map((e) => `${e.name} ${e.passed ? 'PASS' : 'FAIL'}`).join(' · ')}
+                </summary>
+                {data.engines.engines.map((e) => (
+                  <div key={e.name ?? ''}>
+                    <h4>{e.name} — {e.detail}</h4>
+                    <table className="tbl">
+                      <tbody>
+                        {e.checks.map((c, i) => (
+                          <tr key={i}>
+                            <td><code>{c.name}</code></td>
+                            <td className={c.passed ? 'good' : 'bad'}>
+                              {c.passed ? 'PASS' : 'FAIL'}
+                            </td>
+                            <td className="muted">{c.detail}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
+              </details>
+              <details>
+                <summary>
+                  Intervention study — schedule causality{' '}
+                  {data.intervention.supported ? 'SUPPORTED' : 'NOT SUPPORTED'}
+                </summary>
+                {data.intervention.problems.length > 0 && (
+                  <p className="bad">{data.intervention.problems.join('; ')}</p>
+                )}
+                <table className="tbl">
+                  <thead>
+                    <tr>
+                      {data.intervention.rows.length > 0 &&
+                        Object.keys(data.intervention.rows[0]).map((k) => (
+                          <th key={k}>{k}</th>
+                        ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.intervention.rows.map((row, i) => (
+                      <tr key={i}>
+                        {Object.values(row).map((v, j) => (
+                          <td key={j} className={j === 0 ? 'muted' : 'num'}>
+                            {String(v)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </details>
+            </div>
             <h4>Other campaigns (prose authority — linked, not parsed)</h4>
             <ul className="muted">
               {data.prose_campaigns.map((c) => (
