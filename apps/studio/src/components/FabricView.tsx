@@ -1,23 +1,52 @@
 import { Suspense, lazy, useState, type ReactElement } from 'react';
+import { api } from '../api';
 import type { DesignView } from '../types';
 import FabricCanvas, { OVERLAYS, type Overlay } from './FabricCanvas';
-import { deriveFabric } from '../fabricLayout';
+import { fabricModel } from '../fabricLayout';
+import { useAsync } from '../studio';
 
 // Three.js is heavy; load it only when the 3D view is shown.
 const FabricCanvas3D = lazy(() => import('./FabricCanvas3D'));
 
+const shortHash = (value: string | null): string =>
+  value ? `${value.replace(/^sha256:/, '').slice(0, 12)}…` : '';
+
 /**
  * Topology / traffic view. 3D by default (orbitable structure), with a 2D
- * fallback. Overlay selection is honest: only `structure` is rendered;
- * every other overlay states the artifact it needs and is never faked.
+ * fallback.
+ *
+ * Source honesty: with a revision id we draw the certified TopologyView
+ * (routers, channels, agent seats). Without one — an uncompiled draft or
+ * the offline fixture shell — we draw the intent preview and say so.
+ * Overlay selection is equally honest: only `structure` is rendered;
+ * every other overlay states the artifact it needs.
  */
-export default function FabricView({ design }: {
+export default function FabricView({ design, revisionId }: {
   design: DesignView;
+  revisionId?: string | null;
 }): ReactElement {
   const [overlay, setOverlay] = useState<Overlay>('structure');
   const [mode, setMode] = useState<'3d' | '2d'>('3d');
-  const layout = deriveFabric(design);
+  const topology = useAsync(
+    () => (revisionId
+      ? api.topology(revisionId)
+      : Promise.resolve(null)),
+    [revisionId],
+  );
+  const model = fabricModel(
+    design,
+    topology.result.state === 'ready' ? topology.result.data : null,
+  );
   const active = OVERLAYS.find((o) => o.id === overlay);
+
+  const meta = model.source === 'topology'
+    ? `${model.family} · ${model.counts.routers} routers · `
+      + `${model.counts.channels} directed channels · `
+      + `${model.counts.endpoints} endpoints / ${model.counts.seats} seats · `
+      + `topology ${shortHash(model.topologyHash)}`
+    : `~${model.counts.routers} routers from declared counts · `
+      + `${model.totals.compute} compute · `
+      + 'compile to materialize the certified graph';
 
   return (
     <div className="fabric-view">
@@ -57,10 +86,17 @@ export default function FabricView({ design }: {
       </div>
 
       <span className="canvas-meta">
-        {layout.routerCount} routers · {layout.links.length} links ·{' '}
-        {layout.compute} compute tiles · {layout.hbm} HBM · link width{' '}
-        {design.noc_guided.link_width ?? '—'}
+        {model.source === 'topology' ? 'materialized · ' : 'preview · '}
+        {meta}
+        {model.linkWidth ? ` · link ${model.linkWidth}b` : ''}
       </span>
+
+      {topology.result.state === 'error' && (
+        <p className="warn">
+          Materialized topology unavailable ({topology.result.error.message})
+          {' — '}showing the intent preview.
+        </p>
+      )}
 
       {overlay !== 'structure' && active && (
         <div className="overlay-note">
@@ -76,10 +112,10 @@ export default function FabricView({ design }: {
             loading 3D topology…
           </div>
         }>
-          <FabricCanvas3D design={design} />
+          <FabricCanvas3D model={model} />
         </Suspense>
       ) : (
-        <FabricCanvas design={design} />
+        <FabricCanvas model={model} />
       )}
     </div>
   );

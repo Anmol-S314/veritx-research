@@ -22,7 +22,9 @@ from typing import Any
 from veritx_dse.application.errors import ControlPlaneError, ErrorCode, intent_error
 from veritx_dse.application.fabric_compiler import FabricCompiler
 from veritx_dse.application.product_evaluator import evaluate_product
-from veritx_dse.application.views import compilation_view, design_view
+from veritx_dse.application.views import (
+    compilation_view, design_view, topology_view,
+)
 from veritx_dse.core.paths import REPO
 from veritx_dse.core.run_bundle import (
     RunBundleError, finalize_run_bundle, verify_run_bundle,
@@ -376,6 +378,12 @@ class ProductService:
             "compilation": comp_view,
             "certificate": certificate,
         }
+        # Materialized graph captured at certification time: the shape
+        # Studio draws is frozen with the revision, never re-derived later
+        # (re-derivation would let the drawn graph drift from the proof).
+        materialized = topology_view(compilation, revision_id=revision_id)
+        if materialized is not None:
+            revision["topology"] = materialized
         self.store.create_revision(project_id, revision)
         return self.revision_view(revision)
 
@@ -397,6 +405,44 @@ class ProductService:
     def get_revision(self, revision_id: str) -> dict[str, Any]:
         _pid, revision = self.store.load_revision_global(revision_id)
         return self.revision_view(revision)
+
+    def get_revision_topology(self, revision_id: str) -> dict[str, Any]:
+        """The materialized fabric graph a revision was certified against.
+
+        Revisions persisted before this projection existed re-derive it
+        from their own immutable request and are checked against the
+        topology_hash the certificate already recorded — a mismatch is an
+        EVIDENCE_INVALID, never a silently redrawn fabric.
+        """
+        _pid, revision = self.store.load_revision_global(revision_id)
+        view = revision.get("topology")
+        if view is None:
+            compilation = revision.get("compilation") or {}
+            if compilation.get("status") != "COMPILED":
+                raise ProductServiceError(
+                    ErrorCode.CONFLICT,
+                    "this revision did not compile, so it has no "
+                    "materialized topology",
+                    operation="get_revision_topology",
+                    resource_id=revision_id)
+            rederived = topology_view(
+                FabricCompiler().compile(
+                    parse_request_doc(revision["request"])),
+                revision_id=revision_id)
+            expected = (compilation.get("artifact_hashes") or {}).get(
+                "topology_hash")
+            if rederived is None or (
+                    expected is not None
+                    and rederived["topology_hash"].split(":", 1)[-1]
+                    != str(expected).split(":", 1)[-1]):
+                raise ProductServiceError(
+                    ErrorCode.EVIDENCE_INVALID,
+                    "re-derived topology does not match the recorded "
+                    "topology_hash for this revision",
+                    operation="get_revision_topology",
+                    resource_id=revision_id)
+            view = rederived
+        return view
 
     @staticmethod
     def _revision_summary(revision: dict[str, Any]) -> dict[str, Any]:

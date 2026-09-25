@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import type { DesignView } from '../types';
-import { deriveFabric } from '../fabricLayout';
+import { bucketOf, type FabricModel, type FabricNode } from '../fabricLayout';
 
 function cssVar(name: string, fallback: string): string {
   const value = getComputedStyle(document.documentElement)
@@ -12,14 +11,13 @@ function cssVar(name: string, fallback: string): string {
 }
 
 /**
- * 3D structural fabric view (Three.js). It renders only declared intent
- * (routers, mesh links, attachments) from the DesignView — never a
- * fabricated overlay. Orbit to inspect; click a router to identify it.
+ * 3D structural fabric view (Three.js). It renders the handed model —
+ * the certified TopologyView when a revision compiled, otherwise the
+ * intent preview — and never a fabricated overlay. Orbit to inspect;
+ * click a router to identify it.
  */
-export default function FabricCanvas3D({
-  design,
-}: {
-  design: DesignView;
+export default function FabricCanvas3D({ model }: {
+  model: FabricModel;
 }): ReactElement {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -28,8 +26,8 @@ export default function FabricCanvas3D({
     const mount = mountRef.current;
     if (!mount) return;
 
-    const layout = deriveFabric(design);
-    const { routerCount, cols, rows, links, concentration, hbm, edge } = layout;
+    const materialized = model.source === 'topology';
+    const { nodes, edges, cols, rows, totals, concentration } = model;
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     const accent = cssVar('--accent', '#4da3c4');
@@ -72,18 +70,16 @@ export default function FabricCanvas3D({
       return item;
     };
 
-    const pos = (i: number): THREE.Vector3 => {
-      const c = i % cols;
-      const r = Math.floor(i / cols);
-      return new THREE.Vector3(
-        (c - (cols - 1) / 2) * SP, 0, (r - (rows - 1) / 2) * SP);
-    };
+    const pos = (node: FabricNode): THREE.Vector3 => new THREE.Vector3(
+      (node.col - (cols - 1) / 2) * SP, 0, (node.row - (rows - 1) / 2) * SP);
+    const byId = new Map(nodes.map((n) => [n.id, n]));
 
     // links (one LineSegments geometry)
-    const linkPositions = new Float32Array(links.length * 6);
-    links.forEach(([a, b], k) => {
-      const pa = pos(a);
-      const pb = pos(b);
+    const drawable = edges.filter((e) => byId.has(e.a) && byId.has(e.b));
+    const linkPositions = new Float32Array(drawable.length * 6);
+    drawable.forEach((edge, k) => {
+      const pa = pos(byId.get(edge.a)!);
+      const pb = pos(byId.get(edge.b)!);
       linkPositions.set([pa.x, pa.y, pa.z, pb.x, pb.y, pb.z], k * 6);
     });
     const linkGeom = track(new THREE.BufferGeometry());
@@ -96,74 +92,115 @@ export default function FabricCanvas3D({
     const routerGeom = track(new THREE.BoxGeometry(4, 4, 4));
     const routerMat = track(new THREE.MeshStandardMaterial({
       color: accent, metalness: 0.15, roughness: 0.55 }));
-    const routers = new THREE.InstancedMesh(routerGeom, routerMat, routerCount);
+    const routers = new THREE.InstancedMesh(routerGeom, routerMat,
+                                            Math.max(1, nodes.length));
     const dummy = new THREE.Object3D();
-    const routerCoords: [number, number][] = [];
-    for (let i = 0; i < routerCount; i++) {
-      const p = pos(i);
+    const routerLabels: string[] = [];
+    nodes.forEach((node, i) => {
+      const p = pos(node);
       dummy.position.set(p.x, 0, p.z);
       dummy.updateMatrix();
       routers.setMatrixAt(i, dummy.matrix);
-      routerCoords.push([Math.floor(i / cols), i % cols]);
-    }
+      routerLabels.push(`R${node.row},${node.col}`);
+    });
     routers.instanceMatrix.needsUpdate = true;
     scene.add(routers);
 
-    // attachments (compute tiles above each router)
-    const tileCount = routerCount;
-    const tileGeom = track(new THREE.BoxGeometry(2.2, 1.4, 2.2));
-    const tileMat = track(new THREE.MeshStandardMaterial({
-      color: ok, metalness: 0.1, roughness: 0.6 }));
-    const tiles = new THREE.InstancedMesh(tileGeom, tileMat, tileCount);
-    for (let i = 0; i < tileCount; i++) {
-      const p = pos(i);
-      const attached = Math.min(concentration,
-                                Math.max(0, layout.compute - i * concentration));
-      dummy.position.set(p.x, 3.6, p.z);
-      dummy.scale.set(1, Math.max(0.4, attached / Math.max(1, concentration)), 1);
-      dummy.updateMatrix();
-      tiles.setMatrixAt(i, dummy.matrix);
-    }
-    dummy.scale.set(1, 1, 1);
-    tiles.instanceMatrix.needsUpdate = true;
-    scene.add(tiles);
-
-    // HBM blocks on the north/south edges
-    if (hbm > 0) {
-      const hbmGeom = track(new THREE.BoxGeometry(3.2, 2, 3.2));
-      const hbmMat = track(new THREE.MeshStandardMaterial({
-        color: warn, metalness: 0.2, roughness: 0.5 }));
-      const hbmMesh = new THREE.InstancedMesh(hbmGeom, hbmMat, hbm);
-      const zNorth = -((rows - 1) / 2) * SP - 9;
-      const zSouth = ((rows - 1) / 2) * SP + 9;
-      for (let i = 0; i < hbm; i++) {
-        const north = i % 2 === 0;
-        const slot = Math.floor(i / 2);
-        const slots = Math.max(1, Math.ceil(hbm / 2));
-        const x = ((slot + 0.5) / slots - 0.5) * (cols - 1) * SP;
-        dummy.position.set(x, 0, north ? zNorth : zSouth);
-        dummy.updateMatrix();
-        hbmMesh.setMatrixAt(i, dummy.matrix);
+    if (materialized) {
+      // materialized agent seats, stacked on their own router
+      const bucketColor: Record<string, THREE.Color | string> = {
+        compute: ok, hbm: warn, nic: accent, edge: accent,
+      };
+      const bucketOrder = ['compute', 'hbm', 'nic', 'edge'] as const;
+      const stacks: Record<string, { node: FabricNode; slot: number }[]> = {
+        compute: [], hbm: [], nic: [], edge: [],
+      };
+      for (const node of nodes) {
+        let slot = 0;
+        for (const kind of bucketOrder) {
+          const owned = Object.entries(node.attached)
+            .filter(([k]) => bucketOf(k) === kind)
+            .reduce((sum, [, count]) => sum + count, 0);
+          for (let n = 0; n < owned; n++) {
+            stacks[kind].push({ node, slot });
+            slot += 1;
+          }
+        }
       }
-      hbmMesh.instanceMatrix.needsUpdate = true;
-      scene.add(hbmMesh);
-    }
-
-    // edge (NIC/peripheral) blocks on the west edge
-    if (edge > 0) {
-      const edgeGeom = track(new THREE.BoxGeometry(2.4, 2, 2.4));
-      const edgeMat = track(new THREE.MeshStandardMaterial({
-        color: accent, metalness: 0.2, roughness: 0.6 }));
-      const edgeMesh = new THREE.InstancedMesh(edgeGeom, edgeMat, edge);
-      const xWest = -((cols - 1) / 2) * SP - 9;
-      for (let i = 0; i < edge; i++) {
-        const z = ((i + 0.5) / edge - 0.5) * (rows - 1) * SP;
-        dummy.position.set(xWest, 0, z);
-        dummy.updateMatrix();
-        edgeMesh.setMatrixAt(i, dummy.matrix);
+      for (const kind of bucketOrder) {
+        const entries = stacks[kind];
+        if (entries.length === 0) continue;
+        const geom = track(new THREE.BoxGeometry(2.2, 1.2, 2.2));
+        const mat = track(new THREE.MeshStandardMaterial({
+          color: bucketColor[kind], metalness: 0.1, roughness: 0.6 }));
+        const mesh = new THREE.InstancedMesh(geom, mat, entries.length);
+        entries.forEach(({ node, slot }, i) => {
+          const p = pos(node);
+          dummy.position.set(p.x, 3.4 + slot * 1.5, p.z);
+          dummy.scale.set(1, 1, 1);
+          dummy.updateMatrix();
+          mesh.setMatrixAt(i, dummy.matrix);
+        });
+        mesh.instanceMatrix.needsUpdate = true;
+        scene.add(mesh);
       }
-      edgeMesh.instanceMatrix.needsUpdate = true;
-      scene.add(edgeMesh);
+    } else {
+      // preview: declared compute volume above each router (position unknown)
+      const tileGeom = track(new THREE.BoxGeometry(2.2, 1.4, 2.2));
+      const tileMat = track(new THREE.MeshStandardMaterial({
+        color: ok, metalness: 0.1, roughness: 0.6 }));
+      const tiles = new THREE.InstancedMesh(tileGeom, tileMat,
+                                            Math.max(1, nodes.length));
+      nodes.forEach((node, i) => {
+        const p = pos(node);
+        const attached = Math.min(concentration,
+          Math.max(0, totals.compute - i * concentration));
+        dummy.position.set(p.x, 3.6, p.z);
+        dummy.scale.set(1, Math.max(0.4, attached / Math.max(1, concentration)), 1);
+        dummy.updateMatrix();
+        tiles.setMatrixAt(i, dummy.matrix);
+      });
+      dummy.scale.set(1, 1, 1);
+      tiles.instanceMatrix.needsUpdate = true;
+      scene.add(tiles);
+
+      // declared HBM controllers on the north/south edges (preview only)
+      if (totals.hbm > 0) {
+        const hbmGeom = track(new THREE.BoxGeometry(3.2, 2, 3.2));
+        const hbmMat = track(new THREE.MeshStandardMaterial({
+          color: warn, metalness: 0.2, roughness: 0.5 }));
+        const hbmMesh = new THREE.InstancedMesh(hbmGeom, hbmMat, totals.hbm);
+        const zNorth = -((rows - 1) / 2) * SP - 9;
+        const zSouth = ((rows - 1) / 2) * SP + 9;
+        for (let i = 0; i < totals.hbm; i++) {
+          const north = i % 2 === 0;
+          const slot = Math.floor(i / 2);
+          const slots = Math.max(1, Math.ceil(totals.hbm / 2));
+          const x = ((slot + 0.5) / slots - 0.5) * (cols - 1) * SP;
+          dummy.position.set(x, 0, north ? zNorth : zSouth);
+          dummy.updateMatrix();
+          hbmMesh.setMatrixAt(i, dummy.matrix);
+        }
+        hbmMesh.instanceMatrix.needsUpdate = true;
+        scene.add(hbmMesh);
+      }
+
+      // declared NIC / peripheral agents on the west edge (preview only)
+      if (totals.edge > 0) {
+        const edgeGeom = track(new THREE.BoxGeometry(2.4, 2, 2.4));
+        const edgeMat = track(new THREE.MeshStandardMaterial({
+          color: accent, metalness: 0.2, roughness: 0.6 }));
+        const edgeMesh = new THREE.InstancedMesh(edgeGeom, edgeMat, totals.edge);
+        const xWest = -((cols - 1) / 2) * SP - 9;
+        for (let i = 0; i < totals.edge; i++) {
+          const z = ((i + 0.5) / totals.edge - 0.5) * (rows - 1) * SP;
+          dummy.position.set(xWest, 0, z);
+          dummy.updateMatrix();
+          edgeMesh.setMatrixAt(i, dummy.matrix);
+        }
+        edgeMesh.instanceMatrix.needsUpdate = true;
+        scene.add(edgeMesh);
+      }
     }
 
     // selection
@@ -176,8 +213,7 @@ export default function FabricCanvas3D({
       raycaster.setFromCamera(pointer, camera);
       const hit = raycaster.intersectObject(routers, false)[0];
       if (hit && hit.instanceId !== undefined) {
-        const [r, c] = routerCoords[hit.instanceId];
-        setSelected(`R${r},${c}`);
+        setSelected(routerLabels[hit.instanceId] ?? null);
       } else {
         setSelected(null);
       }
@@ -212,14 +248,16 @@ export default function FabricCanvas3D({
         mount.removeChild(renderer.domElement);
       }
     };
-  }, [design]);
+  }, [model]);
 
   return (
     <div
       className="canvas-3d"
       ref={mountRef}
       role="img"
-      aria-label={`3D fabric topology: ${deriveFabric(design).routerCount} routers`}
+      aria-label={`3D fabric ${model.source === 'topology'
+        ? 'topology'
+        : 'preview'}: ${model.counts.routers} routers`}
     >
       {selected && <div className="canvas-3d-badge">router {selected}</div>}
       <div className="canvas-3d-hint">drag to orbit · scroll to zoom · click a router</div>

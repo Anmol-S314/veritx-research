@@ -15,6 +15,7 @@ import type {
   RunView,
   WorkloadCatalogView,
 } from './types';
+import type { TopologyView } from '../types';
 
 export const api = {
   health: () => get<{ status: string; api: string }>('/health'),
@@ -53,6 +54,9 @@ export const api = {
 
   revision: (revisionId: string) =>
     get<RevisionView>(`/revisions/${encodeURIComponent(revisionId)}`),
+
+  topology: (revisionId: string) =>
+    get<TopologyView>(`/revisions/${encodeURIComponent(revisionId)}/topology`),
 
   evaluate: (revisionId: string, backend?: string) =>
     post<JobView>(`/revisions/${encodeURIComponent(revisionId)}/evaluate`, {

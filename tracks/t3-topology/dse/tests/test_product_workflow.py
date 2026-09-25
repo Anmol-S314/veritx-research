@@ -15,6 +15,7 @@ loudly; it never falls back to a mock backend.
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 import time
@@ -431,3 +432,110 @@ def test_live_evaluation_workflow(tmp_path):
         f"/api/v1/compare?a={run_id}&b={run_id}").json()
     assert compared["rows"]
     assert compared["a"]["revision_id"] == rid
+
+
+def _digest(value: str) -> str:
+    return str(value).split(":", 1)[-1]
+
+
+def test_revision_topology_view_matches_the_certificate(tmp_path):
+    """The Topology view is the certified graph, not a redrawn intent."""
+    client = _client(tmp_path, with_backend=False)
+    pid = _make_project(client)["project"]["project_id"]
+    revision = client.post(f"/api/v1/projects/{pid}/compile").json()
+    rid = revision["revision_id"]
+    compilation = revision["compilation"]
+    assert compilation["status"] == "COMPILED"
+    assert "topology_hash" in compilation["artifact_hashes"]
+
+    resp = client.get(f"/api/v1/revisions/{rid}/topology")
+    assert resp.status_code == 200, resp.text
+    view = resp.json()
+
+    assert view["contract_version"] == 1
+    assert view["revision_id"] == rid
+    assert view["design_hash"] == revision["design_hash"]
+    assert view["topology_hash"].startswith("sha256:")
+    assert _digest(view["topology_hash"]) == _digest(
+        compilation["artifact_hashes"]["topology_hash"])
+    assert view["family"] == revision["design"]["noc_guided"][
+        "topology_family"]
+
+    routers = view["routers"]
+    assert routers, "a compiled fabric always has routers"
+    router_ids = [r["router_id"] for r in routers]
+    assert len(router_ids) == len(set(router_ids))
+    assert view["counts"]["routers"] == len(routers)
+    assert view["counts"]["channels"] == len(view["channels"])
+    assert view["counts"]["endpoints"] == len(view["endpoints"])
+    assert view["counts"]["seats"] == sum(
+        r["seat_capacity"] for r in routers)
+
+    router_set = set(router_ids)
+    for channel in view["channels"]:
+        assert channel["src_router"] in router_set
+        assert channel["dst_router"] in router_set
+        assert channel["src_router"] != channel["dst_router"]
+        assert channel["width_bits"] > 0
+
+    assert view["endpoints"], "agent seats are part of the certified graph"
+    for endpoint in view["endpoints"]:
+        assert endpoint["router_id"] in router_set
+        assert endpoint["port_id"] >= 0
+        assert endpoint["kind"] in {
+            "compute_tile", "hbm_controller", "nic", "peripheral",
+            "ucie_port"}
+
+    links = view["physical_links"]
+    if links:
+        owner = {cid: link["physical_link_id"]
+                 for link in links for cid in link["channel_ids"]}
+        for channel in view["channels"]:
+            if channel.get("physical_link_id") is not None:
+                assert owner[channel["channel_id"]] == \
+                    channel["physical_link_id"]
+    else:
+        # Physical-link grouping is optional in the artifact. When it is
+        # absent every channel must say so, and the renderer collapses the
+        # directed channel set into undirected pairs itself.
+        assert all(c.get("physical_link_id") is None
+                   for c in view["channels"])
+
+    # an unknown revision is a refusal, never an invented empty fabric
+    missing = client.get("/api/v1/revisions/nope/topology")
+    assert missing.status_code == 404
+    assert missing.json()["code"] == "NOT_FOUND"
+
+
+def test_topology_view_rederives_legacy_revisions_and_verifies_the_hash(
+        tmp_path):
+    """Revisions stored before the projection existed are re-derived and
+    checked against the topology_hash the certificate already recorded."""
+    client = _client(tmp_path, with_backend=False)
+    pid = _make_project(client)["project"]["project_id"]
+    revision = client.post(f"/api/v1/projects/{pid}/compile").json()
+    rid = revision["revision_id"]
+
+    stored_path = next(tmp_path.rglob(f"revisions/{rid}.json"))
+    stored = json.loads(stored_path.read_text(encoding="utf-8"))
+    certified = stored["topology"]
+    assert certified is not None
+    del stored["topology"]
+    stored_path.write_text(json.dumps(stored), encoding="utf-8")
+
+    again = client.get(f"/api/v1/revisions/{rid}/topology")
+    assert again.status_code == 200, again.text
+    redervied = again.json()
+    assert redervied["topology_hash"] == certified["topology_hash"]
+    assert redervied["counts"] == certified["counts"]
+
+    # tampering with the recorded hash must fail closed (422), never
+    # return a graph the certificate does not cover
+    tampered = json.loads(stored_path.read_text(encoding="utf-8"))
+    tampered["compilation"]["artifact_hashes"]["topology_hash"] = \
+        "sha256:" + "0" * 64
+    stored_path.write_text(json.dumps(tampered), encoding="utf-8")
+
+    refused = client.get(f"/api/v1/revisions/{rid}/topology")
+    assert refused.status_code == 422, refused.text
+    assert refused.json()["code"] == "EVIDENCE_INVALID"

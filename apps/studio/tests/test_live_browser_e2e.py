@@ -154,6 +154,15 @@ def test_browser_live_flow(live_stack):
             expect(page.get_by_role("heading", name="Topology / traffic view")).to_be_visible(
                 timeout=30000)
 
+            # The side view must draw the certified graph of the revision
+            # just compiled, not the intent preview it shows before a
+            # compile (the regression where both looked identical).
+            meta = page.locator(".canvas-meta").first
+            expect(meta).to_contain_text("materialized", timeout=30000)
+            expect(meta).to_contain_text("routers")
+            expect(meta).to_contain_text("endpoints")
+            expect(meta).not_to_contain_text("compile to materialize")
+
             # Inspect verification.
             page.get_by_role("link", name="Verify", exact=True).click()
             expect(page.get_by_text("obligations PASS").first).to_be_visible(

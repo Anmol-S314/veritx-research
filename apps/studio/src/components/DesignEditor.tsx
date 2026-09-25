@@ -52,9 +52,11 @@ const ARB_OPTIONS: [string, string][] = [
  * rendered read-only. Edits are local-only (fixture mode: no engine
  * connectivity, so nothing recompiles) and flagged dirty with a reset path.
  */
-export default function DesignEditor({ design, live = false }: {
+export default function DesignEditor({ design, live = false, revisionId }: {
   design: DesignView;
   live?: boolean;
+  /** Certified revision whose TopologyView the side view should draw. */
+  revisionId?: string | null;
 }): ReactElement {
   const [draft, setDraft] = useState<DesignView>(() => clone(design));
   const [dirty, setDirty] = useState(false);
@@ -444,7 +446,10 @@ export default function DesignEditor({ design, live = false }: {
       <aside className="design-side">
         <section className="card">
           <h3>Topology / traffic view</h3>
-          <FabricView design={draft} />
+          {/* Edits invalidate the certified graph: after a knob change the
+              revision's TopologyView no longer describes this draft, so the
+              view falls back to the labelled intent preview. */}
+          <FabricView design={draft} revisionId={dirty ? null : revisionId} />
         </section>
       </aside>
     </div>

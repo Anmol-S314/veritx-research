@@ -180,7 +180,11 @@ function RevisionDesign({ revision, dirty }: {
           </span>
         </div>
       )}
-      <DesignEditor design={revision.design} live />
+      <DesignEditor
+        design={revision.design}
+        live
+        revisionId={revision.revision_id}
+      />
     </div>
   );
 }
