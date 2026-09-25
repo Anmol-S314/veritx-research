@@ -101,3 +101,44 @@ def test_expected_rows_agree_with_route_artifact_directly():
         node_to_router={n: n for n in range(parents.topology.router_count)})
     # identical to the projection's bound table
     assert rows == bp.prepare_booksim_input(parents).expected_route_rows
+
+
+def test_nonadjacent_next_hop_refuses():
+    """Invalid adjacency: a lexically valid dump line naming a router that
+    is not a legal first hop is refused. Exact equality against the
+    channel-derived expectation subsumes adjacency legality."""
+    prepared = _prepared()
+    rows = list(prepared.expected_route_rows)
+    idx = next(i for i, (r, n, _x) in enumerate(rows) if r != n)
+    r, n, x = rows[idx]
+    rows[idx] = (r, n, (x + prepared.router_count // 2)
+                 % prepared.router_count)          # far, non-adjacent
+    with pytest.raises(RouteObservationError, match="diverges"):
+        compare_route_realization(
+            expected_rows=prepared.expected_route_rows,
+            dump_text=_dump_from(rows))
+
+
+def test_unknown_routing_class_refuses():
+    """A routing class the RouteArtifact never proved is refused, not
+    silently treated as an empty expectation."""
+    _compiled, parents = _parents()
+    with pytest.raises(RouteObservationError, match="no entry"):
+        expected_route_rows(
+            routing_class="NO_SUCH_CLASS", topology=parents.topology,
+            route=parents.route,
+            node_to_router={n: n for n in range(parents.topology.router_count)})
+
+
+def test_transplanted_route_dump_refuses():
+    """A dump produced for a different fabric cannot satisfy this
+    expectation (no transplantation)."""
+    _compiled, parents = _parents()
+    prepared = _prepared()
+    _other_compiled, other_parents = _parents(compute=4, tp=4)
+    other = bp.prepare_booksim_input(other_parents)
+    assert other.expected_route_rows != prepared.expected_route_rows
+    with pytest.raises(RouteObservationError):
+        compare_route_realization(
+            expected_rows=prepared.expected_route_rows,
+            dump_text=_dump_from(other.expected_route_rows))

@@ -87,3 +87,25 @@ def test_wrong_binary_after_manifest_is_not_certifiable(tmp_path):
     out = _evaluate(binary, tmp_path)
     assert out.status == "BACKEND_UNAVAILABLE"
     assert out.authenticated_proof is None
+
+
+def test_optimizer_certified_boundary_refuses_unqualified_producer(tmp_path):
+    """C1.3: the FINAL optimizer boundary, not only the evaluator, must
+    refuse an unqualified producer — a non-qualified binary can never
+    yield a certified Pareto candidate."""
+    from veritx_dse.optimization.result import (
+        CertifiedBackendConfig, Optimizer,
+    )
+    binary = _copied_binary(tmp_path)          # no manifest -> unqualified
+    result = Optimizer().optimize_certified(
+        _real_base(), _defn(),
+        backend_config=CertifiedBackendConfig(
+            binary=str(binary), run_root=str(tmp_path / "runs"),
+            network_clock_hz=10 ** 9, timeout_s=60))
+    assert result.pareto_ids == ()
+    assert result.selected_candidate_id is None
+    assert result.records
+    for record in result.records:
+        assert record.evaluation_status != "EVALUATED"
+        assert record.performance_result_id is None
+        assert record.pareto_member is False
