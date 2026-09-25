@@ -75,7 +75,7 @@ follow it). Verdict: **NOT READY** (see `PRODUCTION-SEAL.md`).
 
 | id | severity | status | source | root cause | implementation | tests | runtime gate | commit | historical claims affected | remaining limitation |
 |----|----------|--------|--------|-----------|----------------|-------|--------------|--------|---------------------------|----------------------|
-| C8 | high | IN_PROGRESS | `Dockerfile`, `Makefile`, `scripts/write_release_manifest.py`, `.github/workflows/release.yml`, `validation/harness/engines.py` | container tag moving; several Docker deps clone HEADs; no release manifest; ASTRA build invoked with `sh` | `release-manifest.json` (`make release-manifest-json`); tag releases assert digest pin; F-0008 (bash) fixed; ASTRA engine timeout 300→900 | `test_release_manifest_binds_the_release_to_its_facts`; T6 clean clone (fast 3562 + harness green) | T6 build + science green | `a7784bde`, `64944077`, `c759b84b` | F-0008 | Dockerfile external clones unpinned; bit-reproducible binaries not established |
+| C8 | high | IN_PROGRESS | `Dockerfile`, `Makefile`, `scripts/write_release_manifest.py`, `scripts/check_dockerfile_pins.py`, `.github/workflows/release.yml` | container tag moving; Docker deps cloned HEADs; ASTRA build invoked with `sh` | `release-manifest.json`; tag releases assert digest pin; external clones pinned by commit (ARG); unpinned-clone guard; F-0008 fixed; ASTRA engine timeout 300→900 | `test_release_manifest_binds_the_release_to_its_facts`, `test_release_dockerfile_clones_are_pinned`; T6 clean clone | T6 build + fast + harness green | `a7784bde`, `64944077`, `c759b84b`, `69bda89c` | F-0008 | base image/apt not digest-pinned; bit-reproducible binaries not established |
 
 ## C9 — live Studio product
 
