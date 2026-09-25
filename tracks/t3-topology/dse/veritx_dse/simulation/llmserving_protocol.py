@@ -68,6 +68,9 @@ _EVIDENCE_MARKERS = ("[LEDGER][COLL_SUBMIT]", "Comm time:", "injected=")
 _STARTUP_TIMEOUT_S = 30.0
 _REPLY_TIMEOUT_S = 60.0
 _EXIT_TIMEOUT_S = 10.0
+#: bounded wait for the child to be reaped after a stdout EOF, so the exit
+#: code is never lost to a poll/EOF race (crash-mid-session diagnosis).
+_EXIT_OBSERVE_TIMEOUT_S = 10.0
 _KILL_GRACE_S = 5.0
 
 # Completion grammars (controller.py:13-27): analytic iteration form and
@@ -395,7 +398,17 @@ class ServingBackendSession:
                     f"backend made no terminator within {timeout:.1f}s "
                     f"(stall/livelock; process group killed)", burst)
             if line == self._EOF:
+                # The exit code is part of the diagnosis, so make it
+                # deterministically available: EOF on stdout can be observed
+                # a scheduling quantum before the child is reaped, and a
+                # bare poll() would then report None and lose the code under
+                # load. Wait (bounded) for the reap first.
                 code = proc.poll()
+                if code is None:
+                    try:
+                        code = proc.wait(timeout=_EXIT_OBSERVE_TIMEOUT_S)
+                    except subprocess.TimeoutExpired:
+                        code = None
                 raise self._fail(
                     f"backend EOF before Waiting (exit code {code})", burst)
             burst.append(line[:_LINE_CAP])

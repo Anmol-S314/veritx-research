@@ -68,6 +68,9 @@ jobs:
     needs: [fast-gate]
     container:
       image: ${{ vars.VERITX_TOOLS_IMAGE || 'ghcr.io/anmol-s314/veritx-tools-base:latest' }}
+    env:
+      # release-critical tests may not pass by skipping (C10.1)
+      VERITX_RELEASE_GATE: "1"
     steps:
       - uses: actions/checkout@v4
       - run: make release-build
@@ -83,6 +86,9 @@ jobs:
     needs: [fast-gate, scientific-gate]
     container:
       image: ${{ vars.VERITX_TOOLS_IMAGE || 'ghcr.io/anmol-s314/veritx-tools-base:latest' }}
+    env:
+      # a clean clone must not qualify by skipping release-critical tests
+      VERITX_RELEASE_GATE: "1"
     steps:
       - uses: actions/checkout@v4
         with:

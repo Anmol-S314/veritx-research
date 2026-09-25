@@ -18,6 +18,7 @@ dependencies = []
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
+    "pytest-timeout>=2.2",
 ]
 
 [project.scripts]
@@ -31,6 +32,11 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
+markers = [
+    "timeout: enforce a per-test wall-clock timeout (pytest-timeout)",
+]
+# A hung backend must fail the job, not stall CI (T4). Overridden per test.
+timeout = 900
 
 [tool.coverage.run]
 source = ["veritx_dse"]
