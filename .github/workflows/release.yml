@@ -37,6 +37,10 @@ jobs:
           PYTHONPATH=tracks/t3-topology/dse:tracks/t3-topology/dse/tests \
             python3 -m pytest tracks/t3-topology/dse/tests -q -p no:randomly \
               -k "not real"
+      - name: Studio contract + live gateway
+        run: |
+          PYTHONPATH=tracks/t3-topology/dse:tracks/t3-topology/dse/tests \
+            python3 -m pytest apps/studio/tests -q
 
   scientific-gate:
     name: B4 validation corpus (mutations + metamorphic + engines + intervention)

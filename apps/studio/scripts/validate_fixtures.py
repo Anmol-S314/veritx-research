@@ -642,6 +642,17 @@ def provisioned_environment() -> tuple[bool, str]:
     path = Path(str(binary))
     if not path.is_file() or not os.access(path, os.X_OK):
         return False, f"BookSim producer {path} is not an executable file"
+    # The offline-demo fixtures are regenerated through an engine helper that
+    # is absent on this branch; the live Studio product path is the gateway,
+    # so regeneration is not a live-flow blocker. Report it as unprovisioned
+    # rather than letting a ModuleNotFoundError escape.
+    import importlib.util
+    if importlib.util.find_spec(
+            "veritx_dse.application.product_evaluator") is None:
+        return False, (
+            "offline-demo fixture generator requires "
+            "veritx_dse.application.product_evaluator (absent on this "
+            "branch); the live Studio path is the gateway")
     return True, str(path)
 
 

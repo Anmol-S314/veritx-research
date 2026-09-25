@@ -51,15 +51,15 @@ def compilation_view(compilation: Any) -> dict[str, Any]:
     if compilation.status != "COMPILED":
         return view
     bundle, certificate = compilation.bundle, compilation.certificate
+    # ``root_hashes`` normalizes method-vs-attribute access across bundle
+    # versions; never call the child hash directly (it may be a field).
+    root_hashes = {str(k): str(v) for k, v in bundle.root_hashes().items()}
     view.update({
-        "resolved_fabric_hash": _h(
-            bundle.resolved_fabric.resolved_fabric_hash()),
+        "resolved_fabric_hash": _h(root_hashes["resolved_fabric_hash"]),
         "certificate_id": certificate.certificate_id(),
         "certificate_overall": certificate.overall,
         "obligations": [o.to_dict() for o in certificate.obligations],
-        "artifact_hashes": {
-            str(k): str(v)
-            for k, v in bundle.root_hashes().items()},
+        "artifact_hashes": root_hashes,
     })
     return view
 

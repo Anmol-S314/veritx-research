@@ -27,6 +27,9 @@ from veritx_dse.gateway.errors import (
     BackendUnavailable, Conflict, NotFound, error_code_for, http_status_for,
 )
 from veritx_dse.gateway.qualification import qualification_view
+from veritx_dse.gateway.revisions import (
+    Revision, RevisionStore, revision_id_for,
+)
 
 logger = logging.getLogger("veritx.gateway")
 
@@ -39,42 +42,85 @@ class GatewayConfig:
     network_clock_hz: float = 1e9
     timeout_s: int = 600
     experiments_dir: Path | None = None
+    revisions_root: Path | None = None
+
+    @property
+    def revisions_dir(self) -> Path:
+        return self.revisions_root or (
+            self.store_root.parent / "studio-revisions")
 
 
 def config_from_env() -> GatewayConfig:
     repo = Path(__file__).resolve().parents[3]
     store = os.environ.get("VERITX_STORE_ROOT")
     runs = os.environ.get("VERITX_RUNS_ROOT")
+    revisions = os.environ.get("VERITX_REVISIONS_ROOT")
     binary = os.environ.get("VERITX_BOOKSIM_BIN")
+    store_root = Path(store) if store else repo / "runs" / "studio-store"
     return GatewayConfig(
-        store_root=Path(store) if store else repo / "runs" / "studio-store",
+        store_root=store_root,
         runs_root=Path(runs) if runs else repo / "runs" / "veritx-runs",
         booksim_bin=Path(binary) if binary else None,
         experiments_dir=repo / "validation" / "experiments",
+        revisions_root=(Path(revisions) if revisions
+                        else store_root.parent / "studio-revisions"),
     )
 
 
 class CompileBody(BaseModel):
-    preset: str
+    #: guided preset intent (engine derives the canonical request), OR
+    #: a v3 Studio design document supplied by an engine-authored template.
+    preset: str | None = None
     policy: str = "baseline_deterministic_v2"
     overrides: list[str] = []
     name: str | None = None
+    request: dict[str, Any] | None = None
 
 
 class EvaluateBody(BaseModel):
-    request: dict[str, Any]
+    #: evaluate an immutable revision (preferred); the gateway re-derives the
+    #: canonical request. Raw ``request`` is a compatibility path only.
+    revision_id: str | None = None
+    request: dict[str, Any] = {}
     patch: dict[str, Any] = {}
 
 
 class OptimizeBody(BaseModel):
-    request: dict[str, Any]
+    revision_id: str | None = None
+    request: dict[str, Any] = {}
     domain: list[dict[str, Any]] = []
     objectives: list[dict[str, Any]] = [
         {"metric": "completion_cycles", "direction": "MIN"}]
     constraints: list[dict[str, Any]] = []
 
 
-def _compile(config: GatewayConfig, body: CompileBody) -> dict[str, Any]:
+def _compile_design(config: GatewayConfig, body: CompileBody):
+    """Compile one design to (canonical request, Compilation, design_hash,
+    resolved_fabric_hash). Two engine-authored paths, one product boundary.
+
+    * a v3 ``request`` document compiles through ``FabricCompiler`` directly;
+    * a guided ``preset`` compiles through ``SrotaControlPlane`` (which
+      commits a resolution) and is projected through ``FabricCompiler``; the
+      two identities are asserted equal so there is no second authority.
+    """
+    from veritx_dse.application.fabric_compiler import FabricCompiler
+
+    if body.request is not None:
+        from veritx_dse.model.compile_model import CompileRequestV3
+        try:
+            request = CompileRequestV3.from_dict(body.request)
+        except (ValueError, KeyError, InvalidInput) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        compilation = FabricCompiler().compile(request)
+        resolved = ""
+        if compilation.status == "COMPILED":
+            resolved = compilation.bundle.root_hashes()["resolved_fabric_hash"]
+        return request, compilation, request.design_hash(), resolved
+
+    if body.preset is None:
+        raise InvalidInput(
+            "a compile needs either a preset or a v3 design request")
+
     from veritx_dse.application.compile_intent import CompileIntent
     from veritx_dse.application.service import SrotaControlPlane
     from veritx_dse.application.store import ResourceStore
@@ -90,24 +136,103 @@ def _compile(config: GatewayConfig, body: CompileBody) -> dict[str, Any]:
             candidate_policy=policy)
     except (ValueError, KeyError, InvalidInput) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    # no broad catch: typed refusals reach the handler and map to their own
-    # status; a programmer fault becomes a logged 500, never a user error
-    service = SrotaControlPlane(store=ResourceStore(config.store_root))
-    outcome = service.compile(intent)
-    compiled = outcome.compiled
-    return {
-        "intent_id": outcome.intent_id,
-        "design_hash": outcome.design_hash,
-        "resolved_fabric_hash": outcome.resolved_fabric_hash,
-        "topology_hash": compiled.topology.topology_hash(),
-        "attachment_hash": compiled.attachment.attachment_hash(),
-        "mapping_hash": compiled.mapping.mapping_hash(),
-        "route_hash": compiled.routing.route.artifact_hash,
-        "resolved_route_hash": compiled.routing.resolved_route.resolved_route_hash(),
-        "vc_assignment_hash": compiled.routing.vc_assignment.vc_assignment_hash(),
-        "fabric_hash": compiled.fabric.fabric_hash,
-        "vc_count": compiled.vc_resource.vc_count,
+    outcome = SrotaControlPlane(store=ResourceStore(config.store_root))\
+        .compile(intent)
+    request = outcome.compiled.design
+    compilation = FabricCompiler().compile(request)
+    if compilation.status == "COMPILED":
+        resolved = compilation.bundle.root_hashes()["resolved_fabric_hash"]
+        if resolved != outcome.resolved_fabric_hash:
+            raise ControlPlaneError(
+                ErrorCode.INTERNAL_ERROR,
+                "guided and v3 compile paths disagree on resolved_fabric_hash",
+                operation="compile")
+    else:
+        resolved = ""
+    return request, compilation, outcome.design_hash, resolved
+
+
+def _views(request: Any,
+           compilation: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+    from veritx_dse.application.views import compilation_view, design_view
+
+    return design_view(request, compilation), compilation_view(compilation)
+
+
+def _revision_of(config: GatewayConfig, body: CompileBody, *,
+                 design_hash: str,
+                 resolved_fabric_hash: str) -> Revision | None:
+    """Record an immutable revision for a COMPILED design."""
+    if not resolved_fabric_hash:
+        return None
+    intent = body.model_dump()
+    revision = Revision(
+        revision_id=revision_id_for(
+            intent=intent, design_hash=design_hash,
+            resolved_fabric_hash=resolved_fabric_hash),
+        intent=intent, design_hash=design_hash,
+        resolved_fabric_hash=resolved_fabric_hash)
+    RevisionStore(config.revisions_dir).put(revision)
+    return revision
+
+
+def _load_revision(config: GatewayConfig, revision_id: str):
+    """Re-derive a revision's canonical request; refuse on compiler drift."""
+    revision = RevisionStore(config.revisions_dir).get(revision_id)
+    request, compilation, design_hash, resolved = _compile_design(
+        config, CompileBody(**revision.intent))
+    if (design_hash != revision.design_hash
+            or resolved != revision.resolved_fabric_hash):
+        raise Conflict(
+            f"revision {revision_id} no longer compiles to its stored "
+            "identity; refusing to reinterpret it")
+    if compilation.status != "COMPILED":
+        raise Conflict(
+            f"revision {revision_id} is {compilation.status}, not a "
+            "compiled fabric")
+    return revision, request, compilation
+
+
+def _canonical_request(config: GatewayConfig, body: Any):
+    """The canonical request from a revision id, or a raw compatibility body."""
+    if getattr(body, "revision_id", None):
+        _revision, request, _compilation = _load_revision(
+            config, body.revision_id)
+        return request
+    from veritx_dse.model.compile_model import CompileRequestV3
+
+    try:
+        return CompileRequestV3.from_dict(body.request)
+    except (ValueError, KeyError, InvalidInput) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _compile(config: GatewayConfig, body: CompileBody) -> dict[str, Any]:
+    request, compilation, design_hash, resolved = _compile_design(config, body)
+    design, compilation_projection = _views(request, compilation)
+    revision = _revision_of(config, body, design_hash=design_hash,
+                            resolved_fabric_hash=resolved)
+    out: dict[str, Any] = {
+        "revision_id": revision.revision_id if revision else None,
+        "design_hash": design_hash,
+        "resolved_fabric_hash": resolved or None,
+        "design_view": design,
+        "compilation_view": compilation_projection,
     }
+    if compilation.status == "COMPILED":
+        hashes = {str(k): str(v)
+                  for k, v in compilation.bundle.root_hashes().items()}
+        out.update({
+            "topology_hash": hashes["topology_hash"],
+            "attachment_hash": hashes["attachment_hash"],
+            "mapping_hash": hashes["mapping_hash"],
+            "route_hash": hashes["router_route_hash"],
+            "resolved_route_hash": hashes["resolved_route_hash"],
+            "vc_assignment_hash": hashes["vc_assignment_hash"],
+            "fabric_hash": hashes["fabric_hash"],
+            "vc_count": compilation.bundle.vc_assignment.vc_count,
+        })
+    return out
 
 
 def _list_runs(config: GatewayConfig) -> list[dict[str, Any]]:
@@ -182,6 +307,26 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
     def compile_(body: CompileBody) -> dict[str, Any]:
         return _compile(cfg, body)
 
+    @app.get("/revisions")
+    def revisions() -> dict[str, Any]:
+        store = RevisionStore(cfg.revisions_dir)
+        return {"revisions": [
+            {"revision_id": rid}
+            for rid in store.list_ids()]}
+
+    @app.get("/revisions/{revision_id}")
+    def revision(revision_id: str) -> dict[str, Any]:
+        rev, request, compilation = _load_revision(cfg, revision_id)
+        design, compilation_projection = _views(request, compilation)
+        return {
+            "revision_id": rev.revision_id,
+            "design_hash": rev.design_hash,
+            "resolved_fabric_hash": rev.resolved_fabric_hash,
+            "intent": rev.intent,
+            "design_view": design,
+            "compilation_view": compilation_projection,
+        }
+
     @app.get("/runs")
     def runs() -> dict[str, Any]:
         return {"runs": _list_runs(cfg)}
@@ -218,15 +363,17 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
     @app.post("/evaluate")
     def evaluate(body: EvaluateBody) -> dict[str, Any]:
         binary = _require_binary()
-        from veritx_dse.model.compile_model import CompileRequestV3
         from veritx_dse.optimization.candidate import make_candidate
         from veritx_dse.optimization.real_evaluator import (
             RealCandidateEvaluator,
         )
-        try:
-            request = CompileRequestV3.from_dict(body.request)
-        except (ValueError, KeyError, InvalidInput) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        request = _canonical_request(cfg, body)
+        from veritx_dse.core.errors import UnsupportedSemantics
+        from veritx_dse.model.compile_model import CompileRequestV3
+        if not isinstance(request, CompileRequestV3):
+            raise UnsupportedSemantics(
+                "evaluation requires a v3 design; this revision was "
+                "compiled from a guided preset")
         port = RealCandidateEvaluator(
             binary=str(binary), run_root=str(cfg.runs_root / "_evaluate"),
             network_clock_hz=cfg.network_clock_hz, timeout_s=cfg.timeout_s)
@@ -239,15 +386,14 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
     @app.post("/optimize")
     def optimize(body: OptimizeBody) -> dict[str, Any]:
         binary = _require_binary()
-        from veritx_dse.model.compile_model import CompileRequestV3
         from veritx_dse.optimization.definition import (
             Constraint, DomainParam, Objective, OptimizationDefinition,
         )
         from veritx_dse.optimization.result import (
             CertifiedBackendConfig, Optimizer,
         )
+        request = _canonical_request(cfg, body)
         try:
-            request = CompileRequestV3.from_dict(body.request)
             definition = OptimizationDefinition(
                 domain=tuple(DomainParam(d["name"], tuple(d["values"]))
                              for d in body.domain),
