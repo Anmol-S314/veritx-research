@@ -14,10 +14,12 @@ export default function EvaluateView({
   evaluation,
   requirements,
   fixtureId,
+  live = false,
 }: {
   evaluation: EvaluationView | null;
   requirements: RequirementReport | null;
   fixtureId: string;
+  live?: boolean;
 }): ReactElement {
   const [run, setRun] = useState<RunState>('idle');
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -50,16 +52,23 @@ export default function EvaluateView({
         </div>
         <div className="card">
           <h3>Request evaluation</h3>
-          {run === 'idle' && (
-            <div>
-              <p className="muted">
-                Fixture mode has no engine connectivity. A request demonstrates the
-                RUNNING state, then resolves honestly.
-              </p>
-              <button className="btn btn-primary" onClick={requestEvaluation}>
-                Request evaluation
-              </button>
-            </div>
+          {live ? (
+            <p className="muted">
+              No evaluation exists for this revision. Use the Simulate page to
+              start a real, qualified run.
+            </p>
+          ) : (
+            run === 'idle' && (
+              <div>
+                <p className="muted">
+                  Fixture mode has no engine connectivity. A request demonstrates the
+                  RUNNING state, then resolves honestly.
+                </p>
+                <button className="btn btn-primary" onClick={requestEvaluation}>
+                  Request evaluation
+                </button>
+              </div>
+            )
           )}
           {run === 'running' && (
             <div className="running">

@@ -1080,3 +1080,100 @@ input:disabled {
   white-space: pre-wrap;
 }
 .muted { opacity: 0.7; }
+
+/* ── product shell (UI shell) ─────────────────────────────────────────── */
+
+.good { color: var(--ok); }
+.bad { color: var(--bad); }
+.warn { color: var(--warn); }
+.info { color: var(--info); }
+
+.page { padding: 14px 18px 40px; display: flex; flex-direction: column; gap: 12px; }
+.page > h2 { margin: 2px 0 4px; font-size: 17px; font-weight: 600; }
+.page h3 { margin: 0 0 8px; }
+
+.link {
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: var(--accent); font: inherit; text-align: left;
+  text-decoration: underline; text-underline-offset: 2px;
+}
+
+.stale { color: var(--warn); font-weight: 600; }
+
+.context-header {
+  display: flex; flex-wrap: wrap; gap: 18px; align-items: baseline;
+  background: var(--bg-raise); border: 1px solid var(--border);
+  border-radius: 4px; padding: 8px 12px; font-size: 12px;
+}
+.context-header > div { display: flex; gap: 6px; align-items: baseline; }
+.ctx-key { color: var(--muted); text-transform: uppercase; letter-spacing: .04em; font-size: 10px; }
+.ctx-val { font-family: var(--mono); }
+.next-action { color: var(--accent); font-weight: 600; }
+.next-action-large { font-size: 22px; font-family: var(--mono); color: var(--accent); margin: 4px 0; }
+
+.stepper { display: flex; gap: 6px; flex-wrap: wrap; }
+.step {
+  display: flex; flex-direction: column; gap: 2px; align-items: flex-start;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px;
+  padding: 6px 10px; cursor: pointer; color: var(--text);
+}
+.step.active { border-color: var(--accent); }
+.step-label { font-size: 12px; }
+.step-state { font-size: 10px; font-family: var(--mono); color: var(--muted); }
+.st-complete { color: var(--ok); }
+.st-ready { color: var(--info); }
+.st-running { color: var(--info); }
+.st-stale, .st-refused { color: var(--warn); }
+.st-not-started { color: var(--muted); }
+
+.overview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.workload-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 12px; }
+
+.project-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.project-item {
+  display: flex; gap: 12px; align-items: baseline; width: 100%;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px;
+  padding: 10px 12px; cursor: pointer; color: var(--text); text-align: left;
+}
+.project-item:hover { border-color: var(--accent); }
+.project-name { font-weight: 600; min-width: 180px; }
+.flow { font-family: var(--mono); font-size: 11px; padding: 1px 6px; border-radius: 3px; background: var(--bg-raise); }
+.flow-verified, .flow-evaluated { color: var(--ok); }
+.flow-dirty, .flow-evaluation_failed, .flow-refused { color: var(--warn); }
+.flow-evaluating, .flow-optimizing { color: var(--info); }
+
+.job-progress {
+  display: flex; gap: 12px; align-items: center; margin-top: 8px;
+  font-family: var(--mono); font-size: 12px;
+}
+.job-state { padding: 1px 6px; border-radius: 3px; background: var(--bg-raise); }
+.job-completed .job-state { color: var(--ok); }
+.job-refused .job-state, .job-failed .job-state { color: var(--warn); }
+
+.error-box {
+  border: 1px solid var(--bad); background: var(--bad-bg);
+  border-radius: 4px; padding: 10px 12px;
+}
+.error-cat { font-family: var(--mono); margin-bottom: 4px; }
+.error-box p { margin: 4px 0; }
+
+.trust-drawer { border-left: 3px solid var(--accent); }
+.trust-drawer details { margin-top: 8px; }
+.trust-drawer summary { cursor: pointer; font-family: var(--mono); font-size: 12px; }
+
+.check-row { display: inline-flex; gap: 10px; margin-left: 8px; }
+.check-row .check { display: inline-flex; gap: 4px; align-items: center; }
+
+.offline-banner {
+  display: flex; gap: 10px; align-items: baseline;
+  border: 1px solid var(--warn); background: var(--warn-bg);
+  border-radius: 4px; padding: 8px 12px; margin: 12px 18px 0;
+}
+.offline-banner strong { font-family: var(--mono); }
+
+.project-select {
+  background: var(--input-bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px; padding: 3px 6px;
+}
+
+.artifact-list { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }

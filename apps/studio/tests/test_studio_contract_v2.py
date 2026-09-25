@@ -223,7 +223,7 @@ def test_generated_hashes_originate_from_engine_objects():
         f"sha256:{request.design_hash()}"
     compilation = FabricCompiler().compile(request)
     assert compiled["compilation"]["resolved_fabric_hash"] == \
-        f"sha256:{compilation.bundle.resolved_fabric.resolved_fabric_hash()}"
+        f"sha256:{compilation.bundle.resolved_fabric.resolved_fabric_hash}"
 
     study = _load("optimization-study")["optimization"]
     assert study["metric_registry_id"] == \

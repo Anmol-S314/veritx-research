@@ -51,7 +51,10 @@ const ARB_OPTIONS: [string, string][] = [
  * rendered read-only. Edits are local-only (fixture mode: no engine
  * connectivity, so nothing recompiles) and flagged dirty with a reset path.
  */
-export default function DesignEditor({ design }: { design: DesignView }): ReactElement {
+export default function DesignEditor({ design, live = false }: {
+  design: DesignView;
+  live?: boolean;
+}): ReactElement {
   const [draft, setDraft] = useState<DesignView>(() => clone(design));
   const [dirty, setDirty] = useState(false);
 
@@ -114,9 +117,19 @@ export default function DesignEditor({ design }: { design: DesignView }): ReactE
         {dirty && (
           <div className="dirty-banner">
             <span>
-              <strong>Modified locally — recompile required.</strong> Fixture mode has no
-              engine connectivity, so edits do not recompile and LOCKED values are
-              stale until a real compile runs.
+              {live ? (
+                <>
+                  <strong>Local preview only.</strong> These edits are not sent
+                  to the gateway. Use the <strong>Draft</strong> panel above to
+                  edit the canonical request and compile a new revision.
+                </>
+              ) : (
+                <>
+                  <strong>Modified locally — recompile required.</strong> Fixture
+                  mode has no engine connectivity, so edits do not recompile and
+                  LOCKED values are stale until a real compile runs.
+                </>
+              )}
             </span>
             <button
               className="btn"
@@ -125,7 +138,7 @@ export default function DesignEditor({ design }: { design: DesignView }): ReactE
                 setDirty(false);
               }}
             >
-              Reset to fixture
+              {live ? 'Discard preview' : 'Reset to fixture'}
             </button>
           </div>
         )}
