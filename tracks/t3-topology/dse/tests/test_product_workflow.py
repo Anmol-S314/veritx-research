@@ -609,3 +609,158 @@ def test_refused_attempt_preserves_active_revision(tmp_path):
                                json={"backend": None})
     assert refused_eval.status_code == 409, refused_eval.text
     assert refused_eval.json()["code"] == "CONFLICT"
+
+
+def _bundle_run(svc, tmp_path: Path, *, run_id: str) -> dict:
+    """Create a project + run whose bundle verifies, from a real finalize."""
+    from veritx_dse.core.run_bundle import finalize_run_bundle
+
+    pid = svc.create_project(name="bundle run", workload_id=WORKLOAD)[
+        "project"]["project_id"]
+    bundle_dir = svc.store.run_bundle_dir(pid, run_id)
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+    (bundle_dir / "evidence.json").write_text('{"a": {"b": 1}}',
+                                              encoding="utf-8")
+    manifest = finalize_run_bundle(bundle_dir)
+    svc.store.create_run(pid, {
+        "schema_version": 1, "run_id": run_id, "project_id": pid,
+        "revision_id": "r1", "design_hash": "sha256:x", "backend": "booksim",
+        "status": "EVALUATED", "qualification": "QUALIFIED",
+        "bundle_id": "sha256:" + manifest["bundle_id"],
+        "evaluation": None, "requirements": None, "producer": None,
+        "evidence": None, "display_name": None, "started_at": None,
+        "completed_at": None, "requirements_pass": None, "reason": None,
+    })
+    return {"project_id": pid, "run_id": run_id, "bundle_dir": bundle_dir}
+
+
+def test_verify_run_endpoint_contract(tmp_path):
+    """POST /api/v1/runs/{id}/verify delegates to the RunBundle authority."""
+    from veritx_dse.product.service import ProductConfig, ProductService
+
+    svc = ProductService(ProductConfig(projects_root=tmp_path / "projects"))
+    made = _bundle_run(svc, tmp_path, run_id="run-verify-1")
+
+    client = TestClient(create_app(GatewayConfig(
+        store_root=tmp_path / "store", runs_root=tmp_path / "runs",
+        projects_root=tmp_path / "projects")), raise_server_exceptions=False)
+
+    resp = client.post("/api/v1/runs/run-verify-1/verify")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["contract_version"] == 1
+    assert body["status"] == "VERIFIED"
+    assert body["bundle_id"].startswith("sha256:")
+    assert body["files_checked"] >= 1
+
+    # Unknown run -> typed 404.
+    missing = client.post("/api/v1/runs/run-nope/verify")
+    assert missing.status_code == 404, missing.text
+    assert missing.json()["code"] == "NOT_FOUND"
+
+    # Tampered content -> EVIDENCE_INVALID, never a trusted verdict.
+    (made["bundle_dir"] / "evidence.json").write_text('{"a": {"b": 2}}',
+                                                     encoding="utf-8")
+    tampered = client.post("/api/v1/runs/run-verify-1/verify")
+    assert tampered.status_code == 422, tampered.text
+    assert tampered.json()["code"] == "EVIDENCE_INVALID"
+
+    # A run with no bundle (refused evaluation) cannot be verified.
+    pid = svc.create_project(name="no bundle", workload_id=WORKLOAD)[
+        "project"]["project_id"]
+    svc.store.create_run(pid, {
+        "schema_version": 1, "run_id": "run-nobundle", "project_id": pid,
+        "revision_id": "r1", "design_hash": "sha256:x", "backend": None,
+        "status": "REFUSED", "qualification": None, "bundle_id": None,
+        "evaluation": None, "requirements": None, "producer": None,
+        "evidence": None, "display_name": None, "started_at": None,
+        "completed_at": None, "requirements_pass": None, "reason": "x",
+    })
+    nobundle = client.post("/api/v1/runs/run-nobundle/verify")
+    assert nobundle.status_code == 409, nobundle.text
+    assert nobundle.json()["code"] == "CONFLICT"
+
+
+def test_reproduce_endpoint_contract(tmp_path):
+    """POST /api/v1/runs/{id}/reproduce submits a Job over the canonical
+    reproduce authority; the job result distinguishes the scientific
+    outcome and never implies host/wall-time metadata must match."""
+    from veritx_dse.product.service import ProductConfig, ProductService
+
+    svc = ProductService(ProductConfig(projects_root=tmp_path / "projects"))
+    _bundle_run(svc, tmp_path, run_id="run-repro-1")
+
+    client = TestClient(create_app(GatewayConfig(
+        store_root=tmp_path / "store", runs_root=tmp_path / "runs",
+        projects_root=tmp_path / "projects")), raise_server_exceptions=False)
+
+    # No backend configured -> the submit itself refuses (503), the user's
+    # first indication is never a failed job.
+    nobin = client.post("/api/v1/runs/run-repro-1/reproduce")
+    assert nobin.status_code == 503, nobin.text
+    assert nobin.json()["code"] == "EXECUTION_FAILED"
+
+    # Unknown run -> typed 404.
+    missing = client.post("/api/v1/runs/run-nope/reproduce")
+    assert missing.status_code == 404, missing.text
+
+    # The job path itself (backend present) is exercised by the CLI leg;
+    # here we pin the service-level adapter shape with a stubbed authority.
+    from veritx_dse.application.errors import ErrorCode
+
+    svc2 = ProductService(ProductConfig(
+        projects_root=tmp_path / "projects2",
+        booksim_bin=Path("/bin/true")))
+    _bundle_run(svc2, tmp_path, run_id="run-repro-2")
+
+    captured = {}
+
+    def fake_reproduce(run_dir, *, binary=None, timeout=600):
+        captured["run_dir"] = str(run_dir)
+        captured["binary"] = str(binary)
+        return {"matched": True, "bundle_id": "0" * 64,
+                "stats": {"completion_cycles": 17},
+                "route_dump_sha256": "1" * 64}
+
+    import veritx_dse.backend.reproduce as reproduce_mod
+    real = reproduce_mod.reproduce_booksim_run_bundle
+    reproduce_mod.reproduce_booksim_run_bundle = fake_reproduce
+    try:
+        view = svc2.submit_reproduction("run-repro-2")
+        assert view["kind"] == "REPRODUCTION"
+        job_id = view["job_id"]
+        for _ in range(100):
+            job = svc2.get_job(job_id)
+            if job["state"] in ("COMPLETED", "FAILED", "REFUSED"):
+                break
+            time.sleep(0.05)
+        assert job["state"] == "COMPLETED", job
+        result = job["result"]
+        assert result["outcome"] == "SCIENTIFICALLY_REPRODUCED"
+        assert result["reproduced_stats"] == {
+            "completion_cycles": 17}
+        assert captured["binary"].endswith("true")
+    finally:
+        reproduce_mod.reproduce_booksim_run_bundle = real
+
+    # Divergence (authority raises) becomes EVIDENCE_INVALID, not a 500.
+    from veritx_dse.core.run_bundle import RunBundleError
+
+    def diverging(run_dir, *, binary=None, timeout=600):
+        raise RunBundleError("reproduction diverges from stored science")
+
+    real = reproduce_mod.reproduce_booksim_run_bundle
+    reproduce_mod.reproduce_booksim_run_bundle = diverging
+    try:
+        view = svc2.submit_reproduction("run-repro-2")
+        job_id = view["job_id"]
+        for _ in range(100):
+            job = svc2.get_job(job_id)
+            if job["state"] in ("COMPLETED", "FAILED", "REFUSED"):
+                break
+            time.sleep(0.05)
+        assert job["state"] == "REFUSED"
+        assert job["error_code"] == ErrorCode.EVIDENCE_INVALID.value
+        assert "diverges" in (job["error_message"] or "")
+    finally:
+        reproduce_mod.reproduce_booksim_run_bundle = real

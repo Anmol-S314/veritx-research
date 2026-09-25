@@ -876,6 +876,94 @@ class ProductService:
         return {"contract_version": 1, "run_id": run_id,
                 "bundle": files}
 
+    # ── run verification & reproduction ───────────────────────────────
+
+    def verify_run(self, run_id: str) -> dict[str, Any]:
+        """Re-verify a run's RunBundle on demand (thin adapter).
+
+        All verification semantics live in ``core.run_bundle``; this
+        method only locates the run, delegates, and projects the summary.
+        Every read path already verifies; this is the explicit product
+        action for the UI's Verify Bundle button.
+        """
+        pid = self.store.find_run_project(run_id)
+        if pid is None:
+            raise ProductServiceError(
+                ErrorCode.NOT_FOUND, f"no such run: {run_id}",
+                operation="verify_run", resource_id=run_id)
+        run = self.store.load_run(pid, run_id)
+        summary = self._verify_run_bundle(run)
+        if summary is None:
+            raise ProductServiceError(
+                ErrorCode.CONFLICT,
+                f"run {run_id} has no finalized run bundle to verify "
+                "(a refused evaluation produces no evidence)",
+                operation="verify_run", resource_id=run_id)
+        return {
+            "contract_version": 1,
+            "run_id": run_id,
+            "status": "VERIFIED",
+            "bundle_id": "sha256:" + summary["bundle_id"],
+            "file_count": summary["file_count"],
+            "files_checked": summary["file_count"],
+        }
+
+    def submit_reproduction(self, run_id: str) -> dict[str, Any]:
+        """Submit a reproduction Job over the canonical reproduce authority.
+
+        The job calls ``backend.reproduce.reproduce_booksim_run_bundle`` —
+        verify, re-execute on the recorded inputs, compare the deterministic
+        science. No reproduction logic lives in the product layer.
+        """
+        pid = self.store.find_run_project(run_id)
+        if pid is None:
+            raise ProductServiceError(
+                ErrorCode.NOT_FOUND, f"no such run: {run_id}",
+                operation="submit_reproduction", resource_id=run_id)
+        run = self.store.load_run(pid, run_id)
+        # Reproducing evidence requires durable, verified evidence.
+        if self._verify_run_bundle(run) is None:
+            raise ProductServiceError(
+                ErrorCode.CONFLICT,
+                f"run {run_id} has no finalized run bundle to reproduce",
+                operation="submit_reproduction", resource_id=run_id)
+        binary = self._require_backend()
+        bundle_dir = self.store.run_bundle_dir(pid, run_id)
+        job = self.jobs.submit(
+            pid, kind="REPRODUCTION", revision_id=run.get("revision_id"),
+            fn=lambda progress: self._run_reproduction(
+                run_id, bundle_dir, binary, progress))
+        return self.job_view(job)
+
+    def _run_reproduction(self, run_id: str, bundle_dir: Path,
+                          binary: Path, progress) -> tuple[str, dict[str, Any]]:
+        progress("RUNNING")
+        from veritx_dse.backend.reproduce import reproduce_booksim_run_bundle
+
+        try:
+            result = reproduce_booksim_run_bundle(
+                bundle_dir, binary=str(binary),
+                timeout=self.config.timeout_s)
+        except RunBundleError as exc:
+            raise ProductServiceError(
+                ErrorCode.EVIDENCE_INVALID,
+                f"reproduction refused: {exc}",
+                operation="reproduce_run", resource_id=run_id) from exc
+        matched = bool(result.get("matched"))
+        progress("FINALIZING")
+        return "COMPLETED", {
+            "run_id": run_id,
+            # Canonical labels: the reproduce authority compares the
+            # deterministic science (stats + route-dump digest). Host and
+            # wall-time metadata are not compared and must not be implied
+            # to match.
+            "outcome": ("SCIENTIFICALLY_REPRODUCED" if matched
+                        else "DIVERGED"),
+            "bundle_id": result.get("bundle_id"),
+            "reproduced_stats": result.get("stats"),
+            "route_dump_sha256": result.get("route_dump_sha256"),
+        }
+
     # ── optimization ──────────────────────────────────────────────────
 
     def submit_optimization(self, revision_id: str,
