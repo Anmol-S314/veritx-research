@@ -1,9 +1,11 @@
 # Studio Live Architecture (C9)
 
-Status: **NOT BUILT**. `apps/studio` is the existing React/TypeScript
-engineering tool (Design, Verify, Evaluate, Optimize) running on fixtures.
-This file records the agreed shape of the live upgrade; the gap analysis
-lives in `docs/validation/STUDIO-AUDIT-AND-GAP-REPORT.md`.
+Status: **GATEWAY BUILT; frontend wiring partial**. `apps/studio` is the
+existing React/TypeScript engineering tool (Design, Verify, Evaluate,
+Optimize). The live FastAPI gateway now exists at
+`veritx_dse/gateway/app.py`; the React app is still fixture-backed and is
+to be pointed at the gateway incrementally. The gap analysis lives in
+`docs/validation/STUDIO-AUDIT-AND-GAP-REPORT.md`.
 
 ## Principle
 
@@ -11,31 +13,40 @@ Do not rewrite `apps/studio`. Replace fixture-only operation incrementally
 with a thin gateway whose handlers call **canonical services only**. No
 scientific semantics may live in HTTP code.
 
-## Gateway (owed)
+## Gateway (BUILT)
 
-Preferred stack: FastAPI. Initial endpoints:
+Stack: FastAPI (`veritx_dse/gateway/app.py`). Endpoints:
 
 ```text
-POST /compile
-POST /evaluate
-POST /optimize
-
-GET  /runs
-GET  /runs/{id}
+GET  /health
+POST /compile          preset + policy + overrides -> SrotaControlPlane
+POST /evaluate         v3 request + patch -> RealCandidateEvaluator
+POST /optimize         v3 request + definition -> Optimizer.optimize_certified
+GET  /runs             finalized bundles under the runs root, VERIFIED/INVALID
+GET  /runs/{id}        bundle verification + manifest
 GET  /runs/{id}/evidence
-
-GET  /workloads
-GET  /qualification
+GET  /workloads        product presets + validation experiments
+GET  /qualification    canonical qualification registry
 ```
 
-Each handler:
+Handlers parse, call the same canonical service the CLI calls, and return
+the versioned result plus the evidence ids the trust panel needs. No
+scientific semantics live in HTTP code. `/evaluate` and `/optimize` return
+503 until a qualified backend is configured (`VERITX_BOOKSIM_BIN`).
 
-1. parses the request into the canonical request type,
-2. calls the same service the CLI calls (`SrotaControlPlane`,
-   `RealCandidateEvaluator`/`Optimizer.optimize_certified`,
-   the serving entry),
-3. returns the versioned result, including the evidence ids needed for the
-   UI trust panel.
+Config comes from the environment: `VERITX_STORE_ROOT`, `VERITX_RUNS_ROOT`,
+`VERITX_BOOKSIM_BIN`. Run with `uvicorn veritx_dse.gateway.app:app`.
+
+Tests: `tests/test_gateway.py` (compile, runs listing/verification/invalid,
+path-traversal refusal, qualification, workloads, 503 without backend).
+
+## Remaining C9 work
+
+- Point the React app at the gateway (replace `fixtures.ts` reads with API
+  calls); add a vite dev proxy to the gateway. The sections
+  (`DESIGN · WORKLOAD · VERIFY · SIMULATE · COMPARE · OPTIMIZE · RUNS ·
+  TRUST`) and the evidence-first trust panel are to be wired to the
+  endpoints above; no internal wave names may surface.
 
 ## Sections (target)
 
