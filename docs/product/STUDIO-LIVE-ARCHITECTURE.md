@@ -1,52 +1,70 @@
-# Studio Live Architecture (C9)
+# Studio Live Architecture
 
-Status: **GATEWAY BUILT; frontend wiring partial**. `apps/studio` is the
-existing React/TypeScript engineering tool (Design, Verify, Evaluate,
-Optimize). The live FastAPI gateway now exists at
-`veritx_dse/gateway/app.py`; the React app is still fixture-backed and is
-to be pointed at the gateway incrementally. The gap analysis lives in
-`docs/validation/STUDIO-AUDIT-AND-GAP-REPORT.md`.
+Status: **LIVE**. The product resource layer
+(`veritx_dse/product/`) provides filesystem-backed Project / Draft /
+DesignRevision / Run / Job / OptimizationStudy resources over the
+canonical application services; the gateway exposes them under
+`/api/v1`; `apps/studio` is wired to that API for the primary flow. The
+old ad-hoc routes remain as deprecated aliases for one release. The
+product-flow audit and target model live in
+`docs/product/STUDIO-FLOW-AUDIT.md`; the API reference is
+`docs/product/PRODUCT-API.md`.
 
 ## Principle
 
 Do not rewrite `apps/studio`. Replace fixture-only operation incrementally
 with a thin gateway whose handlers call **canonical services only**. No
-scientific semantics may live in HTTP code.
+scientific semantics may live in HTTP code. This still holds: the product
+layer composes `FabricCompiler`, `FabricEvaluator`,
+`RequirementEvaluator`, `Optimizer.optimize_certified` and
+`core/run_bundle.py`; it derives nothing itself.
 
-## Gateway (BUILT)
+## Gateway
 
-Stack: FastAPI (`veritx_dse/gateway/app.py`). Endpoints:
+Stack: FastAPI (`veritx_dse/gateway/app.py`). Product endpoints:
 
 ```text
-GET  /health
-POST /compile          preset + policy + overrides -> SrotaControlPlane
-POST /evaluate         v3 request + patch -> RealCandidateEvaluator
-POST /optimize         v3 request + definition -> Optimizer.optimize_certified
-GET  /runs             finalized bundles under the runs root, VERIFIED/INVALID
-GET  /runs/{id}        bundle verification + manifest
-GET  /runs/{id}/evidence
-GET  /workloads        product presets + validation experiments
-GET  /qualification    canonical qualification registry
+GET  /api/v1/health
+GET  /api/v1/qualification
+GET  /api/v1/catalog/workloads
+GET  /api/v1/catalog/fabric-presets
+POST /api/v1/projects
+GET  /api/v1/projects
+GET  /api/v1/projects/{id}
+GET  /api/v1/projects/{id}/draft
+PUT  /api/v1/projects/{id}/draft
+POST /api/v1/projects/{id}/compile
+GET  /api/v1/revisions/{id}
+GET  /api/v1/revisions/{id}/compilation
+POST /api/v1/revisions/{id}/evaluate
+POST /api/v1/revisions/{id}/optimize
+GET  /api/v1/jobs/{id}
+GET  /api/v1/runs
+GET  /api/v1/runs/{id}
+GET  /api/v1/runs/{id}/evidence
+GET  /api/v1/runs/{id}/artifacts
+GET  /api/v1/optimizations/{id}
+GET  /api/v1/compare?a=&b=
 ```
 
-Handlers parse, call the same canonical service the CLI calls, and return
-the versioned result plus the evidence ids the trust panel needs. No
-scientific semantics live in HTTP code. `/evaluate` and `/optimize` return
-503 until a qualified backend is configured (`VERITX_BOOKSIM_BIN`).
+Compile is synchronous (fast, and it runs the certificate). Evaluation
+and optimization are jobs: submit returns `{job_id, state: QUEUED}` and
+Studio polls `GET /api/v1/jobs/{id}` to a terminal state.
 
-Config comes from the environment: `VERITX_STORE_ROOT`, `VERITX_RUNS_ROOT`,
-`VERITX_BOOKSIM_BIN`. Run with `uvicorn veritx_dse.gateway.app:app`.
+Config: `VERITX_STORE_ROOT`, `VERITX_RUNS_ROOT`, `VERITX_PROJECTS_ROOT`,
+`VERITX_BOOKSIM_BIN`. Run `uvicorn veritx_dse.gateway.app:app`.
 
-Tests: `tests/test_gateway.py` (compile, runs listing/verification/invalid,
-path-traversal refusal, qualification, workloads, 503 without backend).
+Tests: `tests/test_gateway.py` (endpoint mechanics),
+`tests/test_product_workflow.py` (compile+verify, dirty-draft regression,
+error boundary, catalog separation, qualification, live evaluation),
+`apps/studio/tests/test_live_browser_e2e.py` (browser acceptance,
+`VERITX_E2E=1`).
 
-## Remaining C9 work
+## Qualification authority
 
-- Point the React app at the gateway (replace `fixtures.ts` reads with API
-  calls); add a vite dev proxy to the gateway. The sections
-  (`DESIGN · WORKLOAD · VERIFY · SIMULATE · COMPARE · OPTIMIZE · RUNS ·
-  TRUST`) and the evidence-first trust panel are to be wired to the
-  endpoints above; no internal wave names may surface.
+`docs/production/ENGINE-QUALIFICATION.json` is the single machine-readable
+source; `veritx_dse.product.qualification` loads it and the gateway
+serves it. The old hand-copied dict is gone (it drift-risked).
 
 ## Sections (target)
 
