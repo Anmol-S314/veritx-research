@@ -2,7 +2,7 @@
 
 One canonical artifact-derivation implementation. This document records
 which input shapes exist, which one compiler sequences the sealed Wave-B
-derivation, and the one remaining duplicate sequencer.
+derivation, and how both request generations funnel through it.
 
 ## Inputs
 
@@ -62,35 +62,39 @@ identities are equal (topology, mapping, attachment, route, resolved route,
 VC assignment, VC resource, routing realization, packet format, router
 behavior, address decode, fabric, resolved fabric).
 
-## Remaining duplication (OPEN — A8)
+## Remaining duplication (CLOSED — C2.1)
 
-`build_resolved_bundle_v3` **re-implements the sequencer** that
-`compile_deterministic_candidate` already is. The primitive `derive_*`
-functions are shared, but:
+`build_resolved_bundle_v3` previously re-implemented the sequencer that
+`compile_deterministic_candidate` already is, and carried its own
+`_MAX_PACKET_FLITS`/`_INPUT_BUFFER_DEPTH_FLITS`/`_OUTPUT_STAGE_DEPTH_FLITS`
+literals. Both are now gone:
 
-- the sequence topology→…→resolved_fabric is written twice (once in
-  `canonical.py`, once as `_derive_canonical_fabric`/`_bind_resolved`);
-- the hardware constants are duplicated: `_MAX_PACKET_FLITS = 8`,
-  `_INPUT_BUFFER_DEPTH_FLITS = 8`, `_OUTPUT_STAGE_DEPTH_FLITS = 1` in
-  `orchestration.py` vs `BASELINE_* = 8/8/1` in `candidate_policy.py`.
-  They agree today, which is exactly the F-0006 precondition — agreement by
-  coincidence, not construction.
+- `canonical.compose_deterministic_candidate` is the ONE deterministic
+  derivation engine. It takes explicit candidate semantics (route,
+  resolved route, VC assignment) and produces every downstream artifact
+  and the terminal `ResolvedFabric`.
+- `compile_deterministic_candidate` derives those semantics from a policy
+  and calls the composer.
+- `build_resolved_bundle_v3` derives those semantics from the v3 intent and
+  calls the same composer.
+- `orchestration` no longer defines `_derive_canonical_fabric`,
+  `_bind_resolved` or `_make_bundle`; the baseline hardware settings live
+  only in `candidate_policy.BASELINE_FABRIC_SETTINGS`.
 
-No cross-path (V2↔V3) identity parity test exists yet, so the two paths
-could drift silently.
+Tests:
+`test_both_compile_paths_funnel_through_one_composer` (both entry points
+call the composer) and
+`test_v3_orchestration_uses_the_single_baseline_settings` (no private
+sequencer/constants).
 
-### Collapse plan
+### Why not a V2↔V3 identity parity test
 
-1. Extract `compose_deterministic_fabric(*, design, inventory, mapping,
-   topology, attachment, route, resolved_route, vc_assignment, settings)`
-   from `compile_deterministic_candidate`; have that function call it.
-2. Define the V3→candidate-semantics translation explicitly (what VC spec
-   the V3 declared classes correspond to) so equivalence is *defined*, not
-   assumed.
-3. Have `build_resolved_bundle_v3` build those semantics and call the same
-   composer; delete `_derive_canonical_fabric`/`_bind_resolved` and the
-   duplicated constants.
-4. Add a V2↔V3 parity test asserting the 12 child identities for a fabric
-   the two inputs intentionally represent identically.
-
-Until (1)–(4) land, C2.1 is IN_PROGRESS and the ledger records it OPEN.
+Equivalence between a V2 request and a V3 request is **not defined** by the
+current request types: a v3 request derives VC structure from declared
+traffic classes, so a design with no requirement/collective is
+unrepresentable in v3 (it refuses), whereas the v2 baseline synthesizes a
+`default` class. The generation-independent children (topology, mapping,
+attachment, address decode) are shared by construction once the composer is
+single. A request-equivalence definition (V3→candidate semantics
+translation) remains the next step if the two inputs must be asserted
+equal; recorded as a non-blocking limitation.

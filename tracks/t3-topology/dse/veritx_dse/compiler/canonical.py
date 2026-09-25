@@ -450,35 +450,25 @@ def _derive_common_hardware(
 
 # ── deterministic candidate compiler ──────────────────────────────────────
 
-def compile_deterministic_candidate(
+def compose_deterministic_candidate(
         *, design: CompileRequest, inventory: NodeInventory,
-        mapping: MappingArtifact, routing_policy: RoutingPolicyDefinition,
-        vc_spec: DeterministicVCSpec,
+        mapping: MappingArtifact, topology: TopologyArtifact,
+        attachment: AgentAttachmentArtifact, route: RouteArtifact,
+        resolved_route: ResolvedRouteArtifact,
+        vc_assignment: VCAssignmentArtifact,
         settings: FabricCompileSettings) -> CompiledFabric:
-    """Compile one fully specified deterministic candidate."""
-    _validate_inputs(design=design, inventory=inventory, mapping=mapping,
-                     routing_policy=routing_policy)
-    _require_instance("vc_spec", vc_spec, DeterministicVCSpec)
+    """THE one deterministic derivation engine (C2.1).
+
+    Given explicit candidate semantics — the route, resolved route and VC
+    assignment (which V2 and V3 may obtain by different intent
+    interpretation) — compose every downstream artifact and the terminal
+    ``ResolvedFabric``. Both ``compile_deterministic_candidate`` and the v3
+    orchestration entry call THIS function; no second sequencer exists.
+    """
+    _require_instance("vc_assignment", vc_assignment, VCAssignmentArtifact)
     _require_instance("settings", settings, FabricCompileSettings)
 
-    with _stage(CompileStage.TOPOLOGY):
-        topology = materialize_topology(inventory, design)
-    with _stage(CompileStage.ATTACHMENT):
-        attachment = derive_attachment(design=design, inventory=inventory,
-                                       topology=topology)
-    with _stage(CompileStage.ROUTING):
-        route = materialize_route_artifact(routing_policy, topology,
-                                           name=ROUTE_ARTIFACT_NAME)
-        resolved_route = derive_resolved_route(topology, attachment, route)
     with _stage(CompileStage.VC):
-        vc_assignment = make_vc_assignment_artifact(
-            resolved_route=resolved_route,
-            vc_count=vc_spec.vc_count,
-            traffic_class_to_vcs=vc_spec.traffic_class_to_vcs,
-            vc_to_routing_class=vc_spec.vc_to_routing_class,
-            allowed_transitions=vc_spec.allowed_transitions,
-            escape_vcs=vc_spec.escape_vcs,
-            derivation=vc_spec.derivation)
         vc_resource = vc_resources_from_assignment(vc_assignment)
     with _stage(CompileStage.ROUTING_REALIZATION):
         routing_realization = make_deterministic_routing_realization(
@@ -512,6 +502,42 @@ def compile_deterministic_candidate(
         routing=CompiledDeterministicRouting(
             route=route, resolved_route=resolved_route,
             vc_assignment=vc_assignment))
+
+
+def compile_deterministic_candidate(
+        *, design: CompileRequest, inventory: NodeInventory,
+        mapping: MappingArtifact, routing_policy: RoutingPolicyDefinition,
+        vc_spec: DeterministicVCSpec,
+        settings: FabricCompileSettings) -> CompiledFabric:
+    """Compile one fully specified deterministic candidate."""
+    _validate_inputs(design=design, inventory=inventory, mapping=mapping,
+                     routing_policy=routing_policy)
+    _require_instance("vc_spec", vc_spec, DeterministicVCSpec)
+    _require_instance("settings", settings, FabricCompileSettings)
+
+    with _stage(CompileStage.TOPOLOGY):
+        topology = materialize_topology(inventory, design)
+    with _stage(CompileStage.ATTACHMENT):
+        attachment = derive_attachment(design=design, inventory=inventory,
+                                       topology=topology)
+    with _stage(CompileStage.ROUTING):
+        route = materialize_route_artifact(routing_policy, topology,
+                                           name=ROUTE_ARTIFACT_NAME)
+        resolved_route = derive_resolved_route(topology, attachment, route)
+    with _stage(CompileStage.VC):
+        vc_assignment = make_vc_assignment_artifact(
+            resolved_route=resolved_route,
+            vc_count=vc_spec.vc_count,
+            traffic_class_to_vcs=vc_spec.traffic_class_to_vcs,
+            vc_to_routing_class=vc_spec.vc_to_routing_class,
+            allowed_transitions=vc_spec.allowed_transitions,
+            escape_vcs=vc_spec.escape_vcs,
+            derivation=vc_spec.derivation)
+    return compose_deterministic_candidate(
+        design=design, inventory=inventory, mapping=mapping,
+        topology=topology, attachment=attachment, route=route,
+        resolved_route=resolved_route, vc_assignment=vc_assignment,
+        settings=settings)
 
 
 # ── adaptive candidate compiler ───────────────────────────────────────────

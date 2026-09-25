@@ -105,10 +105,34 @@ def test_service_and_orchestration_agree_on_every_child(preset, tmp_path):
 
 def test_v3_orchestration_uses_the_single_baseline_settings():
     """C2.1: the v3 path must not carry its own copy of the baseline
-    hardware literals (8/8/1); it must consume the one definition."""
-    from veritx_dse.compiler import candidate_policy, orchestration
-    assert orchestration._baseline_settings() \
-        is candidate_policy.BASELINE_FABRIC_SETTINGS
+    hardware literals (8/8/1), nor a second derivation sequencer."""
+    from veritx_dse.compiler import candidate_policy, canonical, orchestration
+    assert candidate_policy.BASELINE_FABRIC_SETTINGS.max_packet_flits == 8
+    assert not hasattr(orchestration, "_derive_canonical_fabric")
+    assert not hasattr(orchestration, "_bind_resolved")
+    assert not hasattr(orchestration, "_make_bundle")
     assert not hasattr(orchestration, "_MAX_PACKET_FLITS")
-    assert not hasattr(orchestration, "_INPUT_BUFFER_DEPTH_FLITS")
-    assert not hasattr(orchestration, "_OUTPUT_STAGE_DEPTH_FLITS")
+    assert callable(canonical.compose_deterministic_candidate)
+
+
+def test_both_compile_paths_funnel_through_one_composer(monkeypatch):
+    """C2.1: the v2 compiler and the v3 orchestration must both call the ONE
+    canonical derivation engine. If either grows its own sequencer, this
+    fails."""
+    from test_canonical_compiler import _design as _v2_design
+    from test_canonical_compiler import _det as _v2_compile
+    from test_p2_real_adapter import _base as _v3_request
+
+    from veritx_dse.compiler import canonical, orchestration
+
+    calls = {"n": 0}
+    real = canonical.compose_deterministic_candidate
+
+    def spy(**kw):
+        calls["n"] += 1
+        return real(**kw)
+
+    monkeypatch.setattr(canonical, "compose_deterministic_candidate", spy)
+    _v2_compile(_v2_design(compute=4, tp=4))
+    orchestration.build_resolved_bundle_v3(_v3_request())
+    assert calls["n"] == 2
