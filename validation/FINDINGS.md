@@ -584,3 +584,60 @@ Only the embedded ASTRA-BookSim2 frontend's wall-clock accounting is
 affected; no effect on the standalone BookSim qualification path (whose
 trace execution drains synchronously inside `TrafficManager::Run`). Any
 ASTRA timing recorded before this fix must not be used.
+
+---
+
+## F-ASTRA-0002 — ASTRA comm cycles are quantized to a 1,000-cycle floor and are payload-insensitive below ~64 KiB
+
+**Status:** OPEN (a limitation, not a bug being tuned) — recorded so absolute comm timing is never presented as a physical model
+**Severity:** medium — bounds every ASTRA absolute-timing claim; does not affect the compute floor or the internal accounting law
+**Found:** 2026-09-25, building the R2 timing micro-oracles
+
+### What it is
+
+After F-ASTRA-0001, the embedded BookSim frontend advances the fabric in
+fixed 1,000-cycle chunks (`Booksim2Fabric.hh`: `constexpr int64_t CHUNK =
+1000`) and returns as soon as a packet retires. A ring step whose packet
+needs fewer than 1,000 fabric cycles is therefore billed a full chunk.
+
+Observed on the release binary (16 ranks, mesh4x4, one ring ALLREDUCE,
+payload varying):
+
+| payload bytes | comm cycles |
+|---|---|
+| 64 | 30310 |
+| 1024 | 30310 |
+| 16384 | 30310 |
+| 65536 | 30310 |
+| 262144 | 90310 |
+| 1048576 | 270310 |
+| 4194304 | 990310 |
+
+Two payloads 1024x apart (64 B vs 64 KiB) cost exactly the same. The
+communication cost is dominated by the 1,000-cycle chunk granularity, not
+by bytes transferred.
+
+### Closed-form accounting law (model M)
+
+For a ring ALLREDUCE over N ranks and a payload small enough that one step
+fits a chunk:
+
+    steps(N)       = 2 * (N - 1)                       # ring law
+    comm_cycles(N) = (1000 + 10) * steps(N) + 10
+                   = 1010 * 2 * (N - 1) + 10
+
+where 1000 is the frontend chunk quantum and 10 is the declared
+`endpoint-delay`. Verified exactly for N = 2 (2030), 4 (6070), 8 (14150,
+a held-out prediction) and 16 (30310), and additive over 1-3 sequential
+collectives. Compute-only timing is exactly the declared nanoseconds.
+
+### Consequence
+
+- ASTRA timing is **internally qualified** under model M for compute,
+  small-payload ring collectives and multi-round accumulation.
+- ASTRA is **not** a physical bandwidth/latency model for realistic small
+  payloads, and its absolute comm timing must not enter a scientific
+  comparison or a certified objective. `ASTRA_X_ABSOLUTE_LATENCY` remains
+  `NOT_ESTABLISHED`.
+- The regression guard is `tracks/t3-topology/dse/tests/test_astra_timing_oracle.py`
+  (it asserts the exact law and the payload-insensitivity plateau).
