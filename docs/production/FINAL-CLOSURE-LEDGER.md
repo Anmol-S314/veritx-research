@@ -7,7 +7,8 @@ Authority is source + tests + runtime output, never this document. Where a
 row says CLOSED, the commit and the gate are named. `docs/production/CLOSURE-PLAN.md`
 remains the earlier narrative; this file is the program ledger.
 
-Release candidate under audit: `2521d713`. Verdict: **NOT READY** (see
+Release candidate under audit: baseline `2521d713`; closure tip
+`573456c6` plus this ledger commit. Verdict: **NOT READY** (see
 `PRODUCTION-SEAL.md`).
 
 ---
@@ -86,19 +87,19 @@ Release candidate under audit: `2521d713`. Verdict: **NOT READY** (see
 
 | id | severity | status | source | root cause | implementation | tests | runtime gate | commit | historical claims affected | remaining limitation |
 |----|----------|--------|--------|-----------|----------------|-------|--------------|--------|---------------------------|----------------------|
-| C10 | high | OPEN | — | battery not run at the RC SHA | owed | — | — | — | — | includes T0–T7 |
+| C10 | high | IN_PROGRESS | `.github/workflows/release.yml` | battery not run at a frozen RC SHA | T0–T3 green via fast/validation/harness; T4/T6 jobs exist and set the release gate; T7 not built | fast 3532, validation 20, harness V01–V14 | — | — | — | RC SHA not frozen; T4/T6 not run at it; C10.2 certified run and C10.3 matrix owed |
 
 ## C11 — final adversarial audit
 
 | id | severity | status | source | root cause | implementation | tests | runtime gate | commit | historical claims affected | remaining limitation |
 |----|----------|--------|--------|-----------|----------------|-------|--------------|--------|---------------------------|----------------------|
-| C11 | high | IN_PROGRESS | this program | stop-condition questions re-asked at seal | F-0007 found and fixed; others owed | — | — | `e9abab38` | — | full checklist not yet closed |
+| C11 | high | IN_PROGRESS | this program | stop-condition questions re-asked at seal | F-0007 (window) and C1.5 (toolchain) found and fixed; route/producer/evidence/VC/admissibility audits done; C2.1 v3 sequencer and C3/C4 run-integrity questions remain | regression per fix | fast tier green | `e9abab38`, `839cd3a9` | — | run-corruption and concurrency questions not yet answerable (C3/C4) |
 
 ## C12 — production seal
 
 | id | severity | status | source | root cause | implementation | tests | runtime gate | commit | historical claims affected | remaining limitation |
 |----|----------|--------|--------|-----------|----------------|-------|--------------|--------|---------------------------|----------------------|
-| C12 | high | OPEN | `docs/production/PRODUCTION-SEAL.md` | seal only at full closure | owed | — | — | — | — | verdict currently NOT READY |
+| C12 | high | IN_PROGRESS | `docs/production/PRODUCTION-SEAL.md` + all C13 outputs | seal only at full closure | all required C13 docs now exist; seal refreshed with current facts; verdict NOT READY | — | — | this program | — | full closure not reached; verdict stays NOT READY |
 
 ---
 
