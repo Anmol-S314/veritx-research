@@ -39,6 +39,7 @@ export interface RevisionSummary {
   design_hash: string;
   compilation_status: string;
   certificate_overall: string | null;
+  error: string | null;
 }
 
 export interface RunSummary {
@@ -72,6 +73,11 @@ export interface ProjectView {
   project: ProjectMeta;
   active_revision_id: string | null;
   active_revision: RevisionView | null;
+  /** Latest compile attempt (usable or refused). Never evaluated directly. */
+  latest_attempt_revision_id: string | null;
+  latest_attempt: RevisionSummary | null;
+  /** Latest run scoped to the ACTIVE revision — never a newer attempt's. */
+  latest_active_run: RunSummary | null;
   draft: DraftMeta;
   revisions: RevisionSummary[];
   runs: RunSummary[];
@@ -106,6 +112,7 @@ export interface DraftView {
   design_hash: string | null;
   dirty: boolean;
   active_revision_id: string | null;
+  latest_attempt_revision_id: string | null;
   request: Record<string, unknown> | null;
 }
 

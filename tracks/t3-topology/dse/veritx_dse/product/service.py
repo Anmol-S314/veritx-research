@@ -240,20 +240,82 @@ class ProductService:
                               design_hash=_view_hash(request.design_hash()))
         return self.project_view(project["project_id"])
 
-    def project_view(self, project_id: str) -> dict[str, Any]:
+    @staticmethod
+    def _revision_promotable(revision: dict[str, Any]) -> bool:
+        """Only a COMPILED revision with a PASS certificate may go active.
+
+        A refused attempt (INVALID/UNSUPPORTED, or a FAIL certificate) is
+        recorded as the latest attempt but must never displace the last
+        usable revision.
+        """
+        compilation = revision.get("compilation") or {}
+        certificate = revision.get("certificate") or {}
+        return (compilation.get("status") == "COMPILED"
+                and certificate.get("overall") == "PASS")
+
+    def _ensure_revision_pointers(self, project_id: str) -> dict[str, Any]:
+        """Backfill and repair the active/latest revision pointers.
+
+        Projects persisted before the split carry only
+        ``active_revision_id``: the latest revision id becomes the latest
+        attempt, and a non-promotable active revision steps back to the
+        newest promotable one (or None) so a refused attempt can never
+        masquerade as the certified fabric. Persists only when a pointer
+        actually changes.
+        """
         project = self.store.load_project(project_id)
+        revision_ids = project.get("revision_ids", [])
+        changed = False
+        if (project.get("latest_attempt_revision_id") is None
+                and revision_ids):
+            project["latest_attempt_revision_id"] = revision_ids[-1]
+            changed = True
+        active_id = project.get("active_revision_id")
+        if active_id is not None:
+            try:
+                active = self.store.load_revision(project_id, active_id)
+            except Exception:
+                active = None
+            if active is None or not self._revision_promotable(active):
+                fallback = None
+                for rid in reversed(revision_ids):
+                    if rid == active_id:
+                        continue
+                    try:
+                        candidate = self.store.load_revision(
+                            project_id, rid)
+                    except Exception:
+                        continue
+                    if self._revision_promotable(candidate):
+                        fallback = rid
+                        break
+                project["active_revision_id"] = fallback
+                changed = True
+        if changed:
+            self.store.save_project(project)
+        return project
+
+    def project_view(self, project_id: str) -> dict[str, Any]:
+        project = self._ensure_revision_pointers(project_id)
         draft = self.store.load_draft(project_id)
         revisions = self.store.list_revisions(project_id)
         active_id = project.get("active_revision_id")
         active = next((r for r in revisions
                        if r["revision_id"] == active_id), None)
+        latest_id = project.get("latest_attempt_revision_id")
+        latest = next((r for r in revisions
+                       if r["revision_id"] == latest_id), None)
         runs = self.store.list_runs(project_id)
         jobs = self.store.list_jobs(project_id)
         optimizations = [self.store.load_optimization(project_id, oid)
                          for oid in project.get("optimization_ids", [])]
         dirty = active is None or (
             draft.get("design_hash") != active.get("design_hash"))
-        flow = self._flow(active, dirty, runs, jobs)
+        flow = self._flow(active, dirty, runs, jobs, latest,
+                          draft.get("design_hash"))
+        latest_active_run = next(
+            (r for r in reversed(runs)
+             if r.get("revision_id") == active_id), None)
         return {
             "contract_version": 1,
             "project": {
@@ -265,6 +327,11 @@ class ProductService:
             "active_revision_id": active_id,
             "active_revision": (None if active is None
                                 else self.revision_view(active)),
+            "latest_attempt_revision_id": latest_id,
+            "latest_attempt": (None if latest is None
+                               else self._revision_summary(latest)),
+            "latest_active_run": (None if latest_active_run is None
+                                  else self._run_summary(latest_active_run)),
             "draft": {
                 "dirty": dirty,
                 "based_on_revision_id": active_id,
@@ -314,7 +381,7 @@ class ProductService:
                 "project_id": project_id}
 
     def draft_view(self, project_id: str) -> dict[str, Any]:
-        project = self.store.load_project(project_id)
+        project = self._ensure_revision_pointers(project_id)
         draft = self.store.load_draft(project_id)
         active_id = project.get("active_revision_id")
         active = None
@@ -331,6 +398,8 @@ class ProductService:
             "design_hash": draft.get("design_hash"),
             "dirty": dirty,
             "active_revision_id": active_id,
+            "latest_attempt_revision_id":
+                project.get("latest_attempt_revision_id"),
             "request": draft.get("request"),
         }
 
@@ -368,7 +437,7 @@ class ProductService:
     # ── compile ───────────────────────────────────────────────────────
 
     def compile_draft(self, project_id: str) -> dict[str, Any]:
-        self.store.load_project(project_id)  # 404 if unknown
+        self._ensure_revision_pointers(project_id)  # 404 if unknown
         draft = self.store.load_draft(project_id)
         request = parse_request_doc(draft.get("request"))
         canonical_doc = canonical_request_doc(request)
@@ -404,7 +473,9 @@ class ProductService:
         materialized = topology_view(compilation, revision_id=revision_id)
         if materialized is not None:
             revision["topology"] = materialized
-        self.store.create_revision(project_id, revision)
+        self.store.create_revision(
+            project_id, revision,
+            promote=self._revision_promotable(revision))
         return self.revision_view(revision)
 
     # ── revisions ─────────────────────────────────────────────────────
@@ -475,6 +546,7 @@ class ProductService:
             "design_hash": revision["design_hash"],
             "compilation_status": compilation.get("status"),
             "certificate_overall": certificate.get("overall"),
+            "error": compilation.get("error"),
         }
 
     # ── jobs ──────────────────────────────────────────────────────────
@@ -513,6 +585,20 @@ class ProductService:
 
     def submit_evaluation(self, revision_id: str) -> dict[str, Any]:
         pid, revision = self.store.load_revision_global(revision_id)
+        # A run must execute certified semantics: refused attempts
+        # (INVALID/UNSUPPORTED) and FAIL certificates can never be
+        # evaluated, so the UI cannot accidentally run the latest attempt
+        # when it is not the usable revision.
+        if not self._revision_promotable(revision):
+            compilation = revision.get("compilation") or {}
+            raise ProductServiceError(
+                ErrorCode.CONFLICT,
+                f"revision {revision_id} is not evaluable "
+                f"(compilation={compilation.get('status')}, "
+                "certificate="
+                f"{(revision.get('certificate') or {}).get('overall')}); "
+                f"reason: {compilation.get('error') or 'not certified'}",
+                operation="submit_evaluation", resource_id=revision_id)
         binary = self._require_backend()
         job = self.jobs.submit(
             pid, kind="EVALUATION", revision_id=revision_id,
@@ -520,9 +606,54 @@ class ProductService:
                 pid, revision, binary, progress))
         return self.job_view(job)
 
+    def _check_compilation_parity(self, revision: dict[str, Any],
+                                    request: Any) -> None:
+        """Refuse when a recompiled request drifts from the stored revision.
+
+        A Run must execute exactly the immutable compilation the revision
+        records — not a re-derived one. Recompiling the stored request and
+        demanding exact identity over every recorded artifact hash turns
+        compiler drift (or a mutated request) into a refused job instead
+        of a silently re-derived execution.
+        """
+        recorded = ((revision.get("compilation") or {})
+                    .get("artifact_hashes"))
+        if not recorded:
+            raise ProductServiceError(
+                ErrorCode.EVIDENCE_INVALID,
+                f"revision {revision.get('revision_id')} records no "
+                "compile-artifact identities, so no run can prove it "
+                "executes the stored compilation",
+                operation="compilation_parity",
+                resource_id=revision.get("revision_id"))
+        recompiled = compilation_view(FabricCompiler().compile(request))
+        if recompiled.get("status") != "COMPILED":
+            raise ProductServiceError(
+                ErrorCode.EVIDENCE_INVALID,
+                f"revision {revision.get('revision_id')} no longer "
+                f"recompiles ({recompiled.get('status')}: "
+                f"{recompiled.get('error')}) — refusing a run against "
+                "drifted compiler semantics",
+                operation="compilation_parity",
+                resource_id=revision.get("revision_id"))
+        fresh = recompiled.get("artifact_hashes") or {}
+        if fresh != recorded:
+            drifted = sorted(
+                {*recorded, *fresh} - {
+                    k for k in recorded
+                    if k in fresh and fresh[k] == recorded[k]})
+            raise ProductServiceError(
+                ErrorCode.EVIDENCE_INVALID,
+                f"revision {revision.get('revision_id')} recompiles to "
+                f"different artifacts (drifted: {drifted}) — refusing a "
+                "run that would not execute the stored compilation",
+                operation="compilation_parity",
+                resource_id=revision.get("revision_id"))
+
     def _run_evaluation(self, project_id: str, revision: dict[str, Any],
                         binary: Path, progress) -> tuple[str, dict[str, Any]]:
         request = parse_request_doc(revision["request"])
+        self._check_compilation_parity(revision, request)
         run_id = new_run_id()
         bundle_dir = self.store.run_bundle_dir(project_id, run_id)
         progress("RUNNING")
@@ -545,6 +676,9 @@ class ProductService:
             "project_id": project_id,
             "revision_id": revision["revision_id"],
             "design_hash": revision["design_hash"],
+            # The identity gate above recompiled the stored request and
+            # matched every recorded artifact hash before executing.
+            "compilation_parity": "MATCHED",
             "display_name": self._run_display_name(revision),
             "backend": None if outcome is None else outcome.backend,
             "status": _RUN_STATUS.get(product.status, product.status),
@@ -983,10 +1117,29 @@ class ProductService:
     # ── flow ──────────────────────────────────────────────────────────
 
     @staticmethod
-    def _flow(active: dict[str, Any] | None, dirty: bool,
+    def _latest_refusal(latest: dict[str, Any] | None) -> str | None:
+        """The refusal reason when the latest attempt is not usable."""
+        if latest is None:
+            return None
+        compilation = latest.get("compilation") or {}
+        certificate = latest.get("certificate") or {}
+        if (compilation.get("status") == "COMPILED"
+                and certificate.get("overall") == "PASS"):
+            return None
+        return (compilation.get("error")
+                or "compilation was not successful")
+
+    @classmethod
+    def _flow(cls, active: dict[str, Any] | None, dirty: bool,
               runs: list[dict[str, Any]],
-              jobs: list[dict[str, Any]]) -> dict[str, Any]:
+              jobs: list[dict[str, Any]],
+              latest: dict[str, Any] | None = None,
+              draft_hash: str | None = None) -> dict[str, Any]:
         if active is None:
+            refusal = cls._latest_refusal(latest)
+            if refusal is not None:
+                return {"state": "REFUSED", "next_action": "EDIT_DRAFT",
+                        "reason": refusal}
             return {"state": "DRAFT" if not dirty else "DIRTY",
                     "next_action": "COMPILE",
                     "reason": "no compiled revision yet"}
@@ -1009,6 +1162,16 @@ class ProductService:
                     "reason": compilation.get("error")
                     or "compilation was not successful"}
         if dirty:
+            # The draft still equals a refused attempt: recompiling would
+            # reproduce the refusal, so the next action is fixing the
+            # design, not compiling again.
+            if (latest is not None and draft_hash is not None
+                    and draft_hash == latest.get("design_hash")):
+                refusal = cls._latest_refusal(latest)
+                if refusal is not None:
+                    return {"state": "REFUSED",
+                            "next_action": "EDIT_DRAFT",
+                            "reason": refusal}
             return {"state": "DIRTY", "next_action": "COMPILE",
                     "reason": "draft has uncompiled changes"}
         if certificate.get("overall") != "PASS":

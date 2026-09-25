@@ -158,6 +158,7 @@ class ProductStore:
                 "created_at": now,
                 "updated_at": now,
                 "active_revision_id": None,
+                "latest_attempt_revision_id": None,
                 "revision_ids": [],
                 "run_ids": [],
                 "optimization_ids": [],
@@ -274,14 +275,26 @@ class ProductStore:
             self.save_project(project)
             return sequence
 
-    def create_revision(self, project_id: str, revision: dict[str, Any]) -> dict[str, Any]:
+    def create_revision(self, project_id: str, revision: dict[str, Any],
+                          *, promote: bool = False) -> dict[str, Any]:
+        """Record a compile attempt and optionally promote it to active.
+
+        Every attempt becomes ``latest_attempt_revision_id`` — including a
+        refused one, which must stay visible. Only a caller-verified
+        usable revision (COMPILED + certificate PASS) passes
+        ``promote=True`` and displaces ``active_revision_id``. The store
+        never decides promotability itself; it only persists the caller's
+        verdict.
+        """
         with self._locked():
             path = self.project_dir(project_id) / "revisions" / (
                 revision["revision_id"] + ".json")
             self._atomic_write(path, revision)
             project = self.load_project(project_id)
             project["revision_ids"].append(revision["revision_id"])
-            project["active_revision_id"] = revision["revision_id"]
+            project["latest_attempt_revision_id"] = revision["revision_id"]
+            if promote:
+                project["active_revision_id"] = revision["revision_id"]
             self.save_project(project)
             return revision
 

@@ -271,7 +271,7 @@ export function JobProgress({ job }: { job: JobView | null }): ReactElement | nu
 // The product pipeline (SROTA template): Intent -> Fabric -> Certificate
 // -> Execute -> Decide. Status only; navigation lives in the left rail.
 const PIPELINE = [
-  { key: 'intent', label: 'Intent', sub: 'CompileRequest v3' },
+  { key: 'intent', label: 'Intent', sub: 'Design intent' },
   { key: 'fabric', label: 'Fabric', sub: 'Topology + route + VC' },
   { key: 'certificate', label: 'Certificate', sub: 'deadlock / identity' },
   { key: 'execute', label: 'Execute', sub: 'qualified backend' },
@@ -327,11 +327,42 @@ export function WorkflowBar({ project, current }: {
   );
 }
 
+/** Human product language for the gateway's flow actions. The API keeps
+ * its stable enum values; the primary UI never shows them raw. */
+export function nextActionLabel(action: string): string {
+  switch (action) {
+    case 'COMPILE':
+      return 'Compile design';
+    case 'EDIT_DRAFT':
+      return 'Fix design';
+    case 'INSPECT_VERIFY':
+      return 'Inspect verification';
+    case 'RUN_EVALUATION':
+      return 'Run simulation';
+    case 'COMPARE_OR_OPTIMIZE':
+      return 'Compare / optimize';
+    case 'WAIT':
+      return 'View progress';
+    default:
+      return 'Open design';
+  }
+}
+
 export function ContextHeader({ project }: { project: ProjectView }): ReactElement {
   const active = project.revisions.find(
     (r) => r.revision_id === project.active_revision_id,
   );
-  const latestRun = project.runs[project.runs.length - 1];
+  // Scoped to the active revision by the gateway: a run from an older
+  // revision — or a newer refused attempt, which has no runs — must never
+  // render beside the current revision's name.
+  const latestRun = project.latest_active_run
+    ?? [...project.runs]
+      .reverse()
+      .find((r) => r.revision_id === project.active_revision_id);
+  const latestName = latestRun
+    ? (project.revisions.find((r) => r.revision_id === latestRun.revision_id)
+      ?.display_name ?? null)
+    : null;
   return (
     <div className="context-header">
       <div>
@@ -357,13 +388,15 @@ export function ContextHeader({ project }: { project: ProjectView }): ReactEleme
           {latestRun
             ? `${latestRun.qualification ?? latestRun.status} · ${
                 latestRun.completion_cycles ?? '—'
-              } cycles`
+              } cycles${latestName ? ` · ${latestName}` : ''}`
             : 'none'}
         </span>
       </div>
       <div>
         <span className="ctx-key">Next</span>
-        <span className="ctx-val next-action">{project.flow.next_action}</span>
+        <span className="ctx-val next-action">
+          {nextActionLabel(project.flow.next_action)}
+        </span>
       </div>
     </div>
   );

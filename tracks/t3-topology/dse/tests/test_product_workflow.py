@@ -45,7 +45,7 @@ def _client(tmp_path: Path, with_backend: bool = True) -> TestClient:
 
 def _make_project(client: TestClient) -> dict:
     resp = client.post("/api/v1/projects",
-                       json={"name": "Qwen NoC Study",
+                       json={"name": "Llama Dense 8B Study",
                              "workload_id": WORKLOAD})
     assert resp.status_code == 200, resp.text
     return resp.json()
@@ -539,3 +539,73 @@ def test_topology_view_rederives_legacy_revisions_and_verifies_the_hash(
     refused = client.get(f"/api/v1/revisions/{rid}/topology")
     assert refused.status_code == 422, refused.text
     assert refused.json()["code"] == "EVIDENCE_INVALID"
+
+
+def test_refused_attempt_preserves_active_revision(tmp_path):
+    """The r01 -> r02 screen: a refused compile must not displace the
+    usable revision, move the latest run, or offer r02 for execution."""
+    client = _client(tmp_path, with_backend=False)
+    project = _make_project(client)
+    pid = project["project"]["project_id"]
+
+    r1 = client.post(f"/api/v1/projects/{pid}/compile").json()
+    assert r1["compilation"]["status"] == "COMPILED"
+    assert r1["certificate"]["overall"] == "PASS"
+    r1_id = r1["revision_id"]
+
+    # A qualified run against r01 (seeded directly: no backend needed to
+    # test the scoping invariant).
+    from veritx_dse.product.service import ProductConfig, ProductService
+    svc = ProductService(ProductConfig(projects_root=tmp_path / "projects"))
+    svc.store.create_run(pid, {
+        "schema_version": 1, "run_id": "run-r01-qualified",
+        "project_id": pid, "revision_id": r1_id,
+        "design_hash": r1["design_hash"],
+        "display_name": "seeded r01 run",
+        "backend": "booksim", "status": "EVALUATED",
+        "qualification": "QUALIFIED", "requirements_pass": True,
+        "started_at": "t", "completed_at": "t", "bundle_id": None,
+        "evaluation": {"metrics": {"completion_cycles": 3259}},
+    })
+
+    # Break the draft (torus has no certified routing derivation) and
+    # compile the refused attempt.
+    draft = client.get(f"/api/v1/projects/{pid}/draft").json()
+    draft["request"]["noc_config"]["topology_family"] = "torus"
+    put = client.put(f"/api/v1/projects/{pid}/draft",
+                     json={"request": draft["request"]})
+    assert put.status_code == 200, put.text
+    r2 = client.post(f"/api/v1/projects/{pid}/compile").json()
+    assert r2["compilation"]["status"] == "UNSUPPORTED"
+    assert r2["compilation"]["error"]
+    r2_id = r2["revision_id"]
+    assert r2_id != r1_id
+
+    project = client.get(f"/api/v1/projects/{pid}").json()
+    # Attempt recorded, active untouched.
+    assert project["active_revision_id"] == r1_id
+    assert project["latest_attempt_revision_id"] == r2_id
+    assert project["latest_attempt"]["revision_id"] == r2_id
+    assert project["latest_attempt"]["compilation_status"] == "UNSUPPORTED"
+    assert "torus" in (project["latest_attempt"]["error"] or "")
+    # The draft still needs fixing, not a recompile of the same refusal.
+    assert project["draft"]["dirty"] is True
+    assert project["flow"]["state"] == "REFUSED"
+    assert project["flow"]["next_action"] == "EDIT_DRAFT"
+    assert "torus" in project["flow"]["reason"]
+    # The latest run stays scoped to the active revision.
+    assert project["latest_active_run"]["run_id"] == "run-r01-qualified"
+    assert project["latest_active_run"]["revision_id"] == r1_id
+
+    # No topology exists for the refused attempt; r01's stays available.
+    no_fabric = client.get(f"/api/v1/revisions/{r2_id}/topology")
+    assert no_fabric.status_code == 409, no_fabric.text
+    fabric = client.get(f"/api/v1/revisions/{r1_id}/topology")
+    assert fabric.status_code == 200, fabric.text
+    assert fabric.json()["counts"]["routers"] >= 1
+
+    # r02 can never be submitted for evaluation.
+    refused_eval = client.post(f"/api/v1/revisions/{r2_id}/evaluate",
+                               json={"backend": None})
+    assert refused_eval.status_code == 409, refused_eval.text
+    assert refused_eval.json()["code"] == "CONFLICT"

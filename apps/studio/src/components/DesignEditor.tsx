@@ -1,16 +1,14 @@
 import { useEffect, useState, type ReactElement } from 'react';
+import { api } from '../api';
 import type { DesignView, Requirement } from '../types';
 import { Hash, TierBadge } from './badges';
 import { agentLabel } from './FabricCanvas';
 import FabricView from './FabricView';
+import { ErrorBox } from '../studio';
+import { clone, setPath } from '../util';
 
-function clone<T>(v: T): T {
-  return JSON.parse(JSON.stringify(v)) as T;
-}
-
-// Engine enum values with presentation labels. Fixture semantic values must
-// project from real engine semantics, so the option value is the engine value
-// and only the visible label is friendlier.
+// Engine enum values with presentation labels. The option value is the
+// engine value; only the visible label is friendlier.
 
 // model/compile_model.py::ModelFamily
 const MODEL_FAMILIES: [string, string][] = [
@@ -47,102 +45,186 @@ const ARB_OPTIONS: [string, string][] = [
   ['round_robin', 'Round robin'],
 ];
 
+/** A DesignView-shaped preview derived from the draft request, so the
+ * side view can draw intent without claiming it is certified. */
+function previewFromRequest(req: Record<string, unknown>): DesignView {
+  const w = (req.workload ?? {}) as Record<string, unknown>;
+  const noc = (req.noc_config ?? {}) as Record<string, unknown>;
+  const par = (k: string): number => {
+    const v = Number(w[k]);
+    return Number.isFinite(v) && v >= 1 ? Math.floor(v) : 1;
+  };
+  const num = (v: unknown): number | null => {
+    if (v === null || v === undefined || v === '') return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  return {
+    contract_version: 1,
+    design_hash: '',
+    schema_version: Number(req.schema_version ?? 3),
+    compiler_semantics_version: 0,
+    workload: {
+      model_family: String(w.model_family ?? ''),
+      model_name: String(w.model_name ?? ''),
+      parallelism: { tp: par('tp'), pp: par('pp'), ep: par('ep'), dp: par('dp') },
+      serving_mode: String(w.serving_mode ?? 'mixed'),
+    },
+    requirements: (req.requirements ?? []) as Requirement[],
+    agents: (req.agents ?? []) as DesignView['agents'],
+    noc_guided: {
+      topology_family: (noc.topology_family as string | null) ?? null,
+      radix: num(noc.radix),
+      concentration: num(noc.concentration),
+      link_width: num(noc.link_width),
+      rcu_enabled: (noc.rcu_enabled as boolean | null) ?? null,
+      arbitration: (noc.arbitration as string | null) ?? null,
+    },
+    locked_derived: null,
+  };
+}
+
 /**
- * E1–E5 design editor. GUIDED/FREE knobs are editable; LOCKED properties are
- * rendered read-only. Edits are local-only (fixture mode: no engine
- * connectivity, so nothing recompiles) and flagged dirty with a reset path.
+ * The one editable Design Intent form. Edits here ARE the canonical
+ * draft: saving writes the gateway draft, compiling certifies a new
+ * immutable revision. There is no second editor; nothing here is
+ * local-only.
  */
-export default function DesignEditor({ design, live = false, revisionId }: {
-  design: DesignView;
-  live?: boolean;
-  /** Certified revision whose TopologyView the side view should draw. */
-  revisionId?: string | null;
+export default function DesignEditor({ projectId, request, draftDesignHash,
+  draftDirty, activeDesign, activeDisplayName, certifiedRevisionId,
+  latestRefusal, draftMatchesAttempt, onChanged }: {
+  projectId: string;
+  /** The gateway draft request document (canonical inputs). */
+  request: Record<string, unknown>;
+  draftDesignHash: string | null;
+  /** Draft differs from the active revision. */
+  draftDirty: boolean;
+  /** The active revision's DesignView (read-only LOCKED source). */
+  activeDesign: DesignView | null;
+  activeDisplayName: string | null;
+  /** Certified revision id to draw, or null when there is none. */
+  certifiedRevisionId: string | null;
+  /** Latest attempt when it was refused, else null. */
+  latestRefusal: { display_name: string; error: string | null } | null;
+  /** The draft still equals the refused attempt (fix, don't recompile). */
+  draftMatchesAttempt: boolean;
+  onChanged: () => void;
 }): ReactElement {
-  const [draft, setDraft] = useState<DesignView>(() => clone(design));
-  const [dirty, setDirty] = useState(false);
+  const [doc, setDoc] = useState<Record<string, unknown>>(() => clone(request));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    setDraft(clone(design));
-    setDirty(false);
-  }, [design]);
+    setDoc(clone(request));
+  }, [request]);
 
-  const touch = (next: DesignView): void => {
-    setDraft(next);
-    setDirty(JSON.stringify(next) !== JSON.stringify(design));
+  const localDirty = JSON.stringify(doc) !== JSON.stringify(request);
+  const showingPreview = localDirty || draftDirty;
+
+  const edit = (path: string, value: unknown): void => {
+    const next = clone(doc);
+    setPath(next, path, value);
+    setDoc(next);
   };
 
-  const setGuided = <K extends keyof DesignView['noc_guided']>(
-    key: K,
-    value: DesignView['noc_guided'][K],
-  ): void => {
-    const next = clone(draft);
-    next.noc_guided[key] = value;
-    touch(next);
+  const editNum = (path: string, raw: string, min: number | null): void => {
+    if (raw === '') {
+      edit(path, min === null ? null : min);
+      return;
+    }
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return;
+    edit(path, min === null ? n : Math.max(min, Math.floor(n)));
+  };
+
+  const save = async (): Promise<void> => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.putDraft(projectId, doc);
+      onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const compile = async (): Promise<void> => {
+    setBusy(true);
+    setError(null);
+    try {
+      if (localDirty) await api.putDraft(projectId, doc);
+      await api.compile(projectId);
+      onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const setReq = (idx: number, patch: Partial<Requirement>): void => {
-    const next = clone(draft);
-    next.requirements[idx] = { ...next.requirements[idx], ...patch };
-    touch(next);
+    const next = clone(doc);
+    const reqs = [...((next.requirements ?? []) as Requirement[])];
+    reqs[idx] = { ...reqs[idx], ...patch };
+    next.requirements = reqs;
+    setDoc(next);
   };
 
   const addReq = (): void => {
-    const next = clone(draft);
-    next.requirements.push({
+    const next = clone(doc);
+    next.requirements = [...((next.requirements ?? []) as Requirement[]), {
       traffic_class: 'new_class',
       qos_class: 'best_effort',
       latency_ceiling_cycles: null,
       bandwidth_floor_gbps: null,
       binding: false,
-    });
-    touch(next);
+    }];
+    setDoc(next);
   };
 
   const delReq = (idx: number): void => {
-    const next = clone(draft);
-    next.requirements.splice(idx, 1);
-    touch(next);
+    const next = clone(doc);
+    const reqs = [...((next.requirements ?? []) as Requirement[])];
+    reqs.splice(idx, 1);
+    next.requirements = reqs;
+    setDoc(next);
   };
 
   const setAgent = (idx: number, count: number): void => {
-    const next = clone(draft);
-    next.agents[idx] = { ...next.agents[idx], count: Math.max(1, count) };
-    touch(next);
+    const next = clone(doc);
+    const agents = [...((next.agents ?? []) as DesignView['agents'])];
+    agents[idx] = { ...agents[idx], count: Math.max(1, count) };
+    next.agents = agents;
+    setDoc(next);
   };
 
-  const locked = draft.locked_derived;
-  const g = draft.noc_guided;
-  const w = draft.workload;
+  const w = (doc.workload ?? {}) as Record<string, unknown>;
+  const noc = (doc.noc_config ?? {}) as Record<string, unknown>;
+  const reqs = (doc.requirements ?? []) as Requirement[];
+  const agents = (doc.agents ?? []) as DesignView['agents'];
+  const locked = activeDesign?.locked_derived ?? null;
+  const sideDesign = showingPreview || !activeDesign
+    ? previewFromRequest(doc)
+    : activeDesign;
+  const sideRevisionId = showingPreview ? null : certifiedRevisionId;
 
   return (
     <div className="design-grid">
       <div className="design-main">
-        {dirty && (
-          <div className="dirty-banner">
-            <span>
-              {live ? (
-                <>
-                  <strong>Local preview only.</strong> These edits are not sent
-                  to the gateway. Use the <strong>Draft</strong> panel above to
-                  edit the canonical request and compile a new revision.
-                </>
-              ) : (
-                <>
-                  <strong>Modified locally — recompile required.</strong> Fixture
-                  mode has no engine connectivity, so edits do not recompile and
-                  LOCKED values are stale until a real compile runs.
-                </>
-              )}
+        {latestRefusal && draftMatchesAttempt && (
+          <div className="verdict-banner verdict-unsupported" role="alert">
+            <span className="verdict-text">
+              <strong>
+                New design refused · attempt {latestRefusal.display_name}.
+              </strong>{' '}
+              {latestRefusal.error ?? 'Compilation refused.'}{' '}
+              {activeDisplayName
+                ? `The certified revision ${activeDisplayName} remains active.`
+                : 'No certified revision exists yet.'}{' '}
+              Fix the design below — recompiling unchanged would refuse again.
             </span>
-            <button
-              className="btn"
-              onClick={() => {
-                setDraft(clone(design));
-                setDirty(false);
-              }}
-            >
-              {live ? 'Discard preview' : 'Reset to fixture'}
-            </button>
           </div>
         )}
 
@@ -155,10 +237,8 @@ export default function DesignEditor({ design, live = false, revisionId }: {
             <label>
               Model family
               <select
-                value={w.model_family}
-                onChange={(e) =>
-                  touch({ ...clone(draft), workload: { ...w, model_family: e.target.value } })
-                }
+                value={String(w.model_family ?? '')}
+                onChange={(e) => edit('workload.model_family', e.target.value)}
               >
                 {MODEL_FAMILIES.map(([value, label]) => (
                   <option key={value} value={value}>
@@ -170,19 +250,16 @@ export default function DesignEditor({ design, live = false, revisionId }: {
             <label>
               Model name
               <input
-                value={w.model_name ?? ''}
-                onChange={(e) => touch({ ...clone(draft), workload: { ...w, model_name: e.target.value } })}
+                value={String(w.model_name ?? '')}
+                onChange={(e) => edit('workload.model_name', e.target.value)}
               />
             </label>
             <label>
               Serving mode
               <select
-                value={w.serving_mode ?? ''}
-                onChange={(e) =>
-                  touch({ ...clone(draft), workload: { ...w, serving_mode: e.target.value || undefined } })
-                }
+                value={String(w.serving_mode ?? 'mixed')}
+                onChange={(e) => edit('workload.serving_mode', e.target.value)}
               >
-                <option value="">—</option>
                 {SERVING_MODES.map(([value, label]) => (
                   <option key={value} value={value}>
                     {label}
@@ -198,12 +275,8 @@ export default function DesignEditor({ design, live = false, revisionId }: {
                 <input
                   type="number"
                   min={1}
-                  value={w.parallelism[k]}
-                  onChange={(e) => {
-                    const next = clone(draft);
-                    next.workload.parallelism[k] = Math.max(1, Number(e.target.value) || 1);
-                    touch(next);
-                  }}
+                  value={String(w[k] ?? 1)}
+                  onChange={(e) => editNum(`workload.${k}`, e.target.value, 1)}
                 />
               </label>
             ))}
@@ -227,7 +300,7 @@ export default function DesignEditor({ design, live = false, revisionId }: {
               </tr>
             </thead>
             <tbody>
-              {draft.requirements.map((r, i) => (
+              {reqs.map((r, i) => (
                 <tr key={i}>
                   <td>
                     <input value={r.traffic_class ?? ''} onChange={(e) => setReq(i, { traffic_class: e.target.value || null })} />
@@ -284,40 +357,13 @@ export default function DesignEditor({ design, live = false, revisionId }: {
             E3 · Agents <TierBadge tier="GUIDED" />
           </h3>
           <div className="form-row">
-            {draft.agents.map((a, i) => (
+            {agents.map((a, i) => (
               <label key={`${a.kind}-${i}`}>
                 {agentLabel(a.kind)} · count
                 <input type="number" min={1} value={a.count} onChange={(e) => setAgent(i, Number(e.target.value) || 1)} />
               </label>
             ))}
           </div>
-        </section>
-
-        {/* E4 dependencies */}
-        <section className="card">
-          <h3>
-            E4 · Dependencies <TierBadge tier="GUIDED" />
-          </h3>
-          <p className="muted">
-            The frozen contract carries no DependencyGraph view (v2 class names are ad
-            hoc), so this panel derives the dependency-relevant signal from E2: binding
-            requirements order traffic-class admission, and the compiler derives VCs
-            from the resolved route — never from Studio input.
-          </p>
-          <ul className="dep-list">
-            {draft.requirements
-              .filter((r) => r.binding)
-              .map((r, i) => (
-                <li key={i}>
-                  <code>{r.traffic_class ?? '—'}</code> ({r.qos_class}) must be admitted
-                  by the VC map before spawn — unknown class is a typed refusal, never
-                  silent VC0.
-                </li>
-              ))}
-            {draft.requirements.filter((r) => r.binding).length === 0 && (
-              <li className="muted">No binding requirements — nothing gates spawn.</li>
-            )}
-          </ul>
         </section>
 
         {/* E5 noc config */}
@@ -327,8 +373,8 @@ export default function DesignEditor({ design, live = false, revisionId }: {
             <label>
               Topology family <TierBadge tier="GUIDED" />
               <select
-                value={g.topology_family ?? ''}
-                onChange={(e) => setGuided('topology_family', e.target.value || null)}
+                value={String(noc.topology_family ?? '')}
+                onChange={(e) => edit('noc_config.topology_family', e.target.value || null)}
               >
                 <option value="">—</option>
                 {TOPO_OPTIONS.map(([value, label]) => (
@@ -342,31 +388,31 @@ export default function DesignEditor({ design, live = false, revisionId }: {
               Radix <TierBadge tier="GUIDED" />
               <input
                 type="number"
-                value={g.radix ?? ''}
-                onChange={(e) => setGuided('radix', e.target.value === '' ? null : Number(e.target.value))}
+                value={noc.radix === null || noc.radix === undefined ? '' : String(noc.radix)}
+                onChange={(e) => editNum('noc_config.radix', e.target.value, null)}
               />
             </label>
             <label>
               Concentration <TierBadge tier="GUIDED" />
               <input
                 type="number"
-                value={g.concentration ?? ''}
-                onChange={(e) => setGuided('concentration', e.target.value === '' ? null : Number(e.target.value))}
+                value={noc.concentration === null || noc.concentration === undefined ? '' : String(noc.concentration)}
+                onChange={(e) => editNum('noc_config.concentration', e.target.value, null)}
               />
             </label>
             <label>
-              Link width <TierBadge tier="GUIDED" />
+              Link width (b) <TierBadge tier="GUIDED" />
               <input
                 type="number"
-                value={g.link_width ?? ''}
-                onChange={(e) => setGuided('link_width', e.target.value === '' ? null : Number(e.target.value))}
+                value={noc.link_width === null || noc.link_width === undefined ? '' : String(noc.link_width)}
+                onChange={(e) => editNum('noc_config.link_width', e.target.value, null)}
               />
             </label>
             <label>
               Arbitration <TierBadge tier="GUIDED" />
               <select
-                value={g.arbitration ?? ''}
-                onChange={(e) => setGuided('arbitration', e.target.value || null)}
+                value={String(noc.arbitration ?? '')}
+                onChange={(e) => edit('noc_config.arbitration', e.target.value || null)}
               >
                 <option value="">—</option>
                 {ARB_OPTIONS.map(([value, label]) => (
@@ -379,24 +425,29 @@ export default function DesignEditor({ design, live = false, revisionId }: {
             <label className="check">
               <input
                 type="checkbox"
-                checked={g.rcu_enabled ?? false}
-                onChange={(e) => setGuided('rcu_enabled', e.target.checked)}
+                checked={noc.rcu_enabled === true}
+                onChange={(e) => edit('noc_config.rcu_enabled', e.target.checked)}
               />
               RCU (in-network reduction) <TierBadge tier="GUIDED" />
             </label>
           </div>
-          {g.rcu_enabled === true && (
+          {noc.rcu_enabled === true && (
             <div className="rcu-refusal">
               <strong>Compiler refusal:</strong> <code>rcu_enabled=true</code> has
-              no RCU realization in the current fabric — the compiler returns
-              UNSUPPORTED rather than silently dropping the intent. In fixture
-              mode this edit stays local and nothing recompiles.
+              no RCU realization in the current fabric — compiling refuses as
+              UNSUPPORTED rather than silently dropping the intent.
             </div>
           )}
 
           <h4 className="locked-head">
             Derived properties <TierBadge tier="LOCKED" />
           </h4>
+          {draftDirty && activeDisplayName && (
+            <p className="muted">
+              Showing LOCKED values from {activeDisplayName} — the draft has
+              uncompiled changes.
+            </p>
+          )}
           {locked ? (
             <div className="locked-grid">
               <div>
@@ -429,16 +480,38 @@ export default function DesignEditor({ design, live = false, revisionId }: {
         </section>
 
         <section className="card">
-          <h3>Design identity</h3>
+          <h3>Save &amp; compile</h3>
+          <div className="form-row">
+            <button className="btn" disabled={busy || !localDirty} onClick={save}>
+              Save draft
+            </button>
+            <button className="btn btn-primary" disabled={busy} onClick={compile}>
+              {busy ? 'Compiling…' : 'Compile design'}
+            </button>
+            {(localDirty || draftDirty) && (
+              <span className="stale">UNCOMPILED CHANGES</span>
+            )}
+          </div>
+          {error && <ErrorBox error={error} />}
+          <p className="muted">
+            Saving updates the draft; compiling certifies a new immutable
+            revision. The previous revision is never mutated.
+          </p>
+        </section>
+
+        <section className="card">
+          <h3>Evidence · identity</h3>
           <div className="kv">
-            <span>design_hash</span>
-            <Hash value={draft.design_hash} />
+            <span>design identity</span>
+            <Hash value={draftDesignHash} />
           </div>
           <div className="kv">
-            <span>schema / semantics</span>
-            <span>
-              v{draft.schema_version} · compiler sem {draft.compiler_semantics_version}
-            </span>
+            <span>request schema</span>
+            <span>v{String(doc.schema_version ?? activeDesign?.schema_version ?? '—')}</span>
+          </div>
+          <div className="kv">
+            <span>compiler semantics</span>
+            <span>{activeDesign ? `sem ${activeDesign.compiler_semantics_version}` : 'uncompiled'}</span>
           </div>
         </section>
       </div>
@@ -446,10 +519,12 @@ export default function DesignEditor({ design, live = false, revisionId }: {
       <aside className="design-side">
         <section className="card">
           <h3>Topology / traffic view</h3>
-          {/* Edits invalidate the certified graph: after a knob change the
-              revision's TopologyView no longer describes this draft, so the
-              view falls back to the labelled intent preview. */}
-          <FabricView design={draft} revisionId={dirty ? null : revisionId} />
+          <p className="muted">
+            {showingPreview || !activeDesign
+              ? 'Draft preview from declared counts — compile to materialize the certified graph.'
+              : `Certified fabric of ${activeDisplayName}.`}
+          </p>
+          <FabricView design={sideDesign} revisionId={sideRevisionId} />
         </section>
       </aside>
     </div>

@@ -1,5 +1,5 @@
-import { useEffect, useState, type ReactElement } from 'react';
-import { api, type JobView, type ProjectView, type RevisionView } from '../api';
+import { useState, type ReactElement } from 'react';
+import { api, type JobView, type ProjectView } from '../api';
 import {
   AsyncView, ErrorBox, JobProgress, Link, WorkflowBar, useAsync,
   useJobPoll, useStudio,
@@ -9,183 +9,53 @@ import ArtifactStrip from '../components/ArtifactStrip';
 import DesignEditor from '../components/DesignEditor';
 import VerifyView from '../components/VerifyView';
 import EvaluateView from '../components/EvaluateView';
-import { clone, getPath, setPath } from '../util';
-
-// ── Draft editing (canonical request doc) ─────────────────────────────────
-
-const DRAFT_FIELDS: { path: string; label: string; kind: 'number' | 'text' }[] = [
-  { path: 'workload.tp', label: 'TP', kind: 'number' },
-  { path: 'workload.pp', label: 'PP', kind: 'number' },
-  { path: 'workload.ep', label: 'EP', kind: 'number' },
-  { path: 'workload.dp', label: 'DP', kind: 'number' },
-  { path: 'noc_config.link_width', label: 'Link width (b)', kind: 'number' },
-  { path: 'noc_config.concentration', label: 'Concentration', kind: 'number' },
-  { path: 'noc_config.topology_family', label: 'Topology family', kind: 'text' },
-  { path: 'agents.0.count', label: 'Compute instances (agents[0])', kind: 'number' },
-  { path: 'requirements.0.latency_ceiling_cycles', label: 'Latency ceiling (cycles)', kind: 'number' },
-];
-
-function DraftEditor({
-  projectId,
-  project,
-  onChanged,
-}: {
-  projectId: string;
-  project: ProjectView;
-  onChanged: () => void;
-}): ReactElement {
-  const draft = useAsync(() => api.draft(projectId), [projectId]);
-  const [doc, setDoc] = useState<Record<string, unknown> | null>(null);
-  const [dirty, setDirty] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
-
-  useEffect(() => {
-    if (draft.result.state === 'ready') {
-      setDoc(clone(draft.result.data.request ?? {}));
-      setDirty(false);
-    }
-  }, [draft.result]);
-
-  const edit = (path: string, raw: string, kind: 'number' | 'text'): void => {
-    if (!doc) return;
-    const next = clone(doc);
-    const value = kind === 'number'
-      ? (raw === '' ? null : Number(raw))
-      : raw;
-    setPath(next, path, value);
-    setDoc(next);
-    setDirty(true);
-  };
-
-  const save = async (): Promise<void> => {
-    if (!doc) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await api.putDraft(projectId, doc);
-      setDirty(false);
-      draft.reload();
-      onChanged();
-    } catch (err) {
-      setError(err instanceof Error ? err : new Error(String(err)));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const compile = async (): Promise<void> => {
-    if (!doc) return;
-    setBusy(true);
-    setError(null);
-    try {
-      if (dirty) await api.putDraft(projectId, doc);
-      await api.compile(projectId);
-      setDirty(false);
-      draft.reload();
-      onChanged();
-    } catch (err) {
-      setError(err instanceof Error ? err : new Error(String(err)));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <section className="card">
-      <h3>Draft (live edits)</h3>
-      {draft.result.state === 'error' && (
-        <ErrorBox error={draft.result.error} onRetry={draft.reload} />
-      )}
-      {doc && (
-        <>
-          <div className="form-row">
-            {DRAFT_FIELDS.map((f) => {
-              const value = getPath(doc, f.path);
-              return (
-                <label key={f.path}>
-                  {f.label}
-                  <input
-                    type={f.kind}
-                    value={value === null || value === undefined ? '' : String(value)}
-                    onChange={(e) => edit(f.path, e.target.value, f.kind)}
-                  />
-                </label>
-              );
-            })}
-          </div>
-          <div className="form-row">
-            <button className="btn" disabled={busy || !dirty} onClick={save}>
-              Save draft
-            </button>
-            <button className="btn btn-primary" disabled={busy} onClick={compile}>
-              {busy ? 'Compiling…' : 'Compile design'}
-            </button>
-            {project.draft.dirty && <span className="stale">UNCOMPILED CHANGES</span>}
-          </div>
-          {error && <ErrorBox error={error} />}
-          <p className="muted">
-            Edits here update the immutable revision inputs. Compiling creates a
-            new immutable DesignRevision; the previous revision is never mutated.
-          </p>
-        </>
-      )}
-    </section>
-  );
-}
 
 export function Design({ projectId }: { projectId: string }): ReactElement {
   const { refreshProjects } = useStudio();
   const project = useAsync(() => api.project(projectId), [projectId]);
+  const draft = useAsync(() => api.draft(projectId), [projectId]);
   const reloadAll = (): void => {
     project.reload();
+    draft.reload();
     refreshProjects();
   };
   return (
     <AsyncView result={project.result} reload={project.reload}>
-      {(p) => {
-        const active = p.active_revision;
-        return (
-          <div className="page">
-            <WorkflowBar project={p} current="design" />
-            <h2>Design</h2>
-            <DraftEditor projectId={projectId} project={p} onChanged={reloadAll} />
-            {active ? (
-              <RevisionDesign revision={active} dirty={p.draft.dirty} />
-            ) : (
-              <p className="muted">
-                Compile the draft to materialise a DesignView and LOCKED derived
-                properties.
-              </p>
-            )}
-          </div>
-        );
-      }}
-    </AsyncView>
-  );
-}
-
-function RevisionDesign({ revision, dirty }: {
-  revision: RevisionView;
-  dirty: boolean;
-}): ReactElement {
-  return (
-    <div>
-      {dirty && (
-        <div className="dirty-banner">
-          <span>
-            Showing <strong>FROM REVISION {revision.display_name}</strong>. The
-            draft has uncompiled changes; these LOCKED values belong to the
-            previous revision.
-          </span>
-        </div>
+      {(p: ProjectView) => (
+        <AsyncView result={draft.result} reload={draft.reload}>
+          {(d) => {
+            const active = p.active_revision;
+            const attempt = p.latest_attempt;
+            const refused = attempt
+              && attempt.revision_id !== p.active_revision_id
+              && attempt.compilation_status !== 'COMPILED'
+              ? attempt : null;
+            return (
+              <div className="page">
+                <WorkflowBar project={p} current="design" />
+                <h2>Design intent</h2>
+                <DesignEditor
+                  projectId={projectId}
+                  request={(d.request ?? {}) as Record<string, unknown>}
+                  draftDesignHash={d.design_hash}
+                  draftDirty={p.draft.dirty}
+                  activeDesign={active?.design ?? null}
+                  activeDisplayName={active?.display_name ?? null}
+                  certifiedRevisionId={
+                    active && active.compilation.status === 'COMPILED'
+                      ? active.revision_id : null
+                  }
+                  latestRefusal={refused}
+                  draftMatchesAttempt={Boolean(
+                    refused && d.design_hash === refused.design_hash)}
+                  onChanged={reloadAll}
+                />
+              </div>
+            );
+          }}
+        </AsyncView>
       )}
-      <DesignEditor
-        design={revision.design}
-        live
-        revisionId={revision.revision_id}
-      />
-    </div>
+    </AsyncView>
   );
 }
 
@@ -216,6 +86,11 @@ export function CompileVerify({ projectId }: { projectId: string }): ReactElemen
       {(p) => {
         const active = p.active_revision;
         const obs = active?.compilation.obligations ?? [];
+        const attempt = p.latest_attempt;
+        const refused = attempt
+          && attempt.revision_id !== p.active_revision_id
+          && attempt.compilation_status !== 'COMPILED'
+          ? attempt : null;
         return (
           <div className="page">
             <WorkflowBar project={p} current="compile" />
@@ -227,6 +102,20 @@ export function CompileVerify({ projectId }: { projectId: string }): ReactElemen
               {p.draft.dirty && <span className="stale">DRAFT HAS UNCOMPILED CHANGES</span>}
             </div>
             {error && <ErrorBox error={error} />}
+            {refused && (
+              <div className="verdict-banner verdict-unsupported" role="alert">
+                <StatusBadge status={refused.compilation_status} />
+                <span className="verdict-text">
+                  <strong>Fabric not materialized · attempt {refused.display_name}.</strong>{' '}
+                  {refused.error ?? 'Compilation refused.'}{' '}
+                  No topology, routing, VC assignment or certificate exists
+                  for this attempt.
+                  {active
+                    ? ` The certified revision ${active.display_name} remains active.`
+                    : ''}
+                </span>
+              </div>
+            )}
             {active ? (
               <>
                 <div className={`verdict-banner verdict-${(active.compilation.status ?? '').toLowerCase()}`}>
@@ -246,15 +135,15 @@ export function CompileVerify({ projectId }: { projectId: string }): ReactElemen
                   <div className="kv"><span>link width</span><span>{String(active.design.noc_guided.link_width ?? '—')} bits</span></div>
                   <div className="kv"><span>routing</span><span>{active.design.locked_derived?.routing ?? '—'}</span></div>
                   <div className="kv"><span>VC count</span><span>{active.design.locked_derived?.vc_count ?? '—'}</span></div>
-                  <div className="kv"><span>design_hash</span><Hash value={active.design_hash} /></div>
-                  <div className="kv"><span>certificate_id</span><Hash value={active.compilation.certificate_id} /></div>
+                  <div className="kv"><span>design identity</span><Hash value={active.design_hash} /></div>
+                  <div className="kv"><span>certificate identity</span><Hash value={active.compilation.certificate_id} /></div>
                 </section>
                 <ArtifactStrip compilation={active.compilation} />
                 <h3>Verification obligations</h3>
                 <VerifyView compilation={active.compilation} />
               </>
             ) : (
-              <p className="muted">No compiled revision yet.</p>
+              <p className="muted">No certified revision yet.</p>
             )}
           </div>
         );

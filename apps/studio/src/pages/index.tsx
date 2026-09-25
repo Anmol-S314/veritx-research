@@ -27,7 +27,8 @@ function nextActionTarget(action: string): { label: string; section: string } {
 
 export function ProjectPicker(): ReactElement {
   const { projects, projectsError, refreshProjects } = useStudio();
-  const [name, setName] = useState('Qwen NoC Study');
+  const [name, setName] = useState('');
+  const [nameTouched, setNameTouched] = useState(false);
   const [workloadId, setWorkloadId] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,11 +40,28 @@ export function ProjectPicker(): ReactElement {
     }
   }, [catalog.result, workloadId]);
 
+  // The project name defaults to the selected workload so the header
+  // never pairs a project with an unrelated workload. Typing a name
+  // keeps it; switching workload re-derives it until then.
+  const pickWorkload = (nextId: string): void => {
+    setWorkloadId(nextId);
+    if (nameTouched || catalog.result.state !== 'ready') return;
+    const entry = catalog.result.data.workloads.find(
+      (w) => w.workload_id === nextId,
+    );
+    if (entry) {
+      setName(`${entry.display_name.split('·')[0].trim()} Study`);
+    }
+  };
+
   const create = async (): Promise<void> => {
     setBusy(true);
     setError(null);
     try {
-      const project = await api.createProject(name, workloadId || undefined);
+      const project = await api.createProject(
+        name.trim() || 'New Interconnect Study',
+        workloadId || undefined,
+      );
       refreshProjects();
       navigate(`/projects/${project.project.project_id}/workload`);
     } catch (err) {
@@ -125,7 +143,14 @@ export function ProjectPicker(): ReactElement {
         <div className="form-row">
           <label>
             Name
-            <input value={name} onChange={(e) => setName(e.target.value)} />
+            <input
+              value={name}
+              placeholder="New Interconnect Study"
+              onChange={(e) => {
+                setName(e.target.value);
+                setNameTouched(true);
+              }}
+            />
           </label>
           <label>
             Workload
@@ -133,7 +158,7 @@ export function ProjectPicker(): ReactElement {
               {(data) => (
                 <select
                   value={workloadId}
-                  onChange={(e) => setWorkloadId(e.target.value)}
+                  onChange={(e) => pickWorkload(e.target.value)}
                 >
                   {data.workloads.map((w) => (
                     <option key={w.workload_id} value={w.workload_id}>
@@ -166,26 +191,36 @@ export function Overview({ projectId }: { projectId: string }): ReactElement {
         const active = p.revisions.find(
           (r) => r.revision_id === p.active_revision_id,
         );
-        const latest = p.runs[p.runs.length - 1];
+        // Latest run scoped to the active revision: the gateway carries
+        // it, with an in-list fallback for older payloads.
+        const latest = p.latest_active_run
+          ?? [...p.runs]
+            .reverse()
+            .find((r) => r.revision_id === p.active_revision_id);
+        const attempt = p.latest_attempt;
+        const refusedAttempt = attempt
+          && attempt.revision_id !== p.active_revision_id
+          && attempt.compilation_status !== 'COMPILED'
+          ? attempt : null;
         return (
           <div className="page">
             <WorkflowBar project={p} current="overview" />
             <div className="overview-grid">
               <section className="card">
-                <h3>Current revision</h3>
+                <h3>Current certified fabric</h3>
                 {active ? (
                   <>
                     <div className="kv"><span>revision</span><span>{active.display_name}</span></div>
                     <div className="kv"><span>compilation</span><StatusBadge status={active.compilation_status} /></div>
                     <div className="kv"><span>certificate</span><span>{active.certificate_overall ?? '—'}</span></div>
-                    <div className="kv"><span>design_hash</span><Hash value={active.design_hash} /></div>
+                    <div className="kv"><span>design identity</span><Hash value={active.design_hash} /></div>
                   </>
                 ) : (
-                  <p className="muted">No compiled revision yet.</p>
+                  <p className="muted">No certified revision yet.</p>
                 )}
               </section>
               <section className="card">
-                <h3>Latest run</h3>
+                <h3>Latest run · {active?.display_name ?? '—'}</h3>
                 {latest ? (
                   <>
                     <div className="kv"><span>run</span>
@@ -197,7 +232,7 @@ export function Overview({ projectId }: { projectId: string }): ReactElement {
                     <div className="kv"><span>completion</span><span>{fmtNum(latest.completion_cycles)} cycles</span></div>
                   </>
                 ) : (
-                  <p className="muted">No runs yet.</p>
+                  <p className="muted">No runs for this revision yet.</p>
                 )}
               </section>
               <section className="card">
@@ -219,8 +254,22 @@ export function Overview({ projectId }: { projectId: string }): ReactElement {
                 })()}
               </section>
             </div>
-            {p.optimizations.length > 0 && (
+            {refusedAttempt && (
               <section className="card">
+                <h3>New design refused</h3>
+                <div className="kv"><span>attempt</span><span>{refusedAttempt.display_name} · {refusedAttempt.compilation_status.toLowerCase()}</span></div>
+                <p className="bad">{refusedAttempt.error ?? 'Compilation refused.'}</p>
+                <p className="muted">
+                  {active
+                    ? `The certified revision ${active.display_name} remains active.`
+                    : 'No certified revision exists yet.'}
+                </p>
+                <Link className="btn" to={`/projects/${projectId}/design`}>
+                  Fix design
+                </Link>
+              </section>
+            )}
+            {p.optimizations.length > 0 && (              <section className="card">
                 <h3>Optimization studies</h3>
                 <ul>
                   {p.optimizations.map((o) => (
@@ -380,6 +429,17 @@ export function Runs(): ReactElement {
       : api.runs()),
     [scope, activeProjectId],
   );
+  // Active revision for the historical tag: runs from older revisions
+  // stay visible but are explicitly marked, never mixed silently.
+  const project = useAsync(
+    () => (scope === 'project' && activeProjectId
+      ? api.project(activeProjectId)
+      : Promise.reject(new Error('no project scope'))),
+    [scope, activeProjectId],
+  );
+  const activeRev = project.result.state === 'ready'
+    ? project.result.data.active_revision_id
+    : null;
   return (
     <div className="page">
       <div className="page-head">
@@ -429,7 +489,13 @@ export function Runs(): ReactElement {
                     {scope === 'all' && (
                       <td className="muted">{r.project_id}</td>
                     )}
-                    <td className="muted">{r.revision_id}</td>
+                    <td className="muted">
+                      {r.revision_id}
+                      {scope === 'project' && activeRev
+                        && r.revision_id !== activeRev && (
+                        <span className="stale"> · historical</span>
+                      )}
+                    </td>
                     <td className="muted">{r.workload_id ?? '—'}</td>
                     <td className="muted">{r.backend ?? '—'}</td>
                     <td><StatusBadge status={r.status ?? 'UNKNOWN'} /></td>

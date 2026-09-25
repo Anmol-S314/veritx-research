@@ -150,7 +150,7 @@ def test_browser_live_flow(live_stack):
             expect(page.get_by_text("LIVE")).to_be_visible(timeout=30000)
 
             # Create a project, selecting a workload explicitly.
-            page.get_by_label("Name").fill("Qwen NoC Study")
+            page.get_by_label("Name").fill("Llama Dense 8B Study")
             page.get_by_label("Workload").select_option(
                 "llama-dense-8b-64tiles")
             page.get_by_role("button", name="Create project").click()
@@ -159,7 +159,7 @@ def test_browser_live_flow(live_stack):
 
             # Edit the design (draft) then compile.
             page.get_by_role("link", name="Design", exact=True).click()
-            expect(page.get_by_text("Draft (live edits)")).to_be_visible(
+            expect(page.get_by_role("heading", name="Design intent")).to_be_visible(
                 timeout=20000)
             page.get_by_label("Link width (b)").fill("128")
             page.get_by_role("button", name="Compile design").click()
