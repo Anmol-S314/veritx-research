@@ -604,6 +604,19 @@ input:disabled {
   font: 10px var(--mono);
 }
 
+.cv-link.cv-clickable, .cv-router.cv-clickable { cursor: pointer; }
+.cv-link.cv-clickable:hover { stroke: var(--accent); }
+.cv-router.cv-clickable:hover { stroke: var(--accent); stroke-width: 2; }
+.cv-endpoint-hit { fill: transparent; cursor: pointer; }
+.fabric-inspector {
+  border: 1px solid var(--border); background: var(--panel);
+  padding: 10px 12px; margin-top: 8px;
+}
+.fabric-inspector h3 { margin: 0 0 8px; font-size: 13px; }
+.fabric-inspector .head-actions {
+  display: flex; justify-content: space-between; align-items: center;
+}
+
 .cv-router {
   fill: var(--bg-card);
   stroke: var(--accent);

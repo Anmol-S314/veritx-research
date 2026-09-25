@@ -1,6 +1,8 @@
-import type { ReactElement } from 'react';
+import { useState, type ReactElement } from 'react';
+import type { TopologyView } from '../types';
 import { fmtNum } from './badges';
 import { bucketOf, strokeFor, type FabricModel, type FabricNode } from '../fabricLayout';
+import FabricInspector, { type FabricSelection } from './FabricInspector';
 
 export type Overlay = 'structure' | 'routing' | 'vc-class' | 'traffic-class' | 'utilization';
 
@@ -65,12 +67,43 @@ function chips(node: FabricNode): string[] {
  * agents whose attachment position is not materialized yet, and say so
  * in the legend.
  */
-export default function FabricCanvas({ model }: {
+export default function FabricCanvas({ model, topology }: {
   model: FabricModel;
+  topology?: TopologyView | null;
   overlay?: Overlay;
 }): ReactElement {
   const { nodes, edges, cols, rows, concentration, totals, source } = model;
   const materialized = source === 'topology';
+  const [selection, setSelection] = useState<FabricSelection | null>(null);
+
+  // Click targets exist only for the materialized graph: a preview has no
+  // certified artifact behind it, so there is nothing to inspect.
+  const channelByPair = new Map<string, number>();
+  if (topology) {
+    for (const c of topology.channels) {
+      const key = `${Math.min(c.src_router, c.dst_router)}-`
+        + `${Math.max(c.src_router, c.dst_router)}`;
+      // one representative channel per drawn pair
+      if (!channelByPair.has(key)) channelByPair.set(key, c.channel_id);
+    }
+  }
+  const pickRouter = materialized
+    ? (id: number) => setSelection({ kind: 'router', routerId: id })
+    : undefined;
+  const pickLink = materialized
+    ? (a: number, b: number) =>
+      setSelection({
+        kind: 'channel',
+        channelId: channelByPair.get(
+          `${Math.min(a, b)}-${Math.max(a, b)}`,
+        ),
+      })
+    : undefined;
+  /** The certified endpoints seated on this router, in artifact order. */
+  const nodeEndpoints = (routerId: number) =>
+    topology
+      ? topology.endpoints.filter((e) => e.router_id === routerId)
+      : [];
 
   const CELL = 96;
   const M = 70; // margin for edge blocks
@@ -108,7 +141,7 @@ export default function FabricCanvas({ model }: {
           ? `Fabric structure: ${nodes.length} routers, ${edges.length} links`
           : `Fabric preview: ~${nodes.length} routers from declared counts`}
       >
-        {/* links */}
+        {/* links (clickable when materialized: inspect the channel) */}
         {edges.map((edge, k) => {
           const na = nodeId.get(edge.a);
           const nb = nodeId.get(edge.b);
@@ -122,12 +155,17 @@ export default function FabricCanvas({ model }: {
               y1={pa.y}
               x2={pb.x}
               y2={pb.y}
-              className="cv-link"
+              className={`cv-link${pickLink ? ' cv-clickable' : ''}`}
               strokeWidth={linkStroke}
-            />
+              onClick={pickLink
+                ? () => pickLink(edge.a, edge.b)
+                : undefined}
+            >
+              {pickLink && <title>inspect channel</title>}
+            </line>
           );
         })}
-        {/* routers (+ materialized seats) */}
+        {/* routers (+ materialized seats); clickable when materialized */}
         {nodes.map((node) => {
           const p = pos(node);
           const seats = chips(node);
@@ -141,8 +179,13 @@ export default function FabricCanvas({ model }: {
                 width={R * 2}
                 height={R * 2}
                 rx={5}
-                className="cv-router"
-              />
+                className={`cv-router${pickRouter ? ' cv-clickable' : ''}`}
+                onClick={pickRouter
+                  ? () => pickRouter(node.id)
+                  : undefined}
+              >
+                {pickRouter && <title>inspect router R{node.row},{node.col}</title>}
+              </rect>
               <text x={p.x} y={p.y - 4} textAnchor="middle" className="cv-label">
                 R{node.row},{node.col}
               </text>
@@ -168,6 +211,23 @@ export default function FabricCanvas({ model }: {
                       r={3.5}
                       className={CHIP_CLASS[bucket] ?? 'cv-agent'}
                     />
+                  ))}
+                  {/* endpoint-level inspection targets: one per attached
+                      agent of the materialized artifact */}
+                  {materialized && topology && nodeEndpoints(node.id).map((e, i) => (
+                    <circle
+                      key={`ep${e.endpoint_id}`}
+                      cx={p.x + (i - (seats.length - 1) / 2) * 9}
+                      cy={p.y + R + 12}
+                      r={5.5}
+                      className="cv-endpoint-hit"
+                      onClick={() =>
+                        setSelection({ kind: 'endpoint', endpointId: e.endpoint_id })}
+                    >
+                      <title>
+                        {e.kind} g{e.group_index} i{e.instance_index}
+                      </title>
+                    </circle>
                   ))}
                 </g>
               )}
@@ -212,6 +272,14 @@ export default function FabricCanvas({ model }: {
           },
         )}
       </svg>
+
+      {topology && (
+        <FabricInspector
+          topology={topology}
+          selection={selection}
+          onClose={() => setSelection(null)}
+        />
+      )}
 
       <div className="canvas-legend">
         <span>

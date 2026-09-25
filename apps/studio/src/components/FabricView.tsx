@@ -149,7 +149,7 @@ function CertifiedCanvas({ design, topology, overlay, onOverlay, mode, onMode,
           <FabricCanvas3D model={model} />
         </Suspense>
       ) : (
-        <Canvas2D model={model} />
+        <Canvas2D model={model} topology={topology} />
       )}
     </div>
   );
