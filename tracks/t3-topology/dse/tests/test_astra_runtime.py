@@ -268,23 +268,13 @@ def test_compare_per_rank_reports_bit_identical_ranks():
 
 # ── real runtime requalification ───────────────────────────────────────────
 
-_REAL_CANDIDATES = (
-    "/home/datavex/worktree-archive/veritx-manal/third_party/astra-sim/"
-    "astra-sim/network_frontend/booksim2/bin/AstraSim_BookSim2",
-    "/home/datavex/worktree-archive/veritx-epic/third_party/astra-sim/"
-    "astra-sim/network_frontend/booksim2/bin/AstraSim_BookSim2",
-)
-
-
 def _real_binary() -> Path | None:
-    env = os.environ.get("VERITX_ASTRA_BIN")
-    candidates = ([env] if env else []) + list(_REAL_CANDIDATES)
-    for candidate in candidates:
-        path = Path(candidate)
-        if path.is_file():
-            return path
-    resolved = astra.resolve_runtime_binary()
-    return resolved
+    """The release ASTRA binary, built from tracked source.
+
+    A developer-local archived build is deliberately not a candidate: the
+    release path must use the binary `make release-build` produces.
+    """
+    return astra.resolve_runtime_binary()
 
 
 _requires_binary = pytest.mark.skipif(

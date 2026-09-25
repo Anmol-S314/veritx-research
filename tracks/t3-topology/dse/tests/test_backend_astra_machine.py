@@ -38,10 +38,6 @@ BUILT_FROM_SOURCE = (
 REAL_CANDIDATES = (
     os.environ.get("VERITX_ASTRA_BIN"),
     str(BUILT_FROM_SOURCE),
-    "/home/datavex/worktree-archive/veritx-manal/third_party/astra-sim/"
-    "astra-sim/network_frontend/booksim2/bin/AstraSim_BookSim2",
-    "/home/datavex/worktree-archive/veritx-main/serving/astra-sim/build/"
-    "astra_booksim2/build/bin/AstraSim_BookSim2",
 )
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "astra_tiny"
 

@@ -7,8 +7,11 @@ tolerated. In ordinary development runs the skips remain visible and
 harmless.
 
 The named dependencies are the ones ``SKIP-INVENTORY.md`` marks
-release-critical: the vendored serving trace fixtures and the ASTRA
-reference binary.
+release-critical: the deterministic serving trace fixtures and the built
+BookSim/ASTRA backend binaries. The two-binary ASTRA reference differential
+is no longer release-critical: R2 replaced it with an independent closed-form
+timing oracle (``test_astra_timing_oracle.py``); the differential is a
+shared-engine check and may skip when no reference binary is supplied.
 """
 from __future__ import annotations
 
@@ -17,8 +20,11 @@ import os
 #: substrings of skip reasons that make the skip release-blocking
 _RELEASE_CRITICAL_REASONS = (
     "event_handler .et not found",
-    "Qwen3 batch trace not found",
-    "VERITX_ASTRA_REF_BIN",
+    "generated batch trace not found",
+    # a release build must actually execute the backends it qualifies
+    "no AstraSim_BookSim2 binary available on this machine",
+    "AstraSim_BookSim2 release binary not built",
+    "no BookSim binary available",
 )
 
 _RELEASE_GATE = os.environ.get("VERITX_RELEASE_GATE") == "1"

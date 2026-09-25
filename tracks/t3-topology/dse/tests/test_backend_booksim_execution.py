@@ -18,11 +18,11 @@ from veritx_dse.backend import evidence as ev
 from veritx_dse.backend import producer as pd
 from veritx_dse.backend.booksim_projection import prepare_booksim_input
 
+_REPO = Path(__file__).resolve().parents[4]
 REAL_CANDIDATES = (
     os.environ.get("VERITX_BOOKSIM_BIN"),
-    "/tmp/p1b-matrix/p1b-bin/third_party/booksim2/src/booksim",
-    "/tmp/p1b-matrix/base-bin/third_party/booksim2/src/booksim",
-    "/tmp/pristine-ec/third_party/booksim2/src/booksim",
+    # the binary `make release-build` produces from tracked source
+    str(_REPO / "third_party" / "booksim2" / "src" / "booksim"),
 )
 
 GOOD_STDOUT = (
