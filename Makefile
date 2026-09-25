@@ -83,6 +83,14 @@ release-manifest:  ## write build-time provenance manifests for built backends
 	    --recipe-version astra-sim+booksim2/v1 --compiler $(RELEASE_CXX) \
 	    --build-config Release
 
+release-manifest-json:  ## bind the release candidate to its facts
+	python3 scripts/write_release_manifest.py \
+	    --container-digest "$${VERITX_TOOLS_IMAGE:-}" \
+	    --backend-manifest third_party/booksim2/src/booksim.build-manifest.json \
+	    --backend-manifest third_party/astra-sim/astra-sim/network_frontend/booksim2/bin/AstraSim_BookSim2.build-manifest.json \
+	    --validation-report validation/reports/REPORT.md \
+	    --out release-manifest.json
+
 # -- Vendored tool management (scripts/tools.py) --
 
 tools:  ## list all vendored tools with status

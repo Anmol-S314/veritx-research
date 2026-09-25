@@ -130,3 +130,24 @@ def test_release_build_records_the_toolchain_it_actually_uses():
     # the manifest compiler is the build compiler, never a hardcoded g++
     assert "--compiler g++" not in makefile
     assert makefile.count("--compiler $(RELEASE_CXX)") == 2
+
+
+def test_release_manifest_binds_the_release_to_its_facts(tmp_path):
+    """C8: release-manifest.json records SHA, container pin state, backend
+    manifests, schema versions and report digests."""
+    import json
+    import subprocess
+    repo = DSE.parents[2]
+    out = tmp_path / "release-manifest.json"
+    subprocess.run(
+        [sys.executable, "scripts/write_release_manifest.py", "--out",
+         str(out), "--backend-manifest",
+         "third_party/booksim2/src/booksim.build-manifest.json"],
+        cwd=repo, check=True)
+    doc = json.loads(out.read_text(encoding="utf-8"))
+    assert doc["schema_version"] == 1
+    assert doc["release_sha"]
+    assert doc["schema_versions"]["prepared_booksim"] == 5
+    assert doc["schema_versions"]["backend_evidence"] == 3
+    assert doc["container"]["pinned_by_digest"] is False
+    assert doc["backends"][0]["path"].endswith("booksim.build-manifest.json")
