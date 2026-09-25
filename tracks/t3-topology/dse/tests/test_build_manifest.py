@@ -151,3 +151,13 @@ def test_release_manifest_binds_the_release_to_its_facts(tmp_path):
     assert doc["schema_versions"]["backend_evidence"] == 3
     assert doc["container"]["pinned_by_digest"] is False
     assert doc["backends"][0]["path"].endswith("booksim.build-manifest.json")
+
+
+def test_release_dockerfile_clones_are_pinned():
+    """C8: the release Dockerfile must not clone a moving ref."""
+    import subprocess
+    repo = DSE.parents[2]
+    proc = subprocess.run(
+        [sys.executable, "scripts/check_dockerfile_pins.py"],
+        cwd=repo, capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stdout + proc.stderr

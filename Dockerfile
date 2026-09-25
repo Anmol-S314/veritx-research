@@ -62,9 +62,13 @@ RUN cd /opt/booksim2/src && make -j$(nproc) && \
 
 # =============================================================================
 # Accelergy (T3 — Topology energy estimation)
+# Pinned by commit (C8): no moving HEAD/latest in the release image path.
 # =============================================================================
-RUN git clone --depth 1 https://github.com/Accelergy-Project/accelergy.git && \
-    cd accelergy && \
+ARG ACCELERGY_COMMIT=6911d15686ee7efdceba7d95605102df4472ae3a
+RUN git init accelergy && cd accelergy && \
+    git remote add origin https://github.com/Accelergy-Project/accelergy.git && \
+    git fetch --depth 1 origin "$ACCELERGY_COMMIT" && \
+    git checkout FETCH_HEAD && \
     pip3 install .
 
 # =============================================================================
@@ -84,12 +88,15 @@ RUN git clone --recurse-submodules https://github.com/Accelergy-Project/timeloop
     find . -name "libtimeloop*.so" -exec cp {} /usr/local/lib/ \;
 
 # =============================================================================
-# Yosys (T4 — Formal Verification)
+# Yosys (T4 — Formal Verification). Pinned by commit (C8).
 # =============================================================================
+ARG YOSYS_COMMIT=6f876ae0e2095753bac358c88f93bc27a62b3d9b
 RUN pip3 install cmake && \
-    git clone --depth 1 --recurse-submodules --shallow-submodules \
-        https://github.com/YosysHQ/yosys.git && \
-    cd yosys && \
+    git init yosys && cd yosys && \
+    git remote add origin https://github.com/YosysHQ/yosys.git && \
+    git fetch --depth 1 origin "$YOSYS_COMMIT" && \
+    git checkout FETCH_HEAD && \
+    git submodule update --init --recursive --depth 1 && \
     mkdir build && cd build && \
     cmake .. -DBUILD_EDA=ON -DENABLE_READLINE=OFF -DWITH_ABC=OFF \
         -DCMAKE_INSTALL_PREFIX=/usr/local && \
@@ -100,19 +107,25 @@ RUN pip3 install cmake && \
     strip /usr/local/bin/yosys
 
 # =============================================================================
-# SymbiYosys (T4)
+# SymbiYosys (T4). Pinned by commit (C8).
 # =============================================================================
-RUN git clone --depth 1 https://github.com/YosysHQ/sby.git && \
-    cd sby && \
+ARG SBY_COMMIT=b1a1e98cba941ec8433f8dc27f416cd7bb7f14be
+RUN git init sby && cd sby && \
+    git remote add origin https://github.com/YosysHQ/sby.git && \
+    git fetch --depth 1 origin "$SBY_COMMIT" && \
+    git checkout FETCH_HEAD && \
     make install && \
     mkdir -p /usr/local/share/yosys/python3/ && \
     cp sbysrc/*.py /usr/local/share/yosys/python3/
 
 # =============================================================================
-# CBMC (T4)
+# CBMC (T4). Pinned by commit (C8).
 # =============================================================================
-RUN git clone --depth 1 https://github.com/diffblue/cbmc.git && \
-    cd cbmc && \
+ARG CBMC_COMMIT=fd5dcee9e623c7d6539697abaafc15fbf73bd3ac
+RUN git init cbmc && cd cbmc && \
+    git remote add origin https://github.com/diffblue/cbmc.git && \
+    git fetch --depth 1 origin "$CBMC_COMMIT" && \
+    git checkout FETCH_HEAD && \
     cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DWITH_JBMC=OFF && \
     cmake --build build -j$(nproc) && \
     cmake --install build && \

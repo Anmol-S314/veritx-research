@@ -95,6 +95,8 @@ jobs:
           fetch-depth: 0
       - name: Assert clean tree
         run: test -z "$(git status --porcelain)" || (git status; exit 1)
+      - name: Assert Dockerfile clones are pinned
+        run: python3 scripts/check_dockerfile_pins.py
       - run: make release-build
       - name: Release manifest (bind RC to its facts)
         run: make release-manifest-json

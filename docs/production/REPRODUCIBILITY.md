@@ -21,18 +21,22 @@ ready** on this axis.
 
 ## What is still moving (blocks C8)
 
-1. **Container image is a moving tag.** `.github/workflows/release.yml`
+1. **Container image is a moving tag in the release path.** The workflow
    defaults to `ghcr.io/anmol-s314/veritx-tools-base:latest` unless the
-   repository variable `VERITX_TOOLS_IMAGE` is set to an immutable digest.
-   A release must pin by digest.
-2. **Docker builds clone moving HEADs.** `Dockerfile` runs
-   `git clone --depth 1` for Accelergy, Timeloop, SymbiYosys, CBMC and
-   others with no commit pin. These are not reproducible.
-3. **No `release-manifest.json`.** Nothing yet binds the release SHA to the
-   container digest, backend manifests, schema versions and validation
-   report IDs.
-4. **Clean-clone qualification has not been run.** No fresh clone →
-   `make release-build` → full gate has been executed and recorded.
+   repository variable `VERITX_TOOLS_IMAGE` is set to an immutable digest;
+   a tag-release job now FAILS unless the image is `@sha256:` pinned. The
+   default must still be replaced by a digest for a real release.
+2. **Docker external clones are now pinned by commit** (Accelergy, Yosys,
+   SymbiYosys, CBMC; Timeloop was already pinned). `scripts/check_dockerfile_pins.py`
+   fails if any `git clone` in the release image path is unpinned, and the
+   clean-clone job runs it. Remaining: the base image (`ubuntu:22.04`) and
+   apt package set are not digest-pinned.
+3. **No `release-manifest.json` was owed** — now produced by
+   `make release-manifest-json`, binding the release SHA, container image +
+   digest-pin state, backend manifests, schema versions, tool versions and
+   validation-report digests.
+4. **Clean-clone qualification** was run at `c759b84b` (build + fast tier +
+   harness green; see `PRODUCTION-SEAL.md` §12).
 
 ## Owed (C8)
 
