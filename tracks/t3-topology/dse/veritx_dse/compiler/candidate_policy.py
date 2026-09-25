@@ -119,6 +119,15 @@ _BASELINE_MAX_PACKET_FLITS = 8
 _BASELINE_INPUT_BUFFER_DEPTH_FLITS = 8
 _BASELINE_OUTPUT_STAGE_DEPTH_FLITS = 1
 
+#: THE single definition of the baseline hardware settings (C2.1). The v3
+#: orchestration and this policy both consume it, so the values cannot
+#: drift by independent literals.
+BASELINE_FABRIC_SETTINGS = FabricCompileSettings(
+    max_packet_flits=_BASELINE_MAX_PACKET_FLITS,
+    input_buffer_depth_flits_per_vc=_BASELINE_INPUT_BUFFER_DEPTH_FLITS,
+    output_stage_depth_flits_per_vc=_BASELINE_OUTPUT_STAGE_DEPTH_FLITS,
+)
+
 # The canonical Slice-10 DOR_XY execution profile this policy proposes.
 _DOR_ROUTING_CLASS = "DOR_XY"
 
@@ -301,9 +310,5 @@ def generate_baseline_candidate(*,
         mapping=mapping,
         routing_policy=_dor_xy_policy(),
         vc_spec=_vc_spec(design),
-        compile_settings=FabricCompileSettings(
-            max_packet_flits=_BASELINE_MAX_PACKET_FLITS,
-            input_buffer_depth_flits_per_vc=_BASELINE_INPUT_BUFFER_DEPTH_FLITS,
-            output_stage_depth_flits_per_vc=_BASELINE_OUTPUT_STAGE_DEPTH_FLITS,
-        ),
+        compile_settings=BASELINE_FABRIC_SETTINGS,
     )

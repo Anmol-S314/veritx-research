@@ -101,3 +101,14 @@ def test_service_and_orchestration_agree_on_every_child(preset, tmp_path):
     assert service_ids == canonical_ids, _diff(service_ids, canonical_ids)
     assert canonical_ids == orchestration_ids, \
         _diff(canonical_ids, orchestration_ids)
+
+
+def test_v3_orchestration_uses_the_single_baseline_settings():
+    """C2.1: the v3 path must not carry its own copy of the baseline
+    hardware literals (8/8/1); it must consume the one definition."""
+    from veritx_dse.compiler import candidate_policy, orchestration
+    assert orchestration._baseline_settings() \
+        is candidate_policy.BASELINE_FABRIC_SETTINGS
+    assert not hasattr(orchestration, "_MAX_PACKET_FLITS")
+    assert not hasattr(orchestration, "_INPUT_BUFFER_DEPTH_FLITS")
+    assert not hasattr(orchestration, "_OUTPUT_STAGE_DEPTH_FLITS")

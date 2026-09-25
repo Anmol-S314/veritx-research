@@ -28,13 +28,13 @@ from typing import Any
 from veritx_dse.application.errors import ControlPlaneError, map_semantic_error
 from veritx_dse.core.errors import VeritXError
 
-# Canonical hardware settings for the application compile path. These
-# mirror the RT-candidate v1 defaults (packet bound 8 flits, 8-flit
-# input buffers, 1-slot output staging) so reclaimed behavior is
-# unchanged; only the artifact identity is canonical v2.
-_MAX_PACKET_FLITS = 8
-_INPUT_BUFFER_DEPTH_FLITS = 8
-_OUTPUT_STAGE_DEPTH_FLITS = 1
+# Canonical hardware settings for the application compile path come from
+# the single baseline definition in ``candidate_policy`` (C2.1); they are
+# no longer spelled as independent literals here. Semantics are unchanged
+# (packet bound 8 flits, 8-flit input buffers, 1-slot output staging).
+def _baseline_settings():
+    from veritx_dse.compiler.candidate_policy import BASELINE_FABRIC_SETTINGS
+    return BASELINE_FABRIC_SETTINGS
 
 
 def _derive_canonical_fabric(*, design, view, topology, attachment,
@@ -53,6 +53,7 @@ def _derive_canonical_fabric(*, design, view, topology, attachment,
     from veritx_dse.model.router_behavior import derive_router_behavior
     from veritx_dse.model.vc_resource import vc_resources_from_assignment
 
+    settings = _baseline_settings()
     vc_resource = vc_resources_from_assignment(vc_assignment)
     routing_realization = make_deterministic_routing_realization(
         topology=topology, attachment=attachment, route=router_route,
@@ -60,13 +61,13 @@ def _derive_canonical_fabric(*, design, view, topology, attachment,
         vc_resource=vc_resource)
     packet_format = derive_packet_format(
         topology, attachment, vc_resource,
-        max_packet_flits=_MAX_PACKET_FLITS)
+        max_packet_flits=settings.max_packet_flits)
     router_behavior = derive_router_behavior(
         vc_resource=vc_resource,
         arbitration=getattr(getattr(design, "noc_config", None),
                             "arbitration", None),
-        buffer_depth_flits=_INPUT_BUFFER_DEPTH_FLITS,
-        output_stage_depth_flits=_OUTPUT_STAGE_DEPTH_FLITS)
+        buffer_depth_flits=settings.input_buffer_depth_flits_per_vc,
+        output_stage_depth_flits=settings.output_stage_depth_flits_per_vc)
     address_decode = derive_address_decode(design=design,
                                            attachment=attachment)
     fabric = make_deterministic_fabric(
