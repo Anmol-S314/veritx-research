@@ -244,6 +244,41 @@ export interface PreflightView {
   reason: string | null;
 }
 
+/** ValidationCampaignView (v1): machine-readable V01–V14 experiment
+ * reports projected verbatim; prose campaigns are linked, never parsed. */
+export interface ValidationCheck {
+  name: string | null;
+  authority_class: string | null;
+  independence: string | null;
+  verdict: string | null;
+  detail: string | null;
+  values: Record<string, unknown> | null;
+  finding: string | null;
+  quarantined: boolean;
+}
+
+export interface ValidationExperiment {
+  id: string;
+  title: string | null;
+  status: string | null;
+  passed: boolean;
+  workload: string | null;
+  profile_id: string | null;
+  fabric: Record<string, unknown> | null;
+  authority: Record<string, unknown> | null;
+  veritx: Record<string, unknown> | null;
+  sweep: Record<string, unknown> | null;
+  quarantined_findings: unknown[];
+  checks: ValidationCheck[];
+}
+
+export interface ValidationCampaignsView {
+  contract_version: 1;
+  experiments: ValidationExperiment[];
+  prose_campaigns: { document: string }[];
+  findings_document: string;
+}
+
 export interface OptimizationView {
   contract_version: 1;
   optimization_id: string;

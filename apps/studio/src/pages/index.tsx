@@ -5,6 +5,7 @@ import {
   type RunIntegrityView,
   type RunView,
   type RunVerifyView,
+  type ValidationExperiment,
 } from '../api';
 import {
   AsyncView, Link, WorkflowBar, useAsync, useStudio,
@@ -372,6 +373,118 @@ export function Workload({ projectId }: { projectId: string }): ReactElement {
   );
 }
 
+// ── Trust: validation campaigns (UX11) ─────────────────────────────────
+
+function CampaignDetail({ experiment }: {
+  experiment: ValidationExperiment;
+}): ReactElement {
+  const fabric = experiment.fabric;
+  return (
+    <>
+      <div className="kv">
+        <span>what was tested</span>
+        <span>{experiment.title ?? experiment.id}</span>
+      </div>
+      <div className="kv">
+        <span>status</span>
+        <span>
+          <StatusBadge status={experiment.status ?? 'UNKNOWN'} />
+        </span>
+      </div>
+      {fabric && (
+        <div className="kv">
+          <span>fabric</span>
+          <span className="muted">
+            {String(fabric.compute_tiles ?? '—')} tiles ·{' '}
+            {String(fabric.link_width ?? '—')}b links ·{' '}
+            {String(fabric.num_vcs ?? '—')} VC
+          </span>
+        </div>
+      )}
+      <table className="tbl">
+        <thead>
+          <tr>
+            <th>check</th><th>authority</th><th>independence</th>
+            <th>verdict</th><th>expected vs observed</th>
+          </tr>
+        </thead>
+        <tbody>
+          {experiment.checks.map((c, i) => (
+            <tr key={i}>
+              <td>{c.name ?? '—'}</td>
+              <td className="muted">{c.authority_class ?? '—'}</td>
+              <td className="muted">{c.independence ?? '—'}</td>
+              <td><StatusBadge status={c.verdict ?? 'UNKNOWN'} /></td>
+              <td className="muted">{c.detail}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {experiment.quarantined_findings.length > 0 && (
+        <p className="bad">
+          quarantined findings: {experiment.quarantined_findings.join(', ')}
+        </p>
+      )}
+    </>
+  );
+}
+
+function ValidationCampaigns(): ReactElement {
+  const campaigns = useAsync(api.validation, []);
+  const [openId, setOpenId] = useState<string | null>(null);
+  return (
+    <section className="card">
+      <h3>Validation campaigns</h3>
+      <AsyncView result={campaigns.result} reload={campaigns.reload}>
+        {(data) => (
+          <>
+            <table className="live-table">
+              <thead>
+                <tr><th>experiment</th><th>workload</th><th>checks</th><th>result</th><th></th></tr>
+              </thead>
+              <tbody>
+                {data.experiments.map((e) => (
+                  <tr key={e.id}>
+                    <td>{e.id}</td>
+                    <td className="muted">{e.workload ?? '—'}</td>
+                    <td className="muted">{e.checks.length}</td>
+                    <td>
+                      <StatusBadge status={e.status ?? 'UNKNOWN'} />
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => setOpenId(openId === e.id ? null : e.id)}
+                      >
+                        {openId === e.id ? 'Hide' : 'Inspect'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {data.experiments
+              .filter((e) => e.id === openId)
+              .map((e) => <CampaignDetail key={e.id} experiment={e} />)}
+            <h4>Other campaigns (prose authority — linked, not parsed)</h4>
+            <ul className="muted">
+              {data.prose_campaigns.map((c) => (
+                <li key={c.document}><code>{c.document}</code></li>
+              ))}
+              <li>
+                <code>{data.findings_document}</code> — defects validation
+                found, how each was detected, and the regression that now
+                prevents recurrence
+              </li>
+            </ul>
+          </>
+        )}
+      </AsyncView>
+    </section>
+  );
+}
+
 export function Trust(): ReactElement {
   const qual = useAsync(api.qualification, []);
   return (
@@ -417,6 +530,7 @@ export function Trust(): ReactElement {
           </>
         )}
       </AsyncView>
+      <ValidationCampaigns />
     </div>
   );
 }

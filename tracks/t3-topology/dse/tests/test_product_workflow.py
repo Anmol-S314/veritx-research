@@ -343,6 +343,45 @@ def test_catalog_separates_workloads_from_fabric_presets(tmp_path):
     assert entry["collectives"][0]["traffic_class"] == "tp_collective"
 
 
+def test_validation_campaigns_view_contract(tmp_path):
+    """ValidationCampaignView: V01–V14 served as structured data with
+    check-level authority/verdict detail; prose campaigns are linked by
+    name and never parsed into the view (§34)."""
+    client = _client(tmp_path, with_backend=False)
+    resp = client.get("/api/v1/validation")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["contract_version"] == 1
+
+    ids = [e["id"] for e in body["experiments"]]
+    assert len(ids) == 14
+    assert ids == [f"V{i:02d}" for i in range(1, 15)]
+
+    v01 = body["experiments"][0]
+    assert v01["passed"] is True
+    assert v01["status"] == "PASS"
+    assert v01["title"]
+    assert v01["fabric"] and "compute_tiles" in v01["fabric"]
+    # Check-level inspection: authority, independence, verdict, detail.
+    check = v01["checks"][0]
+    for key in ("name", "authority_class", "independence", "verdict",
+                "detail", "quarantined"):
+        assert key in check
+    # Every experiment's checks carry at least one trace conservation gate
+    # with an exact verdict; nothing is upgraded past what the report says.
+    for experiment in body["experiments"]:
+        assert experiment["checks"], experiment["id"]
+        assert all(c["verdict"] == "exact" for c in experiment["checks"]
+                   if not c["quarantined"])
+
+    # Prose campaigns are references only: no parsed content.
+    assert body["findings_document"] == "FINDINGS.md"
+    prose = {c["document"] for c in body["prose_campaigns"]}
+    assert "MUTATIONS.md" in prose and "ENGINES.md" in prose
+    for campaign in body["prose_campaigns"]:
+        assert set(campaign) == {"document"}
+
+
 def test_qualification_authority_is_machine_readable(tmp_path):
     client = _client(tmp_path, with_backend=False)
     body = client.get("/api/v1/qualification").json()

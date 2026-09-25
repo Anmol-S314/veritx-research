@@ -27,6 +27,7 @@ Stack: FastAPI (`veritx_dse/gateway/app.py`). Product endpoints:
 ```text
 GET  /api/v1/health
 GET  /api/v1/qualification
+GET  /api/v1/validation
 GET  /api/v1/catalog/workloads
 GET  /api/v1/catalog/fabric-presets
 POST /api/v1/projects

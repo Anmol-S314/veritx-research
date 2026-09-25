@@ -37,6 +37,7 @@ from veritx_dse.gateway.revisions import (
 )
 from veritx_dse.product.qualification import qualification_view
 from veritx_dse.product.service import ProductConfig, ProductService
+from veritx_dse.product.validation import validation_campaigns
 
 logger = logging.getLogger("veritx.gateway")
 
@@ -348,6 +349,10 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
     @app.get("/api/v1/qualification", tags=["product"])
     def v1_qualification() -> dict[str, Any]:
         return qualification_view()
+
+    @app.get("/api/v1/validation", tags=["product"])
+    def v1_validation() -> dict[str, Any]:
+        return validation_campaigns()
 
     @app.get("/api/v1/catalog/workloads", tags=["product"])
     def v1_workloads() -> dict[str, Any]:

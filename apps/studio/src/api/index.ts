@@ -10,6 +10,7 @@ import type {
   OptimizationView,
   ProjectView,
   QualificationView,
+  ValidationCampaignsView,
   PreflightView,
   RunIntegrityView,
   RunVerifyView,
@@ -24,6 +25,7 @@ export const api = {
   health: () => get<{ status: string; api: string }>('/health'),
 
   qualification: () => get<QualificationView>('/qualification'),
+  validation: () => get<ValidationCampaignsView>('/validation'),
   workloadCatalog: () => get<WorkloadCatalogView>('/catalog/workloads'),
   fabricPresets: () =>
     get<FabricPresetCatalogView>('/catalog/fabric-presets'),
