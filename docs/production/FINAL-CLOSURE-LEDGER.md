@@ -8,8 +8,9 @@ row says CLOSED, the commit and the gate are named. `docs/production/CLOSURE-PLA
 remains the earlier narrative; this file is the program ledger.
 
 Release candidate under audit: baseline `2521d713`, inherited branch point
-`bd6be628`, qualified code SHA `c759b84b` (this ledger and seal commits
-follow it). Verdict: **NOT READY** (see `PRODUCTION-SEAL.md`).
+`bd6be628`. The R1–R5 closure commits begin at `d3240814` (R1.1) and the
+current tip is `552a68d0`; R6 freezes one exact SHA after this ledger and the
+seal are refreshed. Verdict: **NOT READY** (see `PRODUCTION-SEAL.md`).
 
 ---
 
@@ -63,57 +64,68 @@ follow it). Verdict: **NOT READY** (see `PRODUCTION-SEAL.md`).
 
 | id | severity | status | source | root cause | implementation | tests | runtime gate | commit | historical claims affected | remaining limitation |
 |----|----------|--------|--------|-----------|----------------|-------|--------------|--------|---------------------------|----------------------|
-| C6 | high | IN_PROGRESS | `backend/astra_machine.py`, `third_party/astra-sim/.../Booksim2Fabric.hh`, `validation/harness/engines.py` | ~30M-cycle dominant timing | root cause fixed: `run_cycles` quantized draining billed 1,000,010c per ring step; chunked stepping restored (F-ASTRA-0001); aggregate now 40310 = declared 10000+30310, verified independently | engine gate `astra_runtime` | gate PASS, aggregate closes; gate wording corrected | `a4f7da62`, wording fix | F-ASTRA-0001 | no independent per-domain oracle yet; absolute timing still unqualified |
+| C6 | high | CLOSED | `backend/astra_machine.py`, `third_party/astra-sim/extern/network_backend/booksim2/Booksim2Fabric.hh`, `tests/test_astra_timing_oracle.py` | ~30M-cycle dominant timing; then no independent per-domain oracle | F-ASTRA-0001 fixed the 1M-cycle quantization; R2 adds a closed-form model M oracle: compute exact, ring `comm = 1010*2(N-1)+10` exact for N=2/4/8(held-out)/16 and additive over rounds | `test_astra_timing_oracle.py` (13, real binary) | exact equality on the release binary | `a4f7da62`, `34a37b8b` | F-ASTRA-0001, F-ASTRA-0002 | absolute latency NOT_ESTABLISHED (F-ASTRA-0002: comm payload-insensitive below 64 KiB); P2P/INSTANCE/MOE not established |
 
 ## C7 — serving qualification
 
 | id | severity | status | source | root cause | implementation | tests | runtime gate | commit | historical claims affected | remaining limitation |
 |----|----------|--------|--------|-----------|----------------|-------|--------------|--------|---------------------------|----------------------|
-| C7 | high | IN_PROGRESS | `serving/*`, `backend/serving_round.py`, `tests/test_serving_loop.py`, `tests/test_serving_liveness.py` | integration fixtures not vendored; qualification not complete | network-execution-evidence and multi-instance liveness gates exist and refuse missing/contradictory ledgers; flaky protocol tests deterministic; release gate fails on skips | `test_a_dispatched_instance_without_execution_evidence_refuses`, `test_a_missing_ledger_refuses`, serving liveness suite | fast tier green; gate fails on `.et` skips | `503c53a8` + prior serving work | — | serving `.et` fixtures unvendored → integration domain UNSUPPORTED; no independent TTFT/latency oracle |
+| C7 | high | CLOSED | `backend/canonical_serving.py`, `backend/serving_round.py`, `tests/test_serving_*.py`, `docs/validation/SERVING-QUALIFICATION.md` | integration fixtures not vendored; independent oracle and runtime parallelism qualification missing | deterministic Chakra fixtures (`gen_serving_chakra_fixtures`, R1.1); independent scheduling oracle (R1.2); runtime EP ledger gates (R1.3); multi-instance liveness (R1.4); domain statuses (R1.9) | `test_full_pipeline.py` (no skips), `test_serving_fixture_provenance.py`, `test_serving_scheduling_oracle.py`, `test_serving_ep.py`, `test_serving_multiinstance_liveness.py`, `test_serving_tp_groups.py`, `test_serving_dp.py` | fast tier green; live TP/DP gates gated by `VERITX_LIVE_SERVING` | `d3240814`, `7e14bfdc`, `6212e185`, `b8ad1b47`, `15f0d295` | release-critical `.et` skip resolved | absolute hardware latency PARTIAL (declared model only) |
 
 ## C8 — reproducible release build
 
 | id | severity | status | source | root cause | implementation | tests | runtime gate | commit | historical claims affected | remaining limitation |
 |----|----------|--------|--------|-----------|----------------|-------|--------------|--------|---------------------------|----------------------|
-| C8 | high | IN_PROGRESS | `Dockerfile`, `Makefile`, `scripts/write_release_manifest.py`, `scripts/check_dockerfile_pins.py`, `.github/workflows/release.yml` | container tag moving; Docker deps cloned HEADs; ASTRA build invoked with `sh` | `release-manifest.json`; tag releases assert digest pin; external clones pinned by commit (ARG); unpinned-clone guard; F-0008 fixed; ASTRA engine timeout 300→900 | `test_release_manifest_binds_the_release_to_its_facts`, `test_release_dockerfile_clones_are_pinned`; T6 clean clone | T6 build + fast + harness green | `a7784bde`, `64944077`, `c759b84b`, `69bda89c` | F-0008 | base image/apt not digest-pinned; bit-reproducible binaries not established |
+| C8 | high | CLOSED | `Dockerfile`, `Makefile`, `scripts/check_dockerfile_pins.py`, `scripts/classify_binary_reproducibility.py`, `docs/production/REPRODUCIBILITY.md` | container tag moving; Docker deps cloned HEADs; base image unpinned; binary bit-reproducibility unknown | base image pinned by digest (`ARG UBUNTU_IMAGE`); clones pinned by commit; pin guard now covers `FROM`; binaries classified SCIENTIFICALLY_EQUIVALENT_NON_BIT_REPRODUCIBLE (`.text` byte-identical) | `test_release_manifest_binds_the_release_to_its_facts`, `test_release_dockerfile_clones_are_pinned` | T6 clean clone + guard green | `69bda89c`, `ce05c4bc` | F-0008 | apt/pip not snapshotted (recorded, not bit-reproducible OS); clean clone not re-run at the R5 tip |
 
 ## C9 — live Studio product
 
 | id | severity | status | source | root cause | implementation | tests | runtime gate | commit | historical claims affected | remaining limitation |
 |----|----------|--------|--------|-----------|----------------|-------|--------------|--------|---------------------------|----------------------|
-| C9 | high | IN_PROGRESS | `veritx_dse/gateway/`, `apps/studio` | fixture-only operation | FastAPI gateway built over canonical services (compile/evaluate/optimize/runs/evidence/qualification/workloads) | `test_gateway.py` | gateway contract green | `d789c4da` | — | React app not yet wired to the gateway |
+| C9 | high | IN_PROGRESS | `veritx_dse/gateway/`, `apps/studio` | fixture-only operation | gateway live for design→compile→evaluate: immutable revisions, DesignView/CompilationView, revision_id continuity, typed HTTP error taxonomy; Runs/Trust live in React | `test_gateway.py`, `test_gateway_errors.py`, `test_gateway_revisions.py`, `apps/studio/tests/test_studio_contract_v2.py` | gateway + Studio contract green | `d789c4da`, `dd46efcc`, `e6faad7c` | latent `compilation_view` regression fixed | React Design/Verify/Evaluate/Optimize still fixture-backed; no guided v3 design deriver; no browser E2E |
 
 ## C10 — final release battery
 
 | id | severity | status | source | root cause | implementation | tests | runtime gate | commit | historical claims affected | remaining limitation |
 |----|----------|--------|--------|-----------|----------------|-------|--------------|--------|---------------------------|----------------------|
-| C10 | high | IN_PROGRESS | `.github/workflows/release.yml`, `validation/harness/engines.py` | battery run at one frozen SHA | T0–T4 green (fast 3563, validation 24, harness V01–V14, real 154); T6 clean clone green at `c759b84b`; T7 gateway browser smoke (Playwright: LIVE → Trust → Runs → evidence); C10.2 certified run via `test_real_grid_end_to_end` | — | full battery + T6 | `c759b84b`, `12eb6c25` | — | C10.3 broader matrix (MoE/multi-instance serving) owed; final SHA moves with each docs commit |
+| C10 | high | IN_PROGRESS | `.github/workflows/release.yml`, `validation/harness/engines.py` | battery run at one frozen SHA | T0–T4 green; T6 clean clone green at `c759b84b` (not re-run at the R5 tip); Studio contract added to the fast-gate; R6 will freeze one SHA | — | fast tier 3607 passed / 7 skipped at `552a68d0`; harness V01–V14 | `c759b84b`, `e6faad7c` | — | C10.3 broader matrix (MoE/multi-instance serving) owed; no browser E2E; final SHA moves with each docs commit |
 
 ## C11 — final adversarial audit
 
 | id | severity | status | source | root cause | implementation | tests | runtime gate | commit | historical claims affected | remaining limitation |
 |----|----------|--------|--------|-----------|----------------|-------|--------------|--------|---------------------------|----------------------|
-| C11 | high | IN_PROGRESS | this program | stop-condition questions re-asked at seal | F-0007 (window), C1.5 (toolchain), F-0006 (ALLGATHER) found and fixed; route/producer/evidence/VC/admissibility/run-integrity/concurrency audits done | regression per fix | fast tier green | `e9abab38`, `839cd3a9`, `dbbcf17c` | — | ASTRA dominant-timing question unresolved (C6); clean-clone identity not yet re-proven |
+| C11 | high | IN_PROGRESS | this program | stop-condition questions re-asked at seal | F-0007 (window), C1.5 (toolchain), F-0006 (ALLGATHER), F-ASTRA-0002 (quantized comm), the `compilation_view` method/field regression, and the silent BookSim-skip/developer-local-path hermeticity gaps found and fixed; route/producer/evidence/VC/admissibility/run-integrity/concurrency audits done | regression per fix | fast tier green | `e9abab38`, `839cd3a9`, `ce05c4bc` | — | independent adversarial audit of the R1–R5 changes not yet run by a second party; clean-clone identity not re-proven at the R5 tip |
 
 ## C12 — production seal
 
 | id | severity | status | source | root cause | implementation | tests | runtime gate | commit | historical claims affected | remaining limitation |
 |----|----------|--------|--------|-----------|----------------|-------|--------------|--------|---------------------------|----------------------|
-| C12 | high | IN_PROGRESS | `docs/production/PRODUCTION-SEAL.md` + all C13 outputs | seal only at full closure | all required C13 docs exist; seal refreshed with battery + T6 facts; verdict NOT READY | — | — | this program | — | C6/C7/C8/C9 blockers remain; verdict stays NOT READY |
+| C12 | high | IN_PROGRESS | `docs/production/PRODUCTION-SEAL.md` + all C13 outputs | seal only at full closure | all required C13 docs exist; seal refreshed with the R1–R5 facts; verdict NOT READY | — | — | this program | — | C9 frontend flow, C10.3 matrix, R6 freeze remain; verdict stays NOT READY |
 
 ---
 
 ## Stop conditions currently active
 
-The release is **NOT READY** because these C15 conditions remain open:
+The release is **NOT READY** because these conditions remain open:
 
-- run corruption / concurrency not yet proven (C3, C4);
-- clean clone not qualified (C8);
-- release-critical tests skip (`test_full_pipeline.py`, ASTRA reference) (C7, C10.1);
-- ASTRA timing contains an unexplained dominant component and is honestly
-  labelled NOT_ESTABLISHED (C6) — it is excluded from scientific claims;
-- two canonical authorities (v2/v3 compiler) not yet collapsed (C2.1);
-- workload authority not yet audited (C2.2).
+- the React Design/Verify/Evaluate/Optimize flow is still fixture-backed
+  (the gateway is live; the frontend wiring and a guided v3 design deriver
+  are owed) (C9);
+- no browser end-to-end test exists (C9/C10);
+- the C10.3 broader production workload matrix (MoE / multi-instance
+  serving) is not run end-to-end at one frozen SHA (C10);
+- ASTRA absolute latency is honestly `NOT_ESTABLISHED` (F-ASTRA-0002) and is
+  excluded from scientific claims (C6);
+- the clean clone has not been re-run at the R5 tip, and no exact RC SHA is
+  frozen yet (R6);
+- `apt`/`pip` are recorded but not snapshotted (R4.3).
+
+Closed since the previous ledger revision: C6 (independent ASTRA timing
+oracle), C7 (serving fixtures, scheduling oracle, runtime TP/DP/EP,
+multi-instance liveness), C8 (base-image digest pin, reproducibility
+classification), and the release-critical serving `.et` skip. The stale
+"two canonical authorities" and "clean clone not qualified" entries were
+already closed in the C2/C8 tables and are removed here.
 
 No stop condition is currently *violated* by a passing false result: the
 conservation, route, producer and admissibility gates are all fail-closed

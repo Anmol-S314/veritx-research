@@ -10,32 +10,36 @@ each backend by what its numbers can legitimately support.
 | Standalone BookSim (harness authority) | shared-engine differential | semi-independent (same simulator, separate build/config) | qualified at the differential level | `validation/harness/authority.py`, `standalone_parity` checks |
 | RTL / Verilator | independent execution engine | independent within the RTL domain | established (R0 self-check) | `rtl_selfcheck` engine gate |
 | Ramulator | memory engine / integration | independent | established (16/16) | `ramulator_battery` engine gate |
-| ASTRA-Sim | runtime / integration | shares the BookSim network engine | **EXECUTES; NUMERICAL VALIDITY NOT_ESTABLISHED** | `astra_runtime` gate |
+| ASTRA-Sim | runtime / integration | shares the BookSim network engine | **EXECUTES; internally qualified under model M; ABSOLUTE LATENCY NOT_ESTABLISHED** | `astra_runtime` gate, `test_astra_timing_oracle.py` |
 
-## ASTRA is the open domain
+## ASTRA is the bounded domain
 
 The engine gate reports:
 
 ```text
 ASTRA_RUNTIME_EXECUTES=PASS
-ASTRA_NUMERICAL_VALIDITY=NOT_ESTABLISHED
-  (aggregate 30010310c, exposed_comm 30000310c are unexplained and
-   must not enter a scientific comparison)
+ASTRA_NUMERICAL_VALIDITY=INTERNALLY_QUALIFIED_UNDER_MODEL_M
+  (absolute latency NOT_ESTABLISHED — F-ASTRA-0002)
 ```
 
-2026-09-25 (F-ASTRA-0001): the ~30M-cycle component is now EXPLAINED — a
-`run_cycles` quantization regression in the embedded BookSim2 frontend
-billed every collective step one 1M-cycle chunk. After the fix the gate
-reads `aggregate 40310c, exposed_comm 30310c`, identical to the archived
-qualified build (two-binary differential). Numerical validity remains
-NOT_ESTABLISHED pending the per-domain qualification below; the stale
-numbers above are kept for the record.
+2026-09-25 (F-ASTRA-0001): the ~30M-cycle component was a `run_cycles`
+quantization regression in the embedded BookSim2 frontend (every collective
+step billed one 1M-cycle chunk). Fixed; the gate now reads
+`aggregate 40310c, exposed_comm 30310c`.
 
-The ~30M-cycle dominant component is unexplained, so ASTRA timing is
-excluded from scientific comparison and from certified objectives. C6
-owes per-domain qualification (`ASTRA_P2P_SIMPLE`, `ASTRA_RING_COLLECTIVE`,
-`ASTRA_COMPUTE_COMM`, `ASTRA_MULTI_ROUND`, `ASTRA_MULTI_INSTANCE`,
-`ASTRA_MOE`), each `QUALIFIED` / `PARTIAL` / `NOT_ESTABLISHED`. There is no
+R2 then added an **independent** closed-form oracle (model M) on the release
+binary: compute-only cycles equal the declared nanoseconds (exact for four
+durations); a ring ALLREDUCE of N ranks costs `1010 * 2(N-1) + 10` cycles
+(exact for N=2/4/8/16, N=8 held out) and multi-round collects additively.
+Domains: `ASTRA_COMPUTE`, `ASTRA_RING_COLLECTIVE`, `ASTRA_COMPUTE_COMM` and
+`ASTRA_MULTI_ROUND` are QUALIFIED under model M; `ASTRA_P2P_SIMPLE`,
+`ASTRA_MULTI_INSTANCE` and `ASTRA_MOE` are NOT_ESTABLISHED.
+
+Finding F-ASTRA-0002 bounds the claim: comm cycles are quantized to the
+1,000-cycle frontend chunk and payload-insensitive below ~64 KiB (64 B and
+64 KiB both cost 30,310 cycles at N=16). ASTRA absolute timing is therefore
+an internal accounting model, not a physical bandwidth/latency model, and
+must not enter a scientific comparison or a certified objective. There is no
 global ASTRA PASS.
 
 ## What "qualified" means per axis

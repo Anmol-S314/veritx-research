@@ -8,12 +8,12 @@ until every seal condition is met.
 
 ## 1. Release candidate SHA
 
-`prod/production-readiness`; the closure tip is recorded in
-`FINAL-CLOSURE-LEDGER.md`. The clean-clone qualification (T6) was run at
-code SHA `c759b84b` (build from `0095e651` + the C10 ASTRA timeout fix);
-see `FINAL-BASELINE.md` for the pre-change baseline (`2521d713`) and the
-inherited branch point (`bd6be628`). The branch is not tagged and `main`
-has not been modified. A release tag must point at the exact audited SHA.
+`prod/production-readiness`. The R1–R5 closure commits begin at `d3240814`;
+the current (unfrozen) tip is `552a68d0`. The clean-clone qualification (T6)
+was last run at code SHA `c759b84b` and has **not** been re-run at the R5
+tip; R6 freezes one exact SHA and re-runs the battery (see
+`FINAL-CLOSURE-LEDGER.md`). The branch is not tagged and `main` has not been
+modified. A release tag must point at the exact audited SHA.
 
 ## 2. Base SHAs
 
@@ -42,7 +42,6 @@ taxonomy).
 | Clock parse through binary float lost Hz above 2^53 | high | `float(str(text))` | `e7a85911` | `test_clock_parsing_exact.py` |
 | `_validate_legacy_v1` called but undefined (NameError on legacy evidence) | high | reclamation dropped the function | `facf645b` | `test_evidence_admissibility.py` |
 | Evidence accepted impossible documents (unknown/contradictory fidelity/transport) | high | content-only validation | `facf645b` | `test_evidence_admissibility.py` |
-| `_validate_legacy_v1` called but undefined (NameError on legacy evidence) | high | reclamation dropped the function | `facf645b` | `test_evidence_admissibility.py` |
 | Second compile authority `application/compile.py` reachable | high | unremoved legacy surface | `9eb7c2e6` | `test_application_service.py` |
 | No single producer qualification rule; revision/cleanliness unchecked | high | split admission logic | `978a38ed` | `test_evidence_admissibility.py` |
 | Build provenance was ambient git HEAD (binary built at A attributed to B) | critical | live `git rev-parse` | `43f55d94` | `test_build_manifest.py` |
@@ -67,6 +66,11 @@ taxonomy).
 | Toolchain provenance recorded g++ while building with ambient CXX (C1.5) | high | manifest literal vs `$(CXX)` | `839cd3a9` | `test_build_manifest.py` |
 | Collective vocabulary had 2–4 independent definitions (C2.2) | high | duplicated tuples/dicts | this program | `test_collective_vocabulary_has_exactly_one_authority` |
 | ASTRA over-counted every collective step by 1,000,000 cycles (F-ASTRA-0001) | high | `run_cycles` quantized retired-packet draining | `a4f7da62` | engine gate `astra_runtime`; two-binary differential |
+| ASTRA comm timing is quantized to a 1,000-cycle floor and payload-insensitive below ~64 KiB (F-ASTRA-0002) | medium | frontend `CHUNK=1000` stepping bills a full chunk per ring step | recorded + regression guard (not tuned) | `test_astra_timing_oracle.py` |
+| `compilation_view` called `resolved_fabric.resolved_fabric_hash()` as a method, but it is a str field on the v3 `ResolvedFabric`; the whole `apps/studio` contract suite and fixture generation were broken and ran in no CI job | high | method-vs-field API drift | use `bundle.root_hashes()` (shim normalizes both); Studio tests added to the fast-gate | `apps/studio/tests/test_studio_contract_v2.py`, `test_gateway_revisions.py` |
+| Four serving tests imported LLMServingSim from a developer-local path absent on a clean clone | high | hardcoded `/home/datavex/veritx-integration` | resolve the repo's own vendored package | serving suites |
+| The real BookSim gates silently skipped in the release backend-gate (resolver only looked in `/tmp` scratch dirs); the ASTRA reference-binary differential was mis-classified as release-critical | high | developer-local resolver + wrong gate classification | resolve the built binary; a missing BookSim/ASTRA binary is now release-critical, the differential is not | `test_backend_booksim_execution.py`, `tests/conftest.py` |
+| `generate_studio_fixtures` imports `application.product_evaluator`, which exists only on historical audit branches; committed compile fixture was stale | medium | cross-branch artifact | regenerate the compile fixture from the live path; offline-demo regeneration reported as unprovisioned | `apps/studio/tests/test_studio_contract_v2.py` |
 
 Historical scientific findings F-0001 and F-0004 are FIXED in
 `validation/FINDINGS.md`; F-0002 ACCEPTED.
@@ -96,23 +100,31 @@ Historical scientific findings F-0001 and F-0004 are FIXED in
   `verify-run`/`reproduce` (C3). Legacy `core.runs.Run` and
   `core.paths.new_run_dir` still coexist and are not yet routed through the
   bundle lifecycle for evaluator/serving dirs.
-- BookSim binaries built in two different directories are not
-  bit-identical at the same source revision (scientific identity is
-  identical); each build's manifest binds its own binary sha.
-- The Studio gateway exists and the React app is wired for Runs/Trust; the
-  remaining sections are still fixture-backed.
+- BookSim binaries built in two different directories are not bit-identical
+  at the same source revision; classified
+  `SCIENTIFICALLY_EQUIVALENT_NON_BIT_REPRODUCIBLE` (`.text` byte-identical,
+  only DWARF paths/build-id differ; `scripts/classify_binary_reproducibility.py`).
+  Each build's manifest binds its own binary sha.
+- The Studio gateway is live for design→compile→evaluate with immutable
+  revisions; Runs/Trust are live in React. Design/Verify/Evaluate/Optimize
+  are still fixture-backed, there is no guided v3 design deriver, and there
+  is no browser E2E. Offline-demo fixture regeneration needs
+  `application.product_evaluator`, absent on this branch.
 - Rebuilding a backend requires regenerating its build manifest
   (`make release-manifest`); the producer gate correctly refuses a binary
   whose manifest digest is stale (observed after the F-ASTRA-0001 rebuild).
-- ASTRA numerical comparison (NOT_ESTABLISHED); F-ASTRA-0001 fixed the
-  30M-cycle run_cycles over-count, so the aggregate now matches the
-  declared compute + comm (40310c = 10000 + 30310). Independent per-domain
-  oracles are still owed before absolute timing may enter a comparison.
-- Serving integration `.et` fixtures are not vendored; the release gate
-  now FAILS on their skip (C7.1) instead of passing silently.
-- CI image/toolchain not yet pinned by digest; several Docker dependencies
-  clone moving HEADs (`Dockerfile`).
-- No clean-clone qualification has been run.
+- ASTRA timing is internally qualified under model M (compute exact, ring
+  `comm = 1010*2(N-1)+10` exact for N=2/4/8/16 and additive over rounds).
+  Absolute latency is NOT_ESTABLISHED (F-ASTRA-0002: comm is payload-
+  insensitive below ~64 KiB), and P2P / multi-instance / MoE domains are not
+  established, so ASTRA absolute timing must not enter a comparison.
+- Serving integration now runs on deterministic tracked Chakra fixtures; the
+  release gate no longer skips on their absence (R1.1). Absolute hardware
+  serving latency remains PARTIAL (declared linear model only).
+- The release base image is digest-pinned and Docker clones are pinned by
+  commit; `apt`/`pip` are recorded but not snapshotted.
+- The clean clone was last qualified at `c759b84b`; it has not been re-run at
+  the R5 tip.
 - Report files embed ephemeral scratch paths.
 - `bash third_party/ramulator2/build.sh` fails silently (use `./build.sh`).
 - Evidence schema v3 / prepared BookSim v5 / trace schedule v2 are
@@ -132,7 +144,7 @@ See `SCHEMA-COMPATIBILITY.md` (owed). Version constants inventoried in
 | Standalone BookSim | shared-engine differential | semi-independent | qualified |
 | RTL / Verilator | independent execution engine | independent within RTL domain | established (R0 self-check) |
 | Ramulator | memory engine / integration | independent | established (16/16) |
-| ASTRA-Sim | runtime/integration | shares BookSim engine (not independent) | **NOT_ESTABLISHED** |
+| ASTRA-Sim | runtime/integration | shares BookSim engine (not independent) | internally qualified under model M (compute + ring + multi-round); absolute latency **NOT_ESTABLISHED** |
 
 The five categories are NOT "five independent engines".
 
@@ -146,14 +158,19 @@ ring semantics only; chunk ownership is not modeled.
 
 ## 9. Full regression results
 
-- Fast DSE tier: `3563 passed, 16 skipped, 0 failed` (108 s).
+- Fast DSE tier: `3607 passed, 7 skipped, 0 failed` (117 s) at `552a68d0`
+  (up from 3563; the extra tests are the serving fixture/provenance,
+  scheduling oracle, runtime EP, multi-instance liveness, ASTRA timing
+  oracle and gateway taxonomy/revision suites).
+- Studio contract suite: `7 passed, 3 skipped` (the skips are offline-demo
+  fixture regeneration, unprovisioned on this branch).
 - Validation pytest: `24 passed` (245 s).
 - Validation harness: V01–V14 PASS, mutations CAUGHT, metamorphic PASS,
-  engine gates PASS (ASTRA numerical NOT_ESTABLISHED), intervention
-  SUPPORTED, 0 quarantined.
-- Live-backend tier: `154 passed, 12 skipped` (7.7 s). The tier is now
-  ~100x faster because F-ASTRA-0001 removed the 30M-cycle-per-step ASTRA
-  over-count.
+  engine gates PASS (ASTRA numerical internally qualified under model M),
+  intervention SUPPORTED, 0 quarantined.
+- Live-backend tier: green; the real BookSim/ASTRA gates now resolve the
+  built binaries (previously the BookSim resolver only looked in developer
+  scratch dirs and silently skipped).
 - Certified optimization gate (C10.2): `test_real_grid_end_to_end` runs
   `Optimizer.optimize_certified` from the release build and asserts every
   selected/Pareto candidate is EVALUATED with an authenticated proof,
@@ -177,17 +194,17 @@ share scientific identity with distinct run dirs; different runs differ.
 
 ## 12. Clean-clone results
 
-RUN (C8/T6) at `c759b84b`. A `git clone` with no prebuilt binaries builds
-BookSim, ASTRA and Ramulator from tracked source via `make release-build`,
-writes both build manifests binding the release revision with
-`source_dirty=false`, runs the fast tier (3562 passed, 16 skipped), the
-real backend gates, and the full validation harness (V01–V14 PASS, engines
-PASS, 0 quarantined). The clean clone's canonical compile produces the same
-`resolved_fabric_hash` as the working tree. Findings: F-0008 (ASTRA build
-invoked with `sh`) and a false astra_runtime FAIL from a too-tight engine
-timeout (now 900 s). A build outside a git checkout records no revision and
-`dirty=true`, so releases must build from a clone. Bit-identical binaries
-across build directories are not yet established.
+RUN (C8/T6) at `c759b84b`, **not re-run at the R5 tip**. A `git clone` with no
+prebuilt binaries builds BookSim, ASTRA and Ramulator from tracked source via
+`make release-build`, writes both build manifests binding the release
+revision with `source_dirty=false`, runs the fast tier, the real backend
+gates, and the full validation harness. The clean clone's canonical compile
+produces the same `resolved_fabric_hash` as the working tree. Findings:
+F-0008 (ASTRA build invoked with `sh`) and a false astra_runtime FAIL from a
+too-tight engine timeout (now 900 s). A build outside a git checkout records
+no revision and `dirty=true`, so releases must build from a clone. R4
+classifies cross-directory binary differences as
+`scientifically-equivalent-non-bit-reproducible` (`.text` identical).
 
 ## 13. Performance / scale envelope
 
@@ -201,8 +218,10 @@ Not performed (`THREAT-MODEL.md` owed).
 
 Partial: source-only build of BookSim/ASTRA/Ramulator works and
 `make release-build` writes build-time manifests for BookSim and ASTRA
-(verified at resolve time). Missing: a lockfile/container-qualified clean
-clone and a release manifest tying manifests to a tag. Owed.
+(verified at resolve time). The release base image is digest-pinned and
+Docker clones are pinned by commit. Missing: `apt`/`pip` snapshots (recorded,
+not bit-reproducible) and a clean-clone re-run at the frozen RC SHA. See
+`REPRODUCIBILITY.md`.
 
 ## 16. Known unsupported domains
 
@@ -210,48 +229,52 @@ clone and a release manifest tying manifests to a tag. Owed.
   supervised transport, QUALIFIED fidelity, known/clean producer, exit 0,
   verified manifest, recipe == booksim2-fork/v1, observed route + dump
   digest.
-- ASTRA numerical comparison (NOT_ESTABLISHED).
+- ASTRA absolute timing (NOT_ESTABLISHED, F-ASTRA-0002); ASTRA P2P /
+  multi-instance / MoE timing domains not established.
+- Serving absolute hardware latency (PARTIAL; declared linear model only).
 - Reduce-scatter/all-gather chunk ownership/rotation (not modeled).
 - Route realization beyond the first hop (the fork dumps first hops only).
 - Injection faster than one flit per cycle per source (trace model limit);
   drain beyond the fixed 1000-cycle margin is refused.
-- Serving integration without vendored `.et` fixtures (release gate fails).
-- Durable run verification/reproduction (`verify-run`/`reproduce`) — owed.
+- Studio Design/Verify/Evaluate/Optimize browser flow (gateway live;
+  frontend wiring and a guided v3 design deriver owed).
+- Offline-demo Studio fixture regeneration (`application.product_evaluator`
+  absent on this branch).
+- Durable run verification/reproduction (`verify-run`/`reproduce`) is
+  implemented; legacy `core.runs` dirs are still outside the bundle
+  lifecycle.
 
 ## 17. Dirty-tree status
 
-Clean at the time of writing (`84615331` is the last code commit; the seal
-and documentation commits follow).
+The R1–R5 closure commits are committed on `prod/production-readiness`; the
+only untracked paths are local agent tooling (`.agents/`, `.claude/`,
+`skills-lock.json`) that are not part of the product.
 
 ## 18. Branch status
 
 Historical branches untouched (no cleanup performed). `main` untouched.
-`prod/production-readiness` is pushed to `github` and tracks
-`github/prod/production-readiness`. The local branch is ahead of the
-pushed tip by the closure commits recorded in `FINAL-CLOSURE-LEDGER.md`.
+`prod/production-readiness` was pushed to `github` at `b2600851`; the R1–R5
+closure commits are local-only at the time of writing (tip `552a68d0`) and
+are recorded in `FINAL-CLOSURE-LEDGER.md`. The exact RC SHA is frozen in R6.
 
 ## 19. Release decision
 
 **NOT READY.** The scientific core (C1), authority collapse (C2.1–C2.3),
-durable run bundles with verify/reproduce (C3), failure/concurrency safety
-(C4), the production workload corpus (C5), the release manifest and a
-working clean-clone build (C8/T6) and the live Studio gateway (C9) are in
-place and green; the full battery was run and the clean clone qualified.
-Remaining blockers:
+durable run bundles (C3), failure/concurrency safety (C4), the workload
+corpus (C5), ASTRA internal timing qualification (C6), serving qualification
+(C7), the release pinning/reproducibility classification (C8), and the live
+gateway with revision continuity (C9) are in place and green. Remaining
+blockers:
 
-- ASTRA numerical validity is **NOT_ESTABLISHED** (C6): the dominant
-  30M-cycle over-count was root-caused and fixed (F-ASTRA-0001, aggregate
-  40310c = 10000 compute + 30310 comm), but no independent per-domain
-  oracle exists yet, so absolute ASTRA timing remains unqualified.
-- Serving integration `.et` fixtures are not vendored; the release gate
-  fails on their absence rather than passing (C7).
-- Container image and Docker external clones are not pinned by digest; the
-  release manifest records the pin state but the release path is not yet
-  digest-pinned (C8).
-- BookSim binaries are not bit-reproducible across build directories (C8).
-- The Studio React app is not yet wired to the gateway; T7 is a
-  gateway-level smoke, not a browser smoke (C9/C10).
-- C10.3's broader production matrix (MoE, multi-instance serving) is not
-  run end-to-end.
+- The Studio React Design/Verify/Evaluate/Optimize flow is still
+  fixture-backed; the gateway is live but the frontend wiring and a guided
+  v3 design deriver are owed (C9).
+- No browser end-to-end test exists (C9/C10).
+- C10.3's broader production matrix (MoE / multi-instance serving) is not
+  run end-to-end at one frozen SHA.
+- ASTRA absolute latency is `NOT_ESTABLISHED` (F-ASTRA-0002), so ASTRA
+  absolute timing must not enter a comparison.
+- No exact RC SHA is frozen and the clean clone has not been re-run at the
+  R5 tip (R6).
 
 See `FINAL-CLOSURE-LEDGER.md` for the item-by-item state.
