@@ -6,7 +6,6 @@ import {
 } from '../studio';
 import { Hash, StatusBadge } from '../components/badges';
 import ArtifactChain from '../components/ArtifactChain';
-import ArtifactStrip from '../components/ArtifactStrip';
 import DesignEditor from '../components/DesignEditor';
 import VerifyView from '../components/VerifyView';
 import EvaluateView from '../components/EvaluateView';
@@ -60,7 +59,7 @@ export function Design({ projectId }: { projectId: string }): ReactElement {
   );
 }
 
-// ── Compile & Verify ──────────────────────────────────────────────────────
+// ── Compile (02) / Verify (03) ───────────────────────────────────────
 
 /** Fetches the revision's canonical artifact chain (§14). A 409 (never
  * compiled) renders as an explicit absence, not an empty chain. */
@@ -85,7 +84,23 @@ function ArtifactChainSection({ revisionId }: {
   );
 }
 
-export function CompileVerify({ projectId }: { projectId: string }): ReactElement {
+/** Shared state banner: the active revision's compilation verdict plus the
+ * newer refused attempt, if any. Both Compile and Verify read it. */
+function useActiveRefused(p: ProjectView): {
+  active: ProjectView['active_revision'];
+  refused: ProjectView['latest_attempt'];
+} {
+  const active = p.active_revision;
+  const attempt = p.latest_attempt;
+  const refused = attempt
+    && attempt.revision_id !== p.active_revision_id
+    && attempt.compilation_status !== 'COMPILED'
+    ? attempt : null;
+  return { active, refused };
+}
+
+/** 02 · Compile: the linked artifact graph the compiler derived. */
+export function Compile({ projectId }: { projectId: string }): ReactElement {
   const { refreshProjects } = useStudio();
   const project = useAsync(() => api.project(projectId), [projectId]);
   const [compiling, setCompiling] = useState(false);
@@ -108,32 +123,61 @@ export function CompileVerify({ projectId }: { projectId: string }): ReactElemen
   return (
     <AsyncView result={project.result} reload={project.reload}>
       {(p) => {
-        const active = p.active_revision;
-        const obs = active?.compilation.obligations ?? [];
-        const attempt = p.latest_attempt;
-        const refused = attempt
-          && attempt.revision_id !== p.active_revision_id
-          && attempt.compilation_status !== 'COMPILED'
-          ? attempt : null;
+        const { active, refused } = useActiveRefused(p);
         return (
           <div className="page">
             <WorkflowBar project={p} current="compile" />
-            <h2>Compile &amp; Verify</h2>
-            <div className="form-row">
-              <button className="btn btn-primary" disabled={compiling} onClick={compile}>
-                {compiling ? 'Compiling…' : 'Compile draft'}
-              </button>
-              {p.draft.dirty && <span className="stale">DRAFT HAS UNCOMPILED CHANGES</span>}
+            <div className="page-head">
+              <div>
+                <h2>Canonical compilation</h2>
+                <p className="muted">
+                  The product is the linked artifact graph, not a simulator
+                  config. Identity and derived semantics come from the
+                  CompilationView — never recomputed here.
+                </p>
+              </div>
+              <div className="head-actions">
+                <Link
+                  className="btn"
+                  to={`/projects/${projectId}/design`}
+                >
+                  Edit intent
+                </Link>
+                <button
+                  className="btn btn-primary"
+                  disabled={compiling}
+                  onClick={compile}
+                >
+                  {compiling ? 'Compiling…' : 'Compile revision'}
+                </button>
+                {active && (
+                  <Link
+                    className="btn btn-primary"
+                    to={`/projects/${projectId}/verify`}
+                  >
+                    Verify fabric
+                  </Link>
+                )}
+              </div>
             </div>
+            {p.draft.dirty && (
+              <div className="verdict-banner verdict-unsupported" role="status">
+                <span className="verdict-text">
+                  <strong>Draft has uncompiled changes.</strong> The materialized
+                  artifacts below belong to {active?.display_name ?? 'an earlier revision'};
+                  compile to materialize the edited intent.
+                </span>
+              </div>
+            )}
             {error && <ErrorBox error={error} />}
             {refused && (
               <div className="verdict-banner verdict-unsupported" role="alert">
                 <StatusBadge status={refused.compilation_status} />
                 <span className="verdict-text">
                   <strong>Fabric not materialized · attempt {refused.display_name}.</strong>{' '}
-                  {refused.error ?? 'Compilation refused.'}{' '}
-                  No topology, routing, VC assignment or certificate exists
-                  for this attempt.
+                  {refused.error ?? 'Compilation refused.'} No topology,
+                  routing, VC assignment or certificate exists for this
+                  attempt.
                   {active
                     ? ` The certified revision ${active.display_name} remains active.`
                     : ''}
@@ -146,29 +190,124 @@ export function CompileVerify({ projectId }: { projectId: string }): ReactElemen
                   <StatusBadge status={active.compilation.status} />
                   <span className="verdict-text">
                     {active.compilation.status === 'COMPILED'
-                      ? `Certificate ${active.certificate?.overall ?? '—'} — ${
-                          obs.filter((o) => o.status === 'PASS').length
-                        }/${obs.length} obligations PASS.`
+                      ? `Compiled — design ${active.display_name}.`
                       : active.compilation.error ?? 'Refused.'}
                   </span>
                 </div>
-                <section className="card">
-                  <h3>Fabric summary</h3>
-                  <div className="kv"><span>revision</span><span>{active.display_name}</span></div>
-                  <div className="kv"><span>topology</span><span>{String(active.design.noc_guided.topology_family ?? '—')}</span></div>
-                  <div className="kv"><span>link width</span><span>{String(active.design.noc_guided.link_width ?? '—')} bits</span></div>
-                  <div className="kv"><span>routing</span><span>{active.design.locked_derived?.routing ?? '—'}</span></div>
-                  <div className="kv"><span>VC count</span><span>{active.design.locked_derived?.vc_count ?? '—'}</span></div>
-                  <div className="kv"><span>design identity</span><Hash value={active.design_hash} /></div>
-                  <div className="kv"><span>certificate identity</span><Hash value={active.compilation.certificate_id} /></div>
-                </section>
-                <ArtifactStrip compilation={active.compilation} />
                 <ArtifactChainSection revisionId={active.revision_id} />
-                <h3>Verification obligations</h3>
+                <div className="overview-grid">
+                  <section className="card">
+                    <h3>Identity</h3>
+                    <div className="kv"><span>design identity</span><Hash value={active.design_hash} /></div>
+                    <div className="kv"><span>compiler semantics</span>
+                      <span>v{active.design.schema_version ?? '—'}</span>
+                    </div>
+                    <div className="kv"><span>resolved fabric</span>
+                      <Hash value={active.compilation.resolved_fabric_hash} />
+                    </div>
+                    <div className="kv"><span>certificate identity</span>
+                      <Hash value={active.compilation.certificate_id} />
+                    </div>
+                  </section>
+                  <section className="card">
+                    <h3>Derived network semantics</h3>
+                    <div className="kv"><span>routing</span>
+                      <span>{active.design.locked_derived?.routing ?? '—'} · compiler-owned</span>
+                    </div>
+                    <div className="kv"><span>VC count</span>
+                      <span>{active.design.locked_derived?.vc_count ?? '—'} · derived</span>
+                    </div>
+                    <div className="kv"><span>topology family</span>
+                      <span>{String(active.design.noc_guided.topology_family ?? '—')}</span>
+                    </div>
+                    <div className="kv"><span>link width</span>
+                      <span>{String(active.design.noc_guided.link_width ?? '—')} bits</span>
+                    </div>
+                  </section>
+                </div>
+              </>
+            ) : (
+              <p className="muted">No compiled revision yet.</p>
+            )}
+          </div>
+        );
+      }}
+    </AsyncView>
+  );
+}
+
+/** 03 · Verify: the certificate, obligation by obligation. */
+export function Verify({ projectId }: { projectId: string }): ReactElement {
+  const project = useAsync(() => api.project(projectId), [projectId]);
+  return (
+    <AsyncView result={project.result} reload={project.reload}>
+      {(p) => {
+        const { active, refused } = useActiveRefused(p);
+        const obs = active?.compilation.obligations ?? [];
+        return (
+          <div className="page">
+            <WorkflowBar project={p} current="verify" />
+            <div className="page-head">
+              <div>
+                <h2>Verification certificate</h2>
+                <p className="muted">
+                  Prove the fabric before asking it for performance. Every
+                  obligation carries its own method and evidence; a failed
+                  gate closes downstream claims.
+                </p>
+              </div>
+              <div className="head-actions">
+                <Link
+                  className={`btn ${active?.certificate?.overall === 'PASS'
+                    ? 'btn-primary' : ''}`}
+                  to={`/projects/${projectId}/simulate`}
+                >
+                  Evaluate workload
+                </Link>
+              </div>
+            </div>
+            {refused && (
+              <div className="verdict-banner verdict-unsupported" role="alert">
+                <StatusBadge status={refused.compilation_status} />
+                <span className="verdict-text">
+                  <strong>No certificate · attempt {refused.display_name} was
+                  refused.</strong> {refused.error ?? ''}
+                </span>
+              </div>
+            )}
+            {active ? (
+              <>
+                <div className="overview-grid">
+                  <section className="card">
+                    <h3>Certificate</h3>
+                    <p className="next-action-large">
+                      {active.certificate?.overall ?? '—'}
+                    </p>
+                    <div className="kv"><span>identity</span>
+                      <Hash value={active.compilation.certificate_id} />
+                    </div>
+                  </section>
+                  <section className="card">
+                    <h3>Obligations</h3>
+                    <p className="next-action-large">
+                      {obs.filter((o) => o.status === 'PASS').length} / {obs.length}
+                    </p>
+                    <p className="muted">required gates satisfied</p>
+                  </section>
+                  <section className="card">
+                    <h3>Deadlock analysis</h3>
+                    <p className="next-action-large">
+                      {obs.find((o) => o.obligation === 'DEADLOCK_FREE')?.status
+                        ?? '—'}
+                    </p>
+                    <p className="muted">channel-VC dependency graph</p>
+                  </section>
+                </div>
+                <h3>Certificate obligations</h3>
                 <VerifyView compilation={active.compilation} />
               </>
             ) : (
-              <p className="muted">No certified revision yet.</p>
+              <p className="muted">No compiled revision to verify yet.</p>
             )}
           </div>
         );

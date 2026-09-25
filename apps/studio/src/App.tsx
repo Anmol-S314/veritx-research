@@ -4,30 +4,38 @@ import { navigate, parseRoute, usePathname } from './router';
 import {
   Overview, ProjectPicker, RunDetail, Runs, Trust, Workload,
 } from './pages';
-import { CompileVerify, Design, Simulate } from './pages/design';
+import { Compile, Design, Simulate, Verify } from './pages/design';
 import { Compare, Optimize } from './pages/optimize';
 import { Serving } from './pages/serving';
+import { Evidence, ValidationLab } from './pages/evidence';
 import OfflineDemo from './pages/offline';
 import BrandMark from './components/BrandMark';
 
 type Theme = 'dark' | 'light';
 
-const RAIL = [
-  { section: 'overview', no: '01', label: 'Overview' },
-  { section: 'workload', no: '02', label: 'Workload' },
-  { section: 'design', no: '03', label: 'Design' },
-  { section: 'compile', no: '04', label: 'Verify' },
-  { section: 'simulate', no: '05', label: 'Simulate' },
-  { section: 'serving', no: '06', label: 'Serving' },
-  { section: 'decide', no: '07', label: 'Compare' },
-  { section: 'optimize', no: '08', label: 'Optimize' },
+// The handoff IA (00–09). Two groups, matching the prototype: the
+// revision workflow and the record/validation surfaces. Numbers are part
+// of the product language — do not collapse them into generic tabs.
+const RAIL: { section: string; no: string; label: string; group: string
+  tiny?: string }[] = [
+  { section: 'overview', no: '00', label: 'Overview', group: 'workflow' },
+  { section: 'workload', no: '01', label: 'Intent', group: 'workflow', tiny: 'edit' },
+  { section: 'compile', no: '02', label: 'Compile', group: 'workflow' },
+  { section: 'verify', no: '03', label: 'Verify', group: 'workflow' },
+  { section: 'simulate', no: '04', label: 'Evaluate', group: 'workflow' },
+  { section: 'optimize', no: '05', label: 'Optimize', group: 'workflow' },
+  { section: 'serving', no: '06', label: 'Serving', group: 'workflow', tiny: 'LLM' },
+  { section: 'evidence', no: '07', label: 'Evidence', group: 'records' },
+  { section: 'decide', no: '08', label: 'Compare', group: 'records' },
+  { section: 'validation', no: '09', label: 'Validation lab', group: 'records' },
 ] as const;
 
 function Shell(): ReactElement {
   const { mode, projects, activeProjectId, setActiveProjectId } = useStudio();
   const path = usePathname();
   const route = parseRoute(path);
-  const [theme, setTheme] = useState<Theme>('dark');
+  // Light mode is primary per the handoff visual rules; dark supported.
+  const [theme, setTheme] = useState<Theme>('light');
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -71,9 +79,12 @@ function Shell(): ReactElement {
         switch (route.section) {
           case 'workload': return <Workload projectId={pid} />;
           case 'design': return <Design projectId={pid} />;
-          case 'compile': return <CompileVerify projectId={pid} />;
+          case 'compile': return <Compile projectId={pid} />;
+          case 'verify': return <Verify projectId={pid} />;
           case 'simulate': return <Simulate projectId={pid} />;
           case 'serving': return <Serving projectId={pid} />;
+          case 'evidence': return <Evidence projectId={pid} />;
+          case 'validation': return <ValidationLab projectId={pid} />;
           case 'decide': return <Compare projectId={pid} />;
           case 'optimize': return <Optimize projectId={pid} />;
           default: return <Overview projectId={pid} />;
@@ -91,6 +102,8 @@ function Shell(): ReactElement {
     if (route.section === section) return true;
     return section === 'decide' && route.section === 'optimize';
   };
+
+  let lastGroup = '';
 
   return (
     <div className="app-shell">
@@ -158,8 +171,16 @@ function Shell(): ReactElement {
 
       <aside className="sidebar">
         <nav className="rail" aria-label="Primary navigation">
-          {RAIL.map((item) =>
-            pid ? (
+          {RAIL.map((item) => {
+            const groupHeader = item.group !== lastGroup
+              ? (
+                <div className="rail-group" key={`g-${item.group}`}>
+                  {item.group === 'workflow' ? 'Workflow' : 'Records & validation'}
+                </div>
+              )
+              : null;
+            lastGroup = item.group;
+            const itemEl = pid ? (
               <Link
                 key={item.section}
                 className={`rail-item${isRailActive(item.section) ? ' active' : ''}`}
@@ -168,6 +189,7 @@ function Shell(): ReactElement {
               >
                 <span>{item.no}</span>
                 <b>{item.label}</b>
+                {item.tiny && <em>{item.tiny}</em>}
               </Link>
             ) : (
               <span
@@ -177,9 +199,13 @@ function Shell(): ReactElement {
               >
                 <span>{item.no}</span>
                 <b>{item.label}</b>
+                {item.tiny && <em>{item.tiny}</em>}
               </span>
-            ),
-          )}
+            );
+            return groupHeader
+              ? [groupHeader, itemEl]
+              : itemEl;
+          })}
         </nav>
         <div className="rail-bottom">
           <Link

@@ -196,7 +196,8 @@ export function Overview({ projectId }: { projectId: string }): ReactElement {
   return (
     <AsyncView result={project.result} reload={project.reload}>
       {(p) => {
-        const active = p.revisions.find(
+        const active = p.active_revision;
+        const activeSummary = p.revisions.find(
           (r) => r.revision_id === p.active_revision_id,
         );
         // Latest run scoped to the active revision: the gateway carries
@@ -210,17 +211,58 @@ export function Overview({ projectId }: { projectId: string }): ReactElement {
           && attempt.revision_id !== p.active_revision_id
           && attempt.compilation_status !== 'COMPILED'
           ? attempt : null;
+        const agents = active?.design.agents ?? [];
+        const compute = agents.find((a) => a.kind === 'compute_tile')?.count;
+        const hbm = agents.find((a) => a.kind === 'hbm_controller')?.count;
         return (
           <div className="page">
             <WorkflowBar project={p} current="overview" />
             <div className="overview-grid">
               <section className="card">
+                <h3>Current revision</h3>
+                {active ? (
+                  <>
+                    <div className="kv"><span>compilation</span><StatusBadge status={active.compilation.status} /></div>
+                    <div className="kv"><span>certificate</span>
+                      <span>{active.certificate?.overall ?? '—'} · {activeSummary?.display_name}</span>
+                    </div>
+                    <div className="kv"><span>model</span>
+                      <span>{active.design.workload.model_name ?? active.design.workload.model_family}</span>
+                    </div>
+                    <div className="kv"><span>TP / PP / EP / DP</span>
+                      <span>
+                        {active.design.workload.parallelism.tp} / {' '}
+                        {active.design.workload.parallelism.pp} / {' '}
+                        {active.design.workload.parallelism.ep} / {' '}
+                        {active.design.workload.parallelism.dp}
+                      </span>
+                    </div>
+                    <div className="kv"><span>agents</span>
+                      <span>
+                        {compute != null || hbm != null
+                          ? `${compute ?? 0} compute${hbm ? ` + ${hbm} HBM` : ''}`
+                          : agents.map((a) => `${a.count}× ${a.kind}`).join(', ') || '—'}
+                      </span>
+                    </div>
+                    <div className="kv"><span>routing / VC</span>
+                      <span>
+                        {active.design.locked_derived?.routing ?? '—'} · {' '}
+                        {active.design.locked_derived?.vc_count ?? '—'} VC
+                      </span>
+                    </div>
+                    <div className="kv"><span>design identity</span><Hash value={active.design_hash} /></div>
+                  </>
+                ) : (
+                  <p className="muted">No certified revision yet.</p>
+                )}
+              </section>
+              <section className="card">
                 <h3>Current certified fabric</h3>
                 {active ? (
                   <>
                     <div className="kv"><span>revision</span><span>{active.display_name}</span></div>
-                    <div className="kv"><span>compilation</span><StatusBadge status={active.compilation_status} /></div>
-                    <div className="kv"><span>certificate</span><span>{active.certificate_overall ?? '—'}</span></div>
+                    <div className="kv"><span>compilation</span><StatusBadge status={active.compilation.status} /></div>
+                    <div className="kv"><span>certificate</span><span>{active.certificate?.overall ?? '—'}</span></div>
                     <div className="kv"><span>design identity</span><Hash value={active.design_hash} /></div>
                   </>
                 ) : (
@@ -277,6 +319,52 @@ export function Overview({ projectId }: { projectId: string }): ReactElement {
                 </Link>
               </section>
             )}
+            <div className="job-cards">
+              <section className="card">
+                <p className="kicker">PRODUCT EVALUATION</p>
+                <h3>Can this design satisfy the workload?</h3>
+                <p className="muted">
+                  Compile the fabric, prove its obligations, execute supported
+                  communication and evaluate explicit product requirements.
+                </p>
+                <Link className="btn" to={`/projects/${projectId}/workload`}>
+                  Open intent
+                </Link>
+              </section>
+              <section className="card">
+                <p className="kicker">DESIGN SPACE</p>
+                <h3>Which legal designs are worth considering?</h3>
+                <p className="muted">
+                  Search guided knobs through the certified path while keeping
+                  requirements, constraints and measured objectives separate.
+                </p>
+                <Link className="btn" to={`/projects/${projectId}/optimize`}>
+                  Explore candidates
+                </Link>
+              </section>
+              <section className="card">
+                <p className="kicker">LLM SERVING</p>
+                <h3>How does request-driven serving stress the fabric?</h3>
+                <p className="muted">
+                  Run the canonical serving path through ASTRA-Sim and
+                  canonical BookSim, including multi-instance and EP/MoE flows.
+                </p>
+                <Link className="btn" to={`/projects/${projectId}/serving`}>
+                  Open serving
+                </Link>
+              </section>
+              <section className="card">
+                <p className="kicker">AUDIT &amp; REPRODUCE</p>
+                <h3>Where did this number come from?</h3>
+                <p className="muted">
+                  Trace design, compiler artifacts, producer identity, backend
+                  inputs, evidence digests, metrics and requirement reports.
+                </p>
+                <Link className="btn" to={`/projects/${projectId}/evidence`}>
+                  Inspect evidence
+                </Link>
+              </section>
+            </div>
             {p.optimizations.length > 0 && (              <section className="card">
                 <h3>Optimization studies</h3>
                 <ul>
