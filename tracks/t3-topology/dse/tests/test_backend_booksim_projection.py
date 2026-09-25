@@ -483,14 +483,17 @@ def test_traffic_is_a_derived_workload_binding_not_a_profile_constant():
     assert "traffic" not in bp.MESH_DOR_PROFILE.pinned_values()
 
 
-def test_convergence_controls_cover_the_final_trace_timestamp():
+def test_convergence_controls_cover_the_injection_horizon():
     _, parents = _parents()
     schedule = bp.trace_schedule(parents.physical_traffic)
     assert schedule["expected_packets"] > 0
-    assert schedule["sample_period"] == max(
-        200, schedule["max_timestamp"] + 1 + 1000)
-    assert schedule["sample_period"] * schedule["max_samples"] \
-        >= schedule["max_timestamp"] + 1
+    # F-0007: the window is the per-source injection horizon plus the drain
+    # margin, and it always covers the last scheduled timestamp too.
+    horizon = bp.trace_injection_horizon(parents.physical_traffic)
+    assert schedule["injection_horizon"] == horizon
+    assert horizon >= schedule["max_timestamp"] + 1
+    assert schedule["sample_period"] == max(200, horizon + 1000)
+    assert schedule["sample_period"] * schedule["max_samples"] >= horizon
     prepared = bp.prepare_booksim_input(parents)
     values = bp.parse_config_values(prepared.config_text)
     assert int(values["sample_period"]) == schedule["sample_period"]
@@ -499,6 +502,38 @@ def test_convergence_controls_cover_the_final_trace_timestamp():
     doc = prepared.identity_dict()
     assert doc["trace_schedule_version"] == bp.TRACE_SCHEDULE_VERSION
     assert doc["expected_packets"] == schedule["expected_packets"]
+
+
+def test_concentrated_multi_flit_source_widens_the_window():
+    """F-0007: a single source emitting back-to-back multi-flit packets
+    needs more injection cycles than the packet count, and the window must
+    grow to the flit-serialized horizon (BROADCAST-style fanout)."""
+    from veritx_dse.workload.graph import (
+        KIND_COLLECTIVE, OperationNode, WorkloadGraph, collective_detail,
+    )
+    from veritx_dse.workload.messages import LogicalMessageArtifactV2
+    from veritx_dse.workload.traffic import PhysicalTrafficArtifactV2
+    compiled = _parents()[0]
+    graph = WorkloadGraph(
+        parallelism=compiled.inventory.parallelism, participant_count=16,
+        operations=(OperationNode(
+            operation_id="bc", kind=KIND_COLLECTIVE,
+            detail=collective_detail(
+                collective_kind="BROADCAST", participants=tuple(range(16)),
+                payload_bytes=1024, participant_count=16, source=7)),))
+    logical = LogicalMessageArtifactV2(graph=graph)
+    traffic = PhysicalTrafficArtifactV2(
+        logical=logical, resolved_fabric=compiled.resolved_fabric,
+        mapping=compiled.mapping, attachment=compiled.attachment,
+        inventory=compiled.inventory, packet_format=compiled.packet_format)
+    schedule = bp.trace_schedule(traffic)
+    # every packet leaves from source 7; the flit-sum horizon strictly
+    # exceeds the last timestamp when packets carry more than one flit.
+    assert schedule["injection_horizon"] > schedule["max_timestamp"] + 1
+    assert schedule["sample_period"] == max(
+        200, schedule["injection_horizon"] + 1000)
+    assert schedule["sample_period"] * schedule["max_samples"] \
+        >= schedule["injection_horizon"]
 
 
 def test_a_late_event_still_fits_the_declared_schedule():

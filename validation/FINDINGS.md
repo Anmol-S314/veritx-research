@@ -378,7 +378,8 @@ oracle bytes        15360  (= (k-1)B)
 ### Post-fix corpus
 
 V11 (ALLGATHER k=16) PASS, V12 (REDUCESCATTER) PASS, V14 (ALLGATHER k=2)
-PASS.
+PASS. V13 (BROADCAST) exposed the separate window defect F-0007; after that
+fix V13 PASS (completion 2939 == authority 2939).
 
 ### Still open (surfaced by the same PW2 probe)
 
@@ -387,3 +388,85 @@ V13 (BROADCAST from a non-zero root) fails the packet-conservation gate:
 declared packets do not all arrive; whether the cause is the BROADCAST
 lowering, the trace injection, or an unsupported domain is under
 investigation (separate finding to follow).
+
+---
+
+## F-0007 — the convergence window truncated concentrated multi-flit traces
+
+**Status:** FIXED (canonical schedule + authority parity config)
+**Severity:** high — a supported collective (BROADCAST / any fan-in
+concentrated source) was silently truncated; the conservation gate refused
+it, so no false PASS escaped, but the corpus had no passing broadcast case
+and the window was not a function of physics
+**Found:** 2026-09-25, resolving the V13 broadcast failures left by F-0006
+
+### What was wrong
+
+`backend/booksim_projection.py::trace_schedule` sized the BookSim
+convergence window from the *packet count*:
+
+```text
+sample_period = max(200, max_timestamp + 1 + 1000)   # max_timestamp = N-1
+```
+
+But a source port injects at most one **flit** per cycle, and a trace
+packet carries several flits (`sz` in the trace dialect). Emission order
+assigns one packet per cycle regardless of size, so a single source
+emitting `P` back-to-back multi-flit packets needs `sum(flits)` cycles to
+inject, not `P`. For V13 (BROADCAST from root 7, k=16, B=1024) every one of
+the 300 packets leaves source 7: the flit-serialized horizon is 2395 cycles
+while the window was 1300. BookSim stopped counting deliveries at the
+window: `delivered 132 != declared 300`, `injected flits 1038` of `2325`.
+
+The conservation gate correctly refused, so this was a fail-closed
+truncation, not a false PASS. Two secondary defects were found alongside:
+
+- the *authority* config (`validation/harness/authority.py`) did not pin
+  `latency_thres`, so the reference BookSim used the compiled default
+  `500.0` and could abort long-latency drains, breaking parity;
+- the canonical profile already pinned `latency_thres = 1e15`, so only the
+  authority needed the pin.
+
+### Reproduction
+
+```text
+V13-broadcast-4x4, canonical config, sample_period=1300:
+  Loaded text trace: 300 packets
+  Trace replay complete: delivered 132 packets, drain took 1640 cycles
+  VeritX: injected flits total = 1038, accepted flits total = 1026
+same config, sample_period=3600:
+  Trace replay complete: delivered 300 packets
+  VeritX: injected flits total = 2325, accepted flits total = 2325
+  Completion time is 2939 cycles
+```
+
+### Fix
+
+- `trace_schedule` now derives the window from
+  `trace_injection_horizon` — the cycle the last flit enters the network,
+  computed by serializing each source's packets at one flit/cycle:
+  `sample_period = max(200, horizon + 1000)`. `render_trace`,
+  `verify_trace_conservation` and the horizon share one packet iterator.
+- `TRACE_SCHEDULE_VERSION` v1→v2 and `BOOKSIM_PROJECTION_SCHEMA_VERSION`
+  v4→v5 (the schedule is identity-bearing and the window changed).
+- `validation/harness/authority.py` pins `latency_thres = 1e15` to match
+  the canonical profile.
+- regression: `test_convergence_controls_cover_the_injection_horizon`,
+  `test_concentrated_multi_flit_source_widens_the_window`; harness V13.
+
+### Why it is not a false PASS
+
+For every non-concentrated trace the horizon is only a few cycles beyond
+the old `max_timestamp + 1`, so the window grows monotonically and existing
+completions are invariant (a larger cap cannot change a completion that
+already fit). For concentrated traces the gate now passes only because all
+declared packets are delivered and `injected == accepted == declared`
+flits/ packets, which is exactly the conservation law. A window that is
+still too small continues to refuse (fail-closed).
+
+### Scope
+
+The horizon models one flit/cycle per source port (BookSim trace default).
+A workload needing a larger drain than the fixed 1000-cycle margin will
+still be refused by conservation; the margin is a documented heuristic, not
+a physical bound (`SUPPORTED-LIMITS.md`).

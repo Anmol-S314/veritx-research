@@ -47,7 +47,7 @@ import math
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from veritx_dse.backend.source_audit import audit_profile_reads
 from veritx_dse.core.artifact import content_hash
@@ -65,7 +65,13 @@ from veritx_dse.workload.traffic import PhysicalTrafficArtifactV2
 #: (``expected_route_rows``) and renders the route-dump path, so execution
 #: can prove the EXECUTED route realization rather than only qualify it
 #: statically (P0.10).
-BOOKSIM_PROJECTION_SCHEMA_VERSION = 4
+#: v5: the convergence window is derived from the per-source trace
+#: injection horizon (flit-serialized at one flit/cycle per source port),
+#: not from the packet count. A concentrated source (e.g. a broadcast
+#: root fanning out multi-flit packets) needs far more than one injection
+#: cycle per packet; the old window truncated such runs and the
+#: conservation gate (correctly) refused them.
+BOOKSIM_PROJECTION_SCHEMA_VERSION = 5
 
 _MESH_DOR_PROFILE_ID = "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1"
 _MESH_DOR_SEMANTICS_VERSION = "booksim2-fork+P1B-meshdor-dump+prepared-v2"
@@ -76,7 +82,9 @@ _ANYNET_PROFILE_ID = "CERTIFIED_BOOKSIM_ANYNET_V1"
 _ANYNET_SEMANTICS_VERSION = "booksim2-fork+B3.7b-anynet-dump+prepared-v2"
 
 #: trace scheduling semantics (bound into the prepared identity)
-TRACE_SCHEDULE_VERSION = "srota/booksim-trace-schedule/v1"
+#: v2: the convergence window is the per-source injection horizon (the
+#: cycle the last flit enters the network), not the last timestamp.
+TRACE_SCHEDULE_VERSION = "srota/booksim-trace-schedule/v2"
 #: historical certified convergence constants
 _SAMPLE_PERIOD_MIN = 200
 _SAMPLE_PERIOD_MARGIN = 1000
@@ -201,7 +209,7 @@ CONFIG_KEY_ORDER = (
     "traffic", "sample_period", "max_samples", "injection_rate",
     "injection_rate_uses_flits", "injection_process", "sim_type",
     "sim_count", "warmup_periods", "measure_stats", "print_activity",
-    "viewer_trace", "sim_power", "seed",
+    "viewer_trace", "sim_power", "seed", "latency_thres",
 )
 
 _AUDIT: tuple[ConfigRead, ...] = (
@@ -252,6 +260,13 @@ _AUDIT: tuple[ConfigRead, ...] = (
     ConfigRead("viewer_trace", _A.BACKEND_PROFILE, "main.cpp", 0),
     ConfigRead("sim_power", _A.BACKEND_PROFILE, "main.cpp", 0),
     ConfigRead("seed", _A.DERIVED, "main.cpp", note="explicit run seed"),
+    ConfigRead("latency_thres", _A.BACKEND_PROFILE, "trafficmanager.cpp",
+               1000000000000000.0,
+               note="effectively disabled so trace drains never abort: the "
+                    "traffic manager aborts the whole simulation once the "
+                    "running latency average crosses this threshold "
+                    "(compiled default 500), which silently truncates the "
+                    "drain and drops packets from conservation"),
 )
 
 ANYNET_PROFILE = BookSimProfile(
@@ -516,6 +531,18 @@ def render_anynet_topology(parents: BookSimProjectionParents) -> bytes:
     return ("\n".join(lines) + "\n").encode()
 
 
+def _iter_physical_packets(physical_traffic: PhysicalTrafficArtifactV2
+                           ) -> Iterator[Any]:
+    """Physical packets in the exact emission order ``render_trace`` uses.
+
+    One authority for the trace order: the renderer, the conservation
+    proof and the convergence schedule all iterate this sequence.
+    """
+    for message in physical_traffic.traffic:
+        for packet in message.packets:
+            yield packet
+
+
 def render_trace(physical_traffic: PhysicalTrafficArtifactV2) -> bytes:
     """Render canonical physical traffic as the BookSim whitespace trace.
 
@@ -524,13 +551,27 @@ def render_trace(physical_traffic: PhysicalTrafficArtifactV2) -> bytes:
     Deterministic: (message order, packet index) only.
     """
     lines: list[str] = []
-    timestamp = 0
-    for message in physical_traffic.traffic:
-        for packet in message.packets:
-            lines.append(f"{timestamp} {packet.src_endpoint} 0 "
-                         f"{packet.dst_endpoint} {packet.flit_count}")
-            timestamp += 1
+    for timestamp, packet in enumerate(_iter_physical_packets(physical_traffic)):
+        lines.append(f"{timestamp} {packet.src_endpoint} 0 "
+                     f"{packet.dst_endpoint} {packet.flit_count}")
     return ("\n".join(lines) + "\n").encode()
+
+
+def trace_injection_horizon(physical_traffic: PhysicalTrafficArtifactV2) -> int:
+    """Cycles to serialize the trace through the per-source ports.
+
+    A source port injects at most one flit per cycle (BookSim's default
+    injection bandwidth), so a packet scheduled at cycle ``t`` with ``f``
+    flits cannot begin before the source has finished its earlier packets.
+    Returns the cycle the last flit enters the network, i.e. an exclusive
+    finish time ``>= max_timestamp + 1``.
+    """
+    free_at: dict[int, int] = {}
+    for timestamp, packet in enumerate(_iter_physical_packets(physical_traffic)):
+        src = packet.src_endpoint
+        start = max(timestamp, free_at.get(src, 0))
+        free_at[src] = start + packet.flit_count
+    return max(free_at.values(), default=0)
 
 
 def verify_trace_conservation(physical_traffic: PhysicalTrafficArtifactV2
@@ -627,18 +668,26 @@ def trace_schedule(physical_traffic: PhysicalTrafficArtifactV2
     application wall-clock scheduling: BookSim completion time measured
     under this schedule is the completion time of the canonical network
     traffic projection, and must never be reported as end-to-end workload
-    runtime.
+    runtime. The convergence window is the per-source injection horizon
+    plus a fixed drain margin (F-0007).
     """
     expected_packets = sum(len(m.packets) for m in physical_traffic.traffic)
     if expected_packets <= 0:
         raise BookSimProjectionError(
             "a trace-driven execution requires a non-empty trace")
     max_timestamp = expected_packets - 1
-    sample_period = max(_SAMPLE_PERIOD_MIN,
-                        max_timestamp + 1 + _SAMPLE_PERIOD_MARGIN)
-    max_samples = max(1, -(-(max_timestamp + 1) // sample_period))
+    # The window must cover the per-source injection horizon, not merely the
+    # last scheduled timestamp: a single source emitting back-to-back
+    # multi-flit packets needs `sum(flits)` cycles to inject them, and a
+    # window that stops earlier truncates the run (the conservation gate
+    # then refuses it — F-0007).
+    horizon = trace_injection_horizon(physical_traffic)
+    needed = horizon + _SAMPLE_PERIOD_MARGIN
+    sample_period = max(_SAMPLE_PERIOD_MIN, needed)
+    max_samples = max(1, -(-needed // sample_period))
     return {"expected_packets": expected_packets,
             "max_timestamp": max_timestamp,
+            "injection_horizon": horizon,
             "sample_period": sample_period,
             "max_samples": max_samples}
 
@@ -995,5 +1044,6 @@ __all__ = [
     "prepare_booksim_input", "qualify_anynet_min_hops",
     "qualify_native_mesh_dor", "render_anynet_topology", "render_config",
     "render_trace", "select_booksim_profile", "source_audit_report",
-    "trace_schedule", "vc_exactness", "verify_trace_conservation",
+    "trace_injection_horizon", "trace_schedule", "vc_exactness",
+    "verify_trace_conservation",
 ]
