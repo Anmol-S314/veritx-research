@@ -301,3 +301,17 @@ def test_messages_module_has_no_reference_oracle():
     assert "oracle" not in source.lower()
     for forbidden in ("verification", "backend", "booksim", "simulation"):
         assert forbidden not in source
+
+
+def test_collective_vocabulary_has_exactly_one_authority():
+    """C2.2: the collective-kind vocabulary and the pinned algorithm map
+    must come from ``workload.collectives`` by identity, never from a
+    second definition that could drift (the F-0004/F-0006 pattern)."""
+    from veritx_dse.workload import (
+        collectives, graph, messages, migration, operations,
+    )
+    assert graph.COLLECTIVE_KINDS is collectives.COLLECTIVE_KINDS
+    assert operations.COLLECTIVE_KINDS is collectives.COLLECTIVE_KINDS
+    assert messages.SCHEDULES is collectives.SCHEDULES
+    assert operations.SCHEDULES is collectives.SCHEDULES
+    assert migration._WAVED_COLLECTIVE_KINDS is collectives.COLLECTIVE_KINDS

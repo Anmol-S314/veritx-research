@@ -46,6 +46,8 @@ from veritx_dse.core.errors import (
 )
 from veritx_dse.model.placement import ParallelismShape
 
+from . import collectives
+
 
 def _parallelism_from_dict(value: Any) -> ParallelismShape:
     """Strict parse of the canonical geometry document.
@@ -88,9 +90,10 @@ KIND_PIM_END = "PIM_END"
 ALL_KINDS = (KIND_COMPUTE, KIND_COLLECTIVE, KIND_P2P, KIND_MULTICAST,
              KIND_EXPERT_BEGIN, KIND_EXPERT_END, KIND_PIM_CHANNEL, KIND_PIM_END)
 
-# collective kinds a COLLECTIVE / EXPERT payload may name
-COLLECTIVE_KINDS = ("ALLREDUCE", "REDUCESCATTER", "ALLGATHER", "ALLTOALL",
-                    "BROADCAST")
+# collective kinds a COLLECTIVE / EXPERT payload may name.
+# The vocabulary is owned by ``workload.collectives`` (C2.2); importing it
+# (rather than redefining) makes drift between layers impossible.
+COLLECTIVE_KINDS = collectives.COLLECTIVE_KINDS
 # p2p roles: a Wave-D P2P is a complete transfer; legacy SEND/RECV rows are
 # not paired here, ever
 P2P_ROLES = ("TRANSFER", "SEND", "RECV")

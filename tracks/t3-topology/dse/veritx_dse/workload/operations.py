@@ -26,6 +26,7 @@ from veritx_dse.core.errors import (
 from veritx_dse.core.artifact import content_hash
 from veritx_dse.core.artifact import FrozenMap, ImmutableError, freeze, thaw
 from veritx_dse.model.parallelism import ParallelismArtifact
+from . import collectives
 from .semantics import WaveDWorkloadSemantics
 from veritx_dse.core.artifact import (
     require_embedded_id, require_fields, require_schema_version, require_type_tag,
@@ -49,16 +50,11 @@ OPERATION_KINDS = (
     KIND_MULTICAST, KIND_EXPERT_DISPATCH, KIND_EXPERT_COMBINE,
 )
 
-# Collective kinds with a pinned v1 schedule (§21).
-COLLECTIVE_KINDS = ("ALLREDUCE", "REDUCESCATTER", "ALLGATHER", "ALLTOALL",
-                    "BROADCAST")
-SCHEDULES = {
-    "ALLREDUCE": "RING",
-    "REDUCESCATTER": "RING",
-    "ALLGATHER": "RING",
-    "ALLTOALL": "DIRECT",
-    "BROADCAST": "ROOT_FANOUT",
-}
+# Collective kinds and their pinned schedules are owned by
+# ``workload.collectives`` (C2.2); re-exported here for the historical
+# import surface without redefining them.
+COLLECTIVE_KINDS = collectives.COLLECTIVE_KINDS
+SCHEDULES = collectives.SCHEDULES
 REPLICATION_SOURCE = "SOURCE_REPLICATION"
 
 

@@ -200,8 +200,10 @@ def phase9_to_canonical_identity(doc: dict) -> str:
 
 
 # ── Wave-D migration ────────────────────────────────────────────────────
-_WAVED_COLLECTIVE_KINDS = ("ALLREDUCE", "REDUCESCATTER", "ALLGATHER",
-                           "ALLTOALL", "BROADCAST")
+# The collective vocabulary is owned by ``workload.collectives`` (C2.2).
+from veritx_dse.workload.collectives import (  # noqa: E402
+    COLLECTIVE_KINDS as _WAVED_COLLECTIVE_KINDS,
+)
 
 
 def migrate_waved_workload(art: Any, *, validate: bool = True

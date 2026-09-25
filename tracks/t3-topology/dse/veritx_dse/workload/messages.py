@@ -39,7 +39,7 @@ from veritx_dse.core.artifact import (
 from veritx_dse.core.errors import (
     ConservationFailed, UnsupportedSemantics,
 )
-from veritx_dse.workload.collectives import collective_schedule
+from veritx_dse.workload.collectives import SCHEDULES, collective_schedule
 from veritx_dse.workload.graph import (
     KIND_COLLECTIVE, KIND_COMPUTE, KIND_EXPERT_BEGIN, KIND_EXPERT_END,
     KIND_MULTICAST, KIND_P2P, KIND_PIM_CHANNEL, KIND_PIM_END, WorkloadGraph,
@@ -51,13 +51,8 @@ _V2_HASH_TYPE_TAG = "srota/LogicalMessageArtifactV2"
 DEFAULT_TRAFFIC_CLASS = "DEFAULT"
 
 #: the pinned algorithm label per collective kind (identity-bearing)
-SCHEDULES = {
-    "ALLREDUCE": "RING",
-    "REDUCESCATTER": "RING",
-    "ALLGATHER": "RING",
-    "ALLTOALL": "DIRECT",
-    "BROADCAST": "ROOT_FANOUT",
-}
+# Collective algorithms are owned by ``workload.collectives`` (C2.2) and
+# imported above; the historical ``messages.SCHEDULES`` name still resolves.
 #: the pinned multicast replication schedule
 REPLICATION_SOURCE = "SOURCE_REPLICATION"
 

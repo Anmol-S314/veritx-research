@@ -19,6 +19,22 @@ from veritx_dse.core.errors import UnsupportedSchedule
 
 PADDED_HEADER_BYTES = 0  # reserved: payload accounting lives in the spec
 
+#: THE single production authority for the collective-kind vocabulary and
+#: the pinned algorithm per kind (C2.2). ``graph``, ``operations``,
+#: ``messages`` and ``migration`` import these; they must never redefine
+#: them, so two layers cannot drift into accepting or scheduling different
+#: collectives (the F-0004/F-0006 failure mode). The verification reference
+#: keeps its own independent equations on purpose.
+COLLECTIVE_KINDS = ("ALLREDUCE", "REDUCESCATTER", "ALLGATHER", "ALLTOALL",
+                    "BROADCAST")
+SCHEDULES = {
+    "ALLREDUCE": "RING",
+    "REDUCESCATTER": "RING",
+    "ALLGATHER": "RING",
+    "ALLTOALL": "DIRECT",
+    "BROADCAST": "ROOT_FANOUT",
+}
+
 
 def collective_schedule(kind: str, k: int, B: int) -> dict[str, int]:
     """The §10.1 exact schedule table as pure arithmetic.
@@ -72,4 +88,4 @@ def collective_schedule(kind: str, k: int, B: int) -> dict[str, int]:
     raise ValueError(f"unsupported collective kind {kind!r}")
 
 
-__all__ = ["collective_schedule"]
+__all__ = ["COLLECTIVE_KINDS", "SCHEDULES", "collective_schedule"]
