@@ -65,6 +65,59 @@ export interface DesignView {
   locked_derived?: LockedDerived | null;
 }
 
+// ── TopologyView (contracts/srota/v1) ──────────────────────────────────────
+// The materialized fabric graph a revision was certified against:
+// routers with seats, directed channels, agent endpoints. The
+// topology_family string in DesignView is intent metadata; this view is
+// the artifact the certificate proved and the only graph we draw.
+
+export interface TopologyRouter {
+  router_id: number;
+  coordinates: number[];
+  seat_capacity: number;
+}
+
+export interface TopologyChannel {
+  channel_id: number;
+  src_router: number;
+  src_port: number;
+  dst_router: number;
+  dst_port: number;
+  width_bits: number;
+  latency_cycles: number;
+  route_weight?: number;
+  physical_link_id?: number | null;
+}
+
+export interface TopologyPhysicalLink {
+  physical_link_id: number;
+  channel_ids: number[];
+  length_mm?: number | null;
+}
+
+export interface TopologyEndpoint {
+  endpoint_id: number;
+  kind: string;
+  group_index: number;
+  instance_index: number;
+  router_id: number;
+  port_id: number;
+}
+
+export interface TopologyView {
+  contract_version: 1;
+  revision_id: string | null;
+  design_hash: string;
+  topology_hash: string;
+  attachment_hash: string;
+  family: 'mesh' | 'torus' | 'ring' | 'concentrated_mesh';
+  routers: TopologyRouter[];
+  channels: TopologyChannel[];
+  physical_links: TopologyPhysicalLink[];
+  endpoints: TopologyEndpoint[];
+  counts: { routers: number; channels: number; seats: number; endpoints: number };
+}
+
 export type ObligationStatus = 'PASS' | 'FAIL';
 
 export interface Obligation {

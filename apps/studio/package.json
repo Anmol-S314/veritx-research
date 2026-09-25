@@ -12,12 +12,15 @@
     "gen-fixtures": "cd ../../tracks/t3-topology/dse && python3 -m veritx_dse.tools.generate_studio_fixtures"
   },
   "dependencies": {
+    "animejs": "^4.5.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "three": "^0.170.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/three": "^0.170.0",
     "@vitejs/plugin-react": "^4.3.4",
     "typescript": "~5.7.2",
     "vite": "^6.0.7"

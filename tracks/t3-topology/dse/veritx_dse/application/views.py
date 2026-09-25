@@ -64,6 +64,56 @@ def compilation_view(compilation: Any) -> dict[str, Any]:
     return view
 
 
+def topology_view(compilation: Any,
+                  *, revision_id: str | None = None) -> dict[str, Any] | None:
+    """Project a Compilation to TopologyView — the materialized fabric graph.
+
+    This is the ONLY shape Studio may draw. A topology family name in
+    DesignView is intent metadata; the routers, channels and agent
+    attachments below are the certified artifact the certificate proved.
+
+    Returns None for a non-COMPILED compilation (a failed proof is not a
+    fabric — no empty graph is ever invented in its place).
+    """
+    from veritx_dse.application.fabric_compiler import Compilation
+    if not isinstance(compilation, Compilation):
+        raise TypeError(
+            f"topology_view takes a Compilation, got "
+            f"{type(compilation).__name__}")
+    if compilation.status != "COMPILED":
+        return None
+    bundle = compilation.bundle
+    topology, attachment = bundle.topology, bundle.attachment
+    return {
+        "contract_version": 1,
+        "revision_id": revision_id,
+        "design_hash": _h(compilation.request.design_hash()),
+        "topology_hash": _h(topology.topology_hash()),
+        "attachment_hash": _h(attachment.attachment_hash()),
+        "family": _agent_kind(topology.family),
+        "routers": [r.to_dict() for r in topology.routers],
+        "channels": [c.to_dict() for c in topology.channels],
+        "physical_links": [p.to_dict() for p in topology.physical_links],
+        "endpoints": [
+            {
+                "endpoint_id": e.endpoint_id,
+                "kind": _agent_kind(e.agent.kind),
+                "group_index": e.agent.group_index,
+                "instance_index": e.agent.instance_index,
+                "router_id": e.router_id,
+                "port_id": e.port_id,
+            }
+            for e in attachment.endpoints
+        ],
+        "counts": {
+            "routers": topology.router_count,
+            "channels": topology.channel_count,
+            "seats": topology.seat_capacity,
+            "endpoints": attachment.endpoint_count,
+        },
+    }
+
+
 def _agent_kind(value: Any) -> str:
     return getattr(value, "value", value)
 

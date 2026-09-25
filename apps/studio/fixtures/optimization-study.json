@@ -1,20 +1,20 @@
 {
   "compilation": {
     "artifact_hashes": {
-      "address_decode_hash": "585527fdc7918096d21f7da78634a41fa0b38dc5a3a4633249cf9f4affee9297",
+      "address_decode_hash": "69ea754f83871b04abdbf1e9ba950d7e528dbf50bca8c9b2c075b114dbb28959",
       "attachment_hash": "392d77ccb875491020bd10c7f12ea0624782d2eabdb7276ff6bad7b7ea56851d",
       "design_hash": "4d858f032c55cbd31013f32e017138b64923a3879f83d325cd65a8f998212634",
-      "fabric_hash": "a47a6a8503044f4664b395fe3d74d4c13c4e3015b98f8c289efa5e8ceba18312",
+      "fabric_hash": "7f98edb9ee6c19d6cfa42be106b83c6c4ff444c24158402471949ed52acd8682",
       "mapping_hash": "ae85233fa2611ce1ac6c251bcb4120cc4a482207da36972639ffe6dd598a3789",
-      "packet_format_hash": "89217e537b44bf8fb5969ead63ab6281b5bcefca964aafa39620d1821b9c7524",
-      "resolved_fabric_hash": "9277e2af0154cb887d64ff9ccfe34b21ec5acc5c51235a12c4903b43cf0b2906",
+      "packet_format_hash": "fd84075f586b0d8a67e9f8470ce7809796167b57b46a67023e89c98ca42e4456",
+      "resolved_fabric_hash": "d86feeedfe0c9c0df10ba98ce9815dfc34d4ed4e1f44b73314425d919fb9d14a",
       "resolved_route_hash": "f8cdbac5ca3f21fc4ac43ef519566d1a9227791d0a57cb7a365d90a01cc6b949",
-      "router_behavior_hash": "e57b92401216d9eae557c55150b4aa36689fad9dd95fd92b317df163f4467dc4",
+      "router_behavior_hash": "95d405334b3349b70b652b8d6730e86a8e7d158724fcd25a4a702447e3368966",
       "router_route_hash": "sha256:35b46b09bc2106e9badbbe316675671d19c266e9f8b61b5415638f14f05adb98",
       "topology_hash": "efef602b155a1a3ed5ee20579e5daf5feb817fec1f04df2a2e18110ac5b2d8e1",
       "vc_assignment_hash": "eab1c3d50938a99f3472fe713b125b656459eeca3dc57c028153c18f7a96fc6d"
     },
-    "certificate_id": "sha256:c5005de110cf18bb4d732f2b646f2d91fafae1522636dda8d01960069a1bfc1b",
+    "certificate_id": "sha256:7900aad515aa2b923cbe5cbf11541a62df5796eceb90ffc3563918209d1c8b02",
     "certificate_overall": "PASS",
     "compiler_semantics_version": 3,
     "contract_version": 1,
@@ -96,7 +96,7 @@
           "node_count": 8,
           "resolved_route_hash": "f8cdbac5ca3f21fc4ac43ef519566d1a9227791d0a57cb7a365d90a01cc6b949",
           "route_realization": "v2_channel_id",
-          "router_behavior_hash": "e57b92401216d9eae557c55150b4aa36689fad9dd95fd92b317df163f4467dc4",
+          "router_behavior_hash": "95d405334b3349b70b652b8d6730e86a8e7d158724fcd25a4a702447e3368966",
           "router_route_hash": "sha256:35b46b09bc2106e9badbbe316675671d19c266e9f8b61b5415638f14f05adb98",
           "routing_classes": [
             "DOR_XY"
@@ -129,15 +129,15 @@
       },
       {
         "evidence": {
-          "address_decode_hash": "585527fdc7918096d21f7da78634a41fa0b38dc5a3a4633249cf9f4affee9297",
+          "address_decode_hash": "69ea754f83871b04abdbf1e9ba950d7e528dbf50bca8c9b2c075b114dbb28959",
           "attachment_hash": "392d77ccb875491020bd10c7f12ea0624782d2eabdb7276ff6bad7b7ea56851d",
           "design_hash": "4d858f032c55cbd31013f32e017138b64923a3879f83d325cd65a8f998212634",
-          "fabric_hash": "a47a6a8503044f4664b395fe3d74d4c13c4e3015b98f8c289efa5e8ceba18312",
+          "fabric_hash": "7f98edb9ee6c19d6cfa42be106b83c6c4ff444c24158402471949ed52acd8682",
           "mapping_hash": "ae85233fa2611ce1ac6c251bcb4120cc4a482207da36972639ffe6dd598a3789",
-          "packet_format_hash": "89217e537b44bf8fb5969ead63ab6281b5bcefca964aafa39620d1821b9c7524",
-          "resolved_fabric_hash": "9277e2af0154cb887d64ff9ccfe34b21ec5acc5c51235a12c4903b43cf0b2906",
+          "packet_format_hash": "fd84075f586b0d8a67e9f8470ce7809796167b57b46a67023e89c98ca42e4456",
+          "resolved_fabric_hash": "d86feeedfe0c9c0df10ba98ce9815dfc34d4ed4e1f44b73314425d919fb9d14a",
           "resolved_route_hash": "f8cdbac5ca3f21fc4ac43ef519566d1a9227791d0a57cb7a365d90a01cc6b949",
-          "router_behavior_hash": "e57b92401216d9eae557c55150b4aa36689fad9dd95fd92b317df163f4467dc4",
+          "router_behavior_hash": "95d405334b3349b70b652b8d6730e86a8e7d158724fcd25a4a702447e3368966",
           "router_route_hash": "sha256:35b46b09bc2106e9badbbe316675671d19c266e9f8b61b5415638f14f05adb98",
           "topology_hash": "efef602b155a1a3ed5ee20579e5daf5feb817fec1f04df2a2e18110ac5b2d8e1",
           "vc_assignment_hash": "eab1c3d50938a99f3472fe713b125b656459eeca3dc57c028153c18f7a96fc6d"
@@ -147,7 +147,7 @@
         "status": "PASS"
       }
     ],
-    "resolved_fabric_hash": "sha256:9277e2af0154cb887d64ff9ccfe34b21ec5acc5c51235a12c4903b43cf0b2906",
+    "resolved_fabric_hash": "sha256:d86feeedfe0c9c0df10ba98ce9815dfc34d4ed4e1f44b73314425d919fb9d14a",
     "status": "COMPILED"
   },
   "description": "Certified v2 study (optimize_certified): six engine candidates over link_width {32,64,128} \u00d7 rcu_enabled {false,true}. Three-state constraint verdicts, one eligible Pareto member, evaluated-but-ineligible candidates (binding requirement violated / hard constraint violated), and compile-refused RCU candidates with UNMEASURABLE objectives. LOCKED properties recompiled per candidate.",
@@ -195,51 +195,47 @@
   "evaluation": {
     "backend_producer": {
       "backend": "BOOKSIM_STANDALONE",
-      "config_hash": "0a21c45a479ea52b868087f3acc7538f1e7fbc2b3acd989a5991a1c809031434",
-      "input_hash": "0e068661c839567d8521e86d4d6671c543fa9827e4ff3c6e9f4ed7ed8904a9b3",
-      "producer_identity": "65d61d336fabfb6a4ea6e8fd47826f5e9a707834ef1450cbde11bd32defc7c11"
+      "config_hash": "e6940cfcc1bb65b8771cb15cdb5910dc9f39761978c6aefe550c802d5f00e1b7",
+      "input_hash": "2f7502fcf262e18588681d7bdbcec1b9389ab21b93e7930b2a2a0864a245c364",
+      "producer_identity": "d4035d224878af9bd690b4a0600f500c8bd105d6ac915b06cda4b3fcdc70177b"
     },
     "contract_version": 1,
     "design_hash": "sha256:4d858f032c55cbd31013f32e017138b64923a3879f83d325cd65a8f998212634",
     "evidence": {
-      "raw_evidence_digest": "4d78d966dfaf2073ae18d7212d7066046b43223ac827048138668c263c6f001d",
-      "stats_digest": "85b4c1d8165afce0cb13750136f9973fda3dbf7e99bc23a11098705dbe15a483"
+      "raw_evidence_digest": "15e5b5ff526f7fd64c4ec1c95b18251be898c0feae6150c7af9ebecf81f29dab",
+      "stats_digest": "8d7b64f5f5b7ae82c71945fbbe0b08b7f624db90740d767f90f90954d2994229"
     },
     "fidelity_warning": "compute=EXPLICIT_DURATION memory=EXPLICIT_DURATION network=QUALIFIED_BOOKSIM_WINDOW all=UNCALIBRATED (declared/explicit models; no hardware dataset in repo)",
-    "message_artifact_id": "sha256:32025a36600e69093f3c660135700bc1c99dbf019383da473cce16bce87c78f4",
+    "message_artifact_id": "sha256:6b85a46d2403934688aae73fa1effb86a2a13475c2c65cc0adc61615b7ae4dd0",
     "metrics": {
-      "completion_time": 437,
-      "delivered": 120,
+      "completion_cycles": 293,
+      "delivered_packets": 120,
+      "flit_latency_avg": 18.5588,
       "flits_accepted": 816,
       "flits_injected": 816,
-      "honest_latency": 173.433,
-      "hops": 2.33333,
-      "latency": 210.933,
-      "max_packet_latency": 408.0,
-      "p50": 175.0,
-      "p95": 313.0,
-      "p99": 325.0,
-      "pkt_count": 120,
-      "throughput": 0.0267857
+      "injected_trace_packets": 120,
+      "loaded_trace_packets": 120,
+      "packet_latency_avg": 135.8,
+      "sample_window_cycles": 1219
     },
     "network_traffic_window": {
       "cycles_only": false,
-      "wall_time_ns": 437.0,
-      "window_cycles": 437
+      "wall_time_ns": 293.0,
+      "window_cycles": 293
     },
-    "performance_result_id": "8a924e702fe28cf788de90b506dbb101c131eaafb8a846162f1b7ec863543af0",
-    "physical_traffic_id": "sha256:c02eed1d9cef4b671df75a9df2ac62c3ba52d77d0d2036b33fdc03a47056a719",
+    "performance_result_id": "03fdec5db674df2508a0ee97d0d5a9ad00b47e4433ac9f07f5c7b8afcf7e923b",
+    "physical_traffic_id": "sha256:21dbb2d5c4aeb1b8f804020f43877a78dd0f3123e1bf236137a685fe7ef57217",
     "reason": null,
-    "resolved_fabric_hash": "sha256:9277e2af0154cb887d64ff9ccfe34b21ec5acc5c51235a12c4903b43cf0b2906",
+    "resolved_fabric_hash": "sha256:d86feeedfe0c9c0df10ba98ce9815dfc34d4ed4e1f44b73314425d919fb9d14a",
     "status": "EVALUATED",
-    "workload_id": "sha256:c19bee81444ecc7e0ea220fd2e5aa50d500ce8c60dac6f3f65c15cf5859ceb89"
+    "workload_id": "sha256:c078379896bf38f46cd10745022a6953509830e7daa104d6c654ca51c5036da7"
   },
   "fixture_id": "optimization-study",
   "optimization": {
     "base_design_hash": "sha256:ad7601ad02637939798b37ffde24494f1111a5c9bae5115eb9af4508fe6f7280",
     "candidates": [
       {
-        "candidate_id": "cand_329a1f5e54f47c92",
+        "candidate_id": "cand_329a1f5e54f47c92919e8149cf8047d22ef0bf105df8ed65543c6542bf5932af",
         "compilation_status": "UNSUPPORTED",
         "constraint_verdicts": {
           "completion_cycles": "UNMEASURABLE"
@@ -251,7 +247,7 @@
           "performance_result_id": null,
           "requirement_report_id": null
         },
-        "evaluation_reason": "UNSUPPORTED: NocConfig.rcu_enabled=True has no RCU artifact/behavior in Fabric v3; refusing to resolve the ordinary non-RCU fabric for an RCU-intent design",
+        "evaluation_reason": "stage=RESOLVED_FABRIC: cause=UNSUPPORTED: design requests RCU (rcu_enabled=True) but no canonical RCU hardware artifact exists; refusing to compile the ordinary non-RCU fabric",
         "evaluation_status": "COMPILE_FAILED",
         "guided_patch": {
           "link_width": 128,
@@ -270,19 +266,19 @@
         }
       },
       {
-        "candidate_id": "cand_9efc2ddb4234981b",
+        "candidate_id": "cand_9efc2ddb4234981bbf03069750facb520c5c786ba0f8e8dbc8fa2f12f0b3a279",
         "compilation_status": "COMPILED",
         "constraint_verdicts": {
           "completion_cycles": "SATISFIED"
         },
-        "eligibility_reason": "binding product requirements are not satisfied",
+        "eligibility_reason": null,
         "evaluation_authority": "certified-backend",
         "evaluation_ids": {
           "design_hash": "sha256:71b39380f046ccf9fa71ca369bcbae8c73ef6c55e477f4ee5d56bc93b4cb3665",
-          "performance_result_id": "48d6c0ae6f0a007aa5866808306558460c145a365cc761d3d68d70b88a4d3f51",
-          "requirement_report_id": "58bf7acbb929a272fdbe7cf4c2e5fa1028121bd6a0b36a897fff189f2eb472e8"
+          "performance_result_id": "cb107a9e4d4862f6d631e3bcbfe91d4c0d23c4b5156e34de0faa1e2343b30d40",
+          "requirement_report_id": "8778187677df1b024041014b7d8a1fc1c5213ef530f2f84c001d4b103f546777"
         },
-        "evaluation_reason": "binding requirements not satisfied: [0:tp_collective/latency_critical=VIOLATED]",
+        "evaluation_reason": null,
         "evaluation_status": "EVALUATED",
         "guided_patch": {
           "link_width": 64,
@@ -301,30 +297,30 @@
           "completion_cycles": "MEASURED"
         },
         "objective_values": {
-          "completion_cycles": 845.0
+          "completion_cycles": 581.0
         },
-        "pareto_eligible": false,
+        "pareto_eligible": true,
         "pareto_member": false,
         "product_requirements": {
-          "satisfied": false,
+          "satisfied": true,
           "verdicts": [
             {
               "binding": true,
-              "measured": 845.0,
+              "measured": 581.0,
               "metric_authority": "performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles)",
-              "performance_result_id": "48d6c0ae6f0a007aa5866808306558460c145a365cc761d3d68d70b88a4d3f51",
+              "performance_result_id": "cb107a9e4d4862f6d631e3bcbfe91d4c0d23c4b5156e34de0faa1e2343b30d40",
               "qos_class": "latency_critical",
-              "reason": "measured 845 cycles > ceiling 600.0 cycles via performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles). class-scoped to 'tp_collective' (single-class workload: aggregate == class evidence)",
+              "reason": "measured 581 cycles <= ceiling 600.0 cycles via performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles). class-scoped to 'tp_collective' (single-class workload: aggregate == class evidence)",
               "required": 600.0,
               "requirement_index": 0,
               "traffic_class": "tp_collective",
-              "verdict": "VIOLATED"
+              "verdict": "SATISFIED"
             }
           ]
         }
       },
       {
-        "candidate_id": "cand_b1c45e8e462f4558",
+        "candidate_id": "cand_b1c45e8e462f4558732237870f5e281926605238beac0ab3659b668560c6a4b9",
         "compilation_status": "COMPILED",
         "constraint_verdicts": {
           "completion_cycles": "SATISFIED"
@@ -333,8 +329,8 @@
         "evaluation_authority": "certified-backend",
         "evaluation_ids": {
           "design_hash": "sha256:4d858f032c55cbd31013f32e017138b64923a3879f83d325cd65a8f998212634",
-          "performance_result_id": "8a924e702fe28cf788de90b506dbb101c131eaafb8a846162f1b7ec863543af0",
-          "requirement_report_id": "5fd0590372201ad33d9cf2e9a0956bf7384f7282d616ab961805a484fcc73add"
+          "performance_result_id": "03fdec5db674df2508a0ee97d0d5a9ad00b47e4433ac9f07f5c7b8afcf7e923b",
+          "requirement_report_id": "3428e73de18d8319a1666754902d452d8bdb1a4b6d583b5f0f063a42809c6a50"
         },
         "evaluation_reason": null,
         "evaluation_status": "EVALUATED",
@@ -355,7 +351,7 @@
           "completion_cycles": "MEASURED"
         },
         "objective_values": {
-          "completion_cycles": 437.0
+          "completion_cycles": 293.0
         },
         "pareto_eligible": true,
         "pareto_member": true,
@@ -364,11 +360,11 @@
           "verdicts": [
             {
               "binding": true,
-              "measured": 437.0,
+              "measured": 293.0,
               "metric_authority": "performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles)",
-              "performance_result_id": "8a924e702fe28cf788de90b506dbb101c131eaafb8a846162f1b7ec863543af0",
+              "performance_result_id": "03fdec5db674df2508a0ee97d0d5a9ad00b47e4433ac9f07f5c7b8afcf7e923b",
               "qos_class": "latency_critical",
-              "reason": "measured 437 cycles <= ceiling 600.0 cycles via performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles). class-scoped to 'tp_collective' (single-class workload: aggregate == class evidence)",
+              "reason": "measured 293 cycles <= ceiling 600.0 cycles via performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles). class-scoped to 'tp_collective' (single-class workload: aggregate == class evidence)",
               "required": 600.0,
               "requirement_index": 0,
               "traffic_class": "tp_collective",
@@ -378,7 +374,7 @@
         }
       },
       {
-        "candidate_id": "cand_ba52eaecd294b497",
+        "candidate_id": "cand_ba52eaecd294b49776dbb038fadb27675b5de2fa55bbe2ed66c5031cdc3671e7",
         "compilation_status": "UNSUPPORTED",
         "constraint_verdicts": {
           "completion_cycles": "UNMEASURABLE"
@@ -390,7 +386,7 @@
           "performance_result_id": null,
           "requirement_report_id": null
         },
-        "evaluation_reason": "UNSUPPORTED: NocConfig.rcu_enabled=True has no RCU artifact/behavior in Fabric v3; refusing to resolve the ordinary non-RCU fabric for an RCU-intent design",
+        "evaluation_reason": "stage=RESOLVED_FABRIC: cause=UNSUPPORTED: design requests RCU (rcu_enabled=True) but no canonical RCU hardware artifact exists; refusing to compile the ordinary non-RCU fabric",
         "evaluation_status": "COMPILE_FAILED",
         "guided_patch": {
           "link_width": 64,
@@ -409,7 +405,7 @@
         }
       },
       {
-        "candidate_id": "cand_d8df2c67f77f931a",
+        "candidate_id": "cand_d8df2c67f77f931a4d5ac6518a46ee9fd1e48d98c5bd6134e9d3a1d94865094a",
         "compilation_status": "COMPILED",
         "constraint_verdicts": {
           "completion_cycles": "VIOLATED"
@@ -418,8 +414,8 @@
         "evaluation_authority": "certified-backend",
         "evaluation_ids": {
           "design_hash": "sha256:6cb709cdde15db7ba8132e8734aa430dd53ff7cc97c1a62be89c566c5876753c",
-          "performance_result_id": "808611213b4c0fd7950414e22244df016b2ccb299fe889dfe421a4c269a95437",
-          "requirement_report_id": "3138830ea0d31fa4c626e07956e100182f72fa9ab79e919084000b59b75931fb"
+          "performance_result_id": "85c8c9d088bfe44367940fcd501176311354de80026903dde4ad9c1d89ceb0ba",
+          "requirement_report_id": "4edf558e46cc0c45c320929283bf7c42f9f08d59a00fe7b82ce9c6da05b608c7"
         },
         "evaluation_reason": "binding requirements not satisfied: [0:tp_collective/latency_critical=VIOLATED]",
         "evaluation_status": "EVALUATED",
@@ -440,7 +436,7 @@
           "completion_cycles": "MEASURED"
         },
         "objective_values": {
-          "completion_cycles": 1950.0
+          "completion_cycles": 1313.0
         },
         "pareto_eligible": false,
         "pareto_member": false,
@@ -449,11 +445,11 @@
           "verdicts": [
             {
               "binding": true,
-              "measured": 1950.0,
+              "measured": 1313.0,
               "metric_authority": "performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles)",
-              "performance_result_id": "808611213b4c0fd7950414e22244df016b2ccb299fe889dfe421a4c269a95437",
+              "performance_result_id": "85c8c9d088bfe44367940fcd501176311354de80026903dde4ad9c1d89ceb0ba",
               "qos_class": "latency_critical",
-              "reason": "measured 1950 cycles > ceiling 600.0 cycles via performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles). class-scoped to 'tp_collective' (single-class workload: aggregate == class evidence)",
+              "reason": "measured 1313 cycles > ceiling 600.0 cycles via performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles). class-scoped to 'tp_collective' (single-class workload: aggregate == class evidence)",
               "required": 600.0,
               "requirement_index": 0,
               "traffic_class": "tp_collective",
@@ -463,7 +459,7 @@
         }
       },
       {
-        "candidate_id": "cand_e8479905cda8ae43",
+        "candidate_id": "cand_e8479905cda8ae433abc6bed59dc7681f292b563a11bfbdabc20d1605006c8a8",
         "compilation_status": "UNSUPPORTED",
         "constraint_verdicts": {
           "completion_cycles": "UNMEASURABLE"
@@ -475,7 +471,7 @@
           "performance_result_id": null,
           "requirement_report_id": null
         },
-        "evaluation_reason": "UNSUPPORTED: NocConfig.rcu_enabled=True has no RCU artifact/behavior in Fabric v3; refusing to resolve the ordinary non-RCU fabric for an RCU-intent design",
+        "evaluation_reason": "stage=RESOLVED_FABRIC: cause=UNSUPPORTED: design requests RCU (rcu_enabled=True) but no canonical RCU hardware artifact exists; refusing to compile the ordinary non-RCU fabric",
         "evaluation_status": "COMPILE_FAILED",
         "guided_patch": {
           "link_width": 32,
@@ -528,13 +524,13 @@
     },
     "metric_registry_id": "316e403f447f90431f761f084539c934aaded9581f15d58d72aa121627a9e938",
     "metric_registry_version": "certified-builtin-v1",
-    "optimization_result_id": "e9e2ee5eb03388fe77b2f36e823c2c2b776db900ec0fb9fc99df8c45cc4b8d41",
+    "optimization_result_id": "0a0526b0c1d945784d5bf45abe21c740642da23e4f267796b2a054af62617b10",
     "pareto_ids": [
-      "cand_b1c45e8e462f4558"
+      "cand_b1c45e8e462f4558732237870f5e281926605238beac0ab3659b668560c6a4b9"
     ],
     "result_class": "CERTIFIED_PRODUCT",
-    "selected_candidate_id": "cand_b1c45e8e462f4558",
-    "selection_rationale": "selected cand_b1c45e8e462f4558 minimizing completion_cycles (MIN) over 1 Pareto candidate(s); policy=min_first_objective; values={completion_cycles=437}"
+    "selected_candidate_id": "cand_b1c45e8e462f4558732237870f5e281926605238beac0ab3659b668560c6a4b9",
+    "selection_rationale": "selected cand_b1c45e8e462f4558732237870f5e281926605238beac0ab3659b668560c6a4b9 minimizing completion_cycles (MIN) over 1 Pareto candidate(s); policy=min_first_objective; values={completion_cycles=293}"
   },
   "requirements": {
     "contract_version": 1,
@@ -542,18 +538,18 @@
     "entries": [
       {
         "binding": true,
-        "measured": 437.0,
+        "measured": 293.0,
         "metric_authority": "performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles)",
-        "performance_result_id": "8a924e702fe28cf788de90b506dbb101c131eaafb8a846162f1b7ec863543af0",
+        "performance_result_id": "03fdec5db674df2508a0ee97d0d5a9ad00b47e4433ac9f07f5c7b8afcf7e923b",
         "qos_class": "latency_critical",
-        "reason": "measured 437 cycles <= ceiling 600.0 cycles via performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles). class-scoped to 'tp_collective' (single-class workload: aggregate == class evidence)",
+        "reason": "measured 293 cycles <= ceiling 600.0 cycles via performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles). class-scoped to 'tp_collective' (single-class workload: aggregate == class evidence)",
         "required": 600.0,
         "requirement_index": 0,
         "traffic_class": "tp_collective",
         "verdict": "SATISFIED"
       }
     ],
-    "performance_result_id": "8a924e702fe28cf788de90b506dbb101c131eaafb8a846162f1b7ec863543af0"
+    "performance_result_id": "03fdec5db674df2508a0ee97d0d5a9ad00b47e4433ac9f07f5c7b8afcf7e923b"
   },
   "title": "Optimization study over link_width \u00d7 rcu_enabled"
 }

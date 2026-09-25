@@ -1,20 +1,20 @@
 {
   "compilation": {
     "artifact_hashes": {
-      "address_decode_hash": "ff881b1a89c038c2afef298cfa913103a029f4cc231d1d7bbd3cd25e577f7045",
+      "address_decode_hash": "43bca8bedd75286a9ecddab8989d9d101d3a315c77ed2b24956e09319a686b9f",
       "attachment_hash": "1b7150b86d7881b0131e05afe263f7e84e9a3fb9e3926eb8ae45b416180b00f8",
       "design_hash": "28ffcebf4b4f89e759911504aedbfb8b64b415546ae263392b820b614e99cbae",
-      "fabric_hash": "dafc7d6a2ee16add667cd9f9b7fc00fe895e0dc0077a41858a39afba07d11aee",
+      "fabric_hash": "6277616fc0d72f82edb77815db545b57584737b2309a1da5eed7d5dcfe4cbe05",
       "mapping_hash": "a4fefbe600d78b93ea9b9c52b8e28f88eb0ee85dbcb868f153ba7b3a802d2100",
-      "packet_format_hash": "826d98acff8aaea8ecfc29aaf39706458e634c00a3f6121a9d31274520625e19",
-      "resolved_fabric_hash": "31101953af6bf2f58078d461a815129e950c894f1a7e62d9192acfc83a317c47",
+      "packet_format_hash": "9aa36e26a2af98ef1dccfe3b616a062c947830fd70a02c822766c48671e2caac",
+      "resolved_fabric_hash": "76dfa2331711bad0719a1ff26063dd27b20bbc42bdc4c054b88b9ce0ce5e60da",
       "resolved_route_hash": "699a3bdde1ff70b3717ea7378df2e15c421d05ccf5924a5255a23075118b4374",
-      "router_behavior_hash": "86ab868a71e7874a613a4552337f8f42114b1441eb1df81c95c20e15124fbb2d",
+      "router_behavior_hash": "95d405334b3349b70b652b8d6730e86a8e7d158724fcd25a4a702447e3368966",
       "router_route_hash": "sha256:e495aa876f7d7e4b81a427133b2acd73ed12c42f622a29fb463851a6ff467579",
       "topology_hash": "e3f51fa212992d36414a3832ba32e2643bf6d848952021327fa397a8c3836d4a",
       "vc_assignment_hash": "a11717d8f569be26db05da1142260d14d308096f8f5b604ad1d9d060cd4fcfda"
     },
-    "certificate_id": "sha256:4648f03512035280fdfd4e09324e8689fc4c4214add95f61b8ee44feb05b98cb",
+    "certificate_id": "sha256:4aa51820631e1b829065e0325353138543ce7d29c861384d835cbe1d5e794531",
     "certificate_overall": "PASS",
     "compiler_semantics_version": 3,
     "contract_version": 1,
@@ -96,7 +96,7 @@
           "node_count": 288,
           "resolved_route_hash": "699a3bdde1ff70b3717ea7378df2e15c421d05ccf5924a5255a23075118b4374",
           "route_realization": "v2_channel_id",
-          "router_behavior_hash": "86ab868a71e7874a613a4552337f8f42114b1441eb1df81c95c20e15124fbb2d",
+          "router_behavior_hash": "95d405334b3349b70b652b8d6730e86a8e7d158724fcd25a4a702447e3368966",
           "router_route_hash": "sha256:e495aa876f7d7e4b81a427133b2acd73ed12c42f622a29fb463851a6ff467579",
           "routing_classes": [
             "DOR_XY"
@@ -129,15 +129,15 @@
       },
       {
         "evidence": {
-          "address_decode_hash": "ff881b1a89c038c2afef298cfa913103a029f4cc231d1d7bbd3cd25e577f7045",
+          "address_decode_hash": "43bca8bedd75286a9ecddab8989d9d101d3a315c77ed2b24956e09319a686b9f",
           "attachment_hash": "1b7150b86d7881b0131e05afe263f7e84e9a3fb9e3926eb8ae45b416180b00f8",
           "design_hash": "28ffcebf4b4f89e759911504aedbfb8b64b415546ae263392b820b614e99cbae",
-          "fabric_hash": "dafc7d6a2ee16add667cd9f9b7fc00fe895e0dc0077a41858a39afba07d11aee",
+          "fabric_hash": "6277616fc0d72f82edb77815db545b57584737b2309a1da5eed7d5dcfe4cbe05",
           "mapping_hash": "a4fefbe600d78b93ea9b9c52b8e28f88eb0ee85dbcb868f153ba7b3a802d2100",
-          "packet_format_hash": "826d98acff8aaea8ecfc29aaf39706458e634c00a3f6121a9d31274520625e19",
-          "resolved_fabric_hash": "31101953af6bf2f58078d461a815129e950c894f1a7e62d9192acfc83a317c47",
+          "packet_format_hash": "9aa36e26a2af98ef1dccfe3b616a062c947830fd70a02c822766c48671e2caac",
+          "resolved_fabric_hash": "76dfa2331711bad0719a1ff26063dd27b20bbc42bdc4c054b88b9ce0ce5e60da",
           "resolved_route_hash": "699a3bdde1ff70b3717ea7378df2e15c421d05ccf5924a5255a23075118b4374",
-          "router_behavior_hash": "86ab868a71e7874a613a4552337f8f42114b1441eb1df81c95c20e15124fbb2d",
+          "router_behavior_hash": "95d405334b3349b70b652b8d6730e86a8e7d158724fcd25a4a702447e3368966",
           "router_route_hash": "sha256:e495aa876f7d7e4b81a427133b2acd73ed12c42f622a29fb463851a6ff467579",
           "topology_hash": "e3f51fa212992d36414a3832ba32e2643bf6d848952021327fa397a8c3836d4a",
           "vc_assignment_hash": "a11717d8f569be26db05da1142260d14d308096f8f5b604ad1d9d060cd4fcfda"
@@ -147,7 +147,7 @@
         "status": "PASS"
       }
     ],
-    "resolved_fabric_hash": "sha256:31101953af6bf2f58078d461a815129e950c894f1a7e62d9192acfc83a317c47",
+    "resolved_fabric_hash": "sha256:76dfa2331711bad0719a1ff26063dd27b20bbc42bdc4c054b88b9ce0ce5e60da",
     "status": "COMPILED"
   },
   "description": "Preconditions met but no qualified BookSim producer exists, so the outcome is BACKEND_UNAVAILABLE with a reason and no metrics.",
@@ -206,15 +206,15 @@
     "design_hash": "sha256:28ffcebf4b4f89e759911504aedbfb8b64b415546ae263392b820b614e99cbae",
     "evidence": null,
     "fidelity_warning": null,
-    "message_artifact_id": "sha256:0bb2ce65cc049d6b84f1f7d0d6c28fc8e6a4f0de049e39ec17cbbe01478560ff",
+    "message_artifact_id": "sha256:94d7edf33977a2bdaa02f88849b006b790b30e2a485be623145477424a4d0b37",
     "metrics": null,
     "network_traffic_window": null,
     "performance_result_id": null,
-    "physical_traffic_id": "sha256:aa07a43f7f99459eaaa59e646c9de2d31c823305aa8bc52a94007ca25d25ac88",
-    "reason": "BookSim producer unidentifiable: cannot hash execution producer /nonexistent-booksim-for-fixture: [Errno 2] No such file or directory: '/nonexistent-booksim-for-fixture'; refusing to produce certified evidence for an unidentified binary",
-    "resolved_fabric_hash": "sha256:31101953af6bf2f58078d461a815129e950c894f1a7e62d9192acfc83a317c47",
+    "physical_traffic_id": "sha256:76671115a5981b1c45361e2c42af6a35541db157c56846fb600b2eb7e9a38881",
+    "reason": "BookSim producer not qualified: BookSim binary not found: /nonexistent-booksim-for-fixture",
+    "resolved_fabric_hash": "sha256:76dfa2331711bad0719a1ff26063dd27b20bbc42bdc4c054b88b9ce0ce5e60da",
     "status": "BACKEND_UNAVAILABLE",
-    "workload_id": "sha256:25cc4fd07f0c12a6c5103e3d226d61c13e5444ba3b07efca7455a224151dad25"
+    "workload_id": "sha256:8a9c2a4d9d8b350c9678f96301d87b74e75bad2f4c135118a2cb3ff43861eb14"
   },
   "fixture_id": "backend-unavailable",
   "optimization": null,

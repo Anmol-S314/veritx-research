@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "authority": "docs/production/ENGINE-QUALIFICATION.md",
+  "generated_from": "release qualification authority (C7 / C10)",
+  "validation_sha": null,
+  "engines": {
+    "booksim_embedded": {
+      "role": "canonical network execution engine",
+      "integration": "QUALIFIED",
+      "numerical": "QUALIFIED",
+      "independence": "engine under test",
+      "qualified_domains": ["network execution", "packet/flit conservation"],
+      "limitations": ["route realization observed at the first hop only"]
+    },
+    "booksim_standalone": {
+      "role": "shared-engine differential authority",
+      "integration": "QUALIFIED",
+      "numerical": "QUALIFIED",
+      "independence": "semi-independent (same simulator, separate build)",
+      "qualified_domains": ["differential parity against the embedded engine"],
+      "limitations": []
+    },
+    "rtl": {
+      "role": "independent RTL execution engine",
+      "integration": "QUALIFIED",
+      "numerical": "ESTABLISHED",
+      "independence": "independent within the RTL domain",
+      "qualified_domains": ["within the RTL domain"],
+      "limitations": []
+    },
+    "ramulator": {
+      "role": "memory engine / integration",
+      "integration": "QUALIFIED",
+      "numerical": "ESTABLISHED",
+      "independence": "independent",
+      "qualified_domains": ["memory battery (16/16)"],
+      "limitations": []
+    },
+    "astra": {
+      "role": "runtime / integration",
+      "integration": "QUALIFIED",
+      "numerical": "NOT_ESTABLISHED",
+      "independence": "shares the BookSim network engine",
+      "qualified_domains": [],
+      "limitations": [
+        "the 30M-cycle over-count was fixed (F-ASTRA-0001); aggregate now matches the declared compute+comm",
+        "absolute timing remains unqualified pending independent per-domain oracles"
+      ]
+    }
+  },
+  "workload_levels": {
+    "W0": "micro-oracle (V01-V14) - RUN",
+    "W1": "model-realistic - manifests owed",
+    "W2": "serving-realistic - owed",
+    "W3": "stress - owed"
+  }
+}

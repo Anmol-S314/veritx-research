@@ -67,6 +67,27 @@ record and an empty Pareto (covered by
 `test_certified_admission.py::test_optimizer_certified_boundary_refuses_unqualified_producer`).
 A pinned binary and its manifest are required.
 
+## 6. Live product flow (Studio gateway)
+
+```bash
+export VERITX_BOOKSIM_BIN=$PWD/third_party/booksim2/src/booksim
+export PYTHONPATH=tracks/t3-topology/dse
+uvicorn veritx_dse.gateway.app:app --port 8123
+# in another shell:
+cd apps/studio && npm install && npm run dev   # Vite proxies /gw -> 8123
+```
+
+Then, in the browser:
+
+```text
+create project -> choose workload -> edit draft -> Compile design
+-> CompilationView + certificate PASS (10/10) -> Run Simulation
+-> job polls QUEUED/PREPARING/RUNNING/FINALIZING -> EVALUATED
+-> Run detail -> "Why can I trust this?" -> evidence + RunBundle
+```
+
+Product flow details: `docs/product/PRODUCT-API.md`.
+
 ## Known-good posture to communicate
 
 - Compile is canonical and prints hashes; it is not a simulation.

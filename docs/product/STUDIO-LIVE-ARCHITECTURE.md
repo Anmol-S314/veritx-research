@@ -1,86 +1,77 @@
-# Studio Live Architecture (C9)
+# Studio Live Architecture
 
-Status: **GATEWAY LIVE for the design→compile→evaluate path; frontend wiring
-partial**. `apps/studio` is the existing React/TypeScript engineering tool
-(Design, Verify, Evaluate, Optimize). The live FastAPI gateway at
-`veritx_dse/gateway/app.py` now owns **immutable design revisions**, so later
-stages name a revision instead of resubmitting raw engine JSON. The Runs and
-Trust sections are live in the React app; Design/Verify/Evaluate/Optimize are
-still fixture-backed (offline demo). The gap analysis lives in
-`docs/validation/STUDIO-AUDIT-AND-GAP-REPORT.md`.
+Status: **LIVE**. The product resource layer
+(`veritx_dse/product/`) provides filesystem-backed Project / Draft /
+DesignRevision / Run / Job / OptimizationStudy resources over the
+canonical application services; the gateway exposes them under
+`/api/v1`; `apps/studio` is wired to that API for the primary flow. The
+old ad-hoc routes remain as deprecated aliases for one release. The
+product-flow audit and target model live in
+`docs/product/STUDIO-FLOW-AUDIT.md`; the API reference is
+`docs/product/PRODUCT-API.md`.
 
 ## Principle
 
 Do not rewrite `apps/studio`. Replace fixture-only operation incrementally
 with a thin gateway whose handlers call **canonical services only**. No
-scientific semantics may live in HTTP code.
+scientific semantics may live in HTTP code. This still holds: the product
+layer composes `FabricCompiler`, `FabricEvaluator`,
+`RequirementEvaluator`, `Optimizer.optimize_certified` and
+`core/run_bundle.py`; it derives nothing itself.
 
-## Gateway (LIVE)
+## Gateway
 
-Stack: FastAPI (`veritx_dse/gateway/app.py`). Endpoints:
+Stack: FastAPI (`veritx_dse/gateway/app.py`). Product endpoints:
 
 ```text
-GET  /health
-POST /compile          preset+policy+overrides, OR a v3 design request
-                       -> DesignView + CompilationView + immutable revision_id
-GET  /revisions        immutable revision ids
-GET  /revisions/{id}   re-derives the canonical request; refuses compiler drift
-POST /evaluate         {revision_id, patch} or a raw v3 request -> evaluator
-POST /optimize         {revision_id, definition} or raw request -> certified study
-GET  /runs             finalized bundles under the runs root, VERIFIED/INVALID
-GET  /runs/{id}        bundle verification + manifest
-GET  /runs/{id}/evidence
-GET  /workloads        product presets + validation experiments
-GET  /qualification    canonical qualification registry
+```text
+GET  /api/v1/health
+GET  /api/v1/qualification
+GET  /api/v1/catalog/workloads
+GET  /api/v1/catalog/fabric-presets
+POST /api/v1/projects
+GET  /api/v1/projects
+GET  /api/v1/projects/{id}
+GET  /api/v1/projects/{id}/draft
+PUT  /api/v1/projects/{id}/draft
+POST /api/v1/projects/{id}/compile
+GET  /api/v1/revisions/{id}
+GET  /api/v1/revisions/{id}/compilation
+POST /api/v1/revisions/{id}/evaluate
+POST /api/v1/revisions/{id}/optimize
+GET  /api/v1/jobs/{id}
+GET  /api/v1/runs
+GET  /api/v1/runs/{id}
+GET  /api/v1/runs/{id}/evidence
+GET  /api/v1/runs/{id}/artifacts
+GET  /api/v1/optimizations/{id}
+GET  /api/v1/compare?a=&b=
 ```
 
-Handlers parse, call the same canonical service the CLI calls, and return
-the versioned result plus the evidence ids the trust panel needs. No
-scientific semantics live in HTTP code. `/evaluate` and `/optimize` return
-503 until a qualified backend is configured (`VERITX_BOOKSIM_BIN`).
+Compile is synchronous (fast, and it runs the certificate). Evaluation
+and optimization are jobs: submit returns `{job_id, state: QUEUED}` and
+Studio polls `GET /api/v1/jobs/{id}` to a terminal state.
 
-**Error taxonomy (R3.14).** Only typed failures map to 4xx/503: `InvalidInput`
--> 400, `UnsupportedSemantics` -> 422, `BackendUnavailable` -> 503,
-`Conflict` -> 409, `NotFound` -> 404. Any programmer fault
-(`ValueError`/`TypeError`/`RuntimeError`/`AttributeError`) is a logged 500 and
-`INTERNAL_ERROR`; internals are never leaked.
+Config: `VERITX_STORE_ROOT`, `VERITX_RUNS_ROOT`, `VERITX_PROJECTS_ROOT`,
+`VERITX_BOOKSIM_BIN`. Run `uvicorn veritx_dse.gateway.app:app`.
 
-**Revision continuity (R3.2/R3.4/R3.6).** `/compile` returns a
-`revision_id` that is a content hash of the intent plus the compiled
-identities. `/revisions/{id}` re-derives the canonical request and refuses if
-the identities no longer match (compiler drift), so an old Run can never be
-shown as the current revision. `/evaluate` and `/optimize` accept a
-`revision_id`; raw `request` remains a compatibility path.
+Tests: `tests/test_gateway.py` (endpoint mechanics),
+`tests/test_product_workflow.py` (compile+verify, dirty-draft regression,
+error boundary, catalog separation, qualification, live evaluation),
+`apps/studio/tests/test_live_browser_e2e.py` (browser acceptance,
+`VERITX_E2E=1`).
 
-Config comes from the environment: `VERITX_STORE_ROOT`, `VERITX_RUNS_ROOT`,
-`VERITX_REVISIONS_ROOT`, `VERITX_BOOKSIM_BIN`. Run with
-`uvicorn veritx_dse.gateway.app:app`.
+**Error taxonomy (R3.14, deprecated alias layer).** Only typed failures map
+to 4xx/5xx: `InvalidInput` -> 400, `UnsupportedSemantics` -> 422,
+`BackendUnavailable` -> 503, `Conflict` -> 409, `NotFound` -> 404. Any
+programmer fault (`ValueError`/`TypeError`/`RuntimeError`/`AttributeError`)
+is a logged 500 with code `INTERNAL_ERROR`; internals are never leaked.
 
-Tests: `tests/test_gateway.py`, `tests/test_gateway_errors.py` (taxonomy by
-injection), `tests/test_gateway_revisions.py` (revision identity/continuity).
-
-## Remaining C9 work (frontend)
-
-- Point Design/Verify/Evaluate/Optimize at the gateway using the client
-  functions already added in `src/api.ts` (`compileDesign`, `revision`,
-  `evaluate`, `optimize`). Keep fixtures only as an explicit offline demo;
-  when the gateway is unavailable the section must read
-  `LIVE GATEWAY UNAVAILABLE`, never silently fall back to fixtures.
-- A guided design-intent -> v3 request deriver so the UI can edit supported
-  parameters without a raw `CompileRequestV3`. Until then the v3 design is an
-  engine-authored template.
-- Long-running job states, run detail/evidence list, and the "why can I trust
-  this?" drawer wired to `/runs`.
-- Browser E2E (currently absent).
-
-### Offline-demo fixtures
-
-`apps/studio/fixtures/*.json` remain an offline demo. Their regeneration
-path (`generate_studio_fixtures.py`) imports
-`application.product_evaluator`, which exists only on historical audit
-branches, so regeneration is classified as unprovisioned in
-`validate_fixtures.provisioned_environment`; the live product path is the
-gateway. This is a non-blocking offline-demo gap.
+**Revision continuity (R3.2/R3.4/R3.6, deprecated alias layer).** The alias
+`/revisions/{id}` route re-derives the canonical request and refuses if the
+identities no longer match (compiler drift), so an old Run can never be
+shown as the current revision. Config additionally honours
+`VERITX_REVISIONS_ROOT` for that store.
 
 ## Sections (target)
 
