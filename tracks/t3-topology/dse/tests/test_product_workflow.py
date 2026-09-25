@@ -634,6 +634,114 @@ def _bundle_run(svc, tmp_path: Path, *, run_id: str) -> dict:
     return {"project_id": pid, "run_id": run_id, "bundle_dir": bundle_dir}
 
 
+def _bundle_run_with_evidence(svc, tmp_path: Path, *, run_id: str,
+                              stats: dict, route_observation: str,
+                              route_dump: str | None) -> Path:
+    """A verifying bundle whose backend-evidence.json carries given stats."""
+    import json as _json
+    from veritx_dse.core.run_bundle import finalize_run_bundle
+
+    pid = svc.create_project(name="integrity run", workload_id=WORKLOAD)[
+        "project"]["project_id"]
+    bundle_dir = svc.store.run_bundle_dir(pid, run_id)
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+    doc = {
+        "evidence": {
+            "route_observation": route_observation,
+            "route_dump_sha256": route_dump,
+            "stats": stats,
+        },
+        "attempt": {},
+    }
+    (bundle_dir / "backend-evidence.json").write_text(_json.dumps(doc),
+                                                      encoding="utf-8")
+    (bundle_dir / "evidence.json").write_text("{}", encoding="utf-8")
+    manifest = finalize_run_bundle(bundle_dir)
+    svc.store.create_run(pid, {
+        "schema_version": 1, "run_id": run_id, "project_id": pid,
+        "revision_id": "r1", "design_hash": "sha256:x", "backend": "booksim",
+        "status": "EVALUATED", "qualification": "QUALIFIED",
+        "bundle_id": "sha256:" + manifest["bundle_id"],
+        "evaluation": None, "requirements": None, "producer": None,
+        "evidence": {"evidence_id": "ev-1"}, "display_name": None,
+        "started_at": None, "completed_at": None,
+        "requirements_pass": None, "reason": None,
+    })
+    return bundle_dir
+
+
+def test_run_integrity_view_contract(tmp_path):
+    """ExecutionIntegrityView: conservation + route realization projected
+    from authenticated evidence. Absent counters are NOT AVAILABLE, never
+    zero; conservation needs both counters; first-hop scope is explicit."""
+    from veritx_dse.product.service import ProductConfig, ProductService
+
+    svc = ProductService(ProductConfig(projects_root=tmp_path / "projects"))
+    _bundle_run_with_evidence(
+        svc, tmp_path, run_id="run-int-1",
+        stats={
+            "loaded_trace_packets": 300,
+            "injected_trace_packets": 300,
+            "delivered_packets": 300,
+            "flits_injected": 2700,
+            "flits_accepted": 2700,
+            # no declared_packets / declared_flits emitted by this backend
+        },
+        route_observation="EXECUTED_ROUTE_OBSERVED",
+        route_dump="a" * 64)
+
+    client = TestClient(create_app(GatewayConfig(
+        store_root=tmp_path / "store", runs_root=tmp_path / "runs",
+        projects_root=tmp_path / "projects")), raise_server_exceptions=False)
+    resp = client.get("/api/v1/runs/run-int-1/integrity")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["contract_version"] == 1
+
+    packets = body["packet_conservation"]
+    assert packets["loaded"] == {"value": 300, "availability": "MEASURED"}
+    # Absent counter is NOT AVAILABLE, never 0 (§18).
+    assert packets["declared"] == {
+        "value": None, "availability": "NOT_AVAILABLE"}
+    assert packets["verdict"] == "CONSERVED"
+
+    flits = body["flit_conservation"]
+    assert flits["declared"]["availability"] == "NOT_AVAILABLE"
+    assert flits["verdict"] == "CONSERVED"
+
+    route = body["route_realization"]
+    assert route["status"] == "OBSERVED"
+    assert route["scope"] == "destination-aware first-hop realization"
+    # Mandatory scope honesty: full path is never claimed.
+    assert route["full_path_claimed"] is False
+    assert route["realized_digest"] == "a" * 64
+
+
+def test_run_integrity_view_honesty_fallbacks(tmp_path):
+    """Missing counters yield NOT_MEASURED conservation and NOT_OBSERVED
+    routing — the view never upgrades absence into a positive claim."""
+    from veritx_dse.product.service import ProductConfig, ProductService
+
+    svc = ProductService(ProductConfig(projects_root=tmp_path / "projects"))
+    _bundle_run_with_evidence(
+        svc, tmp_path, run_id="run-int-2",
+        stats={"loaded_trace_packets": 5},  # delivered absent; no flits
+        route_observation="DOMAIN_QUALIFIED_ROUTE_NOT_OBSERVED",
+        route_dump=None)
+
+    client = TestClient(create_app(GatewayConfig(
+        store_root=tmp_path / "store", runs_root=tmp_path / "runs",
+        projects_root=tmp_path / "projects")), raise_server_exceptions=False)
+    body = client.get("/api/v1/runs/run-int-2/integrity").json()
+    assert body["packet_conservation"]["delivered"]["availability"] \
+        == "NOT_AVAILABLE"
+    assert body["packet_conservation"]["verdict"] == "NOT_MEASURED"
+    assert body["flit_conservation"]["verdict"] == "NOT_MEASURED"
+    assert body["route_realization"]["status"] == "NOT_OBSERVED"
+    assert body["route_realization"]["full_path_claimed"] is False
+    assert body["route_realization"]["realized_digest"] is None
+
+
 def test_verify_run_endpoint_contract(tmp_path):
     """POST /api/v1/runs/{id}/verify delegates to the RunBundle authority."""
     from veritx_dse.product.service import ProductConfig, ProductService

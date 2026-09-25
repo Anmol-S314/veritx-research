@@ -876,7 +876,93 @@ class ProductService:
         return {"contract_version": 1, "run_id": run_id,
                 "bundle": files}
 
-    # ── run verification & reproduction ───────────────────────────────
+    # ── run verification & reproduction ──────────────────────────────
+
+    def run_integrity(self, run_id: str) -> dict[str, Any]:
+        """ExecutionIntegrityView — conservation + route realization.
+
+        A pure projection over the authenticated evidence document inside
+        the VERIFIED run bundle. Selects and groups existing counters;
+        it computes no science. A counter the backend did not emit is
+        reported as NOT AVAILABLE, never zero-filled (§18/§59).
+        """
+        pid = self.store.find_run_project(run_id)
+        if pid is None:
+            raise ProductServiceError(
+                ErrorCode.NOT_FOUND, f"no such run: {run_id}",
+                operation="run_integrity", resource_id=run_id)
+        run = self.store.load_run(pid, run_id)
+        if self._verify_run_bundle(run) is None:
+            raise ProductServiceError(
+                ErrorCode.CONFLICT,
+                f"run {run_id} has no finalized run bundle; no execution "
+                "integrity evidence exists",
+                operation="run_integrity", resource_id=run_id)
+        evidence_path = (self.store.run_bundle_dir(pid, run_id)
+                         / "backend-evidence.json")
+        if not evidence_path.is_file():
+            raise ProductServiceError(
+                ErrorCode.NOT_FOUND,
+                f"run {run_id} carries no backend evidence document",
+                operation="run_integrity", resource_id=run_id)
+        try:
+            doc = json.loads(evidence_path.read_text(encoding="utf-8"))
+            evidence = doc["evidence"]
+            stats = evidence["stats"]
+        except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
+            raise ProductServiceError(
+                ErrorCode.EVIDENCE_INVALID,
+                f"run {run_id} evidence document is unreadable: {exc}",
+                operation="run_integrity", resource_id=run_id) from exc
+
+        def counter(key: str) -> dict[str, Any]:
+            value = stats.get(key)
+            if value is None:
+                return {"value": None, "availability": "NOT_AVAILABLE"}
+            return {"value": value, "availability": "MEASURED"}
+
+        packets_injected = stats.get("injected_trace_packets")
+        packets_delivered = stats.get("delivered_packets")
+        flits_injected = stats.get("flits_injected")
+        flits_accepted = stats.get("flits_accepted")
+
+        def conserved(injected: Any, delivered: Any) -> str:
+            # A conservation verdict needs both counters measured. Anything
+            # less is NOT_MEASURED — never inferred as conserved (or not).
+            if injected is None or delivered is None:
+                return "NOT_MEASURED"
+            return "CONSERVED" if injected == delivered else "VIOLATED"
+
+        route_observation = evidence.get("route_observation")
+        realized = route_observation == "EXECUTED_ROUTE_OBSERVED"
+        return {
+            "contract_version": 1,
+            "run_id": run_id,
+            "packet_conservation": {
+                "declared": counter("declared_packets"),
+                "loaded": counter("loaded_trace_packets"),
+                "injected": counter("injected_trace_packets"),
+                "delivered": counter("delivered_packets"),
+                "verdict": conserved(packets_injected, packets_delivered),
+            },
+            "flit_conservation": {
+                "declared": counter("declared_flits"),
+                "injected": counter("flits_injected"),
+                "accepted": counter("flits_accepted"),
+                "verdict": conserved(flits_injected, flits_accepted),
+            },
+            "route_realization": {
+                "status": ("OBSERVED" if realized
+                           else "NOT_OBSERVED"),
+                "scope": "destination-aware first-hop realization",
+                # Mandatory scope honesty: the backend proves the first
+                # hop only. Full path is never claimed.
+                "full_path_claimed": False,
+                "realized_digest": evidence.get("route_dump_sha256"),
+            },
+            "evidence_id": run.get("evidence", {}).get("evidence_id")
+            if isinstance(run.get("evidence"), dict) else None,
+        }
 
     def verify_run(self, run_id: str) -> dict[str, Any]:
         """Re-verify a run's RunBundle on demand (thin adapter).

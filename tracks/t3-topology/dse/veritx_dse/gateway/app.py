@@ -440,6 +440,10 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
     def v1_run_artifacts(run_id: str) -> dict[str, Any]:
         return product.run_artifacts(run_id)
 
+    @app.get("/api/v1/runs/{run_id}/integrity", tags=["product"])
+    def v1_run_integrity(run_id: str) -> dict[str, Any]:
+        return product.run_integrity(run_id)
+
     @app.post("/api/v1/runs/{run_id}/verify", tags=["product"])
     def v1_run_verify(run_id: str) -> dict[str, Any]:
         return product.verify_run(run_id)

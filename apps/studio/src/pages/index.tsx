@@ -1,5 +1,11 @@
 import { useEffect, useState, type ReactElement } from 'react';
-import { api, type RunView } from '../api';
+import {
+  api,
+  type JobView,
+  type RunIntegrityView,
+  type RunView,
+  type RunVerifyView,
+} from '../api';
 import {
   AsyncView, Link, WorkflowBar, useAsync, useStudio,
 } from '../studio';
@@ -512,6 +518,185 @@ export function Runs(): ReactElement {
   );
 }
 
+// ── Execution integrity panels (UX7) ───────────────────────────────────
+
+/** Counter cell: measured values as-is; an absent counter is NOT AVAILABLE,
+ * never 0 (§18/§59). */
+function IntegrityCounter({ counter }: {
+  counter: RunIntegrityView['packet_conservation']['declared'];
+}): ReactElement {
+  if (counter.availability === 'NOT_AVAILABLE') {
+    return <span className="muted">NOT AVAILABLE</span>;
+  }
+  return <span>{fmtNum(counter.value)}</span>;
+}
+
+function ConservationTable({ title, rows, verdict }: {
+  title: string;
+  rows: { label: string; counter: RunIntegrityView['packet_conservation']['declared'] }[];
+  verdict: string;
+}): ReactElement {
+  return (
+    <>
+      <h4>{title}</h4>
+      <table className="tbl">
+        <tbody>
+          {rows.map(({ label, counter }) => (
+            <tr key={label}>
+              <td>{label}</td>
+              <td className="num"><IntegrityCounter counter={counter} /></td>
+            </tr>
+          ))}
+          <tr>
+            <td>verdict</td>
+            <td className="num"><StatusBadge status={verdict} /></td>
+          </tr>
+        </tbody>
+      </table>
+    </>
+  );
+}
+
+function ExecutionIntegrity({ runId }: { runId: string }): ReactElement {
+  const integrity = useAsync(() => api.integrity(runId), [runId]);
+  return (
+    <section className="card">
+      <h3>Execution integrity</h3>
+      <AsyncView result={integrity.result} reload={integrity.reload}>
+        {(v: RunIntegrityView) => (
+          <>
+            <ConservationTable
+              title="Packet conservation"
+              verdict={v.packet_conservation.verdict}
+              rows={[
+                { label: 'declared', counter: v.packet_conservation.declared },
+                { label: 'loaded', counter: v.packet_conservation.loaded },
+                { label: 'injected', counter: v.packet_conservation.injected },
+                { label: 'delivered', counter: v.packet_conservation.delivered },
+              ]}
+            />
+            <ConservationTable
+              title="Flit conservation"
+              verdict={v.flit_conservation.verdict}
+              rows={[
+                { label: 'declared', counter: v.flit_conservation.declared },
+                { label: 'injected', counter: v.flit_conservation.injected },
+                { label: 'accepted', counter: v.flit_conservation.accepted },
+              ]}
+            />
+            <h4>Route realization</h4>
+            <div className="kv">
+              <span>status</span>
+              <span>{v.route_realization.status}</span>
+            </div>
+            <div className="kv">
+              <span>scope</span>
+              <span className="muted">{v.route_realization.scope}</span>
+            </div>
+            <div className="kv">
+              <span>full path</span>
+              <span className="muted">not claimed — first-hop scope only</span>
+            </div>
+            <div className="kv">
+              <span>realized digest</span>
+              <Hash value={v.route_realization.realized_digest} />
+            </div>
+            {v.evidence_id && (
+              <div className="kv">
+                <span>evidence</span>
+                <Hash value={v.evidence_id} />
+              </div>
+            )}
+          </>
+        )}
+      </AsyncView>
+    </section>
+  );
+}
+
+function BundleActions({ run }: { run: RunView }): ReactElement {
+  const [verify, setVerify] = useState<RunVerifyView | null>(null);
+  const [job, setJob] = useState<JobView | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const poll = async (jobId: string): Promise<void> => {
+    for (;;) {
+      const current = await api.job(jobId);
+      setJob(current);
+      if (['COMPLETED', 'FAILED', 'REFUSED', 'CANCELLED'].includes(current.state)) {
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  };
+
+  const act = async (fn: () => Promise<void>): Promise<void> => {
+    setBusy(true);
+    setError(null);
+    try {
+      await fn();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="card">
+      <h3>Bundle</h3>
+      <div className="kv"><span>bundle identity</span><Hash value={run.bundle_id} /></div>
+      <div className="head-actions">
+        <button
+          type="button"
+          className="btn"
+          disabled={busy}
+          onClick={() => act(async () => {
+            setVerify(null);
+            setVerify(await api.verifyRun(run.run_id));
+          })}
+        >
+          Verify bundle
+        </button>
+        <button
+          type="button"
+          className="btn"
+          disabled={busy}
+          onClick={() => act(async () => {
+            setJob(null);
+            const submitted = await api.reproduceRun(run.run_id);
+            void poll(submitted.job_id);
+          })}
+        >
+          Reproduce
+        </button>
+      </div>
+      {verify && (
+        <div className="kv">
+          <span>integrity</span>
+          <span>
+            ✓ VERIFIED · {verify.files_checked} files checked
+          </span>
+        </div>
+      )}
+      {job && (
+        <div className="kv">
+          <span>reproduction</span>
+          <span>
+            {job.state === 'COMPLETED'
+              ? `SCIENTIFICALLY REPRODUCED (${job.result?.outcome ?? 'ok'})`
+              : job.state === 'REFUSED' || job.state === 'FAILED'
+                ? `refused: ${job.error_message ?? job.error_code}`
+                : job.state.toLowerCase()}
+          </span>
+        </div>
+      )}
+      {error && <p className="bad">{error}</p>}
+    </section>
+  );
+}
+
 function TrustDrawer({ run }: { run: RunView }): ReactElement {
   const evidence = useAsync(() => api.evidence(run.run_id), [run.run_id]);
   return (
@@ -613,21 +798,26 @@ export function RunDetail({ runId }: { runId: string }): ReactElement {
               <section className="card">
                 <h3>Requirements</h3>
                 <table className="live-table">
-                  <thead><tr><th>class</th><th>verdict</th><th>required</th><th>measured</th><th>authority</th></tr></thead>
+                  <thead><tr><th>class</th><th>QoS</th><th>binding</th><th>verdict</th><th>required</th><th>measured</th><th>authority</th><th>reason</th></tr></thead>
                   <tbody>
                     {r.requirements.entries.map((e, i) => (
                       <tr key={i}>
                         <td>{e.traffic_class ?? 'fabric'}</td>
+                        <td className="muted">{e.qos_class ?? '—'}</td>
+                        <td className="muted">{e.binding ? 'binding' : 'advisory'}</td>
                         <td><StatusBadge status={e.verdict} /></td>
-                        <td>{fmtNum(e.required)}</td>
-                        <td>{fmtNum(e.measured)}</td>
+                        <td>{e.required == null ? '—' : fmtNum(e.required)}</td>
+                        <td>{e.measured == null ? '—' : fmtNum(e.measured)}</td>
                         <td className="muted">{e.metric_authority}</td>
+                        <td className="muted">{e.reason}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </section>
             )}
+            <ExecutionIntegrity runId={r.run_id} />
+            <BundleActions run={r} />
             <TrustDrawer run={r} />
           </>
         )}

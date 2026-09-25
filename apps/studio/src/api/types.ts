@@ -137,7 +137,12 @@ export interface JobView {
   updated_at: string;
   error_code: string | null;
   error_message: string | null;
-  result: { run_id?: string; optimization_id?: string } | null;
+  result: {
+    run_id?: string;
+    optimization_id?: string;
+    /** REPRODUCTION jobs: canonical scientific outcome label. */
+    outcome?: 'SCIENTIFICALLY_REPRODUCED' | 'DIVERGED';
+  } | null;
 }
 
 export interface RunView extends RunSummary {
@@ -170,6 +175,48 @@ export interface EvidenceView {
   evidence: RunView['evidence'];
   artifacts: { path: string; size_bytes: number }[];
   documents: Record<string, unknown>;
+}
+
+/** ExecutionIntegrityView: conservation + route realization, projected
+ * from the authenticated evidence document. A counter the backend did not
+ * emit is `NOT_AVAILABLE` with a null value — never zero. */
+export interface IntegrityCounter {
+  value: number | null;
+  availability: 'MEASURED' | 'NOT_AVAILABLE';
+}
+
+export interface RunIntegrityView {
+  contract_version: 1;
+  run_id: string;
+  packet_conservation: {
+    declared: IntegrityCounter;
+    loaded: IntegrityCounter;
+    injected: IntegrityCounter;
+    delivered: IntegrityCounter;
+    verdict: 'CONSERVED' | 'VIOLATED' | 'NOT_MEASURED';
+  };
+  flit_conservation: {
+    declared: IntegrityCounter;
+    injected: IntegrityCounter;
+    accepted: IntegrityCounter;
+    verdict: 'CONSERVED' | 'VIOLATED' | 'NOT_MEASURED';
+  };
+  route_realization: {
+    status: 'OBSERVED' | 'NOT_OBSERVED';
+    scope: string;
+    full_path_claimed: false;
+    realized_digest: string | null;
+  };
+  evidence_id: string | null;
+}
+
+export interface RunVerifyView {
+  contract_version: 1;
+  run_id: string;
+  status: 'VERIFIED';
+  bundle_id: string;
+  file_count: number;
+  files_checked: number;
 }
 
 export interface OptimizationView {

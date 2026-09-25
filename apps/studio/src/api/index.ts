@@ -10,6 +10,8 @@ import type {
   OptimizationView,
   ProjectView,
   QualificationView,
+  RunIntegrityView,
+  RunVerifyView,
   RevisionView,
   RunSummary,
   RunView,
@@ -79,6 +81,12 @@ export const api = {
     get<RunView>(`/runs/${encodeURIComponent(runId)}`),
   evidence: (runId: string) =>
     get<EvidenceView>(`/runs/${encodeURIComponent(runId)}/evidence`),
+  integrity: (runId: string) =>
+    get<RunIntegrityView>(`/runs/${encodeURIComponent(runId)}/integrity`),
+  verifyRun: (runId: string) =>
+    post<RunVerifyView>(`/runs/${encodeURIComponent(runId)}/verify`),
+  reproduceRun: (runId: string) =>
+    post<JobView>(`/runs/${encodeURIComponent(runId)}/reproduce`),
 
   optimization: (optimizationId: string) =>
     get<OptimizationView>(
