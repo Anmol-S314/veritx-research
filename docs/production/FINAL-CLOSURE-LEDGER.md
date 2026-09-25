@@ -7,9 +7,9 @@ Authority is source + tests + runtime output, never this document. Where a
 row says CLOSED, the commit and the gate are named. `docs/production/CLOSURE-PLAN.md`
 remains the earlier narrative; this file is the program ledger.
 
-Release candidate under audit: baseline `2521d713`; closure tip
-`573456c6` plus this ledger commit. Verdict: **NOT READY** (see
-`PRODUCTION-SEAL.md`).
+Release candidate under audit: baseline `2521d713`, inherited branch point
+`bd6be628`, qualified code SHA `c759b84b` (this ledger and seal commits
+follow it). Verdict: **NOT READY** (see `PRODUCTION-SEAL.md`).
 
 ---
 
@@ -75,7 +75,7 @@ Release candidate under audit: baseline `2521d713`; closure tip
 
 | id | severity | status | source | root cause | implementation | tests | runtime gate | commit | historical claims affected | remaining limitation |
 |----|----------|--------|--------|-----------|----------------|-------|--------------|--------|---------------------------|----------------------|
-| C8 | high | IN_PROGRESS | `Dockerfile`, `Makefile`, `scripts/write_release_manifest.py`, `.github/workflows/release.yml` | container tag moving; several Docker deps clone HEADs; no release manifest | `release-manifest.json` binds SHA/container/backends/schemas/tools/reports (`make release-manifest-json`); tag releases assert container digest pin | `test_release_manifest_binds_the_release_to_its_facts` | script runs; pin guard in workflow | `a7784bde` | — | Dockerfile external clones still unpinned; clean clone not run |
+| C8 | high | IN_PROGRESS | `Dockerfile`, `Makefile`, `scripts/write_release_manifest.py`, `.github/workflows/release.yml`, `validation/harness/engines.py` | container tag moving; several Docker deps clone HEADs; no release manifest; ASTRA build invoked with `sh` | `release-manifest.json` (`make release-manifest-json`); tag releases assert digest pin; F-0008 (bash) fixed; ASTRA engine timeout 300→900 | `test_release_manifest_binds_the_release_to_its_facts`; T6 clean clone (fast 3562 + harness green) | T6 build + science green | `a7784bde`, `64944077`, `c759b84b` | F-0008 | Dockerfile external clones unpinned; bit-reproducible binaries not established |
 
 ## C9 — live Studio product
 
@@ -87,7 +87,7 @@ Release candidate under audit: baseline `2521d713`; closure tip
 
 | id | severity | status | source | root cause | implementation | tests | runtime gate | commit | historical claims affected | remaining limitation |
 |----|----------|--------|--------|-----------|----------------|-------|--------------|--------|---------------------------|----------------------|
-| C10 | high | IN_PROGRESS | `.github/workflows/release.yml` | battery not run at a frozen RC SHA | T0–T3 green via fast/validation/harness; T4/T6 jobs exist and set the release gate; T7 not built | fast 3532, validation 20, harness V01–V14 | — | — | — | RC SHA not frozen; T4/T6 not run at it; C10.2 certified run and C10.3 matrix owed |
+| C10 | high | IN_PROGRESS | `.github/workflows/release.yml`, `validation/harness/engines.py` | battery run at one frozen SHA | T0–T4 run green (fast 3562, validation 24, harness V01–V14, real 154); T6 clean clone green at `c759b84b`; T7 gateway-level smoke (uvicorn+curl); ASTRA timeout false-FAIL fixed | — | full battery + T6 | `c759b84b` | — | C10.2 certified run is covered by `test_real_grid_end_to_end`; C10.3 broader matrix and T7 browser smoke owed |
 
 ## C11 — final adversarial audit
 
@@ -99,7 +99,7 @@ Release candidate under audit: baseline `2521d713`; closure tip
 
 | id | severity | status | source | root cause | implementation | tests | runtime gate | commit | historical claims affected | remaining limitation |
 |----|----------|--------|--------|-----------|----------------|-------|--------------|--------|---------------------------|----------------------|
-| C12 | high | IN_PROGRESS | `docs/production/PRODUCTION-SEAL.md` + all C13 outputs | seal only at full closure | all required C13 docs now exist; seal refreshed with current facts; verdict NOT READY | — | — | this program | — | full closure not reached; verdict stays NOT READY |
+| C12 | high | IN_PROGRESS | `docs/production/PRODUCTION-SEAL.md` + all C13 outputs | seal only at full closure | all required C13 docs exist; seal refreshed with battery + T6 facts; verdict NOT READY | — | — | this program | — | C6/C7/C8/C9 blockers remain; verdict stays NOT READY |
 
 ---
 

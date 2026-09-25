@@ -8,10 +8,12 @@ until every seal condition is met.
 
 ## 1. Release candidate SHA
 
-`prod/production-readiness`, pushed to `github` (Anmol-S314/veritx-research);
-see `BASELINE.md` for the base SHAs and the per-commit list. The branch is
-not tagged and `main` has not been modified. A release tag must point at
-the exact audited SHA.
+`prod/production-readiness`; the closure tip is recorded in
+`FINAL-CLOSURE-LEDGER.md`. The clean-clone qualification (T6) was run at
+code SHA `c759b84b` (build from `0095e651` + the C10 ASTRA timeout fix);
+see `FINAL-BASELINE.md` for the pre-change baseline (`2521d713`) and the
+inherited branch point (`bd6be628`). The branch is not tagged and `main`
+has not been modified. A release tag must point at the exact audited SHA.
 
 ## 2. Base SHAs
 
@@ -166,14 +168,17 @@ share scientific identity with distinct run dirs; different runs differ.
 
 ## 12. Clean-clone results
 
-RUN (C8/T6). A `git clone` at the RC SHA with no prebuilt binaries builds
-BookSim, ASTRA and Ramulator from tracked source via `make release-build`
-and writes both build manifests. The clean clone's canonical compile
-produces the same `resolved_fabric_hash` as the working tree. The first
-attempt found F-0008 (the ASTRA build was invoked with `sh`, not `bash`),
-now fixed. A build outside a git checkout records no revision and
+RUN (C8/T6) at `c759b84b`. A `git clone` with no prebuilt binaries builds
+BookSim, ASTRA and Ramulator from tracked source via `make release-build`,
+writes both build manifests binding the release revision with
+`source_dirty=false`, runs the fast tier (3562 passed, 16 skipped), the
+real backend gates, and the full validation harness (V01–V14 PASS, engines
+PASS, 0 quarantined). The clean clone's canonical compile produces the same
+`resolved_fabric_hash` as the working tree. Findings: F-0008 (ASTRA build
+invoked with `sh`) and a false astra_runtime FAIL from a too-tight engine
+timeout (now 900 s). A build outside a git checkout records no revision and
 `dirty=true`, so releases must build from a clone. Bit-identical binaries
-across build directories are not yet established (scientific identity is).
+across build directories are not yet established.
 
 ## 13. Performance / scale envelope
 
@@ -218,14 +223,24 @@ pushed tip by the closure commits recorded in `FINAL-CLOSURE-LEDGER.md`.
 
 ## 19. Release decision
 
-**NOT READY.** The scientific core, authority collapse (C2.1–C2.3), durable
-run bundles with verify/reproduce (C3), failure/concurrency safety (C4),
-the production workload corpus (C5), the release manifest and a working
-clean-clone build (C8) and the live Studio gateway (C9) are in place and
-green. Remaining blockers: ASTRA numerical validity is NOT_ESTABLISHED
-(C6); serving integration fixtures are not vendored and the gate fails on
-their absence (C7); the container/Docker external clones are not pinned and
-bit-reproducible binaries are not established (C8); the Studio React app is
-not yet wired to the gateway (C9); and the final battery has not been run
-at a single frozen RC SHA with a T7 browser smoke (C10). See
-`FINAL-CLOSURE-LEDGER.md` for the item-by-item state.
+**NOT READY.** The scientific core (C1), authority collapse (C2.1–C2.3),
+durable run bundles with verify/reproduce (C3), failure/concurrency safety
+(C4), the production workload corpus (C5), the release manifest and a
+working clean-clone build (C8/T6) and the live Studio gateway (C9) are in
+place and green; the full battery was run and the clean clone qualified.
+Remaining blockers:
+
+- ASTRA numerical validity is **NOT_ESTABLISHED** (C6); its dominant
+  30M-cycle component is unexplained.
+- Serving integration `.et` fixtures are not vendored; the release gate
+  fails on their absence rather than passing (C7).
+- Container image and Docker external clones are not pinned by digest; the
+  release manifest records the pin state but the release path is not yet
+  digest-pinned (C8).
+- BookSim binaries are not bit-reproducible across build directories (C8).
+- The Studio React app is not yet wired to the gateway; T7 is a
+  gateway-level smoke, not a browser smoke (C9/C10).
+- C10.3's broader production matrix (MoE, multi-instance serving) is not
+  run end-to-end.
+
+See `FINAL-CLOSURE-LEDGER.md` for the item-by-item state.
