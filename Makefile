@@ -58,21 +58,29 @@ image-push:  ## push the tools image to the registry (needs write auth)
 # Builds every backend the release gates need from tracked source only and
 # writes a build-time provenance manifest beside each binary. A released
 # binary without a manifest is never pinned for reusable evidence.
+#
+# ONE toolchain variable controls both the build and the manifest, so a
+# release cannot record a compiler it did not use (C1.5). Choose the
+# toolchain with `RELEASE_CXX=clang++ make release-build`; it is passed
+# explicitly to the recursive make (BookSim), the ASTRA build and the
+# Ramulator cmake, so an ambient `CXX` cannot desynchronise them.
+
+RELEASE_CXX ?= g++
 
 .PHONY: release-build release-manifest
 release-build:  ## build all release-gate backends from source + manifests
-	$(MAKE) -C third_party/booksim2/src
-	JOBS=$${JOBS:-$$(nproc)} sh third_party/astra-sim/build/astra_booksim2/build.sh
-	cd third_party/ramulator2 && JOBS=$${JOBS:-$$(nproc)} ./build.sh
-	$(MAKE) release-manifest
+	$(MAKE) -C third_party/booksim2/src CXX=$(RELEASE_CXX)
+	CXX=$(RELEASE_CXX) JOBS=$${JOBS:-$$(nproc)} sh third_party/astra-sim/build/astra_booksim2/build.sh
+	cd third_party/ramulator2 && CXX=$(RELEASE_CXX) JOBS=$${JOBS:-$$(nproc)} ./build.sh
+	$(MAKE) release-manifest RELEASE_CXX=$(RELEASE_CXX)
 
 release-manifest:  ## write build-time provenance manifests for built backends
 	python3 scripts/write_build_manifest.py third_party/booksim2/src/booksim \
-	    --recipe-version booksim2-fork/v1 --compiler g++ \
+	    --recipe-version booksim2-fork/v1 --compiler $(RELEASE_CXX) \
 	    --build-config Release --flag=-O3 --flag=-g
 	python3 scripts/write_build_manifest.py \
 	    third_party/astra-sim/astra-sim/network_frontend/booksim2/bin/AstraSim_BookSim2 \
-	    --recipe-version astra-sim+booksim2/v1 --compiler g++ \
+	    --recipe-version astra-sim+booksim2/v1 --compiler $(RELEASE_CXX) \
 	    --build-config Release
 
 # -- Vendored tool management (scripts/tools.py) --

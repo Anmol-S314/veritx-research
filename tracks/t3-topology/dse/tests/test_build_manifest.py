@@ -116,3 +116,17 @@ def test_recipe_version_mismatch_refuses(tmp_path):
     manifest = load_and_verify_manifest(binary, path=path)
     with pytest.raises(BuildManifestError, match="recipe_version"):
         verify_build_manifest(binary, manifest, recipe_version="v2")
+
+
+def test_release_build_records_the_toolchain_it_actually_uses():
+    """C1.5: `CXX=clang++ make release-build` must not write a manifest that
+    claims g++. One variable must drive both the build and the manifest."""
+    repo = DSE.parents[2]
+    makefile = (repo / "Makefile").read_text(encoding="utf-8")
+    assert "RELEASE_CXX ?=" in makefile
+    # the same variable is threaded into every backend build
+    assert "third_party/booksim2/src CXX=$(RELEASE_CXX)" in makefile
+    assert "CXX=$(RELEASE_CXX) JOBS=" in makefile
+    # the manifest compiler is the build compiler, never a hardcoded g++
+    assert "--compiler g++" not in makefile
+    assert makefile.count("--compiler $(RELEASE_CXX)") == 2
