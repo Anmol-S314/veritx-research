@@ -60,6 +60,10 @@ taxonomy).
 | Environment contract contradiction (pyproject >=3.10 vs enforced 3.12) and missing `requirements.lock` | medium | inconsistent floor | `39f50578` | `test_run_core.py` |
 | CI did not trigger on the production branch | high | missing branch glob + no release workflow | `1fea26ab` | `.github/workflows/release.yml` |
 | Executed route realization was never observed (P0.10) | high | no dump render/compare | P0.10 commit | `test_route_observation.py`, real backend gates |
+| Ring ALLGATHER over-transmitted by factor k (F-0006) | high | message_bytes used B, not B/k | `921eb270` | `test_collective_allgather.py`, V11 |
+| Convergence window truncated concentrated multi-flit traces (F-0007) | high | window sized from packet count, not per-source flit horizon | `e9abab38` | `test_backend_booksim_projection.py`, V13 |
+| Toolchain provenance recorded g++ while building with ambient CXX (C1.5) | high | manifest literal vs `$(CXX)` | `839cd3a9` | `test_build_manifest.py` |
+| Collective vocabulary had 2–4 independent definitions (C2.2) | high | duplicated tuples/dicts | this program | `test_collective_vocabulary_has_exactly_one_authority` |
 
 Historical scientific findings F-0001 and F-0004 are FIXED in
 `validation/FINDINGS.md`; F-0002 ACCEPTED.
@@ -70,6 +74,15 @@ Historical scientific findings F-0001 and F-0004 are FIXED in
   realization equivalence over the complete source x destination domain —
   stronger than static config checking, narrower than per-packet
   instrumentation. No flit path trace exists.
+- The convergence window is the per-source injection horizon plus a
+  fixed 1000-cycle drain margin (F-0007). The margin is a heuristic, not a
+  physical bound; a workload needing more drain is refused by conservation.
+- The v3 compile orchestration still re-sequences the derivation that the
+  canonical compiler performs (hardware settings collapsed, sequencer not);
+  there is no V2↔V3 identity parity test. Tracked as C2.1/A8.
+- The collective vocabulary is now one authority (`workload/collectives.py`),
+  imported by every workload layer; `workload/canonical.py` still spells its
+  op-kind vocabulary inline (distinct fact, no schedule).
 - Build manifests are local files, not a cryptographic trust root: a
   clean-clone CI must generate them and the release manifest must tie
   them to the tag. `release-manifest` covers BookSim and ASTRA; Ramulator
@@ -78,22 +91,20 @@ Historical scientific findings F-0001 and F-0004 are FIXED in
   (16/16) and its pinned vendored source.
 - Run directories are timestamped, not content-addressed/atomic (P2); three
   run notions (`core.runs.Run`, `core.paths.new_run_dir`, evaluator temp
-  dirs) still coexist — `core.runs` is hardened but unused.
-- The v3 compile orchestration has no canonical-compiler equivalent yet
-  (only the v2 path was collapsed).
-- Workload model (`graph`/`operations`/`canonical`) authority is still
-  `VERIFY`.
+  dirs) still coexist — `core.runs` is hardened but unused. No
+  `verify-run`/`reproduce` verb yet.
+- ASTRA numerical comparison (NOT_ESTABLISHED); the engine gate reports the
+  unexplained 30M-cycle aggregate/exposed_comm component.
+- Serving integration `.et` fixtures are not vendored; the release gate
+  now FAILS on their skip (C7.1) instead of passing silently.
 - CI image/toolchain not yet pinned by digest; several Docker dependencies
-  clone moving HEADs.
+  clone moving HEADs (`Dockerfile`).
 - No clean-clone qualification has been run.
-- Prose is beginning to stale (generated/checked facts are owed).
 - Report files embed ephemeral scratch paths.
 - `bash third_party/ramulator2/build.sh` fails silently (use `./build.sh`).
-- Two serving-protocol tests are flaky under load (see
-  `SKIP-INVENTORY.md`).
-- Evidence schema v2 and PreparedBookSimInput schema v3 are incompatible
-  with v1/v2 fixtures by design; older persisted documents are refused,
-  not migrated.
+- Evidence schema v3 / prepared BookSim v5 / trace schedule v2 are
+  incompatible with older fixtures by design; older persisted documents are
+  refused, not migrated (see `SCHEMA-COMPATIBILITY.md`).
 
 ## 6. Schema / version matrix
 
@@ -122,12 +133,16 @@ ring semantics only; chunk ownership is not modeled.
 
 ## 9. Full regression results
 
-- Fast DSE tier: `3489 passed, 13 skipped, 0 failed` (102 s).
-- Validation pytest: `16 passed` (306 s).
-- Validation harness: V01–V10 PASS, mutations M1–M8 CAUGHT, metamorphic
-  M1–M8 PASS, engine gates PASS (ASTRA numerical NOT_ESTABLISHED).
-- Live-backend tier: 160 tests deselected from the fast tier; not yet run
-  as a timed release job.
+- Fast DSE tier: `3531 passed, 13 skipped, 0 failed` (106 s).
+- Validation pytest: `20 passed` (308 s).
+- Validation harness: V01–V14 PASS, mutations CAUGHT, metamorphic PASS,
+  engine gates PASS (ASTRA numerical NOT_ESTABLISHED), intervention
+  SUPPORTED, 0 quarantined.
+- Live-backend tier: last run at `bd6be628` `153 passed, 12 skipped`
+  (877 s); re-run at the RC SHA owed. 160 tests are deselected from the
+  fast tier.
+- Certified optimization gate: `Optimizer.optimize_certified` boundary
+  refuses unqualified producers; a real certified run remains owed (C10.2).
 
 ## 10. Failure-injection results
 
@@ -165,25 +180,32 @@ clone and a release manifest tying manifests to a tag. Owed.
 - ASTRA numerical comparison (NOT_ESTABLISHED).
 - Reduce-scatter/all-gather chunk ownership/rotation (not modeled).
 - Route realization beyond the first hop (the fork dumps first hops only).
-- Injection faster than one packet per cycle (trace model limit).
+- Injection faster than one flit per cycle per source (trace model limit);
+  drain beyond the fixed 1000-cycle margin is refused.
+- Serving integration without vendored `.et` fixtures (release gate fails).
+- Durable run verification/reproduction (`verify-run`/`reproduce`) — owed.
 
 ## 17. Dirty-tree status
 
-Clean at the time of writing.
+Clean at the time of writing (`84615331` is the last code commit; the seal
+and documentation commits follow).
 
 ## 18. Branch status
 
 Historical branches untouched (no cleanup performed). `main` untouched.
 `prod/production-readiness` is pushed to `github` and tracks
-`github/prod/production-readiness`.
+`github/prod/production-readiness`. The local branch is ahead of the
+pushed tip by the closure commits recorded in `FINAL-CLOSURE-LEDGER.md`.
 
 ## 19. Release decision
 
 **NOT READY.** Producer admission/provenance, conservation, executed-route
-observation and the fail-closed semantic taxonomy are enforced end-to-end
-(evidence schema v3 binds the manifest, recipe and route dump; the certified
-evaluator refuses unpinned producers and divergent routes). The operational
-program remains open: durable run bundles
-(P2), failure injection (P3), concurrency/idempotency (P4), API/schema
-freeze (P5), observability/limits, security review, clean-clone
-qualification, and the release manifest.
+observation, the fail-closed semantic taxonomy and the collective
+authority are enforced end-to-end (evidence schema v3 binds the manifest,
+recipe and route dump; the certified evaluator refuses unpinned producers
+and divergent routes; F-0007 removed the truncated-window class). The
+operational program remains open: durable run bundles (C3), failure
+injection (C4), concurrency/idempotency (C4), API/schema freeze (C5/P5),
+workload/serving/ASTRA qualification (C5–C7), clean-clone reproducibility
+(C8), the live Studio (C9), and the final battery and seal (C10–C12).
+See `FINAL-CLOSURE-LEDGER.md` for the item-by-item state.
