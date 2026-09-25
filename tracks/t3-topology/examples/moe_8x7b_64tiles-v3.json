@@ -1,0 +1,97 @@
+{
+  "_comment": "Mixture-of-experts serving on 64 compute tiles + 8 HBM + 2 NIC (9x9 MESH, concentration 1, 128b links). v3 semantics: TP allreduce plus EP alltoall intents across two traffic classes \u2014 one binding latency requirement and one advisory bandwidth floor. Compiler derives topology, DOR_XY, VCs and the deadlock certificate. No LOCKED fields below.",
+  "schema_version": 3,
+  "compiler_semantics_version": 3,
+  "workload": {
+    "model_family": "mixture_of_experts",
+    "model_name": "moe-8x7b",
+    "tp": 8,
+    "pp": 1,
+    "ep": 8,
+    "dp": 1,
+    "serving_mode": "mixed",
+    "collectives": [
+      {
+        "kind": "allreduce",
+        "dimension": "TP",
+        "payload_bytes": 8192,
+        "traffic_class": "tp_collective"
+      },
+      {
+        "kind": "alltoall",
+        "dimension": "EP",
+        "payload_bytes": 4096,
+        "traffic_class": "ep_dispatch"
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "traffic_class": "tp_collective",
+      "qos_class": "latency_critical",
+      "latency_ceiling_cycles": 100000.0,
+      "bandwidth_floor_gbps": null,
+      "binding": true
+    },
+    {
+      "traffic_class": "ep_dispatch",
+      "qos_class": "bandwidth",
+      "latency_ceiling_cycles": null,
+      "bandwidth_floor_gbps": 25.0,
+      "binding": false
+    }
+  ],
+  "agents": [
+    {
+      "kind": "compute_tile",
+      "count": 64,
+      "data_width": 256,
+      "addr_width": 64,
+      "protocol": "AXI",
+      "clock_domain": null,
+      "power_domain": null
+    },
+    {
+      "kind": "hbm_controller",
+      "count": 8,
+      "data_width": 256,
+      "addr_width": 64,
+      "protocol": "AXI",
+      "clock_domain": null,
+      "power_domain": null
+    },
+    {
+      "kind": "nic",
+      "count": 2,
+      "data_width": 256,
+      "addr_width": 64,
+      "protocol": "AXI",
+      "clock_domain": null,
+      "power_domain": null
+    }
+  ],
+  "dependencies": [],
+  "noc_config": {
+    "topology_family": "mesh",
+    "radix": null,
+    "concentration": 1,
+    "arbitration": null,
+    "rcu_enabled": null,
+    "link_width": 128,
+    "mcast_groups": null,
+    "mcast_setup_cycles": null,
+    "output_formats": [
+      "json"
+    ],
+    "obfuscation_level": 0
+  },
+  "address_map": {
+    "ranges": []
+  },
+  "physical": {
+    "clock_freq_mhz": 1000.0,
+    "data_width": 256,
+    "num_power_domains": 1,
+    "process_node_nm": 7
+  }
+}

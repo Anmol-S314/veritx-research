@@ -42,6 +42,26 @@ _WORKLOAD_TEMPLATES: tuple[tuple[str, str, str, str], ...] = (
         "Llama Dense 8B · 64 tiles",
         "dense transformer, TP8 collective over a 64-tile mesh",
     ),
+    (
+        "dense-1b-16tiles",
+        "tracks/t3-topology/examples/dense_1b_16tiles-v3.json",
+        "Dense 1B · 16 tiles",
+        "decode-heavy dense transformer, TP4 allreduce over a 16-tile mesh",
+    ),
+    (
+        "dense-4b-32tiles-conc4",
+        "tracks/t3-topology/examples/dense_4b_32tiles_conc4-v3.json",
+        "Dense 4B · 32 tiles · concentrated",
+        "prefill-heavy dense transformer, DP allgather over a concentrated "
+        "mesh (4 tiles per router)",
+    ),
+    (
+        "moe-8x7b-64tiles",
+        "tracks/t3-topology/examples/moe_8x7b_64tiles-v3.json",
+        "MoE 8×7B · 64 tiles",
+        "mixture-of-experts serving, TP allreduce + EP alltoall over a "
+        "64-tile mesh",
+    ),
 )
 
 _RUN_STATUS = {

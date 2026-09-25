@@ -1,0 +1,75 @@
+{
+  "_comment": "Decode-heavy dense transformer on 16 compute tiles + 4 HBM (5x5 MESH, concentration 1). v3 semantics: one TP allreduce intent, one traffic class, one binding latency requirement. Compiler derives topology, DOR_XY, VCs and the deadlock certificate. No LOCKED fields below.",
+  "schema_version": 3,
+  "compiler_semantics_version": 3,
+  "workload": {
+    "model_family": "dense_transformer",
+    "model_name": "dense-1b",
+    "tp": 4,
+    "pp": 1,
+    "ep": 1,
+    "dp": 1,
+    "serving_mode": "decode_heavy",
+    "collectives": [
+      {
+        "kind": "allreduce",
+        "dimension": "TP",
+        "payload_bytes": 4096,
+        "traffic_class": "tp_collective"
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "traffic_class": "tp_collective",
+      "qos_class": "latency_critical",
+      "latency_ceiling_cycles": 50000.0,
+      "bandwidth_floor_gbps": null,
+      "binding": true
+    }
+  ],
+  "agents": [
+    {
+      "kind": "compute_tile",
+      "count": 16,
+      "data_width": 256,
+      "addr_width": 64,
+      "protocol": "AXI",
+      "clock_domain": null,
+      "power_domain": null
+    },
+    {
+      "kind": "hbm_controller",
+      "count": 4,
+      "data_width": 256,
+      "addr_width": 64,
+      "protocol": "AXI",
+      "clock_domain": null,
+      "power_domain": null
+    }
+  ],
+  "dependencies": [],
+  "noc_config": {
+    "topology_family": "mesh",
+    "radix": null,
+    "concentration": 1,
+    "arbitration": null,
+    "rcu_enabled": null,
+    "link_width": 64,
+    "mcast_groups": null,
+    "mcast_setup_cycles": null,
+    "output_formats": [
+      "json"
+    ],
+    "obfuscation_level": 0
+  },
+  "address_map": {
+    "ranges": []
+  },
+  "physical": {
+    "clock_freq_mhz": 1000.0,
+    "data_width": 256,
+    "num_power_domains": 1,
+    "process_node_nm": 7
+  }
+}
