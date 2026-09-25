@@ -93,6 +93,10 @@ class SelectWorkloadBody(BaseModel):
     workload_id: str
 
 
+class RenameProjectBody(BaseModel):
+    name: str
+
+
 class EvaluateBodyV1(BaseModel):
     backend: str | None = None
 
@@ -275,6 +279,15 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
     @app.get("/api/v1/projects/{project_id}", tags=["product"])
     def v1_project(project_id: str) -> dict[str, Any]:
         return product.project_view(project_id)
+
+    @app.patch("/api/v1/projects/{project_id}", tags=["product"])
+    def v1_rename_project(project_id: str,
+                          body: RenameProjectBody) -> dict[str, Any]:
+        return product.rename_project(project_id, body.name)
+
+    @app.delete("/api/v1/projects/{project_id}", tags=["product"])
+    def v1_delete_project(project_id: str) -> dict[str, Any]:
+        return product.delete_project(project_id)
 
     @app.get("/api/v1/projects/{project_id}/draft", tags=["product"])
     def v1_draft(project_id: str) -> dict[str, Any]:

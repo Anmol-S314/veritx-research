@@ -32,6 +32,7 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import shutil
 import tempfile
 import threading
 import uuid
@@ -197,6 +198,36 @@ class ProductStore:
             self._atomic_write(
                 self.project_dir(project["project_id"]) / "project.json",
                 project)
+
+    def rename_project(self, project_id: str, name: str) -> dict[str, Any]:
+        with self._locked():
+            project = self.load_project(project_id)
+            project["name"] = name
+            project["updated_at"] = utcnow()
+            self._atomic_write(self.project_dir(project_id) / "project.json",
+                               project)
+            return project
+
+    def delete_project(self, project_id: str) -> None:
+        """Remove a project and all of its resources.
+
+        Irreversible. Refuses to touch anything outside the projects root.
+        Jobs still running against the project are in-process; the caller
+        (gateway) is responsible for not deleting a project mid-job.
+        """
+        with self._locked():
+            target = self.project_dir(project_id)
+            base = (self.root / "projects").resolve()
+            resolved = target.resolve()
+            if base != resolved and base not in resolved.parents:
+                raise ProductStoreError(
+                    ErrorCode.INVALID_INTENT,
+                    f"refusing to delete outside the projects root: {target}")
+            if not (target / "project.json").is_file():
+                raise ProductStoreError(
+                    ErrorCode.NOT_FOUND, f"no such project: {project_id}",
+                    operation="delete_project", resource_id=project_id)
+            shutil.rmtree(target)
 
     # ── draft ─────────────────────────────────────────────────────────
 

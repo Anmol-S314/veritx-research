@@ -74,6 +74,50 @@ def test_compile_and_verify_workflow(tmp_path):
     assert project["draft"]["dirty"] is False
 
 
+def test_project_crud(tmp_path):
+    client = _client(tmp_path, with_backend=False)
+    pid = _make_project(client)["project"]["project_id"]
+
+    renamed = client.patch(f"/api/v1/projects/{pid}",
+                           json={"name": "Renamed Study"})
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["project"]["name"] == "Renamed Study"
+    assert client.get(f"/api/v1/projects/{pid}").json()[
+        "project"]["name"] == "Renamed Study"
+    listing = client.get("/api/v1/projects").json()["projects"]
+    assert any(p["project"]["project_id"] == pid for p in listing)
+
+    blank = client.patch(f"/api/v1/projects/{pid}", json={"name": "   "})
+    assert blank.status_code == 400
+
+    deleted = client.delete(f"/api/v1/projects/{pid}")
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json()["deleted"] is True
+    assert client.get(f"/api/v1/projects/{pid}").status_code == 404
+    assert client.get("/api/v1/projects").json()["projects"] == []
+
+
+def test_delete_project_with_running_job_conflicts(tmp_path):
+    # A non-terminal job makes delete a conflict, not silent data loss.
+    from veritx_dse.application.errors import ErrorCode
+    from veritx_dse.product.service import ProductConfig, ProductService
+
+    svc = ProductService(ProductConfig(projects_root=tmp_path / "projects"))
+    pid = svc.create_project(name="busy", workload_id=WORKLOAD)[
+        "project"]["project_id"]
+    svc.store.create_job(pid, {
+        "schema_version": 1, "job_id": "job-x", "project_id": pid,
+        "kind": "EVALUATION", "revision_id": "r", "state": "RUNNING",
+        "submitted_at": "t", "updated_at": "t", "error_code": None,
+        "error_message": None, "result": None,
+    })
+    with pytest.raises(Exception) as exc:
+        svc.delete_project(pid)
+    assert getattr(exc.value, "code", None) == ErrorCode.CONFLICT
+    # The project survives.
+    assert svc.store.load_project(pid)["name"] == "busy"
+
+
 def test_dirty_draft_regression(tmp_path):
     client = _client(tmp_path, with_backend=False)
     project = _make_project(client)

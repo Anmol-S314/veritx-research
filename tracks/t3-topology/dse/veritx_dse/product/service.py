@@ -28,7 +28,7 @@ from veritx_dse.core.run_bundle import (
     RunBundleError, finalize_run_bundle, verify_run_bundle,
 )
 from veritx_dse.core.runs import new_run_id
-from veritx_dse.product.jobs import JobManager
+from veritx_dse.product.jobs import TERMINAL_STATES, JobManager
 from veritx_dse.product.store import ProductStore, _new_id, utcnow
 
 #: v3 workload templates shipped with the product. The catalog exposes
@@ -269,6 +269,27 @@ class ProductService:
         return {"contract_version": 1,
                 "projects": [self.project_view(p["project_id"])
                              for p in self.store.list_projects()]}
+
+    def rename_project(self, project_id: str, name: str) -> dict[str, Any]:
+        if not isinstance(name, str) or not name.strip():
+            raise intent_error("project name must be a non-empty string")
+        self.store.load_project(project_id)
+        project = self.store.rename_project(project_id, name.strip())
+        return self.project_view(project["project_id"])
+
+    def delete_project(self, project_id: str) -> dict[str, Any]:
+        self.store.load_project(project_id)
+        active = [j for j in self.store.list_jobs(project_id)
+                  if j.get("state") not in TERMINAL_STATES]
+        if active:
+            raise ProductServiceError(
+                ErrorCode.CONFLICT,
+                f"project {project_id} has {len(active)} job(s) in progress; "
+                "wait for them to finish before deleting",
+                operation="delete_project", resource_id=project_id)
+        self.store.delete_project(project_id)
+        return {"contract_version": 1, "deleted": True,
+                "project_id": project_id}
 
     def draft_view(self, project_id: str) -> dict[str, Any]:
         project = self.store.load_project(project_id)
