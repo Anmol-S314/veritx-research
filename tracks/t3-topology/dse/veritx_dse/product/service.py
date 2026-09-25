@@ -20,10 +20,17 @@ from pathlib import Path
 from typing import Any
 
 from veritx_dse.application.errors import ControlPlaneError, ErrorCode, intent_error
+from veritx_dse.application.errors import map_lowering_error as _map_lowering_error
 from veritx_dse.application.fabric_compiler import FabricCompiler
 from veritx_dse.application.product_evaluator import evaluate_product
 from veritx_dse.application.views import (
     compilation_view, design_view, topology_view,
+)
+from veritx_dse.core.errors import (
+    InvalidInput as _LoweringInvalid,
+    MappingInvalid as _LoweringMappingInvalid,
+    UnsupportedSchedule as _LoweringSchedule,
+    UnsupportedSemantics as _LoweringSemantics,
 )
 from veritx_dse.core.paths import REPO
 from veritx_dse.core.run_bundle import (
@@ -172,6 +179,10 @@ class ProductService:
                 "noc": self._noc_view(request),
                 "request": canonical_request_doc(request),
             }
+            supported, support_reason = self._evaluation_support(
+                {"request": entry["request"]})
+            entry["evaluation_supported"] = supported
+            entry["evaluation_note"] = support_reason
             workloads.append(entry)
         return {"contract_version": 1, "workloads": workloads}
 
@@ -295,6 +306,29 @@ class ProductService:
             self.store.save_project(project)
         return project
 
+    def _evaluation_support(
+            self, revision: dict[str, Any]) -> tuple[bool, str | None]:
+        """Whether a revision's intent can actually be simulated.
+
+        Compilation proves the fabric; only a successful intent lowering
+        proves the workload can run on it. A MoE design certifies fine
+        but has no proven intent→collective mapping, so it must read as
+        unevaluable everywhere — catalog, project view, submit gate —
+        never as a runnable simulation.
+        """
+        from veritx_dse.workload.intent_lowering import (
+            lower_compile_workload,
+        )
+        try:
+            request = parse_request_doc(revision.get("request"))
+            lower_compile_workload(request)
+        except (_LoweringInvalid, _LoweringSemantics, _LoweringSchedule,
+                _LoweringMappingInvalid) as exc:
+            return False, str(exc)
+        except ControlPlaneError as exc:
+            return False, exc.message
+        return True, None
+
     def project_view(self, project_id: str) -> dict[str, Any]:
         project = self._ensure_revision_pointers(project_id)
         draft = self.store.load_draft(project_id)
@@ -316,6 +350,11 @@ class ProductService:
         latest_active_run = next(
             (r for r in reversed(runs)
              if r.get("revision_id") == active_id), None)
+        if active is None:
+            active_evaluation = None
+        else:
+            supported, reason = self._evaluation_support(active)
+            active_evaluation = {"supported": supported, "reason": reason}
         return {
             "contract_version": 1,
             "project": {
@@ -332,6 +371,7 @@ class ProductService:
                                else self._revision_summary(latest)),
             "latest_active_run": (None if latest_active_run is None
                                   else self._run_summary(latest_active_run)),
+            "active_evaluation": active_evaluation,
             "draft": {
                 "dirty": dirty,
                 "based_on_revision_id": active_id,
@@ -599,6 +639,13 @@ class ProductService:
                 f"{(revision.get('certificate') or {}).get('overall')}); "
                 f"reason: {compilation.get('error') or 'not certified'}",
                 operation="submit_evaluation", resource_id=revision_id)
+        supported, support_reason = self._evaluation_support(revision)
+        if not supported:
+            raise ProductServiceError(
+                ErrorCode.LOWERING_UNSUPPORTED,
+                f"revision {revision_id} cannot be simulated: "
+                f"{support_reason}",
+                operation="submit_evaluation", resource_id=revision_id)
         binary = self._require_backend()
         job = self.jobs.submit(
             pid, kind="EVALUATION", revision_id=revision_id,
@@ -657,11 +704,19 @@ class ProductService:
         run_id = new_run_id()
         bundle_dir = self.store.run_bundle_dir(project_id, run_id)
         progress("RUNNING")
-        product = evaluate_product(
-            request, binary=binary,
-            network_clock_hz=self.config.network_clock_hz,
-            timeout_s=self.config.timeout_s,
-            run_dir=bundle_dir, repo_root=self.config.repo_root)
+        try:
+            product = evaluate_product(
+                request, binary=binary,
+                network_clock_hz=self.config.network_clock_hz,
+                timeout_s=self.config.timeout_s,
+                run_dir=bundle_dir, repo_root=self.config.repo_root)
+        except (_LoweringInvalid, _LoweringSemantics, _LoweringSchedule,
+                _LoweringMappingInvalid) as exc:
+            # A workload the lowering cannot prove (MoE, diffusion, …)
+            # is a typed refusal, never an internal error: the design
+            # certified, but no run can honestly execute it.
+            raise _map_lowering_error(
+                exc, operation="run_evaluation") from exc
         evaluation = (None if product.outcome is None
                       else product.outcome.to_view_dict())
         outcome = product.outcome

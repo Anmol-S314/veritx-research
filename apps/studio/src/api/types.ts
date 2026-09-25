@@ -78,6 +78,11 @@ export interface ProjectView {
   latest_attempt: RevisionSummary | null;
   /** Latest run scoped to the ACTIVE revision — never a newer attempt's. */
   latest_active_run: RunSummary | null;
+  /** Whether the active revision's intent can actually be simulated. */
+  active_evaluation: {
+    supported: boolean;
+    reason: string | null;
+  } | null;
   draft: DraftMeta;
   revisions: RevisionSummary[];
   runs: RunSummary[];
@@ -227,6 +232,10 @@ export interface WorkloadCatalogEntry {
   agents: { kind: string; count: number }[];
   noc: Record<string, unknown>;
   request: Record<string, unknown>;
+  /** False when the workload certifies but cannot be simulated
+   * (no proven intent→collective mapping); reason carries the refusal. */
+  evaluation_supported: boolean;
+  evaluation_note: string | null;
 }
 
 export interface WorkloadCatalogView {

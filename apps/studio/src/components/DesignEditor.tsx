@@ -45,6 +45,12 @@ const ARB_OPTIONS: [string, string][] = [
   ['round_robin', 'Round robin'],
 ];
 
+/** Friendly label for an engine model-family value. */
+export function modelFamilyLabel(value: string | null | undefined): string {
+  const found = MODEL_FAMILIES.find(([v]) => v === value);
+  return found ? found[1] : (value ?? '—');
+}
+
 /** A DesignView-shaped preview derived from the draft request, so the
  * side view can draw intent without claiming it is certified. */
 function previewFromRequest(req: Record<string, unknown>): DesignView {

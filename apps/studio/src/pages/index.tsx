@@ -354,6 +354,12 @@ export function Workload({ projectId }: { projectId: string }): ReactElement {
                           Use this workload
                         </button>
                       )}
+                      {!w.evaluation_supported && (
+                        <span className="stale" title={w.evaluation_note ?? ''}>
+                          Certifies, but simulation isn&apos;t supported for
+                          this workload
+                        </span>
+                      )}
                     </div>
                   </section>
                 ))}

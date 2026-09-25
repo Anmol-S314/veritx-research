@@ -609,3 +609,35 @@ def test_refused_attempt_preserves_active_revision(tmp_path):
                                json={"backend": None})
     assert refused_eval.status_code == 409, refused_eval.text
     assert refused_eval.json()["code"] == "CONFLICT"
+
+
+def test_unevaluable_revision_refuses_simulation_honestly(tmp_path):
+    """A certified MoE revision has no proven intent->collective mapping:
+    the catalog, the project view and the submit gate must all say so,
+    and the refusal is typed (422) rather than an internal error."""
+    client = _client(tmp_path, with_backend=False)
+    catalog = client.get("/api/v1/catalog/workloads").json()["workloads"]
+    moe = next(w for w in catalog
+               if w["workload_id"] == "moe-8x7b-64tiles")
+    assert moe["evaluation_supported"] is False
+    assert "mixture_of_experts" in (moe["evaluation_note"] or "")
+
+    resp = client.post("/api/v1/projects",
+                       json={"name": "MoE Study",
+                             "workload_id": "moe-8x7b-64tiles"})
+    assert resp.status_code == 200, resp.text
+    pid = resp.json()["project"]["project_id"]
+    revision = client.post(f"/api/v1/projects/{pid}/compile").json()
+    assert revision["compilation"]["status"] == "COMPILED"
+    assert revision["certificate"]["overall"] == "PASS"
+
+    project = client.get(f"/api/v1/projects/{pid}").json()
+    support = project["active_evaluation"]
+    assert support["supported"] is False
+    assert "mixture_of_experts" in (support["reason"] or "")
+
+    refused = client.post(
+        f"/api/v1/revisions/{revision['revision_id']}/evaluate",
+        json={"backend": None})
+    assert refused.status_code == 422, refused.text
+    assert refused.json()["code"] == "LOWERING_UNSUPPORTED"

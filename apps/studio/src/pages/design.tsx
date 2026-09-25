@@ -6,7 +6,7 @@ import {
 } from '../studio';
 import { Hash, StatusBadge } from '../components/badges';
 import ArtifactStrip from '../components/ArtifactStrip';
-import DesignEditor from '../components/DesignEditor';
+import DesignEditor, { modelFamilyLabel } from '../components/DesignEditor';
 import VerifyView from '../components/VerifyView';
 import EvaluateView from '../components/EvaluateView';
 
@@ -214,6 +214,16 @@ export function Simulate({ projectId }: { projectId: string }): ReactElement {
               section: 'compile', label: 'Inspect verification',
             };
           }
+          if (p.active_evaluation && !p.active_evaluation.supported) {
+            const family = modelFamilyLabel(
+              current.design.workload.model_family);
+            return {
+              text: `Simulation isn't supported for ${family} — ${
+                p.active_evaluation.reason ?? 'no proven mapping to simulation.'
+              } The fabric is certified; it just can't be executed by this backend.`,
+              section: 'design', label: 'Edit design',
+            };
+          }
           if (p.draft.dirty) {
             return {
               text: `The draft has uncompiled changes. The active revision is ${current.display_name}; compile to evaluate the new intent.`,
@@ -225,6 +235,7 @@ export function Simulate({ projectId }: { projectId: string }): ReactElement {
         const canRun = Boolean(current)
           && current!.compilation.status === 'COMPILED'
           && current!.certificate?.overall === 'PASS'
+          && (p.active_evaluation?.supported ?? true)
           && !p.draft.dirty && !running;
         return (
           <div className="page">
