@@ -87,7 +87,7 @@ follow it). Verdict: **NOT READY** (see `PRODUCTION-SEAL.md`).
 
 | id | severity | status | source | root cause | implementation | tests | runtime gate | commit | historical claims affected | remaining limitation |
 |----|----------|--------|--------|-----------|----------------|-------|--------------|--------|---------------------------|----------------------|
-| C10 | high | IN_PROGRESS | `.github/workflows/release.yml`, `validation/harness/engines.py` | battery run at one frozen SHA | T0–T4 run green (fast 3562, validation 24, harness V01–V14, real 154); T6 clean clone green at `c759b84b`; T7 gateway-level smoke (uvicorn+curl); ASTRA timeout false-FAIL fixed | — | full battery + T6 | `c759b84b` | — | C10.2 certified run is covered by `test_real_grid_end_to_end`; C10.3 broader matrix and T7 browser smoke owed |
+| C10 | high | IN_PROGRESS | `.github/workflows/release.yml`, `validation/harness/engines.py` | battery run at one frozen SHA | T0–T4 green (fast 3563, validation 24, harness V01–V14, real 154); T6 clean clone green at `c759b84b`; T7 gateway browser smoke (Playwright: LIVE → Trust → Runs → evidence); C10.2 certified run via `test_real_grid_end_to_end` | — | full battery + T6 | `c759b84b`, `12eb6c25` | — | C10.3 broader matrix (MoE/multi-instance serving) owed; final SHA moves with each docs commit |
 
 ## C11 — final adversarial audit
 

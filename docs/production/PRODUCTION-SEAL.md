@@ -66,6 +66,7 @@ taxonomy).
 | Convergence window truncated concentrated multi-flit traces (F-0007) | high | window sized from packet count, not per-source flit horizon | `e9abab38` | `test_backend_booksim_projection.py`, V13 |
 | Toolchain provenance recorded g++ while building with ambient CXX (C1.5) | high | manifest literal vs `$(CXX)` | `839cd3a9` | `test_build_manifest.py` |
 | Collective vocabulary had 2–4 independent definitions (C2.2) | high | duplicated tuples/dicts | this program | `test_collective_vocabulary_has_exactly_one_authority` |
+| ASTRA over-counted every collective step by 1,000,000 cycles (F-ASTRA-0001) | high | `run_cycles` quantized retired-packet draining | `a4f7da62` | engine gate `astra_runtime`; two-binary differential |
 
 Historical scientific findings F-0001 and F-0004 are FIXED in
 `validation/FINDINGS.md`; F-0002 ACCEPTED.
@@ -98,7 +99,11 @@ Historical scientific findings F-0001 and F-0004 are FIXED in
 - BookSim binaries built in two different directories are not
   bit-identical at the same source revision (scientific identity is
   identical); each build's manifest binds its own binary sha.
-- The Studio gateway exists; the React app is still fixture-backed.
+- The Studio gateway exists and the React app is wired for Runs/Trust; the
+  remaining sections are still fixture-backed.
+- Rebuilding a backend requires regenerating its build manifest
+  (`make release-manifest`); the producer gate correctly refuses a binary
+  whose manifest digest is stale (observed after the F-ASTRA-0001 rebuild).
 - ASTRA numerical comparison (NOT_ESTABLISHED); F-ASTRA-0001 fixed the
   30M-cycle run_cycles over-count, so the aggregate now matches the
   declared compute + comm (40310c = 10000 + 30310). Independent per-domain
@@ -141,12 +146,14 @@ ring semantics only; chunk ownership is not modeled.
 
 ## 9. Full regression results
 
-- Fast DSE tier: `3562 passed, 16 skipped, 0 failed` (107 s).
-- Validation pytest: `24 passed` (300 s).
+- Fast DSE tier: `3563 passed, 16 skipped, 0 failed` (108 s).
+- Validation pytest: `24 passed` (245 s).
 - Validation harness: V01–V14 PASS, mutations CAUGHT, metamorphic PASS,
   engine gates PASS (ASTRA numerical NOT_ESTABLISHED), intervention
   SUPPORTED, 0 quarantined.
-- Live-backend tier: `154 passed, 12 skipped` (825 s).
+- Live-backend tier: `154 passed, 12 skipped` (7.7 s). The tier is now
+  ~100x faster because F-ASTRA-0001 removed the 30M-cycle-per-step ASTRA
+  over-count.
 - Certified optimization gate (C10.2): `test_real_grid_end_to_end` runs
   `Optimizer.optimize_certified` from the release build and asserts every
   selected/Pareto candidate is EVALUATED with an authenticated proof,
