@@ -89,6 +89,10 @@ class DraftBody(BaseModel):
     request: dict[str, Any]
 
 
+class SelectWorkloadBody(BaseModel):
+    workload_id: str
+
+
 class EvaluateBodyV1(BaseModel):
     backend: str | None = None
 
@@ -279,6 +283,11 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
     @app.put("/api/v1/projects/{project_id}/draft", tags=["product"])
     def v1_put_draft(project_id: str, body: DraftBody) -> dict[str, Any]:
         return product.put_draft(project_id, body.request)
+
+    @app.post("/api/v1/projects/{project_id}/workload", tags=["product"])
+    def v1_select_workload(project_id: str,
+                           body: SelectWorkloadBody) -> dict[str, Any]:
+        return product.select_workload(project_id, body.workload_id)
 
     @app.post("/api/v1/projects/{project_id}/compile", tags=["product"])
     def v1_compile(project_id: str) -> dict[str, Any]:

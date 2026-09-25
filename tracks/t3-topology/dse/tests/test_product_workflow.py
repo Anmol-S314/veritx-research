@@ -143,6 +143,145 @@ def test_typed_refusals_map_to_http(tmp_path):
     assert bad_study.status_code == 400
 
 
+def test_tampered_bundle_is_refused(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+
+    from veritx_dse.application.errors import ErrorCode
+    from veritx_dse.core.run_bundle import finalize_run_bundle
+    from veritx_dse.product.service import ProductConfig, ProductService
+    from veritx_dse.product.store import ProductStore
+
+    svc = ProductService(ProductConfig(projects_root=tmp_path / "projects"))
+    pid = svc.create_project(name="tamper", workload_id=WORKLOAD)[
+        "project"]["project_id"]
+    run_id = "run-tamper-1"
+    bundle_dir = svc.store.run_bundle_dir(pid, run_id)
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+    (bundle_dir / "evidence.json").write_text('{"a": 1}', encoding="utf-8")
+    manifest = finalize_run_bundle(bundle_dir)
+    svc.store.create_run(pid, {
+        "schema_version": 1, "run_id": run_id, "project_id": pid,
+        "revision_id": "r", "design_hash": "sha256:x", "backend": "booksim",
+        "status": "EVALUATED", "qualification": "QUALIFIED",
+        "bundle_id": "sha256:" + manifest["bundle_id"],
+        "evaluation": None, "requirements": None, "producer": None,
+        "evidence": None, "display_name": None, "started_at": None,
+        "completed_at": None, "requirements_pass": None, "reason": None,
+    })
+    # A verified read succeeds.
+    assert svc.get_run(run_id)["bundle_id"].startswith("sha256:")
+
+    # Tampering with the content after finalize is refused.
+    (bundle_dir / "evidence.json").write_text('{"a": 2}', encoding="utf-8")
+    with pytest.raises(Exception) as exc:
+        svc.get_run(run_id)
+    assert getattr(exc.value, "code", None) == ErrorCode.EVIDENCE_INVALID
+    with pytest.raises(Exception) as exc2:
+        svc.run_evidence(run_id)
+    assert getattr(exc2.value, "code", None) == ErrorCode.EVIDENCE_INVALID
+
+    # A recorded bundle_id that disagrees with the content is refused.
+    svc2 = ProductService(ProductConfig(projects_root=tmp_path / "projects2"))
+    pid2 = svc2.create_project(name="mismatch", workload_id=WORKLOAD)[
+        "project"]["project_id"]
+    run2 = "run-tamper-2"
+    d2 = svc2.store.run_bundle_dir(pid2, run2)
+    d2.mkdir(parents=True, exist_ok=True)
+    (d2 / "e.json").write_text("{}", encoding="utf-8")
+    finalize_run_bundle(d2)
+    svc2.store.create_run(pid2, {
+        "schema_version": 1, "run_id": run2, "project_id": pid2,
+        "revision_id": "r", "design_hash": "sha256:x", "backend": "booksim",
+        "status": "EVALUATED", "qualification": "QUALIFIED",
+        "bundle_id": "sha256:" + "0" * 64,
+        "evaluation": None, "requirements": None, "producer": None,
+        "evidence": None, "display_name": None, "started_at": None,
+        "completed_at": None, "requirements_pass": None, "reason": None,
+    })
+    with pytest.raises(Exception) as exc3:
+        svc2.get_run(run2)
+    assert getattr(exc3.value, "code", None) == ErrorCode.EVIDENCE_INVALID
+
+    # Concurrent revision allocation must be unique (two store instances).
+    store_root = tmp_path / "projects3"
+    base = ProductStore(store_root)
+    from veritx_dse.product.service import parse_request_doc
+    draft = parse_request_doc(_workload_request_doc())
+    project = base.create_project(
+        name="concurrent", draft_doc=draft.to_dict(),
+        workload_id=WORKLOAD, source="test")
+    cpid = project["project_id"]
+
+    def alloc(_i: int) -> int:
+        return ProductStore(store_root).allocate_revision(cpid)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        seqs = list(pool.map(alloc, range(16)))
+    assert len(set(seqs)) == 16
+
+
+def _workload_request_doc() -> dict:
+    import json
+    from pathlib import Path
+    from veritx_dse.core.paths import REPO
+    return json.loads((REPO / "tracks/t3-topology/examples/"
+                       "llama_dense_64tiles-v3.json").read_text())
+
+
+def test_compare_compatibility_gate(tmp_path):
+    from veritx_dse.product.service import ProductConfig, ProductService
+
+    svc = ProductService(ProductConfig(projects_root=tmp_path / "projects"))
+    pid = svc.create_project(name="cmp", workload_id=WORKLOAD)[
+        "project"]["project_id"]
+    rid = svc.compile_draft(pid)["revision_id"]
+
+    def mkrun(run_id: str, workload: str, qualification: str) -> str:
+        svc.store.create_run(pid, {
+            "schema_version": 1, "run_id": run_id, "project_id": pid,
+            "revision_id": rid, "design_hash": "sha256:x",
+            "backend": "BOOKSIM_STANDALONE", "status": "EVALUATED",
+            "qualification": qualification, "bundle_id": None,
+            "evaluation": {"workload_id": workload,
+                           "metrics": {"completion_cycles": 100}},
+            "requirements": None, "producer": None, "evidence": None,
+            "display_name": None, "started_at": None, "completed_at": None,
+            "requirements_pass": True, "reason": None,
+        })
+        return run_id
+
+    a = mkrun("run-a", "wl-a", "QUALIFIED")
+    b = mkrun("run-b", "wl-b", "QUALIFIED")
+    cross = svc.compare(a, b)
+    assert cross["compatibility"]["compatible"] is False
+    assert cross["compatibility"]["same_workload"] is False
+    assert all(not row["comparable"] for row in cross["rows"])
+
+    d = mkrun("run-d", "wl-a", "QUALIFIED")
+    same = svc.compare(a, d)
+    assert same["compatibility"]["compatible"] is True
+    assert same["rows"][0]["comparable"] is True
+
+    unqualified = mkrun("run-e", "wl-a", None)
+    not_qual = svc.compare(a, unqualified)
+    assert not_qual["compatibility"]["compatible"] is False
+    assert not_qual["compatibility"]["both_qualified"] is False
+
+
+def test_select_workload_is_a_real_action(tmp_path):
+    client = _client(tmp_path, with_backend=False)
+    pid = _make_project(client)["project"]["project_id"]
+    selected = client.post(f"/api/v1/projects/{pid}/workload",
+                           json={"workload_id": WORKLOAD})
+    assert selected.status_code == 200, selected.text
+    assert selected.json()["workload_id"] == WORKLOAD
+    assert selected.json()["source"]
+
+    unknown = client.post(f"/api/v1/projects/{pid}/workload",
+                          json={"workload_id": "no-such-workload"})
+    assert unknown.status_code == 400
+
+
 def test_catalog_separates_workloads_from_fabric_presets(tmp_path):
     client = _client(tmp_path, with_backend=False)
     workloads = client.get("/api/v1/catalog/workloads").json()["workloads"]

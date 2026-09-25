@@ -24,7 +24,9 @@ from veritx_dse.application.fabric_compiler import FabricCompiler
 from veritx_dse.application.product_evaluator import evaluate_product
 from veritx_dse.application.views import compilation_view, design_view
 from veritx_dse.core.paths import REPO
-from veritx_dse.core.run_bundle import finalize_run_bundle
+from veritx_dse.core.run_bundle import (
+    RunBundleError, finalize_run_bundle, verify_run_bundle,
+)
 from veritx_dse.core.runs import new_run_id
 from veritx_dse.product.jobs import JobManager
 from veritx_dse.product.store import ProductStore, _new_id, utcnow
@@ -295,10 +297,35 @@ class ProductService:
                               design_hash=_view_hash(request.design_hash()))
         return self.draft_view(project_id)
 
+    def select_workload(self, project_id: str,
+                        workload_id: str) -> dict[str, Any]:
+        """Make a catalog workload the project's draft (a real user action).
+
+        The draft request and its workload identity/source move together;
+        the previous compiled revision is untouched, so the draft becomes
+        dirty until recompiled.
+        """
+        self.store.load_project(project_id)
+        catalog = self.workload_catalog()["workloads"]
+        entry = next((w for w in catalog if w["workload_id"] == workload_id),
+                     None)
+        if entry is None:
+            raise intent_error(
+                f"unknown workload {workload_id!r}; known: "
+                f"{[w['workload_id'] for w in catalog]}")
+        request = parse_request_doc(entry["request"])
+        draft = self.store.load_draft(project_id)
+        draft["workload_id"] = entry["workload_id"]
+        draft["source"] = entry["source"]
+        draft["request"] = canonical_request_doc(request)
+        draft["design_hash"] = _view_hash(request.design_hash())
+        self.store.put_draft(project_id, draft)
+        return self.draft_view(project_id)
+
     # ── compile ───────────────────────────────────────────────────────
 
     def compile_draft(self, project_id: str) -> dict[str, Any]:
-        project = self.store.load_project(project_id)
+        self.store.load_project(project_id)  # 404 if unknown
         draft = self.store.load_draft(project_id)
         request = parse_request_doc(draft.get("request"))
         canonical_doc = canonical_request_doc(request)
@@ -314,7 +341,7 @@ class ProductService:
                 "obligations": [o.to_dict()
                                 for o in compilation.certificate.obligations],
             }
-        sequence = len(project.get("revision_ids", [])) + 1
+        sequence = self.store.allocate_revision(project_id)
         revision_id = f"{project_id}-r{sequence:02d}"
         revision = {
             "schema_version": 1,
@@ -434,8 +461,16 @@ class ProductService:
             "display_name": self._run_display_name(revision),
             "backend": None if outcome is None else outcome.backend,
             "status": _RUN_STATUS.get(product.status, product.status),
+            # Carried from the canonical evaluator. FabricEvaluator only
+            # reaches EVALUATED after a pinned producer, admitted evidence
+            # and a reloaded/verified chain, so EVALUATED *is* the
+            # certified outcome; the basis is recorded for auditability.
             "qualification": ("QUALIFIED" if product.status == "EVALUATED"
                               else None),
+            "qualification_basis": (
+                "canonical FabricEvaluator EVALUATED (pinned producer, "
+                "admitted + reload-verified evidence)" if product.status
+                == "EVALUATED" else None),
             "requirements_pass": product.requirements_pass,
             "started_at": utcnow(),
             "completed_at": utcnow(),
@@ -501,6 +536,37 @@ class ProductService:
             "completion_cycles": metrics.get("completion_cycles"),
         }
 
+    def _verify_run_bundle(self, run: dict[str, Any]) -> dict[str, Any] | None:
+        """Re-verify the durable RunBundle before any trust read.
+
+        A finalized bundle is the evidence authority: every read of a run,
+        its evidence or its artifacts recomputes the content identity and
+        refuses when the bundle is missing, tampered, or no longer matches
+        the run record. Returns the verification summary, or None when the
+        run has no bundle (e.g. a refused evaluation).
+        """
+        recorded = run.get("bundle_id")
+        if recorded is None:
+            return None
+        bundle_dir = self.store.run_bundle_dir(run["project_id"], run["run_id"])
+        try:
+            summary = verify_run_bundle(bundle_dir)
+        except RunBundleError as exc:
+            raise ProductServiceError(
+                ErrorCode.EVIDENCE_INVALID,
+                f"run bundle failed verification: {exc}",
+                operation="verify_run_bundle",
+                resource_id=run["run_id"]) from exc
+        computed = "sha256:" + summary["bundle_id"]
+        if computed != recorded:
+            raise ProductServiceError(
+                ErrorCode.EVIDENCE_INVALID,
+                f"run {run['run_id']} records bundle_id {recorded} but the "
+                f"bundle content hashes to {computed} — refusing a tampered "
+                "run bundle",
+                operation="verify_run_bundle", resource_id=run["run_id"])
+        return summary
+
     def get_run(self, run_id: str) -> dict[str, Any]:
         pid = self.store.find_run_project(run_id)
         if pid is None:
@@ -508,6 +574,7 @@ class ProductService:
                 ErrorCode.NOT_FOUND, f"no such run: {run_id}",
                 operation="get_run", resource_id=run_id)
         run = self.store.load_run(pid, run_id)
+        self._verify_run_bundle(run)
         return self._run_view(run)
 
     def _run_view(self, run: dict[str, Any]) -> dict[str, Any]:
@@ -521,6 +588,7 @@ class ProductService:
             "backend": run.get("backend"),
             "status": run.get("status"),
             "qualification": run.get("qualification"),
+            "qualification_basis": run.get("qualification_basis"),
             "requirements_pass": run.get("requirements_pass"),
             "started_at": run.get("started_at"),
             "completed_at": run.get("completed_at"),
@@ -539,6 +607,7 @@ class ProductService:
                 ErrorCode.NOT_FOUND, f"no such run: {run_id}",
                 operation="run_evidence", resource_id=run_id)
         run = self.store.load_run(pid, run_id)
+        self._verify_run_bundle(run)
         bundle_dir = self.store.run_bundle_dir(pid, run_id)
         documents: dict[str, Any] = {}
         artifacts: list[dict[str, Any]] = []
@@ -567,12 +636,14 @@ class ProductService:
             "documents": documents,
         }
 
-    def run_artifacts(self, run_id: str) -> dict[str, Any]:
+    def run_artifacts(self,         run_id: str) -> dict[str, Any]:
         pid = self.store.find_run_project(run_id)
         if pid is None:
             raise ProductServiceError(
                 ErrorCode.NOT_FOUND, f"no such run: {run_id}",
                 operation="run_artifacts", resource_id=run_id)
+        run = self.store.load_run(pid, run_id)
+        self._verify_run_bundle(run)
         bundle_dir = self.store.run_bundle_dir(pid, run_id)
         files: dict[str, Any] = {}
         checksums = bundle_dir / "checksums.json"
@@ -673,12 +744,20 @@ class ProductService:
         for candidate in view.get("candidates", []):
             evaluation_ids = candidate.get("evaluation_ids") or {}
             result_id = evaluation_ids.get("performance_result_id")
+            run_id = by_result.get(result_id)
             candidate_runs.append({
                 "candidate_id": candidate["candidate_id"],
                 "performance_result_id": result_id,
                 "requirement_report_id":
                     evaluation_ids.get("requirement_report_id"),
-                "run_id": by_result.get(result_id),
+                "run_id": run_id,
+                # A candidate execution is its own resource unless it was
+                # independently registered as a Product Run. It is NOT a
+                # verified RunBundle by default.
+                "evidence_kind": ("product-run" if run_id
+                                  else "optimization-candidate"),
+                "evaluation_status": candidate.get("evaluation_status"),
+                "evaluation_authority": candidate.get("evaluation_authority"),
             })
         optimization = {
             "schema_version": 1,
@@ -688,6 +767,13 @@ class ProductService:
             "created_at": utcnow(),
             "study": view,
             "candidate_runs": candidate_runs,
+            "candidate_evidence_note": (
+                "Candidate evidence lives in the certified optimization "
+                "study (performance_result_id / requirement_report_id). A "
+                "candidate is linked to a Product Run only when an existing "
+                "verified run registered the same performance_result_id; "
+                "otherwise its evidence_kind is 'optimization-candidate' and "
+                "run_id is null."),
             "selected_candidate_id": view.get("selected_candidate_id"),
         }
         self.store.create_optimization(project_id, optimization)
@@ -709,6 +795,7 @@ class ProductService:
             "created_at": opt["created_at"],
             "study": opt["study"],
             "candidate_runs": opt["candidate_runs"],
+            "candidate_evidence_note": opt.get("candidate_evidence_note"),
             "selected_candidate_id": opt["selected_candidate_id"],
         }
 
@@ -717,9 +804,15 @@ class ProductService:
     def compare(self, a_run_id: str, b_run_id: str) -> dict[str, Any]:
         a = self.get_run(a_run_id)
         b = self.get_run(b_run_id)
+        compatibility = self._compare_compatibility(a, b)
         a_metrics = (a.get("evaluation") or {}).get("metrics") or {}
         b_metrics = (b.get("evaluation") or {}).get("metrics") or {}
         keys = sorted(set(a_metrics) | set(b_metrics))
+
+        def numeric(value: Any) -> bool:
+            return (value is not None and isinstance(value, (int, float))
+                    and not isinstance(value, bool))
+
         rows = []
         for key in keys:
             av = a_metrics.get(key)
@@ -728,19 +821,58 @@ class ProductService:
                 "key": key,
                 "a": av,
                 "b": bv,
-                "comparable": (av is not None and bv is not None
-                               and isinstance(av, (int, float))
-                               and isinstance(bv, (int, float))
-                               and not isinstance(av, bool)
-                               and not isinstance(bv, bool)),
+                # Comparable only when the scenarios are compatible AND
+                # both sides actually measured the quantity. Same key is
+                # not enough.
+                "comparable": (compatibility["compatible"]
+                               and numeric(av) and numeric(bv)),
             })
         return {
             "contract_version": 1,
             "a": self._compare_side(a),
             "b": self._compare_side(b),
+            "compatibility": compatibility,
             "rows": rows,
-            "note": ("No automatic winner: only quantities with compatible "
-                     "semantics are compared; tradeoffs are shown as-is."),
+            "note": ("No automatic winner. Rows are marked comparable only "
+                     "when both runs share a workload identity, a backend "
+                     "and a QUALIFIED evidence chain, and both measured the "
+                     "quantity; tradeoffs are shown as-is."),
+        }
+
+    @staticmethod
+    def _compare_compatibility(a: dict[str, Any],
+                               b: dict[str, Any]) -> dict[str, Any]:
+        """The explicit compatibility gate. Same metric key is not enough."""
+        a_eval = a.get("evaluation") or {}
+        b_eval = b.get("evaluation") or {}
+        a_workload = a_eval.get("workload_id")
+        b_workload = b_eval.get("workload_id")
+        same_workload = (a_workload is not None
+                         and a_workload == b_workload)
+        a_backend = a.get("backend")
+        b_backend = b.get("backend")
+        same_backend = (a_backend is not None and a_backend == b_backend)
+        both_qualified = (a.get("qualification") == "QUALIFIED"
+                          and b.get("qualification") == "QUALIFIED")
+        reasons: list[str] = []
+        if not same_workload:
+            reasons.append(
+                "different or missing workload identity "
+                f"({a_workload!r} vs {b_workload!r})")
+        if not same_backend:
+            reasons.append(
+                f"different or missing backend ({a_backend!r} vs "
+                f"{b_backend!r})")
+        if not both_qualified:
+            reasons.append("at least one run has no QUALIFIED evidence chain")
+        return {
+            "compatible": same_workload and same_backend and both_qualified,
+            "same_workload": same_workload,
+            "same_backend": same_backend,
+            "both_qualified": both_qualified,
+            "metric_units": ("not carried by EvaluationView v1; metrics are "
+                             "raw backend quantities"),
+            "reasons": reasons,
         }
 
     def _compare_side(self, run: dict[str, Any]) -> dict[str, Any]:
