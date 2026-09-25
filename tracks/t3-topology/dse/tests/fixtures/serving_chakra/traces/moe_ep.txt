@@ -1,0 +1,8 @@
+COLOCATED		model_parallel_NPU_group: 1
+5
+Layername                     comp_time      input_loc      input_size     weight_loc     weight_size    output_loc     output_size    comm_type      comm_size      misc           
+attn                          1000           LOCAL          0              LOCAL          0              LOCAL          0              NONE           0              NONE           
+EXPERT 0 ALLGATHER:1 4096
+expert                        900            LOCAL          0              LOCAL          0              LOCAL          0              NONE           0              NONE           
+EXPERT 1 NONE 0
+EXPERT END REDUCESCATTER:1 8192

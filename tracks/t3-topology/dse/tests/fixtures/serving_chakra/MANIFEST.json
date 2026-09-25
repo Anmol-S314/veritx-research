@@ -1,0 +1,163 @@
+{
+  "canonical_inputs": {
+    "dense_single": {
+      "kind": "colocated",
+      "layers": [
+        [
+          "embed",
+          800,
+          "NONE",
+          0
+        ],
+        [
+          "attn",
+          1000,
+          "NONE",
+          0
+        ],
+        [
+          "mlp",
+          2000,
+          "NONE",
+          0
+        ]
+      ],
+      "num_npus": 1,
+      "pp_group": 1
+    },
+    "dense_tp2": {
+      "kind": "colocated",
+      "layers": [
+        [
+          "attn",
+          1000,
+          "ALLREDUCE:1",
+          4096
+        ],
+        [
+          "mlp",
+          2000,
+          "ALLREDUCE:1",
+          4096
+        ]
+      ],
+      "num_npus": 2,
+      "pp_group": 1
+    },
+    "dense_tp4": {
+      "kind": "colocated",
+      "layers": [
+        [
+          "attn",
+          1000,
+          "ALLREDUCE:1",
+          4096
+        ],
+        [
+          "mlp",
+          2000,
+          "ALLREDUCE:1",
+          4096
+        ]
+      ],
+      "num_npus": 4,
+      "pp_group": 1
+    },
+    "event_handler": {
+      "alarm_ns": 1000,
+      "kind": "event",
+      "num_npus": 2
+    },
+    "moe_ep": {
+      "kind": "colocated",
+      "layers": [
+        [
+          "attn",
+          1000,
+          "NONE",
+          0
+        ],
+        [
+          "EXPERT",
+          "0",
+          "ALLGATHER:1",
+          4096
+        ],
+        [
+          "expert",
+          900,
+          "NONE",
+          0
+        ],
+        [
+          "EXPERT",
+          "1",
+          "NONE",
+          0
+        ],
+        [
+          "EXPERT",
+          "END",
+          "REDUCESCATTER:1",
+          8192
+        ]
+      ],
+      "num_npus": 2,
+      "pp_group": 1
+    }
+  },
+  "files": {
+    "dense_single/llm.0.et": {
+      "sha256": "135a57f03cd909545a4daab2a86c59156789ea3baf119a6e5984cbfdb5c00c12",
+      "size": 1064
+    },
+    "dense_tp2/llm.0.et": {
+      "sha256": "56c39f31d591ea2562e8fcfb397408291e4e70fc22c61d5253e6cdf78d716225",
+      "size": 1038
+    },
+    "dense_tp2/llm.1.et": {
+      "sha256": "d9fbf8c191d35a2eea5e956d7933718d8c2c97e34f3e53740efcb296a13e8819",
+      "size": 1040
+    },
+    "dense_tp4/llm.0.et": {
+      "sha256": "56c39f31d591ea2562e8fcfb397408291e4e70fc22c61d5253e6cdf78d716225",
+      "size": 1038
+    },
+    "dense_tp4/llm.1.et": {
+      "sha256": "d9fbf8c191d35a2eea5e956d7933718d8c2c97e34f3e53740efcb296a13e8819",
+      "size": 1040
+    },
+    "dense_tp4/llm.2.et": {
+      "sha256": "ee366ab2cf1ad2690ac8c5bc175ee95c583a499226ede4da8e9d31a943718f29",
+      "size": 1040
+    },
+    "dense_tp4/llm.3.et": {
+      "sha256": "1ba6c09d355abba36c4cd7a6bf23959fd40ccd0f75a5dfc0aa3fc7a06cc4cb11",
+      "size": 1040
+    },
+    "event_handler/llm.0.et": {
+      "sha256": "627e820fad47785c62311cbd8e721d1726d2db325b1c4408464846a4da4aa8ee",
+      "size": 451
+    },
+    "event_handler/llm.1.et": {
+      "sha256": "8585830efb2e11bce9022a0a89f1f2fee37e9bcb913ae0add5370f4c542ada60",
+      "size": 453
+    },
+    "moe_ep/llm.0.et": {
+      "sha256": "40f078bd72f694a81f8d9228b9a2ba360355ebfa235530b38918dd5a142af559",
+      "size": 1137
+    },
+    "moe_ep/llm.1.et": {
+      "sha256": "6d692f4670e441114c9b3f71624c0a4eda24d7c2b942a27a08ac397e6c870050",
+      "size": 1111
+    }
+  },
+  "generator_source_sha256": {
+    "third_party/astra-sim/extern/graph_frontend/chakra/schema/protobuf/et_def.proto": "46b67392c6192561c146c14718cae5336c644d43cf5f96a1466028a89f3ab890",
+    "third_party/astra-sim/extern/graph_frontend/chakra/src/converter/llm_converter.py": "1a0cc79303bf621c2e41912585a79dd9773c69af6edd6ea4ed7617ab7dea9a5a",
+    "third_party/astra-sim/extern/graph_frontend/chakra/src/third_party/utils/protolib.py": "6faf95be0af8e66866147e3a3daee28c11b42e2099ae146da246eb896a60e162",
+    "veritx_dse/tools/gen_serving_chakra_fixtures.py": "49e499eff5616ec6b522c026bf2b218d441d181696e52be52be7acd23404f034"
+  },
+  "generator_version": "veritx-serving-chakra/v1",
+  "manifest_id": "3ca806643c816bf4d507ae98e4ec82b58842ce5807d3fb44f2d1e43e27fab90b"
+}

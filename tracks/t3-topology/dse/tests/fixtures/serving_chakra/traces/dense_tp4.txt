@@ -1,0 +1,5 @@
+COLOCATED		model_parallel_NPU_group: 1
+2
+Layername                     comp_time      input_loc      input_size     weight_loc     weight_size    output_loc     output_size    comm_type      comm_size      misc           
+attn                          1000           LOCAL          0              LOCAL          0              LOCAL          4096           ALLREDUCE:1    4096           NONE           
+mlp                           2000           LOCAL          0              LOCAL          0              LOCAL          4096           ALLREDUCE:1    4096           NONE           

@@ -25,8 +25,15 @@ ASTRA = REPO / "third_party" / "astra-sim"
 BOOKSIM_BIN = ASTRA / "astra-sim" / "network_frontend" / "booksim2" / "bin" / "AstraSim_BookSim2"
 CONVERTER = ASTRA / "astra-sim" / "network_frontend" / "booksim2" / "examples" / "convert_chakra_trace.py"
 
-SAMPLE_RUN = LLMSIM / "traces" / "run_1786643546936153_195056"
-SAMPLE_ET = SAMPLE_RUN / "workload" / "event_handler" / "llm.0.et"
+# Deterministic, tracked Chakra fixtures generated from canonical text traces by
+# ``veritx_dse.tools.gen_serving_chakra_fixtures`` (see its MANIFEST.json). This
+# replaces the developer-local LLMServingSim run directory that was absent on a
+# clean clone and made six release-critical tests skip (R1.1/R1.2).
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "serving_chakra"
+EVENT_DIR = FIXTURES / "event_handler"
+SAMPLE_ET = EVENT_DIR / "llm.0.et"
+BATCH_CASE = "dense_tp4"
+BATCH_ET = FIXTURES / BATCH_CASE / "llm.0.et"
 WORKLOADS = LLMSIM / "workloads"
 CLUSTER_CONFIGS = LLMSIM / "configs" / "cluster"
 
@@ -183,12 +190,10 @@ class TestChakraConverter:
 
     @pytest.mark.skipif(not CONVERTER.exists(), reason="convert_chakra_trace.py not found")
     def test_converter_on_full_qwen3_trace(self):
-        """Converter handles full Qwen3 batch traces (COMM_COLL nodes)."""
-        # Find a batch trace from the run
-        batch_trace = (SAMPLE_RUN / "workload" / "RTXPRO6000" / "Qwen"
-                       / "Qwen3-30B-A3B-Instruct-2507" / "dp_A_batch0" / "llm.0.et")
+        """Converter handles full batch traces with COMM_COLL nodes."""
+        batch_trace = BATCH_ET
         if not batch_trace.exists():
-            pytest.skip(f"Qwen3 batch trace not found: {batch_trace}")
+            pytest.skip(f"generated batch trace not found: {batch_trace}")
 
         with tempfile.TemporaryDirectory() as tmpdir:
             out_path = os.path.join(tmpdir, "llm.0.et")
@@ -238,7 +243,7 @@ class TestASTRASimStandalone:
     def test_binary_replay_only(self):
         """Binary runs event_handler with replay-only (no network sim)."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            eh_path = SAMPLE_RUN / "workload" / "event_handler" / "llm"
+            eh_path = EVENT_DIR / "llm"
             sys_path = _generate_system_config(tmpdir, replay_only=1)
             net_cfg = _generate_booksim_config(tmpdir)
             mem_path = _generate_memory_config(tmpdir)
@@ -317,7 +322,7 @@ class TestPipelineTraceToResults:
             mem_path = _generate_memory_config(tmpdir)
 
             # Step 3: Run ASTRA-Sim with BookSim2
-            eh_path = SAMPLE_RUN / "workload" / "event_handler" / "llm"
+            eh_path = EVENT_DIR / "llm"
 
             cmd = [
                 str(BOOKSIM_BIN),
@@ -351,10 +356,9 @@ class TestPipelineTraceToResults:
     @pytest.mark.skipif(not BOOKSIM_BIN.exists(), reason="AstraSim_BookSim2 binary not found")
     def test_full_qwen3_replay_only(self):
         """Full Qwen3 batch trace -> converter -> BookSim2 replay-only -> non-zero cycles."""
-        batch_trace = (SAMPLE_RUN / "workload" / "RTXPRO6000" / "Qwen"
-                       / "Qwen3-30B-A3B-Instruct-2507" / "dp_A_batch0" / "llm.0.et")
+        batch_trace = BATCH_ET
         if not batch_trace.exists():
-            pytest.skip(f"Qwen3 batch trace not found")
+            pytest.skip("generated batch trace not found")
 
         with tempfile.TemporaryDirectory() as tmpdir:
             # Step 1: Convert trace (adds attrs for ASTRA-sim feeder_v3)
