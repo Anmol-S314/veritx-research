@@ -1,0 +1,73 @@
+name: Studio Live E2E
+
+# Release gate for the live product flow. Unlike the generic CI, this job
+# builds a pinned BookSim producer and then runs the real browser
+# acceptance test with `VERITX_E2E_REQUIRE_BACKEND=1`, so a missing
+# producer is a FAILURE, never a skip.
+#
+# Note: a pull_request workflow only runs from the base branch's copy of
+# this file, so the gate engages for PRs into prod/production-readiness
+# once this file is present on that branch. `workflow_dispatch` and pushes
+# to rebuild/** also exercise it.
+
+on:
+  pull_request:
+    branches:
+      - prod/production-readiness
+  push:
+    branches:
+      - 'rebuild/**'
+  workflow_dispatch:
+
+jobs:
+  studio-live-e2e:
+    name: product workflow + live browser acceptance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Python dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install "fastapi>=0.110" uvicorn pydantic pytest playwright
+
+      - name: Build pinned BookSim + build manifest
+        run: |
+          make -C third_party/booksim2/src -j"$(nproc)"
+          python3 scripts/write_build_manifest.py \
+            third_party/booksim2/src/booksim \
+            --recipe-version booksim2-fork/v1 --compiler g++ \
+            --build-config Release --flag=-O3 --flag=-g
+
+      - name: Studio build + Chromium
+        working-directory: apps/studio
+        run: |
+          npm ci
+          npm run build
+          python3 -m playwright install --with-deps chromium
+
+      - name: Product workflow + live evaluation
+        env:
+          VERITX_BOOKSIM_BIN: ${{ github.workspace }}/third_party/booksim2/src/booksim
+        run: |
+          PYTHONPATH=tracks/t3-topology/dse python3 -m pytest \
+            tracks/t3-topology/dse/tests/test_product_workflow.py \
+            tracks/t3-topology/dse/tests/test_gateway.py \
+            -q -p no:randomly
+
+      - name: Browser acceptance (missing producer = failure)
+        env:
+          VERITX_E2E: '1'
+          VERITX_E2E_REQUIRE_BACKEND: '1'
+          VERITX_BOOKSIM_BIN: ${{ github.workspace }}/third_party/booksim2/src/booksim
+        run: |
+          PYTHONPATH=tracks/t3-topology/dse python3 -m pytest \
+            apps/studio/tests/test_live_browser_e2e.py -q -p no:randomly
