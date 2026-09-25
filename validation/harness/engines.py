@@ -159,16 +159,28 @@ def run_astra(repo_root: Path, work_root: Path,
                             f"{type(exc).__name__}: {exc}")
     ranks = len(evidence.per_rank_cycles)
     comm = evidence.aggregate_cycles - projection.declared_compute_cycles()
-    ok = evidence.status == "EXECUTED" and ranks == 16 and comm > 0
+    # Model M (R2): a ring step below the 1000-cycle frontend chunk costs
+    # (CHUNK + endpoint_delay); the first step is followed by 2(N-1)-1 more
+    # and one trailing endpoint delay. V02 carries a 1024 B payload, below
+    # the ~64 KiB quantization ceiling, so the closed form is exact.
+    chunk = 1000
+    endpoint_delay = 10
+    expected_comm = ((chunk + endpoint_delay) * 2 * (ranks - 1)
+                     + endpoint_delay) if ranks >= 2 else 0
+    ring_ok = ranks >= 2 and comm == expected_comm
+    ok = evidence.status == "EXECUTED" and ranks == 16 and ring_ok
     return EngineResult(
         "astra_runtime", ok,
         f"ASTRA_RUNTIME_EXECUTES={'PASS' if ok else 'FAIL'}; "
-        f"ASTRA_NUMERICAL_VALIDITY=NOT_ESTABLISHED (aggregate "
+        f"ASTRA_RING_COLLECTIVE="
+        f"{'QUALIFIED_UNDER_MODEL_M' if ring_ok else 'MISMATCH'} "
+        f"(comm {comm}c == closed form {expected_comm}c = "
+        f"(1000+10)*2*(N-1)+10 for N={ranks}); "
+        "ASTRA_ABSOLUTE_LATENCY=NOT_ESTABLISHED (F-ASTRA-0002: comm is "
+        "quantized to the 1000-cycle chunk and payload-insensitive below "
+        "~64 KiB, so it is not a physical timing model); aggregate "
         f"{evidence.aggregate_cycles}c = declared compute "
-        f"{projection.declared_compute_cycles()}c + comm {comm}c; the "
-        "dominant over-count was fixed by F-ASTRA-0001, but absolute timing "
-        "remains unqualified pending independent per-domain oracles and must "
-        "not enter a scientific comparison)",
+        f"{projection.declared_compute_cycles()}c + comm {comm}c",
         validated=False)
 
 

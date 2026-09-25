@@ -17,9 +17,9 @@ each backend by what its numbers can legitimately support.
 The engine gate reports:
 
 ```text
-ASTRA_RUNTIME_EXECUTES=PASS
-ASTRA_NUMERICAL_VALIDITY=INTERNALLY_QUALIFIED_UNDER_MODEL_M
-  (absolute latency NOT_ESTABLISHED — F-ASTRA-0002)
+ASTRA_RUNTIME_EXECUTES=PASS; ASTRA_RING_COLLECTIVE=QUALIFIED_UNDER_MODEL_M
+  (comm 30310c == closed form (1000+10)*2*(N-1)+10 for N=16);
+ASTRA_ABSOLUTE_LATENCY=NOT_ESTABLISHED (F-ASTRA-0002)
 ```
 
 2026-09-25 (F-ASTRA-0001): the ~30M-cycle component was a `run_cycles`
