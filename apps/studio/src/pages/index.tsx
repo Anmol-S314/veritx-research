@@ -485,8 +485,75 @@ function ValidationCampaigns(): ReactElement {
   );
 }
 
+/** Capabilities registry (§36): rendered directly from the backend's
+ * machine-readable registry — backend support, workload kinds, wave-E
+ * timing semantics and deferred work. Nothing here is hand-copied prose.
+ * Rendered as raw key/value tables: the registry is the authority and its
+ * exact vocabulary matters more than a re-worded summary. */
+function CapabilitiesSection({ capabilities }: {
+  capabilities: ReturnType<typeof useAsync<Record<string, unknown>>>;
+}): ReactElement {
+  return (
+    <section className="card">
+      <h3>Capabilities</h3>
+      <AsyncView result={capabilities.result} reload={capabilities.reload}>
+        {(reg) => (
+          <>
+            <table className="live-table">
+              <thead>
+                <tr><th>backend</th><th>lowering</th><th>execution</th><th>route evidence</th><th>semantics version</th></tr>
+              </thead>
+              <tbody>
+                {Object.entries(reg.backends as Record<string, Record<string, unknown>>).map(([name, b]) => (
+                  <tr key={name}>
+                    <td>{name}</td>
+                    <td>{String(b.lowering ?? '—')}</td>
+                    <td className={
+                      b.execution === 'SUPPORTED' ? 'good'
+                        : b.execution === 'BLOCKED' || b.execution === 'UNSUPPORTED' ? 'bad'
+                          : 'muted'}>
+                      {String(b.execution ?? '—')}
+                    </td>
+                    <td className="muted">{String(b.route_evidence ?? '—')}</td>
+                    <td className="muted"><code>{String(b.semantics_version ?? '—')}</code></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="cap-block">
+              <h4>Workload kinds</h4>
+              <table className="tbl">
+                <tbody>
+                  {Object.entries(reg.workload_kinds as Record<string, Record<string, unknown>> ?? {}).map(([kind, info]) => (
+                    <tr key={kind}>
+                      <td>{kind}</td>
+                      <td className="muted">
+                        semantic provenance {String(info.semantic_provenance ?? '—')}
+                        {info.execution ? ` · execution ${String(info.execution)}` : ''}
+                        {info.wave_d_chain ? ` · wave-D chain ${String(info.wave_d_chain)}` : ''}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <details>
+              <summary>Timing semantics (wave-E) and deferred capabilities</summary>
+              <pre className="evidence">{JSON.stringify({
+                wave_e: reg.wave_e,
+                deferred: reg.deferred,
+              }, null, 2)}</pre>
+            </details>
+          </>
+        )}
+      </AsyncView>
+    </section>
+  );
+}
+
 export function Trust(): ReactElement {
   const qual = useAsync(api.qualification, []);
+  const capabilities = useAsync(api.capabilities, []);
   return (
     <div className="page">
       <h2>Trust · what VERITX currently trusts</h2>
@@ -530,6 +597,7 @@ export function Trust(): ReactElement {
           </>
         )}
       </AsyncView>
+      <CapabilitiesSection capabilities={capabilities} />
       <ValidationCampaigns />
     </div>
   );

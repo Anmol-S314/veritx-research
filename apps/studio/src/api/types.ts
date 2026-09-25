@@ -219,6 +219,25 @@ export interface RunVerifyView {
   files_checked: number;
 }
 
+/** ArtifactChainView (v1): the canonical certified artifact DAG. Each
+ * node is a real bundle artifact with its identity hash, its parent
+ * artifacts and the obligations that proved it. Absent for a revision
+ * that never compiled — no chain may be drawn around a refusal. */
+export interface ArtifactChainNode {
+  artifact: string;
+  label: string;
+  parents: string[];
+  hash: string;
+  proved_by: string[];
+}
+
+export interface ArtifactChainView {
+  contract_version: 1;
+  design_hash: string;
+  certificate_id: string;
+  nodes: ArtifactChainNode[];
+}
+
 /** PreflightView: the execution gate, evaluated before any run.
  * `ready` is the server's verdict; Studio never recomputes it. */
 export interface PreflightGate {

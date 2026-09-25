@@ -5,6 +5,7 @@ import {
   useJobPoll, useStudio,
 } from '../studio';
 import { Hash, StatusBadge } from '../components/badges';
+import ArtifactChain from '../components/ArtifactChain';
 import ArtifactStrip from '../components/ArtifactStrip';
 import DesignEditor from '../components/DesignEditor';
 import VerifyView from '../components/VerifyView';
@@ -60,6 +61,29 @@ export function Design({ projectId }: { projectId: string }): ReactElement {
 }
 
 // ── Compile & Verify ──────────────────────────────────────────────────────
+
+/** Fetches the revision's canonical artifact chain (§14). A 409 (never
+ * compiled) renders as an explicit absence, not an empty chain. */
+function ArtifactChainSection({ revisionId }: {
+  revisionId: string;
+}): ReactElement {
+  const chain = useAsync(() => api.artifactChain(revisionId), [revisionId]);
+  return (
+    <section className="card">
+      <h3>Artifact chain</h3>
+      {chain.result.state === 'ready' ? (
+        <ArtifactChain chain={chain.result.data} />
+      ) : chain.result.state === 'error' ? (
+        <p className="muted">
+          No artifact chain is available for this revision: it never compiled,
+          so no canonical artifacts exist.
+        </p>
+      ) : (
+        <p className="muted">Loading…</p>
+      )}
+    </section>
+  );
+}
 
 export function CompileVerify({ projectId }: { projectId: string }): ReactElement {
   const { refreshProjects } = useStudio();
@@ -139,6 +163,7 @@ export function CompileVerify({ projectId }: { projectId: string }): ReactElemen
                   <div className="kv"><span>certificate identity</span><Hash value={active.compilation.certificate_id} /></div>
                 </section>
                 <ArtifactStrip compilation={active.compilation} />
+                <ArtifactChainSection revisionId={active.revision_id} />
                 <h3>Verification obligations</h3>
                 <VerifyView compilation={active.compilation} />
               </>

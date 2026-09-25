@@ -1446,6 +1446,32 @@ a.ghost-button { display: inline-flex; align-items: center; gap: 6px; }
   border-top: 1px solid var(--border);
 }
 
+/* canonical artifact chain (DAG inspector) */
+.chain-layers { list-style: none; margin: 0; padding: 0; }
+.chain-layer + .chain-layer { margin-top: 4px; }
+.chain-node {
+  display: flex; gap: 10px; align-items: baseline; width: 100%;
+  padding: 6px 9px; text-align: left; background: transparent;
+  border: 1px solid var(--border); border-radius: 2px; cursor: pointer;
+}
+.chain-node:hover { border-color: var(--accent); }
+.chain-node.open { border-color: var(--accent); }
+.chain-label { min-width: 150px; font-weight: 600; font-size: 12px; }
+.chain-hash { font-size: 10px; color: var(--faint); }
+.chain-proved {
+  margin-left: auto; font-size: 10px; color: var(--good);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.chain-detail {
+  padding: 8px 10px; margin: 4px 0;
+  border: 1px dashed var(--border); border-top: 0;
+}
+.chain-note { margin-top: 8px; font-size: 11px; }
+.key-evidence td { font-size: 11px; }
+.key-evidence td:first-child { color: var(--muted); }
+.ob-text { display: flex; flex-direction: column; min-width: 0; }
+.ob-text small { font-weight: 400; }
+
 /* context header now lives in the topbar */
 .context-header {
   background: none; border: 0; border-radius: 0; padding: 0;

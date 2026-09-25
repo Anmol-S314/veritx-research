@@ -392,6 +392,27 @@ def test_qualification_authority_is_machine_readable(tmp_path):
         body["validation_sha"], str)
 
 
+def test_capabilities_registry_is_served_and_truthful(tmp_path):
+    """§36: the capability registry is machine-readable, served verbatim,
+    and never overstates execution support (regression: the registry used
+    to crash on a module dissolved from the backend package)."""
+    client = _client(tmp_path, with_backend=False)
+    resp = client.get("/api/v1/capabilities")
+    assert resp.status_code == 200, resp.text
+    reg = resp.json()
+    assert reg["schema_version"] == 1
+    # The qualified execution backend is SUPPORTED; the serving backend
+    # stays BLOCKED and analytical stays UNSUPPORTED — no global PASS.
+    assert reg["backends"]["BOOKSIM_STANDALONE"]["execution"] == "SUPPORTED"
+    assert reg["backends"]["SERVING_BOOKSIM2"]["execution"] == "BLOCKED"
+    for backend in ("SERVING_ANALYTICAL_AWARE", "SERVING_ANALYTICAL_UNAWARE"):
+        assert reg["backends"][backend]["execution"] == "UNSUPPORTED"
+    # Wave-E timing honesty is carried verbatim.
+    assert reg["wave_e"]["network_timing"]["per_operation_causality"] \
+        == "UNSUPPORTED"
+    assert reg["deferred"]["area_power_energy"] == "WAVE_F"
+
+
 def _pinned_producer_available(client: TestClient) -> bool:
     binary = os.environ.get("VERITX_BOOKSIM_BIN")
     if not binary:
@@ -475,6 +496,70 @@ def test_live_evaluation_workflow(tmp_path):
 
 def _digest(value: str) -> str:
     return str(value).split(":", 1)[-1]
+
+
+def test_revision_artifact_chain_matches_the_certificate(tmp_path):
+    """The artifact DAG is the real certified chain: real hashes, real
+    parent links, real proving obligations — and nothing for a refusal."""
+    client = _client(tmp_path, with_backend=False)
+    pid = _make_project(client)["project"]["project_id"]
+    revision = client.post(f"/api/v1/projects/{pid}/compile").json()
+    rid = revision["revision_id"]
+    compilation = revision["compilation"]
+    assert compilation["status"] == "COMPILED"
+
+    resp = client.get(f"/api/v1/revisions/{rid}/artifacts")
+    assert resp.status_code == 200, resp.text
+    view = resp.json()
+
+    assert view["contract_version"] == 1
+    assert view["certificate_id"] == compilation["certificate_id"]
+    assert view["design_hash"] == revision["design_hash"]
+
+    nodes = view["nodes"]
+    artifacts = {n["artifact"] for n in nodes}
+    assert {"design", "topology", "attachment", "router_route",
+            "resolved_route", "vc_assignment", "packet_format",
+            "router_behavior", "address_decode", "fabric",
+            "resolved_fabric"} <= artifacts
+    for node in nodes:
+        assert node["hash"].startswith("sha256:")
+        expected_key = f"{node['artifact']}_hash"
+        recorded = compilation["artifact_hashes"].get(expected_key)
+        if node["artifact"] == "design":
+            assert _digest(node["hash"]) == _digest(revision["design_hash"])
+        elif node["artifact"] == "inventory_mapping":
+            # inventory+mapping surface as mapping_hash in the bundle
+            assert _digest(node["hash"]) == _digest(
+                compilation["artifact_hashes"]["mapping_hash"])
+        else:
+            assert recorded is not None, expected_key
+            assert _digest(node["hash"]) == _digest(recorded)
+        # parents must be artifacts present in the chain
+        for parent in node["parents"]:
+            assert parent in artifacts
+    # every LOCKED obligation proves at least one node
+    proved = {o for n in nodes for o in n["proved_by"]}
+    assert {"TOPOLOGY_CONNECTED", "DEADLOCK_FREE", "FABRIC_DAG_VALID",
+            "PACKET_FORMAT_VALID"} <= proved
+
+    # a refused attempt has NO chain: no artifacts exist to draw
+    bad = client.put(f"/api/v1/projects/{pid}/draft",
+                     json={"workload": {"model_family": "nonexistent_family"}})
+    assert bad.status_code in (200, 400, 422)
+    attempt = client.post(f"/api/v1/projects/{pid}/compile")
+    if attempt.status_code == 200:
+        refused = attempt.json()
+        if refused["compilation"]["status"] != "COMPILED":
+            missing = client.get(
+                f"/api/v1/revisions/{refused['revision_id']}/artifacts")
+            assert missing.status_code == 409
+            assert missing.json()["code"] == "CONFLICT"
+
+    # an unknown revision is a refusal, never an invented chain
+    missing = client.get("/api/v1/revisions/nope/artifacts")
+    assert missing.status_code == 404
+    assert missing.json()["code"] == "NOT_FOUND"
 
 
 def test_revision_topology_view_matches_the_certificate(tmp_path):

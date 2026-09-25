@@ -35,6 +35,7 @@ from veritx_dse.gateway.errors import (
 from veritx_dse.gateway.revisions import (
     Revision, RevisionStore, revision_id_for,
 )
+from veritx_dse.application.capabilities import capability_registry
 from veritx_dse.product.qualification import qualification_view
 from veritx_dse.product.service import ProductConfig, ProductService
 from veritx_dse.product.validation import validation_campaigns
@@ -350,6 +351,10 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
     def v1_qualification() -> dict[str, Any]:
         return qualification_view()
 
+    @app.get("/api/v1/capabilities", tags=["product"])
+    def v1_capabilities() -> dict[str, Any]:
+        return capability_registry()
+
     @app.get("/api/v1/validation", tags=["product"])
     def v1_validation() -> dict[str, Any]:
         return validation_campaigns()
@@ -412,6 +417,10 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
     @app.get("/api/v1/revisions/{revision_id}/topology", tags=["product"])
     def v1_revision_topology(revision_id: str) -> dict[str, Any]:
         return product.get_revision_topology(revision_id)
+
+    @app.get("/api/v1/revisions/{revision_id}/artifacts", tags=["product"])
+    def v1_revision_artifacts(revision_id: str) -> dict[str, Any]:
+        return product.get_revision_artifact_chain(revision_id)
 
     @app.get("/api/v1/revisions/{revision_id}/preflight", tags=["product"])
     def v1_revision_preflight(revision_id: str) -> dict[str, Any]:

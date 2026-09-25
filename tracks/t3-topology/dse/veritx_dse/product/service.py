@@ -23,7 +23,7 @@ from veritx_dse.application.errors import ControlPlaneError, ErrorCode, intent_e
 from veritx_dse.application.fabric_compiler import FabricCompiler
 from veritx_dse.application.product_evaluator import evaluate_product
 from veritx_dse.application.views import (
-    compilation_view, design_view, topology_view,
+    artifact_chain_view, compilation_view, design_view, topology_view,
 )
 from veritx_dse.core.paths import REPO
 from veritx_dse.core.run_bundle import (
@@ -473,6 +473,12 @@ class ProductService:
         materialized = topology_view(compilation, revision_id=revision_id)
         if materialized is not None:
             revision["topology"] = materialized
+        # Canonical artifact DAG captured at certification time (§12/§14):
+        # like the topology, it is frozen with the revision and never
+        # re-derived for display without an identity check.
+        chain = artifact_chain_view(compilation)
+        if chain is not None:
+            revision["artifact_chain"] = chain
         self.store.create_revision(
             project_id, revision,
             promote=self._revision_promotable(revision))
@@ -534,6 +540,52 @@ class ProductService:
                     resource_id=revision_id)
             view = rederived
         return view
+
+    def get_revision_artifact_chain(self, revision_id: str) -> dict[str, Any]:
+        """The canonical artifact DAG this revision was certified against.
+
+        Revisions persisted before this projection existed re-derive it
+        from their own immutable request and are checked against the
+        artifact hashes the certificate already recorded — a mismatch is
+        EVIDENCE_INVALID, never a silently redrawn chain.
+        """
+        _pid, revision = self.store.load_revision_global(revision_id)
+        chain = revision.get("artifact_chain")
+        if chain is not None:
+            return chain
+        compilation_doc = revision.get("compilation") or {}
+        if compilation_doc.get("status") != "COMPILED":
+            raise ProductServiceError(
+                ErrorCode.CONFLICT,
+                "this revision did not compile, so it has no artifact chain",
+                operation="get_revision_artifact_chain",
+                resource_id=revision_id)
+        rederived = artifact_chain_view(
+            FabricCompiler().compile(
+                parse_request_doc(revision["request"])))
+        expected = compilation_doc.get("artifact_hashes") or {}
+        if rederived is None:
+            raise ProductServiceError(
+                ErrorCode.EVIDENCE_INVALID,
+                "re-derivation produced no artifact chain for a compiled "
+                "revision",
+                operation="get_revision_artifact_chain",
+                resource_id=revision_id)
+        for node in rederived["nodes"]:
+            key = node["artifact"]
+            if key == "design":
+                continue  # identity is the revision design_hash itself
+            recorded = expected.get(f"{key}_hash")
+            if recorded is not None:
+                actual = node["hash"].split(":", 1)[-1]
+                if actual != str(recorded).split(":", 1)[-1]:
+                    raise ProductServiceError(
+                        ErrorCode.EVIDENCE_INVALID,
+                        f"re-derived {key} does not match the recorded "
+                        f"hash for this revision",
+                        operation="get_revision_artifact_chain",
+                        resource_id=revision_id)
+        return rederived
 
     @staticmethod
     def _revision_summary(revision: dict[str, Any]) -> dict[str, Any]:

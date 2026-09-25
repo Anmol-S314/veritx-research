@@ -14,13 +14,11 @@ from typing import Any
 
 def capability_registry() -> dict[str, Any]:
     """Backend capability truth, derived from sealed modules."""
-    from veritx_dse.backend import analytical as analytical_mod
     from veritx_dse.backend.booksim import (
         BOOKSIM_BACKEND_SEMANTICS_VERSION, BOOKSIM_LOWERER_VERSION,
         BOOKSIM_STANDALONE_PROFILE, SERVING_BOOKSIM2_PROFILE,
         SERVING_BOOKSIM2_SEMANTICS_VERSION,
     )
-    _ = analytical_mod  # registry presence only; no execution implied
     return {
         "schema_version": 1,
         "backends": {

@@ -2,6 +2,7 @@
 // from scattering URLs.
 import { del, get, patch, post, put } from './client';
 import type {
+  ArtifactChainView,
   CompareView,
   DraftView,
   EvidenceView,
@@ -25,6 +26,8 @@ export const api = {
   health: () => get<{ status: string; api: string }>('/health'),
 
   qualification: () => get<QualificationView>('/qualification'),
+  capabilities: () =>
+    get<Record<string, unknown>>('/capabilities'),
   validation: () => get<ValidationCampaignsView>('/validation'),
   workloadCatalog: () => get<WorkloadCatalogView>('/catalog/workloads'),
   fabricPresets: () =>
@@ -62,6 +65,11 @@ export const api = {
 
   topology: (revisionId: string) =>
     get<TopologyView>(`/revisions/${encodeURIComponent(revisionId)}/topology`),
+
+  artifactChain: (revisionId: string) =>
+    get<ArtifactChainView>(
+      `/revisions/${encodeURIComponent(revisionId)}/artifacts`,
+    ),
 
   evaluate: (revisionId: string, backend?: string) =>
     post<JobView>(`/revisions/${encodeURIComponent(revisionId)}/evaluate`, {
