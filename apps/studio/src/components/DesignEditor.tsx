@@ -398,7 +398,7 @@ export default function DesignEditor({ design }: { design: DesignView }): ReactE
               <div>
                 <span className="k">Turn restrictions</span>
                 <span className="v">
-                  {locked.turn_restrictions.join('; ')}{' '}
+                  {(locked.turn_restrictions ?? []).join('; ') || '—'}{' '}
                   <span className="lock" title="Compiler-derived — no override">🔒 Derived</span>
                 </span>
               </div>
