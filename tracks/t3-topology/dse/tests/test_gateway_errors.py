@@ -95,13 +95,25 @@ def test_evaluate_without_a_backend_is_503(tmp_path):
 
 @pytest.mark.parametrize("fault", [ValueError("boom"), RuntimeError("boom")])
 def test_evaluate_internal_fault_is_500(tmp_path, monkeypatch, fault):
-    monkeypatch.setattr(CompileRequestV3, "from_dict",
-                        staticmethod(lambda _d: object()))
+    from test_p2_real_adapter import _base
+
+    request = _base().to_dict()
     monkeypatch.setattr(RealCandidateEvaluator, "evaluate", _raise(fault))
     response = _client(tmp_path, with_binary=True).post(
-        "/evaluate", json={"request": {"anything": True}})
+        "/evaluate", json={"request": request})
     assert response.status_code == 500, response.text
     assert response.json()["code"] == "INTERNAL_ERROR"
+
+
+def test_evaluate_a_guided_preset_revision_is_a_typed_refusal(tmp_path):
+    """The real evaluator needs a v3 design; a preset revision is refused."""
+    client = _client(tmp_path, with_binary=True)
+    compiled = client.post("/compile", json={"preset": "mesh4"}).json()
+    assert compiled["revision_id"]
+    response = client.post(
+        "/evaluate", json={"revision_id": compiled["revision_id"]})
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == "UNSUPPORTED_SEMANTICS"
 
 
 def test_optimize_internal_fault_is_500(tmp_path, monkeypatch):
