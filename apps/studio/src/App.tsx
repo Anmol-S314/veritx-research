@@ -1,12 +1,14 @@
 import { useEffect, useState, type ReactElement } from 'react';
 import { FIXTURES, FIXTURE_ORDER, type FixtureId } from './fixtures';
+import { api } from './api';
 import { Hash } from './components/badges';
 import DesignEditor from './components/DesignEditor';
 import VerifyView from './components/VerifyView';
 import EvaluateView from './components/EvaluateView';
 import OptimizeView from './components/OptimizeView';
+import LiveView from './components/LiveView';
 
-type Section = 'design' | 'verify' | 'evaluate' | 'optimize';
+type Section = 'design' | 'verify' | 'evaluate' | 'optimize' | 'runs' | 'trust';
 type Theme = 'dark' | 'light';
 
 const SECTIONS: { id: Section; label: string }[] = [
@@ -14,18 +16,35 @@ const SECTIONS: { id: Section; label: string }[] = [
   { id: 'verify', label: 'Verify' },
   { id: 'evaluate', label: 'Evaluate' },
   { id: 'optimize', label: 'Optimize' },
+  { id: 'runs', label: 'Runs' },
+  { id: 'trust', label: 'Trust' },
 ];
+
+const LIVE_SECTIONS: Section[] = ['runs', 'trust'];
 
 export default function App(): ReactElement {
   const [fixtureId, setFixtureId] = useState<FixtureId>('compiled-mesh');
   const [section, setSection] = useState<Section>('design');
   const [theme, setTheme] = useState<Theme>('dark');
+  const [live, setLive] = useState<'checking' | 'live' | 'offline'>('checking');
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
 
+  useEffect(() => {
+    let alive = true;
+    api
+      .health()
+      .then(() => alive && setLive('live'))
+      .catch(() => alive && setLive('offline'));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const fixture = FIXTURES[fixtureId];
+  const isLive = LIVE_SECTIONS.includes(section);
 
   return (
     <div className="app">
@@ -33,8 +52,19 @@ export default function App(): ReactElement {
         <div className="brand">
           <span className="brand-mark">SROTA</span>
           <span className="brand-sub">Studio · Fabric Compiler Console</span>
-          <span className="fixture-mode" title="Studio boots from contract-validated fixtures only. No engine connectivity.">
-            FIXTURE MODE
+          <span
+            className={`fixture-mode ${live === 'live' ? 'live' : ''}`}
+            title={
+              live === 'live'
+                ? 'Gateway reachable. Runs and Trust read live evidence.'
+                : 'Gateway unreachable. Fixture-backed sections remain.'
+            }
+          >
+            {live === 'live'
+              ? 'LIVE GATEWAY'
+              : live === 'offline'
+                ? 'FIXTURE MODE · GATEWAY OFFLINE'
+                : 'CHECKING GATEWAY…'}
           </span>
         </div>
         <nav className="sections" aria-label="Studio sections">
@@ -65,25 +95,27 @@ export default function App(): ReactElement {
         </div>
       </header>
 
-      <div className="fixture-bar">
-        <span className="fixture-label">Fixture</span>
-        <div className="fixture-tabs" role="tablist" aria-label="Fixtures">
-          {FIXTURE_ORDER.map((id) => (
-            <button
-              key={id}
-              role="tab"
-              aria-selected={fixtureId === id}
-              className={`fixture-tab${fixtureId === id ? ' active' : ''}`}
-              onClick={() => setFixtureId(id)}
-            >
-              {id}
-            </button>
-          ))}
+      {!isLive && (
+        <div className="fixture-bar">
+          <span className="fixture-label">Fixture</span>
+          <div className="fixture-tabs" role="tablist" aria-label="Fixtures">
+            {FIXTURE_ORDER.map((id) => (
+              <button
+                key={id}
+                role="tab"
+                aria-selected={fixtureId === id}
+                className={`fixture-tab${fixtureId === id ? ' active' : ''}`}
+                onClick={() => setFixtureId(id)}
+              >
+                {id}
+              </button>
+            ))}
+          </div>
+          <span className="fixture-title">
+            {fixture.title} — {fixture.description}
+          </span>
         </div>
-        <span className="fixture-title">
-          {fixture.title} — {fixture.description}
-        </span>
-      </div>
+      )}
 
       <main className="content">
         {section === 'design' &&
@@ -104,6 +136,8 @@ export default function App(): ReactElement {
         {section === 'optimize' && (
           <OptimizeView optimization={fixture.optimization} design={fixture.design} />
         )}
+        {section === 'runs' && <LiveView view="runs" />}
+        {section === 'trust' && <LiveView view="trust" />}
       </main>
 
       <footer className="statusbar">
