@@ -8,18 +8,27 @@ live here.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from veritx_dse.application.errors import ControlPlaneError
+from veritx_dse.core.errors import InvalidInput, Refusal
 from veritx_dse.core.run_bundle import (
     CHECKSUMS_NAME, RunBundleError, verify_run_bundle,
 )
+from veritx_dse.gateway.errors import (
+    BackendUnavailable, Conflict, NotFound, error_code_for, http_status_for,
+)
 from veritx_dse.gateway.qualification import qualification_view
+
+logger = logging.getLogger("veritx.gateway")
 
 
 @dataclass(frozen=True)
@@ -79,14 +88,12 @@ def _compile(config: GatewayConfig, body: CompileBody) -> dict[str, Any]:
             name=body.name or f"studio:{body.preset}",
             fabric_preset=body.preset, fabric_overrides=overrides,
             candidate_policy=policy)
-    except (ValueError, KeyError) as exc:
+    except (ValueError, KeyError, InvalidInput) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    try:
-        service = SrotaControlPlane(store=ResourceStore(config.store_root))
-        outcome = service.compile(intent)
-    except Exception as exc:  # noqa: BLE001 - typed service refusal
-        raise HTTPException(status_code=422,
-                            detail=f"{type(exc).__name__}: {exc}") from exc
+    # no broad catch: typed refusals reach the handler and map to their own
+    # status; a programmer fault becomes a logged 500, never a user error
+    service = SrotaControlPlane(store=ResourceStore(config.store_root))
+    outcome = service.compile(intent)
     compiled = outcome.compiled
     return {
         "intent_id": outcome.intent_id,
@@ -127,10 +134,10 @@ def _list_runs(config: GatewayConfig) -> list[dict[str, Any]]:
 def _run_dir(config: GatewayConfig, run_id: str) -> Path:
     # never allow path traversal out of the runs root
     if "/" in run_id or "\\" in run_id or run_id in (".", ".."):
-        raise HTTPException(status_code=400, detail="invalid run id")
+        raise InvalidInput("invalid run id")
     path = config.runs_root / run_id
     if not path.is_dir():
-        raise HTTPException(status_code=404, detail=f"no such run: {run_id}")
+        raise NotFound(f"no such run: {run_id}")
     return path
 
 
@@ -185,7 +192,7 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
         try:
             summary = verify_run_bundle(path)
         except RunBundleError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+            raise Conflict(str(exc)) from exc
         manifest = path / "manifest.json"
         doc = json.loads(manifest.read_text()) if manifest.is_file() else None
         return {"run_id": run_id, **summary, "manifest": doc}
@@ -196,18 +203,16 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
         try:
             verify_run_bundle(path)
         except RunBundleError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+            raise Conflict(str(exc)) from exc
         ev = path / "backend-evidence.json"
         if not ev.is_file():
-            raise HTTPException(status_code=404, detail="no evidence in run")
+            raise NotFound("no evidence in run")
         return json.loads(ev.read_text())
 
     def _require_binary() -> Path:
         if cfg.booksim_bin is None or not Path(cfg.booksim_bin).is_file():
-            raise HTTPException(
-                status_code=503,
-                detail="no qualified backend configured "
-                       "(set VERITX_BOOKSIM_BIN)")
+            raise BackendUnavailable(
+                "no qualified backend configured (set VERITX_BOOKSIM_BIN)")
         return Path(cfg.booksim_bin)
 
     @app.post("/evaluate")
@@ -220,7 +225,7 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
         )
         try:
             request = CompileRequestV3.from_dict(body.request)
-        except Exception as exc:  # noqa: BLE001
+        except (ValueError, KeyError, InvalidInput) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         port = RealCandidateEvaluator(
             binary=str(binary), run_root=str(cfg.runs_root / "_evaluate"),
@@ -251,7 +256,7 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
                 constraints=tuple(Constraint(c["metric"], c["op"],
                                              c["threshold"])
                                   for c in body.constraints))
-        except Exception as exc:  # noqa: BLE001
+        except (ValueError, KeyError, TypeError, InvalidInput) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         result = Optimizer().optimize_certified(
             request, definition,
@@ -260,6 +265,37 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
                 network_clock_hz=cfg.network_clock_hz,
                 timeout_s=cfg.timeout_s))
         return result.to_study_view()
+
+    async def _typed_error_response(exc: Exception) -> JSONResponse:
+        status = http_status_for(exc)
+        code = error_code_for(exc)
+        if status is None:
+            # not a declared failure: a programmer fault is a logged 500
+            logger.exception("unhandled gateway error", exc_info=exc)
+            return JSONResponse(
+                status_code=500,
+                content={"detail": "internal server error",
+                         "code": "INTERNAL_ERROR"})
+        if status >= 500:
+            logger.error("gateway typed failure %s: %s", code, exc)
+        return JSONResponse(status_code=status,
+                            content={"detail": str(exc), "code": code})
+
+    # Typed failures are registered as exception handlers so Starlette's
+    # ExceptionMiddleware returns the mapped status (only the bare Exception
+    # case falls through to the 500 ServerErrorMiddleware).
+    for _typed in (Refusal, ControlPlaneError, BackendUnavailable,
+                   Conflict, NotFound):
+        async def _handler(request: Request, exc: Exception,
+                           _t=_typed) -> JSONResponse:
+            return await _typed_error_response(exc)
+
+        app.add_exception_handler(_typed, _handler)
+
+    @app.exception_handler(Exception)
+    async def _internal_error_handler(request: Request,
+                                      exc: Exception) -> JSONResponse:
+        return await _typed_error_response(exc)
 
     return app
 
