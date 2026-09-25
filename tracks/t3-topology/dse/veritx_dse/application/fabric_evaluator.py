@@ -412,21 +412,39 @@ class FabricEvaluator:
             ConservationFailed, EvidenceInvalid, InvalidInput,
             MappingInvalid, UnsupportedSchedule, UnsupportedSemantics,
         )
+        expected_class = expected_lowered.unified_traffic_class
         try:
             from veritx_dse.workload.messages import (
-                LogicalMessageArtifactV2,
+                LogicalMessageArtifactV2, LogicalMessageArtifactV3,
             )
             from veritx_dse.workload.traffic import (
-                PhysicalTrafficArtifactV2,
+                PhysicalTrafficArtifactV2, PhysicalTrafficArtifactV3,
             )
-            logical = LogicalMessageArtifactV2(
-                workload, traffic_class=opts.traffic_class)
-            physical = PhysicalTrafficArtifactV2(
-                logical=logical,
-                resolved_fabric=bundle.resolved_fabric,
-                mapping=bundle.mapping, attachment=bundle.attachment,
-                inventory=bundle.inventory,
-                packet_format=bundle.packet_format)
+            if expected_class is None:
+                # Multi-class: per-message classes come from the
+                # re-derived lowering sidecar (the authority), never a
+                # uniform label. No class is flattened and none is
+                # invented; every message carries its operation's class
+                # into admission.
+                logical = LogicalMessageArtifactV3(
+                    graph=workload,
+                    traffic_class_by_operation=(
+                        expected_lowered.traffic_class_by_operation))
+                physical = PhysicalTrafficArtifactV3(
+                    logical=logical,
+                    resolved_fabric=bundle.resolved_fabric,
+                    mapping=bundle.mapping, attachment=bundle.attachment,
+                    inventory=bundle.inventory,
+                    packet_format=bundle.packet_format)
+            else:
+                logical = LogicalMessageArtifactV2(
+                    workload, traffic_class=opts.traffic_class)
+                physical = PhysicalTrafficArtifactV2(
+                    logical=logical,
+                    resolved_fabric=bundle.resolved_fabric,
+                    mapping=bundle.mapping, attachment=bundle.attachment,
+                    inventory=bundle.inventory,
+                    packet_format=bundle.packet_format)
         except (UnsupportedSemantics, UnsupportedSchedule) as exc:
             return refuse(UNSUPPORTED,
                           f"workload semantics unprojectable: {exc}",
@@ -451,19 +469,10 @@ class FabricEvaluator:
         # ── intent-class sidecar (semantics outside workload_id) ───
         # Traffic-class semantics live in the lowering sidecar, not in
         # the canonical graph identity; the options class is an
-        # ASSERTION against the re-derived lowering, never a label.
-        expected_class = expected_lowered.unified_traffic_class
-        if expected_class is None:
-            return refuse(
-                UNSUPPORTED,
-                f"lowering spans traffic classes "
-                f"{list(expected_lowered.classes)}: no single-class "
-                f"message artifact can represent per-operation classes — "
-                f"UNSUPPORTED until a versioned per-operation message "
-                f"artifact lands",
-                message_artifact_id=message_id,
-                physical_traffic_id=traffic_id)
-        if opts.traffic_class != expected_class:
+        # ASSERTION against the re-derived lowering, never a label. A
+        # multi-class lowering asserts nothing globally — its classes
+        # are per-message and were admitted above.
+        if expected_class is not None and opts.traffic_class != expected_class:
             return refuse(
                 UNSUPPORTED,
                 f"evaluation traffic class {opts.traffic_class!r} does "

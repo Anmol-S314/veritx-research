@@ -43,10 +43,14 @@ from veritx_dse.model.mapping import MappingArtifact
 from veritx_dse.model.packet_format import FlitFieldRole, PacketFormatArtifact
 from veritx_dse.model.placement import NodeInventory
 from veritx_dse.model.resolved_fabric import ResolvedFabric
-from veritx_dse.workload.messages import LogicalMessageArtifactV2
+from veritx_dse.workload.messages import (
+    LogicalMessageArtifactV2, LogicalMessageArtifactV3,
+)
 
 PHYSICAL_TRAFFIC_SCHEMA_VERSION_V2 = 2
+PHYSICAL_TRAFFIC_SCHEMA_VERSION_V3 = 3
 _V2_HASH_TYPE_TAG = "srota/PhysicalTrafficArtifactV2"
+_V3_HASH_TYPE_TAG = "srota/PhysicalTrafficArtifactV3"
 
 PARTICIPANT_MAPPING_SCHEMA_VERSION = 1
 _PEM_TYPE_TAG = "srota/ParticipantEndpointMapping"
@@ -620,11 +624,170 @@ class PhysicalTrafficArtifactV2:
         return art
 
 
+@dataclass(frozen=True)
+class PhysicalTrafficArtifactV3(PhysicalTrafficArtifactV2):
+    """Physical traffic projected from per-message-class logical V3.
+
+    Binding, packetization and conservation are the V2 law unchanged
+    (rank→endpoint binding has no class semantics); only the accepted
+    logical version and the identity tag differ, so a V3 physical id can
+    never collide with a V2 id. Per-message classes ride on the logical
+    messages — packets stay class-blind, which is exactly why multi-class
+    traffic has no certified trace dialect yet (``render_trace``
+    refuses it) and profile selection refuses execution first.
+    """
+
+    schema_version: int = PHYSICAL_TRAFFIC_SCHEMA_VERSION_V3
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.logical, LogicalMessageArtifactV3):
+            raise InvalidInput("logical must be a LogicalMessageArtifactV3")
+        for name, value, cls in (
+                ("resolved_fabric", self.resolved_fabric, ResolvedFabric),
+                ("mapping", self.mapping, MappingArtifact),
+                ("attachment", self.attachment, AgentAttachmentArtifact),
+                ("inventory", self.inventory, NodeInventory),
+                ("packet_format", self.packet_format, PacketFormatArtifact)):
+            if not isinstance(value, cls):
+                raise InvalidInput(f"{name} must be a {cls.__name__}")
+        if self.schema_version != PHYSICAL_TRAFFIC_SCHEMA_VERSION_V3:
+            raise InvalidInput(
+                f"unsupported physical traffic schema_version "
+                f"{self.schema_version!r}")
+        # ── the canonical seams this lowering stands on ────────────────
+        if self.mapping.mapping_hash() != self.resolved_fabric.mapping_hash:
+            raise MappingInvalid(
+                "mapping does not belong to the resolved fabric")
+        if self.packet_format.attachment_hash \
+                != self.attachment.attachment_hash():
+            raise MappingInvalid(
+                "packet format was not derived from this attachment")
+        graph_shape = self.logical.graph.parallelism
+        if graph_shape != self.inventory.parallelism:
+            raise MappingInvalid(
+                f"logical rank geometry "
+                f"{graph_shape.to_dict()} does not match the physical "
+                f"inventory geometry "
+                f"{self.inventory.parallelism.to_dict()}; equal world size "
+                "is not semantic equivalence")
+        h_bits = header_width_bits(self.packet_format)
+        q_bits = payload_width_bits(self.packet_format)
+        if h_bits < 0 or q_bits < 1:
+            raise InvalidInput("packet format has no payload capacity")
+        pem = bind_participants(
+            participant_count=self.logical.participant_count,
+            mapping=self.mapping, attachment=self.attachment,
+            resolved_fabric=self.resolved_fabric)
+        rank_agent = {p.rank: p.agent for p in self.mapping.placements}
+
+        traffic: list[MessageTraffic] = []
+        count = self.logical.participant_count
+        for m in self.logical.messages:
+            for rank in (m.src_rank, m.dst_rank):
+                if not 0 <= rank < count:
+                    raise MappingInvalid(
+                        f"message {m.message_id!r} addresses rank {rank} "
+                        f"outside the participant namespace [0, {count})")
+            src = BindingRecord(
+                rank=m.src_rank,
+                agent_instance_id=rank_agent[m.src_rank].instance_id,
+                endpoint_id=pem.endpoint_for(m.src_rank))
+            dst = BindingRecord(
+                rank=m.dst_rank,
+                agent_instance_id=rank_agent[m.dst_rank].instance_id,
+                endpoint_id=pem.endpoint_for(m.dst_rank))
+            message_bits = m.payload_bytes * 8
+            packets = list(_packet_records(m, src, dst, self.packet_format,
+                                           h_bits, q_bits))
+            if sum(p.payload_bits for p in packets) != message_bits:
+                raise ConservationFailed(
+                    f"message {m.message_id!r}: packet payload bits do not "
+                    "conserve message bits")
+            traffic.append(MessageTraffic(
+                message_id=m.message_id, operation_id=m.operation_id,
+                src=src, dst=dst, payload_bytes=m.payload_bytes,
+                message_bits=message_bits, packets=tuple(packets)))
+        object.__setattr__(self, "_traffic", tuple(traffic))
+
+    # ── identity ──────────────────────────────────────────────────────
+    def identity_dict(self) -> dict[str, Any]:
+        return {
+            "type": _V3_HASH_TYPE_TAG,
+            "schema_version": self.schema_version,
+            "message_artifact_id": self.logical.message_artifact_id(),
+            "resolved_fabric_hash": self.resolved_fabric.resolved_fabric_hash,
+            "packet_format_hash": self.packet_format.packet_format_hash,
+            "participant_endpoint_mapping_id":
+                self.participant_endpoint_mapping().binding_id(),
+            "traffic": [t.canonical_packets() for t in self._traffic],
+        }
+
+    def physical_traffic_id(self) -> str:
+        return content_hash(_V3_HASH_TYPE_TAG, self.schema_version,
+                            self.identity_dict())
+
+    def to_dict(self) -> dict[str, Any]:
+        return {**self.identity_dict(),
+                "physical_traffic_id": self.physical_traffic_id(),
+                "totals": self.totals()}
+
+    @classmethod
+    def from_dict(cls, d: Any, *, logical: LogicalMessageArtifactV3,
+                  resolved_fabric: ResolvedFabric, mapping: MappingArtifact,
+                  attachment: AgentAttachmentArtifact,
+                  inventory: NodeInventory, packet_format: PacketFormatArtifact,
+                  strict: bool = False) -> "PhysicalTrafficArtifactV3":
+        """Rebuild from VERIFIED parents (never from the JSON)."""
+        require_fields(d, {
+            "type", "schema_version", "message_artifact_id",
+            "resolved_fabric_hash", "packet_format_hash",
+            "participant_endpoint_mapping_id", "traffic",
+            "physical_traffic_id", "totals",
+        }, "physical traffic v3")
+        if strict:
+            require_type_tag(d, _V3_HASH_TYPE_TAG, "physical traffic v3")
+            require_schema_version(d, PHYSICAL_TRAFFIC_SCHEMA_VERSION_V3,
+                                   "physical traffic v3")
+            if d["message_artifact_id"] != logical.message_artifact_id():
+                raise InvalidInput(
+                    "physical traffic v3 message_artifact_id does not "
+                    "match the verified logical parent")
+        elif "type" in d and d["type"] != _V3_HASH_TYPE_TAG:
+            raise InvalidInput(
+                f"physical traffic v3 type tag {d['type']!r} is not "
+                f"{_V3_HASH_TYPE_TAG!r}")
+        art = cls(logical=logical, resolved_fabric=resolved_fabric,
+                  mapping=mapping, attachment=attachment,
+                  inventory=inventory, packet_format=packet_format,
+                  schema_version=d.get("schema_version",
+                                       PHYSICAL_TRAFFIC_SCHEMA_VERSION_V3))
+        if strict:
+            require_embedded_id(d, "physical_traffic_id",
+                                art.physical_traffic_id(),
+                                "physical traffic v3")
+            recomputed = art.identity_dict()
+            for key in ("traffic", "resolved_fabric_hash",
+                        "packet_format_hash",
+                        "participant_endpoint_mapping_id"):
+                if d.get(key) != recomputed[key]:
+                    raise EvidenceInvalid(
+                        f"persisted physical traffic v3 {key} does not "
+                        "equal the recomputed canonical content: content "
+                        "forged")
+        elif d.get("physical_traffic_id") not in (
+                None, art.physical_traffic_id()):
+            raise InvalidInput(
+                "physical_traffic_id does not match content")
+        return art
+
+
 __all__ = [
     "BindingRecord", "MessageTraffic", "OperationLedgerEntry",
     "PARTICIPANT_MAPPING_SCHEMA_VERSION", "ParticipantEndpointMapping",
     "PacketRecord", "PHYSICAL_TRAFFIC_SCHEMA_VERSION_V2",
-    "PhysicalTrafficArtifactV2", "bind_participants", "flitize_packet",
+    "PHYSICAL_TRAFFIC_SCHEMA_VERSION_V3",
+    "PhysicalTrafficArtifactV2", "PhysicalTrafficArtifactV3",
+    "bind_participants", "flitize_packet",
     "header_width_bits", "packet_capacity_bits", "packetize_message",
     "payload_width_bits",
 ]

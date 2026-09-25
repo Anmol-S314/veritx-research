@@ -2,11 +2,11 @@ import { useState, type ReactElement } from 'react';
 import { api, type JobView, type ProjectView } from '../api';
 import {
   AsyncView, ErrorBox, JobProgress, Link, WorkflowBar, useAsync,
-  useJobPoll, useStudio,
+  useJobPoll, useStudio, simulationCapabilityReason,
 } from '../studio';
 import { Hash, StatusBadge } from '../components/badges';
 import ArtifactStrip from '../components/ArtifactStrip';
-import DesignEditor, { modelFamilyLabel } from '../components/DesignEditor';
+import DesignEditor from '../components/DesignEditor';
 import VerifyView from '../components/VerifyView';
 import EvaluateView from '../components/EvaluateView';
 
@@ -215,12 +215,11 @@ export function Simulate({ projectId }: { projectId: string }): ReactElement {
             };
           }
           if (p.active_evaluation && !p.active_evaluation.supported) {
-            const family = modelFamilyLabel(
-              current.design.workload.model_family);
             return {
-              text: `Simulation isn't supported for ${family} — ${
-                p.active_evaluation.reason ?? 'no proven mapping to simulation.'
-              } The fabric is certified; it just can't be executed by this backend.`,
+              text: simulationCapabilityReason(
+                p.active_evaluation.domain, p.active_evaluation.reason)
+                + ' The fabric is certified; it just cannot be executed by '
+                + 'this backend.',
               section: 'design', label: 'Edit design',
             };
           }

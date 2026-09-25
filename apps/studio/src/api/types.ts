@@ -78,10 +78,13 @@ export interface ProjectView {
   latest_attempt: RevisionSummary | null;
   /** Latest run scoped to the ACTIVE revision — never a newer attempt's. */
   latest_active_run: RunSummary | null;
-  /** Whether the active revision's intent can actually be simulated. */
+  /** Whether the active revision's intent can actually be simulated.
+   * `domain` names the first gate that refuses: "compile",
+   * "intent_lowering", or "backend_profile". */
   active_evaluation: {
     supported: boolean;
     reason: string | null;
+    domain: 'compile' | 'intent_lowering' | 'backend_profile' | null;
   } | null;
   draft: DraftMeta;
   revisions: RevisionSummary[];
@@ -236,6 +239,7 @@ export interface WorkloadCatalogEntry {
    * (no proven intent→collective mapping); reason carries the refusal. */
   evaluation_supported: boolean;
   evaluation_note: string | null;
+  evaluation_domain: 'compile' | 'intent_lowering' | 'backend_profile' | null;
 }
 
 export interface WorkloadCatalogView {

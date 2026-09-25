@@ -46,7 +46,9 @@ from veritx_dse.workload.graph import (
 )
 
 LOGICAL_MESSAGE_SCHEMA_VERSION_V2 = 2
+LOGICAL_MESSAGE_SCHEMA_VERSION_V3 = 3
 _V2_HASH_TYPE_TAG = "srota/LogicalMessageArtifactV2"
+_V3_HASH_TYPE_TAG = "srota/LogicalMessageArtifactV3"
 
 DEFAULT_TRAFFIC_CLASS = "DEFAULT"
 
@@ -172,6 +174,84 @@ def _collective_triples(kind: str, participants: tuple[int, ...],
     return triples, ref
 
 
+def _build_messages(graph: WorkloadGraph, class_for: Any) -> tuple[
+        tuple[LogicalMessage, ...], tuple[CollectiveScheduleRecord, ...]]:
+    """The single message-construction law, shared by V2 and V3.
+
+    ``class_for`` names the traffic class of one operation id: V2 passes
+    the uniform artifact class, V3 the lowering sidecar lookup. Message
+    order, schedule records and conservation are identical either way —
+    only the per-message class stamp differs, and it is identity-bearing
+    (``LogicalMessage.canonical`` carries it).
+    """
+    messages: list[LogicalMessage] = []
+    schedules: list[CollectiveScheduleRecord] = []
+    seq = 0
+    for op in graph.ordered_operations():
+        d = thaw(op.detail)
+        kind = op.kind
+        if kind in (KIND_COMPUTE, KIND_PIM_CHANNEL, KIND_PIM_END):
+            continue
+        if kind in (KIND_COLLECTIVE, KIND_EXPERT_BEGIN,
+                    KIND_EXPERT_END):
+            declared = d.get("participants")
+            if kind != KIND_COLLECTIVE:
+                # EXPERT regions may declare no collective at all.
+                if not declared or len(declared) < 2:
+                    continue      # declared, but not communicating
+            participants = tuple(declared)
+            ck = d["collective_kind"]
+            triples, ref = _collective_triples(
+                ck, participants, d["payload_bytes"],
+                source=d.get("source"))
+            schedules.append(CollectiveScheduleRecord(
+                collective_id=op.operation_id, kind=ck,
+                algorithm=SCHEDULES[ck], k=len(participants),
+                payload_bytes=d["payload_bytes"], steps=ref["steps"],
+                message_count=ref["message_count"],
+                message_bytes=ref["message_bytes"],
+                per_rank_sent=ref["per_rank_sent"],
+                aggregate_payload=ref["aggregate_payload"]))
+            for step, si, di in triples:
+                messages.append(LogicalMessage(
+                    message_id=f"{op.operation_id}#{seq}",
+                    operation_id=op.operation_id, phase=op.phase,
+                    src_rank=participants[si],
+                    dst_rank=participants[di],
+                    payload_bytes=ref["message_bytes"],
+                    traffic_class=class_for(op.operation_id),
+                    step=step, seq=seq))
+                seq += 1
+        elif kind == KIND_P2P:
+            if d["role"] != "TRANSFER":
+                raise UnsupportedSemantics(
+                    f"operation {op.operation_id!r}: P2P role "
+                    f"{d['role']!r} is not a complete transfer; "
+                    f"SEND/RECV pairing is not a proven lowering")
+            messages.append(LogicalMessage(
+                message_id=f"{op.operation_id}#{seq}",
+                operation_id=op.operation_id, phase=op.phase,
+                src_rank=d["src_rank"], dst_rank=d["dst_rank"],
+                payload_bytes=d["payload_bytes"],
+                traffic_class=class_for(op.operation_id), step=0, seq=seq))
+            seq += 1
+        elif kind == KIND_MULTICAST:
+            for dst in d["destinations"]:
+                messages.append(LogicalMessage(
+                    message_id=f"{op.operation_id}#{seq}",
+                    operation_id=op.operation_id, phase=op.phase,
+                    src_rank=d["source_rank"], dst_rank=dst,
+                    payload_bytes=d["payload_bytes"],
+                    traffic_class=class_for(op.operation_id),
+                    step=0, seq=seq))
+                seq += 1
+        else:
+            raise UnsupportedSemantics(
+                f"operation {op.operation_id!r}: kind {kind!r} has no "
+                f"logical-message semantics")
+    return tuple(messages), tuple(schedules)
+
+
 @dataclass(frozen=True)
 class LogicalMessageArtifactV2:
     """Canonical logical messages built from the canonical WorkloadGraph."""
@@ -189,73 +269,10 @@ class LogicalMessageArtifactV2:
                 f"{self.schema_version!r} (expected "
                 f"{LOGICAL_MESSAGE_SCHEMA_VERSION_V2})")
         tc = _TrafficClassAuthority(self.traffic_class)
-
-        messages: list[LogicalMessage] = []
-        schedules: list[CollectiveScheduleRecord] = []
-        seq = 0
-        for op in self.graph.ordered_operations():
-            d = thaw(op.detail)
-            kind = op.kind
-            if kind in (KIND_COMPUTE, KIND_PIM_CHANNEL, KIND_PIM_END):
-                continue
-            if kind in (KIND_COLLECTIVE, KIND_EXPERT_BEGIN,
-                        KIND_EXPERT_END):
-                declared = d.get("participants")
-                if kind != KIND_COLLECTIVE:
-                    # EXPERT regions may declare no collective at all.
-                    if not declared or len(declared) < 2:
-                        continue      # declared, but not communicating
-                participants = tuple(declared)
-                ck = d["collective_kind"]
-                triples, ref = _collective_triples(
-                    ck, participants, d["payload_bytes"],
-                    source=d.get("source"))
-                schedules.append(CollectiveScheduleRecord(
-                    collective_id=op.operation_id, kind=ck,
-                    algorithm=SCHEDULES[ck], k=len(participants),
-                    payload_bytes=d["payload_bytes"], steps=ref["steps"],
-                    message_count=ref["message_count"],
-                    message_bytes=ref["message_bytes"],
-                    per_rank_sent=ref["per_rank_sent"],
-                    aggregate_payload=ref["aggregate_payload"]))
-                for step, si, di in triples:
-                    messages.append(LogicalMessage(
-                        message_id=f"{op.operation_id}#{seq}",
-                        operation_id=op.operation_id, phase=op.phase,
-                        src_rank=participants[si],
-                        dst_rank=participants[di],
-                        payload_bytes=ref["message_bytes"],
-                        traffic_class=tc.class_name, step=step, seq=seq))
-                    seq += 1
-            elif kind == KIND_P2P:
-                if d["role"] != "TRANSFER":
-                    raise UnsupportedSemantics(
-                        f"operation {op.operation_id!r}: P2P role "
-                        f"{d['role']!r} is not a complete transfer; "
-                        f"SEND/RECV pairing is not a proven lowering")
-                messages.append(LogicalMessage(
-                    message_id=f"{op.operation_id}#{seq}",
-                    operation_id=op.operation_id, phase=op.phase,
-                    src_rank=d["src_rank"], dst_rank=d["dst_rank"],
-                    payload_bytes=d["payload_bytes"],
-                    traffic_class=tc.class_name, step=0, seq=seq))
-                seq += 1
-            elif kind == KIND_MULTICAST:
-                for dst in d["destinations"]:
-                    messages.append(LogicalMessage(
-                        message_id=f"{op.operation_id}#{seq}",
-                        operation_id=op.operation_id, phase=op.phase,
-                        src_rank=d["source_rank"], dst_rank=dst,
-                        payload_bytes=d["payload_bytes"],
-                        traffic_class=tc.class_name, step=0, seq=seq))
-                    seq += 1
-            else:
-                raise UnsupportedSemantics(
-                    f"operation {op.operation_id!r}: kind {kind!r} has no "
-                    f"logical-message semantics")
-
-        object.__setattr__(self, "_messages", tuple(messages))
-        object.__setattr__(self, "_schedules", tuple(schedules))
+        messages, schedules = _build_messages(
+            self.graph, lambda _op: tc.class_name)
+        object.__setattr__(self, "_messages", messages)
+        object.__setattr__(self, "_schedules", schedules)
 
     # ── accessors ─────────────────────────────────────────────────────
     @property
@@ -373,8 +390,176 @@ class LogicalMessageArtifactV2:
         return art
 
 
+@dataclass(frozen=True)
+class LogicalMessageArtifactV3:
+    """Canonical logical messages with per-message traffic classes.
+
+    V2 stamps one uniform class on every message; a multi-class lowering
+    cannot be represented that way without loss, so V3 stamps each
+    message with its operation's lowered class from the sidecar
+    (``traffic_class_by_operation``: every graph COLLECTIVE op exactly
+    once, sorted). Construction, schedule records and conservation are
+    the shared law (:func:`_build_messages`); only the class stamp is
+    per-operation, and it is identity-bearing, so a V3 id can never
+    collide with a V2 id over the same graph.
+    """
+
+    graph: WorkloadGraph
+    traffic_class_by_operation: tuple[tuple[str, str], ...]
+    schema_version: int = LOGICAL_MESSAGE_SCHEMA_VERSION_V3
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.graph, WorkloadGraph):
+            raise InvalidInput("graph must be a WorkloadGraph")
+        if self.schema_version != LOGICAL_MESSAGE_SCHEMA_VERSION_V3:
+            raise InvalidInput(
+                f"unsupported logical message schema_version "
+                f"{self.schema_version!r} (expected "
+                f"{LOGICAL_MESSAGE_SCHEMA_VERSION_V3})")
+        pairs = tuple(self.traffic_class_by_operation)
+        op_ids = [op.operation_id
+                  for op in self.graph.of_kind("COLLECTIVE")]
+        if sorted(op for op, _ in pairs) != sorted(op_ids):
+            raise InvalidInput(
+                "traffic_class_by_operation must name every COLLECTIVE "
+                "operation exactly once")
+        classes: dict[str, str] = {}
+        for op, cls in pairs:
+            _TrafficClassAuthority(cls)
+            classes[op] = cls
+        object.__setattr__(self, "_classes", classes)
+        messages, schedules = _build_messages(
+            self.graph, lambda op: classes[op])
+        object.__setattr__(self, "_messages", messages)
+        object.__setattr__(self, "_schedules", schedules)
+
+    # ── accessors ─────────────────────────────────────────────────────
+    @property
+    def messages(self) -> tuple[LogicalMessage, ...]:
+        return self._messages
+
+    @property
+    def schedules(self) -> tuple[CollectiveScheduleRecord, ...]:
+        return self._schedules
+
+    @property
+    def participant_count(self) -> int:
+        return self.graph.participant_count
+
+    @property
+    def classes(self) -> tuple[str, ...]:
+        """Sorted distinct traffic classes across messages."""
+        return tuple(sorted({m.traffic_class for m in self._messages}))
+
+    def messages_for_operation(self, operation_id: str
+                               ) -> tuple[LogicalMessage, ...]:
+        return tuple(m for m in self._messages
+                     if m.operation_id == operation_id)
+
+    def validate_conservation(self) -> None:
+        for rec in self._schedules:
+            rows = self.messages_for_operation(rec.collective_id)
+            if len(rows) != rec.message_count:
+                raise ConservationFailed(
+                    f"collective {rec.collective_id!r}: generated "
+                    f"{len(rows)} messages, schedule requires "
+                    f"{rec.message_count}")
+            if sum(m.payload_bytes for m in rows) != rec.aggregate_payload:
+                raise ConservationFailed(
+                    f"collective {rec.collective_id!r}: aggregate payload "
+                    f"does not equal the scheduled "
+                    f"{rec.aggregate_payload}")
+            if rec.kind != "BROADCAST":
+                per_rank: dict[int, int] = {}
+                for m in rows:
+                    per_rank[m.src_rank] = (per_rank.get(m.src_rank, 0)
+                                            + m.payload_bytes)
+                for rank, sent in per_rank.items():
+                    if sent != rec.per_rank_sent:
+                        raise ConservationFailed(
+                            f"collective {rec.collective_id!r}: rank "
+                            f"{rank} sent {sent} != scheduled "
+                            f"{rec.per_rank_sent}")
+
+    # ── identity ──────────────────────────────────────────────────────
+    def identity_dict(self) -> dict[str, Any]:
+        return {
+            "type": _V3_HASH_TYPE_TAG,
+            "schema_version": self.schema_version,
+            "workload_id": self.graph.workload_id(),
+            "participant_count": self.graph.participant_count,
+            "replication_schedule": REPLICATION_SOURCE,
+            "traffic_class_by_operation": [
+                [op, cls] for op, cls in
+                sorted(self._classes.items())],
+            "schedules": [s.to_dict() for s in self._schedules],
+            "messages": [m.canonical() for m in self._messages],
+        }
+
+    def message_artifact_id(self) -> str:
+        return content_hash(_V3_HASH_TYPE_TAG, self.schema_version,
+                            self.identity_dict())
+
+    def to_dict(self) -> dict[str, Any]:
+        return {**self.identity_dict(),
+                "message_artifact_id": self.message_artifact_id()}
+
+    @classmethod
+    def from_dict(cls, d: Any, *, graph: WorkloadGraph,
+                  strict: bool = False) -> "LogicalMessageArtifactV3":
+        """Rebuild from the VERIFIED graph parent, never from the JSON."""
+        require_fields(d, {
+            "type", "schema_version", "workload_id", "participant_count",
+            "replication_schedule", "traffic_class_by_operation",
+            "schedules", "messages", "message_artifact_id",
+        }, "logical messages v3")
+        if strict:
+            require_type_tag(d, _V3_HASH_TYPE_TAG, "logical messages v3")
+            require_schema_version(d, LOGICAL_MESSAGE_SCHEMA_VERSION_V3,
+                                   "logical messages v3")
+            if d["workload_id"] != graph.workload_id():
+                raise InvalidInput(
+                    "logical messages v3 workload_id does not match the "
+                    "verified WorkloadGraph parent")
+            if d["participant_count"] != graph.participant_count:
+                raise InvalidInput(
+                    "logical messages v3 participant_count does not match "
+                    "the verified WorkloadGraph parent")
+            if d["replication_schedule"] != REPLICATION_SOURCE:
+                raise InvalidInput(
+                    "logical messages v3 replication_schedule is not the "
+                    "pinned SOURCE_REPLICATION schedule")
+        elif "type" in d and d["type"] != _V3_HASH_TYPE_TAG:
+            raise InvalidInput(
+                f"logical messages v3 type tag {d['type']!r} is not "
+                f"{_V3_HASH_TYPE_TAG!r}")
+        art = cls(graph=graph,
+                  traffic_class_by_operation=tuple(
+                      (op, cls) for op, cls in
+                      d.get("traffic_class_by_operation", ())),
+                  schema_version=d.get("schema_version",
+                                       LOGICAL_MESSAGE_SCHEMA_VERSION_V3))
+        if strict:
+            require_embedded_id(d, "message_artifact_id",
+                                art.message_artifact_id(),
+                                "logical messages v3")
+            recomputed = art.identity_dict()
+            for key in ("schedules", "messages"):
+                if d.get(key) != recomputed[key]:
+                    raise EvidenceInvalid(
+                        f"persisted logical messages v3 {key} do not equal "
+                        f"the recomputed canonical content: content forged")
+        elif d.get("message_artifact_id") not in (
+                None, art.message_artifact_id()):
+            raise InvalidInput(
+                "message_artifact_id does not match content")
+        return art
+
+
 __all__ = [
     "CollectiveScheduleRecord", "DEFAULT_TRAFFIC_CLASS", "LogicalMessage",
-    "LogicalMessageArtifactV2", "LOGICAL_MESSAGE_SCHEMA_VERSION_V2",
+    "LogicalMessageArtifactV2", "LogicalMessageArtifactV3",
+    "LOGICAL_MESSAGE_SCHEMA_VERSION_V2",
+    "LOGICAL_MESSAGE_SCHEMA_VERSION_V3",
     "REPLICATION_SOURCE", "SCHEDULES",
 ]

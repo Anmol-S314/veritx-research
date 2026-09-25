@@ -17,9 +17,13 @@ Lowering laws (all enforced, none assumed):
   typed refusal (stages communicate point-to-point; no proven peer
   semantics). pp>1 GEOMETRY is still supported: TP/DP groups scope
   within stages via the canonical rank algebra.
-* **Dense transformer only.** Any other model family is a typed refusal —
-  MoE dispatch/combine, diffusion, CNN, and custom topologies have no
-  proven intent→collective mapping here.
+* **Dense transformer, and MoE by declared ops.** Any other model family
+  is a typed refusal — diffusion, CNN, and custom topologies have no
+  proven intent→collective mapping here. For mixture-of-experts the
+  lowering maps exactly the declared collectives with their declared
+  classes: a declared EP all-to-all is dispatch traffic, never an
+  implied layer; expert compute has no duration semantics and combine
+  traffic exists only when explicitly declared.
 * **Ordered collectives.** Declared intent order becomes an explicit op
   chain (each op depends on its predecessor), so the graph has a unique
   dependency-derived total order. Declaration order is therefore v3
@@ -75,7 +79,9 @@ from veritx_dse.workload.graph import (
     collective_detail,
 )
 from veritx_dse.workload.collectives import collective_schedule
-from veritx_dse.workload.messages import LogicalMessageArtifactV2
+from veritx_dse.workload.messages import (
+    LogicalMessageArtifactV2, LogicalMessageArtifactV3,
+)
 
 LOWERING_SCHEMA_VERSION = 1
 LOWERER_ID = "veritx_dse.workload.intent_lowering/v3.1"
@@ -202,16 +208,25 @@ def _expand_dimension(intent: CollectiveIntent, index: int,
 def lower_compile_workload(request: CompileRequestV3) -> LoweredWorkload:
     """Lower a v3 request's workload intent to a canonical WorkloadGraph.
 
-    Supported: dense transformer + TP/DP/EP/GLOBAL intents with ordered
-    collectives. Everything else is a typed refusal (see module laws).
-    Deterministic: same request -> byte-identical graph (workload_id
-    stable across runs and processes).
+    Supported: dense transformer and mixture-of-experts intents with
+    TP/DP/EP/GLOBAL ordered collectives. Everything else is a typed
+    refusal (see module laws). Deterministic: same request ->
+    byte-identical graph (workload_id stable across runs and processes).
+
+    Declared-ops law (MoE): the lowering maps exactly the declared
+    collective intents, each with its declared traffic class. A declared
+    EP all-to-all is dispatch traffic — never an implied full MoE layer:
+    expert compute has no duration semantics here and combine traffic
+    exists only when a combine collective is explicitly declared. The
+    run therefore measures declared communication, and per-operation
+    classes ride the sidecar to the per-message artifact.
 
     Raises:
         InvalidInput: non-v3 request, empty intent, BROADCAST root
             outside an expanded group, or sidecar mismatch (internal).
-        UnsupportedSemantics: non-dense family, PP-dimension collective,
-            single-member group, or otherwise unprovable intent.
+        UnsupportedSemantics: non-dense/non-MoE family, PP-dimension
+            collective, single-member group, or otherwise unprovable
+            intent.
         UnsupportedSchedule: payload indivisible under the pinned
             schedule (from collective_schedule, unmodified).
     """
@@ -221,12 +236,14 @@ def lower_compile_workload(request: CompileRequestV3) -> LoweredWorkload:
             f"{type(request).__name__} — v2 interpretation is frozen; "
             f"migrate explicitly via migrate_v2_to_v3")
     wl = request.workload
-    if wl.model_family != ModelFamily.DENSE_TRANSFORMER:
+    if wl.model_family == ModelFamily.MOE:
+        pass  # declared-ops law below: no invented combine, no compute
+    elif wl.model_family != ModelFamily.DENSE_TRANSFORMER:
         raise UnsupportedSemantics(
-            f"intent lowering supports model_family=dense_transformer, "
-            f"got {wl.model_family.value} — MoE dispatch/combine, "
-            f"diffusion, CNN, and custom intents have no proven "
-            f"intent→collective mapping here")
+            f"intent lowering supports model_family=dense_transformer "
+            f"or mixture_of_experts (declared collectives only), got "
+            f"{wl.model_family.value} — diffusion, CNN, and custom "
+            f"intents have no proven intent→collective mapping here")
     if not wl.collectives:
         raise InvalidInput(
             "intent declares no collectives — a fabric workload with no "
@@ -337,6 +354,30 @@ def build_single_class_messages(
                                     traffic_class=unified)
 
 
+def build_multi_class_messages(
+        lowered: LoweredWorkload) -> LogicalMessageArtifactV3:
+    """Logical messages for a multi-class lowering (MoE fast path).
+
+    Each message carries its own operation's lowered class from the
+    sidecar — no flattening to one class, no loss. Admission against
+    the compiled VC assignment stays per-class downstream
+    (:func:`fabric_evaluator._admit_traffic_classes` iterates messages,
+    and :func:`assert_traffic_classes_bound` mirrors it here).
+    """
+    if not isinstance(lowered, LoweredWorkload):
+        raise InvalidInput(
+            f"build_multi_class_messages takes a LoweredWorkload, got "
+            f"{type(lowered).__name__}")
+    if lowered.unified_traffic_class is not None:
+        raise InvalidInput(
+            f"lowering is single-class "
+            f"({lowered.unified_traffic_class!r}): use "
+            f"build_single_class_messages, never a V3 artifact")
+    return LogicalMessageArtifactV3(
+        graph=lowered.graph,
+        traffic_class_by_operation=lowered.traffic_class_by_operation)
+
+
 def assert_traffic_classes_bound(lowered: LoweredWorkload,
                                  vc_assignment: Any) -> None:
     """Admission check mirroring the evaluator traffic-class gate (B3).
@@ -426,5 +467,6 @@ __all__ = [
     "assert_traffic_classes_bound",
     "bridge_to_evaluation_messages",
     "build_single_class_messages",
+    "build_multi_class_messages",
     "lower_compile_workload",
 ]

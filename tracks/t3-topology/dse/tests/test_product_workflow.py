@@ -612,15 +612,33 @@ def test_refused_attempt_preserves_active_revision(tmp_path):
 
 
 def test_unevaluable_revision_refuses_simulation_honestly(tmp_path):
-    """A certified MoE revision has no proven intent->collective mapping:
-    the catalog, the project view and the submit gate must all say so,
-    and the refusal is typed (422) rather than an internal error."""
+    """A certified MoE revision lowers (declared-ops law) and its
+    per-message classes reach the profile gate, where the certified
+    BookSim profile cannot execute them: the catalog, the project view
+    and the submit gate must all state that exact reason, and the
+    refusal is typed (422) rather than an internal error."""
     client = _client(tmp_path, with_backend=False)
     catalog = client.get("/api/v1/catalog/workloads").json()["workloads"]
     moe = next(w for w in catalog
                if w["workload_id"] == "moe-8x7b-64tiles")
     assert moe["evaluation_supported"] is False
-    assert "mixture_of_experts" in (moe["evaluation_note"] or "")
+    assert moe["evaluation_domain"] == "backend_profile"
+    assert "VC" in (moe["evaluation_note"] or "")
+
+    # The concentrated template lowers (TP allreduce), so its refusal is
+    # also a profile refusal — never a lowering one.
+    conc = next(w for w in catalog
+                if w["workload_id"] == "dense-4b-32tiles-conc4")
+    assert conc["evaluation_supported"] is False
+    assert conc["evaluation_domain"] == "backend_profile"
+    assert "concentration" in (conc["evaluation_note"] or "")
+
+    # Both dense mesh workloads stay inside the certified profile.
+    for w in catalog:
+        if w["workload_id"] in ("llama-dense-8b-64tiles",
+                                "dense-1b-16tiles"):
+            assert w["evaluation_supported"] is True, w["workload_id"]
+            assert w["evaluation_domain"] is None
 
     resp = client.post("/api/v1/projects",
                        json={"name": "MoE Study",
@@ -634,10 +652,11 @@ def test_unevaluable_revision_refuses_simulation_honestly(tmp_path):
     project = client.get(f"/api/v1/projects/{pid}").json()
     support = project["active_evaluation"]
     assert support["supported"] is False
-    assert "mixture_of_experts" in (support["reason"] or "")
+    assert support["domain"] == "backend_profile"
+    assert "VC" in (support["reason"] or "")
 
     refused = client.post(
         f"/api/v1/revisions/{revision['revision_id']}/evaluate",
         json={"backend": None})
     assert refused.status_code == 422, refused.text
-    assert refused.json()["code"] == "LOWERING_UNSUPPORTED"
+    assert refused.json()["code"] == "UNSUPPORTED_SEMANTICS"
