@@ -611,6 +611,66 @@ def test_refused_attempt_preserves_active_revision(tmp_path):
     assert refused_eval.json()["code"] == "CONFLICT"
 
 
+def test_revision_preflight_contract(tmp_path):
+    """PreflightView: every execution gate reported with its exact reason
+    before the Run button is pressed (§15). Ready requires COMPILED +
+    certificate PASS + a configured backend; anything less is CANNOT RUN."""
+    client = _client(tmp_path, with_backend=False)
+    project = _make_project(client)
+    pid = project["project"]["project_id"]
+
+    # Compile a certified revision.
+    assert client.post(f"/api/v1/projects/{pid}/compile").status_code == 200
+    project = client.get(f"/api/v1/projects/{pid}").json()
+    rid = project["active_revision_id"]
+
+    # Gate 1: certified revision but no backend configured -> CANNOT RUN
+    # with the exact reason; compilation and certificate gates are READY.
+    resp = client.get(f"/api/v1/revisions/{rid}/preflight")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["contract_version"] == 1
+    assert body["revision_id"] == rid
+    assert body["ready"] is False
+    gates = {g["gate"]: g for g in body["gates"]}
+    assert gates["compilation"]["state"] == "READY"
+    assert gates["compilation"]["reason"] is None
+    assert gates["certificate"]["state"] == "READY"
+    assert gates["certificate"]["obligations_total"] == 10
+    assert gates["certificate"]["obligations_passed"] == 10
+    assert gates["backend"]["state"] == "MISSING"
+    assert "VERITX_BOOKSIM_BIN" in gates["backend"]["reason"]
+    assert gates["producer_qualification"]["state"] == "NOT_AVAILABLE"
+    assert body["reason"] is not None
+    # Honest expectation defaults, independent of readiness.
+    assert body["network_clock_hz"] > 0
+    assert body["route_observation_required"] is True
+    assert body["conservation_required"] is True
+    # No promised evidence tier while not ready.
+    assert body["expected_evidence_tier"] is None
+
+    # Gate 2: an UNSUPPORTED draft attempt refuses with the compiler reason
+    # and never shows backend/producer as the blocker list's first lie.
+    draft = client.get(f"/api/v1/projects/{pid}/draft").json()
+    draft["request"]["noc_config"]["topology_family"] = "torus"
+    assert client.put(f"/api/v1/projects/{pid}/draft",
+                      json={"request": draft["request"]}).status_code == 200
+    refused = client.post(f"/api/v1/projects/{pid}/compile")
+    assert refused.status_code in (200, 409, 422)
+    project = client.get(f"/api/v1/projects/{pid}").json()
+    attempt_id = project["latest_attempt_revision_id"]
+    if attempt_id != rid:  # the attempt was refused
+        pf = client.get(f"/api/v1/revisions/{attempt_id}/preflight").json()
+        pg = {g["gate"]: g for g in pf["gates"]}
+        assert pg["compilation"]["state"] == "UNSUPPORTED"
+        assert pg["compilation"]["reason"]
+        assert pf["ready"] is False
+
+    # Unknown revision -> typed 404.
+    missing = client.get("/api/v1/revisions/rev-nope/preflight")
+    assert missing.status_code == 404, missing.text
+
+
 def _bundle_run(svc, tmp_path: Path, *, run_id: str) -> dict:
     """Create a project + run whose bundle verifies, from a real finalize."""
     from veritx_dse.core.run_bundle import finalize_run_bundle

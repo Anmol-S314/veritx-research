@@ -37,6 +37,8 @@ PUT  /api/v1/projects/{id}/draft
 POST /api/v1/projects/{id}/compile
 GET  /api/v1/revisions/{id}
 GET  /api/v1/revisions/{id}/compilation
+GET  /api/v1/revisions/{id}/topology
+GET  /api/v1/revisions/{id}/preflight
 POST /api/v1/revisions/{id}/evaluate
 POST /api/v1/revisions/{id}/optimize
 GET  /api/v1/jobs/{id}
@@ -44,6 +46,9 @@ GET  /api/v1/runs
 GET  /api/v1/runs/{id}
 GET  /api/v1/runs/{id}/evidence
 GET  /api/v1/runs/{id}/artifacts
+GET  /api/v1/runs/{id}/integrity
+POST /api/v1/runs/{id}/verify
+POST /api/v1/runs/{id}/reproduce
 GET  /api/v1/optimizations/{id}
 GET  /api/v1/compare?a=&b=
 ```

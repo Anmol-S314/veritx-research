@@ -876,6 +876,91 @@ class ProductService:
         return {"contract_version": 1, "run_id": run_id,
                 "bundle": files}
 
+    # ── simulation preflight ─────────────────────────────────────────
+
+    def revision_preflight(self, revision_id: str) -> dict[str, Any]:
+        """PreflightView — the execution gate, evaluated before any run.
+
+        Pure projection: reads the stored revision, the active draft
+        state and the configured backend and reports each gate with its
+        exact reason. It decides nothing the evaluator would not decide
+        again at spawn; it exists so the Run button is never the user's
+        first indication of a missing gate (§15).
+        """
+        try:
+            _pid, revision = self.store.load_revision_global(revision_id)
+        except ProductServiceError:
+            raise
+        compilation = revision.get("compilation") or {}
+        certificate = revision.get("certificate") or {}
+        status = compilation.get("status")
+        cert_overall = certificate.get("overall")
+        obligations = certificate.get("obligations") or []
+        passed = sum(1 for o in obligations if o.get("status") == "PASS")
+        cert_pass = status == "COMPILED" and cert_overall == "PASS"
+
+        binary = self.config.booksim_bin
+        backend_ready = binary is not None and Path(binary).is_file()
+        producer_status = "QUALIFIED" if backend_ready else "NOT_AVAILABLE"
+        if not backend_ready:
+            producer_reason = (
+                "no qualified backend configured (set VERITX_BOOKSIM_BIN)")
+        else:
+            producer_reason = "pinned producer, manifest-verified build"
+
+        gates: list[dict[str, Any]] = [
+            {
+                "gate": "compilation",
+                "state": ("READY" if status == "COMPILED"
+                          else (status or "NOT_COMPILED")),
+                "reason": (None if status == "COMPILED"
+                           else compilation.get("error")
+                           or f"compilation is {status or 'absent'}"),
+            },
+            {
+                "gate": "certificate",
+                "state": ("READY" if cert_pass
+                          else (cert_overall or "NOT_CERTIFIED")),
+                "reason": (None if cert_pass
+                           else ("certificate is not PASS"
+                                 if cert_overall is not None
+                                 else "no certificate exists for this "
+                                 "revision")),
+                "obligations_passed": passed if obligations else None,
+                "obligations_total": len(obligations) or None,
+            },
+            {
+                "gate": "backend",
+                "state": "READY" if backend_ready else "MISSING",
+                "reason": None if backend_ready else producer_reason,
+            },
+            {
+                "gate": "producer_qualification",
+                "state": producer_status,
+                "reason": None if backend_ready else producer_reason,
+            },
+        ]
+        ready = cert_pass and backend_ready
+        return {
+            "contract_version": 1,
+            "revision_id": revision_id,
+            "display_name": revision.get("display_name"),
+            "backend": "booksim_standalone",
+            "backend_profile": "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1"
+            if cert_pass else None,
+            "network_clock_hz": self.config.network_clock_hz,
+            "expected_evidence_tier": ("authenticated backend evidence + "
+                                       "run bundle" if ready else None),
+            "route_observation_required": True,
+            "conservation_required": True,
+            "gates": gates,
+            "ready": ready,
+            "reason": (None if ready
+                       else "; ".join(
+                           g.get("reason") for g in gates
+                           if g.get("reason")) or None),
+        }
+
     # ── run verification & reproduction ──────────────────────────────
 
     def run_integrity(self, run_id: str) -> dict[str, Any]:

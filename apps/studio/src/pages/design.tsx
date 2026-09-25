@@ -1,4 +1,4 @@
-import { useState, type ReactElement } from 'react';
+import { useRef, useState, type ReactElement } from 'react';
 import { api, type JobView, type ProjectView } from '../api';
 import {
   AsyncView, ErrorBox, JobProgress, Link, WorkflowBar, useAsync,
@@ -154,9 +154,63 @@ export function CompileVerify({ projectId }: { projectId: string }): ReactElemen
 
 // ── Simulate ──────────────────────────────────────────────────────────────
 
+function PreflightPanel({ revisionId, onReady }: {
+  revisionId: string;
+  onReady?: (ready: boolean) => void;
+}): ReactElement {
+  const preflight = useAsync(() => api.preflight(revisionId), [revisionId]);
+  const reported = useRef(false);
+  return (
+    <AsyncView result={preflight.result} reload={preflight.reload}>
+      {(pf) => {
+        if (!reported.current) {
+          reported.current = true;
+          onReady?.(pf.ready);
+        }
+        return (
+          <>
+            <h3>{pf.ready ? 'Ready to run' : 'Cannot run'}</h3>
+            <div className="kv"><span>revision</span>
+              <span>{pf.display_name ?? pf.revision_id}</span>
+            </div>
+            <div className="kv"><span>backend</span><span>{pf.backend}</span></div>
+            {pf.backend_profile && (
+              <div className="kv"><span>profile</span><span>{pf.backend_profile}</span></div>
+            )}
+            <div className="kv"><span>producer</span>
+              <span>{pf.gates.find((g) => g.gate === 'producer_qualification')?.state ?? '—'}</span>
+            </div>
+            <div className="kv"><span>network clock</span>
+              <span>{(pf.network_clock_hz / 1e6).toFixed(0)} GHz</span>
+            </div>
+            {pf.ready && pf.expected_evidence_tier && (
+              <div className="kv"><span>expected evidence</span>
+                <span className="muted">{pf.expected_evidence_tier}</span>
+              </div>
+            )}
+            <div className="kv"><span>route observation</span>
+              <span>{pf.route_observation_required ? 'required' : '—'}</span>
+            </div>
+            <div className="kv"><span>conservation</span>
+              <span>{pf.conservation_required ? 'required' : '—'}</span>
+            </div>
+            {pf.gates.filter((g) => g.reason).map((g) => (
+              <div className="blocker" key={g.gate} role="status">
+                <strong>{g.gate}: {g.state}</strong>
+                <p className="bad">{g.reason}</p>
+              </div>
+            ))}
+          </>
+        );
+      }}
+    </AsyncView>
+  );
+}
+
 export function Simulate({ projectId }: { projectId: string }): ReactElement {
   const { refreshProjects } = useStudio();
   const project = useAsync(() => api.project(projectId), [projectId]);
+  const [preflightReady, setPreflightReady] = useState<boolean | null>(null);
 
   const [jobId, setJobId] = useState<string | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
@@ -225,18 +279,27 @@ export function Simulate({ projectId }: { projectId: string }): ReactElement {
         const canRun = Boolean(current)
           && current!.compilation.status === 'COMPILED'
           && current!.certificate?.overall === 'PASS'
-          && !p.draft.dirty && !running;
+          && !p.draft.dirty && !running
+          // The server's preflight verdict is the final gate; the local
+          // checks only decide whether a preflight can exist at all.
+          && preflightReady !== false;
         return (
           <div className="page">
             <WorkflowBar project={p} current="simulate" />
             <h2>Simulate</h2>
             <section className="card">
-              <h3>Run configuration</h3>
-              <div className="kv"><span>revision</span><span>{current ? `${current.display_name} · ${current.compilation.status.toLowerCase()}` : '—'}</span></div>
+              {current && !p.draft.dirty ? (
+                <PreflightPanel
+                  revisionId={current.revision_id}
+                  onReady={setPreflightReady}
+                />
+              ) : (
+                <h3>Run configuration</h3>
+              )}
+              {!current && (
+                <div className="kv"><span>revision</span><span>—</span></div>
+              )}
               <div className="kv"><span>workload</span><span>{p.draft.workload_id ?? '—'}</span></div>
-              <div className="kv"><span>backend</span><span>Embedded BookSim (qualified)</span></div>
-              <div className="kv"><span>certificate</span><span>{current?.certificate?.overall ?? '—'}</span></div>
-              <div className="kv"><span>expected run type</span><span>network execution + authenticated evidence</span></div>
               <div className="form-row">
                 <button
                   className="btn btn-primary"

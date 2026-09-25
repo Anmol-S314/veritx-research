@@ -408,6 +408,10 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
     def v1_revision_topology(revision_id: str) -> dict[str, Any]:
         return product.get_revision_topology(revision_id)
 
+    @app.get("/api/v1/revisions/{revision_id}/preflight", tags=["product"])
+    def v1_revision_preflight(revision_id: str) -> dict[str, Any]:
+        return product.revision_preflight(revision_id)
+
     @app.post("/api/v1/revisions/{revision_id}/evaluate", tags=["product"])
     def v1_evaluate(revision_id: str,
                     body: EvaluateBodyV1 | None = None) -> dict[str, Any]:

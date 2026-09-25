@@ -10,6 +10,7 @@ import type {
   OptimizationView,
   ProjectView,
   QualificationView,
+  PreflightView,
   RunIntegrityView,
   RunVerifyView,
   RevisionView,
@@ -83,6 +84,8 @@ export const api = {
     get<EvidenceView>(`/runs/${encodeURIComponent(runId)}/evidence`),
   integrity: (runId: string) =>
     get<RunIntegrityView>(`/runs/${encodeURIComponent(runId)}/integrity`),
+  preflight: (revisionId: string) =>
+    get<PreflightView>(`/revisions/${encodeURIComponent(revisionId)}/preflight`),
   verifyRun: (runId: string) =>
     post<RunVerifyView>(`/runs/${encodeURIComponent(runId)}/verify`),
   reproduceRun: (runId: string) =>

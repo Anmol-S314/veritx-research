@@ -219,6 +219,31 @@ export interface RunVerifyView {
   files_checked: number;
 }
 
+/** PreflightView: the execution gate, evaluated before any run.
+ * `ready` is the server's verdict; Studio never recomputes it. */
+export interface PreflightGate {
+  gate: string;
+  state: string;
+  reason: string | null;
+  obligations_passed?: number | null;
+  obligations_total?: number | null;
+}
+
+export interface PreflightView {
+  contract_version: 1;
+  revision_id: string;
+  display_name: string | null;
+  backend: string;
+  backend_profile: string | null;
+  network_clock_hz: number;
+  expected_evidence_tier: string | null;
+  route_observation_required: boolean;
+  conservation_required: boolean;
+  gates: PreflightGate[];
+  ready: boolean;
+  reason: string | null;
+}
+
 export interface OptimizationView {
   contract_version: 1;
   optimization_id: string;
