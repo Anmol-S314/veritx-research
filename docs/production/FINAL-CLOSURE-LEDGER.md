@@ -68,7 +68,7 @@ Release candidate under audit: `2521d713`. Verdict: **NOT READY** (see
 
 | id | severity | status | source | root cause | implementation | tests | runtime gate | commit | historical claims affected | remaining limitation |
 |----|----------|--------|--------|-----------|----------------|-------|--------------|--------|---------------------------|----------------------|
-| C7 | high | OPEN | `serving/*`, `tests/test_full_pipeline.py`, `tests/test_serving_protocol.py` | integration fixtures not vendored; two timing-flaky protocol tests | C7.1 fixture fix + deterministic signalling + pytest-timeout owed | 6 skipped, 2 flaky | — | — | — | release-critical skips remain |
+| C7 | high | IN_PROGRESS | `serving/*`, `tests/test_full_pipeline.py`, `tests/test_serving_protocol.py`, `tests/conftest.py` | integration fixtures not vendored; two timing-flaky protocol tests | flaky tests made deterministic (reap-on-EOF; bounded quiescence); pytest-timeout; release-gate fails on release-critical skips | `test_serving_protocol.py` (35 passed ×3) | fast tier 3531 passed; gate fails on `.et`/ASTRA skips | `503c53a8` | — | serving `.et` fixtures still unvendored → integration domain explicitly UNSUPPORTED at the gate |
 
 ## C8 — reproducible release build
 
