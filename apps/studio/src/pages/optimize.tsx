@@ -13,7 +13,8 @@ export function Optimize({ projectId }: { projectId: string }): ReactElement {
   const { refreshProjects } = useStudio();
   const project = useAsync(() => api.project(projectId), [projectId]);
   const [widths, setWidths] = useState<number[]>([32, 64, 128]);
-  const [ceiling, setCeiling] = useState(1000);
+  const [ceilingOn, setCeilingOn] = useState(false);
+  const [ceiling, setCeiling] = useState(0);
   const [jobId, setJobId] = useState<string | null>(null);
   const [optimizationId, setOptimizationId] = useState<string | null>(null);
   const [error, setError] = useState<Error | null>(null);
@@ -42,9 +43,12 @@ export function Optimize({ projectId }: { projectId: string }): ReactElement {
       const submitted = await api.optimize(currentId, {
         domain: [{ name: 'link_width', values: widths }],
         objectives: [{ metric: 'completion_cycles', direction: 'MIN' }],
-        constraints: [
-          { metric: 'completion_cycles', op: '<=', threshold: ceiling },
-        ],
+        // A hard constraint is opt-in: an arbitrary ceiling that no
+        // measured candidate can meet makes the whole study ineligible,
+        // which reads as a broken optimizer rather than a strict bound.
+        constraints: ceilingOn && ceiling > 0
+          ? [{ metric: 'completion_cycles', op: '<=', threshold: ceiling }]
+          : [],
         method: 'grid',
         selection: 'min_first_objective',
       });
@@ -92,14 +96,46 @@ export function Optimize({ projectId }: { projectId: string }): ReactElement {
                   </span>
                 </label>
                 <label>
-                  Constraint · completion_cycles ≤
-                  <input type="number" value={ceiling} onChange={(e) => setCeiling(Number(e.target.value))} />
+                  Hard constraint
+                  <span className="check-row">
+                    <label className="check">
+                      <input
+                        type="checkbox"
+                        checked={ceilingOn}
+                        onChange={(e) => setCeilingOn(e.target.checked)}
+                      />
+                      completion_cycles ≤
+                    </label>
+                    <input
+                      type="number"
+                      value={ceiling === 0 ? '' : ceiling}
+                      placeholder="measured"
+                      disabled={!ceilingOn}
+                      onChange={(e) => setCeiling(Number(e.target.value) || 0)}
+                    />
+                  </span>
+                  <small className="muted">
+                    Optional. Every candidate that violates it is ineligible —
+                    no Pareto set and no selection. Leave it off to rank the
+                    measured candidates outright.
+                  </small>
                 </label>
               </div>
               <div className="form-row">
                 <button className="btn btn-primary" disabled={!active || running} onClick={start}>
                   {running ? 'Optimizing…' : 'Launch optimization'}
                 </button>
+                {(() => {
+                  const measured = [...p.runs]
+                    .reverse()
+                    .find((r) => typeof r.completion_cycles === 'number');
+                  return measured ? (
+                    <span className="muted">
+                      last measured run: {fmtNum(measured.completion_cycles)}{' '}
+                      cycles ({measured.display_name ?? measured.run_id})
+                    </span>
+                  ) : null;
+                })()}
               </div>
               {error && <ErrorBox error={error} />}
               <JobProgress job={job} />
@@ -130,6 +166,18 @@ function StudyResult({
         <div className="kv"><span>selected candidate</span><span>{optimization.selected_candidate_id ?? '—'}</span></div>
         <div className="kv"><span>pareto members</span><span>{optimization.study.pareto_ids.length}</span></div>
         <div className="kv"><span>metric registry</span><Hash value={optimization.study.metric_registry_id} /></div>
+        {optimization.study.selection_rationale && (
+          <p className={optimization.selected_candidate_id ? 'muted' : 'warn'}>
+            {optimization.study.selection_rationale}
+          </p>
+        )}
+        {optimization.candidate_runs.length > 0 && (
+          <p className="muted">
+            {optimization.candidate_runs.length} candidates measured by{' '}
+            {optimization.candidate_runs.find((c) => c.evaluation_authority)
+              ?.evaluation_authority ?? 'the certified backend'}.
+          </p>
+        )}
       </section>
       {optimization.candidate_runs.some((c) => c.run_id) && (
         <section className="card">

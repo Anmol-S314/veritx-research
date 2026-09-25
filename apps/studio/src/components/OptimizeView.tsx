@@ -177,6 +177,75 @@ function VerdictChip({ map, state }: { map: PresentationMap; state: string | nul
   return <span className={`verdict-chip ${e.class}`}>{e.label}</span>;
 }
 
+/** One certified objective: rank the measured candidates instead of
+ * pretending a frontier exists. Nothing is drawn from an unmeasured
+ * objective — those candidates are listed as excluded. */
+function objectiveRanking(
+  candidates: Candidate[],
+  objective: StudyObjective,
+  selectedId: string | null,
+  onSelect: (id: string) => void,
+): ReactElement {
+  const metric = objective.metric;
+  const measured = candidates
+    .filter(
+      (c) =>
+        c.objective_availability[metric] === 'MEASURED' &&
+        typeof c.objective_values[metric] === 'number',
+    )
+    .map((c) => ({ c, value: c.objective_values[metric] as number }));
+  const excluded = candidates.filter(
+    (c) => !measured.some((m) => m.c.candidate_id === c.candidate_id),
+  );
+  if (measured.length === 0) {
+    return (
+      <p className="muted">
+        No candidate carries a measured value for {humanize(metric)}, so
+        nothing is ranked. Unmeasured objectives are never coerced to a
+        number.
+      </p>
+    );
+  }
+  const sorted = [...measured].sort((a, b) =>
+    objective.direction === 'MIN' ? a.value - b.value : b.value - a.value,
+  );
+  const max = Math.max(...measured.map((m) => m.value)) || 1;
+  const short = (id: string): string => id.replace(/^cand_/, '').slice(0, 10);
+  return (
+    <div className="rank-chart" role="list">
+      <p className="muted">
+        Single certified objective — a ranking of measured values, not a
+        Pareto frontier. Best {humanize(metric)} first; the engine selects
+        under its declared policy.
+      </p>
+      {sorted.map(({ c, value }, index) => (
+        <button
+          key={c.candidate_id}
+          role="listitem"
+          type="button"
+          className={`rank-row${c.candidate_id === selectedId ? ' sel' : ''}${c.pareto_member ? ' pt' : ''}`}
+          onClick={() => onSelect(c.candidate_id)}
+          title={`${c.candidate_id} · ${humanize(metric)} = ${fmtNum(value)}${c.pareto_member ? ' · Pareto member' : ''}`}
+        >
+          <span className="rank-pos">{index + 1}</span>
+          <code className="rank-id">{short(c.candidate_id)}</code>
+          <span
+            className="rank-bar"
+            style={{ width: `${Math.max(2, (value / max) * 100)}%` }}
+          />
+          <span className="rank-val num">{fmtNum(value)}</span>
+        </button>
+      ))}
+      {excluded.length > 0 && (
+        <p className="muted">
+          Not ranked (no measured value):{' '}
+          {excluded.map((c) => c.candidate_id).join(', ')}.
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** Optimization study: the engine's three authorities, rendered apart. */
 export default function OptimizeView({
   optimization,
@@ -199,7 +268,10 @@ export default function OptimizeView({
     return (
       <Empty
         title="No optimization study"
-        body="This fixture carries no OptimizationStudyView. Open the optimization-study fixture to explore candidates, constraint verdicts, and the Pareto frontier."
+        body={
+          'Launch a study from the Optimize page to see candidates, '
+          + 'constraint verdicts and the measured ranking of the domain.'
+        }
       />
     );
   }
@@ -347,14 +419,19 @@ export default function OptimizeView({
               })}
             </tbody>
           </table>
-          <h4>Pareto frontier</h4>
+          <h4>
+            {objectives.length >= 2
+              ? 'Pareto frontier'
+              : objectives.length === 1
+                ? 'Measured ranking'
+                : 'Objectives'}
+          </h4>
           {objectives.length >= 2 ? (
             paretoPlot(optimization.candidates, objectives, selected?.candidate_id ?? null, setSelectedId)
+          ) : objectives.length === 1 ? (
+            objectiveRanking(optimization.candidates, objectives[0], selected?.candidate_id ?? null, setSelectedId)
           ) : (
-            <p className="muted">
-              Need ≥2 objectives for a frontier plot; a single objective maps
-              directly to the candidate table.
-            </p>
+            <p className="muted">This study declares no objective.</p>
           )}
           <p className="muted">
             Pareto set (engine): {optimization.pareto_ids.join(', ') || '—'}
