@@ -6,6 +6,7 @@ import {
 } from '../studio';
 import { Hash, StatusBadge, fmtNum } from '../components/badges';
 import OptimizeView from '../components/OptimizeView';
+import OptimizationAnalysis from '../components/OptimizationAnalysis';
 
 const WIDTH_CHOICES = [32, 64, 128];
 
@@ -205,6 +206,12 @@ function StudyResult({
         </section>
       )}
       <OptimizeView optimization={optimization.study} design={baseRevision?.design ?? null} />
+      {optimization.study.result_class === 'CERTIFIED_PRODUCT' &&
+        optimization.study.candidates.some(
+          (c) => c.evaluation_status === 'EVALUATED',
+        ) && (
+          <OptimizationAnalysis optimization={optimization.study} />
+        )}
     </div>
   );
 }
