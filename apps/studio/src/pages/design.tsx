@@ -450,7 +450,19 @@ export function Simulate({ projectId }: { projectId: string }): ReactElement {
         return (
           <div className="page">
             <WorkflowBar project={p} current="simulate" />
-            <h2>Simulate</h2>
+            <h2>Evaluate</h2>
+            <p className="muted flow-lede">
+              Lower declared communication, execute it, then judge
+              requirements. Execution evidence and requirement authority
+              remain separate from this UI.
+            </p>
+            <div className="flow-rail">
+              <div className="flow-node"><span className="n">01</span><b>Declared workload</b><small>collectives + dependencies</small></div>
+              <div className="flow-node"><span className="n">02</span><b>Logical messages</b><small>participant semantics</small></div>
+              <div className="flow-node"><span className="n">03</span><b>Physical traffic</b><small>rank → endpoint bound</small></div>
+              <div className="flow-node"><span className="n">04</span><b>Qualified backend</b><small>pinned producer identity</small></div>
+              <div className="flow-node"><span className="n">05</span><b>Evidence + report</b><small>metrics + requirements</small></div>
+            </div>
             <section className="card">
               {current && !p.draft.dirty ? (
                 <PreflightPanel
