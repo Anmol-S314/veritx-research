@@ -2,7 +2,7 @@
   {
     "name": "ramulator_battery",
     "passed": true,
-    "detail": "1.9s, 16/16 checks; 16/16 checks",
+    "detail": "2.2s, 16/16 checks; 16/16 checks",
     "checks": [
       [
         "vendored-ext-present",
@@ -12,7 +12,7 @@
       [
         "ext-hash-recorded",
         true,
-        "sha256:152614ac3"
+        "sha256:8c86220d8"
       ],
       [
         "drain-1R",

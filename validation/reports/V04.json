@@ -105,7 +105,7 @@
       "authority_class": "ring_oracle",
       "independence": "independent_oracle",
       "verdict": "exact",
-      "detail": "lowering matches ring ALLREDUCE arithmetic (messages=480, bytes=30720, flits=12000, packets=1920)",
+      "detail": "lowering matches ALLREDUCE schedule arithmetic (messages=480, bytes=30720, flits=12000, packets=1920)",
       "values": {
         "ranks": 16,
         "payload_bytes": 1024,
@@ -166,7 +166,7 @@
       "values": {
         "veritx_completion": 1983,
         "authority_completion": 1983,
-        "veritx_window": 2920,
+        "veritx_window": 2941,
         "authority_window": 3920
       },
       "quarantined": false,
@@ -192,7 +192,7 @@
       "authority_class": "ring_oracle",
       "independence": "independent_oracle",
       "verdict": "exact",
-      "detail": "lowering matches ring ALLREDUCE arithmetic (messages=480, bytes=30720, flits=4800, packets=960)",
+      "detail": "lowering matches ALLREDUCE schedule arithmetic (messages=480, bytes=30720, flits=4800, packets=960)",
       "values": {
         "ranks": 16,
         "payload_bytes": 1024,
@@ -253,7 +253,7 @@
       "values": {
         "veritx_completion": 1006,
         "authority_completion": 1006,
-        "veritx_window": 1960,
+        "veritx_window": 1968,
         "authority_window": 2960
       },
       "quarantined": false,
@@ -279,7 +279,7 @@
       "authority_class": "ring_oracle",
       "independence": "independent_oracle",
       "verdict": "exact",
-      "detail": "lowering matches ring ALLREDUCE arithmetic (messages=480, bytes=30720, flits=2400, packets=480)",
+      "detail": "lowering matches ALLREDUCE schedule arithmetic (messages=480, bytes=30720, flits=2400, packets=480)",
       "values": {
         "ranks": 16,
         "payload_bytes": 1024,
@@ -340,7 +340,7 @@
       "values": {
         "veritx_completion": 520,
         "authority_completion": 520,
-        "veritx_window": 1480,
+        "veritx_window": 1484,
         "authority_window": 2480
       },
       "quarantined": false,
@@ -366,7 +366,7 @@
       "authority_class": "ring_oracle",
       "independence": "independent_oracle",
       "verdict": "exact",
-      "detail": "lowering matches ring ALLREDUCE arithmetic (messages=480, bytes=30720, flits=1440, packets=480)",
+      "detail": "lowering matches ALLREDUCE schedule arithmetic (messages=480, bytes=30720, flits=1440, packets=480)",
       "values": {
         "ranks": 16,
         "payload_bytes": 1024,
@@ -427,7 +427,7 @@
       "values": {
         "veritx_completion": 518,
         "authority_completion": 518,
-        "veritx_window": 1480,
+        "veritx_window": 1482,
         "authority_window": 2480
       },
       "quarantined": false,

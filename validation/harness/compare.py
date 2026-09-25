@@ -17,7 +17,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from .oracle import collective_graph_report, ring_allreduce_oracle
+from .oracle import (collective_count_oracle, collective_graph_report,
+                     direct_or_broadcast_graph_law, ring_allreduce_oracle)
 
 EXACT = "exact"
 MISMATCH = "mismatch"
@@ -179,12 +180,16 @@ def run_checks(*, spec, built, veritx_stats: dict, authority,
                     "authority_accepted_flits": authority.accepted_flits}))
 
     # ── workload-lowering oracle (independent) ─────────────────────────
-    # First-principles ring arithmetic vs VERITX's lowering.
+    # First-principles schedule arithmetic vs VERITX's lowering, for every
+    # pinned collective kind (PW2). Each kind gets its own closed-form law.
     if spec.workload.kind == "collective" \
-            and spec.workload.collective_kind == "ALLREDUCE":
+            and spec.workload.collective_kind in ("ALLREDUCE", "ALLGATHER",
+                                                  "REDUCESCATTER",
+                                                  "ALLTOALL", "BROADCAST"):
         problems = []
         try:
-            oracle = ring_allreduce_oracle(
+            oracle = collective_count_oracle(
+                kind=spec.workload.collective_kind,
                 ranks=spec.fabric.compute_tiles,
                 payload_bytes=spec.workload.payload_bytes,
                 flit_width_bits=spec.fabric.link_width)
@@ -198,12 +203,12 @@ def run_checks(*, spec, built, veritx_stats: dict, authority,
         else:
             if n_messages != oracle.messages:
                 problems.append(
-                    f"messages {n_messages} != ring oracle "
-                    f"{oracle.messages} (=2k(k-1))")
+                    f"messages {n_messages} != oracle "
+                    f"{oracle.messages}")
             if total_bytes != oracle.total_bytes:
                 problems.append(
-                    f"bytes {total_bytes} != ring oracle "
-                    f"{oracle.total_bytes} (=2(k-1)B)")
+                    f"bytes {total_bytes} != oracle "
+                    f"{oracle.total_bytes}")
             if built.flits != oracle.total_flits:
                 problems.append(
                     f"flits {built.flits} != oracle {oracle.total_flits}")
@@ -215,7 +220,8 @@ def run_checks(*, spec, built, veritx_stats: dict, authority,
                 name="workload_lowering_conservation",
                 authority_class="ring_oracle",
                 detail="; ".join(problems)
-                or ("lowering matches ring ALLREDUCE arithmetic "
+                or ("lowering matches "
+                    f"{spec.workload.collective_kind} schedule arithmetic "
                     f"(messages={oracle.messages}, bytes={oracle.total_bytes}, "
                     f"flits={oracle.total_flits}, "
                     f"packets={oracle.total_packets})"),
@@ -246,7 +252,41 @@ def run_checks(*, spec, built, veritx_stats: dict, authority,
             quarantined=(not conforms and quarantine),
             finding=(None if conforms else "F-0004")))
 
-    # ── hand counts (independent) ──────────────────────────────────────
+    # ── direct / fanout graph-law conformance (independent, PW2) ──────
+    # ALLTOALL: every ordered pair exactly once, B/k each. BROADCAST:
+    # only the declared root sends, one B-byte message per destination.
+    if spec.workload.kind == "collective" \
+            and spec.workload.collective_kind in ("ALLTOALL", "BROADCAST"):
+        try:
+            law_report = direct_or_broadcast_graph_law(
+                spec.workload.collective_kind, spec.fabric.compute_tiles,
+                spec.workload.payload_bytes, built.logical.messages,
+                source=spec.workload.source_rank)
+        except Exception as exc:  # noqa: BLE001
+            law_report = {
+                "conforms": False, "checks": {}, "problems": ["oracle_error"],
+                "detail": f"{type(exc).__name__}: {exc}"}
+        conforms = law_report["conforms"]
+        if conforms:
+            detail = ("graph law holds: "
+                      + ("every ordered pair exactly once, B/k each"
+                         if spec.workload.collective_kind == "ALLTOALL"
+                         else "declared root fans out one B-byte message "
+                              "to every other participant"))
+        else:
+            detail = ("communication graph violates the "
+                      f"{spec.workload.collective_kind} law: "
+                      f"{law_report.get('problems')}")
+        results.append(CheckResult(
+            name="collective_graph_conformance",
+            authority_class="ring_oracle",
+            detail=detail,
+            verdict=_verdict(conforms),
+            values=law_report,
+            quarantined=(not conforms and quarantine),
+            finding=(None if conforms else "F-0004")))
+
+    # ── hand counts (independent) ─────────────────────────────────
     if "hand_counts" in spec.checks and expected.packets is not None:
         problems = []
         if built.packets != expected.packets:

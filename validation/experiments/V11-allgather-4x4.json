@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "id": "V11",
+  "title": "4x4 mesh, 16-node TP ALLGATHER (ring), 1024 B payload",
+  "fabric": {
+    "topology_family": "mesh",
+    "compute_tiles": 16,
+    "tp": 16,
+    "link_width": 64,
+    "concentration": 1,
+    "num_vcs": 1
+  },
+  "workload": {
+    "kind": "collective",
+    "collective_kind": "ALLGATHER",
+    "payload_bytes": 1024
+  },
+  "expected": {
+    "notes": "PW2 audit: ring ALLGATHER, chunk = B (full chunk forwarded). Oracle laws: messages = k(k-1) = 240, bytes = (k-1)B, neighbour edges only, one send and one receive per rank per step."
+  },
+  "checks": [
+    "conservation",
+    "standalone_parity",
+    "window_invariance"
+  ]
+}

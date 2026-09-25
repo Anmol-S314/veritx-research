@@ -14,7 +14,7 @@
     "packets": 1,
     "flits": 3,
     "completion_cycles": 39,
-    "sample_window_cycles": 1001,
+    "sample_window_cycles": 1003,
     "canonical_hops_avg": 6.0
   },
   "authority": {
@@ -81,7 +81,7 @@
       "values": {
         "veritx_completion": 39,
         "authority_completion": 39,
-        "veritx_window": 1001,
+        "veritx_window": 1003,
         "authority_window": 2001
       },
       "quarantined": false,

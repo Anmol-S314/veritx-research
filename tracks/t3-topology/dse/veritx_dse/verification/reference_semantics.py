@@ -87,7 +87,7 @@ def ref_collective(kind: str, k: int, B: int) -> dict[str, int]:
                 "message_bytes": C, "per_rank_sent": (k - 1) * C,
                 "aggregate_payload": (k - 1) * B}
     if kind == "ALLGATHER":
-        # F-0005: re-derived ring law — each rank owns a B/k chunk, so each
+        # F-0006: re-derived ring law — each rank owns a B/k chunk, so each
         # of the k(k-1) ring messages carries B/k, aggregate (k-1)B.
         if B % k:
             raise ValueError("ALLGATHER requires B % k == 0")

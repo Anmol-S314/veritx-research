@@ -46,7 +46,7 @@
       "authority_class": "ring_oracle",
       "independence": "independent_oracle",
       "verdict": "exact",
-      "detail": "lowering matches ring ALLREDUCE arithmetic (messages=24, bytes=48, flits=24, packets=24)",
+      "detail": "lowering matches ALLREDUCE schedule arithmetic (messages=24, bytes=48, flits=24, packets=24)",
       "values": {
         "ranks": 4,
         "payload_bytes": 8,

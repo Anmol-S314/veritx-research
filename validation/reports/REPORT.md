@@ -24,7 +24,7 @@ profile: `CERTIFIED_BOOKSIM_MESH_DOR_XY_V1`  ·  fabric: {'compute_tiles': 16, '
 | workload_lowering_conservation | ring_oracle | independent_oracle | messages=480, bytes=30720, flits=4800, packets=960 | exact |
 | collective_graph_conformance | ring_oracle | independent_oracle | {"aggregate_bytes": 30720, "checks": {"aggregate_bytes_match": true, "chunk_bytes_match": true, "dst_is_next_ring_neighbour": true, "every_rank_receives_once_per_step": true, "every_rank_sends_once_per_step": true, "every_step_has_k_messages": true, "message_count_match": true, "no_non_neighbour_pairs": true, "no_self_messages": true, "phase_labels_exact": true, "steps_exact": true}, "chunk_bytes": 64, "conforms": true, "extra_non_neighbour_pairs": {}, "kind": "ALLREDUCE", "messages": 480, "observed_distinct_pairs": 16, "payload_bytes": 1024, "problems": [], "ranks": 16, "steps": 30} | exact |
 | standalone_parity | standalone_booksim | semi_independent_shared_engine | 1006 == 1006 | exact |
-| window_invariance | standalone_booksim | semi_independent_shared_engine | completion=1006, windows={'veritx': 1960, 'authority': 2960, 'authority_alt': 3960} | exact |
+| window_invariance | standalone_booksim | semi_independent_shared_engine | completion=1006, windows={'veritx': 1968, 'authority': 2960, 'authority_alt': 3960} | exact |
 
 **PASS**
 
@@ -35,8 +35,10 @@ profile: `CERTIFIED_BOOKSIM_MESH_DOR_XY_V1`  ·  fabric: {'compute_tiles': 16, '
 | check | authority | independence | value | verdict |
 |---|---|---|---|---|
 | trace_execution_conservation | trace_conservation | integration_gate | packets=480, flits=2400, auth_flits=2400/2400 | exact |
+| workload_lowering_conservation | ring_oracle | independent_oracle | messages=240, bytes=15360, flits=2400, packets=480 | exact |
+| collective_graph_conformance | ring_oracle | independent_oracle | {"checks": {"aggregate_bytes_match": true, "chunk_bytes_match": true, "every_rank_receives_k_minus_1": true, "every_rank_sends_k_minus_1": true, "message_count_match": true, "no_self_messages": true, "pair_multiplicity_exact": true, "steps_exact": true}, "conforms": true, "kind": "ALLTOALL", "messages": 240, "payload_bytes": 1024, "problems": [], "ranks": 16, "source": null} | exact |
 | standalone_parity | standalone_booksim | semi_independent_shared_engine | 719 == 719 | exact |
-| window_invariance | standalone_booksim | semi_independent_shared_engine | completion=719, windows={'veritx': 1480, 'authority': 2480, 'authority_alt': 3480} | exact |
+| window_invariance | standalone_booksim | semi_independent_shared_engine | completion=719, windows={'veritx': 1600, 'authority': 2480, 'authority_alt': 3480} | exact |
 
 **PASS**
 
@@ -176,20 +178,76 @@ profile: `CERTIFIED_BOOKSIM_MESH_DOR_XY_V1`  ·  fabric: {'compute_tiles': 16, '
 
 **PASS**
 
+## V11 — 4x4 mesh, 16-node TP ALLGATHER (ring), 1024 B payload
+
+profile: `CERTIFIED_BOOKSIM_MESH_DOR_XY_V1`  ·  fabric: {'compute_tiles': 16, 'tp': 16, 'link_width': 64, 'num_vcs': 1}  ·  workload: collective
+
+| check | authority | independence | value | verdict |
+|---|---|---|---|---|
+| trace_execution_conservation | trace_conservation | integration_gate | packets=480, flits=2400, auth_flits=2400/2400 | exact |
+| workload_lowering_conservation | ring_oracle | independent_oracle | messages=240, bytes=15360, flits=2400, packets=480 | exact |
+| collective_graph_conformance | ring_oracle | independent_oracle | {"aggregate_bytes": 15360, "checks": {"aggregate_bytes_match": true, "chunk_bytes_match": true, "dst_is_next_ring_neighbour": true, "every_rank_receives_once_per_step": true, "every_rank_sends_once_per_step": true, "every_step_has_k_messages": true, "message_count_match": true, "no_non_neighbour_pairs": true, "no_self_messages": true, "steps_exact": true}, "chunk_bytes": 64, "conforms": true, "extra_non_neighbour_pairs": {}, "kind": "ALLGATHER", "messages": 240, "observed_distinct_pairs": 16, "payload_bytes": 1024, "problems": [], "ranks": 16, "steps": 15} | exact |
+| standalone_parity | standalone_booksim | semi_independent_shared_engine | 526 == 526 | exact |
+| window_invariance | standalone_booksim | semi_independent_shared_engine | completion=526, windows={'veritx': 1488, 'authority': 2480, 'authority_alt': 3480} | exact |
+
+**PASS**
+
+## V12 — 4x4 mesh, 16-node TP REDUCESCATTER (ring), 1024 B payload
+
+profile: `CERTIFIED_BOOKSIM_MESH_DOR_XY_V1`  ·  fabric: {'compute_tiles': 16, 'tp': 16, 'link_width': 64, 'num_vcs': 1}  ·  workload: collective
+
+| check | authority | independence | value | verdict |
+|---|---|---|---|---|
+| trace_execution_conservation | trace_conservation | integration_gate | packets=480, flits=2400, auth_flits=2400/2400 | exact |
+| workload_lowering_conservation | ring_oracle | independent_oracle | messages=240, bytes=15360, flits=2400, packets=480 | exact |
+| collective_graph_conformance | ring_oracle | independent_oracle | {"aggregate_bytes": 15360, "checks": {"aggregate_bytes_match": true, "chunk_bytes_match": true, "dst_is_next_ring_neighbour": true, "every_rank_receives_once_per_step": true, "every_rank_sends_once_per_step": true, "every_step_has_k_messages": true, "message_count_match": true, "no_non_neighbour_pairs": true, "no_self_messages": true, "steps_exact": true}, "chunk_bytes": 64, "conforms": true, "extra_non_neighbour_pairs": {}, "kind": "REDUCESCATTER", "messages": 240, "observed_distinct_pairs": 16, "payload_bytes": 1024, "problems": [], "ranks": 16, "steps": 15} | exact |
+| standalone_parity | standalone_booksim | semi_independent_shared_engine | 526 == 526 | exact |
+| window_invariance | standalone_booksim | semi_independent_shared_engine | completion=526, windows={'veritx': 1488, 'authority': 2480, 'authority_alt': 3480} | exact |
+
+**PASS**
+
+## V13 — 4x4 mesh, 16-node TP BROADCAST (root fanout, source rank 7), 1024 B payload
+
+profile: `CERTIFIED_BOOKSIM_MESH_DOR_XY_V1`  ·  fabric: {'compute_tiles': 16, 'tp': 16, 'link_width': 64, 'num_vcs': 1}  ·  workload: collective
+
+| check | authority | independence | value | verdict |
+|---|---|---|---|---|
+| trace_execution_conservation | trace_conservation | integration_gate | packets=300, flits=2325, auth_flits=2325/2325 | exact |
+| workload_lowering_conservation | ring_oracle | independent_oracle | messages=15, bytes=15360, flits=2325, packets=300 | exact |
+| collective_graph_conformance | ring_oracle | independent_oracle | {"checks": {"aggregate_bytes_match": true, "chunk_bytes_match": true, "message_count_match": true, "no_self_messages": true, "only_root_sends": true, "root_sends_to_every_other_exactly_once": true, "steps_exact": true}, "conforms": true, "kind": "BROADCAST", "messages": 15, "payload_bytes": 1024, "problems": [], "ranks": 16, "source": 7} | exact |
+| standalone_parity | standalone_booksim | semi_independent_shared_engine | 2939 == 2939 | exact |
+| window_invariance | standalone_booksim | semi_independent_shared_engine | completion=2939, windows={'veritx': 3325, 'authority': 2942, 'authority_alt': 3300} | exact |
+
+**PASS**
+
+## V14 — 2x2 mesh, 4-node TP ALLGATHER (ring, k=2 boundary), 1024 B payload
+
+profile: `CERTIFIED_BOOKSIM_MESH_DOR_XY_V1`  ·  fabric: {'compute_tiles': 4, 'tp': 4, 'link_width': 64, 'num_vcs': 1}  ·  workload: collective
+
+| check | authority | independence | value | verdict |
+|---|---|---|---|---|
+| trace_execution_conservation | trace_conservation | integration_gate | packets=60, flits=432, auth_flits=432/432 | exact |
+| workload_lowering_conservation | ring_oracle | independent_oracle | messages=12, bytes=3072, flits=432, packets=60 | exact |
+| collective_graph_conformance | ring_oracle | independent_oracle | {"aggregate_bytes": 3072, "checks": {"aggregate_bytes_match": true, "chunk_bytes_match": true, "dst_is_next_ring_neighbour": true, "every_rank_receives_once_per_step": true, "every_rank_sends_once_per_step": true, "every_step_has_k_messages": true, "message_count_match": true, "no_non_neighbour_pairs": true, "no_self_messages": true, "steps_exact": true}, "chunk_bytes": 256, "conforms": true, "extra_non_neighbour_pairs": {}, "kind": "ALLGATHER", "messages": 12, "observed_distinct_pairs": 4, "payload_bytes": 1024, "problems": [], "ranks": 4, "steps": 3} | exact |
+| standalone_parity | standalone_booksim | semi_independent_shared_engine | 167 == 167 | exact |
+| window_invariance | standalone_booksim | semi_independent_shared_engine | completion=167, windows={'veritx': 1123, 'authority': 2060, 'authority_alt': 3060} | exact |
+
+**PASS**
+
 ---
 
-checks exact: 72/72 (0 quarantined by a filed finding)
+checks exact: 94/94 (0 quarantined by a filed finding)
 
 by independence category (exact/total):
   calibrated_cross_engine            8/8
   independent_execution_engine       5/5
-  independent_oracle                 24/24
-  integration_gate                   16/16
-  semi_independent_shared_engine     19/19
+  independent_oracle                 34/34
+  integration_gate                   20/20
+  semi_independent_shared_engine     27/27
 
 independent_oracle by provenance (exact/total):
   posthoc_hand                       3/3
   preregistered_hand                 3/3
-  preregistered_oracle               6/6
+  preregistered_oracle               16/16
   preregistered_physics              2/2
   unstated                           10/10

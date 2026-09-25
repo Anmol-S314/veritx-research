@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "id": "V14",
+  "title": "2x2 mesh, 4-node TP ALLGATHER (ring, k=2 boundary), 1024 B payload",
+  "fabric": {
+    "topology_family": "mesh",
+    "compute_tiles": 4,
+    "tp": 4,
+    "link_width": 64,
+    "concentration": 1,
+    "num_vcs": 1
+  },
+  "workload": {
+    "kind": "collective",
+    "collective_kind": "ALLGATHER",
+    "payload_bytes": 1024
+  },
+  "expected": {
+    "notes": "PW2 audit: ring ALLGATHER at the k=2 boundary. Oracle laws: messages = k(k-1) = 2, one step, each neighbour edge carries exactly one message of B bytes. Guards against step-count off-by-one at the degenerate ring."
+  },
+  "checks": [
+    "conservation",
+    "standalone_parity",
+    "window_invariance"
+  ]
+}

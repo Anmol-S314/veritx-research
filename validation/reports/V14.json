@@ -1,29 +1,29 @@
 {
   "schema_version": 1,
-  "id": "V02",
-  "title": "4x4 mesh, 16-node TP ALLREDUCE, 1024 B payload",
+  "id": "V14",
+  "title": "2x2 mesh, 4-node TP ALLGATHER (ring, k=2 boundary), 1024 B payload",
   "fabric": {
-    "compute_tiles": 16,
-    "tp": 16,
+    "compute_tiles": 4,
+    "tp": 4,
     "link_width": 64,
     "num_vcs": 1
   },
   "workload": "collective",
   "profile_id": "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1",
   "veritx": {
-    "packets": 960,
-    "flits": 4800,
-    "completion_cycles": 1006,
-    "sample_window_cycles": 1968,
-    "canonical_hops_avg": 1.875
+    "packets": 60,
+    "flits": 432,
+    "completion_cycles": 167,
+    "sample_window_cycles": 1123,
+    "canonical_hops_avg": 1.5
   },
   "authority": {
     "class": "standalone_booksim",
-    "completion_cycles": 1006,
-    "sample_window_cycles": 2960,
-    "injected_flits": 4800,
-    "accepted_flits": 4800,
-    "hops_avg": 2.875
+    "completion_cycles": 167,
+    "sample_window_cycles": 2060,
+    "injected_flits": 432,
+    "accepted_flits": 432,
+    "hops_avg": 2.5
   },
   "checks": [
     {
@@ -33,10 +33,10 @@
       "verdict": "exact",
       "detail": "the engine consumed exactly the produced trace",
       "values": {
-        "packets": 960,
-        "flits": 4800,
-        "authority_injected_flits": 4800,
-        "authority_accepted_flits": 4800
+        "packets": 60,
+        "flits": 432,
+        "authority_injected_flits": 432,
+        "authority_accepted_flits": 432
       },
       "quarantined": false,
       "finding": null
@@ -46,19 +46,19 @@
       "authority_class": "ring_oracle",
       "independence": "independent_oracle",
       "verdict": "exact",
-      "detail": "lowering matches ALLREDUCE schedule arithmetic (messages=480, bytes=30720, flits=4800, packets=960)",
+      "detail": "lowering matches ALLGATHER schedule arithmetic (messages=12, bytes=3072, flits=432, packets=60)",
       "values": {
-        "ranks": 16,
+        "ranks": 4,
         "payload_bytes": 1024,
-        "messages": 480,
-        "total_bytes": 30720,
-        "chunk_bytes": 64,
-        "header_bits": 11,
-        "usable_payload_bits": 53,
-        "flits_per_message": 10,
-        "packets_per_message": 2,
-        "total_flits": 4800,
-        "total_packets": 960
+        "messages": 12,
+        "total_bytes": 3072,
+        "chunk_bytes": 256,
+        "header_bits": 7,
+        "usable_payload_bits": 57,
+        "flits_per_message": 36,
+        "packets_per_message": 5,
+        "total_flits": 432,
+        "total_packets": 60
       },
       "quarantined": false,
       "finding": null
@@ -70,13 +70,13 @@
       "verdict": "exact",
       "detail": "ring law holds: neighbour edges only, k sends and k receives per step, chunk = B/k, two phases",
       "values": {
-        "kind": "ALLREDUCE",
-        "ranks": 16,
+        "kind": "ALLGATHER",
+        "ranks": 4,
         "payload_bytes": 1024,
-        "steps": 30,
-        "messages": 480,
-        "chunk_bytes": 64,
-        "aggregate_bytes": 30720,
+        "steps": 3,
+        "messages": 12,
+        "chunk_bytes": 256,
+        "aggregate_bytes": 3072,
         "checks": {
           "steps_exact": true,
           "message_count_match": true,
@@ -87,13 +87,12 @@
           "no_self_messages": true,
           "chunk_bytes_match": true,
           "aggregate_bytes_match": true,
-          "no_non_neighbour_pairs": true,
-          "phase_labels_exact": true
+          "no_non_neighbour_pairs": true
         },
         "conforms": true,
         "problems": [],
         "extra_non_neighbour_pairs": {},
-        "observed_distinct_pairs": 16
+        "observed_distinct_pairs": 4
       },
       "quarantined": false,
       "finding": null
@@ -103,12 +102,12 @@
       "authority_class": "standalone_booksim",
       "independence": "semi_independent_shared_engine",
       "verdict": "exact",
-      "detail": "VERITX completion 1006 == authority 1006",
+      "detail": "VERITX completion 167 == authority 167",
       "values": {
-        "veritx_completion": 1006,
-        "authority_completion": 1006,
-        "veritx_window": 1968,
-        "authority_window": 2960
+        "veritx_completion": 167,
+        "authority_completion": 167,
+        "veritx_window": 1123,
+        "authority_window": 2060
       },
       "quarantined": false,
       "finding": null
@@ -120,11 +119,11 @@
       "verdict": "exact",
       "detail": "completion invariant across independent windows",
       "values": {
-        "completion": 1006,
+        "completion": 167,
         "windows": {
-          "veritx": 1968,
-          "authority": 2960,
-          "authority_alt": 3960
+          "veritx": 1123,
+          "authority": 2060,
+          "authority_alt": 3060
         }
       },
       "quarantined": false,

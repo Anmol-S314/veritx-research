@@ -46,9 +46,11 @@ def _request_doc(spec: ExperimentSpec) -> dict[str, Any]:
             "tp": spec.fabric.tp, "pp": 1, "ep": 1, "dp": 1,
             "serving_mode": "mixed",
             "collectives": [{
-                "kind": class_kind, "dimension": "TP",
-                "payload_bytes": wl.payload_bytes,
-                "traffic_class": "tp_collective"}],
+                    "kind": class_kind, "dimension": "TP",
+                    "payload_bytes": wl.payload_bytes,
+                    "traffic_class": "tp_collective",
+                    **({"source_rank": wl.source_rank}
+                       if wl.collective_kind == "BROADCAST" else {})}],
         },
         "requirements": [{
             "traffic_class": "tp_collective",
@@ -90,7 +92,9 @@ def _workload_graph(spec: ExperimentSpec, parallelism: Any) -> Any:
                 collective_kind=wl.collective_kind,
                 participants=tuple(range(participants)),
                 payload_bytes=wl.payload_bytes,
-                participant_count=participants)))
+                participant_count=participants,
+                source=(wl.source_rank
+                        if wl.collective_kind == "BROADCAST" else None))))
     else:
         if wl.src_rank is None or wl.dst_rank is None:
             raise SpecError("p2p experiment lost its endpoints")

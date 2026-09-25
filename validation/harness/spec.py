@@ -54,6 +54,8 @@ class WorkloadSpec:
     payload_bytes: int = 1024
     src_rank: int | None = None
     dst_rank: int | None = None
+    #: declared BROADCAST root (PW2); refused for every other kind
+    source_rank: int | None = None
 
     def __post_init__(self) -> None:
         if self.kind == _P2P:
@@ -62,6 +64,15 @@ class WorkloadSpec:
         elif self.kind == _COLLECTIVE:
             if not self.collective_kind:
                 raise SpecError("collective workload requires collective_kind")
+            if self.collective_kind == "BROADCAST":
+                if self.source_rank is None:
+                    raise SpecError(
+                        "BROADCAST workload requires source_rank; "
+                        "participants[0] is a legacy convenience, not a law")
+            elif self.source_rank is not None:
+                raise SpecError(
+                    f"{self.collective_kind} must not declare source_rank "
+                    "(a declared source would be a fabricated field)")
         else:
             raise SpecError(f"unknown workload kind {self.kind!r}")
 
@@ -193,7 +204,9 @@ class ExperimentSpec:
             src_rank=(int(wl["src_rank"]) if wl.get("src_rank") is not None
                       else None),
             dst_rank=(int(wl["dst_rank"]) if wl.get("dst_rank") is not None
-                      else None))
+                      else None),
+            source_rank=(int(wl["source_rank"])
+                         if wl.get("source_rank") is not None else None))
 
         exp_doc = doc.get("expected", {})
         packets, packets_prov = _expected_value(exp_doc, "packets")

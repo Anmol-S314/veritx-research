@@ -109,7 +109,7 @@
       "values": {
         "veritx_completion": 38,
         "authority_completion": 38,
-        "veritx_window": 1001,
+        "veritx_window": 1002,
         "authority_window": 2001
       },
       "quarantined": false,
@@ -139,7 +139,7 @@
       "values": {
         "veritx_completion": 48,
         "authority_completion": 48,
-        "veritx_window": 1002,
+        "veritx_window": 1010,
         "authority_window": 2002
       },
       "quarantined": false,
@@ -169,7 +169,7 @@
       "values": {
         "veritx_completion": 132,
         "authority_completion": 132,
-        "veritx_window": 1010,
+        "veritx_window": 1078,
         "authority_window": 2010
       },
       "quarantined": false,
@@ -199,7 +199,7 @@
       "values": {
         "veritx_completion": 809,
         "authority_completion": 809,
-        "veritx_window": 1078,
+        "veritx_window": 1619,
         "authority_window": 2078
       },
       "quarantined": false,

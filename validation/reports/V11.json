@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "id": "V10",
-  "title": "4x4 mesh, 16-node ALLREDUCE 1024B: independent RTL execution of the canonical trace",
+  "id": "V11",
+  "title": "4x4 mesh, 16-node TP ALLGATHER (ring), 1024 B payload",
   "fabric": {
     "compute_tiles": 16,
     "tp": 16,
@@ -11,18 +11,18 @@
   "workload": "collective",
   "profile_id": "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1",
   "veritx": {
-    "packets": 960,
-    "flits": 4800,
-    "completion_cycles": 1006,
-    "sample_window_cycles": 1968,
+    "packets": 480,
+    "flits": 2400,
+    "completion_cycles": 526,
+    "sample_window_cycles": 1488,
     "canonical_hops_avg": 1.875
   },
   "authority": {
     "class": "standalone_booksim",
-    "completion_cycles": 1006,
-    "sample_window_cycles": 2960,
-    "injected_flits": 4800,
-    "accepted_flits": 4800,
+    "completion_cycles": 526,
+    "sample_window_cycles": 2480,
+    "injected_flits": 2400,
+    "accepted_flits": 2400,
     "hops_avg": 2.875
   },
   "checks": [
@@ -33,10 +33,10 @@
       "verdict": "exact",
       "detail": "the engine consumed exactly the produced trace",
       "values": {
-        "packets": 960,
-        "flits": 4800,
-        "authority_injected_flits": 4800,
-        "authority_accepted_flits": 4800
+        "packets": 480,
+        "flits": 2400,
+        "authority_injected_flits": 2400,
+        "authority_accepted_flits": 2400
       },
       "quarantined": false,
       "finding": null
@@ -46,19 +46,19 @@
       "authority_class": "ring_oracle",
       "independence": "independent_oracle",
       "verdict": "exact",
-      "detail": "lowering matches ALLREDUCE schedule arithmetic (messages=480, bytes=30720, flits=4800, packets=960)",
+      "detail": "lowering matches ALLGATHER schedule arithmetic (messages=240, bytes=15360, flits=2400, packets=480)",
       "values": {
         "ranks": 16,
         "payload_bytes": 1024,
-        "messages": 480,
-        "total_bytes": 30720,
+        "messages": 240,
+        "total_bytes": 15360,
         "chunk_bytes": 64,
         "header_bits": 11,
         "usable_payload_bits": 53,
         "flits_per_message": 10,
         "packets_per_message": 2,
-        "total_flits": 4800,
-        "total_packets": 960
+        "total_flits": 2400,
+        "total_packets": 480
       },
       "quarantined": false,
       "finding": null
@@ -70,13 +70,13 @@
       "verdict": "exact",
       "detail": "ring law holds: neighbour edges only, k sends and k receives per step, chunk = B/k, two phases",
       "values": {
-        "kind": "ALLREDUCE",
+        "kind": "ALLGATHER",
         "ranks": 16,
         "payload_bytes": 1024,
-        "steps": 30,
-        "messages": 480,
+        "steps": 15,
+        "messages": 240,
         "chunk_bytes": 64,
-        "aggregate_bytes": 30720,
+        "aggregate_bytes": 15360,
         "checks": {
           "steps_exact": true,
           "message_count_match": true,
@@ -87,8 +87,7 @@
           "no_self_messages": true,
           "chunk_bytes_match": true,
           "aggregate_bytes_match": true,
-          "no_non_neighbour_pairs": true,
-          "phase_labels_exact": true
+          "no_non_neighbour_pairs": true
         },
         "conforms": true,
         "problems": [],
@@ -103,42 +102,29 @@
       "authority_class": "standalone_booksim",
       "independence": "semi_independent_shared_engine",
       "verdict": "exact",
-      "detail": "VERITX completion 1006 == authority 1006",
+      "detail": "VERITX completion 526 == authority 526",
       "values": {
-        "veritx_completion": 1006,
-        "authority_completion": 1006,
-        "veritx_window": 1968,
-        "authority_window": 2960
+        "veritx_completion": 526,
+        "authority_completion": 526,
+        "veritx_window": 1488,
+        "authority_window": 2480
       },
       "quarantined": false,
       "finding": null
     },
     {
-      "name": "rtl_execution_conservation",
-      "authority_class": "rtl_execution",
-      "independence": "independent_execution_engine",
+      "name": "window_invariance",
+      "authority_class": "standalone_booksim",
+      "independence": "semi_independent_shared_engine",
       "verdict": "exact",
-      "detail": "the RTL injected and ejected exactly the produced trace",
+      "detail": "completion invariant across independent windows",
       "values": {
-        "rtl_injected_flits": 4800,
-        "rtl_ejected_flits": 4800,
-        "rtl_dump_flits": 4800,
-        "canonical_flits": 4800
-      },
-      "quarantined": false,
-      "finding": null
-    },
-    {
-      "name": "rtl_completion",
-      "authority_class": "rtl_calibrated",
-      "independence": "calibrated_cross_engine",
-      "verdict": "exact",
-      "detail": "RTL completion 1006 == canonical completion 1006",
-      "values": {
-        "veritx_completion": 1006,
-        "rtl_completion": 1006,
-        "tolerance": 0,
-        "delta": 0
+        "completion": 526,
+        "windows": {
+          "veritx": 1488,
+          "authority": 2480,
+          "authority_alt": 3480
+        }
       },
       "quarantined": false,
       "finding": null

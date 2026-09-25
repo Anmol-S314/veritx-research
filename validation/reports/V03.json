@@ -14,7 +14,7 @@
     "packets": 480,
     "flits": 2400,
     "completion_cycles": 719,
-    "sample_window_cycles": 1480,
+    "sample_window_cycles": 1600,
     "canonical_hops_avg": 2.6666666666666665
   },
   "authority": {
@@ -42,6 +42,56 @@
       "finding": null
     },
     {
+      "name": "workload_lowering_conservation",
+      "authority_class": "ring_oracle",
+      "independence": "independent_oracle",
+      "verdict": "exact",
+      "detail": "lowering matches ALLTOALL schedule arithmetic (messages=240, bytes=15360, flits=2400, packets=480)",
+      "values": {
+        "ranks": 16,
+        "payload_bytes": 1024,
+        "messages": 240,
+        "total_bytes": 15360,
+        "chunk_bytes": 64,
+        "header_bits": 11,
+        "usable_payload_bits": 53,
+        "flits_per_message": 10,
+        "packets_per_message": 2,
+        "total_flits": 2400,
+        "total_packets": 480
+      },
+      "quarantined": false,
+      "finding": null
+    },
+    {
+      "name": "collective_graph_conformance",
+      "authority_class": "ring_oracle",
+      "independence": "independent_oracle",
+      "verdict": "exact",
+      "detail": "graph law holds: every ordered pair exactly once, B/k each",
+      "values": {
+        "kind": "ALLTOALL",
+        "ranks": 16,
+        "payload_bytes": 1024,
+        "source": null,
+        "messages": 240,
+        "checks": {
+          "no_self_messages": true,
+          "message_count_match": true,
+          "pair_multiplicity_exact": true,
+          "chunk_bytes_match": true,
+          "aggregate_bytes_match": true,
+          "every_rank_sends_k_minus_1": true,
+          "every_rank_receives_k_minus_1": true,
+          "steps_exact": true
+        },
+        "conforms": true,
+        "problems": []
+      },
+      "quarantined": false,
+      "finding": null
+    },
+    {
       "name": "standalone_parity",
       "authority_class": "standalone_booksim",
       "independence": "semi_independent_shared_engine",
@@ -50,7 +100,7 @@
       "values": {
         "veritx_completion": 719,
         "authority_completion": 719,
-        "veritx_window": 1480,
+        "veritx_window": 1600,
         "authority_window": 2480
       },
       "quarantined": false,
@@ -65,7 +115,7 @@
       "values": {
         "completion": 719,
         "windows": {
-          "veritx": 1480,
+          "veritx": 1600,
           "authority": 2480,
           "authority_alt": 3480
         }

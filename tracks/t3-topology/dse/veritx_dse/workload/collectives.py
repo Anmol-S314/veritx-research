@@ -47,7 +47,7 @@ def collective_schedule(kind: str, k: int, B: int) -> dict[str, int]:
                 "message_bytes": C, "per_rank_sent": (k - 1) * C,
                 "aggregate_payload": (k - 1) * B}
     if kind == "ALLGATHER":
-        # F-0005: ring ALLGATHER forwards CHUNKS of B/k, not the whole
+        # F-0006: ring ALLGATHER forwards CHUNKS of B/k, not the whole
         # payload. Using B per message made aggregate = k(k-1)B instead of
         # the ring law (k-1)B — a factor-k over-transmission.
         if B % k:

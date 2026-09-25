@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "id": "V13",
+  "title": "4x4 mesh, 16-node TP BROADCAST (root fanout, source rank 7), 1024 B payload",
+  "fabric": {
+    "topology_family": "mesh",
+    "compute_tiles": 16,
+    "tp": 16,
+    "link_width": 64,
+    "concentration": 1,
+    "num_vcs": 1
+  },
+  "workload": {
+    "kind": "collective",
+    "collective_kind": "BROADCAST",
+    "payload_bytes": 1024,
+    "source_rank": 7
+  },
+  "expected": {
+    "notes": "PW2 audit: BROADCAST from a NON-trivial root (7, not participants[0]). Oracle laws: messages = k-1 = 15, only rank 7 sends, one B-byte message to every other rank, aggregate = (k-1)B. A lowering that silently uses participants[0] fails only-root-sends."
+  },
+  "checks": [
+    "conservation",
+    "standalone_parity",
+    "window_invariance"
+  ]
+}
