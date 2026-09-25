@@ -53,7 +53,7 @@ def compilation_view(compilation: Any) -> dict[str, Any]:
     bundle, certificate = compilation.bundle, compilation.certificate
     view.update({
         "resolved_fabric_hash": _h(
-            bundle.resolved_fabric.resolved_fabric_hash()),
+            bundle.resolved_fabric.resolved_fabric_hash),
         "certificate_id": certificate.certificate_id(),
         "certificate_overall": certificate.overall,
         "obligations": [o.to_dict() for o in certificate.obligations],
