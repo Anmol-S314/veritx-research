@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-LMS = Path("/home/datavex/veritx-integration/third_party/llmservingsim")
+LMS = Path(__file__).resolve().parents[4] / "third_party" / "llmservingsim"
 if str(LMS) not in sys.path:
     sys.path.insert(0, str(LMS))
 
