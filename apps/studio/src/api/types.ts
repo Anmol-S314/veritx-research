@@ -360,6 +360,49 @@ export interface WorkloadCatalogView {
   workloads: WorkloadCatalogEntry[];
 }
 
+/** WorkloadLoweringView (v1): the canonical workload → collectives →
+ * logical-messages chain, projected from LogicalMessageArtifactV2.
+ * Flows aggregate per-step messages per (collective, src, dst, class);
+ * the aggregation conserves the artifact's message count. */
+export interface LoweringSchedule {
+  collective_id: string;
+  kind: string;
+  algorithm: string;
+  k: number;
+  payload_bytes: number;
+  steps: number;
+  message_count: number;
+  message_bytes: number;
+  per_rank_sent: number;
+  aggregate_payload: number;
+}
+
+export interface LoweringFlow {
+  operation_id: string;
+  src_rank: number;
+  dst_rank: number;
+  traffic_class: string;
+  message_count: number;
+  payload_bytes: number;
+  max_step: number;
+}
+
+export interface WorkloadLoweringView {
+  contract_version: 1;
+  workload_id: string;
+  message_artifact_id: string;
+  participant_count: number;
+  traffic_class: string;
+  collectives: LoweringSchedule[];
+  flows: LoweringFlow[];
+  totals: {
+    collectives: number;
+    messages: number;
+    flows: number;
+    payload_bytes: number;
+  };
+}
+
 export interface FabricPresetCatalogView {
   contract_version: 1;
   presets: { preset_id: string; name: string; description: string }[];

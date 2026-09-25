@@ -330,5 +330,85 @@ def artifact_chain_view(compilation: Any) -> dict[str, Any] | None:
     }
 
 
+def lowering_view(request: Any) -> dict[str, Any]:
+    """Project a request's workload lowering (contract v1): the canonical
+    WorkloadGraph -> LogicalMessageArtifactV2 chain, aggregated for human
+    inspection.
+
+    This is the "workload -> operations -> collectives -> logical
+    messages" authority, built ONLY from the real canonical lowering —
+    the same construction the evaluator lowers to physical traffic before
+    every run. Per-step messages stay inspectable (bounded), but this view
+    is a projection of the artifact, never a reimplementation of it: the
+    artifact identity hash is computed by the canonical class itself and
+    carried verbatim.
+
+    Raises TypeError for a non-request, and the lowering's own typed
+    errors for a workload whose semantics cannot be projected — an
+    unprojectable workload stays unprojectable (no empty view).
+    """
+    from veritx_dse.model.compile_model import (
+        CompileRequest,
+        CompileRequestV3,
+    )
+    if not isinstance(request, (CompileRequest, CompileRequestV3)):
+        raise TypeError(
+            f"lowering_view takes a CompileRequest, got "
+            f"{type(request).__name__}")
+    from veritx_dse.workload.intent_lowering import lower_compile_workload
+    from veritx_dse.workload.messages import LogicalMessageArtifactV2
+
+    lowered = lower_compile_workload(request)
+    artifact = LogicalMessageArtifactV2(lowered.graph)
+    identity = artifact.identity_dict()
+
+    # Per-collective schedule rollup (one row per collective operation).
+    schedules = identity["schedules"]
+    # Per-step messages, aggregated into per-(collective, src, dst, class)
+    # flows — the communication structure a NoC engineer reasons about.
+    flows: dict[tuple[str, int, int, str], dict[str, Any]] = {}
+    steps: dict[str, int] = {}
+    for m in identity["messages"]:
+        key = (m["operation_id"], m["src_rank"], m["dst_rank"],
+               m["traffic_class"])
+        flow = flows.get(key)
+        if flow is None:
+            flow = {
+                "operation_id": m["operation_id"],
+                "src_rank": m["src_rank"],
+                "dst_rank": m["dst_rank"],
+                "traffic_class": m["traffic_class"],
+                "message_count": 0,
+                "payload_bytes": 0,
+                "max_step": 0,
+            }
+            flows[key] = flow
+        flow["message_count"] += 1
+        flow["payload_bytes"] += m["payload_bytes"]
+        flow["max_step"] = max(flow["max_step"], m["step"])
+        steps[m["operation_id"]] = max(
+            steps.get(m["operation_id"], 0), m["step"])
+
+    return {
+        "contract_version": 1,
+        "workload_id": identity["workload_id"],
+        "message_artifact_id":
+            artifact.message_artifact_id(),
+        "participant_count": identity["participant_count"],
+        "traffic_class": identity["traffic_class"],
+        "collectives": schedules,
+        "flows": sorted(
+            flows.values(),
+            key=lambda f: (f["operation_id"], f["src_rank"], f["dst_rank"])),
+        "totals": {
+            "collectives": len(schedules),
+            "messages": len(identity["messages"]),
+            "flows": len(flows),
+            "payload_bytes": sum(
+                s["aggregate_payload"] for s in schedules),
+        },
+    }
+
+
 __all__ = ["compilation_view", "design_view", "artifact_chain_view",
-           "topology_view"]
+           "topology_view", "lowering_view"]

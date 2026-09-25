@@ -13,6 +13,7 @@ import type {
   QualificationView,
   ValidationCampaignsView,
   PreflightView,
+  WorkloadLoweringView,
   RunIntegrityView,
   RunVerifyView,
   RevisionView,
@@ -30,6 +31,10 @@ export const api = {
     get<Record<string, unknown>>('/capabilities'),
   validation: () => get<ValidationCampaignsView>('/validation'),
   workloadCatalog: () => get<WorkloadCatalogView>('/catalog/workloads'),
+  workloadLowering: (workloadId: string) =>
+    get<WorkloadLoweringView>(
+      `/workloads/${encodeURIComponent(workloadId)}/lowering`,
+    ),
   fabricPresets: () =>
     get<FabricPresetCatalogView>('/catalog/fabric-presets'),
 

@@ -343,6 +343,48 @@ def test_catalog_separates_workloads_from_fabric_presets(tmp_path):
     assert entry["collectives"][0]["traffic_class"] == "tp_collective"
 
 
+def test_workload_lowering_view_contract(tmp_path):
+    """§29 typed lowering projection: workload -> collectives -> logical
+    messages, built from the real LogicalMessageArtifactV2 — with its own
+    content identity — and never invented per workload."""
+    client = _client(tmp_path, with_backend=False)
+    resp = client.get(f"/api/v1/workloads/{WORKLOAD}/lowering")
+    assert resp.status_code == 200, resp.text
+    view = resp.json()
+    assert view["contract_version"] == 1
+    assert view["workload_id"] == WORKLOAD
+    assert view["message_artifact_id"].startswith("sha256:")
+    assert view["participant_count"] > 0
+
+    schedules = view["collectives"]
+    assert schedules, "the canonical lowering produced real collectives"
+    for s in schedules:
+        for key in ("collective_id", "kind", "algorithm", "k",
+                    "payload_bytes", "steps", "message_count",
+                    "message_bytes", "aggregate_payload"):
+            assert key in s, key
+        assert s["k"] == view["participant_count"] or s["k"] > 1
+
+    flows = view["flows"]
+    assert flows, "logical message flows are the communication structure"
+    total_flow_messages = 0
+    for f in flows:
+        for key in ("operation_id", "src_rank", "dst_rank",
+                    "traffic_class", "message_count", "payload_bytes"):
+            assert key in f, key
+        assert f["src_rank"] != f["dst_rank"]
+        total_flow_messages += f["message_count"]
+    # flow aggregation conserves the per-step message count
+    assert total_flow_messages == view["totals"]["messages"]
+    assert view["totals"]["messages"] == sum(
+        s["message_count"] for s in schedules)
+
+    # unknown workload -> typed 404, never an invented lowering
+    missing = client.get("/api/v1/workloads/no-such-workload/lowering")
+    assert missing.status_code == 404
+    assert missing.json()["code"] == "NOT_FOUND"
+
+
 def test_validation_campaigns_view_contract(tmp_path):
     """ValidationCampaignView: V01–V14 served as structured data with
     check-level authority/verdict detail; prose campaigns are linked by

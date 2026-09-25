@@ -363,6 +363,10 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
     def v1_workloads() -> dict[str, Any]:
         return product.workload_catalog()
 
+    @app.get("/api/v1/workloads/{workload_id}/lowering", tags=["product"])
+    def v1_workload_lowering(workload_id: str) -> dict[str, Any]:
+        return product.workload_lowering(workload_id)
+
     @app.get("/api/v1/catalog/fabric-presets", tags=["product"])
     def v1_presets() -> dict[str, Any]:
         return product.fabric_presets()

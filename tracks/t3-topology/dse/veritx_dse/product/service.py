@@ -23,7 +23,8 @@ from veritx_dse.application.errors import ControlPlaneError, ErrorCode, intent_e
 from veritx_dse.application.fabric_compiler import FabricCompiler
 from veritx_dse.application.product_evaluator import evaluate_product
 from veritx_dse.application.views import (
-    artifact_chain_view, compilation_view, design_view, topology_view,
+    artifact_chain_view, compilation_view, design_view, lowering_view,
+    topology_view,
 )
 from veritx_dse.core.paths import REPO
 from veritx_dse.core.run_bundle import (
@@ -174,6 +175,33 @@ class ProductService:
             }
             workloads.append(entry)
         return {"contract_version": 1, "workloads": workloads}
+
+    def workload_lowering(self, workload_id: str) -> dict[str, Any]:
+        """The canonical lowering view for one catalog workload: workload
+        -> operations -> collectives -> logical messages (§29's typed
+        projection over LogicalMessageArtifactV2).
+
+        The workload template documents are immutable repo content, so the
+        lowering is deterministic; the view carries the artifact's own
+        content-hash identity so a consumer can verify it independently.
+        """
+        template = next((t for t in _WORKLOAD_TEMPLATES
+                         if t[0] == workload_id), None)
+        if template is None:
+            raise ProductServiceError(
+                ErrorCode.NOT_FOUND, f"no such workload: {workload_id}",
+                operation="workload_lowering", resource_id=workload_id)
+        path = self.config.repo_root / template[1]
+        if not path.is_file():
+            raise ProductServiceError(
+                ErrorCode.NOT_FOUND,
+                f"workload template document is missing: {template[1]}",
+                operation="workload_lowering", resource_id=workload_id)
+        document = json.loads(path.read_text(encoding="utf-8"))
+        request = parse_request_doc(document)
+        view = lowering_view(request)
+        view["workload_id"] = workload_id
+        return view
 
     def fabric_presets(self) -> dict[str, Any]:
         from veritx_dse.application.compile_intent import (

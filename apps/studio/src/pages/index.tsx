@@ -6,6 +6,7 @@ import {
   type RunView,
   type RunVerifyView,
   type ValidationExperiment,
+  type WorkloadLoweringView,
 } from '../api';
 import {
   AsyncView, Link, WorkflowBar, useAsync, useStudio,
@@ -297,6 +298,113 @@ export function Overview({ projectId }: { projectId: string }): ReactElement {
   );
 }
 
+/** Lowering inspector for one workload card: the real canonical chain
+ * workload → collectives → logical-message flows, from the backend's
+ * WorkloadLoweringView. Participant-level (rank-space) structure only;
+ * physical traffic appears after lowering to a fabric, inside runs. */
+function WorkloadLowering({ workloadId }: {
+  workloadId: string;
+}): ReactElement {
+  const lowering = useAsync(
+    () => api.workloadLowering(workloadId),
+    [workloadId],
+  );
+  const [view, setView] = useState<'collectives' | 'flows'>('collectives');
+  return (
+    <details className="lowering-inspect">
+      <summary>Inspect lowering chain</summary>
+      <AsyncView result={lowering.result} reload={lowering.reload}>
+        {(v: WorkloadLoweringView) => (
+          <>
+            <div className="kv">
+              <span>message artifact</span>
+              <Hash value={v.message_artifact_id} />
+            </div>
+            <div className="kv">
+              <span>participants</span>
+              <span>{v.participant_count} ranks · traffic class {v.traffic_class}</span>
+            </div>
+            <div className="segmented small" role="tablist" aria-label="Lowering detail">
+              <button
+                role="tab"
+                aria-selected={view === 'collectives'}
+                className={view === 'collectives' ? 'selected' : ''}
+                onClick={() => setView('collectives')}
+              >
+                Collectives ({v.totals.collectives})
+              </button>
+              <button
+                role="tab"
+                aria-selected={view === 'flows'}
+                className={view === 'flows' ? 'selected' : ''}
+                onClick={() => setView('flows')}
+              >
+                Message flows ({v.totals.flows})
+              </button>
+            </div>
+            {view === 'collectives' ? (
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>collective</th><th>kind</th><th>algorithm</th>
+                    <th>k</th><th>payload</th><th>steps</th>
+                    <th>messages</th><th>msg bytes</th><th>aggregate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {v.collectives.map((s) => (
+                    <tr key={s.collective_id}>
+                      <td><code>{s.collective_id}</code></td>
+                      <td>{s.kind}</td>
+                      <td className="muted">{s.algorithm}</td>
+                      <td className="num">{s.k}</td>
+                      <td className="num">{fmtNum(s.payload_bytes)} B</td>
+                      <td className="num">{s.steps}</td>
+                      <td className="num">{s.message_count}</td>
+                      <td className="num">{fmtNum(s.message_bytes)} B</td>
+                      <td className="num">{fmtNum(s.aggregate_payload)} B</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <>
+                <p className="muted">
+                  Per-step logical messages aggregated per source →
+                  destination pair ({v.totals.messages} messages total,
+                  conserved by construction). Rank space — physical
+                  traffic exists only after lowering to a certified fabric,
+                  inside a run.
+                </p>
+                <table className="tbl">
+                  <thead>
+                    <tr>
+                      <th>operation</th><th>src</th><th>dst</th>
+                      <th>class</th><th>messages</th><th>payload</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {v.flows.map((f, i) => (
+                      <tr key={i}>
+                        <td><code>{f.operation_id}</code></td>
+                        <td className="num">{f.src_rank}</td>
+                        <td className="num">{f.dst_rank}</td>
+                        <td className="muted">{f.traffic_class}</td>
+                        <td className="num">{f.message_count}</td>
+                        <td className="num">{fmtNum(f.payload_bytes)} B</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            )}
+          </>
+        )}
+      </AsyncView>
+    </details>
+  );
+}
+
 export function Workload({ projectId }: { projectId: string }): ReactElement {
   const { refreshProjects } = useStudio();
   const catalog = useAsync(api.workloadCatalog, []);
@@ -348,6 +456,7 @@ export function Workload({ projectId }: { projectId: string }): ReactElement {
                       lowering, not the catalog; request-level editing lives in
                       the Draft (Design page).
                     </p>
+                    <WorkloadLowering workloadId={w.workload_id} />
                     <div className="form-row">
                       {p.draft.workload_id === w.workload_id ? (
                         <span className="current-badge">
