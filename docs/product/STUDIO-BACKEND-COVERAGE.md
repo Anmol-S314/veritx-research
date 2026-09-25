@@ -215,3 +215,21 @@ Remaining gaps (UX1–UX12 will pin with tests): the §50 browser regression seq
 
 Nothing in this table requires new science. Every missing item is a
 projection, an adapter over an existing authority, or UI presentation.
+
+---
+
+## 19. Stage-2 surfaces added (post-Stage-1 RC)
+
+Additions after the Stage-1 engineering console, all projections over
+existing canonical authorities (no new science, no invented metrics):
+
+| Surface | Authority | Product endpoint | UI | Class |
+|---|---|---|---|---|
+| Artifact DAG inspector (§12/§14) | `views.artifact_chain_view` over `bundle.root_hashes()` + certificate obligations | `GET /api/v1/revisions/{id}/artifacts` (persisted at certification; legacy re-derivation hash-checked; refusals → CONFLICT) | `ArtifactChain` on Compile & Verify | A |
+| Certificate proof depth (§13) | per-obligation `evidence{}` dicts (routers/components, expected vs actual route entries, VC bindings, SCC count, flit width, placements, bound hashes) | already in `CompilationView` | `VerifyView` human meaning + key-evidence cells | A |
+| Capabilities page (§36) | `application.capabilities.capability_registry` (import of dissolved `backend.analytical` fixed) | `GET /api/v1/capabilities` | Trust capabilities tables | A |
+| Optimization study analysis (§24–28 depth) | `OptimizationStudyView` v2 fields (`definition.domain`, `guided_patch`, statuses, identities) | already served | `OptimizationAnalysis` (coverage, outcome distribution, lineage) — no sensitivity view (no authority) | A |
+| Workload lowering explorer (§4/§29) | `views.lowering_view` over `LogicalMessageArtifactV2` via `lower_compile_workload`; artifact identity verbatim | `GET /api/v1/workloads/{id}/lowering` | Workload card inspector: collectives + message flows (rank space; physical traffic only inside runs) | A |
+| Validation laboratory (§15 depth) | `mutations.json` / `metamorphic.json` / `engines.json` / `intervention.json` projected verbatim; FINDINGS.md stays link-only (§34) | `GET /api/v1/validation` extended | Trust campaign ledgers (mutations caught/missed as data, invariants, engine gates, intervention rows) | A |
+| Serving analysis (§14) | **still no** stable `ServingExperiment/ServingRun` product resource — correctly withheld | none | none (Trust qualification only) | B/C |
+| Ramulator / ASTRA workspaces (§12/§13) | correctly NOT coupled to runs; qualification + engine-gate battery visible in Trust | none | Trust only | B/C |
