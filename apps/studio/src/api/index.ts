@@ -37,6 +37,11 @@ export const api = {
     put<DraftView>(`/projects/${encodeURIComponent(projectId)}/draft`, {
       request,
     }),
+  selectWorkload: (projectId: string, workloadId: string) =>
+    post<DraftView>(
+      `/projects/${encodeURIComponent(projectId)}/workload`,
+      { workload_id: workloadId },
+    ),
   compile: (projectId: string) =>
     post<RevisionView>(`/projects/${encodeURIComponent(projectId)}/compile`),
 

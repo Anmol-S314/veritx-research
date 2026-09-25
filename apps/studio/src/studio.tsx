@@ -144,6 +144,35 @@ export function useJobPoll(
 
 // ── shared UI ─────────────────────────────────────────────────────────────
 
+/** A real anchor: native link semantics, keyboard/middle-click and deep
+ * linking, with client-side navigation for plain left clicks. */
+export function Link({
+  to, className, children, title,
+}: {
+  to: string;
+  className?: string;
+  children: ReactNode;
+  title?: string;
+}): ReactElement {
+  return (
+    <a
+      href={to}
+      className={className}
+      title={title}
+      onClick={(e) => {
+        if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey
+            || e.altKey || e.button !== 0) {
+          return;
+        }
+        e.preventDefault();
+        navigate(to);
+      }}
+    >
+      {children}
+    </a>
+  );
+}
+
 export function ErrorBox({ error, onRetry }: {
   error: Error;
   onRetry?: () => void;
@@ -177,7 +206,9 @@ export function AsyncView<T>({
   reload: () => void;
   children: (data: T) => ReactNode;
 }): ReactElement {
-  if (result.state === 'loading') return <p className="muted">loading…</p>;
+  if (result.state === 'loading') {
+    return <p className="muted" role="status" aria-live="polite">loading…</p>;
+  }
   if (result.state === 'error') {
     return <ErrorBox error={result.error} onRetry={reload} />;
   }
@@ -188,7 +219,8 @@ export function JobProgress({ job }: { job: JobView | null }): ReactElement | nu
   if (!job) return null;
   const done = TERMINAL.has(job.state);
   return (
-    <div className={`job-progress job-${job.state.toLowerCase()}`}>
+    <div className={`job-progress job-${job.state.toLowerCase()}`}
+         role="status" aria-live="polite">
       <span className="job-state">{job.state}</span>
       <span className="muted">job {job.job_id}</span>
       {job.error_code && (
@@ -256,16 +288,16 @@ export function Stepper({ project, current }: {
   return (
     <nav className="stepper" aria-label="Workflow">
       {STAGES.map((stage) => (
-        <button
+        <Link
           key={stage.key}
+          to={`/projects/${project.project.project_id}/${stage.key}`}
           className={`step${current === stage.key ? ' active' : ''}`}
-          onClick={() => navigate(`/projects/${project.project.project_id}/${stage.key}`)}
         >
           <span className="step-label">{stage.label}</span>
           <span className={`step-state st-${(statuses[stage.key] ?? '').toLowerCase().replace(' ', '-')}`}>
             {statuses[stage.key]}
           </span>
-        </button>
+        </Link>
       ))}
     </nav>
   );

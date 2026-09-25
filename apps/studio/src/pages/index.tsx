@@ -1,21 +1,30 @@
-import { useState, type ReactElement } from 'react';
+import { useEffect, useState, type ReactElement } from 'react';
 import { api, type RunView } from '../api';
-import { AsyncView, ContextHeader, Stepper, useAsync, useStudio } from '../studio';
+import {
+  AsyncView, ContextHeader, Link, Stepper, useAsync, useStudio,
+} from '../studio';
 import { Hash, StatusBadge, fmtNum, humanize } from '../components/badges';
 import { navigate } from '../router';
 
 export function ProjectPicker(): ReactElement {
   const { projects, projectsError, refreshProjects } = useStudio();
   const [name, setName] = useState('Qwen NoC Study');
+  const [workloadId, setWorkloadId] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const catalog = useAsync(api.workloadCatalog, []);
+
+  useEffect(() => {
+    if (catalog.result.state === 'ready' && !workloadId) {
+      setWorkloadId(catalog.result.data.workloads[0]?.workload_id ?? '');
+    }
+  }, [catalog.result, workloadId]);
 
   const create = async (): Promise<void> => {
     setBusy(true);
     setError(null);
     try {
-      const project = await api.createProject(name);
+      const project = await api.createProject(name, workloadId || undefined);
       refreshProjects();
       navigate(`/projects/${project.project.project_id}/workload`);
     } catch (err) {
@@ -33,11 +42,9 @@ export function ProjectPicker(): ReactElement {
         <ul className="project-list">
           {projects.map((p) => (
             <li key={p.project.project_id}>
-              <button
+              <Link
                 className="project-item"
-                onClick={() =>
-                  navigate(`/projects/${p.project.project_id}/overview`)
-                }
+                to={`/projects/${p.project.project_id}/overview`}
               >
                 <span className="project-name">{p.project.name}</span>
                 <span className={`flow flow-${p.flow.state.toLowerCase()}`}>
@@ -46,7 +53,7 @@ export function ProjectPicker(): ReactElement {
                 <span className="muted">
                   {p.revisions.length} revisions · {p.runs.length} runs
                 </span>
-              </button>
+              </Link>
             </li>
           ))}
         </ul>
@@ -58,18 +65,32 @@ export function ProjectPicker(): ReactElement {
             Name
             <input value={name} onChange={(e) => setName(e.target.value)} />
           </label>
+          <label>
+            Workload
+            <AsyncView result={catalog.result} reload={catalog.reload}>
+              {(data) => (
+                <select
+                  value={workloadId}
+                  onChange={(e) => setWorkloadId(e.target.value)}
+                >
+                  {data.workloads.map((w) => (
+                    <option key={w.workload_id} value={w.workload_id}>
+                      {w.display_name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </AsyncView>
+          </label>
           <button className="btn btn-primary" disabled={busy} onClick={create}>
             {busy ? 'Creating…' : 'Create project'}
           </button>
         </div>
         {error && <p className="bad">{error}</p>}
-        <AsyncView result={catalog.result} reload={catalog.reload}>
-          {(data) => (
-            <p className="muted">
-              Workload templates: {data.workloads.map((w) => w.display_name).join(', ')}
-            </p>
-          )}
-        </AsyncView>
+        <p className="muted">
+          The chosen workload becomes the project draft; the Workload page can
+          switch it at any time (the previous revision stays immutable).
+        </p>
       </section>
     </div>
   );
@@ -107,9 +128,9 @@ export function Overview({ projectId }: { projectId: string }): ReactElement {
                 {latest ? (
                   <>
                     <div className="kv"><span>run</span>
-                      <button className="link" onClick={() => navigate(`/runs/${latest.run_id}`)}>
+                      <Link className="link" to={`/runs/${latest.run_id}`}>
                         {latest.display_name ?? latest.run_id}
-                      </button>
+                      </Link>
                     </div>
                     <div className="kv"><span>status</span><StatusBadge status={latest.status ?? 'UNKNOWN'} /></div>
                     <div className="kv"><span>completion</span><span>{fmtNum(latest.completion_cycles)} cycles</span></div>
@@ -133,9 +154,9 @@ export function Overview({ projectId }: { projectId: string }): ReactElement {
                 <ul>
                   {p.optimizations.map((o) => (
                     <li key={o.optimization_id}>
-                      <button className="link" onClick={() => navigate(`/projects/${projectId}/optimize?opt=${o.optimization_id}`)}>
+                      <Link className="link" to={`/projects/${projectId}/optimize`}>
                         {o.optimization_id}
-                      </button>{' '}
+                      </Link>{' '}
                       · {o.candidate_count} candidates · {o.pareto_count} Pareto · selected {o.selected_candidate_id ?? '—'}
                     </li>
                   ))}
@@ -150,8 +171,15 @@ export function Overview({ projectId }: { projectId: string }): ReactElement {
 }
 
 export function Workload({ projectId }: { projectId: string }): ReactElement {
+  const { refreshProjects } = useStudio();
   const catalog = useAsync(api.workloadCatalog, []);
   const project = useAsync(() => api.project(projectId), [projectId]);
+  const select = async (workloadId: string): Promise<void> => {
+    await api.selectWorkload(projectId, workloadId);
+    project.reload();
+    refreshProjects();
+    navigate(`/projects/${projectId}/design`);
+  };
   return (
     <AsyncView result={project.result} reload={project.reload}>
       {(p) => (
@@ -194,6 +222,17 @@ export function Workload({ projectId }: { projectId: string }): ReactElement {
                       lowering, not the catalog; request-level editing lives in
                       the Draft (Design page).
                     </p>
+                    <div className="form-row">
+                      <button
+                        className="btn btn-primary"
+                        disabled={p.draft.workload_id === w.workload_id}
+                        onClick={() => select(w.workload_id)}
+                      >
+                        {p.draft.workload_id === w.workload_id
+                          ? 'Current workload'
+                          : 'Use this workload'}
+                      </button>
+                    </div>
                   </section>
                 ))}
               </div>
@@ -272,9 +311,9 @@ export function Runs(): ReactElement {
                 {data.runs.map((r) => (
                   <tr key={r.run_id}>
                     <td>
-                      <button className="link" onClick={() => navigate(`/runs/${r.run_id}`)}>
+                      <Link className="link" to={`/runs/${r.run_id}`}>
                         {r.display_name ?? r.run_id}
-                      </button>
+                      </Link>
                     </td>
                     <td className="muted">{r.revision_id}</td>
                     <td className="muted">{r.workload_id ?? '—'}</td>
@@ -342,6 +381,12 @@ export function RunDetail({ runId }: { runId: string }): ReactElement {
             <section className="card">
               <h3>{r.display_name ?? r.run_id}</h3>
               <div className="kv"><span>status</span><StatusBadge status={r.status ?? 'UNKNOWN'} /></div>
+              {r.qualification_basis && (
+                <div className="kv">
+                  <span>qualification basis</span>
+                  <span className="muted">{r.qualification_basis}</span>
+                </div>
+              )}
               <div className="kv"><span>revision</span><span>{r.revision_id}</span></div>
               <div className="kv"><span>design_hash</span><Hash value={r.design_hash} /></div>
               <div className="kv"><span>workload</span><span>{r.evaluation?.workload_id ?? '—'}</span></div>

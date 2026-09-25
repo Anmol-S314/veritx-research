@@ -137,14 +137,16 @@ def test_browser_live_flow(live_stack):
             page.goto(f"http://127.0.0.1:{ui_port}/")
             expect(page.get_by_text("LIVE")).to_be_visible(timeout=30000)
 
-            # Create a project (lands on the Workload page).
+            # Create a project, selecting a workload explicitly.
             page.get_by_label("Name").fill("Qwen NoC Study")
+            page.get_by_label("Workload").select_option(
+                "llama-dense-8b-64tiles")
             page.get_by_role("button", name="Create project").click()
             expect(page.get_by_role("heading", name="Workload")).to_be_visible(
                 timeout=20000)
 
             # Edit the design (draft) then compile.
-            page.get_by_role("button", name="Design", exact=True).click()
+            page.get_by_role("link", name="Design", exact=True).click()
             expect(page.get_by_text("Draft (live edits)")).to_be_visible(
                 timeout=20000)
             page.get_by_label("Link width (b)").fill("128")
@@ -153,22 +155,27 @@ def test_browser_live_flow(live_stack):
                 timeout=30000)
 
             # Inspect verification.
-            page.get_by_role("button", name="Compile & Verify").click()
+            page.get_by_role("link", name="Compile & Verify").click()
             expect(page.get_by_text("obligations PASS").first).to_be_visible(
                 timeout=20000)
             expect(page.get_by_text("Certificate PASS").first).to_be_visible(
                 timeout=20000)
 
             if not _pinned_producer():
+                if os.environ.get("VERITX_E2E_REQUIRE_BACKEND") == "1":
+                    pytest.fail(
+                        "release gate: no pinned BookSim producer available "
+                        "(build with a clean manifest and set "
+                        "VERITX_BOOKSIM_BIN)")
                 pytest.skip("compile/verify browser path verified; "
                             "simulation leg needs a pinned BookSim producer")
 
             # Run a live evaluation and wait for completion.
-            page.get_by_role("button", name="Simulate", exact=True).click()
+            page.get_by_role("link", name="Simulate", exact=True).click()
             page.get_by_role("button", name="Run Simulation").click()
             expect(page.get_by_text("EVALUATED").first).to_be_visible(
                 timeout=600000)
-            page.locator("button.link").first.click()
+            page.locator("a.link").first.click()
             expect(page.get_by_text("Why can I trust this?").first).to_be_visible(
                 timeout=30000)
         finally:

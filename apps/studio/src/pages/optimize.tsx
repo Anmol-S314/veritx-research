@@ -1,12 +1,11 @@
 import { useEffect, useState, type ReactElement } from 'react';
 import { api, type JobView, type OptimizationView, type RevisionView } from '../api';
 import {
-  AsyncView, ContextHeader, ErrorBox, JobProgress, Stepper, useAsync,
+  AsyncView, ContextHeader, ErrorBox, JobProgress, Link, Stepper, useAsync,
   useJobPoll, useStudio,
 } from '../studio';
 import { Hash, StatusBadge, fmtNum } from '../components/badges';
 import OptimizeView from '../components/OptimizeView';
-import { navigate } from '../router';
 
 const WIDTH_CHOICES = [32, 64, 128];
 
@@ -145,13 +144,17 @@ function StudyResult({
                   <td><Hash value={c.performance_result_id} /></td>
                   <td>
                     {c.run_id
-                      ? <button className="link" onClick={() => navigate(`/runs/${c.run_id}`)}>{c.run_id}</button>
-                      : <span className="muted">not persisted as a run</span>}
+                      ? <Link className="link" to={`/runs/${c.run_id}`}>{c.run_id}</Link>
+                      : <span className="muted">candidate execution — evidence in study</span>}
+                    <div className="muted">{c.evidence_kind} · {c.evaluation_status ?? '—'}</div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+          {optimization.candidate_evidence_note && (
+            <p className="muted">{optimization.candidate_evidence_note}</p>
+          )}
         </section>
       )}
       <OptimizeView optimization={optimization.study} design={baseRevision?.design ?? null} />
@@ -213,6 +216,22 @@ export function Compare({ projectId }: { projectId: string }): ReactElement {
                 {pair && comparison.result.state === 'ready' && (
                   <section className="card">
                     <h3>{comparison.result.data.a.display_name} vs {comparison.result.data.b.display_name}</h3>
+                    <div className={`compat compat-${comparison.result.data.compatibility.compatible ? 'ok' : 'bad'}`}>
+                      <strong>
+                        {comparison.result.data.compatibility.compatible
+                          ? 'Comparable scenario'
+                          : 'NOT DIRECTLY COMPARABLE'}
+                      </strong>
+                      <ul className="muted">
+                        <li>same workload: {String(comparison.result.data.compatibility.same_workload)}</li>
+                        <li>same backend: {String(comparison.result.data.compatibility.same_backend)}</li>
+                        <li>both qualified: {String(comparison.result.data.compatibility.both_qualified)}</li>
+                        {comparison.result.data.compatibility.reasons.map((reason, i) => (
+                          <li key={i} className="bad">{reason}</li>
+                        ))}
+                        <li>{comparison.result.data.compatibility.metric_units}</li>
+                      </ul>
+                    </div>
                     <table className="live-table">
                       <thead><tr><th>quantity</th><th>A</th><th>B</th><th>semantics</th></tr></thead>
                       <tbody>

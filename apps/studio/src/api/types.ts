@@ -135,6 +135,7 @@ export interface JobView {
 
 export interface RunView extends RunSummary {
   contract_version: 1;
+  qualification_basis: string | null;
   evaluation: EvaluationView | null;
   requirements: RequirementReport | null;
   producer: {
@@ -176,7 +177,11 @@ export interface OptimizationView {
     performance_result_id: string | null;
     requirement_report_id: string | null;
     run_id: string | null;
+    evidence_kind: 'product-run' | 'optimization-candidate' | string;
+    evaluation_status: string | null;
+    evaluation_authority: string | null;
   }[];
+  candidate_evidence_note: string | null;
   selected_candidate_id: string | null;
 }
 
@@ -227,10 +232,20 @@ export interface FabricPresetCatalogView {
   presets: { preset_id: string; name: string; description: string }[];
 }
 
+export interface CompareCompatibility {
+  compatible: boolean;
+  same_workload: boolean;
+  same_backend: boolean;
+  both_qualified: boolean;
+  metric_units: string;
+  reasons: string[];
+}
+
 export interface CompareView {
   contract_version: 1;
   a: CompareSide;
   b: CompareSide;
+  compatibility: CompareCompatibility;
   rows: { key: string; a: number | null; b: number | null; comparable: boolean }[];
   note: string;
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactElement } from 'react';
-import { StudioProvider, useStudio } from './studio';
+import { Link, StudioProvider, useStudio } from './studio';
 import { navigate, parseRoute, usePathname } from './router';
 import {
   Overview, ProjectPicker, RunDetail, Runs, Trust, Workload,
@@ -96,18 +96,23 @@ function Shell(): ReactElement {
           </span>
         </div>
         <nav className="sections" aria-label="Sections">
-          {projectNav.map((item) => (
-            <button
-              key={item.section}
-              className="section-tab"
-              disabled={item.disabled}
-              onClick={() => navigate(item.to)}
-            >
-              {item.label}
-            </button>
-          ))}
-          <button className="section-tab" onClick={() => navigate('/runs')}>Runs</button>
-          <button className="section-tab" onClick={() => navigate('/trust')}>Trust</button>
+          {projectNav.map((item) =>
+            item.disabled ? (
+              <span
+                key={item.section}
+                className="section-tab disabled"
+                aria-disabled="true"
+              >
+                {item.label}
+              </span>
+            ) : (
+              <Link key={item.section} className="section-tab" to={item.to}>
+                {item.label}
+              </Link>
+            ),
+          )}
+          <Link className="section-tab" to="/runs">Runs</Link>
+          <Link className="section-tab" to="/trust">Trust</Link>
         </nav>
         <div className="top-actions">
           {projects.length > 0 && (

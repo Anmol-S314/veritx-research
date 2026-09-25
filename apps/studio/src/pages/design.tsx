@@ -1,14 +1,13 @@
 import { useEffect, useState, type ReactElement } from 'react';
 import { api, type JobView, type ProjectView, type RevisionView } from '../api';
 import {
-  AsyncView, ContextHeader, ErrorBox, JobProgress, Stepper, useAsync,
+  AsyncView, ContextHeader, ErrorBox, JobProgress, Link, Stepper, useAsync,
   useJobPoll, useStudio,
 } from '../studio';
 import { Hash, StatusBadge } from '../components/badges';
 import DesignEditor from '../components/DesignEditor';
 import VerifyView from '../components/VerifyView';
 import EvaluateView from '../components/EvaluateView';
-import { navigate } from '../router';
 import { clone, getPath, setPath } from '../util';
 
 // ── Draft editing (canonical request doc) ─────────────────────────────────
@@ -328,7 +327,17 @@ export function Simulate({ projectId }: { projectId: string }): ReactElement {
                 >
                   {running ? 'Running…' : 'Run Simulation'}
                 </button>
-                {p.draft.dirty && <span className="stale">DRAFT HAS UNCOMPILED CHANGES — compile first</span>}
+                {p.draft.dirty && (
+                  <span className="stale">
+                    DRAFT HAS UNCOMPILED CHANGES — compile first
+                  </span>
+                )}
+                {!p.draft.dirty && current
+                  && current.certificate?.overall !== 'PASS' && (
+                  <span className="stale">
+                    Certificate is not PASS — compile and verify first
+                  </span>
+                )}
               </div>
               {error && <ErrorBox error={error} />}
               <JobProgress job={job} />
@@ -345,9 +354,9 @@ export function Simulate({ projectId }: { projectId: string }): ReactElement {
                     {run.result.data.qualification ?? ''}
                   </h3>
                   <div className="kv"><span>run</span>
-                    <button className="link" onClick={() => navigate(`/runs/${runId}`)}>
+                    <Link className="link" to={`/runs/${runId}`}>
                       {run.result.data.display_name ?? runId}
-                    </button>
+                    </Link>
                   </div>
                   <div className="kv"><span>run bundle</span><Hash value={run.result.data.bundle_id} /></div>
                 </section>
