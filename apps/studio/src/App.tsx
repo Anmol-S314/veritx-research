@@ -141,6 +141,9 @@ function Shell(): ReactElement {
               New / open
             </button>
           )}
+          <a className="ghost-button" href="/landing.html">
+            Site <span aria-hidden="true">↗</span>
+          </a>
           <button
             className="ghost-button"
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}

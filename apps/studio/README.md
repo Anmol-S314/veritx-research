@@ -18,6 +18,9 @@ from contract-validated fixtures** — no engine connectivity.
 
 ```
 apps/studio/
+  landing.html     marketing surface (second Vite entry, served at
+                   /landing.html; its hero renders public/assets/
+                   veritx-board.webp with Anime.js motion only)
   fixtures/         five engine-generated *.json fixtures (no in-tree generator)
   scripts/          validate_fixtures.py (schema + linkage + vocabulary fast
                     path; provisioned engine proof + byte comparison)
@@ -28,6 +31,7 @@ apps/studio/
                     source; every engine state renders distinctly)
     fixtures.ts     fixture loading (validated JSON only)
     App.tsx         shell: sections + fixture switcher + theme
+    landing/        light landing styles + motion.ts (entrance, parallax)
     components/
       DesignEditor.tsx   E1–E5 editor (LOCKED read-only, GUIDED/FREE editable)
       FabricCanvas.tsx   SVG structure canvas + overlay extension points
@@ -44,8 +48,8 @@ apps/studio/
 
 ```bash
 npm install
-npm run dev        # local dev server
-npm run build      # typecheck + production build
+npm run dev        # local dev server: console at /, landing at /landing.html
+npm run build      # typecheck + production build (both entries)
 npm run validate   # schema/linkage/vocabulary fast path (provisioned proof
                    # runs automatically when CI is set)
 npm run gen-fixtures  # regenerate via the engine tool (BookSim required)

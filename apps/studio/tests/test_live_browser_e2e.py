@@ -134,6 +134,18 @@ def test_browser_live_flow(live_stack):
         browser = pw.chromium.launch(**_chromium_launch_kwargs())
         try:
             page = browser.new_page()
+            # The marketing landing ships from the same build and renders
+            # the photoreal hero, not an SVG stand-in.
+            page.goto(f"http://127.0.0.1:{ui_port}/landing.html")
+            expect(page.get_by_role(
+                "heading", name="Build without boundaries.")).to_be_visible(
+                    timeout=20000)
+            board = page.locator(".board-stage img.noc-board")
+            expect(board).to_be_visible(timeout=20000)
+            assert page.evaluate(
+                "() => document.querySelector('.board-stage img')"
+                ".naturalWidth") > 1000, "hero asset did not load"
+
             page.goto(f"http://127.0.0.1:{ui_port}/")
             expect(page.get_by_text("LIVE")).to_be_visible(timeout=30000)
 

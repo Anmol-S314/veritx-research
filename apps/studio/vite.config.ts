@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
@@ -9,9 +10,12 @@ const proxy = {
   '/gw': {
     target: GATEWAY,
     changeOrigin: true,
-    rewrite: (path: string) => path.replace(/^\/gw/, ''),
+    rewrite: (path) => path.replace(/^\/gw/, ''),
   },
 };
+
+const entry = (name: string): string =>
+  fileURLToPath(new URL(`./${name}`, import.meta.url));
 
 export default defineConfig({
   plugins: [react()],
@@ -20,5 +24,13 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false,
+    // Two surfaces ship from this app: the console (index.html) and the
+    // marketing landing page (landing.html).
+    rollupOptions: {
+      input: {
+        main: entry('index.html'),
+        landing: entry('landing.html'),
+      },
+    },
   },
 });
