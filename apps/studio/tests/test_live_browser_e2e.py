@@ -88,6 +88,25 @@ def live_stack(tmp_path):
                 proc.kill()
 
 
+def _chromium_launch_kwargs() -> dict:
+    """Prefer a system/existing Chromium so the test does not require a
+    fresh `playwright install` matching the Python package version."""
+    explicit = os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE")
+    candidates = [explicit] if explicit else []
+    cache = Path.home() / ".cache" / "ms-playwright"
+    if cache.is_dir():
+        candidates.extend(
+            str(p) for p in sorted(cache.glob(
+                "chromium-*/chrome-linux64/chrome"), reverse=True))
+    for candidate in candidates:
+        if candidate and Path(candidate).is_file():
+            return {"executable_path": candidate}
+    for system in ("/usr/bin/google-chrome", "/usr/bin/chromium"):
+        if Path(system).is_file():
+            return {"executable_path": system}
+    return {}
+
+
 def _pinned_producer() -> bool:
     binary = os.environ.get("VERITX_BOOKSIM_BIN")
     if not binary:
@@ -112,28 +131,32 @@ def test_browser_live_flow(live_stack):
         pytest.skip(f"playwright not installed: {exc}")
 
     with sync_playwright() as pw:
-        browser = pw.chromium.launch()
+        browser = pw.chromium.launch(**_chromium_launch_kwargs())
         try:
             page = browser.new_page()
             page.goto(f"http://127.0.0.1:{ui_port}/")
             expect(page.get_by_text("LIVE")).to_be_visible(timeout=30000)
 
-            # Create a project.
+            # Create a project (lands on the Workload page).
             page.get_by_label("Name").fill("Qwen NoC Study")
             page.get_by_role("button", name="Create project").click()
-            expect(page.get_by_text("Draft (live edits)")).to_be_visible(
+            expect(page.get_by_role("heading", name="Workload")).to_be_visible(
                 timeout=20000)
 
-            # Edit the design (link width) then compile.
+            # Edit the design (draft) then compile.
+            page.get_by_role("button", name="Design", exact=True).click()
+            expect(page.get_by_text("Draft (live edits)")).to_be_visible(
+                timeout=20000)
+            page.get_by_label("Link width (b)").fill("128")
             page.get_by_role("button", name="Compile design").click()
             expect(page.get_by_text("Fabric canvas")).to_be_visible(
                 timeout=30000)
 
             # Inspect verification.
             page.get_by_role("button", name="Compile & Verify").click()
-            expect(page.get_by_text("obligations PASS")).to_be_visible(
+            expect(page.get_by_text("obligations PASS").first).to_be_visible(
                 timeout=20000)
-            expect(page.get_by_text("Certificate PASS")).to_be_visible(
+            expect(page.get_by_text("Certificate PASS").first).to_be_visible(
                 timeout=20000)
 
             if not _pinned_producer():
@@ -141,11 +164,12 @@ def test_browser_live_flow(live_stack):
                             "simulation leg needs a pinned BookSim producer")
 
             # Run a live evaluation and wait for completion.
-            page.get_by_role("button", name="Simulate").click()
+            page.get_by_role("button", name="Simulate", exact=True).click()
             page.get_by_role("button", name="Run Simulation").click()
-            expect(page.get_by_text("EVALUATED")).to_be_visible(timeout=600000)
+            expect(page.get_by_text("EVALUATED").first).to_be_visible(
+                timeout=600000)
             page.locator("button.link").first.click()
-            expect(page.get_by_text("Why can I trust this?")).to_be_visible(
+            expect(page.get_by_text("Why can I trust this?").first).to_be_visible(
                 timeout=30000)
         finally:
             browser.close()

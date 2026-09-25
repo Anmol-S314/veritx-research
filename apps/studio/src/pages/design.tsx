@@ -8,7 +8,6 @@ import { Hash, StatusBadge } from '../components/badges';
 import DesignEditor from '../components/DesignEditor';
 import VerifyView from '../components/VerifyView';
 import EvaluateView from '../components/EvaluateView';
-import FabricCanvas from '../components/FabricCanvas';
 import { navigate } from '../router';
 import { clone, getPath, setPath } from '../util';
 
@@ -181,17 +180,7 @@ function RevisionDesign({ revision, dirty }: {
           </span>
         </div>
       )}
-      <div className="design-grid">
-        <div className="design-main">
-          <DesignEditor design={revision.design} live />
-        </div>
-        <aside className="design-side">
-          <section className="card">
-            <h3>Fabric canvas</h3>
-            <FabricCanvas design={revision.design} />
-          </section>
-        </aside>
-      </div>
+      <DesignEditor design={revision.design} live />
     </div>
   );
 }
