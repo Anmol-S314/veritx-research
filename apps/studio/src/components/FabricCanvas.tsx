@@ -1,10 +1,11 @@
-import { useState, type ReactElement } from 'react';
+import type { ReactElement } from 'react';
 import type { DesignView } from '../types';
 import { fmtNum } from './badges';
+import { deriveFabric } from '../fabricLayout';
 
-type Overlay = 'structure' | 'routing' | 'vc-class' | 'traffic-class' | 'utilization';
+export type Overlay = 'structure' | 'routing' | 'vc-class' | 'traffic-class' | 'utilization';
 
-const OVERLAYS: { id: Overlay; label: string; needs: string }[] = [
+export const OVERLAYS: { id: Overlay; label: string; needs: string }[] = [
   { id: 'structure', label: 'Structure', needs: '' },
   {
     id: 'routing',
@@ -28,10 +29,6 @@ const OVERLAYS: { id: Overlay; label: string; needs: string }[] = [
   },
 ];
 
-function agentCount(d: DesignView, kind: string): number {
-  return d.agents.filter((a) => a.kind === kind).reduce((s, a) => s + a.count, 0);
-}
-
 /** Presentation labels are friendlier than engine values (AgentKind). */
 export const AGENT_LABELS: Record<string, string> = {
   compute_tile: 'Compute tile',
@@ -45,53 +42,30 @@ export function agentLabel(kind: string): string {
   return AGENT_LABELS[kind] ?? kind;
 }
 
-function gridFor(routers: number): { cols: number; rows: number } {
-  const cols = Math.max(1, Math.ceil(Math.sqrt(Math.max(1, routers))));
-  const rows = Math.max(1, Math.ceil(Math.max(1, routers) / cols));
-  return { cols, rows };
-}
-
-function strokeFor(linkWidth: number | null): number {
-  if (!linkWidth) return 1.5;
-  if (linkWidth <= 64) return 1.5;
-  if (linkWidth <= 128) return 2.5;
-  return 4;
-}
-
-/** Structural fabric canvas derived from the DesignView only. */
-export default function FabricCanvas({ design }: { design: DesignView }): ReactElement {
-  const [overlay, setOverlay] = useState<Overlay>('structure');
-
-  const compute = agentCount(design, 'compute_tile');
-  const hbm = agentCount(design, 'hbm_controller');
-  const edge = agentCount(design, 'nic') + agentCount(design, 'peripheral');
-  const conc = design.noc_guided.concentration ?? 1;
-  const routerCount = Math.max(1, Math.ceil(compute / Math.max(1, conc)));
-  const { cols, rows } = gridFor(routerCount);
+/** Pure 2D structural renderer. Overlay selection is owned by FabricView. */
+export default function FabricCanvas({ design }: {
+  design: DesignView;
+  overlay?: Overlay;
+}): ReactElement {
+  const layout = deriveFabric(design);
+  const { compute, hbm, nic, edge, concentration: conc,
+          routerCount, cols, rows, links } = layout;
 
   const CELL = 96;
   const M = 70; // margin for edge blocks
   const W = cols * CELL + M * 2;
   const H = rows * CELL + M * 2 + 34; // +34 for HBM row
   const R = 26; // router half-size
-  const linkStroke = strokeFor(design.noc_guided.link_width);
+  const linkStroke = design.noc_guided.link_width
+    && design.noc_guided.link_width > 128 ? 4
+    : design.noc_guided.link_width && design.noc_guided.link_width > 64 ? 2.5
+      : 1.5;
 
   const pos = (i: number): { x: number; y: number } => {
     const c = i % cols;
     const r = Math.floor(i / cols);
     return { x: M + c * CELL + CELL / 2, y: M + r * CELL + CELL / 2 + 17 };
   };
-
-  // Mesh neighbor links between existing routers.
-  const links: [number, number][] = [];
-  for (let i = 0; i < routerCount; i++) {
-    const c = i % cols;
-    const r = Math.floor(i / cols);
-    if (c + 1 < cols && i + 1 < routerCount && Math.floor((i + 1) / cols) === r) {
-      links.push([i, i + 1]);
-    }
-    if (r + 1 < rows && i + cols < routerCount) links.push([i, i + cols]);
-  }
 
   const hbmTop = Math.ceil(hbm / 2);
   const hbmBottom = hbm - hbmTop;
@@ -105,39 +79,8 @@ export default function FabricCanvas({ design }: { design: DesignView }): ReactE
     </g>
   );
 
-  const activeOverlay = OVERLAYS.find((o) => o.id === overlay);
-
   return (
     <div className="canvas-wrap">
-      <div className="canvas-toolbar">
-        <div className="overlay-tabs" role="tablist" aria-label="Canvas overlays">
-          {OVERLAYS.map((o) => (
-            <button
-              key={o.id}
-              role="tab"
-              aria-selected={overlay === o.id}
-              className={`overlay-tab${overlay === o.id ? ' active' : ''}`}
-              onClick={() => setOverlay(o.id)}
-              title={o.needs || 'Structural view (routers, links, attachments)'}
-            >
-              {o.label}
-            </button>
-          ))}
-        </div>
-        <span className="canvas-meta">
-          {routerCount} routers · {links.length} links · {compute} compute tiles · {hbm} HBM ·
-          link width {design.noc_guided.link_width ?? '—'}
-        </span>
-      </div>
-
-      {overlay !== 'structure' && activeOverlay && (
-        <div className="overlay-note">
-          <strong>{activeOverlay.label} overlay — extension point, not rendered.</strong>{' '}
-          {activeOverlay.needs} The canvas shows structure only; nothing is
-          color-fabricated from aggregate data.
-        </div>
-      )}
-
       <svg viewBox={`0 0 ${W} ${H}`} className="canvas" role="img" aria-label="Fabric structure">
         {/* links */}
         {links.map(([a, b], k) => {
@@ -205,7 +148,7 @@ export default function FabricCanvas({ design }: { design: DesignView }): ReactE
             <g key={`e${k}`}>
               <rect x={8} y={y - 12} width={44} height={24} rx={3} className="cv-edge" />
               <text x={30} y={y + 4} textAnchor="middle" className="cv-label-sm">
-                {k < agentCount(design, 'nic') ? `NIC${k}` : `P${k}`}
+                {k < nic ? `NIC${k}` : `P${k}`}
               </text>
             </g>
           );

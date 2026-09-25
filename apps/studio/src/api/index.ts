@@ -1,6 +1,6 @@
 // Product API v1 endpoints. One module per resource family keeps components
 // from scattering URLs.
-import { get, post, put } from './client';
+import { del, get, patch, post, put } from './client';
 import type {
   CompareView,
   DraftView,
@@ -30,6 +30,12 @@ export const api = {
     post<ProjectView>('/projects', { name, workload_id: workloadId ?? null }),
   project: (projectId: string) =>
     get<ProjectView>(`/projects/${encodeURIComponent(projectId)}`),
+  renameProject: (projectId: string, name: string) =>
+    patch<ProjectView>(`/projects/${encodeURIComponent(projectId)}`, { name }),
+  deleteProject: (projectId: string) =>
+    del<{ contract_version: 1; deleted: boolean; project_id: string }>(
+      `/projects/${encodeURIComponent(projectId)}`,
+    ),
 
   draft: (projectId: string) =>
     get<DraftView>(`/projects/${encodeURIComponent(projectId)}/draft`),

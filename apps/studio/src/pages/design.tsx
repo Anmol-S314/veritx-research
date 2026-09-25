@@ -1,10 +1,11 @@
 import { useEffect, useState, type ReactElement } from 'react';
 import { api, type JobView, type ProjectView, type RevisionView } from '../api';
 import {
-  AsyncView, ContextHeader, ErrorBox, JobProgress, Link, Stepper, useAsync,
+  AsyncView, ErrorBox, JobProgress, Link, WorkflowBar, useAsync,
   useJobPoll, useStudio,
 } from '../studio';
 import { Hash, StatusBadge } from '../components/badges';
+import ArtifactStrip from '../components/ArtifactStrip';
 import DesignEditor from '../components/DesignEditor';
 import VerifyView from '../components/VerifyView';
 import EvaluateView from '../components/EvaluateView';
@@ -20,6 +21,7 @@ const DRAFT_FIELDS: { path: string; label: string; kind: 'number' | 'text' }[] =
   { path: 'noc_config.link_width', label: 'Link width (b)', kind: 'number' },
   { path: 'noc_config.concentration', label: 'Concentration', kind: 'number' },
   { path: 'noc_config.topology_family', label: 'Topology family', kind: 'text' },
+  { path: 'agents.0.count', label: 'Compute instances (agents[0])', kind: 'number' },
   { path: 'requirements.0.latency_ceiling_cycles', label: 'Latency ceiling (cycles)', kind: 'number' },
 ];
 
@@ -145,8 +147,7 @@ export function Design({ projectId }: { projectId: string }): ReactElement {
         const active = p.active_revision;
         return (
           <div className="page">
-            <ContextHeader project={p} />
-            <Stepper project={p} current="design" />
+            <WorkflowBar project={p} current="design" />
             <h2>Design</h2>
             <DraftEditor projectId={projectId} project={p} onChanged={reloadAll} />
             {active ? (
@@ -213,8 +214,7 @@ export function CompileVerify({ projectId }: { projectId: string }): ReactElemen
         const obs = active?.compilation.obligations ?? [];
         return (
           <div className="page">
-            <ContextHeader project={p} />
-            <Stepper project={p} current="compile" />
+            <WorkflowBar project={p} current="compile" />
             <h2>Compile &amp; Verify</h2>
             <div className="form-row">
               <button className="btn btn-primary" disabled={compiling} onClick={compile}>
@@ -243,15 +243,9 @@ export function CompileVerify({ projectId }: { projectId: string }): ReactElemen
                   <div className="kv"><span>routing</span><span>{active.design.locked_derived?.routing ?? '—'}</span></div>
                   <div className="kv"><span>VC count</span><span>{active.design.locked_derived?.vc_count ?? '—'}</span></div>
                   <div className="kv"><span>design_hash</span><Hash value={active.design_hash} /></div>
-                  <details>
-                    <summary>Evidence identities</summary>
-                    <div className="kv"><span>resolved_fabric_hash</span><Hash value={active.compilation.resolved_fabric_hash} /></div>
-                    <div className="kv"><span>certificate_id</span><Hash value={active.compilation.certificate_id} /></div>
-                    {active.compilation.artifact_hashes && Object.entries(active.compilation.artifact_hashes).map(([k, v]) => (
-                      <div className="kv" key={k}><span>{k}</span><Hash value={v} /></div>
-                    ))}
-                  </details>
+                  <div className="kv"><span>certificate_id</span><Hash value={active.compilation.certificate_id} /></div>
                 </section>
+                <ArtifactStrip compilation={active.compilation} />
                 <h3>Verification obligations</h3>
                 <VerifyView compilation={active.compilation} />
               </>
@@ -307,14 +301,45 @@ export function Simulate({ projectId }: { projectId: string }): ReactElement {
       {(p) => {
         const current = p.active_revision;
         const running = job !== null && !['COMPLETED', 'REFUSED', 'FAILED', 'CANCELLED'].includes(job.state);
+        const blocker = (() => {
+          if (!current) {
+            return {
+              text: 'No compiled revision exists yet.',
+              section: 'design', label: 'Go to Design',
+            };
+          }
+          if (current.compilation.status !== 'COMPILED') {
+            return {
+              text: current.compilation.error
+                ?? 'Compilation was refused for this revision.',
+              section: 'design', label: 'Fix design and compile',
+            };
+          }
+          if (current.certificate?.overall !== 'PASS') {
+            return {
+              text: 'The verification certificate is not PASS.',
+              section: 'compile', label: 'Inspect verification',
+            };
+          }
+          if (p.draft.dirty) {
+            return {
+              text: `The draft has uncompiled changes. The active revision is ${current.display_name}; compile to evaluate the new intent.`,
+              section: 'design', label: 'Recompile draft',
+            };
+          }
+          return null;
+        })();
+        const canRun = Boolean(current)
+          && current!.compilation.status === 'COMPILED'
+          && current!.certificate?.overall === 'PASS'
+          && !p.draft.dirty && !running;
         return (
           <div className="page">
-            <ContextHeader project={p} />
-            <Stepper project={p} current="simulate" />
+            <WorkflowBar project={p} current="simulate" />
             <h2>Simulate</h2>
             <section className="card">
               <h3>Run configuration</h3>
-              <div className="kv"><span>revision</span><span>{current?.display_name ?? '—'}</span></div>
+              <div className="kv"><span>revision</span><span>{current ? `${current.display_name} · ${current.compilation.status.toLowerCase()}` : '—'}</span></div>
               <div className="kv"><span>workload</span><span>{p.draft.workload_id ?? '—'}</span></div>
               <div className="kv"><span>backend</span><span>Embedded BookSim (qualified)</span></div>
               <div className="kv"><span>certificate</span><span>{current?.certificate?.overall ?? '—'}</span></div>
@@ -322,23 +347,29 @@ export function Simulate({ projectId }: { projectId: string }): ReactElement {
               <div className="form-row">
                 <button
                   className="btn btn-primary"
-                  disabled={!current || current.certificate?.overall !== 'PASS' || running}
+                  disabled={!canRun}
                   onClick={start}
                 >
                   {running ? 'Running…' : 'Run Simulation'}
                 </button>
-                {p.draft.dirty && (
-                  <span className="stale">
-                    DRAFT HAS UNCOMPILED CHANGES — compile first
-                  </span>
-                )}
-                {!p.draft.dirty && current
-                  && current.certificate?.overall !== 'PASS' && (
-                  <span className="stale">
-                    Certificate is not PASS — compile and verify first
-                  </span>
-                )}
               </div>
+              {blocker && (
+                <div className="blocker" role="status">
+                  <strong>Cannot run yet</strong>
+                  <p className={
+                    current && current.compilation.status !== 'COMPILED'
+                      ? 'bad' : 'muted'
+                  }>
+                    {blocker.text}
+                  </p>
+                  <Link
+                    className="btn"
+                    to={`/projects/${p.project.project_id}/${blocker.section}`}
+                  >
+                    {blocker.label}
+                  </Link>
+                </div>
+              )}
               {error && <ErrorBox error={error} />}
               <JobProgress job={job} />
             </section>

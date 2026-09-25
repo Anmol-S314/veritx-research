@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactElement } from 'react';
 import type { DesignView, Requirement } from '../types';
 import { Hash, TierBadge } from './badges';
-import FabricCanvas, { agentLabel } from './FabricCanvas';
+import { agentLabel } from './FabricCanvas';
+import FabricView from './FabricView';
 
 function clone<T>(v: T): T {
   return JSON.parse(JSON.stringify(v)) as T;
@@ -442,8 +443,8 @@ export default function DesignEditor({ design, live = false }: {
 
       <aside className="design-side">
         <section className="card">
-          <h3>Fabric canvas</h3>
-          <FabricCanvas design={draft} />
+          <h3>Topology / traffic view</h3>
+          <FabricView design={draft} />
         </section>
       </aside>
     </div>

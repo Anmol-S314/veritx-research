@@ -1,10 +1,29 @@
 import { useEffect, useState, type ReactElement } from 'react';
 import { api, type RunView } from '../api';
 import {
-  AsyncView, ContextHeader, Link, Stepper, useAsync, useStudio,
+  AsyncView, Link, WorkflowBar, useAsync, useStudio,
 } from '../studio';
 import { Hash, StatusBadge, fmtNum, humanize } from '../components/badges';
 import { navigate } from '../router';
+
+function nextActionTarget(action: string): { label: string; section: string } {
+  switch (action) {
+    case 'COMPILE':
+      return { label: 'Compile design', section: 'design' };
+    case 'EDIT_DRAFT':
+      return { label: 'Fix design', section: 'design' };
+    case 'INSPECT_VERIFY':
+      return { label: 'Inspect verification', section: 'compile' };
+    case 'RUN_EVALUATION':
+      return { label: 'Run simulation', section: 'simulate' };
+    case 'COMPARE_OR_OPTIMIZE':
+      return { label: 'Compare / optimize', section: 'decide' };
+    case 'WAIT':
+      return { label: 'View progress', section: 'simulate' };
+    default:
+      return { label: 'Open design', section: 'design' };
+  }
+}
 
 export function ProjectPicker(): ReactElement {
   const { projects, projectsError, refreshProjects } = useStudio();
@@ -34,6 +53,35 @@ export function ProjectPicker(): ReactElement {
     }
   };
 
+  const rename = async (projectId: string,
+                        currentName: string): Promise<void> => {
+    const next = window.prompt('Project name', currentName);
+    if (next === null || !next.trim()) return;
+    setError(null);
+    try {
+      await api.renameProject(projectId, next.trim());
+      refreshProjects();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const remove = async (projectId: string,
+                        projectName: string): Promise<void> => {
+    if (!window.confirm(
+      `Delete project "${projectName}" and all its revisions, runs and `
+      + 'optimization studies? This cannot be undone.')) {
+      return;
+    }
+    setError(null);
+    try {
+      await api.deleteProject(projectId);
+      refreshProjects();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   return (
     <div className="page">
       <h2>Projects</h2>
@@ -41,7 +89,7 @@ export function ProjectPicker(): ReactElement {
       {projects.length > 0 && (
         <ul className="project-list">
           {projects.map((p) => (
-            <li key={p.project.project_id}>
+            <li className="project-row" key={p.project.project_id}>
               <Link
                 className="project-item"
                 to={`/projects/${p.project.project_id}/overview`}
@@ -54,6 +102,20 @@ export function ProjectPicker(): ReactElement {
                   {p.revisions.length} revisions · {p.runs.length} runs
                 </span>
               </Link>
+              <div className="project-actions">
+                <button
+                  className="btn"
+                  onClick={() => rename(p.project.project_id, p.project.name)}
+                >
+                  Rename
+                </button>
+                <button
+                  className="btn btn-danger"
+                  onClick={() => remove(p.project.project_id, p.project.name)}
+                >
+                  Delete
+                </button>
+              </div>
             </li>
           ))}
         </ul>
@@ -107,8 +169,7 @@ export function Overview({ projectId }: { projectId: string }): ReactElement {
         const latest = p.runs[p.runs.length - 1];
         return (
           <div className="page">
-            <ContextHeader project={p} />
-            <Stepper project={p} current="overview" />
+            <WorkflowBar project={p} current="overview" />
             <div className="overview-grid">
               <section className="card">
                 <h3>Current revision</h3>
@@ -142,10 +203,20 @@ export function Overview({ projectId }: { projectId: string }): ReactElement {
               <section className="card">
                 <h3>Next action</h3>
                 <p className="next-action-large">{p.flow.next_action}</p>
-                <p className="muted">{p.flow.reason}</p>
-                <button className="btn btn-primary" onClick={() => navigate(`/projects/${projectId}/${p.flow.next_action === 'COMPILE' ? 'design' : p.flow.next_action === 'RUN_EVALUATION' ? 'simulate' : 'compare'}`)}>
-                  Go
-                </button>
+                <p className={p.flow.state === 'REFUSED' ? 'bad' : 'muted'}>
+                  {p.flow.reason}
+                </p>
+                {(() => {
+                  const target = nextActionTarget(p.flow.next_action);
+                  return (
+                    <Link
+                      className="btn btn-primary"
+                      to={`/projects/${projectId}/${target.section}`}
+                    >
+                      {target.label}
+                    </Link>
+                  );
+                })()}
               </section>
             </div>
             {p.optimizations.length > 0 && (
@@ -184,8 +255,7 @@ export function Workload({ projectId }: { projectId: string }): ReactElement {
     <AsyncView result={project.result} reload={project.reload}>
       {(p) => (
         <div className="page">
-          <ContextHeader project={p} />
-          <Stepper project={p} current="workload" />
+          <WorkflowBar project={p} current="workload" />
           <h2>Workload</h2>
           <AsyncView result={catalog.result} reload={catalog.reload}>
             {(data) => (
@@ -223,15 +293,18 @@ export function Workload({ projectId }: { projectId: string }): ReactElement {
                       the Draft (Design page).
                     </p>
                     <div className="form-row">
-                      <button
-                        className="btn btn-primary"
-                        disabled={p.draft.workload_id === w.workload_id}
-                        onClick={() => select(w.workload_id)}
-                      >
-                        {p.draft.workload_id === w.workload_id
-                          ? 'Current workload'
-                          : 'Use this workload'}
-                      </button>
+                      {p.draft.workload_id === w.workload_id ? (
+                        <span className="current-badge">
+                          In use by this project's draft
+                        </span>
+                      ) : (
+                        <button
+                          className="btn btn-primary"
+                          onClick={() => select(w.workload_id)}
+                        >
+                          Use this workload
+                        </button>
+                      )}
                     </div>
                   </section>
                 ))}

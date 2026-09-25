@@ -3,7 +3,7 @@
 // the gateway's explicit flow state; it never infers a stage from a missing
 // field.
 import {
-  createContext, useContext, useEffect, useState,
+  Fragment, createContext, useContext, useEffect, useState,
   type ReactElement, type ReactNode,
 } from 'react';
 import { api, ApiError, type JobView, type ProjectView } from './api';
@@ -147,18 +147,20 @@ export function useJobPoll(
 /** A real anchor: native link semantics, keyboard/middle-click and deep
  * linking, with client-side navigation for plain left clicks. */
 export function Link({
-  to, className, children, title,
+  to, className, children, title, ariaLabel,
 }: {
   to: string;
   className?: string;
   children: ReactNode;
   title?: string;
+  ariaLabel?: string;
 }): ReactElement {
   return (
     <a
       href={to}
       className={className}
       title={title}
+      aria-label={ariaLabel}
       onClick={(e) => {
         if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey
             || e.altKey || e.button !== 0) {
@@ -233,73 +235,62 @@ export function JobProgress({ job }: { job: JobView | null }): ReactElement | nu
   );
 }
 
-const STAGES = [
-  { key: 'workload', label: '1 Workload' },
-  { key: 'design', label: '2 Design' },
-  { key: 'compile', label: '3 Compile' },
-  { key: 'verify', label: '4 Verify' },
-  { key: 'simulate', label: '5 Simulate' },
-  { key: 'decide', label: '6 Compare / Optimize' },
+// The product pipeline (SROTA template): Intent -> Fabric -> Certificate
+// -> Execute -> Decide. Status only; navigation lives in the left rail.
+const PIPELINE = [
+  { key: 'intent', label: 'Intent', sub: 'CompileRequest v3' },
+  { key: 'fabric', label: 'Fabric', sub: 'Topology + route + VC' },
+  { key: 'certificate', label: 'Certificate', sub: 'deadlock / identity' },
+  { key: 'execute', label: 'Execute', sub: 'qualified backend' },
+  { key: 'decide', label: 'Decide', sub: 'Pareto + requirements' },
 ] as const;
 
-export function stageStatuses(project: ProjectView): Record<string, string> {
-  const active = project.revisions.find(
-    (r) => r.revision_id === project.active_revision_id,
-  );
-  const evaluated = project.runs.some((r) => r.status === 'EVALUATED');
-  const optimizing = project.flow.state === 'OPTIMIZING';
+type NodeState = 'done' | 'active' | 'pending';
+
+export function pipelineStatuses(project: ProjectView): Record<string, NodeState> {
+  const active = project.active_revision;
+  const rid = project.active_revision_id;
+  const compiled = active?.compilation?.status === 'COMPILED';
+  const certified = active?.certificate?.overall === 'PASS';
+  // Scope the pipeline to the ACTIVE revision: a run or study from an
+  // older revision must not advance the current design's pipeline.
+  const evaluated = project.runs.some(
+    (r) => r.revision_id === rid && r.status === 'EVALUATED');
+  const decided = project.optimizations.some(
+    (o) => o.base_revision_id === rid);
+  const intent = Boolean(active || project.draft.workload_id);
   return {
-    workload: project.draft.workload_id ? 'COMPLETE' : 'NOT STARTED',
-    design: active || project.draft.workload_id ? 'COMPLETE' : 'NOT STARTED',
-    compile: project.draft.dirty
-      ? 'STALE'
-      : active
-        ? 'COMPLETE'
-        : 'READY',
-    verify:
-      active?.certificate_overall === 'PASS'
-        ? 'COMPLETE'
-        : active
-          ? 'REFUSED'
-          : 'NOT STARTED',
-    simulate:
-      project.flow.state === 'EVALUATING'
-        ? 'RUNNING'
-        : evaluated
-          ? 'COMPLETE'
-          : project.flow.state === 'EVALUATION_FAILED'
-            ? 'REFUSED'
-            : 'READY',
-    decide: optimizing
-      ? 'RUNNING'
-      : project.optimizations.length
-        ? 'COMPLETE'
-        : evaluated
-          ? 'READY'
-          : 'NOT STARTED',
+    intent: intent ? 'done' : 'active',
+    fabric: compiled ? 'done' : intent ? 'active' : 'pending',
+    certificate: certified ? 'done' : compiled ? 'active' : 'pending',
+    execute: evaluated ? 'done' : certified ? 'active' : 'pending',
+    decide: decided ? 'done' : evaluated ? 'active' : 'pending',
   };
 }
 
-export function Stepper({ project, current }: {
+export function WorkflowBar({ project, current }: {
   project: ProjectView;
-  current: string;
+  current?: string;
 }): ReactElement {
-  const statuses = stageStatuses(project);
+  const statuses = pipelineStatuses(project);
   return (
-    <nav className="stepper" aria-label="Workflow">
-      {STAGES.map((stage) => (
-        <Link
-          key={stage.key}
-          to={`/projects/${project.project.project_id}/${stage.key}`}
-          className={`step${current === stage.key ? ' active' : ''}`}
-        >
-          <span className="step-label">{stage.label}</span>
-          <span className={`step-state st-${(statuses[stage.key] ?? '').toLowerCase().replace(' ', '-')}`}>
-            {statuses[stage.key]}
-          </span>
-        </Link>
+    <section className="workflow-bar" aria-label="Workflow pipeline"
+             data-current={current ?? ''}>
+      {PIPELINE.map((node, index) => (
+        <Fragment key={node.key}>
+          <div className={`workflow-node ${statuses[node.key]}`}>
+            <span>{String(index + 1).padStart(2, '0')}</span>
+            <div>
+              <b>{node.label}</b>
+              <small>{node.sub}</small>
+            </div>
+          </div>
+          {index < PIPELINE.length - 1 && (
+            <div className={`workflow-line ${statuses[node.key] === 'done' ? 'done' : ''}`} />
+          )}
+        </Fragment>
       ))}
-    </nav>
+    </section>
   );
 }
 

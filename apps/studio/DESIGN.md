@@ -69,19 +69,42 @@ values; light values are:
 
 ## Typography
 
-`mono` is used for every machine identity and measured quantity: hashes,
-metric values, resource ids, job states. Prose uses the system sans stack.
-Data and identities render with tabular figures so columns do not shift.
-Headings balance; body and list text is pretty-wrapped.
+Two families, both self-hosted variable woff2 (latin subset), so the tool
+works without a font CDN:
+
+- `sans` (Inter) for prose, labels and controls;
+- `mono` (JetBrains Mono) for every machine identity and measured quantity
+  — hashes, metric values, resource ids, job states.
+
+A small semantic scale: micro 11, label 12, body 13, body-lg 16, title 15,
+display 20. Headings 1.15 line-height, body 1.5. Small uppercase labels
+carry positive tracking; large headings slightly negative. Data and
+identities render with tabular figures so columns do not shift. Headings
+balance; body and list text is pretty-wrapped. Text is antialiased once on
+the root. On small screens inputs render at 16px so iOS does not zoom.
+
+## Layout
+
+A three-region engineering shell: a sticky topbar (brand, live context
+strip, actions), a left numbered rail (01–06) for navigation, and a
+workspace. Inside a project the workspace opens with the pipeline bar
+(Intent → Fabric → Certificate → Execute → Decide), then the page. Machine
+identities are truncated with the full value in a tooltip, never dropped.
 
 ## Components
 
 Interactive navigation is a real anchor (`<a href>`), not a button with an
-onClick: the workflow stepper, top navigation and run links are links so
-keyboard, middle-click and deep-linking work. Buttons are reserved for
-actions (compile, run simulation, create project). Every focusable control
-has a visible focus ring. Loading and job states announce themselves with
+onClick: the rail, pipeline links and run links are links so keyboard,
+middle-click and deep-linking work. Buttons are reserved for actions
+(compile, run simulation, create project). Every focusable control has a
+visible focus ring. Loading and job states announce themselves with
 `role="status"`.
+
+The topology / traffic view is a 3D scene (Three.js, lazy-loaded) of the
+declared fabric: orbitable routers, mesh links and attachments, with a 2D
+fallback and an artifact strip bound to the compiler's real hashes. Only
+`structure` is rendered; every other overlay names the artifact it needs
+and is never fabricated.
 
 ## Do's and Don'ts
 

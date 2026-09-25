@@ -151,11 +151,11 @@ def test_browser_live_flow(live_stack):
                 timeout=20000)
             page.get_by_label("Link width (b)").fill("128")
             page.get_by_role("button", name="Compile design").click()
-            expect(page.get_by_text("Fabric canvas")).to_be_visible(
+            expect(page.get_by_role("heading", name="Topology / traffic view")).to_be_visible(
                 timeout=30000)
 
             # Inspect verification.
-            page.get_by_role("link", name="Compile & Verify").click()
+            page.get_by_role("link", name="Verify", exact=True).click()
             expect(page.get_by_text("obligations PASS").first).to_be_visible(
                 timeout=20000)
             expect(page.get_by_text("Certificate PASS").first).to_be_visible(
