@@ -470,3 +470,48 @@ The horizon models one flit/cycle per source port (BookSim trace default).
 A workload needing a larger drain than the fixed 1000-cycle margin will
 still be refused by conservation; the margin is a documented heuristic, not
 a physical bound (`SUPPORTED-LIMITS.md`).
+
+---
+
+## F-0008 — the release build could not build ASTRA from a clean clone
+
+**Status:** FIXED
+**Severity:** high — `make release-build` failed on a clean machine, so the
+release could not be reproduced from an exact commit
+**Found:** 2026-09-25, by the T6 clean-clone qualification
+
+### What was wrong
+
+`third_party/astra-sim/build/astra_booksim2/build.sh` is `#!/bin/bash` and
+uses `${BASH_SOURCE[0]}`, but the top-level `release-build` target invoked
+it with `sh` (dash on Ubuntu). From a clean clone the ASTRA build died at
+`build.sh: 9: Bad substitution`, after BookSim had already built.
+
+### Reproduction
+
+```text
+git clone <repo> cc && cd cc && make release-build
+  ... booksim builds ...
+  CXX=g++ JOBS=$(nproc) sh third_party/astra-sim/build/astra_booksim2/build.sh
+  third_party/astra-sim/build/astra_booksim2/build.sh: 9: Bad substitution
+  make: *** [Makefile:73: release-build] Error 2
+```
+
+### Fix
+
+Invoke the script with `bash` in the `release-build` recipe. After the fix
+the clean clone builds BookSim, ASTRA and Ramulator from tracked source and
+writes both build manifests.
+
+### Consequence / notes
+
+- The clean clone's compile science is identical to the working tree
+  (`resolved_fabric_hash c05d4c19…`).
+- A build outside a git checkout (e.g. `git archive` tarball) records
+  `source_dirty=true` and `source_revision=null`; a release MUST build from
+  a git clone so the manifest binds the revision and stays certifiable.
+- BookSim binaries built in two different directories were not
+  bit-identical (20832432 vs 20832448 bytes) at the same source revision;
+  reproducibility is at the scientific-identity level, and each build's
+  manifest binds its own binary sha. Bit-reproducible binaries are not yet
+  established.

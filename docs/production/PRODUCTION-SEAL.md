@@ -89,10 +89,14 @@ Historical scientific findings F-0001 and F-0004 are FIXED in
   is a vendored Python extension executed through `simulation/ramulator.py`
   (not the binary-manifest producer path), qualified by the engine gate
   (16/16) and its pinned vendored source.
-- Run directories are timestamped, not content-addressed/atomic (P2); three
-  run notions (`core.runs.Run`, `core.paths.new_run_dir`, evaluator temp
-  dirs) still coexist — `core.runs` is hardened but unused. No
-  `verify-run`/`reproduce` verb yet.
+- Run bundles are checksummed, atomic and path-independent, with
+  `verify-run`/`reproduce` (C3). Legacy `core.runs.Run` and
+  `core.paths.new_run_dir` still coexist and are not yet routed through the
+  bundle lifecycle for evaluator/serving dirs.
+- BookSim binaries built in two different directories are not
+  bit-identical at the same source revision (scientific identity is
+  identical); each build's manifest binds its own binary sha.
+- The Studio gateway exists; the React app is still fixture-backed.
 - ASTRA numerical comparison (NOT_ESTABLISHED); the engine gate reports the
   unexplained 30M-cycle aggregate/exposed_comm component.
 - Serving integration `.et` fixtures are not vendored; the release gate
@@ -133,28 +137,43 @@ ring semantics only; chunk ownership is not modeled.
 
 ## 9. Full regression results
 
-- Fast DSE tier: `3531 passed, 13 skipped, 0 failed` (106 s).
-- Validation pytest: `20 passed` (308 s).
+- Fast DSE tier: `3562 passed, 16 skipped, 0 failed` (107 s).
+- Validation pytest: `24 passed` (300 s).
 - Validation harness: V01–V14 PASS, mutations CAUGHT, metamorphic PASS,
   engine gates PASS (ASTRA numerical NOT_ESTABLISHED), intervention
   SUPPORTED, 0 quarantined.
-- Live-backend tier: last run at `bd6be628` `153 passed, 12 skipped`
-  (877 s); re-run at the RC SHA owed. 160 tests are deselected from the
-  fast tier.
-- Certified optimization gate: `Optimizer.optimize_certified` boundary
-  refuses unqualified producers; a real certified run remains owed (C10.2).
+- Live-backend tier: `154 passed, 12 skipped` (825 s).
+- Certified optimization gate (C10.2): `test_real_grid_end_to_end` runs
+  `Optimizer.optimize_certified` from the release build and asserts every
+  selected/Pareto candidate is EVALUATED with an authenticated proof,
+  satisfied constraints and a requirement report.
+- Production fault/concurrency suite (`tests/production/`): green
+  (real concurrency gates included in the live tier).
 
 ## 10. Failure-injection results
 
-Not implemented (`tests/production/test_failure_injection.py` owed).
+Implemented (`tests/production/test_failure_injection.py`): nonzero exit,
+hang/timeout, malformed/partial output, post-preparation config/trace
+tamper, foreign files in a reused run dir, post-finalize evidence tamper,
+partial bundle, read-only destination. All end in a typed failure with no
+evidence written. SIGKILL of the parent service is not exercised.
 
 ## 11. Concurrency results
 
-Not implemented.
+Implemented (`tests/production/test_concurrency.py`): concurrent finalize is
+idempotent; distinct bundles do not collide; concurrent identical real runs
+share scientific identity with distinct run dirs; different runs differ.
 
 ## 12. Clean-clone results
 
-Not run. This is a release blocker.
+RUN (C8/T6). A `git clone` at the RC SHA with no prebuilt binaries builds
+BookSim, ASTRA and Ramulator from tracked source via `make release-build`
+and writes both build manifests. The clean clone's canonical compile
+produces the same `resolved_fabric_hash` as the working tree. The first
+attempt found F-0008 (the ASTRA build was invoked with `sh`, not `bash`),
+now fixed. A build outside a git checkout records no revision and
+`dirty=true`, so releases must build from a clone. Bit-identical binaries
+across build directories are not yet established (scientific identity is).
 
 ## 13. Performance / scale envelope
 
@@ -199,13 +218,14 @@ pushed tip by the closure commits recorded in `FINAL-CLOSURE-LEDGER.md`.
 
 ## 19. Release decision
 
-**NOT READY.** Producer admission/provenance, conservation, executed-route
-observation, the fail-closed semantic taxonomy and the collective
-authority are enforced end-to-end (evidence schema v3 binds the manifest,
-recipe and route dump; the certified evaluator refuses unpinned producers
-and divergent routes; F-0007 removed the truncated-window class). The
-operational program remains open: durable run bundles (C3), failure
-injection (C4), concurrency/idempotency (C4), API/schema freeze (C5/P5),
-workload/serving/ASTRA qualification (C5–C7), clean-clone reproducibility
-(C8), the live Studio (C9), and the final battery and seal (C10–C12).
-See `FINAL-CLOSURE-LEDGER.md` for the item-by-item state.
+**NOT READY.** The scientific core, authority collapse (C2.1–C2.3), durable
+run bundles with verify/reproduce (C3), failure/concurrency safety (C4),
+the production workload corpus (C5), the release manifest and a working
+clean-clone build (C8) and the live Studio gateway (C9) are in place and
+green. Remaining blockers: ASTRA numerical validity is NOT_ESTABLISHED
+(C6); serving integration fixtures are not vendored and the gate fails on
+their absence (C7); the container/Docker external clones are not pinned and
+bit-reproducible binaries are not established (C8); the Studio React app is
+not yet wired to the gateway (C9); and the final battery has not been run
+at a single frozen RC SHA with a T7 browser smoke (C10). See
+`FINAL-CLOSURE-LEDGER.md` for the item-by-item state.
