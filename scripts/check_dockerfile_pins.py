@@ -42,20 +42,48 @@ def _pinned(block: str) -> bool:
     return False
 
 
+def _arg_defaults(text: str) -> dict[str, str]:
+    defaults: dict[str, str] = {}
+    for raw in text.splitlines():
+        match = re.match(r"\s*ARG\s+([A-Za-z_][A-Za-z0-9_]*)=(\S+)", raw)
+        if match:
+            defaults[match.group(1)] = match.group(2)
+    return defaults
+
+
+def _from_pinned(ref: str, defaults: dict[str, str]) -> bool:
+    """A base image is pinned only by an immutable ``@sha256:`` digest.
+
+    A bare ``${ARG}`` is pinned when the ARG's default carries a digest.
+    """
+    ref = ref.strip()
+    if "@sha256:" in ref:
+        return True
+    match = re.match(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?", ref)
+    if match:
+        return "@sha256:" in defaults.get(match.group(1), "")
+    return False
+
+
 def main() -> int:
     text = DOCKERFILE.read_text(encoding="utf-8")
+    defaults = _arg_defaults(text)
     offenders = []
+    for raw in text.splitlines():
+        match = re.match(r"\s*FROM\s+(\S+)", raw)
+        if match and not _from_pinned(match.group(1), defaults):
+            offenders.append(raw.strip())
     for block in _run_blocks(text):
         if "git clone" not in block:
             continue
         if not _pinned(block):
             offenders.append(block.splitlines()[0])
     if offenders:
-        print("UNPINNED Dockerfile clone(s) — pin by commit/tag (C8):")
+        print("UNPINNED Dockerfile reference(s) — pin by digest/commit (C8):")
         for line in offenders:
             print(f"  {line}")
         return 1
-    print("Dockerfile clones are pinned")
+    print("Dockerfile base image is digest-pinned and clones are pinned by commit")
     return 0
 
 

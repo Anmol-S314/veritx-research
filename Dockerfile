@@ -1,5 +1,10 @@
+# Base image is digest-pinned (C8/R4.1). Override with
+#   --build-arg UBUNTU_IMAGE=ubuntu:22.04@sha256:<new-digest>
+# to move it deliberately; a mutable tag is not used in the release path.
+ARG UBUNTU_IMAGE=ubuntu:22.04@sha256:b8b6ee6aa931ecd9d0d952abc34dc0e5f7c6a30c6bb71b079fe399fde0329c02
+
 # Stage 1: Build all VeritX research tools
-FROM ubuntu:22.04 AS builder
+FROM ${UBUNTU_IMAGE} AS builder
 
 LABEL description="VeritX Research Tools — Booksim, Accelergy, Yosys, SymbiYosys, CBMC (gem5 + Timeloop added later)"
 
@@ -175,7 +180,7 @@ RUN pip3 install --no-cache-dir \
 # =============================================================================
 # Stage 2: Runtime image (slim)
 # =============================================================================
-FROM ubuntu:22.04
+FROM ${UBUNTU_IMAGE}
 
 SHELL ["/bin/bash", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive

@@ -1,14 +1,17 @@
-# VERITX Reproducibility (C8)
+# VERITX Reproducibility (C8 / R4)
 
-A clean machine must build VERITX from an exact release commit and
-reproduce the science. Current state: **partial**. The release is **not
-ready** on this axis.
+A clean machine must build VERITX from an exact release commit and reproduce
+the science. Current state: **release environment pinned enough for a frozen
+RC; OS packages are recorded, not bit-reproducible**.
 
-## What is pinned today
+## What is pinned
 
 | artifact | pin | mechanism |
 |----------|-----|-----------|
 | source | exact git SHA | `prod/production-readiness` commits |
+| container base | `ubuntu:22.04@sha256:b8b6ee6aa931ecd9d0d952abc34dc0e5f7c6a30c6bb71b079fe399fde0329c02` | `Dockerfile` `ARG UBUNTU_IMAGE` (R4.1) |
+| release container | `VERITX_TOOLS_IMAGE` digest | workflow fails a tag release unless `@sha256:` is present |
+| Docker external clones | immutable commits | Accelergy / Yosys / SymbiYosys / CBMC `git fetch <sha>`; Timeloop `git clone` + `git checkout <sha>`; submodules follow the pinned superproject gitlinks |
 | BookSim source | vendored in-repo | tracked `third_party/booksim2` |
 | ASTRA source | vendored in-repo | tracked `third_party/astra-sim` |
 | Ramulator source | vendored in-repo | tracked `third_party/ramulator2` |
@@ -19,33 +22,51 @@ ready** on this axis.
 | ASTRA binary | build manifest | `make release-build` |
 | backend evidence | binds manifest sha + recipe + route dump | `backend/evidence.py` v3 |
 
-## What is still moving (blocks C8)
+`scripts/check_dockerfile_pins.py` fails if any `FROM` is not digest-pinned or
+any `git clone` is not pinned by commit/tag; the clean-clone job runs it.
 
-1. **Container image is a moving tag in the release path.** The workflow
-   defaults to `ghcr.io/anmol-s314/veritx-tools-base:latest` unless the
-   repository variable `VERITX_TOOLS_IMAGE` is set to an immutable digest;
-   a tag-release job now FAILS unless the image is `@sha256:` pinned. The
-   default must still be replaced by a digest for a real release.
-2. **Docker external clones are now pinned by commit** (Accelergy, Yosys,
-   SymbiYosys, CBMC; Timeloop was already pinned). `scripts/check_dockerfile_pins.py`
-   fails if any `git clone` in the release image path is unpinned, and the
-   clean-clone job runs it. Remaining: the base image (`ubuntu:22.04`) and
-   apt package set are not digest-pinned.
-3. **No `release-manifest.json` was owed** — now produced by
-   `make release-manifest-json`, binding the release SHA, container image +
-   digest-pin state, backend manifests, schema versions, tool versions and
-   validation-report digests.
-4. **Clean-clone qualification** was run at `c759b84b` (build + fast tier +
-   harness green; see `PRODUCTION-SEAL.md` §12).
+## R4.4 — bit-reproducibility classification
 
-## Owed (C8)
+BookSim binaries built from the same source in two different directories are
+**not** bit-identical. The classification is
+`SCIENTIFICALLY_EQUIVALENT_NON_BIT_REPRODUCIBLE`, proven by
+`scripts/classify_binary_reproducibility.py`:
 
-- Pin the container by digest; pin every external Docker source by commit.
-- Generate `release-manifest.json` at release time.
-- Run the T6 clean-clone job (already sketched in `release.yml`) against the
-  RC SHA and record the result in `PRODUCTION-SEAL.md` and
-  `docs/production/REPRODUCIBILITY.md`.
-- Re-run the live-backend tier at the exact RC SHA.
+| build | sha256 | size | `.text` sha256 |
+|-------|--------|------|----------------|
+| `/tmp/opencode/bsbuild-a` | `373977aa…` | 20,832,472 | `1d43a114…` |
+| `/tmp/opencode/bsbuild-bbbbbbbb` | `b3d26405…` | 20,832,480 | `1d43a114…` |
+
+- The executable `.text` section is **byte-identical**; the `.comment`
+  compiler string is identical (GCC 15.2.0).
+- The bytes differ only in build metadata: the embedded absolute build path
+  (DWARF debug info, from `-g`) and the GNU build-id derived from it.
+
+Classification rule: bit-identical is not required unless the project
+certifies reproducible builds. It does not, so this is not a release blocker;
+each build's manifest binds its own binary sha, and scientific identity is
+asserted separately (repeat-run evidence-id equality).
+
+## R4.3 — package drift
+
+A bit-reproducible OS environment is **not** claimed. The practical
+first-release claim is:
+
+- the release container is pinned by digest;
+- tool and source revisions are recorded (`.comment`, git SHAs, build
+  manifests);
+- each backend binary's SHA is recorded in its build manifest and bound into
+  backend evidence.
+
+`apt`/`pip` are not pinned to a snapshot; `apt-get update` and
+`pip3 install` resolve current packages at image build time. This is recorded
+here rather than overclaimed.
+
+## Clean-clone qualification
+
+Run at `c759b84b` (build + fast tier + harness green; see
+`PRODUCTION-SEAL.md` §12) and owned by the T6 `clean-clone` workflow job,
+which now also runs the Studio contract suite and asserts the clean tree.
 
 ## Partial reproducibility already proven
 

@@ -4,7 +4,7 @@ echo "=== VeritX DSE Verification Gate ==="
 RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
 PASS=0; FAIL=0
 check() { local name="$1"; shift; if "$@" >/dev/null 2>&1; then echo -e "${GREEN}✅ $name${NC}"; PASS=$((PASS+1)); else echo -e "${RED}❌ $name${NC}"; FAIL=$((FAIL+1)); fi; }
-R="/home/datavex/veritx-research"
+R="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 D="$R/tracks/t3-topology/dse"
 echo "--- Package Integrity ---"
 check "import" python3 -c "import sys;sys.path.insert(0,'$D');from veritx_dse import recommend,search,evaluator,space"
