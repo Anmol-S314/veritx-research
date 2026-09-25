@@ -99,8 +99,10 @@ Historical scientific findings F-0001 and F-0004 are FIXED in
   bit-identical at the same source revision (scientific identity is
   identical); each build's manifest binds its own binary sha.
 - The Studio gateway exists; the React app is still fixture-backed.
-- ASTRA numerical comparison (NOT_ESTABLISHED); the engine gate reports the
-  unexplained 30M-cycle aggregate/exposed_comm component.
+- ASTRA numerical comparison (NOT_ESTABLISHED); F-ASTRA-0001 fixed the
+  30M-cycle run_cycles over-count, so the aggregate now matches the
+  declared compute + comm (40310c = 10000 + 30310). Independent per-domain
+  oracles are still owed before absolute timing may enter a comparison.
 - Serving integration `.et` fixtures are not vendored; the release gate
   now FAILS on their skip (C7.1) instead of passing silently.
 - CI image/toolchain not yet pinned by digest; several Docker dependencies
@@ -230,8 +232,10 @@ working clean-clone build (C8/T6) and the live Studio gateway (C9) are in
 place and green; the full battery was run and the clean clone qualified.
 Remaining blockers:
 
-- ASTRA numerical validity is **NOT_ESTABLISHED** (C6); its dominant
-  30M-cycle component is unexplained.
+- ASTRA numerical validity is **NOT_ESTABLISHED** (C6): the dominant
+  30M-cycle over-count was root-caused and fixed (F-ASTRA-0001, aggregate
+  40310c = 10000 compute + 30310 comm), but no independent per-domain
+  oracle exists yet, so absolute ASTRA timing remains unqualified.
 - Serving integration `.et` fixtures are not vendored; the release gate
   fails on their absence rather than passing (C7).
 - Container image and Docker external clones are not pinned by digest; the

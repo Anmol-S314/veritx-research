@@ -164,8 +164,11 @@ def run_astra(repo_root: Path, work_root: Path,
         "astra_runtime", ok,
         f"ASTRA_RUNTIME_EXECUTES={'PASS' if ok else 'FAIL'}; "
         f"ASTRA_NUMERICAL_VALIDITY=NOT_ESTABLISHED (aggregate "
-        f"{evidence.aggregate_cycles}c, exposed_comm {comm}c are unexplained "
-        "and must not enter a scientific comparison)",
+        f"{evidence.aggregate_cycles}c = declared compute "
+        f"{projection.declared_compute_cycles()}c + comm {comm}c; the "
+        "dominant over-count was fixed by F-ASTRA-0001, but absolute timing "
+        "remains unqualified pending independent per-domain oracles and must "
+        "not enter a scientific comparison)",
         validated=False)
 
 

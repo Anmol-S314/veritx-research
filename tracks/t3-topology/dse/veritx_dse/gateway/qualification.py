@@ -42,8 +42,10 @@ QUALIFICATION: dict[str, dict[str, Any]] = {
         "numerical": "NOT_ESTABLISHED",
         "independence": "shares the BookSim network engine",
         "limitations": [
-            "aggregate 30010310c / exposed_comm 30000310c unexplained",
-            "absolute timing must not enter a scientific comparison",
+            "the 30M-cycle over-count was fixed (F-ASTRA-0001); aggregate now "
+            "matches the declared compute+comm",
+            "absolute timing remains unqualified pending independent "
+            "per-domain oracles",
         ],
     },
 }

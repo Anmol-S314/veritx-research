@@ -63,7 +63,7 @@ follow it). Verdict: **NOT READY** (see `PRODUCTION-SEAL.md`).
 
 | id | severity | status | source | root cause | implementation | tests | runtime gate | commit | historical claims affected | remaining limitation |
 |----|----------|--------|--------|-----------|----------------|-------|--------------|--------|---------------------------|----------------------|
-| C6 | high | OPEN | `backend/astra_machine.py`, `validation/harness` engines | ~30M-cycle dominant timing unexplained; numerical validity NOT_ESTABLISHED | micro-oracle derivation owed (F-ASTRA-0001) | engine gate reports EXECUTES + NOT_ESTABLISHED | `astra_runtime` gate | — | ASTRA timing must not enter scientific comparison | qualification domains not established |
+| C6 | high | IN_PROGRESS | `backend/astra_machine.py`, `third_party/astra-sim/.../Booksim2Fabric.hh`, `validation/harness/engines.py` | ~30M-cycle dominant timing | root cause fixed: `run_cycles` quantized draining billed 1,000,010c per ring step; chunked stepping restored (F-ASTRA-0001); aggregate now 40310 = declared 10000+30310, verified independently | engine gate `astra_runtime` | gate PASS, aggregate closes; gate wording corrected | `a4f7da62`, wording fix | F-ASTRA-0001 | no independent per-domain oracle yet; absolute timing still unqualified |
 
 ## C7 — serving qualification
 
