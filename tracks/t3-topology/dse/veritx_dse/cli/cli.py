@@ -844,6 +844,32 @@ def cmd_runs(ctx: Ctx, args):
     list_runs(ctx, last=args.last, run_id=args.run_id)
 
 
+def cmd_verify_run(ctx: Ctx, args):
+    """C3: verify a finalized run bundle WITHOUT re-running any simulator."""
+    from veritx_dse.core.run_bundle import RunBundleError, verify_run_bundle
+    try:
+        summary = verify_run_bundle(args.run_dir)
+    except RunBundleError as exc:
+        fail(ctx, str(exc))
+        sys.exit(1)
+    print(f"run bundle VERIFIED: {summary['file_count']} files, "
+          f"bundle_id {summary['bundle_id']}")
+
+
+def cmd_reproduce(ctx: Ctx, args):
+    """C3: re-execute a BookSim run bundle and compare deterministic science."""
+    from veritx_dse.backend.reproduce import reproduce_booksim_run_bundle
+    from veritx_dse.core.run_bundle import RunBundleError
+    try:
+        result = reproduce_booksim_run_bundle(
+            args.run_dir, binary=args.binary, timeout=args.timeout or 600)
+    except RunBundleError as exc:
+        fail(ctx, str(exc))
+        sys.exit(1)
+    print(f"run bundle REPRODUCED: bundle_id {result['bundle_id']} "
+          f"route_dump {result['route_dump_sha256']}")
+
+
 def cmd_results(ctx: Ctx, args):
     show_results(ctx, last=args.last)
 
@@ -1563,6 +1589,16 @@ def build_parser() -> argparse.ArgumentParser:
     # preset_names(), policy values from CandidatePolicy. No duplicate list.
     from ..application.compile_intent import preset_names
     from ..compiler.candidate_policy import CandidatePolicy
+    p_verify = sub.add_parser(
+        "verify-run",
+        help="Verify a durable run bundle (checksums) without re-running")
+    p_verify.add_argument("run_dir")
+    p_repro = sub.add_parser(
+        "reproduce",
+        help="Re-execute a run bundle and compare deterministic science")
+    p_repro.add_argument("run_dir")
+    p_repro.add_argument("--binary", help="Backend binary (default: recorded)")
+    p_repro.add_argument("--timeout", type=int, default=600)
     p_compile = sub.add_parser(
         "compile",
         help="Canonical product compile (CompileIntent -> ResolvedFabric)")
@@ -1673,6 +1709,8 @@ DISPATCH = {
     "pareto": cmd_pareto,
     "runs": cmd_runs,
     "results": cmd_results,
+    "verify-run": cmd_verify_run,
+    "reproduce": cmd_reproduce,
     "status": cmd_status,
     "diff": cmd_diff,
     "report": cmd_report,

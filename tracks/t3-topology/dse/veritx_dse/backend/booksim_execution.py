@@ -116,8 +116,11 @@ def materialize_prepared(prepared: PreparedBookSimInput, run_dir: Path
             "digests disagree with prepared_id inputs)")
     target = Path(run_dir)
     target.mkdir(parents=True, exist_ok=True)
-    # refuse to let a stale directory contribute anything
-    expected_names = set(files) | {EVIDENCE_OUTPUT_NAME}
+    # refuse to let a stale directory contribute anything. ``checksums.json``
+    # is tolerated because a finalized run bundle carries it; it is
+    # re-derived on finalize, never consumed as input.
+    from veritx_dse.core.run_bundle import CHECKSUMS_NAME
+    expected_names = set(files) | {EVIDENCE_OUTPUT_NAME, CHECKSUMS_NAME}
     for existing in target.iterdir():
         if existing.is_file() and existing.name not in expected_names:
             raise BookSimExecutionError(
@@ -515,6 +518,12 @@ def execute_prepared_booksim(
     ref = write_evidence(Path(run_dir), {"evidence": evidence.to_dict(),
                                          "attempt": attempt.to_dict()}) \
         if write else None
+    if ref is not None:
+        # Durable run bundle (C3): publish a checksum manifest over the
+        # complete run (inputs, route dump, evidence) so it can be verified
+        # without re-running, and reproduced independently.
+        from veritx_dse.core.run_bundle import finalize_run_bundle
+        finalize_run_bundle(Path(run_dir))
     return ExecutionRecord(evidence=evidence, attempt=attempt, ref=ref)
 
 
