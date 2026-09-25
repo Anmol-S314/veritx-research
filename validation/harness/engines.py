@@ -110,13 +110,17 @@ def run_rtl_selfcheck(repo_root: Path, work_root: Path,
 
 
 def run_astra(repo_root: Path, work_root: Path,
-              *, timeout: int = 300) -> EngineResult:
+              *, timeout: int = 900) -> EngineResult:
     """Run the canonical ASTRA projection on the real AstraSim_BookSim2.
 
     This is an engine gate, not an independent-parity check: ASTRA's
     BookSim2 frontend shares the BookSim2 network engine, so it cannot
     independently falsify the network. It proves the ASTRA path executes
     the canonical projection and reports per-rank cycles for every rank.
+
+    The timeout is generous: a direct run completes in ~70 s, but under a
+    loaded release machine a tighter budget produced a false FAIL (SIGTERM)
+    in the clean-clone harness. A timeout must not be the thing under test.
     """
     from veritx_dse.backend import astra
     from .fabric import build as build_fabric
