@@ -227,9 +227,10 @@ def test_live_evaluation_workflow(tmp_path):
     assert run["requirements_pass"] is True
 
     evidence = client.get(f"/api/v1/runs/{run_id}/evidence").json()
-    assert evidence["evidence"]["evidence_id"] == \
-        evaluation["evidence_id"] if "evidence_id" in evidence[
-            "evidence"] else evidence["evidence"]["raw_evidence_digest"]
+    assert evidence["evidence"]["evidence_id"] == run["evidence"]["evidence_id"]
+    assert evidence["evidence"]["raw_evidence_digest"] == \
+        evaluation["evidence"]["raw_evidence_digest"]
+    assert evidence["evidence"]["run_bundle"] == run["bundle_id"]
     assert evidence["artifacts"]
     assert evidence["documents"]
 

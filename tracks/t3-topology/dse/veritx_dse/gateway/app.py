@@ -56,7 +56,7 @@ class GatewayConfig:
     store_root: Path
     runs_root: Path
     booksim_bin: Path | None = None
-    network_clock_hz: float = 1e9
+    network_clock_hz: int = 1_000_000_000
     timeout_s: int = 600
     experiments_dir: Path | None = None
     projects_root: Path | None = None

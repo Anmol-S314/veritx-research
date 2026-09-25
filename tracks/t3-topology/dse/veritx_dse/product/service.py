@@ -63,7 +63,9 @@ class BackendUnavailable(ControlPlaneError):
 class ProductConfig:
     projects_root: Path
     booksim_bin: Path | None = None
-    network_clock_hz: float = 1e9
+    #: Exact network clock (Hz). Must be an int/Fraction: the evaluator
+    #: refuses a float as a wall-time authority.
+    network_clock_hz: int = 1_000_000_000
     timeout_s: int = 600
     repo_root: Path = REPO
 
@@ -99,6 +101,11 @@ def canonical_request_doc(request: Any) -> dict[str, Any]:
     for field in _COMPUTED_IDENTITY_FIELDS:
         doc.pop(field, None)
     return doc
+
+
+def _view_hash(value: str) -> str:
+    """Self-describing identity, matching DesignView/CompilationView."""
+    return value if value.startswith("sha256:") else "sha256:" + value
 
 
 class ProductService:
@@ -206,7 +213,7 @@ class ProductService:
             workload_id=chosen["workload_id"], source=chosen["source"])
         request = parse_request_doc(chosen["request"])
         self.store.save_draft(project["project_id"], chosen["request"],
-                              design_hash=request.design_hash())
+                              design_hash=_view_hash(request.design_hash()))
         return self.project_view(project["project_id"])
 
     def project_view(self, project_id: str) -> dict[str, Any]:
@@ -285,7 +292,7 @@ class ProductService:
     def put_draft(self, project_id: str, request_doc: Any) -> dict[str, Any]:
         request = parse_request_doc(request_doc)
         self.store.save_draft(project_id, canonical_request_doc(request),
-                              design_hash=request.design_hash())
+                              design_hash=_view_hash(request.design_hash()))
         return self.draft_view(project_id)
 
     # ── compile ───────────────────────────────────────────────────────
@@ -315,7 +322,7 @@ class ProductService:
             "display_name": f"r{sequence:02d}",
             "project_id": project_id,
             "created_at": utcnow(),
-            "design_hash": request.design_hash(),
+            "design_hash": _view_hash(request.design_hash()),
             "request": canonical_doc,
             "design": design,
             "compilation": comp_view,
@@ -388,7 +395,7 @@ class ProductService:
         if binary is None or not Path(binary).is_file():
             raise BackendUnavailable(
                 "no qualified backend configured (set VERITX_BOOKSIM_BIN)")
-        return Path(binary)
+        return Path(binary).resolve()
 
     def submit_evaluation(self, revision_id: str) -> dict[str, Any]:
         pid, revision = self.store.load_revision_global(revision_id)
