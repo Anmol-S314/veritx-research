@@ -2,7 +2,7 @@
   {
     "name": "ramulator_battery",
     "passed": true,
-    "detail": "2.2s, 16/16 checks; 16/16 checks",
+    "detail": "2.1s, 16/16 checks; 16/16 checks",
     "checks": [
       [
         "vendored-ext-present",
@@ -173,7 +173,7 @@
   {
     "name": "astra_runtime",
     "passed": true,
-    "detail": "ASTRA_RUNTIME_EXECUTES=PASS; ASTRA_NUMERICAL_VALIDITY=NOT_ESTABLISHED (aggregate 30010310c, exposed_comm 30000310c are unexplained and must not enter a scientific comparison)",
+    "detail": "ASTRA_RUNTIME_EXECUTES=PASS; ASTRA_NUMERICAL_VALIDITY=NOT_ESTABLISHED (aggregate 40310c, exposed_comm 30310c are unexplained and must not enter a scientific comparison)",
     "checks": [],
     "validated": false
   }

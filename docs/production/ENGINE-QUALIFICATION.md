@@ -23,6 +23,14 @@ ASTRA_NUMERICAL_VALIDITY=NOT_ESTABLISHED
    must not enter a scientific comparison)
 ```
 
+2026-09-25 (F-ASTRA-0001): the ~30M-cycle component is now EXPLAINED — a
+`run_cycles` quantization regression in the embedded BookSim2 frontend
+billed every collective step one 1M-cycle chunk. After the fix the gate
+reads `aggregate 40310c, exposed_comm 30310c`, identical to the archived
+qualified build (two-binary differential). Numerical validity remains
+NOT_ESTABLISHED pending the per-domain qualification below; the stale
+numbers above are kept for the record.
+
 The ~30M-cycle dominant component is unexplained, so ASTRA timing is
 excluded from scientific comparison and from certified objectives. C6
 owes per-domain qualification (`ASTRA_P2P_SIMPLE`, `ASTRA_RING_COLLECTIVE`,

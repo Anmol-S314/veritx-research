@@ -515,3 +515,72 @@ writes both build manifests.
   reproducibility is at the scientific-identity level, and each build's
   manifest binds its own binary sha. Bit-reproducible binaries are not yet
   established.
+---
+
+## F-ASTRA-0001 — the production ASTRA binary over-counted every collective step by exactly 1,000,000 cycles
+
+**Status:** FIXED (root cause found, fix applied and verified by two-binary differential)
+**Severity:** high — the 30M-cycle component invalidated all ASTRA timing evidence
+**Found:** 2026-09-25, executing the F-ASTRA-0001 instrumentation wave
+
+### What it is
+
+The ASTRA engine gate reported `aggregate 30010310c, exposed_comm
+30000310c` for the canonical 4x4 ALLREDUCE projection — a ~30M-cycle
+component not explained by the workload model
+(`ASTRA_NUMERICAL_VALIDITY=NOT_ESTABLISHED`). The delta against the
+historically qualified tiny-fixture value (40310 total = 10000 compute +
+30310 exposed) was exactly **30,000,000 cycles**.
+
+### Reproduction
+
+Byte-identical ET artifacts (sha `54a3c294f81d39fa…` for every rank)
+executed on two builds of the same source:
+
+| binary | aggregate | exposed comm |
+|---|---|---|
+| production build (`7d4bb435…`, 2026-09-24) | 30,010,310 | 30,003,310 |
+| archived veritx-manal build (`b3d83264…`, 2026-09-08) | 40,310 | 30,310 |
+
+LEDGER tracing of the production run shows rank 0's ring sends at
+t = 10010, 1,010,020, 2,010,030, … — every one of the 30 ALLREDUCE ring
+steps separated by **exactly 1,000,010 cycles**.
+
+### Root cause
+
+`EventQueue::run_cycles(N)` in
+`third_party/astra-sim/extern/network_backend/booksim2/Booksim2Fabric.hh`
+executed one blind `_tm->RunCycles(N)` and only pumped retired packets
+(`_drain_retired` → `advance_hook`) **after** the whole N-cycle chunk.
+The quiescence loop calls `run_cycles(1000000)` when the event queue is
+empty but flits are in flight, so a packet injected at cycle t retired at
+t+50 was only delivered to ASTRA at the next 1M-cycle boundary. Each
+collective step was therefore quantized to one full `run_cycles(1e6)`
+call: 30 steps × 1,000,000 = the unexplained 30,000,000.
+
+The archived build already contained the fix (chunked stepping with
+interleaved 1K-cycle drains and early return once arrivals flow); the
+production tree had **regressed** to the blind-chunk form.
+
+### Fix
+
+`Booksim2Fabric.hh::run_cycles` restored to chunked stepping: run 1K-cycle
+slices, drain retirees and pump `advance_hook` after each slice, and
+return as soon as a slice produced arrivals (callers re-invoke while work
+remains). Production binary rebuilt (`adc604193aa152b9…`).
+
+### Verification
+
+- Production binary now reports 40310 / 30310 — identical to the archived
+  qualified build, per-rank, on byte-identical ETs (two-binary
+  differential, seed 0 deterministic).
+- Engine gate re-run: `astra_runtime PASS, aggregate 40310c, exposed_comm
+  30310c` — the workload model now explains the numbers (10000 declared
+  compute + 30310 communication).
+
+### Scope
+
+Only the embedded ASTRA-BookSim2 frontend's wall-clock accounting is
+affected; no effect on the standalone BookSim qualification path (whose
+trace execution drains synchronously inside `TrafficManager::Run`). Any
+ASTRA timing recorded before this fix must not be used.

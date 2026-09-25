@@ -168,10 +168,25 @@ class EventQueue {
   }
 
   void run_cycles(int cycles) {
-    _tm->RunCycles(cycles);
-    _now += cycles;
-    _drain_retired();
-    if (advance_hook) advance_hook();
+    // Chunked stepping with interleaved drains + early exit (F-ASTRA-0001).
+    // A blind N-cycle chunk retires a packet at +50 but only pumps it at +N,
+    // quantizing every collective step to N cycles (observed: 1M/step, 30M+
+    // per allreduce: 30 steps x run_cycles(1000000)). Draining every 1K and
+    // returning as soon as arrivals flow lets the event loop consume
+    // completions promptly (~1-2K/step instead). Callers (quiescence loops)
+    // re-invoke while work remains, so stopping early sheds idle burn only.
+    // The run_cycles(1) unstick path still takes its full step when idle.
+    constexpr int64_t CHUNK = 1000;
+    int64_t remaining = cycles;
+    while (remaining > 0) {
+      int64_t step = std::min<int64_t>(CHUNK, remaining);
+      _tm->RunCycles(step);
+      _now += step;
+      remaining -= step;
+      size_t retired = _drain_retired();
+      if (advance_hook) advance_hook();
+      if (retired > 0 && remaining > 0) return;
+    }
   }
 
  private:
@@ -185,14 +200,18 @@ class EventQueue {
     }
   };
 
-  void _drain_retired() {
+  // Returns the number of newly retired flits (callers ignore it freely).
+  size_t _drain_retired() {
     int const nodes = _tm->NumNodes();
+    size_t n_retired = 0;
     for (int n = 0; n < nodes; ++n) {
       auto retired = _tm->DrainRetired(n);
+      n_retired += retired.size();
       for (auto const & r : retired)
         _arrivals[std::make_pair(r.src, r.dst)].push({r.atime, r.src, r.dst, r.pid});
     }
     if (advance_hook) advance_hook();
+    return n_retired;
   }
 
   VeritXEmbed::EmbedTM * _tm;
