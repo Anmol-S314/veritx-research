@@ -144,6 +144,66 @@ class ProductStore:
     def run_bundle_dir(self, project_id: str, run_id: str) -> Path:
         return self.project_dir(project_id) / "runs" / run_id / "bundle"
 
+    # ── serving experiments ─────────────────────────────────────────
+
+    def serving_dir(self, project_id: str) -> Path:
+        return self.project_dir(project_id) / "serving"
+
+    def create_serving(self, project_id: str,
+                       experiment: dict[str, Any]) -> dict[str, Any]:
+        with self._locked():
+            project = self.load_project(project_id)
+            serving_id = experiment["serving_id"]
+            project.setdefault("serving_ids", []).append(serving_id)
+            project["updated_at"] = utcnow()
+            self._atomic_write(
+                self.serving_dir(project_id) / f"{serving_id}.json",
+                experiment)
+            self._atomic_write(
+                self.project_dir(project_id) / "project.json", project)
+            return experiment
+
+    def update_serving(self, project_id: str, serving_id: str,
+                       **fields: Any) -> None:
+        with self._locked():
+            self.load_project(project_id)
+            path = self.serving_dir(project_id) / f"{serving_id}.json"
+            if not path.is_file():
+                raise ProductStoreError(
+                    ErrorCode.NOT_FOUND,
+                    f"no such serving experiment: {serving_id}")
+            doc = json.loads(path.read_text(encoding="utf-8"))
+            doc.update(fields)
+            self._atomic_write(path, doc)
+
+    def load_serving(self, project_id: str,
+                     serving_id: str) -> dict[str, Any]:
+        path = self.serving_dir(project_id) / f"{serving_id}.json"
+        if not path.is_file():
+            raise ProductStoreError(
+                ErrorCode.NOT_FOUND,
+                f"no such serving experiment: {serving_id}")
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def list_serving(self, project_id: str) -> list[dict[str, Any]]:
+        directory = self.serving_dir(project_id)
+        if not directory.is_dir():
+            return []
+        out = []
+        for path in sorted(directory.glob("*.json")):
+            doc = json.loads(path.read_text(encoding="utf-8"))
+            evidence = doc.get("evidence") or {}
+            out.append({
+                "serving_id": doc.get("serving_id"),
+                "state": doc.get("state"),
+                "workload_id": doc.get("workload_id"),
+                "created_at": doc.get("created_at"),
+                "request_count": evidence.get("request_count"),
+                "rounds": evidence.get("rounds"),
+                "reusable": evidence.get("reusable"),
+            })
+        return out
+
     # ── projects ──────────────────────────────────────────────────────
 
     def create_project(self, *, name: str, draft_doc: dict[str, Any],
@@ -362,6 +422,15 @@ class ProductStore:
             return None
         for child in sorted(base.iterdir()):
             if (child / "runs" / run_id / "run.json").is_file():
+                return child.name
+        return None
+
+    def find_serving_project(self, serving_id: str) -> str | None:
+        base = self.root / "projects"
+        if not base.is_dir():
+            return None
+        for child in sorted(base.iterdir()):
+            if (child / "serving" / f"{serving_id}.json").is_file():
                 return child.name
         return None
 

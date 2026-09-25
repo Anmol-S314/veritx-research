@@ -102,6 +102,13 @@ class EvaluateBodyV1(BaseModel):
     backend: str | None = None
 
 
+class ServingBody(BaseModel):
+    workload_id: str | None = None
+    num_reqs: int | None = None
+    cluster_config: str | None = None
+    dataset: str | None = None
+
+
 class OptimizeBodyV1(BaseModel):
     domain: list[dict[str, Any]]
     objectives: list[dict[str, Any]] = [
@@ -429,6 +436,21 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
     @app.get("/api/v1/revisions/{revision_id}/preflight", tags=["product"])
     def v1_revision_preflight(revision_id: str) -> dict[str, Any]:
         return product.revision_preflight(revision_id)
+
+    @app.get("/api/v1/projects/{project_id}/serving", tags=["product"])
+    def v1_serving_list(project_id: str) -> dict[str, Any]:
+        return {"contract_version": 1,
+                "experiments": product.list_serving(project_id)}
+
+    @app.post("/api/v1/projects/{project_id}/serving", tags=["product"])
+    def v1_serving_submit(project_id: str,
+                          body: ServingBody | None = None) -> dict[str, Any]:
+        return product.submit_serving(project_id,
+                                      body.model_dump() if body else None)
+
+    @app.get("/api/v1/serving/{serving_id}", tags=["product"])
+    def v1_serving_get(serving_id: str) -> dict[str, Any]:
+        return product.get_serving(serving_id)
 
     @app.post("/api/v1/revisions/{revision_id}/evaluate", tags=["product"])
     def v1_evaluate(revision_id: str,

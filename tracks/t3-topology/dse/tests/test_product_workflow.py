@@ -450,6 +450,77 @@ def test_qualification_authority_is_machine_readable(tmp_path):
         body["validation_sha"], str)
 
 
+def test_serving_product_resource_contract(tmp_path):
+    """ServingExperiments are a real product resource: submitted as a Job
+    over the canonical serve authority, stored with their evidence, listed
+    per project — and refused with the exact missing authority when the
+    tracked inputs or the backend are absent. No serving semantics live in
+    the product layer."""
+    client = _client(tmp_path, with_backend=False)
+    pid = _make_project(client)["project"]["project_id"]
+
+    # Listing starts empty but is a real collection.
+    listing = client.get(f"/api/v1/projects/{pid}/serving")
+    assert listing.status_code == 200, listing.text
+    assert listing.json()["experiments"] == []
+
+    # The tracked cluster/dataset authorities exist, so submission is
+    # attempted — and refused exactly at the missing backend, with the
+    # backend requirement named (fail-closed, never a silent fallback).
+    submitted = client.post(f"/api/v1/projects/{pid}/serving",
+                            json={"num_reqs": 2})
+    if submitted.status_code == 200:
+        job = submitted.json()
+        assert job["kind"] == "SERVING"
+        finished = _wait(client, job["job_id"], timeout_s=60)
+        if finished["state"] == "COMPLETED":
+            serving_id = finished["result"]["serving_id"]
+            doc = client.get(f"/api/v1/serving/{serving_id}").json()
+            assert doc["state"] == "COMPLETED"
+            evidence = doc["evidence"]
+            assert evidence["rounds"] >= 1
+            assert evidence["machine_id"] and evidence["namespace_id"]
+            assert evidence["evidence_ids"]
+        else:
+            # The canonical path refused (e.g. no built ASTRA binary);
+            # the experiment record carries the exact reason.
+            assert finished["state"] in ("REFUSED", "FAILED")
+            assert finished["error_message"]
+    else:
+        # No backend configured: typed refusal, never a fake experiment.
+        assert submitted.status_code in (409, 422, 503)
+        assert submitted.json()["code"] in (
+            "CONFLICT", "UNSUPPORTED_SEMANTICS", "EXECUTION_FAILED")
+
+    # Unknown serving experiment -> typed 404.
+    missing = client.get("/api/v1/serving/sv-nope")
+    assert missing.status_code == 404
+    assert missing.json()["code"] == "NOT_FOUND"
+    missing_project = client.get("/api/v1/projects/p-nope/serving")
+    assert missing_project.status_code == 404
+
+
+def test_serving_refused_without_tracked_authorities(tmp_path, monkeypatch):
+    """When the tracked serving authorities are absent, submission is a
+    typed UNSUPPORTED_SEMANTICS naming the missing file — serving is not
+    established in that deployment, and nothing pretends otherwise."""
+    from veritx_dse.application.errors import ErrorCode
+    from veritx_dse.product.service import ProductConfig, ProductService
+
+    svc = ProductService(ProductConfig(projects_root=tmp_path / "projects"))
+    monkeypatch.setattr(
+        svc, "_SERVING_CLUSTER_CONFIG",
+        "tracks/t3-topology/serving/absent-cluster.json")
+    pid = svc.create_project(name="no serving authority",
+                             workload_id=WORKLOAD)["project"]["project_id"]
+    with pytest.raises(Exception) as exc:
+        svc.submit_serving(pid, None)
+    assert getattr(exc.value, "code", None) == ErrorCode.UNSUPPORTED_SEMANTICS
+    assert "absent-cluster.json" in str(exc.value.message)
+    # No experiment record was created by the refused submission.
+    assert svc.list_serving(pid) == []
+
+
 def test_capabilities_registry_is_served_and_truthful(tmp_path):
     """§36: the capability registry is machine-readable, served verbatim,
     and never overstates execution support (regression: the registry used

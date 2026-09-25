@@ -1215,6 +1215,134 @@ class ProductService:
             "route_dump_sha256": result.get("route_dump_sha256"),
         }
 
+    # ── serving ──────────────────────────────────────────────────────
+
+    #: Vendored, tracked serving authorities: a cluster config carries
+    #: service semantics only (instances/model/TP/EP); the dataset is a
+    #: real JSONL request trace. Both may be overridden per submission
+    #: with a repo-relative or absolute path.
+    _SERVING_CLUSTER_CONFIG = ("third_party/llmservingsim/configs/cluster/"
+                               "single_node_4_instance_2TP.json")
+    _SERVING_DATASET = ("third_party/llmservingsim/workloads/"
+                        "example_trace.jsonl")
+
+    @staticmethod
+    def _resolve_serving_input(value: str | None,
+                               default: str) -> Path:
+        """A serving input path: the tracked default, or a caller-supplied
+        absolute/repo-relative path. The canonical loader still validates
+        the contents — the product layer never parses service semantics."""
+        if value:
+            candidate = Path(value)
+            if candidate.is_absolute():
+                return candidate
+            return REPO / candidate
+        return REPO / default
+
+    def list_serving(self, project_id: str) -> list[dict[str, Any]]:
+        self.store.load_project(project_id)  # 404 if unknown
+        return self.store.list_serving(project_id)
+
+    def get_serving(self, serving_id: str) -> dict[str, Any]:
+        pid = self.store.find_serving_project(serving_id)
+        if pid is None:
+            raise ProductServiceError(
+                ErrorCode.NOT_FOUND,
+                f"no such serving experiment: {serving_id}",
+                operation="get_serving", resource_id=serving_id)
+        return self.store.load_serving(pid, serving_id)
+
+    def submit_serving(self, project_id: str,
+                       body: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Submit a canonical serving experiment as a Job.
+
+        The job wraps ``serve_canonical.run_canonical_serve`` — the
+        qualified live path (cluster service semantics -> canonical
+        compiler -> ASTRA/BookSim -> CanonicalServingEvidence). No serving
+        semantics live in the product layer; refusal reasons come from
+        the canonical path's own typed errors.
+        """
+        self.store.load_project(project_id)  # 404 if unknown
+        body = body or {}
+        # Resolve inputs at submit time so a missing authority is a typed
+        # refusal before the job starts, not a FAILED job as first signal.
+        cluster = self._resolve_serving_input(
+            body.get("cluster_config"), self._SERVING_CLUSTER_CONFIG)
+        dataset = self._resolve_serving_input(
+            body.get("dataset"), self._SERVING_DATASET)
+        if not cluster.is_file():
+            raise ProductServiceError(
+                ErrorCode.UNSUPPORTED_SEMANTICS,
+                f"cluster service-semantics config not found: {cluster}",
+                operation="submit_serving", resource_id=project_id)
+        if not dataset.is_file():
+            raise ProductServiceError(
+                ErrorCode.UNSUPPORTED_SEMANTICS,
+                f"request dataset not found: {dataset}",
+                operation="submit_serving", resource_id=project_id)
+        self._require_backend()
+        num_reqs = int(body.get("num_reqs") or 8)
+        serving_id = _new_id("sv")
+        self.store.create_serving(project_id, {
+            "schema_version": 1,
+            "serving_id": serving_id,
+            "project_id": project_id,
+            "state": "QUEUED",
+            "workload_id": body.get("workload_id"),
+            "num_reqs": num_reqs,
+            "evidence": None,
+            "created_at": utcnow(),
+        })
+        job = self.jobs.submit(
+            project_id, kind="SERVING", revision_id=None,
+            fn=lambda progress: self._run_serving(
+                serving_id, cluster, dataset, num_reqs, progress))
+        return self.job_view(job)
+
+    def _run_serving(self, serving_id: str, cluster: Path, dataset: Path,
+                     num_reqs: int, progress) -> tuple[str, dict[str, Any]]:
+        from veritx_dse.simulation.serve_canonical import (
+            run_canonical_serve,
+        )
+        pid = self.store.find_serving_project(serving_id)
+        progress("PREPARING")
+        self.store.update_serving(pid, serving_id, state="RUNNING")
+        run_dir = self.store.serving_dir(pid) / "_runs" / serving_id
+        try:
+            result = run_canonical_serve(
+                cluster_config=str(cluster), dataset=str(dataset),
+                num_reqs=num_reqs, run_dir=run_dir,
+                timeout_s=self.config.timeout_s)
+        except Exception as exc:
+            # The canonical path refuses or fails typed; record the exact
+            # reason on the experiment and re-raise for the job layer.
+            self.store.update_serving(
+                pid, serving_id, state="REFUSED",
+                error=f"{type(exc).__name__}: {exc}")
+            raise
+        progress("FINALIZING")
+        # The evidence document lives in the run dir; the serve path
+        # writes serving-evidence.json (the CanonicalServingEvidence
+        # canonical bytes). Load it and carry it verbatim.
+        evidence = None
+        for name in ("serving-evidence.json", "evidence.json"):
+            candidate = run_dir / name
+            if candidate.is_file():
+                evidence = json.loads(candidate.read_text(encoding="utf-8"))
+                break
+        self.store.update_serving(
+            pid, serving_id, state="COMPLETED",
+            evidence={
+                "request_count": result.requests_completed,
+                "requests_expected": result.requests_expected,
+                "rounds": result.rounds,
+                "machine_id": result.machine_id,
+                "namespace_id": result.namespace_id,
+                "evidence_ids": list(result.evidence_ids),
+                "document": evidence,
+            })
+        return "COMPLETED", {"serving_id": serving_id}
+
     # ── optimization ──────────────────────────────────────────────────
 
     def submit_optimization(self, revision_id: str,
