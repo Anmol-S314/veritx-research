@@ -70,7 +70,7 @@ RELEASE_CXX ?= g++
 .PHONY: release-build release-manifest
 release-build:  ## build all release-gate backends from source + manifests
 	$(MAKE) -C third_party/booksim2/src CXX=$(RELEASE_CXX)
-	CXX=$(RELEASE_CXX) JOBS=$${JOBS:-$$(nproc)} sh third_party/astra-sim/build/astra_booksim2/build.sh
+	CXX=$(RELEASE_CXX) JOBS=$${JOBS:-$$(nproc)} bash third_party/astra-sim/build/astra_booksim2/build.sh
 	cd third_party/ramulator2 && CXX=$(RELEASE_CXX) JOBS=$${JOBS:-$$(nproc)} ./build.sh
 	$(MAKE) release-manifest RELEASE_CXX=$(RELEASE_CXX)
 

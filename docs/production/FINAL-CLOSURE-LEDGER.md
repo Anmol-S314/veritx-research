@@ -45,19 +45,19 @@ Release candidate under audit: baseline `2521d713`; closure tip
 
 | id | severity | status | source | root cause | implementation | tests | runtime gate | commit | historical claims affected | remaining limitation |
 |----|----------|--------|--------|-----------|----------------|-------|--------------|--------|---------------------------|----------------------|
-| C3 | critical | OPEN | `core/runs.py`, `core/paths.py`, evaluator/serving temp dirs | three run notions; timestamped dirs; no verify/reproduce | `RunBundle` + `verify-run` + `reproduce` owed (P2, A6) | — | — | `39f50578` (atomic init/lock only) | — | no durable content-addressed run lifecycle |
+| C3 | critical | CLOSED | `core/run_bundle.py`, `backend/reproduce.py`, `backend/booksim_execution.py`, `cli/cli.py` | three run notions; timestamped dirs; no verify/reproduce | checksummed `RunBundle` (atomic fsynced finalize, path-independent `bundle_id`); `veritx verify-run` (no rerun); `veritx reproduce` (rerun + science compare); every supervised execution finalizes | `test_run_bundle.py` (unit + real finalize/reproduce/tamper) | real reproduce matched; tamper refused | `0e915554` | A6 closed | legacy `core.runs`/`new_run_dir` still coexist; no single lifecycle wiring for evaluator/serving dirs |
 
 ## C4 — failure / concurrency safety
 
 | id | severity | status | source | root cause | implementation | tests | runtime gate | commit | historical claims affected | remaining limitation |
 |----|----------|--------|--------|-----------|----------------|-------|--------------|--------|---------------------------|----------------------|
-| C4 | critical | OPEN | — | no `tests/production/` fault/concurrency suite | P3/P4 owed | — | — | — | — | crash/concurrency not yet proven |
+| C4 | critical | CLOSED | `tests/production/` | no fault/concurrency suite | fault matrix + concurrency/idempotency tests | `test_failure_injection.py` (10), `test_concurrency.py` (4, real gated) | typed failures; no evidence on fault; concurrent identical runs share identity | `dbbcf17c` | — | SIGKILL/process-restart of the parent service not exercised |
 
 ## C5 — production workload trust
 
 | id | severity | status | source | root cause | implementation | tests | runtime gate | commit | historical claims affected | remaining limitation |
 |----|----------|--------|--------|-----------|----------------|-------|--------------|--------|---------------------------|----------------------|
-| C5 | high | IN_PROGRESS | `docs/validation/PRODUCTION-WORKLOAD-MATRIX.md`, `validation/experiments/V01–V14` | no production-scale corpus | W0 micro-oracles exist (V01–V14); W1–W3 matrix drafted (PW1) | V01–V14 | harness green | `d21aed04`, `074a6db3` | workload matrix proposed | W1/W2/W3 model/serving/stress manifests not built |
+| C5 | high | CLOSED | `validation/corpus.py`, `validation/experiments/V01–V14` | no production-scale corpus | W0 experiments run; W1/W2/W3 representative entries built through the canonical pipeline with content-addressed manifests | `validation/tests/test_production_corpus.py`; harness V01–V14 | manifest_id stable; conservation holds | `a7784bde` | workload matrix populated | representative, not exhaustive; no serving `.et` workloads |
 
 ## C6 — ASTRA numerical qualification
 
@@ -69,19 +69,19 @@ Release candidate under audit: baseline `2521d713`; closure tip
 
 | id | severity | status | source | root cause | implementation | tests | runtime gate | commit | historical claims affected | remaining limitation |
 |----|----------|--------|--------|-----------|----------------|-------|--------------|--------|---------------------------|----------------------|
-| C7 | high | IN_PROGRESS | `serving/*`, `tests/test_full_pipeline.py`, `tests/test_serving_protocol.py`, `tests/conftest.py` | integration fixtures not vendored; two timing-flaky protocol tests | flaky tests made deterministic (reap-on-EOF; bounded quiescence); pytest-timeout; release-gate fails on release-critical skips | `test_serving_protocol.py` (35 passed ×3) | fast tier 3531 passed; gate fails on `.et`/ASTRA skips | `503c53a8` | — | serving `.et` fixtures still unvendored → integration domain explicitly UNSUPPORTED at the gate |
+| C7 | high | IN_PROGRESS | `serving/*`, `backend/serving_round.py`, `tests/test_serving_loop.py`, `tests/test_serving_liveness.py` | integration fixtures not vendored; qualification not complete | network-execution-evidence and multi-instance liveness gates exist and refuse missing/contradictory ledgers; flaky protocol tests deterministic; release gate fails on skips | `test_a_dispatched_instance_without_execution_evidence_refuses`, `test_a_missing_ledger_refuses`, serving liveness suite | fast tier green; gate fails on `.et` skips | `503c53a8` + prior serving work | — | serving `.et` fixtures unvendored → integration domain UNSUPPORTED; no independent TTFT/latency oracle |
 
 ## C8 — reproducible release build
 
 | id | severity | status | source | root cause | implementation | tests | runtime gate | commit | historical claims affected | remaining limitation |
 |----|----------|--------|--------|-----------|----------------|-------|--------------|--------|---------------------------|----------------------|
-| C8 | high | IN_PROGRESS | `Dockerfile`, `Makefile`, `.github/workflows/release.yml` | container tag moving; several Docker deps clone HEADs; no lockfile/release manifest | `release-build` + manifests exist; pinning + `release-manifest.json` owed | — | `make release-build` on host | `48152452`, `1fea26ab`, `839cd3a9` | — | clean clone not run |
+| C8 | high | IN_PROGRESS | `Dockerfile`, `Makefile`, `scripts/write_release_manifest.py`, `.github/workflows/release.yml` | container tag moving; several Docker deps clone HEADs; no release manifest | `release-manifest.json` binds SHA/container/backends/schemas/tools/reports (`make release-manifest-json`); tag releases assert container digest pin | `test_release_manifest_binds_the_release_to_its_facts` | script runs; pin guard in workflow | `a7784bde` | — | Dockerfile external clones still unpinned; clean clone not run |
 
 ## C9 — live Studio product
 
 | id | severity | status | source | root cause | implementation | tests | runtime gate | commit | historical claims affected | remaining limitation |
 |----|----------|--------|--------|-----------|----------------|-------|--------------|--------|---------------------------|----------------------|
-| C9 | high | OPEN | `apps/studio` | fixture-only operation | FastAPI gateway + live sections owed | — | — | — | `docs/validation/STUDIO-AUDIT-AND-GAP-REPORT.md` | no live gateway |
+| C9 | high | IN_PROGRESS | `veritx_dse/gateway/`, `apps/studio` | fixture-only operation | FastAPI gateway built over canonical services (compile/evaluate/optimize/runs/evidence/qualification/workloads) | `test_gateway.py` | gateway contract green | `d789c4da` | — | React app not yet wired to the gateway |
 
 ## C10 — final release battery
 
@@ -93,7 +93,7 @@ Release candidate under audit: baseline `2521d713`; closure tip
 
 | id | severity | status | source | root cause | implementation | tests | runtime gate | commit | historical claims affected | remaining limitation |
 |----|----------|--------|--------|-----------|----------------|-------|--------------|--------|---------------------------|----------------------|
-| C11 | high | IN_PROGRESS | this program | stop-condition questions re-asked at seal | F-0007 (window) and C1.5 (toolchain) found and fixed; route/producer/evidence/VC/admissibility audits done; C2.1 v3 sequencer and C3/C4 run-integrity questions remain | regression per fix | fast tier green | `e9abab38`, `839cd3a9` | — | run-corruption and concurrency questions not yet answerable (C3/C4) |
+| C11 | high | IN_PROGRESS | this program | stop-condition questions re-asked at seal | F-0007 (window), C1.5 (toolchain), F-0006 (ALLGATHER) found and fixed; route/producer/evidence/VC/admissibility/run-integrity/concurrency audits done | regression per fix | fast tier green | `e9abab38`, `839cd3a9`, `dbbcf17c` | — | ASTRA dominant-timing question unresolved (C6); clean-clone identity not yet re-proven |
 
 ## C12 — production seal
 
