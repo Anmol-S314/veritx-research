@@ -1064,6 +1064,36 @@ input:disabled {
   margin-top: 10px;
 }
 
+/* single-objective measured ranking (no frontier to draw) */
+.rank-chart { display: grid; gap: 6px; }
+.rank-row {
+  display: grid;
+  grid-template-columns: 22px 92px minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 6px;
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.rank-row:hover { border-color: var(--border); background: var(--bg-raise); }
+.rank-row.sel { border-color: var(--accent); background: var(--accent-dim); }
+.rank-pos { color: var(--muted); font: 11px var(--mono); text-align: right; }
+.rank-id { color: var(--muted); font: 11px var(--mono); }
+.rank-row.sel .rank-id { color: var(--accent); }
+.rank-bar {
+  height: 12px;
+  background: var(--accent-dim);
+  border-left: 3px solid var(--accent);
+  min-width: 2px;
+}
+.rank-row.pt .rank-bar { background: var(--ok-bg); border-left-color: var(--ok); }
+.rank-val { font: 12px var(--mono); font-variant-numeric: tabular-nums; }
+
 /* ── live gateway panels (C9) ───────────────────────────────────────── */
 .fixture-mode.live {
   border-color: #2f9e44;
@@ -1117,6 +1147,12 @@ input:disabled {
 .page { padding: 14px 18px 40px; display: flex; flex-direction: column; gap: 12px; }
 .page > h2 { margin: 2px 0 4px; font-size: 17px; font-weight: 600; }
 .page h3 { margin: 0 0 8px; }
+.page-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+}
+.page-head h2 { margin: 2px 0 4px; font-size: 17px; font-weight: 600; }
+.head-actions { display: flex; align-items: center; gap: 8px; }
 
 .link {
   background: none; border: none; padding: 0; cursor: pointer;

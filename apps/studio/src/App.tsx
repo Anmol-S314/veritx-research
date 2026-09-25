@@ -17,11 +17,12 @@ const RAIL = [
   { section: 'design', no: '03', label: 'Design' },
   { section: 'compile', no: '04', label: 'Verify' },
   { section: 'simulate', no: '05', label: 'Simulate' },
-  { section: 'decide', no: '06', label: 'Optimize' },
+  { section: 'decide', no: '06', label: 'Compare' },
+  { section: 'optimize', no: '07', label: 'Optimize' },
 ] as const;
 
 function Shell(): ReactElement {
-  const { mode, projects } = useStudio();
+  const { mode, projects, activeProjectId, setActiveProjectId } = useStudio();
   const path = usePathname();
   const route = parseRoute(path);
   const [theme, setTheme] = useState<Theme>('dark');
@@ -30,10 +31,29 @@ function Shell(): ReactElement {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
 
-  const activeProject = route.projectId
-    ? projects.find((p) => p.project.project_id === route.projectId)
+  // Keep one open project across every route: opening a project records it,
+  // global routes (/runs, /trust, run detail) keep reading it back. A
+  // project that no longer exists drops the context instead of pointing at
+  // a ghost.
+  useEffect(() => {
+    if (projects.length === 0) return;
+    const known = (id: string): boolean =>
+      projects.some((p) => p.project.project_id === id);
+    if (route.projectId) {
+      if (known(route.projectId)) setActiveProjectId(route.projectId);
+      return;
+    }
+    if (activeProjectId && !known(activeProjectId)) setActiveProjectId('');
+  }, [route.projectId, projects, activeProjectId, setActiveProjectId]);
+
+  const contextProjectId = route.projectId
+    ?? (projects.some((p) => p.project.project_id === activeProjectId)
+      ? activeProjectId
+      : '');
+  const activeProject = contextProjectId
+    ? projects.find((p) => p.project.project_id === contextProjectId)
     : undefined;
-  const pid = route.projectId ?? '';
+  const pid = contextProjectId;
   const onProjectRoute = route.kind === 'project';
 
   const renderBody = (): ReactElement => {
@@ -101,7 +121,7 @@ function Shell(): ReactElement {
             <select
               className="project-select"
               aria-label="Active project"
-              value={route.projectId ?? ''}
+              value={contextProjectId}
               onChange={(e) =>
                 e.target.value
                   ? navigate(`/projects/${e.target.value}/overview`)
@@ -133,7 +153,7 @@ function Shell(): ReactElement {
       <aside className="sidebar">
         <nav className="rail" aria-label="Primary navigation">
           {RAIL.map((item) =>
-            onProjectRoute ? (
+            pid ? (
               <Link
                 key={item.section}
                 className={`rail-item${isRailActive(item.section) ? ' active' : ''}`}

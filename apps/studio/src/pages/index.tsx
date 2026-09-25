@@ -367,18 +367,56 @@ export function Trust(): ReactElement {
 }
 
 export function Runs(): ReactElement {
-  const runs = useAsync(() => api.runs(), []);
+  const { activeProjectId } = useStudio();
+  const [requested, setScope] = useState<'project' | 'all'>(
+    activeProjectId ? 'project' : 'all',
+  );
+  // "This project" falls back to all runs when no project is open, so the
+  // scope can never silently show an empty list for a missing project.
+  const scope = requested === 'project' && !activeProjectId ? 'all' : requested;
+  const runs = useAsync(
+    () => (scope === 'project' && activeProjectId
+      ? api.runs({ projectId: activeProjectId })
+      : api.runs()),
+    [scope, activeProjectId],
+  );
   return (
     <div className="page">
-      <h2>Runs</h2>
+      <div className="page-head">
+        <h2>Runs</h2>
+        <div className="segmented small" role="tablist" aria-label="Run scope">
+          <button
+            role="tab"
+            aria-selected={scope === 'project'}
+            className={scope === 'project' ? 'selected' : ''}
+            disabled={!activeProjectId}
+            title={activeProjectId || 'no project open'}
+            onClick={() => setScope('project')}
+          >
+            This project
+          </button>
+          <button
+            role="tab"
+            aria-selected={scope === 'all'}
+            className={scope === 'all' ? 'selected' : ''}
+            onClick={() => setScope('all')}
+          >
+            All projects
+          </button>
+        </div>
+      </div>
       <AsyncView result={runs.result} reload={runs.reload}>
         {(data) =>
           data.runs.length === 0 ? (
-            <p className="muted">No runs yet.</p>
+            <p className="muted">
+              {scope === 'project'
+                ? 'No runs for this project yet.'
+                : 'No runs yet.'}
+            </p>
           ) : (
             <table className="live-table">
               <thead>
-                <tr><th>run</th><th>revision</th><th>workload</th><th>backend</th><th>status</th><th>qualification</th><th>cycles</th></tr>
+                <tr><th>run</th>{scope === 'all' && <th>project</th>}<th>revision</th><th>workload</th><th>backend</th><th>status</th><th>qualification</th><th>cycles</th></tr>
               </thead>
               <tbody>
                 {data.runs.map((r) => (
@@ -388,6 +426,9 @@ export function Runs(): ReactElement {
                         {r.display_name ?? r.run_id}
                       </Link>
                     </td>
+                    {scope === 'all' && (
+                      <td className="muted">{r.project_id}</td>
+                    )}
                     <td className="muted">{r.revision_id}</td>
                     <td className="muted">{r.workload_id ?? '—'}</td>
                     <td className="muted">{r.backend ?? '—'}</td>
@@ -447,12 +488,25 @@ export function RunDetail({ runId }: { runId: string }): ReactElement {
   const run = useAsync(() => api.run(runId), [runId]);
   return (
     <div className="page">
-      <h2>Run detail</h2>
+      <div className="page-head">
+        <h2>Run detail</h2>
+        <div className="head-actions">
+          <Link className="btn" to="/runs">All runs</Link>
+        </div>
+      </div>
       <AsyncView result={run.result} reload={run.reload}>
         {(r) => (
           <>
             <section className="card">
               <h3>{r.display_name ?? r.run_id}</h3>
+              <div className="head-actions">
+                <Link
+                  className="btn"
+                  to={`/projects/${r.project_id}/overview`}
+                >
+                  Open project
+                </Link>
+              </div>
               <div className="kv"><span>status</span><StatusBadge status={r.status ?? 'UNKNOWN'} /></div>
               {r.qualification_basis && (
                 <div className="kv">

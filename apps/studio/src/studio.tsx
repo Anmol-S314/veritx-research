@@ -16,15 +16,46 @@ interface StudioContextValue {
   projects: ProjectView[];
   projectsError: string | null;
   refreshProjects: () => void;
+  /** Last project the user had open. Survives global routes (/runs,
+   * /trust) and reloads so the shell never silently drops context. */
+  activeProjectId: string;
+  setActiveProjectId: (projectId: string) => void;
 }
 
 const StudioContext = createContext<StudioContextValue | null>(null);
+
+const ACTIVE_PROJECT_KEY = 'veritx.active-project';
+
+function readStoredProject(): string {
+  try {
+    return window.localStorage.getItem(ACTIVE_PROJECT_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
 
 export function StudioProvider({ children }: { children: ReactNode }): ReactElement {
   const [mode, setMode] = useState<Mode>('checking');
   const [projects, setProjects] = useState<ProjectView[]>([]);
   const [projectsError, setProjectsError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
+  const [activeProjectId, setActiveProjectIdState] = useState<string>(
+    readStoredProject,
+  );
+
+  const setActiveProjectId = (projectId: string): void => {
+    setActiveProjectIdState((current) =>
+      current === projectId ? current : projectId);
+    try {
+      if (projectId) {
+        window.localStorage.setItem(ACTIVE_PROJECT_KEY, projectId);
+      } else {
+        window.localStorage.removeItem(ACTIVE_PROJECT_KEY);
+      }
+    } catch {
+      /* storage unavailable — context stays session-only */
+    }
+  };
 
   useEffect(() => {
     let alive = true;
@@ -61,6 +92,8 @@ export function StudioProvider({ children }: { children: ReactNode }): ReactElem
     projects,
     projectsError,
     refreshProjects: () => setNonce((n) => n + 1),
+    activeProjectId,
+    setActiveProjectId,
   };
   return <StudioContext.Provider value={value}>{children}</StudioContext.Provider>;
 }
