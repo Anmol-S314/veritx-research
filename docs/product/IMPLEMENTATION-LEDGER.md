@@ -1741,3 +1741,85 @@ AnyNet profile accepts a custom graph, so the backend path is reachable and
 the blanket "blocked" statement is **no longer supported by the evidence**.
 A qualified execution run remains to be performed before readiness is
 claimed.
+
+---
+
+## CUSTOM BACKEND EXECUTION — AVAILABLE (corrects the previous verdict)
+
+### The decisive run
+
+```
+custom 5x5 explicit graph
+  -> COMPILED
+  -> certificate PASS (all 10 obligations, DEADLOCK_FREE acyclic=true)
+  -> profile CERTIFIED_BOOKSIM_ANYNET_V1
+  -> BookSim executed, routing.dump written (500 entries)
+  -> EVALUATED, completion_cycles 13, requirements_pass True
+
+route observation:
+  routing_class  = ANYNET_MIN_HOPS
+  pairs_compared = 500
+  expected_sha256 = 1c6e57d16e95f04e10731d53f53743cdda6c395eecc2826d70702f947ffee7fd
+  executed_sha256 = 1c6e57d16e95f04e10731d53f53743cdda6c395eecc2826d70702f947ffee7fd
+  -> IDENTICAL
+```
+
+**The canonical RouteArtifact and BookSim's executed routing table are
+byte-identical over the complete source × destination universe.**
+
+### Why this overturned the previous verdict
+
+The previous verdict (`BACKEND_EXECUTION_UNAVAILABLE`) rested on the
+routing-policy error corrected above. With `ANYNET_MIN_HOPS` restored:
+
+| layer | before | after |
+|---|---|---|
+| custom route class | `WEIGHTED_SHORTEST_PATH` | `ANYNET_MIN_HOPS` |
+| `qualify_anynet_min_hops` | **REFUSED** (class id only) | **ACCEPTED** |
+| BookSim projection | unavailable | `CERTIFIED_BOOKSIM_ANYNET_V1` |
+| execution | unavailable | **EVALUATED** |
+| route equivalence | unprovable | **byte-identical, 500/500** |
+
+### Why equivalence holds BY CONSTRUCTION, not by sampling
+
+`core.route_artifact._route_entries_from_adj` is documented as *"the one
+routing truth: AnyNet::route() first-hop table, all-pairs"* — it is a
+**replica of the vendored fork's own algorithm**. So the canonical table and
+BookSim's table are the same function computed twice, not two routers
+compared hopefully.
+
+The **envelope** is the pre-existing fail-closed check
+`qualify_anynet_min_hops`: unit link latency, unit `route_weight`, no
+parallel channels, sequential router namespace, `ANYNET_MIN_HOPS` class.
+Any graph passing that check is projected identically and is therefore in
+scope; the check is the boundary, and it is mechanical.
+
+### Capability status
+
+`FAB-007` and `SYN-004` advanced to `PROJECTABLE: YES`, `EXECUTABLE: YES`,
+`QUALIFIED: CONDITIONAL`, `EVIDENCE_CAPABLE: YES`, `PRODUCT_WIRED: NO`.
+
+`QUALIFIED` is **CONDITIONAL**, not `YES`: one instance is proven and the
+envelope is checkable, but qualification is per-instance and no product
+entry point exposes custom execution.
+
+### Readiness — revised again
+
+`STRUCTURAL PERFORMANCE OPTIMIZATION — BLOCKED ON CUSTOM BACKEND
+EXECUTION` **no longer holds.** A generated custom candidate can obtain
+qualified BookSim metrics through the bounded AnyNet profile. The remaining
+prerequisite for Wave-F is the product seam that lets a synthesized
+candidate reach evaluation without hand-assembled internal objects.
+
+### Also recorded
+
+- **`load_matrix` reclamation is OPEN.** The hardened version on
+  `integration/p1-product` @ `ec747ffe` (empty/ragged/non-square/NaN/Inf/
+  negative) should be reclaimed and reconciled with
+  `SynthesisTrafficMatrix`, not duplicated.
+- **`ir.routing` backend-identity gap (NEW).** It has no canonical
+  authority (verified: zero consumers outside `topology_ir.py`, and
+  `materialize_ir` ignores it), but it *does* control the generated BookSim
+  config. Two designs with the same `design_hash` can therefore project to
+  **different backend configs**. Canonical identity is unaffected; backend
+  identity is not bound.
