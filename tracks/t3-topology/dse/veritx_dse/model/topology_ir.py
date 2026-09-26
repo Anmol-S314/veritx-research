@@ -39,6 +39,12 @@ SCHEMA_VERSION = "0"
 KINDS = ("mesh", "torus", "ring", "star", "switch", "anynet", "custom")
 TEMPLATE_KINDS = ("mesh", "torus", "ring", "star", "switch")
 
+#: The closed document schema. Anything outside this set is refused.
+_DOC_KEYS = frozenset({
+    "name", "kind", "nodes", "params", "links", "link_attrs", "dims",
+    "routing", "booksim_params", "rtl",
+})
+
 # BookSim routing default per kind. anynet kinds use "min" — mirrors
 # cli._write_anynet_cfg (arbitrary graphs have no DOR axes).
 DEFAULT_ROUTING = {
@@ -102,6 +108,55 @@ class TopologyIR:
     def effective_routing(self) -> str:
         return self.routing or DEFAULT_ROUTING[self.kind]
 
+    def to_dict(self) -> dict:
+        """LOSSESS serialization — everything a round trip needs.
+
+        Distinct from `scientific_dict()`, which is the identity-bearing
+        projection. Persistence keeps the label and the backend policy;
+        design identity keeps only the graph science.
+        """
+        return {
+            "name": self.name,
+            "kind": self.kind,
+            "nodes": self.nodes,
+            "params": dict(self.params),
+            "links": [list(e) for e in self.links] if self.links is not None
+                     else None,
+            "link_attrs": dict(self.link_attrs),
+            "dims": [dict(d) for d in self.dims] if self.dims is not None
+                    else None,
+            "routing": self.routing,
+            "booksim_params": dict(self.booksim_params),
+            "rtl": dict(self.rtl),
+        }
+
+    def scientific_dict(self) -> dict:
+        """The GRAPH SCIENCE of this document — the part that is design
+        intent, and the only part that may enter a design hash.
+
+        INCLUDED: kind, nodes, links, link_attrs. These are the exact
+        connectivity semantics; changing any of them changes the design.
+
+        EXCLUDED, deliberately:
+
+          * ``name`` — a LABEL. A synthesized candidate is named
+            ``synthesized-<id>`` and the identical hand-authored graph is
+            named whatever the user typed. Hashing the name would make
+            origin part of design identity, so the same scientific graph
+            authored and synthesized would hash differently. That is the
+            ownership error this method exists to prevent.
+          * ``routing`` / ``booksim_params`` / ``rtl`` — backend and
+            collateral POLICY, not graph science.
+          * ``dims`` — an analytical-leg projection, not canonical
+            connectivity.
+        """
+        return {
+            "kind": self.kind,
+            "nodes": self.nodes,
+            "links": [list(e) for e in (self.links or [])],
+            "link_attrs": dict(sorted(self.link_attrs.items())),
+        }
+
 
 @dataclass
 class Materialized:
@@ -128,9 +183,20 @@ def load(path: str | Path) -> TopologyIR:
 
 
 def from_dict(doc: dict, source: str = "<dict>") -> TopologyIR:
-    """Validate a decoded mapping into a TopologyIR."""
+    """Validate a decoded mapping into a TopologyIR.
+
+    CLOSED SCHEMA. Unknown fields are refused rather than dropped: a
+    TopologyIR that carries an explicit topology into a CompileRequest is
+    design intent, and silently discarding a key the author wrote would
+    change the design while claiming to preserve it.
+    """
     if not isinstance(doc, dict):
         raise TopologyError(f"TopologyIR: {source} must be a mapping")
+    unknown = sorted(set(doc) - set(_DOC_KEYS))
+    if unknown:
+        raise TopologyError(
+            f"TopologyIR: {source}: unknown field(s) {unknown} "
+            f"(allowed: {sorted(_DOC_KEYS)})")
     _require(doc, "name", str, source)
     _require(doc, "kind", str, source)
     kind = doc["kind"]

@@ -1140,3 +1140,108 @@ Practical as an ordinary test and it makes solver honesty provable.
 
 Structural optimization · BO/SA/iterative adapters · additional topology
 families · product API/CLI entry point for synthesis · Studio UI.
+
+---
+
+## FEATURE RECLAMATION IMPLEMENTATION TRANCHE 4
+
+**Goal:** make explicit/custom topology a first-class canonical
+`CompileRequest` input and carry it through the ordinary compiler until the
+next genuine capability boundary.
+
+### FAB-007 traced and resolved at the CONTRACT boundary
+
+`CompileRequestV3` gained `explicit_topology: TopologyIR | None`. The
+**topology-selection law**: a request expresses EXACTLY ONE source.
+
+```
+NAMED     noc_config.topology_family names a family
+EXPLICIT  explicit_topology carries the graph (TopologyIR kind=custom)
+```
+
+Both declared → refused ("two authorities for one fact"). A TEMPLATE kind
+smuggled through the explicit door → refused. Not resolved by catching the
+exception or injecting side state.
+
+### §6 — origin must not enter design identity
+
+The subtle rule. `TopologyIR.scientific_dict()` excludes `name`:
+
+| | Persistence (`to_dict`) | Identity (`canonical_dict`) |
+|---|---|---|
+| content | lossless (label + backend policy) | `kind`, `nodes`, `links`, `link_attrs` only |
+
+So a synthesized candidate and the identical hand-authored graph are **the
+same design**. CFAB-8/8b pin it.
+
+### Named identities PROVEN unchanged
+
+Measured at the parent commit and after, byte-identical:
+
+```
+mesh4            e04583a3e1bf2dfd6f1fd8832b80a35149342439
+mesh4_hbm        0d7a4654bcb004ce99a7b4411f8d024ca2b79f77
+mesh4_wide128    df68df8d5af9a6fbeccf0cd8b86e2113165972b1
+```
+
+### The honest boundary moved from TOPOLOGY to ROUTING
+
+```
+NAMED (mesh)                -> FULL COMPILE, 25 routers
+EXPLICIT 4x4 (16 routers)   -> STOPS at ATTACHMENT: "16 seats but 20 agents"
+EXPLICIT 5x5 (25 routers)   -> STOPS at ROUTING: "no certified routing
+                               derivation for topology family 'custom'"
+produced: INPUT, INPUT_MAPPING, TOPOLOGY, ATTACHMENT
+```
+
+The 4×4 case is the §14 **capacity law** working: excess attachment demand
+refuses. Unused seats stay legal and produce no fake endpoints (CFAB-22/24).
+
+### Routing audit (§16) — §18 option C, deliberately
+
+`derive_route` certifies **MESH and CONCENTRATED_MESH (DOR_XY) only** and
+refuses a custom family with a typed error rather than letting a backend
+choose routes independently — the §17 prohibited state.
+
+**`routing_materialize.py` ALREADY has** `WEIGHTED_SHORTEST_PATH` ("minimum
+sum of `DirectedChannel.route_weight`, tie-break lexicographically smallest
+full channel-id sequence") and `ANYNET_MIN_HOPS`, both producing the same
+sealed `RouteArtifact`. So the graph-general deterministic router **exists**
+— but wiring it into the compiler ROUTING stage is a routing tranche, and
+the brief says C is acceptable and forbids implementing routing to make the
+tranche look end-to-end. **Recorded as the named candidate, not done.**
+
+### Historical contract reclaimed, not invented
+
+`SROTA_FABRIC_SEMANTICS_V1.md` (branch `integration/p1-product-rt-candidate`
+@ `26e6f9dc`) already ruled `model/topology_ir.py` = **"EVOLVE —
+materialization authority"**, and its P0 finding **C-01** states:
+*"RouteArtifact sole route truth; consumers ingest or prove equivalence"*.
+Tranche 1 used TopologyIR on that basis; Tranche 4 completes it.
+
+### Gap found and fixed
+
+`TopologyIR.from_dict` was **not a closed schema** — it dropped unknown
+fields. §8 requires strictness, so `_DOC_KEYS` now refuses them (CFAB-6).
+
+### Migration holes recorded (not fixed)
+
+- `tests/test_synthesis_loops.py`, `test_synthesis_math.py` — other branch only.
+- `test_architecture_law.py`, `FABRIC-COMPILER-AUTHORITY.md` — other branch only.
+- `TopologyIR` CLI (`cmd_topology_render/_stats/_diff`) — other branch only.
+
+### Final test matrix
+
+| Command | Passed | Failed | Skipped |
+|---|---|---|---|
+| backend `pytest tests/` | **4326** | **0** | 17 |
+| explicit-request focused | 116 | 0 | — |
+| capability / exposure / topology / ontology / preset gates | PASS | — | — |
+
+23 new tests (CFAB-1..CFAB-40).
+
+### Not started (out of tranche scope)
+
+Structural optimization · routing materialization into the compiler stage ·
+synthesis product/API seam · candidate promotion API · Studio UI ·
+BO/SA/iterative adapters.

@@ -446,9 +446,9 @@ capabilities:
   name: custom / hierarchical topology
   owner: FABRIC
   stages:
-    DECLARABLE: 'NO'
-    DERIVABLE: 'NO'
-    VERIFIABLE: 'NO'
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
     PROJECTABLE: 'NO'
     EXECUTABLE: 'NO'
     QUALIFIED: 'NO'
@@ -456,7 +456,15 @@ capabilities:
     PRODUCT_WIRED: 'NO'
   wiring: NOT_AVAILABLE
   reason: NO_CONTRACT
-  claim_scope: only the declared topology families exist
+  claim_scope: 'FAB-007 RESOLVED at the contract boundary: CompileRequestV3 now carries explicit_topology
+    (a TopologyIR kind=custom), so a custom graph is a first-class design input and materializes
+    through the ORDINARY compiler to a canonical TopologyArtifact. Design identity binds the
+    graph science but NOT its label, so a synthesized candidate and the identical hand-authored
+    graph are the same design. The honest boundary is now ROUTING: derive_route certifies
+    MESH/CONCENTRATED_MESH only and refuses a custom family with a typed error rather than
+    letting a backend choose routes independently. routing_materialize already provides WEIGHTED_SHORTEST_PATH
+    and ANYNET_MIN_HOPS with a deterministic lexicographic tie-break, but wiring it into the
+    compiler stage is a ROUTING tranche, not this one.'
 - id: MAP-001
   name: automatic mapping
   owner: PLACEMENT
@@ -1163,11 +1171,11 @@ capabilities:
     PRODUCT_WIRED: 'NO'
   wiring: NOT_AVAILABLE
   reason: NO_CONTRACT
-  claim_scope: "BLOCKED by FAB-007 (custom topology has no compiler request contract): TopologyFamily.CUSTOM\
-    \ refuses with a typed error pointing at materialize_ir. A synthesized graph stops at\
-    \ exactly the same stage as an authored custom graph \u2014 synthesis is NOT special-cased\
-    \ to bypass a missing stage. Legacy direct MILP -> AnyNet -> BookSim scripts remain developer\
-    \ tooling and are NOT the canonical path."
+  claim_scope: 'BLOCKED by FAB-007 (custom topology has no compiler request contract): TopologyFamily.CUSTOM
+    refuses with a typed error pointing at materialize_ir. A synthesized graph stops at exactly
+    the same stage as an authored custom graph — synthesis is NOT special-cased to bypass
+    a missing stage. Legacy direct MILP -> AnyNet -> BookSim scripts remain developer tooling
+    and are NOT the canonical path.'
 - id: SYS-001
   name: physical agent inventory
   owner: SYSTEM

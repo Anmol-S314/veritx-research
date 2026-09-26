@@ -635,14 +635,45 @@ def materialize_topology(inventory: NodeInventory,
                          ) -> TopologyArtifact:
     """Materialize a topology from hardware inventory and GUIDED knobs.
 
-    NocConfig can express mesh, torus and concentrated mesh; ring/custom/
-    anynet arrive via TopologyIR in a later wave. GEC and fat-tree are
-    refused rather than silently downgraded to mesh.
+    TWO TOPOLOGY SOURCES, ONE ARTIFACT (FAB-007). The request expresses
+    exactly one:
 
-    The v3 path passes the FabricIntentView (which carries the shared
-    noc_config); it is read by attribute so the view needs no import
-    here and no second topology authority exists.
+      NAMED     noc_config.topology_family -> the family materializers
+                (mesh / torus / concentrated_mesh / ring / flatfly)
+      EXPLICIT  an explicit TopologyIR graph (kind=custom) -> materialize_ir
+
+    Both emit the SAME `TopologyArtifact`, and nothing downstream may care
+    which path produced it. There is no `if synthesized` branch anywhere
+    after this function.
+
+    GEC and fat-tree are refused rather than silently downgraded to mesh.
     """
+    # ── EXPLICIT source (FAB-007) ────────────────────────────────────
+    # Read by attribute so a FabricIntentView needs no import here and no
+    # second topology authority exists (same discipline as noc_config).
+    explicit = getattr(cr_or_noc, "explicit_topology", None)
+    if explicit is not None:
+        from veritx_dse.model.topology_ir import TopologyIR
+        if not isinstance(explicit, TopologyIR):
+            raise TopologyError(
+                f"explicit_topology must be a TopologyIR, got "
+                f"{type(explicit).__name__}")
+        noc_check = getattr(cr_or_noc, "noc_config", cr_or_noc)
+        if isinstance(noc_check, NocConfig) and \
+                noc_check.topology_family is not None:
+            raise TopologyError(
+                "a request must express EXACTLY ONE topology source: a "
+                "topology_family AND an explicit graph are both declared")
+        # The canonical attributes come from the request's link_width when
+        # declared; TopologyIR's analytical attrs are NOT converted here
+        # (ns -> cycles needs a clock TopologyIR does not carry).
+        width = getattr(noc_check, "link_width", None) \
+            if isinstance(noc_check, NocConfig) else None
+        kwargs = {}
+        if width is not None:
+            kwargs["width_bits"] = width
+        return materialize_ir(explicit, **kwargs)
+
     noc = getattr(cr_or_noc, "noc_config", cr_or_noc)
     if not isinstance(noc, NocConfig):
         raise TopologyError("expected a CompileRequest or NocConfig")

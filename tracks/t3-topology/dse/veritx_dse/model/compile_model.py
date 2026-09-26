@@ -1895,6 +1895,7 @@ _TOP_V3_KEYS = frozenset({
     "requirements", "agents", "dependencies", "noc_config",
     "address_map", "physical", "design_hash", "guardrail_hash",
     "_comment", "_docs",
+    "explicit_topology",
 })
 _WORKLOAD_V3_KEYS = frozenset({
     "model_family", "model_name", "tp", "pp", "ep", "dp",
@@ -2214,6 +2215,19 @@ class CompileRequestV3:
     noc_config: NocConfig
     address_map: AddressMap = field(default_factory=AddressMap)
     physical: PhysicalContext = field(default_factory=PhysicalContext)
+    #: THE TOPOLOGY-SELECTION LAW (FAB-007). A request expresses EXACTLY ONE
+    #: topology source:
+    #:
+    #:   NAMED     noc_config.topology_family names a family the compiler
+    #:             materializes (mesh / torus / concentrated_mesh)
+    #:   EXPLICIT  explicit_topology carries the exact graph as a TopologyIR
+    #:             document (kind=custom), which `materialize_ir` lowers
+    #:
+    #: Never both: declaring a family AND a graph is two authorities for one
+    #: fact. An explicit graph is DESIGN INTENT, so its scientific content
+    #: enters `design_hash`. Its `name` does NOT: a synthesized candidate and
+    #: the identical hand-authored graph must be the same design science.
+    explicit_topology: "TopologyIR | None" = None
     schema_version: int = COMPILE_REQUEST_SCHEMA_VERSION_V3
     compiler_semantics_version: int = COMPILER_SEMANTICS_VERSION_V3
 
@@ -2260,6 +2274,29 @@ class CompileRequestV3:
             raise ValueError(
                 f"unsupported v3 compiler_semantics_version "
                 f"{self.compiler_semantics_version}")
+        # ── topology-selection law (FAB-007) ────────────────────────────
+        # A request expresses EXACTLY ONE topology source. `None` on both
+        # keeps the historical NAMED default (mesh), so every pre-existing
+        # request behaves identically.
+        if self.explicit_topology is not None:
+            from veritx_dse.model.topology_ir import TopologyIR
+            if not isinstance(self.explicit_topology, TopologyIR):
+                raise ValueError(
+                    "explicit_topology must be a TopologyIR, got "
+                    f"{type(self.explicit_topology).__name__}")
+            if self.explicit_topology.kind not in ("custom", "anynet"):
+                raise ValueError(
+                    f"explicit_topology kind {self.explicit_topology.kind!r} "
+                    "is a TEMPLATE — a named family must be declared through "
+                    "noc_config.topology_family, not as an explicit graph "
+                    "(one topology source per request)")
+            if self.noc_config.topology_family is not None:
+                raise ValueError(
+                    "a request must express EXACTLY ONE topology source: "
+                    "noc_config.topology_family="
+                    f"{self.noc_config.topology_family.value!r} AND an "
+                    "explicit_topology graph are both declared — refusing "
+                    "two authorities for one fact")
 
     @property
     def total_nodes(self) -> int:
@@ -2326,7 +2363,7 @@ class CompileRequestV3:
         return d
 
     def _semantic_dict(self) -> dict:
-        return {
+        d = {
             "workload": self._workload_dict(),
             "requirements": [self._requirement_dict(r)
                                for r in self.requirements],
@@ -2338,6 +2375,12 @@ class CompileRequestV3:
                                          for r in self.address_map.ranges]},
             "physical": self._physical_dict(),
         }
+        # PERSISTENCE: the LOSSLESS document (label + backend policy kept),
+        # so to_dict/from_dict round-trips exactly. canonical_dict() then
+        # REPLACES this with scientific_dict() for identity.
+        if self.explicit_topology is not None:
+            d["explicit_topology"] = self.explicit_topology.to_dict()
+        return d
 
     def canonical_dict(self) -> dict:
         """Canonical v3 envelope — sole input to design_hash().
@@ -2349,6 +2392,14 @@ class CompileRequestV3:
         a different design).
         """
         d = self._semantic_dict()
+        if self.explicit_topology is not None:
+            # IDENTITY: replace the lossless document carried by
+            # _semantic_dict with the SCIENTIFIC projection. `name` is
+            # excluded so origin cannot enter design identity — a
+            # synthesized candidate and the identical hand-authored graph
+            # must hash the same.
+            d["explicit_topology"] = \
+                self.explicit_topology.scientific_dict()
         # Identity/persistence split (P1C phase-2 fix): the persisted
         # workload_source_ref keeps provenance (artifact_identity), but
         # the canonical envelope hashes the identity representation
@@ -2565,6 +2616,20 @@ class CompileRequestV3:
             raise CompileRequestV3SchemaError(
                 f"invalid physical: {e}") from e
 
+        # ── explicit topology source (FAB-007) ──────────────────────────
+        explicit = None
+        if d.get("explicit_topology") is not None:
+            from veritx_dse.model.topology_ir import TopologyIR, from_dict as _ir_from_dict
+            raw = d["explicit_topology"]
+            if not isinstance(raw, dict):
+                raise CompileRequestV3SchemaError(
+                    "explicit_topology must be an object")
+            try:
+                explicit = _ir_from_dict(raw, source="explicit_topology")
+            except Exception as e:
+                raise CompileRequestV3SchemaError(
+                    f"invalid explicit_topology: {e}") from e
+
         try:
             obj = cls(
                 workload=workload,
@@ -2574,6 +2639,7 @@ class CompileRequestV3:
                 noc_config=noc_config,
                 address_map=AddressMap(ranges=tuple(ranges)),
                 physical=physical,
+                explicit_topology=explicit,
                 schema_version=d["schema_version"],
                 compiler_semantics_version=semantics,
             )
@@ -2738,6 +2804,10 @@ class FabricIntentView:
     traffic_classes: tuple[str, ...]
     design_hash: str
     source_generation: str
+    #: The EXPLICIT topology source, when the request declares one. Carried
+    #: so the TOPOLOGY stage can dispatch without re-reading the request
+    #: (the same discipline as noc_config). None = NAMED topology.
+    explicit_topology: Any = None
 
     def __post_init__(self):
         object.__setattr__(self, "agents",
@@ -2796,6 +2866,7 @@ def fabric_intent_view(request: CompileRequest | CompileRequestV3
             traffic_classes=derive_v3_traffic_classes(request),
             design_hash=request.design_hash(),
             source_generation="v3",
+            explicit_topology=request.explicit_topology,
         )
     if isinstance(request, CompileRequest):
         wl = request.workload
