@@ -216,3 +216,58 @@ def test_lin_3f_anynet_min_hops_identity_is_pinned():
     from veritx_dse.model.topology_artifact import MaterializedFamily
     from veritx_dse.core.route_artifact import ANYNET_MIN_HOPS
     assert _POLICY_BY_FAMILY[MaterializedFamily.CUSTOM] == ANYNET_MIN_HOPS
+
+
+# ══ LIN-4: the PHASE-3 re-run is complete and honest ══════════════════
+
+def _audit_text():
+    return (Path(__file__).parents[4]
+            / "docs/product/SOURCE-LINEAGE-AUDIT.md").read_text()
+
+
+def test_lin_4_phase_3_rerun_is_recorded_with_its_candidates():
+    """The re-run must name its discriminator and every candidate, so the
+    residual can be re-checked instead of assumed."""
+    audit = _audit_text()
+    assert "PHASE 3 — re-run of the source-lineage audit" in audit
+    assert "blob identity, not line count" in audit
+    for cand in ("application/service.py", "simulation/model_to_trace.py",
+                 "simulation/traces.py", "synthesis/iterative_synthesizer.py",
+                 "synthesis/bo_synthesizer.py", "core/logging.py",
+                 "application/resources.py", "application/store.py"):
+        assert cand in audit, f"{cand} must stay in the PHASE-3 record"
+
+
+def test_lin_4b_phase_3_verdict_is_not_overclaimed():
+    """The honest verdict distinguishes 'no live caller' from 'proven
+    equivalent'. A future edit must not upgrade it to a blanket claim."""
+    audit = _audit_text()
+    assert "0 unresolved weaker-ancestor regressions with a live caller" in audit
+    assert "content-difference" in audit
+    assert "a live defect" in audit
+
+
+def test_lin_4c_supersession_claims_name_their_successor():
+    """A SUPERSEDED classification without a named successor is a guess."""
+    audit = _audit_text()
+    assert "product/service.py::ProductService" in audit
+    assert "workload/lowering.py:41" in audit
+    assert "SynthesisTrafficMatrix" in audit
+    assert "presets.topo_size" in audit
+
+
+def test_lin_4d_reclaimed_files_left_the_candidate_set():
+    """PHASE 1/2 changed the blobs, so those files must no longer be
+    identical to integration/canonical — the discriminator must agree."""
+    import subprocess
+    repo = Path(__file__).parents[4]
+    for rel in ("tracks/t3-topology/dse/veritx_dse/synthesis/milp_topology_v2.py",
+                "tracks/t3-topology/dse/veritx_dse/model/presets.py",
+                "tracks/t3-topology/dse/veritx_dse/core/route_artifact.py"):
+        cur = subprocess.run(["git", "rev-parse", f"HEAD:{rel}"], cwd=repo,
+                             capture_output=True, text=True).stdout.strip()
+        can = subprocess.run(["git", "rev-parse", f"integration/canonical:{rel}"],
+                             cwd=repo, capture_output=True, text=True).stdout.strip()
+        assert cur and can and cur != can, (
+            f"{rel} is still byte-identical to integration/canonical — the "
+            "reclamation did not land")

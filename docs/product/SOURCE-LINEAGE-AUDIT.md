@@ -205,6 +205,64 @@ strong line lacks. `env_int`, `DEFAULT_K`, `DEFAULT_TIMEOUT` and
 power/area model**, a different domain from topology synthesis. **Not a
 reclamation target for PHASE 1; recorded.**
 
+## PHASE 3 — re-run of the source-lineage audit (after PHASE 1 + PHASE 2)
+
+**Method.** The discriminator is blob identity, not line count. A file is a
+regression candidate only if its current blob is **identical to
+`integration/canonical`** (i.e. the tree took it from the migration
+destination) **and** the strong branch (`github/integration/p1-product` /
+`github/p1b/verified-evaluation`) carries a different, larger blob. Files the
+current tree evolved deliberately do not match canonical and are not
+candidates. Every candidate was then checked for (a) live references to the
+strong-only symbols anywhere in the tree, and (b) a named superseding
+authority.
+
+**Candidates found: 15** (after PHASE 1 and PHASE 2 removed
+`synthesis/milp_topology_v2.py`, `model/presets.py` and
+`core/route_artifact.py` from the set).
+
+| Candidate | cur / strong | Classification | Evidence |
+|---|---|---|---|
+| `application/service.py` | 252 / 1541 | **SUPERSEDED** | `SrotaControlPlane`'s 37 strong-only methods (`validate`, `capabilities`, `plan`, `evaluate`, `run_study`, `compare`, `inspect`, …) belong to the pre-product CLI-era control plane; the current authority is `product/service.py::ProductService` (2232 lines) plus `application/comparison.py` and the `product/*` seam. Strong-only leftovers `_binder_chain`/`_default_store_root` have 0 references. |
+| `simulation/model_to_trace.py` | 219 / 444 | **SUPERSEDED** | Strong-only `broadcast_packets`, `p2p_packets`, `_validate_source`, `_flow_bytes_by_class`, `write_lowering_manifest`, `_lowering_manifest`: 0 references. `LoweringError` (48 references) lives at `workload/lowering.py:41` (`WorkloadError` base) with `LoweringManifest`, `UnsupportedSemantic`, `et_readback_conservation`. The typed lowering module is the current authority. |
+| `simulation/traces.py` | 453 / 578 | **SUPERSEDED** | Strong-only `trace_num_nodes`, `aggregate_matrix`, `save_matrix`, `matrix_to_trace` (an untyped trace↔matrix round-trip): 0 references. Replaced by the typed traffic authority (`workload/traffic.py`, `SynthesisTrafficMatrix`, `workload/canonical.py`). The current `traces.py` carries the richer `validate_trace`/`analyze_trace`/`extract_burst`/`extract_uniform`/`slice_trace`. |
+| `synthesis/iterative_synthesizer.py` | 336 / 508 | **SUPERSEDED** | Strong-only `mesh_size`/`grid_size`/`anynet_size` are the same dead wrappers rejected in §1; `mesh_seed_adj` has 0 references. Size math now has one authority, `presets.topo_size`. |
+| `synthesis/bo_synthesizer.py` | 526 / 690 | **SUPERSEDED** | Same dead size wrappers; `_canonical_runs` has 0 references. |
+| `core/logging.py` | 137 / 186 | **SUPERSEDED / DELIBERATE REMOVAL** | Strong-only `emit()`, `diag()`, `Ctx.failed`. `tests/test_p2_guided_optimization.py:989` and `tests/test_p2_optimization_truth.py:1112` name `Ctx.failed` among features **removed on purpose**. |
+| `__init__.py` | 44 / 98 | **COSMETIC** | The delta is only re-export surface (`derive_vc_assignment_artifact`, `migrate_design`, `PacketFormatArtifact`, `ResolvedRouteArtifact`, placement/mapping/attachment/address-decode names). Every symbol remains importable from its submodule; no caller imports it from the package root. |
+| `cli/pipeline.py` | 466 / 683 | **NO STRONG-ONLY SYMBOL** | Top-level definition sets are identical; the difference is inside function bodies. |
+| `reports/reports.py` | 447 / 532 | **NO STRONG-ONLY SYMBOL** | As above. |
+| `backend/contracts.py` | 881 / 883 | **NO STRONG-ONLY SYMBOL** | 2-line difference. |
+| `reports/artifact.py` | 224 / 232 | **NO STRONG-ONLY SYMBOL** | 8-line difference. |
+| `synthesis/event_objective.py` | 159 / 166 | **NO STRONG-ONLY SYMBOL** | 7-line difference. |
+| `simulation/trace_to_binary.py` | 53 / 54 | **NO STRONG-ONLY SYMBOL** | 1-line difference. |
+| `application/resources.py` | 504 / 410 | **CURRENT LARGER** | No regression. |
+| `application/store.py` | 432 / 105 | **CURRENT LARGER** | No regression. |
+
+**CLI helper note.** The strong `cli/cli.py` (5177 lines) carries fail-fast
+helpers the current tree does not have by those names
+(`_eff_timeout`, `_expand_anynet_files`, `_sim_overrides`). The *contracts*
+are present elsewhere: `VERITX_TIMEOUT` precedence is honoured at
+`core/config.py:49`, and the current tree split the monolithic CLI into
+`cli/commands_compile.py`, `cli/commands_trace.py`,
+`cli/commands_optimize.py`. Reclaiming the strong CLI wholesale is **not**
+justified — it would re-introduce `Ctx.failed`, which the tree removed on
+purpose — so the individual helpers are recorded as a **PART I candidate**,
+not reclaimed here.
+
+### Verdict of the re-run
+
+- **0 unresolved weaker-ancestor regressions with a live caller.** Every
+  strong-only symbol in the 15 candidates has either 0 references or a
+  named, verified current authority.
+- **Residual, stated precisely:** 15 candidates carry strong-only *content*
+  with no live caller. 12 are classified SUPERSEDED / COSMETIC / CURRENT
+  LARGER with the evidence above; 3 (`cli/pipeline.py`,
+  `reports/reports.py`, `backend/contracts.py` and the other
+  no-strong-only-symbol files) differ only inside function bodies and were
+  **not line-by-line diffed**. This is a **content-difference** residual, not
+  a live defect, and it is recorded rather than claimed closed.
+
 ## Files whose provenance is correct
 
 - `backend/booksim_profile.py` — taken from the **strong** line (identical
