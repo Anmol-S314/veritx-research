@@ -475,6 +475,26 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
     def v1_revision_artifacts(revision_id: str) -> dict[str, Any]:
         return product.get_revision_artifact_chain(revision_id)
 
+    @app.get("/api/v1/revisions/{revision_id}/compile-result", tags=["product"])
+    def v1_revision_compile_result(revision_id: str) -> dict[str, Any]:
+        """CompileResultView — the seven inspector groups under one Compile
+        Result (Gate 8 §50), frozen at certification time."""
+        return product.get_revision_compile_result(revision_id)
+
+    @app.get("/api/v1/revisions/{revision_id}/route", tags=["product"])
+    def v1_revision_route(revision_id: str, routing_class: str | None = None,
+                          src: int | None = None,
+                          dst: int | None = None) -> dict[str, Any]:
+        """The canonical DERIVED EXPECTED route for one (class, src, dst).
+
+        A query over the route table frozen at certification time, never a
+        re-derivation. Gate 8 §58: this is the expected state; a runtime
+        observation is a different fact with its own scope.
+        """
+        return product.canonical_route(revision_id,
+                                       routing_class=routing_class,
+                                       src=src, dst=dst)
+
     @app.get("/api/v1/revisions/{revision_id}/preflight", tags=["product"])
     def v1_revision_preflight(revision_id: str) -> dict[str, Any]:
         return product.revision_preflight(revision_id)

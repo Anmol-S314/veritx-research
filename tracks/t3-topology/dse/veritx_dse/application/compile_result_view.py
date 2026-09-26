@@ -1,0 +1,572 @@
+"""veritx_dse.application.compile_result_view — Compile Result inspectors.
+
+One projection over a compiled revision, materialized **at certification
+time** and frozen with the revision (Gate 5 §97, Gate 8 §50). The
+inspectors are never re-derived from the request at view time: a drawn
+graph that could drift from the proof it claims to show is worse than no
+graph.
+
+Seven groups under one Compile Result (Gate 8 §50) — not one page per
+artifact:
+
+    summary · mapping · fabric · routing · resources · address_decode ·
+    provenance
+
+Two rules shape what is projected:
+
+* **Expected and observed are never merged** (Gate 8 §58/§59). The
+  canonical route is a DERIVED EXPECTED state; runtime observation is a
+  separate fact with its own scope. The observation is reported only when
+  the certificate actually carries it, using the exact Gate-4 claim
+  wording.
+* **The certificate is four product claims over ten obligations** (Gate 7
+  §9 PF-D9, Gate 8 §62). The verifier issues ten obligations; four of them
+  are the named claims the product surfaces. Both are exposed — the four
+  as the headline, all ten verbatim — so the projection cannot hide an
+  obligation the proof relied on.
+
+Everything here is read-only. No group carries an edit control.
+"""
+from __future__ import annotations
+
+from typing import Any
+
+CONTRACT_VERSION = 1
+
+#: Gate 8 §50 — the seven groups, in order.
+GROUPS = (
+    "summary",
+    "mapping",
+    "fabric",
+    "routing",
+    "resources",
+    "address_decode",
+    "provenance",
+)
+
+#: Gate 7 §9 / Gate 8 §62 — the four named certificate claims, in the
+#: product's order, with the exact scope sentence the planning corpus uses.
+PRODUCT_CLAIMS: tuple[tuple[str, str], ...] = (
+    ("ATTACHMENT_COMPLETE", "every declared agent is attached"),
+    ("ROUTE_COMPLETE", "every required (class, src, dst) has a route"),
+    ("ROUTE_LEGAL", "every route's channel sequence is legal"),
+    ("DEADLOCK_FREE", "the channel-VC CDG is acyclic"),
+)
+
+#: Gate 8 §57 — semantic zoom thresholds for the fabric inspector. Above
+#: MAX_DETAIL_ROUTERS a per-router DOM is not created.
+FULL_DETAIL_ROUTERS = 64
+MAX_DETAIL_ROUTERS = 256
+
+#: Gate 8 §59 — the exact Gate-4 observation claim.
+OBSERVATION_SCOPE = "FIRST_HOP"
+OBSERVATION_CLAIM = (
+    "runtime routing-function/table first-hop realization is exactly "
+    "equivalent to the canonical route over the complete source x "
+    "destination domain")
+OBSERVATION_LIMIT = (
+    "this proves deterministic first-hop routing equivalence, not observed "
+    "packet paths")
+
+#: The DEADLOCK_FREE obligation records the route-realization *scheme*
+#: (`v2_channel_id`), which is a property of the artifact encoding, not a
+#: runtime observation. It must never be presented as one.
+_ROUTE_REALIZATION_IS_A_SCHEME = True
+
+
+def _enum_value(value: Any) -> Any:
+    """Enum -> its declared value; anything else passes through.
+
+    The inspectors present canonical values, never Python reprs such as
+    ``AllocatorPolicy.ISLIP``.
+    """
+    return getattr(value, "value", value)
+
+
+def _h(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value)
+    return text if text.startswith("sha256:") else f"sha256:{text}"
+
+
+def _obligations(certificate: Any) -> list[dict[str, Any]]:
+    if certificate is None:
+        return []
+    return [o.to_dict() for o in getattr(certificate, "obligations", ())]
+
+
+def _claim_table(obligations: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_name = {o.get("obligation"): o for o in obligations}
+    claims: list[dict[str, Any]] = []
+    for name, scope in PRODUCT_CLAIMS:
+        row = by_name.get(name)
+        claims.append({
+            "claim": name,
+            "scope": scope,
+            "status": (row or {}).get("status", "UNSUPPORTED"),
+            "method": (row or {}).get("method"),
+        })
+    return claims
+
+
+def _additional_obligations(
+        obligations: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    named = {name for name, _scope in PRODUCT_CLAIMS}
+    return [
+        {"obligation": o.get("obligation"), "status": o.get("status"),
+         "method": o.get("method"), "evidence": o.get("evidence") or {}}
+        for o in obligations if o.get("obligation") not in named
+    ]
+
+
+# ── groups ─────────────────────────────────────────────────────────────
+
+def _summary(request: Any, bundle: Any, certificate: Any,
+             compilation: Any) -> dict[str, Any]:
+    """Gate 8 §52 — declared / derived / verified. Not a Design Review."""
+    noc = getattr(request, "noc_config", None)
+    workload = getattr(request, "workload", None)
+    topology = getattr(bundle, "topology", None)
+    attachment = getattr(bundle, "attachment", None)
+    vc = getattr(bundle, "vc_assignment", None)
+    declared: dict[str, Any] = {}
+    if noc is not None:
+        family = getattr(noc, "topology_family", None)
+        declared["topology_family"] = getattr(family, "value", family)
+        # §16: the product name for the implementation field `radix`.
+        declared["side_length"] = getattr(noc, "radix", None)
+        declared["concentration"] = getattr(noc, "concentration", None)
+        declared["link_width"] = getattr(noc, "link_width", None)
+        declared["arbitration"] = getattr(noc, "arbitration", None)
+    if workload is not None:
+        declared["parallelism"] = {
+            "tp": getattr(workload, "tp", None),
+            "pp": getattr(workload, "pp", None),
+            "ep": getattr(workload, "ep", None),
+            "dp": getattr(workload, "dp", None),
+        }
+    declared["agents"] = [
+        {"kind": getattr(getattr(a, "kind", None), "value",
+                         getattr(a, "kind", None)),
+         "count": getattr(a, "count", None)}
+        for a in (getattr(request, "agents", ()) or ())]
+    declared["requirements"] = len(getattr(request, "requirements", ()) or ())
+
+    derived: dict[str, Any] = {}
+    if topology is not None:
+        derived["routers"] = len(getattr(topology, "routers", ()))
+        derived["channels"] = len(getattr(topology, "channels", ()))
+        derived["seats"] = sum(
+            getattr(r, "seat_capacity", 0) or 0
+            for r in getattr(topology, "routers", ()))
+    if attachment is not None:
+        derived["endpoints"] = len(getattr(attachment, "endpoints", ()))
+    if vc is not None:
+        derived["vc_count"] = getattr(vc, "vc_count", None)
+    route = getattr(bundle, "router_route", None)
+    if route is not None:
+        derived["routing_classes"] = [
+            c.id for c in getattr(route, "routing_classes", ())]
+
+    return {
+        "declared": declared,
+        "derived": derived,
+        "verified": _claim_table(_obligations(certificate)),
+        "certificate_overall": getattr(certificate, "overall", None),
+        "compilation_status": getattr(compilation, "status", None),
+    }
+
+
+def _mapping(bundle: Any) -> dict[str, Any]:
+    """Gate 8 §53/§54 — participant -> compute agent, table-first."""
+    mapping = getattr(bundle, "mapping", None)
+    attachment = getattr(bundle, "attachment", None)
+    if mapping is None:
+        return {"available": False, "rows": []}
+    endpoints_by_agent: dict[tuple[int, int], int] = {}
+    if attachment is not None:
+        for endpoint in getattr(attachment, "endpoints", ()):
+            agent = getattr(endpoint, "agent", None)
+            if agent is None:
+                continue
+            endpoints_by_agent[
+                (getattr(agent, "group_index", -1),
+                 getattr(agent, "instance_index", -1))
+            ] = getattr(endpoint, "endpoint_id", None)
+    rows: list[dict[str, Any]] = []
+    for placement in getattr(mapping, "placements", ()):
+        agent = getattr(placement, "agent", None)
+        group_index = getattr(agent, "group_index", None)
+        instance_index = getattr(agent, "instance_index", None)
+        kind = getattr(agent, "kind", None)
+        rows.append({
+            "rank": getattr(placement, "rank", None),
+            "agent_kind": getattr(kind, "value", kind),
+            "group_index": group_index,
+            "instance_index": instance_index,
+            "endpoint_id": endpoints_by_agent.get(
+                (group_index, instance_index)),
+        })
+    return {
+        "available": True,
+        "rows": rows,
+        "rank_count": getattr(mapping, "rank_count", len(rows)),
+    }
+
+
+def _fabric(bundle: Any, topology_view: dict[str, Any] | None) -> dict[str, Any]:
+    """Gate 8 §55/§57 — the compiled topology plus its zoom strategy."""
+    topology = getattr(bundle, "topology", None)
+    attachment = getattr(bundle, "attachment", None)
+    if topology is None:
+        return {"available": False, "rows": []}
+    routers = list(getattr(topology, "routers", ()))
+    attached: set[int] = set()
+    if attachment is not None:
+        attached = {getattr(e, "router_id", None)
+                    for e in getattr(attachment, "endpoints", ())}
+    seats = sum(getattr(r, "seat_capacity", 0) or 0 for r in routers)
+    count = len(routers)
+    if count <= FULL_DETAIL_ROUTERS:
+        detail = "FULL"
+    elif count <= MAX_DETAIL_ROUTERS:
+        detail = "ROUTERS_AND_LINKS"
+    else:
+        detail = "AGGREGATE"
+    return {
+        "available": True,
+        "counts": {
+            "routers": count,
+            "channels": len(getattr(topology, "channels", ())),
+            "seats": seats,
+            "attached": len([r for r in attached if r is not None]),
+            "unused_seats": max(0, seats - len([r for r in attached
+                                                if r is not None])),
+        },
+        # Gate 8 §57: above MAX_DETAIL_ROUTERS no per-router DOM is created.
+        "detail_level": detail,
+        "detail_thresholds": {
+            "full_detail_max": FULL_DETAIL_ROUTERS,
+            "router_detail_max": MAX_DETAIL_ROUTERS,
+        },
+        "topology": topology_view,
+    }
+
+
+def _routing(bundle: Any, certificate: Any) -> dict[str, Any]:
+    """Gate 8 §58/§59 — expected and observed, never merged."""
+    route = getattr(bundle, "router_route", None)
+    if route is None:
+        return {"available": False}
+    entries = dict(getattr(route, "entries", {}) or {})
+    topology = getattr(bundle, "topology", None)
+    classes = [c.id for c in getattr(route, "routing_classes", ())]
+
+    # The route table and the channel table are stored as pure data: the
+    # revision is persisted as JSON, so the payload can hold no callable.
+    # `canonical_route(payload, ...)` walks them on request.
+    route_entries = [
+        {"routing_class": cls, "src": src, "dst": dst, "channel_id": channel}
+        for (cls, src, dst), channel in sorted(
+            entries.items(), key=lambda kv: (kv[0][0], kv[0][1], kv[0][2]))
+    ]
+    channel_hops = [
+        {"channel_id": getattr(c, "channel_id", None),
+         "src_router": getattr(c, "src_router", None),
+         "src_port": getattr(c, "src_port", None),
+         "dst_router": getattr(c, "dst_router", None),
+         "dst_port": getattr(c, "dst_port", None)}
+        for c in (getattr(topology, "channels", ()) or ())
+    ]
+
+    # Gate 8 §59: the observation is a separate fact with its own scope.
+    #
+    # A compiled revision has NO runtime execution, so there is no
+    # observation to report. The DEADLOCK_FREE evidence carries
+    # `route_realization: "v2_channel_id"`, which is the artifact's encoding
+    # scheme — presenting it as an observation would claim a runtime fact
+    # that does not exist. The observation belongs to an evaluation run,
+    # where RunIntegrityView.route_realization reports
+    # OBSERVED | NOT_OBSERVED with its own scope.
+    observation: dict[str, Any] = {
+        "available": False,
+        "scope": OBSERVATION_SCOPE,
+        "claim": OBSERVATION_CLAIM,
+        "limit": OBSERVATION_LIMIT,
+        "realized_digest": None,
+        "reason": ("no runtime execution exists for a compiled revision; a "
+                   "route observation is produced by an evaluation run"),
+        "source": "evaluation run (RunIntegrityView.route_realization)",
+    }
+
+    return {
+        "available": True,
+        "routing_classes": classes,
+        "default_class": classes[0] if classes else None,
+        "entry_count": len(route_entries),
+        "entries": route_entries,
+        "channel_hops": channel_hops,
+        "observation": observation,
+        "observation_note": (
+            "expected and observed are separate facts: the canonical route "
+            "is DERIVED EXPECTED, the observation is a runtime realization "
+            f"at scope {OBSERVATION_SCOPE}"),
+    }
+
+
+def _resources(bundle: Any, certificate: Any) -> dict[str, Any]:
+    """Gate 8 §60/§61 — VC assignment, CDG, arbitration."""
+    vc = getattr(bundle, "vc_assignment", None)
+    behavior = getattr(bundle, "router_behavior", None)
+    if vc is None:
+        return {"available": False}
+    transitions = list(getattr(vc, "allowed_transitions", ()) or ())
+    pairs = [list(pair) for pair in transitions
+             if isinstance(pair, (tuple, list)) and len(pair) == 2]
+    identity = bool(pairs) and all(a == b for a, b in pairs)
+    class_map = [list(pair) for pair in
+                 (getattr(vc, "traffic_class_to_vcs", ()) or ())]
+    vc_to_class = [list(pair) for pair in
+                   (getattr(vc, "vc_to_routing_class", ()) or ())]
+
+    deadlock: dict[str, Any] = {"status": "UNSUPPORTED", "evidence": {}}
+    for obligation in _obligations(certificate):
+        if obligation.get("obligation") == "DEADLOCK_FREE":
+            evidence = obligation.get("evidence") or {}
+            # Gate 8 §61: the channel dependency graph is the witness. When
+            # the verdict is FAIL the cycle is named; when PASS the graph
+            # properties are the proof. Both are the same fields.
+            deadlock = {
+                "status": obligation.get("status", "UNSUPPORTED"),
+                "method": obligation.get("method"),
+                "witness": {
+                    "acyclic": evidence.get("acyclic"),
+                    "sccs_gt_1": evidence.get("sccs_gt_1"),
+                    "node_count": evidence.get("node_count"),
+                    "edge_count": evidence.get("edge_count"),
+                    "cdg_route_classes": evidence.get("cdg_route_classes"),
+                    "escape_vcs": evidence.get("escape_vcs"),
+                    "vc_count": evidence.get("vc_count"),
+                    "route_realization_scheme": evidence.get(
+                        "route_realization"),
+                },
+                "evidence": evidence,
+            }
+            break
+
+    return {
+        "available": True,
+        "vc_count": getattr(vc, "vc_count", None),
+        "vc_ids": list(getattr(vc, "vc_ids", ()) or ()),
+        "traffic_class_to_vcs": class_map,
+        "vc_to_routing_class": vc_to_class,
+        "allowed_transitions": pairs,
+        "transitions_are_identity": identity,
+        "escape_vcs": list(getattr(vc, "escape_vcs", ()) or ()),
+        "derivation": getattr(vc, "derivation", None),
+        "arbitration": {
+            "vc_allocator": _enum_value(
+                getattr(behavior, "vc_allocator", None)),
+            "switch_allocator": _enum_value(
+                getattr(behavior, "switch_allocator", None)),
+            "input_vc_packet_policy": _enum_value(
+                getattr(behavior, "input_vc_packet_policy", None)),
+            "flow_control": _enum_value(
+                getattr(behavior, "flow_control", None)),
+            "allocator_iterations": getattr(
+                behavior, "allocator_iterations", None),
+            "input_buffer_depth_flits_per_vc": getattr(
+                behavior, "input_buffer_depth_flits_per_vc", None),
+            "output_stage_depth_flits_per_vc": getattr(
+                behavior, "output_stage_depth_flits_per_vc", None),
+        },
+        "deadlock": deadlock,
+        "editable": False,
+    }
+
+
+def _address_decode(bundle: Any) -> dict[str, Any]:
+    """Gate 8 §50 — ranges -> memory agent -> endpoint.
+
+    Gate 7 §23: the resolved stable identity is presented; the legacy
+    positional `target_agent_group` is carried as technical detail, never
+    as the primary label.
+    """
+    decode = getattr(bundle, "address_decode", None)
+    attachment = getattr(bundle, "attachment", None)
+    if decode is None:
+        return {"available": False, "rows": []}
+    endpoints_by_id = {getattr(e, "endpoint_id", None): e
+                       for e in getattr(attachment, "endpoints", ()) or ()}
+    rows: list[dict[str, Any]] = []
+    for entry in getattr(decode, "entries", ()):
+        endpoint_id = getattr(entry, "target_endpoint_id", None)
+        endpoint = endpoints_by_id.get(endpoint_id)
+        agent = getattr(endpoint, "agent", None) if endpoint else None
+        kind = getattr(agent, "kind", None) if agent else None
+        rows.append({
+            "name": getattr(entry, "name", None),
+            "base": getattr(entry, "base", None),
+            "size": getattr(entry, "size", None),
+            # The stable semantic target, then the positional legacy index.
+            "target_agent_kind": getattr(kind, "value", kind),
+            "target_agent_instance": (
+                getattr(agent, "instance_index", None) if agent else None),
+            "target_endpoint_id": endpoint_id,
+            "legacy_target_agent_group": getattr(
+                entry, "target_agent_group", None),
+        })
+    transform = getattr(decode, "address_transform", None)
+    policy = getattr(decode, "unmatched_address_policy", None)
+    return {
+        "available": True,
+        "rows": rows,
+        "address_transform": getattr(transform, "value", transform),
+        "unmatched_address_policy": getattr(policy, "value", policy),
+    }
+
+
+def _provenance(revision: dict[str, Any], bundle: Any,
+                chain_view: dict[str, Any] | None) -> dict[str, Any]:
+    """Gate 8 §115/§116 — compiler semantics, artifact hashes, pins."""
+    hashes: dict[str, Any] = {}
+    if bundle is not None:
+        try:
+            hashes = {str(k): _h(v) for k, v in bundle.root_hashes().items()}
+        except Exception:  # noqa: BLE001
+            hashes = {}
+    compilation = revision.get("compilation") or {}
+    return {
+        "revision_id": revision.get("revision_id"),
+        "design_hash": _h(revision.get("design_hash")),
+        "compiler_semantics_version": compilation.get(
+            "compiler_semantics_version"),
+        "resolved_fabric_hash": _h(compilation.get("resolved_fabric_hash")),
+        "certificate_id": _h((revision.get("certificate") or {})
+                             .get("certificate_id")),
+        "artifact_hashes": hashes,
+        "artifact_chain": chain_view,
+    }
+
+
+def canonical_route(routing_group: dict[str, Any], routing_class: str,
+                    src: int, dst: int,
+                    limit: int = 512) -> dict[str, Any]:
+    """Walk the frozen route table — the DERIVED EXPECTED route (Gate 8 §58).
+
+    ``entries[(class, src, dst)]`` is a **channel id**; the next router is
+    that channel's destination. The walk terminates in ``LOCAL_EJECTION``.
+
+    This is a query over the frozen payload, never a re-derivation: the
+    table it walks is the one captured at certification time.
+    """
+    table = {(row["routing_class"], row["src"], row["dst"]):
+             row["channel_id"] for row in routing_group.get("entries", ())}
+    channels = {row["channel_id"]: row
+                for row in routing_group.get("channel_hops", ())}
+    if src == dst:
+        return {"routing_class": routing_class, "src": src, "dst": dst,
+                "routers": [src], "hops": [], "terminates": True,
+                "terminal": "LOCAL_EJECTION", "reason": None}
+    path = [src]
+    hops: list[dict[str, Any]] = []
+    current = src
+    while current != dst and len(path) < limit:
+        channel_id = table.get((routing_class, current, dst))
+        if channel_id is None:
+            return {"routing_class": routing_class, "src": src, "dst": dst,
+                    "routers": path, "hops": hops, "terminates": False,
+                    "terminal": None,
+                    "reason": f"no entry ({routing_class},{current},{dst})"}
+        channel = channels.get(channel_id)
+        if channel is None:
+            return {"routing_class": routing_class, "src": src, "dst": dst,
+                    "routers": path, "hops": hops, "terminates": False,
+                    "terminal": None,
+                    "reason": f"channel {channel_id} is not in the topology"}
+        hops.append(channel)
+        nxt = channel.get("dst_router")
+        if nxt is None or nxt == current:
+            return {"routing_class": routing_class, "src": src, "dst": dst,
+                    "routers": path, "hops": hops, "terminates": False,
+                    "terminal": None, "reason": "route does not advance"}
+        path.append(nxt)
+        current = nxt
+    terminates = current == dst
+    return {"routing_class": routing_class, "src": src, "dst": dst,
+            "routers": path, "hops": hops, "terminates": terminates,
+            "terminal": "LOCAL_EJECTION" if terminates else None,
+            "reason": None}
+
+
+# ── the projection ─────────────────────────────────────────────────────
+
+def build_compile_result(revision: dict[str, Any],
+                         compilation: Any,
+                         topology_view: dict[str, Any] | None,
+                         chain_view: dict[str, Any] | None) -> dict[str, Any]:
+    """Materialize the seven inspector groups for one compiled revision.
+
+    Called at compile time and frozen with the revision, so the inspectors
+    can never drift from the proof they describe.
+    """
+    bundle = getattr(compilation, "bundle", None)
+    certificate = getattr(compilation, "certificate", None)
+    request = getattr(compilation, "request", None)
+    obligations = _obligations(certificate)
+
+    if bundle is None:
+        return {
+            "contract_version": CONTRACT_VERSION,
+            "available": False,
+            "reason": getattr(compilation, "error", None)
+            or "no bundle exists for this revision",
+            "groups": {name: {"available": False} for name in GROUPS},
+            "certificate": None,
+        }
+
+    result = {
+        "contract_version": CONTRACT_VERSION,
+        "available": True,
+        "revision_id": revision.get("revision_id"),
+        "display_name": revision.get("display_name"),
+        "compiled_at": revision.get("created_at"),
+        "design_hash": _h(revision.get("design_hash")),
+        "certificate": {
+            "overall": getattr(certificate, "overall", None),
+            "certificate_id": _h(getattr(certificate, "certificate_id",
+                                         lambda: None)()),
+            "claims": _claim_table(obligations),
+            "obligations": obligations,
+            "additional_obligations": _additional_obligations(obligations),
+            "claim_count": len(PRODUCT_CLAIMS),
+            "obligation_count": len(obligations),
+        },
+        "groups": {
+            "summary": _summary(request, bundle, certificate, compilation),
+            "mapping": _mapping(bundle),
+            "fabric": _fabric(bundle, topology_view),
+            "routing": _routing(bundle, certificate),
+            "resources": _resources(bundle, certificate),
+            "address_decode": _address_decode(bundle),
+            "provenance": _provenance(revision, bundle, chain_view),
+        },
+        "group_order": list(GROUPS),
+        "topology_hash": (topology_view or {}).get("topology_hash"),
+    }
+    return result
+
+
+__all__ = [
+    "CONTRACT_VERSION",
+    "FULL_DETAIL_ROUTERS",
+    "GROUPS",
+    "MAX_DETAIL_ROUTERS",
+    "OBSERVATION_CLAIM",
+    "OBSERVATION_LIMIT",
+    "OBSERVATION_SCOPE",
+    "PRODUCT_CLAIMS",
+    "build_compile_result",
+    "canonical_route",
+]

@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from veritx_dse.application.compile_result_view import build_compile_result
 from veritx_dse.application.errors import ControlPlaneError, ErrorCode, intent_error
 from veritx_dse.application.fabric_compiler import FabricCompiler
 from veritx_dse.application.product_evaluator import evaluate_product
@@ -798,12 +799,81 @@ class ProductService:
         chain = artifact_chain_view(compilation)
         if chain is not None:
             revision["artifact_chain"] = chain
+        # Compile Result inspectors, materialized at certification time and
+        # frozen with the revision (Gate 5 §97, Gate 8 §50). Re-deriving
+        # them at view time would let a drawn graph drift from the proof.
+        revision["compile_result"] = build_compile_result(
+            revision, compilation, revision.get("topology"), chain)
         self.store.create_revision(
             project_id, revision,
             promote=self._revision_promotable(revision))
         return self.revision_view(revision)
 
     # ── revisions ─────────────────────────────────────────────────────
+
+    def get_revision_compile_result(self, revision_id: str) -> dict[str, Any]:
+        """CompileResultView — the seven inspector groups (Gate 8 §50).
+
+        Read from the payload frozen at certification time. A revision that
+        never compiled has no inspectors: a failed proof is not a fabric.
+        """
+        _pid, revision = self.store.load_revision_global(revision_id)
+        payload = revision.get("compile_result")
+        if payload is None:
+            return {
+                "contract_version": 1,
+                "available": False,
+                "revision_id": revision_id,
+                "reason": ((revision.get("compilation") or {})
+                           .get("error")
+                           or "no compile result exists for this revision"),
+            }
+        return payload
+
+    def canonical_route(self, revision_id: str, *,
+                        routing_class: str | None = None,
+                        src: int | None = None,
+                        dst: int | None = None) -> dict[str, Any]:
+        """The DERIVED EXPECTED route for one (class, src, dst).
+
+        Walks the route table frozen with the revision at certification
+        time (Gate 8 §58). The routing class defaults to the first declared
+        class — the canonical default — and src/dst default to the first
+        attached router pair, so the inspector always has something real to
+        show without the caller guessing.
+        """
+        from veritx_dse.application.compile_result_view import (  # noqa: PLC0415
+            canonical_route as _walk,
+        )
+
+        payload = self.get_revision_compile_result(revision_id)
+        if not payload.get("available"):
+            raise ProductServiceError(
+                ErrorCode.CONFLICT,
+                payload.get("reason")
+                or "no compile result exists for this revision",
+                operation="route", resource_id=revision_id)
+        routing = payload["groups"]["routing"]
+        resolved_class = routing_class or routing.get("default_class")
+        if resolved_class is None:
+            raise ProductServiceError(
+                ErrorCode.INVALID_INTENT,
+                "this revision declares no routing class",
+                operation="route", resource_id=revision_id)
+        if resolved_class not in (routing.get("routing_classes") or []):
+            raise ProductServiceError(
+                ErrorCode.INVALID_INTENT,
+                f"unknown routing class {resolved_class!r}; declared: "
+                f"{routing.get('routing_classes')}",
+                operation="route", resource_id=revision_id)
+        routers = sorted({
+            row["src_router"] for row in routing.get("channel_hops", ())
+            if row.get("src_router") is not None})
+        if src is None:
+            src = routers[0] if routers else 0
+        if dst is None:
+            dst = routers[-1] if routers else 0
+        return _walk(routing, resolved_class, src, dst)
 
     def revision_view(self, revision: dict[str, Any]) -> dict[str, Any]:
         return {
