@@ -267,9 +267,135 @@ def _completion_ns(verified: Any) -> float | None:
     return duration.to_float() * 1e9
 
 
+# ── Wave-E model metrics (AMEND-5) ──────────────────────────────────────
+#
+# These are ANALYTICAL/MODEL-DERIVED facts from the verified Wave-E
+# performance result — NOT backend measurements. Registering them does NOT
+# make them measured; wave_e_honesty_metadata() is what keeps that
+# distinction visible, and predictive_validation = NOT_ESTABLISHED must
+# remain visible wherever these are shown.
+#
+# Each producer returns None when the fact is absent. A metric with no
+# value is ABSENT, never zero — zero is a measurement.
+
+def _qtime_cycles(doc: Any) -> float | None:
+    """Exact rational cycle count from a persisted QTime, or None.
+
+    QTime.to_dict() is {numerator, denominator} and is cycle-valued, so the
+    scalar is the exact ratio — never a rounded approximation.
+    """
+    if not isinstance(doc, Mapping):
+        return None
+    n, den = doc.get("numerator"), doc.get("denominator")
+    if type(n) is not int or type(den) is not int or den == 0:
+        return None
+    return n / den
+
+
+def _makespan(verified: Any) -> float | None:
+    """Wave-E schedule makespan in cycles (ANALYTICAL, model-derived)."""
+    if not isinstance(verified, Mapping):
+        return None
+    return _qtime_cycles(verified.get("makespan"))
+
+
+def _critical_path(verified: Any) -> float | None:
+    """Longest EXPLICIT dependency chain, in cycles.
+
+    Named for exactly what it is: resource-serialization edges are NOT part
+    of it, so it can be shorter than the makespan and must never be read as
+    the realized schedule critical path (the performance result says so in
+    its own comment).
+    """
+    if not isinstance(verified, Mapping):
+        return None
+    return _qtime_cycles(verified.get("dependency_critical_path_duration"))
+
+
+def _request_latency_mean(verified: Any) -> float | None:
+    """Mean per-request latency in cycles, from the latency summary."""
+    if not isinstance(verified, Mapping):
+        return None
+    summary = verified.get("latency_summary")
+    if not isinstance(summary, Mapping):
+        return None
+    return _qtime_cycles(summary.get("mean"))
+
+
+def _resource_utilization_max(verified: Any) -> float | None:
+    """Highest occupied fraction across resources.
+
+    ``utilization`` is PER-RESOURCE. A single scalar requires a reduction
+    and the reduction is a choice, so the metric NAME says which one: the
+    binding (maximum) resource. None when no resource reports a fraction.
+    """
+    if not isinstance(verified, Mapping):
+        return None
+    util = verified.get("utilization")
+    if not isinstance(util, Mapping):
+        return None
+    vals = [row.get("utilization") for row in util.values()
+            if isinstance(row, Mapping)
+            and isinstance(row.get("utilization"), (int, float))]
+    return max(vals) if vals else None
+
+
+#: Wave-E metric names actually derivable as scalars from the verified
+#: performance result, with the producer that derives each.
+WAVE_E_SCALAR_METRICS = (
+    ("makespan", _makespan),
+    ("critical_path", _critical_path),
+    ("request_latency_mean", _request_latency_mean),
+    ("resource_utilization_max", _resource_utilization_max),
+)
+
+#: Wave-E facts that are NOT registered as scalar metrics, with the reason.
+#: Recorded so their absence is a DECISION, not an oversight.
+WAVE_E_NOT_SCALAR = {
+    "sensitivity": "present as a nested analysis document, not a scalar; "
+                   "exposing a single number would invent a reduction",
+    "ttft": "declared in the Wave-E capability set but NOT computed in the "
+            "performance result; registering it would fabricate a metric",
+    "decode_step_latency": "same as ttft — declared, not computed here",
+    "request_latencies": "a per-request row set; request_latency_mean is "
+                         "the registered scalar view",
+    "latency_summary": "a summary document (count/mean/median/max); the "
+                       "mean is registered as request_latency_mean",
+}
+
+
+def wave_e_honesty_metadata(verified: Any) -> dict[str, Any]:
+    """The honesty facts that MUST travel with any Wave-E metric.
+
+    These keep an analytical model output from being read as a backend
+    measurement. predictive_validation is NOT_ESTABLISHED and stays
+    explicit.
+    """
+    from veritx_dse.application.capabilities import capability_registry
+    doc = capability_registry()
+    wave_e = (doc.get("wave_e") or {}) if isinstance(doc, Mapping) else {}
+    meta = {
+        "authority": "ANALYTICAL_MODEL",
+        "measured": False,
+        "predictive_validation": wave_e.get(
+            "predictive_validation", "NOT_ESTABLISHED"),
+        "unsupported": list(wave_e.get("unsupported") or ()),
+        "fidelity_warning": None,
+    }
+    if isinstance(verified, Mapping):
+        meta["fidelity_warning"] = verified.get("metrics_warning")
+    return meta
+
+
 #: The product-controlled certified registry (frozen at import). Only this
 #: registry is used by ``Optimizer.optimize_certified``.
-CERTIFIED_METRIC_REGISTRY = (
+#:
+#: v1 = the authenticated network-window metrics only.
+#: v2 = v1 + the Wave-E ANALYTICAL model metrics (AMEND-5). A NEW VERSION,
+#:      not a replacement: MetricRegistryBuilder refuses duplicate metric
+#:      names, and one authority per metric is the rule. Adding a version
+#:      is the documented path; silently replacing a producer is not.
+CERTIFIED_METRIC_REGISTRY_V1 = (
     MetricRegistryBuilder("certified-builtin-v1")
     .register("completion_cycles", _completion_cycles,
               producer_id="authenticated-network-window-cycles")
@@ -281,8 +407,23 @@ CERTIFIED_METRIC_REGISTRY = (
 )
 
 
+def _build_v2() -> CertifiedMetricRegistry:
+    b = MetricRegistryBuilder("certified-builtin-v2",
+                              base=CERTIFIED_METRIC_REGISTRY_V1)
+    for name, producer in WAVE_E_SCALAR_METRICS:
+        b.register(name, producer, producer_id=f"wave-e-model/{name}")
+    return b.freeze()
+
+
+CERTIFIED_METRIC_REGISTRY = _build_v2()
+
+
 __all__ = [
     "CERTIFIED_METRIC_REGISTRY",
+    "CERTIFIED_METRIC_REGISTRY_V1",
+    "WAVE_E_SCALAR_METRICS",
+    "WAVE_E_NOT_SCALAR",
+    "wave_e_honesty_metadata",
     "METRIC_REGISTRY_DOMAIN",
     "CertifiedMetricRegistry",
     "ExperimentalMetricRegistry",
