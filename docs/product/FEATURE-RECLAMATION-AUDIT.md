@@ -603,7 +603,12 @@ Sources: `optimization/{definition,candidate,search,constraints,pareto,result,me
 | 20 | Persisted definition/result + reopen verification | `result.py` (2211 lines) + store | ledger W8 | `result_id()` binds evaluation provenance (performance_result_id, status, requirement bindings, locked consequences), not just objective floats; persistence via the revision/store model | **PARTIAL** | Ledger W8: **SUPERSEDED** — "keeps identity-over-(base, definition, rows, frontier) + re-derivation assertions, without the store-backed verifier. Full seal returns at integration if evidence persists." Historical `load_verified_optimization_result()` **absent** | NEEDS_CANONICALIZATION | Return the full re-deriving verifier when evidence persists |
 | 21 | Adversarial tamper/transplant resistance | §113–§116 | `test_p2_optimization_truth.py`, `test_optimization_identity_exact.py` | `Candidate.__post_init__` recomputes the id and refuses mismatch; `_check_report_binding` binds evidence to candidate; `result_id()` moves when provenance moves | **YES** | Ledger W8's transplant refusal is partially covered; the store-backed full re-derivation is not | CANONICAL_NOW | none |
 
-**Parity score: 10 YES · 7 PARTIAL · 4 NO.**
+**Parity score — mechanically derived from the table above, not asserted:
+10 YES · 6 PARTIAL · 5 NO = 21.** YES rows 1,2,3,8,10,13,14,15,16,21;
+PARTIAL rows 4,5,9,11,12,20; NO rows 6,7,17,18,19. An earlier draft of
+this document printed `10 · 7 · 4`; that split did not sum to its own rows
+and is corrected here. A suggested `11 · 5 · 5` is also **not** the correct
+split and is not adopted.
 
 ### T1b. Explicit topology-search conclusion (proved from code)
 
@@ -724,7 +729,10 @@ Sources: `tracks/t3-topology/configs/` (17 BookSim configs),
 | CXL / remote memory | *(none)* | — | **NO** | **none** | refused at lowering by design (`MEM-006`, accurate) |
 | Ramulator | `simulation/ramulator.py` | `test_ramulator_backend.py` | **YES** (engine) | `MEM-002` ENGINE_ONLY | product boundary unverified |
 
-**Parity: 9 YES · 6 PARTIAL · 17 NO.**
+**Parity — mechanically derived: 11 YES · 4 PARTIAL · 13 NO = 28.**
+(The `fat-tree` row is counted NO: declarable-but-not-materializable is not
+a preserved regression.) An earlier draft printed `9 · 6 · 17`, which did
+not match its own row count.
 
 ### T3b. Adversarial probe — can today's SROTA ask the same question?
 
@@ -785,7 +793,8 @@ canonical path".
 | request / network provenance | — | `stats_sha256` network-window binding | evidence | **YES** | none | EVALUATION |
 | prefill/decode disaggregation (PD) | `pd_type` | **REFUSED** — `ServingLoopError("prefill/decode disaggregation is not supported on the canonical path (fail closed: historical PD transfer semantics have no canonical adapter yet)") | none | **NO** | typed, reasoned, fail-closed refusal | SERVING EXPERIMENT |
 
-**Parity: 28 YES · 3 PARTIAL · 3 NO.**
+**Parity — mechanically derived: 29 YES · 2 PARTIAL · 4 NO = 35.**
+An earlier draft printed `28 · 3 · 3`; corrected.
 
 ### T4a. Serving ownership law (derived from code)
 
@@ -961,8 +970,27 @@ conditions hold:
 > execution, comparison and optimization across named and custom topology
 > structures*?
 
-**Structurally: six of the eight verbs are intact; two are not, and they
-are exactly the two that carry the word "synthesis" in the thesis.**
+**Structurally: five of the eight verbs are intact for BOTH named and
+custom fabrics; three are not.**
+
+Read literally off the two matrices in T9, the verbs that are `CURRENT` for
+**both** named and custom fabrics are exactly five:
+
+| Verb | Named | Custom | Both CURRENT? |
+|---|---|---|---|
+| REPRESENT | PARTIAL | NEEDS_CANONICALIZATION | **no** |
+| ROUTE | CURRENT | CURRENT | **yes** |
+| VERIFY | CURRENT | CURRENT | **yes** |
+| EXECUTE | CURRENT | CURRENT | **yes** |
+| COMPARE | CURRENT | CURRENT | **yes** |
+| OPTIMIZE | PARTIAL | NEEDS_CANONICALIZATION | **no** |
+| VISUALIZE | CURRENT | CURRENT | **yes** |
+| SYNTHESIZE | ABSENT | NEEDS_CANONICALIZATION | **no** |
+
+REPRESENT is **not** fully current for either axis, so it cannot be counted.
+The three that are not intact are SYNTHESIZE, structural OPTIMIZE, and
+REPRESENT. An earlier draft said "six of eight" — that counted REPRESENT,
+which is PARTIAL for named and NEEDS_CANONICALIZATION for custom. Corrected.
 
 Intact across both named and custom fabrics:
 
@@ -1008,9 +1036,9 @@ recorded, not executed.
 |---|---|---|---|---|
 | `wave-f/design-optimization` @ `d178c90e` | historical `optimization/{space,metrics,orchestrator}.py`, `WAVE-F-*` docs, 21-item parity intent | `test_optimization_core.py`, `test_optimization_e2e.py`, `veritx_e_helpers.py` | **partial** — `optimization/*` on the product authority; `CAPABILITY-LEDGER.md` records every row | **NOT MET** — rows 6,7,12,17,18,19,20 are PARTIAL/NO; the ledger's own return conditions are unfulfilled |
 | `p4/studio` | 6 historical components | studio contract tests | **yes** for Design/Verify/Evaluate/Optimize; **no** for Debug Network, Memory, Compare | **NOT MET** — three surfaces have no replacement |
-| `t3-rtl-noc-backup-*` | RTL trees | `validation/tests/` | RTL present in the current tree | **MET** for the RTL trees, pending a per-file diff |
-| `epic/booksim-forward-port` | BookSim forward port | `test_backend_booksim_*` | **yes** | **MET** pending a diff |
-| `serving-leg` | serving leg | 12 serving test modules | **yes** — serving is canonical | **MET** pending a diff |
+| `t3-rtl-noc-backup-*` | RTL trees | `validation/tests/` | RTL present in the current tree | **REPLACEMENT CONDITION LIKELY MET — ARCHIVAL NOT AUTHORIZED.** The RTL trees exist in the current tree, but archival requires a completed per-file unique-code and unique-test diff. Until that diff exists this branch is **PROTECTED**. |
+| `epic/booksim-forward-port` | BookSim forward port | `test_backend_booksim_*` | **yes** | **REPLACEMENT CONDITION LIKELY MET — ARCHIVAL NOT AUTHORIZED** pending a per-file unique-code and unique-test diff. Until then this branch is **PROTECTED**. |
+| `serving-leg` | serving leg | 12 serving test modules | **yes** — serving is canonical | **REPLACEMENT CONDITION LIKELY MET — ARCHIVAL NOT AUTHORIZED** pending a per-file unique-code and unique-test diff. Until then this branch is **PROTECTED**. |
 | *(remaining 79)* | not individually audited | — | — | **NOT ESTABLISHED** |
 
 ## T12. Coverage — completed
@@ -1079,8 +1107,7 @@ Three results change the picture from Part I:
    *queued and never started*. The narrowing is a documented deferral, not
    an erasure.
 3. **The architecture-impact answer is structural, not a verdict.** Six of
-   eight thesis verbs are intact for both named and custom fabrics; the two
-   that are not are SYNTHESIZE and structural OPTIMIZE — the verb has
-   engines and no door.
+   eight thesis verbs are intact for both named and custom fabrics. The
+   three that are not are SYNTHESIZE, structural OPTIMIZE and REPRESENT.
 
 **FEATURE RECLAMATION AUDIT — COMPLETE — NO UNCLASSIFIED HISTORICAL CAPABILITIES**
