@@ -595,12 +595,25 @@ def derive_vc_count(graph: DependencyGraph) -> int:
 # ══════════════════════════════════════════════════════════════════════════════
 
 class TopologyFamily(Enum):
-    """PRD §4.4: GUIDED topology family knob."""
+    """PRD §4.4: GUIDED topology family knob.
+
+    Membership here means the family is RECOGNIZED and AUTHORABLE. It does
+    NOT mean materializable, routable or executable. GEC and FAT_TREE are
+    authorable with no materializer, and `_family_of` refuses them with a
+    typed error rather than silently downgrading. The stage authority is
+    docs/product/topology-family-registry.yaml.
+
+    CUSTOM is a CLASSIFICATION marker, not a topology algorithm: it means
+    "the graph comes from an explicit topology description (TopologyIR)".
+    It carries no parameters and is not materializable through
+    `_family_of` — the graph itself is the input.
+    """
     MESH = "mesh"
     TORUS = "torus"
     CONCENTRATED_MESH = "concentrated_mesh"
     GEC = "gec"
     FAT_TREE = "fat_tree"
+    CUSTOM = "custom"
 
 
 class OutputFormat(Enum):

@@ -42,6 +42,7 @@ _HASH_TYPE_TAG = "srota/TopologyArtifact"
 # Default local seats per router by family (GUIDED concentration overrides).
 _CONCENTRATION_DEFAULT = {
     "mesh": 1, "torus": 1, "ring": 1, "concentrated_mesh": 4,
+    "flatfly": 1, "custom": 1,
 }
 # Default per-hop link properties when the request does not carry them.
 _DEFAULT_LINK_WIDTH_BITS = 64
@@ -53,10 +54,21 @@ class TopologyError(ValueError, SemanticError):
 
 
 class MaterializedFamily(Enum):
+    """How a TopologyArtifact was derived.
+
+    This is a PROVENANCE/CLASSIFICATION marker, not a topology algorithm.
+    CUSTOM means "the graph came from an explicit topology description
+    (TopologyIR)", not "a custom algorithm ran". Membership here does NOT
+    imply a family is authorable or routable: see
+    docs/product/topology-family-registry.yaml, which is the stage
+    authority (RING is materializable and deliberately not authorable).
+    """
     MESH = "mesh"
     TORUS = "torus"
     RING = "ring"
     CONCENTRATED_MESH = "concentrated_mesh"
+    FLATFLY = "flatfly"
+    CUSTOM = "custom"
 
 
 def _strict_keys(d: Any, allowed: frozenset[str], where: str) -> None:
@@ -343,9 +355,18 @@ def _family_of(noc: NocConfig) -> MaterializedFamily:
         TopologyFamily.CONCENTRATED_MESH: MaterializedFamily.CONCENTRATED_MESH,
     }
     if tf not in mapping:
+        if tf == TopologyFamily.CUSTOM:
+            raise TopologyError(
+                "topology_family 'custom' carries no parameters: an explicit "
+                "graph is the input, not a family. Use "
+                "topology_ir.materialize_ir(TopologyIR) — "
+                "no silent fallback")
         raise TopologyError(
-            f"topology_family {tf.value!r} is not materializable in B3.1 "
-            "(supported: mesh, torus, concentrated_mesh) — no silent fallback")
+            f"topology_family {tf.value!r} is not materializable: it is "
+            "RECOGNIZED and AUTHORABLE but has no canonical materializer "
+            "yet (materializable: mesh, torus, concentrated_mesh, flatfly, "
+            "custom-via-TopologyIR) — no silent fallback. See "
+            "docs/product/topology-family-registry.yaml")
     return mapping[tf]
 
 
@@ -445,7 +466,168 @@ def materialize_family(family: MaterializedFamily, *, endpoint_count: int,
                         latency_cycles=latency_cycles)
         for i, (sr, sp, dr, dp) in enumerate(raw)
     )
+    return _artifact(family, adj, coordinates, concentration,
+                     width_bits, latency_cycles)
+
+
+def _artifact(family: MaterializedFamily, adj: dict[int, list[int]],
+              coordinates: dict[int, tuple[int, ...]], concentration: int,
+              width_bits: int, latency_cycles: int) -> TopologyArtifact:
+    """Shared canonical construction: routers, ports, dense channel ids.
+
+    One construction path for every family, so canonical ordering cannot
+    drift between materializers.
+    """
+    routers = tuple(
+        Router(router_id=r, coordinates=coordinates[r],
+               seat_capacity=concentration)
+        for r in sorted(adj)
+    )
+    # Canonical ports: local seats first, then link ports in ascending
+    # neighbor order. channel_id assigned densely in sorted order.
+    link_port: dict[tuple[int, int], int] = {}
+    for r in sorted(adj):
+        for i, nb in enumerate(adj[r]):
+            link_port[(r, nb)] = concentration + i
+    raw = sorted(
+        (r, link_port[(r, nb)], nb, link_port[(nb, r)])
+        for r in sorted(adj) for nb in adj[r]
+    )
+    channels = tuple(
+        DirectedChannel(channel_id=i, src_router=sr, src_port=sp,
+                        dst_router=dr, dst_port=dp, width_bits=width_bits,
+                        latency_cycles=latency_cycles)
+        for i, (sr, sp, dr, dp) in enumerate(raw)
+    )
     return TopologyArtifact(family=family, routers=routers, channels=channels)
+
+
+def materialize_flatfly(*, k: int, n: int, concentration: int = 1,
+                        width_bits: int = _DEFAULT_LINK_WIDTH_BITS,
+                        latency_cycles: int = _DEFAULT_LINK_LATENCY_CYCLES
+                        ) -> TopologyArtifact:
+    """Materialize a k-ary n-fly flattened butterfly (PURE point-to-point).
+
+    Shape: ``k ** n`` routers, each with radix ``r = concentration +
+    (k - 1) * n``. In each of the ``n`` dimensions a router connects to
+    every other router that differs only in that dimension, giving
+    ``(k - 1) * n`` router ports per router and ``k ** n * (k - 1) * n / 2``
+    undirected links.
+
+    Every link is an ordinary point-to-point channel. FlatFly needs NO new
+    channel primitive, which is why it is the first non-mesh proof family
+    rather than GEC (GEC-MECS is a single express channel *tapped* to many
+    destinations — multidrop, not representable as DirectedChannels
+    without semantic loss).
+
+    Canonical numbering is row-major over dimensions, matching the grid
+    families' convention: ``coord_i = (router_id // k**i) % k``.
+    """
+    _as_int("k", k, minimum=2)
+    _as_int("n", n, minimum=1)
+    _as_int("concentration", concentration, minimum=1)
+    _as_int("width_bits", width_bits, minimum=1)
+    _as_int("latency_cycles", latency_cycles, minimum=0)
+
+    router_count = k ** n
+    coords = {r: tuple((r // k ** i) % k for i in range(n))
+              for r in range(router_count)}
+    # Symmetric adjacency: connect routers differing in exactly one
+    # dimension (all k-1 other values of that coordinate).
+    adj: dict[int, list[int]] = {r: [] for r in range(router_count)}
+    for r in range(router_count):
+        rc = coords[r]
+        for i in range(n):
+            for v in range(k):
+                if v == rc[i]:
+                    continue
+                other = list(rc)
+                other[i] = v
+                oid = 0
+                for d in range(n):
+                    oid += other[d] * (k ** d)
+                if oid != r and oid not in adj[r]:
+                    adj[r].append(oid)
+    adj = {r: sorted(peers) for r, peers in adj.items()}
+    expected_deg = (k - 1) * n
+    bad = {r: len(p) for r, p in adj.items() if len(p) != expected_deg}
+    if bad:
+        raise TopologyError(
+            f"flatfly k={k} n={n}: routers with degree != (k-1)*n={expected_deg}: "
+            f"{sorted(bad.items())[:4]}")
+    return _artifact(MaterializedFamily.FLATFLY, adj, coords, concentration,
+                     width_bits, latency_cycles)
+
+
+def materialize_ir(ir: Any, *,
+                   width_bits: int = _DEFAULT_LINK_WIDTH_BITS,
+                   latency_cycles: int = _DEFAULT_LINK_LATENCY_CYCLES,
+                   seat_capacity: int = 1,
+                   coordinates: dict[int, tuple[int, ...]] | None = None
+                   ) -> TopologyArtifact:
+    """Materialize an explicit topology description (TopologyIR) to a
+    canonical TopologyArtifact.
+
+    The existing ``model.topology_ir`` module is the canonical custom
+    topology contract: strict schema, undirected explicit links, self-loop
+    and duplicate and range validation, and NO required coordinates. This
+    function is the missing half — lowering that intent to the canonical
+    artifact. It is the ONLY place an explicit graph becomes a
+    TopologyArtifact.
+
+    COORDINATE LAW (see FEATURE-RECLAMATION-AMENDMENT.md):
+      * ``coordinates`` is OPTIONAL and SCIENTIFIC. Supply it only when
+        physical placement is a real fact (it feeds link length, allowed
+        links, latency and physical cost). When supplied, it is
+        identity-bearing.
+      * When omitted, routers carry ``coordinates=()`` and the artifact is
+        coordinate-free. The 2D Fabric Inspector derives a
+        presentation-only layout at render time; that layout is NEVER
+        persisted into a design, topology or evidence hash.
+
+    UNIT GAP (explicit, not hidden): TopologyIR carries ANALYTICAL link
+    attributes (``bandwidth_GBs``, ``latency_ns``). DirectedChannel carries
+    PHYSICAL units (``width_bits``, ``latency_cycles``). Converting ns to
+    cycles requires a clock that TopologyIR does not carry, so this
+    function does NOT guess: the caller supplies the canonical channel
+    properties. Fabricating a conversion would silently invent a clock.
+
+    No routing, VC, turn or escape semantics are produced here. Those stay
+    compiler-derived (the whole point of the authority boundary).
+    """
+    from .topology_ir import TopologyIR, expand
+    if not isinstance(ir, TopologyIR):
+        raise TopologyError(
+            f"materialize_ir expects a TopologyIR, got {type(ir).__name__}")
+    _as_int("width_bits", width_bits, minimum=1)
+    _as_int("latency_cycles", latency_cycles, minimum=0)
+    _as_int("seat_capacity", seat_capacity, minimum=1)
+
+    m = expand(ir)
+    adj: dict[int, list[int]] = {v: [] for v in m.nodes}
+    for u, v in m.edges:
+        adj[u].append(v)
+        adj[v].append(u)
+    adj = {r: sorted(peers) for r, peers in adj.items()}
+
+    if coordinates is None:
+        coords = {r: () for r in adj}
+    else:
+        missing = sorted(set(adj) - set(coordinates))
+        if missing:
+            raise TopologyError(
+                f"materialize_ir: coordinates supplied but missing for "
+                f"routers {missing[:8]}")
+        for r, c in coordinates.items():
+            if not isinstance(c, tuple) or not all(
+                    type(x) is int and x >= 0 for x in c):
+                raise TopologyError(
+                    f"materialize_ir: coordinates[{r}] must be a tuple of "
+                    f"non-negative ints, got {c!r}")
+        coords = dict(coordinates)
+
+    return _artifact(MaterializedFamily.CUSTOM, adj, coords, seat_capacity,
+                     width_bits, latency_cycles)
 
 
 def materialize_topology(inventory: NodeInventory,
