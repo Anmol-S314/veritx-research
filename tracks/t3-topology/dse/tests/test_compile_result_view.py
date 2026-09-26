@@ -151,12 +151,16 @@ def test_the_certificate_exposes_the_four_product_claims(compiled):
     claims = compiled["certificate"]["claims"]
     assert [c["claim"] for c in claims] == [n for n, _ in PRODUCT_CLAIMS]
     for claim in claims:
-        assert claim["status"] in ("PASS", "FAIL", "UNSUPPORTED")
+        # The certificate obligation vocabulary is PASS/FAIL only — an
+        # obligation-level UNSUPPORTED does not exist.
+        assert claim["certificate_status"] in ("PASS", "FAIL")
         assert claim["scope"]
+        assert claim["contributing_obligations"]
 
 
 def test_the_four_claims_carry_the_planning_scope_sentences(compiled):
-    scopes = {c["claim"]: c["scope"] for c in compiled["certificate"]["claims"]}
+    scopes = {c["claim"]: c["scope"]
+              for c in compiled["certificate"]["claims"]}
     assert scopes["ATTACHMENT_COMPLETE"] == "every declared agent is attached"
     assert scopes["DEADLOCK_FREE"] == "the channel-VC CDG is acyclic"
 

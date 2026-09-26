@@ -97,27 +97,55 @@ def _obligations(certificate: Any) -> list[dict[str, Any]]:
 
 
 def _claim_table(obligations: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    by_name = {o.get("obligation"): o for o in obligations}
-    claims: list[dict[str, Any]] = []
-    for name, scope in PRODUCT_CLAIMS:
-        row = by_name.get(name)
-        claims.append({
-            "claim": name,
-            "scope": scope,
-            "status": (row or {}).get("status", "UNSUPPORTED"),
-            "method": (row or {}).get("method"),
-        })
-    return claims
+    """The four product claims, derived from the ten obligations.
+
+    Delegates to CertificateProjectionV1: the claims are aggregated by an
+    explicit contribution table, never by a same-name lookup, and the
+    deadlock claim carries its underlying analysis verdict so a
+    NOT-ESTABLISHED certificate state is never rendered as a detected
+    deadlock.
+    """
+    projection = _projection_for_obligations(obligations)
+    return projection.get("claims", [])
 
 
 def _additional_obligations(
         obligations: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    named = {name for name, _scope in PRODUCT_CLAIMS}
-    return [
-        {"obligation": o.get("obligation"), "status": o.get("status"),
-         "method": o.get("method"), "evidence": o.get("evidence") or {}}
-        for o in obligations if o.get("obligation") not in named
-    ]
+    projection = _projection_for_obligations(obligations)
+    return projection.get("technical_only", [])
+
+
+def _projection_for_obligations(
+        obligations: list[dict[str, Any]]) -> dict[str, Any]:
+    """Project a bare obligation list through the same authority.
+
+    The Compile Result holds an already-serialized obligation list, so it
+    re-wraps it in a minimal certificate-shaped object rather than
+    duplicating the projection rules.
+    """
+    from veritx_dse.application.certificate_projection import (  # noqa: PLC0415
+        project_certificate,
+    )
+
+    class _Row:
+        def __init__(self, row: dict[str, Any]) -> None:
+            self._row = row
+
+        def to_dict(self) -> dict[str, Any]:
+            return self._row
+
+    class _Certificate:
+        overall = None
+        certificate_id = staticmethod(lambda: None)
+
+        def __init__(self, rows: tuple) -> None:
+            self.obligations = rows
+
+    projection = project_certificate(
+        _Certificate(tuple(_Row(o) for o in obligations)))
+    projection["overall"] = next(
+        (o.get("status") for o in obligations), None)
+    return projection
 
 
 # ── groups ─────────────────────────────────────────────────────────────
@@ -534,10 +562,10 @@ def build_compile_result(revision: dict[str, Any],
         "compiled_at": revision.get("created_at"),
         "design_hash": _h(revision.get("design_hash")),
         "certificate": {
+            **_projection_for_obligations(obligations),
             "overall": getattr(certificate, "overall", None),
             "certificate_id": _h(getattr(certificate, "certificate_id",
                                          lambda: None)()),
-            "claims": _claim_table(obligations),
             "obligations": obligations,
             "additional_obligations": _additional_obligations(obligations),
             "claim_count": len(PRODUCT_CLAIMS),
