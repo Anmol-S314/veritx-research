@@ -42,6 +42,9 @@ _STATUS_BY_CODE: dict[ErrorCode, int] = {
     ErrorCode.POLICY_REJECTED: 422,
     ErrorCode.NOT_FOUND: 404,
     ErrorCode.CONFLICT: 409,
+    # A stale review is a conflict with the reviewed snapshot, not a bad
+    # request: the client must refresh Review before compiling (REV-D2).
+    ErrorCode.STALE_REVIEW: 409,
     ErrorCode.INTERNAL_ERROR: 500,
 }
 

@@ -136,6 +136,19 @@ class CompileBody(BaseModel):
     request: dict[str, Any] | None = None
 
 
+class CompileDraftBody(BaseModel):
+    """Compile request body (Gate 7 §4).
+
+    ``expected_draft_design_hash`` is the snapshot the user reviewed. The
+    gateway refuses with ``STALE_REVIEW`` when the current canonical draft
+    no longer matches it, so a reviewed snapshot can never compile unseen
+    content. No ETag substitute: the canonical content hash is the
+    authority the draft model already uses.
+    """
+
+    expected_draft_design_hash: str | None = None
+
+
 class EvaluateBody(BaseModel):
     #: evaluate an immutable revision (preferred); the gateway re-derives the
     #: canonical request. Raw ``request`` is a compatibility path only.
@@ -413,6 +426,16 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
     def v1_draft(project_id: str) -> dict[str, Any]:
         return product.draft_view(project_id)
 
+    @app.get("/api/v1/projects/{project_id}/design", tags=["product"])
+    def v1_design(project_id: str,
+                  presentation: str = "edit",
+                  review_snapshot_hash: str | None = None) -> dict[str, Any]:
+        """DesignViewV2 — authoring (edit) or the pre-compile boundary
+        (review). One projection, not two models (Gate 7 §2/§51.1)."""
+        return product.design_view_v2(
+            project_id, presentation=presentation,
+            review_snapshot_hash=review_snapshot_hash)
+
     @app.put("/api/v1/projects/{project_id}/draft", tags=["product"])
     def v1_put_draft(project_id: str, body: DraftBody) -> dict[str, Any]:
         return product.put_draft(project_id, body.request)
@@ -423,8 +446,18 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
         return product.select_workload(project_id, body.workload_id)
 
     @app.post("/api/v1/projects/{project_id}/compile", tags=["product"])
-    def v1_compile(project_id: str) -> dict[str, Any]:
-        return product.compile_draft(project_id)
+    def v1_compile(project_id: str,
+                   body: CompileDraftBody | None = None) -> dict[str, Any]:
+        """Compile the draft into an immutable revision.
+
+        ``expected_draft_design_hash`` binds the compile to the reviewed
+        snapshot (Gate 7 §4, REV-D2). Omitting it compiles the current draft
+        — the compatibility path — but the product flow always sends it.
+        """
+        return product.compile_draft(
+            project_id,
+            expected_draft_design_hash=(
+                body.expected_draft_design_hash if body else None))
 
     @app.get("/api/v1/revisions/{revision_id}", tags=["product"])
     def v1_revision(revision_id: str) -> dict[str, Any]:

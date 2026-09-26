@@ -629,6 +629,44 @@ class ProductService:
             "request": draft.get("request"),
         }
 
+    def design_view_v2(self, project_id: str, *,
+                       presentation: str = "edit",
+                       review_snapshot_hash: str | None = None,
+                       ) -> dict[str, Any]:
+        """DesignViewV2 for the current draft (Gate 7 §51.1).
+
+        One projection, two presentations: authoring (``edit``) and the
+        pre-compile boundary (``review``). The backend owns the canonical
+        values, the grouping, readiness, findings, capability consequences
+        and the scientific diff — the frontend renders them.
+        """
+        from veritx_dse.application.design_view_v2 import (
+            build_design_view_v2,
+        )
+
+        project = self._ensure_revision_pointers(project_id)
+        draft = self.store.load_draft(project_id)
+        request = parse_request_doc(draft.get("request"))
+        canonical_doc = canonical_request_doc(request)
+        draft_hash = _view_hash(request.design_hash())
+
+        parent_revision = None
+        parent_doc = None
+        active_id = project.get("active_revision_id")
+        if active_id is not None:
+            parent_revision = self.store.load_revision(project_id, active_id)
+            parent_doc = parent_revision.get("request")
+
+        return build_design_view_v2(
+            canonical_doc,
+            project_id=project_id,
+            presentation=presentation,
+            draft_design_hash=draft_hash,
+            parent_revision=parent_revision,
+            parent_doc=parent_doc,
+            review_snapshot_hash=review_snapshot_hash,
+        )
+
     def put_draft(self, project_id: str, request_doc: Any) -> dict[str, Any]:
         request = parse_request_doc(request_doc)
         self.store.save_draft(project_id, canonical_request_doc(request),
@@ -662,11 +700,35 @@ class ProductService:
 
     # ── compile ───────────────────────────────────────────────────────
 
-    def compile_draft(self, project_id: str) -> dict[str, Any]:
+    def compile_draft(self, project_id: str,
+                      expected_draft_design_hash: str | None = None,
+                      ) -> dict[str, Any]:
+        """Compile the current draft into an immutable revision.
+
+        ``expected_draft_design_hash`` is the reviewed snapshot (Gate 7 §4,
+        REV-D2). When supplied and it no longer matches the current canonical
+        draft, compilation is refused as ``STALE_REVIEW`` — the reviewed
+        content is never silently replaced by unseen content, and Review is
+        never silently regenerated.
+        """
         self._ensure_revision_pointers(project_id)  # 404 if unknown
         draft = self.store.load_draft(project_id)
         request = parse_request_doc(draft.get("request"))
         canonical_doc = canonical_request_doc(request)
+        current_hash = _view_hash(request.design_hash())
+        if (expected_draft_design_hash is not None
+                and expected_draft_design_hash != current_hash):
+            raise ControlPlaneError(
+                ErrorCode.STALE_REVIEW,
+                "the draft changed after this review was generated; refresh "
+                "Review before compiling (reviewed "
+                f"{expected_draft_design_hash}, current {current_hash})",
+                operation="compile",
+                resource_id=project_id,
+                details=(
+                    ("expected_draft_design_hash", expected_draft_design_hash),
+                    ("current_draft_design_hash", current_hash),
+                ))
         compilation = FabricCompiler().compile(request)
         design = design_view(
             request, compilation if compilation.status == "COMPILED" else None)

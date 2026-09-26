@@ -27,6 +27,9 @@ class ErrorCode(str, Enum):
     POLICY_REJECTED = "POLICY_REJECTED"
     NOT_FOUND = "NOT_FOUND"
     CONFLICT = "CONFLICT"
+    #: The reviewed draft snapshot is no longer the current draft. Compiling
+    #: would certify content the user never reviewed (Gate 7 §4, REV-D2).
+    STALE_REVIEW = "STALE_REVIEW"
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
 
