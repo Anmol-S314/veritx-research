@@ -48,6 +48,21 @@ def compilation_view(compilation: Any) -> dict[str, Any]:
             request.compiler_semantics_version,
         "error": compilation.error,
     }
+    # A staged refusal still says WHERE it stopped and what it produced:
+    # "compilation failed" would be wrong when upstream derivation was
+    # valid and only a downstream contract is unavailable.
+    staged = getattr(compilation, "staged", None)
+    if getattr(compilation, "stopped_at_stage", None) is not None:
+        view["stopped_at_stage"] = compilation.stopped_at_stage
+    if staged is not None:
+        view["staged"] = {
+            "stopped_at_stage": staged.stopped_at_stage,
+            "produced_stages": list(staged.produced_stages),
+            "has_topology": staged.topology is not None,
+            "has_attachment": staged.attachment is not None,
+            "has_mapping": staged.mapping is not None,
+            "has_inventory": staged.inventory is not None,
+        }
     if compilation.status != "COMPILED":
         return view
     bundle, certificate = compilation.bundle, compilation.certificate
@@ -111,6 +126,68 @@ def topology_view(compilation: Any,
             "seats": topology.seat_capacity,
             "endpoints": attachment.endpoint_count,
         },
+    }
+
+
+def staged_topology_view(compilation: Any,
+                         *, revision_id: str | None = None
+                         ) -> dict[str, Any] | None:
+    """Project a STAGED refusal's derived topology (the staged-compilation law).
+
+    A later stage refusal must not invalidate already-derived earlier
+    artifacts. When routing refuses, the TopologyArtifact and
+    AgentAttachmentArtifact are still canonical science and stay
+    inspectable — they are simply not a fabric, so this view is returned
+    ONLY alongside an explicit `stopped_at_stage` and never as a
+    TopologyView of a completed compile.
+
+    Returns None when no upstream topology was produced.
+    """
+    from veritx_dse.application.fabric_compiler import Compilation
+    if not isinstance(compilation, Compilation):
+        raise TypeError(
+            f"staged_topology_view takes a Compilation, got "
+            f"{type(compilation).__name__}")
+    staged = getattr(compilation, "staged", None)
+    if staged is None or staged.topology is None:
+        return None
+    topology, attachment = staged.topology, staged.attachment
+    endpoints = []
+    if attachment is not None:
+        endpoints = [
+            {
+                "endpoint_id": e.endpoint_id,
+                "kind": _agent_kind(e.agent.kind),
+                "group_index": e.agent.group_index,
+                "instance_index": e.agent.instance_index,
+                "router_id": e.router_id,
+                "port_id": e.port_id,
+            }
+            for e in attachment.endpoints
+        ]
+    return {
+        "contract_version": 1,
+        "revision_id": revision_id,
+        "design_hash": _h(compilation.request.design_hash()),
+        "topology_hash": _h(topology.topology_hash()),
+        "attachment_hash": (_h(attachment.attachment_hash())
+                            if attachment is not None else None),
+        "family": _agent_kind(topology.family),
+        "routers": [r.to_dict() for r in topology.routers],
+        "channels": [c.to_dict() for c in topology.channels],
+        "physical_links": [p.to_dict() for p in topology.physical_links],
+        "endpoints": endpoints,
+        "counts": {
+            "routers": topology.router_count,
+            "channels": topology.channel_count,
+            "seats": topology.seat_capacity,
+            "endpoints": (attachment.endpoint_count
+                          if attachment is not None else 0),
+        },
+        # Never let a staged topology read as a certified one.
+        "staged": True,
+        "stopped_at_stage": staged.stopped_at_stage,
+        "produced_stages": list(staged.produced_stages),
     }
 
 

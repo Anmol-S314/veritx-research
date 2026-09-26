@@ -1044,15 +1044,58 @@ export interface ProvenanceGroup {
   artifact_chain: ArtifactChainView | null;
 }
 
+/** A staged refusal: upstream derivation was valid and only a downstream
+ * contract is unavailable. This is NOT a catastrophic error, and it is not
+ * an invalid design. */
+export interface StagedCompileResult {
+  contract_version: 1;
+  available: false;
+  staged: true;
+  revision_id: string | null;
+  display_name: string | null;
+  design_hash: string | null;
+  compilation_status: string;
+  stopped_at_stage: string | null;
+  produced_stages: string[];
+  reason: string;
+  staged_topology: (TopologyView & {
+    staged: true;
+    stopped_at_stage: string;
+    produced_stages: string[];
+  }) | null;
+  unavailable_groups: string[];
+  certificate: { available: false; reason: string };
+  capability_consequences: CapabilityConsequence[];
+}
+
+/** A staged refusal carries an explanation of WHY no certificate exists,
+ * not a certificate. */
+export interface CertificateAbsence {
+  available: false;
+  reason: string;
+}
+
+export function hasClaims(
+  certificate: CompileCertificate | CertificateAbsence | undefined,
+): certificate is CompileCertificate {
+  return !!certificate && 'claims' in certificate;
+}
+
 export interface CompileResultView {
   contract_version: 1;
   available: boolean;
+  /** Present when this is a staged refusal rather than a full result. */
+  staged?: boolean;
+  stopped_at_stage?: string | null;
+  produced_stages?: string[];
+  staged_topology?: StagedCompileResult['staged_topology'];
+  unavailable_groups?: string[];
   reason?: string;
   revision_id?: string | null;
   display_name?: string | null;
   compiled_at?: string | null;
   design_hash?: string | null;
-  certificate?: CompileCertificate;
+  certificate?: CompileCertificate | CertificateAbsence;
   groups?: {
     summary: CompileSummaryGroup;
     mapping: MappingGroup;

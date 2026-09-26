@@ -1,0 +1,1502 @@
+{
+  "case": "torus-staged",
+  "compilation_status": "UNSUPPORTED",
+  "error": "UNSUPPORTED: no certified routing derivation for topology family 'torus' \u2014 P1A certifies MESH and CONCENTRATED_MESH (DOR_XY) only; refusing silent minimum-hop fallback",
+  "produced_stages": [
+    "INPUT",
+    "INPUT_MAPPING",
+    "TOPOLOGY",
+    "ATTACHMENT"
+  ],
+  "staged": true,
+  "staged_topology": {
+    "attachment_hash": "sha256:2369a95d53a2ef39cadd19dd1145bf3c4b1de98448eb5a257a7ccec7ff0d4795",
+    "channels": [
+      {
+        "channel_id": 0,
+        "dst_port": 1,
+        "dst_router": 1,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 1,
+        "src_router": 0,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 1,
+        "dst_port": 1,
+        "dst_router": 4,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 2,
+        "src_router": 0,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 2,
+        "dst_port": 1,
+        "dst_router": 5,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 3,
+        "src_router": 0,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 3,
+        "dst_port": 1,
+        "dst_router": 20,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 4,
+        "src_router": 0,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 4,
+        "dst_port": 1,
+        "dst_router": 0,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 1,
+        "src_router": 1,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 5,
+        "dst_port": 1,
+        "dst_router": 2,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 2,
+        "src_router": 1,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 6,
+        "dst_port": 1,
+        "dst_router": 6,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 3,
+        "src_router": 1,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 7,
+        "dst_port": 1,
+        "dst_router": 21,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 4,
+        "src_router": 1,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 8,
+        "dst_port": 2,
+        "dst_router": 1,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 1,
+        "src_router": 2,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 9,
+        "dst_port": 1,
+        "dst_router": 3,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 2,
+        "src_router": 2,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 10,
+        "dst_port": 1,
+        "dst_router": 7,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 3,
+        "src_router": 2,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 11,
+        "dst_port": 1,
+        "dst_router": 22,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 4,
+        "src_router": 2,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 12,
+        "dst_port": 2,
+        "dst_router": 2,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 1,
+        "src_router": 3,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 13,
+        "dst_port": 2,
+        "dst_router": 4,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 2,
+        "src_router": 3,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 14,
+        "dst_port": 1,
+        "dst_router": 8,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 3,
+        "src_router": 3,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 15,
+        "dst_port": 1,
+        "dst_router": 23,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 4,
+        "src_router": 3,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 16,
+        "dst_port": 2,
+        "dst_router": 0,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 1,
+        "src_router": 4,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 17,
+        "dst_port": 2,
+        "dst_router": 3,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 2,
+        "src_router": 4,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 18,
+        "dst_port": 1,
+        "dst_router": 9,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 3,
+        "src_router": 4,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 19,
+        "dst_port": 1,
+        "dst_router": 24,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 4,
+        "src_router": 4,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 20,
+        "dst_port": 3,
+        "dst_router": 0,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 1,
+        "src_router": 5,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 21,
+        "dst_port": 2,
+        "dst_router": 6,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 2,
+        "src_router": 5,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 22,
+        "dst_port": 2,
+        "dst_router": 9,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 3,
+        "src_router": 5,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 23,
+        "dst_port": 1,
+        "dst_router": 10,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 4,
+        "src_router": 5,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 24,
+        "dst_port": 3,
+        "dst_router": 1,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 1,
+        "src_router": 6,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 25,
+        "dst_port": 2,
+        "dst_router": 5,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 2,
+        "src_router": 6,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 26,
+        "dst_port": 2,
+        "dst_router": 7,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 3,
+        "src_router": 6,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 27,
+        "dst_port": 1,
+        "dst_router": 11,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 4,
+        "src_router": 6,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 28,
+        "dst_port": 3,
+        "dst_router": 2,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 1,
+        "src_router": 7,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 29,
+        "dst_port": 3,
+        "dst_router": 6,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 2,
+        "src_router": 7,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 30,
+        "dst_port": 2,
+        "dst_router": 8,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 3,
+        "src_router": 7,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 31,
+        "dst_port": 1,
+        "dst_router": 12,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 4,
+        "src_router": 7,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 32,
+        "dst_port": 3,
+        "dst_router": 3,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 1,
+        "src_router": 8,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 33,
+        "dst_port": 3,
+        "dst_router": 7,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 2,
+        "src_router": 8,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 34,
+        "dst_port": 3,
+        "dst_router": 9,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 3,
+        "src_router": 8,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 35,
+        "dst_port": 1,
+        "dst_router": 13,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 4,
+        "src_router": 8,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 36,
+        "dst_port": 3,
+        "dst_router": 4,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 1,
+        "src_router": 9,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 37,
+        "dst_port": 3,
+        "dst_router": 5,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 2,
+        "src_router": 9,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 38,
+        "dst_port": 3,
+        "dst_router": 8,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 3,
+        "src_router": 9,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 39,
+        "dst_port": 1,
+        "dst_router": 14,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 4,
+        "src_router": 9,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 40,
+        "dst_port": 4,
+        "dst_router": 5,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 1,
+        "src_router": 10,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 41,
+        "dst_port": 2,
+        "dst_router": 11,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 2,
+        "src_router": 10,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 42,
+        "dst_port": 2,
+        "dst_router": 14,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 3,
+        "src_router": 10,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 43,
+        "dst_port": 1,
+        "dst_router": 15,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 4,
+        "src_router": 10,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 44,
+        "dst_port": 4,
+        "dst_router": 6,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 1,
+        "src_router": 11,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 45,
+        "dst_port": 2,
+        "dst_router": 10,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 2,
+        "src_router": 11,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 46,
+        "dst_port": 2,
+        "dst_router": 12,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 3,
+        "src_router": 11,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 47,
+        "dst_port": 1,
+        "dst_router": 16,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 4,
+        "src_router": 11,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 48,
+        "dst_port": 4,
+        "dst_router": 7,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 1,
+        "src_router": 12,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 49,
+        "dst_port": 3,
+        "dst_router": 11,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 2,
+        "src_router": 12,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 50,
+        "dst_port": 2,
+        "dst_router": 13,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 3,
+        "src_router": 12,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 51,
+        "dst_port": 1,
+        "dst_router": 17,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 4,
+        "src_router": 12,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 52,
+        "dst_port": 4,
+        "dst_router": 8,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 1,
+        "src_router": 13,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 53,
+        "dst_port": 3,
+        "dst_router": 12,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 2,
+        "src_router": 13,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 54,
+        "dst_port": 3,
+        "dst_router": 14,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 3,
+        "src_router": 13,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 55,
+        "dst_port": 1,
+        "dst_router": 18,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 4,
+        "src_router": 13,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 56,
+        "dst_port": 4,
+        "dst_router": 9,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 1,
+        "src_router": 14,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 57,
+        "dst_port": 3,
+        "dst_router": 10,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 2,
+        "src_router": 14,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 58,
+        "dst_port": 3,
+        "dst_router": 13,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 3,
+        "src_router": 14,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 59,
+        "dst_port": 1,
+        "dst_router": 19,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 4,
+        "src_router": 14,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 60,
+        "dst_port": 4,
+        "dst_router": 10,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 1,
+        "src_router": 15,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 61,
+        "dst_port": 2,
+        "dst_router": 16,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 2,
+        "src_router": 15,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 62,
+        "dst_port": 2,
+        "dst_router": 19,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 3,
+        "src_router": 15,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 63,
+        "dst_port": 2,
+        "dst_router": 20,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 4,
+        "src_router": 15,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 64,
+        "dst_port": 4,
+        "dst_router": 11,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 1,
+        "src_router": 16,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 65,
+        "dst_port": 2,
+        "dst_router": 15,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 2,
+        "src_router": 16,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 66,
+        "dst_port": 2,
+        "dst_router": 17,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 3,
+        "src_router": 16,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 67,
+        "dst_port": 2,
+        "dst_router": 21,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 4,
+        "src_router": 16,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 68,
+        "dst_port": 4,
+        "dst_router": 12,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 1,
+        "src_router": 17,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 69,
+        "dst_port": 3,
+        "dst_router": 16,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 2,
+        "src_router": 17,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 70,
+        "dst_port": 2,
+        "dst_router": 18,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 3,
+        "src_router": 17,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 71,
+        "dst_port": 2,
+        "dst_router": 22,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 4,
+        "src_router": 17,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 72,
+        "dst_port": 4,
+        "dst_router": 13,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 1,
+        "src_router": 18,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 73,
+        "dst_port": 3,
+        "dst_router": 17,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 2,
+        "src_router": 18,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 74,
+        "dst_port": 3,
+        "dst_router": 19,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 3,
+        "src_router": 18,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 75,
+        "dst_port": 2,
+        "dst_router": 23,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 4,
+        "src_router": 18,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 76,
+        "dst_port": 4,
+        "dst_router": 14,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 1,
+        "src_router": 19,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 77,
+        "dst_port": 3,
+        "dst_router": 15,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 2,
+        "src_router": 19,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 78,
+        "dst_port": 3,
+        "dst_router": 18,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 3,
+        "src_router": 19,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 79,
+        "dst_port": 2,
+        "dst_router": 24,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 4,
+        "src_router": 19,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 80,
+        "dst_port": 4,
+        "dst_router": 0,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 1,
+        "src_router": 20,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 81,
+        "dst_port": 4,
+        "dst_router": 15,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 2,
+        "src_router": 20,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 82,
+        "dst_port": 3,
+        "dst_router": 21,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 3,
+        "src_router": 20,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 83,
+        "dst_port": 3,
+        "dst_router": 24,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 4,
+        "src_router": 20,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 84,
+        "dst_port": 4,
+        "dst_router": 1,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 1,
+        "src_router": 21,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 85,
+        "dst_port": 4,
+        "dst_router": 16,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 2,
+        "src_router": 21,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 86,
+        "dst_port": 3,
+        "dst_router": 20,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 3,
+        "src_router": 21,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 87,
+        "dst_port": 3,
+        "dst_router": 22,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 4,
+        "src_router": 21,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 88,
+        "dst_port": 4,
+        "dst_router": 2,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 1,
+        "src_router": 22,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 89,
+        "dst_port": 4,
+        "dst_router": 17,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 2,
+        "src_router": 22,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 90,
+        "dst_port": 4,
+        "dst_router": 21,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 3,
+        "src_router": 22,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 91,
+        "dst_port": 3,
+        "dst_router": 23,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 4,
+        "src_router": 22,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 92,
+        "dst_port": 4,
+        "dst_router": 3,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 1,
+        "src_router": 23,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 93,
+        "dst_port": 4,
+        "dst_router": 18,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 2,
+        "src_router": 23,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 94,
+        "dst_port": 4,
+        "dst_router": 22,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 3,
+        "src_router": 23,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 95,
+        "dst_port": 4,
+        "dst_router": 24,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 4,
+        "src_router": 23,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 96,
+        "dst_port": 4,
+        "dst_router": 4,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 1,
+        "src_router": 24,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 97,
+        "dst_port": 4,
+        "dst_router": 19,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 2,
+        "src_router": 24,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 98,
+        "dst_port": 4,
+        "dst_router": 20,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 3,
+        "src_router": 24,
+        "width_bits": 64
+      },
+      {
+        "channel_id": 99,
+        "dst_port": 4,
+        "dst_router": 23,
+        "latency_cycles": 1,
+        "physical_link_id": null,
+        "route_weight": 1,
+        "src_port": 4,
+        "src_router": 24,
+        "width_bits": 64
+      }
+    ],
+    "contract_version": 1,
+    "counts": {
+      "channels": 100,
+      "endpoints": 20,
+      "routers": 25,
+      "seats": 25
+    },
+    "design_hash": "sha256:7f795ea7c13fdd313f25898efd8233fba7955a581188e6b9a0bb8096bb2627bd",
+    "endpoints": [
+      {
+        "endpoint_id": 0,
+        "group_index": 0,
+        "instance_index": 0,
+        "kind": "compute_tile",
+        "port_id": 0,
+        "router_id": 0
+      },
+      {
+        "endpoint_id": 1,
+        "group_index": 0,
+        "instance_index": 1,
+        "kind": "compute_tile",
+        "port_id": 0,
+        "router_id": 1
+      },
+      {
+        "endpoint_id": 2,
+        "group_index": 0,
+        "instance_index": 2,
+        "kind": "compute_tile",
+        "port_id": 0,
+        "router_id": 2
+      },
+      {
+        "endpoint_id": 3,
+        "group_index": 0,
+        "instance_index": 3,
+        "kind": "compute_tile",
+        "port_id": 0,
+        "router_id": 3
+      },
+      {
+        "endpoint_id": 4,
+        "group_index": 0,
+        "instance_index": 4,
+        "kind": "compute_tile",
+        "port_id": 0,
+        "router_id": 4
+      },
+      {
+        "endpoint_id": 5,
+        "group_index": 0,
+        "instance_index": 5,
+        "kind": "compute_tile",
+        "port_id": 0,
+        "router_id": 5
+      },
+      {
+        "endpoint_id": 6,
+        "group_index": 0,
+        "instance_index": 6,
+        "kind": "compute_tile",
+        "port_id": 0,
+        "router_id": 6
+      },
+      {
+        "endpoint_id": 7,
+        "group_index": 0,
+        "instance_index": 7,
+        "kind": "compute_tile",
+        "port_id": 0,
+        "router_id": 7
+      },
+      {
+        "endpoint_id": 8,
+        "group_index": 0,
+        "instance_index": 8,
+        "kind": "compute_tile",
+        "port_id": 0,
+        "router_id": 8
+      },
+      {
+        "endpoint_id": 9,
+        "group_index": 0,
+        "instance_index": 9,
+        "kind": "compute_tile",
+        "port_id": 0,
+        "router_id": 9
+      },
+      {
+        "endpoint_id": 10,
+        "group_index": 0,
+        "instance_index": 10,
+        "kind": "compute_tile",
+        "port_id": 0,
+        "router_id": 10
+      },
+      {
+        "endpoint_id": 11,
+        "group_index": 0,
+        "instance_index": 11,
+        "kind": "compute_tile",
+        "port_id": 0,
+        "router_id": 11
+      },
+      {
+        "endpoint_id": 12,
+        "group_index": 0,
+        "instance_index": 12,
+        "kind": "compute_tile",
+        "port_id": 0,
+        "router_id": 12
+      },
+      {
+        "endpoint_id": 13,
+        "group_index": 0,
+        "instance_index": 13,
+        "kind": "compute_tile",
+        "port_id": 0,
+        "router_id": 13
+      },
+      {
+        "endpoint_id": 14,
+        "group_index": 0,
+        "instance_index": 14,
+        "kind": "compute_tile",
+        "port_id": 0,
+        "router_id": 14
+      },
+      {
+        "endpoint_id": 15,
+        "group_index": 0,
+        "instance_index": 15,
+        "kind": "compute_tile",
+        "port_id": 0,
+        "router_id": 15
+      },
+      {
+        "endpoint_id": 16,
+        "group_index": 1,
+        "instance_index": 0,
+        "kind": "hbm_controller",
+        "port_id": 0,
+        "router_id": 16
+      },
+      {
+        "endpoint_id": 17,
+        "group_index": 1,
+        "instance_index": 1,
+        "kind": "hbm_controller",
+        "port_id": 0,
+        "router_id": 17
+      },
+      {
+        "endpoint_id": 18,
+        "group_index": 1,
+        "instance_index": 2,
+        "kind": "hbm_controller",
+        "port_id": 0,
+        "router_id": 18
+      },
+      {
+        "endpoint_id": 19,
+        "group_index": 1,
+        "instance_index": 3,
+        "kind": "hbm_controller",
+        "port_id": 0,
+        "router_id": 19
+      }
+    ],
+    "family": "torus",
+    "physical_links": [],
+    "produced_stages": [
+      "INPUT",
+      "INPUT_MAPPING",
+      "TOPOLOGY",
+      "ATTACHMENT"
+    ],
+    "revision_id": "fixture-torus-staged",
+    "routers": [
+      {
+        "coordinates": [
+          0,
+          0
+        ],
+        "router_id": 0,
+        "seat_capacity": 1
+      },
+      {
+        "coordinates": [
+          1,
+          0
+        ],
+        "router_id": 1,
+        "seat_capacity": 1
+      },
+      {
+        "coordinates": [
+          2,
+          0
+        ],
+        "router_id": 2,
+        "seat_capacity": 1
+      },
+      {
+        "coordinates": [
+          3,
+          0
+        ],
+        "router_id": 3,
+        "seat_capacity": 1
+      },
+      {
+        "coordinates": [
+          4,
+          0
+        ],
+        "router_id": 4,
+        "seat_capacity": 1
+      },
+      {
+        "coordinates": [
+          0,
+          1
+        ],
+        "router_id": 5,
+        "seat_capacity": 1
+      },
+      {
+        "coordinates": [
+          1,
+          1
+        ],
+        "router_id": 6,
+        "seat_capacity": 1
+      },
+      {
+        "coordinates": [
+          2,
+          1
+        ],
+        "router_id": 7,
+        "seat_capacity": 1
+      },
+      {
+        "coordinates": [
+          3,
+          1
+        ],
+        "router_id": 8,
+        "seat_capacity": 1
+      },
+      {
+        "coordinates": [
+          4,
+          1
+        ],
+        "router_id": 9,
+        "seat_capacity": 1
+      },
+      {
+        "coordinates": [
+          0,
+          2
+        ],
+        "router_id": 10,
+        "seat_capacity": 1
+      },
+      {
+        "coordinates": [
+          1,
+          2
+        ],
+        "router_id": 11,
+        "seat_capacity": 1
+      },
+      {
+        "coordinates": [
+          2,
+          2
+        ],
+        "router_id": 12,
+        "seat_capacity": 1
+      },
+      {
+        "coordinates": [
+          3,
+          2
+        ],
+        "router_id": 13,
+        "seat_capacity": 1
+      },
+      {
+        "coordinates": [
+          4,
+          2
+        ],
+        "router_id": 14,
+        "seat_capacity": 1
+      },
+      {
+        "coordinates": [
+          0,
+          3
+        ],
+        "router_id": 15,
+        "seat_capacity": 1
+      },
+      {
+        "coordinates": [
+          1,
+          3
+        ],
+        "router_id": 16,
+        "seat_capacity": 1
+      },
+      {
+        "coordinates": [
+          2,
+          3
+        ],
+        "router_id": 17,
+        "seat_capacity": 1
+      },
+      {
+        "coordinates": [
+          3,
+          3
+        ],
+        "router_id": 18,
+        "seat_capacity": 1
+      },
+      {
+        "coordinates": [
+          4,
+          3
+        ],
+        "router_id": 19,
+        "seat_capacity": 1
+      },
+      {
+        "coordinates": [
+          0,
+          4
+        ],
+        "router_id": 20,
+        "seat_capacity": 1
+      },
+      {
+        "coordinates": [
+          1,
+          4
+        ],
+        "router_id": 21,
+        "seat_capacity": 1
+      },
+      {
+        "coordinates": [
+          2,
+          4
+        ],
+        "router_id": 22,
+        "seat_capacity": 1
+      },
+      {
+        "coordinates": [
+          3,
+          4
+        ],
+        "router_id": 23,
+        "seat_capacity": 1
+      },
+      {
+        "coordinates": [
+          4,
+          4
+        ],
+        "router_id": 24,
+        "seat_capacity": 1
+      }
+    ],
+    "staged": true,
+    "stopped_at_stage": "ROUTING",
+    "topology_hash": "sha256:9c3f77243c6f1c5c19b25405e03dbe07c230dffc572d0e85ed19d9796f7d99aa"
+  },
+  "stopped_at_stage": "ROUTING"
+}

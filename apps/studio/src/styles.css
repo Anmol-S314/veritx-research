@@ -1979,3 +1979,20 @@ p, li { text-wrap: pretty; }
   background: var(--bg-raise);
 }
 .fabric-aggregate p { margin: 0 0 6px; }
+
+/* ── Staged derivation (Phase-2 §24) ─────────────────────────────────── */
+.claim-overall.claim-staged {
+  border-left-color: var(--warn);
+  color: var(--warn);
+}
+
+.stage-list {
+  margin: 0 0 8px;
+  padding-left: 0;
+  list-style: none;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.stage-list li { padding: 2px 0; }
+.stage-derived { color: var(--ok); }
+.stage-stopped { color: var(--warn); font-weight: 600; }

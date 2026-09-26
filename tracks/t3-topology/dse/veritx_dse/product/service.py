@@ -26,7 +26,7 @@ from veritx_dse.application.fabric_compiler import FabricCompiler
 from veritx_dse.application.product_evaluator import evaluate_product
 from veritx_dse.application.views import (
     artifact_chain_view, compilation_view, design_view, lowering_view,
-    topology_view,
+    staged_topology_view, topology_view,
 )
 from veritx_dse.core.paths import REPO
 from veritx_dse.core.run_bundle import (
@@ -793,6 +793,18 @@ class ProductService:
         materialized = topology_view(compilation, revision_id=revision_id)
         if materialized is not None:
             revision["topology"] = materialized
+        else:
+            # Staged-compilation law: a later stage refusal must not
+            # invalidate already-derived earlier artifacts. A Torus design
+            # derives a real TopologyArtifact (with wraparound channels)
+            # and refuses only at ROUTING; that topology is canonical
+            # science and is frozen with the revision so it survives a
+            # reload. It is NOT a TopologyView of a completed compile —
+            # it carries `staged: true` and its stopping stage.
+            staged_topology = staged_topology_view(
+                compilation, revision_id=revision_id)
+            if staged_topology is not None:
+                revision["staged_topology"] = staged_topology
         # Canonical artifact DAG captured at certification time (§12/§14):
         # like the topology, it is frozen with the revision and never
         # re-derived for display without an identity check.
@@ -802,8 +814,13 @@ class ProductService:
         # Compile Result inspectors, materialized at certification time and
         # frozen with the revision (Gate 5 §97, Gate 8 §50). Re-deriving
         # them at view time would let a drawn graph drift from the proof.
-        revision["compile_result"] = build_compile_result(
-            revision, compilation, revision.get("topology"), chain)
+        # Only a bundle-bearing compile gets a Compile Result payload. A
+        # staged refusal is projected by `_staged_compile_result` from the
+        # frozen staged topology, so persisting an empty "no compile
+        # result" payload here would mask it.
+        if compilation.bundle is not None:
+            revision["compile_result"] = build_compile_result(
+                revision, compilation, revision.get("topology"), chain)
         self.store.create_revision(
             project_id, revision,
             promote=self._revision_promotable(revision))
@@ -854,13 +871,7 @@ class ProductService:
 
         compilation_view_doc = revision.get("compilation") or {}
         if compilation_view_doc.get("status") != "COMPILED":
-            return {
-                "contract_version": 1,
-                "available": False,
-                "revision_id": revision_id,
-                "reason": (compilation_view_doc.get("error")
-                           or "no compile result exists for this revision"),
-            }
+            return self._staged_compile_result(revision_id, revision)
 
         compilation = FabricCompiler().compile(
             parse_request_doc(revision["request"]))
@@ -898,6 +909,93 @@ class ProductService:
             revision, compilation,
             self.get_revision_topology(revision_id),
             revision.get("artifact_chain") or artifact_chain_view(compilation))
+
+    def _staged_compile_result(self, revision_id: str,
+                               revision: dict[str, Any]) -> dict[str, Any]:
+        """A staged refusal as a product state, not a catastrophic error.
+
+        The vocabulary distinguishes what happened:
+
+          * upstream derivation valid, downstream contract unavailable
+            -> the stages that DID derive are inspectable and the stopping
+               stage is named with the capability reason;
+          * the upstream artifact itself could not be built -> nothing is
+               inspectable, because there is nothing valid to show.
+
+        Empty downstream panels are never presented as successful.
+        """
+        compilation_view_doc = revision.get("compilation") or {}
+        status = compilation_view_doc.get("status")
+        staged = compilation_view_doc.get("staged")
+        staged_topology = revision.get("staged_topology")
+        return {
+            "contract_version": 1,
+            "available": False,
+            "staged": True,
+            "revision_id": revision_id,
+            "display_name": revision.get("display_name"),
+            "design_hash": revision.get("design_hash"),
+            "compilation_status": status,
+            "stopped_at_stage": compilation_view_doc.get(
+                "stopped_at_stage"),
+            "produced_stages": (staged or {}).get("produced_stages", []),
+            "reason": (compilation_view_doc.get("error")
+                       or "derivation stopped before a bundle was produced"),
+            "staged_topology": staged_topology,
+            "unavailable_groups": [
+                "routing", "resources", "address_decode", "provenance"],
+            "certificate": {
+                "available": False,
+                "reason": ("no certificate was issued: compilation stopped "
+                           f"at {compilation_view_doc.get('stopped_at_stage')}"
+                           if compilation_view_doc.get("stopped_at_stage")
+                           else "no certificate was issued"),
+            },
+            "capability_consequences": (
+                self._staged_capability_consequences(revision)
+                if staged_topology else []),
+        }
+
+    def _staged_capability_consequences(
+            self, revision: dict[str, Any]) -> list[dict[str, Any]]:
+        """The capability rows a staged stop actually exercises.
+
+        Read from the registry, never hand-coded: the stopping stage maps
+        to the capability whose later stage is unavailable, so the product
+        says "routed execution is unavailable" in the registry's own
+        words instead of inventing a reason string.
+        """
+        from veritx_dse.application import product_registry as registry
+
+        staged = (revision.get("compilation") or {}).get("staged") or {}
+        stage = staged.get("stopped_at_stage")
+        family = (revision.get("staged_topology") or {}).get("family")
+        capability_ids: list[str] = []
+        if stage == "ROUTING" and family:
+            for row in registry.capability_rows():
+                if row.get("owner") != "FABRIC":
+                    continue
+                name = (row.get("name") or "").lower()
+                if family.lower() in name and row.get("stages", {}).get(
+                        "PROJECTABLE") == "NO":
+                    capability_ids.append(row["id"])
+        out: list[dict[str, Any]] = []
+        for capability_id in capability_ids:
+            consequence = registry.capability_consequence(capability_id)
+            if consequence is None:
+                continue
+            out.append({
+                "capability_id": capability_id,
+                "choice": family,
+                "name": consequence["name"],
+                "wiring": consequence["wiring"],
+                "reason": consequence["reason"],
+                "limiting": consequence["limiting"],
+                "claim_scope": consequence["claim_scope"],
+                "stages": consequence["stages"],
+                "registry_version": consequence["capability_semantics_version"],
+            })
+        return out
 
     def canonical_route(self, revision_id: str, *,
                         routing_class: str | None = None,

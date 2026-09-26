@@ -83,6 +83,34 @@ def _cases() -> dict:
     }
 
 
+def _torus_request():
+    """A Torus design: topology derives, routing refuses (staged)."""
+    base = CompileRequestV3.from_dict(_load_preset_doc("dense-1b-16tiles"))
+    return replace(base, noc_config=replace(
+        base.noc_config, topology_family=TopologyFamily.TORUS))
+
+
+def build_staged(case: str, request) -> dict:
+    """The staged-refusal fixture: upstream artifacts, no fabric."""
+    from veritx_dse.application.views import staged_topology_view
+
+    compilation = FabricCompiler().compile(request)
+    if compilation.status == "COMPILED":
+        raise SystemExit(f"{case}: expected a staged refusal, it compiled")
+    staged = staged_topology_view(compilation, revision_id=f"fixture-{case}")
+    if staged is None:
+        raise SystemExit(f"{case}: no staged topology was preserved")
+    return {
+        "case": case,
+        "staged": True,
+        "compilation_status": compilation.status,
+        "stopped_at_stage": compilation.stopped_at_stage,
+        "error": compilation.error,
+        "produced_stages": list(compilation.staged.produced_stages),
+        "staged_topology": staged,
+    }
+
+
 def build(case: str, request) -> dict:
     compilation = FabricCompiler().compile(request)
     if compilation.status != "COMPILED":
@@ -128,8 +156,11 @@ def main(argv) -> int:
 
     OUT.mkdir(parents=True, exist_ok=True)
     failures = []
-    for case, request in _cases().items():
-        payload = build(case, request)
+    cases = dict(_cases())
+    cases["torus-staged"] = _torus_request()
+    for case, request in cases.items():
+        payload = (build_staged(case, request)
+                   if case == "torus-staged" else build(case, request))
         text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
         path = OUT / f"{case}.json"
         if args.check:
@@ -142,7 +173,7 @@ def main(argv) -> int:
         print(f"COMPILED FIXTURES DRIFTED: {failures}", file=sys.stderr)
         return 1
     if args.check:
-        print(f"compiled fixtures current ({len(_cases())} cases)")
+        print(f"compiled fixtures current ({len(cases)} cases)")
     return 0
 
 

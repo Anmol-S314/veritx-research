@@ -2,9 +2,11 @@ import { useCallback, useState, type ReactElement } from 'react';
 import { api } from '../api';
 import type {
   AddressDecodeGroup, CanonicalRoute, CapabilityConsequence,
-  CompileCertificate, CompileResultView, CompileSummaryGroup, FabricGroup,
-  MappingGroup, ProvenanceGroup, ResourcesGroup, RoutingGroup,
+  CertificateAbsence, CompileCertificate, CompileResultView,
+  CompileSummaryGroup, FabricGroup, MappingGroup, ProvenanceGroup,
+  ResourcesGroup, RoutingGroup,
 } from '../api';
+import { hasClaims } from '../api';
 import { Hash, fmtNum, humanize } from './badges';
 import ArtifactChain from './ArtifactChain';
 import FabricInspector2D from './FabricInspector2D';
@@ -601,6 +603,11 @@ export default function CompileResultViewPanel({ result, revisionId }: {
   }, [revisionId]);
 
   if (!result.available || !result.groups) {
+    // A staged refusal is NOT a catastrophic error: upstream derivation was
+    // valid and only a downstream contract is unavailable. It renders as a
+    // partial derivation with the stopping stage named, never as
+    // "compilation failed".
+    if (result.staged) return <StagedResult result={result} />;
     return (
       <section className="card">
         <h3>Compile result</h3>
@@ -608,14 +615,15 @@ export default function CompileResultViewPanel({ result, revisionId }: {
           {result.reason ?? 'No compile result exists for this revision.'}
         </p>
         <p className="muted">
-          A failed proof is not a fabric: no topology, routing, VC assignment
-          or certificate is drawn for a refused compilation.
+          No upstream artifact was produced, so there is nothing valid to
+          inspect. A failed proof is not a fabric.
         </p>
       </section>
     );
   }
   const groups = result.groups;
-  const certificate = result.certificate;
+  const certificate = hasClaims(result.certificate)
+    ? result.certificate : null;
   return (
     <div className="compile-result">
       <header className="compile-head">
@@ -679,6 +687,93 @@ export default function CompileResultViewPanel({ result, revisionId }: {
       </div>
 
       {certificate && <CertificateSection certificate={certificate} />}
+    </div>
+  );
+}
+
+/**
+ * A staged refusal (Phase-2 §24).
+ *
+ * Shows what DID derive, names the stage that stopped, and lists the groups
+ * that therefore do not exist. Empty downstream panels are never rendered
+ * as successful, and the wording is capability language, not "failed".
+ */
+function StagedResult({ result }: { result: CompileResultView }): ReactElement {
+  const topology = result.staged_topology ?? null;
+  return (
+    <div className="compile-result">
+      <header className="compile-head">
+        <div>
+          <h2>{result.display_name ?? 'staged derivation'}</h2>
+          <p className="muted">
+            stopped at <strong>{result.stopped_at_stage ?? '—'}</strong> ·{' '}
+            <code>{result.design_hash?.slice(0, 18) ?? '—'}…</code>
+          </p>
+        </div>
+        <span className="claim-overall claim-staged">
+          partial derivation — not a fabric
+        </span>
+      </header>
+
+      <section className="card">
+        <h4>Derived stages</h4>
+        <ol className="stage-list">
+          {(result.produced_stages ?? []).map((stage) => (
+            <li key={stage} className="stage-derived">
+              <span aria-hidden="true">✓</span> {stage}
+            </li>
+          ))}
+          {result.stopped_at_stage && (
+            <li className="stage-stopped">
+              <span aria-hidden="true">✗</span> {result.stopped_at_stage}
+              <span className="muted"> — {result.reason}</span>
+            </li>
+          )}
+        </ol>
+        <p className="muted">
+          A later stage refusal does not invalidate earlier artifacts. The
+          stages above are canonical and inspectable; nothing downstream was
+          synthesized.
+        </p>
+      </section>
+
+      {result.capability_consequences
+        && result.capability_consequences.length > 0 && (
+        <CapabilityConsequences consequences={result.capability_consequences} />
+      )}
+
+      {topology ? (
+        <section className="card">
+          <div className="inspector-head">
+            <h4>Fabric — derived topology</h4>
+            <span className="muted">
+              {topology.family} · {topology.counts.routers} routers ·{' '}
+              {topology.counts.channels} channels
+            </span>
+          </div>
+          <FabricInspector2D topology={topology} />
+        </section>
+      ) : (
+        <section className="card">
+          <h4>Fabric</h4>
+          <p className="muted">
+            No topology was derived before the stop.
+          </p>
+        </section>
+      )}
+
+      <section className="card">
+        <h4>Unavailable</h4>
+        <ul className="muted">
+          {(result.unavailable_groups ?? []).map((group) => (
+            <li key={group}>{GROUP_LABEL[group] ?? group} — not produced</li>
+          ))}
+        </ul>
+        <p className="muted">
+          {(result.certificate as CertificateAbsence | undefined)?.reason
+            ?? 'no certificate was issued'}
+        </p>
+      </section>
     </div>
   );
 }
