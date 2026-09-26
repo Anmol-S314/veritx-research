@@ -498,3 +498,207 @@ Net new tests: **+41**.
 | Studio fixture regeneration digests · `run_bundle` concurrency flake | — | Pre-existing, out of scope. |
 
 No `IMPLEMENTATION-CONTRACT-CONFLICT` was raised.
+
+---
+
+# PHASE 2 CLOSURE — compiled inspectors / verification / certificate
+
+Baseline at entry: `b7147075`, clean tree, backend 3999 passed / 17 skipped,
+four registry gates exit 0, studio tsc/vite exit 0, studio tests 2
+pre-existing failures.
+
+## 1. The 10-obligation audit
+
+Read from `verification/certificate.py` (`_OBLIGATION_RUNNERS` and each
+producer), `VerificationCertificate.__post_init__`,
+`verification/channel_vc_cdg.py`, `application/views.py`, and the
+obligation tests. Not inferred from names.
+
+| Obligation | Producer | Inputs | Status vocabulary | Exact meaning | Claim(s) | Primary / sub |
+|---|---|---|---|---|---|---|
+| `TOPOLOGY_CONNECTED` | `_topology_connected` | topology channels | PASS/FAIL | router graph is one undirected component, no isolated routers | — | technical-only |
+| `ATTACHMENT_COMPLETE` | `_attachment_complete` | `attachment.validate_against(design, inventory, topology)` | PASS/FAIL | every declared agent has a proven seat | **ATTACHMENT_COMPLETE** | primary |
+| `ADDRESS_DECODE_VALID` | `_address_decode_valid` | `decode.validate_against(address_map, attachment)` | PASS/FAIL | the decode realizes the declared address map | — | technical-only |
+| `ROUTE_COMPLETE` | `_route_complete` | route table | PASS/FAIL | entries == classes × routers × (routers−1) | **ROUTE_COMPLETE** | primary |
+| `ROUTE_LEGAL` | `_route_legal` | `route.validate_against(topology)` | PASS/FAIL | every route is channel-legal and terminates | **ROUTE_LEGAL** | primary |
+| `VC_ASSIGNMENT_VALID` | `_vc_assignment_valid` | `vc.validate_against(resolved_route)` | PASS/FAIL | VC structure binds the resolved route | — | technical-only |
+| `DEADLOCK_FREE` | `_deadlock_free` | `(channel, VC)` CDG | PASS/FAIL **at the obligation**, PASS/FAIL/UNSUPPORTED/NOT_RUN **underneath** | the realized CDG is acyclic | **DEADLOCK_FREE** | primary |
+| `MAPPING_VALID` | `_mapping_valid` | mapping↔attachment seam over `mapping.placements` | PASS/FAIL | every mapped rank lands on an attached agent; ranks contiguous from 0 | — | technical-only |
+| `PACKET_FORMAT_VALID` | `_packet_format_valid` | `packet_format.validate_against(topology, attachment, vc_resources)` | PASS/FAIL | the wire format fits topology/attachment/VC bounds | — | technical-only |
+| `FABRIC_DAG_VALID` | `_fabric_dag_valid` | `bundle.revalidate()` | PASS/FAIL | the whole hardware + design/mapping seam revalidates | — | technical-only |
+
+Two facts the audit established, both enforced in code:
+
+* `VerificationCertificate.__post_init__` requires **exactly** these ten
+  and rejects an obligation status outside `PASS|FAIL`. There is no
+  obligation-level `UNSUPPORTED` — the earlier projection invented one.
+* `_deadlock_free` folds every non-PASS CDG verdict into obligation
+  `FAIL` (`if cert.verdict != "PASS": return _fail(...)`), recording the
+  true verdict in the evidence and in a prose `failure_reason`. That is
+  correct for the certificate; it is not correct for the product.
+
+## 2. Product claim derivation
+
+`MAPPING_VALID` is **not** part of `ATTACHMENT_COMPLETE`, despite sharing
+an artifact-provenance parent in `views.py`: the former is the mapping
+seam (`mapping.placements`), the latter is agent attachment
+(`attachment.validate_against`). Different artifacts, different failure
+modes. The contribution table is therefore 1:1:
+
+| Product claim | Contributing obligations | Aggregation | Failure semantics |
+|---|---|---|---|
+| `ATTACHMENT_COMPLETE` | `ATTACHMENT_COMPLETE` | ALL_PASS | not established if the obligation is not PASS |
+| `ROUTE_COMPLETE` | `ROUTE_COMPLETE` | ALL_PASS | as above |
+| `ROUTE_LEGAL` | `ROUTE_LEGAL` | ALL_PASS | as above |
+| `DEADLOCK_FREE` | `DEADLOCK_FREE` | ALL_PASS | as above, plus the analysis verdict |
+
+No `IMPLEMENTATION-CONTRACT-CONFLICT` was raised: every claim has a
+proven mapping, and the projection **fails closed** if a certificate ever
+carries an obligation it does not classify.
+
+## 3. The deadlock verdict fix
+
+Two layers, modelled separately:
+
+```text
+certificate obligation status   PASS | FAIL                       (canonical)
+CDG analysis verdict            PASS | FAIL | UNSUPPORTED | NOT_RUN (separate)
+```
+
+The verdict is recovered from **evidence keys**, never by parsing prose:
+
+```text
+acyclic is True                    -> PASS
+acyclic is False + cycle present   -> FAIL
+unsupported_reason, no acyclic     -> UNSUPPORTED
+no analysis evidence at all        -> NOT_RUN
+```
+
+`detected_deadlock` is true only for a real FAIL carrying a cycle witness,
+so `UNSUPPORTED` and `NOT_RUN` can never render as a detected deadlock.
+
+## 4. Compiled-result authority table
+
+| Product fact | Canonical authority | Product projection | Frontend surface |
+|---|---|---|---|
+| declared values | `CompileRequestV3` | `groups.summary.declared` | Summary |
+| derived counts | `TopologyArtifact`, `AgentAttachmentArtifact`, `VCAssignmentArtifact`, `RouteArtifact` | `groups.summary.derived` | Summary |
+| mapping | `MappingArtifact` + `AgentAttachmentArtifact` | `groups.mapping` (+ coordinates from `model.placement.coords_of`) | Mapping |
+| topology | `TopologyArtifact` | `groups.fabric.topology` | Fabric inspector |
+| attachments / seats | `AgentAttachmentArtifact` | `groups.fabric.topology.endpoints` + counts | Fabric inspector |
+| routes | `RouteArtifact` + `ResolvedRouteArtifact` | `groups.routing` (table stored, not shipped) + `GET /route` | Routing |
+| VCs | `VCAssignmentArtifact` | `groups.resources` | Resources |
+| CDG / deadlock | `channel_vc_cdg` via `DEADLOCK_FREE` | `groups.resources.deadlock` + `certificate.deadlock_analysis` | Resources + Verification |
+| certificate | `VerificationCertificate` | `certificate` (4 claims + 10 obligations) | Verification |
+| capability consequences | `capability-registry.yaml` | `capability_consequences` | Summary |
+| provenance | bundle `root_hashes()` + `ArtifactChainView` | `groups.provenance` | Provenance |
+
+## 5. Two defects found and fixed during closure
+
+**Occupancy was wrong.** `_fabric` counted *distinct routers* as
+`attached` instead of endpoints. `dense-4b-32tiles-conc4` (9 routers × 4
+seats, 36 agents) reported **27 unused seats when it has zero**. Now
+endpoint-counted, with `occupied_routers` added so the two facts stay
+distinct.
+
+**The 16×16 payload was 4.8 MB**, because the routing group shipped 65,280
+route-entry rows inline. The frontend never needs them — the canonical
+route is a query walked server-side over the frozen table. The served
+response withholds the entries; the stored revision keeps them.
+**4.8 MB → 311 KB**, route still walks correctly.
+
+## 6. Current view audit
+
+| Component | Verdict | Reason |
+|---|---|---|
+| `FabricCanvas` | **KEEP** | preview + materialized structural renderer; still used by the Design preview and offline page |
+| `FabricInspector` | **KEEP** | the selection detail panel, reused conceptually by `FabricInspector2D` |
+| `FabricInspector2D` | **NEW** | the canonical compiled inspector |
+| `FabricView` | **KEEP** | 2D-only wrapper, no 3D |
+| `CompileResultView` | **REPLACE** (done) | was flat cards; now the seven groups |
+| `VerifyView` | **REFACTOR** (done) | `/verify` renders the same Compile Result projection; the component survives only for the offline fixture page |
+| Compile page | **REPLACE** (done) | no longer mixes Review with the result |
+
+## 7. Phase-2 acceptance battery
+
+| ID | Obligation | Result | Evidence |
+|---|---|---|---|
+| P2-A | 10 obligations preserved | **PASS** | `test_p2_a_*`; 4 claims + 6 technical-only partition the set; an unclassified obligation raises |
+| P2-B | claims derive deterministically | **PASS** | `test_p2_b_*`; contribution table, ALL_PASS, order-independent, missing contributor fails closed |
+| P2-C | frontend does not aggregate | **PASS** | claims computed backend-side; `certificate_status` and `established` are payload fields |
+| P2-D | no sole generic VERIFIED | **PASS** | `test_p2_d_*`; no `VERIFIED` token; vocabulary declared explicitly |
+| P2-E | mapping uses stable identities | **PASS** | `test_p2_e_*`; rank/agent/endpoint ids + rank-algebra coordinates |
+| P2-F | mapping cannot be edited | **PASS** | `test_p2_f_mapping_is_not_editable` |
+| P2-G | mesh geometry from canonical coordinates | **PASS** | `test_p2_g_*`; unique 2D coords, no self-loops, no diagonal shortcuts |
+| P2-H | torus wrap links render from artifact | **BLOCKED** | no compiled torus can exist — see P2-S. Arc rendering is implemented and coordinate-derived, but unexercised |
+| P2-I | concentration renders seats not routers | **PASS** | `test_p2_i_*`; 9 routers × 4 seats = 36, capacity uniform |
+| P2-J | unused seats render correctly | **PASS** | `test_p2_j_*`; 5 unused (dense-1b), 0 unused (conc4), per-router sums match |
+| P2-K | attachment selection resolves exactly | **PASS** | `test_p2_k_*`; every endpoint resolves to a real router, full identity chain |
+| P2-L | route from canonical artifact | **PASS** | `test_p2_l_*`; every entry names a real channel; server-side walk |
+| P2-M | LOCAL_EJECTION handled | **PASS** | `test_p2_m_*` |
+| P2-N | derived route and runtime evidence separate | **PASS** | `test_p2_n_*`; observation unavailable, Gate-4 wording, "not observed packet paths" |
+| P2-O | VC inspection read-only | **PASS** | `test_p2_o_*`; `editable: false`, canonical integer VC ids |
+| P2-P | deadlock FAIL displays witness | **PASS** | `test_p2_p_*`; witness fields + cycle rendering + recovery links |
+| P2-Q | deadlock UNSUPPORTED ≠ FAIL | **PASS** | `test_p2_q_*`; all four verdicts independently; `detected_deadlock` false for UNSUPPORTED/NOT_RUN |
+| P2-R | CDG witness resolves to channels/VCs | **PASS** | `test_p2_r_*`; witness channel ids exist in the topology |
+| P2-S | torus inspectable despite route-unavailable | **BLOCKED** | `test_p2_s_*` asserts the blocker; see below |
+| P2-T | multi-class result inspectable | **PASS** | `test_p2_t_*`; mesh4 family compiles, certifies, all 7 groups |
+| P2-U | capability limitation ≠ invalidity | **PASS** | `test_p2_u_*`; certificate PASS + COMM-006 consequence together |
+| P2-V | provenance in technical detail | **PASS** | `test_p2_v_*`; hashes, versions, parentage |
+| P2-W | scientific SVG has data equivalent | **PASS** | `test_p2_w_*`; router/channel/attachment columns complete in the payload, rendered as tables |
+| P2-X | 3D not reintroduced | **PASS** | `test_p2_x_*`; 2D coordinates only, no spatial tokens |
+
+**BLOCKED, with evidence (not a silent absence):**
+
+`P2-H` and `P2-S` depend on a **compiled torus**, which cannot exist.
+`FabricCompiler` refuses a torus at `stage=ROUTING` and returns
+`bundle=None`, so there is no `TopologyArtifact`, no certificate and no
+Compile Result to inspect. The capability registry agrees the topology is
+derivable (`FAB-003`: `DECLARABLE=YES`, `DERIVABLE=YES`,
+`PROJECTABLE=NO`), and `derive_topology_spec(torus)` succeeds — but the
+compiler discards the derived topology with the bundle when routing
+refuses.
+
+**Smallest real correction:** the compiler must surface the derived
+topology when a later stage refuses (a topology-only compile outcome), or
+the product needs a topology-only inspection path for a
+declarable-but-not-projectable topology. Both are compiler/product changes
+outside Phase 2. The arc rendering for wrap links is implemented and
+coordinate-derived, so the visual half is ready.
+
+## 8. Performance
+
+| Case | Compile | Project | Routers | Channels | Payload |
+|---|---|---|---|---|---|
+| mesh4 | 92 ms | 61 ms | 9 | 24 | 32 KB |
+| 8×8 | 317 ms | 7 ms | 64 | 224 | 360 KB |
+| 16×16 | 4.2 s | 55 ms | 256 | 960 | 311 KB (was 4.8 MB) |
+
+SVG remains adequate: the drawing is bounded by router count (≤256 in the
+router-detail band), not by route-table size. No graphics-stack change is
+warranted.
+
+## 9. Test results
+
+| Command | Baseline | Final |
+|---|---|---|
+| `pytest tests/` (dse) | 3999 passed, 17 skipped | **4105 passed, 17 skipped** |
+| `pytest tests/` (studio) | 2 failed, 8 passed | **2 failed, 8 passed** (same pre-existing) |
+| `npx tsc --noEmit` | exit 0 | **exit 0** |
+| `npx vite build` | exit 0 | **exit 0** |
+| `make -C tracks/t3-topology product-gates` | exit 0 | **exit 0** |
+| `generate_compiled_fixtures.py --check` | n/a | **exit 0 (5 cases)** |
+
+Net new tests: **+106**.
+
+## 10. Unresolved blockers
+
+| Blocker | ID | Notes |
+|---|---|---|
+| No compiled torus → P2-H/P2-S | — | Compiler discards the derived topology on a routing refusal. Needs a topology-only compile outcome. |
+| Gate 8 §5 primary navigation | — | Rail still carries Compile/Verify as numbered workflow entries; §146 has no Verify screen. Separate IA slice. |
+| Compile Result group deep links | Gate 8 §150 | Tabs, not `/revisions/:rid/:group`. |
+| `PreflightView` evaluation fields | REV-D5 | Unchanged; belongs to Evaluate. |
+| Studio fixture digests · `run_bundle` flake | — | Pre-existing, out of scope. |
+
+No `IMPLEMENTATION-CONTRACT-CONFLICT` was raised.
