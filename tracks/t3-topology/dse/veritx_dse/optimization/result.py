@@ -371,6 +371,10 @@ class OptimizationResult:
     result_class: str = RESULT_CLASS_ANALYTIC
     metric_registry_id: str | None = None
     metric_registry_version: str | None = None
+    #: Search completeness accounting. Identity-bearing: a budgeted search
+    #: and an exhaustive one over the same space MUST hash differently, so
+    #: a truncated result can never be presented as complete.
+    completeness: Any = None
 
     def result_id(self) -> str:
         # Binds evaluation provenance, not just rounded objectives: two
@@ -420,6 +424,8 @@ class OptimizationResult:
             "candidates": rows,
             "pareto_ids": list(self.pareto_ids),
             "selected_candidate_id": self.selected_candidate_id,
+            "completeness": (self.completeness.to_dict()
+                             if self.completeness is not None else None),
         })
 
     def _definition_view_v1(self) -> dict[str, Any]:
@@ -507,6 +513,8 @@ class OptimizationResult:
             "pareto_ids": list(self.pareto_ids),
             "selected_candidate_id": self.selected_candidate_id,
             "selection_rationale": self.selection_rationale,
+            "completeness": (self.completeness.to_dict()
+                             if self.completeness is not None else None),
         }
 
     def _to_study_view_v1(self) -> dict[str, Any]:
@@ -560,6 +568,16 @@ class OptimizationResult:
         raise OptimizationResultError(
             f"unknown OptimizationStudyView contract_version "
             f"{contract_version!r}; supported: 1, 2")
+
+
+def _derive_completeness(definition: Any, evaluated: int) -> Any:
+    """Derive the search-completeness fact (AMEND-4).
+
+    Never infers EXHAUSTIVE: `completeness.derive` claims it only when the
+    universe is known AND every candidate was evaluated.
+    """
+    from .completeness import derive
+    return derive(definition, evaluated)
 
 
 def _select(records: list[CandidateRecord], definition: Any,
@@ -1032,6 +1050,7 @@ class Optimizer:
             result_class=RESULT_CLASS_ANALYTIC,
             metric_registry_id=None,
             metric_registry_version=None,
+            completeness=_derive_completeness(definition, len(records)),
         )
 
 

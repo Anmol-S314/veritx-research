@@ -4,19 +4,40 @@
   "title": "OptimizationStudyViewV2",
   "description": "Authoritative P1-RT OptimizationStudyView (contract v2). Three independent authorities are never merged: product Requirements (requirement_report_id + product_requirements: did the design satisfy the customer?), optimization constraints (constraint_verdicts: SATISFIED|VIOLATED|UNMEASURABLE), and measured objectives (objective_values + objective_availability: MEASURED|UNMEASURABLE). Pareto input requires evaluation success, binding product requirements pass, every requested objective measured+finite, and every hard constraint SATISFIED, so pareto_member implies pareto_eligible. The v1 boolean-only projector is LOSSY by design and lives at contracts/srota/v1/optimization.study.view.schema.json.",
   "type": "object",
-  "required": ["contract_version", "result_class", "metric_registry_id", "metric_registry_version", "optimization_result_id", "base_design_hash", "definition", "candidates", "pareto_ids"],
+  "required": [
+    "contract_version",
+    "result_class",
+    "metric_registry_id",
+    "metric_registry_version",
+    "optimization_result_id",
+    "base_design_hash",
+    "definition",
+    "candidates",
+    "pareto_ids"
+  ],
   "properties": {
-    "contract_version": {"const": 2},
+    "contract_version": {
+      "const": 2
+    },
     "result_class": {
-      "enum": ["CERTIFIED_PRODUCT", "ANALYTIC_RESEARCH"],
+      "enum": [
+        "CERTIFIED_PRODUCT",
+        "ANALYTIC_RESEARCH"
+      ],
       "description": "Result class (R1): CERTIFIED_PRODUCT comes only from Optimizer.optimize_certified, which owns the real evaluator; ANALYTIC_RESEARCH comes from optimize_with_port and can never contain certified Pareto."
     },
     "metric_registry_id": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Certified metric registry identity (R2/C2): binds version + {metric, producer_id, semantics_version}. Null for analytic/research results."
     },
     "metric_registry_version": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Certified metric registry version. Null for analytic/research results."
     },
     "optimization_result_id": {
@@ -24,22 +45,44 @@
       "pattern": "^[0-9a-f]{64}$",
       "description": "Bare content_id digest of the OptimizationResult (re-derivable from definition_id + candidate rows + frontier)."
     },
-    "base_design_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "base_design_hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
     "definition": {
       "type": "object",
       "description": "Lossless definition: identity, objective directions, constraint operators/thresholds, method and selection policy are all explicit.",
-      "required": ["definition_id", "objectives", "constraints",
-                    "method", "selection", "budget"],
+      "required": [
+        "definition_id",
+        "objectives",
+        "constraints",
+        "method",
+        "selection",
+        "budget"
+      ],
       "properties": {
-        "definition_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "definition_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
         "objectives": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["metric", "direction"],
+            "required": [
+              "metric",
+              "direction"
+            ],
             "properties": {
-              "metric": {"type": "string"},
-              "direction": {"enum": ["MIN", "MAX"]}
+              "metric": {
+                "type": "string"
+              },
+              "direction": {
+                "enum": [
+                  "MIN",
+                  "MAX"
+                ]
+              }
             },
             "unevaluatedProperties": false
           }
@@ -48,19 +91,52 @@
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["metric", "op", "threshold"],
+            "required": [
+              "metric",
+              "op",
+              "threshold"
+            ],
             "properties": {
-              "metric": {"type": "string"},
-              "op": {"enum": ["<=", ">="]},
-              "threshold": {"type": "number"}
+              "metric": {
+                "type": "string"
+              },
+              "op": {
+                "enum": [
+                  "<=",
+                  ">="
+                ]
+              },
+              "threshold": {
+                "type": "number"
+              }
             },
             "unevaluatedProperties": false
           }
         },
-        "method": {"enum": ["grid", "enumeration", "random"]},
-        "selection": {"enum": ["min_first_objective", "lexicographic", "none"]},
-        "budget": {"type": "object"},
-        "seed": {"type": ["integer", "string", "null"]},
+        "method": {
+          "enum": [
+            "grid",
+            "enumeration",
+            "random"
+          ]
+        },
+        "selection": {
+          "enum": [
+            "min_first_objective",
+            "lexicographic",
+            "none"
+          ]
+        },
+        "budget": {
+          "type": "object"
+        },
+        "seed": {
+          "type": [
+            "integer",
+            "string",
+            "null"
+          ]
+        },
         "domain": {
           "type": "object",
           "description": "GUIDED knob ranges only. LOCKED dimensions are inexpressible here.",
@@ -73,38 +149,78 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["candidate_id", "guided_patch", "evaluation_ids",
-                      "product_requirements", "objective_values",
-                      "objective_availability", "constraint_verdicts",
-                      "evaluation_authority", "compilation_status",
-                      "evaluation_status", "evaluation_reason",
-                      "eligibility_reason",
-                      "pareto_eligible", "pareto_member"],
+        "required": [
+          "candidate_id",
+          "guided_patch",
+          "evaluation_ids",
+          "product_requirements",
+          "objective_values",
+          "objective_availability",
+          "constraint_verdicts",
+          "evaluation_authority",
+          "compilation_status",
+          "evaluation_status",
+          "evaluation_reason",
+          "eligibility_reason",
+          "pareto_eligible",
+          "pareto_member"
+        ],
         "properties": {
-          "candidate_id": {"type": "string"},
-          "guided_patch": {"type": "object"},
-          "locked_consequences": {"type": "object"},
+          "candidate_id": {
+            "type": "string"
+          },
+          "guided_patch": {
+            "type": "object"
+          },
+          "locked_consequences": {
+            "type": "object"
+          },
           "evaluation_ids": {
             "type": "object",
             "description": "This candidate's evaluation provenance: design identity, authenticated performance result, and the product RequirementReport identity (null when no report exists).",
-            "required": ["design_hash", "performance_result_id",
-                          "requirement_report_id"],
+            "required": [
+              "design_hash",
+              "performance_result_id",
+              "requirement_report_id"
+            ],
             "properties": {
-              "design_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-              "performance_result_id": {"type": ["string", "null"]},
-              "requirement_report_id": {"type": ["string", "null"]}
+              "design_hash": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "performance_result_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "requirement_report_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
             },
             "unevaluatedProperties": false
           },
           "product_requirements": {
             "type": "object",
             "description": "PRODUCT authority: did the design satisfy the customer's requirements? null = no report exists (no product binding). Binding + UNMEASURABLE never passes.",
-            "required": ["satisfied"],
+            "required": [
+              "satisfied"
+            ],
             "properties": {
-              "satisfied": {"type": ["boolean", "null"]},
+              "satisfied": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
               "verdicts": {
                 "type": "array",
-                "items": {"type": "object"}
+                "items": {
+                  "type": "object"
+                }
               }
             },
             "unevaluatedProperties": false
@@ -112,14 +228,19 @@
           "objective_values": {
             "type": "object",
             "description": "Measured, finite objective values only; absent metrics are never zero-filled.",
-            "additionalProperties": {"type": "number"}
+            "additionalProperties": {
+              "type": "number"
+            }
           },
           "objective_availability": {
             "type": "object",
             "description": "Explicit state for every requested objective (plus any extra measured metric).",
             "additionalProperties": {
               "type": "string",
-              "enum": ["MEASURED", "UNMEASURABLE"]
+              "enum": [
+                "MEASURED",
+                "UNMEASURABLE"
+              ]
             }
           },
           "constraint_verdicts": {
@@ -127,50 +248,105 @@
             "description": "OPTIMIZATION-CONSTRAINT authority: did the candidate satisfy the study's hard constraints? Three-state, never a boolean.",
             "additionalProperties": {
               "type": "string",
-              "enum": ["SATISFIED", "VIOLATED", "UNMEASURABLE"]
+              "enum": [
+                "SATISFIED",
+                "VIOLATED",
+                "UNMEASURABLE"
+              ]
             }
           },
           "evaluation_authority": {
-            "type": ["string", "null"],
-            "enum": ["certified-backend", "analytic-fake", null],
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "certified-backend",
+              "analytic-fake",
+              null
+            ],
             "description": "Structural fidelity of the evaluator that produced this row. Only certified-backend results can be Pareto-eligible; analytic-fake is a development double."
           },
           "compilation_status": {
-            "enum": ["COMPILED", "INVALID", "UNSUPPORTED"],
+            "enum": [
+              "COMPILED",
+              "INVALID",
+              "UNSUPPORTED"
+            ],
             "description": "FabricCompiler verdict for this candidate's request."
           },
           "evaluation_status": {
-            "enum": ["EVALUATED", "COMPILE_FAILED", "INVALID",
-                      "UNSUPPORTED", "BACKEND_UNAVAILABLE", "FAILED"],
+            "enum": [
+              "EVALUATED",
+              "COMPILE_FAILED",
+              "INVALID",
+              "UNSUPPORTED",
+              "BACKEND_UNAVAILABLE",
+              "FAILED"
+            ],
             "description": "Real evaluation taxonomy, never collapsed: a simulated run that fails a binding product requirement is still EVALUATED (product_requirements.satisfied=false)."
           },
           "evaluation_reason": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Evaluator message for non-success outcomes and for EVALUATED runs with failing product requirements; null for a clean evaluated run."
           },
           "eligibility_reason": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Typed explanation when pareto_eligible is false (evaluation status, authority, missing report/performance id, failed product requirements, unmeasured objectives, unsatisfied constraints). null when eligible."
           },
           "pareto_eligible": {
             "type": "boolean",
             "description": "Evaluation succeeded AND binding product requirements pass AND every requested objective measured+finite AND every hard constraint SATISFIED."
           },
-          "pareto_member": {"type": "boolean"}
+          "pareto_member": {
+            "type": "boolean"
+          }
         },
         "allOf": [
           {
-            "if": {"properties": {"pareto_member": {"const": true}},
-                   "required": ["pareto_member"]},
-            "then": {"properties": {"pareto_eligible": {"const": true}}}
-          },
-          {
-            "if": {"properties": {"pareto_eligible": {"const": true}},
-                   "required": ["pareto_eligible"]},
+            "if": {
+              "properties": {
+                "pareto_member": {
+                  "const": true
+                }
+              },
+              "required": [
+                "pareto_member"
+              ]
+            },
             "then": {
               "properties": {
-                "evaluation_authority": {"const": "certified-backend"},
-                "eligibility_reason": {"type": "null"}
+                "pareto_eligible": {
+                  "const": true
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "pareto_eligible": {
+                  "const": true
+                }
+              },
+              "required": [
+                "pareto_eligible"
+              ]
+            },
+            "then": {
+              "properties": {
+                "evaluation_authority": {
+                  "const": "certified-backend"
+                },
+                "eligibility_reason": {
+                  "type": "null"
+                }
               }
             }
           }
@@ -178,9 +354,100 @@
         "unevaluatedProperties": false
       }
     },
-    "pareto_ids": {"type": "array", "items": {"type": "string"}},
-    "selected_candidate_id": {"type": ["string", "null"]},
-    "selection_rationale": {"type": ["string", "null"]}
+    "pareto_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "selected_candidate_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "selection_rationale": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "completeness": {
+      "description": "Search completeness accounting (AMEND-4). EXHAUSTIVE is claimed only when the candidate universe is known AND every candidate was evaluated; a budgeted search reports BUDGETED and may never imply optimality. Null only for legacy results.",
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "schema_version",
+            "method",
+            "universe_size",
+            "universe_known",
+            "budget",
+            "evaluated_count",
+            "not_evaluated_count",
+            "completeness",
+            "claim",
+            "may_claim_optimality"
+          ],
+          "unevaluatedProperties": false,
+          "properties": {
+            "schema_version": {
+              "type": "integer"
+            },
+            "method": {
+              "type": "string"
+            },
+            "universe_size": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "universe_known": {
+              "type": "boolean"
+            },
+            "budget": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "evaluated_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "not_evaluated_count": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "completeness": {
+              "enum": [
+                "EXHAUSTIVE",
+                "BUDGETED",
+                "UNBOUNDED"
+              ]
+            },
+            "claim": {
+              "type": "string"
+            },
+            "may_claim_optimality": {
+              "type": "boolean"
+            },
+            "not_evaluated_identities": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
+    }
   },
   "unevaluatedProperties": false
 }
