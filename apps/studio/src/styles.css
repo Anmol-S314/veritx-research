@@ -1636,3 +1636,168 @@ p, li { text-wrap: pretty; }
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ── DesignViewV2: section navigator, findings, readiness, Review ──────────
+   Gate 8 §127/§128/§131: sections are separated by rules and headings, not
+   wrapped in a card each; every status carries a glyph or label as well as
+   colour, so state never depends on colour alone. */
+
+.design-v2 {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: var(--space-6, 24px);
+  align-items: start;
+}
+
+.section-nav {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  padding-right: 12px;
+}
+
+.section-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: none;
+  border: none;
+  border-left: 2px solid transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.section-nav-item:hover { background: var(--bg-raise); }
+
+.section-nav-item.active {
+  border-left-color: var(--accent);
+  font-weight: 600;
+}
+
+.section-nav-title { flex: 1; }
+
+.section-nav-count {
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+}
+
+.section-nav-count.bad { color: var(--bad); }
+.section-nav-count.warn { color: var(--warn); }
+
+.design-v2-main > h3 {
+  margin: 0 0 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px 16px;
+}
+
+.field { display: flex; flex-direction: column; gap: 4px; }
+
+.field-label { font-size: 12px; font-weight: 500; }
+
+.field-hint { color: var(--accent); font-weight: 400; }
+
+.field-owner { font-size: 11px; }
+
+.advanced { margin-top: 16px; border-top: 1px solid var(--border); }
+
+.advanced-toggle {
+  background: none;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  padding: 8px 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.advanced-body { padding: 8px 0 12px; }
+
+/* Findings: class is the authority, colour is secondary (§38/§131). */
+.findings { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+
+.finding {
+  border-left: 3px solid var(--border);
+  padding: 8px 0 8px 12px;
+}
+
+.finding-blocking_error { border-left-color: var(--bad); }
+.finding-downstream_limitation { border-left-color: var(--warn); }
+.finding-information { border-left-color: var(--info); }
+.finding-legacy_migration_notice { border-left-color: var(--warn); }
+
+.finding-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.finding-glyph { font-weight: 700; }
+.finding-blocking_error .finding-glyph { color: var(--bad); }
+.finding-downstream_limitation .finding-glyph { color: var(--warn); }
+.finding-information .finding-glyph { color: var(--info); }
+.finding-legacy_migration_notice .finding-glyph { color: var(--warn); }
+
+.finding-body { margin: 4px 0; }
+.finding-affected { margin: 2px 0; font-size: 11px; }
+.finding-remedies { margin: 6px 0 0; display: flex; gap: 6px; flex-wrap: wrap; }
+
+.btn-small { padding: 2px 8px; font-size: 11px; }
+
+/* Readiness: five states, never a boolean (§10 / REV-D5). */
+.readiness {
+  display: inline-block;
+  margin: 0 0 16px;
+  padding: 6px 10px;
+  border-left: 3px solid var(--border);
+  background: var(--bg-raise);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.readiness-ready { border-left-color: var(--ok); color: var(--ok); }
+.readiness-incomplete { border-left-color: var(--warn); color: var(--warn); }
+.readiness-invalid { border-left-color: var(--bad); color: var(--bad); }
+.readiness-preflight_blocked { border-left-color: var(--bad); color: var(--bad); }
+.readiness-capability_limited_but_compilable {
+  border-left-color: var(--warn);
+  color: var(--warn);
+}
+
+.review-v2 { display: flex; flex-direction: column; gap: 16px; }
+
+.review-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.review-head h2 { margin: 0 0 4px; }
+
+.review-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.kv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 4px 16px;
+}
+
+.consequence-list { margin: 0; padding-left: 18px; }
+.consequence-list li { margin-bottom: 8px; }

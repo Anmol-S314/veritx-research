@@ -4,7 +4,7 @@ import { navigate, parseRoute, usePathname } from './router';
 import {
   Overview, ProjectPicker, RunDetail, Runs, Trust, Workload,
 } from './pages';
-import { Compile, Design, Simulate, Verify } from './pages/design';
+import { Compile, Design, Review, Simulate, Verify } from './pages/design';
 import { Compare, Optimize } from './pages/optimize';
 import { Serving } from './pages/serving';
 import { Evidence, ValidationLab } from './pages/evidence';
@@ -19,7 +19,7 @@ type Theme = 'dark' | 'light';
 const RAIL: { section: string; no: string; label: string; group: string
   tiny?: string }[] = [
   { section: 'overview', no: '00', label: 'Overview', group: 'workflow' },
-  { section: 'design', no: '01', label: 'Intent', group: 'workflow', tiny: 'edit' },
+  { section: 'design', no: '01', label: 'Design', group: 'workflow', tiny: 'edit' },
   { section: 'compile', no: '02', label: 'Compile', group: 'workflow' },
   { section: 'verify', no: '03', label: 'Verify', group: 'workflow' },
   { section: 'simulate', no: '04', label: 'Evaluate', group: 'workflow' },
@@ -91,6 +91,7 @@ function Shell(): ReactElement {
         switch (route.section) {
           case 'workload': return <Workload projectId={pid} />;
           case 'design': return <Design projectId={pid} />;
+          case 'review': return <Review projectId={pid} />;
           case 'compile': return <Compile projectId={pid} />;
           case 'verify': return <Verify projectId={pid} />;
           case 'simulate': return <Simulate projectId={pid} />;

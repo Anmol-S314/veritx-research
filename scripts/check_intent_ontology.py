@@ -39,7 +39,10 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DSE = REPO_ROOT / "tracks" / "t3-topology" / "dse"
 ONTOLOGY = REPO_ROOT / "docs" / "product" / "intent-ontology.yaml"
-DESIGN_EDITOR = REPO_ROOT / "apps" / "studio" / "src" / "components" / "DesignEditor.tsx"
+#: The one canonical Design editor. It maps canonical field paths to inputs;
+#: every path it can write must have an ontology row (UI admission).
+DESIGN_EDITOR = (REPO_ROOT / "apps" / "studio" / "src" / "components"
+                 / "DesignViewV2Editor.tsx")
 
 ANSWERS = (
     "real", "owner", "edit", "kind", "stored", "depends_on",
@@ -203,27 +206,34 @@ def main(argv: list[str]) -> int:
             errors.append(f"coverage: declared field {key} has no row")
 
     # ── 6. UI admission ────────────────────────────────────────────────
+    # The Design editor writes canonical intent by path. Every path it can
+    # write must be covered by an ontology row, so the UI cannot introduce a
+    # field the ontology never answered for.
     if DESIGN_EDITOR.is_file():
         src = DESIGN_EDITOR.read_text(encoding="utf-8")
-        found = re.findall(r"(?:edit|editNum)\(\s*'([a-z_]+\.[a-z_]+)'", src)
+        found = re.findall(r"^  '([A-Za-z_]+\.[a-z_]+)':", src, re.MULTILINE)
+        if not found:
+            errors.append(
+                "ui: the Design editor declares no canonical field paths — "
+                "the UI-admission check has nothing to validate")
+        # A row covers a path when the path is in its `fields` list (the
+        # authoritative coverage declaration). The id-suffix form is kept as
+        # a fallback for rows that cover a field implicitly.
         for path in sorted(set(found)):
-            top = path.split(".")[0]
-            # map UI path -> ontology id family
-            known = {
-                "workload": "workload.",
-                "noc_config": "noc.",
-                "requirements": "requirement.",
-                "agents": "agent.",
-            }
-            prefix = known.get(top)
-            if prefix is None:
-                errors.append(f"ui: {path!r} has no ontology prefix mapping")
-                continue
-            field = path.split(".")[1]
-            if not any(n.get("id", "").endswith(field) for n in nodes):
+            cls, _, field = path.partition(".")
+            if cls not in DECLARED and cls not in PRODUCT_DECLARED:
                 errors.append(
-                    f"ui: DesignEditor writes {path!r} but no ontology row "
-                    "covers it")
+                    f"ui: {path!r} names class {cls!r}, which is not a "
+                    "declared intent class")
+                continue
+            covered = any(
+                path in (n.get("fields") or [])
+                or n.get("id", "").endswith(field)
+                for n in nodes)
+            if not covered:
+                errors.append(
+                    f"ui: the Design editor writes {path!r} but no ontology "
+                    "row covers it")
 
     # ── 7. domain plans (Gate 2) ───────────────────────────────────────
     domains = doc.get("domains") or {}

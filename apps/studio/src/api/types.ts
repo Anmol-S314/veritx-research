@@ -618,3 +618,147 @@ export interface ServingView {
   } | null;
   created_at: string | null;
 }
+
+// ── DesignViewV2 (Gate 5 D1, Gate 7 §51.1) ─────────────────────────────────
+// One projection, two presentations. The backend owns canonical values,
+// grouping, readiness, findings, capability consequences, the scientific
+// diff and snapshot identity; Studio renders them and never reconstructs
+// scientific semantics. Review is `presentation: "review"` — there is no
+// separate Review model.
+
+export type DesignReadiness =
+  | 'READY'
+  | 'INCOMPLETE'
+  | 'INVALID'
+  | 'PREFLIGHT_BLOCKED'
+  | 'CAPABILITY_LIMITED_BUT_COMPILABLE';
+
+export type FindingClass =
+  | 'BLOCKING_ERROR'
+  | 'DOWNSTREAM_LIMITATION'
+  | 'INFORMATION'
+  | 'LEGACY_MIGRATION_NOTICE';
+
+export type ReviewFreshness = 'CURRENT' | 'STALE';
+
+/** Gate 7 §52: no naked values without a semantic class. */
+export type EntrySemanticClass =
+  | 'DECLARED'
+  | 'DERIVED_PREVIEW'
+  | 'METADATA'
+  | 'CAPABILITY_CONSEQUENCE';
+
+export interface DesignEntry {
+  /** Canonical field path, e.g. `NocConfig.radix`. */
+  field: string;
+  /** Product label from the exposure registry (§16). */
+  label: string;
+  /** Canonical value. A repeated child is the list of that leaf's values. */
+  value: unknown;
+  semantic_class: EntrySemanticClass;
+  exposure_class: string;
+  disclosure_depth: 'GUIDED' | 'EXPERT';
+  source: 'SEMANTIC_DEFAULT' | 'RECOMMENDATION' | 'NONE' | null;
+  active: boolean;
+  capability_ref: string | null;
+  ownership: {
+    domain: string | null;
+    canonical_field: string;
+    scientific_name: string | null;
+  };
+}
+
+export interface DesignSection {
+  id: string;
+  title: string;
+  entries: DesignEntry[];
+  advanced_active_count: number;
+  blocking_count: number;
+  limitation_count: number;
+}
+
+/** Gate 7 §29: class, owner, code, message, affected, explicit blocking. */
+export interface DesignFinding {
+  class: FindingClass;
+  owner_domain: string;
+  code: string;
+  message: string;
+  affected: string | null;
+  blocking: boolean;
+  remediation_owners: string[];
+}
+
+export interface DerivedSummary {
+  id: string;
+  label: string;
+  value: unknown;
+  kind: 'PRE_COMPILE_DERIVED_SUMMARY';
+  semantic_class: 'DERIVED_PREVIEW';
+}
+
+/** Gate 7 §30: consequences caused by the current choices, not 73 rows. */
+export interface CapabilityConsequence {
+  capability_id: string;
+  choice: string;
+  name: string | null;
+  wiring: string;
+  reason: string | null;
+  limiting: string | null;
+  claim_scope: string | null;
+  stages: Record<string, string>;
+  registry_version: string;
+}
+
+/** Gate 7 §5: active − metadata = represented, mechanically checkable. */
+export interface DesignCompleteness {
+  active_scientific_fields: string[];
+  represented_fields: string[];
+  non_active_fields: { field: string; reason: string }[];
+  unrepresented_active_fields: string[];
+  invariant_holds: boolean;
+  law: string;
+}
+
+export interface ScientificDiffEntry {
+  field: string;
+  before: unknown;
+  after: unknown;
+  kind: 'added' | 'removed' | 'changed';
+}
+
+export interface DesignViewV2 {
+  contract_version: 2;
+  presentation: 'edit' | 'review';
+  draft_identity: {
+    project_id: string;
+    draft_design_hash: string | null;
+  };
+  parent_revision_ref: { revision_id: string; label: string } | null;
+  readiness: DesignReadiness;
+  sections: DesignSection[];
+  derived_summaries: DerivedSummary[];
+  validation_findings: DesignFinding[];
+  capability_consequences: CapabilityConsequence[];
+  completeness: DesignCompleteness;
+  capability_semantics_version: string;
+  registry_versions: {
+    capability_semantics_version: string;
+    capability_registry_version: number;
+    exposure_registry_version: number;
+  };
+  scientific_diff?: ScientificDiffEntry[];
+  review_freshness?: ReviewFreshness;
+  review_snapshot?: {
+    reviewed_draft_design_hash: string | null;
+    current_draft_design_hash: string | null;
+    bound_by: string[];
+  };
+  /** Gate 7 §39/§40: these do not exist before compile/evaluation. */
+  later_stage_claims?: {
+    certificate: null;
+    qualification: null;
+    measurements: null;
+    requirement_verdicts: null;
+    note: string;
+  };
+}

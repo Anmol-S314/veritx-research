@@ -4,6 +4,7 @@ import { del, get, patch, post, put } from './client';
 import type {
   ArtifactChainView,
   CompareView,
+  DesignViewV2,
   DraftView,
   EvidenceView,
   FabricPresetCatalogView,
@@ -65,8 +66,32 @@ export const api = {
       `/projects/${encodeURIComponent(projectId)}/workload`,
       { workload_id: workloadId },
     ),
-  compile: (projectId: string) =>
-    post<RevisionView>(`/projects/${encodeURIComponent(projectId)}/compile`),
+  /** DesignViewV2. `presentation: 'review'` is the pre-compile boundary —
+   * the same projection, not a second model (Gate 7 §51.1). */
+  design: (projectId: string, params?: {
+    presentation?: 'edit' | 'review';
+    /** Ask whether this reviewed snapshot is still current. */
+    reviewSnapshotHash?: string | null;
+  }) => {
+    const q = new URLSearchParams();
+    if (params?.presentation) q.set('presentation', params.presentation);
+    if (params?.reviewSnapshotHash) {
+      q.set('review_snapshot_hash', params.reviewSnapshotHash);
+    }
+    const suffix = q.toString() ? `?${q.toString()}` : '';
+    return get<DesignViewV2>(
+      `/projects/${encodeURIComponent(projectId)}/design${suffix}`,
+    );
+  },
+  /** Compile the draft. `expectedDraftDesignHash` is the reviewed snapshot;
+   * a mismatch is refused as STALE_REVIEW (Gate 7 §4, REV-D2). */
+  compile: (projectId: string, expectedDraftDesignHash?: string | null) =>
+    post<RevisionView>(
+      `/projects/${encodeURIComponent(projectId)}/compile`,
+      expectedDraftDesignHash
+        ? { expected_draft_design_hash: expectedDraftDesignHash }
+        : {},
+    ),
 
   revision: (revisionId: string) =>
     get<RevisionView>(`/revisions/${encodeURIComponent(revisionId)}`),

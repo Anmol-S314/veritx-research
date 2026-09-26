@@ -1,74 +1,182 @@
 import { useRef, useState, type ReactElement } from 'react';
 import { api, type JobView, type ProjectView } from '../api';
+import { navigate } from '../router';
 import {
   AsyncView, ErrorBox, JobProgress, Link, useAsync,
   useJobPoll, useStudio,
 } from '../studio';
 import { Hash, StatusBadge } from '../components/badges';
 import ArtifactChain from '../components/ArtifactChain';
-import DesignEditor from '../components/DesignEditor';
+import DesignViewV2Editor, {
+  READINESS_LABEL,
+} from '../components/DesignViewV2Editor';
+import DesignReviewV2 from '../components/DesignReviewV2';
 import VerifyView from '../components/VerifyView';
 import EvaluateView from '../components/EvaluateView';
 
 export function Design({ projectId }: { projectId: string }): ReactElement {
   const { refreshProjects } = useStudio();
   const project = useAsync(() => api.project(projectId), [projectId]);
+  const view = useAsync(
+    () => api.design(projectId, { presentation: 'edit' }),
+    [projectId],
+  );
   const draft = useAsync(() => api.draft(projectId), [projectId]);
+  const [doc, setDoc] = useState<Record<string, unknown> | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+  const [sectionId, setSectionId] = useState('system');
+
   const reloadAll = (): void => {
     project.reload();
+    view.reload();
     draft.reload();
     refreshProjects();
   };
+
   return (
     <AsyncView result={project.result} reload={project.reload}>
-      {(p: ProjectView) => (
-        <AsyncView result={draft.result} reload={draft.reload}>
-          {(d) => {
-            const active = p.active_revision;
-            const attempt = p.latest_attempt;
-            const refused = attempt
-              && attempt.revision_id !== p.active_revision_id
-              && attempt.compilation_status !== 'COMPILED'
-              ? attempt : null;
-            return (
-              <div className="page">
-                <div className="page-head">
-                  <div>
-                    <h2>Design intent</h2>
+      {() => (
+        <AsyncView result={view.result} reload={view.reload}>
+          {(v) => (
+            <AsyncView result={draft.result} reload={draft.reload}>
+              {(d) => {
+                // The canonical draft document is the thing being edited.
+                // DesignViewV2 owns the structure, labels, exposure,
+                // findings and readiness (Gate 7 §51).
+                const base = (doc
+                  ?? (d.request ?? {})) as Record<string, unknown>;
+                const dirty = JSON.stringify(base)
+                  !== JSON.stringify(d.request ?? {});
+                const save = async (): Promise<void> => {
+                  setSaving(true);
+                  setError(null);
+                  try {
+                    await api.putDraft(projectId, base);
+                    setDoc(null);
+                    reloadAll();
+                  } catch (err) {
+                    setError(err instanceof Error ? err : new Error(String(err)));
+                  } finally {
+                    setSaving(false);
+                  }
+                };
+                return (
+                  <div className="page">
+                    <div className="page-head">
+                      <div>
+                        <h2>Design intent</h2>
+                        <p className="muted">
+                          Edit accepted intent; the compiler owns every derived
+                          value. Sections, disclosure depth and findings come
+                          from the backend projection.
+                        </p>
+                      </div>
+                      <div className="head-actions">
+                        <Link className="btn" to={`/projects/${projectId}/review`}>
+                          Review Design →
+                        </Link>
+                      </div>
+                    </div>
+
+                    <div className={`readiness readiness-${v.readiness.toLowerCase()}`}>
+                      {READINESS_LABEL[v.readiness]}
+                    </div>
+
+                    <DesignViewV2Editor
+                      view={v}
+                      doc={base}
+                      onDocChange={setDoc}
+                      onGoToSection={(owner) => setSectionId(owner)}
+                      sectionId={sectionId}
+                      onSectionChange={setSectionId}
+                    />
+
+                    <div className="form-row">
+                      <button className="btn" disabled={saving || !dirty}
+                              onClick={save}>
+                        {saving ? 'Saving…' : 'Save draft'}
+                      </button>
+                      {dirty && <span className="stale">UNCOMPILED CHANGES</span>}
+                    </div>
+                    {error && <ErrorBox error={error} />}
                     <p className="muted">
-                      Edit the guided inputs; the compiler owns the derived
-                      fabric. Changes mark the revision dirty until a new
-                      compile returns.
+                      Compiling happens from Review, which binds the compile to
+                      the snapshot you reviewed.
                     </p>
                   </div>
-                  <div className="head-actions">
-                    <Link
-                      className="btn"
-                      to={`/projects/${projectId}/workload`}
-                    >
-                      Declared workload catalog
-                    </Link>
-                  </div>
+                );
+              }}
+            </AsyncView>
+          )}
+        </AsyncView>
+      )}
+    </AsyncView>
+  );
+}
+
+export function Review({ projectId }: { projectId: string }): ReactElement {
+  const { refreshProjects } = useStudio();
+  const project = useAsync(() => api.project(projectId), [projectId]);
+  const view = useAsync(
+    () => api.design(projectId, { presentation: 'review' }),
+    [projectId],
+  );
+  const draft = useAsync(() => api.draft(projectId), [projectId]);
+  const [compiling, setCompiling] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+  const [sectionId, setSectionId] = useState('system');
+
+  const reloadAll = (): void => {
+    project.reload();
+    view.reload();
+    draft.reload();
+    refreshProjects();
+  };
+
+  const compile = async (): Promise<void> => {
+    const snapshot = view.result.state === 'ready'
+      ? view.result.data.draft_identity.draft_design_hash : null;
+    setCompiling(true);
+    setError(null);
+    try {
+      // The reviewed snapshot binds the compile: a mismatch is refused as
+      // STALE_REVIEW rather than certifying unseen content (REV-D2).
+      await api.compile(projectId, snapshot);
+      reloadAll();
+      navigate(`/projects/${projectId}/compile`);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+      reloadAll();
+    } finally {
+      setCompiling(false);
+    }
+  };
+
+  return (
+    <AsyncView result={project.result} reload={project.reload}>
+      {() => (
+        <AsyncView result={view.result} reload={view.reload}>
+          {(v) => (
+            <AsyncView result={draft.result} reload={draft.reload}>
+              {(d) => (
+                <div className="page">
+                  <DesignReviewV2
+                    view={v}
+                    doc={(d.request ?? {}) as Record<string, unknown>}
+                    compiling={compiling}
+                    onCompile={compile}
+                    onBack={() => navigate(`/projects/${projectId}/design`)}
+                    onRefresh={reloadAll}
+                    onGoToSection={(owner) => setSectionId(owner)}
+                    sectionId={sectionId}
+                    onSectionChange={setSectionId}
+                  />
+                  {error && <ErrorBox error={error} />}
                 </div>
-                <DesignEditor
-                  projectId={projectId}
-                  request={(d.request ?? {}) as Record<string, unknown>}
-                  draftDesignHash={d.design_hash}
-                  draftDirty={p.draft.dirty}
-                  activeDesign={active?.design ?? null}
-                  activeDisplayName={active?.display_name ?? null}
-                  certifiedRevisionId={
-                    active && active.compilation.status === 'COMPILED'
-                      ? active.revision_id : null
-                  }
-                  latestRefusal={refused}
-                  draftMatchesAttempt={Boolean(
-                    refused && d.design_hash === refused.design_hash)}
-                  onChanged={reloadAll}
-                />
-              </div>
-            );
-          }}
+              )}
+            </AsyncView>
+          )}
         </AsyncView>
       )}
     </AsyncView>

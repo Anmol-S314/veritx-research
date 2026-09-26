@@ -39,7 +39,11 @@ export function parseRoute(path: string): ParsedRoute {
     return {
       kind: 'project',
       projectId: parts[1],
-      section: parts[2] ?? 'overview',
+      // `/projects/:pid/design/review` is the pre-compile boundary; it is
+      // its own section so the review snapshot has a real deep link.
+      section: parts[2] === 'design' && parts[3] === 'review'
+        ? 'review'
+        : parts[2] ?? 'overview',
     };
   }
   return { kind: 'notfound' };
