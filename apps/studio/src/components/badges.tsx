@@ -5,9 +5,9 @@ export function shortHash(h: string | null | undefined, chars = 12): string {
   return h.length > chars + 9 ? `${h.slice(0, 7)}…${h.slice(-4)}` : h;
 }
 
-export function TierBadge({ tier }: { tier: 'LOCKED' | 'GUIDED' | 'FREE' }): ReactNode {
-  return <span className={`tier tier-${tier.toLowerCase()}`}>{tier}</span>;
-}
+// TierBadge (LOCKED / GUIDED / FREE) was removed: it encoded the superseded
+// tier model. Field exposure is now owned by docs/product/exposure-registry.yaml
+// and projected by the backend (DesignViewV2). See STUDIO-WIREFRAMES.md §144.
 
 const STATUS_CLASS: Record<string, string> = {
   PASS: 'ok',

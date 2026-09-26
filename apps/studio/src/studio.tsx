@@ -1,9 +1,12 @@
 // Studio shell primitives: mode detection, active-project state, async/job
-// hooks and the persistent context header + workflow stepper. React renders
-// the gateway's explicit flow state; it never infers a stage from a missing
-// field.
+// hooks and the persistent context header. React renders the gateway's
+// explicit flow state; it never infers a stage from a missing field.
+//
+// The linear 01…05 WorkflowBar was removed (STUDIO-WIREFRAMES.md §144/§181):
+// navigation follows the scientific object lifecycle (Design · Evaluate ·
+// Serve · Optimize · History · Capability), not one global pipeline.
 import {
-  Fragment, createContext, useContext, useEffect, useState,
+  createContext, useContext, useEffect, useState,
   type ReactElement, type ReactNode,
 } from 'react';
 import { api, ApiError, type JobView, type ProjectView } from './api';
@@ -265,65 +268,6 @@ export function JobProgress({ job }: { job: JobView | null }): ReactElement | nu
       )}
       {!done && <span className="spinner" aria-label="working" />}
     </div>
-  );
-}
-
-// The product pipeline (SROTA template): Intent -> Fabric -> Certificate
-// -> Execute -> Decide. Status only; navigation lives in the left rail.
-const PIPELINE = [
-  { key: 'intent', label: 'Intent', sub: 'Design intent' },
-  { key: 'fabric', label: 'Fabric', sub: 'Topology + route + VC' },
-  { key: 'certificate', label: 'Certificate', sub: 'deadlock / identity' },
-  { key: 'execute', label: 'Execute', sub: 'qualified backend' },
-  { key: 'decide', label: 'Decide', sub: 'Pareto + requirements' },
-] as const;
-
-type NodeState = 'done' | 'active' | 'pending';
-
-export function pipelineStatuses(project: ProjectView): Record<string, NodeState> {
-  const active = project.active_revision;
-  const rid = project.active_revision_id;
-  const compiled = active?.compilation?.status === 'COMPILED';
-  const certified = active?.certificate?.overall === 'PASS';
-  // Scope the pipeline to the ACTIVE revision: a run or study from an
-  // older revision must not advance the current design's pipeline.
-  const evaluated = project.runs.some(
-    (r) => r.revision_id === rid && r.status === 'EVALUATED');
-  const decided = project.optimizations.some(
-    (o) => o.base_revision_id === rid);
-  const intent = Boolean(active || project.draft.workload_id);
-  return {
-    intent: intent ? 'done' : 'active',
-    fabric: compiled ? 'done' : intent ? 'active' : 'pending',
-    certificate: certified ? 'done' : compiled ? 'active' : 'pending',
-    execute: evaluated ? 'done' : certified ? 'active' : 'pending',
-    decide: decided ? 'done' : evaluated ? 'active' : 'pending',
-  };
-}
-
-export function WorkflowBar({ project, current }: {
-  project: ProjectView;
-  current?: string;
-}): ReactElement {
-  const statuses = pipelineStatuses(project);
-  return (
-    <section className="workflow-bar" aria-label="Workflow pipeline"
-             data-current={current ?? ''}>
-      {PIPELINE.map((node, index) => (
-        <Fragment key={node.key}>
-          <div className={`workflow-node ${statuses[node.key]}`}>
-            <span>{String(index + 1).padStart(2, '0')}</span>
-            <div>
-              <b>{node.label}</b>
-              <small>{node.sub}</small>
-            </div>
-          </div>
-          {index < PIPELINE.length - 1 && (
-            <div className={`workflow-line ${statuses[node.key] === 'done' ? 'done' : ''}`} />
-          )}
-        </Fragment>
-      ))}
-    </section>
   );
 }
 

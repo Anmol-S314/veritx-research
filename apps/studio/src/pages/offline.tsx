@@ -1,6 +1,6 @@
 import { useState, type ReactElement } from 'react';
 import { FIXTURES, FIXTURE_ORDER, type FixtureId } from '../fixtures';
-import { Hash, TierBadge } from '../components/badges';
+import { Hash } from '../components/badges';
 import type { DesignView } from '../types';
 import FabricView from '../components/FabricView';
 import VerifyView from '../components/VerifyView';
@@ -20,7 +20,7 @@ function FixtureDesign({ design }: { design: DesignView }): ReactElement {
       <div className="design-main">
         <section className="card">
           <h3>
-            E1 · Workload <TierBadge tier="GUIDED" />
+            E1 · Workload
           </h3>
           <div className="kv"><span>model</span><span>{w.model_family} · {w.model_name ?? '—'}</span></div>
           <div className="kv"><span>TP / PP / EP / DP</span><span>{w.parallelism.tp} / {w.parallelism.pp} / {w.parallelism.ep} / {w.parallelism.dp}</span></div>
@@ -28,11 +28,11 @@ function FixtureDesign({ design }: { design: DesignView }): ReactElement {
         </section>
         <section className="card">
           <h3>
-            E2 · Requirements <TierBadge tier="GUIDED" />
+            E2 · Requirements
           </h3>
           <table className="tbl">
             <thead>
-              <tr><th>Traffic class</th><th>QoS class</th><th>Latency ceiling</th><th>Bandwidth floor</th><th>Binding</th></tr>
+              <tr><th>Traffic class</th><th>QoS class</th><th>Latency ceiling</th><th>Binding</th></tr>
             </thead>
             <tbody>
               {design.requirements.map((r, i) => (
@@ -40,7 +40,6 @@ function FixtureDesign({ design }: { design: DesignView }): ReactElement {
                   <td>{r.traffic_class ?? '—'}</td>
                   <td>{r.qos_class}</td>
                   <td>{r.latency_ceiling_cycles ?? '—'}</td>
-                  <td>{r.bandwidth_floor_gbps ?? '—'}</td>
                   <td>{r.binding ? 'yes' : 'no'}</td>
                 </tr>
               ))}
@@ -49,7 +48,7 @@ function FixtureDesign({ design }: { design: DesignView }): ReactElement {
         </section>
         <section className="card">
           <h3>
-            E3 · Agents <TierBadge tier="GUIDED" />
+            E3 · Agents
           </h3>
           {design.agents.map((a, i) => (
             <div className="kv" key={i}><span>{a.kind}</span><span>{a.count}×</span></div>
@@ -58,15 +57,14 @@ function FixtureDesign({ design }: { design: DesignView }): ReactElement {
         <section className="card">
           <h3>E5 · NoC configuration</h3>
           <div className="kv"><span>topology</span><span>{g.topology_family ?? '—'}</span></div>
-          <div className="kv"><span>radix</span><span>{g.radix ?? '—'}</span></div>
+          <div className="kv"><span>grid size</span><span>{g.radix ?? '—'}</span></div>
           <div className="kv"><span>concentration</span><span>{g.concentration ?? '—'}</span></div>
           <div className="kv"><span>link width</span><span>{g.link_width ?? '—'} bits</span></div>
           <div className="kv"><span>arbitration</span><span>{g.arbitration ?? '—'}</span></div>
-          <div className="kv"><span>RCU</span><span>{String(g.rcu_enabled ?? '—')}</span></div>
           {locked && (
             <>
               <h4 className="locked-head">
-                Derived properties <TierBadge tier="LOCKED" />
+                Derived properties
               </h4>
               <div className="kv"><span>routing</span><span>{locked.routing}</span></div>
               <div className="kv"><span>VC count</span><span>{locked.vc_count}</span></div>

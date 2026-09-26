@@ -1,6 +1,30 @@
-/* Srota Studio — semiconductor engineering-tool theme. Dense, flat, no gloss. */
+/* Srota Studio — semiconductor engineering-tool theme. Dense, flat, no gloss.
+   Light-first (STUDIO-WIREFRAMES.md §3): `:root` is the light token block and
+   dark is an explicit opt-in. The token family is unchanged — this is an
+   inversion of the default, not a new theme system. */
 
 :root,
+[data-theme='light'] {
+  --bg: #f2f4f6;
+  --bg-raise: #e9edf1;
+  --bg-card: #ffffff;
+  /* Raised one step from #d3d9e0 for dense-table structural edges (§193). */
+  --border: #c9d1da;
+  --text: #1d242c;
+  --muted: #5d6874;
+  --accent: #0f6c9e;
+  --accent-dim: #d3e7f2;
+  --ok: #1d7a4c;
+  --ok-bg: #e2f2e9;
+  --bad: #b3372c;
+  --bad-bg: #f9e3e0;
+  --warn: #9a6b12;
+  --warn-bg: #f7ecd2;
+  --info: #2456c4;
+  --input-bg: #f6f8fa;
+  --mono: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+}
+
 [data-theme='dark'] {
   --bg: #14171c;
   --bg-raise: #1b2027;
@@ -18,26 +42,15 @@
   --warn-bg: #2a2113;
   --info: #6aa8ff;
   --input-bg: #12151a;
-  --mono: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
 }
 
-[data-theme='light'] {
-  --bg: #f2f4f6;
-  --bg-raise: #e9edf1;
-  --bg-card: #ffffff;
-  --border: #d3d9e0;
-  --text: #1d242c;
-  --muted: #5d6874;
-  --accent: #0f6c9e;
-  --accent-dim: #d3e7f2;
-  --ok: #1d7a4c;
-  --ok-bg: #e2f2e9;
-  --bad: #b3372c;
-  --bad-bg: #f9e3e0;
-  --warn: #9a6b12;
-  --warn-bg: #f7ecd2;
-  --info: #2456c4;
-  --input-bg: #f6f8fa;
+/* Tabular figures for numeric columns (§130): cycles, ns, bytes, counts. */
+.num,
+.tbl td.num,
+.live-table td.num,
+td.num,
+th.num {
+  font-variant-numeric: tabular-nums;
 }
 
 * {
@@ -627,6 +640,17 @@ input:disabled {
   stroke: var(--muted);
 }
 
+.cv-link-wrap {
+  stroke: var(--accent);
+  stroke-dasharray: 5 3;
+  opacity: 0.75;
+}
+
+.cv-link-tree {
+  stroke: var(--info);
+  opacity: 0.8;
+}
+
 .cv-stub {
   stroke: var(--muted);
   stroke-width: 1;
@@ -712,7 +736,6 @@ input:disabled {
   gap: 10px;
   align-items: flex-start;
   border: 1px solid var(--border);
-  border-left-width: 4px;
   border-radius: 4px;
   padding: 8px 12px;
   margin-bottom: 12px;
@@ -721,21 +744,17 @@ input:disabled {
 
 .verdict-compiled,
 .verdict-evaluated {
-  border-left-color: var(--ok);
+  background: var(--ok-bg);
 }
 
 .verdict-invalid,
 .verdict-failed {
-  border-left-color: var(--bad);
+  background: var(--bad-bg);
 }
 
 .verdict-backend_unavailable,
 .verdict-not_run {
-  border-left-color: var(--warn);
-}
-
-.verdict-unsupported {
-  border-left-color: var(--muted);
+  background: var(--warn-bg);
 }
 
 .verdict-text {
@@ -775,7 +794,6 @@ input:disabled {
   width: 100%;
   background: var(--input-bg);
   border: 1px solid var(--border);
-  border-left-width: 4px;
   border-radius: 3px;
   padding: 6px 10px;
   cursor: pointer;
@@ -784,11 +802,11 @@ input:disabled {
 }
 
 .ob-pass {
-  border-left-color: var(--ok);
+  background: var(--ok-bg);
 }
 
 .ob-fail {
-  border-left-color: var(--bad);
+  background: var(--bad-bg);
 }
 
 .ob-row.selected {
@@ -993,7 +1011,7 @@ input:disabled {
 .reason-block {
   margin: 8px 0;
   padding: 8px 10px;
-  border-left: 3px solid var(--bad);
+  border: 1px solid var(--border);
   background: var(--bad-bg);
   font-size: 12px;
   line-height: 1.45;
@@ -1001,7 +1019,6 @@ input:disabled {
 }
 
 .reason-block.reason-ineligible {
-  border-left-color: var(--warn);
   background: var(--warn-bg);
 }
 
@@ -1100,11 +1117,10 @@ input:disabled {
 .rank-row.sel .rank-id { color: var(--accent); }
 .rank-bar {
   height: 12px;
-  background: var(--accent-dim);
-  border-left: 3px solid var(--accent);
+  background: var(--accent);
   min-width: 2px;
 }
-.rank-row.pt .rank-bar { background: var(--ok-bg); border-left-color: var(--ok); }
+.rank-row.pt .rank-bar { background: var(--ok); }
 .rank-val { font: 12px var(--mono); font-variant-numeric: tabular-nums; }
 
 /* ── live gateway panels (C9) ───────────────────────────────────────── */
@@ -1236,7 +1252,7 @@ input:disabled {
 .error-cat { font-family: var(--mono); margin-bottom: 4px; }
 .error-box p { margin: 4px 0; }
 
-.trust-drawer { border-left: 3px solid var(--accent); }
+.trust-drawer { background: var(--bg-raise); border: 1px solid var(--border); border-radius: 4px; padding: 8px 10px; }
 .trust-drawer details { margin-top: 8px; }
 .trust-drawer summary { cursor: pointer; font-family: var(--mono); font-size: 12px; }
 
@@ -1278,8 +1294,10 @@ input:disabled {
 }
 
 :root {
-  --font-sans: 'InterVar', ui-sans-serif, system-ui, -apple-system,
-    'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  /* §129: a neutral grotesque, NOT Inter-as-default. The system UI stack is
+     the neutral grotesque; InterVar is no longer the default face. */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
   --font-mono: 'JetBrainsMonoVar', ui-monospace, 'SFMono-Regular', Menlo,
     Consolas, monospace;
   --sans: var(--font-sans);
@@ -1576,8 +1594,8 @@ span.warn { color: var(--warn, #92620e); }
   border: 1px solid var(--border); border-radius: 4px;
   padding: 8px 12px; margin-bottom: 10px;
 }
-.compat-ok { border-left: 3px solid var(--ok); }
-.compat-bad { border-left: 3px solid var(--bad); }
+.compat-ok { background: var(--ok-bg); }
+.compat-bad { background: var(--bad-bg); }
 .compat ul { margin: 6px 0 0; padding-left: 18px; }
 
 .current-badge {

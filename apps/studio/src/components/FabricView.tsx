@@ -1,19 +1,20 @@
-import { Suspense, lazy, useState, type ReactElement } from 'react';
+import { useState, type ReactElement } from 'react';
 import { api } from '../api';
 import type { DesignView, TopologyView } from '../types';
 import Canvas2D, { OVERLAYS, type Overlay } from './FabricCanvas';
 import { fabricModel } from '../fabricLayout';
 import { useAsync } from '../studio';
 
-// Three.js is heavy; load it only when the 3D view is shown.
-const FabricCanvas3D = lazy(() => import('./FabricCanvas3D'));
+// FabricCanvas3D was removed (STUDIO-WIREFRAMES.md §186): the canonical
+// TopologyArtifact has no depth dimension — mesh, torus and concentrated
+// mesh are planar and concentration is a per-router property. A 3D render
+// would assert structure that does not exist scientifically.
 
 const shortHash = (value: string | null): string =>
   value ? `${value.replace(/^sha256:/, '').slice(0, 12)}…` : '';
 
 /**
- * Topology / traffic view. 3D by default (orbitable structure), with a 2D
- * fallback.
+ * Topology / traffic view (2D).
  *
  * Source honesty: with a revision id we draw the certified TopologyView
  * (routers, channels, agent seats). Without one — an uncompiled draft —
@@ -27,7 +28,6 @@ export default function FabricView({ design, revisionId }: {
   revisionId?: string | null;
 }): ReactElement {
   const [overlay, setOverlay] = useState<Overlay>('structure');
-  const [mode, setMode] = useState<'3d' | '2d'>('3d');
   const topology = useAsync(
     () => (revisionId
       ? api.topology(revisionId)
@@ -57,8 +57,6 @@ export default function FabricView({ design, revisionId }: {
       topology={topology.result.state === 'ready' ? topology.result.data : null}
       overlay={overlay}
       onOverlay={setOverlay}
-      mode={mode}
-      onMode={setMode}
       unavailable={unavailable}
     />
   );
@@ -66,26 +64,31 @@ export default function FabricView({ design, revisionId }: {
 
 /** The certified-or-preview canvas with its toolbar. Split so the
  * not-materialized branch above returns before any mesh is constructed. */
-function CertifiedCanvas({ design, topology, overlay, onOverlay, mode, onMode,
+function CertifiedCanvas({ design, topology, overlay, onOverlay,
   unavailable }: {
   design: DesignView;
   topology: TopologyView | null;
   overlay: Overlay;
   onOverlay: (o: Overlay) => void;
-  mode: '3d' | '2d';
-  onMode: (m: '3d' | '2d') => void;
   unavailable: { id: Overlay; label: string; needs: string }[];
 }): ReactElement {
   const model = fabricModel(design, topology);
 
+  const g = design.noc_guided;
+  const knobs = [
+    g.topology_family ? `family ${g.topology_family}` : 'family —',
+    g.concentration != null ? `conc ${g.concentration}` : null,
+    g.radix != null ? `side length ${g.radix}` : null,
+    g.arbitration ? `arb ${g.arbitration}` : null,
+  ].filter((part): part is string => Boolean(part)).join(' · ');
   const meta = model.source === 'topology'
     ? `${model.family} · ${model.counts.routers} routers · `
       + `${model.counts.channels} directed channels · `
       + `${model.counts.endpoints} endpoints / ${model.counts.seats} seats · `
       + `topology ${shortHash(model.topologyHash)}`
     : `~${model.counts.routers} routers from declared counts · `
-      + `${model.totals.compute} compute · `
-      + 'compile to materialize the certified graph';
+      + `${model.totals.compute} compute · ${knobs} · `
+      + 'schematic preview — compile to materialize the certified graph';
 
   return (
     <div className="fabric-view">
@@ -99,24 +102,6 @@ function CertifiedCanvas({ design, topology, overlay, onOverlay, mode, onMode,
             title="Structural view (routers, links, attachments)"
           >
             Structure ✓
-          </button>
-        </div>
-        <div className="segmented small" role="tablist" aria-label="View mode">
-          <button
-            role="tab"
-            aria-selected={mode === '3d'}
-            className={mode === '3d' ? 'selected' : ''}
-            onClick={() => onMode('3d')}
-          >
-            3D
-          </button>
-          <button
-            role="tab"
-            aria-selected={mode === '2d'}
-            className={mode === '2d' ? 'selected' : ''}
-            onClick={() => onMode('2d')}
-          >
-            2D
           </button>
         </div>
       </div>
@@ -140,17 +125,7 @@ function CertifiedCanvas({ design, topology, overlay, onOverlay, mode, onMode,
         </ul>
       </details>
 
-      {mode === '3d' ? (
-        <Suspense fallback={
-          <div className="canvas-3d canvas-3d-loading" role="status">
-            loading 3D topology…
-          </div>
-        }>
-          <FabricCanvas3D model={model} />
-        </Suspense>
-      ) : (
-        <Canvas2D model={model} topology={topology} />
-      )}
+      <Canvas2D model={model} topology={topology} />
     </div>
   );
 }

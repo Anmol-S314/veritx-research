@@ -9,7 +9,7 @@ import {
   type WorkloadLoweringView,
 } from '../api';
 import {
-  AsyncView, Link, WorkflowBar, useAsync, useStudio,
+  AsyncView, Link, useAsync, useStudio,
 } from '../studio';
 import { Hash, StatusBadge, fmtNum, humanize } from '../components/badges';
 import { navigate } from '../router';
@@ -216,7 +216,6 @@ export function Overview({ projectId }: { projectId: string }): ReactElement {
         const hbm = agents.find((a) => a.kind === 'hbm_controller')?.count;
         return (
           <div className="page">
-            <WorkflowBar project={p} current="overview" />
             <div className="overview-grid">
               <section className="card">
                 <h3>Current revision</h3>
@@ -324,12 +323,18 @@ export function Overview({ projectId }: { projectId: string }): ReactElement {
                 <p className="kicker">PRODUCT EVALUATION</p>
                 <h3>Can this design satisfy the workload?</h3>
                 <p className="muted">
-                  Compile the fabric, prove its obligations, execute supported
-                  communication and evaluate explicit product requirements.
+                  Compile the fabric, prove its obligations, execute
+                  communication under a named evaluation profile and evaluate
+                  explicit product requirements.
                 </p>
-                <Link className="btn" to={`/projects/${projectId}/workload`}>
-                  Open intent
-                </Link>
+                <div className="form-row">
+                  <Link className="btn btn-primary" to={`/projects/${projectId}/design`}>
+                    Edit intent
+                  </Link>
+                  <Link className="btn" to={`/projects/${projectId}/workload`}>
+                    Declared workload
+                  </Link>
+                </div>
               </section>
               <section className="card">
                 <p className="kicker">DESIGN SPACE</p>
@@ -507,7 +512,6 @@ export function Workload({ projectId }: { projectId: string }): ReactElement {
     <AsyncView result={project.result} reload={project.reload}>
       {(p) => (
         <div className="page">
-          <WorkflowBar project={p} current="workload" />
           <h2>Workload</h2>
           <AsyncView result={catalog.result} reload={catalog.reload}>
             {(data) => (
@@ -738,8 +742,7 @@ function ValidationCampaigns(): ReactElement {
               </details>
               <details>
                 <summary>
-                  Intervention study — schedule causality{' '}
-                  {data.intervention.supported ? 'SUPPORTED' : 'NOT SUPPORTED'}
+                  Intervention study — schedule causality
                 </summary>
                 {data.intervention.problems.length > 0 && (
                   <p className="bad">{data.intervention.problems.join('; ')}</p>

@@ -116,19 +116,12 @@ def test_evaluate_a_guided_preset_revision_is_a_typed_refusal(tmp_path):
     assert response.json()["code"] == "UNSUPPORTED_SEMANTICS"
 
 
-def test_optimize_internal_fault_is_500(tmp_path, monkeypatch):
-    from veritx_dse.optimization.result import Optimizer
-
-    monkeypatch.setattr(CompileRequestV3, "from_dict",
-                        staticmethod(lambda _d: object()))
-    monkeypatch.setattr(Optimizer, "optimize_certified",
-                        _raise(TypeError("boom")))
-    response = _client(tmp_path, with_binary=True).post(
-        "/optimize", json={"request": {"anything": True},
-                           "domain": [{"name": "link_width",
-                                       "values": [64, 128]}]})
-    assert response.status_code == 500, response.text
-    assert response.json()["code"] == "INTERNAL_ERROR"
+# ``test_optimize_internal_fault_is_500`` was removed with the endpoint
+# (PF-D15). Its coverage — a programmer fault becoming a typed 500 rather
+# than a user error — is already carried by
+# ``test_internal_programmer_errors_are_500_never_user_errors``
+# (parametrized over ValueError/TypeError/RuntimeError/AttributeError on
+# ``POST /compile``) and by ``test_evaluate_internal_fault_is_500``.
 
 
 def test_unknown_run_is_404_and_traversal_is_rejected(tmp_path):

@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactElement } from 'react';
 import { api } from '../api';
 import type { DesignView, Requirement } from '../types';
-import { Hash, TierBadge } from './badges';
+import { Hash } from './badges';
 import { agentLabel } from './FabricCanvas';
 import FabricView from './FabricView';
 import { ErrorBox } from '../studio';
@@ -77,7 +77,6 @@ function previewFromRequest(req: Record<string, unknown>): DesignView {
       radix: num(noc.radix),
       concentration: num(noc.concentration),
       link_width: num(noc.link_width),
-      rcu_enabled: (noc.rcu_enabled as boolean | null) ?? null,
       arbitration: (noc.arbitration as string | null) ?? null,
     },
     locked_derived: null,
@@ -178,7 +177,6 @@ export default function DesignEditor({ projectId, request, draftDesignHash,
       traffic_class: 'new_class',
       qos_class: 'best_effort',
       latency_ceiling_cycles: null,
-      bandwidth_floor_gbps: null,
       binding: false,
     }];
     setDoc(next);
@@ -231,7 +229,7 @@ export default function DesignEditor({ projectId, request, draftDesignHash,
         {/* E1 workload */}
         <section className="card">
           <h3>
-            E1 · Workload <TierBadge tier="GUIDED" />
+            E1 · Workload
           </h3>
           <div className="form-row">
             <label>
@@ -286,7 +284,7 @@ export default function DesignEditor({ projectId, request, draftDesignHash,
         {/* E2 requirements */}
         <section className="card">
           <h3>
-            E2 · Requirements <TierBadge tier="GUIDED" />
+            E2 · Requirements
           </h3>
           <table className="tbl">
             <thead>
@@ -294,7 +292,6 @@ export default function DesignEditor({ projectId, request, draftDesignHash,
                 <th>Traffic class</th>
                 <th>QoS class</th>
                 <th>Latency ceiling (cycles)</th>
-                <th>Bandwidth floor (Gbps)</th>
                 <th>Binding</th>
                 <th />
               </tr>
@@ -325,16 +322,6 @@ export default function DesignEditor({ projectId, request, draftDesignHash,
                     />
                   </td>
                   <td>
-                    <input
-                      type="number"
-                      value={r.bandwidth_floor_gbps ?? ''}
-                      placeholder="—"
-                      onChange={(e) =>
-                        setReq(i, { bandwidth_floor_gbps: e.target.value === '' ? null : Number(e.target.value) })
-                      }
-                    />
-                  </td>
-                  <td>
                     <input type="checkbox" checked={r.binding} onChange={(e) => setReq(i, { binding: e.target.checked })} />
                   </td>
                   <td>
@@ -354,7 +341,7 @@ export default function DesignEditor({ projectId, request, draftDesignHash,
         {/* E3 agents */}
         <section className="card">
           <h3>
-            E3 · Agents <TierBadge tier="GUIDED" />
+            E3 · Agents
           </h3>
           <div className="form-row">
             {agents.map((a, i) => (
@@ -371,7 +358,7 @@ export default function DesignEditor({ projectId, request, draftDesignHash,
           <h3>E5 · NoC configuration</h3>
           <div className="form-row">
             <label>
-              Topology family <TierBadge tier="GUIDED" />
+              Topology family
               <select
                 value={String(noc.topology_family ?? '')}
                 onChange={(e) => edit('noc_config.topology_family', e.target.value || null)}
@@ -385,7 +372,7 @@ export default function DesignEditor({ projectId, request, draftDesignHash,
               </select>
             </label>
             <label>
-              Radix <TierBadge tier="GUIDED" />
+              Grid size
               <input
                 type="number"
                 value={noc.radix === null || noc.radix === undefined ? '' : String(noc.radix)}
@@ -393,7 +380,7 @@ export default function DesignEditor({ projectId, request, draftDesignHash,
               />
             </label>
             <label>
-              Concentration <TierBadge tier="GUIDED" />
+              Concentration
               <input
                 type="number"
                 value={noc.concentration === null || noc.concentration === undefined ? '' : String(noc.concentration)}
@@ -401,7 +388,7 @@ export default function DesignEditor({ projectId, request, draftDesignHash,
               />
             </label>
             <label>
-              Link width (b) <TierBadge tier="GUIDED" />
+              Link width (b)
               <input
                 type="number"
                 value={noc.link_width === null || noc.link_width === undefined ? '' : String(noc.link_width)}
@@ -409,7 +396,7 @@ export default function DesignEditor({ projectId, request, draftDesignHash,
               />
             </label>
             <label>
-              Arbitration <TierBadge tier="GUIDED" />
+              Arbitration
               <select
                 value={String(noc.arbitration ?? '')}
                 onChange={(e) => edit('noc_config.arbitration', e.target.value || null)}
@@ -422,25 +409,10 @@ export default function DesignEditor({ projectId, request, draftDesignHash,
                 ))}
               </select>
             </label>
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={noc.rcu_enabled === true}
-                onChange={(e) => edit('noc_config.rcu_enabled', e.target.checked)}
-              />
-              RCU (in-network reduction) <TierBadge tier="GUIDED" />
-            </label>
           </div>
-          {noc.rcu_enabled === true && (
-            <div className="rcu-refusal">
-              <strong>Compiler refusal:</strong> <code>rcu_enabled=true</code> has
-              no RCU realization in the current fabric — compiling refuses as
-              UNSUPPORTED rather than silently dropping the intent.
-            </div>
-          )}
 
           <h4 className="locked-head">
-            Derived properties <TierBadge tier="LOCKED" />
+            Derived properties
           </h4>
           {draftDirty && activeDisplayName && (
             <p className="muted">

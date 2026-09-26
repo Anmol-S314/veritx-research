@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactElement } from 'react';
 import { api, type JobView, type OptimizationView, type RevisionView } from '../api';
 import {
-  AsyncView, ErrorBox, JobProgress, Link, WorkflowBar, useAsync,
+  AsyncView, ErrorBox, JobProgress, Link, useAsync,
   useJobPoll, useStudio,
 } from '../studio';
 import { Hash, StatusBadge, fmtNum } from '../components/badges';
@@ -67,7 +67,6 @@ export function Optimize({ projectId }: { projectId: string }): ReactElement {
         const running = job !== null && !['COMPLETED', 'REFUSED', 'FAILED', 'CANCELLED'].includes(job.state);
         return (
           <div className="page">
-            <WorkflowBar project={p} current="decide" />
             <h2>Optimize</h2>
             <section className="card">
               <h3>Study definition</h3>
@@ -243,7 +242,6 @@ export function Compare({ projectId }: { projectId: string }): ReactElement {
         const evaluated = p.runs.filter((r) => r.status === 'EVALUATED');
         return (
           <div className="page">
-            <WorkflowBar project={p} current="decide" />
             <h2>Compare</h2>
             {evaluated.length < 2 ? (
               <p className="muted">Two evaluated runs are required to compare.</p>

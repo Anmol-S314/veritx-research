@@ -28,7 +28,10 @@ export interface Requirement {
   traffic_class: string | null;
   qos_class: string;
   latency_ceiling_cycles: number | null;
-  bandwidth_floor_gbps: number | null;
+  /** REMOVED_V4 (exposure-registry: RequirementV3.bandwidth_floor_gbps).
+   * Retained in the frozen DesignView v1 contract for compatibility; no
+   * Studio control writes it and no Studio surface renders it. */
+  bandwidth_floor_gbps?: number | null;
   binding: boolean;
 }
 
@@ -42,7 +45,9 @@ export interface NocGuided {
   radix: number | null;
   concentration: number | null;
   link_width: number | null;
-  rcu_enabled: boolean | null;
+  /** REMOVED_V4 (exposure-registry: NocConfig.rcu_enabled). Present in the
+   * frozen DesignView v1 contract; never authored or rendered by Studio. */
+  rcu_enabled?: boolean | null;
   arbitration: string | null;
 }
 

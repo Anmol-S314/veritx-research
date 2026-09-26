@@ -19,7 +19,7 @@ type Theme = 'dark' | 'light';
 const RAIL: { section: string; no: string; label: string; group: string
   tiny?: string }[] = [
   { section: 'overview', no: '00', label: 'Overview', group: 'workflow' },
-  { section: 'workload', no: '01', label: 'Intent', group: 'workflow', tiny: 'edit' },
+  { section: 'design', no: '01', label: 'Intent', group: 'workflow', tiny: 'edit' },
   { section: 'compile', no: '02', label: 'Compile', group: 'workflow' },
   { section: 'verify', no: '03', label: 'Verify', group: 'workflow' },
   { section: 'simulate', no: '04', label: 'Evaluate', group: 'workflow' },
@@ -34,7 +34,8 @@ function Shell(): ReactElement {
   const { mode, projects, activeProjectId, setActiveProjectId } = useStudio();
   const path = usePathname();
   const route = parseRoute(path);
-  // Light mode is primary per the handoff visual rules; dark supported.
+  // Light mode is authoritative (STUDIO-WIREFRAMES.md §3/§5). Dark remains
+  // available as an explicit opt-in and is not required for parity.
   const [theme, setTheme] = useState<Theme>('light');
 
   useEffect(() => {
@@ -56,10 +57,20 @@ function Shell(): ReactElement {
     if (activeProjectId && !known(activeProjectId)) setActiveProjectId('');
   }, [route.projectId, projects, activeProjectId, setActiveProjectId]);
 
-  const contextProjectId = route.projectId
-    ?? (projects.some((p) => p.project.project_id === activeProjectId)
-      ? activeProjectId
-      : '');
+  // A project id in the URL is trusted only once the project list has
+  // loaded and confirms it. Otherwise a stale link dead-ends on a 404 with
+  // a Retry that can never succeed.
+  const projectsLoaded = projects.length > 0;
+  const routeProjectKnown =
+    route.projectId != null &&
+    projects.some((p) => p.project.project_id === route.projectId);
+  const staleProject = Boolean(route.projectId) && projectsLoaded && !routeProjectKnown;
+  const contextProjectId =
+    route.projectId && (!projectsLoaded || routeProjectKnown)
+      ? route.projectId
+      : projects.some((p) => p.project.project_id === activeProjectId)
+        ? activeProjectId
+        : '';
   const activeProject = contextProjectId
     ? projects.find((p) => p.project.project_id === contextProjectId)
     : undefined;
@@ -76,6 +87,7 @@ function Shell(): ReactElement {
       case 'run':
         return <RunDetail runId={route.runId ?? ''} />;
       case 'project': {
+        if (staleProject) return <ProjectPicker />;
         switch (route.section) {
           case 'workload': return <Workload projectId={pid} />;
           case 'design': return <Design projectId={pid} />;

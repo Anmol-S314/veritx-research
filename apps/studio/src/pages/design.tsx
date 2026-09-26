@@ -1,7 +1,7 @@
 import { useRef, useState, type ReactElement } from 'react';
 import { api, type JobView, type ProjectView } from '../api';
 import {
-  AsyncView, ErrorBox, JobProgress, Link, WorkflowBar, useAsync,
+  AsyncView, ErrorBox, JobProgress, Link, useAsync,
   useJobPoll, useStudio,
 } from '../studio';
 import { Hash, StatusBadge } from '../components/badges';
@@ -32,8 +32,24 @@ export function Design({ projectId }: { projectId: string }): ReactElement {
               ? attempt : null;
             return (
               <div className="page">
-                <WorkflowBar project={p} current="design" />
-                <h2>Design intent</h2>
+                <div className="page-head">
+                  <div>
+                    <h2>Design intent</h2>
+                    <p className="muted">
+                      Edit the guided inputs; the compiler owns the derived
+                      fabric. Changes mark the revision dirty until a new
+                      compile returns.
+                    </p>
+                  </div>
+                  <div className="head-actions">
+                    <Link
+                      className="btn"
+                      to={`/projects/${projectId}/workload`}
+                    >
+                      Declared workload catalog
+                    </Link>
+                  </div>
+                </div>
                 <DesignEditor
                   projectId={projectId}
                   request={(d.request ?? {}) as Record<string, unknown>}
@@ -126,7 +142,6 @@ export function Compile({ projectId }: { projectId: string }): ReactElement {
         const { active, refused } = useActiveRefused(p);
         return (
           <div className="page">
-            <WorkflowBar project={p} current="compile" />
             <div className="page-head">
               <div>
                 <h2>Canonical compilation</h2>
@@ -246,7 +261,6 @@ export function Verify({ projectId }: { projectId: string }): ReactElement {
         const obs = active?.compilation.obligations ?? [];
         return (
           <div className="page">
-            <WorkflowBar project={p} current="verify" />
             <div className="page-head">
               <div>
                 <h2>Verification certificate</h2>
@@ -449,7 +463,6 @@ export function Simulate({ projectId }: { projectId: string }): ReactElement {
           && preflightReady !== false;
         return (
           <div className="page">
-            <WorkflowBar project={p} current="simulate" />
             <h2>Evaluate</h2>
             <p className="muted flow-lede">
               Lower declared communication, execute it, then judge

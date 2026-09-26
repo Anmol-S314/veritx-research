@@ -8,7 +8,7 @@ import {
   type ValidationExperiment,
 } from '../api';
 import {
-  AsyncView, Link, WorkflowBar, useAsync,
+  AsyncView, Link, useAsync,
 } from '../studio';
 import { Hash, StatusBadge, fmtNum, humanize } from '../components/badges';
 
@@ -213,7 +213,6 @@ export function Evidence({ projectId }: { projectId: string }): ReactElement {
     <AsyncView result={project.result} reload={project.reload}>
       {(p) => (
         <div className="page">
-          <WorkflowBar project={p} current="evidence" />
           <div className="page-head">
             <div>
               <h2>Evidence &amp; reproduction</h2>
@@ -499,9 +498,8 @@ export function ValidationLab({ projectId }: { projectId: string }): ReactElemen
   const project = useAsync(() => api.project(projectId), [projectId]);
   return (
     <AsyncView result={project.result} reload={project.reload}>
-      {(p) => (
+      {() => (
         <div className="page">
-          <WorkflowBar project={p} current="validation" />
           <div className="page-head">
             <div>
               <h2>Validation lab</h2>

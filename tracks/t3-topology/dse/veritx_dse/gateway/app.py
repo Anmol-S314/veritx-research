@@ -107,6 +107,11 @@ class ServingBody(BaseModel):
     num_reqs: int | None = None
     cluster_config: str | None = None
     dataset: str | None = None
+    #: Per-request wall-clock budget for the canonical run, in seconds.
+    timeout_s: int | None = None
+    #: Declared service-profile overrides. Keys are validated against the
+    #: certified field set at submit time; an unknown key is a typed refusal.
+    profile_overrides: dict[str, Any] | None = None
 
 
 class OptimizeBodyV1(BaseModel):
@@ -139,13 +144,11 @@ class EvaluateBody(BaseModel):
     patch: dict[str, Any] = {}
 
 
-class OptimizeBody(BaseModel):
-    revision_id: str | None = None
-    request: dict[str, Any] = {}
-    domain: list[dict[str, Any]] = []
-    objectives: list[dict[str, Any]] = [
-        {"metric": "completion_cycles", "direction": "MIN"}]
-    constraints: list[dict[str, Any]] = []
+# OptimizeBody and the deprecated ``POST /optimize`` endpoint were removed
+# (PF-D15, STUDIO-WIREFRAMES.md §181). The canonical optimization surface is
+# ``POST /api/v1/revisions/{revision_id}/optimize`` — a study against an
+# immutable revision. The legacy endpoint took a raw request + ad-hoc domain
+# and bypassed revision identity and StudyDefinition/DesignSpace separation.
 
 
 def _compile_design(config: GatewayConfig, body: CompileBody):
@@ -378,6 +381,12 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
     def v1_presets() -> dict[str, Any]:
         return product.fabric_presets()
 
+    @app.get("/api/v1/catalog/serving-configs", tags=["product"])
+    def v1_serving_configs() -> dict[str, Any]:
+        """Cluster service-semantics configs and request traces the
+        canonical serve path can be pointed at, with the tracked defaults."""
+        return product.serving_config_catalog()
+
     @app.post("/api/v1/projects", tags=["product"])
     def v1_create_project(body: CreateProjectBody) -> dict[str, Any]:
         return product.create_project(name=body.name,
@@ -596,35 +605,6 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
                 "performance_result_id": out.performance_result_id,
                 "objective_values": getattr(out, "objective_values", None),
                 "error": out.error}
-
-    @app.post("/optimize", deprecated=True)
-    def optimize(body: OptimizeBody) -> dict[str, Any]:
-        binary = _require_binary()
-        from veritx_dse.optimization.definition import (
-            Constraint, DomainParam, Objective, OptimizationDefinition,
-        )
-        from veritx_dse.optimization.result import (
-            CertifiedBackendConfig, Optimizer,
-        )
-        request = _canonical_request(cfg, body)
-        try:
-            definition = OptimizationDefinition(
-                domain=tuple(DomainParam(d["name"], tuple(d["values"]))
-                             for d in body.domain),
-                objectives=tuple(Objective(o["metric"], o["direction"])
-                                 for o in body.objectives),
-                constraints=tuple(Constraint(c["metric"], c["op"],
-                                             c["threshold"])
-                                  for c in body.constraints))
-        except (ValueError, KeyError, TypeError, InvalidInput) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        result = Optimizer().optimize_certified(
-            request, definition,
-            backend_config=CertifiedBackendConfig(
-                binary=str(binary), run_root=str(cfg.runs_root / "_optimize"),
-                network_clock_hz=cfg.network_clock_hz,
-                timeout_s=cfg.timeout_s))
-        return result.to_study_view()
 
     async def _typed_error_response(exc: Exception) -> JSONResponse:
         status = http_status_for(exc)
