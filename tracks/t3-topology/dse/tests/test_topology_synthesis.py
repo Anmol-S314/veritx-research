@@ -205,16 +205,28 @@ def test_syn_10_no_uniform_fallback_in_the_canonical_adapter():
     assert "mismatched problem" in str(e.value)
 
 
-def test_syn_10b_the_historical_loader_would_not_have_noticed():
-    """The canonical adapter's strictness is the point: load_matrix parses
-    floats with no validation at all."""
+def test_syn_10b_the_loader_is_hardened_and_the_adapter_still_refuses():
+    """RECLAIMED (Tranche 5 PHASE 1). This test previously pinned the
+    OPPOSITE claim: that load_matrix parsed floats with no validation at
+    all, which was the stated reason the canonical adapter had to be
+    strict. The hardened lineage (p1b/verified-evaluation ==
+    integration/p1-product, blob 7487c3228036) was reclaimed, so the
+    loader now refuses malformed input as well.
+
+    Both layers refuse. The adapter's fail-closed boundary is unchanged
+    and remains the authority for the SYNTHESIZE path; the loader is
+    developer tooling and must not contradict it.
+    """
     from veritx_dse.synthesis import milp_topology_v2 as engine
     import inspect
-    src = inspect.getsource(engine.load_matrix)
-    for check in ("shape", "isfinite", "nan", "raise", "dimension"):
-        assert check not in src.lower(), (
-            "load_matrix gained validation; the canonical adapter's "
-            "fail-closed rationale must be re-checked")
+    src = inspect.getsource(engine.load_matrix).lower()
+    for check in ("isfinite", "ragged", "square", "negative"):
+        assert check in src, (
+            f"the reclaimed loader lost its documented {check!r} refusal")
+    # Independent of the loader, the canonical adapter still refuses a
+    # missing / mismatched authority rather than reshaping it.
+    with pytest.raises(TopologyCandidateError):
+        synthesize(_defn(), None)
 
 
 # ══ SYN-11..SYN-15: candidate ══════════════════════════════════════════

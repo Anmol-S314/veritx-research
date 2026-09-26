@@ -34,6 +34,27 @@ from pathlib import Path
 import numpy as np
 from collections import deque, defaultdict
 
+# Canonical constants — single source of truth in veritx_dse.core.constants.
+# Script-mode safe: running this file directly has no package root on
+# sys.path, so add the DSE root and fall back to literal defaults that
+# MATCH the canonical values (never a different number).
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+try:
+    from veritx_dse.core.constants import DEFAULT_K, DEFAULT_TIMEOUT, env_int
+except ImportError:  # pragma: no cover - direct-script invocation
+    try:
+        from ..core.constants import DEFAULT_K, DEFAULT_TIMEOUT, env_int  # type: ignore
+    except Exception:
+        DEFAULT_K = 8  # type: ignore  # same value; canonical home is core.constants
+        DEFAULT_TIMEOUT = 60  # type: ignore
+
+        def env_int(name, default):  # type: ignore
+            import os
+            raw = os.environ.get(name)
+            if raw is None:
+                return default
+            return int(raw)
+
 # ---------------- layout / feasibility ----------------
 def grid_xy(k):
     return [(x, y) for y in range(k) for x in range(k)]
@@ -56,15 +77,49 @@ def valid_links(xy, max_len):
                 L.append((i, j))
     return L
 
+# RECLAIMED, not re-invented. This loader is the hardened version from
+# p1b/verified-evaluation / integration/p1-product (identical there),
+# which the current tree had regressed to the older integration/canonical
+# copy. A reclamation pass that "discovered" the old loader validated
+# nothing and re-implemented the checks in SynthesisTrafficMatrix was
+# duplicating work that already existed. SynthesisTrafficMatrix remains the
+# CANONICAL authority (it additionally binds source provenance); this file
+# parser is developer tooling and must not contradict it.
 def load_matrix(path):
+    """Load an N×N traffic matrix, failing loudly on malformed input.
+
+    Rejects: empty files, ragged rows, non-square matrices, NaN/Inf,
+    negative entries — any of which would silently poison the synthesis.
+    """
     mat = []
     with open(path) as f:
-        for line in f:
+        for line_no, line in enumerate(f, 1):
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            mat.append([float(x) for x in line.split()])
-    return np.array(mat)
+            try:
+                mat.append([float(x) for x in line.split()])
+            except ValueError as e:
+                raise SystemExit(
+                    f"ERROR: {path}:{line_no}: non-numeric matrix entry ({e})")
+    if not mat:
+        raise SystemExit(f"ERROR: {path}: no matrix data (empty file or comments only)")
+    widths = {len(row) for row in mat}
+    if len(widths) != 1:
+        raise SystemExit(
+            f"ERROR: {path}: ragged matrix — rows have widths {sorted(widths)}")
+    n = len(mat)
+    if widths != {n}:
+        raise SystemExit(
+            f"ERROR: {path}: matrix must be square NxN, got {n}x{widths.pop()}")
+    arr = np.array(mat)
+    if not np.all(np.isfinite(arr)):
+        raise SystemExit(f"ERROR: {path}: matrix contains NaN or Inf entries")
+    if (arr < 0).any():
+        raise SystemExit(
+            f"ERROR: {path}: negative traffic entries (min {arr.min():g}) — "
+            "traffic volumes must be >= 0")
+    return arr
 
 def base_mesh(xy, max_nbr=4, radix=None):
     """nearest-neighbor mesh seed: connect each node to its few closest, undirected."""
@@ -231,8 +286,13 @@ def is_bridge(adj, u, v):
     return v not in seen
 
 # ---------------- TMCF MILP ----------------
-def solve_tmcf(T, xy, base_edges, cand_links, radix, timeout=120, max_nodes=20):
-    """Minimize total traffic-weighted hops over chosen links + flow routing."""
+def solve_tmcf(T, xy, base_edges, cand_links, radix, timeout=None, max_nodes=20):
+    """Minimize total traffic-weighted hops over chosen links + flow routing.
+
+    timeout=None resolves VERITX_TIMEOUT (default 120s) at call time.
+    """
+    if timeout is None:
+        timeout = env_int("VERITX_TIMEOUT", 120)
     from scipy.optimize import milp, LinearConstraint, Bounds
     from scipy import sparse
     n = T.shape[0]
@@ -341,7 +401,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--matrix", required=True)
     ap.add_argument("--layout", choices=["grid","interposer"], default="grid")
-    ap.add_argument("--k", type=int, default=8)
+    ap.add_argument("--k", type=int, default=DEFAULT_K)
     ap.add_argument("--rows", type=int, default=4)
     ap.add_argument("--cols", type=int, default=4)
     ap.add_argument("--seed", type=int, default=7)
@@ -438,10 +498,17 @@ def main():
             "radix": args.radix, "max_len": args.max_len,
             "solver": solver, "opt_value": opt,
             "secs": None}
-    # write anynet + json
+    # write anynet + json. The anynet text is DEVELOPER OUTPUT for this
+    # standalone CLI; the canonical writer is model.topology_ir.to_anynet /
+    # synthesis.candidate.anynet_projection. Format matches theirs exactly
+    # (no trailing space) so a downstream reader cannot tell them apart.
+    # (The historical delegation to synthesis.evaluator.write_anynet is
+    # superseded: that module was removed; the engine must not import the
+    # candidate layer, which would invert the dependency.)
     with open(str(args.out)+".anynet","w") as f:
         for i in range(n):
-            f.write(f"router {i} node {i} "+" ".join(f"router {x}" for x in sorted(adj[i]))+"\n")
+            peers = " ".join(f"router {x}" for x in sorted(adj[i]))
+            f.write(f"router {i} node {i} {peers}".rstrip()+"\n")
     stats = {"nodes": n, "edges": edges, "max_degree": maxdeg,
              "traffic_weighted_avg_hops": round(hops,4),
              "vs_base_mesh": {"base_hops": round(base_hops,4),

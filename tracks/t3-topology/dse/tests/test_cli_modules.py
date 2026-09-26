@@ -103,12 +103,12 @@ class TestTopology:
     def test_mesh_edge_count(self):
         from veritx_dse.model.presets import Topology
         t = Topology("mesh_8x8", "mesh", "min_adapt", {"k": 8, "n": 2})
-        assert t.edges() == 128  # 2 * 8^2 = 128
+        assert t.edges() == 112  # 2*k*(k-1) undirected (was n*k**n=128, overcounted)
 
-    def test_torus_same_as_mesh(self):
+    def test_torus_wrap_edges(self):
         from veritx_dse.model.presets import Topology
         t = Topology("torus_8x8", "torus", "dim_order", {"k": 8, "n": 2})
-        assert t.edges() == 128
+        assert t.edges() == 128  # wrap links add k**n over the mesh count
 
     def test_flatfly_edge_count(self):
         from veritx_dse.model.presets import Topology
@@ -117,11 +117,14 @@ class TestTopology:
         assert edges > 0
 
     def test_gec_edge_count(self):
-        from veritx_dse.model.presets import Topology
+        from veritx_dse.model.presets import Topology, lookup_topo
         t = Topology("gec", "gec", "dor", {"k": 8, "c": 1, "o": 7, "d": 1})
-        edges = t.edges()
-        # mesh_edges = 2*8*7 = 112, express = 7*64 = 448, total = 560
-        assert edges == 560
+        # express mode builds ONLY the p2p graph: k*k*(k-1) = 448 undirected
+        # (the old mesh_edges+express total 560 counted unbuilt mesh links).
+        assert t.edges() == 448
+        m = lookup_topo("gec_mesh_k8")
+        assert m is not None and m.params.get("mesh") == 1
+        assert m.edges() == 2 * 8 * 7  # real mesh graph, not silent express
 
     def test_lookup_by_name(self):
         from veritx_dse.model.presets import lookup_topo
