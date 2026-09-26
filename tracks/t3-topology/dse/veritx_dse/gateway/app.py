@@ -29,6 +29,7 @@ from veritx_dse.core.errors import InvalidInput, Refusal
 from veritx_dse.core.run_bundle import (
     CHECKSUMS_NAME, RunBundleError, verify_run_bundle,
 )
+from veritx_dse.gateway.staleness import staleness, warn_if_stale
 from veritx_dse.gateway.errors import (
     BackendUnavailable, Conflict, NotFound, error_code_for, http_status_for,
 )
@@ -61,6 +62,10 @@ class GatewayConfig:
 
 
 def config_from_env() -> GatewayConfig:
+    # NOTE: `repo` here is tracks/t3-topology, and the store/runs/experiments
+    # paths below are correctly relative to it — the studio store really does
+    # live at tracks/t3-topology/runs/studio-store. It is NOT the repository
+    # root, so it must not be used to locate vendored third-party trees.
     repo = Path(__file__).resolve().parents[3]
     store = os.environ.get("VERITX_STORE_ROOT")
     runs = os.environ.get("VERITX_RUNS_ROOT")
@@ -71,12 +76,45 @@ def config_from_env() -> GatewayConfig:
     return GatewayConfig(
         store_root=store_root,
         runs_root=Path(runs) if runs else repo / "runs" / "veritx-runs",
-        booksim_bin=Path(binary) if binary else None,
+        booksim_bin=resolve_booksim_bin(binary),
         experiments_dir=repo / "validation" / "experiments",
         revisions_root=(Path(revisions) if revisions
                         else store_root.parent / "studio-revisions"),
         projects_root=Path(projects) if projects else store_root / "projects",
     )
+
+
+def resolve_booksim_bin(env_value: str | None = None) -> Path | None:
+    """The gateway's BookSim binary: env override, then the standard search.
+
+    BUG THIS FIXES. The gateway read VERITX_BOOKSIM_BIN and passed None when
+    it was unset, WITHOUT falling back to find_booksim_bin(). Every other
+    consumer falls back (fabric_evaluator, the studio fixture generator,
+    backend/booksim). So on a machine with a built, working BookSim the
+    gateway alone reported the backend as
+
+        MISSING - "no qualified backend configured (set VERITX_BOOKSIM_BIN)"
+
+    and refused every evaluation, while the same binary ran fine from the
+    CLI and the tests. The message named an environment variable as the
+    remedy when the real problem was a missing fallback in this module.
+
+    The search uses core.paths.REPO, the single source of truth for the
+    REPOSITORY root. `config_from_env`'s local `repo` is tracks/t3-topology
+    (correct for the store paths, wrong for vendored third-party trees), so
+    passing it here would look for the binary one level too high.
+
+    Returns None only when the binary genuinely does not exist, so MISSING
+    now means missing rather than unset.
+    """
+    if env_value:
+        return Path(env_value)
+    try:
+        from veritx_dse.core.paths import REPO
+        from veritx_dse.simulation.booksim import find_booksim_bin
+        return find_booksim_bin(REPO)
+    except Exception:
+        return None
 
 
 # ── API bodies ────────────────────────────────────────────────────────────
@@ -367,8 +405,18 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
 
     # ── product API v1 ────────────────────────────────────────────────
     @app.get("/api/v1/health", tags=["product"])
-    def v1_health() -> dict[str, str]:
-        return {"status": "ok", "api": "v1"}
+    def v1_health() -> dict[str, Any]:
+        """Liveness PLUS code staleness.
+
+        The gateway runs without --reload, so a backend commit does not
+        reach a running process and the failure is silent: the process keeps
+        answering 200 with payloads built by the OLD code. `code.stale` is
+        True when a source file on disk is newer than this process, which
+        means a restart is required before any response can be trusted.
+        """
+        info = staleness()
+        status = "stale" if info.get("stale") else "ok"
+        return {"status": status, "api": "v1", "code": info}
 
     @app.get("/api/v1/qualification", tags=["product"])
     def v1_qualification() -> dict[str, Any]:
@@ -694,3 +742,7 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
 
 
 app = create_app()
+
+# Startup staleness check: a process launched from an out-of-date checkout
+# announces itself immediately rather than lying to every later request.
+warn_if_stale()
