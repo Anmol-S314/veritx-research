@@ -919,3 +919,78 @@ def test_migration_is_never_silent_in_from_dict():
     loaded = CompileRequest.from_dict(v1.to_dict())
     assert loaded.compiler_semantics_version == 1
     assert loaded.to_dict() == v1.to_dict()
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Arbitration spelling is not semantic identity (Gate 3 / §15)
+# ══════════════════════════════════════════════════════════════════════════
+#
+# The guided arbitration label is a domain-owned vocabulary with aliases:
+# "islip", "ISLIP", " iSLIP " and "IsLiP" all name one policy, and
+# "round_robin", "round-robin", "rr" and "RR" all name another. Identity
+# must be computed through the domain owner's canonicalizer
+# (router_behavior.canonical_allocator), never from the raw spelling —
+# otherwise two designs that compile to the same fabric hash differently
+# and no review/compile freshness comparison can be trusted.
+
+_ARBITRATION_ALIAS_GROUPS = (
+    ("islip", "ISLIP", " iSLIP ", "IsLiP", "iSlIp"),
+    ("round_robin", "ROUND_ROBIN", "round-robin", "rr", "RR", " rr "),
+)
+
+
+def _with_arbitration(value: str | None) -> CompileRequest:
+    return replace(B, noc_config=replace(B.noc_config, arbitration=value))
+
+
+@pytest.mark.parametrize("group", _ARBITRATION_ALIAS_GROUPS)
+def test_arbitration_spellings_share_one_identity(group):
+    hashes = {_with_arbitration(v).design_hash() for v in group}
+    assert len(hashes) == 1, (group, hashes)
+
+
+def test_distinct_arbitration_policies_keep_distinct_identities():
+    islip = _with_arbitration("islip").design_hash()
+    rr = _with_arbitration("round_robin").design_hash()
+    assert islip != rr
+
+
+def test_unknown_arbitration_keeps_its_own_identity():
+    """Identity is not the place to decide validity.
+
+    ``canonical_allocator`` refuses an unknown policy at compile time, but
+    identity must stay well-defined and distinct meanwhile — folding an
+    unknown value into a known policy would silently equate two different
+    requests.
+    """
+    unknown = _with_arbitration("fixed").design_hash()
+    assert unknown != _with_arbitration("round_robin").design_hash()
+    assert unknown != _with_arbitration("islip").design_hash()
+    assert unknown == _with_arbitration("fixed").design_hash()
+
+
+def test_unset_arbitration_is_a_declaration_state_not_a_spelling():
+    """``None`` means "the user did not decide".
+
+    ``canonical_allocator`` resolves ``None`` to the iSLIP default, but
+    design_hash answers what was *requested*, not what the compiler
+    resolved. An unset field and an explicit iSLIP are different requests
+    (``SEMANTIC_DEFAULT`` vs a chosen policy).
+    """
+    assert _with_arbitration(None).design_hash() \
+        != _with_arbitration("islip").design_hash()
+
+
+def test_arbitration_normalization_leaves_serialization_lossless():
+    """Only the identity envelope is normalized; ``to_dict`` is lossless."""
+    for spelling in (" iSLIP ", "RR", "fixed"):
+        design = _with_arbitration(spelling)
+        assert design.to_dict()["noc_config"]["arbitration"] == spelling
+        assert CompileRequest.from_dict(design.to_dict()) == design
+
+
+def test_canonical_envelope_carries_the_canonical_policy_token():
+    canon = _with_arbitration(" iSLIP ").canonical_dict()
+    assert canon["noc_config"]["arbitration"] == "islip"
+    assert _with_arbitration("RR").canonical_dict()["noc_config"]["arbitration"] \
+        == "round_robin"

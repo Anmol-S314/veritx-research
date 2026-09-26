@@ -236,6 +236,36 @@ def canonical_allocator(arbitration: str | None) -> AllocatorPolicy:
     return policy
 
 
+def canonical_arbitration_token(arbitration: str | None) -> str | None:
+    """Identity-stable arbitration token — the spelling that design_hash sees.
+
+    Two designs that name the same policy with different spellings must have
+    the same design identity, so ``"islip"``, ``"ISLIP"`` and ``" iSLIP "``
+    all collapse to the canonical policy value. This is the normalization the
+    product identity is computed through; it is deliberately *not* applied to
+    lossless serialization (``to_dict``), which preserves what the user
+    wrote.
+
+    A value outside the alias table is returned verbatim rather than folded
+    into a known policy or refused: it is not a policy this compiler knows,
+    so it must keep its own identity. ``canonical_allocator`` still refuses it
+    at compile time — identity is not the place to decide validity.
+
+    ``None`` is deliberately NOT folded into the iSLIP default, even though
+    ``canonical_allocator`` resolves it that way. ``None`` is a *declaration
+    state* (unset; ``SEMANTIC_DEFAULT`` in the exposure registry), not a
+    spelling of a chosen policy: "the user did not decide" and "the user
+    chose iSLIP" are different requests, and ``design_hash`` answers what was
+    requested, not what the compiler resolved it to.
+    """
+    if arbitration is None:
+        return None
+    try:
+        return canonical_allocator(arbitration).value
+    except RouterBehaviorError:
+        return arbitration
+
+
 # ── the artifact ─────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)

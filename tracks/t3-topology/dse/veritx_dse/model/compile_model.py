@@ -98,6 +98,20 @@ def _canonical_json(obj: Any) -> str:
     return json.dumps(obj, sort_keys=True, separators=(",", ":"))
 
 
+def _canonical_arbitration(value: Any) -> Any:
+    """Identity normalization for the guided arbitration label.
+
+    Imported lazily: the domain owner is ``router_behavior``, which must not
+    become an import-time dependency of the intent model.
+    """
+    if not isinstance(value, str):
+        return value
+    from veritx_dse.model.router_behavior import (  # noqa: PLC0415
+        canonical_arbitration_token,
+    )
+    return canonical_arbitration_token(value)
+
+
 def _strict_keys(d: Any, allowed: frozenset, where: str) -> None:
     """Reject unknown keys at a boundary (``extra="forbid"`` semantics)."""
     if not isinstance(d, dict):
@@ -1139,6 +1153,12 @@ class CompileRequest:
                                             key=_canonical_json)
         d["noc_config"]["output_formats"] = sorted(
             d["noc_config"]["output_formats"])
+        # Arbitration spelling is not semantic identity (Gate 3 / §15):
+        # "islip", "ISLIP" and " iSLIP " are one policy and must hash equal.
+        # Normalization lives in the domain owner (router_behavior) and is
+        # applied here only — `to_dict` stays lossless.
+        d["noc_config"]["arbitration"] = _canonical_arbitration(
+            d["noc_config"]["arbitration"])
         if self.compiler_semantics_version >= 2:
             d["dependencies"] = sorted(d["dependencies"], key=_canonical_json)
         return {
@@ -2328,6 +2348,12 @@ class CompileRequestV3:
                                               key=_canonical_json)
         d["noc_config"]["output_formats"] = sorted(
             d["noc_config"]["output_formats"])
+        # Arbitration spelling is not semantic identity (Gate 3 / §15):
+        # "islip", "ISLIP" and " iSLIP " are one policy and must hash equal.
+        # Normalization lives in the domain owner (router_behavior) and is
+        # applied here only — `to_dict` stays lossless.
+        d["noc_config"]["arbitration"] = _canonical_arbitration(
+            d["noc_config"]["arbitration"])
         d["dependencies"] = sorted(d["dependencies"], key=_canonical_json)
         return {
             "type": _HASH_TYPE_TAG_V3,
