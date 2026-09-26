@@ -1,0 +1,976 @@
+{
+  "case": "mixed-agents",
+  "certificate": {
+    "additional_obligations": [
+      {
+        "evidence": {
+          "components": 1,
+          "directed_channels": 24,
+          "routers": 9
+        },
+        "failure_reason": null,
+        "meaning": "the router graph is one connected component",
+        "method": "undirected-bfs/v1",
+        "obligation": "TOPOLOGY_CONNECTED",
+        "status": "PASS"
+      },
+      {
+        "evidence": {
+          "entries": 1
+        },
+        "failure_reason": null,
+        "meaning": "the decode realizes the declared address map",
+        "method": "address_decode.validate_against/v1",
+        "obligation": "ADDRESS_DECODE_VALID",
+        "status": "PASS"
+      },
+      {
+        "evidence": {
+          "vc_count": 2,
+          "vc_to_routing_class": [
+            [
+              0,
+              "DOR_XY"
+            ],
+            [
+              1,
+              "DOR_XY"
+            ]
+          ]
+        },
+        "failure_reason": null,
+        "meaning": "the VC structure binds the resolved route",
+        "method": "vc.validate_against/v1",
+        "obligation": "VC_ASSIGNMENT_VALID",
+        "status": "PASS"
+      },
+      {
+        "evidence": {
+          "placements": 1
+        },
+        "failure_reason": null,
+        "meaning": "every mapped rank lands on an attached agent",
+        "method": "mapping-attachment-seam/v1",
+        "obligation": "MAPPING_VALID",
+        "status": "PASS"
+      },
+      {
+        "evidence": {
+          "flit_width_bits": 256,
+          "vc_count": 2
+        },
+        "failure_reason": null,
+        "meaning": "the wire format fits topology/attachment/VC bounds",
+        "method": "packet_format.validate_against/v1",
+        "obligation": "PACKET_FORMAT_VALID",
+        "status": "PASS"
+      },
+      {
+        "evidence": {
+          "address_decode_hash": "84c549f23b2bcb965bd2c849f99e992b7bda7b08935c0fef52824da9f6bfa8a9",
+          "attachment_hash": "d90d3c0bcfc09531e4a02cf6b9f7c336131d568de39c4f7a44495c4f16348631",
+          "design_hash": "65fb216a4760d96eb488a4c6941a4a473327d310878243e5febd52c3e665f885",
+          "fabric_hash": "3beef19bf7488c6317f65ec7c9ce1a1efe3b437e23185512a9339d2744ddc57a",
+          "mapping_hash": "d7a24033b2f5ba710a4a0263882044a4f17d07e9e0d75eb75027353de2ae52dc",
+          "packet_format_hash": "d590c02fc0ad405ead060be8b23d9650ba29a5ad52f961ede589b1112e5abb20",
+          "resolved_fabric_hash": "7f529df7ecb89cfb70f41af615231c675528ba3a87e45c557d43c5dc295b5805",
+          "resolved_route_hash": "dfd91e036d08e0941c3aaa3e79d5aa26f80940498b43858285bb533e426cd5ad",
+          "router_behavior_hash": "c99ae75b9d7edafcde74f0ddcb03cf1337ffa7c6c8d67840b40341ee4e52713a",
+          "router_route_hash": "sha256:04924ddca6522f2d5917a5bba3892357f867ff76bb3c2f43f77b2b6690c71e85",
+          "topology_hash": "7e037220be81ea3f75f3f20cfb8bb2d5b0d7c53b43d68da8e4cbbfe63255b586",
+          "vc_assignment_hash": "b9d7b0205eaca021c5bd479d226b224bf5cda41cddf351f1586943ab966b6468"
+        },
+        "failure_reason": null,
+        "meaning": "the full hardware and design/mapping seam revalidates",
+        "method": "bundle.revalidate/v1",
+        "obligation": "FABRIC_DAG_VALID",
+        "status": "PASS"
+      }
+    ],
+    "available": true,
+    "certificate_id": "sha256:21a79d9ccfec41a3a35eb83f84481cbcf49d697a96d490514150a5ae9949bdf4",
+    "claim_count": 4,
+    "claims": [
+      {
+        "aggregation": "ALL_PASS",
+        "certificate_status": "PASS",
+        "claim": "ATTACHMENT_COMPLETE",
+        "contributing_obligations": [
+          "ATTACHMENT_COMPLETE"
+        ],
+        "contributing_statuses": {
+          "ATTACHMENT_COMPLETE": "PASS"
+        },
+        "established": true,
+        "method": "attachment.validate_against/v1",
+        "scope": "every declared agent is attached"
+      },
+      {
+        "aggregation": "ALL_PASS",
+        "certificate_status": "PASS",
+        "claim": "ROUTE_COMPLETE",
+        "contributing_obligations": [
+          "ROUTE_COMPLETE"
+        ],
+        "contributing_statuses": {
+          "ROUTE_COMPLETE": "PASS"
+        },
+        "established": true,
+        "method": "entry-coverage/v1",
+        "scope": "every required (class, src, dst) has a route"
+      },
+      {
+        "aggregation": "ALL_PASS",
+        "certificate_status": "PASS",
+        "claim": "ROUTE_LEGAL",
+        "contributing_obligations": [
+          "ROUTE_LEGAL"
+        ],
+        "contributing_statuses": {
+          "ROUTE_LEGAL": "PASS"
+        },
+        "established": true,
+        "method": "route.validate_against/v1",
+        "scope": "every route's channel sequence is legal"
+      },
+      {
+        "aggregation": "ALL_PASS",
+        "analysis_reason": null,
+        "analysis_verdict": "PASS",
+        "certificate_status": "PASS",
+        "claim": "DEADLOCK_FREE",
+        "contributing_obligations": [
+          "DEADLOCK_FREE"
+        ],
+        "contributing_statuses": {
+          "DEADLOCK_FREE": "PASS"
+        },
+        "detected_deadlock": false,
+        "established": true,
+        "method": "channel-vc-cdg/v2",
+        "scope": "the channel-VC CDG is acyclic"
+      }
+    ],
+    "contract_version": 1,
+    "deadlock_analysis": {
+      "acyclic": true,
+      "analysis_verdict": "PASS",
+      "cdg_route_classes": [
+        "DOR_XY"
+      ],
+      "cycle_witness": [],
+      "detected_deadlock": false,
+      "edge_count": 56,
+      "escape_vcs": [],
+      "node_count": 48,
+      "route_realization_scheme": "v2_channel_id",
+      "sccs_gt_1": 0,
+      "unsupported_reason": null,
+      "vc_count": 2
+    },
+    "obligation_count": 10,
+    "obligations": [
+      {
+        "evidence": {
+          "components": 1,
+          "directed_channels": 24,
+          "routers": 9
+        },
+        "method": "undirected-bfs/v1",
+        "obligation": "TOPOLOGY_CONNECTED",
+        "status": "PASS"
+      },
+      {
+        "evidence": {
+          "endpoints": 7
+        },
+        "method": "attachment.validate_against/v1",
+        "obligation": "ATTACHMENT_COMPLETE",
+        "status": "PASS"
+      },
+      {
+        "evidence": {
+          "entries": 1
+        },
+        "method": "address_decode.validate_against/v1",
+        "obligation": "ADDRESS_DECODE_VALID",
+        "status": "PASS"
+      },
+      {
+        "evidence": {
+          "entries": 72,
+          "expected_entries": 72,
+          "routers": 9,
+          "routing_classes": [
+            "DOR_XY"
+          ]
+        },
+        "method": "entry-coverage/v1",
+        "obligation": "ROUTE_COMPLETE",
+        "status": "PASS"
+      },
+      {
+        "evidence": {
+          "routing_classes": [
+            "DOR_XY"
+          ]
+        },
+        "method": "route.validate_against/v1",
+        "obligation": "ROUTE_LEGAL",
+        "status": "PASS"
+      },
+      {
+        "evidence": {
+          "vc_count": 2,
+          "vc_to_routing_class": [
+            [
+              0,
+              "DOR_XY"
+            ],
+            [
+              1,
+              "DOR_XY"
+            ]
+          ]
+        },
+        "method": "vc.validate_against/v1",
+        "obligation": "VC_ASSIGNMENT_VALID",
+        "status": "PASS"
+      },
+      {
+        "evidence": {
+          "acyclic": true,
+          "attachment_hash": "d90d3c0bcfc09531e4a02cf6b9f7c336131d568de39c4f7a44495c4f16348631",
+          "cdg_route_classes": [
+            "DOR_XY"
+          ],
+          "edge_count": 56,
+          "escape_vcs": [],
+          "node_count": 48,
+          "resolved_route_hash": "dfd91e036d08e0941c3aaa3e79d5aa26f80940498b43858285bb533e426cd5ad",
+          "route_realization": "v2_channel_id",
+          "router_behavior_hash": "c99ae75b9d7edafcde74f0ddcb03cf1337ffa7c6c8d67840b40341ee4e52713a",
+          "router_route_hash": "sha256:04924ddca6522f2d5917a5bba3892357f867ff76bb3c2f43f77b2b6690c71e85",
+          "routing_classes": [
+            "DOR_XY"
+          ],
+          "sccs_gt_1": 0,
+          "topology_hash": "7e037220be81ea3f75f3f20cfb8bb2d5b0d7c53b43d68da8e4cbbfe63255b586",
+          "vc_assignment_hash": "b9d7b0205eaca021c5bd479d226b224bf5cda41cddf351f1586943ab966b6468",
+          "vc_count": 2
+        },
+        "method": "channel-vc-cdg/v2",
+        "obligation": "DEADLOCK_FREE",
+        "status": "PASS"
+      },
+      {
+        "evidence": {
+          "placements": 1
+        },
+        "method": "mapping-attachment-seam/v1",
+        "obligation": "MAPPING_VALID",
+        "status": "PASS"
+      },
+      {
+        "evidence": {
+          "flit_width_bits": 256,
+          "vc_count": 2
+        },
+        "method": "packet_format.validate_against/v1",
+        "obligation": "PACKET_FORMAT_VALID",
+        "status": "PASS"
+      },
+      {
+        "evidence": {
+          "address_decode_hash": "84c549f23b2bcb965bd2c849f99e992b7bda7b08935c0fef52824da9f6bfa8a9",
+          "attachment_hash": "d90d3c0bcfc09531e4a02cf6b9f7c336131d568de39c4f7a44495c4f16348631",
+          "design_hash": "65fb216a4760d96eb488a4c6941a4a473327d310878243e5febd52c3e665f885",
+          "fabric_hash": "3beef19bf7488c6317f65ec7c9ce1a1efe3b437e23185512a9339d2744ddc57a",
+          "mapping_hash": "d7a24033b2f5ba710a4a0263882044a4f17d07e9e0d75eb75027353de2ae52dc",
+          "packet_format_hash": "d590c02fc0ad405ead060be8b23d9650ba29a5ad52f961ede589b1112e5abb20",
+          "resolved_fabric_hash": "7f529df7ecb89cfb70f41af615231c675528ba3a87e45c557d43c5dc295b5805",
+          "resolved_route_hash": "dfd91e036d08e0941c3aaa3e79d5aa26f80940498b43858285bb533e426cd5ad",
+          "router_behavior_hash": "c99ae75b9d7edafcde74f0ddcb03cf1337ffa7c6c8d67840b40341ee4e52713a",
+          "router_route_hash": "sha256:04924ddca6522f2d5917a5bba3892357f867ff76bb3c2f43f77b2b6690c71e85",
+          "topology_hash": "7e037220be81ea3f75f3f20cfb8bb2d5b0d7c53b43d68da8e4cbbfe63255b586",
+          "vc_assignment_hash": "b9d7b0205eaca021c5bd479d226b224bf5cda41cddf351f1586943ab966b6468"
+        },
+        "method": "bundle.revalidate/v1",
+        "obligation": "FABRIC_DAG_VALID",
+        "status": "PASS"
+      }
+    ],
+    "overall": "PASS",
+    "technical_only": [
+      {
+        "evidence": {
+          "components": 1,
+          "directed_channels": 24,
+          "routers": 9
+        },
+        "failure_reason": null,
+        "meaning": "the router graph is one connected component",
+        "method": "undirected-bfs/v1",
+        "obligation": "TOPOLOGY_CONNECTED",
+        "status": "PASS"
+      },
+      {
+        "evidence": {
+          "entries": 1
+        },
+        "failure_reason": null,
+        "meaning": "the decode realizes the declared address map",
+        "method": "address_decode.validate_against/v1",
+        "obligation": "ADDRESS_DECODE_VALID",
+        "status": "PASS"
+      },
+      {
+        "evidence": {
+          "vc_count": 2,
+          "vc_to_routing_class": [
+            [
+              0,
+              "DOR_XY"
+            ],
+            [
+              1,
+              "DOR_XY"
+            ]
+          ]
+        },
+        "failure_reason": null,
+        "meaning": "the VC structure binds the resolved route",
+        "method": "vc.validate_against/v1",
+        "obligation": "VC_ASSIGNMENT_VALID",
+        "status": "PASS"
+      },
+      {
+        "evidence": {
+          "placements": 1
+        },
+        "failure_reason": null,
+        "meaning": "every mapped rank lands on an attached agent",
+        "method": "mapping-attachment-seam/v1",
+        "obligation": "MAPPING_VALID",
+        "status": "PASS"
+      },
+      {
+        "evidence": {
+          "flit_width_bits": 256,
+          "vc_count": 2
+        },
+        "failure_reason": null,
+        "meaning": "the wire format fits topology/attachment/VC bounds",
+        "method": "packet_format.validate_against/v1",
+        "obligation": "PACKET_FORMAT_VALID",
+        "status": "PASS"
+      },
+      {
+        "evidence": {
+          "address_decode_hash": "84c549f23b2bcb965bd2c849f99e992b7bda7b08935c0fef52824da9f6bfa8a9",
+          "attachment_hash": "d90d3c0bcfc09531e4a02cf6b9f7c336131d568de39c4f7a44495c4f16348631",
+          "design_hash": "65fb216a4760d96eb488a4c6941a4a473327d310878243e5febd52c3e665f885",
+          "fabric_hash": "3beef19bf7488c6317f65ec7c9ce1a1efe3b437e23185512a9339d2744ddc57a",
+          "mapping_hash": "d7a24033b2f5ba710a4a0263882044a4f17d07e9e0d75eb75027353de2ae52dc",
+          "packet_format_hash": "d590c02fc0ad405ead060be8b23d9650ba29a5ad52f961ede589b1112e5abb20",
+          "resolved_fabric_hash": "7f529df7ecb89cfb70f41af615231c675528ba3a87e45c557d43c5dc295b5805",
+          "resolved_route_hash": "dfd91e036d08e0941c3aaa3e79d5aa26f80940498b43858285bb533e426cd5ad",
+          "router_behavior_hash": "c99ae75b9d7edafcde74f0ddcb03cf1337ffa7c6c8d67840b40341ee4e52713a",
+          "router_route_hash": "sha256:04924ddca6522f2d5917a5bba3892357f867ff76bb3c2f43f77b2b6690c71e85",
+          "topology_hash": "7e037220be81ea3f75f3f20cfb8bb2d5b0d7c53b43d68da8e4cbbfe63255b586",
+          "vc_assignment_hash": "b9d7b0205eaca021c5bd479d226b224bf5cda41cddf351f1586943ab966b6468"
+        },
+        "failure_reason": null,
+        "meaning": "the full hardware and design/mapping seam revalidates",
+        "method": "bundle.revalidate/v1",
+        "obligation": "FABRIC_DAG_VALID",
+        "status": "PASS"
+      }
+    ],
+    "vocabulary": {
+      "cdg_analysis_verdict": [
+        "PASS",
+        "FAIL",
+        "UNSUPPORTED",
+        "NOT_RUN"
+      ],
+      "obligation_status": [
+        "PASS",
+        "FAIL"
+      ]
+    }
+  },
+  "fabric": {
+    "available": true,
+    "counts": {
+      "attached": 7,
+      "channels": 24,
+      "occupied_routers": 7,
+      "routers": 9,
+      "seats": 9,
+      "unused_seats": 2
+    },
+    "detail_level": "FULL",
+    "detail_thresholds": {
+      "full_detail_max": 64,
+      "router_detail_max": 256
+    },
+    "topology": {
+      "attachment_hash": "sha256:d90d3c0bcfc09531e4a02cf6b9f7c336131d568de39c4f7a44495c4f16348631",
+      "channels": [
+        {
+          "channel_id": 0,
+          "dst_port": 1,
+          "dst_router": 1,
+          "latency_cycles": 1,
+          "physical_link_id": null,
+          "route_weight": 1,
+          "src_port": 1,
+          "src_router": 0,
+          "width_bits": 256
+        },
+        {
+          "channel_id": 1,
+          "dst_port": 1,
+          "dst_router": 3,
+          "latency_cycles": 1,
+          "physical_link_id": null,
+          "route_weight": 1,
+          "src_port": 2,
+          "src_router": 0,
+          "width_bits": 256
+        },
+        {
+          "channel_id": 2,
+          "dst_port": 1,
+          "dst_router": 0,
+          "latency_cycles": 1,
+          "physical_link_id": null,
+          "route_weight": 1,
+          "src_port": 1,
+          "src_router": 1,
+          "width_bits": 256
+        },
+        {
+          "channel_id": 3,
+          "dst_port": 1,
+          "dst_router": 2,
+          "latency_cycles": 1,
+          "physical_link_id": null,
+          "route_weight": 1,
+          "src_port": 2,
+          "src_router": 1,
+          "width_bits": 256
+        },
+        {
+          "channel_id": 4,
+          "dst_port": 1,
+          "dst_router": 4,
+          "latency_cycles": 1,
+          "physical_link_id": null,
+          "route_weight": 1,
+          "src_port": 3,
+          "src_router": 1,
+          "width_bits": 256
+        },
+        {
+          "channel_id": 5,
+          "dst_port": 2,
+          "dst_router": 1,
+          "latency_cycles": 1,
+          "physical_link_id": null,
+          "route_weight": 1,
+          "src_port": 1,
+          "src_router": 2,
+          "width_bits": 256
+        },
+        {
+          "channel_id": 6,
+          "dst_port": 1,
+          "dst_router": 5,
+          "latency_cycles": 1,
+          "physical_link_id": null,
+          "route_weight": 1,
+          "src_port": 2,
+          "src_router": 2,
+          "width_bits": 256
+        },
+        {
+          "channel_id": 7,
+          "dst_port": 2,
+          "dst_router": 0,
+          "latency_cycles": 1,
+          "physical_link_id": null,
+          "route_weight": 1,
+          "src_port": 1,
+          "src_router": 3,
+          "width_bits": 256
+        },
+        {
+          "channel_id": 8,
+          "dst_port": 2,
+          "dst_router": 4,
+          "latency_cycles": 1,
+          "physical_link_id": null,
+          "route_weight": 1,
+          "src_port": 2,
+          "src_router": 3,
+          "width_bits": 256
+        },
+        {
+          "channel_id": 9,
+          "dst_port": 1,
+          "dst_router": 6,
+          "latency_cycles": 1,
+          "physical_link_id": null,
+          "route_weight": 1,
+          "src_port": 3,
+          "src_router": 3,
+          "width_bits": 256
+        },
+        {
+          "channel_id": 10,
+          "dst_port": 3,
+          "dst_router": 1,
+          "latency_cycles": 1,
+          "physical_link_id": null,
+          "route_weight": 1,
+          "src_port": 1,
+          "src_router": 4,
+          "width_bits": 256
+        },
+        {
+          "channel_id": 11,
+          "dst_port": 2,
+          "dst_router": 3,
+          "latency_cycles": 1,
+          "physical_link_id": null,
+          "route_weight": 1,
+          "src_port": 2,
+          "src_router": 4,
+          "width_bits": 256
+        },
+        {
+          "channel_id": 12,
+          "dst_port": 2,
+          "dst_router": 5,
+          "latency_cycles": 1,
+          "physical_link_id": null,
+          "route_weight": 1,
+          "src_port": 3,
+          "src_router": 4,
+          "width_bits": 256
+        },
+        {
+          "channel_id": 13,
+          "dst_port": 1,
+          "dst_router": 7,
+          "latency_cycles": 1,
+          "physical_link_id": null,
+          "route_weight": 1,
+          "src_port": 4,
+          "src_router": 4,
+          "width_bits": 256
+        },
+        {
+          "channel_id": 14,
+          "dst_port": 2,
+          "dst_router": 2,
+          "latency_cycles": 1,
+          "physical_link_id": null,
+          "route_weight": 1,
+          "src_port": 1,
+          "src_router": 5,
+          "width_bits": 256
+        },
+        {
+          "channel_id": 15,
+          "dst_port": 3,
+          "dst_router": 4,
+          "latency_cycles": 1,
+          "physical_link_id": null,
+          "route_weight": 1,
+          "src_port": 2,
+          "src_router": 5,
+          "width_bits": 256
+        },
+        {
+          "channel_id": 16,
+          "dst_port": 1,
+          "dst_router": 8,
+          "latency_cycles": 1,
+          "physical_link_id": null,
+          "route_weight": 1,
+          "src_port": 3,
+          "src_router": 5,
+          "width_bits": 256
+        },
+        {
+          "channel_id": 17,
+          "dst_port": 3,
+          "dst_router": 3,
+          "latency_cycles": 1,
+          "physical_link_id": null,
+          "route_weight": 1,
+          "src_port": 1,
+          "src_router": 6,
+          "width_bits": 256
+        },
+        {
+          "channel_id": 18,
+          "dst_port": 2,
+          "dst_router": 7,
+          "latency_cycles": 1,
+          "physical_link_id": null,
+          "route_weight": 1,
+          "src_port": 2,
+          "src_router": 6,
+          "width_bits": 256
+        },
+        {
+          "channel_id": 19,
+          "dst_port": 4,
+          "dst_router": 4,
+          "latency_cycles": 1,
+          "physical_link_id": null,
+          "route_weight": 1,
+          "src_port": 1,
+          "src_router": 7,
+          "width_bits": 256
+        },
+        {
+          "channel_id": 20,
+          "dst_port": 2,
+          "dst_router": 6,
+          "latency_cycles": 1,
+          "physical_link_id": null,
+          "route_weight": 1,
+          "src_port": 2,
+          "src_router": 7,
+          "width_bits": 256
+        },
+        {
+          "channel_id": 21,
+          "dst_port": 2,
+          "dst_router": 8,
+          "latency_cycles": 1,
+          "physical_link_id": null,
+          "route_weight": 1,
+          "src_port": 3,
+          "src_router": 7,
+          "width_bits": 256
+        },
+        {
+          "channel_id": 22,
+          "dst_port": 3,
+          "dst_router": 5,
+          "latency_cycles": 1,
+          "physical_link_id": null,
+          "route_weight": 1,
+          "src_port": 1,
+          "src_router": 8,
+          "width_bits": 256
+        },
+        {
+          "channel_id": 23,
+          "dst_port": 3,
+          "dst_router": 7,
+          "latency_cycles": 1,
+          "physical_link_id": null,
+          "route_weight": 1,
+          "src_port": 2,
+          "src_router": 8,
+          "width_bits": 256
+        }
+      ],
+      "contract_version": 1,
+      "counts": {
+        "channels": 24,
+        "endpoints": 7,
+        "routers": 9,
+        "seats": 9
+      },
+      "design_hash": "sha256:65fb216a4760d96eb488a4c6941a4a473327d310878243e5febd52c3e665f885",
+      "endpoints": [
+        {
+          "endpoint_id": 0,
+          "group_index": 0,
+          "instance_index": 0,
+          "kind": "compute_tile",
+          "port_id": 0,
+          "router_id": 0
+        },
+        {
+          "endpoint_id": 1,
+          "group_index": 0,
+          "instance_index": 1,
+          "kind": "compute_tile",
+          "port_id": 0,
+          "router_id": 1
+        },
+        {
+          "endpoint_id": 2,
+          "group_index": 0,
+          "instance_index": 2,
+          "kind": "compute_tile",
+          "port_id": 0,
+          "router_id": 2
+        },
+        {
+          "endpoint_id": 3,
+          "group_index": 0,
+          "instance_index": 3,
+          "kind": "compute_tile",
+          "port_id": 0,
+          "router_id": 3
+        },
+        {
+          "endpoint_id": 4,
+          "group_index": 1,
+          "instance_index": 0,
+          "kind": "hbm_controller",
+          "port_id": 0,
+          "router_id": 4
+        },
+        {
+          "endpoint_id": 5,
+          "group_index": 2,
+          "instance_index": 0,
+          "kind": "nic",
+          "port_id": 0,
+          "router_id": 5
+        },
+        {
+          "endpoint_id": 6,
+          "group_index": 3,
+          "instance_index": 0,
+          "kind": "peripheral",
+          "port_id": 0,
+          "router_id": 6
+        }
+      ],
+      "family": "mesh",
+      "physical_links": [],
+      "revision_id": "fixture-mixed-agents",
+      "routers": [
+        {
+          "coordinates": [
+            0,
+            0
+          ],
+          "router_id": 0,
+          "seat_capacity": 1
+        },
+        {
+          "coordinates": [
+            1,
+            0
+          ],
+          "router_id": 1,
+          "seat_capacity": 1
+        },
+        {
+          "coordinates": [
+            2,
+            0
+          ],
+          "router_id": 2,
+          "seat_capacity": 1
+        },
+        {
+          "coordinates": [
+            0,
+            1
+          ],
+          "router_id": 3,
+          "seat_capacity": 1
+        },
+        {
+          "coordinates": [
+            1,
+            1
+          ],
+          "router_id": 4,
+          "seat_capacity": 1
+        },
+        {
+          "coordinates": [
+            2,
+            1
+          ],
+          "router_id": 5,
+          "seat_capacity": 1
+        },
+        {
+          "coordinates": [
+            0,
+            2
+          ],
+          "router_id": 6,
+          "seat_capacity": 1
+        },
+        {
+          "coordinates": [
+            1,
+            2
+          ],
+          "router_id": 7,
+          "seat_capacity": 1
+        },
+        {
+          "coordinates": [
+            2,
+            2
+          ],
+          "router_id": 8,
+          "seat_capacity": 1
+        }
+      ],
+      "topology_hash": "sha256:7e037220be81ea3f75f3f20cfb8bb2d5b0d7c53b43d68da8e4cbbfe63255b586"
+    }
+  },
+  "mapping": {
+    "available": true,
+    "idle_agents": {
+      "attached": 7,
+      "by_kind": {
+        "compute_tile": 4,
+        "hbm_controller": 1,
+        "nic": 1,
+        "peripheral": 1
+      },
+      "count": 6,
+      "mapped": 1
+    },
+    "parallelism": {
+      "dp": 1,
+      "ep": 1,
+      "pp": 1,
+      "tp": 1
+    },
+    "rank_count": 1,
+    "rows": [
+      {
+        "agent_kind": "compute_tile",
+        "coordinates": {
+          "dp": 0,
+          "ep": 0,
+          "pp": 0,
+          "tp": 0
+        },
+        "endpoint_id": 0,
+        "group_index": 0,
+        "instance_index": 0,
+        "rank": 0
+      }
+    ]
+  },
+  "resources": {
+    "allowed_transitions": [
+      [
+        0,
+        0
+      ],
+      [
+        1,
+        1
+      ]
+    ],
+    "arbitration": {
+      "allocator_iterations": 1,
+      "flow_control": "credit",
+      "input_buffer_depth_flits_per_vc": 8,
+      "input_vc_packet_policy": "one_packet_at_a_time",
+      "output_stage_depth_flits_per_vc": 1,
+      "switch_allocator": "islip",
+      "vc_allocator": "islip"
+    },
+    "available": true,
+    "deadlock": {
+      "evidence": {
+        "acyclic": true,
+        "attachment_hash": "d90d3c0bcfc09531e4a02cf6b9f7c336131d568de39c4f7a44495c4f16348631",
+        "cdg_route_classes": [
+          "DOR_XY"
+        ],
+        "edge_count": 56,
+        "escape_vcs": [],
+        "node_count": 48,
+        "resolved_route_hash": "dfd91e036d08e0941c3aaa3e79d5aa26f80940498b43858285bb533e426cd5ad",
+        "route_realization": "v2_channel_id",
+        "router_behavior_hash": "c99ae75b9d7edafcde74f0ddcb03cf1337ffa7c6c8d67840b40341ee4e52713a",
+        "router_route_hash": "sha256:04924ddca6522f2d5917a5bba3892357f867ff76bb3c2f43f77b2b6690c71e85",
+        "routing_classes": [
+          "DOR_XY"
+        ],
+        "sccs_gt_1": 0,
+        "topology_hash": "7e037220be81ea3f75f3f20cfb8bb2d5b0d7c53b43d68da8e4cbbfe63255b586",
+        "vc_assignment_hash": "b9d7b0205eaca021c5bd479d226b224bf5cda41cddf351f1586943ab966b6468",
+        "vc_count": 2
+      },
+      "method": "channel-vc-cdg/v2",
+      "status": "PASS",
+      "witness": {
+        "acyclic": true,
+        "cdg_route_classes": [
+          "DOR_XY"
+        ],
+        "edge_count": 56,
+        "escape_vcs": [],
+        "node_count": 48,
+        "route_realization_scheme": "v2_channel_id",
+        "sccs_gt_1": 0,
+        "vc_count": 2
+      }
+    },
+    "derivation": "candidate_policy baseline_deterministic_v2: victims=['A']; proposed_vc_count=2",
+    "editable": false,
+    "escape_vcs": [],
+    "traffic_class_to_vcs": [
+      [
+        "A",
+        [
+          1
+        ]
+      ],
+      [
+        "B",
+        [
+          0
+        ]
+      ]
+    ],
+    "transitions_are_identity": true,
+    "vc_count": 2,
+    "vc_ids": [
+      0,
+      1
+    ],
+    "vc_to_routing_class": [
+      [
+        0,
+        "DOR_XY"
+      ],
+      [
+        1,
+        "DOR_XY"
+      ]
+    ]
+  },
+  "routing": {
+    "default_class": "DOR_XY",
+    "entry_count": 72,
+    "observation": {
+      "available": false,
+      "claim": "runtime routing-function/table first-hop realization is exactly equivalent to the canonical route over the complete source x destination domain",
+      "limit": "this proves deterministic first-hop routing equivalence, not observed packet paths",
+      "realized_digest": null,
+      "reason": "no runtime execution exists for a compiled revision; a route observation is produced by an evaluation run",
+      "scope": "FIRST_HOP",
+      "source": "evaluation run (RunIntegrityView.route_realization)"
+    },
+    "routing_classes": [
+      "DOR_XY"
+    ]
+  }
+}

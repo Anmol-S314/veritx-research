@@ -1,15 +1,13 @@
-import { useState, type ReactElement } from 'react';
+import { useCallback, useState, type ReactElement } from 'react';
 import { api } from '../api';
 import type {
-  AddressDecodeGroup, CanonicalRoute, CompileResultView,
-  CompileSummaryGroup, FabricGroup, MappingGroup, ProvenanceGroup,
-  ResourcesGroup, RoutingGroup,
+  AddressDecodeGroup, CanonicalRoute, CapabilityConsequence,
+  CompileCertificate, CompileResultView, CompileSummaryGroup, FabricGroup,
+  MappingGroup, ProvenanceGroup, ResourcesGroup, RoutingGroup,
 } from '../api';
 import { Hash, fmtNum, humanize } from './badges';
 import ArtifactChain from './ArtifactChain';
-import FabricCanvas from './FabricCanvas';
-import { fabricModelFromTopology } from '../fabricLayout';
-import { useAsync } from '../studio';
+import FabricInspector2D from './FabricInspector2D';
 
 /**
  * Compile Result (Gate 8 §50–§63).
@@ -42,8 +40,8 @@ function ClaimTable({ summary }: { summary: CompileSummaryGroup }): ReactElement
         {summary.verified.map((claim) => (
           <tr key={claim.claim}>
             <td><code>{claim.claim}</code></td>
-            <td className={CLAIM_STATUS_CLASS[claim.status] ?? 'muted'}>
-              {claim.status}
+            <td className={CLAIM_STATUS_CLASS[claim.certificate_status] ?? 'muted'}>
+              {claim.certificate_status}
             </td>
             <td className="muted">{claim.scope}</td>
           </tr>
@@ -122,53 +120,116 @@ function SummaryGroup({ group }: { group: CompileSummaryGroup }): ReactElement {
 
 function MappingGroupView({ group }: { group: MappingGroup }): ReactElement {
   const [filter, setFilter] = useState('');
+  const [agentFilter, setAgentFilter] = useState('');
+  const [idleOnly, setIdleOnly] = useState(false);
   const needle = filter.trim().toLowerCase();
-  const rows = group.rows.filter((row) => !needle
-    || String(row.rank).includes(needle)
-    || (row.agent_kind ?? '').toLowerCase().includes(needle)
-    || String(row.instance_index ?? '').includes(needle));
+  const kinds = [...new Set(group.rows.map((r) => r.agent_kind ?? ''))]
+    .filter(Boolean).sort();
+  const rows = group.rows.filter((row) => {
+    if (agentFilter && row.agent_kind !== agentFilter) return false;
+    if (!needle) return true;
+    const coords = row.coordinates
+      ? `tp${row.coordinates.tp} pp${row.coordinates.pp} `
+        + `ep${row.coordinates.ep} dp${row.coordinates.dp}`
+      : '';
+    return String(row.rank).includes(needle)
+      || (row.agent_kind ?? '').toLowerCase().includes(needle)
+      || String(row.instance_index ?? '').includes(needle)
+      || coords.toLowerCase().includes(needle);
+  });
+  const idle = group.idle_agents;
   return (
     <section className="card">
       <div className="inspector-head">
         <h4>Mapping</h4>
         <input
           className="inspector-filter"
-          placeholder="search rank, agent or instance…"
+          placeholder="search rank, coordinate, agent or instance…"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
         />
       </div>
-      <table className="tbl">
-        <thead>
-          <tr>
-            <th>rank</th><th>agent</th><th>group</th>
-            <th>instance</th><th>endpoint</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={`${row.rank}-${row.endpoint_id}`}>
-              <td className="num">{row.rank}</td>
-              <td>{humanize(row.agent_kind ?? '—')}</td>
-              <td className="num">{row.group_index}</td>
-              <td className="num">{row.instance_index}</td>
-              <td className="num">{row.endpoint_id}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <p className="muted">
-        {rows.length} of {group.rows.length} rows
-        {group.rank_count != null ? ` · ${group.rank_count} ranks` : ''}
-        {' '}· ⓘ derived · no editing
-      </p>
+      <div className="inspector-controls">
+        <label>agent
+          <select value={agentFilter}
+                  onChange={(e) => setAgentFilter(e.target.value)}>
+            <option value="">all</option>
+            {kinds.map((k) => <option key={k} value={k}>{k}</option>)}
+          </select>
+        </label>
+        <label className="check">
+          <input type="checkbox" checked={idleOnly}
+                 onChange={(e) => setIdleOnly(e.target.checked)} />
+          idle agents only
+        </label>
+      </div>
+      {group.parallelism && (
+        <p className="muted">
+          parallelism TP{group.parallelism.tp}/PP{group.parallelism.pp}/
+          EP{group.parallelism.ep}/DP{group.parallelism.dp} ·{' '}
+          {group.rank_count} ranks
+        </p>
+      )}
+      {!idleOnly && (
+        <>
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>rank</th><th>tp</th><th>pp</th><th>ep</th><th>dp</th>
+                <th>agent</th><th>group</th><th>instance</th><th>endpoint</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={`${row.rank}-${row.endpoint_id}`}>
+                  <td className="num">{row.rank}</td>
+                  <td className="num">{row.coordinates?.tp ?? '—'}</td>
+                  <td className="num">{row.coordinates?.pp ?? '—'}</td>
+                  <td className="num">{row.coordinates?.ep ?? '—'}</td>
+                  <td className="num">{row.coordinates?.dp ?? '—'}</td>
+                  <td>{humanize(row.agent_kind ?? '—')}</td>
+                  <td className="num">{row.group_index}</td>
+                  <td className="num">{row.instance_index}</td>
+                  <td className="num">{row.endpoint_id}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="muted">
+            {rows.length} of {group.rows.length} rows · ⓘ derived · no editing
+          </p>
+        </>
+      )}
+      {idle && idle.count > 0 && (
+        <>
+          <h5 className="inspector-label">Idle attached agents</h5>
+          <p className="muted">
+            {idle.count} of {idle.attached} attached agents are not mapped to
+            a rank. That is a design fact — the fabric is larger than the
+            workload needs.
+          </p>
+          <table className="tbl">
+            <thead><tr><th>agent</th><th>attached</th></tr></thead>
+            <tbody>
+              {Object.entries(idle.by_kind).map(([kind, count]) => (
+                <tr key={kind}>
+                  <td>{humanize(kind)}</td>
+                  <td className="num">{count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
     </section>
   );
 }
 
-function FabricGroupView({ group }: { group: FabricGroup }): ReactElement {
-  const counts = group.counts;
-  const [selection, setSelection] = useState<string>('');
+function FabricGroupView({ group, route, showRoute }: {
+  group: FabricGroup;
+  route: CanonicalRoute | null;
+  showRoute: boolean;
+}): ReactElement {
   if (!group.available || !group.topology) {
     return (
       <section className="card">
@@ -177,7 +238,7 @@ function FabricGroupView({ group }: { group: FabricGroup }): ReactElement {
       </section>
     );
   }
-  const model = fabricModelFromTopology(group.topology);
+  const counts = group.counts;
   const aggregate = group.detail_level === 'AGGREGATE';
   return (
     <section className="card">
@@ -193,7 +254,8 @@ function FabricGroupView({ group }: { group: FabricGroup }): ReactElement {
       </div>
       {aggregate ? (
         // Gate 8 §57: above the router threshold no per-router DOM is
-        // created. The aggregate is the honest representation.
+        // created. The aggregate is the honest representation, and it says
+        // why rather than silently dropping detail.
         <div className="fabric-aggregate">
           <p>
             <strong>{counts?.routers}</strong> routers ·{' '}
@@ -208,69 +270,32 @@ function FabricGroupView({ group }: { group: FabricGroup }): ReactElement {
           </p>
         </div>
       ) : (
-        <>
-          <FabricCanvas model={model} topology={group.topology} />
-          <label className="inspector-select">
-            inspect router
-            <select value={selection}
-                    onChange={(e) => setSelection(e.target.value)}>
-              <option value="">—</option>
-              {group.topology.routers.map((r) => (
-                <option key={r.router_id} value={String(r.router_id)}>
-                  router {r.router_id}
-                </option>
-              ))}
-            </select>
-          </label>
-          {selection !== '' && (() => {
-            const router = group.topology!.routers.find(
-              (r) => String(r.router_id) === selection);
-            if (!router) return null;
-            const attached = group.topology!.endpoints.filter(
-              (e) => e.router_id === router.router_id);
-            const channels = group.topology!.channels.filter(
-              (c) => c.src_router === router.router_id);
-            return (
-              <div className="inspector-detail">
-                <h5>Router {router.router_id}</h5>
-                <div className="kv"><span>coordinates</span>
-                  <span className="num">
-                    {(router.coordinates ?? []).join(', ')}
-                  </span></div>
-                <div className="kv"><span>seats</span>
-                  <span className="num">{router.seat_capacity}</span></div>
-                <div className="kv"><span>attached</span>
-                  <span className="num">{attached.length}</span></div>
-                <div className="kv"><span>outgoing channels</span>
-                  <span className="num">{channels.length}</span></div>
-              </div>
-            );
-          })()}
-        </>
+        <FabricInspector2D
+          topology={group.topology}
+          route={route}
+          showRoute={showRoute}
+        />
       )}
       <p className="muted">
         routers {counts?.routers} · channels {counts?.channels} · seats{' '}
         {counts?.seats} · attached {counts?.attached} · unused{' '}
-        {counts?.unused_seats} · <code>{group.topology.topology_hash.slice(0, 18)}…</code>
+        {counts?.unused_seats} ·{' '}
+        <code>{group.topology.topology_hash.slice(0, 18)}…</code>
       </p>
     </section>
   );
 }
 
-function RoutingGroupView({ group, revisionId }: {
-  group: RoutingGroup; revisionId: string;
+function RoutingGroupView({ group, route, loading, error, onQuery }: {
+  group: RoutingGroup;
+  route: CanonicalRoute | null;
+  loading: boolean;
+  error: string | null;
+  onQuery: (q: { routingClass: string; src: string; dst: string }) => void;
 }): ReactElement {
   const [routingClass, setRoutingClass] = useState(group.default_class ?? '');
   const [src, setSrc] = useState('');
   const [dst, setDst] = useState('');
-  const route = useAsync(
-    () => api.route(revisionId, {
-      routingClass: routingClass || null,
-      src: src === '' ? null : Number(src),
-      dst: dst === '' ? null : Number(dst),
-    }),
-    [revisionId, routingClass, src, dst],
-  );
   const observation = group.observation;
   const routers = [...new Set((group.channel_hops ?? [])
     .map((h) => h.src_router))].sort((a, b) => a - b);
@@ -302,18 +327,33 @@ function RoutingGroupView({ group, revisionId }: {
             ))}
           </select>
         </label>
+        <button className="btn"
+                onClick={() => onQuery({ routingClass, src, dst })}>
+          Overlay route on fabric
+        </button>
       </div>
 
       <h5 className="inspector-label">CANONICAL DERIVED ROUTE</h5>
-      {route.result.state === 'ready' ? (
-        <RoutePath route={route.result.data} />
-      ) : route.result.state === 'error' ? (
-        <p className="bad">{route.result.error.message}</p>
-      ) : (
+      {loading ? (
         <p className="muted">loading…</p>
+      ) : error ? (
+        <p className="bad">{error}</p>
+      ) : route ? (
+        <RoutePath route={route} />
+      ) : (
+        <p className="muted">
+          No route selected. The route is walked server-side from the table
+          frozen at certification time — this view never runs pathfinding.
+        </p>
       )}
       <p className="muted">
         ⓘ this is a DERIVED EXPECTED state. It is not an observation.
+      </p>
+
+      {/* Gate 8 §29: a path existing is not the same as ROUTE_LEGAL. */}
+      <p className="muted">
+        ROUTE_LEGAL is a certificate claim, shown in the Verification
+        section. A route rendering here does not by itself establish it.
       </p>
 
       {/* Gate 8 §59: expected and observed are never merged into one line. */}
@@ -536,6 +576,30 @@ export default function CompileResultViewPanel({ result, revisionId }: {
   revisionId: string;
 }): ReactElement {
   const [group, setGroup] = useState('summary');
+  // The canonical route is shared: Routing selects it, Fabric overlays it.
+  // It is always walked server-side from the frozen table.
+  const [route, setRoute] = useState<CanonicalRoute | null>(null);
+  const [routeLoading, setRouteLoading] = useState(false);
+  const [routeError, setRouteError] = useState<string | null>(null);
+
+  const queryRoute = useCallback((q: {
+    routingClass: string; src: string; dst: string;
+  }) => {
+    setRouteLoading(true);
+    setRouteError(null);
+    api.route(revisionId, {
+      routingClass: q.routingClass || null,
+      src: q.src === '' ? null : Number(q.src),
+      dst: q.dst === '' ? null : Number(q.dst),
+    }).then((r) => {
+      setRoute(r);
+      setGroup('fabric');
+    }).catch((err: unknown) => {
+      setRoute(null);
+      setRouteError(err instanceof Error ? err.message : String(err));
+    }).finally(() => setRouteLoading(false));
+  }, [revisionId]);
+
   if (!result.available || !result.groups) {
     return (
       <section className="card">
@@ -562,10 +626,13 @@ export default function CompileResultViewPanel({ result, revisionId }: {
             <code>{result.design_hash?.slice(0, 18) ?? '—'}…</code>
           </p>
         </div>
-        <span className={`claim-overall claim-${(certificate?.overall ?? '').toLowerCase()}`}>
-          certificate {certificate?.overall ?? '—'} (
-          {certificate?.claim_count ?? 0}/{certificate?.claim_count ?? 0} claims)
-        </span>
+        {certificate && (
+          <span className={`claim-overall claim-${(certificate.overall ?? '').toLowerCase()}`}>
+            certificate {certificate.overall ?? '—'}
+            {' '}({certificate.claims.filter((c) => c.established).length}
+            /{certificate.claim_count} claims established)
+          </span>
+        )}
       </header>
 
       <nav className="group-tabs" aria-label="Compile result groups">
@@ -583,14 +650,26 @@ export default function CompileResultViewPanel({ result, revisionId }: {
 
       <div className="compile-body">
         {group === 'summary' && (
-          <SummaryGroup group={groups.summary} />
+          <>
+            <SummaryGroup group={groups.summary} />
+            <CapabilityConsequences consequences={groups.summary
+              ? (result as { capability_consequences?: CapabilityConsequence[] })
+                .capability_consequences ?? [] : []} />
+          </>
         )}
         {group === 'mapping' && <MappingGroupView group={groups.mapping} />}
-        {group === 'fabric' && <FabricGroupView group={groups.fabric} />}
-        {group === 'routing' && (
-          <RoutingGroupView group={groups.routing} revisionId={revisionId} />
+        {group === 'fabric' && (
+          <FabricGroupView group={groups.fabric} route={route}
+                           showRoute={route !== null} />
         )}
-        {group === 'resources' && <ResourcesGroupView group={groups.resources} />}
+        {group === 'routing' && (
+          <RoutingGroupView group={groups.routing} route={route}
+                            loading={routeLoading} error={routeError}
+                            onQuery={queryRoute} />
+        )}
+        {group === 'resources' && (
+          <ResourcesGroupView group={groups.resources} />
+        )}
         {group === 'address_decode' && (
           <AddressDecodeGroupView group={groups.address_decode} />
         )}
@@ -599,49 +678,154 @@ export default function CompileResultViewPanel({ result, revisionId }: {
         )}
       </div>
 
-      {certificate && (
-        <section className="card">
-          <h4>Certificate</h4>
+      {certificate && <CertificateSection certificate={certificate} />}
+    </div>
+  );
+}
+
+/** The four product claims over the ten canonical obligations. */
+function CertificateSection({ certificate }: {
+  certificate: CompileCertificate;
+}): ReactElement {
+  const analysis = certificate.deadlock_analysis;
+  return (
+    <section className="card">
+      <h4>Verification</h4>
+      <table className="tbl">
+        <thead>
+          <tr><th>claim</th><th>status</th><th>scope</th><th>contributing</th></tr>
+        </thead>
+        <tbody>
+          {certificate.claims.map((claim) => (
+            <tr key={claim.claim}>
+              <td><code>{claim.claim}</code></td>
+              <td className={CLAIM_STATUS_CLASS[claim.certificate_status] ?? 'muted'}>
+                {claim.certificate_status}
+              </td>
+              <td className="muted">{claim.scope}</td>
+              <td className="muted">
+                {claim.contributing_obligations.map((o) => (
+                  <code key={o}>{o} </code>
+                ))}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {/* A non-PASS deadlock claim must not read as a detected deadlock. */}
+      {analysis && !analysis.detected_deadlock && (
+        <p className="muted">
+          Deadlock analysis: <strong>{analysis.analysis_verdict}</strong>
+          {analysis.unsupported_reason
+            ? ` — ${analysis.unsupported_reason}`
+            : ' — no cycle witness exists'}
+          . The certificate claim is not established; no deadlock was
+          detected.
+        </p>
+      )}
+      {analysis?.detected_deadlock && analysis.cycle_witness.length > 0 && (
+        <>
+          <h5 className="inspector-label">Cycle witness</h5>
+          <p className="bad">
+            A cycle exists in the channel-VC dependency graph.
+          </p>
           <table className="tbl">
-            <thead>
-              <tr><th>claim</th><th>status</th><th>scope</th></tr>
-            </thead>
+            <thead><tr><th>step</th><th>channel</th><th>VC</th></tr></thead>
             <tbody>
-              {certificate.claims.map((claim) => (
-                <tr key={claim.claim}>
-                  <td><code>{claim.claim}</code></td>
-                  <td className={CLAIM_STATUS_CLASS[claim.status] ?? 'muted'}>
-                    {claim.status}
-                  </td>
-                  <td className="muted">{claim.scope}</td>
+              {analysis.cycle_witness.map((node, i) => (
+                <tr key={i}>
+                  <td className="num">{i}</td>
+                  <td className="num">ch {node.channel_id}</td>
+                  <td className="num">vc {node.vc}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {/* The four claims are a subset of the obligations the verifier
-              issued. Hiding the rest would hide proof. */}
-          <details>
-            <summary>
-              Additional obligations ({certificate.additional_obligations.length}
-              {' '}of {certificate.obligation_count})
-            </summary>
-            <table className="tbl">
-              <thead><tr><th>obligation</th><th>status</th><th>method</th></tr></thead>
-              <tbody>
-                {certificate.additional_obligations.map((o) => (
-                  <tr key={o.obligation}>
-                    <td><code>{o.obligation}</code></td>
-                    <td className={CLAIM_STATUS_CLASS[o.status] ?? 'muted'}>
-                      {o.status}
-                    </td>
-                    <td className="muted">{o.method}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </details>
-        </section>
+          <RecoveryLinks owners={['fabric', 'router_behavior']} />
+        </>
       )}
-    </div>
+
+      <details>
+        <summary>
+          All obligations ({certificate.obligation_count})
+        </summary>
+        <table className="tbl">
+          <thead>
+            <tr><th>obligation</th><th>status</th><th>method</th>
+              <th>meaning</th></tr>
+          </thead>
+          <tbody>
+            {certificate.obligations.map((o) => {
+              const meta = certificate.technical_only.find(
+                (t) => t.obligation === o.obligation);
+              return (
+                <tr key={o.obligation}>
+                  <td><code>{o.obligation}</code></td>
+                  <td className={CLAIM_STATUS_CLASS[o.status] ?? 'muted'}>
+                    {o.status}
+                  </td>
+                  <td className="muted">{o.method}</td>
+                  <td className="muted">{meta?.meaning ?? 'product claim'}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <p className="muted">
+          Vocabulary — obligation status:{' '}
+          {certificate.vocabulary.obligation_status.join(' · ')}; CDG analysis:{' '}
+          {certificate.vocabulary.cdg_analysis_verdict.join(' · ')}.
+        </p>
+      </details>
+
+      {certificate.claims.some((c) => !c.established) && (
+        <RecoveryLinks owners={['fabric', 'system']} />
+      )}
+    </section>
+  );
+}
+
+/** Gate 8 §42: a failure points at editable upstream owners. It never
+ * offers a manual route/VC edit, because those are compiler-derived. */
+function RecoveryLinks({ owners }: { owners: string[] }): ReactElement {
+  return (
+    <p className="finding-remedies">
+      {owners.map((owner) => (
+        <span key={owner} className="btn btn-small" role="note">
+          editable upstream: {owner}
+        </span>
+      ))}
+      <span className="muted">
+        Route and VC assignment are compiler-derived and cannot be edited
+        here.
+      </span>
+    </p>
+  );
+}
+
+/** Gate 8 §43/§46: downstream capability state, from the registry. */
+function CapabilityConsequences({ consequences }: {
+  consequences: CapabilityConsequence[];
+}): ReactElement | null {
+  if (consequences.length === 0) return null;
+  return (
+    <section className="card">
+      <h4>Capability consequences</h4>
+      <p className="muted">
+        The compiled artifact is valid. These are downstream execution or
+        qualification limits — not design errors.
+      </p>
+      <ul className="consequence-list">
+        {consequences.map((c) => (
+          <li key={c.capability_id}>
+            <code>{c.capability_id}</code> <strong>{c.choice}</strong> —{' '}
+            {c.wiring}
+            {c.reason ? ` · ${c.reason}` : ''}
+            {c.claim_scope && <p className="muted">{c.claim_scope}</p>}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

@@ -206,12 +206,37 @@ def _summary(request: Any, bundle: Any, certificate: Any,
     }
 
 
-def _mapping(bundle: Any) -> dict[str, Any]:
-    """Gate 8 §53/§54 — participant -> compute agent, table-first."""
+def _mapping(bundle: Any, request: Any = None) -> dict[str, Any]:
+    """Gate 8 §53/§54 — participant -> compute agent, table-first.
+
+    Parallel coordinates come from the sealed Wave-B rank algebra
+    (``model.placement.coords_of``), never from a frontend convention: a
+    second copy of the rank law is a second answer to "which rank is
+    (tp=1,dp=0)".
+    """
     mapping = getattr(bundle, "mapping", None)
     attachment = getattr(bundle, "attachment", None)
     if mapping is None:
         return {"available": False, "rows": []}
+
+    workload = getattr(request, "workload", None)
+    dims = None
+    if workload is not None:
+        try:
+            dims = {
+                "tp": int(getattr(workload, "tp") or 1),
+                "pp": int(getattr(workload, "pp") or 1),
+                "ep": int(getattr(workload, "ep") or 1),
+                "dp": int(getattr(workload, "dp") or 1),
+            }
+        except (TypeError, ValueError):
+            dims = None
+    coords_of = None
+    if dims is not None:
+        from veritx_dse.model.placement import (  # noqa: PLC0415
+            coords_of as _coords_of,
+        )
+        coords_of = _coords_of
     endpoints_by_agent: dict[tuple[int, int], int] = {}
     if attachment is not None:
         for endpoint in getattr(attachment, "endpoints", ()):
@@ -228,19 +253,57 @@ def _mapping(bundle: Any) -> dict[str, Any]:
         group_index = getattr(agent, "group_index", None)
         instance_index = getattr(agent, "instance_index", None)
         kind = getattr(agent, "kind", None)
+        rank = getattr(placement, "rank", None)
+        coordinates = None
+        if coords_of is not None and rank is not None:
+            try:
+                coordinates = coords_of(rank, **dims)
+            except (TypeError, ValueError):
+                coordinates = None
         rows.append({
-            "rank": getattr(placement, "rank", None),
+            "rank": rank,
             "agent_kind": getattr(kind, "value", kind),
             "group_index": group_index,
             "instance_index": instance_index,
             "endpoint_id": endpoints_by_agent.get(
                 (group_index, instance_index)),
+            "coordinates": coordinates,
         })
     return {
         "available": True,
         "rows": rows,
         "rank_count": getattr(mapping, "rank_count", len(rows)),
+        "parallelism": dims,
+        "idle_agents": _idle_agents(bundle, rows),
     }
+
+
+def _idle_agents(bundle: Any, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Attached compute agents no rank maps to.
+
+    Gate 8 §53 requires idle compute to be visible: a 64-tile fabric
+    serving 8 ranks has 56 idle tiles, and that is a design fact.
+    """
+    attachment = getattr(bundle, "attachment", None)
+    if attachment is None:
+        return {"count": 0, "by_kind": {}, "mapped": 0, "attached": 0}
+    mapped = {(r["group_index"], r["instance_index"]) for r in rows}
+    by_kind: dict[str, int] = {}
+    attached = 0
+    idle = 0
+    for endpoint in getattr(attachment, "endpoints", ()):
+        agent = getattr(endpoint, "agent", None)
+        if agent is None:
+            continue
+        attached += 1
+        kind = getattr(getattr(agent, "kind", None), "value",
+                       getattr(agent, "kind", None))
+        by_kind[kind] = by_kind.get(kind, 0) + 1
+        if (getattr(agent, "group_index", None),
+                getattr(agent, "instance_index", None)) not in mapped:
+            idle += 1
+    return {"count": idle, "by_kind": by_kind, "mapped": len(rows),
+            "attached": attached}
 
 
 def _fabric(bundle: Any, topology_view: dict[str, Any] | None) -> dict[str, Any]:
@@ -250,10 +313,15 @@ def _fabric(bundle: Any, topology_view: dict[str, Any] | None) -> dict[str, Any]
     if topology is None:
         return {"available": False, "rows": []}
     routers = list(getattr(topology, "routers", ()))
-    attached: set[int] = set()
-    if attachment is not None:
-        attached = {getattr(e, "router_id", None)
-                    for e in getattr(attachment, "endpoints", ())}
+    endpoints = list(getattr(attachment, "endpoints", ())) \
+        if attachment is not None else []
+    # OCCUPANCY IS ENDPOINT COUNT, NOT DISTINCT-ROUTER COUNT. A router with
+    # four seats hosting four agents occupies four seats; counting the
+    # router once would under-report occupancy by a factor of the
+    # concentration (dense-4b-32tiles-conc4 has 36 seats and 36 agents, so
+    # zero unused — not 27).
+    attached_count = len(endpoints)
+    occupied_routers = {getattr(e, "router_id", None) for e in endpoints}
     seats = sum(getattr(r, "seat_capacity", 0) or 0 for r in routers)
     count = len(routers)
     if count <= FULL_DETAIL_ROUTERS:
@@ -268,9 +336,12 @@ def _fabric(bundle: Any, topology_view: dict[str, Any] | None) -> dict[str, Any]
             "routers": count,
             "channels": len(getattr(topology, "channels", ())),
             "seats": seats,
-            "attached": len([r for r in attached if r is not None]),
-            "unused_seats": max(0, seats - len([r for r in attached
-                                                if r is not None])),
+            # occupied seats = attached endpoints
+            "attached": attached_count,
+            "unused_seats": max(0, seats - attached_count),
+            # routers with at least one attached agent (distinct from seats)
+            "occupied_routers": len([r for r in occupied_routers
+                                     if r is not None]),
         },
         # Gate 8 §57: above MAX_DETAIL_ROUTERS no per-router DOM is created.
         "detail_level": detail,
@@ -528,6 +599,63 @@ def canonical_route(routing_group: dict[str, Any], routing_class: str,
             "reason": None}
 
 
+def _capability_consequences(request: Any,
+                             compilation: Any = None) -> list[dict[str, Any]]:
+    """Downstream capability state for the compiled design.
+
+    Delegates to the DesignViewV2 consequence builder so the Compile Result
+    and the Design surface can never disagree about what a choice costs.
+    """
+    from veritx_dse.application.design_view_v2 import (  # noqa: PLC0415
+        _capability_consequences as build_consequences,
+    )
+    from veritx_dse.application.views import (  # noqa: PLC0415
+        design_view,
+    )
+
+    if request is None:
+        return []
+    try:
+        doc = design_view(request).get("__source_doc__")
+    except Exception:  # noqa: BLE001
+        doc = None
+    if doc is None:
+        # design_view projects rather than exposing the request doc, so
+        # rebuild the minimal document the consequence builder reads.
+        doc = {
+            "workload": {
+                "model_family": getattr(
+                    getattr(request, "workload", None), "model_family", None),
+                "ep": getattr(getattr(request, "workload", None), "ep", None),
+                "collectives": [
+                    {"kind": getattr(c, "kind", None),
+                     "dimension": getattr(
+                         getattr(c, "dimension", None), "value",
+                         getattr(c, "dimension", None)),
+                     "traffic_class": getattr(c, "traffic_class", None)}
+                    for c in (getattr(
+                        getattr(request, "workload", None),
+                        "collectives", ()) or ())],
+            },
+            "noc_config": {
+                "topology_family": getattr(
+                    getattr(getattr(request, "noc_config", None),
+                            "topology_family", None), "value",
+                    getattr(getattr(request, "noc_config", None),
+                            "topology_family", None)),
+                "concentration": getattr(
+                    getattr(request, "noc_config", None), "concentration", None),
+            },
+            "agents": [
+                {"clock_domain": getattr(a, "clock_domain", None)}
+                for a in (getattr(request, "agents", ()) or ())],
+        }
+    # The compilation is required to see the LOWERED traffic classes: a
+    # fabric can be multi-class through its dependency graph without
+    # declaring a single collective (the mesh4 family is exactly that).
+    return build_consequences(doc, compilation)
+
+
 # ── the projection ─────────────────────────────────────────────────────
 
 def build_compile_result(revision: dict[str, Any],
@@ -573,7 +701,7 @@ def build_compile_result(revision: dict[str, Any],
         },
         "groups": {
             "summary": _summary(request, bundle, certificate, compilation),
-            "mapping": _mapping(bundle),
+            "mapping": _mapping(bundle, request),
             "fabric": _fabric(bundle, topology_view),
             "routing": _routing(bundle, certificate),
             "resources": _resources(bundle, certificate),
@@ -581,6 +709,10 @@ def build_compile_result(revision: dict[str, Any],
             "provenance": _provenance(revision, bundle, chain_view),
         },
         "group_order": list(GROUPS),
+        # Gate 8 §43/§46: downstream capability state, from the SAME
+        # registry authority DesignViewV2 uses. One capability authority.
+        "capability_consequences": _capability_consequences(
+            request, compilation),
         "topology_hash": (topology_view or {}).get("topology_hash"),
     }
     return result

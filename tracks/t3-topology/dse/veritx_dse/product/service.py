@@ -812,14 +812,40 @@ class ProductService:
     # ── revisions ─────────────────────────────────────────────────────
 
     def get_revision_compile_result(self, revision_id: str) -> dict[str, Any]:
-        """CompileResultView — the seven inspector groups (Gate 8 §50).
+        """CompileResultView as served: the route TABLE is not shipped.
 
-        Read from the payload frozen at certification time. A revision
-        persisted before this projection existed re-derives it from its own
-        immutable request and is checked against the hashes the certificate
-        already recorded — a mismatch is an EVIDENCE_INVALID, never a
-        silently redrawn fabric. A revision that never compiled has no
-        inspectors: a failed proof is not a fabric.
+        The routing group carries the routing classes, the entry count and
+        the channel hops, but not the entry rows. A 16x16 mesh has 65,280
+        entries (~4.8 MB); the frontend never needs them, because the
+        canonical route is a query (`GET /revisions/{id}/route`) walked
+        server-side over the frozen table. Shipping them would make the
+        inspector unusable at exactly the sizes where it matters.
+        """
+        payload = self._stored_compile_result(revision_id)
+        if payload.get("available") and "groups" in payload:
+            routing = payload["groups"].get("routing")
+            if routing and routing.get("entries"):
+                payload = {**payload, "groups": {
+                    **payload["groups"],
+                    "routing": {**routing, "entries": [],
+                                "entries_withheld": True,
+                                "entries_note": (
+                                    "the route table is not shipped in this "
+                                    "payload; query "
+                                    "/revisions/{id}/route for a canonical "
+                                    "route")}}}
+        return payload
+
+    def _stored_compile_result(self, revision_id: str) -> dict[str, Any]:
+        """The full frozen payload, including the route table.
+
+        Internal: the route walk needs the table the served response
+        withholds. Read from the payload frozen at certification time. A
+        revision persisted before this projection existed re-derives it
+        from its own immutable request and is checked against the hashes
+        the certificate already recorded — a mismatch is an
+        EVIDENCE_INVALID, never a silently redrawn fabric. A revision that
+        never compiled has no inspectors: a failed proof is not a fabric.
         """
         _pid, revision = self.store.load_revision_global(revision_id)
         payload = revision.get("compile_result")
@@ -889,7 +915,7 @@ class ProductService:
             canonical_route as _walk,
         )
 
-        payload = self.get_revision_compile_result(revision_id)
+        payload = self._stored_compile_result(revision_id)
         if not payload.get("available"):
             raise ProductServiceError(
                 ErrorCode.CONFLICT,

@@ -787,13 +787,65 @@ export interface DesignViewV2 {
 // certification time and frozen with the revision. Everything is read-only:
 // an inspector reveals canonical properties, it never edits them.
 
-export type ClaimStatus = 'PASS' | 'FAIL' | 'UNSUPPORTED';
+/** The certificate obligation vocabulary is PASS | FAIL. An
+ * obligation-level UNSUPPORTED does not exist — `VerificationCertificate`
+ * enforces this — so it is deliberately absent here. */
+export type ClaimStatus = 'PASS' | 'FAIL';
 
+/** The channel-VC CDG certifier's own vocabulary, a separate layer. */
+export type CdgAnalysisVerdict =
+  | 'PASS' | 'FAIL' | 'UNSUPPORTED' | 'NOT_RUN';
+
+/** One product claim, derived from its contributing obligations. The
+ * frontend never aggregates: `certificate_status` is computed by the
+ * backend from the contribution table. */
 export interface CertificateClaim {
   claim: string;
   scope: string;
+  certificate_status: ClaimStatus;
+  established: boolean;
+  contributing_obligations: string[];
+  contributing_statuses: Record<string, ClaimStatus>;
+  aggregation: string;
+  method: string | null;
+  /** Deadlock only: the underlying analysis verdict, separate from the
+   * certificate obligation status. */
+  analysis_verdict?: CdgAnalysisVerdict;
+  detected_deadlock?: boolean;
+  analysis_reason?: string | null;
+}
+
+/** A real verification obligation that is not one of the four claims. */
+export interface TechnicalObligation {
+  obligation: string;
+  meaning: string;
   status: ClaimStatus;
   method: string | null;
+  evidence: Record<string, unknown>;
+  failure_reason?: string | null;
+}
+
+export interface CdgCycleNode {
+  channel_id: number | null;
+  vc: number | null;
+}
+
+/** The deadlock analysis, kept apart from the certificate obligation.
+ * `detected_deadlock` is true only for a real FAIL with a cycle witness,
+ * so UNSUPPORTED and NOT_RUN can never read as a detected deadlock. */
+export interface CdgAnalysis {
+  analysis_verdict: CdgAnalysisVerdict;
+  cycle_witness: CdgCycleNode[];
+  acyclic: boolean | null;
+  unsupported_reason: string | null;
+  sccs_gt_1: number | null;
+  node_count: number | null;
+  edge_count: number | null;
+  cdg_route_classes: string[] | null;
+  escape_vcs: number[] | null;
+  vc_count: number | null;
+  route_realization_scheme: string | null;
+  detected_deadlock: boolean;
 }
 
 export interface CertificateObligation {
@@ -810,6 +862,13 @@ export interface CompileCertificate {
   certificate_id: string | null;
   claims: CertificateClaim[];
   obligations: CertificateObligation[];
+  technical_only: TechnicalObligation[];
+  deadlock_analysis: CdgAnalysis | null;
+  vocabulary: {
+    obligation_status: ClaimStatus[];
+    cdg_analysis_verdict: CdgAnalysisVerdict[];
+  };
+  /** Retained: the obligations that are not claims, in obligation shape. */
   additional_obligations: CertificateObligation[];
   claim_count: number;
   obligation_count: number;
@@ -847,12 +906,22 @@ export interface MappingRow {
   group_index: number | null;
   instance_index: number | null;
   endpoint_id: number | null;
+  /** Parallel coordinates from the sealed Wave-B rank algebra. */
+  coordinates: { tp: number; pp: number; ep: number; dp: number } | null;
 }
 
 export interface MappingGroup {
   available: boolean;
   rows: MappingRow[];
   rank_count?: number;
+  parallelism?: { tp: number; pp: number; ep: number; dp: number } | null;
+  /** Attached agents no rank maps to — a design fact, not an error. */
+  idle_agents?: {
+    count: number;
+    by_kind: Record<string, number>;
+    mapped: number;
+    attached: number;
+  };
 }
 
 /** Gate 8 §57: above `router_detail_max` no per-router DOM is created. */
@@ -995,4 +1064,6 @@ export interface CompileResultView {
   };
   group_order?: string[];
   topology_hash?: string | null;
+  /** Gate 8 §43/§46: downstream capability state, from the registry. */
+  capability_consequences?: CapabilityConsequence[];
 }
