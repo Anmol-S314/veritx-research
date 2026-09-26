@@ -23,7 +23,7 @@ Line counts across the branches that carry each file.
 
 | File | current | canonical | p1-product / verified-eval | verdict |
 |---|---|---|---|---|
-| `core/route_artifact.py` | 706 | **704 (4 lines off)** | **971 (359 lines off)** | **REGRESSED_STRONGER_VERSION** |
+| `core/route_artifact.py` | 706 → **972** | **704 (4 lines off)** | **971 (359 lines off)** | **RECLAIMED (PHASE 2)** |
 | `synthesis/milp_topology_v2.py` | 454 → **521** | **454 (IDENTICAL)** | **582 (152 lines off)** | **RECLAIMED (PHASE 1)** |
 | `model/presets.py` | 425 → **649** | **425 (IDENTICAL)** | **684 (259 lines off)** | **RECLAIMED (PHASE 1)** |
 | `core/constants.py` | 51 | 51 | 92 | superset on strong (power/area model); `env_int` present in both |
@@ -118,30 +118,59 @@ mesh-vs-torus distinction restored.
 domains, see §3 and §4): the six extra `SWEEP_TOPOS` entries and the
 `collectives` block added to four `WORKLOAD_PRESETS` entries.
 
-### 2. `core/route_artifact.py` — CONFIRMED, **NEEDS_RECONCILIATION**
+### 2. `core/route_artifact.py` — CONFIRMED, **RECLAIMED (PHASE 2)**
 
-Current is 4 lines from `integration/canonical`; the stronger version is
-**359 lines away** and contains functions **entirely absent** from the
-current tree:
+Current was 4 lines from `integration/canonical`; the stronger version
+(blob `8fdb3985…`, identical on `p1b/verified-evaluation` /
+`integration/p1-product`; `epic/booksim-forward-port` carries a third
+variant `ca52ae96…`) is **359 lines away** and contained functions
+**entirely absent** from the current tree:
 
 | Missing function | What it is |
 |---|---|
 | `equivalence_report` | per-flow expected-vs-executed comparison with `mismatched`, `missing_in_executed`, `extra_in_executed` all pinned |
 | `artifact_from_anynet` | build a `RouteArtifact` from an AnyNet table |
-| `upgrade_v` | **schema upgrade** |
+| `upgrade_v1_to_v2` | **schema upgrade** (the audit's `upgrade_v`) |
 | `topology_hash_from_adj` | topology identity from an adjacency |
 | `standalone_channel_dst` | channel destination mapping |
 | `first_hop_table` | public first-hop projection |
-| `route_entries_from_adj` | public (ours is private) |
+| `route_entries_from_adj` | public (ours was private `_route_entries_from_adj`) |
+| `RouteArtifact.from_adjacency` | standalone-graph constructor — **live caller** `tools/deadlock_routing.py:426` already called it and would have raised `AttributeError` |
+| `_validate_hop_entries` | all-pairs coverage + adjacency legality for a supplied hop table |
 
-**And `backend/route_observation.py` is absent on every historical branch** —
-it is locally invented, and it **duplicates `equivalence_report`'s job**
-(`expected_route_rows` + `compare_route_realization`).
+**Action taken — semantic three-way merge, not a wholesale replace.** The
+current tree carried later hardening that the strong version lacks, and
+all of it is preserved:
 
-**Not fixed in this pass.** 359 lines including a schema-upgrade path is not
-a safe change to make late in a tranche; it needs its own reconciliation
-with the same rigour as the routing correction. **Recorded as the top
-blocker.**
+| Current-only hardening | Status |
+|---|---|
+| `RouteArtifactError(ValueError, SemanticError)` | **preserved** (strong is bare `ValueError`) |
+| defensive freeze of `RoutingClassDefinition.parameters` | **preserved** |
+| defensive copy + `MappingProxyType` for `RouteArtifact.entries` | **preserved** |
+| `isinstance(self.entries, Mapping)` (not `dict`) | **preserved** — required so the read-only view re-validates |
+
+`_route_entries_from_adj` is retained as a module-level **alias** of the new
+public `route_entries_from_adj` (same object), so the earlier private name
+keeps resolving to one implementation.
+
+**Ownership reconciliation of the locally invented
+`backend/route_observation.py`.** It was not deleted and is not garbage — it
+is a **simulator adapter** owning two things the core module does not:
+parsing the fork's `routing.dump` line format, and deriving the expected
+table from a `TopologyArtifact` + execution `node->router` map (a node-level
+domain, wider than router pairs). What it must NOT own is route-set
+comparison semantics, which it previously re-implemented. A new core
+primitive **`compare_first_hop_tables(expected, executed)`** is now the
+single comparison authority; `equivalence_report` and
+`route_observation.compare_route_realization` both delegate to it. The
+adapter still converts a `DIVERGENT` verdict into its typed refusal with the
+pinned per-flow diagnostics, so its callers and error contracts are
+unchanged.
+
+**Stale-diagnostic fix:** `model/routing.py` (×2),
+`tests/test_custom_routing.py` and `tests/test_booksim_route_equivalence.py`
+cited the private `_route_entries_from_adj`; they now cite the public
+`route_entries_from_adj`.
 
 ### 3. `SWEEP_TOPOS` surface — NOT reclaimed (Gate-8)
 

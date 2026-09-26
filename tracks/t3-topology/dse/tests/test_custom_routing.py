@@ -410,7 +410,7 @@ def test_custom_policy_is_accepted_by_the_certified_anynet_profile():
     BookSim-coupled. That created a canonical-vs-backend mismatch which did
     not previously exist, and it was then reported as a backend limitation.
 
-    The sealed contract is ANYNET_MIN_HOPS: `_route_entries_from_adj` is
+    The sealed contract is ANYNET_MIN_HOPS: `route_entries_from_adj` is
     documented as "the one routing truth: AnyNet::route() first-hop table",
     a REPLICA of the vendored fork's routing. The certified AnyNet profile
     accepts a custom graph routed with it, which is what keeps BookSim

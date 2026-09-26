@@ -72,19 +72,22 @@ def test_lin_10c_reclaimed_loader_records_its_provenance():
 
 # ══ LIN-1: a stronger ancestor cannot be silently replaced ════════════
 
-def test_lin_1_route_artifact_gap_is_recorded_not_silently_accepted():
-    """The strongest historical route_artifact.py carries functions the
-    current tree lacks (equivalence_report, artifact_from_anynet,
-    upgrade_v, ...). The gap is a recorded blocker, and this test fails if
-    someone closes it without updating the record — or silently drops it."""
+def test_lin_1_route_artifact_gap_is_recorded_and_closed():
+    """The strongest historical route_artifact.py carried functions the
+    current tree lacked (equivalence_report, artifact_from_anynet,
+    upgrade_v1_to_v2, ...). PHASE 2 reclaimed them; the record must name
+    both the gap and its closure, so nobody re-opens or forgets it."""
     audit = (Path(__file__).parents[4]
              / "docs/product/SOURCE-LINEAGE-AUDIT.md").read_text()
-    for fn in ("equivalence_report", "artifact_from_anynet", "upgrade_v"):
-        assert fn in audit, f"{fn} must stay recorded as missing"
-    assert "NEEDS_RECONCILIATION" in audit
-    # And the locally invented comparator is named as a duplicate.
+    for fn in ("equivalence_report", "artifact_from_anynet",
+               "upgrade_v1_to_v2"):
+        assert fn in audit, f"{fn} must stay recorded"
+    assert "RECLAIMED (PHASE 2)" in audit
+    # And the locally invented comparator is named as an adapter, with the
+    # comparison authority handed to the core module.
     assert "route_observation.py" in audit
-    assert "locally invented" in audit
+    assert "compare_first_hop_tables" in audit
+    assert "simulator adapter" in audit
 
 
 def test_lin_1b_authority_selection_law_is_documented():
@@ -140,3 +143,76 @@ def test_lin_2d_presets_reclamation_is_recorded():
     assert "model/presets.py" in audit
     assert "parallel_world_size" in audit
     assert "silent duplicate of `gec_express_k8`" in audit
+
+
+# ══ LIN-3: route_artifact PHASE 2 reclamation ═════════════════════════
+
+def test_lin_3_reclaimed_route_artifact_functions_exist():
+    from veritx_dse.core.route_artifact import (
+        RouteArtifact, route_entries_from_adj, topology_hash_from_adj,
+        standalone_channel_dst, first_hop_table, artifact_from_anynet,
+        equivalence_report, upgrade_v1_to_v2, compare_first_hop_tables,
+    )
+    adj = {0: {1, 2}, 1: {0, 3}, 2: {0, 3}, 3: {1, 2}}
+    art = RouteArtifact.from_adjacency(adj, name="t")
+    cdst = standalone_channel_dst(adj)
+    fh = first_hop_table(art, cdst)
+    assert equivalence_report(art, fh, channel_dst=cdst)["status"] \
+        == "COMPARABLE"
+    assert compare_first_hop_tables(fh, fh)["status"] == "COMPARABLE"
+    assert topology_hash_from_adj(adj) == art.topology_hash
+    assert callable(artifact_from_anynet) and callable(upgrade_v1_to_v2)
+    assert route_entries_from_adj(adj) == fh
+
+
+def test_lin_3b_public_name_aliases_the_private_one():
+    """One implementation, two names — never two implementations."""
+    from veritx_dse.core.route_artifact import (
+        route_entries_from_adj, _route_entries_from_adj,
+    )
+    assert _route_entries_from_adj is route_entries_from_adj
+
+
+def test_lin_3c_current_hardening_survived_the_merge():
+    """The strong ancestor was NOT a strict superset: the current tree had
+    later hardening that a wholesale replace would have destroyed."""
+    from types import MappingProxyType
+    from veritx_dse.core.errors import SemanticError
+    from veritx_dse.core.route_artifact import (
+        RouteArtifact, RouteArtifactError, RoutingClassDefinition,
+    )
+    assert issubclass(RouteArtifactError, SemanticError)
+    d = RoutingClassDefinition(id="X", algorithm="a", algorithm_version=1,
+                               parameters=(("k", [1, 2]),))
+    assert d.parameters == (("k", (1, 2)),)  # defensive freeze
+    adj = {0: {1}, 1: {0}}
+    art = RouteArtifact.from_adjacency(adj, name="t")
+    assert isinstance(art.entries, MappingProxyType)  # read-only view
+    before = art.artifact_hash
+    adj[0].add(99)  # caller mutation must not reach the sealed artifact
+    assert art.artifact_hash == before
+
+
+def test_lin_3d_comparison_has_one_authority():
+    """route_observation must DELEGATE the verdict, not re-implement it."""
+    src = (Path(__file__).parent.parent
+           / "veritx_dse/backend/route_observation.py").read_text()
+    assert "compare_first_hop_tables" in src
+    assert "mismatches = [" not in src  # the old independent comparison
+    assert "missing = sorted(set(expected) - set(executed))" not in src
+
+
+def test_lin_3e_deadlock_routing_from_adjacency_caller_resolves():
+    """tools/deadlock_routing.py:426 already called from_adjacency while
+    the constructor did not exist — a live AttributeError."""
+    from veritx_dse.core.route_artifact import RouteArtifact
+    assert hasattr(RouteArtifact, "from_adjacency")
+
+
+def test_lin_3f_anynet_min_hops_identity_is_pinned():
+    """CUSTOM must route with the SEALED executable class; the earlier
+    WEIGHTED_SHORTEST_PATH choice is what cost the backend."""
+    from veritx_dse.model.routing import _POLICY_BY_FAMILY
+    from veritx_dse.model.topology_artifact import MaterializedFamily
+    from veritx_dse.core.route_artifact import ANYNET_MIN_HOPS
+    assert _POLICY_BY_FAMILY[MaterializedFamily.CUSTOM] == ANYNET_MIN_HOPS

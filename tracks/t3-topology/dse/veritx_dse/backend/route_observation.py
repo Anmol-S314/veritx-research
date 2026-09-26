@@ -27,6 +27,14 @@ Id mapping (why this is exact, not assumed):
     the canonical router/endpoint ids;
   * AnyNet: ``render_anynet_topology`` emits ``router <id>`` / ``node <id>``
     with the canonical ids verbatim, so the same identity holds.
+
+OWNERSHIP (Tranche 5 PHASE 2). This module is a SIMULATOR ADAPTER: it owns
+(a) parsing the fork's dump format and (b) building the expected table from
+the sealed canonical artifacts plus the execution node->router map. It does
+NOT own route-set comparison semantics — ``core.route_artifact.
+compare_first_hop_tables`` does, and this module delegates to it. Two
+independent comparisons of the same science is exactly the drift this
+reclamation exists to remove.
 """
 from __future__ import annotations
 
@@ -129,25 +137,33 @@ def compare_route_realization(
     is derived: every non-local expected hop is looked up as a real channel
     leaving that src router. Exact executed == expected therefore implies
     adjacency-legal hops; a divergent dump refuses.
+
+    The VERDICT is delegated to
+    ``core.route_artifact.compare_first_hop_tables`` — the one comparison
+    authority. This function contributes the dump parsing, the id mapping
+    and the evidence digests, and converts a DIVERGENT verdict into the
+    typed refusal this adapter's callers expect.
     """
+    from veritx_dse.core.route_artifact import compare_first_hop_tables
+
     executed = parse_route_dump(dump_text)
     expected = {(src, dst): next_router
                 for src, dst, next_router in expected_rows}
 
-    missing = sorted(set(expected) - set(executed))
-    extra = sorted(set(executed) - set(expected))
-    if missing or extra:
+    report = compare_first_hop_tables(expected, executed)
+    if report["status"] != "COMPARABLE":
+        mismatched = report["mismatched"]
+        if mismatched:
+            shown = [((m["src"], m["dst"]), m["artifact_next_hop"],
+                      m["executed_next_hop"]) for m in mismatched[:3]]
+            raise RouteObservationError(
+                "executed route realization diverges from the RouteArtifact "
+                f"in {len(mismatched)} entries, e.g. {shown} — the fabric "
+                "is NOT executed as declared")
         raise RouteObservationError(
             "executed route dump coverage differs from the canonical route "
-            f"(missing {missing[:3]}, extra {extra[:3]})")
-
-    mismatches = [(key, expected[key], executed[key])
-                  for key in sorted(expected) if expected[key] != executed[key]]
-    if mismatches:
-        raise RouteObservationError(
-            f"executed route realization diverges from the RouteArtifact in "
-            f"{len(mismatches)} entries, e.g. {mismatches[:3]} — the fabric "
-            "is NOT executed as declared")
+            f"(missing {[(m['src'], m['dst']) for m in report['missing_in_executed']][:3]}, "
+            f"extra {[(m['src'], m['dst']) for m in report['extra_in_executed']][:3]})")
 
     def _digest(rows: Mapping[tuple[int, int], int]) -> str:
         return hashlib.sha256(canonical_bytes(

@@ -4,7 +4,7 @@ THE QUESTION: can a concrete custom topology obtain qualified BookSim
 execution by proving its canonical RouteArtifact equals what BookSim
 actually routes?
 
-THE COMPARAND. `core.route_artifact._route_entries_from_adj` is documented
+THE COMPARAND. `core.route_artifact.route_entries_from_adj` is documented
 as "the one routing truth: AnyNet::route() first-hop table, all-pairs" —
 it is a REPLICA of the vendored fork's `AnyNet::route()`. So comparing the
 canonical custom producer against `ANYNET_MIN_HOPS` is comparing against

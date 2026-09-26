@@ -85,7 +85,7 @@ _POLICY_BY_FAMILY: dict[MaterializedFamily, str] = {
     # that ANYNET_MIN_HOPS' name is BookSim-coupled. That was wrong and it
     # cost us the backend:
     #
-    #   * `core.route_artifact._route_entries_from_adj` is documented as
+    #   * `core.route_artifact.route_entries_from_adj` is documented as
     #     "the one routing truth: AnyNet::route() first-hop table" — a REPLICA
     #     of the vendored fork's routing, i.e. the sealed contract that
     #     ALREADY matches BookSim;
@@ -155,7 +155,7 @@ def _anynet_min_hops_policy() -> Any:
 
     `weight_metric: hop_count` + `tie_break_policy: anynet_ascending_min`
     select the ANYNET_MIN_HOPS realization in routing_materialize, whose
-    first-hop table is `_route_entries_from_adj` — the documented replica of
+    first-hop table is `route_entries_from_adj` — the documented replica of
     `AnyNet::route()`. Because it IS the fork's algorithm, the certified
     AnyNet profile accepts it and BookSim route equivalence holds by
     construction rather than by hope.
