@@ -928,3 +928,95 @@ and the row now says exactly that, with the nuance in `claim_scope`.
 
 AMEND-8 synthesis adapter · AMEND-9 structural optimizer · AMEND-10 Studio
 IA · Phase 3 Static Evaluate
+
+---
+
+## TRANCHE 2 CLOSURE — contract/versioning boundary
+
+### The blocker was a SCHEMA BUG, not stale golden data
+
+`views.py` has emitted `staged` and `stopped_at_stage` since **`2fdd758f`**
+(staged compilation). `contracts/srota/v1/compilation.view.schema.json` was
+last touched in **`a5b806fe`** — *before* that commit — and declares
+`unevaluatedProperties: false`.
+
+So the engine emitted fields its own contract forbade, and **every fixture
+regeneration failed schema validation**. The fixtures were not stale; the
+contract was. That is why the earlier regeneration attempt was reverted.
+
+Fix: the schema now declares the fields (the product contract changed
+intentionally — a staged refusal genuinely is not "compilation failed").
+Both are **additive** and `types.ts` already has `staged?:` optional, so
+this is backward compatible and `CONTRACT_VERSION` stays 1. A version bump
+is reserved for an *incompatible* change.
+
+### Four Studio failures — classified
+
+| Test | Fields | Class |
+|---|---|---|
+| `test_generated_hashes_originate_from_engine_objects` | `metric_registry_id` | **AMEND-5 INTENTIONAL** |
+| `test_optimization_fixture_originates_from_optimize_certified` | `metric_registry_id` | **AMEND-5 INTENTIONAL** |
+| `test_provisioned_validator_proves_backend_fixtures_through_engine` | `compilation.staged`, `stopped_at_stage`, `producer_identity` | **SCHEMA BUG + PRE-EXISTING** |
+| `test_fresh_provisioned_regeneration_bytes` | `performance_result_id`, `producer_identity`, `raw_evidence_digest` | **PRE-EXISTING STALE FIXTURE** |
+
+### AMEND-5 identity impact — exactly four fields
+
+```
+optimization.completeness             AMEND-4 (new SearchCompleteness)
+optimization.metric_registry_id       v1 -> v2
+optimization.metric_registry_version  v1 -> v2
+optimization.optimization_result_id   CONSEQUENCE (result_id binds registry id)
+```
+
+**Unchanged, proven by diff:** `design_hash`, `resolved_fabric_hash`,
+`base_design_hash`, topology identity, candidate ids, the definition.
+Design/topology/fabric identity is computed *before* any registry is
+consulted, so adding metric projection cannot move it (FIX-8).
+
+### The ~43 unrelated lines — classified, not absorbed
+
+| Field(s) | Origin |
+|---|---|
+| `.compilation.staged`, `.stopped_at_stage`, `.produced_stages`, `has_*` | `2fdd758f` staged compilation |
+| `.evaluation.performance_result_id`, `.requirements.*.performance_result_id` | pre-existing engine change |
+| `.evaluation.backend_producer.producer_identity` | pre-existing engine change |
+| `.evaluation.evidence.raw_evidence_digest` | pre-existing engine change |
+| `.optimization.candidates[*].evaluation_ids`, `product_requirements` | same performance-result provenance |
+
+Each traces to a named commit. These are **legitimate older changes that
+were never regenerated** — not obsolete generator output, not accidental
+drift. Handled in a **separate commit** (`6aa20f25`) with field-level
+provenance so the two causes never blur.
+
+### Commits
+
+| Commit | Scope |
+|---|---|
+| `16bcf2eb` | gateway BookSim resolution + staleness reporting |
+| `5dbab873` | **contract fix** + AMEND-4/5 fixture (4 fields, field-surgical) |
+| `6aa20f25` | pre-existing fixture reconciliation (separate provenance) |
+
+### FINAL TEST MATRIX
+
+| Command | Passed | Failed | Skipped |
+|---|---|---|---|
+| backend `pytest tests/` | **4260** | **0** | 17 |
+| studio `pytest tests/` | **10** | **0** | 1 |
+| `npx tsc --noEmit` | exit 0 | — | — |
+| `npx vite build` | exit 0 | — | — |
+| `check_capability_registry` | PASS | — | — |
+| `check_topology_family_registry` | PASS | — | — |
+| `check_exposure_registry` | PASS | — | — |
+| `check_intent_ontology` | PASS | — | — |
+| `check_preset_certification` | PASS | — | — |
+| `gen_feature_reclamation --check` | PASS | — | — |
+
+**Every required command has zero failures.**
+
+### Unresolved blockers
+
+1. Two unrelated `TopologyError` classes (deferred; tree-wide change).
+2. `flatfly` materializable, not authorable.
+3. `TopologyIR` CLI not restored.
+4. Gateway staleness is now *observable* but not *prevented* — a long-lived
+   process still needs a restart. `/api/v1/health` reports it.
