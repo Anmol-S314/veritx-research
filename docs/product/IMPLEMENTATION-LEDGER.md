@@ -123,6 +123,7 @@ made. The file is deleted either way; the attribution is off by one commit.
 | `src/pages/design.tsx` | `Design` rebuilt on the projection; new `Review` |
 | `src/pages/offline.tsx` | false controls removed |
 | `src/pages/index.tsx` | `intervention.supported` binary removed |
+| `src/pages/evidence.tsx` | `intervention.supported` binary removed (second occurrence, found by the false-surface sweep) |
 | `src/pages/{design,evidence,serving,optimize}.tsx` | `WorkflowBar` removed |
 | `src/studio.tsx` | `WorkflowBar` / `PIPELINE` / `pipelineStatuses` removed; `ContextHeader` rebuilt (PF-D13 + §7) |
 | `src/router.ts` | `/projects/:pid/design/review` |
@@ -204,7 +205,7 @@ which it does).
 |---|---|
 | RCU authoring checkbox + `.rcu-refusal` banner | PF-D16, GX-D6, ROUTE-011 |
 | Requirement "Bandwidth floor (Gbps)" control | PF-D6, GX-D6, REQ-003 |
-| `intervention.supported` binary rendering | CAP-D2 |
+| `intervention.supported` binary rendering (both `pages/index.tsx` and `pages/evidence.tsx`) | CAP-D2 |
 | `FabricCanvas3D.tsx` + 3D/2D toggle | STUDIO-WIREFRAMES §186 |
 | `WorkflowBar` / `PIPELINE` / `pipelineStatuses` | STUDIO-WIREFRAMES §144/§181 |
 | `TierBadge` | STUDIO-WIREFRAMES §144 |

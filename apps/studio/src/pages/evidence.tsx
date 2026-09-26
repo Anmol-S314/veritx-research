@@ -450,9 +450,15 @@ function Campaigns(): ReactElement {
             </details>
             <details>
               <summary>
-                Intervention study — schedule causality{' '}
-                {data.intervention.supported ? 'SUPPORTED' : 'NOT SUPPORTED'}
+                Intervention study — schedule causality
               </summary>
+              {data.intervention.problems.length > 0 && (
+                <ul className="bad">
+                  {data.intervention.problems.map((problem, index) => (
+                    <li key={index}>{String(problem)}</li>
+                  ))}
+                </ul>
+              )}
               <table className="tbl">
                 <thead>
                   <tr>
