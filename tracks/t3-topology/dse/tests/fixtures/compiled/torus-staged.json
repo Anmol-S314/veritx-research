@@ -1,7 +1,7 @@
 {
   "case": "torus-staged",
   "compilation_status": "UNSUPPORTED",
-  "error": "UNSUPPORTED: no certified routing derivation for topology family 'torus' \u2014 P1A certifies MESH and CONCENTRATED_MESH (DOR_XY) only; refusing silent minimum-hop fallback",
+  "error": "UNSUPPORTED: no certified routing policy for topology family 'torus' \u2014 DOR_XY is certified for mesh and concentrated_mesh, and WEIGHTED_SHORTEST_PATH for explicit custom graphs; other families have no certified routing yet. Refusing rather than guessing a route semantic.",
   "produced_stages": [
     "INPUT",
     "INPUT_MAPPING",

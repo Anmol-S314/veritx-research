@@ -210,32 +210,62 @@ def test_cfab_15_16_manual_and_synthesized_produce_the_same_artifact():
     assert a.family == b.family
 
 
-def test_cfab_17_18_both_origins_stop_at_the_same_stage():
-    """Origin must not change capability. Both stop at ROUTING."""
-    _b, staged, _r = derive_stages_v3(
-        CompileRequestV3.from_dict(_explicit_doc(k=5)))
-    assert staged is not None
-    assert staged.stopped_at_stage == "ROUTING", (
-        "the honest boundary after FAB-007 is ROUTING; if this moves the "
-        "tranche conclusion must be re-derived")
-    assert list(staged.produced_stages) == [
-        "INPUT", "INPUT_MAPPING", "TOPOLOGY", "ATTACHMENT"]
+def test_cfab_17_18_custom_now_compiles_end_to_end():
+    """TRANCHE 5 MOVED THE BOUNDARY. Custom topology no longer stops at
+    ROUTING: it routes via the declared WEIGHTED_SHORTEST_PATH policy and
+    the ordinary pipeline completes.
+
+    The previous assertion (stop at ROUTING, produced INPUT..ATTACHMENT)
+    was correct for Tranche 4 and is now superseded by a real capability
+    change, not by relaxing a check."""
+    from veritx_dse.application.fabric_compiler import FabricCompiler
+    c = FabricCompiler().compile(CompileRequestV3.from_dict(_explicit_doc(k=5)))
+    assert c.status == "COMPILED"
+    assert c.certificate.overall == "PASS"
 
 
-def test_cfab_18b_route_refusal_is_typed():
-    _b, staged, refusal = derive_stages_v3(
-        CompileRequestV3.from_dict(_explicit_doc(k=5)))
-    assert refusal is not None
-    assert "no certified routing derivation" in str(refusal)
-    assert "custom" in str(refusal)
+def test_cfab_18b_custom_route_uses_the_declared_policy():
+    """The routing class is the DECLARED policy, not a hidden default."""
+    from veritx_dse.application.fabric_compiler import FabricCompiler
+    from veritx_dse.model.routing import routing_policy_for
+    from veritx_dse.model.topology_artifact import materialize_ir
+    c = FabricCompiler().compile(CompileRequestV3.from_dict(_explicit_doc(k=5)))
+    classes = [getattr(x, "id", x) for x in (c.bundle.router_route.routing_classes or ())]
+    assert classes == ["WEIGHTED_SHORTEST_PATH"], classes
+    art = materialize_ir(_ir(5), width_bits=64, latency_cycles=1)
+    assert routing_policy_for(art) == "WEIGHTED_SHORTEST_PATH"
+
+
+def test_cfab_18c_named_families_keep_dor():
+    """The declared table must not have widened the certified path."""
+    from veritx_dse.model.routing import routing_policy_for
+    from veritx_dse.model.topology_artifact import (
+        MaterializedFamily, materialize_family,
+    )
+    for fam in (MaterializedFamily.MESH, MaterializedFamily.CONCENTRATED_MESH):
+        art = materialize_family(fam, endpoint_count=16)
+        assert routing_policy_for(art) == "DOR_XY", fam
+
+
+def test_cfab_18d_undeclared_family_refuses_rather_than_guessing():
+    """TORUS is deliberately NOT in the policy table this tranche; it must
+    refuse with a typed error rather than silently inherit a policy."""
+    from veritx_dse.model.routing import routing_policy_for
+    from veritx_dse.model.topology_artifact import (
+        MaterializedFamily, materialize_family,
+    )
+    art = materialize_family(MaterializedFamily.TORUS, endpoint_count=25)
+    with pytest.raises(Exception) as e:
+        routing_policy_for(art)
+    assert "no certified routing policy" in str(e.value)
 
 
 def test_cfab_19_no_origin_specific_downstream_branch():
     """The artifact a custom graph produces is the SAME type a named family
     produces — no synthesis/custom subclass."""
-    _b, staged, _r = derive_stages_v3(
-        CompileRequestV3.from_dict(_explicit_doc(k=5)))
-    art = staged.topology
+    from veritx_dse.application.fabric_compiler import FabricCompiler
+    c = FabricCompiler().compile(CompileRequestV3.from_dict(_explicit_doc(k=5)))
+    art = c.bundle.topology
     assert type(art).__name__ == "TopologyArtifact"
     keys = set(art.to_dict())
     from veritx_dse.model.topology_artifact import (
@@ -259,16 +289,15 @@ def test_cfab_21_excess_agents_refuse():
 def test_cfab_22_unused_seats_are_legal():
     """25 routers x 1 seat = 25 seats for 20 agents: 5 unused, and the
     pipeline proceeds past ATTACHMENT."""
-    _b, staged, _r = derive_stages_v3(
-        CompileRequestV3.from_dict(_explicit_doc(k=5)))
-    assert "ATTACHMENT" in staged.produced_stages
-    assert staged.attachment is not None
+    from veritx_dse.application.fabric_compiler import FabricCompiler
+    c = FabricCompiler().compile(CompileRequestV3.from_dict(_explicit_doc(k=5)))
+    assert c.bundle.attachment is not None
 
 
 def test_cfab_24_no_fake_endpoints_for_unused_seats():
-    _b, staged, _r = derive_stages_v3(
-        CompileRequestV3.from_dict(_explicit_doc(k=5)))
-    att = staged.attachment
+    from veritx_dse.application.fabric_compiler import FabricCompiler
+    c = FabricCompiler().compile(CompileRequestV3.from_dict(_explicit_doc(k=5)))
+    att = c.bundle.attachment
     # Endpoints exist only for real agents.
     assert len(att.endpoints) == 20
     assert len(att.endpoints) < 25, "unused seats must not become endpoints"

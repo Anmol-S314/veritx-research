@@ -1245,3 +1245,150 @@ fields. §8 requires strictness, so `_DOC_KEYS` now refuses them (CFAB-6).
 Structural optimization · routing materialization into the compiler stage ·
 synthesis product/API seam · candidate promotion API · Studio UI ·
 BO/SA/iterative adapters.
+
+---
+
+## FEATURE RECLAMATION IMPLEMENTATION TRANCHE 5
+
+**Goal:** determine whether an existing graph-general route producer is
+suitable as canonical custom-fabric routing authority, and if so wire it
+into the normal compiler.
+
+### TRANCHE-4 SEAL — CFAB accounting corrected
+
+The Tranche-4 report said *"23 new tests (CFAB-1..CFAB-40)"*. That was
+misleading. The honest mapping:
+
+| CFAB | Status |
+|---|---|
+| 1–8 (request identity, round trip, selection law, strict schema) | **PASS** (10 test functions) |
+| 9–13 (promotion) | **NOT_IMPLEMENTED** — no promotion API exists |
+| 14–19 (compiler convergence) | **PASS**, updated this tranche (see below) |
+| 20 (seat capacity respected) | COVERED_BY_OTHER_TEST (21/22/24) |
+| 21, 22, 24 (capacity, unused seats, no fake endpoints) | **PASS** |
+| 23 (heterogeneous seat capacity) | **NOT_IMPLEMENTED** — TopologyIR has no seat field |
+| 25–31 (routing) | **NOT_IMPLEMENTED in T4** — delivered in T5 |
+| 32–36 (API/product seam) | **NOT_IMPLEMENTED** |
+| 37, 38 (schema before persistence) | COVERED_BY_OTHER_TEST (39) |
+| 39, 40 (stale hash, parser) | **PASS** |
+
+23 test functions covered roughly CFAB-1..8, 14..19, 21/22/24, 39, 40 — not
+all 40. **The aggregate hid a large NOT_IMPLEMENTED block.**
+
+### TopologyIR identity audit
+
+| field | class | identity |
+|---|---|---|
+| `name` | PRESENTATION | excluded (proven: synthesized and authored hash equal) |
+| `kind`, `nodes`, `links`, `link_attrs` | SCIENTIFIC_SEMANTIC | **included** |
+| `routing`, `booksim_params`, `rtl` | BACKEND_PROJECTION | excluded |
+| `dims` | BACKEND_PROJECTION (analytical leg) | excluded |
+
+**`route_weight` (§6/§7).** It is a `DirectedChannel` field, so it IS in
+`TopologyArtifact` identity — a weight change moves `topology_hash`.
+**But `TopologyIR` has no `route_weight` field**, so every explicit graph
+materializes with `route_weight=1` and `WEIGHTED_SHORTEST_PATH` currently
+degenerates to minimum-hop. **Honest gap**, pinned by
+`test_route_c_2b_route_weight_cannot_vary_for_explicit_topology_yet` so the
+day weights are added the identity question re-opens deliberately.
+**Semantics: dimensionless routing cost** — not latency, not distance.
+
+### Routing producer audit (§8/§9) — three independent questions
+
+| Producer | Derives? | Verifiable? | Backend executes? |
+|---|---|---|---|
+| `DOR_XY` | yes | **yes, by construction** | mesh yes |
+| `WEIGHTED_SHORTEST_PATH` | **yes** | **yes — CDG check runs** | **no equivalence** |
+| `ANYNET_MIN_HOPS` | yes | yes | BookSim-coupled name |
+| `CUSTOM_STATIC` | yes | depends on the table | no |
+| `tools/flow_certifier` CDG | n/a | **graph-general (Dally-Seitz)** | n/a |
+
+### Selected policy: `WEIGHTED_SHORTEST_PATH` (§10/§11/§12)
+
+Chosen on **canonical semantic clarity**, not convenience: self-contained
+deterministic Dijkstra over `(sum route_weight, channel-id sequence)`,
+backend-neutral name, explicit traversal-independent tie-break, defined over
+canonical **directed** channels, handles parallel links individually.
+
+`ANYNET_MIN_HOPS` was **not** chosen: its name and `anynet_ascending_min`
+tie-break encode a BookSim backend concept (§12 backend-coupling debt).
+
+### Ownership: a DECLARED table, not a hidden branch (§13)
+
+`model/routing.py::_POLICY_BY_FAMILY` is the authority — data, inspectable
+via the public `routing_policy_for(topology)`.
+
+```
+MESH, CONCENTRATED_MESH -> DOR_XY                 (deadlock-free BY
+                                                   CONSTRUCTION)
+CUSTOM                  -> WEIGHTED_SHORTEST_PATH (deadlock-freedom is a
+                                                   PROPERTY CHECKED)
+TORUS/RING/FLATFLY      -> absent (typed refusal)
+```
+
+**Torus/Ring/FlatFly are deliberately absent.** Measured: a 5×5 torus
+routes fine and the CDG then reports `acyclic=False` with a 6-node cycle.
+That is a real, useful verdict — but widening those families changes an
+existing contract (torus currently stops at ROUTING) and is a separate,
+deliberate decision. Tranche 5's purpose is **custom** fabrics.
+
+### Measured outcomes — the CDG does real work
+
+| Graph | status | certificate | `DEADLOCK_FREE` |
+|---|---|---|---|
+| 5×5 explicit mesh | **COMPILED** | **PASS** | `acyclic: true`, 80 nodes, 124 edges |
+| 25-node ring | **INVALID** | **FAIL** | `acyclic: false` + 6-node **cycle witness** |
+| chorded irregular | INVALID | FAIL | real cyclic CDG |
+
+A deadlock stays a deadlock with a witness — **no reroute magic**.
+Custom topology gets the **full 10 obligations**, not a smaller certificate.
+
+### Independent oracle (§19/§20)
+
+`test_custom_routing.py` implements its own BFS/Dijkstra — it never imports
+the production producer. Comparison law: **cost must always agree**;
+**next-hop must agree where the choice is unique** (ties may legitimately
+break differently, which is why an independent formulation is evidence
+rather than tautology). Verified on a diamond ladder, a non-grid
+caterpillar, and a 5×5 mesh.
+
+### Origin equivalence
+
+A synthesized graph and the identical hand-authored graph produce the same
+`topology_hash`, route table, `ResolvedRouteArtifact` and `VCAssignment`.
+Only the label differs.
+
+### BookSim boundary (§25/§27) — REFUSED, not weakened
+
+BookSim AnyNet computes its own routes. **No exact ingestion and no
+all-pairs equivalence has been established**, so `PROJECTABLE` and
+`EXECUTABLE` stay **NO** for custom fabrics. Custom topology compiles and
+certifies; backend execution is UNAVAILABLE. The rule was not weakened to
+make custom evaluation work.
+
+### Escape VCs — the finding that shaped the design
+
+`derive_vc_assignment_artifact_v3` never passes `escape_vcs` (defaults to
+`()`), and `make_vc_assignment_artifact` documents "no escape VC is
+designated". So the CDG must be acyclic **without** escape channels — which
+is why a mesh passes and a ring fails. This is honest: the certificate
+reports the truth rather than routing around it.
+
+### Final test matrix
+
+| Command | Passed | Failed | Skipped |
+|---|---|---|---|
+| backend `pytest tests/` | **4344** | **0** | 17 |
+| `test_custom_routing.py` | 16 | 0 | — |
+| `test_explicit_topology_request.py` | 25 | 0 | — |
+| capability / topology / exposure / ontology / preset gates | PASS | — | — |
+
+Named-family identity re-verified unchanged:
+`mesh4 e04583a3… · mesh4_hbm 0d7a4654… · mesh4_wide128 df68df8d…`
+
+### Not done in this tranche (honest)
+
+Synthesis product/API seam · promotion API · TopologyIR CLI disposition ·
+historical test reclamation · MCTS/MCLB and escape/up-down audit ·
+BookSim route equivalence · Torus/Ring/FlatFly routing widening ·
+structural optimization.
