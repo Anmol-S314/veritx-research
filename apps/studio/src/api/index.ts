@@ -3,7 +3,9 @@
 import { del, get, patch, post, put } from './client';
 import type {
   ArtifactChainView,
+  CanonicalRoute,
   CompareView,
+  CompileResultView,
   DesignViewV2,
   DraftView,
   EvidenceView,
@@ -103,6 +105,29 @@ export const api = {
     get<ArtifactChainView>(
       `/revisions/${encodeURIComponent(revisionId)}/artifacts`,
     ),
+
+  /** CompileResultView — the seven inspector groups (Gate 8 §50), frozen
+   * at certification time. Read-only: an inspector never edits. */
+  compileResult: (revisionId: string) =>
+    get<CompileResultView>(
+      `/revisions/${encodeURIComponent(revisionId)}/compile-result`,
+    ),
+
+  /** The canonical DERIVED EXPECTED route for one (class, src, dst).
+   * Gate 8 §58: this is the expected state; a runtime observation is a
+   * separate fact with its own scope. */
+  route: (revisionId: string, params?: {
+    routingClass?: string | null; src?: number | null; dst?: number | null;
+  }) => {
+    const q = new URLSearchParams();
+    if (params?.routingClass) q.set('routing_class', params.routingClass);
+    if (params?.src != null) q.set('src', String(params.src));
+    if (params?.dst != null) q.set('dst', String(params.dst));
+    const suffix = q.toString() ? `?${q.toString()}` : '';
+    return get<CanonicalRoute>(
+      `/revisions/${encodeURIComponent(revisionId)}/route${suffix}`,
+    );
+  },
 
   evaluate: (revisionId: string, backend?: string) =>
     post<JobView>(`/revisions/${encodeURIComponent(revisionId)}/evaluate`, {

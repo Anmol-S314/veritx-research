@@ -205,9 +205,21 @@ export function modelFromIntent(design: DesignView): FabricModel {
 }
 
 /** Model of the certified graph: routers, channels and agent seats. */
+/** Drawing hints that a DesignView would otherwise supply.
+ *
+ * The certified topology carries the drawn graph; concentration and link
+ * width are presentation fallbacks. A Compile Result passes them from its
+ * own summary group rather than fabricating a DesignView to render a
+ * graph it already holds. */
+export interface TopologyDrawHints {
+  concentration?: number | null;
+  linkWidth?: number | null;
+}
+
 export function modelFromTopology(
   topology: TopologyView,
-  design: DesignView,
+  design?: DesignView | null,
+  hints?: TopologyDrawHints,
 ): FabricModel {
   const coords = topology.routers.map((r) => r.coordinates ?? [0]);
   const cols = Math.max(1, ...coords.map((c) => (c[0] ?? 0) + 1));
@@ -258,9 +270,11 @@ export function modelFromTopology(
     edges: [...byPair.values()].sort((x, y) => x.a - y.a || x.b - y.b),
     cols,
     rows,
-    concentration: design.noc_guided.concentration ?? 1,
-    linkWidth: design.noc_guided.link_width ?? topology.channels[0]?.width_bits
-      ?? null,
+    concentration: design?.noc_guided.concentration
+      ?? hints?.concentration ?? 1,
+    linkWidth: design?.noc_guided.link_width
+      ?? hints?.linkWidth
+      ?? topology.channels[0]?.width_bits ?? null,
     totals,
     counts: {
       routers: topology.counts.routers,
@@ -279,6 +293,15 @@ export function fabricModel(
   topology: TopologyView | null | undefined,
 ): FabricModel {
   return topology ? modelFromTopology(topology, design) : modelFromIntent(design);
+}
+
+/** The Compile Result path: the frozen certified topology, no DesignView.
+ * Concentration and link width come from the compile result's summary. */
+export function fabricModelFromTopology(
+  topology: TopologyView,
+  hints?: TopologyDrawHints,
+): FabricModel {
+  return modelFromTopology(topology, null, hints);
 }
 
 /** Stroke width for a link (link width in bits → visual weight). */

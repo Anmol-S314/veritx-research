@@ -814,21 +814,64 @@ class ProductService:
     def get_revision_compile_result(self, revision_id: str) -> dict[str, Any]:
         """CompileResultView — the seven inspector groups (Gate 8 §50).
 
-        Read from the payload frozen at certification time. A revision that
-        never compiled has no inspectors: a failed proof is not a fabric.
+        Read from the payload frozen at certification time. A revision
+        persisted before this projection existed re-derives it from its own
+        immutable request and is checked against the hashes the certificate
+        already recorded — a mismatch is an EVIDENCE_INVALID, never a
+        silently redrawn fabric. A revision that never compiled has no
+        inspectors: a failed proof is not a fabric.
         """
         _pid, revision = self.store.load_revision_global(revision_id)
         payload = revision.get("compile_result")
-        if payload is None:
+        if payload is not None:
+            return payload
+
+        compilation_view_doc = revision.get("compilation") or {}
+        if compilation_view_doc.get("status") != "COMPILED":
             return {
                 "contract_version": 1,
                 "available": False,
                 "revision_id": revision_id,
-                "reason": ((revision.get("compilation") or {})
-                           .get("error")
+                "reason": (compilation_view_doc.get("error")
                            or "no compile result exists for this revision"),
             }
-        return payload
+
+        compilation = FabricCompiler().compile(
+            parse_request_doc(revision["request"]))
+        if compilation.status != "COMPILED":
+            return {
+                "contract_version": 1,
+                "available": False,
+                "revision_id": revision_id,
+                "reason": (compilation.error
+                           or "the recorded revision no longer compiles"),
+            }
+        recorded = compilation_view_doc.get("artifact_hashes") or {}
+        expected = {
+            "design_hash": revision.get("design_hash"),
+            "resolved_fabric_hash": compilation_view_doc.get(
+                "resolved_fabric_hash"),
+        }
+        actual = compilation.bundle.root_hashes()
+
+        def _bare(value: Any) -> str | None:
+            return None if value is None else str(value).split(":", 1)[-1]
+
+        for key, want in expected.items():
+            have = actual.get(key)
+            if want is None or have is None:
+                continue
+            if _bare(want) != _bare(have):
+                raise ProductServiceError(
+                    ErrorCode.EVIDENCE_INVALID,
+                    f"re-derived compile result does not match the recorded "
+                    f"{key} for this revision",
+                    operation="get_revision_compile_result",
+                    resource_id=revision_id)
+        return build_compile_result(
+            revision, compilation,
+            self.get_revision_topology(revision_id),
+            revision.get("artifact_chain") or artifact_chain_view(compilation))
 
     def canonical_route(self, revision_id: str, *,
                         routing_class: str | None = None,

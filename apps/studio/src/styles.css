@@ -1801,3 +1801,114 @@ p, li { text-wrap: pretty; }
 
 .consequence-list { margin: 0; padding-left: 18px; }
 .consequence-list li { margin-bottom: 8px; }
+
+/* ── Compile Result: seven inspector groups (Gate 8 §50) ─────────────────── */
+.compile-result { display: flex; flex-direction: column; gap: 16px; }
+
+.compile-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.compile-head h2 { margin: 0 0 4px; }
+
+.claim-overall {
+  padding: 6px 10px;
+  border-left: 3px solid var(--border);
+  background: var(--bg-raise);
+  font-size: 12px;
+  font-weight: 600;
+}
+.claim-overall.claim-pass { border-left-color: var(--ok); color: var(--ok); }
+.claim-overall.claim-fail { border-left-color: var(--bad); color: var(--bad); }
+
+.group-tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+}
+
+.group-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 6px 12px;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.group-tab:hover { background: var(--bg-raise); }
+.group-tab.active { border-bottom-color: var(--accent); font-weight: 600; }
+
+.compile-body { display: flex; flex-direction: column; gap: 16px; }
+
+.inspector-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.inspector-head h4 { margin: 0; }
+
+.inspector-filter {
+  min-width: 220px;
+  padding: 4px 8px;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  color: var(--text);
+  font: inherit;
+}
+
+.inspector-label {
+  margin: 16px 0 6px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.inspector-controls {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.inspector-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.inspector-select {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.inspector-detail {
+  margin-top: 8px;
+  padding: 8px 0 8px 12px;
+  border-left: 2px solid var(--accent);
+}
+.inspector-detail h5 { margin: 0 0 6px; }
+
+.route-path {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-family: var(--mono);
+  line-height: 1.8;
+}
+.route-arrow { color: var(--muted); }
+
+.fabric-aggregate {
+  padding: 12px;
+  border: 1px dashed var(--border);
+  background: var(--bg-raise);
+}
+.fabric-aggregate p { margin: 0 0 6px; }

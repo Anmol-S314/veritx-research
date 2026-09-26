@@ -8,6 +8,7 @@ import type {
   EvaluationView,
   OptimizationStudyView,
   RequirementReport,
+  TopologyView,
 } from '../types';
 
 export interface ProjectMeta {
@@ -779,4 +780,219 @@ export interface DesignViewV2 {
     requirement_verdicts: null;
     note: string;
   };
+}
+
+// ── CompileResultView (Gate 8 §50–§63) ────────────────────────────────────
+// Seven inspector groups under one Compile Result, materialized at
+// certification time and frozen with the revision. Everything is read-only:
+// an inspector reveals canonical properties, it never edits them.
+
+export type ClaimStatus = 'PASS' | 'FAIL' | 'UNSUPPORTED';
+
+export interface CertificateClaim {
+  claim: string;
+  scope: string;
+  status: ClaimStatus;
+  method: string | null;
+}
+
+export interface CertificateObligation {
+  obligation: string;
+  status: ClaimStatus;
+  method: string | null;
+  evidence: Record<string, unknown>;
+}
+
+/** The four product claims are a SUBSET of the obligations the verifier
+ * issued. Both are carried, so the projection cannot hide proof. */
+export interface CompileCertificate {
+  overall: ClaimStatus | null;
+  certificate_id: string | null;
+  claims: CertificateClaim[];
+  obligations: CertificateObligation[];
+  additional_obligations: CertificateObligation[];
+  claim_count: number;
+  obligation_count: number;
+}
+
+export interface CompileSummaryGroup {
+  declared: {
+    topology_family?: string | null;
+    /** §16: the product name for the implementation field `radix`. */
+    side_length?: number | null;
+    concentration?: number | null;
+    link_width?: number | null;
+    arbitration?: string | null;
+    parallelism?: { tp: number | null; pp: number | null;
+                    ep: number | null; dp: number | null };
+    agents?: { kind: string; count: number }[];
+    requirements?: number;
+  };
+  derived: {
+    routers?: number;
+    channels?: number;
+    seats?: number;
+    endpoints?: number;
+    vc_count?: number | null;
+    routing_classes?: string[];
+  };
+  verified: CertificateClaim[];
+  certificate_overall: ClaimStatus | null;
+  compilation_status: string | null;
+}
+
+export interface MappingRow {
+  rank: number | null;
+  agent_kind: string | null;
+  group_index: number | null;
+  instance_index: number | null;
+  endpoint_id: number | null;
+}
+
+export interface MappingGroup {
+  available: boolean;
+  rows: MappingRow[];
+  rank_count?: number;
+}
+
+/** Gate 8 §57: above `router_detail_max` no per-router DOM is created. */
+export type FabricDetailLevel = 'FULL' | 'ROUTERS_AND_LINKS' | 'AGGREGATE';
+
+export interface FabricGroup {
+  available: boolean;
+  counts?: {
+    routers: number; channels: number; seats: number;
+    attached: number; unused_seats: number;
+  };
+  detail_level?: FabricDetailLevel;
+  detail_thresholds?: { full_detail_max: number; router_detail_max: number };
+  topology?: TopologyView | null;
+}
+
+export interface RouteEntry {
+  routing_class: string;
+  src: number;
+  dst: number;
+  channel_id: number;
+}
+
+export interface ChannelHop {
+  channel_id: number;
+  src_router: number;
+  src_port: number;
+  dst_router: number;
+  dst_port: number;
+}
+
+/** Gate 8 §59: expected and observed are separate facts. A compiled
+ * revision has no runtime execution, so `available` is false until an
+ * evaluation run produces one. */
+export interface RouteObservation {
+  available: boolean;
+  scope: string;
+  claim: string;
+  limit: string;
+  realized_digest: string | null;
+  reason?: string;
+  source?: string;
+  realization?: string;
+}
+
+export interface RoutingGroup {
+  available: boolean;
+  routing_classes?: string[];
+  default_class?: string | null;
+  entry_count?: number;
+  entries?: RouteEntry[];
+  channel_hops?: ChannelHop[];
+  observation?: RouteObservation;
+  observation_note?: string;
+}
+
+export interface CanonicalRoute {
+  routing_class: string;
+  src: number;
+  dst: number;
+  routers: number[];
+  hops: ChannelHop[];
+  terminates: boolean;
+  terminal: string | null;
+  reason: string | null;
+}
+
+export interface DeadlockWitness {
+  acyclic: boolean | null;
+  sccs_gt_1: number | null;
+  node_count: number | null;
+  edge_count: number | null;
+  cdg_route_classes: string[] | null;
+  escape_vcs: number[] | null;
+  vc_count: number | null;
+  route_realization_scheme: string | null;
+}
+
+export interface ResourcesGroup {
+  available: boolean;
+  vc_count?: number | null;
+  vc_ids?: number[];
+  traffic_class_to_vcs?: [string, number[]][];
+  vc_to_routing_class?: [number, string][];
+  allowed_transitions?: number[][];
+  transitions_are_identity?: boolean;
+  escape_vcs?: number[];
+  derivation?: string | null;
+  arbitration?: Record<string, unknown>;
+  deadlock?: { status: ClaimStatus; method?: string;
+               witness?: DeadlockWitness; evidence?: Record<string, unknown> };
+  editable?: boolean;
+}
+
+export interface AddressDecodeRow {
+  name: string | null;
+  base: number | null;
+  size: number | null;
+  target_agent_kind: string | null;
+  target_agent_instance: number | null;
+  target_endpoint_id: number | null;
+  /** Gate 7 §23: legacy positional index, technical detail only. */
+  legacy_target_agent_group: number | null;
+}
+
+export interface AddressDecodeGroup {
+  available: boolean;
+  rows: AddressDecodeRow[];
+  address_transform?: string | null;
+  unmatched_address_policy?: string | null;
+}
+
+export interface ProvenanceGroup {
+  revision_id: string | null;
+  design_hash: string | null;
+  compiler_semantics_version: number | null;
+  resolved_fabric_hash: string | null;
+  certificate_id: string | null;
+  artifact_hashes: Record<string, string>;
+  artifact_chain: ArtifactChainView | null;
+}
+
+export interface CompileResultView {
+  contract_version: 1;
+  available: boolean;
+  reason?: string;
+  revision_id?: string | null;
+  display_name?: string | null;
+  compiled_at?: string | null;
+  design_hash?: string | null;
+  certificate?: CompileCertificate;
+  groups?: {
+    summary: CompileSummaryGroup;
+    mapping: MappingGroup;
+    fabric: FabricGroup;
+    routing: RoutingGroup;
+    resources: ResourcesGroup;
+    address_decode: AddressDecodeGroup;
+    provenance: ProvenanceGroup;
+  };
+  group_order?: string[];
+  topology_hash?: string | null;
 }

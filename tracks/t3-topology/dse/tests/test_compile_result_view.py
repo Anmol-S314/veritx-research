@@ -446,3 +446,93 @@ def test_the_compile_result_payload_is_json_over_the_wire(client,
     response = client.get(f"/api/v1/revisions/{revision_id}/compile-result")
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")
+
+
+# ── legacy revisions re-derive and are hash-verified ───────────────────
+
+
+def _legacy(service, revision_id, mutate=None):
+    """Make a stored revision look pre-CompileResult.
+
+    Simulated at the store boundary rather than by writing private paths:
+    the payload is simply absent from what the service reads back, which is
+    exactly the state a revision compiled before this projection is in.
+    """
+    original = service.store.load_revision_global
+
+    def patched(rid):
+        pid, revision = original(rid)
+        if rid == revision_id:
+            revision = dict(revision)
+            revision.pop("compile_result", None)
+            if mutate is not None:
+                mutate(revision)
+        return pid, revision
+
+    service.store.load_revision_global = patched  # type: ignore[assignment]
+
+
+def test_a_legacy_revision_rederives_and_is_hash_verified(tmp_path):
+    """A revision persisted before the inspectors existed still gets them.
+
+    Re-derivation is allowed only because it is checked against the hashes
+    the revision already recorded — the rule `get_revision_topology`
+    already follows. A mismatch is EVIDENCE_INVALID, never a silently
+    redrawn fabric.
+    """
+    from veritx_dse.product.service import ProductConfig, ProductService
+
+    service = ProductService(ProductConfig(projects_root=tmp_path / "projects"))
+    pid = service.create_project(name="legacy")["project"]["project_id"]
+    request = build_preset_request(PRESET).to_dict()
+    request.pop("design_hash", None)
+    request.pop("guardrail_hash", None)
+    service.put_draft(pid, request)
+    revision_id = service.compile_draft(pid)["revision_id"]
+    assert "compile_result" in service.store.load_revision_global(
+        revision_id)[1]
+
+    _legacy(service, revision_id)
+    payload = service.get_revision_compile_result(revision_id)
+    assert payload["available"] is True
+    assert set(payload["groups"]) == set(GROUPS)
+    assert payload["certificate"]["obligation_count"] == 10
+
+
+def test_a_legacy_revision_that_no_longer_matches_is_refused(tmp_path):
+    """Hash-verified: a tampered request cannot produce inspectors."""
+    from veritx_dse.product.service import ProductConfig, ProductService
+
+    service = ProductService(ProductConfig(projects_root=tmp_path / "projects"))
+    pid = service.create_project(name="legacy")["project"]["project_id"]
+    request = build_preset_request(PRESET).to_dict()
+    request.pop("design_hash", None)
+    request.pop("guardrail_hash", None)
+    service.put_draft(pid, request)
+    revision_id = service.compile_draft(pid)["revision_id"]
+
+    def tamper(revision):
+        revision["request"]["noc_config"]["link_width"] = 64
+
+    _legacy(service, revision_id, tamper)
+    with pytest.raises(Exception) as excinfo:
+        service.get_revision_compile_result(revision_id)
+    assert "does not match the recorded" in str(excinfo.value)
+
+
+def test_a_refused_revision_has_no_inspectors(tmp_path):
+    """A failed proof is not a fabric, legacy or not."""
+    from veritx_dse.product.service import ProductConfig, ProductService
+
+    service = ProductService(ProductConfig(projects_root=tmp_path / "projects"))
+    pid = service.create_project(name="legacy")["project"]["project_id"]
+    request = build_preset_request(PRESET).to_dict()
+    request.pop("design_hash", None)
+    request.pop("guardrail_hash", None)
+    request["address_map"]["ranges"][0]["target_agent_idx"] = 0
+    service.put_draft(pid, request)
+    service.compile_draft(pid)
+    attempt = service.project_view(pid)["latest_attempt"]
+    payload = service.get_revision_compile_result(attempt["revision_id"])
+    assert payload["available"] is False
+    assert payload["reason"]
