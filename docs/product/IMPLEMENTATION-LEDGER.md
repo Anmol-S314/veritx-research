@@ -72,7 +72,9 @@ corpus.
 | 7–8 | rebuild design editor on DesignViewV2 + review flow | `5b2b67af` | done |
 | 9 | reconcile compile result handoff | — | **not started** |
 | 10 | PF-D13 three distinct facts, no ambiguous "run" | `acbef67d` | done |
-| 11 | preset certification authority (audit closure) | see below | done |
+| 11 | preset certification authority (audit closure) | `b7147075` | done |
+| 12 | CompileResultView — seven inspector groups | `3fb97400` | done |
+| 13 | Compile Result surface + certificate/verification | `92103d07` | done |
 
 Slices 4, 5 and 6 share one projection module and one HTTP surface, so they
 land in a single commit; they are itemised separately under *Contracts
@@ -363,3 +365,136 @@ disagree with itself.
 | Was | Now |
 |---|---|
 | GX-D5 preset certification asserted, never enforced | **Enforced.** `scripts/check_preset_certification.py` fails closed on a refuted Guided claim; verified by re-asserting the false `mesh4` claim (exit 1) and restoring (exit 0). |
+
+---
+
+# PHASE 2 — compiled inspectors + verification/certificate surfaces
+
+Baseline at entry: `b7147075`, clean tree, backend 3999 passed / 17 skipped,
+four registry gates exit 0, studio tsc/vite exit 0, studio tests 2
+pre-existing failures.
+
+## Scope
+
+Gate 8 §50–§63 and §36–§63: the Compile Result inspectors and the
+verification/certificate surface. Evaluate / Serve / Optimize were **not**
+touched, per the Phase-1 handoff.
+
+## Contracts implemented
+
+| Contract | Status |
+|---|---|
+| Gate 5 §97 / Gate 8 §50 — seven inspector groups under one Compile Result | done |
+| Gate 8 §51 — compiled revision header | done |
+| Gate 8 §52 — summary: declared / derived / verified | done |
+| Gate 8 §53/§54 — mapping, table-first | done |
+| Gate 8 §55/§56 — fabric inspector over the compiled topology | done |
+| Gate 8 §57 — semantic zoom thresholds | done |
+| Gate 8 §58 — canonical DERIVED EXPECTED route | done |
+| Gate 8 §59 — runtime observation, separate and honestly unavailable | done |
+| Gate 8 §60 — VC inspector, no controls | done |
+| Gate 8 §61 — deadlock/CDG witness | done |
+| Gate 8 §62/§63 — certificate: four claims over ten obligations | done |
+| Gate 7 §23 — address decode stable identity | done |
+| Gate 7 §9 PF-D9 — four separate claims, not one verdict | done |
+| Gate 8 §115/§116 — provenance | done |
+| Gate 8 §35 — inspector draws the compiled artifact, never a preview | done |
+
+## The certificate projection — the flag from Phase 1, resolved
+
+The verifier issues **ten** obligations; Gate 7 §9 / Gate 8 §62 name
+**four** claims. Phase 1 flagged this as unresolved.
+
+Resolution: expose **both**. `claims` is the four, in the product's order
+with the planning scope sentences; `obligations` is all ten verbatim;
+`additional_obligations` names the six that are not claims; `claim_count`
+and `obligation_count` are both carried. A test asserts no obligation is
+dropped. The planning contract is satisfiable by projection and nothing was
+invented — hiding six obligations would have hidden proof the certificate
+relied on.
+
+## Two defects found and fixed during the slice
+
+**1. `route_realization` is not an observation.** The DEADLOCK_FREE
+evidence carries `route_realization: "v2_channel_id"` — the artifact's
+*encoding scheme*. The first implementation treated it as a runtime
+observation and set `observation.available = True`, which would have
+claimed a runtime fact that does not exist. A compiled revision has no
+execution, so the observation is now reported unavailable with its source
+named (an evaluation run, where `RunIntegrityView.route_realization`
+reports OBSERVED | NOT_OBSERVED at its own scope).
+
+**2. The route table value is a channel id, not a port or a next router.**
+`entries[(class, src, dst)]` → channel id; the next router is that
+channel's destination. The first walk assumed a port and produced
+`0 → 0 → 0 …` and `<no channel from r0 port 0>`. Corrected and verified:
+`0 → 8` walks `0,1,2,5,8`, `8 → 0` walks `8,7,6,3,0`, and a self-route
+terminates in `LOCAL_EJECTION`.
+
+## Design decisions
+
+**The payload is frozen at certification time** (Gate 5 §97). The
+inspectors are materialized during compile and stored with the revision, so
+a drawn graph can never drift from the proof it claims to show.
+
+**The payload is pure data.** The revision is persisted as JSON, so the
+route walker is a module-level query (`GET /revisions/{id}/route`) rather
+than a closure on the payload. The first attempt attached a function and
+broke compilation with `TypeError: Object of type function is not JSON
+serializable`.
+
+**Legacy revisions re-derive and are hash-verified.** A revision persisted
+before this payload existed re-derives from its own immutable request and
+is checked against the hashes it already recorded — the rule
+`get_revision_topology` already follows. A mismatch is
+`EVIDENCE_INVALID`, never a silently redrawn fabric.
+
+**`Verify` is reconciled, not duplicated.** Gate 8 §50 is explicit that
+there is not one page per artifact, so `/verify` renders the same Compile
+Result projection. `VerifyView` is retained only for the offline fixture
+page, which has no gateway.
+
+**`FabricCanvas` needed no `DesignView`.** `modelFromTopology` accepted one
+but used it only for concentration/link-width presentation fallbacks;
+those are now explicit optional hints, so a Compile Result never fabricates
+a `DesignView` to draw a graph it already holds.
+
+## Live verification (real revision, not a fixture)
+
+Against a real 81-router revision served by the gateway:
+
+```text
+groups        summary · mapping · fabric · routing · resources ·
+              address_decode · provenance
+certificate   4 claims / 10 obligations
+fabric        routers 81 · channels 288 · seats 81 · attached 72 ·
+              unused_seats 9 · detail ROUTERS_AND_LINKS
+route         0 → 1 → … → 80  (17 hops) → LOCAL_EJECTION
+observation   unavailable (no runtime execution)
+```
+
+The 81-router fabric sits **between** the 64 and 256 thresholds, so the
+semantic-zoom rule was exercised for real rather than by a unit test alone.
+
+## Test results
+
+| Command | Baseline | Final |
+|---|---|---|
+| `pytest tests/` (dse) | 3999 passed, 17 skipped | **4040 passed, 17 skipped** |
+| `pytest tests/` (studio) | 2 failed, 8 passed | **2 failed, 8 passed** (same pre-existing) |
+| `npx tsc --noEmit` | exit 0 | **exit 0** |
+| `npx vite build` | exit 0 | **exit 0** |
+| `make -C tracks/t3-topology product-gates` | exit 0 | **exit 0** |
+
+Net new tests: **+41**.
+
+## Known blockers
+
+| Blocker | Debt | Notes |
+|---|---|---|
+| Gate 8 §5 primary navigation (Design · Evaluate · Serve · Optimize · History · Capability) | — | The rail still carries Compile/Verify as numbered workflow entries. Gate 8 §146 has no Verify screen. A separate IA slice. |
+| Compile Result is not routed per group | Gate 8 §150 | `/revisions/:rid/:group` deep links are specified; the surface uses tabs. |
+| `PreflightView` still carries evaluation fields | REV-D5 | Unchanged from Phase 1; belongs to Evaluate. |
+| Studio fixture regeneration digests · `run_bundle` concurrency flake | — | Pre-existing, out of scope. |
+
+No `IMPLEMENTATION-CONTRACT-CONFLICT` was raised.
