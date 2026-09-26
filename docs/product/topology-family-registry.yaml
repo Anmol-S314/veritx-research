@@ -1,0 +1,238 @@
+# Topology family registry — the stage authority for topology identity.
+#
+# WHY THIS FILE EXISTS
+#
+# The tree carries TWO enums that disagree:
+#
+#   TopologyFamily      MESH TORUS CONCENTRATED_MESH GEC FAT_TREE        (declaration)
+#   MaterializedFamily  MESH TORUS CONCENTRATED_MESH RING                (materialization)
+#
+# Enum membership is NOT a capability statement. A family that is
+# recognized is not thereby authorable; a family that is materializable is
+# not thereby declarable. This registry is the single authority for the
+# staged answer, and `scripts/check_topology_family_registry.py` fails
+# closed if any enum and this file drift apart.
+#
+# THREE INDEPENDENT CONCEPTS (never collapsed):
+#
+#   taxonomy   — scientifically recognized topology identities
+#   authorable — a canonical intent schema exists for it
+#   material   — the compiler can lower it to a canonical TopologyArtifact
+#
+# A family may be in any subset. RING is the proof: materializable, not
+# authorable, not a user-facing family.
+
+schema_version: 1
+registry_version: topo-fam-v1
+
+#: The staged vocabulary. Every cell is one of these, and each is answered
+#: independently — no stage may be inferred from another.
+stages:
+  - "RECOGNIZED"     # in the scientific taxonomy
+  - "AUTHORABLE"     # a canonical intent schema accepts it
+  - "MATERIALIZABLE" # lowers to TopologyArtifact
+  - "ROUTABLE"       # a canonical route can be derived
+  - "VERIFIABLE"     # attachment/route/CDG verification applies
+  - "PROJECTABLE"    # a backend projection exists
+  - "EXECUTABLE"     # the projection runs
+  - "QUALIFIED"      # the run is qualified against an authority
+  - "WIRED"          # reachable from the product
+
+stage_values: ["YES", "NO", "PARTIAL", "CONDITIONAL"]
+
+#: Roles a family can play. NONE of these implies AUTHORABLE.
+roles:
+  - USER_FAMILY       # a user may legitimately declare it
+  - DERIVED_STRUCTURE # the compiler derives it internally
+  - TEST_FIXTURE      # exists to exercise the compiler in tests
+  - BACKEND_ONLY      # a backend spelling with no canonical intent
+  - RESEARCH          # recognized, not product
+
+families:
+
+  mesh:
+    canonical_id: mesh
+    role: USER_FAMILY
+    stages: {RECOGNIZED: "YES", AUTHORABLE: "YES", MATERIALIZABLE: "YES",
+             ROUTABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES",
+             EXECUTABLE: "YES", QUALIFIED: "YES", WIRED: "YES"}
+    intent_schema: "NocConfig.topology_family = mesh (params: radix, concentration)"
+    materializer: "topology_artifact.materialize_family(MESH)"
+    backend_projection: {booksim: mesh, astra: mesh}
+    evidence: "certified preset dense-1b-16tiles; test_topology_artifact.py"
+
+  torus:
+    canonical_id: torus
+    role: USER_FAMILY
+    stages: {RECOGNIZED: "YES", AUTHORABLE: "YES", MATERIALIZABLE: "YES",
+             ROUTABLE: "NO", VERIFIABLE: "YES", PROJECTABLE: "NO",
+             EXECUTABLE: "NO", QUALIFIED: "NO", WIRED: "PARTIAL"}
+    intent_schema: "NocConfig.topology_family = torus (params: radix, concentration)"
+    materializer: "topology_artifact.materialize_family(TORUS)"
+    backend_projection: {booksim: torus, astra: mesh}
+    evidence: "test_staged_compilation.py: real TopologyArtifact with 20 wraparound links, then typed ROUTING refusal"
+    note: "WIRED=PARTIAL: inspectable via the staged path, not executable."
+
+  concentrated_mesh:
+    canonical_id: concentrated_mesh
+    role: USER_FAMILY
+    stages: {RECOGNIZED: "YES", AUTHORABLE: "YES", MATERIALIZABLE: "YES",
+             ROUTABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES",
+             EXECUTABLE: "YES", QUALIFIED: "YES", WIRED: "YES"}
+    intent_schema: "NocConfig.topology_family = concentrated_mesh (params: concentration)"
+    materializer: "topology_artifact.materialize_family(CONCENTRATED_MESH)"
+    backend_projection: {booksim: cmesh, astra: mesh}
+    evidence: "preset dense-4b-32tiles-conc4 (GUIDED_SAFE); endpoint-count occupancy fix"
+
+  ring:
+    canonical_id: ring
+    role: TEST_FIXTURE
+    stages: {RECOGNIZED: "YES", AUTHORABLE: "NO", MATERIALIZABLE: "YES",
+             ROUTABLE: "NO", VERIFIABLE: "YES", PROJECTABLE: "NO",
+             EXECUTABLE: "NO", QUALIFIED: "NO", WIRED: "NO"}
+    intent_schema: null
+    materializer: "topology_artifact.materialize_family(RING)"
+    backend_projection: {booksim: "torus (k=N, n=1)", astra: Ring}
+    evidence: "used by test_attachment.py, test_route_artifact.py, test_channel_vc_cdg.py, test_min_adapt_materialize.py, test_packet_format.py, test_topology_artifact.py"
+    note: "AUTHORABLE=NO. Materializable does NOT imply declarable: RING is a
+           minimal-graph fixture the compiler and CDG tests need. It is not
+           user intent. This row is the explicit counterexample to
+           'materializable families should be declarable'."
+
+  gec:
+    canonical_id: gec
+    role: RESEARCH
+    stages: {RECOGNIZED: "YES", AUTHORABLE: "YES", MATERIALIZABLE: "NO",
+             ROUTABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "PARTIAL",
+             EXECUTABLE: "NO", QUALIFIED: "NO", WIRED: "NO"}
+    intent_schema: "NocConfig.topology_family = gec (params k, c, o, d)"
+    materializer: null
+    backend_projection: {booksim: gec, astra: null}
+    evidence: "TopologyFamily.GEC; presets gec_express_k8 (o=7,d=1), gec_mecs_k8 (o=1,d=7), gec_mesh_k8 (o=0)"
+    note: "RECOGNIZED=YES and AUTHORABLE=YES are retained. A missing
+           materializer does NOT remove a family from the scientific
+           taxonomy. _family_of() refuses with a typed error naming the
+           supported set. See amend_doc for the MECS finding."
+    subfamilies:
+      gec_express: {point_to_point: YES, note: "o=7,d=1: 7 express channels, each to 1 destination"}
+      gec_mecs: {point_to_point: NO, note: "o=1,d=7: ONE express channel TAPPED to 7 destinations — multidrop, NOT representable as ordinary DirectedChannels without semantic loss"}
+      gec_mesh: {point_to_point: YES, note: "o=0: degrades to plain mesh"}
+
+  fat_tree:
+    canonical_id: fat_tree
+    role: RESEARCH
+    stages: {RECOGNIZED: "YES", AUTHORABLE: "YES", MATERIALIZABLE: "NO",
+             ROUTABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "PARTIAL",
+             EXECUTABLE: "NO", QUALIFIED: "NO", WIRED: "NO"}
+    intent_schema: "NocConfig.topology_family = fat_tree"
+    materializer: null
+    backend_projection: {booksim: fattree, astra: null}
+    evidence: "TopologyFamily.FAT_TREE; configs/fattree16.cfg"
+    note: "RECOGNIZED and AUTHORABLE retained for the same reason as GEC."
+
+  flatfly:
+    canonical_id: flatfly
+    role: USER_FAMILY
+    stages: {RECOGNIZED: "YES", AUTHORABLE: "NO", MATERIALIZABLE: "YES",
+             ROUTABLE: "NO", VERIFIABLE: "YES", PROJECTABLE: "PARTIAL",
+             EXECUTABLE: "NO", QUALIFIED: "NO", WIRED: "NO"}
+    intent_schema: null
+    materializer: "topology_artifact.materialize_flatfly(k, n, concentration)"
+    backend_projection: {booksim: flatfly, astra: null}
+    evidence: "presets flatfly_64 (k=4,n=2,c=4 -> 16 routers, 48 undirected links); topology_artifact materializer added in AMEND-2"
+    note: "FIRST NON-MESH PROOF FAMILY. Pure point-to-point: radix r=c+(k-1)*n,
+           every router port is an ordinary channel. Requires NO new channel
+           primitive. Chosen over GEC precisely because GEC-MECS is tapped."
+    params: {k: 4, n: 2, c: 4}
+
+  flattened_butterfly:
+    canonical_id: flattened_butterfly
+    role: RESEARCH
+    stages: {RECOGNIZED: "YES", AUTHORABLE: "NO", MATERIALIZABLE: "NO",
+             ROUTABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "PARTIAL",
+             EXECUTABLE: "NO", QUALIFIED: "NO", WIRED: "NO"}
+    intent_schema: null
+    materializer: null
+    backend_projection: {booksim: ftree, astra: null}
+    evidence: "configs/ftree.cfg only"
+
+  dragonfly:
+    canonical_id: dragonfly
+    role: RESEARCH
+    stages: {RECOGNIZED: "YES", AUTHORABLE: "NO", MATERIALIZABLE: "NO",
+             ROUTABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "PARTIAL",
+             EXECUTABLE: "NO", QUALIFIED: "NO", WIRED: "NO"}
+    intent_schema: null
+    materializer: null
+    backend_projection: {booksim: dragonfly, astra: null}
+    evidence: "configs/dragonfly16.cfg only"
+
+  qtree:
+    canonical_id: qtree
+    role: RESEARCH
+    stages: {RECOGNIZED: "YES", AUTHORABLE: "NO", MATERIALIZABLE: "NO",
+             ROUTABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "PARTIAL",
+             EXECUTABLE: "NO", QUALIFIED: "NO", WIRED: "NO"}
+    intent_schema: null
+    materializer: null
+    backend_projection: {booksim: qtree, astra: null}
+    evidence: "configs/qtree16.cfg only"
+
+  custom:
+    canonical_id: custom
+    role: USER_FAMILY
+    stages: {RECOGNIZED: "YES", AUTHORABLE: "YES", MATERIALIZABLE: "YES",
+             ROUTABLE: "PARTIAL", VERIFIABLE: "YES", PROJECTABLE: "YES",
+             EXECUTABLE: "YES", QUALIFIED: "PARTIAL", WIRED: "NO"}
+    intent_schema: "TopologyIR kind=custom|anynet (explicit undirected links; link_attrs.bandwidth_GBs/latency_ns required)"
+    materializer: "topology_artifact.materialize_ir(TopologyIR)"
+    backend_projection: {booksim: anynet, astra: "namespace (explicit dims required)"}
+    evidence: "model/topology_ir.py (validated, strict); materializer added in AMEND-2; test_topology_ir.py recovered from integration/p1-product-rt-candidate"
+    note: "ROUTABLE=PARTIAL and QUALIFIED=PARTIAL are inherited from the
+           existing AnyNet path (ROUTE-002/003). No coordinates are required."
+
+#: Backend spellings are NOT canonical identity. A backend rename must not
+#: silently change scientific identity.
+backend_spelling_boundary:
+  law: "canonical_id != backend spelling; projection is explicit and one-way"
+  examples:
+    - {canonical: torus, booksim: torus, astra: "mesh (1-D torus lowers to Ring)"}
+    - {canonical: concentrated_mesh, booksim: cmesh, astra: mesh}
+    - {canonical: custom, booksim: anynet, astra: "explicit dims"}
+    - {canonical: flattened_butterfly, booksim: ftree, astra: null}
+    - {canonical: gec, booksim: gec, astra: null}
+
+#: Invariants the checker enforces. Each is a test, not prose.
+invariants:
+  - id: TAX-1
+    law: "RECOGNIZED does not imply AUTHORABLE"
+    witness: "gec/fat_tree are RECOGNIZED and AUTHORABLE but not MATERIALIZABLE; dragonfly is RECOGNIZED, not AUTHORABLE"
+  - id: TAX-2
+    law: "AUTHORABLE does not imply MATERIALIZABLE"
+    witness: "gec, fat_tree"
+  - id: TAX-3
+    law: "MATERIALIZABLE does not imply AUTHORABLE"
+    witness: "ring (TEST_FIXTURE), flatfly before AMEND-2's intent wiring"
+  - id: TAX-4
+    law: "MATERIALIZABLE does not imply ROUTABLE"
+    witness: "torus, ring"
+  - id: TAX-5
+    law: "canonical_id is not a backend spelling"
+    witness: "concentrated_mesh/cmesh, custom/anynet, flattened_butterfly/ftree"
+  - id: TAX-6
+    law: "no enum-set comparison is a capability authority"
+    witness: "this registry; check_topology_family_registry.py compares it against the enums"
+
+amendments:
+  - id: AMEND-1
+    decision: "GEC and FAT_TREE stay RECOGNIZED and AUTHORABLE. A missing materializer does not delete a family from the taxonomy; _family_of() already refuses with a typed error."
+    rejected: "remove GEC/FAT_TREE from declaration authority because they lack materializers"
+    reason: "that rule collapses DECLARABLE and MATERIALIZABLE — the exact conflation the staged model exists to prevent"
+  - id: AMEND-1b
+    decision: "RING stays AUTHORABLE=NO with role TEST_FIXTURE."
+    rejected: "add RING to declaration authority because it has a materializer"
+    reason: "materializable does not imply declarable; RING is a minimal-graph fixture used only by tests"
+  - id: AMEND-2
+    decision: "custom topology intent is the EXISTING TopologyIR (undirected links, no coordinates required); add only the TopologyIR -> TopologyArtifact materializer."
+    rejected: "a new ExplicitTopologyIntent requiring coordinates"
+    reason: "TopologyIR already exists, is stricter, and does not require coordinates — requiring them would silently redefine 'custom topology' as '2D physical-layout topology'"
