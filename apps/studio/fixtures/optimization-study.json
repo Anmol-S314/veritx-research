@@ -490,6 +490,18 @@
         }
       }
     ],
+    "completeness": {
+      "budget": null,
+      "claim": "complete over this declared finite design space",
+      "completeness": "EXHAUSTIVE",
+      "evaluated_count": 6,
+      "may_claim_optimality": true,
+      "method": "grid",
+      "not_evaluated_count": 0,
+      "schema_version": 1,
+      "universe_known": true,
+      "universe_size": 6
+    },
     "contract_version": 2,
     "definition": {
       "budget": {},
@@ -522,9 +534,9 @@
       "seed": null,
       "selection": "min_first_objective"
     },
-    "metric_registry_id": "316e403f447f90431f761f084539c934aaded9581f15d58d72aa121627a9e938",
-    "metric_registry_version": "certified-builtin-v1",
-    "optimization_result_id": "0a0526b0c1d945784d5bf45abe21c740642da23e4f267796b2a054af62617b10",
+    "metric_registry_id": "d67437ad9a48ec90afbc0b2d9fb9688d39f61d4fb7153a3a339749b9014c0b11",
+    "metric_registry_version": "certified-builtin-v2",
+    "optimization_result_id": "86efa4e28799b7eff24088e73eba6e9744ff31d8b592206556e5acd09483e053",
     "pareto_ids": [
       "cand_b1c45e8e462f4558732237870f5e281926605238beac0ab3659b668560c6a4b9"
     ],

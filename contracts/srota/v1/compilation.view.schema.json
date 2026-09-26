@@ -4,27 +4,72 @@
   "title": "CompilationView",
   "description": "Frozen P1 product view of FabricCompiler.compile. COMPILED carries bundle+certificate hashes; non-COMPILED carries evidence and never a bundle.",
   "type": "object",
-  "required": ["contract_version", "status", "design_hash", "compiler_semantics_version"],
+  "required": [
+    "contract_version",
+    "status",
+    "design_hash",
+    "compiler_semantics_version"
+  ],
   "properties": {
-    "contract_version": {"const": 1},
-    "status": {"enum": ["COMPILED", "INVALID", "UNSUPPORTED"]},
-    "design_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-    "compiler_semantics_version": {"type": "integer"},
-    "resolved_fabric_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-    "certificate_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-    "certificate_overall": {"enum": ["PASS", "FAIL"]},
+    "contract_version": {
+      "const": 1
+    },
+    "status": {
+      "enum": [
+        "COMPILED",
+        "INVALID",
+        "UNSUPPORTED"
+      ]
+    },
+    "design_hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "compiler_semantics_version": {
+      "type": "integer"
+    },
+    "resolved_fabric_hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "certificate_id": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "certificate_overall": {
+      "enum": [
+        "PASS",
+        "FAIL"
+      ]
+    },
     "obligations": {
       "type": "array",
       "minItems": 10,
       "maxItems": 10,
       "items": {
         "type": "object",
-        "required": ["obligation", "status", "method", "evidence"],
+        "required": [
+          "obligation",
+          "status",
+          "method",
+          "evidence"
+        ],
         "properties": {
-          "obligation": {"type": "string"},
-          "status": {"enum": ["PASS", "FAIL"]},
-          "method": {"type": "string"},
-          "evidence": {"type": "object"}
+          "obligation": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "PASS",
+              "FAIL"
+            ]
+          },
+          "method": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "object"
+          }
         },
         "unevaluatedProperties": false
       }
@@ -32,17 +77,113 @@
     "artifact_hashes": {
       "type": "object",
       "description": "Content hashes of bundle children (topology, attachment, routes, VC, packet format, router behavior, address decode, fabric).",
-      "additionalProperties": {"type": "string"}
+      "additionalProperties": {
+        "type": "string"
+      }
     },
-    "error": {"type": ["string", "null"]}
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "stopped_at_stage": {
+      "description": "The canonical CompileStage at which a staged refusal stopped. Present only when compilation did NOT complete. A staged stop is NOT the same as 'compilation failed': upstream derivation can be valid while a downstream contract is unavailable, and the upstream artifacts are preserved and inspectable.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "staged": {
+      "description": "What a staged refusal produced before it stopped. Emitted alongside stopped_at_stage; never as a substitute for a completed compilation. Declared here because views.py has emitted it since the staged-compilation change and an undeclared field on a schema with unevaluatedProperties:false is a contract violation, not a fixture problem.",
+      "type": [
+        "object",
+        "null"
+      ],
+      "unevaluatedProperties": false,
+      "required": [
+        "stopped_at_stage",
+        "produced_stages",
+        "has_topology",
+        "has_attachment",
+        "has_mapping",
+        "has_inventory"
+      ],
+      "properties": {
+        "stopped_at_stage": {
+          "type": "string"
+        },
+        "produced_stages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "has_topology": {
+          "type": "boolean"
+        },
+        "has_attachment": {
+          "type": "boolean"
+        },
+        "has_mapping": {
+          "type": "boolean"
+        },
+        "has_inventory": {
+          "type": "boolean"
+        }
+      }
+    }
   },
   "unevaluatedProperties": false,
   "allOf": [
-    {"if": {"properties": {"status": {"const": "COMPILED"}}},
-     "then": {"required": ["resolved_fabric_hash", "certificate_id", "certificate_overall", "obligations"]}},
-    {"if": {"properties": {"status": {"const": "INVALID"}}},
-     "then": {"not": {"required": ["resolved_fabric_hash"]}}},
-    {"if": {"properties": {"status": {"const": "UNSUPPORTED"}}},
-     "then": {"not": {"required": ["resolved_fabric_hash"]}}}
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "COMPILED"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "resolved_fabric_hash",
+          "certificate_id",
+          "certificate_overall",
+          "obligations"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "INVALID"
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "required": [
+            "resolved_fabric_hash"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "UNSUPPORTED"
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "required": [
+            "resolved_fabric_hash"
+          ]
+        }
+      }
+    }
   ]
 }
