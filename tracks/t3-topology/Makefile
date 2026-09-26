@@ -28,6 +28,11 @@ setup: ## check the toolchain (Booksim required; Timeloop/Accelergy optional)
 lint: ## syntax-check the Python scripts
 	@python3 -m py_compile scripts/*.py 2>/dev/null || true
 
+product-gates: ## fail-closed product registry gates (Gate 1 / 4 / 6)
+	@cd ../.. && python3 scripts/check_intent_ontology.py
+	@cd ../.. && python3 scripts/check_capability_registry.py
+	@cd ../.. && python3 scripts/check_exposure_registry.py
+
 test: ## quick sanity sweep (the CI gate)
 	@python3 scripts/sanity_test.py
 

@@ -29,6 +29,9 @@ jobs:
         run: make -C tracks/${{ matrix.track }} setup
       - name: Lint
         run: make -C tracks/${{ matrix.track }} lint
+      - name: Product registry gates (T3 only)
+        if: matrix.track == 't3-topology'
+        run: make -C tracks/t3-topology product-gates
       - name: Test (sanity)
         run: make -C tracks/${{ matrix.track }} test
       - name: Sim (full)
