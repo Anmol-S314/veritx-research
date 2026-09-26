@@ -1156,8 +1156,13 @@ containers:
   CompileRequestV3.noc_config: NocConfig
   CompileRequestV3.address_map: AddressMap
   CompileRequestV3.physical: PhysicalContext
+  CompileRequestV3.explicit_topology: TopologyIR
   AddressMap.ranges: AddressRange
   DependencyGraph.dependencies: Dependency
+  TopologyIR.kind: str
+  TopologyIR.nodes: int
+  TopologyIR.links: list[[int, int]]
+  TopologyIR.link_attrs: map[str, float]
   WorkloadV3.collectives: CollectiveIntent
 
 nodes:
@@ -4854,6 +4859,33 @@ nodes:
       blast_radius: "none"
       primitive: [4]
       action: "none - product IA decision, not a contract"
+  - id: fabric.explicit_topology
+    domain: FABRIC_INTENT
+    fields: [CompileRequestV3.explicit_topology, TopologyIR.kind, TopologyIR.nodes, TopologyIR.links, TopologyIR.link_attrs]
+    real: R2
+    owner: CI
+    edit: TCU
+    kind: PRF
+    default: "null (named family)"
+    stored: request -> TopologyArtifact
+    depends_on: [TopologyArtifact, AgentAttachmentArtifact, RouteArtifact, FabricArtifact]
+    invalidates: B
+    validation: [L1n]
+    unsupported: "routing: custom"
+    refusal_stage: routing
+    visual: [1, 3]
+    evidence: V
+    cite: model/compile_model.py:2253
+    plan:
+      surface: "Fabric"
+      control: "read-only"
+      default: "—"
+      validation_timing: "[]"
+      refusal: "null"
+      change_class: "TOPOLOGY_SHAPE_CHANGE"
+      blast_radius: "attachment -> fabric -> routes/VC -> evidence"
+      primitive: [2]
+      action: "read-only: explicit graph is design intent, materialized by the compiler"
   # ── FABRIC / NOC ───────────────────────────────────────────────────
   - id: noc.topology_family
     domain: FABRIC_INTENT
