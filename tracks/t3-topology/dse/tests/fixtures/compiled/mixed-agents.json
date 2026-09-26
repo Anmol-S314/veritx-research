@@ -90,6 +90,7 @@
     "available": true,
     "certificate_id": "sha256:21a79d9ccfec41a3a35eb83f84481cbcf49d697a96d490514150a5ae9949bdf4",
     "claim_count": 4,
+    "claim_shape_version": 2,
     "claims": [
       {
         "aggregation": "ALL_PASS",

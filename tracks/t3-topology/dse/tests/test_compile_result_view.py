@@ -540,3 +540,163 @@ def test_a_refused_revision_has_no_inspectors(tmp_path):
     payload = service.get_revision_compile_result(attempt["revision_id"])
     assert payload["available"] is False
     assert payload["reason"]
+
+
+# ── frozen-payload claim shape (the white-screen regression) ────────────
+#
+# A CompileResultView is FROZEN at certification time and served verbatim.
+# The certificate claim shape changed while CONTRACT_VERSION stayed 1, so a
+# revision persisted before that change handed the frontend a payload whose
+# claims lacked `contributing_obligations` — and
+# `claim.contributing_obligations.map(...)` threw, taking the whole Compile
+# Result down. These tests pin both halves of the repair.
+
+def _stale_claims(service, revision_id):
+    """Make a stored revision's FROZEN certificate carry the OLD claim shape."""
+    original = service.store.load_revision_global
+
+    def patched(rid):
+        pid, revision = original(rid)
+        if rid == revision_id:
+            revision = dict(revision)
+            payload = dict(revision["compile_result"])
+            cert = dict(payload["certificate"])
+            # The pre-change row: {claim, scope, status, method}.
+            cert["claims"] = [
+                {"claim": c["claim"], "scope": c["scope"],
+                 "status": c["certificate_status"], "method": c.get("method")}
+                for c in cert["claims"]]
+            cert.pop("claim_shape_version", None)
+            payload["certificate"] = cert
+            revision["compile_result"] = payload
+        return pid, revision
+
+    service.store.load_revision_global = patched
+
+
+def test_claims_are_current_detects_the_legacy_shape():
+    from veritx_dse.application.compile_result_view import (
+        CLAIM_SHAPE_VERSION, claims_are_current,
+    )
+
+    legacy = [{"claim": "ROUTE_COMPLETE", "scope": "s",
+               "status": "PASS", "method": None}]
+    assert claims_are_current(legacy) is False
+    current = [{"claim": "ROUTE_COMPLETE", "scope": "s",
+                "certificate_status": "PASS", "established": True,
+                "contributing_obligations": ["ROUTE_COMPLETE"],
+                "contributing_statuses": {"ROUTE_COMPLETE": "PASS"},
+                "aggregation": "ALL_PASS"}]
+    assert claims_are_current(current) is True
+    assert CLAIM_SHAPE_VERSION >= 2
+
+
+def test_claims_are_current_accepts_empty_and_rejects_non_list():
+    from veritx_dse.application.compile_result_view import claims_are_current
+    assert claims_are_current([]) is True      # no claims is a valid state
+    assert claims_are_current(None) is False
+    assert claims_are_current("nope") is False
+    assert claims_are_current([{"claim": "x"}]) is False
+
+
+def test_compile_result_is_current_guards_the_frozen_payload():
+    from veritx_dse.application.compile_result_view import (
+        CONTRACT_VERSION, compile_result_is_current,
+    )
+    # No certificate block (unavailable / staged) is servable as-is.
+    assert compile_result_is_current(
+        {"contract_version": CONTRACT_VERSION, "certificate": None}) is True
+    # A wrong contract version is not.
+    assert compile_result_is_current(
+        {"contract_version": 999, "certificate": None}) is False
+    assert compile_result_is_current("nope") is False
+
+
+def test_a_frozen_payload_with_stale_claims_is_re_derived(tmp_path):
+    """THE REGRESSION. A frozen view whose claims predate the current shape
+    must be re-derived through the hash-checked path, never served."""
+    from veritx_dse.product.service import ProductConfig, ProductService
+
+    service = ProductService(ProductConfig(projects_root=tmp_path / "projects"))
+    pid = service.create_project(name="stale")["project"]["project_id"]
+    request = build_preset_request(PRESET).to_dict()
+    request.pop("design_hash", None)
+    request.pop("guardrail_hash", None)
+    service.put_draft(pid, request)
+    revision_id = service.compile_draft(pid)["revision_id"]
+
+    _stale_claims(service, revision_id)
+    payload = service.get_revision_compile_result(revision_id)
+
+    assert payload["available"] is True
+    claims = payload["certificate"]["claims"]
+    assert claims, "the re-derived view must carry the four product claims"
+    for claim in claims:
+        # Every field the frontend dereferences must be present.
+        assert "contributing_obligations" in claim
+        assert isinstance(claim["contributing_obligations"], list)
+        assert "certificate_status" in claim
+        assert "contributing_statuses" in claim
+        assert "established" in claim
+    assert payload["certificate"]["claim_shape_version"] >= 2
+
+
+def test_a_current_frozen_payload_is_served_without_re_derivation(tmp_path):
+    """The guard must not force a re-compile for a payload that is fine."""
+    from veritx_dse.product.service import ProductConfig, ProductService
+
+    service = ProductService(ProductConfig(projects_root=tmp_path / "projects"))
+    pid = service.create_project(name="current")["project"]["project_id"]
+    request = build_preset_request(PRESET).to_dict()
+    request.pop("design_hash", None)
+    request.pop("guardrail_hash", None)
+    service.put_draft(pid, request)
+    revision_id = service.compile_draft(pid)["revision_id"]
+
+    frozen = service.store.load_revision_global(revision_id)[1]["compile_result"]
+    calls = {"n": 0}
+    original = service.store.load_revision_global
+
+    def counting(rid):
+        calls["n"] += 1
+        return original(rid)
+
+    service.store.load_revision_global = counting
+    payload = service.get_revision_compile_result(revision_id)
+    assert payload["certificate"]["claim_shape_version"] >= 2
+    # One read for the payload; no FabricCompiler re-derivation.
+    assert calls["n"] == 1
+    assert payload["certificate"]["claims"] == frozen["certificate"]["claims"]
+
+
+def test_a_stale_payload_that_no_longer_matches_is_still_refused(tmp_path):
+    """Re-derivation stays hash-checked: a stale payload cannot smuggle a
+    redrawn fabric past the guard."""
+    from veritx_dse.product.service import ProductConfig, ProductService
+
+    service = ProductService(ProductConfig(projects_root=tmp_path / "projects"))
+    pid = service.create_project(name="stale-tamper")["project"]["project_id"]
+    request = build_preset_request(PRESET).to_dict()
+    request.pop("design_hash", None)
+    request.pop("guardrail_hash", None)
+    service.put_draft(pid, request)
+    revision_id = service.compile_draft(pid)["revision_id"]
+
+    _stale_claims(service, revision_id)
+
+    def tamper(revision):
+        revision["request"]["noc_config"]["link_width"] = 64
+
+    original = service.store.load_revision_global
+
+    def patched(rid):
+        pid_, revision = original(rid)
+        if rid == revision_id:
+            revision = dict(revision)
+            tamper(revision)
+        return pid_, revision
+
+    service.store.load_revision_global = patched
+    with pytest.raises(Exception) as excinfo:
+        service.get_revision_compile_result(revision_id)
+    assert "does not match the recorded" in str(excinfo.value)

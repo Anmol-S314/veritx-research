@@ -808,6 +808,13 @@ export interface CertificateClaim {
   contributing_statuses: Record<string, ClaimStatus>;
   aggregation: string;
   method: string | null;
+  /** LEGACY ONLY. A CompileResultView is frozen at certification time, so a
+   * payload persisted before the claim shape changed still carries the old
+   * `status` field and lacks `certificate_status` /
+   * `contributing_obligations`. The backend re-derives those payloads; the
+   * render path tolerates them so a stale revision degrades instead of
+   * white-screening. Never read `status` when `certificate_status` exists. */
+  status?: ClaimStatus;
   /** Deadlock only: the underlying analysis verdict, separate from the
    * certificate obligation status. */
   analysis_verdict?: CdgAnalysisVerdict;
@@ -858,6 +865,9 @@ export interface CertificateObligation {
 /** The four product claims are a SUBSET of the obligations the verifier
  * issued. Both are carried, so the projection cannot hide proof. */
 export interface CompileCertificate {
+  /** Shape version of the claim rows. Absent on legacy payloads, which is
+   * exactly how the backend detects that a frozen view must be re-derived. */
+  claim_shape_version?: number;
   overall: ClaimStatus | null;
   certificate_id: string | null;
   claims: CertificateClaim[];

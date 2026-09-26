@@ -20,7 +20,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from veritx_dse.application.compile_result_view import build_compile_result
+from veritx_dse.application.compile_result_view import (
+    build_compile_result,
+    compile_result_is_current,
+)
 from veritx_dse.application.errors import ControlPlaneError, ErrorCode, intent_error
 from veritx_dse.application.fabric_compiler import FabricCompiler
 from veritx_dse.application.product_evaluator import evaluate_product
@@ -866,8 +869,14 @@ class ProductService:
         """
         _pid, revision = self.store.load_revision_global(revision_id)
         payload = revision.get("compile_result")
-        if payload is not None:
+        if payload is not None and compile_result_is_current(payload):
             return payload
+        # A FROZEN payload is served verbatim, so a payload whose certificate
+        # claim shape predates the current contract must NOT be served: the
+        # frontend type says those fields are required and rendering would
+        # throw. Treat it as absent and fall through to the re-derivation
+        # path below, which re-checks the recorded hashes and raises
+        # EVIDENCE_INVALID on mismatch — never a silently redrawn fabric.
 
         compilation_view_doc = revision.get("compilation") or {}
         if compilation_view_doc.get("status") != "COMPILED":

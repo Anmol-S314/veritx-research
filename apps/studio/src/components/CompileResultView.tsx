@@ -795,11 +795,16 @@ function CertificateSection({ certificate }: {
             <tr key={claim.claim}>
               <td><code>{claim.claim}</code></td>
               <td className={CLAIM_STATUS_CLASS[claim.certificate_status] ?? 'muted'}>
-                {claim.certificate_status}
+                {claim.certificate_status ?? claim.status ?? 'UNKNOWN'}
               </td>
               <td className="muted">{claim.scope}</td>
               <td className="muted">
-                {claim.contributing_obligations.map((o) => (
+                {/* Defensive: a FROZEN CompileResultView is served verbatim,
+                    so a payload predating the current claim shape can still
+                    arrive. The backend now re-derives those, but a missing
+                    field must degrade here rather than throw and take the
+                    whole Compile Result down. */}
+                {(claim.contributing_obligations ?? []).map((o) => (
                   <code key={o}>{o} </code>
                 ))}
               </td>

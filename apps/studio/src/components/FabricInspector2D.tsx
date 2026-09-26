@@ -76,6 +76,50 @@ export default function FabricInspector2D({
     () => new Map(topology.routers.map((r) => [r.router_id, r])),
     [topology.routers]);
 
+  /** PRESENTATION-ONLY layout. Never persisted, never identity-bearing.
+   *
+   * SCIENTIFIC coordinates are used when every router carries at least two
+   * of them — those come from the canonical TopologyArtifact and describe
+   * real physical placement. A COORDINATE-FREE graph (an explicit
+   * TopologyIR custom topology, or a synthesized candidate) carries
+   * `coordinates: []`, so the previous `coordinates?.[0] ?? 0` stacked
+   * every router at (0, 0). We derive a deterministic grid instead:
+   * row-major by router_id, which is stable across reloads and identical
+   * for identical artifacts.
+   *
+   * This layout is computed here and nowhere written back, so it cannot
+   * reach a design, topology or evidence hash. */
+  const layout = useMemo(() => {
+    const routers = topology.routers;
+    const scientific = routers.length > 0 && routers.every(
+      (r) => Array.isArray(r.coordinates) && r.coordinates.length >= 2);
+    const cells = new Map<number, { col: number; row: number }>();
+    if (scientific) {
+      for (const r of routers) {
+        cells.set(r.router_id, { col: r.coordinates[0], row: r.coordinates[1] });
+      }
+    } else {
+      const n = Math.max(1, routers.length);
+      const side = Math.ceil(Math.sqrt(n));
+      // Deterministic canonical order: router_id ascending.
+      [...routers]
+        .sort((a, b) => a.router_id - b.router_id)
+        .forEach((r, i) => {
+          cells.set(r.router_id, {
+            col: i % side,
+            row: Math.floor(i / side),
+          });
+        });
+    }
+    let cols = 1;
+    let rows = 1;
+    for (const c of cells.values()) {
+      cols = Math.max(cols, c.col + 1);
+      rows = Math.max(rows, c.row + 1);
+    }
+    return { cells, cols, rows, scientific };
+  }, [topology.routers]);
+
   const occupiedByRouter = useMemo(() => {
     const counts = new Map<number, number>();
     for (const endpoint of topology.endpoints) {
@@ -109,20 +153,16 @@ export default function FabricInspector2D({
     return [...byPair.values()];
   }, [topology.channels, routerById]);
 
-  const cols = Math.max(
-    1, ...topology.routers.map((r) => (r.coordinates?.[0] ?? 0) + 1));
-  const rows = Math.max(
-    1, ...topology.routers.map((r) => (r.coordinates?.[1] ?? 0) + 1));
+  const cols = layout.cols;
+  const rows = layout.rows;
   const width = cols * CELL + MARGIN * 2;
   const height = rows * CELL + MARGIN * 2;
 
   const pos = (routerId: number): { x: number; y: number } => {
-    const router = routerById.get(routerId);
-    const col = router?.coordinates?.[0] ?? 0;
-    const row = router?.coordinates?.[1] ?? 0;
+    const cell = layout.cells.get(routerId) ?? { col: 0, row: 0 };
     return {
-      x: MARGIN + col * CELL + CELL / 2,
-      y: MARGIN + row * CELL + CELL / 2,
+      x: MARGIN + cell.col * CELL + CELL / 2,
+      y: MARGIN + cell.row * CELL + CELL / 2,
     };
   };
 

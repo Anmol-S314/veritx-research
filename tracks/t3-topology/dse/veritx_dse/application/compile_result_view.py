@@ -33,6 +33,77 @@ from typing import Any
 
 CONTRACT_VERSION = 1
 
+#: Shape version of the CERTIFICATE CLAIM rows inside a CompileResultView.
+#:
+#: WHY THIS EXISTS. The claim row shape changed while CONTRACT_VERSION stayed
+#: 1: legacy rows are ``{claim, scope, status, method}`` and current rows add
+#: ``certificate_status``, ``established``, ``contributing_obligations``,
+#: ``contributing_statuses`` and ``aggregation``. A CompileResultView is
+#: FROZEN at certification time and served back verbatim, so a revision
+#: persisted before the change hands the frontend a payload its own type
+#: says is impossible — ``claim.contributing_obligations.map`` throws and the
+#: Compile Result white-screens.
+#:
+#: The version marker alone is not enough (nothing reads it on a legacy
+#: payload), so ``claims_are_current()`` is the enforcement: a frozen payload
+#: whose claims are not current is treated as ABSENT and re-derived through
+#: the existing hash-checked path, never served stale and never silently
+#: redrawn.
+CLAIM_SHAPE_VERSION = 2
+
+#: Fields every CURRENT claim row must carry. Presence, not truthiness: a
+#: legitimate ``established: false`` must still pass.
+REQUIRED_CLAIM_FIELDS = (
+    "claim",
+    "scope",
+    "certificate_status",
+    "established",
+    "contributing_obligations",
+    "contributing_statuses",
+    "aggregation",
+)
+
+
+def claims_are_current(claims: Any) -> bool:
+    """True when every claim row carries the current claim shape.
+
+    An empty list is CURRENT (a certificate with no claims is a legitimate
+    state). A non-list, or any row missing a required field, is NOT — that
+    is a legacy or foreign payload and must not be served.
+    """
+    if not isinstance(claims, list):
+        return False
+    for row in claims:
+        if not isinstance(row, dict):
+            return False
+        if any(field not in row for field in REQUIRED_CLAIM_FIELDS):
+            return False
+    return True
+
+
+def compile_result_is_current(payload: Any) -> bool:
+    """True when a FROZEN CompileResultView may be served as-is.
+
+    Guards the certificate claim shape. A payload with no certificate block
+    (``available: False``, or a staged stop) is current — there are no
+    claims to render. Anything else must prove its claims are current.
+    """
+    if not isinstance(payload, dict):
+        return False
+    if payload.get("contract_version") != CONTRACT_VERSION:
+        return False
+    certificate = payload.get("certificate")
+    if certificate is None:
+        return True
+    if not isinstance(certificate, dict):
+        return False
+    if certificate.get("claim_shape_version") == CLAIM_SHAPE_VERSION:
+        return True
+    # Legacy payloads carry no marker; fall back to a structural check so a
+    # pre-marker revision is still classified correctly rather than
+    # re-derived on every read.
+    return claims_are_current(certificate.get("claims", []))
+
 #: Gate 8 §50 — the seven groups, in order.
 GROUPS = (
     "summary",
@@ -691,6 +762,7 @@ def build_compile_result(revision: dict[str, Any],
         "design_hash": _h(revision.get("design_hash")),
         "certificate": {
             **_projection_for_obligations(obligations),
+            "claim_shape_version": CLAIM_SHAPE_VERSION,
             "overall": getattr(certificate, "overall", None),
             "certificate_id": _h(getattr(certificate, "certificate_id",
                                          lambda: None)()),
@@ -719,7 +791,11 @@ def build_compile_result(revision: dict[str, Any],
 
 
 __all__ = [
+    "CLAIM_SHAPE_VERSION",
+    "REQUIRED_CLAIM_FIELDS",
     "CONTRACT_VERSION",
+    "claims_are_current",
+    "compile_result_is_current",
     "FULL_DETAIL_ROUTERS",
     "GROUPS",
     "MAX_DETAIL_ROUTERS",
