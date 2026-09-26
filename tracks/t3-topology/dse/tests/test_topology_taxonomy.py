@@ -203,3 +203,78 @@ def test_flatfly_rejects_illegal_params():
         materialize_flatfly(k=1, n=2)
     with pytest.raises(ValueError):
         materialize_flatfly(k=4, n=0)
+
+
+# ══ SEAL-1: FlatFly concentration / seat law ═══════════════════════════
+#
+# Historical target derived from source, not asserted: presets.py:51-57
+# defines flatfly as nodes = (k**n)*c, r = c + (k-1)*n and
+# edges = nodes//c*(r-c)//2, and SWEEP_TOPOS names the preset flatfly_64.
+# For k=4, n=2, c=4 that is 16 routers, 64 endpoints, 4 seats/router.
+
+def test_seal_1_flatfly_matches_the_historical_target():
+    art = materialize_flatfly(k=4, n=2, concentration=4)
+    assert len(art.routers) == 16                      # k**n
+    assert {r.seat_capacity for r in art.routers} == {4}
+    assert sum(r.seat_capacity for r in art.routers) == 64   # k**n * c
+    assert len(art.channels) == 96                     # 2 * 48 undirected
+    for r in art.routers:
+        assert len([c for c in art.channels
+                    if c.src_router == r.router_id]) == 6   # (k-1)*n
+
+
+def test_seal_1b_endpoint_universe_is_64_not_16():
+    """The trap this guards: 16 ROUTERS must not be read as 16 ENDPOINTS.
+    flatfly_64 carries 64 endpoints over 16 routers."""
+    art = materialize_flatfly(k=4, n=2, concentration=4)
+    assert len(art.routers) == 16
+    assert sum(r.seat_capacity for r in art.routers) == 64
+    assert len(art.routers) != 64, "must not imply 64 routers"
+
+
+def test_seal_1c_attachment_capacity_follows_seat_capacity():
+    """The attachment law is family-agnostic: it consumes routers and
+    seat_capacity. 64 agents fit; 16 seats do not."""
+    full = materialize_flatfly(k=4, n=2, concentration=4)
+    seats_full = [(r.router_id, s) for r in full.routers
+                  for s in range(r.seat_capacity)]
+    assert len(seats_full) == 64
+    assert len(seats_full) >= 64           # 64 agents attach
+
+    thin = materialize_flatfly(k=4, n=2, concentration=1)
+    seats_thin = [(r.router_id, s) for r in thin.routers
+                  for s in range(r.seat_capacity)]
+    assert len(seats_thin) == 16
+    assert len(seats_thin) < 64            # the same 64 agents must refuse
+
+
+# ══ SEAL-3: FlatFly identity law ═══════════════════════════════════════
+
+def test_seal_3_concentration_changes_identity():
+    """Same router graph, different c, must NOT collapse to one fabric
+    identity — the seat capacity is part of the artifact."""
+    a = materialize_flatfly(k=4, n=2, concentration=4)
+    b = materialize_flatfly(k=4, n=2, concentration=2)
+    assert a.topology_hash() != b.topology_hash()
+    # The router GRAPH is identical; only capacity differs.
+    assert [(c.src_router, c.dst_router) for c in a.channels] == \
+           [(c.src_router, c.dst_router) for c in b.channels]
+    assert a.routers[0].seat_capacity != b.routers[0].seat_capacity
+
+
+def test_seal_3b_concentration_is_owned_by_the_artifact():
+    """Concentration lives on Router.seat_capacity inside the artifact, so
+    the artifact owns it — not a second parallel authority."""
+    art = materialize_flatfly(k=4, n=2, concentration=4)
+    assert all(r.seat_capacity == 4 for r in art.routers)
+    d = art.to_dict()
+    assert {r["seat_capacity"] for r in d["routers"]} == {4}
+
+
+def test_seal_3c_same_parameters_are_deterministic():
+    a = materialize_flatfly(k=3, n=3, concentration=2)
+    b = materialize_flatfly(k=3, n=3, concentration=2)
+    assert a.topology_hash() == b.topology_hash()
+    # directed channels = routers * (k-1)*n  (== 2 * undirected links)
+    assert len(a.routers) == 27 and len(a.channels) == 27 * 6
+    assert len(a.channels) == 2 * (27 * 6 // 2)

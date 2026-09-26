@@ -1,112 +1,108 @@
-# capability-registry.yaml — canonical capability truth (Gate 4)
-#
-# Authority for what SROTA can do, at which scientific stage, with what
-# evidence, through which product surface. Derived from:
-#   docs/product/CROSS-DOMAIN-LAWS.md   (Gate 3)
-#   docs/product/INTENT-*.md            (Gate 2, eleven domains)
-#   docs/product/CAPABILITY-MATRIX.md   (Gate 4 narrative)
-#   backend/booksim_profile.py, backend/meshdor_profile.py,
-#   backend/qualification.py, backend/route_observation.py,
-#   optimization/metric_registry.py, simulation/ramulator.py
-#
-# This file is NOT the intent ontology. The ontology answers "what may the
-# Design page render?"; this registry answers "what can the system actually
-# do?". They have different concerns and different checkers.
-
 version: 1
 schema: srota/capability-registry/v1
 capability_semantics_version: cap-v1
 narrative: docs/product/CAPABILITY-MATRIX.md
-
-# ── stage vocabulary (exactly 8, ordered, independent) ────────────────────
 stages:
-  - id: DECLARABLE
-    question: can canonical intent/schema represent it?
-  - id: DERIVABLE
-    question: can the canonical compiler/lowering produce the required artifacts?
-  - id: VERIFIABLE
-    question: can mandatory canonical verification issue a meaningful verdict?
-  - id: PROJECTABLE
-    question: can it be projected into a concrete backend representation?
-  - id: EXECUTABLE
-    question: can a backend actually execute that projection?
-  - id: QUALIFIED
-    question: does a named profile authorize a scientific claim for that execution?
-  - id: EVIDENCE_CAPABLE
-    question: can authenticated evidence be produced for the claimed property?
-  - id: PRODUCT_WIRED
-    question: can the product invoke and expose it today?
-
-# ── result vocabulary (strict; no prose) ──────────────────────────────────
-results: ["YES", "NO", "CONDITIONAL", "NOT_APPLICABLE", "LEGACY_ONLY", "FUTURE_CONTRACT", "ENGINE_ONLY"]
-
-# ── product-wiring vocabulary (separate axis from scientific stages) ──────
-product_wiring: ["WIRED", "ENGINE_ONLY", "INSPECT_ONLY", "NOT_AVAILABLE"]
-
-# ── limiting-reason taxonomy ──────────────────────────────────────────────
+- id: DECLARABLE
+  question: can canonical intent/schema represent it?
+- id: DERIVABLE
+  question: can the canonical compiler/lowering produce the required artifacts?
+- id: VERIFIABLE
+  question: can mandatory canonical verification issue a meaningful verdict?
+- id: PROJECTABLE
+  question: can it be projected into a concrete backend representation?
+- id: EXECUTABLE
+  question: can a backend actually execute that projection?
+- id: QUALIFIED
+  question: does a named profile authorize a scientific claim for that execution?
+- id: EVIDENCE_CAPABLE
+  question: can authenticated evidence be produced for the claimed property?
+- id: PRODUCT_WIRED
+  question: can the product invoke and expose it today?
+results:
+- 'YES'
+- 'NO'
+- CONDITIONAL
+- NOT_APPLICABLE
+- LEGACY_ONLY
+- FUTURE_CONTRACT
+- ENGINE_ONLY
+product_wiring:
+- WIRED
+- ENGINE_ONLY
+- INSPECT_ONLY
+- NOT_AVAILABLE
 reasons:
-  [NO_CONTRACT, NO_DERIVATION, NO_VERIFIER, NO_BACKEND_PROJECTION,
-   BACKEND_UNAVAILABLE, NOT_QUALIFIED, NO_EVIDENCE_CONTRACT,
-   PRODUCT_NOT_WIRED, LEGACY_ONLY, FUTURE_CONTRACT, INVALID_COMBINATION,
-   IMPLEMENTATION_GAP]
-
-# ── qualification envelopes ───────────────────────────────────────────────
+- NO_CONTRACT
+- NO_DERIVATION
+- NO_VERIFIER
+- NO_BACKEND_PROJECTION
+- BACKEND_UNAVAILABLE
+- NOT_QUALIFIED
+- NO_EVIDENCE_CONTRACT
+- PRODUCT_NOT_WIRED
+- LEGACY_ONLY
+- FUTURE_CONTRACT
+- INVALID_COMBINATION
+- IMPLEMENTATION_GAP
 envelopes:
   CAP-ENV-BOOKSIM-MESH-DOR-XY-V1:
     profile_id: CERTIFIED_BOOKSIM_MESH_DOR_XY_V1
-    semantics_version: "booksim2-fork+P1B-meshdor-dump"
+    semantics_version: booksim2-fork+P1B-meshdor-dump
     authorizes: QUALIFIED + EVIDENCE_CAPABLE for mesh DOR-XY static evaluation
     required_conditions:
-      [COND-TOPOLOGY-MESH, COND-ROUTING-DOR-XY, COND-SINGLE-COMM-CLASS,
-       COND-IDENTITY-VC-TRANSITIONS, COND-SINGLE-CLOCK-FABRIC,
-       COND-DENSE-STATIC-WORKLOAD, COND-CONFIG-AUDIT-CLOSED]
-    claim_scope: >-
-      Qualified network-cycle simulation of a dense static workload over a
-      square mesh with DOR-XY routing under the pinned config audit.
+    - COND-TOPOLOGY-MESH
+    - COND-ROUTING-DOR-XY
+    - COND-SINGLE-COMM-CLASS
+    - COND-IDENTITY-VC-TRANSITIONS
+    - COND-SINGLE-CLOCK-FABRIC
+    - COND-DENSE-STATIC-WORKLOAD
+    - COND-CONFIG-AUDIT-CLOSED
+    claim_scope: Qualified network-cycle simulation of a dense static workload over a square
+      mesh with DOR-XY routing under the pinned config audit.
     failure_meaning: NOT QUALIFIED FOR THIS ENVELOPE - the design remains canonically valid
   CAP-ENV-BOOKSIM-ANYNET-V1:
     profile_id: CERTIFIED_BOOKSIM_ANYNET_V1
-    semantics_version: "booksim2-fork+B3.7b-anynet-dump"
+    semantics_version: booksim2-fork+B3.7b-anynet-dump
     authorizes: QUALIFIED + EVIDENCE_CAPABLE for canonical-route static evaluation
     required_conditions:
-      [COND-CANONICAL-ROUTE-PRESENT, COND-SINGLE-COMM-CLASS,
-       COND-SINGLE-CLOCK-FABRIC, COND-DENSE-STATIC-WORKLOAD,
-       COND-CONFIG-AUDIT-CLOSED]
-    claim_scope: >-
-      Qualified network-cycle simulation of a dense static workload over the
-      canonical route table, with first-hop routing-function equivalence to
-      the canonical route over the complete source x destination domain.
+    - COND-CANONICAL-ROUTE-PRESENT
+    - COND-SINGLE-COMM-CLASS
+    - COND-SINGLE-CLOCK-FABRIC
+    - COND-DENSE-STATIC-WORKLOAD
+    - COND-CONFIG-AUDIT-CLOSED
+    claim_scope: Qualified network-cycle simulation of a dense static workload over the canonical
+      route table, with first-hop routing-function equivalence to the canonical route over
+      the complete source x destination domain.
     failure_meaning: NOT QUALIFIED FOR THIS ENVELOPE - the design remains canonically valid
   CAP-ENV-BOOKSIM-SERVING-V1:
     profile_id: CERTIFIED_SERVING_BOOKSIM2_V1
     authorizes: QUALIFIED + EVIDENCE_CAPABLE for serving-round evaluation
-    required_conditions: [COND-SERVING-ROUND-QUALIFIED, COND-CONFIG-AUDIT-CLOSED]
-    claim_scope: >-
-      Qualified serving-round network execution against a qualified ASTRA
-      machine projection. LLMServingSim owns request semantics.
+    required_conditions:
+    - COND-SERVING-ROUND-QUALIFIED
+    - COND-CONFIG-AUDIT-CLOSED
+    claim_scope: Qualified serving-round network execution against a qualified ASTRA machine
+      projection. LLMServingSim owns request semantics.
     failure_meaning: NOT QUALIFIED FOR THIS ENVELOPE - the design remains canonically valid
   CAP-ENV-CERTIFIED-OPTIMIZATION-V1:
     profile_id: certified-builtin-v1
-    semantics_version: "veritx/optimization-result/v2"
+    semantics_version: veritx/optimization-result/v2
     authorizes: QUALIFIED + EVIDENCE_CAPABLE for certified Pareto studies
-    required_conditions: [COND-CERTIFIED-BACKEND-AUTHORITY, COND-CONFIG-AUDIT-CLOSED]
-    claim_scope: >-
-      Certified single-backend, single-fidelity Pareto study over the closed
-      GUIDED design space, with three never-merged authorities and fail-closed
-      typed ineligibility.
+    required_conditions:
+    - COND-CERTIFIED-BACKEND-AUTHORITY
+    - COND-CONFIG-AUDIT-CLOSED
+    claim_scope: Certified single-backend, single-fidelity Pareto study over the closed GUIDED
+      design space, with three never-merged authorities and fail-closed typed ineligibility.
     failure_meaning: ANALYTIC_RESEARCH - never certified Pareto
   CAP-ENV-RAMULATOR-V1:
     profile_id: ramulator-2.1-v1
-    semantics_version: "veritx_dse.simulation.ramulator/1"
+    semantics_version: veritx_dse.simulation.ramulator/1
     authorizes: QUALIFIED + EVIDENCE_CAPABLE for standalone DRAM timing
-    required_conditions: [COND-RAMULATOR-V1]
-    claim_scope: >-
-      Standalone DRAM-cycle timing simulation over a recorded legacy-derived
-      request stream. request_generation is a recorded stream;
-      dram_timing is MEMORY_CYCLE_SIMULATION.
+    required_conditions:
+    - COND-RAMULATOR-V1
+    claim_scope: Standalone DRAM-cycle timing simulation over a recorded legacy-derived request
+      stream. request_generation is a recorded stream; dram_timing is MEMORY_CYCLE_SIMULATION.
     failure_meaning: UNSUPPORTED or EVALUATION_FAILED - never a zero-latency result
-
-# ── named conditions ──────────────────────────────────────────────────────
 conditions:
   COND-TOPOLOGY-MESH: topology_family == MESH and radix is a perfect square
   COND-ROUTING-DOR-XY: canonical routing is DOR-XY (anynet_dijkstra_hops not required)
@@ -115,532 +111,1216 @@ conditions:
   COND-IDENTITY-VC-TRANSITIONS: allowed_transitions is the identity class map
   COND-SINGLE-CLOCK-FABRIC: at most one distinct clock domain across agents
   COND-DENSE-STATIC-WORKLOAD: dense_transformer model family, static evaluation path
-  COND-CONFIG-AUDIT-CLOSED: every result-affecting backend config value has a
-    ParameterOwner and the closed-world audit passes
-  COND-RAMULATOR-V1: dram_class HBM3, controller HBM34, mapping
-    sequential_bankstriped_v1, clock_ratio 4/1
+  COND-CONFIG-AUDIT-CLOSED: every result-affecting backend config value has a ParameterOwner
+    and the closed-world audit passes
+  COND-RAMULATOR-V1: dram_class HBM3, controller HBM34, mapping sequential_bankstriped_v1,
+    clock_ratio 4/1
   COND-SERVING-ROUND-QUALIFIED: AstraServingRoundQualification predicates all pass
-  COND-CERTIFIED-BACKEND-AUTHORITY: the evaluation authority is certified-backend
-    and the authenticated proof re-verifies (the label alone admits nothing)
-
-# ── capability rows ───────────────────────────────────────────────────────
-# stage value = YES | NO | CONDITIONAL | NOT_APPLICABLE | LEGACY_ONLY |
-#               FUTURE_CONTRACT | ENGINE_ONLY
+  COND-CERTIFIED-BACKEND-AUTHORITY: the evaluation authority is certified-backend and the
+    authenticated proof re-verifies (the label alone admits nothing)
 capabilities:
-
-  # SYSTEM
-  - id: SYS-001
-    name: physical agent inventory
-    owner: SYSTEM
-    stages: {DECLARABLE: "YES", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES", EXECUTABLE: NOT_APPLICABLE, QUALIFIED: NOT_APPLICABLE, EVIDENCE_CAPABLE: NOT_APPLICABLE, PRODUCT_WIRED: "YES"}
-    wiring: WIRED
-    claim_scope: the declared agent inventory is materialized as PhysicalInventory and participates in every downstream join
-  - id: SYS-002
-    name: agent hierarchy
-    owner: SYSTEM
-    stages: {DECLARABLE: "YES", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES", EXECUTABLE: NOT_APPLICABLE, QUALIFIED: NOT_APPLICABLE, EVIDENCE_CAPABLE: NOT_APPLICABLE, PRODUCT_WIRED: "YES"}
-    wiring: INSPECT_ONLY
-    claim_scope: hierarchy is declared and inspectable; a hierarchy-only change reissues context-bound artifacts
-  - id: SYS-003
-    name: multiple declared clock domains
-    owner: SYSTEM
-    stages: {DECLARABLE: "YES", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "NO", EXECUTABLE: "NO", QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: NO_BACKEND_PROJECTION
-    limiting: no clock-crossing artifact exists; COND-SINGLE-CLOCK-FABRIC is a coherence law
-    claim_scope: memberships are declarable; the design is refused beyond one domain
-  - id: SYS-004
-    name: multi-clock fabric execution
-    owner: SYSTEM
-    stages: {DECLARABLE: "YES", DERIVABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO", EXECUTABLE: "NO", QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: NO_DERIVATION
-    limiting: no clock-crossing fabric artifact
-    claim_scope: not claimed
-  - id: SYS-005
-    name: stable agent identity
-    owner: SYSTEM
-    stages: {DECLARABLE: "YES", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES", EXECUTABLE: NOT_APPLICABLE, QUALIFIED: NOT_APPLICABLE, EVIDENCE_CAPABLE: NOT_APPLICABLE, PRODUCT_WIRED: "YES"}
-    wiring: WIRED
-    claim_scope: AgentGroupId/AgentInstanceId are stable; declaration order never changes science
-
-  # WORKLOAD
-  - id: WORK-001
-    name: dense static workload
-    owner: WORKLOAD
-    stages: {DECLARABLE: "YES", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: CONDITIONAL, EXECUTABLE: CONDITIONAL, QUALIFIED: CONDITIONAL, EVIDENCE_CAPABLE: CONDITIONAL, PRODUCT_WIRED: "YES"}
-    conditions: [CAP-ENV-BOOKSIM-MESH-DOR-XY-V1, CAP-ENV-BOOKSIM-ANYNET-V1]
-    wiring: WIRED
-    claim_scope: dense_transformer static workloads lower, map, route, verify and evaluate under a named envelope
-  - id: WORK-002
-    name: static MoE
-    owner: WORKLOAD
-    stages: {DECLARABLE: "YES", DERIVABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO", EXECUTABLE: "NO", QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: IMPLEMENTATION_GAP
-    limiting: no full static dispatch/combine lowering
-    claim_scope: MoE semantics are declarable; static MoE evaluation is not available
-  - id: WORK-003
-    name: serving dense
-    owner: WORKLOAD
-    stages: {DECLARABLE: "YES", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES", EXECUTABLE: CONDITIONAL, QUALIFIED: CONDITIONAL, EVIDENCE_CAPABLE: CONDITIONAL, PRODUCT_WIRED: "YES"}
-    conditions: [CAP-ENV-BOOKSIM-SERVING-V1]
-    wiring: WIRED
-    claim_scope: serving request semantics belong to LLMServingSim; VERITX owns fabric/network execution
-  - id: WORK-004
-    name: serving MoE
-    owner: WORKLOAD
-    stages: {DECLARABLE: "YES", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES", EXECUTABLE: CONDITIONAL, QUALIFIED: CONDITIONAL, EVIDENCE_CAPABLE: CONDITIONAL, PRODUCT_WIRED: "YES"}
-    conditions: [CAP-ENV-BOOKSIM-SERVING-V1]
-    wiring: WIRED
-    claim_scope: real dispatch/combine behaviour in serving; NOT equivalent to static MoE
-  - id: WORK-005
-    name: collectives as declared intent
-    owner: WORKLOAD
-    stages: {DECLARABLE: "YES", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: CONDITIONAL, EXECUTABLE: CONDITIONAL, QUALIFIED: CONDITIONAL, EVIDENCE_CAPABLE: CONDITIONAL, PRODUCT_WIRED: "YES"}
-    conditions: [COND-SINGLE-COMM-CLASS]
-    wiring: WIRED
-    claim_scope: collectives are declared and lowered per class; multi-class execution is not available
-
-  # PARALLELISM
-  - id: PAR-001
-    name: TP coordinate
-    owner: PARALLELISM
-    stages: {DECLARABLE: "YES", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES", EXECUTABLE: "YES", QUALIFIED: CONDITIONAL, EVIDENCE_CAPABLE: CONDITIONAL, PRODUCT_WIRED: "YES"}
-    wiring: WIRED
-    claim_scope: TP grouping and collective participation are real; TENSOR-SHARDING CORRECTNESS IS NOT PROVEN
-  - id: PAR-002
-    name: DP coordinate
-    owner: PARALLELISM
-    stages: {DECLARABLE: "YES", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES", EXECUTABLE: "YES", QUALIFIED: CONDITIONAL, EVIDENCE_CAPABLE: CONDITIONAL, PRODUCT_WIRED: "YES"}
-    wiring: WIRED
-    claim_scope: DP extent/group algebra is real; gradient-replica semantics are NOT asserted
-  - id: PAR-003
-    name: EP coordinate
-    owner: PARALLELISM
-    stages: {DECLARABLE: "YES", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES", EXECUTABLE: CONDITIONAL, QUALIFIED: CONDITIONAL, EVIDENCE_CAPABLE: CONDITIONAL, PRODUCT_WIRED: "YES"}
-    wiring: WIRED
-    claim_scope: EP extent and communication participation are real; expert assignment boundaries are not modelled in static
-  - id: PAR-004
-    name: PP coordinate
-    owner: PARALLELISM
-    stages: {DECLARABLE: "YES", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES", EXECUTABLE: CONDITIONAL, QUALIFIED: CONDITIONAL, EVIDENCE_CAPABLE: CONDITIONAL, PRODUCT_WIRED: "YES"}
-    wiring: WIRED
-    claim_scope: PP group family is real; STAGE ASSIGNMENT/LOWERING IS INCOMPLETE
-  - id: PAR-005
-    name: sharding correctness
-    owner: PARALLELISM
-    stages: {DECLARABLE: "NO", DERIVABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO", EXECUTABLE: "NO", QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: NO_CONTRACT
-    claim_scope: no tensor/gradient/expert sharding correctness obligation exists
-
-  # COMMUNICATION
-  - id: COMM-001
-    name: point-to-point
-    owner: COMMUNICATION
-    stages: {DECLARABLE: "YES", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES", EXECUTABLE: "YES", QUALIFIED: CONDITIONAL, EVIDENCE_CAPABLE: CONDITIONAL, PRODUCT_WIRED: "YES"}
-    conditions: [COND-SINGLE-COMM-CLASS]
-    wiring: WIRED
-  - id: COMM-002
-    name: collectives
-    owner: COMMUNICATION
-    stages: {DECLARABLE: "YES", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES", EXECUTABLE: "YES", QUALIFIED: CONDITIONAL, EVIDENCE_CAPABLE: CONDITIONAL, PRODUCT_WIRED: "YES"}
-    conditions: [COND-SINGLE-COMM-CLASS]
-    wiring: WIRED
-  - id: COMM-003
-    name: broadcast / root-fanout
-    owner: COMMUNICATION
-    stages: {DECLARABLE: "YES", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES", EXECUTABLE: "YES", QUALIFIED: CONDITIONAL, EVIDENCE_CAPABLE: CONDITIONAL, PRODUCT_WIRED: "YES"}
-    conditions: [COND-SINGLE-COMM-CLASS]
-    wiring: WIRED
-    claim_scope: a real semantic collective, lowered to per-destination messages
-  - id: COMM-004
-    name: semantic multicast
-    owner: COMMUNICATION
-    stages: {DECLARABLE: "YES", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES", EXECUTABLE: "YES", QUALIFIED: CONDITIONAL, EVIDENCE_CAPABLE: CONDITIONAL, PRODUCT_WIRED: "YES"}
-    conditions: [COND-SINGLE-COMM-CLASS]
-    wiring: WIRED
-    claim_scope: semantic multicast lowers to repeated unicasts; it is NOT hardware multicast
-  - id: COMM-005
-    name: hardware multicast
-    owner: COMMUNICATION
-    stages: {DECLARABLE: "NO", DERIVABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO", EXECUTABLE: "NO", QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: FUTURE_CONTRACT
-    claim_scope: not modelled. mcast_groups/mcast_setup_cycles are declarable knobs with NO execution
-  - id: COMM-006
-    name: multiple communication classes
-    owner: COMMUNICATION
-    stages: {DECLARABLE: "YES", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "NO", EXECUTABLE: "NO", QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: IMPLEMENTATION_GAP
-    limiting: COMM-D1 multi-class logical-message/physical-propagation debt; native profiles require one class
-    claim_scope: multi-class intent is valid and VC assignment is class-aware; execution is not available
-
-  # PLACEMENT / MAPPING
-  - id: MAP-001
-    name: automatic mapping
-    owner: PLACEMENT
-    stages: {DECLARABLE: NOT_APPLICABLE, DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES", EXECUTABLE: NOT_APPLICABLE, QUALIFIED: NOT_APPLICABLE, EVIDENCE_CAPABLE: NOT_APPLICABLE, PRODUCT_WIRED: "YES"}
-    wiring: INSPECT_ONLY
-    claim_scope: participant->compute-agent placement is derived deterministically under RANK_ORDER_V1
-  - id: MAP-002
-    name: manual placement / pinning
-    owner: PLACEMENT
-    stages: {DECLARABLE: "NO", DERIVABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO", EXECUTABLE: "NO", QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: NO_CONTRACT
-    claim_scope: no editable placement contract exists (Gate-3 D2)
-  - id: MAP-003
-    name: affinity / anti-affinity
-    owner: PLACEMENT
-    stages: {DECLARABLE: "NO", DERIVABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO", EXECUTABLE: "NO", QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: NO_CONTRACT
-    claim_scope: not modelled
-
-  # FABRIC
-  - id: FAB-001
-    name: mesh
-    owner: FABRIC
-    stages: {DECLARABLE: "YES", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES", EXECUTABLE: CONDITIONAL, QUALIFIED: CONDITIONAL, EVIDENCE_CAPABLE: CONDITIONAL, PRODUCT_WIRED: "YES"}
-    conditions: [CAP-ENV-BOOKSIM-MESH-DOR-XY-V1]
-    wiring: WIRED
-    claim_scope: square mesh topology; scientific name side_length, implementation field NocConfig.radix
-  - id: FAB-002
-    name: concentrated mesh
-    owner: FABRIC
-    stages: {DECLARABLE: "YES", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: CONDITIONAL, EXECUTABLE: CONDITIONAL, QUALIFIED: "NO", EVIDENCE_CAPABLE: CONDITIONAL, PRODUCT_WIRED: "YES"}
-    conditions: [CAP-ENV-BOOKSIM-ANYNET-V1]
-    wiring: WIRED
-    limiting: concentration > 1 is NOT covered by the mesh-DOR envelope
-    claim_scope: valid canonical fabric; qualification depends on the envelope
-  - id: FAB-003
-    name: torus topology
-    owner: FABRIC
-    stages: {DECLARABLE: "YES", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "NO", EXECUTABLE: "NO", QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: INSPECT_ONLY
-    reason: NO_BACKEND_PROJECTION
-    claim_scope: topology construction available; routed execution not available
-  - id: FAB-004
-    name: torus routed execution
-    owner: FABRIC
-    stages: {DECLARABLE: "YES", DERIVABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO", EXECUTABLE: "NO", QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: NO_DERIVATION
-    claim_scope: no canonical route generator for torus
-  - id: FAB-005
-    name: multiplane
-    owner: FABRIC
-    stages: {DECLARABLE: "NO", DERIVABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO", EXECUTABLE: "NO", QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: FUTURE_CONTRACT
-  - id: FAB-006
-    name: link width variation
-    owner: FABRIC
-    stages: {DECLARABLE: "YES", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES", EXECUTABLE: CONDITIONAL, QUALIFIED: CONDITIONAL, EVIDENCE_CAPABLE: CONDITIONAL, PRODUCT_WIRED: "YES"}
-    conditions: [CAP-ENV-BOOKSIM-MESH-DOR-XY-V1, CAP-ENV-BOOKSIM-ANYNET-V1]
-    wiring: WIRED
-  - id: FAB-007
-    name: custom / hierarchical topology
-    owner: FABRIC
-    stages: {DECLARABLE: "NO", DERIVABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO", EXECUTABLE: "NO", QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: NO_CONTRACT
-    claim_scope: only the declared topology families exist
-
-  # ROUTING / RESOURCES
-  - id: ROUTE-001
-    name: DOR-XY routing
-    owner: ROUTER_RESOURCE
-    stages: {DECLARABLE: "NO", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES", EXECUTABLE: "YES", QUALIFIED: CONDITIONAL, EVIDENCE_CAPABLE: CONDITIONAL, PRODUCT_WIRED: "YES"}
-    conditions: [CAP-ENV-BOOKSIM-MESH-DOR-XY-V1]
-    wiring: WIRED
-    claim_scope: compiler-derived for mesh; never user intent
-  - id: ROUTE-002
-    name: AnyNet canonical route algorithm
-    owner: ROUTER_RESOURCE
-    stages: {DECLARABLE: "NO", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES", EXECUTABLE: "YES", QUALIFIED: CONDITIONAL, EVIDENCE_CAPABLE: CONDITIONAL, PRODUCT_WIRED: "YES"}
-    conditions: [CAP-ENV-BOOKSIM-ANYNET-V1]
-    wiring: WIRED
-    claim_scope: ROUTING_ALGORITHM=anynet_dijkstra_hops; compiler-owned, not user intent
-  - id: ROUTE-003
-    name: AnyNet backend projection
-    owner: ROUTER_RESOURCE
-    stages: {DECLARABLE: "NO", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES", EXECUTABLE: "YES", QUALIFIED: CONDITIONAL, EVIDENCE_CAPABLE: CONDITIONAL, PRODUCT_WIRED: "YES"}
-    conditions: [CAP-ENV-BOOKSIM-ANYNET-V1]
-    wiring: WIRED
-    claim_scope: a distinct capability from the canonical algorithm; never a user checkbox
-  - id: ROUTE-004
-    name: torus routing
-    owner: ROUTER_RESOURCE
-    stages: {DECLARABLE: "NO", DERIVABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO", EXECUTABLE: "NO", QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: NO_DERIVATION
-    claim_scope: UNSUPPORTED_SEMANTICS at the route generator
-  - id: ROUTE-005
-    name: derived VC assignment
-    owner: ROUTER_RESOURCE
-    stages: {DECLARABLE: "NO", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES", EXECUTABLE: "YES", QUALIFIED: CONDITIONAL, EVIDENCE_CAPABLE: CONDITIONAL, PRODUCT_WIRED: "YES"}
-    wiring: INSPECT_ONLY
-    claim_scope: VC count and class->VC map are compiler-derived; never editable
-  - id: ROUTE-006
-    name: deadlock / CDG verification
-    owner: ROUTER_RESOURCE
-    stages: {DECLARABLE: NOT_APPLICABLE, DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: NOT_APPLICABLE, EXECUTABLE: NOT_APPLICABLE, QUALIFIED: NOT_APPLICABLE, EVIDENCE_CAPABLE: NOT_APPLICABLE, PRODUCT_WIRED: "YES"}
-    wiring: INSPECT_ONLY
-    claim_scope: channel-VC CDG determinism is proven by construction
-  - id: ROUTE-007
-    name: arbitration policy
-    owner: ROUTER_RESOURCE
-    stages: {DECLARABLE: "YES", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES", EXECUTABLE: "YES", QUALIFIED: CONDITIONAL, EVIDENCE_CAPABLE: CONDITIONAL, PRODUCT_WIRED: "YES"}
-    conditions: [CAP-ENV-BOOKSIM-MESH-DOR-XY-V1, CAP-ENV-BOOKSIM-ANYNET-V1]
-    wiring: WIRED
-    claim_scope: RouterResourceIntentV4.arbitration_policy is real intent (ISLIP | ROUND_ROBIN)
-  - id: ROUTE-008
-    name: escape VC designation
-    owner: ROUTER_RESOURCE
-    stages: {DECLARABLE: "YES", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "NO", EXECUTABLE: "NO", QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: IMPLEMENTATION_GAP
-    claim_scope: supported-but-unused; no backend materialization
-  - id: ROUTE-009
-    name: adaptive routing
-    owner: ROUTER_RESOURCE
-    stages: {DECLARABLE: "NO", DERIVABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO", EXECUTABLE: "NO", QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: FUTURE_CONTRACT
-  - id: ROUTE-010
-    name: valiant routing
-    owner: ROUTER_RESOURCE
-    stages: {DECLARABLE: "NO", DERIVABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO", EXECUTABLE: "NO", QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: FUTURE_CONTRACT
-  - id: ROUTE-011
-    name: RCU / in-network reduction
-    owner: ROUTER_RESOURCE
-    stages: {DECLARABLE: "FUTURE_CONTRACT", DERIVABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO", EXECUTABLE: "NO", QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: FUTURE_CONTRACT
-    limiting: removed from v4; no structural router-reduction artifact (INTENT-ROUTER-RESOURCES.md:316,320)
-    claim_scope: not modeled. No target intent field exists; legacy parsing is preserved but never becomes canonical router-resource meaning. Semantic REDUCE does not imply physical router reduction.
-  - id: ROUTE-012
-    name: candidate-owned router buffers
-    owner: ROUTER_RESOURCE
-    stages: {DECLARABLE: "NO", DERIVABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO", EXECUTABLE: "NO", QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: NO_CONTRACT
-    claim_scope: category defined (candidate-owned); no optimizer dimension exists
-
-  # MEMORY
-  - id: MEM-001
-    name: AddressMap
-    owner: MEMORY
-    stages: {DECLARABLE: "YES", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: NOT_APPLICABLE, EXECUTABLE: NOT_APPLICABLE, QUALIFIED: NOT_APPLICABLE, EVIDENCE_CAPABLE: NOT_APPLICABLE, PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: PRODUCT_NOT_WIRED
-    limiting: no authoring control, no inspection surface, and DesignView does not carry address_map (PF-D1)
-    claim_scope: half-open [base, base+size) ranges owned by memory agents; decoded into FabricArtifact; presets supply the map internally
-  - id: MEM-002
-    name: Ramulator engine
-    owner: MEMORY
-    stages: {DECLARABLE: "NO", DERIVABLE: "YES", VERIFIABLE: "NO", PROJECTABLE: "YES", EXECUTABLE: "YES", QUALIFIED: CONDITIONAL, EVIDENCE_CAPABLE: "YES", PRODUCT_WIRED: "NO"}
-    conditions: [CAP-ENV-RAMULATOR-V1]
-    wiring: ENGINE_ONLY
-    claim_scope: standalone DRAM-cycle simulation over a recorded request stream; NOT NoC-inclusive memory latency
-  - id: MEM-003
-    name: canonical WorkloadV4 -> Ramulator
-    owner: MEMORY
-    stages: {DECLARABLE: "NO", DERIVABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO", EXECUTABLE: "NO", QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: NO_CONTRACT
-    claim_scope: no bridge exists; the chain consumes the Phase-9 WorkloadArtifact
-  - id: MEM-004
-    name: serving -> Ramulator
-    owner: MEMORY
-    stages: {DECLARABLE: "NO", DERIVABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO", EXECUTABLE: "NO", QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: NO_CONTRACT
-    claim_scope: serving does not call Ramulator
-  - id: MEM-005
-    name: network + memory coupled timing
-    owner: MEMORY
-    stages: {DECLARABLE: "NO", DERIVABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO", EXECUTABLE: "NO", QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: FUTURE_CONTRACT
-    claim_scope: FORBIDDEN to sum BookSim and Ramulator latency
-  - id: MEM-006
-    name: REMOTE / CXL / STORAGE memory
-    owner: MEMORY
-    stages: {DECLARABLE: LEGACY_ONLY, DERIVABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO", EXECUTABLE: "NO", QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: LEGACY_ONLY
-    claim_scope: grammar tokens, refused at lowering against the v1 HBM pool
-  - id: MEM-007
-    name: PIM
-    owner: MEMORY
-    stages: {DECLARABLE: LEGACY_ONLY, DERIVABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO", EXECUTABLE: "NO", QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: LEGACY_ONLY
-  - id: MEM-008
-    name: memory Requirements
-    owner: MEMORY
-    stages: {DECLARABLE: "NO", DERIVABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO", EXECUTABLE: "NO", QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: NO_EVIDENCE_CONTRACT
-    claim_scope: no registered memory MetricId; Requirements stay deferred
-
-  # EVALUATION / EVIDENCE
-  - id: EVAL-001
-    name: native BookSim (mesh DOR-XY)
-    owner: EVALUATION
-    stages: {DECLARABLE: NOT_APPLICABLE, DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES", EXECUTABLE: "YES", QUALIFIED: CONDITIONAL, EVIDENCE_CAPABLE: CONDITIONAL, PRODUCT_WIRED: "YES"}
-    conditions: [CAP-ENV-BOOKSIM-MESH-DOR-XY-V1]
-    wiring: WIRED
-    claim_scope: qualified network-cycle simulation under CERTIFIED_BOOKSIM_MESH_DOR_XY_V1
-  - id: EVAL-002
-    name: generic / AnyNet BookSim
-    owner: EVALUATION
-    stages: {DECLARABLE: NOT_APPLICABLE, DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES", EXECUTABLE: "YES", QUALIFIED: CONDITIONAL, EVIDENCE_CAPABLE: CONDITIONAL, PRODUCT_WIRED: "YES"}
-    conditions: [CAP-ENV-BOOKSIM-ANYNET-V1]
-    wiring: WIRED
-    claim_scope: qualified under CERTIFIED_BOOKSIM_ANYNET_V1; NOT interchangeable with the mesh-DOR profile
-  - id: EVAL-003
-    name: ASTRA
-    owner: EVALUATION
-    stages: {DECLARABLE: NOT_APPLICABLE, DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES", EXECUTABLE: "YES", QUALIFIED: CONDITIONAL, EVIDENCE_CAPABLE: CONDITIONAL, PRODUCT_WIRED: "YES"}
-    conditions: [CAP-ENV-BOOKSIM-SERVING-V1]
-    wiring: WIRED
-    claim_scope: drives serving-round network execution; ASTRA execution is NOT hardware-latency truth
-  - id: EVAL-004
-    name: static Product Evaluation
-    owner: EVALUATION
-    stages: {DECLARABLE: "YES", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: CONDITIONAL, EXECUTABLE: CONDITIONAL, QUALIFIED: CONDITIONAL, EVIDENCE_CAPABLE: CONDITIONAL, PRODUCT_WIRED: "YES"}
-    conditions: [CAP-ENV-BOOKSIM-MESH-DOR-XY-V1, CAP-ENV-BOOKSIM-ANYNET-V1]
-    wiring: WIRED
-    claim_scope: dense static workloads through compile -> certificate -> qualified BookSim -> metric evidence
-  - id: EVAL-005
-    name: Serving Evaluation
-    owner: EVALUATION
-    stages: {DECLARABLE: "YES", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES", EXECUTABLE: CONDITIONAL, QUALIFIED: CONDITIONAL, EVIDENCE_CAPABLE: CONDITIONAL, PRODUCT_WIRED: "YES"}
-    conditions: [CAP-ENV-BOOKSIM-SERVING-V1]
-    wiring: WIRED
-    claim_scope: LLMServingSim owns requests/queues/scheduling/batching/prefill/decode/metrics; VERITX owns fabric execution
-  - id: EVAL-006
-    name: backend full-path route observation
-    owner: EVALUATION
-    stages: {DECLARABLE: NOT_APPLICABLE, DERIVABLE: NOT_APPLICABLE, VERIFIABLE: NOT_APPLICABLE, PROJECTABLE: "NO", EXECUTABLE: "NO", QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: NO_EVIDENCE_CONTRACT
-    claim_scope: no per-packet path instrumentation exists
-  - id: EVAL-007
-    name: first-hop route observation
-    owner: EVALUATION
-    stages: {DECLARABLE: NOT_APPLICABLE, DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES", EXECUTABLE: "YES", QUALIFIED: CONDITIONAL, EVIDENCE_CAPABLE: "YES", PRODUCT_WIRED: "YES"}
-    conditions: [CAP-ENV-BOOKSIM-MESH-DOR-XY-V1, CAP-ENV-BOOKSIM-ANYNET-V1]
-    wiring: WIRED
-    claim_scope: >-
-      The runtime routing-function/table first-hop realization is exactly
-      equivalent to the canonical route over the COMPLETE source x destination
-      domain. Not observed packet paths.
-  - id: EVAL-008
-    name: canonical full-route derivation + legality/termination verification
-    owner: EVALUATION
-    stages: {DECLARABLE: NOT_APPLICABLE, DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: NOT_APPLICABLE, EXECUTABLE: NOT_APPLICABLE, QUALIFIED: NOT_APPLICABLE, EVIDENCE_CAPABLE: NOT_APPLICABLE, PRODUCT_WIRED: "YES"}
-    wiring: INSPECT_ONLY
-    claim_scope: the canonical route table is legal and terminating; this is a DERIVED EXPECTED state, never OBSERVED evidence
-
-  # REQUIREMENTS
-  - id: REQ-001
-    name: network completion_cycles requirement
-    owner: REQUIREMENTS
-    stages: {DECLARABLE: "YES", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: NOT_APPLICABLE, EXECUTABLE: NOT_APPLICABLE, QUALIFIED: CONDITIONAL, EVIDENCE_CAPABLE: "YES", PRODUCT_WIRED: "YES"}
-    wiring: WIRED
-    claim_scope: WholeNetworkEvaluationTarget; cycle evidence survives a caller clock change
-  - id: REQ-002
-    name: network completion_ns requirement
-    owner: REQUIREMENTS
-    stages: {DECLARABLE: "YES", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: NOT_APPLICABLE, EXECUTABLE: NOT_APPLICABLE, QUALIFIED: CONDITIONAL, EVIDENCE_CAPABLE: "YES", PRODUCT_WIRED: "YES"}
-    wiring: WIRED
-    claim_scope: WholeNetworkEvaluationTarget; ns evidence is invalidated by a clock change
-  - id: REQ-003
-    name: bandwidth requirement
-    owner: REQUIREMENTS
-    stages: {DECLARABLE: "NO", DERIVABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: NOT_APPLICABLE, EXECUTABLE: NOT_APPLICABLE, QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: NO_CONTRACT
-  - id: REQ-004
-    name: class-target requirement
-    owner: REQUIREMENTS
-    stages: {DECLARABLE: "NO", DERIVABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: NOT_APPLICABLE, EXECUTABLE: NOT_APPLICABLE, QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: NO_CONTRACT
-  - id: REQ-005
-    name: memory requirement
-    owner: REQUIREMENTS
-    stages: {DECLARABLE: "NO", DERIVABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: NOT_APPLICABLE, EXECUTABLE: NOT_APPLICABLE, QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: NO_EVIDENCE_CONTRACT
-  - id: REQ-006
-    name: serving / operation / group requirement targets
-    owner: REQUIREMENTS
-    stages: {DECLARABLE: "NO", DERIVABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: NOT_APPLICABLE, EXECUTABLE: NOT_APPLICABLE, QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: NO_CONTRACT
-
-  # OPTIMIZATION
-  - id: OPT-001
-    name: guided optimizer
-    owner: DESIGN_SPACE
-    stages: {DECLARABLE: "YES", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES", EXECUTABLE: "YES", QUALIFIED: "YES", EVIDENCE_CAPABLE: "YES", PRODUCT_WIRED: "YES"}
-    wiring: WIRED
-    conditions: [CAP-ENV-CERTIFIED-OPTIMIZATION-V1]
-    claim_scope: closed GUIDED registry over 8 typed NocConfig dimensions; locked derived properties inexpressible
-  - id: OPT-002
-    name: expert typed design space
-    owner: DESIGN_SPACE
-    stages: {DECLARABLE: "YES", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES", EXECUTABLE: "YES", QUALIFIED: "YES", EVIDENCE_CAPABLE: "YES", PRODUCT_WIRED: "YES"}
-    wiring: WIRED
-    conditions: [CAP-ENV-CERTIFIED-OPTIMIZATION-V1]
-    claim_scope: the same OptimizationDefinition contract; no arbitrary JSON path editor
-  - id: OPT-003
-    name: multi-objective Pareto
-    owner: DESIGN_SPACE
-    stages: {DECLARABLE: "YES", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: NOT_APPLICABLE, EXECUTABLE: NOT_APPLICABLE, QUALIFIED: "YES", EVIDENCE_CAPABLE: "YES", PRODUCT_WIRED: "YES"}
-    wiring: WIRED
-    conditions: [CAP-ENV-CERTIFIED-OPTIMIZATION-V1]
-    claim_scope: backend-authoritative exact dominance over certified metrics; ties stay ties
-  - id: OPT-004
-    name: requirement reporting within studies
-    owner: DESIGN_SPACE
-    stages: {DECLARABLE: "YES", DERIVABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: NOT_APPLICABLE, EXECUTABLE: NOT_APPLICABLE, QUALIFIED: "YES", EVIDENCE_CAPABLE: "YES", PRODUCT_WIRED: "YES"}
-    wiring: WIRED
-    conditions: [CAP-ENV-CERTIFIED-OPTIMIZATION-V1]
-    claim_scope: requirement status is an orthogonal annotation (Gate-3 law B), not a frontier predicate
-  - id: OPT-005
-    name: serving optimization
-    owner: DESIGN_SPACE
-    stages: {DECLARABLE: "NO", DERIVABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO", EXECUTABLE: "NO", QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: FUTURE_CONTRACT
-  - id: OPT-006
-    name: memory optimization
-    owner: DESIGN_SPACE
-    stages: {DECLARABLE: "NO", DERIVABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO", EXECUTABLE: "NO", QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: NO_EVIDENCE_CONTRACT
-  - id: OPT-007
-    name: evidence reuse / cache
-    owner: DESIGN_SPACE
-    stages: {DECLARABLE: "NO", DERIVABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO", EXECUTABLE: "NO", QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: IMPLEMENTATION_GAP
-    claim_scope: no compile or evidence reuse exists; every study recompiles and re-evaluates
-  - id: OPT-008
-    name: candidate promotion
-    owner: DESIGN_SPACE
-    stages: {DECLARABLE: "NO", DERIVABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO", EXECUTABLE: "NO", QUALIFIED: "NO", EVIDENCE_CAPABLE: "NO", PRODUCT_WIRED: "NO"}
-    wiring: NOT_AVAILABLE
-    reason: PRODUCT_NOT_WIRED
-    claim_scope: a selected candidate exists; promotion into a new design revision is not wired
+- id: COMM-001
+  name: point-to-point
+  owner: COMMUNICATION
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'YES'
+    EXECUTABLE: 'YES'
+    QUALIFIED: CONDITIONAL
+    EVIDENCE_CAPABLE: CONDITIONAL
+    PRODUCT_WIRED: 'YES'
+  conditions:
+  - COND-SINGLE-COMM-CLASS
+  wiring: WIRED
+- id: COMM-002
+  name: collectives
+  owner: COMMUNICATION
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'YES'
+    EXECUTABLE: 'YES'
+    QUALIFIED: CONDITIONAL
+    EVIDENCE_CAPABLE: CONDITIONAL
+    PRODUCT_WIRED: 'YES'
+  conditions:
+  - COND-SINGLE-COMM-CLASS
+  wiring: WIRED
+- id: COMM-003
+  name: broadcast / root-fanout
+  owner: COMMUNICATION
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'YES'
+    EXECUTABLE: 'YES'
+    QUALIFIED: CONDITIONAL
+    EVIDENCE_CAPABLE: CONDITIONAL
+    PRODUCT_WIRED: 'YES'
+  conditions:
+  - COND-SINGLE-COMM-CLASS
+  wiring: WIRED
+  claim_scope: a real semantic collective, lowered to per-destination messages
+- id: COMM-004
+  name: semantic multicast
+  owner: COMMUNICATION
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'YES'
+    EXECUTABLE: 'YES'
+    QUALIFIED: CONDITIONAL
+    EVIDENCE_CAPABLE: CONDITIONAL
+    PRODUCT_WIRED: 'YES'
+  conditions:
+  - COND-SINGLE-COMM-CLASS
+  wiring: WIRED
+  claim_scope: semantic multicast lowers to repeated unicasts; it is NOT hardware multicast
+- id: COMM-005
+  name: hardware multicast
+  owner: COMMUNICATION
+  stages:
+    DECLARABLE: 'NO'
+    DERIVABLE: 'NO'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: FUTURE_CONTRACT
+  claim_scope: not modelled. mcast_groups/mcast_setup_cycles are declarable knobs with NO
+    execution
+- id: COMM-006
+  name: multiple communication classes
+  owner: COMMUNICATION
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: IMPLEMENTATION_GAP
+  limiting: COMM-D1 multi-class logical-message/physical-propagation debt; native profiles
+    require one class
+  claim_scope: multi-class intent is valid and VC assignment is class-aware; execution is
+    not available
+- id: EVAL-001
+  name: native BookSim (mesh DOR-XY)
+  owner: EVALUATION
+  stages:
+    DECLARABLE: NOT_APPLICABLE
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'YES'
+    EXECUTABLE: 'YES'
+    QUALIFIED: CONDITIONAL
+    EVIDENCE_CAPABLE: CONDITIONAL
+    PRODUCT_WIRED: 'YES'
+  conditions:
+  - CAP-ENV-BOOKSIM-MESH-DOR-XY-V1
+  wiring: WIRED
+  claim_scope: qualified network-cycle simulation under CERTIFIED_BOOKSIM_MESH_DOR_XY_V1
+- id: EVAL-002
+  name: generic / AnyNet BookSim
+  owner: EVALUATION
+  stages:
+    DECLARABLE: NOT_APPLICABLE
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'YES'
+    EXECUTABLE: 'YES'
+    QUALIFIED: CONDITIONAL
+    EVIDENCE_CAPABLE: CONDITIONAL
+    PRODUCT_WIRED: 'YES'
+  conditions:
+  - CAP-ENV-BOOKSIM-ANYNET-V1
+  wiring: WIRED
+  claim_scope: qualified under CERTIFIED_BOOKSIM_ANYNET_V1; NOT interchangeable with the mesh-DOR
+    profile
+- id: EVAL-003
+  name: ASTRA
+  owner: EVALUATION
+  stages:
+    DECLARABLE: NOT_APPLICABLE
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'YES'
+    EXECUTABLE: 'YES'
+    QUALIFIED: CONDITIONAL
+    EVIDENCE_CAPABLE: CONDITIONAL
+    PRODUCT_WIRED: 'YES'
+  conditions:
+  - CAP-ENV-BOOKSIM-SERVING-V1
+  wiring: WIRED
+  claim_scope: drives serving-round network execution; ASTRA execution is NOT hardware-latency
+    truth
+- id: EVAL-004
+  name: static Product Evaluation
+  owner: EVALUATION
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: CONDITIONAL
+    EXECUTABLE: CONDITIONAL
+    QUALIFIED: CONDITIONAL
+    EVIDENCE_CAPABLE: CONDITIONAL
+    PRODUCT_WIRED: 'YES'
+  conditions:
+  - CAP-ENV-BOOKSIM-MESH-DOR-XY-V1
+  - CAP-ENV-BOOKSIM-ANYNET-V1
+  wiring: WIRED
+  claim_scope: dense static workloads through compile -> certificate -> qualified BookSim
+    -> metric evidence
+- id: EVAL-005
+  name: Serving Evaluation
+  owner: EVALUATION
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'YES'
+    EXECUTABLE: CONDITIONAL
+    QUALIFIED: CONDITIONAL
+    EVIDENCE_CAPABLE: CONDITIONAL
+    PRODUCT_WIRED: 'YES'
+  conditions:
+  - CAP-ENV-BOOKSIM-SERVING-V1
+  wiring: WIRED
+  claim_scope: LLMServingSim owns requests/queues/scheduling/batching/prefill/decode/metrics;
+    VERITX owns fabric execution
+- id: EVAL-006
+  name: backend full-path route observation
+  owner: EVALUATION
+  stages:
+    DECLARABLE: NOT_APPLICABLE
+    DERIVABLE: NOT_APPLICABLE
+    VERIFIABLE: NOT_APPLICABLE
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: NO_EVIDENCE_CONTRACT
+  claim_scope: no per-packet path instrumentation exists
+- id: EVAL-007
+  name: first-hop route observation
+  owner: EVALUATION
+  stages:
+    DECLARABLE: NOT_APPLICABLE
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'YES'
+    EXECUTABLE: 'YES'
+    QUALIFIED: CONDITIONAL
+    EVIDENCE_CAPABLE: 'YES'
+    PRODUCT_WIRED: 'YES'
+  conditions:
+  - CAP-ENV-BOOKSIM-MESH-DOR-XY-V1
+  - CAP-ENV-BOOKSIM-ANYNET-V1
+  wiring: WIRED
+  claim_scope: The runtime routing-function/table first-hop realization is exactly equivalent
+    to the canonical route over the COMPLETE source x destination domain. Not observed packet
+    paths.
+- id: EVAL-008
+  name: canonical full-route derivation + legality/termination verification
+  owner: EVALUATION
+  stages:
+    DECLARABLE: NOT_APPLICABLE
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: NOT_APPLICABLE
+    EXECUTABLE: NOT_APPLICABLE
+    QUALIFIED: NOT_APPLICABLE
+    EVIDENCE_CAPABLE: NOT_APPLICABLE
+    PRODUCT_WIRED: 'YES'
+  wiring: INSPECT_ONLY
+  claim_scope: the canonical route table is legal and terminating; this is a DERIVED EXPECTED
+    state, never OBSERVED evidence
+- id: FAB-001
+  name: mesh
+  owner: FABRIC
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'YES'
+    EXECUTABLE: CONDITIONAL
+    QUALIFIED: CONDITIONAL
+    EVIDENCE_CAPABLE: CONDITIONAL
+    PRODUCT_WIRED: 'YES'
+  conditions:
+  - CAP-ENV-BOOKSIM-MESH-DOR-XY-V1
+  wiring: WIRED
+  claim_scope: square mesh topology; scientific name side_length, implementation field NocConfig.radix
+- id: FAB-002
+  name: concentrated mesh
+  owner: FABRIC
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: CONDITIONAL
+    EXECUTABLE: CONDITIONAL
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: CONDITIONAL
+    PRODUCT_WIRED: 'YES'
+  conditions:
+  - CAP-ENV-BOOKSIM-ANYNET-V1
+  wiring: WIRED
+  limiting: concentration > 1 is NOT covered by the mesh-DOR envelope
+  claim_scope: valid canonical fabric; qualification depends on the envelope
+- id: FAB-003
+  name: torus topology
+  owner: FABRIC
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: INSPECT_ONLY
+  reason: NO_BACKEND_PROJECTION
+  claim_scope: topology construction available; routed execution not available
+- id: FAB-004
+  name: torus routed execution
+  owner: FABRIC
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'NO'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: NO_DERIVATION
+  claim_scope: no canonical route generator for torus
+- id: FAB-005
+  name: multiplane
+  owner: FABRIC
+  stages:
+    DECLARABLE: 'NO'
+    DERIVABLE: 'NO'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: FUTURE_CONTRACT
+- id: FAB-006
+  name: link width variation
+  owner: FABRIC
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'YES'
+    EXECUTABLE: CONDITIONAL
+    QUALIFIED: CONDITIONAL
+    EVIDENCE_CAPABLE: CONDITIONAL
+    PRODUCT_WIRED: 'YES'
+  conditions:
+  - CAP-ENV-BOOKSIM-MESH-DOR-XY-V1
+  - CAP-ENV-BOOKSIM-ANYNET-V1
+  wiring: WIRED
+- id: FAB-007
+  name: custom / hierarchical topology
+  owner: FABRIC
+  stages:
+    DECLARABLE: 'NO'
+    DERIVABLE: 'NO'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: NO_CONTRACT
+  claim_scope: only the declared topology families exist
+- id: MAP-001
+  name: automatic mapping
+  owner: PLACEMENT
+  stages:
+    DECLARABLE: NOT_APPLICABLE
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'YES'
+    EXECUTABLE: NOT_APPLICABLE
+    QUALIFIED: NOT_APPLICABLE
+    EVIDENCE_CAPABLE: NOT_APPLICABLE
+    PRODUCT_WIRED: 'YES'
+  wiring: INSPECT_ONLY
+  claim_scope: participant->compute-agent placement is derived deterministically under RANK_ORDER_V1
+- id: MAP-002
+  name: manual placement / pinning
+  owner: PLACEMENT
+  stages:
+    DECLARABLE: 'NO'
+    DERIVABLE: 'NO'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: NO_CONTRACT
+  claim_scope: no editable placement contract exists (Gate-3 D2)
+- id: MAP-003
+  name: affinity / anti-affinity
+  owner: PLACEMENT
+  stages:
+    DECLARABLE: 'NO'
+    DERIVABLE: 'NO'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: NO_CONTRACT
+  claim_scope: not modelled
+- id: MEM-001
+  name: AddressMap
+  owner: MEMORY
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: NOT_APPLICABLE
+    EXECUTABLE: NOT_APPLICABLE
+    QUALIFIED: NOT_APPLICABLE
+    EVIDENCE_CAPABLE: NOT_APPLICABLE
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: PRODUCT_NOT_WIRED
+  limiting: no authoring control, no inspection surface, and DesignView does not carry address_map
+    (PF-D1)
+  claim_scope: half-open [base, base+size) ranges owned by memory agents; decoded into FabricArtifact;
+    presets supply the map internally
+- id: MEM-002
+  name: Ramulator engine
+  owner: MEMORY
+  stages:
+    DECLARABLE: 'NO'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: 'YES'
+    EXECUTABLE: 'YES'
+    QUALIFIED: CONDITIONAL
+    EVIDENCE_CAPABLE: 'YES'
+    PRODUCT_WIRED: 'NO'
+  conditions:
+  - CAP-ENV-RAMULATOR-V1
+  wiring: ENGINE_ONLY
+  claim_scope: standalone DRAM-cycle simulation over a recorded request stream; NOT NoC-inclusive
+    memory latency
+- id: MEM-003
+  name: canonical WorkloadV4 -> Ramulator
+  owner: MEMORY
+  stages:
+    DECLARABLE: 'NO'
+    DERIVABLE: 'NO'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: NO_CONTRACT
+  claim_scope: no bridge exists; the chain consumes the Phase-9 WorkloadArtifact
+- id: MEM-004
+  name: serving -> Ramulator
+  owner: MEMORY
+  stages:
+    DECLARABLE: 'NO'
+    DERIVABLE: 'NO'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: NO_CONTRACT
+  claim_scope: serving does not call Ramulator
+- id: MEM-005
+  name: network + memory coupled timing
+  owner: MEMORY
+  stages:
+    DECLARABLE: 'NO'
+    DERIVABLE: 'NO'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: FUTURE_CONTRACT
+  claim_scope: FORBIDDEN to sum BookSim and Ramulator latency
+- id: MEM-006
+  name: REMOTE / CXL / STORAGE memory
+  owner: MEMORY
+  stages:
+    DECLARABLE: LEGACY_ONLY
+    DERIVABLE: 'NO'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: LEGACY_ONLY
+  claim_scope: grammar tokens, refused at lowering against the v1 HBM pool
+- id: MEM-007
+  name: PIM
+  owner: MEMORY
+  stages:
+    DECLARABLE: LEGACY_ONLY
+    DERIVABLE: 'NO'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: LEGACY_ONLY
+  claim_scope: 'legacy chain, end to end. The code is LIVE (KIND_PIM_CHANNEL/PIM_END exist
+    in workload/graph.py and backend/astra.py consumes them) but the PROVENANCE is legacy-only:
+    the sole producer is workload/migration.py, a legacy-import surface that is not on the
+    product path, and no WorkloadV3 intent originates PIM. LEGACY_ONLY here therefore means
+    "live code, legacy origin", not "dead code".'
+- id: MEM-008
+  name: memory Requirements
+  owner: MEMORY
+  stages:
+    DECLARABLE: 'NO'
+    DERIVABLE: 'NO'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: NO_EVIDENCE_CONTRACT
+  claim_scope: no registered memory MetricId; Requirements stay deferred
+- id: OPT-001
+  name: guided optimizer
+  owner: DESIGN_SPACE
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'YES'
+    EXECUTABLE: 'YES'
+    QUALIFIED: 'YES'
+    EVIDENCE_CAPABLE: 'YES'
+    PRODUCT_WIRED: 'YES'
+  wiring: WIRED
+  conditions:
+  - CAP-ENV-CERTIFIED-OPTIMIZATION-V1
+  claim_scope: closed GUIDED registry over 8 typed NocConfig dimensions; locked derived properties
+    inexpressible
+- id: OPT-002
+  name: expert typed design space
+  owner: DESIGN_SPACE
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'YES'
+    EXECUTABLE: 'YES'
+    QUALIFIED: 'YES'
+    EVIDENCE_CAPABLE: 'YES'
+    PRODUCT_WIRED: 'YES'
+  wiring: WIRED
+  conditions:
+  - CAP-ENV-CERTIFIED-OPTIMIZATION-V1
+  claim_scope: the same OptimizationDefinition contract; no arbitrary JSON path editor
+- id: OPT-003
+  name: multi-objective Pareto
+  owner: DESIGN_SPACE
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: NOT_APPLICABLE
+    EXECUTABLE: NOT_APPLICABLE
+    QUALIFIED: 'YES'
+    EVIDENCE_CAPABLE: 'YES'
+    PRODUCT_WIRED: 'YES'
+  wiring: WIRED
+  conditions:
+  - CAP-ENV-CERTIFIED-OPTIMIZATION-V1
+  claim_scope: backend-authoritative exact dominance over certified metrics; ties stay ties
+- id: OPT-004
+  name: requirement reporting within studies
+  owner: DESIGN_SPACE
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: NOT_APPLICABLE
+    EXECUTABLE: NOT_APPLICABLE
+    QUALIFIED: 'YES'
+    EVIDENCE_CAPABLE: 'YES'
+    PRODUCT_WIRED: 'YES'
+  wiring: WIRED
+  conditions:
+  - CAP-ENV-CERTIFIED-OPTIMIZATION-V1
+  claim_scope: requirement status is an orthogonal annotation (Gate-3 law B), not a frontier
+    predicate
+- id: OPT-005
+  name: serving optimization
+  owner: DESIGN_SPACE
+  stages:
+    DECLARABLE: 'NO'
+    DERIVABLE: 'NO'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: FUTURE_CONTRACT
+- id: OPT-006
+  name: memory optimization
+  owner: DESIGN_SPACE
+  stages:
+    DECLARABLE: 'NO'
+    DERIVABLE: 'NO'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: NO_EVIDENCE_CONTRACT
+- id: OPT-007
+  name: evidence reuse / cache
+  owner: DESIGN_SPACE
+  stages:
+    DECLARABLE: 'NO'
+    DERIVABLE: 'NO'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: IMPLEMENTATION_GAP
+  claim_scope: no compile or evidence reuse exists; every study recompiles and re-evaluates
+- id: OPT-008
+  name: candidate promotion
+  owner: DESIGN_SPACE
+  stages:
+    DECLARABLE: 'NO'
+    DERIVABLE: 'NO'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: PRODUCT_NOT_WIRED
+  claim_scope: a selected candidate exists; promotion into a new design revision is not wired
+- id: PAR-001
+  name: TP coordinate
+  owner: PARALLELISM
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'YES'
+    EXECUTABLE: 'YES'
+    QUALIFIED: CONDITIONAL
+    EVIDENCE_CAPABLE: CONDITIONAL
+    PRODUCT_WIRED: 'YES'
+  wiring: WIRED
+  claim_scope: TP grouping and collective participation are real; TENSOR-SHARDING CORRECTNESS
+    IS NOT PROVEN
+- id: PAR-002
+  name: DP coordinate
+  owner: PARALLELISM
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'YES'
+    EXECUTABLE: 'YES'
+    QUALIFIED: CONDITIONAL
+    EVIDENCE_CAPABLE: CONDITIONAL
+    PRODUCT_WIRED: 'YES'
+  wiring: WIRED
+  claim_scope: DP extent/group algebra is real; gradient-replica semantics are NOT asserted
+- id: PAR-003
+  name: EP coordinate
+  owner: PARALLELISM
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'YES'
+    EXECUTABLE: CONDITIONAL
+    QUALIFIED: CONDITIONAL
+    EVIDENCE_CAPABLE: CONDITIONAL
+    PRODUCT_WIRED: 'YES'
+  wiring: WIRED
+  claim_scope: EP extent and communication participation are real; expert assignment boundaries
+    are not modelled in static
+- id: PAR-004
+  name: PP coordinate
+  owner: PARALLELISM
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'YES'
+    EXECUTABLE: CONDITIONAL
+    QUALIFIED: CONDITIONAL
+    EVIDENCE_CAPABLE: CONDITIONAL
+    PRODUCT_WIRED: 'YES'
+  wiring: WIRED
+  claim_scope: PP group family is real; STAGE ASSIGNMENT/LOWERING IS INCOMPLETE
+- id: PAR-005
+  name: sharding correctness
+  owner: PARALLELISM
+  stages:
+    DECLARABLE: 'NO'
+    DERIVABLE: 'NO'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: NO_CONTRACT
+  claim_scope: no tensor/gradient/expert sharding correctness obligation exists
+- id: REQ-001
+  name: network completion_cycles requirement
+  owner: REQUIREMENTS
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: NOT_APPLICABLE
+    EXECUTABLE: NOT_APPLICABLE
+    QUALIFIED: CONDITIONAL
+    EVIDENCE_CAPABLE: 'YES'
+    PRODUCT_WIRED: 'YES'
+  wiring: WIRED
+  claim_scope: WholeNetworkEvaluationTarget; cycle evidence survives a caller clock change
+- id: REQ-002
+  name: network completion_ns requirement
+  owner: REQUIREMENTS
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: NOT_APPLICABLE
+    EXECUTABLE: NOT_APPLICABLE
+    QUALIFIED: CONDITIONAL
+    EVIDENCE_CAPABLE: 'YES'
+    PRODUCT_WIRED: 'YES'
+  wiring: WIRED
+  claim_scope: WholeNetworkEvaluationTarget; ns evidence is invalidated by a clock change
+- id: REQ-003
+  name: bandwidth requirement
+  owner: REQUIREMENTS
+  stages:
+    DECLARABLE: 'NO'
+    DERIVABLE: 'NO'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: NOT_APPLICABLE
+    EXECUTABLE: NOT_APPLICABLE
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: NO_CONTRACT
+- id: REQ-004
+  name: class-target requirement
+  owner: REQUIREMENTS
+  stages:
+    DECLARABLE: 'NO'
+    DERIVABLE: 'NO'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: NOT_APPLICABLE
+    EXECUTABLE: NOT_APPLICABLE
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: NO_CONTRACT
+- id: REQ-005
+  name: memory requirement
+  owner: REQUIREMENTS
+  stages:
+    DECLARABLE: 'NO'
+    DERIVABLE: 'NO'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: NOT_APPLICABLE
+    EXECUTABLE: NOT_APPLICABLE
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: NO_EVIDENCE_CONTRACT
+- id: REQ-006
+  name: serving / operation / group requirement targets
+  owner: REQUIREMENTS
+  stages:
+    DECLARABLE: 'NO'
+    DERIVABLE: 'NO'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: NOT_APPLICABLE
+    EXECUTABLE: NOT_APPLICABLE
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: NO_CONTRACT
+- id: ROUTE-001
+  name: DOR-XY routing
+  owner: ROUTER_RESOURCE
+  stages:
+    DECLARABLE: 'NO'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'YES'
+    EXECUTABLE: 'YES'
+    QUALIFIED: CONDITIONAL
+    EVIDENCE_CAPABLE: CONDITIONAL
+    PRODUCT_WIRED: 'YES'
+  conditions:
+  - CAP-ENV-BOOKSIM-MESH-DOR-XY-V1
+  wiring: WIRED
+  claim_scope: compiler-derived for mesh; never user intent
+- id: ROUTE-002
+  name: AnyNet canonical route algorithm
+  owner: ROUTER_RESOURCE
+  stages:
+    DECLARABLE: 'NO'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'YES'
+    EXECUTABLE: 'YES'
+    QUALIFIED: CONDITIONAL
+    EVIDENCE_CAPABLE: CONDITIONAL
+    PRODUCT_WIRED: 'YES'
+  conditions:
+  - CAP-ENV-BOOKSIM-ANYNET-V1
+  wiring: WIRED
+  claim_scope: ROUTING_ALGORITHM=anynet_dijkstra_hops; compiler-owned, not user intent
+- id: ROUTE-003
+  name: AnyNet backend projection
+  owner: ROUTER_RESOURCE
+  stages:
+    DECLARABLE: 'NO'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'YES'
+    EXECUTABLE: 'YES'
+    QUALIFIED: CONDITIONAL
+    EVIDENCE_CAPABLE: CONDITIONAL
+    PRODUCT_WIRED: 'YES'
+  conditions:
+  - CAP-ENV-BOOKSIM-ANYNET-V1
+  wiring: WIRED
+  claim_scope: a distinct capability from the canonical algorithm; never a user checkbox
+- id: ROUTE-004
+  name: torus routing
+  owner: ROUTER_RESOURCE
+  stages:
+    DECLARABLE: 'NO'
+    DERIVABLE: 'NO'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: NO_DERIVATION
+  claim_scope: UNSUPPORTED_SEMANTICS at the route generator
+- id: ROUTE-005
+  name: derived VC assignment
+  owner: ROUTER_RESOURCE
+  stages:
+    DECLARABLE: 'NO'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'YES'
+    EXECUTABLE: 'YES'
+    QUALIFIED: CONDITIONAL
+    EVIDENCE_CAPABLE: CONDITIONAL
+    PRODUCT_WIRED: 'YES'
+  wiring: INSPECT_ONLY
+  claim_scope: VC count and class->VC map are compiler-derived; never editable
+- id: ROUTE-006
+  name: deadlock / CDG verification
+  owner: ROUTER_RESOURCE
+  stages:
+    DECLARABLE: NOT_APPLICABLE
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: NOT_APPLICABLE
+    EXECUTABLE: NOT_APPLICABLE
+    QUALIFIED: NOT_APPLICABLE
+    EVIDENCE_CAPABLE: NOT_APPLICABLE
+    PRODUCT_WIRED: 'YES'
+  wiring: INSPECT_ONLY
+  claim_scope: channel-VC CDG determinism is proven by construction
+- id: ROUTE-007
+  name: arbitration policy
+  owner: ROUTER_RESOURCE
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'YES'
+    EXECUTABLE: 'YES'
+    QUALIFIED: CONDITIONAL
+    EVIDENCE_CAPABLE: CONDITIONAL
+    PRODUCT_WIRED: 'YES'
+  conditions:
+  - CAP-ENV-BOOKSIM-MESH-DOR-XY-V1
+  - CAP-ENV-BOOKSIM-ANYNET-V1
+  wiring: WIRED
+  claim_scope: RouterResourceIntentV4.arbitration_policy is real intent (ISLIP | ROUND_ROBIN)
+- id: ROUTE-008
+  name: escape VC designation
+  owner: ROUTER_RESOURCE
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: IMPLEMENTATION_GAP
+  claim_scope: supported-but-unused; no backend materialization
+- id: ROUTE-009
+  name: adaptive routing
+  owner: ROUTER_RESOURCE
+  stages:
+    DECLARABLE: 'NO'
+    DERIVABLE: 'NO'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: FUTURE_CONTRACT
+- id: ROUTE-010
+  name: valiant routing
+  owner: ROUTER_RESOURCE
+  stages:
+    DECLARABLE: 'NO'
+    DERIVABLE: 'NO'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: FUTURE_CONTRACT
+- id: ROUTE-011
+  name: RCU / in-network reduction
+  owner: ROUTER_RESOURCE
+  stages:
+    DECLARABLE: FUTURE_CONTRACT
+    DERIVABLE: 'NO'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: FUTURE_CONTRACT
+  limiting: removed from v4; no structural router-reduction artifact (INTENT-ROUTER-RESOURCES.md:316,320)
+  claim_scope: not modeled. No target intent field exists; legacy parsing is preserved but
+    never becomes canonical router-resource meaning. Semantic REDUCE does not imply physical
+    router reduction.
+- id: ROUTE-012
+  name: candidate-owned router buffers
+  owner: ROUTER_RESOURCE
+  stages:
+    DECLARABLE: 'NO'
+    DERIVABLE: 'NO'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: NO_CONTRACT
+  claim_scope: category defined (candidate-owned); no optimizer dimension exists
+- id: SYS-001
+  name: physical agent inventory
+  owner: SYSTEM
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'YES'
+    EXECUTABLE: NOT_APPLICABLE
+    QUALIFIED: NOT_APPLICABLE
+    EVIDENCE_CAPABLE: NOT_APPLICABLE
+    PRODUCT_WIRED: 'YES'
+  wiring: WIRED
+  claim_scope: the declared agent inventory is materialized as PhysicalInventory and participates
+    in every downstream join
+- id: SYS-002
+  name: agent hierarchy
+  owner: SYSTEM
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'YES'
+    EXECUTABLE: NOT_APPLICABLE
+    QUALIFIED: NOT_APPLICABLE
+    EVIDENCE_CAPABLE: NOT_APPLICABLE
+    PRODUCT_WIRED: 'YES'
+  wiring: INSPECT_ONLY
+  claim_scope: hierarchy is declared and inspectable; a hierarchy-only change reissues context-bound
+    artifacts
+- id: SYS-003
+  name: multiple declared clock domains
+  owner: SYSTEM
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: NO_BACKEND_PROJECTION
+  limiting: no clock-crossing artifact exists; COND-SINGLE-CLOCK-FABRIC is a coherence law
+  claim_scope: memberships are declarable; the design is refused beyond one domain
+- id: SYS-004
+  name: multi-clock fabric execution
+  owner: SYSTEM
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'NO'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: NO_DERIVATION
+  limiting: no clock-crossing fabric artifact
+  claim_scope: not claimed
+- id: SYS-005
+  name: stable agent identity
+  owner: SYSTEM
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'YES'
+    EXECUTABLE: NOT_APPLICABLE
+    QUALIFIED: NOT_APPLICABLE
+    EVIDENCE_CAPABLE: NOT_APPLICABLE
+    PRODUCT_WIRED: 'YES'
+  wiring: WIRED
+  claim_scope: AgentGroupId/AgentInstanceId are stable; declaration order never changes science
+- id: WORK-001
+  name: dense static workload
+  owner: WORKLOAD
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: CONDITIONAL
+    EXECUTABLE: CONDITIONAL
+    QUALIFIED: CONDITIONAL
+    EVIDENCE_CAPABLE: CONDITIONAL
+    PRODUCT_WIRED: 'YES'
+  conditions:
+  - CAP-ENV-BOOKSIM-MESH-DOR-XY-V1
+  - CAP-ENV-BOOKSIM-ANYNET-V1
+  wiring: WIRED
+  claim_scope: dense_transformer static workloads lower, map, route, verify and evaluate under
+    a named envelope
+- id: WORK-002
+  name: static MoE
+  owner: WORKLOAD
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'NO'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: IMPLEMENTATION_GAP
+  limiting: no full static dispatch/combine lowering
+  claim_scope: MoE semantics are declarable; static MoE evaluation is not available
+- id: WORK-003
+  name: serving dense
+  owner: WORKLOAD
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'YES'
+    EXECUTABLE: CONDITIONAL
+    QUALIFIED: CONDITIONAL
+    EVIDENCE_CAPABLE: CONDITIONAL
+    PRODUCT_WIRED: 'YES'
+  conditions:
+  - CAP-ENV-BOOKSIM-SERVING-V1
+  wiring: WIRED
+  claim_scope: serving request semantics belong to LLMServingSim; VERITX owns fabric/network
+    execution
+- id: WORK-004
+  name: serving MoE
+  owner: WORKLOAD
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'YES'
+    EXECUTABLE: CONDITIONAL
+    QUALIFIED: CONDITIONAL
+    EVIDENCE_CAPABLE: CONDITIONAL
+    PRODUCT_WIRED: 'YES'
+  conditions:
+  - CAP-ENV-BOOKSIM-SERVING-V1
+  wiring: WIRED
+  claim_scope: real dispatch/combine behaviour in serving; NOT equivalent to static MoE
+- id: WORK-005
+  name: collectives as declared intent
+  owner: WORKLOAD
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: CONDITIONAL
+    EXECUTABLE: CONDITIONAL
+    QUALIFIED: CONDITIONAL
+    EVIDENCE_CAPABLE: CONDITIONAL
+    PRODUCT_WIRED: 'YES'
+  conditions:
+  - COND-SINGLE-COMM-CLASS
+  wiring: WIRED
+  claim_scope: collectives are declared and lowered per class; multi-class execution is not
+    available
+- id: WORK-006
+  name: P2P transfer
+  owner: WORKLOAD
+  stages:
+    DECLARABLE: 'NO'
+    DERIVABLE: 'NO'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: NO_CONTRACT
+  claim_scope: 'not authorable: WorkloadV3 exposes collectives only. KIND_P2P is produced
+    by workload/migration.py from legacy phase9/waved documents, which is not the product
+    path. No intent field declares a point-to-point transfer.'
+- id: WORK-007
+  name: logical (source-replicated) multicast
+  owner: WORKLOAD
+  stages:
+    DECLARABLE: LEGACY_ONLY
+    DERIVABLE: 'NO'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: NO_CONTRACT
+  claim_scope: 'not authorable. LOGICAL multicast is source replication (REPLICATION_SOURCE
+    in workload/operations.py) and is DISTINCT from hardware fabric multicast: see WORK-008.
+    Produced only by the legacy migration path.'
+- id: WORK-008
+  name: hardware fabric multicast
+  owner: ROUTER_RESOURCE
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: CONDITIONAL
+    VERIFIABLE: 'NO'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: FUTURE_CONTRACT
+  claim_scope: no hardware replication artifact exists. The NocConfig knobs mcast_groups /
+    mcast_setup_cycles constrain a switch multicast engine and are NOT a replication-tree
+    resource. Never collapse this row with WORK-007.
+- id: WORK-009
+  name: static expert (dispatch/combine) communication
+  owner: WORKLOAD
+  stages:
+    DECLARABLE: LEGACY_ONLY
+    DERIVABLE: 'NO'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: NO_CONTRACT
+  claim_scope: not authorable. ModelFamily.MOE declares a model SHAPE; it does not declare
+    expert dispatch/combine operations. KIND_EXPERT_BEGIN/END are produced only by the legacy
+    migration path. Serving expert execution is WORK-004 and must not be read as static expert
+    lowering.

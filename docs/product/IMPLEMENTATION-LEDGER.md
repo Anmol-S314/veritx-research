@@ -821,3 +821,110 @@ absent is never zero; honesty metadata travels with the metrics.
 AMEND-6 workload parity · AMEND-7 capability-registry correction ·
 AMEND-8 synthesis adapter · AMEND-9 structural optimizer ·
 AMEND-10 Studio IA · Phase 3 Static Evaluate
+
+---
+
+## FEATURE RECLAMATION IMPLEMENTATION TRANCHE 2
+
+### TRANCHE 1 SEAL
+
+**Test-count reconciliation — by collected node-ID set diff, not arithmetic.**
+
+| | |
+|---|---|
+| Baseline `1834495c` collected | **4140** |
+| HEAD collected | **4220** |
+| **Added** | **+80** |
+| **Removed** | **0** |
+
+Added = 74 (tranche 1's four new files: TAX 15, CUSTOM/STAGE 29, SEARCH 16,
+PERF 14) + 6 (`test_compile_result_view.py`). Method: `pytest
+--collect-only -q` at both commits, `LC_ALL=C sort`, `comm`. An earlier
+`comm` run without the locale pin reported 4 spurious removals; the correct
+answer is **0**.
+
+**The reported "+31" was a REPORTING error, not a test loss.** The "4171
+baseline" figure was a mid-tranche measurement taken after 44 of the 74 new
+tests already existed. **No regression test disappeared.**
+
+**FlatFly concentration proof.** Target derived from source, not asserted:
+`presets.py:51-57` defines `nodes=(k**n)*c`, `r=c+(k-1)*n`,
+`edges=nodes//c*(r-c)//2`, and `SWEEP_TOPOS` names the preset `flatfly_64`.
+
+| Fact | Expected | Materializer |
+|---|---|---|
+| routers | 16 (`k**n`) | 16 ✓ |
+| endpoints | **64** (`k**n * c`) | 64 seats ✓ |
+| seats/router | 4 | {4} ✓ |
+| total seats | 64 | 64 ✓ |
+| router degree | 6 (`(k-1)*n`) | 6 ✓ |
+| directed channels | 96 (`2*48`) | 96 ✓ |
+
+**Endpoint universe is 64 over 16 routers — not 64 routers.** Concentration
+is owned by `Router.seat_capacity` inside the artifact, so `c=4` and `c=1`
+**do not collapse**: their `topology_hash` differs while the router graph is
+identical. SEAL-1/SEAL-3 tests added.
+
+**SEAL-4 defect found and fixed.** `FabricInspector2D` laid out from
+`r.coordinates`, so a coordinate-free custom graph stacked every router at
+(0,0). A deterministic presentation-only grid now covers that case.
+
+**Verdict: `TRANCHE 1 SEAL — PASS`** (with the studio fixture blocker below).
+
+### AMEND-6 — workload origin parity
+
+Evidence: the question is who **PRODUCES** a kind, not who consumes it.
+
+| Kind | Producer | Status |
+|---|---|---|
+| COMPUTE | `lowering.py` | DERIVED_ONLY |
+| COLLECTIVE (×5) | `lowering.py` from `CollectiveIntent` | **AUTHORABLE** |
+| P2P | `migration.py` only | DERIVED_ONLY (legacy import) |
+| MULTICAST | `migration.py` only | DERIVED_ONLY (logical) |
+| EXPERT_BEGIN/END | `migration.py` only | DERIVED_ONLY |
+| PIM_CHANNEL/END | `migration.py` only | DERIVED_ONLY / BACKEND_INTERNAL |
+
+`WorkloadV3` exposes `collectives` and **no** operations/p2p/multicast/pim
+field. `migration.py` is **not called from the product path** (its only
+reference is a comment in `lowering.py`).
+
+**BROADCAST is safe:** `CollectiveIntent` refuses a BROADCAST without an
+explicit `source_rank` — *"participants[0] is a legacy"* invention is named
+in the refusal. Never silently dropped.
+
+**CXL / REMOTE / STORAGE still refuse** at lowering with typed reasons.
+
+### AMEND-7 — capability truth
+
+77 rows (was 73). New: WORK-006 P2P, WORK-007 logical multicast, WORK-008
+hardware multicast, WORK-009 static expert. MEM-007 rebuilt.
+
+**The checker caught a real contradiction.** `check_capability_registry.py`
+enforces a **TERMINAL** law: a `LEGACY_ONLY` stage makes every later stage
+`NO`. My first MEM-007 draft claimed `DERIVABLE: LEGACY_ONLY` with
+`PROJECTABLE: YES` and was **refused**. The correct characterisation is
+that PIM's chain is legacy **end-to-end** — live code, legacy provenance —
+and the row now says exactly that, with the nuance in `claim_scope`.
+
+### Unresolved blockers
+
+1. **Studio fixture staleness (pre-existing, now entangled).** 4 failures in
+   `apps/studio/tests/test_studio_contract_v2.py`: 2 pre-existing
+   (`test_provisioned_validator_proves_backend_fixtures_through_engine`,
+   `test_fresh_provisioned_regeneration_bytes`) and 2 caused by AMEND-5
+   moving the certified registry to v2. Regeneration was **attempted and
+   reverted**: it absorbs ~43 lines of unrelated drift (staged-compilation
+   `staged` block, `raw_evidence_digest`, `performance_result_id`,
+   `producer_identity`) and then **breaks schema validation** —
+   `test_all_committed_fixtures_validate_against_declared_contract_versions`
+   fails on the regenerated `invalid-design.json`. The fixture set and its
+   schema are mutually stale, independent of this work. Needs a separate
+   deliberate refresh.
+2. Two unrelated `TopologyError` classes (unchanged, deferred).
+3. `flatfly` materializable, not authorable (unchanged).
+4. `TopologyIR` CLI not restored (unchanged).
+
+### Not started (out of tranche scope)
+
+AMEND-8 synthesis adapter · AMEND-9 structural optimizer · AMEND-10 Studio
+IA · Phase 3 Static Evaluate
