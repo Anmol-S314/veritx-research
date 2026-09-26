@@ -1020,3 +1020,123 @@ provenance so the two causes never blur.
 3. `TopologyIR` CLI not restored.
 4. Gateway staleness is now *observable* but not *prevented* — a long-lived
    process still needs a restart. `/api/v1/health` reports it.
+
+---
+
+## FEATURE RECLAMATION IMPLEMENTATION TRANCHE 3
+
+**Purpose:** prove an EXISTING synthesis engine can generate a canonical
+candidate that enters the SAME compiler/verification/evaluation/visualisation
+pipeline as an authored topology. Not structural optimization, not multiple
+engines, not a broad topology catalog.
+
+### Engine audit (from source, not names)
+
+| Engine | Input | Output | Objective | Constraints | Determinism | Tests |
+|---|---|---|---|---|---|---|
+| `milp_topology_v2.py::solve_tmcf` | traffic matrix, layout, radix, max_len | chosen link set | traffic-weighted hops (or priced geodesic) | **link-capacity, flow conservation, radix** | yes (HiGHS) | **none in tree** |
+| `milp_topology_v2.py::sa_synthesize` | same | adjacency | geodesic / priced | radix + connectivity | seeded | none in tree |
+| `bo_synthesizer.py` | param registry | SynthResult | skopt GP | — | seed-dependent | none in tree |
+| `iterative_synthesizer.py` | anonymous adjacency | `.anynet` | rollouts | connectivity | seed-dependent | none in tree |
+| `event_objective.py` | adjacency | scalar | priced geodesic | — | deterministic | none in tree |
+
+**Migration hole:** `tests/test_synthesis_loops.py` and
+`tests/test_synthesis_math.py` exist **only on another branch** — the
+synthesis modules are in the tree, their tests are not. Same pattern as
+`TopologyIR`.
+
+### Engine selection: MILP/TMCF
+
+Deterministic under explicit inputs · emits an exact graph · radix and
+link-length constraints are explicit · source is executable · no hidden
+evaluator authority · no obsolete topology identity. Selected on those
+criteria, not algorithm prestige.
+
+### `diameter` REMOVED — the engine never enforces it
+
+`milp_topology_v2` advertises *"optional diameter"* in its docstring, but
+`solve_tmcf` adds only link-capacity, flow-conservation and radix
+constraints. Exposing a constraint the engine ignores is a false capability
+claim, so the field **does not exist** (SYN-18/19 asserts this).
+
+### Science vs execution policy
+
+| Class | Fields |
+|---|---|
+| **SCIENTIFIC_IDENTITY** | nodes, layout, k/rows/cols, layout_seed, jitter, radix, max_len, objective, pipe_cost, wire_cost, bandwidth_GBs, latency_ns, engine |
+| **EXECUTION_POLICY** | timeout_s, max_nodes |
+| **PROVENANCE** | algorithm, producer_id, generator_semantics_version, solver_status, objective_value |
+
+SYN-4 proves a timeout/cap change does **not** move `definition_id`.
+
+### Traffic authority
+
+`SynthesisTrafficMatrix` — declared namespace, source artifact identity,
+unit, aggregation rule, dimension. **No hidden fallback:** ragged, negative,
+NaN, Inf, non-square, nonzero-diagonal, missing source and dimension
+mismatch all refuse (SYN-8..10). The historical `load_matrix` validates
+**nothing**; SYN-10b asserts that remains true so the adapter's rationale
+stays honest.
+
+### Identity laws
+
+- `candidate_id` binds **definition + traffic + exact graph** only —
+  excludes algorithm, solver status and the `.anynet` projection, so two
+  runs producing the same graph describe the same scientific candidate.
+- `graph_id` binds the graph alone (SYN-27: changed traffic → different
+  candidate, **same** graph_id).
+- `generator_semantics_version` is provenance, not identity (SYN-30).
+
+### Solver honesty
+
+`OPTIMAL` is reported **only** when the solver proved optimality of the
+encoded MILP — never inferred from an incumbent. scipy status 1 (time
+limit) maps to `TIME_LIMIT` even when a solution exists. The 4×4 fixture
+genuinely solves to **OPTIMAL**, so SYN-37 tests the real claim; SYN-38b
+tests the time-limited case is **not** promoted.
+
+### Convergence — the central proof
+
+```
+SynthesisDefinition + SynthesisTrafficMatrix
+  -> milp_topology_v2 (UNMODIFIED)
+  -> TopologyCandidate
+  -> TopologyIR (kind=custom)        <- SAME representation as authored
+  -> materialize_ir -> TopologyArtifact
+  -> [STOPS: FAB-007, the compiler request cannot carry an explicit graph]
+```
+
+SYN-22: a synthesized graph and the **identical hand-authored graph**
+produce the **same `topology_hash`**. Origin differs; science does not.
+
+### Honest stopping point
+
+`TopologyFamily.CUSTOM` refuses with a typed error pointing at
+`materialize_ir`. A synthesized graph stops at **exactly the same stage** as
+an authored custom graph — synthesis is not special-cased to bypass a
+missing stage. Legacy direct `MILP -> AnyNet -> BookSim` scripts remain
+developer tooling and are **not** the canonical path.
+
+### Fixture
+
+4×4 grid, 16 routers, radix 4, max_len 1.0 → **OPTIMAL in ~0.2s**, 24 links.
+Practical as an ordinary test and it makes solver honesty provable.
+
+### Tests
+
+**43 new** (SYN-1..SYN-40), 10.8s total.
+
+### Final test matrix
+
+| Command | Passed | Failed | Skipped |
+|---|---|---|---|
+| backend `pytest tests/` | **4303** | **0** | 17 |
+| studio `pytest tests/` | 10 | 0 | 1 |
+| `npx tsc --noEmit` | exit 0 | — | — |
+| `npx vite build` | exit 0 | — | — |
+| capability / topology / exposure / ontology / preset gates | PASS | — | — |
+
+### Not started (out of tranche scope)
+
+Structural optimization · BO/SA/iterative adapters · additional topology
+families · product API/CLI entry point for synthesis · Studio UI.

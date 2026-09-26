@@ -1095,6 +1095,79 @@ capabilities:
   wiring: NOT_AVAILABLE
   reason: NO_CONTRACT
   claim_scope: category defined (candidate-owned); no optimizer dimension exists
+- id: SYN-001
+  name: topology synthesis definition
+  owner: WORKLOAD
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'NO'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: NO_CONTRACT
+  claim_scope: the definition is canonical, versioned and content-addressed (veritx/synthesis-definition/v1)
+    and binds only graph-changing inputs; timeout and exact-solve cap are execution policy
+    and are excluded from identity. No product/API entry point exists yet, so PRODUCT_WIRED
+    is NO.
+- id: SYN-002
+  name: topology candidate generation
+  owner: WORKLOAD
+  stages:
+    DECLARABLE: 'NO'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: NO_CONTRACT
+  claim_scope: 'milp_topology_v2 drives a canonical TopologyCandidate through an adapter.
+    GENERATOR OBJECTIVE IS NOT EVALUATED PERFORMANCE: objective_value is traffic-weighted
+    hops, never latency or a BookSim result. Solver status is preserved exactly (OPTIMAL only
+    when proven; a time-limited incumbent is TIME_LIMIT).'
+- id: SYN-003
+  name: canonical candidate materialization
+  owner: WORKLOAD
+  stages:
+    DECLARABLE: 'NO'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: NO_CONTRACT
+  claim_scope: a candidate converts to the SAME explicit topology representation an authored
+    custom graph uses (TopologyIR kind=custom) and then to TopologyArtifact through the ordinary
+    materialize_ir. A synthesized graph and the identical hand-authored graph produce the
+    SAME topology_hash. No synthesis-specific materializer or schema exists.
+- id: SYN-004
+  name: synthesized candidate routing / evaluation
+  owner: WORKLOAD
+  stages:
+    DECLARABLE: 'NO'
+    DERIVABLE: LEGACY_ONLY
+    VERIFIABLE: 'NO'
+    PROJECTABLE: 'NO'
+    EXECUTABLE: 'NO'
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  wiring: NOT_AVAILABLE
+  reason: NO_CONTRACT
+  claim_scope: "BLOCKED by FAB-007 (custom topology has no compiler request contract): TopologyFamily.CUSTOM\
+    \ refuses with a typed error pointing at materialize_ir. A synthesized graph stops at\
+    \ exactly the same stage as an authored custom graph \u2014 synthesis is NOT special-cased\
+    \ to bypass a missing stage. Legacy direct MILP -> AnyNet -> BookSim scripts remain developer\
+    \ tooling and are NOT the canonical path."
 - id: SYS-001
   name: physical agent inventory
   owner: SYSTEM
