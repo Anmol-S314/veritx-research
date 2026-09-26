@@ -61,64 +61,90 @@ vocabularies:
     P2: valuable research/diagnostic capability
     P3: historical/developer-only or optional
 coverage:
+  required_domain_count: 43
+  audited_domain_count: 30
+  partial_domain_count: 13
+  unaudited_domain_count: 0
+  partial_domains:
+  - RTL route-table generation
+  - RTL<->simulator validation
+  - Wave-F candidate persistence/reopen verification
+  - agent/machine-readable surfaces
+  - bandwidth resources
+  - batching
+  - compute timing
+  - control-plane diagnose/list/inspect/capabilities
+  - fault injection
+  - memory timing
+  - request arrivals/traces
+  - resource contention
+  - serving MoE
+  unaudited_domains: []
   status: PARTIAL
   reason: Domains under not_yet_audited were NOT searched in history and are NOT classified.
     This registry must not be read as 'everything else is absent'.
   audited_domains:
+  - ASTRA runtime diagnostics
+  - CXL, remote memory, memory-location semantics
+  - MTU/fragmentation
   - PIM
   - RCU / in-network reduction
+  - RTL / Verilator
+  - Ramulator full depth
+  - Studio historical surfaces
+  - Timeloop, energy
+  - UVM generation, SVA/assertion generation
   - VC assignment
+  - Wave-E temporal/system-performance model
+  - Wave-F design optimization
   - agent/API/machine-readable surfaces
+  - backend qualification, evidence/provenance, fault injection
   - capability introspection
+  - comparison/comparability
   - custom/arbitrary topology
+  - historical examples
   - multiplane
+  - physical/reporting (area, power, leakage, Fmax, energy)
   - routing algorithms
   - routing optimization
+  - serving depth / LLMServingSim scheduler
+  - signed manifests/export bundles
   - topology as optimization dimension
   - topology families
   - topology physical constraints
   - topology synthesis
   - workload graph operation vocabulary
-  not_yet_audited:
-  - traffic classes / virtual networks / QoS depth
-  - multicast implementation depth
-  - collective semantics depth
-  - MoE semantics depth
-  - memory-location semantics depth (REMOTE/CXL/STORAGE)
-  - Ramulator integration depth
-  - ASTRA-Sim / Chakra integration depth
-  - LLMServingSim depth
-  - multi-instance serving depth
-  - scheduling / batching / request traces depth
-  - temporal / system-performance model (Wave E)
-  - sensitivity / scaling analysis
-  - physical area estimates
-  - power estimates
-  - timing / Fmax estimates
-  - Timeloop / energy
-  - RTL generation
-  - Verilator
+  verified_domains:
+  - ASTRA runtime diagnostics
+  - CXL
+  - LLMServingSim scheduler
+  - MTU/fragmentation
+  - PIM memory paths
+  - RTL
+  - Ramulator full depth
+  - SVA/assertion generation
+  - Studio historical surfaces
+  - Timeloop
   - UVM generation
-  - SVA / assertion generation
-  - RTL <-> simulator parity
-  - fault injection
-  - MTU / packetization
-  - packet / flit conservation
-  - backend qualification depth
-  - evidence / provenance depth
-  - signed / export artifacts
-  - immutable experiment / attempt lifecycle depth
-  - studies / comparison / comparability gates depth
-  - design-space enumeration depth
-  - multi-scenario optimization
-  - exhaustive vs budgeted completeness
-  - Pareto / selection policies depth
-  - candidate persistence / reopen verification
-  - workload-as-scenario-variable
-  - flow-class certification
-  - Studio surfaces depth
-  - chiplet / hotspot / multicast / HPC examples
-  - report generation
+  - Verilator
+  - Wave-E temporal/system-performance model
+  - analytical area
+  - clocks/time-domain semantics
+  - comparison/comparability
+  - deterministic scheduler
+  - energy
+  - historical examples
+  - leakage
+  - multi-instance
+  - network timing seam
+  - physical/layout/link-price models
+  - power
+  - remote memory
+  - reports
+  - sensitivity/scaling
+  - serving depth
+  - signed manifests/export bundles
+  - timing/Fmax
 capabilities:
 - id: FRA-TOPO-001
   capability: broad topology family representation
@@ -455,6 +481,416 @@ capabilities:
     the ASTRA backend, not merely a legacy grammar token. Reclassify or justify.'
   notes: Direct instance of the audit's critical rule — a NOT_AVAILABLE registry row whose
     historical evidence is stronger than the row implies.
+- id: FRA-PERF-001
+  capability: Wave-E temporal / system-performance model
+  domain: Wave-E temporal/system-performance model
+  historical_source: Wave-E sealed performance layer
+  exact_files:
+  - veritx_dse/performance/model.py (PerformanceModel, ClockDef, ResourceDef, fidelity_warning,
+    rate_duration)
+  - veritx_dse/performance/workload.py (PerformanceRequest, TemporalEvent, TemporalWorkload,
+    canonical_events)
+  - veritx_dse/performance/scheduler.py (schedule_workload, Schedule, ScheduledEvent, SchedulerDeadlock)
+  - veritx_dse/performance/result.py (PerformanceEventGraph, build_performance_result, reverify_result)
+  - veritx_dse/performance/network.py (NetworkWindowBinding, bind_network_window, stats_sha256,
+    network_window_duration)
+  - veritx_dse/performance/metrics.py (dependency_critical_path, resource_utilization, request_latencies,
+    latency_summary)
+  - veritx_dse/performance/sensitivity.py (perturb_model, perturb_workload_durations, sensitivity_analysis)
+  - veritx_dse/application/wave_e_resources.py
+  tests: test_wave_e_identity.py, test_wave_e_scheduler.py, test_wave_e_product.py, test_wave_e_demos.py,
+    test_serving_scheduling_oracle.py
+  historical_maturity: SEALED
+  current_canonical_representation: CANONICAL and WIRED. application/fabric_evaluator.py builds
+    PerformanceModel + TemporalWorkload, runs schedule_workload -> build_performance_result
+    -> reverify_result, and binds the BookSim window.
+  current_product_wiring: EVAL-001..EVAL-008; application/wave_e_resources.py
+  classification: CANONICAL_NOW
+  priority: P3
+  required_action: none
+- id: FRA-PERF-002
+  capability: Wave-E metric exposure (makespan, critical path, utilization, request latency,
+    TTFT, decode-step latency, sensitivity)
+  domain: Wave-E temporal/system-performance model
+  historical_source: Wave-E declared metric set
+  exact_files:
+  - veritx_dse/application/capabilities.py (wave_e.metrics)
+  - veritx_dse/performance/metrics.py
+  - veritx_dse/performance/sensitivity.py
+  tests: test_wave_e_demos.py, test_wave_e_product.py
+  historical_maturity: SEALED
+  current_canonical_representation: COMPUTED but only PARTLY product-exposed. The product
+    surfaces completion_cycles / completion_ns / completion_time. Wave-E additionally computes
+    makespan, critical_path, utilization, request_latency, ttft, decode_step_latency and sensitivity.
+  current_product_wiring: metric registry (optimization/metric_registry.py) exposes the completion_*
+    family
+  classification: NEEDS_CANONICALIZATION
+  priority: P0
+  required_action: 'Decide which Wave-E metrics are product claims and give them registry
+    rows with producers. This is the single largest Phase-3 risk: implementing Static Evaluate
+    without this reclaims one aggregate number and silently drops critical path, utilization,
+    request-latency distribution, TTFT, decode-step latency and sensitivity.'
+  notes: Wave-E is NOT a reclamation item (it is sealed and wired). The reclamation item is
+    its product projection.
+- id: FRA-PERF-003
+  capability: Wave-E honesty boundary (unsupported list + fidelity warning + predictive validation
+    status)
+  domain: Wave-E temporal/system-performance model
+  historical_source: Wave-E capability declaration
+  exact_files:
+  - veritx_dse/application/capabilities.py (wave_e.unsupported, wave_e.predictive_validation,
+    compute.calibration)
+  - veritx_dse/performance/model.py (fidelity_warning)
+  tests: test_wave_e_product.py
+  historical_maturity: SEALED
+  current_canonical_representation: 'CANONICAL. Explicitly unsupported: throughput, continuous_batching,
+    per_operation_network_causality, analytical_compute_roofline, memory_capacity. compute
+    ANALYTICAL_MODEL is MEMORY_ONLY and UNCALIBRATED. predictive_validation NOT_ESTABLISHED.'
+  current_product_wiring: application/capabilities.py
+  classification: CANONICAL_NOW
+  priority: P0
+  required_action: Preserve verbatim when Phase 3 projects metrics. These declarations are
+    what stop an analytical estimate being read as a measured claim.
+- id: FRA-PHYS-001
+  capability: analytical area / power / timing estimates
+  domain: physical/reporting (area, power, leakage, Fmax, energy)
+  historical_source: PRD §7 formal estimation models
+  exact_files:
+  - veritx_dse/reports/reports.py (estimate_router_area, estimate_link_area, estimate_nic_area,
+    estimate_fabric_area, estimate_dynamic_power, estimate_leakage_power, estimate_total_power,
+    compute_energy_per_bit, router_pipeline_stages, estimate_critical_path_ps, estimate_max_frequency,
+    generate_report, _scale_factor)
+  tests: test_reports.py
+  historical_maturity: TESTED
+  current_canonical_representation: PRESENT and TESTED but NOT product-wired. Exported from
+    veritx_dse/__init__.py; imported by no application/product module. NOT listed in application/inventory.py.
+  current_product_wiring: none
+  classification: NEEDS_CANONICALIZATION
+  priority: P1
+  required_action: 'Classify honestly as ANALYTICAL_ESTIMATE and decide the home: report capability,
+    optimization objective, or comparison metric. Do NOT promote to signoff. The model cites
+    DAC 2022 router area, ARM CMN-600 and JEDEC HBM3 and scales as (process_nm/7)^2; it is
+    an estimate by construction.'
+  notes: 'Fidelity ladder for this row: ANALYTICAL_ESTIMATE (not TOOL_DERIVED, not MEASURED,
+    not SIGNOFF). Its absence from inventory.py is itself a finding.'
+- id: FRA-PHYS-002
+  capability: HMAC-signed design manifests / export bundles
+  domain: signed manifests/export bundles
+  historical_source: PRD §12/§14 artifact signing
+  exact_files:
+  - veritx_dse/reports/artifact.py (sign_manifest, verify_manifest, DesignManifest, _DEFAULT_SECRET)
+  tests: test_artifact_primitives.py, test_build_manifest.py
+  historical_maturity: TESTED
+  current_canonical_representation: 'PRESENT but not product-wired. Self-declared: ''The signing
+    is NOT a full PKI system - it uses a shared secret key''. PRD full cryptographic signing
+    (§14.4) is deferred.'
+  current_product_wiring: none
+  classification: NEEDS_CANONICALIZATION
+  priority: P2
+  required_action: Decide whether this is product provenance or developer tooling. Integrity/provenance
+    via a shared secret is real but must never be presented as PKI signing or as third-party
+    verifiable.
+- id: FRA-BACK-001
+  capability: Ramulator DRAM/HBM engine
+  domain: Ramulator full depth
+  historical_source: Ramulator 2.1 integration
+  exact_files:
+  - veritx_dse/simulation/ramulator.py (RamulatorBackend, MemoryEvidence, execute, _verdict,
+    _check_supported, manifest_hash, _verify_chain, _metric, discover)
+  - veritx_dse/model/memory_lowering*
+  tests: test_ramulator_backend.py, test_ramulator_lowering.py
+  historical_maturity: TESTED
+  current_canonical_representation: 'PRESENT and typed, with a lowering manifest, a supported-configuration
+    check and an evidence chain. Registry: MEM-002 ENGINE_ONLY under CAP-ENV-RAMULATOR-V1,
+    drain contract issued == accepted == served.'
+  current_product_wiring: MEM-002 ENGINE_ONLY; MEM-003/MEM-004 NOT_AVAILABLE
+  classification: NEEDS_CANONICALIZATION
+  priority: P1
+  required_action: ENGINE_ONLY appears ACCURATE for the engine itself (it runs and produces
+    evidence) but the audit did not verify the full scheduler/row-policy/clock/capacity/conservation
+    surface, nor the PASS/FAILED/INCONCLUSIVE/UNSUPPORTED vocabulary end to end. Verify before
+    treating MEM-003/MEM-004 as absent rather than un-wired.
+  notes: 'Depth NOT completed in this pass: exact DRAM/HBM config set, row/scheduler policy,
+    clock assumptions, capacity checks, transaction conservation.'
+- id: FRA-BACK-002
+  capability: ASTRA-Sim execution, namespace and machine binding
+  domain: ASTRA runtime diagnostics
+  historical_source: ASTRA-Sim integration
+  exact_files:
+  - veritx_dse/backend/astra.py
+  - veritx_dse/backend/astra_execution.py
+  - veritx_dse/backend/astra_machine.py
+  - veritx_dse/backend/astra_namespace.py
+  tests: test_astra_projection.py, test_astra_runtime.py, test_astra_timing_oracle.py, test_astra_trace.py,
+    test_backend_astra_machine.py, test_backend_astra_namespace.py
+  historical_maturity: SEALED
+  current_canonical_representation: CANONICAL. Includes an independent closed-form timing
+    oracle (R2) that replaced the two-binary differential as the release-critical check.
+  current_product_wiring: serving path (CERTIFIED_SERVING_BOOKSIM2_V1)
+  classification: CANONICAL_NOW
+  priority: P3
+  required_action: none
+- id: FRA-BACK-003
+  capability: MTU / fragmentation boundary
+  domain: MTU/fragmentation
+  historical_source: Wave-D packet delimitation
+  exact_files:
+  - veritx_dse/backend/astra.py (# MTU / fragmentation boundary)
+  - veritx_dse/backend/booksim.py (embedded_mtu 'not proven/deferred to Wave D')
+  - veritx_dse/backend/meshdor.py
+  tests: not isolated in this pass
+  historical_maturity: IMPLEMENTED
+  current_canonical_representation: 'DECLARED AS NOT ACTIVATED: BookSim records ''fragmentation
+    mechanism is not activated or proven'' and ''embedded_mtu not proven/deferred to Wave
+    D''. ASTRA carries the boundary.'
+  current_product_wiring: none
+  classification: RESEARCH_ONLY
+  priority: P2
+  required_action: Keep the explicit 'not proven' declaration. Do not let a future claim imply
+    fragmentation is modeled.
+- id: FRA-SERVE-001
+  capability: serving runtime, protocol and trace lowering
+  domain: serving depth / LLMServingSim scheduler
+  historical_source: LLMServingSim + canonical serving loop
+  exact_files:
+  - veritx_dse/simulation/serve_canonical.py
+  - veritx_dse/simulation/serving_loop.py
+  - veritx_dse/simulation/serving_runtime.py
+  - veritx_dse/simulation/serving_dp.py
+  - veritx_dse/simulation/serving_liveness.py
+  - veritx_dse/simulation/llmserving_protocol.py
+  - veritx_dse/simulation/model_to_trace.py
+  - veritx_dse/simulation/trace_to_binary.py
+  - veritx_dse/simulation/traces.py
+  - veritx_dse/backend/canonical_serving.py
+  tests: 12 serving test modules incl. test_serving_dp.py, test_serving_ep.py, test_serving_tp_groups.py,
+    test_serving_multiinstance_liveness.py, test_serving_liveness.py, test_serving_round.py,
+    test_serving_canonical.py, test_serving_scheduling_oracle.py
+  historical_maturity: SEALED
+  current_canonical_representation: CANONICAL and WIRED. TP groups, DP, EP, multi-instance
+    liveness, request traces and a scheduling oracle all have dedicated tests.
+  current_product_wiring: WORK-003/WORK-004; CERTIFIED_SERVING_BOOKSIM2_V1; /projects/{id}/serving
+  classification: CANONICAL_NOW
+  priority: P3
+  required_action: none
+  notes: 'Depth NOT completed: arrivals, batching, prefill/decode split, MoE dispatch/combine
+    detail, memory tiers, profiling, analytical vs BookSim backend comparison. The module
+    and test surface is large enough that a shallow claim would be unsafe.'
+- id: FRA-RTL-001
+  capability: RTL generation + Verilator build/run + RTL authority
+  domain: RTL / Verilator
+  historical_source: T3 RTL and validation harness
+  exact_files:
+  - validation/harness/rtl.py (RtlPacket, RtlResult, mesh_radix, write_traces, build [invokes
+    'verilator --binary -j 4 --timing'], run, run_authority)
+  - tracks/t3-topology/rtl/t3
+  - tracks/t3-topology/rtl/mot_htree
+  - tracks/t3-topology/rtl/cdc
+  - tracks/t3-topology/rtl/mot_htree/gen_rtl_htree.py
+  tests: validation/tests/ (7 modules) and validation/experiments (14)
+  historical_maturity: IMPLEMENTED
+  current_canonical_representation: PRESENT. Verilator is genuinely EXECUTED (build + run
+    + run_authority), not merely referenced. RTL directories exist for t3, mot_htree and cdc.
+  current_product_wiring: none - validation harness is a release/validation surface, not the
+    product path
+  classification: RESEARCH_ONLY
+  priority: P2
+  required_action: 'Keep as a validation authority. Do NOT describe this as formal verification:
+    it is simulation of generated RTL against an oracle.'
+  notes: 'Distinction the brief requires: generator exists YES; simulation exists YES; qualified
+    parity exists (validation/harness/compare.py standalone_parity with authority_class standalone_booksim);
+    current canonical product integration NO.'
+- id: FRA-RTL-002
+  capability: UVM testbench / sequence / assertion / coverage generation
+  domain: UVM generation, SVA/assertion generation
+  historical_source: PRD §12 collateral generation
+  exact_files:
+  - 'veritx_dse/verification/uvm_gen.py (generate_uvm, _gen_tb_top, _gen_sequences, _gen_assertions,
+    _gen_coverage, sequences: vc_separation_seq, injected_seq, random_seq, alltoall_seq, hotspot_seq,
+    noc_coverage)'
+  tests: test_uvm_gen.py, test_compile_uvm.py
+  historical_maturity: TESTED
+  current_canonical_representation: GENERATION CAPABILITY. Emits testbench top, sequences,
+    assertion families and a coverage component.
+  current_product_wiring: CLI 'generate uvm' (legacy namespace)
+  classification: RESEARCH_ONLY
+  priority: P2
+  required_action: Preserve as GENERATION capability only. Nothing in this repository executes
+    or proves the emitted assertions, so it must never be described as formal verification
+    or as proven coverage.
+- id: FRA-VALID-001
+  capability: validation harness (authority, engines, oracle, metamorphic, mutations, intervention,
+    corpus)
+  domain: backend qualification, evidence/provenance, fault injection
+  historical_source: B4 validation campaign
+  exact_files:
+  - validation/harness/authority.py
+  - validation/harness/engines.py
+  - validation/harness/oracle.py
+  - validation/harness/compare.py
+  - validation/harness/metamorphic.py
+  - validation/harness/mutations.py
+  - validation/harness/intervention.py
+  - validation/harness/fabric.py
+  - validation/corpus.py
+  - validation/FINDINGS.md
+  tests: validation/tests/ (7 modules incl. test_mutations.py, test_metamorphic.py, test_intervention.py,
+    test_engines.py, test_corpus.py, test_collective_graph.py, test_production_corpus.py)
+  historical_maturity: SEALED
+  current_canonical_representation: CANONICAL. 24 machine-readable reports are projected by
+    application/product/validation.py into the Trust surface; prose campaigns are linked,
+    never parsed.
+  current_product_wiring: GET /api/v1/validation; Trust page
+  classification: CANONICAL_NOW
+  priority: P3
+  required_action: Fault injection is mutation-based (validation/harness/mutations.py) rather
+    than a runtime fault injector; keep that distinction explicit.
+- id: FRA-CMP-001
+  capability: comparison contract (controlled/intentional variables, fidelity, metric and
+    payload compatibility)
+  domain: comparison/comparability
+  historical_source: ComparisonIntent / evaluate_comparability
+  exact_files:
+  - veritx_dse/core/comparison.py (ComparisonIntent, ComparisonSpecError, eval_metric_compatibility,
+    FINGERPRINT_FIELDS, REQUIRED_BY_FIDELITY, fingerprint_from_run, fingerprint_from_legacy_row,
+    ComparisonVerdict, evaluate_comparability, PARETO_STATUSES)
+  tests: test_optimization_identity_exact.py and comparison tests
+  historical_maturity: SEALED
+  current_canonical_representation: CANONICAL. Includes KNOWN_UNITS for metric compatibility
+    and REQUIRED_BY_FIDELITY for fidelity-gated comparison.
+  current_product_wiring: GET /api/v1/compare; Compare page
+  classification: CANONICAL_NOW
+  priority: P3
+  required_action: 'Depth NOT completed: percentage-delta admissibility, network-clock compatibility
+    and the full incomparable-outcome set were not traced against the planned Compare flow.'
+- id: FRA-WF-001
+  capability: Wave-F optimization definition/result identity and search
+  domain: Wave-F design optimization
+  historical_source: Wave-F sealed optimizer
+  exact_files:
+  - veritx_dse/optimization/definition.py
+  - veritx_dse/optimization/result.py
+  - veritx_dse/optimization/search.py
+  - veritx_dse/optimization/candidate.py
+  - veritx_dse/optimization/constraints.py
+  - veritx_dse/optimization/evaluators.py
+  - veritx_dse/optimization/metric_registry.py
+  - veritx_dse/optimization/pareto.py
+  - veritx_dse/optimization/real_evaluator.py
+  - veritx_dse/optimization/CAPABILITY-LEDGER.md
+  tests: test_optimization_definition_identity.py, test_optimization_identity_exact.py, test_p2_guided_optimization.py,
+    test_p2_optimization_truth.py, test_p1_optimize_booksim.py, test_candidate_policy.py,
+    test_optimize_canonical_cli.py
+  historical_maturity: SEALED
+  current_canonical_representation: CANONICAL and WIRED (OPT-001..OPT-004). An adversarial
+    optimization-truth suite exists (test_p2_optimization_truth.py).
+  current_product_wiring: POST /api/v1/revisions/{id}/optimize; Optimize surface
+  classification: CANONICAL_NOW
+  priority: P3
+  required_action: 'Depth NOT completed: the 21-item Wave-F parity matrix (aliases, invalid
+    candidates, multi-scenario, ties, exhaustive vs budgeted completeness, NOT_EVALUATED tails,
+    reopen verification, transplant/tamper attacks) was not built in this pass. The RT audit
+    branches hold the strongest evidence for it.'
+- id: FRA-WF-002
+  capability: topology as a design-space variable
+  domain: topology as optimization dimension
+  historical_source: synthesis MILP/SA emits a topology
+  exact_files:
+  - veritx_dse/synthesis/milp_topology_v2.py
+  - veritx_dse/optimization/definition.py
+  tests: none
+  historical_maturity: IMPLEMENTED
+  current_canonical_representation: ABSENT. DomainParam carries finite value tuples; a generated
+    graph has no finite tuple, so topology generation is not expressible as a dimension.
+  current_product_wiring: OPT-002 expert typed design space
+  classification: NEEDS_CANONICALIZATION
+  priority: P0
+  required_action: 'CONCLUSION: the current optimizer is a NARROWER PARAMETER OPTIMIZER, not
+    a topology-search optimizer. It has no topology-graph, link-budget, radix, link-length
+    or physical-layout dimension. State that plainly rather than implying search parity.'
+  notes: This is the explicit conclusion the brief demands, not an ambiguous one.
+- id: FRA-STUDIO-001
+  capability: historical Studio surfaces
+  domain: Studio historical surfaces
+  historical_source: p4/studio and RT Studio hardening
+  exact_files:
+  - apps/studio/src/components/{DesignEditor,EvaluateView,FabricCanvas,OptimizeView,VerifyView,badges}.tsx
+    on origin/p4/studio
+  - current apps/studio/src/{pages,components}/
+  tests: apps/studio/tests/test_studio_contract_v2.py (2 pre-existing failures)
+  historical_maturity: TESTED
+  current_canonical_representation: Design/Review/Compile Result/Fabric inspector rebuilt
+    on DesignViewV2 and CompileResultView (Phase 1-2). EvaluateView, OptimizeView, VerifyView
+    and FabricCanvas survive; DesignEditor was replaced by DesignViewV2Editor.
+  current_product_wiring: WIRED
+  classification: CANONICAL_NOW
+  priority: P3
+  required_action: 'Depth NOT completed: the historical p4/studio screen inventory was read
+    from the branch tree, not from its source semantics, so per-surface classification (PRESERVED
+    / REPLACED / REMOVED_CORRECTLY) is incomplete.'
+- id: FRA-EX-001
+  capability: historical example corpus as regression probes
+  domain: historical examples
+  historical_source: v3 workload templates + DSE example presets
+  exact_files:
+  - tracks/t3-topology/examples/{dense_1b_16tiles,dense_4b_32tiles_conc4,llama_dense_64tiles,moe_8x7b_64tiles}-v3.json
+    and llama_dense_64tiles.json
+  - tracks/t3-topology/dse/examples/{dense_64npu,llama1b_tp64,llama70b_tp64,moe_8npu,qwen3_moe_16npu}.json
+  tests: test_integration.py and test_product_workflow.py consume examples/
+  historical_maturity: TESTED
+  current_canonical_representation: PARTIAL. Four v3 templates are product presets with certification;
+    the DSE example presets (dense_64npu, llama1b_tp64, llama70b_tp64, moe_8npu, qwen3_moe_16npu)
+    are legacy and are NOT canonical regressions.
+  current_product_wiring: workload catalog for the v3 set only
+  classification: NEEDS_CANONICALIZATION
+  priority: P2
+  required_action: 'Depth NOT completed: no mesh/torus/GEC/MECS/FlatFly/Dragonfly/AnyNet/allreduce/alltoall/broadcast/multicast/hotspot/chiplet/HPC/PIM/CXL
+    example was individually mapped to a canonical regression. The BookSim configs (11 topologies)
+    and plane_* configs are the likely probe set.'
+- id: FRA-MEM-001
+  capability: REMOTE / CXL / STORAGE memory locations
+  domain: CXL, remote memory, memory-location semantics
+  historical_source: Wave-D memory-location grammar
+  exact_files:
+  - 'veritx_dse/workload/memory_lowering.py (explicit refusals: REMOTE ''remote access mislabeled,
+    not local memory''; CXL; STORAGE ''package storage is never HBM. Refused.'')'
+  - veritx_dse/workload/canonical.py
+  - veritx_dse/workload/graph.py
+  - veritx_dse/core/memory.py
+  - veritx_dse/simulation/serving_loop.py
+  tests: memory lowering tests
+  historical_maturity: IMPLEMENTED
+  current_canonical_representation: GRAMMAR TOKENS, refused at lowering with typed reasons
+    against the v1 HBM pool. This matches MEM-006 'grammar tokens, refused at lowering against
+    the v1 HBM pool' exactly.
+  current_product_wiring: MEM-006 NOT_AVAILABLE / LEGACY_ONLY
+  classification: REJECTED_UNSOUND
+  priority: P3
+  required_action: 'None for the v1 pool: the refusal is typed, reasoned and tested, and ''eh,
+    use HBM'' is explicitly rejected. If a remote-memory tier is ever wanted it needs a NEW
+    contract, not a re-enable.'
+  notes: LEGACY_ONLY is accurate here, unlike MEM-007 PIM where it understates live code.
+- id: FRA-PHYS-003
+  capability: Timeloop / Accelergy NoC energy spine
+  domain: Timeloop, energy
+  historical_source: T3 analysis pipeline
+  exact_files:
+  - tracks/t3-topology/timeloop/{arch,mapper,problem,noc_ERT,noc_arch}.yaml
+  - tracks/t3-topology/timeloop/experiment_configs/
+  - tracks/t3-topology/timeloop/problem_library/
+  - tracks/t3-topology/Makefile (timeloop, energy targets)
+  tests: pipeline runs via the Makefile; no canonical test
+  historical_maturity: IMPLEMENTED
+  current_canonical_representation: PRESENT as a research pipeline. inventory.py classifies
+    the T3 scripts pipeline LEGACY_INTERNAL, 'research-only, not product'.
+  current_product_wiring: none
+  classification: RESEARCH_ONLY
+  priority: P2
+  required_action: Keep as research. Timeloop/Accelergy energy is TOOL_DERIVED for compute/accelerator
+    energy, not a NoC power signoff; it must not be merged with reports.py ANALYTICAL_ESTIMATE
+    power.
+  notes: 'Fidelity: TOOL_DERIVED, and optional even in the pipeline (Makefile tolerates accelergy
+    being absent).'
 - id: FRA-META-001
   capability: capability introspection and path migration classification
   domain: capability introspection
