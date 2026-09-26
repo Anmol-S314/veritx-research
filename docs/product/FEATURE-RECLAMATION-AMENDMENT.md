@@ -834,3 +834,173 @@ Two audit claims were found to be the audit's own errors (contradictions C
 and D) and are withdrawn rather than carried into the registry.
 
 **FEATURE RECLAMATION AMENDMENT — COHERENT — IMPLEMENTATION MAY RESUME**
+
+---
+
+# PART II — AMENDMENT CORRECTION AND TRANCHE 1
+
+## 45. AMENDMENT CORRECTION (three items)
+
+The amendment as first written contained one architectural mistake and two
+premature decisions. All three are corrected here, and the correction is
+what AMEND-1..5 implement.
+
+### 45.1 The taxonomy mistake — REJECTED rule
+
+The amendment proposed:
+
+> *remove GEC and FAT_TREE from declaration authority; add RING, because
+> materializable families should be declarable and non-materializable ones
+> should not.*
+
+**That rule is rejected. It collapses AUTHORABLE and MATERIALIZABLE — the
+exact conflation the staged model exists to prevent.**
+
+| Family | AUTHORABLE | MATERIALIZABLE | Verdict |
+|---|---|---|---|
+| `gec` | **YES (kept)** | NO | stays in the taxonomy; `_family_of` refuses with a typed error |
+| `fat_tree` | **YES (kept)** | NO | same |
+| `ring` | **NO (kept)** | YES | `role: TEST_FIXTURE` — materializable ≠ declarable |
+
+Evidence for `RING`: `MaterializedFamily.RING` is referenced **only** by
+tests (`test_attachment`, `test_route_artifact`, `test_channel_vc_cdg`,
+`test_min_adapt_materialize`, `test_packet_format`,
+`test_topology_artifact`), and `topology_artifact.py`'s own docstring says
+*"NocConfig can express mesh, torus and concentrated mesh; ring/custom/
+anynet arrive via TopologyIR"*. RING is a minimal-graph fixture, not user
+intent.
+
+Evidence for `GEC`/`FAT_TREE`: they are in `TopologyFamily` and not in
+`MaterializedFamily`, and the refusal already existed and already named the
+supported set. Removing them would have deleted two recognized families
+from the scientific taxonomy to satisfy an enum-shaped rule.
+
+**Three sets, never one:**
+
+```text
+taxonomy    — scientifically recognized topology identities
+authorable  — a canonical intent schema exists
+material    — the compiler can lower it to a TopologyArtifact
+```
+
+### 45.2 The coordinate law
+
+The amendment's draft `ExplicitTopologyIntent` **required** coordinates.
+That would have silently redefined "custom topology" as "2D physical-layout
+topology".
+
+**`TopologyIR` already existed and already had the right law.** It carries
+undirected explicit links, strict validation, and **no coordinates**. The
+correction is therefore not a new contract at all — it is wiring the
+existing one.
+
+| Kind | Identity-bearing? | Where it lives |
+|---|---|---|
+| SCIENTIFIC coordinates | **YES** — feeds link length, allowed links, latency, physical cost | `materialize_ir(coordinates=...)`; persisted in the artifact |
+| PRESENTATION layout | **NO** — never persisted | derived frontend-side at render time |
+
+**Directionality law:** connectivity is declared **undirected** (a physical
+link); `TopologyIR` validates duplicates as undirected
+(`min(u,v), max(u,v)`). One undirected link lowers to **two**
+`DirectedChannel`s. Declaring a directed link directly is refused — it
+would let a user author a half-duplex topology the verifier cannot reason
+about.
+
+**Unit gap, recorded not hidden:** `TopologyIR` carries ANALYTICAL units
+(`bandwidth_GBs`, `latency_ns`); `DirectedChannel` carries PHYSICAL units
+(`width_bits`, `latency_cycles`). Converting ns→cycles needs a clock
+`TopologyIR` does not carry, so `materialize_ir` does **not** guess — the
+caller supplies the canonical channel properties. A hidden conversion would
+silently invent a clock.
+
+### 45.3 First non-mesh family — **FlatFly**, not GEC
+
+The amendment preselected GEC on surviving-declaration and
+backend-availability grounds. **That was the wrong criterion.**
+
+**GEC-MECS finding (decisive):** `model/presets.py:110` states it verbatim:
+
+```python
+# GEC MECS: o=1,d=7 → 1 express channel, tapped to 7 dests
+Topology("gec_mecs_k8", "gec", "dor", {"k": 8, "c": 1, "o": 1, "d": 7}, ...)
+```
+
+GEC-MECS is **tapped / multidrop** — one express channel fanned to seven
+destinations. Flattening that into ordinary `DirectedChannel`s would be
+**semantic loss**. GEC Express (`o=7,d=1`) *is* point-to-point, but the
+family is not uniformly representable, so it must not be forced to fit
+first.
+
+| Candidate | Point-to-point | New channel primitive | Verdict |
+|---|---|---|---|
+| **FlatFly** | **YES** | **none** | **chosen** |
+| GEC Express | yes | none | follows once GEC semantics are exact |
+| GEC-MECS | **NO (tapped)** | multidrop | classify separately |
+| flattened butterfly | yes | none | no materializer, config only |
+| Dragonfly | yes | none | no materializer, config only |
+| FatTree | yes | none | no materializer |
+
+**FlatFly is the first proof family:** radix `r = c + (k-1)*n`, every
+router port an ordinary channel; at `k=4, n=2, c=4` it is 16 routers, 48
+undirected links, degree `(k-1)*n = 6`. It proves *"TopologyArtifact is
+generic beyond Mesh/Torus"* with **zero semantic distortion**.
+
+## 46. MIGRATION HOLE FOUND — `TopologyIR` was an orphan
+
+| Artifact | In the current tree? |
+|---|---|
+| `veritx_dse/model/topology_ir.py` | **YES** |
+| `tests/test_topology_ir.py` (349 lines) | **NO** — survives only on `integration/p1-product-rt-candidate` @ `26e6f9dc` |
+| CLI `cmd_topology_render` / `_stats` / `_diff` | **NO** — same branch |
+| `application/inventory.py` entry | **NO** |
+
+Module survived; test and CLI did not. The module had **no test, no
+consumer, and no ledger entry** — the textbook MIGRATION_HOLE. AMEND-2
+wires it and adds 29 tests.
+
+## 47. TRANCHE 1 — what was implemented
+
+| Step | Commit | Scope |
+|---|---|---|
+| AMEND-1 | `4fdc7555` | taxonomy registry + checker + TAX-1..6 |
+| AMEND-2 | `2b04709a` | `materialize_ir` + `materialize_flatfly` + coordinate law + CUSTOM-1..10 |
+| AMEND-3 | `2b04709a` | shared `_artifact()` — staged law generic, mesh identity proven stable |
+| AMEND-4 | `8ec11e56` | `SearchCompleteness` + SEARCH-1..6 |
+| AMEND-5 | `64fc4760` | Wave-E metric projection + PERF-1..5 |
+
+**Not implemented, deliberately:** full topology catalog reclamation, full
+synthesis adapter (AMEND-8), structural optimizer (AMEND-9), workload
+parity (AMEND-6), Studio IA (AMEND-10), Phase 3 Static Evaluate.
+
+### 47.1 Stop-condition check
+
+| Condition | State |
+|---|---|
+| taxonomy not inferred from the materialization enum | **MET** — registry is authority; TAX-6 fails closed on drift |
+| GEC/FAT_TREE/RING have evidence-based roles | **MET** — GEC/FAT_TREE RESEARCH+AUTHORABLE; RING TEST_FIXTURE |
+| custom graph intent is canonical | **MET** — `TopologyIR`, existing and stricter than the draft |
+| coordinate/presentation semantics separated | **MET** — CUSTOM-7/8/8c |
+| custom graph lowers to exact TopologyArtifact | **MET** — CUSTOM-1/4c/6b |
+| the same 2D inspector renders it | **MET** — CUSTOM-9/9b: identical key sets for mesh/flatfly/custom |
+| staged compile is generic | **MET** — shared `_artifact()`; STAGE-1/2/3/6 |
+| one genuinely non-mesh family proves the abstraction | **MET** — FlatFly, pure point-to-point |
+| search completeness is explicit | **MET** — SEARCH-1..6 |
+| Wave-E metrics/fidelity projected | **MET** — PERF-1..5 |
+| no qualification claims broadened | **MET** — FlatFly `QUALIFIED: NO`; no row gained a stage |
+
+### 47.2 Unresolved blockers
+
+1. **TWO UNRELATED `TopologyError` CLASSES.** `core.errors.TopologyError(VeritXError)`
+   and `model.topology_artifact.TopologyError(ValueError, SemanticError)`.
+   Neither catches the other. `TopologyIR` raises the first; the
+   materializer raises the second. Tests catch both explicitly. **Not
+   merged here** — merging changes error handling tree-wide and is out of
+   tranche scope.
+2. **`flatfly` is MATERIALIZABLE but not yet AUTHORABLE.** No intent schema
+   yet; `NocConfig.topology_family` has no `flatfly` value. Deliberate: the
+   registry records the honest stage rather than over-claiming.
+3. **`concentrated_mesh` backend cells unverified.** `B`/`A` for
+   concentrated_mesh were never traced; marked for AMEND-1 follow-up rather
+   than asserted.
+4. **`TopologyIR` CLI not restored.** `cmd_topology_render/_stats/_diff`
+   remain absent; only the module and its tests are wired.

@@ -702,3 +702,122 @@ Net new tests: **+106**.
 | Studio fixture digests · `run_bundle` flake | — | Pre-existing, out of scope. |
 
 No `IMPLEMENTATION-CONTRACT-CONFLICT` was raised.
+
+---
+
+## FEATURE RECLAMATION IMPLEMENTATION TRANCHE 1
+
+Bounded tranche under `FEATURE-RECLAMATION-AMENDMENT.md`. Establishes the
+generic topology representation and proves it. No qualification claim was
+broadened anywhere.
+
+### AMEND-0 — audit bookkeeping correction
+
+**Commit:** `1834495c` — `audit(amend-0): correct three bookkeeping defects in the audit seal`
+
+Three defects, all mechanically derived rather than asserted:
+
+| Defect | Printed | Derived |
+|---|---|---|
+| Wave-F 21-item parity | `10·7·4` | **`10 YES · 6 PARTIAL · 5 NO`** |
+| T3 example parity | `9·6·17` | **`11 YES · 4 PARTIAL · 13 NO`** |
+| T4 serving parity | `28·3·3` | **`29 YES · 2 PARTIAL · 4 NO`** |
+| Thesis count | "six of eight" | **five of eight** |
+| Branch status | `MET pending per-file diff` | `REPLACEMENT CONDITION LIKELY MET — ARCHIVAL NOT AUTHORIZED` |
+
+The suggested `11·5·5` was **also not** the correct Wave-F split.
+
+### AMEND-1 — topology taxonomy separated from capability stages
+
+**Commit:** `4fdc7555` — `product: separate topology taxonomy from capability stages`
+
+**Files:** `docs/product/topology-family-registry.yaml`,
+`scripts/check_topology_family_registry.py`,
+`tests/test_topology_taxonomy.py`
+
+Nine independent stages; membership in either enum is no longer a
+capability statement. **Corrects the amendment's rejected rule** (GEC and
+FAT_TREE stay AUTHORABLE; RING stays AUTHORABLE=NO as TEST_FIXTURE).
+
+**Tests:** TAX-1..TAX-6 (15 tests). TAX-6c mutates a registry row and
+asserts the checker exits 1 — drift is detected, not assumed.
+
+```
+TopologyFamily      (6): concentrated_mesh, custom, fat_tree, gec, mesh, torus
+MaterializedFamily  (6): concentrated_mesh, custom, flatfly, mesh, ring, torus
+declarable-not-materializable: fat_tree, gec
+materializable-not-declarable: flatfly, ring
+```
+
+### AMEND-2 / AMEND-3 — explicit topology materialization + generic staged law
+
+**Commit:** `2b04709a` — `model: materialize explicit topology and add the flatfly proof family`
+
+**Files:** `veritx_dse/model/topology_artifact.py`,
+`veritx_dse/model/compile_model.py`, `tests/test_explicit_topology.py`
+
+Custom topology intent is the **existing** `TopologyIR`; the missing half
+was the materializer. `MaterializedFamily.CUSTOM` and `.FLATFLY` added as
+**classification** markers, not algorithms. Shared `_artifact()` makes the
+staged law generic.
+
+**Mesh identity proven stable:** `524cf3267d4d64c3cdd07dd2`, 16 routers,
+48 channels — unchanged by the refactor.
+
+**Tests:** CUSTOM-1..10, STAGE-1/2/3/6 (29 tests).
+
+### AMEND-4 — search completeness
+
+**Commit:** `8ec11e56` — `optimization: restore explicit search completeness`
+
+**Files:** `veritx_dse/optimization/completeness.py`,
+`veritx_dse/optimization/result.py`,
+`contracts/srota/v2/optimization.study.view.schema.json`,
+`tests/test_search_completeness.py`
+
+Replaces `cands[:limit]` silent truncation with an identity-bearing
+`SearchCompleteness`. `EXHAUSTIVE` is never inferred. The contract schema is
+strict, so the field is **declared** there rather than smuggled.
+
+**Tests:** SEARCH-1..6 (16 tests).
+
+### AMEND-5 — Wave-E metric projection
+
+**Commit:** `64fc4760` — `performance: expose certified Wave-E metrics`
+
+**Files:** `veritx_dse/optimization/metric_registry.py`,
+`tests/test_wave_e_metric_projection.py`
+
+`certified-builtin-v2` extends v1 (a new version, not a replacement — one
+authority per metric). Four metrics registered with exact canonical names;
+`ttft`/`decode_step_latency` **not fabricated** (declared but not computed);
+absent is never zero; honesty metadata travels with the metrics.
+
+**Tests:** PERF-1..5 (14 tests).
+
+### Tranche 1 totals
+
+| | |
+|---|---|
+| New tests | **74** |
+| Full suite | **4202 passed, 17 skipped, 0 failed** |
+| Registry gates | all exit 0 |
+| Branches | 84 — **none deleted, archived or modified** |
+
+### Unresolved blockers
+
+1. **Two unrelated `TopologyError` classes** — `core.errors` and
+   `model.topology_artifact`. Neither catches the other. Not merged.
+2. **`flatfly` materializable, not yet authorable** — no intent schema.
+   Recorded honestly rather than over-claimed.
+3. **`concentrated_mesh` backend cells unverified** — deferred.
+4. **`TopologyIR` CLI not restored** — module and tests wired only.
+5. **`TopologyIR` test/CLI MIGRATION HOLE** — `tests/test_topology_ir.py`
+   (349 lines) and `cmd_topology_render/_stats/_diff` survive only on
+   `integration/p1-product-rt-candidate` @ `26e6f9dc`.
+
+### Not started (out of tranche scope)
+
+AMEND-6 workload parity · AMEND-7 capability-registry correction ·
+AMEND-8 synthesis adapter · AMEND-9 structural optimizer ·
+AMEND-10 Studio IA · Phase 3 Static Evaluate
