@@ -205,12 +205,12 @@
       "backend": "BOOKSIM_STANDALONE",
       "config_hash": "173b5cef5cf67d8b2e9b67cb8b58c4ccb6760033b92d6b1f952b1077ea0c7473",
       "input_hash": "86440735fb68bd6e277e71c4928c4e66dbac0a76974aaed089f31427f644defd",
-      "producer_identity": "d4035d224878af9bd690b4a0600f500c8bd105d6ac915b06cda4b3fcdc70177b"
+      "producer_identity": "1f742c6017c08b8cf3e2ef4e5311472ed6009c67651f9bcfcdd48135e720c331"
     },
     "contract_version": 1,
     "design_hash": "sha256:28ffcebf4b4f89e759911504aedbfb8b64b415546ae263392b820b614e99cbae",
     "evidence": {
-      "raw_evidence_digest": "5f6fe2ac16e09e213cce103b02a423cda8a3c13f926045fcd4ffcacdfc194e16",
+      "raw_evidence_digest": "677d4f7a0213c85574c7ef528a3378f1c0416e07e26d5cf51be7c504c33fdeea",
       "stats_digest": "797be3a735d6f4a55b5b560e1d67e9a1f892171dd4e95a5522e21df7e013565e"
     },
     "fidelity_warning": "compute=EXPLICIT_DURATION memory=EXPLICIT_DURATION network=QUALIFIED_BOOKSIM_WINDOW all=UNCALIBRATED (declared/explicit models; no hardware dataset in repo)",
@@ -231,7 +231,7 @@
       "wall_time_ns": 3259.0,
       "window_cycles": 3259
     },
-    "performance_result_id": "fc575337e4e7dbe074a82df7f7ea6cbe530d47541874611d04471f70e1263616",
+    "performance_result_id": "a574fe6adccdf72f749ac7bb1628fbf49568c6a65bc3cad26b1edeceadfa3dae",
     "physical_traffic_id": "sha256:76671115a5981b1c45361e2c42af6a35541db157c56846fb600b2eb7e9a38881",
     "reason": null,
     "resolved_fabric_hash": "sha256:76dfa2331711bad0719a1ff26063dd27b20bbc42bdc4c054b88b9ce0ce5e60da",
@@ -248,7 +248,7 @@
         "binding": true,
         "measured": 3259.0,
         "metric_authority": "performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles)",
-        "performance_result_id": "fc575337e4e7dbe074a82df7f7ea6cbe530d47541874611d04471f70e1263616",
+        "performance_result_id": "a574fe6adccdf72f749ac7bb1628fbf49568c6a65bc3cad26b1edeceadfa3dae",
         "qos_class": "latency_critical",
         "reason": "measured 3259 cycles <= ceiling 100000.0 cycles via performance_result.network_binding.duration x network_binding.network_clock_hz (authenticated completion_time cycles). class-scoped to 'tp_collective' (single-class workload: aggregate == class evidence)",
         "required": 100000.0,
@@ -257,7 +257,7 @@
         "verdict": "SATISFIED"
       }
     ],
-    "performance_result_id": "fc575337e4e7dbe074a82df7f7ea6cbe530d47541874611d04471f70e1263616"
+    "performance_result_id": "a574fe6adccdf72f749ac7bb1628fbf49568c6a65bc3cad26b1edeceadfa3dae"
   },
   "title": "Evaluated design (BookSim aggregate window + requirement verdicts)"
 }

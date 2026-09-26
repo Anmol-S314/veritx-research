@@ -4,7 +4,21 @@
     "contract_version": 1,
     "design_hash": "sha256:d813ff746a540431dc9eecf09e71b08f20b7db297ca02b6aec0fad218a6da929",
     "error": "UNSUPPORTED: no certified routing derivation for topology family 'torus' \u2014 P1A certifies MESH and CONCENTRATED_MESH (DOR_XY) only; refusing silent minimum-hop fallback",
-    "status": "UNSUPPORTED"
+    "staged": {
+      "has_attachment": true,
+      "has_inventory": true,
+      "has_mapping": true,
+      "has_topology": true,
+      "produced_stages": [
+        "INPUT",
+        "INPUT_MAPPING",
+        "TOPOLOGY",
+        "ATTACHMENT"
+      ],
+      "stopped_at_stage": "ROUTING"
+    },
+    "status": "UNSUPPORTED",
+    "stopped_at_stage": "ROUTING"
   },
   "description": "Engine-typed UNSUPPORTED refusal: the torus topology family has no certified routing derivation, so there is no bundle, no certificate, no obligation list, and no resolved fabric hash.",
   "design": {
