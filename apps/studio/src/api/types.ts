@@ -76,8 +76,26 @@ export interface ProjectView {
   /** Latest compile attempt (usable or refused). Never evaluated directly. */
   latest_attempt_revision_id: string | null;
   latest_attempt: RevisionSummary | null;
-  /** Latest run scoped to the ACTIVE revision — never a newer attempt's. */
+  /** Latest static evaluation scoped to the ACTIVE revision — never a
+   * newer attempt's. Retained for compatibility; new UI reads the three
+   * distinct facts below (PF-D13). */
   latest_active_run: RunSummary | null;
+  /** PF-D13: the ambiguous global "latest run" is replaced by three
+   * distinct facts, so nothing renders as an unqualified "run". */
+  latest_static_evaluation: RunSummary | null;
+  latest_serving_experiment: {
+    serving_id: string | null;
+    state: string | null;
+    created_at: string | null;
+  } | null;
+  latest_optimization_study: {
+    optimization_id: string;
+    base_revision_id: string;
+    created_at: string;
+    candidate_count: number;
+    pareto_count: number;
+    selected_candidate_id: string | null;
+  } | null;
   draft: DraftMeta;
   revisions: RevisionSummary[];
   runs: RunSummary[];

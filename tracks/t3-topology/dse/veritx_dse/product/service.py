@@ -542,6 +542,13 @@ class ProductService:
         latest_active_run = next(
             (r for r in reversed(runs)
              if r.get("revision_id") == active_id), None)
+        # PF-D13: the ambiguous global "latest run" is replaced by three
+        # distinct facts. Each is scoped to the active revision where that
+        # scoping is meaningful, so an older revision's work is never shown
+        # as the current design's.
+        latest_optimization = optimizations[-1] if optimizations else None
+        serving = self.list_serving(project_id)
+        latest_serving = serving[-1] if serving else None
         return {
             "contract_version": 1,
             "project": {
@@ -558,6 +565,30 @@ class ProductService:
                                else self._revision_summary(latest)),
             "latest_active_run": (None if latest_active_run is None
                                   else self._run_summary(latest_active_run)),
+            # PF-D13 — three distinct facts, never one ambiguous "run".
+            "latest_static_evaluation": (
+                None if latest_active_run is None
+                else self._run_summary(latest_active_run)),
+            "latest_serving_experiment": (
+                None if latest_serving is None else {
+                    "serving_id": latest_serving.get("serving_id"),
+                    "state": latest_serving.get("state"),
+                    "created_at": latest_serving.get("created_at"),
+                }),
+            "latest_optimization_study": (
+                None if latest_optimization is None else {
+                    "optimization_id":
+                        latest_optimization["optimization_id"],
+                    "base_revision_id":
+                        latest_optimization["base_revision_id"],
+                    "created_at": latest_optimization["created_at"],
+                    "candidate_count": len(
+                        latest_optimization["study"].get("candidates", [])),
+                    "pareto_count": len(
+                        latest_optimization["study"].get("pareto_ids", [])),
+                    "selected_candidate_id": latest_optimization["study"]
+                        .get("selected_candidate_id"),
+                }),
             "draft": {
                 "dirty": dirty,
                 "based_on_revision_id": active_id,

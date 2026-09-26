@@ -255,3 +255,41 @@ def test_review_never_claims_a_certificate(client, project):
     view = _design(client, pid, presentation="review")
     assert view["later_stage_claims"]["certificate"] is None
     assert view["later_stage_claims"]["qualification"] is None
+
+
+# ── PF-D13: no ambiguous global "run" ──────────────────────────────────
+
+
+def test_project_view_exposes_three_distinct_facts_not_a_latest_run(client, project):
+    """PF-D13 / PRODUCT-FLOWS §128.
+
+    "Latest run" is eliminated. The project summary carries a latest static
+    evaluation, a latest serving experiment and a latest optimization study
+    as separate facts, so no surface can render an unqualified "run".
+    """
+    pid, _ = project
+    view = client.get(f"/api/v1/projects/{pid}").json()
+    for key in ("latest_static_evaluation", "latest_serving_experiment",
+                "latest_optimization_study"):
+        assert key in view, key
+
+
+def test_the_three_facts_start_empty_rather_than_null_ambiguous(client, project):
+    pid, _ = project
+    view = client.get(f"/api/v1/projects/{pid}").json()
+    assert view["latest_static_evaluation"] is None
+    assert view["latest_serving_experiment"] is None
+    assert view["latest_optimization_study"] is None
+
+
+def test_a_compiled_revision_is_reported_as_the_draft_basis(client, project):
+    """Gate 8 §7: the context must answer "based on what?"."""
+    pid, _ = project
+    snapshot = _design(client, pid, presentation="review")[
+        "draft_identity"]["draft_design_hash"]
+    client.post(f"/api/v1/projects/{pid}/compile",
+                json={"expected_draft_design_hash": snapshot})
+    view = client.get(f"/api/v1/projects/{pid}").json()
+    assert view["draft"]["based_on_revision_id"] == view["active_revision_id"]
+    assert view["active_revision"] is not None
+    assert view["draft"]["dirty"] is False

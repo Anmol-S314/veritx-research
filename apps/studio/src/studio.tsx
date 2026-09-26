@@ -292,21 +292,23 @@ export function nextActionLabel(action: string): string {
   }
 }
 
+/** Persistent project/revision context (Gate 8 §7).
+ *
+ * Always answers "what am I looking at?": the project, the compiled
+ * revision, whether the draft has uncompiled changes, and what it is based
+ * on. The ambiguous global "latest run" is gone (PF-D13); it is replaced by
+ * three distinct facts — latest static evaluation, latest serving
+ * experiment, latest optimization study — so no surface shows an
+ * unqualified "run".
+ */
 export function ContextHeader({ project }: { project: ProjectView }): ReactElement {
   const active = project.revisions.find(
     (r) => r.revision_id === project.active_revision_id,
   );
-  // Scoped to the active revision by the gateway: a run from an older
-  // revision — or a newer refused attempt, which has no runs — must never
-  // render beside the current revision's name.
-  const latestRun = project.latest_active_run
-    ?? [...project.runs]
-      .reverse()
-      .find((r) => r.revision_id === project.active_revision_id);
-  const latestName = latestRun
-    ? (project.revisions.find((r) => r.revision_id === latestRun.revision_id)
-      ?.display_name ?? null)
-    : null;
+  const evaluation = project.latest_static_evaluation
+    ?? project.latest_active_run;
+  const serving = project.latest_serving_experiment;
+  const study = project.latest_optimization_study;
   return (
     <div className="context-header">
       <div>
@@ -314,34 +316,43 @@ export function ContextHeader({ project }: { project: ProjectView }): ReactEleme
         <span className="ctx-val">{project.project.name}</span>
       </div>
       <div>
-        <span className="ctx-key">Revision</span>
+        <span className="ctx-key">Context</span>
         <span className="ctx-val">
+          {project.draft.dirty
+            ? <><span aria-hidden="true">◉</span> Draft</>
+            : <><span aria-hidden="true">▣</span> Revision</>}
+          {' · '}
           {active
-            ? `${active.display_name} · ${active.compilation_status.toLowerCase()}`
-            : 'none'}
-          {project.draft.dirty && <span className="stale"> · DRAFT UNCOMPILED</span>}
+            ? `based on ${active.display_name} · ${active.compilation_status.toLowerCase()}`
+            : 'no compiled revision'}
+          {project.draft.dirty && (
+            <span className="stale"> · UNCOMPILED CHANGES</span>
+          )}
         </span>
       </div>
       <div>
-        <span className="ctx-key">Workload</span>
-        <span className="ctx-val">{project.draft.workload_id ?? '—'}</span>
-      </div>
-      <div>
-        <span className="ctx-key">Latest run</span>
+        <span className="ctx-key">Static evaluation</span>
         <span className="ctx-val">
-          {latestRun
-            ? `${latestRun.qualification ?? latestRun.status} · ${
-                latestRun.completion_cycles ?? '—'
-              } cycles${latestName ? ` · ${latestName}` : ''}`
+          {evaluation
+            ? `${evaluation.qualification ?? evaluation.status} · ${
+                evaluation.completion_cycles ?? '—'
+              } cycles`
             : 'none'}
         </span>
       </div>
       <div>
-        <span className="ctx-key">Next</span>
-        <span className="ctx-val next-action">
-          {nextActionLabel(project.flow.next_action)}
+        <span className="ctx-key">Serving experiment</span>
+        <span className="ctx-val">{serving?.state ?? 'none'}</span>
+      </div>
+      <div>
+        <span className="ctx-key">Optimization study</span>
+        <span className="ctx-val">
+          {study
+            ? `${study.pareto_count}/${study.candidate_count} pareto`
+            : 'none'}
         </span>
       </div>
     </div>
   );
 }
+

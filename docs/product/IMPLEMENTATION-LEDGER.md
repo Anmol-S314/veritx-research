@@ -71,6 +71,7 @@ corpus.
 | 4–6 | DesignViewV2 · readiness/findings · compile binding | `08de20c6` | done |
 | 7–8 | rebuild design editor on DesignViewV2 + review flow | `5b2b67af` | done |
 | 9 | reconcile compile result handoff | — | **not started** |
+| 10 | PF-D13 three distinct facts, no ambiguous "run" | `6a0c4a1`-series | done |
 
 Slices 4, 5 and 6 share one projection module and one HTTP surface, so they
 land in a single commit; they are itemised separately under *Contracts
@@ -103,7 +104,7 @@ made. The file is deleted either way; the attribution is off by one commit.
 | `veritx_dse/application/errors.py` | `ErrorCode.STALE_REVIEW` |
 | `veritx_dse/gateway/errors.py` | `STALE_REVIEW` → 409 |
 | `veritx_dse/gateway/app.py` | `GET /api/v1/projects/{id}/design`; `CompileDraftBody`; removed `POST /optimize` + `OptimizeBody` |
-| `veritx_dse/product/service.py` | `design_view_v2()`; `compile_draft(expected_draft_design_hash=…)` |
+| `veritx_dse/product/service.py` | `design_view_v2()`; `compile_draft(expected_draft_design_hash=…)`; PF-D13 three distinct facts on `project_view` |
 | `veritx_dse/model/compile_model.py` | arbitration normalized in both `canonical_dict` implementations |
 | `veritx_dse/model/router_behavior.py` | `canonical_arbitration_token()` |
 
@@ -123,7 +124,7 @@ made. The file is deleted either way; the attribution is off by one commit.
 | `src/pages/offline.tsx` | false controls removed |
 | `src/pages/index.tsx` | `intervention.supported` binary removed |
 | `src/pages/{design,evidence,serving,optimize}.tsx` | `WorkflowBar` removed |
-| `src/studio.tsx` | `WorkflowBar` / `PIPELINE` / `pipelineStatuses` removed |
+| `src/studio.tsx` | `WorkflowBar` / `PIPELINE` / `pipelineStatuses` removed; `ContextHeader` rebuilt (PF-D13 + §7) |
 | `src/router.ts` | `/projects/:pid/design/review` |
 | `src/App.tsx` | light-first default; `Review` route; rail "Intent" → "Design" |
 | `src/styles.css` | light-first tokens; tabular figures; DesignViewV2/Review styles |
@@ -182,6 +183,8 @@ made. The file is deleted either way; the attribution is off by one commit.
 | 5 | Gate 7 §29 finding taxonomy | done |
 | 5 | Gate 7 §30 capability consequences | done |
 | 6 | Gate 7 §4 REV-D2 `expected_draft_design_hash` + `STALE_REVIEW` | done |
+| 10 | PF-D13 / PRODUCT-FLOWS §128 remove the ambiguous "latest run" | done |
+| 10 | Gate 8 §7 persistent project/revision context | done |
 | 7 | Gate 8 §8/§9/§27 left section navigator + central editor | done |
 | 7 | Gate 8 §28/§29 progressive disclosure + hidden-active indicator | done |
 | 7 | Gate 8 §30 Advanced is not a dumping ground | done (registry-driven) |
@@ -207,6 +210,7 @@ which it does).
 | `TierBadge` | STUDIO-WIREFRAMES §144 |
 | `DesignEditor.tsx` | superseded by the backend projection |
 | `POST /optimize` + `OptimizeBody` | PF-D15 |
+| Ambiguous global "Latest run" in the context header | PF-D13 |
 | `three` / `@types/three` direct deps | consequence of the §186 removal |
 | Dark-as-default theme | STUDIO-WIREFRAMES §3/§5 |
 | Inter-as-default UI face | STUDIO-WIREFRAMES §129 |
@@ -216,7 +220,7 @@ which it does).
 
 | Command | Baseline | Final |
 |---|---|---|
-| `python3 -m pytest tests/` (dse) | 3833 passed, 17 skipped | **3961 passed, 17 skipped** |
+| `python3 -m pytest tests/` (dse) | 3833 passed, 17 skipped | **3964 passed, 17 skipped** |
 | `python3 -m pytest tests/` (studio) | 2 failed, 8 passed, 1 skipped | **2 failed, 8 passed, 1 skipped** (same pre-existing) |
 | `npx tsc --noEmit` | exit 0 | **exit 0** |
 | `npx vite build` | exit 0 | **exit 0** |
@@ -226,7 +230,7 @@ which it does).
 | `make -C tracks/t3-topology product-gates` | n/a | **exit 0** |
 | `python3 scripts/validate_fixtures.py` | exit 0 | **exit 0** |
 
-Net new tests: **+128**.
+Net new tests: **+131**.
 
 The validators are verified to be able to fail: every encoded invariant has a
 mutation test (`test_product_registry_gates.py`), and the ontology UI-admission
