@@ -1537,3 +1537,86 @@ begin.
 - §17 BookSim equivalence **run** (audit done, run not attempted)
 - §20 qualification envelope
 - §26 CFAB-1..40 regenerated matrix
+
+---
+
+## TRANCHE 5 — INSTANCE-LEVEL BOOKSIM EQUIVALENCE PASS
+
+### The comparison is against a REPLICA, not the binary
+
+`core.route_artifact._route_entries_from_adj` is documented as *"the one
+routing truth: AnyNet::route() first-hop table, all-pairs"* — it is a
+replica of the vendored fork's `AnyNet::route()`. Comparing the canonical
+custom producer against `ANYNET_MIN_HOPS` therefore compares against
+BookSim's routing **without running the binary**, over the complete
+ordered-pair universe.
+
+### A CORRECTION TO MY OWN EARLIER CLAIM
+
+The previous report asserted *"BookSim generic route equivalence is known
+to be false on equal-cost ties."* **Measured, that is imprecise.**
+
+| fixture | pairs | mismatches |
+|---|---|---|
+| tree (unique shortest paths) | 380 | **0** |
+| **diamond (a genuine tie)** | 380 | **0** |
+| mesh 5×5 | 600 | **0** |
+| ring 25 | 600 | **0** |
+| chorded | 380 | **24** |
+| synthesized-style (mesh + chords) | 600 | see suite |
+
+A **diamond is a canonical tie and it AGREES.** Divergence is
+**structure-dependent**, not tie-dependent: it needs several cost-optimal
+paths whose *smallest-channel-id-sequence* and *smallest-ascending-router-id*
+choices actually differ.
+
+Also verified: the **independent oracle agrees with canonical** on the
+disagreeing pair — both pick channel 0, both cost 6. So the canonical
+producer is correct; the divergence is canonical-vs-BookSim, not a bug.
+
+**Boundary statement:** unique shortest paths are *sufficient* for
+agreement but **not necessary** (the diamond is non-unique and agrees). No
+tested structural property is both necessary and sufficient.
+
+### ORDERING LAW PROVEN
+
+`test_rteq_6` — the 25-node ring routes **identically** to the BookSim
+replica (0 mismatches) yet must **not** execute, because its certificate
+FAILs `DEADLOCK_FREE`. Canonical compile/certificate comes first; route
+agreement cannot override a FAIL.
+
+### BookSim audit facts (from source)
+
+| Question | Finding |
+|---|---|
+| algorithm | `AnyNet::route()` — Dijkstra over `std::set<int>`, strict `<` |
+| tie-break | smallest ascending **router id** |
+| distance | adds the edge's **link latency** (the "hops" comment is stale) |
+| execution | `min_anynet` is a table lookup |
+| ingestion | **unavailable** — `routing_dump_file` is output-only |
+| export | **exists** (VeritX `B3.7b` dump) |
+| comparator | **exists and is generic** — `route_observation.expected_route_rows(routing_class=...)`, wired into `booksim_execution.py` |
+| pre-existing domain check | `qualify_anynet_min_hops` — fail-closed: unit latency, unit weight, no parallel channels, sequential namespace, `ANYNET_MIN_HOPS` class only |
+
+### Scope of the oracle — stated, not assumed
+
+Valid for the **current unit-positive-weight contract**: `TopologyIR` has no
+weight field, so every explicit graph materializes with `route_weight = 1`.
+These tests do **not** verify arbitrary weighted routing. If weighted
+authoring is added, the reference proof must be revisited.
+
+### Final test matrix
+
+| Command | Passed | Failed | Skipped |
+|---|---|---|---|
+| backend `pytest tests/` | **4378** | **0** | 17 |
+| route-equivalence (RTEQ) | 8 | 0 | — |
+| tie-break oracle | 14 | 0 | — |
+| promotion | 12 | 0 | — |
+| gates | PASS | — | — |
+
+### STILL NOT COMPLETED (unchanged from the previous pass)
+
+Synthesis product/control-plane seam · promotion application-layer seam ·
+gateway/API proof · TopologyIR CLI disposition · historical test
+reclamation · CFAB-1..40 regenerated matrix · qualification envelope.

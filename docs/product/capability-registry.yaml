@@ -456,14 +456,16 @@ capabilities:
     PRODUCT_WIRED: 'NO'
   wiring: NOT_AVAILABLE
   reason: NO_CONTRACT
-  claim_scope: 'custom topology is a first-class design input and now compiles END TO END:
-    it routes via the DECLARED policy table (model/routing.py::_POLICY_BY_FAMILY) selecting
-    WEIGHTED_SHORTEST_PATH, and the ordinary pipeline issues the full 10-obligation certificate.
-    Measured: a 5x5 explicit graph yields certificate PASS with DEADLOCK_FREE evidence acyclic=true;
-    a 25-node ring yields FAIL with a cycle witness - the CDG check does real work and a deadlock
-    stays a deadlock. PROJECTABLE and EXECUTABLE are NO: BookSim AnyNet computes its own routes
-    and no exact ingestion or all-pairs equivalence has been established, so backend execution
-    of a custom fabric is refused rather than assumed.'
+  claim_scope: 'custom topology is a first-class design input and compiles END TO END: it
+    routes via the DECLARED policy table selecting WEIGHTED_SHORTEST_PATH (minimum hop count,
+    then lexicographically smallest complete channel-id sequence), and the ordinary pipeline
+    issues the full 10-obligation certificate. Measured: 5x5 explicit mesh PASS with DEADLOCK_FREE
+    acyclic=true; 25-node ring FAIL with a cycle witness. BookSim EXECUTION IS UNAVAILABLE
+    and this is a measured result, not a gap: the vendored AnyNet::route() tie-break is smallest-ascending-router-id
+    while canonical is smallest-channel-id-sequence. Exhaustive first-hop comparison over
+    the complete src x dst universe AGREES on tree/diamond/mesh5/ring25 and DIVERGES on a
+    chorded graph (24/380 pairs). Agreement is structure-dependent, so no blanket CUSTOM equivalence
+    is supportable and generic custom BookSim execution stays NO.'
 - id: MAP-001
   name: automatic mapping
   owner: PLACEMENT
@@ -1171,10 +1173,12 @@ capabilities:
   wiring: NOT_AVAILABLE
   reason: null
   claim_scope: 'a synthesized graph takes the SAME path as an authored one: TopologyCandidate
-    -> TopologyIR(kind=custom) -> CompileRequestV3.explicit_topology -> ordinary compiler
-    -> certificate. A synthesized 5x5 graph and the identical hand-authored graph produce
-    the same topology_hash, route table and VC assignment. PROJECTABLE/EXECUTABLE remain NO
-    for the same BookSim route-equivalence reason as FAB-007.'
+    -> promote_to_explicit_topology -> CompileRequestV3.explicit_topology -> ordinary compiler
+    -> full certificate. Promotion is implemented at the library layer: a promoted 5x5 MILP
+    graph and the identical hand-authored graph produce the same design_hash, topology_hash,
+    route table, VC assignment and certificate. Synthesis provenance is persisted as LINKAGE
+    and provably excluded from design identity. No product/API seam for synthesis or promotion
+    yet, so PRODUCT_WIRED is NO.'
 - id: SYS-001
   name: physical agent inventory
   owner: SYSTEM
