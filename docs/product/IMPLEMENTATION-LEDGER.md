@@ -1620,3 +1620,124 @@ authoring is added, the reference proof must be revisited.
 Synthesis product/control-plane seam · promotion application-layer seam ·
 gateway/API proof · TopologyIR CLI disposition · historical test
 reclamation · CFAB-1..40 regenerated matrix · qualification envelope.
+
+---
+
+## LINEAGE AUDIT — THREE WORKER ERRORS CORRECTED
+
+An external lineage review challenged three claims in the recent tranche
+reports. All three were checked against source. **All three were correct,
+and two of them were mine.**
+
+### ERROR 1 — the BookSim audit was factually wrong
+
+I reported that `AnyNet::route()` *"counts hops and ignores route_weight"*.
+That came from the **stale code comment** at `anynet.cpp:309`
+(`//distance is hops not cycles`), not from the code.
+
+The field actually added to the Dijkstra distance is **link latency**:
+
+```
+anynet.cpp:309   dist[min_cand] + i->second.second
+anynet.cpp:121   cout << "\t Router " << ... << " lat " << i->second.second
+anynet.cpp:334   distance += router_list[1][prev[neighbor]][neighbor].second;  //REVERSE lat
+```
+
+Worse: **the correction was in a file I read in the same pass.**
+`backend/booksim_projection.qualify_anynet_min_hops` already documents it —
+*"The vendored AnyNet::route adds the edge's LINK LATENCY to the Dijkstra
+distance … even though an old comment claims 'distance is hops'"* — and
+requires unit latency plus unit `route_weight` precisely so the two
+collapse. I read that docstring and still reported the comment.
+
+**Corrected statement:** BookSim's distance is latency-weighted. Under unit
+latency and unit weight it reduces to minimum-hop. My conclusion was valid
+**only for the current all-unit topology**, not as a statement about
+BookSim.
+
+### ERROR 2 — I created the backend mismatch I then reported
+
+An earlier revision of `model/routing.py` selected
+`WEIGHTED_SHORTEST_PATH` for custom topologies, justified as
+"backend-neutral naming". That was an **aesthetic** rationale, and §12 of
+the same brief said *"Do not gratuitously rename sealed artifacts in this
+tranche."*
+
+What it cost, measured:
+
+```
+custom 5x5, routed WEIGHTED_SHORTEST_PATH
+  -> qualify_anynet_min_hops REFUSED
+     "the certified AnyNet profile represents ANYNET_MIN_HOPS only,
+      got route classes ['WEIGHTED_SHORTEST_PATH']"
+
+custom 5x5, routed ANYNET_MIN_HOPS
+  -> qualify_anynet_min_hops ** ACCEPTED **
+```
+
+Every other prerequisite already passed (unit latency, unit weight, no
+parallel channels, sequential namespace). **The refusal was caused solely by
+the class id I chose.**
+
+`core.route_artifact._route_entries_from_adj` is documented as *"the one
+routing truth: AnyNet::route() first-hop table, all-pairs"* — a **replica**
+of the fork's routing, i.e. the sealed contract that already matched
+BookSim. By routing custom graphs with a *different* producer I created a
+canonical-vs-backend divergence that did not previously exist, and then
+reported that divergence as a backend limitation and declared structural
+optimization blocked.
+
+**Fixed:** `_POLICY_BY_FAMILY[CUSTOM] = ANYNET_MIN_HOPS`. A custom 5×5 now
+compiles, certifies PASS, and is **ACCEPTED** by the certified AnyNet
+profile — the BookSim path is open.
+
+The naming debt is real and is **recorded, not acted on**.
+
+### ERROR 3 — I wrapped old code instead of reclaiming the hardened version
+
+I wrote that `load_matrix` *"validates nothing"*. True of the **current
+tree's copy**, but false as a statement about the historical
+implementation:
+
+| branch | validation in `load_matrix` |
+|---|---|
+| `integration/canonical` | **0** |
+| `integration/p1-product` (`ec747ffe`) | **12** |
+| `p1b/verified-evaluation` | **12** |
+| `epic/booksim-forward-port` | **12** |
+
+The hardened version already rejects empty files, ragged rows,
+non-square matrices, NaN/Inf and negative entries — exactly what I
+"discovered" was missing and then re-implemented in `SynthesisTrafficMatrix`.
+
+**The current tree took `milp_topology_v2.py` from the OLDER
+`integration/canonical` copy.** `SynthesisTrafficMatrix`'s *source
+identity* requirement remains a genuine addition; the shape/sign/finiteness
+validation was already solved and should have been reclaimed, not rewritten.
+
+**Open:** re-reclaim the hardened `load_matrix` from `ec747ffe` and
+reconcile it with `SynthesisTrafficMatrix` rather than duplicating it.
+
+### VERIFIED CORRECT — `ir.routing` has no canonical authority
+
+`TopologyIR.routing` is consumed **only** by `topology_ir.py`'s own
+translators (`to_booksim_cfg:515`, `to_preset:565/568`). It has **zero
+consumers outside that module**, and `materialize_ir` ignores it — proven:
+two documents differing only in `routing` produce the **same**
+`topology_hash`.
+
+**But the deeper concern stands and is recorded as a new finding:**
+`ir.routing` *does* control the generated BookSim config
+(`routing_function = {ir.effective_routing}`). So two designs with the same
+`design_hash` can project to **different backend configs**. That is a
+**backend-identity gap**, not a canonical one — the canonical artifact is
+unaffected, but the backend projection is not bound by design identity.
+
+### Structural-optimization readiness — revised
+
+The previous verdict was `BLOCKED ON CUSTOM BACKEND EXECUTION`. That
+verdict rested on Error 2. With `ANYNET_MIN_HOPS` restored, the certified
+AnyNet profile accepts a custom graph, so the backend path is reachable and
+the blanket "blocked" statement is **no longer supported by the evidence**.
+A qualified execution run remains to be performed before readiness is
+claimed.

@@ -140,7 +140,7 @@ def test_route_c_1_policy_is_declared_and_inspectable():
         "name": "g", "kind": "custom", "nodes": 4, "links": [[0, 1], [1, 2]],
         "link_attrs": {"bandwidth_GBs": 50.0, "latency_ns": 500.0}}),
         width_bits=64, latency_cycles=1)
-    assert routing_policy_for(art) == "WEIGHTED_SHORTEST_PATH"
+    assert routing_policy_for(art) == "ANYNET_MIN_HOPS"
 
 
 def test_route_c_1b_mesh_keeps_dor():
@@ -320,7 +320,7 @@ def test_route_c_11_cdg_executes_on_custom_routes():
     ev = {o.obligation: o.evidence for o in c.certificate.obligations}
     dk = ev["DEADLOCK_FREE"]
     assert dk["acyclic"] is True
-    assert tuple(dk["cdg_route_classes"]) == ("WEIGHTED_SHORTEST_PATH",)
+    assert tuple(dk["cdg_route_classes"]) == ("ANYNET_MIN_HOPS",)
     assert dk["node_count"] > 0 and dk["edge_count"] > 0
 
 
@@ -337,7 +337,7 @@ def test_route_c_12_a_real_deadlock_stays_a_failure():
     assert dk["acyclic"] is False
     assert dk.get("cycle"), "a FAIL must carry a witness, not just a verdict"
     # The route class is unchanged: no reroute magic.
-    assert tuple(dk["cdg_route_classes"]) == ("WEIGHTED_SHORTEST_PATH",)
+    assert tuple(dk["cdg_route_classes"]) == ("ANYNET_MIN_HOPS",)
 
 
 def test_route_c_12b_mesh_and_ring_disagree_only_on_the_cdg():
@@ -356,7 +356,7 @@ def test_route_c_12b_mesh_and_ring_disagree_only_on_the_cdg():
         # An INVALID compile has no bundle; read the class from evidence.
         ev = {o.obligation: o.evidence for o in comp.certificate.obligations}
         return tuple(ev["DEADLOCK_FREE"].get("cdg_route_classes") or ())
-    assert classes(mesh) == classes(r) == ("WEIGHTED_SHORTEST_PATH",)
+    assert classes(mesh) == classes(r) == ("ANYNET_MIN_HOPS",)
     assert mesh.certificate.overall == "PASS"
     assert r.certificate.overall == "FAIL"
 
@@ -398,3 +398,50 @@ def test_route_c_18_projection_does_not_change_route_identity():
     text = "\n".join(f"router {i}" for i in range(k * k))
     assert text  # a projection artifact exists independently
     assert c.bundle.router_route.entries == before
+
+
+# ══ THE REGRESSION THAT WOULD HAVE CAUGHT THE WRONG POLICY ═════════════
+
+def test_custom_policy_is_accepted_by_the_certified_anynet_profile():
+    """THE TEST THAT WAS MISSING.
+
+    An earlier revision selected WEIGHTED_SHORTEST_PATH for custom
+    topologies on the aesthetic ground that ANYNET_MIN_HOPS' name is
+    BookSim-coupled. That created a canonical-vs-backend mismatch which did
+    not previously exist, and it was then reported as a backend limitation.
+
+    The sealed contract is ANYNET_MIN_HOPS: `_route_entries_from_adj` is
+    documented as "the one routing truth: AnyNet::route() first-hop table",
+    a REPLICA of the vendored fork's routing. The certified AnyNet profile
+    accepts a custom graph routed with it, which is what keeps BookSim
+    execution reachable. Any future change to the custom policy must keep
+    this green or say explicitly why the backend is being given up.
+    """
+    from veritx_dse.backend.booksim_projection import qualify_anynet_min_hops
+    k = 5
+    c = FabricCompiler().compile(_req("m5", k * k, _mesh(k)))
+    assert c.status == "COMPILED"
+    assert c.certificate.overall == "PASS"
+    assert [getattr(x, "id", x)
+            for x in c.bundle.router_route.routing_classes] == \
+        ["ANYNET_MIN_HOPS"], "custom must use the SEALED executable contract"
+
+    class _P:
+        pass
+    p = _P()
+    p.topology = c.bundle.topology
+    p.route = c.bundle.router_route
+    p.attachment = c.bundle.attachment
+    qualify_anynet_min_hops(p)          # raises if the backend path closes
+
+
+def test_custom_policy_is_the_booksim_replica_not_a_new_semantic():
+    """The canonical custom route table must equal the BookSim replica by
+    construction, so route equivalence is not a hope."""
+    from veritx_dse.model.routing import routing_policy_for
+    k = 5
+    art = materialize_ir(tir.from_dict({
+        "name": "m5", "kind": "custom", "nodes": k * k, "links": _mesh(k),
+        "link_attrs": {"bandwidth_GBs": 50.0, "latency_ns": 500.0}}),
+        width_bits=64, latency_cycles=1)
+    assert routing_policy_for(art) == "ANYNET_MIN_HOPS"

@@ -231,9 +231,9 @@ def test_cfab_18b_custom_route_uses_the_declared_policy():
     from veritx_dse.model.topology_artifact import materialize_ir
     c = FabricCompiler().compile(CompileRequestV3.from_dict(_explicit_doc(k=5)))
     classes = [getattr(x, "id", x) for x in (c.bundle.router_route.routing_classes or ())]
-    assert classes == ["WEIGHTED_SHORTEST_PATH"], classes
+    assert classes == ["ANYNET_MIN_HOPS"], classes
     art = materialize_ir(_ir(5), width_bits=64, latency_cycles=1)
-    assert routing_policy_for(art) == "WEIGHTED_SHORTEST_PATH"
+    assert routing_policy_for(art) == "ANYNET_MIN_HOPS"
 
 
 def test_cfab_18c_named_families_keep_dor():
