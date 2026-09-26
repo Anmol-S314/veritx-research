@@ -259,7 +259,40 @@ def _finding(*, cls: str, owner: str, code: str, message: str,
     }
 
 
-def _capability_consequences(doc: dict[str, Any]) -> list[dict[str, Any]]:
+def _compilation_for(doc: dict[str, Any]):
+    """Compile once; the projection reuses it everywhere.
+
+    ``None`` when the document does not canonicalize — the callers treat
+    that as "not decidable", never as "passes".
+    """
+    request, error = _canonicalize(doc)
+    if request is None:
+        return None
+    from veritx_dse.application.fabric_compiler import FabricCompiler
+    return FabricCompiler().compile(request)
+
+
+def _lowered_traffic_classes(compilation) -> set[str]:
+    """The traffic classes the canonical lowering actually produced.
+
+    This is the authoritative multi-class signal: a fabric can be
+    multi-class through its dependency graph without declaring a single
+    collective (the ``mesh4`` family is exactly that case), so reading
+    declared collective classes alone under-reports.
+    """
+    if compilation is None or compilation.status != "COMPILED":
+        return set()
+    try:
+        pairs = compilation.bundle.vc_assignment.traffic_class_to_vcs
+    except Exception:  # noqa: BLE001
+        return set()
+    # `traffic_class_to_vcs` is a tuple of (traffic_class, vc_ids) pairs.
+    return {str(pair[0]) for pair in (pairs or ())
+            if isinstance(pair, (tuple, list)) and pair}
+
+
+def _capability_consequences(doc: dict[str, Any],
+                             compilation=None) -> list[dict[str, Any]]:
     """Consequences materially caused by the current choices (Gate 7 §30).
 
     Not the 73-row matrix, and never hand-coded conditionals: each entry is
@@ -274,18 +307,21 @@ def _capability_consequences(doc: dict[str, Any]) -> list[dict[str, Any]]:
     if isinstance(concentration, int) and concentration > 1:
         chosen.append(("concentration > 1", "FAB-002"))
 
-    collectives = (doc.get("workload") or {}).get("collectives") or []
-    classes = {c.get("traffic_class") for c in collectives
-               if isinstance(c, dict) and c.get("traffic_class")}
+    classes = _lowered_traffic_classes(compilation)
+    if not classes:
+        collectives = (doc.get("workload") or {}).get("collectives") or []
+        classes = {c.get("traffic_class") for c in collectives
+                   if isinstance(c, dict) and c.get("traffic_class")}
     if len(classes) > 1:
-        chosen.append(("multiple communication classes", "COMM-006"))
+        chosen.append((f"multiple communication classes "
+                       f"({', '.join(sorted(classes))})", "COMM-006"))
 
     clock_domains = {a.get("clock_domain") for a in doc.get("agents") or []
                      if isinstance(a, dict)}
     if len({c for c in clock_domains if c}) > 1:
         chosen.append(("multiple clock domains", "SYS-003"))
 
-    if (doc.get("workload") or {}).get("model_family") == "mixture_of_experts":
+    if _declares_moe_structure(doc):
         chosen.append(("static MoE", "WORK-002"))
 
     out: list[dict[str, Any]] = []
@@ -309,6 +345,34 @@ def _capability_consequences(doc: dict[str, Any]) -> list[dict[str, Any]]:
             "registry_version": consequence["capability_semantics_version"],
         })
     return out
+
+
+def _declares_moe_structure(doc: dict[str, Any]) -> bool:
+    """Does this design actually exercise MoE structure?
+
+    WORK-002's limitation is "no full static dispatch/combine lowering" — it
+    is about expert routing, not about a model-family label. A design only
+    reaches that limitation when it has expert parallelism or declares
+    dispatch/combine traffic. Firing on the label alone would report a
+    limitation for a single-NPU trace carrier that has no MoE structure to
+    lower — a false capability claim in the opposite direction.
+    """
+    workload = doc.get("workload") or {}
+    if workload.get("model_family") != "mixture_of_experts":
+        return False
+    try:
+        if int(workload.get("ep") or 1) > 1:
+            return True
+    except (TypeError, ValueError):
+        return True
+    for collective in workload.get("collectives") or []:
+        if not isinstance(collective, dict):
+            continue
+        dimension = str(collective.get("dimension") or "").upper()
+        kind = str(collective.get("kind") or "").lower()
+        if dimension == "EP" or kind in ("alltoall", "dispatch", "combine"):
+            return True
+    return False
 
 
 def _torus_capability(family: str) -> str:
@@ -436,18 +500,15 @@ def _validation_findings(doc: dict[str, Any]) -> list[dict[str, Any]]:
     )]
 
 
-def _preflight_findings(doc: dict[str, Any]) -> list[dict[str, Any]]:
+def _preflight_findings(doc: dict[str, Any],
+                        compilation=None) -> list[dict[str, Any]]:
     """Cross-domain preflight (Gate 7 §27, class 2).
 
     Provable before compile, using the canonical compiler as the authority
     rather than a parallel join implementation.
     """
-    request, error = _canonicalize(doc)
-    if request is None:
+    if compilation is None:
         return []
-    from veritx_dse.application.fabric_compiler import FabricCompiler
-
-    compilation = FabricCompiler().compile(request)
     if compilation.status == "COMPILED":
         return []
     cls = "PREFLIGHT_BLOCKED" if compilation.status == "INVALID" \
@@ -465,19 +526,14 @@ def _preflight_findings(doc: dict[str, Any]) -> list[dict[str, Any]]:
     )]
 
 
-def _derived_summaries(doc: dict[str, Any]) -> list[dict[str, Any]]:
+def _derived_summaries(doc: dict[str, Any],
+                       compilation=None) -> list[dict[str, Any]]:
     """PRE-COMPILE DERIVED SUMMARY (Gate 7 §19 / Gate 8 §42).
 
     Computed by the canonical compiler, never by the frontend. Absent when
     the design does not derive.
     """
-    request, error = _canonicalize(doc)
-    if request is None:
-        return []
-    from veritx_dse.application.fabric_compiler import FabricCompiler
-
-    compilation = FabricCompiler().compile(request)
-    if compilation.status != "COMPILED":
+    if compilation is None or compilation.status != "COMPILED":
         return []
     bundle = compilation.bundle
     topology = getattr(bundle, "topology", None)
@@ -761,9 +817,14 @@ def build_design_view_v2(
             expected=expected_capability_semantics_version,
             actual=semantics_version)
 
+    # Compile once. Every consumer below reads the same canonical
+    # compilation, so the projection can never disagree with itself about
+    # what the design derives.
+    compilation = _compilation_for(draft_doc)
+
     findings = [
         *_validation_findings(draft_doc),
-        *_preflight_findings(draft_doc),
+        *_preflight_findings(draft_doc, compilation),
         *_legacy_findings(draft_doc),
         *_downstream_findings(draft_doc),
     ]
@@ -778,7 +839,7 @@ def build_design_view_v2(
         elif finding["class"] == "DOWNSTREAM_LIMITATION":
             _LIMITED_FIELDS.add(finding["affected"])
 
-    consequences = _capability_consequences(draft_doc)
+    consequences = _capability_consequences(draft_doc, compilation)
     sections = _sections(draft_doc, presentation)
     readiness = _readiness(findings, consequences, draft_doc)
 
@@ -795,7 +856,7 @@ def build_design_view_v2(
             if parent_revision else None),
         "readiness": readiness,
         "sections": sections,
-        "derived_summaries": _derived_summaries(draft_doc),
+        "derived_summaries": _derived_summaries(draft_doc, compilation),
         "validation_findings": findings,
         "capability_consequences": consequences,
         "completeness": _completeness(draft_doc, sections, presentation),

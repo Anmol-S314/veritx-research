@@ -128,7 +128,17 @@ def _mesh4_dependencies() -> DependencyGraph:
 
 
 def _mesh4_workload() -> Workload:
-    return Workload(model_family=ModelFamily.MOE, tp=1, pp=1, ep=1, dp=1)
+    """The carrier workload for the mesh4 FABRIC presets.
+
+    DENSE_TRANSFORMER, not MOE: these presets exist to certify a 4-tile
+    mesh, they carry a minimal synthetic trace, and ``tp=ep=dp=1`` means
+    they exercise no parallelism structure. Declaring MOE made the preset
+    fail COND-DENSE-STATIC-WORKLOAD, a condition of the very envelope
+    GUIDED-EXPERT.md certifies it under. See application/presets.py for
+    the inertness proof.
+    """
+    return Workload(model_family=ModelFamily.DENSE_TRANSFORMER,
+                    tp=1, pp=1, ep=1, dp=1)
 
 
 def _mesh4_request() -> CompileRequest:

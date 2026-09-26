@@ -120,20 +120,34 @@ def test_source_of_value_is_registry_owned():
 
 
 def test_guided_eligible_presets_match_the_registry():
-    """Uncertified presets are never presented as Guided-safe (§32)."""
+    """Uncertified presets are never presented as Guided-safe (§32).
+
+    Corrected by the implementation audit: the mesh4 family ships a
+    multi-class fabric, so no static envelope admits it. Only
+    dense-1b-16tiles is Guided-eligible, and that claim is proven by
+    tests/test_preset_certification.py rather than asserted here.
+    """
     guided = pr.guided_eligible_presets()
-    assert "mesh4" in guided
-    assert "mesh4_hbm" in guided
-    assert "mesh4_wide128" in guided
-    assert "dense-1b-16tiles" in guided
-    assert "dense-4b-32tiles-conc4" not in guided
-    assert "moe-8x7b-64tiles" not in guided
+    assert guided == ["dense-1b-16tiles"]
+    for preset in ("mesh4", "mesh4_hbm", "mesh4_wide128",
+                   "dense-4b-32tiles-conc4", "moe-8x7b-64tiles"):
+        assert preset not in guided, preset
 
 
-def test_uncertified_preset_names_its_reason():
-    spec = pr.preset_spec("dense-4b-32tiles-conc4")
-    assert spec["guided_eligible"] is False
-    assert spec.get("reason")
+def test_every_non_guided_preset_names_its_reason():
+    """A preset that is not Guided-safe must say why, not merely be absent."""
+    for preset in ("mesh4", "mesh4_hbm", "mesh4_wide128",
+                   "dense-4b-32tiles-conc4", "moe-8x7b-64tiles"):
+        spec = pr.preset_spec(preset)
+        assert spec["guided_eligible"] is False, preset
+        assert spec.get("reason"), preset
+
+
+def test_the_mesh4_family_reason_names_the_real_cause():
+    """The reason is the multi-class fabric, not a model-family label."""
+    for preset in ("mesh4", "mesh4_hbm", "mesh4_wide128"):
+        reason = pr.preset_spec(preset)["reason"]
+        assert "multi-class" in reason.lower(), preset
 
 
 # ── capability projection ──────────────────────────────────────────────

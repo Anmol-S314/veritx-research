@@ -36,7 +36,30 @@ class Preset:
 
 def _mesh4_request(*, hbm: bool = False,
                    link_width: int | None = None):
-    """Sealed-constructor CompileRequest for the mesh4 family."""
+    """Sealed-constructor CompileRequest for the mesh4 family.
+
+    These are FABRIC presets: a 4-tile mesh carrying a minimal synthetic
+    trace (``tiny2`` / ``tiny2x5``). The declared workload is the carrier
+    that lets the canonical CompileRequest exist; it is not a model
+    workload, and ``tp=ep=dp=1`` means it exercises no parallelism
+    structure at all.
+
+    ``model_family`` is therefore DENSE_TRANSFORMER, not MOE. It was MOE
+    historically as a placeholder, which made the preset declare a
+    workload family its advertised envelope excludes: GUIDED-EXPERT.md
+    §preset audit certifies ``mesh4`` under
+    ``CAP-ENV-BOOKSIM-MESH-DOR-XY-V1``, whose COND-DENSE-STATIC-WORKLOAD
+    requires ``dense_transformer``. A preset must not advertise an
+    envelope whose own conditions it fails.
+
+    The correction is identity-only and proven inert for the fabric: for
+    ``tp=1, ep=1`` ``Workload.total_npus`` is 1 either way, the traffic is
+    trace-driven rather than collective-driven, and every derived artifact
+    hash (topology, attachment, mapping, route, resolved route, VC
+    assignment, fabric) is byte-identical. Only ``design_hash`` and its
+    ``resolved_fabric_hash`` child move, exactly as they did for the
+    semantics-v1 -> v2 identity move.
+    """
     from veritx_dse.model.compile_model import (
         AddressMap, AddressRange, Agent, AgentKind, CompileRequest,
         DepKind, Dependency, DependencyGraph, ModelFamily, NocConfig,
@@ -52,8 +75,8 @@ def _mesh4_request(*, hbm: bool = False,
             AddressRange(name="HBM0", base=0x1000, size=0x1000,
                          target_agent_idx=1),))
     return CompileRequest(
-        workload=Workload(model_family=ModelFamily.MOE, tp=1, pp=1,
-                          ep=1, dp=1),
+        workload=Workload(model_family=ModelFamily.DENSE_TRANSFORMER,
+                          tp=1, pp=1, ep=1, dp=1),
         requirements=[],
         agents=agents,
         dependencies=DependencyGraph([

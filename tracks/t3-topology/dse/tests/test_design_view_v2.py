@@ -25,6 +25,7 @@ import pytest
 DSE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(DSE))
 
+from veritx_dse.application import preset_certification as pc  # noqa: E402
 from veritx_dse.application import product_registry as registry  # noqa: E402
 from veritx_dse.application.compile_intent import (  # noqa: E402
     build_preset_request,
@@ -139,14 +140,36 @@ def test_readiness_carries_no_evaluation_fields():
 
 
 def test_a_preset_design_is_limited_not_blocked():
-    """mesh4 declares MoE; static MoE lowering is unavailable (WORK-002).
+    """The mesh4 family ships a multi-class fabric (classes A and B).
 
-    The design is still valid and compilable — this is a downstream
-    limitation, never an invalid design (Gate 7 §28).
+    Multi-class execution is unavailable (COMM-006), so the design is
+    capability-limited — and still valid and compilable. A downstream
+    limitation is never an invalid design (Gate 7 §28).
     """
     view = _view(_doc("mesh4"))
     assert view["readiness"] == "CAPABILITY_LIMITED_BUT_COMPILABLE"
     assert not any(f["blocking"] for f in view["validation_findings"])
+    assert [c["capability_id"] for c in view["capability_consequences"]] \
+        == ["COMM-006"]
+
+
+def test_a_single_class_dense_preset_has_no_consequence():
+    """The proven Guided preset carries no downstream limitation."""
+    view = _view(pc._load_preset_doc("dense-1b-16tiles"))
+    assert view["readiness"] == "READY"
+    assert view["capability_consequences"] == []
+
+
+def test_multi_class_is_detected_from_the_lowered_fabric():
+    """A fabric can be multi-class through its dependency graph without
+    declaring a single collective — the mesh4 case. Reading declared
+    collective classes alone under-reports, so the projection uses the
+    lowered VC assignment."""
+    doc = _doc("mesh4")
+    assert (doc.get("workload") or {}).get("collectives") in (None, [], ())
+    view = _view(doc)
+    assert any(c["capability_id"] == "COMM-006"
+               for c in view["capability_consequences"])
 
 
 def test_malformed_intent_is_invalid_and_blocking():

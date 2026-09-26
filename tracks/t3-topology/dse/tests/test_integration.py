@@ -115,7 +115,7 @@ class TestCompilePipeline:
             "--store", str(tmp_path / "store"),
             "--set", "noc_config.link_width=128", timeout=90)
         assert result.returncode == 0
-        assert "47d8cb6c386b22cbc6b4bbf152f40d3c1c72dd1900a48d099afd2bda8fbc9c7f" \
+        assert "9f5d25edb7053bdf170669345b14d056e690479d895d00bee6a5cef3da604528" \
             in _strip_ansi(result.stdout)
 
 

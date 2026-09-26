@@ -32,6 +32,7 @@ product-gates: ## fail-closed product registry gates (Gate 1 / 4 / 6)
 	@cd ../.. && python3 scripts/check_intent_ontology.py
 	@cd ../.. && python3 scripts/check_capability_registry.py
 	@cd ../.. && python3 scripts/check_exposure_registry.py
+	@cd ../.. && python3 scripts/check_preset_certification.py
 
 test: ## quick sanity sweep (the CI gate)
 	@python3 scripts/sanity_test.py

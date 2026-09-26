@@ -29,19 +29,19 @@ from veritx_dse.model.compile_model import (
 )
 
 GOLDEN_MESH4_RESOLVED = (
-    "c05d4c19bf3bdd955da97f33fd665d2325441966906b1bb23290d0dcc3296fa1")
+    "b43419602cdaf9a80b15590f28fc42154664b35f0d263ae5e1b054c5b03fedbd")
 GOLDEN_WIDE128_RESOLVED = (
-    "47d8cb6c386b22cbc6b4bbf152f40d3c1c72dd1900a48d099afd2bda8fbc9c7f")
+    "9f5d25edb7053bdf170669345b14d056e690479d895d00bee6a5cef3da604528")
 # Design hashes are identity-only movers under compiler semantics v2; the
 # old semantics-v1 values were 306dc86a… (mesh4), c5bac8e5… (hbm),
 # 02ad4c72… (wide128) and remain reproducible via
 # replace(request, compiler_semantics_version=1).design_hash().
 GOLDEN_MESH4_DESIGN = (
-    "f13b8d7d61776d863f3f554c32f7d8dab2a622dbf62bdfe697afc6b95ee4547f")
+    "e04583a3e1bf2dfd6f1fd8832b80a35149342439bfecf78a5ef9bd7051730a94")
 GOLDEN_HBM_DESIGN = (
-    "0fe2e62ae06c67c5dc781eafd69ff9138f505c62a16f29ad5ea16494abc2bc13")
+    "0d7a4654bcb004ce99a7b4411f8d024ca2b79f7718de0cec85810d4ea4cb6620")
 GOLDEN_WIDE128_DESIGN = (
-    "d94dde8d87bdac52316bcfd8c2f210a2598a564045f7e60f3da92650da2968b3")
+    "df68df8d5af9a6fbeccf0cd8b86e2113165972b1ea451617bf79fd466d8a36e0")
 # Hardware children: MUST NOT move (execution semantics unchanged).
 GOLDEN_HBM_ADDRESS_DECODE = (
     "b498a6f0a7dfd3ca3261998f3239bb4178150f7fa6f4ff4c69184b853051ebef")
@@ -49,7 +49,7 @@ GOLDEN_HBM_FABRIC = (
     "264a857c1978fa44c0f17f150c929a2aff18691189405e5b7754c7fef42a79f1")
 # ResolvedFabric moves only because its design_hash parent moved.
 GOLDEN_HBM_RESOLVED = (
-    "2bf76043e6c653147842b341a04d2600b6201a13ea10d7fe2f0b3e18fad099e6")
+    "4f0159a0533798c190ad190b485ae83b382c9bee4e4eff384eabe73a11942a7b")
 GOLDEN_DOR_POLICY = (
     "c451979bf68ac87535cf117adc1b9ff98cb45ea6a50ff42d22f7e312f68a2426")
 PRESOLVED = {"mesh4": GOLDEN_MESH4_RESOLVED,

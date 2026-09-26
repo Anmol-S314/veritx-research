@@ -71,7 +71,8 @@ corpus.
 | 4–6 | DesignViewV2 · readiness/findings · compile binding | `08de20c6` | done |
 | 7–8 | rebuild design editor on DesignViewV2 + review flow | `5b2b67af` | done |
 | 9 | reconcile compile result handoff | — | **not started** |
-| 10 | PF-D13 three distinct facts, no ambiguous "run" | `6a0c4a1`-series | done |
+| 10 | PF-D13 three distinct facts, no ambiguous "run" | `acbef67d` | done |
+| 11 | preset certification authority (audit closure) | see below | done |
 
 Slices 4, 5 and 6 share one projection module and one HTTP surface, so they
 land in a single commit; they are itemised separately under *Contracts
@@ -221,17 +222,18 @@ which it does).
 
 | Command | Baseline | Final |
 |---|---|---|
-| `python3 -m pytest tests/` (dse) | 3833 passed, 17 skipped | **3964 passed, 17 skipped** |
+| `python3 -m pytest tests/` (dse) | 3833 passed, 17 skipped | **3999 passed, 17 skipped** |
 | `python3 -m pytest tests/` (studio) | 2 failed, 8 passed, 1 skipped | **2 failed, 8 passed, 1 skipped** (same pre-existing) |
 | `npx tsc --noEmit` | exit 0 | **exit 0** |
 | `npx vite build` | exit 0 | **exit 0** |
 | `python3 scripts/check_intent_ontology.py` | exit 0 | **exit 0** |
 | `python3 scripts/check_capability_registry.py` | n/a | **exit 0** |
 | `python3 scripts/check_exposure_registry.py` | n/a | **exit 0** |
+| `python3 scripts/check_preset_certification.py` | n/a | **exit 0** |
 | `make -C tracks/t3-topology product-gates` | n/a | **exit 0** |
 | `python3 scripts/validate_fixtures.py` | exit 0 | **exit 0** |
 
-Net new tests: **+131**.
+Net new tests: **+166**.
 
 The validators are verified to be able to fail: every encoded invariant has a
 mutation test (`test_product_registry_gates.py`), and the ontology UI-admission
@@ -262,3 +264,102 @@ OPT-D2/D3/D5/D6/D7/D8, FAB-D1/D4/D6, VC-D1, COMM-D1, ROUTER-D2.
 ## Contract conflicts
 
 None.
+
+---
+
+## Audit closure — preset certification (GX-D5)
+
+A contract contradiction was raised after the first Phase-1 report:
+`mesh4` declared `ModelFamily.MOE` while Gate 6 certified it Guided-safe
+under `CAP-ENV-BOOKSIM-MESH-DOR-XY-V1`, whose `COND-DENSE-STATIC-WORKLOAD`
+requires `dense_transformer`.
+
+### Audit of `mesh4` — the four options, decided from source
+
+| Question | Finding |
+|---|---|
+| Preset ID | `mesh4`, `mesh4_hbm`, `mesh4_wide128` |
+| ModelFamily | `ModelFamily.MOE` in **both** canonical sources (`application/presets.py:55`, `application/compile_intent.py:131`) |
+| Workload template | `Workload(model_family=MOE, tp=1, pp=1, ep=1, dp=1)` — a single NPU, no parallelism |
+| Operation graph | two dependency classes: `Dependency("A","B",BLOCKING)`, `Dependency("B","A",BLOCKING)` |
+| Collectives | **none** — the network workload is the synthetic trace `tiny2` / `tiny2x5` |
+| TP/DP/EP/PP | 1/1/1/1 |
+| Communication semantics | **multi-class**: `traffic_class_to_vcs = {A: (1,), B: (0,)}`, `vc_count = 2` |
+| Generated CompileRequest | schema v2, mesh, `radix=None` (derived), `link_width=None` except wide128=128 |
+| Capability rows triggered | `COMM-006` (multi-class execution `NOT_AVAILABLE`); `WORK-002` only under the old MOE label |
+
+**Classification: (C) mislabelled by preset metadata — plus a second,
+independent certification error.**
+
+1. `model_family=MOE` was wrong metadata. These are **fabric** presets: a
+   4-tile mesh carrying a synthetic trace, with `total_npus = tp × ep = 1`
+   and no collectives. `moe-8x7b-64tiles` (`ep=8`, `alltoall`) is the real
+   MoE preset.
+2. Even with the family corrected, the family **still** fails the envelope:
+   it is multi-class, and every static envelope requires
+   `COND-SINGLE-COMM-CLASS`. `GUIDED-EXPERT.md` §86 already wrote the
+   envelope as *"(if single class)"* — the conditionality was known and the
+   verdict ignored it.
+
+### Inertness proof for the metadata correction
+
+| | MOE carrier | DENSE carrier |
+|---|---|---|
+| `Workload.total_npus` | 1 | 1 |
+| compile | COMPILED | COMPILED |
+| certificate | PASS | PASS |
+| topology / attachment / mapping / route / resolved-route / VC / fabric hashes | **identical** | **identical** |
+| `design_hash`, `resolved_fabric_hash` | differ | differ |
+
+Only the identity moved — the same class of move the repo already documents
+for semantics v1 → v2. Pinned goldens updated in
+`test_compile_intent.py`, `test_cli_compile_surface.py`,
+`test_application_service.py`. `test_candidate_policy.py` was **not**
+changed: it builds its own design and its golden is independent.
+
+### Certification after the correction
+
+| Preset | State | Envelope |
+|---|---|---|
+| `dense-1b-16tiles` | **GUIDED_SAFE (PROVEN)** | `CAP-ENV-BOOKSIM-MESH-DOR-XY-V1` |
+| `mesh4` · `mesh4_hbm` · `mesh4_wide128` | EXPERT_ONLY | none — multi-class (`COMM-006`) |
+| `dense-4b-32tiles-conc4` | EXPERT_ONLY | none — concentration 4 |
+| `moe-8x7b-64tiles` | EXPERT_ONLY | serving envelope |
+
+**Guided safe path: `dense-1b-16tiles` — proven, not asserted.** All seven
+required conditions hold from real artifacts. §6's requirement is met, so
+this is **not** `GUIDED SAFE PATH BLOCKED`.
+
+### Second defect found during the closure
+
+`DesignViewV2`'s capability-consequence projection **under-reported**:
+it read *declared collective* classes, so the mesh4 family — multi-class
+through its dependency graph, with no collectives declared — produced no
+consequence at all and projected as `READY`. It now reads the **lowered**
+`traffic_class_to_vcs` from the canonical compilation, and reports
+`COMM-006 multiple communication classes (A, B)`.
+
+The projection also now compiles **once** and threads that compilation
+through preflight, consequences and derived summaries, so it cannot
+disagree with itself.
+
+### Files changed (audit closure)
+
+| File | Change |
+|---|---|
+| `veritx_dse/application/presets.py` | `mesh4` carrier → `DENSE_TRANSFORMER` + rationale |
+| `veritx_dse/application/compile_intent.py` | same correction |
+| `veritx_dse/application/preset_certification.py` | **new** — certification authority, fail-closed |
+| `veritx_dse/application/design_view_v2.py` | lowered-class consequences; single compilation |
+| `scripts/check_preset_certification.py` | **new** — CI gate |
+| `docs/product/exposure-registry.yaml` | `presets` certification corrected |
+| `docs/product/GUIDED-EXPERT.md` | §86 corrected; §87 marked ENFORCED |
+| `docs/product/STUDIO-WIREFRAMES.md` | §18/§20 preset lists corrected |
+| `tracks/t3-topology/Makefile` | gate wired |
+| tests | +32 certification, +3 registry, +2 projection |
+
+### Blocker closed
+
+| Was | Now |
+|---|---|
+| GX-D5 preset certification asserted, never enforced | **Enforced.** `scripts/check_preset_certification.py` fails closed on a refuted Guided claim; verified by re-asserting the false `mesh4` claim (exit 1) and restoring (exit 0). |

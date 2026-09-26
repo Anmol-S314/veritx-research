@@ -814,14 +814,33 @@ violation of this law (§85).
 
 ## 86. Current template audit (§87) — shipped presets
 
+**CORRECTED by implementation audit (§87 enforcement).** The table below
+asserted Guided eligibility; §87's requirement 4 — *reach its advertised
+capability envelope* — was never mechanically checked, and two rows were
+false. The audit found the `mesh4` family failing
+`COND-SINGLE-COMM-CLASS`: it ships a **multi-class** fabric (dependency
+classes A and B, two VCs), and every static envelope requires a single
+class, with `COMM-006` recording multi-class execution as unavailable. The
+parenthetical *"(if single class)"* was the tell — the condition was known
+and the verdict ignored it.
+
+The family also declared `model_family=mixture_of_experts` while the
+envelope's `COND-DENSE-STATIC-WORKLOAD` requires `dense_transformer`; that
+metadata was wrong (a 1-NPU synthetic-trace fabric carrier is not a MoE
+workload) and is corrected at the canonical preset source.
+
 | Template | Materializes | Valid under target contracts? | Envelope | Verdict |
 |---|---|---|---|---|
-| `mesh4` | 4-tile mesh | **valid** | `CAP-ENV-BOOKSIM-MESH-DOR-XY-V1` (if single class) | **Guided-eligible** |
-| `mesh4_hbm` | 4-tile mesh + HBM + address map | **valid** | same | **Guided-eligible** (map materialized, inspectable) |
-| `mesh4_wide128` | 4-tile mesh, 128-bit links | **valid** | same | **Guided-eligible** |
-| `dense-1b-16tiles` | dense, TP4 allreduce, 16 tiles | **valid** | same | **Guided-eligible** |
+| `mesh4` | 4-tile mesh, **multi-class** (A/B) | **valid** | none — no static envelope admits multi-class (`COMM-006`) | **Expert-only** (declarable, compilable, inspectable; not evaluation-safe) |
+| `mesh4_hbm` | 4-tile mesh + HBM + address map, multi-class | **valid** | none — same | **Expert-only** (map materialized, inspectable read-only) |
+| `mesh4_wide128` | 4-tile mesh, 128-bit links, multi-class | **valid** | none — same | **Expert-only** |
+| `dense-1b-16tiles` | dense, TP4 allreduce, 16 tiles | **valid** | `CAP-ENV-BOOKSIM-MESH-DOR-XY-V1` | **Guided-eligible — PROVEN** (every required condition holds) |
 | `dense-4b-32tiles-conc4` | dense, **DP allgather**, concentrated mesh (4 tiles/router) | **needs preset certification (§87)** | mesh-DOR **not qualified** at concentration 4 | **Expert-only until certified** |
 | `moe-8x7b-64tiles` | MoE serving, TP allreduce + EP alltoall | **serving path** | serving envelope | **Expert-only** (static MoE `DERIVABLE NO`) |
+
+**`dense-1b-16tiles` is the one proven Guided safe path.** Every required
+condition of its advertised envelope holds from real artifacts. The Guided
+safe path is therefore real rather than asserted.
 
 **The known `conc4` + DP allgather defect** is exactly the case §87 names. It
 **must not survive as a Guided preset** without passing preset certification
@@ -840,6 +859,16 @@ A shipped Guided preset must:
 ```
 
 **A preset is not trusted because it is bundled.** Recorded as **GX-D5**.
+
+**ENFORCED.** Requirements 1–3 and 5 are checked by
+tests/test_preset_certification.py; requirement 4 is checked by
+evaluating every required condition of the advertised envelope against the
+canonical compilation (`application/preset_certification.py`), gated by
+`scripts/check_preset_certification.py`. The certification states are
+`GUIDED_SAFE` · `EXPERT_ONLY` · `INVALID` · `UNCERTIFIED`, and the gate
+fails closed: a claim its own envelope refutes is `INVALID`, and a claim
+resting on a condition only an execution can decide is `UNCERTIFIED`,
+never assumed.
 
 ## 88. Guided preset tiers (§89)
 

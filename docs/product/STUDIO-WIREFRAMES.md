@@ -313,16 +313,32 @@ and produces no warning unless a formal dependency requires one.
 
 ## 18. Preset entry
 
+**CORRECTED by implementation audit.** `mesh4`, `mesh4_hbm` and
+`mesh4_wide128` were drawn as `✓ evaluate-safe`. They are not: they ship a
+**multi-class** fabric (dependency classes A/B, two VCs), and every static
+envelope requires `COND-SINGLE-COMM-CLASS`, with `COMM-006` recording
+multi-class execution as unavailable. Only `dense-1b-16tiles` provably
+reaches the advertised envelope (GUIDED-EXPERT.md §86/§87).
+
 ```text
 ┌─ Start from ──────────────────────────────────────────────────┐
 │ ○ Empty draft                                                  │
-│ ● mesh4          4-tile mesh                    ✓ evaluate-safe │
-│ ○ mesh4_hbm      4-tile mesh + HBM + address map ✓ evaluate-safe│
-│ ○ mesh4_wide128  4-tile mesh, 128-bit links      ✓ evaluate-safe│
-│ ○ dense-1b-16tiles  dense TP4 allreduce          ✓ evaluate-safe│
-│ ▸ Expert / research presets (2)   ⚠ not Guided-eligible        │
+│ ● dense-1b-16tiles  dense TP4 allreduce          ✓ evaluate-safe│
+│ ▸ Other shipped presets (5)      ⚠ not Guided-eligible         │
+│     mesh4 · mesh4_hbm · mesh4_wide128                          │
+│       multi-class fabric — no static envelope admits it        │
+│     dense-4b-32tiles-conc4                                     │
+│       concentration 4 is not covered by the mesh-DOR envelope  │
+│     moe-8x7b-64tiles                                           │
+│       static MoE lowering unavailable; serving path only       │
 └────────────────────────────────────────────────────────────────┘
 ```
+
+**A preset is never labelled `✓ evaluate-safe` from its name or from the
+fact that it is bundled.** The label is the certification state
+`GUIDED_SAFE`, which is derived by evaluating every required condition of
+the advertised envelope against the canonical compilation and fails closed
+(`scripts/check_preset_certification.py`).
 
 **Preset selection visibly results in materialized fields** (§19). After
 applying, the product **shows what changed**. The user is **never trapped inside
@@ -359,8 +375,16 @@ IDENTITY      design_hash changes; a new draft hash; no revision created
 ## 20. Invalid preset
 
 ```text
-✓ evaluate-safe            Guided-eligible; may appear in the default list
+✓ evaluate-safe            certification state GUIDED_SAFE: every required
+                           condition of the advertised envelope holds
+                           (derived, never declared)
 ▸ Expert / research presets
+    mesh4                    ⚠ not Guided-eligible
+      multi-class fabric — no static envelope admits multi-class execution
+    mesh4_hbm                ⚠ not Guided-eligible
+      same as mesh4; the HBM address map is materialized and reviewable
+    mesh4_wide128            ⚠ not Guided-eligible
+      same as mesh4, with 128-bit links
     dense-4b-32tiles-conc4   ⚠ not Guided-eligible
       DP allgather with dp=1; concentration 4 is not covered by the
       mesh-DOR envelope

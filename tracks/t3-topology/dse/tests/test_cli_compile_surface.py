@@ -40,13 +40,13 @@ DSE_DIR = Path(__file__).resolve().parent.parent
 POLICY = CandidatePolicy.BASELINE_DETERMINISTIC_V2.value
 
 GOLDEN_MESH4_DESIGN = \
-    "f13b8d7d61776d863f3f554c32f7d8dab2a622dbf62bdfe697afc6b95ee4547f"
+    "e04583a3e1bf2dfd6f1fd8832b80a35149342439bfecf78a5ef9bd7051730a94"
 GOLDEN_MESH4_FABRIC = \
     "d7fde891d47c7a6ffb1e0746429a784f95bd20a0014324b8757fdc2841716094"
 GOLDEN_MESH4_RESOLVED = \
-    "c05d4c19bf3bdd955da97f33fd665d2325441966906b1bb23290d0dcc3296fa1"
+    "b43419602cdaf9a80b15590f28fc42154664b35f0d263ae5e1b054c5b03fedbd"
 GOLDEN_WIDE128_RESOLVED = \
-    "47d8cb6c386b22cbc6b4bbf152f40d3c1c72dd1900a48d099afd2bda8fbc9c7f"
+    "9f5d25edb7053bdf170669345b14d056e690479d895d00bee6a5cef3da604528"
 
 SUMMARY_FIELDS = {
     "status", "intent_id", "design_hash", "fabric_hash",

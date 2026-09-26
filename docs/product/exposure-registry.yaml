@@ -134,9 +134,28 @@ optimization_only:
 
 # ── shipped presets and their advertised envelope ─────────────────────────
 presets:
-  mesh4:                    {guided_eligible: true,  envelope: CAP-ENV-BOOKSIM-MESH-DOR-XY-V1}
-  mesh4_hbm:                {guided_eligible: true,  envelope: CAP-ENV-BOOKSIM-MESH-DOR-XY-V1}
-  mesh4_wide128:            {guided_eligible: true,  envelope: CAP-ENV-BOOKSIM-MESH-DOR-XY-V1}
+  # PRESET CERTIFICATION CORRECTION (implementation audit).
+  #
+  # The mesh4 family ships a MULTI-CLASS fabric: its dependency graph
+  # declares classes A and B, which the canonical VC derivation maps to two
+  # VCs (traffic_class_to_vcs = {A: (1,), B: (0,)}). No static envelope
+  # admits multi-class execution - every one of them requires
+  # COND-SINGLE-COMM-CLASS, and COMM-006 records multi-class execution as
+  # NOT_AVAILABLE. GUIDED-EXPERT.md §86 already wrote the envelope as
+  # "(if single class)", and this registry's own safe_path already requires
+  # communication_classes: 1. The presets entries claimed Guided-eligible
+  # unconditionally, which contradicted both.
+  #
+  # They are therefore NOT Guided-safe. They remain fully usable: they
+  # declare, compile, certify and inspect - they are simply not advertised
+  # as evaluation-safe under an envelope whose conditions they fail.
+  mesh4:                    {guided_eligible: false, envelope: null, reason: "multi-class fabric (dependency classes A/B -> 2 VCs); no static envelope admits multi-class execution (COMM-006) - Expert-only; declarable, compilable, inspectable"}
+  mesh4_hbm:                {guided_eligible: false, envelope: null, reason: "same as mesh4: multi-class fabric; the HBM address map is materialized and reviewable read-only (REV-D6)"}
+  mesh4_wide128:            {guided_eligible: false, envelope: null, reason: "same as mesh4: multi-class fabric with 128-bit links"}
+  # The one PROVEN Guided safe path: every required condition of the
+  # advertised envelope holds from real artifacts (dense_transformer,
+  # single class, mesh + DOR_XY, identity VC transitions, one clock domain,
+  # closed config audit).
   dense-1b-16tiles:         {guided_eligible: true,  envelope: CAP-ENV-BOOKSIM-MESH-DOR-XY-V1}
   dense-4b-32tiles-conc4:   {guided_eligible: false, envelope: null, reason: "DP allgather with dp=1; concentration 4 not covered by the mesh-DOR envelope - Expert-only until preset certification (G41)"}
   moe-8x7b-64tiles:         {guided_eligible: false, envelope: CAP-ENV-BOOKSIM-SERVING-V1, reason: "static MoE DERIVABLE NO - serving path only"}
