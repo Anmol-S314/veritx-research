@@ -1,0 +1,773 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>SROTA Studio — AI Interconnect Engineering</title>
+<style>
+  :root{
+    --bg:#f3f2ee; --panel:#fbfaf7; --panel2:#f7f6f2; --ink:#171815;
+    --muted:#6b6d66; --line:#d8d7d0; --line-strong:#aaa9a1;
+    --accent:#0d6760; --accent-soft:#dcebe7; --orange:#b6582e;
+    --orange-soft:#f3e2d8; --ok:#28623d; --ok-soft:#dfeade;
+    --bad:#9b3f37; --bad-soft:#f1dedb; --warn:#92620e; --warn-soft:#f1ead7;
+    --blue:#365d83; --blue-soft:#e0e8ef; --shadow:0 12px 34px rgba(23,24,21,.07);
+    --mono:"SFMono-Regular","Cascadia Code","Liberation Mono",Menlo,monospace;
+    --sans:"Aptos","Segoe UI","Helvetica Neue",Arial,sans-serif;
+    --serif:"Iowan Old Style","Palatino Linotype",Georgia,serif;
+  }
+  html[data-theme="dark"]{
+    --bg:#171916; --panel:#20231f; --panel2:#252824; --ink:#eceee8; --muted:#a8ada3;
+    --line:#373b35; --line-strong:#555a51; --accent:#71c8bc; --accent-soft:#223f3b;
+    --orange:#df8a60; --orange-soft:#493126; --ok:#8fcb9d; --ok-soft:#263b2b;
+    --bad:#e18f88; --bad-soft:#472d2c; --warn:#e1bc69; --warn-soft:#433b25;
+    --blue:#90b6db; --blue-soft:#283846; --shadow:0 16px 38px rgba(0,0,0,.22);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.45}
+  button,input,select{font:inherit;color:inherit}
+  button{cursor:pointer}
+  code,.mono{font-family:var(--mono)}
+  .app{min-height:100vh;display:grid;grid-template-rows:56px 1fr 28px}
+  .topbar{display:flex;align-items:center;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--panel) 92%,transparent);backdrop-filter:blur(14px);position:sticky;top:0;z-index:20}
+  .brand{width:270px;padding:0 18px;border-right:1px solid var(--line);height:100%;display:flex;align-items:center;gap:10px}
+  .mark{font-family:var(--serif);font-size:21px;letter-spacing:-.02em}
+  .studio{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted)}
+  .context{flex:1;padding:0 18px;display:flex;align-items:center;gap:18px;min-width:0}
+  .crumb{display:flex;gap:8px;align-items:center;white-space:nowrap;overflow:hidden}
+  .crumb span{overflow:hidden;text-overflow:ellipsis}
+  .sep{color:var(--line-strong)}
+  .context-meta{margin-left:auto;display:flex;gap:8px;align-items:center}
+  .pill,.status{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:4px 8px;font-size:11px;white-space:nowrap;background:var(--panel)}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+  .dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)}
+  .top-actions{height:100%;display:flex;align-items:center;border-left:1px solid var(--line);padding:0 12px;gap:8px}
+  .btn{border:1px solid var(--line-strong);background:var(--panel);padding:7px 10px;border-radius:7px}
+  .btn:hover{border-color:var(--ink)}
+  .btn.primary{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+  .btn.ghost{border-color:transparent;background:transparent}
+  .shell{display:grid;grid-template-columns:220px minmax(0,1fr);min-height:0}
+  .sidebar{border-right:1px solid var(--line);background:var(--panel2);padding:14px 10px 22px;overflow:auto}
+  .side-head{font-size:10px;text-transform:uppercase;letter-spacing:.13em;color:var(--muted);padding:13px 9px 6px}
+  .nav{display:flex;flex-direction:column;gap:3px}
+  .nav button{display:flex;align-items:center;gap:10px;text-align:left;width:100%;border:0;background:transparent;padding:8px 9px;border-radius:7px;color:var(--muted)}
+  .nav button:hover{background:var(--panel);color:var(--ink)}
+  .nav button.active{background:var(--ink);color:var(--panel)}
+  .nav .num{width:22px;font-family:var(--mono);font-size:10px;opacity:.65}
+  .nav .nav-label{flex:1}
+  .nav .tiny{font-size:9px;border:1px solid currentColor;border-radius:999px;padding:1px 5px;opacity:.75}
+  .sidebar-card{margin:18px 6px 0;border:1px solid var(--line);background:var(--panel);padding:11px;border-radius:9px}
+  .sidebar-card h4{margin:0 0 6px;font-size:12px}
+  .sidebar-card p{margin:0;color:var(--muted);font-size:11px}
+  main{overflow:auto}
+  .page{display:none;padding:26px 28px 50px;max-width:1540px;margin:0 auto}
+  .page.active{display:block}
+  .eyebrow{font-size:10px;text-transform:uppercase;letter-spacing:.16em;color:var(--accent);font-weight:700}
+  h1{font-family:var(--serif);font-size:38px;line-height:1.06;letter-spacing:-.03em;margin:7px 0 10px;font-weight:500}
+  h2{font-family:var(--serif);font-size:24px;letter-spacing:-.02em;margin:0}
+  h3{font-size:13px;letter-spacing:.01em;margin:0 0 10px}
+  .lede{color:var(--muted);max-width:760px;font-size:15px;margin:0 0 24px}
+  .grid{display:grid;gap:14px}
+  .grid.cols-4{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .grid.cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .grid.cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .card{border:1px solid var(--line);background:var(--panel);border-radius:10px;box-shadow:0 1px 0 rgba(0,0,0,.02)}
+  .card.pad{padding:16px}
+  .card-head{padding:13px 15px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .card-body{padding:15px}
+  .job{padding:17px;min-height:156px;display:flex;flex-direction:column}
+  .job .kicker{font-family:var(--mono);font-size:10px;color:var(--muted)}
+  .job h3{font-family:var(--serif);font-size:19px;font-weight:500;margin:15px 0 6px}
+  .job p{margin:0;color:var(--muted);font-size:12px;flex:1}
+  .job button{align-self:flex-start;margin-top:15px}
+  .pipeline{display:grid;grid-template-columns:repeat(6,1fr);border:1px solid var(--line);background:var(--panel);border-radius:10px;overflow:hidden;margin:18px 0}
+  .stage{padding:14px;min-height:92px;border-right:1px solid var(--line);position:relative}
+  .stage:last-child{border-right:0}
+  .stage .index{font-family:var(--mono);font-size:9px;color:var(--muted)}
+  .stage strong{display:block;margin-top:10px;font-size:12px}
+  .stage small{display:block;color:var(--muted);margin-top:3px}
+  .stage.done:after{content:"";position:absolute;bottom:0;left:0;right:0;height:3px;background:var(--ok)}
+  .stage.active:after{content:"";position:absolute;bottom:0;left:0;right:0;height:3px;background:var(--accent)}
+  .stage.pending:after{content:"";position:absolute;bottom:0;left:0;right:0;height:3px;background:var(--line-strong)}
+  .section-bar{display:flex;align-items:end;justify-content:space-between;gap:20px;margin-bottom:18px}
+  .section-bar p{margin:4px 0 0;color:var(--muted)}
+  .split{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.65fr);gap:14px}
+  .form-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+  label.field{display:flex;flex-direction:column;gap:5px;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+  input,select{border:1px solid var(--line);background:var(--panel2);border-radius:6px;padding:8px 9px;min-width:0}
+  .tier{display:inline-flex;border:1px solid var(--line);border-radius:5px;padding:2px 5px;font-size:9px;font-family:var(--mono);margin-left:5px}
+  .tier.locked{background:var(--blue-soft);color:var(--blue);border-color:transparent}
+  .tier.guided{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+  .tier.free{background:var(--orange-soft);color:var(--orange);border-color:transparent}
+  .locked-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .locked-item{border:1px dashed var(--line-strong);padding:10px;border-radius:7px;background:var(--panel2)}
+  .locked-item .k{font-size:9px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted)}
+  .locked-item .v{display:block;font-family:var(--mono);font-size:11px;margin-top:4px}
+  .canvas{min-height:480px;display:flex;flex-direction:column}
+  .canvas-tools{padding:9px 12px;border-bottom:1px solid var(--line);display:flex;gap:6px;flex-wrap:wrap}
+  .canvas-tools button{border:1px solid var(--line);background:var(--panel2);border-radius:999px;padding:5px 8px;font-size:10px;color:var(--muted)}
+  .canvas-tools button.active{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+  .fabric-svg{width:100%;min-height:350px;flex:1}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;padding:10px 12px;border-top:1px solid var(--line);color:var(--muted);font-size:10px}
+  .sw{width:10px;height:10px;border:1px solid var(--line-strong);display:inline-block;margin-right:4px;vertical-align:-1px}
+  .artifact-chain{display:flex;align-items:stretch;gap:0;overflow:auto;padding-bottom:5px}
+  .artifact{min-width:150px;border:1px solid var(--line);background:var(--panel);padding:13px}
+  .artifact+.arrow{display:flex;align-items:center;padding:0 8px;color:var(--muted)}
+  .artifact .type{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+  .artifact strong{display:block;margin-top:7px}
+  .hash{font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap}
+  table{border-collapse:collapse;width:100%}
+  th,td{border-bottom:1px solid var(--line);padding:9px 10px;text-align:left;vertical-align:top}
+  th{font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:600}
+  td{font-size:12px}
+  tr:last-child td{border-bottom:0}
+  .badge{display:inline-flex;align-items:center;border-radius:999px;padding:3px 7px;font-size:9px;font-weight:700;letter-spacing:.04em}
+  .pass{background:var(--ok-soft);color:var(--ok)}
+  .fail{background:var(--bad-soft);color:var(--bad)}
+  .warn{background:var(--warn-soft);color:var(--warn)}
+  .info{background:var(--blue-soft);color:var(--blue)}
+  .neutral{background:var(--panel2);color:var(--muted);border:1px solid var(--line)}
+  .metric-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  .metric{border:1px solid var(--line);border-radius:8px;padding:12px;background:var(--panel2)}
+  .metric .k{font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
+  .metric .v{font-family:var(--serif);font-size:24px;margin-top:6px}
+  .metric .sub{font-size:10px;color:var(--muted)}
+  .flow-rail{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:12px}
+  .flow-node{border:1px solid var(--line);padding:11px;border-radius:7px;background:var(--panel2)}
+  .flow-node .n{font-size:9px;color:var(--muted)}
+  .flow-node b{display:block;font-size:11px;margin-top:5px}
+  .flow-node small{display:block;color:var(--muted);margin-top:3px}
+  .notice{border-left:3px solid var(--accent);background:var(--accent-soft);padding:10px 12px;color:color-mix(in srgb,var(--ink) 82%,var(--accent));font-size:11px;border-radius:0 7px 7px 0}
+  .notice.warn-note{border-color:var(--warn);background:var(--warn-soft)}
+  .notice.bad-note{border-color:var(--bad);background:var(--bad-soft)}
+  .authority{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .authority .card{padding:12px}
+  .authority h4{margin:0 0 8px;font-size:11px}
+  .authority p{margin:0;color:var(--muted);font-size:10px}
+  .pareto-wrap{display:grid;grid-template-columns:1fr 330px;gap:14px}
+  .plot{min-height:330px;padding:10px}
+  .plot svg{width:100%;height:310px}
+  .candidate-detail{padding:14px}
+  .candidate-detail .kv{display:flex;justify-content:space-between;gap:15px;border-bottom:1px solid var(--line);padding:8px 0;font-size:11px}
+  .candidate-detail .kv:last-child{border-bottom:0}
+  .serve-layout{display:grid;grid-template-columns:330px minmax(0,1fr);gap:14px}
+  .stack{display:flex;flex-direction:column;gap:10px}
+  .timeline{display:grid;grid-template-columns:92px 1fr;gap:0;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .timeline .row{display:contents}
+  .timeline .label{padding:9px;border-bottom:1px solid var(--line);background:var(--panel2);font-size:10px;color:var(--muted)}
+  .timeline .track{position:relative;min-height:38px;border-bottom:1px solid var(--line);background:var(--panel)}
+  .timeline .bar{position:absolute;height:16px;top:11px;border-radius:3px;background:var(--accent-soft);border:1px solid var(--accent);font-size:8px;padding:1px 5px;overflow:hidden;white-space:nowrap}
+  .timeline .bar.compute{background:var(--blue-soft);border-color:var(--blue)}
+  .timeline .bar.ep{background:var(--orange-soft);border-color:var(--orange)}
+  .scope-matrix{display:grid;grid-template-columns:160px repeat(4,1fr);border-top:1px solid var(--line);border-left:1px solid var(--line)}
+  .scope-matrix>div{padding:9px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);font-size:10px}
+  .scope-matrix .head{background:var(--panel2);font-weight:700}
+  .identity{word-break:break-all;font-family:var(--mono);font-size:10px}
+  .footer{display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-top:1px solid var(--line);background:var(--panel2);color:var(--muted);font-size:10px}
+  .kbd{font-family:var(--mono);border:1px solid var(--line);border-bottom-color:var(--line-strong);border-radius:4px;padding:1px 4px;background:var(--panel)}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:flex-start;justify-content:center;padding-top:10vh;z-index:50}
+  .modal.open{display:flex}
+  .modal-card{width:min(680px,92vw);background:var(--panel);border:1px solid var(--line-strong);border-radius:12px;box-shadow:var(--shadow)}
+  .modal-head{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+  .modal-body{padding:16px}
+  .api-list{font-family:var(--mono);font-size:11px}
+  .api-list div{padding:8px 0;border-bottom:1px solid var(--line)}
+  .api-list div:last-child{border-bottom:0}
+  .kbd-row{display:flex;gap:7px;align-items:center}
+  .muted{color:var(--muted)}
+  .spacer{height:14px}
+  .w100{width:100%}
+  @media (max-width:1100px){
+    .grid.cols-4,.grid.cols-3{grid-template-columns:repeat(2,1fr)}
+    .split,.serve-layout,.pareto-wrap{grid-template-columns:1fr}
+    .pipeline{grid-template-columns:repeat(3,1fr)}
+    .stage:nth-child(3){border-right:0}
+    .metric-row,.form-grid{grid-template-columns:repeat(2,1fr)}
+  }
+  @media (max-width:760px){
+    .brand{width:auto;border-right:0}.studio{display:none}.context-meta{display:none}
+    .shell{grid-template-columns:58px minmax(0,1fr)}
+    .sidebar{padding:10px 6px}.side-head,.sidebar-card,.nav .num,.nav .tiny{display:none}.nav .nav-label{font-size:0}
+    .nav .nav-label::first-letter{font-size:12px}.nav button{justify-content:center;height:40px}
+    .page{padding:18px 14px 44px}
+    .grid.cols-4,.grid.cols-3,.grid.cols-2,.metric-row,.form-grid,.authority{grid-template-columns:1fr}
+    .pipeline{grid-template-columns:1fr}.stage{border-right:0;border-bottom:1px solid var(--line)}
+    h1{font-size:31px}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand"><span class="mark">SROTA</span><span class="studio">Studio</span></div>
+    <div class="context">
+      <div class="crumb"><span class="muted">Project</span><span>Qwen NoC Study</span><span class="sep">/</span><span class="mono">r15</span></div>
+      <div class="context-meta">
+        <span class="pill"><span class="dot ok"></span>compiled</span>
+        <span class="pill"><span class="dot ok"></span>certificate PASS</span>
+        <span class="pill">BookSim · qualified</span>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button class="btn ghost" id="apiBtn">API map</button>
+      <button class="btn ghost" id="themeBtn">Dark</button>
+      <button class="btn primary" data-go="intent">New revision</button>
+    </div>
+  </header>
+
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="side-head">Workflow</div>
+      <nav class="nav" id="nav">
+        <button class="active" data-page="overview"><span class="num">00</span><span class="nav-label">Overview</span></button>
+        <button data-page="intent"><span class="num">01</span><span class="nav-label">Intent</span><span class="tiny">edit</span></button>
+        <button data-page="compile"><span class="num">02</span><span class="nav-label">Compile</span></button>
+        <button data-page="verify"><span class="num">03</span><span class="nav-label">Verify</span></button>
+        <button data-page="evaluate"><span class="num">04</span><span class="nav-label">Evaluate</span></button>
+        <button data-page="optimize"><span class="num">05</span><span class="nav-label">Optimize</span></button>
+        <button data-page="serving"><span class="num">06</span><span class="nav-label">Serving</span><span class="tiny">LLM</span></button>
+      </nav>
+      <div class="side-head">Records & validation</div>
+      <nav class="nav">
+        <button data-page="evidence"><span class="num">07</span><span class="nav-label">Evidence</span></button>
+        <button data-page="compare"><span class="num">08</span><span class="nav-label">Compare</span></button>
+        <button data-page="validation"><span class="num">09</span><span class="nav-label">Validation lab</span></button>
+      </nav>
+      <div class="sidebar-card">
+        <h4>Authority boundary</h4>
+        <p>Studio renders product views. It does not derive routes, fabricate metrics, infer missing verdicts, or import engine internals.</p>
+      </div>
+    </aside>
+
+    <main>
+      <section class="page active" id="page-overview">
+        <div class="eyebrow">AI interconnect engineering workspace</div>
+        <h1>From system intent to defensible interconnect decisions.</h1>
+        <p class="lede">SROTA Studio is the human interface to the fabric compiler, verification gates, qualified execution backends, authenticated evidence, and design-space exploration system. Serving experiments use a separate request-driven path.</p>
+
+        <div class="grid cols-4">
+          <div class="card job">
+            <div class="kicker">PRODUCT EVALUATION</div>
+            <h3>Can this design satisfy the workload?</h3>
+            <p>Compile the fabric, prove its obligations, execute supported communication and evaluate explicit product requirements.</p>
+            <button class="btn" data-go="intent">Open design</button>
+          </div>
+          <div class="card job">
+            <div class="kicker">DESIGN SPACE</div>
+            <h3>Which legal designs are worth considering?</h3>
+            <p>Search guided knobs through the certified path while keeping requirements, constraints and measured objectives separate.</p>
+            <button class="btn" data-go="optimize">Explore candidates</button>
+          </div>
+          <div class="card job">
+            <div class="kicker">LLM SERVING</div>
+            <h3>How does request-driven serving stress the fabric?</h3>
+            <p>Run LLMServingSim scheduling semantics through ASTRA-Sim and canonical BookSim, including multi-instance and EP/MoE flows.</p>
+            <button class="btn" data-go="serving">Open serving</button>
+          </div>
+          <div class="card job">
+            <div class="kicker">AUDIT & REPRODUCE</div>
+            <h3>Where did this number come from?</h3>
+            <p>Trace design, compiler artifacts, producer identity, backend inputs, evidence digests, metrics and requirement reports.</p>
+            <button class="btn" data-go="evidence">Inspect evidence</button>
+          </div>
+        </div>
+
+        <div class="pipeline">
+          <div class="stage done"><span class="index">01</span><strong>Intent</strong><small>workload + system + guided NoC</small></div>
+          <div class="stage done"><span class="index">02</span><strong>Compile</strong><small>canonical linked artifacts</small></div>
+          <div class="stage done"><span class="index">03</span><strong>Verify</strong><small>10 obligations · PASS</small></div>
+          <div class="stage active"><span class="index">04</span><strong>Execute</strong><small>qualified BookSim path</small></div>
+          <div class="stage pending"><span class="index">05</span><strong>Evaluate</strong><small>requirements + metrics</small></div>
+          <div class="stage pending"><span class="index">06</span><strong>Decide</strong><small>compare / optimize / reproduce</small></div>
+        </div>
+
+        <div class="grid cols-2">
+          <div class="card">
+            <div class="card-head"><h3>Current revision</h3><span class="badge pass">COMPILED</span></div>
+            <div class="card-body">
+              <div class="metric-row">
+                <div class="metric"><div class="k">Model</div><div class="v" style="font-size:19px">Dense 8B</div><div class="sub">prefill-heavy</div></div>
+                <div class="metric"><div class="k">Agents</div><div class="v">72</div><div class="sub">64 compute + 8 HBM</div></div>
+                <div class="metric"><div class="k">Fabric</div><div class="v" style="font-size:19px">9×9</div><div class="sub">mesh · DOR_XY</div></div>
+                <div class="metric"><div class="k">VCs</div><div class="v">2</div><div class="sub">derived, class-aware</div></div>
+              </div>
+              <div class="spacer"></div>
+              <div class="notice">Values on this prototype are illustrative UI data. The production Studio must replace them with contract-validated engine views and preserve explicit missing/unmeasurable states.</div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>Capability map</h3><span class="badge info">CURRENT PRODUCT SHAPE</span></div>
+            <div class="card-body">
+              <table>
+                <tr><td>Fabric compiler</td><td><span class="badge pass">FIRST-CLASS</span></td><td class="muted">topology, attachment, routing, VC, packet semantics</td></tr>
+                <tr><td>Certified network evaluation</td><td><span class="badge pass">FIRST-CLASS</span></td><td class="muted">BookSim evidence + route realization</td></tr>
+                <tr><td>Optimization</td><td><span class="badge pass">FIRST-CLASS</span></td><td class="muted">certified candidates + explicit unmeasurable states</td></tr>
+                <tr><td>LLM serving</td><td><span class="badge pass">SEPARATE PATH</span></td><td class="muted">LLMServingSim → ASTRA → BookSim</td></tr>
+                <tr><td>Ramulator</td><td><span class="badge warn">BOUNDED</span></td><td class="muted">qualified memory analysis, not universal coupled timing</td></tr>
+                <tr><td>RTL correspondence</td><td><span class="badge warn">BOUNDED</span></td><td class="muted">independent validation on qualified small cases</td></tr>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-intent">
+        <div class="section-bar">
+          <div><div class="eyebrow">01 · Design intent</div><h2>Describe the system. Let the compiler derive the fabric.</h2><p>Only GUIDED/FREE inputs are editable. LOCKED properties remain compiler-owned.</p></div>
+          <div><button class="btn">Save draft</button> <button class="btn primary" data-go="compile">Compile revision</button></div>
+        </div>
+        <div class="split">
+          <div class="stack">
+            <div class="card">
+              <div class="card-head"><h3>Workload & parallelism <span class="tier guided">GUIDED</span></h3><span class="badge neutral">E1</span></div>
+              <div class="card-body form-grid">
+                <label class="field">Model family<select><option>Dense transformer</option><option>Mixture of experts</option><option>Diffusion</option><option>Custom</option></select></label>
+                <label class="field">Serving mode<select><option>Prefill heavy</option><option>Decode heavy</option><option>Mixed</option></select></label>
+                <label class="field">Tensor parallel<input value="8" type="number"/></label>
+                <label class="field">Expert parallel<input value="1" type="number"/></label>
+                <label class="field">Pipeline parallel<input value="1" type="number"/></label>
+                <label class="field">Data parallel<input value="1" type="number"/></label>
+                <label class="field">Compute tiles<input value="64" type="number"/></label>
+                <label class="field">HBM controllers<input value="8" type="number"/></label>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-head"><h3>Product requirements <span class="tier guided">GUIDED</span></h3><button class="btn">+ Requirement</button></div>
+              <div class="card-body">
+                <table>
+                  <thead><tr><th>Traffic class</th><th>QoS</th><th>Latency ceiling</th><th>Bandwidth floor</th><th>Binding</th></tr></thead>
+                  <tbody>
+                    <tr><td><input value="tp_collective"/></td><td><select><option>latency_critical</option></select></td><td><input value="18000"/></td><td><input placeholder="—"/></td><td><input type="checkbox" checked/></td></tr>
+                    <tr><td><input value="memory"/></td><td><select><option>bandwidth</option></select></td><td><input placeholder="—"/></td><td><input value="420"/></td><td><input type="checkbox"/></td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-head"><h3>NoC intent <span class="tier guided">GUIDED</span></h3><span class="badge neutral">E5</span></div>
+              <div class="card-body">
+                <div class="form-grid">
+                  <label class="field">Topology<select><option>Mesh</option><option>Concentrated mesh</option><option>Torus — route-refused</option><option>Fat tree — refused</option></select></label>
+                  <label class="field">Radix<input value="9" type="number"/></label>
+                  <label class="field">Concentration<input value="1" type="number"/></label>
+                  <label class="field">Link width<input value="128" type="number"/></label>
+                  <label class="field">Arbitration<select><option>iSLIP</option><option>Round robin</option></select></label>
+                  <label class="field">RCU<select><option>Disabled</option><option>Enabled — current compiler refusal</option></select></label>
+                </div>
+                <div class="spacer"></div>
+                <h3>Compiler-owned consequences <span class="tier locked">LOCKED</span></h3>
+                <div class="locked-grid">
+                  <div class="locked-item"><span class="k">Routing</span><span class="v">DOR_XY · derived</span></div>
+                  <div class="locked-item"><span class="k">VC assignment</span><span class="v">class-aware · derived</span></div>
+                  <div class="locked-item"><span class="k">Escape VCs</span><span class="v">designation only</span></div>
+                  <div class="locked-item"><span class="k">Packet semantics</span><span class="v">artifact-bound</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="card canvas">
+            <div class="card-head"><h3>Fabric preview</h3><span class="badge neutral">STRUCTURE AUTHORITY</span></div>
+            <div class="canvas-tools">
+              <button class="active">Structure</button><button title="Requires route dump">Routing</button><button title="Requires VC artifact">VC class</button><button title="Requires traffic counters">Traffic</button><button title="Requires per-link counters">Utilization</button>
+            </div>
+            <svg class="fabric-svg" viewBox="0 0 650 480" role="img" aria-label="Illustrative mesh fabric preview">
+              <g stroke="currentColor" opacity=".22" stroke-width="2">
+                <path d="M130 115H520M130 225H520M130 335H520"/>
+                <path d="M130 115V335M260 115V335M390 115V335M520 115V335"/>
+              </g>
+              <g fill="var(--panel2)" stroke="var(--ink)">
+                <rect x="101" y="86" width="58" height="58" rx="7"/><rect x="231" y="86" width="58" height="58" rx="7"/><rect x="361" y="86" width="58" height="58" rx="7"/><rect x="491" y="86" width="58" height="58" rx="7"/>
+                <rect x="101" y="196" width="58" height="58" rx="7"/><rect x="231" y="196" width="58" height="58" rx="7"/><rect x="361" y="196" width="58" height="58" rx="7"/><rect x="491" y="196" width="58" height="58" rx="7"/>
+                <rect x="101" y="306" width="58" height="58" rx="7"/><rect x="231" y="306" width="58" height="58" rx="7"/><rect x="361" y="306" width="58" height="58" rx="7"/><rect x="491" y="306" width="58" height="58" rx="7"/>
+              </g>
+              <g font-family="var(--mono)" font-size="10" text-anchor="middle" fill="currentColor">
+                <text x="130" y="120">R0,0</text><text x="260" y="120">R0,1</text><text x="390" y="120">R0,2</text><text x="520" y="120">R0,3</text>
+                <text x="130" y="230">R1,0</text><text x="260" y="230">R1,1</text><text x="390" y="230">R1,2</text><text x="520" y="230">R1,3</text>
+                <text x="130" y="340">R2,0</text><text x="260" y="340">R2,1</text><text x="390" y="340">R2,2</text><text x="520" y="340">R2,3</text>
+              </g>
+              <g fill="var(--accent-soft)" stroke="var(--accent)">
+                <rect x="70" y="28" width="90" height="28" rx="5"/><rect x="280" y="28" width="90" height="28" rx="5"/><rect x="490" y="28" width="90" height="28" rx="5"/>
+              </g>
+              <g font-size="9" text-anchor="middle" fill="currentColor"><text x="115" y="46">HBM0</text><text x="325" y="46">HBM1</text><text x="535" y="46">HBM2</text></g>
+            </svg>
+            <div class="legend"><span><i class="sw"></i>router</span><span><i class="sw" style="background:var(--accent-soft)"></i>memory agent</span><span>Overlays stay disabled until their authority exists.</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-compile">
+        <div class="section-bar">
+          <div><div class="eyebrow">02 · Canonical compilation</div><h2>Inspect what the compiler actually derived.</h2><p>The product is the linked artifact graph, not an isolated simulator config.</p></div>
+          <button class="btn primary" data-go="verify">Verify fabric</button>
+        </div>
+        <div class="card pad">
+          <div class="artifact-chain">
+            <div class="artifact"><span class="type">v3 intent</span><strong>CompileRequest</strong><span class="hash">21d8…af91</span></div><div class="arrow">→</div>
+            <div class="artifact"><span class="type">placement</span><strong>Agent mapping</strong><span class="hash">8e91…182b</span></div><div class="arrow">→</div>
+            <div class="artifact"><span class="type">topology</span><strong>TopologyArtifact</strong><span class="hash">741a…bf66</span></div><div class="arrow">→</div>
+            <div class="artifact"><span class="type">attachment</span><strong>AgentAttachment</strong><span class="hash">4bc0…aa19</span></div><div class="arrow">→</div>
+            <div class="artifact"><span class="type">routing</span><strong>ResolvedRoute</strong><span class="hash">f980…916c</span></div><div class="arrow">→</div>
+            <div class="artifact"><span class="type">vc structure</span><strong>VCAssignment</strong><span class="hash">2e18…6d02</span></div><div class="arrow">→</div>
+            <div class="artifact"><span class="type">fabric</span><strong>FabricArtifact</strong><span class="hash">0bd4…c225</span></div>
+          </div>
+        </div>
+        <div class="spacer"></div>
+        <div class="grid cols-3">
+          <div class="card pad"><h3>Identity</h3><table><tr><td>design_hash</td><td class="hash">sha256:21d8…af91</td></tr><tr><td>compiler semantics</td><td class="mono">v3</td></tr><tr><td>resolved fabric</td><td class="hash">sha256:0bd4…c225</td></tr></table></div>
+          <div class="card pad"><h3>Materialized system</h3><table><tr><td>Routers</td><td>81</td></tr><tr><td>Endpoints</td><td>72</td></tr><tr><td>Topology</td><td>mesh</td></tr><tr><td>Idle endpoints</td><td>9</td></tr></table></div>
+          <div class="card pad"><h3>Derived network semantics</h3><table><tr><td>Routing</td><td>DOR_XY</td></tr><tr><td>VC model</td><td>class-aware</td></tr><tr><td>CDG</td><td>channel + VC</td></tr><tr><td>Unknown traffic class</td><td>typed refusal</td></tr></table></div>
+        </div>
+        <div class="spacer"></div>
+        <div class="notice">Compiler status and artifacts must come from the CompilationView / canonical artifact graph. Studio must not recreate materialization or routing rules in TypeScript.</div>
+      </section>
+
+      <section class="page" id="page-verify">
+        <div class="section-bar">
+          <div><div class="eyebrow">03 · Verification certificate</div><h2>Prove the fabric before asking it for performance.</h2><p>Every obligation has its own method and evidence. A failed parent gate closes downstream claims.</p></div>
+          <button class="btn primary" data-go="evaluate">Evaluate workload</button>
+        </div>
+        <div class="grid cols-3">
+          <div class="card pad"><div class="eyebrow">Certificate</div><div style="font-family:var(--serif);font-size:34px;margin-top:4px">PASS</div><div class="hash">cert:3b7e…10ca</div></div>
+          <div class="card pad"><div class="eyebrow">Obligations</div><div style="font-family:var(--serif);font-size:34px;margin-top:4px">10 / 10</div><div class="muted">required gates satisfied</div></div>
+          <div class="card pad"><div class="eyebrow">Deadlock analysis</div><div style="font-family:var(--serif);font-size:34px;margin-top:4px">PASS</div><div class="muted">channel-VC dependency graph</div></div>
+        </div>
+        <div class="spacer"></div>
+        <div class="card">
+          <div class="card-head"><h3>Certificate obligations</h3><span class="badge pass">ALL REQUIRED PASS</span></div>
+          <div class="card-body">
+            <table>
+              <thead><tr><th>Obligation</th><th>Status</th><th>Method</th><th>Evidence</th></tr></thead>
+              <tbody>
+                <tr><td>Topology connected</td><td><span class="badge pass">PASS</span></td><td>graph reachability</td><td class="hash">topology:741a…bf66</td></tr>
+                <tr><td>Attachment complete</td><td><span class="badge pass">PASS</span></td><td>endpoint bijection</td><td class="hash">attach:4bc0…aa19</td></tr>
+                <tr><td>Address decode valid</td><td><span class="badge pass">PASS</span></td><td>range proof</td><td class="hash">decode:61e2…8ae0</td></tr>
+                <tr><td>Route complete</td><td><span class="badge pass">PASS</span></td><td>all src/dst pairs</td><td class="hash">route:f980…916c</td></tr>
+                <tr><td>Route legal</td><td><span class="badge pass">PASS</span></td><td>topology edge legality</td><td class="hash">route:f980…916c</td></tr>
+                <tr><td>VC assignment valid</td><td><span class="badge pass">PASS</span></td><td>class/route binding</td><td class="hash">vc:2e18…6d02</td></tr>
+                <tr><td>Deadlock free</td><td><span class="badge pass">PASS</span></td><td>channel-VC CDG</td><td class="hash">cdg:5294…fe77</td></tr>
+                <tr><td>Mapping valid</td><td><span class="badge pass">PASS</span></td><td>inventory + placement</td><td class="hash">map:8e91…182b</td></tr>
+                <tr><td>Packet format valid</td><td><span class="badge pass">PASS</span></td><td>schema + bounds</td><td class="hash">pkt:a92e…1c40</td></tr>
+                <tr><td>Fabric DAG valid</td><td><span class="badge pass">PASS</span></td><td>parent identity chain</td><td class="hash">fabric:0bd4…c225</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-evaluate">
+        <div class="section-bar">
+          <div><div class="eyebrow">04 · Product evaluation</div><h2>Lower declared communication, execute it, then judge requirements.</h2><p>Execution evidence and requirement authority remain separate from the UI.</p></div>
+          <div><button class="btn">Backend settings</button> <button class="btn primary">Run evaluation</button></div>
+        </div>
+        <div class="flow-rail">
+          <div class="flow-node"><span class="n">01</span><b>Declared workload</b><small>collectives + dependencies</small></div>
+          <div class="flow-node"><span class="n">02</span><b>Logical messages</b><small>participant semantics</small></div>
+          <div class="flow-node"><span class="n">03</span><b>Physical traffic</b><small>rank → endpoint bound</small></div>
+          <div class="flow-node"><span class="n">04</span><b>BookSim execution</b><small>pinned producer identity</small></div>
+          <div class="flow-node"><span class="n">05</span><b>Evidence + report</b><small>metrics + requirements</small></div>
+        </div>
+        <div class="spacer"></div>
+        <div class="grid cols-2">
+          <div class="card">
+            <div class="card-head"><h3>Execution result</h3><span class="badge pass">EVALUATED</span></div>
+            <div class="card-body">
+              <div class="metric-row">
+                <div class="metric"><div class="k">Network window</div><div class="v">16,161</div><div class="sub">cycles · measured</div></div>
+                <div class="metric"><div class="k">Packets</div><div class="v">—</div><div class="sub">not in this view</div></div>
+                <div class="metric"><div class="k">Flits</div><div class="v">—</div><div class="sub">not in this view</div></div>
+                <div class="metric"><div class="k">Wall time</div><div class="v">—</div><div class="sub">cycles-only authority</div></div>
+              </div>
+              <div class="spacer"></div>
+              <table>
+                <tr><td>Backend</td><td class="mono">booksim2</td></tr>
+                <tr><td>Producer identity</td><td class="identity">sha256:9a5219d5…</td></tr>
+                <tr><td>Input hash</td><td class="identity">sha256:bd11e0c7…</td></tr>
+                <tr><td>Config hash</td><td class="identity">sha256:f6c37b10…</td></tr>
+                <tr><td>Route realization</td><td><span class="badge pass">FIRST-HOP MATCH</span></td></tr>
+              </table>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>Product requirements</h3><span class="badge info">RequirementReport</span></div>
+            <div class="card-body">
+              <table>
+                <thead><tr><th>Requirement</th><th>Required</th><th>Measured</th><th>Verdict</th></tr></thead>
+                <tbody>
+                  <tr><td>tp_collective · latency</td><td>≤ 18,000 cyc</td><td>16,161 cyc</td><td><span class="badge pass">SATISFIED</span></td></tr>
+                  <tr><td>memory · bandwidth</td><td>≥ 420 Gbps</td><td>—</td><td><span class="badge warn">UNMEASURABLE</span></td></tr>
+                </tbody>
+              </table>
+              <div class="spacer"></div>
+              <div class="notice warn-note">A missing metric never becomes zero. A requirement that lacks an authoritative measured value remains UNMEASURABLE.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-optimize">
+        <div class="section-bar">
+          <div><div class="eyebrow">05 · Certified design-space exploration</div><h2>Search legal designs without collapsing three different authorities.</h2><p>Product requirements, optimizer constraints, and objective availability are rendered independently.</p></div>
+          <button class="btn primary">Start study</button>
+        </div>
+        <div class="authority">
+          <div class="card"><h4>Product requirements</h4><p>Did the evaluated design satisfy what the product/user asked for?</p></div>
+          <div class="card"><h4>Optimization constraints</h4><p>Did this candidate satisfy study-specific hard constraints?</p></div>
+          <div class="card"><h4>Measured objectives</h4><p>Was the requested objective actually measured by an accepted authority?</p></div>
+        </div>
+        <div class="spacer"></div>
+        <div class="pareto-wrap">
+          <div class="card">
+            <div class="card-head"><h3>Candidate space</h3><span class="badge info">CERTIFIED_PRODUCT</span></div>
+            <div class="plot">
+              <svg viewBox="0 0 720 310" aria-label="Illustrative Pareto plot">
+                <line x1="62" y1="20" x2="62" y2="270" stroke="var(--line-strong)"/><line x1="62" y1="270" x2="690" y2="270" stroke="var(--line-strong)"/>
+                <g stroke="var(--line)" opacity=".7"><line x1="62" y1="80" x2="690" y2="80"/><line x1="62" y1="140" x2="690" y2="140"/><line x1="62" y1="200" x2="690" y2="200"/></g>
+                <g fill="var(--muted)" font-size="10"><text x="12" y="28">cycles ↓</text><text x="610" y="300">link width →</text></g>
+                <circle cx="190" cy="215" r="8" fill="var(--bad)"/><text x="204" y="220" font-size="10" fill="currentColor">32-bit · constraint violated</text>
+                <circle cx="390" cy="150" r="8" fill="var(--warn)"/><text x="404" y="155" font-size="10" fill="currentColor">64-bit · requirement failed</text>
+                <circle cx="590" cy="75" r="10" fill="var(--accent)"/><circle cx="590" cy="75" r="16" fill="none" stroke="var(--accent)"/><text x="510" y="55" font-size="10" fill="currentColor">128-bit · Pareto</text>
+                <g fill="none" stroke="var(--line-strong)" stroke-dasharray="4 4"><circle cx="190" cy="255" r="8"/><circle cx="390" cy="255" r="8"/><circle cx="590" cy="255" r="8"/></g>
+                <text x="170" y="245" font-size="9" fill="var(--muted)">RCU refused</text><text x="370" y="245" font-size="9" fill="var(--muted)">RCU refused</text><text x="570" y="245" font-size="9" fill="var(--muted)">RCU refused</text>
+              </svg>
+            </div>
+          </div>
+          <div class="card candidate-detail">
+            <div class="eyebrow">Selected candidate</div><h3 style="margin-top:8px">128-bit link · RCU off</h3>
+            <div class="kv"><span>Compilation</span><span class="badge pass">COMPILED</span></div>
+            <div class="kv"><span>Evaluation</span><span class="badge pass">EVALUATED</span></div>
+            <div class="kv"><span>Product reqs</span><span class="badge pass">SATISFIED</span></div>
+            <div class="kv"><span>Hard constraints</span><span class="badge pass">SATISFIED</span></div>
+            <div class="kv"><span>Objective</span><span class="badge pass">MEASURED</span></div>
+            <div class="kv"><span>Pareto eligible</span><span class="badge pass">YES</span></div>
+            <div class="kv"><span>Pareto member</span><span class="badge info">YES</span></div>
+            <div class="kv"><span>Evaluation authority</span><code>certified-backend</code></div>
+          </div>
+        </div>
+        <div class="spacer"></div>
+        <div class="card">
+          <div class="card-head"><h3>Study candidates</h3><span class="hash">definition:9bce…8132</span></div>
+          <div class="card-body" style="overflow:auto">
+            <table>
+              <thead><tr><th>Candidate</th><th>Patch</th><th>Compile</th><th>Evaluate</th><th>Requirements</th><th>Constraints</th><th>Objective</th><th>Pareto</th></tr></thead>
+              <tbody>
+                <tr><td class="hash">cand-128</td><td>width=128</td><td><span class="badge pass">COMPILED</span></td><td><span class="badge pass">EVALUATED</span></td><td><span class="badge pass">SATISFIED</span></td><td><span class="badge pass">SATISFIED</span></td><td>437 · MEASURED</td><td><span class="badge info">MEMBER</span></td></tr>
+                <tr><td class="hash">cand-64</td><td>width=64</td><td><span class="badge pass">COMPILED</span></td><td><span class="badge pass">EVALUATED</span></td><td><span class="badge fail">VIOLATED</span></td><td><span class="badge pass">SATISFIED</span></td><td>845 · MEASURED</td><td><span class="badge neutral">INELIGIBLE</span></td></tr>
+                <tr><td class="hash">cand-32</td><td>width=32</td><td><span class="badge pass">COMPILED</span></td><td><span class="badge pass">EVALUATED</span></td><td><span class="badge pass">SATISFIED</span></td><td><span class="badge fail">VIOLATED</span></td><td>1950 · MEASURED</td><td><span class="badge neutral">INELIGIBLE</span></td></tr>
+                <tr><td class="hash">cand-rcu</td><td>rcu=true</td><td><span class="badge warn">UNSUPPORTED</span></td><td><span class="badge warn">UNSUPPORTED</span></td><td><span class="badge warn">UNMEASURABLE</span></td><td><span class="badge warn">UNMEASURABLE</span></td><td>— · UNMEASURABLE</td><td><span class="badge neutral">INELIGIBLE</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-serving">
+        <div class="section-bar">
+          <div><div class="eyebrow">06 · Request-driven LLM serving</div><h2>Model scheduler semantics and network execution as separate owners.</h2><p>LLMServingSim owns request behavior. SROTA owns physical fabric identity, rank binding, network execution and evidence.</p></div>
+          <button class="btn primary">Run serving experiment</button>
+        </div>
+        <div class="serve-layout">
+          <div class="stack">
+            <div class="card">
+              <div class="card-head"><h3>Serving experiment</h3><span class="badge info">SEPARATE PATH</span></div>
+              <div class="card-body stack">
+                <label class="field">Model<select><option>Llama 3.1 8B</option><option>MoE workload</option></select></label>
+                <div class="grid cols-2">
+                  <label class="field">Nodes<input value="2"/></label><label class="field">Instances / node<input value="2"/></label>
+                  <label class="field">TP<input value="1"/></label><label class="field">EP<input value="4"/></label>
+                  <label class="field">DP<input value="1"/></label><label class="field">Batch policy<select><option>scheduler-owned</option></select></label>
+                </div>
+                <label class="field">Request trace<select><option>interactive-small.jsonl</option><option>burst-prefill.jsonl</option></select></label>
+                <label class="field">Network backend<select><option>ASTRA-Sim + canonical BookSim</option><option>analytical — research only</option></select></label>
+              </div>
+            </div>
+            <div class="card pad">
+              <h3>Namespace discipline</h3>
+              <table><tr><td>Serving instance</td><td>scheduler object</td></tr><tr><td>Rank</td><td>collective participant</td></tr><tr><td>Endpoint</td><td>physical attachment</td></tr><tr><td>Router</td><td>fabric node</td></tr></table>
+              <div class="spacer"></div><div class="notice">These identifiers must never be treated as interchangeable.</div>
+            </div>
+          </div>
+          <div class="stack">
+            <div class="card">
+              <div class="card-head"><h3>Request / network timeline</h3><span class="badge pass">MULTI-INSTANCE</span></div>
+              <div class="card-body">
+                <div class="timeline">
+                  <div class="row"><div class="label">request 017</div><div class="track"><span class="bar compute" style="left:3%;width:22%">prefill</span><span class="bar" style="left:26%;width:18%">TP collective</span><span class="bar compute" style="left:45%;width:33%">decode</span></div></div>
+                  <div class="row"><div class="label">request 018</div><div class="track"><span class="bar compute" style="left:16%;width:15%">prefill</span><span class="bar ep" style="left:32%;width:17%">EP dispatch</span><span class="bar compute" style="left:50%;width:20%">expert compute</span><span class="bar ep" style="left:71%;width:16%">EP combine</span></div></div>
+                  <div class="row"><div class="label">instance 0</div><div class="track"><span class="bar" style="left:7%;width:38%">rank 0 active</span><span class="bar compute" style="left:52%;width:27%">rank 0 active</span></div></div>
+                  <div class="row"><div class="label">instance 1</div><div class="track"><span class="bar compute" style="left:19%;width:30%">rank 1 active</span><span class="bar" style="left:60%;width:26%">rank 1 active</span></div></div>
+                </div>
+              </div>
+            </div>
+            <div class="grid cols-2">
+              <div class="card pad"><h3>MoE / EP semantics</h3><div class="flow-rail" style="grid-template-columns:repeat(3,1fr)">
+                <div class="flow-node"><span class="n">A</span><b>EP dispatch</b><small>ALLGATHER</small></div>
+                <div class="flow-node"><span class="n">B</span><b>Expert compute</b><small>same canonical ranks</small></div>
+                <div class="flow-node"><span class="n">C</span><b>EP combine</b><small>REDUCESCATTER</small></div>
+              </div></div>
+              <div class="card pad"><h3>Ownership boundary</h3><table><tr><td>Arrivals / queues</td><td>LLMServingSim</td></tr><tr><td>Batching / prefill / decode</td><td>LLMServingSim</td></tr><tr><td>Physical fabric</td><td>SROTA</td></tr><tr><td>Rank → endpoint</td><td>SROTA</td></tr><tr><td>Network evidence</td><td>SROTA</td></tr></table></div>
+            </div>
+            <div class="notice warn-note">Static Product Evaluation and request-driven Serving are different abstractions. Do not make a Studio “EP ALLTOALL” template silently stand in for the canonical serving dispatch/combine semantics.</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-evidence">
+        <div class="section-bar">
+          <div><div class="eyebrow">07 · Evidence & reproduction</div><h2>Make every result traceable to the exact thing that produced it.</h2><p>RunBundle is the audit surface: design, revision, backend inputs, producer, evidence, metrics and requirement report.</p></div>
+          <button class="btn primary">Reproduce run</button>
+        </div>
+        <div class="grid cols-3">
+          <div class="card pad"><h3>Design identity</h3><p class="identity">sha256:21d8b2390f9e…af91</p><span class="badge pass">MATCHED</span></div>
+          <div class="card pad"><h3>Producer identity</h3><p class="identity">booksim2 · sha256:9a5219d5…</p><span class="badge pass">QUALIFIED</span></div>
+          <div class="card pad"><h3>Evidence integrity</h3><p class="identity">raw:87ce… / stats:f419…</p><span class="badge pass">VERIFIED</span></div>
+        </div>
+        <div class="spacer"></div>
+        <div class="card">
+          <div class="card-head"><h3>RunBundle chain</h3><span class="hash">run:eval-2026-09-25-017</span></div>
+          <div class="card-body">
+            <div class="artifact-chain">
+              <div class="artifact"><span class="type">revision</span><strong>Design</strong><span class="hash">21d8…af91</span></div><div class="arrow">→</div>
+              <div class="artifact"><span class="type">compiler</span><strong>Fabric</strong><span class="hash">0bd4…c225</span></div><div class="arrow">→</div>
+              <div class="artifact"><span class="type">lowering</span><strong>PhysicalTraffic</strong><span class="hash">6ba1…108e</span></div><div class="arrow">→</div>
+              <div class="artifact"><span class="type">producer</span><strong>BookSim</strong><span class="hash">9a52…19d5</span></div><div class="arrow">→</div>
+              <div class="artifact"><span class="type">evidence</span><strong>ScientificEvidence</strong><span class="hash">87ce…4412</span></div><div class="arrow">→</div>
+              <div class="artifact"><span class="type">result</span><strong>Performance</strong><span class="hash">e191…cc02</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="spacer"></div>
+        <div class="grid cols-2">
+          <div class="card pad"><h3>Execution checks</h3><table><tr><td>Packet conservation</td><td><span class="badge pass">PASS</span></td></tr><tr><td>Flit conservation</td><td><span class="badge pass">PASS</span></td></tr><tr><td>Producer identity</td><td><span class="badge pass">PASS</span></td></tr><tr><td>Input/config identity</td><td><span class="badge pass">PASS</span></td></tr><tr><td>First-hop realization</td><td><span class="badge pass">PASS</span></td></tr></table></div>
+          <div class="card pad"><h3>Scope of the claim</h3><div class="notice warn-note">First-hop realization does not imply complete per-packet path observation. Studio should state the exact observation level instead of presenting a generic “routing verified” badge.</div><div class="spacer"></div><div class="notice bad-note">Known reproducibility risk: evidence identities must exclude or deterministically handle non-semantic runtime fields such as temporary paths and wall-time measurements.</div></div>
+        </div>
+      </section>
+
+      <section class="page" id="page-compare">
+        <div class="section-bar">
+          <div><div class="eyebrow">08 · Comparable runs</div><h2>Compare only results that share compatible authority.</h2><p>Compatibility checks come before deltas. Different semantic versions, workload identities or measurement authorities are not silently merged.</p></div>
+          <button class="btn">Add run</button>
+        </div>
+        <div class="grid cols-2">
+          <div class="card pad"><h3>Run A · 64-bit mesh</h3><table><tr><td>design</td><td class="hash">53e1…91ab</td></tr><tr><td>backend</td><td>BookSim qualified</td></tr><tr><td>metric registry</td><td>v3</td></tr><tr><td>network window</td><td>845 cyc</td></tr></table></div>
+          <div class="card pad"><h3>Run B · 128-bit mesh</h3><table><tr><td>design</td><td class="hash">21d8…af91</td></tr><tr><td>backend</td><td>BookSim qualified</td></tr><tr><td>metric registry</td><td>v3</td></tr><tr><td>network window</td><td>437 cyc</td></tr></table></div>
+        </div>
+        <div class="spacer"></div>
+        <div class="card">
+          <div class="card-head"><h3>Compatibility gate</h3><span class="badge pass">COMPARABLE</span></div>
+          <div class="card-body">
+            <table><thead><tr><th>Dimension</th><th>Run A</th><th>Run B</th><th>Gate</th></tr></thead>
+              <tbody><tr><td>Workload identity</td><td class="hash">wk:7aa…</td><td class="hash">wk:7aa…</td><td><span class="badge pass">MATCH</span></td></tr>
+              <tr><td>Compiler semantics</td><td>v3</td><td>v3</td><td><span class="badge pass">MATCH</span></td></tr>
+              <tr><td>Metric authority</td><td>certified-backend</td><td>certified-backend</td><td><span class="badge pass">MATCH</span></td></tr>
+              <tr><td>Changed guided knob</td><td>64-bit</td><td>128-bit</td><td><span class="badge info">INTENTIONAL</span></td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-validation">
+        <div class="section-bar">
+          <div><div class="eyebrow">09 · Validation lab</div><h2>Expose stronger validation without overstating its domain.</h2><p>Backends and independent validation legs carry different scopes. Studio should show the scope next to every result.</p></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>Backend / validation matrix</h3><span class="badge neutral">SCOPE-AWARE</span></div>
+          <div class="card-body">
+            <div class="scope-matrix">
+              <div class="head">Capability</div><div class="head">BookSim</div><div class="head">ASTRA-Sim</div><div class="head">Ramulator</div><div class="head">RTL</div>
+              <div class="head">Primary purpose</div><div>network execution</div><div>distributed-system projection</div><div>memory analysis</div><div>independent correspondence</div>
+              <div class="head">Current qualification</div><div><span class="badge pass">STRONG</span></div><div><span class="badge info">INTEGRATED</span></div><div><span class="badge warn">BOUNDED</span></div><div><span class="badge warn">BOUNDED</span></div>
+              <div class="head">Identity / evidence</div><div>producer + input + stats</div><div>machine/workload + nested backend</div><div>structured memory evidence</div><div>trace correspondence</div>
+              <div class="head">Do not claim</div><div>full physical timing prediction</div><div>hardware latency truth</div><div>universal network+DRAM coupling</div><div>all arbitrary fabrics verified</div>
+            </div>
+          </div>
+        </div>
+        <div class="spacer"></div>
+        <div class="grid cols-2">
+          <div class="card pad"><h3>RTL correspondence gate</h3><p class="muted">Use this surface for the exact qualified cases and their trace-level correspondence. Keep scope explicit.</p><div style="font-family:var(--serif);font-size:30px;margin:14px 0 4px">289 / 289 flits</div><div class="muted">73 packets · historical qualified case · zero mismatch</div></div>
+          <div class="card pad"><h3>Memory analysis</h3><p class="muted">Ramulator results belong here until a product path explicitly qualifies coupled network + DRAM execution.</p><table><tr><td>Lowering</td><td><span class="badge pass">AVAILABLE</span></td></tr><tr><td>Backpressure / drain tests</td><td><span class="badge pass">AVAILABLE</span></td></tr><tr><td>Universal Product Run coupling</td><td><span class="badge warn">NOT CLAIMED</span></td></tr></table></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <footer class="footer">
+    <span>Prototype shell · contract-first · no fabricated authority</span>
+    <span><span class="kbd">G</span> overview · <span class="kbd">D</span> intent · <span class="kbd">O</span> optimize · <span class="kbd">S</span> serving</span>
+  </footer>
+</div>
+
+<div class="modal" id="apiModal" role="dialog" aria-modal="true" aria-label="Recommended gateway adapter map">
+  <div class="modal-card">
+    <div class="modal-head"><strong>Recommended Studio gateway adapter</strong><button class="btn ghost" id="closeApi">Close</button></div>
+    <div class="modal-body">
+      <p class="muted">These are adapter responsibilities for the frontend, not claims about existing HTTP route names. Keep engine types behind the gateway and return frozen product views.</p>
+      <div class="api-list">
+        <div><b>loadRevision()</b> → DesignView + CompilationView refs</div>
+        <div><b>compile(intent)</b> → CompilationView + artifact identities</div>
+        <div><b>getCertificate(compilationId)</b> → obligations + evidence refs</div>
+        <div><b>evaluate(compilationId, workload)</b> → EvaluationView + RequirementReport</div>
+        <div><b>optimize(baseDesign, studyDefinition)</b> → OptimizationStudyView v2</div>
+        <div><b>runServing(servingSpec, fabricRef)</b> → serving run view + canonical evidence refs</div>
+        <div><b>getRunBundle(runId)</b> → design / producer / evidence / result linkage</div>
+        <div><b>compare(runIds)</b> → compatibility result + allowed metric deltas</div>
+        <div><b>getValidation(runOrDesignId)</b> → bounded ASTRA / Ramulator / RTL evidence</div>
+      </div>
+      <div class="spacer"></div>
+      <div class="notice">Frontend rule: render explicit engine states. Never infer PASS from missing values, never substitute 0 for absent metrics, and never recompute compiler-owned semantics in the browser.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const pages = [...document.querySelectorAll('.page')];
+  const navButtons = [...document.querySelectorAll('[data-page]')];
+  function go(id){
+    pages.forEach(p => p.classList.toggle('active', p.id === 'page-' + id));
+    navButtons.forEach(b => b.classList.toggle('active', b.dataset.page === id));
+    document.querySelector('main').scrollTop = 0;
+    history.replaceState(null,'','#'+id);
+  }
+  navButtons.forEach(b => b.addEventListener('click',()=>go(b.dataset.page)));
+  document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click',()=>go(b.dataset.go)));
+
+  const themeBtn = document.getElementById('themeBtn');
+  themeBtn.addEventListener('click',()=>{
+    const root = document.documentElement;
+    const next = root.dataset.theme === 'light' ? 'dark' : 'light';
+    root.dataset.theme = next;
+    themeBtn.textContent = next === 'light' ? 'Dark' : 'Light';
+  });
+
+  const modal = document.getElementById('apiModal');
+  document.getElementById('apiBtn').addEventListener('click',()=>modal.classList.add('open'));
+  document.getElementById('closeApi').addEventListener('click',()=>modal.classList.remove('open'));
+  modal.addEventListener('click',e=>{ if(e.target===modal) modal.classList.remove('open'); });
+
+  document.addEventListener('keydown',e=>{
+    if(e.target.matches('input,select,textarea')) return;
+    const key=e.key.toLowerCase();
+    const map={g:'overview',d:'intent',o:'optimize',s:'serving'};
+    if(map[key]) go(map[key]);
+    if(e.key==='Escape') modal.classList.remove('open');
+  });
+
+  const hash = location.hash.replace('#','');
+  if(hash && document.getElementById('page-'+hash)) go(hash);
+
+  // Production integration seam:
+  // Replace illustrative inline values with contract-validated views.
+  // Do not call Python engine modules from the browser.
+  window.SROTA_STUDIO_ADAPTER = {
+    loadRevision: async () => { throw new Error('Wire to gateway'); },
+    compile: async () => { throw new Error('Wire to gateway'); },
+    getCertificate: async () => { throw new Error('Wire to gateway'); },
+    evaluate: async () => { throw new Error('Wire to gateway'); },
+    optimize: async () => { throw new Error('Wire to gateway'); },
+    runServing: async () => { throw new Error('Wire to gateway'); },
+    getRunBundle: async () => { throw new Error('Wire to gateway'); },
+    compare: async () => { throw new Error('Wire to gateway'); },
+    getValidation: async () => { throw new Error('Wire to gateway'); }
+  };
+</script>
+</body>
+</html>

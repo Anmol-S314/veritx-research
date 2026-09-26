@@ -1,0 +1,156 @@
+# exposure-registry.yaml — Gate 6 authoring exposure truth
+#
+# Answers: at which disclosure depth is an accepted intent field exposed, with
+# what default/preset policy, and under which capability row?
+#
+# NOT the intent ontology (that answers "what may the Design page render?").
+# NOT the capability registry (that answers "what can the system do?").
+# This registry REFERENCES capability rows by id; it never restates them.
+
+version: 1
+schema: srota/exposure-registry/v1
+capability_semantics_version: cap-v1
+narrative: docs/product/GUIDED-EXPERT.md
+
+# ── disclosure depths (one editor; these are disclosure, not modes) ────────
+depths: [GUIDED, EXPERT]
+
+# ── exposure classes ──────────────────────────────────────────────────────
+classes:
+  G1: {name: GUIDED_PRIMARY,    rendered_at: GUIDED, meaning: frequent and scientifically meaningful}
+  G2: {name: GUIDED_ADVANCED,   rendered_at: GUIDED, meaning: real intent, uncommon; behind the expansion}
+  E1: {name: EXPERT_PRIMARY,    rendered_at: EXPERT, meaning: accepted intent expected in the Expert expansion}
+  E2: {name: EXPERT_ADVANCED,   rendered_at: EXPERT, meaning: accepted intent, specialist use}
+  DERIVED_INSPECT: {name: DERIVED_INSPECT, rendered_at: null, meaning: never editable; inspector only}
+  EVALUATION_ONLY: {name: EVALUATION_ONLY, rendered_at: null, meaning: configured outside Design (EvaluationPolicy)}
+  OPTIMIZATION_ONLY: {name: OPTIMIZATION_ONLY, rendered_at: null, meaning: owned by Study / DesignSpace}
+  METADATA: {name: METADATA, rendered_at: null, meaning: never identity}
+  NOT_RENDERED: {name: NOT_RENDERED, rendered_at: null, meaning: no accepted target contract}
+  LEGACY_ONLY: {name: LEGACY_ONLY, rendered_at: null, meaning: compatibility / migration only}
+
+# ── capability behaviours (must align with Gate 5 §43) ────────────────────
+behaviours: [RENDER, RENDER_WITH_LIMIT, DO_NOT_RENDER]
+
+# ── default classes ───────────────────────────────────────────────────────
+default_classes:
+  SEMANTIC_DEFAULT: part of the canonical contract
+  RECOMMENDATION: product convenience that materializes an explicit value
+  NONE: the user must decide
+
+# ── fields: every declared field of the 12 declared classes ───────────────
+# src = UI | METADATA | REMOVED_V4 | LEGACY
+fields:
+  CompileRequestV3.workload:                    {owner: WORKLOAD,     src: UI,        class: container}
+  CompileRequestV3.requirements:                {owner: REQUIREMENTS, src: UI,        class: container}
+  CompileRequestV3.agents:                      {owner: SYSTEM,       src: UI,        class: container}
+  CompileRequestV3.dependencies:                {owner: WORKLOAD,     src: UI,        class: container}
+  CompileRequestV3.noc_config:                  {owner: FABRIC,       src: UI,        class: container}
+  CompileRequestV3.address_map:                 {owner: MEMORY,       src: UI,        class: container, capability: MEM-001}
+  CompileRequestV3.physical:                    {owner: PHYSICAL,     src: UI,        class: container}
+  CompileRequestV3.schema_version:              {owner: "-",          src: METADATA,  class: METADATA}
+  CompileRequestV3.compiler_semantics_version:  {owner: "-",          src: METADATA,  class: METADATA}
+
+  WorkloadV3.model_family:   {owner: WORKLOAD,    src: UI,       class: G1, default: RECOMMENDATION, preset: true,  capability: WORK-001}
+  WorkloadV3.model_name:     {owner: WORKLOAD,    src: METADATA, class: G1, default: NONE,           preset: true}
+  WorkloadV3.tp:             {owner: PARALLELISM, src: UI,       class: G1, default: NONE,           preset: true,  capability: PAR-001}
+  WorkloadV3.pp:             {owner: PARALLELISM, src: UI,       class: G1, default: RECOMMENDATION, preset: true,  capability: PAR-004, limit: stage lowering incomplete}
+  WorkloadV3.ep:             {owner: PARALLELISM, src: UI,       class: G1, default: RECOMMENDATION, preset: true,  capability: PAR-003}
+  WorkloadV3.dp:             {owner: PARALLELISM, src: UI,       class: G1, default: RECOMMENDATION, preset: true,  capability: PAR-002}
+  WorkloadV3.serving_mode:   {owner: WORKLOAD,    src: UI,       class: G1, default: RECOMMENDATION, preset: true,  note: must not imply a serving workflow}
+  WorkloadV3.collectives:    {owner: COMMUNICATION, src: UI,     class: G2, default: RECOMMENDATION, preset: true,  capability: COMM-002}
+  WorkloadV3.source_ref:     {owner: WORKLOAD,    src: METADATA, class: E2, default: NONE,           preset: true}
+
+  RequirementV3.qos_class:               {owner: REQUIREMENTS, src: UI,          class: G1, default: NONE,           preset: true, capability: REQ-001}
+  RequirementV3.traffic_class:           {owner: REQUIREMENTS, src: UI,          class: G2, default: RECOMMENDATION, preset: true, capability: COMM-006}
+  RequirementV3.latency_ceiling_cycles:  {owner: REQUIREMENTS, src: UI,          class: G1, default: NONE,           preset: true, capability: REQ-001}
+  RequirementV3.bandwidth_floor_gbps:    {owner: REQUIREMENTS, src: REMOVED_V4,  class: NOT_RENDERED, default: NONE, preset: false, capability: REQ-003, behaviour: DO_NOT_RENDER, note: "INTENT-REQUIREMENTS.md:143 - REMOVE from v4"}
+  RequirementV3.binding:                 {owner: REQUIREMENTS, src: UI,          class: G1, default: SEMANTIC_DEFAULT, preset: true}
+
+  Agent.kind:          {owner: SYSTEM, src: UI, class: G1, default: RECOMMENDATION, preset: true, capability: SYS-001}
+  Agent.count:         {owner: SYSTEM, src: UI, class: G1, default: RECOMMENDATION, preset: true, capability: SYS-001}
+  Agent.data_width:    {owner: SYSTEM, src: UI, class: G2, default: RECOMMENDATION, preset: true, capability: SYS-001}
+  Agent.addr_width:    {owner: SYSTEM, src: UI, class: G2, default: RECOMMENDATION, preset: true, capability: MEM-001}
+  Agent.protocol:      {owner: SYSTEM, src: UI, class: G2, default: RECOMMENDATION, preset: true, capability: SYS-001}
+  Agent.clock_domain:  {owner: SYSTEM, src: UI, class: G2, default: RECOMMENDATION, preset: true, capability: SYS-003, limit: multi-clock fabric execution unavailable}
+  Agent.power_domain:  {owner: SYSTEM, src: UI, class: G2, default: RECOMMENDATION, preset: true, capability: SYS-001}
+
+  NocConfig.topology_family:   {owner: FABRIC,         src: UI,         class: G1, default: RECOMMENDATION, preset: true, capability: FAB-001, behaviour: RENDER_WITH_LIMIT, limit: torus routed execution unavailable}
+  NocConfig.radix:             {owner: FABRIC,         src: UI,         class: G1, default: RECOMMENDATION, preset: true, capability: FAB-001, scientific_name: side_length, label_guided: "Grid size", label_expert: "Mesh side length"}
+  NocConfig.concentration:     {owner: FABRIC,         src: UI,         class: G1, default: RECOMMENDATION, preset: true, capability: FAB-002, behaviour: RENDER_WITH_LIMIT, limit: mesh-DOR envelope not qualified}
+  NocConfig.link_width:        {owner: FABRIC,         src: UI,         class: G1, default: RECOMMENDATION, preset: true, capability: FAB-006}
+  NocConfig.arbitration:       {owner: ROUTER_RESOURCE, src: UI,        class: G2, default: SEMANTIC_DEFAULT, preset: true, capability: ROUTE-007, note: one field - never VC allocator + switch allocator}
+  NocConfig.rcu_enabled:       {owner: "-",            src: REMOVED_V4, class: NOT_RENDERED, default: NONE, preset: false, capability: ROUTE-011, behaviour: DO_NOT_RENDER, note: "INTENT-ROUTER-RESOURCES.md:316,320 - REMOVE from v4; No rcu=true checkbox"}
+  NocConfig.mcast_groups:      {owner: "-",            src: REMOVED_V4, class: NOT_RENDERED, default: NONE, preset: false, capability: COMM-005, behaviour: DO_NOT_RENDER}
+  NocConfig.mcast_setup_cycles: {owner: "-",           src: REMOVED_V4, class: NOT_RENDERED, default: NONE, preset: false, capability: COMM-005, behaviour: DO_NOT_RENDER}
+  NocConfig.output_formats:    {owner: FABRIC,         src: UI,         class: E2, default: SEMANTIC_DEFAULT, preset: true}
+  NocConfig.obfuscation_level: {owner: FABRIC,         src: UI,         class: E2, default: SEMANTIC_DEFAULT, preset: true}
+
+  AddressMap.ranges:               {owner: MEMORY, src: UI, class: NOT_RENDERED, target_class: E2, default: NONE, preset: true, capability: MEM-001, behaviour: DO_NOT_RENDER, note: "surface not wired (PF-D1); target is Expert-advanced"}
+  AddressRange.name:               {owner: MEMORY, src: METADATA, class: METADATA, default: NONE, preset: false}
+  AddressRange.base:               {owner: MEMORY, src: UI, class: NOT_RENDERED, target_class: E2, default: NONE, preset: true, capability: MEM-001, behaviour: DO_NOT_RENDER, note: 'surface not wired (PF-D1)'}
+  AddressRange.size:               {owner: MEMORY, src: UI, class: NOT_RENDERED, target_class: E2, default: NONE, preset: true, capability: MEM-001, behaviour: DO_NOT_RENDER, note: 'surface not wired (PF-D1)'}
+  AddressRange.target_agent_idx:   {owner: MEMORY, src: UI, class: NOT_RENDERED, target_class: E2, default: SEMANTIC_DEFAULT, preset: true, capability: MEM-001, behaviour: DO_NOT_RENDER, note: 'to become a stable AgentInstanceId (MEM-D1); surface not wired (PF-D1)'}
+
+  PhysicalContext.default_clock_freq_mhz: {owner: PHYSICAL, src: UI,       class: G2, default: RECOMMENDATION, preset: true, note: "design clock - NOT the network clock"}
+  PhysicalContext.default_data_width:     {owner: PHYSICAL, src: UI,       class: G2, default: RECOMMENDATION, preset: true}
+  PhysicalContext.num_power_domains:      {owner: PHYSICAL, src: UI,       class: E2, default: RECOMMENDATION, preset: true}
+  PhysicalContext.process_node_nm:        {owner: PHYSICAL, src: METADATA, class: METADATA, default: NONE, preset: true}
+
+  DependencyGraph.dependencies: {owner: WORKLOAD, src: UI, class: G2, default: RECOMMENDATION, preset: true}
+  Dependency.source:            {owner: WORKLOAD, src: UI, class: G2, default: NONE, preset: true}
+  Dependency.target:            {owner: WORKLOAD, src: UI, class: G2, default: NONE, preset: true}
+  Dependency.kind:              {owner: WORKLOAD, src: UI, class: G2, default: NONE, preset: true}
+
+  CollectiveIntent.kind:           {owner: COMMUNICATION, src: UI, class: G2, default: RECOMMENDATION, preset: true, capability: COMM-002}
+  CollectiveIntent.dimension:      {owner: COMMUNICATION, src: UI, class: G2, default: RECOMMENDATION, preset: true, capability: PAR-001}
+  CollectiveIntent.payload_bytes:  {owner: COMMUNICATION, src: UI, class: G2, default: RECOMMENDATION, preset: true}
+  CollectiveIntent.traffic_class:  {owner: COMMUNICATION, src: UI, class: G2, default: RECOMMENDATION, preset: true, capability: COMM-006}
+  CollectiveIntent.source_rank:    {owner: COMMUNICATION, src: UI, class: E2, default: RECOMMENDATION, preset: true}
+
+  WorkloadSourceRef.content_digest:      {owner: WORKLOAD, src: METADATA, class: METADATA, default: NONE, preset: true}
+  WorkloadSourceRef.format:              {owner: WORKLOAD, src: METADATA, class: METADATA, default: NONE, preset: true}
+  WorkloadSourceRef.size_bytes:          {owner: WORKLOAD, src: METADATA, class: METADATA, default: NONE, preset: true}
+  WorkloadSourceRef.artifact_identity:   {owner: WORKLOAD, src: METADATA, class: METADATA, default: NONE, preset: true}
+
+  CompileIntent.name:                 {owner: "-", src: METADATA,  class: G1, default: NONE, preset: false, note: preset provenance}
+  CompileIntent.fabric_preset:        {owner: "-", src: METADATA,  class: G1, default: NONE, preset: false, note: preset provenance}
+  CompileIntent.fabric_overrides:     {owner: "-", src: LEGACY,    class: LEGACY_ONLY, default: NONE, preset: false, behaviour: DO_NOT_RENDER, note: "superseded - CAPABILITY-LEDGER W3"}
+  CompileIntent.candidate_policy:     {owner: "-", src: METADATA,  class: E2, default: NONE, preset: false}
+  CompileIntent.preset_design_hash:   {owner: "-", src: METADATA,  class: E2, default: NONE, preset: false, note: "preset fingerprint pin"}
+  CompileIntent.schema_version:              {owner: "-", src: METADATA, class: METADATA, default: NONE, preset: false}
+  CompileIntent.compiler_semantics_version:  {owner: "-", src: METADATA, class: METADATA, default: NONE, preset: false}
+
+# ── non-Design fields that must NOT appear in Design authoring ────────────
+evaluation_only:
+  - {field: network_clock_hz, owner: EVALUATION, note: "EvaluationPolicy - never Design Physical intent"}
+  - {field: backend_profile,  owner: EVALUATION, note: "EvaluationPolicy"}
+  - {field: execution_options, owner: EVALUATION, note: "EvaluationPolicy"}
+
+optimization_only:
+  - {field: search.method, owner: DESIGN_SPACE, note: "SearchExecutionPolicy, not StudyDefinition science"}
+  - {field: search.budget, owner: DESIGN_SPACE, note: "SearchExecutionPolicy"}
+  - {field: search.seed,   owner: DESIGN_SPACE, note: "SearchExecutionPolicy"}
+  - {field: candidate_owned_router_buffers, owner: DESIGN_SPACE, note: "candidate-owned; no dimension exists today (ROUTE-012)"}
+
+# ── shipped presets and their advertised envelope ─────────────────────────
+presets:
+  mesh4:                    {guided_eligible: true,  envelope: CAP-ENV-BOOKSIM-MESH-DOR-XY-V1}
+  mesh4_hbm:                {guided_eligible: true,  envelope: CAP-ENV-BOOKSIM-MESH-DOR-XY-V1}
+  mesh4_wide128:            {guided_eligible: true,  envelope: CAP-ENV-BOOKSIM-MESH-DOR-XY-V1}
+  dense-1b-16tiles:         {guided_eligible: true,  envelope: CAP-ENV-BOOKSIM-MESH-DOR-XY-V1}
+  dense-4b-32tiles-conc4:   {guided_eligible: false, envelope: null, reason: "DP allgather with dp=1; concentration 4 not covered by the mesh-DOR envelope - Expert-only until preset certification (G41)"}
+  moe-8x7b-64tiles:         {guided_eligible: false, envelope: CAP-ENV-BOOKSIM-SERVING-V1, reason: "static MoE DERIVABLE NO - serving path only"}
+
+# ── the Guided safe path (an AUTHORING RECOMMENDATION, not a semantic default)
+safe_path:
+  envelope: CAP-ENV-BOOKSIM-MESH-DOR-XY-V1
+  values:
+    model_family: dense_transformer
+    topology_family: MESH
+    radix: 8
+    concentration: 1
+    link_width: 256
+    arbitration: null
+    communication_classes: 1
+  user_decided: [tp, pp, ep, dp, requirements]
+  class: RECOMMENDATION
