@@ -14,6 +14,7 @@ no packet, decides no Pareto membership and invents no qualification.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -216,6 +217,203 @@ class ProductService:
                 "description": preset.description,
             })
         return {"contract_version": 1, "presets": presets}
+
+    #: Directories the canonical serve path reads its inputs from. The
+    #: product layer only lists them; the canonical loader still validates
+    #: every file's contents.
+    _SERVING_CONFIG_DIR = "third_party/llmservingsim/configs/cluster"
+    _SERVING_TRACE_DIR = "third_party/llmservingsim/workloads"
+
+    #: CertifiedServiceProfile constructor kwargs a caller may override.
+    #: ``model`` and ``schema_version`` are engine-owned and excluded: the
+    #: service model comes from the cluster config, never from a request.
+    _SERVING_PROFILE_FIELDS = frozenset({
+        "max_num_seqs", "max_num_batched_tokens", "npu_mem_gb",
+        "cpu_mem_gb", "block_size", "fp_bits", "routing_policy",
+        "collective_kind", "collective_bytes_per_rank",
+        "compute_base_ns", "compute_per_token_ns", "ep_size",
+        "ep_dispatch_kind", "ep_combine_kind",
+        "ep_dispatch_bytes_per_rank", "ep_combine_bytes_per_rank",
+        "expert_compute_base_ns", "expert_compute_per_token_ns",
+    })
+    #: Override fields whose value is a name, not a positive integer.
+    _SERVING_PROFILE_NAMES = frozenset({
+        "routing_policy", "collective_kind", "ep_dispatch_kind",
+        "ep_combine_kind",
+    })
+
+    def _serving_profile_overrides(
+            self, raw: Any) -> dict[str, Any] | None:
+        """Validate declared service-profile overrides at submit time.
+
+        The profile is a *declared* semantics input, so a bad value must be
+        a typed refusal before the job starts, not a FAILED job. Keys are
+        checked against the certified field set; the canonical constructor
+        still validates the resulting profile.
+        """
+        if raw is None:
+            return None
+        if not isinstance(raw, dict):
+            raise ProductServiceError(
+                ErrorCode.UNSUPPORTED_SEMANTICS,
+                "profile_overrides must be an object",
+                operation="submit_serving")
+        unknown = sorted(set(raw) - self._SERVING_PROFILE_FIELDS)
+        if unknown:
+            raise ProductServiceError(
+                ErrorCode.UNSUPPORTED_SEMANTICS,
+                ("unsupported profile override field(s): "
+                 + ", ".join(unknown)
+                 + "; certified fields are "
+                 + ", ".join(sorted(self._SERVING_PROFILE_FIELDS))),
+                operation="submit_serving")
+        for key, value in sorted(raw.items()):
+            if key in self._SERVING_PROFILE_NAMES:
+                if not isinstance(value, str) or not value:
+                    raise ProductServiceError(
+                        ErrorCode.UNSUPPORTED_SEMANTICS,
+                        f"profile override {key} must be a non-empty name",
+                        operation="submit_serving")
+                continue
+            if isinstance(value, bool) or not isinstance(value, int) \
+                    or value <= 0:
+                raise ProductServiceError(
+                    ErrorCode.UNSUPPORTED_SEMANTICS,
+                    f"profile override {key} must be a positive integer",
+                    operation="submit_serving")
+            if key == "ep_size" and value < 1:
+                raise ProductServiceError(
+                    ErrorCode.UNSUPPORTED_SEMANTICS,
+                    "profile override ep_size must be >= 1",
+                    operation="submit_serving")
+        return dict(raw)
+
+    def _serving_timeout(self, raw: Any) -> int:
+        """Per-request wall-clock budget for the canonical run."""
+        if raw is None:
+            return self.config.timeout_s
+        if isinstance(raw, bool) or not isinstance(raw, int):
+            raise ProductServiceError(
+                ErrorCode.UNSUPPORTED_SEMANTICS,
+                f"timeout_s must be an integer; got {raw!r}",
+                operation="submit_serving")
+        if not 1 <= raw <= 3600:
+            raise ProductServiceError(
+                ErrorCode.UNSUPPORTED_SEMANTICS,
+                f"timeout_s must be in [1, 3600]; got {raw}",
+                operation="submit_serving")
+        return raw
+
+    def _serving_config_entry(self, rel: str) -> dict[str, Any] | None:
+        """One cluster service-semantics config, listed for selection.
+
+        Geometry is read from the document so the UI can describe a choice
+        without interpreting it. No serving semantics are derived here.
+        """
+        path = self.config.repo_root / rel
+        if not path.is_file():
+            return None
+        try:
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        nodes = document.get("nodes") or []
+        instances = [i for n in nodes for i in (n.get("instances") or [])]
+
+        def _ints(key: str) -> list[int]:
+            return sorted({int(i[key]) for i in instances
+                           if isinstance(i.get(key), int)})
+
+        def _strs(key: str) -> list[str]:
+            return sorted({str(i[key]) for i in instances
+                           if i.get(key) not in (None, "")})
+
+        config_id = Path(rel).stem
+        return {
+            "contract_version": 1,
+            "config_id": config_id,
+            "display_name": config_id.replace("_", " "),
+            "description": (f"{len(nodes)} node(s), "
+                            f"{len(instances)} instance(s)"),
+            "source": rel,
+            "content_digest": ("sha256:" + hashlib.sha256(
+                path.read_bytes()).hexdigest()),
+            "geometry": {
+                "num_nodes": int(document.get("num_nodes") or len(nodes)),
+                "instances": len(instances),
+                "tp_sizes": _ints("tp_size"),
+                "ep_sizes": _ints("ep_size"),
+                "pp_sizes": _ints("pp_size"),
+                "pd_types": _strs("pd_type"),
+                "models": _strs("model_name"),
+                "hardware": _strs("hardware"),
+                "link_bw": document.get("link_bw"),
+                "link_latency": document.get("link_latency"),
+            },
+        }
+
+    def _serving_trace_entry(self, rel: str) -> dict[str, Any] | None:
+        """One JSONL request trace, listed for selection."""
+        path = self.config.repo_root / rel
+        if not path.is_file():
+            return None
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return None
+        requests = 0
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            requests += 1
+        trace_id = Path(rel).stem
+        return {
+            "contract_version": 1,
+            "trace_id": trace_id,
+            "display_name": trace_id.replace("_", " "),
+            "description": f"{requests} request(s) in the trace",
+            "source": rel,
+            "content_digest": ("sha256:" + hashlib.sha256(
+                path.read_bytes()).hexdigest()),
+            "requests": requests,
+        }
+
+    def serving_config_catalog(self) -> dict[str, Any]:
+        """Cluster configs and request traces the canonical serve path can
+        be pointed at, plus the tracked defaults. Mirrors workload_catalog /
+        fabric_presets: the product layer lists, it does not interpret."""
+        root = self.config.repo_root
+
+        configs: list[dict[str, Any]] = []
+        config_dir = root / self._SERVING_CONFIG_DIR
+        if config_dir.is_dir():
+            for path in sorted(config_dir.glob("*.json")):
+                entry = self._serving_config_entry(
+                    str(path.relative_to(root)))
+                if entry is not None:
+                    configs.append(entry)
+
+        traces: list[dict[str, Any]] = []
+        trace_dir = root / self._SERVING_TRACE_DIR
+        if trace_dir.is_dir():
+            for path in sorted(trace_dir.glob("*.jsonl")):
+                entry = self._serving_trace_entry(
+                    str(path.relative_to(root)))
+                if entry is not None:
+                    traces.append(entry)
+
+        return {
+            "contract_version": 1,
+            "configs": configs,
+            "traces": traces,
+            "default_config": self._SERVING_CLUSTER_CONFIG,
+            "default_trace": self._SERVING_DATASET,
+        }
 
     @staticmethod
     def _collective_view(collective: Any) -> dict[str, Any]:
@@ -1063,9 +1261,20 @@ class ProductService:
                 f"run {run_id} has no finalized run bundle; no execution "
                 "integrity evidence exists",
                 operation="run_integrity", resource_id=run_id)
-        evidence_path = (self.store.run_bundle_dir(pid, run_id)
-                         / "backend-evidence.json")
-        if not evidence_path.is_file():
+        bundle_dir = self.store.run_bundle_dir(pid, run_id)
+        # The authenticated attempt record — a wrapped {attempt, evidence}
+        # document — is written by the backend into the bundle's `run/`
+        # working directory; the raw evidence copy lives under `evidence/`.
+        # Read the wrapped record (the schema this projection parses), with
+        # a bundle-root fallback for older layouts.
+        evidence_path = next(
+            (path for path in (
+                bundle_dir / "run" / "backend-evidence.json",
+                bundle_dir / "backend-evidence.json",
+            ) if path.is_file()),
+            None,
+        )
+        if evidence_path is None:
             raise ProductServiceError(
                 ErrorCode.NOT_FOUND,
                 f"run {run_id} carries no backend evidence document",
@@ -1282,6 +1491,9 @@ class ProductService:
                 operation="submit_serving", resource_id=project_id)
         self._require_backend()
         num_reqs = int(body.get("num_reqs") or 8)
+        overrides = self._serving_profile_overrides(
+            body.get("profile_overrides"))
+        timeout_s = self._serving_timeout(body.get("timeout_s"))
         serving_id = _new_id("sv")
         self.store.create_serving(project_id, {
             "schema_version": 1,
@@ -1290,17 +1502,23 @@ class ProductService:
             "state": "QUEUED",
             "workload_id": body.get("workload_id"),
             "num_reqs": num_reqs,
+            "profile_overrides": overrides,
+            "timeout_s": timeout_s,
             "evidence": None,
             "created_at": utcnow(),
         })
         job = self.jobs.submit(
             project_id, kind="SERVING", revision_id=None,
             fn=lambda progress: self._run_serving(
-                serving_id, cluster, dataset, num_reqs, progress))
+                serving_id, cluster, dataset, num_reqs, progress,
+                overrides, timeout_s))
         return self.job_view(job)
 
     def _run_serving(self, serving_id: str, cluster: Path, dataset: Path,
-                     num_reqs: int, progress) -> tuple[str, dict[str, Any]]:
+                     num_reqs: int, progress,
+                     profile_overrides: dict[str, Any] | None = None,
+                     timeout_s: int | None = None,
+                     ) -> tuple[str, dict[str, Any]]:
         from veritx_dse.simulation.serve_canonical import (
             run_canonical_serve,
         )
@@ -1312,7 +1530,9 @@ class ProductService:
             result = run_canonical_serve(
                 cluster_config=str(cluster), dataset=str(dataset),
                 num_reqs=num_reqs, run_dir=run_dir,
-                timeout_s=self.config.timeout_s)
+                profile_overrides=profile_overrides,
+                timeout_s=(timeout_s if timeout_s is not None
+                           else self.config.timeout_s))
         except Exception as exc:
             # The canonical path refuses or fails typed; record the exact
             # reason on the experiment and re-raise for the job layer.

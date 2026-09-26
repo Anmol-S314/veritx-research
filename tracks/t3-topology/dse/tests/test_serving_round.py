@@ -19,6 +19,7 @@ from test_serving_canonical import BUILT_FROM_SOURCE, _qualified
 from veritx_dse.backend import canonical_serving as cs
 from veritx_dse.backend import serving_round as sround
 from veritx_dse.backend.producer import (
+
     ProducerError, resolve_producer_identity,
 )
 
@@ -27,6 +28,9 @@ REPO = Path(__file__).resolve().parents[4]
 
 
 # ── fixtures ──────────────────────────────────────────────────────────────
+TEST_PROFILE_ID = "sha256:test-certified-service-profile"
+
+
 
 def _fixture(instance_count=4, granularity="collectives"):
     """compiled canonical design + machine + namespace + serving binding."""
@@ -473,6 +477,7 @@ def test_top_level_evidence_references_real_round_evidence_ids(tmp_path):
                          ledger=[_ledger_line(rank=r) for r in range(4)]),
         machine=machine, parser_version="srota/astra-stats-parser/v1")
     top = sr.build_serving_evidence(
+            service_profile_id=TEST_PROFILE_ID,
         backend=backend, rounds=(), workload_id="wl/round-refs",
         round_evidence=(evidence,))
     assert top.backend_evidence_ids == (evidence.evidence_id(),)

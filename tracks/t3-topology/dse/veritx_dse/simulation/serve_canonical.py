@@ -342,6 +342,11 @@ def run_canonical_serve(*, cluster_config: str | Path,
         lowering=lowering, timeout_s=timeout_s,
         session_factory=None, ledger=True,
         expected_requests=num_reqs, dp_groups=dp_groups)
+    # Persist the canonical serving evidence beside the run inputs: the
+    # product layer reads serving-evidence.json as the served experiment's
+    # evidence document and must not reconstruct it.
+    (run_path / "serving-evidence.json").write_bytes(
+        result.evidence.canonical_bytes())
     return CanonicalServeResult(
         requests_completed=result.evidence.request_count,
         requests_expected=num_reqs,

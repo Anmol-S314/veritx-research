@@ -753,6 +753,7 @@ def run_request_driven_service(
     request_metrics = tuple(r.metric() for r in retired)
     evidence = build_serving_evidence(
         backend=backend, rounds=tuple(outcomes), workload_id=workload_id,
+        service_profile_id=profile.profile_id(),
         request_metrics=request_metrics, round_evidence=tuple(round_evidence))
     return ServiceRunResult(
         workload_id=workload_id, profile_id=profile.profile_id(),

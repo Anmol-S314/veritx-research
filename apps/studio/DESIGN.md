@@ -86,7 +86,7 @@ the root. On small screens inputs render at 16px so iOS does not zoom.
 ## Layout
 
 A three-region engineering shell: a sticky topbar (brand, live context
-strip, actions), a left numbered rail (01–06) for navigation, and a
+strip, actions), a left numbered rail (00–09) for navigation, and a
 workspace. Inside a project the workspace opens with the pipeline bar
 (Intent → Fabric → Certificate → Execute → Decide), then the page. Machine
 identities are truncated with the full value in a tooltip, never dropped.

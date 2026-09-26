@@ -148,6 +148,32 @@ export default function FabricCanvas({ model, topology }: {
           if (!na || !nb) return null;
           const pa = pos(na);
           const pb = pos(nb);
+          // A declared torus/express wrap is drawn as an arc bulging away
+          // from the fabric centre so it reads as a chord, not an overlaid
+          // local link. Preview-only: materialized links are always straight.
+          if (edge.kind === 'wrap') {
+            const midX = (pa.x + pb.x) / 2;
+            const midY = (pa.y + pb.y) / 2;
+            const centreX = M + (cols * CELL) / 2;
+            const centreY = M + 17 + (rows * CELL) / 2;
+            let nx = midX - centreX;
+            let ny = midY - centreY;
+            const len = Math.hypot(nx, ny) || 1;
+            nx /= len;
+            ny /= len;
+            const bulge = 34;
+            return (
+              <path
+                key={k}
+                d={`M ${pa.x} ${pa.y} Q ${midX + nx * bulge} ${midY + ny * bulge} ${pb.x} ${pb.y}`}
+                className="cv-link cv-link-wrap"
+                fill="none"
+                strokeWidth={linkStroke}
+              >
+                <title>declared wrap link (preview)</title>
+              </path>
+            );
+          }
           return (
             <line
               key={k}
@@ -155,7 +181,7 @@ export default function FabricCanvas({ model, topology }: {
               y1={pa.y}
               x2={pb.x}
               y2={pb.y}
-              className={`cv-link${pickLink ? ' cv-clickable' : ''}`}
+              className={`cv-link${edge.kind === 'tree' ? ' cv-link-tree' : ''}${pickLink ? ' cv-clickable' : ''}`}
               strokeWidth={linkStroke}
               onClick={pickLink
                 ? () => pickLink(edge.a, edge.b)

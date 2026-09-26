@@ -13,6 +13,7 @@ import type {
   QualificationView,
   ValidationCampaignsView,
   PreflightView,
+  ServingConfigCatalogView,
   ServingSummary,
   ServingView,
   WorkloadLoweringView,
@@ -120,9 +121,22 @@ export const api = {
     get<{ contract_version: 1; experiments: ServingSummary[] }>(
       `/projects/${encodeURIComponent(projectId)}/serving`,
     ),
+  servingConfigs: () =>
+    get<ServingConfigCatalogView>('/catalog/serving-configs'),
   servingSubmit: (
     projectId: string,
-    body?: { num_reqs?: number; workload_id?: string },
+    body?: {
+      num_reqs?: number;
+      workload_id?: string;
+      /** Repo-relative or absolute path to a cluster config. */
+      cluster_config?: string;
+      /** Repo-relative or absolute path to a JSONL request trace. */
+      dataset?: string;
+      /** Wall-clock budget for the canonical run, seconds (1..3600). */
+      timeout_s?: number;
+      /** Declared service-profile overrides; keys validated server-side. */
+      profile_overrides?: Record<string, number | string>;
+    },
   ) =>
     post<JobView>(`/projects/${encodeURIComponent(projectId)}/serving`,
       body ?? {}),

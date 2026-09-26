@@ -23,15 +23,23 @@ export interface FabricNode {
   attached: Record<string, number>;
 }
 
+/** How a drawn link relates to the declared family. `wrap` is a torus/express
+ * wrap-around, `tree` a fat-tree parent→child edge; both are preview-only
+ * schematics of a DECLARED structure, never a materialized artifact. */
+export type FabricEdgeKind = 'local' | 'wrap' | 'tree';
+
 export interface FabricEdge {
   a: number;
   b: number;
   widthBits: number;
+  kind?: FabricEdgeKind;
 }
 
 export interface FabricModel {
   source: FabricSource;
   family: string | null;
+  /** Preview layout family: a grid mesh or a tiered tree. */
+  shape: 'mesh' | 'tree' | 'grid';
   nodes: FabricNode[];
   /** Undirected pairs derived from the directed channel set. */
   edges: FabricEdge[];
@@ -81,6 +89,54 @@ function meshEdges(cols: number, rows: number, count: number): [number, number][
   return links;
 }
 
+/** Torus / express wrap-around chords: last↔first in each full row and
+ * column. Only the DECLARED family is expressed; the schema is a preview. */
+function wrapEdges(cols: number, rows: number, count: number): [number, number][] {
+  const links: [number, number][] = [];
+  for (let r = 0; r < rows; r++) {
+    const first = r * cols;
+    const last = Math.min((r + 1) * cols, count) - 1;
+    if (last > first) links.push([first, last]);
+  }
+  for (let c = 0; c < cols; c++) {
+    const first = c;
+    const last = (rows - 1) * cols + c;
+    if (last < count && last > first) links.push([first, last]);
+  }
+  return links;
+}
+
+const TREE_BRANCHING = 4;
+
+/** A tiered k-ary tree schematic for a declared fat tree. Node count is an
+ * approximation from declared intent; the materialized tree is backend-owned. */
+function treeLayout(count: number): {
+  nodes: { row: number; col: number }[];
+  edges: [number, number][];
+  cols: number;
+  rows: number;
+} {
+  const n = Math.max(1, count);
+  const depth: number[] = new Array(n).fill(0);
+  const rank: number[] = new Array(n).fill(0);
+  const perDepth: number[] = [];
+  for (let i = 0; i < n; i++) {
+    depth[i] = i === 0 ? 0 : depth[Math.floor((i - 1) / TREE_BRANCHING)] + 1;
+    perDepth[depth[i]] = (perDepth[depth[i]] ?? 0) + 1;
+    rank[i] = perDepth[depth[i]] - 1;
+  }
+  const edges: [number, number][] = [];
+  for (let i = 1; i < n; i++) {
+    edges.push([Math.floor((i - 1) / TREE_BRANCHING), i]);
+  }
+  return {
+    nodes: Array.from({ length: n }, (_, i) => ({ row: depth[i], col: rank[i] })),
+    edges,
+    cols: Math.max(1, ...perDepth),
+    rows: Math.max(1, perDepth.length),
+  };
+}
+
 function emptyTotals(): { compute: number; hbm: number; nic: number; edge: number } {
   return { compute: 0, hbm: 0, nic: 0, edge: 0 };
 }
@@ -94,32 +150,42 @@ export function modelFromIntent(design: DesignView): FabricModel {
     + agentCount(design, 'ucie_port');
   const concentration = design.noc_guided.concentration ?? 1;
   const routerCount = Math.max(1, Math.ceil(compute / Math.max(1, concentration)));
-  const { cols, rows } = gridFor(routerCount);
-
-  const nodes: FabricNode[] = [];
-  let remaining = compute;
-  for (let i = 0; i < routerCount; i++) {
-    const seats = Math.min(concentration, Math.max(0, remaining));
-    remaining -= seats;
-    nodes.push({
-      id: i,
-      row: Math.floor(i / cols),
-      col: i % cols,
-      seats: concentration,
-      // Attachment POSITIONS are not materialized before a compile, so a
-      // preview attaches nothing: the count stays in `totals`.
-      attached: {},
-    });
-  }
-
+  const family = design.noc_guided.topology_family;
   const width = design.noc_guided.link_width;
-  const edges: FabricEdge[] = meshEdges(cols, rows, routerCount).map(([a, b]) => ({
-    a, b, widthBits: width ?? 64,
+
+  // The DECLARED family selects the preview schema. The materialized graph —
+  // including its router count and channel set — is backend-owned and only
+  // exists after a compile; this is a labelled schematic, never an artifact.
+  const isTree = family === 'fat_tree';
+  const tree = isTree ? treeLayout(routerCount) : null;
+  const cols = tree ? tree.cols : gridFor(routerCount).cols;
+  const rows = tree ? tree.rows : gridFor(routerCount).rows;
+
+  const nodes: FabricNode[] = Array.from({ length: routerCount }, (_, i) => ({
+    id: i,
+    row: tree ? tree.nodes[i].row : Math.floor(i / cols),
+    col: tree ? tree.nodes[i].col : i % cols,
+    seats: concentration,
+    // Attachment POSITIONS are not materialized before a compile, so a
+    // preview attaches nothing: the count stays in `totals`.
+    attached: {},
   }));
+
+  const edges: FabricEdge[] = tree
+    ? tree.edges.map(([a, b]) => ({ a, b, widthBits: width ?? 64, kind: 'tree' }))
+    : [
+      ...meshEdges(cols, rows, routerCount).map(([a, b]) => (
+        { a, b, widthBits: width ?? 64, kind: 'local' as const })),
+      ...(family === 'torus' || family === 'gec'
+        ? wrapEdges(cols, rows, routerCount).map(([a, b]) => (
+          { a, b, widthBits: width ?? 64, kind: 'wrap' as const }))
+        : []),
+    ];
 
   return {
     source: 'intent',
-    family: design.noc_guided.topology_family,
+    family,
+    shape: tree ? 'tree' : 'mesh',
     nodes,
     edges,
     cols,
@@ -187,6 +253,7 @@ export function modelFromTopology(
   return {
     source: 'topology',
     family: topology.family,
+    shape: 'grid',
     nodes,
     edges: [...byPair.values()].sort((x, y) => x.a - y.a || x.b - y.b),
     cols,

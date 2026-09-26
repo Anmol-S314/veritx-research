@@ -18,6 +18,7 @@ from veritx_dse.backend.booksim_projection import prepare_booksim_input
 from veritx_dse.simulation import serving_runtime as sr
 from veritx_dse.workload.traffic import ParticipantEndpointMapping
 
+
 REPO = Path(__file__).resolve().parents[4]
 BUILT_FROM_SOURCE = (REPO / "third_party" / "astra-sim" / "astra-sim"
                      / "network_frontend" / "booksim2" / "bin"
@@ -25,6 +26,9 @@ BUILT_FROM_SOURCE = (REPO / "third_party" / "astra-sim" / "astra-sim"
 
 
 # ── fixtures ──────────────────────────────────────────────────────────────
+TEST_PROFILE_ID = "sha256:test-certified-service-profile"
+
+
 
 def _qualified(*, instance_count=4, granularity="collectives"):
     """machine + permuted namespace + a serving instance partition."""
@@ -232,6 +236,7 @@ def test_every_instance_serves_work_regression(tmp_path, instance_count):
             comm={e: 7 for e in ns.participant_endpoints()},
             endpoints=ns.participant_endpoints()))
     evidence = sr.build_serving_evidence(
+            service_profile_id=TEST_PROFILE_ID,
         backend=backend, rounds=(outcome,), workload_id="wl/regression")
     assert evidence.instance_count == instance_count
     assert evidence.instances_with_completions == tuple(range(instance_count))
@@ -252,6 +257,7 @@ def test_instance_starvation_is_detected(tmp_path):
         session_factory=_session_factory(comm=starved,
                                          endpoints=tuple(starved)))
     evidence = sr.build_serving_evidence(
+            service_profile_id=TEST_PROFILE_ID,
         backend=backend, rounds=(outcome,), workload_id="wl/starved")
     assert evidence.instances_with_completions == (0,)
     assert not evidence.every_instance_served()
@@ -413,9 +419,11 @@ def test_live_and_replay_evidence_are_distinguishable(tmp_path):
         session_factory=_session_factory(
             comm={e: 1 for e in ns.participant_endpoints()},
             endpoints=ns.participant_endpoints()))
-    replay_ev = sr.build_serving_evidence(backend=replay, rounds=(outcome,),
+    replay_ev = sr.build_serving_evidence(
+            service_profile_id=TEST_PROFILE_ID,backend=replay, rounds=(outcome,),
                                           workload_id="wl/x")
-    live_ev = sr.build_serving_evidence(backend=live, rounds=(outcome,),
+    live_ev = sr.build_serving_evidence(
+            service_profile_id=TEST_PROFILE_ID,backend=live, rounds=(outcome,),
                                         workload_id="wl/x")
     assert replay_ev.execution_mode == cs.MODE_REPLAY_ONLY
     assert not replay_ev.reusable()
@@ -436,6 +444,7 @@ def test_evidence_binds_every_canonical_identity(tmp_path):
             comm={e: 1 for e in ns.participant_endpoints()},
             endpoints=ns.participant_endpoints()))
     evidence = sr.build_serving_evidence(
+            service_profile_id=TEST_PROFILE_ID,
         backend=backend, rounds=(outcome,), workload_id="wl/identity",
         request_metrics=(cs.RequestMetric("r0", 10, 100),))
     identity = evidence.identity_dict()
@@ -462,7 +471,8 @@ def test_evidence_identity_excludes_host_facts(tmp_path):
         session_factory=_session_factory(
             comm={e: 1 for e in ns.participant_endpoints()},
             endpoints=ns.participant_endpoints()))
-    evidence = sr.build_serving_evidence(backend=backend, rounds=(outcome,),
+    evidence = sr.build_serving_evidence(
+            service_profile_id=TEST_PROFILE_ID,backend=backend, rounds=(outcome,),
                                          workload_id="wl/x")
     blob = json.dumps(evidence.identity_dict(), sort_keys=True)
     for token in ("/tmp", "pid", "run_dir", "wall_time", "host", "elapsed"):
@@ -481,6 +491,7 @@ def test_evidence_is_deterministic_across_run_locations(tmp_path):
                 comm={e: 1 for e in ns.participant_endpoints()},
                 endpoints=ns.participant_endpoints()))
         ids.append(sr.build_serving_evidence(
+            service_profile_id=TEST_PROFILE_ID,
             backend=backend, rounds=(outcome,),
             workload_id="wl/x").evidence_id())
     assert ids[0] == ids[1]
@@ -514,6 +525,7 @@ def test_real_live_canonical_serving_round(tmp_path):
         backend=backend, workload=_workload(), run_dir=tmp_path / "run",
         dispatched_instances=frozenset(range(4)), timeout_s=900)
     evidence = sr.build_serving_evidence(
+            service_profile_id=TEST_PROFILE_ID,
         backend=backend, rounds=(outcome,), workload_id="wl/live",
         request_metrics=(cs.RequestMetric("r0", 100, 1000),))
     evidence.assert_live()
@@ -537,6 +549,7 @@ def test_real_live_multi_instance_serving(tmp_path):
         backend=backend, workload=_workload(), run_dir=tmp_path / "run",
         dispatched_instances=frozenset(range(2)), timeout_s=900)
     evidence = sr.build_serving_evidence(
+            service_profile_id=TEST_PROFILE_ID,
         backend=backend, rounds=(outcome,), workload_id="wl/live-multi")
     evidence.assert_all_instances_served()
     assert evidence.instances_with_completions == (0, 1)

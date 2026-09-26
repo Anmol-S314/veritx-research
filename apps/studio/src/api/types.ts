@@ -509,6 +509,92 @@ export interface ServingSummary {
   reusable: boolean | null;
 }
 
+/** CanonicalServingEvidence document (v1), returned verbatim by the
+ * canonical serve path (srota/CanonicalServingEvidence). Cycles are
+ * model-internal under the declared linear service profile. No time-domain
+ * conversion authority is attached, so values are never compared across
+ * SERVING_LOGICAL_CYCLE / MODEL_SERVICE_CYCLE / NETWORK_BOOKSIM_CYCLE. */
+export interface CanonicalServingEvidence {
+  type: string;
+  schema_version: number;
+  evidence_id: string;
+  execution_mode: string;
+  network_evidence_tier: string;
+  expansion_authority: string;
+  instance_count: number;
+  served_instances: number[];
+  instances_with_completions: number[];
+  every_instance_served: boolean;
+  /** [instance, completion_cycles] */
+  endpoint_completions: [number, number][];
+  /** [request_id, ttft_cycles, completion_cycles] */
+  request_metrics: [string, number | null, number | null][];
+  /** Per-round injection payload. Currently emitted all-null by the
+   * canonical path; treat as unavailable rather than empty. */
+  autonomous_injection_packets: unknown[];
+  backend_evidence_ids: string[];
+  backend_id: string;
+  serving_binding_id: string;
+  participant_mapping_id: string;
+  machine_id: string;
+  namespace_id: string;
+  serving_config_id: string;
+  standalone_config_sha256: string;
+  embedded_fabric_abi_version: string;
+  astra_source_revision: string;
+  astra_binary_sha256: string;
+  astra_binary_size: number;
+  workload_id: string;
+  reusable: boolean;
+  request_count: number;
+  rounds: number;
+}
+
+/** One selectable cluster service-semantics config. Geometry is read from
+ * the document by the gateway so the UI can describe a choice without
+ * interpreting it. */
+export interface ServingConfigEntry {
+  contract_version: 1;
+  config_id: string;
+  display_name: string;
+  description: string;
+  source: string;
+  content_digest: string;
+  geometry: {
+    num_nodes: number;
+    instances: number;
+    tp_sizes: number[];
+    ep_sizes: number[];
+    pp_sizes: number[];
+    pd_types: string[];
+    models: string[];
+    hardware: string[];
+    link_bw: number[] | number | null;
+    link_latency: number[] | number | null;
+  };
+}
+
+/** One selectable JSONL request trace. */
+export interface ServingTraceEntry {
+  contract_version: 1;
+  trace_id: string;
+  display_name: string;
+  description: string;
+  source: string;
+  content_digest: string;
+  requests: number;
+}
+
+/** Inputs the canonical serve path can be pointed at, plus the tracked
+ * defaults. The gateway lists these; it does not interpret them. */
+export interface ServingConfigCatalogView {
+  contract_version: 1;
+  configs: ServingConfigEntry[];
+  traces: ServingTraceEntry[];
+  default_config: string;
+  default_trace: string;
+}
+
 export interface ServingView {
   schema_version: 1;
   serving_id: string;
@@ -516,6 +602,10 @@ export interface ServingView {
   state: string;
   workload_id: string | null;
   num_reqs: number | null;
+  /** Declared service-profile overrides that produced this run. */
+  profile_overrides: Record<string, number | string> | null;
+  /** Wall-clock budget applied to the canonical run, seconds. */
+  timeout_s: number | null;
   error: string | null;
   evidence: {
     request_count: number;
@@ -524,7 +614,7 @@ export interface ServingView {
     machine_id: string;
     namespace_id: string;
     evidence_ids: string[];
-    document: Record<string, unknown> | null;
+    document: CanonicalServingEvidence | null;
   } | null;
   created_at: string | null;
 }

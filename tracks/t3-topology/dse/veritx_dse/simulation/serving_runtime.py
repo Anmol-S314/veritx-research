@@ -186,6 +186,7 @@ def collective_ledger_lines(stderr_text: str) -> tuple[str, ...]:
 def build_serving_evidence(*, backend: CanonicalServingNetworkBackend,
                            rounds: tuple[RoundOutcome, ...],
                            workload_id: str,
+                           service_profile_id: str,
                            request_metrics: tuple[RequestMetric, ...] = (),
                            served_instances: tuple[int, ...] | None = None,
                            round_evidence: tuple[Any, ...] = ()
@@ -200,6 +201,7 @@ def build_serving_evidence(*, backend: CanonicalServingNetworkBackend,
     injected = tuple(outcome.autonomous_injection_packets for outcome in rounds)
     return CanonicalServingEvidence(
         workload_id=workload_id,
+        service_profile_id=service_profile_id,
         serving_config_id=backend.binding.serving_config_id,
         machine_id=backend.machine.machine_id(),
         namespace_id=backend.binding.namespace.namespace_id(),

@@ -559,6 +559,11 @@ class CanonicalServingEvidence:
 
     workload_id: str
     serving_config_id: str
+    #: Declared service-profile identity (CertifiedServiceProfile.profile_id()).
+    #: A declared semantics input is part of the scientific identity: without
+    #: it two runs with different declared profiles produce identical evidence
+    #: and cannot be told apart or reproduced.
+    service_profile_id: str
     machine_id: str
     namespace_id: str
     participant_mapping_id: str
@@ -594,6 +599,7 @@ class CanonicalServingEvidence:
                     ("machine_id", self.machine_id),
                     ("namespace_id", self.namespace_id),
                     ("participant_mapping_id", self.participant_mapping_id),
+                    ("service_profile_id", self.service_profile_id),
                     ("astra_binary_sha256", self.astra_binary_sha256)):
                 if not value:
                     raise ServingBoundaryError(
@@ -615,6 +621,7 @@ class CanonicalServingEvidence:
             "schema_version": self.schema_version,
             "workload_id": self.workload_id,
             "serving_config_id": self.serving_config_id,
+            "service_profile_id": self.service_profile_id,
             "machine_id": self.machine_id,
             "namespace_id": self.namespace_id,
             "participant_mapping_id": self.participant_mapping_id,
@@ -646,7 +653,10 @@ class CanonicalServingEvidence:
         }
 
     def evidence_id(self) -> str:
-        return content_hash("srota/CanonicalServingEvidence", 1,
+        # Identity version 2: the declared service-profile identity is bound
+        # in. Version 1 evidence did not carry it, so a v1 and a v2 digest are
+        # deliberately not comparable.
+        return content_hash("srota/CanonicalServingEvidence", 2,
                             self.identity_dict())
 
     def to_dict(self) -> dict[str, Any]:

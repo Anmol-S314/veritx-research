@@ -22,6 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable
 
 from veritx_dse.application.errors import ControlPlaneError, ErrorCode
+from veritx_dse.core.errors import Refusal
 from veritx_dse.product.store import ProductStore, _new_id, utcnow
 
 log = logging.getLogger("veritx.product.jobs")
@@ -99,6 +100,18 @@ class JobManager:
             self._store.update_job(
                 project_id, job_id, state=state,
                 error_code=exc.code.value, error_message=exc.message,
+                result=None)
+        except Refusal as exc:
+            # A core Refusal (semantic refusal, never approximated silently)
+            # is NOT a ControlPlaneError. Without this branch it fell through
+            # to the generic handler and was reported as INTERNAL_ERROR/FALSE
+            # FAILED, telling the operator something broke when in fact no
+            # science was attempted.
+            state = "REFUSED" if exc.code in _REFUSAL_CODES else "FAILED"
+            log.info("job %s refused: %s", job_id, exc)
+            self._store.update_job(
+                project_id, job_id, state=state,
+                error_code=exc.code, error_message=exc.message,
                 result=None)
         except Exception as exc:  # noqa: BLE001 - programmer failure
             log.exception("job %s failed unexpectedly", job_id)
