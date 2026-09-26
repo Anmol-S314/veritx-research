@@ -4886,6 +4886,32 @@ nodes:
       blast_radius: "attachment -> fabric -> routes/VC -> evidence"
       primitive: [2]
       action: "read-only: explicit graph is design intent, materialized by the compiler"
+  - id: fabric.synthesis_provenance
+    domain: FABRIC_INTENT
+    fields: [CompileRequestV3.synthesis_provenance]
+    real: R2
+    owner: CI
+    edit: TC-
+    kind: CMT
+    default: "null (manual design)"
+    stored: request (linkage only)
+    depends_on: []
+    invalidates: NONE
+    validation: [L1n]
+    unsupported: null
+    visual: [4]
+    evidence: V
+    cite: model/compile_model.py:2239
+    plan:
+      surface: "\u2014"
+      control: "none"
+      default: "\u2014"
+      validation_timing: "[]"
+      refusal: "null"
+      change_class: "NO_SCIENTIFIC_CHANGE"
+      blast_radius: "none \u2014 linkage, not design science"
+      primitive: [4]
+      action: "none - excluded from design identity by construction"
   # ── FABRIC / NOC ───────────────────────────────────────────────────
   - id: noc.topology_family
     domain: FABRIC_INTENT

@@ -1896,6 +1896,11 @@ _TOP_V3_KEYS = frozenset({
     "address_map", "physical", "design_hash", "guardrail_hash",
     "_comment", "_docs",
     "explicit_topology",
+    # Synthesis provenance: LINKAGE, never design science. Accepted and
+    # persisted, deliberately EXCLUDED from _semantic_dict() so it cannot
+    # reach design_hash — a promoted candidate and the identical manual
+    # graph must be the same design.
+    "synthesis_provenance",
 })
 _WORKLOAD_V3_KEYS = frozenset({
     "model_family", "model_name", "tp", "pp", "ep", "dp",
@@ -2228,6 +2233,10 @@ class CompileRequestV3:
     #: enters `design_hash`. Its `name` does NOT: a synthesized candidate and
     #: the identical hand-authored graph must be the same design science.
     explicit_topology: "TopologyIR | None" = None
+    #: Optional linkage to the synthesis candidate this design came from.
+    #: NOT design semantics: it is excluded from canonical_dict(), so
+    #: origin cannot enter design identity. A manual design simply has None.
+    synthesis_provenance: Any = None
     schema_version: int = COMPILE_REQUEST_SCHEMA_VERSION_V3
     compiler_semantics_version: int = COMPILER_SEMANTICS_VERSION_V3
 
@@ -2447,6 +2456,13 @@ class CompileRequestV3:
             "compiler_semantics_version": self.compiler_semantics_version,
             **self._semantic_dict(),
         }
+        # PERSISTENCE ONLY. `_semantic_dict()` feeds `canonical_dict()`, so a
+        # provenance write there would put ORIGIN into design identity —
+        # a promoted candidate and the identical manual graph would stop
+        # being the same design. It is attached here, after identity is
+        # settled, and is therefore linkage rather than science.
+        if self.synthesis_provenance is not None:
+            d["synthesis_provenance"] = dict(self.synthesis_provenance)
         d["design_hash"] = self.design_hash()
         d["guardrail_hash"] = d["design_hash"]
         return d
@@ -2640,6 +2656,9 @@ class CompileRequestV3:
                 address_map=AddressMap(ranges=tuple(ranges)),
                 physical=physical,
                 explicit_topology=explicit,
+                synthesis_provenance=(dict(d["synthesis_provenance"])
+                                      if d.get("synthesis_provenance")
+                                      else None),
                 schema_version=d["schema_version"],
                 compiler_semantics_version=semantics,
             )

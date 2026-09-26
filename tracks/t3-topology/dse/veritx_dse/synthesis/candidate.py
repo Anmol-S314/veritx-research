@@ -445,3 +445,107 @@ __all__ = [
     "TopologyCandidateError", "TopologyCandidate",
     "synthesize", "to_topology_ir", "anynet_projection",
 ]
+
+
+# ── promotion: TopologyCandidate -> ordinary Design intent ──────────────
+
+#: Promotion provenance key. Linkage, NOT design semantics — it never enters
+#: design_hash.
+PROMOTION_PROVENANCE_KEY = "synthesis_provenance"
+
+
+def promote_to_explicit_topology(
+        candidate: TopologyCandidate,
+        definition: SynthesisDefinition,
+        *,
+        name: str | None = None,
+        expected_candidate_id: str | None = None,
+) -> dict[str, Any]:
+    """Promote a candidate into ORDINARY explicit-topology design intent.
+
+    WHAT PROMOTION IS: freezing the candidate's exact graph into a canonical
+    `TopologyIR` (kind=custom) so it can enter a normal CompileRequest. That
+    is all. It is NOT "mark the candidate verified" — nothing here claims a
+    certificate, a measurement or a Pareto status.
+
+    WHAT PROMOTION IS NOT: a second design type. The result is the SAME
+    explicit topology an authored graph produces, so a synthesized design
+    and a hand-authored one are indistinguishable downstream. Synthesis
+    provenance is returned SEPARATELY as linkage.
+
+    ORIGIN DOES NOT ENTER DESIGN IDENTITY. The returned TopologyIR carries a
+    `name`, but `TopologyIR.scientific_dict()` excludes it, so the promoted
+    graph and the identical manual graph have the same design_hash. Callers
+    must attach `provenance` as metadata, never into the request's
+    scientific fields.
+
+    STALE PROMOTION REFUSES. Before freezing, the candidate is re-verified:
+    schema, self-identity, definition identity, traffic identity, and graph
+    integrity. A candidate that does not re-verify cannot become a design.
+    """
+    if not isinstance(candidate, TopologyCandidate):
+        raise TopologyCandidateError(
+            f"expected a TopologyCandidate, got {type(candidate).__name__}")
+    if not isinstance(definition, SynthesisDefinition):
+        raise TopologyCandidateError(
+            f"expected a SynthesisDefinition, got {type(definition).__name__}")
+    if candidate.status != "SUCCEEDED":
+        raise TopologyCandidateError(
+            f"cannot promote a {candidate.status} candidate — there is no "
+            "graph to freeze")
+
+    # ── staleness / integrity re-verification ────────────────────────
+    if expected_candidate_id is not None and \
+            candidate.candidate_id() != expected_candidate_id:
+        raise TopologyCandidateError(
+            "candidate_id does not match the expected value — refusing a "
+            "stale promotion")
+    if candidate.definition_id != definition.definition_id():
+        raise TopologyCandidateError(
+            "candidate.definition_id does not match the supplied definition "
+            "— the definition changed since generation; refusing a stale "
+            "promotion")
+    # Re-derive through the wire form so a tampered in-memory object cannot
+    # be promoted by accident.
+    round_tripped = TopologyCandidate.from_dict(candidate.to_dict())
+    if round_tripped.candidate_id() != candidate.candidate_id():
+        raise TopologyCandidateError(
+            "candidate does not re-verify against its own serialized form")
+
+    # ── freeze the exact graph ───────────────────────────────────────
+    ir = to_topology_ir(candidate, definition)
+    if name:
+        from veritx_dse.model import topology_ir as tir
+        ir = tir.from_dict({**ir.to_dict(), "name": name})
+
+    provenance = {
+        "candidate_id": candidate.candidate_id(),
+        "graph_id": candidate.graph_id(),
+        "definition_id": candidate.definition_id,
+        "traffic_id": candidate.traffic_id,
+        "producer": candidate.producer_dict(),
+        "promotion_schema_version": 1,
+    }
+    return {"explicit_topology": ir, "provenance": provenance}
+
+
+def apply_promotion_to_request_doc(request_doc: dict[str, Any],
+                                   promotion: dict[str, Any]
+                                   ) -> dict[str, Any]:
+    """Attach a promotion to a CompileRequest document.
+
+    The topology goes into the SCIENTIFIC field (`explicit_topology`); the
+    synthesis provenance goes into a NON-scientific linkage field. Keeping
+    them apart is what makes a promoted design and the identical manual
+    design the same design science.
+    """
+    ir = promotion["explicit_topology"]
+    out = dict(request_doc)
+    out.pop("design_hash", None)
+    out.pop("guardrail_hash", None)
+    out["explicit_topology"] = ir.to_dict()
+    noc = dict(out.get("noc_config") or {})
+    noc["topology_family"] = None
+    out["noc_config"] = noc
+    out[PROMOTION_PROVENANCE_KEY] = promotion["provenance"]
+    return out

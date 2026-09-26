@@ -50,6 +50,7 @@ fields:
   CompileRequestV3.explicit_topology:          {owner: FABRIC,       src: UI,        class: G1, default: RECOMMENDATION, capability: FAB-007, behaviour: RENDER_WITH_LIMIT, limit: custom routing unavailable - compilation stops at ROUTING}
   CompileRequestV3.schema_version:              {owner: "-",          src: METADATA,  class: METADATA}
   CompileRequestV3.compiler_semantics_version:  {owner: "-",          src: METADATA,  class: METADATA}
+  CompileRequestV3.synthesis_provenance:        {owner: "-",          src: METADATA,  class: METADATA}
 
   WorkloadV3.model_family:   {owner: WORKLOAD,    src: UI,       class: G1, default: RECOMMENDATION, preset: true,  capability: WORK-001}
   WorkloadV3.model_name:     {owner: WORKLOAD,    src: METADATA, class: G1, default: NONE,           preset: true}

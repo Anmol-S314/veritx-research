@@ -1392,3 +1392,148 @@ Synthesis product/API seam · promotion API · TopologyIR CLI disposition ·
 historical test reclamation · MCTS/MCLB and escape/up-down audit ·
 BookSim route equivalence · Torus/Ring/FlatFly routing widening ·
 structural optimization.
+
+---
+
+## TRANCHE 5 CLOSURE PASS
+
+### ROUTING ORACLE CORRECTED (§1/§2)
+
+The earlier oracle checked **cost**, and the next hop **only when the
+optimum was unique**. That is insufficient: the tie-break IS part of the
+canonical route function.
+
+`tests/routing_oracle.py` now implements the SAME specification as a
+**different algorithm** — Bellman-Ford on cost alone (forward and reverse),
+then a greedy lexicographic walk over the min-cost DAG. No heap, no settled
+set, no production import. Comparison is on the **complete channel-id
+path**, always.
+
+Adversarial fixtures: equal-cost diamond · diamond ladder (different first
+hops) · late divergence (same first hop, different later sequence) ·
+symmetric cycle · triple equal-cost paths · irregular with a chord · the
+compiled 5×5 mesh. **14 tests pass**; a guard test asserts the suite is not
+vacuous (the diamond must contain ≥2 min-cost first hops).
+
+### ROUTE-WEIGHT DECISION (§3/§4) — **OUTCOME B**
+
+| Evidence | Finding |
+|---|---|
+| `DirectedChannel.route_weight` | exists, `minimum=1`, in `TopologyArtifact` identity |
+| `TopologyIR` | **no route_weight field** |
+| `materialize_ir` | uniform; every explicit graph gets weight 1 |
+| `booksim_projection.py` | "uniform channel latency 1, route_weight 1, no parallel channels" |
+
+**Weighted routing is NOT an authorable canonical semantic.** TopologyIR
+stays unweighted and the contract is exposed honestly as **deterministic
+minimum-hop routing with lexicographic channel-id tie-break**.
+`WEIGHTED_SHORTEST_PATH` remains the **implementation producer** (accurate:
+it minimises `route_weight`); it is not a product claim that users can
+author weights. Semantics of the weight: **dimensionless routing cost** —
+not latency, not distance.
+
+### POLICY IDENTITY (§5)
+
+`_POLICY_BY_FAMILY` is compiler-owned and **not user-selectable**: there is
+no request field for routing policy, so no two policies can alias. The
+selected class is carried into the certificate evidence as
+`cdg_route_classes`, so the route science is visible in the proof. **No
+hidden unversioned algorithm selection**: the table is the single owner and
+`routing_policy_for()` exposes it.
+
+### CFAB-23 — HETEROGENEOUS SEATS (§6) — **PASS with invariant**
+
+Heterogeneous capacity **IS representable**: `Router.seat_capacity` is
+per-router and `TopologyArtifact` validates it per-router. Verified with a
+{2, 5} artifact that round-trips.
+
+**Invariant:** it is **not authorable** — `TopologyIR` has no seat field, so
+`materialize_ir` takes a single uniform `seat_capacity`. Representable in
+the artifact, not expressible in intent.
+
+### PROMOTION CONTRACT (§7/§8/§9) — **IMPLEMENTED**
+
+`promote_to_explicit_topology(candidate, definition)` and
+`apply_promotion_to_request_doc(doc, promotion)`.
+
+**A BUG MY OWN TEST CAUGHT.** The first implementation put
+`synthesis_provenance` into `_semantic_dict()`, which feeds
+`canonical_dict()` — so **origin entered design identity** and a promoted
+candidate was NOT the same design as the identical manual graph
+(`DESIGN IDENTICAL: False`). Moved to `to_dict()` only, after identity is
+settled. Now:
+
+```
+provenance in design identity?  False
+provenance persisted?           True
+DESIGN IDENTICAL                True
+TOPOLOGY / ROUTES / VC IDENTICAL True
+certificate                     COMPILED PASS
+```
+
+Stale promotion refuses on: wrong `expected_candidate_id`, changed
+definition, non-SUCCEEDED status, and failure to re-verify against the
+candidate's own wire form. No `SynthesizedDesign` type exists.
+
+### TOPOLOGYERROR (§24) — **CLOSED**
+
+The two classes have distinct, legitimate owners:
+
+| class | owner | is SemanticError? |
+|---|---|---|
+| `core.errors.TopologyError(VeritXError)` | TopologyIR / schema layer | no |
+| `model.topology_artifact.TopologyError(ValueError, SemanticError)` | artifact construction | yes |
+
+**Proven not to escape untyped:** a malformed `explicit_topology` in a
+request document is mapped to the typed `CompileRequestV3SchemaError`
+(`"invalid explicit_topology: TopologyIR: links[0] endpoint 9 out of
+range"`). The application boundary catches it. Blocker closed with evidence,
+not deferred.
+
+### BOOKSIM ROUTING AUDIT (§15–§19) — **OUTCOME C**
+
+| Question | Finding |
+|---|---|
+| AnyNet route algorithm | `AnyNet::route()` — Dijkstra over `std::set<int>`, **strict `<`** |
+| tie-break | **smallest router id** (ascending set iteration) |
+| weight interpretation | **hop count** (`"distance is hops not cycles"`) — ignores `route_weight` |
+| execution | `min_anynet` is a **table lookup** (`global_routing_table[r][dest]`) |
+| exact ingestion | **NOT AVAILABLE** — `routing_dump_file` is **output-only** |
+| export for comparison | **EXISTS** — VeritX `B3.7b` dump: `src_router/dst_node/next_router/port` |
+| equivalence machinery | **EXISTS and is generic** — `route_observation.expected_route_rows(routing_class=...)` takes the class as a parameter and is wired into `booksim_execution.py` |
+
+**Canonical tie-break is smallest channel-id sequence; BookSim's is smallest
+router id. They diverge on ties.** So:
+
+- **A (exact ingestion):** unavailable — no input path
+- **B (exhaustive equivalence):** mechanically possible (the dump and a
+  generic comparator both exist) but **NOT established**, and would fail on
+  ties as specified
+- **C: BACKEND_EXECUTION_UNAVAILABLE**
+
+### STRUCTURAL-OPTIMIZATION READINESS
+
+**STRUCTURAL PERFORMANCE OPTIMIZATION — BLOCKED ON CUSTOM BACKEND
+EXECUTION.** Under outcome C a generated custom candidate cannot obtain
+qualified BookSim metrics, so Wave-F structural optimization must not
+begin.
+
+### Final test matrix
+
+| Command | Passed | Failed | Skipped |
+|---|---|---|---|
+| backend `pytest tests/` | **4370** | **0** | 17 |
+| tie-break oracle | 14 | 0 | — |
+| promotion | 12 | 0 | — |
+| custom routing | 16 | 0 | — |
+| capability / topology / exposure / ontology / preset gates | PASS | — | — |
+
+### NOT COMPLETED in this pass (honest)
+
+- §10 synthesis **product/control-plane seam** — no application operation
+- §11 explicit/promoted compile through the **gateway/API**
+- §13 TopologyIR CLI disposition
+- §14 historical test reclamation
+- §17 BookSim equivalence **run** (audit done, run not attempted)
+- §20 qualification envelope
+- §26 CFAB-1..40 regenerated matrix
