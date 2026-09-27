@@ -7,11 +7,20 @@ import {
 import { Hash, StatusBadge, fmtNum } from '../components/badges';
 import OptimizeView from '../components/OptimizeView';
 
-const WIDTH_CHOICES = [32, 64, 128];
+// NO hard-coded control list. Every parameter, and every value the UI offers,
+// comes from GET /optimization/capabilities, which is derived from canonical
+// backend authority (GUIDED_PARAMS, the certified metric registry, and a probe
+// that measures whether a knob actually reaches executed semantics).
+//
+// `link_width` is the only qualified numeric domain whose value domain can be
+// offered as a finite choice, and even that is not enumerated by the backend:
+// it is a validated range. So the UI offers a small set of plausible values
+// and states that they are UI choices, not a backend enumeration.
 
 export function Optimize({ projectId }: { projectId: string }): ReactElement {
   const { refreshProjects } = useStudio();
   const project = useAsync(() => api.project(projectId), [projectId]);
+  const caps = useAsync(() => api.optimizationCapabilities(), []);
   const [widths, setWidths] = useState<number[]>([32, 64, 128]);
   const [ceilingOn, setCeilingOn] = useState(false);
   const [ceiling, setCeiling] = useState(0);
@@ -32,11 +41,29 @@ export function Optimize({ projectId }: { projectId: string }): ReactElement {
     [optimizationId],
   );
 
+  const capabilityDoc = caps.result.state === 'ready' ? caps.result.data : null;
+  // Offered values for the link-width domain. The backend does not enumerate
+  // this domain (it is a validated range), so these are UI choices — see the
+  // `value_constraint` on the capability. They are never presented as a
+  // backend enumeration.
+  const WIDTH_CHOICES = capabilityDoc?.accepted_values_is_exhaustive
+    ? (capabilityDoc.guided_parameters
+        .find((p) => p.name === 'link_width')
+        ?.accepted_values?.map(Number).filter((n) => Number.isFinite(n))
+        ?? [32, 64, 128])
+    : [32, 64, 128];
+  const qualified = new Set(capabilityDoc?.qualified_parameters ?? []);
+  const param = (name: string) =>
+    capabilityDoc?.guided_parameters.find((p) => p.name === name) ?? null;
+  // The backend is the authority on whether a knob may be searched. Until the
+  // capability response says so, nothing is offered.
+  const linkWidthQualified = qualified.has('link_width');
+
   const start = async (): Promise<void> => {
     const currentId = project.result.state === 'ready'
       ? project.result.data.active_revision_id
       : null;
-    if (!currentId || widths.length === 0) return;
+    if (!currentId || widths.length === 0 || !linkWidthQualified) return;
     setError(null);
     setOptimizationId(null);
     try {
@@ -75,6 +102,26 @@ export function Optimize({ projectId }: { projectId: string }): ReactElement {
                 authorities stay separate: product requirements, optimization
                 constraints, measured objectives.
               </p>
+              {!capabilityDoc && (
+                <p className="muted">
+                  Loading optimization capabilities from the backend…
+                </p>
+              )}
+              {capabilityDoc && !linkWidthQualified && (
+                <ErrorBox error={new Error(
+                  'link_width is not a qualified optimization dimension in '
+                  + 'this build: '
+                  + (param('link_width')?.reason ?? 'no reason reported'))} />
+              )}
+              {capabilityDoc && (
+                <p className="muted">
+                  {qualified.size} qualified dimension(s):{' '}
+                  {[...qualified].join(', ') || 'none'}. Not qualified:{' '}
+                  {(capabilityDoc.unqualified_parameters ?? []).join(', ')
+                    || 'none'} — these are hidden because the certified '
+                  + 'backend cannot measure their effect.
+                </p>
+              )}
               <div className="form-row">
                 <label>
                   Link width domain

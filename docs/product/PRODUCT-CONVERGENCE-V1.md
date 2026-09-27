@@ -189,6 +189,36 @@ requires when the backend cannot preserve classes.
 
 ---
 
+## Step F — Optimize UI, PARTIAL (and UNVERIFIED)
+
+The load-bearing acceptance criteria were "Studio no longer hard-codes
+link-width-only optimization" and "Studio capabilities are derived from
+backend product authority". Both are now addressed in source:
+
+* `api/types.ts` gains `OptimizationParamCapability` / `OptimizationCapabilities`
+  with the five separated facts, and an explicit warning that
+  `accepted_values: null` must never be read as "all values supported";
+* `api/index.ts` gains `optimizationCapabilities()` →
+  `GET /api/v1/optimization/capabilities`;
+* `pages/optimize.tsx` deletes the module-level `WIDTH_CHOICES` constant, fetches
+  the capability document, derives the qualified set from it, refuses to launch
+  when `link_width` is not qualified, and SURFACES the unqualified parameters
+  with the backend's reason instead of hiding them silently.
+
+WARNING — NOT VERIFIED. This worktree has no `node_modules`, so neither
+`tsc --noEmit` nor `vite build` could run, and no browser E2E was performed.
+The Studio build and the E2E acceptance gate are therefore UNPROVEN for this
+commit. `npm install` in `apps/studio` is required before that can be claimed.
+
+NOT DONE in the UI: PHASES 3-10 proper. The page still renders only the
+link-width domain control, not one control per qualified parameter; there is no
+exhaustive/random search configuration with the Cartesian count; no
+single-vs-multi-objective rendering rule; no human candidate labels; no
+"Use this candidate" → Draft action; no engineering-details disclosure. Those
+remain outstanding.
+
+---
+
 ## NOT DONE in this slice
 
 | step | status |

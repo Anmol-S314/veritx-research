@@ -283,3 +283,45 @@ export interface CompareSide {
   locked_derived: Record<string, unknown> | null;
   requirements_pass: boolean | null;
 }
+
+/** GET /api/v1/optimization/capabilities — derived from backend authority.
+ *  Nothing here is hand-maintained in the frontend. A parameter may be
+ *  `expressible` yet NOT `qualified_for_certified_optimization` (e.g.
+ *  `arbitration` compiles but leaves every projection input identical, so the
+ *  certified backend would execute byte-identical work). Unqualified
+ *  parameters must be hidden or disabled, never silently searched. */
+export interface OptimizationParamCapability {
+  name: string;
+  field: string;
+  kind: 'int' | 'bool' | 'str' | 'enum';
+  expressible: boolean;
+  compilable: boolean;
+  executable: boolean;
+  effective: boolean;
+  qualified_for_certified_optimization: boolean;
+  value_constraint: string;
+  /** null means "a validated range, NOT an enumerated list". Never read this
+   *  as "all values supported" — check `accepted_values_is_exhaustive`. */
+  accepted_values: (string | number)[] | null;
+  accepted_values_is_exhaustive: boolean;
+  executable_values: (string | number)[] | null;
+  value_source: string;
+  reason: string | null;
+}
+
+export interface OptimizationCapabilities {
+  schema_version: number;
+  guided_parameters: OptimizationParamCapability[];
+  search_methods: string[];
+  selection_policies: string[];
+  certified_metrics: { metric: string; producer_id?: string | null;
+                       registry_id?: string; registry_version?: string }[];
+  metric_registry_id: string;
+  locked_parameters: { name: string; reason: string }[];
+  qualified_parameters: string[];
+  unqualified_parameters: string[];
+  effectiveness_basis: string;
+  multicast_note: string;
+  not_measured: string[];
+  not_measured_note: string;
+}

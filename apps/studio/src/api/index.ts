@@ -7,6 +7,7 @@ import type {
   EvidenceView,
   FabricPresetCatalogView,
   JobView,
+  OptimizationCapabilities,
   OptimizationView,
   ProjectView,
   QualificationView,
@@ -21,6 +22,9 @@ export const api = {
   health: () => get<{ status: string; api: string }>('/health'),
 
   qualification: () => get<QualificationView>('/qualification'),
+  /** What VERITX can actually optimize, from canonical backend authority. */
+  optimizationCapabilities: () =>
+    get<OptimizationCapabilities>('/optimization/capabilities'),
   workloadCatalog: () => get<WorkloadCatalogView>('/catalog/workloads'),
   fabricPresets: () =>
     get<FabricPresetCatalogView>('/catalog/fabric-presets'),
