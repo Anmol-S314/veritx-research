@@ -925,6 +925,7 @@ def test_real_live_request_driven_service(tmp_path):
 
 # ── fast pre-flight for the live path ─────────────────────────────────────
 
+@_requires_built
 def test_live_mode_wiring_is_verified_without_spawning(tmp_path):
     """Seconds-fast sweep of the whole LIVE path with only the subprocess
     swapped out.
