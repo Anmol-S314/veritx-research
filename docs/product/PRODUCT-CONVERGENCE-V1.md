@@ -85,15 +85,68 @@ in this repository. The file is at:
 | P1 requested definition not persisted | the optimization record stored only `study` + `candidate_runs`, so `method`/`selection`/`seed`/`budget` were unverifiable after the fact | persist `definition` (the normalized request) | same | **DONE** |
 | P1 canonical domain order | — | `DomainParam` sorts values by canonical JSON, so `[32,64,128]` ⇒ `(128,32,64)`. Documented backend behaviour; **PHASE 3 must present canonical order, not declared order** | pinned in the same test | noted (no code change) |
 
-### Environment note (not a code defect)
+### Step A — backend testability (RESOLVED)
 
-The fresh worktree has no built BookSim binary. Backend-dependent tests
-(`test_p2_optimization_truth.py` and friends) fail with
-`FileNotFoundError: BookSim binary not found`, and a symlink to the binary
-from another worktree yields a provenance mismatch
-(`BACKEND_UNAVAILABLE`). **Build `third_party/booksim2` in this worktree
-before relying on backend-dependent results.** The PHASE 1 tests do not
-require the binary.
+The fresh worktree had no built BookSim binary, so `test_p2_optimization_truth`
+and friends failed. Symlinking the binary from another worktree does NOT fix
+it and must not be used: `assert_pinned_producer` refuses it, because a binary
+whose build-time manifest does not verify is not attributable to a source
+revision. That refusal is CORRECT and was not worked around.
+
+Canonical build in this worktree:
+
+```
+cd third_party/booksim2/src && make -j"$(nproc)"
+cd <repo root>
+python3 scripts/write_build_manifest.py third_party/booksim2/src/booksim \
+    --recipe-version booksim2-fork/v1 --compiler g++ \
+    --build-config Release --flag=-O3 --flag=-g
+```
+
+The manifest must be written while the worktree is CLEAN: `assert_pinned_producer`
+refuses a dirty producer for reusable evidence. The manifest is gitignored
+(`*.build-manifest.json`), so writing it does not itself dirty the tree.
+
+| field | value |
+|---|---|
+| `binary_size` | 20832456 |
+| `binary_sha256` | `93e370afaabd11a5430d9e3031a081babfe204c03d7aae803191bc5ded16ada4` |
+| `recipe_version` | `booksim2-fork/v1` |
+| `source_revision` | `bbc5e1c38763c55c7c0854222e47af902ec2d1e9` |
+| `source_dirty` | `false` |
+| `compiler` | `g++ (Ubuntu 15.2.0-16ubuntu1) 15.2.0` |
+
+Results after the canonical build:
+
+| run | result |
+|---|---|
+| `test_product_convergence_phase1.py` | 12 passed |
+| `test_product_workflow.py` | 18 passed, 1 skipped |
+| `-k "optimization or optimize or product or moe"` | **193 passed, 8 skipped, 0 failed** |
+
+Classification of the 7 earlier failures: **qualification/provenance refusal**
+(not regression, not pre-existing defect, not merely environment). Resolved by
+building with the canonical manifest.
+
+---
+
+## PENDING — lineage reconciliation (does not block this branch)
+
+The worktree at `/home/datavex/bruh/veritx-research` (branch
+`integration/studio-reconciliation`, HEAD `c45f1ea8`) carries a **staged,
+uncommitted port of `2e51311d`** into that line: 10 files including
+`application/fabric_evaluator.py`, `backend/booksim_projection.py`,
+`product/service.py`, `workload/{messages,traffic,intent_lowering}.py`, plus
+`tests/test_workload_moe_lowering.py` and an example change.
+
+`booksim_projection.py` and `traffic.py` in that staged set are byte-identical
+to `2e51311d`; **`service.py` differs** (`b1db1a8f` there vs `980af7c4` at
+`2e51311d`), i.e. it is an adapted port, not a straight copy.
+
+Consequence: `product/service.py` will exist in two divergent forms — this
+branch's (based on `2e51311d`) and that line's adapted port. **This must be
+reconciled before either becomes a canonical base.** It is recorded here and
+deliberately NOT touched from this branch.
 
 ---
 
