@@ -31,7 +31,9 @@ from .simulation.traces import validate_trace, extract_uniform
 
 # Re-export reports
 from .reports.reports import generate_report, _scale_factor, estimate_fabric_area, estimate_total_power
-from .reports.artifact import sign_manifest, verify_manifest, DesignManifest
+from .reports.artifact import (
+    sign_manifest, verify_manifest, DesignManifest, MissingSigningKey,
+)
 
 # Re-export verification
 from .verification.uvm_gen import generate_uvm

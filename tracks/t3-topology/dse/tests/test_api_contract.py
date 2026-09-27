@@ -60,11 +60,16 @@ class TestCompileRequestApiContract:
         assert len(h) == 64  # SHA-256 hex
 
     def test_design_manifest_works_with_list_deps(self):
-        """DesignManifest.create() should work with list deps."""
+        """DesignManifest.create_unsigned() should work with list deps.
+
+        Uses the CHECKSUMMED/UNSIGNED mode: there is deliberately no
+        default signing key (PR B), and this test is about dependency
+        shapes, not signing.
+        """
         cr = self._minimal_cr(
             dependencies=[Dependency(source="a", target="b", kind=DepKind.BLOCKING)]
         )
-        dm = DesignManifest.create(cr)
+        dm = DesignManifest.create_unsigned(cr)
         assert dm.revision == 1
         assert len(dm.guardrail_hash) == 64
 
