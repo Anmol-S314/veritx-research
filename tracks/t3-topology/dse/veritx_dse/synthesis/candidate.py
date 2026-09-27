@@ -303,6 +303,23 @@ def _layout_xy(defn: SynthesisDefinition):
                                 defn.jitter)
 
 
+def _assert_objective_is_honest(defn: SynthesisDefinition,
+                                algorithm: str) -> None:
+    """`priced_geodesic` must never be accepted by a path that cannot use it.
+
+    The TMCF MILP minimizes traffic-weighted hops; it has no notion of pipe or
+    wire price. Accepting `priced_geodesic` there hashed a distinct design
+    identity while producing the byte-identical graph as `geodesic` — two
+    designs, one artifact. Refusing is the honest behaviour.
+    """
+    if defn.objective == "priced_geodesic" and algorithm != "sa_geodesic":
+        raise TopologyCandidateError(
+            f"objective {defn.objective!r} requires the SA engine, but this "
+            f"definition selects {algorithm!r} (nodes {defn.nodes} <= "
+            f"max_nodes {defn.max_nodes}). Raise max_nodes=None/lower nodes "
+            "to use SA, or use objective 'geodesic'.")
+
+
 def synthesize(defn: SynthesisDefinition,
                traffic: SynthesisTrafficMatrix,
                *,
@@ -335,20 +352,56 @@ def synthesize(defn: SynthesisDefinition,
     engine = engine_module or _import_engine()
     import numpy as np
 
+    # FAIL-CLOSED: refuse an objective the selected engine cannot honour.
+    _assert_objective_is_honest(
+        defn, "sa_geodesic" if defn.nodes > defn.max_nodes else "milp_tmcf")
+
     T = np.array([list(r) for r in traffic.values], dtype=float)
     xy = _layout_xy(defn)
     cand_links = engine.valid_links(xy, defn.max_len)
     base_edges = engine.base_mesh(xy, radix=defn.radix)
 
     if defn.nodes > defn.max_nodes:
-        # Above the exact-solve cap the historical engine switches to SA.
-        # Tranche 3 wires the MILP only, so this is UNSUPPORTED rather than
-        # a silent algorithm substitution.
+        # Above the exact-solve cap the engine uses SIMULATED ANNEALING on the
+        # ANALYTICAL objective. This is the ONLY place `objective` /
+        # `pipe_cost` / `wire_cost` are consumed: the TMCF MILP always
+        # minimizes traffic-weighted hops and cannot express them.
+        #
+        # The seed is `layout_seed`, so the same definition produces the SAME
+        # graph every time — a synthesis candidate must be a stable scientific
+        # identity, not a function of when it was evaluated.
+        priced = defn.objective == "priced_geodesic"
+        if priced:
+            engine.set_costs(defn.pipe_cost, defn.wire_cost)
+        try:
+            adj, best = engine.sa_synthesize(
+                T, xy, base_edges, cand_links, defn.radix,
+                seed=defn.layout_seed, priced=priced)
+        except Exception as exc:                            # noqa: BLE001
+            return TopologyCandidate(
+                definition_id=defn.definition_id(),
+                traffic_id=traffic.traffic_id(), nodes=defn.nodes, links=(),
+                algorithm="sa_geodesic", solver_status="UNKNOWN",
+                objective_value=None, objective_name=defn.objective,
+                status="FAILED",
+                producer_id=f"{PRODUCER_ID}#{type(exc).__name__}")
+        chosen_sa = tuple(sorted({(min(a, b), max(a, b))
+                                  for a in adj for b in adj[a] if a < b}))
+        if not chosen_sa:
+            return TopologyCandidate(
+                definition_id=defn.definition_id(),
+                traffic_id=traffic.traffic_id(), nodes=defn.nodes, links=(),
+                algorithm="sa_geodesic", solver_status="UNKNOWN",
+                objective_value=None, objective_name=defn.objective,
+                status="FAILED", producer_id=PRODUCER_ID)
         return TopologyCandidate(
-            definition_id=defn.definition_id(), traffic_id=traffic.traffic_id(),
-            nodes=defn.nodes, links=(), algorithm="milp_tmcf",
-            solver_status="UNKNOWN", objective_value=None,
-            objective_name="traffic_weighted_hops", status="UNSUPPORTED",
+            definition_id=defn.definition_id(),
+            traffic_id=traffic.traffic_id(), nodes=defn.nodes,
+            links=chosen_sa, algorithm="sa_geodesic",
+            # SA has no optimality proof: FEASIBLE is the honest status, and
+            # it is never promoted to OPTIMAL.
+            solver_status="FEASIBLE", objective_value=float(best),
+            objective_name=defn.objective, status="SUCCEEDED",
             producer_id=PRODUCER_ID)
 
     try:

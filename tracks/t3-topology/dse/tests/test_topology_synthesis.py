@@ -608,3 +608,84 @@ def test_syn_40_generator_optimum_is_not_product_performance(solved):
     blob = art.to_dict()
     for forbidden in ("latency_ns", "completion", "performance", "booksim"):
         assert forbidden not in blob
+
+
+# ══ SYN-28..SYN-33: SA reclaim + objective honesty (PHASE B.4) ═════════
+#
+# Before this, `defn.nodes > defn.max_nodes` returned status="UNSUPPORTED":
+# the canonical synthesizer could not produce a graph larger than the exact
+# MILP cap, even though `sa_synthesize` had existed in the engine all along
+# and `ALGORITHMS` already reserved the name "sa_geodesic".
+#
+# The same change closes a false contract: `priced_geodesic` (+ pipe_cost /
+# wire_cost) was accepted and HASHED into definition_id while
+# `synthesize()` always called solve_tmcf() and always reported
+# "traffic_weighted_hops". Two distinct design identities produced the
+# byte-identical graph.
+
+def _big_defn(**kw):
+    """25 nodes (a 5x5 grid) with an exact-solve cap of 20 -> the SA regime."""
+    base = dict(nodes=25, layout="grid", k=5, radix=4, max_len=3.0,
+                bandwidth_GBs=50.0, latency_ns=500.0, timeout_s=60,
+                max_nodes=20)
+    base.update(kw)
+    return SynthesisDefinition(**base)
+
+
+def test_syn_28_above_the_exact_cap_sa_actually_runs():
+    c = synthesize(_big_defn(), _traffic(25))
+    assert c.status == "SUCCEEDED", c.status
+    assert c.algorithm == "sa_geodesic"
+    assert len(c.links) > 0
+    # SA has no optimality proof, so it must never claim OPTIMAL.
+    assert c.solver_status == "FEASIBLE"
+
+
+def test_syn_29_sa_candidate_is_a_stable_identity():
+    """The seed is `layout_seed`, so the same definition yields the SAME
+    graph. Candidate identity must not depend on when it was evaluated."""
+    d, t = _big_defn(), _traffic(25)
+    a, b = synthesize(d, t), synthesize(d, t)
+    assert a.links == b.links
+    assert a.candidate_id() == b.candidate_id()
+
+
+def test_syn_30_a_different_layout_seed_is_a_different_candidate():
+    t = _traffic(25)
+    a = synthesize(_big_defn(layout_seed=1), t)
+    b = synthesize(_big_defn(layout_seed=2), t)
+    assert a.candidate_id() != b.candidate_id()
+
+
+def test_syn_31_sa_candidate_converts_to_a_normal_topology_ir():
+    """The reclaimed path converges with the hand-authored one BEFORE
+    materialize_ir, so downstream sees nothing synthesis-specific."""
+    d, t = _big_defn(), _traffic(25)
+    c = synthesize(d, t)
+    ir = to_topology_ir(c, d)
+    assert ir.kind == "custom"
+    assert ir.nodes == 25
+    assert len(ir.links) == len(c.links)
+
+
+def test_syn_32_priced_geodesic_actually_changes_the_graph():
+    """The whole point: pipe_cost/wire_cost must AFFECT the synthesized
+    graph, not merely the definition hash."""
+    t = _traffic(25)
+    plain = synthesize(_big_defn(objective="geodesic"), t)
+    priced = synthesize(_big_defn(objective="priced_geodesic",
+                                  pipe_cost=50.0, wire_cost=1.0), t)
+    assert plain.status == priced.status == "SUCCEEDED"
+    assert plain.objective_name == "geodesic"
+    assert priced.objective_name == "priced_geodesic"
+    assert plain.objective_value != priced.objective_value
+    assert plain.links != priced.links
+
+
+def test_syn_33_priced_geodesic_is_REFUSED_where_it_cannot_be_honoured():
+    """The MILP minimizes traffic-weighted hops and has no notion of pipe or
+    wire price. Accepting `priced_geodesic` there hashed a distinct design
+    identity while producing the byte-identical graph as `geodesic`."""
+    d = _big_defn(max_nodes=100, objective="priced_geodesic")
+    with pytest.raises(TopologyCandidateError, match="requires the SA engine"):
+        synthesize(d, _traffic(25))
