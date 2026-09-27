@@ -229,22 +229,30 @@ def test_lin_4_phase_3_rerun_is_recorded_with_its_candidates():
     """The re-run must name its discriminator and every candidate, so the
     residual can be re-checked instead of assumed."""
     audit = _audit_text()
-    assert "PHASE 3 — re-run of the source-lineage audit" in audit
-    assert "blob identity, not line count" in audit
+    assert "PHASE 3 — first re-run of the source-lineage audit" in audit
+    assert "PHASE 3.1 — semantic closure of the body-level residual" in audit
+    assert "Blob identity" in audit
     for cand in ("application/service.py", "simulation/model_to_trace.py",
                  "simulation/traces.py", "synthesis/iterative_synthesizer.py",
                  "synthesis/bo_synthesizer.py", "core/logging.py",
-                 "application/resources.py", "application/store.py"):
-        assert cand in audit, f"{cand} must stay in the PHASE-3 record"
+                 "application/resources.py", "application/store.py",
+                 "reports/artifact.py", "reports/reports.py",
+                 "backend/contracts.py", "synthesis/event_objective.py",
+                 "simulation/trace_to_binary.py", "cli/pipeline.py",
+                 "__init__.py"):
+        assert cand in audit, f"{cand} must stay in the record"
 
 
-def test_lin_4b_phase_3_verdict_is_not_overclaimed():
-    """The honest verdict distinguishes 'no live caller' from 'proven
-    equivalent'. A future edit must not upgrade it to a blanket claim."""
+def test_lin_4b_the_retracted_verdict_is_marked_retracted():
+    """PHASE 3 claimed '0 unresolved weaker-ancestor regressions' from a
+    symbol-set-only check. That claim was wrong and must stay visibly
+    retracted, not quietly reworded."""
     audit = _audit_text()
-    assert "0 unresolved weaker-ancestor regressions with a live caller" in audit
-    assert "content-difference" in audit
-    assert "a live defect" in audit
+    assert "Verdict of the first re-run — RETRACTED" in audit
+    assert "Both sentences were wrong" in audit
+    # The corrected success condition, stated as counts.
+    assert "**OPEN-BLOCKER** | **0**" in audit
+    assert "OPEN-BLOCKER = 0" in audit
 
 
 def test_lin_4c_supersession_claims_name_their_successor():
@@ -254,6 +262,8 @@ def test_lin_4c_supersession_claims_name_their_successor():
     assert "workload/lowering.py:41" in audit
     assert "SynthesisTrafficMatrix" in audit
     assert "presets.topo_size" in audit
+    assert "application/comparison" in audit
+    assert "LEGACY_INTERNAL" in audit
 
 
 def test_lin_4d_reclaimed_files_left_the_candidate_set():
@@ -271,3 +281,100 @@ def test_lin_4d_reclaimed_files_left_the_candidate_set():
         assert cur and can and cur != can, (
             f"{rel} is still byte-identical to integration/canonical — the "
             "reclamation did not land")
+
+
+def test_lin_4e_phase_3_1_counts_are_exact():
+    """The corrected record must state counts, not prose."""
+    audit = _audit_text()
+    assert "Exact counts over the 15 audited weaker-ancestor candidates" in audit
+    for row in ("| RECLAIM | **4** |", "| CURRENT-STRONGER | **3** |",
+                "| SUPERSEDED-BY-NAMED-AUTHORITY | **5** |",
+                "| INTENTIONAL-REMOVAL | **1** |",
+                "| COSMETIC / DOCUMENTATION | **2** |",
+                "| **TOTAL** | **15** |"):
+        assert row in audit, f"missing count row: {row}"
+
+
+def test_lin_4f_all_six_body_level_files_are_dispositioned():
+    """PHASE 3 left SIX files as 'NO STRONG-ONLY SYMBOL'. Each must now
+    carry a real body-level disposition, not that placeholder."""
+    audit = _audit_text()
+    section = audit.split("**Body-level disposition of the six residual files**")[1]
+    section = section.split("**Exact counts")[0]
+    for f in ("`reports/artifact.py`", "`cli/pipeline.py`",
+              "`reports/reports.py`", "`backend/contracts.py`",
+              "`synthesis/event_objective.py`", "`simulation/trace_to_binary.py`"):
+        assert f in section, f"{f} has no body-level disposition row"
+    for disp in ("**RECLAIM**", "**CURRENT-STRONGER (proven)**",
+                 "**COSMETIC**"):
+        assert disp in section
+
+
+# ══ LIN-5: every audit claim is mechanically supported by code ═════════
+
+def test_lin_5_audit_claims_match_the_code():
+    """The audit document is EVIDENCE, not decoration. A PHASE-2 claim
+    ("the stale routing diagnostic was fixed") was false while the prose
+    said otherwise, so each headline claim is now checked against code."""
+    # §1 milp_topology_v2 RECLAIMED
+    import inspect
+    from veritx_dse.synthesis import milp_topology_v2 as milp
+    from veritx_dse.core.constants import DEFAULT_K
+    assert "isfinite" in inspect.getsource(milp.load_matrix)
+    assert inspect.signature(milp.solve_tmcf).parameters["timeout"].default is None
+    assert milp.DEFAULT_K == DEFAULT_K
+
+    # §1b presets RECLAIMED (the three live-ImportError authorities)
+    from veritx_dse.model.presets import (
+        topo_size, parallel_world_size, resolve_fabric, count_anynet_edges,
+        anynet_usability, SWEEP_TOPOS, WORKLOAD_PRESETS, Topology,
+    )
+    assert topo_size("mesh", {"k": 8, "n": 2}) == (64, 112)
+    assert parallel_world_size(2, 2, 4, 1) == 16
+    assert resolve_fabric("mesh_8x8")[0] is not None
+    assert "from ..core.anynet import" in inspect.getsource(count_anynet_edges)
+
+    # §2 route_artifact RECLAIMED + hardening preserved
+    from veritx_dse.core.errors import SemanticError
+    from veritx_dse.core import route_artifact as ra
+    for fn in ("equivalence_report", "artifact_from_anynet", "upgrade_v1_to_v2",
+               "topology_hash_from_adj", "standalone_channel_dst",
+               "first_hop_table", "compare_first_hop_tables"):
+        assert callable(getattr(ra, fn)), f"{fn} missing"
+    assert hasattr(ra.RouteArtifact, "from_adjacency")
+    assert issubclass(ra.RouteArtifactError, SemanticError)
+
+    # §3 SWEEP_TOPOS NOT reclaimed (Gate-8): still the pruned 7
+    assert len(SWEEP_TOPOS) == 7
+    for absent in ("fbfly_64", "cmesh_64", "fattree_k4n3", "qtree_64",
+                   "tree4_64", "dragonfly_72"):
+        assert all(t.name != absent for t in SWEEP_TOPOS)
+
+    # §4 WORKLOAD_PRESETS collectives NOT reclaimed
+    for p in WORKLOAD_PRESETS.values():
+        assert "collectives" not in p.get("workload", {})
+
+    # §5 constants reclaimed into ONE home
+    from veritx_dse.core import constants as C
+    from veritx_dse.model import compile_model as M
+    assert M.PLANE_C_MAX_VC is C.PLANE_C_MAX_VC
+
+    # PHASE 3.1: the routing diagnostic cannot contradict the table
+    from veritx_dse.model.routing import routing_policy_for, _POLICY_BY_FAMILY
+    from veritx_dse.model.topology_artifact import MaterializedFamily
+    from veritx_dse.core.route_artifact import ANYNET_MIN_HOPS, RouteArtifactError
+
+    class _T:
+        def __init__(self, fam):
+            self.family = fam
+
+    assert routing_policy_for(_T(MaterializedFamily.CUSTOM)) == ANYNET_MIN_HOPS
+    with pytest.raises(RouteArtifactError) as e:
+        routing_policy_for(_T(MaterializedFamily.TORUS))
+    assert "custom -> ANYNET_MIN_HOPS" in str(e.value)
+
+    # PHASE 3.1: signing has no default secret
+    from veritx_dse.reports import artifact as art
+    assert not hasattr(art, "_DEFAULT_SECRET")
+    assert issubclass(art.MissingSigningKey, TypeError)
+    assert callable(art.DesignManifest.create_unsigned)
