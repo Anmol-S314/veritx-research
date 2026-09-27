@@ -276,9 +276,13 @@ class TestTraceStats:
         assert stats.num_packets == 0
 
     def test_detect_nonexistent(self):
+        """RECLAIMED: an unreadable trace fails LOUDLY. Returning zeros let a
+        zeroed span size sample_period wrong and measure missing data."""
+        import pytest
+        from veritx_dse.core.errors import TraceError
         from veritx_dse.simulation.booksim import detect_trace_stats
-        stats = detect_trace_stats("/nonexistent/file.trace")
-        assert stats.num_packets == 0
+        with pytest.raises(TraceError):
+            detect_trace_stats("/nonexistent/file.trace")
 
 
 # ── Trace validate tests ───────────────────────────────────────────────────

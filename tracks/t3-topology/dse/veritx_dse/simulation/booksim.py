@@ -20,24 +20,21 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from ..core.errors import BookSimError, TimeoutError, TraceError
 from ..core.logging import Ctx, log, ok, fail, verbose, debug
 from ..model.presets import Topology, count_anynet_edges
 
 
 # ── Errors ──────────────────────────────────────────────────────────────────
-
-class BookSimError(Exception):
-    """Raised when BookSim execution fails."""
-    def __init__(self, message: str, returncode: int = -1, stdout: str = "", stderr: str = ""):
-        super().__init__(message)
-        self.returncode = returncode
-        self.stdout = stdout
-        self.stderr = stderr
-
-
-class TimeoutError(BookSimError):
-    """Raised when BookSim exceeds the time limit."""
-    pass
+# RECLAIMED (one authority). This module used to DEFINE its own
+# BookSimError(Exception)/TimeoutError, while core.errors defined a second
+# BookSimError(VeritXError) that the certified backend
+# (backend/booksim.py, backend/meshdor.py) actually raises. The CLI caught
+# the LOCAL class, so a backend BookSim failure fell through to the generic
+# handler. The core classes are shape-identical (returncode/stdout/stderr)
+# and additionally subclass VeritXError, so they are re-exported here.
+# Callers importing `from ..simulation.booksim import BookSimError` are
+# unaffected; `except BookSimError` now also catches backend failures.
 
 
 # ── Config builder (single source of truth) ────────────────────────────────
@@ -105,11 +102,20 @@ def build_config(
         import sys as _sys
         print(f"WARNING: trace path contains spaces — BookSim may fail: {trace_abs}", file=_sys.stderr)
     if sim_type == "latency":
-        stats = detect_trace_stats(trace_path)
-        # For trace-driven mode, use very large sample_period
-        # This forces BookSim to run until all events are consumed
-        # instead of doing periodic sampling
-        sp = sample_period or max(10000000, stats.max_cycle + 10000)
+        # detect_trace_stats raises TraceError on unreadable/malformed traces
+        # (no silent zero-fallback). Handle it explicitly here so a missing
+        # trace still yields a runnable config with a conservative default
+        # span — loudly, not silently. RECLAIMED alongside the fail-loud
+        # parser change; without it build_config would raise for a trace that
+        # only the config text is being inspected for.
+        try:
+            stats = detect_trace_stats(trace_path)
+            sp = sample_period or max(10000000, stats.max_cycle + 10000)
+        except TraceError as e:
+            import sys as _sys2
+            print(f"WARNING: detect_trace_stats failed for {trace_path}: {e} — "
+                  f"using default sample_period", file=_sys2.stderr)
+            sp = sample_period or 1000
         params["traffic"] = f"trace({trace_abs})"
         params["sample_period"] = sp
         # For trace-driven mode, use max_samples = 1
@@ -252,9 +258,32 @@ def run_booksim(
 
 # ── Result parsing ──────────────────────────────────────────────────────────
 
+# ── Result parsing ──────────────────────────────────────────────────────────
+
+# Number-shaped field value. `[0-9.eE+\-]+` would match a bare "-" —
+# BookSim's stats module prints "= -" for a stat with no samples (e.g. zero
+# packets delivered) — and float("-") then crashes the whole batch.
+# RECLAIMED from the stronger lineage (p1b/verified-evaluation ==
+# integration/p1-product == epic/booksim-forward-port).
+NUM = r"((?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)"
+
+
 def parse_output(stdout: str) -> dict:
-    """Parse BookSim stdout for latency/hops/throughput/completion_time."""
+    """Parse BookSim stdout for latency/hops/throughput/completion_time.
+
+    TWO latency keys, deliberately NOT collapsed (RECLAIMED):
+
+      latency         stock BookSim "Packet latency average" — the qtime-based
+                      plat mean, which inflates on sparse traces because qtime
+                      slots go stale across idle gaps
+      honest_latency  the VeritX fork's ``honest_avg`` = arrival time minus the
+                      ORIGINAL trace request timestamp. This is the metric the
+                      certified evidence path and the comparison CLI prefer.
+
+    Both are kept under precise names; the stock key is never overwritten.
+    """
     result = {}
+    expecting_max = False
     for line in stdout.splitlines():
         # Completion time (primary metric for trace-driven mode)
         m = re.search(r"Completion time is\s+(\d+)\s+cycles", line)
@@ -266,32 +295,56 @@ def parse_output(stdout: str) -> dict:
             if m:
                 result["completion_time"] = int(m.group(1))
         # Packet latency stats
-        m = re.search(r"Packet latency average\s*=\s*([0-9.eE+\-]+)", line)
+        m = re.search(rf"Packet latency average\s*=\s*{NUM}", line)
         if m:
             result["latency"] = float(m.group(1))
-        m = re.search(r"\tp50\s*=\s*([0-9.eE+\-]+)", line)
+            # F8 evidence candidate: the \tmaximum within THIS block
+            # (grammar: average, minimum, maximum — before "Network
+            # latency average"). Guarded: NaN blocks (packet-less
+            # phase/class) never produce the key.
+            expecting_max = True
+        if expecting_max:
+            if line.startswith("Network latency average"):
+                expecting_max = False  # block ended with no real max
+            else:
+                m2 = re.fullmatch(rf"\tmaximum = ({NUM})", line)
+                if m2:
+                    v = float(m2.group(1))
+                    if v == v and abs(v) != float("inf"):  # NaN/inf guard
+                        result["max_packet_latency"] = v
+                    expecting_max = False
+        m = re.search(rf"\tp50\s*=\s*{NUM}", line)
         if m:
             result["p50"] = float(m.group(1))
-        m = re.search(r"\tp95\s*=\s*([0-9.eE+\-]+)", line)
+        m = re.search(rf"\tp95\s*=\s*{NUM}", line)
         if m:
             result["p95"] = float(m.group(1))
-        m = re.search(r"\tp99\s*=\s*([0-9.eE+\-]+)", line)
+        m = re.search(rf"\tp99\s*=\s*{NUM}", line)
         if m:
             result["p99"] = float(m.group(1))
         m = re.search(r"\tpkt_count\s*=\s*(\d+)", line)
         if m:
             result["pkt_count"] = int(m.group(1))
-        m = re.search(r"Hops average\s*=\s*([0-9.eE+\-]+)", line)
+        m = re.search(rf"Hops average\s*=\s*{NUM}", line)
         if m:
             result["hops"] = float(m.group(1))
-        m = re.search(r"Accepted packet rate average\s*=\s*([0-9.eE+\-]+)", line)
+        m = re.search(rf"Accepted packet rate average\s*=\s*{NUM}", line)
         if m:
             result["throughput"] = float(m.group(1))
+        # THE P0 RECLAMATION: honest request-time latency. Same semantics as
+        # p50/p95/p99 (all request-time based), so the distribution and the
+        # mean come from one measurement convention.
+        m = re.search(rf"\thonest_avg\s*=\s*{NUM}", line)
+        if m:
+            result["honest_latency"] = float(m.group(1))
         if "unstable" in line.lower() or "Too many sample periods" in line:
             result["unstable"] = True
-        # VeritX (RT reclaim): the qualified fork prints a drain verdict and
-        # delivered/flit-total counters at the trace-drain point. Stock
-        # BookSim prints none of these — keys stay absent, never fabricated.
+        # VeritX (RT reclaim + F3 evidence): the qualified fork prints a drain
+        # verdict, delivered count, and flit TOTALS at the trace-drain point
+        # (the only point where the counters provably hold full-run values;
+        # summed over classes by the fork itself). Stock BookSim prints none of
+        # these — keys stay absent, never fabricated, so F3 reports NOT_RUN
+        # instead of reading a fabricated zero.
         if "Trace replay complete" in line or "drain incomplete" in line:
             result["drain_verdict"] = line.strip()
         m = re.search(r"delivered (\d+) packets", line)
@@ -315,6 +368,12 @@ class TraceStats:
     num_classes: int = 1
     num_packets: int = 0
     num_srcs: int = 0
+    #: Highest ADDRESSED node id (src or dst). Feeds the anynet size
+    #: pre-check: a graph smaller than the trace's node universe delivers
+    #: zero packets and measures nothing. RECLAIMED from the stronger
+    #: lineage, which had it; the current tree had dropped the field, so
+    #: `presets.anynet_usability(..., trace_max_node)` could never fire.
+    max_node: int = 0
     span: int = 1
     ir: float = 0.0
 
@@ -324,6 +383,7 @@ class TraceStats:
             "num_classes": self.num_classes,
             "num_packets": self.num_packets,
             "num_srcs": self.num_srcs,
+            "max_node": self.max_node,
             "span": self.span,
             "ir": self.ir,
         }
@@ -335,29 +395,50 @@ def detect_trace_stats(trace_path: str) -> TraceStats:
 
     This is the SINGLE function for trace analysis. All callers use this.
     Never passes "classes" to BookSim — only counts for display.
+
+    Raises TraceError on unreadable/malformed traces instead of silently
+    returning zeros — a zeroed span would size sample_period wrong and
+    synthesize/evaluate against missing data. An existing-but-empty trace
+    (comments only) still returns zeros so callers can report
+    "no parseable packets" via ``num_packets == 0``.
+
+    RECLAIMED from the stronger lineage (p1b/verified-evaluation): the
+    current tree swallowed every exception and dropped ``max_node``.
     """
     max_cycle = 0
     num_classes = 1
     num_packets = 0
     srcs: set[int] = set()
+    max_node = 0
     try:
         with open(trace_path) as f:
-            for line in f:
+            for line_no, line in enumerate(f, 1):
                 if line.startswith("#"):
                     continue
                 parts = line.split()
                 if len(parts) >= 5:
-                    c = int(parts[0])
-                    src = int(parts[1])
-                    cl = int(parts[2])
+                    try:
+                        c = int(parts[0])
+                        src = int(parts[1])
+                        cl = int(parts[2])
+                        dst = int(parts[3])
+                    except ValueError as e:
+                        raise TraceError(
+                            f"{trace_path}: line {line_no}: non-integer field: {e}"
+                        ) from e
                     num_packets += 1
                     srcs.add(src)
+                    max_node = max(max_node, src, dst)
                     if c > max_cycle:
                         max_cycle = c
                     if cl > 0 and num_classes <= cl:
                         num_classes = cl + 1
-    except Exception:
-        pass
+    except TraceError:
+        raise
+    except FileNotFoundError as e:
+        raise TraceError(f"Trace not found: {trace_path}") from e
+    except OSError as e:
+        raise TraceError(f"{trace_path}: failed to read trace: {e}") from e
     span = max_cycle + 1
     ir = num_packets / max(span, 1)
     return TraceStats(
@@ -365,6 +446,7 @@ def detect_trace_stats(trace_path: str) -> TraceStats:
         num_classes=num_classes,
         num_packets=num_packets,
         num_srcs=len(srcs),
+        max_node=max_node,
         span=span,
         ir=ir,
     )
