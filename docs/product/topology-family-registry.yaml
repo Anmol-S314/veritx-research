@@ -65,24 +65,25 @@ families:
     canonical_id: torus
     role: USER_FAMILY
     stages: {RECOGNIZED: "YES", AUTHORABLE: "YES", MATERIALIZABLE: "YES",
-             ROUTABLE: "NO", VERIFIABLE: "YES", PROJECTABLE: "NO",
+             ROUTABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO",
              EXECUTABLE: "NO", QUALIFIED: "NO", WIRED: "PARTIAL"}
     intent_schema: "NocConfig.topology_family = torus (params: radix, concentration)"
     materializer: "topology_artifact.materialize_family(TORUS)"
     backend_projection: {booksim: torus, astra: mesh}
-    evidence: "test_staged_compilation.py: real TopologyArtifact with 20 wraparound links, then typed ROUTING refusal"
+    evidence: "test_staged_compilation.py: real TopologyArtifact with 20 wraparound links, then typed ROUTING refusal. VERIFIABLE corrected NO (PHASE A): with no route there is no resolved route to verify — the compiler stops at ROUTING, so attachment/route/CDG verification cannot complete."
     note: "WIRED=PARTIAL: inspectable via the staged path, not executable."
 
   concentrated_mesh:
     canonical_id: concentrated_mesh
     role: USER_FAMILY
     stages: {RECOGNIZED: "YES", AUTHORABLE: "YES", MATERIALIZABLE: "YES",
-             ROUTABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES",
-             EXECUTABLE: "YES", QUALIFIED: "YES", WIRED: "YES"}
+             ROUTABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "NO",
+             EXECUTABLE: "NO", QUALIFIED: "NO", WIRED: "NO"}
     intent_schema: "NocConfig.topology_family = concentrated_mesh (params: concentration)"
     materializer: "topology_artifact.materialize_family(CONCENTRATED_MESH)"
     backend_projection: {booksim: cmesh, astra: mesh}
-    evidence: "preset dense-4b-32tiles-conc4 (GUIDED_SAFE); endpoint-count occupancy fix"
+    evidence: "MATERIALIZABLE/ROUTABLE proven by capability_truth (compiler derives a real TopologyArtifact + DOR_XY RouteArtifact). PROJECTABLE/EXECUTABLE/QUALIFIED were claimed YES but are FALSE: select_booksim_profile() has exactly two profiles — CERTIFIED_BOOKSIM_MESH_DOR_XY_V1 (guarded on TopologyArtifact.family is MaterializedFamily.MESH) and CERTIFIED_BOOKSIM_ANYNET_V1 (requires ANYNET_MIN_HOPS). Concentrated mesh is CONCENTRATED_MESH and routes DOR_XY, so it satisfies neither and the projection is REFUSED. Fixing this requires a new CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1 profile (PHASE C), not a widened MESH guard."
+    note: "CORRECTED (PHASE A truth gate): the previous YES/YES/YES was a false positive. scripts/check_capability_truth.py now derives these stages from the real selector and fails CI on any such claim."
 
   ring:
     canonical_id: ring
@@ -103,12 +104,12 @@ families:
     canonical_id: gec
     role: RESEARCH
     stages: {RECOGNIZED: "YES", AUTHORABLE: "YES", MATERIALIZABLE: "NO",
-             ROUTABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "PARTIAL",
+             ROUTABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO",
              EXECUTABLE: "NO", QUALIFIED: "NO", WIRED: "NO"}
     intent_schema: "NocConfig.topology_family = gec (params k, c, o, d)"
     materializer: null
     backend_projection: {booksim: gec, astra: null}
-    evidence: "TopologyFamily.GEC; presets gec_express_k8 (o=7,d=1), gec_mecs_k8 (o=1,d=7), gec_mesh_k8 (o=0)"
+    evidence: "TopologyFamily.GEC; SWEEP_TOPOS carries gec_express_k8 (o=7,d=1), gec_mecs_k8 (o=1,d=7), gec_mesh_k8 (mesh=1). PROJECTABLE corrected PARTIAL->NO (PHASE A): with MATERIALIZABLE=NO there is no TopologyArtifact to project, so the projection stage has no implementation authority. The BookSim BACKEND does implement gec (networks/gec.cpp); what is missing is the canonical bridge — see capability-archaeology.yaml GEC-MECS/GEC-EXPRESS."
     note: "RECOGNIZED=YES and AUTHORABLE=YES are retained. A missing
            materializer does NOT remove a family from the scientific
            taxonomy. _family_of() refuses with a typed error naming the
