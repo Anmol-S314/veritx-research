@@ -205,10 +205,16 @@ backend product authority". Both are now addressed in source:
   when `link_width` is not qualified, and SURFACES the unqualified parameters
   with the backend's reason instead of hiding them silently.
 
-WARNING — NOT VERIFIED. This worktree has no `node_modules`, so neither
-`tsc --noEmit` nor `vite build` could run, and no browser E2E was performed.
-The Studio build and the E2E acceptance gate are therefore UNPROVEN for this
-commit. `npm install` in `apps/studio` is required before that can be claimed.
+VERIFIED. `npm install` then `npm run build` (`tsc --noEmit && vite build`)
+passes: 113 modules transformed, production bundle emitted. The first build
+attempt FAILED with a real type error
+(`accepted_values_is_exhaustive` read off the capabilities document instead of
+the parameter, where it lives) — which is exactly why the unverified claim was
+labelled as such rather than assumed. Fixed and rebuilt clean.
+
+STILL UNPROVEN: no browser E2E was run. The E2E acceptance gate (create/open
+project → compile → evaluate → Optimize → launch → inspect → select candidate
+→ draft → compile → compare) remains outstanding.
 
 NOT DONE in the UI: PHASES 3-10 proper. The page still renders only the
 link-width domain control, not one control per qualified parameter; there is no
@@ -216,6 +222,25 @@ exhaustive/random search configuration with the Cartesian count; no
 single-vs-multi-objective rendering rule; no human candidate labels; no
 "Use this candidate" → Draft action; no engineering-details disclosure. Those
 remain outstanding.
+
+---
+
+## Backend testability — both backends now built in this worktree
+
+| backend | recipe | size | source_dirty |
+|---|---|---|---|
+| BookSim | `booksim2-fork/v1` | 20832456 | `false` |
+| AstraSim (`AstraSim_BookSim2`) | `astra-sim+booksim2/v1` | 4028520 | `false` |
+
+The 9 `test_serving_*` failures in the first full-suite run were **environment**:
+the fresh worktree had no AstraSim binary, so the provenance tests could not
+reach their assertions (`FileNotFoundError` on a missing file cannot be caused
+by a Python edit). After building AstraSim with its canonical manifest they
+pass. Classification: environment, not regression, not papered over.
+
+**Full DSE suite at `c37aaa71` + built backends: 3803 passed, 31 skipped,
+0 failed.** This verifies the `fail()` contract change, which the earlier `-k`
+slice did not cover.
 
 ---
 

@@ -46,11 +46,11 @@ export function Optimize({ projectId }: { projectId: string }): ReactElement {
   // this domain (it is a validated range), so these are UI choices — see the
   // `value_constraint` on the capability. They are never presented as a
   // backend enumeration.
-  const WIDTH_CHOICES = capabilityDoc?.accepted_values_is_exhaustive
-    ? (capabilityDoc.guided_parameters
-        .find((p) => p.name === 'link_width')
-        ?.accepted_values?.map(Number).filter((n) => Number.isFinite(n))
-        ?? [32, 64, 128])
+  const widthParam = capabilityDoc?.guided_parameters
+    .find((p) => p.name === 'link_width') ?? null;
+  const WIDTH_CHOICES = widthParam?.accepted_values_is_exhaustive
+    ? (widthParam.accepted_values?.map(Number)
+        .filter((n) => Number.isFinite(n)) ?? [32, 64, 128])
     : [32, 64, 128];
   const qualified = new Set(capabilityDoc?.qualified_parameters ?? []);
   const param = (name: string) =>
