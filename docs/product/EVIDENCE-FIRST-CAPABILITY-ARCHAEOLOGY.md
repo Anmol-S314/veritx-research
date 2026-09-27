@@ -3,7 +3,7 @@
 > **What has VERITX already implemented, executed, measured, verified or
 > qualified — even when the current canonical product does not expose it?**
 
-Companion (machine-readable, 26 records): `capability-archaeology.yaml`.
+Companion (machine-readable, 28 records): `capability-archaeology.yaml`.
 
 This is **not** a feature-development tranche. It exists because the
 capability registry answered *"what is canonical?"* and nobody asked
@@ -124,7 +124,7 @@ current comments — Git history is not rewritten.)
 
 ## 2. CAPABILITY RECORDS
 
-Full structured records are in `capability-archaeology.yaml` (26 records, 13
+Full structured records are in `capability-archaeology.yaml` (28 records, 13
 independent fields each, no collapsed `SUPPORTED` flag). The table below is
 the summary; `MISSING_BRIDGE` is the field that matters.
 
@@ -423,14 +423,14 @@ classifications). Counts are OUTPUTS of the records, not targets.
 |---|---|
 | CURRENT_CANONICAL | 9 |
 | CURRENT_QUALIFIED | 1 |
-| CURRENT_BACKEND_ONLY | 11 |
+| CURRENT_BACKEND_ONLY | 13 |
 | CURRENT_DOWNSTREAM_ONLY | 6 |
 | CURRENT_RESEARCH | 7 |
 | CURRENT_LEGACY_EXECUTABLE | 0 |
 | HISTORICAL_EXECUTABLE | 4 |
-| HISTORICAL_MEASURED | 7 |
+| HISTORICAL_MEASURED | 8 |
 | PROTOTYPE_ONLY | 3 |
-| DOC_STALE | 10 |
+| DOC_STALE | 11 |
 | TRULY_ABSENT | 0 |
 
 ### Classification semantics

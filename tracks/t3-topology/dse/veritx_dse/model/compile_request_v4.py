@@ -216,6 +216,13 @@ class CompileRequestV4:
             d["synthesis_provenance"] = dict(self.synthesis_provenance)
         if self.migration_provenance is not None:
             d["migration_provenance"] = dict(self.migration_provenance)
+        # PERSISTED IDENTITY (PHASE B.2 §6.1). v4 follows the same explicit
+        # discipline as v3: the computed identity travels WITH the document,
+        # so a reader can verify the document was not altered in transit.
+        # `canonical_dict()` (the hash input) is unaffected — these are added
+        # only to the persisted form, exactly as v3 does.
+        d["design_hash"] = self.design_hash()
+        d["guardrail_hash"] = self.guardrail_hash()
         return d
 
     def canonical_dict(self) -> dict:
@@ -277,7 +284,13 @@ class CompileRequestV4:
         shared = {k: v for k, v in d.items() if k not in (
             "topology", "noc_controls", "schema_version",
             "compiler_semantics_version", "synthesis_provenance",
-            "migration_provenance")}
+            "migration_provenance",
+            # CRITICAL: the v4 root hashes must NOT reach the frozen v3
+            # reader. It would compare a V4 hash against a V3 design hash and
+            # refuse a perfectly valid v4 document before the v4 parser ever
+            # validates its own hashes. The v3 projection carries no root
+            # identity; identity is validated once, below, by the v4 reader.
+            "design_hash", "guardrail_hash")}
         shared["schema_version"] = 3
         shared["compiler_semantics_version"] = 3
         shared["noc_config"] = {"topology_family": "mesh"}

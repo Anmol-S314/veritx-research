@@ -1,0 +1,50 @@
+{
+  "fixtures": {
+    "anynet/2x2_explicit": {
+      "config_sha256": "d3bfed2c8d1c633f691aa7bb490075c2ea2d026a3f80e5404a62f3673062cf66",
+      "design_hash": "de2ee503665732a76332081ee1e04b7e5bf3c5a11a4f4fcf94b0f728f467e8b4",
+      "endpoint_count": 4,
+      "expected_packets": 432,
+      "num_vcs": 1,
+      "prepared_id": "sha256:838d23664e43b2ae278096ce38559978d9e63c22f25d0cfaecf44dad272d1afd",
+      "profile_id": "CERTIFIED_BOOKSIM_ANYNET_V1",
+      "profile_semantics_version": "booksim2-fork+B3.7b-anynet-dump+prepared-v2",
+      "router_count": 4,
+      "status": "COMPILED",
+      "topology_bytes_sha256": "4aedbac2497036f15102c3de5e49a04f012b0d35962c6379cb3012719a043fd0",
+      "topology_hash": "9a9193394681f37fc9cb4502f0bbbbd84c871b5a7e5b62d7059e7e173cbc084c",
+      "trace_sha256": "bbda3fb74877dfac8efe21653495620d9f2995052a51c4aee3b8ca13f20e17a3"
+    },
+    "mesh/mesh_4x4": {
+      "config_sha256": "99ec214ee45aece13d98d05865ad2d36ec486858a65b252d22199e37ddfeeec9",
+      "design_hash": "db18c3b55cc32f4d9c78b4cac2ae302c9f1bc4749ee189d0b70b558db4787125",
+      "endpoint_count": 16,
+      "expected_packets": 480,
+      "num_vcs": 1,
+      "prepared_id": "sha256:6bbbecf5bb0c04ea2b2dcccd897204109262cb01f7c9a07557801c63912e1508",
+      "profile_id": "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1",
+      "profile_semantics_version": "booksim2-fork+P1B-meshdor-dump+prepared-v2",
+      "router_count": 16,
+      "status": "COMPILED",
+      "topology_bytes_sha256": null,
+      "topology_hash": "524cf3267d4d64c3cdd07dd244f1923156c2a34698ecf82062edb75569fc2609",
+      "trace_sha256": "b13d9d37dcdcbc5b8ec6e007b262c008b367cf94c0c932da0716e314d5069974"
+    },
+    "mesh/mesh_shipped": {
+      "config_sha256": "f8bcbe56f5803ba421f0837ea1591d4379d56dc2de9d7a0b0d2b47f3d509d326",
+      "design_hash": "c548ed634afa522955806dcc0e0230ed6ffffc34a5658ce14ccd6c0f83f82fdb",
+      "endpoint_count": 20,
+      "expected_packets": 504,
+      "num_vcs": 1,
+      "prepared_id": "sha256:a9962a7d5a225edd3231c4462bcc28f48cc90692ebeff9eadd82a3d4ee7479c1",
+      "profile_id": "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1",
+      "profile_semantics_version": "booksim2-fork+P1B-meshdor-dump+prepared-v2",
+      "router_count": 25,
+      "status": "COMPILED",
+      "topology_bytes_sha256": null,
+      "topology_hash": "3b1f63fa7f3896c9671413e33916350e585c9789133ede9a3a1a0ebf6c3a502b",
+      "trace_sha256": "b522331aa9c5f70bf0566eb9ae86d1b8cbcbaf119f7da6f5d1e3c44915facbb5"
+    }
+  },
+  "seed": 0
+}

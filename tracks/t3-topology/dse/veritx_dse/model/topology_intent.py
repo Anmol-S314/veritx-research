@@ -194,26 +194,30 @@ class FatTreeIntent(TopologyIntent):
     count = level_count * switch_radix ** (level_count - 1). The intent
     carries the STRUCTURE; the derived counts are properties, not knobs.
 
+    THERE IS NO CONCENTRATION PARAMETER, and adding one would be false
+    science. The source gives each BOTTOM switch exactly `switch_radix`
+    terminals and no independent endpoint-per-switch input; the endpoint count
+    is fixed by `switch_radix ** level_count`. A concentrated fat-tree is a
+    DIFFERENT topology semantic, not something to insert silently into the
+    BookSim-compatible one.
+
     Authorable now, materializable later — no materializer is invented here.
     """
     switch_radix: int
     level_count: int
-    concentration: int = 1
     kind: ClassVar[str] = "fattree"
 
     def __post_init__(self):
         _as_int("switch_radix", self.switch_radix, minimum=2)
         _as_int("level_count", self.level_count, minimum=1)
-        _as_int("concentration", self.concentration, minimum=1)
 
     def parameters(self):
         return {"switch_radix": self.switch_radix,
-                "level_count": self.level_count,
-                "concentration": self.concentration}
+                "level_count": self.level_count}
 
     @property
     def endpoint_capacity(self) -> int:
-        return (self.switch_radix ** self.level_count) * self.concentration
+        return self.switch_radix ** self.level_count
 
     @property
     def switch_count(self) -> int:
@@ -391,8 +395,7 @@ _FIELDS: dict[str, frozenset[str]] = {
     "torus": frozenset({"kind", "side_length", "concentration"}),
     "flatfly": frozenset({"kind", "radix_per_dimension", "dimension_count",
                           "concentration"}),
-    "fattree": frozenset({"kind", "switch_radix", "level_count",
-                          "concentration"}),
+    "fattree": frozenset({"kind", "switch_radix", "level_count"}),
     "gec": frozenset({"kind", "mode", "grid_side_length", "concentration",
                       "express_channel_groups_per_dimension",
                       "destinations_per_express_channel"}),

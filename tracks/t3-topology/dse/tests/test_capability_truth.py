@@ -139,19 +139,50 @@ def test_projectable_is_proven_by_the_real_preparer_not_by_selection():
     assert "prepare_booksim_input" in t.authority["PROJECTABLE"]
 
 
-def test_the_two_sealed_profiles_are_qualified_with_named_evidence():
+def test_the_two_sealed_profiles_are_qualified_with_resolvable_evidence():
     for profile_id in ("CERTIFIED_BOOKSIM_MESH_DOR_XY_V1",
                        "CERTIFIED_BOOKSIM_ANYNET_V1"):
         record = QUALIFICATION[profile_id]
         assert record.is_qualified
-        assert record.evidence
         assert record.scope
+        # The qualifier is EXECUTABLE, and every evidence path exists.
+        assert callable(record.qualifier_callable())
+        assert record.unresolved_evidence() == ()
 
 
-def test_a_qualification_without_evidence_is_refused():
-    with pytest.raises(QualificationRegistryError, match="no qualification"):
+def test_a_qualification_without_resolvable_evidence_is_refused():
+    with pytest.raises(QualificationRegistryError, match="durable evidence"):
         QualificationRecord(profile_id="X", state="QUALIFIED",
-                            semantics_version=1, evidence=(), scope="none")
+                            projection_semantics_version="s",
+                            lowerer_version=None, qualifier="m:f",
+                            evidence_paths=(), scope="none")
+    with pytest.raises(QualificationRegistryError, match="module:function"):
+        QualificationRecord(profile_id="X", state="QUALIFIED",
+                            projection_semantics_version="s",
+                            lowerer_version=None, qualifier="just prose",
+                            evidence_paths=("README.md",), scope="none")
+
+
+def test_prose_cannot_make_a_profile_qualified():
+    """Previously `evidence=("trust me",)` satisfied the constructor, which
+    is exactly the hole this registry exists to close. The constructor is
+    STRUCTURAL (a qualifier and at least one evidence path are required); the
+    RESOLUTION of both is enforced by `validate_registry()` and by every
+    `evaluate_qualification()` call."""
+    from veritx_dse.application.booksim_qualification_registry import (
+        evaluate_qualification,
+    )
+    prose = QualificationRecord(
+        profile_id="X", state="QUALIFIED",
+        projection_semantics_version="s", lowerer_version=None,
+        qualifier="trust:me", evidence_paths=("trust me",), scope="none")
+    assert prose.unresolved_evidence() == ("trust me",)
+    ok, why = evaluate_qualification(
+        type("P", (), {"profile_id": "X", "semantics_version": "s",
+                       "lowerer_version": None})(), object())
+    # Not even a registered record: an unregistered profile is NEVER
+    # qualified. The resolution gates close the hole from the other side.
+    assert ok is False
 
 
 def test_an_unregistered_profile_is_not_qualified_by_omission():
@@ -206,3 +237,134 @@ def test_mesh_is_the_only_fully_progressing_family():
                                                    "PROJECTABLE",
                                                    "EXECUTABLE", "QUALIFIED"))}
     assert fully == {"mesh", "explicit"}
+
+
+# ══ §11 qualification boundary ════════════════════════════════════════
+
+def test_qualification_is_NOT_bound_to_request_generation():
+    """The qualified interface is the CANONICAL ARTIFACTS downstream of
+    request generation. The qualifiers never inspect whether the root request
+    began as v2, v3 or v4, and they must not: a v2, a v3 and a v4 request that
+    lower to the same canonical parents produce the same prepared bytes and
+    are therefore the same qualification question."""
+    from veritx_dse.application.booksim_qualification_registry import (
+        QUALIFICATION,
+    )
+    for record in QUALIFICATION.values():
+        assert not hasattr(record, "semantics_version"), (
+            "the compiler-semantics-version field was the WRONG boundary")
+        assert not hasattr(record, "compiler_semantics_version")
+    # The registry is bound to the projection layer's exact identity.
+    from veritx_dse.backend.booksim_projection import (
+        ANYNET_PROFILE, MESH_DOR_PROFILE,
+    )
+    assert (QUALIFICATION[MESH_DOR_PROFILE.profile_id]
+            .projection_semantics_version == MESH_DOR_PROFILE.semantics_version)
+    assert (QUALIFICATION[ANYNET_PROFILE.profile_id]
+            .projection_semantics_version
+            == ANYNET_PROFILE.semantics_version)
+
+
+def test_a_changed_projection_semantics_version_is_not_qualified():
+    """Changing a profile's semantics string invalidates its qualification
+    automatically — the exact-match check is what makes that true."""
+    import dataclasses
+    from veritx_dse.application.booksim_qualification_registry import (
+        QUALIFICATION, evaluate_qualification,
+    )
+    from veritx_dse.backend.booksim_projection import MESH_DOR_PROFILE
+    changed = dataclasses.replace(MESH_DOR_PROFILE,
+                                  semantics_version="booksim2-fork+NEW+v3")
+    ok, why = evaluate_qualification(changed, object())
+    assert ok is False
+    assert "does not carry across a semantics change" in why
+
+
+def test_a_nonexistent_qualifier_is_refused():
+    from veritx_dse.application.booksim_qualification_registry import (
+        QualificationRegistryError, resolve_handler,
+    )
+    with pytest.raises(QualificationRegistryError, match="not 'module"):
+        resolve_handler("noseparator")
+    with pytest.raises(QualificationRegistryError, match="does not exist"):
+        resolve_handler("veritx_dse.backend.booksim_projection:no_such_fn")
+    with pytest.raises(QualificationRegistryError, match="does not import"):
+        resolve_handler("no.such.module:fn")
+
+
+def test_a_nonexistent_evidence_path_is_refused():
+    from veritx_dse.application.booksim_qualification_registry import (
+        QualificationRecord,
+    )
+    record = QualificationRecord(
+        profile_id="X", state="QUALIFIED", projection_semantics_version="s",
+        lowerer_version=None,
+        qualifier="veritx_dse.backend.booksim_projection:qualify_anynet_min_hops",
+        evidence_paths=("docs/DOES-NOT-EXIST.md",), scope="none")
+    assert record.unresolved_evidence() == ("docs/DOES-NOT-EXIST.md",)
+    from veritx_dse.application.booksim_qualification_registry import (
+        QUALIFICATION, evaluate_qualification,
+    )
+    QUALIFICATION["X"] = record
+    try:
+        ok, why = evaluate_qualification(
+            type("P", (), {"profile_id": "X", "semantics_version": "s",
+                           "lowerer_version": None})(), object())
+        assert ok is False and "does not exist" in why
+    finally:
+        del QUALIFICATION["X"]
+
+
+def test_the_registry_validates_its_own_bindings_at_import():
+    from veritx_dse.application.booksim_qualification_registry import (
+        validate_registry,
+    )
+    validate_registry()          # raises if a binding is stale or missing
+
+
+# ══ §4 EXECUTABLE is fail-closed ══════════════════════════════════════
+
+def test_a_registered_but_unresolvable_handler_makes_executable_NO(
+        monkeypatch):
+    """A typo in the registry must not read as availability until a test
+    happens to catch it: the LIVE derivation resolves the symbol."""
+    monkeypatch.setitem(ct.EXECUTION_HANDLERS_VIEW,
+                        "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1",
+                        "veritx_dse.backend.booksim_execution:no_such_symbol")
+    t = ct.derive_family_stages("mesh")
+    assert t.stages["EXECUTABLE"] == "NO"
+    assert "does not resolve" in t.authority["EXECUTABLE"]
+
+
+def test_an_unimportable_handler_module_makes_executable_NO(monkeypatch):
+    monkeypatch.setitem(ct.EXECUTION_HANDLERS_VIEW,
+                        "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1",
+                        "no.such.module:fn")
+    t = ct.derive_family_stages("mesh")
+    assert t.stages["EXECUTABLE"] == "NO"
+    assert "does not resolve" in t.authority["EXECUTABLE"]
+
+
+def test_resolve_execution_handler_reports_the_reason():
+    from veritx_dse.application.booksim_qualification_registry import (
+        resolve_execution_handler,
+    )
+    handler, err = resolve_execution_handler("NOT_A_PROFILE")
+    assert handler is None and err and "no execution implementation" in err
+    handler, err = resolve_execution_handler("CERTIFIED_BOOKSIM_ANYNET_V1")
+    assert callable(handler) and err is None
+
+
+# ══ §8 PRODUCT_WIRED has no family-name shortcut ══════════════════════
+
+def test_product_wired_uses_the_normalized_intent_not_a_family_string():
+    """All four GEC modes share `.kind == "gec"`, so a family-string match
+    would mark every mode wired from one generic GEC preset. The derivation
+    compares normalized capability labels instead."""
+    src = (DSE / "veritx_dse/application/capability_truth.py").read_text()
+    body = src[src.index("def _product_wired("):
+               src.index("def derive_family_stages(")]
+    assert "capability_family_label" in body
+    assert "fabric_intent_view" in body
+    assert "noc_config" not in body, (
+        "PRODUCT_WIRED must not read the legacy topology_family field")

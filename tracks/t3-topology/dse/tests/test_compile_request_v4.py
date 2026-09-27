@@ -345,3 +345,79 @@ def test_migration_records_the_source_design_hash():
 def test_migration_rejects_a_non_v3_request():
     with pytest.raises(CompileRequestV4MigrationError):
         migrate_v3_to_v4({"not": "a request"})       # type: ignore[arg-type]
+
+
+# ══ §6/§7 v4 PERSISTED IDENTITY ═══════════════════════════════════════
+
+def test_v4_persists_its_computed_identity():
+    """v4 follows v3's explicit persisted-identity discipline: the computed
+    hash travels WITH the document so a reader can verify it in transit."""
+    r = _v4()
+    doc = r.to_dict()
+    assert doc["design_hash"] == r.design_hash()
+    assert doc["guardrail_hash"] == r.guardrail_hash()
+    # ...and the hash INPUT is unaffected by their presence.
+    assert CompileRequestV4.from_dict(doc).canonical_dict() == \
+        r.canonical_dict()
+
+
+def test_v4_hash_bearing_document_actually_loads():
+    """THE B.1 BUG. `from_dict` used to pass the v4 root hashes into its
+    temporary v3-shaped projection, so the FROZEN v3 reader compared a V4
+    hash against a V3 design hash and refused a perfectly valid v4 document
+    before the v4 parser ever validated its own hashes. It was invisible
+    because `to_dict` did not emit the hashes."""
+    r = _v4()
+    loaded = CompileRequestV4.from_dict(r.to_dict())
+    assert loaded.design_hash() == r.design_hash()
+    assert loaded.canonical_dict() == r.canonical_dict()
+    assert loaded.topology == r.topology
+    assert loaded.noc_controls == r.noc_controls
+    assert loaded.to_dict()["design_hash"] == r.design_hash()
+    assert loaded.to_dict()["guardrail_hash"] == r.guardrail_hash()
+
+
+def test_v4_hash_bearing_explicit_graph_document_loads():
+    from veritx_dse.model.topology_intent import ExplicitTopologyIntent
+    from veritx_dse.model.topology_ir import TopologyIR
+    g = TopologyIR(name="rt", kind="custom", nodes=4,
+                   links=[[0, 1], [1, 2], [2, 3]],
+                   link_attrs={"bandwidth_GBs": 50.0, "latency_ns": 500.0})
+    r = dataclasses.replace(_v4(),
+                            topology=ExplicitTopologyIntent(graph=g))
+    loaded = CompileRequestV4.from_dict(r.to_dict())
+    assert loaded.design_hash() == r.design_hash()
+    assert loaded.topology.graph.links == g.links
+    assert loaded.canonical_dict() == r.canonical_dict()
+
+
+def test_v4_topology_tampering_with_the_old_hash_refuses():
+    doc = _v4().to_dict()
+    doc["topology"] = {"kind": "mesh", "side_length": 7}
+    with pytest.raises(CompileRequestV4SchemaError, match="design_hash"):
+        CompileRequestV4.from_dict(doc)
+
+
+def test_v4_hash_tampering_alone_refuses():
+    doc = _v4().to_dict()
+    doc["design_hash"] = "0" * 64
+    with pytest.raises(CompileRequestV4SchemaError, match="design_hash"):
+        CompileRequestV4.from_dict(doc)
+
+
+def test_v4_guardrail_hash_tampering_alone_refuses():
+    doc = _v4().to_dict()
+    doc["guardrail_hash"] = "1" * 64
+    with pytest.raises(CompileRequestV4SchemaError, match="guardrail_hash"):
+        CompileRequestV4.from_dict(doc)
+
+
+def test_v4_accepts_a_hashless_transport_form():
+    """Omitting the hashes is an intentionally supported transport form: the
+    document's science still determines its identity, so a reader can verify
+    it against the recomputed value."""
+    doc = _v4().to_dict()
+    doc.pop("design_hash")
+    doc.pop("guardrail_hash")
+    r = _v4()
+    assert CompileRequestV4.from_dict(doc).design_hash() == r.design_hash()

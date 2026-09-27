@@ -31,6 +31,9 @@ from dataclasses import dataclass, field, replace
 from typing import Any
 
 from veritx_dse.model.compile_model import CompileRequestV3, TopologyFamily
+from veritx_dse.application.booksim_qualification_registry import (
+    EXECUTION_HANDLERS as EXECUTION_HANDLERS_VIEW,
+)
 
 #: §18.1 — PROBE COVERAGE IS DERIVED FROM THE TOPOLOGY-INTENT REGISTRY.
 #:
@@ -236,22 +239,40 @@ def _authorable(kind: str) -> tuple[str, str]:
 
 
 def _product_wired(kind: str) -> tuple[str, str]:
-    """PRODUCT_WIRED: reachable from a shipped product preset."""
+    """PRODUCT_WIRED: reachable from a shipped product preset.
+
+    PHASE B.2 §8 — NO FAMILY-NAME SHORTCUT. Comparing a legacy
+    `topology_family` string against `intent.kind` conflates all four GEC
+    physical modes, because `.kind == "gec"` for every one of them: a single
+    future generic GEC preset would make gec_mesh, gec_express, gec_multidrop
+    AND gec_hybrid all read PRODUCT_WIRED even if it declared only one mode.
+
+    Instead the preset request is normalized through the REAL generation seam
+    and the resulting intent's capability label is compared with the probed
+    label. A legacy Mesh preset still normalizes to Mesh; a future v4 GEC
+    preset keeps its exact mode.
+    """
     try:
         from veritx_dse.application.compile_intent import build_preset_request
         from veritx_dse.application.presets import FABRIC_PRESETS
+        from veritx_dse.model.compile_model import fabric_intent_view
     except Exception:               # pragma: no cover
         return "NO", "no product preset module"
-    value = PROBE_INTENTS[kind].kind
+    want = capability_family_label(PROBE_INTENTS[kind])
     for preset in FABRIC_PRESETS:
         try:
             request = build_preset_request(preset.name)
+            view = fabric_intent_view(request)
         except Exception:           # pragma: no cover - defensive
             continue
-        fam = getattr(request.noc_config, "topology_family", None)
-        if getattr(fam, "value", fam) == value:
-            return "YES", f"shipped product preset {preset.name!r}"
-    return "NO", "no shipped product preset targets this family"
+        actual = capability_family_label(view.topology)
+        if actual == want:
+            return "YES", (
+                f"shipped product preset {preset.name!r} normalizes to "
+                f"topology {actual!r} (via the generation seam, not a "
+                "family-name match)")
+    return "NO", (f"no shipped product preset normalizes to topology "
+                  f"{want!r}")
 
 
 def derive_family_stages(kind: str) -> FamilyStageTruth:
@@ -338,29 +359,29 @@ def derive_family_stages(kind: str) -> FamilyStageTruth:
                     f"select_booksim_profile -> {profile_id}, but the "
                     f"preparer refused: {type(prep_exc).__name__}: "
                     f"{str(prep_exc)[:140]}")
-            # EXECUTABLE is IMPLEMENTATION AVAILABILITY, from ONE registry —
-            # not a claim that a probe ran during this gate.
+            # EXECUTABLE is IMPLEMENTATION AVAILABILITY — and it is
+            # FAIL-CLOSED: the registered handler must RESOLVE to a callable.
+            # Merely finding a registry string would let a typo read as
+            # availability until a test happened to catch it, so the live
+            # truth calls the same resolver the gate does.
             from veritx_dse.application.booksim_qualification_registry import (
-                execution_handler_for,
+                evaluate_qualification, resolve_execution_handler,
             )
-            handler = execution_handler_for(profile_id)
-            stages["EXECUTABLE"] = "YES" if handler else "NO"
+            handler, handler_err = resolve_execution_handler(profile_id)
+            stages["EXECUTABLE"] = "YES" if handler is not None else "NO"
             authority["EXECUTABLE"] = (
-                f"execution implementation {handler}" if handler
-                else "no execution implementation is registered for this "
-                     "profile")
-            # QUALIFIED is SCIENTIFIC QUALIFICATION, from ONE registry.
-            # Selectability NEVER implies qualification: an unregistered
-            # profile is NOT_QUALIFIED by construction.
-            from veritx_dse.application.booksim_qualification_registry import (
-                qualification_of,
-            )
-            record = qualification_of(profile_id)
-            stages["QUALIFIED"] = "YES" if record.is_qualified else "NO"
-            authority["QUALIFIED"] = (
-                f"{profile_id} {record.state} under compiler semantics "
-                f"v{record.semantics_version}; scope {record.scope}; "
-                f"evidence {', '.join(record.evidence)}")
+                f"execution implementation "
+                f"{EXECUTION_HANDLERS_VIEW.get(profile_id)} resolves to a "
+                f"callable" if handler is not None else handler_err or "no "
+                "execution implementation")
+            # QUALIFIED is SCIENTIFIC QUALIFICATION, from ONE registry, and
+            # it is decided by the REAL qualifier over the REAL canonical
+            # parents under an EXACT projection-semantics match. Selecting a
+            # profile, or preparing it, never implies qualification.
+            qualified, qual_authority = evaluate_qualification(profile,
+                                                               parents)
+            stages["QUALIFIED"] = "YES" if qualified else "NO"
+            authority["QUALIFIED"] = qual_authority
         except Exception as exc:
             stages["PROJECTABLE"] = "NO"
             authority["PROJECTABLE"] = (

@@ -89,10 +89,57 @@ def test_strict_loader_agrees_with_safe_load_on_a_valid_document(tmp_path):
 
 # ══ record completeness ═════════════════════════════════════════════════
 
+def test_the_intent_and_artifact_layers_are_separate_axes(ledger):
+    """PHASE B.2 §9: one CANONICAL_REPRESENTATION field could not distinguish
+    "the design can be DECLARED" from "the physical fabric can be DERIVED".
+    GEC's four modes and fat-tree have a canonical INTENT with no canonical
+    physical ARTIFACT, which the old single field could not express."""
+    for cap in ledger["capabilities"]:
+        assert "CANONICAL_INTENT" in cap, cap["id"]
+        assert "CANONICAL_PHYSICAL_ARTIFACT" in cap, cap["id"]
+
+
+def test_intent_and_artifact_are_independently_stated(ledger):
+    """A record may have an intent and no artifact — the B.1 state — and that
+    must be visible without reading prose in the OTHER field."""
+    by_id = {c["id"]: c for c in ledger["capabilities"]}
+    for cap_id in ("GEC-MESH", "GEC-EXPRESS", "GEC-MECS", "GEC-HYBRID",
+                   "FAT-TREE"):
+        cap = by_id[cap_id]
+        assert str(cap["CANONICAL_INTENT"]).strip().upper().startswith("YES"),             cap_id
+        assert str(cap["CANONICAL_PHYSICAL_ARTIFACT"]).strip().upper() \
+            .startswith("NO"), cap_id
+
+
+def test_flatfly_is_authorable_and_materializable(ledger):
+    """The pre-B.1 claim (`CANONICAL_DERIVATION: NO — family is not
+    AUTHORABLE`) is false: FlatFlyIntent declares it and MaterializedFamily.
+    FLATFLY builds it."""
+    cap = {c["id"]: c for c in ledger["capabilities"]}["FLATFLY"]
+    assert str(cap["CANONICAL_INTENT"]).strip().upper().startswith("YES")
+    assert str(cap["CANONICAL_PHYSICAL_ARTIFACT"]).strip().upper() \
+        .startswith("YES")
+
+
+def test_gec_subfamilies_are_independently_trackable(ledger):
+    """One GEC row could not express that mesh/express/multidrop/hybrid
+    progress differently."""
+    ids = {c["id"] for c in ledger["capabilities"]}
+    for cap_id in ("GEC-MESH", "GEC-EXPRESS", "GEC-MECS", "GEC-HYBRID"):
+        assert cap_id in ids, cap_id
+
+
 def test_every_record_answers_every_axis(ledger):
-    """No collapsed SUPPORTED flag: all 13 axes, independently."""
+    """No collapsed SUPPORTED flag: every axis independently.
+
+    PHASE B.2 §9 grew this from 13 to 15 by splitting the overloaded
+    CANONICAL_REPRESENTATION into CANONICAL_INTENT and
+    CANONICAL_PHYSICAL_ARTIFACT.
+    """
     required = ledger["fields"]
-    assert len(required) == 13
+    assert len(required) == 15
+    assert "CANONICAL_INTENT" in required
+    assert "CANONICAL_PHYSICAL_ARTIFACT" in required
     for cap in ledger["capabilities"]:
         missing = [f for f in required if f not in cap]
         assert not missing, f"{cap['id']} missing {missing}"

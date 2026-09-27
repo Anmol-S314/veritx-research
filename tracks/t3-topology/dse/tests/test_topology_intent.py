@@ -149,21 +149,40 @@ def test_gec_subfamilies_are_reported_separately():
 
 # ══ §7 fat-tree ═══════════════════════════════════════════════════════
 
-def test_fattree_carries_only_the_structural_facts():
+def test_fattree_carries_only_the_source_structural_facts():
+    """Source law (third_party/booksim2/src/networks/fattree.cpp):
+    nodes = k ** n, switches = n * k ** (n - 1), and each BOTTOM switch
+    terminates exactly k endpoints. There is NO independent concentration
+    input, so the intent must not have one."""
     ft = FatTreeIntent(switch_radix=4, level_count=2)
     assert ft.to_dict() == {"kind": "fattree", "switch_radix": 4,
-                            "level_count": 2, "concentration": 1}
+                            "level_count": 2}
     # Derived counts are properties, not knobs.
-    assert ft.endpoint_capacity == 16
-    assert ft.switch_count == 8
+    assert ft.endpoint_capacity == 4 ** 2 == 16
+    assert ft.switch_count == 2 * 4 ** 1 == 8
     with pytest.raises(TopologyIntentError):
         FatTreeIntent(switch_radix=1, level_count=2)
 
 
+def test_fattree_has_no_concentration_knob():
+    """A concentrated fat-tree is a DIFFERENT topology semantic. Inserting a
+    concentration knob into the BookSim-compatible intent would describe a
+    topology the cited source does not implement."""
+    import dataclasses
+    names = {f.name for f in dataclasses.fields(FatTreeIntent)}
+    assert names == {"switch_radix", "level_count"}
+    with pytest.raises(TypeError):
+        FatTreeIntent(switch_radix=4, level_count=2, concentration=2)
+    with pytest.raises(TopologyIntentError, match="unknown fields"):
+        topology_intent_from_dict({"kind": "fattree", "switch_radix": 4,
+                                   "level_count": 2, "concentration": 2})
+
+
 def test_fattree_is_authorable_and_round_trips():
-    ft = FatTreeIntent(switch_radix=8, level_count=3, concentration=2)
+    ft = FatTreeIntent(switch_radix=8, level_count=3)
     assert topology_intent_from_dict(ft.to_dict()) == ft
-    assert ft.endpoint_capacity == 8 ** 3 * 2
+    assert ft.endpoint_capacity == 8 ** 3
+    assert ft.switch_count == 3 * 8 ** 2
 
 
 # ══ other families ════════════════════════════════════════════════════
