@@ -1035,8 +1035,38 @@ class ProductService:
                 pid, revision, binary, definition_doc, progress))
         return self.job_view(job)
 
+    #: Fields the product API accepts for an optimization study. An unknown
+    #: key is REFUSED, never dropped: a silently ignored option is a lie about
+    #: what the study did.
+    _OPTIMIZATION_KEYS = frozenset({
+        "domain", "objectives", "constraints", "method", "budget",
+        "seed", "selection",
+    })
+
     @staticmethod
     def _parse_definition(body: dict[str, Any]) -> dict[str, Any]:
+        """Normalize a product optimization body into the canonical shape.
+
+        EVERY option accepted here reaches `OptimizationDefinition`. Nothing
+        is accepted and then dropped: earlier, `selection`, `seed` and the
+        whole budget were parsed and never propagated, so the study silently
+        ran the default policy whatever the caller asked for.
+
+        Normalization (not dropping): an ABSENT `selection` resolves to the
+        backend default, and an absent `budget` resolves to `{}`. Both are
+        the values `OptimizationDefinition` would have chosen itself.
+        """
+        unknown = sorted(set(body) - ProductService._OPTIMIZATION_KEYS)
+        if unknown:
+            from veritx_dse.optimization.definition import (
+                SELECTION_POLICIES, SEARCH_METHODS,
+            )
+            raise intent_error(
+                f"unknown optimization option(s) {unknown}; supported: "
+                f"domain, objectives, constraints, method "
+                f"{list(SEARCH_METHODS)}, budget "
+                "{max_candidates, max_evaluations}, seed, selection "
+                f"{list(SELECTION_POLICIES)}")
         try:
             domain = [{"name": d["name"], "values": list(d["values"])}
                       for d in body.get("domain", [])]
@@ -1051,13 +1081,25 @@ class ProductService:
             method = body.get("method", "grid")
             selection = body.get("selection")
             seed = body.get("seed")
+            raw_budget = body.get("budget")
+            if raw_budget is None:
+                budget: dict[str, Any] = {}
+            elif isinstance(raw_budget, dict):
+                budget = dict(raw_budget)
+            else:
+                raise intent_error(
+                    "optimization budget must be an object with "
+                    "max_candidates / max_evaluations")
         except (KeyError, TypeError) as exc:
             raise intent_error(f"malformed optimization definition: {exc}") from exc
         if not domain:
             raise intent_error("optimization requires a non-empty domain")
         return {"domain": domain, "objectives": objectives,
                 "constraints": constraints, "method": method,
-                "selection": selection, "seed": seed}
+                "budget": budget,
+                "selection": selection if selection is not None
+                else "min_first_objective",
+                "seed": seed}
 
     def _run_optimization(self, project_id: str, revision: dict[str, Any],
                           binary: Path, definition_doc: dict[str, Any],
@@ -1084,7 +1126,13 @@ class ProductService:
                 constraints=tuple(Constraint(c["metric"], c["op"],
                                              c["threshold"])
                                   for c in definition_doc["constraints"]),
-                method=definition_doc["method"])
+                method=definition_doc["method"],
+                # PHASE 1: budget/seed/selection were accepted by the product
+                # API and then dropped here, so a caller asking for a bounded
+                # seeded random study silently got the default policy.
+                budget=definition_doc["budget"],
+                seed=definition_doc["seed"],
+                selection=definition_doc["selection"])
         except (KeyError, TypeError, ValueError) as exc:
             raise intent_error(
                 f"optimization definition is invalid: {exc}") from exc
@@ -1132,6 +1180,12 @@ class ProductService:
             "project_id": project_id,
             "base_revision_id": revision["revision_id"],
             "created_at": utcnow(),
+            # THE REQUESTED DEFINITION, as normalized. Persisted so a study is
+            # auditable against what was ASKED for, not only against what the
+            # engine recorded. PHASE 1: this was previously not stored at all,
+            # so `method`/`selection`/`seed`/`budget` were unverifiable after
+            # the fact.
+            "definition": definition_doc,
             "study": view,
             "candidate_runs": candidate_runs,
             "candidate_evidence_note": (

@@ -109,6 +109,10 @@ class OptimizeBodyV1(BaseModel):
     method: str = "grid"
     selection: str | None = None
     seed: int | None = None
+    #: Search budget. `None`/omitted = exhaustive. PHASE 1: these were not
+    #: expressible on the product API at all, so a caller could not bound a
+    #: large search.
+    budget: dict[str, Any] | None = None
 
 
 # legacy bodies (deprecated) ───────────────────────────────────────────────
