@@ -13,10 +13,13 @@ place where the product compiler chooses routing:
 Policy (P1A slice): MESH and CONCENTRATED_MESH route DOR_XY
 (dimension-order XY over the router grid — deterministic, proven by
 construction-time termination walk plus the P1.4 CDG certificate).
-Anything else (TORUS, RING, …) is UNSUPPORTED_SEMANTICS at the
-service boundary: representability is not certification, and silent
-minimum-hop fallback would certify a route set the deadlock theorem
-does not cover.
+CUSTOM routes ANYNET_MIN_HOPS (the sealed executable contract — the
+replica of the vendored fork's AnyNet routing, which the certified
+AnyNet backend profile accepts and which executed-route comparison
+verifies mechanically). Anything else (TORUS, RING, FLATFLY, …) is
+UNSUPPORTED_SEMANTICS at the service boundary: representability is not
+certification, and silent minimum-hop fallback would certify a route
+set the deadlock theorem does not cover.
 
 ``request`` is a load-bearing parameter even though the MVP policy
 keys off family alone: it is type-checked (fail-closed), and future
@@ -61,20 +64,24 @@ _CERTIFIED_FAMILIES = (
 #:   DOR_XY                 deadlock-free BY CONSTRUCTION. Dimension-order
 #:                          traversal terminates; the ordering IS the proof,
 #:                          so no CDG check is needed to certify it.
-#:   WEIGHTED_SHORTEST_PATH deadlock-freedom is a PROPERTY TO BE CHECKED,
-#:                          not a consequence of the algorithm. It is
-#:                          selected for every family DOR cannot express
-#:                          because it is the only producer whose semantics
-#:                          are defined over canonical DIRECTED channels
-#:                          with an explicit, traversal-independent
-#:                          tie-break, and it handles parallel links
-#:                          individually.
+#:   ANYNET_MIN_HOPS        the SEALED EXECUTABLE contract for CUSTOM. Its
+#:                          first-hop table IS the vendored fork's
+#:                          ``AnyNet::route()`` replica, so route
+#:                          equivalence holds by construction rather than
+#:                          by hope. Naming debt (the id spells a backend
+#:                          concept) is recorded, not acted on.
+#:   WEIGHTED_SHORTEST_PATH a SEPARATE, still-valid producer. It is NOT
+#:                          selected by this table today: no family maps to
+#:                          it. It remains reachable through
+#:                          `routing_materialize` for callers that ask for
+#:                          it explicitly, and its deadlock-freedom is a
+#:                          PROPERTY TO BE CHECKED by the CDG obligation,
+#:                          not a consequence of the algorithm.
 #:
-#: `ANYNET_MIN_HOPS` is deliberately NOT the default: its name and its
-#: `anynet_ascending_min` tie-break encode a BookSim backend concept, and a
-#: backend spelling must not become the canonical routing contract. It
-#: stays reachable through `routing_materialize` for callers that ask for
-#: it explicitly.
+#: The mapping below is THE authority. Diagnostics DERIVE their wording
+#: from it (see `_certified_mapping_text`): a hand-written sentence is what
+#: once let this file's error message claim custom used
+#: WEIGHTED_SHORTEST_PATH while the table said ANYNET_MIN_HOPS.
 _POLICY_BY_FAMILY: dict[MaterializedFamily, str] = {
     MaterializedFamily.MESH: DOR_XY,
     MaterializedFamily.CONCENTRATED_MESH: DOR_XY,
@@ -182,6 +189,20 @@ def _anynet_min_hops_policy() -> Any:
     )
 
 
+def _certified_mapping_text() -> str:
+    """Render the certified family -> policy mapping FROM the table.
+
+    DERIVED, never hand-written. The previous diagnostic hard-coded
+    "WEIGHTED_SHORTEST_PATH for explicit custom graphs" while
+    `_POLICY_BY_FAMILY[CUSTOM]` was `ANYNET_MIN_HOPS`; a derived string
+    cannot drift from the table it describes.
+    """
+    return "; ".join(
+        f"{fam.value} -> {_POLICY_BY_FAMILY[fam]}"
+        for fam in sorted(_POLICY_BY_FAMILY, key=lambda f: f.value)
+    )
+
+
 def routing_policy_for(topology: Any) -> str:
     """The declared routing policy id for a materialized topology.
 
@@ -195,10 +216,10 @@ def routing_policy_for(topology: Any) -> str:
     if policy is None:
         raise RouteArtifactError(
             f"UNSUPPORTED: no certified routing policy for topology family "
-            f"{getattr(family, 'value', family)!r} \u2014 DOR_XY is certified "
-            "for mesh and concentrated_mesh, and WEIGHTED_SHORTEST_PATH for "
-            "explicit custom graphs; other families have no certified "
-            "routing yet. Refusing rather than guessing a route semantic.")
+            f"{getattr(family, 'value', family)!r} \u2014 the certified "
+            f"mapping is [{_certified_mapping_text()}]; other families have "
+            "no certified routing yet. Refusing rather than guessing a "
+            "route semantic.")
     return policy
 
 
@@ -243,6 +264,10 @@ def derive_route(*, request: Any, topology: Any) -> RouteArtifact:
                 f"could not be realized on family "
                 f"{getattr(family, 'value', family)!r}: {exc}") from exc
     if policy_id == WEIGHTED_SHORTEST_PATH:
+        # Reachable only if a family is added to `_POLICY_BY_FAMILY` with
+        # this policy (none is today). Kept because WEIGHTED_SHORTEST_PATH
+        # remains a valid, separately-owned producer — deleting the branch
+        # would make re-adding a family silently unsupported.
         # Deadlock-freedom is a property the CDG obligation must CHECK. The
         # producer lives in `routing_materialize`; this module only SELECTS
         # the policy and calls it. There is no synthesis/authoring branch

@@ -445,3 +445,47 @@ def test_custom_policy_is_the_booksim_replica_not_a_new_semantic():
         "link_attrs": {"bandwidth_GBs": 50.0, "latency_ns": 500.0}}),
         width_bits=64, latency_cycles=1)
     assert routing_policy_for(art) == "ANYNET_MIN_HOPS"
+
+
+# ══ ROUTE-C-14: policy table and diagnostics cannot contradict ═════════
+
+def test_route_c_14_diagnostic_derives_from_the_policy_table():
+    """RECLAIMED FIX (PHASE 3.1). The unsupported-family diagnostic once
+    hard-coded "WEIGHTED_SHORTEST_PATH for explicit custom graphs" while
+    `_POLICY_BY_FAMILY[CUSTOM]` said ANYNET_MIN_HOPS.
+
+    This is exercised BEHAVIOURALLY: the raised message must report the same
+    mapping the table declares, for every family in it.
+    """
+    from veritx_dse.model.routing import (
+        routing_policy_for, _POLICY_BY_FAMILY, _certified_mapping_text)
+    from veritx_dse.model.routing_materialize import WEIGHTED_SHORTEST_PATH
+    from veritx_dse.model.topology_artifact import MaterializedFamily
+    from veritx_dse.core.route_artifact import (
+        ANYNET_MIN_HOPS, DOR_XY, RouteArtifactError)
+
+    class _T:
+        def __init__(self, family):
+            self.family = family
+
+    # The table's own answers.
+    assert routing_policy_for(_T(MaterializedFamily.CUSTOM)) == ANYNET_MIN_HOPS
+    assert routing_policy_for(_T(MaterializedFamily.MESH)) == DOR_XY
+    assert routing_policy_for(_T(MaterializedFamily.CONCENTRATED_MESH)) == DOR_XY
+
+    # An unsupported family refuses, and its message must agree with the table.
+    with pytest.raises(RouteArtifactError) as e:
+        routing_policy_for(_T(MaterializedFamily.TORUS))
+    msg = str(e.value)
+    for fam, policy in _POLICY_BY_FAMILY.items():
+        assert f"{fam.value} -> {policy}" in msg, (
+            f"diagnostic omits the real mapping {fam.value} -> {policy}")
+    assert "WEIGHTED_SHORTEST_PATH for explicit custom graphs" not in msg
+    assert "custom -> ANYNET_MIN_HOPS" in msg
+
+    # Nothing maps to WEIGHTED_SHORTEST_PATH today; it stays a valid
+    # producer reachable through routing_materialize only.
+    assert WEIGHTED_SHORTEST_PATH not in _POLICY_BY_FAMILY.values()
+    assert _certified_mapping_text() == "; ".join(
+        f"{f.value} -> {_POLICY_BY_FAMILY[f]}"
+        for f in sorted(_POLICY_BY_FAMILY, key=lambda x: x.value))
