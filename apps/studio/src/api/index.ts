@@ -22,6 +22,15 @@ export const api = {
   health: () => get<{ status: string; api: string }>('/health'),
 
   qualification: () => get<QualificationView>('/qualification'),
+  /** Adopt a studied candidate as the DRAFT. The immutable base revision is
+   *  NOT mutated: the user must compile explicitly before a new revision
+   *  exists. */
+  useCandidate: (optimizationId: string, candidateId: string) =>
+    post<DraftView>(
+      `/optimizations/${encodeURIComponent(optimizationId)}`
+      + `/candidates/${encodeURIComponent(candidateId)}/use`,
+      {},
+    ),
   /** What VERITX can actually optimize, from canonical backend authority. */
   optimizationCapabilities: () =>
     get<OptimizationCapabilities>('/optimization/capabilities'),

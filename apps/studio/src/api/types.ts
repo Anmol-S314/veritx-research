@@ -319,6 +319,14 @@ export interface OptimizationCapabilities {
   metric_registry_id: string;
   locked_parameters: { name: string; reason: string }[];
   qualified_parameters: string[];
+  /** Certified metric -> semantic objective family. `completion_cycles`,
+   *  `completion_time` and `completion_ns` are the SAME authenticated window in
+   *  different units, so they are ONE family and a study over them must render
+   *  a RANKING, never a Pareto frontier. */
+  objective_semantic_families: Record<string, string>;
+  independent_objective_families: string[];
+  multi_objective_available: boolean;
+  objective_note: string;
   unqualified_parameters: string[];
   effectiveness_basis: string;
   multicast_note: string;

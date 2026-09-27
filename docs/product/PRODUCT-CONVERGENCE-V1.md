@@ -253,6 +253,52 @@ slice did not cover.
 
 ---
 
+## PHASES 3-10 — Optimize workflow (IN PROGRESS)
+
+### §1/§16 — units are not dimensions
+
+The certified registry names three metrics. They are NOT three independent
+optimization dimensions: all three read the same canonical artifact
+(`verified["network_binding"]`, the authenticated completion window), and
+`completion_cycles`/`completion_time` even share a producer id. So a study
+over "cycles vs ns" is ONE quantity expressed twice.
+
+NEW `objective_semantic_family()` + `independent_objective_families()` in the
+capability payload, with `multi_objective_available: false` and an
+`objective_note`. The mapping is DECLARED and PROVEN against the producers by
+`tests/test_objective_semantic_families.py` (7 tests), so a genuinely new
+metric cannot be silently folded into `completion`. An unknown metric gets its
+own family — assuming independence merely declines to claim redundancy, which
+is the safe direction.
+
+### Capability-driven design space
+
+NEW `components/DesignSpace.tsx`: one control group per QUALIFIED parameter,
+each showing the current value, the explore chips, and whether the domain is
+backend-enumerated or a UI choice on a validated range. `topology_family`
+chips come from `accepted_values`; `radix` is a free numeric list carrying the
+real seat constraint, so the UI never invents an enumeration. Search
+configuration exposes `method`, a required `seed` for `random`, and a candidate
+budget. The raw Cartesian candidate count is computed BEFORE launch with the
+multiplication shown.
+
+Unqualified knobs appear only in an "Unavailable / not yet qualified" section
+with the backend's measured reason — they cannot enter a study.
+
+### OptimizeView
+
+* **human candidate identity** `mesh · 128b · c1` replaces `cand_cf01...` as the
+  visible label, with the immutable id in a tooltip and in Engineering details;
+* **`multiObjective` is now gated on the registry**, not just the objective
+  count — a two-objective study over unit aliases renders a RANKING, and the
+  Pareto column/heading/scatter are suppressed;
+* **"Use this candidate"** calls `api.useCandidate`, which updates the DRAFT
+  only; the base revision is untouched and the user must Compile.
+
+Studio build: PASS (114 modules).
+
+---
+
 ## NOT DONE in this slice
 
 | step | status |
