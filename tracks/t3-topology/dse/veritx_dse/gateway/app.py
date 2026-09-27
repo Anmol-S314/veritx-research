@@ -369,6 +369,18 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
         )
         return optimization_capabilities()
 
+    @app.post(
+        "/api/v1/optimizations/{optimization_id}/candidates/{candidate_id}/use",
+        tags=["product"])
+    def v1_use_candidate(optimization_id: str,
+                         candidate_id: str) -> dict[str, Any]:
+        """Adopt a studied candidate as the DRAFT.
+
+        The base revision is NOT mutated: it stays immutable, and the user
+        must explicitly compile before a new revision exists.
+        """
+        return product.use_candidate(optimization_id, candidate_id)
+
     @app.get("/api/v1/optimizations/{optimization_id}", tags=["product"])
     def v1_optimization(optimization_id: str) -> dict[str, Any]:
         return product.get_optimization(optimization_id)

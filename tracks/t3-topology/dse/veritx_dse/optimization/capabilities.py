@@ -270,6 +270,21 @@ def optimization_capabilities() -> dict[str, Any]:
         "selection_policies": list(SELECTION_POLICIES),
         "certified_metrics": metrics,
         "metric_registry_id": CERTIFIED_METRIC_REGISTRY.registry_id(),
+        # §1: units are not dimensions. A study is multi-objective only when
+        # the certified registry offers more than one INDEPENDENT semantic
+        # family; today it offers exactly one.
+        "objective_semantic_families": {
+            m["metric"]: objective_semantic_family(m["metric"])
+            for m in metrics},
+        "independent_objective_families": list(
+            independent_objective_families()),
+        "multi_objective_available": len(independent_objective_families()) > 1,
+        "objective_note": (
+            "completion_cycles, completion_time and completion_ns are the SAME "
+            "authenticated completion window expressed in different units, so "
+            "they are ONE semantic objective. A study combining them would "
+            "invent a trade-off that does not exist and must render as a "
+            "measured RANKING, not a Pareto frontier."),
         "locked_parameters": [dict(x) for x in LOCKED_PARAMETERS],
         "effectiveness_basis": _effectiveness_basis(),
         "unqualified_parameters": sorted(
@@ -293,6 +308,50 @@ def optimization_capabilities() -> dict[str, Any]:
             "completion performance only, so a study can never claim the "
             "overall best hardware design."),
     }
+
+
+#: Certified metric -> SEMANTIC OBJECTIVE FAMILY.
+#:
+#: The registry names three metrics, but they are NOT three independent
+#: optimization dimensions:
+#:
+#:   completion_cycles  the authenticated network completion window, in cycles
+#:   completion_time    the SAME window (same producer id)
+#:   completion_ns      the SAME window, as wall time
+#:
+#: All three read the same canonical artifact (`verified["network_binding"]`),
+#: so a study over "cycles vs ns" would be a study of ONE quantity expressed
+#: twice — a frontier with a single underlying dimension. Treating that as
+#: multi-objective would manufacture a trade-off that does not exist.
+#:
+#: The mapping is declared here and PROVEN against the producers by test
+#: (`test_objective_semantic_families.py`), so a genuinely new metric cannot
+#: be silently folded into `completion`.
+_CERTIFIED_OBJECTIVE_FAMILY: dict[str, str] = {
+    "completion_cycles": "completion",
+    "completion_time": "completion",
+    "completion_ns": "completion",
+}
+
+
+def objective_semantic_family(metric: str) -> str:
+    """The semantic family a certified metric belongs to.
+
+    An unregistered metric gets its own family (its own name): assuming
+    independence is the safe direction, because it merely declines to claim
+    redundancy.
+    """
+    return _CERTIFIED_OBJECTIVE_FAMILY.get(metric, metric)
+
+
+def independent_objective_families() -> tuple[str, ...]:
+    """The DISTINCT semantic families the certified registry offers."""
+    seen: list[str] = []
+    for name in _certified_metric_names():
+        family = objective_semantic_family(name)
+        if family not in seen:
+            seen.append(family)
+    return tuple(seen)
 
 
 def _effectiveness_basis() -> str:
@@ -355,4 +414,5 @@ def presentation_order(values: Any) -> tuple[Any, ...]:
 __all__ = [
     "CapabilityError", "LOCKED_PARAMETERS", "ParamCapability",
     "optimization_capabilities", "presentation_order",
+    "objective_semantic_family", "independent_objective_families",
 ]
