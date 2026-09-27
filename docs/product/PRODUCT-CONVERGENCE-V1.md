@@ -83,7 +83,37 @@ in this repository. The file is at:
 | P1 budget not expressible | `_parse_definition` had no budget branch at all; backend `search.py` consumes `budget["max_candidates"]`/`["max_evaluations"]` | accept + validate `budget` object | same | **DONE** |
 | P1 unknown options dropped | no unknown-key check; a misspelled option was ignored | `_OPTIMIZATION_KEYS` closed set; unknown ⇒ `INVALID_INTENT` naming the supported set | same | **DONE** |
 | P1 requested definition not persisted | the optimization record stored only `study` + `candidate_runs`, so `method`/`selection`/`seed`/`budget` were unverifiable after the fact | persist `definition` (the normalized request) | same | **DONE** |
-| P1 canonical domain order | — | `DomainParam` sorts values by canonical JSON, so `[32,64,128]` ⇒ `(128,32,64)`. Documented backend behaviour; **PHASE 3 must present canonical order, not declared order** | pinned in the same test | noted (no code change) |
+| P1 canonical domain order | `[32,64,128]` ⇒ `(128,32,64)` | **C**: added `capabilities.presentation_order()` — numeric display order, explicitly NOT part of the definition; identity/enumeration keep canonical order | `test_optimization_capabilities.py` (4 tests) | **DONE** |
+| P2 capability API | no endpoint; Studio hard-codes `link_width ∈ {32,64,128}` | **B**: new `optimization/capabilities.py` + `GET /api/v1/optimization/capabilities`, derived from `GUIDED_PARAMS` / `SEARCH_METHODS` / `SELECTION_POLICIES` / `CERTIFIED_METRIC_REGISTRY` / the canonical materializer | `test_optimization_capabilities.py` (19 tests) | **DONE** |
+| P2 per-value honesty (expressible ≠ executable) | — | `topology_family` values obtained by ASKING `_family_of` + `MaterializedFamily`: `[mesh, torus, concentrated_mesh]`; `gec`/`fat_tree` refused though they ARE enum members | same | **DONE** |
+| P2 no invented PPA | — | certified metrics are exactly `completion_{cycles,time,ns}`; area/power/energy/cost/thermal appear only in the explicit `not_measured` list | same | **DONE** |
+| P2 LOCKED non-searchable | — | `LOCKED_PARAMETERS` named; parametrized test proves the definition refuses each | same | **DONE** |
+
+### Capability payload (current)
+
+```
+search_methods      ["grid", "enumeration", "random"]
+selection_policies  ["min_first_objective", "lexicographic", "none"]
+certified_metrics   completion_cycles, completion_time, completion_ns
+                    (registry certified-builtin-v1,
+                     316e403f447f90431f761f084539c934aaded9581f15d58d72aa121627a9e938)
+topology_family     mesh, torus, concentrated_mesh      (gec, fat_tree refused)
+linK_width/radix/concentration   accepted_values = None
+                    (validated ranges, NOT finite enumerations — no invented list)
+mcast_groups/mcast_setup_cycles  accepted, but change nothing without multicast
+locked_parameters   routing_function, turn_restrictions, vc_map, vc_count, escape_vc
+not_measured        area, power, energy, cost, thermal, timing closure, effort
+```
+
+---
+
+## NOT DONE in this slice
+
+| step | status |
+|---|---|
+| **D** — PHASE 11 CLI P0 defects (A–G) | **NOT STARTED** |
+| **E** — multi-class optimization hard gate | **NOT STARTED** (the `render_trace` guard IS covered by `test_workload_moe_lowering.py`; the optimization/evaluation path is not) |
+| **F** — PHASE 3 Optimize UI rebuild | **NOT STARTED** (blocked on D/E per the brief) |
 
 ### Step A — backend testability (RESOLVED)
 

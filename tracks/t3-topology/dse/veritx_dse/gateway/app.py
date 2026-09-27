@@ -354,6 +354,21 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
     def v1_run_artifacts(run_id: str) -> dict[str, Any]:
         return product.run_artifacts(run_id)
 
+    @app.get("/api/v1/optimization/capabilities", tags=["product"])
+    def v1_optimization_capabilities() -> dict[str, Any]:
+        """What VERITX can actually optimize, derived from backend authority.
+
+        The Studio derives its controls from THIS. Nothing here is
+        hand-maintained in the frontend: guided parameters, search methods,
+        selection policies and certified metrics all come from canonical
+        backend definitions, and `topology_family` values are obtained by
+        asking the canonical materializer rather than restating an enum.
+        """
+        from veritx_dse.optimization.capabilities import (
+            optimization_capabilities,
+        )
+        return optimization_capabilities()
+
     @app.get("/api/v1/optimizations/{optimization_id}", tags=["product"])
     def v1_optimization(optimization_id: str) -> dict[str, Any]:
         return product.get_optimization(optimization_id)
