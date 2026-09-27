@@ -32,6 +32,50 @@ classifications:
   - DOC_STALE
   - TRULY_ABSENT
 
+#: EXACT semantics. A classification must have mechanical meaning, or the
+#: ledger is prose with a schema bolted on.
+classification_definitions:
+  CURRENT_CANONICAL: >
+    The capability has a current canonical VERITX representation or
+    primitive that PARTICIPATES IN THE CANONICAL AUTHORITY MODEL — an
+    identity owner, a sealed artifact, a registered authority, a typed
+    contract that other canonical code derives from. It does NOT mean
+    merely "the source file is currently in the repository". A record
+    classified CURRENT_CANONICAL must state CANONICAL_REPRESENTATION = YES,
+    or PARTIAL with the canonical portion named.
+  CURRENT_QUALIFIED: >
+    Executes through a canonical path AND its output is qualified against
+    an authority (certificate, profile, executed-equivalence, oracle).
+  CURRENT_BACKEND_ONLY: >
+    The backend implements it and can execute it, but no canonical
+    representation or projection reaches it.
+  CURRENT_LEGACY_EXECUTABLE: >
+    Reachable only through the pre-product legacy CLI path.
+  CURRENT_DOWNSTREAM_ONLY: >
+    Implemented and executed inside a downstream component (LLMServingSim,
+    ASTRA-sim) with no canonical upstream bridge.
+  CURRENT_RESEARCH: >
+    Current, executable research code (scripts/, experiments/, harnesses)
+    that is NOT part of the canonical authority model.
+  HISTORICAL_EXECUTABLE: >
+    Was executable at a recorded historical commit; not reproducible at
+    HEAD (scripts removed, patch unapplied).
+  HISTORICAL_MEASURED: >
+    A measurement result exists in recorded history (commit-qualified
+    artifact or durable run record); it is NOT a current qualification.
+  PROTOTYPE_ONLY: >
+    A prototype/component exists but is wired into no canonical or
+    scientific execution path.
+  DOC_STALE: >
+    A registry or document describes an older state that executable
+    evidence contradicts. ORTHOGONAL — a record may be DOC_STALE in
+    addition to any other classification.
+  TRULY_ABSENT: >
+    Searched current canonical code, backend source, legacy CLI, research
+    scripts, archive/, historical branches, tests and committed results,
+    and found no implementation, execution or measurement evidence. The
+    search scope must be recorded on the record.
+
 #: Every record answers these independently. No collapsed SUPPORTED flag.
 fields:
   - IMPLEMENTED_ANYWHERE
@@ -156,10 +200,10 @@ capabilities:
 
   - id: FAT-TREE-QTREE-TREE4-DRAGONFLY
     name: Fat-tree / QTree / Tree4 / DragonflyNew
-    classifications: [CURRENT_BACKEND_ONLY, DOC_STALE]
+    classifications: [CURRENT_BACKEND_ONLY, HISTORICAL_MEASURED, DOC_STALE]
     IMPLEMENTED_ANYWHERE: "YES — networks/{fattree,qtree,tree4,dragonfly}.cpp, all instantiated by Network::New"
-    EXECUTED_ANYWHERE: "YES — run_full_comparison.py runs fattree/nca, dragonflynew/min, qtree, tree4"
-    MEASURED_ANYWHERE: "YES — full_topology_comparison.xlsx (research artifact, not committed as JSON)"
+    EXECUTED_ANYWHERE: "YES IN HISTORY — run_full_comparison.py drives the real binary per topology (fattree/nca, dragonflynew/min, qtree, tree4); the scripts are at HEAD"
+    MEASURED_ANYWHERE: "YES IN HISTORY — a committed result workbook exists at 6a335004:booksim2/full_topology_comparison.xlsx (20,725 bytes). NOT present at HEAD or on the three audited refs (it lived at booksim2/, not third_party/booksim2/src/)."
     CURRENT_ACTIVE_IMPLEMENTATION: "YES — BookSim binary"
     CANONICAL_REPRESENTATION: "NO"
     CANONICAL_DERIVATION: "NO"
@@ -173,13 +217,16 @@ capabilities:
     evidence:
       - "third_party/booksim2/src/networks/network.cpp"
       - "third_party/booksim2/src/run_full_comparison.py"
+    historical_evidence:
+      - "6a335004:booksim2/full_topology_comparison.xlsx"
+    note: "CORRECTED (seal pass): the workbook is commit-qualified history, not a HEAD artifact. The script alone would prove executable potential, not a completed measurement campaign."
 
   - id: ADAPTIVE-ROUTING
     name: Adaptive routing (MinAdapt/UGAL/Valiant/Chaos/planar/ROMM)
     classifications: [CURRENT_BACKEND_ONLY, CURRENT_RESEARCH, HISTORICAL_EXECUTABLE]
     IMPLEMENTED_ANYWHERE: "YES — routefunc.cpp registers min_adapt_mesh, planar_adapt_mesh, romm_mesh, valiant_mesh, chaos_mesh, ugal_flatfly, ugal_dragonflynew, adaptive_xy_yx_mesh, limited_adapt_mesh"
-    EXECUTED_ANYWHERE: "YES — study_adaptive_vs_dor.sh, study_adaptive_diag*.sh, run_full_comparison.py"
-    MEASURED_ANYWHERE: "YES — adaptive study outputs"
+    EXECUTED_ANYWHERE: "YES IN HISTORY — the fork registers the adaptive routing functions and study_adaptive_*.sh scripts drive the real binary; no committed run artifact was located"
+    MEASURED_ANYWHERE: "NOT PROVEN — the study scripts exist but no committed adaptive-routing result artifact (json/csv/md/xlsx) was located in HEAD or in history"
     CURRENT_ACTIVE_IMPLEMENTATION: "YES — BookSim fork; canonical side has RoutingPolicyDefinition + relation artifacts + verification/adaptive_escape.py"
     CANONICAL_REPRESENTATION: "PARTIAL — RoutingPolicyDefinition models PER_HOP/CANDIDATE_SET/ROUTER_ALLOCATOR/RNG/credit observation; ADAPTIVE/ESCAPE/PHASE/TAP roles exist"
     CANONICAL_DERIVATION: "PARTIAL — relation + resource-binding artifacts exist; no adaptive policy producer wired to a family"
@@ -194,6 +241,7 @@ capabilities:
       - "third_party/booksim2/src/routefunc.cpp"
       - "tracks/t3-topology/dse/veritx_dse/model/routing_policy.py"
       - "tracks/t3-topology/dse/veritx_dse/verification/adaptive_escape.py"
+    note: "CORRECTED (seal pass): 'adaptive study outputs' cited no artifact. The study SCRIPTS prove executable potential; no measurement artifact was found."
 
   - id: MULTI-CLASS-COMMUNICATION
     name: Multi-class traffic (class -> VC subset)
@@ -220,8 +268,8 @@ capabilities:
     name: Hardware flit-fork multicast
     classifications: [HISTORICAL_EXECUTABLE, PROTOTYPE_ONLY]
     IMPLEMENTED_ANYWHERE: "YES — archive/booksim-ext/multicast.patch (300 lines): Flit/IQRouter/TrafficManager fork + mcast_k/mcast_naive/reduce_col/bcast_all config fields"
-    EXECUTED_ANYWHERE: "YES — the patch was applied to the fork for the row-broadcast experiment"
-    MEASURED_ANYWHERE: "YES — mcast experiment outputs; research scripts multicast_savings.py, prefix_multicast.py"
+    EXECUTED_ANYWHERE: "YES IN HISTORY — the patch was applied to the fork and the row-broadcast/broadcast experiments ran; the measurement scripts (mcast_measured.py, decode_e2e.py) were added at 90da38ff and are NOT at HEAD"
+    MEASURED_ANYWHERE: "YES IN HISTORY — durable run records exist (comm/topics status + decision notes added at 90da38ff, c41087b1 and 973ee7bd). No committed numeric result artifact at HEAD."
     CURRENT_ACTIVE_IMPLEMENTATION: "NO — not applied to the current fork"
     CANONICAL_REPRESENTATION: "PARTIAL — logical source replication exists in workload operations; hardware multicast resource does not"
     CANONICAL_DERIVATION: "PARTIAL — logical lowering exists"
@@ -236,6 +284,10 @@ capabilities:
       - "archive/booksim-ext/multicast.patch"
       - "tracks/t3-topology/scripts/research/multicast_savings.py"
       - "tracks/t3-topology/product/examples/multicast.json"
+    historical_evidence:
+      - "90da38ff:tracks/t3-topology/scripts/mcast_measured.py"
+      - "c41087b1:comm/topics/status"
+    note: "CORRECTED (seal pass): a patch proves an implementation prototype, not execution. Execution and measurement are recorded IN HISTORY only; the scripts were removed and the patch is unapplied at HEAD."
 
   - id: MULTIPLANE
     name: Simultaneous multi-plane fabric
@@ -261,8 +313,8 @@ capabilities:
     name: P2P and logical multicast operation contracts
     classifications: [CURRENT_CANONICAL, CURRENT_DOWNSTREAM_ONLY]
     IMPLEMENTED_ANYWHERE: "YES — workload/operations.py, workload/graph.py, workload/messages.py"
-    EXECUTED_ANYWHERE: "YES — typed ops lower through the workload pipeline"
-    MEASURED_ANYWHERE: "YES — via lowered traffic in BookSim runs"
+    EXECUTED_ANYWHERE: "YES — typed ops lower through the workload pipeline (tests exercise construction + lowering)"
+    MEASURED_ANYWHERE: "NOT PROVEN — no committed measurement tied to a canonical originating P2P or logical-multicast operation was located. The lowering exists; the measurement axis is not established."
     CURRENT_ACTIVE_IMPLEMENTATION: "YES"
     CANONICAL_REPRESENTATION: "YES"
     CANONICAL_DERIVATION: "YES"
@@ -278,8 +330,8 @@ capabilities:
     name: Static MoE expert dispatch/combine
     classifications: [CURRENT_DOWNSTREAM_ONLY, CURRENT_CANONICAL]
     IMPLEMENTED_ANYWHERE: "YES — workload/graph.py EXPERT BEGIN/END + collectives; backend/astra.py lowering"
-    EXECUTED_ANYWHERE: "YES downstream"
-    MEASURED_ANYWHERE: "YES — serving MoE traces exercise dispatch/alltoall"
+    EXECUTED_ANYWHERE: "TESTED LOWERING — KIND_EXPERT_BEGIN/END construction, validation and lowering are covered by tests (test_workload_graph.py, test_workload_origin_parity.py). No backend scientific run of the static-MoE producer path was found."
+    MEASURED_ANYWHERE: "NO CONFIRMED STATIC-MOE MEASUREMENT"
     CURRENT_ACTIVE_IMPLEMENTATION: "YES downstream"
     CANONICAL_REPRESENTATION: "YES — expert operation semantics + ALLTOALL dispatch/combine + logical messages"
     CANONICAL_DERIVATION: "YES downstream"
@@ -289,14 +341,18 @@ capabilities:
     QUALIFICATION_EXISTS: "PARTIAL"
     EVIDENCE_CONTRACT: "PARTIAL"
     PRODUCT_WIRED: "NO"
-    MISSING_BRIDGE: "canonical static MoE dispatch/combine producer at intent level (serving MoE is separate)"
+    MISSING_BRIDGE: "canonical static MoE dispatch/combine producer at intent level (SERVING MoE is a SEPARATE path and its measurements are not evidence for this row)"
+    evidence:
+      - "tracks/t3-topology/dse/veritx_dse/workload/graph.py"
+      - "tracks/t3-topology/dse/tests/test_workload_graph.py"
+    note: "CORRECTED (seal pass): the previous MEASURED claim borrowed serving-MoE trace results, which exercise a different path."
 
   - id: PIM
     name: Processing-in-memory
     classifications: [CURRENT_DOWNSTREAM_ONLY, CURRENT_RESEARCH]
     IMPLEMENTED_ANYWHERE: "YES — LLMServingSim serving/core/pim_model.py + power_model.py (real latency/power models)"
     EXECUTED_ANYWHERE: "YES — inside LLMServingSim serving runs"
-    MEASURED_ANYWHERE: "YES — LLMServingSim PIM latency/power outputs"
+    MEASURED_ANYWHERE: "NOT PROVEN — the LLMServingSim PIM latency/power models are real and execute inside serving runs, but no committed PIM result artifact was located in HEAD or history"
     CURRENT_ACTIVE_IMPLEMENTATION: "YES downstream; canonical side has PIM graph markers only"
     CANONICAL_REPRESENTATION: "PARTIAL — canonical PIM graph markers exist"
     CANONICAL_DERIVATION: "NO"
@@ -315,8 +371,8 @@ capabilities:
     name: Ramulator memory simulation
     classifications: [CURRENT_CANONICAL, CURRENT_DOWNSTREAM_ONLY]
     IMPLEMENTED_ANYWHERE: "YES — veritx_dse/simulation/ramulator.py + qualification/ramulator.py"
-    EXECUTED_ANYWHERE: "YES"
-    MEASURED_ANYWHERE: "YES"
+    EXECUTED_ANYWHERE: "YES — the backend runs; a phase-15 handoff document records the Ramulator leg"
+    MEASURED_ANYWHERE: "YES — tracks/t3-topology/docs/HANDOFF-2026-09-18-phase15-ramulator.md records the measured Ramulator leg"
     CURRENT_ACTIVE_IMPLEMENTATION: "YES"
     CANONICAL_REPRESENTATION: "YES — memory artifacts + typed evidence"
     CANONICAL_DERIVATION: "YES"
@@ -327,6 +383,11 @@ capabilities:
     EVIDENCE_CONTRACT: "YES"
     PRODUCT_WIRED: "PARTIAL — no NoC/memory coupling; no product memory API"
     MISSING_BRIDGE: "NoC/memory coupling + product surface"
+    evidence:
+      - "tracks/t3-topology/dse/veritx_dse/simulation/ramulator.py"
+      - "tracks/t3-topology/dse/qualification/ramulator.py"
+    historical_evidence:
+      - "fd2b6694:tracks/t3-topology/docs/HANDOFF-2026-09-18-phase15-ramulator.md"
 
   - id: CANDIDATE-PROMOTION
     name: Topology candidate promotion
@@ -384,7 +445,7 @@ capabilities:
     classifications: [CURRENT_CANONICAL, DOC_STALE]
     IMPLEMENTED_ANYWHERE: "YES — optimization/metric_registry.py registers makespan, critical path, request-latency mean, resource-utilization max"
     EXECUTED_ANYWHERE: "YES"
-    MEASURED_ANYWHERE: "YES"
+    MEASURED_ANYWHERE: "PARTIAL — the registry computes and projects the metrics (covered by test_wave_e_metric_projection.py); no committed measurement result artifact was located"
     CURRENT_ACTIVE_IMPLEMENTATION: "YES"
     CANONICAL_REPRESENTATION: "YES"
     CANONICAL_DERIVATION: "YES"
@@ -398,30 +459,31 @@ capabilities:
 
   - id: NOC-ENERGY
     name: NoC energy estimation
-    classifications: [CURRENT_CANONICAL, CURRENT_RESEARCH]
+    classifications: [CURRENT_RESEARCH, DOC_STALE]
     IMPLEMENTED_ANYWHERE: "YES — tracks/t3-topology/scripts/noc_energy_bridge.py (Accelergy-calibrated pJ/hop), plus the older hops x packet_size proxy and reports/reports.py analytical estimates"
-    EXECUTED_ANYWHERE: "YES"
-    MEASURED_ANYWHERE: "YES — calibrated against Accelergy/FlooNoC"
-    CURRENT_ACTIVE_IMPLEMENTATION: "YES — but THREE fidelity classes coexist"
-    CANONICAL_REPRESENTATION: "PARTIAL — no fidelity class on the metric"
-    CANONICAL_DERIVATION: "PARTIAL"
+    EXECUTED_ANYWHERE: "YES — the bridge is a runnable research script"
+    MEASURED_ANYWHERE: "PARTIAL — the bridge is calibrated against Accelergy/FlooNoC; no committed energy result table was located for a canonical fabric"
+    CURRENT_ACTIVE_IMPLEMENTATION: "YES — but SIX fidelity classes coexist (proxy, tool-derived, bridge, analytical, BookSim native, LLMServingSim)"
+    CANONICAL_REPRESENTATION: "NO — no canonical metric authority carries an energy metric with a fidelity class"
+    CANONICAL_DERIVATION: "NO"
     VERIFIER_EXISTS: "NO"
     BACKEND_PROJECTION: "N/A"
     BACKEND_EXECUTABLE: "N/A"
     QUALIFICATION_EXISTS: "NO"
     EVIDENCE_CONTRACT: "NO"
     PRODUCT_WIRED: "PARTIAL"
-    MISSING_BRIDGE: "canonical fidelity/metric ownership — the three estimators must never be merged into one 'energy'"
+    MISSING_BRIDGE: "canonical fidelity/metric ownership — the six estimators must never be merged into one 'energy'"
     evidence:
       - "tracks/t3-topology/scripts/noc_energy_bridge.py"
       - "tracks/t3-topology/dse/veritx_dse/reports/reports.py"
+    note: "RECLASSIFIED (seal pass): was CURRENT_CANONICAL while its own CANONICAL_REPRESENTATION said PARTIAL. No canonical metric authority for energy exists."
 
   - id: BOOKSIM-NATIVE-POWER
     name: BookSim native Power_Module
     classifications: [CURRENT_BACKEND_ONLY]
     IMPLEMENTED_ANYWHERE: "YES — third_party/booksim2/src/power/"
     EXECUTED_ANYWHERE: "YES when sim_power=1 (not enabled by the topology comparison scripts)"
-    MEASURED_ANYWHERE: "YES historically for ordinary channels"
+    MEASURED_ANYWHERE: "NOT PROVEN — the power module exists and is exercised when sim_power=1, but no committed power result artifact was located, and the topology comparison scripts do not enable it"
     CURRENT_ACTIVE_IMPLEMENTATION: "YES"
     CANONICAL_REPRESENTATION: "N/A"
     CANONICAL_DERIVATION: "NO"
@@ -438,12 +500,12 @@ capabilities:
 
   - id: RTL-VALIDATION
     name: RTL build/run validation
-    classifications: [CURRENT_CANONICAL, CURRENT_RESEARCH]
+    classifications: [CURRENT_RESEARCH]
     IMPLEMENTED_ANYWHERE: "YES — validation/harness/rtl.py (Verilator build+run) + tracks/t3-topology/rtl/*"
-    EXECUTED_ANYWHERE: "YES"
-    MEASURED_ANYWHERE: "YES"
-    CURRENT_ACTIVE_IMPLEMENTATION: "YES"
-    CANONICAL_REPRESENTATION: "N/A"
+    EXECUTED_ANYWHERE: "YES — the harness builds and runs RTL"
+    MEASURED_ANYWHERE: "PARTIAL — harness oracle comparisons run; no committed qualification result artifact located"
+    CURRENT_ACTIVE_IMPLEMENTATION: "YES — the validation harness"
+    CANONICAL_REPRESENTATION: "N/A — RTL is not a canonical VERITX artifact"
     CANONICAL_DERIVATION: "N/A"
     VERIFIER_EXISTS: "YES — oracle comparison in validation/harness/compare.py"
     BACKEND_PROJECTION: "N/A"
@@ -452,15 +514,19 @@ capabilities:
     EVIDENCE_CONTRACT: "PARTIAL"
     PRODUCT_WIRED: "NO"
     MISSING_BRIDGE: "product integration; and it remains SIMULATION, not formal proof"
+    evidence:
+      - "validation/harness/rtl.py"
+      - "validation/harness/compare.py"
+    note: "RECLASSIFIED (seal pass): was CURRENT_CANONICAL with CANONICAL_REPRESENTATION = N/A. Current and executable, but not canonical product science."
 
   - id: UVM-SVA
     name: UVM / SVA generation
-    classifications: [CURRENT_CANONICAL, PROTOTYPE_ONLY]
+    classifications: [PROTOTYPE_ONLY, CURRENT_RESEARCH]
     IMPLEMENTED_ANYWHERE: "YES — verification/uvm_gen.py + generated tests"
-    EXECUTED_ANYWHERE: "PARTIAL — generator runs; no committed simulator execution authority"
+    EXECUTED_ANYWHERE: "PARTIAL — the generator runs; no committed simulator execution authority"
     MEASURED_ANYWHERE: "NO"
     CURRENT_ACTIVE_IMPLEMENTATION: "YES (generator)"
-    CANONICAL_REPRESENTATION: "N/A"
+    CANONICAL_REPRESENTATION: "N/A — generated collateral is not a canonical VERITX artifact"
     CANONICAL_DERIVATION: "N/A"
     VERIFIER_EXISTS: "NO"
     BACKEND_PROJECTION: "N/A"
@@ -469,16 +535,17 @@ capabilities:
     EVIDENCE_CONTRACT: "NO"
     PRODUCT_WIRED: "NO"
     MISSING_BRIDGE: "execution/formal authority — a generator alone is not verification, and generated SVA is not 'proven'"
+    evidence:
+      - "tracks/t3-topology/dse/veritx_dse/verification/uvm_gen.py"
+    note: "RECLASSIFIED (seal pass): was CURRENT_CANONICAL with CANONICAL_REPRESENTATION = N/A. Generation is current; it is not a canonical verification authority."
 
   - id: CDC
     name: Clock-domain crossing
     classifications: [CURRENT_RESEARCH, PROTOTYPE_ONLY]
-    IMPLEMENTED_ANYWHERE: "YES — a CDC FIFO component + testbench under the RTL track"
-    EXECUTED_ANYWHERE: "YES (component-level)"
-    MEASURED_ANYWHERE: "PARTIAL"
-    CURRENT_ACTIVE_IMPLEMENTATION: "YES — a CDC FIFO component (tracks/t3-topology/rtl/cdc/cdc_fifo.sv) with a Verilator testbench (tb_cdc.cpp)"
+    IMPLEMENTED_ANYWHERE: "YES — a CDC FIFO component (tracks/t3-topology/rtl/cdc/cdc_fifo.sv) with a Verilator testbench (tb_cdc.cpp)"
     EXECUTED_ANYWHERE: "YES (component-level, via the cdc Makefile)"
-    MEASURED_ANYWHERE: "PARTIAL — component testbench"
+    MEASURED_ANYWHERE: "PARTIAL — component testbench only"
+    CURRENT_ACTIVE_IMPLEMENTATION: "YES — the RTL component + its testbench; not wired into any canonical multi-clock NoC path"
     CANONICAL_REPRESENTATION: "NO — no multi-clock NoC contract"
     CANONICAL_DERIVATION: "NO"
     VERIFIER_EXISTS: "PARTIAL — component testbench"

@@ -277,10 +277,21 @@ def parse_output(stdout: str) -> dict:
                       plat mean, which inflates on sparse traces because qtime
                       slots go stale across idle gaps
       honest_latency  the VeritX fork's ``honest_avg`` = arrival time minus the
-                      ORIGINAL trace request timestamp. This is the metric the
-                      certified evidence path and the comparison CLI prefer.
+                      ORIGINAL trace request timestamp
 
-    Both are kept under precise names; the stock key is never overwritten.
+    These are TWO POPULATIONS, not one. `p50/p95/p99/honest_avg/pkt_count`
+    all come from the fork's `_all_latencies` vector (request time);
+    `latency`/`max_packet_latency` come from `_plat_stats` (qtime). The
+    metric schema splits them into `sim.latency.*` (qtime) and
+    `sim.trace_request_latency.*` (request) so a consumer cannot read them as
+    one distribution.
+
+    WHO READS WHAT (stated precisely, not "the evidence path prefers
+    honest"): `backend/booksim.py::_execute_prepared` parses BOTH, requires
+    the stock ``latency`` key, and stores the full stats dict; the certified
+    profile, requirements and report consumers therefore read the stock key.
+    The comparison CLI prefers ``honest_latency`` when the fork emits it.
+    Both are parsed; neither is silently substituted for the other.
     """
     result = {}
     expecting_max = False

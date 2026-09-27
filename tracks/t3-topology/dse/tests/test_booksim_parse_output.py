@@ -11,7 +11,9 @@ The stronger lineage (p1b/verified-evaluation == integration/p1-product ==
 epic/booksim-forward-port) carried three semantics the current tree had lost:
 
   1. `honest_avg` -> `honest_latency`   (request-time latency; the metric the
-     comparison CLI and the evidence path prefer)
+     comparison CLI prefers. The certified path parses BOTH keys, requires
+     the stock `latency` key and stores the full stats dict — it does not
+     itself prefer honest latency. Corrected wording, PHASE 3.2-seal.)
   2. a `NUM` numeric grammar that refuses BookSim's bare `= -` no-sample form
      instead of calling `float("-")`
   3. `max_packet_latency` extracted from the block's `\\tmaximum` line, NaN

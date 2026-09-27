@@ -23,7 +23,68 @@ LEDGER = REPO / "docs/product/capability-archaeology.yaml"
 
 @pytest.fixture(scope="module")
 def ledger():
-    return yaml.safe_load(LEDGER.read_text())
+    return load_ledger_strict(LEDGER)
+
+
+class DuplicateKeyError(ValueError):
+    """A machine-readable ledger may not contain duplicate mapping keys."""
+
+
+def _strict_loader():
+    """A SafeLoader that FAILS on duplicate mapping keys.
+
+    `yaml.safe_load()` silently keeps the later value, so the CDC record once
+    defined EXECUTED_ANYWHERE and MEASURED_ANYWHERE twice and every
+    "all 13 axes present" check still passed. Silent acceptance is the bug.
+    """
+    class _Loader(yaml.SafeLoader):
+        pass
+
+    def _construct_mapping(loader, node, deep=False):
+        mapping = {}
+        for key_node, value_node in node.value:
+            key = loader.construct_object(key_node, deep=deep)
+            if key in mapping:
+                raise DuplicateKeyError(
+                    f"duplicate key {key!r} at line "
+                    f"{key_node.start_mark.line + 1}")
+            mapping[key] = loader.construct_object(value_node, deep=deep)
+        return mapping
+
+    _Loader.add_constructor(
+        yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _construct_mapping)
+    return _Loader
+
+
+def load_ledger_strict(path: Path) -> dict:
+    return yaml.load(path.read_text(), Loader=_strict_loader())
+
+
+# ══ PART A: no duplicate keys, ever ═════════════════════════════════════
+
+def test_ledger_has_no_duplicate_mapping_keys():
+    """The law: NO DUPLICATE KEY MAY EXIST IN THE MACHINE-READABLE LEDGER."""
+    load_ledger_strict(LEDGER)  # raises DuplicateKeyError on violation
+
+
+def test_strict_loader_actually_fails_on_duplicate_keys(tmp_path):
+    """Proof the loader is strict — a synthetic duplicate must raise, or the
+    test above is vacuous."""
+    bad = tmp_path / "dup.yaml"
+    bad.write_text("a: 1\nb: 2\na: 3\n")
+    with pytest.raises(DuplicateKeyError):
+        load_ledger_strict(bad)
+    bad2 = tmp_path / "dup2.yaml"
+    bad2.write_text("capabilities:\n  - id: X\n    MEASURED_ANYWHERE: A\n"
+                    "    MEASURED_ANYWHERE: B\n")
+    with pytest.raises(DuplicateKeyError):
+        load_ledger_strict(bad2)
+
+
+def test_strict_loader_agrees_with_safe_load_on_a_valid_document(tmp_path):
+    good = tmp_path / "ok.yaml"
+    good.write_text("a: 1\nb:\n  - c: 2\n")
+    assert load_ledger_strict(good) == yaml.safe_load(good.read_text())
 
 
 # ══ record completeness ═════════════════════════════════════════════════
@@ -59,16 +120,63 @@ def test_classification_vocabulary_is_declared_and_used(ledger):
         assert must in declared
 
 
+# ══ PART B: classification semantics are mechanical ════════════════════
+
+def test_every_classification_has_an_exact_definition(ledger):
+    defs = ledger.get("classification_definitions") or {}
+    for cls in ledger["classifications"]:
+        assert cls in defs, f"{cls} has no definition"
+        assert len(defs[cls].split()) >= 8, f"{cls} definition is a stub"
+
+
+def test_current_canonical_definition_excludes_mere_presence(ledger):
+    d = ledger["classification_definitions"]["CURRENT_CANONICAL"].lower()
+    assert "authority model" in d
+    assert "does not mean" in d and "repository" in d
+
+
+def test_current_canonical_requires_a_canonical_representation(ledger):
+    """A CURRENT_CANONICAL record may not say CANONICAL_REPRESENTATION is
+    NO or N/A. PARTIAL must name the canonical portion that exists."""
+    for cap in ledger["capabilities"]:
+        if "CURRENT_CANONICAL" not in cap["classifications"]:
+            continue
+        rep = str(cap["CANONICAL_REPRESENTATION"]).strip()
+        assert not rep.upper().startswith(("NO", "N/A")), (
+            f"{cap['id']} is CURRENT_CANONICAL but CANONICAL_REPRESENTATION "
+            f"is {rep!r}")
+        if rep.upper().startswith("PARTIAL"):
+            assert len(rep.split()) >= 6, (
+                f"{cap['id']} claims PARTIAL canonical representation "
+                "without naming which portion exists")
+
+
+def test_reclassified_records_are_no_longer_current_canonical(ledger):
+    """The three records whose own fields contradicted CURRENT_CANONICAL."""
+    for cid in ("NOC-ENERGY", "RTL-VALIDATION", "UVM-SVA"):
+        cap = next(c for c in ledger["capabilities"] if c["id"] == cid)
+        assert "CURRENT_CANONICAL" not in cap["classifications"], \
+            f"{cid} is still CURRENT_CANONICAL"
+
+
 # ══ evidence citation ═══════════════════════════════════════════════════
+
+#: Proves IMPLEMENTATION or EXECUTABLE POTENTIAL, never MEASURED.
+_IMPLEMENTATION_ONLY = (".py", ".cpp", ".hpp", ".h", ".yaml", ".cfg", ".sh",
+                       ".patch", ".sv", ".ts")
+#: Can carry a measurement / result.
+_RESULT_LIKE = (".md", ".json", ".csv", ".txt", ".xlsx")
+
 
 def _cites(cap) -> str:
     return " ".join(str(v) for v in cap.values()) + " " + \
-        " ".join(cap.get("evidence") or [])
+        " ".join(cap.get("evidence") or []) + " " + \
+        " ".join(cap.get("historical_evidence") or [])
 
 
 def test_claimed_implementations_cite_a_source_path(ledger):
-    """A YES implementation must name a real path (or an explicit N/A)."""
-    path_re = re.compile(r"[A-Za-z0-9_./-]+\.(py|cpp|hpp|h|md|yaml|json|cfg|sh|patch)")
+    """A YES/PARTIAL implementation must name a real path."""
+    path_re = re.compile(r"[A-Za-z0-9_./-]+\.(py|cpp|hpp|h|md|yaml|json|cfg|sh|patch|sv|ts)")
     for cap in ledger["capabilities"]:
         impl = str(cap["IMPLEMENTED_ANYWHERE"])
         if impl.startswith("YES") or impl.startswith("PARTIAL"):
@@ -77,28 +185,38 @@ def test_claimed_implementations_cite_a_source_path(ledger):
         elif impl.startswith("NO"):
             pass
         else:
-            assert impl.startswith("N/A"), f"{cap['id']}: odd IMPLEMENTED_ANYWHERE {impl!r}"
+            assert impl.startswith("N/A"), \
+                f"{cap['id']}: odd IMPLEMENTED_ANYWHERE {impl!r}"
 
 
-def test_claimed_measurements_cite_an_artifact(ledger):
-    """HISTORICAL_MEASURED / measured YES must cite an experiment or result."""
+def test_every_yes_measurement_cites_result_evidence(ledger):
+    """PART C law — applies to EVERY record, not only HISTORICAL_MEASURED.
+    A script or implementation file proves executable POTENTIAL, never
+    MEASURED."""
     for cap in ledger["capabilities"]:
-        measured = str(cap["MEASURED_ANYWHERE"])
-        if measured.startswith("YES") and "HISTORICAL_MEASURED" in cap["classifications"]:
-            cited = _cites(cap)
-            assert ("RESULTS" in cited or "docs/" in cited or "evidence" in cited
-                    or "run_full_comparison" in cited or "experiments/" in cited
-                    or "study_" in cited or "scripts/" in cited), (
-                f"{cap['id']} is HISTORICAL_MEASURED but cites no result artifact")
+        measured = str(cap["MEASURED_ANYWHERE"]).strip()
+        if not measured.upper().startswith("YES"):
+            continue
+        cited = _cites(cap)
+        assert any(t in cited for t in _RESULT_LIKE), (
+            f"{cap['id']} claims MEASURED_ANYWHERE={measured!r} but cites no "
+            "result artifact (only implementation/script paths)")
 
 
-def test_every_evidence_path_exists_or_is_a_known_history_ref(ledger):
-    """Cited repo paths must exist. Historical SHAs/branches are allowed as
-    text (the audit process, not runtime tests, owns branch comparison)."""
+def test_historical_evidence_is_commit_qualified(ledger):
+    """A historical citation must name a commit, so it can be re-found."""
+    for cap in ledger["capabilities"]:
+        for h in cap.get("historical_evidence") or []:
+            assert re.match(r"^[0-9a-f]{7,40}[:/]", h), (
+                f"{cap['id']} historical_evidence {h!r} is not commit-qualified")
+
+
+def test_every_evidence_path_exists(ledger):
+    """`evidence` paths are HEAD artifacts and must exist."""
     for cap in ledger["capabilities"]:
         for p in cap.get("evidence") or []:
-            full = REPO / p
-            assert full.exists(), f"{cap['id']} cites a non-existent path: {p}"
+            assert (REPO / p).exists(), \
+                f"{cap['id']} cites a non-existent path: {p}"
 
 
 # ══ the MISSING_BRIDGE field is the point ══════════════════════════════
@@ -178,3 +296,41 @@ def test_document_does_not_claim_multicast_json_is_capability():
     doc = DOC.read_text()
     assert "no consumer" in doc.lower()
     assert "is not an executable capability" in doc
+
+
+# ══ PART K: the counts are outputs, and the scope law is explicit ══════
+
+def test_counts_are_scoped_to_the_audited_records():
+    doc = DOC.read_text()
+    assert "these 23 audited records" in doc
+    assert "Counts are OUTPUTS" in doc
+
+
+def test_truly_absent_scope_law_is_explicit():
+    """`TRULY_ABSENT = 0` must never read as 'VERITX has no absent
+    capabilities'."""
+    doc = DOC.read_text()
+    assert "does **not** mean \"VERITX has no" in doc
+    assert "strict TRULY_ABSENT definition" in doc
+
+
+def test_document_records_the_metric_population_split():
+    doc = DOC.read_text()
+    assert "LATENCY METRIC AUTHORITY" in doc
+    assert "sim.trace_request_latency.avg_cycles" in doc
+    assert "_plat_stats" in doc and "_all_latencies" in doc
+
+
+def test_document_records_the_corrected_measurement_claims():
+    doc = DOC.read_text()
+    section = doc.split("### Measurement claims corrected in the seal pass")[1]
+    for cid in ("Fat-tree/QTree/Tree4/Dragonfly", "Static MoE",
+                "P2P + logical multicast", "Hardware multicast"):
+        assert cid in section, f"{cid} not recorded as corrected"
+
+
+def test_document_records_the_reclassifications():
+    doc = DOC.read_text()
+    section = doc.split("### Classification semantics")[1].split("### TRULY_ABSENT")[0]
+    for cid in ("NoC energy", "RTL validation", "UVM/SVA"):
+        assert cid in section, f"{cid} reclassification not recorded"

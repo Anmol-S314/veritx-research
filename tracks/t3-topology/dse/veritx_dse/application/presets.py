@@ -196,9 +196,25 @@ def resolve_trace_bytes(ref: str) -> bytes:
             f"external traces use trace_file)") from None
 
 
-# ── metric schema (booksim-parse/v1 only) ─────────────────────────────
-
-METRIC_SCHEMA_VERSION = "booksim-parse/v1"
+# ── metric schema (booksim-parse/v2) ─────────────────────────────────
+#
+# TWO LATENCY POPULATIONS. BookSim's stats block emits both, and they are
+# NOT statistics of one distribution — verified in the fork source
+# (third_party/booksim2/src/trafficmanager.cpp):
+#
+#   Packet latency average / \tmaximum        <- _plat_stats[c]      (qtime)
+#   p50 / p95 / p99 / honest_avg / pkt_count  <- _all_latencies[c]   (request)
+#
+#   _plat_stats[c]->AddSample(f->atime - head->ctime)     <- qtime slots,
+#       which go STALE across idle gaps and inflate sparse-trace means 100x+
+#   _all_latencies[c].push_back(f->atime - <original trace request ts>)
+#       <- REQUEST time, the same vector the percentiles are sorted from
+#
+# v1 put the qtime mean and the request-time percentiles in one
+# `sim.latency.*` family, so a consumer could read them as one distribution.
+# v2 splits them. `sim.latency.avg_cycles` is RETAINED for backward
+# compatibility but its definition now states exactly which population it is.
+METRIC_SCHEMA_VERSION = "booksim-parse/v2"
 
 
 @dataclass(frozen=True)
@@ -210,18 +226,44 @@ class MetricDefinition:
 
 
 METRIC_DEFINITIONS: tuple[MetricDefinition, ...] = (
-    MetricDefinition("sim.latency.avg_cycles", "cycles",
-                     "BookSim 'Packet latency average' as parsed by "
-                     "simulation.booksim.parse_output", "mean"),
-    MetricDefinition("sim.latency.max_cycles", "cycles",
-                     "BookSim '\\tmaximum' following the packet latency "
-                     "average line", "max"),
-    MetricDefinition("sim.latency.p50_cycles", "cycles",
-                     "BookSim p50 latency line", "percentile-50"),
-    MetricDefinition("sim.latency.p95_cycles", "cycles",
-                     "BookSim p95 latency line", "percentile-95"),
-    MetricDefinition("sim.latency.p99_cycles", "cycles",
-                     "BookSim p99 latency line", "percentile-99"),
+    # ── stock BookSim qtime/ctime population (_plat_stats) ────────────
+    MetricDefinition(
+        "sim.latency.avg_cycles", "cycles",
+        "BookSim 'Packet latency average' — the STOCK qtime/ctime-based "
+        "_plat_stats mean. NOT the same population as "
+        "sim.trace_request_latency.*; do not read the two as one "
+        "distribution.",
+        "mean"),
+    MetricDefinition(
+        "sim.latency.max_cycles", "cycles",
+        "BookSim '\\tmaximum' following 'Packet latency average' — stock "
+        "qtime/ctime _plat_stats max.",
+        "max"),
+    # ── VeritX request-time population (_all_latencies) ──────────────
+    MetricDefinition(
+        "sim.trace_request_latency.avg_cycles", "cycles",
+        "VeritX fork 'honest_avg' = arrival time minus the ORIGINAL trace "
+        "request timestamp (_all_latencies). Same population as the "
+        "percentiles below.",
+        "mean"),
+    MetricDefinition(
+        "sim.trace_request_latency.p50_cycles", "cycles",
+        "VeritX fork p50 of _all_latencies (request time).",
+        "percentile-50"),
+    MetricDefinition(
+        "sim.trace_request_latency.p95_cycles", "cycles",
+        "VeritX fork p95 of _all_latencies (request time).",
+        "percentile-95"),
+    MetricDefinition(
+        "sim.trace_request_latency.p99_cycles", "cycles",
+        "VeritX fork p99 of _all_latencies (request time).",
+        "percentile-99"),
+    MetricDefinition(
+        "sim.trace_request_latency.samples", "packets",
+        "Size of the request-latency vector (_all_latencies) — the sample "
+        "count the request-time percentiles are computed over.",
+        "count"),
+    # ── non-latency ──────────────────────────────────────────────────
     MetricDefinition("sim.hops.avg", "hops",
                      "BookSim average hops line", "mean"),
     MetricDefinition("sim.throughput.rate", "packets/cycle",
@@ -231,8 +273,6 @@ METRIC_DEFINITIONS: tuple[MetricDefinition, ...] = (
                      "count"),
     MetricDefinition("sim.completion_time.cycles", "cycles",
                      "BookSim completion/time-taken cycles line", "total"),
-    MetricDefinition("sim.packets.count", "packets",
-                     "BookSim packet count line", "count"),
     MetricDefinition("sim.flits.injected", "flits",
                      "BookSim flits injected counter", "count"),
     MetricDefinition("sim.flits.accepted", "flits",
@@ -240,19 +280,40 @@ METRIC_DEFINITIONS: tuple[MetricDefinition, ...] = (
 )
 
 # Evidence stats key -> metric id (only genuinely produced metrics).
+#
+# The mapping is what ENFORCES the split: a qtime mean can never be filed
+# under a request-time id, because each key has exactly one destination.
 STATS_TO_METRIC = {
+    # stock qtime population
     "latency": "sim.latency.avg_cycles",
     "max_packet_latency": "sim.latency.max_cycles",
-    "p50": "sim.latency.p50_cycles",
-    "p95": "sim.latency.p95_cycles",
-    "p99": "sim.latency.p99_cycles",
+    # request-time population
+    "honest_latency": "sim.trace_request_latency.avg_cycles",
+    "p50": "sim.trace_request_latency.p50_cycles",
+    "p95": "sim.trace_request_latency.p95_cycles",
+    "p99": "sim.trace_request_latency.p99_cycles",
+    "pkt_count": "sim.trace_request_latency.samples",
+    # non-latency
     "hops": "sim.hops.avg",
     "throughput": "sim.throughput.rate",
     "delivered": "sim.delivered.packets",
     "completion_time": "sim.completion_time.cycles",
-    "pkt_count": "sim.packets.count",
     "flits_injected": "sim.flits.injected",
     "flits_accepted": "sim.flits.accepted",
+}
+
+#: Latency metric ids grouped by the statistical population they belong to.
+#: A consumer that wants "the latency" must choose a population; there is no
+#: single ambiguous family to fall back on.
+LATENCY_POPULATIONS = {
+    "booksim_qtime": ("sim.latency.avg_cycles", "sim.latency.max_cycles"),
+    "trace_request": (
+        "sim.trace_request_latency.avg_cycles",
+        "sim.trace_request_latency.p50_cycles",
+        "sim.trace_request_latency.p95_cycles",
+        "sim.trace_request_latency.p99_cycles",
+        "sim.trace_request_latency.samples",
+    ),
 }
 
 
@@ -270,6 +331,7 @@ def get_metric_definition(metric_id: str) -> MetricDefinition:
 
 __all__ = [
     "FABRIC_PRESETS",
+    "LATENCY_POPULATIONS",
     "METRIC_DEFINITIONS",
     "METRIC_SCHEMA_VERSION",
     "STATS_TO_METRIC",

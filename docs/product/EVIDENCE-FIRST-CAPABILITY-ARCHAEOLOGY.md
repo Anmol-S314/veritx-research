@@ -47,7 +47,6 @@ capability, not by file.
 `reclaim(booksim): restore honest trace latency parsing`
 
 `veritx_dse/simulation/booksim.py::parse_output` is not a legacy CLI helper:
-
 ```
 backend/booksim.py::_execute_prepared  -> parse_output   (CERTIFIED path)
 backend/meshdor.py                     -> parse_output
@@ -79,6 +78,50 @@ paired with BookSim's own accepted-packet-rate accounting). The comparison
 CLI prefers `honest_latency` when the fork emits it. Both are now parsed;
 neither is silently substituted for the other.
 
+## 1b. LATENCY METRIC AUTHORITY (FIXED IN THE SEAL PASS)
+
+The parser fix restored `honest_latency`, but the METRIC SCHEMA still filed a
+qtime mean and request-time percentiles in one `sim.latency.*` family. The
+fork source shows they are different populations:
+
+```
+trafficmanager.cpp
+trafficmanager.cpp:  _plat_stats[c]->AddSample( f->atime - head->ctime )      <- qtime
+trafficmanager.cpp:  _all_latencies[c].push_back( f->atime - <request ts> )   <- request
+trafficmanager.cpp:  "Packet latency average = " << _plat_stats[c]->Average()  <- qtime
+trafficmanager.cpp:  sorted_lat(_all_latencies[c]) -> p50/p95/p99/honest_avg  <- request
+```
+
+Both are emitted **in the same per-class stats block**, which is exactly why a
+consumer could read them as one distribution. `booksim-parse/v2` splits them:
+
+| Metric id | Population | Source key |
+|---|---|---|
+| `sim.latency.avg_cycles` | stock BookSim qtime/ctime (`_plat_stats`) | `latency` |
+| `sim.latency.max_cycles` | stock BookSim qtime/ctime (`_plat_stats`) | `max_packet_latency` |
+| `sim.trace_request_latency.avg_cycles` | VeritX request time (`_all_latencies`) | `honest_latency` |
+| `sim.trace_request_latency.p50_cycles` | request | `p50` |
+| `sim.trace_request_latency.p95_cycles` | request | `p95` |
+| `sim.trace_request_latency.p99_cycles` | request | `p99` |
+| `sim.trace_request_latency.samples` | request | `pkt_count` |
+
+`sim.latency.avg_cycles` is RETAINED for backward compatibility, and its
+definition text now states that it is **not the same population** as
+`sim.trace_request_latency.*`. The old ambiguous ids
+(`sim.latency.p50_cycles`, `.p95`, `.p99`, `sim.packets.count`) are gone —
+nothing consumed them. `LATENCY_POPULATIONS` publishes the grouping so a
+consumer must choose a population.
+
+**Who reads what (corrected wording).** `backend/booksim.py::
+_execute_prepared` parses BOTH keys, **requires** the stock `latency` key and
+stores the full stats dict; the certified profile, requirements and report
+consumers therefore read the stock key. The comparison CLI prefers
+`honest_latency` when the fork emits it. Neither is silently substituted for
+the other. (The earlier parser-commit prose said the certified path
+"prefers honest latency"; that was inaccurate and is corrected in the
+current comments — Git history is not rewritten.)
+
+
 ## 2. CAPABILITY RECORDS
 
 Full structured records are in `capability-archaeology.yaml` (23 records, 13
@@ -92,23 +135,23 @@ the summary; `MISSING_BRIDGE` is the field that matters.
 | GEC-express | CURRENT_BACKEND_ONLY, HISTORICAL_MEASURED, DOC_STALE | canonical materializer + route/VC semantics |
 | Torus | CURRENT_BACKEND_ONLY, HISTORICAL_MEASURED, DOC_STALE | canonical route generator + proof/profile for wraparound minimal routing |
 | FlatFly | CURRENT_BACKEND_ONLY, HISTORICAL_MEASURED, DOC_STALE | authoring/control-plane bridge + route class + backend profile |
-| Fat-tree / QTree / Tree4 / Dragonfly | CURRENT_BACKEND_ONLY, DOC_STALE | canonical representations + qualification (these are NOT "cfg only") |
+| Fat-tree / QTree / Tree4 / Dragonfly | CURRENT_BACKEND_ONLY, HISTORICAL_MEASURED, DOC_STALE | canonical representations + qualification (these are NOT "cfg only") |
 | Adaptive routing | CURRENT_BACKEND_ONLY, CURRENT_RESEARCH, HISTORICAL_EXECUTABLE | policy producer + BookSim projection + executed-route observation + qualification |
 | Multi-class | CURRENT_BACKEND_ONLY, CURRENT_CANONICAL, HISTORICAL_MEASURED | sound canonical class→VC-subset mapping expressed exactly in a profile |
 | Hardware multicast | HISTORICAL_EXECUTABLE, PROTOTYPE_ONLY | reclaim/modernize fork resource semantics + verification |
 | Multiplane | CURRENT_RESEARCH, HISTORICAL_EXECUTABLE | first-class simultaneous multi-plane contract |
 | P2P + logical multicast | CURRENT_CANONICAL, CURRENT_DOWNSTREAM_ONLY | WorkloadV3 / product intent origination |
-| Static MoE | CURRENT_DOWNSTREAM_ONLY, CURRENT_CANONICAL | canonical static MoE dispatch/combine producer |
+| Static MoE | CURRENT_DOWNSTREAM_ONLY, CURRENT_CANONICAL | canonical static MoE dispatch/combine producer (SERVING MoE is separate and is not evidence here) |
 | PIM | CURRENT_DOWNSTREAM_ONLY, CURRENT_RESEARCH | canonical intent → PIM execution bridge |
 | Ramulator | CURRENT_CANONICAL, CURRENT_DOWNSTREAM_ONLY | NoC/memory coupling + product surface |
 | Candidate promotion | CURRENT_CANONICAL, CURRENT_DOWNSTREAM_ONLY | product/API/Studio promotion action |
 | Evidence reuse | CURRENT_CANONICAL, CURRENT_DOWNSTREAM_ONLY | cache lookup/orchestration |
 | Search completeness | CURRENT_CANONICAL, DOC_STALE | registry/docs reconciliation only |
 | Wave-E metrics | CURRENT_CANONICAL, DOC_STALE | registry/docs describe an older missing state |
-| NoC energy | CURRENT_CANONICAL, CURRENT_RESEARCH | canonical fidelity/metric ownership (three estimators must not merge) |
+| NoC energy | CURRENT_RESEARCH, DOC_STALE | canonical fidelity/metric ownership (six estimators must not merge) |
 | BookSim native power | CURRENT_BACKEND_ONLY | MECS-aware power accounting |
-| RTL validation | CURRENT_CANONICAL, CURRENT_RESEARCH | product integration; remains simulation, not proof |
-| UVM/SVA | CURRENT_CANONICAL, PROTOTYPE_ONLY | execution/formal authority |
+| RTL validation | CURRENT_RESEARCH | product integration; remains simulation, not proof |
+| UVM/SVA | PROTOTYPE_ONLY, CURRENT_RESEARCH | execution/formal authority |
 | CDC | CURRENT_RESEARCH, PROTOTYPE_ONLY | canonical multi-clock NoC execution |
 
 ### GEC: what was actually added to BookSim
@@ -245,6 +288,24 @@ Per the work order, `capability-registry.yaml` is **not** edited in this
 tranche. The audit comes first; every row above is unambiguous enough to
 change later, and none of them redefines product semantics.
 
+### Measurement claims corrected in the seal pass
+
+An independent audit found `MEASURED_ANYWHERE = YES` claims that exceeded the
+committed evidence. All four are corrected in the ledger, and a structural
+test now enforces the law for **every** record (not only `HISTORICAL_MEASURED`):
+a script or implementation file proves executable POTENTIAL, never MEASURED.
+
+| Record | Was | Now | Why |
+|---|---|---|---|
+| Fat-tree/QTree/Tree4/Dragonfly | `MEASURED_ANYWHERE: YES — full_topology_comparison.xlsx` | `YES IN HISTORY`, commit-qualified | the workbook **was** found — at `6a335004:booksim2/full_topology_comparison.xlsx` (20,725 bytes), not at HEAD and not on the three audited refs (it lived under `booksim2/`, not `third_party/booksim2/src/`). The script alone would only prove executable potential. |
+| Static MoE | `MEASURED_ANYWHERE: YES — serving MoE traces exercise dispatch/alltoall` | `NO CONFIRMED STATIC-MOE MEASUREMENT`; `EXECUTED_ANYWHERE: TESTED LOWERING` | serving MoE is a **different path**; its measurements are not evidence for the static-MoE producer. Only construction/lowering tests exist. |
+| P2P + logical multicast | `MEASURED_ANYWHERE: YES — via lowered traffic in BookSim runs` | `NOT PROVEN` | no committed measurement tied to a canonically originating P2P/logical-multicast operation was located. The lowering is real; the measurement axis is not established. |
+| Hardware multicast | `EXECUTED_ANYWHERE: YES`, `MEASURED_ANYWHERE: YES` | `YES IN HISTORY`, commit-qualified | a patch proves an implementation prototype, not execution. Execution/measurement evidence exists **in history** (`90da38ff` added `mcast_measured.py`; comm status/decision records at `c41087b1`/`973ee7bd`), and the scripts were removed and the patch unapplied at HEAD. |
+
+Records now carry an optional `historical_evidence:` list, whose entries must
+be commit-qualified (`<sha>:<path>`), so a claim that is true only in history
+can be re-found rather than taken on trust.
+
 ## 4. NEGATIVE EVIDENCE — search scope for TRULY_ABSENT
 
 No capability in this ledger is classified `TRULY_ABSENT`. Where a
@@ -295,21 +356,52 @@ Concrete negative findings recorded here (each with the scope searched):
 
 ## 6. CLASSIFICATION COUNTS
 
-Counted over the 23 records (a record may carry several classifications).
+Counted over **these 23 audited records** (a record may carry several
+classifications). Counts are OUTPUTS of the records, not targets.
 
 | Classification | Records |
 |---|---|
-| CURRENT_CANONICAL | 12 |
+| CURRENT_CANONICAL | 9 |
 | CURRENT_QUALIFIED | 1 |
 | CURRENT_BACKEND_ONLY | 8 |
 | CURRENT_DOWNSTREAM_ONLY | 6 |
-| CURRENT_RESEARCH | 6 |
+| CURRENT_RESEARCH | 7 |
 | CURRENT_LEGACY_EXECUTABLE | 0 |
 | HISTORICAL_EXECUTABLE | 4 |
-| HISTORICAL_MEASURED | 5 |
+| HISTORICAL_MEASURED | 6 |
 | PROTOTYPE_ONLY | 3 |
-| DOC_STALE | 6 |
+| DOC_STALE | 7 |
 | TRULY_ABSENT | 0 |
+
+### Classification semantics
+
+A classification must have mechanical meaning. The exact definitions live in
+`capability-archaeology.yaml:classification_definitions` and are enforced by
+test. The load-bearing one:
+
+> **CURRENT_CANONICAL** — the capability has a current canonical VERITX
+> representation or primitive that **participates in the canonical authority
+> model** (an identity owner, a sealed artifact, a registered authority, a
+> typed contract other canonical code derives from). It does **not** mean
+> merely "the source file is currently in the repository".
+
+Applied to the three records that previously contradicted themselves:
+
+| Record | Was | Now | Why |
+|---|---|---|---|
+| NoC energy | CURRENT_CANONICAL (with `CANONICAL_REPRESENTATION: PARTIAL`) | CURRENT_RESEARCH, DOC_STALE | six estimators, no canonical metric authority, no fidelity class |
+| RTL validation | CURRENT_CANONICAL (with `CANONICAL_REPRESENTATION: N/A`) | CURRENT_RESEARCH | current and executable, but a validation harness is not canonical product science |
+| UVM/SVA | CURRENT_CANONICAL (with `CANONICAL_REPRESENTATION: N/A`) | PROTOTYPE_ONLY, CURRENT_RESEARCH | a generator is not a canonical verification authority |
+
+A structural test now forbids `CURRENT_CANONICAL` with
+`CANONICAL_REPRESENTATION` of `NO` or `N/A`, and requires `PARTIAL` to name
+the canonical portion that exists.
+
+### TRULY_ABSENT scope law
+
+> `TRULY_ABSENT = 0` means **none of these 23 audited records satisfied the
+> strict TRULY_ABSENT definition**. It does **not** mean "VERITX has no
+> absent capabilities."
 
 `CURRENT_LEGACY_EXECUTABLE` is 0 because the legacy CLI is *covered* by the
 `CURRENT_BACKEND_ONLY` records it exercises (the old compare path is the
