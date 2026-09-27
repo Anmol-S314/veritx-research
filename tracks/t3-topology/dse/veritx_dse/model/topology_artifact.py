@@ -396,6 +396,46 @@ def _grid_adjacency(k: int, wrap: bool) -> dict[int, list[int]]:
     return {r: sorted(peers) for r, peers in adj.items()}
 
 
+def _intent_shape(intent: Any) -> tuple[MaterializedFamily, int | None, int]:
+    """Typed topology intent -> (materialized family, radix, concentration).
+
+    The intent's scientific parameters are translated to the materializer's
+    arguments HERE and nowhere else: this is the one seam between the typed
+    authority and the canonical materializer. A kind with no canonical
+    materializer is refused by name rather than silently mapped onto a
+    different family's shape.
+    """
+    from veritx_dse.model.topology_intent import (
+        ConcentratedMeshIntent, FlatFlyIntent, GecExpressIntent, MeshIntent,
+        TorusIntent,
+    )
+    if isinstance(intent, MeshIntent):
+        return (MaterializedFamily.MESH, intent.side_length,
+                intent.concentration)
+    if isinstance(intent, ConcentratedMeshIntent):
+        return (MaterializedFamily.CONCENTRATED_MESH, intent.side_length,
+                intent.concentration)
+    if isinstance(intent, TorusIntent):
+        return (MaterializedFamily.TORUS, intent.side_length,
+                intent.concentration)
+    if isinstance(intent, FlatFlyIntent):
+        # The canonical flatfly materializer exists; radix is the per-
+        # dimension complete-graph size and concentration is explicit.
+        return (MaterializedFamily.FLATFLY, intent.radix_per_dimension,
+                intent.concentration)
+    if isinstance(intent, GecExpressIntent):
+        raise TopologyError(
+            "UNSUPPORTED: GEC express has no canonical materializer yet — "
+            "the intent is authorable and the BookSim backend implements it, "
+            "but the canonical point-to-point express graph is PHASE D work. "
+            "Refusing rather than silently materializing a different family "
+            "(see docs/product/capability-archaeology.yaml GEC-EXPRESS).")
+    raise TopologyError(
+        f"UNSUPPORTED: topology intent kind "
+        f"{getattr(intent, 'kind', type(intent).__name__)!r} has no canonical "
+        "materializer — no silent fallback")
+
+
 def materialize_family(family: MaterializedFamily, *, endpoint_count: int,
                        concentration: int = 1, radix: int | None = None,
                        width_bits: int = _DEFAULT_LINK_WIDTH_BITS,
@@ -648,6 +688,28 @@ def materialize_topology(inventory: NodeInventory,
 
     GEC and fat-tree are refused rather than silently downgraded to mesh.
     """
+    # ── TYPED INTENT source (PHASE B) ───────────────────────────────
+    # The intent is the v3 authority for topology science: it names the
+    # family AND its parameters under scientific names. It must actually
+    # DRIVE materialization, or it would be a decorative field.
+    intent = getattr(cr_or_noc, "topology_intent", None)
+    if intent is not None:
+        noc_check = getattr(cr_or_noc, "noc_config", cr_or_noc)
+        if isinstance(noc_check, NocConfig) and \
+                noc_check.topology_family is not None:
+            raise TopologyError(
+                "a request must express EXACTLY ONE topology source: a "
+                "topology_family AND a typed topology_intent are both "
+                "declared")
+        family, radix, concentration = _intent_shape(intent)
+        width = getattr(noc_check, "link_width", None) \
+            if isinstance(noc_check, NocConfig) else None
+        return materialize_family(
+            family, endpoint_count=inventory.agent_count,
+            concentration=concentration, radix=radix,
+            width_bits=(width if width is not None
+                        else _DEFAULT_LINK_WIDTH_BITS))
+
     # ── EXPLICIT source (FAB-007) ────────────────────────────────────
     # Read by attribute so a FabricIntentView needs no import here and no
     # second topology authority exists (same discipline as noc_config).

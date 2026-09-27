@@ -48,6 +48,7 @@ fields:
   CompileRequestV3.address_map:                 {owner: MEMORY,       src: UI,        class: container, capability: MEM-001}
   CompileRequestV3.physical:                    {owner: PHYSICAL,     src: UI,        class: container}
   CompileRequestV3.explicit_topology:          {owner: FABRIC,       src: UI,        class: G1, default: RECOMMENDATION, capability: FAB-007, behaviour: RENDER_WITH_LIMIT, limit: custom routing unavailable - compilation stops at ROUTING}
+  CompileRequestV3.topology_intent:            {owner: FABRIC,       src: UI,        class: G1, default: RECOMMENDATION, capability: FAB-007, behaviour: RENDER_WITH_LIMIT, limit: gec_express has no canonical materializer yet (PHASE D); flatfly is not routable yet}
   CompileRequestV3.schema_version:              {owner: "-",          src: METADATA,  class: METADATA}
   CompileRequestV3.compiler_semantics_version:  {owner: "-",          src: METADATA,  class: METADATA}
   CompileRequestV3.synthesis_provenance:        {owner: "-",          src: METADATA,  class: METADATA}

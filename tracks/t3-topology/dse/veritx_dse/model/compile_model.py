@@ -1918,6 +1918,10 @@ _TOP_V3_KEYS = frozenset({
     "address_map", "physical", "design_hash", "guardrail_hash",
     "_comment", "_docs",
     "explicit_topology",
+    #: The typed topology-intent authority (PHASE B). Exactly one of
+    #: {noc_config.topology_family, topology_intent, explicit_topology} may
+    #: be declared; see CompileRequestV3.__post_init__.
+    "topology_intent",
     # Synthesis provenance: LINKAGE, never design science. Accepted and
     # persisted, deliberately EXCLUDED from _semantic_dict() so it cannot
     # reach design_hash — a promoted candidate and the identical manual
@@ -2255,6 +2259,19 @@ class CompileRequestV3:
     #: enters `design_hash`. Its `name` does NOT: a synthesized candidate and
     #: the identical hand-authored graph must be the same design science.
     explicit_topology: "TopologyIR | None" = None
+    #: THE TYPED TOPOLOGY AUTHORITY (PHASE B).
+    #:
+    #: `noc_config.topology_family/radix/concentration` is the v2-shaped
+    #: spelling and remains a supported SOURCE, but a v3 document may instead
+    #: declare the science directly with a family-specific intent
+    #: (MeshIntent / ConcentratedMeshIntent / TorusIntent / FlatFlyIntent /
+    #: GecExpressIntent). The intent owns exactly the parameters its family's
+    #: science needs, under scientific names — no `k`/`n`/`c`/`o`/`d`.
+    #:
+    #: ONE SOURCE, ONE AUTHORITY: declaring both a family and an intent is
+    #: two authorities for one fact and is refused. The intent is DESIGN
+    #: SCIENCE, so it enters `design_hash`.
+    topology_intent: Any = None
     #: Optional linkage to the synthesis candidate this design came from.
     #: NOT design semantics: it is excluded from canonical_dict(), so
     #: origin cannot enter design identity. A manual design simply has None.
@@ -2328,6 +2345,36 @@ class CompileRequestV3:
                     f"{self.noc_config.topology_family.value!r} AND an "
                     "explicit_topology graph are both declared — refusing "
                     "two authorities for one fact")
+        # ── typed topology intent (PHASE B) ────────────────────────────
+        if self.topology_intent is not None:
+            from veritx_dse.model.topology_intent import (
+                ExplicitTopologyIntent, TopologyIntent,
+            )
+            if not isinstance(self.topology_intent, TopologyIntent):
+                raise ValueError(
+                    "topology_intent must be a TopologyIntent, got "
+                    f"{type(self.topology_intent).__name__}")
+            if isinstance(self.topology_intent, ExplicitTopologyIntent):
+                raise ValueError(
+                    "ExplicitTopologyIntent is a MARKER: for an explicit "
+                    "graph the graph IS the input, so declare it through "
+                    "explicit_topology (a TopologyIR), not as an intent "
+                    "with no shape parameters (one topology source per "
+                    "request)")
+            if self.noc_config.topology_family is not None:
+                raise ValueError(
+                    "a request must express EXACTLY ONE topology source: "
+                    "noc_config.topology_family="
+                    f"{self.noc_config.topology_family.value!r} AND "
+                    f"topology_intent kind {self.topology_intent.kind!r} "
+                    "are both declared — refusing two authorities for one "
+                    "fact")
+            if self.explicit_topology is not None:
+                raise ValueError(
+                    "a request must express EXACTLY ONE topology source: "
+                    f"topology_intent kind {self.topology_intent.kind!r} "
+                    "AND an explicit_topology graph are both declared — "
+                    "refusing two authorities for one fact")
 
     @property
     def total_nodes(self) -> int:
@@ -2411,6 +2458,8 @@ class CompileRequestV3:
         # REPLACES this with scientific_dict() for identity.
         if self.explicit_topology is not None:
             d["explicit_topology"] = self.explicit_topology.to_dict()
+        if self.topology_intent is not None:
+            d["topology_intent"] = self.topology_intent.to_dict()
         return d
 
     def canonical_dict(self) -> dict:
@@ -2431,6 +2480,10 @@ class CompileRequestV3:
             # must hash the same.
             d["explicit_topology"] = \
                 self.explicit_topology.scientific_dict()
+        if self.topology_intent is not None:
+            # IDENTITY: the typed intent IS design science — its parameters
+            # decide the physical structure, so they must reach the hash.
+            d["topology_intent"] = self.topology_intent.to_dict()
         # Identity/persistence split (P1C phase-2 fix): the persisted
         # workload_source_ref keeps provenance (artifact_identity), but
         # the canonical envelope hashes the identity representation
@@ -2668,6 +2721,18 @@ class CompileRequestV3:
                 raise CompileRequestV3SchemaError(
                     f"invalid explicit_topology: {e}") from e
 
+        # ── typed topology intent (PHASE B) ─────────────────────────────
+        intent = None
+        if d.get("topology_intent") is not None:
+            from veritx_dse.model.topology_intent import (
+                TopologyIntentError, topology_intent_from_dict,
+            )
+            try:
+                intent = topology_intent_from_dict(d["topology_intent"])
+            except TopologyIntentError as e:
+                raise CompileRequestV3SchemaError(
+                    f"invalid topology_intent: {e}") from e
+
         try:
             obj = cls(
                 workload=workload,
@@ -2678,6 +2743,7 @@ class CompileRequestV3:
                 address_map=AddressMap(ranges=tuple(ranges)),
                 physical=physical,
                 explicit_topology=explicit,
+                topology_intent=intent,
                 synthesis_provenance=(dict(d["synthesis_provenance"])
                                       if d.get("synthesis_provenance")
                                       else None),

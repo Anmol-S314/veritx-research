@@ -1157,6 +1157,15 @@ containers:
   CompileRequestV3.address_map: AddressMap
   CompileRequestV3.physical: PhysicalContext
   CompileRequestV3.explicit_topology: TopologyIR
+  CompileRequestV3.topology_intent: TopologyIntent
+  TopologyIntent.kind: str
+  TopologyIntent.side_length: int
+  TopologyIntent.concentration: int
+  TopologyIntent.radix_per_dimension: int
+  TopologyIntent.dimension_count: int
+  TopologyIntent.grid_side_length: int
+  TopologyIntent.express_channel_count: int
+  TopologyIntent.destinations_per_express_channel: int
   AddressMap.ranges: AddressRange
   DependencyGraph.dependencies: Dependency
   TopologyIR.kind: str
@@ -4859,6 +4868,33 @@ nodes:
       blast_radius: "none"
       primitive: [4]
       action: "none - product IA decision, not a contract"
+  - id: fabric.topology_intent
+    domain: FABRIC_INTENT
+    fields: [CompileRequestV3.topology_intent, TopologyIntent.kind, TopologyIntent.side_length, TopologyIntent.concentration, TopologyIntent.radix_per_dimension, TopologyIntent.dimension_count, TopologyIntent.grid_side_length, TopologyIntent.express_channel_count, TopologyIntent.destinations_per_express_channel]
+    real: R2
+    owner: CI
+    edit: TCU
+    kind: PRF
+    default: "null (v2-shaped noc_config spelling)"
+    stored: request -> TopologyArtifact
+    depends_on: [TopologyArtifact, AgentAttachmentArtifact, RouteArtifact, FabricArtifact]
+    invalidates: B
+    validation: [L1n]
+    unsupported: "routing: gec_express (no canonical materializer, PHASE D); flatfly (not routable yet)"
+    refusal_stage: topology
+    visual: [1, 3]
+    evidence: V
+    cite: model/topology_intent.py:1
+    plan:
+      surface: "Fabric"
+      control: "read-only"
+      default: "—"
+      validation_timing: "[]"
+      refusal: "null"
+      change_class: "METADATA"
+      blast_radius: "none"
+      primitive: [4]
+      action: "none - typed intent authority (PHASE B); family-specific controls land in PHASE O"
   - id: fabric.explicit_topology
     domain: FABRIC_INTENT
     fields: [CompileRequestV3.explicit_topology, TopologyIR.kind, TopologyIR.nodes, TopologyIR.links, TopologyIR.link_attrs]
