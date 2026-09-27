@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
-from veritx_dse.core.constants import env_int
+from veritx_dse.core.constants import PLANE_C_MAX_VC, env_int
 from typing import Any
 
 
@@ -452,8 +452,10 @@ class Dependency:
             raise ValueError(
                 f"kind must be a DepKind, got {type(self.kind).__name__}")
 
-# Maximum VC count the fabric supports (PRD §11.3 bound)
-PLANE_C_MAX_VC: int = 8
+# Maximum VC count the fabric supports (PRD §11.3 bound).
+# NOTE: PLANE_C_MAX_VC lives in core.constants (env-overridable via
+# VERITX_MAX_VC) and is imported, not re-declared — a second literal here
+# would be a duplicated magic-number authority that could silently drift.
 
 
 @dataclass(frozen=True)
@@ -892,6 +894,26 @@ class VCAssignment:
     def __post_init__(self):
         if isinstance(self.turn_restrictions, list):
             object.__setattr__(self, 'turn_restrictions', tuple(self.turn_restrictions))
+
+
+def collective_vc_floor(collectives: tuple[CollectiveOp, ...]) -> int:
+    """Minimum VCs so declared collective contexts don't share one VC.
+
+    Assumption (documented, worst-case): declared collectives are
+    potentially concurrent. Concurrent collectives sharing a VC can
+    deadlock via cyclic buffer waits (rank A holds buffers for collective 1
+    waiting on B; B holds buffers for collective 2 waiting on A) — the same
+    reason MPI separates communicator contexts and IB maps classes to
+    distinct service levels. Phase overlap is NOT modeled, so this is a
+    floor, not a proof: VC0 covers the first context, each additional
+    multi-rank collective needs one more VC.
+
+    Single-rank (group_size == 1) collectives need no fabric VC.
+
+    RECLAIMED from the stronger lineage (integration/p1-product), where it
+    is the sibling of collective_vc_map; the current tree had only the map.
+    """
+    return sum(1 for c in collectives if c.group_size > 1)
 
 
 def collective_vc_map(collectives: tuple[CollectiveOp, ...]) -> dict[int, int]:

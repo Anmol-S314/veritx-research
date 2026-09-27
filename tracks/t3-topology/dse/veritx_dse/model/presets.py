@@ -367,6 +367,41 @@ def make_anynet_topo(filepath: str) -> Topology:
     )
 
 
+def anynet_usability(topo: "Topology",
+                     trace_max_node: int | None = None) -> tuple[bool, str]:
+    """Can this anynet topology be simulated MEANINGFULLY? (ok, reason).
+
+    THE reusable gate for custom-graph simulation. BookSim HANGS on a
+    disconnected anynet, and can dribble out a near-empty result (e.g. 13
+    delivered packets) that would otherwise rank as a real measurement.
+
+    Three distinct failures keep three distinct reasons — a missing file
+    (bad glob/typo), a corrupt file (parses to zero routers) and a
+    disconnected graph must never collapse into one shrug. A fourth case
+    is a trace that addresses more nodes than the graph has: the run
+    delivers zero packets and measures nothing.
+
+    ``reason`` is "" when usable. RECLAIMED from the stronger CLI lineage
+    (integration/p1-product) where it was inlined in ``run_compare``;
+    promoted here so every caller shares ONE precheck instead of
+    re-implementing it ad hoc.
+    """
+    nf = (getattr(topo, "params", None) or {}).get("network_file", "")
+    if not nf or not Path(nf).is_file():
+        return False, ("anynet file not found: "
+                       f"{nf or '(topology carries no network_file)'}")
+    connected, n_nodes, n_unreached = check_anynet_connected(nf)
+    if n_nodes == 0:
+        return False, "file parses to zero routers (invalid .anynet?)"
+    if not connected:
+        return False, f"{n_unreached} of {n_nodes} nodes unreachable from node 0"
+    if trace_max_node is not None and trace_max_node >= n_nodes:
+        return False, (f"trace addresses nodes 0..{trace_max_node} but this "
+                       f"anynet has only {n_nodes} — remap the trace or use "
+                       "a larger net")
+    return True, ""
+
+
 # ── Dense presets ──────────────────────────────────────────────────────────
 
 DENSE_PRESETS: dict[str, dict] = {

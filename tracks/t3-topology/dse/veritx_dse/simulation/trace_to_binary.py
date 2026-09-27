@@ -4,7 +4,10 @@
 Binary format:
   - 4 bytes: magic number (0x54524143 = "TRAC")
   - 4 bytes: count of packets
-  - N × 12 bytes: packed records (cycle:uint64, src:uint16, cl:uint16, dst:uint16, size:uint16)
+  - N × 16 bytes: packed records
+      cycle:uint64, src:uint16, cl:uint16, dst:uint16, size:uint16
+      (struct '<QHHHH' = 8+2+2+2+2 = 16 bytes; this header previously said
+       12, which contradicted the pack format — corrected)
 
 Usage:
   python3 trace_to_binary.py input.trace output.trace.bin
@@ -14,6 +17,11 @@ import sys
 from pathlib import Path
 
 BINARY_MAGIC = 0x54524143  # "TRAC"
+
+#: Bytes per packed record. Kept as a named constant so the writer and any
+#: reader/assertion cannot disagree with the docstring again.
+RECORD_STRUCT = "<QHHHH"
+RECORD_BYTES = struct.calcsize(RECORD_STRUCT)
 
 def convert_text_to_binary(input_path: str, output_path: str):
     """Convert text trace to binary format."""
@@ -36,9 +44,9 @@ def convert_text_to_binary(input_path: str, output_path: str):
         f.write(struct.pack('<I', BINARY_MAGIC))
         f.write(struct.pack('<I', len(entries)))
         
-        # Write all records (12 bytes each)
+        # Write all records (RECORD_BYTES each; '<QHHHH' = 16, not 12)
         for cycle, src, cl, dst, size in entries:
-            f.write(struct.pack('<QHHHH', cycle, src, cl, dst, size))
+            f.write(struct.pack(RECORD_STRUCT, cycle, src, cl, dst, size))
     
     print(f"Converted {len(entries)} entries to binary format")
     print(f"  Input:  {input_path} ({Path(input_path).stat().st_size:,} bytes)")

@@ -17,12 +17,20 @@ This is the thing a pre-aggregated matrix CANNOT express (Test 2, Proof 2).
 """
 import json
 import math
+import sys
 from pathlib import Path
 
 import numpy as np
 
-# Local import: milp_topology_v2 lives in the same package
-from .milp_topology_v2 import PIPE_COST, WIRE_COST, _edge_len
+# Script-mode safe import (RECLAIMED from the stronger lineage). This module
+# advertises `python event_objective.py ...` and has a __main__ entry point;
+# a bare package-relative import fails before argparse when run directly.
+# Package import first, direct-script fallback second.
+try:
+    from .milp_topology_v2 import PIPE_COST, WIRE_COST, _edge_len
+except ImportError:  # pragma: no cover - direct-script invocation
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from milp_topology_v2 import PIPE_COST, WIRE_COST, _edge_len  # type: ignore
 
 
 # ── Algorithm decompositions on a GIVEN topology ────────────────────────

@@ -16,30 +16,47 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..core.constants import (
+    BOOKSIM_DEFAULTS,
+    CAPACITANCE_PER_BIT_FF,
+    ENERGY_PER_BIT_PER_HOP,
+    FMAX_DERATING,
+    FREQ_DEFAULT_GHZ,
+    LEAKAGE_PER_ROUTER_MW,
+    LINK_AREA_MM2_256B_7NM,
+    MECS_AREA_MM2_7NM,
+    NIC_AREA_MM2_7NM,
+    RCU_AREA_MM2_7NM,
+    ROUTER_AREA_MM2_7NM,
+    ROUTER_DYNAMIC_MW_PER_MHZ,
+    ROUTER_STAGE_DELAY_PS,
+    TOPO_WIRE_MM,
+    VOLTAGE_DEFAULT,
+    WIRE_DELAY_PS_PER_MM,
+)
 from ..model.compile_model import CompileRequest
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# §7.1 — Area Model
+# §7.1 — Area Model (canonical values from core.constants)
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Per-router area (mm²) at reference nodes, for a 5-stage pipelined
-# NoC router with 4 VCs, 8flit buffers.  Scales roughly with
-# (process_nm / 7nm)².
-_ROUTER_AREA_7NM = 0.005  # mm² per router at 7nm
+# Backward-compat aliases — canonical homes live in core.constants.
+# _ROUTER_AREA_7NM == ROUTER_AREA_MM2_7NM (0.005, identical).
+_ROUTER_AREA_7NM = ROUTER_AREA_MM2_7NM
 
-# Per-link area (mm²) — includes repeaters and wire shielding.
-# Scales with data_width (bits) and process node.
-_LINK_AREA_REF = 0.0003  # mm² per 256-bit link at 7nm
+# _LINK_AREA_REF == LINK_AREA_MM2_256B_7NM (0.0003). Intentionally diverges
+# from LINK_AREA_MM2_PER_MM (0.0001/mm wire-only): per-link (repeaters +
+# shielding) vs per-mm abstraction — do NOT substitute.
+_LINK_AREA_REF = LINK_AREA_MM2_256B_7NM
 
-# Per-NIC area (mm²) — protocol adapter + DMA engine.
-_NIC_AREA_7NM = 0.008  # mm² per NIC at 7nm
+# _NIC_AREA_7NM == NIC_AREA_MM2_7NM (0.008 full NIC + DMA). Intentionally
+# diverges from NIC_AREA_MM2 (0.002 bare NIC) — reports model the full NIC.
+_NIC_AREA_7NM = NIC_AREA_MM2_7NM
 
-# Per-RCU area (mm²) — in-network reduction unit.
-_RCU_AREA_7NM = 0.012  # mm² per RCU at 7nm
+_RCU_AREA_7NM = RCU_AREA_MM2_7NM
 
-# Per-MECS drop cell area (mm²) — express channel endpoint.
-_MECS_AREA_7NM = 0.002  # mm² per MECS endpoint at 7nm
+_MECS_AREA_7NM = MECS_AREA_MM2_7NM
 
 
 def _scale_factor(process_nm: int | None) -> float:
@@ -137,17 +154,17 @@ def estimate_fabric_area(
 # §7.2 — Power Model
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Technology parameters at 7nm
-_DEFAULT_VOLTAGE = 0.75  # V
-_CAPACITANCE_PER_BIT_FF = 0.5  # fF per bit (wire capacitance only)
+# Technology parameters at 7nm (canonical: core.constants).
+_DEFAULT_VOLTAGE = VOLTAGE_DEFAULT
+_CAPACITANCE_PER_BIT_FF = CAPACITANCE_PER_BIT_FF
 
 # Published per-router power at 7nm, ~1GHz, 30% utilization:
 #   ARM CMN-600:     ~8-12 mW per mesh port (128-port config)
 #   Melia et al.:    ~5-15 mW per 5-stage pipelined router (DAC 2010)
 #   TUM survey:      ~10 mW typical for 64-node mesh at 7nm (2022)
 # We use a per-router dynamic power model calibrated to these references.
-_ROUTER_DYNAMIC_MW_PER_MHZ = 0.010  # mW per MHz at 100% activity, 256-bit
-_DEFAULT_LEAKAGE_PER_ROUTER_MW = 0.5  # mW per router at 7nm (sub-threshold + gate)
+_ROUTER_DYNAMIC_MW_PER_MHZ = ROUTER_DYNAMIC_MW_PER_MHZ  # mW per MHz at 100% activity, 256-bit
+_DEFAULT_LEAKAGE_PER_ROUTER_MW = LEAKAGE_PER_ROUTER_MW  # mW per router at 7nm
 
 
 def estimate_dynamic_power(
@@ -155,7 +172,7 @@ def estimate_dynamic_power(
     data_width: int,
     n_hops: float,
     voltage: float = _DEFAULT_VOLTAGE,
-    freq_ghz: float = 1.0,
+    freq_ghz: float = FREQ_DEFAULT_GHZ,
     n_routers: int = 1,
 ) -> float:
     """PRD §7.2: Dynamic power in watts.
@@ -203,7 +220,8 @@ def compute_energy_per_bit(data_width: int = 256, avg_hops: float = 4.0) -> floa
     Typical on-chip NoC: 0.1–1.0 pJ/bit.
     """
     # 0.15 pJ/bit/hop is a published reference for 7nm NoC
-    return 0.15 * avg_hops
+    # ENERGY_PER_BIT_PER_HOP (canonical) is the published 7nm NoC reference.
+    return ENERGY_PER_BIT_PER_HOP * avg_hops
 
 
 def estimate_total_power(
@@ -212,7 +230,7 @@ def estimate_total_power(
     activity_rate: float,
     avg_hops: float,
     voltage: float = _DEFAULT_VOLTAGE,
-    freq_ghz: float = 1.0,
+    freq_ghz: float = FREQ_DEFAULT_GHZ,
     process_nm: int = 7,
 ) -> dict[str, float]:
     """PRD §7.2: Total power — dynamic + leakage.
@@ -235,26 +253,12 @@ def estimate_total_power(
 # §7.3 — Timing Model
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Per-stage delay at 7nm (picoseconds)
-_ROUTER_STAGE_DELAY_PS = {
-    "input_buffer": 80,
-    "routing_computation": 60,
-    "vc_allocation": 80,
-    "switch_allocation": 100,
-    "crossbar_traversal": 60,
-}
+# Canonical timing knobs live in core.constants; aliases kept for backward compat.
+_ROUTER_STAGE_DELAY_PS = ROUTER_STAGE_DELAY_PS
 
-# Wire delay per mm at 7nm (ps/mm)
-_WIRE_DELAY_PS_PER_MM = 3.5  # speed of light ~50% in copper
+_WIRE_DELAY_PS_PER_MM = WIRE_DELAY_PS_PER_MM
 
-# Average wire length for different topologies (mm)
-_TOPO_WIRE_MM = {
-    "mesh": 0.5,
-    "torus": 0.4,     # wraparound reduces avg distance
-    "flatfly": 0.3,   # concentrated
-    "gec": 0.35,      # express channels
-    "anynet": 0.45,   # unknown, assume mesh-like
-}
+_TOPO_WIRE_MM = TOPO_WIRE_MM
 
 
 def router_pipeline_stages() -> list[dict[str, Any]]:
@@ -290,7 +294,8 @@ def estimate_critical_path_ps(
 # Derating factor: real Fmax = ideal Fmax × derating.
 # Accounts for clock skew, setup/hold margins, IR drop, PVT variation.
 # Reference: Synopsys timing closure reports for 7nm NoC designs.
-_FMAX_DERATING = 0.75  # 25% margin is conservative for 7nm
+# Canonical: core.constants FMAX_DERATING (alias kept for backward compat).
+_FMAX_DERATING = FMAX_DERATING
 
 
 def estimate_max_frequency(
@@ -416,6 +421,87 @@ def generate_report(
     # Include simulation results if provided
     if sim_result:
         report["simulation"] = sim_result
+
+    # Collective sizing block (PRD §5.2 Level B — estimates, not sign-off).
+    # Incast buffer note: worst-case concurrent arrivals at one port ≈
+    # incast_degree × packet_size flits (canonical: BOOKSIM_DEFAULTS in
+    # core.constants). A fabric absorbing full-fan-in bursts without
+    # backpressure needs vc_buf at or above that; below it, expect the
+    # saturation seen in trace replay.
+    # Hypercast estimate: alltoall/allgather among G ranks takes G*(G-1)
+    # unicast messages vs G hardware-multicast messages, saving G*(G-2).
+    from ..model.compile_model import collective_vc_floor, collective_vc_map
+    colls = list(cr.workload.collectives)
+    multi = [c for c in colls if c.group_size > 1]
+    max_incast = max((c.group_size for c in multi), default=0)
+    hypercast_saved = {
+        f"{c.kind.value}/{c.group_size}": c.group_size * (c.group_size - 2)
+        for c in multi
+        if c.kind.value in ("alltoall", "allgather") and c.group_size > 2
+    }
+    # Ring-algorithm phase estimates for reduce collectives: a ring
+    # allreduce/reducescatter over G ranks takes 2*(G-1) phases. Assumes the
+    # ring algorithm (bandwidth-optimal, latency-suboptimal); a tree or
+    # in-network-compute collapse is NOT modeled — see note below.
+    ring_phases = {
+        f"{c.kind.value}/{c.group_size}": 2 * (c.group_size - 1)
+        for c in multi
+        if c.kind.value in ("allreduce", "reducescatter") and c.group_size > 1
+    }
+    # Multicast group fit vs the GUIDED hardware knobs (None = ideal).
+    mcast_kinds = ("alltoall", "allgather", "broadcast")
+    mcast_need = [c for c in multi if c.kind.value in mcast_kinds]
+    mcast_groups = cr.noc_config.mcast_groups
+    mcast_setup = cr.noc_config.mcast_setup_cycles
+    mcast_fallback = (
+        max(0, len(mcast_need) - mcast_groups) if mcast_groups is not None
+        else 0
+    )
+    setup_cost = (
+        len(mcast_need) * mcast_setup
+        if mcast_setup is not None else None
+    )
+    report["collectives"] = {
+        "contexts": [
+            {"kind": c.kind.value, "group_size": c.group_size,
+             "bytes_per_element": c.bytes_per_element}
+            for c in colls
+        ],
+        "vc_floor": collective_vc_floor(tuple(colls)),
+        "collective_vc_map": collective_vc_map(tuple(colls)),
+        "max_incast_degree": max_incast,
+        "recommended_vc_buf_note": (
+            f"Full-fan-in absorption needs vc_buf >= {max_incast * BOOKSIM_DEFAULTS['packet_size']} flits "
+            f"({max_incast} ranks x {BOOKSIM_DEFAULTS['packet_size']}-flit packets); below this, size for "
+            f"backpressure tolerance, not losslessness. Estimate only."
+            if max_incast else "No multi-rank collectives — no incast sizing."
+        ),
+        "hypercast_messages_saved_estimate": hypercast_saved,
+        "hypercast_note": (
+            "Message counts only (G*(G-1) unicast vs G multicast). Excludes "
+            "group-setup latency and the N-1→1 phase collapse from "
+            "in-network compute — both unmodeled. Do not quote as speedup."
+            if hypercast_saved else "No alltoall/allgather with G>2."
+        ),
+        "ring_phases_estimate": ring_phases,
+        "ring_note": (
+            "Phase counts assume the ring algorithm, 2*(G-1) phases per "
+            "collective. Bandwidth-optimal but latency-suboptimal; tree and "
+            "in-network-compute collapses unmodeled. Phase counts, not time."
+            if ring_phases else "No allreduce/reducescatter with G>1."
+        ),
+        "multicast_groups_required": len(mcast_need),
+        "multicast_groups_available": mcast_groups,
+        "multicast_fallback_to_unicast": mcast_fallback,
+        "multicast_setup_cost_cycles_estimate": setup_cost,
+        "multicast_note": (
+            "One group per multicast collective context; excess contexts "
+            "fall back to unicast (slower, still correct). Setup cost = "
+            "contexts × mcast_setup_cycles; dynamic reconfiguration during "
+            "expert routing unmodeled. None-valued knobs mean ideal "
+            "multicast was assumed."
+        ),
+    }
 
     # Validation / VC assignment info (PRD §13 — all stages in report)
     from ..model.compile_model import derive_vc_assignment, verify_design, generate_artifacts
