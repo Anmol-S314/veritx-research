@@ -1996,3 +1996,47 @@ p, li { text-wrap: pretty; }
 .stage-list li { padding: 2px 0; }
 .stage-derived { color: var(--ok); }
 .stage-stopped { color: var(--warn); font-weight: 600; }
+
+/* ── Study verdict (Optimize result header) ───────────────────────────── */
+.verdict .verdict-kicker {
+  margin: 0 0 2px;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.verdict .verdict-headline {
+  margin: 0;
+  font-size: 20px;
+}
+.verdict .verdict-headline.muted { color: var(--muted); }
+.verdict .verdict-value {
+  margin: 4px 0 12px;
+  font-size: 24px;
+  font-family: var(--mono);
+}
+.verdict .verdict-value .muted { font-size: 13px; }
+.verdict .verdict-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin: 12px 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.verdict .verdict-grid > div { display: flex; flex-direction: column; gap: 2px; }
+.verdict .verdict-label {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.verdict .verdict-grid .good { color: var(--ok); }
+.verdict .verdict-grid .bad { color: var(--bad); }
+.verdict .verdict-limit {
+  margin: 12px 0 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--warn);
+  background: var(--bg-raise);
+  font-size: 13px;
+}

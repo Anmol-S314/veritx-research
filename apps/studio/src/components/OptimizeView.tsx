@@ -13,6 +13,7 @@ import type {
   StudyObjective,
 } from '../types';
 import { Empty, Hash, StatusBadge, fmtNum, humanize } from './badges';
+import { candidateLabel, guidedDelta } from '../labels';
 import presentationJson from '../presentation.json';
 
 // Presentation is keyed ONLY by the engine's explicit contract values
@@ -172,30 +173,8 @@ function paretoPlot(
   );
 }
 
-/** A human identity for a candidate, derived from its DESIGN.
- *
- *  `cand_cf01ae...` is not something a person can reason about, and the brief
- *  is explicit that it must not be the visible identity. The label is the
- *  design itself: family · width · concentration. The immutable id stays in
- *  tooltips and in Engineering details.
- */
-function candidateLabel(
-  c: Candidate,
-  base: Record<string, unknown> | null,
-): string {
-  const patch = (c.guided_patch ?? {}) as Record<string, unknown>;
-  const val = (k: string): unknown =>
-    (patch[k] !== undefined ? patch[k] : base?.[k]);
-  const parts: string[] = [];
-  const fam = val('topology_family');
-  if (fam !== undefined && fam !== null) parts.push(String(fam));
-  const width = val('link_width');
-  if (width !== undefined && width !== null) parts.push(`${width}b`);
-  const conc = val('concentration');
-  if (conc !== undefined && conc !== null) parts.push(`c${conc}`);
-  return parts.join(' · ') || 'base design';
-}
-
+// candidateLabel lives in ../labels.ts — one human identity for a design,
+// shared by the verdict header and this table.
 function VerdictChip({ map, state }: { map: PresentationMap; state: string | null | undefined }): ReactElement {
   const e = entry(map, state);
   return <span className={`verdict-chip ${e.class}`}>{e.label}</span>;
@@ -557,13 +536,13 @@ export default function OptimizeView({
                   </tr>
                 </thead>
                 <tbody>
-                  {Object.entries(selected.guided_patch).map(([k, v]) => (
-                    <tr key={k}>
+                  {guidedDelta(selected, baseGuided ?? null).map(({ name, from, to }) => (
+                    <tr key={name}>
                       <td>
-                        <code>{k}</code>
+                        {name}
                       </td>
-                      <td className="num">{fmtNum(baseGuided?.[k] ?? null)}</td>
-                      <td className="num changed">{fmtNum(v)}</td>
+                      <td className="num">{from}</td>
+                      <td className="num changed">{to}</td>
                     </tr>
                   ))}
                 </tbody>

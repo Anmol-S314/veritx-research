@@ -8,6 +8,7 @@ import { Hash, StatusBadge, fmtNum } from '../components/badges';
 import OptimizeView from '../components/OptimizeView';
 import OptimizationAnalysis from '../components/OptimizationAnalysis';
 import DesignSpace from '../components/DesignSpace';
+import StudyVerdict from '../StudyVerdict';
 
 // NO hard-coded control list. Every parameter, and every value the UI offers,
 // comes from GET /optimization/capabilities, which is derived from canonical
@@ -273,6 +274,11 @@ function StudyResult({
 }): ReactElement {
   return (
     <div className="page">
+      <StudyVerdict
+        study={optimization.study}
+        baseGuided={(baseRevision?.design?.noc_guided ?? null) as Record<string, unknown> | null}
+        multiObjective={multiObjectiveAvailable}
+      />
       <section className="card">
         <h3>Study {optimization.optimization_id}</h3>
         <div className="kv"><span>base revision</span><span>{optimization.base_revision_id}</span></div>
