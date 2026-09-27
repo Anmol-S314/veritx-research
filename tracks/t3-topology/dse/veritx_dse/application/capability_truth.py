@@ -4,15 +4,19 @@ WHY THIS EXISTS
 ===============
 
 We have repeatedly shipped documentation that claimed a capability the
-compiler or evaluator could not actually execute. The worst instance:
-`docs/product/topology-family-registry.yaml` marks CONCENTRATED_MESH
-`PROJECTABLE: YES, EXECUTABLE: YES, QUALIFIED: YES`, while
-`select_booksim_profile()` has exactly two profiles — a native mesh-DOR
-profile whose guard is `TopologyArtifact.family is MaterializedFamily.MESH`,
-and the AnyNet profile, which requires `ANYNET_MIN_HOPS`. Concentrated mesh
-materializes as `MaterializedFamily.CONCENTRATED_MESH` and routes `DOR_XY`,
-so it satisfies NEITHER. The registry was describing an intention, not a
-fact.
+compiler or evaluator could not actually execute. A historical instance:
+`docs/product/topology-family-registry.yaml` marked CONCENTRATED_MESH
+`PROJECTABLE: YES, EXECUTABLE: YES, QUALIFIED: YES` back when
+`select_booksim_profile()` had only two certified profiles — the native
+mesh-DOR profile whose guard is `TopologyArtifact.family is
+MaterializedFamily.MESH`, and the AnyNet profile, which requires
+`ANYNET_MIN_HOPS`. Concentrated mesh materializes as
+`MaterializedFamily.CONCENTRATED_MESH` and routes `DOR_XY`,
+so it satisfied NEITHER. The registry was describing an intention, not a
+fact. (P2 closed this gap with the dedicated
+`CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1` profile; the live truth below now
+derives CONCENTRATED_MESH stages from the real selector, which selects
+that profile for a qualifying fabric.)
 
 THE LAW
 =======

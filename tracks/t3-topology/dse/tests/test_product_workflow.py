@@ -1187,7 +1187,46 @@ def test_reproduce_endpoint_contract(tmp_path):
         reproduce_mod.reproduce_booksim_run_bundle = real
 
 
-def test_unevaluable_revision_refuses_simulation_honestly(tmp_path):
+def test_concentrated_revision_evaluates_after_cmesh_profile(tmp_path):
+    """Phase 2 acceptance: the shipped concentrated template lowers (TP
+    allreduce), selects CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1, and evaluates —
+    the old mesh-DOR seat_capacity refusal is gone. MoE stays honestly
+    refused at the profile gate until multi-class execution lands."""
+    client = _client(tmp_path, with_backend=False)
+    catalog = client.get("/api/v1/catalog/workloads").json()["workloads"]
+    moe = next(w for w in catalog
+               if w["workload_id"] == "moe-8x7b-64tiles")
+    assert moe["evaluation_supported"] is False
+    assert moe["evaluation_domain"] == "backend_profile"
+    assert "VC" in (moe["evaluation_note"] or "")
+
+    conc = next(w for w in catalog
+                if w["workload_id"] == "dense-4b-32tiles-conc4")
+    assert conc["evaluation_supported"] is True, conc
+    assert conc["evaluation_domain"] is None
+
+    # Both dense mesh workloads stay inside the certified profile.
+    for w in catalog:
+        if w["workload_id"] in ("llama-dense-8b-64tiles",
+                                "dense-1b-16tiles"):
+            assert w["evaluation_supported"] is True, w["workload_id"]
+            assert w["evaluation_domain"] is None
+
+    resp = client.post("/api/v1/projects",
+                       json={"name": "Conc Study",
+                             "workload_id": "dense-4b-32tiles-conc4"})
+    assert resp.status_code == 200, resp.text
+    pid = resp.json()["project"]["project_id"]
+    revision = client.post(f"/api/v1/projects/{pid}/compile").json()
+    assert revision["compilation"]["status"] == "COMPILED"
+    assert revision["certificate"]["overall"] == "PASS"
+
+    project = client.get(f"/api/v1/projects/{pid}").json()
+    support = project["active_evaluation"]
+    assert support["supported"] is True, support
+
+
+def test_unevaluable_moe_revision_refuses_simulation_honestly(tmp_path):
     """A certified MoE revision lowers (declared-ops law) and its
     per-message classes reach the profile gate, where the certified
     BookSim profile cannot execute them: the catalog, the project view
@@ -1200,21 +1239,6 @@ def test_unevaluable_revision_refuses_simulation_honestly(tmp_path):
     assert moe["evaluation_supported"] is False
     assert moe["evaluation_domain"] == "backend_profile"
     assert "VC" in (moe["evaluation_note"] or "")
-
-    # The concentrated template lowers (TP allreduce), so its refusal is
-    # also a profile refusal — never a lowering one.
-    conc = next(w for w in catalog
-                if w["workload_id"] == "dense-4b-32tiles-conc4")
-    assert conc["evaluation_supported"] is False
-    assert conc["evaluation_domain"] == "backend_profile"
-    assert "concentration" in (conc["evaluation_note"] or "")
-
-    # Both dense mesh workloads stay inside the certified profile.
-    for w in catalog:
-        if w["workload_id"] in ("llama-dense-8b-64tiles",
-                                "dense-1b-16tiles"):
-            assert w["evaluation_supported"] is True, w["workload_id"]
-            assert w["evaluation_domain"] is None
 
     resp = client.post("/api/v1/projects",
                        json={"name": "MoE Study",

@@ -78,6 +78,20 @@ _MESH_DOR_SEMANTICS_VERSION = "booksim2-fork+P1B-meshdor-dump+prepared-v2"
 _MESH_DOR_LOWERER_VERSION = "DORXY/1"
 _MESH_DOR_ROUTING_FUNCTION = "dim_order"
 
+_CMESH_DOR_PROFILE_ID = "CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1"
+_CMESH_DOR_SEMANTICS_VERSION = "booksim2-fork+P2-cmesh-dor+prepared-v1"
+_CMESH_DOR_LOWERER_VERSION = "DORXY/1"
+#: The fork composes its routing registry key as
+#:   routing_function + "_" + topology
+#: and cmesh registers "dor_no_express_cmesh" (networks/cmesh.cpp:66), so the
+#: VALUE here is "dor_no_express". This is the PLAIN dimension-order
+#: function (networks/cmesh.cpp: cmesh_next_no_express — x-then-y, no
+#: express branch): exactly the canonical DOR_XY semantics over the
+#: unfolded 2k x 2k node grid. The EXPRESS variant ("dor_cmesh" via
+#: cmesh_next) adds bypass channels the canonical artifact does not
+#: materialize and is deliberately not certified.
+_CMESH_DOR_ROUTING_FUNCTION = "dor_no_express"
+
 _ANYNET_PROFILE_ID = "CERTIFIED_BOOKSIM_ANYNET_V1"
 _ANYNET_SEMANTICS_VERSION = "booksim2-fork+B3.7b-anynet-dump+prepared-v2"
 
@@ -203,7 +217,8 @@ _A = ParameterOwner
 
 #: master render order for the fields this projector emits
 CONFIG_KEY_ORDER = (
-    "topology", "k", "n", "use_noc_latency", "network_file",
+    "topology", "k", "n", "c", "x", "y", "xr", "yr", "use_noc_latency",
+    "network_file",
     "routing_function", "routing_dump_file",
     "num_vcs", "classes", "router", "priority", "link_failures",
     "traffic", "sample_period", "max_samples", "injection_rate",
@@ -309,8 +324,75 @@ MESH_DOR_PROFILE = BookSimProfile(
     semantics_version=_MESH_DOR_SEMANTICS_VERSION, audit=_mesh_audit())
 
 
+def _cmesh_audit() -> tuple[ConfigRead, ...]:
+    """The audit re-pathed for the native concentrated-mesh surface.
+
+    CMesh reads (networks/cmesh.cpp::_ComputeSize): ``k`` (side), ``n``
+    (dimensionality, asserted <= 2), ``c`` (concentration, asserted == 4),
+    ``x``/``y`` (topology extent, asserted equal), ``xr``/``yr``
+    (concentration split, asserted xr*yr == c and xr == yr), plus
+    ``use_noc_latency``. It shares the router/VC/traffic-manager surface
+    with the mesh profile, so every row except the CMesh-specific ones is
+    carried over verbatim from ``_mesh_audit`` — sharing tables would let
+    one profile's pins vouch for the other's reads.
+    """
+    cmesh_only = {"k", "n", "use_noc_latency"}
+    rows: list[ConfigRead] = []
+    for row in _mesh_audit():
+        if row.name in cmesh_only:
+            continue
+        if row.name == "topology":
+            rows.append(ConfigRead(
+                "topology", _A.CANONICAL, "networks/network.cpp", "cmesh",
+                note="native concentrated-mesh render (no AnyNet file)"))
+            continue
+        rows.append(row)
+    rows.extend((
+        ConfigRead(
+            "k", _A.DERIVED, "networks/cmesh.cpp",
+            note="concentrated-mesh side: k x k router grid re-derived "
+                 "from the topology artifact"),
+        ConfigRead(
+            "n", _A.DERIVED, "networks/cmesh.cpp",
+            note="dimensionality; the fork asserts n <= 2 and the certified "
+                 "domain pins n = 2"),
+        ConfigRead(
+            "c", _A.CANONICAL, "networks/cmesh.cpp",
+            note="seats per router, from TopologyArtifact.seat_capacity; "
+                 "the fork asserts c == 4"),
+        ConfigRead(
+            "x", _A.DERIVED, "networks/cmesh.cpp",
+            note="topology extent; read and asserted equal to y by the "
+                 "fork but unused beyond the assert — rendered as the "
+                 "canonical side length k"),
+        ConfigRead(
+            "y", _A.DERIVED, "networks/cmesh.cpp",
+            note="topology extent; asserted equal to x by the fork"),
+        ConfigRead(
+            "xr", _A.CANONICAL, "networks/cmesh.cpp",
+            note="concentration split along x; canonical geometry is "
+                 "square, so xr = yr = sqrt(c); the fork asserts xr*yr == c"),
+        ConfigRead(
+            "yr", _A.CANONICAL, "networks/cmesh.cpp",
+            note="concentration split along y; asserted equal to xr"),
+        ConfigRead(
+            "use_noc_latency", _A.BACKEND_PROFILE, "networks/cmesh.cpp", 0,
+            note="PINNED 0: the certified envelope requires uniform "
+                 "link latency 1. The fork's noc-latency path sets "
+                 "per-dimension latencies from the concentration split "
+                 "(non-uniform for every certified geometry), so the pin "
+                 "disables that path instead of certifying it"),
+    ))
+    return tuple(rows)
+
+
+CMESH_DOR_PROFILE = BookSimProfile(
+    profile_id=_CMESH_DOR_PROFILE_ID,
+    semantics_version=_CMESH_DOR_SEMANTICS_VERSION, audit=_cmesh_audit())
+
+
 def _assert_profile_closure() -> None:
-    for profile in (ANYNET_PROFILE, MESH_DOR_PROFILE):
+    for profile in (ANYNET_PROFILE, MESH_DOR_PROFILE, CMESH_DOR_PROFILE):
         for row in profile.audit:
             if row.owner is ParameterOwner.BACKEND_PROFILE \
                     and row.name != "traffic" and row.name != "sample_period" \
@@ -320,6 +402,9 @@ def _assert_profile_closure() -> None:
     if MESH_DOR_PROFILE.known_names() == ANYNET_PROFILE.known_names():
         raise BookSimProjectionError(
             "the mesh profile must have its own audited surface")
+    if CMESH_DOR_PROFILE.known_names() == MESH_DOR_PROFILE.known_names():
+        raise BookSimProjectionError(
+            "the cmesh profile must have its own audited surface")
 
 
 _assert_profile_closure()
@@ -485,6 +570,186 @@ def qualify_native_mesh_dor(parents: BookSimProjectionParents
         attachment_hash=parents.attachment.attachment_hash())
 
 
+@dataclass(frozen=True)
+class CMeshDorQualification:
+    """The proof that the native concentrated-mesh DOR projection may be used.
+
+    Every field is a canonical artifact fact that the profile's execution
+    semantics were proven against; nothing here is derived from counts
+    alone.
+    """
+
+    k: int
+    concentration: int
+    router_count: int
+    endpoint_count: int
+    route_artifact_hash: str
+    vc_resource_hash: str
+    attachment_hash: str
+
+
+def _cmesh_node_to_router(k: int, c: int) -> Any:
+    """The fork's node -> router law as a mapping, derived from CMesh.
+
+    networks/cmesh.cpp::CMesh::NodeToRouter composes the node address from
+    a 2k x 2k grid folded 2 x 2 onto each router (``_cX = _cY = 2`` for
+    every certifiable geometry, because the fork asserts ``c == xr*yr``
+    and ``xr == yr`` and ``c == 4``). Router ids are row-major
+    ``y * k + x`` — the same numbering our materializer emits
+    (coordinates ``(x, y)``). The returned mapping is the composition of
+    exactly those two functions; it is never re-invented from counts.
+    """
+    cx = cy = math.isqrt(c)
+    if cx * cy != c:                                   # pragma: no cover
+        raise SemanticLoss(
+            f"node addressing requires a square concentration split, got "
+            f"c={c}")
+    node_count = k * k * c
+    return {node: ((node // (k * cx)) // cy) * k + (node % (k * cx)) // cx
+            for node in range(node_count)}
+
+
+def _cmesh_expected_route_rows(
+        parents: BookSimProjectionParents, k: int,
+        concentration: int) -> tuple[tuple[int, int, int], ...]:
+    """Canonical expected first-hop table for the cmesh node universe.
+
+    Delegates to `route_observation.expected_route_rows` — the one
+    derivation authority — with the cmesh node -> router mapping. Every
+    non-local hop is looked up as a real channel of the materialized
+    artifact, so a route proof that does not cover this fabric refuses
+    here rather than becoming an uncheckable expectation.
+    """
+    from veritx_dse.backend.route_observation import expected_route_rows
+    return expected_route_rows(
+        routing_class=DOR_XY, topology=parents.topology,
+        route=parents.route,
+        node_to_router=_cmesh_node_to_router(k, concentration))
+
+
+def qualify_native_cmesh_dor(
+        parents: BookSimProjectionParents) -> CMeshDorQualification:
+    """Prove every prerequisite of the cmesh envelope, or refuse.
+
+    The envelope is the fork's own contract (networks/cmesh.cpp), each
+    clause proven against the canonical artifacts:
+
+    1. family CONCENTRATED_MESH, uniform seat_capacity == 4 (the fork
+       asserts ``c == 4``);
+    2. square k x k router grid in row-major coordinates matching the
+       fork's ``y * k + x`` router ids;
+    3. endpoints dense 0..E-1, one per seat, seat ports forming the
+       2x2 block the fork's NodeToPort expects;
+    4. the route artifact realizes DOR_XY and every VC binds DOR_XY
+       (the fork executes one deterministic dimension-order function);
+    5. uniform channel latency 1 and route_weight 1 — the profile pins
+       ``use_noc_latency = 0``, which makes every link latency 1 in the
+       fork, so a canonical channel that is not unit-latency would
+       execute with WRONG latency and must refuse here;
+    6. no parallel channels (the fork's channel grid is one channel per
+       direction per adjacent pair);
+    7. single traffic class over the full VC set, identity VC
+       transitions (the same trace-class law as the mesh envelope).
+    """
+    topo = parents.topology
+    if topo.family is not MaterializedFamily.CONCENTRATED_MESH:
+        raise SemanticLoss(
+            "UNSUPPORTED: the certified cmesh-DOR profile covers "
+            "TopologyArtifact.family CONCENTRATED_MESH only, got "
+            f"{getattr(topo.family, 'value', topo.family)!r}")
+    seats = {r.seat_capacity for r in topo.routers}
+    if seats != {4}:
+        raise SemanticLoss(
+            "UNSUPPORTED: the vendored CMesh asserts c == 4 "
+            f"(networks/cmesh.cpp::_ComputeSize); seats are {sorted(seats)}")
+    n = topo.router_count
+    k = math.isqrt(n)
+    if k * k != n or k < 1:
+        raise SemanticLoss(
+            f"UNSUPPORTED: certified cmesh-DOR covers square k x k router "
+            f"grids only, got {n} routers")
+    for router in topo.routers:
+        x, y = router.coordinates[0], router.coordinates[1] \
+            if len(router.coordinates) > 1 else None
+        if y is None or router.coordinates != (x, y) \
+                or router.router_id != y * k + x:
+            raise SemanticLoss(
+                f"UNSUPPORTED: router {router.router_id} coordinates "
+                f"{router.coordinates} do not match the fork's row-major "
+                "y * k + x numbering")
+
+    endpoints = parents.attachment.endpoints
+    if sorted(e.endpoint_id for e in endpoints) \
+            != list(range(len(endpoints))):
+        raise SemanticLoss(
+            "UNSUPPORTED: endpoint ids are not dense 0..E-1; the cmesh "
+            "node universe cannot be addressed without a remap proof")
+    expected_nodes = n * 4
+    if len(endpoints) != expected_nodes:
+        raise SemanticLoss(
+            f"UNSUPPORTED: the fork's node universe has exactly {n} * 4 "
+            f"= {expected_nodes} nodes; {len(endpoints)} endpoints attach")
+    by_router: dict[int, list[int]] = {}
+    for endpoint in endpoints:
+        by_router.setdefault(endpoint.router_id, []).append(endpoint.port_id)
+    for router_id, ports in by_router.items():
+        if sorted(ports) != [0, 1, 2, 3]:
+            raise SemanticLoss(
+                f"UNSUPPORTED: router {router_id} seats ports {sorted(ports)}; "
+                "the fork's NodeToPort expects the dense 2x2 seat block "
+                "0..3 on every router")
+
+    classes = [d.id for d in parents.route.routing_classes]
+    if DOR_XY not in classes or list(classes) != [DOR_XY]:
+        raise SemanticLoss(
+            f"UNSUPPORTED: certified cmesh-DOR realizes DOR_XY only; route "
+            f"artifact classes are {classes}")
+    vc_classes = {cls for _vc, cls
+                  in parents.vc_assignment.vc_to_routing_class}
+    if vc_classes != {DOR_XY}:
+        raise SemanticLoss(
+            "UNSUPPORTED: the cmesh-DOR profile executes one DOR routing "
+            f"function, but VCs map to {sorted(vc_classes)}")
+
+    latencies = {c.latency_cycles for c in topo.channels}
+    if latencies != {1}:
+        raise SemanticLoss(
+            "UNSUPPORTED: this profile pins use_noc_latency = 0, under "
+            "which every fork link latency is 1; canonical channels carry "
+            f"{sorted(latencies)} — the design would execute with wrong "
+            "latency, so it is refused rather than silently re-timed")
+    weights = {c.route_weight for c in topo.channels}
+    if weights != {1}:
+        raise SemanticLoss(
+            f"UNSUPPORTED: DOR_XY is hop-count semantics but channels "
+            f"carry route_weight {sorted(weights)}")
+    pairs: dict[tuple[int, int], int] = {}
+    for channel in topo.channels:
+        key = (channel.src_router, channel.dst_router)
+        pairs[key] = pairs.get(key, 0) + 1
+    parallel = sorted(key for key, count in pairs.items() if count > 1)
+    if parallel:
+        raise SemanticLoss(
+            f"UNSUPPORTED: parallel channels between routers "
+            f"{parallel[:3]} have no native cmesh representation")
+
+    exact, reason = vc_exactness(parents.vc_resource)
+    if not exact:
+        raise SemanticLoss(f"UNSUPPORTED: {reason}")
+    if parents.vc_resource.allowed_transitions != tuple(
+            (vc, vc) for vc in parents.vc_resource.vc_ids):
+        raise SemanticLoss(
+            "UNSUPPORTED: the certified profile executes identity VC "
+            "transitions only")
+
+    return CMeshDorQualification(
+        k=k, concentration=4, router_count=n,
+        endpoint_count=len(endpoints),
+        route_artifact_hash=parents.route.artifact_hash,
+        vc_resource_hash=parents.vc_resource.artifact_hash,
+        attachment_hash=parents.attachment.attachment_hash())
+
+
 def vc_exactness(vc_resource: Any) -> tuple[bool, str]:
     """BookSim trace traffic runs every flow in one class over all VCs."""
     if len(vc_resource.traffic_class_to_vcs) == 1:
@@ -632,6 +897,20 @@ def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
             "topology": "mesh", "k": qual.k, "n": 2,
             "use_noc_latency": 1,
             "routing_function": _MESH_DOR_ROUTING_FUNCTION,
+            "routing_dump_file": ROUTE_DUMP_FILE,
+            "num_vcs": parents.vc_resource.vc_count,
+        })
+    elif profile.profile_id == _CMESH_DOR_PROFILE_ID:
+        qual = qualify_native_cmesh_dor(parents)
+        values = dict(profile.pinned_values())
+        values.update({
+            "topology": "cmesh", "k": qual.k, "n": 2,
+            "c": qual.concentration,
+            "x": qual.k, "y": qual.k,
+            "xr": math.isqrt(qual.concentration),
+            "yr": math.isqrt(qual.concentration),
+            "use_noc_latency": 0,
+            "routing_function": _CMESH_DOR_ROUTING_FUNCTION,
             "routing_dump_file": ROUTE_DUMP_FILE,
             "num_vcs": parents.vc_resource.vc_count,
         })
@@ -883,16 +1162,22 @@ class PreparedBookSimInput:
 
 
 def select_booksim_profile(parents: BookSimProjectionParents) -> BookSimProfile:
-    """Native mesh DOR when its domain is proven, else the AnyNet profile.
+    """Native mesh DOR, then native concentrated-mesh DOR, else AnyNet.
 
-    When both refuse, the native mesh-DOR reason leads the message: it is
+    When all refuse, the native mesh-DOR reason leads the message: it is
     the profile this fabric was built for (mesh + DOR_XY), so its refusal
-    names the real gap; the AnyNet refusal is a fallback note, never the
+    names the real gap; the other refusals are fallback notes, never the
     headline that hides the operative cause.
     """
     try:
         qualify_native_mesh_dor(parents)
     except SemanticLoss as native_exc:
+        try:
+            qualify_native_cmesh_dor(parents)
+        except SemanticLoss:
+            pass
+        else:
+            return CMESH_DOR_PROFILE
         try:
             qualify_anynet_min_hops(parents)   # refuse if unrepresentable
         except SemanticLoss as anynet_exc:
@@ -944,12 +1229,18 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
     schedule = trace_schedule(pt)
     # Canonical executed-route expectation. mesh-DOR addresses every router
     # as a node (native mesh node n <-> router n); AnyNet addresses the
-    # attached endpoint nodes.
+    # attached endpoint nodes; cmesh addresses the fork's 2k x 2k folded
+    # node grid via the seat mapping.
     from veritx_dse.backend.route_observation import expected_route_rows
     if profile.profile_id == _MESH_DOR_PROFILE_ID:
         routing_class = DOR_XY
         node_to_router = {n: n
                           for n in range(parents.topology.router_count)}
+    elif profile.profile_id == _CMESH_DOR_PROFILE_ID:
+        routing_class = DOR_XY
+        node_to_router = _cmesh_node_to_router(
+            math.isqrt(parents.topology.router_count),
+            parents.topology.routers[0].seat_capacity)
     else:
         routing_class = ANYNET_MIN_HOPS
         node_to_router = {e.endpoint_id: e.router_id
@@ -962,7 +1253,9 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
         semantics_version=profile.semantics_version,
         lowerer_version=(_MESH_DOR_LOWERER_VERSION
                          if profile.profile_id == _MESH_DOR_PROFILE_ID
-                         else "ANYNET/1"),
+                         else (_CMESH_DOR_LOWERER_VERSION
+                               if profile.profile_id == _CMESH_DOR_PROFILE_ID
+                               else "ANYNET/1")),
         config_text=config.decode(), topology_text=topology_text,
         trace_text=render_trace(pt).decode(),
         topology_hash=parents.topology.topology_hash(),
@@ -1061,13 +1354,15 @@ def source_audit_report(profile: BookSimProfile, *, source_root: str | Path
 __all__ = [
     "ANYNET_PROFILE", "BOOKSIM_PROJECTION_SCHEMA_VERSION",
     "BookSimProfile", "BookSimProjectionError", "BookSimProjectionParents",
+    "CMESH_DOR_PROFILE", "CmeshDorQualification",
     "CONFIG_FILE", "CONFIG_KEY_ORDER", "ConfigRead", "MESH_DOR_PROFILE",
     "MeshDorQualification", "ParameterOwner", "PreparedBookSimInput",
     "ROUTE_DUMP_FILE", "SemanticLoss", "TOPOLOGY_FILE", "TRACE_FILE",
     "TRACE_SCHEDULE_VERSION", "assert_canonical_booksim_projection",
     "compare_route_realization", "parse_config_values",
     "prepare_booksim_input", "qualify_anynet_min_hops",
-    "qualify_native_mesh_dor", "render_anynet_topology", "render_config",
+    "qualify_native_cmesh_dor", "qualify_native_mesh_dor",
+    "render_anynet_topology", "render_config",
     "render_trace", "select_booksim_profile", "source_audit_report",
     "trace_injection_horizon", "trace_schedule", "vc_exactness",
     "verify_trace_conservation",

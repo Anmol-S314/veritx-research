@@ -1814,8 +1814,11 @@ class ProductService:
             },
             {
                 "gate": "backend",
-                "state": "READY" if backend_ready else "MISSING",
-                "reason": None if backend_ready else producer_reason,
+                "state": ("READY" if backend_ready and profile_id is not None
+                          else "MISSING" if not backend_ready else "REFUSED"),
+                "reason": (None if backend_ready and profile_id is not None
+                           else producer_reason if not backend_ready
+                           else profile_reason),
             },
             {
                 "gate": "producer_qualification",
@@ -1823,14 +1826,84 @@ class ProductService:
                 "reason": None if backend_ready else producer_reason,
             },
         ]
-        ready = cert_pass and backend_ready
+        # The profile named here is the one the REAL selector picks for this
+        # revision's canonical bundle — the same gate the evaluation path
+        # applies. A refusal keeps the reason; it is never silenced by a
+        # plausible profile name (the historical regression this replaces).
+        profile_id: str | None = None
+        profile_reason: str | None = None
+        if cert_pass:
+            try:
+                from veritx_dse.workload.intent_lowering import (
+                    lower_compile_workload,
+                )
+                from veritx_dse.workload.messages import (
+                    LogicalMessageArtifactV2, LogicalMessageArtifactV3,
+                )
+                from veritx_dse.workload.traffic import (
+                    PhysicalTrafficArtifactV2, PhysicalTrafficArtifactV3,
+                )
+                from veritx_dse.backend.booksim_projection import (
+                    BookSimProjectionParents, select_booksim_profile,
+                )
+                from veritx_dse.model.vc_resource import (
+                    vc_resources_from_assignment,
+                )
+                request_doc = revision.get("request")
+                request = (parse_request_doc(request_doc)
+                           if request_doc else None)
+                if request is None:
+                    raise ProductServiceError(
+                        ErrorCode.NOT_FOUND,
+                        "the revision does not carry a parsable request")
+                lowered = lower_compile_workload(request)
+                if lowered.unified_traffic_class is None:
+                    logical: Any = LogicalMessageArtifactV3(
+                        graph=lowered.graph,
+                        traffic_class_by_operation=(
+                            lowered.traffic_class_by_operation))
+                    physical: Any = PhysicalTrafficArtifactV3(
+                        logical=logical,
+                        resolved_fabric=bundle.resolved_fabric,
+                        mapping=bundle.mapping,
+                        attachment=bundle.attachment,
+                        inventory=bundle.inventory,
+                        packet_format=bundle.packet_format)
+                else:
+                    logical = LogicalMessageArtifactV2(
+                        graph=lowered.graph,
+                        traffic_class=lowered.unified_traffic_class)
+                    physical = PhysicalTrafficArtifactV2(
+                        logical=logical,
+                        resolved_fabric=bundle.resolved_fabric,
+                        mapping=bundle.mapping,
+                        attachment=bundle.attachment,
+                        inventory=bundle.inventory,
+                        packet_format=bundle.packet_format)
+                parents = BookSimProjectionParents(
+                    resolved_fabric=bundle.resolved_fabric,
+                    topology=bundle.topology,
+                    attachment=bundle.attachment, mapping=bundle.mapping,
+                    vc_resource=vc_resources_from_assignment(
+                        bundle.vc_assignment),
+                    vc_assignment=bundle.vc_assignment,
+                    packet_format=bundle.packet_format,
+                    route=bundle.router_route,
+                    physical_traffic=physical)
+                profile_id = select_booksim_profile(parents).profile_id
+            except ProductServiceError:
+                raise
+            except Exception as exc:                        # noqa: BLE001
+                profile_reason = (
+                    "the certified execution profile refused this design: "
+                    f"{type(exc).__name__}: {str(exc)[:220]}")
+        ready = cert_pass and backend_ready and profile_id is not None
         return {
             "contract_version": 1,
             "revision_id": revision_id,
             "display_name": revision.get("display_name"),
             "backend": "booksim_standalone",
-            "backend_profile": "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1"
-            if cert_pass else None,
+            "backend_profile": profile_id,
             "network_clock_hz": self.config.network_clock_hz,
             "expected_evidence_tier": ("authenticated backend evidence + "
                                        "run bundle" if ready else None),

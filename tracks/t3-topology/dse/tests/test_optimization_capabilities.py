@@ -321,18 +321,20 @@ def test_arbitration_is_identity_only_by_direct_measurement(caps):
                     "effective, so the capability payload must be updated")
 
 
-def test_materializable_is_not_backend_executable(caps):
-    """(2) The materializer accepting a design does not imply the certified
-    chain executes it: `accepted_values` is the compile-accepted subset of
-    TopologyFamily, `executable_values` is what the FULL certified chain
-    (compile → workload lowering → select_booksim_profile) runs, and
+def test_topology_family_execution_truth_is_derived(caps):
+    """(2) Every stage list is DERIVED, never assumed from the materializer:
+    `accepted_values` is the compile-accepted subset of TopologyFamily,
+    `executable_values` is what the FULL certified chain (compile →
+    workload lowering → select_booksim_profile) runs, and
     executable ⊆ accepted.
 
-    Ground truth (derived, pinned here): concentrated_mesh COMPILES but is
-    refused at backend_profile (mesh-DOR pins seat_capacity 1; AnyNet
-    requires ANYNET_MIN_HOPS); torus is refused at compile (no certified
-    routing policy); gec/fat_tree are refused at compile (the legacy
-    spelling carries no mode/structure). Only mesh survives end to end.
+    Ground truth (derived, pinned here, post-CMESH profile):
+    concentrated_mesh executes via CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1;
+    torus is refused at compile (no certified routing policy); gec/fat_tree
+    are refused at compile (the legacy spelling carries no mode/structure);
+    custom is a classification marker, not a materializable family.
+    Materializable-but-unroutable torus therefore never reaches accepted,
+    and nothing is called executable merely because it materializes.
     """
     from veritx_dse.model.compile_model import TopologyFamily
     p = _by_name(caps)["topology_family"]
@@ -343,14 +345,16 @@ def test_materializable_is_not_backend_executable(caps):
     # ... but only the certified chain's survivors are executable.
     assert set(p["executable_values"]) <= set(p["accepted_values"])
     assert "mesh" in p["executable_values"]
-    assert "concentrated_mesh" in p["accepted_values"]
-    assert "concentrated_mesh" not in p["executable_values"]
+    # Phase 2: the certified concentrated profile executes concentrated_mesh
+    # end to end — the old mesh-DOR seat_capacity refusal is gone.
+    assert "concentrated_mesh" in p["executable_values"]
     assert "torus" not in p["executable_values"]
     assert "torus" not in p["accepted_values"]
     # A dimension that is effective but refused by the certified profile
     # is NOT a qualified optimization choice (regression: concentration
     # used to be advertised while every candidate with concentration>1
-    # deterministically failed at evaluation).
+    # deterministically failed at evaluation; on a MESH base that refusal
+    # still holds — the cmesh profile is family-gated, not knob-gated).
     assert "concentration" in caps["unqualified_parameters"]
     assert "concentration" not in caps["qualified_parameters"]
     conc = _by_name(caps)["concentration"]

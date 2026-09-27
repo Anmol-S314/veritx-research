@@ -153,6 +153,22 @@ QUALIFICATION: dict[str, QualificationRecord] = {
         scope="MaterializedFamily.MESH, seat_capacity 1, square k x k, "
               "routing class DOR_XY",
     ),
+    "CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1": QualificationRecord(
+        profile_id="CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1",
+        state="QUALIFIED",
+        projection_semantics_version=
+            "booksim2-fork+P2-cmesh-dor+prepared-v1",
+        lowerer_version="DORXY/1",
+        qualifier=(
+            "veritx_dse.backend.booksim_projection:"
+            "qualify_native_cmesh_dor"),
+        evidence_paths=(
+            "tracks/t3-topology/dse/tests/test_booksim_cmesh_projection.py",
+            "docs/product/CAPABILITY-CLOSURE-2026-09.md",
+        ),
+        scope="MaterializedFamily.CONCENTRATED_MESH, seat_capacity 4, "
+              "square k x k, routing class DOR_XY, use_noc_latency 0",
+    ),
     "CERTIFIED_BOOKSIM_ANYNET_V1": QualificationRecord(
         profile_id="CERTIFIED_BOOKSIM_ANYNET_V1",
         state="QUALIFIED",
@@ -173,6 +189,8 @@ QUALIFICATION: dict[str, QualificationRecord] = {
 #: does NOT mean a probe was executed during the capability gate.
 EXECUTION_HANDLERS: dict[str, str] = {
     "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1":
+        "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
+    "CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1":
         "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
     "CERTIFIED_BOOKSIM_ANYNET_V1":
         "veritx_dse.backend.booksim_execution:execute_prepared_booksim",
@@ -260,6 +278,9 @@ def _profile_semantics() -> dict[str, tuple[str, str | None]]:
         bp.MESH_DOR_PROFILE.profile_id: (
             bp.MESH_DOR_PROFILE.semantics_version,
             getattr(bp, "_MESH_DOR_LOWERER_VERSION", None)),
+        bp.CMESH_DOR_PROFILE.profile_id: (
+            bp.CMESH_DOR_PROFILE.semantics_version,
+            getattr(bp, "_CMESH_DOR_LOWERER_VERSION", None)),
         bp.ANYNET_PROFILE.profile_id: (
             bp.ANYNET_PROFILE.semantics_version,
             getattr(bp, "_ANYNET_LOWERER_VERSION", None)),
@@ -342,10 +363,11 @@ def evaluate_qualification(profile: Any, parents: Any
             f"{actual_sem!r} but its qualification covers "
             f"{record.projection_semantics_version!r} — the qualification does "
             "not carry across a semantics change")
-    actual_lower = getattr(
-        profile, "lowerer_version",
-        getattr(_projection_module(), "_MESH_DOR_LOWERER_VERSION", None)
-        if profile_id == "CERTIFIED_BOOKSIM_MESH_DOR_XY_V1" else None)
+    # The lowerer version is not an attribute of BookSimProfile; it is the
+    # projection module's constant for the profile, read through the same
+    # table _profile_semantics uses so the two can never disagree.
+    default_lower = _profile_semantics().get(profile_id, (None, None))[1]
+    actual_lower = getattr(profile, "lowerer_version", default_lower)
     if actual_lower != record.lowerer_version:
         return False, (
             f"{profile_id} selected with lowerer {actual_lower!r} but its "
