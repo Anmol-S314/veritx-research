@@ -488,7 +488,12 @@ def cmd_certify_flow(ctx: Ctx, args):
         elif "FAIL" in line:
             failed += 1
             log(ctx, f"  ✗ {line.strip()}")
-    if failed > 0:
+    if r.returncode != 0:
+        # A non-zero exit is authoritative even when no PASS/FAIL line was
+        # emitted: without this, a certifier that crashed silently counted as
+        # "0 failed" and the command reported success.
+        fail(ctx, f"Flow certification process exited {r.returncode}")
+    elif failed > 0:
         fail(ctx, f"Flow certification FAILED: {failed} checks failed")
     else:
         ok(ctx, f"Flow certification PASSED: {passed} checks")
@@ -792,10 +797,20 @@ def cmd_run(ctx: Ctx, args):
     # Step 3: Evaluate
     try:
         log(ctx, "Step 3/4: Evaluating with BookSim2")
-        k = int(args.nodes ** 0.5)
-        if k * k != args.nodes:
-            k = 8
-        topo = Topology(f"mesh_{k}x{k}", "mesh", "min_adapt", {"k": k, "n": 2})
+        # THE EXACT GRAPH THAT WAS SYNTHESIZED.
+        #
+        # This step previously derived k from `args.nodes` (falling back to
+        # k=8 whenever the count was not a perfect square) and evaluated a
+        # freshly constructed mesh. The design EVALUATED was therefore not
+        # the design SYNTHESIZED: two different identities in one run, and a
+        # silent substitution whenever the node count did not fit a square.
+        if not topo_path.exists():
+            raise FileNotFoundError(
+                f"no synthesized topology at {topo_path}; refusing to "
+                "evaluate a different design instead")
+        topo = Topology(f"{run_id}_synthesized", "anynet", "min",
+                        {"network_file": str(topo_path.resolve())})
+        manifest["evaluated_topology"] = topo.name
         eval_result = run_topology_eval(ctx, topo, str(trace_path),
                                         repo_root=REPO, timeout=60)
         manifest["eval"] = eval_result
@@ -819,9 +834,18 @@ def cmd_run(ctx: Ctx, args):
                                         "--traffic-model", _resolve_path(args.model),
                                         "--topology", str(topo_path.resolve())],
                                        capture_output=True, text=True, timeout=300, cwd=str(REPO))
-                    cert_pass = any("PASS" in line for line in r.stdout.splitlines())
-                    manifest["cert"] = "PASS" if cert_pass else "FAIL"
-                    ok(ctx, f"Certification: {manifest['cert']}")
+                    # AUTHORITATIVE verdict: the process result and its
+                    # structured status. NOT a substring scan of stdout —
+                    # `any("PASS" in line)` passes on a log line that merely
+                    # mentions PASS (including "FAIL: expected PASS").
+                    verdict = _certification_verdict(r)
+                    manifest["cert"] = verdict["status"]
+                    manifest["cert_evidence"] = verdict
+                    if verdict["status"] != "PASS":
+                        fail(ctx, f"Certification {verdict['status']}: "
+                                  f"{verdict['reason']}")
+                    else:
+                        ok(ctx, f"Certification: {verdict['status']}")
         else:
             log(ctx, "Step 4/4: Skipping certification (disabled)")
     except Exception as e:
@@ -1793,6 +1817,51 @@ def main():
     finally:
         ctx.close()
         _cleanup_stale_temp_dirs()
+
+    # A command that REPORTED a failure must not exit 0. Handlers call
+    # `fail()` and return normally, so without this the process reported
+    # success while printing errors.
+    if ctx.failed:
+        sys.exit(1)
+
+
+def _certification_verdict(proc) -> dict:
+    """Authoritative certification verdict from a subprocess result.
+
+    The process EXIT STATUS is primary: a non-zero exit means a constituent
+    stage failed, whatever the text said. A structured verdict on stdout is
+    consumed when present; the substring scan it replaces passed on any line
+    merely CONTAINING "PASS", including one that reports a failure.
+    """
+    import json as _json
+    stdout = proc.stdout or ""
+    if proc.returncode != 0:
+        tail = "\n".join(stdout.splitlines()[-5:])
+        return {"status": "FAIL", "exit_code": proc.returncode,
+                "reason": f"certifier exited {proc.returncode}",
+                "stdout_tail": tail}
+    structured = None
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            candidate = _json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(candidate, dict) and "status" in candidate:
+            structured = candidate
+    if structured is None:
+        return {"status": "FAIL", "exit_code": 0,
+                "reason": ("the certifier exited 0 but emitted no structured "
+                           "verdict; a text-only result is not admissible "
+                           "certification evidence")}
+    status = str(structured["status"]).upper()
+    if status != "PASS":
+        return {"status": "FAIL", "exit_code": 0,
+                "reason": f"certifier reported {status!r}",
+                "structured": structured}
+    return {"status": "PASS", "exit_code": 0, "structured": structured}
 
 
 def _cleanup_stale_temp_dirs():
