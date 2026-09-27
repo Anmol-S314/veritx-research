@@ -107,16 +107,26 @@ def test_a_locked_name_is_refused_by_the_definition(locked):
 
 def test_topology_family_values_are_materializable_not_merely_authorable(caps):
     """`TopologyFamily` membership means AUTHORABLE. GEC and FAT_TREE are
-    members with no materializer, so they must NOT be advertised."""
+    members with no materializer, so they must NOT be advertised.
+
+    Under the corrected two-stage truth, accepted_values is the
+    COMPILE-ACCEPTED subset (a concrete compile succeeds): torus is
+    additionally absent because the certified compile refuses it — no
+    certified routing policy — even though the materializer alone would
+    accept it. The stricter gate is pinned in
+    test_materializable_is_not_backend_executable.
+    """
     from veritx_dse.model.compile_model import TopologyFamily
     param = next(p for p in caps["guided_parameters"]
                  if p["name"] == "topology_family")
     accepted = set(param["accepted_values"])
-    assert accepted == {"mesh", "torus", "concentrated_mesh"}
+    assert accepted == {"mesh", "concentrated_mesh"}
     assert "gec" not in accepted
     assert "fat_tree" not in accepted
+    assert "torus" not in accepted
     # ...and the refusal is real, not hypothetical: the enum does contain them.
     assert "gec" in {f.value for f in TopologyFamily}
+    assert "torus" in {f.value for f in TopologyFamily}
 
 
 def test_no_advertised_topology_family_is_rejected_by_the_compiler(caps):
@@ -279,9 +289,10 @@ def test_uncompilable_parameters_are_not_qualified(caps):
 
 def test_the_unqualified_set_is_explicit(caps):
     assert caps["unqualified_parameters"] == [
-        "arbitration", "mcast_groups", "mcast_setup_cycles", "rcu_enabled"]
+        "arbitration", "concentration", "mcast_groups", "mcast_setup_cycles",
+        "rcu_enabled"]
     assert caps["qualified_parameters"] == [
-        "concentration", "link_width", "radix", "topology_family"]
+        "link_width", "radix", "topology_family"]
 
 
 def test_every_qualified_knob_changes_executed_semantics(caps):
@@ -311,22 +322,63 @@ def test_arbitration_is_identity_only_by_direct_measurement(caps):
 
 
 def test_materializable_is_not_backend_executable(caps):
-    """(2) The materializer accepting a design does not imply every certified
-    projection accepts it: `topology_family` values are the materializable
-    subset, and each is separately bounded by the projection's own
-    qualification."""
+    """(2) The materializer accepting a design does not imply the certified
+    chain executes it: `accepted_values` is the compile-accepted subset of
+    TopologyFamily, `executable_values` is what the FULL certified chain
+    (compile → workload lowering → select_booksim_profile) runs, and
+    executable ⊆ accepted.
+
+    Ground truth (derived, pinned here): concentrated_mesh COMPILES but is
+    refused at backend_profile (mesh-DOR pins seat_capacity 1; AnyNet
+    requires ANYNET_MIN_HOPS); torus is refused at compile (no certified
+    routing policy); gec/fat_tree are refused at compile (the legacy
+    spelling carries no mode/structure). Only mesh survives end to end.
+    """
     from veritx_dse.model.compile_model import TopologyFamily
     p = _by_name(caps)["topology_family"]
     assert p["accepted_values_is_exhaustive"] is True
     for value in p["accepted_values"]:
-        # materializable ...
+        # compile-accepted ...
         assert value in {f.value for f in TopologyFamily}
-    # ...but the mesh-DOR profile pins seat_capacity 1, so a concentrated
-    # fabric is NOT executable by that profile even though it materializes.
+    # ... but only the certified chain's survivors are executable.
+    assert set(p["executable_values"]) <= set(p["accepted_values"])
+    assert "mesh" in p["executable_values"]
     assert "concentrated_mesh" in p["accepted_values"]
-    assert "concentration" in caps["qualified_parameters"]
+    assert "concentrated_mesh" not in p["executable_values"]
+    assert "torus" not in p["executable_values"]
+    assert "torus" not in p["accepted_values"]
+    # A dimension that is effective but refused by the certified profile
+    # is NOT a qualified optimization choice (regression: concentration
+    # used to be advertised while every candidate with concentration>1
+    # deterministically failed at evaluation).
+    assert "concentration" in caps["unqualified_parameters"]
+    assert "concentration" not in caps["qualified_parameters"]
     conc = _by_name(caps)["concentration"]
+    assert conc["backend_executable"] is False
+    assert conc["effective"] is True, (
+        "concentration must be refused for EXECUTION, not effectiveness — "
+        "the reason must name the certified profile, not a fake identity")
     assert conc["value_constraint"], "the seat constraint must be stated"
+    assert conc["reason"], "the refusal reason must name the profile gate"
+
+
+def test_backend_executable_requires_the_certified_chain(caps):
+    """`executable` is measured through select_booksim_profile, not inferred
+    from compilable && effective (regression: the payload used to report
+    executable = compilable and effective, advertising knobs whose every
+    candidate the product evaluation path refuses)."""
+    from veritx_dse.optimization.capability_probe import (
+        _backend_executable, _base_request,
+    )
+    for p in caps["guided_parameters"]:
+        assert p["executable"] == (
+            p["compilable"] and p["effective"] and p["backend_executable"])
+        assert p["qualified_for_certified_optimization"] == p["executable"]
+    # The concentration refusal is reproducible directly through the chain.
+    compiled, executable, note = _backend_executable(
+        _base_request(concentration=4))
+    assert compiled and not executable
+    assert "profile" in note.lower() or "refused" in note.lower()
 
 
 def test_an_unenumerated_domain_is_not_all_values(caps):

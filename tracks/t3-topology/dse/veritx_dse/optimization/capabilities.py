@@ -32,12 +32,17 @@ WHY SOME VALUES ARE PROBED AND NOT DECLARED
 
 `topology_family` is the one parameter with a real finite enumeration
 (`TopologyFamily`), and membership there means "authorable", NOT
-"materializable". So the materializable subset is obtained by ASKING the
-canonical materializer, the same way `capability_truth` does — not by
-restating an enum.
+"materializable", and materializable does NOT mean the certified backend
+executes it. So the domain is obtained by ASKING twice: the canonical
+materializer bounds `accepted_values`, and the full certified chain
+(compile → workload lowering → `select_booksim_profile`) bounds
+`executable_values` — the same gate `ProductService` applies before any
+evaluation. A value that is deterministically refused at evaluation is
+never advertised as an optimization choice.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Any
 from functools import lru_cache
@@ -79,9 +84,10 @@ class ParamCapability:
 
       expressible   the optimization schema accepts the parameter
       compilable    a patched design actually compiles
-      executable    the certified backend can execute the result
       effective     the parameter reaches the semantics being MEASURED —
                     changing it is not an identity-only change
+      backend_executable  the certified profile accepts the probed result
+                    (compile → lower → select_booksim_profile)
       qualified     VERITX may use it as a certified optimization dimension
 
     `accepted_values is None` means "the domain is a validated range, and the
@@ -101,6 +107,12 @@ class ParamCapability:
     expressible: bool = True
     compilable: bool = True
     effective: bool = True
+    #: The certified backend profile accepts the probed result. Independent
+    #: of `effective`: a knob can change executed semantics and STILL be
+    #: refused by `select_booksim_profile` (concentration>1 does exactly
+    #: that). Qualification requires all of compilable ∧ effective ∧
+    #: backend_executable.
+    backend_executable: bool = True
     expressible_note: str | None = None
 
     @property
@@ -112,8 +124,10 @@ class ParamCapability:
             "name": self.name, "field": self.field, "kind": self.kind,
             "expressible": self.expressible,
             "compilable": self.compilable,
-            "executable": self.compilable and self.effective,
             "effective": self.effective,
+            "backend_executable": self.backend_executable,
+            "executable": (self.compilable and self.effective
+                           and self.backend_executable),
             "qualified_for_certified_optimization": self.qualified,
             "value_constraint": self.value_constraint,
             "accepted_values": (list(self.accepted_values)
@@ -196,6 +210,49 @@ class _ProbeNoc:
 
 
 @lru_cache(maxsize=1)
+def _topology_family_truth() -> tuple[tuple[str, ...], tuple[str, ...], str]:
+    """(accepted=compiles, executable=full-chain, note). ASKS the chain.
+
+    Two separate stages, never collapsed:
+
+      accepted_values    the canonical compiler ACCEPTS the family (a
+                         concrete compile of a mesh-shaped request succeeds)
+      executable_values  the full certified chain (compile → workload
+                         lowering → `select_booksim_profile`) runs it —
+                         what the product can actually evaluate
+
+    gec and fat_tree are authorable enum members whose concrete compile is
+    refused (the legacy spelling carries no mode/structure), so they are
+    not accepted values. concentrated_mesh compiles but the certified
+    profiles refuse it (mesh-DOR pins seat_capacity 1; AnyNet requires
+    ANYNET_MIN_HOPS), and torus is refused at compile (no certified
+    routing policy). Offering a value the evaluation path deterministically
+    refuses manufactures doomed candidates.
+    """
+    from veritx_dse.optimization.capability_probe import (
+        probe_parameters,
+    )
+    probe = probe_parameters().get("_topology_family_truth")
+    if probe is None:                                   # pragma: no cover
+        raise CapabilityError(
+            "the topology_family backend-executability probe did not run; "
+            "refusing to advertise the domain")
+    try:
+        truth: dict[str, dict[str, bool]] = json.loads(
+            probe.backend_note or "{}")
+    except ValueError as exc:                           # pragma: no cover
+        raise CapabilityError(
+            f"topology_family executability truth is unreadable: {exc}") from exc
+    accepted, executable = [], []
+    for value, stages in sorted(truth.items()):
+        if stages.get("compiled"):
+            accepted.append(value)
+        if stages.get("executable"):
+            executable.append(value)
+    return tuple(accepted), tuple(executable), probe.note
+
+
+@lru_cache(maxsize=1)
 def optimization_capabilities() -> dict[str, Any]:
     """The product capability description. Derived, never hand-written."""
     # ASK the compiler+projector. `qualified` is NEVER defaulted true: a knob
@@ -213,12 +270,10 @@ def optimization_capabilities() -> dict[str, Any]:
         source = "NocConfig validation (positive ints / bool / non-empty str)"
 
         if name == "topology_family":
-            allowed, note = _materializable_topology_families()
-            accepted = allowed
-            executable = allowed
-            source = ("canonical materializer (_family_of + "
-                      "MaterializedFamily); the only exhaustively enumerable "
-                      "domain")
+            accepted, executable, note = _topology_family_truth()
+            source = ("canonical materializer for accepted_values; the FULL "
+                      "certified chain (compile → lowering → "
+                      "select_booksim_profile) for executable_values")
             reason = note
         elif name in ("link_width", "concentration", "radix"):
             # NOT a finite enumeration. Report the real constraint instead of
@@ -231,15 +286,17 @@ def optimization_capabilities() -> dict[str, Any]:
         if name == "topology_family":
             compilable = bool(accepted)
             effective = bool(accepted)
+            backend_executable = bool(executable)
         elif probe is not None:
             compilable = probe.compilable
             effective = probe.effective
+            backend_executable = probe.backend_executable
             reason = reason or probe.note
         else:                                               # pragma: no cover
-            compilable = effective = False
+            compilable = effective = backend_executable = False
             reason = ("no effectiveness probe is registered for this "
                       "parameter; refusing to advertise it")
-        qualified = compilable and effective
+        qualified = compilable and effective and backend_executable
 
         params.append(ParamCapability(
             name=name, field=field_name, kind=kind,
@@ -247,6 +304,7 @@ def optimization_capabilities() -> dict[str, Any]:
             executable_values=executable, qualified=qualified,
             value_source=source, reason=reason,
             compilable=compilable, effective=effective,
+            backend_executable=backend_executable,
             expressible_note=("accepted by the optimization schema; that is "
                               "not evidence that the certified backend "
                               "measures it")))
@@ -287,6 +345,11 @@ def optimization_capabilities() -> dict[str, Any]:
             "measured RANKING, not a Pareto frontier."),
         "locked_parameters": [dict(x) for x in LOCKED_PARAMETERS],
         "effectiveness_basis": _effectiveness_basis(),
+        "qualification_basis": (
+            "qualified = compilable AND effective AND backend_executable, "
+            "where backend_executable is measured through the same certified "
+            "chain the product evaluation path applies (compile → workload "
+            "lowering → select_booksim_profile)"),
         "unqualified_parameters": sorted(
             p.name for p in params if not p.qualified),
         "qualified_parameters": sorted(
