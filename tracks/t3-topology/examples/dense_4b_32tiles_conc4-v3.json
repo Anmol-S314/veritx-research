@@ -1,5 +1,5 @@
 {
-  "_comment": "Prefill-heavy dense transformer on 32 compute tiles + 4 HBM with concentration 4 (3x3 CONCENTRATED_MESH, four seat slots per router). v3 semantics: one DP allgather intent, one traffic class, one binding bandwidth requirement. Compiler derives topology, DOR_XY, VCs and the deadlock certificate. No LOCKED fields below.",
+  "_comment": "Prefill-heavy dense transformer on 32 compute tiles + 4 HBM with concentration 4 (CONCENTRATED_MESH, four seat slots per router). v3 semantics: one TP allreduce intent matching the tp=8 parallelism (a DP-dimension collective with dp=1 would be a vacuous one-member intent and is refused by lowering law), one traffic class, one binding bandwidth requirement. Compiler derives topology, DOR_XY, VCs and the deadlock certificate. No LOCKED fields below.",
   "schema_version": 3,
   "compiler_semantics_version": 3,
   "workload": {
@@ -12,16 +12,16 @@
     "serving_mode": "prefill_heavy",
     "collectives": [
       {
-        "kind": "allgather",
-        "dimension": "DP",
+        "kind": "allreduce",
+        "dimension": "TP",
         "payload_bytes": 16384,
-        "traffic_class": "dp_allgather"
+        "traffic_class": "tp_collective"
       }
     ]
   },
   "requirements": [
     {
-      "traffic_class": "dp_allgather",
+      "traffic_class": "tp_collective",
       "qos_class": "bandwidth",
       "latency_ceiling_cycles": null,
       "bandwidth_floor_gbps": 50.0,

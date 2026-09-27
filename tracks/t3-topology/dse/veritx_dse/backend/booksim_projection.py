@@ -399,11 +399,9 @@ def qualify_native_mesh_dor(parents: BookSimProjectionParents
                             ) -> MeshDorQualification:
     """Prove every prerequisite, or refuse. Never a family-name shortcut."""
     topo = parents.topology
-    if topo.family is not MaterializedFamily.MESH:
-        raise SemanticLoss(
-            "UNSUPPORTED: the certified mesh-DOR profile covers "
-            "TopologyArtifact.family MESH only, got "
-            f"{getattr(topo.family, 'value', topo.family)!r}")
+    # Seat capacity leads the family check: for a concentrated fabric the
+    # real gap is that the native profile models one endpoint per router,
+    # so the refusal names concentration rather than a family label.
     for router in topo.routers:
         if router.seat_capacity != 1:
             raise SemanticLoss(
@@ -411,6 +409,11 @@ def qualify_native_mesh_dor(parents: BookSimProjectionParents
                 f"only (router {router.router_id} has "
                 f"{router.seat_capacity}); concentration has no native "
                 "representation")
+    if topo.family is not MaterializedFamily.MESH:
+        raise SemanticLoss(
+            "UNSUPPORTED: the certified mesh-DOR profile covers "
+            "TopologyArtifact.family MESH only, got "
+            f"{getattr(topo.family, 'value', topo.family)!r}")
     n = topo.router_count
     k = math.isqrt(n)
     if k * k != n or k < 1:
@@ -549,7 +552,18 @@ def render_trace(physical_traffic: PhysicalTrafficArtifactV2) -> bytes:
     The fork's trace dialect is ``cyc src cl dst sz`` with ``sz`` in
     FLITS, one line per physical packet, timestamps in emission order.
     Deterministic: (message order, packet index) only.
+
+    Single-class only: the dialect's class column renders 0, so
+    multi-class traffic has no certified rendering — profile selection
+    refuses execution first, and this guard closes the seam against any
+    future caller that reaches the render directly.
     """
+    classes = {m.traffic_class for m in physical_traffic.logical.messages}
+    if len(classes) != 1:
+        raise BookSimProjectionError(
+            f"multi-class traffic {sorted(classes)} has no certified "
+            f"BookSim trace dialect (the class column renders one class "
+            f"only); refusing a class-blind execution")
     lines: list[str] = []
     for timestamp, packet in enumerate(_iter_physical_packets(physical_traffic)):
         lines.append(f"{timestamp} {packet.src_endpoint} 0 "
@@ -869,11 +883,22 @@ class PreparedBookSimInput:
 
 
 def select_booksim_profile(parents: BookSimProjectionParents) -> BookSimProfile:
-    """Native mesh DOR when its domain is proven, else the AnyNet profile."""
+    """Native mesh DOR when its domain is proven, else the AnyNet profile.
+
+    When both refuse, the native mesh-DOR reason leads the message: it is
+    the profile this fabric was built for (mesh + DOR_XY), so its refusal
+    names the real gap; the AnyNet refusal is a fallback note, never the
+    headline that hides the operative cause.
+    """
     try:
         qualify_native_mesh_dor(parents)
-    except SemanticLoss:
-        qualify_anynet_min_hops(parents)   # refuse if also unrepresentable
+    except SemanticLoss as native_exc:
+        try:
+            qualify_anynet_min_hops(parents)   # refuse if unrepresentable
+        except SemanticLoss as anynet_exc:
+            raise SemanticLoss(
+                f"{native_exc}; the AnyNet fallback also refuses: "
+                f"{anynet_exc}") from native_exc
         return ANYNET_PROFILE
     return MESH_DOR_PROFILE
 

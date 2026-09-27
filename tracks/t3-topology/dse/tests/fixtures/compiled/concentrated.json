@@ -65,16 +65,16 @@
         "evidence": {
           "address_decode_hash": "642b47de9b8c4c2eeabb2f8fedbde05450971b29fc9ca6d7c529709854a35a41",
           "attachment_hash": "31d73ad0fcd4fee457c463e891cabaef5f67fcae141e62a8915fefacd887c1a3",
-          "design_hash": "6a7c3dd8c57526a8c45c2412915d6a7d53cab7739f751efa1684ddb772c3b336",
-          "fabric_hash": "22905b014ff99ed3339c4e14e9a296ce265703e518f4208a67e50f84e516556c",
+          "design_hash": "835216e017fc345cc880c87a82876dedb49bf84c27a7e7e2a801e384988e70b3",
+          "fabric_hash": "d1ece603131ef23e35e5fbd65b9f1051e47ce148e0c3ccfe6c03932da3fa2ecf",
           "mapping_hash": "a4fefbe600d78b93ea9b9c52b8e28f88eb0ee85dbcb868f153ba7b3a802d2100",
-          "packet_format_hash": "85b925312052b79003ebf2f2110c087e89d28b86946ae599bb46422a72664609",
-          "resolved_fabric_hash": "0c06b35948af61102e0176f0d2a4f266f90a828dd7b66994517437141f40682c",
+          "packet_format_hash": "7b67f5d727e77312f8b5abcf4d7d3f5cca9a94aa44cd18ad7ece87fdd0434c78",
+          "resolved_fabric_hash": "5d7ed1f7bf5bd211a73fdaf6a85601b61118d8ff1bd0d018c1b36825b3cc2e8b",
           "resolved_route_hash": "24775fe427a2614d00e62d88996a39557e8d254646eadd34fe4037c57eb0d378",
-          "router_behavior_hash": "ebf30cf2b9910e66d5112603b54665a6492964c5d2b94976a1557b0b5f88b573",
+          "router_behavior_hash": "95d405334b3349b70b652b8d6730e86a8e7d158724fcd25a4a702447e3368966",
           "router_route_hash": "sha256:3d86b0a2a04d6de857bb9e895d5c9a042458ca933b7510f80407ac2bbcc850c3",
           "topology_hash": "24e369185a39d384a9e7372c0f535579d6cfe1b71bddaaf6464b3a8af72ffabc",
-          "vc_assignment_hash": "5e3cefafbc5e4590d3a7da4344240e2019816b70bec01aaf6db451d028a03eda"
+          "vc_assignment_hash": "8d5bc577253eece69e08bce568ce0af9782cec96b41ae75572093708a3cee168"
         },
         "failure_reason": null,
         "meaning": "the full hardware and design/mapping seam revalidates",
@@ -84,7 +84,7 @@
       }
     ],
     "available": true,
-    "certificate_id": "sha256:2967c3102f0756ea60815569b05b2cb149cbf65fbc8b4542a12c0522437121a1",
+    "certificate_id": "sha256:03a735c41959eca5e4b1965862e6804e5505845095ce1c10a7dcb1b80531a8eb",
     "claim_count": 4,
     "claim_shape_version": 2,
     "claims": [
@@ -242,14 +242,14 @@
           "node_count": 24,
           "resolved_route_hash": "24775fe427a2614d00e62d88996a39557e8d254646eadd34fe4037c57eb0d378",
           "route_realization": "v2_channel_id",
-          "router_behavior_hash": "ebf30cf2b9910e66d5112603b54665a6492964c5d2b94976a1557b0b5f88b573",
+          "router_behavior_hash": "95d405334b3349b70b652b8d6730e86a8e7d158724fcd25a4a702447e3368966",
           "router_route_hash": "sha256:3d86b0a2a04d6de857bb9e895d5c9a042458ca933b7510f80407ac2bbcc850c3",
           "routing_classes": [
             "DOR_XY"
           ],
           "sccs_gt_1": 0,
           "topology_hash": "24e369185a39d384a9e7372c0f535579d6cfe1b71bddaaf6464b3a8af72ffabc",
-          "vc_assignment_hash": "5e3cefafbc5e4590d3a7da4344240e2019816b70bec01aaf6db451d028a03eda",
+          "vc_assignment_hash": "8d5bc577253eece69e08bce568ce0af9782cec96b41ae75572093708a3cee168",
           "vc_count": 1
         },
         "method": "channel-vc-cdg/v2",
@@ -277,16 +277,16 @@
         "evidence": {
           "address_decode_hash": "642b47de9b8c4c2eeabb2f8fedbde05450971b29fc9ca6d7c529709854a35a41",
           "attachment_hash": "31d73ad0fcd4fee457c463e891cabaef5f67fcae141e62a8915fefacd887c1a3",
-          "design_hash": "6a7c3dd8c57526a8c45c2412915d6a7d53cab7739f751efa1684ddb772c3b336",
-          "fabric_hash": "22905b014ff99ed3339c4e14e9a296ce265703e518f4208a67e50f84e516556c",
+          "design_hash": "835216e017fc345cc880c87a82876dedb49bf84c27a7e7e2a801e384988e70b3",
+          "fabric_hash": "d1ece603131ef23e35e5fbd65b9f1051e47ce148e0c3ccfe6c03932da3fa2ecf",
           "mapping_hash": "a4fefbe600d78b93ea9b9c52b8e28f88eb0ee85dbcb868f153ba7b3a802d2100",
-          "packet_format_hash": "85b925312052b79003ebf2f2110c087e89d28b86946ae599bb46422a72664609",
-          "resolved_fabric_hash": "0c06b35948af61102e0176f0d2a4f266f90a828dd7b66994517437141f40682c",
+          "packet_format_hash": "7b67f5d727e77312f8b5abcf4d7d3f5cca9a94aa44cd18ad7ece87fdd0434c78",
+          "resolved_fabric_hash": "5d7ed1f7bf5bd211a73fdaf6a85601b61118d8ff1bd0d018c1b36825b3cc2e8b",
           "resolved_route_hash": "24775fe427a2614d00e62d88996a39557e8d254646eadd34fe4037c57eb0d378",
-          "router_behavior_hash": "ebf30cf2b9910e66d5112603b54665a6492964c5d2b94976a1557b0b5f88b573",
+          "router_behavior_hash": "95d405334b3349b70b652b8d6730e86a8e7d158724fcd25a4a702447e3368966",
           "router_route_hash": "sha256:3d86b0a2a04d6de857bb9e895d5c9a042458ca933b7510f80407ac2bbcc850c3",
           "topology_hash": "24e369185a39d384a9e7372c0f535579d6cfe1b71bddaaf6464b3a8af72ffabc",
-          "vc_assignment_hash": "5e3cefafbc5e4590d3a7da4344240e2019816b70bec01aaf6db451d028a03eda"
+          "vc_assignment_hash": "8d5bc577253eece69e08bce568ce0af9782cec96b41ae75572093708a3cee168"
         },
         "method": "bundle.revalidate/v1",
         "obligation": "FABRIC_DAG_VALID",
@@ -358,16 +358,16 @@
         "evidence": {
           "address_decode_hash": "642b47de9b8c4c2eeabb2f8fedbde05450971b29fc9ca6d7c529709854a35a41",
           "attachment_hash": "31d73ad0fcd4fee457c463e891cabaef5f67fcae141e62a8915fefacd887c1a3",
-          "design_hash": "6a7c3dd8c57526a8c45c2412915d6a7d53cab7739f751efa1684ddb772c3b336",
-          "fabric_hash": "22905b014ff99ed3339c4e14e9a296ce265703e518f4208a67e50f84e516556c",
+          "design_hash": "835216e017fc345cc880c87a82876dedb49bf84c27a7e7e2a801e384988e70b3",
+          "fabric_hash": "d1ece603131ef23e35e5fbd65b9f1051e47ce148e0c3ccfe6c03932da3fa2ecf",
           "mapping_hash": "a4fefbe600d78b93ea9b9c52b8e28f88eb0ee85dbcb868f153ba7b3a802d2100",
-          "packet_format_hash": "85b925312052b79003ebf2f2110c087e89d28b86946ae599bb46422a72664609",
-          "resolved_fabric_hash": "0c06b35948af61102e0176f0d2a4f266f90a828dd7b66994517437141f40682c",
+          "packet_format_hash": "7b67f5d727e77312f8b5abcf4d7d3f5cca9a94aa44cd18ad7ece87fdd0434c78",
+          "resolved_fabric_hash": "5d7ed1f7bf5bd211a73fdaf6a85601b61118d8ff1bd0d018c1b36825b3cc2e8b",
           "resolved_route_hash": "24775fe427a2614d00e62d88996a39557e8d254646eadd34fe4037c57eb0d378",
-          "router_behavior_hash": "ebf30cf2b9910e66d5112603b54665a6492964c5d2b94976a1557b0b5f88b573",
+          "router_behavior_hash": "95d405334b3349b70b652b8d6730e86a8e7d158724fcd25a4a702447e3368966",
           "router_route_hash": "sha256:3d86b0a2a04d6de857bb9e895d5c9a042458ca933b7510f80407ac2bbcc850c3",
           "topology_hash": "24e369185a39d384a9e7372c0f535579d6cfe1b71bddaaf6464b3a8af72ffabc",
-          "vc_assignment_hash": "5e3cefafbc5e4590d3a7da4344240e2019816b70bec01aaf6db451d028a03eda"
+          "vc_assignment_hash": "8d5bc577253eece69e08bce568ce0af9782cec96b41ae75572093708a3cee168"
         },
         "failure_reason": null,
         "meaning": "the full hardware and design/mapping seam revalidates",
@@ -679,7 +679,7 @@
         "routers": 9,
         "seats": 36
       },
-      "design_hash": "sha256:6a7c3dd8c57526a8c45c2412915d6a7d53cab7739f751efa1684ddb772c3b336",
+      "design_hash": "sha256:835216e017fc345cc880c87a82876dedb49bf84c27a7e7e2a801e384988e70b3",
       "endpoints": [
         {
           "endpoint_id": 0,
@@ -1204,14 +1204,14 @@
         "node_count": 24,
         "resolved_route_hash": "24775fe427a2614d00e62d88996a39557e8d254646eadd34fe4037c57eb0d378",
         "route_realization": "v2_channel_id",
-        "router_behavior_hash": "ebf30cf2b9910e66d5112603b54665a6492964c5d2b94976a1557b0b5f88b573",
+        "router_behavior_hash": "95d405334b3349b70b652b8d6730e86a8e7d158724fcd25a4a702447e3368966",
         "router_route_hash": "sha256:3d86b0a2a04d6de857bb9e895d5c9a042458ca933b7510f80407ac2bbcc850c3",
         "routing_classes": [
           "DOR_XY"
         ],
         "sccs_gt_1": 0,
         "topology_hash": "24e369185a39d384a9e7372c0f535579d6cfe1b71bddaaf6464b3a8af72ffabc",
-        "vc_assignment_hash": "5e3cefafbc5e4590d3a7da4344240e2019816b70bec01aaf6db451d028a03eda",
+        "vc_assignment_hash": "8d5bc577253eece69e08bce568ce0af9782cec96b41ae75572093708a3cee168",
         "vc_count": 1
       },
       "method": "channel-vc-cdg/v2",
@@ -1229,12 +1229,12 @@
         "vc_count": 1
       }
     },
-    "derivation": "v3 route_classes=['DOR_XY']; vc_count=1; declared_classes=['dp_allgather']; cycle_separated=[]; no_concurrent_collective_floor",
+    "derivation": "v3 route_classes=['DOR_XY']; vc_count=1; declared_classes=['tp_collective']; cycle_separated=[]; no_concurrent_collective_floor",
     "editable": false,
     "escape_vcs": [],
     "traffic_class_to_vcs": [
       [
-        "dp_allgather",
+        "tp_collective",
         [
           0
         ]

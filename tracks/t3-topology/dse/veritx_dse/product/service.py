@@ -25,11 +25,18 @@ from veritx_dse.application.compile_result_view import (
     compile_result_is_current,
 )
 from veritx_dse.application.errors import ControlPlaneError, ErrorCode, intent_error
+from veritx_dse.application.errors import map_lowering_error as _map_lowering_error
 from veritx_dse.application.fabric_compiler import FabricCompiler
 from veritx_dse.application.product_evaluator import evaluate_product
 from veritx_dse.application.views import (
     artifact_chain_view, compilation_view, design_view, lowering_view,
     staged_topology_view, topology_view,
+)
+from veritx_dse.core.errors import (
+    InvalidInput as _LoweringInvalid,
+    MappingInvalid as _LoweringMappingInvalid,
+    UnsupportedSchedule as _LoweringSchedule,
+    UnsupportedSemantics as _LoweringSemantics,
 )
 from veritx_dse.core.paths import REPO
 from veritx_dse.core.run_bundle import (
@@ -58,7 +65,7 @@ _WORKLOAD_TEMPLATES: tuple[tuple[str, str, str, str], ...] = (
         "dense-4b-32tiles-conc4",
         "tracks/t3-topology/examples/dense_4b_32tiles_conc4-v3.json",
         "Dense 4B · 32 tiles · concentrated",
-        "prefill-heavy dense transformer, DP allgather over a concentrated "
+        "prefill-heavy dense transformer, TP allreduce over a concentrated "
         "mesh (4 tiles per router)",
     ),
     (
@@ -144,8 +151,113 @@ class ProductService:
         self.config = config
         self.store = store or ProductStore(config.projects_root)
         self.jobs = JobManager(self.store)
+        #: simulation-capability assessment, keyed by design_hash. The
+        #: assessment compiles the request once; the verdict is
+        #: deterministic for a given tree, so the process caches it.
+        self._assessment_cache: dict[str, dict[str, Any]] = {}
         for project in self.store.list_projects():
             self.jobs.recover_interrupted(project["project_id"])
+
+    # ── simulation capability assessment ──────────────────────────────
+
+    def _assess_compilation(self, request: Any,
+                            compilation: Any) -> dict[str, Any]:
+        """Assess whether a request can actually be SIMULATED.
+
+        Compilation proves the fabric; it does not prove the workload can
+        be lowered to executable traffic or that the certified backend
+        profile represents this exact fabric. This runs the real chain
+        (lowering → logical → physical → profile selection) and records
+        the FIRST gate that refuses, with its domain, so the UI can state
+        the true capability reason instead of a vague "unsupported".
+        """
+        from veritx_dse.backend.booksim_projection import (
+            BookSimProjectionError, BookSimProjectionParents,
+            select_booksim_profile,
+        )
+        from veritx_dse.model.vc_resource import (
+            vc_resources_from_assignment,
+        )
+        from veritx_dse.workload.intent_lowering import (
+            lower_compile_workload,
+        )
+        from veritx_dse.workload.messages import (
+            LogicalMessageArtifactV2, LogicalMessageArtifactV3,
+        )
+        from veritx_dse.workload.traffic import (
+            PhysicalTrafficArtifactV2, PhysicalTrafficArtifactV3,
+        )
+        if compilation.status != "COMPILED":
+            return {"supported": False, "domain": "compile",
+                    "reason": compilation.error
+                    or "compilation was not successful"}
+        try:
+            lowered = lower_compile_workload(request)
+        except (_LoweringInvalid, _LoweringSemantics, _LoweringSchedule,
+                _LoweringMappingInvalid) as exc:
+            return {"supported": False, "domain": "intent_lowering",
+                    "reason": str(exc)}
+        bundle = compilation.bundle
+        try:
+            if lowered.unified_traffic_class is None:
+                logical: Any = LogicalMessageArtifactV3(
+                    graph=lowered.graph,
+                    traffic_class_by_operation=(
+                        lowered.traffic_class_by_operation))
+                physical: Any = PhysicalTrafficArtifactV3(
+                    logical=logical,
+                    resolved_fabric=bundle.resolved_fabric,
+                    mapping=bundle.mapping, attachment=bundle.attachment,
+                    inventory=bundle.inventory,
+                    packet_format=bundle.packet_format)
+            else:
+                logical = LogicalMessageArtifactV2(
+                    graph=lowered.graph,
+                    traffic_class=lowered.unified_traffic_class)
+                physical = PhysicalTrafficArtifactV2(
+                    logical=logical,
+                    resolved_fabric=bundle.resolved_fabric,
+                    mapping=bundle.mapping, attachment=bundle.attachment,
+                    inventory=bundle.inventory,
+                    packet_format=bundle.packet_format)
+        except (_LoweringInvalid, _LoweringSemantics, _LoweringSchedule,
+                _LoweringMappingInvalid) as exc:
+            return {"supported": False, "domain": "intent_lowering",
+                    "reason": f"{type(exc).__name__}: {exc}"}
+        try:
+            parents = BookSimProjectionParents(
+                resolved_fabric=bundle.resolved_fabric,
+                topology=bundle.topology,
+                attachment=bundle.attachment, mapping=bundle.mapping,
+                vc_resource=vc_resources_from_assignment(
+                    bundle.vc_assignment),
+                vc_assignment=bundle.vc_assignment,
+                packet_format=bundle.packet_format,
+                route=bundle.router_route,
+                physical_traffic=physical)
+            select_booksim_profile(parents)
+        except BookSimProjectionError as exc:
+            return {"supported": False, "domain": "backend_profile",
+                    "reason": str(exc)}
+        return {"supported": True, "domain": None, "reason": None}
+
+    def _assess_request(self, request: Any) -> dict[str, Any]:
+        key = request.design_hash()
+        cached = self._assessment_cache.get(key)
+        if cached is not None:
+            return cached
+        result = self._assess_compilation(
+            request, FabricCompiler().compile(request))
+        self._assessment_cache[key] = result
+        return result
+
+    def _assessment_for_revision(self, revision: dict[str, Any]
+                                 ) -> dict[str, Any]:
+        """Stored assessment when present, else recompute (cached)."""
+        stored = revision.get("simulation")
+        if isinstance(stored, dict) and "supported" in stored:
+            return stored
+        return self._assess_request(parse_request_doc(revision["request"]))
 
     # ── catalog ───────────────────────────────────────────────────────
 
@@ -178,6 +290,10 @@ class ProductService:
                 "noc": self._noc_view(request),
                 "request": canonical_request_doc(request),
             }
+            assessment = self._assess_request(request)
+            entry["evaluation_supported"] = assessment["supported"]
+            entry["evaluation_note"] = assessment["reason"]
+            entry["evaluation_domain"] = assessment["domain"]
             workloads.append(entry)
         return {"contract_version": 1, "workloads": workloads}
 
@@ -553,6 +669,13 @@ class ProductService:
         latest_optimization = optimizations[-1] if optimizations else None
         serving = self.list_serving(project_id)
         latest_serving = serving[-1] if serving else None
+        # Simulation-capability verdict for the active revision: states the
+        # real reason (compile / intent_lowering / backend_profile) without
+        # recompiling, so the UI never offers a run that would refuse.
+        if active is None:
+            active_evaluation = None
+        else:
+            active_evaluation = self._assessment_for_revision(active)
         return {
             "contract_version": 1,
             "project": {
@@ -593,6 +716,9 @@ class ProductService:
                     "selected_candidate_id": latest_optimization["study"]
                         .get("selected_candidate_id"),
                 }),
+            # Honest capability verdict for the active revision, alongside
+            # the three PF-D13 facts above.
+            "active_evaluation": active_evaluation,
             "draft": {
                 "dirty": dirty,
                 "based_on_revision_id": active_id,
@@ -824,6 +950,13 @@ class ProductService:
         if compilation.bundle is not None:
             revision["compile_result"] = build_compile_result(
                 revision, compilation, revision.get("topology"), chain)
+        # Simulation capability is assessed ONCE, from the certified
+        # bundle, and frozen with the revision: the UI states the real
+        # reason (lowering / backend profile / compile) without
+        # recompiling, and a run can never be offered where the profile
+        # would refuse.
+        revision["simulation"] = self._assess_compilation(
+            request, compilation)
         self.store.create_revision(
             project_id, revision,
             promote=self._revision_promotable(revision))
@@ -1216,6 +1349,16 @@ class ProductService:
                 f"{(revision.get('certificate') or {}).get('overall')}); "
                 f"reason: {compilation.get('error') or 'not certified'}",
                 operation="submit_evaluation", resource_id=revision_id)
+        assessment = self._assessment_for_revision(revision)
+        if not assessment["supported"]:
+            code = (ErrorCode.LOWERING_UNSUPPORTED
+                    if assessment.get("domain") == "intent_lowering"
+                    else ErrorCode.UNSUPPORTED_SEMANTICS)
+            raise ProductServiceError(
+                code,
+                f"revision {revision_id} cannot be simulated: "
+                f"{assessment.get('reason')}",
+                operation="submit_evaluation", resource_id=revision_id)
         binary = self._require_backend()
         job = self.jobs.submit(
             pid, kind="EVALUATION", revision_id=revision_id,
@@ -1274,11 +1417,19 @@ class ProductService:
         run_id = new_run_id()
         bundle_dir = self.store.run_bundle_dir(project_id, run_id)
         progress("RUNNING")
-        product = evaluate_product(
-            request, binary=binary,
-            network_clock_hz=self.config.network_clock_hz,
-            timeout_s=self.config.timeout_s,
-            run_dir=bundle_dir, repo_root=self.config.repo_root)
+        try:
+            product = evaluate_product(
+                request, binary=binary,
+                network_clock_hz=self.config.network_clock_hz,
+                timeout_s=self.config.timeout_s,
+                run_dir=bundle_dir, repo_root=self.config.repo_root)
+        except (_LoweringInvalid, _LoweringSemantics, _LoweringSchedule,
+                _LoweringMappingInvalid) as exc:
+            # A workload the lowering cannot prove (MoE, diffusion, …)
+            # is a typed refusal, never an internal error: the design
+            # certified, but no run can honestly execute it.
+            raise _map_lowering_error(
+                exc, operation="run_evaluation") from exc
         evaluation = (None if product.outcome is None
                       else product.outcome.to_view_dict())
         outcome = product.outcome
