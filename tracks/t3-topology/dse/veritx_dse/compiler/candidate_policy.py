@@ -154,7 +154,8 @@ class CandidatePolicyError(ValueError, SemanticError):
 
 
 def _require_design(design: Any) -> CompileRequest:
-    if not isinstance(design, CompileRequest):
+    from veritx_dse.model.generation import is_any_compile_request
+    if not is_any_compile_request(design):
         raise CandidatePolicyError(
             "INPUT",
             f"design must be a CompileRequest, got {type(design).__name__}")

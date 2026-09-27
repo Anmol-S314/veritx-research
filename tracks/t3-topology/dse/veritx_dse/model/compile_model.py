@@ -2704,9 +2704,15 @@ def derive_v3_traffic_classes(request: CompileRequestV3
     evaluator admission gate refuses any message class outside the VC
     artifact instead of silently mapping to VC0.
     """
-    if not isinstance(request, CompileRequestV3):
+    # A v4 request carries the SAME WorkloadV3, so the registry is the same
+    # function of the workload. Checked by shape rather than by class so the
+    # one definition cannot drift into two.
+    if not isinstance(request, CompileRequestV3) and not (
+            getattr(request, "schema_version", None) == 4
+            and hasattr(request, "noc_controls")):
         raise CompileRequestV3SchemaError(
-            "derive_v3_traffic_classes takes a CompileRequestV3")
+            "derive_v3_traffic_classes takes a CompileRequestV3 or "
+            "CompileRequestV4")
     return tuple(sorted({c.traffic_class
                          for c in request.workload.collectives}))
 
@@ -2849,6 +2855,23 @@ class FabricIntentView:
     #: so the TOPOLOGY stage can dispatch without re-reading the request
     #: (the same discipline as noc_config). None = NAMED topology.
     explicit_topology: Any = None
+    #: THE NORMALIZED TYPED TOPOLOGY AUTHORITY (PHASE B.1 §15).
+    #:
+    #: For a v4 request this is the declared intent itself. For v2/v3 it is
+    #: derived TRANSIENTLY by this seam using FROZEN legacy semantics — a
+    #: normalization, never a reinterpretation: it cannot change a persisted
+    #: identity because the view has no to_dict/from_dict and its
+    #: `design_hash` is copied from the source request verbatim.
+    #:
+    #: The TOPOLOGY stage consumes THIS, not legacy
+    #: topology_family/radix/concentration.
+    topology: Any = None
+    #: The normalized topology-INDEPENDENT NoC controls. Present for v4;
+    #: derived transiently from the legacy NocConfig for v2/v3.
+    noc_controls: Any = None
+    #: NON-SEMANTIC: the legacy spelling this topology was normalized from,
+    #: when it was derived rather than declared. Linkage only.
+    topology_normalization: Any = None
 
     def __post_init__(self):
         object.__setattr__(self, "agents",
@@ -2859,8 +2882,13 @@ class FabricIntentView:
                     f"agents must contain Agent, got {type(a).__name__}")
         if not isinstance(self.dependencies, DependencyGraph):
             raise ValueError("dependencies must be a DependencyGraph")
-        if not isinstance(self.noc_config, NocConfig):
-            raise ValueError("noc_config must be a NocConfig")
+        if self.noc_config is not None and not isinstance(self.noc_config,
+                                                          NocConfig):
+            raise ValueError("noc_config must be a NocConfig or None")
+        if self.noc_controls is not None:
+            from veritx_dse.model.noc_controls import NocControls
+            if not isinstance(self.noc_controls, NocControls):
+                raise ValueError("noc_controls must be a NocControls or None")
         if not isinstance(self.address_map, AddressMap):
             raise ValueError("address_map must be an AddressMap")
         if not isinstance(self.physical, PhysicalContext):
@@ -2874,10 +2902,15 @@ class FabricIntentView:
         if sorted(set(self.traffic_classes)) != list(self.traffic_classes):
             raise ValueError("traffic_classes must be sorted and distinct")
         _as_str("design_hash", self.design_hash, allow_empty=False)
-        if self.source_generation not in ("v2", "v3"):
+        if self.source_generation not in ("v2", "v3", "v4"):
             raise ValueError(
-                f"source_generation must be 'v2' or 'v3', got "
+                f"source_generation must be 'v2', 'v3' or 'v4', got "
                 f"{self.source_generation!r}")
+        if self.topology is None:
+            raise ValueError(
+                "a FabricIntentView MUST carry a normalized topology intent: "
+                "the topology stage reads THAT, never legacy "
+                "topology_family/radix/concentration")
 
     @property
     def world_size(self) -> int:
@@ -2885,7 +2918,7 @@ class FabricIntentView:
         return parallel_world_size(self.tp, self.pp, self.ep, self.dp)
 
 
-def fabric_intent_view(request: CompileRequest | CompileRequestV3
+def fabric_intent_view(request: CompileRequest | CompileRequestV3 | Any
                        ) -> FabricIntentView:
     """THE dispatch seam: one isinstance decision for the whole compiler.
 
@@ -2895,6 +2928,23 @@ def fabric_intent_view(request: CompileRequest | CompileRequestV3
     derive_v3_traffic_classes (the declared intent registry). Anything
     else refuses: the compiler never guesses a generation.
     """
+    # v4 first: it is the only generation that DECLARES a typed intent.
+    if getattr(request, "schema_version", None) == 4 and hasattr(
+            request, "noc_controls"):
+        wl = request.workload
+        return FabricIntentView(
+            agents=request.agents,
+            dependencies=request.dependencies,
+            noc_config=None,
+            address_map=request.address_map,
+            physical=request.physical,
+            tp=wl.tp, pp=wl.pp, ep=wl.ep, dp=wl.dp,
+            traffic_classes=derive_v3_traffic_classes(request),
+            design_hash=request.design_hash(),
+            source_generation="v4",
+            topology=request.topology,
+            noc_controls=request.noc_controls,
+        )
     if isinstance(request, CompileRequestV3):
         wl = request.workload
         return FabricIntentView(
@@ -2908,6 +2958,7 @@ def fabric_intent_view(request: CompileRequest | CompileRequestV3
             design_hash=request.design_hash(),
             source_generation="v3",
             explicit_topology=request.explicit_topology,
+            **_normalized_fabric_from_legacy(request),
         )
     if isinstance(request, CompileRequest):
         wl = request.workload
@@ -2923,10 +2974,73 @@ def fabric_intent_view(request: CompileRequest | CompileRequestV3
             traffic_classes=tuple(dep_classes),
             design_hash=request.design_hash(),
             source_generation="v2",
+            **_normalized_fabric_from_legacy(request),
         )
     raise CompileRequestV3SchemaError(
-        f"fabric_intent_view takes a v2 CompileRequest or a "
-        f"CompileRequestV3, got {type(request).__name__}")
+        f"fabric_intent_view takes a v2 CompileRequest, a CompileRequestV3 "
+        f"or a CompileRequestV4, got {type(request).__name__}")
+
+
+def _normalized_fabric_from_legacy(request: Any) -> dict:
+    """TRANSIENT normalization of a v2/v3 request into the typed vocabulary.
+
+    This is the ONLY place allowed to read legacy
+    `noc_config.topology_family` / `radix` / `concentration` for the purpose
+    of choosing a topology: after this seam, topology materialization reads
+    `view.topology` and nothing else.
+
+    It is a NORMALIZATION, not a reinterpretation. The derived intent is
+    transient (the view has no to_dict/from_dict) and `design_hash` is copied
+    from the source request verbatim, so a legacy document's persisted
+    identity cannot move because of it.
+
+    It reuses the same frozen sizing law the migration uses, and it REFUSES
+    families whose legacy spelling does not determine a physical design
+    (flatfly / gec / fat_tree) rather than guessing.
+    """
+    from veritx_dse.model.noc_controls import noc_controls_from_noc_config
+    from veritx_dse.model.topology_intent import (
+        ExplicitTopologyIntent, topology_intent_from_noc_config,
+    )
+    from veritx_dse.model.compile_request_v4 import _frozen_v3_radix
+
+    explicit = getattr(request, "explicit_topology", None)
+    controls = noc_controls_from_noc_config(request.noc_config)
+    if explicit is not None:
+        return {
+            "topology": ExplicitTopologyIntent(graph=explicit),
+            "noc_controls": controls,
+            "topology_normalization": {"source": "explicit_topology"},
+        }
+    noc = request.noc_config
+    family = noc.topology_family
+    endpoint_count = sum(a.count for a in request.agents)
+    concentration = noc.concentration
+    conc = concentration or 1
+    if family is TopologyFamily.CONCENTRATED_MESH and concentration is None:
+        from veritx_dse.model.topology_intent import (
+            V3_CONCENTRATED_MESH_DEFAULT_CONCENTRATION,
+        )
+        conc = V3_CONCENTRATED_MESH_DEFAULT_CONCENTRATION
+    radix = noc.radix
+    resolution = "explicit"
+    if radix is None:
+        radix = _frozen_v3_radix(endpoint_count, conc)
+        resolution = (f"frozen_v3_autosize(endpoints={endpoint_count},"
+                      f"concentration={conc})->side_length={radix}")
+    intent = topology_intent_from_noc_config(family, radix=radix,
+                                             concentration=conc)
+    return {
+        "topology": intent,
+        "noc_controls": controls,
+        "topology_normalization": {
+            "source": "noc_config.topology_family",
+            "topology_family": family and family.value,
+            "radix": noc.radix,
+            "concentration": concentration,
+            "radix_resolution": resolution,
+        },
+    }
 
 
 def _routing_for_cycle_structure(has_cycles: bool, vc_count: int
@@ -2960,10 +3074,13 @@ def derive_vc_assignment_v3(request: CompileRequestV3) -> VCAssignment:
     endpoint names ride along at VC0; cycle victims separate per the
     shared least-cost law.
     """
-    if not isinstance(request, CompileRequestV3):
+    if not isinstance(request, CompileRequestV3) and not (
+            getattr(request, "schema_version", None) == 4
+            and hasattr(request, "noc_controls")):
         raise CompileRequestV3SchemaError(
-            f"derive_vc_assignment_v3 takes a CompileRequestV3, got "
-            f"{type(request).__name__} — never a converted v2 stand-in")
+            f"derive_vc_assignment_v3 takes a CompileRequestV3 or a "
+            f"CompileRequestV4, got {type(request).__name__} — never a "
+            "converted v2 stand-in")
     graph = request.dependencies
     cycles = graph.find_cycles()
     vc_count = derive_vc_count(graph)
@@ -3007,9 +3124,15 @@ def derive_vc_assignment_artifact_v3(
     classes, victims, no concurrent-context floor).
     """
     from .vc_assignment import VCAssignmentError, make_vc_assignment_artifact
-    if not isinstance(request, CompileRequestV3):
+    # A v4 request carries the same WorkloadV3/DependencyGraph, so the VC
+    # policy is the same function of the design. Checked by shape so the one
+    # definition cannot drift into two.
+    if not isinstance(request, CompileRequestV3) and not (
+            getattr(request, "schema_version", None) == 4
+            and hasattr(request, "noc_controls")):
         raise CompileRequestV3SchemaError(
-            "derive_vc_assignment_artifact_v3 takes a CompileRequestV3")
+            "derive_vc_assignment_artifact_v3 takes a CompileRequestV3 or "
+            "a CompileRequestV4")
     va = derive_vc_assignment_v3(request)
     classes = list(resolved_route.routing_classes)
     if not classes:

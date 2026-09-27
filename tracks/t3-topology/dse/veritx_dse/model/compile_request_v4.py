@@ -155,6 +155,31 @@ class CompileRequestV4:
     def total_nodes(self) -> int:
         return sum(a.count for a in self.agents)
 
+    @property
+    def noc_config(self) -> Any:
+        """LEGACY CONTROL VIEW — for consumers that read NoC CONTROLS.
+
+        It carries NO topology shape: `topology_family`, `radix` and
+        `concentration` are all None, because in v4 topology shape belongs
+        exclusively to `self.topology` and a second copy could disagree.
+
+        This exists so control reads (`link_width`, `arbitration`, ...) do not
+        have to be rewritten in one step. It is NOT a second authority for
+        anything: the shape fields are structurally absent, so a consumer
+        that reads shape here gets None and must fail loudly rather than
+        silently use a stale copy.
+        """
+        from veritx_dse.model.compile_model import NocConfig
+        c = self.noc_controls
+        return NocConfig(
+            topology_family=None, radix=None, concentration=None,
+            arbitration=c.arbitration, rcu_enabled=c.rcu_enabled,
+            link_width=c.link_width, mcast_groups=c.mcast_groups,
+            mcast_setup_cycles=c.mcast_setup_cycles,
+            output_formats=c.output_formats,
+            obfuscation_level=c.obfuscation_level,
+        )
+
     # ── envelope rendering (delegates to the frozen v3 helpers) ─────────
     # These parts of the envelope are IDENTICAL to v3 by construction, so
     # they are rendered by the v3 code rather than re-implemented: a

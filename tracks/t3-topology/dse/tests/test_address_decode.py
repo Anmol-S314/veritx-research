@@ -712,6 +712,7 @@ def test_module_imports_only_allowed_layers():
         "veritx_dse.core.errors",
         "veritx_dse.model.attachment",
         "veritx_dse.model.compile_model",
+    "veritx_dse.model.generation",
     }
     forbidden = ("topology", "mapping", "placement", "packet_format", "route",
                  "resolved_route", "vc_assignment", "vc_resource", "routing",

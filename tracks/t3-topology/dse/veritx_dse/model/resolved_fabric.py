@@ -130,6 +130,18 @@ def _need(d: dict[str, Any], key: str, where: str) -> Any:
     return d[key]
 
 
+def _require_design_generation(name: str, value: Any) -> None:
+    """A design request of ANY generation the shared engine consumes.
+
+    One predicate instead of a tuple that grows a disjunct per generation.
+    """
+    from veritx_dse.model.generation import is_any_compile_request
+    if not is_any_compile_request(value):
+        raise ResolvedFabricError(
+            f"{name} must be a (CompileRequest, CompileRequestV3), got "
+            f"{type(value).__name__}")
+
+
 def _require_instance(name: str, value: Any, cls: type) -> None:
     if not isinstance(value, cls):
         names = (cls.__name__ if isinstance(cls, type)
@@ -282,7 +294,7 @@ class ResolvedFabric:
             packet_format: PacketFormatArtifact,
             router_behavior: RouterBehaviorArtifact,
             address_decode: AddressDecodeArtifact) -> None:
-        _require_instance("design", design, (CompileRequest, CompileRequestV3))
+        _require_design_generation("design", design)
         _require_instance("inventory", inventory, NodeInventory)
         _require_instance("mapping", mapping, MappingArtifact)
         _require_instance("topology", topology, TopologyArtifact)
@@ -471,10 +483,10 @@ class ResolvedFabric:
 
 def _bind(*, design: CompileRequest | CompileRequestV3, mapping: MappingArtifact,
           fabric: FabricArtifact) -> ResolvedFabric:
-    for name, value, cls in (("design", design, (CompileRequest, CompileRequestV3)),
-                             ("mapping", mapping, MappingArtifact),
+    for name, value, cls in (("mapping", mapping, MappingArtifact),
                              ("fabric", fabric, FabricArtifact)):
         _require_instance(name, value, cls)
+    _require_design_generation("design", design)
     return ResolvedFabric(
         design_hash=design.design_hash(),
         mapping_hash=mapping.mapping_hash(),

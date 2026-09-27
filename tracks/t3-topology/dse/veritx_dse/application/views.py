@@ -24,6 +24,7 @@ report dict), OptimizationStudyView (``OptimizationResult.to_study_view``).
 from __future__ import annotations
 
 from typing import Any
+from veritx_dse.model.generation import is_any_compile_request  # noqa: E402
 
 
 def _h(value: str) -> str:
@@ -210,7 +211,7 @@ def design_view(request: Any, compilation: Any = None) -> dict[str, Any]:
         CompileRequest,
         CompileRequestV3,
     )
-    if not isinstance(request, (CompileRequest, CompileRequestV3)):
+    if not is_any_compile_request(request):
         raise TypeError(
             f"design_view takes a CompileRequest, got "
             f"{type(request).__name__}")
@@ -428,7 +429,7 @@ def lowering_view(request: Any) -> dict[str, Any]:
         CompileRequest,
         CompileRequestV3,
     )
-    if not isinstance(request, (CompileRequest, CompileRequestV3)):
+    if not is_any_compile_request(request):
         raise TypeError(
             f"lowering_view takes a CompileRequest, got "
             f"{type(request).__name__}")

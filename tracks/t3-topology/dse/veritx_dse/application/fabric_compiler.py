@@ -119,7 +119,9 @@ class FabricCompiler:
             build_resolved_bundle, build_resolved_bundle_v3,
             derive_stages_v3)
         try:
-            if isinstance(request, CompileRequestV3):
+            if isinstance(request, CompileRequestV3) or (
+                    getattr(request, "schema_version", None) == 4
+                    and hasattr(request, "noc_controls")):
                 bundle, staged, refusal = derive_stages_v3(request)
             else:
                 staged = None

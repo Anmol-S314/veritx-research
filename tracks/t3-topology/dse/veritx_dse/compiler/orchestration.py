@@ -233,10 +233,13 @@ def build_resolved_bundle_v3(compile_request: Any):
     from veritx_dse.model.routing import derive_route
     from veritx_dse.model.topology_artifact import materialize_topology
 
-    if not isinstance(compile_request, CompileRequestV3):
+    if not isinstance(compile_request, CompileRequestV3) and not (
+            getattr(compile_request, "schema_version", None) == 4
+            and hasattr(compile_request, "noc_controls")):
         raise map_semantic_error(
             TypeError(
-                f"build_resolved_bundle_v3 takes a CompileRequestV3, got "
+                f"build_resolved_bundle_v3 takes a CompileRequestV3 or a "
+                f"CompileRequestV4, got "
                 f"{type(compile_request).__name__}"),
             operation="compile")
     try:

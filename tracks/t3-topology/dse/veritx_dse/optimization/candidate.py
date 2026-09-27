@@ -26,6 +26,7 @@ from veritx_dse.core.artifact import content_id
 from veritx_dse.core.spec import canonical_json
 
 from .definition import GUIDED_PARAMS, _normalize_param_name
+from veritx_dse.model.generation import is_any_compile_request  # noqa: E402
 
 CANDIDATE_DOMAIN = "veritx/optimization-candidate/v1"
 
@@ -82,7 +83,7 @@ def apply_patch(base: Any, patch: dict[str, Any]) -> Any:
     # Integration: v3 bases patch through the identical replace path
     # (same NocConfig class, same frozen-replace mechanics); v2 flow
     # is byte-identical — only the gate widens, nothing else branches.
-    if not isinstance(base, (CompileRequest, CompileRequestV3)):
+    if not is_any_compile_request(base):
         raise CandidateError(
             f"base must be a CompileRequest or CompileRequestV3, got "
             f"{type(base).__name__}")

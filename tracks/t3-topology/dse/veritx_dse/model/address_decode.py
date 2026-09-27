@@ -474,7 +474,8 @@ def derive_address_decode(*, design: CompileRequest | CompileRequestV3,
     v3 requests are accepted for the fields they share with v2 (agents,
     address_map); the v3-only schema is never reinterpreted as v2.
     """
-    if not isinstance(design, (CompileRequest, CompileRequestV3)):
+    from veritx_dse.model.generation import is_any_compile_request
+    if not is_any_compile_request(design):
         raise AddressDecodeError(
             f"design must be a CompileRequest, got "
             f"{type(design).__name__}")

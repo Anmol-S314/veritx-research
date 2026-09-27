@@ -409,6 +409,7 @@ def test_production_imports_are_exactly_allowed():
         "veritx_dse.compiler.canonical",
         "veritx_dse.core.errors",
         "veritx_dse.model.compile_model",
+    "veritx_dse.model.generation",
         "veritx_dse.model.mapping",
         "veritx_dse.model.placement",
         "veritx_dse.model.routing_policy",

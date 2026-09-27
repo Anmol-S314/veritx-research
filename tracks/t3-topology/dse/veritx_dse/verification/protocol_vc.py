@@ -123,8 +123,10 @@ class ProtocolVCGraph:
 
 def _require_types(design: CompileRequest,
                    vc_assignment: VCAssignmentArtifact) -> None:
-    if not isinstance(design, CompileRequest):
-        raise ProtocolVCError("design must be a CompileRequest")
+    from veritx_dse.model.generation import is_any_compile_request
+    if not is_any_compile_request(design):
+        raise ProtocolVCError(
+            f"design must be a CompileRequest, got {type(design).__name__}")
     if not isinstance(vc_assignment, VCAssignmentArtifact):
         raise ProtocolVCError("vc_assignment must be a VCAssignmentArtifact")
 

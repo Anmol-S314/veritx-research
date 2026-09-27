@@ -630,6 +630,79 @@ def materialize_ir(ir: Any, *,
                      width_bits, latency_cycles)
 
 
+def materialize_topology_intent(inventory: NodeInventory, intent: Any, *,
+                                width_bits: int = _DEFAULT_LINK_WIDTH_BITS,
+                                latency_cycles: int = _DEFAULT_LINK_LATENCY_CYCLES
+                                ) -> TopologyArtifact:
+    """Typed topology intent -> `TopologyArtifact`. THE materialization seam.
+
+    This is the ONLY place a typed intent becomes a canonical artifact, and
+    therefore the only place that decides whether the canonical model can
+    represent a physical design at all.
+
+    THE LAW (PHASE B.1 §16): authorability and materializability are
+    different stages. An intent that describes real physical science the
+    canonical artifact cannot yet represent is refused HERE, by name, with a
+    typed UNSUPPORTED — never silently mapped onto a different family's
+    shape.
+
+      mesh / concentrated_mesh / torus / flatfly  -> the family materializers
+      explicit graph                              -> materialize_ir
+      gec (all four modes)                        -> REFUSED (PHASE D owns
+                                                     the equivalence ruling)
+      fattree                                     -> REFUSED (no materializer)
+    """
+    from veritx_dse.model.topology_intent import (
+        ConcentratedMeshIntent, ExplicitTopologyIntent, FatTreeIntent,
+        FlatFlyIntent, GecTopologyIntent, MeshIntent, TorusIntent,
+    )
+    if isinstance(intent, ExplicitTopologyIntent):
+        return materialize_ir(intent.graph, width_bits=width_bits)
+    if isinstance(intent, MeshIntent):
+        family, radix, conc = (MaterializedFamily.MESH, intent.side_length,
+                               intent.concentration)
+    elif isinstance(intent, ConcentratedMeshIntent):
+        family, radix, conc = (MaterializedFamily.CONCENTRATED_MESH,
+                               intent.side_length, intent.concentration)
+    elif isinstance(intent, TorusIntent):
+        family, radix, conc = (MaterializedFamily.TORUS, intent.side_length,
+                               intent.concentration)
+    elif isinstance(intent, FlatFlyIntent):
+        # FlatFly's canonical materializer takes (k, n) where k is the
+        # per-dimension complete-graph size and n the dimension count.
+        return materialize_flatfly(
+            k=intent.radix_per_dimension, n=intent.dimension_count,
+            concentration=intent.concentration, width_bits=width_bits,
+            latency_cycles=latency_cycles)
+    elif isinstance(intent, GecTopologyIntent):
+        raise TopologyError(
+            f"UNSUPPORTED: GEC mode {intent.mode.value!r} has no canonical "
+            "materializer yet. The intent is AUTHORABLE and the BookSim "
+            "backend implements the family, but the canonical point-to-point "
+            "express graph is PHASE D work and the shared/tapped MULTIDROP "
+            "(MECS) resource is not representable as independent directed "
+            "channels at all. Refusing rather than silently materializing a "
+            "different family (docs/product/capability-archaeology.yaml, "
+            "GEC-EXPRESS / GEC-MECS).")
+    elif isinstance(intent, FatTreeIntent):
+        raise TopologyError(
+            "UNSUPPORTED: fat-tree has no canonical materializer yet. The "
+            "intent is AUTHORABLE (its physical structure is fully "
+            f"specified: switch_radix={intent.switch_radix}, "
+            f"level_count={intent.level_count}, endpoint_capacity="
+            f"{intent.endpoint_capacity}); materialization is later-phase "
+            "work. No materializer is invented here.")
+    else:
+        raise TopologyError(
+            f"UNSUPPORTED: topology intent kind "
+            f"{getattr(intent, 'kind', type(intent).__name__)!r} has no "
+            "canonical materializer — no silent fallback")
+    return materialize_family(
+        family, endpoint_count=inventory.agent_count,
+        concentration=conc, radix=radix, width_bits=width_bits,
+        latency_cycles=latency_cycles)
+
+
 def materialize_topology(inventory: NodeInventory,
                          cr_or_noc: CompileRequest | NocConfig
                          ) -> TopologyArtifact:
@@ -648,6 +721,25 @@ def materialize_topology(inventory: NodeInventory,
 
     GEC and fat-tree are refused rather than silently downgraded to mesh.
     """
+    # ── NORMALIZED TYPED INTENT (v4 / FabricIntentView) ──────────────
+    # THE ONE SEAM. A FabricIntentView always carries a normalized
+    # `topology` intent (derived transiently for v2/v3 by the dispatch
+    # seam). When it is present it is the AUTHORITY: nothing downstream
+    # reads legacy topology_family/radix/concentration.
+    intent = getattr(cr_or_noc, "topology", None)
+    if intent is not None:
+        from veritx_dse.model.topology_intent import TopologyIntent
+        if isinstance(intent, TopologyIntent):
+            noc_ctl = getattr(cr_or_noc, "noc_controls", None)
+            width = getattr(noc_ctl, "link_width", None)
+            if width is None:
+                width = getattr(getattr(cr_or_noc, "noc_config", None),
+                                "link_width", None)
+            return materialize_topology_intent(
+                inventory, intent,
+                width_bits=(width if width is not None
+                            else _DEFAULT_LINK_WIDTH_BITS))
+
     # ── EXPLICIT source (FAB-007) ────────────────────────────────────
     # Read by attribute so a FabricIntentView needs no import here and no
     # second topology authority exists (same discipline as noc_config).
