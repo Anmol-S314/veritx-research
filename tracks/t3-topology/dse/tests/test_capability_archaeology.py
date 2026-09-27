@@ -302,7 +302,7 @@ def test_document_does_not_claim_multicast_json_is_capability():
 
 def test_counts_are_scoped_to_the_audited_records():
     doc = DOC.read_text()
-    assert "these 23 audited records" in doc
+    assert "these 26 audited records" in doc
     assert "Counts are OUTPUTS" in doc
 
 
@@ -334,3 +334,146 @@ def test_document_records_the_reclassifications():
     section = doc.split("### Classification semantics")[1].split("### TRULY_ABSENT")[0]
     for cid in ("NoC energy", "RTL validation", "UVM/SVA"):
         assert cid in section, f"{cid} reclassification not recorded"
+
+
+# ══ EXECUTION evidence law (seal pass 2) ═══════════════════════════════
+
+def test_every_yes_execution_claim_cites_durable_execution_evidence(ledger):
+    """A source file or runnable script proves EXECUTABLE POTENTIAL, never
+    EXECUTED. A YES execution claim needs a durable run record: a result
+    artifact, evidence document, or a commit-qualified status/result."""
+    for cap in ledger["capabilities"]:
+        ex = str(cap["EXECUTED_ANYWHERE"]).strip()
+        if not ex.upper().startswith("YES"):
+            continue
+        cited = _cites(cap)
+        has_result_doc = any(t in cited for t in _RESULT_LIKE)
+        has_commit_ref = bool(cap.get("historical_evidence"))
+        assert has_result_doc or has_commit_ref, (
+            f"{cap['id']} claims EXECUTED_ANYWHERE={ex!r} but cites no durable "
+            "execution evidence (only implementation/script/test paths)")
+
+
+def test_scripts_and_sources_alone_never_satisfy_the_execution_law():
+    """Regression proof for the law itself: a record whose only citations are
+    .py/.cpp/.sh must NOT be able to claim YES execution."""
+    fake = {
+        "id": "SYNTHETIC", "EXECUTED_ANYWHERE": "YES — it runs",
+        "evidence": ["a.py", "b.cpp", "c.sh"], "MEASURED_ANYWHERE": "NO",
+    }
+    cited = _cites(fake)
+    assert not any(t in cited for t in _RESULT_LIKE)
+    assert not fake.get("historical_evidence")
+
+
+def test_executable_potential_wording_is_used_where_execution_is_unproven(ledger):
+    """The records downgraded in this pass must say so explicitly."""
+    for cid in ("ADAPTIVE-ROUTING", "PIM", "QTREE", "TREE4", "NOC-ENERGY",
+                "BOOKSIM-NATIVE-POWER", "RTL-VALIDATION", "CDC"):
+        cap = next(c for c in ledger["capabilities"] if c["id"] == cid)
+        ex = str(cap["EXECUTED_ANYWHERE"]).upper()
+        assert not ex.startswith("YES"), f"{cid} still claims YES execution"
+        assert ("NOT PROVEN" in ex or "POTENTIAL" in ex or "TESTED" in ex), \
+            f"{cid} does not state its execution status precisely: {ex!r}"
+
+
+def test_p2p_record_states_tested_lowering_not_execution(ledger):
+    cap = next(c for c in ledger["capabilities"]
+               if c["id"] == "P2P-LOGICAL-MULTICAST")
+    assert "TESTED LOWERING" in cap["EXECUTED_ANYWHERE"]
+    assert "NOT PROVEN" in cap["MEASURED_ANYWHERE"]
+
+
+def test_in_process_primitives_are_labelled_as_tested_primitives(ledger):
+    for cid in ("CANDIDATE-PROMOTION", "EVIDENCE-REUSE", "SEARCH-COMPLETENESS",
+                "WAVE-E-METRICS"):
+        cap = next(c for c in ledger["capabilities"] if c["id"] == cid)
+        assert "TESTED PRIMITIVE" in cap["EXECUTED_ANYWHERE"], cid
+
+
+# ══ historical refs must be durable and exact ══════════════════════════
+
+def test_historical_refs_use_full_sha_where_feasible(ledger):
+    """A durable citation must be a full 40-char SHA so it cannot collide and
+    can be fetched by SHA."""
+    for cap in ledger["capabilities"]:
+        for h in cap.get("historical_evidence") or []:
+            sha = h.split(":")[0]
+            assert len(sha) == 40, (
+                f"{cap['id']} historical ref {h!r} is not a full SHA")
+
+
+def test_no_historical_ref_is_an_unreachable_local_sha(ledger):
+    """Every cited SHA must exist locally AND be contained by at least one
+    ref, so a claim cannot rest on a dangling object in one clone."""
+    import subprocess
+    for cap in ledger["capabilities"]:
+        for h in cap.get("historical_evidence") or []:
+            sha = h.split(":")[0]
+            t = subprocess.run(["git", "cat-file", "-t", sha], cwd=REPO,
+                               capture_output=True, text=True)
+            if t.returncode != 0:
+                pytest.skip(f"{sha[:12]} not present in this clone")
+            refs = subprocess.run(
+                ["git", "for-each-ref", "--contains", sha,
+                 "--format=%(refname)"], cwd=REPO,
+                capture_output=True, text=True).stdout.strip()
+            assert refs, (
+                f"{cap['id']} cites {sha[:12]} which is UNREACHABLE from any "
+                "ref — a dangling object is not repository evidence")
+
+
+def test_historical_refs_point_at_real_paths_not_directories(ledger):
+    """A directory such as `comm/topics/status` is not a record. Cite the
+    file that actually contains the result."""
+    import subprocess
+    for cap in ledger["capabilities"]:
+        for h in cap.get("historical_evidence") or []:
+            sha, _, path = h.partition(":")
+            if not path:
+                continue
+            if path.endswith("/"):
+                raise AssertionError(f"{cap['id']} cites a directory: {h!r}")
+            t = subprocess.run(["git", "cat-file", "-t", f"{sha}:{path}"],
+                               cwd=REPO, capture_output=True, text=True)
+            if t.returncode != 0:
+                pytest.skip(f"{sha[:12]}:{path} not present in this clone")
+            assert t.stdout.strip() == "blob", (
+                f"{cap['id']} historical ref {h!r} is not a file")
+
+
+# ══ the split topology records must not share execution evidence ═══════
+
+def test_qtree_and_tree4_do_not_claim_the_comparison_script(ledger):
+    """run_full_comparison.py runs CMesh/Flatfly/Fat-tree/Dragonfly/Torus.
+    It does NOT run qtree or tree4, so neither may cite it as evidence."""
+    for cid in ("QTREE", "TREE4"):
+        cap = next(c for c in ledger["capabilities"] if c["id"] == cid)
+        # Scope the check to the CLAIM fields and citations, not the
+        # explanatory note (which legitimately names the script to say it
+        # does not run this topology).
+        cited = " ".join([
+            str(cap["EXECUTED_ANYWHERE"]), str(cap["MEASURED_ANYWHERE"]),
+            str(cap["IMPLEMENTED_ANYWHERE"]),
+            " ".join(cap.get("evidence") or []),
+            " ".join(cap.get("historical_evidence") or []),
+        ])
+        assert "run_full_comparison" not in cited, (
+            f"{cid} cites run_full_comparison.py as evidence, but that script "
+            "does not run it")
+        assert "full_topology_comparison.xlsx" not in cited, (
+            f"{cid} cites the comparison workbook, which has no {cid} rows")
+
+
+def test_fat_tree_and_dragonfly_cite_the_measured_workbook(ledger):
+    for cid in ("FAT-TREE", "DRAGONFLY"):
+        cap = next(c for c in ledger["capabilities"] if c["id"] == cid)
+        assert "full_topology_comparison.xlsx" in _cites(cap), cid
+        assert cap.get("historical_evidence"), cid
+
+
+def test_the_four_topologies_are_separate_records(ledger):
+    ids = {c["id"] for c in ledger["capabilities"]}
+    for cid in ("FAT-TREE", "DRAGONFLY", "QTREE", "TREE4"):
+        assert cid in ids, f"{cid} missing"
+    assert "FAT-TREE-QTREE-TREE4-DRAGONFLY" not in ids, "combined record remains"

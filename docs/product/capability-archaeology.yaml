@@ -98,8 +98,8 @@ capabilities:
     name: BookSim stdout stats parser (honest latency + percentiles)
     classifications: [CURRENT_CANONICAL, CURRENT_QUALIFIED]
     IMPLEMENTED_ANYWHERE: "YES"
-    EXECUTED_ANYWHERE: "YES"
-    MEASURED_ANYWHERE: "YES"
+    EXECUTED_ANYWHERE: "YES — the certified path runs BookSim and parses its stdout; the bake-off reproducibility report records the resulting per-topology latencies"
+    MEASURED_ANYWHERE: "YES — tracks/t3-topology/dse/docs/BAKE-OFF-REPRODUCIBILITY.md records verified latencies (mesh_8x8 23.38c, custom_anynet 23.20c, flatfly_8x8 20.38c)"
     CURRENT_ACTIVE_IMPLEMENTATION: "YES — veritx_dse/simulation/booksim.py::parse_output"
     CANONICAL_REPRESENTATION: "YES — the parsed dict is the evidence payload"
     CANONICAL_DERIVATION: "YES — backend/booksim.py::_execute_prepared calls it"
@@ -198,12 +198,12 @@ capabilities:
       - "tracks/t3-topology/dse/veritx_dse/model/topology_artifact.py"
       - "tracks/t3-topology/dse/docs/PARETO-REPLAY-RESULTS-2026-08-29.md"
 
-  - id: FAT-TREE-QTREE-TREE4-DRAGONFLY
-    name: Fat-tree / QTree / Tree4 / DragonflyNew
+  - id: FAT-TREE
+    name: Fat-tree (BookSim fattree / KNFly-style k-ary n-tree)
     classifications: [CURRENT_BACKEND_ONLY, HISTORICAL_MEASURED, DOC_STALE]
-    IMPLEMENTED_ANYWHERE: "YES — networks/{fattree,qtree,tree4,dragonfly}.cpp, all instantiated by Network::New"
-    EXECUTED_ANYWHERE: "YES IN HISTORY — run_full_comparison.py drives the real binary per topology (fattree/nca, dragonflynew/min, qtree, tree4); the scripts are at HEAD"
-    MEASURED_ANYWHERE: "YES IN HISTORY — a committed result workbook exists at 6a335004:booksim2/full_topology_comparison.xlsx (20,725 bytes). NOT present at HEAD or on the three audited refs (it lived at booksim2/, not third_party/booksim2/src/)."
+    IMPLEMENTED_ANYWHERE: "YES — networks/fattree.cpp, instantiated by Network::New for topology = fattree; routing nca/anca registered"
+    EXECUTED_ANYWHERE: "YES IN HISTORY — the full topology comparison ran Fat-tree (nca, k=4,n=3, 64 nodes) on the real binary and recorded the outcome"
+    MEASURED_ANYWHERE: "YES IN HISTORY — 6a3350048c646b0ea9f738f0bff889fbfcf6a753:booksim2/full_topology_comparison.xlsx ('Fat-tree (nca, 64 nodes)' rows; sheets Report + All Runs). Not present at HEAD."
     CURRENT_ACTIVE_IMPLEMENTATION: "YES — BookSim binary"
     CANONICAL_REPRESENTATION: "NO"
     CANONICAL_DERIVATION: "NO"
@@ -213,19 +213,80 @@ capabilities:
     QUALIFICATION_EXISTS: "NO"
     EVIDENCE_CONTRACT: "NO"
     PRODUCT_WIRED: "NO"
-    MISSING_BRIDGE: "canonical representations + qualification; these are NOT 'cfg only'"
+    MISSING_BRIDGE: "canonical representation + qualification; NOT 'cfg only'"
     evidence:
-      - "third_party/booksim2/src/networks/network.cpp"
+      - "third_party/booksim2/src/networks/fattree.cpp"
       - "third_party/booksim2/src/run_full_comparison.py"
     historical_evidence:
-      - "6a335004:booksim2/full_topology_comparison.xlsx"
-    note: "CORRECTED (seal pass): the workbook is commit-qualified history, not a HEAD artifact. The script alone would prove executable potential, not a completed measurement campaign."
+      - "6a3350048c646b0ea9f738f0bff889fbfcf6a753:booksim2/full_topology_comparison.xlsx"
+
+  - id: DRAGONFLY
+    name: DragonflyNew
+    classifications: [CURRENT_BACKEND_ONLY, HISTORICAL_MEASURED, DOC_STALE]
+    IMPLEMENTED_ANYWHERE: "YES — networks/dragonfly.cpp, instantiated by Network::New for topology = dragonflynew; routing min/ugal registered"
+    EXECUTED_ANYWHERE: "YES IN HISTORY — the full topology comparison ran Dragonfly (min, 72 nodes — the structural minimum a*p*(a*p+1) at p=2,n=1) on the real binary"
+    MEASURED_ANYWHERE: "YES IN HISTORY — 6a3350048c646b0ea9f738f0bff889fbfcf6a753:booksim2/full_topology_comparison.xlsx ('Dragonfly (min, 72 nodes -- structural minimum)' rows). Not present at HEAD."
+    CURRENT_ACTIVE_IMPLEMENTATION: "YES — BookSim binary"
+    CANONICAL_REPRESENTATION: "NO"
+    CANONICAL_DERIVATION: "NO"
+    VERIFIER_EXISTS: "NO"
+    BACKEND_PROJECTION: "PARTIAL — registry PROJECTABLE: PARTIAL"
+    BACKEND_EXECUTABLE: "YES outside the canonical path"
+    QUALIFICATION_EXISTS: "NO"
+    EVIDENCE_CONTRACT: "NO"
+    PRODUCT_WIRED: "NO"
+    MISSING_BRIDGE: "canonical representation + qualification; NOT 'cfg only'"
+    evidence:
+      - "third_party/booksim2/src/networks/dragonfly.cpp"
+      - "third_party/booksim2/src/run_full_comparison.py"
+    historical_evidence:
+      - "6a3350048c646b0ea9f738f0bff889fbfcf6a753:booksim2/full_topology_comparison.xlsx"
+
+  - id: QTREE
+    name: Quad tree (BookSim qtree)
+    classifications: [CURRENT_BACKEND_ONLY, DOC_STALE]
+    IMPLEMENTED_ANYWHERE: "YES — networks/qtree.cpp, instantiated by Network::New for topology = qtree; routing nca_qtree registered"
+    EXECUTED_ANYWHERE: "EXECUTABLE POTENTIAL — NOT PROVEN EXECUTED FROM DURABLE REPOSITORY EVIDENCE. The network and its routing function exist and the binary accepts the topology, but NO committed run artifact or status record recording a qtree execution was located."
+    MEASURED_ANYWHERE: "NOT PROVEN — no committed measurement artifact for qtree was located in HEAD or in history"
+    CURRENT_ACTIVE_IMPLEMENTATION: "YES — BookSim binary"
+    CANONICAL_REPRESENTATION: "NO"
+    CANONICAL_DERIVATION: "NO"
+    VERIFIER_EXISTS: "NO"
+    BACKEND_PROJECTION: "PARTIAL — registry PROJECTABLE: PARTIAL"
+    BACKEND_EXECUTABLE: "YES outside the canonical path"
+    QUALIFICATION_EXISTS: "NO"
+    EVIDENCE_CONTRACT: "NO"
+    PRODUCT_WIRED: "NO"
+    MISSING_BRIDGE: "canonical representation + qualification; NOT 'cfg only'"
+    evidence:
+      - "third_party/booksim2/src/networks/qtree.cpp"
+    note: "SPLIT OUT (seal pass): run_full_comparison.py does NOT run qtree. The previous combined record cited that script as execution evidence for it, which was wrong."
+
+  - id: TREE4
+    name: 4-ary tree (BookSim tree4)
+    classifications: [CURRENT_BACKEND_ONLY, DOC_STALE]
+    IMPLEMENTED_ANYWHERE: "YES — networks/tree4.cpp, instantiated by Network::New for topology = tree4; routing nca_tree4/anca_tree4 registered"
+    EXECUTED_ANYWHERE: "EXECUTABLE POTENTIAL — NOT PROVEN EXECUTED FROM DURABLE REPOSITORY EVIDENCE. The network and its routing functions exist and the binary accepts the topology, but NO committed run artifact or status record recording a tree4 execution was located."
+    MEASURED_ANYWHERE: "NOT PROVEN — no committed measurement artifact for tree4 was located in HEAD or in history"
+    CURRENT_ACTIVE_IMPLEMENTATION: "YES — BookSim binary"
+    CANONICAL_REPRESENTATION: "NO"
+    CANONICAL_DERIVATION: "NO"
+    VERIFIER_EXISTS: "NO"
+    BACKEND_PROJECTION: "PARTIAL — registry PROJECTABLE: PARTIAL"
+    BACKEND_EXECUTABLE: "YES outside the canonical path"
+    QUALIFICATION_EXISTS: "NO"
+    EVIDENCE_CONTRACT: "NO"
+    PRODUCT_WIRED: "NO"
+    MISSING_BRIDGE: "canonical representation + qualification; NOT 'cfg only'"
+    evidence:
+      - "third_party/booksim2/src/networks/tree4.cpp"
+    note: "SPLIT OUT (seal pass): run_full_comparison.py does NOT run tree4. The previous combined record cited that script as execution evidence for it, which was wrong."
 
   - id: ADAPTIVE-ROUTING
     name: Adaptive routing (MinAdapt/UGAL/Valiant/Chaos/planar/ROMM)
     classifications: [CURRENT_BACKEND_ONLY, CURRENT_RESEARCH, HISTORICAL_EXECUTABLE]
     IMPLEMENTED_ANYWHERE: "YES — routefunc.cpp registers min_adapt_mesh, planar_adapt_mesh, romm_mesh, valiant_mesh, chaos_mesh, ugal_flatfly, ugal_dragonflynew, adaptive_xy_yx_mesh, limited_adapt_mesh"
-    EXECUTED_ANYWHERE: "YES IN HISTORY — the fork registers the adaptive routing functions and study_adaptive_*.sh scripts drive the real binary; no committed run artifact was located"
+    EXECUTED_ANYWHERE: "EXECUTABLE POTENTIAL — NOT PROVEN EXECUTED FROM DURABLE REPOSITORY EVIDENCE. The fork registers the adaptive routing functions and study_adaptive_*.sh scripts drive the real binary, but no committed run artifact or status record recording an adaptive-routing run was located."
     MEASURED_ANYWHERE: "NOT PROVEN — the study scripts exist but no committed adaptive-routing result artifact (json/csv/md/xlsx) was located in HEAD or in history"
     CURRENT_ACTIVE_IMPLEMENTATION: "YES — BookSim fork; canonical side has RoutingPolicyDefinition + relation artifacts + verification/adaptive_escape.py"
     CANONICAL_REPRESENTATION: "PARTIAL — RoutingPolicyDefinition models PER_HOP/CANDIDATE_SET/ROUTER_ALLOCATOR/RNG/credit observation; ADAPTIVE/ESCAPE/PHASE/TAP roles exist"
@@ -269,7 +330,7 @@ capabilities:
     classifications: [HISTORICAL_EXECUTABLE, PROTOTYPE_ONLY]
     IMPLEMENTED_ANYWHERE: "YES — archive/booksim-ext/multicast.patch (300 lines): Flit/IQRouter/TrafficManager fork + mcast_k/mcast_naive/reduce_col/bcast_all config fields"
     EXECUTED_ANYWHERE: "YES IN HISTORY — the patch was applied to the fork and the row-broadcast/broadcast experiments ran; the measurement scripts (mcast_measured.py, decode_e2e.py) were added at 90da38ff and are NOT at HEAD"
-    MEASURED_ANYWHERE: "YES IN HISTORY — durable run records exist (comm/topics status + decision notes added at 90da38ff, c41087b1 and 973ee7bd). No committed numeric result artifact at HEAD."
+    MEASURED_ANYWHERE: "YES IN HISTORY — durable status records state outcomes: \"SMOKE TEST PASS: unicast 0->9 (4 flits) retired cycle 22; row multicast 0->{1,2,3,7} delivered 4/4 via router fork\" (c41087b1) and \"ROW-MCAST die-A 0->{1..7}: 700/700; CROSS-DIE MCAST 0->{8,16,24,32,40,48,56,64}: 800/800\" (973ee7bd). Scope is limited to what those records state; no committed numeric result artifact exists at HEAD."
     CURRENT_ACTIVE_IMPLEMENTATION: "NO — not applied to the current fork"
     CANONICAL_REPRESENTATION: "PARTIAL — logical source replication exists in workload operations; hardware multicast resource does not"
     CANONICAL_DERIVATION: "PARTIAL — logical lowering exists"
@@ -285,8 +346,9 @@ capabilities:
       - "tracks/t3-topology/scripts/research/multicast_savings.py"
       - "tracks/t3-topology/product/examples/multicast.json"
     historical_evidence:
-      - "90da38ff:tracks/t3-topology/scripts/mcast_measured.py"
-      - "c41087b1:comm/topics/status"
+      - "90da38ff1b705b4e73027ad0b80af83480a49ba8:tracks/t3-topology/scripts/mcast_measured.py"
+      - "c41087b151e783478c69e57ba792467030d7683e:comm/topics/status/2026-08-14-1552-jane-booksim2_embed_api_proven_external_unica.txt"
+      - "973ee7bda81acda9b06a7b6cedc98d767cce49f7:comm/topics/status/2026-08-15-2130-jane-fixed_col0_anynet_verified_at_the_fabric.txt"
     note: "CORRECTED (seal pass): a patch proves an implementation prototype, not execution. Execution and measurement are recorded IN HISTORY only; the scripts were removed and the patch is unapplied at HEAD."
 
   - id: MULTIPLANE
@@ -313,7 +375,7 @@ capabilities:
     name: P2P and logical multicast operation contracts
     classifications: [CURRENT_CANONICAL, CURRENT_DOWNSTREAM_ONLY]
     IMPLEMENTED_ANYWHERE: "YES — workload/operations.py, workload/graph.py, workload/messages.py"
-    EXECUTED_ANYWHERE: "YES — typed ops lower through the workload pipeline (tests exercise construction + lowering)"
+    EXECUTED_ANYWHERE: "TESTED LOWERING — NO BACKEND RUN PROVEN. Typed ops construct and lower through the workload pipeline under committed tests; no durable run artifact ties an originating P2P/logical-multicast op to a backend execution."
     MEASURED_ANYWHERE: "NOT PROVEN — no committed measurement tied to a canonical originating P2P or logical-multicast operation was located. The lowering exists; the measurement axis is not established."
     CURRENT_ACTIVE_IMPLEMENTATION: "YES"
     CANONICAL_REPRESENTATION: "YES"
@@ -351,7 +413,7 @@ capabilities:
     name: Processing-in-memory
     classifications: [CURRENT_DOWNSTREAM_ONLY, CURRENT_RESEARCH]
     IMPLEMENTED_ANYWHERE: "YES — LLMServingSim serving/core/pim_model.py + power_model.py (real latency/power models)"
-    EXECUTED_ANYWHERE: "YES — inside LLMServingSim serving runs"
+    EXECUTED_ANYWHERE: "IMPLEMENTED AND CALLABLE — EXECUTABLE POTENTIAL; NO PIM SERVING RUN PROVEN FROM DURABLE REPOSITORY EVIDENCE. The LLMServingSim PIM models are real code that a serving run invokes; no committed run artifact or status record recording a PIM serving execution was located."
     MEASURED_ANYWHERE: "NOT PROVEN — the LLMServingSim PIM latency/power models are real and execute inside serving runs, but no committed PIM result artifact was located in HEAD or history"
     CURRENT_ACTIVE_IMPLEMENTATION: "YES downstream; canonical side has PIM graph markers only"
     CANONICAL_REPRESENTATION: "PARTIAL — canonical PIM graph markers exist"
@@ -387,13 +449,13 @@ capabilities:
       - "tracks/t3-topology/dse/veritx_dse/simulation/ramulator.py"
       - "tracks/t3-topology/dse/qualification/ramulator.py"
     historical_evidence:
-      - "fd2b6694:tracks/t3-topology/docs/HANDOFF-2026-09-18-phase15-ramulator.md"
+      - "fd2b66943cef37fb8257e90f9ff6d4ed9113473a:tracks/t3-topology/docs/HANDOFF-2026-09-18-phase15-ramulator.md"
 
   - id: CANDIDATE-PROMOTION
     name: Topology candidate promotion
     classifications: [CURRENT_CANONICAL, CURRENT_DOWNSTREAM_ONLY]
     IMPLEMENTED_ANYWHERE: "YES — synthesis/candidate.py promote_to_explicit_topology + apply_promotion_to_request_doc"
-    EXECUTED_ANYWHERE: "YES"
+    EXECUTED_ANYWHERE: "TESTED PRIMITIVE — exercised in-process by committed tests; no durable external run artifact"
     MEASURED_ANYWHERE: "N/A"
     CURRENT_ACTIVE_IMPLEMENTATION: "YES"
     CANONICAL_REPRESENTATION: "YES"
@@ -410,7 +472,7 @@ capabilities:
     name: Evidence reuse / cache
     classifications: [CURRENT_CANONICAL, CURRENT_DOWNSTREAM_ONLY]
     IMPLEMENTED_ANYWHERE: "YES — backend/evidence.py verify_reusable_record + read_reusable_record (digest/schema/binary/profile safe)"
-    EXECUTED_ANYWHERE: "YES"
+    EXECUTED_ANYWHERE: "TESTED PRIMITIVE — exercised in-process by committed tests; no durable external run artifact"
     MEASURED_ANYWHERE: "N/A"
     CURRENT_ACTIVE_IMPLEMENTATION: "YES"
     CANONICAL_REPRESENTATION: "YES"
@@ -427,7 +489,7 @@ capabilities:
     name: Structural search completeness accounting
     classifications: [CURRENT_CANONICAL, DOC_STALE]
     IMPLEMENTED_ANYWHERE: "YES — optimization/completeness.py SearchCompleteness (EXHAUSTIVE/BUDGETED/UNBOUNDED + result binding)"
-    EXECUTED_ANYWHERE: "YES"
+    EXECUTED_ANYWHERE: "TESTED PRIMITIVE — exercised in-process by committed tests; no durable external run artifact"
     MEASURED_ANYWHERE: "N/A"
     CURRENT_ACTIVE_IMPLEMENTATION: "YES"
     CANONICAL_REPRESENTATION: "YES"
@@ -444,7 +506,7 @@ capabilities:
     name: Wave-E metric registry
     classifications: [CURRENT_CANONICAL, DOC_STALE]
     IMPLEMENTED_ANYWHERE: "YES — optimization/metric_registry.py registers makespan, critical path, request-latency mean, resource-utilization max"
-    EXECUTED_ANYWHERE: "YES"
+    EXECUTED_ANYWHERE: "TESTED PRIMITIVE — exercised in-process by committed tests; no durable external run artifact"
     MEASURED_ANYWHERE: "PARTIAL — the registry computes and projects the metrics (covered by test_wave_e_metric_projection.py); no committed measurement result artifact was located"
     CURRENT_ACTIVE_IMPLEMENTATION: "YES"
     CANONICAL_REPRESENTATION: "YES"
@@ -461,7 +523,7 @@ capabilities:
     name: NoC energy estimation
     classifications: [CURRENT_RESEARCH, DOC_STALE]
     IMPLEMENTED_ANYWHERE: "YES — tracks/t3-topology/scripts/noc_energy_bridge.py (Accelergy-calibrated pJ/hop), plus the older hops x packet_size proxy and reports/reports.py analytical estimates"
-    EXECUTED_ANYWHERE: "YES — the bridge is a runnable research script"
+    EXECUTED_ANYWHERE: "EXECUTABLE POTENTIAL — the bridge is a runnable research script; no committed energy run artifact was located"
     MEASURED_ANYWHERE: "PARTIAL — the bridge is calibrated against Accelergy/FlooNoC; no committed energy result table was located for a canonical fabric"
     CURRENT_ACTIVE_IMPLEMENTATION: "YES — but SIX fidelity classes coexist (proxy, tool-derived, bridge, analytical, BookSim native, LLMServingSim)"
     CANONICAL_REPRESENTATION: "NO — no canonical metric authority carries an energy metric with a fidelity class"
@@ -482,7 +544,7 @@ capabilities:
     name: BookSim native Power_Module
     classifications: [CURRENT_BACKEND_ONLY]
     IMPLEMENTED_ANYWHERE: "YES — third_party/booksim2/src/power/"
-    EXECUTED_ANYWHERE: "YES when sim_power=1 (not enabled by the topology comparison scripts)"
+    EXECUTED_ANYWHERE: "EXECUTABLE POTENTIAL — runs when sim_power=1; the topology comparison scripts do not enable it and no committed power run artifact was located"
     MEASURED_ANYWHERE: "NOT PROVEN — the power module exists and is exercised when sim_power=1, but no committed power result artifact was located, and the topology comparison scripts do not enable it"
     CURRENT_ACTIVE_IMPLEMENTATION: "YES"
     CANONICAL_REPRESENTATION: "N/A"
@@ -502,7 +564,7 @@ capabilities:
     name: RTL build/run validation
     classifications: [CURRENT_RESEARCH]
     IMPLEMENTED_ANYWHERE: "YES — validation/harness/rtl.py (Verilator build+run) + tracks/t3-topology/rtl/*"
-    EXECUTED_ANYWHERE: "YES — the harness builds and runs RTL"
+    EXECUTED_ANYWHERE: "EXECUTABLE POTENTIAL — the harness builds and runs RTL; the committed RTL document (research/rtl-audit-2026-08-13.md) is a read-through audit, not a run record, and no committed run log was located"
     MEASURED_ANYWHERE: "PARTIAL — harness oracle comparisons run; no committed qualification result artifact located"
     CURRENT_ACTIVE_IMPLEMENTATION: "YES — the validation harness"
     CANONICAL_REPRESENTATION: "N/A — RTL is not a canonical VERITX artifact"
@@ -543,7 +605,7 @@ capabilities:
     name: Clock-domain crossing
     classifications: [CURRENT_RESEARCH, PROTOTYPE_ONLY]
     IMPLEMENTED_ANYWHERE: "YES — a CDC FIFO component (tracks/t3-topology/rtl/cdc/cdc_fifo.sv) with a Verilator testbench (tb_cdc.cpp)"
-    EXECUTED_ANYWHERE: "YES (component-level, via the cdc Makefile)"
+    EXECUTED_ANYWHERE: "EXECUTABLE POTENTIAL — the component builds and runs via the cdc Makefile; no committed run log was located"
     MEASURED_ANYWHERE: "PARTIAL — component testbench only"
     CURRENT_ACTIVE_IMPLEMENTATION: "YES — the RTL component + its testbench; not wired into any canonical multi-clock NoC path"
     CANONICAL_REPRESENTATION: "NO — no multi-clock NoC contract"

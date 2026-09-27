@@ -3,7 +3,7 @@
 > **What has VERITX already implemented, executed, measured, verified or
 > qualified — even when the current canonical product does not expose it?**
 
-Companion (machine-readable, 23 records): `capability-archaeology.yaml`.
+Companion (machine-readable, 26 records): `capability-archaeology.yaml`.
 
 This is **not** a feature-development tranche. It exists because the
 capability registry answered *"what is canonical?"* and nobody asked
@@ -124,7 +124,7 @@ current comments — Git history is not rewritten.)
 
 ## 2. CAPABILITY RECORDS
 
-Full structured records are in `capability-archaeology.yaml` (23 records, 13
+Full structured records are in `capability-archaeology.yaml` (26 records, 13
 independent fields each, no collapsed `SUPPORTED` flag). The table below is
 the summary; `MISSING_BRIDGE` is the field that matters.
 
@@ -135,7 +135,10 @@ the summary; `MISSING_BRIDGE` is the field that matters.
 | GEC-express | CURRENT_BACKEND_ONLY, HISTORICAL_MEASURED, DOC_STALE | canonical materializer + route/VC semantics |
 | Torus | CURRENT_BACKEND_ONLY, HISTORICAL_MEASURED, DOC_STALE | canonical route generator + proof/profile for wraparound minimal routing |
 | FlatFly | CURRENT_BACKEND_ONLY, HISTORICAL_MEASURED, DOC_STALE | authoring/control-plane bridge + route class + backend profile |
-| Fat-tree / QTree / Tree4 / Dragonfly | CURRENT_BACKEND_ONLY, HISTORICAL_MEASURED, DOC_STALE | canonical representations + qualification (these are NOT "cfg only") |
+| Fat-tree | CURRENT_BACKEND_ONLY, HISTORICAL_MEASURED, DOC_STALE | canonical representation + qualification (NOT "cfg only") |
+| Dragonfly | CURRENT_BACKEND_ONLY, HISTORICAL_MEASURED, DOC_STALE | canonical representation + qualification (NOT "cfg only") |
+| QTree | CURRENT_BACKEND_ONLY, DOC_STALE | canonical representation + qualification; execution NOT PROVEN |
+| Tree4 | CURRENT_BACKEND_ONLY, DOC_STALE | canonical representation + qualification; execution NOT PROVEN |
 | Adaptive routing | CURRENT_BACKEND_ONLY, CURRENT_RESEARCH, HISTORICAL_EXECUTABLE | policy producer + BookSim projection + executed-route observation + qualification |
 | Multi-class | CURRENT_BACKEND_ONLY, CURRENT_CANONICAL, HISTORICAL_MEASURED | sound canonical class→VC-subset mapping expressed exactly in a profile |
 | Hardware multicast | HISTORICAL_EXECUTABLE, PROTOTYPE_ONLY | reclaim/modernize fork resource semantics + verification |
@@ -306,6 +309,63 @@ Records now carry an optional `historical_evidence:` list, whose entries must
 be commit-qualified (`<sha>:<path>`), so a claim that is true only in history
 can be re-found rather than taken on trust.
 
+### Execution claims corrected (seal pass 2)
+
+The same discipline now applies to `EXECUTED_ANYWHERE`. A source file or a
+runnable script proves **executable potential**, never **executed**. Every
+`EXECUTED_ANYWHERE = YES` must cite durable run evidence: a committed result
+artifact, evidence document, or a commit-qualified status/result record.
+
+| Record | Was | Now |
+|---|---|---|
+| Adaptive routing | `YES IN HISTORY` (no artifact) | `EXECUTABLE POTENTIAL — NOT PROVEN EXECUTED` |
+| PIM | `YES — inside LLMServingSim serving runs` | `IMPLEMENTED AND CALLABLE — EXECUTABLE POTENTIAL; NO PIM SERVING RUN PROVEN` |
+| P2P + logical multicast | `YES — typed ops lower…` | `TESTED LOWERING — NO BACKEND RUN PROVEN` |
+| Candidate promotion / evidence reuse / search completeness / Wave-E metrics | `YES` | `TESTED PRIMITIVE — exercised in-process by committed tests; no durable external run artifact` |
+| NoC energy | `YES — runnable research script` | `EXECUTABLE POTENTIAL` |
+| BookSim native power | `YES when sim_power=1` | `EXECUTABLE POTENTIAL` |
+| RTL validation | `YES — the harness builds and runs RTL` | `EXECUTABLE POTENTIAL` (the committed RTL document is a read-through audit, not a run record) |
+| CDC | `YES (component-level)` | `EXECUTABLE POTENTIAL` |
+| BookSim stats parser | `YES` (no citation) | `YES` + cites `BAKE-OFF-REPRODUCIBILITY.md` (verified latencies: mesh_8x8 23.38c, custom_anynet 23.20c, flatfly_8x8 20.38c) |
+
+### `6a335004` — disposition
+
+The combined topology record cited `6a335004:booksim2/full_topology_comparison.xlsx`.
+Independent verification could not resolve that commit on
+`Anmol-S314/veritx-research`: the object is contained only by
+`origin/updated-booksim` (the **internal** remote), not by any GitHub ref.
+
+The workbook is genuine and detailed (Excel 2007+, 20,725 bytes, sheets
+*Report* + *All Runs*, per-topology rows for Mesh/MECS/Hybrid/CMesh/Flatfly/
+**Fat-tree**/**Dragonfly**/**Torus**). It was therefore made durable rather
+than discarded:
+
+```
+refs/heads/archive/topology-comparison-2026-08
+  -> 6a3350048c646b0ea9f738f0bff889fbfcf6a753
+```
+
+pushed to GitHub and verified remotely. All historical citations now use
+**full 40-character SHAs**, and a structural test fails if any cited SHA is
+unreachable from every ref (a dangling object is not repository evidence).
+
+### Fat-tree / Dragonfly / QTree / Tree4 — split
+
+The previous combined record cited `run_full_comparison.py` as execution
+evidence for all four. That script runs CMesh, Flatfly, Fat-tree, Dragonfly
+and Torus — **not QTree or Tree4** — and the comparison workbook has no QTree
+or Tree4 rows. The record is split:
+
+| Record | Implementation | Execution | Measurement |
+|---|---|---|---|
+| Fat-tree | YES | YES IN HISTORY | YES IN HISTORY (`6a335004…:booksim2/full_topology_comparison.xlsx`) |
+| Dragonfly | YES | YES IN HISTORY | YES IN HISTORY (same workbook) |
+| QTree | YES | EXECUTABLE POTENTIAL — NOT PROVEN | NOT PROVEN |
+| Tree4 | YES | EXECUTABLE POTENTIAL — NOT PROVEN | NOT PROVEN |
+
+Implementation remains YES for all four — they are concrete C++ networks
+instantiated by `Network::New`. Only the evidence axis was overstated.
+
 ## 4. NEGATIVE EVIDENCE — search scope for TRULY_ABSENT
 
 No capability in this ledger is classified `TRULY_ABSENT`. Where a
@@ -356,21 +416,21 @@ Concrete negative findings recorded here (each with the scope searched):
 
 ## 6. CLASSIFICATION COUNTS
 
-Counted over **these 23 audited records** (a record may carry several
+Counted over **these 26 audited records** (a record may carry several
 classifications). Counts are OUTPUTS of the records, not targets.
 
 | Classification | Records |
 |---|---|
 | CURRENT_CANONICAL | 9 |
 | CURRENT_QUALIFIED | 1 |
-| CURRENT_BACKEND_ONLY | 8 |
+| CURRENT_BACKEND_ONLY | 11 |
 | CURRENT_DOWNSTREAM_ONLY | 6 |
 | CURRENT_RESEARCH | 7 |
 | CURRENT_LEGACY_EXECUTABLE | 0 |
 | HISTORICAL_EXECUTABLE | 4 |
-| HISTORICAL_MEASURED | 6 |
+| HISTORICAL_MEASURED | 7 |
 | PROTOTYPE_ONLY | 3 |
-| DOC_STALE | 7 |
+| DOC_STALE | 10 |
 | TRULY_ABSENT | 0 |
 
 ### Classification semantics
@@ -399,7 +459,7 @@ the canonical portion that exists.
 
 ### TRULY_ABSENT scope law
 
-> `TRULY_ABSENT = 0` means **none of these 23 audited records satisfied the
+> `TRULY_ABSENT = 0` means **none of these 26 audited records satisfied the
 > strict TRULY_ABSENT definition**. It does **not** mean "VERITX has no
 > absent capabilities."
 
