@@ -14,7 +14,10 @@ import type { OptimizationCapabilities } from '../api/types';
  *     chips below are UI choices on such a range, and the range constraint is
  *     shown next to them.
  *  2. `topology_family` IS exhaustively enumerable, so its choices come
- *     straight from the capability response.
+ *     straight from the capability response — specifically from
+ *     `executable_values` (the FULL certified chain), never from
+ *     `accepted_values` (compile-accepted but possibly refused by the
+ *     certified profile).
  */
 export interface DesignSpaceProps {
   caps: OptimizationCapabilities;
@@ -83,7 +86,12 @@ export default function DesignSpace(p: DesignSpaceProps): ReactElement {
   const qualified = new Set(caps.qualified_parameters);
   const unqualified = caps.unqualified_parameters ?? [];
   const topoParam = byName.topology_family;
-  const topoChoices = topoParam?.accepted_values?.map(String) ?? [];
+  // executable_values = what the FULL certified chain runs. accepted_values
+  // may be wider (e.g. concentrated_mesh compiles but the certified profile
+  // refuses it) — offering those as search choices would manufacture
+  // candidates that deterministically fail at evaluation.
+  const topoChoices = (topoParam?.executable_values
+    ?? topoParam?.accepted_values ?? []).map(String);
 
   const current = (name: string): string => {
     const v = base?.[name];
@@ -134,7 +142,8 @@ export default function DesignSpace(p: DesignSpaceProps): ReactElement {
         <Chips values={topoChoices} selected={p.topologies}
                onToggle={(v, on) =>
                  p.setTopologies(toggle(p.topologies, String(v), on))} />,
-        'These are the families the canonical materializer accepts.')}
+        'These are the families the certified execution chain accepts ' +
+        'end to end — not merely the ones that compile.')}
 
       {group('concentration',
         <Chips values={RANGE_CHOICES.concentration} selected={p.concentrations}
@@ -244,7 +253,9 @@ export default function DesignSpace(p: DesignSpaceProps): ReactElement {
                     <td>
                       {g && !g.compilable
                         ? 'does not compile'
-                        : 'no measured effect'}
+                        : g && !g.backend_executable
+                          ? 'certified profile refuses it'
+                          : 'no measured effect'}
                     </td>
                     <td className="muted">{g?.reason ?? '—'}</td>
                   </tr>

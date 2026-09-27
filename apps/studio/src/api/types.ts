@@ -1146,8 +1146,14 @@ export interface OptimizationParamCapability {
   kind: 'int' | 'bool' | 'str' | 'enum';
   expressible: boolean;
   compilable: boolean;
-  executable: boolean;
   effective: boolean;
+  /** The certified profile accepts the probed result (compile → lowering →
+   *  select_booksim_profile). Independent of `effective`: a knob can change
+   *  executed semantics and STILL be refused (concentration>1 does exactly
+   *  that under the mesh-DOR envelope). */
+  backend_executable: boolean;
+  /** compilable ∧ effective ∧ backend_executable — the qualification. */
+  executable: boolean;
   qualified_for_certified_optimization: boolean;
   value_constraint: string;
   /** null means "a validated range, NOT an enumerated list". Never read this
@@ -1179,6 +1185,9 @@ export interface OptimizationCapabilities {
   objective_note: string;
   unqualified_parameters: string[];
   effectiveness_basis: string;
+  /** How qualification is computed: compilable ∧ effective ∧
+   *  backend_executable, measured through the certified chain. */
+  qualification_basis: string;
   multicast_note: string;
   not_measured: string[];
   not_measured_note: string;

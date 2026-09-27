@@ -176,9 +176,11 @@ function EvidenceRunCard({ run }: { run: RunView }): ReactElement {
           {job && (
             <div className="kv">
               <span>reproduction</span>
-              <span>
+              <span className={job.result?.outcome === 'DIVERGED' ? 'bad' : ''}>
                 {job.state === 'COMPLETED'
-                  ? `SCIENTIFICALLY REPRODUCED (${job.result?.outcome ?? 'ok'})`
+                  ? job.result?.outcome === 'DIVERGED'
+                    ? 'DIVERGED — scientific divergence; the original run is NOT reproduced'
+                    : `SCIENTIFICALLY REPRODUCED (${job.result?.outcome ?? 'ok'})`
                   : job.state === 'REFUSED' || job.state === 'FAILED'
                     ? `refused: ${job.error_message ?? job.error_code}`
                     : job.state.toLowerCase()}
@@ -451,6 +453,10 @@ function Campaigns(): ReactElement {
             <details>
               <summary>
                 Intervention study — schedule causality
+                {' '}·{' '}
+                {data.intervention.supported
+                  ? 'causal intervention available'
+                  : 'causal intervention NOT supported'}
               </summary>
               {data.intervention.problems.length > 0 && (
                 <ul className="bad">
