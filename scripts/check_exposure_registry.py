@@ -61,6 +61,9 @@ DECLARED_CLASSES = (
     "CompileRequestV3", "WorkloadV3", "RequirementV3", "Agent", "NocConfig",
     "AddressMap", "AddressRange", "PhysicalContext", "DependencyGraph",
     "Dependency", "CollectiveIntent", "WorkloadSourceRef",
+    # PHASE B.1 §24: the v4 fabric authority. The v3 reader has NO
+    # topology_intent field — typed topology intent is v4-only.
+    "CompileRequestV4", "NocControls",
 )
 PRODUCT_CLASSES = ("CompileIntent",)
 
@@ -81,8 +84,14 @@ def _load_declared_fields() -> dict[str, list[str]]:
     from veritx_dse.model import compile_model as cm  # noqa: PLC0415
 
     out: dict[str, list[str]] = {}
+    # The v4 classes live in their own modules (PHASE B.1 §10: the v4 root is
+    # a dedicated module, not an extension of the already-large compile_model).
+    from veritx_dse.model import compile_request_v4 as cm4  # noqa: PLC0415
+    from veritx_dse.model import noc_controls as nc  # noqa: PLC0415
+    _HOME = {"CompileRequestV4": cm4, "NocControls": nc}
     for name in DECLARED_CLASSES:
-        cls = getattr(cm, name)
+        module = _HOME.get(name, cm)
+        cls = getattr(module, name)
         out[name] = [f.name for f in dataclasses.fields(cls)]
     for name in PRODUCT_CLASSES:
         out[name] = [f.name for f in dataclasses.fields(CompileIntent)]

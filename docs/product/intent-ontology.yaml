@@ -1157,6 +1157,15 @@ containers:
   CompileRequestV3.address_map: AddressMap
   CompileRequestV3.physical: PhysicalContext
   CompileRequestV3.explicit_topology: TopologyIR
+  CompileRequestV4.topology: TopologyIntent
+  CompileRequestV4.noc_controls: NocControls
+  NocControls.arbitration: str
+  NocControls.rcu_enabled: bool
+  NocControls.link_width: int
+  NocControls.mcast_groups: int
+  NocControls.mcast_setup_cycles: int
+  NocControls.output_formats: list[str]
+  NocControls.obfuscation_level: int
   AddressMap.ranges: AddressRange
   DependencyGraph.dependencies: Dependency
   TopologyIR.kind: str
@@ -4859,6 +4868,60 @@ nodes:
       blast_radius: "none"
       primitive: [4]
       action: "none - product IA decision, not a contract"
+  - id: fabric.topology_intent
+    domain: FABRIC_INTENT
+    fields: [CompileRequestV4.topology, TopologyIntent.kind, TopologyIntent.side_length, TopologyIntent.concentration, TopologyIntent.radix_per_dimension, TopologyIntent.dimension_count, TopologyIntent.switch_radix, TopologyIntent.level_count, TopologyIntent.grid_side_length, TopologyIntent.mode, TopologyIntent.express_channel_groups_per_dimension, TopologyIntent.destinations_per_express_channel, TopologyIntent.graph]
+    real: R2
+    owner: CI
+    edit: TCU
+    kind: PRF
+    default: "REQUIRED - schema 4 has no implicit mesh"
+    stored: CompileRequestV4.topology -> TopologyArtifact
+    depends_on: [TopologyArtifact, AgentAttachmentArtifact, RouteArtifact, FabricArtifact]
+    invalidates: B
+    validation: [L1n]
+    unsupported: "gec (all four modes) and fattree: AUTHORABLE, stop at MATERIALIZATION; flatfly and torus: materialize, stop at ROUTING"
+    refusal_stage: topology
+    visual: [1, 3]
+    evidence: V
+    cite: model/topology_intent.py:1
+    plan:
+      surface: "Fabric"
+      control: "read-only"
+      default: "—"
+      validation_timing: "[]"
+      refusal: "null"
+      change_class: "METADATA"
+      blast_radius: "none"
+      primitive: [4]
+      action: "none - typed intent authority (PHASE B.1); family-specific controls land in PHASE O"
+  - id: fabric.noc_controls
+    domain: FABRIC_INTENT
+    fields: [CompileRequestV4.noc_controls, NocControls.arbitration, NocControls.rcu_enabled, NocControls.link_width, NocControls.mcast_groups, NocControls.mcast_setup_cycles, NocControls.output_formats, NocControls.obfuscation_level]
+    real: R2
+    owner: CI
+    edit: TCU
+    kind: PRF
+    default: "null = unconstrained (engine derives)"
+    stored: CompileRequestV4.noc_controls
+    depends_on: [TopologyArtifact, FabricArtifact]
+    invalidates: B
+    validation: [L1n]
+    unsupported: "topology shape (topology_family/radix/concentration/dimensions) is REFUSED here: shape belongs exclusively to the topology intent"
+    refusal_stage: topology
+    visual: [1, 3]
+    evidence: V
+    cite: model/noc_controls.py:1
+    plan:
+      surface: "Fabric"
+      control: "read-only"
+      default: "—"
+      validation_timing: "[]"
+      refusal: "null"
+      change_class: "METADATA"
+      blast_radius: "none"
+      primitive: [4]
+      action: "none - the topology-independent control bag (PHASE B.1)"
   - id: fabric.explicit_topology
     domain: FABRIC_INTENT
     fields: [CompileRequestV3.explicit_topology, TopologyIR.kind, TopologyIR.nodes, TopologyIR.links, TopologyIR.link_attrs]

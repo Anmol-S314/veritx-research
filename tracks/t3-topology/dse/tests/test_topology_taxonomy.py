@@ -93,11 +93,38 @@ def test_tax_3_materializable_does_not_imply_authorable(reg):
     assert "ring" not in {f.value for f in TopologyFamily}
 
 
-def test_tax_3b_flatfly_materializable_not_authorable(reg):
+def test_tax_3b_authorable_and_materializable_are_independent(reg):
+    """TAX-3: neither stage implies the other.
+
+    PHASE B.1 CHANGED THE WITNESSES, NOT THE LAW. This test used to cite
+    `flatfly` as "materializable but not authorable" — true while the legacy
+    `TopologyFamily` enum was the ONLY declaration authority, because flatfly
+    is absent from it. Typed topology intent (FlatFlyIntent) is now a second
+    declaration authority, so flatfly became AUTHORABLE=YES; keeping the old
+    assertion would pin a claim the implementation no longer makes.
+
+    The law is witnessed instead by the two families that still separate:
+    `gec` is AUTHORABLE and not MATERIALIZABLE; `ring` is MATERIALIZABLE and
+    not authorable.
+    """
+    gec = _stages(reg, "gec")
+    assert gec["AUTHORABLE"] == "YES"
+    assert gec["MATERIALIZABLE"] == "NO"
+    ring = _stages(reg, "ring")
+    assert ring["MATERIALIZABLE"] == "YES"
+    assert ring["AUTHORABLE"] == "NO"
+
+
+def test_tax_3c_flatfly_is_now_authorable_through_typed_intent(reg):
+    """The declaration authority is two-fold: the legacy enum OR a registered
+    typed topology intent. flatfly is absent from the enum and authorable
+    anyway — so a check against the enum alone is a false NEGATIVE."""
+    from veritx_dse.model.topology_intent import AUTHORABLE_INTENT_KINDS
     s = _stages(reg, "flatfly")
     assert s["MATERIALIZABLE"] == "YES"
-    assert s["AUTHORABLE"] == "NO"
+    assert s["AUTHORABLE"] == "YES"
     assert "flatfly" not in {f.value for f in TopologyFamily}
+    assert "flatfly" in AUTHORABLE_INTENT_KINDS
 
 
 # ── TAX-4: MATERIALIZABLE does not imply ROUTABLE ───────────────────────

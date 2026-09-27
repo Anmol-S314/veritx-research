@@ -215,9 +215,11 @@ def lower_compile_workload(request: CompileRequestV3) -> LoweredWorkload:
         UnsupportedSchedule: payload indivisible under the pinned
             schedule (from collective_schedule, unmodified).
     """
-    if not isinstance(request, CompileRequestV3):
+    from veritx_dse.model.generation import is_v4_request
+    if not isinstance(request, CompileRequestV3) and not is_v4_request(request):
         raise InvalidInput(
-            f"lower_compile_workload takes a CompileRequestV3, got "
+            f"lower_compile_workload takes a CompileRequestV3 or a "
+            f"CompileRequestV4, got "
             f"{type(request).__name__} — v2 interpretation is frozen; "
             f"migrate explicitly via migrate_v2_to_v3")
     wl = request.workload

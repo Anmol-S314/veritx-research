@@ -214,7 +214,12 @@ def test_cap_4_flatfly_materializable_does_not_imply_executable():
     assert flat["MATERIALIZABLE"] == "YES"
     assert flat["EXECUTABLE"] == "NO"
     assert flat["QUALIFIED"] == "NO"
-    assert flat["AUTHORABLE"] == "NO"
+    # PHASE B.1: flatfly became AUTHORABLE when typed topology intent added a
+    # second declaration authority (FlatFlyIntent). The law this test pins is
+    # MATERIALIZABLE !=> EXECUTABLE, and it holds regardless of authorability
+    # — so the authorability assertion is updated to the live truth rather
+    # than left pinning a superseded claim.
+    assert flat["AUTHORABLE"] == "YES"
 
 
 def test_cap_5_custom_materializable_does_not_imply_qualified():

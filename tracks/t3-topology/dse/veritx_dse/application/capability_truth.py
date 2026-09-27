@@ -32,25 +32,97 @@ from typing import Any
 
 from veritx_dse.model.compile_model import CompileRequestV3, TopologyFamily
 
-#: The families the gate must test (the work order's list).
-GATED_FAMILIES: tuple[TopologyFamily, ...] = (
-    TopologyFamily.MESH,
-    TopologyFamily.CONCENTRATED_MESH,
-    TopologyFamily.TORUS,
-    TopologyFamily.GEC,
-    TopologyFamily.CUSTOM,
+#: §18.1 — PROBE COVERAGE IS DERIVED FROM THE TOPOLOGY-INTENT REGISTRY.
+#:
+#: A hand-maintained family list drifts: the previous one came from the
+#: legacy `TopologyFamily` enum and therefore could not see FlatFly or
+#: FatTree at all, even though both became authorable. Coverage is now
+#: `AUTHORABLE_INTENT_KINDS` plus the GEC physical subfamilies (GEC is one
+#: registered kind but four modes that progress differently, so reporting it
+#: as one row would hide which subfamilies can advance).
+#:
+#: A registered kind with NO probe factory is a GATE FAILURE, not a silent
+#: omission — see `missing_probe_kinds()`.
+from veritx_dse.model.topology_intent import (  # noqa: E402
+    AUTHORABLE_INTENT_KINDS, ConcentratedMeshIntent, ExplicitTopologyIntent,
+    FatTreeIntent, FlatFlyIntent, GecMode, GecTopologyIntent, MeshIntent,
+    TorusIntent, capability_family_label,
 )
 
-#: Per-family probe shape: (endpoint_count, concentration, radix).
-#: Chosen to be the SMALLEST design that exercises the family's real path —
-#: a probe that cannot materialize is itself the answer.
-_PROBE_SHAPE: dict[TopologyFamily, tuple[int, int, int | None]] = {
-    TopologyFamily.MESH: (16, 1, 4),
-    TopologyFamily.CONCENTRATED_MESH: (16, 4, 2),
-    TopologyFamily.TORUS: (16, 1, 4),
-    TopologyFamily.GEC: (16, 1, 4),
-    TopologyFamily.FAT_TREE: (16, 1, None),
-}
+#: Capability-truth key -> the intent the probe declares. The probe SHAPE
+#: lives with the probe (§18.2: no second shape table). Each is the SMALLEST
+#: design that exercises the family's real path — a probe that cannot
+#: materialize is itself the answer.
+def _probe_intents() -> dict[str, Any]:
+    from veritx_dse.model import topology_ir as tir
+    k = 2
+    links = []
+    for y in range(k):
+        for x in range(k):
+            n = y * k + x
+            if x + 1 < k:
+                links.append([n, n + 1])
+            if y + 1 < k:
+                links.append([n, n + k])
+    graph = tir.from_dict({
+        "name": "probe-custom", "kind": "custom", "nodes": k * k,
+        "links": links,
+        "link_attrs": {"bandwidth_GBs": 50.0, "latency_ns": 500.0},
+    })
+    out: dict[str, Any] = {
+        "mesh": MeshIntent(side_length=4, concentration=1),
+        "concentrated_mesh": ConcentratedMeshIntent(side_length=2,
+                                                    concentration=4),
+        "torus": TorusIntent(side_length=4, concentration=1),
+        "flatfly": FlatFlyIntent(radix_per_dimension=2, dimension_count=2,
+                                 concentration=4),
+        "fattree": FatTreeIntent(switch_radix=4, level_count=2),
+        "explicit": ExplicitTopologyIntent(graph=graph),
+        # GEC is one registered kind, four physical modes.
+        "gec_mesh": GecTopologyIntent(mode=GecMode.MESH, grid_side_length=8,
+                                      concentration=1),
+        "gec_express": GecTopologyIntent(
+            mode=GecMode.EXPRESS, grid_side_length=8, concentration=1,
+            express_channel_groups_per_dimension=7,
+            destinations_per_express_channel=1),
+        "gec_multidrop": GecTopologyIntent(
+            mode=GecMode.MULTIDROP, grid_side_length=8, concentration=1,
+            express_channel_groups_per_dimension=1,
+            destinations_per_express_channel=7),
+        "gec_hybrid": GecTopologyIntent(
+            mode=GecMode.HYBRID, grid_side_length=8, concentration=1,
+            express_channel_groups_per_dimension=7,
+            destinations_per_express_channel=1),
+    }
+    for label, intent in out.items():
+        assert capability_family_label(intent) == label, (label, intent.kind)
+    return out
+
+
+PROBE_INTENTS: dict[str, Any] = _probe_intents()
+
+#: The capability-truth rows the gate must produce.
+GATED_KINDS: tuple[str, ...] = tuple(sorted(PROBE_INTENTS))
+
+
+def missing_probe_kinds() -> tuple[str, ...]:
+    """Registered authorable kinds with NO probe factory.
+
+    MUST be empty. A new topology kind that is not gated would otherwise be
+    silently absent from capability truth — the exact failure the previous
+    hardcoded family list had.
+    """
+    covered = {capability_family_label(i) for i in PROBE_INTENTS.values()}
+    # A registered kind is satisfied when EVERY subfamily label it expands to
+    # is probed: GEC is one registered kind but four physical modes, and all
+    # four must be gated.
+    required: set[str] = set()
+    for kind in AUTHORABLE_INTENT_KINDS:
+        if kind == "gec":
+            required |= {f"gec_{m.value}" for m in GecMode}
+        else:
+            required.add(kind)
+    return tuple(sorted(required - covered))
 
 STAGES: tuple[str, ...] = (
     "AUTHORABLE", "MATERIALIZABLE", "ROUTABLE", "VERIFIABLE",
@@ -86,17 +158,26 @@ class FamilyStageTruth:
         }
 
 
-def _probe_request(family: TopologyFamily) -> Any:
-    """A minimal v3 design that exercises ``family``'s real compiler path.
+def _probe_request(kind: str) -> Any:
+    """A minimal V4 design that exercises ``kind``'s real compiler path.
 
-    Built from the shipped v3 example so the probe uses the same schema the
-    product does. (v2 is frozen and must not be reinterpreted, so the probe
-    is authored in v3 rather than migrated.)
+    Authored in v4 because v4 is where typed topology intent lives — and
+    because the probe must exercise the SAME vocabulary a user declares.
+    Built from the shipped v3 example's workload so the probe uses the same
+    science the product does; the workload is migrated, the topology is
+    declared.
+
+    A kind whose probe cannot even be CONSTRUCTED is a gate failure: the
+    intent registry and the probe registry must agree.
     """
     import json
     from pathlib import Path
     from veritx_dse.core.paths import REPO
-    endpoints, concentration, radix = _PROBE_SHAPE[family]
+    from veritx_dse.model.compile_model import CompileRequestV3
+    from veritx_dse.model.compile_request_v4 import migrate_v3_to_v4
+
+    intent = PROBE_INTENTS[kind]
+    endpoints = _probe_endpoints(intent)
     doc = json.loads((REPO / "tracks/t3-topology/examples/"
                       "dense_1b_16tiles-v3.json").read_text())
     doc.pop("design_hash", None)
@@ -106,70 +187,62 @@ def _probe_request(family: TopologyFamily) -> Any:
          "data_width": 256, "addr_width": 64, "protocol": "AXI"},
     ]
     doc["noc_config"] = dict(doc["noc_config"])
-    doc["noc_config"]["topology_family"] = family.value
-    doc["noc_config"]["radix"] = radix
-    doc["noc_config"]["concentration"] = concentration
-    return CompileRequestV3.from_dict(doc)
-
-
-def _custom_probe_request() -> Any:
-    """CUSTOM is a classification marker, not an algorithm: the graph IS the
-    input, so the probe is a v3 request carrying an explicit TopologyIR."""
-    import json
-    from pathlib import Path
-    from veritx_dse.core.paths import REPO
-    from veritx_dse.model import topology_ir as tir
-    example = (REPO / "tracks/t3-topology/examples/"
-               "dense_1b_16tiles-v3.json")
-    doc = json.loads(Path(example).read_text())
-    doc.pop("design_hash", None)
-    doc.pop("guardrail_hash", None)
-    k = 2
-    links = []
-    for y in range(k):
-        for x in range(k):
-            n = y * k + x
-            if x + 1 < k:
-                links.append([n, n + 1])
-            if y + 1 < k:
-                links.append([n, n + k])
-    ir = tir.from_dict({
-        "name": "probe-custom", "kind": "custom", "nodes": k * k,
-        "links": links,
-        "link_attrs": {"bandwidth_GBs": 50.0, "latency_ns": 500.0},
-    })
-    doc["explicit_topology"] = ir.to_dict()
-    doc["agents"] = [
-        {"kind": "compute_tile", "count": k * k,
-         "data_width": 256, "addr_width": 64, "protocol": "AXI"},
-    ]
-    doc["noc_config"] = dict(doc["noc_config"])
     doc["noc_config"]["topology_family"] = None
-    return CompileRequestV3.from_dict(doc)
+    doc["noc_config"]["radix"] = None
+    doc["noc_config"]["concentration"] = None
+    v3 = CompileRequestV3.from_dict(doc)
+    return migrate_v3_to_v4(v3, topology_intent=intent)
 
 
-def _authorable(family: TopologyFamily) -> tuple[str, str]:
-    """AUTHORABLE: the schema accepts the family as declared intent."""
-    if family is TopologyFamily.CUSTOM:
-        return "YES", ("TopologyFamily.CUSTOM + CompileRequest.explicit_topology "
-                       "(the graph is the input)")
+def _probe_endpoints(intent: Any) -> int:
+    """Endpoint count for a probe: enough to seat the declared structure.
+
+    Derived from the INTENT, so a probe cannot silently test a different
+    shape than the one it declares.
+    """
+    from veritx_dse.model.topology_intent import (
+        ConcentratedMeshIntent, ExplicitTopologyIntent, FatTreeIntent,
+        FlatFlyIntent, GecTopologyIntent, MeshIntent, TorusIntent,
+    )
+    if isinstance(intent, ExplicitTopologyIntent):
+        return intent.graph.nodes
+    if isinstance(intent, (MeshIntent, TorusIntent)):
+        return intent.side_length ** 2 * intent.concentration
+    if isinstance(intent, ConcentratedMeshIntent):
+        return intent.side_length ** 2 * intent.concentration
+    if isinstance(intent, FlatFlyIntent):
+        return (intent.radix_per_dimension ** intent.dimension_count
+                * intent.concentration)
+    if isinstance(intent, GecTopologyIntent):
+        return intent.grid_side_length ** 2 * intent.concentration
+    if isinstance(intent, FatTreeIntent):
+        return intent.endpoint_capacity
+    raise ValueError(f"no probe size law for {type(intent).__name__}")
+
+
+def _authorable(kind: str) -> tuple[str, str]:
+    """AUTHORABLE: the v4 schema accepts the declaration.
+
+    This is a REAL observation (constructing the probe request), not a
+    membership lookup: a kind can be registered and still be refused by the
+    schema, and that difference matters.
+    """
     try:
-        _probe_request(family)      # schema construction must accept it
-    except Exception as exc:        # pragma: no cover - defensive
-        return "NO", f"schema refused: {type(exc).__name__}"
-    if family not in TopologyFamily:
-        return "NO", "not a TopologyFamily member"
-    return "YES", "TopologyFamily membership (authorable vocabulary)"
+        _probe_request(kind)
+    except Exception as exc:                                # noqa: BLE001
+        return "NO", f"schema refused: {type(exc).__name__}: {str(exc)[:120]}"
+    return "YES", (f"CompileRequestV4 accepted topology kind "
+                   f"{PROBE_INTENTS[kind].kind!r}")
 
 
-def _product_wired(family: TopologyFamily) -> tuple[str, str]:
+def _product_wired(kind: str) -> tuple[str, str]:
     """PRODUCT_WIRED: reachable from a shipped product preset."""
     try:
         from veritx_dse.application.compile_intent import build_preset_request
         from veritx_dse.application.presets import FABRIC_PRESETS
     except Exception:               # pragma: no cover
         return "NO", "no product preset module"
-    value = family.value
+    value = PROBE_INTENTS[kind].kind
     for preset in FABRIC_PRESETS:
         try:
             request = build_preset_request(preset.name)
@@ -181,30 +254,32 @@ def _product_wired(family: TopologyFamily) -> tuple[str, str]:
     return "NO", "no shipped product preset targets this family"
 
 
-def derive_family_stages(family: TopologyFamily) -> FamilyStageTruth:
+def derive_family_stages(kind: str) -> FamilyStageTruth:
     """Ask the actual compiler + profile selector what this family can do."""
     from veritx_dse.application.fabric_compiler import FabricCompiler
 
     stages: dict[str, str] = {s: "NO" for s in STAGES}
     authority: dict[str, str] = {s: "no implementation authority" for s in STAGES}
 
-    ok, why = _authorable(family)
+    ok, why = _authorable(kind)
     stages["AUTHORABLE"], authority["AUTHORABLE"] = ok, why
 
-    ok, why = _product_wired(family)
+    ok, why = _product_wired(kind)
     stages["PRODUCT_WIRED"], authority["PRODUCT_WIRED"] = ok, why
 
-    request = (_custom_probe_request() if family is TopologyFamily.CUSTOM
-               else _probe_request(family))
+    request = _probe_request(kind)
     compilation = FabricCompiler().compile(request)
     staged = getattr(compilation, "staged", None)
     produced = set(getattr(staged, "produced_stages", ()) or ())
     stopped = getattr(staged, "stopped_at_stage", None)
-    # A staged refusal carries `stage=<NAME>: cause=...` in the error; every
-    # stage BEFORE it in the compiler order was genuinely produced. Without
-    # this the probe would report a torus design as un-materializable even
-    # though its wraparound topology IS derived.
-    if not produced:
+    # §18.3 — STRUCTURED stage recovery for the current generation.
+    #
+    # `StagedDerivation.produced_stages` / `.stopped_at_stage` are the
+    # authority. The regex fallback is retained ONLY for the HISTORICAL v2
+    # path, which is not decomposed into preserved stages and therefore has
+    # no structured record to read; it is never consulted for a v3/v4 probe.
+    if not produced and getattr(compilation, "request", None) is not None \
+            and getattr(compilation.request, "schema_version", None) == 2:
         import re as _re
         m = _re.search(r"stage=([A-Z_]+)", str(getattr(compilation, "error", "")))
         if m:
@@ -242,17 +317,50 @@ def derive_family_stages(family: TopologyFamily) -> FamilyStageTruth:
             parents = _parents_from_bundle(bundle, request)
             profile = select_booksim_profile(parents)
             profile_id = profile.profile_id
-            stages["PROJECTABLE"] = "YES"
-            authority["PROJECTABLE"] = f"select_booksim_profile -> {profile_id}"
-            # EXECUTABLE: the selected profile has a real execution path.
-            stages["EXECUTABLE"] = "YES"
-            authority["EXECUTABLE"] = f"executable profile {profile_id}"
-            # QUALIFIED: the profile's own qualification envelope accepted
-            # these exact parents (select_booksim_profile calls it, so a
-            # return here IS the qualification result).
-            stages["QUALIFIED"] = "YES"
+            # PROJECTABLE is a SEPARATE question from selection: it is
+            # answered by the REAL preparation path, which is what actually
+            # produces backend input. Selecting a profile is necessary but
+            # not sufficient, and the binary is NOT spawned to answer it.
+            try:
+                from veritx_dse.backend.booksim_projection import (
+                    prepare_booksim_input,
+                )
+                prepared = prepare_booksim_input(parents)
+                pid = getattr(prepared, "prepared_id", None)
+                pid = pid() if callable(pid) else pid
+                stages["PROJECTABLE"] = "YES"
+                authority["PROJECTABLE"] = (
+                    f"prepare_booksim_input produced {str(pid)[:18]}… under "
+                    f"profile {profile_id}")
+            except Exception as prep_exc:                   # noqa: BLE001
+                stages["PROJECTABLE"] = "NO"
+                authority["PROJECTABLE"] = (
+                    f"select_booksim_profile -> {profile_id}, but the "
+                    f"preparer refused: {type(prep_exc).__name__}: "
+                    f"{str(prep_exc)[:140]}")
+            # EXECUTABLE is IMPLEMENTATION AVAILABILITY, from ONE registry —
+            # not a claim that a probe ran during this gate.
+            from veritx_dse.application.booksim_qualification_registry import (
+                execution_handler_for,
+            )
+            handler = execution_handler_for(profile_id)
+            stages["EXECUTABLE"] = "YES" if handler else "NO"
+            authority["EXECUTABLE"] = (
+                f"execution implementation {handler}" if handler
+                else "no execution implementation is registered for this "
+                     "profile")
+            # QUALIFIED is SCIENTIFIC QUALIFICATION, from ONE registry.
+            # Selectability NEVER implies qualification: an unregistered
+            # profile is NOT_QUALIFIED by construction.
+            from veritx_dse.application.booksim_qualification_registry import (
+                qualification_of,
+            )
+            record = qualification_of(profile_id)
+            stages["QUALIFIED"] = "YES" if record.is_qualified else "NO"
             authority["QUALIFIED"] = (
-                f"{profile_id} qualification envelope accepted these parents")
+                f"{profile_id} {record.state} under compiler semantics "
+                f"v{record.semantics_version}; scope {record.scope}; "
+                f"evidence {', '.join(record.evidence)}")
         except Exception as exc:
             stages["PROJECTABLE"] = "NO"
             authority["PROJECTABLE"] = (
@@ -264,7 +372,7 @@ def derive_family_stages(family: TopologyFamily) -> FamilyStageTruth:
             authority["QUALIFIED"] = "no qualifying profile"
 
     return FamilyStageTruth(
-        family=family.value, stages=stages, authority=authority,
+        family=kind, stages=stages, authority=authority,
         stopped_at_stage=stopped, profile_id=profile_id, refusal=refusal)
 
 
@@ -310,4 +418,4 @@ def _parents_from_bundle(bundle: Any, request: Any) -> Any:
 
 
 def derive_all_stages() -> dict[str, FamilyStageTruth]:
-    return {f.value: derive_family_stages(f) for f in GATED_FAMILIES}
+    return {k: derive_family_stages(k) for k in GATED_KINDS}

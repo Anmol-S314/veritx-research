@@ -30,14 +30,50 @@ REGISTRY = REPO / "docs" / "product" / "topology-family-registry.yaml"
 
 sys.path.insert(0, str(DSE))
 
-#: Registry family key -> capability_truth family value.
-_FAMILY_KEY = {
-    "mesh": "mesh",
-    "concentrated_mesh": "concentrated_mesh",
-    "torus": "torus",
-    "gec": "gec",
-    "custom": "custom",
+#: Registry family key -> capability_truth ROW KEYS it aggregates over.
+#:
+#: §21: a descriptive registry may group GEC into one public family while the
+#: machine truth keeps the four physical subfamilies separate. The aggregate
+#: is CONSERVATIVE — YES only when every subfamily agrees, so an aggregate
+#: claim can never hide that only some subfamilies can progress. The
+#: subfamily detail is always reported alongside.
+_FAMILY_KEY: dict[str, tuple[str, ...]] = {
+    "mesh": ("mesh",),
+    "concentrated_mesh": ("concentrated_mesh",),
+    "torus": ("torus",),
+    "flatfly": ("flatfly",),
+    "fat_tree": ("fattree",),
+    "gec": ("gec_mesh", "gec_express", "gec_multidrop", "gec_hybrid"),
+    "custom": ("explicit",),
 }
+
+
+class _Aggregate:
+    """A conservative view over several truth rows (see _FAMILY_KEY)."""
+
+    def __init__(self, rows: list) -> None:
+        self.rows = rows
+        self.stages = {
+            stage: ("YES" if all(r.stages[stage] == "YES" for r in rows)
+                    else "NO")
+            for stage in STAGES
+        }
+        self.authority = {
+            stage: self._why(stage) for stage in STAGES
+        }
+        self.stopped_at_stage = next(
+            (r.stopped_at_stage for r in rows if r.stopped_at_stage), None)
+        self.profile_id = next((r.profile_id for r in rows if r.profile_id),
+                               None)
+
+    def _why(self, stage: str) -> str:
+        if self.stages[stage] == "YES":
+            return ("all subfamilies derive YES: " + "; ".join(
+                f"{r.family}={r.stages[stage]}" for r in self.rows))
+        bad = [f"{r.family}={r.stages[stage]}" for r in self.rows
+               if r.stages[stage] != "YES"]
+        return ("CONSERVATIVE NO — not every subfamily derives YES: "
+                + "; ".join(bad))
 
 STAGES = ("AUTHORABLE", "MATERIALIZABLE", "ROUTABLE", "VERIFIABLE",
           "PROJECTABLE", "EXECUTABLE", "QUALIFIED", "PRODUCT_WIRED")
@@ -61,13 +97,20 @@ def check() -> tuple[list[str], dict]:
     failures: list[str] = []
     report: dict[str, dict] = {}
 
-    for key, truth_key in _FAMILY_KEY.items():
+    for key, truth_keys in _FAMILY_KEY.items():
         row = families.get(key)
         if row is None:
             failures.append(f"registry has no family {key!r}")
             continue
+        missing = [k for k in truth_keys if k not in truth]
+        if missing:
+            failures.append(
+                f"{key}: capability truth has no row for {missing} — a "
+                "topology kind without a derived row is UNGATED")
+            continue
         declared = row.get("stages") or {}
-        derived = truth[truth_key]
+        rows = [truth[k] for k in truth_keys]
+        derived = rows[0] if len(rows) == 1 else _Aggregate(rows)
         per_family: dict[str, dict] = {}
         for stage in STAGES:
             reg_value = str(declared.get(stage, "NO")).upper()
@@ -83,7 +126,13 @@ def check() -> tuple[list[str], dict]:
                     f"{derived.authority[stage]}")
         report[key] = {"stages": per_family,
                        "stopped_at_stage": derived.stopped_at_stage,
-                       "profile_id": derived.profile_id}
+                       "profile_id": derived.profile_id,
+                       "subfamilies": (
+                           {k: {"stages": truth[k].stages,
+                                "stopped_at_stage":
+                                    truth[k].stopped_at_stage}
+                            for k in truth_keys}
+                           if len(truth_keys) > 1 else None)}
     return failures, report
 
 

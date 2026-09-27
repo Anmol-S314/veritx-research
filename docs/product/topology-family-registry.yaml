@@ -123,7 +123,7 @@ families:
     canonical_id: fat_tree
     role: RESEARCH
     stages: {RECOGNIZED: "YES", AUTHORABLE: "YES", MATERIALIZABLE: "NO",
-             ROUTABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "PARTIAL",
+             ROUTABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO",
              EXECUTABLE: "NO", QUALIFIED: "NO", WIRED: "NO"}
     intent_schema: "NocConfig.topology_family = fat_tree"
     materializer: null
@@ -134,8 +134,8 @@ families:
   flatfly:
     canonical_id: flatfly
     role: USER_FAMILY
-    stages: {RECOGNIZED: "YES", AUTHORABLE: "NO", MATERIALIZABLE: "YES",
-             ROUTABLE: "NO", VERIFIABLE: "YES", PROJECTABLE: "PARTIAL",
+    stages: {RECOGNIZED: "YES", AUTHORABLE: "YES", MATERIALIZABLE: "YES",
+             ROUTABLE: "NO", VERIFIABLE: "NO", PROJECTABLE: "NO",
              EXECUTABLE: "NO", QUALIFIED: "NO", WIRED: "NO"}
     intent_schema: null
     materializer: "topology_artifact.materialize_flatfly(k, n, concentration)"

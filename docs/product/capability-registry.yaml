@@ -442,6 +442,27 @@ capabilities:
   - CAP-ENV-BOOKSIM-MESH-DOR-XY-V1
   - CAP-ENV-BOOKSIM-ANYNET-V1
   wiring: WIRED
+- id: FAB-008
+  name: typed topology intent (v4 fabric authority)
+  owner: FABRIC
+  stages:
+    DECLARABLE: 'YES'
+    DERIVABLE: 'YES'
+    VERIFIABLE: 'YES'
+    PROJECTABLE: CONDITIONAL
+    EXECUTABLE: CONDITIONAL
+    QUALIFIED: 'NO'
+    EVIDENCE_CAPABLE: 'NO'
+    PRODUCT_WIRED: 'NO'
+  reason: null
+  claim_scope: >-
+    Schema 4 replaces the mesh-shaped noc_config vocabulary with a typed
+    topology intent and a topology-independent NocControls bag. Every kind is
+    AUTHORABLE. mesh and an explicit graph progress fully; concentrated_mesh,
+    flatfly and torus materialize and stop at ROUTING/PROJECTION; gec (all
+    four physical modes) and fattree are authorable and stop at
+    MATERIALIZATION. Derived truth: scripts/check_capability_truth.py.
+  wiring: NOT_AVAILABLE
 - id: FAB-007
   name: custom / hierarchical topology
   owner: FABRIC

@@ -97,12 +97,37 @@ def main() -> int:
                 f"the registry says MATERIALIZABLE="
                 f"{row['stages']['MATERIALIZABLE']}")
 
+    # THE DECLARATION AUTHORITY IS NOW TWO-FOLD (PHASE B.1 §23).
+    #
+    # The legacy `TopologyFamily` enum was the only way to declare a topology,
+    # so it was the only declaration authority. Typed topology intent adds a
+    # second, and a family may be authorable through EITHER. Checking only the
+    # enum would report FlatFly as non-authorable when it is now declared
+    # through FlatFlyIntent — a false NEGATIVE, the mirror of the false
+    # positives this gate exists to catch.
+    from veritx_dse.model.topology_intent import (
+        AUTHORABLE_INTENT_KINDS, topology_intent_from_dict,
+    )
+    #: Registry family name -> the typed intent kind that declares it.
+    _INTENT_KIND = {"fattree": "fattree", "fat_tree": "fattree",
+                    "flatfly": "flatfly", "gec": "gec",
+                    "mesh": "mesh", "torus": "torus",
+                    "concentrated_mesh": "concentrated_mesh",
+                    "custom": "explicit"}
+    intent_declared = set()
+    for name in families:
+        kind = _INTENT_KIND.get(name)
+        if kind and kind in AUTHORABLE_INTENT_KINDS:
+            intent_declared.add(name)
+
     # And the converse: nothing may claim a stage the code cannot honour.
     for name, row in families.items():
-        if row["stages"]["AUTHORABLE"] == "YES" and name not in decl:
+        if row["stages"]["AUTHORABLE"] == "YES" \
+                and name not in decl and name not in intent_declared:
             errors.append(
-                f"{name}: registry says AUTHORABLE=YES but the family is not "
-                f"in TopologyFamily (declaration authority)")
+                f"{name}: registry says AUTHORABLE=YES but the family is "
+                f"neither in TopologyFamily nor backed by a registered typed "
+                f"topology intent (declaration authority)")
         if row["stages"]["MATERIALIZABLE"] == "YES" and name not in mat:
             errors.append(
                 f"{name}: registry says MATERIALIZABLE=YES but the family is "

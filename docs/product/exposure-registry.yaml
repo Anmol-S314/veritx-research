@@ -36,6 +36,7 @@ default_classes:
   SEMANTIC_DEFAULT: part of the canonical contract
   RECOMMENDATION: product convenience that materializes an explicit value
   NONE: the user must decide
+  REQUIRED: the field must be declared - schema 4 has no implicit default
 
 # ── fields: every declared field of the 12 declared classes ───────────────
 # src = UI | METADATA | REMOVED_V4 | LEGACY
@@ -47,6 +48,25 @@ fields:
   CompileRequestV3.noc_config:                  {owner: FABRIC,       src: UI,        class: container}
   CompileRequestV3.address_map:                 {owner: MEMORY,       src: UI,        class: container, capability: MEM-001}
   CompileRequestV3.physical:                    {owner: PHYSICAL,     src: UI,        class: container}
+  CompileRequestV4.workload:                   {owner: WORKLOAD,     src: UI,        class: container}
+  CompileRequestV4.requirements:               {owner: REQUIREMENTS, src: UI,        class: container}
+  CompileRequestV4.agents:                     {owner: SYSTEM,       src: UI,        class: container}
+  CompileRequestV4.dependencies:               {owner: WORKLOAD,     src: UI,        class: container}
+  CompileRequestV4.address_map:                {owner: SYSTEM,       src: UI,        class: container}
+  CompileRequestV4.physical:                   {owner: PHYSICAL,     src: UI,        class: container}
+  CompileRequestV4.schema_version:             {owner: "-",          src: METADATA,  class: METADATA}
+  CompileRequestV4.compiler_semantics_version: {owner: "-",          src: METADATA,  class: METADATA}
+  CompileRequestV4.synthesis_provenance:       {owner: "-",          src: METADATA,  class: METADATA}
+  CompileRequestV4.migration_provenance:       {owner: "-",          src: METADATA,  class: METADATA}
+  CompileRequestV4.topology:                   {owner: FABRIC,       src: UI,        class: G1, default: REQUIRED, capability: FAB-008, behaviour: RENDER_WITH_LIMIT, limit: typed topology intent is REQUIRED and is the only topology authority; gec (all four modes) and fattree are AUTHORABLE but stop at MATERIALIZATION; flatfly/torus materialize but stop at ROUTING}
+  CompileRequestV4.noc_controls:               {owner: FABRIC,       src: UI,        class: container}
+  NocControls.arbitration:                     {owner: FABRIC,       src: UI,        class: G2, default: SEMANTIC_DEFAULT, capability: FAB-008, behaviour: RENDER, limit: null = unconstrained (engine derives)}
+  NocControls.rcu_enabled:                     {owner: FABRIC,       src: UI,        class: G2, default: SEMANTIC_DEFAULT, capability: FAB-008, behaviour: RENDER, limit: null = unconstrained (engine derives)}
+  NocControls.link_width:                      {owner: FABRIC,       src: UI,        class: G2, default: SEMANTIC_DEFAULT, capability: FAB-008, behaviour: RENDER, limit: null = unconstrained (engine derives)}
+  NocControls.mcast_groups:                    {owner: FABRIC,       src: UI,        class: G2, default: SEMANTIC_DEFAULT, capability: FAB-008, behaviour: RENDER, limit: null = unconstrained (engine derives)}
+  NocControls.mcast_setup_cycles:              {owner: FABRIC,       src: UI,        class: G2, default: SEMANTIC_DEFAULT, capability: FAB-008, behaviour: RENDER, limit: null = unconstrained (engine derives)}
+  NocControls.output_formats:                  {owner: FABRIC,       src: UI,        class: G2, default: SEMANTIC_DEFAULT, capability: FAB-008, behaviour: RENDER, limit: order-insensitive for identity}
+  NocControls.obfuscation_level:               {owner: FABRIC,       src: UI,        class: G2, default: SEMANTIC_DEFAULT, capability: FAB-008, behaviour: RENDER, limit: not design physics}
   CompileRequestV3.explicit_topology:          {owner: FABRIC,       src: UI,        class: G1, default: RECOMMENDATION, capability: FAB-007, behaviour: RENDER_WITH_LIMIT, limit: custom routing unavailable - compilation stops at ROUTING}
   CompileRequestV3.schema_version:              {owner: "-",          src: METADATA,  class: METADATA}
   CompileRequestV3.compiler_semantics_version:  {owner: "-",          src: METADATA,  class: METADATA}
