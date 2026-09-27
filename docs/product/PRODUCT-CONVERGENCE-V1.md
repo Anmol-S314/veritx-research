@@ -107,6 +107,43 @@ not_measured        area, power, energy, cost, thermal, timing closure, effort
 
 ---
 
+## PHASE 2.1 — capability truth is PROBED, not defaulted
+
+DEFECT: every non-`topology_family` GUIDED parameter was initialized
+`qualified=True` on the strength of "NocConfig accepts this field". That
+conflated EXPRESSIBLE with "the certified backend measures it".
+
+NEW `optimization/capability_probe.py` answers it by MEASUREMENT.
+`prepare_booksim_input` is a pure function of `BookSimProjectionParents`
+(topology, attachment, mapping, vc_resource, packet_format, route,
+physical_traffic, resolved_fabric), so if patching a parameter leaves every
+one of those canonical identities unchanged, the backend bytes CANNOT differ —
+the knob is IDENTITY-ONLY. No binary needs to be spawned to prove it.
+
+| parameter | expressible | compilable | effective | qualified | why |
+|---|---|---|---|---|---|
+| `link_width` | ✓ | ✓ | ✓ | **YES** | changes topology/packet_format/route identities |
+| `concentration` | ✓ | ✓ | ✓ | **YES** | changes the topology artifact |
+| `radix` | ✓ | ✓ | ✓ | **YES** | changes the topology artifact |
+| `topology_family` | ✓ | ✓ | ✓ | **YES** | materializable subset (exhaustively enumerable) |
+| `rcu_enabled` | ✓ | **✗** | ✗ | **NO** | a `rcu_enabled` design fails to compile (RESOLVED_FABRIC) |
+| `arbitration` | ✓ | ✓ | **✗** | **NO** | compiles, but leaves EVERY projection input identical |
+| `mcast_groups` | ✓ | **✗** | ✗ | **NO** | fails to compile; no multicast parameter exists in the closed-world config audit |
+| `mcast_setup_cycles` | ✓ | **✗** | ✗ | **NO** | same |
+
+**4 of 8 advertised knobs were not usable certified dimensions.** The payload
+now publishes `qualified_parameters`, `unqualified_parameters`,
+`effectiveness_basis` and a `multicast_note`, and every unqualified
+parameter carries a reason so Studio can explain why it is hidden.
+
+`accepted_values=None` is no longer ambiguous: `accepted_values_is_exhaustive`
+is False for the validated-range domains, so Studio cannot read "no list" as
+"all values supported". Only `topology_family` is exhaustively enumerable.
+`radix`/`concentration` carry the real seat constraint
+(`k*k*concentration >= endpoints`) instead of an invented list.
+
+---
+
 ## NOT DONE in this slice
 
 | step | status |

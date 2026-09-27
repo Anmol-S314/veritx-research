@@ -233,3 +233,137 @@ def _base_request():
     doc.pop("design_hash", None)
     doc.pop("guardrail_hash", None)
     return CompileRequestV3.from_dict(doc)
+
+
+# ══ PHASE 2.1 — capability truth is PROBED, not defaulted ═════════════
+#
+# The defect this closes: every non-topology parameter was initialized
+# `qualified=True` on the strength of "NocConfig accepts this field". That
+# conflated EXPRESSIBLE with "the certified backend measures it". Four of the
+# eight advertised knobs are not usable as certified optimization dimensions.
+
+def _by_name(caps):
+    return {p["name"]: p for p in caps["guided_parameters"]}
+
+
+def test_expressible_is_not_qualified(caps):
+    """(1) An expressible but backend-ineffective field must not be
+    advertised as certified."""
+    p = _by_name(caps)["arbitration"]
+    assert p["expressible"] is True
+    assert p["compilable"] is True          # the design does compile
+    assert p["effective"] is False          # ...but execution is identical
+    assert p["qualified_for_certified_optimization"] is False
+    assert "identity-only" in p["reason"]
+
+
+def test_uncompilable_parameters_are_not_qualified(caps):
+    """`rcu_enabled` and the multicast knobs do not merely do nothing —
+    a design that sets them FAILS TO COMPILE."""
+    by = _by_name(caps)
+    for name in ("rcu_enabled", "mcast_groups", "mcast_setup_cycles"):
+        p = by[name]
+        assert p["expressible"] is True, name
+        assert p["compilable"] is False, name
+        assert p["qualified_for_certified_optimization"] is False, name
+        assert "does not compile" in p["reason"], name
+
+
+def test_the_unqualified_set_is_explicit(caps):
+    assert caps["unqualified_parameters"] == [
+        "arbitration", "mcast_groups", "mcast_setup_cycles", "rcu_enabled"]
+    assert caps["qualified_parameters"] == [
+        "concentration", "link_width", "radix", "topology_family"]
+
+
+def test_every_qualified_knob_changes_executed_semantics(caps):
+    """(4) Every qualified knob must change or participate in canonical
+    executed semantics — proven by the probe, not asserted here."""
+    from veritx_dse.optimization.capability_probe import probe_parameters
+    probes = probe_parameters()
+    for name in caps["qualified_parameters"]:
+        assert probes[name].effective, name
+        assert probes[name].compilable, name
+    for name in caps["unqualified_parameters"]:
+        assert not probes[name].qualified, name
+
+
+def test_arbitration_is_identity_only_by_direct_measurement(caps):
+    """The strongest form of the claim: compile with two arbitration values
+    and compare the CANONICAL ARTIFACT IDENTITIES the certified projection is
+    a pure function of. Identical artifacts => identical backend bytes."""
+    from veritx_dse.optimization.capability_probe import (
+        _artifact_identity, _base_request,
+    )
+    a, _ = _artifact_identity(_base_request())
+    b, _ = _artifact_identity(_base_request(arbitration="round_robin"))
+    assert a is not None and b is not None
+    assert a == b, ("arbitration changed a projection input — it may now be "
+                    "effective, so the capability payload must be updated")
+
+
+def test_materializable_is_not_backend_executable(caps):
+    """(2) The materializer accepting a design does not imply every certified
+    projection accepts it: `topology_family` values are the materializable
+    subset, and each is separately bounded by the projection's own
+    qualification."""
+    from veritx_dse.model.compile_model import TopologyFamily
+    p = _by_name(caps)["topology_family"]
+    assert p["accepted_values_is_exhaustive"] is True
+    for value in p["accepted_values"]:
+        # materializable ...
+        assert value in {f.value for f in TopologyFamily}
+    # ...but the mesh-DOR profile pins seat_capacity 1, so a concentrated
+    # fabric is NOT executable by that profile even though it materializes.
+    assert "concentrated_mesh" in p["accepted_values"]
+    assert "concentration" in caps["qualified_parameters"]
+    conc = _by_name(caps)["concentration"]
+    assert conc["value_constraint"], "the seat constraint must be stated"
+
+
+def test_an_unenumerated_domain_is_not_all_values(caps):
+    """`accepted_values=None` must NOT be readable as 'everything works'."""
+    by = _by_name(caps)
+    for name in ("link_width", "concentration", "radix"):
+        p = by[name]
+        assert p["accepted_values"] is None
+        assert p["accepted_values_is_exhaustive"] is False
+        assert p["value_constraint"]
+    # Only the topology domain is exhaustively enumerable.
+    exhaustive = [p["name"] for p in caps["guided_parameters"]
+                  if p["accepted_values_is_exhaustive"]]
+    assert exhaustive == ["topology_family"]
+
+
+def test_capability_status_comes_from_compiler_authority_not_frontend(caps):
+    """(3) The status must be re-derivable from the compiler. Two independent
+    computations must agree, so a hand-edited table cannot survive."""
+    from veritx_dse.optimization.capability_probe import probe_parameters
+    probes = probe_parameters()
+    for p in caps["guided_parameters"]:
+        if p["name"] not in probes:
+            continue
+        assert p["compilable"] == probes[p["name"]].compilable
+        assert p["effective"] == probes[p["name"]].effective
+        assert p["qualified_for_certified_optimization"] == \
+            probes[p["name"]].qualified
+
+
+def test_studio_can_safely_disable_unqualified_capabilities(caps):
+    """(5) Every parameter carries enough information to hide or disable it."""
+    for p in caps["guided_parameters"]:
+        assert isinstance(p["qualified_for_certified_optimization"], bool)
+        assert p["reason"] or p["qualified_for_certified_optimization"], (
+            f"{p['name']} is unqualified without a reason — Studio could not "
+            "explain why it is hidden")
+    assert caps["effectiveness_basis"]
+    assert caps["multicast_note"]
+
+
+def test_multicast_qualification_is_not_advertised_globally(caps):
+    """Multicast may depend on workload semantics; the payload says so
+    instead of advertising the knob as meaningful for every workload."""
+    assert "workload" in caps["multicast_note"]
+    for name in ("mcast_groups", "mcast_setup_cycles"):
+        p = _by_name(caps)[name]
+        assert p["qualified_for_certified_optimization"] is False
