@@ -212,9 +212,18 @@ attempt FAILED with a real type error
 the parameter, where it lives) — which is exactly why the unverified claim was
 labelled as such rather than assumed. Fixed and rebuilt clean.
 
-STILL UNPROVEN: no browser E2E was run. The E2E acceptance gate (create/open
-project → compile → evaluate → Optimize → launch → inspect → select candidate
-→ draft → compile → compare) remains outstanding.
+BROWSER E2E: the EXISTING live browser acceptance
+(`apps/studio/tests/test_live_browser_e2e.py`, opt-in via `VERITX_E2E=1`)
+**PASSES** (1 passed) with `VERITX_BOOKSIM_BIN` pointing at the pinned binary
+built in this worktree. That exercises the real surface: open Studio → create
+project → select workload → edit design → compile → inspect verification →
+evaluate → inspect evidence.
+
+OUTSTANDING: the brief's Optimize E2E gate — open Optimize → select two GUIDED
+dimensions → launch → observe job lifecycle → inspect result → select candidate
+→ create draft from candidate → compile new revision → compare old vs new —
+CANNOT be run, because PHASES 3-10 are not implemented. The page still renders
+only the link-width domain control.
 
 NOT DONE in the UI: PHASES 3-10 proper. The page still renders only the
 link-width domain control, not one control per qualified parameter; there is no
