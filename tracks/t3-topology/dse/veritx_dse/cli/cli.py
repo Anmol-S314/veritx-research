@@ -488,7 +488,12 @@ def cmd_certify_flow(ctx: Ctx, args):
         elif "FAIL" in line:
             failed += 1
             log(ctx, f"  ✗ {line.strip()}")
-    if failed > 0:
+    if r.returncode != 0:
+        # A non-zero exit is authoritative even when no PASS/FAIL line was
+        # emitted: without this, a certifier that crashed silently counted as
+        # "0 failed" and the command reported success.
+        fail(ctx, f"Flow certification process exited {r.returncode}")
+    elif failed > 0:
         fail(ctx, f"Flow certification FAILED: {failed} checks failed")
     else:
         ok(ctx, f"Flow certification PASSED: {passed} checks")
@@ -792,10 +797,20 @@ def cmd_run(ctx: Ctx, args):
     # Step 3: Evaluate
     try:
         log(ctx, "Step 3/4: Evaluating with BookSim2")
-        k = int(args.nodes ** 0.5)
-        if k * k != args.nodes:
-            k = 8
-        topo = Topology(f"mesh_{k}x{k}", "mesh", "min_adapt", {"k": k, "n": 2})
+        # THE EXACT GRAPH THAT WAS SYNTHESIZED.
+        #
+        # This step previously derived k from `args.nodes` (falling back to
+        # k=8 whenever the count was not a perfect square) and evaluated a
+        # freshly constructed mesh. The design EVALUATED was therefore not
+        # the design SYNTHESIZED: two different identities in one run, and a
+        # silent substitution whenever the node count did not fit a square.
+        if not topo_path.exists():
+            raise FileNotFoundError(
+                f"no synthesized topology at {topo_path}; refusing to "
+                "evaluate a different design instead")
+        topo = Topology(f"{run_id}_synthesized", "anynet", "min",
+                        {"network_file": str(topo_path.resolve())})
+        manifest["evaluated_topology"] = topo.name
         eval_result = run_topology_eval(ctx, topo, str(trace_path),
                                         repo_root=REPO, timeout=60)
         manifest["eval"] = eval_result
@@ -819,9 +834,18 @@ def cmd_run(ctx: Ctx, args):
                                         "--traffic-model", _resolve_path(args.model),
                                         "--topology", str(topo_path.resolve())],
                                        capture_output=True, text=True, timeout=300, cwd=str(REPO))
-                    cert_pass = any("PASS" in line for line in r.stdout.splitlines())
-                    manifest["cert"] = "PASS" if cert_pass else "FAIL"
-                    ok(ctx, f"Certification: {manifest['cert']}")
+                    # AUTHORITATIVE verdict: the process result and its
+                    # structured status. NOT a substring scan of stdout —
+                    # `any("PASS" in line)` passes on a log line that merely
+                    # mentions PASS (including "FAIL: expected PASS").
+                    verdict = _certification_verdict(r)
+                    manifest["cert"] = verdict["status"]
+                    manifest["cert_evidence"] = verdict
+                    if verdict["status"] != "PASS":
+                        fail(ctx, f"Certification {verdict['status']}: "
+                                  f"{verdict['reason']}")
+                    else:
+                        ok(ctx, f"Certification: {verdict['status']}")
         else:
             log(ctx, "Step 4/4: Skipping certification (disabled)")
     except Exception as e:
@@ -1063,6 +1087,75 @@ def _cmd_serve_legacy(ctx: Ctx, args):
         fail(ctx, f"Simulation error: {e}")
 
 
+class _UvmInputError(ValueError):
+    """The UVM generator cannot be given a truthful fabric description."""
+
+
+def _uvm_generation_input(doc: dict, args) -> dict:
+    """Derive the UVM fabric size from the COMPILED artifact, not from flags.
+
+    Two defects this closes:
+
+    * the size came from `--nodes`/`--k`, defaulting to 64/8, so a testbench
+      could describe a fabric that has nothing to do with the design;
+    * only a v2 `CompileRequest` was accepted, so a v3 revision document could
+      not be used at all even though v3 is what the product produces.
+
+    The size is now taken from the canonical materialized topology. A v3
+    request is REFUSED with a clear reason rather than silently generated
+    from a guessed size — `generate_uvm` still derives its VC structure with
+    the v2 path, and pretending otherwise would emit collateral for a design
+    nobody compiled.
+    """
+    from veritx_dse.model.compile_model import CompileRequest, CompileRequestV3
+
+    request = None
+    try:
+        request = CompileRequest.from_dict(doc)
+    except Exception:                                       # noqa: BLE001
+        pass
+
+    if request is None:
+        will_be_v3 = (isinstance(doc, dict)
+                      and doc.get("schema_version") == 3)
+        if will_be_v3:
+            raise _UvmInputError(
+                "this is a v3 revision document. UVM generation still derives "
+                "its VC structure with the v2 `derive_vc_assignment` path, "
+                "which is a DIFFERENT authority from v3's declared-class VC "
+                "policy. Generating collateral from it would describe a "
+                "fabric the compiler never produced, so this is refused rather "
+                "than silently approximated. Wire the canonical "
+                "Compilation/ResolvedFabricBundle input first "
+                "(PRODUCT-CONVERGENCE-V1 item G).")
+        raise _UvmInputError("unrecognised design document (expected a v2 "
+                             "CompileRequest)")
+
+    # Size from the canonical materializer, not from flags.
+    n_nodes = None
+    k = None
+    try:
+        from veritx_dse.application.fabric_compiler import FabricCompiler
+        compilation = FabricCompiler().compile(request)
+        topology = getattr(compilation.bundle, "topology", None)
+        if topology is not None:
+            n_nodes = topology.router_count
+            import math as _math
+            root = _math.isqrt(n_nodes)
+            k = root if root * root == n_nodes else None
+    except Exception:                                       # noqa: BLE001
+        n_nodes = None
+
+    if n_nodes is None:
+        # No compiled artifact to stand on: fall back to the flags but SAY SO,
+        # so the caller is never told a derived size it did not get.
+        return {"request": request, "n_nodes": args.nodes, "k": args.k,
+                "source": "arg"}
+    return {"request": request, "n_nodes": n_nodes,
+            "k": k if k is not None else args.k,
+            "source": "compiled-topology"}
+
+
 def cmd_generate_uvm(ctx: Ctx, args):
     """Generate UVM testbench from CompileRequest."""
     from veritx_dse.model.compile_model import CompileRequest, derive_vc_assignment
@@ -1074,16 +1167,25 @@ def cmd_generate_uvm(ctx: Ctx, args):
         return
 
     try:
-        cr = CompileRequest.from_dict(json.loads(Path(cr_path).read_text()))
-    except Exception as e:
-        fail(ctx, f"Failed to parse CompileRequest: {e}")
+        doc = json.loads(Path(cr_path).read_text())
+        generation = _uvm_generation_input(doc, args)
+    except _UvmInputError as e:
+        fail(ctx, f"Cannot generate UVM: {e}")
         return
 
+    cr = generation["request"]
     banner(ctx, f"Generate UVM: {cr.workload.model_name or cr.workload.model_family.value}")
-    log(ctx, f"Nodes: {args.nodes}, k: {args.k}")
+    if generation["source"] == "arg":
+        # Honest about where the size came from: it was NOT derived from a
+        # compiled artifact, so the testbench describes a declared size.
+        fail(ctx, "UVM node count was supplied on the command line and could "
+                  "not be checked against a compiled fabric")
+    log(ctx, f"Nodes: {generation['n_nodes']}, k: {generation['k']} "
+             f"(source: {generation['source']})")
     log(ctx, f"Routing: {derive_vc_assignment(cr).routing_function} (LOCKED)")
 
-    result = generate_uvm(cr, n_nodes=args.nodes, k=args.k)
+    result = generate_uvm(cr, n_nodes=generation["n_nodes"],
+                          k=generation["k"])
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1793,6 +1895,51 @@ def main():
     finally:
         ctx.close()
         _cleanup_stale_temp_dirs()
+
+    # A command that REPORTED a failure must not exit 0. Handlers call
+    # `fail()` and return normally, so without this the process reported
+    # success while printing errors.
+    if ctx.failed:
+        sys.exit(1)
+
+
+def _certification_verdict(proc) -> dict:
+    """Authoritative certification verdict from a subprocess result.
+
+    The process EXIT STATUS is primary: a non-zero exit means a constituent
+    stage failed, whatever the text said. A structured verdict on stdout is
+    consumed when present; the substring scan it replaces passed on any line
+    merely CONTAINING "PASS", including one that reports a failure.
+    """
+    import json as _json
+    stdout = proc.stdout or ""
+    if proc.returncode != 0:
+        tail = "\n".join(stdout.splitlines()[-5:])
+        return {"status": "FAIL", "exit_code": proc.returncode,
+                "reason": f"certifier exited {proc.returncode}",
+                "stdout_tail": tail}
+    structured = None
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            candidate = _json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(candidate, dict) and "status" in candidate:
+            structured = candidate
+    if structured is None:
+        return {"status": "FAIL", "exit_code": 0,
+                "reason": ("the certifier exited 0 but emitted no structured "
+                           "verdict; a text-only result is not admissible "
+                           "certification evidence")}
+    status = str(structured["status"]).upper()
+    if status != "PASS":
+        return {"status": "FAIL", "exit_code": 0,
+                "reason": f"certifier reported {status!r}",
+                "structured": structured}
+    return {"status": "PASS", "exit_code": 0, "structured": structured}
 
 
 def _cleanup_stale_temp_dirs():

@@ -10,6 +10,7 @@ import {
 } from '../api';
 import {
   AsyncView, Link, useAsync, useStudio,
+  simulationCapabilityReason,
 } from '../studio';
 import { Hash, StatusBadge, fmtNum, humanize } from '../components/badges';
 import { navigate } from '../router';
@@ -562,7 +563,19 @@ export function Workload({ projectId }: { projectId: string }): ReactElement {
                           Use this workload
                         </button>
                       )}
+                      {!w.evaluation_supported && (
+                        <span className="stale">
+                          Simulation unavailable
+                        </span>
+                      )}
                     </div>
+                    {!w.evaluation_supported && (
+                      <p className="muted">
+                        <strong>Certifies, but cannot be simulated.</strong>{' '}
+                        {simulationCapabilityReason(
+                          w.evaluation_domain, w.evaluation_note)}
+                      </p>
+                    )}
                   </section>
                 ))}
               </div>

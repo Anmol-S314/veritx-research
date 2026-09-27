@@ -1,4 +1,13 @@
 {
+  "amendments": {
+    "examples/dense_4b_32tiles_conc4-v3.json": {
+      "amended_from_design_hash": "6a7c3dd8c57526a8c45c2412915d6a7d53cab7739f751efa1684ddb772c3b336",
+      "amended_to_design_hash": "835216e017fc345cc880c87a82876dedb49bf84c27a7e7e2a801e384988e70b3",
+      "authority": "git 2e51311d",
+      "reason": "the EXAMPLE DOCUMENT itself was corrected, not the schema. Its collective was allgather/DP/dp_allgather with dp=1, which lowering refuses: 'group 0 has 1 member(s) - a one-member collective intent is never represented'. The corrected document declares allreduce/TP/tp_collective matching tp=8. Schema 3 is unchanged; a pin over a file whose contents changed must move.",
+      "verified": "the pre-correction document is REFUSED by lower_compile_workload; the corrected one is accepted"
+    }
+  },
   "entries": {
     "examples/dense_1b_16tiles-v3.json": {
       "canonical_sha256": "74789287b61421b77ac33883024a608d40972538db51ee8d6534c507c0ebec53",
@@ -13,7 +22,7 @@
       "to_dict_sha256": "ec779643d64b1105ed1e48c014082212da556e1ee9ada5a280de4f4ab6156875"
     },
     "examples/dense_4b_32tiles_conc4-v3.json": {
-      "canonical_sha256": "ae10023fca4cacc8f8c51f593f3acc4334e2c6724112dad312ddef91c812f798",
+      "canonical_sha256": "8d12b9b4354200e067dfffc60ae049641ca2bbf4b4ea44b9b79ad8ac9a8b7352",
       "compiled": {
         "endpoint_count": null,
         "family": "concentrated_mesh",
@@ -21,8 +30,8 @@
         "status": "COMPILED",
         "topology_hash": "24e369185a39d384a9e7372c0f535579d6cfe1b71bddaaf6464b3a8af72ffabc"
       },
-      "design_hash": "6a7c3dd8c57526a8c45c2412915d6a7d53cab7739f751efa1684ddb772c3b336",
-      "to_dict_sha256": "15d0e45dff1f5dd964339f42c90f58c53d4f3d21883bed98c51db4f586831728"
+      "design_hash": "835216e017fc345cc880c87a82876dedb49bf84c27a7e7e2a801e384988e70b3",
+      "to_dict_sha256": "05168b2e8778d9078980bce3f58a34dde5d4b611c1d918ce845dd58796354d7c"
     },
     "examples/llama_dense_64tiles-v3.json": {
       "canonical_sha256": "05760b3df9b5e368f61661a1c0f13e64c7d4c82b81629ccf62d62ecd5ff90949",

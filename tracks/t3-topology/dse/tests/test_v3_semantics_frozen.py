@@ -41,6 +41,27 @@ GOLDEN = json.loads(
     (DSE / "tests/fixtures/v3_identity_golden.json").read_text())
 
 
+def test_any_golden_amendment_is_documented():
+    """A pinned v3 identity may move ONLY when the underlying DOCUMENT was
+    deliberately corrected, and the amendment must say so.
+
+    Without this, regenerating the fixture to make a failure go away would be
+    indistinguishable from a real schema drift.
+    """
+    here = Path(__file__).parent.parent
+    g = json.loads((here / "tests/fixtures/v3_identity_golden.json").read_text())
+    amendments = g.get("amendments") or {}
+    # Every amended entry must carry a reason, an authority and a verification.
+    for key, record in amendments.items():
+        assert key in g["entries"], key
+        for field in ("reason", "authority", "verified",
+                      "amended_from_design_hash", "amended_to_design_hash"):
+            assert record.get(field), f"{key} amendment missing {field!r}"
+        # ...and the recorded destination must be the CURRENT value.
+        assert record["amended_to_design_hash"] == \
+            g["entries"][key]["design_hash"], key
+
+
 def test_v3_golden_covers_examples_and_representative_shapes():
     keys = set(GOLDEN["entries"])
     assert any(k.startswith("examples/") for k in keys)

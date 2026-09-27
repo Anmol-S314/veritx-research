@@ -22,6 +22,16 @@ class Ctx:
     log_file: str | None = None
     seed: int = 0              # reproducibility seed (auto-generated if 0)
     _log_fh: object = field(default=None, repr=False)
+    #: Failures REPORTED through `fail()`. Non-empty means the command did
+    #: not succeed, whatever else it printed. `main()` exits non-zero on it.
+    _failures: list = field(default_factory=list, repr=False)
+
+    def record_failure(self, msg: str) -> None:
+        self._failures.append(msg)
+
+    @property
+    def failed(self) -> bool:
+        return bool(self._failures)
 
     def __post_init__(self):
         if self.log_file:
@@ -61,9 +71,15 @@ def ok(ctx: Ctx, msg: str):
 
 
 def fail(ctx: Ctx, msg: str):
-    """Error message (always shown)."""
+    """Error message (always shown). ALSO records the failure.
+
+    A command that reports a failure must not exit 0. Recording it here —
+    rather than making every caller `return 1` — means a new caller cannot
+    forget, and `main()` turns any recorded failure into a non-zero exit.
+    """
     print(f"  \033[31m✗\033[0m {msg}", file=sys.stderr)
     ctx._append("ERROR", msg)
+    ctx.record_failure(msg)
 
 
 def verbose(ctx: Ctx, msg: str):

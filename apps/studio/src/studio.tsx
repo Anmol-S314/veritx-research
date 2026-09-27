@@ -301,6 +301,27 @@ export function nextActionLabel(action: string): string {
  * experiment, latest optimization study — so no surface shows an
  * unqualified "run".
  */
+/** The capability reason for an unsimulatable design, phrased by the
+ * gate that actually refuses — never a vague "unsupported". */
+export function simulationCapabilityReason(
+  domain: string | null | undefined,
+  reason: string | null | undefined,
+): string {
+  const detail = (reason ?? '').replace(/^UNSUPPORTED:\s*/, '');
+  switch (domain) {
+    case 'intent_lowering':
+      return 'Intent → executable workload lowering is not yet qualified.'
+        + (detail ? ` ${detail}` : '');
+    case 'backend_profile':
+      return 'The certified BookSim execution profile cannot represent this '
+        + 'exact fabric.'
+        + (detail ? ` ${detail}` : '');
+    case 'compile':
+      return detail || 'The design did not compile.';
+    default:
+      return detail || 'Simulation is not supported for this design.';
+  }
+}
 export function ContextHeader({ project }: { project: ProjectView }): ReactElement {
   const active = project.revisions.find(
     (r) => r.revision_id === project.active_revision_id,

@@ -389,6 +389,29 @@ def list_runs(ctx: Ctx, last: int = 20, run_id: str | None = None):
         print(f"  {run.name:<22} {ts:<20} {dur:>8} {model:<20} {lat_str:>10} {str(cert):<6}")
 
 
+def _topology_size(topo) -> dict:
+    """(nodes, edges) for a topology, INCLUDING when its run failed.
+
+    An error row used to hardcode `nodes: 0`, which is a false statement about
+    the design — the size is a property of the topology, not of the run. For
+    an anynet topology the true counts come from the link file.
+    """
+    edges = topo.edges()
+    network_file = (topo.params or {}).get("network_file")
+    if network_file:
+        try:
+            from veritx_dse.model.presets import count_anynet_edges
+            nodes, file_edges = count_anynet_edges(str(network_file))
+            return {"nodes": nodes, "edges": file_edges}
+        except Exception:                                   # noqa: BLE001
+            pass
+    k = (topo.params or {}).get("k")
+    n = (topo.params or {}).get("n", 2)
+    if isinstance(k, int) and isinstance(n, int) and k > 0 and n > 0:
+        return {"nodes": k ** n, "edges": edges}
+    return {"nodes": None, "edges": edges}
+
+
 def show_results(ctx: Ctx, last: int = 5):
     """Show latest comparison/sweep results."""
     booksim_dir = _runs_dir() / "booksim"
@@ -418,6 +441,14 @@ def show_results(ctx: Ctx, last: int = 5):
             print(f"  {'Topology':<16} {'Mean':>8} {'Std':>7} {'Min':>8} {'Max':>8} {'Runs':>4}")
             print(f"  {'─' * 52}")
             for s in data["summary"]:
+                # A failed/partial row is still part of the study record and
+                # must render. Assuming every row carries
+                # mean/std/min/max/n crashed the whole command on one failure.
+                if not set(("mean", "std", "min", "max", "n")) <= set(s):
+                    reason = s.get("error") or s.get("status") or "incomplete"
+                    print(f"  {s.get('name', '?'):<16} {'-':>8} {'-':>7} "
+                          f"{'-':>8} {'-':>8} {str(reason)[:24]}")
+                    continue
                 print(f"  {s['name']:<16} {s['mean']:>7.2f}c {s['std']:>6.2f}c "
                       f"{s['min']:>7.2f}c {s['max']:>7.2f}c {s['n']:>4}")
         elif isinstance(data, list) and all(isinstance(r, dict) for r in data):

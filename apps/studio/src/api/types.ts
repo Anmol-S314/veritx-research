@@ -97,6 +97,14 @@ export interface ProjectView {
     pareto_count: number;
     selected_candidate_id: string | null;
   } | null;
+  /** Whether the active revision's intent can actually be simulated.
+   * `domain` names the first gate that refuses: "compile",
+   * "intent_lowering", or "backend_profile". */
+  active_evaluation: {
+    supported: boolean;
+    reason: string | null;
+    domain: 'compile' | 'intent_lowering' | 'backend_profile' | null;
+  } | null;
   draft: DraftMeta;
   revisions: RevisionSummary[];
   runs: RunSummary[];
@@ -428,6 +436,11 @@ export interface WorkloadCatalogEntry {
   agents: { kind: string; count: number }[];
   noc: Record<string, unknown>;
   request: Record<string, unknown>;
+  /** False when the workload certifies but cannot be simulated
+   * (no proven intent→collective mapping); reason carries the refusal. */
+  evaluation_supported: boolean;
+  evaluation_note: string | null;
+  evaluation_domain: 'compile' | 'intent_lowering' | 'backend_profile' | null;
 }
 
 export interface WorkloadCatalogView {
@@ -1119,4 +1132,54 @@ export interface CompileResultView {
   topology_hash?: string | null;
   /** Gate 8 §43/§46: downstream capability state, from the registry. */
   capability_consequences?: CapabilityConsequence[];
+}
+
+/** GET /api/v1/optimization/capabilities — derived from backend authority.
+ *  Nothing here is hand-maintained in the frontend. A parameter may be
+ *  `expressible` yet NOT `qualified_for_certified_optimization` (e.g.
+ *  `arbitration` compiles but leaves every projection input identical, so the
+ *  certified backend would execute byte-identical work). Unqualified
+ *  parameters must be hidden or disabled, never silently searched. */
+export interface OptimizationParamCapability {
+  name: string;
+  field: string;
+  kind: 'int' | 'bool' | 'str' | 'enum';
+  expressible: boolean;
+  compilable: boolean;
+  executable: boolean;
+  effective: boolean;
+  qualified_for_certified_optimization: boolean;
+  value_constraint: string;
+  /** null means "a validated range, NOT an enumerated list". Never read this
+   *  as "all values supported" — check `accepted_values_is_exhaustive`. */
+  accepted_values: (string | number)[] | null;
+  accepted_values_is_exhaustive: boolean;
+  executable_values: (string | number)[] | null;
+  value_source: string;
+  reason: string | null;
+
+}
+export interface OptimizationCapabilities {
+  schema_version: number;
+  guided_parameters: OptimizationParamCapability[];
+  search_methods: string[];
+  selection_policies: string[];
+  certified_metrics: { metric: string; producer_id?: string | null;
+                       registry_id?: string; registry_version?: string }[];
+  metric_registry_id: string;
+  locked_parameters: { name: string; reason: string }[];
+  qualified_parameters: string[];
+  /** Certified metric -> semantic objective family. `completion_cycles`,
+   *  `completion_time` and `completion_ns` are the SAME authenticated window in
+   *  different units, so they are ONE family and a study over them must render
+   *  a RANKING, never a Pareto frontier. */
+  objective_semantic_families: Record<string, string>;
+  independent_objective_families: string[];
+  multi_objective_available: boolean;
+  objective_note: string;
+  unqualified_parameters: string[];
+  effectiveness_basis: string;
+  multicast_note: string;
+  not_measured: string[];
+  not_measured_note: string;
 }

@@ -160,6 +160,10 @@ class OptimizeBodyV1(BaseModel):
     method: str = "grid"
     selection: str | None = None
     seed: int | None = None
+    #: Search budget. `None`/omitted = exhaustive. PHASE 1: these were not
+    #: expressible on the product API at all, so a caller could not bound a
+    #: large search.
+    budget: dict[str, Any] | None = None
 
 
 # legacy bodies (deprecated) ───────────────────────────────────────────────
@@ -605,6 +609,32 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
     @app.post("/api/v1/runs/{run_id}/reproduce", tags=["product"])
     def v1_run_reproduce(run_id: str) -> dict[str, Any]:
         return product.submit_reproduction(run_id)
+    @app.get("/api/v1/optimization/capabilities", tags=["product"])
+    def v1_optimization_capabilities() -> dict[str, Any]:
+        """What VERITX can actually optimize, derived from backend authority.
+
+        The Studio derives its controls from THIS. Nothing here is
+        hand-maintained in the frontend: guided parameters, search methods,
+        selection policies and certified metrics all come from canonical
+        backend definitions, and `topology_family` values are obtained by
+        asking the canonical materializer rather than restating an enum.
+        """
+        from veritx_dse.optimization.capabilities import (
+            optimization_capabilities,
+        )
+        return optimization_capabilities()
+
+    @app.post(
+        "/api/v1/optimizations/{optimization_id}/candidates/{candidate_id}/use",
+        tags=["product"])
+    def v1_use_candidate(optimization_id: str,
+                         candidate_id: str) -> dict[str, Any]:
+        """Adopt a studied candidate as the DRAFT.
+
+        The base revision is NOT mutated: it stays immutable, and the user
+        must explicitly compile before a new revision exists.
+        """
+        return product.use_candidate(optimization_id, candidate_id)
 
     @app.get("/api/v1/optimizations/{optimization_id}", tags=["product"])
     def v1_optimization(optimization_id: str) -> dict[str, Any]:

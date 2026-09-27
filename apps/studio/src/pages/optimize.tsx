@@ -7,13 +7,33 @@ import {
 import { Hash, StatusBadge, fmtNum } from '../components/badges';
 import OptimizeView from '../components/OptimizeView';
 import OptimizationAnalysis from '../components/OptimizationAnalysis';
+import DesignSpace from '../components/DesignSpace';
 
-const WIDTH_CHOICES = [32, 64, 128];
+// NO hard-coded control list. Every parameter, and every value the UI offers,
+// comes from GET /optimization/capabilities, which is derived from canonical
+// backend authority (GUIDED_PARAMS, the certified metric registry, and a probe
+// that measures whether a knob actually reaches executed semantics).
+//
+// `link_width` is the only qualified numeric domain whose value domain can be
+// offered as a finite choice, and even that is not enumerated by the backend:
+// it is a validated range. So the UI offers a small set of plausible values
+// and states that they are UI choices, not a backend enumeration.
 
 export function Optimize({ projectId }: { projectId: string }): ReactElement {
   const { refreshProjects } = useStudio();
   const project = useAsync(() => api.project(projectId), [projectId]);
+  const caps = useAsync(() => api.optimizationCapabilities(), []);
   const [widths, setWidths] = useState<number[]>([32, 64, 128]);
+  // One entry per searchable GUIDED parameter. Only parameters the capability
+  // endpoint marks qualified can ever be written here.
+  const [topologies, setTopologies] = useState<string[]>([]);
+  const [concentrations, setConcentrations] = useState<number[]>([]);
+  const [radixText, setRadixText] = useState<string>('');
+  const [method, setMethod] = useState<string>('grid');
+  const [adopting, setAdopting] = useState<boolean>(false);
+  const [adoptedFrom, setAdoptedFrom] = useState<string | null>(null);
+  const [seed, setSeed] = useState<number>(1);
+  const [maxCandidates, setMaxCandidates] = useState<number>(0);
   const [ceilingOn, setCeilingOn] = useState(false);
   const [ceiling, setCeiling] = useState(0);
   const [jobId, setJobId] = useState<string | null>(null);
@@ -33,25 +53,97 @@ export function Optimize({ projectId }: { projectId: string }): ReactElement {
     [optimizationId],
   );
 
+  const capabilityDoc = caps.result.state === 'ready' ? caps.result.data : null;
+  // The authority on which dimensions may be searched. Nothing is offered
+  // outside this set — see the capability probe, which MEASURES whether a knob
+  // reaches executed semantics.
+  const qualified = new Set(capabilityDoc?.qualified_parameters ?? []);
+  // The single semantic objective to minimize. The certified registry exposes
+  // one independent family today, so this is "completion time" expressed in
+  // the unit it is measured in.
+  const objectiveMetric = (capabilityDoc
+    ? Object.keys(capabilityDoc.objective_semantic_families)[0]
+    : null) ?? 'completion_cycles';
+  const linkWidthQualified = qualified.has('link_width');
+  const baseNoc = (project.result.state === 'ready'
+    ? (project.result.data.active_revision?.design?.noc_guided ?? null)
+    : null) as Record<string, unknown> | null;
+
+  const parsedRadix = radixText
+    .split(',')
+    .map((t) => Number(t.trim()))
+    .filter((n) => Number.isFinite(n) && Number.isInteger(n) && n > 0);
+
+  // The DOMAIN, built only from qualified parameters the user enabled.
+  // Canonical ordering is the backend's business; this is the declared set.
+  const domain: { name: string; values: (string | number)[] }[] = [];
+  if (linkWidthQualified && widths.length > 0) {
+    domain.push({ name: 'link_width', values: widths });
+  }
+  if (qualified.has('topology_family') && topologies.length > 0) {
+    domain.push({ name: 'topology_family', values: topologies });
+  }
+  if (qualified.has('concentration') && concentrations.length > 0) {
+    domain.push({ name: 'concentration', values: concentrations });
+  }
+  if (qualified.has('radix') && parsedRadix.length > 0) {
+    domain.push({ name: 'radix', values: parsedRadix });
+  }
+  // Raw Cartesian size, computed BEFORE launch so the user sees the cost.
+  const candidateCount = domain.reduce((n, d) => n * d.values.length, 0);
+
+  /** Adopt a studied candidate as the DRAFT, then send the user to Design.
+   *
+   *  The immutable base revision is NOT touched: `use_candidate` re-applies the
+   *  candidate's GUIDED patch to the BASE REVISION's request, refuses if the
+   *  resulting design hash differs from the study's, and writes only the
+   *  draft. A new revision exists only after an explicit Compile.
+   */
+  const adopt = async (candidateId: string): Promise<void> => {
+    if (!optimizationId) return;
+    setAdopting(true);
+    setError(null);
+    try {
+      const draft = await api.useCandidate(optimizationId, candidateId);
+      setAdoptedFrom(
+        `Derived from optimization ${optimizationId}, candidate ${candidateId}`
+        + ` (draft is dirty: ${String((draft as { dirty?: boolean }).dirty)})`);
+      project.reload();
+      refreshProjects();
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      setAdopting(false);
+    }
+  };
+
   const start = async (): Promise<void> => {
     const currentId = project.result.state === 'ready'
       ? project.result.data.active_revision_id
       : null;
-    if (!currentId || widths.length === 0) return;
+    if (!currentId || domain.length === 0) return;
     setError(null);
     setOptimizationId(null);
     try {
       const submitted = await api.optimize(currentId, {
-        domain: [{ name: 'link_width', values: widths }],
-        objectives: [{ metric: 'completion_cycles', direction: 'MIN' }],
+        domain,
+        // ONE semantic objective. completion_cycles/time/ns are the same
+        // authenticated window in different units, so requesting two of them
+        // would invent a trade-off. This is "minimize completion time",
+        // expressed in the unit the certified registry measures it in.
+        objectives: [{ metric: objectiveMetric, direction: 'MIN' }],
         // A hard constraint is opt-in: an arbitrary ceiling that no
         // measured candidate can meet makes the whole study ineligible,
         // which reads as a broken optimizer rather than a strict bound.
         constraints: ceilingOn && ceiling > 0
           ? [{ metric: 'completion_cycles', op: '<=', threshold: ceiling }]
           : [],
-        method: 'grid',
+        method,
         selection: 'min_first_objective',
+        // A seeded random study is only reproducible with an explicit seed;
+        // the backend requires one, so it is never omitted.
+        seed: method === 'random' ? seed : null,
+        budget: maxCandidates > 0 ? { max_candidates: maxCandidates } : {},
       });
       setJobId(submitted.job_id);
     } catch (err) {
@@ -75,26 +167,28 @@ export function Optimize({ projectId }: { projectId: string }): ReactElement {
                 authorities stay separate: product requirements, optimization
                 constraints, measured objectives.
               </p>
+              {!capabilityDoc && (
+                <p className="muted">
+                  Loading optimization capabilities from the backend…
+                </p>
+              )}
+              {capabilityDoc && (
+                <DesignSpace
+                  caps={capabilityDoc}
+                  base={baseNoc}
+                  widths={widths} setWidths={setWidths}
+                  topologies={topologies} setTopologies={setTopologies}
+                  concentrations={concentrations}
+                  setConcentrations={setConcentrations}
+                  radixText={radixText} setRadixText={setRadixText}
+                  method={method} setMethod={setMethod}
+                  seed={seed} setSeed={setSeed}
+                  maxCandidates={maxCandidates}
+                  setMaxCandidates={setMaxCandidates}
+                  candidateCount={candidateCount}
+                />
+              )}
               <div className="form-row">
-                <label>
-                  Link width domain
-                  <span className="check-row">
-                    {WIDTH_CHOICES.map((w) => (
-                      <label className="check" key={w}>
-                        <input
-                          type="checkbox"
-                          checked={widths.includes(w)}
-                          onChange={(e) =>
-                            setWidths((prev) => e.target.checked
-                              ? [...prev, w].sort((a, b) => a - b)
-                              : prev.filter((x) => x !== w))
-                          }
-                        />
-                        {w}b
-                      </label>
-                    ))}
-                  </span>
-                </label>
                 <label>
                   Hard constraint
                   <span className="check-row">
@@ -137,11 +231,25 @@ export function Optimize({ projectId }: { projectId: string }): ReactElement {
                   ) : null;
                 })()}
               </div>
+              {adoptedFrom && (
+                <p className="muted">
+                  {adoptedFrom} — open{' '}
+                  <Link to={`/p/${projectId}/design`}>Design</Link> to review,
+                  then Compile to create the next immutable revision.
+                </p>
+              )}
               {error && <ErrorBox error={error} />}
               <JobProgress job={job} />
             </section>
             {optimizationId && opt.result.state === 'ready' && (
-              <StudyResult optimization={opt.result.data} baseRevision={baseRevision} />
+              <StudyResult
+                optimization={opt.result.data}
+                baseRevision={baseRevision}
+                multiObjectiveAvailable={
+                  capabilityDoc?.multi_objective_available ?? true}
+                onUseCandidate={adopt}
+                usingCandidate={adopting}
+              />
             )}
           </div>
         );
@@ -153,9 +261,15 @@ export function Optimize({ projectId }: { projectId: string }): ReactElement {
 function StudyResult({
   optimization,
   baseRevision,
+  multiObjectiveAvailable,
+  onUseCandidate,
+  usingCandidate,
 }: {
   optimization: OptimizationView;
   baseRevision: RevisionView | undefined;
+  multiObjectiveAvailable: boolean;
+  onUseCandidate: (candidateId: string) => Promise<void>;
+  usingCandidate: boolean;
 }): ReactElement {
   return (
     <div className="page">
@@ -204,7 +318,13 @@ function StudyResult({
           )}
         </section>
       )}
-      <OptimizeView optimization={optimization.study} design={baseRevision?.design ?? null} />
+      <OptimizeView
+        optimization={optimization.study}
+        design={baseRevision?.design ?? null}
+        multiObjectiveAvailable={multiObjectiveAvailable}
+        onUseCandidate={onUseCandidate}
+        usingCandidate={usingCandidate}
+      />
       {optimization.study.result_class === 'CERTIFIED_PRODUCT' &&
         optimization.study.candidates.some(
           (c) => c.evaluation_status === 'EVALUATED',

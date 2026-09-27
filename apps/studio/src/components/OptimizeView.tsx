@@ -172,6 +172,30 @@ function paretoPlot(
   );
 }
 
+/** A human identity for a candidate, derived from its DESIGN.
+ *
+ *  `cand_cf01ae...` is not something a person can reason about, and the brief
+ *  is explicit that it must not be the visible identity. The label is the
+ *  design itself: family · width · concentration. The immutable id stays in
+ *  tooltips and in Engineering details.
+ */
+function candidateLabel(
+  c: Candidate,
+  base: Record<string, unknown> | null,
+): string {
+  const patch = (c.guided_patch ?? {}) as Record<string, unknown>;
+  const val = (k: string): unknown =>
+    (patch[k] !== undefined ? patch[k] : base?.[k]);
+  const parts: string[] = [];
+  const fam = val('topology_family');
+  if (fam !== undefined && fam !== null) parts.push(String(fam));
+  const width = val('link_width');
+  if (width !== undefined && width !== null) parts.push(`${width}b`);
+  const conc = val('concentration');
+  if (conc !== undefined && conc !== null) parts.push(`c${conc}`);
+  return parts.join(' · ') || 'base design';
+}
+
 function VerdictChip({ map, state }: { map: PresentationMap; state: string | null | undefined }): ReactElement {
   const e = entry(map, state);
   return <span className={`verdict-chip ${e.class}`}>{e.label}</span>;
@@ -250,9 +274,18 @@ function objectiveRanking(
 export default function OptimizeView({
   optimization,
   design,
+  multiObjectiveAvailable = true,
+  onUseCandidate,
+  usingCandidate = false,
 }: {
   optimization: OptimizationStudyView | null;
   design: DesignView | null;
+  /** False when the certified registry offers ONE semantic objective family
+   *  (completion_cycles/time/ns are the same window in different units). Then
+   *  a study is a measured RANKING and Pareto vocabulary must not appear. */
+  multiObjectiveAvailable?: boolean;
+  onUseCandidate?: (candidateId: string) => void;
+  usingCandidate?: boolean;
 }): ReactElement {
   const initial = optimization?.selected_candidate_id ?? optimization?.candidates[0]?.candidate_id ?? null;
   const [selectedId, setSelectedId] = useState<string | null>(initial);
@@ -281,6 +314,14 @@ export default function OptimizeView({
   const constraints = def.constraints;
   const baseGuided = design?.noc_guided as Record<string, number | string | boolean | null> | undefined;
   const certified = optimization.result_class === 'CERTIFIED_PRODUCT';
+  // A study may carry two objectives that are the SAME semantic family in
+  // different units. That is not a Pareto study, so the registry's verdict
+  // gates the vocabulary as well as the objective count.
+  const multiObjective = objectives.length >= 2 && multiObjectiveAvailable;
+  // The candidate carrying no GUIDED change is the BASE design.
+  const baseCandidateId = optimization.candidates.find(
+    (c) => Object.keys(c.guided_patch ?? {}).length === 0,
+  )?.candidate_id ?? null;
 
   return (
     <div>
@@ -373,7 +414,7 @@ export default function OptimizeView({
                 <th>Evaluation</th>
                 <th>Requirements</th>
                 <th>Constraints</th>
-                <th>Pareto</th>
+                {multiObjective && <th>Pareto</th>}
               </tr>
             </thead>
             <tbody>
@@ -386,10 +427,13 @@ export default function OptimizeView({
                     className={c.candidate_id === selected?.candidate_id ? 'sel' : ''}
                     onClick={() => setSelectedId(c.candidate_id)}
                   >
-                    <td>
-                      <code>{c.candidate_id}</code>
+                    <td title={c.candidate_id}>
+                      <strong>{candidateLabel(c, baseGuided ?? null)}</strong>
                       {c.candidate_id === optimization.selected_candidate_id && (
                         <span className="selected-tag">selected</span>
+                      )}
+                      {c.candidate_id === baseCandidateId && (
+                        <span className="base-tag">base</span>
                       )}
                     </td>
                     {objectives.map((o) => (
@@ -409,24 +453,26 @@ export default function OptimizeView({
                         {rollup.text}
                       </span>
                     </td>
-                    <td>
-                      <span className={`pareto-tag ${pe.class}`} title={c.eligibility_reason ?? 'Pareto-eligible'}>
-                        {pe.label}
-                      </span>
-                    </td>
+                    {multiObjective && (
+                      <td>
+                        <span className={`pareto-tag ${pe.class}`} title={c.eligibility_reason ?? 'Pareto-eligible'}>
+                          {pe.label}
+                        </span>
+                      </td>
+                    )}
                   </tr>
                 );
               })}
             </tbody>
           </table>
           <h4>
-            {objectives.length >= 2
+            {multiObjective
               ? 'Pareto frontier'
-              : objectives.length === 1
+              : objectives.length >= 1
                 ? 'Measured ranking'
                 : 'Objectives'}
           </h4>
-          {objectives.length >= 2 ? (
+          {multiObjective ? (
             paretoPlot(optimization.candidates, objectives, selected?.candidate_id ?? null, setSelectedId)
           ) : objectives.length === 1 ? (
             objectiveRanking(optimization.candidates, objectives[0], selected?.candidate_id ?? null, setSelectedId)
@@ -444,8 +490,34 @@ export default function OptimizeView({
           {selected && (
             <div>
               <div className="kv">
-                <span>candidate</span>
+                <span>design</span>
+                <strong>{candidateLabel(selected, baseGuided ?? null)}</strong>
+              </div>
+              <div className="kv">
+                <span>candidate id</span>
                 <code>{selected.candidate_id}</code>
+              </div>
+              <div className="form-row">
+                {selected.candidate_id === baseCandidateId ? (
+                  <small className="muted">
+                    This is the base design — there is nothing to adopt.
+                  </small>
+                ) : (
+                  <>
+                    <button
+                      className="btn btn-primary"
+                      disabled={usingCandidate || !onUseCandidate}
+                      onClick={() => onUseCandidate?.(selected.candidate_id)}
+                    >
+                      {usingCandidate ? 'Adopting…' : 'Use this candidate'}
+                    </button>
+                    <small className="muted">
+                      Updates the project DRAFT only. The base revision is not
+                      modified — you must Compile to create the next immutable
+                      revision.
+                    </small>
+                  </>
+                )}
               </div>
               <div className="badge-row">
                 <span className="badge-label">compilation</span>

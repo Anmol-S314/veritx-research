@@ -3,7 +3,7 @@ import { api, type JobView, type ProjectView } from '../api';
 import { navigate } from '../router';
 import {
   AsyncView, ErrorBox, JobProgress, Link, useAsync,
-  useJobPoll, useStudio,
+  useJobPoll, useStudio, simulationCapabilityReason,
 } from '../studio';
 import { Hash, StatusBadge } from '../components/badges';
 import DesignViewV2Editor, {
@@ -459,6 +459,15 @@ export function Simulate({ projectId }: { projectId: string }): ReactElement {
               section: 'compile', label: 'Inspect verification',
             };
           }
+          if (p.active_evaluation && !p.active_evaluation.supported) {
+            return {
+              text: simulationCapabilityReason(
+                p.active_evaluation.domain, p.active_evaluation.reason)
+                + ' The fabric is certified; it just cannot be executed by '
+                + 'this backend.',
+              section: 'design', label: 'Edit design',
+            };
+          }
           if (p.draft.dirty) {
             return {
               text: `The draft has uncompiled changes. The active revision is ${current.display_name}; compile to evaluate the new intent.`,
@@ -470,6 +479,7 @@ export function Simulate({ projectId }: { projectId: string }): ReactElement {
         const canRun = Boolean(current)
           && current!.compilation.status === 'COMPILED'
           && current!.certificate?.overall === 'PASS'
+          && (p.active_evaluation?.supported ?? true)
           && !p.draft.dirty && !running
           // The server's preflight verdict is the final gate; the local
           // checks only decide whether a preflight can exist at all.
