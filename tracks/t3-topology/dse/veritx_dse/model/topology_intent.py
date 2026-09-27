@@ -1,4 +1,4 @@
-"""topology_intent — the typed, family-specific topology authority.
+"""topology_intent — the typed, family-specific topology authority (v4).
 
 WHY THIS EXISTS
 ===============
@@ -6,20 +6,34 @@ WHY THIS EXISTS
 `NocConfig` carried `topology_family` + `radix` + `concentration`. That is a
 mesh-shaped vocabulary, and it is already insufficient:
 
-  * GEC needs a grid side, concentration, an express-channel grouping and the
-    number of destinations each express channel reaches;
+  * GEC needs a grid side, concentration, express-channel grouping, a
+    destinations-per-channel count AND a physical mode;
   * FlatFly needs a per-dimension radix, a dimension count and concentration;
   * Torus needs extents and wrap semantics;
-  * fat-tree / dragonfly will need different structural parameters again.
+  * fat-tree needs a switch radix and a level count.
 
 The wrong fix is to let `NocConfig` accumulate every backend parameter. The
 other wrong fix is to expose BookSim's `k`/`n`/`c`/`o`/`d` as the scientific
 API because the backend happens to use those letters.
 
 So topology intent is TYPED. Each variant owns exactly the parameters its
-family's science needs, under scientific names. Backend spellings live only
-in the projection layer, and a parameter that is meaningless for a family is
-not expressible for it.
+family's science needs, under scientific names, and a parameter that is
+meaningless for a family is not expressible for it.
+
+THE CENTRAL LAW (PHASE B.1 §5)
+==============================
+
+    THE INTENT MUST BE ABLE TO EXPRESS THE PHYSICAL DESIGN EVEN WHEN NO
+    MATERIALIZER EXISTS YET.
+
+Authorability and materializability are DIFFERENT stages. A multidrop GEC
+design is real physical science (BookSim implements it over shared, tapped
+`MultiDropChannel`s). Saying "this is a multidrop GEC design" must be legal
+even though the canonical `TopologyArtifact` cannot represent a shared
+resource yet. So the intent accepts it and MATERIALIZATION refuses it.
+
+Refusing MECS *materialization* is correct. Refusing MECS *design intent* is
+not.
 
 WHAT THIS IS NOT
 ================
@@ -28,14 +42,16 @@ Topology intent describes PHYSICAL STRUCTURE only. It never carries a routing
 function, a backend config, a backend profile or a VC policy — routing is
 downstream of topology, and backend projection is downstream of both.
 
-`ExplicitTopologyIntent` is a marker: for an explicit graph the graph IS the
-input (a `TopologyIR`), so there are no shape parameters to type.
+For an explicit graph the graph IS the input, so `ExplicitTopologyIntent`
+carries the `TopologyIR` itself. That keeps v4 to ONE topology field: two
+topology authorities cannot even be expressed, let alone disagree.
 """
 from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, ClassVar
 
 from veritx_dse.core.errors import SemanticError
@@ -63,21 +79,28 @@ class TopologyIntent:
         raise NotImplementedError
 
     def to_dict(self) -> dict[str, Any]:
+        """LOSSLESS persistence form."""
         return {"kind": self.kind, **self.parameters()}
+
+    def scientific_dict(self) -> dict[str, Any]:
+        """IDENTITY projection. Defaults to the lossless form; a variant
+        overrides this only to strip something that is not design science
+        (e.g. an explicit graph's presentation name)."""
+        return self.to_dict()
 
     def intent_id(self) -> str:
         """Content identity of the DECLARED INTENT (not of the artifact).
 
-        Two requests declaring the same topology science have the same
-        intent id regardless of ordering or of unrelated NoC controls.
+        Built from the SCIENTIFIC projection, so an explicit graph's
+        presentation name cannot change which design science this is.
         """
-        body = json.dumps(self.to_dict(), sort_keys=True,
+        body = json.dumps(self.scientific_dict(), sort_keys=True,
                           separators=(",", ":")).encode()
         return "sha256:" + hashlib.sha256(
             b"veritx/topology-intent/v1\0" + body).hexdigest()
 
 
-# ── the typed variants ──────────────────────────────────────────────────────
+# ── named families ──────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class MeshIntent(TopologyIntent):
@@ -155,64 +178,210 @@ class FlatFlyIntent(TopologyIntent):
 
 
 @dataclass(frozen=True)
-class GecExpressIntent(TopologyIntent):
-    """GEC point-to-point express.
+class FatTreeIntent(TopologyIntent):
+    """A hierarchical indirect fat-tree.
 
-    `express_channel_count` express channels leave each router, and each
-    reaches `destinations_per_express_channel` destinations. A value of 1 is
-    the point-to-point (non-tapped) case; values > 1 are the multi-drop
-    (MECS) case, which is NOT representable with ordinary directed channels
-    and is refused here rather than silently flattened.
+    Source: `third_party/booksim2/src/networks/fattree.cpp`. The physical
+    structure is fixed by two facts:
+
+      switch_radix (source `k`)  ports per DIRECTION at a switch. A switch
+                                 therefore has 2*switch_radix total ports,
+                                 except at the top level which has
+                                 switch_radix.
+      level_count  (source `n`)  hierarchy levels.
+
+    From those, endpoint capacity = switch_radix ** level_count and switch
+    count = level_count * switch_radix ** (level_count - 1). The intent
+    carries the STRUCTURE; the derived counts are properties, not knobs.
+
+    Authorable now, materializable later — no materializer is invented here.
     """
-    grid_side_length: int
-    concentration: int
-    express_channel_count: int
-    destinations_per_express_channel: int = 1
-    kind: ClassVar[str] = "gec_express"
+    switch_radix: int
+    level_count: int
+    concentration: int = 1
+    kind: ClassVar[str] = "fattree"
 
     def __post_init__(self):
-        _as_int("grid_side_length", self.grid_side_length, minimum=2)
+        _as_int("switch_radix", self.switch_radix, minimum=2)
+        _as_int("level_count", self.level_count, minimum=1)
         _as_int("concentration", self.concentration, minimum=1)
-        _as_int("express_channel_count", self.express_channel_count, minimum=1)
-        _as_int("destinations_per_express_channel",
-                self.destinations_per_express_channel, minimum=1)
-        if self.destinations_per_express_channel != 1:
-            raise TopologyIntentError(
-                "GEC express with destinations_per_express_channel > 1 is the "
-                "MULTI-DROP (MECS) case: one shared, tapped wire. It is not "
-                "representable as independent point-to-point directed "
-                "channels, so this intent refuses it rather than silently "
-                "flattening a shared resource into N unrelated links. See "
-                "docs/product/capability-archaeology.yaml (GEC-MECS).")
 
     def parameters(self):
-        return {"grid_side_length": self.grid_side_length,
-                "concentration": self.concentration,
-                "express_channel_count": self.express_channel_count,
-                "destinations_per_express_channel":
-                    self.destinations_per_express_channel}
+        return {"switch_radix": self.switch_radix,
+                "level_count": self.level_count,
+                "concentration": self.concentration}
+
+    @property
+    def endpoint_capacity(self) -> int:
+        return (self.switch_radix ** self.level_count) * self.concentration
+
+    @property
+    def switch_count(self) -> int:
+        return self.level_count * self.switch_radix ** (self.level_count - 1)
+
+
+# ── GEC ─────────────────────────────────────────────────────────────────────
+
+class GecMode(str, Enum):
+    """The four physical GEC constructions.
+
+    `mesh` and `hybrid` are mutually exclusive in the source; `mesh` forbids
+    the express-channel partitioning entirely.
+    """
+    MESH = "mesh"
+    EXPRESS = "express"
+    MULTIDROP = "multidrop"
+    HYBRID = "hybrid"
 
 
 @dataclass(frozen=True)
-class ExplicitTopologyIntent(TopologyIntent):
-    """Marker: the physical graph comes from an explicit `TopologyIR`.
+class GecTopologyIntent(TopologyIntent):
+    """GEC (a grid of routers plus long-range express channels).
 
-    Carries no shape parameters on purpose — for an explicit graph the graph
-    IS the input, and duplicating its shape here would create a second
-    authority that could disagree with it.
+    Source: `third_party/booksim2/src/networks/gec.cpp`. Physical facts:
+
+      * a `grid_side_length` x `grid_side_length` grid of routers, each
+        seating `concentration` endpoints;
+      * `express_channel_groups_per_dimension` express-channel groups leave
+        each router per dimension, each group reaching
+        `destinations_per_express_channel` destinations;
+      * for every NON-mesh mode the source law is
+
+            express_channel_groups_per_dimension
+              x destinations_per_express_channel
+              == grid_side_length - 1
+
+        (this is `o * d == k - 1` in the source, and it is the reason the
+        express channels span the grid exactly once);
+      * `mesh` mode is the nearest-neighbour graph ONLY: the partitioning
+        model does not apply, so express parameters are not expressible;
+      * `multidrop` mode is MECS: one shared, tapped wire per express
+        channel, with several destinations reading the same transmission.
+
+    THE MODE IS PHYSICAL SCIENCE, NOT A BACKEND KNOB. `destinations_per_
+    express_channel > 1` is a legal declaration here; whether the canonical
+    artifact can represent a shared resource is a MATERIALIZATION question,
+    answered downstream.
     """
-    kind: ClassVar[str] = "explicit"
+    mode: GecMode
+    grid_side_length: int
+    concentration: int
+    express_channel_groups_per_dimension: int | None = None
+    destinations_per_express_channel: int | None = None
+    kind: ClassVar[str] = "gec"
+
+    def __post_init__(self):
+        mode = self.mode if isinstance(self.mode, GecMode) else GecMode(
+            self.mode)
+        object.__setattr__(self, "mode", mode)
+        _as_int("grid_side_length", self.grid_side_length, minimum=2)
+        _as_int("concentration", self.concentration, minimum=1)
+        groups = self.express_channel_groups_per_dimension
+        dests = self.destinations_per_express_channel
+
+        if mode is GecMode.MESH:
+            if groups is not None or dests is not None:
+                raise TopologyIntentError(
+                    "GEC mesh mode is the NEAREST-NEIGHBOUR graph only: the "
+                    "express-channel partitioning model does not apply to "
+                    "it, so express_channel_groups_per_dimension and "
+                    "destinations_per_express_channel are not expressible "
+                    "(source: gec.cpp refuses mesh=1 with o/d other than "
+                    "1/1). Declare GecMode.EXPRESS to build express "
+                    "channels.")
+            return
+
+        if groups is None or dests is None:
+            raise TopologyIntentError(
+                f"GEC mode {mode.value!r} needs BOTH "
+                "express_channel_groups_per_dimension and "
+                "destinations_per_express_channel: the express channels "
+                "span the grid exactly once, so neither can be defaulted "
+                "without silently inventing a different physical design")
+        _as_int("express_channel_groups_per_dimension", groups, minimum=1)
+        _as_int("destinations_per_express_channel", dests, minimum=1)
+        if mode is GecMode.EXPRESS and dests != 1:
+            raise TopologyIntentError(
+                "GEC express mode is POINT-TO-POINT: each express channel "
+                f"reaches exactly one destination, got {dests}. Use "
+                "GecMode.MULTIDROP for shared/tapped express channels.")
+        if mode is GecMode.MULTIDROP and dests < 2:
+            raise TopologyIntentError(
+                "GEC multidrop (MECS) mode needs "
+                f"destinations_per_express_channel >= 2, got {dests}: with "
+                "one destination per channel there is no shared wire and "
+                "the design is point-to-point express.")
+        if groups * dests != self.grid_side_length - 1:
+            raise TopologyIntentError(
+                "GEC express channels must span the grid exactly once: "
+                "express_channel_groups_per_dimension "
+                f"({groups}) x destinations_per_express_channel ({dests}) "
+                f"= {groups * dests} != grid_side_length - 1 "
+                f"({self.grid_side_length - 1}). This is the source's "
+                "o*d == k-1 law.")
 
     def parameters(self):
-        return {}
+        return {"mode": self.mode.value,
+                "grid_side_length": self.grid_side_length,
+                "concentration": self.concentration,
+                "express_channel_groups_per_dimension":
+                    self.express_channel_groups_per_dimension,
+                "destinations_per_express_channel":
+                    self.destinations_per_express_channel}
 
+    @property
+    def shares_express_channels(self) -> bool:
+        """True when express channels are a SHARED resource (one wire read by
+        several destinations), which ordinary independent directed channels
+        cannot represent."""
+        return (self.destinations_per_express_channel or 1) > 1
+
+
+# ── explicit graph ──────────────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class ExplicitTopologyIntent(TopologyIntent):
+    """An explicit graph IS the topology: the `TopologyIR` is the input.
+
+    Carrying the graph HERE (rather than in a sibling request field) is what
+    keeps v4 to ONE topology field, so two topology authorities cannot even
+    be expressed.
+
+    The graph's scientific content is design identity. Its `name` is
+    presentation and is excluded — a synthesized candidate and the identical
+    hand-authored graph must be the same design science.
+    """
+    graph: Any
+    kind: ClassVar[str] = "explicit"
+
+    def __post_init__(self):
+        from veritx_dse.model.topology_ir import TopologyIR
+        if not isinstance(self.graph, TopologyIR):
+            raise TopologyIntentError(
+                f"explicit topology needs a TopologyIR graph, got "
+                f"{type(self.graph).__name__}")
+        if self.graph.kind not in ("custom", "anynet"):
+            raise TopologyIntentError(
+                f"explicit topology graph kind {self.graph.kind!r} is a "
+                "TEMPLATE: a named family must be declared through its typed "
+                "intent, not as an explicit graph")
+
+    def parameters(self):
+        return {"graph": self.graph.to_dict()}
+
+    def scientific_dict(self):
+        return {"kind": self.kind, "graph": self.graph.scientific_dict()}
+
+
+# ── registry ────────────────────────────────────────────────────────────────
 
 _KIND_TO_CLASS: dict[str, type[TopologyIntent]] = {
     "mesh": MeshIntent,
     "concentrated_mesh": ConcentratedMeshIntent,
     "torus": TorusIntent,
     "flatfly": FlatFlyIntent,
-    "gec_express": GecExpressIntent,
+    "fattree": FatTreeIntent,
+    "gec": GecTopologyIntent,
     "explicit": ExplicitTopologyIntent,
 }
 
@@ -222,11 +391,18 @@ _FIELDS: dict[str, frozenset[str]] = {
     "torus": frozenset({"kind", "side_length", "concentration"}),
     "flatfly": frozenset({"kind", "radix_per_dimension", "dimension_count",
                           "concentration"}),
-    "gec_express": frozenset({"kind", "grid_side_length", "concentration",
-                              "express_channel_count",
-                              "destinations_per_express_channel"}),
-    "explicit": frozenset({"kind"}),
+    "fattree": frozenset({"kind", "switch_radix", "level_count",
+                          "concentration"}),
+    "gec": frozenset({"kind", "mode", "grid_side_length", "concentration",
+                      "express_channel_groups_per_dimension",
+                      "destinations_per_express_channel"}),
+    "explicit": frozenset({"kind", "graph"}),
 }
+
+#: Every topology kind a v4 design may declare. Capability truth DERIVES its
+#: probe coverage from this, so a newly registered kind cannot be silently
+#: ungated (PHASE B.1 §18.1).
+AUTHORABLE_INTENT_KINDS: tuple[str, ...] = tuple(sorted(_KIND_TO_CLASS))
 
 
 def topology_intent_from_dict(d: Any) -> TopologyIntent:
@@ -246,68 +422,100 @@ def topology_intent_from_dict(d: Any) -> TopologyIntent:
             f"(allowed: {sorted(_FIELDS[kind])})")
     cls = _KIND_TO_CLASS[kind]
     kwargs = {k: v for k, v in d.items() if k != "kind"}
+    if kind == "explicit":
+        # The persisted form carries the graph as a plain document; the
+        # in-memory form carries a TopologyIR. Convert HERE and nowhere else,
+        # so a persisted intent always reloads to the same object.
+        from veritx_dse.model.topology_ir import TopologyIR
+        from veritx_dse.model.topology_ir import from_dict as _ir_from_dict
+        raw = kwargs.get("graph")
+        if isinstance(raw, dict):
+            try:
+                kwargs["graph"] = _ir_from_dict(raw, source="topology.graph")
+            except Exception as e:                            # noqa: BLE001
+                raise TopologyIntentError(
+                    f"invalid explicit topology graph: {e}") from e
+        elif not isinstance(raw, TopologyIR):
+            raise TopologyIntentError(
+                "explicit topology needs a graph document or a TopologyIR, "
+                f"got {type(raw).__name__}")
     return cls(**kwargs)
 
 
-# ── the v2 representation / compatibility layer ─────────────────────────────
+def capability_family_label(intent: TopologyIntent) -> str:
+    """The label capability truth reports this intent under.
 
-#: The v2-style spelling (`NocConfig.topology_family`) -> typed intent.
-#: This is the COMPATIBILITY layer: v2 documents keep their meaning, and the
-#: derived intent is the in-memory authority. It is NOT a second authority —
-#: the two can never disagree because one is derived from the other.
+    GEC is ONE registered kind but FOUR physical modes, and they progress
+    differently (mesh/express/multidrop/hybrid all stop at different
+    bridges). Reporting them as one row would hide that, so the label keeps
+    the subfamily. This is a reporting label, never a design parameter.
+    """
+    if isinstance(intent, GecTopologyIntent):
+        return f"gec_{intent.mode.value}"
+    return intent.kind
+
+
+# ── v2/v3 representation compatibility layer ────────────────────────────────
+
+#: Frozen v3 default concentration for concentrated mesh, used ONLY by the
+#: migration. It is a literal on purpose: reading a mutable current default
+#: would make a migration's meaning depend on when it ran.
+V3_CONCENTRATED_MESH_DEFAULT_CONCENTRATION = 4
+
+
 def topology_intent_from_noc_config(
         family: Any, *, radix: int | None, concentration: int | None,
 ) -> TopologyIntent:
-    """Derive a typed intent from the v2-style family + shape spelling."""
+    """Derive a typed intent from the LEGACY (v2/v3) family + shape spelling.
+
+    This is the compatibility layer used by the internal normalization seam.
+    It is NOT a second authority: the typed intent is derived from the legacy
+    spelling, so the two can never disagree.
+
+    It deliberately REFUSES families whose legacy spelling does not determine
+    a physical design (GEC's four modes, fat-tree's structure) rather than
+    defaulting to a plausible-looking guess.
+    """
     value = getattr(family, "value", family)
     conc = concentration or 1
     if value in (None, "mesh"):
         return MeshIntent(side_length=radix or 1, concentration=conc)
     if value == "concentrated_mesh":
-        return ConcentratedMeshIntent(side_length=radix or 1,
-                                      concentration=max(2, conc))
+        return ConcentratedMeshIntent(
+            side_length=radix or 1,
+            concentration=concentration
+            or V3_CONCENTRATED_MESH_DEFAULT_CONCENTRATION)
     if value == "torus":
         return TorusIntent(side_length=radix or 1, concentration=conc)
     if value == "flatfly":
-        return FlatFlyIntent(radix_per_dimension=radix or 4,
-                             dimension_count=2, concentration=conc)
-    if value == "gec":
-        return GecExpressIntent(grid_side_length=radix or 8,
-                                concentration=conc,
-                                express_channel_count=1)
+        raise TopologyIntentError(
+            "the legacy 'flatfly' spelling does not determine a physical "
+            "design: a flattened butterfly needs a per-dimension radix, a "
+            "dimension count and a concentration, and the legacy shape "
+            "carries only one number. Supply a FlatFlyIntent instead of "
+            "guessing which of the three it meant.")
+    if value in ("gec", "fattree", "fat_tree"):
+        raise TopologyIntentError(
+            f"the legacy {value!r} spelling does not determine a physical "
+            "design: it carries no mode/structure. Supply a "
+            f"{'GecTopologyIntent' if value == 'gec' else 'FatTreeIntent'} "
+            "explicitly — no default to the source's internal fallback.")
     if value == "custom":
-        return ExplicitTopologyIntent()
+        raise TopologyIntentError(
+            "the legacy 'custom' spelling names an explicit GRAPH, which "
+            "must be carried by an ExplicitTopologyIntent(graph=...) — the "
+            "graph is the design, so it cannot be derived from a family name")
     raise TopologyIntentError(
         f"topology family {value!r} has no typed intent: it is RECOGNIZED "
         "and AUTHORABLE but no intent variant exists for it yet — no silent "
         "fallback to another family's parameters")
 
 
-def migrate_topology_intent(family: Any, *, radix: int | None,
-                            concentration: int | None
-                            ) -> tuple[TopologyIntent, dict[str, Any]]:
-    """v2-style spelling -> (typed intent, NON-SEMANTIC provenance).
-
-    The provenance records that a migration happened and what it read. It is
-    linkage only: it must never enter a design identity, or a migrated
-    document would differ from the identical hand-written one.
-    """
-    intent = topology_intent_from_noc_config(
-        family, radix=radix, concentration=concentration)
-    provenance = {
-        "migrated_from": "noc_config.topology_family",
-        "read": {"topology_family": getattr(family, "value", family),
-                 "radix": radix, "concentration": concentration},
-        "intent_kind": intent.kind,
-        "intent_id": intent.intent_id(),
-    }
-    return intent, provenance
-
-
 __all__ = [
-    "TopologyIntent", "TopologyIntentError",
+    "TopologyIntent", "TopologyIntentError", "GecMode",
     "MeshIntent", "ConcentratedMeshIntent", "TorusIntent", "FlatFlyIntent",
-    "GecExpressIntent", "ExplicitTopologyIntent",
+    "FatTreeIntent", "GecTopologyIntent", "ExplicitTopologyIntent",
+    "AUTHORABLE_INTENT_KINDS", "capability_family_label",
     "topology_intent_from_dict", "topology_intent_from_noc_config",
-    "migrate_topology_intent",
+    "V3_CONCENTRATED_MESH_DEFAULT_CONCENTRATION",
 ]
