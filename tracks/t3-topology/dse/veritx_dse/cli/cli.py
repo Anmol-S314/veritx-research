@@ -1087,6 +1087,75 @@ def _cmd_serve_legacy(ctx: Ctx, args):
         fail(ctx, f"Simulation error: {e}")
 
 
+class _UvmInputError(ValueError):
+    """The UVM generator cannot be given a truthful fabric description."""
+
+
+def _uvm_generation_input(doc: dict, args) -> dict:
+    """Derive the UVM fabric size from the COMPILED artifact, not from flags.
+
+    Two defects this closes:
+
+    * the size came from `--nodes`/`--k`, defaulting to 64/8, so a testbench
+      could describe a fabric that has nothing to do with the design;
+    * only a v2 `CompileRequest` was accepted, so a v3 revision document could
+      not be used at all even though v3 is what the product produces.
+
+    The size is now taken from the canonical materialized topology. A v3
+    request is REFUSED with a clear reason rather than silently generated
+    from a guessed size — `generate_uvm` still derives its VC structure with
+    the v2 path, and pretending otherwise would emit collateral for a design
+    nobody compiled.
+    """
+    from veritx_dse.model.compile_model import CompileRequest, CompileRequestV3
+
+    request = None
+    try:
+        request = CompileRequest.from_dict(doc)
+    except Exception:                                       # noqa: BLE001
+        pass
+
+    if request is None:
+        will_be_v3 = (isinstance(doc, dict)
+                      and doc.get("schema_version") == 3)
+        if will_be_v3:
+            raise _UvmInputError(
+                "this is a v3 revision document. UVM generation still derives "
+                "its VC structure with the v2 `derive_vc_assignment` path, "
+                "which is a DIFFERENT authority from v3's declared-class VC "
+                "policy. Generating collateral from it would describe a "
+                "fabric the compiler never produced, so this is refused rather "
+                "than silently approximated. Wire the canonical "
+                "Compilation/ResolvedFabricBundle input first "
+                "(PRODUCT-CONVERGENCE-V1 item G).")
+        raise _UvmInputError("unrecognised design document (expected a v2 "
+                             "CompileRequest)")
+
+    # Size from the canonical materializer, not from flags.
+    n_nodes = None
+    k = None
+    try:
+        from veritx_dse.application.fabric_compiler import FabricCompiler
+        compilation = FabricCompiler().compile(request)
+        topology = getattr(compilation.bundle, "topology", None)
+        if topology is not None:
+            n_nodes = topology.router_count
+            import math as _math
+            root = _math.isqrt(n_nodes)
+            k = root if root * root == n_nodes else None
+    except Exception:                                       # noqa: BLE001
+        n_nodes = None
+
+    if n_nodes is None:
+        # No compiled artifact to stand on: fall back to the flags but SAY SO,
+        # so the caller is never told a derived size it did not get.
+        return {"request": request, "n_nodes": args.nodes, "k": args.k,
+                "source": "arg"}
+    return {"request": request, "n_nodes": n_nodes,
+            "k": k if k is not None else args.k,
+            "source": "compiled-topology"}
+
+
 def cmd_generate_uvm(ctx: Ctx, args):
     """Generate UVM testbench from CompileRequest."""
     from veritx_dse.model.compile_model import CompileRequest, derive_vc_assignment
@@ -1098,16 +1167,25 @@ def cmd_generate_uvm(ctx: Ctx, args):
         return
 
     try:
-        cr = CompileRequest.from_dict(json.loads(Path(cr_path).read_text()))
-    except Exception as e:
-        fail(ctx, f"Failed to parse CompileRequest: {e}")
+        doc = json.loads(Path(cr_path).read_text())
+        generation = _uvm_generation_input(doc, args)
+    except _UvmInputError as e:
+        fail(ctx, f"Cannot generate UVM: {e}")
         return
 
+    cr = generation["request"]
     banner(ctx, f"Generate UVM: {cr.workload.model_name or cr.workload.model_family.value}")
-    log(ctx, f"Nodes: {args.nodes}, k: {args.k}")
+    if generation["source"] == "arg":
+        # Honest about where the size came from: it was NOT derived from a
+        # compiled artifact, so the testbench describes a declared size.
+        fail(ctx, "UVM node count was supplied on the command line and could "
+                  "not be checked against a compiled fabric")
+    log(ctx, f"Nodes: {generation['n_nodes']}, k: {generation['k']} "
+             f"(source: {generation['source']})")
     log(ctx, f"Routing: {derive_vc_assignment(cr).routing_function} (LOCKED)")
 
-    result = generate_uvm(cr, n_nodes=args.nodes, k=args.k)
+    result = generate_uvm(cr, n_nodes=generation["n_nodes"],
+                          k=generation["k"])
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)

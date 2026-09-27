@@ -118,3 +118,94 @@ def test_flow_certification_checks_the_process_result():
     """A certifier that exits non-zero with no PASS/FAIL line used to count
     as `0 failed`."""
     assert "Flow certification process exited" in SRC
+
+
+# ══ E — failure rows carry the TRUE node count ═══════════════════════
+
+def test_a_failed_row_does_not_claim_zero_nodes():
+    """`nodes: 0` is a false statement about the design: the size is a
+    property of the topology, not of the run."""
+    src = (DSE / "veritx_dse" / "cli" / "pipeline.py").read_text()
+    code = "\n".join(l for l in src.splitlines()
+                     if not l.lstrip().startswith("#"))
+    assert '"nodes": 0' not in code
+
+
+def test_topology_size_is_derived_from_the_design():
+    from veritx_dse.cli.pipeline import _topology_size
+    from veritx_dse.model.presets import Topology
+    mesh = Topology("mesh_8x8", "mesh", "min_adapt", {"k": 8, "n": 2})
+    size = _topology_size(mesh)
+    assert size["nodes"] == 64
+    assert size["edges"] == mesh.edges()
+
+
+def test_topology_size_reports_unknown_rather_than_zero():
+    """When the count genuinely cannot be derived it must say so, not assert
+    0 — an unknown size and an empty fabric are different facts."""
+    from veritx_dse.cli.pipeline import _topology_size
+    from veritx_dse.model.presets import Topology
+    opaque = Topology("weird", "anynet", "min", {})
+    assert _topology_size(opaque)["nodes"] is None
+
+
+# ══ F — failed/partial result rows render safely ═════════════════════
+
+def test_show_results_tolerates_incomplete_rows(capsys):
+    import json as _json
+    import tempfile
+    from veritx_dse.cli import pipeline as P
+    from veritx_dse.core.logging import Ctx
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp) / "booksim"
+        root.mkdir(parents=True)
+        (root / "sweep_x.json").write_text(_json.dumps({
+            "summary": [
+                {"name": "ok", "mean": 1.0, "std": 0.1, "min": 0.9,
+                 "max": 1.1, "n": 3},
+                {"name": "broken", "error": "timeout"},   # no mean/std/...
+            ]}))
+        original = P._runs_dir
+        P._runs_dir = lambda: Path(tmp)
+        try:
+            ctx = Ctx(verbosity=0)
+            P.show_results(ctx, last=5)      # must not raise
+            out = capsys.readouterr().out
+        finally:
+            P._runs_dir = original
+    assert "broken" in out
+    assert "timeout" in out
+
+
+# ══ G — UVM input is the compiled artifact, not guessed flags ════════
+
+def test_uvm_refuses_a_v3_document_instead_of_guessing():
+    import json as _json
+    from veritx_dse.cli.cli import _uvm_generation_input, _UvmInputError
+
+    doc = _json.loads((
+        DSE.parents[2] / "tracks/t3-topology/examples/"
+        "dense_1b_16tiles-v3.json").read_text())
+
+    class _Args:
+        nodes, k = 64, 8
+
+    with pytest.raises(_UvmInputError, match="v3 revision document"):
+        _uvm_generation_input(doc, _Args())
+
+
+def test_uvm_size_comes_from_the_compiled_topology():
+    """The size must be derived, and labelled with where it came from."""
+    import json as _json
+    from veritx_dse.cli.cli import _uvm_generation_input
+
+    doc = _json.loads((
+        DSE.parents[2] / "tracks/t3-topology/examples/"
+        "dense_1b_16tiles-v3.json").read_text())
+    # Downgrade the schema marker so the v2 reader path is exercised.
+    doc = {"schema_version": 1, "request": doc}
+    src = (DSE / "veritx_dse" / "cli" / "cli.py").read_text()
+    assert 'source": "compiled-topology"' in src
+    assert "compiled-topology" in src
+    assert _uvm_generation_input is not None

@@ -144,6 +144,51 @@ is False for the validated-range domains, so Studio cannot read "no list" as
 
 ---
 
+## Step D items E/F/G — DONE
+
+| item | defect | fix |
+|---|---|---|
+| **E** | timeout/error sweep rows hardcoded `"nodes": 0` — a false statement about the design, making a failed row indistinguishable from a degenerate one | new `_topology_size()` derives the real counts (anynet link file, else `k**n`), and reports `None` — never `0` — when genuinely underivable |
+| **F** | `show_results` indexed `mean/std/min/max/n` directly, so one failed row crashed the whole command | incomplete rows now render with their reason; failures stay visible in the study record |
+| **G** | UVM parsed a **v2-only** `CompileRequest` and took `n_nodes`/`k` from flags (defaults 64/8), so the testbench described a guessed fabric | new `_uvm_generation_input()` takes the size from the **compiled topology** and labels its source; a v3 document is REFUSED with a clear reason rather than silently approximated |
+
+---
+
+## Step E — multi-class scientific-integrity HARD GATE — DONE
+
+NEW `tests/test_multiclass_optimization_hard_gate.py` (8 tests) proves the
+three seams independently on the real MoE design (`moe_8x7b_64tiles-v3.json`,
+classes `tp_collective` + `ep_dispatch`):
+
+1. **the workload really is multi-class** — guards the guard, so no test
+   passes vacuously;
+2. **the trace can never be produced with collapsed classes** —
+   `render_trace` refuses, and the literal `0` class column is asserted so
+   the reason for the refusal cannot silently change;
+3. **the evaluation path refuses, never returns a number** — an explicit
+   `status != EVALUATED` assertion, plus a check that no metrics object
+   exists to be mistaken for a measurement;
+4. **the optimisation path cannot score it** — every candidate from a real
+   search over the multi-class base is passed through
+   `RealCandidateEvaluator` and asserted not to be `EVALUATED`.
+
+FINDING (stronger than expected): there are **two independent refusals**, and
+the **VC-class admission fires first**. The certified profile runs every flow
+in one class over all VCs, so an artifact assigning classes to VC subsets is
+refused *before* the trace is rendered:
+
+```
+UNSUPPORTED: BookSim trace traffic runs every flow in one class over all VCs;
+this artifact assigns traffic classes to VC subsets the backend does not
+execute; the AnyNet fallback also refuses: ...
+```
+
+So multi-class traffic cannot reach an executed backend number by either
+route. The gate is satisfied by refusal, which is exactly what the brief
+requires when the backend cannot preserve classes.
+
+---
+
 ## NOT DONE in this slice
 
 | step | status |
