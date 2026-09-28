@@ -25,11 +25,14 @@ from veritx_dse.backend.registry import BackendRegistry  # noqa: E402
 
 
 class _Ctx:
-    """Minimal stand-in: the planner reads design/bundle hashes only."""
+    """Minimal stand-in: the planner reads design hash and the bundle's
+    resolved_fabric child hash (the real bundle shape)."""
 
     def __init__(self):
         self.design_hash = "d" * 64
-        self.bundle = type("B", (), {"resolved_fabric_hash": "f" * 64})()
+        self.bundle = type("B", (), {
+            "resolved_fabric": type("RF", (), {
+                "resolved_fabric_hash": "f" * 64})()})()
 
 
 def _assessment(backend="B", support=SupportLevel.SUPPORTED,

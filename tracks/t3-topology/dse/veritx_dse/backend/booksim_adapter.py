@@ -20,8 +20,8 @@ from veritx_dse.application.evaluation_context import (
 )
 from veritx_dse.application.evaluation_question import EvaluationQuestion
 from veritx_dse.backend.adapter import (
-    BackendAdapter, BackendAssessment, BackendCapability, ModelFidelity,
-    PreparedExecution, SupportLevel,
+    BackendAdapter, BackendAssessment, BackendCapability, BackendReadiness,
+    ModelFidelity, PreparedExecution, SupportLevel,
 )
 
 
@@ -127,7 +127,10 @@ class BookSimAdapter:
                 required_parents=self._required_parents(),
                 limitations=self._capabilities[0].limitations)
         try:
-            self._canonical_traffic(context)
+            # the assess gate asserts the lowered intent's own class —
+            # an assertion against the context, never a relabel
+            self._canonical_traffic(
+                context, traffic_class=context.unified_traffic_class)
         except BookSimProjectionRefusal as exc:
             return BackendAssessment(
                 backend_id=self.backend_id, question=question,

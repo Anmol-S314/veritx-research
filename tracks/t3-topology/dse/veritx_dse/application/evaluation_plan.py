@@ -104,12 +104,16 @@ class EvaluationPlanner:
         analyses = tuple(
             self._plan_one(context, question, registry, requested_backend)
             for question in questions)
-        fabric_hash = context.bundle.resolved_fabric_hash
-        if callable(fabric_hash):
-            fabric_hash = fabric_hash()  # RT v1 accessor vs canonical attr
+        # the bundle's fabric identity is its resolved_fabric child's
+        # hash (RT v1 accessor or canonical attribute — same shim the
+        # bundle itself uses)
+        def _hash_of(obj: object, name: str) -> str:
+            value = getattr(obj, name)
+            return value() if callable(value) else value
         return EvaluationPlan(
             design_hash=context.design_hash,
-            resolved_fabric_hash=fabric_hash,
+            resolved_fabric_hash=_hash_of(
+                context.bundle.resolved_fabric, "resolved_fabric_hash"),
             analyses=analyses)
 
     def _plan_one(
