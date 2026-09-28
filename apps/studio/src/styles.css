@@ -2040,3 +2040,31 @@ p, li { text-wrap: pretty; }
   background: var(--bg-raise);
   font-size: 13px;
 }
+
+/* ── Compile console (engineering summary + inspectors) ─────────────── */
+.row-selected { background: var(--bg-raise); }
+.row-selected td:first-child { border-left: 2px solid var(--accent); }
+
+.empty-state {
+  padding: 12px;
+  border: 1px dashed var(--border);
+  background: var(--bg-raise);
+  font-size: 13px;
+}
+.empty-state p { margin: 0 0 6px; }
+
+.claim-compact { margin: 0 0 8px; padding-left: 18px; }
+.claim-compact li { margin-bottom: 4px; font-size: 13px; }
+
+.finding-list { margin: 0; padding-left: 18px; }
+.finding-list li { margin-bottom: 6px; font-size: 13px; }
+
+.action-list { margin: 0; padding-left: 0; list-style: none; }
+.action-list li { margin-bottom: 8px; }
+
+.btn-disabled { opacity: 0.55; cursor: not-allowed; }
+
+.readiness-blocked { border-left-color: var(--bad); color: var(--bad); }
+
+.artifact-jumps { margin-top: 8px; }
+.artifact-jumps label { display: flex; gap: 8px; align-items: center; font-size: 13px; }

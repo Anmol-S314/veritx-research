@@ -53,13 +53,17 @@ function isWrap(a: TopologyView['routers'][number] | undefined,
 }
 
 export default function FabricInspector2D({
-  topology, route = null, showRoute = false, onSelectionChange,
+  topology, route = null, showRoute = false, onSelectionChange, external,
 }: {
   topology: TopologyView;
   /** The canonical DERIVED EXPECTED route to overlay, if any. */
   route?: RouteResult | null;
   showRoute?: boolean;
   onSelectionChange?: (selection: FabricSelectionState) => void;
+  /** Cross-inspector highlight: an entity selected in another inspector
+   * (Mapping, Routing, Address Decode) renders highlighted here even
+   * though the click happened elsewhere. Identifiers only. */
+  external?: FabricSelectionState | null;
 }): ReactElement {
   const [selection, setSelection] = useState<FabricSelectionState>(
     { kind: null });
@@ -186,6 +190,12 @@ export default function FabricInspector2D({
   const selectedEndpoints = selection.kind === 'router'
     ? topology.endpoints.filter((e) => e.router_id === selection.id)
     : [];
+  /** An entity is highlighted when selected here OR in another inspector. */
+  const isExternal = (kind: 'router' | 'channel' | 'endpoint',
+                      id: number): boolean =>
+    external?.kind === kind && external?.id === id;
+  const isRouterHi = (id: number): boolean =>
+    (selection.kind === 'router' && selection.id === id) || isExternal('router', id);
 
   return (
     <div className="fabric-inspector">
@@ -229,11 +239,12 @@ export default function FabricInspector2D({
           const pa = pos(link.a);
           const pb = pos(link.b);
           const onRoute = showRoute && routeChannelIds.has(link.channelId);
+          const externallyHi = isExternal('channel', link.channelId);
           const classes = [
             'cv-link',
             link.wrap ? 'cv-link-wrap' : '',
-            onRoute ? 'cv-link-route' : '',
-            showRoute && !onRoute ? 'cv-link-subdued' : '',
+            onRoute || externallyHi ? 'cv-link-route' : '',
+            showRoute && !onRoute && !externallyHi ? 'cv-link-subdued' : '',
           ].filter(Boolean).join(' ');
           if (link.wrap) {
             // A wraparound is drawn as an arc bulging away from the fabric
@@ -290,8 +301,7 @@ export default function FabricInspector2D({
                   'cv-router',
                   'cv-clickable',
                   onRoute ? 'cv-router-route' : '',
-                  selection.kind === 'router'
-                    && selection.id === router.router_id
+                  isRouterHi(router.router_id)
                     ? 'cv-router-selected' : '',
                 ].filter(Boolean).join(' ')}
                 onClick={() => select({ kind: 'router', id: router.router_id })}
@@ -335,8 +345,9 @@ export default function FabricInspector2D({
               className={[
                 'cv-endpoint',
                 `cv-endpoint-${endpoint.kind}`,
-                selection.kind === 'endpoint'
-                  && selection.id === endpoint.endpoint_id
+                isExternal('endpoint', endpoint.endpoint_id)
+                || (selection.kind === 'endpoint'
+                  && selection.id === endpoint.endpoint_id)
                   ? 'cv-endpoint-selected' : '',
               ].join(' ')}
               onClick={() => select({ kind: 'endpoint',
