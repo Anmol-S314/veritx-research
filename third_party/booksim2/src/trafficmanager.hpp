@@ -48,6 +48,11 @@
 class PacketReplyInfo;
 
 class TrafficManager : public Module {
+protected:
+  // booksim2-fork/v2: per-class flag — true when the class's injection
+  // process is trace-driven. Trace classes share ONE physical injection
+  // port per source (see _Inject).
+  vector<bool> _trace_driven_class;
 
 private:
 

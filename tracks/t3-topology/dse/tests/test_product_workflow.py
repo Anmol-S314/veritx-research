@@ -1190,15 +1190,15 @@ def test_reproduce_endpoint_contract(tmp_path):
 def test_concentrated_revision_evaluates_after_cmesh_profile(tmp_path):
     """Phase 2 acceptance: the shipped concentrated template lowers (TP
     allreduce), selects CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1, and evaluates —
-    the old mesh-DOR seat_capacity refusal is gone. MoE stays honestly
-    refused at the profile gate until multi-class execution lands."""
+    the old mesh-DOR seat_capacity refusal is gone. Phase 3 added the
+    certified multi-class mesh profile, so the static declared-op MoE
+    workload is simulatable too (its classes execute as declared)."""
     client = _client(tmp_path, with_backend=False)
     catalog = client.get("/api/v1/catalog/workloads").json()["workloads"]
     moe = next(w for w in catalog
                if w["workload_id"] == "moe-8x7b-64tiles")
-    assert moe["evaluation_supported"] is False
-    assert moe["evaluation_domain"] == "backend_profile"
-    assert "VC" in (moe["evaluation_note"] or "")
+    assert moe["evaluation_supported"] is True, moe
+    assert moe["evaluation_domain"] is None
 
     conc = next(w for w in catalog
                 if w["workload_id"] == "dense-4b-32tiles-conc4")
@@ -1227,36 +1227,42 @@ def test_concentrated_revision_evaluates_after_cmesh_profile(tmp_path):
 
 
 def test_unevaluable_moe_revision_refuses_simulation_honestly(tmp_path):
-    """A certified MoE revision lowers (declared-ops law) and its
-    per-message classes reach the profile gate, where the certified
-    BookSim profile cannot execute them: the catalog, the project view
-    and the submit gate must all state that exact reason, and the
-    refusal is typed (422) rather than an internal error."""
+    """A workload the certified chain cannot execute is refused honestly,
+    with the REAL gate named and the refusal domain typed. Multi-class
+    traffic now has a certified profile (Phase 3), so the pinning case is
+    a workload whose fabric itself leaves the certified envelope: a
+    concentrated mesh with c == 2, which the fork's cmesh assertion and
+    the mesh-DOR profile both refuse. The refusal is derived by the
+    backend-independent assessment, so it holds with no binary present.
+    """
+    from veritx_dse.core.paths import REPO
+    doc = json.loads(
+        (REPO / "tracks/t3-topology/examples/"
+         "dense_4b_32tiles_conc4-v3.json").read_text())
+    doc.pop("design_hash", None)
+    doc.pop("guardrail_hash", None)
+    doc["noc_config"] = dict(doc["noc_config"])
+    doc["noc_config"]["concentration"] = 2  # fork asserts c == 4
+    from veritx_dse.model.compile_model import CompileRequestV3
+    from veritx_dse.application.fabric_compiler import FabricCompiler
+    from veritx_dse.product.service import ProductConfig, ProductService
+    request = CompileRequestV3.from_dict(doc)
+    compilation = FabricCompiler().compile(request)
+    if compilation.status != "COMPILED" or compilation.bundle is None:
+        pytest.skip(f"concentration=2 does not compile: {compilation.error}")
+    svc = ProductService(ProductConfig(projects_root=tmp_path))
+    assessment = svc._assess_compilation(request, compilation)
+    assert assessment["supported"] is False, assessment
+    assert assessment["domain"] == "backend_profile"
+    assert "c == 4" in (assessment["reason"] or "") \
+        or "seat_capacity" in (assessment["reason"] or ""), \
+        assessment["reason"]
+
+    # ...and the shipped MoE workload now flows through the certified
+    # multi-class profile (the old profile refusal is gone).
     client = _client(tmp_path, with_backend=False)
     catalog = client.get("/api/v1/catalog/workloads").json()["workloads"]
     moe = next(w for w in catalog
                if w["workload_id"] == "moe-8x7b-64tiles")
-    assert moe["evaluation_supported"] is False
-    assert moe["evaluation_domain"] == "backend_profile"
-    assert "VC" in (moe["evaluation_note"] or "")
-
-    resp = client.post("/api/v1/projects",
-                       json={"name": "MoE Study",
-                             "workload_id": "moe-8x7b-64tiles"})
-    assert resp.status_code == 200, resp.text
-    pid = resp.json()["project"]["project_id"]
-    revision = client.post(f"/api/v1/projects/{pid}/compile").json()
-    assert revision["compilation"]["status"] == "COMPILED"
-    assert revision["certificate"]["overall"] == "PASS"
-
-    project = client.get(f"/api/v1/projects/{pid}").json()
-    support = project["active_evaluation"]
-    assert support["supported"] is False
-    assert support["domain"] == "backend_profile"
-    assert "VC" in (support["reason"] or "")
-
-    refused = client.post(
-        f"/api/v1/revisions/{revision['revision_id']}/evaluate",
-        json={"backend": None})
-    assert refused.status_code == 422, refused.text
-    assert refused.json()["code"] == "UNSUPPORTED_SEMANTICS"
+    assert moe["evaluation_supported"] is True, moe
+    assert moe["evaluation_domain"] is None

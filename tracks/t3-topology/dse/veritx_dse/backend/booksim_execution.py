@@ -78,6 +78,11 @@ _INJECTED_RE = re.compile(r"injected=(\d+)")
 _DELIVERED_RE = re.compile(r"Trace replay complete: delivered (\d+) packets")
 _FLITS_INJECTED_RE = re.compile(r"VeritX: injected flits total = (\d+)")
 _FLITS_ACCEPTED_RE = re.compile(r"VeritX: accepted flits total = (\d+)")
+#: booksim2-fork/v2 per-class counters (booksim_execution law: each trace
+#: class must conserve independently — a total-only check cannot see a
+#: collapsed or swapped class)
+_CLASS_FLITS_RE = re.compile(
+    r"VeritX: class (\d+) injected flits = (\d+), accepted flits = (\d+)")
 #: tokens the fork prints when a statistic has no samples
 UNAVAILABLE_TOKENS = ("-", "nan", "-nan", "+nan", "inf", "-inf", "+inf",
                       "infinity", "-infinity")
@@ -277,6 +282,12 @@ def parse_booksim_stats(stdout: str, stderr: str) -> dict[str, Any]:
 
     hops = {int(rank): [float(v) for v in values.split(",") if v]
             for rank, values in _HOPS_RE.findall(stdout)}
+    # booksim2-fork/v2 per-class conservation counters:
+    #   VeritX: class N injected flits = X, accepted flits = Y
+    flits_by_class: dict[int, dict[str, int]] = {}
+    for rank_s, inj_s, acc_s in _CLASS_FLITS_RE.findall(combined):
+        flits_by_class[int(rank_s)] = {"injected": int(inj_s),
+                                       "accepted": int(acc_s)}
     unstable = _UNSTABLE_TOKEN in stdout or _UNSTABLE_TOKEN in stderr
     abort = next((token for token in _ABORT_TOKENS
                   if token in stdout or token in stderr), None)
@@ -296,6 +307,8 @@ def parse_booksim_stats(stdout: str, stderr: str) -> dict[str, Any]:
         "delivered_packets": delivered,
         "flits_injected": flits_injected,
         "flits_accepted": flits_accepted,
+        # per-class counters (booksim2-fork/v2, trace-driven classes only)
+        "flits_by_class": flits_by_class,
         "simulation_unstable": unstable,
         "abort_token": abort,
     }
@@ -303,6 +316,7 @@ def parse_booksim_stats(stdout: str, stderr: str) -> dict[str, Any]:
 
 def assert_execution_gate(stats: dict[str, Any], *, expected_packets: int,
                           expected_flits: int | None = None,
+                          expected_flits_by_class: dict[int, int] | None = None,
                           require_conservation: bool = False) -> None:
     """The scientific gate for a trace-driven run.
 
@@ -352,6 +366,24 @@ def assert_execution_gate(stats: dict[str, Any], *, expected_packets: int,
             raise BookSimExecutionError(
                 f"flit conservation failed: injected {flits_in} != accepted "
                 f"{flits_accepted}")
+    if expected_flits_by_class:
+        # booksim2-fork/v2 per-class law: every executed class must
+        # conserve its own flits. A missing counter for a declared class
+        # means the class never executed — refused, never assumed.
+        per_class = stats.get("flits_by_class") or {}
+        for class_index, expected in sorted(expected_flits_by_class.items()):
+            counters = per_class.get(class_index)
+            if counters is None:
+                raise BookSimExecutionError(
+                    f"class conservation evidence missing: the backend did "
+                    f"not emit per-class flit counters for trace class "
+                    f"{class_index}")
+            if counters["injected"] != expected \
+                    or counters["accepted"] != expected:
+                raise BookSimExecutionError(
+                    f"class {class_index} flit conservation failed: "
+                    f"injected {counters['injected']} / accepted "
+                    f"{counters['accepted']} != declared {expected}")
     completion = stats.get("completion_cycles")
     if completion is None or completion < 0:
         raise BookSimExecutionError(
@@ -450,9 +482,18 @@ def execute_prepared_booksim(
             f"{(outcome.stderr or '')[-300:]}")
 
     stats = parse_booksim_stats(outcome.stdout, outcome.stderr)
+    # per-class declared flits, keyed by the trace class index the fork
+    # emits (dense index over the bound class map)
+    declared_by_class = (dict(prepared.expected_flits_by_class)
+                         if prepared.expected_flits_by_class else {})
+    expected_by_index = (
+        {i: declared_by_class[cls]
+         for i, cls in enumerate(prepared.trace_class_map)}
+        if prepared.trace_class_map else None)
     assert_execution_gate(
         stats, expected_packets=prepared.expected_packets,
         expected_flits=prepared.expected_flits,
+        expected_flits_by_class=expected_by_index,
         require_conservation=(
             transport != EXECUTION_TRANSPORT_TEST_INJECTED))
 

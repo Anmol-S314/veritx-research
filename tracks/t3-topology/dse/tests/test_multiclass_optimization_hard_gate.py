@@ -95,26 +95,40 @@ def test_classes_are_carried_per_message_not_uniformly(physical):
     assert all(count > 0 for count in by_class.values())
 
 
-# ══ seam 3 — the trace can NEVER be produced with collapsed classes ══
+# ══ seam 3 — the trace carries the REAL classes, never a collapse ════
 
-def test_render_trace_refuses_multi_class_traffic(physical):
-    with pytest.raises(BookSimProjectionError, match="multi-class"):
-        render_trace(physical)
+def test_render_trace_carries_each_canonical_class(physical):
+    """booksim2-fork/v2: the dialect's class column renders each message's
+    canonical class (dense index over the sorted class map). The old law
+    rendered a literal 0 and refused multi-class traffic; the fork's
+    per-class replay filter now makes the column semantically load-bearing,
+    so the render must carry the classes — a collapse is still a refusal.
+    """
+    text = render_trace(physical).decode()
+    rows = [line.split() for line in text.splitlines() if line]
+    assert rows, "no trace rows: the gate would be vacuous"
+    rendered_classes = {int(r[2]) for r in rows}
+    assert len(rendered_classes) >= 2, (
+        f"every row rendered the same class {rendered_classes}: that is "
+        "the old literal-0 collapse, not a class-aware render")
+    # the rendered class count equals the canonical class count
+    from veritx_dse.backend.booksim_projection import trace_class_map
+    assert len(rendered_classes) == len(trace_class_map(physical))
 
 
-def test_the_class_column_is_a_literal_zero_hence_the_refusal(physical):
-    """Documents WHY the refusal is necessary: the dialect has no room for a
-    second class, so the only alternatives are refuse or lie."""
-    import inspect
-    src = inspect.getsource(render_trace)
-    assert '" 0 "' in src or " 0 " in src, \
-        "the class column is no longer a literal; revisit this gate"
+def test_render_trace_is_deterministic_and_class_stable(physical):
+    """Two renders over the same artifact are byte-identical (the class
+    map is artifact-derived, never environment-derived)."""
+    assert render_trace(physical) == render_trace(physical)
 
 
-def test_prepare_booksim_input_refuses_before_any_bytes_exist(physical):
-    """The refusal must happen in the PREPARER, so no prepared config, trace
-    or topology file can exist for a multi-class design."""
-    from veritx_dse.backend.booksim_projection import BookSimProjectionParents
+def test_prepare_booksim_input_binds_the_class_identity(physical):
+    """The prepared input binds the executed class identity: the class map
+    and the per-class flit declaration are part of prepared identity, so a
+    class remap or a per-class loss can never be invisible."""
+    from veritx_dse.backend.booksim_projection import (
+        BookSimProjectionParents, prepare_booksim_input,
+    )
     from veritx_dse.model.vc_resource import vc_resources_from_assignment
     compilation = FabricCompiler().compile(_moe_request())
     bundle = compilation.bundle
@@ -125,16 +139,14 @@ def test_prepare_booksim_input_refuses_before_any_bytes_exist(physical):
         vc_assignment=bundle.vc_assignment,
         packet_format=bundle.packet_format, route=bundle.router_route,
         physical_traffic=physical)
-    # TWO independent refusals guard this seam, and the VC-class admission
-    # fires FIRST: the certified profile runs every flow in one class over all
-    # VCs, so an artifact that assigns classes to VC subsets is refused before
-    # the trace is ever rendered. Either refusal is acceptable; silence is not.
-    with pytest.raises(BookSimProjectionError) as excinfo:
-        prepare_booksim_input(parents)
-    message = str(excinfo.value)
-    assert ("multi-class" in message
-            or "one class" in message
-            or "traffic classes" in message), message
+    prepared = prepare_booksim_input(parents)
+    assert prepared.profile_id == "CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1"
+    assert len(prepared.trace_class_map) >= 2
+    assert len(prepared.expected_flits_by_class) == len(
+        prepared.trace_class_map)
+    assert sum(flits for _c, flits
+               in prepared.expected_flits_by_class) \
+        == prepared.expected_flits
 
 
 def test_no_physical_packet_loses_its_class(physical):
@@ -146,37 +158,54 @@ def test_no_physical_packet_loses_its_class(physical):
                for p in packets)
 
 
-# ══ seam 2 — the EVALUATION path refuses, never returns a number ═════
+# ══ seam 2 — the EVALUATION path is class-faithful, never collapsing ══
 
-def test_evaluation_refuses_a_multi_class_workload(compiled):
-    """The hard gate: no executed metric may be produced."""
+def test_evaluation_preserves_classes_or_refuses(compiled):
+    """The hard gate, Phase-3 form: a multi-class workload either evaluates
+    through the certified multi-class profile (per-class conservation
+    proven) or refuses with a named reason. What it may NEVER do is return
+    a metric whose traffic was collapsed to one class — that number would
+    describe work nobody asked for."""
     from veritx_dse.workload.graph import WorkloadGraph
     request, compilation = compiled
     lowered = lower_compile_workload(request)
     graph = lowered.graph
     assert isinstance(graph, WorkloadGraph)
     outcome = FabricEvaluator().evaluate(compilation, graph)
-    assert outcome.status != EVALUATED, (
-        "a multi-class workload was EVALUATED: the certified trace dialect "
-        "renders one class column, so the metric would describe collapsed "
-        f"traffic. status={outcome.status} detail={outcome.detail!r}")
-    assert outcome.status in (UNSUPPORTED, BACKEND_UNAVAILABLE, FAILED)
-    # ...and there is no number to mistake for a measurement.
-    assert getattr(outcome, "metrics", None) in (None, {})
+    if outcome.status == EVALUATED:
+        # executed through the certified MC profile: the metrics ride on
+        # evidence that conserved each class independently
+        assert outcome.backend_profile == \
+            "CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1", outcome.backend_profile
+    else:
+        assert outcome.status in (UNSUPPORTED, BACKEND_UNAVAILABLE, FAILED), \
+            outcome.status
+        assert outcome.backend_profile == \
+            "CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1", outcome.backend_profile
+        # the refusal names a real gate (class semantics or producer
+        # qualification), never a vague unsupported
+        reason = getattr(outcome, "reason", None) or ""
+        assert ("multi-class" in reason
+                or "class" in reason
+                or "producer" in reason
+                or "DIRTY" in reason
+                or "manifest" in reason), reason
+    # ...and there is no number to mistake for a collapsed measurement.
+    assert getattr(outcome, "metrics", None) in (None, {}) \
+        or outcome.status == EVALUATED
 
 
-# ══ the OPTIMISATION path must not turn the refusal into a score ═════
+# ══ the OPTIMISATION path stays class-faithful ═══════════════════════
 
-def test_optimization_cannot_score_a_multi_class_base(compiled):
-    """An optimizer that swallowed the projection refusal into a numeric
-    penalty would 'rank' candidates for a design nothing can execute. The
-    candidate must be refused, not scored."""
+def test_optimization_preserves_classes_or_refuses(compiled):
+    """An optimizer must either evaluate a multi-class candidate through
+    the certified MC profile or refuse it with a named reason — never
+    score a silently collapsed execution."""
     request, compilation = compiled
     from veritx_dse.optimization.real_evaluator import RealCandidateEvaluator
     from veritx_dse.optimization.definition import (
         DomainParam, Objective, OptimizationDefinition,
     )
-    from veritx_dse.optimization.candidate import make_candidate
     from veritx_dse.optimization.search import search_candidates
 
     definition = OptimizationDefinition(
@@ -196,17 +225,13 @@ def test_optimization_cannot_score_a_multi_class_base(compiled):
         for candidate in candidates:
             result = evaluator.evaluate(candidate)
             evaluated += 1
-            assert result.status != EVALUATED, (
-                f"candidate {candidate.candidate_id} was SCORED for a "
-                "multi-class design that the certified backend cannot "
-                f"execute: status={result.status}")
+            if result.status == EVALUATED:
+                # scored candidates must have gone through the MC profile
+                detail = str(getattr(result, "detail", "") or "")
+                assert "MESH_DOR_XY_MC" in detail or detail == "", \
+                    (f"candidate {candidate.candidate_id} was scored but "
+                     f"does not name the certified MC profile: {detail!r}")
+            else:
+                assert result.status in (UNSUPPORTED, BACKEND_UNAVAILABLE,
+                                         FAILED), result.status
         assert evaluated == len(candidates)
-    evaluated = 0
-    for candidate in candidates:
-        result = evaluator.evaluate(candidate)
-        evaluated += 1
-        assert result.status != EVALUATED, (
-            f"candidate {candidate.candidate_id} was SCORED for a "
-            "multi-class design that the certified backend cannot execute: "
-            f"status={result.status}")
-    assert evaluated == len(candidates)

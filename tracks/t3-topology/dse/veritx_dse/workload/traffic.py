@@ -632,9 +632,10 @@ class PhysicalTrafficArtifactV3(PhysicalTrafficArtifactV2):
     (rank→endpoint binding has no class semantics); only the accepted
     logical version and the identity tag differ, so a V3 physical id can
     never collide with a V2 id. Per-message classes ride on the logical
-    messages — packets stay class-blind, which is exactly why multi-class
-    traffic has no certified trace dialect yet (``render_trace``
-    refuses it) and profile selection refuses execution first.
+    messages — packets stay class-blind. The class-aware trace dialect
+    (booksim2-fork/v2) renders each message's canonical class from the
+    logical authority; the multi-class profile binds the executed class
+    identity into the prepared input.
     """
 
     schema_version: int = PHYSICAL_TRAFFIC_SCHEMA_VERSION_V3

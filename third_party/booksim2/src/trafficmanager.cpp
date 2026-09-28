@@ -128,6 +128,8 @@ TrafficManager::TrafficManager( const Configuration &config, const vector<Networ
     // ============ Traffic ============ 
 
     _classes = config.GetInt("classes");
+    // booksim2-fork/v2: per-class trace-driven flags (see _Inject)
+    _trace_driven_class.assign(_classes, false);
 
     _use_read_write = config.GetIntArray("use_read_write");
     if(_use_read_write.empty()) {
@@ -246,8 +248,15 @@ TrafficManager::TrafficManager( const Configuration &config, const vector<Networ
         // that fires packets at exact timestamps instead of Bernoulli
         TraceTrafficPattern *ttp = dynamic_cast<TraceTrafficPattern*>(_traffic_pattern[c]);
         if (ttp) {
-            _injection_process[c] = new TraceInjectionProcess(_nodes, ttp->trace());
-            std::cerr << "Trace mode: " << ttp->count() << " events, "
+            // booksim2-fork/v2 multi-class law: a class's injection process
+            // replays ONLY the events the trace labels for that class. The
+            // event's own cl column is the authority; replaying the whole
+            // file into every class duplicated each event _classes times
+            // under fabricated class labels.
+            _injection_process[c] = new TraceInjectionProcess(_nodes, ttp->trace(), c);
+            _trace_driven_class[c] = true;
+            std::cerr << "Trace mode: class " << c << " "
+                      << ttp->count() << " file events, "
                       << _nodes << " nodes — using cycle-accurate injection" << std::endl;
         } else {
             _injection_process[c] = InjectionProcess::New(injection_process[c], _nodes, _load[c], &config);
@@ -992,7 +1001,23 @@ void TrafficManager::_Inject(){
     }
 
     for ( int input = 0; input < _nodes; ++input ) {
+        // booksim2-fork/v2: trace-driven classes share ONE physical
+        // injection port per source — a class may only start a new packet
+        // when no trace class still holds a packet mid-injection. Classes
+        // here are disjoint traffic streams (BookSim has no cross-class
+        // bandwidth multiplicity), so the port is the serialization law.
+        // With a single trace-driven class this loop is a no-op.
+        bool source_busy = false;
         for ( int c = 0; c < _classes; ++c ) {
+            if ( _trace_driven_class[c] && !_partial_packets[input][c].empty() ) {
+                source_busy = true;
+                break;
+            }
+        }
+        for ( int c = 0; c < _classes; ++c ) {
+            if ( source_busy && _trace_driven_class[c] ) {
+                continue;
+            }
             // Potentially generate packets for any (input,class)
             // that is currently empty
             if ( _partial_packets[input][c].empty() ) {
@@ -1912,6 +1937,19 @@ bool TrafficManager::Run( )
             }
             cout << "VeritX: injected flits total = " << v_inj << endl
                  << "VeritX: accepted flits total = " << v_acc << endl;
+            // booksim2-fork/v2: per-class conservation evidence — the
+            // verifier binds each trace class's expected flit count to the
+            // class's own counters, so a collapsed or swapped class can
+            // never pass a total-only check.
+            for (int cc = 0; cc < _classes; ++cc) {
+                if (_trace_driven_class.empty() || !_trace_driven_class[cc]) {
+                    continue;
+                }
+                cout << "VeritX: class " << cc
+                     << " injected flits = " << _veritx_total_sent_flits[cc]
+                     << ", accepted flits = " << _veritx_total_accepted_flits[cc]
+                     << endl;
+            }
         }
         //wait until all the credits are drained as well
         while(Credit::OutStanding()!=0){

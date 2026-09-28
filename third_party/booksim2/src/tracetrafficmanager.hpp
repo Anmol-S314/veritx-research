@@ -42,6 +42,13 @@ protected:
 
   std::ofstream _packets_csv;
 
+  // VeritX multi-class injection law (booksim2-fork/v2): a source injects
+  // through ONE physical port shared by every class, so a new trace event
+  // may only issue when NO class still holds a packet in its source
+  // injection buffer. With classes = 1 this is exactly the single-class
+  // behavior this fork has always had.
+  bool _source_busy(int source) const;
+
   void _LoadTraceFile(std::string const & filename);
 
   // ---- Real extension points (see INTEGRATION.md for which of these

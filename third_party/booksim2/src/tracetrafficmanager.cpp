@@ -155,11 +155,20 @@ int TraceTrafficManager::_IssuePacket(int source, int cl)
   // naturally serialize exactly like a real single injection port would.
   if (_trace_queue[source].empty()) return 0;
 
+  // VeritX multi-class injection law (booksim2-fork/v2): a class may only
+  // issue its own event. Without this guard, whichever class polls the
+  // per-source queue first would claim (and then double-inject) another
+  // class's event under a fabricated class label.
   TraceEvent const & ev = _trace_queue[source].front();
+  if (ev.cl != cl) return 0;
+
+  // One shared physical injection port per source: no class may start a
+  // new packet while any class still has a packet mid-injection. (The base
+  // class only checks THIS class's _partial_packets, which is fine for
+  // classes = 1 and unobservable otherwise because of the guard above.)
+  if (_source_busy(source)) return 0;
+
   if ((uint64_t) _time < ev.timestamp) return 0; // not ready yet
-  // NOTE: classes share one per-source queue: whichever class issues first
-  // wins. Other classes simply see an empty queue on their turn (their stats
-  // will show -nan for empty samples — pre-existing BookSim behavior, not a bug).
 
   // Stage the event on this class's own pattern object (see header note).
   // The slot necessarily belongs to the (source, class) pair _GeneratePacket
@@ -188,6 +197,14 @@ int TraceTrafficManager::_GetNextPacketSize(int cl) const
     return pat->Pending().packet_size;
   }
   return TrafficManager::_GetNextPacketSize(cl); // fallback; shouldn't hit
+}
+
+bool TraceTrafficManager::_source_busy(int source) const
+{
+  for (int c = 0; c < _classes; ++c) {
+    if (!_partial_packets[source][c].empty()) return true;
+  }
+  return false;
 }
 
 void TraceTrafficManager::_OnPacketGenerated(int pid, int source, int cl,

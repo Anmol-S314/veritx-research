@@ -56,7 +56,7 @@ EXECUTION_TRANSPORT_TEST_INJECTED = "TEST_INJECTED"
 #: The build recipe every certified BookSim profile must have been built by.
 #: Admission checks it by profile, so a self-consistent document that names
 #: an arbitrary valid-looking recipe cannot enter a certified product.
-BOOKSIM_BUILD_RECIPE_VERSION = "booksim2-fork/v1"
+BOOKSIM_BUILD_RECIPE_VERSION = "booksim2-fork/v2"
 CERTIFIED_BOOKSIM_PROFILE_PREFIX = "CERTIFIED_BOOKSIM_"
 
 

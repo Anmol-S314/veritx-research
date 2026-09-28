@@ -7,8 +7,10 @@ and (2) a versioned message artifact that carries a traffic class per
 message, so admission can validate each class against the compiled VC
 assignment without flattening to one class.
 
-These tests pin both pieces and the honest refusal that still follows
-when the certified BookSim profile cannot execute multi-class traffic.
+The certified multi-class mesh profile (booksim2-fork/v2) now EXECUTES
+both canonical classes through the fork's per-class trace replay; these
+tests pin the lowering, the class-aware projection law, and the
+per-class conservation that follows it.
 """
 from __future__ import annotations
 
@@ -23,7 +25,8 @@ sys.path.insert(0, str(DSE))
 
 from veritx_dse.application.fabric_compiler import FabricCompiler  # noqa: E402
 from veritx_dse.backend.booksim_projection import (  # noqa: E402
-    BookSimProjectionError, render_trace,
+    _message_class_of, render_trace, trace_class_map,
+    verify_trace_conservation,
 )
 from veritx_dse.core.errors import (  # noqa: E402
     InvalidInput, UnsupportedSemantics,
@@ -105,7 +108,7 @@ def test_v3_stamps_each_message_with_its_operation_class():
                 (lowered.traffic_class_by_operation[0][0], "made_up"),))
 
 
-def test_v3_physical_projection_conserves_and_trace_refuses_classes():
+def test_v3_physical_projection_renders_and_conserves_per_class():
     request = _request(MOE)
     compilation = FabricCompiler().compile(request)
     assert compilation.status == "COMPILED"
@@ -119,10 +122,24 @@ def test_v3_physical_projection_conserves_and_trace_refuses_classes():
     physical.validate_conservation()
     assert physical.logical.message_artifact_id() \
         == logical.message_artifact_id()
-    # The trace dialect renders one class column; multi-class traffic has
-    # no certified rendering and must be refused, never flattened.
-    with pytest.raises(BookSimProjectionError):
-        render_trace(physical)
+    # The class-aware trace dialect (booksim2-fork/v2) renders the class
+    # column for every canonical class — never a flattening refusal: the
+    # certified MC profile executes multi-class traffic as-is.
+    trace = render_trace(physical)
+    assert {len(row.split())
+            for row in trace.decode().splitlines()} == {5}
+    stats = verify_trace_conservation(physical)
+    assert trace_class_map(physical) == ("ep_dispatch", "tp_collective")
+    assert stats["num_packets"] > 0
+    # Each canonical class conserves exactly its own flits (per-class
+    # law), under the same class authority the renderer uses.
+    expected_by_class: dict[str, int] = {}
+    for message in physical.traffic:
+        cl = _message_class_of(physical.logical, message)
+        for packet in message.packets:
+            expected_by_class[cl] = (expected_by_class.get(cl, 0)
+                                     + packet.flit_count)
+    assert stats["flits_by_class"] == expected_by_class
 
 
 def test_non_dense_non_moe_families_still_refuse():

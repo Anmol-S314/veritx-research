@@ -391,8 +391,45 @@ CMESH_DOR_PROFILE = BookSimProfile(
     semantics_version=_CMESH_DOR_SEMANTICS_VERSION, audit=_cmesh_audit())
 
 
+_ML_DOR_PROFILE_ID = "CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1"
+#: semantics version for the multi-class mesh profile: the injection-law
+#: patch (per-class replay + one shared source port) is part of the
+#: certified semantics, and the prepared-input schema gained the bound
+#: class map.
+_ML_DOR_SEMANTICS_VERSION = "booksim2-fork+P3-meshdor-mc+prepared-v1"
+_ML_DOR_LOWERER_VERSION = "DORXY-MC/1"
+
+
+def _mc_audit() -> tuple[ConfigRead, ...]:
+    """The mesh-DOR audit with ``classes`` promoted to CANONICAL.
+
+    Everything is identical to the single-class mesh surface — same fork
+    code paths, same router/VC/routing reads — except the class count is
+    now derived from the workload (classes = len(trace_classes)), not
+    pinned to 1. The fork's per-class replay filter (booksim2-fork/v2)
+    is what makes that count semantically load-bearing.
+    """
+    rows: list[ConfigRead] = []
+    for row in _mesh_audit():
+        if row.name == "classes":
+            rows.append(ConfigRead(
+                "classes", _A.CANONICAL, "trafficmanager.cpp",
+                note="number of canonical traffic classes in the executed "
+                     "workload; the fork's per-class replay filter makes "
+                     "the count execute as declared"))
+            continue
+        rows.append(row)
+    return tuple(rows)
+
+
+MESH_DOR_MC_PROFILE = BookSimProfile(
+    profile_id=_ML_DOR_PROFILE_ID,
+    semantics_version=_ML_DOR_SEMANTICS_VERSION, audit=_mc_audit())
+
+
 def _assert_profile_closure() -> None:
-    for profile in (ANYNET_PROFILE, MESH_DOR_PROFILE, CMESH_DOR_PROFILE):
+    for profile in (ANYNET_PROFILE, MESH_DOR_PROFILE, CMESH_DOR_PROFILE,
+                    MESH_DOR_MC_PROFILE):
         for row in profile.audit:
             if row.owner is ParameterOwner.BACKEND_PROFILE \
                     and row.name != "traffic" and row.name != "sample_period" \
@@ -478,9 +515,14 @@ class MeshDorQualification:
     route_artifact_hash: str
     vc_resource_hash: str
     attachment_hash: str
+    #: canonical traffic classes carried by the executed trace, mapped to
+    #: the fork's dense class indices (sorted canonical names). One class
+    #: means the trace renders index 0 — byte-identical to pre-v2 traces.
+    trace_classes: tuple[str, ...] = ()
 
 
-def qualify_native_mesh_dor(parents: BookSimProjectionParents
+def qualify_native_mesh_dor(parents: BookSimProjectionParents,
+                            *, multi_class: bool = False
                             ) -> MeshDorQualification:
     """Prove every prerequisite, or refuse. Never a family-name shortcut."""
     topo = parents.topology
@@ -554,6 +596,21 @@ def qualify_native_mesh_dor(parents: BookSimProjectionParents
             f"UNSUPPORTED: parallel channels between routers "
             f"{parallel[:3]} have no native mesh representation")
 
+    traffic = getattr(parents, "physical_traffic", None)
+    if traffic is None:
+        # stub-parent contexts (qualification replays over a sealed
+        # qualification object): the class gate is the preparer's law and
+        # the preparer always carries the traffic artifact
+        trace_classes: tuple[str, ...] = ()
+    else:
+        trace_classes = trace_class_map(traffic)
+        if not multi_class and len(trace_classes) != 1:
+            raise SemanticLoss(
+                "UNSUPPORTED: the single-class mesh profile executes ONE "
+                "traffic class (config pins classes = 1); this workload "
+                f"declares {sorted(trace_classes)} — the multi-class "
+                "profile owns this traffic")
+
     exact, reason = vc_exactness(parents.vc_resource)
     if not exact:
         raise SemanticLoss(f"UNSUPPORTED: {reason}")
@@ -567,7 +624,37 @@ def qualify_native_mesh_dor(parents: BookSimProjectionParents
         k=k, router_count=n, endpoint_count=len(endpoints),
         route_artifact_hash=parents.route.artifact_hash,
         vc_resource_hash=parents.vc_resource.artifact_hash,
-        attachment_hash=parents.attachment.attachment_hash())
+        attachment_hash=parents.attachment.attachment_hash(),
+        trace_classes=trace_classes)
+
+
+def qualify_native_mesh_dor_mc(
+        parents: BookSimProjectionParents) -> MeshDorQualification:
+    """Qualify the multi-class mesh-DOR profile.
+
+    Reuses every single-class mesh gate (geometry, seat capacity, DOR-XY
+    route class, VC envelope, channel latency/weights, no parallel
+    channels, identity VC transitions) and additionally requires the
+    v2 fork injection law: the vendored fork's per-class replay filter
+    (``TraceInjectionProcess`` class filter) is what executes a class
+    count > 1 faithfully. Refusals name the real gate — never a
+    silent class collapse.
+    """
+    _mc_traffic = getattr(parents, "physical_traffic", None)
+    if _mc_traffic is not None \
+            and len(trace_class_map(_mc_traffic)) < 2:
+        raise SemanticLoss(
+            "UNSUPPORTED: the multi-class mesh profile requires two or "
+            "more canonical traffic classes; single-class traffic is the "
+            "single-class profile's domain")
+    qual = qualify_native_mesh_dor(parents, multi_class=True)
+    return MeshDorQualification(
+        k=qual.k, router_count=qual.router_count,
+        endpoint_count=qual.endpoint_count,
+        route_artifact_hash=qual.route_artifact_hash,
+        vc_resource_hash=qual.vc_resource_hash,
+        attachment_hash=qual.attachment_hash,
+        trace_classes=qual.trace_classes)
 
 
 @dataclass(frozen=True)
@@ -733,6 +820,14 @@ def qualify_native_cmesh_dor(
             f"UNSUPPORTED: parallel channels between routers "
             f"{parallel[:3]} have no native cmesh representation")
 
+    if len(trace_class_map(parents.physical_traffic)) != 1:
+        raise SemanticLoss(
+            "UNSUPPORTED: the single-class cmesh profile executes ONE "
+            "traffic class (config pins classes = 1); this workload "
+            "declares "
+            f"{sorted(trace_class_map(parents.physical_traffic))} — the "
+            "multi-class profile owns this traffic")
+
     exact, reason = vc_exactness(parents.vc_resource)
     if not exact:
         raise SemanticLoss(f"UNSUPPORTED: {reason}")
@@ -751,15 +846,27 @@ def qualify_native_cmesh_dor(
 
 
 def vc_exactness(vc_resource: Any) -> tuple[bool, str]:
-    """BookSim trace traffic runs every flow in one class over all VCs."""
-    if len(vc_resource.traffic_class_to_vcs) == 1:
-        (_cls, vcs), = vc_resource.traffic_class_to_vcs
-        if tuple(vcs) == tuple(vc_resource.vc_ids):
-            return True, ""
+    """The fork executes ONE VC envelope for every traffic class.
+
+    Source audit (booksim2-fork/v2): ``iq_router`` takes an output VC
+    from the ROUTE SET's ``vc_start..vc_end`` (routers/iq_router.cpp,
+    piggyback VC allocation), and the injection VC search starts at VC 0
+    (trafficmanager.cpp ``Find first available VC``) — neither consults
+    the packet's class. So a class-to-VC-SUBSET assignment is executed
+    only when every class's canonical set equals the full envelope: that
+    IS the VC-domain design the backend runs, not a collapse of it. A
+    real class-split VC assignment refuses with this named reason until
+    routing-level class binding exists (never silently narrowed).
+    """
+    if not vc_resource.traffic_class_to_vcs:
+        return False, "the VC assignment carries no traffic classes"
+    if all(tuple(vcs) == tuple(vc_resource.vc_ids)
+           for _cls, vcs in vc_resource.traffic_class_to_vcs):
+        return True, ""
     return False, (
-        "BookSim trace traffic runs every flow in one class over all VCs; "
+        "BookSim trace traffic runs every class over one VC envelope; "
         "this artifact assigns traffic classes to VC subsets the backend "
-        "does not execute")
+        "does not execute (route-set envelope; injection starts at VC 0)")
 
 
 # ── rendering ─────────────────────────────────────────────────────────────
@@ -811,6 +918,45 @@ def _iter_physical_packets(physical_traffic: PhysicalTrafficArtifactV2
             yield packet
 
 
+def _message_class_of(logical: Any, message: Any) -> str:
+    """The canonical traffic class of one physical message.
+
+    V3 stamps each operation's class in ``traffic_class_by_operation``;
+    V2 stamps one uniform class on every message. Packets stay
+    class-blind by law — the LOGICAL artifact is the class authority.
+    """
+    by_op = getattr(logical, "traffic_class_by_operation", None)
+    if by_op is not None:
+        mapping = dict(by_op)
+        try:
+            return mapping[message.operation_id]
+        except KeyError:
+            raise BookSimProjectionError(
+                f"operation {message.operation_id!r} has no canonical "
+                "traffic class in the logical artifact") from None
+    cls = getattr(logical, "traffic_class", None)
+    if cls is None:
+        raise BookSimProjectionError(
+            "the logical message artifact carries no traffic-class "
+            "authority (neither uniform nor per-operation)")
+    return cls
+
+
+def trace_class_map(physical_traffic: PhysicalTrafficArtifactV2
+                    ) -> tuple[str, ...]:
+    """Dense trace-class indices for the artifact's canonical classes.
+
+    The fork's trace dialect is ``cyc src cl dst sz``; its class column is
+    a small integer. Canonical class NAMES are mapped to indices by
+    sorted order — deterministic, artifact-derived, and bound into
+    prepared-input identity (``trace_class_map``) so a mapping change is
+    never invisible. Single-class traffic yields ``(class,)`` and renders
+    index 0, byte-identical to the pre-multi-class renderer.
+    """
+    return tuple(sorted({_message_class_of(physical_traffic.logical, m)
+                         for m in physical_traffic.traffic}))
+
+
 def render_trace(physical_traffic: PhysicalTrafficArtifactV2) -> bytes:
     """Render canonical physical traffic as the BookSim whitespace trace.
 
@@ -818,21 +964,23 @@ def render_trace(physical_traffic: PhysicalTrafficArtifactV2) -> bytes:
     FLITS, one line per physical packet, timestamps in emission order.
     Deterministic: (message order, packet index) only.
 
-    Single-class only: the dialect's class column renders 0, so
-    multi-class traffic has no certified rendering — profile selection
-    refuses execution first, and this guard closes the seam against any
-    future caller that reaches the render directly.
+    Class-aware (booksim2-fork/v2): column 3 carries each message's
+    canonical traffic-class index from ``trace_class_map``. The vendored
+    fork's ``TraceInjectionProcess`` class filter replays each event in
+    exactly the class the trace labels — never a cross-class copy — so
+    the executed classes ARE the canonical classes.
     """
-    classes = {m.traffic_class for m in physical_traffic.logical.messages}
-    if len(classes) != 1:
-        raise BookSimProjectionError(
-            f"multi-class traffic {sorted(classes)} has no certified "
-            f"BookSim trace dialect (the class column renders one class "
-            f"only); refusing a class-blind execution")
+    class_index = {name: i for i, name
+                   in enumerate(trace_class_map(physical_traffic))}
     lines: list[str] = []
-    for timestamp, packet in enumerate(_iter_physical_packets(physical_traffic)):
-        lines.append(f"{timestamp} {packet.src_endpoint} 0 "
-                     f"{packet.dst_endpoint} {packet.flit_count}")
+    timestamp = 0
+    for message in physical_traffic.traffic:
+        cl = class_index[_message_class_of(physical_traffic.logical,
+                                           message)]
+        for packet in message.packets:
+            lines.append(f"{timestamp} {packet.src_endpoint} {cl} "
+                         f"{packet.dst_endpoint} {packet.flit_count}")
+            timestamp += 1
     return ("\n".join(lines) + "\n").encode()
 
 
@@ -866,6 +1014,7 @@ def verify_trace_conservation(physical_traffic: PhysicalTrafficArtifactV2
             f"trace projection lost packets: {len(rows)} != "
             f"{expected_packets}")
     flits = 0
+    flits_by_class: dict[int, int] = {}
     for index, row in enumerate(rows):
         if len(row) != 5:
             raise BookSimProjectionError(
@@ -874,10 +1023,27 @@ def verify_trace_conservation(physical_traffic: PhysicalTrafficArtifactV2
             raise BookSimProjectionError(
                 f"trace timestamp is not deterministic at line {index}")
         flits += int(row[4])
+        cl = int(row[2])
+        flits_by_class[cl] = flits_by_class.get(cl, 0) + int(row[4])
     if flits != expected_flits:
         raise BookSimProjectionError(
             f"trace projection lost flits: {flits} != {expected_flits}")
-    return {"num_packets": expected_packets, "flits_total": expected_flits}
+    # class-level conservation: each rendered class index carries exactly
+    # the flits of its canonical class (booksim2-fork/v2 per-class law)
+    class_map = trace_class_map(physical_traffic)
+    expected_by_class: dict[int, int] = {i: 0 for i in range(len(class_map))}
+    for message in physical_traffic.traffic:
+        i = class_map.index(_message_class_of(physical_traffic.logical,
+                                              message))
+        for packet in message.packets:
+            expected_by_class[i] += packet.flit_count
+    if flits_by_class != expected_by_class:
+        raise BookSimProjectionError(
+            f"trace projection lost class-bound flits: {flits_by_class} "
+            f"!= {expected_by_class}")
+    return {"num_packets": expected_packets, "flits_total": expected_flits,
+            "flits_by_class": {class_map[i]: n
+                               for i, n in sorted(flits_by_class.items())}}
 
 
 def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
@@ -899,6 +1065,20 @@ def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
             "routing_function": _MESH_DOR_ROUTING_FUNCTION,
             "routing_dump_file": ROUTE_DUMP_FILE,
             "num_vcs": parents.vc_resource.vc_count,
+        })
+    elif profile.profile_id == _ML_DOR_PROFILE_ID:
+        qual = qualify_native_mesh_dor_mc(parents)
+        values = dict(profile.pinned_values())
+        values.update({
+            "topology": "mesh", "k": qual.k, "n": 2,
+            "use_noc_latency": 1,
+            "routing_function": _MESH_DOR_ROUTING_FUNCTION,
+            "routing_dump_file": ROUTE_DUMP_FILE,
+            "num_vcs": parents.vc_resource.vc_count,
+            # the workload's class count IS a canonical value in this
+            # profile (audit row is CANONICAL): one class index per
+            # canonical traffic class
+            "classes": len(qual.trace_classes),
         })
     elif profile.profile_id == _CMESH_DOR_PROFILE_ID:
         qual = qualify_native_cmesh_dor(parents)
@@ -1006,6 +1186,19 @@ def qualify_anynet_min_hops(parents: BookSimProjectionParents) -> None:
         raise SemanticLoss(
             "UNSUPPORTED: the certified AnyNet profile executes one "
             f"min-hop routing function, got classes {classes}")
+    traffic = getattr(parents, "physical_traffic", None)
+    if traffic is not None:
+        # stub-parent contexts (qualification replays over a sealed
+        # qualification object): the class gate is the preparer's law and
+        # the preparer always carries the traffic artifact
+        trace_classes = trace_class_map(traffic)
+        if len(trace_classes) != 1:
+            raise SemanticLoss(
+                "UNSUPPORTED: the single-class AnyNet profile executes ONE "
+                "traffic class (config pins classes = 1); this workload "
+                "declares "
+                f"{sorted(trace_classes)} — the multi-class profile owns "
+                "this traffic")
 
     latencies = {c.latency_cycles for c in parents.topology.channels}
     if latencies != {1}:
@@ -1092,6 +1285,15 @@ class PreparedBookSimInput:
     #: total flits the trace declares (bound so flit conservation can be
     #: checked against the fork's emitted injected/accepted counters).
     expected_flits: int = 0
+    #: canonical traffic-class names mapped to the fork's dense trace
+    #: class indices (sorted). Bound so the executed class identity is
+    #: part of the prepared identity — a remapping can never be invisible.
+    #: Empty for single-class profiles (the trace renders index 0).
+    trace_class_map: tuple[str, ...] = ()
+    #: per-class flit counts keyed by canonical class name; execution
+    #: must conserve each class independently (booksim2-fork/v2 emits
+    #: per-class counters for exactly this check).
+    expected_flits_by_class: tuple[tuple[str, int], ...] = ()
     #: canonical first-hop expectation: (src_router, node, next_router)
     #: rows over the execution node universe. Bound so execution can prove
     #: the executed route realization (P0.10).
@@ -1125,6 +1327,14 @@ class PreparedBookSimInput:
             "max_samples": self.max_samples,
             "expected_packets": self.expected_packets,
             "expected_flits": self.expected_flits,
+            # class identity keys appear ONLY when a class map is bound
+            # (multi-class profile): single-class science keeps the exact
+            # identity it always had — a prepared id never moves because a
+            # new field was added empty.
+            **({"trace_class_map": list(self.trace_class_map),
+                "expected_flits_by_class": [list(p) for p in
+                                            self.expected_flits_by_class]}
+               if self.trace_class_map else {}),
             "expected_route_rows": [list(r) for r in self.expected_route_rows],
             "seed": self.seed,
             "config_sha256": content_hash("srota/PreparedBookSimConfig", 1,
@@ -1162,13 +1372,31 @@ class PreparedBookSimInput:
 
 
 def select_booksim_profile(parents: BookSimProjectionParents) -> BookSimProfile:
-    """Native mesh DOR, then native concentrated-mesh DOR, else AnyNet.
+    """Multi-class mesh DOR, single-class mesh DOR, concentrated, AnyNet.
 
+    Multi-class traffic on a mesh fabric routes to the multi-class
+    profile — it executes the canonical classes as declared (fork v2
+    per-class replay law) where the single-class profile would refuse.
     When all refuse, the native mesh-DOR reason leads the message: it is
     the profile this fabric was built for (mesh + DOR_XY), so its refusal
     names the real gap; the other refusals are fallback notes, never the
     headline that hides the operative cause.
     """
+    _sel_traffic = getattr(parents, "physical_traffic", None)
+    _sel_classes = len(trace_class_map(_sel_traffic)) \
+        if _sel_traffic is not None else 0
+    if _sel_classes >= 2:
+        # multi-class traffic: the MC profile is the operative candidate;
+        # its refusal — never a single-class profile's — leads the message
+        try:
+            qualify_native_mesh_dor_mc(parents)
+        except SemanticLoss as mc_exc:
+            raise SemanticLoss(
+                "UNSUPPORTED: no certified multi-class profile accepts "
+                "this design; the multi-class mesh profile refuses: "
+                f"{mc_exc}; the concentrated-mesh and AnyNet profiles "
+                "execute ONE traffic class only") from mc_exc
+        return MESH_DOR_MC_PROFILE
     try:
         qualify_native_mesh_dor(parents)
     except SemanticLoss as native_exc:
@@ -1232,7 +1460,7 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
     # attached endpoint nodes; cmesh addresses the fork's 2k x 2k folded
     # node grid via the seat mapping.
     from veritx_dse.backend.route_observation import expected_route_rows
-    if profile.profile_id == _MESH_DOR_PROFILE_ID:
+    if profile.profile_id in (_MESH_DOR_PROFILE_ID, _ML_DOR_PROFILE_ID):
         routing_class = DOR_XY
         node_to_router = {n: n
                           for n in range(parents.topology.router_count)}
@@ -1251,11 +1479,14 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
     return PreparedBookSimInput(
         profile_id=profile.profile_id,
         semantics_version=profile.semantics_version,
-        lowerer_version=(_MESH_DOR_LOWERER_VERSION
-                         if profile.profile_id == _MESH_DOR_PROFILE_ID
-                         else (_CMESH_DOR_LOWERER_VERSION
-                               if profile.profile_id == _CMESH_DOR_PROFILE_ID
-                               else "ANYNET/1")),
+        lowerer_version=(_ML_DOR_LOWERER_VERSION
+                         if profile.profile_id == _ML_DOR_PROFILE_ID
+                         else (_MESH_DOR_LOWERER_VERSION
+                               if profile.profile_id == _MESH_DOR_PROFILE_ID
+                               else (_CMESH_DOR_LOWERER_VERSION
+                                     if profile.profile_id \
+                                     == _CMESH_DOR_PROFILE_ID
+                                     else "ANYNET/1"))),
         config_text=config.decode(), topology_text=topology_text,
         trace_text=render_trace(pt).decode(),
         topology_hash=parents.topology.topology_hash(),
@@ -1274,6 +1505,12 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
         max_samples=int(rendered["max_samples"]),
         expected_packets=schedule["expected_packets"],
         expected_flits=conservation["flits_total"],
+        trace_class_map=(trace_class_map(pt)
+                         if profile.profile_id == _ML_DOR_PROFILE_ID
+                         else ()),
+        expected_flits_by_class=(tuple(
+            sorted(conservation["flits_by_class"].items()))
+            if profile.profile_id == _ML_DOR_PROFILE_ID else ()),
         expected_route_rows=route_rows,
         seed=seed)
 
@@ -1364,6 +1601,7 @@ __all__ = [
     "qualify_native_cmesh_dor", "qualify_native_mesh_dor",
     "render_anynet_topology", "render_config",
     "render_trace", "select_booksim_profile", "source_audit_report",
+    "trace_class_map",
     "trace_injection_horizon", "trace_schedule", "vc_exactness",
     "verify_trace_conservation",
 ]

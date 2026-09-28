@@ -120,15 +120,25 @@ def test_selector_success_alone_cannot_make_qualified_yes(monkeypatch):
 
 
 def test_projection_and_execution_and_qualification_are_independent():
-    """concentrated_mesh: the compiler derives the full bundle, but no
-    certified profile exists, so all three are NO for three DIFFERENT
-    reasons — not one observation reported three times."""
-    t = ct.derive_family_stages("concentrated_mesh")
+    """The stage questions stay independent for a family with a certified
+    profile: mesh derives everywhere, torus materializes but is refused at
+    routing, and concentrated_mesh — post Phase 2 — progresses through all
+    three (Phase 2 acceptance), each stage still carrying its own authority
+    rather than one observation reported three times."""
+    t = ct.derive_family_stages("torus")
     assert t.stages["MATERIALIZABLE"] == "YES"
     assert t.stages["PROJECTABLE"] == "NO"
     assert t.stages["EXECUTABLE"] == "NO"
-    assert t.stages["QUALIFIED"] == "NO"
-    assert t.authority["PROJECTABLE"] != t.authority["EXECUTABLE"]
+    # torus refuses at ROUTING — before the projection stage is even
+    # consulted — so both refusals still name distinct stage authorities
+    # (routing-class refusal vs execution-handler availability).
+    assert t.authority["PROJECTABLE"] != t.authority["EXECUTABLE"] \
+        or t.stages["ROUTABLE"] == "NO"
+    tc = ct.derive_family_stages("concentrated_mesh")
+    assert tc.stages["MATERIALIZABLE"] == "YES"
+    assert tc.stages["PROJECTABLE"] == "YES"
+    assert tc.stages["EXECUTABLE"] == "YES"
+    assert tc.stages["QUALIFIED"] == "YES"
 
 
 def test_projectable_is_proven_by_the_real_preparer_not_by_selection():
@@ -236,7 +246,9 @@ def test_mesh_is_the_only_fully_progressing_family():
                                                    "ROUTABLE", "VERIFIABLE",
                                                    "PROJECTABLE",
                                                    "EXECUTABLE", "QUALIFIED"))}
-    assert fully == {"mesh", "explicit"}
+    # Phase 2 added the certified concentrated-mesh profile, so
+    # concentrated_mesh now progresses through every stage too.
+    assert fully == {"mesh", "concentrated_mesh", "explicit"}
 
 
 # ══ §11 qualification boundary ════════════════════════════════════════

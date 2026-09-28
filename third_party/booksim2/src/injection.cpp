@@ -203,13 +203,20 @@ bool OnOffInjectionProcess::test(int source)
 
 TraceInjectionProcess::TraceInjectionProcess(
     int nodes,
-    const std::vector<TraceEntry>& trace)
+    const std::vector<TraceEntry>& trace,
+    int class_filter)
   : InjectionProcess(nodes, 0.0),  // rate unused
     _current_cycle(0), _trace_done(false),
     _injected_total(0), _injected_this_cycle(0)
 {
-  // Build per-source queues from the sorted trace
+  // Build per-source queues from the sorted trace.
+  // booksim2-fork/v2 multi-class law: when class_filter >= 0, this process
+  // replays ONLY the events whose trace class equals the filter — the event's
+  // own cl column is the authority. (Without the filter, every class replayed
+  // the whole file and each event executed _classes times under a fabricated
+  // class label.) class_filter < 0 keeps the unfiltered legacy behavior.
   for (auto const& e : trace) {
+    if (class_filter >= 0 && e.cl != class_filter) continue;
     TraceEvent te;
     te.cycle = e.cycle;
     te.dst   = e.dst;
@@ -218,7 +225,15 @@ TraceInjectionProcess::TraceInjectionProcess(
     _queues[e.src].push_back(te);
   }
   std::cerr << "TraceInjectionProcess: built " << _queues.size()
-            << " source queues, total events = " << trace.size() << std::endl;
+            << " source queues, total events = ";
+  if (class_filter >= 0) {
+    int kept = 0;
+    for (auto const& kv : _queues) kept += (int)kv.second.size();
+    std::cerr << kept << " (class filter " << class_filter << ")"
+              << std::endl;
+  } else {
+    std::cerr << trace.size() << std::endl;
+  }
 }
 
 void TraceInjectionProcess::set_cycle(int64_t cycle)

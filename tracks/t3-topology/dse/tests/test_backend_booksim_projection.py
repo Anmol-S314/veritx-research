@@ -300,7 +300,7 @@ def test_semantic_loss_is_a_refusal_not_a_substitution():
         traffic_class_to_vcs=(("a", (0,)), ("b", (1,))))
     exact, reason = bp.vc_exactness(broken)
     assert exact is False
-    assert "one class over all VCs" in reason
+    assert "one VC envelope" in reason
 
 
 def test_unsupported_owner_requires_a_documented_loss():

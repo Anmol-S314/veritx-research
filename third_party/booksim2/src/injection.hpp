@@ -82,7 +82,8 @@ private:
   int _injected_total;     // total packets injected
   int _injected_this_cycle;
 public:
-  TraceInjectionProcess(int nodes, const std::vector<TraceEntry>& trace);
+  TraceInjectionProcess(int nodes, const std::vector<TraceEntry>& trace,
+                        int class_filter = -1);
   virtual bool test(int source) override;
   virtual void reset() override;
   void set_cycle(int64_t cycle);

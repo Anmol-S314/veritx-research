@@ -14,6 +14,11 @@ row is also a bug.
 | `CERTIFIED_BOOKSIM_MESH_DOR_XY_V1` | `MaterializedFamily.MESH`, seat_capacity 1, square k×k, `DOR_XY` | `qualify_native_mesh_dor` | `tests/test_booksim_route_equivalence.py` |
 | `CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1` | `MaterializedFamily.CONCENTRATED_MESH`, seat_capacity 4, square k×k, `DOR_XY`, plain grid (no express links routed) | `qualify_native_cmesh_dor` | `tests/test_booksim_cmesh_projection.py` (this audit) |
 | `CERTIFIED_BOOKSIM_ANYNET_V1` | custom/explicit graphs, routing class `ANYNET_MIN_HOPS` | anynet qualifier | `tests/test_booksim_anynet_projection.py` |
+| `CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1` | `MaterializedFamily.MESH`, seat_capacity 1, square k×k, `DOR_XY`, **≥2 canonical traffic classes** | `qualify_native_mesh_dor_mc` | `tests/test_multiclass_optimization_hard_gate.py` |
+
+All profiles execute on the pinned fork binary under build recipe
+`booksim2-fork/v2` (per-class trace replay; the manifest must be
+regenerated after any rebuild).
 
 ### CMESH profile derivation (2026-09)
 
@@ -38,6 +43,30 @@ row is also a bug.
   conserved (loaded = injected = delivered; 37,520 flits accepted) and
   completion 6164 cycles, authenticated evidence.
 
+### Multi-class profile derivation (2026-09, Phase 3)
+
+- **Fork law (booksim2-fork/v2)**: `sim_type = latency` + `traffic =
+  trace(file)` builds one `TraceInjectionProcess` per class from the FULL
+  trace; unfiltered, `classes = 2` doubles every event (probed: 3 events
+  → 6 injections). The patch adds a per-class event filter
+  (`TraceInjectionProcess(..., class_filter)`) plus a source-busy
+  coupling so a source replays its classes through one shared port
+  without double-injection. The `sim_type = trace` path
+  (`TraceTrafficManager`) carries the same guards as defense-in-depth.
+- **Class indices**: the trace dialect `cyc src cl dst sz` maps canonical
+  class NAMES to dense indices by sorted order (`trace_class_map`), bound
+  into prepared-input identity only when multi-class — sealed single-class
+  prepared IDs stay byte-stable.
+- **Conservation**: `verify_trace_conservation` checks flits per class;
+  `assert_execution_gate(expected_flits_by_class=…)` refuses the run if
+  any per-class fork counter is missing or mismatched — no class
+  collapsing, no cross-class contamination.
+- **End-to-end acceptance**: `moe-8x7b-64tiles` → COMPILED → certificate
+  PASS → MC profile selected (`classes = 2`) → executed live with
+  per-class conservation (ep_dispatch 16,576 flits, tp_collective 66,304
+  flits), 11,200 packets delivered, completion 11,720 cycles, all gates
+  passed with `EXECUTED_ROUTE_OBSERVED`.
+
 ## 2. Static workload matrix (shipped templates)
 
 | Workload | Compile/certify | Certified execution | Basis |
@@ -45,12 +74,14 @@ row is also a bug.
 | `llama-dense-8b-64tiles` | PASS | EVALUATED (mesh-DOR) | mesh k×k, seat 1 |
 | `dense-1b-16tiles` | PASS | EVALUATED (mesh-DOR) | mesh k×k, seat 1 |
 | `dense-4b-32tiles-conc4` | PASS | **EVALUATED (cmesh-DOR, Phase 2)** | concentrated 3×3, seat 4 |
-| `moe-8x7b-64tiles` | PASS | refused at `backend_profile` | multi-class traffic; certified trace is single-class (Phase 3) |
+| `moe-8x7b-64tiles` | PASS | **EVALUATED (mesh-DOR multi-class, Phase 3)** | mesh k×k, seat 1, 2 canonical classes |
 
-**Status: 3 of 4 shipped workloads execute.** MoE's refusal is honest and
-typed (`UNSUPPORTED_SEMANTICS`, 422): `LogicalMessageArtifactV3` /
-`PhysicalTrafficArtifactV3` preserve per-message classes and the evaluator
-refuses unknown VC classes rather than collapsing them to VC0.
+**Status: 4 of 4 shipped workloads execute.** Multi-class execution is
+faithful, not flattened: `LogicalMessageArtifactV3` /
+`PhysicalTrafficArtifactV3` preserve per-message classes, the MC profile
+renders the fork's class column, and per-class flit counters are gated at
+execution. Both classes share the single certified VC envelope (0,); the
+VC envelope law is stated per run, never silently widened.
 
 ## 3. Optimization capability truth (Phase 1, repaired)
 
@@ -87,8 +118,6 @@ through `select_booksim_profile` on a real compiled/lowered design),
 
 ## 5. Known gaps deliberately NOT claimed (fail-closed)
 
-- Multi-class BookSim execution (MoE static declared-op communication) —
-  Phase 3. No class collapsing, no per-class latency summation.
 - Torus/FlatFly/GEC/fat-tree execution — no canonical route + backend
   equivalence yet; materialization alone is not support.
 - Hardware multicast — `mcast_groups`/`mcast_setup_cycles` are knobs, not a
@@ -105,3 +134,21 @@ through `select_booksim_profile` on a real compiled/lowered design),
   (`test_unevaluable_moe_revision_refuses_simulation_honestly`).
 - `tests/test_optimization_capabilities.py` — re-pinned: executable_values
   include concentrated_mesh; concentration stays unqualified.
+
+### Phase 3 gates
+
+- `tests/test_multiclass_optimization_hard_gate.py` — rewritten to the
+  Phase-3 law: MC profile selection, class-aware rendering, per-class
+  conservation gate, prepared-identity binding of `trace_class_map`.
+- `tests/test_workload_moe_lowering.py` — re-pinned: the V3 projection
+  now renders and conserves per class (the old flattening refusal is
+  gone by design).
+- `tests/test_product_workflow.py` — MoE template now
+  `evaluation_supported`; the unevaluable-concentrated refusal is pinned
+  separately (c == 4 seat_capacity refusal, domain `backend_profile`).
+- `tests/test_capability_truth.py` — fully-progressing families are now
+  `{mesh, concentrated_mesh, explicit}`.
+- `tests/test_sealed_prepared_input.py` — sealed single-class prepared
+  IDs byte-stable across the class-aware schema change.
+- `tests/test_custom_routing.py` — the custom AnyNet path survives the
+  class gate via stub-parent tolerance.
