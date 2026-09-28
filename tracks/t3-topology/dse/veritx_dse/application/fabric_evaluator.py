@@ -482,84 +482,76 @@ class FabricEvaluator:
                 message_artifact_id=message_id,
                 physical_traffic_id=traffic_id)
 
-        # ── canonical projection (pure: gates + lowering + render) ─
-        # §26 Option 2: the optimizer evaluates through the canonical
-        # BookSim stack ONLY (booksim_projection → booksim_execution →
+        # ── canonical projection via the BookSim adapter ───────────
+        # §26 Option 2, federated: the evaluator orchestrates the
+        # certified BookSim stack through the BackendAdapter seam
+        # (booksim_projection → booksim_execution →
         # ScientificBackendEvidence). The RT meshdor/projection seams are
         # not used here and no RT→canonical evidence translation exists:
         # the prepared execution objects own the canonical identifiers
         # and construct the canonical evidence directly.
-        from veritx_dse.backend.booksim_projection import (
-            CONFIG_FILE, TRACE_FILE, BookSimProjectionError,
-            BookSimProjectionParents, prepare_booksim_input,
+        from veritx_dse.application.evaluation_context import (
+            build_evaluation_context,
+        )
+        from veritx_dse.application.evaluation_question import (
+            EvaluationQuestion,
+        )
+        from veritx_dse.backend.booksim_adapter import (
+            BookSimAdapter, BookSimProjectionRefusal,
         )
         from veritx_dse.backend.booksim_execution import (
-            prepared_file_digests,
-        )
-        from veritx_dse.core.errors import (
-            InvalidInput, MappingInvalid, UnsupportedSchedule,
-            UnsupportedSemantics,
-        )
-        from veritx_dse.model.vc_resource import (
-            vc_resources_from_assignment,
+            BookSimExecutionError,
         )
         seed = opts.seed if type(opts.seed) is int \
             and not isinstance(opts.seed, bool) and opts.seed >= 0 else 0
+        adapter = BookSimAdapter()
+        context = build_evaluation_context(compilation)
         try:
-            parents = BookSimProjectionParents(
-                resolved_fabric=bundle.resolved_fabric,
-                topology=bundle.topology,
-                attachment=bundle.attachment, mapping=bundle.mapping,
-                vc_resource=vc_resources_from_assignment(
-                    bundle.vc_assignment),
-                vc_assignment=bundle.vc_assignment,
-                packet_format=bundle.packet_format,
-                route=bundle.router_route,
-                physical_traffic=physical)
-            prepared = prepare_booksim_input(parents, seed=seed)
-        except (BookSimProjectionError, InvalidInput, MappingInvalid,
-                UnsupportedSemantics, UnsupportedSchedule) as exc:
+            bs_prep = adapter.prepare(
+                context, EvaluationQuestion.NETWORK_COMPLETION,
+                traffic_class=opts.traffic_class)
+        except BookSimProjectionRefusal as exc:
             return refuse(UNSUPPORTED,
-                          f"fabric unprojectable to BookSim: "
-                          f"{type(exc).__name__}: {exc}",
-                          message_artifact_id=message_id,
-                          physical_traffic_id=traffic_id)
-        prof = prepared.profile_id
-        digests = prepared_file_digests(prepared)
-        # Evaluator bookkeeping labels name canonical executed-byte
-        # digests: the config/input bytes about to be executed. These
-        # are the canonical measurements, not RT values under new names.
-        config_hash = digests[CONFIG_FILE]
-        input_hash = digests[TRACE_FILE]
-        # Canonical realization statement: the content identity of the
-        # exact prepared input (config + topology + trace bytes). No
-        # separate qualification module is consulted.
-        realization_digest = prepared.prepared_id()
+                          f"fabric unprojectable to BookSim: {exc}",
+                          message_artifact_id=None,
+                          physical_traffic_id=None)
+        message_id = bs_prep.message_artifact_id
+        traffic_id = bs_prep.physical_traffic_id
+        prof = bs_prep.profile_id
+        config_hash = bs_prep.config_hash
+        input_hash = bs_prep.input_hash
+        realization_digest = bs_prep.realization_digest
+        prepared = bs_prep.prepared
 
-        # ── backend availability (producer.py; no FileNotFoundError) ─
-        from veritx_dse.backend.producer import (
-            ProducerError, assert_pinned_producer,
-            resolve_producer_identity,
-        )
-        from veritx_dse.backend.booksim_execution import (
-            BOOKSIM_BUILD_RECIPE_VERSION,
-        )
+        # ── backend availability via the adapter (producer.py; no
+        # FileNotFoundError) ──
+        from veritx_dse.backend.producer import ProducerError
         from veritx_dse.core.paths import REPO as _REPO
         repo_root = Path(opts.repo_root) if opts.repo_root is not None \
             else Path(_REPO)
+        run_dir = Path(opts.run_dir) if opts.run_dir is not None \
+            else Path(tempfile.mkdtemp(prefix="p1b-eval-"))
+        evidence_dir = run_dir / "evidence"
         try:
             if opts.binary is not None:
                 bin_path = Path(opts.binary)
             else:
                 from veritx_dse.simulation.booksim import find_booksim_bin
                 bin_path = find_booksim_bin(repo_root)
-            producer = resolve_producer_identity(
-                bin_path, repo_root=repo_root,
-                require_manifest_recipe=BOOKSIM_BUILD_RECIPE_VERSION)
-            # The certified evaluator never accepts an unpinned producer:
-            # a binary whose build manifest does not verify against the
-            # canonical recipe cannot produce certified evidence.
-            assert_pinned_producer(producer)
+            from types import SimpleNamespace
+            exec_opts = SimpleNamespace(
+                binary=bin_path, repo_root=repo_root,
+                run_dir=run_dir, timeout=opts.timeout_s, seed=seed)
+            from veritx_dse.backend.adapter import PreparedExecution \
+                as _Prepared
+            exec_prepared = _Prepared(
+                backend_id=adapter.backend_id,
+                projection_identity=realization_digest,
+                qualification_identity=prof,
+                backend_config=None, backend_input=None, producer=None,
+                native_prepared=bs_prep)
+            result = adapter.execute(exec_prepared, exec_opts)
+            producer = result.producer
         except FileNotFoundError as exc:
             return refuse(BACKEND_UNAVAILABLE,
                           f"no qualified BookSim producer available: {exc}",
@@ -580,42 +572,21 @@ class FabricEvaluator:
                           backend_config_hash=config_hash,
                           backend_input_hash=input_hash,
                           realization_digest=realization_digest)
-
-        run_dir = Path(opts.run_dir) if opts.run_dir is not None \
-            else Path(tempfile.mkdtemp(prefix="p1b-eval-"))
-        backend_run_dir = run_dir / "run"
-        evidence_dir = run_dir / "evidence"
-
-        # ── canonical qualified execution ──────────────────────────
-        # Quiescence is unconditional here: execute_prepared_booksim
-        # always enforces the trace-drain gate (loaded == declared,
-        # injected == declared, valid completion). The certified path
-        # requires it; this evaluator offers no weaker mode.
-        from veritx_dse.backend.booksim_execution import (
-            BOOKSIM_BUILD_RECIPE_VERSION, BookSimExecutionError,
-            execute_prepared_booksim,
-        )
-        from veritx_dse.backend.producer import ProducerError
-        try:
-            record = execute_prepared_booksim(
-                prepared=prepared, binary=bin_path,
-                run_dir=backend_run_dir, timeout=opts.timeout_s,
-                seed=seed, repo_root=repo_root, write=True,
-                require_pinned_producer=True,
-                require_manifest_recipe=BOOKSIM_BUILD_RECIPE_VERSION)
-        except (BookSimExecutionError, ProducerError) as exc:
+        except BookSimExecutionError as _exc:
             return refuse(FAILED,
                           f"backend execution failed: "
-                          f"{type(exc).__name__}: {exc}",
+                          f"{type(_exc).__name__}: {_exc}",
                           message_artifact_id=message_id,
                           physical_traffic_id=traffic_id,
                           backend=STANDALONE_BACKEND,
                           backend_profile=prof,
-                          producer_identity=producer.binary_sha256,
+                          producer_identity=None,
                           backend_config_hash=config_hash,
                           backend_input_hash=input_hash,
                           run_dir=str(run_dir),
                           realization_digest=realization_digest)
+
+        record = result.record
         evidence = record.evidence
         # execute_prepared_booksim fails closed on nonzero exit, so a
         # completed record always carries exit_status 0 and parsed stats.
