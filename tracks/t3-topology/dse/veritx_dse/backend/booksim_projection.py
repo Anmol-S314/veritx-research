@@ -429,6 +429,34 @@ MESH_DOR_MC_PROFILE = BookSimProfile(
     semantics_version=_ML_DOR_SEMANTICS_VERSION, audit=_mc_audit())
 
 
+_MIN_ADAPT_PROFILE_ID = "CERTIFIED_BOOKSIM_MIN_ADAPT_MESH_V1"
+_MIN_ADAPT_SEMANTICS_VERSION = "booksim2-fork+A1-minadaptmesh+prepared-v1"
+_MIN_ADAPT_LOWERER_VERSION = "MINADAPT/1"
+#: The fork registers "min_adapt_mesh" (routefunc.cpp); the certified
+#: VALUE is the registered key itself (no topology suffix composition).
+_MIN_ADAPT_ROUTING_FUNCTION = "min_adapt_mesh"
+
+
+def _min_adapt_audit() -> tuple[ConfigRead, ...]:
+    """The mesh audit for runtime-selected adaptive routing.
+
+    Identical to the multi-class mesh surface (CANONICAL class count via
+    the fork-v2 replay law) EXCEPT the route-dump row is absent entirely:
+    the fork aborts deterministic first-hop dumps for candidate-set
+    routing functions, so no dump path is rendered and no dump-based
+    route comparison is claimed (observation-scope guard). Execution
+    evidence is conservation + DOMAIN_QUALIFIED_ROUTE_NOT_OBSERVED.
+    """
+    return tuple(row for row in _mc_audit()
+                  if row.name != "routing_dump_file")
+
+
+MIN_ADAPT_MESH_PROFILE = BookSimProfile(
+    profile_id=_MIN_ADAPT_PROFILE_ID,
+    semantics_version=_MIN_ADAPT_SEMANTICS_VERSION,
+    audit=_min_adapt_audit())
+
+
 _TORUS_DOR_PROFILE_ID = "CERTIFIED_BOOKSIM_TORUS_DOR_XY_V1"
 _TORUS_DOR_SEMANTICS_VERSION = "booksim2-fork+T1-torusdor-dump+prepared-v1"
 _TORUS_DOR_LOWERER_VERSION = "DORTORUS/1"
@@ -552,7 +580,7 @@ FLATFLY_MIN_PROFILE = BookSimProfile(
 def _assert_profile_closure() -> None:
     for profile in (ANYNET_PROFILE, MESH_DOR_PROFILE, CMESH_DOR_PROFILE,
                     MESH_DOR_MC_PROFILE, TORUS_DOR_PROFILE,
-                    FLATFLY_MIN_PROFILE):
+                    FLATFLY_MIN_PROFILE, MIN_ADAPT_MESH_PROFILE):
         for row in profile.audit:
             if row.owner is ParameterOwner.BACKEND_PROFILE \
                     and row.name != "traffic" and row.name != "sample_period" \
@@ -647,46 +675,16 @@ class MeshDorQualification:
 def qualify_native_mesh_dor(parents: BookSimProjectionParents,
                             *, multi_class: bool = False
                             ) -> MeshDorQualification:
-    """Prove every prerequisite, or refuse. Never a family-name shortcut."""
+    """Prove every prerequisite, or refuse. Never a family-name shortcut.
+
+    Physical gates live in _mesh_dor_physical_gates (shared verbatim
+    with the MIN_ADAPT envelope); the class laws below are the
+    deterministic-DOR envelope's own."""
     topo = parents.topology
-    # Seat capacity leads the family check: for a concentrated fabric the
-    # real gap is that the native profile models one endpoint per router,
-    # so the refusal names concentration rather than a family label.
-    for router in topo.routers:
-        if router.seat_capacity != 1:
-            raise SemanticLoss(
-                "UNSUPPORTED: certified mesh-DOR covers seat_capacity 1 "
-                f"only (router {router.router_id} has "
-                f"{router.seat_capacity}); concentration has no native "
-                "representation")
-    if topo.family is not MaterializedFamily.MESH:
-        raise SemanticLoss(
-            "UNSUPPORTED: the certified mesh-DOR profile covers "
-            "TopologyArtifact.family MESH only, got "
-            f"{getattr(topo.family, 'value', topo.family)!r}")
+    _mesh_dor_physical_gates(parents)
     n = topo.router_count
     k = math.isqrt(n)
-    if k * k != n or k < 1:
-        raise SemanticLoss(
-            f"UNSUPPORTED: certified mesh-DOR covers square k x k meshes "
-            f"only, got {n} routers")
-
     endpoints = parents.attachment.endpoints
-    if len(endpoints) > n:
-        raise SemanticLoss(
-            f"UNSUPPORTED: {len(endpoints)} attached endpoints exceed the "
-            f"{n} native mesh nodes")
-    if sorted(e.endpoint_id for e in endpoints) != list(range(len(endpoints))):
-        raise SemanticLoss(
-            "UNSUPPORTED: endpoint ids are not dense 0..E-1; the native "
-            "node universe cannot be addressed without a remap proof")
-    for endpoint in endpoints:
-        if endpoint.router_id != endpoint.endpoint_id:
-            raise SemanticLoss(
-                f"UNSUPPORTED: endpoint {endpoint.endpoint_id} attaches to "
-                f"router {endpoint.router_id}, not its native node "
-                "(identity-prefix attachments only)")
-
     classes = [d.id for d in parents.route.routing_classes]
     if DOR_XY not in classes:
         raise SemanticLoss(
@@ -778,6 +776,223 @@ def qualify_native_mesh_dor_mc(
         vc_resource_hash=qual.vc_resource_hash,
         attachment_hash=qual.attachment_hash,
         trace_classes=qual.trace_classes)
+
+
+def _min_adapt_k(parents: BookSimProjectionParents) -> int:
+    import math
+    n = parents.topology.router_count
+    k = math.isqrt(n)
+    if k * k != n or k < 1:
+        raise SemanticLoss(
+            f"UNSUPPORTED: min_adapt mesh covers square k x k meshes "
+            f"only, got {n} routers")
+    return k
+
+
+def _check_escape_transitions(base_transitions, esc_transitions,
+                              selection) -> None:
+    have = set(base_transitions)
+    esc = set(esc_transitions)
+    if not have <= esc:
+        raise SemanticLoss(
+            "UNSUPPORTED: escape resource must extend (never rewrite) "
+            "the compiler-derived transitions")
+    roles = {"escape": tuple(selection.escape_vcs),
+             "adaptive": tuple(selection.adaptive_vcs)}
+    need = {(v, v) for vcs in roles.values() for v in vcs}
+    need |= {(a, e) for a in roles.get("adaptive", ())
+             for e in roles.get("escape", ())}
+    if not need <= esc:
+        raise SemanticLoss(
+            "UNSUPPORTED: escape resource lacks required transitions "
+            f"{sorted(need - esc)}")
+    allowed_extra = {(a, e) for a in roles.get("adaptive", ())
+                     for e in roles.get("escape", ())}
+    if esc - have - allowed_extra:
+        raise SemanticLoss(
+            "UNSUPPORTED: escape resource adds non-escape transitions "
+            f"{sorted(esc - have - allowed_extra)}")
+
+
+def _mesh_dor_physical_gates(parents: BookSimProjectionParents) -> None:
+    """Mesh-DOR physical truth shared by the DOR and MIN_ADAPT envelopes.
+
+    Geometry, seats, route class, VC-routing-class mapping, latency,
+    weight and parallelism — everything EXCEPT the traffic-class count
+    law, the VC-envelope exactness law and the identity-transition law,
+    which differ per envelope (deterministic DOR executes identity
+    transitions over the full envelope; MIN_ADAPT executes the escape
+    partition). Extracted verbatim; qualify_native_mesh_dor behavior is
+    byte-identical."""
+    topo = parents.topology
+    for router in topo.routers:
+        if router.seat_capacity != 1:
+            raise SemanticLoss(
+                "UNSUPPORTED: certified mesh-DOR covers seat_capacity 1 "
+                f"only (router {router.router_id} has "
+                f"{router.seat_capacity}); concentration has no native "
+                "representation")
+    if topo.family is not MaterializedFamily.MESH:
+        raise SemanticLoss(
+            "UNSUPPORTED: the certified mesh-DOR profile covers "
+            "TopologyArtifact.family MESH only, got "
+            f"{getattr(topo.family, 'value', topo.family)!r}")
+    n = topo.router_count
+    k = math.isqrt(n)
+    if k * k != n or k < 1:
+        raise SemanticLoss(
+            f"UNSUPPORTED: certified mesh-DOR covers square k x k meshes "
+            f"only, got {n} routers")
+    endpoints = parents.attachment.endpoints
+    if len(endpoints) > n:
+        raise SemanticLoss(
+            f"UNSUPPORTED: {len(endpoints)} attached endpoints exceed the "
+            f"{n} native mesh nodes")
+    if sorted(e.endpoint_id for e in endpoints) != list(range(len(endpoints))):
+        raise SemanticLoss(
+            "UNSUPPORTED: endpoint ids are not dense 0..E-1; the native "
+            "node universe cannot be addressed without a remap proof")
+    for endpoint in endpoints:
+        if endpoint.router_id != endpoint.endpoint_id:
+            raise SemanticLoss(
+                f"UNSUPPORTED: endpoint {endpoint.endpoint_id} attaches to "
+                f"router {endpoint.router_id}, not its native node "
+                "(identity-prefix attachments only)")
+    vc_classes = {cls for _vc, cls
+                  in parents.vc_assignment.vc_to_routing_class}
+    if vc_classes != {DOR_XY}:
+        raise SemanticLoss(
+            "UNSUPPORTED: the mesh-DOR profile executes one DOR routing "
+            f"function, but VCs map to {sorted(vc_classes)}")
+    latencies = {c.latency_cycles for c in topo.channels}
+    if latencies != {1}:
+        raise SemanticLoss(
+            f"UNSUPPORTED: native mesh links are latency 1; channels carry "
+            f"{sorted(latencies)}")
+    weights = {c.route_weight for c in topo.channels}
+    if weights != {1}:
+        raise SemanticLoss(
+            f"UNSUPPORTED: DOR_XY is hop-count semantics but channels "
+            f"carry route_weight {sorted(weights)}")
+    pairs: dict[tuple[int, int], int] = {}
+    for channel in topo.channels:
+        key = (channel.src_router, channel.dst_router)
+        pairs[key] = pairs.get(key, 0) + 1
+    parallel = sorted(key for key, count in pairs.items() if count > 1)
+    if parallel:
+        raise SemanticLoss(
+            f"UNSUPPORTED: parallel channels between routers "
+            f"{parallel[:3]} have no native mesh representation")
+
+
+def qualify_min_adapt_mesh(parents: BookSimProjectionParents, selection,
+                           qualification, esc_resource
+                           ) -> MeshDorQualification:
+    """Qualify runtime-selected MIN_ADAPT_MESH execution.
+
+    The declared policy/profile, escape semantics and candidate-set scope
+    are qualified by the canonical chain (MinAdaptQualification over the
+    escape-subfunction proof); this projection consumes that verdict and
+    proves the mesh base, the VC partition and the fork mapping:
+
+      * mesh-DOR base gates reused verbatim (geometry, seat capacity,
+        DOR_XY escape-source route class, VC envelope, unit
+        latency/weights, no parallel channels, fork-v2 per-class law)
+        via the single/multi-class qualifier selected by the workload's
+        class count — EXCEPT the identity-VC gate, which the escape
+        subfunction supersedes by proof;
+      * esc_resource: same VC ids/count as the compiler resource, whose
+        transitions are exactly identity + the binding's adaptive->escape
+        hops, hash-bound through binding and qualification;
+      * vc_count == selection.num_vcs >= 2 (escape VC0 + adaptive 1..N);
+      * qualification verdict QUALIFIED with matching routing function,
+        escape/adaptive partition and policy/realization hashes.
+
+    UGAL/Valiant/Chaos/planar/ROMM/GEC-adaptive and the broken
+    limited_adapt_mesh are refused by the canonical chain before this
+    projection is reachable; routing_function stays LOCKED (no user
+    knob — the selection record is the only authority).
+    """
+    from veritx_dse.model.routing_realization import (
+        AdaptiveBackendSelection,
+        MIN_ADAPT_BACKEND_ROUTING_FUNCTION,
+    )
+    if not isinstance(selection, AdaptiveBackendSelection):
+        raise SemanticLoss(
+            f"UNSUPPORTED: min_adapt projection consumes an "
+            f"AdaptiveBackendSelection, got "
+            f"{type(selection).__name__}")
+    if getattr(qualification, "verdict", None) != "QUALIFIED":
+        raise SemanticLoss(
+            "UNSUPPORTED: min_adapt projection requires a QUALIFIED "
+            "MinAdaptQualification (escape-subfunction proof); got "
+            f"{getattr(qualification, 'verdict', None)!r}")
+    if getattr(qualification, "routing_function", None) != \
+            MIN_ADAPT_BACKEND_ROUTING_FUNCTION:
+        raise SemanticLoss(
+            "UNSUPPORTED: qualification routing function "
+            f"{getattr(qualification, 'routing_function', None)!r} is "
+            "not the min_adapt_mesh backend selection")
+    for field in ("escape_vcs", "adaptive_vcs", "policy_hash",
+                  "realization_hash"):
+        if getattr(qualification, field, None) != \
+                getattr(selection, field, None):
+            raise SemanticLoss(
+                f"UNSUPPORTED: qualification {field} does not match "
+                "the backend selection")
+    # Physical truth is shared verbatim with the deterministic envelope;
+    # the class/transition law below is the adaptive envelope's own (the
+    # deterministic identity-only law cannot cover escape entry).
+    _mesh_dor_physical_gates(parents)
+    classes = [d.id for d in parents.route.routing_classes]
+    if DOR_XY not in classes:
+        raise SemanticLoss(
+            f"UNSUPPORTED: min_adapt runs on a DOR_XY escape route; route "
+            f"artifact classes are {classes}")
+    traffic = getattr(parents, "physical_traffic", None)
+    trace_classes = trace_class_map(traffic) \
+        if traffic is not None else ()
+    if len(trace_classes) > 1:
+        raise SemanticLoss(
+            "UNSUPPORTED: min_adapt v1 covers single-class traffic only; "
+            f"this workload declares {sorted(trace_classes)} (adaptive + "
+            "multi-class interaction is unproven)")
+    from veritx_dse.model.vc_resource import VCResourceArtifact
+    if not isinstance(esc_resource, VCResourceArtifact):
+        raise SemanticLoss(
+            "UNSUPPORTED: min_adapt projection consumes an explicit "
+            "escape-augmented VCResourceArtifact, got "
+            f"{type(esc_resource).__name__}")
+    if tuple(esc_resource.vc_ids) != tuple(parents.vc_resource.vc_ids):
+        raise SemanticLoss(
+            "UNSUPPORTED: escape resource VC ids diverge from the "
+            "compiler-derived resource")
+    # The executed VC domain: every carried class over the full envelope
+    # (the fork allocates from the route-set envelope starting at VC 0),
+    # plus the escape-entry transitions of the qualified partition.
+    exact, reason = vc_exactness(esc_resource)
+    if not exact:
+        raise SemanticLoss(
+            f"UNSUPPORTED: min_adapt executed VC domain refused: {reason}")
+    vc_count = esc_resource.vc_count
+    if vc_count != selection.num_vcs or vc_count < 2:
+        raise SemanticLoss(
+            f"UNSUPPORTED: min_adapt escape partition needs vc_count "
+            f"== selection.num_vcs >= 2, got vc_count={vc_count} vs "
+            f"selection {selection.num_vcs}")
+    _check_escape_transitions(
+        parents.vc_resource.allowed_transitions,
+        esc_resource.allowed_transitions, selection)
+    topo = parents.topology
+    endpoints = parents.attachment.endpoints
+    return MeshDorQualification(
+        k=math.isqrt(topo.router_count),
+        router_count=topo.router_count,
+        endpoint_count=len(endpoints),
+        route_artifact_hash=parents.route.artifact_hash,
+        vc_resource_hash=esc_resource.artifact_hash,
+        attachment_hash=parents.attachment.attachment_hash(),
+        trace_classes=tuple(trace_classes))
 
 
 @dataclass(frozen=True)
@@ -1430,6 +1645,20 @@ def render_config(parents: BookSimProjectionParents, profile: BookSimProfile,
             # canonical traffic class
             "classes": len(qual.trace_classes),
         })
+    elif profile.profile_id == _MIN_ADAPT_PROFILE_ID:
+        # Runtime-selected adaptive: mesh geometry, min_adapt_mesh fork
+        # function, workload-derived class count, NO route-dump path
+        # (candidate-set functions abort deterministic dumps — the
+        # observation-scope guard, not a missing feature).
+        values = dict(profile.pinned_values())
+        values.update({
+            "topology": "mesh", "k": _min_adapt_k(parents), "n": 2,
+            "use_noc_latency": 1,
+            "routing_function": _MIN_ADAPT_ROUTING_FUNCTION,
+            "num_vcs": parents.vc_resource.vc_count,
+            "classes": len(trace_class_map(
+                parents.physical_traffic)),
+        })
     elif profile.profile_id == _CMESH_DOR_PROFILE_ID:
         qual = qualify_native_cmesh_dor(parents)
         values = dict(profile.pinned_values())
@@ -1928,6 +2157,101 @@ def prepare_booksim_input(parents: BookSimProjectionParents, *,
         seed=seed)
 
 
+def prepare_min_adapt_input(parents: BookSimProjectionParents, selection,
+                            qualification, esc_resource, *, seed: int = 0
+                            ) -> PreparedBookSimInput:
+    """Project a qualified MIN_ADAPT_MESH selection into prepared input.
+
+    Selection-driven (never via select_booksim_profile, which stays
+    deterministic-only): the qualifier proves the mesh base + VC
+    partition + qualification binding, then this renders the min_adapt
+    profile with NO route-dump path and NO expected route rows —
+    candidate-set routing has no deterministic first-hop table, so
+    execution evidence is conservation +
+    DOMAIN_QUALIFIED_ROUTE_NOT_OBSERVED (the observation-scope guard).
+    Per-class identity rides the fork-v2 replay law exactly as in the
+    multi-class profile; nothing is flattened, inferred or re-timed.
+    """
+    if not isinstance(parents, BookSimProjectionParents):
+        raise BookSimProjectionError(
+            "parents must be a BookSimProjectionParents")
+    if type(seed) is not int or isinstance(seed, bool) or seed < 0:
+        raise BookSimProjectionError("seed must be a non-negative int")
+    profile = MIN_ADAPT_MESH_PROFILE
+    qualify_min_adapt_mesh(parents, selection, qualification, esc_resource)
+    conservation = verify_trace_conservation(parents.physical_traffic)
+    # include_optional=True renders optional rows, but the min_adapt
+    # audit carries no routing_dump_file row at all — nothing to emit.
+    config = render_config(parents, profile, include_optional=True,
+                           seed=seed)
+    rendered = parse_config_values(config.decode())
+    missing = profile.rendered_names() - set(rendered)
+    if missing:
+        raise BookSimProjectionError(
+            f"rendered config is missing required profile fields "
+            f"{sorted(missing)} for {profile.profile_id}")
+    undeclared = set(rendered) - profile.known_names()
+    if undeclared:
+        raise BookSimProjectionError(
+            f"rendered config carries fields outside the audited profile "
+            f"surface {sorted(undeclared)} for {profile.profile_id}: an "
+            "undeclared simulation-relevant value is never emitted")
+    for name, pin in profile.pinned_values().items():
+        if rendered.get(name) != _format_value(pin):
+            raise BookSimProjectionError(
+                f"rendered {name}={rendered.get(name)!r} does not equal "
+                f"the profile pin {pin!r}")
+    if "routing_dump_file" in rendered:
+        raise BookSimProjectionError(
+            "min_adapt prepared input must not render a route-dump path: "
+            "candidate-set routing aborts deterministic dumps")
+    pt = parents.physical_traffic
+    schedule = trace_schedule(pt)
+    multi = len(trace_class_map(pt)) >= 2
+    return PreparedBookSimInput(
+        profile_id=profile.profile_id,
+        semantics_version=profile.semantics_version,
+        lowerer_version=_MIN_ADAPT_LOWERER_VERSION,
+        config_text=config.decode(), topology_text=None,
+        trace_text=render_trace(pt).decode(),
+        topology_hash=parents.topology.topology_hash(),
+        attachment_hash=parents.attachment.attachment_hash(),
+        mapping_hash=parents.mapping.mapping_hash(),
+        vc_resource_hash=parents.vc_resource.artifact_hash,
+        packet_format_hash=parents.packet_format.packet_format_hash,
+        route_artifact_hash=parents.route.artifact_hash,
+        resolved_fabric_hash=parents.resolved_fabric.resolved_fabric_hash,
+        physical_traffic_id=pt.physical_traffic_id(),
+        message_artifact_id=pt.logical.message_artifact_id(),
+        num_vcs=parents.vc_resource.vc_count,
+        endpoint_count=len(parents.attachment.endpoints),
+        router_count=parents.topology.router_count,
+        sample_period=int(rendered["sample_period"]),
+        max_samples=int(rendered["max_samples"]),
+        expected_packets=schedule["expected_packets"],
+        expected_flits=conservation["flits_total"],
+        trace_class_map=(trace_class_map(pt) if multi else ()),
+        expected_flits_by_class=(tuple(
+            sorted(conservation["flits_by_class"].items()))
+            if multi else ()),
+        expected_route_rows=(),
+        seed=seed)
+
+
+def assert_canonical_min_adapt_projection(
+        prepared: PreparedBookSimInput,
+        parents: BookSimProjectionParents, selection,
+        qualification, esc_resource) -> None:
+    """Re-prove a min_adapt prepared input (tamper refusal)."""
+    rebuilt = prepare_min_adapt_input(
+        parents, selection, qualification, esc_resource, seed=prepared.seed)
+    if rebuilt.prepared_id() != prepared.prepared_id():
+        raise BookSimProjectionError(
+            "prepared input does not match a fresh min_adapt projection "
+            "of these canonical parents (tampered or transplanted "
+            "artifact)")
+
+
 def assert_canonical_booksim_projection(
         prepared: PreparedBookSimInput,
         parents: BookSimProjectionParents) -> None:
@@ -2009,14 +2333,16 @@ __all__ = [
     "CMESH_DOR_PROFILE", "CmeshDorQualification",
     "CONFIG_FILE", "CONFIG_KEY_ORDER", "ConfigRead",
     "FLATFLY_MIN_PROFILE", "FlatflyMinQualification",
-    "MESH_DOR_PROFILE",
+    "MESH_DOR_PROFILE", "MIN_ADAPT_MESH_PROFILE",
     "MeshDorQualification", "ParameterOwner", "PreparedBookSimInput",
     "ROUTE_DUMP_FILE", "SemanticLoss", "TOPOLOGY_FILE", "TRACE_FILE",
     "TORUS_DOR_PROFILE", "TRACE_SCHEDULE_VERSION",
     "TorusDorQualification",
     "assert_canonical_booksim_projection",
+    "assert_canonical_min_adapt_projection",
     "compare_route_realization", "parse_config_values",
-    "prepare_booksim_input", "qualify_anynet_min_hops",
+    "prepare_booksim_input", "prepare_min_adapt_input",
+    "qualify_anynet_min_hops", "qualify_min_adapt_mesh",
     "qualify_native_cmesh_dor", "qualify_native_flatfly_min",
     "qualify_native_mesh_dor", "qualify_native_torus_dor",
     "render_anynet_topology", "render_config",

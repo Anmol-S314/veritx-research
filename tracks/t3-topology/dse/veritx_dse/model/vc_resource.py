@@ -284,6 +284,73 @@ class VCResourceArtifact:
         return artifact
 
 
+def adaptive_escape_vc_resource(
+        base: VCResourceArtifact,
+        escape_vcs: tuple[int, ...],
+        adaptive_vcs: tuple[int, ...],
+        traffic_classes: tuple[str, ...] | None = None) -> VCResourceArtifact:
+    """Derive the escape-aware VC resource for adaptive execution.
+
+    The compiler-derived resource carries identity transitions only, which
+    cannot realize the policy's adaptive->escape role transition (escape
+    entry is the deadlock-freedom mechanism). This constructor extends the
+    transition relation with every adaptive->escape pair while keeping
+    escape VCs closed under escape (escape->escape only, via identity):
+    adaptive traffic may enter the escape subfunction, escape traffic
+    never leaves it. Partition (disjoint, covering, non-empty) is
+    enforced.
+
+    The executed class law: the fork allocates every class from the
+    route-set envelope starting at VC 0, so each carried class maps to
+    the FULL envelope here. Pass the workload's carried classes
+    explicitly (never inferred); omitting them copies the base map,
+    which only qualifies when it is already full-envelope.
+    """
+    if not isinstance(base, VCResourceArtifact):
+        raise VCResourceError(
+            "base must be a VCResourceArtifact")
+    escape = tuple(int(v) for v in escape_vcs)
+    adaptive = tuple(int(v) for v in adaptive_vcs)
+    for v in (*escape, *adaptive):
+        if not 0 <= v < base.vc_count:
+            raise VCResourceError(
+                f"escape/adaptive VC {v} outside 0..{base.vc_count - 1}")
+    if not escape or not adaptive:
+        raise VCResourceError(
+            "escape and adaptive VC sets must both be non-empty")
+    if set(escape) & set(adaptive):
+        raise VCResourceError(
+            "escape and adaptive VC sets must be disjoint")
+    if set(escape) | set(adaptive) != set(base.vc_ids):
+        raise VCResourceError(
+            "escape + adaptive VCs must partition the full VC set")
+    transitions = {(v, v) for v in base.vc_ids}
+    transitions.update(
+        (a, e) for a in adaptive for e in escape)
+    if traffic_classes is None:
+        class_map = tuple(base.traffic_class_to_vcs)
+        derivation_classes = "base-map"
+    else:
+        for cls in traffic_classes:
+            _as_str("traffic class name", cls)
+        if len(set(traffic_classes)) != len(tuple(traffic_classes)):
+            raise VCResourceError(
+                "traffic classes must be unique")
+        class_map = tuple(
+            (cls, tuple(base.vc_ids)) for cls in sorted(traffic_classes))
+        derivation_classes = f"full-envelope:{sorted(traffic_classes)}"
+    return VCResourceArtifact(
+        vc_count=base.vc_count,
+        vc_ids=tuple(base.vc_ids),
+        traffic_class_to_vcs=class_map,
+        allowed_transitions=tuple(sorted(transitions)),
+        derivation=(
+            f"adaptive-escape(base={base.artifact_hash[:18]}…,"
+            f"escape={list(escape)},adaptive={list(adaptive)},"
+            f"classes={derivation_classes})"),
+    )
+
+
 def require_disjoint_traffic_classes(
         traffic_class_to_vcs: tuple[tuple[str, tuple[int, ...]], ...]
         ) -> None:
