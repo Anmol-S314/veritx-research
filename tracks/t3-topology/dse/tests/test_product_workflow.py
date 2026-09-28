@@ -304,8 +304,14 @@ def test_compare_compatibility_gate(tmp_path):
 
     d = mkrun("run-d", "wl-a", "QUALIFIED")
     same = svc.compare(a, d)
-    assert same["compatibility"]["compatible"] is True
-    assert same["rows"][0]["comparable"] is True
+    # Trust law: bundle-less runs read back UNVERIFIED, so even the
+    # same-workload pair is incompatible — a run with no bundle must
+    # never compare as QUALIFIED evidence.
+    assert same["compatibility"]["compatible"] is False
+    assert same["compatibility"]["same_workload"] is True
+    assert same["compatibility"]["both_qualified"] is False
+    assert any("QUALIFIED" in r
+               for r in same["compatibility"]["reasons"])
 
     unqualified = mkrun("run-e", "wl-a", None)
     not_qual = svc.compare(a, unqualified)

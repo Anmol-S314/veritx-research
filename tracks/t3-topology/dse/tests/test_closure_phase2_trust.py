@@ -156,7 +156,7 @@ def test_booksim_outcome_transplant_refused(tmp_path):
     from veritx_dse.backend.evidence import BackendEvidenceError
     ids = _booksim_ids()
 
-    def _outcome(**over):
+    def _outcome(digest, **over):
         base = {
             "status": "EVALUATED", "design_hash": "sha256:" + _h("design"),
             "resolved_fabric_hash": ids["fabric"],
@@ -166,38 +166,43 @@ def test_booksim_outcome_transplant_refused(tmp_path):
             "backend_config_hash": ids["config"],
             "backend_input_hash": ids["trace"],
             "realization_digest": ids["prepared"],
+            "producer_identity": ids["binary"],
+            "raw_evidence_digest": digest,
             "metrics": {"completion_cycles": 100},
         }
         base.update(over)
         return EvaluationOutcome(**base)
 
     def _write(doc):
+        raw = json.dumps(doc).encode("utf-8")
         path = tmp_path / "evidence.json"
-        path.write_text(json.dumps(doc), encoding="utf-8")
-        return str(path)
+        path.write_bytes(raw)
+        return str(path), hashlib.sha256(raw).hexdigest()
 
     # transplanted design on the outcome itself
-    bad_design = _outcome(design_hash="sha256:" + _h("other-design"))
+    doc = _booksim_evidence_doc(ids)
+    path, digest = _write(doc)
+    bad_design = _outcome(
+        digest, design_hash="sha256:" + _h("other-design"))
     bad_design = EvaluationOutcome(
-        **{**bad_design.__dict__, "evidence_path": _write(
-            _booksim_evidence_doc(ids))})
+        **{**bad_design.__dict__, "evidence_path": path})
     with pytest.raises(BackendEvidenceError, match="transplanted"):
         normalize_booksim_outcome(_context(ids), bad_design)
 
     # bound outcome, transplanted evidence beneath it
     tx_ids = dict(ids, config=_h("transplanted-config"))
-    bound = _outcome()
+    tx_doc = _booksim_evidence_doc(tx_ids)
+    tx_path, tx_digest = _write(tx_doc)
+    bound = _outcome(tx_digest)
     bound = EvaluationOutcome(
-        **{**bound.__dict__, "evidence_path": _write(
-            _booksim_evidence_doc(tx_ids))})
+        **{**bound.__dict__, "evidence_path": tx_path})
     with pytest.raises(BackendEvidenceError, match="transplanted"):
         normalize_booksim_outcome(_context(ids), bound)
 
     # EVALUATED outcome with no binding identities is unbound, refused
-    unbound = _outcome(realization_digest=None)
+    unbound = _outcome(digest, realization_digest=None)
     unbound = EvaluationOutcome(
-        **{**unbound.__dict__, "evidence_path": _write(
-            _booksim_evidence_doc(ids))})
+        **{**unbound.__dict__, "evidence_path": path})
     with pytest.raises(BackendEvidenceError, match="unbound"):
         normalize_booksim_outcome(_context(ids), unbound)
 
@@ -220,8 +225,11 @@ def _astra_native(ids):
     namespace_id = ids["namespace"]
     return Astra2Preparation(
         workload_projection=SimpleNamespace(
-            projection_id=lambda: workload_id),
-        machine=SimpleNamespace(machine_id=lambda: machine_id),
+            projection_id=lambda: workload_id,
+            traffic_classes=lambda: ("tp_collective",)),
+        machine=SimpleNamespace(
+            machine_id=lambda: machine_id,
+            embedded_network_class_abi_version=0),
         namespace=SimpleNamespace(namespace_id=lambda: namespace_id),
         workload_projection_id=ids["workload"],
         machine_id=ids["machine"],
@@ -232,7 +240,10 @@ def _astra_native(ids):
 
 
 def _astra_evidence(ids, **over):
-    from veritx_dse.backend.astra_execution import AstraRuntimeEvidence
+    from veritx_dse.backend.astra_execution import (
+        ASTRA_BUILD_RECIPE_VERSION,
+        AstraRuntimeEvidence,
+    )
     fields = {
         "status": "EXECUTED",
         "evidence_tier": "ASTRA_OWNED_COLLECTIVE_EXECUTION",
@@ -243,6 +254,12 @@ def _astra_evidence(ids, **over):
         "workload_projection_id": ids["workload"],
         "network_config_abi": "v1",
         "embedded_fabric_abi_version": "v1",
+        # Pin-quality producer facts: the normalize gate requires the
+        # qualified recipe constant (imported, never hardcoded — the
+        # v1-stamp drift is exactly what broke this control before).
+        "embedded_network_class_abi_version": 0,
+        "astra_build_recipe_version": ASTRA_BUILD_RECIPE_VERSION,
+        "astra_build_manifest_sha256": "1" * 64,
         "astra_binary_sha256": _h("astra-bin"),
         "astra_binary_size": 999,
         "astra_source_revision": "rev",
@@ -396,8 +413,9 @@ def test_ramulator_reproduction_match_still_returns_true(
 # ── PARTIAL failure naming ───────────────────────────────────────────
 
 def test_mixed_run_names_failed_analysis_in_reason():
-    """EVALUATED + FAILED mixes stay PARTIAL and the top-level reason
-    names the failed question with its reason (no silent masking)."""
+    """EVALUATED + FAILED mixes are overall FAILED (a crash is never
+    masked as PARTIAL) and the top-level reason names the failed
+    question with its reason."""
     from veritx_dse.application.federated_evaluator import (
         ANALYSIS_EVALUATED, ANALYSIS_FAILED, _aggregate,
     )
@@ -410,8 +428,11 @@ def test_mixed_run_names_failed_analysis_in_reason():
         question=EvaluationQuestion.SYSTEM_MAKESPAN,
         backend_id="ASTRA2_EMBEDDED_BOOKSIM", status=ANALYSIS_FAILED,
         reason="injected backend crash")
-    assert _aggregate((net, broken)) == "PARTIAL"
+    assert _aggregate((net, broken)) == "FAILED"
     reason = ProductService._federated_reason(
         SimpleNamespace(analyses=[net, broken]))
+    assert reason is not None
+    assert reason.startswith("FAILED SYSTEM_MAKESPAN on "
+                             "ASTRA2_EMBEDDED_BOOKSIM:")
     assert "SYSTEM_MAKESPAN" in reason
     assert "injected backend crash" in reason

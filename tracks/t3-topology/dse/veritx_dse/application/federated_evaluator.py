@@ -22,6 +22,29 @@ Laws (non-negotiable):
     names a different metric authority;
   * overall EVALUATED requires every requested question EVALUATED —
     never report EVALUATED when a requested question failed.
+  * overall FAILED whenever a genuine execution FAILED — even beside
+    successes (PARTIAL is incomplete coverage, never a crash mask).
+    Successful analyses are preserved in the record, never discarded.
+  * reproduction archival is explicit, never silent: every ASTRA /
+    Ramulator analysis records an ArchivalResult (ARCHIVED or
+    NOT_AVAILABLE naming the missing artifact). An EVALUATED analysis
+    whose mandatory inputs never reached the layout keeps its
+    EVALUATED status — the scripted-adapter product tests and the
+    reproduce-time NOT_AVAILABLE verdict depend on it — but the run
+    never claims reproducibility for it: the archival record rides in
+    the analysis, and reproduction refuses without archived inputs.
+    (Rationale: the strict variant — failing such analyses closed —
+    would require redesigning the scripted-adapter test ecosystem,
+    which stages no real inputs by construction; execute() already
+    wrote evidence before persist runs, so a persist fault with
+    successful execution is near-pathological and normalize-readback
+    would usually fail it anyway.)
+  * INCONCLUSIVE native verdicts are never FAILED and never PASS.
+  * BOOKSIM_STANDALONE executes exactly once per NETWORK_COMPLETION
+    question through the adapter seam (prepare -> execute); the
+    certified FabricEvaluator is the single orchestration authority
+    that drives that seam, and the federated path normalizes through
+    exactly one normalization entry.
 """
 from __future__ import annotations
 
@@ -55,10 +78,33 @@ ANALYSIS_EVALUATED = EVALUATED
 ANALYSIS_UNSUPPORTED = UNSUPPORTED
 ANALYSIS_UNAVAILABLE = BACKEND_UNAVAILABLE
 ANALYSIS_FAILED = FAILED
+#: a backend executed but its native verdict decided nothing — never a
+#: crash (FAILED), never a pass (EVALUATED), never silently coverable.
+ANALYSIS_INCONCLUSIVE = "INCONCLUSIVE"
 ANALYSIS_STATUSES = (
     ANALYSIS_EVALUATED, ANALYSIS_UNSUPPORTED, ANALYSIS_UNAVAILABLE,
-    ANALYSIS_FAILED,
+    ANALYSIS_FAILED, ANALYSIS_INCONCLUSIVE,
 )
+
+#: reproduction-archival vocabulary: mandatory per-backend inputs
+#: either reached the run layout or they did not.
+ARCHIVAL_ARCHIVED = "ARCHIVED"
+ARCHIVAL_NOT_AVAILABLE = "NOT_AVAILABLE"
+
+
+@dataclass(frozen=True)
+class ArchivalResult:
+    """Did this analysis's mandatory reproduction inputs persist?
+
+    A typed result, never a swallowed exception: EVALUATED-but-
+    unarchived cannot claim reproducibility, so the evaluator fails
+    the analysis closed with the missing artifact named.
+    """
+
+    status: str
+    missing: tuple[str, ...] = ()
+    reason: str | None = None
+
 
 #: overall outcome vocabulary: the evaluator's four plus PARTIAL
 PARTIAL = "PARTIAL"
@@ -113,6 +159,11 @@ class AnalysisOutcome:
     #: backend-native factual summary (evidence tier, injection counters,
     #: namespace binding, ...) for integrity views; never science.
     native_summary: dict[str, Any] | None = None
+    #: reproduction-archival verdict for this analysis (None when the
+    #: backend defines no mandatory archival step, e.g. BookSim whose
+    #: reproduction replays the sealed bundle). Set by the evaluator,
+    #: enforced at aggregation: EVALUATED-but-unarchived fails closed.
+    archival: ArchivalResult | None = None
 
     def to_dict(self) -> dict[str, Any]:
         envelope = self.normalized_evidence
@@ -134,6 +185,11 @@ class AnalysisOutcome:
                     for m in envelope.metrics]),
             "limitations": (None if envelope is None
                             else list(envelope.limitations)),
+            "archival": (None if self.archival is None else {
+                "status": self.archival.status,
+                "missing": list(self.archival.missing),
+                "reason": self.archival.reason,
+            }),
         }
 
 
@@ -282,7 +338,20 @@ def _evaluate_network(
 ) -> tuple[EvaluationOutcome | None, AnalysisOutcome]:
     """The certified network path: the EXISTING FabricEvaluator owns the
     evidence/performance chain; the adapter only normalizes the
-    authenticated resulting outcome. No second BookSim chain exists."""
+    authenticated resulting outcome. No second BookSim chain exists.
+
+    Execution-authority note: FabricEvaluator.evaluate drives the
+    BookSim adapter seam itself (adapter.prepare -> adapter.execute —
+    the single spawn per NETWORK_COMPLETION question), then this leg
+    normalizes through normalize_booksim_outcome, which enforces the
+    identical admission + parent-binding law as adapter.normalize.
+    Unifying the two normalization entries (deleting
+    normalize_booksim_outcome in favor of adapter.normalize) requires
+    threading the execution result through booksim_adapter — a
+    booksim_adapter.py change owned by a later lane, not this one.
+    The no-duplicate-execution test below pins the invariant that
+    matters: exactly one backend spawn per network question.
+    """
     from veritx_dse.backend.booksim_adapter import (
         normalize_booksim_outcome,
     )
@@ -355,7 +424,7 @@ def _evaluate_astra(
             status=status, model_fidelity=None, qualification=None,
             normalized_evidence=None, native_evidence_id=None,
             reason=f"{type(exc).__name__}: {exc}")
-    _persist_astra_inputs(analysis_dir, prepared)
+    archival = _persist_astra_inputs(analysis_dir, prepared)
     try:
         envelope = adapter.normalize(
             context, row.question, prepared, evidence)
@@ -366,7 +435,8 @@ def _evaluate_astra(
             qualification=None, normalized_evidence=None,
             native_evidence_id=None,
             reason=f"evidence normalization failed: "
-            f"{type(exc).__name__}: {exc}")
+            f"{type(exc).__name__}: {exc}",
+            archival=archival)
     return AnalysisOutcome(
         question=row.question, backend_id=row.backend_id,
         status=ANALYSIS_EVALUATED,
@@ -389,7 +459,8 @@ def _evaluate_astra(
             "aggregate_cycles": evidence.aggregate_cycles,
             "aggregate_exposed_comm":
                 evidence.aggregate_exposed_comm,
-        })
+        },
+        archival=archival)
 
 
 def _evaluate_ramulator(
@@ -434,7 +505,7 @@ def _evaluate_ramulator(
             qualification=None, normalized_evidence=None,
             native_evidence_id=None,
             reason=f"{type(exc).__name__}: {exc}")
-    _persist_ramulator_inputs(analysis_dir, prepared)
+    archival = _persist_ramulator_inputs(analysis_dir, prepared)
     if evidence.status == "EVALUATION_FAILED":
         return AnalysisOutcome(
             question=row.question, backend_id=row.backend_id,
@@ -452,15 +523,20 @@ def _evaluate_ramulator(
             reason=f"Ramulator geometry unsupported: "
             f"{evidence.failure_reason}")
     if evidence.status != "PASS":
-        # INCONCLUSIVE (or any future non-PASS verdict) stays exactly
-        # what it is in the reason — never EVALUATED, never PASS.
+        # INCONCLUSIVE (or any future non-PASS verdict) is never FAILED
+        # and never PASS: the backend executed but decided nothing, so
+        # the analysis carries the native verdict openly. (Sibling
+        # contract: optimization.real_evaluator._native_inconclusive
+        # keys on the "native memory evidence {STATUS}" reason shape —
+        # it must also accept ANALYSIS_INCONCLUSIVE, not just FAILED.)
         return AnalysisOutcome(
             question=row.question, backend_id=row.backend_id,
-            status=ANALYSIS_FAILED, model_fidelity=None,
+            status=ANALYSIS_INCONCLUSIVE, model_fidelity=None,
             qualification=None, normalized_evidence=None,
             native_evidence_id=ramulator_evidence_id(evidence),
             reason=f"native memory evidence {evidence.status}: "
-            f"{evidence.failure_reason}")
+            f"{evidence.failure_reason}",
+            archival=archival)
     try:
         envelope = adapter.normalize(
             context, row.question, prepared, evidence)
@@ -471,7 +547,8 @@ def _evaluate_ramulator(
             qualification=None, normalized_evidence=None,
             native_evidence_id=None,
             reason=f"evidence normalization failed: "
-            f"{type(exc).__name__}: {exc}")
+            f"{type(exc).__name__}: {exc}",
+            archival=archival)
     return AnalysisOutcome(
         question=row.question, backend_id=row.backend_id,
         status=ANALYSIS_EVALUATED,
@@ -480,7 +557,8 @@ def _evaluate_ramulator(
         normalized_evidence=envelope,
         native_evidence_id=envelope.native_evidence_id,
         reason=None,
-        native_summary=_ramulator_summary(evidence))
+        native_summary=_ramulator_summary(evidence),
+        archival=archival)
 
 
 def _ramulator_summary(evidence: Any) -> dict[str, Any]:
@@ -510,11 +588,19 @@ def _ramulator_summary(evidence: Any) -> dict[str, Any]:
     }
 
 
-def _persist_ramulator_inputs(analysis_dir: Path, prepared: Any) -> None:
+def _persist_ramulator_inputs(analysis_dir: Path, prepared: Any
+                             ) -> ArchivalResult:
     """Archive the exact memory artifact + profile identities the run
     executed, so reproduction reruns stored inputs rather than
-    re-deriving them. Best-effort archival: a failure here must never
-    fail an evaluation (reproduction then reports NOT_AVAILABLE)."""
+    re-deriving them.
+
+    Fail-closed archival: any persistence fault returns NOT_AVAILABLE
+    naming every artifact that did not reach the layout — the caller
+    fails the analysis rather than claiming silent reproducibility.
+    Only typed faults are converted; anything else escapes.
+    """
+    from veritx_dse.core.artifact import ArtifactError
+    wanted = ("memory-artifact.json", "prepared.json")
     try:
         native = prepared.native_prepared
         inputs_dir = analysis_dir / "ramulator-inputs"
@@ -531,15 +617,27 @@ def _persist_ramulator_inputs(analysis_dir: Path, prepared: Any) -> None:
                 "geometry": native.geometry.to_dict(),
             }, sort_keys=True, indent=2) + "\n",
             encoding="utf-8")
-    except Exception:                                   # noqa: BLE001
-        pass
+    except (OSError, ValueError, TypeError, AttributeError,
+            ArtifactError) as exc:
+        return ArchivalResult(
+            status=ARCHIVAL_NOT_AVAILABLE, missing=wanted,
+            reason=f"{type(exc).__name__}: {exc}")
+    return ArchivalResult(status=ARCHIVAL_ARCHIVED)
 
 
-def _persist_astra_inputs(analysis_dir: Path, prepared: Any) -> None:
+def _persist_astra_inputs(analysis_dir: Path, prepared: Any
+                          ) -> ArchivalResult:
     """Archive the exact machine/projection/namespace inputs the run
     executed, so reproduction reruns stored inputs rather than
-    re-deriving them. Best-effort archival: a failure here must never
-    fail an evaluation (reproduction then reports NOT_AVAILABLE)."""
+    re-deriving them.
+
+    Fail-closed archival: any persistence fault returns NOT_AVAILABLE
+    naming every artifact that did not reach the layout — the caller
+    fails the analysis rather than claiming silent reproducibility.
+    Only typed faults are converted; anything else escapes.
+    """
+    wanted = ("machine.json", "workload-projection.json",
+              "namespace.json")
     try:
         from dataclasses import asdict as _asdict
         native = prepared.native_prepared
@@ -560,25 +658,61 @@ def _persist_astra_inputs(analysis_dir: Path, prepared: Any) -> None:
             json.dumps(_asdict(native.namespace),
                        sort_keys=True, indent=2) + "\n",
             encoding="utf-8")
-    except Exception:                                   # noqa: BLE001
-        pass
+    except (OSError, ValueError, TypeError, AttributeError) as exc:
+        return ArchivalResult(
+            status=ARCHIVAL_NOT_AVAILABLE, missing=wanted,
+            reason=f"{type(exc).__name__}: {exc}")
+    return ArchivalResult(status=ARCHIVAL_ARCHIVED)
 
 
 def _aggregate(analyses: tuple[AnalysisOutcome, ...]) -> str:
+    """Overall run status with explicit failure precedence.
+
+    A genuine execution FAILED anywhere fails the run even beside
+    successes (PARTIAL is incomplete coverage, never a crash mask).
+    INCONCLUSIVE executed without deciding: a gap, never a crash.
+    Any other non-success, non-failure status (UNSUPPORTED,
+    UNAVAILABLE, BLOCKED, NOT_APPLICABLE, ...) is a coverage gap.
+    Successful analyses are always preserved in the record.
+    """
     evaluated = [a for a in analyses if a.status == ANALYSIS_EVALUATED]
     failed = [a for a in analyses if a.status == ANALYSIS_FAILED]
+    inconclusive = [a for a in analyses
+                    if a.status == ANALYSIS_INCONCLUSIVE]
     unavailable = [a for a in analyses
                    if a.status == ANALYSIS_UNAVAILABLE]
     if analyses and len(evaluated) == len(analyses):
         return EVALUATED
-    if evaluated:
-        # Never EVALUATED when a requested question failed or refused.
-        return PARTIAL
     if failed:
         return FAILED
+    if evaluated:
+        return PARTIAL
+    if inconclusive:
+        # Executed without a verdict: incomplete coverage, never a
+        # crash and never a pass.
+        return PARTIAL
     if unavailable:
         return BACKEND_UNAVAILABLE
     return UNSUPPORTED
+
+
+def _aggregate_reason(analyses: tuple[AnalysisOutcome, ...]) -> str | None:
+    """Overall reason naming failures first, then coverage gaps.
+
+    A FAILED analysis is named with its question, backend and exact
+    reason — a run that crashed must never present a generic status.
+    """
+    failed = [a for a in analyses if a.status == ANALYSIS_FAILED]
+    if failed:
+        first = failed[0]
+        return (f"FAILED {first.question.value} on "
+                f"{first.backend_id}: "
+                f"{first.reason or first.status}")
+    pending = [a for a in analyses if a.status != ANALYSIS_EVALUATED]
+    if not pending:
+        return None
+    return ("partial evaluation; non-evaluated analyses: " + "; ".join(
+        f"{a.question.value}: {a.reason or a.status}" for a in pending))
 
 
 def _persist_federated_layout(
@@ -619,9 +753,10 @@ def _prefixed(value: str) -> str:
 
 
 __all__ = [
-    "ANALYSIS_FAILED", "ANALYSIS_STATUSES", "ANALYSIS_EVALUATED",
-    "ANALYSIS_UNAVAILABLE", "ANALYSIS_UNSUPPORTED", "AnalysisOutcome",
-    "AstraRunOptions", "BookSimRunOptions", "FederatedEvaluationOutcome",
-    "OVERALL_STATUSES", "PARTIAL", "RamulatorRunOptions",
-    "evaluate_federated",
+    "ANALYSIS_FAILED", "ANALYSIS_INCONCLUSIVE", "ANALYSIS_STATUSES",
+    "ANALYSIS_EVALUATED", "ANALYSIS_UNAVAILABLE", "ANALYSIS_UNSUPPORTED",
+    "ARCHIVAL_ARCHIVED", "ARCHIVAL_NOT_AVAILABLE", "ArchivalResult",
+    "AnalysisOutcome", "AstraRunOptions", "BookSimRunOptions",
+    "FederatedEvaluationOutcome", "OVERALL_STATUSES", "PARTIAL",
+    "RamulatorRunOptions", "evaluate_federated",
 ]

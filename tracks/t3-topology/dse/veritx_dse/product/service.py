@@ -40,11 +40,14 @@ from veritx_dse.core.errors import (
 )
 from veritx_dse.core.paths import REPO
 from veritx_dse.core.run_bundle import (
-    RunBundleError, finalize_run_bundle, verify_run_bundle,
+    RunBundleError, finalize_run_bundle, read_verified_file,
+    verify_run_bundle,
 )
 from veritx_dse.core.runs import new_run_id
 from veritx_dse.product.jobs import TERMINAL_STATES, JobManager
-from veritx_dse.product.store import ProductStore, _new_id, utcnow
+from veritx_dse.product.store import (
+    ProductStore, ProductStoreError, _new_id, utcnow,
+)
 
 #: v3 workload templates shipped with the product. The catalog exposes
 #: exactly these canonical request documents; it authors no workload.
@@ -85,6 +88,13 @@ _RUN_STATUS = {
     "FAILED": "FAILED",
     "INVALID": "INVALID",
 }
+
+#: Trust-read byte caps for serving bundle documents as science: a
+#: single evidence document larger than this is refused rather than
+#: parsed (giant raw exposure is never a trust read).
+_TRUST_READ_FILE_CAP = 4 * 1024 * 1024
+#: Total across every document served by one run_evidence response.
+_TRUST_READ_TOTAL_CAP = 32 * 1024 * 1024
 
 
 class ProductServiceError(ControlPlaneError):
@@ -639,7 +649,10 @@ class ProductService:
         if active_id is not None:
             try:
                 active = self.store.load_revision(project_id, active_id)
-            except Exception:
+            except ProductStoreError:
+                # A missing/unreadable active revision steps back; a
+                # programming error propagates instead of silently
+                # stepping back over a corrupt store.
                 active = None
             if active is None or not self._revision_promotable(active):
                 fallback = None
@@ -649,7 +662,7 @@ class ProductService:
                     try:
                         candidate = self.store.load_revision(
                             project_id, rid)
-                    except Exception:
+                    except ProductStoreError:
                         continue
                     if self._revision_promotable(candidate):
                         fallback = rid
@@ -913,7 +926,9 @@ class ProductService:
         the SAME DESIGN the study measured — not a re-derivation that might
         have drifted.
         """
-        from veritx_dse.optimization.candidate import apply_patch
+        from veritx_dse.optimization.candidate import (
+            CandidateError, apply_patch,
+        )
 
         optimization = self.get_optimization(optimization_id)
         project_id = optimization["project_id"]
@@ -951,7 +966,7 @@ class ProductService:
         base_request = parse_request_doc(base_revision.get("request"))
         try:
             patched = apply_patch(base_request, patch)
-        except Exception as exc:                            # noqa: BLE001
+        except (CandidateError, ValueError, KeyError) as exc:
             raise intent_error(
                 f"cannot apply candidate {candidate_id!r} patch {patch!r} to "
                 f"base revision {base_revision_id!r}: {exc}") from exc
@@ -1588,7 +1603,7 @@ class ProductService:
         planner, projects the view. Never executes anything.
         """
         from veritx_dse.application.evaluation_context import (
-            build_evaluation_context,
+            EvaluationContextError, build_evaluation_context,
         )
         from veritx_dse.application.evaluation_plan import (
             EvaluationPlanError, EvaluationPlanner,
@@ -1604,7 +1619,9 @@ class ProductService:
         compilation = self._compilation_for_plan(revision)
         try:
             context = build_evaluation_context(compilation)
-        except Exception as exc:
+        except (EvaluationContextError, _LoweringInvalid,
+                _LoweringSemantics, _LoweringSchedule,
+                _LoweringMappingInvalid) as exc:
             raise ProductServiceError(
                 ErrorCode.UNSUPPORTED_SEMANTICS,
                 f"revision {revision_id} has no evaluable context: {exc}",
@@ -1733,6 +1750,38 @@ class ProductService:
                 resource_id=revision.get("revision_id"))
         return compilation
 
+    @staticmethod
+    def _check_run_report_binding(run_id: str, revision: dict[str, Any],
+                                    network: Any, report: Any) -> None:
+        """Re-verify the requirement report binds THIS revision before
+        the run is persisted.
+
+        The report is the product-requirement authority: its design_hash
+        and every entry's performance_result_id must name this
+        revision's network evaluation. A stale or transplanted report
+        persisted beside the displayed revision is refused instead of
+        stored. Reuses the optimizer's binding law; the failure is
+        projected as a product EVIDENCE_INVALID.
+        """
+        from types import SimpleNamespace
+        from veritx_dse.optimization.result import (
+            OptimizationResultError, _check_report_binding,
+        )
+        binding = SimpleNamespace(
+            design_hash=revision.get("design_hash"),
+            performance_result_id=getattr(
+                network, "performance_result_id", None),
+            requirement_report_id=None)
+        try:
+            _check_report_binding(binding, report, run_id)
+        except OptimizationResultError as exc:
+            raise ProductServiceError(
+                ErrorCode.EVIDENCE_INVALID,
+                f"refusing run {run_id}: the requirement report does "
+                f"not bind this revision's network evaluation: {exc}",
+                operation="run_report_binding",
+                resource_id=run_id) from exc
+
     def _run_federated_evaluation(
             self, project_id: str, revision: dict[str, Any],
             questions: tuple[Any, ...], requested_backend: str | None,
@@ -1749,8 +1798,8 @@ class ProductService:
             EvaluationQuestion,
         )
         from veritx_dse.application.federated_evaluator import (
-            PARTIAL, AstraRunOptions, BookSimRunOptions,
-            RamulatorRunOptions, evaluate_federated,
+            ANALYSIS_INCONCLUSIVE, PARTIAL, AstraRunOptions,
+            BookSimRunOptions, RamulatorRunOptions, evaluate_federated,
         )
         request = parse_request_doc(revision["request"])
         compilation = self._check_compilation_parity(revision, request)
@@ -1789,7 +1838,15 @@ class ProductService:
         evaluation = (None if network is None
                       else network.to_view_dict())
         bundle_id = None
-        if federated.status in ("EVALUATED", PARTIAL):
+        if any(a.normalized_evidence is not None
+               or a.status == ANALYSIS_INCONCLUSIVE
+               for a in federated.analyses):
+            # Seal every successful analysis even when the overall run
+            # FAILED: a crashed sibling must never discard another
+            # backend's authenticated evidence. Inconclusive native
+            # evidence is sealed too (it executed; the verdict is what
+            # is unknown). Pure refusals (nothing executed anywhere)
+            # seal nothing and stay bundle-less, exactly as before.
             progress("FINALIZING")
             manifest = finalize_run_bundle(bundle_dir)
             bundle_id = "sha256:" + manifest["bundle_id"]
@@ -1849,6 +1906,11 @@ class ProductService:
                 revision["revision_id"], federated),
             "analyses": [a.to_dict() for a in federated.analyses],
         }
+        if federated.requirement_report is not None and network is not None \
+                and network.status == "EVALUATED":
+            self._check_run_report_binding(
+                run_id, revision, network,
+                federated.requirement_report)
         self.store.create_run(project_id, run)
         state = ("COMPLETED" if federated.status in ("EVALUATED", PARTIAL)
                  else "REFUSED")
@@ -1856,34 +1918,49 @@ class ProductService:
 
     @staticmethod
     def _federated_reason(federated: Any) -> str | None:
-        """Top-level reason: the network leg's reason when it did not
-        evaluate, else a summary of every non-evaluated analysis (a
-        PARTIAL run with a null reason would hide which question
-        refused)."""
+        """Top-level reason: FAILED analyses are named first with their
+        question, backend and exact reason (a crashed run must never
+        present a generic status); then the historical network-first
+        rule; then every other non-evaluated analysis. A PARTIAL run
+        with a null reason would hide which question refused."""
         from veritx_dse.application.evaluation_question import (
             EvaluationQuestion,
         )
+        failed = [
+            f"FAILED {a.question.value} on {a.backend_id}: "
+            f"{a.reason or a.status}"
+            for a in federated.analyses if a.status == "FAILED"]
         network = next(
             (a for a in federated.analyses
              if a.question is EvaluationQuestion.NETWORK_COMPLETION
              and a.backend_id == "BOOKSIM_STANDALONE"),
             None)
-        if network is not None and network.status != "EVALUATED":
-            return network.reason
-        pending = [f"{a.question.value}: {a.reason or a.status}"
-                   for a in federated.analyses
-                   if a.status != "EVALUATED"]
-        if pending:
-            return ("partial evaluation; non-evaluated analyses: "
-                    + "; ".join(pending))
-        return None
+        base: str | None = None
+        if network is not None and network.status != "EVALUATED" \
+                and network.status != "FAILED":
+            base = network.reason
+        if base is None:
+            pending = [f"{a.question.value}: {a.reason or a.status}"
+                       for a in federated.analyses
+                       if a.status != "EVALUATED"
+                       and a.status != "FAILED"]
+            if pending:
+                base = ("partial evaluation; non-evaluated analyses: "
+                        + "; ".join(pending))
+        if failed and base:
+            return "; ".join(failed) + "; " + base
+        if failed:
+            return "; ".join(failed)
+        return base
 
     @staticmethod
     def _report_passes(report: dict[str, Any]) -> bool | None:
         from veritx_dse.application.requirements import report_passes
         try:
             return report_passes(report)
-        except Exception:                               # noqa: BLE001
+        except (AttributeError, TypeError):
+            # Report-shape errors only (non-mapping entries): verdict
+            # unknown. Anything else propagates.
             return None
 
     @staticmethod
@@ -1939,6 +2016,34 @@ class ProductService:
             "completion_cycles": metrics.get("completion_cycles"),
         }
 
+    def _read_trust_file(self, bundle_dir: Path,
+                           relpath: str) -> bytes:
+        """Read one bundle file pinned to its verified digest.
+
+        Every trust read (evidence documents consumed as science)
+        goes through the bundle's sealed checksums: the file is
+        re-hashed at read time and compared against the digest recorded
+        at finalization, closing the verify-to-read gap where bytes could
+        change between verification and consumption. A mismatch, an
+        unsealed name, a symlink or a missing file raises
+        EVIDENCE_INVALID — trust reads never fall back to raw bytes.
+        """
+        try:
+            data = read_verified_file(bundle_dir, relpath)
+        except RunBundleError as exc:
+            raise ProductServiceError(
+                ErrorCode.EVIDENCE_INVALID,
+                f"refusing trust read of {relpath}: {exc}",
+                operation="read_trust_file") from exc
+        if len(data) > _TRUST_READ_FILE_CAP:
+            raise ProductServiceError(
+                ErrorCode.EVIDENCE_INVALID,
+                f"refusing trust read of {relpath}: "
+                f"{len(data)} bytes exceeds the "
+                f"{_TRUST_READ_FILE_CAP}-byte trust-read cap",
+                operation="read_trust_file") from None
+        return data
+
     def _verify_run_bundle(self, run: dict[str, Any]) -> dict[str, Any] | None:
         """Re-verify the durable RunBundle before any trust read.
 
@@ -1981,7 +2086,7 @@ class ProductService:
         return self._run_view(run)
 
     def _run_view(self, run: dict[str, Any]) -> dict[str, Any]:
-        return {
+        return self._downgrade_unverified_trust({
             "contract_version": 1,
             "run_id": run["run_id"],
             "display_name": run.get("display_name"),
@@ -2003,7 +2108,32 @@ class ProductService:
             "reason": run.get("reason"),
             "evaluation_plan": run.get("evaluation_plan"),
             "analyses": run.get("analyses"),
-        }
+        }, run)
+
+    @staticmethod
+    def _downgrade_unverified_trust(payload: dict[str, Any],
+                                      run: dict[str, Any]) -> dict[str, Any]:
+        """Downgrade trust claims that have no sealed bundle behind them.
+
+        A run record claiming evaluated trust (EVALUATED/PARTIAL status
+        or any qualification) without a bundle_id serves UNVERIFIED
+        verdicts instead: refused or legacy runs legitimately lack
+        bundles, but no caller may read QUALIFIED science from a record
+        with no sealed evidence. Pure refusals (no trust claimed) pass
+        through untouched.
+        """
+        if run.get("bundle_id") is not None:
+            return payload
+        if run.get("status") not in ("EVALUATED", "PARTIAL") \
+                and not run.get("qualification"):
+            return payload
+        payload = dict(payload)
+        payload["qualification"] = "UNVERIFIED"
+        note = ("trust fields are UNVERIFIED: the run records no "
+                "sealed run bundle")
+        reason = payload.get("reason")
+        payload["reason"] = note if not reason else f"{reason}; {note}"
+        return payload
 
     def run_evidence(self, run_id: str) -> dict[str, Any]:
         pid = self.store.find_run_project(run_id)
@@ -2016,20 +2146,45 @@ class ProductService:
         bundle_dir = self.store.run_bundle_dir(pid, run_id)
         documents: dict[str, Any] = {}
         artifacts: list[dict[str, Any]] = []
-        if bundle_dir.is_dir():
+        documents_truncated = False
+        total_bytes = 0
+        if run.get("bundle_id") is not None and bundle_dir.is_dir():
+            # No sealed bundle, no served evidence: partial working
+            # files from a failed or refused job are never presented as
+            # bundle artifacts. Hidden files and checksum-temp files
+            # (.checksums-*) are never bundle content.
             for path in sorted(bundle_dir.rglob("*")):
                 if not path.is_file():
                     continue
                 rel = path.relative_to(bundle_dir).as_posix()
-                artifacts.append({"path": rel,
-                                  "size_bytes": path.stat().st_size})
-                if path.suffix == ".json" and rel != "checksums.json":
-                    try:
-                        documents[rel] = json.loads(
-                            path.read_text(encoding="utf-8"))
-                    except (OSError, json.JSONDecodeError):
-                        continue
-        return {
+                if any(part.startswith(".") for part in rel.split("/")):
+                    continue
+                size_bytes = path.stat().st_size
+                artifacts.append({"path": rel, "size_bytes": size_bytes})
+                if path.suffix != ".json" \
+                        or path.name == "checksums.json":
+                    # checksums.json at any depth is bundle metadata of
+                    # its own scope (the sealer excludes it by name), never
+                    # a servable science document.
+                    continue
+                if size_bytes > _TRUST_READ_FILE_CAP or \
+                        total_bytes + size_bytes > _TRUST_READ_TOTAL_CAP:
+                    # Oversized documents are described, never served
+                    # raw: a giant raw JSON exposure is not a trust read.
+                    documents[rel] = {
+                        "truncated": True,
+                        "size_bytes": size_bytes,
+                        "reason": "exceeds the trust-read byte budget",
+                    }
+                    documents_truncated = True
+                    continue
+                try:
+                    raw = self._read_trust_file(bundle_dir, rel)
+                    documents[rel] = json.loads(raw.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    continue
+                total_bytes += size_bytes
+        response = {
             "contract_version": 1,
             "run_id": run_id,
             "bundle_id": run.get("bundle_id"),
@@ -2039,7 +2194,9 @@ class ProductService:
             "evidence": run.get("evidence"),
             "artifacts": artifacts,
             "documents": documents,
+            "documents_truncated": documents_truncated,
         }
+        return self._downgrade_unverified_trust(response, run)
 
     def run_artifacts(self,         run_id: str) -> dict[str, Any]:
         pid = self.store.find_run_project(run_id)
@@ -2288,24 +2445,33 @@ class ProductService:
         # document — is written by the backend into the bundle's `run/`
         # working directory; the raw evidence copy lives under `evidence/`.
         # Read the wrapped record (the schema this projection parses), with
-        # a bundle-root fallback for older layouts.
-        evidence_path = next(
-            (path for path in (
-                bundle_dir / "run" / "backend-evidence.json",
-                bundle_dir / "backend-evidence.json",
-            ) if path.is_file()),
-            None,
-        )
-        if evidence_path is None:
+        # a bundle-root fallback for older layouts. Trust reads go
+        # through the sealed checksums: bytes that changed after
+        # verification are refused, never projected.
+        doc = None
+        for rel in ("run/backend-evidence.json",
+                    "backend-evidence.json"):
+            if (bundle_dir / rel).is_file():
+                raw = self._read_trust_file(bundle_dir, rel)
+                try:
+                    doc = json.loads(raw.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise ProductServiceError(
+                        ErrorCode.EVIDENCE_INVALID,
+                        f"run {run_id} evidence document {rel} is "
+                        f"unreadable: {exc}",
+                        operation="run_integrity",
+                        resource_id=run_id) from exc
+                break
+        if doc is None:
             raise ProductServiceError(
                 ErrorCode.NOT_FOUND,
                 f"run {run_id} carries no backend evidence document",
                 operation="run_integrity", resource_id=run_id)
         try:
-            doc = json.loads(evidence_path.read_text(encoding="utf-8"))
             evidence = doc["evidence"]
             stats = evidence["stats"]
-        except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        except (KeyError, TypeError) as exc:
             raise ProductServiceError(
                 ErrorCode.EVIDENCE_INVALID,
                 f"run {run_id} evidence document is unreadable: {exc}",
@@ -2392,20 +2558,13 @@ class ProductService:
             if backend == "BOOKSIM_STANDALONE" and status == "EVALUATED":
                 doc = self._analysis_evidence_doc(
                     run_id, bundle_dir, key)
-                if doc is not None:
-                    network_projection = self._booksim_integrity(
-                        doc["evidence"], doc["evidence"]["stats"])
-                    per_analysis[key] = {
-                        "backend": backend, "status": status,
-                        "kind": "network_packet_integrity",
-                        **network_projection,
-                    }
-                else:
-                    per_analysis[key] = {
-                        "backend": backend, "status": status,
-                        "kind": "network_packet_integrity",
-                        "error": "evidence document absent from bundle",
-                    }
+                network_projection = self._booksim_integrity(
+                    doc["evidence"], doc["evidence"]["stats"])
+                per_analysis[key] = {
+                    "backend": backend, "status": status,
+                    "kind": "network_packet_integrity",
+                    **network_projection,
+                }
             elif backend == "ASTRA2_EMBEDDED_BOOKSIM":
                 per_analysis[key] = self._astra_integrity(analysis)
             elif backend == "RAMULATOR2_HBM3_V1":
@@ -2434,26 +2593,44 @@ class ProductService:
         return response
 
     def _analysis_evidence_doc(self, run_id: str, bundle_dir: Path,
-                               analysis_key: str) -> dict[str, Any] | None:
-        """The authenticated BookSim evidence wrapper for one analysis."""
+                               analysis_key: str) -> dict[str, Any]:
+        """The authenticated BookSim evidence wrapper for one analysis.
+
+        Raises EVIDENCE_INVALID when the document is absent, unreadable
+        or structurally wrong: an EVALUATED analysis without evidence
+        is corruption, never a soft error field.
+        """
         candidates = (
-            bundle_dir / "analyses" / analysis_key
-            / "evidence" / "backend-evidence.json",
-            bundle_dir / "analyses" / analysis_key
-            / "run" / "backend-evidence.json",
+            f"analyses/{analysis_key}/evidence/backend-evidence.json",
+            f"analyses/{analysis_key}/run/backend-evidence.json",
         )
-        for path in candidates:
-            if not path.is_file():
+        for rel in candidates:
+            if not (bundle_dir / rel).is_file():
                 continue
+            raw = self._read_trust_file(bundle_dir, rel)
             try:
-                doc = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                continue
+                doc = json.loads(raw.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise ProductServiceError(
+                    ErrorCode.EVIDENCE_INVALID,
+                    f"run {run_id} analysis {analysis_key} evidence "
+                    f"document is unreadable: {exc}",
+                    operation="run_integrity",
+                    resource_id=run_id) from exc
             evidence = doc.get("evidence")
             if isinstance(evidence, dict) \
                     and isinstance(evidence.get("stats"), dict):
                 return doc
-        return None
+            raise ProductServiceError(
+                ErrorCode.EVIDENCE_INVALID,
+                f"run {run_id} analysis {analysis_key} evidence "
+                f"document carries no scientific evidence with stats",
+                operation="run_integrity", resource_id=run_id)
+        raise ProductServiceError(
+            ErrorCode.EVIDENCE_INVALID,
+            f"run {run_id} analysis {analysis_key} evidence document "
+            f"is absent from the bundle",
+            operation="run_integrity", resource_id=run_id)
 
     @staticmethod
     def _astra_integrity(analysis: dict[str, Any]) -> dict[str, Any]:
