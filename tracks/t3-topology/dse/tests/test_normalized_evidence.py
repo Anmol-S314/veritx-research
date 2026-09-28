@@ -128,3 +128,37 @@ def test_envelope_is_frozen():
     env = _envelope()
     with pytest.raises(dataclasses.FrozenInstanceError):
         env.qualification = "QUALIFIED"
+
+
+def _rank_metric(rank: int, value: float = 1234.0) -> MetricValue:
+    return MetricValue(
+        key="completion_cycles", value=value, unit="cycles",
+        source_metric_key="per_rank_cycles",
+        dimensions=(("rank", str(rank)),))
+
+
+def test_per_rank_metrics_share_a_key_with_different_dimensions():
+    """No rank_0_cycles inventions: the same key with different
+    dimensions is legal; identity is (key, dimensions)."""
+    env = _envelope(metrics=(_rank_metric(0), _rank_metric(1, 1250.0)))
+    assert env.metric("completion_cycles").dimensions == (("rank", "0"),)
+
+
+def test_duplicate_key_and_dimensions_refused():
+    with pytest.raises(NormalizedEvidenceError, match="duplicate"):
+        _envelope(metrics=(_rank_metric(3), _rank_metric(3, 999.0)))
+
+
+def test_dimensions_are_strict():
+    with pytest.raises(NormalizedEvidenceError, match="tuple"):
+        MetricValue(key="x", value=1.0, unit=None, source_metric_key=None,
+                    dimensions=[("rank", "0")])
+    with pytest.raises(NormalizedEvidenceError):
+        MetricValue(key="x", value=1.0, unit=None, source_metric_key=None,
+                    dimensions=(("rank", ""),))
+    with pytest.raises(NormalizedEvidenceError, match="duplicate"):
+        MetricValue(key="x", value=1.0, unit=None, source_metric_key=None,
+                    dimensions=(("rank", "0"), ("rank", "1")))
+    with pytest.raises(NormalizedEvidenceError):
+        MetricValue(key="x", value=1.0, unit=None, source_metric_key=None,
+                    dimensions=(("rank", "0", "extra"),))

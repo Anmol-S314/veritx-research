@@ -37,12 +37,19 @@ class MetricValue:
 
     Every objective value that ever reaches an optimizer or the Studio
     rides in one of these: a number alone is not evidence.
+
+    ``dimensions`` carries coordinates such as ``(("rank", "3"),)`` for
+    per-rank ASTRA metrics or ``(("request_id", ...),)`` for serving —
+    never invented key suffixes like ``rank_0_cycles``. Metric identity
+    is ``(key, dimensions)``: the same key with different dimensions is
+    a different measurement of the same quantity, not a duplicate.
     """
 
     key: str
     value: float
     unit: str | None
     source_metric_key: str | None
+    dimensions: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self) -> None:
         _non_empty_str("key", self.key)
@@ -55,6 +62,28 @@ class MetricValue:
             _non_empty_str("unit", self.unit)
         if self.source_metric_key is not None:
             _non_empty_str("source_metric_key", self.source_metric_key)
+        if type(self.dimensions) is not tuple:
+            raise NormalizedEvidenceError(
+                "dimensions must be a tuple, got "
+                f"{type(self.dimensions).__name__}")
+        seen: set[str] = set()
+        for dimension in self.dimensions:
+            if type(dimension) is not tuple or len(dimension) != 2:
+                raise NormalizedEvidenceError(
+                    "each dimension must be exactly (name, value), got "
+                    f"{dimension!r}")
+            name, dimension_value = dimension
+            _non_empty_str("dimension name", name)
+            _non_empty_str("dimension value", dimension_value)
+            if name in seen:
+                raise NormalizedEvidenceError(
+                    f"metric {self.key!r} has duplicate dimension "
+                    f"{name!r}")
+            seen.add(name)
+
+    def identity(self) -> tuple[str, tuple[tuple[str, str], ...]]:
+        """Metric identity: (key, dimensions), never the key alone."""
+        return (self.key, self.dimensions)
 
 
 @dataclass(frozen=True)
@@ -116,16 +145,19 @@ class NormalizedBackendEvidence:
             raise NormalizedEvidenceError(
                 "metrics must be a tuple, got "
                 f"{type(self.metrics).__name__}")
-        keys: set[str] = set()
+        identities: set[
+            tuple[str, tuple[tuple[str, str], ...]]] = set()
         for metric in self.metrics:
             if not isinstance(metric, MetricValue):
                 raise NormalizedEvidenceError(
                     "metrics entries must be MetricValue, got "
                     f"{type(metric).__name__}")
-            if metric.key in keys:
+            identity = metric.identity()
+            if identity in identities:
                 raise NormalizedEvidenceError(
-                    f"metrics has duplicate key {metric.key!r}")
-            keys.add(metric.key)
+                    f"metrics has duplicate (key, dimensions) "
+                    f"{identity!r}")
+            identities.add(identity)
         if type(self.limitations) is not tuple:
             raise NormalizedEvidenceError(
                 "limitations must be a tuple, got "

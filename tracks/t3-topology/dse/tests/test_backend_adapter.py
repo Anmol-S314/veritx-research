@@ -347,6 +347,12 @@ class _FakeAdapter:
                 options: object) -> object:
         return object()
 
+    def normalize(self, context: object,
+                  question: EvaluationQuestion,
+                  prepared: PreparedExecution,
+                  native_result: object) -> object:
+        return object()
+
 
 def test_fake_adapter_satisfies_protocol_structurally():
     assert isinstance(_FakeAdapter(), BackendAdapter)

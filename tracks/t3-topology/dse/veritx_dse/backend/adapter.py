@@ -15,13 +15,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from veritx_dse.application.evaluation_question import EvaluationQuestion
 from veritx_dse.backend.contracts import (
     BackendConfigArtifact, BackendInputManifest,
 )
 from veritx_dse.backend.producer import ProducerIdentity
+
+if TYPE_CHECKING:
+    from veritx_dse.application.evaluation_context import (
+        CanonicalEvaluationContext,
+    )
+    from veritx_dse.backend.normalized_evidence import (
+        NormalizedBackendEvidence,
+    )
 
 
 class BackendContractError(ValueError):
@@ -258,12 +266,13 @@ class PreparedExecution:
 class BackendAdapter(Protocol):
     """The minimal federation execution seam.
 
-    Exactly four operations: declare capabilities, assess one for a
-    canonical context, prepare, execute. The adapter ORCHESTRATES
-    existing backend authorities (projection, execution, evidence); it
-    does not re-implement or force them into one lifecycle — no
-    parse()/verify()/qualify() ceremonies, and no normalize() until the
-    common evidence envelope exists (Federation 08).
+    Exactly five operations: declare capabilities, assess one for a
+    canonical context, prepare, execute, normalize. The adapter
+    ORCHESTRATES existing backend authorities (projection, execution,
+    evidence); it does not re-implement or force them into one
+    lifecycle — no parse()/verify()/qualify() ceremonies. Native
+    evidence stays authoritative; ``normalize()`` is an index/view over
+    it, never a conversion of it.
     """
 
     @property
@@ -272,20 +281,22 @@ class BackendAdapter(Protocol):
 
     def capabilities(self) -> tuple[BackendCapability, ...]:
         """Declared capabilities; installation does not imply readiness.
-        ``capability_id`` names a question from the closed
-        ``EvaluationQuestion`` vocabulary (Federation 04)."""
+        ``question`` names a question from the closed
+        ``EvaluationQuestion`` vocabulary: capability truth, never
+        aspiration."""
 
     def assess(
         self,
-        context: object,          # Federation 05: CanonicalEvaluationContext
+        context: CanonicalEvaluationContext,
         question: EvaluationQuestion,
     ) -> BackendAssessment:
         """Assess one question against the canonical context, now."""
 
     def prepare(
         self,
-        context: object,          # Federation 05: CanonicalEvaluationContext
+        context: CanonicalEvaluationContext,
         question: EvaluationQuestion,
+        **kwargs: object,
     ) -> PreparedExecution:
         """Compose the prepared execution identities for one execution."""
 
@@ -294,8 +305,18 @@ class BackendAdapter(Protocol):
         prepared: PreparedExecution,
         options: object,          # backend-native execution options
     ) -> object:
-        """Execute and return the backend-NATIVE result (Federation 08
-        adds the common normalized evidence envelope)."""
+        """Execute and return the backend-NATIVE result."""
+
+    def normalize(
+        self,
+        context: CanonicalEvaluationContext,
+        question: EvaluationQuestion,
+        prepared: PreparedExecution,
+        native_result: object,
+    ) -> NormalizedBackendEvidence:
+        """Project authenticated native evidence into the common
+        normalized envelope. The native evidence stays authoritative;
+        this is an index/view over it."""
 
 
 __all__ = [
