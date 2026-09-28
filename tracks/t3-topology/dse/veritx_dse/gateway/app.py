@@ -49,6 +49,7 @@ class GatewayConfig:
     store_root: Path
     runs_root: Path
     booksim_bin: Path | None = None
+    astra_bin: Path | None = None
     network_clock_hz: int = 1_000_000_000
     timeout_s: int = 600
     experiments_dir: Path | None = None
@@ -77,11 +78,52 @@ def config_from_env() -> GatewayConfig:
         store_root=store_root,
         runs_root=Path(runs) if runs else repo / "runs" / "veritx-runs",
         booksim_bin=resolve_booksim_bin(binary),
+        astra_bin=resolve_astra_bin(os.environ.get("VERITX_ASTRA_BIN")),
         experiments_dir=repo / "validation" / "experiments",
         revisions_root=(Path(revisions) if revisions
                         else store_root.parent / "studio-revisions"),
         projects_root=Path(projects) if projects else store_root / "projects",
     )
+
+
+def resolve_astra_bin(env_value: str | None = None) -> Path | None:
+    """The gateway's ASTRA binary: env override, then the canonical
+    resolver. Returns None only when the binary genuinely does not
+    exist, so MISSING means missing rather than unset."""
+    if env_value:
+        return Path(env_value)
+    try:
+        from veritx_dse.backend.astra import resolve_runtime_binary
+        return resolve_runtime_binary()
+    except Exception:
+        return None
+
+
+def _backend_presence(config: GatewayConfig) -> dict[str, Any]:
+    """Cheap, non-secret backend presence. No simulation ever runs here.
+
+    States are install facts (PRESENT/ABSENT), never readiness: READY
+    requires adjudicating a real canonical context, which health must
+    not do. A manifest flag names whether build-time provenance exists
+    for the binary (no digests, no paths leak).
+    """
+    from veritx_dse.core.build_manifest import manifest_path_for
+
+    def probe(binary: Path | None) -> dict[str, Any]:
+        if binary is None or not Path(binary).is_file():
+            return {"state": "ABSENT", "binary_present": False,
+                    "manifest_present": False}
+        try:
+            manifest = manifest_path_for(Path(binary)).is_file()
+        except Exception:
+            manifest = False
+        return {"state": "PRESENT", "binary_present": True,
+                "manifest_present": bool(manifest)}
+
+    return {
+        "BOOKSIM_STANDALONE": probe(config.booksim_bin),
+        "ASTRA2_EMBEDDED_BOOKSIM": probe(config.astra_bin),
+    }
 
 
 def resolve_booksim_bin(env_value: str | None = None) -> Path | None:
@@ -138,6 +180,7 @@ class RenameProjectBody(BaseModel):
 
 class EvaluateBodyV1(BaseModel):
     backend: str | None = None
+    questions: list[str] | None = None
 
 
 class ServingBody(BaseModel):
@@ -403,6 +446,7 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
     projects_root = cfg.projects_root or (cfg.store_root / "projects")
     product = ProductService(ProductConfig(
         projects_root=projects_root, booksim_bin=cfg.booksim_bin,
+        astra_bin=cfg.astra_bin,
         network_clock_hz=cfg.network_clock_hz, timeout_s=cfg.timeout_s))
     app = FastAPI(title="VERITX Studio Gateway", version="1.0.0")
     app.state.product = product
@@ -420,7 +464,8 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
         """
         info = staleness()
         status = "stale" if info.get("stale") else "ok"
-        return {"status": status, "api": "v1", "code": info}
+        return {"status": status, "api": "v1", "code": info,
+                "backends": _backend_presence(cfg)}
 
     @app.get("/api/v1/qualification", tags=["product"])
     def v1_qualification() -> dict[str, Any]:
@@ -551,6 +596,14 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
     def v1_revision_preflight(revision_id: str) -> dict[str, Any]:
         return product.revision_preflight(revision_id)
 
+    @app.get("/api/v1/revisions/{revision_id}/diff", tags=["product"])
+    def v1_revision_diff(revision_id: str,
+                         against: str | None = None) -> dict[str, Any]:
+        """RevisionDiffView — DESIGN / DERIVED / CAPABILITY changes between
+        two frozen compile results. The default basis is the predecessor
+        in the project's revision order."""
+        return product.revision_diff(revision_id, against)
+
     @app.get("/api/v1/projects/{project_id}/serving", tags=["product"])
     def v1_serving_list(project_id: str) -> dict[str, Any]:
         return {"contract_version": 1,
@@ -566,10 +619,29 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
     def v1_serving_get(serving_id: str) -> dict[str, Any]:
         return product.get_serving(serving_id)
 
+    @app.get("/api/v1/revisions/{revision_id}/evaluation-plan",
+            tags=["product"])
+    def v1_evaluation_plan(revision_id: str,
+                           questions: str | None = None,
+                           backend: str | None = None) -> dict[str, Any]:
+        """EvaluationPlanView — what this revision can run, per question.
+
+        ``questions`` is a comma-separated question selection
+        (default: all known questions); ``backend`` pins one explicit
+        backend. Pure adjudication: never executes.
+        """
+        parsed = ([q.strip() for q in questions.split(",") if q.strip()]
+                  if questions else None)
+        return product.evaluation_plan(
+            revision_id, questions=parsed, requested_backend=backend)
+
     @app.post("/api/v1/revisions/{revision_id}/evaluate", tags=["product"])
     def v1_evaluate(revision_id: str,
                     body: EvaluateBodyV1 | None = None) -> dict[str, Any]:
-        return product.submit_evaluation(revision_id)
+        payload = body or EvaluateBodyV1()
+        return product.submit_evaluation(
+            revision_id, questions=payload.questions,
+            requested_backend=payload.backend)
 
     @app.post("/api/v1/revisions/{revision_id}/optimize", tags=["product"])
     def v1_optimize(revision_id: str,

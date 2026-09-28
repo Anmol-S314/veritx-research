@@ -85,6 +85,7 @@ _WORKLOAD_TEMPLATES: tuple[tuple[str, str, str, str], ...] = (
 
 _RUN_STATUS = {
     "EVALUATED": "EVALUATED",
+    "PARTIAL": "PARTIAL",
     "BACKEND_UNAVAILABLE": "BACKEND_UNAVAILABLE",
     "UNSUPPORTED": "UNSUPPORTED",
     "FAILED": "FAILED",
@@ -106,6 +107,7 @@ class BackendUnavailable(ControlPlaneError):
 class ProductConfig:
     projects_root: Path
     booksim_bin: Path | None = None
+    astra_bin: Path | None = None
     #: Exact network clock (Hz). Must be an int/Fraction: the evaluator
     #: refuses a float as a wall-time authority.
     network_clock_hz: int = 1_000_000_000
@@ -153,10 +155,25 @@ def _view_hash(value: str) -> str:
 
 class ProductService:
     def __init__(self, config: ProductConfig,
-                 store: ProductStore | None = None) -> None:
+                 store: ProductStore | None = None,
+                 registry: Any | None = None) -> None:
         self.config = config
         self.store = store or ProductStore(config.projects_root)
         self.jobs = JobManager(self.store)
+        # One product process = one registry configuration, bound here
+        # from the service settings. Adapters are never constructed ad
+        # hoc in service methods. (Tests may inject a scripted registry;
+        # production always builds exactly this one.)
+        if registry is not None:
+            self._registry = registry
+        else:
+            from veritx_dse.backend.registry import (
+                default_backend_registry,
+            )
+            self._registry = default_backend_registry(
+                booksim_bin=config.booksim_bin,
+                astra_bin=config.astra_bin,
+                repo_root=config.repo_root)
         #: simulation-capability assessment, keyed by design_hash. The
         #: assessment compiles the request once; the verdict is
         #: deterministic for a given tree, so the process caches it.
@@ -170,82 +187,42 @@ class ProductService:
                             compilation: Any) -> dict[str, Any]:
         """Assess whether a request can actually be SIMULATED.
 
-        Compilation proves the fabric; it does not prove the workload can
-        be lowered to executable traffic or that the certified backend
-        profile represents this exact fabric. This runs the real chain
-        (lowering → logical → physical → profile selection) and records
-        the FIRST gate that refuses, with its domain, so the UI can state
-        the true capability reason instead of a vague "unsupported".
+        Derived from the federation planner, never from a second
+        hand-built BookSim projection: the canonical context is built
+        once and the NETWORK_COMPLETION plan row adjudicates
+        representability. Compilation proves the fabric; the plan row
+        proves a backend can represent this exact fabric/workload.
         """
-        from veritx_dse.backend.booksim_projection import (
-            BookSimProjectionError, BookSimProjectionParents,
-            select_booksim_profile,
+        from veritx_dse.application.evaluation_context import (
+            EvaluationContextError, build_evaluation_context,
         )
-        from veritx_dse.model.vc_resource import (
-            vc_resources_from_assignment,
+        from veritx_dse.application.evaluation_plan import EvaluationPlanner
+        from veritx_dse.application.evaluation_question import (
+            EvaluationQuestion,
         )
-        from veritx_dse.workload.intent_lowering import (
-            lower_compile_workload,
-        )
-        from veritx_dse.workload.messages import (
-            LogicalMessageArtifactV2, LogicalMessageArtifactV3,
-        )
-        from veritx_dse.workload.traffic import (
-            PhysicalTrafficArtifactV2, PhysicalTrafficArtifactV3,
-        )
+        from veritx_dse.backend.adapter import SupportLevel
         if compilation.status != "COMPILED":
             return {"supported": False, "domain": "compile",
                     "reason": compilation.error
                     or "compilation was not successful"}
         try:
-            lowered = lower_compile_workload(request)
-        except (_LoweringInvalid, _LoweringSemantics, _LoweringSchedule,
-                _LoweringMappingInvalid) as exc:
-            return {"supported": False, "domain": "intent_lowering",
+            context = build_evaluation_context(compilation)
+        except EvaluationContextError as exc:
+            return {"supported": False, "domain": "compile",
                     "reason": str(exc)}
-        bundle = compilation.bundle
-        try:
-            if lowered.unified_traffic_class is None:
-                logical: Any = LogicalMessageArtifactV3(
-                    graph=lowered.graph,
-                    traffic_class_by_operation=(
-                        lowered.traffic_class_by_operation))
-                physical: Any = PhysicalTrafficArtifactV3(
-                    logical=logical,
-                    resolved_fabric=bundle.resolved_fabric,
-                    mapping=bundle.mapping, attachment=bundle.attachment,
-                    inventory=bundle.inventory,
-                    packet_format=bundle.packet_format)
-            else:
-                logical = LogicalMessageArtifactV2(
-                    graph=lowered.graph,
-                    traffic_class=lowered.unified_traffic_class)
-                physical = PhysicalTrafficArtifactV2(
-                    logical=logical,
-                    resolved_fabric=bundle.resolved_fabric,
-                    mapping=bundle.mapping, attachment=bundle.attachment,
-                    inventory=bundle.inventory,
-                    packet_format=bundle.packet_format)
         except (_LoweringInvalid, _LoweringSemantics, _LoweringSchedule,
                 _LoweringMappingInvalid) as exc:
             return {"supported": False, "domain": "intent_lowering",
                     "reason": f"{type(exc).__name__}: {exc}"}
-        try:
-            parents = BookSimProjectionParents(
-                resolved_fabric=bundle.resolved_fabric,
-                topology=bundle.topology,
-                attachment=bundle.attachment, mapping=bundle.mapping,
-                vc_resource=vc_resources_from_assignment(
-                    bundle.vc_assignment),
-                vc_assignment=bundle.vc_assignment,
-                packet_format=bundle.packet_format,
-                route=bundle.router_route,
-                physical_traffic=physical)
-            select_booksim_profile(parents)
-        except BookSimProjectionError as exc:
-            return {"supported": False, "domain": "backend_profile",
-                    "reason": str(exc)}
-        return {"supported": True, "domain": None, "reason": None}
+        plan = EvaluationPlanner().plan(
+            context, (EvaluationQuestion.NETWORK_COMPLETION,),
+            self._registry)
+        row = plan.analyses[0]
+        if row.support is SupportLevel.UNSUPPORTED:
+            return {"supported": False, "domain": "backend",
+                    "reason": row.reason
+                    or "no registered backend represents this workload"}
+        return {"supported": True, "domain": None, "reason": row.reason}
 
     def _assess_request(self, request: Any) -> dict[str, Any]:
         key = request.design_hash()
@@ -1448,7 +1425,124 @@ class ProductService:
                 "no qualified backend configured (set VERITX_BOOKSIM_BIN)")
         return Path(binary).resolve()
 
-    def submit_evaluation(self, revision_id: str) -> dict[str, Any]:
+    # ── federated evaluation: plan -> execute -> evidence ────────
+
+    @staticmethod
+    def _parse_eval_questions(
+            questions: Any, *, all_by_default: bool = False
+    ) -> tuple[Any, ...]:
+        """Normalize a question selection.
+
+        Plan calls default to ALL currently defined questions; submit
+        calls default to NETWORK_COMPLETION only, so old clients keep
+        behavior.
+        """
+        from veritx_dse.application.evaluation_question import (
+            EvaluationQuestion,
+        )
+        if questions is None:
+            if all_by_default:
+                return tuple(EvaluationQuestion)
+            return (EvaluationQuestion.NETWORK_COMPLETION,)
+        if isinstance(questions, (str, EvaluationQuestion)):
+            questions = (questions,)
+        parsed: list[EvaluationQuestion] = []
+        for question in questions:
+            if isinstance(question, EvaluationQuestion):
+                parsed.append(question)
+                continue
+            if isinstance(question, str):
+                try:
+                    parsed.append(EvaluationQuestion[question])
+                    continue
+                except KeyError:
+                    pass
+            raise intent_error(
+                f"unknown evaluation question {question!r} (known: "
+                f"{sorted(q.name for q in EvaluationQuestion)})")
+        if not parsed:
+            raise intent_error("at least one evaluation question is required")
+        if len(set(parsed)) != len(parsed):
+            raise intent_error("duplicate evaluation question requested")
+        return tuple(parsed)
+
+    def _compilation_for_plan(self, revision: dict[str, Any]) -> Any:
+        """The evaluable Compilation for a stored revision (typed refusal
+        when the revision is not certified)."""
+        compilation = revision.get("compilation") or {}
+        certificate = revision.get("certificate") or {}
+        if compilation.get("status") != "COMPILED" \
+                or certificate.get("overall") != "PASS":
+            raise ProductServiceError(
+                ErrorCode.CONFLICT,
+                f"revision {revision.get('revision_id')} is not evaluable "
+                f"(compilation={compilation.get('status')}, "
+                f"certificate={certificate.get('overall')}); reason: "
+                f"{compilation.get('error') or 'not certified'}",
+                operation="evaluation_plan",
+                resource_id=revision.get("revision_id"))
+        request = parse_request_doc(revision["request"])
+        return FabricCompiler().compile(request)
+
+    def evaluation_plan(
+        self,
+        revision_id: str,
+        *,
+        questions: Any = None,
+        requested_backend: str | None = None,
+    ) -> dict[str, Any]:
+        """EvaluationPlanView — what this revision can run, per question.
+
+        Pure adjudication: builds the canonical context once, asks the
+        planner, projects the view. Never executes anything.
+        """
+        from veritx_dse.application.evaluation_context import (
+            build_evaluation_context,
+        )
+        from veritx_dse.application.evaluation_plan import (
+            EvaluationPlanError, EvaluationPlanner,
+        )
+        from veritx_dse.application.evaluation_plan_view import (
+            evaluation_plan_view,
+        )
+        _pid, revision = self.store.load_revision_global(revision_id)
+        parsed = self._parse_eval_questions(questions, all_by_default=True)
+        if requested_backend is not None and not isinstance(
+                requested_backend, str):
+            raise intent_error("requested backend must be a string")
+        compilation = self._compilation_for_plan(revision)
+        try:
+            context = build_evaluation_context(compilation)
+        except Exception as exc:
+            raise ProductServiceError(
+                ErrorCode.UNSUPPORTED_SEMANTICS,
+                f"revision {revision_id} has no evaluable context: {exc}",
+                operation="evaluation_plan",
+                resource_id=revision_id) from exc
+        try:
+            plan = EvaluationPlanner().plan(
+                context, parsed, self._registry,
+                requested_backend=requested_backend)
+        except EvaluationPlanError as exc:
+            raise ProductServiceError(
+                ErrorCode.INVALID_INTENT, str(exc),
+                operation="evaluation_plan",
+                resource_id=revision_id) from exc
+        resolved = context.bundle.resolved_fabric.resolved_fabric_hash
+        return evaluation_plan_view(
+            plan, revision_id=revision_id,
+            design_hash=context.design_hash,
+            resolved_fabric_hash=(
+                resolved() if callable(resolved) else resolved),
+            workload_id=context.workload_id)
+
+    def submit_evaluation(
+        self,
+        revision_id: str,
+        *,
+        questions: Any = None,
+        requested_backend: str | None = None,
+    ) -> dict[str, Any]:
         pid, revision = self.store.load_revision_global(revision_id)
         # A run must execute certified semantics: refused attempts
         # (INVALID/UNSUPPORTED) and FAIL certificates can never be
@@ -1464,32 +1558,45 @@ class ProductService:
                 f"{(revision.get('certificate') or {}).get('overall')}); "
                 f"reason: {compilation.get('error') or 'not certified'}",
                 operation="submit_evaluation", resource_id=revision_id)
-        assessment = self._assessment_for_revision(revision)
-        if not assessment["supported"]:
-            code = (ErrorCode.LOWERING_UNSUPPORTED
-                    if assessment.get("domain") == "intent_lowering"
-                    else ErrorCode.UNSUPPORTED_SEMANTICS)
-            raise ProductServiceError(
-                code,
-                f"revision {revision_id} cannot be simulated: "
-                f"{assessment.get('reason')}",
-                operation="submit_evaluation", resource_id=revision_id)
-        binary = self._require_backend()
+        from veritx_dse.application.evaluation_question import (
+            EvaluationQuestion,
+        )
+        parsed = self._parse_eval_questions(questions)
+        if requested_backend is not None and not isinstance(
+                requested_backend, str):
+            raise intent_error("requested backend must be a string")
+        if EvaluationQuestion.NETWORK_COMPLETION in parsed:
+            # The historical network-only gate, unchanged: a design the
+            # federation cannot represent never becomes a job, and a
+            # network run still requires its configured producer.
+            assessment = self._assessment_for_revision(revision)
+            if not assessment["supported"]:
+                code = (ErrorCode.LOWERING_UNSUPPORTED
+                        if assessment.get("domain") == "intent_lowering"
+                        else ErrorCode.UNSUPPORTED_SEMANTICS)
+                raise ProductServiceError(
+                    code,
+                    f"revision {revision_id} cannot be simulated: "
+                    f"{assessment.get('reason')}",
+                    operation="submit_evaluation",
+                    resource_id=revision_id)
+            self._require_backend()
         job = self.jobs.submit(
             pid, kind="EVALUATION", revision_id=revision_id,
-            fn=lambda progress: self._run_evaluation(
-                pid, revision, binary, progress))
+            fn=lambda progress: self._run_federated_evaluation(
+                pid, revision, parsed, requested_backend, progress))
         return self.job_view(job)
 
     def _check_compilation_parity(self, revision: dict[str, Any],
-                                    request: Any) -> None:
+                                    request: Any) -> Any:
         """Refuse when a recompiled request drifts from the stored revision.
 
         A Run must execute exactly the immutable compilation the revision
         records — not a re-derived one. Recompiling the stored request and
         demanding exact identity over every recorded artifact hash turns
         compiler drift (or a mutated request) into a refused job instead
-        of a silently re-derived execution.
+        of a silently re-derived execution. Returns the recompiled
+        Compilation the run executes (hash-matched to the stored one).
         """
         recorded = ((revision.get("compilation") or {})
                     .get("artifact_hashes"))
@@ -1501,7 +1608,8 @@ class ProductService:
                 "executes the stored compilation",
                 operation="compilation_parity",
                 resource_id=revision.get("revision_id"))
-        recompiled = compilation_view(FabricCompiler().compile(request))
+        compilation = FabricCompiler().compile(request)
+        recompiled = compilation_view(compilation)
         if recompiled.get("status") != "COMPILED":
             raise ProductServiceError(
                 ErrorCode.EVIDENCE_INVALID,
@@ -1524,20 +1632,46 @@ class ProductService:
                 "run that would not execute the stored compilation",
                 operation="compilation_parity",
                 resource_id=revision.get("revision_id"))
+        return compilation
 
-    def _run_evaluation(self, project_id: str, revision: dict[str, Any],
-                        binary: Path, progress) -> tuple[str, dict[str, Any]]:
+    def _run_federated_evaluation(
+            self, project_id: str, revision: dict[str, Any],
+            questions: tuple[Any, ...], requested_backend: str | None,
+            progress) -> tuple[str, dict[str, Any]]:
+        """Execute the adjudicated plan: one analysis per READY row, each
+        through its own backend seam, persisted as a multi-analysis run.
+
+        Compatibility: the NETWORK_COMPLETION analysis keeps the exact
+        historical record shape (evaluation, requirements, producer,
+        evidence, qualification) so old readers and the requirement
+        report keep working; per-analysis records ride alongside it.
+        """
+        from veritx_dse.application.evaluation_question import (
+            EvaluationQuestion,
+        )
+        from veritx_dse.application.federated_evaluator import (
+            PARTIAL, AstraRunOptions, BookSimRunOptions,
+            evaluate_federated,
+        )
         request = parse_request_doc(revision["request"])
-        self._check_compilation_parity(revision, request)
+        compilation = self._check_compilation_parity(revision, request)
         run_id = new_run_id()
         bundle_dir = self.store.run_bundle_dir(project_id, run_id)
         progress("RUNNING")
         try:
-            product = evaluate_product(
-                request, binary=binary,
-                network_clock_hz=self.config.network_clock_hz,
-                timeout_s=self.config.timeout_s,
-                run_dir=bundle_dir, repo_root=self.config.repo_root)
+            federated = evaluate_federated(
+                compilation, questions, self._registry,
+                requested_backend=requested_backend,
+                booksim_options=BookSimRunOptions(
+                    binary=self.config.booksim_bin,
+                    repo_root=self.config.repo_root,
+                    timeout_s=self.config.timeout_s,
+                    network_clock_hz=self.config.network_clock_hz),
+                astra_options=AstraRunOptions(
+                    timeout_s=self.config.timeout_s,
+                    repo_root=self.config.repo_root),
+                run_dir=bundle_dir,
+                revision_id=revision["revision_id"])
         except (_LoweringInvalid, _LoweringSemantics, _LoweringSchedule,
                 _LoweringMappingInvalid) as exc:
             # A workload the lowering cannot prove (MoE, diffusion, …)
@@ -1545,14 +1679,21 @@ class ProductService:
             # certified, but no run can honestly execute it.
             raise _map_lowering_error(
                 exc, operation="run_evaluation") from exc
-        evaluation = (None if product.outcome is None
-                      else product.outcome.to_view_dict())
-        outcome = product.outcome
+        network = federated.network_evaluation
+        network_analysis = next(
+            (a for a in federated.analyses
+             if a.question is EvaluationQuestion.NETWORK_COMPLETION
+             and a.backend_id == "BOOKSIM_STANDALONE"),
+            None)
+        evaluation = (None if network is None
+                      else network.to_view_dict())
         bundle_id = None
-        if product.status == "EVALUATED":
+        if federated.status in ("EVALUATED", PARTIAL):
             progress("FINALIZING")
             manifest = finalize_run_bundle(bundle_dir)
             bundle_id = "sha256:" + manifest["bundle_id"]
+        # The primary backend/producer/evidence triple stays the network
+        # leg (historical shape); every analysis is recorded below it.
         run = {
             "schema_version": 1,
             "run_id": run_id,
@@ -1563,41 +1704,98 @@ class ProductService:
             # matched every recorded artifact hash before executing.
             "compilation_parity": "MATCHED",
             "display_name": self._run_display_name(revision),
-            "backend": None if outcome is None else outcome.backend,
-            "status": _RUN_STATUS.get(product.status, product.status),
+            "backend": None if network is None else network.backend,
+            "status": _RUN_STATUS.get(
+                federated.status, federated.status),
             # Carried from the canonical evaluator. FabricEvaluator only
             # reaches EVALUATED after a pinned producer, admitted evidence
             # and a reloaded/verified chain, so EVALUATED *is* the
             # certified outcome; the basis is recorded for auditability.
-            "qualification": ("QUALIFIED" if product.status == "EVALUATED"
-                              else None),
+            "qualification": ("QUALIFIED" if network is not None
+                              and network.status == "EVALUATED" else None),
             "qualification_basis": (
                 "canonical FabricEvaluator EVALUATED (pinned producer, "
-                "admitted + reload-verified evidence)" if product.status
-                == "EVALUATED" else None),
-            "requirements_pass": product.requirements_pass,
+                "admitted + reload-verified evidence)"
+                if network is not None
+                and network.status == "EVALUATED" else None),
+            "requirements_pass": (
+                None if federated.requirement_report is None else
+                self._report_passes(federated.requirement_report)),
             "started_at": utcnow(),
             "completed_at": utcnow(),
             "bundle_id": bundle_id,
             "evaluation": evaluation,
-            "requirements": product.requirement_report,
-            "producer": (None if outcome is None or
-                         outcome.producer_identity is None else {
-                             "backend": outcome.backend,
-                             "producer_identity": outcome.producer_identity,
-                             "config_hash": outcome.backend_config_hash,
-                             "input_hash": outcome.backend_input_hash}),
-            "evidence": (None if outcome is None or
-                         outcome.evidence_id is None else {
-                             "evidence_id": outcome.evidence_id,
-                             "raw_evidence_digest": outcome.raw_evidence_digest,
-                             "stats_digest": outcome.stats_digest,
+            "requirements": federated.requirement_report,
+            "producer": (None if network is None or
+                         network.producer_identity is None else {
+                             "backend": network.backend,
+                             "producer_identity":
+                                 network.producer_identity,
+                             "config_hash": network.backend_config_hash,
+                             "input_hash": network.backend_input_hash}),
+            "evidence": (None if network is None or
+                         network.evidence_id is None else {
+                             "evidence_id": network.evidence_id,
+                             "raw_evidence_digest":
+                                 network.raw_evidence_digest,
+                             "stats_digest": network.stats_digest,
                              "run_bundle": bundle_id}),
-            "reason": product.reason,
+            "reason": self._federated_reason(federated),
+            # The federated record: the adjudicated plan plus one entry
+            # per requested question, each with its own backend, status,
+            # native evidence id and normalized metrics.
+            "evaluation_plan": self._plan_record(
+                revision["revision_id"], federated),
+            "analyses": [a.to_dict() for a in federated.analyses],
         }
         self.store.create_run(project_id, run)
-        state = "COMPLETED" if product.status == "EVALUATED" else "REFUSED"
+        state = ("COMPLETED" if federated.status in ("EVALUATED", PARTIAL)
+                 else "REFUSED")
         return state, {"run_id": run_id}
+
+    @staticmethod
+    def _federated_reason(federated: Any) -> str | None:
+        """Top-level reason: the network leg's reason when it did not
+        evaluate, else a summary of every non-evaluated analysis (a
+        PARTIAL run with a null reason would hide which question
+        refused)."""
+        from veritx_dse.application.evaluation_question import (
+            EvaluationQuestion,
+        )
+        network = next(
+            (a for a in federated.analyses
+             if a.question is EvaluationQuestion.NETWORK_COMPLETION
+             and a.backend_id == "BOOKSIM_STANDALONE"),
+            None)
+        if network is not None and network.status != "EVALUATED":
+            return network.reason
+        pending = [f"{a.question.value}: {a.reason or a.status}"
+                   for a in federated.analyses
+                   if a.status != "EVALUATED"]
+        if pending:
+            return ("partial evaluation; non-evaluated analyses: "
+                    + "; ".join(pending))
+        return None
+
+    @staticmethod
+    def _report_passes(report: dict[str, Any]) -> bool | None:
+        from veritx_dse.application.requirements import report_passes
+        try:
+            return report_passes(report)
+        except Exception:                               # noqa: BLE001
+            return None
+
+    @staticmethod
+    def _plan_record(revision_id: str,
+                     federated: Any) -> dict[str, Any]:
+        from veritx_dse.application.evaluation_plan_view import (
+            evaluation_plan_view,
+        )
+        return evaluation_plan_view(
+            federated.plan, revision_id=revision_id,
+            design_hash=federated.design_hash,
+            resolved_fabric_hash=federated.resolved_fabric_hash,
+            workload_id=federated.workload_id)
 
     @staticmethod
     def _run_display_name(revision: dict[str, Any]) -> str:
@@ -1702,6 +1900,8 @@ class ProductService:
             "producer": run.get("producer"),
             "evidence": run.get("evidence"),
             "reason": run.get("reason"),
+            "evaluation_plan": run.get("evaluation_plan"),
+            "analyses": run.get("analyses"),
         }
 
     def run_evidence(self, run_id: str) -> dict[str, Any]:
@@ -1926,6 +2126,11 @@ class ProductService:
         the VERIFIED run bundle. Selects and groups existing counters;
         it computes no science. A counter the backend did not emit is
         reported as NOT AVAILABLE, never zero-filled (§18/§59).
+
+        Federated runs report per-analysis integrity: the BookSim packet
+        tables only for the NETWORK_COMPLETION analysis (never for
+        ASTRA/Ramulator evidence), and each ASTRA analysis reports its
+        own factual fields (tier, injection, namespace).
         """
         pid = self.store.find_run_project(run_id)
         if pid is None:
@@ -1940,6 +2145,10 @@ class ProductService:
                 "integrity evidence exists",
                 operation="run_integrity", resource_id=run_id)
         bundle_dir = self.store.run_bundle_dir(pid, run_id)
+        analyses = run.get("analyses")
+        if analyses:
+            return self._federated_integrity(run_id, run, bundle_dir,
+                                             analyses)
         # The authenticated attempt record — a wrapped {attempt, evidence}
         # document — is written by the backend into the bundle's `run/`
         # working directory; the raw evidence copy lives under `evidence/`.
@@ -1966,6 +2175,21 @@ class ProductService:
                 ErrorCode.EVIDENCE_INVALID,
                 f"run {run_id} evidence document is unreadable: {exc}",
                 operation="run_integrity", resource_id=run_id) from exc
+        projection = self._booksim_integrity(evidence, stats)
+        return {
+            "contract_version": 1,
+            "run_id": run_id,
+            **projection,
+            "evidence_id": run.get("evidence", {}).get("evidence_id")
+            if isinstance(run.get("evidence"), dict) else None,
+            "analyses": None,
+        }
+
+    @staticmethod
+    def _booksim_integrity(evidence: dict[str, Any],
+                           stats: dict[str, Any]) -> dict[str, Any]:
+        """The BookSim packet/flit/route projection. BookSim evidence
+        only — never rendered for another backend's counters."""
 
         def counter(key: str) -> dict[str, Any]:
             value = stats.get(key)
@@ -1988,8 +2212,6 @@ class ProductService:
         route_observation = evidence.get("route_observation")
         realized = route_observation == "EXECUTED_ROUTE_OBSERVED"
         return {
-            "contract_version": 1,
-            "run_id": run_id,
             "packet_conservation": {
                 "declared": counter("declared_packets"),
                 "loaded": counter("loaded_trace_packets"),
@@ -2012,8 +2234,114 @@ class ProductService:
                 "full_path_claimed": False,
                 "realized_digest": evidence.get("route_dump_sha256"),
             },
+        }
+
+    def _federated_integrity(self, run_id: str, run: dict[str, Any],
+                             bundle_dir: Path,
+                             analyses: list[dict[str, Any]]
+                             ) -> dict[str, Any]:
+        """Per-analysis integrity for a federated run.
+
+        The network tables render only for an EVALUATED BookSim
+        NETWORK_COMPLETION analysis; every ASTRA analysis reports its
+        own factual fields. A BookSim integrity table is never rendered
+        for non-BookSim evidence.
+        """
+        per_analysis: dict[str, Any] = {}
+        network_projection: dict[str, Any] | None = None
+        for analysis in analyses:
+            question = analysis.get("question")
+            backend = analysis.get("backend_id")
+            status = analysis.get("status")
+            key = str(question).lower() if question else "unknown"
+            if backend == "BOOKSIM_STANDALONE" and status == "EVALUATED":
+                doc = self._analysis_evidence_doc(
+                    run_id, bundle_dir, key)
+                if doc is not None:
+                    network_projection = self._booksim_integrity(
+                        doc["evidence"], doc["evidence"]["stats"])
+                    per_analysis[key] = {
+                        "backend": backend, "status": status,
+                        "kind": "network_packet_integrity",
+                        **network_projection,
+                    }
+                else:
+                    per_analysis[key] = {
+                        "backend": backend, "status": status,
+                        "kind": "network_packet_integrity",
+                        "error": "evidence document absent from bundle",
+                    }
+            elif backend == "ASTRA2_EMBEDDED_BOOKSIM":
+                per_analysis[key] = self._astra_integrity(analysis)
+            else:
+                per_analysis[key] = {
+                    "backend": backend, "status": status,
+                    "reason": analysis.get("reason"),
+                }
+        response: dict[str, Any] = {
+            "contract_version": 1,
+            "run_id": run_id,
+            "packet_conservation": (
+                None if network_projection is None
+                else network_projection["packet_conservation"]),
+            "flit_conservation": (
+                None if network_projection is None
+                else network_projection["flit_conservation"]),
+            "route_realization": (
+                None if network_projection is None
+                else network_projection["route_realization"]),
             "evidence_id": run.get("evidence", {}).get("evidence_id")
             if isinstance(run.get("evidence"), dict) else None,
+            "analyses": per_analysis,
+        }
+        return response
+
+    def _analysis_evidence_doc(self, run_id: str, bundle_dir: Path,
+                               analysis_key: str) -> dict[str, Any] | None:
+        """The authenticated BookSim evidence wrapper for one analysis."""
+        candidates = (
+            bundle_dir / "analyses" / analysis_key
+            / "evidence" / "backend-evidence.json",
+            bundle_dir / "analyses" / analysis_key
+            / "run" / "backend-evidence.json",
+        )
+        for path in candidates:
+            if not path.is_file():
+                continue
+            try:
+                doc = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            evidence = doc.get("evidence")
+            if isinstance(evidence, dict) \
+                    and isinstance(evidence.get("stats"), dict):
+                return doc
+        return None
+
+    @staticmethod
+    def _astra_integrity(analysis: dict[str, Any]) -> dict[str, Any]:
+        """Factual ASTRA integrity — namespace, tier, injection, never a
+        BookSim packet table."""
+        summary = analysis.get("native_summary") or {}
+        if analysis.get("status") != "EVALUATED":
+            return {
+                "backend": analysis.get("backend_id"),
+                "status": analysis.get("status"),
+                "reason": analysis.get("reason"),
+            }
+        return {
+            "backend": analysis.get("backend_id"),
+            "status": analysis.get("status"),
+            "kind": "astra_system_integrity",
+            "native_evidence_id": analysis.get("native_evidence_id"),
+            "evidence_tier": summary.get("evidence_tier"),
+            "expansion_authority": summary.get("expansion_authority"),
+            "autonomous_injection_packets": summary.get(
+                "autonomous_injection_packets"),
+            "participant_statistics_present": summary.get(
+                "participant_statistics_present"),
+            "namespace_binding": summary.get("namespace_binding"),
+            "namespace_id": summary.get("namespace_id"),
         }
 
     def verify_run(self, run_id: str) -> dict[str, Any]:
@@ -2049,9 +2377,14 @@ class ProductService:
     def submit_reproduction(self, run_id: str) -> dict[str, Any]:
         """Submit a reproduction Job over the canonical reproduce authority.
 
-        The job calls ``backend.reproduce.reproduce_booksim_run_bundle`` —
-        verify, re-execute on the recorded inputs, compare the deterministic
-        science. No reproduction logic lives in the product layer.
+        Legacy runs reproduce through
+        ``backend.reproduce.reproduce_booksim_run_bundle``. Federated runs
+        dispatch per analysis backend (BookSim: the same authority over
+        the analysis run subdir; ASTRA: rerun of the exact stored
+        machine/projection/namespace inputs). A backend whose
+        reproduction cannot run here reports REPRODUCTION_NOT_AVAILABLE
+        for its analyses — never a generic Reproduce button that only
+        reproduces BookSim.
         """
         pid = self.store.find_run_project(run_id)
         if pid is None:
@@ -2065,13 +2398,125 @@ class ProductService:
                 ErrorCode.CONFLICT,
                 f"run {run_id} has no finalized run bundle to reproduce",
                 operation="submit_reproduction", resource_id=run_id)
-        binary = self._require_backend()
         bundle_dir = self.store.run_bundle_dir(pid, run_id)
+        if run.get("analyses"):
+            job = self.jobs.submit(
+                pid, kind="REPRODUCTION",
+                revision_id=run.get("revision_id"),
+                fn=lambda progress: self._run_federated_reproduction(
+                    run_id, bundle_dir, run.get("analyses"), progress))
+            return self.job_view(job)
+        binary = self._require_backend()
         job = self.jobs.submit(
             pid, kind="REPRODUCTION", revision_id=run.get("revision_id"),
             fn=lambda progress: self._run_reproduction(
                 run_id, bundle_dir, binary, progress))
         return self.job_view(job)
+
+    def _run_federated_reproduction(
+            self, run_id: str, bundle_dir: Path,
+            analyses: list[dict[str, Any]],
+            progress) -> tuple[str, dict[str, Any]]:
+        """Reproduce each executed analysis through its own backend."""
+        progress("RUNNING")
+        reproductions: dict[str, Any] = {}
+        for analysis in analyses:
+            question = str(analysis.get("question", "unknown"))
+            key = question.lower()
+            reproductions[key] = self._reproduce_analysis(
+                bundle_dir, key, analysis)
+        progress("FINALIZING")
+        return "COMPLETED", {"run_id": run_id,
+                             "reproductions": reproductions}
+
+    def _reproduce_analysis(self, bundle_dir: Path, key: str,
+                            analysis: dict[str, Any]) -> dict[str, Any]:
+        """One analysis, its own backend, honest unavailability."""
+        from veritx_dse.core.run_bundle import RunBundleError
+        backend = analysis.get("backend_id")
+        if analysis.get("status") != "EVALUATED":
+            return {"backend": backend, "status": "NOT_EXECUTED",
+                    "outcome": "NOT_EXECUTED",
+                    "reason": analysis.get("reason")
+                    or "the analysis never executed; nothing to reproduce"}
+        analysis_dir = bundle_dir / "analyses" / key
+        if backend == "BOOKSIM_STANDALONE":
+            return self._reproduce_booksim_analysis(
+                bundle_dir, analysis_dir, backend)
+        if backend == "ASTRA2_EMBEDDED_BOOKSIM":
+            return self._reproduce_astra_analysis(
+                bundle_dir, analysis_dir, backend)
+        return {"backend": backend, "status": "EVALUATED",
+                "outcome": "REPRODUCTION_NOT_AVAILABLE",
+                "reason": f"no reproduction authority for backend "
+                f"{backend!r}"}
+
+    def _reproduce_booksim_analysis(self, bundle_dir: Path,
+                                    analysis_dir: Path,
+                                    backend: str) -> dict[str, Any]:
+        from veritx_dse.backend.reproduce import (
+            reproduce_booksim_run_bundle,
+        )
+        from veritx_dse.core.run_bundle import RunBundleError
+        binary = self.config.booksim_bin
+        if binary is None or not Path(binary).is_file():
+            return {"backend": backend, "status": "EVALUATED",
+                    "outcome": "REPRODUCTION_NOT_AVAILABLE",
+                    "reason": "no BookSim binary configured here"}
+        run_subdir = analysis_dir / "run"
+        if not (run_subdir / "backend-evidence.json").is_file():
+            return {"backend": backend, "status": "EVALUATED",
+                    "outcome": "REPRODUCTION_NOT_AVAILABLE",
+                    "reason": "the analysis bundle carries no BookSim "
+                    "execution record to rerun"}
+        try:
+            result = reproduce_booksim_run_bundle(
+                run_subdir, binary=str(binary),
+                timeout=self.config.timeout_s)
+        except RunBundleError as exc:
+            return {"backend": backend, "status": "EVALUATED",
+                    "outcome": "DIVERGED",
+                    "reason": f"reproduction refused: {exc}"}
+        return {"backend": backend, "status": "EVALUATED",
+                "outcome": ("SCIENTIFICALLY_REPRODUCED"
+                            if result.get("matched") else "DIVERGED"),
+                "reproduced_stats": result.get("stats"),
+                "route_dump_sha256": result.get("route_dump_sha256")}
+
+    def _reproduce_astra_analysis(self, bundle_dir: Path,
+                                  analysis_dir: Path,
+                                  backend: str) -> dict[str, Any]:
+        from veritx_dse.backend.reproduce_astra import (
+            reproduce_astra_run_bundle,
+        )
+        from veritx_dse.core.run_bundle import RunBundleError
+        binary = self.config.astra_bin
+        if binary is not None and not Path(binary).is_file():
+            binary = None
+        if binary is None:
+            from veritx_dse.backend.astra import resolve_runtime_binary
+            binary = resolve_runtime_binary()
+        if binary is None:
+            return {"backend": backend, "status": "EVALUATED",
+                    "outcome": "REPRODUCTION_NOT_AVAILABLE",
+                    "reason": "no ASTRA runtime binary available here"}
+        try:
+            result = reproduce_astra_run_bundle(
+                analysis_dir, binary=str(binary),
+                timeout=self.config.timeout_s)
+        except RunBundleError as exc:
+            message = str(exc)
+            if "NOT_AVAILABLE" in message:
+                return {"backend": backend, "status": "EVALUATED",
+                        "outcome": "REPRODUCTION_NOT_AVAILABLE",
+                        "reason": message}
+            return {"backend": backend, "status": "EVALUATED",
+                    "outcome": "DIVERGED", "reason": message}
+        return {"backend": backend, "status": "EVALUATED",
+                "outcome": ("SCIENTIFICALLY_REPRODUCED"
+                            if result.get("matched") else "DIVERGED"),
+                "evidence_id": result.get("evidence_id"),
+                "aggregate_cycles": result.get("aggregate_cycles")}
 
     def _run_reproduction(self, run_id: str, bundle_dir: Path,
                           binary: Path, progress) -> tuple[str, dict[str, Any]]:
@@ -2444,6 +2889,8 @@ class ProductService:
     def compare(self, a_run_id: str, b_run_id: str) -> dict[str, Any]:
         a = self.get_run(a_run_id)
         b = self.get_run(b_run_id)
+        if a.get("analyses") and b.get("analyses"):
+            return self._compare_federated(a, b)
         compatibility = self._compare_compatibility(a, b)
         a_metrics = (a.get("evaluation") or {}).get("metrics") or {}
         b_metrics = (b.get("evaluation") or {}).get("metrics") or {}
@@ -2477,6 +2924,115 @@ class ProductService:
                      "when both runs share a workload identity, a backend "
                      "and a QUALIFIED evidence chain, and both measured the "
                      "quantity; tradeoffs are shown as-is."),
+        }
+
+    @staticmethod
+    def _federated_metric_index(
+            run: dict[str, Any]) -> dict[tuple[str, str, str], dict[str, Any]]:
+        """(question, metric key, dimension coordinates) -> measurement."""
+        index: dict[tuple[str, str, str], dict[str, Any]] = {}
+        for analysis in run.get("analyses") or []:
+            question = analysis.get("question")
+            for metric in analysis.get("normalized_metrics") or []:
+                dims = tuple(
+                    (d[0], d[1]) for d in (metric.get("dimensions") or []))
+                coords = ",".join(f"{name}={value}"
+                                  for name, value in sorted(dims))
+                index[(question, metric.get("key"), coords)] = {
+                    "value": metric.get("value"),
+                    "unit": metric.get("unit"),
+                    "backend": analysis.get("backend_id"),
+                    "fidelity": analysis.get("model_fidelity"),
+                    "qualification": analysis.get("qualification"),
+                }
+        return index
+
+    def _compare_federated(self, a: dict[str, Any],
+                           b: dict[str, Any]) -> dict[str, Any]:
+        """Compare normalized federated evidence, one metric at a time.
+
+        A comparison is eligible only for the same question, metric key,
+        unit, dimensional coordinates, compatible model fidelity and
+        acceptable qualification. Anything else is comparable=false with
+        the exact difference — never a delta across models.
+        """
+        def numeric(value: Any) -> bool:
+            return (value is not None and isinstance(value, (int, float))
+                    and not isinstance(value, bool))
+
+        a_index = self._federated_metric_index(a)
+        b_index = self._federated_metric_index(b)
+        a_workload = ((a.get("evaluation_plan") or {}).get("workload_id")
+                      or (a.get("evaluation") or {}).get("workload_id"))
+        b_workload = ((b.get("evaluation_plan") or {}).get("workload_id")
+                      or (b.get("evaluation") or {}).get("workload_id"))
+        same_workload = (a_workload is not None
+                         and a_workload == b_workload)
+        rows = []
+        for key in sorted(set(a_index) | set(b_index)):
+            question, metric, coords = key
+            am = a_index.get(key)
+            bm = b_index.get(key)
+            reason: str | None = None
+            comparable = True
+            if am is None or bm is None:
+                comparable = False
+                missing = "b" if am is not None else "a"
+                reason = f"measured on one side only (absent in run {missing})"
+            elif not same_workload:
+                comparable = False
+                reason = (f"different workload identity ({a_workload!r} "
+                          f"vs {b_workload!r})")
+            elif am["unit"] != bm["unit"]:
+                comparable = False
+                reason = (f"unit mismatch ({am['unit']!r} vs "
+                          f"{bm['unit']!r})")
+            elif am["backend"] != bm["backend"]:
+                comparable = False
+                reason = (f"backend difference ({am['backend']!r} vs "
+                          f"{bm['backend']!r}): a cross-backend number is "
+                          f"a MODEL DIFFERENCE, not a performance winner")
+            elif am["fidelity"] != bm["fidelity"]:
+                comparable = False
+                reason = (f"model difference ({am['fidelity']!r} vs "
+                          f"{bm['fidelity']!r}): different models, not a "
+                          f"performance winner")
+            elif am["qualification"] != bm["qualification"] \
+                    or am["qualification"] is None:
+                comparable = False
+                reason = (f"qualification mismatch "
+                          f"({am['qualification']!r} vs "
+                          f"{bm['qualification']!r})")
+            elif not (numeric(am["value"]) and numeric(bm["value"])):
+                comparable = False
+                reason = "at least one side did not measure a number"
+            rows.append({
+                "question": question,
+                "key": metric,
+                "dimensions": coords or None,
+                "a": None if am is None else am["value"],
+                "b": None if bm is None else bm["value"],
+                "unit": None if am is None else am["unit"],
+                "comparable": comparable,
+                "reason": reason,
+            })
+        return {
+            "contract_version": 1,
+            "a": self._compare_side(a),
+            "b": self._compare_side(b),
+            "compatibility": {
+                "compatible": same_workload,
+                "same_workload": same_workload,
+                "reasons": ([] if same_workload else [
+                    "different or missing workload identity "
+                    f"({a_workload!r} vs {b_workload!r})"]),
+            },
+            "rows": rows,
+            "note": ("No automatic winner. Rows are comparable only for "
+                     "the same question, metric, unit, dimensional "
+                     "coordinates, model fidelity and qualification; "
+                     "cross-model numbers are labeled MODEL DIFFERENCE, "
+                     "never ranked."),
         }
 
     @staticmethod
