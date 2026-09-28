@@ -7,6 +7,7 @@ import {
 import { Hash, StatusBadge, fmtNum } from '../components/badges';
 import OptimizeView from '../components/OptimizeView';
 import OptimizationAnalysis from '../components/OptimizationAnalysis';
+import TopologyInspector from '../components/TopologyInspector';
 import DesignSpace from '../components/DesignSpace';
 import StudyVerdict from '../StudyVerdict';
 
@@ -105,6 +106,10 @@ export function Optimize({ projectId }: { projectId: string }): ReactElement {
   const [topologies, setTopologies] = useState<string[]>([]);
   const [concentrations, setConcentrations] = useState<number[]>([]);
   const [radixText, setRadixText] = useState<string>('');
+  // Selections for further qualified dimensions (parallelism, placement,
+  // …): chips write here directly, free-numeric dims via text below.
+  const [extraSel, setExtraSel] = useState<Record<string, (string | number)[]>>({});
+  const [extraText, setExtraText] = useState<Record<string, string>>({});
   const [method, setMethod] = useState<string>('grid');
   const [adopting, setAdopting] = useState<boolean>(false);
   const [adoptedFrom, setAdoptedFrom] = useState<string | null>(null);
@@ -172,6 +177,30 @@ export function Optimize({ projectId }: { projectId: string }): ReactElement {
   }
   if (qualified.has('radix') && parsedRadix.length > 0) {
     domain.push({ name: 'radix', values: parsedRadix });
+  }
+  // Any further qualified dimension enters the domain from its parsed
+  // selection — backend-qualified dimensions (parallelism, placement)
+  // become live knobs with no frontend change; unqualified ones can
+  // never reach this set.
+  const CORE_DIMS = new Set(['link_width', 'topology_family', 'concentration', 'radix']);
+  const extraParsed: Record<string, (string | number)[]> = {};
+  for (const g of capabilityDoc?.guided_parameters ?? []) {
+    if (!qualified.has(g.name) || CORE_DIMS.has(g.name)) continue;
+    if (g.kind === 'enum' || g.kind === 'str' || g.kind === 'bool') {
+      const sel = extraSel[g.name] ?? [];
+      if (sel.length > 0) {
+        extraParsed[g.name] = [...sel];
+        domain.push({ name: g.name, values: [...sel] });
+      }
+    } else {
+      const nums = (extraText[g.name] ?? '').split(',')
+        .map((t) => Number(t.trim()))
+        .filter((n) => Number.isFinite(n) && Number.isInteger(n));
+      if (nums.length > 0) {
+        extraParsed[g.name] = nums;
+        domain.push({ name: g.name, values: nums });
+      }
+    }
   }
   // Raw Cartesian size, computed BEFORE launch so the user sees the cost.
   const candidateCount = domain.reduce((n, d) => n * d.values.length, 0);
@@ -271,6 +300,15 @@ export function Optimize({ projectId }: { projectId: string }): ReactElement {
                   concentrations={concentrations}
                   setConcentrations={setConcentrations}
                   radixText={radixText} setRadixText={setRadixText}
+                  extraSelections={extraParsed}
+                  setExtraSelection={(name, v) => {
+                    const kind = capabilityDoc?.guided_parameters.find((g) => g.name === name)?.kind;
+                    if (kind === 'enum' || kind === 'str' || kind === 'bool') {
+                      setExtraSel((prev) => ({ ...prev, [name]: v }));
+                    }
+                  }}
+                  extraTexts={extraText}
+                  setExtraText={(name, v) => setExtraText((prev) => ({ ...prev, [name]: v }))}
                   method={method} setMethod={setMethod}
                   seed={seed} setSeed={setSeed}
                   maxCandidates={maxCandidates}
@@ -491,6 +529,51 @@ function StudyResult({
   );
 }
 
+/** Topology diff between two compared runs: side-A graph with side-B as
+ * the diff target. Both topologies load from certified revisions — the
+ * diff itself proves nothing; qualification belongs to each side. */
+function CompareTopologyDiff({ projectId, runA, runB }: {
+  projectId: string;
+  runA: { run_id: string; revision_id: string } | null;
+  runB: { run_id: string; revision_id: string } | null;
+}): ReactElement | null {
+  void projectId;
+  const revA = useAsync(
+    () => (runA ? api.revision(runA.revision_id).catch(() => null) : Promise.resolve(null)),
+    [runA?.revision_id],
+  );
+  const topoA = useAsync(
+    () => (runA ? api.topology(runA.revision_id).catch(() => null) : Promise.resolve(null)),
+    [runA?.revision_id],
+  );
+  if (!runA || !runB || runA.revision_id === runB.revision_id) return null;
+  const revision = revA.result.state === 'ready' ? revA.result.data : null;
+  const topology = topoA.result.state === 'ready' ? topoA.result.data : null;
+  if (!revision || !topology) {
+    return (
+      <section className="card">
+        <h3>Topology diff</h3>
+        <p className="muted">
+          {revA.result.state === 'error' || topoA.result.state === 'error'
+            ? 'Side-A fabric unavailable — diff needs two materialized topologies.'
+            : 'Loading side-A fabric…'}
+        </p>
+      </section>
+    );
+  }
+  return (
+    <section className="card">
+      <h3>Topology diff — run A vs run B fabric</h3>
+      <TopologyInspector
+        design={revision.design}
+        revisionId={runA.revision_id}
+        topology={topology}
+        compareRevisionId={runB.revision_id}
+      />
+    </section>
+  );
+}
+
 export function Compare({ projectId }: { projectId: string }): ReactElement {
   const project = useAsync(() => api.project(projectId), [projectId]);
   const [a, setA] = useState<string>('');
@@ -582,6 +665,13 @@ export function Compare({ projectId }: { projectId: string }): ReactElement {
                     </table>
                     <p className="muted">{comparison.result.data.note}</p>
                   </section>
+                )}
+                {pair && (
+                  <CompareTopologyDiff
+                    projectId={projectId}
+                    runA={evaluated.find((r) => r.run_id === pair.a) ?? null}
+                    runB={evaluated.find((r) => r.run_id === pair.b) ?? null}
+                  />
                 )}
                 {pair && comparison.result.state === 'error' && (
                   <ErrorBox error={comparison.result.error} />

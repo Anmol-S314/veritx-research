@@ -42,18 +42,49 @@ export interface OverlayLink {
 }
 
 export default function TopologyInspector({ design, revisionId, topology,
-  routing, resources, compareTopology, overlayTraffic, evidenceLabel }: {
+  routing, resources, compareTopology, compareRevisionId, overlayTraffic,
+  evidenceLabel }: {
   design: DesignView;
   revisionId: string | null;
   topology: TopologyView;
+  /** Compile groups. `undefined` (default) loads them from the revision's
+   *  compile result — routes/VC go live for every caller. Explicit `null`
+   *  keeps the not-loaded note for contexts without a revision. */
   routing?: RoutingGroup | null;
   resources?: ResourcesGroup | null;
   compareTopology?: TopologyView | null;
+  /** Revision id to diff against. Fetched internally when `compareTopology`
+   *  is absent — candidate/compare pages wire base-vs-candidate this way. */
+  compareRevisionId?: string | null;
   overlayTraffic?: OverlayLink[] | null;
   evidenceLabel?: string | null;
 }): ReactElement {
   const [mode, setMode] = useState<InspectorMode>('physical');
   const model = fabricModel(design, topology);
+  // Compile groups, loaded when the caller did not supply them. The
+  // inspector never derives routes/VCs — it only displays the groups
+  // frozen at certification.
+  const compiled = useAsync(
+    () => (revisionId && (routing === undefined || resources === undefined)
+      ? api.compileResult(revisionId).catch(() => null)
+      : Promise.resolve(null)),
+    [revisionId, routing === undefined, resources === undefined],
+  );
+  const compiledGroups = compiled.result.state === 'ready'
+    ? compiled.result.data?.groups ?? null : null;
+  const routingLive = routing !== undefined ? routing : compiledGroups?.routing ?? null;
+  const resourcesLive = resources !== undefined ? resources : compiledGroups?.resources ?? null;
+  const groupsFailed = compiled.result.state === 'error';
+  // Diff target, loaded when the caller passed an id instead of a graph.
+  const otherTopo = useAsync(
+    () => (compareTopology === undefined && compareRevisionId
+      ? api.topology(compareRevisionId).catch(() => null)
+      : Promise.resolve(null)),
+    [compareTopology === undefined, compareRevisionId],
+  );
+  const otherLive = compareTopology !== undefined
+    ? compareTopology
+    : (otherTopo.result.state === 'ready' ? otherTopo.result.data : null);
   return (
     <div className="topology-inspector">
       <div className="canvas-toolbar">
@@ -72,21 +103,24 @@ export default function TopologyInspector({ design, revisionId, topology,
         </div>
       </div>
       <FamilyMaturity family={topology.family} />
+      {groupsFailed && (
+        <p className="warn">Compile groups unavailable ({compiled.result.state === 'error' ? compiled.result.error.message : 'unknown'}) — routes/VC render from caller-supplied groups only, or not at all. Nothing is inferred.</p>
+      )}
       {mode === 'physical' && <PhysicalMode model={model} />}
       {mode === 'classes' && (
-        <ClassesMode model={model} topology={topology} resources={resources ?? null} />
+        <ClassesMode model={model} topology={topology} resources={resourcesLive} />
       )}
       {mode === 'routes' && (
         <RoutesMode model={model} topology={topology} revisionId={revisionId}
-                    routing={routing ?? null} />
+                    routing={routingLive} />
       )}
-      {mode === 'vc' && <VcMode resources={resources ?? null} />}
+      {mode === 'vc' && <VcMode resources={resourcesLive} />}
       {mode === 'overlay' && (
         <OverlayMode model={model} links={overlayTraffic ?? null}
                      evidenceLabel={evidenceLabel ?? null} />
       )}
       {mode === 'diff' && (
-        <DiffMode model={model} topology={topology} other={compareTopology ?? null} />
+        <DiffMode model={model} topology={topology} other={otherLive} />
       )}
     </div>
   );

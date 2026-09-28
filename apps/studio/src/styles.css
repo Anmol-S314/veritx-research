@@ -2084,3 +2084,163 @@ p, li { text-wrap: pretty; }
 
 .artifact-jumps { margin-top: 8px; }
 .artifact-jumps label { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+
+/* ══ VNEXT PROTOTYPE PORT (scoped under .vnext — opt-in, additive) ══════
+   Visual language from veritx-studio-vnext-prototype.html. Every rule is
+   scoped under `.vnext` so no existing Studio class is altered. Wrap a
+   vnext-styled surface in <div className="vnext"> to opt in.
+   Tokens live as --vnext-* with prototype values; dark pair included. */
+
+.vnext {
+  --vnext-bg: #f3f2ee;
+  --vnext-panel: #ffffff;
+  --vnext-panel2: #f8f7f3;
+  --vnext-text: #171817;
+  --vnext-muted: #6d726d;
+  --vnext-line: #d8d7d1;
+  --vnext-strong: #b7b6af;
+  --vnext-accent: #1f645b;
+  --vnext-good: #1f6c4f;
+  --vnext-warn: #9a6217;
+  --vnext-bad: #9a3b32;
+  --vnext-research: #6f5c34;
+  --vnext-hist: #6e747a;
+  --vnext-shadow: 0 8px 24px rgba(20, 24, 21, 0.055);
+  background: var(--vnext-bg);
+  color: var(--vnext-text);
+}
+html[data-theme='dark'] .vnext {
+  --vnext-bg: #111412;
+  --vnext-panel: #171b18;
+  --vnext-panel2: #1d221f;
+  --vnext-text: #eef1ed;
+  --vnext-muted: #9ea69f;
+  --vnext-line: #2d342f;
+  --vnext-strong: #3d463f;
+  --vnext-accent: #6cbcaf;
+  --vnext-good: #73c59a;
+  --vnext-warn: #d5aa5f;
+  --vnext-bad: #e38278;
+  --vnext-research: #d1b76d;
+  --vnext-hist: #a7adb4;
+  --vnext-shadow: none;
+}
+
+/* nav shell */
+.vnext .vapp { display: grid; grid-template-columns: 258px 1fr; min-height: 100vh; }
+.vnext .vside { background: var(--vnext-panel); border-right: 1px solid var(--vnext-line); padding: 18px 15px; }
+.vnext .vgroup { margin: 20px 8px 5px; color: var(--vnext-muted); font-size: 10px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; }
+.vnext .vnav { width: 100%; border: 0; background: transparent; padding: 9px 10px; border-radius: 8px; text-align: left; margin: 1px 0; display: flex; gap: 10px; align-items: center; color: var(--vnext-text); cursor: pointer; font: inherit; }
+.vnext .vnav:hover { background: var(--vnext-panel2); }
+.vnext .vnav.vactive { background: var(--vnext-text); color: var(--vnext-panel); }
+.vnext .vdot { width: 7px; height: 7px; border: 1px solid currentColor; border-radius: 50%; opacity: 0.55; }
+.vnext .vmain { min-width: 0; }
+.vnext .vcontent { max-width: 1540px; margin: auto; padding: 28px 30px 80px; }
+.vnext .vhead { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin-bottom: 20px; }
+.vnext .vhead h1 { font-size: 30px; letter-spacing: -0.025em; line-height: 1.05; margin: 0 0 6px; }
+.vnext .vhead p { margin: 0; color: var(--vnext-muted); max-width: 850px; }
+
+/* cards + grids */
+.vnext .vgrid { display: grid; gap: 14px; }
+.vnext .vg2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.vnext .vg3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.vnext .vg4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.vnext .vgmain { grid-template-columns: minmax(0, 1.7fr) minmax(300px, 0.8fr); }
+.vnext .vcard { background: var(--vnext-panel); border: 1px solid var(--vnext-line); border-radius: 12px; box-shadow: var(--vnext-shadow); padding: 16px; }
+.vnext .vcard h3 { margin: 0 0 10px; font-size: 15px; }
+.vnext .vcard h4 { margin: 0 0 10px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--vnext-muted); }
+.vnext .vbig { font-size: 26px; font-weight: 760; letter-spacing: -0.02em; }
+.vnext .vmuted { color: var(--vnext-muted); }
+.vnext .vmono { font-family: var(--mono); }
+.vnext .vrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.vnext .vbetween { justify-content: space-between; }
+.vnext .vstack { display: flex; flex-direction: column; gap: 10px; }
+.vnext .vdivider { height: 1px; background: var(--vnext-line); margin: 14px 0; }
+
+/* pills: maturity + epistemic vocabulary */
+.vnext .vpill { display: inline-flex; align-items: center; border: 1px solid var(--vnext-strong); border-radius: 999px; padding: 3px 7px; font-size: 9px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
+.vnext .vpill.vgood { color: var(--vnext-good); border-color: var(--vnext-good); }
+.vnext .vpill.vwarn { color: var(--vnext-warn); border-color: var(--vnext-warn); }
+.vnext .vpill.vbad { color: var(--vnext-bad); border-color: var(--vnext-bad); }
+.vnext .vpill.vresearch { color: var(--vnext-research); border-color: var(--vnext-research); }
+.vnext .vpill.vhist { color: var(--vnext-hist); border-color: var(--vnext-hist); }
+
+/* key-value rows */
+.vnext .vvalue { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--vnext-line); }
+.vnext .vvalue:last-child { border: 0; }
+.vnext .vvalue .vk { color: var(--vnext-muted); }
+.vnext .vvalue .vv { text-align: right; font-weight: 650; }
+
+/* scientific value block: left-border epistemic color */
+.vnext .vscientific { border-left: 3px solid var(--vnext-strong); padding-left: 11px; }
+.vnext .vscientific.vsim { border-color: var(--vnext-accent); }
+.vnext .vscientific.vmodel { border-color: var(--vnext-warn); }
+.vnext .vscientific.vverify { border-color: var(--vnext-good); }
+.vnext .vscientific.vhist { border-color: var(--vnext-hist); }
+.vnext .vsv { font-size: 24px; font-weight: 760; }
+.vnext .vmeta { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+
+/* tables */
+.vnext table { width: 100%; border-collapse: collapse; }
+.vnext th, .vnext td { text-align: left; vertical-align: top; padding: 9px 8px; border-bottom: 1px solid var(--vnext-line); }
+.vnext th { font-size: 9px; color: var(--vnext-muted); letter-spacing: 0.08em; text-transform: uppercase; }
+.vnext td.vnum { text-align: right; font-family: var(--mono); }
+
+/* tabs */
+.vnext .vtabs { display: flex; gap: 4px; overflow: auto; border-bottom: 1px solid var(--vnext-line); margin-bottom: 14px; }
+.vnext .vtab { border: 0; background: transparent; padding: 9px 10px; border-bottom: 2px solid transparent; color: var(--vnext-muted); cursor: pointer; font: inherit; }
+.vnext .vtab.vactive { color: var(--vnext-text); border-color: var(--vnext-text); }
+
+/* forms */
+.vnext .vfield { display: grid; grid-template-columns: 210px 1fr; gap: 14px; padding: 10px 0; border-bottom: 1px solid var(--vnext-line); }
+.vnext .vfield label { font-weight: 700; }
+.vnext .vfield small { display: block; color: var(--vnext-muted); margin-top: 3px; }
+.vnext .vfield:last-child { border: 0; }
+.vnext .vchoices { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.vnext .vchoice { background: var(--vnext-panel2); border: 1px solid var(--vnext-line); border-radius: 9px; padding: 10px; min-height: 70px; }
+.vnext .vchoice strong { display: block; }
+.vnext .vchoice small { color: var(--vnext-muted); }
+
+/* topology graph placeholder grid */
+.vnext .vgraph { height: 320px; border: 1px dashed var(--vnext-strong); border-radius: 10px; position: relative; overflow: hidden; background: linear-gradient(var(--vnext-line) 1px, transparent 1px), linear-gradient(90deg, var(--vnext-line) 1px, transparent 1px); background-size: 28px 28px; }
+.vnext .vnode { position: absolute; width: 32px; height: 32px; border: 2px solid var(--vnext-text); border-radius: 7px; background: var(--vnext-panel); display: grid; place-items: center; font: 10px var(--mono); z-index: 2; }
+.vnext .vedge { position: absolute; height: 2px; background: var(--vnext-strong); transform-origin: left center; z-index: 1; }
+.vnext .vedge.vexpress { height: 3px; background: var(--vnext-accent); }
+
+/* callouts */
+.vnext .vcallout { padding: 11px; border-left: 3px solid var(--vnext-accent); background: var(--vnext-panel2); border-radius: 0 8px 8px 0; }
+.vnext .vcallout.vwarn { border-color: var(--vnext-warn); }
+.vnext .vcallout.vbad { border-color: var(--vnext-bad); }
+
+/* metric bars */
+.vnext .vmetric { display: grid; grid-template-columns: 130px 1fr 100px; gap: 10px; align-items: center; margin: 8px 0; }
+.vnext .vtrack { height: 14px; background: var(--vnext-panel2); border: 1px solid var(--vnext-line); border-radius: 5px; overflow: hidden; }
+.vnext .vfill { height: 100%; background: var(--vnext-text); }
+
+/* evidence chain */
+.vnext .vev { display: flex; align-items: center; gap: 8px; overflow: auto; padding: 8px 0; }
+.vnext .vevn { min-width: 145px; border: 1px solid var(--vnext-strong); border-radius: 8px; padding: 10px; background: var(--vnext-panel); }
+.vnext .varrow { font-size: 20px; color: var(--vnext-muted); }
+
+/* capability grid + 7-stage ladder */
+.vnext .vcapgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.vnext .vcap { border: 1px solid var(--vnext-line); border-radius: 9px; padding: 11px; background: var(--vnext-panel); }
+.vnext .vstages { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
+.vnext .vstage { font-size: 8px; padding: 3px 5px; border: 1px solid var(--vnext-line); border-radius: 4px; color: var(--vnext-muted); }
+.vnext .vstage.von { color: var(--vnext-good); border-color: var(--vnext-good); }
+.vnext .vstage.vpartial { color: var(--vnext-warn); border-color: var(--vnext-warn); }
+
+.vnext details { border-top: 1px solid var(--vnext-line); padding-top: 10px; margin-top: 10px; }
+.vnext summary { font-weight: 700; cursor: pointer; }
+
+@media (max-width: 1100px) {
+  .vnext .vapp { grid-template-columns: 210px 1fr; }
+  .vnext .vg4 { grid-template-columns: repeat(2, 1fr); }
+  .vnext .vg3, .vnext .vgmain { grid-template-columns: 1fr; }
+  .vnext .vchoices { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 760px) {
+  .vnext .vapp { display: block; }
+  .vnext .vg2, .vnext .vg4 { grid-template-columns: 1fr; }
+  .vnext .vfield { grid-template-columns: 1fr; }
+}

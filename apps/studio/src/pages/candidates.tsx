@@ -1,7 +1,8 @@
 // Candidates page (§26): the global candidate library. Filters by
 // study, generation method, compiled, verified, evaluated, eligible,
 // Pareto, adopted. Sources, in order of authority:
-//   1. live gateway candidate library (api.candidates) where wired;
+//   1. live gateway candidate library (api.candidates) where wired —
+//      adopted/status flips read straight from these gateway records;
 //   2. optimization-study candidates from the project record;
 //   3. local synthesis imports (explicitly local, never backend truth).
 // Cards show origin, design delta, network/system/memory results,
@@ -57,6 +58,66 @@ function localToRow(c: LocalCandidate): Row {
   };
 }
 
+/** Raw gateway store record (product/vnext list_candidates) — the library
+ * route returns store records, not the display entry shape. Normalized
+ * here so adopted/status flips come from the record, never local state. */
+interface RawLibraryRecord {
+  candidate_id: string;
+  origin: { kind: string; synthesis_id?: string } | string | null;
+  method?: string | null;
+  engine?: string | null;
+  solver_status?: string | null;
+  status?: string | null;
+  compiled?: boolean | null;
+  verified?: boolean | null;
+  evaluated?: boolean | null;
+  adopted?: boolean | null;
+  pareto_member?: boolean | null;
+  network_cycles?: number | null;
+  system_cycles?: number | null;
+  memory_cycles?: number | null;
+  design_delta?: string | null;
+  verification?: string | null;
+}
+
+function isRawRecord(e: CandidateLibraryEntry | RawLibraryRecord): e is RawLibraryRecord {
+  const origin = (e as RawLibraryRecord).origin;
+  return typeof origin !== 'string' || 'compiled' in e;
+}
+
+function rawToRow(e: RawLibraryRecord): Row {
+  const origin = typeof e.origin === 'string'
+    ? e.origin
+    : (e.origin?.kind ?? 'unknown');
+  const evaluated = e.evaluated === true
+    || e.network_cycles != null || e.system_cycles != null || e.memory_cycles != null;
+  const status = e.adopted === true ? 'ADOPTED'
+    : evaluated ? 'EVALUATED'
+    : e.verified === true ? 'VERIFIED'
+    : e.compiled === true ? 'COMPILED'
+    : (e.solver_status ?? e.status ?? '—');
+  return {
+    key: `lib:${e.candidate_id}`,
+    label: e.candidate_id,
+    origin,
+    method: e.method ?? e.engine ?? '—',
+    status,
+    verification: e.verified === true ? 'VERIFIED'
+      : (e.verification ?? (e.compiled === true ? 'COMPILED_UNVERIFIED' : 'NOT_VERIFIED')),
+    network: e.network_cycles ?? null,
+    system: e.system_cycles ?? null,
+    memory: e.memory_cycles ?? null,
+    pareto: e.pareto_member ?? null,
+    adopted: e.adopted === true,
+    evaluated,
+    eligible: null,
+    entry: null,
+    local: null,
+    optimizationId: null,
+    backendCandidateId: null,
+  };
+}
+
 function entryToRow(e: CandidateLibraryEntry): Row {
   const evaluated =
     e.network_cycles != null || e.system_cycles != null || e.memory_cycles != null;
@@ -90,7 +151,19 @@ export function Candidates({
 }): ReactElement {
   const project = useAsync(() => api.project(projectId), [projectId]);
   const library = useAsync(
-    () => api.candidates().catch(() => ({ contract_version: 1 as const, entries: [] })),
+    // The gateway library route returns raw store records
+    // ({candidates, count}); the typed display shape is normalized below.
+    // A refused/unwired route yields an empty library — never a fixture.
+    () => api.candidates()
+      .then((lib) => {
+        const raw = lib as unknown as {
+          entries?: (CandidateLibraryEntry | RawLibraryRecord)[];
+          candidates?: RawLibraryRecord[];
+        };
+        const rows = raw.entries ?? raw.candidates ?? [];
+        return { entries: rows };
+      })
+      .catch(() => ({ entries: [] as (CandidateLibraryEntry | RawLibraryRecord)[] })),
     [],
   );
 
@@ -110,7 +183,7 @@ export function Candidates({
         <AsyncView result={library.result} reload={library.reload}>
           {(lib) => {
             const rows: Row[] = [
-              ...lib.entries.map(entryToRow),
+              ...lib.entries.map((e) => (isRawRecord(e) ? rawToRow(e) : entryToRow(e))),
               ...listCandidates().map(localToRow),
             ];
             const methods = [...new Set(rows.map((r) => r.method))].sort();
@@ -212,7 +285,94 @@ export function Candidates({
   );
 }
 
-/** Detail route: live gateway candidate first, local import second. */
+/** Raw gateway detail record (product/vnext get_candidate): store fields
+ * plus seed diff, definition and topology IR — not the display shape. */
+interface RawDetailRecord {
+  candidate_id: string;
+  origin: { kind: string; synthesis_id?: string } | null;
+  method?: string | null;
+  engine?: string | null;
+  nodes: number;
+  links: number[][];
+  generator_objective?: { name?: string; value?: number | null } | null;
+  solver_status?: string | null;
+  compiled?: boolean | null;
+  verified?: boolean | null;
+  evaluated?: boolean | null;
+  adopted?: boolean | null;
+  adopted_project_id?: string | null;
+  completeness?: { completeness?: string; claim?: string } | null;
+  provenance?: Record<string, unknown> | null;
+  definition?: { definition_id?: string } | null;
+  diff_vs_seed?: { added?: number[][]; removed?: number[][] } | null;
+}
+
+/** Normalize a raw gateway record. Adopted/compiled/verified/evaluated
+ * flips come from the record; the seed diff rebuilds the base graph so
+ * the delta view works without a stored base. */
+function rawDetailToInput(r: RawDetailRecord): CandidateViewInput {
+  const key = (e: number[]): string => {
+    const [a, b] = e;
+    return `${Math.min(a, b)}-${Math.max(a, b)}`;
+  };
+  const links = (r.links ?? []).map((e) => [e[0], e[1]] as [number, number]);
+  let baseLinks: [number, number][] | null = null;
+  let baseLabel = 'seed graph unknown';
+  if (r.diff_vs_seed) {
+    const added = new Set((r.diff_vs_seed.added ?? []).map(key));
+    const kept = links.filter((e) => !added.has(key(e)));
+    baseLinks = [...kept, ...((r.diff_vs_seed.removed ?? []).map((e) => [e[0], e[1]] as [number, number]))];
+    baseLabel = 'reconstructed seed graph (links − added + removed)';
+  }
+  const kind = r.completeness?.completeness;
+  const completeness = (kind === 'BUDGETED' || kind === 'EXHAUSTIVE' || kind === 'UNBOUNDED') ? kind : 'UNBOUNDED';
+  const adopted = r.adopted === true;
+  return {
+    id: r.candidate_id,
+    label: r.candidate_id,
+    origin: 'synthesis-gateway',
+    adopted,
+    adoptionNote: adopted
+      ? `adopted${r.adopted_project_id ? ` in project ${r.adopted_project_id}` : ''} — gateway record`
+      : null,
+    method: r.method ?? r.engine ?? '—',
+    solverStatus: r.solver_status ?? '—',
+    completeness,
+    completenessNote: typeof r.completeness?.claim === 'string'
+      ? r.completeness.claim
+      : 'gateway-carried completeness',
+    nodes: r.nodes,
+    gridK: Math.round(Math.sqrt(r.nodes)) || 1,
+    links,
+    baseLinks,
+    baseLabel,
+    generatorObjective: r.generator_objective?.value ?? null,
+    generatorNote: 'Analytical generator objective — screening only, never measured performance.',
+    seed: typeof r.provenance?.seed === 'number' ? r.provenance.seed : null,
+    engineSemantics: r.engine ?? r.method ?? '—',
+    compile: { label: 'compile', state: r.compiled === true ? 'COMPILED' : 'NOT_COMPILED' },
+    verification: { label: 'verification', state: r.verified === true ? 'VERIFIED' : 'NOT_VERIFIED' },
+    backends: [
+      { label: 'evaluation', state: r.evaluated === true ? 'EVALUATED' : 'NOT_EVALUATED' },
+    ],
+    requirements: [],
+    evidence: [],
+    provenance: [
+      ...Object.entries(r.provenance ?? {}).map(([kk, v]) => ({ key: kk, value: String(v) })),
+      ...(r.definition?.definition_id ? [{ key: 'definition_id', value: String(r.definition.definition_id) }] : []),
+      ...(r.origin?.synthesis_id ? [{ key: 'synthesis_id', value: String(r.origin.synthesis_id) }] : []),
+    ],
+    optimizationId: null,
+    backendCandidateId: null,
+    gatewayCandidateId: r.candidate_id,
+  };
+}
+
+/** Detail route: live gateway candidate first, local import second.
+ * The gateway detail route returns the raw store record (adopted,
+ * compiled/verified/evaluated flags, generator objective, seed diff);
+ * the typed display shape is accepted too. Either way the adopted flip
+ * comes from the record. */
 function CandidateRoute({
   projectId,
   candidateId,
@@ -227,15 +387,36 @@ function CandidateRoute({
   return (
     <AsyncView result={detail.result} reload={detail.reload}>
       {(d) => {
-        if (d) {
+        const raw = d as unknown as Record<string, unknown> | null;
+        if (raw && (raw as { candidate?: unknown }).candidate === undefined
+          && typeof (raw as { candidate_id?: unknown }).candidate_id === 'string') {
+          return (
+            <CandidateDetail
+              projectId={projectId}
+              input={rawDetailToInput(raw as unknown as RawDetailRecord)}
+            />
+          );
+        }
+        if (d && (d as { candidate?: unknown }).candidate !== undefined) {
+          const typed = d as unknown as {
+            candidate: CandidateLibraryEntry;
+            compile: string | null;
+            verification: string | null;
+            evidence_ids: string[];
+            generator_provenance: Record<string, unknown> | null;
+            promotion?: { promoted?: boolean; message?: string | null } | null;
+          };
           const input: CandidateViewInput = {
-            id: d.candidate.candidate_id,
-            label: d.candidate.candidate_id,
-            origin: d.candidate.origin.includes('optim')
+            id: typed.candidate.candidate_id,
+            label: typed.candidate.candidate_id,
+            origin: typed.candidate.origin.includes('optim')
               ? 'optimization-study'
               : 'synthesis-local',
-            method: d.candidate.method ?? '—',
-            solverStatus: d.candidate.status ?? '—',
+            adopted: typed.candidate.adopted === true,
+            adoptionNote: typed.promotion?.message
+              ?? (typed.candidate.adopted === true ? 'adopted — gateway record' : null),
+            method: typed.candidate.method ?? '—',
+            solverStatus: typed.candidate.status ?? '—',
             completeness: 'BUDGETED',
             completenessNote: 'gateway-carried entry — completeness per parent study',
             nodes: 0,
@@ -246,18 +427,19 @@ function CandidateRoute({
             generatorObjective: null,
             generatorNote: 'Generator fields ride on the synthesis result view, not the library entry.',
             seed: null,
-            engineSemantics: d.candidate.origin,
-            compile: { label: 'compile', state: d.compile ?? '—' },
-            verification: { label: 'verification', state: d.verification ?? '—' },
+            engineSemantics: typed.candidate.origin,
+            compile: { label: 'compile', state: typed.compile ?? '—' },
+            verification: { label: 'verification', state: typed.verification ?? '—' },
             backends: [
-              { label: 'network', state: d.candidate.network_cycles != null ? 'MEASURED' : 'NOT_EVALUATED', detail: d.candidate.network_cycles != null ? `${fmtNum(d.candidate.network_cycles)} cycles` : undefined },
-              { label: 'system', state: d.candidate.system_cycles != null ? 'MEASURED' : 'NOT_EVALUATED', detail: d.candidate.system_cycles != null ? `${fmtNum(d.candidate.system_cycles)} cycles` : undefined },
+              { label: 'network', state: typed.candidate.network_cycles != null ? 'MEASURED' : 'NOT_EVALUATED', detail: typed.candidate.network_cycles != null ? `${fmtNum(typed.candidate.network_cycles)} cycles` : undefined },
+              { label: 'system', state: typed.candidate.system_cycles != null ? 'MEASURED' : 'NOT_EVALUATED', detail: typed.candidate.system_cycles != null ? `${fmtNum(typed.candidate.system_cycles)} cycles` : undefined },
             ],
             requirements: [],
-            evidence: d.evidence_ids.map((id, i) => ({ key: `evidence ${i + 1}`, value: id })),
-            provenance: Object.entries(d.generator_provenance ?? {}).map(([k, v]) => ({ key: k, value: String(v) })),
+            evidence: typed.evidence_ids.map((id, i) => ({ key: `evidence ${i + 1}`, value: id })),
+            provenance: Object.entries(typed.generator_provenance ?? {}).map(([k, v]) => ({ key: k, value: String(v) })),
             optimizationId: null,
             backendCandidateId: null,
+            gatewayCandidateId: null,
           };
           return <CandidateDetail projectId={projectId} input={input} />;
         }
@@ -282,6 +464,8 @@ function CandidateRoute({
           id: local.id,
           label: local.label,
           origin: 'synthesis-local',
+          adopted: false,
+          adoptionNote: null,
           method: local.method,
           solverStatus: 'FEASIBLE',
           completeness: 'UNBOUNDED',
@@ -306,6 +490,7 @@ function CandidateRoute({
           ],
           optimizationId: local.backendOptimizationId,
           backendCandidateId: local.backendCandidateId,
+          gatewayCandidateId: null,
         };
         return <CandidateDetail projectId={projectId} input={input} />;
       }}

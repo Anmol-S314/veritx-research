@@ -30,6 +30,13 @@ export interface DesignSpaceProps {
   setConcentrations: (v: number[]) => void;
   radixText: string;
   setRadixText: (v: string) => void;
+  /** Selections for any OTHER qualified dimension, keyed by parameter
+   *  name. Generic wiring: when the backend qualifies a new dimension
+   *  (parallelism, placement, …), Studio offers it with no frontend change. */
+  extraSelections: Record<string, (string | number)[]>;
+  setExtraSelection: (name: string, v: (string | number)[]) => void;
+  extraTexts: Record<string, string>;
+  setExtraText: (name: string, v: string) => void;
   method: string;
   setMethod: (v: string) => void;
   seed: number;
@@ -79,6 +86,85 @@ const DIMENSION_GROUPS: { title: string; dims: string[]; note: string }[] = [
 
 /** Derived compiler state: never a search knob. */
 const DERIVED_NEVER_KNOBS = ['vc_count', 'vc_map', 'route_table'];
+
+/** Generic editors for qualified dimensions outside the core Fabric four.
+ * A dimension becomes a live knob here iff the backend capability probe
+ * reports it qualified (compilable ∧ effective ∧ backend_executable).
+ * Anything else stays in the pending disclosures above — visible, never
+ * searchable. Editors are driven by the capability row (kind + value
+ * lists), never by a frontend list. */
+function GenericDimensions({ caps, base, extraSelections, setExtraSelection,
+  extraTexts, setExtraText }: {
+  caps: DesignSpaceProps['caps'];
+  base: Record<string, unknown> | null;
+  extraSelections: Record<string, (string | number)[]>;
+  setExtraSelection: (name: string, v: (string | number)[]) => void;
+  extraTexts: Record<string, string>;
+  setExtraText: (name: string, v: string) => void;
+}): ReactElement | null {
+  const CORE = new Set(['link_width', 'topology_family', 'concentration', 'radix']);
+  const qualified = new Set(caps.qualified_parameters);
+  const rows = caps.guided_parameters.filter(
+    (g) => qualified.has(g.name) && !CORE.has(g.name));
+  if (rows.length === 0) return null;
+  const current = (name: string): string => {
+    const v = base?.[name];
+    return v === undefined || v === null ? '—' : String(v);
+  };
+  return (
+    <fieldset>
+      <legend>Further qualified dimensions</legend>
+      <p className="muted">
+        Qualified by the backend probe (effective and executable through the
+        certified chain) — live knobs, not pending disclosures.
+      </p>
+      {rows.map((g) => {
+        const choices = g.executable_values ?? g.accepted_values ?? null;
+        const selected = extraSelections[g.name] ?? [];
+        return (
+          <div className="form-row" key={g.name}>
+            <label>
+              {HUMAN[g.name] ?? g.name}
+              <span className="muted"> — current: {current(g.name)}</span>{' '}
+              <span className="muted">({g.kind}{g.value_constraint ? ` · ${g.value_constraint}` : ''})</span>
+              {(g.kind === 'enum' || g.kind === 'str' || g.kind === 'bool') && choices ? (
+                <Chips
+                  values={choices} selected={selected}
+                  onToggle={(v, on) => setExtraSelection(
+                    g.name, toggle(selected, v as string | number, on))}
+                />
+              ) : g.kind === 'bool' ? (
+                <select
+                  value={selected.length ? String(selected[0]) : ''}
+                  onChange={(e) => setExtraSelection(
+                    g.name, e.target.value === '' ? [] : [e.target.value])}
+                  aria-label={g.name}
+                >
+                  <option value="">—</option>
+                  <option value="true">true</option>
+                  <option value="false">false</option>
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={extraTexts[g.name] ?? ''}
+                  placeholder="comma-separated values"
+                  onChange={(e) => setExtraText(g.name, e.target.value)}
+                  aria-label={g.name}
+                />
+              )}
+              <small className="muted">
+                {g.reason ?? 'Backend-qualified dimension.'}{' '}
+                {choices && !g.accepted_values_is_exhaustive
+                  ? 'UI choices on a validated range.' : ''}
+              </small>
+            </label>
+          </div>
+        );
+      })}
+    </fieldset>
+  );
+}
 
 function toggle<T>(list: T[], value: T, on: boolean): T[] {
   const next = on ? [...list, value] : list.filter((x) => x !== value);
@@ -227,6 +313,13 @@ export default function DesignSpace(p: DesignSpaceProps): ReactElement {
         )}
       </fieldset>
 
+      <GenericDimensions
+        caps={caps} base={base}
+        extraSelections={p.extraSelections}
+        setExtraSelection={p.setExtraSelection}
+        extraTexts={p.extraTexts} setExtraText={p.setExtraText}
+      />
+
       <h4>Search configuration</h4>
       <div className="form-row">
         <label>
@@ -282,7 +375,8 @@ export default function DesignSpace(p: DesignSpaceProps): ReactElement {
               const count = n === 'link_width' ? p.widths.length
                 : n === 'topology_family' ? p.topologies.length
                   : n === 'concentration' ? p.concentrations.length
-                    : undefined;
+                    : (p.extraSelections[n]?.length ?? 0) > 0
+                      ? p.extraSelections[n].length : undefined;
               return count ? `${count} ${n}` : null;
             }).filter(Boolean).join(' × ')}</>
           )}

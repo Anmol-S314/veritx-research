@@ -15,6 +15,99 @@ const STAGE_COLUMNS = [
   'evidence',
 ] as const;
 
+/** The seven-stage maturity ladder (§1): INTENT → MATERIALIZED → VERIFIED →
+ * PROJECTED → EXECUTABLE → QUALIFIED → PRODUCT. Mirrors the reference
+ * prototype's caps[] mini-ladder rendering (on/partial/off per stage).
+ *
+ * `ladderCells` maps the ledger's sentence-valued stage cells to
+ * on/partial/off WITHOUT editing ledger data. Rule (documented, deliberately
+ * coarse — the sentence tooltip carries the nuance): leading YES → on;
+ * leading NO / N-A / NOT… / NONE / ABSENT / NEVER / — / empty → off;
+ * anything else (PARTIAL, INTENT ONLY, TESTED PRIMITIVE, EXECUTABLE
+ * POTENTIAL, historical-only, downstream-only, …) → partial. The EVIDENCE
+ * column is not a ladder stage and rides only as tooltip context. */
+export const LADDER_STAGES = [
+  'INTENT',
+  'ARTIFACT',
+  'VERIFY',
+  'PROJECT',
+  'EXECUTE',
+  'QUALIFY',
+  'PRODUCT',
+] as const;
+
+export type LadderLevel = 0 | 0.5 | 1;
+
+export interface LadderCell {
+  stage: (typeof LADDER_STAGES)[number];
+  level: LadderLevel;
+  /** The underlying ledger sentence — shown as tooltip, never invented. */
+  detail: string;
+}
+
+export function ladderLevel(cell: string | undefined | null): LadderLevel {
+  const upper = (cell ?? '').trim().toUpperCase();
+  if (!upper) return 0;
+  if (/^YES\b/.test(upper)) return 1;
+  if (/^(NO\b|NO\s|N\/A\b|NOT\s|NONE\b|ABSENT\b|NEVER\b|—)/.test(upper)) return 0;
+  return 0.5;
+}
+
+export function ladderCells(stages: CapabilityRecord['stages']): LadderCell[] {
+  const picked = [
+    stages.intent,
+    stages.artifact,
+    stages.verifier,
+    stages.projection,
+    stages.executable,
+    stages.qualified,
+    stages.product,
+  ];
+  return LADDER_STAGES.map((stage, i) => ({
+    stage,
+    level: ladderLevel(picked[i]),
+    detail: picked[i] ?? '—',
+  }));
+}
+
+/** Seven-dot maturity ladder. Inline styles only (no stylesheet dependency):
+ * filled green = on, filled amber = partial, hollow gray = off. */
+export function StageLadder({
+  cells,
+  label,
+}: {
+  cells: LadderCell[];
+  label: string;
+}): ReactElement {
+  return (
+    <span
+      role="img"
+      aria-label={`${label} maturity ladder: ${cells
+        .map((c) => `${c.stage}=${c.level === 1 ? 'on' : c.level === 0.5 ? 'partial' : 'off'}`)
+        .join(', ')}`}
+      title={cells.map((c) => `${c.stage}: ${c.detail}`).join('\n')}
+      style={{ display: 'inline-flex', gap: 4, alignItems: 'center', verticalAlign: 'middle' }}
+    >
+      {cells.map((c) => (
+        <span
+          key={c.stage}
+          title={`${c.stage}: ${c.detail}`}
+          style={{
+            width: 10,
+            height: 10,
+            borderRadius: '50%',
+            display: 'inline-block',
+            border: '1px solid currentColor',
+            opacity: c.level === 0 ? 0.45 : 1,
+            backgroundColor:
+              c.level === 1 ? '#1f6c4f' : c.level === 0.5 ? '#9a6217' : 'transparent',
+          }}
+        />
+      ))}
+    </span>
+  );
+}
+
 function cellTone(cell: string): string {
   const upper = cell.toUpperCase();
   if (/^(YES|AVAILABLE|QUALIFIED)\b/.test(upper)) return 'stage-yes';
@@ -37,6 +130,11 @@ export function CapabilityDetail({ cap }: { cap: CapabilityRecord }): ReactEleme
         {cap.id} · {MATURITY_BLURB[cap.maturity]} — {cap.maturityNote}.
       </p>
       <h4>Status</h4>
+      <p className="muted">
+        Seven-stage ladder (INTENT → MATERIALIZED → VERIFIED → PROJECTED →
+        EXECUTABLE → QUALIFIED → PRODUCT):{' '}
+        <StageLadder cells={ladderCells(cap.stages)} label={cap.name} />
+      </p>
       <table className="live-table capability-matrix">
         <thead>
           <tr>

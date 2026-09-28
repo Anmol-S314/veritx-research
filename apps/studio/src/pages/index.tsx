@@ -363,12 +363,7 @@ export function Overview({ projectId }: { projectId: string }): ReactElement {
                       epistemic="DECLARED"
                       source="optimization study"
                     />{' '}·{' '}
-                    <ScientificValue
-                      value={p.latest_optimization_study.pareto_count}
-                      unit="pareto"
-                      epistemic="DECLARED"
-                      source="optimization study"
-                    />
+                    <span className="muted">selected {p.latest_optimization_study.selected_candidate_id ?? '—'}</span>
                   </span>
                 </div>
               ) : (

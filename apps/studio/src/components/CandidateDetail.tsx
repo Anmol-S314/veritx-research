@@ -5,13 +5,14 @@
 // three actions: Evaluate candidate, Compare to base, Promote to draft.
 //
 // Promotion uses the existing safe candidate→explicit-topology path:
-// for optimization-study candidates that is api.useCandidate (draft
-// only — Compile creates the immutable revision). For local synthesis
-// candidates no gateway promotion endpoint exists yet: the page states
-// the missing bridge explicitly and offers the CLI/import path instead
+// for optimization-study candidates that is api.useCandidate, for gateway
+// synthesis candidates POST /candidates/{id}/promote (draft only — Compile
+// creates the immutable revision). Local imports carry no gateway record:
+// the page states that explicitly and offers the submit/import path instead
 // of inventing a promotion.
 import { useState, type ReactElement } from 'react';
 import { api } from '../api';
+import { post } from '../api/client';
 import { ErrorBox, Link } from '../studio';
 import { navigate } from '../router';
 import { fmtNum, Hash, StatusBadge } from './badges';
@@ -35,7 +36,11 @@ export interface CandidateStateRow {
 export interface CandidateViewInput {
   id: string;
   label: string;
-  origin: 'synthesis-local' | 'optimization-study';
+  origin: 'synthesis-local' | 'synthesis-gateway' | 'optimization-study';
+  /** Gateway-recorded adoption — flips from the candidate record, never
+   *  from local state. */
+  adopted: boolean;
+  adoptionNote: string | null;
   method: string;
   solverStatus: string;
   completeness: CompletenessKind;
@@ -57,6 +62,10 @@ export interface CandidateViewInput {
   provenance: CandidateProvenance[];
   optimizationId: string | null;
   backendCandidateId: string | null;
+  /** Gateway synthesis candidate id — promotes through the canonical
+   *  POST /candidates/{id}/promote route (draft only, Compile creates
+   *  the revision). Null for local imports (no gateway record yet). */
+  gatewayCandidateId: string | null;
 }
 
 function StateRow({ row }: { row: CandidateStateRow }): ReactElement {
@@ -87,25 +96,40 @@ export function CandidateDetail({
   const maxDeg = Math.max(0, ...deg);
   const connected = isConnected(input.nodes, input.links);
   const topNode = maxNode(input.links);
-  const canPromote =
-    input.origin === 'optimization-study' &&
+  const canPromoteOpt = input.origin === 'optimization-study' &&
     input.optimizationId &&
     input.backendCandidateId;
+  const canPromoteSynthesis = input.origin === 'synthesis-gateway' &&
+    input.gatewayCandidateId;
+  const canPromote = canPromoteOpt || canPromoteSynthesis;
 
   const promote = async (): Promise<void> => {
-    if (!canPromote || !input.optimizationId || !input.backendCandidateId) return;
+    if (!canPromote) return;
     setPromoting(true);
     setError(null);
     try {
-      const draft = await api.useCandidate(
-        input.optimizationId,
-        input.backendCandidateId,
-      );
-      setPromoted(
-        `Draft updated from candidate ${input.backendCandidateId} `
-        + `(dirty: ${String((draft as { dirty?: boolean }).dirty)}). `
-        + 'Compile to create an immutable revision.',
-      );
+      if (canPromoteSynthesis && input.gatewayCandidateId) {
+        await post<{ contract_version: number } | Record<string, unknown>>(
+          `/candidates/${encodeURIComponent(input.gatewayCandidateId)}/promote`,
+          { project_id: projectId },
+        );
+        setPromoted(
+          `Draft updated from synthesis candidate ${input.gatewayCandidateId} ` +
+          'through the canonical promotion primitive. ' +
+          'Compile to create an immutable revision. ' +
+          'Adoption flips on the gateway record — reload to confirm.',
+        );
+      } else if (input.optimizationId && input.backendCandidateId) {
+        const draft = await api.useCandidate(
+          input.optimizationId,
+          input.backendCandidateId,
+        );
+        setPromoted(
+          `Draft updated from candidate ${input.backendCandidateId} `
+          + `(dirty: ${String((draft as { dirty?: boolean }).dirty)}). `
+          + 'Compile to create an immutable revision.',
+        );
+      }
     } catch (err) {
       setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
@@ -126,8 +150,10 @@ export function CandidateDetail({
         </span>
       </h2>
       <p className="muted">
-        Origin: {input.origin === 'optimization-study' ? 'optimization study' : 'local synthesis study'}
+        Origin: {input.origin === 'optimization-study' ? 'optimization study' : input.origin === 'synthesis-gateway' ? 'gateway synthesis record' : 'local synthesis study'}
         {' · '}completeness: <b>{input.completeness}</b> — {input.completenessNote}
+        {' · '}adopted: <b>{input.adopted ? 'yes (gateway record)' : 'no'}</b>
+        {input.adoptionNote ? ` — ${input.adoptionNote}` : ''}
       </p>
 
       <section className="card">
@@ -239,9 +265,10 @@ export function CandidateDetail({
               {promoting ? 'Promoting…' : 'Promote to draft'}
             </button>
           ) : (
-            <span className="muted" title="No gateway promotion endpoint exists for local synthesis candidates yet">
-              Promotion pending: no gateway endpoint for local synthesis candidates — import via the canonical
-              promote_to_explicit_topology path, then Compile.
+            <span className="muted" title="Local imports carry no gateway record">
+              Promotion pending: this local import has no gateway candidate record — submit
+              through Synthesize (or import via the canonical
+              promote_to_explicit_topology path), then Compile.
             </span>
           )}
         </div>

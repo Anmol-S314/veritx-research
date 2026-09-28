@@ -12,7 +12,8 @@ import { useState, type ReactElement } from 'react';
 import {
   AsyncView, ErrorBox, JobProgress, Link, useAsync, useJobPoll, useStudio,
 } from '../studio';
-import { api, type JobView, type SynthesisResultView } from '../api';
+import { api, type JobView, type SynthesisCandidateResultView, type SynthesisResultView } from '../api';
+import { get, post } from '../api/client';
 import { fmtNum, StatusBadge } from '../components/badges';
 import { EpistemicChip, ScientificValue } from '../components/ScientificValue';
 import {
@@ -26,6 +27,79 @@ import { TopologyGraph } from '../components/Synthesis/TopologyGraph';
 import {
   listCandidates, listStudies, saveCandidate, saveStudy,
 } from '../components/Synthesis/store';
+
+/** Parse a pasted NxN demand matrix. Strict: square, finite,
+ * non-negative, zero diagonal, dimension == nodes. Any violation is a
+ * typed refusal string — never a silent uniform fallback. */
+function parseTrafficMatrix(
+  text: string, nodes: number,
+): { rows: number[][]; errors: string[] } {
+  const lines = text.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+  if (lines.length === 0) return { rows: [], errors: ['traffic matrix is empty — paste an explicit NxN demand matrix'] };
+  if (lines.length !== nodes) {
+    return { rows: [], errors: [`traffic has ${lines.length} rows but the problem declares ${nodes} nodes`] };
+  }
+  const rows: number[][] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const cells = lines[i].split(/[\s,;]+/).filter((c) => c.length > 0);
+    if (cells.length !== nodes) {
+      return { rows: [], errors: [`row ${i} has ${cells.length} values, expected ${nodes}`] };
+    }
+    const row = cells.map(Number);
+    if (row.some((v) => !Number.isFinite(v))) {
+      return { rows: [], errors: [`row ${i} contains a non-finite value`] };
+    }
+    if (row.some((v) => v < 0)) {
+      return { rows: [], errors: [`row ${i} contains a negative demand`] };
+    }
+    rows.push(row);
+  }
+  for (let i = 0; i < nodes; i++) {
+    if (rows[i][i] !== 0) {
+      return { rows: [], errors: [`diagonal must be zero (row ${i} has ${rows[i][i]})`] };
+    }
+  }
+  return { rows, errors: [] };
+}
+
+/** Normalize a raw gateway synthesis record into the result view.
+ * Generator and measured objectives stay separate fields. */
+function normalizeSynthesisRecord(rec: Record<string, unknown>): SynthesisResultView {
+  const gen = (rec.generator_objective ?? {}) as Record<string, unknown>;
+  const comp = (rec.completeness ?? {}) as Record<string, unknown>;
+  const cand = (rec.candidate ?? {}) as Record<string, unknown>;
+  const kind = (comp.completeness === 'BUDGETED' || comp.completeness === 'EXHAUSTIVE'
+    || comp.completeness === 'UNBOUNDED') ? comp.completeness : 'UNBOUNDED';
+  const candidate: SynthesisCandidateResultView = {
+    candidate_id: String(rec.candidate_id ?? ''),
+    method: String(rec.engine ?? ''),
+    solver_status: String(rec.solver_status ?? (cand.solver_status ?? '')),
+    generator_objective_name: typeof gen.name === 'string' ? gen.name : null,
+    generator_objective_value: typeof gen.value === 'number' ? gen.value : null,
+    compile_status: 'NOT_COMPILED',
+    verification_status: 'NOT_VERIFIED',
+    measured_cycles: null,
+    measured_backend: null,
+    evidence_id: null,
+    requirements_state: null,
+  };
+  return {
+    contract_version: 1,
+    synthesis_id: String(rec.synthesis_id ?? ''),
+    method: String(rec.engine ?? ''),
+    base_topology: typeof rec.base_revision_id === 'string' ? rec.base_revision_id : null,
+    generated_count: 1,
+    evaluated_count: 0,
+    completeness: {
+      kind,
+      evaluated: typeof comp.evaluated_count === 'number' ? comp.evaluated_count : 1,
+      declared: typeof comp.universe_size === 'number' ? comp.universe_size : null,
+      wording: typeof comp.claim === 'string' ? comp.claim : String(rec.completeness_claim ?? ''),
+      may_claim_optimality: comp.may_claim_optimality === true,
+    },
+    candidates: candidate.candidate_id ? [candidate] : [],
+  };
+}
 
 function defaultsOf(methodId: string): Record<string, string | number> {
   const m = methodById(methodId);
@@ -56,6 +130,13 @@ export function Synthesize({ projectId }: { projectId: string }): ReactElement {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const [studyTick, setStudyTick] = useState(0);
+  // Explicit traffic authority (no uniform fallback) + canonical channel
+  // attributes the synthesis definition requires. All user-supplied and
+  // visible — the gateway refuses dimension mismatches verbatim.
+  const [trafficText, setTrafficText] = useState('');
+  const [bandwidth, setBandwidth] = useState(32);
+  const [latency, setLatency] = useState(1.0);
+  const [maxLen, setMaxLen] = useState(2.0);
   const [jobId, setJobId] = useState<string | null>(null);
   const [synthesisId, setSynthesisId] = useState<string | null>(null);
   const [liveState, setLiveState] = useState<'idle' | 'unavailable'>('idle');
@@ -65,38 +146,92 @@ export function Synthesize({ projectId }: { projectId: string }): ReactElement {
     if (sid) setSynthesisId(sid);
   };
   const job = useJobPoll(jobId, onTerminal);
+  // Live synthesis record, read from the canonical route and normalized
+  // into the result view. A 404/503 keeps the RESEARCH fallback below —
+  // never a substituted fixture.
   const live = useAsync(
     () => (synthesisId
-      ? api.synthesis(synthesisId)
+      ? get<Record<string, unknown>>(
+        `/syntheses/${encodeURIComponent(synthesisId)}`).then(normalizeSynthesisRecord)
       : Promise.reject(new Error('no synthesis'))),
     [synthesisId],
   );
 
-  /** Launch through the gateway synthesis endpoint where wired.
-   * A 404/503 means the backend route has not landed yet: the page
-   * records the maturity state and keeps the local draft + CLI path
-   * instead of substituting anything. */
+  /** Launch through the canonical gateway route
+   * POST /revisions/{id}/synthesize with an explicit definition +
+   * traffic authority. No uniform-traffic fallback: the matrix below is
+   * required, square, and dimension-checked against the node count.
+   * A refusal (unknown engine, dimension mismatch, no revision) is
+   * shown verbatim — never converted into a silent local draft. */
   const launchLive = async (): Promise<void> => {
     setError(null);
     setNotice(null);
+    const activeRevisionId = project.result.state === 'ready'
+      ? project.result.data.active_revision_id : null;
+    if (!activeRevisionId) {
+      setError(new Error('No active revision — compile a revision before submitting a synthesis problem.'));
+      return;
+    }
+    const matrix = parseTrafficMatrix(trafficText, nodes);
+    if (matrix.errors.length > 0) {
+      setError(new Error(`Traffic matrix refused: ${matrix.errors[0]}`));
+      return;
+    }
+    if (k * k !== nodes) {
+      setError(new Error(`Grid layout requires nodes == k×k; got nodes=${nodes}, k=${k}.`));
+      return;
+    }
+    const radix = Number(values.radix ?? 4) || 4;
+    const definition: Record<string, unknown> = {
+      nodes,
+      layout: 'grid',
+      k,
+      radix,
+      max_len: Number(values.max_len ?? maxLen),
+      bandwidth_GBs: bandwidth,
+      latency_ns: latency,
+      objective: typeof values.objective === 'string' ? values.objective : 'geodesic',
+      execution_policy: {
+        timeout_s: Number(values.timeout_s ?? 120) || 120,
+        // SA runs the heuristic branch: force it below the node count
+        // (execution policy selecting the algorithm, recorded as
+        // provenance) so the SA card never silently runs MILP.
+        max_nodes: methodId === 'sa'
+          ? Math.max(2, nodes - 1)
+          : (Number(values.max_nodes ?? 20) || 20),
+      },
+    };
+    const body: Record<string, unknown> = {
+      engine: method.engine,
+      definition,
+      traffic: {
+        source_artifact_id: `studio:synthesize:${studyName || method.id}`,
+        namespace: 'studio',
+        dimension: nodes,
+        values: matrix.rows,
+        unit: 'messages',
+        aggregation: 'sum_over_window',
+      },
+      seed: Number(values.seed ?? 7) || 7,
+      steps: Number(values.steps ?? 50) || 50,
+      horizon: Number(values.horizon ?? 5) || 5,
+      branch: Number(values.branch ?? 5) || 5,
+      group: Number(values.group ?? 4) || 4,
+      iters: Number(values.iters ?? 50) || 50,
+      max_edges: maxEdges,
+    };
     try {
-      const submitted = await api.synthesisSubmit({
-        method: method.id,
-        base_topology: base,
-        nodes,
-        traffic,
-        traffic_ref: trafficRef || null,
-        constraints: { max_edges: maxEdges, radix: Number(values.radix ?? 4) },
-        params: { ...values },
-      });
+      const submitted = await post<JobView>(
+        `/revisions/${encodeURIComponent(activeRevisionId)}/synthesize`, body);
       setSynthesisId(null);
       setJobId(submitted.job_id);
+      setLiveState('idle');
     } catch (err) {
       setLiveState('unavailable');
       setNotice(
-        'Gateway synthesis endpoint not wired yet (RESEARCH maturity) — '
-        + 'study draft saved locally and the exact CLI invocation is above. '
-        + `Gateway said: ${(err instanceof Error ? err.message : String(err))}`,
+        'Synthesis refused — the problem, not a fallback, is shown. '
+        + `Gateway said: ${(err instanceof Error ? err.message : String(err))}. `
+        + 'Study draft and CLI path below remain available.',
       );
     }
   };
@@ -294,6 +429,62 @@ export function Synthesize({ projectId }: { projectId: string }): ReactElement {
                 </label>
               ))}
             </div>
+          </section>
+
+          <section className="card">
+            <h3>Traffic authority — explicit matrix, required</h3>
+            <p className="muted">
+              The synthesis problem binds exactly one traffic authority. No
+              uniform-traffic fallback exists: paste an NxN demand matrix
+              (one row per line, {nodes} rows for {nodes} nodes, zero
+              diagonal, messages per window). Dimension mismatches are
+              refused, never repaired.
+            </p>
+            <textarea
+              rows={Math.min(10, Math.max(4, nodes))}
+              cols={40}
+              value={trafficText}
+              onChange={(e) => setTrafficText(e.target.value)}
+              placeholder={Array.from({ length: Math.min(4, nodes) }, (_, i) =>
+                Array.from({ length: Math.min(4, nodes) }, (_, j) => (i === j ? 0 : 1)).join(' ')
+              ).join('\n') + (nodes > 4 ? '\n…' : '')}
+              aria-label="Traffic demand matrix"
+            />
+            <div className="form-row">
+              <button
+                className="btn"
+                onClick={() => setTrafficText(
+                  Array.from({ length: nodes }, (_, i) =>
+                    Array.from({ length: nodes }, (_, j) => (i === j ? 0 : 1)).join(' ')
+                  ).join('\n'))
+              }>
+                Insert all-pairs example ({nodes}×{nodes})
+              </button>
+              <span className="muted">Example template only — review before launching.</span>
+            </div>
+            <div className="form-row">
+              <label>Link bandwidth (GB/s)
+                <input type="number" value={bandwidth} min={0.1}
+                       onChange={(e) => setBandwidth(Number(e.target.value) || 32)} />
+              </label>
+              <label>Link latency (ns)
+                <input type="number" value={latency} min={0.1} step={0.1}
+                       onChange={(e) => setLatency(Number(e.target.value) || 1.0)} />
+              </label>
+              {values.max_len === undefined && (
+                <label>Max link length (pitches)
+                  <input type="number" value={maxLen} min={0.5} step={0.5}
+                         onChange={(e) => setMaxLen(Number(e.target.value) || 2.0)} />
+                </label>
+              )}
+            </div>
+            <p className="muted">
+              Canonical channel attributes — they enter the artifact, so the
+              problem states them instead of letting an adapter invent them.
+              Unit messages · aggregation sum_over_window.
+              {methodId === 'bo' && ' Generator-space dims (cluster/express/weights) apply to CLI runs; the gateway adapter samples the declared space per iteration under the seed.'}
+              {methodId === 'sa' && ' SA runs the heuristic branch (max_nodes forced below the node count, recorded as provenance).'}
+            </p>
           </section>
 
           <section className="card">

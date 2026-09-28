@@ -114,6 +114,15 @@ const TOPOLOGY_GROUPS: { title: string; options: string[] }[] = [
   { title: 'Backend / reclamation', options: ['gec', 'fat_tree'] },
 ];
 
+const TOPOLOGY_LABEL: Record<string, string> = {
+  mesh: 'Mesh · AVAILABLE',
+  concentrated_mesh: 'Concentrated mesh · AVAILABLE',
+  custom: 'Custom explicit · AVAILABLE',
+  torus: 'Torus · BRIDGE INCOMPLETE',
+  gec: 'GEC · RESEARCH',
+  fat_tree: 'Fat-tree · HISTORICAL',
+};
+
 const TOPOLOGY_MATURITY: Record<string, string> = {
   mesh: 'Qualified — intent ✓ materialized ✓ verified ✓ projected ✓ executable ✓ qualified ✓',
   concentrated_mesh:
@@ -121,19 +130,26 @@ const TOPOLOGY_MATURITY: Record<string, string> = {
   custom:
     'Explicit topology — qualified where the canonical route + envelope hold',
   torus:
-    'Canonical intent ✓ physical topology ✓ · routing proof pending · BookSim implements torus · historical measurement exists — compilation stops at ROUTING',
+    'Canonical intent ✓ physical topology ✓ · wraparound-minimal DOR route exists · deadlock-proof method pending · BookSim implements torus · historical measurement exists — compilation stops at ROUTING',
   gec:
-    'Backend implements GEC mesh/express/MECS/hybrid · canonical materializer missing (MECS needs a shared-multidrop resource) · historical measurement exists — research',
+    'Backend implements GEC mesh/express/MECS/hybrid · GEC-Express is canonically materializable (pure point-to-point) but the aggregate gec declaration still stops at MATERIALIZATION · MECS needs a shared-multidrop resource, never flattened · historical measurement exists — research',
   fat_tree:
     'Backend implements fat-tree · canonical materializer + route class missing · historical measurement exists — research',
 };
+
+/** Backend implementations that are not declarable in this picker.
+ * FlatFly is authorable through typed v4 intent; Dragonfly/QTree/Tree4
+ * are backend-only with no durable measurement (experimental only). */
+const TOPOLOGY_NON_DECLARABLE_NOTE =
+  'FlatFly (typed-intent authorable), Dragonfly, QTree and Tree4 are BookSim backend '
+  + 'implementations, not declarable NocConfig values — see the Capabilities explorer.';
 
 const TOPOLOGY_STOP_STAGE: Record<string, string | null> = {
   mesh: null,
   concentrated_mesh: null,
   custom: null,
   torus: 'If selected, compilation stops at ROUTING: wraparound routing proof is pending.',
-  gec: 'If selected, compilation stops at MATERIALIZATION: no canonical GEC materializer exists.',
+  gec: 'If selected, compilation stops at MATERIALIZATION: the aggregate gec declaration carries no materializer (GEC-Express graphs can enter as custom explicit topologies via candidate promotion).',
   fat_tree:
     'If selected, compilation stops at MATERIALIZATION: no canonical fat-tree materializer exists.',
 };
@@ -351,7 +367,7 @@ function TopologyPicker({
                 disabled={readOnly}
                 onChange={() => onChange(option)}
               />
-              <span className="topology-name">{option}</span>
+              <span className="topology-name">{TOPOLOGY_LABEL[option] ?? option}</span>
               <span className="muted topology-maturity">
                 {TOPOLOGY_MATURITY[option]}
               </span>
@@ -363,6 +379,7 @@ function TopologyPicker({
         Generated graphs enter as <code>custom</code> explicit topologies via
         candidate promotion (Synthesize → promote → compile).
       </p>
+      <p className="muted">{TOPOLOGY_NON_DECLARABLE_NOTE}</p>
       {current && TOPOLOGY_STOP_STAGE[current] && (
         <p className="finding finding-downstream_limitation" role="note">
           <strong>Use experimentally.</strong> {TOPOLOGY_STOP_STAGE[current]}

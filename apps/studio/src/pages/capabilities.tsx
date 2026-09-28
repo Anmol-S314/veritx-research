@@ -1,5 +1,9 @@
 import { useState, type ReactElement } from 'react';
-import { CapabilityDetail } from '../components/CapabilityDetail';
+import {
+  CapabilityDetail,
+  StageLadder,
+  ladderCells,
+} from '../components/CapabilityDetail';
 import {
   CAPABILITIES,
   CORE_SYSTEMS,
@@ -51,6 +55,7 @@ export function CapabilitiesPage(): ReactElement {
           <tr>
             <th>Capability</th>
             <th>Status</th>
+            <th title="Seven-stage ladder: INTENT → MATERIALIZED → VERIFIED → PROJECTED → EXECUTABLE → QUALIFIED → PRODUCT (dot per stage: filled = on, amber = partial, hollow = off; hover for the ledger sentence)">Ladder</th>
             <th>Intent</th>
             <th>Artifact</th>
             <th>Verifier</th>
@@ -71,6 +76,7 @@ export function CapabilitiesPage(): ReactElement {
             >
               <td><strong>{c.name}</strong><br /><span className="muted">{c.id}</span></td>
               <td><span className={`maturity maturity-${c.maturity.toLowerCase().replace(/ /g, '-')}`}>{c.maturity}</span></td>
+              <td><StageLadder cells={ladderCells(c.stages)} label={c.name} /></td>
               <td>{c.stages.intent}</td>
               <td>{c.stages.artifact}</td>
               <td>{c.stages.verifier}</td>

@@ -44,6 +44,8 @@ export interface SynthesisMethod {
   solverStatus: string;
   cli: string[] | null;
   cliNote: string;
+  /** Canonical adapter module → typed TopologyCandidate (never a second compiler). */
+  adapter?: string;
   params: ParamField[];
 }
 
@@ -59,6 +61,7 @@ export const METHODS: SynthesisMethod[] = [
     solverStatus: 'OPTIMAL or TIME_LIMIT (honest solver status preserved)',
     cli: null,
     cliNote: 'No CLI verb yet — run via the canonical adapter veritx_dse.synthesis.candidate.synthesize() (Python API), then import the graph below.',
+    adapter: 'veritx_dse.synthesis.candidate.synthesize (exact TMCF ≤ max_nodes, SA branch above; .anynet is a projection, never authority)',
     params: [
       { name: 'nodes', label: 'Node count', kind: 'int', def: 16, min: 2, max: 256, help: 'Router count. Exact solve caps at max_nodes; above it the SA path runs.' },
       { name: 'k', label: 'Grid side k', kind: 'int', def: 4, min: 2, help: 'Grid layout requires nodes == k×k.' },
@@ -99,6 +102,7 @@ export const METHODS: SynthesisMethod[] = [
     solverStatus: 'FEASIBLE',
     cli: ['veritx', 'synthesize', 'bo'],
     cliNote: 'CLI verb exists. Scorer analytical (default) or booksim.',
+    adapter: 'veritx_dse.synthesis.bo_adapter (generate_topology + run_bo → to_topology_candidate; BUDGETED, seeded-random default surrogate)',
     params: [
       { name: 'nodes', label: 'Node count', kind: 'int', def: 64, min: 4, help: 'Router count (square k×k required by the generator).' },
       { name: 'iters', label: 'Iterations', kind: 'int', def: 50, min: 1, help: 'Search budget.' },
@@ -122,6 +126,7 @@ export const METHODS: SynthesisMethod[] = [
     solverStatus: 'FEASIBLE',
     cli: ['veritx', 'synthesize', 'iterative'],
     cliNote: 'CLI verb exists with --method rho.',
+    adapter: 'veritx_dse.synthesis.rho_grpo_adapter (run_rho → to_topology_candidate; UNBOUNDED, seeded mutations + horizon rollouts)',
     params: [
       { name: 'nodes', label: 'Node count', kind: 'int', def: 64, min: 4, help: 'Router count.' },
       { name: 'steps', label: 'Steps', kind: 'int', def: 50, min: 1, help: 'Search steps.' },
@@ -142,6 +147,7 @@ export const METHODS: SynthesisMethod[] = [
     solverStatus: 'FEASIBLE',
     cli: ['veritx', 'synthesize', 'iterative'],
     cliNote: 'CLI verb exists with --method grpo.',
+    adapter: 'veritx_dse.synthesis.rho_grpo_adapter (run_grpo → to_topology_candidate; UNBOUNDED, mean-baseline relative commit — not a trained policy)',
     params: [
       { name: 'nodes', label: 'Node count', kind: 'int', def: 64, min: 4, help: 'Router count.' },
       { name: 'steps', label: 'Steps', kind: 'int', def: 50, min: 1, help: 'Search steps.' },
