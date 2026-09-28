@@ -15,4 +15,5 @@ def test_evaluation_questions_are_exactly_the_answerable_set():
     assert {q.value for q in EvaluationQuestion} == {
         "NETWORK_COMPLETION", "SYSTEM_MAKESPAN",
         "COMMUNICATION_EXPOSURE", "PER_RANK_COMPLETION",
+        "DRAM_TIMING", "SERVING_TTFT", "SERVING_COMPLETION",
     }

@@ -97,7 +97,8 @@ def test_backend_readiness_is_closed():
 def test_model_fidelity_is_closed():
     assert {f.value for f in ModelFidelity} == {
         "ANALYTICAL_ESTIMATE", "NETWORK_PACKET_SIMULATION",
-        "SYSTEM_SIMULATION", "FULL_SYSTEM_SIMULATION", "RTL_SIMULATION",
+        "SYSTEM_SIMULATION", "FULL_SYSTEM_SIMULATION",
+        "MEMORY_CYCLE_SIMULATION", "RTL_SIMULATION",
         "OBSERVED"}
 
 
