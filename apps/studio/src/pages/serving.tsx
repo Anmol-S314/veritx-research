@@ -10,6 +10,13 @@ import {
   AsyncView, ErrorBox, JobProgress, useAsync, useJobPoll,
 } from '../studio';
 import { Hash, StatusBadge, fmtNum } from '../components/badges';
+import {
+  ComputeModelCard,
+  MoeCard,
+  PimCard,
+  ServiceConfigCard,
+  ServingResults,
+} from '../components/ServingView';
 
 /**
  * Serving workspace. Submits canonical serving experiments (the
@@ -39,70 +46,6 @@ const PROFILE_FIELDS: {
   { key: 'collective_bytes_per_rank', label: 'Collective bytes/rank', kind: 'int' },
   { key: 'ep_size', label: 'Expert parallel size', kind: 'int' },
 ];
-
-function RequestMetricsTable({ document }: {
-  document: CanonicalServingEvidence;
-}): ReactElement {
-  const rows = document.request_metrics ?? [];
-  if (rows.length === 0) {
-    return (
-      <p className="muted">
-        The evidence document carries no per-request metrics.
-      </p>
-    );
-  }
-  const pct = (p: number): [number, number] => {
-    const pick = (idx: 1 | 2): number => {
-      const vals = rows
-        .map((r) => r[idx])
-        .filter((v): v is number => typeof v === 'number')
-        .sort((a, b) => a - b);
-      if (vals.length === 0) return NaN;
-      const i = Math.min(vals.length - 1, Math.ceil((p / 100) * vals.length) - 1);
-      return vals[Math.max(0, i)];
-    };
-    return [pick(1), pick(2)];
-  };
-  const [ttft50, comp50] = pct(50);
-  const [ttft99, comp99] = pct(99);
-  const fmt = (n: number): string => (Number.isFinite(n) ? fmtNum(n) : '—');
-  return (
-    <>
-      <p className="muted">
-        Model-internal values under the certified linear service profile —
-        exact within the declared model, NOT calibrated hardware latency
-        (SERVING_ABSOLUTE_LATENCY: PARTIAL). Percentiles are over the declared
-        population: {rows.length}/{document.request_count} retired.
-      </p>
-      <div className="kv">
-        <span>TTFT p50 / p99</span>
-        <span>
-          {fmt(ttft50)} / {fmt(ttft99)} cycles
-        </span>
-      </div>
-      <div className="kv">
-        <span>completion p50 / p99</span>
-        <span>
-          {fmt(comp50)} / {fmt(comp99)} cycles
-        </span>
-      </div>
-      <table className="tbl">
-        <thead>
-          <tr><th>request</th><th>TTFT (cycles)</th><th>completion (cycles)</th></tr>
-        </thead>
-        <tbody>
-          {rows.map(([id, ttft, completion], i) => (
-            <tr key={i}>
-              <td><code>{id}</code></td>
-              <td className="num">{ttft == null ? '—' : fmtNum(ttft)}</td>
-              <td className="num">{completion == null ? '—' : fmtNum(completion)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </>
-  );
-}
 
 /** Presentation-only short form of an identity. The full value stays in the
  * title and the copy control; never used as a scientific identity. */
@@ -312,8 +255,10 @@ function ServingDetail({ servingId }: { servingId: string }): ReactElement {
                   <RunSummary document={s.evidence.document} />
                   <InstanceParticipation document={s.evidence.document} />
                   <Provenance document={s.evidence.document} />
-                  <h4>Per-request metrics</h4>
-                  <RequestMetricsTable document={s.evidence.document} />
+                  <ComputeModelCard profileOverrides={s.profile_overrides} />
+                  <MoeCard entry={null} document={s.evidence.document} />
+                  <PimCard />
+                  <ServingResults document={s.evidence.document} />
                   <details>
                     <summary>Raw evidence document</summary>
                     <pre className="evidence">
@@ -524,6 +469,8 @@ export function Serving({ projectId }: { projectId: string }): ReactElement {
                         </span>
                       </div>
                     )}
+                    <ServiceConfigCard entry={entry ?? null} />
+                    <MoeCard entry={entry ?? null} document={null} />
                     <details className="advanced">
                       <summary>
                         Advanced — timeout and declared service profile

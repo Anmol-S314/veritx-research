@@ -32,11 +32,70 @@ function scalar(value: unknown): string {
 
 // ── Evaluation plan ──────────────────────────────────────────────────
 
+// ── Question-first federation (§11) ─────────────────────────────────────
+// Canonical engineering-question order. Unknown questions sort last,
+// never dropped: every server row renders exactly once.
+const QUESTION_ORDER = [
+  'NETWORK_COMPLETION',
+  'SYSTEM_MAKESPAN',
+  'COMMUNICATION_EXPOSURE',
+  'PER_RANK_COMPLETION',
+  'DRAM_TIMING',
+  'SERVING_TTFT',
+  'SERVING_COMPLETION',
+];
+
+export function sortQuestions<T>(rows: T[], pick: (r: T) => string): T[] {
+  return [...rows].sort((a, b) => {
+    const ia = QUESTION_ORDER.indexOf(pick(a));
+    const ib = QUESTION_ORDER.indexOf(pick(b));
+    return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+  });
+}
+
+/** Epistemic class follows the adjudicated fidelity, never the backend
+ * name: Wave-E/analytical model outputs are MODELLED, never MEASURED. */
+export function epistemicFor(analysis: {
+  status: string;
+  model_fidelity: string | null;
+}): string | null {
+  if (analysis.status !== 'EVALUATED') return null;
+  const f = (analysis.model_fidelity ?? '').toLowerCase();
+  if (f.includes('wave-e') || f.includes('analytical') || f.includes('model')) {
+    return 'MODELLED';
+  }
+  return 'SIMULATED';
+}
+
+/** Execution policy banner: AUTO (planner chooses the qualified producer
+ * per question) is the default; a pinned backend is Expert policy. */
+export function ExecutionPolicyBanner({ policy }: {
+  policy?: { mode: 'AUTO' } | { mode: 'PINNED'; backend: string } | null;
+}): ReactElement {
+  if (policy?.mode === 'PINNED') {
+    return (
+      <p className="muted">
+        Execution policy: <strong>Expert pin</strong> — backend{' '}
+        <code>{policy.backend}</code> pinned by the user. Readiness below is
+        still the planner&apos;s verdict for that pin, never assumed.
+      </p>
+    );
+  }
+  return (
+    <p className="muted">
+      Execution policy: <strong>AUTO</strong> — the planner chooses the
+      qualified producer per question. Manual backend pinning is Expert
+      execution policy.
+    </p>
+  );
+}
+
 function PlanRow({ row }: { row: PlannedAnalysisView }): ReactElement {
   return (
     <>
       <td><code title={questionLabel(row.question)}>{row.question}</code><br /><span className="muted">{questionLabel(row.question)}</span></td>
       <td className="muted">{row.backend ? (<><span>{backendLabel(row.backend)}</span> <code>{row.backend}</code></>) : '—'}</td>
+      <td className="muted">{row.support}</td>
       <td><StatusBadge status={row.readiness} /></td>
       <td className="muted">{row.model_fidelity ?? '—'}</td>
       <td className="muted">{row.qualification_profile ?? '—'}</td>
@@ -50,12 +109,14 @@ function PlanRow({ row }: { row: PlannedAnalysisView }): ReactElement {
 
 /** The server's adjudicated plan. `selected`/`onToggle` exist so the
  * caller can offer checkboxes — enabled only for READY rows. */
-export function EvaluationPlanTable({ plan, selected, onToggle }: {
+export function EvaluationPlanTable({ plan, selected, onToggle, executionPolicy }: {
   plan: EvaluationPlanView;
   selected?: Set<string> | null;
   onToggle?: ((question: string) => void) | null;
+  executionPolicy?: { mode: 'AUTO' } | { mode: 'PINNED'; backend: string } | null;
 }): ReactElement {
   const selectable = selected != null && onToggle != null;
+  const rows = sortQuestions(plan.analyses, (r) => r.question);
   return (
     <div>
       <div className="kv"><span>workload</span><span>{plan.workload_id}</span></div>
@@ -63,17 +124,18 @@ export function EvaluationPlanTable({ plan, selected, onToggle }: {
       <div className="kv"><span>resolved fabric</span>
         <Hash value={plan.resolved_fabric_hash} />
       </div>
+      <ExecutionPolicyBanner policy={executionPolicy ?? { mode: 'AUTO' }} />
       <table className="live-table">
         <thead>
           <tr>
             {selectable && <th>run</th>}
-            <th>question</th><th>backend</th><th>readiness</th>
+            <th>question</th><th>backend</th><th>support</th><th>readiness</th>
             <th>fidelity</th><th>qualification</th><th>reason</th>
             <th>limitations</th>
           </tr>
         </thead>
         <tbody>
-          {plan.analyses.map((row) => {
+          {rows.map((row) => {
             const ready = row.readiness === 'READY';
             return (
               <tr key={row.question}>
@@ -117,10 +179,10 @@ function MetricsTable({ metrics, analysis }: {
   }
   // Metric-level epistemics ride the analysis envelope: the backend that
   // executed the question, at the fidelity and qualification the planner
-  // adjudicated. A metric without an executed analysis is never rendered
+  // adjudicated. Wave-E/analytical model outputs render MODELLED, never
+  // MEASURED. A metric without an executed analysis is never rendered
   // as a bare number.
-  const epistemic =
-    analysis.status === 'EVALUATED' ? 'SIMULATED' : null;
+  const epistemic = epistemicFor(analysis);
   return (
     <table className="tbl">
       <thead>
@@ -198,21 +260,57 @@ function PerRankTable({ summary }: {
 
 // ── Per-analysis cards ───────────────────────────────────────────────
 
-export function AnalysisCard({ analysis, evaluation, requirements }: {
+/** Headline metric: the first normalized metric, labelled with the
+ * analysis envelope. Never merged across questions — one card, one
+ * question, one backend. */
+function HeadlineMetric({ analysis }: { analysis: FederatedAnalysisView }): ReactElement | null {
+  const first = analysis.normalized_metrics?.[0];
+  if (!first || analysis.status !== 'EVALUATED') return null;
+  return (
+    <p>
+      <ScientificValue
+        value={first.value}
+        unit={first.unit}
+        epistemic={epistemicFor(analysis)}
+        source={analysis.backend_id ? backendLabel(analysis.backend_id) : null}
+        fidelity={analysis.model_fidelity}
+        qualification={analysis.qualification}
+      />{' '}
+      <span className="muted" title={first.source_metric_key ?? ''}>
+        ({humanize(first.key)})
+      </span>
+    </p>
+  );
+}
+
+export function AnalysisCard({ analysis, evaluation, requirements, actions }: {
   analysis: FederatedAnalysisView;
   /** The legacy network view — bound only to NETWORK_COMPLETION. */
   evaluation: EvaluationView | null;
   requirements: RequirementReport | null;
+  actions?: {
+    onInspectEvidence?: ((analysis: FederatedAnalysisView) => void) | null;
+    onReproduce?: ((analysis: FederatedAnalysisView) => void) | null;
+    onCompare?: ((analysis: FederatedAnalysisView) => void) | null;
+  } | null;
 }): ReactElement {
   const evaluated = analysis.status === 'EVALUATED';
+  const isServing = analysis.question.startsWith('SERVING');
   return (
     <section className="card">
       <h3>
         {questionLabel(analysis.question)}{' '}
         <code className="muted" title="canonical evaluation question">{analysis.question}</code>{' '}
         <StatusBadge status={analysis.status} />{' '}
-        {analysis.status === 'EVALUATED' && <EpistemicChip value="SIMULATED" />}
+        {analysis.status === 'EVALUATED' && <EpistemicChip value={epistemicFor(analysis)} />}
       </h3>
+      <HeadlineMetric analysis={analysis} />
+      {isServing && (
+        <p className="muted">
+          Serving detail (TTFT distribution, per-request table) lives in the
+          Serving workspace — this card carries only the federated envelope.
+        </p>
+      )}
       <div className="kv"><span>backend</span>
         <span>{backendLabel(analysis.backend_id)}{' '}<code>{analysis.backend_id ?? '—'}</code></span>
       </div>
@@ -244,6 +342,25 @@ export function AnalysisCard({ analysis, evaluation, requirements }: {
               Limitations: {analysis.limitations.join('; ')}
             </p>
           )}
+          {actions && (actions.onInspectEvidence || actions.onReproduce || actions.onCompare) && (
+            <p>
+              {actions.onInspectEvidence && (
+                <button className="btn" onClick={() => actions.onInspectEvidence?.(analysis)}>
+                  Inspect evidence
+                </button>
+              )}{' '}
+              {actions.onReproduce && (
+                <button className="btn" onClick={() => actions.onReproduce?.(analysis)}>
+                  Reproduce
+                </button>
+              )}{' '}
+              {actions.onCompare && (
+                <button className="btn" onClick={() => actions.onCompare?.(analysis)}>
+                  Compare
+                </button>
+              )}
+            </p>
+          )}
         </>
       )}
       {analysis.question === 'NETWORK_COMPLETION' && (evaluation || requirements) && (
@@ -263,11 +380,16 @@ export function AnalysisCard({ analysis, evaluation, requirements }: {
  * ASTRA analyses show makespan/exposure/per-rank + namespace/tier;
  * Ramulator analyses show drain counters/row stats + profile facts.
  * Serving evidence stays on the Serving page. */
-export default function FederatedEvaluationView({ runId, analyses, evaluation, requirements }: {
+export default function FederatedEvaluationView({ runId, analyses, evaluation, requirements, actions }: {
   runId: string;
   analyses: FederatedAnalysisView[] | null;
   evaluation: EvaluationView | null;
   requirements: RequirementReport | null;
+  actions?: {
+    onInspectEvidence?: ((analysis: FederatedAnalysisView) => void) | null;
+    onReproduce?: ((analysis: FederatedAnalysisView) => void) | null;
+    onCompare?: ((analysis: FederatedAnalysisView) => void) | null;
+  } | null;
 }): ReactElement {
   if (!analyses || analyses.length === 0) {
     // Legacy single-backend runs carry no federated record: the
@@ -281,14 +403,24 @@ export default function FederatedEvaluationView({ runId, analyses, evaluation, r
       />
     );
   }
+  const ordered = sortQuestions(analyses, (a) => a.question);
+  const evaluated = ordered.filter((a) => a.status === 'EVALUATED').length;
+  const blocked = ordered.length - evaluated;
   return (
     <div>
-      {analyses.map((a) => (
+      <p className="muted">
+        <strong>{ordered.length} {ordered.length === 1 ? 'analysis' : 'analyses'} requested</strong>{' '}—{' '}
+        {evaluated} evaluated · {blocked} blocked/failed. Each card is one
+        engineering question answered by its own backend; times across cards
+        are never merged into one total.
+      </p>
+      {ordered.map((a) => (
         <AnalysisCard
           key={a.question}
           analysis={a}
           evaluation={evaluation}
           requirements={requirements}
+          actions={actions}
         />
       ))}
     </div>

@@ -1,7 +1,28 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react';
 import type { EvaluationView, RequirementReport } from '../types';
 import { Hash, StatusBadge, fmtNum, humanize } from './badges';
-import { EpistemicChip, SimulatedTimeNote } from './ScientificValue';
+import { EpistemicChip, ScientificValue, SimulatedTimeNote, backendLabel } from './ScientificValue';
+
+// ── Backend metric units (§12: no naked numbers) ─────────────────────────
+// The legacy EvaluationView carries a present-only metric map without unit
+// metadata. Units below are presentation labels inferred from the metric
+// key — they never change the value. Unknown keys render '—', never a
+// guessed unit.
+export function metricUnit(key: string): string | null {
+  const k = key.toLowerCase();
+  if (k.includes('wall_time_ns') || k.endsWith('_ns')) return 'ns';
+  if (k.includes('cycles')) return 'cycles';
+  if (k.includes('packets')) return 'packets';
+  if (k.includes('flits')) return 'flits';
+  if (k.includes('latency')) return 'cycles';
+  if (k.includes('hops')) return 'hops';
+  if (k.includes('bytes')) return 'bytes';
+  if (k.includes('bandwidth') || k.includes('gbps')) return 'GB/s';
+  if (k.includes('percent') || k.includes('utilization') || k.includes('rate')) return '%';
+  if (k.includes('count') || k.includes('injected') || k.includes('accepted')
+    || k.includes('delivered') || k.includes('ejected')) return 'count';
+  return null;
+}
 
 type RunState = 'idle' | 'running' | 'refused';
 
@@ -126,12 +147,21 @@ export default function EvaluateView({
           <h3>Network completion</h3>
           <div className="kv">
             <span>window cycles</span>
-            <span>{fmtNum(win?.window_cycles)}</span>
+            <span>
+              <ScientificValue
+                value={win?.window_cycles}
+                unit="cycles"
+                epistemic="SIMULATED"
+                source={bp ? backendLabel(bp.backend) : 'BookSim'}
+              />
+            </span>
           </div>
           <div className="kv">
             <span>simulated time</span>
             <span title="cycles × declared network clock — simulated/model time, not host wall-clock measurement">
-              {win?.wall_time_ns == null ? '— (cycles only)' : `${fmtNum(win.wall_time_ns)} ns`}
+              {win?.wall_time_ns == null ? '— (cycles only)' : (
+                <ScientificValue value={win.wall_time_ns} unit="ns" epistemic="SIMULATED" source={bp ? backendLabel(bp.backend) : 'BookSim'} />
+              )}
               {!win?.cycles_only && win?.wall_time_ns != null && <SimulatedTimeNote />}
             </span>
           </div>
@@ -148,13 +178,23 @@ export default function EvaluateView({
               <tr>
                 <th>Metric</th>
                 <th>Value</th>
+                <th>Unit</th>
               </tr>
             </thead>
             <tbody>
               {metricKeys.map((k) => (
                 <tr key={k}>
                   <td>{humanize(k)}</td>
-                  <td className="num">{fmtNum(metrics[k])}</td>
+                  <td className="num">
+                    <ScientificValue
+                      value={metrics[k]}
+                      unit={metricUnit(k)}
+                      epistemic="SIMULATED"
+                      source={bp ? backendLabel(bp.backend) : 'BookSim'}
+                      fidelity={evaluation.fidelity_warning ? undefined : null}
+                    />
+                  </td>
+                  <td className="muted">{metricUnit(k) ?? '—'}</td>
                 </tr>
               ))}
             </tbody>
