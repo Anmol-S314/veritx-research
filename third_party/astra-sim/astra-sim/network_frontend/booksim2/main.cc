@@ -102,6 +102,13 @@ int main(int argc, char * argv[]) {
   CmdLineParser cmd_line_parser(argv[0]);
   cmd_line_parser.parse(argc, argv);
 
+  // VeritX: network ABI identity, logged once per run. Qualification
+  // binds this version; v0 (no class_id) or uniform class 0 traces are
+  // unattributable and must fail qualification, never pass as class 0.
+  if (VeritX::LedgerLevel() >= 1)
+    std::cerr << "[LEDGER][ABI] booksim2_abi_version="
+              << VeritX::kBooksim2AbiVersion << std::endl;
+
   const std::string workload_configuration =
       cmd_line_parser.get<std::string>("workload-configuration");
   const std::string comm_group_configuration =

@@ -33,6 +33,11 @@ struct sim_request {
     uint64_t reqCount;
     uint32_t vnet;
     uint32_t layerNum;
+    // VeritX canonical class attribution (attribution-only, no timing or
+    // scheduling effect). Stamped by the collective algorithm from its
+    // ComType; Sys::front_end_sim_send backstops NATIVE/RNDZ bands.
+    // 0 (kUnknown) = unattributable; qualification must refuse it.
+    uint8_t veritx_class_id = 0;
 };
 
 class MetaData {
@@ -48,6 +53,38 @@ enum class ComType {
     All_to_All,
     All_Reduce_All_to_All
 };
+
+// VeritX canonical class id carried from the collective algorithm to the
+// embedded BookSim injection call. Must match the Python-side contract
+// (VeritXClassId in the VERITX ABI spec): 0=unknown, 1=allreduce,
+// 2=reducescatter, 3=allgather, 4=alltoall, 5=native, 6=rendezvous.
+enum class VeritXClassId : uint8_t {
+    kUnknown = 0,
+    kAllReduce = 1,
+    kReduceScatter = 2,
+    kAllGather = 3,
+    kAllToAll = 4,
+    kNative = 5,
+    kRendezvous = 6
+};
+
+// Collective kind -> canonical class. Anything outside the qualified
+// envelope (notably All_Reduce_All_to_All) maps to kUnknown: v1 ABI
+// cannot attribute it, so qualification must refuse, never guess.
+inline VeritXClassId veritx_class_of_comtype(ComType type) {
+    switch (type) {
+        case ComType::All_Reduce:
+            return VeritXClassId::kAllReduce;
+        case ComType::Reduce_Scatter:
+            return VeritXClassId::kReduceScatter;
+        case ComType::All_Gather:
+            return VeritXClassId::kAllGather;
+        case ComType::All_to_All:
+            return VeritXClassId::kAllToAll;
+        default:
+            return VeritXClassId::kUnknown;
+    }
+}
 
 enum class CollectiveOptimization { Baseline = 0, LocalBWAware };
 

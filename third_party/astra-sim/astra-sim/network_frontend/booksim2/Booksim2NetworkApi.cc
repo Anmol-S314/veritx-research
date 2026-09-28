@@ -30,11 +30,11 @@ Booksim2NetworkApi::Booksim2NetworkApi(int rank, BookSim2Fabric * fabric,
 }
 
 void Booksim2NetworkApi::process_chunk_arrival(void * args) {
-  // args: (tag, src, dst, count, chunk_id) — mirror analytical semantics:
+  // args: (tag, src, dst, count, chunk_id, class_id) — mirror analytical semantics:
   // if both callbacks are registered, fire both; else fire send only and
   // mark the transmission finished so the late sim_recv fires immediately.
-  auto * data = static_cast<std::tuple<int, int, int, uint64_t, int> *>(args);
-  const auto [tag, src, dst, count, chunk_id] = *data;
+  auto * data = static_cast<std::tuple<int, int, int, uint64_t, int, uint8_t> *>(args);
+  const auto [tag, src, dst, count, chunk_id, class_id] = *data;
   delete data;
 
   TrackerEntry * entry = _tracker.search_entry(tag, src, dst, count, chunk_id);
@@ -47,6 +47,7 @@ void Booksim2NetworkApi::process_chunk_arrival(void * args) {
   if (VeritX::LedgerLevel() >= 2)
     std::cerr << "[LEDGER][ARRIVE] tag=" << tag << " src=" << src << " dst=" << dst
               << " count=" << count << " chunk=" << chunk_id
+              << " class=" << static_cast<unsigned>(class_id)
               << " both=" << entry->both_callbacks_registered()
               << " finished=" << entry->is_transmission_finished() << std::endl;
 
@@ -96,16 +97,36 @@ void Booksim2NetworkApi::flush_fold_group(int src) {
               << " k=" << g.dsts.size() << " far=" << g.dsts.back()
               << " t=" << _eq->get_current_time() << std::endl;
   int const flits = (g.count + _fabric->flit_bytes() - 1) / _fabric->flit_bytes();
+  // VeritX: the folded stream carries ONE class — uniformity is enforced
+  // by the join condition above; assert it here so a violation fails loud
+  // instead of injecting a misattributed stream.
+  const uint8_t fold_class =
+      g.pendings.empty() ? 0 : g.pendings.front().class_id;
+  for (size_t ui = 0; ui < g.pendings.size(); ++ui) {
+    if (g.pendings[ui].class_id != fold_class) {
+      std::cerr << "Booksim2: fold group src=" << src
+                << " mixes class "
+                << static_cast<unsigned>(g.pendings[ui].class_id)
+                << " with " << static_cast<unsigned>(fold_class)
+                << " — refusing to fold across classes" << std::endl;
+      std::abort();
+    }
+  }
+  if (VeritX::LedgerLevel() >= 2)
+    std::cerr << "[LEDGER][FOLD] src=" << src << " count=" << g.count
+              << " k=" << g.dsts.size()
+              << " class=" << static_cast<unsigned>(fold_class)
+              << " t=" << _eq->get_current_time() << std::endl;
   if (g.dsts.size() == 1) {
     // k=1: a plain unicast packet (the mcast stream path requires a
     // routable far end and gains nothing for a single dest).
-    _fabric->tm()->InjectUnicast(src, g.dsts[0], flits, 0);
+    _fabric->tm()->InjectUnicast(src, g.dsts[0], flits, fold_class);
     g.pendings[0].remaining_flits = 1;
     _pending[std::make_pair(src, g.dsts[0])].push(g.pendings[0]);
     return;
   }
   for (int f = 0; f < flits; ++f)
-    _fabric->tm()->InjectMcast(src, g.dsts, 0);
+    _fabric->tm()->InjectMcast(src, g.dsts, fold_class);
   for (size_t i = 0; i < g.dsts.size(); ++i) {
     g.pendings[i].remaining_flits = flits;
     _pending[std::make_pair(src, g.dsts[i])].push(g.pendings[i]);
@@ -159,12 +180,26 @@ void Booksim2NetworkApi::pump_arrivals() {
         Arrival const a = q.front();
         if (getenv("VERITX_DEBUG"))
           std::cerr << "[dbg] arrival src=" << src << " dst=" << dst
-                    << " atime=" << a.atime << std::endl;
+                    << " atime=" << a.atime
+                    << " cl=" << static_cast<unsigned>(a.class_id) << std::endl;
         q.pop();
         PendingSend & p = pending.front();
+        // VeritX: the retired flit class must equal the pending send's
+        // canonical class. A mismatch means misattribution (wrong stream
+        // matched, class dropped, or fold corruption) — fail loud, never
+        // complete the chunk against the wrong class.
+        if (a.class_id != p.class_id) {
+          std::cerr << "Booksim2: arrival class "
+                    << static_cast<unsigned>(a.class_id)
+                    << " != pending class "
+                    << static_cast<unsigned>(p.class_id) << " (src=" << src
+                    << " dst=" << dst << " tag=" << p.tag << ") — "
+                    << "class attribution violated" << std::endl;
+          std::abort();
+        }
         if (--p.remaining_flits > 0) continue;  // more streams still arriving
-        auto * arg = new std::tuple<int, int, int, uint64_t, int>(
-            p.tag, src, dst, p.count, p.chunk_id);
+        auto * arg = new std::tuple<int, int, int, uint64_t, int, uint8_t>(
+            p.tag, src, dst, p.count, p.chunk_id, p.class_id);
         _eq->schedule_event(a.atime, Booksim2NetworkApi::process_chunk_arrival,
                             arg);
         pending.pop();
@@ -183,9 +218,16 @@ int Booksim2NetworkApi::sim_send(void * buffer, uint64_t count, int type,
               << " count=" << count << " tag=" << tag << " t=" << _eq->get_current_time() << std::endl;
   const int chunk_id =
       _chunk_id_generator.create_send_chunk_id(tag, src, dst, count);
+  // VeritX: canonical class comes ONLY from the stamped request (set by
+  // the collective algorithm from its ComType, backstopped by band at
+  // front_end_sim_send). Never derive from endpoint, size, or order.
+  // 0 = unattributable; downstream qualification must refuse it.
+  const uint8_t class_id =
+      (request != NULL) ? request->veritx_class_id : 0;
   if (VeritX::LedgerLevel() >= 2)
     std::cerr << "[LEDGER][SEND] src=" << src << " dst=" << dst
               << " count=" << count << " tag=" << tag << " chunk=" << chunk_id
+              << " class=" << static_cast<unsigned>(class_id)
               << " t=" << _eq->get_current_time() << std::endl;
 
   TrackerEntry * entry = _tracker.search_entry(tag, src, dst, count, chunk_id);
@@ -205,12 +247,18 @@ int Booksim2NetworkApi::sim_send(void * buffer, uint64_t count, int type,
   if (_mcast_fold) {
     int64_t const now = _eq->get_current_time();
     auto & g = _fold_groups[src];
+    // VeritX: only same-class sends may share one folded mcast stream —
+    // folding two classes into one injection would corrupt attribution.
     bool joinable = !g.dsts.empty() && g.count == count &&
+                    !g.pendings.empty() &&
+                    g.pendings.front().class_id == class_id &&
                     (now - g.last_cycle) <= _fold_window &&
                     std::find(g.dsts.begin(), g.dsts.end(), dst) == g.dsts.end();
     if (joinable) {
       g.dsts.push_back(dst);
-      g.pendings.push_back({tag, count, chunk_id, 0});
+      PendingSend ps{tag, count, chunk_id, 0};
+      ps.class_id = class_id;
+      g.pendings.push_back(ps);
       g.last_cycle = now;
       return 0;  // deferred; the whole fanout injects as one mcast stream
     }
@@ -219,7 +267,9 @@ int Booksim2NetworkApi::sim_send(void * buffer, uint64_t count, int type,
     g.count = count;
     g.last_cycle = now;
     g.dsts.push_back(dst);
-    g.pendings.push_back({tag, count, chunk_id, 0});
+    PendingSend ps0{tag, count, chunk_id, 0};
+    ps0.class_id = class_id;
+    g.pendings.push_back(ps0);
     // Bounded defer: flush this group after the fold window closes so
     // non-fanout (k=1) sends do not wait for the next event.
     auto * src_arg = new int(src);
@@ -227,8 +277,10 @@ int Booksim2NetworkApi::sim_send(void * buffer, uint64_t count, int type,
     return 0;
   }
 
-  _fabric->tm()->InjectUnicast(src, dst, flits, 0);
-  _pending[std::make_pair(src, dst)].push({tag, count, chunk_id, 1});
+  _fabric->tm()->InjectUnicast(src, dst, flits, class_id);
+  PendingSend psd{tag, count, chunk_id, 1};
+  psd.class_id = class_id;
+  _pending[std::make_pair(src, dst)].push(psd);
   if (getenv("VERITX_DEBUG"))
     std::cerr << "[dbg] sim_send injected flits=" << flits << " pending="
               << _pending[std::make_pair(src, dst)].size() << std::endl;

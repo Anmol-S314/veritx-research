@@ -71,11 +71,15 @@ class Booksim2NetworkApi : public AstraSim::AstraNetworkAPI {
   static ChunkIdGenerator _chunk_id_generator;
 
   // One pending send context per (src, dst) FIFO; arrivals pop the head.
+  // class_id is the VeritX canonical class (0 = unattributable); it is
+  // set at sim_send from the stamped sim_request and asserted against
+  // the retired flit class at pump time — never derived, never guessed.
   struct PendingSend {
     int tag;
     uint64_t count;
     int chunk_id;
     int remaining_flits;  // arrivals still expected for this send
+    uint8_t class_id = 0;
   };
   static std::map<std::pair<int, int>, std::queue<PendingSend>> _pending;
 

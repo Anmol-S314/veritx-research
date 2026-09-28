@@ -39,6 +39,8 @@ void DoubleBinaryTreeAllReduce::run(EventType event, CallData* data) {
                type == BinaryTree::Type::Leaf) {  // leaf.3
         // sending
         sim_request snd_req;
+        // VeritX: stamp canonical class from this algorithm's ComType.
+        snd_req.veritx_class_id = static_cast<uint8_t>(veritx_class_of_comtype(comType));
         snd_req.srcRank = stream->owner->id;
         snd_req.dstRank = parent;
         snd_req.tag = stream->stream_id;
@@ -50,6 +52,8 @@ void DoubleBinaryTreeAllReduce::run(EventType event, CallData* data) {
                                           &Sys::handleEvent, nullptr);
         // receiving
         sim_request rcv_req;
+        // VeritX: stamp canonical class from this algorithm's ComType.
+        rcv_req.veritx_class_id = static_cast<uint8_t>(veritx_class_of_comtype(comType));
         rcv_req.vnet = this->stream->current_queue_id;
         RecvPacketEventHandlerData* ehd = new RecvPacketEventHandlerData(
             stream, stream->owner->id, EventType::PacketReceived,
@@ -78,6 +82,8 @@ void DoubleBinaryTreeAllReduce::run(EventType event, CallData* data) {
         // the same state again.
         state = State::WaitingForTwoChildData;
         sim_request rcv_req;
+        // VeritX: stamp canonical class from this algorithm's ComType.
+        rcv_req.veritx_class_id = static_cast<uint8_t>(veritx_class_of_comtype(comType));
         rcv_req.vnet = this->stream->current_queue_id;
         RecvPacketEventHandlerData* ehd = new RecvPacketEventHandlerData(
             stream, stream->owner->id, EventType::PacketReceived,
@@ -124,6 +130,8 @@ void DoubleBinaryTreeAllReduce::run(EventType event, CallData* data) {
         state = State::WaitingDataFromParent;
         // sending
         sim_request snd_req;
+        // VeritX: stamp canonical class from this algorithm's ComType.
+        snd_req.veritx_class_id = static_cast<uint8_t>(veritx_class_of_comtype(comType));
         snd_req.srcRank = stream->owner->id;
         snd_req.dstRank = parent;
         snd_req.tag = stream->stream_id;
@@ -135,6 +143,8 @@ void DoubleBinaryTreeAllReduce::run(EventType event, CallData* data) {
                                           &Sys::handleEvent, nullptr);
         // receiving
         sim_request rcv_req;
+        // VeritX: stamp canonical class from this algorithm's ComType.
+        rcv_req.veritx_class_id = static_cast<uint8_t>(veritx_class_of_comtype(comType));
         rcv_req.vnet = this->stream->current_queue_id;
         RecvPacketEventHandlerData* ehd = new RecvPacketEventHandlerData(
             stream, stream->owner->id, EventType::PacketReceived,
@@ -155,6 +165,8 @@ void DoubleBinaryTreeAllReduce::run(EventType event, CallData* data) {
     } else if (state == State::SendingDataToChilds &&
                type == BinaryTree::Type::Intermediate) {
         sim_request snd_req;
+        // VeritX: stamp canonical class from this algorithm's ComType.
+        snd_req.veritx_class_id = static_cast<uint8_t>(veritx_class_of_comtype(comType));
         snd_req.srcRank = stream->owner->id;
         snd_req.dstRank = left_child;
         snd_req.tag = stream->stream_id;
@@ -185,6 +197,8 @@ void DoubleBinaryTreeAllReduce::run(EventType event, CallData* data) {
         state = State::WaitingForOneChildData;
         int only_child_id = left_child >= 0 ? left_child : right_child;
         sim_request rcv_req;
+        // VeritX: stamp canonical class from this algorithm's ComType.
+        rcv_req.veritx_class_id = static_cast<uint8_t>(veritx_class_of_comtype(comType));
         rcv_req.vnet = this->stream->current_queue_id;
         RecvPacketEventHandlerData* ehd = new RecvPacketEventHandlerData(
             stream, stream->owner->id, EventType::PacketReceived,
@@ -206,6 +220,8 @@ void DoubleBinaryTreeAllReduce::run(EventType event, CallData* data) {
                type == BinaryTree::Type::Root) {  // root.2
         int only_child_id = left_child >= 0 ? left_child : right_child;
         sim_request snd_req;
+        // VeritX: stamp canonical class from this algorithm's ComType.
+        snd_req.veritx_class_id = static_cast<uint8_t>(veritx_class_of_comtype(comType));
         snd_req.srcRank = stream->owner->id;
         snd_req.dstRank = only_child_id;
         snd_req.tag = stream->stream_id;

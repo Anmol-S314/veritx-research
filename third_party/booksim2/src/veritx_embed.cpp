@@ -1,6 +1,7 @@
 #include "veritx_embed.hpp"
 
 #include <cassert>
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -104,10 +105,29 @@ void EmbedTM::_BuildMcastStream(int src, std::vector<int> const & dsts,
 }
 
 void EmbedTM::InjectUnicast(int src, int dst, int size, int cl) {
+  // VeritX: per-class bookkeeping containers are dimensioned by the
+  // config's `classes` count. A class id at or above it means the
+  // embedded config does not cover the canonical classes — the machine
+  // renderer must declare classes >= max class id + 1, never silently
+  // wrap or truncate the class here.
+  if (cl < 0 || cl >= _classes) {
+    std::cerr << "EmbedTM: inject class " << cl << " outside configured "
+              << "classes=" << _classes << " — embedded config must "
+              << "declare classes covering the canonical class ids"
+              << std::endl;
+    std::abort();
+  }
   _BuildUnicast(src, dst, size, cl, _time);
 }
 
 void EmbedTM::InjectMcast(int src, std::vector<int> const & dsts, int cl) {
+  if (cl < 0 || cl >= _classes) {
+    std::cerr << "EmbedTM: inject class " << cl << " outside configured "
+              << "classes=" << _classes << " — embedded config must "
+              << "declare classes covering the canonical class ids"
+              << std::endl;
+    std::abort();
+  }
   _BuildMcastStream(src, dsts, cl, _time);
 }
 

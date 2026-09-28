@@ -10,6 +10,7 @@ arrivals are reported back as events at their retirement cycle.
 #ifndef __VERITX_BOOKSIM2_FABRIC_HH__
 #define __VERITX_BOOKSIM2_FABRIC_HH__
 
+#include <cstdint>
 #include <cstdlib>
 #include <functional>
 #include <iostream>
@@ -34,12 +35,20 @@ inline int LedgerLevel() {
   return level;
 }
 
+// VERITX BookSim2 network ABI version. v1 is the first ABI that carries
+// the canonical class id end-to-end (injection cl + retire round-trip).
+// Qualification must refuse any trace produced under ABI v0 (no class_id)
+// or with class_id 0 (kUnknown = unattributable).
+constexpr uint32_t kBooksim2AbiVersion = 1;
+
 // One fabric arrival: a packet fully retired at `dst` at cycle `atime`.
+// class_id is the retired flit's canonical class (VeritXClassId).
 struct Arrival {
   int64_t atime;
   int src;
   int dst;
   int pid;
+  uint8_t class_id = 0;
 };
 
 // ---- cycle-based event queue (mirrors the analytical backend's EventQueue,
@@ -208,7 +217,9 @@ class EventQueue {
       auto retired = _tm->DrainRetired(n);
       n_retired += retired.size();
       for (auto const & r : retired)
-        _arrivals[std::make_pair(r.src, r.dst)].push({r.atime, r.src, r.dst, r.pid});
+        _arrivals[std::make_pair(r.src, r.dst)].push(
+            {r.atime, r.src, r.dst, r.pid,
+             static_cast<uint8_t>(r.cl)});
     }
     if (advance_hook) advance_hook();
     return n_retired;

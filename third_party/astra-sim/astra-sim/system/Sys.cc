@@ -1320,6 +1320,17 @@ int Sys::front_end_sim_send(Tick delay,
     } else {
         sys_panic("A type of RENDZVOUS should never issued in frontend");
     }
+    // VeritX: canonical class backstop (attribution-only). Collective
+    // algorithms stamp request->veritx_class_id from their ComType above.
+    // Anything still unknown gets at most the band-level attribution:
+    // NATIVE-band work is genuinely non-collective. A COLLECTIVE-band
+    // request with class 0 stays 0 (UNQUALIFIED) — the backend must never
+    // guess the collective kind from endpoint, size, or arrival order.
+    if (request != NULL && request->veritx_class_id == 0 &&
+        send_type == Sys::FrontEndSendRecvType::NATIVE) {
+        request->veritx_class_id =
+            static_cast<uint8_t>(VeritXClassId::kNative);
+    }
     if (rendezvous_enabled) {
         return rendezvous_sim_send(delay, buffer, count, type, dst, tag,
                                    request, msg_handler, fun_arg);
@@ -1376,6 +1387,10 @@ int Sys::rendezvous_sim_send(Tick delay,
         new RendezvousSendData(id, this, buffer, count, type, dst, tag,
                                *request, msg_handler, fun_arg);
     sim_request newReq = *request;
+    // VeritX: handshake control is protocol traffic, never collective
+    // payload — attribute it distinctly so it cannot pollute a class.
+    newReq.veritx_class_id =
+        static_cast<uint8_t>(VeritXClassId::kRendezvous);
     uint64_t rendevouz_size = 8192;
     newReq.dstRank = request->srcRank;
     newReq.srcRank = request->dstRank;

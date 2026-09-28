@@ -253,6 +253,8 @@ bool Ring::ready() {
     }
     MyPacket packet = packets.front();
     sim_request snd_req;
+    // VeritX: stamp canonical class from this algorithm's ComType.
+    snd_req.veritx_class_id = static_cast<uint8_t>(veritx_class_of_comtype(comType));
     snd_req.srcRank = id;
     snd_req.dstRank = packet.preferred_dest;
     snd_req.tag = stream->stream_id;
@@ -264,6 +266,8 @@ bool Ring::ready() {
         &Sys::handleEvent,
         nullptr);  // stream_id+(packet.preferred_dest*50)
     sim_request rcv_req;
+    // VeritX: stamp canonical class from this algorithm's ComType.
+    rcv_req.veritx_class_id = static_cast<uint8_t>(veritx_class_of_comtype(comType));
     rcv_req.vnet = this->stream->current_queue_id;
     RecvPacketEventHandlerData* ehd = new RecvPacketEventHandlerData(
         stream, stream->owner->id, EventType::PacketReceived,
