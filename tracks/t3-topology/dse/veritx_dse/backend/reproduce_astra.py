@@ -142,7 +142,8 @@ def reproduce_astra_run_bundle(
                 machine=machine, binary=str(binary),
                 run_dir=Path(tmp),
                 workload_configuration=workload_base,
-                timeout_s=timeout, write=False, namespace=namespace)
+                timeout_s=timeout, write=False, namespace=namespace,
+                class_binding_id=workload.class_binding_id())
         except AstraExecutionError as exc:
             raise RunBundleError(
                 f"ASTRA reproduction execution failed: {exc}") from exc

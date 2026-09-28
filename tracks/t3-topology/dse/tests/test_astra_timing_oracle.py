@@ -107,12 +107,13 @@ def _collective(ranks: int, payload: int, deps, index: int = 0):
             participant_count=ranks))
 
 
-def _mesh_config(path: Path, k: int, n: int) -> Path:
+def _mesh_config(path: Path, k: int, n: int, classes: int) -> Path:
     path.write_text(
         "topology = mesh;\n"
         f"k = {k};\nn = {n};\n"
         "routing_function = dor;\nnum_vcs = 4;\nvc_buf_size = 8;\n"
         "traffic = uniform;\ninjection_rate = 0.1;\npacket_size = 5;\n"
+        f"classes = {classes};\n"
         "sim_type = latency;\nsample_period = 1000;\nwarmup_periods = 3;\n"
         "print_activity = 1;\n")
     return path
@@ -123,11 +124,17 @@ _MESH = {2: (2, 1), 4: (2, 2), 8: (2, 3), 16: (4, 2)}
 
 
 def _run(projection, tmp_path, ranks: int, tag: str):
+    # The embedded runtime attributes injections by canonical class id
+    # (ABI v1); the config must declare the envelope the workload will
+    # inject, derived from the projection — never a hardcoded default.
+    classes = astra.required_embedded_classes(
+        projection.collective_operations)
     if ranks == 16:
         network = FIXTURE / "mesh4x4.cfg"
     else:
         k, n = _MESH[ranks]
-        network = _mesh_config(tmp_path / f"mesh-{ranks}.cfg", k, n)
+        network = _mesh_config(
+            tmp_path / f"mesh-{ranks}.cfg", k, n, classes)
     out = tmp_path / tag / "et"
     projection.write_chakra(directory=out, stem="canon")
     return astra.run_astra(

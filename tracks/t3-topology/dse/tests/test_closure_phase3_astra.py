@@ -454,3 +454,30 @@ def test_reproduce_refuses_binary_swap(tmp_path):
         reproduce_astra_run_bundle(root, binary=other, timeout=30)
     assert "producer" in str(exc.value).lower()
     shutil.rmtree(root, ignore_errors=True)
+
+
+# ── embedded class envelope ────────────────────────────────────────────
+
+def test_required_embedded_classes_covers_collective_kinds():
+    from veritx_dse.backend.astra import (
+        AstraLoweringRefused, required_embedded_classes,
+    )
+    assert required_embedded_classes(
+        [("op0", "ALLREDUCE", 64, (0, 1))]) == 2
+    assert required_embedded_classes(
+        [("op0", "ALLREDUCE", 64, (0, 1)),
+         ("op1", "ALLTOALL", 64, (0, 1))]) == 5
+    assert required_embedded_classes([]) == 1
+    with pytest.raises(AstraLoweringRefused, match="BROADCAST"):
+        required_embedded_classes([("op9", "BROADCAST", 64, (0, 1))])
+
+
+def test_embedded_config_declares_class_envelope():
+    from types import SimpleNamespace
+    from veritx_dse.backend import astra_machine as am
+    prepared = SimpleNamespace(
+        config_text=("topology = mesh;\nk = 4;\n"
+                     "routing_function = dor;\n"))
+    config = am.embedded_fabric_config(prepared, embedded_classes=5)
+    assert "classes = 5;" in config.text
+    assert "trace(" not in config.text

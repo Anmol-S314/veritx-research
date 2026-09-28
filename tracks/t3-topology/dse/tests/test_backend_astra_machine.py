@@ -256,7 +256,7 @@ def test_standalone_trace_reference_is_refused_by_the_transform():
     leaked = dataclasses.replace(prepared, config_text=prepared.config_text)
     assert "trace(" in leaked.config_text
     # the transform must never pass a trace pattern through
-    config = am.embedded_fabric_config(leaked)
+    config = am.embedded_fabric_config(leaked, embedded_classes=2)
     assert "trace(" not in config.text
     assert config.carries_trace_reference is False
 
@@ -273,10 +273,14 @@ def test_machine_semantics_survive_the_embedded_transform():
                 f"machine key {key} changed in the embedded projection"
             compared += 1
     assert compared >= 3, "no machine-semantic key was actually verified"
-    # workload-driving keys are exactly the ones that changed
+    # workload-driving keys are exactly the ones that changed, plus the
+    # machine-declared class envelope covering the canonical class ids.
     changed = {k for k in standalone
                if k in embedded and embedded[k] != standalone[k]}
-    assert changed <= {"traffic", "injection_rate", "injection_process"}
+    assert changed <= {"traffic", "injection_rate", "injection_process",
+                        "classes"}, changed
+    if "classes" in embedded:
+        assert int(embedded["classes"]) >= 1
 
 
 def test_embedded_config_keeps_the_certified_profile():
@@ -315,7 +319,8 @@ def test_legacy_json_network_config_is_refused():
     assert machine.network_config_abi != am.LEGACY_NETWORK_CONFIG_ABI
     with pytest.raises(am.AstraMachineError):
         am.embedded_fabric_config(dataclasses.replace(
-            _machine()[2], config_text=json.dumps(legacy)))
+            _machine()[2], config_text=json.dumps(legacy)),
+            embedded_classes=2)
 
 
 def test_fixture_machine_authority_is_reference_only():

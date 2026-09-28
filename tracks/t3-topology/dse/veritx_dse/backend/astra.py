@@ -127,6 +127,43 @@ class AstraExecutionError(AstraError):
     """Execution failed, partially executed, or produced malformed evidence."""
 
 
+#: Canonical collective-kind to embedded class id. Mirrors
+#: ``VeritXClassId`` in the vendored frontend
+#: (``astra-sim/.../system/Common.hh``); the two tables must agree or
+#: attribution lies. Kinds without an id are unattributable: the
+#: runtime injects them as class 0, which no qualification may accept.
+VERITX_CLASS_IDS = {
+    "ALLREDUCE": 1,
+    "REDUCESCATTER": 2,
+    "ALLGATHER": 3,
+    "ALLTOALL": 4,
+}
+
+
+def required_embedded_classes(collective_operations: Any) -> int:
+    """Embedded ``classes=`` covering every attributable collective.
+
+    Returns max(class id) + 1 over the projection's collective
+    operations. A kind without a VeritXClassId (today BROADCAST) is a
+    typed refusal: executing it unattributed would flatten it into
+    class 0 silently. Never derive class from endpoint, rank, size or
+    arrival order — the authority is this table plus the runtime enum.
+    """
+    ids: list[int] = []
+    for entry in collective_operations or ():
+        kind = entry[1] if len(entry) > 1 else None
+        class_id = VERITX_CLASS_IDS.get(kind)
+        if class_id is None:
+            raise AstraLoweringRefused(
+                f"collective kind {kind!r} has no embedded class id "
+                "under ABI v1: the runtime would inject it unattributed "
+                "(class 0) — refusing instead of flattening")
+        ids.append(class_id)
+    if not ids:
+        return 1
+    return max(ids) + 1
+
+
 # ── semantic audit ─────────────────────────────────────────────────────────
 
 def classify_operation(op: Any) -> str:

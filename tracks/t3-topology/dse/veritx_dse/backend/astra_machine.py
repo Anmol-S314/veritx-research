@@ -256,8 +256,18 @@ def _standalone_values(prepared: Any) -> dict[str, str]:
     return parse_config_values(prepared.config_text)
 
 
-def embedded_fabric_config(prepared: Any) -> EmbeddedFabricConfig:
-    """Disarm standalone injection; keep every machine fact intact."""
+def embedded_fabric_config(prepared: Any, *, embedded_classes: int
+                           ) -> EmbeddedFabricConfig:
+    """Disarm standalone injection; keep every machine fact intact.
+
+    ``embedded_classes`` declares the embedded ``classes=`` envelope
+    covering every canonical class id the workload will inject (the
+    caller derives it from the collective-kind table). The standalone
+    config pins ``classes`` only for multi-class profiles; the embedded
+    runtime needs the envelope for every collective kind it attributes,
+    so the machine declares it explicitly and asserts it into the
+    rendered text — never inherited from a default of 1.
+    """
     text = getattr(prepared, "config_text", None)
     if not isinstance(text, str) or not text.strip():
         raise AstraMachineError(
@@ -275,19 +285,22 @@ def embedded_fabric_config(prepared: Any) -> EmbeddedFabricConfig:
     # config that already looks embedded would hide the transform.
     machine = tuple(sorted((k, values[k]) for k in MACHINE_SEMANTIC_KEYS
                            if k in values))
+    declared: list[tuple[str, str]] = [
+        ("classes", str(embedded_classes)),
+    ]
     disarmed: list[tuple[str, str]] = [
         ("traffic", DISARMED_TRAFFIC),
         ("injection_process", DISARMED_INJECTION_PROCESS),
         ("injection_rate", repr(DISARMED_INJECTION_RATE)),
     ]
 
-    ordered = _render_config(values, disarmed)
+    ordered = _render_config(values, disarmed + declared)
     carried = "trace(" in ordered
     if carried:
         raise AstraMachineError(
             "embedded fabric configuration still references a standalone "
             "trace; autonomous injection would double-count ASTRA traffic")
-    for key, value in disarmed:
+    for key, value in disarmed + declared:
         if not _config_has(ordered, key, value):
             raise AstraMachineError(
                 f"embedded fabric configuration failed to pin {key}={value}")
@@ -784,7 +797,18 @@ def qualify_astra_machine(*, parents: Any, prepared: Any, projection: Any,
         raise AstraMachineError(
             "the workload projection must be an AstraWorkloadProjection")
 
-    embedded = embedded_fabric_config(prepared)
+    from veritx_dse.backend.astra import (
+        AstraLoweringRefused, required_embedded_classes,
+    )
+    try:
+        embedded = embedded_fabric_config(
+            prepared,
+            embedded_classes=required_embedded_classes(
+                projection.collective_operations))
+    except AstraLoweringRefused as exc:
+        raise AstraMachineError(
+            f"cannot declare the embedded class envelope: {exc}"
+        ) from exc
     derived_topology = derive_logical_dimensions(projection)
     scope, active = memory_scope(logical, projection)
     authority = projection.expansion_authority()
