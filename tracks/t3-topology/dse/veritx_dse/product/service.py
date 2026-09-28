@@ -108,6 +108,11 @@ class ProductConfig:
     projects_root: Path
     booksim_bin: Path | None = None
     astra_bin: Path | None = None
+    #: Ramulator discovery overrides (vendor tree / interpreter). None
+    #: means the canonical discovery: the vendored tree under the repo
+    #: root with the running interpreter's extension tag.
+    ramulator_vendor_dir: Path | None = None
+    ramulator_python: str | None = None
     #: Exact network clock (Hz). Must be an int/Fraction: the evaluator
     #: refuses a float as a wall-time authority.
     network_clock_hz: int = 1_000_000_000
@@ -173,7 +178,9 @@ class ProductService:
             self._registry = default_backend_registry(
                 booksim_bin=config.booksim_bin,
                 astra_bin=config.astra_bin,
-                repo_root=config.repo_root)
+                repo_root=config.repo_root,
+                ramulator_vendor_dir=config.ramulator_vendor_dir,
+                ramulator_python=config.ramulator_python)
         #: simulation-capability assessment, keyed by design_hash. The
         #: assessment compiles the request once; the verdict is
         #: deterministic for a given tree, so the process caches it.
@@ -1651,7 +1658,7 @@ class ProductService:
         )
         from veritx_dse.application.federated_evaluator import (
             PARTIAL, AstraRunOptions, BookSimRunOptions,
-            evaluate_federated,
+            RamulatorRunOptions, evaluate_federated,
         )
         request = parse_request_doc(revision["request"])
         compilation = self._check_compilation_parity(revision, request)
@@ -1670,6 +1677,8 @@ class ProductService:
                 astra_options=AstraRunOptions(
                     timeout_s=self.config.timeout_s,
                     repo_root=self.config.repo_root),
+                ramulator_options=RamulatorRunOptions(
+                    timeout_s=self.config.timeout_s),
                 run_dir=bundle_dir,
                 revision_id=revision["revision_id"])
         except (_LoweringInvalid, _LoweringSemantics, _LoweringSchedule,
@@ -2273,6 +2282,8 @@ class ProductService:
                     }
             elif backend == "ASTRA2_EMBEDDED_BOOKSIM":
                 per_analysis[key] = self._astra_integrity(analysis)
+            elif backend == "RAMULATOR2_HBM3_V1":
+                per_analysis[key] = self._ramulator_integrity(analysis)
             else:
                 per_analysis[key] = {
                     "backend": backend, "status": status,
@@ -2342,6 +2353,35 @@ class ProductService:
                 "participant_statistics_present"),
             "namespace_binding": summary.get("namespace_binding"),
             "namespace_id": summary.get("namespace_id"),
+        }
+
+    @staticmethod
+    def _ramulator_integrity(analysis: dict[str, Any]) -> dict[str, Any]:
+        """Factual Ramulator integrity — drain reconciliation and
+        completed bytes from the native summary, never a BookSim packet
+        table and never re-derived science."""
+        summary = analysis.get("native_summary") or {}
+        if analysis.get("status") != "EVALUATED":
+            return {
+                "backend": analysis.get("backend_id"),
+                "status": analysis.get("status"),
+                "reason": analysis.get("reason"),
+            }
+        return {
+            "backend": analysis.get("backend_id"),
+            "status": analysis.get("status"),
+            "kind": "memory_drain_integrity",
+            "native_evidence_id": analysis.get("native_evidence_id"),
+            "drain": {
+                "generated_requests": summary.get("generated_requests"),
+                "accepted_requests": summary.get("accepted_requests"),
+                "completed_requests": summary.get("completed_requests"),
+                "outstanding_requests":
+                    summary.get("outstanding_requests"),
+            },
+            "completed_read_bytes": summary.get("completed_read_bytes"),
+            "completed_write_bytes": summary.get("completed_write_bytes"),
+            "completion_cycles": summary.get("completion_cycles"),
         }
 
     def verify_run(self, run_id: str) -> dict[str, Any]:
@@ -2446,6 +2486,9 @@ class ProductService:
         if backend == "ASTRA2_EMBEDDED_BOOKSIM":
             return self._reproduce_astra_analysis(
                 bundle_dir, analysis_dir, backend)
+        if backend == "RAMULATOR2_HBM3_V1":
+            return self._reproduce_ramulator_analysis(
+                bundle_dir, analysis_dir, backend)
         return {"backend": backend, "status": "EVALUATED",
                 "outcome": "REPRODUCTION_NOT_AVAILABLE",
                 "reason": f"no reproduction authority for backend "
@@ -2517,6 +2560,33 @@ class ProductService:
                             if result.get("matched") else "DIVERGED"),
                 "evidence_id": result.get("evidence_id"),
                 "aggregate_cycles": result.get("aggregate_cycles")}
+
+    def _reproduce_ramulator_analysis(self, bundle_dir: Path,
+                                      analysis_dir: Path,
+                                      backend: str) -> dict[str, Any]:
+        from veritx_dse.backend.reproduce_ramulator import (
+            reproduce_ramulator_run_bundle,
+        )
+        from veritx_dse.core.run_bundle import RunBundleError
+        try:
+            result = reproduce_ramulator_run_bundle(
+                analysis_dir,
+                vendor_dir=self.config.ramulator_vendor_dir,
+                python_exe=self.config.ramulator_python,
+                timeout=self.config.timeout_s)
+        except RunBundleError as exc:
+            message = str(exc)
+            if "NOT_AVAILABLE" in message:
+                return {"backend": backend, "status": "EVALUATED",
+                        "outcome": "REPRODUCTION_NOT_AVAILABLE",
+                        "reason": message}
+            return {"backend": backend, "status": "EVALUATED",
+                    "outcome": "DIVERGED", "reason": message}
+        return {"backend": backend, "status": "EVALUATED",
+                "outcome": ("SCIENTIFICALLY_REPRODUCED"
+                            if result.get("matched") else "DIVERGED"),
+                "evidence_id": result.get("evidence_id"),
+                "rerun_status": result.get("status")}
 
     def _run_reproduction(self, run_id: str, bundle_dir: Path,
                           binary: Path, progress) -> tuple[str, dict[str, Any]]:
@@ -2673,6 +2743,17 @@ class ProductService:
             if candidate.is_file():
                 evidence = json.loads(candidate.read_text(encoding="utf-8"))
                 break
+        # The normalized TTFT/completion view the serve path persists
+        # beside the native evidence (analyses, or an explicit absence
+        # record). Native evidence is never removed or replaced.
+        normalized_doc = None
+        normalized_candidate = run_dir / "normalized-serving-evidence.json"
+        if normalized_candidate.is_file():
+            try:
+                normalized_doc = json.loads(
+                    normalized_candidate.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                normalized_doc = None
         self.store.update_serving(
             pid, serving_id, state="COMPLETED",
             evidence={
@@ -2683,6 +2764,13 @@ class ProductService:
                 "namespace_id": result.namespace_id,
                 "evidence_ids": list(result.evidence_ids),
                 "document": evidence,
+                "normalized_analyses": (
+                    None if normalized_doc is None
+                    else normalized_doc.get("analyses")),
+                "normalization_reason": (
+                    "serving run predates normalized serving archival"
+                    if normalized_doc is None
+                    else normalized_doc.get("reason")),
             })
         return "COMPLETED", {"serving_id": serving_id}
 
