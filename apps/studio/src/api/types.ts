@@ -1328,3 +1328,294 @@ export interface OptimizationCapabilities {
   not_measured: string[];
   not_measured_note: string;
 }
+
+// ── Studio vNext linkage-contract types (product API v1) ───────────────
+// These envelope the same frozen scientific authorities as above; they never
+// duplicate engine fields. Routes live under /api/v1 (see api/index.ts).
+// Where the backend has not wired a route yet, the gateway answers 404 and
+// Studio renders the capability's maturity state (RESEARCH/HISTORICAL/
+// BLOCKED) — never a fixture substituted for a live project (§45).
+
+/** §44 feature-status language. Closed vocabulary: anything else is a
+ * contract violation, never a silent fallback. */
+export const MATURITY_LEVELS = [
+  'AVAILABLE',
+  'EXPERIMENTAL',
+  'RESEARCH',
+  'HISTORICAL',
+  'BLOCKED',
+  'NOT_APPLICABLE',
+] as const;
+
+export type MaturityLevel = (typeof MATURITY_LEVELS)[number];
+
+export function isMaturityLevel(value: unknown): value is MaturityLevel {
+  return (
+    typeof value === 'string' &&
+    (MATURITY_LEVELS as readonly string[]).includes(value)
+  );
+}
+
+/** §1 seven-stage maturity ladder. Each stage is true (reached), false
+ * (not reached), or 'partial' (bridge incomplete). Nothing disappears
+ * because it has not reached PRODUCT. */
+export interface StageLadder {
+  intent: boolean;
+  materialized: boolean | 'partial';
+  verified: boolean | 'partial';
+  projected: boolean | 'partial';
+  executable: boolean | 'partial';
+  qualified: boolean;
+  product: boolean;
+}
+
+/** §22 synthesis method cards. `optimality_claim` is the ONLY wording a
+ * method may use about global optimality. */
+export interface SynthesisMethodView {
+  method: 'milp' | 'sa' | 'bo' | 'rho' | 'grpo' | string;
+  label: string;
+  scope: string;
+  optimality_claim: string;
+  maturity: MaturityLevel;
+}
+
+/** §24 synthesis result. Generator objective and measured/simulated
+ * product objectives are SEPARATE fields — a candidate is never called
+ * verified because a generator likes it. */
+export interface SynthesisCandidateResultView {
+  candidate_id: string;
+  method: string;
+  solver_status: string;
+  generator_objective_name: string | null;
+  generator_objective_value: number | null;
+  compile_status: string | null;
+  verification_status: string | null;
+  measured_cycles: number | null;
+  measured_backend: string | null;
+  evidence_id: string | null;
+  requirements_state: string | null;
+}
+
+export interface SynthesisResultView {
+  contract_version: 1;
+  synthesis_id: string;
+  method: string;
+  base_topology: string | null;
+  generated_count: number;
+  evaluated_count: number;
+  completeness: CompletenessView | null;
+  candidates: SynthesisCandidateResultView[];
+}
+
+/** §25/§26 candidate library + detail. Promotion uses the existing safe
+ * candidate→explicit-topology path; after promotion the UI must say
+ * "Draft updated. Compile to create an immutable revision." */
+export interface CandidateLibraryEntry {
+  candidate_id: string;
+  origin: string;
+  method: string | null;
+  design_delta: string | null;
+  network_cycles: number | null;
+  system_cycles: number | null;
+  memory_cycles: number | null;
+  verification: string | null;
+  status: string | null;
+  pareto_member: boolean | null;
+  adopted: boolean;
+}
+
+export interface CandidateLibraryView {
+  contract_version: 1;
+  entries: CandidateLibraryEntry[];
+}
+
+export interface CandidateDetailView {
+  contract_version: 1;
+  candidate: CandidateLibraryEntry;
+  topology_hash: string | null;
+  compile: string | null;
+  verification: string | null;
+  evidence_ids: string[];
+  generator_provenance: Record<string, unknown> | null;
+  promotion: {
+    promoted: boolean;
+    message: string | null;
+  };
+}
+
+/** §32/§33 capability explorer + detail. Every archaeology record appears;
+ * core product systems ride alongside. Maturity determines what the user
+ * can do — never whether the row exists. */
+export interface CapabilityExplorerRow {
+  capability_id: string;
+  title: string;
+  ladder: StageLadder;
+  maturity: MaturityLevel;
+  evidence: string | null;
+}
+
+export interface CapabilityExplorerView {
+  contract_version: 1;
+  rows: CapabilityExplorerRow[];
+}
+
+export interface CapabilityDetailView {
+  contract_version: 1;
+  capability_id: string;
+  title: string;
+  ladder: StageLadder;
+  maturity: MaturityLevel;
+  description: string | null;
+  implementation: string[];
+  historical_evidence: string[];
+  missing_bridge: string | null;
+}
+
+/** §13 Wave-E performance. All values are MODELLED with
+ * PREDICTIVE VALIDATION NOT ESTABLISHED — never MEASURED. */
+export interface PerformanceMetricsView {
+  contract_version: 1;
+  makespan_s: number | null;
+  critical_path_s: number | null;
+  critical_path_note: string | null;
+  request_latency: {
+    mean_s: number | null;
+    median_s: number | null;
+    p95_s: number | null;
+    max_s: number | null;
+    sample_count: number | null;
+  } | null;
+  utilization: Record<string, number> | null;
+  sensitivity: Record<string, unknown> | null;
+  epistemic: 'MODELLED';
+  predictive_validation: 'NOT_ESTABLISHED';
+}
+
+/** §37 energy authorities. Six separate authorities, never one number.
+ * MECS native power is unavailable by construction. */
+export interface EnergyAuthorityView {
+  id: string;
+  fidelity: string;
+  unit: string | null;
+  inputs: string[];
+  source: string;
+  scope: string;
+  calibration: string | null;
+}
+
+export interface EnergyAuthoritiesView {
+  contract_version: 1;
+  authorities: EnergyAuthorityView[];
+  mecs_native_power: {
+    available: false;
+    reason: string;
+  };
+}
+
+/** §38/§39/§40 implementation lab. Generated ≠ executed ≠ passed. */
+export interface ImplementationStatusView {
+  contract_version: 1;
+  rtl: {
+    build: string | null;
+    simulation: string | null;
+    oracle: string | null;
+    design_identity: string | null;
+    epistemic: 'RTL_SIMULATION';
+  };
+  uvm_sva: {
+    generated: boolean;
+    executed: boolean;
+    passed: boolean | null;
+    assertions: number | null;
+    testbench: string | null;
+  };
+  cdc: {
+    component: string | null;
+    component_tests: string | null;
+    system_qualification: 'NOT_ESTABLISHED';
+  };
+}
+
+/** §41 reuse visibility. A hit references the reused evidence id plus
+ * every matched parent — never an invisible cache. */
+export interface ReuseInfoView {
+  reused: boolean;
+  reused_evidence_id: string | null;
+  matched_design: boolean | null;
+  matched_workload: boolean | null;
+  matched_backend_config: boolean | null;
+  matched_producer: boolean | null;
+  matched_semantics: boolean | null;
+}
+
+/** §42 search completeness. One of the three wordings; only EXHAUSTIVE
+ * may claim completeness over the declared space. */
+export type CompletenessKind = 'EXHAUSTIVE' | 'BUDGETED' | 'UNBOUNDED';
+
+export interface CompletenessView {
+  kind: CompletenessKind;
+  evaluated: number;
+  declared: number | null;
+  wording: string;
+  may_claim_optimality: boolean;
+}
+
+/** Product copy for a completeness panel. Only EXHAUSTIVE may claim
+ * completeness; anything else is "best observed among evaluated
+ * candidates" (or the heuristic variant). Pure — safe to unit-test. */
+export function completenessWording(
+  kind: CompletenessKind,
+  evaluated: number,
+  declared: number | null,
+): string {
+  if (kind === 'EXHAUSTIVE') {
+    return `Evaluated all ${evaluated} declared candidates.`;
+  }
+  if (kind === 'BUDGETED' && declared != null) {
+    return `${evaluated} of ${declared} declared candidates evaluated — best observed among evaluated candidates.`;
+  }
+  return `${evaluated} generated graphs explored — heuristic search, no claim of global optimality.`;
+}
+
+/** §21 tie rule. Identical objective values are NO DISTINCTION — never
+ * an arbitrary tie-break presented as superior. Pure. */
+export function tieVerdict(values: (number | null)[]): 'NO_DISTINCTION' | null {
+  const measured = values.filter((v): v is number => v != null);
+  if (measured.length < 2) return null;
+  return measured.every((v) => v === measured[0]) ? 'NO_DISTINCTION' : null;
+}
+
+/** §21 recommendation language. The engine recommends investigation,
+ * never a "winner". Pure. */
+export function recommendationLabel(): string {
+  return 'Recommended for further investigation (not a winner)';
+}
+
+/** §4 engineering units. Converts a time quantity into the largest unit
+ * that keeps a nonzero value nonzero — 0.00001172 s becomes 11.72 µs,
+ * never 0 cycles and never 0 s. Pure. */
+export function formatEngineeringTime(
+  seconds: number | null | undefined,
+): { text: string; unit: string } {
+  if (seconds == null || !Number.isFinite(seconds)) {
+    return { text: '—', unit: 's' };
+  }
+  const abs = Math.abs(seconds);
+  const table: [number, string][] = [
+    [1, 's'],
+    [1e-3, 'ms'],
+    [1e-6, 'µs'],
+    [1e-9, 'ns'],
+  ];
+  for (const [scale, unit] of table) {
+    const v = seconds / scale;
+    if (abs / scale >= 1 || unit === 'ns') {
+      const rounded = Math.round(v * 100) / 100;
+      const text = rounded === 0 && seconds !== 0
+        ? v.toPrecision(2)
+        : String(rounded);
+      return { text, unit };
+    }
+  }
+  return { text: String(seconds), unit: 's' };
+}

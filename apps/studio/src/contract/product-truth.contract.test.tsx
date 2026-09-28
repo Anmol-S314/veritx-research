@@ -194,12 +194,187 @@ describe('StudyVerdict', () => {
     expect(text).not.toMatch(/best measured design/i);
     // The word "winner" may appear only inside the explicit
     // not-a-winner disclaimer, never as a claim.
-    expect(text).not.toMatch(/\bwinner\b(?!\))/i);
+    const withoutDisclaimers = text.replace(/not a winner/gi, '');
+    expect(withoutDisclaimers).not.toMatch(/\bwinner\b/i);
     expect(text).toContain('Highest measured value (not a winner)');
     // Server verdict block with delta.
     expect(text).toContain('COMPARABLE');
     expect(text).toContain('-100');
     // Server capability truth.
     expect(text).toContain('SUPPORTED · READY');
+  });
+});
+
+// ── Studio vNext contract: scientific value, maturity, never-rules ─────
+import {
+  MATURITY_LEVELS,
+  completenessWording,
+  formatEngineeringTime,
+  isMaturityLevel,
+  recommendationLabel,
+  tieVerdict,
+} from '../api/types';
+import {
+  VNEXT_CANDIDATES_FIXTURE,
+  VNEXT_CAPABILITIES_FIXTURE,
+  VNEXT_ENERGY_FIXTURE,
+  VNEXT_IMPLEMENTATION_FIXTURE,
+  VNEXT_PERFORMANCE_FIXTURE,
+  VNEXT_SYNTHESIS_FIXTURE,
+} from '../fixtures';
+import { ScientificValue } from '../components/ScientificValue';
+
+describe('ScientificValue', () => {
+  it('carries an epistemic chip, unit and source on every number', () => {
+    const { container } = render(
+      <ScientificValue
+        value={11720}
+        unit="cycles"
+        epistemic="SIMULATED"
+        source="BookSim"
+        fidelity="NETWORK_PACKET_SIMULATION"
+        qualification="QUALIFIED"
+      />,
+    );
+    const text = container.textContent ?? '';
+    expect(text).toContain('11,720');
+    expect(text).toContain('cycles');
+    expect(text).toContain('SIMULATED');
+    expect(text).toContain('BookSim');
+    expect(text).toContain('QUALIFIED');
+  });
+
+  it('renders an explicit PROVENANCE GAP, never a bare number', () => {
+    const { container } = render(
+      <ScientificValue value={42} unit="cycles" epistemic={null} />,
+    );
+    expect(container.textContent ?? '').toContain('PROVENANCE GAP');
+  });
+
+  it('marks derived summaries with their sample count', () => {
+    const { container } = render(
+      <ScientificValue
+        value={2.1}
+        unit="µs"
+        epistemic="MODELLED"
+        source="Wave-E model"
+        sampleCount={64}
+      />,
+    );
+    expect(container.textContent ?? '').toContain('n=64');
+  });
+});
+
+describe('maturity vocabulary', () => {
+  it('is the closed six-level §44 language', () => {
+    expect([...MATURITY_LEVELS]).toEqual([
+      'AVAILABLE',
+      'EXPERIMENTAL',
+      'RESEARCH',
+      'HISTORICAL',
+      'BLOCKED',
+      'NOT_APPLICABLE',
+    ]);
+    expect(isMaturityLevel('RESEARCH')).toBe(true);
+    expect(isMaturityLevel('unsupported')).toBe(false);
+    expect(isMaturityLevel(null)).toBe(false);
+  });
+
+  it('labels every explorer row with a valid maturity — none hidden', () => {
+    for (const row of VNEXT_CAPABILITIES_FIXTURE.rows) {
+      expect(isMaturityLevel(row.maturity)).toBe(true);
+    }
+    const ids = VNEXT_CAPABILITIES_FIXTURE.rows.map((r) => r.capability_id);
+    expect(ids).toContain('torus');
+    expect(ids).toContain('gec-mecs');
+  });
+});
+
+describe('completeness wording', () => {
+  it('reserves completeness claims for EXHAUSTIVE', () => {
+    expect(completenessWording('EXHAUSTIVE', 27, 27)).toContain('all 27');
+    const budgeted = completenessWording('BUDGETED', 100, 12480);
+    expect(budgeted).toContain('best observed among evaluated candidates');
+    expect(budgeted).not.toMatch(/complete over/i);
+    const unbounded = completenessWording('UNBOUNDED', 250, null);
+    expect(unbounded).toContain('no claim of global optimality');
+    expect(VNEXT_SYNTHESIS_FIXTURE.completeness?.may_claim_optimality).toBe(
+      false,
+    );
+  });
+});
+
+describe('tie and recommendation language', () => {
+  it('reports NO DISTINCTION on ties, never a tie-break winner', () => {
+    expect(tieVerdict([11720, 11720])).toBe('NO_DISTINCTION');
+    expect(tieVerdict([11720, 13050])).toBeNull();
+    expect(tieVerdict([null, null])).toBeNull();
+  });
+
+  it('recommends investigation without winner language', () => {
+    const label = recommendationLabel();
+    expect(label).toContain('further investigation');
+    expect(label).not.toMatch(/best measured design/i);
+  });
+});
+
+describe('engineering units', () => {
+  it('uses µs for 11.72µs and never rounds nonzero to zero', () => {
+    const v = formatEngineeringTime(0.00001172);
+    expect(v.unit).toBe('µs');
+    expect(v.text).toContain('11.72');
+    const tiny = formatEngineeringTime(1e-12);
+    expect(tiny.text).not.toBe('0');
+    expect(formatEngineeringTime(null).text).toBe('—');
+  });
+});
+
+describe('vNext fixtures carry their authority honestly', () => {
+  it('keeps generator and measured objectives on separate fields', () => {
+    const c = VNEXT_SYNTHESIS_FIXTURE.candidates[0];
+    expect(c.generator_objective_name).toBe('traffic_weighted_hops');
+    expect(c.measured_cycles).toBe(11720);
+    expect(c.measured_backend).toBe('BOOKSIM_STANDALONE');
+    // Heuristic provenance: FEASIBLE, never OPTIMAL.
+    expect(c.solver_status).toBe('FEASIBLE');
+  });
+
+  it('marks Wave-E MODELLED, never MEASURED', () => {
+    expect(VNEXT_PERFORMANCE_FIXTURE.epistemic).toBe('MODELLED');
+    expect(VNEXT_PERFORMANCE_FIXTURE.predictive_validation).toBe(
+      'NOT_ESTABLISHED',
+    );
+    expect(
+      (VNEXT_PERFORMANCE_FIXTURE as unknown as Record<string, unknown>)
+        .measured,
+    ).toBeUndefined();
+  });
+
+  it('keeps energy authorities separate with MECS unavailable', () => {
+    const fids = VNEXT_ENERGY_FIXTURE.authorities.map((a) => a.fidelity);
+    expect(new Set(fids).size).toBe(fids.length);
+    expect(VNEXT_ENERGY_FIXTURE.mecs_native_power.available).toBe(false);
+    expect(VNEXT_ENERGY_FIXTURE.mecs_native_power.reason).toContain(
+      '_md_chan',
+    );
+  });
+
+  it('keeps generated/executed/passed distinct in the lab', () => {
+    expect(VNEXT_IMPLEMENTATION_FIXTURE.uvm_sva.generated).toBe(true);
+    expect(VNEXT_IMPLEMENTATION_FIXTURE.uvm_sva.executed).toBe(false);
+    expect(VNEXT_IMPLEMENTATION_FIXTURE.uvm_sva.passed).toBeNull();
+    expect(VNEXT_IMPLEMENTATION_FIXTURE.rtl.epistemic).toBe(
+      'RTL_SIMULATION',
+    );
+    expect(
+      VNEXT_IMPLEMENTATION_FIXTURE.cdc.system_qualification,
+    ).toBe('NOT_ESTABLISHED');
+  });
+
+  it('labels demonstration fixtures as demos — never live truth', () => {
+    expect(VNEXT_SYNTHESIS_FIXTURE.synthesis_id).toContain('demo');
+    expect(VNEXT_CANDIDATES_FIXTURE.entries[0].candidate_id).toContain(
+      'demo',
+    );
   });
 });

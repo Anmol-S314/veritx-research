@@ -332,3 +332,82 @@ export interface FixtureBundle {
   requirements: RequirementReport | null;
   optimization: OptimizationStudyView | null;
 }
+
+// ── Studio vNext contract mirrors (additive only — no frozen field renamed)
+// Synthesis studies, candidate records, Wave-E performance and capability
+// maturity mirror the backend authorities; Studio renders them verbatim.
+
+/** Synthesis engine vocabulary. Heuristic engines never claim global
+ * optimality; only MILP with a proven solve status may. */
+export type SynthesisMethod = 'milp' | 'sa' | 'bo' | 'rho' | 'grpo';
+
+export type SynthesisSolverStatus =
+  | 'OPTIMAL'
+  | 'FEASIBLE'
+  | 'TIME_LIMIT'
+  | 'INFEASIBLE'
+  | 'UNBOUNDED'
+  | 'UNKNOWN';
+
+/** Generator screening vs measured product evidence — separate by
+ * construction. A candidate is never VERIFIED because a generator
+ * prefers it. */
+export interface SynthesisCandidateRecord {
+  candidate_id: string;
+  method: SynthesisMethod | string;
+  solver_status: SynthesisSolverStatus | string;
+  generator_objective_name: string | null;
+  generator_objective_value: number | null;
+  generator_objective_is_measured_performance: false;
+  engine_semantics_version: string | null;
+  seed: number | null;
+  compile_status: string | null;
+  verification_status: string | null;
+  measured_backend: string | null;
+  measured_cycles: number | null;
+  evidence_id: string | null;
+}
+
+export interface SynthesisStudyRecord {
+  synthesis_id: string;
+  method: SynthesisMethod | string;
+  base_topology: string | null;
+  generated_count: number;
+  evaluated_count: number;
+  /** EXHAUSTIVE: "complete over this declared finite design space".\n   * Anything else: "best observed among evaluated candidates." */
+  completeness_kind: 'EXHAUSTIVE' | 'BUDGETED' | 'UNBOUNDED';
+  may_claim_optimality: boolean;
+}
+
+/** Wave-E model values. MODELLED + UNCALIBRATED always — never MEASURED,
+ * never cycles when the authority produced QTime seconds. */
+export interface WaveEPerformanceRecord {
+  makespan_s: number | null;
+  critical_path_s: number | null;
+  critical_path_excludes_resource_serialization: boolean;
+  request_latency_mean_s: number | null;
+  request_sample_count: number | null;
+  resource_utilization_max: number | null;
+  epistemic: 'MODELLED';
+  predictive_validation: 'NOT_ESTABLISHED';
+}
+
+/** Seven-stage maturity, one row per capability. PRODUCT false never
+ * hides the row — it sets the maturity state. */
+export interface CapabilityMaturityRecord {
+  capability_id: string;
+  intent: boolean;
+  materialized: boolean;
+  verified: boolean;
+  projected: boolean;
+  executable: boolean;
+  qualified: boolean;
+  product: boolean;
+  maturity:
+    | 'AVAILABLE'
+    | 'EXPERIMENTAL'
+    | 'RESEARCH'
+    | 'HISTORICAL'
+    | 'BLOCKED'
+    | 'NOT_APPLICABLE';
+}

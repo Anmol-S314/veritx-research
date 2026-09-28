@@ -3,21 +3,30 @@
 import { del, get, patch, post, put } from './client';
 import type {
   ArtifactChainView,
+  CandidateDetailView,
+  CandidateLibraryView,
   CanonicalRoute,
+  CapabilityDetailView,
+  CapabilityExplorerView,
   CompareView,
   CompileResultView,
   DesignViewV2,
   DraftView,
+  EnergyAuthoritiesView,
   EvaluationPlanView,
   EvidenceView,
   FederationBackendsView,
   HealthView,
   FabricPresetCatalogView,
+  ImplementationStatusView,
   JobView,
   OptimizationCapabilities,
   OptimizationView,
+  PerformanceMetricsView,
   ProjectView,
   QualificationView,
+  SynthesisMethodView,
+  SynthesisResultView,
   ValidationCampaignsView,
   PreflightView,
   RevisionDiffView,
@@ -250,6 +259,53 @@ export const api = {
       body ?? {}),
   serving: (servingId: string) =>
     get<ServingView>(`/serving/${encodeURIComponent(servingId)}`),
+
+  // ── Studio vNext surfaces (product API v1) ─────────────────────────
+  // Where the backend has not wired a route yet the gateway answers 404
+  // (or 503 when the producer is absent). Callers MUST surface the
+  // capability maturity state — RESEARCH / HISTORICAL / BLOCKED — and
+  // MUST NOT substitute an offline fixture for a live project (§45).
+  synthesisMethods: () =>
+    get<{ contract_version: 1; methods: SynthesisMethodView[] }>(
+      '/synthesis/methods',
+    ),
+  synthesisSubmit: (body: Record<string, unknown>) =>
+    post<JobView>('/synthesis', body),
+  synthesis: (synthesisId: string) =>
+    get<SynthesisResultView>(
+      `/synthesis/${encodeURIComponent(synthesisId)}`,
+    ),
+  synthesisPromote: (synthesisId: string, candidateId: string) =>
+    post<DraftView>(
+      `/synthesis/${encodeURIComponent(synthesisId)}`
+      + `/candidates/${encodeURIComponent(candidateId)}/promote`,
+      {},
+    ),
+  candidates: (params?: { study?: string; method?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.study) q.set('study', params.study);
+    if (params?.method) q.set('method', params.method);
+    const suffix = q.toString() ? `?${q.toString()}` : '';
+    return get<CandidateLibraryView>(`/candidates${suffix}`);
+  },
+  candidate: (candidateId: string) =>
+    get<CandidateDetailView>(
+      `/candidates/${encodeURIComponent(candidateId)}`,
+    ),
+  capabilitiesExplorer: () =>
+    get<CapabilityExplorerView>('/capabilities/explorer'),
+  capabilityDetail: (capabilityId: string) =>
+    get<CapabilityDetailView>(
+      `/capabilities/${encodeURIComponent(capabilityId)}`,
+    ),
+  performance: (revisionId: string) =>
+    get<PerformanceMetricsView>(
+      `/revisions/${encodeURIComponent(revisionId)}/performance`,
+    ),
+  energyAuthorities: () =>
+    get<EnergyAuthoritiesView>('/implementation/energy'),
+  implementationStatus: () =>
+    get<ImplementationStatusView>('/implementation/status'),
 };
 
 export * from './types';

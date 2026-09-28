@@ -163,7 +163,10 @@ export default function OfflineDemo(): ReactElement {
           />
         )}
         {section === 'optimize' && (
-          <OptimizeView optimization={fixture.optimization} design={fixture.design} />
+          <>
+            <p className="muted">Demonstration fixture: conclusion first — headline the measured finding, then the definition. Live studies lead with StudyVerdict.</p>
+            <OptimizeView optimization={fixture.optimization} design={fixture.design} />
+          </>
         )}
       </main>
       <footer className="statusbar">

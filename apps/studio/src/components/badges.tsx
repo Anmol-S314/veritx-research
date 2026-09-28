@@ -56,6 +56,11 @@ export function humanize(key: string): string {
 
 export function fmtNum(v: unknown): string {
   if (v === null || v === undefined) return '—';
-  if (typeof v === 'number') return v.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  if (typeof v === 'number') {
+    if (!Number.isFinite(v)) return String(v);
+    // Never round a nonzero engineering value to exact zero.
+    if (v !== 0 && Math.abs(v) < 0.005) return v < 0 ? '<-0.01' : '<0.01';
+    return v.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  }
   return String(v);
 }
