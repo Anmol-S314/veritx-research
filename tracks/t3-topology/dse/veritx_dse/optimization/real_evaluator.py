@@ -215,7 +215,10 @@ class RealCandidateEvaluator:
                  require_quiescence: bool = True,
                  questions: tuple[EvaluationQuestion, ...] | None = None,
                  objectives: tuple[Any, ...] | None = None,
-                 registry: Any | None = None):
+                 registry: Any | None = None,
+                 astra_binary: str | Path | None = None,
+                 ramulator_vendor_dir: str | Path | None = None,
+                 ramulator_python: str | None = None):
         if not binary:
             raise EvaluationError("real adapter needs a backend binary")
         self.binary = str(binary)
@@ -227,6 +230,9 @@ class RealCandidateEvaluator:
         self.questions = None if questions is None else tuple(questions)
         self.objectives = None if objectives is None else tuple(objectives)
         self.registry = registry
+        self.astra_binary = astra_binary
+        self.ramulator_vendor_dir = ramulator_vendor_dir
+        self.ramulator_python = ramulator_python
         self.calls = 0
 
     def _resolve_questions(self) -> tuple[EvaluationQuestion, ...]:
@@ -265,7 +271,10 @@ class RealCandidateEvaluator:
             return self.registry
         from veritx_dse.backend.registry import default_backend_registry
         return default_backend_registry(
-            booksim_bin=self.binary, repo_root=self.repo_root)
+            booksim_bin=self.binary, repo_root=self.repo_root,
+            astra_bin=self.astra_binary,
+            ramulator_vendor_dir=self.ramulator_vendor_dir,
+            ramulator_python=self.ramulator_python)
 
     def evaluate(self, candidate: Any) -> CandidateEvaluation:
         request = candidate.request

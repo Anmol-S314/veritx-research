@@ -54,6 +54,7 @@ from typing import Any
 from veritx_dse.application.authenticated_evaluation import (
     verify_authenticated_backend_evaluation,
 )
+from veritx_dse.application.evaluation_question import EvaluationQuestion
 from veritx_dse.core.artifact import content_id
 from veritx_dse.optimization.evaluators import (
     AUTHORITY_CERTIFIED_BACKEND,
@@ -179,21 +180,34 @@ class CertifiedBackendConfig:
     from this config itself; no caller-supplied evaluator can enter the
     certified path. Quiescence is a certification obligation and is NOT a
     config knob: certified execution is always quiescent.
+
+    ``binary`` is the BookSim binary (the network leg). ``astra_binary``
+    and the Ramulator discovery options are None by default, in which
+    case each backend resolves through its own canonical authority
+    (ASTRA resolver / Ramulator discovery) — never a second matrix.
     """
+
     binary: Any
     run_root: Any
     network_clock_hz: int | None = None
     timeout_s: int = 300
     repo_root: Any = None
+    astra_binary: Any = None
+    ramulator_vendor_dir: Any = None
+    ramulator_python: str | None = None
 
 
-def _make_real_certified_evaluator(config: CertifiedBackendConfig) -> Any:
+def _make_real_certified_evaluator(config: CertifiedBackendConfig,
+                                   definition: Any | None = None) -> Any:
     """Module-private, non-overridable certified evaluator factory (C1).
 
     ``optimize_certified`` calls THIS function, not a method, so ordinary
     subclass polymorphism cannot substitute a synthetic evaluator into
     the certified path. Quiescence is hard-coded True (C3): a certified
-    result cannot be produced by a non-quiescent execution.
+    result cannot be produced by a non-quiescent execution. The
+    definition's objectives ride along so the port executes exactly the
+    questions the study reads (plan once, one run per question); None
+    means the legacy network-only evaluation.
     """
     from .real_evaluator import RealCandidateEvaluator
     return RealCandidateEvaluator(
@@ -202,6 +216,11 @@ def _make_real_certified_evaluator(config: CertifiedBackendConfig) -> Any:
         network_clock_hz=config.network_clock_hz,
         timeout_s=config.timeout_s,
         repo_root=config.repo_root,
+        astra_binary=config.astra_binary,
+        ramulator_vendor_dir=config.ramulator_vendor_dir,
+        ramulator_python=config.ramulator_python,
+        objectives=(None if definition is None
+                    else tuple(definition.objectives)),
         require_quiescence=True)
 
 
@@ -263,6 +282,237 @@ def _has_metric_authority(registry: Any, metric: str) -> bool:
     """Does the frozen certified registry carry this metric? (A4/R2)."""
     return isinstance(registry, CertifiedMetricRegistry) and \
         registry.has_metric(metric)
+
+
+def _objective_question(objective: Any) -> EvaluationQuestion:
+    """The federation question an objective reads (legacy default: network).
+
+    Objectives constructed before the evaluation-policy extension carry
+    no question attribute; they mean NETWORK_COMPLETION (the legacy
+    BookSim-only objective) — never an unknown.
+    """
+    question = getattr(objective, "question", None)
+    if question is None:
+        return EvaluationQuestion.NETWORK_COMPLETION
+    if isinstance(question, EvaluationQuestion):
+        return question
+    raise OptimizationResultError(
+        f"objective {getattr(objective, 'metric', objective)!r} carries "
+        f"a non-question evaluation policy {question!r} — refusing an "
+        f"objective that names no federation question")
+
+
+def _federated_objective_metrics(ev: Any, definition: Any,
+                                 port_measured: dict[str, float],
+                                 port_invalid: dict[str, str],
+                                 ) -> tuple[dict[str, float], set[str]]:
+    """Re-derive federated values from carried analyses.
+
+    Returns (measured, federated_keys). The certified discipline,
+    extended to the federation: the evaluator's ``objective_values``
+    never score. Network-question objectives come ONLY from the frozen
+    certified registry over the verified claims
+    (``_authoritative_metrics``); every other objective re-derives here
+    from the carried federated analyses' normalized envelopes. A
+    misreport refuses; a value the envelopes do not evidence is simply
+    absent (the optimizer marks it UNMEASURABLE with the evaluator's
+    exact miss reason when present).
+
+    Constraint metrics (which carry no question) resolve under the
+    unambiguous-union rule: exactly one EVALUATED analysis evidencing a
+    scalar row binds it; zero — or several models evidencing the same
+    key — leaves it unmeasured, never guessed across models.
+
+    Per-value law: the analysis must be EVALUATED with an envelope, a
+    backend, a qualification, a native evidence id and a
+    dimension-free metric row; a definition backend constraint the plan
+    did not satisfy is unmeasured, never substituted.
+    """
+    measured: dict[str, float] = {}
+    federated_keys: set[str] = set()
+    analyses = getattr(ev, "federated_analyses", None) or ()
+    if not analyses:
+        return measured, federated_keys
+    by_question: dict[Any, Any] = {}
+    for row in analyses:
+        by_question.setdefault(getattr(row, "question", None), row)
+
+    def _check(metric: str, derived: float, where: str) -> None:
+        if metric in port_invalid:
+            raise OptimizationResultError(
+                f"certified evaluation for {ev.candidate_id!r} reports "
+                f"federated metric {metric!r} as "
+                f"{port_invalid[metric]} while {where} evidences "
+                f"{derived!r} — refusing a misreported metric")
+        if metric in port_measured and port_measured[metric] != derived:
+            raise OptimizationResultError(
+                f"certified evaluation for {ev.candidate_id!r} reports "
+                f"federated metric {metric!r}={port_measured[metric]!r} "
+                f"but {where} evidences {derived!r} — refusing a "
+                f"misreported metric")
+
+    def _scalar(row: Any, metric: str) -> Any | None:
+        envelope = getattr(row, "normalized_evidence", None)
+        if getattr(row, "status", None) != "EVALUATED" or envelope is None:
+            return None
+        if not getattr(row, "qualification", None) or \
+                not getattr(row, "native_evidence_id", None):
+            return None
+        found = [m for m in envelope.metrics
+                 if m.key == metric and m.dimensions == ()]
+        return found[0] if found else None
+
+    for objective in definition.objectives:
+        metric = getattr(objective, "metric", None)
+        question = _objective_question(objective)
+        if question is EvaluationQuestion.NETWORK_COMPLETION:
+            continue
+        row = by_question.get(question)
+        if row is None:
+            continue
+        constraint = getattr(objective, "backend_id", None)
+        if constraint is not None and \
+                getattr(row, "backend_id", None) != constraint:
+            continue
+        found = _scalar(row, metric)
+        if found is None:
+            continue
+        derived = float(found.value)
+        _check(metric, derived, f"the {question.value} evidence")
+        measured[metric] = derived
+        federated_keys.add(metric)
+    for constraint_def in (definition.constraints or []):
+        metric = getattr(constraint_def, "metric", None)
+        if metric in measured or not isinstance(metric, str):
+            continue
+        rows = [(q, row) for q, row in by_question.items()
+                if q is not EvaluationQuestion.NETWORK_COMPLETION
+                and _scalar(row, metric) is not None]
+        # Zero — or several models evidencing the same key — binds
+        # nothing: a constraint never guesses across models.
+        if len(rows) != 1:
+            continue
+        question, row = rows[0]
+        derived = float(_scalar(row, metric).value)
+        _check(metric, derived, f"the {question.value} evidence")
+        measured[metric] = derived
+        federated_keys.add(metric)
+    return measured, federated_keys
+
+
+def _provenance_docs(ev: Any, measured: dict[str, float]
+                     ) -> tuple[dict[str, Any], ...]:
+    """Canonical per-objective provenance rows for a candidate record.
+
+    Only bound (measured) metrics carry provenance, in metric order. A
+    float without provenance never reaches the view as an objective.
+    """
+    carried = getattr(ev, "objective_provenance", None) or {}
+    docs = []
+    for metric in sorted(measured):
+        row = carried.get(metric)
+        if row is None:
+            continue
+        docs.append(row.to_dict() if hasattr(row, "to_dict") else dict(row))
+    return tuple(docs)
+
+
+def _enforce_federated_comparability(
+        records: list["CandidateRecord"], definition: Any
+        ) -> list["CandidateRecord"]:
+    """Pareto comparability over model fidelity (Step 4).
+
+    Eligible only when, per objective: the question matches the
+    definition, the backend satisfies the definition constraint, the
+    native evidence exists, the qualification passes (present and
+    identical across the eligible set — comparing a QUALIFIED number
+    against a DIAGNOSTIC one silently would be a lie), the unit matches
+    and the model fidelity matches. A divergent candidate is demoted
+    to ineligible with the exact difference — never compared, never
+    dropped silently. In particular a BookSim network completion and an
+    ASTRA system makespan can never be one objective merely because
+    both use cycles: different questions are different semantic
+    families, structurally (each objective axis carries its question).
+    """
+    import dataclasses as _dc
+    eligible = [r for r in records if r.pareto_eligible]
+    if len(eligible) < 2:
+        return records
+    reference = {o.metric if hasattr(o, "metric") else o["metric"]:
+                 _objective_question(o) for o in definition.objectives}
+    prov_index = {}
+    for record in eligible:
+        per_metric: dict[str, dict[str, Any]] = {}
+        for doc in record.objective_provenance:
+            per_metric[doc.get("metric_key")] = doc
+        prov_index[record.candidate_id] = per_metric
+    demotions: dict[str, str] = {}
+    for objective in definition.objectives:
+        metric = objective.metric if hasattr(objective, "metric") \
+            else objective["metric"]
+        question = reference[metric]
+        constraint = getattr(objective, "backend_id", None)
+        first_signature: tuple | None = None
+        first_id: str | None = None
+        for record in eligible:
+            if record.candidate_id in demotions:
+                continue
+            doc = prov_index[record.candidate_id].get(metric)
+            if doc is None:
+                continue
+            if doc.get("question") != question.value:
+                demotions[record.candidate_id] = (
+                    f"objective {metric!r} answers "
+                    f"{doc.get('question')!r}, not the definition's "
+                    f"{question.value!r} — different semantic families "
+                    f"never share an objective axis")
+                continue
+            if constraint is not None and \
+                    doc.get("backend_id") != constraint:
+                demotions[record.candidate_id] = (
+                    f"objective {metric!r} was produced by "
+                    f"{doc.get('backend_id')!r}, violating the "
+                    f"definition backend constraint {constraint!r}")
+                continue
+            if not doc.get("native_evidence_id"):
+                demotions[record.candidate_id] = (
+                    f"objective {metric!r} carries no native evidence "
+                    f"id — nothing comparable was measured")
+                continue
+            if not doc.get("qualification"):
+                demotions[record.candidate_id] = (
+                    f"objective {metric!r} carries no qualification — "
+                    f"an unqualified measurement never compares")
+                continue
+            # Unit/fidelity/qualification must be IDENTICAL across the
+            # eligible set (a cycles-only None unit matches a None
+            # unit — BookSim native stats honestly carry no unit — but
+            # never a "cycles" unit, and never a different fidelity).
+            signature = (doc.get("unit"), doc.get("model_fidelity"),
+                         doc.get("qualification"))
+            if first_signature is None:
+                first_signature, first_id = signature, \
+                    record.candidate_id
+            elif signature != first_signature:
+                demotions[record.candidate_id] = (
+                    f"objective {metric!r} is not comparable across the "
+                    f"eligible set (unit/fidelity/qualification "
+                    f"{signature!r} vs {first_id!r}'s "
+                    f"{first_signature!r}) — MODEL DIFFERENCE, not a "
+                    f"performance difference")
+    if not demotions:
+        return records
+    out = []
+    for record in records:
+        reason = demotions.get(record.candidate_id)
+        if reason is None or not record.pareto_eligible:
+            out.append(record)
+            continue
+        prior = record.eligibility_reason
+        out.append(_dc.replace(
+            record, pareto_eligible=False,
+            eligibility_reason=((prior + "; " if prior else "") + reason)))
+    return out
 
 
 def _authoritative_metrics(ev: Any, definition: Any, claims: Any,
@@ -355,6 +605,12 @@ class CandidateRecord:
     product_requirement_details: tuple = ()
     constraint_details: tuple = ()
     objective_details: tuple = ()
+    #: Per-measured-objective federation provenance (Step 2): one row
+    #: per bound metric {metric_key, question, backend_id,
+    #: model_fidelity, qualification, native_evidence_id, unit, value},
+    #: in metric order. Part of result_id: equal floats from different
+    #: models hash differently.
+    objective_provenance: tuple = ()
     constraints_satisfied: bool | None = None
     eligibility_reason: str | None = None
 
@@ -411,6 +667,8 @@ class OptimizationResult:
             "constraint_details": [
                 dict(d) for d in r.constraint_details],
             "objective_details": [dict(d) for d in r.objective_details],
+            "objective_provenance": [dict(d)
+                                     for d in r.objective_provenance],
             "constraints_satisfied": r.constraints_satisfied,
             "pareto_eligible": bool(r.pareto_eligible),
             "pareto_member": bool(r.pareto_member),
@@ -445,6 +703,7 @@ class OptimizationResult:
         """Lossless v2 definition projection.
 
         Identity (`definition_id`), objective direction (MIN/MAX),
+        objective evaluation policy (question + backend constraint),
         constraint operator and threshold, search method and selection
         policy are all explicit — a consumer never has to infer
         semantics from bare metric strings.
@@ -452,7 +711,9 @@ class OptimizationResult:
         defn = self.definition
         return {
             "definition_id": defn.definition_id(),
-            "objectives": [{"metric": o.metric, "direction": o.direction}
+            "objectives": [{"metric": o.metric, "direction": o.direction,
+                            "question": _objective_question(o).value,
+                            "backend_id": getattr(o, "backend_id", None)}
                            for o in defn.objectives],
             "constraints": [{"metric": c.metric, "op": c.op,
                              "threshold": c.threshold}
@@ -492,6 +753,8 @@ class OptimizationResult:
                 "objective_values": {k: float(v)
                                      for k, v in r.objective_values.items()},
                 "objective_availability": dict(r.objective_availability),
+                "objective_provenance": [dict(d)
+                                         for d in r.objective_provenance],
                 "constraint_verdicts": dict(r.constraint_verdicts),
                 "evaluation_authority": r.evaluation_authority,
                 "compilation_status": r.compilation_status,
@@ -715,7 +978,8 @@ class Optimizer:
             raise OptimizationResultError(
                 f"optimize_certified requires a CertifiedBackendConfig, "
                 f"got {type(backend_config).__name__}")
-        evaluator = _make_real_certified_evaluator(backend_config)
+        evaluator = _make_real_certified_evaluator(backend_config,
+                                                   definition)
         core = self._optimize_core(
             base_request, definition, evaluator,
             accept_certified_claims=True,
@@ -845,6 +1109,27 @@ class Optimizer:
                     ev, definition, claims, measured_all, invalid_values,
                     registry)
                 invalid_values = {}
+                # Federation: non-network questions re-derive from the
+                # carried analyses (same misreport discipline). Two
+                # models evidencing one key is a collision, never a
+                # merge — the evaluator already refuses it; this is
+                # the second gate for ports that bypass it.
+                federated_measured, federated_keys = \
+                    _federated_objective_metrics(
+                        ev, definition, measured_all, invalid_values)
+                for key, value in federated_measured.items():
+                    if key in measured_all and \
+                            measured_all[key] != value:
+                        raise OptimizationResultError(
+                            f"certified evaluation for "
+                            f"{ev.candidate_id!r} evidences metric "
+                            f"{key!r} as {measured_all[key]!r} from the "
+                            f"network proof and as {value!r} from "
+                            f"federated evidence — two models, one "
+                            f"metric: refusing rather than merging")
+                    measured_all[key] = value
+            else:
+                federated_keys = set()
             if ev.status == "EVALUATED":
                 verdicts = evaluate_all(definition.constraints,
                                         measured_all)
@@ -887,8 +1172,11 @@ class Optimizer:
                     state = "UNMEASURABLE"
                     reason = (f"evaluation status {ev.status} — "
                               "no measured value")
-                elif claims is not None and not _has_metric_authority(
-                        registry, o.metric):
+                elif (claims is not None
+                        and _objective_question(o) is
+                        EvaluationQuestion.NETWORK_COMPLETION
+                        and not _has_metric_authority(
+                            registry, o.metric)):
                     state = "UNMEASURABLE"
                     reason = (f"objective {o.metric} has no registered "
                               f"metric authority over the authenticated "
@@ -903,10 +1191,13 @@ class Optimizer:
                     reason = None
                 else:
                     state = "UNMEASURABLE"
-                    reason = (f"objective {o.metric} not evidenced by "
-                              "the authenticated proof" if claims is not None
-                              else f"objective {o.metric} not evidenced "
-                                   "by evaluation")
+                    miss = getattr(
+                        ev, "objective_unmeasured_reasons", None) or {}
+                    reason = miss.get(o.metric) or (
+                        f"objective {o.metric} not evidenced by "
+                        "the authenticated proof" if claims is not None
+                        else f"objective {o.metric} not evidenced "
+                             "by evaluation")
                 objective_availability[o.metric] = state
                 if state != "MEASURED":
                     objective_entries.append({
@@ -962,14 +1253,23 @@ class Optimizer:
                 eligibility_reasons.append(
                     "hard constraints are not all SATISFIED")
             if claims is not None:
-                # A4: every requested objective AND constraint metric must
-                # have a registered producer over the derived claims.
+                # A4: every network-question objective AND every
+                # constraint metric must have a registered producer
+                # over the derived claims — unless the federation
+                # derived it (non-network objectives re-derive from
+                # carried analyses above; constraint metrics under the
+                # unambiguous-union rule). Registry silence plus
+                # federation silence is UNMEASURABLE authority.
                 needed = sorted(
-                    {o.metric for o in definition.objectives} |
-                    {c.metric for c in (definition.constraints or [])})
+                    {o.metric for o in definition.objectives
+                     if _objective_question(o) is
+                     EvaluationQuestion.NETWORK_COMPLETION} |
+                    {c.metric if hasattr(c, "metric") else c["metric"]
+                     for c in (definition.constraints or [])})
                 missing_authority = [m for m in needed
                                      if not _has_metric_authority(registry,
-                                                                  m)]
+                                                                  m)
+                                     and m not in federated_keys]
                 if missing_authority:
                     eligibility_reasons.append(
                         "metric(s) without a registered metric authority "
@@ -1003,6 +1303,7 @@ class Optimizer:
                 product_requirement_details=product_details,
                 constraint_details=constraint_details,
                 objective_details=objective_details,
+                objective_provenance=_provenance_docs(ev, measured_all),
                 constraints_satisfied=constraints_satisfied,
                 eligibility_reason=eligibility_reason,
             )
@@ -1011,6 +1312,16 @@ class Optimizer:
                 feasible_values[cand.candidate_id] = {
                     o.metric: measured_all[o.metric]
                     for o in definition.objectives}
+        # Step 4: Pareto comparability over model fidelity. Candidates
+        # whose provenance diverges (different unit/fidelity/
+        # qualification for one objective axis, or a different question
+        # than the definition) are demoted to ineligible with the exact
+        # difference — never compared across models.
+        records = _enforce_federated_comparability(records, definition)
+        feasible_values = {
+            r.candidate_id: {o.metric: r.objective_values[o.metric]
+                             for o in definition.objectives}
+            for r in records if r.pareto_eligible}
         front = _pareto_ids(feasible_values, definition.objectives)
         front_set = set(front)
         records = [CandidateRecord(
@@ -1033,6 +1344,7 @@ class Optimizer:
             product_requirement_details=r.product_requirement_details,
             constraint_details=r.constraint_details,
             objective_details=r.objective_details,
+            objective_provenance=r.objective_provenance,
             constraints_satisfied=r.constraints_satisfied,
             eligibility_reason=r.eligibility_reason,
         ) for r in records]

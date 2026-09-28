@@ -82,6 +82,17 @@
                   "MIN",
                   "MAX"
                 ]
+              },
+              "question": {
+                "type": "string",
+                "description": "Federation question the metric is read from (P4 evaluation policy). Absent on pre-P4 views, which mean NETWORK_COMPLETION."
+              },
+              "backend_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Required backend, or null when the federation planner adjudicates."
               }
             },
             "unevaluatedProperties": false
@@ -243,6 +254,60 @@
               ]
             }
           },
+          "objective_provenance": {
+            "type": "array",
+            "description": "One row per measured objective value: metric key, question, backend, model fidelity, qualification, native evidence id, unit, value. A float without provenance is not an optimizer objective.",
+            "items": {
+              "type": "object",
+              "required": [
+                "metric_key",
+                "question",
+                "value"
+              ],
+              "properties": {
+                "metric_key": {
+                  "type": "string"
+                },
+                "question": {
+                  "type": "string"
+                },
+                "backend_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "model_fidelity": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "qualification": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "native_evidence_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "unit": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "unevaluatedProperties": false
+            }
+          },
           "constraint_verdicts": {
             "type": "object",
             "description": "OPTIMIZATION-CONSTRAINT authority: did the candidate satisfy the study's hard constraints? Three-state, never a boolean.",
@@ -282,9 +347,10 @@
               "INVALID",
               "UNSUPPORTED",
               "BACKEND_UNAVAILABLE",
-              "FAILED"
+              "FAILED",
+              "INCONCLUSIVE"
             ],
-            "description": "Real evaluation taxonomy, never collapsed: a simulated run that fails a binding product requirement is still EVALUATED (product_requirements.satisfied=false)."
+            "description": "Real evaluation taxonomy, never collapsed: a simulated run that fails a binding product requirement is still EVALUATED (product_requirements.satisfied=false); INCONCLUSIVE is a native verdict that drained without deciding (never a crash, never infeasible)."
           },
           "evaluation_reason": {
             "type": [
