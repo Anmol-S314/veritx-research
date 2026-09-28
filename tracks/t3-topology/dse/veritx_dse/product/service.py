@@ -3372,6 +3372,11 @@ class ProductService:
             if row_comparable:
                 row_verdict: str = "COMPARABLE"
                 row_differs: str | None = None
+            elif (compatibility["same_workload"]
+                    and compatibility["same_backend"]
+                    and not compatibility["both_qualified"]):
+                row_verdict = "QUALIFICATION_DIFFERENCE"
+                row_differs = "qualification"
             elif not compatibility["compatible"]:
                 row_verdict = "NOT_COMPARABLE"
                 row_differs = "scenario"

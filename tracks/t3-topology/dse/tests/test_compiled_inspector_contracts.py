@@ -402,9 +402,14 @@ def test_p2_u_a_capability_limitation_does_not_invalidate_the_design():
     assert result["certificate"]["overall"] == "PASS"
     consequences = result["capability_consequences"]
     assert any(c["capability_id"] == "COMM-006" for c in consequences)
-    # the consequence is a downstream limit, not a certificate failure
+    # Each consequence is a downstream limit, not a certificate failure.
+    # COMM-006 (multi-class) is WIRED under the MC envelope; anything
+    # else without an envelope stays NOT_AVAILABLE.
     for consequence in consequences:
-        assert consequence["wiring"] == "NOT_AVAILABLE"
+        if consequence["capability_id"] == "COMM-006":
+            assert consequence["wiring"] == "WIRED", consequence
+        else:
+            assert consequence["wiring"] == "NOT_AVAILABLE", consequence
 
 
 # ── P2-V: provenance in technical detail ───────────────────────────────

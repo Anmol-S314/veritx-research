@@ -250,8 +250,11 @@ def test_legacy_rows_carry_verdicts(tmp_path):
     a = mkrun("run-a", "wl")
     d = mkrun("run-d", "wl")
     same = svc.compare(a, d)
-    assert same["rows"][0]["comparable"] is True
-    assert same["rows"][0]["verdict"] == "COMPARABLE"
+    # Bundle-less fixtures read back UNVERIFIED, so the same-workload
+    # pair is a qualification difference — never COMPARABLE without a
+    # QUALIFIED evidence chain on both sides.
+    assert same["rows"][0]["verdict"] == "QUALIFICATION_DIFFERENCE"
+    assert same["rows"][0]["differs"] == "qualification"
     e = mkrun("run-e", "other")
     cross = svc.compare(a, e)
     assert all(r["verdict"] == "NOT_COMPARABLE" for r in cross["rows"])

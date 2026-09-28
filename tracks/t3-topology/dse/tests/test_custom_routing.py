@@ -428,10 +428,17 @@ def test_custom_policy_is_accepted_by_the_certified_anynet_profile():
 
     class _P:
         pass
+    from veritx_dse.model.vc_resource import (
+        vc_resources_from_assignment,
+    )
     p = _P()
     p.topology = c.bundle.topology
     p.route = c.bundle.router_route
     p.attachment = c.bundle.attachment
+    # The qualifier also proves the VC envelope (class-to-VC subsets
+    # are not executed on AnyNet); the stub carries the real compiled
+    # VC resource, never a mock.
+    p.vc_resource = vc_resources_from_assignment(c.bundle.vc_assignment)
     qualify_anynet_min_hops(p)          # raises if the backend path closes
 
 
