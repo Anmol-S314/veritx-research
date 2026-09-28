@@ -8,6 +8,11 @@ import { Compile, Design, Review, Simulate, Verify } from './pages/design';
 import { Compare, Optimize } from './pages/optimize';
 import { Serving } from './pages/serving';
 import { Performance } from './pages/performance';
+import { Synthesize } from './pages/synthesize';
+import { Candidates } from './pages/candidates';
+import { Reproduce } from './pages/reproduce';
+import { CapabilitiesPage } from './pages/capabilities';
+import { ImplementationLabPage } from './pages/implementation-lab';
 import { Evidence, ValidationLab } from './pages/evidence';
 import OfflineDemo from './pages/offline';
 import BrandMark from './components/BrandMark';
@@ -68,19 +73,6 @@ function resolveNav(section: string): NavItem | null {
     }
   }
   return null;
-}
-
-/** vNext placeholder for sections whose page lane has not landed yet.
- * Page lanes replace the matching `case` in renderBody with the real
- * component; this text never pretends to be product functionality. */
-function VNextPlaceholder({ title, note }: { title: string; note: string }): ReactElement {
-  return (
-    <div className="vnext-placeholder">
-      <h2>{title}</h2>
-      <p className="muted">{note}</p>
-      <p className="muted">This workspace is under construction in Studio vNext.</p>
-    </div>
-  );
 }
 
 function Shell(): ReactElement {
@@ -160,19 +152,11 @@ function Shell(): ReactElement {
           case 'decide': return <Compare projectId={pid} />;
           case 'optimize': return <Optimize projectId={pid} />;
           case 'performance': return <Performance projectId={pid} />;
-          case 'synthesize':
-          case 'candidates':
-          case 'reproduce':
-          case 'capabilities':
-          case 'implementation': {
-            const item = resolveNav(section);
-            return (
-              <VNextPlaceholder
-                title={item?.label ?? section ?? 'Section'}
-                note={item?.placeholder ?? ''}
-              />
-            );
-          }
+          case 'synthesize': return <Synthesize projectId={pid} />;
+          case 'candidates': return <Candidates projectId={pid} />;
+          case 'reproduce': return <Reproduce projectId={pid} />;
+          case 'capabilities': return <CapabilitiesPage />;
+          case 'implementation': return <ImplementationLabPage />;
           case 'runs': return <Runs />;
           case 'trust': return <Trust />;
           default: return <Overview projectId={pid} />;
