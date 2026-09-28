@@ -392,6 +392,15 @@ def get_candidate(svc: Any, candidate_id: str) -> dict[str, Any]:
         raise intent_error(
             f"no such candidate: {candidate_id!r}") from exc
     detail: dict[str, Any] = {"contract_version": 1, **record}
+    detail["pipeline"] = {
+        "compiled": bool(record.get("compiled")),
+        "verified": bool(record.get("verified")),
+        "evaluated": bool(record.get("evaluated")),
+        "adopted": bool(record.get("adopted")),
+        "revision_id": record.get("revision_id"),
+        "evaluated_run_id": record.get("evaluated_run_id"),
+        "adopted_project_id": record.get("adopted_project_id"),
+    }
     origin = record.get("origin") or {}
     if origin.get("kind") == "synthesis" and origin.get("synthesis_id"):
         pid = svc.store.find_synthesis_project(origin["synthesis_id"])
@@ -426,6 +435,58 @@ def _seed_links(synthesis: dict[str, Any]) -> set[tuple[int, int]] | None:
             except Exception:
                 return None
     return None
+
+
+def mark_candidate_compiled(store: Any, candidate_id: str,
+                              revision_id: str, verified: bool) -> dict[str, Any]:
+    """Flip a synthesis candidate's compiled/verified flags post-compile.
+
+    Called by compile_draft when the promoted draft compiles. Only
+    synthesis candidates carry these flags (optimization candidates live
+    in studies); anything else is a typed refusal. Never synthesizes
+    status: compiled requires a real COMPILED compilation, verified a
+    real PASS certificate.
+    """
+    from veritx_dse.product.store import utcnow
+    try:
+        record = store.load_candidate(candidate_id)
+    except Exception as exc:
+        raise intent_error(
+            f"no such candidate: {candidate_id!r}") from exc
+    origin = record.get("origin") or {}
+    if origin.get("kind") not in ("synthesis",):
+        raise intent_error(
+            f"candidate {candidate_id!r} is not a synthesis candidate "
+            f"(origin {origin!r}) — status flips apply to the candidate "
+            "library only")
+    return store.update_candidate(
+        candidate_id, compiled=True, verified=bool(verified),
+        revision_id=revision_id, compiled_at=utcnow())
+
+
+def mark_candidate_evaluated(store: Any, candidate_id: str,
+                             run_id: str) -> dict[str, Any]:
+    """Flip a synthesis candidate's evaluated flag post-measurement.
+
+    Called by run_evaluation when the candidate's revision produces an
+    EVALUATED network measurement. The measurement is the run's own;
+    this only records that it exists.
+    """
+    from veritx_dse.product.store import utcnow
+    try:
+        record = store.load_candidate(candidate_id)
+    except Exception as exc:
+        raise intent_error(
+            f"no such candidate: {candidate_id!r}") from exc
+    origin = record.get("origin") or {}
+    if origin.get("kind") not in ("synthesis",):
+        raise intent_error(
+            f"candidate {candidate_id!r} is not a synthesis candidate "
+            f"(origin {origin!r}) — status flips apply to the candidate "
+            "library only")
+    return store.update_candidate(
+        candidate_id, evaluated=True, evaluated_run_id=run_id,
+        evaluated_at=utcnow())
 
 
 def promote_candidate(svc: Any, candidate_id: str,

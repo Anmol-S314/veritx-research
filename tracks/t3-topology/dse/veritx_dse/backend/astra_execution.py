@@ -18,6 +18,7 @@ evidence, and the last two never claim each other's fidelity.
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 from dataclasses import dataclass
@@ -74,6 +75,22 @@ _COMM_RE = re.compile(r"sys\[(\d+)\],\s*Comm time:\s*(\d+)")
 _GPU_RE = re.compile(r"sys\[(\d+)\],\s*GPU time:\s*(\d+)")
 #: the embedded fork's autonomous-injection counter (stderr)
 _INJECTED_RE = re.compile(r"\[trace\] All\s+\d+\s+cycles,\s*injected=(\d+)")
+#: contract ledger stream lines (stderr, VERITX_LEDGER>=1):
+#: ``[LEDGER][STREAM] rank=<r> stream_id=<s> comm_type=<t> ...`` where
+#: <t> is the ASTRA ComType int (None=0, Reduce_Scatter=1, All_Gather=2,
+#: All_Reduce=3, All_to_All=4, All_Reduce_All_to_All=5).
+_STREAM_RE = re.compile(
+    r"\[LEDGER\]\[STREAM\]\s+rank=(\d+)\s+stream_id=(\d+)\s+"
+    r"comm_type=(\d+)")
+#: vendored ComType int -> VeritX canonical class id. Mirrors
+#: ``veritx_class_of_comtype`` in third_party/.../system/Common.hh
+#: (0/5 map to 0 = unattributable; v1 ABI cannot attribute them).
+COMTYPE_TO_CLASS_ID = {0: 0, 1: 2, 2: 3, 3: 1, 4: 4, 5: 0}
+#: canonical collective kind -> vendored ComType int (same mirror).
+COLLECTIVE_KIND_TO_COMTYPE = {
+    "REDUCESCATTER": 1, "ALLGATHER": 2, "ALLREDUCE": 3,
+    "ALLTOALL": 4,
+}
 _LEGACY_JSON_ABI_TOKEN = b"booksim-config-file"
 
 
@@ -531,6 +548,63 @@ def autonomous_injection_packets(stderr: str) -> int | None:
     return values.pop()
 
 
+def parse_class_stream_ledger(stderr: str) -> dict[int, int]:
+    """Per-ComType stream counts from the contract ledger (stderr).
+
+    Empty dict when the runtime emitted no STREAM lines (ledger below
+    level 1): absence stays absent, never a zero-filled claim."""
+    counts: dict[int, int] = {}
+    for line in (stderr or "").splitlines():
+        match = _STREAM_RE.search(line)
+        if match:
+            comtype = int(match.group(3))
+            counts[comtype] = counts.get(comtype, 0) + 1
+    return counts
+
+
+def assert_stream_ledger_covers_kinds(
+        counts: dict[int, int],
+        expected_kinds: tuple[str, ...]) -> dict[int, int]:
+    """The executed schedule attributed every projected collective kind.
+
+    Each projected canonical kind must appear as its ComType stream, and
+    no unattributable (0/5) or unexpected ComType may appear: an extra
+    stream is traffic the workload did not ask for, an unknown one is
+    unattributable. Empty ledger data skips (never zero-filled)."""
+    if not counts:
+        return {}
+    expected = set()
+    for kind in expected_kinds:
+        try:
+            expected.add(COLLECTIVE_KIND_TO_COMTYPE[kind])
+        except KeyError:
+            raise AstraExecutionError(
+                f"projected collective kind {kind!r} has no vendored "
+                f"ComType mapping: cannot prove schedule attribution") \
+                from None
+    unknown = sorted(t for t in counts if t not in COMTYPE_TO_CLASS_ID)
+    if unknown:
+        raise AstraExecutionError(
+            f"runtime scheduled streams with unmapped ComType "
+            f"{unknown}: refusing unattributable traffic")
+    unattributed = sorted(t for t in counts if COMTYPE_TO_CLASS_ID[t] == 0)
+    if unattributed:
+        raise AstraExecutionError(
+            f"runtime scheduled unattributable streams (ComType "
+            f"{unattributed}, class 0): refusing flattened attribution")
+    missing = sorted(expected - set(counts))
+    if missing:
+        raise AstraExecutionError(
+            f"runtime scheduled no stream for projected ComType "
+            f"{missing}: refusing an execution that dropped a class")
+    extra = sorted(set(counts) - expected)
+    if extra:
+        raise AstraExecutionError(
+            f"runtime scheduled unexpected ComType {extra}: refusing "
+            f"traffic the workload did not ask for")
+    return dict(counts)
+
+
 def assert_astra_gate(money: AstraMoney, *,
                       machine: AstraMachineProjection,
                       injected: int | None,
@@ -647,12 +721,18 @@ def execute_astra_machine(
         expected_machine_id: str | None = None,
         namespace: Any = None,
         write: bool = True,
-        class_binding_id: str | None = None) -> AstraRuntimeEvidence:
+        class_binding_id: str | None = None,
+        expected_collective_kinds: tuple[str, ...] | None = None
+        ) -> AstraRuntimeEvidence:
     """Run the projected machine and authenticate what came back.
 
     ``class_binding_id`` is the executed projection's deterministic
     operation->class binding (None = legacy single-class path); it is
     stamped into evidence so normalization can verify class attribution.
+    ``expected_collective_kinds`` is the projected canonical kind set;
+    when the runtime emits contract-ledger STREAM lines, the executed
+    schedule must cover exactly that set (None = skip the check, never
+    assume it).
     """
     if not isinstance(machine, AstraMachineProjection):
         raise AstraExecutionError(
@@ -715,9 +795,20 @@ def execute_astra_machine(
     if supervised:
         def runner(cmd, cwd, timeout):  # pragma: no cover - real process
             try:
+                # Contract-ledger floor: VERITX_LEDGER=1 buys the
+                # [LEDGER][STREAM] schedule attribution (one line per
+                # stream) the class-coverage check reads. Logging only;
+                # a preset higher level is respected, never lowered.
+                env = dict(os.environ)
+                try:
+                    level = int(env.get("VERITX_LEDGER", "0") or "0")
+                except ValueError:
+                    level = 0
+                if level < 1:
+                    env["VERITX_LEDGER"] = "1"
                 proc = subprocess.run(cmd, cwd=str(cwd), stdin=subprocess.DEVNULL,
                                       capture_output=True, text=True,
-                                      timeout=timeout)
+                                      timeout=timeout, env=env)
             except subprocess.TimeoutExpired:
                 return AstraOutcome(returncode=-1, stdout="", stderr="",
                                     timed_out=True)
@@ -736,6 +827,10 @@ def execute_astra_machine(
             f"{(outcome.stderr or '')[-400:]}")
     money = parse_astra_stats(outcome.stdout, outcome.stderr)
     injected = autonomous_injection_packets(outcome.stderr)
+    if expected_collective_kinds is not None:
+        assert_stream_ledger_covers_kinds(
+            parse_class_stream_ledger(outcome.stderr),
+            tuple(expected_collective_kinds))
     if namespace is not None:
         participant_endpoints = namespace.participant_endpoints()
         endpoint_count = namespace.endpoint_count

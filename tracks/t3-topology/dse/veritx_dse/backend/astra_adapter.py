@@ -474,7 +474,9 @@ class Astra2Adapter:
         from veritx_dse.backend.astra import (
             _CHAKRA_COLLECTIVE_TYPE, audit_operations,
         )
-        from veritx_dse.workload.graph import KIND_COLLECTIVE
+        from veritx_dse.workload.graph import (
+            KIND_COLLECTIVE, KIND_EXPERT_BEGIN, KIND_EXPERT_END,
+        )
         for row in audit_operations(workload):
             if row["classification"] == "ZERO_TRAFFIC":
                 continue
@@ -485,9 +487,16 @@ class Astra2Adapter:
                     f"{operation.operation_id!r} (kind={operation.kind}): "
                     f"refusing rather than reporting zero communication "
                     f"cost")
-            if operation.kind == KIND_COLLECTIVE and \
-                    operation.detail.get("collective_kind") in \
-                    _CHAKRA_COLLECTIVE_TYPE:
+            # Static-MoE expert dispatch/combine (EXPERT_BEGIN/END with a
+            # declared collective such as ALLTOALL) executes through the
+            # same collective-mode path as an ordinary collective: the
+            # operation keeps its identity (operation_id) and its class
+            # rides the COLL-node sidecar + class binding, never inferred.
+            # A bare EXPERT region (no declared collective) is
+            # ZERO_TRAFFIC upstream and never reaches here.
+            if operation.detail.get("collective_kind") in \
+                    _CHAKRA_COLLECTIVE_TYPE and operation.kind in \
+                    (KIND_COLLECTIVE, KIND_EXPERT_BEGIN, KIND_EXPERT_END):
                 continue
             raise Astra2SemanticRefusal(
                 f"operation {operation.operation_id!r} "
@@ -582,7 +591,10 @@ class Astra2Adapter:
             namespace=native.namespace,
             repo_root=self._repo_root,
             class_binding_id=
-            native.workload_projection.class_binding_id())
+            native.workload_projection.class_binding_id(),
+            expected_collective_kinds=tuple(
+                kind for _, kind, _, _
+                in native.workload_projection.collective_operations))
 
     # ── normalize ─────────────────────────────────────────────────────
 
@@ -697,6 +709,26 @@ class Astra2Adapter:
                     f"{evidence.class_binding_id!r} does not match the "
                     f"prepared {_expected_binding!r}: refusing a "
                     "class-swapped or collapsed normalization")
+            if evidence.embedded_network_class_abi_version < 1:
+                raise AstraExecutionError(
+                    "multi-class evidence from a class-blind runtime "
+                    f"(class ABI "
+                    f"{evidence.embedded_network_class_abi_version}): "
+                    "refusing unattributable classes")
+        # Per-class conservation, when a producer reports per-class
+        # counts: every injected class unit must complete. Absent counts
+        # stay absent (never zero-filled); present-but-unbalanced counts
+        # refuse.
+        if evidence.per_class_injected or evidence.per_class_completed:
+            _inj = dict(evidence.per_class_injected)
+            _done = dict(evidence.per_class_completed)
+            if set(_inj) != set(_done) or any(
+                    _inj[c] != _done[c] for c in _inj):
+                raise AstraExecutionError(
+                    f"per-class conservation violated "
+                    f"(injected={sorted(_inj.items())} vs completed="
+                    f"{sorted(_done.items())}): refusing a lossy "
+                    "normalization")
         metrics: list[MetricValue] = []
         if question is EvaluationQuestion.SYSTEM_MAKESPAN:
             metrics.append(MetricValue(

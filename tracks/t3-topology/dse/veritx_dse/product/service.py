@@ -1100,6 +1100,21 @@ class ProductService:
         # would refuse.
         revision["simulation"] = self._assess_compilation(
             request, compilation)
+        # Candidate status flips (synthesis candidates only): a compiled
+        # draft flips compiled (+revision link); a PASS certificate flips
+        # verified. Auxiliary bookkeeping — a flip failure is recorded on
+        # the revision, never allowed to fail a valid compile.
+        candidate_id = draft.get("derived_from_candidate_id")
+        if candidate_id and compilation.status == "COMPILED":
+            from veritx_dse.product import vnext as _vnext
+            try:
+                _vnext.mark_candidate_compiled(
+                    self.store, candidate_id, revision_id,
+                    verified=(certificate is not None
+                              and certificate.get("overall") == "PASS"))
+            except Exception as exc:
+                revision["candidate_flip_error"] = (
+                    f"{type(exc).__name__}: {exc}")
         self.store.create_revision(
             project_id, revision,
             promote=self._revision_promotable(revision))
@@ -1905,12 +1920,45 @@ class ProductService:
             "evaluation_plan": self._plan_record(
                 revision["revision_id"], federated),
             "analyses": [a.to_dict() for a in federated.analyses],
+            # Explicit reuse linkage (Studio §41 REUSED banner): the
+            # network leg carries the reused evidence id plus the
+            # matched parents when it did not execute. Never synthetic.
+            "reused_evidence_id": (
+                None if network_analysis is None
+                else network_analysis.reused_evidence_id),
+            "reuse_matching": (
+                None if network_analysis is None
+                else network_analysis.reuse_matching),
+            "reuse": {
+                "reused": (
+                    network_analysis is not None
+                    and network_analysis.reused_evidence_id is not None),
+                "reused_evidence_id": (
+                    None if network_analysis is None
+                    else network_analysis.reused_evidence_id),
+                "matching": (
+                    None if network_analysis is None
+                    else network_analysis.reuse_matching),
+            },
         }
         if federated.requirement_report is not None and network is not None \
                 and network.status == "EVALUATED":
             self._check_run_report_binding(
                 run_id, revision, network,
                 federated.requirement_report)
+        # Candidate evaluated flip: a synthesis candidate whose revision
+        # produced an EVALUATED network measurement flips evaluated.
+        # Auxiliary — recorded on the run, never failing it.
+        candidate_id = revision.get("derived_from_candidate_id")
+        if candidate_id and network is not None \
+                and network.status == "EVALUATED":
+            from veritx_dse.product import vnext as _vnext2
+            try:
+                _vnext2.mark_candidate_evaluated(
+                    self.store, candidate_id, run_id)
+            except Exception as exc:
+                run["candidate_flip_error"] = (
+                    f"{type(exc).__name__}: {exc}")
         self.store.create_run(project_id, run)
         state = ("COMPLETED" if federated.status in ("EVALUATED", PARTIAL)
                  else "REFUSED")

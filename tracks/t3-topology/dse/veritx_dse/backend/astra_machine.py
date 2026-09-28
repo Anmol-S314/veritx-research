@@ -40,13 +40,17 @@ ASTRA_MACHINE_SCHEMA_VERSION = 1
 EMBEDDED_FABRIC_ABI_VERSION = "srota/booksim-embedded-fabric-abi/v1"
 
 #: Class-attribution injection ABI proven by the embedded runtime.
-#: 0 = pre-extension: injection carries (src, dst, bytes) only and any
-#: class label would be unattributable. A multi-class machine qualifies
-#: only when this version proves class-aware injection (class_id bound
-#: at every injection site, threaded through retire, ledger-logged).
-#: Bumped if and only if the vendored C++ runtime lands the extension
-#: (kBooksim2AbiVersion) and re-qualifies.
-EMBEDDED_NETWORK_CLASS_ABI_VERSION = 0
+#: 1 = class-aware injection (vendored kBooksim2AbiVersion=1): every
+#: collective algorithm stamps request->veritx_class_id from its ComType
+#: (Ring/HalvingDoubling/DoubleBinaryTree/CustomAlgorithm), Sys.cc
+#: backstops NATIVE/rendezvous distinctly and never guesses a kind,
+#: sim_send threads class_id into InjectUnicast, retire aborts on
+#: arrival/pending class mismatch, and [LEDGER][SEND]/[ABI] log the
+#: attribution. A multi-class machine qualifies only at class ABI >= 1;
+#: against a class-blind runtime (ABI 0) the classes would contend
+#: unattributed. Bump if and only if the vendored runtime extends the
+#: attribution contract again and re-qualifies.
+EMBEDDED_NETWORK_CLASS_ABI_VERSION = 1
 #: Minimum class ABI a multi-class machine requires. Single-class
 #: machines are unaffected: one class needs no attribution.
 REQUIRED_CLASS_ABI_MULTI_CLASS = 1

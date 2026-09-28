@@ -156,6 +156,12 @@ class AnalysisOutcome:
     normalized_evidence: NormalizedBackendEvidence | None
     native_evidence_id: str | None
     reason: str | None
+    #: explicit reuse linkage (Studio §41): when this analysis did not
+    #: execute but returned byte-verified reused evidence, the reused
+    #: evidence id rides here (never a synthetic measurement) plus the
+    #: matched reuse parents. None on a direct execution.
+    reused_evidence_id: str | None = None
+    reuse_matching: dict[str, Any] | None = None
     #: backend-native factual summary (evidence tier, injection counters,
     #: namespace binding, ...) for integrity views; never science.
     native_summary: dict[str, Any] | None = None
@@ -190,6 +196,8 @@ class AnalysisOutcome:
                 "missing": list(self.archival.missing),
                 "reason": self.archival.reason,
             }),
+            "reused_evidence_id": self.reused_evidence_id,
+            "reuse_matching": self.reuse_matching,
         }
 
 
@@ -329,6 +337,236 @@ def _refused(row: Any) -> AnalysisOutcome:
         reason=row.reason)
 
 
+# ── evidence-reuse orchestration (network leg) ────────────────────────
+#
+# The safe verification primitives (verify/read_reusable_record) prove
+# that STORED bytes are intact, but they cannot skip an execution: the
+# full EvidenceCache key contains execution outputs (evidence_id,
+# route_dump_sha256, route_observation) unknowable before the backend
+# runs. So this layer does lookup-before-execute on the maximal
+# pre-execution projection of the parent key, and treats the excluded
+# outputs as functionally determined by those inputs under the seeded
+# deterministic backend. The determination is then CONFIRMED, not
+# assumed: a hit re-reads stored bytes through the verified reader and
+# copies them into the current layout with a post-copy digest check.
+# Any mismatch executes fresh. A hit never creates a synthetic
+# measurement. In-memory process-wide only; strict clock exact-match.
+
+_REUSE_PRE_FIELDS = (
+    "prepared_id", "config_sha256", "trace_sha256", "binary_sha256",
+    "binary_size", "profile_id", "projection_semantics_version",
+    "parser_version", "build_manifest", "build_recipe_version",
+    "schema_version", "producer_revision", "producer_dirty",
+    "producer_transport", "producer_fidelity", "seed", "topology_id",
+    "fabric_id", "traffic_id", "message_id", "question",
+    "network_clock_hz",
+)
+
+_REUSE_KEY_DOMAIN = "veritx/network-reuse-key/v1"
+
+_OUTCOME_REUSE: dict[str, list[dict[str, Any]]] = {}
+_OUTCOME_REUSE_CAP = 128
+
+
+def reset_network_reuse() -> None:
+    """Clear the process-wide network reuse index (tests only)."""
+    _OUTCOME_REUSE.clear()
+    _evidence_reuse_cache()._entries.clear()
+    _evidence_reuse_cache()._hits.clear()
+
+
+def _evidence_reuse_cache():
+    """The process-wide evidence-tier cache (full parent keys)."""
+    global _EVIDENCE_REUSE_CACHE
+    try:
+        return _EVIDENCE_REUSE_CACHE
+    except NameError:
+        from veritx_dse.backend.evidence_cache import EvidenceCache
+        _EVIDENCE_REUSE_CACHE = EvidenceCache()
+        return _EVIDENCE_REUSE_CACHE
+
+
+def _pre_execution_parents(context, traffic_class, options):
+    """Pre-execution reuse parents, or None to skip caching.
+
+    Uses the adapter's OWN prepare (identical call to FabricEvaluator's
+    internal one, so byte-identical digests — no second authority, no
+    backend spawn) plus read-only producer introspection with the
+    execution's identical recipe.
+    """
+    from veritx_dse.backend.booksim_adapter import BookSimAdapter
+    try:
+        pre = BookSimAdapter().prepare(
+            context, EvaluationQuestion.NETWORK_COMPLETION,
+            traffic_class=traffic_class)
+    except Exception:
+        return None
+    native = pre.native_prepared
+    prepared = native.prepared
+    try:
+        from veritx_dse.backend import booksim_projection as _bp
+        semantics_by_profile = {
+            _bp.MESH_DOR_PROFILE.profile_id:
+                _bp.MESH_DOR_PROFILE.semantics_version,
+            _bp.CMESH_DOR_PROFILE.profile_id:
+                _bp.CMESH_DOR_PROFILE.semantics_version,
+            _bp.ANYNET_PROFILE.profile_id:
+                _bp.ANYNET_PROFILE.semantics_version,
+            _bp.MESH_DOR_MC_PROFILE.profile_id:
+                _bp.MESH_DOR_MC_PROFILE.semantics_version,
+        }
+        projection_semantics = semantics_by_profile[native.profile_id]
+        identity = prepared.identity_dict()
+        trace_sha256 = identity["trace_sha256"]
+        prepared_id = prepared.prepared_id()
+    except Exception:
+        return None
+    try:
+        from veritx_dse.backend.booksim_execution import (
+            BOOKSIM_BUILD_RECIPE_VERSION,
+            EXECUTION_TRANSPORT_SUPERVISED_PROCESS,
+        )
+        from veritx_dse.backend.producer import (
+            resolve_producer_identity,
+        )
+        from veritx_dse.core.paths import REPO as _REPO
+        repo_root = Path(options.repo_root) \
+            if options.repo_root is not None else Path(_REPO)
+        if options.binary is not None:
+            bin_path = Path(options.binary)
+        else:
+            from veritx_dse.simulation.booksim import find_booksim_bin
+            bin_path = find_booksim_bin(repo_root)
+        producer = resolve_producer_identity(
+            bin_path, repo_root=repo_root,
+            require_manifest_recipe=BOOKSIM_BUILD_RECIPE_VERSION)
+    except Exception:
+        return None
+    seed = options.seed if type(options.seed) is int \
+        and not isinstance(options.seed, bool) and options.seed >= 0 \
+        else 0
+    try:
+        topology_id = context.bundle.topology.topology_hash()
+    except Exception:
+        return None
+    try:
+        from veritx_dse.backend import evidence as _ev2
+        parser_version = _ev2.PARSER_VERSION
+        schema_version = _ev2.EVIDENCE_SCHEMA_VERSION
+    except Exception:
+        return None
+    return {
+        "prepared_id": prepared_id,
+        "config_sha256": native.config_hash,
+        "trace_sha256": trace_sha256,
+        "binary_sha256": producer.binary_sha256,
+        "binary_size": producer.binary_size,
+        "profile_id": native.profile_id,
+        "projection_semantics_version": projection_semantics,
+        "parser_version": parser_version,
+        "build_manifest": producer.build_manifest_sha256,
+        "build_recipe_version": producer.build_recipe_version,
+        "schema_version": schema_version,
+        "producer_revision": producer.source_revision,
+        "producer_dirty": producer.dirty,
+        "producer_transport": EXECUTION_TRANSPORT_SUPERVISED_PROCESS,
+        "producer_fidelity": "QUALIFIED",
+        "seed": seed,
+        "topology_id": topology_id,
+        "fabric_id": _resolved_hash(context),
+        "traffic_id": native.physical_traffic_id,
+        "message_id": native.message_artifact_id,
+        "question": EvaluationQuestion.NETWORK_COMPLETION.value,
+        "network_clock_hz": options.network_clock_hz,
+    }
+
+
+def _tier1_key(pre_parents):
+    from veritx_dse.core.artifact import content_id
+    return content_id(
+        _REUSE_KEY_DOMAIN,
+        {k: pre_parents[k] for k in _REUSE_PRE_FIELDS},
+    )
+
+
+def _lookup_reusable(pre_parents, analysis_dir):
+    """Hit path or None (miss/refusal -> caller executes fresh)."""
+    key = _tier1_key(pre_parents)
+    records = _OUTCOME_REUSE.get(key)
+    if not records:
+        return None
+    from veritx_dse.backend import evidence as _ev
+    for record in records:
+        try:
+            ref = record["ref"]
+            evidence = _ev.read_reusable_record(
+                ref,
+                prepared_id=pre_parents["prepared_id"],
+                config_sha256=pre_parents["config_sha256"],
+                trace_sha256=pre_parents["trace_sha256"],
+                binary_sha256=pre_parents["binary_sha256"],
+            )
+            if evidence.evidence_id != record["evidence_id"]:
+                continue
+            import dataclasses
+            import hashlib
+            evidence_dir = analysis_dir / "evidence"
+            evidence_dir.mkdir(parents=True, exist_ok=True)
+            raw = Path(ref.path).read_bytes()
+            if hashlib.sha256(raw).hexdigest() != ref.sha256:
+                continue
+            target = evidence_dir / "backend-evidence.json"
+            target.write_bytes(raw)
+            outcome = dataclasses.replace(
+                record["outcome"],
+                run_dir=str(analysis_dir),
+                evidence_path=str(target),
+            )
+            matching = {k: pre_parents[k] for k in _REUSE_PRE_FIELDS}
+            analysis = dataclasses.replace(
+                record["analysis"],
+                reused_evidence_id=evidence.evidence_id,
+                reuse_matching=matching,
+            )
+            return outcome, analysis, matching
+        except Exception:
+            continue
+    return None
+
+
+def _register_reusable(pre_parents, outcome, analysis):
+    """Register a fresh EVALUATED outcome. Auxiliary: never fails."""
+    try:
+        from veritx_dse.backend import evidence as _ev
+        from veritx_dse.backend.evidence import EvidenceRef
+        ref = EvidenceRef(path=outcome.evidence_path or "",
+                           sha256=outcome.raw_evidence_digest or "")
+        evidence = _ev.read_reusable_record(
+            ref,
+            prepared_id=pre_parents["prepared_id"],
+            config_sha256=pre_parents["config_sha256"],
+            trace_sha256=pre_parents["trace_sha256"],
+            binary_sha256=pre_parents["binary_sha256"],
+        )
+        full_parents = dict(pre_parents)
+        full_parents["evidence_id"] = evidence.evidence_id
+        full_parents["route_observation"] = evidence.route_observation
+        full_parents["route_dump_sha256"] = evidence.route_dump_sha256
+        _evidence_reuse_cache().put(ref, full_parents)
+        key = _tier1_key(pre_parents)
+        records = _OUTCOME_REUSE.setdefault(key, [])
+        records.append({
+            "ref": ref,
+            "outcome": outcome,
+            "analysis": analysis,
+            "evidence_id": evidence.evidence_id,
+        })
+        while len(_OUTCOME_REUSE) > _OUTCOME_REUSE_CAP:
+            _OUTCOME_REUSE.pop(next(iter(_OUTCOME_REUSE)))
+    except Exception:
+        return
+
+
 def _evaluate_network(
     compilation: Compilation,
     context: CanonicalEvaluationContext,
@@ -356,6 +594,11 @@ def _evaluate_network(
         normalize_booksim_outcome,
     )
     traffic_class = context.unified_traffic_class or "DEFAULT"
+    pre_parents = _pre_execution_parents(context, traffic_class, options)
+    if pre_parents is not None:
+        hit = _lookup_reusable(pre_parents, analysis_dir)
+        if hit is not None:
+            return hit[0], hit[1]
     outcome = FabricEvaluator().evaluate(
         compilation, context.workload,
         EvaluationOptions(
@@ -377,7 +620,7 @@ def _evaluate_network(
             normalized_evidence=None, native_evidence_id=None,
             reason=outcome.reason)
     envelope = normalize_booksim_outcome(context, outcome)
-    return outcome, AnalysisOutcome(
+    analysis = AnalysisOutcome(
         question=row.question, backend_id=row.backend_id,
         status=ANALYSIS_EVALUATED,
         model_fidelity=envelope.model_fidelity,
@@ -391,6 +634,9 @@ def _evaluate_network(
             # no host path is ever recorded in the outcome.
             "backend_profile": outcome.backend_profile,
         })
+    if pre_parents is not None:
+        _register_reusable(pre_parents, outcome, analysis)
+    return outcome, analysis
 
 
 def _evaluate_astra(
@@ -759,4 +1005,5 @@ __all__ = [
     "AnalysisOutcome", "AstraRunOptions", "BookSimRunOptions",
     "FederatedEvaluationOutcome", "OVERALL_STATUSES", "PARTIAL",
     "RamulatorRunOptions", "evaluate_federated",
+    "reset_network_reuse",
 ]
