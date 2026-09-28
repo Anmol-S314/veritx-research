@@ -30,6 +30,8 @@ from typing import Any
 from veritx_dse.core.artifact import content_id
 from veritx_dse.core.spec import canonical_json
 
+from veritx_dse.application.evaluation_question import EvaluationQuestion
+
 DOMAIN = "veritx/optimization-definition/v2"
 
 SEARCH_METHODS = ("grid", "enumeration", "random")
@@ -127,10 +129,77 @@ class DomainParam:
 
 
 @dataclass(frozen=True)
+class ObjectiveSource:
+    """WHAT metric / FROM WHICH question / WITH WHICH backend constraint.
+
+    An objective is never a bare metric name: it names the metric key,
+    the closed-vocabulary :class:`EvaluationQuestion` it is read from,
+    and an optional backend constraint (None = the federation planner
+    adjudicates; a backend_id = the planned backend must be exactly
+    that, else the objective is unmeasured — never silently
+    substituted).
+
+    ``question`` accepts an EvaluationQuestion or its canonical name
+    (product transport arrives as a string); anything else refuses.
+    """
+
+    metric_key: str
+    question: EvaluationQuestion = EvaluationQuestion.NETWORK_COMPLETION
+    backend_id: str | None = None
+
+    def __post_init__(self):
+        if not isinstance(self.metric_key, str) or not self.metric_key:
+            raise OptimizationDefinitionError(
+                "objective source needs a metric key")
+        object.__setattr__(self, "question",
+                            _coerce_question(self.question))
+        if self.backend_id is not None and (
+                not isinstance(self.backend_id, str)
+                or not self.backend_id):
+            raise OptimizationDefinitionError(
+                "objective backend constraint must be a backend id "
+                f"string or None, got {self.backend_id!r}")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"metric_key": self.metric_key,
+                "question": self.question.value,
+                "backend_id": self.backend_id}
+
+
+def _coerce_question(value: Any) -> EvaluationQuestion:
+    """EvaluationQuestion or its canonical name -> EvaluationQuestion."""
+    if isinstance(value, EvaluationQuestion):
+        return value
+    if isinstance(value, str):
+        try:
+            return EvaluationQuestion[value]
+        except KeyError:
+            for question in EvaluationQuestion:
+                if question.value == value:
+                    return question
+            raise OptimizationDefinitionError(
+                f"unknown evaluation question {value!r}; supported: "
+                f"{[q.value for q in EvaluationQuestion]}") from None
+    raise OptimizationDefinitionError(
+        f"evaluation question must be an EvaluationQuestion or its "
+        f"name, got {value!r}")
+
+
+@dataclass(frozen=True)
 class Objective:
-    """One optimization objective: metric + direction."""
+    """One optimization objective: metric + direction + evaluation policy.
+
+    ``question``/``backend_id`` are the objective's
+    :class:`ObjectiveSource`: which federation question the metric is
+    read from and which backend (if any) is required. The default
+    (NETWORK_COMPLETION, None) is the legacy BookSim-only objective —
+    bare ``Objective("completion_cycles", "MIN")`` constructions keep
+    their meaning.
+    """
     metric: str
     direction: str
+    question: EvaluationQuestion = EvaluationQuestion.NETWORK_COMPLETION
+    backend_id: str | None = None
 
     def __post_init__(self):
         if not isinstance(self.metric, str) or not self.metric:
@@ -138,6 +207,21 @@ class Objective:
         if self.direction not in ("MIN", "MAX"):
             raise OptimizationDefinitionError(
                 f"objective direction must be MIN or MAX, got {self.direction!r}")
+        object.__setattr__(self, "question",
+                            _coerce_question(self.question))
+        if self.backend_id is not None and (
+                not isinstance(self.backend_id, str)
+                or not self.backend_id):
+            raise OptimizationDefinitionError(
+                "objective backend constraint must be a backend id "
+                f"string or None, got {self.backend_id!r}")
+
+    @property
+    def source(self) -> ObjectiveSource:
+        """This objective's explicit evaluation policy."""
+        return ObjectiveSource(metric_key=self.metric,
+                               question=self.question,
+                               backend_id=self.backend_id)
 
 
 @dataclass(frozen=True)
@@ -276,7 +360,9 @@ class OptimizationDefinition:
         return content_id(DOMAIN, {
             "parameters": [{"name": p.name, "values": list(p.values)}
                            for p in sorted(self.domain, key=lambda p: p.name)],
-            "objectives": [{"metric": o.metric, "direction": o.direction}
+            "objectives": [{"metric": o.metric, "direction": o.direction,
+                            "question": o.question.value,
+                            "backend_id": o.backend_id}
                            for o in self.objectives],
             "constraints": [{"metric": c.metric, "op": c.op,
                              "threshold": c.threshold}
@@ -289,7 +375,9 @@ class OptimizationDefinition:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "objectives": [{"metric": o.metric, "direction": o.direction}
+            "objectives": [{"metric": o.metric, "direction": o.direction,
+                            "question": o.question.value,
+                            "backend_id": o.backend_id}
                            for o in self.objectives],
             "constraints": [{"metric": c.metric, "op": c.op,
                              "threshold": c.threshold}
@@ -302,8 +390,26 @@ class OptimizationDefinition:
         }
 
 
+def required_questions(definition: "OptimizationDefinition"
+                       ) -> tuple[EvaluationQuestion, ...]:
+    """The federation questions a study must execute, in declaration order.
+
+    One execution per question, shared by every objective reading it:
+    three objectives over NETWORK_COMPLETION + DRAM_TIMING need one
+    BookSim run and one Ramulator run, not three runs. The federation
+    planner adjudicates each question once; objectives only read.
+    """
+    seen: list[EvaluationQuestion] = []
+    for objective in definition.objectives:
+        question = _coerce_question(objective.question)
+        if question not in seen:
+            seen.append(question)
+    return tuple(seen)
+
+
 __all__ = [
     "DOMAIN", "GUIDED_PARAMS", "SEARCH_METHODS", "SELECTION_POLICIES",
-    "Constraint", "DomainParam", "Objective", "OptimizationDefinition",
-    "OptimizationDefinitionError",
+    "Constraint", "DomainParam", "Objective", "ObjectiveSource",
+    "OptimizationDefinition", "OptimizationDefinitionError",
+    "required_questions",
 ]
