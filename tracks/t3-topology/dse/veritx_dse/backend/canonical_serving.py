@@ -552,6 +552,23 @@ class RequestMetric:
     ttft_cycles: int | None
     completion_cycles: int | None
 
+    def __post_init__(self) -> None:
+        # Native-layer validation: a corrupt cycle count must refuse at
+        # construction, never travel into evidence and normalize silently.
+        # None stays allowed (absent metric, never zero-filled).
+        for name in ("ttft_cycles", "completion_cycles"):
+            value = getattr(self, name)
+            if value is None:
+                continue
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise ServingBoundaryError(
+                    f"request {self.request_id!r}: {name} must be an "
+                    f"integer cycle count or None, got {value!r}")
+            if value < 0:
+                raise ServingBoundaryError(
+                    f"request {self.request_id!r}: {name} is negative "
+                    f"({value}): corrupt native evidence")
+
 
 @dataclass(frozen=True)
 class CanonicalServingEvidence:

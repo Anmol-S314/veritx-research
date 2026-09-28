@@ -97,6 +97,33 @@ class Astra2Preparation:
     rank_to_endpoint: tuple[tuple[int, int], ...]
 
 
+def _check_astra_evidence_binding(evidence: Any, native: Any) -> None:
+    """Anti-transplant: runtime evidence must claim exactly the
+    machine, workload projection and namespace preparation bound —
+    the same identities reproduction re-verifies before re-execution.
+    A mismatch is evidence corruption, never normalized."""
+    from veritx_dse.backend.astra_execution import AstraExecutionError
+
+    def _require(name: str, claimed: Any, bound: Any) -> None:
+        if claimed != bound:
+            raise AstraExecutionError(
+                f"native ASTRA evidence {name} {claimed!r} does not "
+                f"match the prepared {name} {bound!r} — refusing a "
+                f"transplanted normalization")
+
+    _require("machine_id", evidence.machine_id,
+             native.machine.machine_id())
+    _require("workload_projection_id",
+             evidence.workload_projection_id,
+             native.workload_projection.projection_id())
+    _require("namespace_id", evidence.namespace_id,
+             native.namespace.namespace_id())
+    _require("prepared_id", evidence.prepared_id, native.prepared_id)
+    _require("rank_to_endpoint",
+             tuple(tuple(pair) for pair in evidence.rank_to_endpoint),
+             tuple(tuple(pair) for pair in native.rank_to_endpoint))
+
+
 class Astra2Adapter:
     """Orchestrates workload → machine → execution → runtime evidence.
 
@@ -550,6 +577,7 @@ class Astra2Adapter:
                 f"the embedded fabric injected "
                 f"{evidence.autonomous_injection_packets} packets of its "
                 f"own; evidence with autonomous traffic never normalizes")
+        _check_astra_evidence_binding(evidence, native)
         metrics: list[MetricValue] = []
         if question is EvaluationQuestion.SYSTEM_MAKESPAN:
             metrics.append(MetricValue(

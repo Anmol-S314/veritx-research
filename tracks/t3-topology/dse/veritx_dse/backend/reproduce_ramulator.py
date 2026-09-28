@@ -118,8 +118,13 @@ def reproduce_ramulator_run_bundle(
     matched = (
         rerun.status == stored.status
         and ramulator_evidence_id(rerun) == ramulator_evidence_id(stored))
+    if not matched:
+        raise RunBundleError(
+            "Ramulator reproduction diverges from the stored science: "
+            f"evidence {ramulator_evidence_id(rerun)[:16]} != "
+            f"{ramulator_evidence_id(stored)[:16]}")
     return {
-        "matched": matched,
+        "matched": True,
         "evidence_id": ramulator_evidence_id(stored),
         "status": rerun.status,
         "rerun_status": rerun.status,

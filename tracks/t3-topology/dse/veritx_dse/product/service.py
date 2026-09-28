@@ -3187,15 +3187,27 @@ class ProductService:
         for key in keys:
             av = a_metrics.get(key)
             bv = b_metrics.get(key)
+            row_comparable = (compatibility["compatible"]
+                              and numeric(av) and numeric(bv))
+            # Same closed vocabulary as the federated rows: scenario
+            # mismatch is NOT_COMPARABLE, an unmeasured side is
+            # MISSING_MEASUREMENT. Same key is not enough.
+            if row_comparable:
+                row_verdict: str = "COMPARABLE"
+                row_differs: str | None = None
+            elif not compatibility["compatible"]:
+                row_verdict = "NOT_COMPARABLE"
+                row_differs = "scenario"
+            else:
+                row_verdict = "MISSING_MEASUREMENT"
+                row_differs = "value"
             rows.append({
                 "key": key,
                 "a": av,
                 "b": bv,
-                # Comparable only when the scenarios are compatible AND
-                # both sides actually measured the quantity. Same key is
-                # not enough.
-                "comparable": (compatibility["compatible"]
-                               and numeric(av) and numeric(bv)),
+                "comparable": row_comparable,
+                "verdict": row_verdict,
+                "differs": row_differs,
             })
         return {
             "contract_version": 1,
@@ -3227,6 +3239,8 @@ class ProductService:
                     "backend": analysis.get("backend_id"),
                     "fidelity": analysis.get("model_fidelity"),
                     "qualification": analysis.get("qualification"),
+                    "native_evidence_id": analysis.get(
+                        "native_evidence_id"),
                 }
         return index
 
@@ -3258,6 +3272,10 @@ class ProductService:
             bm = b_index.get(key)
             reason: str | None = None
             comparable = True
+            # Closed-vocabulary verdict: every non-comparable row names
+            # the exact axis that differs, never a silent mismatch.
+            verdict = "COMPARABLE"
+            differs: str | None = None
             if am is None or bm is None:
                 comparable = False
                 missing = "b" if am is not None else "a"
@@ -3271,38 +3289,60 @@ class ProductService:
                     q for (q, k, c) in other_index
                     if k == metric and c == coords})
                 if alt_questions:
+                    verdict = "MODEL_DIFFERENCE"
+                    differs = "question"
                     reason += (
                         f"; the same metric key is measured under "
                         f"different question(s) {alt_questions} on the "
                         f"other side: different models (MODEL "
                         f"DIFFERENCE), not a performance difference")
+                else:
+                    verdict = "MISSING_MEASUREMENT"
+                    differs = "presence"
             elif not same_workload:
                 comparable = False
+                verdict = "NOT_COMPARABLE"
+                differs = "workload"
                 reason = (f"different workload identity ({a_workload!r} "
                           f"vs {b_workload!r})")
             elif am["unit"] != bm["unit"]:
                 comparable = False
+                verdict = "NOT_COMPARABLE"
+                differs = "unit"
                 reason = (f"unit mismatch ({am['unit']!r} vs "
                           f"{bm['unit']!r})")
             elif am["backend"] != bm["backend"]:
                 comparable = False
+                verdict = "MODEL_DIFFERENCE"
+                differs = "backend"
                 reason = (f"backend difference ({am['backend']!r} vs "
                           f"{bm['backend']!r}): a cross-backend number is "
                           f"a MODEL DIFFERENCE, not a performance winner")
             elif am["fidelity"] != bm["fidelity"]:
                 comparable = False
+                verdict = "MODEL_DIFFERENCE"
+                differs = "model_fidelity"
                 reason = (f"model difference ({am['fidelity']!r} vs "
                           f"{bm['fidelity']!r}): different models, not a "
                           f"performance winner")
             elif am["qualification"] != bm["qualification"] \
                     or am["qualification"] is None:
                 comparable = False
+                verdict = "QUALIFICATION_DIFFERENCE"
+                differs = "qualification"
                 reason = (f"qualification mismatch "
                           f"({am['qualification']!r} vs "
                           f"{bm['qualification']!r})")
             elif not (numeric(am["value"]) and numeric(bm["value"])):
                 comparable = False
+                verdict = "MISSING_MEASUREMENT"
+                differs = "value"
                 reason = "at least one side did not measure a number"
+            # Observed delta only, never a winner: emitted solely for
+            # COMPARABLE rows where both sides measured numbers.
+            delta: float | None = None
+            if comparable:
+                delta = float(bm["value"]) - float(am["value"])
             rows.append({
                 "question": question,
                 "key": metric,
@@ -3311,6 +3351,13 @@ class ProductService:
                 "b": None if bm is None else bm["value"],
                 "unit": None if am is None else am["unit"],
                 "comparable": comparable,
+                "verdict": verdict,
+                "differs": differs,
+                "delta_b_minus_a": delta,
+                "a_evidence": (None if am is None
+                                 else am["native_evidence_id"]),
+                "b_evidence": (None if bm is None
+                                 else bm["native_evidence_id"]),
                 "reason": reason,
             })
         return {

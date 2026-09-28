@@ -736,7 +736,7 @@ def validate_collective_ledger_contract(
                 f"the runtime never submitted collective "
                 f"{row.operation_id!r} (ASTRA node {row.astra_node_id}); "
                 "the projected collective was not executed")
-        kinds = {entry.kind for entry in submissions}
+        kinds = {require_known_kind(entry) for entry in submissions}
         if kinds != {row.collective_kind}:
             raise ServingRoundError(
                 f"collective {row.operation_id!r} (node "
@@ -787,6 +787,22 @@ class LedgerCollective:
         return _TYPE_NAME_BY_NUMBER.get(self.comm_type)
 
 
+def require_known_kind(entry: LedgerCollective) -> str:
+    """Name the runtime's collective kind, refusing unknown encodings.
+
+    A ``None`` kind (``comm_type`` outside the canonical contract) must
+    name the offending encoding and rank — dropping it from a kinds set
+    would weaken the mismatch diagnosis into an empty submission list."""
+    kind = entry.kind
+    if kind is None:
+        raise ServingRoundError(
+            f"rank {entry.rank} submitted collective comm_type "
+            f"{entry.comm_type}, which the canonical collective "
+            "contract does not recognize: the runtime expanded a "
+            "collective the product cannot prove")
+    return kind
+
+
 def parse_collective_ledger(lines: Iterable[str]
                             ) -> tuple[LedgerCollective, ...]:
     """Structural parse of the runtime's collective-submission ledger."""
@@ -799,6 +815,16 @@ def parse_collective_ledger(lines: Iterable[str]
     for line in lines:
         match = pattern.search(line)
         if match is None:
+            # Pure runtime noise never carries the marker and stays
+            # skipped. A line that STARTS a ledger record but does not
+            # parse is a truncated/corrupt record: fail fast here and
+            # name truncation, instead of failing late in validation
+            # with a misleading "never submitted" error.
+            if "[LEDGER][COLL_SUBMIT]" in line:
+                raise ServingRoundError(
+                    "truncated or corrupt collective-ledger line: the "
+                    "runtime started a [LEDGER][COLL_SUBMIT] record but "
+                    f"it does not parse: {line[:200]!r}")
             continue
         members_text = match.group(7)
         if members_text in ("none", "-", ""):
@@ -832,7 +858,7 @@ def validate_collective_ledger(entries: tuple[LedgerCollective, ...], *,
             f"the runtime emitted no [LEDGER][COLL_SUBMIT] for batch "
             f"{plan.batch_id}; the projected collective was never submitted")
 
-    kinds = {entry.kind for entry in entries}
+    kinds = {require_known_kind(entry) for entry in entries}
     if kinds != {plan.collective_kind}:
         raise ServingRoundError(
             f"collective type mismatch: projected {plan.collective_kind} "

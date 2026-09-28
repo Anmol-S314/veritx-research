@@ -77,7 +77,7 @@ release-build:  ## build all release-gate backends from source + manifests
 
 release-manifest:  ## write build-time provenance manifests for built backends
 	python3 scripts/write_build_manifest.py third_party/booksim2/src/booksim \
-	    --recipe-version booksim2-fork/v1 --compiler $(RELEASE_CXX) \
+	    --recipe-version booksim2-fork/v2 --compiler $(RELEASE_CXX) \
 	    --build-config Release --flag=-O3 --flag=-g
 	python3 scripts/write_build_manifest.py \
 	    third_party/astra-sim/astra-sim/network_frontend/booksim2/bin/AstraSim_BookSim2 \

@@ -80,6 +80,48 @@ class BookSimPreparation:
     realization_digest: str
 
 
+def _check_booksim_evidence_binding(
+    evidence: Any, *,
+    message_artifact_id: str | None,
+    physical_traffic_id: str | None,
+    config_hash: str | None,
+    input_hash: str | None,
+    realization_digest: str | None,
+    resolved_fabric_hash: str,
+) -> None:
+    """Anti-transplant: persisted evidence must claim exactly the
+    preparation (and fabric) it is normalized against.
+
+    Parents are never stamped from context blindly — a mismatch is
+    evidence corruption, and normalizing another run's evidence under
+    this run's identities would attach science to the wrong design.
+    An absent binding identity is itself a refusal: an EVALUATED
+    outcome without one is corrupt, never normalizable."""
+    from veritx_dse.backend.evidence import BackendEvidenceError
+
+    def _require(name: str, claimed: Any, bound: Any) -> None:
+        if bound is None:
+            raise BackendEvidenceError(
+                f"cannot normalize BookSim evidence: the {name} this "
+                f"run binds is absent — refusing an unbound "
+                f"normalization")
+        if claimed != bound:
+            raise BackendEvidenceError(
+                f"native evidence {name} {claimed!r} does not match "
+                f"the prepared {name} {bound!r} — refusing a "
+                f"transplanted normalization")
+
+    _require("prepared_id", evidence.prepared_id, realization_digest)
+    _require("config_sha256", evidence.config_sha256, config_hash)
+    _require("trace_sha256", evidence.trace_sha256, input_hash)
+    _require("message_artifact_id", evidence.message_artifact_id,
+             message_artifact_id)
+    _require("physical_traffic_id", evidence.physical_traffic_id,
+             physical_traffic_id)
+    _require("resolved_fabric_hash", evidence.resolved_fabric_hash,
+             resolved_fabric_hash)
+
+
 class BookSimAdapter:
     """Orchestrates the certified standalone-BookSim execution chain.
 
@@ -543,6 +585,14 @@ class BookSimAdapter:
         admit_for_certified_product(evidence)
         _resolved = context.bundle.resolved_fabric.resolved_fabric_hash
         resolved_hash = _resolved() if callable(_resolved) else _resolved
+        _check_booksim_evidence_binding(
+            evidence,
+            message_artifact_id=native.message_artifact_id,
+            physical_traffic_id=native.physical_traffic_id,
+            config_hash=native.config_hash,
+            input_hash=native.input_hash,
+            realization_digest=native.realization_digest,
+            resolved_fabric_hash=resolved_hash)
         metrics: list[MetricValue] = []
         for key, value in evidence.stats.items():
             if isinstance(value, bool):
@@ -618,6 +668,32 @@ def normalize_booksim_outcome(
     verified_doc = validate_evidence_document(scientific)
     evidence = ScientificBackendEvidence.from_dict(verified_doc)
     admit_for_certified_product(evidence)
+    from veritx_dse.backend.evidence import BackendEvidenceError
+    if outcome.design_hash != context.design_hash:
+        raise BackendEvidenceError(
+            f"BookSim outcome design_hash {outcome.design_hash!r} does "
+            f"not match this context {context.design_hash!r} — "
+            f"refusing a transplanted normalization")
+    if outcome.workload_id != context.workload_id:
+        raise BackendEvidenceError(
+            f"BookSim outcome workload_id {outcome.workload_id!r} does "
+            f"not match this context {context.workload_id!r} — "
+            f"refusing a transplanted normalization")
+    _outcome_resolved = context.bundle.resolved_fabric.resolved_fabric_hash
+    _outcome_resolved_hash = _outcome_resolved() \
+        if callable(_outcome_resolved) else _outcome_resolved
+    if outcome.resolved_fabric_hash != _outcome_resolved_hash:
+        raise BackendEvidenceError(
+            "BookSim outcome resolved_fabric_hash does not match this "
+            "context — refusing a transplanted normalization")
+    _check_booksim_evidence_binding(
+        evidence,
+        message_artifact_id=outcome.message_artifact_id,
+        physical_traffic_id=outcome.physical_traffic_id,
+        config_hash=outcome.backend_config_hash,
+        input_hash=outcome.backend_input_hash,
+        realization_digest=outcome.realization_digest,
+        resolved_fabric_hash=_outcome_resolved_hash)
     metrics: list[MetricValue] = []
     stats = outcome.metrics or {}
     for key, value in stats.items():

@@ -30,6 +30,9 @@ from typing import Any
 from veritx_dse.application.evaluation_question import EvaluationQuestion
 from veritx_dse.backend.adapter import ModelFidelity
 from veritx_dse.backend.canonical_serving import CanonicalServingEvidence
+from veritx_dse.backend.canonical_serving import (
+    ServingBoundaryError,
+)
 from veritx_dse.backend.normalized_evidence import (
     MetricValue, NormalizedBackendEvidence,
 )
@@ -89,8 +92,19 @@ def _envelope(
         value = getattr(request, metric_key)
         if value is None:
             continue  # absent, never zero-filled
+        # Construction-time validation (RequestMetric.__post_init__) is
+        # the primary gate; this refusal is the backstop for evidence
+        # rebuilt outside it. A corrupt value refuses loudly — it is
+        # never dropped silently, which would mask corrupt evidence.
         if isinstance(value, bool) or not isinstance(value, (int, float)):
-            continue
+            raise ServingBoundaryError(
+                f"request {request.request_id!r}: {metric_key} is "
+                f"corrupt ({value!r}): refusing to normalize instead "
+                "of dropping it")
+        if value < 0:
+            raise ServingBoundaryError(
+                f"request {request.request_id!r}: {metric_key} is "
+                f"negative ({value}): corrupt native evidence")
         metrics.append(MetricValue(
             key=metric_key, value=float(value), unit="cycles",
             source_metric_key=metric_key,
