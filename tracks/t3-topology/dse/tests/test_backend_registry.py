@@ -92,6 +92,61 @@ def test_default_registry_has_booksim():
     assert caps[0].fidelity is ModelFidelity.NETWORK_PACKET_SIMULATION
 
 
+def test_default_registry_has_astra2():
+    """The federation's second execution domain is installed; its
+    READINESS is assessed at plan time, never implied by registration."""
+    from veritx_dse.backend.astra_adapter import Astra2Adapter
+    adapter = default_backend_registry().require("ASTRA2_EMBEDDED_BOOKSIM")
+    assert isinstance(adapter, Astra2Adapter)
+    questions = {cap.question for cap in adapter.capabilities()}
+    assert EvaluationQuestion.SYSTEM_MAKESPAN in questions
+    assert EvaluationQuestion.PER_RANK_COMPLETION in questions
+    assert EvaluationQuestion.NETWORK_COMPLETION not in questions
+
+
+def test_default_registry_accepts_runtime_configuration(tmp_path):
+    """Explicit binaries/repo-root bind once at registration — never
+    reconstructed ad hoc in service methods."""
+    booksim_bin = tmp_path / "booksim"
+    booksim_bin.write_bytes(b"fake")
+    astra_bin = tmp_path / "AstraSim_BookSim2"
+    astra_bin.write_bytes(b"fake")
+    registry = default_backend_registry(
+        booksim_bin=booksim_bin, astra_bin=astra_bin,
+        repo_root=tmp_path)
+    booksim = registry.require("BOOKSIM_STANDALONE")
+    astra = registry.require("ASTRA2_EMBEDDED_BOOKSIM")
+    assert booksim._binary == booksim_bin
+    assert booksim._repo_root == tmp_path
+    assert astra._binary == astra_bin
+    assert astra._repo_root == tmp_path
+
+
+def test_explicit_absent_binary_is_unavailable_not_a_crash(tmp_path):
+    """A configured-but-absent binary assesses UNAVAILABLE (missing
+    backend), never UNSUPPORTED, never an exception."""
+    from veritx_dse.application.evaluation_question import (
+        EvaluationQuestion as _Q,
+    )
+    from veritx_dse.backend.adapter import (
+        BackendReadiness, SupportLevel,
+    )
+    import sys as _sys
+    _sys.path.insert(0, str(DSE / "tests"))
+    from test_astra_adapter import _context
+    context = _context()
+    registry = default_backend_registry(
+        booksim_bin=tmp_path / "no-such-booksim",
+        astra_bin=tmp_path / "no-such-astra")
+    booksim_row = registry.require("BOOKSIM_STANDALONE").assess(
+        context, _Q.NETWORK_COMPLETION)
+    assert booksim_row.support is SupportLevel.SUPPORTED
+    assert booksim_row.readiness is BackendReadiness.UNAVAILABLE
+    astra_row = registry.require("ASTRA2_EMBEDDED_BOOKSIM").assess(
+        context, _Q.SYSTEM_MAKESPAN)
+    assert astra_row.readiness is BackendReadiness.UNAVAILABLE
+
+
 def test_non_adapter_registration_is_not_magically_validated():
     """The registry trusts structural conformance (Protocol typing tests
     own that law); it owns only identity uniqueness."""

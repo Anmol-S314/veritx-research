@@ -84,23 +84,24 @@ def _hash_of(obj: Any, name: str) -> str:
     return value() if callable(value) else value
 
 
-def _require_workload_is_compilation_lowering(
-        compilation: Any, *, workload_id: str) -> Any:
-    """Seal the Compilation→WorkloadGraph seam by RE-DERIVATION.
+def _require_context_for_workload(
+        compilation: Any, workload: Any) -> Any:
+    """Seal the Compilation→WorkloadGraph seam with ONE canonical
+    lowering.
 
-    Provenance is metadata, not authority: ``WorkloadGraph`` identity
-    deliberately excludes it, so a forged ``provenance['design_hash']``
-    cannot bind a foreign semantic graph. The only authority is what the
-    compilation's v3 request actually lowers to — re-derive it and
-    compare content identity, never ask the workload who its parent is.
-    Returns the expected ``LoweredWorkload`` (graph + traffic-class
-    sidecar) for the caller's sidecar comparison.
+    The canonical context lowers the compilation request exactly once;
+    the caller's workload is validated against it by content identity
+    only — provenance is forgeable metadata, never authority. A
+    transplanted workload is a typed refusal, never a second lowering.
+    Returns the ``CanonicalEvaluationContext`` the adapters evaluate.
     """
+    from veritx_dse.application.evaluation_context import (
+        build_evaluation_context,
+    )
     from veritx_dse.core.errors import (
         InvalidInput, UnsupportedSchedule, UnsupportedSemantics,
     )
     from veritx_dse.model.compile_model import CompileRequestV3
-    from veritx_dse.workload.intent_lowering import lower_compile_workload
     request = compilation.request
     if not isinstance(request, CompileRequestV3):
         raise _refuse(
@@ -111,7 +112,7 @@ def _require_workload_is_compilation_lowering(
             f"unverifiable workload is not a pass",
             cause_type=type(request).__name__)
     try:
-        expected = lower_compile_workload(request)
+        context = build_evaluation_context(compilation)
     except InvalidInput as exc:
         raise _refuse(
             ErrorCode.INVALID_INTENT,
@@ -124,15 +125,15 @@ def _require_workload_is_compilation_lowering(
             f"cannot evaluate: the compilation request lowering is "
             f"unsupported: {exc}",
             cause_type=type(exc).__name__) from exc
-    if expected.graph.workload_id() != workload_id:
+    if workload.workload_id() != context.workload_id:
         raise _refuse(
             ErrorCode.INVALID_INTENT,
-            f"workload {workload_id!r} is not the lowering of compilation "
-            f"request design {request.design_hash()!r} "
-            f"({expected.graph.workload_id()!r}) — refusing a semantic "
+            f"workload {workload.workload_id()!r} is not the lowering of "
+            f"compilation request design {request.design_hash()!r} "
+            f"({context.workload_id!r}) — refusing a semantic "
             f"transplant; provenance cannot bind a foreign graph",
             cause_type="WorkloadGraph")
-    return expected
+    return context
 
 
 def _require_evidence_authentic(
@@ -390,11 +391,10 @@ class FabricEvaluator:
         resolved_fabric_hash = \
             _hash_of(bundle.resolved_fabric, "resolved_fabric_hash")
         workload_id = workload.workload_id()
-        # The workload must be EXACTLY this compilation's lowering before
-        # any backend work; re-derivation is the authority (provenance is
-        # forgeable metadata).
-        expected_lowered = _require_workload_is_compilation_lowering(
-            compilation, workload_id=workload_id)
+        # The canonical context lowers the request EXACTLY once; the
+        # workload is validated against it by identity (provenance is
+        # forgeable metadata). No second lowering anywhere downstream.
+        context = _require_context_for_workload(compilation, workload)
 
         def refuse(status: str, reason: str, **extra: Any) -> EvaluationOutcome:
             return EvaluationOutcome(
@@ -408,16 +408,14 @@ class FabricEvaluator:
                           f"evaluator (supports {STANDALONE_BACKEND} only)")
 
         # ── canonical projection via the BookSim adapter ───────────
-        # §26 Option 2, federated: the evaluator orchestrates the
-        # certified BookSim stack through the BackendAdapter seam. The
-        # ADAPTER owns the canonical traffic construction (V3/V2 by
-        # unified class), the VC admission gate, the intent-class
-        # assertion, and the projection — exactly once, no duplicate
-        # artifact construction here. The evaluator binds the adapter's
-        # identities and keeps the evidence/window/performance assembly.
-        from veritx_dse.application.evaluation_context import (
-            build_evaluation_context,
-        )
+        # Federated: the evaluator consumes the certified BookSim stack
+        # through the BackendAdapter seam. The ADAPTER owns the canonical
+        # traffic construction (V3/V2 by unified class), the VC admission
+        # gate, the intent-class assertion, and the projection — exactly
+        # once, no duplicate artifact construction here. The prepared
+        # execution flows straight from prepare() to execute(); the
+        # evaluator binds the native identities and keeps the
+        # evidence/window/performance assembly.
         from veritx_dse.application.evaluation_question import (
             EvaluationQuestion,
         )
@@ -428,9 +426,8 @@ class FabricEvaluator:
         seed = opts.seed if type(opts.seed) is int \
             and not isinstance(opts.seed, bool) and opts.seed >= 0 else 0
         adapter = BookSimAdapter()
-        context = build_evaluation_context(compilation)
         try:
-            bs_prep = adapter.prepare(
+            exec_prepared = adapter.prepare(
                 context, EvaluationQuestion.NETWORK_COMPLETION,
                 traffic_class=opts.traffic_class)
         except BookSimProjectionRefusal as exc:
@@ -447,6 +444,7 @@ class FabricEvaluator:
                           f"fabric unprojectable to BookSim: {exc}",
                           message_artifact_id=exc.message_artifact_id,
                           physical_traffic_id=exc.physical_traffic_id)
+        bs_prep = exec_prepared.native_prepared
         message_id = bs_prep.message_artifact_id
         traffic_id = bs_prep.physical_traffic_id
         prof = bs_prep.profile_id
@@ -474,14 +472,6 @@ class FabricEvaluator:
             exec_opts = SimpleNamespace(
                 binary=bin_path, repo_root=repo_root,
                 run_dir=run_dir, timeout=opts.timeout_s, seed=seed)
-            from veritx_dse.backend.adapter import PreparedExecution \
-                as _Prepared
-            exec_prepared = _Prepared(
-                backend_id=adapter.backend_id,
-                projection_identity=realization_digest,
-                qualification_identity=prof,
-                backend_config=None, backend_input=None, producer=None,
-                native_prepared=bs_prep)
             result = adapter.execute(exec_prepared, exec_opts)
             producer = result.producer
         except FileNotFoundError as exc:

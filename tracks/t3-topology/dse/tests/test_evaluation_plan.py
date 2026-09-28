@@ -70,6 +70,9 @@ class _ScriptedAdapter:
     def execute(self, prepared, options):
         raise AssertionError("planner must not execute")
 
+    def normalize(self, context, question, prepared, native_result):
+        raise AssertionError("planner must not normalize")
+
 
 def _plan(adapter_list, question=EvaluationQuestion.NETWORK_COMPLETION,
           requested=None):
@@ -143,16 +146,68 @@ def test_requested_backend_wins_when_it_qualifies():
     assert plan.analyses[0].backend_id == "OTHER_BACKEND"
 
 
-def test_requested_backend_that_does_not_qualify_is_ignored():
-    """A requested backend that cannot represent must not silently win;
-    the deterministic law still picks the qualifying one."""
+def test_requested_backend_that_cannot_represent_is_refused_not_replaced():
+    """PRODUCT-CONTRACT correction: an explicit request is authoritative.
+    A requested backend that cannot represent returns its own refusal —
+    never a silent substitution of another backend."""
     plan = _plan([
         _ScriptedAdapter("WEAK", lambda q: _assessment(
             support=SupportLevel.UNSUPPORTED,
             readiness=BackendReadiness.BLOCKED, reason="no")),
         _ScriptedAdapter("BOOKSIM_STANDALONE", lambda q: _assessment()),
     ], requested="WEAK")
-    assert plan.analyses[0].backend_id == "BOOKSIM_STANDALONE"
+    row = plan.analyses[0]
+    assert row.backend_id is None
+    assert row.support is SupportLevel.UNSUPPORTED
+    assert row.reason == "no"
+
+
+def test_requested_backend_unavailable_returns_unavailable_row():
+    """An explicit request for a known-but-absent backend is UNAVAILABLE,
+    not a fallback to whatever is installed."""
+    plan = _plan([
+        _ScriptedAdapter("BOOKSIM_STANDALONE", lambda q: _assessment()),
+        _ScriptedAdapter("ABSENT", lambda q: _assessment(
+            backend="ABSENT", readiness=BackendReadiness.UNAVAILABLE,
+            reason="binary absent")),
+    ], requested="ABSENT")
+    row = plan.analyses[0]
+    assert row.backend_id == "ABSENT"
+    assert row.readiness is BackendReadiness.UNAVAILABLE
+
+
+def test_requested_unknown_backend_is_a_planning_error():
+    """Requesting a backend the registry never heard of is a caller bug,
+    not a row."""
+    import pytest as _pytest
+    with _pytest.raises(EvaluationPlanError, match="not registered"):
+        _plan([_ScriptedAdapter("BOOKSIM_STANDALONE",
+                                lambda q: _assessment())],
+              requested="NOPE")
+
+
+def test_empty_registry_is_unavailable_not_a_crash():
+    """A missing backend is UNAVAILABLE, not UNSUPPORTED, not IndexError."""
+    from veritx_dse.backend.registry import BackendRegistry
+    plan = EvaluationPlanner().plan(
+        _Ctx(), (EvaluationQuestion.NETWORK_COMPLETION,),
+        BackendRegistry())
+    row = plan.analyses[0]
+    assert row.backend_id is None
+    assert row.support is SupportLevel.UNSUPPORTED
+    assert row.readiness is BackendReadiness.UNAVAILABLE
+    assert row.reason == "no backend is registered for this evaluation"
+
+
+def test_unresolved_tie_refuses_loudly():
+    """Ties beyond the preference law refuse — registry order must never
+    break them silently."""
+    def ready(backend):
+        return _ScriptedAdapter(backend, lambda q: _assessment(backend=backend))
+    import pytest as _pytest
+    with _pytest.raises(EvaluationPlanError, match="unresolved tie"):
+        _plan([ready("EAST"), ready("WEST")],
+              question=EvaluationQuestion.SYSTEM_MAKESPAN)
 
 
 def test_readiness_beats_preference():

@@ -70,13 +70,17 @@ class EvaluationPlanner:
 
     Selection law, in order:
       1. query every registered adapter for the question;
-      2. drop UNSUPPORTED assessments (they cannot represent);
-      3. among the rest, prefer READY over BLOCKED/UNAVAILABLE;
-      4. prefer an explicitly requested backend when it qualifies;
+      2. an explicitly requested backend is authoritative: unknown is a
+         planning error; known returns exactly its row (refusal or
+         selection) — never a silent substitution;
+      3. drop UNSUPPORTED assessments (they cannot represent);
+      4. among the rest, prefer READY over BLOCKED/UNAVAILABLE;
       5. otherwise apply the stated per-question preference order;
-      6. ties beyond that are refused loudly, never broken silently;
+      6. ties beyond that are refused loudly, never broken silently
+         by registry order;
       7. when nothing qualifies, emit an UNSUPPORTED/BLOCKED/UNAVAILABLE
-         row carrying the best (deterministic) refusal reason.
+         row carrying the best (deterministic) refusal reason;
+      8. an empty registry is an UNAVAILABLE row, never a crash.
     """
 
     def plan(
@@ -127,6 +131,17 @@ class EvaluationPlanner:
         for adapter in registry.adapters():
             assessments.append(
                 (adapter.backend_id, adapter.assess(context, question)))
+        if not assessments:
+            return PlannedAnalysis(
+                question=question, backend_id=None, fidelity=None,
+                support=SupportLevel.UNSUPPORTED,
+                readiness=BackendReadiness.UNAVAILABLE,
+                qualification_profile=None,
+                reason="no backend is registered for this evaluation",
+                limitations=())
+        if requested_backend is not None:
+            return self._plan_explicit(
+                question, assessments, requested_backend)
         representable = [(bid, a) for bid, a in assessments
                          if a.support is not SupportLevel.UNSUPPORTED]
         if not representable:
@@ -157,12 +172,46 @@ class EvaluationPlanner:
             return (readiness_rank, preference)
 
         representable.sort(key=rank)
-        if requested_backend is not None:
-            for backend_id, assessment in representable:
-                if backend_id == requested_backend:
-                    return _planned(question, backend_id, assessment)
+        best_rank = rank(representable[0])
+        contenders = [bid for bid, a in representable
+                      if rank((bid, a)) == best_rank]
+        if len(set(contenders)) > 1:
+            raise EvaluationPlanError(
+                f"unresolved tie for {question.value}: backends "
+                f"{sorted(set(contenders))} are equally ranked and the "
+                f"preference law does not distinguish them; refusing "
+                f"rather than breaking the tie by registry order")
         best_backend, best = representable[0]
         return _planned(question, best_backend, best)
+
+    def _plan_explicit(
+        self,
+        question: EvaluationQuestion,
+        assessments: list[tuple[str, BackendAssessment]],
+        requested_backend: str,
+    ) -> PlannedAnalysis:
+        """An explicitly requested backend means exactly that backend.
+
+        Unknown is a planning error. Known returns its own row —
+        refusal or selection — never a silent substitution of another
+        backend.
+        """
+        for backend_id, assessment in assessments:
+            if backend_id != requested_backend:
+                continue
+            if assessment.support is SupportLevel.UNSUPPORTED:
+                return PlannedAnalysis(
+                    question=question, backend_id=None, fidelity=None,
+                    support=assessment.support,
+                    readiness=assessment.readiness,
+                    qualification_profile=None,
+                    reason=assessment.reason,
+                    limitations=assessment.limitations)
+            return _planned(question, backend_id, assessment)
+        raise EvaluationPlanError(
+            f"requested backend {requested_backend!r} is not registered; "
+            f"known backends: "
+            f"{sorted(bid for bid, _ in assessments) or 'none'}")
 
 
 def _planned(question: EvaluationQuestion, backend_id: str,

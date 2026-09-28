@@ -7,6 +7,7 @@ default registry is a literal tuple of adapters.
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Iterator
 
 from veritx_dse.backend.adapter import BackendAdapter
@@ -61,10 +62,32 @@ class BackendRegistry:
         return len(self._adapters)
 
 
-def default_backend_registry() -> BackendRegistry:
-    """The certified federation, explicitly enumerated."""
+def default_backend_registry(
+    *,
+    booksim_bin: str | Path | None = None,
+    astra_bin: str | Path | None = None,
+    repo_root: str | Path | None = None,
+) -> BackendRegistry:
+    """The certified federation, explicitly enumerated.
+
+    Registration is installation, not readiness: each adapter's
+    assessment decides whether it can actually execute on this tree.
+    Runtime configuration (explicit binaries, repo root) is bound here,
+    once — never reconstructed ad hoc in service methods.
+    """
+    from veritx_dse.backend.astra_adapter import Astra2Adapter
     from veritx_dse.backend.booksim_adapter import BookSimAdapter
-    return BackendRegistry((BookSimAdapter(),))
+    root = Path(repo_root) if repo_root is not None else None
+    return BackendRegistry((
+        BookSimAdapter(
+            binary=(Path(booksim_bin)
+                    if booksim_bin is not None else None),
+            repo_root=root),
+        Astra2Adapter(
+            binary=(Path(astra_bin)
+                    if astra_bin is not None else None),
+            repo_root=root),
+    ))
 
 
 __all__ = [
