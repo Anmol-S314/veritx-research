@@ -288,6 +288,116 @@ def _find_cycle(nodes: tuple, edges: tuple) -> list | None:
     return None
 
 
+# ── MIN_ADAPT_MESH qualification envelope ──────────────────────────────
+#
+# The escape certificate proves deadlock-structure; this envelope binds it
+# to the executable selection (backend routing function + VC partition +
+# realization) with an explicit fidelity distinct from the deterministic
+# static first-hop envelope. Runtime route selection stays allocator-
+# observed: qualification covers the declared policy/profile, the escape
+# semantics and the candidate-set scope — never a certified packet path.
+
+MIN_ADAPT_QUALIFICATION_METHOD = "MIN_ADAPT_MESH_QUALIFIED_V1"
+MIN_ADAPT_QUALIFICATION_FIDELITY = "ADAPTIVE_RUNTIME_SELECTION"
+MIN_ADAPT_BACKEND_ROUTING_FUNCTION = "min_adapt_mesh"
+
+
+@dataclass(frozen=True)
+class MinAdaptQualification:
+    """Qualified adaptive execution: proof + selection + scope."""
+
+    method: str
+    verdict: str
+    policy_hash: str
+    relation_hash: str
+    binding_hash: str
+    realization_hash: str
+    routing_function: str
+    escape_vcs: tuple[int, ...]
+    adaptive_vcs: tuple[int, ...]
+    fidelity: str = MIN_ADAPT_QUALIFICATION_FIDELITY
+    scope: str = ADAPTIVE_ESCAPE_SCOPE
+    first_hop_table_comparable: bool = False
+
+    def __post_init__(self):
+        if self.method != MIN_ADAPT_QUALIFICATION_METHOD:
+            raise AdaptiveEscapeVerificationError(
+                f"qualification method must be "
+                f"{MIN_ADAPT_QUALIFICATION_METHOD!r}")
+        if self.verdict not in ("QUALIFIED", "NOT_QUALIFIED"):
+            raise AdaptiveEscapeVerificationError(
+                "qualification verdict must be QUALIFIED or NOT_QUALIFIED")
+        for name in ("policy_hash", "relation_hash", "binding_hash",
+                     "realization_hash"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value:
+                raise AdaptiveEscapeVerificationError(
+                    f"{name} must be a non-empty string")
+        if self.routing_function != MIN_ADAPT_BACKEND_ROUTING_FUNCTION:
+            raise AdaptiveEscapeVerificationError(
+                "only min_adapt_mesh is qualifiable")
+        if tuple(self.escape_vcs) != (0,):
+            raise AdaptiveEscapeVerificationError(
+                "min_adapt_mesh qualification requires escape VC0")
+        if self.fidelity != MIN_ADAPT_QUALIFICATION_FIDELITY:
+            raise AdaptiveEscapeVerificationError(
+                "adaptive fidelity must stay distinct from the "
+                "deterministic static envelope")
+        if self.first_hop_table_comparable is not False:
+            raise AdaptiveEscapeVerificationError(
+                "first_hop_table_comparable must be False: runtime "
+                "route selection is allocator-observed, never a "
+                "certified table")
+
+
+def qualify_min_adapt(
+        *, topology: TopologyArtifact,
+        policy: RoutingPolicyDefinition,
+        relation: RoutingRelationArtifact,
+        vc_resource: VCResourceArtifact,
+        binding: RoutingResourceBindingArtifact,
+        realization_hash: str,
+        escape_certificate: AdaptiveEscapeCertificate | None = None,
+) -> MinAdaptQualification:
+    """Qualify MIN_ADAPT_MESH execution over the escape-certificate proof."""
+    certificate = escape_certificate
+    if certificate is None:
+        certificate = certify_adaptive_escape(
+            topology=topology, policy=policy, relation=relation,
+            vc_resource=vc_resource, binding=binding)
+    if certificate.verdict != "PASS":
+        return MinAdaptQualification(
+            method=MIN_ADAPT_QUALIFICATION_METHOD,
+            verdict="NOT_QUALIFIED",
+            policy_hash=policy.policy_hash,
+            relation_hash=relation.relation_hash,
+            binding_hash=binding.binding_hash,
+            realization_hash=realization_hash,
+            routing_function=MIN_ADAPT_BACKEND_ROUTING_FUNCTION,
+            escape_vcs=(0,),
+            adaptive_vcs=tuple(dict(binding.role_to_vcs).get(
+                "adaptive", ())),
+        )
+    if certificate.policy_hash != policy.policy_hash \
+            or certificate.relation_hash != relation.relation_hash \
+            or certificate.binding_hash != binding.binding_hash:
+        raise AdaptiveEscapeVerificationError(
+            "escape certificate does not bind this policy/relation/"
+            "binding")
+    roles = dict(binding.role_to_vcs)
+    return MinAdaptQualification(
+        method=MIN_ADAPT_QUALIFICATION_METHOD,
+        verdict="QUALIFIED",
+        policy_hash=policy.policy_hash,
+        relation_hash=relation.relation_hash,
+        binding_hash=binding.binding_hash,
+        realization_hash=realization_hash,
+        routing_function=MIN_ADAPT_BACKEND_ROUTING_FUNCTION,
+        escape_vcs=tuple(roles.get("escape", ())),
+        adaptive_vcs=tuple(roles.get("adaptive", ())),
+    )
+
+
 def certify_adaptive_escape(
         *,
         topology: TopologyArtifact,

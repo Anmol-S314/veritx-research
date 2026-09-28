@@ -407,9 +407,256 @@ def required_questions(definition: "OptimizationDefinition"
     return tuple(seen)
 
 
+# ── Wave-F re-expression: study dimensions (additive; GUIDED path untouched) ──
+#
+# Wave-F's PARAM_REGISTRY patched fabric_overrides intent paths outside the
+# product CompileRequest authority (SUPERSEDED). Study dimensions re-express
+# the useful variables ON canonical authority: searchable NocConfig fabric
+# knobs, workload parallelism sizes, and placement policy resolved through
+# canonical placement/mapping artifacts. Dead knobs and LOCKED properties
+# are refused with reasons, never silently dropped.
+
+#: Fabric knobs searchable in a study. GUIDED_PARAMS additionally lists
+#: rcu_enabled / mcast_groups / mcast_setup_cycles / output_formats /
+#: obfuscation_level; those are NOT searchable (see DEAD_KNOBS).
+SEARCHABLE_FABRIC_PARAMS: dict[str, str] = {
+    "link_width": "link_width",
+    "concentration": "concentration",
+    "radix": "radix",
+    "topology_family": "topology_family",
+    "arbitration": "arbitration",
+}
+
+#: GUIDED-listed knobs that must never be study dimensions, with reasons.
+#: rcu/mcast are removed/future-contract router resources; output_formats
+#: and obfuscation_level are not physical-performance dimensions.
+DEAD_KNOBS: dict[str, str] = {
+    "rcu_enabled": "removed from v4: no structural router-reduction "
+                     "artifact exists; not a searchable dimension",
+    "mcast_groups": "removed from v4: constrains a switch multicast "
+                       "engine with no execution; not searchable",
+    "mcast_setup_cycles": "removed from v4: see mcast_groups",
+    "output_formats": "not a physical-performance dimension: output "
+                         "selection cannot change measured performance",
+    "obfuscation_level": "not a physical-performance dimension",
+}
+
+#: Workload parallelism sizes (patched onto base.workload; each >= 1).
+PARALLELISM_DIMS = ("tp", "pp", "ep", "dp")
+
+#: Placement dimension name. Values are placement POLICY names resolved
+#: through canonical mapping constructors (see candidate
+#: .resolve_study_mapping); only qualified policies are expressible.
+PLACEMENT_DIM = "placement"
+
+#: Placement policies with a canonical constructor today.
+PLACEMENT_POLICIES = ("rank_order",)
+
+
+def _check_study_dimension(name: str) -> tuple[str, str]:
+    """Validate a study dimension name -> (namespace, short name)."""
+    short = _normalize_param_name(name)
+    squashed = short.lower().replace("_", "")
+    for tok in _LOCKED_TOKENS:
+        if tok in squashed:
+            raise OptimizationDefinitionError(
+                f"study dimension {name!r} names a LOCKED property "
+                f"({tok}): VC count/map, routing, turn restrictions and "
+                "escape VCs are compiler-derived and structurally "
+                "inexpressible — every candidate recompiles them")
+    if short in DEAD_KNOBS:
+        raise OptimizationDefinitionError(
+            f"study dimension {name!r} refused: {DEAD_KNOBS[short]}")
+    if short in PARALLELISM_DIMS:
+        return ("workload", short)
+    if short == PLACEMENT_DIM:
+        return ("placement", short)
+    if short in SEARCHABLE_FABRIC_PARAMS:
+        return ("fabric", short)
+    raise OptimizationDefinitionError(
+        f"unknown study dimension {name!r}; searchable fabric: "
+        f"{sorted(SEARCHABLE_FABRIC_PARAMS)}, workload: "
+        f"{list(PARALLELISM_DIMS)}, placement: [{PLACEMENT_DIM}]")
+
+
+@dataclass(frozen=True)
+class StudyParam:
+    """One finite study design-variable domain (namespace-aware)."""
+    name: str
+    values: tuple[Any, ...]
+
+    def __post_init__(self):
+        namespace, short = _check_study_dimension(self.name)
+        object.__setattr__(self, "name", short)
+        object.__setattr__(self, "namespace", namespace)
+        vals = self.values
+        if isinstance(vals, list):
+            vals = tuple(vals)
+        if not isinstance(vals, tuple) or not vals:
+            raise OptimizationDefinitionError(
+                f"study parameter {short!r} needs a non-empty value tuple/list")
+        if namespace == "workload":
+            for v in vals:
+                if type(v) is not int or v < 1:
+                    raise OptimizationDefinitionError(
+                        f"parallelism dimension {short!r} needs int sizes "
+                        f">= 1, got {v!r}")
+            canon = tuple(vals)
+        elif namespace == "placement":
+            for v in vals:
+                if not isinstance(v, str) or v not in PLACEMENT_POLICIES:
+                    raise OptimizationDefinitionError(
+                        f"placement policy {v!r} has no canonical "
+                        f"constructor; qualified: {list(PLACEMENT_POLICIES)}")
+            canon = tuple(vals)
+        else:
+            canon = tuple(_canonical_value(v) for v in vals)
+        if len(set(canonical_json(v) for v in canon)) != len(canon):
+            raise OptimizationDefinitionError(
+                f"study parameter {short!r} has duplicate domain values")
+        ordered = tuple(sorted(canon, key=canonical_json))
+        object.__setattr__(self, "values", ordered)
+
+    namespace: str = "fabric"
+
+
+@dataclass(frozen=True)
+class ScenarioObjective:
+    """One objective bound to exactly one scenario (None = every scenario)."""
+    metric: str
+    direction: str
+    question: EvaluationQuestion = EvaluationQuestion.NETWORK_COMPLETION
+    backend_id: str | None = None
+    scenario: str | None = None
+
+    def __post_init__(self):
+        if not isinstance(self.metric, str) or not self.metric:
+            raise OptimizationDefinitionError("objective needs a metric name")
+        if self.direction not in ("MIN", "MAX"):
+            raise OptimizationDefinitionError(
+                f"objective direction must be MIN or MAX, got {self.direction!r}")
+        object.__setattr__(self, "question",
+                            _coerce_question(self.question))
+        if self.backend_id is not None and (
+                not isinstance(self.backend_id, str)
+                or not self.backend_id):
+            raise OptimizationDefinitionError(
+                "objective backend constraint must be a backend id "
+                f"string or None, got {self.backend_id!r}")
+        if self.scenario is not None and (
+                not isinstance(self.scenario, str)
+                or not self.scenario):
+            raise OptimizationDefinitionError(
+                "objective scenario must be a scenario id string or "
+                f"None, got {self.scenario!r}")
+
+
+@dataclass(frozen=True)
+class ScenarioConstraint:
+    """One hard constraint bound to exactly one scenario (None = every)."""
+    metric: str
+    op: str
+    threshold: float
+    scenario: str | None = None
+
+    def __post_init__(self):
+        if not isinstance(self.metric, str) or not self.metric:
+            raise OptimizationDefinitionError(
+                "constraint needs a metric name")
+        if self.op not in ("<=", ">="):
+            raise OptimizationDefinitionError(
+                f"constraint operator must be <= or >=, got {self.op!r}")
+        if isinstance(self.threshold, bool) or not isinstance(
+                self.threshold, (int, float)):
+            raise OptimizationDefinitionError(
+                "constraint threshold must be a real number, got "
+                f"{self.threshold!r}")
+        import math
+        if not math.isfinite(float(self.threshold)):
+            raise OptimizationDefinitionError(
+                "constraint threshold must be finite")
+        object.__setattr__(self, "threshold", float(self.threshold))
+        if self.scenario is not None and (
+                not isinstance(self.scenario, str)
+                or not self.scenario):
+            raise OptimizationDefinitionError(
+                "constraint scenario must be a scenario id string or "
+                f"None, got {self.scenario!r}")
+
+
+# ── dimension effectiveness (canonical ownership + probes, §18) ──────────
+#
+# An objective knows which design dimensions can causally affect it. A
+# proven no-effect combination is refused for certified studies (it can
+# never distinguish candidates); anything else unknown only warns.
+# Rationales cite the canonical authority, never intuition.
+
+#: (dimension, metric key) -> (verdict, rationale). Dimensions and
+#: metrics outside this table are UNKNOWN.
+_EFFECTIVENESS: dict[tuple[str, str], tuple[str, str]] = {
+    ("link_width", "completion_cycles"): (
+        "EFFECTIVE",
+        "link width sets flit serialization/bandwidth: a direct "
+        "physical effect on network completion"),
+    ("link_width", "critical_path"): (
+        "NO_DIRECT_EFFECT",
+        "Wave-E critical_path is the longest EXPLICIT dependency chain "
+        "by scheduled durations; resource serialization (bandwidth) is "
+        "excluded by definition, so link width cannot move it"),
+    ("tp", "completion_cycles"): (
+        "EFFECTIVE",
+        "TP changes collective participation and traffic shape: "
+        "workload/system semantics change"),
+    ("pp", "completion_cycles"): (
+        "EFFECTIVE",
+        "PP changes stage/lowering structure: workload semantics change"),
+    ("ep", "completion_cycles"): (
+        "EFFECTIVE",
+        "EP changes expert dispatch/combine participation: workload "
+        "semantics change"),
+    ("dp", "completion_cycles"): (
+        "EFFECTIVE",
+        "DP changes replica/group algebra: workload semantics change"),
+    ("placement", "completion_cycles"): (
+        "EFFECTIVE",
+        "host assignment changes rank->endpoint locality through the "
+        "canonical mapping artifact"),
+    ("concentration", "completion_cycles"): (
+        "EFFECTIVE",
+        "concentration changes endpoint-per-router structure"),
+    ("radix", "completion_cycles"): (
+        "EFFECTIVE",
+        "radix changes fabric geometry"),
+    ("topology_family", "completion_cycles"): (
+        "EFFECTIVE",
+        "topology family changes the routed graph"),
+    ("arbitration", "completion_cycles"): (
+        "EFFECTIVE",
+        "arbitration changes router resource contention as qualified"),
+}
+
+EFFECTIVENESS_VERDICTS = ("EFFECTIVE", "NO_DIRECT_EFFECT", "UNKNOWN")
+
+
+def assess_effectiveness(dimension: str, metric: str
+                         ) -> tuple[str, str]:
+    """(verdict, rationale) for one dimension x metric combination."""
+    short = _normalize_param_name(dimension)
+    entry = _EFFECTIVENESS.get((short, metric))
+    if entry is not None:
+        return entry
+    return ("UNKNOWN",
+            f"no proven causal relation between {short!r} and "
+            f"{metric!r}: warn, do not prevent")
+
+
 __all__ = [
     "DOMAIN", "GUIDED_PARAMS", "SEARCH_METHODS", "SELECTION_POLICIES",
     "Constraint", "DomainParam", "Objective", "ObjectiveSource",
     "OptimizationDefinition", "OptimizationDefinitionError",
     "required_questions",
+    "SEARCHABLE_FABRIC_PARAMS", "DEAD_KNOBS", "PARALLELISM_DIMS",
+    "PLACEMENT_DIM", "PLACEMENT_POLICIES", "StudyParam",
+    "ScenarioObjective", "ScenarioConstraint",
+    "EFFECTIVENESS_VERDICTS", "assess_effectiveness",
 ]

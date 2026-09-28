@@ -635,6 +635,129 @@ def make_deterministic_routing_realization(
     return artifact
 
 
+# ── adaptive backend selection (canonical projection record) ───────────
+#
+# This is a canonical SELECTION record, not a backend renderer: it states
+# which fork routing function an ADAPTIVE realization executes under, the
+# exact VC partition the fork requires, and the observation scope. The
+# backend projection consumes it; routing stays compiler-LOCKED (no user
+# knob). Only MIN_ADAPT_MESH is selectable; every other adaptive fork
+# function is refused.
+
+#: The one selectable adaptive backend routing function.
+MIN_ADAPT_BACKEND_ROUTING_FUNCTION = "min_adapt_mesh"
+
+#: Fidelity label for adaptive execution. Distinct from the deterministic
+#: static first-hop envelope: runtime route selection is allocator-
+#: observed, never a certified table.
+MIN_ADAPT_FIDELITY = "ADAPTIVE_RUNTIME_SELECTION"
+
+#: Minimum VC universe: escape VC0 plus at least one adaptive VC.
+MIN_ADAPT_MIN_VCS = 2
+
+MIN_ADAPT_BACKEND_SCOPE = (
+    "per-hop runtime selection by the router allocator over the "
+    "canonical candidate set, observing output-credit occupancy; the "
+    "escape subfunction (VC0, DOR_XY) is always offered. First-hop dump "
+    "comparison does NOT apply: the fork refuses a deterministic "
+    "first-hop table for adaptive functions (multi-port candidate set) "
+    "and exits instead of writing a dump.")
+
+
+@dataclass(frozen=True)
+class AdaptiveBackendSelection:
+    """Canonical record selecting the adaptive backend execution."""
+
+    routing_function: str
+    policy_hash: str
+    realization_hash: str
+    escape_vcs: tuple[int, ...]
+    adaptive_vcs: tuple[int, ...]
+    num_vcs: int
+    fidelity: str = MIN_ADAPT_FIDELITY
+    scope: str = MIN_ADAPT_BACKEND_SCOPE
+    first_hop_table_comparable: bool = False
+
+    def __post_init__(self):
+        _as_str("routing_function", self.routing_function)
+        if self.routing_function != MIN_ADAPT_BACKEND_ROUTING_FUNCTION:
+            raise RoutingRealizationError(
+                f"UNSUPPORTED adaptive backend routing function "
+                f"{self.routing_function!r} (only "
+                f"{MIN_ADAPT_BACKEND_ROUTING_FUNCTION!r} is selectable)")
+        _as_hash("policy_hash", self.policy_hash)
+        _as_hash("realization_hash", self.realization_hash)
+        if tuple(self.escape_vcs) != (0,):
+            raise RoutingRealizationError(
+                f"min_adapt_mesh requires escape_vcs == (0,), got "
+                f"{tuple(self.escape_vcs)!r}")
+        adaptive = tuple(self.adaptive_vcs)
+        if not adaptive or list(adaptive) != list(
+                range(1, len(adaptive) + 1)):
+            raise RoutingRealizationError(
+                f"min_adapt_mesh requires adaptive_vcs == (1..N), got "
+                f"{adaptive!r}")
+        if self.num_vcs != 1 + len(adaptive):
+            raise RoutingRealizationError(
+                f"num_vcs {self.num_vcs!r} does not match the VC "
+                f"partition (1 escape + {len(adaptive)} adaptive)")
+        if self.num_vcs < MIN_ADAPT_MIN_VCS:
+            raise RoutingRealizationError(
+                f"min_adapt_mesh requires at least "
+                f"{MIN_ADAPT_MIN_VCS} VCs, got {self.num_vcs!r}")
+        _as_str("fidelity", self.fidelity)
+        if self.fidelity != MIN_ADAPT_FIDELITY:
+            raise RoutingRealizationError(
+                f"adaptive fidelity must be {MIN_ADAPT_FIDELITY!r}, got "
+                f"{self.fidelity!r}")
+        _as_str("scope", self.scope)
+        if self.first_hop_table_comparable is not False:
+            raise RoutingRealizationError(
+                "first_hop_table_comparable must be False for adaptive "
+                "execution (no deterministic first-hop table exists)")
+
+
+def adaptive_backend_selection(
+        *, realization: "RoutingRealizationArtifact",
+        policy: RoutingPolicyDefinition,
+        binding: RoutingResourceBindingArtifact) -> AdaptiveBackendSelection:
+    """Select the backend execution for an ADAPTIVE realization."""
+    _require_instance("realization", realization,
+                      RoutingRealizationArtifact)
+    _require_instance("policy", policy, RoutingPolicyDefinition)
+    _require_instance("binding", binding,
+                      RoutingResourceBindingArtifact)
+    if realization.kind is not RoutingRealizationKind.ADAPTIVE:
+        raise RoutingRealizationError(
+            "adaptive backend selection requires an ADAPTIVE realization")
+    if policy.algorithm != "per_hop_min_adaptive":
+        raise RoutingRealizationError(
+            f"UNSUPPORTED adaptive algorithm {policy.algorithm!r} "
+            f"(only 'per_hop_min_adaptive' selects "
+            f"{MIN_ADAPT_BACKEND_ROUTING_FUNCTION!r})")
+    if realization.source_hash("policy_hash") != policy.policy_hash:
+        raise RoutingRealizationError(
+            "realization does not bind this routing policy")
+    if realization.source_hash("routing_resource_binding_hash") != \
+            binding.binding_hash:
+        raise RoutingRealizationError(
+            "realization does not bind this resource binding")
+    if binding.policy_hash != policy.policy_hash:
+        raise RoutingRealizationError(
+            "binding does not bind this routing policy")
+    roles = dict(binding.role_to_vcs)
+    escape = tuple(roles.get("escape", ()))
+    adaptive = tuple(roles.get("adaptive", ()))
+    vcs = sorted(escape) + sorted(adaptive)
+    return AdaptiveBackendSelection(
+        routing_function=MIN_ADAPT_BACKEND_ROUTING_FUNCTION,
+        policy_hash=policy.policy_hash,
+        realization_hash=realization.routing_realization_hash,
+        escape_vcs=escape,
+        adaptive_vcs=adaptive,
+        num_vcs=len(vcs))
+
+
 def make_adaptive_routing_realization(
         *, topology: TopologyArtifact,
         policy: RoutingPolicyDefinition,

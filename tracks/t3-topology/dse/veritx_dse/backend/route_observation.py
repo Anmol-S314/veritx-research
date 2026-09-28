@@ -177,7 +177,56 @@ def compare_route_realization(
         executed_sha256=_digest(executed))
 
 
+# ── adaptive observation scope ─────────────────────────────────────────
+#
+# The fork REFUSES a deterministic first-hop dump for adaptive routing
+# functions (networks/network.cpp: a multi-port candidate set aborts the
+# dump instead of writing a table). The canonical side mirrors that
+# refusal: a deterministic RouteArtifact table can never certify adaptive
+# execution, and claiming route equivalence from it is a scope violation.
+# Adaptive inspection renders the canonical candidate sets (not evidence).
+
+ADAPTIVE_OBSERVATION_SCOPE = (
+    "adaptive runtime selection is allocator-observed over the canonical "
+    "candidate set; no deterministic first-hop table exists and the "
+    "backend writes no dump. Deterministic table equivalence must never "
+    "be claimed for an adaptive policy.")
+
+
+def refuse_deterministic_claim_for_adaptive(policy_algorithm: object) -> None:
+    """Refuse deterministic-table equivalence for adaptive policies."""
+    if not isinstance(policy_algorithm, str) or not policy_algorithm:
+        raise RouteObservationError(
+            "policy algorithm must be a non-empty string")
+    if policy_algorithm == "per_hop_min_adaptive":
+        raise RouteObservationError(
+            "UNSUPPORTED scope: deterministic first-hop table equivalence "
+            "cannot certify per_hop_min_adaptive execution — the "
+            "candidate set has no single next hop and the backend "
+            "refuses the dump (" + ADAPTIVE_OBSERVATION_SCOPE + ")")
+    return None
+
+
+def render_adaptive_candidate_table(
+        relation: Any) -> tuple[tuple[int, int, str | None, tuple], ...]:
+    """Render canonical candidate sets for inspection (never evidence)."""
+    rows: list[tuple[int, int, str | None, tuple]] = []
+    for decision in relation.decisions:
+        context = decision.context
+        actions = tuple(
+            (action.channel_id, action.next_role_id, action.priority)
+            for action in decision.actions)
+        rows.append((context.router_id,
+                     context.destination_router_id,
+                     context.current_role_id, actions))
+    return tuple(sorted(rows, key=lambda row: (
+        row[0], row[1], row[2] or "")))
+
+
 __all__ = [
     "RouteObservationError", "RouteObservationResult",
     "compare_route_realization", "expected_route_rows", "parse_route_dump",
+    "refuse_deterministic_claim_for_adaptive",
+    "render_adaptive_candidate_table",
+    "ADAPTIVE_OBSERVATION_SCOPE",
 ]

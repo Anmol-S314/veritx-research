@@ -40,8 +40,8 @@ from veritx_dse.core.route_artifact import (
 )
 from veritx_dse.model.routing_policy import (
     CandidateMode, DeadlockProofObligation, DecisionScope, PathMode,
-    RandomnessMode, RoutingPolicyDefinition, RoutingResourceRoleKind,
-    RuntimeObservation, SelectionLocus,
+    RandomnessMode, RoutingPolicyDefinition, RoutingResourceRole,
+    RoutingResourceRoleKind, RuntimeObservation, SelectionLocus,
 )
 from veritx_dse.model.routing_relation import (
     RoutingAction, RoutingActionKind, RoutingContext, RoutingDecision,
@@ -52,6 +52,30 @@ from veritx_dse.model.topology_artifact import (
 )
 
 MIN_ADAPT_ALGORITHM = "per_hop_min_adaptive"
+#: Canonical id of the exact MIN_ADAPT_MESH profile.
+MIN_ADAPT_POLICY_ID = "min_adapt_mesh"
+#: Backend routing function this profile selects. This is a canonical
+#: selection record, not a user knob: routing stays compiler-LOCKED.
+MIN_ADAPT_BACKEND_ROUTING_FUNCTION = "min_adapt_mesh"
+#: Fork routing functions with NO canonical policy instance. They execute
+#: in the backend only; any policy naming one is refused here.
+#: ``limited_adapt_mesh`` is additionally broken upstream (its registration
+#: is commented out in routefunc.cpp) and must never be reclaimed.
+REFUSED_BACKEND_ONLY_ALGORITHMS = (
+    "limited_adapt_mesh",
+    "planar_adapt_mesh",
+    "romm_mesh",
+    "valiant_mesh",
+    "valiant_torus",
+    "chaos_mesh",
+    "chaos_torus",
+    "adaptive_xy_yx_mesh",
+    "adaptive_xy_yx_gec",
+    "ugal_flatfly",
+    "ugal_dragonflynew",
+    "hybrid_gec",
+    "dor_gec",
+)
 ADAPTIVE_ROLE = "adaptive"
 ESCAPE_ROLE = "escape"
 
@@ -81,12 +105,63 @@ def _unsupported(reason: str) -> RoutingRelationMaterializationError:
     return RoutingRelationMaterializationError(f"UNSUPPORTED: {reason}")
 
 
+def refuse_backend_only_algorithm(algorithm: object) -> None:
+    """Refuse fork routing functions with no canonical policy instance."""
+    if not isinstance(algorithm, str) or not algorithm:
+        raise RoutingRelationMaterializationError(
+            "algorithm must be a non-empty string")
+    if algorithm == MIN_ADAPT_ALGORITHM:
+        return
+    if algorithm == "limited_adapt_mesh":
+        raise RoutingRelationMaterializationError(
+            "UNSUPPORTED: limited_adapt_mesh is broken upstream (its "
+            "registration is commented out in the fork) and has no "
+            "canonical instance")
+    if algorithm in REFUSED_BACKEND_ONLY_ALGORITHMS:
+        raise RoutingRelationMaterializationError(
+            f"UNSUPPORTED: backend-only routing function {algorithm!r} "
+            "has no canonical policy instance (no materializer, no "
+            "proof, no qualification)")
+    raise RoutingRelationMaterializationError(
+        f"UNSUPPORTED: unknown routing algorithm {algorithm!r} (only "
+        f"{MIN_ADAPT_ALGORITHM!r} is canonical)")
+
+
+def min_adapt_mesh_policy() -> RoutingPolicyDefinition:
+    """The exact canonical MIN_ADAPT_MESH routing policy profile."""
+    return RoutingPolicyDefinition(
+        id=MIN_ADAPT_POLICY_ID, algorithm=MIN_ADAPT_ALGORITHM,
+        algorithm_version=1, path_mode=PathMode.MINIMAL,
+        decision_scope=DecisionScope.PER_HOP,
+        candidate_mode=CandidateMode.CANDIDATE_SET,
+        selection_locus=SelectionLocus.ROUTER_ALLOCATOR,
+        randomness=RandomnessMode.NONE,
+        deadlock_proof_obligation=
+            DeadlockProofObligation.ESCAPE_SUBFUNCTION,
+        runtime_observations=(
+            RuntimeObservation.OUTPUT_CREDIT_OCCUPANCY,),
+        resource_roles=(
+            RoutingResourceRole(
+                id=ADAPTIVE_ROLE,
+                kind=RoutingResourceRoleKind.ADAPTIVE),
+            RoutingResourceRole(
+                id=ESCAPE_ROLE,
+                kind=RoutingResourceRoleKind.ESCAPE)),
+        allowed_role_transitions=_ALLOWED_ROLE_TRANSITIONS)
+
+
 def _check_min_adapt_policy(policy: RoutingPolicyDefinition) -> None:
     if not isinstance(policy, RoutingPolicyDefinition):
         raise RoutingRelationMaterializationError(
             "policy must be a RoutingPolicyDefinition")
     problems: list[str] = []
     if policy.algorithm != MIN_ADAPT_ALGORITHM:
+        if isinstance(policy.algorithm, str) and policy.algorithm in \
+                REFUSED_BACKEND_ONLY_ALGORITHMS:
+            raise RoutingRelationMaterializationError(
+                f"UNSUPPORTED: backend-only routing function "
+                f"{policy.algorithm!r} has no canonical policy "
+                f"instance")
         problems.append(f"algorithm {policy.algorithm!r}")
     if policy.algorithm_version != 1:
         problems.append(f"algorithm_version {policy.algorithm_version!r}")
