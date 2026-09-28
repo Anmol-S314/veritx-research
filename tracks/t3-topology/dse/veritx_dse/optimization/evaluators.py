@@ -32,8 +32,10 @@ the real adapter lands.
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
+
+from veritx_dse.application.evaluation_question import EvaluationQuestion
 
 
 class EvaluationError(ValueError):
@@ -55,6 +57,64 @@ AUTHORITY_CERTIFIED_BACKEND = "certified-backend"
 AUTHORITY_ANALYTIC_FAKE = "analytic-fake"
 EVALUATION_AUTHORITIES = (
     AUTHORITY_CERTIFIED_BACKEND, AUTHORITY_ANALYTIC_FAKE)
+
+
+@dataclass(frozen=True)
+class ObjectiveProvenance:
+    """One measured objective value with its federation provenance.
+
+    A float without provenance is not an optimizer objective: every
+    value records the metric key, the question it was read from, the
+    backend that produced it, the model fidelity, the qualification,
+    the native evidence id, the unit and the value. Scalar objectives
+    bind dimension-free envelope metrics only (per-rank / per-request
+    rows never collapse into a scalar — no invented key suffixes).
+    """
+
+    metric_key: str
+    question: EvaluationQuestion
+    backend_id: str | None
+    model_fidelity: str | None
+    qualification: str | None
+    native_evidence_id: str | None
+    unit: str | None
+    value: float
+
+    def __post_init__(self):
+        if not isinstance(self.metric_key, str) or not self.metric_key:
+            raise EvaluationError("objective provenance needs a metric key")
+        if not isinstance(self.question, EvaluationQuestion):
+            raise EvaluationError(
+                f"objective provenance question must be an "
+                f"EvaluationQuestion, got {self.question!r}")
+        if self.backend_id is not None and (
+                not isinstance(self.backend_id, str)
+                or not self.backend_id):
+            raise EvaluationError(
+                "objective provenance backend_id must be a backend id "
+                f"string or None, got {self.backend_id!r}")
+        if isinstance(self.value, bool) or \
+                not isinstance(self.value, (int, float)):
+            raise EvaluationError(
+                f"objective provenance value must be a real number, got "
+                f"{self.value!r}")
+        import math
+        if not math.isfinite(float(self.value)):
+            raise EvaluationError(
+                "objective provenance value must be finite")
+        object.__setattr__(self, "value", float(self.value))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "metric_key": self.metric_key,
+            "question": self.question.value,
+            "backend_id": self.backend_id,
+            "model_fidelity": self.model_fidelity,
+            "qualification": self.qualification,
+            "native_evidence_id": self.native_evidence_id,
+            "unit": self.unit,
+            "value": self.value,
+        }
 
 
 @dataclass(frozen=True)
@@ -119,6 +179,22 @@ class CandidateEvaluation:
     verified_performance_result: Any = None
     # AuthenticatedBackendEvaluation proof (A4); the eligibility authority
     authenticated_proof: Any = None
+    # Per-metric federation provenance for every bound objective value
+    # (Step 2: metric key, question, backend id, model fidelity,
+    # qualification, native evidence id, unit, value). Empty for legacy
+    # and analytic evaluations.
+    objective_provenance: dict[str, Any] = field(default_factory=dict)
+    # Exact per-objective miss reasons (backend-constraint mismatch,
+    # dimensioned-only metric, absent key) so UNMEASURABLE is auditable.
+    # Empty means "no recorded reason" — the optimizer falls back to its
+    # generic unmeasured reason.
+    objective_unmeasured_reasons: dict[str, str] = field(
+        default_factory=dict)
+    # The federated analyses (AnalysisOutcome records) this evaluation
+    # executed — the in-memory carriers the optimizer re-derives
+    # non-network objective values from (never trusts objective_values
+    # for those). Empty for legacy single-backend evaluations.
+    federated_analyses: tuple[Any, ...] = ()
 
 
 class CandidateEvaluationPort(Protocol):
@@ -244,5 +320,5 @@ __all__ = [
     "AUTHORITY_ANALYTIC_FAKE", "AUTHORITY_CERTIFIED_BACKEND",
     "CandidateEvaluation", "CandidateEvaluationPort", "EVALUATION_AUTHORITIES",
     "EvaluationError", "FakeDeterministicEvaluator", "fake_objectives",
-    "locked_consequences_of",
+    "locked_consequences_of", "ObjectiveProvenance",
 ]
