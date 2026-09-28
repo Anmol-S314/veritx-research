@@ -819,7 +819,7 @@ design → compile → verify → simulate. **The `Compile` page shows the RESUL
 | V21 | `ProjectView` pointers + `DraftView`; **no unified summary object** |
 | V22 | **Yes** — `canonical_request_doc` gives a canonical serialization to diff (§34) |
 | V23 | `active_revision_id` / `latest_attempt_revision_id` on the project |
-| V24 | via the optimization study; promotion is **not wired** (`OPT-008`) |
+| V24 | via the optimization study; promotion is **wired** (promote endpoint, draft-only; `OPT-008`) |
 | V25 | project name · revision label · preset provenance · `process_node_nm` · `WorkloadSourceRef.*` · `AddressRange.name` · schema pins (§25) |
 | V26 | **No** — bound by `(project_id, draft_design_hash, capability_semantics_version)` (§53) |
 | V27 | **Backend/product schema**, not React (§51) |

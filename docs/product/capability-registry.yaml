@@ -1041,16 +1041,16 @@ capabilities:
   owner: ROUTER_RESOURCE
   stages:
     DECLARABLE: 'NO'
-    DERIVABLE: 'NO'
-    VERIFIABLE: 'NO'
+    DERIVABLE: CONDITIONAL
+    VERIFIABLE: CONDITIONAL
     PROJECTABLE: 'NO'
     EXECUTABLE: 'NO'
     QUALIFIED: 'NO'
-    EVIDENCE_CAPABLE: 'NO'
+    EVIDENCE_CAPABLE: CONDITIONAL
     PRODUCT_WIRED: 'NO'
   wiring: NOT_AVAILABLE
-  reason: NO_DERIVATION
-  claim_scope: UNSUPPORTED_SEMANTICS at the route generator
+  reason: NO_BACKEND_PROJECTION
+  claim_scope: DOR_TORUS_XY derives (wraparound-minimal, deterministic ties, dateline halves; ROUTE_COMPLETE/LEGAL pass) but DEADLOCK_FREE fails with a named cycle — routed but unqualified; never user intent
 - id: ROUTE-005
   name: derived VC assignment
   owner: ROUTER_RESOURCE

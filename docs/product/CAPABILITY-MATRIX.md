@@ -61,7 +61,7 @@ sub-vocabulary** (§5) so "product state" can be finer than yes/no.
 
 | Capability | DECL | DERIV | VERIF | PROJ | EXEC | QUAL | EVID | WIRED |
 |---|---|---|---|---|---|---|---|---|
-| **TORUS** | YES | topology YES / routing **NO** | topology YES | NO | NO | NO | NO | INSPECT_ONLY |
+| **TORUS** | YES | topology YES / routing YES (`DOR_TORUS_XY`) / cert **PENDING** | topology YES | NO | NO | NO | CONDITIONAL | INSPECT_ONLY |
 | **RAMULATOR** | NO | YES | NO | YES | **YES** | **YES** (envelope) | YES | **ENGINE_ONLY** |
 | **CONCENTRATION > 1** | YES | YES | YES | CONDITIONAL | CONDITIONAL | **NO** (mesh-DOR envelope) | CONDITIONAL | WIRED |
 
@@ -263,16 +263,16 @@ rows whose truth is *not* a simple yes:
 | COMM-006 | multiple communication classes | DECL YES · DERIV YES · VERIF YES · **PROJ NO** |
 | MAP-002/003 | manual placement / affinity | **DECL NO** — NO_CONTRACT (D2) |
 | FAB-002 | concentrated mesh | DECL YES · DERIV YES · **QUAL NO** (mesh-DOR envelope) |
-| FAB-003 | torus topology | DECL YES · DERIV YES · **PROJ NO** |
-| FAB-004 | torus routed execution | **DERIV NO** |
+| FAB-003 | torus topology | DECL YES · DERIV YES · **PROJ NO** (unit-level profile only; no COMPILED bundle) |
+| FAB-004 | torus routed execution | **DERIV CONDITIONAL** (`DOR_TORUS_XY`; cert INVALID on DEADLOCK_FREE) |
 | ROUTE-004 | torus routing | **DERIV NO** |
 | ROUTE-008 | escape VC designation | DERIV YES · **PROJ NO** |
 | ROUTE-011 | RCU | **DECL FUTURE_CONTRACT** · DERIV NO |
 | MEM-002 | Ramulator engine | EXEC YES · QUAL CONDITIONAL · **WIRED NO** |
 | MEM-005 | network+memory coupling | **DECL NO** — FUTURE_CONTRACT |
 | EVAL-006 | backend full-path observation | **NO** — no instrumentation |
-| OPT-007 | evidence reuse / cache | **NO** — IMPLEMENTATION_GAP |
-| OPT-008 | candidate promotion | **WIRED NO** — PRODUCT_NOT_WIRED |
+| OPT-007 | evidence reuse / cache | **WIRED YES** — network-leg orchestration (explicit hits) |
+| OPT-008 | candidate promotion | **WIRED YES** — promote endpoint (draft-only, explicit Compile) |
 
 ## 10. Dense static workload — the complete staged row
 
@@ -393,7 +393,8 @@ alias exists only at the boundary. **No schema migration.**
 ```text
 FAB-003 torus topology        DECL YES · DERIV YES · VERIF YES ·
                               PROJ NO · wiring INSPECT_ONLY
-FAB-004 torus routed execution DERIV NO · wiring NOT_AVAILABLE
+FAB-004 torus routed execution DERIV CONDITIONAL · wiring NOT_AVAILABLE
+                              (route derives; execution unqualified)
 ROUTE-004 torus routing       DERIV NO — UNSUPPORTED_SEMANTICS
 ```
 
@@ -600,8 +601,8 @@ OPT-003 multi-objective Pareto  WIRED · backend-authoritative exact dominance
 OPT-004 requirement reporting   WIRED · orthogonal annotation (Gate-3 law B)
 OPT-005 serving optimization    NOT_AVAILABLE · FUTURE_CONTRACT
 OPT-006 memory optimization     NOT_AVAILABLE · NO_EVIDENCE_CONTRACT
-OPT-007 evidence reuse / cache  NOT_AVAILABLE · IMPLEMENTATION_GAP
-OPT-008 candidate promotion     NOT_AVAILABLE · PRODUCT_NOT_WIRED
+OPT-007 evidence reuse / cache  WIRED · network-leg cache (explicit hits, transplant refusal)
+OPT-008 candidate promotion     WIRED · POST /candidates/{id}/promote (draft-only)
 ```
 
 **Locked derived properties are inexpressible** (routing, VC count/structure,
@@ -723,7 +724,7 @@ Current wording audited against Gate-4 truth. **Copy is not fixed here.**
 | CC-5 | `EvaluateView.tsx:9` | "…/ BACKEND_UNAVAILABLE / EVALUATED / FAILED / UNSUPPORTED" | correct vocabulary, but not mapped to stages | map to the stage table |
 | CC-6 | legacy CLI `synthesize bo/grid/iterative`, `sweep`, `baseline` | presented alongside canonical commands | HISTORICAL, not part of the canonical study contract | mark deprecated; do not surface as capability |
 | CC-7 | any surface implying Ramulator is integrated | (no current instance found) | would be false | "Memory simulation engine available; not connected to the current product workflow." |
-| CC-8 | any surface implying torus is runnable | (no current instance found) | route generator missing | "Topology construction available; routed execution not available." |
+| CC-8 | any surface implying torus is runnable | (no current instance found) | certificate INVALID on DEADLOCK_FREE (dateline-proof pending) | "Topology construction available; routed execution not available." |
 
 **CC-1 is a real, current inaccuracy and the single strongest justification for
 this gate.**
@@ -746,15 +747,18 @@ MULTICAST
   "Semantic multicast lowers to unicasts; hardware multicast is not modeled."
 
 MULTI-CLASS
-  "Multiple communication classes are declarable; execution requires a single
-   class under the current qualified profiles."
+  "Multiple communication classes are declarable; single-class envelopes
+   require one class; multi-class executes under CAP-ENV-BOOKSIM-MESH-DOR-MC-V1
+   (fork-v2 per-class replay + conservation) and ASTRA class ABI 1."
 
 MULTI-CLOCK
   "Multiple clock domains can be declared; fabric execution across them is not
    supported."
 
 STATIC MoE
-  "MoE semantics are declarable; static MoE evaluation is not available."
+  "MoE semantics are declarable; V3 names EXPERT dispatch/combine classes and
+   the ASTRA expert-collective path executes them; intent-level producer and
+   static evaluation envelope still missing."
 
 CONCENTRATION > 1
   "Valid canonical fabric; not qualified under the mesh DOR-XY profile."
@@ -793,21 +797,24 @@ unless the qualified wording in §37 makes them true.
 
 ```text
 TORUS ROUTED EXECUTION
-  TorusIntent → TopologyArtifact PASS → Route generator MISSING
-  → PROJECTABLE NOT REACHED
+  TorusIntent → TopologyArtifact PASS → DOR_TORUS_XY route PASS →
+  certificate INVALID (DEADLOCK_FREE, dateline-proof pending)
+  → PROJECTABLE NOT REACHED end to end
 
 MULTI-CLASS EXECUTION
   CommunicationIntent (multi) → logical messages PASS → physical propagation
-  PASS → VC assignment PASS → CDG PASS → backend projection BLOCKED
-  (COND-SINGLE-COMM-CLASS) → EXECUTABLE NOT REACHED
+  PASS → VC assignment PASS → CDG PASS → backend projection PASS under the
+  MC mesh profile / ASTRA ABI 1 (single-class envelopes still refuse) →
+  EXECUTABLE REACHED under those envelopes only
 
 RAMULATOR PRODUCT WORKFLOW
   MemoryLoweringManifest PASS → Ramulator execution PASS → MemoryEvidence PASS
   → product entry point MISSING → PRODUCT_WIRED NOT REACHED
 
 STATIC MoE
-  MoE semantics PASS → static dispatch/combine lowering MISSING
-  → everything downstream NOT REACHED
+  MoE semantics PASS → V3 EXPERT sidecar PASS → ASTRA expert-collective
+  execution PASS → intent-level producer + static envelope MISSING
+  → static evaluation NOT REACHED (serving-static parity unproven)
 ```
 
 **Limitations are actionable: each names the single blocking stage.**
@@ -861,7 +868,7 @@ A future `scripts/check_capability_registry.py` must enforce:
 | C2 | schema accepts it but the verifier cannot reason | stages diverge — SYS-003 (DECL YES, PROJ NO) |
 | C3 | backend can execute raw config but no qualification exists | EXECUTABLE YES, **QUALIFIED NO** |
 | C4 | qualified engine exists but no product caller | **PRODUCT_WIRED NO** — MEM-002 `ENGINE_ONLY` |
-| C5 | UI control exists but canonical contract absent | product surface is **wrong**; capability remains unavailable (promotion, OPT-008) |
+| C5 | UI control exists but canonical contract absent | product surface is **wrong**; capability remains unavailable (serving optimization, OPT-005) |
 | C6 | canonical route fully derives, backend observes first hop only | **separate rows** EVAL-007 / EVAL-008 |
 | C7 | serving capability exists, static equivalent absent | **no inheritance** — WORK-004 vs WORK-002 |
 | C8 | legacy adapter supports a field absent from v4 | **LEGACY_ONLY** — MEM-006/007 |
@@ -946,7 +953,8 @@ The matrix exists because a single boolean lies.
 `intervention.supported ? 'SUPPORTED' : 'NOT SUPPORTED'` for a fact that is
 genuinely eight independent stages. This gate replaces that with a vocabulary
 whose whole purpose is to make the honest answer expressible: **`TORUS` is
-declarable and derivable and unroutable. `RAMULATOR` is executable and qualified
+declarable, derivable and routable (`DOR_TORUS_XY`) but uncertified
+(dateline-proof pending). `RAMULATOR` is executable and qualified
 and product-unwired. `CONCENTRATION > 1` is a valid canonical fabric that is not
 qualified under the mesh DOR-XY profile.** None of those is a yes or a no.
 

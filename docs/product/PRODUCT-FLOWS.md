@@ -798,8 +798,8 @@ PROMOTED DESIGN  a new Design Revision (§55)
 
 ## 55. Candidate promotion
 
-**Current truth: `OPT-008` is `PRODUCT_NOT_WIRED` — an implementation gap.**
-**The current product must not claim promotion exists.**
+**Current truth: `OPT-008` is `WIRED` — POST /candidates/{id}/promote +
+Studio candidate-page action (draft-only; explicit Compile required).**
 
 **Target workflow (specified, not implemented):**
 
@@ -1693,7 +1693,7 @@ the threshold-reuse path.
 | Requirement annotation | needs the Gate-3 §8 orthogonal treatment surfaced |
 | raw dimensions | correct (typed) |
 | canonicalization | **arbitration gap** (XDOM-D6) |
-| promotion | **must be marked unavailable** (OPT-008) |
+| promotion | **available via promote endpoint** (OPT-008, draft-only) |
 
 **Decision:** **REBUILD** the setup surface; **KEEP** the results surface.
 
@@ -1844,11 +1844,12 @@ create no false action.
 | Compare | the metric registry | none | comparability | comparison / INCOMPARABLE |
 | Run Serving Experiment | EVAL-005 + CAP-ENV-BOOKSIM-SERVING-V1 | ServingExperiment | round qualification | round evidence |
 | Run Study | OPT-001/002/003 | Optimization Study | candidate pipeline | study + frontier |
-| Promote | **OPT-008 — NOT WIRED** | — | — | — |
+| Promote | **OPT-008 — WIRED** | candidate pipeline | draft-only record | promotion evidence |
 | Archive | — | archive state only | — | — |
 
-**No ungrounded action.** `Promote` is the one action whose capability is
-`IMPLEMENTATION_GAP`, and it is therefore **not offered**.
+**No ungrounded action.** `Promote` is grounded in the existing
+promotion primitive with linkage-only provenance; adoption still requires
+an explicit Compile.
 
 ## 135. Product IA deliverable
 

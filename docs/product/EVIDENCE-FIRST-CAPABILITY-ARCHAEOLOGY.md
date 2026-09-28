@@ -421,16 +421,16 @@ classifications). Counts are OUTPUTS of the records, not targets.
 
 | Classification | Records |
 |---|---|
-| CURRENT_CANONICAL | 9 |
-| CURRENT_QUALIFIED | 1 |
-| CURRENT_BACKEND_ONLY | 13 |
-| CURRENT_DOWNSTREAM_ONLY | 6 |
+| CURRENT_CANONICAL | 11 |
+| CURRENT_QUALIFIED | 3 |
+| CURRENT_BACKEND_ONLY | 12 |
+| CURRENT_DOWNSTREAM_ONLY | 4 |
 | CURRENT_RESEARCH | 7 |
 | CURRENT_LEGACY_EXECUTABLE | 0 |
 | HISTORICAL_EXECUTABLE | 4 |
 | HISTORICAL_MEASURED | 8 |
 | PROTOTYPE_ONLY | 3 |
-| DOC_STALE | 11 |
+| DOC_STALE | 9 |
 | TRULY_ABSENT | 0 |
 
 ### Classification semantics

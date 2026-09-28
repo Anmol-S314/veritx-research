@@ -146,25 +146,28 @@ capabilities:
 
   - id: GEC-EXPRESS
     name: GEC point-to-point express channels
-    classifications: [CURRENT_BACKEND_ONLY, HISTORICAL_MEASURED, DOC_STALE]
+    classifications: [CURRENT_CANONICAL, CURRENT_BACKEND_ONLY, HISTORICAL_MEASURED]
     IMPLEMENTED_ANYWHERE: "YES — networks/gec.cpp express mode (d=1)"
     EXECUTED_ANYWHERE: "YES — gec_express row in the replay table"
     MEASURED_ANYWHERE: "YES — 1857.69c qwen / 239.81c attention (best or near-best)"
     CURRENT_ACTIVE_IMPLEMENTATION: "YES — legacy CLI path; SWEEP_TOPOS carries gec_express_k8"
     CANONICAL_INTENT: "YES — PHASE B.1: GecTopologyIntent(mode=EXPRESS, grid_side_length, concentration, express_channel_groups_per_dimension, destinations_per_express_channel=1). The source law groups x destinations == grid_side_length - 1 is enforced at construction."
-    CANONICAL_PHYSICAL_ARTIFACT: "NO — no canonical materializer; the compiler stops at TOPOLOGY"
-    CANONICAL_REPRESENTATION: "INTENT ONLY — a canonical typed intent exists; the physical graph is NOT derived"
-    CANONICAL_DERIVATION: "NO — no materializer"
-    VERIFIER_EXISTS: "NO"
-    BACKEND_PROJECTION: "PARTIAL — backend profile does not accept the family"
-    BACKEND_EXECUTABLE: "YES outside the canonical path"
-    QUALIFICATION_EXISTS: "NO"
-    EVIDENCE_CONTRACT: "NO"
+    CANONICAL_PHYSICAL_ARTIFACT: "YES — MaterializedFamily.GEC_EXPRESS via materialize_gec_express (pure p2p row/col cliques, degree 2(k-1), paper port law)"
+    CANONICAL_REPRESENTATION: "YES — canonical intent + derived physical artifact; routes via ANYNET_MIN_HOPS (pure p2p needs no new route class)"
+    CANONICAL_DERIVATION: "YES — materialize_gec_express + ANYNET_MIN_HOPS route derivation (test_torus_route.py GEC law/refusal coverage)"
+    VERIFIER_EXISTS: "YES — AnyNet route verification applies; k=4/o=3/d=1 uniform traffic EXECUTED under dor_gec (19.7c, no deadlock)"
+    BACKEND_PROJECTION: "PARTIAL — backend-native dor_gec implementation exists; no certified dor_gec profile (AnyNet envelope carries the canonical route)"
+    BACKEND_EXECUTABLE: "YES — backend-level execution proven; end-to-end qualification pending"
+    QUALIFICATION_EXISTS: "PARTIAL — AnyNet-envelope qualification carries the canonical route; no dor_gec-specific envelope"
+    EVIDENCE_CONTRACT: "PARTIAL"
     PRODUCT_WIRED: "NO"
-    MISSING_BRIDGE: "canonical materializer + route/VC semantics (INTENT representation is no longer the blocker; the physical derivation is)"
+    MISSING_BRIDGE: "certified dor_gec profile + qualification envelope (MULTIDROP/HYBRID/MESH still refuse with typed no-flattening errors — never approximated)"
     evidence:
       - "third_party/booksim2/src/networks/gec.cpp"
       - "tracks/t3-topology/dse/veritx_dse/model/topology_intent.py"
+      - "tracks/t3-topology/dse/veritx_dse/model/topology_artifact.py"
+      - "tracks/t3-topology/dse/veritx_dse/model/routing.py"
+      - "tracks/t3-topology/dse/tests/test_torus_route.py"
       - "tracks/t3-topology/dse/veritx_dse/model/presets.py"
       - "tracks/t3-topology/dse/docs/PARETO-REPLAY-RESULTS-2026-08-29.md"
 
@@ -227,14 +230,14 @@ capabilities:
     CANONICAL_INTENT: "YES — a canonical representation participates in the authority model"
     CANONICAL_PHYSICAL_ARTIFACT: "YES — a canonical physical artifact is derived"
     CANONICAL_REPRESENTATION: "YES — MaterializedFamily.TORUS materializes with wraparound links"
-    CANONICAL_DERIVATION: "NO — no certified route class (wraparound needs a different deadlock theorem)"
-    VERIFIER_EXISTS: "PARTIAL — attachment/route verification applies; no wraparound route proof"
-    BACKEND_PROJECTION: "NO in the canonical path (registry PROJECTABLE: NO)"
-    BACKEND_EXECUTABLE: "YES outside the canonical path"
-    QUALIFICATION_EXISTS: "NO"
-    EVIDENCE_CONTRACT: "NO"
-    PRODUCT_WIRED: "PARTIAL — inspectable via the staged path"
-    MISSING_BRIDGE: "canonical route generator + proof/profile for wraparound minimal routing"
+    CANONICAL_DERIVATION: "YES — DOR_TORUS_XY sealed class (wraparound-minimal X-then-Y, deterministic +x/+y midpoint ties, dateline halves) registered in route_artifact + _POLICY_BY_FAMILY (test_torus_route.py)"
+    VERIFIER_EXISTS: "PARTIAL — ROUTE_COMPLETE/LEGAL pass; DEADLOCK_FREE FAILs with a named X-ring VC0 cycle (static (channel,VC) CDG cannot express the dateline partition; pinned by test, never claimed closed)"
+    BACKEND_PROJECTION: "PARTIAL — CERTIFIED_BOOKSIM_TORUS_DOR_XY_V1 profile + qualify_native_torus_dor proven at unit level (exact-2-VC halves, tie carve-out); end-to-end preparation unreached (no COMPILED bundle)"
+    BACKEND_EXECUTABLE: "YES — backend-level k=5 uniform traffic EXECUTED (24.5c, no deadlock); dump equivalence blocked by fork in_channel=-1 harness (exact network.cpp patch recorded, not applied)"
+    QUALIFICATION_EXISTS: "PARTIAL — qualification record registered (unit-level); end-to-end qualification requires the dateline-proof bridge"
+    EVIDENCE_CONTRACT: "PARTIAL"
+    PRODUCT_WIRED: "PARTIAL — inspectable via the staged path (VERIFICATION stop preserves derivation)"
+    MISSING_BRIDGE: "dateline-partition proof method (verification/ + certificate gate) + fork dump-harness patch + end-to-end qualification bundle"
     evidence:
       - "third_party/booksim2/src/networks/network.cpp"
       - "third_party/booksim2/src/networks/kncube.cpp"
@@ -242,7 +245,7 @@ capabilities:
 
   - id: FLATFLY
     name: Flattened butterfly (on-chip)
-    classifications: [CURRENT_BACKEND_ONLY, HISTORICAL_MEASURED, DOC_STALE]
+    classifications: [CURRENT_CANONICAL, CURRENT_QUALIFIED, HISTORICAL_MEASURED]
     IMPLEMENTED_ANYWHERE: "YES — networks/flatfly_onchip.cpp; KNFly"
     EXECUTED_ANYWHERE: "YES — flatfly_64 (ran_min) row"
     MEASURED_ANYWHERE: "YES — 1922.73c / 63937.80c / 259.81c"
@@ -250,17 +253,22 @@ capabilities:
     CANONICAL_INTENT: "YES — PHASE B.1: FlatFlyIntent(radix_per_dimension, dimension_count, concentration)"
     CANONICAL_PHYSICAL_ARTIFACT: "YES — MaterializedFamily.FLATFLY has an internal materializer (materialize_flatfly)"
     CANONICAL_REPRESENTATION: "YES — canonical typed intent AND an internal flatfly materializer (MaterializedFamily.FLATFLY)"
-    CANONICAL_DERIVATION: "NO — family is not AUTHORABLE (registry AUTHORABLE: NO)"
-    VERIFIER_EXISTS: "PARTIAL"
-    BACKEND_PROJECTION: "PARTIAL"
-    BACKEND_EXECUTABLE: "YES outside the canonical path"
-    QUALIFICATION_EXISTS: "NO"
-    EVIDENCE_CONTRACT: "NO"
-    PRODUCT_WIRED: "NO"
-    MISSING_BRIDGE: "authoring/control-plane bridge + route class + backend profile"
+    CANONICAL_DERIVATION: "YES — FLATFLY_MIN sealed class (lowest-dimension-first replica of min_flatfly) in _POLICY_BY_FAMILY (test_flatfly_min.py: lowest-dim-first property, diameter bound)"
+    VERIFIER_EXISTS: "YES — route verification applies within the v1 domain"
+    BACKEND_PROJECTION: "YES — CERTIFIED_BOOKSIM_FLATFLY_MIN_V1 + qualify_native_flatfly_min (v1 domain: k-ary 2-fly, concentration 1, identity node->router)"
+    BACKEND_EXECUTABLE: "YES — k=4/n=2 dump vs canonical table 256/256 COMPARABLE, 0 mismatches (test_torus_flatfly_execution.py)"
+    QUALIFICATION_EXISTS: "YES — qualification record registered; capability truth derives PROJ/EXEC/QUAL YES end to end in the v1 domain"
+    EVIDENCE_CONTRACT: "YES"
+    PRODUCT_WIRED: "PARTIAL — inspectable + experimental use; no Studio execution entry yet"
+    MISSING_BRIDGE: "Studio execution entry + wider (k,n,c) domains (v1 pins n=2/c=1)"
     evidence:
       - "third_party/booksim2/src/networks/flatfly_onchip.cpp"
       - "tracks/t3-topology/dse/veritx_dse/model/topology_artifact.py"
+      - "tracks/t3-topology/dse/veritx_dse/model/routing.py"
+      - "tracks/t3-topology/dse/veritx_dse/backend/booksim_projection.py"
+      - "tracks/t3-topology/dse/tests/test_flatfly_min.py"
+      - "tracks/t3-topology/dse/tests/test_torus_flatfly_profiles.py"
+      - "tracks/t3-topology/dse/tests/test_torus_flatfly_execution.py"
       - "tracks/t3-topology/dse/docs/PARETO-REPLAY-RESULTS-2026-08-29.md"
 
   - id: FAT-TREE
@@ -361,27 +369,31 @@ capabilities:
     IMPLEMENTED_ANYWHERE: "YES — routefunc.cpp registers min_adapt_mesh, planar_adapt_mesh, romm_mesh, valiant_mesh, chaos_mesh, ugal_flatfly, ugal_dragonflynew, adaptive_xy_yx_mesh, limited_adapt_mesh"
     EXECUTED_ANYWHERE: "EXECUTABLE POTENTIAL — NOT PROVEN EXECUTED FROM DURABLE REPOSITORY EVIDENCE. The fork registers the adaptive routing functions and study_adaptive_*.sh scripts drive the real binary, but no committed run artifact or status record recording an adaptive-routing run was located."
     MEASURED_ANYWHERE: "NOT PROVEN — the study scripts exist but no committed adaptive-routing result artifact (json/csv/md/xlsx) was located in HEAD or in history"
-    CURRENT_ACTIVE_IMPLEMENTATION: "YES — BookSim fork; canonical side has RoutingPolicyDefinition + relation artifacts + verification/adaptive_escape.py"
+    CURRENT_ACTIVE_IMPLEMENTATION: "YES — BookSim fork; canonical side has min_adapt_mesh_policy() + AdaptiveBackendSelection + MinAdaptQualification (test_adaptive_bridge.py, 27 tests)"
     CANONICAL_INTENT: "PARTIAL — a canonical intent layer exists for part of the capability"
     CANONICAL_PHYSICAL_ARTIFACT: "PARTIAL — a canonical physical artifact exists for part of the capability"
     CANONICAL_REPRESENTATION: "PARTIAL — RoutingPolicyDefinition models PER_HOP/CANDIDATE_SET/ROUTER_ALLOCATOR/RNG/credit observation; ADAPTIVE/ESCAPE/PHASE/TAP roles exist"
-    CANONICAL_DERIVATION: "PARTIAL — relation + resource-binding artifacts exist; no adaptive policy producer wired to a family"
-    VERIFIER_EXISTS: "PARTIAL — adaptive_escape.py escape-subfunction obligation exists"
-    BACKEND_PROJECTION: "NO — no policy -> BookSim routing-function projection"
-    BACKEND_EXECUTABLE: "YES outside the canonical path"
-    QUALIFICATION_EXISTS: "NO — no executed-equivalence profile for adaptive routing"
-    EVIDENCE_CONTRACT: "NO"
+    CANONICAL_DERIVATION: "PARTIAL — min_adapt_mesh producer wired (policy -> relation -> binding -> realization -> selection); UGAL/Valiant/Chaos/planar/ROMM/GEC-adaptive refused (no instance); limited_adapt_mesh refused as broken upstream; routing_function stays LOCKED"
+    VERIFIER_EXISTS: "YES — escape-subfunction obligation + MinAdaptQualification (QUALIFIED only on escape-cert PASS with hash binding; allocator fairness + packet-path observation explicitly NOT_VERIFIED)"
+    BACKEND_PROJECTION: "PARTIAL — AdaptiveBackendSelection selects only min_adapt_mesh (escape VC0 / adaptive 1..N, >=2 VCs, ADAPTIVE_RUNTIME_SELECTION, first_hop_table_comparable=False); deterministic-table claims refused for adaptive (fork aborts multi-port dumps)"
+    BACKEND_EXECUTABLE: "YES outside the canonical path; no live min_adapt run executed in this tranche"
+    QUALIFICATION_EXISTS: "PARTIAL — static selection audit + escape proof; backend projection wiring + MIN_ADAPT_MESH_QUALIFIED_V1 envelope + live run remain"
+    EVIDENCE_CONTRACT: "PARTIAL"
     PRODUCT_WIRED: "NO"
-    MISSING_BRIDGE: "policy producer + BookSim projection + executed-route observation + qualification"
+    MISSING_BRIDGE: "backend projection consuming AdaptiveBackendSelection + MIN_ADAPT_MESH_QUALIFIED_V1 envelope registration + live mesh min_adapt execution"
     evidence:
       - "third_party/booksim2/src/routefunc.cpp"
       - "tracks/t3-topology/dse/veritx_dse/model/routing_policy.py"
+      - "tracks/t3-topology/dse/veritx_dse/model/routing_relation_materialize.py"
+      - "tracks/t3-topology/dse/veritx_dse/model/routing_realization.py"
       - "tracks/t3-topology/dse/veritx_dse/verification/adaptive_escape.py"
+      - "tracks/t3-topology/dse/veritx_dse/backend/route_observation.py"
+      - "tracks/t3-topology/dse/tests/test_adaptive_bridge.py"
     note: "CORRECTED (seal pass): 'adaptive study outputs' cited no artifact. The study SCRIPTS prove executable potential; no measurement artifact was found."
 
   - id: MULTI-CLASS-COMMUNICATION
     name: Multi-class traffic (class -> VC subset)
-    classifications: [CURRENT_BACKEND_ONLY, CURRENT_CANONICAL, HISTORICAL_MEASURED]
+    classifications: [CURRENT_BACKEND_ONLY, CURRENT_CANONICAL, CURRENT_QUALIFIED, HISTORICAL_MEASURED]
     IMPLEMENTED_ANYWHERE: "YES — BookSim class_priority/classes; canonical VCAssignmentArtifact.traffic_class_to_vcs"
     EXECUTED_ANYWHERE: "YES — plane_shared.cfg / plane_separation.py experiments"
     MEASURED_ANYWHERE: "YES — per-phase slicing in PER-PHASE-PARETO-RESULTS-2026-08-29.md (class 0 vs class 1)"
@@ -391,12 +403,12 @@ capabilities:
     CANONICAL_REPRESENTATION: "YES — traffic classes + VC assignment artifacts"
     CANONICAL_DERIVATION: "YES"
     VERIFIER_EXISTS: "YES — backend/booksim.py::_vc_exactness"
-    BACKEND_PROJECTION: "PARTIAL — the certified profile fixes classes=1"
-    BACKEND_EXECUTABLE: "YES — classes=2 runs exist; classes=2 with a bad mapping inflated latency 75x (fixed in 895047b9)"
-    QUALIFICATION_EXISTS: "PARTIAL — exactness check exists; no qualified multi-class profile"
-    EVIDENCE_CONTRACT: "PARTIAL"
-    PRODUCT_WIRED: "PARTIAL"
-    MISSING_BRIDGE: "sound canonical class->VC-subset mapping expressed exactly in a BookSim profile"
+    BACKEND_PROJECTION: "YES — CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1 (fork-v2 per-class replay, per-class conservation) + ASTRA class ABI 1 (carried, never inferred; EXPERT dispatch/combine envelopes; expected-kind ledger)"
+    BACKEND_EXECUTABLE: "YES — 2-class mesh EXECUTED via certified MC profile (moe-8x7b class execution); live ASTRA run EXECUTED (7090 cycles, class_binding_id match, test_astra_multiclass_bridge.py); classes=2 with a bad mapping inflated latency 75x (fixed in 895047b9)"
+    QUALIFICATION_EXISTS: "YES — MC mesh profile + ASTRA ABI-1 machine qualification with conditional per-class conservation gates in normalize"
+    EVIDENCE_CONTRACT: "YES"
+    PRODUCT_WIRED: "YES"
+    MISSING_BRIDGE: "wider envelopes beyond mesh-DOR-MC + ASTRA ABI-1 (serving-static MoE parity remains unproven — never claimed)"
     evidence:
       - "tracks/t3-topology/configs/plane_shared.cfg"
       - "tracks/t3-topology/scripts/research/plane_separation.py"
@@ -480,18 +492,22 @@ capabilities:
     CURRENT_ACTIVE_IMPLEMENTATION: "YES downstream"
     CANONICAL_INTENT: "YES — a canonical representation participates in the authority model"
     CANONICAL_PHYSICAL_ARTIFACT: "YES — a canonical physical artifact is derived"
-    CANONICAL_REPRESENTATION: "YES — expert operation semantics + ALLTOALL dispatch/combine + logical messages"
+    CANONICAL_REPRESENTATION: "YES — expert operation semantics + ALLTOALL dispatch/combine + logical messages; V3 sidecar names communicating EXPERT_BEGIN/END ops (dispatch/combine classes) instead of KeyErroring (test_v3_names_expert_dispatch_and_combine_ops)"
     CANONICAL_DERIVATION: "YES downstream"
     VERIFIER_EXISTS: "PARTIAL"
-    BACKEND_PROJECTION: "YES — ASTRA lowering; BookSim physical traffic via the trace path"
-    BACKEND_EXECUTABLE: "YES"
+    BACKEND_PROJECTION: "YES — ASTRA expert-collective path (KIND_EXPERT_BEGIN/END with declared collective via collective-mode + COLL sidecar/class binding; expected_collective_kinds; class-ABI >= 1 + per-class conservation refusal)"
+    BACKEND_EXECUTABLE: "YES — ASTRA static-expert path executes with per-class conservation"
     QUALIFICATION_EXISTS: "PARTIAL"
     EVIDENCE_CONTRACT: "PARTIAL"
     PRODUCT_WIRED: "NO"
-    MISSING_BRIDGE: "canonical static MoE dispatch/combine producer at intent level (SERVING MoE is a SEPARATE path and its measurements are not evidence for this row)"
+    MISSING_BRIDGE: "canonical static MoE dispatch/combine producer at intent level (SERVING MoE is a SEPARATE path and its measurements are not evidence for this row; serving-static parity remains unproven)"
     evidence:
       - "tracks/t3-topology/dse/veritx_dse/workload/graph.py"
+      - "tracks/t3-topology/dse/veritx_dse/workload/messages.py"
+      - "tracks/t3-topology/dse/veritx_dse/backend/astra_adapter.py"
       - "tracks/t3-topology/dse/tests/test_workload_graph.py"
+      - "tracks/t3-topology/dse/tests/test_workload_moe_lowering.py"
+      - "tracks/t3-topology/dse/tests/test_astra_multiclass_bridge.py"
     note: "CORRECTED (seal pass): the previous MEASURED claim borrowed serving-MoE trace results, which exercise a different path."
 
   - id: PIM
@@ -542,7 +558,7 @@ capabilities:
 
   - id: CANDIDATE-PROMOTION
     name: Topology candidate promotion
-    classifications: [CURRENT_CANONICAL, CURRENT_DOWNSTREAM_ONLY]
+    classifications: [CURRENT_CANONICAL]
     IMPLEMENTED_ANYWHERE: "YES — synthesis/candidate.py promote_to_explicit_topology + apply_promotion_to_request_doc"
     EXECUTED_ANYWHERE: "TESTED PRIMITIVE — exercised in-process by committed tests; no durable external run artifact"
     MEASURED_ANYWHERE: "N/A"
@@ -556,13 +572,13 @@ capabilities:
     BACKEND_EXECUTABLE: "N/A"
     QUALIFICATION_EXISTS: "N/A"
     EVIDENCE_CONTRACT: "YES — provenance is linkage, excluded from design_hash"
-    PRODUCT_WIRED: "NO"
-    MISSING_BRIDGE: "product/API/Studio promotion action (the primitive already exists)"
+    PRODUCT_WIRED: "YES — POST /candidates/{id}/promote + Studio candidate-page action (draft-only; explicit Compile required); compiled/verified/evaluated flips light the library (test_candidate_status_flips.py)"
+    MISSING_BRIDGE: "none — promotion endpoint + status flips landed this tranche"
 
   - id: EVIDENCE-REUSE
     name: Evidence reuse / cache
-    classifications: [CURRENT_CANONICAL, CURRENT_DOWNSTREAM_ONLY]
-    IMPLEMENTED_ANYWHERE: "YES — backend/evidence.py verify_reusable_record + read_reusable_record (digest/schema/binary/profile safe)"
+    classifications: [CURRENT_CANONICAL]
+    IMPLEMENTED_ANYWHERE: "YES — backend/evidence.py verify_reusable_record + read_reusable_record (digest/schema/binary/profile safe) + backend/evidence_cache.py orchestration (full-parent key, CacheHit/CacheMiss, transplant refusal) wired into application/federated_evaluator.py network leg + product/service.py run linkage"
     EXECUTED_ANYWHERE: "TESTED PRIMITIVE — exercised in-process by committed tests; no durable external run artifact"
     MEASURED_ANYWHERE: "N/A"
     CURRENT_ACTIVE_IMPLEMENTATION: "YES"
@@ -575,8 +591,8 @@ capabilities:
     BACKEND_EXECUTABLE: "N/A"
     QUALIFICATION_EXISTS: "N/A"
     EVIDENCE_CONTRACT: "YES"
-    PRODUCT_WIRED: "NO"
-    MISSING_BRIDGE: "cache lookup/orchestration (a safe reuse-verification API is not a cache)"
+    PRODUCT_WIRED: "YES — cache orchestration wired into network-leg evaluation (full-parent key lookup before execute; explicit hit with reused evidence id on the run record; transplant re-executes); run UI shows REUSED AUTHENTICATED EVIDENCE with matched parents (test_cache_wiring_network.py)"
+    MISSING_BRIDGE: "persisted index/TTL + wider (non-network) legs (in-memory only this tranche)"
 
   - id: SEARCH-COMPLETENESS
     name: Structural search completeness accounting
@@ -619,7 +635,7 @@ capabilities:
   - id: NOC-ENERGY
     name: NoC energy estimation
     classifications: [CURRENT_RESEARCH, DOC_STALE]
-    IMPLEMENTED_ANYWHERE: "YES — tracks/t3-topology/scripts/noc_energy_bridge.py (Accelergy-calibrated pJ/hop), plus the older hops x packet_size proxy and reports/reports.py analytical estimates"
+    IMPLEMENTED_ANYWHERE: "YES — tracks/t3-topology/scripts/noc_energy_bridge.py (Accelergy-calibrated pJ/hop), plus the older hops x packet_size proxy and reports/reports.py analytical estimates, plus veritx_dse/reports/energy_fidelity.py (six-authority fidelity registry: BOOKSIM_NATIVE_POWER_FOR_MECS=INVALID_INCOMPLETE, combine_estimates() always raises; test_energy_fidelity.py)"
     EXECUTED_ANYWHERE: "EXECUTABLE POTENTIAL — the bridge is a runnable research script; no committed energy run artifact was located"
     MEASURED_ANYWHERE: "PARTIAL — the bridge is calibrated against Accelergy/FlooNoC; no committed energy result table was located for a canonical fabric"
     CURRENT_ACTIVE_IMPLEMENTATION: "YES — but SIX fidelity classes coexist (proxy, tool-derived, bridge, analytical, BookSim native, LLMServingSim)"
@@ -633,10 +649,12 @@ capabilities:
     QUALIFICATION_EXISTS: "NO"
     EVIDENCE_CONTRACT: "NO"
     PRODUCT_WIRED: "PARTIAL"
-    MISSING_BRIDGE: "canonical fidelity/metric ownership — the six estimators must never be merged into one 'energy'"
+    MISSING_BRIDGE: "canonical metric authority + ERT calibration (PLACEHOLDER) — the six estimators must never be merged into one 'energy'; the fidelity registry exists as a reports module, not a metric authority"
     evidence:
       - "tracks/t3-topology/scripts/noc_energy_bridge.py"
       - "tracks/t3-topology/dse/veritx_dse/reports/reports.py"
+      - "tracks/t3-topology/dse/veritx_dse/reports/energy_fidelity.py"
+      - "tracks/t3-topology/dse/tests/test_energy_fidelity.py"
     note: "RECLASSIFIED (seal pass): was CURRENT_CANONICAL while its own CANONICAL_REPRESENTATION said PARTIAL. No canonical metric authority for energy exists."
 
   - id: BOOKSIM-NATIVE-POWER

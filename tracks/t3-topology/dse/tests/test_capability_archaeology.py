@@ -103,7 +103,9 @@ def test_intent_and_artifact_are_independently_stated(ledger):
     """A record may have an intent and no artifact — the B.1 state — and that
     must be visible without reading prose in the OTHER field."""
     by_id = {c["id"]: c for c in ledger["capabilities"]}
-    for cap_id in ("GEC-MESH", "GEC-EXPRESS", "GEC-MECS", "GEC-HYBRID",
+    # GEC-EXPRESS graduated (pure-p2p materializer landed) and is no
+    # longer intent-without-artifact.
+    for cap_id in ("GEC-MESH", "GEC-MECS", "GEC-HYBRID",
                    "FAT-TREE"):
         cap = by_id[cap_id]
         assert str(cap["CANONICAL_INTENT"]).strip().upper().startswith("YES"),             cap_id
