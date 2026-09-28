@@ -758,6 +758,11 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
     def v1_compare(a: str, b: str) -> dict[str, Any]:
         return product.compare(a, b)
 
+    # vNext workbench routes (new surfaces only; existing routes above
+    # are untouched). All science lives in veritx_dse.product.vnext.
+    from veritx_dse.gateway.vnext import register_vnext_routes
+    register_vnext_routes(app)
+
     # ── deprecated aliases (one release) ──────────────────────────────
     @app.get("/health", deprecated=True)
     def health() -> dict[str, str]:

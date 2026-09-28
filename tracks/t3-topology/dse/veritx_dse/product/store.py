@@ -509,4 +509,107 @@ class ProductStore:
         return None
 
 
+    # ── syntheses (vnext: topology-synthesis product records) ─────────
+    #
+    # One synthesis record per submitted synthesis problem. The record
+    # carries the problem (definition + traffic), the generated
+    # candidate, its generator objective (never a measurement) and the
+    # search-completeness accounting. A candidate is never verified
+    # because an engine likes it: verification happens after promotion
+    # through the ordinary compile path.
+
+    def create_synthesis(self, project_id: str,
+                         synthesis: dict[str, Any]) -> dict[str, Any]:
+        with self._locked():
+            sid = synthesis["synthesis_id"]
+            self._atomic_write(
+                self.project_dir(project_id) / "syntheses" / (sid + ".json"),
+                synthesis)
+            try:
+                project = self.load_project(project_id)
+                ids = project.get("synthesis_ids") or []
+                if sid not in ids:
+                    project["synthesis_ids"] = [*ids, sid]
+                    self.save_project(project)
+            except Exception:
+                pass
+            return synthesis
+
+    def load_synthesis(self, project_id: str, sid: str) -> dict[str, Any]:
+        return self._read(
+            self.project_dir(project_id) / "syntheses" / (sid + ".json"),
+            "synthesis")
+
+    def find_synthesis_project(self, sid: str) -> str | None:
+        base = self.root / "projects"
+        if not base.is_dir():
+            return None
+        for child in sorted(base.iterdir()):
+            if (child / "syntheses" / f"{sid}.json").is_file():
+                return child.name
+        return None
+
+    def list_syntheses(self, project_id: str) -> list[dict[str, Any]]:
+        directory = self.project_dir(project_id) / "syntheses"
+        if not directory.is_dir():
+            return []
+        out = []
+        for child in sorted(directory.glob("*.json")):
+            try:
+                out.append(self._read(child, "synthesis"))
+            except Exception:
+                continue
+        return out
+
+    # ── candidates (vnext: global candidate library) ──────────────────
+    #
+    # The library is global (not per-project) so candidates from any
+    # study or synthesis can be compared and adopted in one place.
+    # Each record is linkage: the candidate graph, its origin
+    # (synthesis or optimization study), generator provenance, and
+    # adoption state. Scientific status (compiled / verified /
+    # evaluated) is recorded from the ordinary pipeline, never derived
+    # by the UI.
+
+    def _candidates_dir(self) -> Path:
+        directory = self.root / "candidates"
+        directory.mkdir(parents=True, exist_ok=True)
+        return directory
+
+    def create_candidate(self, candidate: dict[str, Any]) -> dict[str, Any]:
+        with self._locked():
+            cid = candidate["candidate_id"]
+            self._atomic_write(
+                self._candidates_dir() / (cid + ".json"), candidate)
+            return candidate
+
+    def load_candidate(self, candidate_id: str) -> dict[str, Any]:
+        return self._read(
+            self._candidates_dir() / (candidate_id + ".json"),
+            "candidate")
+
+    def update_candidate(self, candidate_id: str,
+                         **fields: Any) -> dict[str, Any]:
+        with self._locked():
+            record = self.load_candidate(candidate_id)
+            record.update(fields)
+            record["updated_at"] = utcnow()
+            self._atomic_write(
+                self._candidates_dir() / (candidate_id + ".json"),
+                record)
+            return record
+
+    def list_candidates(self) -> list[dict[str, Any]]:
+        directory = self.root / "candidates"
+        if not directory.is_dir():
+            return []
+        out = []
+        for child in sorted(directory.glob("*.json")):
+            try:
+                out.append(self._read(child, "candidate"))
+            except Exception:
+                continue
+        return out
+
+
 __all__ = ["ProductStore", "ProductStoreError", "utcnow"]
