@@ -43,13 +43,40 @@ COUNT = 4
 
 
 class _FakeAstraEnv:
-    """Makes resolve_runtime_binary find a plausible binary."""
+    """Makes resolve_runtime_binary find a binary file.
+
+    NOTE: a bare executable is NOT a qualified producer — assessment
+    must still refuse READY unless the producer-identity resolver is
+    explicitly monkeypatched (an "exit 0" shell never qualifies).
+    """
 
     def __init__(self, tmp_path: Path, monkeypatch):
         binary = tmp_path / "AstraSim_BookSim2"
         binary.write_text("#!/bin/sh\nexit 0\n")
         binary.chmod(0o755)
         monkeypatch.setenv("VERITX_ASTRA_BIN", str(binary))
+        self.binary = binary
+
+
+def _pinned_identity(binary: Path):
+    """A manifest-verified, clean producer identity for the fake binary."""
+    from veritx_dse.backend.producer import ProducerIdentity
+    return ProducerIdentity(
+        binary_path=str(binary), binary_sha256="a" * 64, binary_size=128,
+        source_revision="cafe" * 10, dirty=False, dirty_digest=None,
+        manifest_verified=True, build_manifest_sha256="b" * 64,
+        build_recipe_version="astra-sim+booksim2/v1")
+
+
+def _qualify_fake_producer(tmp_path: Path, monkeypatch):
+    """Monkeypatch ONLY the producer-identity resolver to vouch for the
+    fake binary — the product path itself never accepts it."""
+    import veritx_dse.backend.astra_execution as _ax
+    env = _FakeAstraEnv(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        _ax, "resolve_astra_identity",
+        lambda binary, repo_root=None: _pinned_identity(Path(binary)))
+    return env
 
 
 def _compiled(count=COUNT):
@@ -125,8 +152,23 @@ def test_assess_without_binary_is_unavailable_not_unsupported(tmp_path,
     assert "absent" in assessment.reason
 
 
-def test_assess_ready_with_binary(tmp_path, monkeypatch):
+def test_an_exit_zero_shell_is_never_a_qualified_producer(tmp_path,
+                                                          monkeypatch):
+    """THE qualification pin: a bare executable file must NOT read READY.
+    Only an explicitly monkeypatched identity resolver (test-only) can
+    vouch for the fake binary."""
     _FakeAstraEnv(tmp_path, monkeypatch)
+    adapter = Astra2Adapter()
+    assessment = adapter.assess(
+        _context(), EvaluationQuestion.SYSTEM_MAKESPAN)
+    assert assessment.support is SupportLevel.SUPPORTED
+    assert assessment.readiness is BackendReadiness.BLOCKED
+    assert "not qualified" in assessment.reason or \
+        "not pinned" in assessment.reason
+
+
+def test_assess_ready_with_binary(tmp_path, monkeypatch):
+    _qualify_fake_producer(tmp_path, monkeypatch)
     adapter = Astra2Adapter()
     assessment = adapter.assess(
         _context(), EvaluationQuestion.SYSTEM_MAKESPAN)
@@ -164,34 +206,112 @@ def test_assess_refuses_multi_class_flattening():
 
 # ── prepare: composition over existing authorities ───────────────────
 
-def test_prepare_composes_machine_over_certified_fabric(tmp_path,
-                                                        monkeypatch):
-    _FakeAstraEnv(tmp_path, monkeypatch)
+def test_prepare_returns_the_generic_execution_seam(tmp_path, monkeypatch):
+    """prepare() returns PreparedExecution (the federation seam), with
+    the REAL projections retained inside — preparation is executable by
+    itself and needs no runtime binary."""
+    monkeypatch.delenv("VERITX_ASTRA_BIN", raising=False)
+    context = _context()
+    adapter = Astra2Adapter()
+    from veritx_dse.backend.adapter import PreparedExecution
+    prepared = adapter.prepare(
+        context, EvaluationQuestion.SYSTEM_MAKESPAN)
+    assert isinstance(prepared, PreparedExecution)
+    assert prepared.backend_id == "ASTRA2_EMBEDDED_BOOKSIM"
+    native = prepared.native_prepared
+    # every identity is the EXISTING authority's, not invented
+    assert prepared.projection_identity == native.workload_projection_id
+    assert prepared.qualification_identity == native.machine_id
+    assert native.machine_id == native.machine.machine_id()
+    assert native.workload_projection_id == \
+        native.workload_projection.projection_id()
+    assert native.embedded_fabric_abi_version == \
+        native.machine.embedded_fabric_abi_version
+    assert native.standalone_config_sha256 == \
+        native.machine.standalone_config_sha256
+    # collective-mode is the qualified path: never the message default
+    assert native.workload_projection.et_granularity == "collectives"
+    assert native.namespace is not None
+    assert native.namespace.machine_id == native.machine_id
+
+
+def test_prepare_consults_the_canonical_binding_authority(tmp_path,
+                                                          monkeypatch):
+    """The adapter feeds bind_participants() the canonical bundle objects
+    — no second rank→endpoint map lives in the adapter."""
+    from veritx_dse.backend.adapter import PreparedExecution
+    import veritx_dse.workload.traffic as _traffic
+
+    calls: list[dict] = []
+    real_bind = _traffic.bind_participants
+
+    def _spy(*, participant_count, mapping, attachment,
+             resolved_fabric):
+        calls.append({
+            "participant_count": participant_count, "mapping": mapping,
+            "attachment": attachment,
+            "resolved_fabric": resolved_fabric})
+        return real_bind(
+            participant_count=participant_count, mapping=mapping,
+            attachment=attachment, resolved_fabric=resolved_fabric)
+
+    monkeypatch.setattr(_traffic, "bind_participants", _spy)
     context = _context()
     adapter = Astra2Adapter()
     prepared = adapter.prepare(
         context, EvaluationQuestion.SYSTEM_MAKESPAN)
+    assert isinstance(prepared, PreparedExecution)
+    # every binding derivation in this path consults the canonical
+    # authority (BookSim traffic + the adapter's own namespace binding)
+    assert calls
+    for call in calls:
+        assert call["mapping"] is context.bundle.mapping
+        assert call["attachment"] is context.bundle.attachment
+        assert call["resolved_fabric"] is context.bundle.resolved_fabric
+    native = prepared.native_prepared
+    binding = real_bind(
+        participant_count=native.workload_projection.participant_count,
+        mapping=context.bundle.mapping,
+        attachment=context.bundle.attachment,
+        resolved_fabric=context.bundle.resolved_fabric)
+    assert native.rank_to_endpoint == binding.rank_to_endpoint
+    assert native.namespace.rank_to_endpoint == binding.rank_to_endpoint
+    assert native.namespace.participant_mapping_id == binding.binding_id()
 
-    # every identity is the EXISTING authority's, not invented
-    assert prepared.machine_id == prepared.machine.machine_id()
-    assert prepared.workload_projection_id
-    assert prepared.embedded_fabric_abi_version == \
-        prepared.machine.embedded_fabric_abi_version
-    assert prepared.standalone_config_sha256 == \
-        prepared.machine.standalone_config_sha256
-    # namespace: identity rank→endpoint over the machine's Sys namespace
-    assert prepared.rank_to_endpoint == tuple(
-        (rank, rank) for rank in range(context.workload.participant_count))
 
+def test_prepare_preserves_a_permuted_canonical_placement(tmp_path,
+                                                          monkeypatch):
+    """Deliberately permuted rank→endpoint placement flows through the
+    adapter unchanged: rank == endpoint is never assumed, and the
+    namespace uses the same mapping."""
+    from veritx_dse.backend.adapter import PreparedExecution
+    from veritx_dse.workload.traffic import ParticipantEndpointMapping
+    import veritx_dse.workload.traffic as _traffic
 
-def test_prepare_binds_the_real_namespace_object(tmp_path, monkeypatch):
-    _FakeAstraEnv(tmp_path, monkeypatch)
     context = _context()
+    count = context.workload.participant_count
+    # a genuine permutation inside the participant endpoint range
+    rows = tuple((rank, (rank * 3 + 1) % count) for rank in range(count))
+    assert any(r != e for r, e in rows)
+    assert len({e for _, e in rows}) == count
+    permuted = ParticipantEndpointMapping(
+        participant_count=count, rank_to_endpoint=rows,
+        fabric_id=context.bundle.resolved_fabric.resolved_fabric_hash
+        if not callable(getattr(context.bundle.resolved_fabric,
+                                "resolved_fabric_hash", None))
+        else context.bundle.resolved_fabric.resolved_fabric_hash())
+    monkeypatch.setattr(_traffic, "bind_participants",
+                        lambda **kw: permuted)
     adapter = Astra2Adapter()
     prepared = adapter.prepare(
-        context, EvaluationQuestion.PER_RANK_COMPLETION)
-    assert prepared.namespace is not None
-    assert prepared.namespace.machine_id == prepared.machine_id
+        context, EvaluationQuestion.SYSTEM_MAKESPAN)
+    assert isinstance(prepared, PreparedExecution)
+    native = prepared.native_prepared
+    assert native.rank_to_endpoint != tuple((r, r) for r in range(count))
+    assert native.rank_to_endpoint == permuted.rank_to_endpoint
+    assert native.namespace.rank_to_endpoint == permuted.rank_to_endpoint
+    assert native.namespace.participant_mapping_id == \
+        permuted.binding_id()
 
 
 def test_prepare_refuses_relabeling(tmp_path, monkeypatch):
@@ -201,6 +321,71 @@ def test_prepare_refuses_relabeling(tmp_path, monkeypatch):
         adapter.prepare(
             _context(), EvaluationQuestion.SYSTEM_MAKESPAN,
             traffic_class="made_up")
+
+
+def test_prepare_needs_no_runtime_binary(tmp_path, monkeypatch):
+    """Preparation is semantic projection: it must succeed with no
+    binary anywhere (execution availability is a separate concern)."""
+    monkeypatch.delenv("VERITX_ASTRA_BIN", raising=False)
+    import veritx_dse.backend.astra as _astra
+    monkeypatch.setattr(_astra, "resolve_runtime_binary", lambda: None)
+    from veritx_dse.backend.adapter import PreparedExecution
+    prepared = Astra2Adapter().prepare(
+        _context(), EvaluationQuestion.SYSTEM_MAKESPAN)
+    assert isinstance(prepared, PreparedExecution)
+
+
+def _envelope_workload(operations):
+    """A minimal workload double: audit + by_id only."""
+    from types import SimpleNamespace
+    graph = SimpleNamespace(
+        ordered_operations=lambda: operations,
+        by_id=lambda op_id: next(
+            op for op in operations if op.operation_id == op_id))
+    return SimpleNamespace(
+        ordered_operations=graph.ordered_operations, by_id=graph.by_id)
+
+
+def test_collective_envelope_allows_compute_and_qualified_collectives():
+    from veritx_dse.workload.graph import (
+        KIND_COLLECTIVE, KIND_COMPUTE, OperationNode, collective_detail,
+        compute_detail,
+    )
+    adapter = Astra2Adapter()
+    ops = (
+        OperationNode(operation_id="pre", kind=KIND_COMPUTE,
+                      detail=compute_detail(duration_ns=1000,
+                                            participant_count=4)),
+        OperationNode(operation_id="ar", kind=KIND_COLLECTIVE,
+                      deps=("pre",),
+                      detail=collective_detail(
+                          collective_kind="ALLREDUCE",
+                          participants=(0, 1, 2, 3), payload_bytes=1024,
+                          participant_count=4)),
+    )
+    adapter._require_collective_envelope(_envelope_workload(ops))
+
+
+def test_collective_envelope_refuses_p2p_and_multicast():
+    from veritx_dse.backend.astra_adapter import Astra2SemanticRefusal
+    from veritx_dse.workload.graph import (
+        KIND_MULTICAST, KIND_P2P, OperationNode, multicast_detail,
+        p2p_detail,
+    )
+    adapter = Astra2Adapter()
+    p2p = OperationNode(
+        operation_id="p2p0", kind=KIND_P2P,
+        detail=p2p_detail(role="TRANSFER", src_rank=0, dst_rank=1,
+                          payload_bytes=64, participant_count=4))
+    mcast = OperationNode(
+        operation_id="mc0", kind=KIND_MULTICAST,
+        detail=multicast_detail(
+            source_rank=0, destinations=(1, 2, 3), payload_bytes=64,
+            replication="SOURCE_REPLICATION", participant_count=4))
+    for op in (p2p, mcast):
+        with pytest.raises(Astra2SemanticRefusal):
+            adapter._require_collective_envelope(
+                _envelope_workload((op,)))
 
 
 # ── execute: native evidence only ────────────────────────────────────
