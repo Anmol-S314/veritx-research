@@ -61,6 +61,21 @@ envelopes:
     claim_scope: Qualified network-cycle simulation of a dense static workload over a square
       mesh with DOR-XY routing under the pinned config audit.
     failure_meaning: NOT QUALIFIED FOR THIS ENVELOPE - the design remains canonically valid
+  CAP-ENV-BOOKSIM-CMESH-DOR-V1:
+    profile_id: CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1
+    semantics_version: booksim2-fork+P2-cmesh-dor+prepared-v1
+    authorizes: QUALIFIED + EVIDENCE_CAPABLE for concentrated-mesh DOR-XY static evaluation
+    required_conditions:
+    - COND-TOPOLOGY-CMESH
+    - COND-ROUTING-DOR-XY
+    - COND-SINGLE-COMM-CLASS
+    - COND-IDENTITY-VC-TRANSITIONS
+    - COND-SINGLE-CLOCK-FABRIC
+    - COND-DENSE-STATIC-WORKLOAD
+    - COND-CONFIG-AUDIT-CLOSED
+    claim_scope: Qualified network-cycle simulation of a dense static workload over a concentrated
+      mesh (seat_capacity 4) with DOR-XY routing under the pinned config audit.
+    failure_meaning: NOT QUALIFIED FOR THIS ENVELOPE - the design remains canonically valid
   CAP-ENV-BOOKSIM-MESH-DOR-MC-V1:
     profile_id: CERTIFIED_BOOKSIM_MESH_DOR_XY_MC_V1
     semantics_version: booksim2-fork+P3-meshdor-mc+prepared-v1
@@ -121,6 +136,7 @@ envelopes:
     failure_meaning: UNSUPPORTED or EVALUATION_FAILED - never a zero-latency result
 conditions:
   COND-TOPOLOGY-MESH: topology_family == MESH and radix is a perfect square
+  COND-TOPOLOGY-CMESH: topology_family == CONCENTRATED_MESH and radix is a perfect square
   COND-ROUTING-DOR-XY: canonical routing is DOR-XY (anynet_dijkstra_hops not required)
   COND-CANONICAL-ROUTE-PRESENT: RouteArtifact + ResolvedRoute derive and terminate
   COND-SINGLE-COMM-CLASS: exactly one unified traffic class after lowering
@@ -396,14 +412,17 @@ capabilities:
     VERIFIABLE: 'YES'
     PROJECTABLE: CONDITIONAL
     EXECUTABLE: CONDITIONAL
-    QUALIFIED: 'NO'
+    QUALIFIED: CONDITIONAL
     EVIDENCE_CAPABLE: CONDITIONAL
     PRODUCT_WIRED: 'YES'
   conditions:
+  - CAP-ENV-BOOKSIM-CMESH-DOR-V1
   - CAP-ENV-BOOKSIM-ANYNET-V1
   wiring: WIRED
-  limiting: concentration > 1 is NOT covered by the mesh-DOR envelope
-  claim_scope: valid canonical fabric; qualification depends on the envelope
+  limiting: concentration > 1 is NOT covered by the mesh-DOR envelope; concentrated-mesh
+    DOR-XY execution is qualified only under CAP-ENV-BOOKSIM-CMESH-DOR-V1 (seat_capacity 4)
+  claim_scope: valid canonical fabric qualified under its native CMESH-DOR envelope or the generic
+    AnyNet envelope; qualification depends on the envelope
 - id: FAB-003
   name: torus topology
   owner: FABRIC
@@ -790,7 +809,9 @@ capabilities:
     PRODUCT_WIRED: 'NO'
   wiring: NOT_AVAILABLE
   reason: IMPLEMENTATION_GAP
-  claim_scope: no compile or evidence reuse exists; every study recompiles and re-evaluates
+  claim_scope: safe verification primitives exist (verify_reusable_record/read_reusable_record
+    + anti-transplant tests); the missing layer is cache lookup/orchestration and product
+    wiring — every study still recompiles and re-evaluates
 - id: OPT-008
   name: candidate promotion
   owner: DESIGN_SPACE
@@ -805,7 +826,9 @@ capabilities:
     PRODUCT_WIRED: 'NO'
   wiring: NOT_AVAILABLE
   reason: PRODUCT_NOT_WIRED
-  claim_scope: a selected candidate exists; promotion into a new design revision is not wired
+  claim_scope: promotion primitives exist (promote_to_explicit_topology/apply_promotion_to_request_doc
+    into TopologyIR kind=custom with linkage-only provenance); the missing layer is the product/API/Studio
+    promotion action — a selected candidate still requires manual promotion
 - id: PAR-001
   name: TP coordinate
   owner: PARALLELISM
@@ -1100,6 +1123,10 @@ capabilities:
     PRODUCT_WIRED: 'NO'
   wiring: NOT_AVAILABLE
   reason: FUTURE_CONTRACT
+  claim_scope: no canonical adaptive producer/projection/qualification exists (MIN_ADAPT_MESH
+    relation chain excluded). The BookSim fork separately registers 9+ adaptive routing
+    functions (min_adapt/planar/ROMM/Valiant/Chaos/UGAL); backend implementation is not a
+    canonical projection.
 - id: ROUTE-010
   name: valiant routing
   owner: ROUTER_RESOURCE
@@ -1114,6 +1141,8 @@ capabilities:
     PRODUCT_WIRED: 'NO'
   wiring: NOT_AVAILABLE
   reason: FUTURE_CONTRACT
+  claim_scope: no canonical Valiant producer/projection/qualification exists. The BookSim fork
+    registers valiant_mesh/valiant_torus; backend implementation is not a canonical projection.
 - id: ROUTE-011
   name: RCU / in-network reduction
   owner: ROUTER_RESOURCE

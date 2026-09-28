@@ -77,13 +77,13 @@ families:
     canonical_id: concentrated_mesh
     role: USER_FAMILY
     stages: {RECOGNIZED: "YES", AUTHORABLE: "YES", MATERIALIZABLE: "YES",
-             ROUTABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "NO",
-             EXECUTABLE: "NO", QUALIFIED: "NO", WIRED: "NO"}
+             ROUTABLE: "YES", VERIFIABLE: "YES", PROJECTABLE: "YES",
+             EXECUTABLE: "YES", QUALIFIED: "YES", WIRED: "YES"}
     intent_schema: "NocConfig.topology_family = concentrated_mesh (params: concentration)"
     materializer: "topology_artifact.materialize_family(CONCENTRATED_MESH)"
     backend_projection: {booksim: cmesh, astra: mesh}
-    evidence: "MATERIALIZABLE/ROUTABLE proven by capability_truth (compiler derives a real TopologyArtifact + DOR_XY RouteArtifact). PROJECTABLE/EXECUTABLE/QUALIFIED were claimed YES but are FALSE: select_booksim_profile() has exactly two profiles — CERTIFIED_BOOKSIM_MESH_DOR_XY_V1 (guarded on TopologyArtifact.family is MaterializedFamily.MESH) and CERTIFIED_BOOKSIM_ANYNET_V1 (requires ANYNET_MIN_HOPS). Concentrated mesh is CONCENTRATED_MESH and routes DOR_XY, so it satisfies neither and the projection is REFUSED. Fixing this requires a new CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1 profile (PHASE C), not a widened MESH guard."
-    note: "CORRECTED (PHASE A truth gate): the previous YES/YES/YES was a false positive. scripts/check_capability_truth.py now derives these stages from the real selector and fails CI on any such claim."
+    evidence: "PHASE C LANDED: CERTIFIED_BOOKSIM_CMESH_DOR_XY_V1 (booksim2-fork+P2-cmesh-dor+prepared-v1, qualifier qualify_native_cmesh_dor, seat_capacity 4, use_noc_latency 0) is registered QUALIFIED with execution handler + test_booksim_cmesh_projection.py. select_booksim_profile() returns CMESH_DOR_PROFILE for CONCENTRATED_MESH DOR_XY designs. scripts/check_capability_truth.py derives these stages from the real selector."
+    note: "RECONCILED (studio-reconciliation slice 2): PHASE A refusal text was stale after PHASE C landed; stages now derived from the live CMESH profile."
 
   ring:
     canonical_id: ring
