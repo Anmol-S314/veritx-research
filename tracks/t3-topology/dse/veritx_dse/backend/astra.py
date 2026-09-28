@@ -55,12 +55,20 @@ from veritx_dse.workload.graph import (
     KIND_COLLECTIVE, KIND_COMPUTE, KIND_EXPERT_BEGIN, KIND_EXPERT_END,
     KIND_MULTICAST, KIND_P2P, KIND_PIM_CHANNEL, KIND_PIM_END,
 )
-from veritx_dse.workload.messages import LogicalMessageArtifactV2
+from veritx_dse.workload.messages import (
+    LogicalMessageArtifactV2, LogicalMessageArtifactV3,
+)
 
 ASTRA_PROJECTION_SCHEMA_VERSION = 1
 LOWERING_SEMANTICS_VERSION = 1
 _PROJECTION_TYPE_TAG = "srota/AstraWorkloadProjection"
 _CHAKRA_SCHEMA = "1.0.2-chakra.0.0.4"
+
+#: logical artifact variants this projection accepts. V2 stamps one
+#: uniform class; V3 stamps each message with its operation's lowered
+#: class. The variant is identity-bearing: a V3 projection id can never
+#: collide with a V2 id over the same graph.
+LOGICAL_ARTIFACT_VARIANTS = ("V2", "V3")
 
 #: canonical operation classification
 ZERO_TRAFFIC = "ZERO_TRAFFIC"
@@ -224,6 +232,10 @@ class AstraWorkloadProjection:
     mtu_bytes: int | None = None
     comm_attr_abi: str = _DEFAULT_COMM_ATTR_ABI
     et_granularity: str = _DEFAULT_ET_GRANULARITY
+    #: which canonical logical artifact variant was projected (V2 uniform
+    #: class, V3 per-operation classes). Identity-bearing: class semantics
+    #: are part of the projection id, never ambient.
+    logical_artifact_variant: str = "V2"
     schema_version: int = ASTRA_PROJECTION_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
@@ -239,6 +251,11 @@ class AstraWorkloadProjection:
             raise AstraError(
                 f"et_granularity must be one of {ET_GRANULARITY}, got "
                 f"{self.et_granularity!r}")
+        if self.logical_artifact_variant not in LOGICAL_ARTIFACT_VARIANTS:
+            raise AstraError(
+                f"logical_artifact_variant must be one of "
+                f"{LOGICAL_ARTIFACT_VARIANTS}, got "
+                f"{self.logical_artifact_variant!r}")
         if type(self.participant_count) is not int \
                 or self.participant_count <= 0:
             raise AstraError("participant_count must be a positive int")
@@ -270,16 +287,28 @@ class AstraWorkloadProjection:
 
     # -- construction ----------------------------------------------------
     @classmethod
-    def build(cls, *, logical: LogicalMessageArtifactV2,
+    def build(cls, *, logical: Any,
               resolved_fabric: ResolvedFabric, mapping: MappingArtifact,
               attachment: AgentAttachmentArtifact,
               mtu_bytes: int | None = None,
               comm_attr_abi: str = _DEFAULT_COMM_ATTR_ABI,
               et_granularity: str = _DEFAULT_ET_GRANULARITY
               ) -> "AstraWorkloadProjection":
-        """Project canonical messages; refuse unsupported semantics."""
-        if not isinstance(logical, LogicalMessageArtifactV2):
-            raise AstraError("logical must be a LogicalMessageArtifactV2")
+        """Project canonical messages; refuse unsupported semantics.
+
+        Accepts the V2 uniform-class artifact and the V3 per-operation
+        artifact. V3 messages keep their operation's lowered class each;
+        the variant is recorded in the projection identity so class
+        semantics can never silently collapse to V2."""
+        if isinstance(logical, LogicalMessageArtifactV3):
+            variant = "V3"
+        elif isinstance(logical, LogicalMessageArtifactV2):
+            variant = "V2"
+        else:
+            raise AstraError(
+                "logical must be a LogicalMessageArtifactV2 or "
+                f"LogicalMessageArtifactV3, got "
+                f"{type(logical).__name__}")
         if not isinstance(resolved_fabric, ResolvedFabric):
             raise AstraError("resolved_fabric must be a ResolvedFabric")
         if not isinstance(mapping, MappingArtifact):
@@ -296,6 +325,11 @@ class AstraWorkloadProjection:
                 "no canonical ASTRA lowering for operation(s) "
                 f"{[row['operation_id'] for row in unsupported]}; refusing "
                 "rather than reporting zero communication cost")
+        if variant == "V3":
+            # Per-operation conservation is the class-faithfulness
+            # proof: every network-bearing collective's messages must
+            # account for its declared payload exactly.
+            logical.validate_conservation()
         messages = tuple(
             AstraMessage(
                 sequence=index, operation_id=m.operation_id,
@@ -340,9 +374,47 @@ class AstraWorkloadProjection:
             collective_operations=collectives,
             mtu_bytes=mtu_bytes,
             comm_attr_abi=comm_attr_abi,
-            et_granularity=et_granularity)
+            et_granularity=et_granularity,
+            logical_artifact_variant=variant)
 
     # -- accessors -------------------------------------------------------
+    def operation_traffic_classes(self) -> dict[str, str]:
+        """One canonical traffic class per operation id.
+
+        Every message of an operation must carry its operation's class:
+        an intra-operation mismatch is a collapsed binding, refused here
+        rather than projected."""
+        classes: dict[str, str] = {}
+        for message in self.messages:
+            known = classes.get(message.operation_id)
+            if known is None:
+                classes[message.operation_id] = message.traffic_class
+            elif known != message.traffic_class:
+                raise AstraError(
+                    f"operation {message.operation_id!r} carries two "
+                    f"traffic classes ({known!r} vs "
+                    f"{message.traffic_class!r}): refusing a collapsed "
+                    "class binding")
+        return classes
+
+    def class_binding_id(self) -> str:
+        """Deterministic identity of the operation->class binding.
+
+        Binds every network-bearing collective operation to its traffic
+        class. Evidence and machine qualification carry this id so a
+        swapped, collapsed or omitted class binding refuses downstream.
+        """
+        from veritx_dse.core.artifact import content_hash
+        binding = sorted(
+            (op_id, cls) for op_id, cls in
+            self.operation_traffic_classes().items())
+        return content_hash("srota/AstraClassBinding", 1,
+                            {"binding": [list(row) for row in binding]})
+
+    def traffic_classes(self) -> tuple[str, ...]:
+        """Sorted distinct traffic classes across messages."""
+        return tuple(sorted({m.traffic_class for m in self.messages}))
+
     def ranks(self) -> tuple[int, ...]:
         return tuple(range(self.participant_count))
 
@@ -430,6 +502,13 @@ class AstraWorkloadProjection:
             "mtu_bytes": self.mtu_bytes,
             "comm_attr_abi": self.comm_attr_abi,
             "et_granularity": self.et_granularity,
+            # V2 identity is frozen byte-for-byte (existing fixtures
+            # and golden ids keep verifying); the class-bearing fields
+            # enter the identity only for V3, where they are the point.
+            **({"logical_artifact_variant": self.logical_artifact_variant,
+                "class_binding_id": self.class_binding_id(),
+                "traffic_classes": list(self.traffic_classes())}
+               if self.logical_artifact_variant != "V2" else {}),
             "expansion_authority": self.expansion_authority(),
             "evidence_scope": self.evidence_scope(),
             "compute_operations": [[op_id, duration_ns]
@@ -513,11 +592,17 @@ class AstraWorkloadProjection:
         if schema != ASTRA_PROJECTION_SCHEMA_VERSION:
             raise AstraError(
                 f"unsupported workload schema_version {schema!r}")
+        variant = doc.get("logical_artifact_variant", "V2")
+        if variant not in LOGICAL_ARTIFACT_VARIANTS:
+            raise AstraError(
+                f"workload document logical_artifact_variant must be "
+                f"one of {LOGICAL_ARTIFACT_VARIANTS}, got {variant!r}")
         return cls(
             messages=messages, participant_count=participant_count,
             **str_fields, compute_operations=compute,
             compute_owners=owners, collective_operations=collectives,
-            mtu_bytes=mtu, schema_version=schema)
+            mtu_bytes=mtu, schema_version=schema,
+            logical_artifact_variant=variant)
 
     def canonical_bytes(self) -> bytes:
         return json.dumps(self.to_dict(), sort_keys=True,
@@ -539,12 +624,16 @@ class AstraWorkloadProjection:
                 "owner": self.compute_owner(op_id)}))
             next_id += 1
         if self.et_granularity == "collectives":
+            op_classes = self.operation_traffic_classes()
             for op_id, kind, payload_bytes, participants in \
                     self.collective_operations:
                 plan.append((next_id, "COLL", {
                     "operation_id": op_id, "collective_kind": kind,
                     "payload_bytes": payload_bytes,
-                    "participants": participants}))
+                    "participants": participants,
+                    # Canonical class rides as node data, never merged
+                    # into the collective kind: TP/EP ops stay distinct.
+                    "traffic_class": op_classes.get(op_id)}))
                 next_id += 1
         for message in self.messages:
             if self.et_granularity == "collectives" \
@@ -630,6 +719,21 @@ class AstraWorkloadProjection:
                     setattr(size_attr,
                             _COMM_ATTR_FIELDS[self.comm_attr_abi][1],
                             payload["payload_bytes"])
+                    # Sidecar class attribute: the runtime schedules the
+                    # collective; the canonical class travels WITH the
+                    # node so attribution never depends on heuristics.
+                    # A COLL node without a bound class is a collapsed
+                    # binding and must not execute.
+                    op_class = payload.get("traffic_class")
+                    if not isinstance(op_class, str) or not op_class:
+                        raise AstraError(
+                            f"collective node {node_id} "
+                            f"({payload.get('operation_id')!r}) has no "
+                            "bound traffic class: refusing a collapsed "
+                            "class binding")
+                    class_attr = node.attr.add()
+                    class_attr.name = "veritx_traffic_class"
+                    class_attr.string_val = op_class
                     dim = node.attr.add()
                     dim.name = "involved_dim"
                     dim.bool_list.values.append(True)
@@ -657,6 +761,12 @@ class AstraWorkloadProjection:
                     size.name = "comm_size"
                     setattr(size, _COMM_ATTR_FIELDS[self.comm_attr_abi][1],
                             message.payload_bytes)
+                    # Message-mode nodes carry the class sidecar too;
+                    # message-mode never normalizes, so this is
+                    # attribution only, never an execution claim.
+                    msg_class = node.attr.add()
+                    msg_class.name = "veritx_traffic_class"
+                    msg_class.string_val = message.traffic_class
                 if node is None:  # pragma: no cover - defensive
                     continue
                 if previous:

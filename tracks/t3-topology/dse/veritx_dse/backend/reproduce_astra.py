@@ -91,6 +91,45 @@ def reproduce_astra_run_bundle(
         raise RunBundleError(
             "archived namespace does not match the stored evidence's "
             "namespace_id")
+    # The archived namespace's rank map must equal the stored evidence's
+    # executed binding: a permuted map with a colliding namespace id
+    # would otherwise re-execute a different placement as "matching".
+    if tuple(tuple(pair) for pair in namespace.rank_to_endpoint) != \
+            tuple(tuple(pair) for pair in stored.rank_to_endpoint):
+        raise RunBundleError(
+            "archived namespace rank map does not match the stored "
+            "evidence's executed rank_to_endpoint; refusing a "
+            "reproduction against a different placement")
+    # Producer pin: the rerun binary must be the exact producer the
+    # stored evidence attributes (same SHA under the qualified recipe).
+    # A different binary — even a rebuild from the same source — is a
+    # different producer and cannot "match" this evidence. Standalone
+    # config and ABI generations are covered by the machine_id and
+    # evidence_id equalities below (both bind those facts).
+    from veritx_dse.backend.astra_execution import (
+        ASTRA_BUILD_RECIPE_VERSION,
+    )
+    from veritx_dse.backend.producer import (
+        ProducerError, resolve_producer_identity,
+    )
+    if stored.astra_build_manifest_sha256 is None \
+            or stored.astra_build_recipe_version is None:
+        raise RunBundleError(
+            "stored evidence predates producer binding (no manifest "
+            "facts); reproduction is NOT_AVAILABLE for it")
+    try:
+        rerun_identity = resolve_producer_identity(
+            Path(binary),
+            require_manifest_recipe=ASTRA_BUILD_RECIPE_VERSION)
+    except ProducerError as exc:
+        raise RunBundleError(
+            "reproduction binary is not a qualified producer: "
+            f"{exc}") from exc
+    if rerun_identity.binary_sha256 != stored.astra_binary_sha256:
+        raise RunBundleError(
+            "reproduction binary SHA does not match the stored "
+            "evidence's producer SHA; refusing reproduction against "
+            "a different producer")
     workload_base = astra_dir / "workload" / "workload.et"
     if not workload_base.is_file():
         raise RunBundleError(

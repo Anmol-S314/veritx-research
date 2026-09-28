@@ -188,8 +188,11 @@ def test_assess_refuses_network_completion_as_unsupported():
 
 
 def test_assess_refuses_multi_class_flattening():
-    """THE semantic trap: MoE's two canonical classes must never be
-    flattened into one ASTRA stream."""
+    """Multi-class is never flattened: the V3 seam preserves both MoE
+    classes structurally, and assessment refuses at machine
+    qualification until the embedded runtime proves class-aware
+    injection (class ABI). Flattening into one stream is what is
+    refused — structurally (V3) and at qualification (ABI gate)."""
     import json
     from veritx_dse.core.paths import REPO
     from veritx_dse.product.service import parse_request_doc
@@ -201,7 +204,7 @@ def test_assess_refuses_multi_class_flattening():
     adapter = Astra2Adapter()
     assessment = adapter.assess(context, EvaluationQuestion.SYSTEM_MAKESPAN)
     assert assessment.support is SupportLevel.UNSUPPORTED
-    assert "single-class" in assessment.reason
+    assert "class ABI" in assessment.reason
 
 
 # ── prepare: composition over existing authorities ───────────────────

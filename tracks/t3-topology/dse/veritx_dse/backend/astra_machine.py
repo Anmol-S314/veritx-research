@@ -38,6 +38,18 @@ from veritx_dse.backend.booksim_projection import (
 ASTRA_MACHINE_SCHEMA_VERSION = 1
 #: bumped whenever the embedded transform or the rendered config ABI changes
 EMBEDDED_FABRIC_ABI_VERSION = "srota/booksim-embedded-fabric-abi/v1"
+
+#: Class-attribution injection ABI proven by the embedded runtime.
+#: 0 = pre-extension: injection carries (src, dst, bytes) only and any
+#: class label would be unattributable. A multi-class machine qualifies
+#: only when this version proves class-aware injection (class_id bound
+#: at every injection site, threaded through retire, ledger-logged).
+#: Bumped if and only if the vendored C++ runtime lands the extension
+#: (kBooksim2AbiVersion) and re-qualifies.
+EMBEDDED_NETWORK_CLASS_ABI_VERSION = 0
+#: Minimum class ABI a multi-class machine requires. Single-class
+#: machines are unaffected: one class needs no attribution.
+REQUIRED_CLASS_ABI_MULTI_CLASS = 1
 MACHINE_PROFILE_VERSION = "srota/astra-machine-profile/v1"
 #: bumped when the logical-topology / memory derivation changes semantics
 MACHINE_DERIVATION_VERSION = "srota/astra-machine-derivation/v1"
@@ -497,6 +509,11 @@ class AstraMachineProjection:
     network_config_text: str
     logical_topology_text: str
     memory_config_text: str
+    #: Proven class-attribution injection ABI of the embedded runtime
+    #: (0 = pre-extension). Identity-bearing: a machine qualified
+    #: against a class-aware runtime never shares identity with one
+    #: qualified against a class-blind runtime.
+    embedded_network_class_abi_version: int = 0
     schema_version: int = ASTRA_MACHINE_SCHEMA_VERSION
 
     # -- files ------------------------------------------------------------
@@ -538,6 +555,8 @@ class AstraMachineProjection:
             "prepared_id": self.prepared_id,
             "booksim_profile_id": self.booksim_profile_id,
             "standalone_config_sha256": self.standalone_config_sha256,
+            "embedded_network_class_abi_version":
+                self.embedded_network_class_abi_version,
             "workload_projection_id": self.workload_projection_id,
             "workload_semantics_version": self.workload_semantics_version,
             "et_granularity": self.et_granularity,
@@ -595,6 +614,8 @@ class AstraMachineProjection:
             "prepared_id": self.prepared_id,
             "booksim_profile_id": self.booksim_profile_id,
             "standalone_config_sha256": self.standalone_config_sha256,
+            "embedded_network_class_abi_version":
+                self.embedded_network_class_abi_version,
             "astra_sys_count": self.astra_sys_count,
             "router_count": self.router_count,
             "endpoint_count": self.endpoint_count,
@@ -687,11 +708,20 @@ class AstraMachineProjection:
         if schema != ASTRA_MACHINE_SCHEMA_VERSION:
             raise AstraMachineError(
                 f"unsupported machine schema_version {schema!r}")
+        # Legacy machines predate class-attribution tracking: absent
+        # means the class-blind runtime (ABI 0), exactly, never unknown.
+        class_abi = doc.get("embedded_network_class_abi_version", 0)
+        if type(class_abi) is not int or isinstance(class_abi, bool) \
+                or class_abi < 0:
+            raise AstraMachineError(
+                "machine document embedded_network_class_abi_version "
+                "must be a non-negative int")
         return cls(
             **str_fields, **int_fields, **text_fields,
             logical_dimensions=tuple(dimensions),
             ns_per_cycle=float(ns_per_cycle),
             memory_semantically_active=active,
+            embedded_network_class_abi_version=class_abi,
             schema_version=schema)
 
     def canonical_bytes(self) -> bytes:
@@ -761,6 +791,23 @@ def qualify_astra_machine(*, parents: Any, prepared: Any, projection: Any,
     if authority not in ("srota_logical_messages", "astra_comm_coll"):
         raise AstraMachineError(
             f"unknown collective expansion authority {authority!r}")
+    # Class-attribution gate: a multi-class workload executes more than
+    # one traffic class through the same embedded network. The runtime
+    # proves class-aware injection only at class ABI >= 1; against a
+    # class-blind runtime (ABI 0) the classes would contend unattributed
+    # — a silent flattening. Refuse qualification, never widen the
+    # meaning of the existing ABI.
+    projected_classes = projection.traffic_classes()
+    if len(projected_classes) > 1 \
+            and EMBEDDED_NETWORK_CLASS_ABI_VERSION < \
+            REQUIRED_CLASS_ABI_MULTI_CLASS:
+        raise AstraMachineError(
+            f"multi-class workload ({len(projected_classes)} classes: "
+            f"{list(projected_classes)}) requires embedded network "
+            f"class ABI >= {REQUIRED_CLASS_ABI_MULTI_CLASS}, but the "
+            "qualified runtime proves "
+            f"{EMBEDDED_NETWORK_CLASS_ABI_VERSION}: old runtimes fail "
+            "qualification rather than executing classes unattributed")
     if astra_collective_authority is not None:
         wants_astra = authority == "astra_comm_coll"
         if astra_collective_authority != wants_astra:
@@ -830,6 +877,8 @@ def qualify_astra_machine(*, parents: Any, prepared: Any, projection: Any,
         prepared_id=prepared.prepared_id(),
         booksim_profile_id=prepared.profile_id,
         embedded_fabric_abi_version=embedded.abi_version,
+        embedded_network_class_abi_version=
+        EMBEDDED_NETWORK_CLASS_ABI_VERSION,
         standalone_config_sha256=embedded.standalone_config_sha256,
         workload_projection_id=projection.projection_id(),
         workload_semantics_version=projection.schema_version,

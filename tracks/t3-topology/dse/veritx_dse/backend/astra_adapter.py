@@ -77,6 +77,24 @@ class Astra2SemanticRefusal(ValueError):
 
 
 @dataclass(frozen=True)
+class ProducerPin:
+    """The pinned runtime producer bound at execution time.
+
+    Preparation is deliberately binary-independent, so the pin is
+    resolved in ``execute()`` (never in ``_prepare_native``) from the
+    existing producer authority and stamped into evidence. Normalization
+    verifies the evidence's producer facts against this pin's recipe
+    and pin-quality rules."""
+
+    binary_sha256: str
+    binary_size: int
+    source_revision: str | None
+    dirty: bool | None
+    build_manifest_sha256: str | None
+    build_recipe_version: str | None
+
+
+@dataclass(frozen=True)
 class Astra2Preparation:
     """The native prepared structures plus the federation identities.
 
@@ -95,6 +113,9 @@ class Astra2Preparation:
     standalone_config_sha256: str
     embedded_fabric_abi_version: str
     rank_to_endpoint: tuple[tuple[int, int], ...]
+    #: Pinned producer bound at execute() time; None straight out of
+    #: _prepare_native (preparation needs no binary).
+    producer_pin: ProducerPin | None = None
 
 
 def _check_astra_evidence_binding(evidence: Any, native: Any) -> None:
@@ -155,7 +176,10 @@ class Astra2Adapter:
                     "delegates collective expansion to ASTRA "
                     "(et_granularity=collectives); SEND/RECV message-mode "
                     "operations refuse rather than execute unqualified",
-                    "single-class collective communication (V2 artifact)",
+                    "multi-class collective communication (V3 artifact) "
+                    "only where the embedded runtime proves class-aware "
+                    "injection; otherwise explicit refusal, never "
+                    "flattening",
                 ))
             for question in ASTRA2_QUESTIONS)
 
@@ -323,32 +347,41 @@ class Astra2Adapter:
                 "ASTRA2 answers system-level questions only: "
                 f"{[q.value for q in ASTRA2_QUESTIONS]}")
         from veritx_dse.workload.messages import (
-            LogicalMessageArtifactV2,
+            LogicalMessageArtifactV2, LogicalMessageArtifactV3,
         )
 
-        # ASTRA consumes the V2 artifact: a multi-class lowering has no
-        # ASTRA representation — refuse rather than flatten classes.
+        # V3 multi-class lowering: every operation keeps its lowered
+        # class; the projection (not a flattening) carries them.
+        # A caller-supplied traffic_class cannot subset a multi-class
+        # intent at eval time — that would silently drop classes.
         lowered = context.lowered_workload
         if lowered.unified_traffic_class is None:
-            raise Astra2SemanticRefusal(
-                f"lowering spans classes {list(lowered.classes)}: ASTRA "
-                f"projection is single-class (V2 artifact); multi-class "
-                f"traffic refuses rather than flattening")
-        unified = lowered.unified_traffic_class
-        if traffic_class is not None and traffic_class != unified:
-            raise Astra2SemanticRefusal(
-                f"evaluation traffic class {traffic_class!r} does not "
-                f"match the lowered intent class {unified!r}: eval-time "
-                f"relabeling is refused")
+            if traffic_class is not None:
+                raise Astra2SemanticRefusal(
+                    f"evaluation traffic class {traffic_class!r} cannot "
+                    "subset a multi-class lowering: eval-time class "
+                    "selection would silently drop the other classes")
+            logical: Any = LogicalMessageArtifactV3(
+                graph=lowered.graph,
+                traffic_class_by_operation=
+                lowered.traffic_class_by_operation)
+        else:
+            unified = lowered.unified_traffic_class
+            if traffic_class is not None and traffic_class != unified:
+                raise Astra2SemanticRefusal(
+                    f"evaluation traffic class {traffic_class!r} does "
+                    "not match the lowered intent class "
+                    f"{unified!r}: eval-time relabeling is refused")
+            logical = LogicalMessageArtifactV2(context.workload,
+                                               traffic_class=unified)
 
         # The qualified communication envelope: every network-bearing
         # operation must be representable through the collective-mode
         # path. P2P / multicast / message-mode operations refuse — never
-        # silently dropped, never executed unqualified.
+        # silently dropped, never executed unqualified. The check loops
+        # per operation, so multi-class membership never affects it.
         self._require_collective_envelope(context.workload)
 
-        logical = LogicalMessageArtifactV2(context.workload,
-                                           traffic_class=unified)
         bundle = context.bundle
         # The canonical BookSim fabric projection is the machine's network
         # authority; embed its prepared config into the ASTRA machine.
@@ -360,10 +393,15 @@ class Astra2Adapter:
         )
         booksim = BookSimAdapter()
         try:
+            # Single-class: the unified class selects the BookSim leg.
+            # Multi-class (V3): no class filter — the canonical V3 path
+            # admits every class against its VC set (a filter here would
+            # silently drop classes from the embedded network).
             bs_prepared = booksim.prepare(
                 context, _Q.NETWORK_COMPLETION,
-                traffic_class=traffic_class if traffic_class is not None
-                else unified)
+                traffic_class=traffic_class
+                if traffic_class is not None
+                else lowered.unified_traffic_class)
         except BookSimProjectionRefusal as exc:
             raise Astra2SemanticRefusal(
                 f"embedded BookSim fabric projection refused: {exc}") \
@@ -476,7 +514,10 @@ class Astra2Adapter:
         """
         from veritx_dse.backend.astra import AstraUnavailable
         from veritx_dse.backend.astra_execution import (
-            execute_astra_machine,
+            ASTRA_BUILD_RECIPE_VERSION, execute_astra_machine,
+        )
+        from veritx_dse.backend.producer import (
+            ProducerError, resolve_producer_identity,
         )
         native = prepared.native_prepared
         if not isinstance(native, Astra2Preparation):
@@ -490,6 +531,31 @@ class Astra2Adapter:
             binary = resolve_runtime_binary()
         if binary is None:
             raise AstraUnavailable("the ASTRA2 runtime binary is absent")
+        # Bind the pinned producer to this execution: resolved here for
+        # the record (preparation stays binary-independent until now);
+        # the spawn itself re-resolves and asserts the pin inside
+        # execute_astra_machine. A pin failure refuses execution — an
+        # unqualified producer never spawns for reusable evidence.
+        from dataclasses import replace as _replace
+        from veritx_dse.backend.astra_execution import AstraExecutionError
+        try:
+            pin_identity = resolve_producer_identity(
+                Path(binary),
+                require_manifest_recipe=ASTRA_BUILD_RECIPE_VERSION)
+            pin = ProducerPin(
+                binary_sha256=pin_identity.binary_sha256,
+                binary_size=pin_identity.binary_size,
+                source_revision=pin_identity.source_revision,
+                dirty=pin_identity.dirty,
+                build_manifest_sha256=
+                pin_identity.build_manifest_sha256,
+                build_recipe_version=
+                pin_identity.build_recipe_version)
+        except ProducerError as exc:
+            raise AstraExecutionError(
+                f"ASTRA producer identity unresolvable, refusing "
+                f"spawn: {exc}") from exc
+        native = _replace(native, producer_pin=pin)
         run_dir = Path(getattr(options, "run_dir"))
         timeout_s = getattr(options, "timeout_s", 600)
         astra_dir = run_dir / "astra"
@@ -514,7 +580,9 @@ class Astra2Adapter:
             workload_configuration=staged.base,
             timeout_s=timeout_s, write=True,
             namespace=native.namespace,
-            repo_root=self._repo_root)
+            repo_root=self._repo_root,
+            class_binding_id=
+            native.workload_projection.class_binding_id())
 
     # ── normalize ─────────────────────────────────────────────────────
 
@@ -578,6 +646,57 @@ class Astra2Adapter:
                 f"{evidence.autonomous_injection_packets} packets of its "
                 f"own; evidence with autonomous traffic never normalizes")
         _check_astra_evidence_binding(evidence, native)
+        # Producer binding: the spawn gate stamps full producer facts
+        # into evidence. Normalization verifies they are pin-quality — a
+        # manifest-bound recipe, a clean revision, a manifest digest —
+        # reusing the existing producer authority's vocabulary. Evidence
+        # that did not come through the pinned spawn gate never
+        # normalizes, even with matching machine/projection ids.
+        from veritx_dse.backend.astra_execution import (
+            ASTRA_BUILD_RECIPE_VERSION,
+        )
+        if evidence.astra_build_recipe_version != \
+                ASTRA_BUILD_RECIPE_VERSION:
+            raise AstraExecutionError(
+                f"ASTRA evidence build recipe "
+                f"{evidence.astra_build_recipe_version!r} is not the "
+                f"qualified {ASTRA_BUILD_RECIPE_VERSION!r}: refusing "
+                "evidence from an unqualified producer")
+        if not isinstance(evidence.astra_build_manifest_sha256, str) \
+                or len(evidence.astra_build_manifest_sha256) != 64:
+            raise AstraExecutionError(
+                "ASTRA evidence carries no build-manifest digest: it "
+                "did not come through the pinned spawn gate")
+        if not evidence.astra_source_revision \
+                or evidence.astra_dirty is not False:
+            raise AstraExecutionError(
+                "ASTRA evidence producer is not clean/revision-identified: "
+                "refusing evidence from an unqualified producer")
+        # ABI binding: evidence stamped by a different runtime generation
+        # than the prepared machine is a cross-generation transplant.
+        if evidence.embedded_network_class_abi_version != \
+                native.machine.embedded_network_class_abi_version:
+            raise AstraExecutionError(
+                f"ASTRA evidence class ABI "
+                f"{evidence.embedded_network_class_abi_version!r} does "
+                "not match the prepared machine "
+                f"{native.machine.embedded_network_class_abi_version!r}: "
+                "refusing a cross-generation transplant")
+        # Class binding: a multi-class projection without a matching
+        # binding id is unattributable (swapped, collapsed or omitted
+        # classes would normalize silently). Single-class evidence needs
+        # no attribution binding — there is nothing to swap.
+        _projection_classes = \
+            native.workload_projection.traffic_classes()
+        if len(_projection_classes) > 1:
+            _expected_binding = \
+                native.workload_projection.class_binding_id()
+            if evidence.class_binding_id != _expected_binding:
+                raise AstraExecutionError(
+                    f"ASTRA evidence class binding "
+                    f"{evidence.class_binding_id!r} does not match the "
+                    f"prepared {_expected_binding!r}: refusing a "
+                    "class-swapped or collapsed normalization")
         metrics: list[MetricValue] = []
         if question is EvaluationQuestion.SYSTEM_MAKESPAN:
             metrics.append(MetricValue(

@@ -273,7 +273,11 @@ def test_message_granularity_emits_send_recv_without_re_expanding(tmp_path):
     assert all(t in (5, 6) for t in types[1:])  # SEND/RECV only
     comm = nodes[1]
     attr = {a.name: (a.uint32_val or a.uint64_val) for a in comm.attr}
-    assert set(attr) == {"comm_src", "comm_dst", "comm_size"}
+    # The canonical class rides as a string sidecar (its int fields read
+    # 0, so its key is present); the wire set is otherwise frozen — this
+    # pins the exact set including the sidecar.
+    assert set(attr) == {"comm_src", "comm_dst", "comm_size",
+                         "veritx_traffic_class"}
     assert attr["comm_size"] == 64          # 1024 B / 16 ranks
     # one pair per logical message, and NO collective node anywhere
     assert len(projection.messages) == 480

@@ -43,6 +43,12 @@ from veritx_dse.backend.producer import (
 ASTRA_EXECUTION_SCHEMA_VERSION = 1
 ASTRA_PARSER_VERSION = "srota/astra-stats-parser/v1"
 
+#: Build recipe the qualified ASTRA producer must be built from. Pinned
+#: at resolve time (spawn gate) and stamped into evidence so
+#: normalization can verify it. Mirrors the BookSim producer pattern;
+#: a single authority, never re-derived per call site.
+ASTRA_BUILD_RECIPE_VERSION = "astra-sim+booksim2/v1"
+
 EVIDENCE_TIER_STANDALONE_BOOKSIM = "STANDALONE_BOOKSIM_EXECUTION"
 EVIDENCE_TIER_EMBEDDED_FABRIC = "EMBEDDED_BOOKSIM_FABRIC_EXECUTION"
 EVIDENCE_TIER_ASTRA_COLLECTIVE = "ASTRA_OWNED_COLLECTIVE_EXECUTION"
@@ -133,6 +139,24 @@ class AstraRuntimeEvidence:
     per_endpoint_cycles: tuple[tuple[int, int], ...]
     per_endpoint_exposed_comm: tuple[tuple[int, int], ...]
     transport: str
+    #: Deterministic operation->class binding the executed projection
+    #: declared (None = legacy single-class evidence, which needs no
+    #: attribution binding). Multi-class evidence without a binding is
+    #: unattributable and never normalizes.
+    class_binding_id: str | None = None
+    #: Class-attribution injection ABI the executing runtime proved.
+    #: 0 = pre-extension class-blind runtime.
+    embedded_network_class_abi_version: int = 0
+    #: Producer facts stamped at execution from the pinned identity.
+    #: A pinned execution always records them; their absence means the
+    #: evidence did not come through the spawn gate.
+    astra_build_manifest_sha256: str | None = None
+    astra_build_recipe_version: str | None = None
+    #: Per-class injection/completion counts. Empty until the embedded
+    #: backend exposes them reliably — never synthesized, never zero-
+    #: filled: absence is absence.
+    per_class_injected: tuple[tuple[str, int], ...] = ()
+    per_class_completed: tuple[tuple[str, int], ...] = ()
     parser_version: str = ASTRA_PARSER_VERSION
     schema_version: int = ASTRA_EXECUTION_SCHEMA_VERSION
 
@@ -189,6 +213,17 @@ class AstraRuntimeEvidence:
                                     for e, c in self.per_endpoint_cycles},
             "per_endpoint_exposed_comm":
                 {str(e): c for e, c in self.per_endpoint_exposed_comm},
+            "class_binding_id": self.class_binding_id,
+            "embedded_network_class_abi_version":
+                self.embedded_network_class_abi_version,
+            "astra_build_manifest_sha256":
+                self.astra_build_manifest_sha256,
+            "astra_build_recipe_version":
+                self.astra_build_recipe_version,
+            "per_class_injected": [[c, n]
+                                      for c, n in self.per_class_injected],
+            "per_class_completed": [[c, n]
+                                       for c, n in self.per_class_completed],
         }
 
     def evidence_id(self) -> str:
@@ -280,6 +315,31 @@ class AstraRuntimeEvidence:
         if dirty is not None and not isinstance(dirty, bool):
             raise AstraExecutionError(
                 "evidence document astra_dirty must be a bool or null")
+        binding_id = doc.get("class_binding_id")
+        if binding_id is not None and not isinstance(binding_id, str):
+            raise AstraExecutionError(
+                "evidence document class_binding_id must be a string "
+                "or null")
+        class_abi = doc.get("embedded_network_class_abi_version", 0)
+        if type(class_abi) is not int or isinstance(class_abi, bool) \
+                or class_abi < 0:
+            raise AstraExecutionError(
+                "evidence document embedded_network_class_abi_version "
+                "must be a non-negative int")
+        manifest_sha = doc.get("astra_build_manifest_sha256")
+        if manifest_sha is not None and not isinstance(manifest_sha, str):
+            raise AstraExecutionError(
+                "evidence document astra_build_manifest_sha256 must be "
+                "a string or null")
+        recipe = doc.get("astra_build_recipe_version")
+        if recipe is not None and not isinstance(recipe, str):
+            raise AstraExecutionError(
+                "evidence document astra_build_recipe_version must be "
+                "a string or null")
+        per_class_injected = _class_counts(
+            doc.get("per_class_injected", ()), "per_class_injected")
+        per_class_completed = _class_counts(
+            doc.get("per_class_completed", ()), "per_class_completed")
         idle = doc.get("idle_fabric_endpoints")
         if not isinstance(idle, list) \
                 or any(type(e) is not int for e in idle):
@@ -301,6 +361,12 @@ class AstraRuntimeEvidence:
             **str_fields, **bool_fields, **int_fields,
             autonomous_injection_packets=injected,
             astra_source_revision=revision, astra_dirty=dirty,
+            class_binding_id=binding_id,
+            embedded_network_class_abi_version=class_abi,
+            astra_build_manifest_sha256=manifest_sha,
+            astra_build_recipe_version=recipe,
+            per_class_injected=per_class_injected,
+            per_class_completed=per_class_completed,
             per_rank_cycles=rank_maps["per_rank_cycles"],
             per_rank_exposed_comm=rank_maps["per_rank_exposed_comm"],
             per_rank_compute=rank_maps["per_rank_compute"],
@@ -335,6 +401,28 @@ def _rank_map(raw: Any, where: str) -> tuple[tuple[int, int], ...]:
             raise AstraExecutionError(
                 f"evidence document {where}[{key!r}] must be an int")
         out.append((rank, value))
+    return tuple(sorted(out))
+
+
+def _class_counts(raw: Any, where: str) -> tuple[tuple[str, int], ...]:
+    """Per-class count rows: [[class, count], ...]; absent means the
+    backend did not expose them, never zero."""
+    if raw is None:
+        return ()
+    if not isinstance(raw, (list, tuple)):
+        raise AstraExecutionError(
+            f"evidence document {where} must be a list of "
+            "[class, count] rows")
+    out = []
+    for row in raw:
+        if not isinstance(row, (list, tuple)) or len(row) != 2 \
+                or not isinstance(row[0], str) or not row[0] \
+                or type(row[1]) is not int \
+                or isinstance(row[1], bool):
+            raise AstraExecutionError(
+                f"evidence document {where} rows must be "
+                "[non-empty class, int count]")
+        out.append((row[0], row[1]))
     return tuple(sorted(out))
 
 
@@ -520,7 +608,9 @@ def resolve_astra_identity(binary: str | Path, *,
                            repo_root: str | Path | None = None
                            ) -> ProducerIdentity:
     try:
-        return resolve_producer_identity(Path(binary), repo_root=repo_root)
+        return resolve_producer_identity(
+            Path(binary), repo_root=repo_root,
+            require_manifest_recipe=ASTRA_BUILD_RECIPE_VERSION)
     except ProducerError as exc:  # pragma: no cover - thin wrapper
         raise AstraExecutionError(str(exc)) from exc
 
@@ -556,8 +646,14 @@ def execute_astra_machine(
         require_canonical_packetization: bool = False,
         expected_machine_id: str | None = None,
         namespace: Any = None,
-        write: bool = True) -> AstraRuntimeEvidence:
-    """Run the projected machine and authenticate what came back."""
+        write: bool = True,
+        class_binding_id: str | None = None) -> AstraRuntimeEvidence:
+    """Run the projected machine and authenticate what came back.
+
+    ``class_binding_id`` is the executed projection's deterministic
+    operation->class binding (None = legacy single-class path); it is
+    stamped into evidence so normalization can verify class attribution.
+    """
     if not isinstance(machine, AstraMachineProjection):
         raise AstraExecutionError(
             "execution consumes only an AstraMachineProjection")
@@ -580,6 +676,20 @@ def execute_astra_machine(
     binary_path = Path(binary)
     identity = resolve_astra_identity(binary_path, repo_root=repo_root)
     recheck_binary_digest(identity)
+    if runner is None:
+        # The real spawn gate: only a pinned producer may execute for
+        # reusable evidence. The injected-runner path is an explicit test
+        # fixture transport whose evidence never normalizes (normalize
+        # requires SUPERVISED), so it records facts without the gate.
+        from veritx_dse.backend.producer import (
+            ProducerError as _ProducerError, assert_pinned_producer,
+        )
+        try:
+            assert_pinned_producer(identity)
+        except _ProducerError as exc:
+            raise AstraExecutionError(
+                f"ASTRA producer not pinned, refusing spawn: {exc}"
+            ) from exc
     accepts_legacy = probe_binary_network_abi(binary_path)
 
     workload = Path(workload_configuration)
@@ -707,6 +817,11 @@ def execute_astra_machine(
         astra_binary_size=identity.binary_size,
         astra_source_revision=identity.source_revision,
         astra_dirty=identity.dirty,
+        astra_build_manifest_sha256=identity.build_manifest_sha256,
+        astra_build_recipe_version=identity.build_recipe_version,
+        class_binding_id=class_binding_id,
+        embedded_network_class_abi_version=
+        machine.embedded_network_class_abi_version,
         binary_accepts_legacy_json_abi=accepts_legacy,
         book_sim_source_has_json_unwrap=source_has_unwrap,
         packetization_fidelity=machine.packetization_fidelity,
