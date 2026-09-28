@@ -529,7 +529,7 @@ export interface CompareView {
   a: CompareSide;
   b: CompareSide;
   compatibility: CompareCompatibility;
-  rows: { key: string; a: number | null; b: number | null; comparable: boolean }[];
+  rows: { key: string; a: number | null; b: number | null; comparable: boolean; verdict?: string | null; differs?: string | null; delta_b_minus_a?: number | null }[];
   note: string;
 }
 

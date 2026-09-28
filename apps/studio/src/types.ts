@@ -267,6 +267,14 @@ export interface Candidate {
   eligibility_reason: string | null;
   pareto_eligible: boolean;
   pareto_member: boolean;
+  /** Server product-compare verdicts, present only when the engine
+   *  compared this candidate (never derived client-side). */
+  verdict?: string | null;
+  differs?: string | null;
+  delta_b_minus_a?: number | null;
+  /** Server capability truth, present only when the engine reported it. */
+  evaluation_support?: string | null;
+  evaluation_readiness?: string | null;
 }
 
 export interface StudyDefinition {

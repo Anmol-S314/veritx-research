@@ -514,6 +514,25 @@ export default function OptimizeView({
                 <span>evaluation authority</span>
                 <code>{selected.evaluation_authority ?? '—'}</code>
               </div>
+              {(selected.evaluation_support != null
+                || selected.evaluation_readiness != null) && (
+                <div className="kv">
+                  <span>capability truth</span>
+                  <span>
+                    {[selected.evaluation_support, selected.evaluation_readiness]
+                      .filter((v) => v != null).join(' · ')}
+                  </span>
+                </div>
+              )}
+              {selected.verdict != null && (
+                <div className="kv">
+                  <span>engine verdict</span>
+                  <span>
+                    {selected.verdict}
+                    {selected.differs ? ` · differs: ${selected.differs}` : ''}
+                  </span>
+                </div>
+              )}
 
               {selected.evaluation_reason && (
                 <div className="reason-block">

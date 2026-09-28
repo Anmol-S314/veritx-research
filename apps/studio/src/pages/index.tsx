@@ -1145,7 +1145,7 @@ function ConservationTable({ title, rows, verdict }: {
  * analysis; ASTRA analyses report namespace/tier/injection facts;
  * Ramulator analyses report drain reconciliation. A BookSim integrity
  * table is never rendered for non-BookSim evidence. */
-function AnalysisIntegrity({ name, record }: {
+export function AnalysisIntegrity({ name, record }: {
   name: string;
   record: Record<string, unknown>;
 }): ReactElement {

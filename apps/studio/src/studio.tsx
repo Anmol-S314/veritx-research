@@ -313,7 +313,7 @@ export function simulationCapabilityReason(
       return 'Intent → executable workload lowering is not yet qualified.'
         + (detail ? ` ${detail}` : '');
     case 'backend_profile':
-      return 'The certified BookSim execution profile cannot represent this '
+      return 'The certified execution profile cannot represent this '
         + 'exact fabric.'
         + (detail ? ` ${detail}` : '');
     case 'compile':

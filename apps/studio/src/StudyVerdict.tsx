@@ -82,7 +82,7 @@ export default function StudyVerdict({
 
   return (
     <section className="card verdict">
-      <p className="verdict-kicker">Best measured design</p>
+      <p className="verdict-kicker">Highest measured value (not a winner)</p>
       {best ? (
         <h3 className="verdict-headline">
           {candidateLabel(best.c, baseGuided)}
@@ -147,6 +147,28 @@ export default function StudyVerdict({
               ? ` · ${counts.unmeasurable} unmeasurable` : ''}
           </span>
         </div>
+        {best?.c.verdict != null && (
+          <div>
+            <span className="verdict-label">Engine verdict</span>
+            <strong>{best.c.verdict}</strong>
+            <span className="muted">
+              {best.c.differs ? `differs: ${best.c.differs}` : 'comparable'}
+              {best.c.delta_b_minus_a != null
+                ? ` · Δ(b−a) ${fmtNum(best.c.delta_b_minus_a)}` : ''}
+            </span>
+          </div>
+        )}
+        {(best?.c.evaluation_support != null
+          || best?.c.evaluation_readiness != null) && (
+          <div>
+            <span className="verdict-label">Capability truth</span>
+            <strong>
+              {[best?.c.evaluation_support, best?.c.evaluation_readiness]
+                .filter((v) => v != null).join(' · ') || '—'}
+            </strong>
+            <span className="muted">server support × readiness</span>
+          </div>
+        )}
       </div>
 
       {study.definition.objectives.length > 1 && (

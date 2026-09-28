@@ -683,7 +683,11 @@ export function Simulate({ projectId }: { projectId: string }): ReactElement {
                 </section>
               </>
             )}
-            {current && (
+            {/* Legacy BookSim-only preflight: shown only when the plan-first
+              flow above is unavailable (dirty draft or a blocker). When the
+              server's evaluation plan is present it is the execution gate
+              and this compatibility projection is hidden, never adjacent. */}
+            {current && (p.draft.dirty || blocker) && (
               <details className="card">
                 <summary>
                   Legacy BookSim-only preflight (compatibility)
