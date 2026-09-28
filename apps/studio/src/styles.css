@@ -1266,6 +1266,22 @@ input:disabled {
 }
 .offline-banner strong { font-family: var(--mono); }
 
+/* ── Scientific-value contract: epistemic chips + provenance ───────── */
+.epistemic {
+  font-family: var(--mono); font-size: 11px;
+  border: 1px solid var(--border); border-radius: 3px;
+  padding: 0 5px; margin-left: 4px; white-space: nowrap;
+}
+.epistemic-simulated { border-color: var(--info); }
+.epistemic-derived { border-color: var(--warn); }
+.epistemic-verified { border-color: var(--ok); }
+.epistemic-declared, .epistemic-modelled { border-color: var(--border); }
+.epistemic-unknown { border-style: dashed; }
+.sci-value .sci-source { font-size: 12px; }
+.sci-provenance { font-size: 12px; }
+.expert-provenance { margin-top: 8px; font-size: 12px; }
+.expert-provenance summary { cursor: pointer; color: var(--muted); }
+
 .project-select {
   background: var(--input-bg); color: var(--text);
   border: 1px solid var(--border); border-radius: 4px; padding: 3px 6px;

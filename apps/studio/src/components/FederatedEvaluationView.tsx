@@ -6,7 +6,13 @@ import type {
   PlannedAnalysisView,
 } from '../api/types';
 import type { EvaluationView, RequirementReport } from '../types';
-import { Hash, StatusBadge, fmtNum, humanize } from './badges';
+import { Hash, StatusBadge, humanize } from './badges';
+import {
+  EpistemicChip,
+  ScientificValue,
+  backendLabel,
+  questionLabel,
+} from './ScientificValue';
 import EvaluateView from './EvaluateView';
 
 // Federated evaluation rendering (P5). Every value is server truth:
@@ -29,8 +35,8 @@ function scalar(value: unknown): string {
 function PlanRow({ row }: { row: PlannedAnalysisView }): ReactElement {
   return (
     <>
-      <td><code>{row.question}</code></td>
-      <td className="muted">{row.backend ?? '—'}</td>
+      <td><code title={questionLabel(row.question)}>{row.question}</code><br /><span className="muted">{questionLabel(row.question)}</span></td>
+      <td className="muted">{row.backend ? (<><span>{backendLabel(row.backend)}</span> <code>{row.backend}</code></>) : '—'}</td>
       <td><StatusBadge status={row.readiness} /></td>
       <td className="muted">{row.model_fidelity ?? '—'}</td>
       <td className="muted">{row.qualification_profile ?? '—'}</td>
@@ -98,8 +104,9 @@ export function EvaluationPlanTable({ plan, selected, onToggle }: {
 
 // ── Normalized metrics ───────────────────────────────────────────────
 
-function MetricsTable({ metrics }: {
+function MetricsTable({ metrics, analysis }: {
   metrics: NormalizedMetricView[] | null;
+  analysis: FederatedAnalysisView;
 }): ReactElement {
   if (!metrics || metrics.length === 0) {
     return (
@@ -108,6 +115,12 @@ function MetricsTable({ metrics }: {
       </p>
     );
   }
+  // Metric-level epistemics ride the analysis envelope: the backend that
+  // executed the question, at the fidelity and qualification the planner
+  // adjudicated. A metric without an executed analysis is never rendered
+  // as a bare number.
+  const epistemic =
+    analysis.status === 'EVALUATED' ? 'SIMULATED' : null;
   return (
     <table className="tbl">
       <thead>
@@ -117,7 +130,16 @@ function MetricsTable({ metrics }: {
         {metrics.map((m) => (
           <tr key={m.key}>
             <td title={m.source_metric_key ?? ''}>{humanize(m.key)}</td>
-            <td className="num">{fmtNum(m.value)}</td>
+            <td>
+              <ScientificValue
+                value={m.value}
+                unit={m.unit}
+                epistemic={epistemic}
+                source={backendLabel(analysis.backend_id)}
+                fidelity={analysis.model_fidelity}
+                qualification={analysis.qualification}
+              />
+            </td>
             <td className="muted">{m.unit ?? '—'}</td>
             <td className="muted">
               {m.dimensions.length === 0
@@ -176,7 +198,7 @@ function PerRankTable({ summary }: {
 
 // ── Per-analysis cards ───────────────────────────────────────────────
 
-function AnalysisCard({ analysis, evaluation, requirements }: {
+export function AnalysisCard({ analysis, evaluation, requirements }: {
   analysis: FederatedAnalysisView;
   /** The legacy network view — bound only to NETWORK_COMPLETION. */
   evaluation: EvaluationView | null;
@@ -186,11 +208,13 @@ function AnalysisCard({ analysis, evaluation, requirements }: {
   return (
     <section className="card">
       <h3>
-        <code>{analysis.question}</code>{' '}
-        <StatusBadge status={analysis.status} />
+        {questionLabel(analysis.question)}{' '}
+        <code className="muted" title="canonical evaluation question">{analysis.question}</code>{' '}
+        <StatusBadge status={analysis.status} />{' '}
+        {analysis.status === 'EVALUATED' && <EpistemicChip value="SIMULATED" />}
       </h3>
       <div className="kv"><span>backend</span>
-        <span>{analysis.backend_id ?? '—'}</span>
+        <span>{backendLabel(analysis.backend_id)}{' '}<code>{analysis.backend_id ?? '—'}</code></span>
       </div>
       <div className="kv"><span>fidelity</span>
         <span className="muted">{analysis.model_fidelity ?? '—'}</span>
@@ -211,7 +235,7 @@ function AnalysisCard({ analysis, evaluation, requirements }: {
       {evaluated && (
         <>
           <h4>Normalized metrics</h4>
-          <MetricsTable metrics={analysis.normalized_metrics} />
+          <MetricsTable metrics={analysis.normalized_metrics} analysis={analysis} />
           <h4>Native summary</h4>
           <NativeSummary summary={analysis.native_summary} />
           <PerRankTable summary={analysis.native_summary} />

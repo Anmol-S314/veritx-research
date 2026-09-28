@@ -101,12 +101,20 @@ export default function OfflineDemo(): ReactElement {
   return (
     <div className="page">
       <div className="offline-banner">
-        <strong>OFFLINE DEMO</strong>
+        <strong>OFFLINE DEMONSTRATION</strong>
         <span>
-          The gateway is unreachable. This view renders contract-validated
+          Gateway unavailable. This view renders contract-validated
           fixtures only — no live compile, no live evaluation, and nothing here
-          is presented as a live result. Start the gateway for LIVE mode.
+          is presented as a live result. Fixture values never replace a live
+          project.
         </span>
+        <button
+          className="btn btn-small"
+          onClick={() => window.location.reload()}
+          title="Re-probe the gateway and return to LIVE mode when it is reachable"
+        >
+          Retry live gateway
+        </button>
       </div>
       <div className="fixture-bar">
         <span className="fixture-label">Fixture</span>

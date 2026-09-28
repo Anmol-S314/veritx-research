@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react';
 import type { EvaluationView, RequirementReport } from '../types';
 import { Hash, StatusBadge, fmtNum, humanize } from './badges';
+import { EpistemicChip, SimulatedTimeNote } from './ScientificValue';
 
 type RunState = 'idle' | 'running' | 'refused';
 
@@ -83,7 +84,7 @@ export default function EvaluateView({
               <span className="verdict-text">
                 No qualified backend reachable from fixture mode — no evaluation
                 performed, no metrics produced. A real deployment would route this
-                request through the gateway to a qualified BookSim producer.
+                request through the gateway to a qualified backend producer.
               </span>
             </div>
           )}
@@ -112,10 +113,10 @@ export default function EvaluateView({
   return (
     <div>
       <div className="verdict-banner verdict-evaluated">
-        <StatusBadge status="EVALUATED" />
+        <StatusBadge status="EVALUATED" /> <EpistemicChip value="SIMULATED" />
         <span className="verdict-text">
           Network window complete: {fmtNum(win?.window_cycles)} cycles
-          {win?.cycles_only ? ' (cycles only — no wall-time authority)' : ''}. Workload{' '}
+          {win?.cycles_only ? ' (cycles only — no simulated-time authority without a declared network clock)' : ''}. Workload{' '}
           <code>{evaluation.workload_id}</code>.
         </span>
       </div>
@@ -128,8 +129,11 @@ export default function EvaluateView({
             <span>{fmtNum(win?.window_cycles)}</span>
           </div>
           <div className="kv">
-            <span>wall time</span>
-            <span>{win?.wall_time_ns == null ? '— (cycles only)' : `${fmtNum(win.wall_time_ns)} ns`}</span>
+            <span>simulated time</span>
+            <span title="cycles × declared network clock — simulated/model time, not host wall-clock measurement">
+              {win?.wall_time_ns == null ? '— (cycles only)' : `${fmtNum(win.wall_time_ns)} ns`}
+              {!win?.cycles_only && win?.wall_time_ns != null && <SimulatedTimeNote />}
+            </span>
           </div>
           <div className="kv">
             <span>performance_result_id</span>

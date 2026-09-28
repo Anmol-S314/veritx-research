@@ -3,7 +3,7 @@ import type { DesignViewV2 } from '../api';
 import DesignViewV2Editor, {
   FINDING_GLYPH, FINDING_LABEL, READINESS_LABEL,
 } from './DesignViewV2Editor';
-import { fmtNum } from './badges';
+import { fmtNum, humanize } from './badges';
 
 /**
  * Review is `DesignViewV2 { presentation: "review" }` — the same projection
@@ -129,6 +129,7 @@ export default function DesignReviewV2({
             No scientific change from the parent revision.
           </p>
         ) : (
+          <>
           <table className="tbl">
             <thead>
               <tr><th>field</th><th>before</th><th>after</th><th>change</th></tr>
@@ -136,7 +137,7 @@ export default function DesignReviewV2({
             <tbody>
               {view.scientific_diff.map((entry) => (
                 <tr key={entry.field}>
-                  <td><code>{entry.field}</code></td>
+                  <td title={`canonical path: ${entry.field}`}>{humanize(entry.field.split('.').pop() ?? entry.field)}</td>
                   <td>{fmtNum(entry.before)}</td>
                   <td>{fmtNum(entry.after)}</td>
                   <td className="muted">{entry.kind}</td>
@@ -144,6 +145,13 @@ export default function DesignReviewV2({
               ))}
             </tbody>
           </table>
+          <details className="expert-provenance">
+            <summary>Expert provenance — canonical field paths</summary>
+            <p className="muted">
+              {view.scientific_diff.map((entry) => entry.field).join(', ')}
+            </p>
+          </details>
+          </>
         )}
       </section>
 

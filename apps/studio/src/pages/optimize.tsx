@@ -59,12 +59,20 @@ export function Optimize({ projectId }: { projectId: string }): ReactElement {
   // outside this set — see the capability probe, which MEASURES whether a knob
   // reaches executed semantics.
   const qualified = new Set(capabilityDoc?.qualified_parameters ?? []);
-  // The single semantic objective to minimize. The certified registry exposes
-  // one independent family today, so this is "completion time" expressed in
-  // the unit it is measured in.
-  const objectiveMetric = (capabilityDoc
-    ? Object.keys(capabilityDoc.objective_semantic_families)[0]
-    : null) ?? 'completion_cycles';
+  // Federated objective selector: generated from the certified metric
+  // catalog, never hardcoded. Each objective shows its semantic family and
+  // answering producer beside it; independent families may be combined,
+  // same-family metrics are one ranking, never a frontier.
+  const certifiedMetrics = capabilityDoc?.certified_metrics ?? [];
+  const families = capabilityDoc?.objective_semantic_families ?? {};
+  const [objectiveMetric, setObjectiveMetric] = useState<string | null>(null);
+  const [constraintMetric, setConstraintMetric] = useState<string>('completion_cycles');
+  const activeObjective = objectiveMetric
+    ?? certifiedMetrics[0]?.metric
+    ?? Object.keys(families)[0]
+    ?? 'completion_cycles';
+  const activeFamily = families[activeObjective] ?? '—';
+  const activeProducer = certifiedMetrics.find((m) => m.metric === activeObjective)?.producer_id ?? '—';
   const linkWidthQualified = qualified.has('link_width');
   const baseNoc = (project.result.state === 'ready'
     ? (project.result.data.active_revision?.design?.noc_guided ?? null)
@@ -132,12 +140,12 @@ export function Optimize({ projectId }: { projectId: string }): ReactElement {
         // authenticated window in different units, so requesting two of them
         // would invent a trade-off. This is "minimize completion time",
         // expressed in the unit the certified registry measures it in.
-        objectives: [{ metric: objectiveMetric, direction: 'MIN' }],
+        objectives: [{ metric: activeObjective, direction: 'MIN' }],
         // A hard constraint is opt-in: an arbitrary ceiling that no
         // measured candidate can meet makes the whole study ineligible,
         // which reads as a broken optimizer rather than a strict bound.
         constraints: ceilingOn && ceiling > 0
-          ? [{ metric: 'completion_cycles', op: '<=', threshold: ceiling }]
+          ? [{ metric: constraintMetric, op: '<=', threshold: ceiling }]
           : [],
         method,
         selection: 'min_first_objective',
@@ -191,6 +199,29 @@ export function Optimize({ projectId }: { projectId: string }): ReactElement {
               )}
               <div className="form-row">
                 <label>
+                  Objective — from the federated metric catalog
+                  <select
+                    value={activeObjective}
+                    onChange={(e) => setObjectiveMetric(e.target.value)}
+                    aria-label="Objective metric"
+                  >
+                    {certifiedMetrics.length === 0 && (
+                      <option value={activeObjective}>{activeObjective}</option>
+                    )}
+                    {certifiedMetrics.map((m) => (
+                      <option key={m.metric} value={m.metric}>
+                        {m.metric} — family {families[m.metric] ?? '—'} · producer {m.producer_id ?? '—'}
+                      </option>
+                    ))}
+                  </select>
+                  <small className="muted">
+                    Answering producer: {activeProducer} · semantic family: {activeFamily}.
+                    Same-family metrics are one ranking, never a Pareto frontier.
+                  </small>
+                </label>
+              </div>
+              <div className="form-row">
+                <label>
                   Hard constraint
                   <span className="check-row">
                     <label className="check">
@@ -199,7 +230,20 @@ export function Optimize({ projectId }: { projectId: string }): ReactElement {
                         checked={ceilingOn}
                         onChange={(e) => setCeilingOn(e.target.checked)}
                       />
-                      completion_cycles ≤
+                      <select
+                        value={constraintMetric}
+                        disabled={!ceilingOn}
+                        onChange={(e) => setConstraintMetric(e.target.value)}
+                        aria-label="Constraint metric"
+                      >
+                        {certifiedMetrics.length === 0 && (
+                          <option value={constraintMetric}>{constraintMetric}</option>
+                        )}
+                        {certifiedMetrics.map((m) => (
+                          <option key={m.metric} value={m.metric}>{m.metric}</option>
+                        ))}
+                      </select>{' '}
+                      ≤
                     </label>
                     <input
                       type="number"
@@ -421,7 +465,11 @@ export function Compare({ projectId }: { projectId: string }): ReactElement {
                             <td>{row.key}</td>
                             <td>{fmtNum(row.a)}</td>
                             <td>{fmtNum(row.b)}</td>
-                            <td className="muted">{row.comparable ? 'comparable' : 'not comparable'}</td>
+                            <td className="muted">
+                              {row.verdict ?? (row.comparable ? 'comparable' : 'not comparable')}
+                              {row.differs ? ` · differs: ${row.differs}` : ''}
+                              {row.delta_b_minus_a != null ? ` · Δ ${fmtNum(row.delta_b_minus_a)}` : ''}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
