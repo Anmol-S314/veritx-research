@@ -86,21 +86,33 @@ def test_unsupported_design_keeps_semantic_refusal(tmp_path, monkeypatch):
     assert resp.json()["code"] == "LOWERING_UNSUPPORTED"
 
 
-def test_non_network_study_submits_without_booksim(tmp_path):
-    """RC-12: no BookSim binary configured, yet ASTRA-only and
-    Ramulator-only studies are accepted for planning — the binary is
-    demanded only by network questions."""
-    client = _client(tmp_path, with_backend=False)
+def test_non_network_studies_complete_with_measurements(
+        tmp_path, monkeypatch):
+    """RC-12, COMPLETED-or-bust: no BookSim binary configured, yet
+    ASTRA-only and Ramulator-only studies run to a terminal COMPLETED
+    state with measured objective values — accepting FAILED (or any
+    other terminal state) as success would mask a deterministically
+    broken study. Full provenance assertions live in
+    test_closure_phase3_opt_e2e; here every covered non-network study
+    must complete with real measurements."""
+    from test_closure_phase3_opt_e2e import (
+        _assert_measured, _scripted_client, _study,
+        _submit_and_wait_completed,
+    )
+    client, _, _ = _scripted_client(tmp_path, monkeypatch)
     rid = _revision(client)
-    for questions in (("SYSTEM_MAKESPAN",),
-                      ("COMMUNICATION_EXPOSURE", "PER_RANK_COMPLETION"),
-                      ("DRAM_TIMING",)):
-        resp = client.post(f"/api/v1/revisions/{rid}/optimize",
-                           json=_study(*questions))
-        assert resp.status_code == 200, (questions, resp.text)
-        assert resp.json()["state"] in ("QUEUED", "PREPARING",
-                                        "RUNNING", "COMPLETED",
-                                        "FAILED")
+    for metric, question, backend, fidelity, value in (
+            ("system_makespan_cycles", "SYSTEM_MAKESPAN",
+             "ASTRA2_EMBEDDED_BOOKSIM", "SYSTEM_SIMULATION", 6070.0),
+            ("average_read_latency_cycles", "DRAM_TIMING",
+             "RAMULATOR2_HBM3_V1", "MEMORY_CYCLE_SIMULATION", 42.0)):
+        study = _submit_and_wait_completed(
+            client, rid, _study(metric, "MIN", question))
+        candidates = study["study"]["candidates"]
+        assert len(candidates) == 2, (question, study)
+        for candidate in candidates:
+            _assert_measured(candidate, metric, question, backend,
+                             fidelity, value)
 
 
 def test_network_study_still_demands_booksim(tmp_path):

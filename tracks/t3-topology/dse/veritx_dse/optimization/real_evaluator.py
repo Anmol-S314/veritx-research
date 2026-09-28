@@ -83,6 +83,7 @@ from veritx_dse.application.fabric_evaluator import (
 from veritx_dse.application.federated_evaluator import (
     ANALYSIS_EVALUATED,
     ANALYSIS_FAILED,
+    ANALYSIS_INCONCLUSIVE,
     ANALYSIS_UNAVAILABLE,
     BookSimRunOptions,
     evaluate_federated,
@@ -169,15 +170,17 @@ def _verified_objectives(verified: Any) -> dict[str, float]:
 
 
 def _native_inconclusive(analysis: Any) -> bool:
-    """A FAILED analysis whose native verdict drained without deciding.
+    """An analysis whose native verdict drained without deciding.
 
-    Coupling (explicit): federated_evaluator._evaluate_ramulator reports
-    a non-PASS/non-FAILED/non-UNSUPPORTED native verdict as
-    ``status=FAILED`` with reason ``"native memory evidence
-    {STATUS}: ..."``. Only that producer formats reasons this way, so
-    the INCONCLUSIVE token there names the native verdict — never a
+    Two shapes (explicit coupling): the first-class
+    ``ANALYSIS_INCONCLUSIVE`` status the federated evaluator emits for
+    a non-PASS/non-FAILED native verdict, and the legacy FAILED row
+    whose reason carries the ``"native memory evidence {STATUS}"``
+    shape. The INCONCLUSIVE token names the native verdict — never a
     crash, never a refusal.
     """
+    if getattr(analysis, "status", None) is ANALYSIS_INCONCLUSIVE:
+        return True
     reason = getattr(analysis, "reason", None) or ""
     return (getattr(analysis, "status", None) is ANALYSIS_FAILED
             and reason.startswith("native memory evidence ")
@@ -207,7 +210,7 @@ class RealCandidateEvaluator:
     its discovery authority).
     """
 
-    def __init__(self, *, binary: str | Path,
+    def __init__(self, *, binary: str | Path | None = None,
                  network_clock_hz: int | None = None,
                  timeout_s: int = 300,
                  run_root: str | Path,
@@ -219,16 +222,27 @@ class RealCandidateEvaluator:
                  astra_binary: str | Path | None = None,
                  ramulator_vendor_dir: str | Path | None = None,
                  ramulator_python: str | None = None):
-        if not binary:
-            raise EvaluationError("real adapter needs a backend binary")
-        self.binary = str(binary)
+        self.questions = None if questions is None else tuple(questions)
+        self.objectives = None if objectives is None else tuple(objectives)
+        # The BookSim binary is backend-optional: required only when the
+        # study asks a network question. An ASTRA-only or Ramulator-only
+        # study runs with binary=None; the planner adjudicates every
+        # requested question, and evaluate() re-asserts the network
+        # requirement before any BookSim-bound options are built, so a
+        # None binary can never flow into a network leg. The legacy
+        # default (no questions/objectives) still resolves to
+        # NETWORK_COMPLETION and therefore still requires BookSim.
+        if not binary and NETWORK_QUESTION in self._resolve_questions():
+            raise EvaluationError(
+                "real adapter needs a backend binary for "
+                "NETWORK_COMPLETION — refusing a network study with "
+                "no BookSim producer")
+        self.binary = str(binary) if binary else None
         self.network_clock_hz = network_clock_hz
         self.timeout_s = timeout_s
         self.run_root = Path(run_root)
         self.repo_root = repo_root
         self.require_quiescence = require_quiescence
-        self.questions = None if questions is None else tuple(questions)
-        self.objectives = None if objectives is None else tuple(objectives)
         self.registry = registry
         self.astra_binary = astra_binary
         self.ramulator_vendor_dir = ramulator_vendor_dir
@@ -320,6 +334,16 @@ class RealCandidateEvaluator:
         run_dir = Path(tempfile.mkdtemp(dir=str(candidate_dir),
                                         prefix="eval-"))
         questions = self._resolve_questions()
+        # Defense in depth for the backend-optional binary: a None
+        # binary must never reach the BookSim-bound execution options.
+        # Unreachable through __init__ (which refuses this combination),
+        # but re-asserted here so post-construction mutation cannot
+        # smuggle a network leg past the constructor gate.
+        if NETWORK_QUESTION in questions and self.binary is None:
+            raise EvaluationError(
+                "real adapter needs a backend binary for "
+                "NETWORK_COMPLETION — refusing a network evaluation "
+                "with no BookSim producer")
         federated = evaluate_federated(
             compilation, questions, self._resolve_registry(),
             booksim_options=BookSimRunOptions(
