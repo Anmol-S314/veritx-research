@@ -10,7 +10,10 @@ import {
 import {
   AsyncView, Link, useAsync,
 } from '../studio';
-import { Hash, StatusBadge, fmtNum, humanize } from '../components/badges';
+import { Hash, StatusBadge, humanize } from '../components/badges';
+import { EvidenceGraph, ReuseBanner } from '../components/EvidenceGraph';
+import { metricUnit } from '../components/EvaluateView';
+import { ScientificValue } from '../components/ScientificValue';
 
 // ── 07 · Evidence: the RunBundle as a first-class inspector ────────────
 
@@ -169,6 +172,13 @@ function EvidenceRunCard({ run }: { run: RunView }): ReactElement {
         </div>
       </div>
       <RunBundleChain run={run} />
+      <ReuseBanner run={run} />
+      <details>
+        <summary>
+          Evidence graph — design to candidate with anti-transplant edges
+        </summary>
+        <EvidenceGraph run={run} />
+      </details>
       <div className="overview-grid">
         <div>
           <h4>Execution checks</h4>
@@ -203,11 +213,12 @@ function EvidenceRunCard({ run }: { run: RunView }): ReactElement {
         <details>
           <summary>Measured metrics</summary>
           <table className="tbl">
+            <thead><tr><th>metric</th><th>value</th><th>unit</th><th>class</th></tr></thead>
             <tbody>
               {Object.entries(run.evaluation.metrics).map(([k, v]) => (
                 <tr key={k}>
                   <td>{humanize(k)}</td>
-                  <td className="num">{fmtNum(v)}</td>
+                  <td className="num"><ScientificValue value={v} unit={metricUnit(k) ?? '—'} epistemic="SIMULATED" source={run.backend ?? null} /></td>
                 </tr>
               ))}
             </tbody>
