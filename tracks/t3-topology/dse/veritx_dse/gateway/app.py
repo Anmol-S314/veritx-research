@@ -123,7 +123,35 @@ def _backend_presence(config: GatewayConfig) -> dict[str, Any]:
     return {
         "BOOKSIM_STANDALONE": probe(config.booksim_bin),
         "ASTRA2_EMBEDDED_BOOKSIM": probe(config.astra_bin),
+        # P5 step 8: the prompt asks for an honest backend summary. The
+        # sealed P2 law stands — health reports install facts
+        # (PRESENT/ABSENT), never readiness: READY requires adjudicating
+        # a real canonical context, which health must not do. Ramulator
+        # joins the summary on identical terms (extension present or
+        # not); no simulation ever runs here.
+        "RAMULATOR2_HBM3_V1": _ramulator_presence(),
     }
+
+
+def _ramulator_presence() -> dict[str, Any]:
+    """Ramulator install fact: is the compiled extension importable by
+    this interpreter? No build, no simulation, no readiness claim."""
+    try:
+        from veritx_dse.core.build_manifest import manifest_path_for
+        from veritx_dse.simulation.ramulator import discover
+        backend = discover()
+    except Exception:
+        return {"state": "ABSENT", "binary_present": False,
+                "manifest_present": False}
+    if not backend.ready:
+        return {"state": "ABSENT", "binary_present": False,
+                "manifest_present": False}
+    try:
+        manifest = manifest_path_for(backend.ext_path).is_file()
+    except Exception:
+        manifest = False
+    return {"state": "PRESENT", "binary_present": True,
+            "manifest_present": bool(manifest)}
 
 
 def resolve_booksim_bin(env_value: str | None = None) -> Path | None:
@@ -474,6 +502,14 @@ def create_app(config: GatewayConfig | None = None) -> FastAPI:
     @app.get("/api/v1/capabilities", tags=["product"])
     def v1_capabilities() -> dict[str, Any]:
         return capability_registry()
+
+    @app.get("/api/v1/federation/backends", tags=["product"])
+    def v1_federation_backends() -> dict[str, Any]:
+        """Per-backend federation truth: registration (declared
+        capabilities) plus runtime install facts. Readiness is never
+        adjudicated here — that belongs to the evaluation plan for a
+        real canonical context."""
+        return product.federation_backends()
 
     @app.get("/api/v1/validation", tags=["product"])
     def v1_validation() -> dict[str, Any]:

@@ -162,6 +162,43 @@ def test_health_reports_backend_presence_without_simulating(tmp_path):
     body = resp.json()
     backends = body["backends"]
     assert set(backends) == {"BOOKSIM_STANDALONE",
-                             "ASTRA2_EMBEDDED_BOOKSIM"}
+                             "ASTRA2_EMBEDDED_BOOKSIM",
+                             "RAMULATOR2_HBM3_V1"}
     for entry in backends.values():
         assert entry["state"] in ("PRESENT", "ABSENT")
+
+
+def test_federation_backends_reports_registry_truth(tmp_path):
+    """P5: one owner per fact — registration from the adapters'
+    declared capabilities, runtime availability as install facts."""
+    client = _client(tmp_path)
+    resp = client.get("/api/v1/federation/backends")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["contract_version"] == 1
+    by_id = {b["backend_id"]: b for b in body["backends"]}
+    assert {"BOOKSIM_STANDALONE", "ASTRA2_EMBEDDED_BOOKSIM",
+            "RAMULATOR2_HBM3_V1"} <= set(by_id)
+    for entry in body["backends"]:
+        assert entry["registered"] is True
+        assert isinstance(entry["runtime_available"], bool)
+        assert isinstance(entry["availability_detail"], str)
+        assert entry["capabilities"], \
+            f"{entry['backend_id']} declares no capabilities"
+        for capability in entry["capabilities"]:
+            assert capability["question"]
+            assert capability["support"]
+            assert capability["fidelity"]
+            assert isinstance(capability["limitations"], list)
+    network = next(
+        c for c in by_id["BOOKSIM_STANDALONE"]["capabilities"]
+        if c["question"] == "NETWORK_COMPLETION")
+    assert network["support"] == "SUPPORTED"
+    makespan = next(
+        c for c in by_id["ASTRA2_EMBEDDED_BOOKSIM"]["capabilities"]
+        if c["question"] == "SYSTEM_MAKESPAN")
+    assert makespan["support"] == "SUPPORTED"
+    dram = next(
+        c for c in by_id["RAMULATOR2_HBM3_V1"]["capabilities"]
+        if c["question"] == "DRAM_TIMING")
+    assert dram["support"] == "SUPPORTED"

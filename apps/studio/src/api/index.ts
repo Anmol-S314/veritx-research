@@ -10,6 +10,8 @@ import type {
   DraftView,
   EvaluationPlanView,
   EvidenceView,
+  FederationBackendsView,
+  HealthView,
   FabricPresetCatalogView,
   JobView,
   OptimizationCapabilities,
@@ -33,11 +35,15 @@ import type {
 import type { TopologyView } from '../types';
 
 export const api = {
-  health: () => get<{ status: string; api: string }>('/health'),
+  health: () => get<HealthView>('/health'),
 
   qualification: () => get<QualificationView>('/qualification'),
   capabilities: () =>
     get<Record<string, unknown>>('/capabilities'),
+  /** Per-backend federation truth: registration + install facts.
+   * Readiness lives on the evaluation plan, never here. */
+  federationBackends: () =>
+    get<FederationBackendsView>('/federation/backends'),
   validation: () => get<ValidationCampaignsView>('/validation'),
   /** Adopt a studied candidate as the DRAFT. The immutable base revision is
    *  NOT mutated: the user must compile explicitly before a new revision

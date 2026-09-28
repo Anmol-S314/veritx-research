@@ -751,6 +751,42 @@ export interface FederatedAnalysisView {
   limitations: string[] | null;
 }
 
+// ── FederationBackendsView (P5: Trust reconciliation) ─────────────────
+// One owner per fact: registration from the adapters' declared
+// capabilities; runtime availability as install facts (present/absent),
+// never readiness. Readiness is adjudicated per canonical context by
+// the evaluation plan, never by this view.
+
+export interface FederatedCapabilityView {
+  question: string;
+  support: string;
+  fidelity: string;
+  limitations: string[];
+}
+
+export interface FederationBackendView {
+  backend_id: string;
+  registered: boolean;
+  runtime_available: boolean;
+  availability_detail: string;
+  capabilities: FederatedCapabilityView[];
+}
+
+export interface FederationBackendsView {
+  contract_version: 1;
+  backends: FederationBackendView[];
+}
+
+export interface HealthView {
+  status: string;
+  api: string;
+  backends: Record<string, {
+    state: 'PRESENT' | 'ABSENT';
+    binary_present: boolean;
+    manifest_present: boolean;
+  }>;
+}
+
 // ── DesignViewV2 (Gate 5 D1, Gate 7 §51.1) ─────────────────────────────────
 // One projection, two presentations. The backend owns canonical values,
 // grouping, readiness, findings, capability consequences, the scientific

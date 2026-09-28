@@ -3339,6 +3339,83 @@ class ProductService:
                 "reason": "certificate PASS"}
 
 
+    # ── federation truth (P5: Trust/Capabilities reconciliation) ──
+
+    def federation_backends(self) -> dict[str, Any]:
+        """Per-backend federation truth, one owner per fact.
+
+        Registration comes from the registry (each adapter's declared
+        capabilities: question/support/fidelity/limitations). Runtime
+        availability is an install fact per backend (binary/extension
+        present), never a readiness verdict — readiness requires
+        adjudicating a real canonical context, which this view never
+        does. No simulation ever runs here.
+        """
+        entries = []
+        for adapter in self._registry.adapters():
+            capabilities = []
+            try:
+                declared = adapter.capabilities()
+            except Exception:                           # noqa: BLE001
+                declared = ()
+            for capability in declared:
+                capabilities.append({
+                    "question": capability.question.value,
+                    "support": capability.support.value,
+                    "fidelity": capability.fidelity.value,
+                    "limitations": list(capability.limitations),
+                })
+            available, detail = self._backend_install_fact(
+                adapter.backend_id)
+            entries.append({
+                "backend_id": adapter.backend_id,
+                "registered": True,
+                "runtime_available": available,
+                "availability_detail": detail,
+                "capabilities": capabilities,
+            })
+        return {"contract_version": 1, "backends": entries}
+
+    def _backend_install_fact(self, backend_id: str) -> tuple[bool, str]:
+        """Install fact for one backend: present or absent on this tree.
+
+        A missing backend is reported as absent (UNAVAILABLE at plan
+        time), never as unsupported — absence is an environment fact,
+        support is a semantic declaration the adapter already carries.
+        """
+        if backend_id == "BOOKSIM_STANDALONE":
+            binary = self.config.booksim_bin
+            if binary is not None and Path(binary).is_file():
+                return True, "BookSim binary present"
+            return False, "no BookSim binary configured on this tree"
+        if backend_id == "ASTRA2_EMBEDDED_BOOKSIM":
+            try:
+                from veritx_dse.backend.astra import resolve_runtime_binary
+                resolved = resolve_runtime_binary()
+            except Exception as exc:                    # noqa: BLE001
+                return False, f"ASTRA resolver failed: {exc}"
+            if resolved is not None:
+                return True, "ASTRA runtime binary present"
+            binary = self.config.astra_bin
+            if binary is not None and Path(binary).is_file():
+                return True, "ASTRA runtime binary present"
+            return False, "no ASTRA runtime binary on this tree"
+        if backend_id == "RAMULATOR2_HBM3_V1":
+            try:
+                from veritx_dse.simulation.ramulator import discover
+                backend = discover(
+                    python_exe=self.config.ramulator_python,
+                    vendor_dir=self.config.ramulator_vendor_dir)
+            except Exception as exc:                    # noqa: BLE001
+                return False, f"Ramulator discovery failed: {exc}"
+            if backend.ready:
+                return True, "Ramulator extension built for this interpreter"
+            return False, (
+                "Ramulator extension absent "
+                f"(expected at {backend.ext_path})")
+        return False, f"no install probe for backend {backend_id!r}"
+
+
 __all__ = [
     "BackendUnavailable", "ProductConfig", "ProductService",
     "ProductServiceError", "parse_request_doc",
