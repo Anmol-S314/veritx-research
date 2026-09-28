@@ -21,6 +21,9 @@ from veritx_dse.backend.adapter import (  # noqa: E402
     BackendContractError, BackendReadiness, ModelFidelity,
     PreparedExecution, SupportLevel,
 )
+from veritx_dse.application.evaluation_question import (  # noqa: E402
+    EvaluationQuestion,
+)
 from veritx_dse.backend.contracts import (  # noqa: E402
     BackendConfigArtifact, BackendInputManifest, BackendTarget,
     RenderedInput,
@@ -102,7 +105,7 @@ def test_model_fidelity_is_closed():
 
 def test_capability_valid_construction():
     cap = BackendCapability(
-        capability_id="NETWORK_COMPLETION",
+        question=EvaluationQuestion.NETWORK_COMPLETION,
         support=SupportLevel.SUPPORTED,
         fidelity=ModelFidelity.NETWORK_PACKET_SIMULATION,
         limitations=("one VC envelope",))
@@ -112,14 +115,14 @@ def test_capability_valid_construction():
 def test_capability_empty_id_refused():
     with pytest.raises(BackendContractError):
         BackendCapability(
-            capability_id="", support=SupportLevel.SUPPORTED,
+            question=None, support=SupportLevel.SUPPORTED,
             fidelity=ModelFidelity.NETWORK_PACKET_SIMULATION)
 
 
 def test_capability_list_limitations_refused_not_converted():
     with pytest.raises(BackendContractError, match="tuple"):
         BackendCapability(
-            capability_id="X", support=SupportLevel.SUPPORTED,
+            question=EvaluationQuestion.NETWORK_COMPLETION, support=SupportLevel.SUPPORTED,
             fidelity=ModelFidelity.NETWORK_PACKET_SIMULATION,
             limitations=["one VC envelope"])
 
@@ -127,7 +130,7 @@ def test_capability_list_limitations_refused_not_converted():
 def test_capability_empty_limitation_refused():
     with pytest.raises(BackendContractError):
         BackendCapability(
-            capability_id="X", support=SupportLevel.SUPPORTED,
+            question=EvaluationQuestion.NETWORK_COMPLETION, support=SupportLevel.SUPPORTED,
             fidelity=ModelFidelity.NETWORK_PACKET_SIMULATION,
             limitations=("",))
 
@@ -135,7 +138,7 @@ def test_capability_empty_limitation_refused():
 def test_capability_duplicate_limitation_refused():
     with pytest.raises(BackendContractError, match="duplicate"):
         BackendCapability(
-            capability_id="X", support=SupportLevel.SUPPORTED,
+            question=EvaluationQuestion.NETWORK_COMPLETION, support=SupportLevel.SUPPORTED,
             fidelity=ModelFidelity.NETWORK_PACKET_SIMULATION,
             limitations=("a", "a"))
 
@@ -143,11 +146,11 @@ def test_capability_duplicate_limitation_refused():
 def test_capability_wrong_enum_type_refused():
     with pytest.raises(BackendContractError):
         BackendCapability(
-            capability_id="X", support="SUPPORTED",
+            question=EvaluationQuestion.NETWORK_COMPLETION, support="SUPPORTED",
             fidelity=ModelFidelity.NETWORK_PACKET_SIMULATION)
     with pytest.raises(BackendContractError):
         BackendCapability(
-            capability_id="X", support=SupportLevel.SUPPORTED,
+            question=EvaluationQuestion.NETWORK_COMPLETION, support=SupportLevel.SUPPORTED,
             fidelity="NETWORK_PACKET_SIMULATION")
 
 
@@ -155,7 +158,8 @@ def test_capability_wrong_enum_type_refused():
 
 def _assessment(**kw) -> BackendAssessment:
     defaults = dict(
-        backend_id="BOOKSIM_STANDALONE", capability_id="NETWORK_COMPLETION",
+        backend_id="BOOKSIM_STANDALONE",
+        question=EvaluationQuestion.NETWORK_COMPLETION,
         support=SupportLevel.SUPPORTED, readiness=BackendReadiness.READY,
         fidelity=ModelFidelity.NETWORK_PACKET_SIMULATION,
         qualification_profile="CERTIFIED_BOOKSIM_MESH_DOR_XY_V1",
@@ -325,13 +329,15 @@ class _FakeAdapter:
 
     def capabilities(self) -> tuple[BackendCapability, ...]:
         return (BackendCapability(
-            capability_id="C", support=SupportLevel.SUPPORTED,
+            question=EvaluationQuestion.NETWORK_COMPLETION, support=SupportLevel.SUPPORTED,
             fidelity=ModelFidelity.ANALYTICAL_ESTIMATE),)
 
-    def assess(self, context: object, capability_id: str) -> BackendAssessment:
-        return _assessment(backend_id="FAKE", capability_id=capability_id)
+    def assess(self, context: object,
+               question: EvaluationQuestion) -> BackendAssessment:
+        return _assessment(backend_id="FAKE", question=question)
 
-    def prepare(self, context: object, capability_id: str) -> PreparedExecution:
+    def prepare(self, context: object,
+                question: EvaluationQuestion) -> PreparedExecution:
         return PreparedExecution(
             backend_id="FAKE", projection_identity=H64,
             qualification_identity=None, backend_config=None,

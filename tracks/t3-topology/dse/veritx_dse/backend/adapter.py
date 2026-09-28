@@ -7,18 +7,17 @@ a second identity system. These objects are in-memory declarations:
 no schema_version, no hashing, no serialization; identity lives in the
 underlying canonical artifacts.
 
-Two seams are deliberately temporary (Federation 03/04 replace them):
-``context`` is opaque (``object``) until ``CanonicalEvaluationContext``
-lands, and ``capability_id: str`` is a backend-neutral key until the
-closed ``EvaluationQuestion`` vocabulary lands. No compatibility
-machinery is provided for either.
+One seam is deliberately temporary (Federation 05 replaces it):
+``context`` is opaque (``object``) until adapters consume the canonical
+evaluation context; no compatibility machinery is provided.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Protocol, runtime_checkable
 
+from veritx_dse.application.evaluation_question import EvaluationQuestion
 from veritx_dse.backend.contracts import (
     BackendConfigArtifact, BackendInputManifest,
 )
@@ -110,16 +109,20 @@ class BackendCapability:
     """A backend's declaration of one thing it can (or cannot) do.
 
     A declaration, not a persisted scientific artifact — no content
-    identity in this commit.
+    identity in this commit. ``question`` is from the closed
+    ``EvaluationQuestion`` vocabulary: capability truth, not aspiration.
     """
 
-    capability_id: str
+    question: EvaluationQuestion
     support: SupportLevel
     fidelity: ModelFidelity
     limitations: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        _non_empty_str("capability_id", self.capability_id)
+        if type(self.question) is not EvaluationQuestion:
+            raise BackendContractError(
+                f"question must be an EvaluationQuestion, got "
+                f"{self.question!r}")
         if type(self.support) is not SupportLevel:
             raise BackendContractError(
                 f"support must be a SupportLevel, got {self.support!r}")
@@ -142,7 +145,7 @@ class BackendAssessment:
     """
 
     backend_id: str
-    capability_id: str
+    question: EvaluationQuestion
     support: SupportLevel
     readiness: BackendReadiness
     fidelity: ModelFidelity
@@ -153,7 +156,10 @@ class BackendAssessment:
 
     def __post_init__(self) -> None:
         _non_empty_str("backend_id", self.backend_id)
-        _non_empty_str("capability_id", self.capability_id)
+        if type(self.question) is not EvaluationQuestion:
+            raise BackendContractError(
+                f"question must be an EvaluationQuestion, got "
+                f"{self.question!r}")
         if type(self.support) is not SupportLevel:
             raise BackendContractError(
                 f"support must be a SupportLevel, got {self.support!r}")
@@ -265,19 +271,21 @@ class BackendAdapter(Protocol):
         """Stable execution identity (e.g. ``BOOKSIM_STANDALONE``)."""
 
     def capabilities(self) -> tuple[BackendCapability, ...]:
-        """Declared capabilities; installation does not imply readiness."""
+        """Declared capabilities; installation does not imply readiness.
+        ``capability_id`` names a question from the closed
+        ``EvaluationQuestion`` vocabulary (Federation 04)."""
 
     def assess(
         self,
-        context: object,          # Federation 03: CanonicalEvaluationContext
-        capability_id: str,       # Federation 04: EvaluationQuestion
+        context: object,          # Federation 05: CanonicalEvaluationContext
+        question: EvaluationQuestion,
     ) -> BackendAssessment:
-        """Assess one capability against the canonical context, now."""
+        """Assess one question against the canonical context, now."""
 
     def prepare(
         self,
-        context: object,          # Federation 03: CanonicalEvaluationContext
-        capability_id: str,       # Federation 04: EvaluationQuestion
+        context: object,          # Federation 05: CanonicalEvaluationContext
+        question: EvaluationQuestion,
     ) -> PreparedExecution:
         """Compose the prepared execution identities for one execution."""
 
