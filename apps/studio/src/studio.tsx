@@ -322,13 +322,16 @@ export function simulationCapabilityReason(
       return detail || 'Simulation is not supported for this design.';
   }
 }
+/** Compact vNext project header (§3): revision, latest analysis and
+ * latest optimization with provenance — never a naked performance number.
+ * Revision, run and study history lives in the History disclosure. */
 export function ContextHeader({ project }: { project: ProjectView }): ReactElement {
+  const pid = project.project.project_id;
   const active = project.revisions.find(
     (r) => r.revision_id === project.active_revision_id,
   );
   const evaluation = project.latest_static_evaluation
     ?? project.latest_active_run;
-  const serving = project.latest_serving_experiment;
   const study = project.latest_optimization_study;
   return (
     <div className="context-header">
@@ -337,14 +340,10 @@ export function ContextHeader({ project }: { project: ProjectView }): ReactEleme
         <span className="ctx-val">{project.project.name}</span>
       </div>
       <div>
-        <span className="ctx-key">Context</span>
+        <span className="ctx-key">Revision</span>
         <span className="ctx-val">
-          {project.draft.dirty
-            ? <><span aria-hidden="true">◉</span> Draft</>
-            : <><span aria-hidden="true">▣</span> Revision</>}
-          {' · '}
           {active
-            ? `based on ${active.display_name} · ${active.compilation_status.toLowerCase()}`
+            ? `${active.display_name} · ${active.compilation_status}`
             : 'no compiled revision'}
           {project.draft.dirty && (
             <span className="stale"> · UNCOMPILED CHANGES</span>
@@ -352,27 +351,68 @@ export function ContextHeader({ project }: { project: ProjectView }): ReactEleme
         </span>
       </div>
       <div>
-        <span className="ctx-key">Static evaluation</span>
+        <span className="ctx-key">Latest analysis</span>
         <span className="ctx-val">
           {evaluation
-            ? `${evaluation.qualification ?? evaluation.status} · ${
+            ? `Network completion · ${evaluation.backend ?? 'backend —'} · ${
                 evaluation.completion_cycles ?? '—'
-              } cycles`
+              } cycles · SIMULATED · qualification ${
+                evaluation.qualification ?? '—'} · run ${
+                evaluation.status ?? '—'}`
             : 'none'}
         </span>
       </div>
       <div>
-        <span className="ctx-key">Serving experiment</span>
-        <span className="ctx-val">{serving?.state ?? 'none'}</span>
-      </div>
-      <div>
-        <span className="ctx-key">Optimization study</span>
+        <span className="ctx-key">Latest optimization</span>
         <span className="ctx-val">
           {study
-            ? `${study.pareto_count}/${study.candidate_count} pareto`
+            ? `${study.candidate_count} candidates · selected ${
+                study.selected_candidate_id ?? '—'}`
             : 'none'}
         </span>
       </div>
+      <details className="ctx-history">
+        <summary className="ctx-key">History</summary>
+        <div className="ctx-history-body">
+          <div>
+            <b>Revisions</b>
+            <ul>
+              {project.revisions.map((r) => (
+                <li key={r.revision_id}>
+                  <Link to={`/projects/${pid}/compile`}>
+                    {r.display_name} · {r.compilation_status}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <b>Runs</b>
+            <ul>
+              {project.runs.map((r) => (
+                <li key={r.run_id}>
+                  <Link to={`/runs/${r.run_id}`}>
+                    {r.display_name ?? r.run_id} · {r.backend ?? '—'} · ${
+                      r.status ?? '—'}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <b>Studies</b>
+            <ul>
+              {project.optimizations.map((o) => (
+                <li key={o.optimization_id}>
+                  <Link to={`/projects/${pid}/optimize`}>
+                    {o.optimization_id.slice(0, 8)} · {o.candidate_count} candidates
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </details>
     </div>
   );
 }

@@ -7,28 +7,81 @@ import {
 import { Compile, Design, Review, Simulate, Verify } from './pages/design';
 import { Compare, Optimize } from './pages/optimize';
 import { Serving } from './pages/serving';
+import { Performance } from './pages/performance';
 import { Evidence, ValidationLab } from './pages/evidence';
 import OfflineDemo from './pages/offline';
 import BrandMark from './components/BrandMark';
 
 type Theme = 'dark' | 'light';
 
-// The handoff IA (00–09). Two groups, matching the prototype: the
-// revision workflow and the record/validation surfaces. Numbers are part
-// of the product language — do not collapse them into generic tabs.
-const RAIL: { section: string; no: string; label: string; group: string
-  tiny?: string }[] = [
-  { section: 'overview', no: '00', label: 'Overview', group: 'workflow' },
-  { section: 'design', no: '01', label: 'Design', group: 'workflow', tiny: 'edit' },
-  { section: 'compile', no: '02', label: 'Compile', group: 'workflow' },
-  { section: 'verify', no: '03', label: 'Verify', group: 'workflow' },
-  { section: 'simulate', no: '04', label: 'Evaluate', group: 'workflow' },
-  { section: 'optimize', no: '05', label: 'Optimize', group: 'workflow' },
-  { section: 'serving', no: '06', label: 'Serving', group: 'workflow', tiny: 'LLM' },
-  { section: 'evidence', no: '07', label: 'Evidence', group: 'records' },
-  { section: 'decide', no: '08', label: 'Compare', group: 'records' },
-  { section: 'validation', no: '09', label: 'Validation lab', group: 'records' },
+// Studio vNext IA (§2/§48): four work groups, no numbered sequence.
+// Verification and Evidence are trust surfaces, not sequential steps.
+// `to` is the canonical path; `aliases` keep pre-vNext deep links alive.
+interface NavItem {
+  section: string;
+  label: string;
+  tiny?: string;
+  aliases?: string[];
+  placeholder?: string;
+}
+interface NavGroup { group: string; items: NavItem[] }
+const NAV: NavGroup[] = [
+  { group: 'BUILD', items: [
+    { section: 'overview', label: 'Overview' },
+    { section: 'design', label: 'Design', tiny: 'edit' },
+    { section: 'compile', label: 'Compile' },
+  ]},
+  { group: 'ANALYZE', items: [
+    { section: 'evaluate', label: 'Evaluate', aliases: ['simulate'] },
+    { section: 'performance', label: 'Performance',
+      placeholder: 'Wave-E schedule, makespan, critical path, request latency, utilization, sensitivity.' },
+    { section: 'serving', label: 'Serving', tiny: 'LLM' },
+  ]},
+  { group: 'EXPLORE', items: [
+    { section: 'optimize', label: 'Optimize' },
+    { section: 'synthesize', label: 'Synthesize',
+      placeholder: 'MILP / SA / BO / RHO / GRPO topology synthesis over candidate graph producers.' },
+    { section: 'candidates', label: 'Candidates',
+      placeholder: 'Global candidate library across parameter-search and synthesis studies.' },
+    { section: 'compare', label: 'Compare', aliases: ['decide'] },
+  ]},
+  { group: 'TRUST', items: [
+    { section: 'runs', label: 'Runs' },
+    { section: 'verification', label: 'Verification', aliases: ['verify'] },
+    { section: 'evidence', label: 'Evidence' },
+    { section: 'reproduce', label: 'Reproduce',
+      placeholder: 'Per-backend reproduction: BookSim, ASTRA, Ramulator, serving where deterministic.' },
+    { section: 'capabilities', label: 'Capabilities',
+      placeholder: 'Capability explorer: every VERITX capability with its maturity stage.' },
+    { section: 'validation', label: 'Validation lab' },
+    { section: 'implementation', label: 'Implementation lab',
+      placeholder: 'Energy & power, RTL, UVM/SVA, CDC, PIM, hardware multicast, multiplane research.' },
+  ]},
 ] as const;
+
+/** Resolve a raw route section (canonical or legacy alias) to its item. */
+function resolveNav(section: string): NavItem | null {
+  for (const g of NAV) {
+    for (const item of g.items) {
+      if (item.section === section) return { ...item };
+      if (item.aliases?.includes(section)) return { ...item };
+    }
+  }
+  return null;
+}
+
+/** vNext placeholder for sections whose page lane has not landed yet.
+ * Page lanes replace the matching `case` in renderBody with the real
+ * component; this text never pretends to be product functionality. */
+function VNextPlaceholder({ title, note }: { title: string; note: string }): ReactElement {
+  return (
+    <div className="vnext-placeholder">
+      <h2>{title}</h2>
+      <p className="muted">{note}</p>
+      <p className="muted">This workspace is under construction in Studio vNext.</p>
+    </div>
+  );
+}
 
 function Shell(): ReactElement {
   const { mode, projects, activeProjectId, setActiveProjectId } = useStudio();
@@ -88,18 +141,40 @@ function Shell(): ReactElement {
         return <RunDetail runId={route.runId ?? ''} />;
       case 'project': {
         if (staleProject) return <ProjectPicker />;
-        switch (route.section) {
+        // Legacy aliases resolve to their canonical section first.
+        const nav = route.section ? resolveNav(route.section) : null;
+        const section = nav ? nav.section : route.section;
+        switch (section) {
           case 'workload': return <Workload projectId={pid} />;
           case 'design': return <Design projectId={pid} />;
           case 'review': return <Review projectId={pid} />;
           case 'compile': return <Compile projectId={pid} />;
+          case 'verification':
           case 'verify': return <Verify projectId={pid} />;
+          case 'evaluate':
           case 'simulate': return <Simulate projectId={pid} />;
           case 'serving': return <Serving projectId={pid} />;
           case 'evidence': return <Evidence projectId={pid} />;
           case 'validation': return <ValidationLab projectId={pid} />;
+          case 'compare':
           case 'decide': return <Compare projectId={pid} />;
           case 'optimize': return <Optimize projectId={pid} />;
+          case 'performance': return <Performance projectId={pid} />;
+          case 'synthesize':
+          case 'candidates':
+          case 'reproduce':
+          case 'capabilities':
+          case 'implementation': {
+            const item = resolveNav(section);
+            return (
+              <VNextPlaceholder
+                title={item?.label ?? section ?? 'Section'}
+                note={item?.placeholder ?? ''}
+              />
+            );
+          }
+          case 'runs': return <Runs />;
+          case 'trust': return <Trust />;
           default: return <Overview projectId={pid} />;
         }
       }
@@ -110,13 +185,16 @@ function Shell(): ReactElement {
     }
   };
 
+  const activeSection = (() => {
+    if (!onProjectRoute || !route.section) return '';
+    return resolveNav(route.section)?.section ?? '';
+  })();
+
   const isRailActive = (section: string): boolean => {
     if (!onProjectRoute) return false;
-    if (route.section === section) return true;
-    return section === 'decide' && route.section === 'optimize';
+    if (activeSection === section) return true;
+    return section === 'compare' && activeSection === 'optimize';
   };
-
-  let lastGroup = '';
 
   return (
     <div className="app-shell">
@@ -184,41 +262,33 @@ function Shell(): ReactElement {
 
       <aside className="sidebar">
         <nav className="rail" aria-label="Primary navigation">
-          {RAIL.map((item) => {
-            const groupHeader = item.group !== lastGroup
-              ? (
-                <div className="rail-group" key={`g-${item.group}`}>
-                  {item.group === 'workflow' ? 'Workflow' : 'Records & validation'}
-                </div>
-              )
-              : null;
-            lastGroup = item.group;
-            const itemEl = pid ? (
-              <Link
-                key={item.section}
-                className={`rail-item${isRailActive(item.section) ? ' active' : ''}`}
-                to={`/projects/${pid}/${item.section}`}
-                ariaLabel={item.label}
-              >
-                <span>{item.no}</span>
-                <b>{item.label}</b>
-                {item.tiny && <em>{item.tiny}</em>}
-              </Link>
-            ) : (
-              <span
-                key={item.section}
-                className="rail-item disabled"
-                aria-disabled="true"
-              >
-                <span>{item.no}</span>
-                <b>{item.label}</b>
-                {item.tiny && <em>{item.tiny}</em>}
-              </span>
-            );
-            return groupHeader
-              ? [groupHeader, itemEl]
-              : itemEl;
-          })}
+          {NAV.map((navGroup) => (
+            <div key={navGroup.group}>
+              <div className="rail-group">{navGroup.group}</div>
+              {navGroup.items.map((item) => (
+                pid ? (
+                  <Link
+                    key={item.section}
+                    className={`rail-item${isRailActive(item.section) ? ' active' : ''}`}
+                    to={`/projects/${pid}/${item.section}`}
+                    ariaLabel={item.label}
+                  >
+                    <b>{item.label}</b>
+                    {item.tiny && <em>{item.tiny}</em>}
+                  </Link>
+                ) : (
+                  <span
+                    key={item.section}
+                    className="rail-item disabled"
+                    aria-disabled="true"
+                  >
+                    <b>{item.label}</b>
+                    {item.tiny && <em>{item.tiny}</em>}
+                  </span>
+                )
+              ))}
+            </div>
+          ))}
         </nav>
         <div className="rail-bottom">
           <Link

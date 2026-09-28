@@ -52,3 +52,19 @@ export function parseRoute(path: string): ParsedRoute {
 export function projectLink(projectId: string, section = 'overview'): string {
   return `/projects/${projectId}/${section}`;
 }
+
+// Studio vNext IA (§2/§48): canonical project sections by work group.
+// Pre-vNext deep links keep working via aliases resolved in App.tsx:
+// simulate→evaluate, decide→compare, verify→verification.
+export const SECTION_GROUPS: Record<string, string[]> = {
+  BUILD: ['overview', 'design', 'compile'],
+  ANALYZE: ['evaluate', 'performance', 'serving'],
+  EXPLORE: ['optimize', 'synthesize', 'candidates', 'compare'],
+  TRUST: ['runs', 'verification', 'evidence', 'reproduce',
+    'capabilities', 'validation', 'implementation'],
+};
+export const SECTION_ALIASES: Record<string, string> = {
+  simulate: 'evaluate',
+  decide: 'compare',
+  verify: 'verification',
+};

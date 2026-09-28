@@ -15,7 +15,16 @@ import {
 } from '../studio';
 import { Hash, StatusBadge, fmtNum, humanize } from '../components/badges';
 import FederatedEvaluationView from '../components/FederatedEvaluationView';
+import { metricUnit } from '../components/EvaluateView';
 import { navigate } from '../router';
+import ProjectHeader, {
+  DesignHealth,
+  DesignSummary,
+  ExecutionReadiness,
+  OutstandingLimitations,
+} from '../components/ProjectHeader';
+import FabricView from '../components/FabricView';
+import { ScientificValue } from '../components/ScientificValue';
 
 function nextActionTarget(action: string): { label: string; section: string } {
   switch (action) {
@@ -200,9 +209,6 @@ export function Overview({ projectId }: { projectId: string }): ReactElement {
     <AsyncView result={project.result} reload={project.reload}>
       {(p) => {
         const active = p.active_revision;
-        const activeSummary = p.revisions.find(
-          (r) => r.revision_id === p.active_revision_id,
-        );
         // Latest run scoped to the active revision: the gateway carries
         // it, with an in-list fallback for older payloads.
         const latest = p.latest_active_run
@@ -214,63 +220,27 @@ export function Overview({ projectId }: { projectId: string }): ReactElement {
           && attempt.revision_id !== p.active_revision_id
           && attempt.compilation_status !== 'COMPILED'
           ? attempt : null;
-        const agents = active?.design.agents ?? [];
-        const compute = agents.find((a) => a.kind === 'compute_tile')?.count;
-        const hbm = agents.find((a) => a.kind === 'hbm_controller')?.count;
         return (
           <div className="page">
+            <ProjectHeader project={p} />
+            <div className="form-row">
+              <Link className="btn btn-primary" to={`/projects/${projectId}/evaluate`}>
+                Evaluate system
+              </Link>
+              <Link className="btn" to={`/projects/${projectId}/optimize`}>
+                Optimize design
+              </Link>
+              <Link className="btn" to={`/projects/${projectId}/synthesize`}>
+                Synthesize topology
+              </Link>
+              <Link className="btn" to={`/projects/${projectId}/compare`}>
+                Compare revisions
+              </Link>
+            </div>
             <div className="overview-grid">
-              <section className="card">
-                <h3>Current revision</h3>
-                {active ? (
-                  <>
-                    <div className="kv"><span>compilation</span><StatusBadge status={active.compilation.status} /></div>
-                    <div className="kv"><span>certificate</span>
-                      <span>{active.certificate?.overall ?? '—'} · {activeSummary?.display_name}</span>
-                    </div>
-                    <div className="kv"><span>model</span>
-                      <span>{active.design.workload.model_name ?? active.design.workload.model_family}</span>
-                    </div>
-                    <div className="kv"><span>TP / PP / EP / DP</span>
-                      <span>
-                        {active.design.workload.parallelism.tp} / {' '}
-                        {active.design.workload.parallelism.pp} / {' '}
-                        {active.design.workload.parallelism.ep} / {' '}
-                        {active.design.workload.parallelism.dp}
-                      </span>
-                    </div>
-                    <div className="kv"><span>agents</span>
-                      <span>
-                        {compute != null || hbm != null
-                          ? `${compute ?? 0} compute${hbm ? ` + ${hbm} HBM` : ''}`
-                          : agents.map((a) => `${a.count}× ${a.kind}`).join(', ') || '—'}
-                      </span>
-                    </div>
-                    <div className="kv"><span>routing / VC</span>
-                      <span>
-                        {active.design.locked_derived?.routing ?? '—'} · {' '}
-                        {active.design.locked_derived?.vc_count ?? '—'} VC
-                      </span>
-                    </div>
-                    <div className="kv"><span>design identity</span><Hash value={active.design_hash} /></div>
-                  </>
-                ) : (
-                  <p className="muted">No certified revision yet.</p>
-                )}
-              </section>
-              <section className="card">
-                <h3>Current certified fabric</h3>
-                {active ? (
-                  <>
-                    <div className="kv"><span>revision</span><span>{active.display_name}</span></div>
-                    <div className="kv"><span>compilation</span><StatusBadge status={active.compilation.status} /></div>
-                    <div className="kv"><span>certificate</span><span>{active.certificate?.overall ?? '—'}</span></div>
-                    <div className="kv"><span>design identity</span><Hash value={active.design_hash} /></div>
-                  </>
-                ) : (
-                  <p className="muted">No certified revision yet.</p>
-                )}
-              </section>
+              {active && <DesignSummary design={active.design} />}
+              <DesignHealth project={p} />
+              <ExecutionReadiness runs={p.runs} />
               <section className="card">
                 <h3>Latest run · {active?.display_name ?? '—'}</h3>
                 {latest ? (
@@ -281,7 +251,15 @@ export function Overview({ projectId }: { projectId: string }): ReactElement {
                       </Link>
                     </div>
                     <div className="kv"><span>status</span><StatusBadge status={latest.status ?? 'UNKNOWN'} /></div>
-                    <div className="kv"><span>completion</span><span>{fmtNum(latest.completion_cycles)} cycles</span></div>
+                    <div className="kv"><span>completion</span>
+                      <ScientificValue
+                        value={latest.completion_cycles}
+                        unit="cycles"
+                        epistemic="SIMULATED"
+                        source={latest.backend ?? undefined}
+                        qualification={latest.qualification ?? undefined}
+                      />
+                    </div>
                   </>
                 ) : (
                   <p className="muted">No runs for this revision yet.</p>
@@ -373,18 +351,77 @@ export function Overview({ projectId }: { projectId: string }): ReactElement {
                 </Link>
               </section>
             </div>
-            {p.optimizations.length > 0 && (              <section className="card">
-                <h3>Optimization studies</h3>
+            <section className="card">
+              <h3>Exploration</h3>
+              {p.latest_optimization_study ? (
+                <div className="kv">
+                  <span>latest study</span>
+                  <span>
+                    <ScientificValue
+                      value={p.latest_optimization_study.candidate_count}
+                      unit="candidates"
+                      epistemic="DECLARED"
+                      source="optimization study"
+                    />{' '}·{' '}
+                    <ScientificValue
+                      value={p.latest_optimization_study.pareto_count}
+                      unit="pareto"
+                      epistemic="DECLARED"
+                      source="optimization study"
+                    />
+                  </span>
+                </div>
+              ) : (
+                <p className="muted">No optimization study yet.</p>
+              )}
+              {p.optimizations.length > 0 && (
                 <ul>
                   {p.optimizations.map((o) => (
                     <li key={o.optimization_id}>
                       <Link className="link" to={`/projects/${projectId}/optimize`}>
                         {o.optimization_id}
                       </Link>{' '}
-                      · {o.candidate_count} candidates · {o.pareto_count} Pareto · selected {o.selected_candidate_id ?? '—'}
+                      · {o.candidate_count} candidates · selected {o.selected_candidate_id ?? '—'}
                     </li>
                   ))}
                 </ul>
+              )}
+              <div className="form-row">
+                <Link className="btn" to={`/projects/${projectId}/optimize`}>
+                  Optimize design
+                </Link>
+                <Link className="btn" to={`/projects/${projectId}/synthesize`}>
+                  Synthesize topology
+                </Link>
+              </div>
+            </section>
+            <section className="card">
+              <h3>Recent decisions</h3>
+              {p.revisions.length === 0 ? (
+                <p className="muted">No revisions yet.</p>
+              ) : (
+                <ul>
+                  {[...p.revisions].reverse().slice(0, 5).map((r) => (
+                    <li key={r.revision_id}>
+                      {r.display_name} · {r.compilation_status.toLowerCase()}
+                      {r.certificate_overall ? ` · cert ${r.certificate_overall}` : ''}{' '}
+                      <span className="muted">{r.created_at}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <Link className="btn" to={`/projects/${projectId}/compare`}>
+                Compare revisions
+              </Link>
+            </section>
+            <OutstandingLimitations
+              project={p}
+              refusedError={refusedAttempt?.error ?? null}
+            />
+            {active && (
+              <section className="card">
+                <h3>Topology preview</h3>
+                <FabricView design={active.design} revisionId={active.revision_id} />
               </section>
             )}
           </div>
@@ -1557,10 +1594,10 @@ export function RunDetail({ runId }: { runId: string }): ReactElement {
                 )}
                 {r.evaluation.metrics && (
                   <table className="live-table">
-                    <thead><tr><th>metric</th><th>value</th></tr></thead>
+                    <thead><tr><th>metric</th><th>value</th><th>unit</th><th>class</th></tr></thead>
                     <tbody>
                       {Object.entries(r.evaluation.metrics).map(([k, v]) => (
-                        <tr key={k}><td>{humanize(k)}</td><td>{fmtNum(v)}</td></tr>
+                        <tr key={k}><td>{humanize(k)}</td><td><ScientificValue value={v} unit={metricUnit(k) ?? '—'} epistemic="SIMULATED" source={r.backend ?? null} /></td></tr>
                       ))}
                     </tbody>
                   </table>
