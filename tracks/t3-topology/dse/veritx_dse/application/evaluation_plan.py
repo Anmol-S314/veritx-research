@@ -62,6 +62,7 @@ _QUESTION_PREFERENCE: dict[EvaluationQuestion, tuple[str, ...]] = {
     EvaluationQuestion.SYSTEM_MAKESPAN: ("ASTRA2_EMBEDDED_BOOKSIM",),
     EvaluationQuestion.COMMUNICATION_EXPOSURE: ("ASTRA2_EMBEDDED_BOOKSIM",),
     EvaluationQuestion.PER_RANK_COMPLETION: ("ASTRA2_EMBEDDED_BOOKSIM",),
+    EvaluationQuestion.DRAM_TIMING: ("RAMULATOR2_HBM3_V1",),
 }
 
 

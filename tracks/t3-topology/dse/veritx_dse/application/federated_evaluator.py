@@ -87,6 +87,18 @@ class AstraRunOptions:
 
 
 @dataclass(frozen=True)
+class RamulatorRunOptions:
+    """Backend-native execution options for the Ramulator leg.
+
+    Discovery configuration (which vendor tree / interpreter) lives on
+    the registered adapter, bound once in the registry — never
+    reconstructed per run. Only the wall-clock budget rides here.
+    """
+
+    timeout_s: int = 600
+
+
+@dataclass(frozen=True)
 class AnalysisOutcome:
     """One requested question and what the federation did with it."""
 
@@ -157,6 +169,7 @@ def evaluate_federated(
     requested_backend: str | None = None,
     booksim_options: BookSimRunOptions | None = None,
     astra_options: AstraRunOptions | None = None,
+    ramulator_options: RamulatorRunOptions | None = None,
     run_dir: str | Path | None = None,
     revision_id: str | None = None,
 ) -> FederatedEvaluationOutcome:
@@ -176,6 +189,7 @@ def evaluate_federated(
         context, questions, registry, requested_backend=requested_backend)
     booksim_opts = booksim_options or BookSimRunOptions()
     astra_opts = astra_options or AstraRunOptions()
+    ramulator_opts = ramulator_options or RamulatorRunOptions()
     if run_dir is not None:
         exec_root = Path(run_dir)
         persistent = True
@@ -204,6 +218,9 @@ def evaluate_federated(
         elif row.backend_id == "ASTRA2_EMBEDDED_BOOKSIM":
             outcomes.append(_evaluate_astra(
                 context, row, adapter, astra_opts, analysis_dir))
+        elif row.backend_id == "RAMULATOR2_HBM3_V1":
+            outcomes.append(_evaluate_ramulator(
+                context, row, adapter, ramulator_opts, analysis_dir))
         else:  # pragma: no cover - planner never selects unknown backends
             outcomes.append(AnalysisOutcome(
                 question=row.question, backend_id=row.backend_id,
@@ -375,6 +392,149 @@ def _evaluate_astra(
         })
 
 
+def _evaluate_ramulator(
+    context: CanonicalEvaluationContext,
+    row: Any,
+    adapter: Any,
+    options: RamulatorRunOptions,
+    analysis_dir: Path,
+) -> AnalysisOutcome:
+    """The Ramulator path: prepare -> execute (lowers its own trace
+    under run_dir/ramulator/) -> normalize. One execution answers the
+    DRAM_TIMING question; the native memory evidence stays authoritative.
+
+    Status mapping preserves the native vocabulary: a backend crash
+    (EVALUATION_FAILED) is FAILED; INCONCLUSIVE stays INCONCLUSIVE in
+    the reason and is never EVALUATED; an unsupported geometry is
+    UNSUPPORTED; only a drained PASS normalizes. Requirement binding is
+    untouched — still the network PerformanceResult only.
+    """
+    from veritx_dse.backend.ramulator_adapter import (
+        RamulatorBackendAbsent, RamulatorSemanticRefusal,
+        ramulator_evidence_id,
+    )
+    from veritx_dse.simulation.ramulator import RamulatorError
+    try:
+        prepared = adapter.prepare(context, row.question)
+        evidence = adapter.execute(
+            prepared,
+            SimpleNamespace(run_dir=analysis_dir,
+                            timeout_s=options.timeout_s))
+    except RamulatorBackendAbsent as exc:
+        return AnalysisOutcome(
+            question=row.question, backend_id=row.backend_id,
+            status=ANALYSIS_UNAVAILABLE, model_fidelity=None,
+            qualification=None, normalized_evidence=None,
+            native_evidence_id=None,
+            reason=f"{type(exc).__name__}: {exc}")
+    except (RamulatorError, RamulatorSemanticRefusal) as exc:
+        return AnalysisOutcome(
+            question=row.question, backend_id=row.backend_id,
+            status=ANALYSIS_FAILED, model_fidelity=None,
+            qualification=None, normalized_evidence=None,
+            native_evidence_id=None,
+            reason=f"{type(exc).__name__}: {exc}")
+    _persist_ramulator_inputs(analysis_dir, prepared)
+    if evidence.status == "EVALUATION_FAILED":
+        return AnalysisOutcome(
+            question=row.question, backend_id=row.backend_id,
+            status=ANALYSIS_FAILED, model_fidelity=None,
+            qualification=None, normalized_evidence=None,
+            native_evidence_id=None,
+            reason=f"Ramulator backend crashed: "
+            f"{evidence.failure_reason}")
+    if evidence.status == "UNSUPPORTED":
+        return AnalysisOutcome(
+            question=row.question, backend_id=row.backend_id,
+            status=ANALYSIS_UNSUPPORTED, model_fidelity=None,
+            qualification=None, normalized_evidence=None,
+            native_evidence_id=None,
+            reason=f"Ramulator geometry unsupported: "
+            f"{evidence.failure_reason}")
+    if evidence.status != "PASS":
+        # INCONCLUSIVE (or any future non-PASS verdict) stays exactly
+        # what it is in the reason — never EVALUATED, never PASS.
+        return AnalysisOutcome(
+            question=row.question, backend_id=row.backend_id,
+            status=ANALYSIS_FAILED, model_fidelity=None,
+            qualification=None, normalized_evidence=None,
+            native_evidence_id=ramulator_evidence_id(evidence),
+            reason=f"native memory evidence {evidence.status}: "
+            f"{evidence.failure_reason}")
+    try:
+        envelope = adapter.normalize(
+            context, row.question, prepared, evidence)
+    except (RamulatorError, ValueError) as exc:
+        return AnalysisOutcome(
+            question=row.question, backend_id=row.backend_id,
+            status=ANALYSIS_FAILED, model_fidelity=None,
+            qualification=None, normalized_evidence=None,
+            native_evidence_id=None,
+            reason=f"evidence normalization failed: "
+            f"{type(exc).__name__}: {exc}")
+    return AnalysisOutcome(
+        question=row.question, backend_id=row.backend_id,
+        status=ANALYSIS_EVALUATED,
+        model_fidelity=envelope.model_fidelity,
+        qualification=envelope.qualification,
+        normalized_evidence=envelope,
+        native_evidence_id=envelope.native_evidence_id,
+        reason=None,
+        native_summary=_ramulator_summary(evidence))
+
+
+def _ramulator_summary(evidence: Any) -> dict[str, Any]:
+    """Backend-native factual summary (drain counters, completed bytes,
+    row behavior) for integrity views; never science beyond what the
+    native evidence already states."""
+
+    def _value(key: str) -> Any:
+        entry = (evidence.metrics or {}).get(key)
+        if isinstance(entry, dict):
+            return entry.get("value")
+        return None
+
+    return {
+        "status": evidence.status,
+        "failure_reason": evidence.failure_reason,
+        "generated_requests": _value("generated_requests"),
+        "accepted_requests": _value("accepted_requests"),
+        "completed_requests": _value("completed_requests"),
+        "outstanding_requests": _value("outstanding_requests"),
+        "completed_read_bytes": _value("completed_read_bytes"),
+        "completed_write_bytes": _value("completed_write_bytes"),
+        "completion_cycles": _value("completion_cycles"),
+        "row_hits": _value("row_hits"),
+        "row_misses": _value("row_misses"),
+        "row_conflicts": _value("row_conflicts"),
+    }
+
+
+def _persist_ramulator_inputs(analysis_dir: Path, prepared: Any) -> None:
+    """Archive the exact memory artifact + profile identities the run
+    executed, so reproduction reruns stored inputs rather than
+    re-deriving them. Best-effort archival: a failure here must never
+    fail an evaluation (reproduction then reports NOT_AVAILABLE)."""
+    try:
+        native = prepared.native_prepared
+        inputs_dir = analysis_dir / "ramulator-inputs"
+        inputs_dir.mkdir(parents=True, exist_ok=True)
+        (inputs_dir / "memory-artifact.json").write_text(
+            json.dumps(native.artifact.serialize(), sort_keys=True,
+                       indent=2) + "\n",
+            encoding="utf-8")
+        (inputs_dir / "prepared.json").write_text(
+            json.dumps({
+                "memory_artifact_hash": native.memory_artifact_hash,
+                "access_stream_hash": native.access_stream_hash,
+                "backend_config_hash": native.backend_config_hash,
+                "geometry": native.geometry.to_dict(),
+            }, sort_keys=True, indent=2) + "\n",
+            encoding="utf-8")
+    except Exception:                                   # noqa: BLE001
+        pass
+
+
 def _persist_astra_inputs(analysis_dir: Path, prepared: Any) -> None:
     """Archive the exact machine/projection/namespace inputs the run
     executed, so reproduction reruns stored inputs rather than
@@ -462,5 +622,6 @@ __all__ = [
     "ANALYSIS_FAILED", "ANALYSIS_STATUSES", "ANALYSIS_EVALUATED",
     "ANALYSIS_UNAVAILABLE", "ANALYSIS_UNSUPPORTED", "AnalysisOutcome",
     "AstraRunOptions", "BookSimRunOptions", "FederatedEvaluationOutcome",
-    "OVERALL_STATUSES", "PARTIAL", "evaluate_federated",
+    "OVERALL_STATUSES", "PARTIAL", "RamulatorRunOptions",
+    "evaluate_federated",
 ]

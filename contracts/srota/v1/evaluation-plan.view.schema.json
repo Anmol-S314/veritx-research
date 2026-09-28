@@ -17,7 +17,7 @@
         "type": "object",
         "required": ["question", "backend", "support", "readiness", "model_fidelity", "qualification_profile", "reason", "limitations"],
         "properties": {
-          "question": {"enum": ["NETWORK_COMPLETION", "SYSTEM_MAKESPAN", "COMMUNICATION_EXPOSURE", "PER_RANK_COMPLETION"]},
+          "question": {"enum": ["NETWORK_COMPLETION", "SYSTEM_MAKESPAN", "COMMUNICATION_EXPOSURE", "PER_RANK_COMPLETION", "DRAM_TIMING", "SERVING_TTFT", "SERVING_COMPLETION"]},
           "backend": {"type": ["string", "null"]},
           "support": {"enum": ["SUPPORTED", "CONDITIONAL", "UNSUPPORTED"]},
           "readiness": {"enum": ["READY", "BLOCKED", "UNAVAILABLE"]},

@@ -67,6 +67,8 @@ def default_backend_registry(
     booksim_bin: str | Path | None = None,
     astra_bin: str | Path | None = None,
     repo_root: str | Path | None = None,
+    ramulator_vendor_dir: str | Path | None = None,
+    ramulator_python: str | None = None,
 ) -> BackendRegistry:
     """The certified federation, explicitly enumerated.
 
@@ -77,6 +79,7 @@ def default_backend_registry(
     """
     from veritx_dse.backend.astra_adapter import Astra2Adapter
     from veritx_dse.backend.booksim_adapter import BookSimAdapter
+    from veritx_dse.backend.ramulator_adapter import RamulatorAdapter
     root = Path(repo_root) if repo_root is not None else None
     return BackendRegistry((
         BookSimAdapter(
@@ -87,6 +90,10 @@ def default_backend_registry(
             binary=(Path(astra_bin)
                     if astra_bin is not None else None),
             repo_root=root),
+        RamulatorAdapter(
+            vendor_dir=(Path(ramulator_vendor_dir)
+                        if ramulator_vendor_dir is not None else None),
+            python_exe=ramulator_python),
     ))
 
 
