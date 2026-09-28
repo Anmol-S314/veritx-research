@@ -79,6 +79,14 @@ export default function StudyVerdict({
 
   const reqState = best?.c.product_requirements?.satisfied;
   const better = delta === null ? null : dir === 'MIN' ? delta < 0 : delta > 0;
+  // §21 ties: every measured value identical — no distinction, never a
+  // tie-break presented as superior.
+  const tied = ranked.length > 1
+    && ranked.every((r) => r.v === ranked[0].v);
+  // §21 diminishing returns by link width, when the domain varies it.
+  const widthGroups = widthReturns(study, ranked, baseGuided);
+  // §42 completeness, derived from the declared definition only.
+  const completeness = studyCompleteness(study);
 
   return (
     <section className="card verdict">
@@ -96,6 +104,47 @@ export default function StudyVerdict({
         <p className="verdict-value">
           {fmtNum(best.v)} <span className="muted">{unit(metric)}</span>
         </p>
+      )}
+      {tied && (
+        <p className="warn" role="note">
+          NO DISTINCTION UNDER THIS OBJECTIVE — every measured candidate
+          reads the same value. Nothing here is superior; the engine
+          selection is arbitrary among ties.
+        </p>
+      )}
+      {best && !tied && (
+        <p className="muted">
+          Recommended for further investigation. A faster
+          network is not a better chip (see limits below).
+        </p>
+      )}
+      {widthGroups && (
+        <div>
+          <span className="verdict-label">Observed returns by link width</span>
+          <table className="tbl">
+            <thead><tr><th>width</th><th>best measured</th><th>n</th><th>Δ vs previous</th></tr></thead>
+            <tbody>
+              {widthGroups.map((g, i) => {
+                const prevBest = i > 0 ? widthGroups[i - 1].best : null;
+                const d = prevBest !== null ? g.best - prevBest : null;
+                const p = d !== null && prevBest !== null && prevBest !== 0
+                  ? (d / prevBest) * 100
+                  : null;
+                return (
+                  <tr key={g.width}>
+                    <td className="num">{g.width}b</td>
+                    <td className="num">{fmtNum(g.best)} {unit(metric)}</td>
+                    <td className="num">{g.n}</td>
+                    <td className="num">
+                      {d === null ? '—' : `${d > 0 ? '+' : ''}${fmtNum(d)}${p === null ? '' : ` (${p > 0 ? '+' : ''}${p.toFixed(1)}%)`}`}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <span className="muted">Measured returns within this study only — diminishing or not, they establish nothing beyond this objective.</span>
+        </div>
       )}
 
       <div className="verdict-grid">
@@ -116,7 +165,7 @@ export default function StudyVerdict({
             {delta === null
               ? '—'
               : `${delta > 0 ? '+' : ''}${fmtNum(delta)} ${unit(metric)}`
-                + (pct === null ? '' : ` (${pct > 0 ? '+' : ''}${pct.toFixed(1)}%)`)}
+                + (pct === null ? '' : ` (${pct > 0 ? '+' : ''}${Math.abs(pct) < 0.05 && pct !== 0 ? '<0.1' : pct.toFixed(1)}%)`)}
           </strong>
           <span className="muted">
             {delta === null
@@ -178,6 +227,9 @@ export default function StudyVerdict({
         </p>
       )}
 
+      <p className="muted">
+        <strong>Search completeness.</strong> {completeness}
+      </p>
       <p className="verdict-limit">
         <strong>What this does not establish.</strong> Only network completion
         performance was measured. Area, power, energy and implementation cost
@@ -196,9 +248,55 @@ export default function StudyVerdict({
   );
 }
 
+/** Group measured values by link width to show observed returns. Only
+renders when the study domain varies link_width and values are measured —
+no model, no invented comparison. */
+function widthReturns(
+  study: OptimizationStudyView,
+  ranked: { c: Candidate; v: number }[],
+  baseGuided: Record<string, unknown> | null,
+): { width: string; best: number; n: number }[] | null {
+  const domain = study.definition.domain as Record<string, unknown[]> | undefined;
+  const widths = domain?.link_width;
+  if (!Array.isArray(widths) || widths.length < 2) return null;
+  const byWidth = new Map<string, number[]>();
+  for (const { c, v } of ranked) {
+    const w = c.guided_patch?.link_width ?? baseGuided?.link_width ?? null;
+    if (w === null || w === undefined) return null;
+    const key = String(w);
+    const arr = byWidth.get(key) ?? [];
+    arr.push(v);
+    byWidth.set(key, arr);
+  }
+  if (byWidth.size < 2) return null;
+  return [...byWidth.entries()]
+    .map(([width, vs]) => ({
+      width,
+      best: Math.min(...vs),
+      n: vs.length,
+    }))
+    .sort((a, b) => Number(a.width) - Number(b.width));
+}
+
+/** §42 search completeness from the declared definition: exhaustive only
+for grid/enumeration with no budget cap; otherwise budgeted/random wording.
+Derived, never claimed from results. */
+function studyCompleteness(study: OptimizationStudyView): string {
+  const budget = study.definition.budget as Record<string, unknown> | undefined;
+  const capped = budget
+    && (typeof budget.max_candidates === 'number' || typeof budget.max_evaluations === 'number');
+  if ((study.definition.method === 'grid' || study.definition.method === 'enumeration') && !capped) {
+    return `EXHAUSTIVE — all ${study.candidates.length} declared candidates evaluated over this finite domain.`;
+  }
+  if (study.definition.method === 'random') {
+    return `BUDGETED (seeded random, seed ${String(study.definition.seed ?? '—')}) — best observed among ${study.candidates.length} evaluated candidates; no global optimality claim.`;
+  }
+  return `BUDGETED — best observed among ${study.candidates.length} evaluated candidates; no global optimality claim.`;
+}
+
 function unit(metric: string): string {
   if (metric.endsWith('_ns')) return 'ns';
   if (metric.endsWith('_cycles') || metric === 'makespan'
       || metric === 'critical_path') return 'cycles';
-  return '';
+  return '—';
 }

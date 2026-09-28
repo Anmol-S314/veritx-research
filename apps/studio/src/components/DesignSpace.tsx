@@ -52,6 +52,34 @@ const HUMAN: Record<string, string> = {
   radix: 'Radix',
 };
 
+/** §16 dimension groups. Only qualified controls are interactive; every
+other dimension renders as pending maturity, never as a hidden feature. */
+const DIMENSION_GROUPS: { title: string; dims: string[]; note: string }[] = [
+  {
+    title: 'Parallelism',
+    dims: ['tp', 'pp', 'ep', 'dp'],
+    note: 'TP / PP / EP / DP search dimensions — pending qualification.',
+  },
+  {
+    title: 'Fabric',
+    dims: ['link_width', 'topology_family', 'concentration', 'radix'],
+    note: 'Qualified fabric dimensions from the capability authority.',
+  },
+  {
+    title: 'Placement',
+    dims: ['placement_compute', 'placement_controller', 'placement_nic'],
+    note: 'Placement search through canonical artifacts — pending.',
+  },
+  {
+    title: 'Advanced',
+    dims: ['arbitration'],
+    note: 'Only parameters proven effective and qualified appear here.',
+  },
+];
+
+/** Derived compiler state: never a search knob. */
+const DERIVED_NEVER_KNOBS = ['vc_count', 'vc_map', 'route_table'];
+
 function toggle<T>(list: T[], value: T, on: boolean): T[] {
   const next = on ? [...list, value] : list.filter((x) => x !== value);
   return Array.from(new Set(next));
@@ -123,52 +151,81 @@ export default function DesignSpace(p: DesignSpaceProps): ReactElement {
     );
   };
 
+  const pendingDims = (names: string[]): string[] =>
+    names.filter((n) => !qualified.has(n));
+
   return (
     <>
-      <h4>Explore design space</h4>
+      <h4>What do you want VERITX to vary?</h4>
       <p className="muted">
         {qualified.size} qualified dimension(s):{' '}
         {caps.qualified_parameters.join(', ') || 'none'}. Only these can enter a
-        certified study.
+        certified study. {DERIVED_NEVER_KNOBS.join(', ')} are compiler-derived
+        correctness state — never search knobs.
       </p>
 
-      {group('link_width',
-        <Chips values={RANGE_CHOICES.link_width} selected={p.widths}
-               suffix="b"
-               onToggle={(v, on) =>
-                 p.setWidths(toggle(p.widths, Number(v), on))} />)}
+      {DIMENSION_GROUPS.filter((g) => g.title !== 'Fabric').map((g) => {
+        const pending = pendingDims(g.dims);
+        const live = g.dims.filter((n) => qualified.has(n));
+        return (
+          <details className="card-details" key={g.title}>
+            <summary>
+              {g.title} — {pending.length === 0 ? 'qualified' : 'pending qualification'}
+            </summary>
+            <p className="muted">{g.note}</p>
+            {live.length > 0 && (
+              <p className="muted">Qualified in this group: {live.join(', ')}.</p>
+            )}
+            {pending.length > 0 && (
+              <p className="muted">
+                Pending: {pending.join(', ')} — visible with truthful
+                maturity state, not offered as study knobs until qualified.
+              </p>
+            )}
+          </details>
+        );
+      })}
 
-      {group('topology_family',
-        <Chips values={topoChoices} selected={p.topologies}
-               onToggle={(v, on) =>
-                 p.setTopologies(toggle(p.topologies, String(v), on))} />,
-        'These are the families the certified execution chain accepts ' +
-        'end to end — not merely the ones that compile.')}
+      <fieldset>
+        <legend>Fabric — qualified dimensions</legend>
+        {group('link_width',
+          <Chips values={RANGE_CHOICES.link_width} selected={p.widths}
+                 suffix="b"
+                 onToggle={(v, on) =>
+                   p.setWidths(toggle(p.widths, Number(v), on))} />)}
 
-      {group('concentration',
-        <Chips values={RANGE_CHOICES.concentration} selected={p.concentrations}
-               onToggle={(v, on) =>
-                 p.setConcentrations(toggle(p.concentrations, Number(v), on))} />)}
+        {group('topology_family',
+          <Chips values={topoChoices} selected={p.topologies}
+                 onToggle={(v, on) =>
+                   p.setTopologies(toggle(p.topologies, String(v), on))} />,
+          'These are the families the certified execution chain accepts ' +
+          'end to end — not merely the ones that compile.')}
 
-      {qualified.has('radix') && (
-        <div className="form-row">
-          <label>
-            Radix
-            <span className="muted"> — current: {current('radix')}</span>
-            <input
-              type="text"
-              value={p.radixText}
-              placeholder="e.g. 4, 5"
-              onChange={(e) => p.setRadixText(e.target.value)}
-            />
-            <small className="muted">
-              Comma-separated integers. Must seat every attached endpoint
-              (k·k·concentration ≥ endpoints); an invalid choice is refused by
-              the compiler rather than silently reshaped.
-            </small>
-          </label>
-        </div>
-      )}
+        {group('concentration',
+          <Chips values={RANGE_CHOICES.concentration} selected={p.concentrations}
+                 onToggle={(v, on) =>
+                   p.setConcentrations(toggle(p.concentrations, Number(v), on))} />)}
+
+        {qualified.has('radix') && (
+          <div className="form-row">
+            <label>
+              Radix
+              <span className="muted"> — current: {current('radix')}</span>
+              <input
+                type="text"
+                value={p.radixText}
+                placeholder="e.g. 4, 5"
+                onChange={(e) => p.setRadixText(e.target.value)}
+              />
+              <small className="muted">
+                Comma-separated integers. Must seat every attached endpoint
+                (k·k·concentration ≥ endpoints); an invalid choice is refused by
+                the compiler rather than silently reshaped.
+              </small>
+            </label>
+          </div>
+        )}
+      </fieldset>
 
       <h4>Search configuration</h4>
       <div className="form-row">
@@ -267,15 +324,22 @@ export default function DesignSpace(p: DesignSpaceProps): ReactElement {
         </details>
       )}
 
-      <h4>Objective</h4>
-      <p>
-        <strong>Minimize completion time</strong>
-      </p>
+      <h4>Objective effectiveness</h4>
       <p className="muted">{caps.objective_note}</p>
+      <p className="muted" title={caps.effectiveness_basis}>
+        Effectiveness basis: {caps.effectiveness_basis || 'measured through the certified chain'}
+      </p>
+      {caps.not_measured.length > 0 && (
+        <p className="muted">
+          Not measured in any certified study: {caps.not_measured.join(', ')}.{' '}
+          {caps.not_measured_note}
+        </p>
+      )}
       <p className="muted">
-        VERITX certifies network completion performance for optimization.
-        Only measured network completion was evaluated: this result does not
-        establish an area, power, energy or implementation-cost advantage.
+        Objectives are selected below from the federated metric catalog.
+        A fabric knob (e.g. link width) has no direct effect on a
+        dependency-model metric (e.g. critical path) — meaningless
+        combinations warn before launch.
       </p>
     </>
   );

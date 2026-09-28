@@ -67,6 +67,15 @@ function constraintRollup(verdicts: Record<string, ConstraintVerdict>): Rollup {
   };
 }
 
+function objectiveUnit(metric: string): string {
+  if (metric.endsWith('_ns')) return 'ns';
+  if (metric.endsWith('_cycles')) return 'cycles';
+  if (metric === 'makespan' || metric === 'critical_path') return 's (model)';
+  if (metric === 'resource_utilization_max') return 'fraction';
+  if (metric === 'request_latency_mean') return 's (model)';
+  return '—';
+}
+
 function objectiveCell(
   c: Candidate,
   metric: string,
@@ -92,6 +101,7 @@ function paretoPlot(
   objectives: StudyObjective[],
   selectedId: string | null,
   onSelect: (id: string) => void,
+  baseGuided: Record<string, number | string | boolean | null> | undefined,
 ): ReactElement {
   const W = 340;
   const H = 230;
@@ -151,13 +161,13 @@ function paretoPlot(
               {sel && <circle cx={cx} cy={cy} r={11} className="pt-ring" />}
               <circle cx={cx} cy={cy} r={6} className={cls}>
                 <title>
-                  {c.candidate_id}: {humanize(ox)}={fmtNum(c.objective_values[ox])},{' '}
+                  {candidateLabel(c, baseGuided ?? null)} ({c.candidate_id}): {humanize(ox)}={fmtNum(c.objective_values[ox])},{' '}
                   {humanize(oy)}={fmtNum(c.objective_values[oy])}
                   {c.pareto_member ? ' (Pareto member)' : c.pareto_eligible ? ' (eligible)' : ' (ineligible)'}
                 </title>
               </circle>
               <text x={cx} y={cy - 10} textAnchor="middle" className="pt-label">
-                {c.candidate_id}
+                {candidateLabel(c, baseGuided ?? null)}
               </text>
             </g>
           );
@@ -188,6 +198,7 @@ function objectiveRanking(
   objective: StudyObjective,
   selectedId: string | null,
   onSelect: (id: string) => void,
+  baseGuided: Record<string, number | string | boolean | null> | undefined,
 ): ReactElement {
   const metric = objective.metric;
   const measured = candidates
@@ -213,7 +224,6 @@ function objectiveRanking(
     objective.direction === 'MIN' ? a.value - b.value : b.value - a.value,
   );
   const max = Math.max(...measured.map((m) => m.value)) || 1;
-  const short = (id: string): string => id.replace(/^cand_/, '').slice(0, 10);
   return (
     <div className="rank-chart" role="list">
       <p className="muted">
@@ -231,7 +241,7 @@ function objectiveRanking(
           title={`${c.candidate_id} · ${humanize(metric)} = ${fmtNum(value)}${c.pareto_member ? ' · Pareto member' : ''}`}
         >
           <span className="rank-pos">{index + 1}</span>
-          <code className="rank-id">{short(c.candidate_id)}</code>
+          <code className="rank-id" title={c.candidate_id}>{candidateLabel(c, baseGuided ?? null)}</code>
           <span
             className="rank-bar"
             style={{ width: `${Math.max(2, (value / max) * 100)}%` }}
@@ -385,8 +395,8 @@ export default function OptimizeView({
               <tr>
                 <th>Candidate</th>
                 {objectives.map((o) => (
-                  <th key={o.metric}>
-                    {humanize(o.metric)} ({o.direction})
+                  <th key={o.metric} title={`unit: ${objectiveUnit(o.metric)}`}>
+                    {humanize(o.metric)} ({o.direction}) · {objectiveUnit(o.metric)}
                   </th>
                 ))}
                 <th>Compilation</th>
@@ -452,14 +462,16 @@ export default function OptimizeView({
                 : 'Objectives'}
           </h4>
           {multiObjective ? (
-            paretoPlot(optimization.candidates, objectives, selected?.candidate_id ?? null, setSelectedId)
+            paretoPlot(optimization.candidates, objectives, selected?.candidate_id ?? null, setSelectedId, baseGuided)
           ) : objectives.length === 1 ? (
-            objectiveRanking(optimization.candidates, objectives[0], selected?.candidate_id ?? null, setSelectedId)
+            objectiveRanking(optimization.candidates, objectives[0], selected?.candidate_id ?? null, setSelectedId, baseGuided)
           ) : (
             <p className="muted">This study declares no objective.</p>
           )}
           <p className="muted">
-            Pareto set (engine): {optimization.pareto_ids.join(', ') || '—'}
+            {multiObjective
+              ? `Pareto set (engine): ${optimization.pareto_ids.join(', ') || '—'}`
+              : 'Single-objective ranking: no Pareto set exists for one semantic family.'}
           </p>
         </div>
 
@@ -573,6 +585,7 @@ export default function OptimizeView({
                   <tr>
                     <th>Objective</th>
                     <th>Value</th>
+                    <th>Unit</th>
                     <th>Availability</th>
                   </tr>
                 </thead>
@@ -583,6 +596,7 @@ export default function OptimizeView({
                         {humanize(o.metric)} ({o.direction})
                       </td>
                       <td>{objectiveCell(selected, o.metric)}</td>
+                      <td className="muted">{objectiveUnit(o.metric)}</td>
                       <td>
                         <VerdictChip
                           map={presentation.objectiveState}

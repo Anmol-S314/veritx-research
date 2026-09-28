@@ -20,6 +20,81 @@ import StudyVerdict from '../StudyVerdict';
 // it is a validated range. So the UI offers a small set of plausible values
 // and states that they are UI choices, not a backend enumeration.
 
+/** §17 objective groups, derived from metric names. The catalog stays the
+authority (only listed metrics are selectable); grouping is a UI
+convenience, never a new metric. */
+function objectiveGroup(metric: string): string {
+  const m = metric.toLowerCase();
+  if (m.includes('ttft') || m.includes('serving') || m.includes('decode')) return 'Serving';
+  if (m.includes('critical_path') || m.includes('request_latency')
+      || m.includes('utilization') || m.includes('makespan')) {
+    return m.includes('makespan') && !m.includes('request') ? 'System / Model' : 'Performance model';
+  }
+  if (m.includes('read_latency') || m.includes('write_latency')
+      || m.includes('dram') || m.includes('memory')) return 'Memory';
+  if (m.includes('exposed') || m.includes('per_rank') || m.includes('system')) return 'System';
+  if (m.includes('energy') || m.includes('power')) return 'Energy / power';
+  return 'Network';
+}
+
+/** Epistemic class derived from the metric name. Certified network metrics
+ride authenticated backend evidence (SIMULATED); dependency-model metrics
+are MODELLED and never measured. Unknown names state the producer only. */
+function objectiveEpistemic(metric: string): string {
+  const m = metric.toLowerCase();
+  if (m.includes('critical_path') || m.includes('request_latency')
+      || m.includes('utilization')) return 'MODELLED · UNCALIBRATED';
+  if (m.includes('energy') || m.includes('power')) return 'fidelity-gated estimate';
+  return 'SIMULATED · QUALIFIED';
+}
+
+function objectiveUnit(metric: string): string {
+  if (metric.endsWith('_ns')) return 'ns';
+  if (metric.endsWith('_cycles')) return 'cycles';
+  if (metric === 'makespan' || metric === 'critical_path') return 's (model)';
+  if (metric === 'resource_utilization_max') return 'fraction';
+  if (metric === 'request_latency_mean') return 's (model)';
+  return '';
+}
+
+/** §18: model-derived metrics answer the dependency model, not the fabric.
+A fabric-only domain cannot causally move them. */
+/** Group catalog metrics for the §17 selector. Order is fixed and
+meaningful (Network → System → Memory → Performance → Serving →
+Energy → Other); within a group, catalog order is preserved. */
+function groupMetrics(
+  metrics: { metric: string; producer_id?: string | null }[],
+): { group: string; metric: string; producer_id?: string | null }[] {
+  const order = ['Network', 'System', 'Memory', 'Performance model',
+    'System / Model', 'Serving', 'Energy / power', 'Other'];
+  return metrics
+    .map((m) => ({
+      group: objectiveGroup(m.metric),
+      metric: m.metric,
+      producer_id: m.producer_id,
+    }))
+    .sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group));
+}
+
+function effectivenessWarning(
+  metric: string,
+  domain: { name: string }[],
+): string | null {
+  const m = metric.toLowerCase();
+  const modelMetric = m.includes('critical_path') || m.includes('request_latency')
+    || m.includes('utilization');
+  if (!modelMetric) return null;
+  const fabricOnly = domain.length > 0
+    && domain.every((d) => ['link_width', 'topology_family', 'concentration', 'radix']
+      .includes(d.name));
+  if (fabricOnly) {
+    return `NO DIRECT EFFECT: ${metric} is a dependency-model metric — fabric knobs `
+      + `(${domain.map((d) => d.name).join(', ')}) cannot causally move it under the `
+      + 'current model. This study would measure no distinction.';
+  }
+  return null;
+}
+
 export function Optimize({ projectId }: { projectId: string }): ReactElement {
   const { refreshProjects } = useStudio();
   const project = useAsync(() => api.project(projectId), [projectId]);
@@ -100,6 +175,12 @@ export function Optimize({ projectId }: { projectId: string }): ReactElement {
   }
   // Raw Cartesian size, computed BEFORE launch so the user sees the cost.
   const candidateCount = domain.reduce((n, d) => n * d.values.length, 0);
+  // §20 search strategy: one compilation per candidate, one backend analysis
+  // per candidate per objective question. Shown before launch.
+  const compilationCount = candidateCount;
+  const analysisCount = candidateCount; // single objective, single question
+  const effectWarning = effectivenessWarning(activeObjective, domain);
+  const groupedObjectives = groupMetrics(certifiedMetrics);
 
   /** Adopt a studied candidate as the DRAFT, then send the user to Design.
    *
@@ -199,7 +280,7 @@ export function Optimize({ projectId }: { projectId: string }): ReactElement {
               )}
               <div className="form-row">
                 <label>
-                  Objective — from the federated metric catalog
+                  Objective — from the federated metric catalog, grouped by meaning
                   <select
                     value={activeObjective}
                     onChange={(e) => setObjectiveMetric(e.target.value)}
@@ -208,18 +289,27 @@ export function Optimize({ projectId }: { projectId: string }): ReactElement {
                     {certifiedMetrics.length === 0 && (
                       <option value={activeObjective}>{activeObjective}</option>
                     )}
-                    {certifiedMetrics.map((m) => (
-                      <option key={m.metric} value={m.metric}>
-                        {m.metric} — family {families[m.metric] ?? '—'} · producer {m.producer_id ?? '—'}
-                      </option>
+                    {Array.from(new Set(groupedObjectives.map((g) => g.group))).map((grp) => (
+                      <optgroup key={grp} label={grp}>
+                        {groupedObjectives.filter((g) => g.group === grp).map((g) => (
+                          <option key={g.metric} value={g.metric}>
+                            {g.metric} — family {families[g.metric] ?? '—'} · {g.producer_id ?? '—'}
+                          </option>
+                        ))}
+                      </optgroup>
                     ))}
                   </select>
                   <small className="muted">
-                    Answering producer: {activeProducer} · semantic family: {activeFamily}.
+                    Producer: {activeProducer} · question family: {activeFamily} ·{' '}
+                    {objectiveEpistemic(activeObjective)}
+                    {objectiveUnit(activeObjective) ? ` · unit: ${objectiveUnit(activeObjective)}` : ''}.
                     Same-family metrics are one ranking, never a Pareto frontier.
                   </small>
                 </label>
               </div>
+              {effectWarning && (
+                <p className="warn" role="alert">{effectWarning}</p>
+              )}
               <div className="form-row">
                 <label>
                   Hard constraint
@@ -239,8 +329,14 @@ export function Optimize({ projectId }: { projectId: string }): ReactElement {
                         {certifiedMetrics.length === 0 && (
                           <option value={constraintMetric}>{constraintMetric}</option>
                         )}
-                        {certifiedMetrics.map((m) => (
-                          <option key={m.metric} value={m.metric}>{m.metric}</option>
+                        {Array.from(new Set(groupedObjectives.map((g) => g.group))).map((grp) => (
+                          <optgroup key={grp} label={grp}>
+                            {groupedObjectives.filter((g) => g.group === grp).map((g) => (
+                              <option key={g.metric} value={g.metric}>
+                                {g.metric}{objectiveUnit(g.metric) ? ` (${objectiveUnit(g.metric)})` : ''}
+                              </option>
+                            ))}
+                          </optgroup>
                         ))}
                       </select>{' '}
                       ≤
@@ -254,15 +350,25 @@ export function Optimize({ projectId }: { projectId: string }): ReactElement {
                     />
                   </span>
                   <small className="muted">
-                    Optional. Every candidate that violates it is ineligible —
+                    Optional, from the same metric catalog — never a hardcoded
+                    ceiling. Every candidate that violates it is ineligible —
                     no Pareto set and no selection. Leave it off to rank the
-                    measured candidates outright.
+                    measured candidates outright. Product requirements stay
+                    separate (see the candidate table) — do not mix them.
                   </small>
                 </label>
               </div>
+              {candidateCount > 0 && (
+                <p className="muted">
+                  Before launch: {candidateCount} candidate architecture{candidateCount === 1 ? '' : 's'} ·{' '}
+                  {compilationCount} compilations · {analysisCount} backend analys{analysisCount === 1 ? 'is' : 'es'} ({activeProducer}).
+                  Each candidate compiles once; each required evaluation
+                  question executes at most once.
+                </p>
+              )}
               <div className="form-row">
-                <button className="btn btn-primary" disabled={!active || running} onClick={start}>
-                  {running ? 'Optimizing…' : 'Launch optimization'}
+                <button className="btn btn-primary" disabled={!active || running || !!effectWarning} onClick={start}>
+                  {running ? 'Optimizing…' : 'Launch study'}
                 </button>
                 {(() => {
                   const measured = [...p.runs]
@@ -328,7 +434,7 @@ function StudyResult({
         <div className="kv"><span>base revision</span><span>{optimization.base_revision_id}</span></div>
         <div className="kv"><span>result class</span><span>{optimization.study.result_class}</span></div>
         <div className="kv"><span>selected candidate</span><span>{optimization.selected_candidate_id ?? '—'}</span></div>
-        <div className="kv"><span>pareto members</span><span>{optimization.study.pareto_ids.length}</span></div>
+        <div className="kv"><span>{multiObjectiveAvailable ? 'pareto members' : 'top-ranked (single-objective ranking)'}</span><span>{multiObjectiveAvailable ? optimization.study.pareto_ids.length : '—'}</span></div>
         <div className="kv"><span>metric registry</span><Hash value={optimization.study.metric_registry_id} /></div>
         {optimization.study.selection_rationale && (
           <p className={optimization.selected_candidate_id ? 'muted' : 'warn'}>

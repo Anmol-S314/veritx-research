@@ -1,0 +1,257 @@
+// Candidate detail page (§25). One page per parameter-search or
+// topology-synthesis candidate: design delta, topology graph, routing /
+// VC resources, compile result, verification, backend analyses,
+// requirements, constraints, evidence, generator provenance — then the
+// three actions: Evaluate candidate, Compare to base, Promote to draft.
+//
+// Promotion uses the existing safe candidate→explicit-topology path:
+// for optimization-study candidates that is api.useCandidate (draft
+// only — Compile creates the immutable revision). For local synthesis
+// candidates no gateway promotion endpoint exists yet: the page states
+// the missing bridge explicitly and offers the CLI/import path instead
+// of inventing a promotion.
+import { useState, type ReactElement } from 'react';
+import { api } from '../api';
+import { ErrorBox, Link } from '../studio';
+import { navigate } from '../router';
+import { fmtNum, Hash, StatusBadge } from './badges';
+import { EpistemicChip, ScientificValue } from './ScientificValue';
+import type { CompletenessKind } from './Synthesis/methods';
+import { ROUTES } from './Synthesis/methods';
+import { degreeOf, diffGraphs, isConnected, maxNode, type Edge } from './Synthesis/graph';
+import { TopologyGraph } from './Synthesis/TopologyGraph';
+
+export interface CandidateProvenance {
+  key: string;
+  value: string;
+}
+
+export interface CandidateStateRow {
+  label: string;
+  state: string;
+  detail?: string;
+}
+
+export interface CandidateViewInput {
+  id: string;
+  label: string;
+  origin: 'synthesis-local' | 'optimization-study';
+  method: string;
+  solverStatus: string;
+  completeness: CompletenessKind;
+  completenessNote: string;
+  nodes: number;
+  gridK: number;
+  links: Edge[];
+  baseLinks: Edge[] | null;
+  baseLabel: string;
+  generatorObjective: number | null;
+  generatorNote: string;
+  seed: number | null;
+  engineSemantics: string;
+  compile: CandidateStateRow;
+  verification: CandidateStateRow;
+  backends: CandidateStateRow[];
+  requirements: CandidateStateRow[];
+  evidence: CandidateProvenance[];
+  provenance: CandidateProvenance[];
+  optimizationId: string | null;
+  backendCandidateId: string | null;
+}
+
+function StateRow({ row }: { row: CandidateStateRow }): ReactElement {
+  return (
+    <div className="kv">
+      <span>{row.label}</span>
+      <span>
+        <StatusBadge status={row.state} />
+        {row.detail && <div className="muted">{row.detail}</div>}
+      </span>
+    </div>
+  );
+}
+
+export function CandidateDetail({
+  projectId,
+  input,
+}: {
+  projectId: string;
+  input: CandidateViewInput;
+}): ReactElement {
+  const [promoting, setPromoting] = useState(false);
+  const [promoted, setPromoted] = useState<string | null>(null);
+  const [error, setError] = useState<Error | null>(null);
+
+  const diff = input.baseLinks ? diffGraphs(input.baseLinks, input.links) : null;
+  const deg = degreeOf(input.nodes, input.links);
+  const maxDeg = Math.max(0, ...deg);
+  const connected = isConnected(input.nodes, input.links);
+  const topNode = maxNode(input.links);
+  const canPromote =
+    input.origin === 'optimization-study' &&
+    input.optimizationId &&
+    input.backendCandidateId;
+
+  const promote = async (): Promise<void> => {
+    if (!canPromote || !input.optimizationId || !input.backendCandidateId) return;
+    setPromoting(true);
+    setError(null);
+    try {
+      const draft = await api.useCandidate(
+        input.optimizationId,
+        input.backendCandidateId,
+      );
+      setPromoted(
+        `Draft updated from candidate ${input.backendCandidateId} `
+        + `(dirty: ${String((draft as { dirty?: boolean }).dirty)}). `
+        + 'Compile to create an immutable revision.',
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      setPromoting(false);
+    }
+  };
+
+  return (
+    <div className="page">
+      <p className="muted">
+        <Link to={ROUTES.candidates(projectId)}>Candidates</Link>
+        {' / '}{input.label}
+      </p>
+      <h2>
+        {input.label}{' '}
+        <span className="muted">
+          {input.method} · {input.solverStatus}
+        </span>
+      </h2>
+      <p className="muted">
+        Origin: {input.origin === 'optimization-study' ? 'optimization study' : 'local synthesis study'}
+        {' · '}completeness: <b>{input.completeness}</b> — {input.completenessNote}
+      </p>
+
+      <section className="card">
+        <h3>Design delta</h3>
+        {diff ? (
+          <div className="kv-grid">
+            <div className="kv"><span>base graph</span><span>{input.baseLabel} · {input.baseLinks?.length ?? 0} links</span></div>
+            <div className="kv"><span>candidate graph</span><span>{input.links.length} links</span></div>
+            <div className="kv"><span>added links</span><span className="good">+{diff.added.length}</span></div>
+            <div className="kv"><span>removed links</span><span className="bad">−{diff.removed.length}</span></div>
+            <div className="kv"><span>max degree / radix</span><span>{maxDeg}</span></div>
+            <div className="kv"><span>connectivity</span><span>{connected ? <StatusBadge status="CONNECTED" /> : <StatusBadge status="DISCONNECTED" />}</span></div>
+            {!connected && (
+              <p className="warn">Disconnected graphs can never be promoted — connectivity is a typed refusal, not a penalty.</p>
+            )}
+          </div>
+        ) : (
+          <p className="muted">No base graph recorded for this candidate — delta unavailable, graph below is the candidate alone.</p>
+        )}
+      </section>
+
+      <section className="card">
+        <h3>Topology graph</h3>
+        <TopologyGraph
+          base={input.baseLinks ?? input.links}
+          candidate={input.baseLinks ? input.links : null}
+          nodes={input.nodes}
+          k={input.gridK}
+          title={input.baseLinks ? 'base vs candidate (added / removed / kept)' : 'candidate graph'}
+        />
+      </section>
+
+      <section className="card">
+        <h3>Generator provenance (proposal, not measurement)</h3>
+        <div className="kv"><span>engine semantics</span><span>{input.engineSemantics}</span></div>
+        {input.seed != null && <div className="kv"><span>seed</span><span>{input.seed}</span></div>}
+        {input.generatorObjective != null ? (
+          <ScientificValue
+            value={input.generatorObjective}
+            unit="weighted hops"
+            epistemic="MODELLED"
+            source="synthesis generator objective"
+            qualification="NOT QUALIFIED — screening only"
+          />
+        ) : (
+          <p className="muted">No generator score recorded.</p>
+        )}
+        <p className="muted">{input.generatorNote}</p>
+        <div className="kv"><span>highest node id</span><span>{topNode >= 0 ? fmtNum(topNode) : '—'} (nodes address 0…{input.nodes - 1})</span></div>
+      </section>
+
+      <section className="card">
+        <h3>Compile &amp; verification</h3>
+        <StateRow row={input.compile} />
+        <StateRow row={input.verification} />
+        <p className="muted">
+          A candidate is never called verified because a generator likes it —
+          verification belongs to the compiled revision, not the proposal.
+        </p>
+      </section>
+
+      <section className="card">
+        <h3>Backend analyses</h3>
+        {input.backends.length === 0 ? (
+          <p className="muted">No backend analyses recorded for this candidate yet.</p>
+        ) : (
+          input.backends.map((b) => <StateRow key={b.label} row={b} />)
+        )}
+      </section>
+
+      <section className="card">
+        <h3>Requirements &amp; evidence</h3>
+        {input.requirements.length === 0 ? (
+          <p className="muted">No requirement verdicts recorded.</p>
+        ) : (
+          input.requirements.map((r) => <StateRow key={r.label} row={r} />)
+        )}
+        {input.evidence.map((e) => (
+          <div className="kv" key={e.key}>
+            <span>{e.key}</span>
+            <span><Hash value={e.value} /></span>
+          </div>
+        ))}
+        {input.provenance.map((e) => (
+          <div className="kv" key={e.key}>
+            <span>{e.key}</span>
+            <span className="muted">{e.value}</span>
+          </div>
+        ))}
+      </section>
+
+      <section className="card">
+        <h3>Actions</h3>
+        <div className="form-row">
+          <button
+            className="btn"
+            onClick={() => navigate(`/projects/${projectId}/simulate`)}
+          >
+            Evaluate candidate
+          </button>
+          <button
+            className="btn"
+            onClick={() => navigate(`/projects/${projectId}/decide`)}
+          >
+            Compare to base
+          </button>
+          {canPromote ? (
+            <button className="btn btn-primary" disabled={promoting} onClick={promote}>
+              {promoting ? 'Promoting…' : 'Promote to draft'}
+            </button>
+          ) : (
+            <span className="muted" title="No gateway promotion endpoint exists for local synthesis candidates yet">
+              Promotion pending: no gateway endpoint for local synthesis candidates — import via the canonical
+              promote_to_explicit_topology path, then Compile.
+            </span>
+          )}
+        </div>
+        <p className="muted">
+          <EpistemicChip value="DERIVED" /> Promotion writes an ordinary explicit-topology draft.
+          After promotion: <b>Draft updated. Compile to create an immutable revision.</b>
+        </p>
+        {promoted && <p className="good">{promoted}</p>}
+        {error && <ErrorBox error={error} />}
+      </section>
+    </div>
+  );
+}
