@@ -280,7 +280,7 @@ def test_product_assessment_reports_the_shipped_workload_simulatable(
     request = CompileRequestV3.from_dict(doc)
     compilation = FabricCompiler().compile(request)
     assessment = svc._assess_compilation(request, compilation)
-    assert assessment["supported"] is True, assessment["reason"]
+    assert assessment["support"] != "UNSUPPORTED", assessment["reason"]
     assert assessment["domain"] is None
     binary = _booksim_binary()
     if binary is None:

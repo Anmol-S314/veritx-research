@@ -39,6 +39,7 @@ from veritx_dse.application.requirements import (
     verify_performance_result,
 )
 from veritx_dse.backend.evidence import (
+    BOOKSIM_BUILD_RECIPE_VERSION,
     PARSER_VERSION,
     stats_sha256_of,
     write_evidence,
@@ -201,7 +202,7 @@ def build_authenticated(request: Any, *, cycles: int = 100,
         exit_status=0,
         transport="SUPERVISED_PROCESS",
         build_manifest_sha256="6" * 64,
-        build_recipe_version="booksim2-fork/v1",
+        build_recipe_version=BOOKSIM_BUILD_RECIPE_VERSION,
         route_dump_sha256="8" * 64).to_dict()
     root = Path(tempfile.mkdtemp(
         prefix="p2-proof-",

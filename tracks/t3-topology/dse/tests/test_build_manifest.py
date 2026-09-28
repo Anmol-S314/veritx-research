@@ -129,7 +129,12 @@ def test_release_build_records_the_toolchain_it_actually_uses():
     assert "CXX=$(RELEASE_CXX) JOBS=" in makefile
     # the manifest compiler is the build compiler, never a hardcoded g++
     assert "--compiler g++" not in makefile
-    assert makefile.count("--compiler $(RELEASE_CXX)") == 2
+    # each backend manifest stamps its authoritative build recipe (one
+    # --compiler threading per backend: BookSim, ASTRA, Ramulator)
+    assert makefile.count("--compiler $(RELEASE_CXX)") == 3
+    assert "--recipe-version booksim2-fork/v2" in makefile
+    assert "--recipe-version astra-sim+booksim2/v1" in makefile
+    assert "--recipe-version ramulator2/v1" in makefile
 
 
 def test_release_manifest_binds_the_release_to_its_facts(tmp_path):

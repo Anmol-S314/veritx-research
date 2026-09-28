@@ -211,8 +211,16 @@ def test_booksim_actually_spawns_and_authenticates(tmp_path):
 
     record = result.record
     evidence = record.evidence
-    assert evidence.loaded_packets == evidence.declared_packets
-    assert evidence.injected_packets == evidence.declared_packets
+    # Conservation counters live in the native stats mapping (the
+    # evidence dataclass carries identities, not counters); the fork
+    # emits no "declared" counter — declared truth is the preparation's
+    # expected_packets, and the execution gate already proved
+    # loaded == injected == delivered == expected. Strict lookups so a
+    # backend that stops emitting a counter fails loudly.
+    stats = evidence.stats
+    expected = native.prepared.expected_packets
+    assert stats["loaded_trace_packets"] == expected
+    assert stats["injected_trace_packets"] == expected
     assert evidence.binary_sha256 == producer.binary_sha256
     assert evidence.prepared_id == native.realization_digest
     assert evidence.config_sha256 == native.config_hash

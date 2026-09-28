@@ -46,7 +46,10 @@ def _evaluate(binary: Path, tmp_path: Path):
 def test_no_manifest_producer_is_not_certifiable(tmp_path):
     binary = _copied_binary(tmp_path)
     out = _evaluate(binary, tmp_path)
-    assert out.status == "BACKEND_UNAVAILABLE"
+    # Representability law: a binary with no provenance cannot represent
+    # certified semantics (UNAVAILABLE would claim the runtime is absent,
+    # but the binary is present — what is missing is proof).
+    assert out.status == "UNSUPPORTED"
     assert out.performance_result_id is None
     assert out.authenticated_proof is None
 
@@ -55,7 +58,10 @@ def test_manifest_with_wrong_recipe_is_not_certifiable(tmp_path):
     binary = _copied_binary(tmp_path)
     write_build_manifest(binary, repo_root=REPO, recipe_version="evil/v1")
     out = _evaluate(binary, tmp_path)
-    assert out.status == "BACKEND_UNAVAILABLE"
+    # Representability law: a manifest stamped with a recipe the product
+    # does not know cannot represent certified evidence — UNSUPPORTED,
+    # never an execution attempt and never certified proof.
+    assert out.status == "UNSUPPORTED"
     assert out.authenticated_proof is None
 
 
@@ -75,7 +81,10 @@ def test_dirty_manifest_is_not_certifiable(tmp_path):
     write_build_manifest(binary, repo_root=repo,
                          recipe_version="booksim2-fork/v1")
     out = _evaluate(binary, tmp_path)
-    assert out.status == "BACKEND_UNAVAILABLE"
+    # Representability law: a dirty build cannot represent a certified
+    # producer, so the refusal is UNSUPPORTED (the binary is present, so
+    # UNAVAILABLE would be a lie about the environment).
+    assert out.status == "UNSUPPORTED"
     assert out.authenticated_proof is None
 
 
@@ -85,7 +94,9 @@ def test_wrong_binary_after_manifest_is_not_certifiable(tmp_path):
                          recipe_version="booksim2-fork/v1")
     binary.write_bytes(binary.read_bytes() + b"\x00")  # replaced after build
     out = _evaluate(binary, tmp_path)
-    assert out.status == "BACKEND_UNAVAILABLE"
+    # Representability law: bytes that no longer match the manifest cannot
+    # represent the certified build — UNSUPPORTED, never executed.
+    assert out.status == "UNSUPPORTED"
     assert out.authenticated_proof is None
 
 

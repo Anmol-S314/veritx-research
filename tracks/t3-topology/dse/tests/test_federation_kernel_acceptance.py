@@ -199,9 +199,14 @@ def test_live_booksim_spawns_and_normalizes(tmp_path):
 
     prepared, result, envelope = _run(tmp_path / "run-a")
     evidence = result.record.evidence
-    # route/conservation gates: the native evidence proves them
-    assert evidence.loaded_packets == evidence.declared_packets
-    assert evidence.injected_packets == evidence.declared_packets
+    # route/conservation gates: the native evidence proves them.
+    # Counters live in the stats mapping (identities on the dataclass);
+    # the fork emits no "declared" counter — declared truth is the
+    # preparation's expected_packets. Strict lookup, never passes blind.
+    stats = evidence.stats
+    expected = prepared.native_prepared.prepared.expected_packets
+    assert stats["loaded_trace_packets"] == expected
+    assert stats["injected_trace_packets"] == expected
     # the envelope is an index over the SAME authenticated evidence
     assert envelope.backend_id == "BOOKSIM_STANDALONE"
     assert envelope.question is _Q.NETWORK_COMPLETION
